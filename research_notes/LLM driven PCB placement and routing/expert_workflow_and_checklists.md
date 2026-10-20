@@ -338,7 +338,7 @@ KiCad now supports this directly, in two releases:
 ### Takeaway
 Merging about 30 checklists and guides gives **about 300 distinct layout-review items** across 24 categories (exact counts below). The sources are open-source repos, vendor/fab checklists (Altium, Sierra Circuits, PCB Power, MacroFab, SparkFun, VSE, JLC), team checklists (UWARG, UW Rocketry), standards (NASA GSFC-STD-8001A), TI app notes, expert columns (Olney) and KiCad's DRC catalogue.
 
-About a third are pure geometry/DRC checks, a bit over 40% need net/part semantics, and the rest need judgment, external data or simulation. *Severity and automation tags are my assignments, based on each source's stated rationale.*
+By primary tag, about 37% are pure geometry/DRC checks, about 41% need net/part semantics, and about 22% need judgment, external data or simulation. 34 of the 41 Critical items are at least semi-automatable. *Severity and automation tags are my assignments, based on each source's stated rationale.*
 
 ### Cited Findings
 
@@ -392,6 +392,16 @@ About a third are pure geometry/DRC checks, a bit over 40% need net/part semanti
 - **AT** AtlasPCB (vendor, 2026-06-28): hold distribution and copper-balance threshold — [AtlasPCB](https://atlaspcb.com/blog/pcb-dfm-check-pre-order-verification) [P] (vendor self-report).
 - **AD** Adom "kicad-board-audit" LLM skill (audit order, silenced-rule check, net-class coverage) — [Adom](https://wiki.adom.inc/adom/kicad-board-audit/files/SKILL.md) [P]. **KH** aklofas/kicad-happy (MIT; PCB analyzer methodology: decap-within-10 mm heuristic, tombstone copper ratio, layer-transition analysis, trace-proximity grid) — [methodology_pcb.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_pcb.md) [P]. **CE** claude-eda (unsourced thresholds) — [PLACEMENT-STRATEGY.md](https://github.com/l3wi/claude-eda/blob/main/templates/claude/skills/eda-pcb/reference/PLACEMENT-STRATEGY.md) [P].
 - **CD** Cadence "PCB Layout Review Checklist": clearance for IC extraction tools; mounting-hole isolation; single-point analog/digital commons — [Cadence](https://resources.pcb.cadence.com/blog/2023-pcb-design-and-risk-benefit-analysis-in-component-placement) [S] (JS-rendered). **Tanner** personal JLC ordering checklist: check IC/diode orientation in the PCBA preview; keep option parts from being auto-matched; "Update this list as fails occurs" — [petertanner.dev](https://www.petertanner.dev/posts/PCB-manufacturing-checklist/) [P].
+- **Other keys used in the table:**
+  - **HT** Hartley — [Altium](https://resources.altium.com/p/pc-board-stack-up-best-practices-with-rick-hartley), [ProtoExpress](https://www.protoexpress.com/blog/rick-hartley-pcb-design-recommendations-to-minimize-emi/) [P].
+  - **NX** NextPCB — [NextPCB](https://www.nextpcb.com/blog/how-many-layers-can-a-pcb-have) [P].
+  - **JR** JLCPCB routing rules — [JLCPCB](https://jlcpcb.com/blog/pcb-routing-rules-best-practices) [P].
+  - **JP** JLCPCB placement guide — [JLCPCB](https://jlcpcb.com/blog/pcb-component-placement-guide-2026) [P].
+  - **EN** electronics-notes — [electronics-notes](https://www.electronics-notes.com/articles/analogue_circuits/pcb-design/pcb-layout-routing.php) [P].
+  - **PC** PCD&F 2019 — [PCD&F](https://www.qgdigitalpublishing.com/article/PCB+Guided+Insights/3388181/589425/article.html) [P].
+  - **BG** bestpcbs ground-plane guide — [bestpcbs](https://www.bestpcbs.com/blog/2026/09/circuit-board-ground-plane-layout/) [S].
+  - **FXP** Flux placement tutorial — [Flux docs](https://docs.flux.ai/tutorials/component-placement) [S] (JS-rendered).
+  - **PS** ProtoExpress stack-up guide — [ProtoExpress](https://www.protoexpress.com/pcb-design-guides/pcb-stack-up-design-guide/) [S] (lamination-cycle claim not found on the current page).
 - Not public or not found: NCAB's checklist is behind a form, but its section titles are visible (component packaging, placement, mechanical, routing, power design, DRC, silkscreen, Gerber review) — [NCAB](https://www.ncabgroup.com/pcb-design-checklist) [P]. Other gaps:
   - Oxide: the public RFD API lists 84 public RFDs with none on PCB review — [Oxide RFD API](https://rfd-api.shared.oxide.computer/rfd) [P].
   - Antmicro publishes an open-hardware portal and KiCad/Blender flow, not a checklist — [Antmicro](https://antmicro.com/blog/2023/04/open-hardware-portal) [P].
@@ -459,7 +469,7 @@ About a third are pure geometry/DRC checks, a bit over 40% need net/part semanti
 | STK-04 | Stackup | Impedance calcs include solder mask (or mask removed over RF) | Mask shifts Z | M | S | AZ, PK |
 | STK-05 | Stackup | Controlled-impedance traces use the computed width/gap for their layer (per-layer net-class rules) | Mismatch → reflections | M | A (once classes are defined) | PK, HH, AL, SC |
 | STK-06 | Stackup | Layer count is the minimum giving continuous references, power copper and escape; +2 layers if channel use >70%; validated by test route | Cost vs SI/routability | M | J (S estimate) | NX, VSE |
-| STK-07 | Stackup | Sequential lamination cycles limited | Yield, cost | m | S | PS [S] |
+| STK-07 | Stackup | Sequential lamination cycles limited | Yield, cost | m | S | PS ([S]) |
 | STK-08 | Stackup | High-speed signals reference GND planes, not power planes | Return quality ("TI does not recommend high-speed signal references to power planes") | M | S | TI-HS |
 | STK-09 | Stackup | Every controlled-impedance net matches a net-class pattern (nets matching none silently get Default, e.g., USB D+/D−) | Silent impedance miss | C | A (class-coverage report) | AD |
 | STK-10 | Stackup | Room for impedance/test coupons; coupons per IPC-2221 on production panels for hi-rel | Fab verification | m | J | ALP, NASA, AL |
@@ -495,7 +505,7 @@ About a third are pure geometry/DRC checks, a bit over 40% need net/part semanti
 | PLC-07 | Placement | Crystal/oscillator next to its IC with short traces and ground guard (CE default ≤5 mm) | Jitter, EMI | M | S | HH, JN, CE, AL |
 | PLC-08 | Placement | ADC anti-alias filters close to the ADC input | Pickup after the filter | M | S | GD, HH |
 | PLC-09 | Placement | All components placed before routing | Inserting parts later is very hard | M | J (process) | FD, MIT, VSE |
-| PLC-10 | Placement | Ratsnest length and crossings minimized; short high-speed lengths prioritized | Routability proxy | M | A | AD*, KG, KF, AL |
+| PLC-10 | Placement | Ratsnest length and crossings minimized; short high-speed lengths prioritized | Routability proxy | M | A | KG, KF, AL, BO |
 | PLC-11 | Placement | Routability trial: quick autoroute ≥85% completion before committing | Placement and layer-count problems surface early | M | A | BO, VSE |
 | PLC-12 | Placement | Routing channels between dense ICs (memories, BGAs) | Escape room | M | S | FD, BO |
 | PLC-13 | Placement | Rework: any part replaceable without removing others; tweezer/iron access | Repairability | m | S | JN, GD, ICD, AL |
@@ -708,10 +718,12 @@ About a third are pure geometry/DRC checks, a bit over 40% need net/part semanti
 | FLX-06 | Flex | Coverlay openings allow for registration/adhesive flow; stiffeners match the mechanical function | Assembly | M | S | ALP |
 | FLX-07 | Flex | Impedance continuity through rigid-to-flex transitions | SI | M | J/sim | ALP |
 
-(*In PLC-10, "AD" is a typo for AD = Autodesk; the Autodesk page is [S]. Read PLC-10's sources as KG, KF, AL, BO.)
 
 #### Coverage statistics (computed from the table above)
-COVERAGE_STATS_PLACEHOLDER
+- Total distinct items: **299** across 24 categories: Process 18; DFM 27; Stackup 12; Mechanical 21; Placement 27; Power integrity 15; Power conversion 9; Ground/return 13; High-speed 24; RF 6; Analog 4; EMC/ESD 10; Thermal 6; Footprints 13; Routing 11; Zones 7; Paste/mask 5; Assembly 13; Test/debug 13; Silkscreen 14; HV/safety 3; Outputs 13; Panel 8; Flex 7.
+- Severity: C = 41, M = 151, m = 107.
+- Automation class (primary tag): A = 101, A/S = 9, S = 119, S/J = 4, J = 66 (A-dominant share ≈ 37%, S-dominant ≈ 41%, J ≈ 22%).
+- Of the 41 Critical items: A = 19, A/S = 0, S = 14, S/J = 1, J = 7 — i.e. 83% of Critical items are at least semi-automatable.
 
 ### Inferences
 - The single biggest enabler for automation is a **semantic annotation layer**: part roles, net roles, currents, voltages, frequencies and datasheet thresholds. KiCad 9+ component classes and net classes, plus custom-rule functions (`hasComponentClass()`, `inDiffPair()`, `intersectsCourtyard()`, `enclosedByArea()`, `fromTo()`, `getField()`), give most of the plumbing ([KiCad custom rules](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc) [P]).
@@ -784,7 +796,35 @@ Qualitative sources agree on footprint/pinout errors, decoupling and return-path
 - Vendor claims of "up to 60% of prototype failures from design errors including footprints" were found only in uncited blog snippets [S] and are not reported as findings.
 
 #### Consensus ranking (proxy, not frequency)
-CONSENSUS_PLACEHOLDER
+Number of independent sources (of the keys in the table) that flag each item. This measures agreement among checklist authors, **not** measured failure frequency. Caveat: keys from the same publisher (SC/SCD/SCR from Sierra; AL/ALP/AL3/AL6 from Altium; MF/MF2; BO/BOH; the TI-* notes) are counted separately, which inflates their items. Top 25 by source count, then severity:
+
+| Rank | ID | Item (abridged) | Sev | # sources | Sources |
+|---|---|---|---|---|---|
+| 1 | GND-02 | High-speed nets don't cross splits/slots/voids; if unavoidable, stitching caps (TI: ≤1 µF, at the crossing)... | C (HS) | 8 | AZ, HH, HT, BOH, TI-HS, FL, VSE, SC |
+| 2 | DFM-04 | Copper-to-edge clearance (Sierra ≥10 mil; SparkFun 8 mil) unless edge plating or edge-launch is confirmed a... | M | 7 | GD, AZ, KD, BP, SCR, SF, PP |
+| 3 | PDN-01 | Decoupling caps as close as possible to power pins, one per pin (Altium: under 15 mm; CE default <3 mm) | M (C for fast ICs) | 7 | AZ, JN, KG, CE, AL, UW, SCR |
+| 4 | SLK-01 | No silk on pads, drills, vias or exposed copper; silk clipped by mask flagged; silk outside component bodies | M | 7 | AZ, GD, JN, KD, UW, MF, SFC |
+| 5 | SLK-05 | Revision, date, name; blank box for serial/assembly revision; version code revised every spin | m | 7 | AZ, HH, JN, GD, SF, AL, MF2 |
+| 6 | PRC-03 | Zero unrouted connections / airwires; no polygon breaks | C | 6 | HH, JN, KD, VSE, MF2, AL |
+| 7 | PRC-05 | Rules (track/space, drill, annular ring, mask web, silk width, edge clearance) set from fab/assembler capab... | C | 6 | GD, PK, UW, MF, SF, VSE |
+| 8 | ASM-01 | Fiducials: ≥3 global (asymmetric), on both sides if double-sided, 2 local diagonal at fine pitch; 40–118 mi... | M | 6 | AZ, AL, GD, FD, SCD, SC |
+| 9 | ASM-02 | Pin-1/polarity marks present and visible after assembly (not under the part) | M | 6 | GD, JN, HH, AL, PP, SC |
+| 10 | DFT-01 | Test points on power rails and critical signals; hidden nets made accessible | M | 6 | GD, HH, PK, AL, UW, VSE |
+| 11 | HS-05 | Stubs and layer changes minimized; via count limited | M | 6 | HH, AZ, KD, SC, SCR, FL |
+| 12 | PLC-02 | Grouped by functional block; power/analog/digital/RF separated; each IC's private parts gathered around it | M | 6 | FXP, GD, KG, KF, SCD, BO |
+| 13 | THM-01 | Thermal reliefs on plane connections for solderability/rework (except heat-sinking or high-current pads) | M | 6 | AZ, GD, PK, JN, UW, PP |
+| 14 | SLK-02 | Text height/thickness within fab limits (Sierra 25 mil / 4 mil; PCB Power ≥1.0 mm; UWARG 50 mil; PK ≥0.1") | m | 6 | AZ, KD, PK, SCD, PP, UW |
+| 15 | SLK-03 | Designators near their parts, unambiguous, in at most 2 orientations; no overlaps | m | 6 | HH, JN, GD, AL, SCD, MF |
+| 16 | SLK-06 | Labels for connector pinouts/signal names, test points, LEDs, switches and states, jumpers, fuse rating, fu... | m | 6 | HH, JN, AZ, SF, SC, UW |
+| 17 | DFM-02 | Annular ring ≥ fab/IPC-class minimum (PK: 5 mil Class 2 / 7 mil Class 3 for 10 mil vias; AP: >3 mil) | C | 5 | PK, AP, KD, PP, ALP |
+| 18 | HS-01 | Differential pairs coupled at impedance gap, as close as possible; uncoupled length limited | C | 5 | AZ, HH, KD, AL, VSE |
+| 19 | HV-01 | Creepage and clearance by voltage, including between layers (IPC-2221C tables) | C | 5 | GD, HH, KD, AL, FX |
+| 20 | MEC-08 | No part collisions or courtyard overlaps (3D body check, nothing under other parts) | C | 5 | AZ, KG, KD, UW, SCR |
+| 21 | PDN-06 | Trace/plane widths sized for current and temperature rise | C | 5 | AZ, HH, JN, GD, SC |
+| 22 | STK-01 | Stackup (materials, dielectric thicknesses, copper weights, finished thickness) verified with the fab | C | 5 | AZ, AL, FD, HT, ALP |
+| 23 | ANA-02 | Sensitive analog separated from SMPS/noisy digital; filters between groups | M | 5 | AZ, GD, KG, SCR, SC |
+| 24 | CAM-04 | Fab drawing/notes: dimensions, datums, drill table, stackup table, impedance table, IPC class, finish, mask... | M | 5 | PK, FX, SC, SCR, PP |
+| 25 | DFM-01 | Features don't push fab limits unnecessarily (SparkFun: 10 mil traces typical, 8 when needed, 6 absolute mi... | M | 5 | AZ, GD, AP, SF, BO |
 
 ### Inferences
 - Combining the vendor hold data (stackup/impedance/fab-note ambiguity first) with the consensus ranking (ground continuity, current capacity, fab-matched rules, stackup verification, decoupling, fiducials, silk on pads) suggests critic priority should be **documentation and specification completeness, then geometry rules, then physics**.
@@ -930,7 +970,7 @@ Thresholds come from fab/assembler profiles and datasheets, each with recorded p
 - KiCad ≥9: hierarchical sheets map to rule areas; detect channels by isomorphism and Repeat Layout.
 - KiCad ≥10: an **EVM-layout design-block library** keyed by MPN and topology (TI's "least risk" path), plus agent-learned blocks saved after they pass their critics.
 
-**4. Coverage implication.** The recomputed stats above show about a third of items are fully automatable now, and a further ~40% once the role model exists. The LLM's distinctive jobs are therefore:
+**4. Coverage implication.** The recomputed stats above show about 37% of items (110 of 299, A or A/S) are fully automatable now, and a further ~41% (123, S or S/J) once the role model exists. That leaves ~22% (66, J) for LLM/human judgment or simulation. The LLM's distinctive jobs are therefore:
 - (a) build the role/constraint model from schematic + datasheets (and verify it, as Adom insists);
 - (b) plan and backtrack through the state machine, using expert micro-workflows;
 - (c) judge the J residue and write severity-ranked findings with concrete fixes.

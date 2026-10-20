@@ -1,395 +1,630 @@
-# Patents, Conference Talks and Industrial Disclosures on Commercial AI/Automated PCB Placement and Routing (as of Oct 2026)
+# Patents, Conference Talks and Industrial Disclosures on Commercial AI/Automated PCB Placement and Routing (deep pass, as of 2026-10-20)
 
-> Method note for the report writer: WebFetch could not reach any host in this session (DNS failure or proxy denial for quilter.ai, instadeep.com, patents.google.com, uspto.gov, cadence.com, zuken.com and others). Only raw.githubusercontent.com could be downloaded directly. Everything else below comes from web-search result summaries of the cited pages. The shared web-search budget (200 calls per turn) ran out partway through. Treat patent claim language as **not read in full**. Where a summary paraphrased a page, I cite that page. Vendor numbers are labelled as vendor claims.
+> **Provenance legend (applies to every bullet):**
+> - **[P]** = primary source read in full during the deep pass on 2026-10-20. The page was fetched with curl and converted to text.
+> - **[P-pat]** = patent full text (bibliographic data, abstract, all claims, description) read from the USPTO Patent Public Search database (ppubs.uspto.gov). The citation links to the official USPTO PDF and a Google Patents mirror.
+> - **[S]** = search-result snippet only, carried over from the first pass and **not** re-verified against the page.
+>
+> **Method notes and access limits:**
+> - Google Patents answered curl with a "We're sorry… automated queries" block, so I did not use it.
+> - Patent searching was done with the USPTO PPUBS full-text index instead. It covers US grants and published US applications only, so there was **no CN/EP/WO/JP search**.
+> - cadence.com, allaboutcircuits.com, venturebeat.com and openai.com returned 403/429. I did not try to get around those blocks.
+> - The shared WebSearch budget was used up, so new leads came only from site maps, in-page links and patent-database queries.
+> - Claim scope is described **at a mechanism level for identification only. This is not legal advice.**
 
 ---
 
-## 1. Quilter (quilter.ai): mechanism, constraints, candidates, results, inputs, patents
+## 1. Quilter (quilter.ai): mechanism, constraints, candidate generation and ranking, results, inputs, patents
 
 ### Takeaway
-Quilter's public material describes a physics-scored, many-candidate generator. It is trained with reinforcement learning on synthetic boards only, and its main observable features are a "comprehension" stage (constraint extraction plus human confirmation), parallel candidates and a physics scorecard. Its flagship result is Project Speedrun (Dec 2025): an 843-component, two-board, 8-layer i.MX 8M Mini Linux computer that booted on first power-up after 38.5 human hours and 27 machine hours, according to Quilter. **I found no Quilter patents or published applications.**
+Quilter describes itself as "reinforcement learning + classical solvers + computational geometry". Placement and routing are treated as one coupled search. The system is trained only on synthetic, physics-scored problems, runs on elastic AWS compute, and returns dozens to hundreds of candidates. Candidates are ranked lexicographically on completion, DRC, "Physics Rule Checks" (PRCs), fabrication conservatism, layer count and wirelength.
+
+The human-in-the-loop interface has three parts:
+- **Circuit Comprehension**: heuristic detection of bypass caps, diff pairs, power nets, crystals and switching converters, which the engineer then confirms.
+- **Floorplan controls**: lock anything inside the outline; regions, rooms, anchoring.
+- **Candidate review.**
+
+Quilter's own documentation admits it "can't typically design or optimize boards as well as skilled humans". In Project Speedrun the hardest board (the SOM) had **human placement and partially hand-routed BGA fanout**. **No Quilter patents or published US applications exist** in the USPTO index.
 
 ### Cited Findings
-**Company and timeline**
-- Founded in 2019 by CEO Sergiy Nesterenko. Raised a $10M Series A in Feb 2024. The Register described the approach as reinforcement learning, "the same technology Google DeepMind used to teach a machine to beat the top human player at the board game Go", and contrasted it with LLM-style generative AI — [The Register, 2024-02-15](https://www.theregister.com/2024/02/15/quilters_ai_platform/)
-- $25M Series B led by Index Ventures (Oct 7, 2025). The release says teams keep their existing tools (Altium, Cadence, Siemens) while Quilter handles placement and layout — [BusinessWire, 2025-10-07](https://www.businesswire.com/news/home/20251007165399/en/Quilter-Secures-$25M-Series-B-to-Eliminate-Manual-PCB-Design-with-Physics-Driven-AI); [StartupHub](https://www.startuphub.ai/ai-news/startup-news/2025/quilter-nets-25m-to-finally-automate-circuit-board-design/). About $40M raised in total and an on-prem deployment option (vendor claims) — [Quilter product page](https://www.quilter.ai/product); [YesPress profile](https://yespress.io/quilter)
-- Eric Bogatin was named Technical Fellow (2026; exact date not captured) — [AccessNewswire](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/quilter-names-eric-bogatin-as-technical-fellow-1218417)
-
-**Disclosed mechanism (vendor descriptions, not verified)**
-- "The First RL Engine for PCB Layout … uses reinforcement learning to actively explore thousands of generated candidate boards." — [Quilter technology page](https://www.quilter.ai/product/technology)
-- Training data: "Our models are built entirely from synthetic data generated by simulation, not your design files, not scraped boards, and never your IP." Elsewhere Quilter says it "learned layout by playing millions of synthetic boards against the laws of physics." — [Quilter technology page](https://www.quilter.ai/product/technology); [Quilter product page](https://www.quilter.ai/product)
-- Press summaries say an RL model generates designs, which "are then evaluated and refined using a high-performance computing physics simulation" — [CircuitDigest](https://circuitdigest.com/news/quilter-an-ai-driven-pcb-design-solution); [The Register](https://www.theregister.com/2024/02/15/quilters_ai_platform/)
-- Quilter's framing of the loop: generate many candidates, score each against the physics, and let the system learn which decisions get there. It contrasts this with traditional autorouters, which take placement as fixed and route pin to pin, whereas Quilter weighs electrical and physical properties while building the whole board — [Quilter technology page](https://www.quilter.ai/product/technology); [Quilter blog, "PCB Autorouting 2026"](https://www.quilter.ai/blog/pcb-autorouting-in-2026-a-review-of-traditional-tools-vs-quilters-ai-approach)
-
-**Constraint handling and comprehension (documented in Quilter docs and changelog)**
-- Inputs: a complete schematic plus a board file holding the outline, mounting holes, connectors and other mechanically critical parts already placed. "Anything inside the board outline is treated as locked. Anything outside is what Quilter will place for you." — [Quilter product page (FAQ)](https://www.quilter.ai/product)
-- Schematic guidance: use supported "object classes" to flag power nets, differential pairs and important net classes — [Quilter docs: Design your schematic](https://docs.quilter.ai/using-quilter/design-your-schematic)
-- Differential pairs: the user supplies the target differential impedance, the associated single-ended impedance and the carrier frequency for each pair. Pairs with multiple receivers are not routed. Pairs are always routed as microstrip, so Quilter avoids them on 2-layer boards — [Quilter docs: Differential Pairs](https://docs.quilter.ai/physics-constraints/differential-pairs)
-- In Speedrun, differential pairs were detected from net names. The engineer then confirmed the pairings and set impedance targets per group, and the post describes constraints being "compiled" into placement, routing and physics checks — [Quilter blog: Compiling an AI-Designed Computer](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
-- 2026 releases:
-  - A "Comprehensions page" with a "Generate Fanout" action. Automated BGA fanout and breakout shipped in **beta on July 8, 2026** as part of standard candidate generation, covering standard-pitch, dense and irregular BGAs — [AccessNewswire, 2026-07-08](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/automated-bga-fanout-headlines-quilters-2026-releases-that-expand-the-c-1188028); [Quilter changelog](https://www.quilter.ai/changelog)
-  - Calculated impedance profiles for differential and single-ended signals on every layer, computed from the customer's stackup materials with Simberian's **Simbeor** solver, with editable per-net-class impedance overrides — [AccessNewswire](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/automated-bga-fanout-headlines-quilters-2026-releases-that-expand-the-c-1188028)
-  - Q1 2026 items: "Simbeor-calculated impedance profiles, ground net comprehension with region pours, a rebuilt setup flow, a new full-screen cand[idate viewer]" — [Quilter on X](https://x.com/quilterai/status/2046574855131173243)
-
-**Physics scorecard (Quilter's own description)**
-- Checks listed:
-  - bypass-capacitor effectiveness: pin-to-pin distance, **via-in-loop detection**, trace length
-  - switching-converter layout: coil proximity, input/output cap placement
-  - differential-pair integrity: phase mismatch, coupling gap, **ground-plane continuity**
-  - power-net current capacity: IPC-derived trace width for target ampacity
-  - crystal-oscillator placement
+**Architecture as Quilter states it**
+- [P] Quilter's comparison table describes its approach as "Reinforcement learning + classical solvers + computational geometry". It frames placement and routing as "one coupled problem" and gives the output as "Dozens to hundreds of ranked candidates in native ECAD format". The compute model is "Cloud-scale parallel placement, routing, and checks across many candidates" — [Quilter blog, "Can LLMs Design PCBs?", 2026-09-08](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
+- [P] "Reinforcement learning navigates the combinatorial search, but the candidates it proposes are checked against deterministic constraints, rules, and solver-backed calculations… Some decisions should be correct by construction… differential-pair spacing should be derived from the stackup and impedance target, not guessed by a neural network." The same post says Quilter runs on AWS and can be deployed inside the customer's own AWS, Azure or GCP — [Quilter blog, "The PCB autorouter was the right idea", updated 2026-06-04](https://www.quilter.ai/blog/pcb-autorouter-was-the-right-idea)
+- [P] "Quilter is never trained on human-designed boards… Our models are built entirely from synthetic data generated by simulation" — [Quilter technology page](https://www.quilter.ai/product/technology)
+- [P] Designs submitted through the free version "are used to generate synthetic training problems, not to reproduce design patterns". Commercial designs are not used in training — [Quilter LLM post](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
+- [P] Quilter engineer Fayaz Rahman: "Router is very sequential… we can't do some sort of backtracking… The order and the constraints is probably the most difficult thing" — [Quilter LLM post](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
+- [P] Engineering history, July 2024:
+  - At the Feb 2024 launch, jobs took 2–3 h to the first candidate and 4–8 h in total. Routing was about 70% of job time.
+  - The *local routing* module (trace paths and obstacle avoidance) was rewritten from Python to C++ for a 6.7× routing speedup.
+  - The *global routing* module was rebuilt for another 4×.
+  - Totals: routing 27× faster, jobs 9.4× faster.
+  - A typical job "explores 50+ unique designs and produces 20 DRC-free, 100% complete candidates — all in less than an hour".
   
-  SI, PI and manufacturing constraints are combined "in a single review" — [Quilter blog: Quilter vs DeepPCB vs Flux](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-- Quilter argues that routing-completion, time-to-route and DRC-pass-rate benchmarks measure the software's behaviour, and that "a 100% routed, DRC-clean board can still fail at bring-up" — [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+  Source: [Quilter blog, 2024-07-01](https://www.quilter.ai/blog/jobs-under-1hr)
+- [P] Until March 2026, each job "attempted many stackups and design constraints". Since 2026-03-26 a job uses a single stackup — [Quilter changelog](https://www.quilter.ai/changelog). Earlier, candidates were provisioned on standard 2-, 4- and 6-layer stackups from "OSH Park, JLCPCB, and MacroFab". Diff-pair geometry came from "a 2D quasi-static field solver" — [Quilter blog, 2024-08-21](https://www.quilter.ai/blog/differential-pairs)
+- [P] Candidate numbering is "X.Y": X = placement, Y = router. A "New Router Strategy [ALPHA]" (shipped 2026-09-30) is limited to boards under 400 pins. Experimental "[BETA]" placement engines (shipped 2026-07-31) "produce strong placements within minutes" but "can neglect some of your constraints" — [Quilter changelog](https://www.quilter.ai/changelog)
 
-**Inputs and outputs**
-- Supported ECAD: Altium, KiCad, Cadence Allegro (OrCAD bundled) and Siemens Xpedition. Candidates come back "in the same native file format" — [Quilter docs: Quickstart](https://docs.quilter.ai/get-started/quickstart); [Quilter product page](https://www.quilter.ai/product)
-- Xpedition support went live in Jan 2026 ("still early … may be bugs") — [Quilter community forum](https://community.quilter.ai/t/mentor-xpedition-interface/288)
+**Candidate ranking (documented)**
+- [P] Ranking dimensions:
+  - Routing completion
+  - Manufacturability ("DRC violations (none allowed)")
+  - PRCs (ground-plane overlap, overheated trace length, diff length mismatch, trace width accuracy, thermal/signal)
+  - Fabrication fit
+  - Resource efficiency (layer count, via count, trace length, component density)
+  
+  Source: [Quilter technology page](https://www.quilter.ai/product/technology)
+- [P] The "Recommended" sort is lexicographic:
+  1. min DRC violations, then max routing completion
+  2. max passing *priority* PRCs (power nets, diff pairs, single-ended impedance)
+  3. most conservative fab rules (max min-trace-width, then clearance, drill, via)
+  4. fewest layers
+  5. other PRCs
+  6. shortest traces
+  
+  Source: [Quilter docs: Sorting](https://docs.quilter.ai/candidate-review/sorting)
 
-**Project Speedrun results (first-party; announced Dec 10, 2025)**
-- i.MX 8M Mini system with 843 components and 5,141 pins, split across a SOM and a baseboard, both 8-layer HDI. Trace/space was 2 mil on the SOM and 3.5 mil on the baseboard. Fabricated by Sierra Circuits. First power-up success on both boards; it booted Linux — [Quilter Project Speedrun page](https://www.quilter.ai/project-speedrun); [BusinessWire, 2025-12-10](https://www.businesswire.com/news/home/20251210722060/en/Quilter-Unveils-Worlds-First-Computer-Designed-by-AI); [VentureBeat](https://venturebeat.com/ai/quilters-ai-just-designed-an-843-part-linux-computer-that-booted-on-the); [Tom's Hardware](https://www.tomshardware.com/tech-industry/artificial-intelligence/dual-pcb-linux-computer-with-843-components-designed-by-ai-boots-on-first-attempt-project-speedrun-was-made-in-just-one-week-and-required-less-than-40-hours-of-human-work)
-- 38.5 human hours against about 428 hours quoted by professional layout services (190 for the SOM, 238 for the baseboard). 27 hours of machine runtime covered placement, routing and physics validation, with 98% routing completion. Cleanup was "PDN pours, via clusters, and minor footprint swaps; no rip-ups, no re-spins" — [Quilter Project Speedrun page](https://www.quilter.ai/project-speedrun)
-- **Internal inconsistency:** the Speedrun page assigns 12 h to the SOM and 26.5 h to the baseboard, while the blog reverses them — [Project Speedrun](https://www.quilter.ai/project-speedrun) vs [Compiling blog](https://www.quilter.ai/blog/compiling-an-ai-designed-computer). Tom's Hardware commenters noted that one successful boot says nothing about how many earlier attempts there were — [Tom's Hardware](https://www.tomshardware.com/tech-industry/artificial-intelligence/dual-pcb-linux-computer-with-843-components-designed-by-ai-boots-on-first-attempt-project-speedrun-was-made-in-just-one-week-and-required-less-than-40-hours-of-human-work)
-- Another vendor claim: a backplane layout went from "30+ days" to "under 24 hours" — [Quilter product page](https://www.quilter.ai/product)
+**Circuit Comprehension: constraint extraction heuristics (documented)**
+- [P] Comprehension "replaces [the layout-kickoff] meeting". The user verifies how Quilter interpreted bypass caps, diff pairs, power nets and special parts. In Speedrun, diff pairs were "automatically detected from net naming conventions (e.g., _P / _N suffixes)". Impedance targets were set per group. High-current nets were flagged and polygon generation enabled. Crystals and switching converters were flagged — [Quilter blog, Compiling (Part 2/6), 2025-12-09](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+- [P] Bypass caps are detected when "connected between a component and ground". Parent pin assignment priority: (1) explicit wire, (2) parent pins with voltage-type names, (3) equal split across same-name pins. Smaller capacitance is placed closer to the power pin, and one cap may serve several pins — [Quilter docs: Bypass capacitors](https://docs.quilter.ai/physics-constraints/bypass-capacitors)
+- [P] Crystals are detected when the refdes starts with X or Y and both pins go to the same parent component. Crystals with load-limiting resistors are not supported — [Quilter docs: Crystal oscillators](https://docs.quilter.ai/physics-constraints/crystal-oscillators)
+- [P] Switching converters are detected when the refdes starts with U and the output connects to an inductor whose refdes starts with L. The three passives must be placed "as closely as possible" — [Quilter docs: Switching converters](https://docs.quilter.ai/physics-constraints/switching-converters)
+- [P] Power nets are detected by voltage-like name patterns or a "Power" net class. Default currents are 200 mA for nets under 3 V and 500 mA for nets over 3 V. IPC width calculations are run per stackup — [Quilter docs: Power nets](https://docs.quilter.ai/physics-constraints/power-nets); per-layer widths use IPC-2221 heating — [Quilter changelog 2026-03-26](https://www.quilter.ai/changelog)
+- [P] Diff pairs need a target differential impedance, a single-ended impedance and a carrier frequency. Pairs with multiple receivers are not routed, and pairs are always routed as microstrip — [Quilter docs: Differential pairs](https://docs.quilter.ai/physics-constraints/differential-pairs). Any differential target is accepted since 2026-06-30, solved with Simbeor — [Quilter changelog](https://www.quilter.ai/changelog)
+- [P] "Timing-sensitive signals" (delay and skew for HDMI or DDR) are "in internal testing and not yet publicly available" — [Quilter docs](https://docs.quilter.ai/physics-constraints/timing-sensitive-signals)
+- [P] "If a specific design requirement isn't specified… Quilter will treat it like a generic signal." Quilter does not review datasheets or check schematic logic — [Quilter docs: What Quilter isn't](https://docs.quilter.ai/about-quilter/what-quilter-isnt)
+- [P] A "Custom Component Proximity" constraint (child component within N mm of a specific parent pin, e.g. sense resistor, snubber) is applied in placement and verified by PRC (shipped 2026-05-01) — [Quilter changelog](https://www.quilter.ai/changelog)
 
-**Quilter on LLMs (Sept 2026)**
-- Quilter notes that OpenAI's GPT-6 Astra (launched Sept 4, 2026) showed a 15-second clip that condenses a 2 min 54 s KiCad layout run, with no PCB-specific benchmark. Quilter contrasts LLMs with physics-driven AI — [Quilter blog: Can LLMs design PCBs?](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
+**Physics Rule Checks: exact definitions (documented)**
+- [P] PRCs launched 2024-11-18 as automated "unit tests" generated per physics constraint. The stated long-term plan is that PRCs become "a critical feedback system that drives Quilter's ongoing learning" — [Quilter blog, 2024-11-18](https://www.quilter.ai/blog/physics-rule-checks)
+- [P] PRC definitions:
+  - **Ground Plane Overlap**: boolean. The plane on the layer below must overlap both traces of the pair everywhere except the last 2×clearance at each end.
+  - **Overheated Length**: a segment is "overheated" if its analytic temperature rise exceeds 20 °C. Example pass range is 0–10% of net length.
+  - **Pin Distance**: Euclidean distance between the closest pin edges. Example range is 0–1 cm.
+  - **Layer Switch Count**: vias between a bypass cap and its pin. Example range is 0–1.
+  - **Length Mismatch**: example range is 0–1 cm.
+  - **Uncoupled Spacing**: a segment is uncoupled if its spacing deviates more than 10% from the solver's nominal. Example range is 0–1 cm of uncoupled length.
+  - **Trace Path Length**: example range is 0–1 cm.
+  - **Invalid Width Span**: width outside ±10% of nominal, with a percentage threshold and a fallback length threshold.
+  - **Planned**: top-plane ground pour, neck-downs, trace proximity.
+  
+  Sources: [Ground plane overlap](https://docs.quilter.ai/physics-rule-checks-prcs/ground-plane-overlap), [Overheated length](https://docs.quilter.ai/physics-rule-checks-prcs/overheated-length), [Pin distance](https://docs.quilter.ai/physics-rule-checks-prcs/pin-distance), [Layer switch count](https://docs.quilter.ai/physics-rule-checks-prcs/layer-switch-count), [Length mismatch](https://docs.quilter.ai/physics-rule-checks-prcs/length-mismatch), [Uncoupled spacing](https://docs.quilter.ai/physics-rule-checks-prcs/uncoupled-spacing), [Trace path length](https://docs.quilter.ai/physics-rule-checks-prcs/trace-path-length), [Invalid width span](https://docs.quilter.ai/physics-rule-checks-prcs/invalid-width-span), [PRC overview](https://docs.quilter.ai/physics-rule-checks-prcs/overview)
+- [P] Physics "scorecard" items listed in marketing: bypass-cap effectiveness, switching-converter layout, diff-pair integrity, IPC ampacity, crystal placement — [Quilter blog, Quilter vs DeepPCB vs Flux](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+
+**Floorplanning and human control (documented)**
+- [P] Placement controls, from most Quilter freedom to least:
+  1. Schematic-based clustering (wired components placed together)
+  2. Anchoring (pre-place one member and the group "sticks")
+  3. Placement regions off-board (grouping only, either side), or regions off-board plus an anchor ("our current favorite"), or regions on-board (hard rooms, multipolygon union allowed for two-sided regions)
+  4. Manual placement (anything inside the outline is locked)
+  
+  Leftover vias block placement. Source: [Quilter docs: Placement guide](https://docs.quilter.ai/guides/placement-guide)
+- [P] In Speedrun the engineer "own[ed] the floorplan" and Quilter owned "the internal arrangement". Schematic groupings became rooms, and connectors, buttons and mounting holes were locked — [Quilter blog, Preparing (Part 1/6), 2025-12-09](https://www.quilter.ai/blog/preparing-an-ai-designed-computer)
+- [P] A Floorplan page was added 2026-06-30 because "the most common setup mistake… users who haven't floorplanned or pre-placed" components — [Quilter changelog](https://www.quilter.ai/changelog)
+
+**Feature timeline (changelog, all [P] from [Quilter changelog](https://www.quilter.ai/changelog) unless noted)**
+- 2024: PRCs (Nov 18), and automatic bypass-cap detection and placement (Dec 10) — [Quilter blog](https://www.quilter.ai/blog/bypass-caps)
+- 2025: automatic power pours (Jul 15) — [Quilter blog](https://www.quilter.ai/blog/power-pours)
+- 2025 "User Design Intent" pillars: power pours; regions and smart clustering and anchoring; stackup import; keepouts as first-class constraints (traces, vias, components, pours)
+- 2026-03-26: explicit ground-net comprehension and region ground pours (isolation), a 4-page setup flow, single stackup per job, new candidate reviewer
+- 2026-04-07: Simbeor impedance profiles; Projects (iterations within 10% BOM change); job Console
+- 2026-05-01:
+  - Net-class, layer-specific and pair-specific clearance constraints read from Altium only (beta)
+  - Automated BGA fanout for square ball patterns, via "Generate Fanout" in Comprehensions; a press release dates its beta to 2026-07-08 — [AccessNewswire](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/automated-bga-fanout-headlines-quilters-2026-releases-that-expand-the-c-1188028)
+  - Editable impedance; component-proximity constraint
+- 2026-05-31: "Today Quilter routes through-vias only"; blind and buried vias are in development
+- 2026-06-30: Floorplan page; Cadence schematic parsing (XML/QLT/DSN/BRD); unrouted-net review items
+- 2026-08-31: power-plane pour planning (pours sized to cover as many same-net vias as possible; placement orients same-net pins); DC IR-drop analysis (beta, "not yet a full power-integrity sign-off")
+- 2026-09-30: New Router Strategy (alpha); native Xpedition upload and download
+
+**Operating envelope (documented)**
+- [P] "Right now, Quilter can't typically design or optimize boards as well as skilled humans." Recommended limits:
+  - fewer than 5,000 pins
+  - low-to-medium density (designs above 20% pin density are better done manually)
+  - signals under 6 GHz (quasi-static impedance)
+  - 48 V or less (no creepage or arcing physics)
+  - 10 A or less
+  
+  Source: [Quilter docs: What Quilter does well](https://docs.quilter.ai/about-quilter/what-quilter-does-well)
+- [P] Supported inputs: Altium, KiCad, Cadence Allegro/OrCAD, Siemens Xpedition, plus Zuken CR-8000 and EasyEDA under "other CAD tools". Output is returned in the same native format — [Quilter docs sitemap/CAD compatibility](https://docs.quilter.ai/cad-compatibility/overview); [Quilter product page](https://www.quilter.ai/product)
+
+**Project Speedrun: primary details**
+- [P] Board: i.MX 8M Mini, 843 components, 5,141 pins, SOM + baseboard, 8-layer HDI, built by Sierra Circuits — [Compiling (Part 2/6)](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+- [P] Human time: 12 h of cleanup on the baseboard and 26.5 h on the SOM (38.5 h total), against 238 h + 190 h (428 h) quoted for manual layout. *First-pass correction:* the earlier "reversed hours" note came from a snippet. The Speedrun page, Part 1 and Part 3 all agree: baseboard 12 h, SOM 26.5 h — [Project Speedrun page](https://www.quilter.ai/project-speedrun); [Preparing](https://www.quilter.ai/blog/preparing-an-ai-designed-computer); [Cleaning Up (Part 3/6)](https://www.quilter.ai/blog/cleaning-up-an-ai-designed-computer)
+- [P] Baseboard run: about 27 h of compute. Quilter "placed a bit over 500 components… routed roughly 2,000 pins, achieving 98.4% completion" at 3.5 mil trace/space. A 99% candidate at 3 mil was rejected for manufacturability — [Compiling](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+- [P] **SOM caveats.**
+  - "We chose not to use Quilter for component placement on the SOM… we fixed the placement based on the original design."
+  - "We created a partial human fanout for the BGAs."
+  - SOM compiles ran nightly while Quilter's algorithms were iterated.
+  - Early runs reached 60–70% completion, with no length matching and most diff pairs failing.
+  - The final run was DRC-clean at 98.7% and 2 mil, in a 15 h job.
+  
+  Source: [Compiling](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+- [P] Cleanup work:
+  - Enlarging power polygons
+  - Length tuning, because "Quilter's length-tuning engine (at the time) did not yet account for via delay"
+  - Widening high-current nets
+  - Component moves (for example moving L102 next to its DC-DC converter)
+  
+  Source: [Cleaning Up](https://www.quilter.ai/blog/cleaning-up-an-ai-designed-computer)
+- [P] Bring-up: both boards powered up. U-Boot ran, LPDDR4 trained at the full 3 GT/s, and Linux expanded onto the 32 GB eMMC. Stress tests (camera, 1080p display, GbE) showed no resets — [Validating (Part 4/6)](https://www.quilter.ai/blog/validating-an-ai-designed-computer-running-under-real-workloads)
+- [P] Fab review: Sierra built 10 SOMs and 10 baseboards and "every single pair powered up and ran". DFM/DFA review raised 58 findings:
+  - 48 were documentation, library, BOM or supply-chain items.
+  - 10 touched physical design, mostly a quoting-versus-DFM disagreement over which process tier (2 mil mSAP) applied.
+  - The SOM's outer-layer 50 Ω target came back as 62 Ω (accepted at ±30%). The baseboard's 100 Ω differential came back as 92 Ω (accepted at ±20%).
+  
+  Source: [Quilter/Sierra blog, AI-designed motherboard DFM/DFA lessons (Part 6)](https://www.quilter.ai/blog/ai-designed-motherboard-dfm-dfa-lessons)
+
+**Company facts**
+- [S] Founded 2019 by Sergiy Nesterenko (ex-SpaceX avionics). $10M Series A Feb 2024 — [The Register](https://www.theregister.com/2024/02/15/quilters_ai_platform/). $25M Series B led by Index Ventures, 2025-10-07 — [BusinessWire](https://www.businesswire.com/news/home/20251007165399/en/Quilter-Secures-$25M-Series-B-to-Eliminate-Manual-PCB-Design-with-Physics-Driven-AI). Founder biography confirmed [P] in [Preparing](https://www.quilter.ai/blog/preparing-an-ai-designed-computer)
+- [P] Hiring for "Senior/Staff Software Engineer (C++)", "PCB CAD Integration" and "ML Systems Engineer" — [Quilter technology page](https://www.quilter.ai/product/technology)
 
 **Patents**
-- Searches for assignee "Quilter, Inc." and inventor "Nesterenko" returned no PCB patents. Justia's "Quilter" assignees are unrelated quilting and audio companies — [Justia: Handi Quilter](https://patents.justia.com/assignee/handi-quilter-inc); [Justia: Quilter Labs](https://patents.justia.com/assignee/quilter-labs-llc)
+- [P-pat] USPPUBS query `"quilter".as.` returned 19 documents, all from Handi Quilter (sewing machines) or Quilter Labs (amplifiers). `nesterenko.in. AND (circuit or layout).ab.` returned 0 — [USPTO Patent Public Search](https://ppubs.uspto.gov/pubwebapp/) (query run 2026-10-20)
 
 ### Inferences
-- The architecture appears to be: (a) a comprehension or constraint-compilation step that mixes heuristics (net-name parsing) with human confirmation; (b) a learned policy trained only on simulator-generated synthetic boards; (c) massively parallel candidate generation on cloud HPC; (d) a rule- and physics-based scorecard used both as reward and as the user-facing ranking. Because the training data is synthetic, the reward must be computable from physics and rules, not from human imitation.
-- Fanout (July 2026) and region pours / ground-net comprehension (Q1 2026) shipped as separate, later capabilities. That suggests a staged pipeline (place → fanout → route → pour) in which each stage has its own solver.
-- The "locked inside outline, free outside" convention is a simple and robust human-in-the-loop interface that a KiCad tool can copy directly.
+- Quilter's disclosed architecture is a **hybrid**:
+  - learned search (RL) proposes placements and routing decisions;
+  - deterministic solvers and geometry make some things "correct by construction" (diff-pair geometry from Simbeor, IPC widths);
+  - rule and physics unit tests (PRCs) score candidates;
+  - massive parallelism plus lexicographic ranking pick the winner;
+  - placement × router variants form a candidate matrix (X.Y).
+  
+  This is close to "propose → construct → verify → rank", and it is the pattern an LLM orchestrator can reproduce with open tools.
+- The comprehension heuristics (refdes prefixes, _P/_N suffixes, cap-to-ground topology, voltage-like net names) are simple, deterministic and confirmable by a person. An LLM can do the same with better recall and keep the human confirmation step.
+- Speedrun shows the frontier: placement plus BGA fanout on dense HDI was still human. Length tuning lacked via delay. Pours were too conservative.
 
 ### Gaps
-- No patents or applications found. Published applications may exist under another entity name, or may still be unpublished (18-month lag). Google Patents could not be reached.
-- No technical paper on the policy architecture (graph or image observations? action space?), the RL algorithm or the reward weights.
-- The full text of the Speedrun blog posts (specific cleanup edits) was not retrieved.
+- No disclosure of the RL algorithm, network architecture, state/action representation or reward weights.
+- No patents, so there is no claim text to study. Applications filed after about April 2025 would not yet be published.
 
 ---
 
 ## 2. InstaDeep DeepPCB: RL routing and placement, architecture, results, API
 
 ### Takeaway
-DeepPCB is a cloud RL router and placer. Its agents are trained in a custom high-speed simulator and scaled with InstaDeep's Sebulba actor-learner stack on Google Cloud TPUs (235x throughput, about 90% lower training cost). In 2025–26 it added an LLM "setup agent" (Cooper) that reads the board's stackup, net classes, diff pairs and planes before routing, plus a KiCad plugin and a per-minute API. It explicitly leaves the hardest 20% (DDR, length matching, advanced impedance, RF) to humans.
+DeepPCB's core mechanism is disclosed in three granted InstaDeep US patents (priority GB 2019-11-27). It is an **AlphaZero-style learned router that replaces MCTS with a neural-network-guided Sequential Monte Carlo (SMC) look-ahead**. The SMC searches over (a) the *order* in which connections are routed and (b) candidate sub-routes. Those candidates come from **gridless geometric candidate-point generation**: rays from a point, and tangents to octagonal clearance polygons.
+
+The search posterior becomes the policy-training target. Rewards include total length, direction changes, density and preferred-layer share. Training uses a custom simulator plus Sebulba actor-learner RL on Cloud TPUs (15–235× faster than their old setup).
+
+The product now puts an LLM setup agent ("Cooper", shipped 2026-06-18) in front of the router. It is available as a cloud API (0.5 credit/min) and an Apache-2.0 KiCad plugin. It explicitly does not model length matching, crosstalk, DDR or complex BGA fanout.
 
 ### Cited Findings
-- It describes itself as "a learned routing engine: over seven years of reinforcement learning R&D, published at top AI conferences like NeurIPS and ICML" — [deeppcb.ai](https://deeppcb.ai/). I could **not** find a NeurIPS or ICML paper specific to PCB routing. InstaDeep's research list shows general combinatorial-optimization work (e.g. population RL, MEMENTO) rather than PCB papers — [NeurIPS 2023 "Winner Takes It All"](https://proceedings.neurips.cc/paper_files/paper/2023/file/97b983c974551153d20ddfabb62a5203-Paper-Conference.pdf); [InstaDeep research](https://instadeep.com/research/)
-- Training infrastructure: InstaDeep applied its **Sebulba** RL framework on Cloud TPUs to DeepPCB, "an astounding 235x throughput increase", and cut training costs by almost 90%. It runs on InstaDeep's AIchor platform on GKE — [InstaDeep blog, Oct 2023](https://instadeep.com/2023/10/reinforcement-learning-on-google-cloud-tpus-to-improve-deeppcb/). The product team "developed a high-speed simulation engine to efficiently train reinforcement learning agents". The routing objective is framed as wiring the components optimally while meeting manufacturing standards and passing DRC — [Google Cloud blog](https://cloud.google.com/blog/products/compute/instadeep-performs-reinforcement-learning-on-cloud-tpus)
-- A competitor (Quilter) says DeepPCB is "trained through self-play iterations inside a custom C++ simulation engine". This is unverified against InstaDeep's own sources — [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-- Capability growth: the early release routed 2-layer boards with up to 150 pairs — [PCD&F](https://pcdandf.com/pcdesign/index.php/editorial/menu-new-indust-prod/17292-instadeep-releases-deeppcb-ai-pcb-routing-platform). Later material cites a 6-layer board with 1,223 airwires and 310 nets — [DeepPCB: Bringing AI and Cloud to PCB Routing](https://deeppcb.ai/bringing-ai-and-cloud-to-pcb-routing/)
-- Workflow: upload a design, choose placement, routing or both, and the AI "runs a continuous optimization within a time budget you allocate", after which you download the best result found (an anytime search) — [Electromaker review](https://www.electromaker.io/blog/article/h1deep-pcb-ai-powered-cloud-native-pcb-routing-a-game-changer-for-hardware-engineersh1)
-- Placement left beta (post dated Apr 15, 2025). It uses RL to "best utilize space, minimize routing challenges, and adhere to design constraints", aiming for placement "closer to what a human designer would do, but faster" — [DeepPCB placement post](https://deeppcb.ai/2025/04/15/ai-powered-pcb-placement-by-deeppcb/)
-- **Cooper** is a natural-language orchestrator and setup agent. It "reads the board and reports what it understood" (stackup, net classes, differential pairs, planes, clearances) before routing — [deeppcb.ai](https://deeppcb.ai/). The Altium podcast says router plus Cooper detect net classes, decoupling caps, reference planes and USB impedance problems "before any trace is drawn" — [Altium podcast: Inside DeepPCB](https://podcast.altium.com/e/ai-pcb-routing-without-the-epic-fails-inside-deeppcb)
-- API: placement and routing jobs cost 0.50 AI credit per minute (30 per hour), the same as the web app — [DeepPCB API post](https://deeppcb.ai/deeppcb-api-your-pcb-design-ai-agent/). A KiCad plugin shipped (routing first, with placement-from-schematic planned), followed by Cooper — [DeepPCB KiCad plugin post](https://deeppcb.ai/deeppcb-kicad-plugin-ai-pcb-routing/)
-- Limits: DeepPCB's "80/20" post says high-speed differential pairs that need specific impedance control and managed return paths remain human work — [DeepPCB 80/20 post](https://deeppcb.ai/ai-pcb-design-80-20-rule/). JLCPCB says DeepPCB leaves "DDR nets, length matching, advanced impedance control, and RF constraints" to engineers — [JLCPCB blog](https://jlcpcb.com/blog/ai-tools-for-pcb-design)
-- Sept 2026: DeepPCB says frontier LLMs "can drive a router like DeepPCB already, through the API or through Cooper". It re-routed a GPT-6 Astra-designed 70×60 mm, 4-layer, 27-net robot compute module, reporting 132/132 connections and 1,104 mm of track. It says Astra put 9 of its 32 vias inside component pads and DeepPCB put none. **The summary contains conflicting via counts (14 layer-change vias vs 64 vias for DeepPCB), so check the original** — [DeepPCB: GPT-6 Astra designed the PCB, DeepPCB routed it better](https://deeppcb.ai/gpt-6-astra-pcb-routing-deeppcb/)
-- Public appearance at PCB West 2024 — [DeepPCB at PCBWest 2024](https://deeppcb.ai/routing-the-way-forward-deeppcb-at-pcbwest-2024/)
+**Mechanism (patents; see Section 5 for claims)**
+- [P-pat] **US 11,842,136 B2** "Electrical circuit design" (InstaDeep Ltd; inventors Chouba, Nabil et al.; filed 2021-11-30, granted 2023-12-12; continuation of PCT/GB2020/053055; priority GB 1917292–1917295, 2019-11-27).
+  - Method: define two or more **orders** in which to route connections; "use a Sequential Monte Carlo process to perform a look ahead search of each defined order… guided using a neural network"; compute "a posterior distribution over the orders"; select a connection; route it; update the state.
+  - Evaluation characteristics (claim 4): "total length… number of changes in direction… density of connections… proportion of the connections which are on a preferred layer".
+  - Training: "target action selection data" from the posterior trains the network (claim 6).
+  - Particle filtering: simulations are resampled and cloned when weight variance crosses a threshold (claims 10–13), with entropy-weighted particles (claim 14).
+  - Description: SMC "uses less memory… than… Monte Carlo Tree Search" and memory use is "more predictable". It explicitly cites AlphaZero.
+  
+  Source: [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11842136); [Google Patents](https://patents.google.com/patent/US11842136B2/en)
+- [P-pat] **US 12,019,968 B2** (InstaDeep; inventors Fu, Yunguan et al.; granted 2024-06-25).
+  - Candidate routes are built by repeatedly selecting a point and finding "candidate points" by "evaluating at least one candidate path extending in a linear direction from the first point". A point qualifies where "a change in direction… is feasible without traversing an isolation region".
+  - The isolation region is "a polygon having angles which correspond to the allowed angular range" (e.g. 45° octagons), with candidate points at tangent intersections.
+  - Sub-route selection uses the same NN-guided SMC.
+  - Description: candidate points lie "in a substantially continuous domain… determined by a resolution of the representation rather than… a grid".
+  
+  Source: [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12019968); [Google Patents](https://patents.google.com/patent/US12019968B2/en)
+- [P-pat] **US 12,159,094 B2** (InstaDeep; inventors Chouba, Nabil et al.; granted 2024-12-03). Covers NN-guided SMC look-ahead over candidate sub-routes, with target action selection data stored for training — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12159094); [Google Patents](https://patents.google.com/patent/US12159094B2/en)
+
+**Training infrastructure**
+- [P] "Its product team developed a high-speed simulation engine to efficiently train reinforcement learning agents". Connecting the DeepPCB simulator to **Sebulba** (Podracer actor-learner: TPU cores split into actor and learner groups, C++ environment thread pool via EnvPool, JAX pmap/pmean) gave "15x-235x acceleration". Training that took about 24 h and cost about $260 on a high-end GPU dropped to "6 minutes at a mere $20" (13× cheaper) — [InstaDeep blog, Oct 2023](https://instadeep.com/2023/10/reinforcement-learning-on-google-cloud-tpus-to-improve-deeppcb/)
+- [P] DeepPCB's RL explainer says the agent trains on "synthetic boards generated programmatically, sometimes real designs from a training corpus". It says "DeepPCB approach[es] this by training on a large corpora of designs". *This contrasts with Quilter's synthetic-only claim* — [DeepPCB blog, 2026-04-14](https://deeppcb.ai/reinforcement-learning-pcb-routing-explained/)
+
+**Product: router + LLM orchestrator**
+- [P] "The low level is the routing engine. It's a reinforcement learning router… On top of that sits Cooper… a natural-language assistant whose job is to get your design intent into a form the router can use… It has skills, in the same sense that Claude Code and Codex have skills… Cooper orchestrates the routing engine. It doesn't lay copper… Cooper runs on an LLM provider. It could run on a different one next month and the product wouldn't change." Also: "Autorouters don't fail at routing. Nobody configures them… about two hours" — [DeepPCB blog, "Two levels", 2026-09-17](https://deeppcb.ai/natural-language-pcb-routing/)
+- [P] Cooper behaviour:
+  - Reads net classes, diff pairs, planes, clearances, widths and stackup, and returns "a plain summary of what it found".
+  - Fixes in one approved pass.
+  - Routes on command.
+  - "never touches your connectivity".
+  
+  Example: on an STM32L4 + nRF24 board it flagged four setup errors, including inner layers typed as power planes with no net. The board routed 98/98 airwires in 2 min 6 s with 68 vias. Claimed "96% mean completion". Source: [DeepPCB blog, 2026-07-23](https://deeppcb.ai/ai-pcb-design-review-cooper/)
+- [P] KiCad plugin v1.2.0 (2026-10-13) adds Cooper in a docked panel. It proposes changes the user accepts or rejects one at a time, highlights and isolates nets on the canvas, and keeps conversation memory per board. Each routed revision lands as **a single entry in KiCad's undo stack**, and nothing overwrites without asking.
+  - "Not modelled: length matching and skew, crosstalk, DDR, complicated BGA fanout."
+  - Cap: 1,200 airwires and 8 layers; free tier 30 min / 4 layers / 150 airwires.
+  - The plugin is Apache-2.0 and the board goes to api.deeppcb.ai.
+  
+  Source: [DeepPCB blog, Cooper is now in KiCad](https://deeppcb.ai/cooper-kicad-plugin/)
+- [P] KiCad plugin first release 2026-05-21: routing only, "multi-layer and multi-plane support up to 8 layers and 1,200 airwires", net-class awareness, diff pairs. Placement-from-schematic is planned — [DeepPCB blog](https://deeppcb.ai/deeppcb-kicad-plugin-ai-pcb-routing/). Source repository github.com/instadeepai/deeppcb-kicad-plugin — [DeepPCB blog, Freerouting vs DeepPCB, 2026-10-14](https://deeppcb.ai/freerouting-vs-deeppcb/)
+- [P] API (2025-05-12): "an agent that actively generates, evaluates, and iterates designs… delivers multiple design options, each paired with key metrics". Workflow: upload → warnings → "stream of diverse design solutions" → pause, refine, resume. Price 0.50 AI credit/min — [DeepPCB blog](https://deeppcb.ai/deeppcb-api-your-pcb-design-ai-agent/)
+- [P] Placement out of beta (2025-04-15): RL, up to 1,000 components and 2,200 pins.
+  - Example: 48 caps around a fixed chip. A 2-min placement led to 10 h of routing; a 30-min placement led to 59 min of routing with fewer vias.
+  - RPi CM base board: placement at 6 min versus 14 h. The 6-min placement routed fully in 7 h (111 vias after 24 h). The 14-h placement routed fully in 4.5 h (79 vias after 6 h).
+  
+  Source: [DeepPCB blog](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/)
+- [P] Supported formats: Specctra/DSN, JSON, KiCad, Altium, Zuken, EasyEDA — [DeepPCB blog, routing time data](https://deeppcb.ai/pcb-routing-time/)
+
+**Results and statistics (vendor-reported)**
+- [P] Platform data (as of end of July 2026): 21,000+ engineers, 100,000+ designs, 55,000+ completed routing jobs.
+  - Median router time by airwire count: under 100 → 2 min (p90 10); 100–299 → 7 min (p90 31); 300–599 → 9 min (p90 45); 600+ → 16 min (p90 60).
+  - Completion: mean 96.1%, median 100%; 87% of boards reach ≥95%.
+  - A 5,208-airwire 8-layer board took about 14 h.
+  - End to end: "2–3 days by hand → ~3 hours plus 30–60 minutes cleanup".
+  
+  Source: [DeepPCB blog, 2026-10-14](https://deeppcb.ai/pcb-routing-time/)
+- [P] PCBWorld-Bench (LG AI Research, arXiv 2607.05915v4), one attempt, 3 min engine time:
+  - DeepPCB clean-pass 0.929 on D3-A (99 small boards) and 0.800 on D3-B (10 medium boards, 3 attempts each).
+  - The paper's best one-attempt results: PPO (w/o finish) 0.81 on D3-A; Freerouting 0.75 and 0.64; KiCadRoutingTools 0.74 and 0.20; **GPT-5.4 0.42 and 0.00**; Qwen3.5-397B 0.19 and 0.00; OrthoRoute 0.02 and 0.00.
+  - DeepPCB used 0.59× and 0.50× the reference vias at 0.94× and 0.95× the track length.
+  - Caveat: almost all boards are 2-layer.
+  
+  Source: [DeepPCB benchmark post, 2026-09-28](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)
+- [P] DeepPCB-run comparison with Quilter on three open KiCad boards (STRF 98, PocketBeagle 290, BeagleConnect Freedom 414 airwires): completion 99/96/97% versus Quilter 94/82/87%; vias 29/135/191 versus 58/163/235; first result in 1–2 min versus 15–20 min. Competitor-run, with no independent replication — [DeepPCB blog, 2026-04-20](https://deeppcb.ai/deeppcb-vs-quilter-open-source-routing-compared-2026/)
+- [P] Comparison with GPT-6 Astra (2026-09-06): on the "microduck head" board (70×60 mm, 4 layers, 27 nets), DeepPCB routed 132/132 connections, 1,104 mm versus Astra's 1,282 mm.
+  - Vias: Astra 32 with 9 inside pads; DeepPCB 64, of which 14 are layer changes and 50 drop to an inner split power plane.
+  - Astra used five track widths but declared one empty net class.
+  - *This resolves the first-pass "14 vs 64 vias" conflict:* 14 are routing vias and 50 are plane connections.
+  
+  Source: [DeepPCB blog](https://deeppcb.ai/gpt-6-astra-pcb-routing-deeppcb/)
+- [P] Organization: 25–30 full-time staff plus 15–25 shared InstaDeep contributors; 2,000+ designs submitted per week; InstaDeep acquired by BioNTech (completed July 2023). The web app is "just one interface to this API", and other EDA vendors embed DeepPCB under NDA — [EEJournal, "2,000+ AI-Routed PCBs a Week", July 2026](https://www.eejournal.com/article/2000-ai-routed-pcbs-a-week/)
+- [P] Benchmarks page: SAMD51 6-layer (212 connections) routed 99.5% in 1 h 51 m against ~56 h estimated by hand. USB-C PD sink 4-layer (342 connections) routed 100% in 40 m 30 s. In each case the critical nets were hand-routed first, and the setup notes record retyping planes and defining missing USB pairs — [DeepPCB homepage](https://deeppcb.ai/)
 
 ### Inferences
-- The pattern is: fast custom simulator, then massively parallel actor-learner RL on accelerators, then a time-budgeted anytime optimizer at inference that returns the best-so-far. The LLM layer (Cooper) sits **in front of** the RL router for comprehension and validation. It does not draw copper.
-- "Vias in pads" and similar DFM details are used as headline differentiators against LLM-only routing. Rule-level DFM hygiene is a cheap, visible quality signal.
+- **Net ordering is treated as the core decision variable**, scored by NN-guided look-ahead. That matches the long-standing observation that sequential routers fail on ordering.
+- Candidate generation is **gridless and geometric**: points come from ray casts and octagon tangents, not a fine grid. That is directly comparable to how an LLM agent could be offered a small candidate set (the PCBWorld approach).
+- DeepPCB's split is "LLM for setup and intent, RL engine for copper, cloud API for integration". Their own data says setup errors, not routing, are the main cause of failure. That is the strongest commercial evidence for making an LLM *configuration and review* agent the first deliverable of a KiCad project.
 
 ### Gaps
-- No public description of the observation or action representation, the network architecture or the reward terms for routing or placement.
-- I could not confirm when the API, Cooper and the KiCad plugin launched (some posts give only a month). The EEJournal "2,000+ AI-routed PCBs a week" article was found but not read ([EEJournal](https://www.eejournal.com/article/2000-ai-routed-pcbs-a-week/)).
+- No public numbers on network architecture, SMC particle counts, simulator fidelity or the placement algorithm. Placement is "RL" with no patent found.
+- Platform statistics are vendor-reported and not independently audited.
 
 ---
 
-## 3. Incumbent EDA vendors: Cadence Allegro X AI, Siemens Xpedition/HyperLynx/Fuse, Zuken CR-8000 AIPR, Altium/Renesas
+## 3. Incumbent EDA vendors: Cadence Allegro X AI, Siemens (Xpedition, HyperLynx, Fuse), Zuken CR-8000 AIPR, Altium/Renesas, Synopsys/Ansys
 
 ### Takeaway
-Cadence (Allegro X AI, April 2023) offers cloud-burst generative placement, power-plane generation and critical-net routing for small and medium boards, reportedly using search (MCTS per one academic source) plus traditional algorithms. Zuken's AIPR is a "Smart Autorouter" plus a staged "Brain" that learns from Zuken's design library and later from the customer's own designs. Siemens is betting on agentic orchestration (the Fuse EDA AI Agent, March 2026) and Celus-powered front ends rather than disclosing a learned placer. Altium has no clearly documented AI placer or router.
+- **Cadence** has the richest disclosure through DARPA-funded patents: a hierarchical RL "system of agents" (Place, Via and Route experts plus a dispatcher) over image, scalar and graph states, and a learned multimodal routability predictor that replaces HPWL or crossings fitness in genetic placement. Allegro X AI itself is cloud (AWS) generative placement, pours and critical-net routing, trained on Cadence's internal designs.
+- **Zuken** pairs a "Smart Autorouter" with a "Brain" learned from design libraries.
+- **Siemens** emphasises an MCP-based multi-agent orchestrator (Fuse) with human checkpoints and "self-verification against deterministic physics engines", and explicitly says "Not every problem requires AI".
+- **Altium** and **Synopsys/Ansys** disclose no AI placement or routing.
 
 ### Cited Findings
-**Cadence Allegro X AI**
-- Launched April 2023. It automates **component placement, power-plane generation and critical-net routing**, "combining traditional physical design algorithms with generative AI". It runs on cloud compute, accessed from the desktop Allegro X platform. Cadence claims ">10X reduction in turnaround", days to minutes, "equivalent or better" quality than manual, and exploration of a larger solution space leading to shorter wirelength — [Cadence press release, 2023](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html); [All About Circuits](https://www.allaboutcircuits.com/news/cadence-launches-cloud-ai-tool-to-shrink-pcb-placement-and-routing-times/); [VentureBeat](https://venturebeat.com/ai/cadences-allegro-x-uses-ai-to-accelerate-circuit-board-design-by-10x)
-- Customer quotes:
-  - Velux: placement went "from days to minutes, while taking into account signal integrity and power integrity effects", and the tool gave "placement options that I had not considered".
-  - Kioxia: automating placement and routing of IC package and PCB reference designs.
+**Cadence**
+- [P-pat] US 11,599,699 B1 and US 12,223,248 B1 (Cadence, DARPA HR0011-18-3-0010) describe:
+  - A **hierarchical "System of Agents"**. Lowest-level agents each train on one design step (Place, Via, Route), and a top-level agent "learn[s] which one to dispatch given the state of the board".
+  - **State** = board images (including RUDY congestion and a "Design image including flight-line connections"), scalars (board dimensions, number of components, fixed components, signal and power nets, total wirelength), and a **GCN** over connectivity. Device IDs are used as both pixel values and graph node IDs.
+  - **Actions**: primitive (via insertion, layer change, via sharing, component move, via move) and "complex" (genetic or analytical placement runs, hyperparameters such as number of generations or routing passes, via-strategy styles).
+  - **Reward**: primarily "the inferred routeability" from a trained CNN, giving "dense" feedback after each action. Imitation learning bootstraps exploration.
   
-  Source: [Cadence press release](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
-- Benchmark as reported: a placement-and-routing task that took an experienced designer 3 days was done in 75 minutes with 12% better wirelength. Quilter cautions that the two companies' benchmarks "measure different things" — [Quilter vs Allegro X AI blog](https://www.quilter.ai/blog/not-all-ai-is-created-equal-quilters-generative-ai-vs-cadence-allegro-x-ai)
-- Independent reseller case study (EMA, 2025): an 80-component, 4-layer board was placed in about 2 minutes versus an estimated 60 minutes by hand. Placement quality was rated 4/5, with some parts placed on the wrong layer and needing manual fixes. The tool supports boards under roughly 5,100 components — [EMA case study](https://www.ema-eda.com/ema-resources/case-study/case-study-accelerating-component-placement-with-allegro-x-ai/)
-- Reseller claims (unverified): power-plane generation analyzes voltage drop and current density; Qualcomm runs it in the background on low-to-medium complexity designs — [Parallel Systems](https://www.parallel-systems.co.uk/allegro-x-ai/). GoEngineer claims a 60% layout-cycle reduction and use of RL; no Cadence confirmation — [GoEngineer](https://www.goengineer.com/cadence/allegro-x)
-- Search method: an ISPD 2025 paper (Cornell) states that "Cadence Allegro X AI employs a decision-making approach to PCB placement, utilizing Monte Carlo Tree Search (MCTS) … typically constrained to smaller designs due to substantial computational and memory demands" — [Cypress, ISPD 2025](https://www.csl.cornell.edu/~zhiruz/pdfs/cypress-ispd2025.pdf). Cadence's own RL page mentions RL for P&R of PCB components — [Cadence RL page](https://www.cadence.com/en_US/home/explore/reinforcement-learning.html)
-- Lineage: DARPA ERI **IDEA** program and Cadence's **MAGESTIC** project (with CMU and NVIDIA, 4 years from 2018) aimed at a unified ML-driven layout generator for SoC, SiP and PCB with "no human in the loop" and "<24 hour turnaround" — [Cadence Breakfast Bytes: MAGESTIC](https://community.cadence.com/cadence_blogs_8/b/breakfast-bytes/posts/magestic); [eeNews Europe](https://www.eenewseurope.com/en/darpa-selects-cadence-for-ml-electronic-design-program/); [DARPA IDEA/POSH slides (Olofsson)](https://eri-summit.darpa.mil/docs/Olofsson_Andreas_IDEA-POSH_Final.pdf). The same DARPA deck cites the "first demonstration of intent driven PCB design (Northrop Grumman/JITX)" — [DARPA slides](https://eri-summit.darpa.mil/docs/Olofsson_Andreas_IDEA-POSH_Final.pdf)
-- CadenceLIVE 2026: according to analyst coverage, the agentic-AI roadmap is still pending customer co-design and testing — [Futurum](https://futurumgroup.com/insights/cadencelive-2026-can-agentic-ai-finally-crack-3d-ic-design-automation/)
-- A Cadence and Circuit Mind joint webinar showed power-architecture generation from a block diagram, export to System Capture and PSpice validation — [Circuit Mind webinar](https://www.circuitmind.io/resource-center/webinar-cadence-circuit-mind-rapid-pcb-power-design-and-generation-with-ai)
+  Source: [US 11,599,699 USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11599699); [US 12,223,248 USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
+- [P-pat] Empirical data in US 12,223,248:
+  - One 350-component board gave 12,000 genetic-optimization placements, each via-assigned and autorouted.
+  - Correlation with routability: HPWL r = −0.923; normalized crossings r = −0.898.
+  - At normalized crossings ≈0.075, routability ranged from 0.83 to 0.94, while routing the same placement repeatedly varied by only σ ≈ 0.005.
+  - Conclusion: "using HPWL or normalized crossings in the fitness function would lead to sub-optimal PCB component placement". This motivates a CNN+GCN+DNN predictor trained on autorouter labels and used as the fitness function.
+  
+  Source: [US 12,223,248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
+- [P-pat] US 11,379,646 B1 (Cadence, 2022): infer missing parameters for a "synthesis engine" covering "placement, via assignment, routing, and metal pouring", collect process data, and train ML to predict compute resources. This appears to be cloud-orchestration plumbing for automated PCB synthesis — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11379646)
+- [P] According to Cadence channel partner EMA:
+  - "Allegro X AI isn't trained on customer designs… Cadence builds its AI models using reinforcement learning on a large library of internal designs combined with over 30 years of PCB design experience."
+  - Runs on AWS, with on-prem "rolling out in 2026"; parallel runs can be queued; Altium, KiCad, Eagle and PADS imports are supported.
+  - Inputs: power/ground values, mechanical part locations, outline, stackup, key IC locations.
+  - Uses: feasibility study (a week cut to 29 min to show another layer pair was needed) and Rev-to-Rev ECO (lock the design, re-place and re-route only the changes).
+  - Claimed "50–70% reductions in design time".
+  
+  Source: [EMA blog](https://www.ema-eda.com/ema-resources/blog/everything-you-need-to-know-about-allegro-x-ai/)
+- [P] EMA case study on a low-density 4-layer board (10.886 pins/cm²): 10 min common setup + 5 min X AI setup + **2 min placement** + 8 min review = 25 min, against 70 min manual. Issues: passives on the bottom side and over-tight rooms. Supported envelope: fewer than 5,100 components and under 100 pins/cm². Recommended extra inputs: component associations, power tree files — [EMA case study](https://www.ema-eda.com/ema-resources/case-study/case-study-accelerating-component-placement-with-allegro-x-ai/)
+- [S] Launched April 2023: placement, power-plane generation and critical-net routing, "traditional physical design algorithms with generative AI", >10× turnaround claim, Velux and Kioxia quotes — [Cadence press release](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html) (cadence.com returned 403 in the deep pass). Benchmark of 3 days cut to 75 min with 12% shorter wirelength [S] — [Quilter comparison blog](https://www.quilter.ai/blog/not-all-ai-is-created-equal-quilters-generative-ai-vs-cadence-allegro-x-ai)
+- [S] An ISPD 2025 paper says Allegro X AI uses MCTS for placement and is limited to smaller designs — [Cypress, ISPD 2025](https://www.csl.cornell.edu/~zhiruz/pdfs/cypress-ispd2025.pdf) (fetch failed in the deep pass)
+- [P] In 2023 Cadence was "tying its OrCAD X platform to a cloud-enabled solution that uses AI-powered placement" — [PCD&F, 2023](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+- [S] DARPA IDEA/MAGESTIC (Cadence + CMU + NVIDIA, from 2018) set goals of "no human in the loop" and "<24h" for SoC, SiP and PCB — [Cadence Breakfast Bytes](https://community.cadence.com/cadence_blogs_8/b/breakfast-bytes/posts/magestic); [DARPA slides](https://eri-summit.darpa.mil/docs/Olofsson_Andreas_IDEA-POSH_Final.pdf)
 
-**Siemens (Xpedition, HyperLynx, Fuse)**
-- **Fuse EDA AI Agent** (launched March 2026): a "domain-scoped autonomous agent that plans and orchestrates multi-tool and multi-agent" workflows, including PCB layout and SI analyses in Xpedition and HyperLynx. It is built on the earlier Fuse system's RAG pipeline, multimodal EDA data lake and "specialized parsers for EDA file formats", runs on the NVIDIA Agent Toolkit and Nemotron models, and includes RBAC, audit trails and **human checkpoint capabilities** — [Siemens news](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/); [Siemens Fuse product page](https://www.siemens.com/en-us/products/fuse-eda-ai-system/agent/); [Engineering.com](https://www.engineering.com/siemens-adds-ai-agent-orchestration-to-eda-workflows/). DAC 2026 brought "self-verifying AI workflows" with NVIDIA — [Siemens news, DAC 2026](https://news.siemens.com/en-us/siemens-nvidia-dac-2026/)
-- Xpedition Standard (May 2026) adds AI-assisted schematic entry, automated placement and routing, and design reuse. It has a new front end "powered by CELUS" that starts from functional intent — [Siemens blog, 2026-05-18](https://blogs.sw.siemens.com/electronic-systems-design/2026/05/18/accelerate-pcb-design-productivity-with-ai-and-intelligent-automation-design-reuse-data-continuity-and-connected-workflows/); [All About Circuits](https://www.allaboutcircuits.com/news/siemens-unveils-ai-enhanced-pcb-design-tools-for-mid-range-users/). PADS Pro Essentials also integrates Celus — [All About Circuits](https://www.allaboutcircuits.com/news/siemens-unveils-ai-enhanced-pcb-design-tools-for-mid-range-users/)
-- Predictive command bar (Nov 2024): ranks next commands by usage frequency. It is a UX feature, not placement ML — [Siemens Xcelerator Academy blog](https://blogs.sw.siemens.com/xcelerator-academy/2024/11/26/transforming-pcb-design-embrace-the-next-generation-of-xpedition-ux/)
-- Third-party blogs (AtlasPCB, Protoflow) claim "ML-optimized placement and routing suggestions" in Xpedition but give no technical detail. **Unverified** — [AtlasPCB](https://www.atlaspcb.com/news/news-quilter-siemens-ai-pcb-design-production-2026/); [Protoflow](https://www.protoflow.ai/compare/ai-pcb-routing-companies)
+**Siemens**
+- [P] Fuse EDA AI Agent (launched at NVIDIA GTC, 2026-03-16 to 19):
+  - A "domain-scoped autonomous AI agent that plans and orchestrates multi-tool and multi-agent… PCB system workflows".
+  - Built on "Model Context Protocol (MCP) and Agent Skills" ("executable playbooks"), with "hierarchical planning with a supervisor agent and worker agents", "autonomous recovery loops", "specialized parsers for EDA file formats", "built-in validation and domain-specific guardrails".
+  - "role-based access controls, audit trails and human checkpoints".
+  - Supports Xpedition and HyperLynx; runs on NVIDIA Nemotron; deployable air-gapped on-prem.
+  
+  Source: [Siemens press release](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/); [Fuse product page](https://www.siemens.com/en-us/products/fuse-eda-ai-system/agent/)
+- [P] At DAC 2026 Siemens described "self-verifying" agents that "continuously validate decisions against deterministic, physics-based EDA engines", using NVIDIA NeMo Gym to optimize skills and MCP tools — [Siemens/NVIDIA DAC 2026 release](https://news.siemens.com/en-us/siemens-nvidia-dac-2026/)
+- [P] Xpedition (2026-05-18): "Not every problem requires AI… Some of the most valuable improvements come from algorithmic automation". The Xpedition Standard front end "powered by CELUS" turns functional block diagrams into a reference schematic and BOM. Layout gains come from "routing automation", reuse and constraint synchronization — [Siemens blog](https://blogs.sw.siemens.com/electronic-systems-design/2026/05/18/accelerate-pcb-design-productivity-with-ai-and-intelligent-automation-design-reuse-data-continuity-and-connected-workflows/)
+- [P] 2023: "Siemens… leveraging its Simcenter PLM tools with AI to fit the design to the form factor… and also uses AI in its Hyperlynx DRC and PI tools" — [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+- [P-pat] A USPTO search for Siemens Industry Software / Mentor Graphics + PCB + placement/routing returned 23 documents. None are ML-based; they cover classical distributed autorouting (e.g. US 7,305,648, 2007) and multi-board collaboration (US 2024/0193335) — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/) (query run 2026-10-20)
 
 **Zuken CR-8000 AIPR**
-- Announced Sept 2023 as AIPR (Autonomous Intelligent Place and Route): a new "Smart Autorouter" driven by a "Brain" rolled out in three stages.
-  - **Basic Brain** learns from Zuken's library of design examples; available Q1 2024.
-  - **Dynamic Brain** learns from the customer's past designs and best practices.
-  - **Autonomous Brain** is in "continuous learning mode".
+- [P] AIPR was announced at PCB West (Sept 2023) as an extension of Design Force.
+  - Kyle Miller (architect) said it uses "all three basic types of machine learning: supervised, unsupervised and reinforcement". The Basic Brain does smart routing "by means of exposure to Zuken's database of PCB designs built in CR-8000. Over time, it mimics human routing, with channels organized in logical ways."
+  - Dynamic Brain will add IPC-2581 ingestion so designs from other ECAD systems can be learned.
+  - Autonomous Brain is "multi-modal; it combines [numerical, geometrical, layer, text, constraint data] and extracts the designer's intent", using "text-based inferencing".
+  - "The brain can be untaught if it is sent a dirty design" (Steve Watt).
+  - Tested on about 100 mostly high-speed digital designs. About 5 days to learn the tool. 30 min setup + 15 min autorouting reduced to 30 s.
   
-  Sources: [Zuken US press release](https://www.zuken.com/us/resource/zuken-introduces-aipr-for-cr-8000-empowering-pcb-designers-with-innovative-ai-powered-place-and-route-technology/); [I-Connect007](https://iconnect007.com/article/137836/zuken-introduces-aipr-for-cr8000-empowering-pcb-designers-with-innovative-aipowered-place-and-route-technology/137833/design)
-- Architect Kyle Miller, PhD, said the engine uses "all three basic types of machine learning: supervised, unsupervised and reinforcement". Steve Watt said it learns from good and bad designs and "can be untaught if it is sent a dirty design". It was tested on about 100 mostly high-speed digital designs. Vendor claim: a job needing 30 min of setup plus 15 min of autorouting "might just take AIPR 30 seconds" — [PCD&F: New AI Tools Offer Look, and Questions](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
-- Training runs on an on-prem **AIPR server** over the local network only (or a secure multisite network) — [Digital Engineering 24/7](https://www.digitalengineering247.com/article/zuken-introduces-aipr-for-cr-8000/zuken). Dynamic Brain is on a "multiyear roadmap", not expected soon — [DE24/7: Machine Learning APIs on the Horizon](https://www.digitalengineering247.com/article/machine-learning-apis-on-the-horizon/zuken)
+  Source: [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+- [P] "Once the board outline and stackup are defined, and the components are placed, the AI-based Smart Autorouter is ready to start. Meanwhile, AI-based Smart Placement is under development" — [Zuken AI PCB design page](https://www.zuken.com/en/product/cr-8000/ai-pcb-design/)
+- [P] Training runs on a local "AIPR server" — [Digital Engineering 24/7](https://www.digitalengineering247.com/article/zuken-introduces-aipr-for-cr-8000/zuken)
+- [P-pat] Zuken has 25 US documents and none are ML layout. The newest, US 12,572,710 B2 (2026-03-10), overlays EMI scan images on CAD — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12572710)
 
 **Altium / Renesas**
-- Renesas finished acquiring Altium in Aug 2024. "Renesas 365", built on Altium 365, was announced in March 2025 with general availability expected in early 2026 — [Wikipedia: Altium](https://en.wikipedia.org/wiki/Altium)
-- I found no authoritative Altium release describing an AI placer or router. ActiveRoute is a guided interactive router, and users wanting AI P&R export to Quilter or DeepPCB — [JLCPCB blog](https://jlcpcb.com/blog/ai-tools-for-pcb-design); [Quilter vs Altium blog](https://www.quilter.ai/blog/quilter-vs-altium-a-2026-comparison-for-ai-automated-pcb-design). Altium does use Simberian's Simbeor SFS 2D field solver for controlled-impedance routing — [Altium docs](https://www.altium.com/documentation/altium-designer/pcb/high-speed-design/interactively-routing-controlled-impedance#the-simbeor-sfs)
+- [P] Altium does not call ActiveRoute AI, and users wanting AI placement or routing export to Quilter or DeepPCB — [JLCPCB blog](https://jlcpcb.com/blog/ai-tools-for-pcb-design). Altium uses Simbeor SFS for impedance — [Altium docs](https://www.altium.com/documentation/altium-designer/pcb/high-speed-design/interactively-routing-controlled-impedance#the-simbeor-sfs)
+- [P-pat] The only Altium LLC US patent hit is from 2018 (PCB verification, US 10,089,429). No AI layout patents — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
+
+**Synopsys / Ansys**
+- [P] Synopsys markets "AgentEngineer™… domain-specific long-horizon agents built on the… Autopilot™ Platform" (chip-focused) — [Synopsys AI](https://www.synopsys.com/ai.html). Ansys SIwave 2025 R1's "PI Advisor… automate[s] schematic generation from power integrity simulations" — [Ansys SIwave](https://www.ansys.com/products/electronics/ansys-siwave). SimAI surrogate models need "30 to 100 simulation results" — [Ansys SimAI](https://www.ansys.com/products/simai). No AI PCB placement or routing was found.
+- [P-pat] `(synopsys or ansys).as. AND PCB AND ML` in claims returned 0 — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
 
 ### Inferences
-- Incumbents present AI as **generative search plus traditional engines**: Cadence names "traditional physical design algorithms" plus AI, and Zuken pairs an autorouter with learned strategies. None claims an end-to-end neural router.
-- Two contrasting data strategies: Zuken learns from human designs (vendor library and customer history, with on-prem training to protect IP), while Quilter trains on synthetic data only. Zuken's warning that a "dirty design" can untrain the Brain shows the risk of learning from unfiltered human boards.
-- Siemens' disclosed direction (Fuse) is **LLM orchestration over existing deterministic tools** with human checkpoints. That is the closest commercial analogue to an LLM-driven KiCad agent.
+- Cadence's patents show the industry lesson that **cheap proxies (HPWL, crossings) correlate with routability (r≈−0.9) but cannot rank close candidates**. Either route to evaluate, or learn a routability predictor from routed samples.
+- Siemens and DeepPCB converge on "LLM orchestrator + deterministic engines + human checkpoints + verification". Siemens names MCP and "Agent Skills" explicitly.
 
 ### Gaps
-- No technical disclosure of Allegro X AI's search algorithm from Cadence itself; the MCTS attribution comes from a third-party academic paper.
-- No 2024–26 Zuken customer results or release notes found, and no confirmation that Dynamic or Autonomous Brain ever shipped.
-- Siemens: no patent or technical paper on ML placement or routing found. AtlasPCB's feature claims could not be confirmed.
-- Synopsys/Ansys PCB AI layout features: not researched (search budget exhausted).
+- No primary Cadence documentation (cadence.com blocked) and no CadenceLIVE session content.
+- Whether Zuken Dynamic or Autonomous Brain shipped is unknown.
 
 ---
 
-## 4. Startups and other players: Flux, JITX, Circuit Mind, Celus, Diode, JLCEDA/EasyEDA, LG AI Research, OpenAI GPT-6 Astra
+## 4. Startups and others: Flux, JITX, Circuit Mind, Celus, Diode, JLCEDA/EasyEDA and China, LG AI Research, OpenAI GPT-6 Astra
 
 ### Takeaway
-Most startups apply AI upstream (requirements → architecture → schematic → BOM: Circuit Mind, Celus, JITX) or as code-first compilers that emit KiCad files (Diode, JITX). Flux is the main browser-based AI router, and it routes only after the human places parts. The most informative open industrial disclosure for a KiCad project is LG AI Research's **PCBWorld** (KDD 2026 workshop): a Gymnasium RL/LLM environment that wraps KiCad's push-and-shove router and DRC, with a fully specified potential-based reward. In Sept 2026, OpenAI's GPT-6 Astra demo showed an LLM driving KiCad. Independent tests found it protected critical nets and then called Freerouting for the rest.
+- **Flux** routes with RL after a human places parts.
+- **JITX** makes code the ground truth: an LLM edits Python, a constraint-driven *topological* router and HFSS close the loop.
+- **Circuit Mind** and **Celus** automate requirements → parts → schematic with solvers and databases (and hold patents on it).
+- **Diode** compiles a Starlark DSL to KiCad layouts.
+- **JLC/EasyEDA** exposes an editor API so Claude Code or Codex can drive it.
+- **LG AI Research's PCBWorld** benchmark shows frontier LLMs routing *directly* score far below classical and RL routers.
+- **GPT-6 Astra's** headline KiCad demo, once examined, was the LLM orchestrating Freerouting. In GUI-only mode it drew 3 segments in an hour.
 
 ### Cited Findings
 **Flux.ai**
-- "AI Auto-Layout, powered by Flux Copilot" is a routing step: the user places parts and sets the board shape, then clicks Auto-Layout — [Flux macropad tutorial](https://www.flux.ai/p/blog/how-to-design-a-custom-macro-pad-with-flux); [Flux announcement (translated mirror)](https://translate.google.com/translate?u=https%3A%2F%2Fwww.flux.ai%2Fp%2Fblog%2Fintroducing-ai-auto-layout&hl=es&sl=en&tl=es&client=srp)
-- Recent updates: full via configuration including microvias, avoidance of awkward trace angles and "smarter pad exit direction logic". Planned: diff-pair routing when pins are not adjacent, and routing priority by net type. Engineers are advised to hand-route critical nets first — [Flux blog: Smarter Copilot, Cleaner Layouts](https://www.flux.ai/p/blog/smarter-copilot-cleaner-layouts-fewer-bugs). Flux says it imitates how engineers reason about routing rather than maze-routing — [Flux page](https://www.flux.ai/p/circuit-board-design-software)
-- Competitor view: Flux tells users to route diff pairs, controlled-impedance and high-speed nets by hand before Auto-Layout, and there is no physics scorecard — [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+- [P] AI Auto-Layout:
+  - "By using advanced AI techniques—especially Reinforcement Learning (RL)". Runs iterate visibly and can be accepted at any time; simple boards take minutes, complex ones "10-15 minutes or even several hours".
+  - Built-in priorities: "Sensitive Power Trace Prioritization" and crystal "shortest path to the clock input".
+  - The user places components first and can pre-route critical traces.
+  
+  Source: [Flux blog, Introducing AI Auto-Layout](https://www.flux.ai/p/blog/introducing-ai-auto-layout)
+- [P] Copilot has "Copilot Knowledge" (user and project memory of approved rules) plus "System Knowledge" (curated by senior engineers) and live execution traces. Auto-Layout roadmap: diff pairs on non-adjacent pins, routing priority by net type — [Flux blog, Smarter Copilot](https://www.flux.ai/p/blog/smarter-copilot-cleaner-layouts-fewer-bugs)
+- [P-pat] No Flux US patents found under `flux.as.` with circuit terms — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
 
 **JITX**
-- Code-first: designs are written in code (Python in 2025) covering stackups, materials, vias, clearances and a constraint system for SI (impedance, skew, loss, structures). JITX supplies "design primitives, routing solvers, HFSS interface, schematic generation, pin assignment, fencing", and "your approved AI edits that code" — [JITX homepage](https://www.jitx.com/); [What's new in JITX 2025](https://blog.jitx.com/jitx-corporate-blog/whats-new-in-jitx-2025); [JITX constraints API docs](https://docs.jitx.com/en/latest/api/jitx.constraints.html)
-- The pin-assignment solver uses a provide/require model — [JITX docs](https://docs.jitx.com/en/latest/essentials/design/index.html). An older FAQ says the solvers handle component selection, pin assignment and schematic, while existing CAD handles final P&R — [JITX FAQ](https://blog.jitx.com/jitx-corporate-blog/frequently-asked-questions)
-- CEO Duncan Haldane claimed up to 25x faster design cycles in a DesignCon 2025 interview (vendor claim) — [I-Connect007](https://iconnect007.com/article/144168/new-eda-tool-company-embraces-ai-and-code/144165/flex)
-
-**Circuit Mind (ACE)**
-- Takes requirements as a block diagram plus design intent and returns schematic and BoM options in about 60 s, optimized for cost, power, size, lifecycle and supply chain. Marketed as "deterministic AI" — [Circuit Mind: Unveiling ACE](https://www.circuitmind.io/resource-center/unveiling-ace-architecture-to-pcb-schematic-in-60-seconds); [EE Times webinar](https://www.eetimes.com/architecture-to-circuit-schematics-in-60-seconds-an-introduction-to-circuit-mind-ai/)
-
-**Celus**
-- A Design Assistant turns text or a sketch into functional blocks, then matches parts and reusable "CUBOs", which are circuit blocks holding components and spec data. Powers the Siemens Xpedition Standard front end — [Celus platform](https://www.celus.io/en/engineering-platform); [All About Circuits on Celus](https://www.allaboutcircuits.com/news/celus-brings-modern-concepts-and-ai-to-circuit-and-pcb-design/)
-
-**Diode Computers**
-- Founded 2024; $11.4M Series A led by Andreessen Horowitz, with Y Combinator participating; "circuit boards as code" — [Dealroom](https://app.dealroom.co/news/feed/diode-computers-raises-11-4m-for-ai-pcb-design); [Benzatine](https://benzatine.com/news-room/diode-computers-secures-114-million-to-revolutionize-pcb-design-with-ai)
-- Open-source `pcb` CLI (Rust, MIT license). Designs are written in **Zener**, a Starlark-based schematic language. `pcb layout` generates **KiCad layout files**, and KiCad 10.x is required for layouts. It credits atopile and tscircuit as inspiration — [diodeinc/pcb README](https://raw.githubusercontent.com/diodeinc/pcb/main/README.md)
-
-**JLCEDA / EasyEDA (China)**
-- No official built-in AI router or placer found. JLCPCB documents an "EasyEDA API Skill" and API Gateway that let AI coding agents call Extension-API functions such as `autoRouting` and ERC — [JLCPCB blog: Prompt to PCB with EasyEDA Pro](https://jlcpcb.com/blog/ai-pcb-design-easyeda). Community MCP bridges offer constraint-driven placement, checkpointed routing transactions and native DRC — [Glama MCP listing](https://glama.ai/mcp/servers?query=easyeda)
-
-**LG AI Research: PCBWorld (an industrial lab disclosure, July 2026)**
-- An open-source Gymnasium environment that wraps **KiCad 9.0.8's push-and-shove router**. Every step is checked by KiCad DRC ("What routes here routes in KiCad"). It includes synthetic board generators, 679 real open-source boards, a decoder-only PPO/GRPO transformer, LLM tool-calling agents, and FreeRouting/KRT baselines. Accepted to the KDD 2026 Workshop on Evaluation and Trustworthiness of Agentic AI — [PCBWorld README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/README.md); [arXiv 2607.05915](https://arxiv.org/pdf/2607.05915)
-- MDP:
-  - Episode: route one net at a time (`net_select → start_route → make_line/make_via … → net_end`).
-  - State: exact-mm nested dict, no grid or image (board_static, routing_geometry, router_head, drc_violations near head, action_history, closed_nets).
-  - LLM text wrapper: renders the state as S-expressions.
-  - Actions: pick from a **candidate point set** (pad centers, copper endpoints, vias, open ratsnest targets, 8 neighbours around the head), plus a routing_mode (mark obstacles / shove / walk-around).
-  - Masking: YAML rules for legal actions.
+- [P] "Requirements become Python. The AI edits the code. JITX generates a candidate design. HFSS, or your own rule checker evaluates the result. The next edit starts from measured data". Example: a PCIe-gen7 BGA launch optimized in 5 HFSS simulations — [JITX homepage](https://www.jitx.com/)
+- [P] JITX 2025:
+  - "a router that is constraint-driven: given a set of rules, directly make a layout that meets the rules (rather than just report a check failed)".
+  - The router is "topological (operates on continuous geometry rather than grid-aligned Manhattan traces)", fitting 8 traces where a legacy tool fit 6, with pin swapping in the router.
+  - Customer benchmarks show 5–20× fewer engineer-hours on 30+ layer designs; the designs were not published.
+  - An LLM-generated design was taken into Ansys, and one model caught a missing termination.
   
-  Source: [PCBWorld ENVIRONMENT.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/ENVIRONMENT.md)
-- Reward: potential-based, Φ(s) = −unconnected − f_drv(DRC, log-shaped, steepest near zero) − λ_w·wirelength − λ_v·vias + per-net completion and clean bonuses + board completion bonus. Shipped weights: −1 per open ratsnest edge, +1 per connected net, +1 per DRV-free net, −0.5·WL/max(bbox), −0.2 per via, small invalid-action penalties — [PCBWorld reward YAML](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/configs/reward/pcbworld_reward.yaml)
-- Evaluation:
-  - Protocol: 5 rollouts, keep the best by potential gain. The headline metric is "**Clean pass**" (fully connected AND zero DRC errors). Boards are re-opened and DRC'd against their own project rules, so "a method never scores itself".
-  
-  Source: [PCBWorld METRICS.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/METRICS.md)
-- Reported results: their agents beat grid-action RL and open-loop LLM baselines, and an RL policy trained only on synthetic boards transferred zero-shot to real boards, approaching rule-based routers — [arXiv 2607.05915](https://arxiv.org/html/2607.05915v1)
-- Licensing pattern: the environment is BSD-3. The engine (KiCad patches, headless RL router, DRC fork that lifts KiCad's per-type report caps) is **GPLv3** "because it links KiCad". The two communicate only over a Unix socket and are never combined into one distributable — [PCBWorld-Engine README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld-Engine/main/README.md)
+  Source: [JITX blog, What's new in 2025](https://blog.jitx.com/jitx-corporate-blog/whats-new-in-jitx-2025)
+- [P] DesignCon 2025 interview: the "up to 25x" claim; automated router setup ("a single line of code… constraints for my six DDR7 memory chips"); "zero cleanup"; ODB++ export — [I-Connect007](https://iconnect007.com/article/144168/new-eda-tool-company-embraces-ai-and-code/144165/flex)
+- [P-pat] `jitx.as.` returned 0 — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
 
-**OpenAI GPT-6 Astra KiCad demo (Sept 2026) and independent tests**
-- OpenAI's launch page shows Astra "turning an electronic schematic into a manufacturable PCB by placing components and routing copper connections" in KiCad — [OpenAI](https://openai.com/index/gpt-6-astra/)
-- JLCPCB review:
-  - Output: a 44×34 mm two-layer board from a four-line brief, with 0 ERC/0 DRC under the configured rules. However, 5 DRC and 4 ERC categories were ignored, and the routed layout was reused from an earlier task.
-  - Method: Astra "defined and protected the critical power, bootstrap, and switching connections, then ran local Freerouting to complete the remaining low-current nets".
-  - Conflict: another search summary of the same review reports 46 schematic-parity issues.
+**Circuit Mind, Celus, Diode**
+- [P-pat] Circuit Mind US 12,050,847 B2 (2024-07-30): requirements → candidate parts → "variables and constraints", with an "objective function" optimized "using a solver" → schematic — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12050847)
+- [P-pat] Celus:
+  - US 12,688,343 B2 (2026-07-21): an AI inference from a block-diagram specification generates "solution variants" by querying a component database per KPI range, then ranking — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12688343)
+  - US 12,443,611 B2 (2025-10-14): block and port compatibility plus net-to-signal mapping with label-based backtracking — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12443611)
+- [P] Diode: "Your requirements become a schematic and layout, written as code that our AI agent and engineers can check… checked against the fab's rules". Enterprise design starts at $10,000; assembly in Brooklyn — [diode.computer](https://diode.computer/). Open-source `pcb` CLI (MIT) uses the Zener (Starlark) language and generates KiCad 10 layouts — [diodeinc/pcb README](https://raw.githubusercontent.com/diodeinc/pcb/main/README.md)
+
+**China: JLCEDA/EasyEDA and others**
+- [P] JLCEDA reports 6.58 M engineers and 52 M designs (as of 2025-12-31). The homepage mentions no AI router — [lceda.cn](https://lceda.cn/)
+- [P] JLCPCB's official route: the "EasyEDA API Gateway" extension, the open-source "EasyEDA API Skill" (github.com/easyeda/easyeda-api-skill) and a local bridge server. Claude Code or Codex "emits JavaScript that calls EasyEDA's extension API — create a component… autoRouting, run ERC". It is local-first — [JLCPCB blog](https://jlcpcb.com/blog/ai-pcb-design-easyeda)
+- [P-pat] Huawei has 7 US PCB layout documents, all hardware structures and none ML. Assignee queries for JLC, Jialichuang, LCEDA and EasyEDA returned only unrelated companies — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
+
+**LG AI Research: PCBWorld (industrial lab)**
+- [P] PCBWorld is a Gymnasium environment around KiCad 9.0.8's push-and-shove router, checked by KiCad DRC.
+  - The agent picks from a candidate point set with masked actions. State is exact-mm geometry, with an S-expression text wrapper for LLMs.
+  - Reward is potential-based, with a log-shaped DRC penalty.
+  - The metric is clean pass (fully connected and zero DRC errors).
+  - It includes 679 real KiCad boards. The engine is GPLv3 behind a socket boundary; the environment is BSD-3.
   
-  Source: [JLCPCB: GPT-6 Astra in KiCad](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad)
-- NextPCB tested whether Astra routes itself or orchestrates autorouters. It took about 12 minutes unrestricted, and a second run was GUI-only with no external tools — [NextPCB](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test). A community blind-routing run (KiCad 10.0.6 via Computer Use) reduced unconnected items from 125 to 0 with clean enabled DRC checks; the author says it is not a controlled benchmark — [GitHub: gpt6-astra-kicad-blind-routing](https://github.com/cyjjjj-21/gpt6-astra-kicad-blind-routing/blob/main/README.md)
+  Sources: [README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/README.md); [ENVIRONMENT.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/ENVIRONMENT.md); [reward YAML](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/configs/reward/pcbworld_reward.yaml); [METRICS.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/METRICS.md); [Engine README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld-Engine/main/README.md); [arXiv 2607.05915](https://arxiv.org/abs/2607.05915)
+- [P] Published one-attempt clean-pass (paper Tables 21–22, as reproduced by DeepPCB): GPT-5.4 0.42 on D3-A and 0.00 on D3-B, against Freerouting 0.75/0.64 and PPO 0.81/0.22 — [DeepPCB benchmark post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)
+
+**OpenAI GPT-6 Astra in KiCad (Sept 2026)**
+- [P] NextPCB test 1, unrestricted: Astra exported DSN, ran **Freerouting**, and imported the SES file. "Freerouting performed the core routing computation. Astra orchestrated the workflow." Test 2, GUI-only with no external tools: "After one hour… Astra had completed only three short trace segments" — [NextPCB, Hubert (KiCon Asia)](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test)
+- [P] JLCPCB review:
+  - Astra "defined and protected the critical power, bootstrap, and switching connections, then ran local Freerouting to complete the remaining low-current nets".
+  - 46 schematic-parity issues were found and then cleared without exclusions.
+  - Final result: 0 ERC and 0 DRC with **5 DRC and 4 ERC categories ignored** (missing courtyards, off-center via endpoints, tuning-profile geometry, footprint-filter mismatch, component-type mismatch; singleton global labels, four-way junctions, SPICE, footprint filters).
+  - The project was copied to a fresh directory to re-verify portability.
+  
+  *This resolves the first-pass conflict:* 46 parity issues came first, then 0 violations. Source: [JLCPCB blog](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad)
+- [P] Quilter's reading: OpenAI's clip is a 15-second condensation of a 2 min 54 s run, and OpenAI published no PCB benchmark. KiCad forum consensus: give the LLM "deterministic tools to orchestrate" — [Quilter LLM post](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
 
 ### Inferences
-- The industry converges on three layers: (1) an LLM for intent, comprehension and orchestration (Cooper, Fuse, JITX "AI edits code", Astra); (2) deterministic or learned geometric engines (KiCad PNS, Freerouting, DeepPCB, Quilter); (3) verification (DRC plus physics scorecards). Even OpenAI's own demo, per JLCPCB, delegated bulk routing to Freerouting after the LLM handled critical nets.
-- Code-first or compiler approaches (JITX, Diode/Zener, atopile) make constraints explicit and machine-readable before layout, which suits LLM generation.
+- Every credible LLM-in-EDA disclosure (Cooper, Fuse, JITX, EasyEDA API Skill, and Astra's actual behaviour) uses the LLM as **planner and configurator over a deterministic API**, not as a geometry generator.
 
 ### Gaps
-- Chinese vendors beyond JLCEDA (e.g. Huawei internal tools, other domestic EDA firms) could not be researched before the search budget ran out. The user's "Kingdee" lead was not verified.
-- The full PCBWorld paper results tables were not read.
-- Cherry Blossom's "40 boards" Astra test was found by title only — [Cherry Blossom](https://www.trycherryblossom.com/blog/gpt-6-astra-pcb-design)
+- No CNIPA search, so Chinese AI-PCB patents (e.g. Huawei internal tooling) are unknown. No primary source for Chinese AI routers beyond JLCEDA.
+- OpenAI's own page returned 403.
 
 ---
 
-## 5. Key patents (any assignee): ML placement, RL routing, learning from prior designs, constraint extraction, natural-language design, plus FTO flags
+## 5. Key patents (any assignee): claims at mechanism level, with FTO flags for a GPL KiCad project
 
 ### Takeaway
-The most relevant patent found is Cadence's DARPA-funded **US 11,599,699** ("autonomous PCB design using machine learning techniques"): an RL agent analyzes a design and recommends place, via or route actions. A related **US 12,223,248** discloses offline training of a routability predictor on a corpus of routed boards for use inside placement. Other PCB-ML patents cover GNN parasitic estimation (US 12,566,911) and learning from manufacturing corrections (US 11,042,981). **I found no granted patent on LLM or natural-language-driven PCB layout.** The nearest is an NVIDIA application on an LLM ReAct loop for standard-cell layout constraints.
+Full claim text of the five flagged patents was read, and corrections were made:
+- US 12,566,911 is **Honeywell**.
+- US 11,042,981 is **SVXR** (continuation US 11,662,479, Bruker Nano).
+- US 12,223,248 is confirmed **Cadence** (DARPA-funded).
+- US 11,599,699's inventors are Roberto, Mitra, Hogan, Li, Zumbo and Murphy (*not* Quayle/Poplack).
+
+New, highly relevant finds: **InstaDeep's three DeepPCB routing patents** (NN-guided SMC look-ahead over net orders and sub-routes; gridless candidate-point generation) and **Cadence US 11,087,060** (learning placement predictors from prior designs to create hard and soft constraints).
+
+The most architecture-relevant *pending* filing is **NVIDIA US 2025/0315590 A1**. Its claim 1 broadly covers *any* "circuit layout tool" driven by an LLM in a ReAct loop that updates constraints. No granted US patent on LLM-driven *PCB* layout was found.
 
 ### Cited Findings
-- **US 11,599,699** — "System and method for autonomous printed circuit board design using machine learning techniques". Cadence. Government support under DARPA Agreement HR0011-18-3-0010 (the IDEA program). Its background says PCB and package design "remains a very manual and human effort". Summaries describe receiving an electronic design, analyzing it with an RL agent, and recommending a place, via or route agent action — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11599699); [Justia Cadence assignee listing](https://patents.justia.com/assignee/cadence-design-systems-inc?page=12). **The claims were not read.** A search summary wrongly linked this patent to inventors Quayle and Poplack; their listed patent is ML hardware, so the inventors are unconfirmed.
-- **US 12,223,248** — "System, method, and computer program product for optimization-based printed circuit board design". An RL agent recommends place, via or route actions and updates the design iteratively. "RL process 10 may be configured to train a machine learning model offline in a distributed fashion on a continually growing corpus of boards and their routed counterparts. This trained machine learning model may now be used to infer routability during the inner steps of the placement algorithm." — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248). The assignee was not shown in the excerpt.
-- **US 12,566,911** — "Machine learning tool for layout design of printed circuit board". Claim 1: obtain a PCB layout, apply a trained ML model to estimate a parasitic value for an element, and output it (including showing complex impedance in a GUI). Dependent claims cover GNNs. The tool explains and visualizes outputs of an ML parasitic simulator, and uses GNN predictions to reduce simulation-versus-measurement error. Priority: Indian provisional 202211056301 (Sep 30, 2022). Assignee unknown — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12566911)
-- **US 11,042,981** — "Methods and systems for printed circuit board design based on automatic corrections". ML trained on X-ray inspection data and on samples generated by manufacturing engineers during human correction — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11042981); [app. 2021/0279878](https://www.patentsencyclopedia.com/app/20210279878)
-- **US 12,620,242 / US 2024/0233407** — PCB netlist extraction from multimodal imagery using ML (reverse engineering; low relevance) — [Justia](https://patents.justia.com/patent/20240233407); [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12620242)
-- An AMD/ATI patent, "Systems and methods for automatically generating a printed circuit board design" (filed Sep 27, 2022; number not captured), is listed under Justia class 716/132 (Optimization) — [Justia 716/132](https://patents.justia.com/patents-by-us-classification/716/132)
-- **US 8,751,999** — "Component placement tool for printed circuit board". Simulated annealing on a slicing-tree representation (classical, not ML) — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8751999). **US 10,747,932** — "Smart placement, visualization and optimization methodology for component placement and planning" (claims not read) — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/10747932). **US 12,541,630** — "Method for layout placement and routing, circuit layout, electronic device, and storage medium" (title only; not read) — [USPTO PDF](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12541630)
-- Chip-level analogues:
-  - **US 2021/0081510 A1** (family US 11,106,855; 11,704,470; 12,147,752): a trained model generates mixed-signal cell layouts and routing from electrical parameters; assignee not confirmed — [Google Patents](https://patents.google.com/patent/US20210081510A1/en)
-  - **NVIDIA US 2025/0315590 A1**: "Large language model for standard cell layout design optimization", an LLM in a ReAct prompting loop that generates cluster constraints for a layout engine — [Justia](https://patents.justia.com/patent/20250315590)
-  - **US 11,627,165 B2**: multi-agent RL with matchmaking, including routing actions to connect components of an ASIC; assignee not captured — [Google Patents](https://patents.google.com/patent/US11627165B2)
-- Eligibility context: in *Recentive Analytics v. Fox* (Fed. Cir., April 2025), claims that "merely recite the application of generic machine learning techniques to a new data environment" without a technological improvement were held ineligible under §101 — [Fish & Richardson](https://www.fr.com/insights/thought-leadership/blogs/federal-circuit-clarifies-limits-of-patent-eligibility-for-machine-learning-claims/); [Holland & Knight](https://www.hklaw.com/en/insights/publications/2025/04/federal-circuit-machine-learning-patents-fail-section-101)
-- No patent combining RL, PCB trace routing and a reward signal surfaced in keyword search other than the Cadence family above — [Google Patents search hits, e.g. US20040262036A1 (non-ML fiber-weave routing)](https://patents.google.com/patent/US20040262036)
+| Patent | Owner / dates | Mechanism in the independent claims ([P-pat]) | Relevance |
+|---|---|---|---|
+| **US 11,599,699 B1** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11599699) / [GP](https://patents.google.com/patent/US11599699B1/en) | Cadence; filed 2020-02-10 (16/785,972); granted 2023-03-07; 469 days PTA; DARPA HR0011-18-3-0010; inventors Luke Roberto, Joydeep Mitra, Taylor Elsom Hogan, Shang Li, Zachary Joseph Zumbo, John Robert Murphy | Claim 1: receive an electronic design; analyze it with a **reinforcement learning agent** on "a feature vector including both images and scalars"; recommend an action that is at least one of a **place agent action, via agent action, or route agent action**; update the design; repeat. Claims 8 and 15 limit the scalars to "PCB dimensions, wirelength, number of nets, number of packages, and discrete components". Dependent claims: hierarchical RL; image + scalar + graph corpus; primitive or complex actions; an NN approximating routability as fitness or reward. | **High** for any *RL-trained* agent that selects place/via/route actions from board images plus scalars |
+| **US 12,223,248 B1** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248) / [GP](https://patents.google.com/patent/US12223248B1/en) | Cadence; filed 2020-08-10 (16/989,058); granted 2025-02-11; DARPA; inventors Mitra, Joydeep et al. | Claim 1: generate placed PCB designs with **genetic optimization** using a reward function adjusted during generation; **route them with an auto-router to label routability**; train an architecture of a **CNN (images), a GCN (graph), a DNN (scalars), and a second DNN fusing them**; predict routability as the percentage of routed connections. Dependent claims: a wire-crossings reward. | **High** if the project trains a multimodal routability predictor on autorouted GA placements; **low** for analytic proxies |
+| **US 11,087,060 B1** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11087060) | Cadence; filed 2019-07-29; granted 2021-08-10 | Claim 1: train a model on a first schematic plus layout, using predictors of **device positions**; apply it to a second design to create **hard constraints** (only solutions satisfying the predictor) and **soft constraints** (a cost function). The context is analog layout, but claim 1 says generic "electronic design". | **Medium** for "learn placement constraints from prior boards" |
+| **US 11,379,646 B1** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11379646) | Cadence; granted 2022-07-05 | Infer missing PCB synthesis parameters (placement, via assignment, routing, metal pouring), collect process data, and train ML to predict compute resources. | Low |
+| **US 11,544,574 B1** / **US 11,620,548 B1** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11544574) / [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11620548) | Cadence; 2023 | ML recognition of transistor-level structures (diff pair, current mirror, cascode…) in schematics; ML parasitic prediction from schematic net features. | Low (IC-level) |
+| **US 11,842,136 B2** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11842136) / [GP](https://patents.google.com/patent/US11842136B2/en) | InstaDeep; priority GB 2019-11-27; PCT/GB2020/053055 (2020-11-27); granted 2023-12-12 | **Routing order search**: define two or more connection orders → NN-guided **Sequential Monte Carlo look-ahead** → posterior over orders → select connection → route → update. Dependent claims: rewards on length, bends, density, preferred layer; posterior as training target; particle resampling and cloning; entropy weighting; value-guided weights. | **High** if the project combines (look-ahead simulations over orders or sub-routes) + (neural-network guidance, which arguably includes an LLM) + (posterior-based selection) |
+| **US 12,019,968 B2** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12019968) | InstaDeep; granted 2024-06-25 | Candidate routes from **linear-ray candidate-point generation** (feasible direction changes that avoid "isolation region" polygons whose angles equal the allowed bend angles; tangent intersections), plus NN-guided SMC sub-route selection. | **High** with the same combination; the ray/tangent candidate generation *alone* is not claimed without the SMC + NN element |
+| **US 12,159,094 B2** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12159094) | InstaDeep; granted 2024-12-03 | NN-guided SMC look-ahead over candidate sub-routes; target action data stored for training. | High (same combination) |
+| **US 2025/0315590 A1** (pending) — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/20250315590) | NVIDIA; filed 2025-04-01 (19/097,389); provisionals 2024-04-03 and 2025-01-30; published 2025-10-09; inventors Ho, Chia-Tung et al. | Claim 1 as published: "a circuit layout tool configured to generate a layout for a circuit based on input cluster constraints; and a feedback loop comprising an agent configured to operate a **large language model in a Thought-Action-Observation (ReAct) prompting loop to update the cluster constraints** and to apply the updated cluster constraints to the circuit layout tool." The title and description are about standard cells. | **Highest watch-list item**: it describes the core "LLM updates constraints, layout engine re-runs" loop. Still pending; claims may narrow. Monitor prosecution and gather prior art. |
+| **US 2026/0187328 A1** (pending) — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/20260187328) | NVIDIA; published 2026-07-02 | GPU **stencil-buffer** counting of shape overlaps for "generative layout design", informing alternative placements. | Medium if the project uses GPU stencil overlap counting |
+| **US 12,566,911 B2** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12566911) | **Honeywell**; filed 2022-11-28; priority IN 202211056301 (2022-09-30); granted 2026-03-03; inventors Jaiswal, Apurv et al. | Claim 1: apply a trained ML model to a PCB layout to estimate a parasitic value and **display a complex impedance value in a GUI**. | Medium only for ML parasitic estimators shown in a GUI; analytic or field solvers are outside its literal scope |
+| **US 11,042,981 B2** / **US 11,662,479 B2** — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11042981) / [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11662479) | **SVXR, Inc.** (2021); continuation by Bruker Nano (2023) | ML trained on X-ray inspection data and on manufacturing engineers' corrections to adjust PCB design. | Low |
+| **US 2026/0228404 A1** (pending) — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/20260228404) | Wistron; published 2026-08-06 | Netlist topology similarity using a learning algorithm against a database of reference PCB *modules*; offers matched modules in a layout UI (layout reuse). | Medium for "reuse layout blocks from prior designs" |
+| **US 2025/0307516 A1** (pending) — [USPTO](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/20250307516) | Think Circuits LLC; published 2025-10-02 | Automated review engines for BOM, schematic, layout and manufacturability, plus a design modification engine. | Low–medium (automated review) |
+| **Celus US 12,688,343 B2; US 12,443,611 B2; Circuit Mind US 12,050,847 B2** (links in Section 4) | 2024–2026 | Requirements and block diagram → component DB queries / CSP solver → schematic and BOM variants; port and pin mapping. | Low for layout; relevant only if the project generates schematics |
+| **Google "AlphaChip" family**: US 10,699,043; 11,100,266; 11,675,940; 12,086,516; 11,216,609; 11,556,690; 11,853,677; 12,248,745 — e.g. [USPTO 11,216,609](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11216609) | Google; 2020–2025 | Claims recite placing a netlist on "the surface of an **integrated circuit chip**". Example: sequential macro placement by a node-placement NN (11,216,609); supervised pretraining of an encoder on reward values, then RL (12,248,745). | Low for PCB (literal claims are IC-specific) |
+
+- [P-pat] Topic searches of US claims for PCB plus ("large language model" / LLM / natural language) plus (layout / placement / routing) returned **no PCB layout patent**. Hits were IoT, inspection and NVIDIA's generative-layout overlap application — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/) (queries run 2026-10-20)
+- [P-pat] Searches for schematic + (differential pair / net class / constraint) + (ML / NL / LLM) in claims found **no PCB constraint-extraction patent**; the only hits were IC-level Cadence filings — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
+- [P-pat] Searches for RL + PCB in claims found only Cadence US 11,599,699 as a PCB layout patent; other hits were assembly, inspection or unrelated — [USPTO PPUBS](https://ppubs.uspto.gov/pubwebapp/)
+- [S] Eligibility context: in *Recentive v. Fox* (Fed. Cir., Apr 2025), generic ML applied to a new data environment was held ineligible under §101 — [Fish & Richardson](https://www.fr.com/insights/thought-leadership/blogs/federal-circuit-clarifies-limits-of-patent-eligibility-for-machine-learning-claims/)
 
 ### Inferences
-- **FTO flags for a GPL KiCad project. This is identification only, not legal advice; claims must be read by counsel.**
-  1. **US 11,599,699 and US 12,223,248 (Cadence family, likely):** most relevant if the project uses an RL or learned agent that picks place, via or route actions on a PCB, or uses a learned routability predictor trained on routed boards inside a placement loop. An LLM that calls deterministic tools may sit further from these claims than a trained RL policy does, but that cannot be judged without the claims.
-  2. **US 12,566,911:** relevant only if the project adds an ML (e.g. GNN) parasitic or impedance estimator and shows its predictions in a layout GUI. Analytic or field-solver impedance calculation would not obviously be affected.
-  3. **US 11,042,981:** relevant only if the project trains models on DFM or manufacturing correction data.
-  4. **NVIDIA US 2025/0315590 (application, chip-level):** worth monitoring, because it covers an LLM-in-the-loop generating layout constraints for a placement engine, which is analogous to the proposed architecture though for standard cells.
-- The patent numbers imply grant dates of roughly March 2023 (11.599M) and roughly Feb 2025 (12.22M). These are my estimates and are unverified.
-- A US 20-year term from a Dec 2018 filing would run to about 2038–2039 for the Cadence family (estimate).
+**FTO identification for a GPL, LLM-driven KiCad placer/router (not legal advice):**
+
+**(a) Avoid or seek counsel before shipping:**
+- A policy trained with RL that takes board *images + scalars* and picks place/via/route actions (Cadence '699).
+- A GA placer whose fitness is a CNN+GCN+DNN routability model trained on autorouter labels (Cadence '248).
+- A NN-guided Sequential Monte Carlo look-ahead over net orders or candidate sub-routes with posterior selection (InstaDeep '136/'968/'094). An LLM is a neural network, so "LLM-guided particle look-ahead over net orders" deserves review.
+
+**(b) Monitor:**
+- NVIDIA 2025/0315590. Its published claim 1 reads on "LLM in a ReAct loop updates constraints → layout tool re-runs", which is the natural architecture for this project. Prior art predating 2024-04-03 should be collected (e.g. LLM-agent EDA papers from 2023 to early 2024). Watch whether the granted claims keep "circuit" generic or narrow to standard cells.
+
+**(c) Lower risk by design:**
+- LLM orchestration of classical algorithms (KiCad push-and-shove, Freerouting, analytic placement, simulated annealing or force-directed placement).
+- Deterministic net-order heuristics, or full re-route evaluation of a few LLM-proposed orders without NN-guided particle filtering.
+- Analytic and field-solver physics checks.
+- Rule-based comprehension with human confirmation.
+
+**Expiry estimates (from filing dates; unverified, subject to maintenance fees and PTA):**
+- Cadence '699: about 2041 (2040-02-10 plus 469 days PTA).
+- InstaDeep family: about 2040-11 (PCT filing plus 20 years) plus any PTA.
+- Cadence '248: about 2040-08 plus any PTA.
 
 ### Gaps
-- No Google Patents assignee-filtered searches were possible (the host was unreachable), so assignee lists for Quilter, InstaDeep, Zuken, Siemens, Flux, JITX, Celus and Huawei were not obtained. Keyword searches did not surface patents from these companies.
-- Claims and legal status (pending, granted, maintenance) for every patent above were not read.
-- Classic autorouter patents (push-and-shove, topological routing, etc.) were not reviewed. Their age makes many expired, but this is unverified.
-- No patents found on constraint extraction from schematics (e.g. auto-detecting diff pairs from net names); the search budget ran out first.
+- No CN/EP/WO/JP searches. Huawei, Chinese EDA firms and European filings remain unknown.
+- Maintenance-fee and legal status not checked.
+- Applications filed after about April 2025 are unpublished.
+- No prior-art analysis has been done.
 
 ---
 
-## 6. Industry talks (DesignCon, PCB West, IPC APEX, CadenceLIVE, Realize LIVE, AltiumLive) and AI-vs-human comparisons
+## 6. Industry talks and AI-vs-human comparisons (DesignCon, PCB West, IPC APEX, CadenceLIVE, Realize LIVE, podcasts)
 
 ### Takeaway
-I found no rigorous, peer-reviewed AI-versus-human PCB layout comparison covering time, DRC and SI. All quantitative comparisons are vendor case studies: Quilter 38.5 vs ~428 h, Cadence 3 days vs 75 min (−12% WL), EMA 2 vs 60 min, Zuken 45 min vs 30 s. The talks found lean toward agentic SI analysis and vendor showcases rather than technical layout disclosures.
+Public talk *content* on AI layout is thin and mostly vendor-led:
+- PCB West 2023 (Zuken AIPR launch and AI panel)
+- DesignCon 2025 (JITX)
+- DesignCon 2026 (multi-agent SI analysis, not layout)
+- NVIDIA GTC and DAC 2026 (Siemens agents)
+- DAC 2026 (DeepPCB booth)
+- The Altium OnTrack podcast (DeepPCB, Sept 2026)
+
+All AI-versus-human comparisons are vendor case studies. The most rigorous third-party-style evidence is Sierra Circuits' DFM review of Speedrun and LG's PCBWorld-Bench (2-layer boards).
 
 ### Cited Findings
-- DesignCon's education page lists "Automated high-speed PCB layout design using deep learning" under Track 14 (Machine Learning & AI). The year is ambiguous between 2026 and 2027 — [DesignCon education](https://www.designcon.com/en/education/education-overview.html)
-- DesignCon 2026: a joint Intel/Simbeor paper, "Multi-Agent AI Systems for Autonomous Signal Integrity Analysis of PCB & Package Designs" (analysis, not layout) — [Signal Integrity Journal](https://www.signalintegrityjournal.com/articles/4262-designcon-2026-ai-driven-infrastructure-and-system-level-design)
-- DeepPCB exhibited at PCB West 2024 — [DeepPCB blog](https://deeppcb.ai/routing-the-way-forward-deeppcb-at-pcbwest-2024/). Podcasts: Quilter on All About Circuits ("Combining AI and Physics for PCB Design") — [AAC podcast](https://www.allaboutcircuits.com/podcast/solving-the-hard-problems-combining-ai-and-physics-for-pcb-design/); DeepPCB on the Altium podcast — [Altium podcast](https://podcast.altium.com/e/ai-pcb-routing-without-the-epic-fails-inside-deeppcb); InstaDeep's Alain-Sam Cohen on Emerj — [Emerj](https://emerj.com/building-better-pcb-layouts-with-ai-driven-optimization-alain-sam-cohen-instadeep/)
-- Quilter held a Q1 2026 webinar walking through Simbeor impedance, ground-net comprehension and region pours — [Quilter on X](https://x.com/quilterai/status/2046574855131173243)
-- A secondary blog quote attributed to an aerospace principal engineer at DesignCon 2026: "The tool will route your board, but it won't teach you why it routed it that way." Unverified — [AtlasPCB](https://www.atlaspcb.com/blog/autonomous-pcb-layout-quilter-siemens-fuse-flux-2026/)
-- Comparison data points (all vendor or partner):
-  - Quilter Speedrun: 38.5 human h vs ~428 quoted h; 27 machine h; 98% routed; first-boot success — [Quilter](https://www.quilter.ai/project-speedrun)
-  - Cadence: 3 days → 75 min, 12% shorter WL — [Quilter comparison blog](https://www.quilter.ai/blog/not-all-ai-is-created-equal-quilters-generative-ai-vs-cadence-allegro-x-ai)
-  - EMA/Allegro X AI: 80 parts, 4 layers, 2 min vs 60 min; quality 4/5; wrong-layer placements — [EMA](https://www.ema-eda.com/ema-resources/case-study/case-study-accelerating-component-placement-with-allegro-x-ai/)
-  - Zuken AIPR: 30 min setup + 15 min route → about 30 s (claim) — [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
-  - JITX: up to 25x (claim) — [I-Connect007](https://iconnect007.com/article/144168/new-eda-tool-company-embraces-ai-and-code/144165/flex)
-- Low-quality anecdotes, recorded only to flag them: "47 minutes … 23% lower crosstalk" with no methodology — [Medium](https://medium.com/@aa.suryanegara2/how-ai-is-changing-pcb-design-and-testing-fba33cd4c2d8). AtlasPCB's "AI copilots catch 85–95% of common DFM violations" appears unsourced — [AtlasPCB](https://www.atlaspcb.com/blog/llm-ai-copilot-pcb-design-review-respin-reduction-2026/)
+- [P] PCB West 2023 panel "AI in Electronics: What Can We Expect?": Kyle Miller (Zuken), Michael Jackson (Cadence), Tomide Adesanmi (Circuit Mind), Sebastian Schaal (Luminovo); moderator Louis Feinstein (Dassault).
+  - Miller: "It's about multiple possible solutions… The overall control is still with the designer."
+  - Jackson on job loss: "no… It reduces the time to do the job."
+  - Adesanmi: "Engineers will be more architects, explorers, optimizers."
+  
+  Source: [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+- [P] DesignCon 2025: JITX CEO interview (code-based EDA, automated router setup, "up to 25x") — [I-Connect007](https://iconnect007.com/article/144168/new-eda-tool-company-embraces-ai-and-code/144165/flex). JITX also presented LLM → code → Ansys SI loop work at Ansys Simulation World — [JITX blog](https://blog.jitx.com/jitx-corporate-blog/whats-new-in-jitx-2025)
+- [P] DesignCon 2026: Intel, Simbeor and MathWorks joint paper "Multi-Agent AI Systems for Autonomous Signal Integrity Analysis of PCB & Package Designs"; MathWorks SI/PI agent bootcamp — [Signal Integrity Journal](https://www.signalintegrityjournal.com/articles/4262-designcon-2026-ai-driven-infrastructure-and-system-level-design). The DesignCon tracks list "Use of AI (Artificial Intelligence) tools in PCB stack-ups and designs" — [DesignCon education](https://www.designcon.com/en/education/education-overview.html)
+- [P] Fuse EDA AI Agent debuted at NVIDIA GTC 2026 (Mar 16–19) — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/). DAC 2026: Siemens/NVIDIA self-verifying agents — [Siemens](https://news.siemens.com/en-us/siemens-nvidia-dac-2026/); DeepPCB booth 1561 — [EEJournal](https://www.eejournal.com/article/2000-ai-routed-pcbs-a-week/)
+- [P] DeepPCB at PCB East (2025-04-30) and Hardware Pioneers Max (2025-04-23 to 24) — [DeepPCB placement post](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/). Altium OnTrack podcast: three community boards routed live, with "said out loud which parts we can't handle yet" (arcs) — [DeepPCB blog](https://deeppcb.ai/natural-language-pcb-routing/)
+- [S] CadenceLIVE 2026: agentic roadmap pending customer co-design — [Futurum](https://futurumgroup.com/insights/cadencelive-2026-can-agentic-ai-finally-crack-3d-ic-design-automation/)
+- [P] Survey: Weidmuller USA 2026 PCB Design Tools survey (EETech Research, 400 North American engineers, Apr–May 2026, released 2026-07-31). 91% have used AI tools in PCB workflows; 75% see AI as a productivity layer within existing flows, not an autonomous step. *Second-hand via DeepPCB* — [DeepPCB blog](https://deeppcb.ai/pcb-routing-time/)
+- **Comparisons (vendor or partner):**
+  - [P] Quilter Speedrun: 38.5 h versus 428 h quoted, with SOM placement done by a human — [Quilter](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+  - [P] Sierra review: 58 findings, of which only 10 were physical design, and those mostly a process-tier miscommunication — [Quilter/Sierra](https://www.quilter.ai/blog/ai-designed-motherboard-dfm-dfa-lessons)
+  - [P] EMA/Allegro X AI: 25 min versus 70 min for placement; a feasibility study cut from a week to 29 min — [EMA case](https://www.ema-eda.com/ema-resources/case-study/case-study-accelerating-component-placement-with-allegro-x-ai/); [EMA blog](https://www.ema-eda.com/ema-resources/blog/everything-you-need-to-know-about-allegro-x-ai/)
+  - [P] Zuken: 45 min cut to 30 s — [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+  - [P] DeepPCB: 2–3 days cut to about 3 h plus cleanup; SAMD51 1 h 51 m versus ~56 h estimated — [DeepPCB](https://deeppcb.ai/pcb-routing-time/); [DeepPCB home](https://deeppcb.ai/)
+  - [P] PCBWorld-Bench: DeepPCB 0.929 versus Freerouting 0.75 versus GPT-5.4 0.42 — [DeepPCB](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)
+  - [P] JITX: 5–20× (unpublished data) — [JITX](https://blog.jitx.com/jitx-corporate-blog/whats-new-in-jitx-2025)
 
 ### Inferences
-- Vendor metrics are not comparable: they differ in what is counted (placement-only time vs total human hours vs machine time) and in board complexity. An open-source project could set itself apart by publishing reproducible benchmarks, for example PCBWorld's clean-pass metric plus physics scorecards, on open boards.
-- Practitioners consistently remain sceptical about SI-critical nets (DDR, RF, length matching). Every vendor either leaves these to humans or asks for explicit human-specified impedance targets.
+- An open project can lead on *transparent* evaluation: clean-pass on PCBWorld-Bench, multilayer boards, PRC-style physics checks and published failures. DeepPCB has started publishing failure breakdowns; others have not.
 
 ### Gaps
-- No session-level content found for IPC APEX, Siemens Realize LIVE, AltiumLive or CadenceLIVE PCB-specific AI talks for 2022–2026; session catalogs were unreachable.
-- No independent SI or measurement validation of any AI-generated board was found.
+- No session content found for IPC APEX, Siemens Realize LIVE or AltiumLive 2022–2026 (program pages are JS-rendered and search was unavailable).
+- No independent SI measurement study of AI-routed boards.
 
 ---
 
-## 7. Common architecture patterns revealed by disclosures
+## 7. Common architecture patterns revealed by the disclosures
 
 ### Takeaway
-The disclosures share a multi-stage, verify-everything pattern:
-1. comprehension/constraint compilation (often LLM- or heuristic-driven, with human confirmation)
-2. human-locked floorplan anchors
-3. placement by search or RL, generating many candidates
-4. fanout
-5. routing by a deterministic or RL engine
-6. pours/PDN
-7. physics and DRC scorecard used for ranking
-8. human cleanup
+The disclosures converge on five components:
+1. A **comprehension/setup layer**: heuristics or LLM, always human-confirmed.
+2. **Human floorplan anchors**: locked parts, rooms or regions, anchoring.
+3. A **search core**: RL (Quilter, DeepPCB, Flux, Cadence patents), NN-guided SMC (InstaDeep), GA with a learned fitness (Cadence), MCTS reportedly (Allegro X AI), or topological constraint-driven routing (JITX). It produces **many candidates** as a placement × router matrix.
+4. **Correct-by-construction solvers** for physics that can be computed (impedance, IPC width) plus **physics unit tests** (PRCs) for ranking.
+5. **Staged features** (fanout, pours, plane planning, length tuning) delivered as separate engines.
 
-Learning comes from simulators and synthetic boards (Quilter, DeepPCB, PCBWorld) or from curated human designs (Zuken), and LLMs act as orchestrators rather than geometry generators.
+LLMs appear only as orchestrators (Cooper, Fuse, JITX code editing, EasyEDA API Skill).
 
 ### Cited Findings
-- **Comprehension and constraint stage:**
-  - Quilter detects diff pairs from net names, then the engineer confirms them and sets impedance — [Quilter Compiling blog](https://www.quilter.ai/blog/compiling-an-ai-designed-computer). Quilter has a "Comprehensions page" — [Quilter changelog](https://www.quilter.ai/changelog)
-  - DeepPCB Cooper reports its understood stackup, net classes, diff pairs and planes before routing — [deeppcb.ai](https://deeppcb.ai/)
-  - Siemens Fuse uses RAG plus EDA-format parsers — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
-- **Human anchors:** Quilter treats parts inside the outline as locked — [Quilter product FAQ](https://www.quilter.ai/product). Flux and DeepPCB recommend hand-routing critical nets first — [Flux](https://www.flux.ai/p/blog/smarter-copilot-cleaner-layouts-fewer-bugs); [DeepPCB 80/20](https://deeppcb.ai/ai-pcb-design-80-20-rule/)
-- **Many candidates plus ranking:**
-  - Quilter: "thousands of generated candidate boards", with multiple candidates returned — [Quilter technology](https://www.quilter.ai/product/technology)
-  - Cadence: a larger explored solution space — [Cadence PR](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
-  - DeepPCB: time-budgeted best-so-far — [Electromaker](https://www.electromaker.io/blog/article/h1deep-pcb-ai-powered-cloud-native-pcb-routing-a-game-changer-for-hardware-engineersh1)
-  - PCBWorld: best of 5 rollouts by potential — [PCBWorld METRICS](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/METRICS.md)
-- **Search methods:**
-  - RL: Quilter, DeepPCB, Zuken (partly), Cadence patent — [Quilter](https://www.quilter.ai/product/technology); [InstaDeep](https://instadeep.com/2023/10/reinforcement-learning-on-google-cloud-tpus-to-improve-deeppcb/); [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future); [US 11599699](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11599699)
-  - MCTS: attributed to Allegro X AI — [Cypress ISPD 2025](https://www.csl.cornell.edu/~zhiruz/pdfs/cypress-ispd2025.pdf)
-  - Learned routability predictor inside placement — [US 12223248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
-- **Physics in the loop:**
-  - Quilter: Simbeor impedance plus scorecard — [AccessNewswire](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/automated-bga-fanout-headlines-quilters-2026-releases-that-expand-the-c-1188028); [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-  - Allegro X AI: SI/PI-aware placement — [Cadence PR](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
-  - JITX: HFSS dispatch — [JITX](https://www.jitx.com/)
-  - Siemens: Fuse with HyperLynx — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
-- **Reward shaping (fully public only in PCBWorld):** potential-based, log-shaped DRC penalty steepest near zero, per-net completion and clean bonuses, normalized wirelength, via penalty, invalid-action penalty — [PCBWorld reward YAML](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/configs/reward/pcbworld_reward.yaml). An MIT thesis on RL PCB placement that trained a neural routing-success predictor warns the process is "extremely vulnerable to reward hacking" — [Crocker MIT MEng thesis 2021](https://dspace.mit.edu/bitstream/handle/1721.1/139247/Crocker-pcrocker-meng-eecs-2021-thesis.pdf?sequence=1&isAllowed=y)
-- **Learning from prior designs:**
-  - Zuken Basic Brain (vendor library) and Dynamic Brain (customer designs; on-prem server) — [Zuken](https://www.zuken.com/us/resource/zuken-introduces-aipr-for-cr-8000-empowering-pcb-designers-with-innovative-ai-powered-place-and-route-technology/); [DE24/7](https://www.digitalengineering247.com/article/zuken-introduces-aipr-for-cr-8000/zuken)
-  - Cadence: corpus of routed boards for a routability model — [US 12223248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
-  - Quilter explicitly avoids human data — [Quilter technology](https://www.quilter.ai/product/technology)
-- **Staged feature rollout:**
-  - Quilter: BGA fanout (Jul 2026) and region pours (Q1 2026) as separate stages — [AccessNewswire](https://www.accessnewswire.com/newsroom/en/electronics-and-engineering/automated-bga-fanout-headlines-quilters-2026-releases-that-expand-the-c-1188028); [Quilter X](https://x.com/quilterai/status/2046574855131173243)
-  - Allegro X AI: separates placement, power-plane generation and critical-net routing — [Cadence PR](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
-- **Cloud burst compute:**
-  - Allegro X AI runs on cloud compute — [All About Circuits](https://www.allaboutcircuits.com/news/cadence-launches-cloud-ai-tool-to-shrink-pcb-placement-and-routing-times/)
-  - DeepPCB on GCP/TPU — [InstaDeep](https://instadeep.com/2023/10/reinforcement-learning-on-google-cloud-tpus-to-improve-deeppcb/)
-  - Quilter: 27 machine hours for Speedrun — [Quilter](https://www.quilter.ai/project-speedrun)
+- **Comprehension**:
+  - Quilter's heuristics and confirmation — [Quilter docs](https://docs.quilter.ai/physics-constraints/bypass-capacitors); [Compiling](https://www.quilter.ai/blog/compiling-an-ai-designed-computer)
+  - Cooper's read → summarize → propose → accept — [DeepPCB](https://deeppcb.ai/cooper-kicad-plugin/)
+  - Fuse "specialized parsers for EDA file formats" — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
+  - Zuken's multimodal "intent" extraction — [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
+- **Floorplan anchors**: [Quilter placement guide](https://docs.quilter.ai/guides/placement-guide); EMA lists fixed locations, component associations and power tree files — [EMA](https://www.ema-eda.com/ema-resources/case-study/case-study-accelerating-component-placement-with-allegro-x-ai/); Zuken requires components to be placed before the Smart Autorouter runs — [Zuken](https://www.zuken.com/en/product/cr-8000/ai-pcb-design/)
+- **Search cores**:
+  - InstaDeep SMC — [US 11,842,136](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11842136)
+  - Cadence hierarchical RL and learned fitness — [US 11,599,699](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11599699); [US 12,223,248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
+  - Quilter RL + solvers + geometry — [Quilter](https://www.quilter.ai/blog/pcb-autorouter-was-the-right-idea)
+  - Flux RL — [Flux](https://www.flux.ai/p/blog/introducing-ai-auto-layout)
+  - JITX topological constraint-driven router — [JITX](https://blog.jitx.com/jitx-corporate-blog/whats-new-in-jitx-2025)
+- **Candidate matrix and ranking**: Quilter X.Y candidates and lexicographic sort — [changelog](https://www.quilter.ai/changelog); [sorting](https://docs.quilter.ai/candidate-review/sorting). DeepPCB "stream of diverse design solutions… with key metrics" — [DeepPCB API](https://deeppcb.ai/deeppcb-api-your-pcb-design-ai-agent/). Allegro X AI parallel runs — [EMA](https://www.ema-eda.com/ema-resources/blog/everything-you-need-to-know-about-allegro-x-ai/)
+- **Placement quality dominates routing cost**: DeepPCB's longer placement (14 h) cut routing time and vias by about 30% — [DeepPCB](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/). Cadence: proxies correlate but don't rank near-equal candidates — [US 12,223,248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
+- **Correct by construction**: Quilter diff-pair geometry from Simbeor and IPC-2221 widths — [Quilter](https://www.quilter.ai/blog/pcb-autorouter-was-the-right-idea); [changelog](https://www.quilter.ai/changelog)
+- **Staged engines**: Quilter fanout, pours, plane-pour planning, IR drop, blind and buried vias — [changelog](https://www.quilter.ai/changelog). Allegro X AI: placement, pours, routing — [EMA](https://www.ema-eda.com/ema-resources/blog/everything-you-need-to-know-about-allegro-x-ai/)
+- **Data strategy split**:
+  - synthetic only — Quilter ([tech](https://www.quilter.ai/product/technology))
+  - internal design library — Cadence ([EMA](https://www.ema-eda.com/ema-resources/blog/everything-you-need-to-know-about-allegro-x-ai/)), Zuken ([PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future))
+  - synthetic plus corpus — DeepPCB ([DeepPCB](https://deeppcb.ai/reinforcement-learning-pcb-routing-explained/))
+- **Human edits in practice**: polygons, length tuning (via delay), high-current widening, a few part moves — [Quilter](https://www.quilter.ai/blog/cleaning-up-an-ai-designed-computer). Critical nets are pre-routed by hand in all DeepPCB benchmarks — [DeepPCB](https://deeppcb.ai/)
 
 ### Inferences
-- The commercially proven place to start is **"LLM understands, engines construct, checkers judge, humans approve"**. No vendor discloses an LLM emitting raw copper geometry as its production method. Where LLMs did route (Astra), reviewers found reliance on Freerouting and DFM blemishes such as vias in pads.
-- Ranking candidates with a multi-term physics/DRC score, rather than routing completion alone, is the strongest differentiator vendors claim.
+- The commercially proven division of labour is: **the LLM understands and configures; engines construct; checkers judge; humans approve.** Disclosed systems also add (i) a **candidate matrix** (several placements × several routers/strategies) and (ii) a **lexicographic ranking**: hard validity first, then physics priorities, then fabrication conservatism, then cost and length.
 
 ### Gaps
-- No vendor discloses its placement objective weights, how it handles thermal constraints, or how it handles EMI beyond the checks listed above.
+- Placement objective weights and thermal/EMI handling beyond the PRCs above remain undisclosed by every vendor.
 
 ---
 
 ## 8. Implications for an LLM-driven KiCad placer/router
 
 ### Takeaway
-Transferable lessons: put the LLM in charge of **comprehension, constraint compilation, floorplan intent and orchestration**, and leave geometry to KiCad's PNS router, Freerouting and a placement optimizer. Generate several candidates and rank them with a DRC plus physics scorecard modelled on Quilter's published checks. Gate on human confirmation of extracted constraints. Benchmark reproducibly with PCBWorld-style clean-pass metrics. Keep GPL boundaries clean and review the Cadence RL-PCB patent family before shipping a learned place/via/route policy.
+Build the open tool as **an LLM "comprehension and orchestration" agent over deterministic KiCad-native engines, with a Quilter-style PRC suite and lexicographic candidate ranking**:
+- Copy DeepPCB/Cooper's UX contract: read → summarize → propose → accept per item → single undo entry.
+- Copy Quilter's floorplan semantics (locked inside the outline, anchors, off-board regions).
+- Generate a placement × router candidate matrix.
+- Evaluate everything with re-opened-file DRC and PRCs.
+- Steer clear of the specific patented combinations flagged in Section 5.
 
 ### Cited Findings
-- A comprehension step with explicit human confirmation is common to Quilter (diff pairs from net names, engineer confirms impedance targets) and DeepPCB Cooper (reports what it understood before routing) — [Quilter](https://www.quilter.ai/blog/compiling-an-ai-designed-computer); [DeepPCB](https://deeppcb.ai/)
-- Lock and free convention: parts inside the outline are locked, parts outside are to be placed — [Quilter FAQ](https://www.quilter.ai/product)
-- Physics scorecard items an open tool can compute geometrically: bypass-cap pin distance, via-in-loop, cap trace length, switching-converter loop component proximity, diff-pair phase mismatch, coupling gap and reference-plane continuity, IPC ampacity widths, crystal placement — [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-- Engine-grounded action spaces work better than free coordinates or grids:
-  - PCBWorld agents use KiCad PNS actions over a candidate point set with action masks and DRC feedback.
-  - Their agents beat grid-action RL and open-loop LLM baselines.
-  - Their text wrapper serializes state as S-expressions for LLMs.
-  
-  Sources: [PCBWorld ENVIRONMENT.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/ENVIRONMENT.md); [arXiv 2607.05915](https://arxiv.org/html/2607.05915v1)
-- Ready-made reward and metric definitions (potential-based, log-DRC, clean pass, best-of-k) — [PCBWorld reward YAML](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/configs/reward/pcbworld_reward.yaml); [PCBWorld METRICS.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/METRICS.md)
-- LLM-plus-autorouter hybrid seen in the wild: Astra protected critical power, bootstrap and switching nets, then ran Freerouting for the rest — [JLCPCB](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad). DeepPCB positions LLMs as drivers of its router via API — [DeepPCB](https://deeppcb.ai/gpt-6-astra-pcb-routing-deeppcb/)
-- DFM hygiene is used as a visible quality gap between LLM-only routing and dedicated routers (9 of 32 Astra vias in pads vs 0) — [DeepPCB](https://deeppcb.ai/gpt-6-astra-pcb-routing-deeppcb/). A clean DRC covers only the rules that are enabled — [JLCPCB EasyEDA review](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-easyeda-pro)
-- Synthetic training data can transfer: PCBWorld's synthetic-only RL policy transferred zero-shot to real boards — [arXiv 2607.05915](https://arxiv.org/html/2607.05915v1). Quilter trains only on synthetic data — [Quilter](https://www.quilter.ai/product/technology)
-- Learning from human boards risks "dirty design" contamination — [PCD&F (Zuken)](https://www.pcdandf.com/pcdesign/index.php/editorial/the-digital-route-ipc-designer-s-council-news/17588-new-ai-tools-offer-look-and-questions-for-future)
-- Hard nets (DDR, length matching, RF, advanced impedance) remain human or constraint-heavy even for leaders — [JLCPCB](https://jlcpcb.com/blog/ai-tools-for-pcb-design); [DeepPCB 80/20](https://deeppcb.ai/ai-pcb-design-80-20-rule/); [Quilter diff-pair docs](https://docs.quilter.ai/physics-constraints/differential-pairs)
-- GPL architecture precedent: PCBWorld keeps its KiCad-linking engine GPLv3 behind a process and socket boundary, separate from a BSD environment — [PCBWorld-Engine README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld-Engine/main/README.md)
-- Code-first front ends emit KiCad layouts (Diode `pcb layout` → KiCad 10 files; JITX constraint code) — [diodeinc/pcb](https://raw.githubusercontent.com/diodeinc/pcb/main/README.md); [JITX](https://www.jitx.com/)
-- Agent guardrails in commercial agentic EDA: RBAC, audit trails, human checkpoints (Siemens Fuse) — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
+- **LLMs should not lay copper directly**:
+  - GPT-5.4 scores 0.42 and 0.00 clean-pass on PCBWorld-Bench against Freerouting 0.75 and 0.64 — [DeepPCB/PCBWorld](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)
+  - GUI-only Astra drew 3 segments in 1 h, while the orchestrated Astra used Freerouting — [NextPCB](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test)
+  - "Cooper orchestrates the routing engine. It doesn't lay copper" — [DeepPCB](https://deeppcb.ai/natural-language-pcb-routing/)
+- **Setup is the main failure mode**: "Autorouters don't fail at routing. Nobody configures them" — [DeepPCB](https://deeppcb.ai/natural-language-pcb-routing/). Quilter's commonest mistake is missing floorplan or pre-placement — [Quilter changelog](https://www.quilter.ai/changelog)
+- **Ready-to-copy comprehension heuristics**: _P/_N pairs; cap-between-pin-and-ground plus parent-pin priority; X/Y crystals; U + L converters; voltage-named and "Power"-class nets with 200/500 mA defaults — [Quilter docs](https://docs.quilter.ai/physics-constraints/bypass-capacitors); [crystals](https://docs.quilter.ai/physics-constraints/crystal-oscillators); [converters](https://docs.quilter.ai/physics-constraints/switching-converters); [power nets](https://docs.quilter.ai/physics-constraints/power-nets)
+- **Ready-to-copy PRC definitions and thresholds**: ground overlap except 2×clearance ends; >20 °C overheated and ≤10% of length; pin distance; layer switches ≤1; length mismatch; ±10% coupling spacing; ±10% width — [Quilter PRC docs](https://docs.quilter.ai/physics-rule-checks-prcs/overview)
+- **Ranking**: completion and DRC → priority PRCs → conservative fab → fewest layers → other PRCs → shortest — [Quilter sorting](https://docs.quilter.ai/candidate-review/sorting)
+- **Proxies**: HPWL and crossings correlate at r≈−0.92/−0.90 but give a routability spread of 0.83–0.94 at the same value, so route the top-k to rank — [Cadence US 12,223,248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
+- **Placement time pays back in routing**: [DeepPCB](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/)
+- **Net order matters most**: InstaDeep's patents centre on searching connection orders — [US 11,842,136](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/11842136). "The order and the constraints is probably the most difficult thing" — [Quilter](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
+- **Agent engineering patterns**: MCP tools, Agent Skills playbooks, supervisor/worker agents, recovery loops, human checkpoints, audit trails, self-verification against deterministic engines — [Siemens Fuse](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/); [Siemens DAC 2026](https://news.siemens.com/en-us/siemens-nvidia-dac-2026/). Code as ground truth with AI editing it — [JITX](https://www.jitx.com/). An editor API driven by Claude Code or Codex — [JLCPCB EasyEDA](https://jlcpcb.com/blog/ai-pcb-design-easyeda)
+- **Honest limits**: Quilter recommends <5,000 pins, <20% density, <6 GHz, ≤48 V, ≤10 A, and says it is not as good as skilled humans — [Quilter docs](https://docs.quilter.ai/about-quilter/what-quilter-does-well). DeepPCB does not model length matching, crosstalk, DDR or complex BGA fanout — [DeepPCB](https://deeppcb.ai/cooper-kicad-plugin/)
+- **Manufacturing reality**: most fab friction came from documentation, libraries, BOM and stackup or process-tier communication, not routing — [Quilter/Sierra](https://www.quilter.ai/blog/ai-designed-motherboard-dfm-dfa-lessons). A clean DRC only covers the checks that are enabled — [JLCPCB](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad)
+- **GPL boundary precedent**: PCBWorld keeps its KiCad-linking GPLv3 engine behind a socket — [PCBWorld-Engine](https://raw.githubusercontent.com/LGAI-Research/PCBWorld-Engine/main/README.md). The DeepPCB KiCad plugin is Apache-2.0 and talks to a cloud API — [DeepPCB](https://deeppcb.ai/cooper-kicad-plugin/)
 
 ### Inferences
-Concrete architecture lessons, synthesized from the above:
-1. **Stage the pipeline explicitly** and make each stage a checkpoint with machine-checkable outputs:
-   - (a) constraint comprehension: the LLM parses the schematic and net names into net classes, diff pairs, power nets, impedance targets, decoupling-cap-to-IC associations and switching loops, emitted as KiCad netclasses and custom rules
-   - (b) human confirmation UI
-   - (c) floorplan: locked anchors plus LLM-proposed functional clusters and regions
-   - (d) placement optimizer, producing N candidates
-   - (e) fanout for BGAs and fine-pitch parts
-   - (f) critical-net routing (diff pairs, power) with tight constraints
-   - (g) bulk routing by the KiCad PNS router or Freerouting
-   - (h) pours and stitching
-   - (i) DRC plus a physics scorecard
-   - (j) LLM-written review report listing residual risks
-2. **Do not have the LLM emit raw geometry for bulk routing.** Give it engine-grounded, candidate-set actions (the PCBWorld style) for critical nets, or have it call routers with per-net strategies, ordering and keep-outs.
-3. **Score and rank candidates with a multi-term potential**: unrouted, log-DRC, WL, vias, plus Quilter-style physics terms such as decap loop distance, via-in-loop, plane continuity under diff pairs, ampacity, crystal and switcher loop compactness. Return the top-k with an explanation. This also answers the DesignCon critique that "it won't teach you why".
-4. **Evaluate independently and reproducibly**: re-open saved `.kicad_pcb` files, run `kicad-cli` DRC against project rules, report clean pass, best-of-k and wallclock, and publish results on open boards. PCBWorld-Bench's 679 KiCad boards are a ready corpus.
-5. **Prefer synthetic or curated data over scraped human boards** for any learned components, to avoid both "dirty design" contamination and IP concerns.
-6. **Keep SI-critical classes (DDR, RF, length-matched buses) behind explicit human-specified constraints** at first, as Quilter and DeepPCB do.
-7. **Licensing:** any code linking KiCad (pcbnew Python/C++) is GPL. A non-GPL orchestrator, if wanted, should talk over IPC (KiCad's IPC API or a socket server), following the PCBWorld precedent.
-8. **FTO watch-list** before shipping a *trained RL policy* that selects place, via or route actions, or a learned routability predictor used in placement: US 11,599,699 and US 12,223,248 (Cadence/DARPA). Also watch US 12,566,911 (ML parasitic estimation shown in a layout GUI) and NVIDIA US 2025/0315590 (LLM-generated layout constraints, chip-level). An LLM orchestrating classical algorithms with analytic physics checks appears to fall outside these titles, but the claims must be checked by counsel.
+Concrete, transferable design for the open project:
+
+1. **Stage 0, comprehension (LLM + rules).** Parse the KiCad schematic and netlist and run the Quilter-style heuristics above. The LLM adds recall: datasheet-aware cap-to-pin mapping, interface recognition (USB, Ethernet, DDR), current estimates. Emit KiCad netclasses, custom DRC rules, diff pairs, rooms and proximity constraints. **Show a plain-language summary and require per-item accept or reject**, the Cooper pattern. Write each accepted change as one undoable transaction.
+2. **Stage 1, floorplan.** Respect locked parts inside the outline. Use schematic clustering, anchoring, and off-board versus on-board region semantics (copy Quilter's four levels). The LLM proposes rooms and edge assignments, and the human approves.
+3. **Stage 2, placement.** Use classical optimizers (analytic, force-directed, simulated annealing, GA) with cheap proxies (HPWL, crossings, PRC-based placement terms such as decap pin distance, crystal and converter loop size). Produce N diverse placements, then **route the top-k to rank** (the Cadence data shows proxies cannot separate near-equal candidates). Spend more placement time where the routing payoff is large, per DeepPCB's evidence.
+4. **Stage 3, fanout and critical nets.** Handle BGA fanout as its own stage. Size diff pairs and controlled impedance "correct by construction" with an analytic or field solver. Route power with width from IPC-2152/2221.
+5. **Stage 4, bulk routing.** Use the KiCad push-and-shove router (PCBWorld-style candidate actions) and/or Freerouting as engines. The LLM chooses net order, strategies, keep-outs and retries (several router strategies give the "X.Y" matrix). For FTO, keep order search deterministic or evaluate a few proposed orders by full routing, rather than NN/LLM-guided particle look-ahead with posterior selection.
+6. **Stage 5, pours and planes.** Generate plane and pour regions that cover same-net vias (Quilter's Aug 2026 approach), then refill and re-check.
+7. **Stage 6, verification and ranking.** Re-open the saved board and run `kicad-cli` DRC under the project's own rules with no categories silently ignored. Run the PRC suite. Rank lexicographically: clean-pass → priority PRCs → conservative fab → layers → other PRCs → length and vias. The LLM writes a review report that names every waived check.
+8. **Benchmarks.** Report clean-pass on PCBWorld-Bench (D3-A/B), plus multilayer boards and PRC pass rates. Publish failures. The vendors' numbers are not comparable, so open, reproducible numbers are a differentiator.
+9. **Learned components (optional, later).** Prefer synthetic or curated data (Quilter, PCBWorld). Before training a routability predictor or an RL place/via/route policy, review Cadence '699/'248 and InstaDeep '136/'968/'094. Before relying on an "LLM updates constraints → engine re-runs" loop, monitor NVIDIA 2025/0315590 prosecution and collect prior art.
 
 ### Gaps
-- Without patent claim text, the FTO flags above are based on titles, abstracts and description excerpts only.
-- No vendor discloses placement-objective weights or how it trades off thermal, EMI and SI terms, so the scorecard weights must be designed and tuned empirically.
-- Chinese vendors, Synopsys/Ansys PCB AI and conference-talk technical content remain unresearched because of tool limits in this session (WebFetch unreachable; web-search budget exhausted).
+- No vendor discloses multi-objective weights for placement (thermal, EMI, SI). The open project must tune them empirically against PRCs and benchmark outcomes.
+- The FTO notes are identification only. Claim construction and validity were not analyzed.
