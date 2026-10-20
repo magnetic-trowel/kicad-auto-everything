@@ -251,7 +251,7 @@
 - **Konnect: probing the socket wedged KiCad (#498).** Socket discovery that dialled the socket with a raw connect "never completes NNG's handshake, and afterwards KiCad answers no client at all — its own kipy included — until pcbnew restarts". Discovery now uses filesystem metadata only. — [commit 7e2d787](https://github.com/mixelpixx/Konnect/commit/7e2d787603406e6def19fed28f432d77696a55b3)
 - **KMS: units ignored on IPC.** IPC move/place handlers ignored the `unit` field, placing parts "at 1/25.4th of the intended position" when inches were given. — [commit 319a65b](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/319a65bd0b49e47fb4fcf2dd37be46f88fa29caa)
 - **PRO: KiCad 10 schema changes.**
-  - The KiCad 10 DRC JSON changed how courtyard violations are classified. — [commit 03238cae](https://github.com/oaslananka/kicad-mcp-pro/commit/03238cae9a22b1cfb72df1c5fe4d552a54aaa90a)
+  - Courtyard violations in KiCad 10 DRC reports needed a "schema-aware courtyard classifier" that also stays compatible with legacy reports. — [commit 03238cae](https://github.com/oaslananka/kicad-mcp-pro/commit/03238cae9a22b1cfb72df1c5fe4d552a54aaa90a)
   - Deleting a missing ID needs a KiCad 10-specific postcondition. — [commit 47056e46](https://github.com/oaslananka/kicad-mcp-pro/commit/47056e46eab4c9cea9afa5de5d4b8d1fd87f5afe)
 - **No headless DSN export on KiCad 10.**
   - Konnect writes its own fail-closed Rust exporter from the IPC snapshot, with an optional ActionPlugin bridge to `pcbnew.ExportSpecctraDSN`. — [KICAD_INTEGRATION.md](https://github.com/mixelpixx/Konnect/blob/9488e5f09717cb508cb25779dc16586d1f06f758/docs/KICAD_INTEGRATION.md)
@@ -431,7 +431,7 @@
   - A `manual_repair=true` success is "not publishable as autonomous success".
   - The README says its own native-live evidence "intentionally reports `insufficient_evidence`".
   - Sources: [reference-board-corpus.md](https://github.com/oaslananka/kicad-mcp-pro/blob/44617f39108c822ab2a02fc557bcffa802e66fea/docs/development/reference-board-corpus.md); [commit 2cd28fc8](https://github.com/oaslananka/kicad-mcp-pro/commit/2cd28fc8e24e070f2142b596afa20ce0c62ccb56); [README](https://github.com/oaslananka/kicad-mcp-pro/blob/44617f39108c822ab2a02fc557bcffa802e66fea/README.md)
-- **KMS tests.** About 2,309 test functions. `tests/conftest.py` installs `MagicMock` stubs for `pcbnew` (`GetBuildVersion` returns "9.0.0-stub") and for `skip`. Real-pcbnew smoke tests run only with `KICAD_USE_REAL_PCBNEW=1`. CI installs KiCad from the PPA. — [conftest.py](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/tests/conftest.py); [test_real_pcbnew_matrix.py](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/tests/test_real_pcbnew_matrix.py)
+- **KMS tests.** About 2,309 test functions. `tests/conftest.py` installs a `MagicMock` stub for `pcbnew` (`GetBuildVersion` returns "9.0.0-stub"), and a stub for `skip` when kicad-skip is not installed. Real-pcbnew smoke tests run only with `KICAD_USE_REAL_PCBNEW=1`. CI installs KiCad from the PPA. — [conftest.py](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/tests/conftest.py); [test_real_pcbnew_matrix.py](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/tests/test_real_pcbnew_matrix.py)
 
 ### Inferences
 - **What to adopt for our benchmark:**
@@ -475,7 +475,10 @@
     - KMS's Freerouting wrapper (best-of-N, hole-keepout growth, SES placement pruning, Java detection).
     - PRO's placement scorer, golden corpus and eval scorer.
   - Konnect code can legally be combined only under GPLv3 §13 + AGPL. That would put AGPL network obligations on the combined work, so copy patterns, not code.
-- **For a permissive project:** limit reuse to KMS, PRO and POA at v0.20.1 or earlier, which is MIT, and notably predates the CST board slices of 2026-08-10. POA's later transform fixes (October 2026) are GPL-only. Konnect is off-limits.
+- **For a permissive project:** limit reuse to KMS, PRO and POA at v0.20.1 or earlier (MIT).
+  - POA v0.20.1 already contains the CST substrate, atomic writes, the board CST slices and the measured footprint flip: commits 45ba30b and 456839d are ancestors of the 0.20.1 bump 511a50d (verified with `git merge-base`).
+  - It does not contain the October transform fixes (b588906 #59, cf501c7, 2d4a55f, fff4209). Those are GPL-only, and the MIT-era `_transform_local_to_board` carries the textbook-rotation bug.
+  - Konnect is off-limits.
 
 ### Gaps
 - The exact `git` tag for POA v0.20.1 was not fetched (only `v0.21.1` exists in the shallow clone). The bump commit above identifies it.
