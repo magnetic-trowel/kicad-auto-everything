@@ -148,7 +148,7 @@ Two kinds of serious automated layout products exist today. (1) **Cloud AI layou
 - **SKiDL**: see Section 2 — [GitHub](https://github.com/devbisme/skidl)
 
 ### Inferences
-- For a KiCad-native GPL-3.0 project, Freerouting is the obvious routing baseline and dependency: same license, active (four releases in five months), MCP and REST already built, explicitly aimed at LLM consumers (compact DRC), with a KiCad 10 IPC path and a public benchmark corpus.
+- For a KiCad-native GPL-3.0 project, Freerouting is the obvious routing baseline and dependency: same license, active (five releases from May to Oct 2026), MCP and REST already built, explicitly aimed at LLM consumers (compact DRC), with a KiCad 10 IPC path and a public benchmark corpus.
 - Quilter and DeepPCB are the quality bar for "AI layout", but both are closed cloud services. They suit benchmarking comparisons and optional user-facing integrations, not reusable components. Quilter publishes no API (none found).
 - Flux, Cadence and Zuken all keep routing of critical nets and placement intent human-led or tool-specific. "Full autonomy" claims hold mainly for small and medium boards.
 
@@ -161,7 +161,7 @@ Two kinds of serious automated layout products exist today. (1) **Cloud AI layou
 
 ### Takeaway
 Reusable open routing code exists at several quality levels:
-- Freerouting (Java, GPL-3.0; mature push-and-shove-free batch router with rip-up and an optimizer)
+- Freerouting (Java, GPL-3.0; mature batch router with fanout, rip-up passes and a post-route optimizer)
 - fastroute (Rust port of Freerouting, GPL-3.0)
 - KiCadRoutingTools (Rust/Python A* with diff pairs and fanout, MIT)
 - tscircuit capacity-autorouter (TypeScript, hypergraph/capacity-mesh, MIT)
