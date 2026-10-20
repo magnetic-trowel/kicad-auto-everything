@@ -2,7 +2,7 @@
 
 How this was researched, and its limits (two passes):
 - **Pass 1 (sections 1–8):** WebFetch could not resolve DNS, and the egress proxy blocked ti.com, analog.com and most vendor hosts. Every finding in sections 1–8 therefore came from extended web-search extracts of the cited documents. Treat all of it as **[S]** unless a bullet is explicitly re-tagged **[P]**.
-- **Pass 2 (sections 9–19 and additions marked [P]):** with full access, I downloaded primary PDFs and web pages with curl and read the relevant sections as text (pdftotext). WebFetch still failed on DNS, and analog.com still refused scripted downloads, so ADI app notes were read from mirrors where possible. This pass ended when the session's web-search budget ran out (200 searches across all agents). Topics that would have needed more searching are listed as gaps.
+- **Pass 2 (sections 9–19 and additions marked [P]):** with full access, I downloaded primary PDFs and web pages with curl and read the relevant sections as text (pdftotext). WebFetch still failed on DNS. analog.com redirects to a CDN host (www-cce.cldnet.analog.com) where the proxy tunnel closed mid-exchange on every attempt, so ADI/LT app notes were read from mirrors: AN-136, AN-139, AN47 (MIT copy). This pass ended when the session's web-search budget ran out (200 searches across all agents). Topics that would have needed more searching are listed as gaps.
 - **Provenance tags:**
   - **[P]** = I read this in the primary document itself (datasheet, app note, standard summary by the standard's user, or the author's own page) during pass 2.
   - **[P-sec]** = I read it in full, but the page is a secondary account of someone else's material (for example a course review).
@@ -155,7 +155,7 @@ Every source puts one rule first: find the loop that carries fully switched (pul
 - "Bigger SW copper for cooling" is wrong. Spread heat with vias from PGND or the EP instead.
 
 ### Gaps
-- Exact numeric content of SLYT614 steps 2–5, AN-136 and AN-139 (loop-area figures, nH values, via counts) could not be read directly because the PDFs were blocked.
+- AN-136 and AN-139 were read from mirrors in pass 2 (see the [P] bullets above). I did not re-read TI SLYT614 steps 2–5; a separate verification agent covers that.
 - No authoritative numeric maximum for hot-loop area or SW copper area was found. A target of 1 cm² for a boost appears only on a low-authority calculator page.
 - MPS and Würth "ANP" notes on hot-loop layout beyond ANP047, and Bob Pease and Jim Williams material, were not reachable or found in this session.
 - No primary source confirmed whether the shunt sense tap should be at the pad's inner edge or its centre. Use the shunt's datasheet land pattern.
