@@ -405,7 +405,7 @@ The product now puts an LLM setup agent ("Cooper", shipped 2026-06-18) in front 
   - The agent picks from a candidate point set with masked actions. State is exact-mm geometry, with an S-expression text wrapper for LLMs.
   - Reward is potential-based, with a log-shaped DRC penalty.
   - The metric is clean pass (fully connected and zero DRC errors).
-  - It includes 679 real KiCad boards. The engine is GPLv3 behind a socket boundary; the environment is BSD-3.
+  - It includes real open-source KiCad boards (from PCBench). [S] The arXiv abstract gives the count as 679. The engine is GPLv3 behind a socket boundary; the environment is BSD-3.
   
   Sources: [README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/README.md); [ENVIRONMENT.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/ENVIRONMENT.md); [reward YAML](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/configs/reward/pcbworld_reward.yaml); [METRICS.md](https://raw.githubusercontent.com/LGAI-Research/PCBWorld/main/docs/METRICS.md); [Engine README](https://raw.githubusercontent.com/LGAI-Research/PCBWorld-Engine/main/README.md); [arXiv 2607.05915](https://arxiv.org/abs/2607.05915)
 - [P] Published one-attempt clean-pass (paper Tables 21–22, as reproduced by DeepPCB): GPT-5.4 0.42 on D3-A and 0.00 on D3-B, against Freerouting 0.75/0.64 and PPO 0.81/0.22 — [DeepPCB benchmark post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)
