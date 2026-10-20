@@ -373,29 +373,69 @@ Constraint-aware PCB placement is still the biggest build-it-yourself area.
 - **OrthoRoute**: MIT, v1.0.0, KiCad 10+ IPC plugin. Manhattan lattice plus PathFinder negotiated congestion with a CUDA/CuPy (or Metal) SSSP kernel; "It is not a general-purpose PCB autorouter"; "useful to about five people on the planet" — [GitHub](https://github.com/bbenchoff/OrthoRoute)
 - **Topola**: MIT, Rust, "a work-in-progress interactive topological router", funded by NLnet NGI0 Entrust; main repository on Codeberg — [GitHub mirror](https://github.com/mikwielgus/topola)
 - **vygr C-PCB / JS-PCB / Python-PCB / Go-PCB**: GPL-2.0, last pushes 2024-02 (C++) and earlier (stale) — [C-PCB](https://github.com/vygr/C-PCB). **Ruby-PCB-Router** (topological rubberband): last push 2016 (stale) — [GitHub](https://github.com/StefanSalewski/Ruby-PCB-Router)
-- **Horizon EDA** (1,324 stars): its `3rd_party/router` directory contains `kimath` and `clipper_kicad` subfolders — [GitHub](https://github.com/horizon-eda/horizon/tree/master/3rd_party/router)
-- **LibrePCB** (3,026 stars) — [GitHub](https://github.com/LibrePCB/LibrePCB); **OpenROAD** (3,203 stars, RTL-to-GDS for chips) — [GitHub](https://github.com/The-OpenROAD-Project/OpenROAD)
+- **Horizon EDA** (1,324★, **GPL-3.0**, last push 2026-10-04):
+  - Its `3rd_party/router` contains `kimath` and `clipper_kicad`, and `3rd_party/router/router` holds KiCad's PNS sources (`pns_router`, `pns_shove`, `pns_walkaround`, `pns_diff_pair_placer`, `pns_meander_placer`, `pns_optimizer`, `pns_topology` and others) [P] — [GitHub](https://github.com/horizon-eda/horizon/tree/master/3rd_party/router/router); [licence via GitHub API](https://github.com/horizon-eda/horizon)
+  - Horizon's docs confirm "the interactive router originally developed for KiCad … Routing differential pairs is supported as well". They list **Autorouter as a non-goal**: "Writing a good autorouter is a lot of work … an autorouter is rarely useful for small to medium-sized boards" [P] — [Horizon feature overview](https://docs.horizon-eda.org/en/latest/feature-overview.html); [Non-goals](https://docs.horizon-eda.org/en/latest/non-goals.html)
+- **PCBWorld-Engine** (LG AI Research; GPLv3; created 2026-08-29; 5★): "KiCad's push-and-shove router exposed through a pybind11 binding and served to the environment over a unix socket. Derived from KiCad 9.0.8" [P] — [GitHub](https://github.com/LGAI-Research/PCBWorld-Engine)
+  - The paper describes **58 Python APIs**: "14 reproduce the core routing API of PNS::ROUTER, 28 directly wrap KiCad's DRC and board-state extraction APIs, and 16 provide auxiliary utilities". It is built "against KiCad 9.0.8 with kicad-python 0.6.0".
+  - Session primitives include `fix_route`, `cancel_route`, `finish` ("invokes the PNS router to complete the route to the Euclidean-nearest unconnected pad"), `flip_posture`, `toggle_via`/`switch_layer`, `set_routing_mode` (mark_as_obstacles / push_n_shove / walkaround) and `set_corner_mode` (45°/90°).
+  - Per-netclass widths and vias are pushed into PNS on net selection. Copper pours are not represented in the PNS routable space.
+  — [P] [PCBWorld paper (HTML)](https://arxiv.org/html/2607.05915)
+- **PCBWorld** (environment, agents, benchmark; **BSD-3-Clause**; v1.1.0; 31★): a Gymnasium environment with actions `ACT_NET_SELECT`, `ACT_START_ROUTE`, `ACT_MAKE_LINE` and `ACT_NET_END`. Baselines are PPO/GRPO transformer policies, LLM tool-calling agents (OpenAI/Anthropic/Gemini/Together) and rule-based routers (Freerouting, KRT) [P] — [GitHub](https://github.com/LGAI-Research/PCBWorld)
+- **route-rnd** (Ringdove/pcb-rnd external autorouter; Debian package 0.9.3-1 in trixie/forky/sid):
+  - "a generic 'external autorouter' … It speaks the tEDAx format … Route-rnd is a modular router that offers different routing algorithms".
+  - Licence **GPL-2+** (bundled libs are public domain, LGPL-2.1+ or BSD-3), so it can be combined with GPL-3.0.
+  - Router plugins: `rt_topo` (topological, with `libgrbs` "generalized rubber band sketch" and CRBS/TRBS variants), `rt_horver` and `rt_hace`.
+  - Its state page lists known limitations: the convex-only rt_topo/crbs leaves "unnecessary curves" and some rats "are not routed or go around far away obstacles in long detours", and rt_horver needs pins aligned "on a (preferrably >=100mil) grid". NLnet is named as a major supporter.
+  — [P] [Debian sources: README](https://sources.debian.org/src/route-rnd/0.9.3-1/README/); [debian/copyright](https://sources.debian.org/src/route-rnd/0.9.3-1/debian/copyright/); [doc/state.html](https://sources.debian.org/src/route-rnd/0.9.3-1/doc/state.html/); [doc/index.html](https://sources.debian.org/src/route-rnd/0.9.3-1/doc/index.html/)
+  - pcb-rnd itself was forked from gEDA PCB in 2013 and grew into the Ringdove suite (sch-rnd, camv-rnd, route-rnd) [P] — [Wikipedia: Pcb-rnd (wikitext)](https://en.wikipedia.org/w/index.php?title=Pcb-rnd&action=raw)
+- **gEDA PCB Toporouter:** "developed by Anthony Blake in a Google-funded open source project mentored by DJ Delorie in 2008 … mostly based on … Tal Dayan's 1997 PhD thesis, 'Rubberband based topological router'". Wikipedia adds "This router has meanwhile been adapted for use with the open-source KiCad project as well". I found no evidence of that in KiCad's source (KiCad's router is PNS), so treat the claim as dubious. The original project page is dead (archived 2011). It is historical, not maintained [P] — [Wikipedia: PCB (software) (wikitext)](https://en.wikipedia.org/w/index.php?title=PCB_(software)&action=raw)
+- **LibrePCB** (3,026★, **GPL-3.0**; 2.0.0 on 2026-01-28 with a new UI; 2.1.1 on 2026-06-12): no built-in autorouter. Since **1.2.0 (2024-12-01)** it supports "Specctra DSN Export / SES Import (#1457) … luckily you can now use an external autorouter like Freerouting". Its 2026 releases add no routing automation [P] — [LibrePCB 1.2.0 notes](https://librepcb.org/blog/2024-12-01_release_1.2.0/); [blog index](https://librepcb.org/blog/); [2.1.0 notes](https://librepcb.org/blog/2026-05-19_release_2.1.0/)
+- **OpenROAD** (3,203★, RTL-to-GDS for chips) — [GitHub](https://github.com/The-OpenROAD-Project/OpenROAD)
+- **rjwalters/kicad-tools** (MIT): file-based force-directed, evolutionary and hybrid placement; a CMA-ES/Bayesian `optimize-placement`; an A* autorouter with an optional C++ backend [P] — [GitHub](https://github.com/rjwalters/kicad-tools)
+- **tscircuit "Sequential Optimal Packing"** (blog, 2026-04-01):
+  - "Sequential Optimal packing sequentially packs chips in the Pack Order. Each time it packs a new chip, it selects the Optimal position based on the Cost Function", searching along the boundary of already-packed parts.
+  - The post argues plain space-minimising packing makes boards "nearly impossible to route", and force-directed placement gives odd shapes and local minima that are "wildly unpredictable".
+  - It notes "LLM loops can easily adapt the design intent representation" by hardening constraints, such as packing a decoupling capacitor with its chip.
+  — [P] [blog.autorouting.com](https://blog.autorouting.com/p/sequential-optimal-packing-for-pcb)
+- **tscircuit Z01 dataset** (2026-02-26): "1 million autorouting input and output sample images for training vision models to autoroute 2-layer printed circuits", produced by running `@tscircuit/high-density-a01` on random zero-obstacle 10×10 mm problems; published on Hugging Face [P] — [blog.autorouting.com](https://blog.autorouting.com/p/were-releasing-z01-1-million-autorouting)
+- **EasyEDA's Freerouting fork** (GPL-3.0, WebSocket server) — see Section 3 [P] — [GitHub](https://github.com/easyeda/easyeda-pcb-router)
+- **diodeinc/dsn** (Rust, 5★, no README or licence shown; presumably a Specctra DSN crate given the name) [P, purpose unconfirmed] — [GitHub](https://github.com/diodeinc/dsn)
 - **KiCad legacy autoplacer** (`ar_autoplacer.cpp`, 2011–2012) and `spread_footprints.cpp`, GPLv3+ — [KiCad source](https://gitlab.com/kicad/code/kicad/-/tree/10.0/pcbnew/autorouter); [LICENSE.README](https://gitlab.com/kicad/code/kicad/-/blob/master/LICENSE.README)
 - **RL_PCB**: MIT, "an end-to-end Reinforcement Learning PCB placement methodology" where each component acts as an agent. Paper: Vassallo & Bajada, "Learning Circuit Placement Techniques Through Reinforcement Learning with Adaptive Rewards" (DATE 2024). Trained on "a relatively small training dataset of 6 circuits"; Python 3.8, PyTorch 1.13, CUDA 11.7; 71 stars — [GitHub](https://github.com/LukeVassallo/RL_PCB)
 - **CadMust-Neo** (simulated annealing, KiCad plugin, 29 stars) — [GitHub](https://github.com/remiblokker/CadMust-Neo); **kicad-kbplacer** (543 stars) — [GitHub](https://github.com/adamws/kicad-kbplacer); **PlaceFootprints** (by sheet or pattern, v10 branch) — [GitHub](https://github.com/MitjaNemec/PlaceFootprints)
 - Freerouting lists **pcb-rnd** among its integrations — [README](https://github.com/freerouting/freerouting)
 
 ### Inferences
-- Horizon's `kimath` and `clipper_kicad` folders strongly suggest it embeds KiCad's PNS push-and-shove router. If so, the PNS router has been extracted from KiCad at least once, a useful precedent for running it outside the GUI. This is an inference; I did not open the files.
+- KiCad's PNS router has been extracted from KiCad **twice**: in Horizon EDA (a long-standing GUI app) and in PCBWorld-Engine (a headless pybind11 server built for agents). Both are GPL-3.0. PCBWorld-Engine is the most direct way for an LLM agent to run KiCad-native, DRC-aware interactive routing (route this net, shove neighbours, finish to the nearest pad) with no GUI. That is a primitive no other open router offers.
 - License compatibility for a GPL-3.0 project:
-  - Can be absorbed: MIT (KiCadRoutingTools, tscircuit, OrthoRoute, Topola, RL_PCB, kicad-python), Apache-2.0 (DeepPCB plugin, eda-agent), GPL-3.0(+) (Freerouting, fastroute, KiCad).
+  - Can be absorbed: MIT (KiCadRoutingTools, kicad-tools, tscircuit, OrthoRoute, Topola, RL_PCB, kicad-python, Diode `pcb`), BSD-3 (PCBWorld env), Apache-2.0 (DeepPCB plugin, eda-agent, copperhead), GPL-3.0(+) (Freerouting, fastroute, KiCad, Horizon, PCBWorld-Engine, LibrePCB, EasyEDA router), GPL-2+ "or later" (route-rnd).
   - GPL-2.0-only code (vygr routers; ReplicateLayout, unless "or later") cannot be combined.
   - AGPL-3.0 code (Konnect) can be combined only under GPLv3 §13, and the AGPL network clause then applies to that part. Treat it as reference only.
 - The weakest open component is global placement and floorplanning that respects PCB-specific constraints (connectors on edges, decoupling capacitors next to pins, thermal, keepouts, component classes). Analytical placers from the chip world (OpenROAD) address a different problem: millions of uniform cells versus tens to hundreds of heterogeneous parts with mechanical constraints.
 
 ### Gaps
-- I could not verify the status of the pcb-rnd autorouter (route-rnd), the gEDA toporouter, LibrePCB's autorouting roadmap, or OpenROAD's license and component modularity (repo.hu, librepcb.org and the docs sites were not reached).
-- I did not inspect Horizon's router files to confirm the PNS origin.
+- repo.hu (route-rnd home) stayed unreachable. Route-rnd facts come from Debian's source mirror (0.9.3, files dated 2016–2021), so post-0.9.3 development is unknown.
+- I did not test PCBWorld-Engine against KiCad 10 (it is pinned to 9.0.8) and did not measure its throughput or stability.
+- OpenROAD's license and component modularity were not checked. It targets chips, so it is low priority.
 
 ## 5. Public benchmarks and comparisons
 
 ### Takeaway
-Before 2026 there were no neutral, standard PCB placement or routing benchmarks. That is changing: Freerouting's 1,157-board PCBench (in-repo), tscircuit's datasets and benchmark dashboard, and the PCBWorld benchmark (Song et al., arXiv:2607.05915), which compares open routers including Freerouting, KiCadRoutingTools and OrthoRoute. Vendor numbers (Quilter Speedrun, DeepPCB's 27,721 boards, Cadence's 10×) are self-reported and not comparable to each other.
+Before 2026 there were no neutral, standard PCB routing benchmarks, and there are still **none for placement**. Routing now has:
+- the **PCBench** corpus (He et al., 2024; GitHub `PCBench/PCBench`, MIT), which Freerouting's in-repo "1,157-board PCBench" suite and PCBWorld's 679-board D3 set both derive from;
+- **PCBWorld-Bench** (LG AI Research, KDD 2026 workshop; read in full this pass), which scores routers, RL policies and LLM agents with the same 8 KiCad-engine metrics;
+- tscircuit's datasets (including the 1M-sample Z01) and its dashboard.
+
+Agent-level benchmarks also appeared: EEBench (atopile; analog and digital design in simulation, **layout explicitly out of scope** in v1), EDA-bench (35 KiCad project-reconstruction tasks, ICML 2026), and devbisme's informal multi-tool KiCad test bed.
+
+PCBWorld's results are the most useful single data point for this project:
+- Freerouting is the strongest rule-based router (clean pass 0.80 on 99 small real boards, 0.78 on medium ones).
+- LLM agents acting through KiCad's native router with DRC feedback reach 0.65 (GPT-5.4).
+- The same model drops to 0.19 in plan-then-execute mode and 0.02 when it emits geometry without the engine.
+- Every LLM scores 0.00 on medium boards.
+
+Vendor numbers (Quilter Speedrun, DeepPCB's 27,721 boards, Cadence's 10×) are self-reported and not comparable.
 
 ### Cited Findings
 - Freerouting PCBench: 1,157 fixtures added to the repo in v2.4.x. v2.5.0 reports clean-board completion rising from about 31% to 75% (self-reported) — [Freerouting releases](https://github.com/freerouting/freerouting/releases). Scoring definitions are in [docs/scoring.md](https://github.com/freerouting/freerouting/blob/master/docs/scoring.md)
