@@ -162,6 +162,61 @@ The workarounds are just as consistent:
   - Source: [KiCad forum thread (via Discourse JSON)](https://forum.kicad.info/t/kicad-agentic-mcp-an-ai-assistant-that-edits-your-board-through-kicads-own-api-and-lets-kicad-decide-whether-the-result-is-good/71403)
 - **atomic14 (July 2025) [snip][A].** Claude Code (better than Cursor) with atopile produced an ESP32-S3 board. The first build left components unwired, and the EN RC was missing its capacitor. Layout was done in KiCad by hand. — [atomic14](https://atomic14.substack.com/p/vibe-coding-a-pcb-surprisingly-good)
 
+**A2. Long-form agent field logs from tool builders (READMEs and docs read in full via raw.githubusercontent.com)**
+
+- **nexatech-ltd/kicad-agent-toolkit: "Lessons learned" from an agent taking a dense 6-layer mixed-signal board (~370 footprints, ~1,700 pads) to a DRC-clean fabrication release [read][A/G].** This is the most detailed agent-driven layout failure catalogue found: "over a hundred failures, each with its symptom, cause and the rule that came out of it." Selected entries:
+  - **State and API traps:**
+    - "Pad angles in the board file are absolute and default to 0" (201 of 1,763 pads had wrong outlines "and the gate still passed").
+    - "Flip in KiCad is a mirror in Y plus 180°."
+    - "Where pad 1 goes under rotation is measured, not derived."
+    - `SaveBoard` silently changed the net of a new via ("three hours went into 'the router can't see its via'").
+    - Rule areas inside footprints are stored in board coordinates, so an antenna keepout landed at the origin.
+    - S-expression parsing bugs (regex, bracket counting, fixed windows) produced phantom nets.
+  - **Routing:**
+    - **Per-net monotone acceptance:** "Ten unattended rounds went 256 → 226 at zero violations, and none of them would have passed whole."
+    - Hiding vias from Freerouting made it "six times faster and every round unusable (149 shorts on import)." The lesson is to judge a helper flag by the acceptance verdict, not by the router's own numbers.
+    - "For the last breaks the maze router beats Freerouting" (0.1 s and 5.5 s against campaigns that made zero progress).
+    - "Read 'no path' by the cell count": a small count means a locked pad, so fix placement; millions means a blocked corridor, so rip the named wall nets.
+    - **"Learning isn't the bottleneck. The last dead ends closed by computable geometry, not by path search. Formalise the moves… as deterministic tools."**
+  - **Placement:**
+    - "QFN pins are locked by local support parts, not board size": +10 mm of board gave *more* breaks, 136 versus 118.
+    - "Via size is a routing-capacity knob."
+    - "A pin boxed in by neighbours: move the signal to a pin with via room" (four signals routed on the first round after twelve failed rip-up rounds).
+    - "Search placements with the real rules": a simplified search said "nowhere," while an exact search found 6,254 valid positions.
+    - "`declash` moves by courtyard and ignores copper": one overlap fixed and 59 new violations.
+    - "In a buck converter the fast loop is the input loop."
+  - **Verification:**
+    - **"A check that didn't run reports zero"** (six silent-clean cases).
+    - **"A write that didn't happen reports success"** ("widened 36 segments" with no bytes changed, caused by a `0.15` vs `0.1500` string mismatch).
+    - "The gate log needs an input fingerprint" (an ERC count was quoted from a log 58 s older than the last save).
+    - The KiCad GUI's "Update PCB from Schematic" (F8) found mismatched transistor pin numbers and pads without nets that ERC, DRC and parity all missed.
+    - "A check must separate defect from decision."
+    - "Expected values are the most productive check."
+    - "Topology isn't values": mode-select resistors must cite the datasheet table row.
+    - A `--severity-error` filter "once hid 20 hole_to_hole items, 19 of them below the fab minimum."
+  - **Agent hygiene:**
+    - "When the agent's shell gets blocked, stop and write a resume point."
+    - "Work autonomously; interrupt only for GUI or a blocking decision… Search the project documents before asking."
+    - The session transcript can rebuild lost scripts.
+  - **Agent rules (AGENTS.md):**
+    - "KiCad is the judge… Your own model of the board is a hypothesis; DRC is the fact."
+    - "Plan first, then `--apply`."
+    - "Work on a copy, accept monotonically."
+    - "Quote the gate only with its fingerprint."
+    - "Some checks need a human with the GUI."
+  - Sources: [lessons-learned.md](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/docs/lessons-learned.md); [methodology.md](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/docs/methodology.md); [AGENTS.md](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/AGENTS.md); [README](https://github.com/nexatech-ltd/kicad-agent-toolkit)
+- **haohao-0725, "PCB Layout with an AI Agent in KiCad" (kicad-clean-pcb skill) [read][A].**
+  - **Why it exists:** "The agent's first attempt used automatic placement and grid routing. It passed DRC, but it had: about 10,000 zigzag track segments, four copper pours, a layout nobody could follow." The restructured board had about 600 segments, 30 vias, one GND plane, and a third less area.
+  - **The late paper check:** "The 1:1 paper check came too late, after routing. It found a USB port blocked by a header row, a fuse holder whose pitch didn't match the real part, and a terminal block that duplicated one already on a module."
+  - **Resulting workflow:** 7 stages with 4 checkpoints. The user chooses a style preset ("Tidy & readable / Compact / Robust," plus 17 axes), and approves every add-on circuit in a yes/no `PCB_DECISIONS.md` ("A blank row means 'not approved'"). Routing happens only after a **1:1 printout check**, one function group at a time with DRC after each group. "Nothing unrequested… And no silently skipped protection either."
+  - Source: [haohao README](https://github.com/haohao-0725/PCB_Layout_with_AGENT_in_KiCAD)
+- **Gato513/kicad-mcp [read][A].** The flow was "validated up to 63 footprints / 48 nets / 2 layers." On a 437-footprint, 380-net, 4-layer HackRF One board, "the autorouter did not complete." Freerouting 2.1.0 entered "an internal crash-loop… no routing progress for a full hour," and `add_zone(fill=true)` "can crash KiCad after 3-4 consecutive calls on large boards." The README states this limits section "exists because a colleague who tries this on their own board deserves to know where it stops working *before* they hit it." — [Gato513 README](https://github.com/Gato513/kicad-mcp)
+- **KiCadRoutingTools (atomic14) with a Claude tab [read][V/A].**
+  - `/plan-pcb-routing` has Claude analyze the board (fanout needs, diff pairs and DDR, power nets, GND return vias) and produce a routing plan that **"fills the parameter fields across the tabs and appears as a checkable step list, which Run Selected Steps executes sequentially… with per-step status marks."**
+  - Plans can be saved and loaded as JSON and replayed "with no Claude call."
+  - Per-field "Ask Claude" buttons cover power widths, stackup and diff-pair verification, with a live transcript and cancel.
+  - Source: [KiCadRoutingTools README](https://github.com/atomic14/KiCadRoutingTools)
+
 **B. "Computer use" versus API/scripting**
 
 - I still found **no documented Claude computer-use experiment that places or routes in the KiCad GUI**.
@@ -207,7 +262,25 @@ The workarounds are just as consistent:
   - Native IPC commit groups make one multi-step agent edit a single KiCad undo step (tested on KiCad 10.0.5). — [kicad-mcp-pro #728](https://github.com/oaslananka/kicad-mcp-pro/issues/728); [PR #808](https://github.com/oaslananka/kicad-mcp-pro/pull/808)
   - Schematic creates are chunked inside one commit, so one Undo restores the prior state. — [Konnect PR #752](https://github.com/mixelpixx/Konnect/pull/752)
   - File-level before-images are used for rollback. — [kicad-agentic-mcp](https://github.com/nevenfo/kicad-agentic-mcp)
-- **Explicit AI/deterministic boundary (CopperMCP):** "AI may interpret constraints and propose net ordering, corridors, cost weights, and repairs. Deterministic code owns geometry, connectivity, DRC, provenance, and file mutation." Generated work stays "an immutable candidate until a user validates and explicitly applies it," and route previews have "no apply path." — [Glama listing](https://glama.ai/mcp/servers/seunghyukchoe/copper-mcp). Copperhead uses a similar rule: nothing touches a file until a validated change proposal exists. — [everydev](https://www.everydev.ai/tools/copperhead/llms.txt)
+- **Explicit AI/deterministic boundary (CopperMCP) [read README].**
+  - "AI may interpret constraints and propose net ordering, corridors, cost weights, and repairs. Deterministic code owns geometry, connectivity, DRC, provenance, and file mutation."
+  - The board is read "as typed, exact-integer geometry… without ever letting the model write copper."
+  - "Every generated result is an immutable candidate bound to an exact board revision" (SHA-256).
+  - Exactly two operations write, and both are "off by default behind an operator environment flag plus an operation-scoped single-use token that no model can mint."
+  - Source: [CopperMCP README](https://github.com/seunghyukchoe/copper-mcp). Copperhead uses a similar rule: nothing touches a file until a validated change proposal exists. — [everydev](https://www.everydev.ai/tools/copperhead/llms.txt) [snip]
+- **CopperLoop (PaoloJN) [read README]:**
+  - The core loop is **"propose → gate → accept":** IPC edits are made "one commit per change, undoable with Ctrl+Z," `kicad-cli` "is the only truth," and "a change stays only if the violation and unconnected counts did not get worse."
+  - **"The agent must look. Region renders per layer before claiming anything is routed."**
+  - Route specs are JSON lists of points and vias kept in the project as "the record of every route the agent made."
+  - Edit tools are plan-only unless `--apply`.
+  - Source: [CopperLoop README](https://github.com/PaoloJN/copperloop)
+- **kicad-agentic-mcp (nevenfo) [read README]:**
+  - Layers: "LLM planning where reasoning is useful → Deterministic compile + refusal (a plan that cannot finish never starts) → Transactional execution (revisions, idempotency, rollback) → Independent validation + evidence."
+  - Coordinates are "grid-snapped" by the operation library, never chosen freely by the model.
+  - "Validator findings carry stable ids, so a fix is an id that disappeared."
+  - **"Objective, constraints, verified facts, failed attempts and evidence live server-side and survive a context compaction or a model swap."**
+  - Source: [kicad-agentic-mcp README](https://github.com/nevenfo/kicad-agentic-mcp)
+- **kicad-mcp-pro [read README]:** "starts with the bounded `default` profile: 24 read-only review tools instead of the complete expert catalog. Use `build` with write mode for controlled edits, `release` with manufacturing mode for human-gated handoff." SI/PI/EMC/thermal tools are closed-form estimates. — [kicad-mcp-pro README](https://github.com/oaslananka/kicad-mcp-pro)
 
 **D. Commercial AI layout tools in the field (read in full unless marked)**
 
@@ -274,9 +347,11 @@ The workarounds are just as consistent:
 - Many failures are **tool bugs**. If tool geometry, checks or state (saved file versus live board) diverge from KiCad's, the agent chases phantom errors or misses real ones.
 - LLM agents run into the same kind of problem as unbounded autorouter runs: endless fix loops (tinycomputers; ESP32 firmware agent in StationX). A loop budget and an explicit "stop and escalate" policy are required.
 - **LLMs add real value at the "noticing" level.** They can say "unrouted nets cluster in one region; spread U6–U10," flag a decap that is too far away, or catch a datasheet mismatch. They are far less useful when computing exact coordinates. A placer/router should expose congestion and failure attribution to the LLM so it can make this kind of contribution.
+- **The best-documented large agent-driven board (kicad-agent-toolkit, about 370 footprints, 6 layers) did not succeed by giving the LLM more freedom.** It succeeded by building **a library of deterministic, measurable moves**: per-net acceptance, rip only the named wall nets, move a signal to a pin with via room, change via size, nudge support parts, exact-geometry placement search. Each move came with a diagnostic that tells the agent which move applies (cell counts, free-cell maps, escape capacity). This is the strongest field evidence for "LLM chooses moves; tools compute and judge."
+- **Passing DRC can coexist with an unusable layout:** about 10,000 zigzag segments in the haohao case, "horrendous tracks" in A6M-Zero, and "larger and less tidy" boards elsewhere. Mechanical and real-part mistakes (a blocked USB port, a wrong fuse-holder pitch) surface only in a physical or 1:1 check. Readability and mechanical-fit gates belong in the loop before routing.
 
 ### Gaps
-- GitHub issue threads were not read in full because github.com is blocked by session policy, so §1C rests on snippets. To mine issues fully, the user would need to attach the relevant repositories (mixelpixx/KiCAD-MCP-Server, mixelpixx/Konnect, oaslananka/kicad-mcp-pro, ProductOfAmerica/mcp-server-kicad).
+- GitHub *issue threads* were not read in full because github.com issue pages and the API are blocked by session policy, so the issue items in §1C rest on snippets. READMEs and docs were read via raw.githubusercontent.com. To mine issues fully, the user would need to attach the relevant repositories (mixelpixx/KiCAD-MCP-Server, mixelpixx/Konnect, oaslananka/kicad-mcp-pro, ProductOfAmerica/mcp-server-kicad).
 - I found no documented Claude computer-use KiCad GUI layout experiment.
 - I could not watch the Altium Academy "168 vs 0" video, so its methodology is unknown.
 - The Diode Sonnet-preference statistic and the Adafruit/Flux episode remain unverified.
@@ -411,7 +486,18 @@ Reliability came from the following:
   - Sources: [JLCPCB](https://jlcpcb.com/blog/kicad-mcp-how-to-design-a-pcb-with-claude-code); 24 read-only of 377 tools by default per its README [snip] — [kicad-mcp-pro](https://github.com/oaslananka/kicad-mcp-pro)
   - The EasyEDA bridge has no authentication, so add a token and an Origin check. — [JLCPCB](https://jlcpcb.com/blog/claude-code-pcb-design)
   - Diode's reviewer is read-only and "does not edit your files." — [Diode](https://blog.diode.computer/hardware-review)
-- **Undo and transactions [snip][G]:** native commit groups give one undo step per agent edit (kicad-mcp-pro #728/#808, Konnect #752). Propose-then-apply candidates with "no apply path" previews: CopperMCP (see §1C). Monotone acceptance, where a change stays only if violation and unconnected counts did not get worse: CopperLoop and kicad-agent-toolkit, as summarized by search; repositories not read.
+- **Undo, transactions, candidates, monotone acceptance [read READMEs / snip issues]:**
+  - Native commit groups give one undo step per agent edit (kicad-mcp-pro #728/#808, Konnect #752) [snip].
+  - CopperMCP uses immutable, revision-bound candidates with a single-use apply token that no model can mint [read].
+  - CopperLoop and kicad-agent-toolkit use monotone acceptance, plan-first `--apply`, and work on a copy [read].
+  - kicad-agent-toolkit snapshots, places copper, runs DRC, then **prunes objects from this run that DRC flagged**, so "only copper that DRC accepted stays on the board" [read].
+  - kicad-agentic-mcp keeps an idempotency ledger, a snapshot journal and server-side task state [read].
+  - Sources: §1A2 and §1C.
+- **Planner output as an editable, checkable step list [read]:** KiCadRoutingTools' Claude tab turns an LLM routing plan into GUI parameters plus a checklist of steps the user can select and run, then saves it as replayable JSON. — [KiCadRoutingTools](https://github.com/atomic14/KiCadRoutingTools)
+- **Human checkpoints and decision files [read]:**
+  - haohao's `PCB_DECISIONS.md` yes/no handshake ("blank row means not approved") and the 1:1 printout before routing. — [haohao](https://github.com/haohao-0725/PCB_Layout_with_AGENT_in_KiCAD)
+  - kicad-agent-toolkit asks a human for the GUI-only F8 check at milestones. — [AGENTS.md](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/AGENTS.md)
+- **Proof that checks ran [read]:** "A check that did not run reports zero… `gate.sh` prints `skipped` for checks it could not run; do not report those as passed"; gate verdicts carry an input SHA fingerprint. — [AGENTS.md](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/AGENTS.md)
 - **Refusal and honesty in tool semantics [snip][G]:** planners refuse unverifiable outlines (#684); "applicable" only if inside the outline and the score improves (#638); exact references required instead of guessing; tool names corrected to say what they measure (#528).
 - **Grounding [read]:**
   - The EasyEDA API reference lets the model "look up real method signatures instead of guessing them." — [JLCPCB](https://jlcpcb.com/blog/claude-code-pcb-design)
@@ -534,7 +620,7 @@ Read in full, the classic and recent literature converges on six points.
 **Design rationale**
 - **Karsenty (CHI '96) [snip][S]:** captured rationale answered only 41% of six professional designers' questions about a past design (paywalled; snippet). — [ACM DL](https://dl.acm.org/doi/fullHtml/10.1145/238386.238462)
 - **IBIS and QOC barriers [snip][S]:** capture overhead and interruption of flow; early IBIS successes didn't scale; retrieval from large, decontextualized argument records is hard. — [Buckingham Shum](https://www.semanticscholar.org/paper/QOC-Design-Rationale-Retrieval:-A-Cognitive-Task-Shum/65037a32d6bb6d068f773edab54adf6d567d2dca); [gIBIS/QOC 15 years on](https://www.researchgate.net/publication/42790084_Hypermedia_support_for_argumentation-based_rationale_15_years_on_from_gIBIS_and_QOC)
-- **LLM-generated design rationale (Zhao et al.?, ACM TOSEM 2025) [read abstract][S]:**
+- **LLM-generated design rationale (Zhou, Li, Liang, Zhang, Shahin, Li; ACM TOSEM 2025) [read abstract][S]:**
   - **Setup:** 100 architecture problems, five LLMs, and zero-shot, CoT and agent prompting, scored against expert rationale.
   - **Scores:** **precision 0.267–0.278, recall 0.627–0.715.**
   - **Arguments not mentioned by the experts:** "64.45% to 69.42%… are also helpful," while "1.59% to 3.24%… are potentially misleading."
@@ -542,7 +628,7 @@ Read in full, the classic and recent literature converges on six points.
 - **ADR generation [snip][S]:** naming "Architectural Decision Record" in the prompt improved zero-shot output, though results stay below human level. — [arXiv 2403.01709](https://arxiv.org/pdf/2403.01709)
 - **PCB-specific rationale need [read]:**
   - Diode: review is "reconstructing the intent of the engineer," and "intent lives outside the file." — [Diode](https://blog.diode.computer/hardware-review)
-  - JLCPCB on reuse: a forum commenter notes you must work out "which layout decisions mattered" when reusing reference circuits [snip]. — [atopile search context](https://forum.kicad.info/t/open-ai-claims-gpt-6-astra-can-make-pcb-boards/71487)
+  - On reuse, a KiCad-forum commenter (seen only via a search summary) notes that you must work out "which layout decisions mattered" when reusing reference circuits [snip]. — [KiCad forum](https://forum.kicad.info/t/open-ai-claims-gpt-6-astra-can-make-pcb-boards/71487)
   - DeepPCB on RL: "can't articulate the underlying principle." — [DeepPCB](https://deeppcb.ai/the-autorouter-broke-your-trust-heres-whats-actually-different-now/)
 
 ### Inferences
@@ -620,6 +706,8 @@ Build a **mixed-initiative orchestrator**:
 - **Invisible failures:** [A6M-Zero](https://a6mzero.com/posts/this-pcb-is-brought-to-you-by-fable-5/), [JLCPCB EasyEDA Astra](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-easyeda-pro), [Adom](https://wiki.adom.inc/api/pages/adom/kicad-board-audit/files/README.md), [Cherry Blossom](https://www.trycherryblossom.com/blog/gpt-6-astra-pcb-design)
 - **Loops and when to stop:** [tinycomputers](https://tinycomputers.io/posts/what-routing-314-nets-taught-me-about-ai-assisted-pcb-design.html), [blwfish PR #158](https://github.com/blwfish/kicad-mcp/pull/158), [Flux winter](https://www.flux.ai/p/blog/ai-auto-layout-winter-update)
 - **Noticing congestion helps:** [tinycomputers](https://tinycomputers.io/posts/what-routing-314-nets-taught-me-about-ai-assisted-pcb-design.html)
+- **Large-board agent methodology** (deterministic moves, per-net monotone acceptance, prune-to-DRC, checks that prove they ran): [kicad-agent-toolkit lessons](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/docs/lessons-learned.md), [methodology](https://raw.githubusercontent.com/nexatech-ltd/kicad-agent-toolkit/main/docs/methodology.md)
+- **Candidate/apply boundary, server-side state, editable plans, decision files:** [CopperMCP](https://github.com/seunghyukchoe/copper-mcp), [kicad-agentic-mcp](https://github.com/nevenfo/kicad-agentic-mcp), [CopperLoop](https://github.com/PaoloJN/copperloop), [KiCadRoutingTools](https://github.com/atomic14/KiCadRoutingTools), [haohao](https://github.com/haohao-0725/PCB_Layout_with_AGENT_in_KiCAD)
 - **Latency and nondeterminism:** [KiCad Agentic MCP](https://forum.kicad.info/t/kicad-agentic-mcp-an-ai-assistant-that-edits-your-board-through-kicads-own-api-and-lets-kicad-decide-whether-the-result-is-good/71403), [DEV](https://dev.to/dibyaprakash_pradhan/kicad-and-ai-in-2026-mcp-servers-scripts-and-what-actually-works-3p1a)
 - **HCI evidence:** [Horvitz](https://www.erichorvitz.com/chi99horvitz.pdf), [Amershi](https://www.microsoft.com/en-us/research/uploads/prod/2019/01/Guidelines-for-Human-AI-Interaction-camera-ready.pdf), [Krarup](https://arxiv.org/pdf/2103.15575), [OptiChat](https://arxiv.org/pdf/2501.08406), [Bansal](https://arxiv.org/pdf/2006.14779), [Vasconcelos](https://arxiv.org/pdf/2212.06823), [Buçinca](https://kgajos.seas.harvard.edu/papers/bucinca21trust.pdf), [Gmeiner](https://arxiv.org/pdf/2303.00192), [Dream Lens](https://research.autodesk.com/app/uploads/2023/03/dream-lens-exploration-and.pdf_recFfqgLe5eOFLays.pdf), [Sketchplore](https://research.aalto.fi/en/publications/sketchplore-sketch-and-explore-with-a-layout-optimiser/), [Zhang/Cagan](https://pure.psu.edu/en/publications/a-cautionary-tale-about-the-impact-of-ai-on-human-design-teams/), [DR-LLM](https://arxiv.org/abs/2504.20781)
 
@@ -660,10 +748,20 @@ Build a **mixed-initiative orchestrator**:
    - compact JSON summaries (per-net status, per-region congestion, top-N violations with object IDs and coordinates);
    - truncation metadata (`_total`, `_truncated`);
    - labeled renders (refdes, highlighted nets, violation markers, region crops) only as a secondary channel.
-10. **Failure attribution for "noticing."** When a solver stalls, return *where* and *why*: "49 unrouted, 80% terminating in region R near U6–U10; channel capacity X versus demand Y." The LLM is good at turning that into a placement-change hypothesis.
+10. **Failure attribution for "noticing."** When a solver stalls, return *where* and *why*: "49 unrouted, 80% terminating in region R near U6–U10; channel capacity X versus demand Y." The LLM is good at turning that into a placement-change hypothesis. Use kicad-agent-toolkit-style diagnostics:
+    - a "no path" cell count, where small means a locked pad and large means a blocked corridor;
+    - wall-net identification;
+    - escape capacity per fine-pitch package;
+    - via-spot scans.
+11. **A library of deterministic "moves" the LLM selects from**, each one measurable and revertible: rip named wall nets, move a signal to a pin with via room (with an alternate-function table), change via size, nudge support parts, re-fanout, exact-geometry placement search (`fit_near`), and temporary keepouts for policies the router can't know.
+12. **Prune-to-DRC writes:** snapshot, write copper, run DRC, then delete *this run's* flagged objects by UUID. Only DRC-accepted copper survives, and every pruned item points to a missing rule in the tool's model.
+13. **Proof that checks ran:** every check reports "checked / defect / not checked" plus input counts, and every gate verdict carries an input fingerprint (a board/schematic hash). A log older than the last edit is never quoted.
+14. **Revision-bound candidates and a human-only apply token.** Proposals are bound to a board hash, and applying requires a token the model cannot create (CopperMCP). Task state (objective, constraints, verified facts, failed attempts, evidence) lives server-side, so it survives context compaction or a model swap (kicad-agentic-mcp).
 
 **B. Agent loop**
-1. **Interpret → confirm → constrain → place (solver) → placement gate (check + render) → route critical → lock → autoroute rest → refill + locked-copper check → DRC/parity/semantic/DFM gate → triage → repeat.**
+1. **Interpret → confirm → constrain → place (solver) → placement gate → route critical → lock → autoroute rest → refill + locked-copper check → DRC/parity/semantic/DFM gate → triage → repeat.**
+   - The placement gate covers: check, render, readability metrics, escape-capacity check, and a mechanical or 1:1 fit check.
+   - Order matters: fan-out first; stitch ground last ("stitching vias placed during routing become walls"); widen to class and current only after zero breaks.
 2. **Monotone acceptance:** keep a change only if violations and unconnected items don't get worse. Keep a regression ledger.
 3. **Loop budget and escalation:** cap retries per issue (2–3), total iterations and spend. When stalled, stop and present the evidence and options to the human, rather than "happily trying to fix it."
 4. **Recognize every failure category**, including "unconnected," "silkscreen" and "parity," so autofix loops can't stall silently.
@@ -683,6 +781,16 @@ Build a **mixed-initiative orchestrator**:
 7. **Calibrated sign-off.** For release gates, consider a light **cognitive-forcing** step: the reviewer marks the top risks *before* seeing the AI's verdict (Buçinca's "update" design). Use it sparingly, because users dislike it. Never show a single green "looks good" to novices; show the residual-risk list and what was not checked.
 8. **Diff-first review and house-style learning.** Every step is a visual and textual diff that can be reverted individually. Treat the user's cleanup edits (bigger pours, straighter routes, label moves) as preference signals for future runs (Quilter's cleanup categories).
 9. **Respect the "faster than typing" threshold.** For tiny edits, offer inline suggestions or completions rather than a chat round-trip. Save the agent loop for block- and board-level work.
+10. **Plans as editable checklists:**
+    - render the agent's plan as GUI parameters plus a checkable step list;
+    - let the user deselect or edit steps, then run them with per-step status;
+    - save the plan as JSON so it replays without an LLM.
+
+    This follows the KiCadRoutingTools Claude tab and gives determinism plus user control.
+11. **A decision file and physical checkpoints:**
+    - a `PCB_DECISIONS.md`-style yes/no table for style preset, protection and add-on circuits, where a blank row means not approved, so nothing unrequested is added and nothing is silently skipped;
+    - a 1:1 printout or 3D mechanical-fit checkpoint after placement and before routing;
+    - human-only GUI checks (F8 parity) requested at milestones (haohao; kicad-agent-toolkit).
 
 ### Gaps
 - None of these principles has been A/B tested on PCB tasks in the literature I found.

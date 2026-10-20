@@ -492,7 +492,12 @@ Vendor numbers (Quilter Speedrun, DeepPCB's 27,721 boards, Cadence's 10×) are s
 ## 6. Practitioner sentiment
 
 ### Takeaway
-I could gather little direct practitioner sentiment: Reddit, Hacker News, EEVblog and the KiCad forum were blocked and web search ran out. What is available is consistent, though. Autorouters and AI layout are seen as useful for low-to-medium complexity boards and for throughput. Experienced designers stay sceptical and keep critical nets, placement intent and final review human-led. The tools' own docs reinforce this ("Never trust the autorouter"; "not designed to fully autoroute every class of board").
+Pass 2 read the main Hacker News threads (via the Algolia API) and KiCad-forum threads (via the Discourse JSON API). Reddit stayed blocked. Sentiment splits into two camps.
+
+- **Experienced EEs** remain sceptical of autorouting ("PCB autorouters are a pain in the ass that never work"; "AI operating a 60 year old technology is mostly entertainment"). They repeatedly say **placement, not routing, is the hard problem**. The KiCad forum's own moderator line on autorouting was "not in the foreseeable future".
+- **Early adopters** report that LLMs are now "really good at the stackup and part config, but [create] some absolutely terrible routes". Simple boards vibe-designed with Claude and Freerouting came back working.
+
+Vendor docs agree with the sceptics: EasyEDA says "Auto router is not good enough! Suggest routing manually!"; Altium requires diff pairs to be hand-routed first. Commenters on Quilter's Speedrun stressed it was "Designed with AI, not by AI": the schematic was a fixed NXP reference design and only layout was automated.
 
 ### Cited Findings
 - Slashdot commenters on Quilter's Speedrun said the tool builds on auto-routing technology that has existed for years and debated the novelty claim — [Slashdot](https://hardware.slashdot.org/story/25/12/16/229209/dual-pcb-linux-computer-with-843-components-designed-by-ai-boots-on-first-attempt)
@@ -502,17 +507,70 @@ I could gather little direct practitioner sentiment: Reddit, Hacker News, EEVblo
 - OrthoRoute's tagline is "Never trust the autorouter" — [GitHub](https://github.com/bbenchoff/OrthoRoute). PCBGolf frames itself as "Are you better than an autorouter?" — [GitHub](https://github.com/commaai/PCBGolf)
 - MCP projects themselves add disclaimers: "AI-generated design suggestions do not replace qualified engineering review" — [mixelpixx](https://github.com/mixelpixx/KiCAD-MCP-Server); "not an automated sign-off authority" — [kicad-mcp-pro](https://github.com/oaslananka/kicad-mcp-pro)
 
+**Hacker News (pass 2, read via the Algolia items API) [P]**
+- **"Things I would have told myself before building an autorouter"** (tscircuit, 2025-03-28; 396 points, 116 comments) — [HN](https://news.ycombinator.com/item?id=43499992):
+  - bsder: "as one of the cranky old people who don't really want to see KiCad expend any energy on autorouters, PCB autorouters are a pain in the ass that never work".
+  - ChrisGammell: "I'm generally in the 'never trust the autorouter' camp (and by extension 'never trust the bevy of AI tools entering the space') … I'm probably more likely to use co-creation tools, rather than full auto tools".
+  - thrtythreeforty: "the typical auto router opinion of aesthetics is 'lol.'"
+  - theamk: "every single track has to abide by the rules, no exceptions are allowed".
+  - The tscircuit author (seveibar) predicted routing is "basically an image transformer problem without a good dataset", which later led to the Z01 dataset.
+- **"Show HN: Copperhead – Cursor for circuit boards"** (2026-09-08; 250 points, 115 comments) — [HN](https://news.ycombinator.com/item?id=49610059):
+  - tadasv: "I used claude and gemini to edit/debug kicad schematics … What is the point of this agent?"
+  - mikeayles: "Flux.ai being the incumbent … [others] have been showing demos Quilter and DeepPCB for layout".
+  - Joel_Mckay: "NP-hard problems are still NP-hard even with magical LLM pixie sprinkles". monocasa replied that it is "closer to the bin packing problem … fitting all of the traces with the lowest board layer count".
+- **"AI-assisted PCB design for KiCad 10" (Konnect)** (2026-10-14; 147 points, 52 comments) — [HN](https://news.ycombinator.com/item?id=50085553):
+  - rutierut: "I tried to use KiCAD through computer-use. This doesn't produce great results … best results through a mix of Happy, this repo, and computer use … It is _really_ good at the stackup and part config, but creates some absolutely terrible routes."
+  - ofrzeta: "Konnect was using freerouting to do the routing".
+  - __atx__ (in-house agent CLI): results "pretty good", but it is "whack-a-mole" getting Opus to use hierarchical sheets properly.
+  - Several commenters said JLC/LCSC part search with stock data is the most valuable part.
+- **"Linux computer designed with AI boots on first attempt"** (Quilter, 2025-12-16; 79 points, 24 comments) — [HN](https://news.ycombinator.com/item?id=46294254):
+  - Top comment: "Designed with AI, not by AI." A moderator then retitled the post.
+  - A quoted excerpt of Quilter's report: "keep the schematic identical and prove out only the layout portion"; "Quilter ran parallel seeded runs with varied constraints, completing the layout in 27 hours, returning multiple ranked candidates".
+  - K0balt: "it takes as long to fix autorouted stuff as it does to do it yourself (with some exceptions)".
+- OrthoRoute's HN post: "OrthoRoute – GPU-accelerated autorouting for KiCad" (2025-11-18; 220 points, 29 comments) — [HN](https://news.ycombinator.com/item?id=45970391)
+
+**KiCad forum (pass 2, via the Discourse API) [P]**
+- "Open AI claims GPT 6 - ASTRA can make pcb boards" (2026-09-04, 37 posts) — [forum](https://forum.kicad.info/t/open-ai-claims-gpt-6-astra-can-make-pcb-boards/71487):
+  - Heath_Raftery: "Seems like a lot of people on the Internet learned what an autorouter is this week. Maybe next week they'll understand that AI operating a 60 year old technology is mostly entertainment."
+  - davidsrsb: "PCB component placement is the hard problem and for that you have to understand the circuit … A good placement has often autorouted usably well even 30 years ago."
+  - joojala: "routing is not really all that complicated. But rather the critical thing is where on the board things are located in relation to others."
+  - The original poster says LLMs are "Moderately good at PCB design but … still very bad with high frequency signals … HDIs are also not great, same with BGAs".
+- "Testing KiCad AI Tools" (2026-09-29, 19 posts): devbisme says Opus improved rapidly. Its main finding is that "they all used Freerouting" (Section 2) — [forum](https://forum.kicad.info/t/testing-kicad-ai-tools/71769)
+- "Autoroute? Is it coming? (Mod edit, short answer is not in the foreseeable future so nothing to see here. ;) )" (2021–2022, 201 posts). This records the KiCad project's long-standing stance against a built-in autorouter — [forum](https://forum.kicad.info/t/autoroute-is-it-coming/30441)
+- paulvdh (2020): "cleanup after an autorouter can take more time than routing the board manually in the first place. Autorouters also tend to need more board space" — [forum](https://forum.kicad.info/t/topor-still-active-and-what-best-alternative-also-about-footprints-libs/26632)
+
+**Other [P]**
+- A Hackaday commenter on the GPT-6 Astra/EEBench article: "I've vibe coded 3 pcbs that I've sent off to manufacture now … Each one has come back working first time … The routing can look a little wonky (which started me down the rabbit hole of making a rust fork of freerouting)" — [Hackaday](https://hackaday.com/2026/09/05/can-ai-now-design-pcbs-that-just-work/)
+- EasyEDA's official docs: "Auto router is not good enough! Suggest routing manually!" — [EasyEDA docs](https://docs.easyeda.com/en/PCB/Route/index.html)
+
 ### Inferences
 - An LLM-driven tool that keeps the human in the loop will likely be received better than a "full autonomy" claim: propose, show diffs and renders, accept per-net, with undoable IPC commits. So will one that is transparent about quality (DRC plus scores).
+- Practitioners keep saying **placement quality decides routability**, and current AI tools (all routing through Freerouting) produce poor-looking routes. A tool that leads with good, explainable placement and treats routing as a verifiable downstream step would answer the most common criticism directly.
+- Sentiment is sharply polarised and sensitive to marketing claims ("designed by AI"). Credibility depends on public, reproducible benchmarks such as PCBWorld-Bench and PCBGolf rather than demos.
 
 ### Gaps
-- No direct Reddit (r/PrintedCircuitBoard, r/KiCad), HN or EEVblog threads on Quilter, DeepPCB, Flux Auto-Layout or Freerouting 2.x could be read. A follow-up with web access to those domains is needed for real sentiment data.
+- Reddit (r/PrintedCircuitBoard, r/KiCad) remained blocked (proxy 403), and EEVblog threads on Quilter, DeepPCB or Flux were not located without search. Sentiment here comes from HN, the KiCad forum, Hackaday comments and vendor docs.
 - A search summary said one tscircuit-based project falls back to Freerouting when tscircuit's built-in router leaves nets unrouted or violates clearance. The underlying page could not be identified or opened (possibly [this tessl.io skill listing](https://tessl.io/registry/skills/github/JimmyPang02/open-replicator/replicator-pcb--replicator-pcb)), so treat it as unverified.
 
 ## 7. Implications: what to reuse, integrate, or build (for a GPL-3.0, LLM-driven KiCad placement+routing project)
 
 ### Takeaway
-Reuse KiCad's IPC API (kipy, MIT) for live board mutation. Use Freerouting (GPL-3.0) as the baseline routing engine and benchmark harness. Optionally add fastroute (GPL-3.0) or KiCadRoutingTools (MIT) as faster or specialized routers. Integrate KiCad's built-ins (DRC rules, component classes, multichannel, design blocks, "Attempt Finish Selected") as levers the agent can pull. **Build** the parts nobody has done well in open source: constraint-aware PCB placement and floorplanning guided by an LLM, and a tight agent loop of propose → apply → DRC/score → critique → repair, exposed through a small, high-level MCP tool set.
+**Reuse:**
+- KiCad's IPC API (kipy, MIT) for live board mutation.
+- Freerouting (GPL-3.0) as the baseline global router.
+- PCBWorld-Engine (GPLv3 headless KiCad PNS plus DRC binding) as the engine-grounded, interactive routing primitive that LLM agents demonstrably need.
+- PCBWorld-Bench (BSD-3) plus PCBench/Freerouting scores as the evaluation harness.
+
+**Optionally add** fastroute (GPL-3.0), KiCadRoutingTools or kicad-tools (MIT) as faster or specialised routers, and route-rnd (GPL-2+) as a topological alternative.
+
+**Integrate** KiCad's built-ins as levers: DRC rules, component classes, multichannel, design blocks, "Attempt Finish Selected". Keep a DSN/SES socket so users can plug in commercial routers (Electra, TopoR, Allegro PCB Router) themselves.
+
+**Build** what nobody has done well in open source:
+- constraint-aware PCB placement and floorplanning guided by an LLM (every surveyed open AI tool punts here, and practitioners call placement the hard problem);
+- layout-quality checks beyond DRC;
+- a tight agent loop of propose → apply → DRC/score → critique → repair behind a small, high-level MCP-plus-skills surface. Siemens Fuse and CELUS validate the same interface style.
+
+Since every current open "AI KiCad" tool routes with stock Freerouting, routing quality is also a differentiator.
 
 ### Cited Findings
 - IPC API: live GUI only on KiCad 9/10; headless and exports in KiCad 11; SWIG removed in 11 — [dev-docs (source)](https://gitlab.com/kicad/services/kicad-dev-docs/-/blob/master/content/apis-and-binding/ipc-api/for-addon-developers/_index.en.adoc); [kicad-python README](https://gitlab.com/kicad/code/kicad-python)
@@ -520,6 +578,20 @@ Reuse KiCad's IPC API (kipy, MIT) for live board mutation. Use Freerouting (GPL-
 - Freerouting v2.5.0: KiCad 10 IPC integration, REST `/v1/autoroute`, MCP `autoroute_board`, LLM-compact DRC, PCBench, two scores — [releases](https://github.com/freerouting/freerouting/releases)
 - KiCad has `RunAction` (unstable) plus built-in actions: Autoroute (Attempt Finish Selected), autoplacer, repeatLayout, generatePlacementRuleAreas, Specctra export/import — [editor_commands.proto](https://gitlab.com/kicad/code/kicad/-/blob/10.0/api/proto/common/commands/editor_commands.proto); [pcb_actions.cpp](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/tools/pcb_actions.cpp)
 - Licenses: Freerouting GPL-3.0 — [GitHub](https://github.com/freerouting/freerouting); fastroute GPL-3.0-or-later — [GitHub](https://github.com/parisxmas/fastroute); KiCadRoutingTools MIT — [GitHub](https://github.com/drandyhaas/KiCadRoutingTools); tscircuit autorouter MIT — [GitHub](https://github.com/tscircuit/tscircuit-autorouter); kicad-python MIT — [pyproject](https://gitlab.com/kicad/code/kicad-python/-/blob/main/pyproject.toml); Konnect AGPL-3.0 — [GitHub](https://github.com/mixelpixx/Konnect); KiCad GPLv3+ — [LICENSE.README](https://gitlab.com/kicad/code/kicad/-/blob/master/LICENSE.README); ReplicateLayout GPL-2.0 — [GitHub](https://github.com/MitjaNemec/ReplicateLayout)
+- (pass 2) More licences:
+  - PCBWorld-Engine GPLv3 and PCBWorld BSD-3 — [PCBWorld README](https://github.com/LGAI-Research/PCBWorld); [Engine](https://github.com/LGAI-Research/PCBWorld-Engine)
+  - route-rnd GPL-2+ — [debian/copyright](https://sources.debian.org/src/route-rnd/0.9.3-1/debian/copyright/)
+  - Horizon and LibrePCB GPL-3.0 — [Horizon](https://github.com/horizon-eda/horizon); [LibrePCB](https://github.com/LibrePCB/LibrePCB)
+  - kicad-tools MIT — [GitHub](https://github.com/rjwalters/kicad-tools)
+  - EasyEDA router GPL-3.0 — [GitHub](https://github.com/easyeda/easyeda-pcb-router)
+  - PCBench MIT — [GitHub](https://github.com/PCBench/PCBench)
+  - Diode `pcb` MIT — [GitHub](https://github.com/diodeinc/pcb)
+  - PCB-Agent-Teams "Noncommercial" — [GitHub](https://github.com/Zane456/PCB-Agent-Teams)
+  [P]
+- (pass 2) PCBWorld on D3-A: GPT-5.4 clean pass is 0.65 interactive, 0.19 plan-and-execute and 0.02 engine-free. Freerouting gets 0.80, and a small PPO policy gets 0.86 on D3-A but only 0.45 on D3-B, where Freerouting gets 0.78 [P] — [paper](https://arxiv.org/html/2607.05915)
+- (pass 2) "I tested seven tools that actually created a routed PCB and they all used Freerouting" [P] — [KiCad forum](https://forum.kicad.info/t/testing-kicad-ai-tools/71769)
+- (pass 2) The official PCM has no AI plugins. 18 plugins already run on the IPC runtime [P] — [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json)
+- (pass 2) Siemens Fuse EDA AI Agent uses "Model Context Protocol (MCP) and Agent Skills" [P] — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
 
 ### Inferences (concrete recommendations)
 1. **KiCad interface layer (reuse plus a thin build).**
@@ -537,23 +609,36 @@ Reuse KiCad's IPC API (kipy, MIT) for live board mutation. Use Freerouting (GPL-
    - Evaluate fastroute as a faster drop-in (Rust, diff pairs, length tuning, `.kicad_dru` carry-over).
    - Evaluate KiCadRoutingTools for BGA/QFN fanout, diff pairs, plane repair and time matching. It is MIT, already agent-oriented, and works on files.
    - Use KiCad's own PNS "Attempt Finish Selected (Autoroute)" through `RunAction` for local completion and cleanup of a few nets, accepting that the action string can break between versions.
+   - **(pass 2) Adopt or fork PCBWorld-Engine (GPLv3)** as the headless, engine-grounded interactive router. Its 58 APIs cover per-net routing with push-and-shove or walkaround, finish-to-nearest-pad, layer switching with vias, and full KiCad DRC/board-state extraction. This is exactly the "interactive" mode in which PCBWorld shows LLM agents are 3–30× more DRC-clean than plan-then-execute or engine-free generation. Use it for critical nets (diff pairs, short high-speed links, power) and for repair after Freerouting, with Freerouting doing bulk completion.
+     - Caveats: pinned to KiCad 9.0.8, 5★, a research codebase. Budget for porting it to KiCad 10/11 and for upstreaming. Copper pours are not in PNS space.
    - Treat the tscircuit capacity-mesh/hypergraph pipeline (MIT) as a design reference for a global-routing and congestion-estimation stage, which can also give placement fast routability feedback.
+   - (pass 2) Keep the DSN/SES path first-class even after IPC export lands. It lets users plug in Electra (€145/month), TopoR or Allegro PCB Router without the project shipping proprietary code, and it is how LibrePCB, EasyEDA and most tools interoperate.
 3. **Placement (build; this is the white space).**
-   - No mature open-source, KiCad-integrated, constraint-aware PCB placer exists. KiCad's autoplacer dates from 2012, CadMust-Neo is a small SA plugin, RL_PCB is academic, and DeepPCB and Quilter are closed.
+   - No mature open-source, KiCad-integrated, constraint-aware PCB placer exists. KiCad's autoplacer dates from 2012, CadMust-Neo is a small SA plugin, RL_PCB is academic, and DeepPCB, Quilter and EasyEDA Pro's new "dual engine" auto placement are closed.
+   - (pass 2) Reusable pieces now exist: kicad-tools' force-directed, GA and CMA-ES placers (MIT, file-based); tscircuit's documented **Sequential Optimal Packing** (deterministic, explainable, and its author notes "LLM loops can easily adapt the design intent representation"); KiCad's `generatePlacementRuleAreas` and `repeatLayout`.
    - Build a hybrid. First, an LLM step produces a floorplan and intent: groups by schematic sheet and function, edge-connector and mounting constraints, decoupling-capacitor proximity, thermal and noisy-versus-sensitive zones. Emit this as KiCad-native artifacts (rule areas, component classes, custom DRC rules, keepouts) so the intent is inspectable and DRC-checkable.
-   - Then a numeric optimizer (force-directed, SA or analytical) does detailed placement and legalization, using HPWL plus congestion estimates from a fast global router as cost.
+   - Then a numeric optimizer (sequential packing for the initial layout, then force-directed, SA or analytical refinement) does detailed placement and legalization. Cost is HPWL plus congestion estimates from a fast global router. Optionally score candidates with a fast router pass (KRT or a PCBWorld-Engine `finish` sweep), since practitioners stress that "a good placement has often autorouted usably well".
    - Use KiCad's `repeatLayout` and PCB Design Blocks for repeated channels and known-good sub-layouts instead of re-solving them.
 4. **LLM and agent surface (build, learning from others).**
    - Expose about 15–30 high-level, verifiable MCP tools (board summary, constraint get/set, propose or apply placement for a group, route a net class, run DRC with compact output, score, render a PNG or SVG for vision feedback) rather than 200+ thin CRUD tools.
    - Copy patterns, not code, from Konnect (AGPL: do not vendor), mixelpixx (MIT: reusable), eda-agent's catalog/invoke mode, and Freerouting's `compact=true` DRC.
    - Ship Claude Code skills or playbooks in the way KiCadRoutingTools and JITX do.
-5. **Evaluation harness (reuse).** Wire PCBench (1,157 boards, GPL-3.0, in the Freerouting repo), tscircuit datasets (MIT) and, if licensing permits, PCBWorld into CI. Report completion, DRC-clean rate, via count, length relative to lower bounds, and wall time. Use PCBGolf as a public demo target. Optionally run DeepPCB (pay-per-hour API via its plugin) or Quilter (manual upload) as external comparison baselines, not dependencies.
+   - (pass 2) Ship it as an **IPC-runtime KiCad plugin plus MCP server**, distributable through the official PCM. That niche is empty: zero AI plugins in the PCM as of 2026-10-19. Follow Siemens Fuse's and CELUS's MCP-plus-Agent-Skills pattern for interoperability.
+   - (pass 2) Add **layout-quality checks DRC misses**: signals routed on plane layers, return-path or plane splits under high-speed nets, decoupling-capacitor distance to pins, diff-pair skew, via counts per net. The devbisme null baseline passed DRC while routing signals through the GND plane layer.
+5. **Evaluation harness (reuse).**
+   - Wire **PCBWorld-Bench** (BSD-3 harness, 679 real D3 boards plus synthetic generators, 8 engine-checked metrics), PCBench (MIT), Freerouting's suite and scores, and tscircuit datasets (MIT) into CI. Check per-board licences before redistributing.
+   - Report clean pass, routability, DRV, via count, length relative to lower bounds, wall time, and the layout-quality checks above.
+   - Build and publish the missing **placement benchmark**: strip placement from D3 boards, then score downstream clean pass, wirelength and vias plus rule proxies.
+   - Use PCBGolf as a public demo target and the devbisme dual-ADC test as a head-to-head with other AI tools.
+   - Optionally run DeepPCB (pay-per-hour API via its plugin), Quilter (manual upload) or Electra (monthly licence) as external comparison baselines, not dependencies.
 6. **License hygiene.**
-   - Can be absorbed: MIT, BSD, Apache-2.0, GPL-3.0(+) code (KiCad, Freerouting, fastroute, kipy, KiCadRoutingTools, tscircuit, OrthoRoute, Topola, RL_PCB).
-   - Avoid copying GPL-2.0-only code (vygr routers; check ReplicateLayout's exact "or later" status) and AGPL-3.0 code (Konnect) into the core.
+   - Can be absorbed: MIT, BSD, Apache-2.0, GPL-3.0(+) and GPL-2.0-or-later code (KiCad, Freerouting, fastroute, PCBWorld-Engine, Horizon's PNS copy, LibrePCB, route-rnd, kipy, KiCadRoutingTools, kicad-tools, tscircuit, OrthoRoute, Topola, RL_PCB, PCBWorld env, Diode `pcb`).
+   - Avoid copying GPL-2.0-only code (vygr routers; check ReplicateLayout's exact "or later" status), AGPL-3.0 code (Konnect) and "noncommercial" code (PCB-Agent-Teams) into the core.
    - Keep cloud services (DeepPCB, Quilter, Freerouting's public API) optional and off by default, for privacy and IP reasons. Quilter's free tier may train on designs, per a third-party summary.
 7. **Timing risk.** Plan a migration point at KiCad 11 (likely early 2027; inferred): headless IPC, DSN/SES and design rules over IPC, and SWIG removal all land there. Build the file and IPC abstraction now so the swap costs little.
 
 ### Gaps
 - No verified data on how well Freerouting 2.5's KiCad 10 IPC integration works in practice, or how much KiCad DRC fidelity is lost on the DSN round trip (Freerouting itself notes missing board-edge clearance in KiCad exports).
-- No head-to-head data comparing Freerouting, fastroute, KiCadRoutingTools and the tscircuit router on the same corpus, other than PCBWorld as summarized second-hand in OrthoRoute's README. Running PCBench across all four would close this gap.
+- PCBWorld compares Freerouting 2.1.0, KRT and OrthoRoute (not Freerouting 2.5, fastroute, kicad-tools or the tscircuit router). Re-running PCBWorld-Bench with the current versions would close this gap.
+- PCBWorld-Engine's portability to KiCad 10/11, its upstream maintenance, and its runtime performance at scale are untested.
+- EasyEDA Pro's closed "dual engine" auto placement is the only mainstream 2026 auto-placer launch found, and its quality is unknown. It would be a useful comparison target if it can be exercised on exported boards.
