@@ -256,16 +256,88 @@ Code-first tools (atopile, tscircuit, JITX, SKiDL, Diode's Zener) automate desig
 - **tscircuit**: 2,857 stars, MIT. TypeScript/React circuits; placement is manual via `pcbX`/`pcbY` for now, with "flex"/"CSS Grid"-style autolayout under development. Uses Algora bounties — [GitHub](https://github.com/tscircuit/tscircuit). Its autorouter, `@tscircuit/capacity-autorouter`, is MIT; npm v0.0.995 was published 2026-10-20 — [npm](https://www.npmjs.com/package/@tscircuit/capacity-autorouter). It is "composed of hundreds of algorithms organized in a Pipeline", uses "successive approximation and hypergraphs instead of sequential routing" with a `CapacityMeshSolver`, and takes and returns SimpleRouteJson — [GitHub](https://github.com/tscircuit/tscircuit-autorouter)
 - **JITX**: the 2026 tooling is Python (`py-jitx` 4.2.x, Python 3.12+). `JITx-Inc/jitx-skills` packages nine Claude Code and Codex skills (component modeler, circuit builder, substrate modeler, physical layout with "code-based routes", interconnect constraints, pin assignment and others). It mentions no autorouter and no KiCad export — [GitHub](https://github.com/JITx-Inc/jitx-skills)
 - **SKiDL**: see Section 2 — [GitHub](https://github.com/devbisme/skidl)
+- **JITX (2026 positioning)**:
+  - "Python-based design for high frequency boards. AI writes the code. HFSS validates. Runs on your hardware."
+  - JITX "supplies the design primitives, routing solvers, HFSS interface, schematic generation, pin assignment, fencing", while "your approved AI writes and revises Python". It "generates routing, fencing, pin assignments, and schematic output".
+  - Example: optimizing a 56 GHz PCIe-gen7 BGA launch in "5 total HFSS simulations". Claimed customers: Honeywell Aerospace, Lockheed Martin, OpenAI.
+  - Proprietary, on-prem. No KiCad export is mentioned.
+  — [P] [jitx.com](https://www.jitx.com/)
+
+**Classic commercial DSN/SES autorouters (pass 2)**
+- **Specctra / Allegro PCB Router (Cadence):**
+  - Written by Cooper & Chyan Technology in 1989 and acquired by Cadence in May 1997. Now "Allegro PCB Router"; Wikipedia lists the latest version as 17.4–22.1 (20 Oct 2022).
+  - "Shape-based" routing in passes: preview, autoroute, post-processing. It uses rip-up-and-retry plus push-and-shove, takes strategies as Do-files, and returns SES or RTE files.
+  - "The DSN/SES file formats are also supported by … KONEKT ELECTRA, Eremex TopoR, Alfons Wirtz's FreeRouting and RL-based DeepPCB". KiCad is in Wikipedia's list of DSN-supporting EDA tools.
+  — [P] [Wikipedia: Specctra (wikitext)](https://en.wikipedia.org/w/index.php?title=Specctra&action=raw)
+- **Konekt ELECTRA:**
+  - "Shape-Based Autorouting software … In contrast with traditional gridded maze autorouters"; "multi-pass cost-based conflict reduction algorithm".
+  - Reads SPECCTRA DSN and writes RTE or SES. It plugs into "Altium, Pulsonix, CADInt, TargetPCB, DipTrace, **KiCAD**, Proteus, SeeTrax, Eagle".
+  - Features: gridless routing up to 256 layers, diff-pair and length-matching autorouting, blind/buried vias, split planes, SMD fanout control, area rules — [P] [konekt.com/products](https://konekt.com/products/)
+  - Version history: v10.10 (July 2026), v10.09 (Jan 2026), v10.0 (Nov 2025), v9.00 (Jan 2025) and so on — [P] [konekt.com](https://konekt.com/)
+  - Pricing: PRO-30 €145 for one month, PRO-UL €2,495 perpetual, node-locked, no dongle — [P] [konekt.com/pricing](https://konekt.com/pricing/)
+  - Testimonial on its own site: "Best Router for KiCAD to work with" (vendor-selected) — [P] [konekt.com](https://konekt.com/)
+  - A 2021 KiCad-forum thread asking for Electra experiences got no user reports — [P] [forum](https://forum.kicad.info/t/has-anyone-used-the-konekt-electra-autorouter/28712)
+- **TopoR (Eremex):**
+  - Topological router whose "distinctive feature … is the absence of preferred routing directions". It added DSN/SES import/export in version 4.0, and Eremex has maintained it since 4.1 (2008). Wikipedia still lists v6.3.17875 (2017-09-20) as current — [P] [Wikipedia: TopoR (wikitext)](https://en.wikipedia.org/w/index.php?title=TopoR&action=raw)
+  - In 2026 Eremex's English site (eremex.com) markets only SimPCB Lite (an SI calculator), and `/products/topor/` returns 404. The Russian site lists TopoR as the "Автоматический трассировщик" (autorouter) module of the Delta Design suite. The topor.ru domain is for sale — [P] [eremex.com](https://www.eremex.com/); [eremex.ru products](https://www.eremex.ru/products/topor/); [topor.ru](https://topor.ru/)
+  - A 2020 KiCad-forum user could not buy a single-user licence because of an account bug on Eremex's site — [P] [forum](https://forum.kicad.info/t/topor-still-active-and-what-best-alternative-also-about-footprints-libs/26632)
+  - A Hackaday 2019 test reportedly got 100% routing with fewer vias than a manual KiCad route [S] — [hackaday.io](https://hackaday.io/page/6004)
+- **Altium Situs** (doc updated 2026-10-07):
+  - "uses a topological-analysis technique to map the board space, which, unlike geometric or shape-based mapping, is not dependent on obstacle shape or coordinates". It "first … define[s] the routing path, then calls on a variety of proven routing algorithms".
+  - Caveats in Altium's own doc: "**Differential pairs nets must be manually routed and locked before using the autorouter**"; "If the board contains an area that can not be routed by hand, then it will not be autorouted either"; the router "obeys all Electrical and Routing design rules, except the Routing Corners rule".
+  — [P] [Altium docs](https://www.altium.com/documentation/altium-designer/pcb/routing/situs-topological-autorouter)
+  - Altium Designer 26.5.1 (6 May 2026) is the latest per Wikipedia. Altium does not brand ActiveRoute or Situs as "AI" [S] — [search summary](https://en.wikipedia.org/wiki/Altium_Designer)
+- **"PCB Auto Router" (pcbautorouter.top)** (closed desktop tool, Windows/Linux):
+  - "A GPU-accelerated, reinforcement-learning (RL) routing engine". It reads DSN and writes SES, with plugins for KiCad and EasyEDA, local-only operation, diff pairs and serpentines. It runs on a free/Pro model.
+  - All claims are the vendor's own; there is no public benchmark.
+  — [P] [pcbautorouter.top](https://www.pcbautorouter.top/)
+
+**EasyEDA / JLCEDA (pass 2)**
+- **EasyEDA Standard:** cloud and local routers. The docs recommend the local router because "when many users using cloud server, the cloud auto router will fail". The docs also say: "**Auto router is not good enough! Suggest routing manually!**" — [P] [EasyEDA docs: Route](https://docs.easyeda.com/en/PCB/Route/index.html)
+- **EasyEDA's local router** (`easyeda/easyeda-pcb-router`, v0.8.11): a headless **Freerouting fork** served over WebSocket (`ws://127.0.0.1:3579/router`); DSN in, JSON traces out; **GPL-3.0** — [P] [GitHub](https://github.com/easyeda/easyeda-pcb-router)
+- **EasyEDA Pro V3.2.148 (2026-06-01):** "Brand new auto placement (dual engine)" and "Brand new auto routing, dual engine, supports equal-length differential pair auto routing". V3.2.206 (2026-10-12) fixed "the issue where V4 auto-routing rate was low". These are closed engines with undisclosed algorithms — [P] [EasyEDA Pro update record](https://pro.easyeda.com/page/update-record)
+
+**Siemens (pass 2)**
+- **PADS Pro Essentials and Xpedition Standard** (2025-05-21): Siemens frames these as "AI-enhanced" tools for small and mid-sized businesses. Essentials adds "an integrated, co-branded front-end powered by CELUS … AI-assisted schematic and BOM generation". Xpedition Standard adds "design reuse, variant management, **advanced routing automation**, native 3D layout". The release names no specific AI placement or routing algorithm — [P] [Siemens press release](https://news.siemens.com/es-es/siemens-pads-pro-xpedition-ai/); [Digital Engineering 24/7](https://www.digitalengineering247.com/article/siemens-democratizes-ai-driven-pcb-design/electronic-cad)
+- **Fuse EDA AI Agent** (2026-03-16, launched at GTC):
+  - An "autonomous AI agent that plans and orchestrates multi-tool and multi-agent … PCB system workflows". It has "secure agentic orchestration with **Model Context Protocol (MCP) and Agent Skills** support", "dynamic tool discovery and orchestration across MCP-connected EDA tools", a supervisor/worker hierarchy, and NVIDIA Nemotron models.
+  - For PCB, the release only says it "aids layout, signal integrity and other analyses in Xpedition™ software and Hyperlynx™ software".
+  — [P] [Siemens press release](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/)
+- More specific claims on fabricator blogs (AI "predicts routing paths", thermal-aware automated placement) are **not** in Siemens' own releases. Treat as unverified [S] — [AtlasPCB](https://www.atlaspcb.com/blog/siemens-fuse-eda-ai-agent-pcb-workflow-orchestration-2026/); [Fly-Wing](https://www.flywing-tech.com/blog/siemens-unwraps-electronic-systems-design-software-with-ai-enhancements/)
+
+**Front-end and adjacent AI startups (not layout) (pass 2)**
+- **CELUS:** "Our agents design it … delivered as a schematic and BOM". "A reference schematic and a complete BOM … opened straight in Altium, Cadence, Siemens, Fusion or KiCad". Component makers can expose catalogs "as live tools over MCP". No PCB layout automation — [P] [celus.io](https://www.celus.io/). It is also the AI front end of Siemens PADS Pro Essentials — [P] [Siemens](https://news.siemens.com/es-es/siemens-pads-pro-xpedition-ai/)
+- **Circuit Mind** (London): "PCB Schematic & BoM in Seconds"; "a real hardware architecture converted into a complete, verified schematic and BoM in minutes". It cites a "Peer-Reviewed Case Study … by Los Alamos National Labs". No layout product — [P] [circuitmind.io](https://www.circuitmind.io/). Funding per CB Insights: about $8.41M over 7 rounds [S] — [CB Insights](https://www.cbinsights.com/company/circuit-mind/financials)
+- **SnapMagic** (formerly SnapEDA) Copilot: "Use AI to auto-complete circuit board designs", "adding bypass capacitors", BOM cost and power optimization, supply-chain alternates, "Works with the tool you already use". It is a schematic/BOM copilot with no placement or routing — [P] [snapmagic.com](https://www.snapmagic.com/)
+- **Cadstrom** (Montreal, founded 2023): $6.8M seed led by Bison Ventures. Its "Sigma Engine" does automated design **verification** to avoid respins — [P] [PCD&F](https://www.pcdandf.com/pcdesign/index.php/editorial/menu-news/design-news/18462-ai-based-design-startup-raises-6-8m-in-seed-funding)
+- **Flux:** disclosed $37M total in Feb 2026 (a $10M seed plus a Series B led by 8VC) [S] — [SiliconANGLE](https://siliconangle.com/2026/02/27/flux-nabs-37m-automate-printed-circuit-board-development-ai/)
+
+**AI-plus-service and agent-first newcomers (pass 2)**
+- **Diode Computers** (YC S24, Brooklyn): "Custom circuit boards, designed and manufactured with AI".
+  - Self-serve: "You, with our AI agent", from "a description, block diagram or KiCad project", with fab and assembly in-house. Enterprise: "From $10,000 per design, plus fab" — [P] [diode.computer](https://www.diode.computer/)
+  - Series A of $11.4M (a16z), per its YC page news list — [P] [YC profile](https://www.ycombinator.com/companies/diode-computers-inc)
+  - Toolchain: the **Zener** language (Starlark-based) plus the `pcb` CLI (Rust, **MIT**, 463★), which "generates KiCad layout files" and "needs KiCad 10.x for layouts". No autorouting or placement automation is described [P] — [diodeinc/pcb](https://github.com/diodeinc/pcb)
+  - With Anthropic, Diode built an agentic reference-design-generation task (datasheet to Zener schematic, graded by a requirement testbench). "Diode's electrical engineers preferred Sonnet 4.5's reference designs over those from Opus 4 (60% vs 40%) and Sonnet 4 (82% vs 18%)" — [P] [Claude blog](https://claude.com/blog/making-claude-a-better-electrical-engineer)
+- **HeyPCB:** a cloud placement, routing and DRC service behind MCP (Section 2) [P] — [GitHub](https://github.com/HeyPCB/heypcb-mcp)
+- **OpenAI GPT-6 Astra KiCad demo** (Sept 2026):
+  - OpenAI's launch post included "a 15-second condensed playback of GPT‑6 Astra performing printed circuit board (PCB) layout in KiCad … placing components and routing copper connections" (quoted in the KiCad forum) — [P] [KiCad forum thread](https://forum.kicad.info/t/open-ai-claims-gpt-6-astra-can-make-pcb-boards/71487)
+  - Per a search summary, a community tester found the routing was "KiCad DSN export → Freerouting → SES import", and a GUI-only run produced three short traces in an hour. I could not locate that tester's original post [S] — [Hackaday](https://hackaday.com/2026/09/05/can-ai-now-design-pcbs-that-just-work/)
+  - Hackaday: GPT-6 Astra "scores 69.3% (+/- 10%)" on EEBench, "roughly in the same ballpark as Claude Opus 5" — [P] [Hackaday](https://hackaday.com/2026/09/05/can-ai-now-design-pcbs-that-just-work/)
 
 ### Inferences
 - For a KiCad-native GPL-3.0 project, Freerouting is the obvious routing baseline and dependency: same license, active (five releases from May to Oct 2026), MCP and REST already built, explicitly aimed at LLM consumers (compact DRC), with a KiCad 10 IPC path and a public benchmark corpus.
 - Quilter and DeepPCB are the quality bar for "AI layout", but both are closed cloud services. They suit benchmarking comparisons and optional user-facing integrations, not reusable components. Quilter publishes no API (none found).
-- Flux, Cadence and Zuken all keep routing of critical nets and placement intent human-led or tool-specific. "Full autonomy" claims hold mainly for small and medium boards.
+- Flux, Cadence, Zuken, Altium and Siemens all keep routing of critical nets and placement intent human-led or tool-specific. Altium's own doc requires diff pairs to be pre-routed by hand before Situs runs. "Full autonomy" claims hold mainly for small and medium boards.
+- **DSN/SES is the lingua franca.** Every commercial autorouter here (Allegro PCB Router, Electra, TopoR, PCB Auto Router) and all the open ones (Freerouting, fastroute, EasyEDA's fork, LibrePCB export) speak it. A project that emits good DSN gets a plug-in socket for commercial routers as optional user-supplied back ends. Electra at €145/month is the most accessible commercial benchmark to compare against.
+- **Placement is where the market is moving.** Of mainstream tools, only EasyEDA Pro (closed, June 2026), DeepPCB, Quilter and the 2023 Cadence/Zuken programmes claim auto-placement. Front-end AI startups stop at the schematic. This supports building open placement as the main differentiator.
+- Siemens' Fuse agent and CELUS both standardise on **MCP plus Agent Skills**. That validates an MCP-plus-skills interface for an open KiCad project and suggests interoperability with enterprise agents later.
 
 ### Gaps
-- No usable sources (web search exhausted, sites blocked) for: **TopoR** (Eremex), **Electra** (Konekt), **Allegro PCB Router / Specctra**, **Altium Situs**, **Celus**, **Diode Computers**, **CircuitMind**, **SnapMagic/SnapEDA Copilot**, **Siemens Xpedition/PADS AI features**, **Cadstar**, and current (2026) status of Cadence Allegro X AI and Zuken AIPR. From background knowledge, unverified and needing a check: TopoR and Situs are topological (gridless, any-angle) autorouters; Electra and Allegro PCB Router are shape-based routers that use Specctra DSN; Celus and CircuitMind focus on architecture, schematic and BOM generation rather than layout; SnapMagic Copilot focuses on parts and schematic assistance.
-- No public Quilter API documentation or price list; no Quilter technical paper confirming RL.
-- No 2026 JITX autorouter information (docs.jitx.com blocked).
+- No primary detail on algorithms or results for EasyEDA Pro's "dual engine" auto placement and routing, nor on how "AI" any Siemens/Xpedition routing feature is.
+- TopoR's current version, pricing and availability outside Russia are unclear. The English product page is gone.
+- **Cadstar** (Zuken) was not researched. Search budget was exhausted, and it is a legacy product with no evident 2025–26 AI story.
+- The "Silixon" (UK) company mentioned by an HN commenter as an incumbent was not identified.
+- No public Quilter API documentation or price list, and no Quilter technical paper confirming RL (under separate verification).
 
 ## 4. Open-source autorouting/placement code that could be reused
 
@@ -277,9 +349,21 @@ Reusable open routing code exists at several quality levels:
 - tscircuit capacity-autorouter (TypeScript, hypergraph/capacity-mesh, MIT)
 - OrthoRoute (GPU PathFinder for huge orthogonal backplanes only, MIT)
 - Topola (Rust topological router, MIT, work in progress)
-- KiCad's own PNS push-and-shove router (C++, GPLv3+)
+- KiCad's own PNS push-and-shove router (C++, GPLv3+). It is now **available headlessly** through LG AI Research's PCBWorld-Engine (GPLv3 pybind11 binding of KiCad 9.0.8's PNS plus DRC). Horizon EDA (GPL-3.0) also embeds it.
+- route-rnd (pcb-rnd's external router; GPL-2+; topological "rubber band sketch" plus horizontal/vertical algorithms over the tEDAx format)
+- rjwalters/kicad-tools (MIT; A* router plus force-directed/GA/CMA-ES placement)
+- EasyEDA's GPL-3.0 Freerouting fork
+- The gEDA Toporouter (2008, Dayan rubber-band thesis), now historical
 
-Open **placement** code is thin. It amounts to KiCad's 2012-era autoplacer, one simulated-annealing plugin, an academic RL codebase (RL_PCB), and domain-specific placers (keyboards). This is the biggest build-it-yourself area.
+Open **placement** code is thin but no longer empty:
+- KiCad's 2012-era autoplacer
+- kicad-tools' force-directed/GA/CMA-ES optimizers (MIT)
+- CadMust-Neo (simulated annealing)
+- tscircuit's "Sequential Optimal Packing" approach (documented, MIT ecosystem)
+- an academic RL codebase (RL_PCB)
+- domain-specific placers (keyboards, spreadsheets)
+
+Constraint-aware PCB placement is still the biggest build-it-yourself area.
 
 ### Cited Findings
 - **Freerouting**: see Section 3. GPL-3.0, Java; v2.4.1 decoupled the core from Swing/AWT — [releases](https://github.com/freerouting/freerouting/releases)

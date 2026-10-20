@@ -1156,6 +1156,40 @@ The highest-value automation is recognizing circuit roles (CIN_HF, SW, L, COUT, 
 - Copper under inductors: follow the datasheet. Default: top-layer void under unshielded inductors, inner GND solid.
 - Ferrite beads: add only on explicit requirement, and always run the resonance check.
 
+**G. Extensions from pass 2 (sections 9–19):**
+- **More role detectors to add** (netlist pattern → roles → loops/constraints):
+  - **Offline flyback:**
+    - Pattern: transformer with a primary winding to the HV bulk-cap net, plus an IC or FET drain on the other primary end. Classify the windings: primary / secondary / bias.
+    - Roles: clamp (diode + RC or TVS across the primary); Y-cap (cap whose pins are on primary and secondary ground or rail classes); spark-gap footprints; post-filter L (series L after C_OUT before the connector).
+    - Constraints: FLY-01…06, ISO-01…07.
+  - **H-bridge / 3-phase:**
+    - Pattern: pairs of N-FETs sharing an SH node that goes to a connector; gate-driver pins GHx/SHx/GLx/SLx/SPx/SNx/VDRAIN/VCP.
+    - Roles: per-phase bypass cap, shunt, CSA filter caps, bulk cap.
+    - Constraints: MOT-01…07.
+  - **Charger:** pins PMID/VBUS/SW/BAT/REGN/BTST/ILIM/TS. Emit the datasheet's *ordered* priority list as `placement_priority` (BQ25895), plus the CHG-02 SW single-layer rule.
+  - **BMS:**
+    - Pattern: pins VC0…VCn, SRP/SRN, BAT, PACK, CHG/DSG gate drivers.
+    - Roles: cell-filter RCs (at the IC), pack shunt (Kelvin pair; filter at the IC), protection FETs (high-current pour).
+    - Spacing classes from cell index × cell voltage.
+  - **LED driver:** CSP/CSN pins → sense pair + R_FLT/C_FLT at the IC; SW keep-out under the IC.
+  - **Sensor front-ends:**
+    - Thermocouple: TC connector footprint, or nets named TC±, plus an NTC/RTD/temperature-sensor IC → CJ-block co-location and symmetric routing.
+    - Bridge: excitation/sense/signal nets of a 4/6-wire connector → ratiometric REF and matched routing.
+    - TIA: op-amp with R_F ≥ ~100 kΩ and a photodiode on IN− → regime classification (SEN-04) and IN− copper rules.
+  - **Class-D:** OUT±/SW/BST/PVDD/VBST/Vsense pins → loop-inductance budgets (AUD-01), no adjacent-layer coupling (AUD-02), filter at the IC (AUD-03).
+- **A loop-inductance estimator as a first-class metric.** SLAA896 gives explicit pH budgets (750–1150 pH total, 250–650 pH pin-to-pin), and section 2 gives measured mounting inductances (≈0.44–0.63 nH for an 0402 on top). A geometric estimator lets the placer score "as close as possible" numerically instead of with arbitrary mm thresholds. The inputs are the pad-to-pin gap, trace W/L, via count and length to the reference plane, and plane depth (Archambeault: deeper means higher L).
+- **Safety-spacing engine.** Implement section 9 as a deterministic lookup: (V_RMS, V_impulse from OVC, PD, MG/CTI, altitude, grade) → (creepage, clearance). Then add a surface-path creepage checker (2-D geodesic on the board surface, respecting slots ≥ PD minimum width) and a 3-D clearance checker. The LLM's job is only to classify nets and insulation grades from the schematic and product context, and those classifications must be confirmed by a human because they are safety-critical.
+- **Thermal screening per placement** (section 18 estimator) and **PDN screening per rail** (section 17 workflow) are cheap enough to run in the placement loop. Both need part power and rail data that the LLM extracts from datasheets and the schematic.
+- **Criticality map (Pease).** Before placement, the LLM emits a reviewable list of the critical items:
+  - hot loops;
+  - high-Z / summing nodes;
+  - matched pairs (symmetry constraints);
+  - thermal aggressors and victims;
+  - noisy buses and their sensitive neighbours;
+  - isolation barriers.
+  Each item carries severity and provenance. Deterministic checks consume this map, and a human can correct it before any geometry is generated.
+- **Tag provenance on generated constraints.** Each constraint should carry its source URL and an authority level ([P] datasheet/app note > [P-sec] > [S] > heuristic), so that conflicts are resolved by authority. Examples: via-current tables differing 2.6× (SLVA959 vs SLAA896); spark gap 5.4 vs 6.4 mm inside AN-72; SLVA959's erroneous via thermal resistance.
+
 ### Gaps
 - No published system or paper was found in this session that auto-extracts hot loops from netlists. The algorithm above is a proposal and needs validation on real designs (e.g., a corpus of open-source KiCad boards with known regulators).
 - I could not consult KiCad's custom-rules documentation here (the network was blocked). The rule syntax mentioned must be checked against the installed KiCad version.
