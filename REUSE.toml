@@ -1,0 +1,18 @@
+version = 1
+SPDX-PackageName = "kicad-auto-everything"
+SPDX-PackageDownloadLocation = "https://github.com/magnetic-trowel/kicad-auto-everything"
+
+# Default: code and anything else not matched below is MPL-2.0.
+# Files with their own SPDX header keep it ("closest").
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
+SPDX-License-Identifier = "MPL-2.0"
+
+# Documentation, research notes, and reports are CC-BY-4.0.
+[[annotations]]
+path = ["**/*.md", "research_notes/**", "reports/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
