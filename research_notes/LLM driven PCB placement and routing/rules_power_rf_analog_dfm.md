@@ -1,6 +1,14 @@
 # PCB Placement and Routing Rules: Power Conversion, PDN and Decoupling, RF, Analog and Mixed-Signal, Thermal, DFM/DFA, and Placement Method
 
-How this was researched, and its limits: WebFetch could not resolve DNS in this session, and the egress proxy returned HTTP 403 for direct downloads from ti.com, analog.com and most vendor hosts. All findings below therefore come from extended web-search extracts of the cited documents, not from reading the full PDFs. Each claim carries the URL of the document the extract came from. Exact figures or wording from primary PDFs (TI SLYT614, ADI AN-136/AN-139, ST AN2867 and others) should be spot-checked before they are hard-coded as constraints. Where only a vendor blog backs a number, it is marked "(low authority)". Rules I derived from circuit physics rather than from a source are kept in the "Inferences" subsections.
+How this was researched, and its limits (two passes):
+- **Pass 1 (sections 1–8):** WebFetch could not resolve DNS, and the egress proxy blocked ti.com, analog.com and most vendor hosts. Every finding in sections 1–8 therefore came from extended web-search extracts of the cited documents. Treat all of it as **[S]** unless a bullet is explicitly re-tagged **[P]**.
+- **Pass 2 (sections 9–19 and additions marked [P]):** with full access, I downloaded primary PDFs and web pages with curl and read the relevant sections as text (pdftotext). WebFetch still failed on DNS, and analog.com still refused scripted downloads, so ADI app notes were read from mirrors where possible. This pass ended when the session's web-search budget ran out (200 searches across all agents). Topics that would have needed more searching are listed as gaps.
+- **Provenance tags:**
+  - **[P]** = I read this in the primary document itself (datasheet, app note, standard summary by the standard's user, or the author's own page) during pass 2.
+  - **[P-sec]** = I read it in full, but the page is a secondary account of someone else's material (for example a course review).
+  - **[S]** = search-engine extract only; not read in the source.
+- Where only a vendor blog backs a number, it is also marked "(low authority)". Rules I derived from circuit physics rather than from a source are kept in the "Inferences" subsections.
+- A separate agent is verifying the numbers in sections 1–8. Pass 2 therefore concentrated on circuit classes and topics not yet covered: isolation/HV/mains, offline flyback, motor drivers, LED drivers, chargers/BMS, high-current/busbars, precision sensor front-ends, audio, PDN methodology, thermal methodology, and practitioner material (Feranec, Phil's Lab, Pease, Williams).
 
 Rule table format used throughout:
 `ID | Rule | Numeric guideline | Why (physics) | Applies when | Severity | How to check automatically | Source`
@@ -135,7 +143,15 @@ What sets high-frequency decoupling performance is mounting loop inductance (pad
 - Bogatin, Smith and Sandler, "The Myth of Three Capacitor Values" (2020): the three-value rule rests on 50-year-old assumptions. Lower mounting loop inductance always helps. Place MLCCs early so they can be routed with the lowest practical mounting inductance. — [Signal Integrity Journal](https://www.signalintegrityjournal.com/articles/1589-the-myth-of-three-capacitor-values)
 - Bogatin: 0.1 µF and 47 µF MLCCs in the same body size have the same ESL. Low mounting inductance is the most important selection criterion. — [Passive Components EU, Bogatin](https://passive-components.eu/a-low-cost-capacitor-characterization-system/)
 - Altium: mounting inductance (ESL plus pads and vias) does not change with location, but the spreading/path inductance through the planes depends on location. — [Altium "When does decoupling capacitor location matter"](https://resources.altium.com/p/when-does-decoupling-capacitor-location-matter-pcb)
-- Archambeault's IEEE EMC chapter talk "PCB Power Decoupling Myths Debunked" covers the same theme (full text not extracted here). — [Archambeault slides](https://ewh.ieee.org/r3/enc/emcs/archive/2012-10-10b_DecouplingMyths.pdf)
+- **[P]** Archambeault, "PCB Power Decoupling Myths Debunked" (IEEE EMC chapter, Oct 2012). His "conventional wisdom" slide lists five beliefs the talk tests: you need a variety of values; many caps of one value are better than many values; place caps as close to ICs as possible; location does not matter; spread caps over the entire board. His title slide answers "It's really the inductance that matters!" Findings:
+  - Capacitance values should be as large as possible within the package size.
+  - In most cases the IC takes charge from between the planes, and the caps replenish that charge.
+  - Caps provide charge better when spread out.
+  - If caps sit near each other, alternate their power/ground pin orientation. The worst case is caps close together with all pins in the same direction.
+  - A plane pair deep in the stackup has higher effective inductance.
+  - Inductance rises rapidly as plane width decreases, so avoid long thin power/ground structures.
+  - In his plane-recharge study with a thick (35 mil) dielectric, "Location does matter!"
+  — [Archambeault slides](https://ewh.ieee.org/r3/enc/emcs/archive/2012-10-10b_DecouplingMyths.pdf)
 - Wikipedia states the conventional rule: the smallest-value caps go closest to the consumer to minimize AC loop area. — [Wikipedia: Power integrity](https://en.wikipedia.org/wiki/Power_integrity)
 - Measured mounting inductance of a 0402 decoupling cap: via-in-pad ≈ 0.44 nH (top side) vs 0.63 nH with short surface traces to vias. Bottom side: 1.04 vs 1.35 nH. Overplated via-in-pad gives a 15–30% reduction. — [Axotron: inductance of decoupling layouts](https://axotron.se/blog/inductance-of-some-decoupling-layouts/); [Axotron: more measurements](http://axotron.se/blog/more-decoupling-layout-inductance-measurements/)
 - Via-in-pad lowers via-to-plane distance and so mounting inductance, but it can thieve solder in manufacturing and costs more (filled and plated over). — [USPTO 7312402](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/7312402)
@@ -226,6 +242,13 @@ Use one solid ground plane and partition placement and routing so that analog an
 
 ### Cited Findings
 - Henry Ott: if you split the ground plane and route traces across the split, the return current has no nearby path, so it flows in a large loop that radiates and adds ground inductance. His preferred approach is a single ground plane with the board partitioned into analog and digital routing sections, with ADCs straddling the partition. If a split is required, connect the planes at one place (a bridge) and route all crossing traces over it. — [Ott tech tip: Grounding of Mixed Signal PCBs](https://hott.shielddigitaldesign.com/techtips/split-gnd-plane.html); [Ott, EE Times "Partitioning and Layout of a Mixed-Signal PCB"](https://www.eetimes.com/partitioning-and-layout-of-a-mixed-signal-pcb-3/)
+- **[P] Ott, primary page (re-read in pass 2), with details the snippet missed:**
+  - He gives a resolution table for a 1 V reference: 8 bit = 4 mV, 10 bit = 1 mV, 12 bit = 240 µV, 14 bit = 60 µV, 16 bit = 15 µV, 20 bit = 1 µV, 24 bit = 60 nV. Scale by V_ref. Keep analog ground-plane noise below the smallest analog signal of concern.
+  - A single solid, partitioned plane is "usually adequate" for 8–12-bit converters.
+  - For ≥14-bit converters, divide the board into isolated analog and digital ground regions, each solidly connected to the digital ground plane under each A/D converter. Even then the plane is not split, and no trace on any layer may cross the isolating slots.
+  - Proposed check: lay out the split with jumpers or 0 Ω links every 1/2 inch, and compare performance with them open and closed.
+  - Datasheet "AGND+DGND to the analog plane" advice raises an unanswered question: where does the digital decoupling cap ground go? His answer is to use one plane from the start.
+  — [Ott tech tip (primary)](https://hott.shielddigitaldesign.com/techtips/split-gnd-plane.html)
 - TI agrees that it is always preferable to use one ground plane and partition the PCB. The main risk is analog signals routed into the digital section or the reverse. — [TI SLYT512](https://www.ti.com/lit/an/slyt512/slyt512.pdf)
 - ADI MT-031: ADCs and DACs (and other mixed-signal ICs) with low digital currents should be treated as analog parts, grounded and decoupled to the analog ground plane. Connecting DGND to a separate digital plane puts V_noise across AGND and DGND. — [ADI MT-031](https://www.analog.com/mt-031); [ADI EngineerZone discussion](https://ez.analog.com/data_converters/precision_adcs/f/q-a/25925/separating-agnd-and-dgnd-at-the-adc-dac)
 - TI: join AGND and DGND externally to the same low-impedance plane with minimum lead length, because extra DGND impedance couples digital noise into the analog input. — [TI SLYT499](https://www.ti.com/lit/pdf/SLYT499)
@@ -269,6 +292,7 @@ Heat moves easily along copper planes but poorly through FR-4. Carry heat from e
 ### Cited Findings
 - Thermal via geometry: 0.3 mm or less at 1 mm pitch (TI SLOA122). A 1.0–1.2 mm pitch grid, 0.3–0.33 mm diameter, about 1 oz barrel, connected to buried planes, with diminishing returns as more are added (Renesas TB389). Tent with solder mask at least 0.10 mm larger than the via diameter if not plugged (NXP AN1902). — [TI SLOA122](https://www.ti.com/lit/pdf/sloa122); [Renesas TB389](https://www.renesas.com/en/document/oth/tb389-pcb-land-pattern-design-and-surface-mount-guidelines-qfn-packages); [NXP AN1902](https://www.nxp.com/docs/en/application-note/AN1902.pdf)
 - Per-via thermal resistance is about 150 °C/W for a 0.3 mm via with 25 µm plating in a 1.6 mm board (R = L/(kA), k = 385 W/m·K). A 9-via array gives roughly 17–33 °C/W. Filled vias (IPC-4761 Type VII) cut it substantially (calculator claims 6–8×). — [rftools via thermal resistance](https://rftools.io/calculators/pcb/via-thermal-resistance/); [semiconductor.tools via current](https://semiconductor.tools/blogs/12-pcb-via-current-capacity)
+- **[P]** For the primary-source thermal methodology (TI SNVA419, SPRA953, SLMA002, SLVA959), including a 261 °C/W per-via figure for a 12-mil via with 0.5 oz plating, a 1 mm via-array pitch, and board-area rules, see section 18. — [TI SNVA419](https://www.ti.com/lit/pdf/snva419)
 - PCB stackups are thermally anisotropic. Use planes plus vias to build 3-D heat paths. — [Salitronic thermal management](https://salitronic.com/kb/thermal-management/)
 - Placement (vendor guidance, low to medium authority): do not put a tall component upstream of a hot one (a 10 mm electrolytic was cited as creating a stagnant wake). Keep sensitive parts (electrolytics, crystals, references) on the cool upstream side. Align tall parts with the airflow. Separate high-power parts rather than clustering them (two 2 W parts 5 mm apart share one copper patch and their rises add; 5–10 mm suggested as a start). Keep hot parts away from board corners, where copper cannot spread heat. — [NextPCB thermal design basics 2](https://www.nextpcb.com/blog/pcb-thermal-design-basics-2-component-layout); [ALLPCB thermal-aware placement](https://www.allpcb.com/blog/pcb-assembly/thermal-aware-component-placement-a-guide-to-preventing-overheating-on-pcbs.html); [EMA placement best practices](https://www.ema-eda.com/ema-resources/blog/best-practices-for-pcb-component-placement-emd/)
 - Electrolytic life follows an Arrhenius-like 10 °C rule (life roughly doubles for each 10 °C cooler), but this is a simplification that ignores voltage and ripple. Polymer capacitors use a different, lab-derived rule. A worked example assumed +35 °C for a cap near IGBTs plus ripple heating. — [CapXon Lifetime Compendium](https://www.capxongroup.com/files/Lifetime%20Compendium_EN.pdf); [DigiKey TechForum lifetime calculation](https://forum.digikey.com/t/calculating-the-operational-life-of-an-aluminum-electrolytic-capacitor/45517)
@@ -300,6 +324,19 @@ Heat moves easily along copper planes but poorly through FR-4. Carry heat from e
 Encode fab limits as DRC minimums but design to the recommended values, not the absolute minimums. For JLCPCB 1 oz that means 4/4 mil (2-layer), 3.5/3.5 mil (multilayer), annular ring 0.25 mm (2-layer) or 0.20 mm (multilayer), and copper ≥0.2 mm from routed edges. Use IPC-7351 courtyards (Level B 0.25 mm excess). Keep passives' thermal connections symmetric to prevent tombstoning. Provide 3 global fiducials (1 mm copper, 2 mm mask opening) and local fiducials for fine pitch, and test points on one side at 100 mil pitch where possible. Keep MLCCs ≥3–5 mm from V-score or tab lines, and meet IPC-2221B or IEC creepage and clearance for high voltage.
 
 ### Cited Findings
+- **[P] JLCPCB capabilities page (read 2026-10-20). Additions to the [S] bullet below:**
+  - Track and space by copper weight:
+    - 2 oz: 0.16/0.16 mm (2-layer), 0.15/0.15 mm (multilayer).
+    - 2.5 oz: 0.20/0.20 mm. 3.5 oz: 0.25/0.25 mm. 4.5 oz: 0.30/0.30 mm (2-layer only).
+    - Available weights: 2-layer 1/2/2.5/3.5/4.5 oz outer; multilayer 1/2 oz outer; inner layers 0.5 oz by default.
+  - Track width tolerance ±20%.
+  - PTH annular ring at 2 oz ≥0.254 mm. NPTH pad ring recommended ≥0.45 mm.
+  - Pad-to-track clearance 0.1 mm (1 oz). SMD pad spacing ≥0.10 mm (1 oz, most mask colours) or 0.20 mm (2 oz).
+  - Pad-to-silkscreen ≥0.15 mm.
+  - Copper to routed edge ≥0.2 mm, and to V-cut edge ≥0.4 mm. V-cut edge tolerance ±0.4 mm (board ≥0.6 mm). Minimum spacing between two V-cuts 2 mm (3 mm recommended).
+  - Inner-layer via-hole-to-copper clearance 0.2 mm; inner PTH-hole-to-copper 0.3 mm.
+  - Vias in BGA pads require filled and plated-over vias.
+  — [JLCPCB PCB capabilities (primary)](https://jlcpcb.com/capabilities/pcb-capabilities)
 - JLCPCB official capabilities (per extract), 1 oz copper: track and space 0.10/0.10 mm (4/4 mil) on 1–2 layer boards and 0.09/0.09 mm (3.5/3.5 mil) on multilayer, 3 mil only in BGA fan-outs. At 2 oz on 2-layer: 6.5/6.5 mil. Annular ring recommended 0.25 mm on 2-layer (absolute 0.18 mm) and 0.20 mm on multilayer (absolute 0.15 mm). Copper ≥0.2 mm from non-mouse-bite board edges. Edge tolerance ±0.2 mm regular / ±0.1 mm high precision. Third-party blogs quote different numbers (e.g., 5 mil). The official page wins. — [JLCPCB PCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities); [NextPCB capability comparison](https://www.nextpcb.com/blog/pcb-capabilities-comparison-jlcpcb-vs-pcbway-vs-nextpcb)
 - IPC-7351 courtyard excess per side: Level A (most) ≈ 0.50 mm, Level B (nominal) 0.25 mm, Level C (least) ≈ 0.10 mm, defined per component family. The density levels are solder-fillet goals, not quality classes. — [PCB Libraries forum: courtyard excess](https://www.pcblibraries.com/forum/placement-courtyard-excess_topic3372.html); [LinkedPCBA courtyard clearance](https://www.linkedpcba.com/blog/component-courtyard-clearance-guide.html); [Ultra Librarian placement tolerance](https://www.ultralibrarian.com/2024/11/15/pcb-component-placement-tolerance-ulc/)
 - Tombstoning: thermal imbalance means one end wets first and surface tension stands the part up. 0201 and 0402 are the most susceptible. Use symmetric IPC-7351 pads and thermal relief on plane-connected pads (spokes about 0.10–0.20 mm, gaps 0.20–0.30 mm for fine passives). Mirror any via within 1 mm of one pad at the opposite pad. Balance paste volume. A longer soak helps in the profile. — [JLCPCB tombstoning](https://jlcpcb.com/blog/pcb-tombstone); [AtlasPCB tombstoning prevention](https://www.atlaspcb.com/blog/pcb-tombstoning-prevention-smt/); [JLCPCB thermal relief](https://jlcpcb.com/blog/thermal-relief-pad-design)
@@ -361,7 +398,7 @@ Recommended order of operations for an automated placer (synthesized from the ab
 Rule of thumb: placement quality can be scored before routing by ratsnest length, crossing count, per-region congestion and constraint-violation counts. That lets placement iterate cheaply ("placement is most of routing").
 
 ### Gaps
-- Searches turned up nothing citable from Robert Feranec (FEDEVEL) or Phil's Lab on their specific placement order, so their methods are not represented here.
+- Pass 1 found nothing citable from Robert Feranec (FEDEVEL) or Phil's Lab. Pass 2 found some, plus Pease and Williams material; see section 19.
 
 ---
 

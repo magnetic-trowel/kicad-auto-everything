@@ -1,347 +1,509 @@
 # LLMs and Agentic AI for EDA Physical Layout (PCB + IC Placement & Routing), Spatial Reasoning, and Design-Intent Explanation
 
-_Method note for the report writer: compiled 2026-10-20. Direct page fetches failed during this session: WebFetch could not resolve arxiv.org or huggingface.co, the egress proxy refused arxiv.org, and GitHub repos outside this project were not accessible. As a result, every finding below comes from web-search result summaries of the cited pages: abstracts, HTML snippets, review sites such as Pith and papernotes, and vendor blogs. **No paper was read in full.** Numbers are as reported in those snippets and were not checked against the papers' tables. Status flags: **[PR]** = peer-reviewed venue, **[WS]** = workshop, **[PP]** = arXiv preprint / not yet peer-reviewed, **[V]** = vendor/blog/marketing, **[C]** = community/README. The search budget ran out before OmniRouting, Holodeck/LayoutVLM, and the 2023 LLM4EDA survey could be checked; see the Gaps sections._
+_Method note for the report writer (revised 2026-10-20, deep pass). This file was first written from search snippets alone, because arXiv was unreachable at the time. In the deep pass, arXiv full text (HTML or PDF) was downloaded with curl and read locally. The WebFetch tool still could not resolve hosts, and mdpi.com was blocked (HTTP 403). Every finding carries a provenance tag:_
+- _**[P]**: read from the primary paper (full text, or at least abstract plus results and conclusion) in this session._
+- _**[P-via-survey]**: read in full text, but in a survey that describes another paper whose primary text was not available (DAC/DATE/ASP-DAC papers not on arXiv)._
+- _**[S]**: search-result snippet or secondary summary only; not verified._
+
+_Venue flags:_
+- _**[PR]**: peer-reviewed._
+- _**[WS]**: workshop._
+- _**[PP]**: arXiv preprint._
+- _**[V]**: vendor or blog._
+- _**[C]**: community or README._
+
+_A separate agent is verifying headline numbers for PCBWorld, ModuPlace, PCBAgent, VeoPlace, EvoPlace, OrderPlace, CoEvoP&R, OmniLayout, PCB-Bench, PCBInnoBench, HWE-Bench, GENIE-ASI, PCBSchemaGen, MAGE and LayoutCopilot. Those entries are kept here mostly at [S] level and marked "(verified separately)". Where this pass read them first-hand, for example through the handoff survey, that is stated. This pass concentrated on breadth and gaps:_
+- _OmniRouting;_
+- _LLM-for-EDA surveys and the systems they list;_
+- _spatial-reasoning and representation studies, read in full;_
+- _VLM layout reading;_
+- _EDA agent-harness studies;_
+- _LLM-to-solver formulation;_
+- _2026 LLM+PCB papers found by following citations._
 
 ---
 
 ## 1. LLM-for-EDA papers and systems for physical layout (2023–2026): what was tried, what worked, what failed
 
 ### Takeaway
-The field has converged on a clear pattern. LLMs do well as **orchestrators, strategists, constraint/objective writers, and heuristic evolvers** wrapped around classical engines: VeoPlace, EvoPlace, CoEvoP&R, OrderPlace, LayoutCopilot, and MCP4EDA all report gains. They do poorly as **direct coordinate or geometry generators**. In PCBWorld, engine-free geometry generation reached a 0.02 clean-pass rate, against 0.65 for interactive tool use and 0.80 for Freerouting. LLM agents scored 0.00 on large boards. PCB-specific LLM work is still dominated by benchmarks (PCB-Bench, PCBWorld, OmniLayout, PCBInnoBench, PCB-QA) that show large gaps. The flagship industrial demo, GPT-6 Astra in KiCad (September 2026), relied on Freerouting for the bulk of its routing.
+All four streams in this section give the same answer. The streams are IC placement, PCB benchmarks, analog/DRC repair, and the newest PCB-specific agent contracts. **LLMs succeed when they make semantic decisions on a low-dimensional control surface**, such as relations, regions, constraints, objective terms, hyperparameters, algorithm code or edit choices from a menu. **They fail when they emit geometry.** The clearest 2026 evidence comes from three PCB papers:
+- **RAC**: when the agent commits only named relations and tools realize the geometry, PCB placement, routing and repair tasks reach a 90.9% clean pass. The same nine models emitting coordinates reach 23.2%.
+- **OmniRouting**: the best LMM connects 12.6% of nets DRC-clean, against 56.2% for an old open-source router and 93.6% for humans.
+- **The DAC 2026 coarse-to-fine PCB placer**: LLM grouping plus MILP legalization beats a commercial placer, NS-Place and Quilter on routed wirelength and vias.
 
 ### Cited Findings
 
 **Surveys and framing**
-- "Agentic Electronic Design Automation: A Handoff Perspective" (Liu, Han, Lu, Zheng, Yan, Bei Yu; June 2026) reviews 82 agentic EDA systems. It classifies them by "handoff validity": an artifact is valid if it meets the next consumer's acceptance conditions and carries context, evidence, and provenance. The three classes are Stage-Bound, Flow-Bound, and Organization-Bound. [PP] — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795); coverage in [SemiEngineering](https://semiengineering.com/edas-future-is-evidence-driven-automation/)
-- "The Dawn of Agentic EDA" survey states that no LLM-driven autonomous agent has yet demonstrated a complete, human-free tape-out of an industrial chip. [PP] — [arXiv 2512.23189](https://arxiv.org/pdf/2512.23189)
-- The Duke survey "A Survey of Research in LLMs for EDA" (ACM TODAES) flags that richer design-rationale and constraint documentation is underused in LLM work. It also names LLM black-box-ness as a barrier to tracing reasoning. [PR] — [ACM 10.1145/3715324](https://dl.acm.org/doi/10.1145/3715324); [arXiv 2501.09655](https://arxiv.org/pdf/2501.09655)
-- "Large Language Models for EDA: Future or Mirage?" is an ACM TODAES review that covers LayoutCopilot and PCBAgent as human-in-the-loop layout examples. [PR] — [ACM 10.1145/3736167](https://dl.acm.org/doi/10.1145/3736167); related Bei Yu IEEE CEDA talk: [CEDA](https://ieee-ceda.org/presentation/lecture/large-language-model-eda)
-- An early-2024 LLM4EDA survey listed physical design and multimodal circuit feature alignment as *future* directions. Physical design was largely unexplored at that point. [PP] — [arXiv 2401.12224](https://arxiv.org/html/2401.12224v1)
-- A 2026 PCB-specific survey, "Surveying GenAI-based Automation in Printed Circuit Board Design and Test", exists. Its content could not be retrieved in this session. [PP] — [arXiv 2606.17074](https://arxiv.org/pdf/2606.17074)
+- **"Agentic EDA: A Handoff Perspective"** (Liu, Han, Lu, Zheng, Yan, Bei Yu; latest HTML version) **[P][PP]**:
+  - The latest version reviews **115 agentic EDA systems**; earlier snippets said 82, probably v1. It classifies them by primary input–output pair into Intra-, Inter- and Extra-stage systems.
+  - **Agent harness mechanisms appear in 88 of 115 systems; model-parameter optimization appears in 23.** Explicit feedback loops are the most common mechanism (1, 16, 23 and 24 systems in 2023–2026). Search/evolution follows (0, 4, 12, 13), then retrieval/memory (0, 2, 7, 8) and orchestration (0, 5, 10, 7). RL fine-tuning of the LLM appears in only three 2026 systems.
+  - It warns that "generated verification collateral can be mutually consistent yet jointly wrong when the implementation and its checks inherit the same interpretation". It also warns that reported gains cannot be compared across unmatched models, tool budgets and backends.
+  - Source: [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **LLM4EDA** (SJTU, Dec 2023) **[P][PP]**: "The complexity of Placement and Routing (P&R) currently makes it challenging to directly apply LLMs." It suggests graph partitioning and clustering to cut problem scale, and using LLMs to "optimize modules or act as a reward system for RL agents" — [arXiv 2401.12224](https://arxiv.org/abs/2401.12224).
+- **"A Survey of Research in LLMs for EDA"** (Duke, ACM TODAES) **[P][PR]**: in logic synthesis and physical design, two trends dominate: Tcl script generation and documentation Q&A. Analog layout adds symmetry and wire-matching constraints — [arXiv 2501.09655](https://arxiv.org/abs/2501.09655); [ACM 10.1145/3715324](https://dl.acm.org/doi/10.1145/3715324).
+- **"The Dawn of Agentic EDA"** (v2, Feb 2026) **[P][PP]**: "no LLM-driven autonomous agent has yet demonstrated a complete, human-free tape-out of an industrial chip". Most academic agents optimize proxy metrics such as placement wirelength on open PDKs like Sky130 — [arXiv 2512.23189](https://arxiv.org/abs/2512.23189).
+- **"LLMs in Digital EDA: from Generation to Orchestration"** (perspective, Aug 2026) **[P][PP]**: defines Generator, Agent and Orchestrator roles. It identifies a **"syntax trap"**: models trained to produce plausible code rather than physically correct hardware, made worse by fragmented tools and lost design context — [arXiv 2608.27184](https://arxiv.org/abs/2608.27184).
+- **"Surveying GenAI-based Automation in PCB Design and Test"** (UNSW, Jun 2026) **[P][PP]**:
+  - It covers 80 papers. It argues that existing LLM-for-EDA surveys "are skewed towards ICs and do not examine PCBs".
+  - At the PCB layout/routing stage it finds very few GenAI works, including (i) You et al. 2024, where GPT-4 writes layout-generator code; (ii) Zhang et al. 2025 in *Engineering Proceedings* (MDPI), a few-shot plus chain-of-thought LLM-only approach that generates PCB routing coordinates; and (iii) PCBAgent and LLANA.
+  - It concludes: **"no GenAI tools independently validate PCB layouts – they instead work as EDA design assistants."**
+  - Source: [arXiv 2606.17074](https://arxiv.org/abs/2606.17074). The Zhang et al. MDPI paper could not be fetched (403) — [MDPI](https://www.mdpi.com/2673-4591/86/1/2).
 
-**Flow / tool-orchestration agents (IC)**
-- **ChatEDA** (Aug 2023): a fine-tuned LLM, "AutoMage", decomposes a natural-language request into sub-tasks, writes Python scripts for EDA tools including OpenROAD, and executes them across RTL→GDSII. The authors claim it beats GPT-4. [PP per sources found] — [arXiv 2308.10204](https://arxiv.org/pdf/2308.10204). The handoff survey calls it the only system in its corpus whose input→output spans RTL to final ASIC layout — [arXiv 2606.19795](https://arxiv.org/pdf/2606.19795)
-- **MCP4EDA** (Jul 2025, UMD/Duke): an MCP server that exposes Yosys, Icarus, OpenLane, GTKWave, and KLayout to Claude Desktop/Cursor. In a closed "backend-aware synthesis" loop, the LLM reads post-layout timing/power/area and rewrites synthesis TCL. Self-reported results: 15–30% better timing closure and 10–20% area reduction versus default flows. [PP] — [arXiv 2507.19570](https://www.arxiv.org/abs/2507.19570). NL2GDS criticizes it as tool orchestration that assumes RTL already exists — [arXiv 2603.05489](https://arxiv.org/pdf/2603.05489)
-- **AutoEDA**: MCP-based RTL→GDSII microservice agents with locally fine-tuned models, motivated by the privacy risk of external APIs. [PR, ACM TODAES] — [arXiv 2508.01012](https://arxiv.org/html/2508.01012v2); [DOI 10.1145/3842675](https://www.citedrive.com/en/discovery/autoeda-enabling-eda-flow-automation-through-microservice-based-llm-agents/)
-- **ORAssistant**: a RAG conversational assistant over OpenROAD, ORFS, Yosys, OpenSTA, and KLayout docs, built on Gemini, answering in prose. The authors report improvements over non-fine-tuned LLMs. [PP] — [arXiv 2410.03845](https://arxiv.org/html/2410.03845v2). A separate project, **OpenROAD-Assistant** (Llama3-8B with retrieval-aware fine-tuning, RAFT), answers in prose or OpenROAD Python — [Zenodo](https://zenodo.org/records/13119166)
-- **AuDoPEDA** (UCSD 2026): a coding agent that proposes and submits OpenROAD code changes. Reported results: up to 5.9% lower routed wirelength, 10.0% lower effective clock period, and 19.4% lower power. [PP] — [arXiv 2601.06268](https://arxiv.org/pdf/2601.06268)
-- **PDAgent-Bench**: 353 physical-design problems across 11 models. Models did reasonably on concepts but were weak on tool-centric execution, e.g. 42.2% on Innovus script generation. "Human-skill-enhanced" agentic workflows significantly improved end-to-end PD results. [PP] — [arXiv 2606.17253](https://arxiv.org/abs/2606.17253); [leaderboard](https://github.com/fenggev56/PDAGENT-BENCH)
+**PCB-specific systems and benchmarks (2026)**
+- **RAC: A Relational Agent Contract for Constraint-Governed Engineering Tasks** (Oct 14, 2026) **[P][PP]**. This is the most directly relevant paper found.
+  - **Contract.** The agent observes a typed board state (components, pins, nets, copper, unrouted connections, DRC results). It may only commit **relations over named objects**: proximity, alignment, symmetry, edge association, keepouts, matched routing, layer preference and via limits. "**No action accepts a coordinate or a metric distance: magnitudes use small ordered classes (tight, close, loose)**", with the metric values fixed on the solver side.
+  - **Realization and checking.** The full bundle of relations is realized jointly by a seed-controlled placement and routing backend. An **independent** DRC plus relation-specific oracles then check the result. When realization is infeasible, feedback names the conflicting constraints, the violation magnitudes and the admissible relaxations.
+  - **Tasks.** 98 PCB tasks: 42 routing, 31 placement, 17 combined, 8 repair. They cover decoupling, board-edge association, keepouts, grouping, symmetry, alignment and routing relations. Nine models were tested over six seeds with at most five model calls per episode.
+  - **Mean clean-pass rate by interface:** direct coordinates 23.2%; coordinates plus a Python sandbox 21.0%; choosing among tool-generated candidates 37.4%; one relation at a time 62.4%; requirements-only delegation 74.0%; **RAC 90.9%**. RAC was best for all nine models (77.6–95.9%). It used 22.9–48.5% fewer tokens than candidate selection and had the lowest latency for 7 of 9 models.
+  - **Harness robustness.** Across Native function calling, Codex, Claude Code and OpenCode harnesses, coordinates scored 22.7–32.7% and RAC 91.8–95.9%. The coding-agent harnesses cost 2.2–5.4× the tokens of native calls.
+  - Its stated limitation: RAC needs a realizer and an independent checker, so preferences that cannot be written as checkable predicates fall outside it.
+  - Source: [arXiv 2610.20935](https://arxiv.org/abs/2610.20935).
+- **OmniRouting** (Penn State, MSR, SJTU et al., Aug 5, 2026) **[P][PP]**:
+  - **Data.** 1,681 open-hardware PCB designs (SparkFun, Arduino, Adafruit, Seeed and others) parsed from EAGLE XML. Each has a human-made routable placement and a human reference routing: 494K wire segments, 84.6K vias, 4.3K pours, 2–8 layers.
+  - **Metrics.** Net Routability Ratio (NRR) is the share of nets connected and DRC-clean; PRR is the pad-to-pad equivalent.
+  - **Zero-shot results:**
 
-**IC macro / global placement with LLMs or VLMs**
-- **VeoPlace** (Google DeepMind; Uchendu & Goel): a frozen Gemini 2.5 Flash VLM acts as a high-level planner and proposes **bounding-box regions** per macro. A specialized low-level placer then places within those regions. The VLM is prompted with a history of prior attempts given as **both text coordinates and canvas images plus metrics**, and is used evolutionarily over generations with no fine-tuning. arXiv v2 reports beating ChiPFormer on 9 of 10 benchmarks, with peak wirelength reductions >32% on ISPD2005/ICCAD2004/Ariane, and DREAMPlace gains on all 8 ICCAD2015 Superblue designs (up to 4.3%). The earlier OpenReview version reported SOTA on 4 of 7. [PP; OpenReview submission] — [arXiv 2603.28733v2](https://arxiv.org/html/2603.28733v2); [OpenReview](https://openreview.net/forum?id=IiU0SeoZHg); [Kempner](https://kempnerinstitute.harvard.edu/news/rethinking-chip-design-with-ai-that-can-see/)
-- **EvoPlace** (Yao et al.): an LLM evolves the *optimization algorithm code* (initialization, preconditioning, optimizer updates) inside analytical global placement (DREAMPlace) under HPWL feedback. Reported HPWL gains: 5.05% (MMS), 5.29% (ISPD2005), 8.30% (ISPD2019) on average, up to 17%. [PR, IEEE TCAD 2026] — [IEEE](https://ieeexplore.ieee.org/document/11345590/); [code](https://github.com/yaoxufeng/EvoPlace)
-- **CoEvoP&R** (Chen, Xiao, Karri, Han; 2026): an LLM evolves **readable differentiable placement objectives** embedded in DREAMPlace, scored with a timing proxy and an *actual router*, and archived with feedback. On 8 ChiP-Bench Nangate45 designs × 3 seeds it reports −16.9% routed wirelength, −36.7% congestion, and +0.70 ns WNS versus native DREAMPlace. On 8 Superblue designs it reports −5.4% routed wirelength and −23.2% congestion. It logs full prompt/response/metric lineage. [PP] — [arXiv 2607.17398](https://arxiv.org/abs/2607.17398); [code](https://github.com/FCHXWH823/CoEvoP-R)
-- **OrderPlace** ("Order Matters"): an LLM evolves code-level **macro placement ordering** strategies, filtered by a cheap deterministic greedy-probe proxy. On ISPD2005 it reports 34.04% lower wirelength than WireMask-EA and 14.08% lower than EGPlace. [PR, ICML 2026 poster] — [arXiv 2606.08904](https://arxiv.org/pdf/2606.08904); [ICML](https://icml.cc/virtual/2026/poster/62576)
-- **MAGE** (Kahng et al.): a multimodal multi-agent macro-placement refinement framework with a six-phase workflow. Expert knowledge is supplied as natural-language directives and validation criteria, and a tournament mode compares candidates. Across 9 designs (NanGate45, GF12) it claims geometric-mean WNS gains of 11.1–19.3% and TNS gains of 70–74% versus commercial macro placers. Pith's review notes **+29.7% routed wirelength and about 4% higher power**, single-run results, and ablations on only 2 designs. [PP] — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536); [Pith review](https://pith.science/paper/2607.18536)
-- **PlaceReasoner-Beta** (Li, Wang, …, D. Z. Pan, T. Lan): a verifier-guided multi-agent VLM. A planner proposes, a **geometric checker** enforces physical constraints, a PD checker reviews intermediate implementation feedback, and a post-route optimizer uses final PPA/DRC. It reports the best timing and routability across 16 tasks, with the caveat that the floorplan is fixed. [PP] — [arXiv 2609.21263](https://arxiv.org/abs/2609.21263); [Pith](https://pith.science/paper/2609.21263)
-- **MacroAgent** (LLM-agent-designed contour algorithms for regularity-aware macro legalization) and **VPR-Evolve** (multi-agent algorithm evolution for FPGA P&R) exist, but only their titles were retrieved. [PP] — [MacroAgent](https://arxiv.org/pdf/2608.24946); [VPR-Evolve](https://arxiv.org/pdf/2607.24998)
+    | Router | NRR | PRR |
+    |---|---|---|
+    | Best LMM (Claude Opus 4.8) | 12.60% | 15.41% |
+    | GPT-5.5 | 9.13% | 12.26% |
+    | PcbRouter (open-source OpenROAD-attic router) | 56.20% | 71.37% |
+    | GPCB transformer router | 0.69% | — |
+    | Human reference | 93.58% | 95.91% |
 
-**Analog IC layout**
-- **LayoutCopilot** (Peking Univ.; Liu, Huang et al.): a multi-agent LLM framework for interactive analog layout. An *Abstract Request Processor* turns high-level intents into concrete requests that match the tool manual, and a *Concrete Request Processor* emits executable layout-tool scripts. MAGICAL produces an initial unconstrained placement, and the agents then propose symmetry constraints on identified device pairs, e.g. differential pairs. Abstract suggestions are executed only **after the designer accepts them**. No headline numbers were found. [PR, IEEE TCAD] — [arXiv 2406.18873v2](https://arxiv.org/abs/2406.18873v2); [v3 HTML](https://arxiv.org/html/2406.18873v3); review summary in [ACM TODAES "Future or Mirage?"](https://dl.acm.org/doi/10.1145/3736167)
-- **Simulation-Aware In-Context Policy Improvement (ICPI)** (Liu, Wei, Gao, D. Z. Pan): wraps an analog layout generator (MAGICAL-style) and tunes its exposed parameters (net weights, placement bias, symmetry constraints, routing priorities, wire widths) in an **act–observe–reflect loop with a "design journal"**, without weight updates. With tens of post-layout simulations it beats built-in heuristics and BO. On OTA1 it reports FoM 1.104, versus 1.003 without ICPI and 0.979 for BO. Pith flags n=1 runs and an under-specified BO baseline. The authors note that scaling is hard because state representation grows and simulation is costly. [PR, to appear ICLAD 2026] — [arXiv 2608.13767](https://arxiv.org/abs/2608.13767); [Pith](https://pith.science/paper/2608.13767)
-- **LLANA**: uses LLM few-shot learning to generate design-dependent layout parameter constraints (e.g. net weights) that speed up Bayesian optimization of analog layout. [PP] — [arXiv 2406.05250](https://arxiv.org/pdf/2406.05250)
-- **ACDC** ("LLMs for Analog Circuit Design Continuum"): fine-tunes Mistral-7B and GPT-oss-20B to place transistors sequentially on a grid under symmetry, non-overlap, and area objectives, using masked-layout prediction. A secondary digest says the authors later moved from grid to **continuous coordinates**. No accuracy numbers were retrieved. [PP] — [arXiv 2512.09199](https://arxiv.org/pdf/2512.09199)
+  - **Errors.** LMM outputs average 69.8–431.3 DRC violations and 20.5–78.3% of nets with physical shorts, against 0.80 and 0.38% for humans. Models route GND as ordinary traces instead of pours.
+  - **Agentic setting** (tools for visualization, overlap check and routability scoring): the best is GPT-5.5 with all tools, NRR 27.98%. Its DRC total falls from 48.06 to 9.35 and physical shorts from 39.5% to 9.1%.
+  - **Feedback quality beats iteration count.** More steps helped GPT-5.5 (NRR 21.7→28.0%) but hurt GPT-5-mini (9.9→6.8%).
+  - **Few-shot examples** "can reduce violations by routing less".
+  - **Inconsistency:** the agentic-framework text describes refining "component positions", apparently copied from OmniLayout.
+  - Source: [arXiv 2608.04434](https://arxiv.org/abs/2608.04434).
+- **Li et al., "A coarse-to-fine PCB placement framework via LLM-guided component grouping and group-aware placement"** (Proc. DAC 2026) **[P-via-survey][PR]**:
+  - Pipeline: multimodal serialization, topology-enriched retrieval, two grouping agents, group-aware global placement, and **constraint-graph/MILP legalization**.
+  - Results: "On six industrial boards routed by the same commercial router, Li et al. report average routed-wirelength/via improvements of **55%/73% over the commercial placer, 34%/26% over NS-Place, and 15%/13% over Quilter**."
+  - The survey stresses that "an unlegalized coordinate set is not acceptable even when its estimated HPWL is low."
+  - The primary paper is not on arXiv. It may be the "ModuPlace" being verified separately; unconfirmed.
+  - Source: [handoff survey §4.2](https://arxiv.org/abs/2606.19795).
+- **PCBAgent** (ASP-DAC 2025; verified separately) **[P-via-survey][PR]**: an RL placement policy (decision-transformer style) plus an LLM interaction agent that turns requests into optimization commands. It was "the only evaluated method to produce fully legal results on all 17 high-density tasks". Its normalized HPWL and surface-layer wire count reach **1.04 and 0.94 relative to manual layouts**, and interactive refinement improves requested wire categories by **39.6%** on average. "Some baselines attain shorter wirelength by violating spacing or boundary constraints." Sources: [handoff survey](https://arxiv.org/abs/2606.19795); [ACM DL](https://dl.acm.org/doi/10.1145/3658617.3697736).
+- **PCBWorld** (LG AI Research; KiCad push-and-shove engine, 679 real boards; verified separately) **[S][PP/WS]**: interactive GPT-5.4 routing reaches clean pass 0.65 on D3-A, against 0.19 for plan-then-execute and 0.02 for engine-free generation. All LLMs score 0.00 on large D3-B boards. Freerouting scores 0.80/0.78 — [arXiv 2607.05915](https://arxiv.org/abs/2607.05915); [GitHub](https://github.com/LGAI-Research/PCBWorld).
+- **OmniLayout** (placement companion to OmniRouting; verified separately), **PCB-Bench** (ICLR 2026), **PCBInnoBench** (NeurIPS 2026; 22.0% vs 7.3% Pass@1 with vs without expert trajectory), **PCB-QA** and **HWE-Bench** are all **[S]** — [OmniLayout](https://arxiv.org/abs/2607.03261); [PCB-Bench](https://github.com/digailab/PCB-Bench); [PCBInnoBench](https://neurips.cc/virtual/2026/poster/139034); [PCB-QA](https://arxiv.org/abs/2606.23704); [HWE-Bench](https://arxiv.org/abs/2603.18102).
+- **"From Prompt to Prototype: Frontier-LLM-driven RF engineering workflow"** (Ruhr-Univ. Bochum / TH Köln, Aug 2026) **[P][PP, carries an IEEE copyright notice]**:
+  - **Setup.** Claude Fable 5 inside Claude Code designed an active GNSS L1 antenna end to end in about 2 hours: patch antenna, SAW prefilter, two-stage LNA and a manufacturing-ready 2-layer board. It drove CST, ADS and **KiCad 9 only through pcbnew and kicad-cli**.
+  - **Design as code.** The whole design is held as scripts, so "schematic and layout are **netlist-identical by construction**", and an automatic check confirmed all 75 nodes and 18 nets against the simulated design. RF lines were drawn as copper polygons that replicate the simulated line models.
+  - **What human review caught.** Rounded line ends where the simulation assumed square; a missing 45° miter; solder-mask openings around RF lines; a tee routed where the simulation had a crossing. The first schematic was "not human-readable": parts on a grid, connected only by net labels.
+  - **Persistent knowledge.** Operating knowledge lived in agent-maintained markdown context files, and standing conventions were written to persistent context.
+  - **Stated limit.** "Only the generation of frontier models released since early to mid-2026 sustains such multi-hour tool-driving sessions reliably."
+  - Source: [arXiv 2608.31006](https://arxiv.org/abs/2608.31006).
+- **SchGen** (Microsoft, May 2026) **[P][PP]**: generates editable PCB schematics from natural language using a **"semantically grounded code representation"**: editing primitives with **relative placement and pin-name-based wiring**. This turns "a geometry-driven generation problem into a semantics-driven matching task". It significantly outperforms alternative representations and larger general LLMs on connectivity and function — [arXiv 2605.30345](https://arxiv.org/abs/2605.30345); [code](https://github.com/microsoft/SchGen).
+- **DRCY: Agentic Hardware Design Reviews** (AllSpice, Mar 2026) **[P][PP]**: a production multi-agent schematic reviewer run as a CI/CD action on AllSpice Hub. Its five-agent pipeline is described in Section 4. **No accuracy numbers are reported** — [arXiv 2603.15672](https://arxiv.org/abs/2603.15672).
+- **SmartonAI** (2023; KiCad plugin) **[P][PP]**: a chat plugin that splits instructions into subtasks with RAG over documentation, plus a plugin recommender. It only helps users operate KiCad and does no layout — [arXiv 2307.14740](https://arxiv.org/abs/2307.14740).
+- **kicad-pycbnew** (CNRS/IN2P3, Sep 2026) **[P][PP]**: an MIT-licensed Python library that writes KiCad PCB files programmatically **without a KiCad runtime**. It offers constraint-driven routing, parallel track arrays and via grids with exclusion zones, aimed at parameterized detector boards — [arXiv 2609.27522](https://arxiv.org/abs/2609.27522).
+- **CUABench-KiCad** (25 schematic-editing GUI tasks scored by netlist comparison, from Cua AI): in the MFM memory paper, persistent multimodal memory raised mean reward from 0.267 with no memory to 0.440 (best baseline 0.400) **[P][PP]** — [arXiv 2610.22686](https://arxiv.org/abs/2610.22686).
+- **Industry demos and claims** (all **[S]**, carried over from the first pass):
+  - **GPT-6 Astra KiCad demo** (Sept 2026). The model hand-protected critical nets, then ran Freerouting. KiCad reported 46 parity issues, and one comparison found 168 DRC violations against 0 on the human board — [JLCPCB](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad); [NextPCB](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test); [zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/); [Quilter](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra).
+  - **EEBench** (atopile; layout out of scope; claims declarative code beats GUI drawing) — [EEBench](https://eebench.org/blog/can-ai-design-circuit-boards-yet/).
+  - **Quilter's position:** "not an LLM"; physics checks; values derived from the stackup — [Quilter](https://www.quilter.ai/blog/pcb-autorouter-was-the-right-idea).
+  - **KiCad MCP servers** that route mostly through Freerouting — [Konnect](https://github.com/mixelpixx/Konnect); [kicad-mcp-pro](https://github.com/oaslananka/kicad-mcp-pro); [Gato513/kicad-mcp](https://github.com/Gato513/kicad-mcp).
+  - **Siemens "Fuse EDA AI agent"** spanning IC, 3D IC and PCB, cited by the handoff survey — [Siemens](https://news.siemens.com/en-us/siemens-fuse-eda-ai-agent/).
 
-**PCB-specific**
-- **PCBAgent** (ASP-DAC 2025; Jianye Hao, Bei Yu et al.): an **RL agent** (decision-transformer style, building on ChiPFormer) handles layout inference and fine-tuning. An **LLM agent** translates user requests into optimization commands for interactive optimization. The LLM never updates the placement policy. The authors report that it outperforms SOTA on 17 industrial high-density tasks, with baselines including MaskPlace, ChiPFormer, and a MILP post-optimizer. [PR] — [ACM DL](https://dl.acm.org/doi/10.1145/3658617.3697736); [author PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); description in [arXiv 2606.19795](https://arxiv.org/pdf/2606.19795)
-- The handoff survey also describes a placement approach by "Li et al." that uses **multimodal serialization, topology-enriched retrieval, two grouping agents, group-aware global placement, and constraint-graph/MILP legalization**. The exact paper and whether it targets PCB or IC were not identified. [PP survey] — [arXiv 2606.19795](https://arxiv.org/pdf/2606.19795)
-- **PCBWorld** (LG AI Research; Song et al., 2026): an open-source routing environment built on **KiCad's push-and-shove router**, with DRC feedback, three dataset families (two synthetic generators plus 679 real open-source boards), and PCBWorld-Bench, which scores with KiCad's own outputs. It compares rule-based routers (Freerouting, OrthoRoute, KiCadRoutingTools), RL agents (PPO, GRPO, A2C, Sable), and LLM agents (GPT-5.4 family, Qwen3.5-397B). The LLM agent gets **one API call per step, with board state, legal actions (7 actions), and reward fed back each turn**. [PP + WS, KDD 2026 agentic-eval workshop] — [arXiv 2607.05915](https://arxiv.org/abs/2607.05915); [workshop PDF](https://kdd-eval-workshop.github.io/agenticai-evaluation-kdd2026/assets/papers/42_PCBWorld_A_Benchmark_Enviro.pdf); [GitHub](https://github.com/LGAI-Research/PCBWorld). Full numbers are in Section 7.
-- **PCB-Bench** (ICLR 2026; Jindong Li, Lianrong Chen et al.): about 3,700 expert-annotated text items, about 500 image+text problems, and 174 complete OSHWHub (JLCPCB) projects. It finds "substantial gaps in current models' ability to reason over spatial placements, follow domain-specific constraints, and interpret professional engineering artifacts". PCBWorld notes that PCB-Bench tests board interpretation, not routing ability. [PR] — [ICLR proceedings](https://proceedings.iclr.cc/paper_files/paper/2026/hash/051f3997af1dd65da8e14397b6a72f8e-Abstract-Conference.html); [GitHub](https://github.com/digailab/PCB-Bench); [PCBWorld HTML](https://arxiv.org/html/2607.05915v2)
-- **OmniLayout** (Microsoft Research et al., July 2026): 1,681 industrial schematic-coupled PCB layouts and 77.24K IC-placement instances. Its four tasks are geometric placement, routability-aware placement, electrical/schematic-relation preservation, and tool-augmented agentic reasoning. It evaluates Claude-Sonnet-4.6, GPT-5.5, and Qwen3.6-35B-A3B against experienced human layout engineers. Results show weak geometric reasoning, poor routability, and incomplete preservation of schematic relationships. Per Pith, models produced **overlapping components, underused the back side, and had poor post-route wirelength and completion across zero-shot, few-shot, and agentic settings**. [PP] — [arXiv 2607.03261](https://arxiv.org/abs/2607.03261); [MSR page](https://www.microsoft.com/en-us/research/publication/omnilayout-a-schematic-coupled-multimodal-benchmark-for-constraint-aware-geometric-reasoning-in-pcb-layout/); [Pith](https://pith.science/paper/2607.03261)
-- **OmniRouting**, a companion "semantic-coupled multimodal benchmark for constraint-aware spatial reasoning in PCB routing", exists, but its content was not retrieved. [PP] — [arXiv 2608.04434](https://arxiv.org/html/2608.04434v1)
-- **PCBInnoBench** (NeurIPS 2026 poster): 372 expert-designed KiCad editing tasks from real projects, graded with hidden structural, task-specific, and cross-artifact checks. The best agent reached **22.0% Pass@1 when given an expert's editing trajectory and 7.3% with the objective only**. [PR] — [NeurIPS](https://neurips.cc/virtual/2026/poster/139034)
-- **PCB-QA**: 480 QA pairs from early-stage KiCad files covering connections, datasheet details, and SPICE behaviour, evaluated over text serializations such as JSON netlists and SPICE. Scores were not retrieved. [PP] — [arXiv 2606.23704](https://arxiv.org/pdf/2606.23704)
-- Schematic-side PCB LLM work: **PCBSchemaGen** (training-free LLM code synthesis with a datasheet-derived knowledge graph and a deterministic 5-layer verifier with pin-level error localization) [PP] — [arXiv 2602.00510](https://arxiv.org/abs/2602.00510); **pcbGPT** (natural language to KiCad schematic via datasheet retrieval; explicitly stops before placement and routing) [PP] — [arXiv 2606.01188](https://arxiv.org/html/2606.01188v1); **HWE-Bench** (board-level schematic design) [PP] — [arXiv 2603.18102](https://arxiv.org/pdf/2603.18102); **MMCircuitEval** (3,614 multimodal circuit QA pairs, with the largest gaps in back-end design) [PP] — [arXiv 2507.19525](https://arxiv.org/html/2507.19525v1)
-- **GPT-6 Astra KiCad demo** (OpenAI, Sept 4, 2026): a short clip of the model placing and routing in KiCad. Quilter calls it a real step for LLMs operating CAD, but says it is a condensed clip with no PCB-specific benchmark. [V] — [Quilter](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra). JLCPCB's reproduction turned a four-line brief into a 44×34 mm, 2-layer board. The model **first defined and protected the power, bootstrap, and switching connections, then ran local Freerouting for the remaining low-current nets**. KiCad reported **46 schematic-parity issues**. [V] — [JLCPCB KiCad review](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad). NextPCB found the workflow was DSN export → Freerouting → SES import, i.e. an existing autorouter did the routing. [V] — [NextPCB](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test). zerowithdot reported 168 DRC violations on the AI board versus 0 on the human board. [C] — [zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/). A single LinkedIn post claims that with the autorouter off, Astra routed only three trace segments in an hour (unverified). [C] — [LinkedIn](https://at.linkedin.com/in/gregor-markus-christandl). A vendor claims 97% first-pass fab yield on 40 boards behind its own verification gate; this is unverified. [V] — [Cherry Blossom](https://www.trycherryblossom.com/blog/gpt-6-astra-pcb-design)
-- **EEBench** (run by atopile): argues that agents do much better editing a **declarative circuit-as-code** representation than "drawing lines in a GUI". V1 grades simulated circuit design (13 tasks) and **excludes layout**. Claude Opus 5 led at 61.6% as of September 2026, and a reported 69.3% for GPT-6 Astra is disputed. The vendor conflict of interest is disclosed. [V] — [EEBench blog](https://eebench.org/blog/can-ai-design-circuit-boards-yet/); [methodology](https://eebench.org/methodology.html); [Hackaday](https://hackaday.com/2026/09/05/can-ai-now-design-pcbs-that-just-work/); [zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/)
-- **Quilter's position**: its engine is "not an LLM". It is RL plus classical solvers plus computational geometry, generating many candidates checked by physics rules. A neural model proposes moves and a deterministic engine validates them. Values such as differential-pair spacing should be **computed from stackup and impedance targets, not guessed by a network**. [V] — [Quilter blog](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra); [Quilter autorouter post](https://www.quilter.ai/blog/pcb-autorouter-was-the-right-idea); [Quilter about](https://www.quilter.ai/about). A competitor claims Quilter lacks circuit-aware checks such as bypass-cap loop and switching-converter layout checks [V, competitor] — [Protoflow](https://www.protoflow.ai/blog/ai-pcb-design-2026-guide)
-- **KiCad MCP ecosystem**: several open-source MCP servers expose KiCad to LLMs, including Gato513/kicad-mcp (32 tools: placement, copper, Freerouting autoroute, ERC/DRC, export), Konnect (a single Rust binary on the KiCad 10 IPC API; 217 tools per its repo, 228 per a third party), and KiCAD-MCP-Server (Freerouting plus JLCPCB part search). In nearly all of them **routing is delegated to Freerouting or KiCad engines**. One overview says "the routing quality is KiCad's, not the model's". kicad-mcp-pro's author deliberately treats placement and routing as experimental and focuses on validation, DFM, and release gating. [C] — [Gato513/kicad-mcp](https://github.com/Gato513/kicad-mcp); [Konnect](https://github.com/mixelpixx/Konnect); [kicad-mcp-pro](https://github.com/oaslananka/kicad-mcp-pro); [KiCAD-MCP-Server](https://ubos.tech/mcp/kicad-mcp-server/); [pcbeditor overview](https://pcbeditor.com/kicad-ai); [KiCad forum MCP post](https://forum.kicad.info/t/i-built-an-open-source-mcp-server-for-ai-assisted-kicad-workflows/68678)
-- **kicad-tools** (rjwalters) is benchmarking its own `kct route` on PCBWorld D3-A/B against the published Freerouting and KiCadRoutingTools figures. [C] — [issue #5942](https://github.com/rjwalters/kicad-tools/issues/5942); [PR #6702](https://github.com/rjwalters/kicad-tools/pull/6702)
+**IC placement, floorplanning and routing with LLMs**
+- **HyperPlace** (ACM TODAES 2025) **[P-via-survey][PR]**: an LLM agent "proposes and explains hyperparameter configurations" for DREAMPlace/Xplace, leaving legality and coordinates to the placer. It reports up to 1.66% HPWL reduction on ISPD 2005, and under ISPD 2015 fence constraints up to 22.24% over DREAMPlace 3.0 and 19.28% over Xplace 2.0 — [handoff survey](https://arxiv.org/abs/2606.19795).
+- **CHIP-MAP** (DATE 2026) **[P-via-survey][PR]**: analysis, grouping, floorplan and verification agents exchange **structured JSON** to refine macro floorplans. It reports up to 1.5% area reduction and repairs 61.6% of TNS on average — [handoff survey](https://arxiv.org/abs/2606.19795).
+- **LLM for standard-cell layout** (Ho & Ren, NVIDIA; LAD 2024) **[P][PR]**: with ReAct prompting, the LLM generates **cluster constraints** for an existing cell-layout engine. It reports up to 19.4% smaller cells (4.65% on average), 100% LVS/DRC-clean results on the selected 2 nm sequential cells, and 23.5% more clean layouts than prior work — [arXiv 2406.06549](https://arxiv.org/abs/2406.06549).
+- **"Code, not canvas: multi-agent layout generation beyond vision models"** (Yang & Ren, ASP-DAC 2026) **[P-via-survey][PR]**: generates IC layout as code. It reports a diversity score of 12.009 with DRC-legal output, "exceeding the evaluated vision-based layout generators" — [handoff survey](https://arxiv.org/abs/2606.19795).
+- **DRC-Coder** **[P][PP]**: a multi-agent system with vision that turns foundry rule text and figures into DRC checker code. It reached F1 1.000, against 0.631 for standard prompting, in under 4 minutes per rule on a sub-3 nm cell-layout tool — [arXiv 2412.05311](https://arxiv.org/abs/2412.05311).
+- **GR-Evolve** (ASU, Apr 2026) **[P][PP]**: an agentic LLM edits **global-router source code** using QoR feedback in OpenROAD, with persistent knowledge of open-source routers. It gives up to 8.72% lower post-detailed-route wirelength across 7 designs and 3 nodes — [arXiv 2604.22234](https://arxiv.org/abs/2604.22234).
+- **VPR-Evolve** (ASU; ASP-DAC 2027) **[P]**: LLM agents evolve FPGA VPR source code per design, with a shared memory of earlier outcomes. Against stock VPR it improves the composite score by up to 2.7% and cuts critical-path delay by up to 9.8%, routed wirelength by up to 18.1% and runtime by up to 79.3%. Against hyperparameter tuning the gains are delay −6.0%, wirelength −2.2% and runtime −7.8% — [arXiv 2607.24998](https://arxiv.org/abs/2607.24998).
+- **FABO** (HKUST/Synopsys, Aug 2026) **[P][PP]**: agent-guided search found a structural limitation in SALT, which picks path breakpoints sink by sink. The new joint breakpoint optimization lowers average FLUTE-normalized wirelength at every setting across 1.29M ICCAD15 nets: peak −0.83% overall and −2.66% for nets with 30 or more pins — [arXiv 2608.30268](https://arxiv.org/abs/2608.30268).
+- **Prim–Dijkstra revisited with LLMs** (Fudan, Jul 2026) **[P][PP]**: LLM-assisted theory work proved weak NP-completeness of a classic routing-tree problem. The resulting HP-RCRST solver Pareto-dominates the union of published methods on 23 of 28 instances — [arXiv 2607.17005](https://arxiv.org/abs/2607.17005).
+- **AlphaRoute** (Nirma Univ./ASU) **[P][PP, IEEE copyright notice]**: LLMs act as "semantic policy optimizers" that tune rip-up-and-reroute penalty parameters, "bounded by a deterministic knowledge graph". It claims a 98.6% overflow reduction on ISPD 2025 MEMPOOL and 29.8× lower overflow than SOTA on ARIANE. Single group, Python implementation; treat with caution — [arXiv 2607.19768](https://arxiv.org/abs/2607.19768).
+- **GoalEvolve** (Aug 2026) **[P][PP]**: goal-driven source evolution of OpenROAD algorithms. A "Teacher" LLM uses stage-resolved checkpoint evidence to locate the responsible stage and source region; parallel "Student" agents implement and validate changes through full-flow runs. On 8 ASAP7 designs it improves TNS by 30.67% and cuts leakage by 21.18% and dynamic power by 9.42% against default OpenROAD. Under matched budgets it beats Codex goal mode (TNS +26.46%) — [arXiv 2608.16733](https://arxiv.org/abs/2608.16733).
+- **Verified separately (kept [S])**: VeoPlace (VLM-proposed regions over a placer), EvoPlace (LLM-evolved placer optimizer, TCAD 2026), OrderPlace (ICML 2026), CoEvoP&R (LLM-evolved differentiable objectives), MAGE (multimodal multi-agent macro placement), PlaceReasoner-Beta, PDAgent-Bench — [VeoPlace](https://arxiv.org/abs/2603.28733); [EvoPlace](https://ieeexplore.ieee.org/document/11345590/); [OrderPlace](https://arxiv.org/abs/2606.08904); [CoEvoP&R](https://arxiv.org/abs/2607.17398); [MAGE](https://arxiv.org/abs/2607.18536); [PlaceReasoner-Beta](https://arxiv.org/abs/2609.21263).
+- **PDAgent-Bench** (latest version v7) **[P][PP]**: 353 physical-design problems tested on 11 models. Results are competitive on concepts (GPT-5.5 scores 73.3% on root-cause analysis) and weak on tool-centric, long-horizon execution. "Human-skill-enhanced agentic workflows significantly improve end-to-end physical design performance". "With human instructions", VLM macro placement beat analytical and RL baselines — [arXiv 2606.17253](https://arxiv.org/abs/2606.17253).
+
+**Flow orchestration (IC)**
+- **ChatEDA** is peer-reviewed in **IEEE TCAD 43(10), 2024**; the citation was confirmed via the RF-workflow paper's references **[P]** — [arXiv 2308.10204](https://arxiv.org/abs/2308.10204).
+- MCP4EDA, AutoEDA, ORAssistant, AuDoPEDA **[S]**, from the first pass — [MCP4EDA](https://arxiv.org/abs/2507.19570); [AutoEDA](https://arxiv.org/abs/2508.01012); [ORAssistant](https://arxiv.org/abs/2410.03845); [AuDoPEDA](https://arxiv.org/abs/2601.06268).
+
+**Analog layout**
+- **"Who Plans, Who Edits?"** (Purdue, Oct 16, 2026) **[P][PP]**: an LLM repair agent for LVS, DRC and post-layout problems, in which **"models only choose bounded layout operators"**. Deterministic guards apply each edit to a checkpointed copy, and sign-off tools re-verify every edit. Full findings are in Section 3 — [arXiv 2610.24234](https://arxiv.org/abs/2610.24234).
+- **AnalogMaster** (Apr 2026) **[P][PP]**: goes from a circuit image to a netlist, then sizing, then **classical** placement and routing. GPT-5 reaches 92.9% Pass@1 and 99.9% Pass@5 on 15 circuits. The LLM does netlist extraction and the parameter search setup; classical algorithms do the layout — [arXiv 2604.20916](https://arxiv.org/abs/2604.20916).
+- **PANDA** (DAC 2026) and **AnAutomate** (DAC 2026 special session): agentic spec-to-layout flows. AnAutomate coordinates sizing, learned constraints, **ALIGN** layout generation and Calibre checks. PANDA finishes end-to-end cases "in several hours, compared with several days for manual iterations" **[P-via-survey]** — [handoff survey](https://arxiv.org/abs/2606.19795); [PANDA arXiv 2606.15052](https://arxiv.org/abs/2606.15052).
+- **GENIE-ASI** (verified separately) **[P abstract][PP]**: a training-free LLM writes Python to identify analog subcircuits in SPICE netlists. F1 is 1.0 on simple structures, 0.81 on moderate and 0.31 on complex ones. The stated motivation is forming matching, symmetry and proximity groups before placement — [arXiv 2508.19393](https://arxiv.org/abs/2508.19393).
+- LayoutCopilot (TCAD; verified separately). Per the handoff survey, its "comparison between a monolithic agent and specialized agents attributes improved sanity-check and command success to role decomposition" **[P-via-survey]**. ICPI (ICLAD 2026; act–observe–reflect loop with a design journal) **[S]**. LLANA (LLM few-shot net-weight constraints for BO) **[S]** — [LayoutCopilot](https://arxiv.org/abs/2406.18873); [ICPI](https://arxiv.org/abs/2608.13767); [LLANA](https://arxiv.org/abs/2406.05250).
 
 ### Inferences
-- The successful IC systems share one shape: **the LLM edits a low-dimensional, semantically meaningful control surface**. Examples are bounding regions (VeoPlace), objective terms (CoEvoP&R), algorithm code (EvoPlace), ordering rules (OrderPlace), and generator parameters (ICPI, LLANA). A trusted numerical engine then turns those decisions into exact geometry. None of the reported wins come from the LLM emitting final coordinates or traces.
-- PCB work is about 1–2 years behind IC work in LLM integration. IC placement already has LLM-in-the-loop systems that beat SOTA baselines. For PCB, the strongest LLM-involved placer (PCBAgent) puts the LLM in a thin command-translation role around an RL engine, and the newest PCB results are mostly negative benchmarks.
-- The GPT-6 Astra workflow ("protect critical nets manually, autoroute the rest") is essentially the human expert workflow. It is a reasonable template, but the evidence (parity errors, DRC counts) shows that verification gates are mandatory.
+- PCB layout now has direct, controlled evidence of the same division of labor already seen in IC placement:
+  - RAC holds the harness fixed and varies only the interface, which gives a +67.7 pp swing.
+  - OmniRouting shows that LLM-emitted traces are nowhere near usable.
+  - The DAC 2026 PCB placer shows that LLM grouping plus classical legalization can beat commercial tools.
+- **The interface is a bigger lever than the model.** In RAC, eight of nine models reached 89.8–95.9%, above any model on any baseline interface, and newer models were not reliably better (Opus 4.8 > Opus 5; GPT-5.6 Luna > Sol).
+- **Code-level LLM evolution of classical engines now covers routing too**: GR-Evolve, VPR-Evolve, FABO, GoalEvolve. Freerouting or a custom KiCad router could be evolved offline the same way.
 
 ### Gaps
-- Full-text quantitative tables (PCB-Bench per-model scores, OmniLayout per-model numbers, PCB-QA scores, LayoutCopilot metrics, ChatEDA PPA numbers) were not retrievable because arXiv fetches were blocked.
-- No source was found for "LLM4Placement" as a named system, nor for "LLM-generated routing scripts" for PCB beyond MCP/tool calls. AlphaRoute ([arXiv 2607.19768](https://arxiv.org/pdf/2607.19768)) cites VLSI global-routing work, but its method was not retrieved.
-- No search found an LLM generating placement constraints directly for **ALIGN**. The closest are LayoutCopilot and ICPI, which use MAGICAL-style generators.
-- The identity of the "Li et al." multimodal-serialization + MILP-legalization placement paper was not resolved.
-- DeepPCB (RL-based cloud placement/routing) appeared in results, but no technical details were retrieved — [DeepPCB](https://deeppcb.ai/2025/04/15/ai-powered-pcb-placement-by-deeppcb/).
+- The Li et al. DAC 2026 PCB placer and CHIP-MAP/HyperPlace primary texts are not on arXiv. Their numbers come only from the handoff survey.
+- RAC's placement and routing backend and its board corpus were not identified in the sections read. It is unknown whether the backend is KiCad-based.
+- The Zhang et al. 2025 LLM PCB-routing paper (MDPI) is blocked (403); no quantitative results known.
+- DRCY reports no accuracy metrics.
 
 ---
 
 ## 2. LLM spatial reasoning: capabilities, limits, failure modes, and which representations help
 
 ### Takeaway
-Text-only LLMs show consistent failures on 2D layout reasoning: coordinate and alignment drift, overlap and boundary violations, lost state over multi-step edits, and errors when combining areas. Vision does **not** reliably fix this. VLMs often underperform their own LLM backbones on spatial tasks, and redundant text plus image helps most. Structured, code-like representations such as CSS-style boxes or JSON help. Tool use fixes arithmetic but not optimization. Layout-specific benchmarks (PCB-Bench, OmniLayout) confirm these weaknesses on real boards.
+Read in full, the spatial benchmarks agree. Frontier models fail at **constructing globally consistent geometry**, and difficulty grows with the **number of coupled relations, not the number of objects**. On PlanarBench, solve rates fall below 2% at 11–12 edges, and these are graphs of only 7 or fewer vertices. **Tools fix arithmetic but not planning or global constraints** (FloorplanQA, OPT-Engine, RAC's Coord+Py result). **Images rarely help more than good text** (SpatialEval, TopoBench, FloorplanQA, Blink).
+
+What does help:
+- **Structured, semantically labeled encodings**: CSS-style boxes; incident-list graphs, which list each node with its neighbors; cell-aligned grids.
+- **Pre-computed structured state from tools.**
+- **Relational or imperative-relative representations realized by solvers.**
 
 ### Cited Findings
-- **TopoBench** (hard grid/topology puzzles): frontier models solved fewer than a quarter of hard instances. Failure modes include repeated move loops, **state-tracking failures where the model's claimed board diverges from its own actions**, and constraint violations. The authors attribute part of this to flattening 2D grids into token sequences, which makes row/column alignment hard. [PP] — [arXiv 2603.12133](https://arxiv.org/html/2603.12133)
-- **GridRoute** (LLM route planning on grids): failures include invalid non-unit steps, paths through obstacles, out-of-bounds paths, and wrong endpoints. [PP] — [arXiv 2505.24306](https://arxiv.org/pdf/2505.24306)
-- **PlanarBench** (planar graph drawing in ASCII): the most common error is **missing edges, especially at high-degree nodes**. Edge count predicts difficulty better than vertex count. Some errors come from the ASCII medium itself. [PP] — [arXiv 2606.02010](https://arxiv.org/html/2606.02010)
-- **Grid Spatial Understanding (GSU)**: models handle basic grid concepts but struggle with frames of reference and with identifying shapes from **coordinate lists**. [PP] — [arXiv 2603.17333](https://arxiv.org/html/2603.17333v1)
-- A mechanistic probing study found near-chance orientation tracking, with errors biased toward frequent compass words. The authors read this as reliance on linguistic priors rather than geometric state. [PP] — [arXiv 2603.26323](https://arxiv.org/pdf/2603.26323)
-- **FloorplanQA** (2,000 structured JSON/XML 2D layouts, 16,000 questions): models fail to respect physical constraints and overlaps. A common error was **summing object areas and ignoring overlaps**. Giving models a **Python interpreter improved arithmetic but made the "Max Box" optimization results worse**. [PR, ICML 2026] — [arXiv 2507.07644](https://arxiv.org/html/2507.07644v3); [ICML poster](https://icml.cc/virtual/2026/poster/62946); [Lacuna summary](https://lacuna.tiptreesystems.com/work/floorplanqa-a-benchmark-for-spatial-reasoning-in-llms-using-structured/wrk_82594f0d17bb048f48ab07aecaa3ec8b)
-- **SpatialEval** ("Is a Picture Worth a Thousand Words?"): VLMs often **under-perform their LLM counterparts** on spatial tasks (relations, navigation, counting) despite visual input. They rely less on the image when text is sufficient, and vision-only rarely beats the LLM backbone. **Redundant vision plus text significantly improves performance**. [PR, NeurIPS 2024] — [NeurIPS poster](https://neurips.cc/virtual/2024/poster/94371); [paper PDF](https://proceedings.neurips.cc/paper_files/paper/2024/file/89cc5e613d34f90de90c21e996e60b30-Paper-Conference.pdf)
-- **LayoutGPT**: formatting layouts as **CSS-like (left, top, width, height)** with in-context exemplars and normalization (values rescaled to ≤256) helps LLMs interpret the spatial meaning of numbers. The authors argue that plain number sequences are hard to interpret. It outperformed text-to-image systems by 20–40% on numerical/spatial correctness and matched human users. [PR, NeurIPS 2023] — [arXiv 2305.15393](https://arxiv.org/pdf/2305.15393); [supplement](https://papers.neurips.cc/paper_files/paper/2023/file/3a7f9e485845dac27423375c934cb4db-Supplemental-Conference.pdf)
-- **PCB-Bench (domain-specific)**: models may know routing *theory* but fail to locate a physical wiring error in an image. Secondary summaries report Gemini-2.5-Pro at 100% and GPT-5 at 90.9% on Basic Wiring Error Identification, while open-source models drop to 45–55% on that fine-grained visual task. A Claude-Opus-4.1 figure of 93.3% placement multiple-choice accuracy is unconfirmed. [PR; numbers from secondary summaries] — [papernotes](https://en.papernotes.org/ICLR2026/llm_evaluation/pcb-bench_benchmarking_llms_for_printed_circuit_board_placement_and_routing/); [Liner review](https://liner.com/review/pcbbench-benchmarking-llms-for-printed-circuit-board-placement-and-routing); [ICLR](https://proceedings.iclr.cc/paper_files/paper/2026/hash/051f3997af1dd65da8e14397b6a72f8e-Abstract-Conference.html)
-- **OmniLayout (domain-specific)**: frontier models produce overlapping components, underuse the board's back side, and give poor post-route wirelength and completion, **even in agentic/tool-augmented settings**. [PP] — [Pith](https://pith.science/paper/2607.03261); [arXiv 2607.03261](https://arxiv.org/abs/2607.03261)
-- Footprint geometry: inconsistencies between EDA files and datasheet diagrams prevent LLMs from accurately inferring geometric details from visual information alone (ICGeo8K). [PP] — [arXiv 2508.03725](https://arxiv.org/html/2508.03725v1)
-- ACDC moved from grid-based to continuous-coordinate representations for LLM transistor placement (per a secondary digest). [PP] — [arXiv 2512.09199](https://arxiv.org/pdf/2512.09199)
-- MAGE splits checking by modality. **Scripts enforce hard constraints** (overlap, boundary, channel spacing), while **vision judges soft qualities** (stacking regularity, pin accessibility, whitespace organization). [PP] — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536)
+- **PlanarBench** (Sep 2026) **[P][PP]**:
+  - **Task.** Draw crossing-free ASCII drawings of planar graphs (2–7 vertices) given an edge list. 91 models were tested.
+  - **Edge count drives difficulty.** Its correlation with score is r=−0.85, against −0.47 for vertex count, and r=−0.80 after partialling out vertices. Mean score falls from 46.4% at 5 edges to 16.3% at 8, 5.1% at 10 and **1.0–1.6% at 11–12 edges**.
+  - **Best model:** GPT-5.2-pro, 159.5/199.
+  - **Extended thinking helps a lot.** Sonnet 3.7 rose from 39.5 to 95.5.
+  - **There is a cliff around 30B parameters.**
+  - **Failures:** missing edges, especially at high-degree nodes; extra edges; broken or misaligned edges.
+  - **Authors' view:** this is a "relational-load" difficulty, with early placement decisions constraining later edge routes.
+  - Source: [arXiv 2606.02010](https://arxiv.org/abs/2606.02010).
+- **TopoBench** (Mar 2026) **[P][PP]**:
+  - **Headline.** Frontier models solve fewer than a quarter of hard topological grid puzzles.
+  - **Causal errors.** Interventions show "premature commitment" and "constraint forgetting" hurt solving, while repeated reasoning is benign.
+  - **Encoding.** Cell-aligned integer encodings give **+30 to +40 pp** on Bridges and Galaxies but can **degrade** others (−26 pp on Undead for DeepSeek).
+  - **Images.** "Adding an image alongside ASCII input does not reliably help and can reduce accuracy."
+  - **Tools.** Giving an external engine the authoritative board state raised hard Bridges accuracy from 40% with no tools to 46% with structured state only and **50% with the full structured suite** (legal moves, components). An ASCII render tool scored only 42%.
+  - **Conclusion:** "the bottleneck lies in extracting constraints from spatial representations and not in reasoning over them."
+  - Source: [arXiv 2603.12133](https://arxiv.org/abs/2603.12133).
+- **FloorplanQA** (ICML 2026) **[P][PR]**:
+  - **Setup.** 2,000 JSON/XML layouts and 15 models.
+  - **Easier tasks.** Models handle distances and angles but fail at constraint satisfaction, geometric unions and multi-step planning.
+  - **Failure modes:** (1) treating areas as summed rather than unioned; (2) centroid errors on non-axis-aligned polygons; (3) shortest paths in clutter.
+  - **Code interpreter.** It gave "plus over 30–40 percentage points on Distance/Angle but limited benefit on planning tasks".
+  - **Images.** Rendered images "do not consistently outperform symbolic input".
+  - **Authors' advice:** hybridize with external geometric solvers (unions, shoelace centroid, clearance buffering, oriented rectangle search, A*).
+  - Source: [arXiv 2507.07644](https://arxiv.org/abs/2507.07644).
+- **SpatialEval** (NeurIPS 2024) **[P][PR]**: competitive models "can fall behind random guessing". VLMs often underperform their LLM backbones, rely less on vision when text suffices, and "often outperform their LLM counterparts with text-only inputs". Redundant vision plus text helps. The authors attribute this to VLMs translating vision into language space — [arXiv 2406.14852](https://arxiv.org/abs/2406.14852).
+- **Grid Spatial Understanding (GSU)** (Mar 2026) **[P][PP]**: on text-only grids, models handle basic grid concepts but struggle with egocentric frames of reference and with recognizing 3D shapes from coordinate lists. A visual modality "does not provide a generalizable understanding of 3D space". Fine-tuned small models can approach frontier performance — [arXiv 2603.17333](https://arxiv.org/abs/2603.17333).
+- **Visualization-of-Thought** (NeurIPS 2024) **[P][PR]**: prompting GPT-4 to draw intermediate ASCII "mental images" improves grid navigation by 23.5% over no visualization. The effect is prompt-sensitive: an explicit "use ascii-art" instruction raises state tracking. It "is still far from perfect", especially on route planning — [arXiv 2404.03622](https://arxiv.org/abs/2404.03622).
+- **Talk like a Graph** (ICLR 2024) **[P][PR]**:
+  - The choice of graph text encoding changes accuracy by **4.8% to 61.8%**.
+  - **Incident encoding**, which lists each node with its neighbors, beat an adjacency/edge list on finding connected nodes: **53.8% vs 19.8%**. It ranked best on average for most prompting methods.
+  - **Integer node names** help arithmetic outputs.
+  - Source: [arXiv 2310.04560](https://arxiv.org/abs/2310.04560).
+- **LayoutGPT** (NeurIPS 2023) **[P][PR]**: CSS-structured exemplars (left/top/width/height) were "the most essential component" in its prompt ablation. Normalization alone hurt accuracy but helped when combined with the other components — [arXiv 2305.15393](https://arxiv.org/abs/2305.15393).
+- **Holodeck** **[P][PP; venue not verified here]**: in a human ranking (mean reciprocal rank), GPT-4-generated **absolute coordinates scored 0.364, no better than random collision-free placement at 0.369**. Edge placement scored 0.645 and LLM-generated **spatial relational constraints solved by DFS (MILP optional)** scored **0.706** — [arXiv 2312.09067](https://arxiv.org/abs/2312.09067).
+- **LayoutVLM** **[P][PP]**: averaged over 11 room types:
+
+  | Method | Collision-free | In-bounds | Physically-grounded semantic alignment |
+  |---|---|---|---|
+  | LayoutGPT (direct coordinates) | 83.8 | 24.2 | 16.6 |
+  | Holodeck (relations + search) | 77.8 | 8.1 | 5.6 |
+  | I-Design | 76.8 | 34.3 | 18.0 |
+  | **LayoutVLM** | 81.8 | **94.9** | **58.8** |
+
+  LayoutVLM uses VLM-produced numeric initial poses plus differentiable spatial relations from visually marked images. Holodeck's search "becomes ineffective with the large number of assets and rigid constraints" — [arXiv 2412.02193](https://arxiv.org/abs/2412.02193).
+- **Imperative vs declarative scene generation** (Gumin et al. 2025) **[P][PP]**: an LLM writes step-by-step **relative-placement programs**, and an **LLM-free numeric error-correction** step adjusts program parameters to resolve collisions. Humans preferred these layouts over two declarative constraint-solver systems 82% and 94% of the time — [arXiv 2504.05482](https://arxiv.org/abs/2504.05482). *Tension:* in RAC, a "sequential relations" baseline modeled on this imperative style scored 62.4%, against 90.9% for submitting all relations as one bundle realized jointly ([arXiv 2610.20935](https://arxiv.org/abs/2610.20935)). Joint realization of coupled constraints appears to matter for PCB.
+- **Weak-verifier aggregation for spatial layouts** (Stanford/MIT, Jun 2026) **[P][PP]**: an LLM writes many imperfect verifier programs in a layout-verification DSL, which are aggregated using about 10 labeled examples. This gives up to **7× F1 over LLM-as-judge**, and verifier-guided generation improved layout quality by up to 66.2% (human evaluation) — [arXiv 2606.05268](https://arxiv.org/abs/2606.05268).
+- **Coordinates and geometry generally** **[P][PP]**:
+  - GPSBench: models are "more reliable at real-world geographic reasoning than at geometric computations" — [arXiv 2602.16105](https://arxiv.org/abs/2602.16105).
+  - Text2CAD-Bench: performance "degrade[s] substantially on complex topology" — [arXiv 2605.18430](https://arxiv.org/abs/2605.18430).
+  - PPNL: GPT-4 with interleaved reason/act is promising on path planning but "fails to perform long-term temporal reasoning", and fine-tuned models fail to generalize to larger or more cluttered grids — [arXiv 2310.03249](https://arxiv.org/abs/2310.03249).
+- **Formal intermediate language matters** **[P][PP]**: comparing 4 formal languages across 6 LLMs, the choice "affects both the syntactic and the semantic reasoning capability"; context-aware encodings help — [arXiv 2502.17216](https://arxiv.org/abs/2502.17216).
+- **PCB-specific spatial evidence** **[P]**:
+  - OmniRouting: LMMs fail multi-net path planning, layer and via assignment, and congestion handling; zero-shot best NRR is 12.6% — [arXiv 2608.04434](https://arxiv.org/abs/2608.04434).
+  - RAC: coordinates 23.2%, and adding Python *lowers* that to 21.0% — [arXiv 2610.20935](https://arxiv.org/abs/2610.20935).
+  - SchGen: relative placement plus pin-name wiring beats geometry-heavy schematic formats — [arXiv 2605.30345](https://arxiv.org/abs/2605.30345).
+  - OmniLayout and PCB-Bench [S]: see Section 1.
 
 ### Inferences
-- Do not ask an LLM to do coordinate arithmetic, overlap detection, or counting. Precompute these as **derived facts** (distances, overlaps, neighbor lists, crossing counts) and hand them over as text.
-- The best representation is likely **multi-channel**: structured JSON/CSS-like boxes for exact data, plus relational/semantic summaries ("C5 is 1.2 mm from U1.VIN on the top side"), plus a rendered image with overlays for gestalt judgments. SpatialEval's redundancy result and the VeoPlace and MAGE designs all point this way.
-- ASCII grids are risky at board scale. Alignment breaks over long token sequences (TopoBench) and the medium itself causes errors (PlanarBench). They may still work for small local views, e.g. a 20×20 neighborhood of a congested area.
-- Relative constraints are the representation that best matches LLM strengths (language and priors) while leaving metric satisfaction to solvers. The direct evidence is LayoutCopilot's symmetry constraints, ICPI's generator parameters, and VeoPlace's regions.
+- **Never ask the LLM for coordinates or metric distances.** Ask for **named relations with categorical magnitudes**, then realize the whole bundle jointly with a solver: RAC, Holodeck, LayoutVLM.
+- **Encode the netlist as an incident list**, one line per part listing its pins and each pin's net and neighbors, rather than a flat edge list (Talk like a Graph). Give parts stable short ids.
+- **Expose tool-computed structured state** rather than renders (TopoBench): legal moves, component clusters, unrouted connections, overlaps, distances. Use renders only as an optional secondary channel.
+- **Expect failure to scale with relation count.** Decompose by functional group so that each LLM decision involves few coupled relations (PlanarBench).
 
 ### Gaps
-- No head-to-head study was found that compares ASCII grid, coordinate list, scene graph, SVG, and image representations **on PCB placement specifically**. OmniLayout or PCB-Bench may contain such ablations in their full text, which was not retrievable.
-- Holodeck-style "LLM emits spatial relations → constraint solver" and LayoutVLM-style "VLM emits relations → differentiable optimization" from 3D scene layout are relevant precedents. **These were not verified in this session** because the search budget ran out. From background knowledge they are Holodeck (arXiv 2312.09067) and LayoutVLM (arXiv 2412.02193); treat these IDs as unverified.
-- No quantitative results were found on SVG as an LLM layout representation.
+- No study was found that compares JSON, S-expression, ASCII, SVG and image representations head-to-head **on PCB tasks**. OmniRouting's ablations vary only the information provided (netclass, layers, few-shot, schematic) — [arXiv 2608.04434](https://arxiv.org/abs/2608.04434).
+- No study was found on how categorical magnitude bins (tight/close/loose) should be calibrated for PCB.
 
 ---
 
 ## 3. Agent architectures: planner + solver, LLM→constraints/MILP, LLM-guided search, self-critique with DRC, multi-agent, RAG, evolutionary LLM-in-the-loop
 
 ### Takeaway
-Five architectures have evidence behind them:
-- **LLM as high-level planner over a numerical solver**: VeoPlace, PCBAgent, LayoutCopilot.
-- **LLM as evolver of solver code, objectives, or orderings** (FunSearch/EoH/ReEvo style): EvoPlace, CoEvoP&R, OrderPlace, AlphaEvolve. These give the most robust *quantified* gains.
-- **Interactive tool-use agents with engine feedback**: PCBWorld, PDAgent-Bench. These clearly beat open-loop LLM generation but remain below classical routers and are about 200× slower.
-- **Verifier-gated multi-agent loops**: MAGE, PlaceReasoner-Beta, DRC-Aid, EvoDRC.
-- **Retrieval/knowledge-grounded orchestration**: ORAssistant, PCBSchemaGen's knowledge graph.
+The architectures with controlled evidence share three properties:
+1. **The model picks from a bounded semantic action space**: relations (RAC), operator catalogs ("Who Plans"), edit menus (DRC-Aid), or algorithm-code edits (GR-Evolve, GoalEvolve).
+2. **Deterministic tools realize the choice and independently verify it.**
+3. **Feedback is structured evidence**, not raw logs.
 
-Open-ended self-correction loops need explicit bounds and edit menus to converge.
+Planner/executor splits help cheap executors but are not automatically cheaper. LLM→MILP/CP formulation works for canonical problems but is fragile to wording, and formulating constraints is the bottleneck. **Execution infrastructure** decides long-horizon reliability as much as the model does: stateful tools, structured APIs, rollback.
 
 ### Cited Findings
-- **Interactive beats open-loop.** In PCBWorld on D3-A, GPT-5.4 interactive reached Clean Pass 0.65, versus 0.19 for plan-then-execute and 0.02 for engine-free geometry generation. [PP] — [arXiv 2607.05915v2](https://arxiv.org/html/2607.05915v2); summary via [alphaXiv](https://www.alphaxiv.org/fr/abs/2607.05915)
-- **Interactive LLMs are slow.** GPT-5.4 took 94.04 s versus 0.43 s for routers and PPO on D2, because every action needs a full model inference. [PP] — [arXiv 2607.05915v2](https://arxiv.org/html/2607.05915v2)
-- **Planner/executor split with images and history.** VeoPlace's VLM sees text coordinates plus canvas images plus metrics of prior attempts, proposes regions, and lets a placer execute. [PP] — [arXiv 2603.28733v2](https://arxiv.org/html/2603.28733v2)
-- **LLM as translator to optimizer commands.** In PCBAgent the LLM converts user requests into optimization commands for an RL placer. [PR] — [ACM DL](https://dl.acm.org/doi/10.1145/3658617.3697736)
-- **Two-stage intent → concrete command agents.** LayoutCopilot uses specialized agents to limit prompt dilution, e.g. a classifier that labels requests abstract or concrete (detail from an AI-written review, treat with caution). [PR] — [arXiv 2406.18873](https://arxiv.org/html/2406.18873v3); [Moonlight review](https://themoonlight.io/review/layoutcopilot-an-llm-powered-multi-agent-collaborative-framework-for-interactive-analog-layout-design)
-- **LLM-evolved objectives with real router feedback.** CoEvoP&R gives the LLM the allowed objective interface, baseline context, an archive of prior candidates, and placement/timing/router feedback. It outputs readable differentiable objectives. [PP] — [arXiv 2607.17398](https://arxiv.org/abs/2607.17398)
-- **LLM-evolved algorithms and orderings.** See EvoPlace ([IEEE TCAD](https://ieeexplore.ieee.org/document/11345590/)) and OrderPlace with its cheap **proxy filter** for expensive evaluations ([arXiv 2606.08904](https://arxiv.org/pdf/2606.08904)).
-- **AlphaEvolve in hardware**: Google's Gemini-based evolutionary coding agent proposed a Verilog rewrite that removed unnecessary bits from an arithmetic circuit for matrix multiplication in an upcoming TPU, which Google's hardware team validated. Separately it reported a 23% speedup on a Gemini matmul kernel (about 1% lower training time) and up to 32.5% on FlashAttention. These come from secondary sources and are not layout results. [V/press] — [TechRepublic](https://www.techrepublic.com/article/news-google-deepmind-alphaevolve-coding-ai/); [Mexico Business News](https://mexicobusiness.news/cloudanddata/news/deepmind-unveils-alphaevolve-ai-agent-algorithm-design)
-- **Background on LLM heuristic-evolution methods**: FunSearch is multi-island evolution with a single prompt strategy; ReEvo adds short- and long-term reflection; EoH co-evolves "thoughts" and code. Comparisons on routing problems (TSP/CVRP, not VLSI) show no consistent winner, e.g. ReEvo ahead at CVRP20 and EoH ahead at CVRP50/100. RouteRepair adds instance-level failure diagnosis and repair to LLM heuristic design. [PP/PR mix] — [ReEvo arXiv 2402.01145](https://arxiv.org/pdf/2402.01145); [EoH-S AAAI](https://ojs.aaai.org/index.php/AAAI/article/view/41038/44999); [RouteRepair arXiv 2609.11452](https://arxiv.org/pdf/2609.11452); [LLM-HCJG arXiv 2609.02353](https://arxiv.org/html/2609.02353v1)
-- **LLM to MILP formulation.** OptiMUS formulates and solves MILPs from natural language, writing and debugging solver code and validating solutions. It reports solving 67% more problems than basic prompting in v1, "nearly twice as many" in a later version, and more than 80% of benchmark problems per a co-author's talk. It is general OR, not layout. [PP] — [arXiv 2310.06116](https://arxiv.org/abs/2310.06116v1); [PapersWithCode](https://physics.paperswithcode.com/paper/optimus-optimization-modeling-using-mip)
-- **Verifier-gated DRC repair.** DRC-Aid has a rule engine **convert Calibre violations into a menu of candidate edits**. The LLM picks one, the toolkit applies it and re-runs Calibre, in an Observe → Reason → Execute → Validate loop. [PP] — [arXiv 2607.22761](https://arxiv.org/html/2607.22761v1). EvoDRC partitions the layout into bounded repair regions, each with an LLM agent plus local DRC, connectivity, and impact-preview tools, and grows a skill database. A secondary summary reports a 73.5% DRV reduction on 7 blocks. [PP] — [arXiv 2607.20019](https://arxiv.org/abs/2607.20019); [Pith](https://pith.science/paper/2607.20019). SCALE uses a fine-tuned VLM to propose top-k fixes that a coding agent applies with DRC/LVS. [PP] — [arXiv 2607.21850](https://arxiv.org/pdf/2607.21850)
-- **Self-correction instability.** A 2026 multi-agent test-repair study found that the self-correction–executor loop "acts as a central source of instability, introducing non-convergence risk without explicit bounds". [PP] — [arXiv 2605.01471](https://arxiv.org/html/2605.01471v1)
-- **Multi-agent with independent audit.** MAGE requires each sub-agent to render, run checks, inspect the image, and write a structured report before revising or accepting. A **stateless independent auditor** then does a separate visual audit, and a tournament mode propagates feedback from winners. [PP] — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536); [Pith](https://pith.science/paper/2607.18536)
-- **Verifier roles split by abstraction level.** PlaceReasoner-Beta uses a planner, a geometric checker, a PD checker, and a post-route PPA/DRC optimizer. [PP] — [arXiv 2609.21263](https://arxiv.org/abs/2609.21263)
-- **Human skills injected into workflows** improve end-to-end PD results significantly (PDAgent-Bench). Expert trajectories triple KiCad-editing pass rates (PCBInnoBench: 22.0% versus 7.3%). [PP/PR] — [arXiv 2606.17253](https://arxiv.org/abs/2606.17253); [NeurIPS](https://neurips.cc/virtual/2026/poster/139034)
-- **Retrieval over topology.** PCBSchemaGen's ablation suggests that circuit retrieval needs **topology-aware metrics rather than purely semantic embeddings**. [PP] — [arXiv 2602.00510](https://arxiv.org/html/2602.00510v2)
-- **In-context policy improvement with a design journal** (ICPI): memory of act/observe/reflect records replaces fine-tuning. [PR, ICLAD 2026] — [arXiv 2608.13767](https://arxiv.org/abs/2608.13767)
-- **Code/DSL interfaces beat GUI manipulation** for agents (EEBench/atopile experience). [V] — [EEBench blog](https://eebench.org/blog/can-ai-design-circuit-boards-yet/)
+- **Relational action contract (RAC)** **[P][PP]**: the agent's semantic commitments go in one bundle, and joint deterministic realization plus an independent checker gives 90.9%. Requirements-only delegation reaches 74.0%, candidate selection 37.4% and coordinates 23.2%. The gain persists across four harnesses — [arXiv 2610.20935](https://arxiv.org/abs/2610.20935).
+- **"Who Plans, Who Edits?"** (analog layout repair) **[P][PP]**:
+  - **Design.** Models are memoryless, tool-free workers returning JSON. They choose from **bounded operator catalogs**: 8 geometry operators for SKY130, 5 for the DAC, 2 for the oscillator. Guards check schema, bounds and editable cell, apply edits to a checkpointed copy, and roll back on failure. Sign-off tools re-run after every edit, "so a model can make a repair fail but cannot make a layout pass checks it fails".
+  - **Planner contract.** The planner returns "a diagnosis (evidence, hypothesis, falsifier) and an ordered list of intents". The executor turns one intent at a time into operator calls. The controller returns to the planner on a regression, a stall, an inexpressible intent or a double refusal.
+  - **Who succeeds.** Over 182 blind runs:
+    - The cheapest model fixed **1 of 11** alone but **16 of 17 under a flagship planner**.
+    - Cheap planners fail more often.
+    - "No fixed assignment is cheapest on every task." The cheapest verified option on every task was a mid-tier model alone.
+  - **Costs.** Tool runs took 59–94% of wall time (median by task). Input context was 81% of model spend, with a 22:1 input:output token ratio.
+  - **Controller.** A Bayesian, per-task-class controller fixed **7 of 8** sealed held-out tasks at 15–40% of flagship spend on three tasks, but 8% more overall.
+  - **Reward hacking.** "DRC-count shortcuts through fixed foundry cells show that legality must be part of the contract."
+  - Source: [arXiv 2610.24234](https://arxiv.org/abs/2610.24234).
+- **DRC-Aid** **[P][PP]**: a deterministic rule engine turns Calibre violations into a **bounded menu of geometric edits**. The LLM selects from the menu, with budgeted DFS, backtracking and a global memory bank that prevents cycles. It reached DRC-clean, LVS-equivalent repairs in **about 92.5%** of cases with about 98% violation reduction. Under the same infrastructure, random selection reached 54.4%, a deterministic heuristic 83.3%, and **static prompting peaked at 6.6%** complete resolution. The LLM's advantage widens at six or more violations — [arXiv 2607.22761](https://arxiv.org/abs/2607.22761).
+- **EvoDRC** **[P][PP]**:
+  - It splits layouts into bounded repair crops, each handled by a four-role agent workflow with local DRC, connectivity and impact-preview tools.
+  - Layer-wise "skill files" evolve from a repair database through a Skill Refiner, a DB Summarizer and a Skill Judge.
+  - The paper is internally inconsistent: the abstract says 73.5% "overall reduction compared to the reported baseline", while the conclusion says 83.6% average DRV reduction on the DAC26 DRC benchmark.
+  - Source: [arXiv 2607.20019](https://arxiv.org/abs/2607.20019).
+- **SCALE** (NVIDIA et al.) **[P][PP]**: layout geometry is serialized to structured text. A model learns masked-polygon reconstruction, and the generated violation pairs fine-tune a DRC-VLM. That VLM raises SOTA agents' local DRV-fix solve rates by +12–25%, up to 97%, on 100 real sub-2 nm cases — [arXiv 2607.21850](https://arxiv.org/abs/2607.21850).
+- **Agentic RTL-to-GDS lessons** (Jul 2026) **[P][PP]**:
+  - Setup: PicoRV32 with commercial tools; Claude Code, Claude Code plus EDA skills, and FluxEDA; four models.
+  - (1) "Domain-specific skills improve agents' understanding of individual subtasks but do not ensure reliable completion".
+  - (2) Agents with similar progress differ by **up to 141× in Token ROI**.
+  - (3) "Low-level tool-interface mismatches are a major source of physical design failures, particularly when Tcl commands depend on the tool version or execution mode".
+  - Recommendation: "structured tool interfaces, persistent design context, controlled execution, and process-level evaluation".
+  - Source: [arXiv 2607.17528](https://arxiv.org/abs/2607.17528).
+- **FluxEDA** **[P][PP]**: a stateful gateway with persistent backend tool instances, structured requests and responses, state reuse and **rollback**, instead of "isolated shell invocations". It was demonstrated on post-route ECO and standard-cell library optimization — [arXiv 2603.25243](https://arxiv.org/abs/2603.25243).
+- **Harness prevalence** **[P]**: loops dominate. Retrieval and memory appear "where previous flow and benchmark records can be reused". Executable feedback (compiler, simulator, DRC) enables repeated rejection and revision, which document-centered tasks lack — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **Memory** **[P][PP]**: in MFM, persistent multimodal memory of episodic, spatial, semantic and procedural records raised CUABench-KiCad reward from 0.267 to 0.440 — [arXiv 2610.22686](https://arxiv.org/abs/2610.22686). The RF-workflow agent kept tool knowledge in markdown files it maintained itself, and turned review feedback into standing conventions — [arXiv 2608.31006](https://arxiv.org/abs/2608.31006).
+- **Multi-run consensus** **[P][PP]**: DRCY runs k parallel group-review agents. A separate consensus agent keeps findings that recur across runs, critically re-checks findings seen only once against the datasheet, and re-examines contradictions — [arXiv 2603.15672](https://arxiv.org/abs/2603.15672).
+- **LLM→MILP/CP formulation** **[P][PP]**:
+  - **OPT-Engine:** "Solver-integrated reasoning" is essential as complexity grows. Pure chain-of-thought "suffers from a critical robustness gap". Tools "help with local calculations [but] still fail to adhere to global optimization constraints". "**The automated formulation of constraints represents the primary bottleneck**", with semantic sensitivity when specifications deviate from canonical versions — [arXiv 2601.19924](https://arxiv.org/abs/2601.19924).
+  - **DCP-Bench-Open:** **Python-based modeling frameworks (CPMpy, OR-Tools) beat MiniZinc**. Repeated sampling plus self-verification adds up to 35%, and the best setting reaches about 90–91% on CPMpy. LLMs "can over-encode the example instance given in the prompt" — [arXiv 2506.06052](https://arxiv.org/abs/2506.06052).
+  - **CSPLib wording study:** performance "drops sharply under contextual and linguistic variation"; distracting details cause misread objectives, suggesting data contamination — [arXiv 2511.14334](https://arxiv.org/abs/2511.14334).
+  - **Agentic constraint-model improvement:** generated models beat the originals in 68.5% of 1,500 cases. A **best-of-5 sampling baseline with the same validation tools matched it** (101 vs 102.8 of 150) — [arXiv 2608.08127](https://arxiv.org/abs/2608.08127).
+  - **Optimization-modeling survey:** benchmark datasets have a "surprisingly high error rate" — [arXiv 2508.10047](https://arxiv.org/abs/2508.10047).
+  - **MCP-Solver:** exposes MiniZinc, PySAT and Z3 to LLMs over MCP, with iterated validation of model edits — [arXiv 2501.00539](https://arxiv.org/abs/2501.00539).
+  - **OptiMUS** **[S]** — [arXiv 2310.06116](https://arxiv.org/abs/2310.06116).
+- **Evolutionary LLM-in-the-loop** **[P]**:
+  - **AlphaEvolve** "optimize[d] an already highly optimized Verilog implementation of a key TPU arithmetic circuit". The change "was also independently caught by downstream synthesis tools" and is "integrated into an upcoming TPU". AlphaEvolve also reports a 23% average kernel speedup (about 1% less Gemini training time) and FlashAttention IR optimization — [arXiv 2506.13131](https://arxiv.org/abs/2506.13131).
+  - **GR-Evolve, VPR-Evolve, GoalEvolve, FABO:** see Section 1. GoalEvolve's design converts unmet QoR targets into normalized gaps and attributes them to a stage before editing code.
+  - Method background: OPRO [arXiv 2309.03409](https://arxiv.org/abs/2309.03409); EoH [arXiv 2401.02051](https://arxiv.org/abs/2401.02051); ReEvo [arXiv 2402.01145](https://arxiv.org/abs/2402.01145).
 
 ### Inferences
-- Use the LLM where decisions are *few, semantic, and high-leverage*: what groups go where, which nets are critical, what the objective weights are, which constraint to relax. Use solvers where decisions are *many, metric, and combinatorial*: exact positions, legalization, maze or push-and-shove routing.
-- Offline LLM evolution of heuristics or objectives across a corpus (CoEvoP&R/EvoPlace style) is the most cost-effective path. The LLM's cost is paid once, and run time stays classical-fast. That avoids PCBWorld's roughly 200× latency problem.
-- Repair loops should present the LLM with **enumerated legal edits** (DRC-Aid) rather than free-form geometry, and should have iteration and budget caps.
-- An independent, stateless auditor (MAGE) is a cheap defense against an agent rationalizing its own output.
+- **Action-space design is the main lever**, ahead of agent topology. Bounded menus, operator catalogs and relational bundles all beat free-form generation by large margins.
+- **Planner/executor splits are a cost tool, not a quality guarantee.** The cheapest verified option was a single mid-tier model. Learned routing per task class is worth it only once a task taxonomy exists.
+- For LLM-written constraints, prefer a **Python constraint API** (CPMpy/OR-Tools style, or a domain DSL embedded in Python) over a separate modeling language. Validate on multiple instances to catch over-encoding.
 
 ### Gaps
-- No published work was found that applies OptiMUS-style **LLM→MILP/SMT/CP-SAT formulation to PCB or IC placement constraints** specifically. PCBAgent and NS-Place use MILP but not LLM-written formulations.
-- No published OPRO-style "LLM as optimizer over placements" result for PCB was found.
-- No direct VLSI-routing application of FunSearch/EoH/ReEvo was found beyond VPR-Evolve (title only) and the placement works above.
+- No study was found that applies OptiMUS-style LLM→MILP formulation to **PCB placement constraints**. RAC's relation schema with a fixed solver sidesteps formulation, which is arguably better.
+- No controlled study was found of tool granularity for KiCad specifically, i.e. few coarse tools versus hundreds of fine ones.
 
 ---
 
 ## 4. Datasheet / application-note understanding for layout recommendations
 
 ### Takeaway
-**No published system was found that automatically extracts *layout* recommendations from datasheets**, e.g. "place input cap within 2 mm of VIN" or "minimize the SW node loop". The closest work extracts **pin roles and electrical constraints into a per-IC knowledge graph** for schematic synthesis (PCBSchemaGen), retrieves datasheet information for schematic generation (pcbGPT), or aligns footprint diagrams (ICGeo8K). This is an open opportunity for the project.
+**No published system extracts PCB layout recommendations from datasheets.** Examples of such recommendations: "input cap within X mm of VIN", "keep SW node small", "Kelvin-connect sense". The surrounding pieces now exist and are proven:
+- Faithful **chunked datasheet→knowledge-graph extraction with provenance**: 98.8% faithful, against 76.1% for one-shot.
+- **Agentic datasheet retrieval with quality scoring and consensus** (DRCY, in production).
+- **Rule text→executable checker code** (DRC-Coder; LLM-written weak verifiers).
+- Pin-role/constraint knowledge graphs (PCBSchemaGen).
 
 ### Cited Findings
-- **PCBSchemaGen** builds a per-IC knowledge graph from the datasheet PDF in three stages: (1) **layout-aware PDF parsing** of pin tables and application-circuit text; (2) **low-temperature LLM pin-role assignment** from a closed 32-role ontology; (3) **instantiation of four types of constraint predicates** against the labeled pins. This shrinks per-IC context from about 16k tokens (a typical datasheet) to about 300 tokens. The constraints are pin-level and electrical, not board-layout. [PP] — [arXiv 2602.00510v2](https://arxiv.org/html/2602.00510v2)
-- **pcbGPT** retrieves datasheet and reference-circuit information to generate KiCad schematics, explicitly scoped to the early design stage before placement and routing. [PP] — [arXiv 2606.01188](https://arxiv.org/html/2606.01188v1)
-- **ICGeo8K** uses LLMs to locate footprint diagrams in datasheets and align them with EDA pin data. It notes that EDA/datasheet inconsistencies defeat vision-only inference. [PP] — [arXiv 2508.03725](https://arxiv.org/html/2508.03725v1)
-- A **datasheet-aware hardware compatibility verification** knowledge graph preserves each property's operating conditions, modes, and device variants, and deduplicates properties repeated in a datasheet. It targets pre-schematic compatibility, not layout. [PP] — [arXiv 2608.25217](https://arxiv.org/pdf/2608.25217)
-- JITX's practitioner report: Gemini's very large context window was very helpful for pulling component data out of datasheets, and they recommend cross-referencing extractions to improve accuracy. [V] — [JITX blog](https://blog.jitx.com/jitx-corporate-blog/testing-generative-ai-for-circuit-board-design)
-- PCB-QA includes datasheet-detail questions over KiCad projects; scores were not retrieved. [PP] — [arXiv 2606.23704](https://arxiv.org/pdf/2606.23704)
-- Layout rules are **conditional**, which an extractor must capture. Per published decoupling guides: one local capacitor per power pin unless the datasheet says pins share an internal plane; close placement can be impossible for wide-pitch packages or BGAs, where plane pairs dominate; and capacitor effectiveness depends on frequency band (a 100 nF 0402 has an SRF of about 50–80 MHz and is inductive above that). [V] — [NextPCB decoupling](https://www.nextpcb.com/blog/decoupling-capacitor-placement-pcb); [JLCPCB decoupling](https://jlcpcb.com/blog/decoupling-capacitors-guide); [Sierra Circuits](https://www.protoexpress.com/blog/decoupling-capacitor-placement-guidelines-pcb-design/)
-- A generic KG survey notes that LLMs given reference documents plus a knowledge graph can produce candidate rules informed by document text. This is not PCB-specific. [PR] — [LLMs and KGs survey](https://d-nb.info/1378253507/34)
+- **Hierarchical hardware knowledge graphs from datasheets** (Oct 2026) **[P][PP]**: chunk-based property extraction, hierarchical routing and iterative refinement. Graph updates are applied "through validated instructions and deterministic local execution", with source provenance kept. On 20 datasheets this gives **98.8% property faithfulness vs 76.1% for one-shot**. The pipeline covers 83.6% of the baseline's faithful properties, while the baseline covers only 10.5% of the pipeline's. Naive one-shot "omits relevant specifications even when the document fits within the model's context window" — [arXiv 2610.12762](https://arxiv.org/abs/2610.12762).
+- **DRCY** **[P][PP]**: a five-stage pipeline:
+  1. netlist augmentation;
+  2. component selection and grouping;
+  3. **agentic datasheet retrieval** from DigiKey or client APIs, with a self-evaluation score weighted toward pin-function coverage (40%), application information (20%) and typical application circuits (15%). It makes up to 5 attempts from alternative sources and caches results for 7 days;
+  4. per-group pin-by-pin review agents;
+  5. a multi-run consensus agent and an error-grouping agent.
+
+  Findings are posted as inline review comments — [arXiv 2603.15672](https://arxiv.org/abs/2603.15672).
+- **DRC-Coder** **[P][PP]**: rule text plus illustrations go to an interpretation LLM, which hands off to a coding LLM. Tools analyze foundry rules and layout DRVs and evaluate the code. It gives F1 1.000, against 0.631 for standard prompting — [arXiv 2412.05311](https://arxiv.org/abs/2412.05311). *(This maps directly onto "datasheet layout rule → executable board check".)*
+- **LLM-written weak verifiers** **[P][PP]**: verifier programs in a layout DSL, aggregated, reach up to 7× F1 over LLM judges — [arXiv 2606.05268](https://arxiv.org/abs/2606.05268).
+- **SpecMap** **[P][PP]**: hierarchical narrowing for datasheet-to-code traceability (repository, then file, then symbol). It reaches up to 73.3% file-mapping accuracy while cutting **LLM tokens by 84%** and runtime by about 80% — [arXiv 2601.11688](https://arxiv.org/abs/2601.11688).
+- **DocEDA** **[P][PP]**: a datasheet layout-analysis model splits documents into sections (parameters, diagrams, curves), then chain-of-thought parameter extraction and schematic parsing — [arXiv 2412.05301](https://arxiv.org/abs/2412.05301).
+- **Datasheet-aware compatibility verification** **[S]**; **PCBSchemaGen** (per-IC knowledge graph with a 32-role pin ontology, 16k→300 tokens; verified separately) **[S]**; **pcbGPT** **[S]**; **ICGeo8K** footprint geometry **[S]** — [arXiv 2608.25217](https://arxiv.org/abs/2608.25217); [arXiv 2602.00510](https://arxiv.org/abs/2602.00510); [arXiv 2606.01188](https://arxiv.org/abs/2606.01188); [arXiv 2508.03725](https://arxiv.org/abs/2508.03725).
+- **In practice** **[P]**: the RF-workflow agent "noticed that the ESD-protected variant is limited to V_CEO = 2.25 V" mid-design and redesigned the bias unprompted — [arXiv 2608.31006](https://arxiv.org/abs/2608.31006).
+- Layout rules are conditional on package and frequency (decoupling guides) **[V]** — [NextPCB](https://www.nextpcb.com/blog/decoupling-capacitor-placement-pcb); [Sierra Circuits](https://www.protoexpress.com/blog/decoupling-capacitor-placement-guidelines-pcb-design/).
 
 ### Inferences
-- The PCBSchemaGen pipeline (layout-aware parsing → closed ontology → predicate templates → compact knowledge graph) transfers directly. A **layout predicate ontology** would include `near(part, pin, d_max)`, `min_loop(nets[])`, `same_side(a, b)`, `kelvin(sense_net, pad)`, `keepout(region, layers)`, `thermal_vias(pad, n)`, `plane_under(region, net)`, `orient(part, toward=pin)`, `no_route_under(part, layers)`, and `width_for_current(net, I)`. Each instance should store page/figure provenance and validity conditions (package, frequency, current).
-- Extraction should be verified twice: by a second LLM pass or cross-reference (JITX), and by checking the extracted predicates are executable against the board.
+- The recommended pipeline is assembled from proven parts:
+  1. retrieve with quality scoring (DRCY);
+  2. extract by chunks into a knowledge graph with provenance and applicability conditions (hardware-KG paper);
+  3. map extracted layout statements to a **closed predicate vocabulary** that is also the RAC-style relation schema (e.g. `near(C_in, U1.VIN, tight)`, `min_loop({U1.SW, L1, C_out})`, `kelvin(R_sense)`);
+  4. generate or attach a checker for each predicate (DRC-Coder, weak-verifier pattern);
+  5. use multi-run consensus for safety-critical extractions.
 
 ### Gaps
-- No benchmark or dataset of datasheet layout-guideline extractions was found.
-- No work was found on parsing **reference-layout figures** (e.g. the EVM layout images in TI/ADI datasheets) into constraints.
-- No work was found on app-note retrieval (RAG over reference layouts) for PCB placement. ORAssistant-style RAG is limited to tool documentation.
+- No dataset or benchmark of datasheet *layout-guideline* extractions exists.
+- No work was found that parses reference-layout figures (EVM layouts) into placement relations.
 
 ---
 
 ## 5. Explainability and design-intent capture ("the why")
 
 ### Takeaway
-Explicit rationale capture is recognized as a **gap**; no layout system logs a standardized "why" graph. The best available patterns are:
-- LayoutCopilot's human-accepted *suggestions* derived from high-level intents.
-- CoEvoP&R's **readable objectives with full lineage logs**.
-- ICPI's **design journal**.
-- MAGE's mandatory **structured reports** per iteration.
-- The handoff survey's call for artifacts to carry **context, evidence, and provenance**.
+No PCB system records a standard rationale graph. But 2026 systems converged on four mechanisms that together amount to design-intent capture:
+1. **Intent expressed as named relations** that are themselves checkable predicates (RAC; LayoutCopilot's human-accepted suggestions).
+2. **Structured diagnoses** with evidence, hypothesis and falsifier ("Who Plans").
+3. **Audit trails**: stored prompts, per-role ledgers, full lineage logs, mechanism memory.
+4. **The design kept as version-controlled code** that regenerates deterministically.
 
 ### Cited Findings
-- The ACM TODAES survey says understanding the reasoning behind EDA design decisions matters, that design-rationale documentation is underused, and that interactive natural-language explanations are an emerging direction. [PR] — [ACM 10.1145/3715324](https://dl.acm.org/doi/10.1145/3715324)
-- An evaluation of LLMs on real engineering tasks found they **often miss design intentions or rationale** even when given functional models or full system descriptions. [PP] — [arXiv 2505.13484](https://arxiv.org/pdf/2505.13484)
-- LayoutCopilot converts abstract designer intent into concrete suggestions that become executable commands **only after designer acceptance**. This is a human-in-the-loop explanation and approval pattern. [PR] — [arXiv 2406.18873](https://arxiv.org/abs/2406.18873v2); [ACM "Future or Mirage?"](https://dl.acm.org/doi/10.1145/3736167)
-- CoEvoP&R stores "the resolved configuration, objective program, prompt and response records, candidate metrics, component and state traces". These are "sufficient to reconstruct candidate lineage and the evidence used by the archive". Its objectives are designed to be human-readable, in contrast to opaque learned surrogates. [PP] — [GitHub](https://github.com/FCHXWH823/CoEvoP-R); [arXiv 2607.17398](https://arxiv.org/abs/2607.17398)
-- ICPI's "design journal" stores experience from act/observe/reflect cycles. [PR, ICLAD 2026] — [arXiv 2608.13767](https://arxiv.org/abs/2608.13767)
-- MAGE requires a structured report (visual observations plus check results) before each revise/accept decision, and encodes expert knowledge as natural-language directives and validation criteria. [PP] — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536)
-- The handoff survey defines valid handoff artifacts as carrying enough context, evidence, and provenance for the next consumer. Its "Organization-Bound" systems maintain source grounding, provenance, scope, and admissibility. [PP] — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795)
-- In verification, one line of work captures designer intent as comment strings specifying properties to check, then feeds them to an LLM for assertion generation. This pattern could carry over to layout rules. [PR review] — [ACM "Future or Mirage?"](https://dl.acm.org/doi/10.1145/3736167)
-- PCBSchemaGen's verifier gives interpretable, pin-localized violation feedback. [PP] — [arXiv 2602.00510](https://arxiv.org/abs/2602.00510)
-- General design-rationale literature (capture and reconstruction methods) is available as a source of schemas. [C] — [Wikipedia: Design rationale](https://en.wikipedia.org/wiki/Design_rationale)
+- **Intent as checkable relations** **[P][PP]**. RAC's agent "decides which relations an artifact should satisfy". Failures come back as "semantic repair evidence, so repair operates on intent instead of geometry". The checker is independent of the solver's own satisfaction labels — [arXiv 2610.20935](https://arxiv.org/abs/2610.20935).
+- **Structured diagnosis and audit** **[P][PP]** ("Who Plans, Who Edits?"):
+  - The planner emits evidence, hypothesis, falsifier and intents, each with a target, mechanism, operators, scope and expected effect.
+  - "Every repair-model prompt is stored before the call, so the information available to each model can be audited."
+  - A per-role ledger tracks tokens, spend and tool time.
+  - An evidence builder attributes post-layout degradation to parasitic groups.
+  - Source: [arXiv 2610.24234](https://arxiv.org/abs/2610.24234).
+- **Design as code** **[P][PP]**: "the design exists entirely as version-controlled code and regenerates deterministically". Human reviewers act as gates with machine-checkable criteria — [arXiv 2608.31006](https://arxiv.org/abs/2608.31006).
+- **Explanations for congestion** **[P][PP]**: a multimodal LLM assistant (MLLMA) uses MLLM-guided genetic prompting and interpretable preference learning over visual, tabular and text features. It produces a "Design Suggestion Deck" of influential layout features and targeted fixes, and is state of the art on CircuitNet — [arXiv 2510.15872](https://arxiv.org/abs/2510.15872).
+- **Explained parameter choices** **[P-via-survey]**: HyperPlace's agent "proposes and explains hyperparameter configurations" — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **Mechanism memory** **[P][PP]**: GoalEvolve keeps "local effects, optimization debt, and downstream retention" as evidence for later evolution steps — [arXiv 2608.16733](https://arxiv.org/abs/2608.16733).
+- **Handoff provenance** **[P][PP]**: the handoff survey calls for "residual risk [to] accompany accepted handoffs" and artifacts to stay "traceable, auditable, and reusable". LayoutCopilot "separates designer intent from tool-mediated syntactic and functional validation" and keeps "the request, command history, and rejected alternatives for designer review" — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **Reviewable diffs** **[P]**: AlphaEvolve notes that expressing changes "directly in Verilog… foster[s] trust and simplif[ies] adoption" — [arXiv 2506.13131](https://arxiv.org/abs/2506.13131).
+- **Provenance-preserving knowledge graphs** **[P][PP]** for datasheet facts — [arXiv 2610.12762](https://arxiv.org/abs/2610.12762).
+- **Readable, lineage-logged objectives** (CoEvoP&R) **[S]**; ICPI design journal **[S]** — [CoEvoP&R repo](https://github.com/FCHXWH823/CoEvoP-R); [ICPI](https://arxiv.org/abs/2608.13767).
 
 ### Inferences
-- The most trustworthy "why" is **constructive, not post-hoc**. Every placement or routing decision should trace to an explicit constraint or objective term. That term should trace to evidence (a datasheet page, an app note, a heuristic id, or a user instruction) and to a measured verification result. A post-hoc LLM narrative should be generated *from* this graph, not invented.
-- The comment-as-intent pattern from verification maps well to KiCad. Intent records can live as structured fields, e.g. a sidecar JSON keyed by refdes/net, or KiCad rule areas and custom DRC rules with comments. They then double as checks.
+- In a RAC-style system, the committed relation bundle *is* the design-intent record. A rationale for a relation is its link to (a) a datasheet knowledge-graph node or a user requirement, (b) the checker verdict and measured margin, and (c) the planner diagnosis that introduced it. An explanation is generated by walking those links, not composed after the fact.
 
 ### Gaps
-- No standard schema for PCB design-intent graphs was found.
-- No user study was found on whether LLM-generated layout explanations are accurate or useful to engineers.
+- No user study was found on whether engineers trust or use LLM layout explanations.
+- No standard schema for PCB design intent was found.
 
 ---
 
 ## 6. Vision feedback: rendered layout images as feedback to multimodal models
 
 ### Takeaway
-Vision feedback has shown value in **IC macro placement** (VeoPlace, MAGE, PlaceReasoner-Beta), **always paired with text metrics and coordinates and with scripted hard-constraint checks**. No PCB-specific system was found that feeds rendered board images back to a VLM inside a placement loop. General and PCB benchmarks warn that VLMs are weak at fine-grained visual judgment (PCB-Bench, SpatialEval). Use images for gestalt and qualitative critique, not for measurement.
+On routing, **structured scoring feedback beats visual feedback**: OmniRouting's scoring tool cut the cross-model mean DRC count by 77.1%, while visualization alone gave smaller and inconsistent gains. Across benchmarks, adding images to good text gives little or negative benefit (TopoBench, FloorplanQA, SpatialEval). General MLLMs remain weak at fine perception (Blink: about 50%, against 95.7% for humans) and at schematic grounding (OmniSch). Vision helps when it is **specialized or fine-tuned** (SCALE's DRC-VLM), **used for qualitative judgment alongside scripts** (MAGE [S]), or **for reading figures in documents** (DRC-Coder).
 
 ### Cited Findings
-- VeoPlace feeds the VLM canvas images plus text coordinates plus metrics of prior attempts. This frozen-VLM-plus-placer design gave the strongest IC placement gains among LLM-in-the-loop works: beating ChiPFormer on 9 of 10 benchmarks and improving DREAMPlace on 8 of 8 Superblue designs. [PP] — [arXiv 2603.28733v2](https://arxiv.org/html/2603.28733v2)
-- MAGE renders core boundaries, group boxes, IO pins, **flylines**, and a **coverage overlay of unclaimed area**. A Pith review also mentions whitespace heatmaps and boundary-coverage maps. The VLM must report "visual-only facts", and scripts handle overlap, boundary, and spacing checks. No ablation isolating the vision contribution was found, and ablations cover only 2 designs. [PP] — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536); [Pith](https://pith.science/paper/2607.18536)
-- PlaceReasoner-Beta is a VLM multi-agent loop with geometric and PD checkers. [PP] — [arXiv 2609.21263](https://arxiv.org/abs/2609.21263)
-- SCALE uses a fine-tuned VLM to analyze DRC violations and propose fixes; drcAgent uses a Qwen2.5-VL fixer trained against Calibre feedback (per survey description). [PP] — [arXiv 2607.21850](https://arxiv.org/pdf/2607.21850); [DRC search summary citing survey](https://arxiv.org/pdf/2606.19795)
-- PCB-Bench: frontier VLMs score high on basic wiring-error identification in images (Gemini-2.5-Pro 100%, GPT-5 90.9% per secondary summaries), but open-source models drop to 45–55%. Summaries also say models "know the theory of routing but fail to identify a physical wiring error in an image". [PR; secondary] — [papernotes](https://en.papernotes.org/ICLR2026/llm_evaluation/pcb-bench_benchmarking_llms_for_printed_circuit_board_placement_and_routing/); [Liner](https://liner.com/review/pcbbench-benchmarking-llms-for-printed-circuit-board-placement-and-routing)
-- SpatialEval: vision-only rarely beats the LLM backbone, while text plus image redundancy helps. [PR] — [NeurIPS 2024](https://neurips.cc/virtual/2024/poster/94371)
-- UniPCB is a VLM benchmark for open-ended PCB *quality inspection* (manufactured boards, not layout). [PP] — [arXiv 2601.19222](https://arxiv.org/pdf/2601.19222)
+- **OmniRouting agentic study** **[P][PP]**:
+  - "Visual feedback lowers Total [DRC] for every model, and Score reduces its cross-model mean from 141.18 to 32.31 (−77.1%)."
+  - Visualization alone barely moves routability. For GPT-5.5, NRR went from 21.71% to 20.96% while clearance violations fell from 42.87 to 32.90.
+  - A pre-routing tool raised reference similarity (MGS) for all eight models by about 10 points.
+  - "Tools improve local legality and routing-corridor selection more than global connectivity."
+  - Source: [arXiv 2608.04434](https://arxiv.org/abs/2608.04434).
+- **TopoBench**: image plus ASCII "does not reliably help and can reduce accuracy". **FloorplanQA**: images "do not consistently outperform symbolic input". **SpatialEval**: vision-only rarely beats the LLM backbone **[P]** — [TopoBench](https://arxiv.org/abs/2603.12133); [FloorplanQA](https://arxiv.org/abs/2507.07644); [SpatialEval](https://arxiv.org/abs/2406.14852).
+- **Blink** (ECCV 2024) **[P][PR]**: on perception tasks that humans solve "within a blink", GPT-4V scored 51.26% and Gemini 45.72%, only 13.17 and 7.63 points above random. Specialist computer-vision models do much better — [arXiv 2404.12390](https://arxiv.org/abs/2404.12390).
+- **OmniSch** (1,854 schematics) **[P][PP]**: LMMs show "unreliable fine-grained grounding, brittle layout-to-graph parsing, inconsistent global connectivity reasoning and inefficient visual exploration". Tool-augmented active visual search improves schematic-to-netlist accuracy and efficiency — [arXiv 2604.00270](https://arxiv.org/abs/2604.00270).
+- **MMCircuitEval** (3,614 multimodal QA pairs) **[P][PP]**: there are "significant performance gaps… particularly in back-end design and complex computations" — [arXiv 2507.19525](https://arxiv.org/abs/2507.19525).
+- **CoDeLayout** (graphic-design layouts) **[P][PP]**: on compositional multi-layer layout understanding, even GPT-o3 reaches only 79.68%, while a post-trained Qwen2.5-VL-7B reaches 91.66% — [arXiv 2608.26716](https://arxiv.org/abs/2608.26716).
+- **SCALE** **[P][PP]**: a fine-tuned DRC-VLM gives +12–25% DRV-fix solve rate — [arXiv 2607.21850](https://arxiv.org/abs/2607.21850). **DRC-Coder** uses a VLM to read rule illustrations **[P]** — [arXiv 2412.05311](https://arxiv.org/abs/2412.05311).
+- **PCBA visual QA** (assembly inspection, not layout) **[P][PP]**: task-aware GRPO fine-tuning reached an 83.24 overall score on a PCBA standard-to-real challenge — [arXiv 2609.21276](https://arxiv.org/abs/2609.21276).
+- **VeoPlace, MAGE, PlaceReasoner-Beta** (IC macro placement with rendered canvases, verified separately) **[S]** — [VeoPlace](https://arxiv.org/abs/2603.28733); [MAGE](https://arxiv.org/abs/2607.18536).
 
 ### Inferences
-- For KiCad, render purpose-built **diagnostic views** rather than photoreal 3D. Useful views: ratsnest/flylines colored by net class; group bounding boxes with labels; a congestion or crossing-density heatmap; critical-loop polygons (e.g. buck hot loop) with area annotated in text; DRC markers with ids that match a text list; and a top/bottom split.
-- Always pair an image with an aligned text table that uses the same ids (SpatialEval redundancy; VeoPlace). Ask the VLM qualitative questions ("Is signal flow left to right? Are decoupling caps visually adjacent to their pins? Is there an obvious ratsnest tangle?") and verify any claimed metric with code.
+- In a KiCad loop, make **structured, numeric feedback** the primary channel: per-predicate verdicts, DRC lists with object ids, unrouted counts. Add renders only for gestalt review (signal flow, clustering, aesthetics), ideally with ids overlaid that match the text. Do not rely on a general VLM to spot small geometric defects.
 
 ### Gaps
-- No PCB-specific measurement was found of how much rendered-image feedback improves placement quality over text-only feedback.
-- No vision ablation numbers were found for MAGE or VeoPlace in the retrieved snippets.
+- No PCB study isolates the contribution of rendered images when strong structured feedback is already available.
 
 ---
 
 ## 7. Quantitative comparisons of LLM-driven layout versus classical tools
 
 ### Takeaway
-- **IC placement:** LLM-in-the-loop methods report beating classical and learned baselines when the LLM steers a classical engine. Reported gains are roughly 4–34% HPWL or routed wirelength and 23–37% congestion, all self-reported preprints except EvoPlace (TCAD) and OrderPlace (ICML). MAGE's timing gains come with a wirelength penalty.
-- **PCB routing:** classical routers (Freerouting) and even PPO RL beat LLM agents, and **LLMs score zero on large boards**.
-- **PCB placement:** frontier models trail human engineers (OmniLayout).
+- **PCB, LLM emits geometry:** classical tools win by a wide margin. In OmniRouting, PcbRouter reaches 56.2% NRR against the best LMM's 12.6% and humans' 93.6%. In PCBWorld [S], Freerouting scores about 0.8 clean pass against 0.65 for the best LLM, and LLMs score 0 on large boards.
+- **PCB, LLM steers a classical engine:** results can beat commercial tools. The DAC 2026 coarse-to-fine placer beats a commercial placer, NS-Place and Quilter on routed wirelength and vias. RAC reaches 90.9% clean pass on relation-specified tasks.
+- **IC:** LLM-evolved or LLM-steered classical engines report gains of a few percent to tens of percent, mostly self-reported preprints.
 
 ### Cited Findings
-- **PCBWorld (PCB routing, Clean Pass = CP)**:
-  - Freerouting: CP 1.00 on synthetic D2, 0.80 on D3-A, 0.78 on D3-B.
-  - GPT-5.4 interactive: CP 0.96 on D2 (mini 0.58, nano 0.55) and 0.65 on D3-A.
-  - **All LLM agents: 0.00 CP on large D3-B**.
-  - PPO: 0.86 on D3-A, 0.45 on D3-B. The paper says PPO beat everything on small boards and was second only to the strongest rule-based router on larger ones.
-  - KiCadRoutingTools: 0.74 / 0.20.
-  - A kicad-tools PR flags the Freerouting row as "denominator not verified".
-  - [PP/WS; partly via third-party GitHub issue] — [arXiv 2607.05915](https://arxiv.org/abs/2607.05915); [kicad-tools #5942](https://github.com/rjwalters/kicad-tools/issues/5942); [kicad-tools PR #6702](https://github.com/rjwalters/kicad-tools/pull/6702)
-- **OmniLayout (PCB placement)**: Claude-Sonnet-4.6, GPT-5.5, and Qwen3.6 were benchmarked against experienced human layout engineers. They showed weak geometric reasoning, poor routability, and incomplete schematic-relation preservation across zero-shot, few-shot, and agentic settings. [PP] — [arXiv 2607.03261](https://arxiv.org/abs/2607.03261)
-- **PCBInnoBench (KiCad editing)**: the best agent scored 22.0% Pass@1 with expert-trajectory guidance and 7.3% without. [PR] — [NeurIPS](https://neurips.cc/virtual/2026/poster/139034)
-- **PCBAgent**: outperforms SOTA (MaskPlace, ChiPFormer, MILP post-optimizer) on 17 industrial PCB tasks; specific numbers were not retrieved. [PR] — [ACM DL](https://dl.acm.org/doi/10.1145/3658617.3697736)
-- **VeoPlace**: beats ChiPFormer on 9 of 10 benchmarks, with peak wirelength reduction >32%, and improves DREAMPlace by up to 4.3% on 8 of 8 Superblue designs. [PP] — [arXiv 2603.28733v2](https://arxiv.org/html/2603.28733v2)
-- **EvoPlace**: HPWL −5.05% (MMS), −5.29% (ISPD2005), −8.30% (ISPD2019) versus DREAMPlace-based baselines, up to 17%. [PR] — [IEEE TCAD](https://ieeexplore.ieee.org/document/11345590/)
-- **CoEvoP&R**: routed wirelength −16.9%, congestion −36.7%, WNS +0.70 ns (Nangate45); −5.4% and −23.2% (Superblue) versus native DREAMPlace. [PP] — [arXiv 2607.17398](https://arxiv.org/abs/2607.17398)
-- **OrderPlace**: −34.04% wirelength versus WireMask-EA and −14.08% versus EGPlace on ISPD2005. [PR, ICML 2026] — [arXiv 2606.08904](https://arxiv.org/pdf/2606.08904)
-- **MAGE**: WNS +11.1–19.3% and TNS +70–74% versus commercial macro placers, but routed wirelength +29.7% and power about +4% (per Pith). [PP] — [Pith](https://pith.science/paper/2607.18536)
-- **MCP4EDA**: timing closure +15–30% and area −10–20% versus default synthesis flows (self-reported). [PP] — [arXiv 2507.19570](https://www.arxiv.org/abs/2507.19570)
-- **AuDoPEDA**: up to −5.9% routed wirelength, −10.0% clock period, −19.4% power in OpenROAD. [PP] — [arXiv 2601.06268](https://arxiv.org/pdf/2601.06268)
-- **ICPI (analog)**: OTA1 FoM 1.104, versus 1.003 without ICPI and 0.979 for BO; n=1 caveat. [PR, ICLAD] — [arXiv 2608.13767](https://arxiv.org/abs/2608.13767)
-- **GPT-6 Astra (anecdotal)**: 46 schematic-parity issues (JLCPCB) and 168 DRC violations versus 0 for a human board (zerowithdot); bulk routing was done by Freerouting. [V/C] — [JLCPCB](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad); [zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/); [NextPCB](https://www.nextpcb.com/blog/gpt-6-astra-kicad-pcb-routing-test)
-- **Classical PCB placement reference**: NS-Place (Laplacian seed → net-crossing minimization → **MILP legalization**) cuts net-separation cost by 77% versus manual and 41% versus GDMILP. This shows the strength of classical solvers on PCB placement sub-problems. [PP] — [arXiv 2210.14259](https://arxiv.org/pdf/2210.14259)
+- **OmniRouting** (zero-shot / agentic, with a classical baseline) **[P][PP]**:
+  - Best LMM zero-shot: 12.60% NRR (Claude Opus 4.8).
+  - Best agentic: 27.98% (GPT-5.5, all tools).
+  - PcbRouter: 56.20% NRR / 71.37% PRR.
+  - GPCB: 0.69% NRR.
+  - Human: 93.58% / 95.91%.
+  - Source: [arXiv 2608.04434](https://arxiv.org/abs/2608.04434).
+- **RAC** **[P][PP]**: interface comparison on 98 PCB tasks: 23.2%, 21.0%, 37.4%, 62.4%, 74.0%, then 90.9% for RAC — [arXiv 2610.20935](https://arxiv.org/abs/2610.20935).
+- **Li et al. DAC 2026 PCB placer** **[P-via-survey][PR]**: routed wirelength and vias improve by 55%/73% against a commercial placer, 34%/26% against NS-Place and 15%/13% against Quilter, on 6 industrial boards with the same commercial router — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **PCBAgent** **[P-via-survey]**: the only fully legal method on 17 tasks; HPWL 1.04× and surface wires 0.94× relative to manual — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **HyperPlace**: up to 22.24% better than DREAMPlace 3.0 under fences. **CHIP-MAP**: area up to −1.5%, 61.6% of TNS repaired **[P-via-survey]** — [arXiv 2606.19795](https://arxiv.org/abs/2606.19795).
+- **GR-Evolve**: up to −8.72% post-detailed-route wirelength. **VPR-Evolve**: wirelength up to −18.1% and delay −9.8% against stock VPR. **GoalEvolve**: TNS +30.67% and leakage −21.18% against default OpenROAD. **FABO**: wirelength −0.83% overall, −2.66% for large nets, against SALT **[P]** — [GR-Evolve](https://arxiv.org/abs/2604.22234); [VPR-Evolve](https://arxiv.org/abs/2607.24998); [GoalEvolve](https://arxiv.org/abs/2608.16733); [FABO](https://arxiv.org/abs/2608.30268).
+- **DRC-Aid**: 92.5% complete repair, against 83.3% for a deterministic heuristic, 54.4% for random and 6.6% for static prompting. **Ho & Ren**: cells up to 19.4% smaller. **DRC-Coder**: F1 1.000 vs 0.631 **[P]** — [DRC-Aid](https://arxiv.org/abs/2607.22761); [Ho & Ren](https://arxiv.org/abs/2406.06549); [DRC-Coder](https://arxiv.org/abs/2412.05311).
+- **Scene-layout analogues** **[P]**: Holodeck's LLM absolute coordinates were no better than random (MRR 0.364 vs 0.369); constraints plus a solver scored 0.706. LayoutVLM's in-bounds rate was 94.9%, against 24.2% for LayoutGPT and 8.1% for Holodeck — [Holodeck](https://arxiv.org/abs/2312.09067); [LayoutVLM](https://arxiv.org/abs/2412.02193).
+- Verified separately and kept [S]: VeoPlace (beats ChiPFormer on 9 of 10), EvoPlace (HPWL −5–8%), OrderPlace (−14% vs EGPlace), CoEvoP&R (routed wirelength −16.9%), MAGE (+WNS but +29.7% routed wirelength) — see the Section 1 links.
 
 ### Inferences
-- The quantitative case is strong for "LLM improves or steers the classical engine" and weak or negative for "LLM replaces the engine". Every PCB benchmark where an LLM directly places or routes shows it trailing classical or human baselines.
-- Self-reported preprint gains in IC placement are large but unreplicated. MAGE shows how optimizing one metric (timing) can hide regressions in another (wirelength, power), so any KiCad system's evaluation should report a full metric vector.
+- The only PCB results where an LLM-involved system beats classical or commercial tools all keep geometry in a solver: the DAC 2026 placer (MILP legalization) and PCBAgent (RL plus MILP).
 
 ### Gaps
-- No independent replication of any LLM-placement result was found.
-- No LLM-versus-Freerouting comparison on *placement-plus-routing jointly* for PCB was found. PCBWorld routes pre-placed boards.
+- No independent replications of any of these results were found.
+- No joint placement-plus-routing comparison of an LLM-steered KiCad flow against Freerouting-based baselines on real boards was found.
 
 ---
 
 ## 8. Implications for an LLM-driven KiCad placer/router
 
 ### Takeaway
-Build a **neuro-symbolic system**:
-- The LLM owns *semantics, intent, strategy, constraints, objective weights, and explanation*.
-- Deterministic solvers own *geometry, legality, and bulk routing*.
-- Every LLM decision is a **checkable, provenance-carrying constraint** in a design-intent graph.
-- Feedback comes from deterministic verifiers (KiCad DRC, parity, custom constraint checkers), with rendered diagnostic images as a secondary qualitative channel.
-- Expensive LLM creativity goes offline, into evolving heuristics and objectives over a board corpus, not online, step-by-step routing.
+Build a **relational-contract, solver-realized, independently verified** system:
+- The LLM commits **named relations with categorical magnitudes** over parts, groups, nets and board features, each linked to its evidence.
+- KiCad-side solvers realize the whole bundle jointly: grouping, global placement, MILP/CP-SAT legalization, and Freerouting or a custom router.
+- **Independent** checkers verify every relation plus DRC, ERC and parity. Feedback returns structured, per-predicate evidence with admissible relaxations.
+- The relation bundle doubles as the design-intent record.
 
-### Cited Findings (evidence base for the recommendations)
-- Open-loop LLM geometry fails (PCBWorld engine-free 0.02 CP); interactive tool use helps (0.65) but trails Freerouting (0.80), scores 0.00 on large boards, and is about 200× slower — [arXiv 2607.05915v2](https://arxiv.org/html/2607.05915v2)
-- The successful pattern is VLM-proposed regions plus a numerical placer (VeoPlace) — [arXiv 2603.28733v2](https://arxiv.org/html/2603.28733v2); LLM-evolved objectives, algorithms, and orderings (CoEvoP&R, EvoPlace, OrderPlace) — [arXiv 2607.17398](https://arxiv.org/abs/2607.17398), [IEEE TCAD](https://ieeexplore.ieee.org/document/11345590/), [arXiv 2606.08904](https://arxiv.org/pdf/2606.08904)
-- Scripts enforce hard constraints while vision judges soft qualities, with a structured report per iteration and an independent auditor (MAGE) — [arXiv 2607.18536](https://arxiv.org/abs/2607.18536)
-- Present repair as a menu of rule-engine-generated edits (DRC-Aid); unbounded self-correction risks non-convergence — [arXiv 2607.22761](https://arxiv.org/html/2607.22761v1); [arXiv 2605.01471](https://arxiv.org/html/2605.01471v1)
-- A datasheet → compact knowledge graph with closed ontology and predicates cuts about 16k tokens to about 300 per IC (PCBSchemaGen) — [arXiv 2602.00510v2](https://arxiv.org/html/2602.00510v2)
-- Expert trajectories and skills help agents dramatically (PCBInnoBench 22.0% vs 7.3%; PDAgent-Bench) — [NeurIPS](https://neurips.cc/virtual/2026/poster/139034); [arXiv 2606.17253](https://arxiv.org/abs/2606.17253)
-- Declarative code interfaces work better for agents than GUI drawing (EEBench/atopile) — [EEBench](https://eebench.org/blog/can-ai-design-circuit-boards-yet/)
-- CSS-like box formats help LLMs read layouts (LayoutGPT); VLMs need text redundancy (SpatialEval); Python tools fix arithmetic but not optimization (FloorplanQA) — [arXiv 2305.15393](https://arxiv.org/pdf/2305.15393); [NeurIPS 2024](https://neurips.cc/virtual/2024/poster/94371); [Lacuna/FloorplanQA](https://lacuna.tiptreesystems.com/work/floorplanqa-a-benchmark-for-spatial-reasoning-in-llms-using-structured/wrk_82594f0d17bb048f48ab07aecaa3ec8b)
-- Electrically computable values (impedance, diff-pair spacing) should come from calculators, not networks (Quilter) — [Quilter](https://www.quilter.ai/blog/llm-pcb-layout-gpt-6-astra)
-- The practical expert workflow that GPT-6 Astra imitated: protect power, bootstrap, and switching nets first, then autoroute the rest. It still produced parity and DRC issues — [JLCPCB](https://jlcpcb.com/blog/gpt-6-astra-pcb-design-in-kicad); [zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/)
-- Ready-made KiCad-native evaluation exists: PCBWorld (679 real boards, push-and-shove engine, DRC), OmniLayout (placement), PCB-Bench (comprehension), PCBInnoBench (editing) — [PCBWorld GitHub](https://github.com/LGAI-Research/PCBWorld); [arXiv 2607.03261](https://arxiv.org/abs/2607.03261); [PCB-Bench GitHub](https://github.com/digailab/PCB-Bench); [NeurIPS](https://neurips.cc/virtual/2026/poster/139034)
+RAC (90.9% vs 23.2%), OmniRouting, DRC-Aid, "Who Plans" and the DAC 2026 coarse-to-fine PCB placer give direct, controlled evidence for each part of this design.
 
-### Inferences (concrete recommendations; these are my synthesis, not sourced claims)
+### Cited Findings (evidence base)
+- Relational contract versus coordinates, candidates, sequential relations and requirements-only, held constant across harnesses — [RAC](https://arxiv.org/abs/2610.20935) [P].
+- LLM traces are unusable (12.6% NRR) and structured scoring feedback beats visuals — [OmniRouting](https://arxiv.org/abs/2608.04434) [P].
+- An edit menu plus verification, DFS and memory beats prompting and heuristics — [DRC-Aid](https://arxiv.org/abs/2607.22761) [P].
+- Bounded operators, guards, planner/executor split, cost ledger, legality inside the contract — ["Who Plans, Who Edits?"](https://arxiv.org/abs/2610.24234) [P].
+- LLM grouping plus MILP legalization beats commercial tools — [handoff survey on Li et al. DAC 2026](https://arxiv.org/abs/2606.19795) [P-via-survey].
+- Incident-list encoding, cell-aligned formats, structured state tools, and limited benefit from images — [Talk like a Graph](https://arxiv.org/abs/2310.04560); [TopoBench](https://arxiv.org/abs/2603.12133); [FloorplanQA](https://arxiv.org/abs/2507.07644) [P].
+- Difficulty scales with coupled relations — [PlanarBench](https://arxiv.org/abs/2606.02010) [P].
+- Structured tool interfaces, persistent context and rollback matter more than skills — [RTL-to-GDS lessons](https://arxiv.org/abs/2607.17528); [FluxEDA](https://arxiv.org/abs/2603.25243) [P].
+- Design as code through pcbnew/kicad-cli, netlist-identical by construction, human review gates — [RF workflow](https://arxiv.org/abs/2608.31006) [P]; [kicad-pycbnew](https://arxiv.org/abs/2609.27522) [P].
+- Datasheet knowledge graph with provenance; agentic datasheet retrieval with consensus; rule text to checker code — [hardware KG](https://arxiv.org/abs/2610.12762); [DRCY](https://arxiv.org/abs/2603.15672); [DRC-Coder](https://arxiv.org/abs/2412.05311) [P].
+- Offline LLM evolution of classical router and placer code — [GR-Evolve](https://arxiv.org/abs/2604.22234); [VPR-Evolve](https://arxiv.org/abs/2607.24998); [GoalEvolve](https://arxiv.org/abs/2608.16733) [P].
 
-**A. Representations (what the LLM sees)**
-1. **Canonical board-state JSON** generated from the `.kicad_pcb` file via the KiCad IPC API or pcbnew. Per footprint: refdes, value, footprint, courtyard bbox as CSS-like `{x, y, w, h}` in mm (fixed 0.1 mm precision), rotation, side, locked flag, functional group id, and pins (pin name, net, **pin role** from the datasheet knowledge graph). Per net: class, criticality tag, current, and frequency/edge-rate tag. Keep ids stable across turns so the model never has to re-identify objects (TopoBench state-tracking failures).
-2. **Derived-facts layer, computed by code and never by the LLM**: pairwise overlaps; courtyard clearance violations; for each intent constraint, the *measured value and pass/fail*; neighbor lists (k nearest parts with distances); ratsnest crossing count and per-net HPWL; per-region pin density and estimated congestion; loop area of tagged critical loops; and board-edge and keepout distances. This sidesteps the arithmetic and overlap failures seen in FloorplanQA and OmniLayout.
-3. **Hierarchical abstraction**: LLM reasoning happens mostly at the **group/zone level**, e.g. "power input", "buck converter", "MCU + decoupling", "USB connector + ESD", "analog front end". Groups are presented as boxes with ports. This matches VeoPlace regions and MAGE group boxes. Drill into a local view only for critical clusters.
-4. **Rendered diagnostic images as a secondary channel**, always with the same ids as the text. Use the overlays listed in Section 6. Use them for qualitative critique (signal flow, clustering, symmetry, obvious tangles), never as the source of truth for numbers.
-5. **Avoid whole-board ASCII grids.** Small local ASCII or occupancy grids may be acceptable for a congested neighborhood, but prefer coordinates plus derived facts.
+### Inferences (concrete recommendations; synthesis, not sourced claims)
 
-**B. Division of labor**
-- **LLM responsibilities**:
-  - (i) Functional understanding of the netlist and partitioning into groups.
-  - (ii) Extracting layout predicates from datasheets and app notes into the knowledge graph, with page provenance and validity conditions.
-  - (iii) Tagging nets by criticality: hot loops, high di/dt, sensitive analog, high-speed pairs, Kelvin sense, thermal paths.
-  - (iv) Writing a **constraint/intent program** in a small DSL: zones, relative proximities, orientation toward pins, same-side rules, symmetry, keepouts, routing order and priority, net-class widths derived by a calculator, via budgets, and layer assignments.
-  - (v) Choosing solver objective weights and relaxing constraints when infeasible.
-  - (vi) Interpreting verifier output and selecting among enumerated repairs.
-  - (vii) Producing explanations from the intent graph.
-- **Solver responsibilities**:
-  - (i) Exact placement: analytical or SA global placement with constraint penalties, then **CP-SAT/MILP legalization** honoring hard constraints (NS-Place and PCBAgent show MILP is effective for PCB legalization).
-  - (ii) Critical-net routing through a router primitive the LLM *parameterizes* ("route net SW: Q1.D→L1.1, F.Cu, width from calculator, minimize loop with C_in") rather than drawing.
-  - (iii) Bulk routing via Freerouting or KiCad push-and-shove (or kicad-tools `kct route`).
-  - (iv) DRC/ERC/parity via kicad-cli.
-  - (v) Impedance and current-width calculators.
-- **Interface style**: a code/DSL or MCP tool surface with **coarse, semantic, idempotent operations** (`assign_zone`, `add_constraint`, `place_group`, `route_critical`, `autoroute_remaining`, `run_checks`) rather than hundreds of low-level GUI-like tools. Large tool surfaces like Konnect's 200+ tools are not evidence of quality, and EEBench's experience favors declarative code.
+**A. Representation (what the LLM sees)**
+1. **Typed board state**, never asked for in pixels:
+   - parts with stable short ids, footprint class, size class, side and locked flag;
+   - an **incident-list netlist**: per part, its pins with net name, pin role from the datasheet KG and connected parts;
+   - net classes and criticality tags;
+   - **tool-computed facts**: groups and clusters, overlaps, unrouted connections, DRC items with object ids, per-relation verdicts with margins.
 
-**C. Feedback loops**
-1. **Inner loop (deterministic, fast)**: solver → checks → structured report listing hard-constraint violations, intent-constraint pass/fail with measured values, DRC items, unrouted nets, parity issues, and metric vector (HPWL, via count, completion, loop areas). Only the delta from the previous iteration goes to the LLM.
-2. **Repair loop (bounded)**: a rule engine turns each violation into 2–6 candidate edits (nudge, rotate, swap side, relax soft constraint, reroute with different layer). The LLM picks and justifies. Cap iterations and token budget, and detect cycles (DRC-Aid pattern; non-convergence warning).
-3. **Strategy loop (best-of-N plus audit)**: generate K alternative intent programs, e.g. different zonings, run the full pipeline on each, and let a **stateless auditor** compare the metric vectors and diagnostic images (MAGE tournament plus auditor). Report the full metric vector to avoid MAGE-style hidden regressions.
-4. **Offline evolution loop**: use an LLM (EoH/ReEvo/CoEvoP&R style) to evolve the *placement objective terms, group-ordering heuristics, and repair-menu generators* across a corpus such as PCBWorld's 679 real boards plus internal boards. Score each candidate with real routing completion and DRC. At run time this costs nothing extra, and it directly targets the PCBWorld result that LLMs are too slow for step-wise routing.
-5. **Memory**: an ICPI-style **design journal** storing (situation, action, outcome, lesson), plus retrieval of expert trajectories and skills. PCBInnoBench shows expert trajectories roughly triple success. Retrieve reference layouts by *topology* (subcircuit graph similarity), not text embedding (PCBSchemaGen ablation).
+   Exact coordinates may be *observable*, as in RAC, but are never *writable*.
+2. **Hierarchy by function.** Present functional groups as first-class objects: power stage, MCU plus decoupling, connector plus ESD, analog front end. This keeps each decision's relation count low (PlanarBench), and the DAC 2026 placer's grouping agents work this way. Grouping itself can be LLM-proposed and code-verified, in the style of GENIE-ASI subcircuit identification.
+3. **Images optional and secondary.** Use labeled renders that share ids with the text, for qualitative review only.
 
-**D. "The why": design-intent graph**
-- Nodes: **Intent** (a natural-language goal, e.g. "minimize buck hot-loop area"), **Evidence** (datasheet page/figure, app-note section, rule-of-thumb id, user instruction), **Constraint** (a DSL predicate with hard/soft weight and validity conditions), **Decision** (a concrete placement or routing action and its solver run id), and **Verification** (measured value and pass/fail, DRC refs).
-- Edges: Intent → Constraint (derived_from) → Evidence (justified_by); Decision → Constraint (satisfies or violates); Verification → Constraint.
-- Persist this graph as a sidecar JSON next to the `.kicad_pcb`. Optionally mirror hard constraints into KiCad custom DRC rules with comments so the intent survives tool round-trips.
-- Explanations ("why is C7 here?") are generated by traversing the graph: C7 → near(C7, U3.VIN, 2 mm) → TPSxxxx datasheet §10.1 Fig. 34 → measured 1.4 mm, PASS. A post-hoc narrative is not acceptable. Every LLM-proposed constraint must cite evidence or be labeled "heuristic" or "assumption" so engineers can audit it. This also addresses the finding that LLMs often miss rationale.
+**B. Action space (what the LLM can write)**
+- A closed **relation vocabulary** with categorical magnitudes:
+  - `near(a, b|pin, {tight, close, loose})`
+  - `same_side`, `align(axis)`, `symmetric(group, axis)`
+  - `edge(part, side)`, `keepout(region|part, layers)`
+  - `group(members)`, `orient_toward(part, pin)`
+  - `route_priority(net)`, `matched(netA, netB, tolerance class)`
+  - `layer_pref(net, layers)`, `via_limit(net, n)`, `min_loop(nets)`, `plane(net, layer, region)`
+- Metric values for each magnitude class are resolved from net class, stackup and datasheet knowledge, never chosen by the LLM.
+- **Submit the whole bundle at once** for joint realization (RAC: 90.9% bundled vs 62.4% sequential).
 
-**E. Evaluation plan**
-- Routing: PCBWorld D2/D3-A/D3-B CP@1/CP@5 against Freerouting and kicad-tools.
-- Placement: OmniLayout tasks.
-- Comprehension and grounding regression: PCB-Bench and PCB-QA.
-- End-to-end editing: PCBInnoBench.
-- Always report the metric vector (completion, DRC count, parity issues, wirelength, vias, critical-loop areas, intent-constraint satisfaction %) and wall-clock and token cost.
+**C. Division of labor**
+- **LLM:** functional partitioning; criticality tagging; turning datasheet/app-note statements and user requirements into relations; choosing relaxations when the solver reports infeasibility; picking repairs from a menu.
+- **Solvers:** group placement (analytical or SA); **MILP/CP-SAT legalization** (courtyards, edges, keepouts); critical-net routing under relation constraints; bulk routing (Freerouting, KiCad push-and-shove); calculators for widths, impedance and clearances.
+- **Independent checkers:** kicad-cli DRC/ERC; schematic parity; per-relation geometric oracles written as code (DRC-Coder and weak-verifier pattern), never the solver's own satisfaction flag.
+
+**D. Feedback loop**
+- The realizer returns which relations it realized or violated, conflicting sets, magnitudes and **admissible relaxations**.
+- Repairs come from **rule-engine-generated menus**, with DFS, backtracking and memory against cycles (DRC-Aid).
+- Budget iterations explicitly; "Who Plans" and OmniRouting show more steps can hurt.
+- Use a **mid-tier model alone** by default. Escalate to a flagship planner only on verified failure, recording per-role spend. Input context dominates cost, so keep observations compact.
+- Use **stateful tool sessions with checkpoint and rollback** (FluxEDA pattern), rather than re-loading boards per shell call.
+
+**E. Datasheet pipeline → relations**
+- Retrieve and score datasheets (DRCY). Extract by chunks into a knowledge graph with provenance and applicability conditions (hardware-KG paper). Map statements to the closed relation vocabulary. Generate a checker per relation type. Use multi-run consensus for safety-critical rules.
+
+**F. "Why"**
+- The intent record is the relation bundle plus, for each relation, (source evidence → planner diagnosis → checker verdict and margin). Store it in a sidecar file next to the `.kicad_pcb`. Keep the whole design as regenerable code (RF workflow, kicad-pycbnew).
+
+**G. Offline improvement**
+- Evolve the realizer itself (placement objectives, legalizer heuristics, Freerouting cost functions) over a board corpus with full-flow scoring, using the GR-Evolve, VPR-Evolve and GoalEvolve pattern with stage-attributed goal gaps.
+
+**H. Evaluation**
+- RAC-style relation tasks (clean-pass rate); OmniRouting and PCBWorld routing metrics; DRC and parity counts; tokens, cost and latency per verified board. Guard against metric gaming ("Who Plans" DRC-count shortcuts): legality is always part of the acceptance contract.
 
 ### Gaps
-- No published evidence yet on whether an LLM-written intent DSL plus CP-SAT/MILP placement beats Freerouting-era classical placers on real PCBs. This needs to be built and measured.
-- The optimal granularity of LLM decisions (group-level vs part-level) for PCB is untested in the literature.
-- Unverified in this session: Holodeck/LayoutVLM-style "LLM relations → solver" precedents, OmniRouting results, and the "Li et al." MILP-legalization agentic placement paper. All are worth a follow-up search when budget allows.
+- Whether RAC's 90.9% holds on full real boards with dozens of interacting relations is untested. Its 98 tasks are task-scoped, and its board corpus was not identified in the sections read.
+- The best calibration of categorical magnitudes and the right grouping granularity for PCBs are open questions.
+- No public KiCad-native implementation of a relational contract was found.

@@ -1,350 +1,568 @@
 # Automatic Component Placement Algorithms for PCBs (and Transferable VLSI / Analog Placement Methods)
 
-Scope note for the report writer: evidence is tagged **[PCB]** (evaluated on real printed circuit boards), **[VLSI]** (digital IC benchmarks only), or **[Analog IC]**. Unless a finding says otherwise, assume a VLSI result has **not** been shown to carry over to PCBs. How sources were obtained: the fetch tool could not reach arXiv, IEEE, ACM, university sites or Wikipedia from this environment. As a result: (a) I read the full text of PCBAgent (ASP-DAC'25) and ModuPlace (DAC'26) from PDF copies hosted on GitHub; (b) I read GitHub READMEs and the KiCad source directly; (c) most other paper-level claims come from search-engine abstract summaries, cited to the URL each summary pointed at. The web-search budget ran out before every sub-topic was covered (see Gaps in each section).
+**Scope tags.** Each finding is tagged **[PCB]** (evaluated on real printed circuit boards), **[VLSI]** (digital IC benchmarks only) or **[Analog IC]**. Unless a finding says otherwise, assume a VLSI result has **not** been shown to carry over to PCBs.
+
+**Read-depth tags.** Each citation also says how deeply it was read:
+- **(P)** = primary full text or source code, read directly (PDF, repository code, or KiCad source/commit history).
+- **(A)** = abstract or bibliographic metadata only (arXiv abstract page, Semantic Scholar/OpenAlex abstract, publisher listing, or README).
+- **(S)** = search-engine summary only; treat as lower confidence.
+
+**How this was researched.**
+- *First pass.* Only GitHub was reachable. PCBAgent and ModuPlace were read in full from PDF copies on GitHub.
+- *Second pass.* arXiv and university PDFs became reachable via curl. Read in full in this pass: NS-Place, the double-layer placer (arXiv 2502.14012), Lim 2026, HiePlace, OmniLayout, the MAGICAL ICCAD'19 paper, the ALIGN overview paper, "Revisiting Floorplan Representations" (ISPD'01), the GenAI-for-PCB survey (arXiv 2606.17074), and two thermal-surrogate papers.
+- *Source code read:* Cypress (NVlabs), ALIGN's placer, and KiCad's autoplacer at the 5.1/6.0/7.0/8.0/9.0/master branches, plus the GitLab commit history.
+- *Not reachable:* ACM DL and IEEE full texts (bot-blocked), and Cornell/UMich PDFs (TLS chain failures).
+- *Budgets:* the shared web-search budget ran out a second time in this pass. OpenAlex's anonymous daily budget also ran out, so citation-following for some recent papers used Semantic Scholar instead.
+- *Verification:* a separate track is verifying headline numbers for NS-Place, HiePlace, Cypress, RL_PCB, PCBAgent, ModuPlace, VeoPlace, EvoPlace, OrderPlace, chip diffusion and TILOS. Where a number below comes from my own full-text read, it is marked (P).
 
 ---
 
 ## Q1. Classical placement methods (force-directed, analytical, SA, GA, partitioning, floorplan representations, CP/ILP/SMT): what they are, and which ones PCB tools actually use
 
 ### Takeaway
-Real PCB placers, both academic and in shipping tools, are almost all **simulated annealing (SA)**, **greedy/grid ratsnest heuristics**, **GA/PSO metaheuristics**, or (since 2022) **analytical gradient placement plus MILP/mathematical-programming legalization** (NS-Place, HiePlace, Zhao et al. 2025). VLSI-grade analytical placers such as ePlace/RePlAce/DREAMPlace transfer conceptually: their electrostatic density term and Nesterov solver are scale-agnostic. They do not handle PCB rotation, two sides, irregular outlines or spacing rules out of the box, so every 2025 PCB analytical paper adds rotation and its own legalizer.
+Real PCB placers, in shipping tools and in academia, fall into four classes:
+- **Greedy grid heuristics.** KiCad's built-in autoplacer.
+- **SA and metaheuristics.** SA-PCB, B*-tree SA, GA/PSO, commercial Trace.
+- **Analytical / force-directed global placement plus a discrete legalizer.** NS-Place, Zhao 2025, PA-ICM, Cypress, and the 2025 NTU (Yao-Wen Chang) placers.
+- **Mathematical programming.** HiePlace, MILP/QP legalizers.
+
+Since 2025 the field has converged on **VLSI-style analytical global placement adapted for PCBs**. The adaptations are rotation variables (Gumbel-softmax, evolutionary, or enumeration), two-sided density maps, pad-to-pad clearance and net-crossing terms, and exact or irregular footprint geometry. These feed **MILP/QP/constraint-graph legalization**. VLSI analytical placers do not work out of the box: NS-Place reports that vanilla RePlAce "fails to find good solutions for multi-layer designs with diversely sized components."
 
 ### Cited Findings
 
-**Force-directed / quadratic (spring) placement [VLSI, foundational]**
-- Quadratic analytical placers are called "force-directed" because the quadratic wirelength objective behaves like point masses joined by springs (Sigl et al., "Analytical Placement: A Linear or a Quadratic Objective Function?"). — [ACM DL](https://dl.acm.org/doi/pdf/10.1145/127601.127707)
-- GORDIAN (Kleinhans et al., TCAD 1991) minimizes quadratic wirelength and spreads cells by recursive partitioning. Most modern quadratic placers (Kraftwerk, FastPlace, SimPL) share this framework and differ mainly in how they compute the linear "density force" that spreads cells. — [Wikipedia: Placement (EDA)](https://en.wikipedia.org/wiki/Placement_(electronic_design_automation)); [Cheong & Si force-directed survey](https://journals.sagepub.com/doi/abs/10.1177/1473871618821740)
-- Kraftwerk2 (Spindler, Schlichtmann, Johannes, TCAD 2008) is a fast force-directed quadratic placer that uses the Bound2Bound net model. — [ResearchGate: Force-Directed Methods for Generic Placement](https://www.researchgate.net/publication/3225893_Force-Directed_Methods_for_Generic_Placement); [Cheong & Si survey](https://journals.sagepub.com/doi/abs/10.1177/1473871618821740)
-- SimPL (Kim, Lee, Markov, TCAD 2012) is a flat force-directed global placer. It keeps a lower-bound placement (quadratic solve) and an upper-bound placement (look-ahead legalization by top-down geometric partitioning) and iterates until the two converge. The authors present it as simpler than earlier placers. — [SimPL paper](https://janders.eecg.utoronto.ca/1387/readings/simpl.pdf); [ResearchGate](https://www.researchgate.net/publication/220401225_SimPL_An_Effective_Placement_Algorithm)
-- A survey covers force-directed algorithms for both schematic drawing and placement, which links graph-drawing spring embedders to EDA placement. — [arXiv 2204.01006](https://arxiv.org/pdf/2204.01006)
-- An open-source KiCad agent toolkit (kicad-tools) ships a force-directed `PlacementOptimizer` (`run(iterations=1000, dt=0.01)`), a GA `EvolutionaryPlacementOptimizer`, a hybrid (GA global then physics refinement), and CMA-ES/Bayesian strategies through `kct optimize-placement`. Its README does not document the objective function. — [rjwalters/kicad-tools](https://github.com/rjwalters/kicad-tools)
+**Force-directed / quadratic (spring) placement [VLSI foundational; PCB origin]**
+- The earliest PCB placer in this lineage is Quinn & Breuer's "A forced directed component placement procedure for printed circuit boards" (IEEE Trans. Circuits Syst., 1979). HiePlace cites it as the exemplar of force-directed PCB placement, and notes that analytical PCB approaches have been validated on "oversimplified or synthetic" cases. — [HiePlace PDF (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- Quadratic analytical placers are called "force-directed" because they behave like point masses joined by springs. — [Sigl et al., ACM DL (S)](https://dl.acm.org/doi/pdf/10.1145/127601.127707)
+- GORDIAN (Kleinhans et al., TCAD 1991) minimizes quadratic wirelength and spreads cells by recursive partitioning. Kraftwerk, FastPlace and SimPL share this framework and differ in how they compute the spreading "density force". — [Wikipedia: Placement (EDA) (S)](https://en.wikipedia.org/wiki/Placement_(electronic_design_automation)); [Cheong & Si survey (S)](https://journals.sagepub.com/doi/abs/10.1177/1473871618821740)
+- Kraftwerk2 (Spindler et al., TCAD 2008) is a force-directed quadratic placer with the Bound2Bound net model. — [ResearchGate (S)](https://www.researchgate.net/publication/3225893_Force-Directed_Methods_for_Generic_Placement)
+- SimPL (Kim, Lee, Markov, TCAD 2012) alternates a lower-bound quadratic solve with an upper-bound look-ahead legalization. — [SimPL PDF (S)](https://janders.eecg.utoronto.ca/1387/readings/simpl.pdf)
+- **[PCB, 2025–26]** Two force-directed placers from NTU (Yao-Wen Chang's group):
+  - The TCAD 2025 paper "Modern Automatic PCB Placement With Complex Constraints" (Tsou, Lin, Hung, Chang) combines SA-based **pad alignment** to reduce wire crossings, **force-directed global placement guided by anchor points extracted from power-circuit flows**, and window-based legalization. On real industrial designs it reports **+13.5% routability and −26% runtime vs ePlace-MS, and >50% better routability than Cypress**. — [OpenAlex/S2 abstract (A)](https://doi.org/10.1109/tcad.2025.3618936)
+  - The DAC 2025 Late-Breaking Result (Tsou, Lee, Chang) uses **Separating-Axis-Theorem collision detection on exact component contours and board shapes**, multi-stage force-directed placement that adapts attraction and repulsion to clearance and routability, and scanline legalization. — [abstract (A)](https://doi.org/10.1109/DAC63849.2025.11132719)
+- kicad-tools (an open-source LLM-agent toolkit for KiCad) ships a force-directed `PlacementOptimizer`, a GA, a hybrid of the two, and CMA-ES/Bayesian strategies. No objective is documented. — [rjwalters/kicad-tools (A)](https://github.com/rjwalters/kicad-tools)
 
-**Nonlinear analytical / electrostatic placement: ePlace, RePlAce, DREAMPlace [VLSI]**
-- ePlace (Lu et al., DAC 2014 / TODAES 2015) models each cell as a positive charge and uses the electrostatic potential energy as the density penalty, computed with FFT. It optimizes with Nesterov's method, predicting step length from a Lipschitz-constant estimate instead of a line search. Nesterov beat conjugate gradient by 2.28% wirelength at 2.21x speed on ISPD05. — [ePlace DAC'14 PDF](https://cseweb.ucsd.edu/~jlu/papers/eplace-dac14/paper.pdf); [ePlace TODAES PDF](https://cseweb.ucsd.edu/~jlu/papers/eplace-todaes14/paper.pdf); [IEEE](https://ieeexplore.ieee.org/document/6881448/)
-- Reported results: wirelength 2.83%, 4.59% and 7.13% shorter than BonnPlace, MAPLE and NTUplace3-unified on ISPD05, ISPD06 and MMS, at 3.05x, 2.84x and 1.05x speed. ePlace-MS (mixed-size, TCAD 2014) gives 8.22% shorter wirelength at equal runtime on 16 MMS benchmarks. These figures come from search snippets and should be checked against the PDFs. — [ePlace DAC'14](https://cseweb.ucsd.edu/~jlu/papers/eplace-dac14/paper.pdf); [ePlace-MS](https://cseweb.ucsd.edu/~jlu/papers/eplace-ms-tcad14/paper.pdf)
-- RePlAce (TCAD 2019) advances ePlace-style global placement with routability work and reports results on the DAC-2012 and ICCAD-2012 routability contest suites. — [RePlAce journal PDF](https://vlsicad.ucsd.edu/Publications/Journals/j126.pdf)
-- DREAMPlace (Lin et al., DAC 2019 / TCAD 2020) recasts analytical placement as neural-network training in a deep-learning toolkit. It reports more than 30x speedup over CPU RePlAce in global placement plus legalization on ISPD 2005 (Tesla V100). Later versions added net weighting (0.0.5), LEF/DEF (0.0.6), ABCDPlace detailed placement and movable macros (2.0), a deterministic mode (2.1), routability via NCTUgr (2.2), **fence regions** (3.0, ICCAD'20 multi-electrostatics), timing-driven placement (4.0), two-stage macro flow (4.1), and GiFt graph-signal initialization (4.2, ICCAD'24). License BSD-3. — [DREAMPlace GitHub](https://github.com/limbo018/DREAMPlace)
+**Nonlinear analytical / electrostatic placement: ePlace, RePlAce, DREAMPlace, and the PCB adaptations [VLSI → PCB]**
+- ePlace (Lu et al., DAC'14 / TODAES'15) models cells as charges, takes the electrostatic potential energy (via FFT) as the density penalty, and optimizes with Nesterov's method using Lipschitz step prediction. — [ePlace DAC'14 PDF (S)](https://cseweb.ucsd.edu/~jlu/papers/eplace-dac14/paper.pdf); [ePlace-MS (S)](https://cseweb.ucsd.edu/~jlu/papers/eplace-ms-tcad14/paper.pdf)
+- RePlAce (TCAD 2019) adds routability work on top of ePlace. — [RePlAce PDF (S)](https://vlsicad.ucsd.edu/Publications/Journals/j126.pdf)
+- DREAMPlace recasts analytical placement as neural-network training in PyTorch, claims more than 30x speedup over CPU RePlAce on ISPD05, and has added fence regions (3.0), timing (4.0), and more. BSD-3. — [DREAMPlace GitHub (A)](https://github.com/limbo018/DREAMPlace)
+- **[PCB] NS-Place reports that vanilla RePlAce "fails to find good solutions for multi-layer designs with diversely sized components"** and that its convergence depends on design-specific parameters such as filler cells and anchor weights. — [NS-Place arXiv 2210.14259 (P)](https://arxiv.org/pdf/2210.14259)
+- **[PCB] Cypress** (Zhang, Agnesina, Shbat, Leader, Z. Zhang, Ren; Cornell + NVIDIA; ISPD'25) is built directly on DREAMPlace. **Read in its source code (Apache-2.0):**
+  - **Orientation:** learned per-component **orientation logits** are sampled through **Gumbel-softmax** and optimized with a separate Adam optimizer.
+  - **Board sides:** each component's side comes from its input orientation (an "F" prefix means bottom). Side is **not optimized**.
+  - **Density:** **separate top and bottom electric-potential density maps and overflow**.
+  - **Legalization:** run **per side**, using macro, greedy and Abacus legalizers.
+  - **Added ops:** a differentiable **net-crossing** cost that is side-aware via `pin_side` (flag on by default; weight is a parameter), a **RUDY**-guided area adjustment, and an **RMST wirelength** op.
+  - **Tuning:** BOHB hyperparameter tuning through hpbandster (`tuner/run_tuner.sh`).
+  - **Benchmarks:** 20 Bookshelf benchmarks (`small-1..20`) and 10 KiCad `.kicad_pcb` artifacts.
+  - **Converters:** from KiCad and from the NS-Place benchmark format (`pcb-util/kicad_converter.py`, `nsplace_converter.py`).
+  - Sources: [NVlabs/Cypress code (P)](https://github.com/NVlabs/Cypress)
+- **Cypress paper abstract:** commercial designs exceed 10,000 components. Reported results are **1–5.9x higher routability** and **1–19.7x shorter routed track length** on fully routed designs, and up to **492.3x** GPU speedup. Cypress also introduces a PCB benchmark suite "synthesized from real commercial designs". — [S2/ACM abstract (A)](https://dl.acm.org/doi/10.1145/3698364.3705346). The ISPD'25 slides say Cypress improves routability by up to 1.2x over SA-PCB. — [search summary of slides (S)](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf)
+- Award status conflicts. Cornell reports Cypress won ISPD'25 Best Paper, but the ISPD slides label it a nominee. — [Cornell news (S)](https://zhang.ece.cornell.edu/news/cypress_ispd_bpa.html)
+- **[PCB] Clearance-Constrained PCB Global Placement with Heterogeneous Components** (Chen, Huang, Tsai, Ou, Chang; DAC'25) has four parts:
+  - a **wire-area model** that accounts for the different routing-resource needs of power and signal nets;
+  - a **pad-to-pad clearance model**;
+  - a **two-sided, pad-type-aware density model**;
+  - a **QP-based legalizer** for components of varying shapes.
+  It reports better post-routing quality than "two state-of-the-art academic placers" on academic and industrial benchmarks. — [abstract (A)](https://doi.org/10.1109/dac63849.2025.11133056)
+- **[PCB] Zhao, Hu, Chai, Liu (Integration, 2025)** optimize **rotation jointly with position during gradient descent**, then apply Hanan-grid legalization and "insensitive component" fine-tuning to open up routing space. Tested on 10 PCB designs with an open-source router. — [ScienceDirect (A)](https://www.sciencedirect.com/science/article/abs/pii/S016792602500224X). A follow-on from the same group, **MARS-Place** ("Multi-stage alignment-refined strategy for PCB placement and routing optimization", Integration 2026), was seen only as a title. — [S2 record (A)](https://doi.org/10.1016/j.vlsi.2026.102671)
+- **[PCB] PA-ICM** (Li, Yang, Pang, Xu, Chen; Wuhan Univ. of Technology; arXiv 2502.14012, also ICICM 2025). **Read in full:**
+  - **Model.** Mixed-variable: orientations r_i ∈ {0, π/2, π, 3π/2}, optimized by a distribution evolutionary algorithm (DEA-PPM), plus coordinates optimized by a **conjugate subgradient algorithm**.
+  - **Top-layer objective.** α·HPWL + β·√(overlap area) + γ·(out-of-contour length), with α=1, β=20, γ=100.
+  - **Bottom layer.** Uses **DBSCAN clustering of the IC's pins**, so each cluster is optimized independently.
+  - **Legalization.** Directional push-apart (1-unit shifts), then a spacing table, then maximal empty rectangles for out-of-bounds parts, then re-sampling of "close-to-pin" parts from N(pin, σ=2).
+  - **Fixed-outline floorplanning benchmarks.** It beat Parquet 4.5 and IARFP on HPWL for ami49 through n300 at about 1–4 s per run, but lost on ami33.
+  - **Industrial cases.** Four cases (80–148 blocks; up to 1,932 IC-pin terminals) ran in roughly 3–33 s on a laptop.
+  - **Evaluation gap.** No routing evaluation.
+  - Sources: [arXiv 2502.14012 (P)](https://arxiv.org/pdf/2502.14012); [ICICM 2025 abstract (A)](https://doi.org/10.1109/ICICM66614.2025.11316007)
 
 **Simulated annealing (TimberWolf lineage) [VLSI origin; PCB use confirmed]**
-- SA-PCB (OpenROAD project, UCSD: Holtz, Merrill, Lin, Wu; advisors C.-K. Cheng, S. Swanson) is a "C++ annealer for simple PCB placement of polygonal components". It uses a TimberWolf-style geometric cooling schedule with a shrinking move window, automatic initial temperature (Ben-Ameur), cost = HPWL plus an analytical polygon-overlap term (Boost.Geometry), rotation in 90°/45° steps (free rotation listed as in progress), Bookshelf input with an Eagle converter, and multistart via a Python script. Known issues: parameter sensitivity and broken weighted nets. BSD-3, now archived. — [SA-PCB GitHub](https://github.com/The-OpenROAD-Project/SA-PCB)
-- SA-PCB cites TimberWolf (Sechen & Sangiovanni-Vincentelli 1985), Spindler & Johannes 2007 (RUDY routing-demand estimation), RePlAce, two-stage SA (Varanelli & Cohoon 1995) and adaptive multistart (Boese, Kahng, Muddu 1993) as its bases. — [SA-PCB GitHub](https://github.com/The-OpenROAD-Project/SA-PCB)
-- **[PCB]** ModuPlace (DAC'26) uses SA-PCB as a baseline on 11 real two- and four-layer boards. After routing, SA-PCB averaged 1528.5 wirelength and 81.7 vias, against ModuPlace's 1266.5 and 48.6. — [ModuPlace paper (GitHub-hosted PDF)](https://github.com/chenh677/Agent4EDA-Papers); [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **[VLSI]** A tuned multithreaded SA ("go-with-the-winners") beat Google's Circuit Training on proxy cost in 17/17 ICCAD04 cases and on HPWL in 16/17. On modern designs SA won 4/6 on proxy cost and 5/6 on routed wirelength, while CT won 4/6 on TNS. SA stopped after about 12.5 h; CT was estimated at about 36 h. — [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- **[Commercial, PCB]** The Trace (buildwithtrace) KiCad-integrated auto-placer uses Claude to analyze the schematic (functional groups, critical nets, thermal constraints, edge-component requirements, proximity rules). It generates several floorplan variants that seed components into logical regions, then runs SA with 8 move types (translate, rotate, swap, group move, centroid pull, mirror, perturb). The cost is HPWL + RUDY congestion + group compactness + thermal distribution, with board-outline, keep-out and mechanical constraint awareness. This is vendor documentation with no independent benchmark. — [Trace docs: PCB Layout](https://docs.buildwithtrace.com/concepts/pcb-layout); [Trace on Hugging Face](https://huggingface.co/buildwithtrace)
+- SA-PCB (OpenROAD/UCSD) is a "C++ annealer for simple PCB placement of polygonal components". It uses a TimberWolf-style cooling schedule, Ben-Ameur automatic initial temperature, and cost = HPWL + analytical polygon overlap (Boost.Geometry). Rotation is 90°/45° (free rotation in progress); input is Bookshelf with an Eagle converter. Known issues: parameter sensitivity and broken weighted nets. BSD-3, archived. — [SA-PCB GitHub (A)](https://github.com/The-OpenROAD-Project/SA-PCB)
+- **[PCB]** SA-PCB is now the standard open baseline:
+  - In ModuPlace's 11-board study, routed wirelength averaged 1528.5 for SA-PCB vs 1266.5 for ModuPlace, and vias 81.7 vs 48.6. — [ModuPlace PDF (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+  - OmniLayout also uses SA-PCB as a baseline. — [OmniLayout arXiv 2607.03261 (P)](https://arxiv.org/abs/2607.03261)
+- **[PCB]** HiePlace describes the conventional PCB approach as "B*-tree representations … wirelength and area … SA", and notes that tree representations suffer from incomplete solution-space coverage. Its own baseline is B*-tree + Fast-SA **with manual adjustments**. — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **[VLSI]** A tuned multithreaded SA beat Circuit Training on proxy cost in 17/17 ICCAD04 cases. — [TILOS MacroPlacement (A)](https://github.com/TILOS-AI-Institute/MacroPlacement)
+- **[Commercial, PCB] Trace** (KiCad-integrated). Claude first analyzes the schematic (groups, critical nets, thermal, edge parts, proximity rules), then several floorplan variants seed SA. SA uses 8 move types; cost = HPWL + RUDY + group compactness + thermal distribution. — [Trace docs (S)](https://docs.buildwithtrace.com/concepts/pcb-layout)
+- **[PCB]** Lim 2026 compares SA with DQN and A2C on a discretized component-centric layout. Results are in Q3. — [arXiv 2602.23540 (P)](https://arxiv.org/abs/2602.23540)
 
-**Greedy grid placement: KiCad's built-in autoplacer [PCB tool]**
-- KiCad's documentation describes an automatic placer that can use both board faces and minimizes ratsnest length. It places large, pad-heavy footprints first. Users should draw the outline, place and lock connectors and critical parts by hand, then run "Autoplace All/New/Selected Footprints". — [kicad-doc pcbnew_footprint_placement.adoc](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc); [KiCad 5.1 Pcbnew docs](https://docs.kicad.org/5.1/en/pcbnew/pcbnew.html)
-- The current KiCad master source still contains `ar_autoplacer.cpp` and `autoplace_tool.cpp`, which expose "autoplace selected" and "autoplace off-board" actions. The algorithm builds a 1.0 mm occupancy matrix (minimum 0.25 mm) over the board outline. It sorts footprints by area × pad/ratsnest count and, for each one, exhaustively scans grid positions. Score = ratsnest cost (distance to nearest same-net pad, `hypot(dx, 2*dy)`) + a keep-out cost. In this reading of master, it keeps the footprint's existing side and does **not** try rotations. — [ar_autoplacer.cpp](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp); [autoplace_tool.cpp](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/autoplace_tool.cpp)
-- Conflict: the older KiCad docs say the autoplacer tries 0/90/-90/180° where per-footprint rotation costs allow it. — [kicad-doc](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc). The master code summary found no rotation handling — [ar_autoplacer.cpp](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp)
-- In 2016 a KiCad developer called the autoplacer "terrible" and argued for removing it (a bug thread about parts placed in no-go zones). — [Launchpad bug 1633256](https://bugs.launchpad.net/kicad/+bug/1633256)
+**Greedy grid placement: KiCad's built-in autoplacer [PCB tool]. Rotation question resolved from source.**
+- **Current algorithm (master and 9.0, read in source):**
+  - **Grid.** A 1.0 mm occupancy matrix (`STEP_AR_MM`), hard-coded to two routing layers.
+  - **Order.** Footprints are picked in order of area × pad count, then area × ratsnest-connection count.
+  - **Search.** For each footprint, every grid position is scanned. Score = ratsnest cost (`hypot(dx, 2·dy)` to the nearest same-net pad) + a keep-out cost whose margin scales with pad count / `AR_GAIN` (16).
+  - **Sides.** Footprints keep their layer. The other side is checked only when the footprint has through-hole pads.
+  - **No rotation search.**
+  - Sources: [ar_autoplacer.cpp master (P)](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp)
+- **History of rotation (P):**
+  - Up to and including **KiCad 6.0**, the autoplacer tried 180°, 90° and 270° from the initial orientation. Each trial cost was multiplied by an `OrientationPenalty[0..10]` table (2.0 down to 1.0) driven by per-footprint "CntRot90/CntRot180" rotation-cost sliders, where 0 meant rotation prohibited. — [ar_autoplacer.cpp at 6.0 (P)](https://github.com/KiCad/kicad-source-mirror/blob/6.0/pcbnew/autorouter/ar_autoplacer.cpp)
+  - Commit **d649b288 (Jeff Young, 2021-12-24)**, "Swap out autoplace rotation costs for private footprint layers" (fixes issues #2291 and #5391), removed the sliders and rotation logic. They are therefore **absent from 7.0, 8.0, 9.0 and master** (zero rotation references in those files). — [GitLab commit (P)](https://gitlab.com/kicad/code/kicad/-/commit/d649b288a62aac5c31489bc41ab22149d7339014)
+  - This explains the conflict noted in my first pass: the archived kicad-doc (5.x era) still describes 0/90/−90/180 trials. — [kicad-doc (P)](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc)
+- **UI in 9.0/master:** Place ▸ Auto-Place Footprints ▸ "Place Off-Board Footprints" / "Place Selected Footprints". It requires an Edge.Cuts outline, skips locked footprints, and commits as one undo step. — [menubar_pcb_editor.cpp 9.0 (P)](https://github.com/KiCad/kicad-source-mirror/blob/9.0/pcbnew/menubar_pcb_editor.cpp); [autoplace_tool.cpp (P)](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/autoplace_tool.cpp)
+- In 2016 a developer called the autoplacer "terrible" and argued for removing it. — [Launchpad bug 1633256 (S)](https://bugs.launchpad.net/kicad/+bug/1633256)
+
+**Partitioning-based (min-cut) placement [VLSI]**
+- Capo (Caldwell, Kahng, Markov, DAC 2000) asked whether recursive min-cut bisection alone yields routable placements. Its components: a multilevel min-cut partitioner (UCLA MLPart), small-tolerance partitioning, optimal end-case partitioners and placers, and block splitting. It does **not** use multi-way partitioning, analytical placement or congestion estimation. Later Capo versions added mixed-size, fixed-outline floorplanning and incremental placement. — [Capo DAC'00 PDF (S)](https://web.eecs.umich.edu/~imarkov/pubs/conf/c015.pdf); [Capo book chapter (S)](https://web.eecs.umich.edu/~imarkov/pubs/book/ispdbk-capo.pdf)
+- ROOSTER, a min-cut placer modelling nets as rectilinear Steiner minimal trees, is cited by NS-Place as a congestion-aware technique. NS-Place argues that such techniques suffer from inadequate estimation or prohibitive cost. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259)
+- GORDIAN used partitioning for spreading (see above). Today, partitioning survives mostly as **clustering for hierarchy**: hMETIS in Circuit Training, and DBSCAN in PA-ICM. — [circuit_training (A)](https://github.com/google-research/circuit_training); [PA-ICM (P)](https://arxiv.org/pdf/2502.14012)
+
+**Floorplan representations: sequence pair, B*-tree, O-tree, corner block list, Polish expression [VLSI/analog; used for PCB module floorplanning]**
+- Yao, Chen, Cheng and Graham ("Revisiting Floorplan Representations", ISPD'01) compare representations by solution-space size and transform time:
+
+  | Representation | Solution space | Transform time |
+  |---|---|---|
+  | Sequence pair | O((n!)²) | O(n log log n) |
+  | Bounded-sliceline grid | n!·C(n², n), highly redundant | O(n²) |
+  | O-tree | O(n!·2^(2n−2)/n^1.5) | O(n) |
+  | Corner block list (Hong et al., ICCAD'00) | O(n!·2^(3n−3)/n^1.5) | O(n) |
+
+  The paper also counts **mosaic floorplans** (Baxter numbers) and **slicing floorplans** (Schröder numbers), and proposes twin binary trees as a non-redundant mosaic representation. A CBL represents a **mosaic floorplan**, which covers all slicing floorplans and all non-slicing floorplans with exactly n rooms for n blocks. — [ISPD'01 PDF (P)](https://www.esa.informatik.tu-darmstadt.de/archive/twiki/pub/Lectures/AlgorithmenImChipEntwurf06De/floorplan-ispd01.pdf)
+- CBL cannot represent empty rooms, so CBL-based search cannot always reach the optimum. Extended CBL (ECBL) adds empty rooms, and there are 3-D and boundary-constrained CBL extensions. — [Atlantis Press (S)](https://www.atlantis-press.com/article/215.pdf); [Springer (S)](https://link.springer.com/article/10.1360/01yf0558); [J. Semicond. (S)](https://www.jos.ac.cn/article/id/4d2a4e22-8266-418d-996a-1c6e0cdbb06f)
+- B*-tree Fast-SA (Chen & Chang) perturbs by rotating a block, moving a node, or swapping nodes. — [NTU chapter (S)](https://cc.ee.ntu.edu.tw/~ywchang/Courses/PD_Source/EDA_floorplanning.pdf); [Fast-SA ISPD'05 (S)](https://cc.ee.ntu.edu.tw/~ywchang/Papers/ispd05-floorplanning.pdf)
+- **[PCB]** Topological representations are used for PCB, but less and less:
+  - PA-ICM states that representation-based methods (sequence pair, B*-tree, O-tree) "cannot accommodate" IC-centred two-layer modules efficiently, so it prefers analytic methods. It does cite a 2024 PCB **centralized block placement based on sequence pair** (Li et al., ICCCAS'24) and a multi-constraint PCB placer (Wang et al., ICCCAS'24). — [PA-ICM refs (P)](https://arxiv.org/pdf/2502.14012)
+  - Older PCB-specific SP work includes "VLSI/PCB placement with predefined coordinate alignment constraint based on sequence pair" (Liu et al., ASICON 2001) and the "Relay-race algorithm" for VLSI/PCB (Sheng et al., ISVLSI 2011). — [HiePlace refs (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- OpenROAD Hier-RTLMP: SA over a cluster hierarchy, with named default weights (area 0.1, outline 100, wirelength 100, boundary 50, notch 10, blockage 10, guidance 10, fence 10). — [OpenROAD src/mpl (A)](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl)
+
+**Constraint programming / ILP / MILP / QP / SMT [PCB legalization confirmed]**
+- **[PCB] NS-Place** (Cheng, Ho, Holtz, UCSD; ASP-DAC'22). **Read in full:**
+  - **Global objective.** Σ[WA wirelength + λ_NS·net-separation] + λ_D·density. Density is the APlace-style bin overlap.
+  - **Net separation.** Models each net's routing region as the **convex hull of its pins** and penalizes failure of an SVM-style separating hyperplane with margin between net pairs (alternating minimization over hyperplanes and positions).
+  - **Initialization.** **Laplacian eigenvectors** (Hall's quadratic placement / sparsest-cut approximation), enumerating relative orientations to choose the seed.
+  - **Legalization.** **MILP** over overlap, boundary and orientation binaries, minimizing Σ HPWL + (max − min HPWL), i.e. a wirelength-variance term. It is pruned by **relative-position constraints derived from global placement** when components are more than k apart.
+  - **Benchmarks.** 14 boards (8–64 parts, plus one with 1,570 parts and 947 locked; 1–4 layers), routed with **FreeRouting** and DRC-checked in KiCad.
+  - **Runtime.** About 5–10 s for tiny boards, about 1–1.7 h for 34–64-part boards, and a 4 h cap.
+  - **Averages in the body text:** routed wirelength −10% vs manual and −6% vs GDMILP; vias −18% and −39%; DRVs + unrouted nets about −80% / −70% / −75% vs manual / MILP / GDMILP; 34% fewer vias on the four largest boards.
+  - **Failure case.** PCB2, at about 80% utilization.
+  - Sources: [arXiv 2210.14259 (P)](https://arxiv.org/pdf/2210.14259)
+- **[PCB] HiePlace** (Li, Zhuang, Liu, Sheng, Yu, Ho; CUHK + Huawei; TCAD Jan 2026; CC BY-NC-ND). **Read in full:**
+  - **Problem.** A module is one core chip plus its surrounding components; components get **priorities** (first priority = parts tied to the chip's outermost pins). The objective is weighted wirelength + white-space ratio, with **alignment** (same-size parts aligned, misalignment count "MC") and **few crossings between high-priority nets**.
+  - **Flow, step 1: preprocessing.** Irregular outlines are filled with fixed blocks; stacked or irregular parts are sliced into sub-rectangles bound by cohesion constraints.
+  - **Step 2: grouping.** Same-size connected small parts are grouped into patterns (1×4, 2×2, …).
+  - **Step 3: first-priority placement.** The chip boundary is unrolled to 1-D. A pairwise-swap reorder minimizes crossings, then wirelength, and a **DP 0/1-knapsack** selects which parts go in the first row.
+  - **Step 4: relaxation.** Modules become circles (R = α√area), solved with **SLSQP** to get relative module positions.
+  - **Step 5: MP legalization.** Uses cardinal up/down/left/right relations to eliminate most Boolean variables; chips and first-priority parts are not rotated.
+  - **Step 6: alignment fine-tuning.** Greedy, with a 300 s timeout. Solver is **Gurobi**.
+  - **Benchmarks.** 19 boards: 15 industrial (mostly **mobile phones, density ≈0.80**, irregular outlines) and 4 academic built from a public "PCBBenchmarks" repo.
+  - **Baselines.** Floorplet (an ILP chiplet floorplanner, which hit its 4 h limit with no feasible solution on PCB11–15), B*-tree SA with manual tweaks, and Quilter on the 4 academic boards.
+  - **Results.** Cost −66% and −18% vs the two baselines at **13% of their runtime**; the largest case finishes in under 2 h. Against Floorplet on the first 10 boards: −16% first-priority wirelength and −46% misaligned regions. Against Quilter: cost −76.7% to −91.3%, and seconds vs 34–75 min.
+  - **Self-reported limitations.** No double-sided layout, no arbitrary rotation angles, no thermal or mechanical handling, and routability measured only by proxies.
+  - **Note.** HiePlace calls Quilter "open-source", which conflicts with Quilter being a commercial product.
+  - Sources: [HiePlace PDF (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **[PCB] Constraint Graph-based PCB Legalization** (Ou, Chen, Chang; DAC'25) is described as the first constraint-graph legalizer for **dense, heterogeneous, irregular-shaped, any-oriented components on double-sided PCBs**. It slices each component into a set of rectangles instead of a bounding box and uses **MILP rather than LP** to widen the solution space. — [abstract (A)](https://doi.org/10.1109/DAC63849.2025.11133304)
+- **[PCB]** "Graph-based legalization for PCB placement" (Chen & Deng, J. Phys. Conf. Ser. 2025) builds a constraint graph that preserves placement geometry, then applies adaptive packing and iterative adjustment, reporting 100% legality and fewer ratsnest intersections on industrial samples. — [abstract (A)](https://doi.org/10.1088/1742-6596/3079/1/012071)
+- **[PCB]** PCBAgent's MILP post-optimizer baseline (Funke et al.) reached HPWL 2.05x manual and failed spacing legality. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- **[VLSI]** Hard-rectangle floorplanning has been encoded in SMT (Z3). — [arXiv 1709.07241 (S)](https://arxiv.org/pdf/1709.07241)
 
 **Genetic / evolutionary / swarm metaheuristics [PCB, mostly older]**
-- PCBAgent's related work lists GA (Jain & Gea 1996, "PCB layout design using a genetic algorithm", J. Electronic Packaging), self-organizing GA (Ismail et al. 2012), GA + Lee routing (Badriyah et al. 2016), and PSO for PCB thermal design (Alexandridis et al. 2017) as the derivative-free class of PCB placers. Their stated weaknesses: they cannot reuse past experience or optimize incrementally from expert feedback. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf) (read via [GitHub copy](https://github.com/chenh677/Agent4EDA-Papers))
-- SOGA treats temperature, PCB area, high-power component placement and critical-component spacing as objectives, and reports better convergence than FWGA and RWGA. — [academia.edu SOGA](https://www.academia.edu/766616/Optimization_of_electronics_component_placement_design_on_PCB_using_self_organizing_genetic_algorithm_SOGA_)
-- A 2025 paper describes these heuristic algorithms as strongly random and computationally intensive. — [Zhao et al., Integration 2025 (ScienceDirect)](https://www.sciencedirect.com/science/article/abs/pii/S016792602500224X)
-
-**Floorplan representations: sequence pair, B*-tree, Polish expression [VLSI / analog; transferable to PCB module floorplanning]**
-- Three popular SA floorplanning representations are the normalized Polish expression, the B*-tree and the sequence pair. A B*-tree is an ordered binary tree modelling a compacted floorplan with the root at the bottom-left module. Fast-SA (Chen & Chang, ISPD'05 / TCAD) perturbs it by rotating a block, moving a node or swapping two nodes. — [NTU floorplanning chapter](https://cc.ee.ntu.edu.tw/~ywchang/Courses/PD_Source/EDA_floorplanning.pdf); [Fast-SA ISPD'05](https://cc.ee.ntu.edu.tw/~ywchang/Papers/ispd05-floorplanning.pdf)
-- Sequence-pair annealers use moves such as swapping two blocks in one or both sequences, plus resizing. TCG and sequence pair are equivalent representations but induce quite different moves. — [NTU floorplanning chapter](https://cc.ee.ntu.edu.tw/~ywchang/Courses/PD_Source/EDA_floorplanning.pdf)
-- OpenROAD's Hier-RTLMP macro placer runs SA over a multilevel cluster hierarchy with explicit, user-visible weighted cost terms. Defaults: area 0.1, outline 100, wirelength 100, boundary 50, notch 10, soft blockage 10, guidance region 10, fence 10. It also offers `place_macro` and `set_macro_guidance_region` for manual control (Kahng, Varadarajan, Wang, ISPD'22 / arXiv 2304.11761). — [OpenROAD src/mpl](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl)
-
-**Constraint programming / ILP / MILP / SMT [PCB legalization confirmed; SMT only for VLSI floorplanning]**
-- **[PCB]** NS-Place (Cheng, Ho, Holtz, ASP-DAC'22, best paper) combines seed layout proposals, coordinate-descent routability optimization (a max-margin, SVM-like "net separation" objective) and **MILP legalization**. On 14 PCB designs it reports up to 25% shorter routed wirelength, up to 50% fewer vias and 79% fewer DRVs than manual and wirelength-minimal placements. — [arXiv 2210.14259](https://arxiv.org/pdf/2210.14259); [IEEE](https://ieeexplore.ieee.org/document/9712480/); [Holtz homepage (best paper)](https://cseweb.ucsd.edu/~chholtz/)
-- A third-party summary says NS-Place initializes with a graph-Laplacian spectral embedding (eigenvectors approximating a sparsest cut) that clusters tightly connected parts. — [Lacuna summary](https://lacuna.tiptreesystems.com/work/net-separation-oriented-printed-circuit-board-placement-via-margin-maximization/wrk_9e3ec1d5b219fea81c9840e0c4e9c69d)
-- **[PCB]** HiePlace (Li, Zhuang, Liu, Sheng, Yu, Ho; IEEE TCAD vol. 45 no. 1, Jan 2026) is a mathematical-programming PCB placer. It uses dynamic programming to place core components first and a relaxation that cuts the number of Boolean variables. It reports a 7.7x speedup and 66% cost reduction, plus 16% wirelength reduction and 46% fewer misaligned regions against a baseline. It treats alignment as a first-class PCB constraint and notes that two-sided extension is possible by treating the board as two planes. — [HiePlace PDF (CUHK)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf); [ResearchGate](https://www.researchgate.net/publication/392778506_HiePlace_Efficient_Hierarchical_PCB_Placement)
-- **[PCB]** PCBAgent used a MILP post-layout optimizer (ref. 18, Funke et al.) as a baseline. Seeded with PCBAgent's own layouts, the MILP results had HPWL 2.05x manual and failed spacing legality. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- **[VLSI]** VLSI floorplanning of hard rectangles has been encoded as SMT (Z3), with non-overlap constraints and enclosing-area minimization. — [arXiv 1709.07241](https://arxiv.org/pdf/1709.07241)
-
-**Analytical PCB placers with rotation (2025) [PCB]**
-- Zhao, Hu, Chai, Liu (Integration, Sept 2025) present a PCB analytical pipeline: global placement that **optimizes component rotation simultaneously during gradient descent**, Hanan-grid legalization with minimal displacement, and a fine-tuning stage that adjusts "insensitive" components to open up local routing space. On 10 PCB designs with an open-source router they report results closer to manual placement, higher routing completion and lower runtime than traditional algorithms. Based on abstract only. — [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S016792602500224X); [ResearchGate](https://www.researchgate.net/publication/395896313_An_analytical_approach_and_fine-tuning_strategy_for_PCB_placement_optimization)
-- Li, Yang, Pang, Xu, Chen (arXiv 2502.14012, Feb 2025) model double-layer PCB placement of functional modules as mixed-variable optimization. They split it into **top-layer centralized placement** and **bottom-layer pin-oriented placement**, each with analytical global placement and legalization, and tested on industrial PCBs. Bin-clustering serves the pin-oriented (bottom) requirements. — [arXiv 2502.14012](https://arxiv.org/pdf/2502.14012)
+- Both NS-Place and PCBAgent list GA (Jain & Gea 1996), self-organizing GA (Ismail 2012), GA + Lee routing (Badriyah 2016) and PSO thermal design (Alexandridis 2017) as prior PCB placers. NS-Place says they "suffer from drawbacks — e.g. are computationally expensive, incapable of rotating components, or evaluated on synthetic or toy benchmarks." — [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- PA-ICM shows a hybrid evolutionary (orientation) + subgradient (coordinates) scheme that is fast (seconds) on industrial modules. — [PA-ICM (P)](https://arxiv.org/pdf/2502.14012)
 
 ### Inferences
-- For boards with tens to a few hundred parts, every classical method is fast enough. The deciding factors are constraint expressiveness, robustness of legalization and transparency, not asymptotic scaling.
-- SA over an explicit weighted cost (SA-PCB, Hier-RTLMP, Trace) is the most practical "LLM-steerable" engine: each term and weight is a named, human-readable knob, and new constraint penalties can be added without touching the solver.
-- Analytical (ePlace/DREAMPlace-style) placement is better at global wirelength structure but needs PCB-specific additions: rotation variables, a spacing/courtyard-aware density, irregular outlines (DREAMPlace fence regions are the nearest existing feature), two sides, and a discrete legalizer. The 2025 PCB analytical papers each built these themselves.
-- MILP/CP legalization (NS-Place, HiePlace) is the right tool for the final "snap to legal, aligned, spaced" step at PCB scale. HiePlace's need to relax Boolean variables for speed shows that exact MP does not scale naively, even to PCB sizes.
-- KiCad's native autoplacer is a greedy 1 mm-grid ratsnest heuristic. It is useful at most as a fallback or seed, not as a quality baseline.
+- The 2025–26 PCB literature agrees on what an analytical PCB placer needs on top of DREAMPlace:
+  1. rotation as an optimization variable;
+  2. side-aware density;
+  3. pad-to-pad clearance and pad-type awareness;
+  4. a net-crossing or net-separation term;
+  5. exact or irregular geometry;
+  6. a discrete legalizer (MILP, QP, constraint graph or scanline).
+
+  Cypress is the only one of these placers that is **open-source** and reads KiCad, which makes it the most practical engine to build on (Apache-2.0).
+- Hierarchy and MP-based methods (HiePlace) win on dense, highly regular, industry-style boards. Force-directed and analytical methods with anchor and pad-alignment terms (NTU TCAD'25) claim the best routability. No single study compares all of them on a common open benchmark yet; OmniLayout and the Cypress suite could serve as that benchmark.
+- KiCad's native autoplacer is a greedy 1 mm-grid ratsnest heuristic and has had **no rotation search since 7.0**. It is useful at most as a seed.
 
 ### Gaps
-- I found no source for **corner block list (CBL)** in this session, nor for partitioning-based placers such as Capo or min-cut (Breuer). Both are recorded as foundational from training knowledge only, with no fetched citation.
-- No head-to-head study of CP-SAT and Z3 on placement, and no CP-SAT PCB placement paper, was found.
-- Could not read full texts of NS-Place, HiePlace, Zhao 2025 or the double-layer paper (arXiv/publisher blocked), so their objective formulas and runtimes beyond the abstracts are unverified.
-- Could not verify whether commercial tools (Altium, Allegro classic, PADS, Zuken) use SA or analytical engines internally. Vendors do not publish this.
+- Full texts of the Cypress ISPD'25 paper, the NTU DAC'25 and TCAD'25 papers, DRLPlace, MARS-Place and the Zhao 2025 paper were not reachable (ACM/IEEE bot walls; Cornell TLS errors). Their algorithmic details here come from abstracts, plus Cypress's source code.
+- The public "PCBBenchmarks" repository HiePlace cites (`github.com/aspdac-submission-pcblayout/PCBBenchmarks`) returned 404 at check time.
+- No head-to-head CP-SAT vs Gurobi/MILP study for PCB legalization was found.
 
 ---
 
 ## Q2. Analog IC placement with symmetry, proximity and matching constraints (closest analogue to PCB "keep this cap next to that pin")
 
 ### Takeaway
-Analog layout systems such as MAGICAL (UT Austin, David Z. Pan / Yibo Lin), ALIGN (Minnesota/TAMU/Intel) and the symmetry-island B*-tree line (Yao-Wen Chang, NTU) give the best-developed **constraint vocabulary** (symmetry pairs/groups, alignment, ordering, proximity/grouping, boundary, spacing) and **hierarchical constraint handling**, and they also extract constraints automatically, including with GNNs. ALIGN's JSON constraint schema is close to a ready-made template for an LLM-authored PCB constraint language.
+Analog layout flows split constraint handling into **soft penalties during global placement** and **hard equality or ordering constraints in an LP/ILP legalization step**.
+- **MAGICAL** (UT Austin) uses an analytical global placer with a symmetry penalty, then constraint-graph LP compaction with exact symmetry equalities, then LP detailed placement.
+- **ALIGN** (Minnesota/TAMU/Intel) uses SA over **sequence pairs whose perturbations preserve order and symmetry**, and evaluates each sequence pair with an **ILP** (SYMPHONY or lp_solve) that sets coordinates and flips under symmetry, alignment and ordering constraints. It also offers an electrostatic (ePlace-style) analytical placer.
+
+This penalty-then-exact-legalization split, and ALIGN's JSON constraint vocabulary, are directly reusable for an LLM-authored PCB constraint layer.
 
 ### Cited Findings
-- **MAGICAL** (Machine Generated Analog IC Layout; ICCAD'19 and later) is an open-source netlist-to-GDSII analog flow with separate constraint generation (ConstGen), placement (IdeaPlaceEx) and routing (anaroute) components. It supports device symmetry groups/pairs, self-symmetric devices, symmetric net pairs and self-symmetric nets, all either user-supplied or extracted automatically. BSD-3. — [MAGICAL GitHub](https://github.com/magical-eda/MAGICAL); [MAGICAL ICCAD'19 PDF](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf)
-- A DARPA ERI summary describes MAGICAL's placer as an **analytical analog placer that supports symmetry**, with symmetric net pairs and self-symmetric nets added in release 0.2. MAGICAL lists LPSolve as a dependency (consistent with LP/ILP-based legalization, but the README does not confirm its role). — [DARPA ERI 2019 slides](https://eri-summit.darpa.mil/docs/ERIsummit2019/posh/07IDEA_UTAustin_Website.pdf); [MAGICAL GitHub](https://github.com/magical-eda/MAGICAL)
-- **ALIGN** (DARPA IDEA; U. Minnesota, Texas A&M, Intel) turns SPICE netlists into GDSII through hierarchical circuit annotation, design-rule abstraction, primitive generation, then placement and routing. Constraints go in a per-hierarchy JSON file (`<hierarchy>.const.json`). Its CLI exposes `--placer_sa_iterations`, which suggests SA-based placement. BSD-3. — [ALIGN-public GitHub](https://github.com/ALIGN-analoglayout/ALIGN-public); [ALIGN overview arXiv 2008.10682](https://arxiv.org/pdf/2008.10682)
-- ALIGN's constraint schema (`align/schema/constraint.py`) includes **hard** constraints Order (sequence along a direction, optional abutment), Align (top/bottom/center/left/right), Spread (minimum spacing), AspectRatio, Boundary (max W/H plus halo), SymmetricBlocks (pairs/singles about an H/V axis) and AssignBboxVariables. **User** constraints include AlignInOrder and Floorplan (rows, optionally ordered or symmetric). **Soft** constraints include PlaceCloser (proximity preference), PlaceOnBoundary (specified sides/corners), CompactPlacement, SameTemplate, PowerPorts/GroundPorts/ClockPorts and DoNotIdentify. — [ALIGN constraint.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py)
-- **Symmetry islands / ASF-B*-trees** (Lin, Chang, Lin, TCAD 2009): modules of one symmetry group are placed as one connected "island", modelled by automatically symmetric-feasible B*-trees. This was the first method to handle 2D as well as 1D symmetry. Hierarchical HB*-trees co-optimize islands with non-symmetric modules. Packing stays linear-time like a plain B*-tree, and the work reported the best published quality and runtime at the time. — [TCAD'09 PDF](https://cc.ee.ntu.edu.tw/~ywchang/Papers/tcad09-analog-placement.pdf); [ACM](https://dl.acm.org/doi/abs/10.1109/TCAD.2009.2017433)
-- Follow-up work extends this to matching, hierarchical symmetry and hierarchical proximity groups through hierarchical module clustering (DAC'08). Related patents (e.g., US7873928B2) cover HB*-tree placement under symmetry, matching and proximity constraints. — [DAC'08 hierarchical clustering](https://dl.acm.org/doi/pdf/10.1145/1391469.1391484); [US7873928B2](https://patents.google.com/patent/US7873928B2/en)
-- An energy-function formulation of analog placement handles symmetry and proximity as penalty terms rather than through a topological representation. — [ResearchGate: Analog Placement with Symmetry and Other Placement Constraints](https://www.researchgate.net/publication/221628173_Analog_Placement_with_Symmetry_and_Other_Placement_Constraints)
-- **Interactive analog layout editing with instant placement legalization** (Gao et al., DAC'21 / TCAD'22, with Pan and Lin) introduced the "mixed constraint graph" of approximate relative relations. ModuPlace later criticized it as too imprecise for PCBs, because it constrains only adjacent pairs. — [DAC'21 PDF](https://yibolin.com/publications/papers/ANALOG_DAC2021_Gao.pdf); [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **Joint placement optimization for hierarchical analog/mixed-signal circuits** (Gao et al., ICCAD'24) targets hierarchical AMS placement. Details not retrieved. — [ICCAD'24 PDF](https://yibolin.com/publications/papers/ANALOG_ICCAD2024_Gao.pdf)
-- **GNN-based constraint extraction [Analog IC]:** a graph-learning framework annotates symmetry constraints from netlists and outperforms graph-similarity and signal-flow methods (ASP-DAC'21, Pan co-author). A graph-attention symmetry extractor followed in 2023. — [ACM ASP-DAC'21](https://dl.acm.org/doi/10.1145/3394885.3431545); [arXiv 2312.14405](https://arxiv.org/pdf/2312.14405)
-- **Performance-driven analog placement with GNN [Analog IC]:** a customized GNN (pooling with edge attention) predicts circuit performance from a placement to guide the analog placer, while symmetry and common-centroid are enforced as geometric constraints (ICCAD'20, U. Minnesota). — [ICCAD'20 PDF](http://people.ece.umn.edu/~sachin/conf/iccad20yl.pdf)
-- **LLM agents for analog layout:** LayoutCopilot (TCAD 2025) is an LLM-powered multi-agent framework for interactive analog layout design. — [arXiv 2406.18873](https://arxiv.org/abs/2406.18873)
+- **MAGICAL placer.** From the ICCAD'19 paper by Xu, Zhu, Liu, Lin, Li, Tang, Sun and Pan, read in full:
+  - **Global placement.** Minimizes **f_WL + a·f_OL + b·f_BND + c·f_SYM** with nonlinear conjugate gradient. HPWL and max/min terms are smoothed with log-sum-exp. f_OL is an area-overlap penalty, f_BND a target-bounding-box penalty for area, whitespace and aspect ratio. f_SYM requires each symmetric pair in a group to mirror about a **shared axis** and self-symmetric devices to sit on that axis. Weights a, b, c rise each iteration until penalties fall below thresholds.
+  - **Legalization.** Builds horizontal and vertical **constraint graphs** by plane sweep, greedily keeps one spreading direction per overlapping pair, adds missing edges found by DFS, applies transitive reduction, and solves an **LP compaction** with topology-order plus **symmetry constraints**.
+  - **Detailed placement.** An **LP-based detailed placement** for wirelength.
+  - **Feasibility rule.** Each device may carry at most **one** symmetry constraint.
+  - **Constraint extraction.** A transistor-pattern library plus **signal-flow graph traversal** from seed differential pairs, which then detects bias-circuit symmetry.
+  - Net criticality can be specified as net weights.
+  - Sources: [MAGICAL ICCAD'19 PDF (P)](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf); [MAGICAL GitHub (A)](https://github.com/magical-eda/MAGICAL)
+- MAGICAL's placer builds on "Device layer-aware analytical placement for analog circuits" (Xu et al., ISPD'19) and "Hierarchical and analytical placement techniques for high-performance analog circuits" (ISPD'17). — [MAGICAL refs (P)](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf)
+- **ALIGN placer.** From the overview paper and the placer source (BSD-3):
+  - The paper says the placer "is based on prior work using the sequence pair method" (Ma et al., TCAD 2011, "Simultaneous handling of symmetry, common centroid, and general placement constraints") and handles symmetry, matching and alignment, with hierarchical block assembly and multiple aspect-ratio options per block.
+  - **SA.** In code, SA runs over `SeqPair` with defaults T₀=0.5, T_min=0.05, α=0.995 and 10,000 iterations. A source comment notes "PerturbationNew honors order and symmetry."
+  - **ILP evaluation.** Each sequence pair becomes coordinates and flips through an **ILP** (`ILP_solver::FrameSolveILPCore`, using SYMPHONY or lp_solve). The objective combines HPWL (linearized with absolute-value constraints, including pin positions under flips) and area, with symmetry-axis, alignment and ordering constraints.
+  - **Small designs.** All sequence pairs consistent with ordering constraints are **enumerated** (topological-sort enumerator).
+  - **Alternatives.** An optional pure-ILP placer (`use_ILP_placer`, falling back to SA on timeout) and an optional **electrostatic analytical placer** (`EA_placer`: FFT-based e-density force, **Nesterov** iterations, LSE wirelength, a "symmetric force matrix", alignment, ordering and common-centroid support).
+  - Sources: [ALIGN overview arXiv 2008.10682 (P)](https://arxiv.org/pdf/2008.10682); [ALIGN placer source (P)](https://github.com/ALIGN-analoglayout/ALIGN-public)
+- ALIGN's constraint schema (`align/schema/constraint.py`) defines three kinds of constraint:
+  - **Hard:** Order, Align, Spread, AspectRatio, Boundary, SymmetricBlocks, AssignBboxVariables.
+  - **User:** AlignInOrder, Floorplan.
+  - **Soft:** PlaceCloser, PlaceOnBoundary, CompactPlacement, SameTemplate, PowerPorts/GroundPorts/ClockPorts, DoNotIdentify.
+
+  Constraints come from a per-hierarchy `<name>.const.json` file. — [constraint.py (A)](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py)
+- ALIGN extracts hierarchically nested symmetry constraints with graph traversal plus ML, even under approximate matches. It translates electrical constraints into maximum parasitics or wire limits, with an ML inference engine planned inside the placer loop. — [ALIGN overview (P)](https://arxiv.org/pdf/2008.10682)
+- **Symmetry islands / ASF-B*-trees** (Lin, Chang, Lin, TCAD 2009) place each symmetry group as one connected island. This was the first method to handle 2D as well as 1D symmetry. Hierarchical HB*-trees co-optimize islands with free modules in linear-time packing. — [TCAD'09 PDF (S)](https://cc.ee.ntu.edu.tw/~ywchang/Papers/tcad09-analog-placement.pdf)
+- Follow-ups extend this to matching and hierarchical proximity groups. — [DAC'08 (S)](https://dl.acm.org/doi/pdf/10.1145/1391469.1391484); [US7873928B2 (S)](https://patents.google.com/patent/US7873928B2/en)
+- Gao et al. (DAC'21 / TCAD'22) introduced "mixed constraint graphs" for interactive analog layout editing. ModuPlace calls them too imprecise for PCBs, since they constrain only adjacent pairs. — [DAC'21 PDF (S)](https://yibolin.com/publications/papers/ANALOG_DAC2021_Gao.pdf); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **GNN constraint extraction [Analog IC].** Symmetry annotation from netlists (ASP-DAC'21, Pan co-author) and GAT-based extraction (2023). — [ACM (S)](https://dl.acm.org/doi/10.1145/3394885.3431545); [arXiv 2312.14405 (S)](https://arxiv.org/pdf/2312.14405)
+- **Performance-guided analog placement.** A GNN predicts performance to guide the placer (ICCAD'20). — [PDF (S)](http://people.ece.umn.edu/~sachin/conf/iccad20yl.pdf)
+- **LLM agents for analog layout.** LayoutCopilot (TCAD 2025). Also "LLM-Enhanced Bayesian Optimization for Efficient Analog Layout Constraint Generation" (Chen, Zhu, Kim, Zhu, Lai, Yu, Pan; arXiv 2406.05250), as cited by the GenAI-PCB survey. — [arXiv 2406.18873 (S)](https://arxiv.org/abs/2406.18873); [survey refs (P)](https://arxiv.org/pdf/2606.17074)
 
 ### Inferences
-- PCB "proximity" rules (decoupling cap within X mm of a power pin, crystal next to the MCU's oscillator pins, ESD diodes at the connector) map directly onto ALIGN-style `PlaceCloser`/`Order`/`Align`/`PlaceOnBoundary` constraints. PCB "matching" (differential-pair or symmetric RF chains, half-bridge legs) maps onto `SymmetricBlocks`/symmetry islands.
-- Symmetry-island and hierarchical-cluster formulations show that treating a constrained group as **one rigid or semi-rigid macro** shrinks the search space and guarantees the constraint. The same trick suits PCB sub-circuits such as a buck converter or an MCU with its decoupling caps.
-- Analog flows split the work into **(1) constraint extraction** (heuristic, GNN, or now LLM), **(2) constrained placement** and **(3) legalization**. That split lines up with an LLM-driven PCB system in which the LLM owns step 1.
+- PCB proximity rules (decap within X mm of a power pin, crystal at the oscillator pins, ESD at the connector) map to ALIGN `PlaceCloser`/`Order`/`Align`/`PlaceOnBoundary`. Symmetric PCB sub-circuits (differential front ends, half-bridge legs, RF chains) map to `SymmetricBlocks`.
+- **Recommended handling pattern, from MAGICAL and ALIGN:** express each LLM-authored constraint twice. During global placement it is a **smooth penalty** (with weights the LLM can tune). During legalization it is an **exact linear constraint** (MILP/LP), with infeasibility reported back to the LLM.
+- ALIGN's "perturbations that preserve constraints" idea transfers to an SA module floorplanner. Edge anchoring, ordering and symmetry can be guaranteed by construction rather than penalized.
 
 ### Gaps
-- I could not retrieve the exact MAGICAL/IdeaPlaceEx placement formulation (the IdeaPlaceEx repo URL returned 404). The claim of analytical global placement plus LP/ILP legalization is inferred from the DARPA slides and the LPSolve dependency.
-- No PCB paper was found that directly reuses analog symmetry-island formulations.
+- I did not read Ma et al. 2011 (symmetry-feasible sequence pairs with common centroid) or Xu et al. ISPD'19 in full.
+- No PCB paper was found that directly reuses analog symmetry-island or sequence-pair-with-symmetry formulations.
 
 ---
 
 ## Q3. Machine learning for placement: Google RL and the controversy, MaskPlace, ChiPFormer, EfficientPlace, diffusion, GNN, LLM-evolved heuristics, and PCB-specific ML
 
 ### Takeaway
-On VLSI macro placement, learned placers have not reliably beaten well-tuned SA or analytical baselines. Independent reproductions (Cheng/Kahng et al., Markov) contradict the Nature 2021 claims, and Google's authors dispute the reproductions. The most credible recent ML directions are **ML as a guide or refiner** (VLM region hints for DREAMPlace, RL as "regulator", LLM-evolved placer code) rather than end-to-end placers. On **real PCBs**, the strongest evidence (PCBAgent, ModuPlace) comes from hybrid systems: a learned or LLM component supplies ordering, masks or constraint graphs, and classical optimization handles geometry. Pure RL PCB placers (RL_PCB, Crocker, Lim 2026) are evaluated on small boards against weak SA baselines.
+- **VLSI.** Independent reproductions contradict Nature-2021-style claims that end-to-end learned macro placers beat tuned SA or analytical placers; Google disputes the reproductions. The credible recent ML is guidance and refinement: VLM region hints, RL as a refiner, LLM-evolved placer code.
+- **Real PCBs.** The best evidence comes from **hybrids**: PCBAgent (RL with masks plus an LLM steering weights) and ModuPlace (an LLM writing a hierarchy and constraint graph for a numeric placer). Pure RL PCB placers (RL_PCB, Crocker, Lim 2026, DRLPlace) are evaluated on small or private sets against weak baselines.
+- **Frontier models.** The OmniLayout benchmark (Sept 2026) shows **2026 frontier multimodal LLMs (Claude Sonnet 4.6, GPT-5.5, Gemini 3.1 Pro) still cannot place PCBs directly**, even with tools.
 
 ### Cited Findings
 
-**Google RL macro placement (Mirhoseini et al., Nature 2021 / AlphaChip) and the critiques [VLSI]**
-- Circuit Training (TF-Agents) is Google's open implementation. It places hundreds of macros (with millions of standard cells clustered by hMETIS) and optimizes proxy wirelength, congestion and density. It supports macro orientation flipping, grid alignment, macro-macro and macro-boundary spacing, and fixed macros. Standard cells can be placed with DREAMPlace. Google says the method's placements were taped out in TPU-v5 and that AlphaChip is used across Alphabet and externally. A checkpoint pre-trained on 20 TPU blocks was released, and Google recommends pre-training on your own blocks. Proxy costs are used for optimization but not for final decisions, since full QoR can take up to 72 h with commercial tools. — [google-research/circuit_training](https://github.com/google-research/circuit_training)
-- Proxy cost = 1.0·wirelength + 1.0·density + 0.5·congestion (Google reportedly used density weight 0.5 internally). Wirelength is HPWL / (netcount × (canvas_h + canvas_w)). Density is the mean of the top-10% densest grid cells × 0.5. Congestion is the mean of the top 5% of smoothed H+V routing-congestion values (including macro-induced congestion). — [TILOS ProxyCost doc](https://github.com/TILOS-AI-Institute/MacroPlacement/tree/main/Docs/ProxyCost)
-- Cheng, Kahng, Kundu, Wang, Wang ("Assessment of RL for Macro Placement", ISPD'23) released open versions of CT's black-box components, clarified discrepancies between CT and the Nature paper, and added public testcases. Their TCAD journal update was accepted on 16 Dec 2025 and adds a stronger SA, sub-10 nm benchmarks and AlphaChip with the released pre-trained checkpoint; the authors say it "reconfirms" the ISPD'23 conclusions. — [arXiv 2302.11014](https://arxiv.org/abs/2302.11014v1); [UCSD PDF](https://vlsicad.ucsd.edu/Publications/Conferences/396/c396.pdf); [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- Key reproduction findings: SA beat CT in nearly all cases with less compute. RePlAce beat CT on ICCAD04, but CT beat RePlAce on proxy cost for modern testcases. Human experts and some baselines beat CT. CT depends heavily on its initial physical-synthesis placement: vacuous initial placements raised routed wirelength by 7–10%. Proxy-cost improvement did not reliably track timing. In March 2025 the authors trained AlphaChip from scratch and fine-tuned from the Aug-2024 pre-trained checkpoint (200→400 iterations) and still reported non-convergence in cases. — [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- Markov's meta-analysis (CACM vol. 67 no. 11, Oct 2024; preprint "The False Dawn", 2023) concludes that cross-checked data "substantially undermine" the integrity of the Nature paper, owing to errors in conduct, analysis and reporting. — [CACM / ACM DL](https://dl.acm.org/doi/10.1145/3676845); [ResearchGate False Dawn](https://www.researchgate.net/publication/371684369_The_False_Dawn_Reevaluating_Google's_Reinforcement_Learning_for_Chip_Macro_Placement)
-- Goldie, Mirhoseini and Dean's rebuttal ("That Chip Has Sailed", arXiv 2411.10053, Nov 2024; not peer reviewed) argues that the critics did not pre-train, used much less compute, did not train to convergence and used unrepresentative testcases. It also says AlphaChip has been used in three TPU generations and in other chips. — [arXiv 2411.10053](https://arxiv.org/pdf/2411.10053)
+**Google RL macro placement and critiques [VLSI]** (other details are left to the verification track)
+- Circuit Training/AlphaChip: hundreds of macros (cells clustered by hMETIS); proxy wirelength, congestion and density; placements taped out in TPU-v5 per Google; a pre-trained checkpoint on 20 TPU blocks. — [circuit_training (A)](https://github.com/google-research/circuit_training)
+- Proxy cost = 1.0·WL + 1.0·density (top-10% grid cells × 0.5) + 0.5·congestion (top-5% smoothed). — [TILOS ProxyCost (A)](https://github.com/TILOS-AI-Institute/MacroPlacement/tree/main/Docs/ProxyCost)
+- Cheng/Kahng et al. (ISPD'23; TCAD update accepted Dec 2025) found SA beat CT in nearly all cases with less compute, CT depends on its initial placement, and proxy cost does not track timing. — [arXiv 2302.11014 (S)](https://arxiv.org/abs/2302.11014v1); [TILOS (A)](https://github.com/TILOS-AI-Institute/MacroPlacement)
+- Markov's CACM 2024 meta-analysis says the integrity of the Nature paper is "substantially undermined". — [ACM DL (S)](https://dl.acm.org/doi/10.1145/3676845)
+- Goldie, Mirhoseini and Dean's rebuttal ("That Chip Has Sailed") is not peer reviewed. — [arXiv 2411.10053 (S)](https://arxiv.org/pdf/2411.10053)
 
-**RL / offline RL / search successors [VLSI]**
-- MaskPlace (Lai, Mu, Luo; NeurIPS'22 spotlight) frames placement as visual RL (PPO) over pixel masks: a **position mask** (legal cells), a **wire mask** (HPWL increase per cell) and a **view mask** (occupancy). Its README reports lower HPWL than DREAMPlace on most ISPD05 macro benchmarks (e.g., adaptec1 6.57 vs 17.94 ×10^5), but worse on adaptec4 (75.75 vs 37.77), and 1.94% overlap on ariane. Standard cells are placed afterwards by DREAMPlace. — [MaskPlace GitHub](https://github.com/laiyao1/maskplace); [NeurIPS'22 PDF](https://proceedings.neurips.cc/paper_files/paper/2022/file/97c8a8eb0e5231d107d0da51b79e09cb-Paper-Conference.pdf)
-- ChiPFormer (Lai et al., ICML'23) is offline RL with a decision transformer, pre-trained on placement data for 12 benchmarks and then fine-tuned online with a prioritized replay buffer. — [ChiPFormer GitHub](https://github.com/laiyao1/chipformer); [PMLR PDF](https://proceedings.mlr.press/v202/lai23c/lai23c.pdf)
-- WireMask-BBO (NeurIPS'23) treats macro placement as black-box optimization. A wire-mask-guided greedy decoder turns a genotype into a placement, and random search, BO (TuRBO) or EA sit on top. It can also fine-tune MaskPlace outputs with EA. Objective is HPWL. MIT license. — [WireMask-BBO GitHub](https://github.com/lamda-bbo/WireMask-BBO); [arXiv 2306.16844](https://arxiv.org/pdf/2306.16844)
-- Comparative HPWL on adaptec1 (×10^5), as reported in a 2026 coarse-to-fine paper: EfficientPlace 5.94, ChiPFormer 6.62, MaskPlace 7.62. EfficientPlace was the only one of the three to finish bigblue2/bigblue4. A 2026 paper reports that MaskPlace and WireMask-BBO time out on large designs. — [Coarse-to-Fine Macro Placement, arXiv 2609.34452](https://arxiv.org/html/2609.34452); [RSPlace AAAI'26](https://ojs.aaai.org/index.php/AAAI/article/download/39559/43520)
-- "RL Policy as Macro Regulator Rather than Macro Placer" (MaskRegulate, NeurIPS'24) **refines existing layouts** (e.g., DREAMPlace output) instead of placing from scratch. Evaluated on ICCAD2015 superblue. BSD-3. — [macro-regulator GitHub](https://github.com/lamda-bbo/macro-regulator); [NeurIPS'24 poster](https://nips.cc/virtual/2024/poster/93943)
-- CORE (NeurIPS'25) is described as the first evolutionary-RL algorithm for floorplanning. BBOPlace-Bench (2025) benchmarks black-box optimizers for chip placement. — [CORE (mlanthology)](https://mlanthology.org/neurips/2025/li2025neurips-core/); [BBOPlace-Bench arXiv 2510.23472](https://arxiv.org/pdf/2510.23472)
+**RL / offline RL / BBO successors [VLSI]**
+- MaskPlace (NeurIPS'22): PPO over **position, wire and view masks**. — [GitHub (A)](https://github.com/laiyao1/maskplace)
+- ChiPFormer (ICML'23): an offline decision transformer. — [GitHub (A)](https://github.com/laiyao1/chipformer)
+- WireMask-BBO (NeurIPS'23): a greedy wire-mask decoder plus RS/BO/EA. — [GitHub (A)](https://github.com/lamda-bbo/WireMask-BBO)
+- MaskRegulate (NeurIPS'24): RL that refines DREAMPlace output. — [GitHub (A)](https://github.com/lamda-bbo/macro-regulator)
+- On adaptec1 HPWL (×10⁵), EfficientPlace 5.94, ChiPFormer 6.62, MaskPlace 7.62. — [arXiv 2609.34452 (S)](https://arxiv.org/html/2609.34452)
 
-**Generative (diffusion / flow) placement [VLSI]**
-- "Chip Placement with Diffusion Models" (Vint Lee et al., ICML'25; arXiv 2407.12282) trains a denoising model on large **synthetic** netlist/placement datasets because real data is proprietary. It places all components at once (non-sequentially), uses guided sampling instead of RL, generalizes zero-shot to new circuits, and reports competitive results on IBM/ISPD macro benchmarks. Code exposes `hpwl_guidance_weight` and `legality_potential_target` knobs plus a legalizer. — [arXiv 2407.12282v3](https://arxiv.org/abs/2407.12282v3); [PMLR v267](https://proceedings.mlr.press/v267/lee25y.html); [chipdiffusion GitHub](https://github.com/vint-1/chipdiffusion)
-- 2026 follow-ons include FlowPlace (flow matching) and physics-guided geometric diffusion for macro placement; details were not retrieved. — [FlowPlace arXiv 2604.23658](https://arxiv.org/html/2604.23658v1); [Physics-Guided Geometric Diffusion arXiv 2605.16451](https://arxiv.org/pdf/2605.16451)
-
-**GNN placers [VLSI]**
-- TransPlace (2025) uses a GNN for transferable global placement of ICs. RoutePlacer (2024) is an end-to-end routability-aware placer with a GNN. — [TransPlace arXiv 2501.05667](https://arxiv.org/html/2501.05667v1); [RoutePlacer arXiv 2406.02651](https://arxiv.org/pdf/2406.02651)
-
-**LLM / VLM-driven placement (2025–2026) [VLSI]**
-- EvoPlace (Yao, Jiang, Zhao, Liao, Lin, Yu; arXiv 2504.17801; IEEE TCAD 2026 early access) uses LLMs to **evolve the optimization-algorithm code inside an analytical placer** through prompt-generated candidates and an LLM-based genetic flow. Case-specific evolved algorithms cut HPWL by an average of 5.05% (MMS), 5.29% (ISPD2005) and 8.30% (ISPD2019), with up to 17% on single cases. A third-party summary reports that the evolved **initialization** accounts for most of the gain, and that generalized (non-case-specific) versions gain less (about 0.5% MMS, 2.85% ISPD2005). — [arXiv 2504.17801](https://arxiv.org/pdf/2504.17801); [Pith summary](https://pith.science/paper/2504.17801)
-- VeoPlace ("See it to Place it", Google DeepMind, arXiv 2603.28733, Mar 2026) has a **vision-language model look at rendered placements and propose sub-regions** for macros. For analytical placers (DREAMPlace) the regions become **soft anchor constraints**; for learning-based placers they become action masks. An evolutionary loop keeps the best proposals. It beats ChiPFormer on 9 of 10 benchmarks (peak wirelength reduction above 32%) and improves DREAMPlace on all 8 ICCAD2015 superblue designs (up to 4.3%). — [arXiv 2603.28733](https://arxiv.org/html/2603.28733v1)
-- Other 2026 LLM-placement preprints include CoEvoP&R (LLMs co-evolve placement objectives using routing feedback), OrderPlace (proxy-guided LLM evolution of macro placement order), PlaceReasoner-Beta (reasoning-driven macro placement and benchmark) and MacroAgent (LLM-agent-designed contour legalization). Only titles and abstracts were seen. — [CoEvoP&R arXiv 2607.17398](https://arxiv.org/pdf/2607.17398); [OrderPlace arXiv 2606.08904](https://arxiv.org/pdf/2606.08904); [PlaceReasoner-Beta arXiv 2609.21263](https://arxiv.org/pdf/2609.21263); [MacroAgent arXiv 2608.24946](https://arxiv.org/pdf/2608.24946)
+**Generative and LLM/VLM placement [VLSI]**
+- Chip diffusion (Lee et al., ICML'25): trained on synthetic data, places all components at once, guided sampling with `hpwl_guidance_weight` and `legality_potential_target`. — [chipdiffusion GitHub (A)](https://github.com/vint-1/chipdiffusion); [arXiv 2407.12282 (S)](https://arxiv.org/abs/2407.12282v3)
+- EvoPlace (Yao, …, Lin, Yu; TCAD 2026): LLMs evolve the placer's optimization code; the evolved initialization gives most of the gain. — [arXiv 2504.17801 (S)](https://arxiv.org/pdf/2504.17801)
+- VeoPlace (Google DeepMind, 2026): a VLM proposes sub-regions, which become soft anchors for DREAMPlace or action masks for RL. — [arXiv 2603.28733 (S)](https://arxiv.org/html/2603.28733v1)
+- Also seen (abstracts only): CoEvoP&R, OrderPlace, PlaceReasoner-Beta, MacroAgent. — [CoEvoP&R (S)](https://arxiv.org/pdf/2607.17398); [OrderPlace (S)](https://arxiv.org/pdf/2606.08904); [PlaceReasoner-Beta (S)](https://arxiv.org/pdf/2609.21263); [MacroAgent (S)](https://arxiv.org/pdf/2608.24946)
 
 **PCB-specific ML placement [PCB]**
-- **RL_PCB** (Vassallo & Bajada, DATE 2024, "Learning Circuit Placement Techniques through RL with Adaptive Rewards") formulates PCB placement as an MDP in which **each component is an agent** (inspired by cellular automata) using local and global information. Policies are TD3/SAC (per figure names). Reward/metrics: HPWL, Euclidean wirelength (EW) and overlap. Weighting HPWL produces "collaborative" behaviour and weighting EW "competitive" behaviour. It is trained on only **6 circuits** and tested on unseen circuits. Placements are routed by an A*-based router and compared with an SA baseline on HPWL and routed wirelength. It parses `.kicad_pcb`. MIT license. — [RL_PCB GitHub](https://github.com/LukeVassallo/RL_PCB); [IEEE DATE'24](https://ieeexplore.ieee.org/document/10546526); [UM repository](https://www.um.edu.mt/library/oar/handle/123456789/131782)
-- Vassallo's MSc thesis summary reports that the best configuration **outperforms SA by up to 21% over three unseen circuits**. An earlier version used a novel edge-based GNN to extract netlist features end to end. — [MSc thesis summary](https://www.lukevassallo.com/wp-content/uploads/2024/01/MSc_thesis_summary_lv.pdf); [thesis summary (alt)](https://lukevassallo.com/files/msc-thesis-summary.pdf)
-- Crocker (MIT MEng thesis, 2021, "Physically Constrained PCB Placement Using Deep RL") trains an agent to place parts on a simulated canvas with no overlaps or wire crossings. It uses routing-based metrics rather than heuristic proxies and an unbounded reward that grows more complex during training (ring-style placement). — [MIT DSpace](https://dspace.mit.edu/handle/1721.1/139247); [thesis PDF](https://dspace.mit.edu/bitstream/handle/1721.1/139247/Crocker-pcrocker-meng-eecs-2021-thesis.pdf?sequence=1&isAllowed=y)
-- Lim (A*STAR, arXiv 2602.23540, Feb 2026, "Component Centric Placement Using Deep RL") uses a component-centric layout and compares DQN, actor-critic and SA. The reward is designed to skip infeasible regions. On more than nine real PCBs the best method approaches human-like wirelength and feasibility. It discusses single- versus double-sided difficulty. Abstract only. — [arXiv 2602.23540](https://arxiv.org/abs/2602.23540)
-- Other PCB RL papers seen only as titles: "Reinforcement Learning-Based Placement Method for Printed Circuit Board" (IEEE, 2024) and "Design Automation of PCB Layout for Power Electronics with RL" (2023). — [IEEE 10652635](https://ieeexplore.ieee.org/document/10652635); [ResearchGate](https://www.researchgate.net/publication/375759135_Design_Automation_of_PCB_Layout_for_Power_Electronics_with_Reinforcement_Learning)
-- **PCBAgent** (Chen et al., HKUST / Huawei Noah's Ark / CUHK; ASP-DAC'25, pp. 781–787). Read in full:
-  - *Problem.* Hard constraints are no overlap, inside an irregular boundary, and pairwise spacing ≥ h(·,·) on bodies and pads. Soft objective = HPWL + λ/NSLW, where **Surface Layer Wire (SLW)** is a new PCB metric: a 2-pin connection that fans out toward the nearest pad edges, crosses no other component, and whose pads overlap in horizontal or vertical projection, i.e. routable on the surface layer.
-  - *RL agent.* A decision transformer (ChiPFormer-style) with MaskPlace-style view, position and wire masks computed for **4 rotations each**. The position mask merges a boundary mask and a spacing mask, so hard constraints are enforced by **action masking**. Small bonuses (b = −0.01) reward pad-aligned and min-spacing positions.
-  - *Placement sequence.* Chip-centred: place ICs first, walk their pads clockwise, then place connected components by a weighted score (size, net count, pad ring/level). This cut HPWL 30% and 22% against net-count and area orderings.
-  - *Training.* Online fine-tuning only, keeping legal trajectories in a prioritized replay.
-  - *LLM agent.* Turns user natural language into tool calls that analyze the placement, find violating components, **reweight the score** and re-optimize only those components.
-  - *Benchmarks.* 17 industrial boards with 18–414 components, densities 0.33–0.76.
-  - *Results.* Legal on all 17. HPWL 1.04x and NSLW 0.94x of manual. MaskPlace, ChiPFormer and MILP reached HPWL 1.13x, 1.33x and 2.05x and frequently violated boundary or spacing. Two to three LLM interaction rounds raised NSLW by 39.6%.
-  - Sources: [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); [ACM DL](https://dl.acm.org/doi/10.1145/3658617.3697736); [GitHub-hosted copy](https://github.com/chenh677/Agent4EDA-Papers)
-- **ModuPlace** (Han et al., CUHK / CUHK-SZ; DAC'26, doi 10.1145/3770743.3803892). Read in full:
-  - *Partition.* An LLM agent (with RAG over design guidelines and a netlist heterogeneous graph with sub-circuit matching) builds a **Hierarchical Modular Tree (HMT)** that partitions parts into functional modules recursively (e.g., power supply, protection, motor drive, control, buttons), stopping on a confidence threshold.
-  - *Constraint graph.* A second LLM (Qwen-2.5-7B, SFT on 426 expert CCGs, then GRPO with a GNN reward model trained on expert rankings) generates a **Comprehensive Constraint Graph (CCG)** for each HMT layer. Each edge carries a relative (x̂, ŷ) offset, a rotation offset θ̂ and a weight.
-  - *Placement.* Hierarchical placement minimizes Σ w·(γ1·|Δpos error| + γ2·|Δθ error|) + γ3·area overlap with parent + γ4·HPWL, over rotations {0, 90, 180, 270}, module by module, then a detailed overlap-free placement in C++/Boost.
-  - *Benchmarks.* 11 boards (35–97 parts, 2–4 layers) from OpenROAD and industry. Every placement was **routed** (PcbRouter and Freerouting, averaged over configurations) and EM-simulated in Keysight ADS for insertion loss and crosstalk.
-  - *Results.* Routed wirelength 17.14% and 15.01% lower than SA-PCB and NS-Place, vias 40.51% and 32.02% lower, and better than DeepPCB (whose wirelength was 17.22% higher) and PCBAgent (14.26% wirelength, 48.51% vias).
-  - *Ablation.* Removing the HMT hurt most. Without SFT: +35.1% wirelength and +66.2% vias. Without GRPO: +25.4% wirelength and +53.1% vias.
-  - *Off-the-shelf LLMs.* **GPT-4o and Claude-3.5-Sonnet generating CCGs zero-shot did substantially worse** than the fine-tuned 7B model (ModuPlace was 25.82% lower in wirelength and 42.56% lower in vias than the better of the two).
-  - *Critiques of predecessors.* PCBAgent can reach low HPWL yet be unroutable, and is costly to train. HPWL/density-only placers lack routing foresight.
-  - Sources: [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [GitHub-hosted copy](https://github.com/chenh677/Agent4EDA-Papers)
-- **Commercial ML placers [PCB, vendor claims only]:**
-  - DeepPCB (InstaDeep) uses RL for placement and routing. Vendor example: a 30-minute optimized placement cut routing time to 59 minutes, against 10 hours after a 2-minute quick placement. A TPU (Sebulba) training architecture gave 15–235x throughput. — [DeepPCB placement blog](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/); [Google Cloud blog](https://cloud.google.com/blog/products/compute/instadeep-performs-reinforcement-learning-on-cloud-tpus)
-  - Cadence Allegro X AI (2023) combines physical-design algorithms with generative AI to propose placements, synthesize planes and route critical nets. It claims more than 10x faster turnaround; one customer cited 3 days manual versus 75 minutes. — [Cadence press release](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
-  - Quilter uses RL agents "trained on physics" and runs circuit-level checks: bypass-cap pin distance, via-in-loop, switching-converter coil proximity, diff-pair phase and coupling, IPC current-capacity trace width, crystal placement. — [Quilter product](https://www.quilter.ai/product); [Quilter 2026 guide](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-  - A Cadence patent describes a **neural network as a learned routability fitness function**, since the true fitness (autorouter completion rate) is expensive. — [US 12223248](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
-- **GNNs on PCB schematics:** a node-pair GNN predicts where to add pull-ups and RC filters in schematics (AUPRC about 85–86% per a third-party summary). A GNN with action-masked DRL predicts component placement order for schematic generation. — [arXiv 2506.10577](https://arxiv.org/pdf/2506.10577); [Springer 2025](https://link.springer.com/article/10.1007/s44163-025-00726-7)
+- **RL_PCB** (Vassallo & Bajada, DATE'24): each component is an agent; TD3/SAC; reward from HPWL, Euclidean wirelength and overlap; trained on 6 circuits; A* routing evaluation vs SA; parses KiCad; MIT license. — [RL_PCB GitHub (A)](https://github.com/LukeVassallo/RL_PCB); [IEEE (S)](https://ieeexplore.ieee.org/document/10546526)
+- A search summary reports 17% and 21% lower post-routing wirelength than SA on unseen circuits. — [UM repository (S)](https://www.um.edu.mt/library/oar/handle/123456789/131782)
+- The thesis summary reports up to 21% better than SA on three unseen circuits. — [MSc summary (S)](https://www.lukevassallo.com/wp-content/uploads/2024/01/MSc_thesis_summary_lv.pdf)
+- **Lim 2026** (A*STAR IME, "Component Centric Placement Using Deep RL"; 4-page preprint). **Read in full:**
+  - **Discretization.** The main IC is fixed at the centre and passives choose among **N discrete candidate slots around its border** (20–48 actions).
+  - **State.** A one-hot token of passive ID concatenated with net ID ("DQNnet").
+  - **Reward.** α·non-overlap + (1−α)·net-proximity. Proximity is relaxed with a **Top-K** set of slots near the correct power pin.
+  - **Methods.** DQN, A2C and SA.
+  - **Metric.** Total Euclidean wirelength (TEWL), argued to correlate better with routed length than HPWL.
+  - **Data.** 9 in-house sub-circuits (8–24 passives, 4–14 nets) extracted from larger boards. U20 was originally double-sided but forced single-sided.
+  - **Results.** A2C was generally best and DQNnet improved TEWL over DQN. Most methods beat human TEWL except on the two hardest cases, **but still produced overlaps and routing conflicts**: across boards, SA had 14 overlapping passives and 22 routing conflicts, DQN 12/13, A2C 4/16, DQNnet 6/16.
+  - **Not covered.** Rotation, routing, two-sided evaluation.
+  - Sources: [arXiv 2602.23540 (P)](https://arxiv.org/abs/2602.23540)
+- **DRLPlace** (Cai, Cheng, Zhang, Li, Ye; Hubei Univ. of Technology; ASP-DAC'26):
+  - PPO with **per-step reward prediction**.
+  - A **pre-trained ResNet policy-value model** over layout, net and density-map features (to cope with few samples).
+  - **Chip-centric clustering** initialization.
+  - **Boundary-aware push-and-reflection legalization** for irregular outlines.
+  - Reports up to 16% lower HPWL than manual designs.
+  - Sources: [abstract via S2/OpenAlex (A)](https://doi.org/10.1109/ASP-DAC66049.2026.11420655)
+- Crocker (MIT MEng 2021): no overlaps or crossings, routing-based metrics, curriculum reward. — [MIT DSpace (S)](https://dspace.mit.edu/handle/1721.1/139247)
+- **PCBAgent** (ASP-DAC'25). Read in full:
+  - Decision-transformer RL with view, position and wire masks for each of **4 rotations**; boundary and spacing masks enforce legality.
+  - **Chip-centred placement order**: ICs first, pads walked clockwise.
+  - A **Surface Layer Wire** metric.
+  - An LLM agent maps user language to reweighting and incremental re-optimization.
+  - 17 industrial boards (18–414 parts): legal on all 17, HPWL 1.04x and NSLW 0.94x of manual, vs MaskPlace 1.13x, ChiPFormer 1.33x and MILP 2.05x. LLM rounds gave +39.6% NSLW.
+  - Sources: [PCBAgent PDF (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- **ModuPlace** (DAC'26). Read in full:
+  - An LLM builds a **Hierarchical Modular Tree**; a fine-tuned Qwen-2.5-7B (SFT on 426 expert graphs, then GRPO with a GNN preference reward) writes **Comprehensive Constraint Graphs** (relative x/y, rotation offset, weight); a numeric hierarchical placer consumes them.
+  - 11 boards, routed with PcbRouter and FreeRouting and EM-simulated in ADS.
+  - vs SA-PCB / NS-Place: routed wirelength −17.14% / −15.01%, vias −40.51% / −32.02%. Also beats DeepPCB and PCBAgent.
+  - Ablation: removing the hierarchy hurts most.
+  - **GPT-4o and Claude-3.5-Sonnet generating constraint graphs zero-shot did substantially worse** than the fine-tuned 7B model.
+  - Sources: [ModuPlace PDF (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **LLM as a decision layer for PCB placement refinement** (Xu, Chen, Chen, Li, Li; CAICE 2026). After engineering changes (package updates, part substitutions), detected conflicts are characterized by geometric severity, local congestion, component category and violation type. The LLM sets conflict priority and chooses a repair strategy, while classical heuristics do the geometry. It reports about 15% better overall conflict resolution and more than 20% better high-priority resolution. — [abstract (A)](https://doi.org/10.1145/3804601.3804665)
+- **OmniLayout** (Lu, …, Gowda; Penn State/SJTU/MSR; arXiv 2607.03261 v3, Sept 2026). **Read in full:**
+  - **Data.** 1,681 schematic-coupled layouts from **EAGLE XML DIY/open-source designs**: 2–8 layers, 31.5–22,459 mm², 77.24K placement instances. Code and data are **CC-BY-4.0**.
+  - **Models tested.** Claude-Sonnet-4.6, GPT-5.5, GPT-5-mini, Gemini-3.1-Pro-Preview, Gemini-2.5-Flash-Lite, LLaMA-4-Maverick, Ministral-14B and Qwen 3.5/3.6, in **zero-shot** and **agentic** settings. The agentic tools are layout visualization, overlap checking and FreeRouting-based routability scoring, with up to 50 turns.
+  - **Baselines.** Quilter, SA-PCB, NS-Place, Cypress and others.
+  - **Findings.**
+    - Models do reasonably on simple boards (under about 40 components) but degrade with density.
+    - They place **about 80% of components on the top layer**.
+    - They show weak routability awareness and only partial preservation of schematic relationships.
+    - Every model in the headline figure produced more than 5 overlap violations.
+    - Tools improve legality but are not applied reliably.
+  - Sources: [OmniLayout PDF (P)](https://arxiv.org/abs/2607.03261)
+- **Commercial [vendor claims only]:**
+  - DeepPCB (RL; TPU training 15–235x throughput). — [DeepPCB blog (S)](https://deeppcb.ai/ai-powered-pcb-placement-by-deeppcb/)
+  - Cadence Allegro X AI (claims more than 10x faster turnaround). — [press release (S)](https://www.cadence.com/en_US/home/company/newsroom/press-releases/pr/2023/cadence-introduces-allegro-x-ai-accelerating-pcb-design-with.html)
+  - Quilter (RL with physics checks). — [Quilter guide (S)](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+  - In HiePlace's independent test on 4 academic boards, Quilter took 34–75 min and had a 4–11x higher cost. — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+  - In ModuPlace's test, DeepPCB's routed wirelength was 17.22% higher than ModuPlace's. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+  - A Cadence patent describes a neural network as a learned routability fitness. — [US 12223248 (S)](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12223248)
 
 ### Inferences
-- Learned **end-to-end** placers need large training corpora that PCB design lacks: RL_PCB trained on 6 circuits, ModuPlace's SFT set was 426 CCGs, and DeepPCB reportedly trained a reward model on many historical designs. VLSI evidence (TILOS) shows that even well-funded RL struggles to beat tuned SA. For a KiCad system with no proprietary data, RL training is the worst cost/benefit choice.
-- Two transferable ML patterns stand out: **masking** (MaskPlace/PCBAgent: legal-position and wire-cost rasters, cheap to compute at PCB scale and a natural visual input for a VLM) and **guidance-not-placement** (VeoPlace's VLM region anchors, MaskRegulate's refinement, EvoPlace's evolved initialization).
-- ModuPlace's finding that zero-shot frontier LLMs produce poor relative-position graphs (with 2024-era models) suggests that an LLM should emit **coarse, semantic constraints** (grouping, sides, edges, proximity, ordering) rather than precise offsets. Otherwise it needs few-shot or RAG grounding from real designs.
+- On PCBs, learned components help most where they **order, partition, mask or prioritize** (PCBAgent's sequence and masks, ModuPlace's hierarchy, DRLPlace's chip-centric init, the conflict-prioritization LLM). Exact geometry is consistently left to classical solvers.
+- OmniLayout is the strongest current evidence against having an LLM emit coordinates. Even 2026 frontier models with checking tools fail at dense legal placement. The LLM should stay at the level of hierarchy, constraints, priorities and strategy.
 
 ### Gaps
-- Full texts of RL_PCB DATE'24, Lim 2026, the IEEE 2024 PCB RL paper, and EfficientPlace (ICML'24) could not be read. The EfficientPlace repo URL tried returned 404.
-- No independent benchmark of DeepPCB, Allegro X AI, Quilter or Trace placement quality was found. All figures are vendor-reported, except ModuPlace's DeepPCB comparison, which was run by competing academics.
-- I did not verify whether frontier LLMs released after Claude-3.5/GPT-4o close the CCG-generation gap reported by ModuPlace.
+- Not readable in full: EfficientPlace, DRLPlace, RL_PCB DATE'24, and the Cypress paper (code only).
+- OmniLayout's per-model numeric tables did not extract cleanly from the PDF. Only qualitative findings are reported here.
 
 ---
 
 ## Q4. PCB-specific placement literature: routability, thermal, EMC, double-sided, hierarchy grouping, mechanical constraints, and benchmarks/datasets
 
 ### Takeaway
-PCB placement research is thin but has picked up since 2022, centred on UCSD (Cheng/Holtz: SA-PCB, NS-Place, PcbRouter) and CUHK/HKUST/Huawei (Bei Yu, Tsung-Yi Ho: HiePlace, PCBAgent, ModuPlace, PCB-Migrator). Thermal-aware PCB placement is an older, separate GA/PSO literature with thermal-network or NN surrogates. **No standard public PCB placement benchmark exists.** Papers use 10–17 private or industrial boards, plus a few from OpenROAD.
+Since 2022 PCB placement has become an active subfield, centred on four groups:
+- **UCSD** (Cheng/Holtz): SA-PCB, NS-Place, PcbRouter.
+- **CUHK/HKUST/Huawei** (Bei Yu, Tsung-Yi Ho): HiePlace, PCBAgent, ModuPlace, PCB-Migrator.
+- **NTU** (Yao-Wen Chang): four 2025 DAC/TCAD papers.
+- **NVIDIA/Cornell**: Cypress.
+
+There are smaller Chinese groups too (WHUT PA-ICM, Zhao/Liu analytical, Hubei DRLPlace, Fuzhou subgraph reuse). Routability is now judged **after routing** with FreeRouting or PcbRouter. **Two-sided placement** handling has improved but sides are still mostly fixed inputs, not optimized. Thermal-aware and EMC-aware placement remain separate, older, mostly metaheuristic literatures, plus power-electronics loop-inductance layout tools. Open benchmarks now exist: Cypress's suite (10 KiCad and 20 Bookshelf boards) and OmniLayout (1,681 EAGLE boards, CC-BY-4.0).
 
 ### Cited Findings
-- **Routability-oriented [PCB]:** NS-Place maximizes the margin between nets to reduce congestion. It reports up to 25% shorter routed wirelength, 50% fewer vias and 79% fewer DRVs on 14 boards. — [arXiv 2210.14259](https://arxiv.org/pdf/2210.14259)
-- PCBAgent's SLW metric (count of 2-pin connections routable on the surface layer without crossing components) is presented as a supplement to HPWL that reflects industrial priorities such as reducing layers. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- ModuPlace uses **net crossings** together with HPWL as physical metrics in its SFT loss and GRPO advantage, and judges final quality by routed wirelength, via count and EM (IL/XT). — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **PCB differences from IC placement, as stated by PCB papers:**
-  - PCBAgent: much higher density (up to 76%), irregular boundaries and spacing rules, the need for surface-layer wires, rotation being crucial, and placement order mattering for sequential methods. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-  - ModuPlace: any rotation, two-sided placement, irregular board and component shapes, and engineers' modular design. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **Double-sided [PCB]:** the double-layer analytical method uses top-layer centralized and bottom-layer pin-oriented placement, with bin clustering for the bottom. — [arXiv 2502.14012](https://arxiv.org/pdf/2502.14012). Lim 2026 discusses the extra difficulty of double-sided boards for RL. — [arXiv 2602.23540](https://arxiv.org/abs/2602.23540). KiCad's autoplacer can place on both faces according to each footprint's layer. — [kicad-doc](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc). Old patents cover two-sided raw-then-refined placement. — [US 5481474](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/5481474)
-- **Alignment / aesthetics [PCB]:** HiePlace treats alignment as a significant PCB constraint and reports 46% fewer misaligned regions. — [HiePlace PDF](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf). PCBAgent adds pad-alignment bonuses to the position mask. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- **Thermal-aware [PCB]:**
-  - A GA minimized peak board temperature and wirelength using a simple thermal-circuit model, including 3D ICs (IEICE ELEX 2020). — [J-STAGE](https://www.jstage.jst.go.jp/article/elex/17/3/17_17.20190737/_article)
-  - Comprehensive-learning PSO used a detailed 3D thermal model with overlap and out-of-bounds checks. — [ResearchGate](https://www.researchgate.net/publication/224107144_Thermal_optimization_formulation_strategies_for_multi-constraints_electronic_devices_placement_on_PCB)
-  - A multidisciplinary method trained **neural-network surrogates** for surface and junction temperature, skipping thermal evaluation (with a penalty instead) when parts overlap. — [ResearchGate](https://www.researchgate.net/publication/3426137_Multidisciplinary_Placement_Optimization_of_Heat_Generating_Electronic_Components_on_a_Printed_Circuit_Board_in_an_Enclosure)
-  - Ant colony optimization has been applied, and a review also lists SA, MILP, firefly and Bayesian optimization. — [ResearchGate ACO](https://www.researchgate.net/publication/326710377_Thermal_optimization_of_electronic_devices_on_PCB_based_on_the_ant_colony_algorithm)
-- **EMC / SI [PCB]:** ModuPlace is the only placement paper found that measures EM performance (ADS insertion loss and crosstalk) after routing. It reports 17–31% better IL and 4.6–15.4% better XT than its baselines, and attributes part of that to modular grouping, since parts in one module share frequency and power domains. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **Hierarchy / functional grouping [PCB]:** ModuPlace's LLM-built HMT and HiePlace's hierarchical MP. See Q5. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [HiePlace PDF](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
-- **Mechanical / fixed parts [PCB]:** KiCad's documented workflow is to draw the outline and lock connectors and critical parts before autoplacing. — [kicad-doc](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc). ModuPlace benchmarks have 1–6 fixed parts per board. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf). Trace lists board outline, keep-outs and mechanical constraints and an "edge-component requirements" analysis step. — [Trace docs](https://docs.buildwithtrace.com/concepts/pcb-layout)
-- **PCB routers used for evaluation:**
-  - PcbRouter (OpenROAD, BSD-3) reads KiCad 5.1.2 `.kicad_pcb`. — [PcbRouter GitHub](https://github.com/The-OpenROAD-Project/PcbRouter)
-  - Its underlying algorithm is a unified PCB routing algorithm with complicated constraints and differential pairs (ASP-DAC'21). — [ResearchGate](https://www.researchgate.net/publication/348891563_A_Unified_Printed_Circuit_Board_Routing_Algorithm_With_Complicated_Constraints_and_Differential_Pairs)
-  - ModuPlace routed with PcbRouter and Freerouting. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- **Benchmarks / datasets:**
-  - PCBAgent's 17 industrial tasks (W×H 147×96 to 1251×941 mil; 18–414 parts; 48–1371 pads; 16–310 nets) are listed in a table but not released as far as the paper states. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-  - ModuPlace's 11 boards come "from OpenROAD and real-world industrial applications". — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-  - PCBWorld (arXiv 2607.05915) is a **routing** benchmark environment with native `.kicad_pcb` data: 679 real open-source boards plus two synthetic generators. It could be repurposed as a placement corpus. — [PCBWorld](https://arxiv.org/html/2607.05915)
-  - PCB-QA (480 QA pairs from design files) tests LLM knowledge, not placement. — [PCB-QA](https://arxiv.org/html/2606.23704v1)
-- **Industrial practice:** ModuPlace states that industry still relies on human engineers because existing automated frameworks ignore user requirements and the modular perspective, and that none has been widely adopted. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+
+**Routability-oriented [PCB]**
+- NS-Place: margin-based net separation over pin convex hulls, MILP legalization, FreeRouting evaluation (details in Q1). — [arXiv 2210.14259 (P)](https://arxiv.org/pdf/2210.14259)
+- Cypress: differentiable side-aware net-crossing cost, RUDY-guided inflation, RMST wirelength; reports routability (fraction routed) and routed track length. — [Cypress code (P)](https://github.com/NVlabs/Cypress); [abstract (A)](https://dl.acm.org/doi/10.1145/3698364.3705346)
+- NTU DAC'25: a wire-area model separating power-net and signal-net routing resources, plus pad-to-pad clearance. — [abstract (A)](https://doi.org/10.1109/dac63849.2025.11133056)
+- NTU TCAD'25: pad alignment to reduce crossings; reports +13.5% routability vs ePlace-MS. — [abstract (A)](https://doi.org/10.1109/tcad.2025.3618936)
+- PCBAgent's Surface Layer Wire count; ModuPlace's net crossings with routed wirelength, vias and EM metrics; HiePlace's high-priority net crossings plus alignment. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+
+**PCB vs IC differences, as stated by PCB papers [PCB]**
+- PCBAgent lists density up to 76%, irregular boundaries and spacing, surface-layer wires, rotation, and sequence sensitivity. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- HiePlace makes three further points:
+  - VLSI puts macros at the boundary, while **good PCB practice puts the large core chip in the centre** with related parts around it;
+  - PCBs need pairwise spacing tables;
+  - industrial outlines are irregular and **some parts overlap symmetrically (stacked)**.
+  — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- NS-Place notes arbitrary component shapes, board boundaries, multiple layers and routing constraints. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259)
+- ModuPlace notes arbitrary rotation, two sides, irregular shapes, and modular expert practice. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+
+**Double-sided placement [PCB]**
+- **Cypress**: two-sided electrostatic density and per-side legalization, but each part's side comes fixed from its input orientation. — [Cypress code (P)](https://github.com/NVlabs/Cypress)
+- **NTU DAC'25**: a "two-sided, pad-type-aware density model" (it distinguishes through-hole from SMD pads, which matter on both sides), and a double-sided MILP constraint-graph legalizer for any-oriented irregular parts. — [Clearance-constrained (A)](https://doi.org/10.1109/dac63849.2025.11133056); [CG legalization (A)](https://doi.org/10.1109/DAC63849.2025.11133304)
+- **PA-ICM**: top layer has the IC with accessories around it; bottom layer has pin-oriented placement **within the IC outline** (i.e., bottom-side passives under the IC, such as decaps), clustered by DBSCAN on IC pins. Sides are given per component; "close-to-pin" nets have priority. — [arXiv 2502.14012 (P)](https://arxiv.org/pdf/2502.14012)
+- **HiePlace**: lists double-sided layout as future work ("treat the PCB as two interconnected planes … additional weights for interlayer connection costs … minimizing vias"). — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **Lim 2026**: forced a double-sided board to a single side. — [arXiv 2602.23540 (P)](https://arxiv.org/abs/2602.23540)
+- **OmniLayout**: LLMs leave about 80% of parts on the top side. — [OmniLayout (P)](https://arxiv.org/abs/2607.03261)
+- **KiCad autoplacer**: keeps each footprint's side and checks the opposite side only for through-hole pads. — [ar_autoplacer.cpp (P)](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp)
+- **Patents**: older two-sided raw-then-refined placement. — [US 5481474 (S)](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/5481474)
+
+**Thermal-aware [PCB and transferable]**
+- Older PCB work: a GA minimizing peak temperature plus wirelength with a thermal-resistance network (IEICE ELEX 2020); CLPSO with a 3D thermal model; NN surrogates for junction temperature (skipping evaluation when parts overlap); ant colony optimization; SOGA. — [J-STAGE (S)](https://www.jstage.jst.go.jp/article/elex/17/3/17_17.20190737/_article); [ResearchGate CLPSO (S)](https://www.researchgate.net/publication/224107144_Thermal_optimization_formulation_strategies_for_multi-constraints_electronic_devices_placement_on_PCB); [ResearchGate NN (S)](https://www.researchgate.net/publication/3426137_Multidisciplinary_Placement_Optimization_of_Heat_Generating_Electronic_Components_on_a_Printed_Circuit_Board_in_an_Enclosure); [ResearchGate ACO (S)](https://www.researchgate.net/publication/326710377_Thermal_optimization_of_electronic_devices_on_PCB_based_on_the_ant_colony_algorithm)
+- **TRouter** (Chen, Xiong, He, Yu; TCAD 2023) is a **thermal-driven PCB router**. A crisscross-attention network predicts the board's thermal map from pads, vias, components and wires, and **per-grid gradients from backpropagation guide detours and via punching**. This shows a differentiable thermal surrogate inside a PCB physical-design loop, and the same idea transfers to a placement density or penalty term. — [S2 abstract (A)](https://doi.org/10.1109/TCAD.2023.3243544)
+- **HSL-TFP benchmark** (Chen et al., arXiv 2103.11177) is a DNN surrogate benchmark for temperature-field prediction from heat-source layouts. It is motivated by the cost of thermal simulation inside layout optimization; PCB design is cited as a motivating application by a secondary summary. — [arXiv 2103.11177 (P, abstract and intro)](https://arxiv.org/pdf/2103.11177)
+- **Surrogate-assisted SA for thermal chiplet placement** (Zhang, Liang, Xu, Chen; the same WHUT group as PA-ICM; IEEE JETCAS 2025): an RBF network approximates the thermal field inside SA that minimizes wirelength plus maximum temperature. [Chiplet, transferable.] — [arXiv 2504.03808 (P, abstract and intro)](https://arxiv.org/pdf/2504.03808)
+- HiePlace lists thermal considerations as future work. — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+
+**EMC / SI / power-loop-aware [PCB]**
+- **ModuPlace** is the only placement paper found that measures EM performance after routing (Keysight ADS insertion loss and crosstalk). It attributes part of the gain to modular grouping by frequency and power domain. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **Power-electronics layout automation** is the main algorithmic EMC-placement literature:
+  - GA-based automatic PCB layout of a DC-DC converter under EMC constraints, with parasitics extracted by ANSYS Q3D in the loop. — [ResearchGate (S)](https://www.researchgate.net/publication/355865177_Automatic_PCB_Layout_Optimization_of_a_DC-DC_Converter_Through_Genetic_Algorithm_Regarding_EMC_Constraints)
+  - A graph-model generative layout for SiC multichip modules, with a GA Pareto front of loop inductance vs branch mismatch, validated on a 1200 V/240 A half-bridge. — [ResearchGate (S)](https://www.researchgate.net/publication/359124822_Graph-Model-Based_Generative_Layout_Optimization_for_Heterogeneous_SiC_Multichip_Power_Modules_With_Reduced_and_Balanced_Parasitic_Inductance)
+  - PowerSynth-based placement for high-density DC-DC converters (inductance vs junction temperature). — [ResearchGate (S)](https://www.researchgate.net/publication/388859171_Physical_Layout_Design_Automation_for_High-Power_Density_DC-DC_Converter)
+  - A hierarchical-RL thesis that keeps critical current loops small. — [ResearchGate (S)](https://www.researchgate.net/publication/375759135_Design_Automation_of_PCB_Layout_for_Power_Electronics_with_Reinforcement_Learning)
+  - GaN work names the gate loop and power loop as the two critical loops to minimize. — [DTU PDF (S)](https://backend.orbit.dtu.dk/ws/portalfiles/portal/236953218/IAS_accepted_PCB_for_GaN_2020.pdf)
+- **NTU TCAD'25** extracts **anchor points from power-circuit flows** to guide force-directed placement, which is a structural way to keep power paths compact. — [abstract (A)](https://doi.org/10.1109/tcad.2025.3618936)
+- **Rule-level guidance only:** partition by function and EM characteristics, put crystals next to their loads, put connectors at the edge. These are written guidelines, not algorithms. — [Altium (S)](https://resources.altium.com/p/component-placement-for-emc)
+- **Quilter's check list** covers bypass-cap distance, via-in-loop, converter coil proximity and crystal placement. — [Quilter guide (S)](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+
+**Mechanical, fixed parts, reuse [PCB]**
+- KiCad's documented workflow locks connectors and critical parts before autoplacing. — [kicad-doc (P)](https://github.com/KiCad/kicad-doc/blob/master/src/pcbnew/pcbnew_footprint_placement.adoc)
+- Benchmarks include fixed parts: NS-Place 1–947 locked, ModuPlace 1–6 fixed, HiePlace preplaced parts and obstacles. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **Reference / reuse placement.** "Subgraph Matching Based Reference Placement for PCB Designs" (Su et al., DAC'22; journal version in J. Supercomputing 2024) finds placed templates in new netlists with the D2BS inexact subgraph-matching algorithm (100% accuracy on PCB instances, faster than VF3). — [DAC'22 abstract (A)](https://doi.org/10.1145/3489517.3530670); [J. Supercomput. (A)](https://doi.org/10.1007/s11227-024-06338-9)
+- **PCB-Migrator** (Han et al., DATE'26) maps a reference layout onto a changed board using an **offset constraint graph** and routing-path graph matching. — [S2 abstract (A)](https://doi.org/10.23919/DATE69613.2026.11539307)
+
+**PCB routers used for evaluation**
+- FreeRouting is used by NS-Place, ModuPlace and OmniLayout; PcbRouter by ModuPlace. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [OmniLayout (P)](https://arxiv.org/abs/2607.03261); [PcbRouter (A)](https://github.com/The-OpenROAD-Project/PcbRouter)
+
+**Benchmarks and datasets**
+
+| Dataset | Boards | Format / access | Notes |
+|---|---|---|---|
+| NS-Place | 14 | Not stated as released | 8–64 parts plus one 1,570-part board; 1–4 layers; utilization 0.10–0.79 |
+| PCBAgent | 17 industrial tasks | Not released | 18–414 parts |
+| HiePlace | 19 | 15 industrial phone boards (density ≈0.8) + 4 academic from a now-404 public repo | |
+| ModuPlace | 11 | OpenROAD + industry | |
+| Cypress | 10 KiCad + 20 Bookshelf | Released in repo, Apache-2.0 | "Synthesized from real commercial designs" |
+| OmniLayout | 1,681 | EAGLE, CC-BY-4.0 | 2–8 layers; DIY/open-source origin |
+| PCBWorld | 679 open-source boards + generators | `.kicad_pcb` | Routing environment, reusable for placement |
+
+Sources: [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [Cypress repo (P)](https://github.com/NVlabs/Cypress); [OmniLayout (P)](https://arxiv.org/abs/2607.03261); [PCBWorld (S)](https://arxiv.org/html/2607.05915)
+
+- OmniLayout's own comparison table lists Cypress as 10 layouts (2.6K components) against its 1,681. It also notes that most PCB placement works use private sets of only 10–20 boards. — [OmniLayout (P)](https://arxiv.org/abs/2607.03261)
+- NVIDIA's ISPD'24 invited talk "Challenges for Automating PCB Layout" (Liu, Agnesina, Ren) is a tutorial on how PCB design is done today and where automation opportunities lie. — [ACM abstract (A)](https://doi.org/10.1145/3626184.3635285)
 
 ### Inferences
-- The field has moved, explicitly, from "minimize HPWL" to "evaluate after routing". ModuPlace routed every result, NS-Place measured DRVs and vias, and Zhao 2025 measured routing completion. An LLM-driven KiCad placer should make a router (Freerouting or a KiCad-native router) part of its evaluation loop.
-- An open, reproducible PCB placement benchmark is missing. Building one from open-source KiCad boards (e.g., the PCBWorld corpus) with human placements as references would be a contribution in its own right.
+- Evaluation norms are converging: (a) route with FreeRouting; (b) report routability (fraction of nets routed), routed length, vias and DRVs; (c) report crossings and alignment proxies. A KiCad system can adopt exactly this and compare against SA-PCB, NS-Place and Cypress on the Cypress KiCad boards and an OmniLayout subset.
+- **Side assignment is an open problem.** Every academic placer found here takes component sides as input. An LLM is well placed to decide sides from design intent (decaps under BGAs, tall or THT parts on top), with the numeric placer then handling each side.
+- **Thermal and EMC placement have no maintained open tool.** The most transferable designs are a differentiable thermal surrogate (TRouter-style) as a penalty term, and power-loop anchoring (NTU) or loop-area penalties.
 
 ### Gaps
-- No dedicated EMC-aware placement algorithm paper (e.g., loop-area minimization as an objective) was retrieved. The search budget ran out.
-- "PCBBench" (170 samples, LLM layout/placement/routing) and "PCB-Bench, ICLR 2026" (about 3,700 text and 500 image questions) were mentioned in search summaries, but I could not locate their primary pages, so they are unverified.
-- PCB-Migrator (DATE'26, automated PCB place-and-route migration; cited in ModuPlace) was not retrieved.
+- No general-purpose **EMC-aware placement algorithm** with a coupling or loop-area objective was found for mixed-signal boards. The only automated loop-inductance work found is for power-converter and power-module layout.
+- The web-search budget ran out before more recent (2024–26) **thermal-aware PCB placement** papers could be found. The thermal items above are older PCB work, or chiplet and routing analogues.
+- OpenAlex's anonymous budget was also exhausted. Citation-following used Semantic Scholar only, so DAC'25/26, ICCAD'25 and ISEDA'25 PCB papers without a Semantic Scholar link may be missing.
 
 ---
 
 ## Q5. Hierarchical / cluster-based approaches: placing functional blocks as macros, then refining inside
 
 ### Takeaway
-Hierarchy is the most consistently successful idea across domains. Hier-RTLMP (VLSI), HB*-tree symmetry islands (analog) and ModuPlace/HiePlace (PCB) all place clusters first and then refine within them. On PCBs, ModuPlace's ablation shows the hierarchical modular tree is its **single most important component**.
+Every strong PCB placer since 2024 has a cluster or module level. On PCBs the module is almost always **"core IC + its satellites"** (HiePlace, PA-ICM, PCBAgent, Lim 2026, DRLPlace) or an **LLM-derived functional module** (ModuPlace, Trace). The common recipe:
+1. place the IC centrally;
+2. arrange first-priority satellites around its pins (ordered to avoid crossings);
+3. pack the remaining parts into module regions;
+4. place modules relative to each other (relaxation or SA);
+5. legalize exactly.
 
 ### Cited Findings
-- ModuPlace places HMT modules layer by layer. Module size comes from its parts and is refined by HPWL, and parts may not leave their module's area. Each finer layer is placed under the guidance of the parent layer's regions until detailed placement. Removing the HMT gave "significantly worse performance across all four metrics", the largest ablation effect. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- HiePlace places **core components first by dynamic programming**, then the rest by mathematical programming, gaining 7.7x speed. — [HiePlace PDF](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
-- PCBAgent's chip-centred ordering (ICs first, then components connected to pads in clockwise pad order) is an implicit hierarchy that cut HPWL by 22–30% against generic orderings. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- The double-layer paper places **functional modules** (IC-based modules) as units on the top and bottom layers. — [arXiv 2502.14012](https://arxiv.org/pdf/2502.14012)
-- Hier-RTLMP builds a physical hierarchy tree (default depth 2) bounded by macro and instance counts. It places clusters by SA under weighted area, outline, wirelength, boundary, notch, blockage, guidance and fence costs, and keeps clustering data for reuse. — [OpenROAD mpl](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl)
-- Circuit Training clusters standard cells with hMETIS before placing macros, and TILOS added an hMETIS wrapper for seed-reproducible clustering. — [circuit_training](https://github.com/google-research/circuit_training); [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- HB*-trees optimize symmetry islands (rigid groups) together with free modules, and placing symmetry modules together greatly reduces the search space. — [TCAD'09 PDF](https://cc.ee.ntu.edu.tw/~ywchang/Papers/tcad09-analog-placement.pdf)
-- Trace seeds components into logical regions from LLM-identified functional groups before SA, and includes a "group move" operator and a group-compactness cost. — [Trace docs](https://docs.buildwithtrace.com/concepts/pcb-layout)
+- **HiePlace hierarchy:**
+  - Modules (chip + surrounding parts) are relaxed to circles of radius α√area and placed with SLSQP.
+  - Inside each module, the chip and first-priority parts keep fixed relative positions. The **first ring is chosen by DP knapsack along the unrolled chip boundary**, after crossing-minimizing reordering, and the remaining parts are confined to a module rectangle solved by MP.
+  - Same-size connected small parts are pre-grouped into patterns.
+  - If MP is infeasible, it backtracks: groups are relaxed and chip movement is enlarged.
+  - Sources: [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **PA-ICM:** the top layer is a centralized layout around the IC, initialized by attaching each passive to its nearest IC pin and pushing it outside the IC. The bottom layer uses DBSCAN clusters of IC pins, optimized independently with cluster-size-adaptive overlap weights. — [PA-ICM (P)](https://arxiv.org/pdf/2502.14012)
+- **PCBAgent:** chip-centred ordering cut HPWL by 30% and 22% vs net-count and area orderings. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- **Lim 2026:** a fixed main IC with discrete slots around it, and the passive-near-power-pin prior baked into the reward. — [Lim (P)](https://arxiv.org/abs/2602.23540)
+- **DRLPlace:** chip-centric clustering initialization. — [abstract (A)](https://doi.org/10.1109/ASP-DAC66049.2026.11420655)
+- **ModuPlace:** an LLM-built Hierarchical Modular Tree, placed layer by layer under constraint-graph guidance. Removing the hierarchy hurt the most. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **NTU TCAD'25:** anchor points from power-circuit flows. — [abstract (A)](https://doi.org/10.1109/tcad.2025.3618936)
+- **Hier-RTLMP (VLSI):** a multilevel cluster tree with weighted SA. **ALIGN (analog):** hierarchical block assembly with multiple shape options per block. — [OpenROAD mpl (A)](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl); [ALIGN (P)](https://arxiv.org/pdf/2008.10682)
+- **Reuse as hierarchy:** subgraph-matched templates (D2BS) and PCB-Migrator's offset constraint graphs reuse proven sub-layouts as fixed modules. — [DAC'22 (A)](https://doi.org/10.1145/3489517.3530670); [PCB-Migrator (A)](https://doi.org/10.23919/DATE69613.2026.11539307)
 
 ### Inferences
-- A KiCad schematic already encodes hierarchy (sheets) and often functional intent (sheet names, net names such as `VBUS` and `3V3`). An LLM can turn that into an HMT more reliably than it can produce coordinates.
-- Recommended two-level scheme: (1) floorplan modules as soft rectangles using a sequence pair or B*-tree with SA, which is fast for fewer than 30 modules and supports side assignment, edge anchoring and keep-outs; (2) place inside each module with a local analytical or SA solver plus explicit proximity constraints; (3) legalize globally with MILP/CP or KiCad courtyard-aware nudging.
+- For KiCad, hierarchy usually comes from three places:
+  - schematic sheets;
+  - "IC + passives on its pins" clusters, which can be computed from the netlist;
+  - a library of proven sub-layouts (datasheet reference layouts, or the user's own past boards), reused through subgraph matching.
+
+  An LLM can name and refine these modules, and decide module sides, regions and adjacency.
+- HiePlace's DP-knapsack "ring around the chip" step is a cheap, explainable way to place decoupling and support parts. An LLM can set its priorities, for example "VDDCORE decaps first".
 
 ### Gaps
-- No study was found that compares how to estimate module area/aspect before inner placement on PCBs. ModuPlace optimizes it jointly with HPWL but gives no sensitivity analysis.
+- No PCB study compares module-area estimation methods (circles in HiePlace, bounding-box joint optimization in ModuPlace) or measures their sensitivity.
 
 ---
 
-## Q6. Which methods produce explainable intermediate representations that an LLM could reason about or steer?
+## Q6. Which methods produce explainable intermediate representations an LLM could reason about or steer?
 
 ### Takeaway
-The most LLM-steerable representations are: **(a) weighted multi-term cost functions** (Hier-RTLMP, SA-PCB, Trace, PCBAgent's score weights); **(b) declarative constraint sets** (ALIGN JSON constraints, MAGICAL symmetry lists, Quilter-style physics checks); **(c) hierarchical module trees and relative-position constraint graphs** (ModuPlace HMT and CCG); **(d) region anchors and soft fences** (VeoPlace, DREAMPlace fence regions, Hier-RTLMP guidance regions); **(e) placement order and seeds** (PCBAgent chip-centred order, NS-Place spectral seeds, EvoPlace evolved initialization); and **(f) raster masks** (MaskPlace/PCBAgent position and wire masks), which a VLM can read. End-to-end neural policies (CT, ChiPFormer, diffusion) are the least explainable.
+The most steerable representations are:
+- **(a) weighted multi-term costs:** Hier-RTLMP, SA-PCB, Trace, PCBAgent score weights, PA-ICM α/β/γ, Cypress parameters plus its BOHB tuner;
+- **(b) declarative constraints:** ALIGN JSON, MAGICAL symmetry groups, HiePlace priorities, spacing tables and alignment, PA-ICM "close-to-pin" nets;
+- **(c) hierarchy and relative-position graphs:** ModuPlace's modular tree and constraint graphs, PCB-Migrator's offset constraint graphs, NS-Place's relative-position constraints;
+- **(d) region anchors and fences:** VeoPlace, DREAMPlace fences, Hier-RTLMP guidance, NTU power-flow anchors;
+- **(e) placement orders and seeds:** PCBAgent chip-centred order, HiePlace crossing-minimizing order, NS-Place spectral seeds, EvoPlace evolved initialization;
+- **(f) raster masks a VLM can read:** MaskPlace/PCBAgent position and wire masks, Cypress RUDY maps;
+- **(g) conflict lists with features:** the LLM conflict-prioritization paper.
+
+End-to-end neural placers (CT, ChiPFormer, diffusion, DRLPlace) are the least explainable.
 
 ### Cited Findings
-- PCBAgent's LLM agent steers the RL placer by **adjusting score weights** and the trajectory weights of violating components, after tool-based analysis of the current placement. It does not emit coordinates. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- ModuPlace's LLM emits a CCG whose edges hold relative (x̂, ŷ), rotation offset θ̂ and weight w. A numeric placer consumes these as soft penalty terms. The authors state that directly generating placement files with LLMs "may lead to severe hallucination problems". — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- VeoPlace converts VLM-proposed sub-regions into **soft anchor constraints** for DREAMPlace, or action masks for RL placers, and evolves them by measured quality. — [arXiv 2603.28733](https://arxiv.org/html/2603.28733v1)
-- Hier-RTLMP exposes named weights (area 0.1, outline 100, wirelength 100, boundary 50, notch 10, blockage 10, guidance 10, fence 10) and commands (`place_macro`, `set_macro_guidance_region`). — [OpenROAD mpl](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl)
-- ALIGN constraints are named, typed JSON objects (Order, Align, Spread, SymmetricBlocks, PlaceCloser, PlaceOnBoundary, Boundary, AspectRatio, …), split into hard, soft and user-macro categories. — [ALIGN constraint.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py)
-- DREAMPlace supports net weights (`.wts`), fence regions, incremental placement and a deterministic mode, all usable as external steering inputs. — [DREAMPlace GitHub](https://github.com/limbo018/DREAMPlace)
-- The chip-diffusion code exposes `hpwl_guidance_weight`, `legality_potential_target` and legalizer `hpwl_weight`. — [chipdiffusion GitHub](https://github.com/vint-1/chipdiffusion)
-- EvoPlace shows an LLM can usefully **write and modify placer code** (especially initialization) in an evolutionary loop, with measurable HPWL gains. — [arXiv 2504.17801](https://arxiv.org/pdf/2504.17801)
-- Quilter's check list (bypass-cap pin distance, via-in-loop, converter coil proximity, diff-pair coupling, crystal placement) is a human-readable rule vocabulary for scoring. — [Quilter 2026 guide](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
-- A KiCad LLM-tool guide warns that assistants moving footprints through KiCad's API do not check clearances or courtyards as they go, and recommends running DRC after every AI placement pass. — [pcbeditor.com KiCad AI guide](https://pcbeditor.com/kicad-ai)
-- kicad-tools' reasoning loop "enables LLMs to make strategic PCB layout decisions while tools handle geometric execution", and exposes `placement_analyze`, `placement_suggestions`, `optimize_placement` and `evaluate_placement` as MCP tools. — [kicad-tools](https://github.com/rjwalters/kicad-tools)
-- Konnect (a KiCad 10 plugin) exposes 217 tools, including placement, to an LLM through KiCad's IPC API. — [Konnect GitHub](https://github.com/mixelpixx/Konnect)
+- **PCBAgent:** the LLM reweights the score and re-optimizes only violating components. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
+- **ModuPlace:** constraint-graph edges carry (x̂, ŷ, θ̂, w). Directly generating placement files "may lead to severe hallucination problems." — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **OmniLayout:** even with visualization, overlap-checking and routability tools, 2026 LMMs fail at dense legal placement, which argues against coordinate-level LLM output. — [OmniLayout (P)](https://arxiv.org/abs/2607.03261)
+- **LLM conflict prioritization:** the LLM chooses priority and repair strategy from a conflict feature vector (severity, congestion, category, violation type), and heuristics do the geometry. — [abstract (A)](https://doi.org/10.1145/3804601.3804665)
+- **MAGICAL:** soft symmetry penalty with rising weight, then exact symmetry in LP legalization. **ALIGN:** constraint-preserving sequence-pair moves plus ILP. — [MAGICAL (P)](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf); [ALIGN source (P)](https://github.com/ALIGN-analoglayout/ALIGN-public)
+- **NS-Place:** relative positions from global placement become explicit MILP constraints that preserve global structure. **PCB-Migrator:** an offset constraint graph extracted from a reference design. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [PCB-Migrator (A)](https://doi.org/10.23919/DATE69613.2026.11539307)
+- **Cypress:** a single JSON config of weights and flags (net-crossing weight, density weight, RUDY adjustment, rotation enable) plus a BOHB tuner, i.e. a ready-made "knob surface" for an LLM. — [Cypress code (P)](https://github.com/NVlabs/Cypress)
+- **HiePlace:** priority classes, spacing tables, an alignment metric and grouping patterns (1×4, 2×2) are all human-readable. — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **VeoPlace:** VLM regions become soft anchors in DREAMPlace. **EvoPlace:** an LLM edits placer code. — [VeoPlace (S)](https://arxiv.org/html/2603.28733v1); [EvoPlace (S)](https://arxiv.org/pdf/2504.17801)
+- **Hier-RTLMP:** named weights and guidance regions. **ALIGN:** typed JSON constraints. — [OpenROAD mpl (A)](https://github.com/The-OpenROAD-Project/OpenROAD/tree/master/src/mpl); [ALIGN constraint.py (A)](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py)
+- A KiCad AI guide warns that API-driven moves do not check courtyards, so DRC should run after every pass. — [pcbeditor.com (S)](https://pcbeditor.com/kicad-ai)
 
 ### Inferences
-- The consistent pattern in the best systems is **LLM → declarative intent (constraints, weights, hierarchy, regions, order) → classical optimizer → measured metrics/violations → LLM**. In this loop the LLM's mistakes are bounded by a legalizer, and its reasoning is auditable.
-- Raster masks (legal positions, HPWL-increase heatmap, RUDY congestion map, thermal map) rendered as images are a natural channel for multimodal models, following VeoPlace.
+- The best-supported loop is: **LLM → hierarchy, constraints, weights, priorities and side assignment → numeric placer → exact legalizer → metrics and conflict list → LLM**. Cypress's config, ALIGN-style constraints and the conflict-feature format give concrete interface designs for each arrow.
 
 ### Gaps
-- No published study measures how well LLM-authored constraint sets match expert constraint sets on PCBs, other than ModuPlace's CCG similarity loss and its LLM comparison table.
+- No study measures LLM-authored vs expert-authored PCB constraint sets, beyond ModuPlace's constraint-graph similarity and OmniLayout's relational-preservation metric.
 
 ---
 
 ## Q7. Evaluation metrics used in placement
 
 ### Takeaway
-HPWL is universal but repeatedly shown to be insufficient on its own. PCB papers now add **net crossings, surface-layer wires, alignment, legality (boundary, overlap, spacing), routed wirelength, via count, DRVs, routing completion, and EM IL/XT**. VLSI adds **density overflow, RUDY/routing congestion, and timing (TNS/WNS)**. Thermal work uses peak or junction temperature from thermal networks or NN surrogates.
+On PCBs, HPWL is necessary but insufficient. Current PCB papers report six kinds of metric:
+- **legality:** overlap, out-of-boundary, spacing/clearance;
+- **proxies:** HPWL, total Euclidean wirelength, RMST, net crossings, net separation, Surface Layer Wire count, first-priority HPWL, misalignment count, area ratio, RUDY;
+- **post-route ground truth:** routability (fraction of nets routed), routed wirelength or track length, vias, DRVs or unrouted nets;
+- **EM:** insertion loss and crosstalk;
+- **runtime;**
+- for LLM benchmarks, **schematic-relation preservation** and **reference similarity**.
 
 ### Cited Findings
-- HPWL is the default wirelength estimate (sum of bounding-box half perimeters). PCBAgent uses it as its main soft objective. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- CT proxy cost = normalized HPWL + top-10% density + top-5% smoothed congestion (weights 1/1/0.5). — [TILOS ProxyCost](https://github.com/TILOS-AI-Institute/MacroPlacement/tree/main/Docs/ProxyCost)
-- Proxy-cost gains did not reliably track timing or final chip metrics in the CT reproductions. — [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- RUDY (Spindler & Johannes 2007, routing-demand estimation) is cited by SA-PCB and used in Trace's PCB cost function. — [SA-PCB](https://github.com/The-OpenROAD-Project/SA-PCB); [Trace docs](https://docs.buildwithtrace.com/concepts/pcb-layout)
-- The DAC 2012 and ICCAD 2012 routability-driven placement contests set routability benchmark suites. — [ResearchGate DAC2012 contest](https://www.researchgate.net/publication/254005672_The_DAC_2012_routability-driven_placement_contest_and_benchmark_suite); [RePlAce](https://vlsicad.ucsd.edu/Publications/Journals/j126.pdf)
-- A routability-driven analytical placer (ICCAD 2011) notes a significant mismatch between wirelength models and congestion. — [ACM DL](https://dl.acm.org/doi/10.5555/2132325.2132348)
-- **PCB metrics in use:**
-  - PCBAgent: HPWL, NSLW, and a legality triple (within boundary, non-overlap, spacing). — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-  - ModuPlace: HPWL and net crossings during training, then routed wirelength, vias, IL and XT for evaluation. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-  - NS-Place: routed wirelength, vias, DRVs. — [arXiv 2210.14259](https://arxiv.org/pdf/2210.14259)
-  - HiePlace: wirelength, misaligned regions, runtime. — [HiePlace PDF](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
-  - Zhao 2025: routing completion rate, runtime, closeness to manual. — [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S016792602500224X)
-  - RL_PCB: HPWL, Euclidean wirelength, overlap, routed wirelength. — [RL_PCB](https://github.com/LukeVassallo/RL_PCB)
-- **Thermal metrics:** peak temperature from a thermal-resistance circuit (GA), 3D thermal model (PSO), or NN-predicted surface and junction temperature. — [J-STAGE](https://www.jstage.jst.go.jp/article/elex/17/3/17_17.20190737/_article); [ResearchGate PSO](https://www.researchgate.net/publication/224107144_Thermal_optimization_formulation_strategies_for_multi-constraints_electronic_devices_placement_on_PCB); [ResearchGate NN](https://www.researchgate.net/publication/3426137_Multidisciplinary_Placement_Optimization_of_Heat_Generating_Electronic_Components_on_a_Printed_Circuit_Board_in_an_Enclosure)
-- **Domain checks as metrics:** Quilter scores bypass-cap pin distance, loop/via-in-loop, coil proximity and crystal placement. — [Quilter 2026 guide](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
+- **NS-Place:** pre-route HPWL and net-separation cost; post-route FreeRouting wirelength, vias, and DRVs + unrouted nets from KiCad DRC. — [NS-Place (P)](https://arxiv.org/pdf/2210.14259)
+- **HiePlace:** HPWL_all, area ratio (sweepline), cost (priority-weighted wirelength), runtime, first-priority HPWL, misalignment count (MC), and crossings between the chip and first-priority parts. — [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf)
+- **Cypress:** routability, routed track length, runtime. Its code has HPWL, RMST, net-crossing and RUDY ops. — [abstract (A)](https://dl.acm.org/doi/10.1145/3698364.3705346); [code (P)](https://github.com/NVlabs/Cypress)
+- **OmniLayout:** overlap area (OO), out-of-boundary count (OoB), runtime, HPWL, net crossings (NC), net separation (NS), predicted routed wirelength (PRWL), routed ratio (RR), vias, schematic relational distance, and reference similarity; plus agentic constraint satisfaction, step count and refinement quality. — [OmniLayout (P)](https://arxiv.org/abs/2607.03261)
+- **Lim 2026:** total Euclidean wirelength (TEWL), argued to correlate better with routed length than HPWL, plus visual counts of overlaps and routing conflicts. — [Lim (P)](https://arxiv.org/abs/2602.23540)
+- **PCBAgent:** HPWL, NSLW and a legality triple. **ModuPlace:** HPWL and crossings for training; routed wirelength, vias, IL and XT for evaluation. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **VLSI:** the CT proxy (normalized HPWL, top-10% density, top-5% congestion) does not reliably track timing. RUDY (Spindler & Johannes 2007) is cited by SA-PCB and NS-Place and used by Trace. — [TILOS ProxyCost (A)](https://github.com/TILOS-AI-Institute/MacroPlacement/tree/main/Docs/ProxyCost); [NS-Place refs (P)](https://arxiv.org/pdf/2210.14259); [Trace (S)](https://docs.buildwithtrace.com/concepts/pcb-layout)
+- **Thermal:** peak or junction temperature from thermal networks, FEM, or NN/RBF surrogates. — [arXiv 2504.03808 (P)](https://arxiv.org/pdf/2504.03808); [J-STAGE (S)](https://www.jstage.jst.go.jp/article/elex/17/3/17_17.20190737/_article)
 
 ### Inferences
-- A practical PCB metric stack has four tiers: (1) **hard legality**: courtyard overlap, outline/keep-out containment, spacing (KiCad DRC courtyard checks); (2) **fast proxies**: HPWL weighted by net class, net-crossing count, RUDY map, SLW-like count; (3) **domain rules**: decap-to-pin distance, crystal distance, loop area of switching nodes, connector at edge, thermal spacing; (4) **ground truth**: autorouter completion %, vias, routed length, DRC errors.
+- Recommended KiCad metric stack:
+  1. **hard legality:** courtyard overlap, Edge.Cuts and keep-out containment, clearance (KiCad DRC);
+  2. **fast proxies:** net-class-weighted HPWL or TEWL, net crossings, RUDY map, SLW-like count, alignment count;
+  3. **domain rules:** decap-to-pin distance, crystal distance, switching-loop area, connector at edge, thermal spacing;
+  4. **periodic ground truth:** FreeRouting routability, routed length, vias, DRC errors.
 
 ### Gaps
-- No PCB paper validated how well HPWL, crossings or RUDY correlate with routed outcomes across a large board set.
+- No PCB study validates proxy-to-routed correlation across many boards. OmniLayout's PRWL vs RR data might allow this, but I could not extract its tables.
 
 ---
 
 ## Q8. Implications for an LLM-driven KiCad placer (concrete suggestions)
 
 ### Takeaway
-Build a **hybrid, constraint-centric pipeline**. The LLM decomposes the schematic into a module hierarchy and writes typed constraints and weights. A classical engine (SA over a module floorplan plus analytical or SA inner placement, then MILP/CP or greedy legalization) does the geometry. A router-in-the-loop evaluator returns structured metrics and violations for the LLM to act on. Avoid end-to-end RL or having the LLM emit raw coordinates. Both are the weakest-evidenced options for small, data-poor PCB settings.
+Build a **hybrid, constraint-centric pipeline**. The LLM owns **hierarchy, side assignment, constraints, weights, priorities and conflict strategy**. An open PCB-aware analytical engine owns geometry: Cypress (DREAMPlace-based, Apache-2.0, reads KiCad), extended with NTU-style clearance and pad-type density, or a simpler SA or force-directed engine. An **exact legalizer** (MILP or constraint graph) runs next, then a **FreeRouting-in-the-loop evaluator**. Do not let the LLM emit coordinates (OmniLayout, ModuPlace), and do not start with RL training.
 
 ### Cited Findings (evidence underpinning the suggestions)
-- Hierarchy is the top driver of quality on real PCBs (ModuPlace ablation). — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- LLMs emitting placements directly hallucinate, and zero-shot GPT-4o and Claude-3.5 produced worse constraint graphs than a fine-tuned 7B model. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- LLM steering via score reweighting plus incremental re-optimization of violating parts raised NSLW 39.6% in 2–3 rounds. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- Chip-centred ordering beat generic orderings by 22–30% HPWL. — [PCBAgent PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf)
-- Tuned SA matched or beat RL at lower cost in VLSI. — [TILOS MacroPlacement](https://github.com/TILOS-AI-Institute/MacroPlacement)
-- HPWL-only optimization can yield unroutable PCB placements. — [ModuPlace PDF](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
-- VLM region hints as soft anchors improved DREAMPlace. — [arXiv 2603.28733](https://arxiv.org/html/2603.28733v1)
-- LLM-evolved initialization drives most of EvoPlace's gains. — [Pith summary of EvoPlace](https://pith.science/paper/2504.17801)
-- KiCad's built-in autoplacer is a 1 mm-grid greedy ratsnest placer. — [ar_autoplacer.cpp](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp)
-- AI placement through KiCad's API needs DRC after every pass. — [pcbeditor.com](https://pcbeditor.com/kicad-ai)
+- **Hierarchy matters most.** It is ModuPlace's largest ablation effect, and every strong 2025 PCB placer is chip- or module-centric. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf); [PA-ICM (P)](https://arxiv.org/pdf/2502.14012)
+- **LLMs cannot place directly.** 2026 frontier multimodal models fail at dense legal PCB placement even with tools; GPT-4o and Claude-3.5 wrote worse constraint graphs than a fine-tuned 7B model. — [OmniLayout (P)](https://arxiv.org/abs/2607.03261); [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf)
+- **LLMs work as decision layers.** Steering by reweighting gave +39.6% NSLW (PCBAgent). Conflict prioritization gave +15% conflict resolution. — [PCBAgent (P)](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf); [conflict-prioritization abstract (A)](https://doi.org/10.1145/3804601.3804665)
+- **Open engine available.** Cypress offers two-sided density, Gumbel-softmax rotation, net-crossing and RUDY terms, KiCad and NS-Place converters, and a BOHB tuner. The NTU TCAD'25 paper reports beating it by more than 50% in routability using power-flow anchors and pad alignment, which suggests what to add. — [Cypress code (P)](https://github.com/NVlabs/Cypress); [NTU TCAD'25 (A)](https://doi.org/10.1109/tcad.2025.3618936)
+- **Legalizer patterns:** MILP with relative-position pruning (NS-Place), cardinal-relation MP (HiePlace), MILP constraint-graph legalization of sliced irregular parts (NTU DAC'25), and LP compaction with symmetry equalities (MAGICAL). — [NS-Place (P)](https://arxiv.org/pdf/2210.14259); [HiePlace (P)](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf); [NTU CG legalization (A)](https://doi.org/10.1109/DAC63849.2025.11133304); [MAGICAL (P)](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf)
+- **Evaluate after routing.** HPWL-only optimization can be unroutable (ModuPlace's critique of PCBAgent). The community evaluates with FreeRouting. — [ModuPlace (P)](https://yhhan.com/PDFs/ModuPlace_paper.pdf); [NS-Place (P)](https://arxiv.org/pdf/2210.14259)
+- **KiCad's built-in autoplacer is weak.** It is greedy on a 1 mm grid with no rotation since 7.0. — [ar_autoplacer.cpp (P)](https://github.com/KiCad/kicad-source-mirror/blob/master/pcbnew/autorouter/ar_autoplacer.cpp); [commit d649b288 (P)](https://gitlab.com/kicad/code/kicad/-/commit/d649b288a62aac5c31489bc41ab22149d7339014)
+- **Open benchmarks exist** (Cypress KiCad set, OmniLayout CC-BY-4.0). — [Cypress (P)](https://github.com/NVlabs/Cypress); [OmniLayout (P)](https://arxiv.org/abs/2607.03261)
 
 ### Inferences (my concrete suggestions)
-1. **Use a typed constraint DSL as the LLM's main output.** Model it on ALIGN's schema plus PCB additions. Hard constraints: `fixed(ref, x, y, rot, side)`, `on_edge(ref, edge, offset)`, `keepout(region, side)`, `side(ref|group, top|bottom)`, `rot_allowed(ref, {0,90,180,270})`, `inside(group, region)`. Soft constraints: `near(ref, pin|ref, max_mm, w)` for decaps, crystals and ESD; `align(refs, axis, w)`; `order(refs, dir)`; `symmetric(pairs, axis)`; `group(refs, compactness_w)`; `spread(heat_refs, min_mm)`; `away_from(ref, ref|region, min_mm)` for switching nodes versus analog or antennas. Each soft term carries an explicit weight, and the LLM owns the weights. Validate every constraint against the netlist and footprints before solving.
-2. **Generate the hierarchy with the LLM, ModuPlace-style but zero-shot friendly.** Start from KiCad sheet hierarchy and net names, ask the LLM to form functional modules (power input/protection, each regulator, MCU core + decoupling, crystal, each connector's ESD/filter, analog front-end, RF), and to give each module a side preference, a region or edge preference, and adjacency to other modules. Ground the step with RAG from datasheet "layout guidelines" sections and a few exemplar boards. ModuPlace showed fine-tuned models help, so a frontier model with good few-shot exemplars is the pragmatic substitute.
-3. **Run a two-level geometric engine.**
-   - (a) Module floorplan: SA over a sequence pair or B*-tree with soft module rectangles, using Hier-RTLMP-style weighted costs (outline, inter-module wirelength, edge/boundary affinity, keep-out/blockage, guidance region, side). This is fast for 5–30 modules.
-   - (b) In-module placement: a small analytical solver (quadratic or ePlace-style density with rotation as a variable, per Zhao 2025) or SA, with proximity constraints as quadratic penalties and the IC pre-placed. Use PCBAgent's chip-centred order (IC first, then passives by pad ring, clockwise) as the seed or sequence.
-   - (c) Legalization: CP-SAT or MILP no-overlap on courtyard rectangles with alignment snapping (NS-Place/HiePlace-style) at PCB scale (fewer than 500 parts), falling back to greedy displacement.
-   - (d) Optional refinement: SA-PCB-style local swaps and rotations under the full cost.
-4. **Seed with several deterministic initializations.** Use spectral (graph-Laplacian) embedding per NS-Place, LLM-specified module regions, and KiCad's "spread footprints" result. Optimize from each and keep a small Pareto set (wirelength, crossings, congestion, rule score) for the LLM or user to choose from. This mirrors Trace's multiple floorplan variants and VeoPlace's evolutionary selection.
-5. **Evaluate with a structured, multi-tier report, not one score.** Tiers: hard legality (courtyard overlap, outline, keep-out via KiCad DRC); proxies (net-class-weighted HPWL, net crossings, RUDY map, SLW-like count); domain rules (decap distance to its power pin, crystal trace length, switching-loop area proxy, connector-at-edge, thermal spacing); and periodically ground truth (Freerouting completion %, vias, routed length, DRC count). Return per-constraint violation lists naming refs so the LLM can reason locally, as in PCBAgent's tool library.
-6. **Close the loop the PCBAgent way.** The LLM reads the violation report and the user's natural-language feedback, edits constraints or weights, and requests **incremental** re-optimization of only the affected modules or parts. This keeps changes small and explainable.
-7. **Use images where they help.** Render the current placement plus masks (legal-position map for the next module, HPWL-increase heatmap, congestion and thermal maps) and let a multimodal LLM propose region anchors, as in VeoPlace. Feed the anchors back as soft constraints, never as final coordinates.
-8. **Handle two sides explicitly.** Treat side as a discrete per-module decision made by the LLM (e.g., bulk decaps or passives under a BGA on the bottom; tall or THT parts and connectors on top), then optimize each side separately with coupling through vias and through-hole pads, per the top-centralized / bottom-pin-oriented split in arXiv 2502.14012.
-9. **Pre-place mechanical anchors first.** Connectors, mounting holes, switches, LEDs and displays become `fixed` or `on_edge` constraints taken from the mechanical spec or user. KiCad's own docs recommend locking connectors before autoplacing.
-10. **Do not invest in RL training up front.** Use RL at most as a refiner (MaskRegulate-style), and only after a corpus exists. Spend the effort on (a) an open benchmark of real KiCad boards with human placements as references (e.g., drawn from a PCBWorld-like corpus), and (b) an offline EvoPlace-style loop in which the LLM evolves the initialization and cost heuristics of your own placer against that benchmark.
-11. **Make it deterministic and reproducible.** Fix seeds, log the full constraint set, weights and solver version for every placement, and write a human-readable "why" for each module location (which constraints were active and binding). This is the explainability layer reviewers can audit.
-12. **Know the KiCad specifics.** Apply results through the IPC API or pcbnew Python as one undo step (as `autoplace_tool` does), respect locked footprints, and run DRC after each pass. Do not rely on KiCad's built-in autoplacer beyond seeding: it uses a 1 mm grid, greedy ratsnest cost, and no rotation search in current master.
+1. **Use a typed constraint DSL as the LLM's main output,** modelled on ALIGN plus PCB additions:
+   - *Hard:* `fixed`, `on_edge(edge, offset)`, `keepout(region, side)`, `side(ref|group)`, `rot_allowed`, `inside(group, region)`, `clearance(class_a, class_b, mm)`.
+   - *Soft:* `near(ref, pin, max_mm, w)`, `ring(ic, refs, priority)` (HiePlace-style first ring), `align(refs, axis)`, `order(refs, dir)`, `symmetric(pairs, axis)`, `group(refs, w)`, `spread(heat_refs, min_mm)`, `away_from(ref, region, min_mm)`, `loop_compact(nets)` (power loops).
+   - Each soft term is compiled twice, MAGICAL/ALIGN-style: a smooth penalty during global placement, and an exact linear constraint during legalization, with infeasibility reported back.
+2. **Make hierarchy the LLM's first job.** Start from KiCad sheets, then compute "IC + pin-satellite" clusters from the netlist, then have the LLM name the modules and assign side preference, region or edge, and adjacency. Use RAG over datasheet layout-guideline sections, and optionally subgraph-match against a library of proven sub-layouts (D2BS-style reuse).
+3. **Have the LLM assign sides explicitly.** No academic placer optimizes sides, and LLMs left alone put about 80% of parts on top. Examples: decaps and small passives under BGAs or QFNs on the bottom, tall, THT and user-facing parts on top. Then run two-sided density (Cypress) with PA-ICM-style "bottom pins under the IC" clustering.
+4. **Geometric engine, in order of preference:**
+   - (a) Fork **Cypress**. Add pad-to-pad clearance, pad-type-aware two-sided density and power-flow anchor terms (from NTU DAC'25 and TCAD'25), and expose its JSON knobs to the LLM.
+   - (b) For small boards (under 100 parts) or tight constraints, use an SA module floorplanner over sequence pairs whose moves preserve constraints (ALIGN-style), then in-module placement with a HiePlace-style DP ring plus a small MP or force-directed step.
+5. **Legalize exactly with CP-SAT or MILP on sliced footprint rectangles** (NTU DAC'25), using relative-position pruning from global placement (NS-Place) and cardinal module relations (HiePlace) so it scales to a few hundred parts. Report the infeasible constraint subset to the LLM.
+6. **Score with a multi-tier report:** KiCad DRC legality; HPWL/TEWL, crossings, RUDY and alignment; domain rules; and periodic FreeRouting routability, length and vias. Emit a **conflict list with features** (severity, congestion, part category, violation type) so the LLM can prioritize and pick repair strategies, as in the 2026 conflict-prioritization paper. Re-optimize incrementally, as PCBAgent does.
+7. **Use images selectively.** Render placements with RUDY, thermal and legal-position masks, and let a multimodal LLM propose module regions (VeoPlace-style soft anchors). Never use its output as final coordinates; OmniLayout shows LMMs are weak at fine geometry.
+8. **Handle thermal and EMC with explicit, explainable terms.** Use a fast thermal surrogate (RBF or CNN, TRouter- and HSL-TFP-style) as a differentiable penalty or SA cost. For switching converters, add loop-area or anchor terms that keep the hot loop (input cap, switch, diode or inductor) compact, plus `away_from` constraints between aggressors and victims.
+9. **Pre-place mechanical anchors** (connectors, holes, switches, LEDs) as fixed or edge constraints, as KiCad's own workflow recommends.
+10. **Benchmark before claiming wins.** Run SA-PCB, NS-Place (if the code can be obtained) and Cypress baselines on the Cypress KiCad boards and an OmniLayout subset, using FreeRouting metrics. Use an EvoPlace-style offline loop to let the LLM evolve your placer's initialization and cost heuristics against that benchmark.
+11. **Keep it deterministic and explainable.** Fix seeds, log the constraint set, weights and solver versions, and write a per-module "why" listing the binding constraints.
+12. **KiCad integration.** Apply results through the IPC API or pcbnew Python as one undo step, respect locked footprints, and run DRC after each pass. Use KiCad's built-in autoplacer only as a seed or fallback (greedy grid, no rotation since 7.0).
 
 ### Gaps
-- No published system yet couples a frontier LLM, a constraint DSL, a classical PCB placer and router-in-the-loop on an open benchmark. Expected gains over SA-PCB or NS-Place baselines are therefore extrapolation.
-- Whether 2026 frontier models close ModuPlace's zero-shot gap (measured on Claude-3.5 and GPT-4o) is untested.
-- Runtime budgets for router-in-the-loop evaluation on 300–500-part boards with Freerouting were not measured in any source found.
+- No published system yet combines a frontier LLM, a constraint DSL, a PCB-aware analytical engine and router-in-the-loop on an open benchmark. Expected gains are extrapolated.
+- Licensing and reuse of NS-Place code (no public repository found) and of HiePlace (paper is CC BY-NC-ND; no code found) are unresolved. Cypress (Apache-2.0), SA-PCB (BSD-3), DREAMPlace (BSD-3), ALIGN and MAGICAL (BSD-3) and OmniLayout data (CC-BY-4.0) are the reusable assets identified.
+- FreeRouting runtimes for in-the-loop evaluation on 300–500-part boards were not measured in any source found.

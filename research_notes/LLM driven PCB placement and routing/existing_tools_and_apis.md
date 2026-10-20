@@ -1,6 +1,10 @@
 # Existing Tools, Products, Plugins and APIs for Automated / AI-Assisted PCB Placement and Routing (KiCad + LLM-agent focus), as of Oct 2026
 
-> Research-method note for the report writer: the web-search budget ran out partway through, and several primary domains could not be reached from this environment: kicad.org, dev-docs.kicad.org, quilter.ai, deeppcb.ai, flux.ai, arxiv.org, news.ycombinator.com, reddit.com, eevblog.com, forum.kicad.info, hackaday.com and jitx.com (DNS or proxy 403). For KiCad facts I went to primary sources on GitLab instead: the KiCad source tree, the IPC API `.proto` files, the dev-docs source (`kicad-dev-docs`) and the website/blog source (`kicad-website`). Facts about vendors whose sites were blocked come from search snippets of those sites or from press coverage. Each is labelled as such. Star counts and push dates come from GitHub search on 2026-10-20.
+> Research-method note for the report writer. **Pass 1** (restricted network): kicad.org, quilter.ai, deeppcb.ai, flux.ai, arxiv.org, HN, Reddit, EEVblog, forum.kicad.info, hackaday.com and jitx.com were unreachable. KiCad facts in that pass therefore come from primary sources on GitLab: the KiCad source tree, the IPC `.proto` files, the `kicad-dev-docs` source and the `kicad-website` blog source. **Pass 2** (2026-10-20, fuller access) filled the pass-1 gaps: TopoR, Electra, Specctra/Allegro PCB Router, Altium Situs, Siemens, CELUS, Circuit Mind, Diode, SnapMagic, EasyEDA/JLCEDA, route-rnd/toporouter, Horizon, LibrePCB, the KiCad PCM catalog, a broader MCP/LLM-tool sweep, PCBWorld, EEBench, and HN/KiCad-forum sentiment.
+>
+> **Provenance tags.** Bullets added in pass 2 carry **[P]** (read directly from the cited primary page, repo, source file, paper or API this session) or **[S]** (search-engine summary or secondary coverage only, not opened at the source). Pass-1 bullets have no tag. Their rule: GitHub/GitLab/PyPI/npm sources were read directly (primary); bullets that say "(snippet)" or "(search snippet)" were not.
+>
+> **Still unreachable in pass 2:** Reddit (the proxy returns 403 "Blocked"), repo.hu (pcb-rnd/route-rnd home; I used Debian's source mirror instead), horizon-eda.org, jlceda.cn. WebSearch was exhausted again near the end of pass 2, so a few items stay [S]. A separate agent is verifying KiCad API/DRC facts, Freerouting, KiCadRoutingTools, kicad-happy, the leading MCP servers, Quilter, DeepPCB, Flux, Allegro X AI and Zuken, so pass 2 adds little on those. Star counts and push dates come from GitHub search on 2026-10-20.
 
 ## 1. KiCad programmatic interfaces (IPC API, kicad-python/kipy, SWIG, kicad-cli, file formats, KiCad 9/10 automation features, built-in tools)
 
@@ -59,16 +63,30 @@ KiCad 10.0.x is the current stable line (10.0.0 shipped 2026-03-20; 10.0.7 on 20
 - In KiCad 10, `kicad-cli` has no Specctra DSN export. DSN export there means the GUI action (or `RunAction`) or SWIG. In KiCad 11, DSN export and SES import are both available over IPC and the CLI, so the Freerouting-style loop becomes fully scriptable.
 - No KiCad 11 release announcement appears in the 2026 blog source (the latest posts are 10.0.x). Given the annual cadence (9.0 in early 2025, 10.0 in March 2026), KiCad 11 most likely ships around Q1 2027. That timing is my inference.
 - Built-in levers an LLM agent can use without new algorithms: component classes and custom DRC rules (constraints), rule areas plus `repeatLayout` (multichannel reuse), PCB Design Blocks (layout reuse), "Attempt Finish Selected", and time-domain tuning profiles.
+- The IPC API exposes no router, but KiCad's push-and-shove (PNS) router can still be driven headlessly. LG AI Research's **PCBWorld-Engine** (GPLv3, derived from KiCad 9.0.8) exposes PNS through a pybind11 binding served over a unix socket, with 58 step-level Python APIs (Section 4). Horizon EDA embeds the same router (Section 4). That gives a third option beside `RunAction` and external routers: link PNS directly, which is license-compatible with a GPL-3.0 project. [P] — [PCBWorld-Engine](https://github.com/LGAI-Research/PCBWorld-Engine); [PCBWorld paper](https://arxiv.org/html/2607.05915)
 
 ### Gaps
-- I could not read the rendered kicad-python API docs (docs.kicad.org blocked), so I could not confirm which kipy version first exposes each method, or exactly which `Board` methods work against 10.0.x versus only against 11 nightlies. The proto diff above is the best proxy.
+- I could not read the rendered kicad-python API docs (docs.kicad.org blocked), so I could not confirm which kipy version first exposes each method, or exactly which `Board` methods work against 10.0.x versus only against 11 nightlies. The proto diff above is the best proxy. (A separate agent is re-verifying KiCad API facts in pass 2.)
 - I could not confirm whether the KiCad 10 interactive router added new automation features beyond tuning (e.g., multi-track routing), because the forum "post-v9 new features" thread was unreachable.
 - Exact KiCad 11 release timing and the final IPC feature list are unknown.
 
 ## 2. KiCad MCP servers, LLM integrations, and KiCad automation plugins/libraries
 
 ### Takeaway
-The KiCad-MCP ecosystem is large and young: GitHub search for "kicad mcp" returns 233 repositories. Most servers wrap file editing, `kicad-cli` (DRC/ERC/export) and, increasingly, the IPC API. Almost none contain real placement or routing intelligence. Where autorouting exists, it is delegated to Freerouting. The leaders are mixelpixx/KiCAD-MCP-Server (MIT, about 2.9k stars) and its AGPL successor Konnect (Rust, KiCad 10 IPC, about 1.3k stars). KiCadRoutingTools (MIT) is the notable exception that ships its own router plus Claude Code skills. Mature non-AI plugins (KiKit, iBOM, JLCPCB tools) cover panelization, BOM and fab output, not placement or routing.
+The KiCad-MCP and LLM-tool ecosystem is large, young and long-tailed. GitHub search for "kicad mcp" returns 233 repositories. A curated "KiCad AI" list (RepoRecon) holds 275 repos, of which only 11 have 50 or more stars. Most servers wrap file editing, `kicad-cli` (DRC/ERC/export) and, increasingly, the IPC API. Almost none contain real placement or routing intelligence.
+
+The decisive pass-2 finding comes from an independent tester, the SKiDL author: "I tested seven tools that actually created a routed PCB and they all used Freerouting."
+
+The leaders by stars:
+- mixelpixx/KiCAD-MCP-Server (MIT, about 2.5–2.9k)
+- kicad-happy (MIT skills, about 1.4k)
+- Konnect (AGPL, Rust, KiCad 10 IPC, about 1.3k)
+- Backplane (MIT, a KiCad fork with extra LLM instrumentation, about 670)
+- copperhead (Apache-2.0, which says it is "Not an autorouter", about 610)
+
+KiCadRoutingTools (MIT) and rjwalters/kicad-tools (MIT) are the exceptions that ship their own routers, and kicad-tools also ships placement optimizers.
+
+The official KiCad Plugin and Content Manager (PCM) has **no AI/LLM plugin at all**. Its routing entries are Freerouting, KiCad Routing Tools, OrthoRoute and a fanout tool. Its placement entries are arrange/replicate/spreadsheet tools, with no autoplacer.
 
 ### Cited Findings
 **MCP servers (stars / last push as of 2026-10-20)**
@@ -92,21 +110,113 @@ The KiCad-MCP ecosystem is large and young: GitHub search for "kicad mcp" return
 - Placement-related plugins: **kicad-kbplacer** (keyboard key placement and routing, 543 stars) — [GitHub](https://github.com/adamws/kicad-kbplacer); **CadMust-Neo** ("KiCad placement optimizer plugin using simulated annealing", 29 stars, created 2026-03) — [GitHub](https://github.com/remiblokker/CadMust-Neo); **kicad-auto-silkscreen** (refdes placement, 37 stars) — [GitHub](https://github.com/CGrassin/kicad-auto-silkscreen); **VelaTrace** (KiCad 10 lint plus its own router, 3 stars) — [GitHub](https://github.com/F-Blaze/VelaTrace)
 - assalas/pcb-designer-ai-agent (137 stars) claims ML placement, routing and SI across KiCad, Altium and Eagle — [GitHub](https://github.com/assalas/pcb-designer-ai-agent). Its description is a buzzword list (GNNs, RL, TensorFlow, PyTorch, thermal…) and I did not verify that it works. Treat with suspicion.
 
+**Official KiCad Plugin and Content Manager (PCM) catalog: index snapshot 2026-10-19 [P]**
+- The official repository index (`packages-v1.json`, updated 2026-10-19 11:02 UTC) lists **132 packages: 97 plugins, 18 colour themes, 17 libraries**. The metadata repo is `gitlab.com/kicad/addons/metadata` — [repository.json](https://repository.kicad.org/repository.json); [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json); [metadata repo](https://gitlab.com/kicad/addons/metadata)
+- **Routing plugins:**
+  - Freerouting `app.freerouting.kicad-plugin` 2.4.1 (KiCad ≥6.0, SWIG runtime, GPL-3.0, "needs Java JRE 25"). The PCM listing lags upstream v2.5.0.
+  - KiCad Routing Tools 0.22.1 (KiCad ≥9.0, SWIG, MIT, "Fast Rust-accelerated A* autorouter"). This is newer than the v0.15.x in its README snapshot.
+  - OrthoRoute 1.0.0 (KiCad ≥10.0, **IPC runtime**, MIT).
+  - Fanout Tool 1.0.0 (KiCad ≥10.0, IPC, MIT): QFN/QFP/BGA escape routing with "3-segment routing algorithms".
+  - A delisted "Length Matching" plugin.
+  — [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json)
+- **Placement and layout-reuse plugins:**
+  - Place Footprints 5.0.0 (KiCad 10.0–10.1, GPL-2.0; "Arrange footprints on a line, circle or grid")
+  - Replicate Layout 5.0.1 (KiCad 10.0–10.1, GPL-2.0). It still has a KiCad-10 build despite its README saying it is no longer updated.
+  - Save/Restore Layout 4.0.0 (KiCad 9.x)
+  - SubLayout 0.2 (BSD-3; "replicate, load, and save layouts of hierarchical sheets")
+  - HierarchicalPCB 1.1.0 (MIT; "Enforce sub-PCB layouts for sub-schematics")
+  - Layout Clone 0.3.3 (KiCad 10, IPC, MIT)
+  - Parts Placer 0.1.14 (LGPL-2.1; "Declaratively place components using a spreadsheet")
+  - Place By Sch 2.2.0 (GPL-3.0; places footprints from schematic positions)
+  - KLEPlacement, Keyboard footprints placer (kbplacer), PosOrient, Snap To Grid
+  - **None is an optimizing autoplacer.**
+  — [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json)
+- **No AI or LLM plugin is listed.** A regex scan of every package name and description for AI/LLM/GPT/Claude/MCP/assistant/copilot/chat found nothing. **The DeepPCB plugin is not in the official index**, which matches its vendor saying the PCM listing was "being finalized" — [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json)
+- 18 plugins already use the new **IPC runtime**. Examples: OrthoRoute, Fanout Tool, Layout Clone, Via Stitching, Via Patterns, Silk Reference Tools, a Net Class Clearance Matrix, Z0 Field Solver (writes net classes and design rules from a 2D field solve) and Z0 Wavelab — [packages-v1.json](https://gitlab.com/kicad/addons/repository/-/raw/main/packages-v1.json)
+
+**Broader sweep of KiCad AI/LLM tools beyond the top MCP servers (pass 2)**
+- **Scale:**
+  - GitHub search `kicad llm OR kicad claude OR kicad gpt OR kicad agent` returns 194 repos [P] — [GitHub search](https://github.com/search?q=kicad+llm+OR+kicad+claude+OR+kicad+gpt+OR+kicad+agent&type=repositories)
+  - devbisme's RepoRecon "KiCad AI" table (built by embedding-matching 55k KiCad-related repo descriptions) holds **275 entries**. Only 11 have 50 or more stars and 13 have 10 or more [P] — [RepoRecon kicad_ai](https://devbisme.github.io/RepoRecon/?topic=kicad_ai&filter=&sort=stars:desc); [data](https://devbisme.github.io/RepoRecon/kicad_ai.json); [forum post](https://forum.kicad.info/t/kicad-ai-related-projects/71760)
+- **aklofas/kicad-happy** (1,464★, MIT, created 2026-03-09). "AI coding agent skills for KiCad … Analyze schematics, review PCB layouts, EMC pre-compliance, SPICE simulation … prep boards for fabrication". It works with Claude Code and Codex. This is the "kicad-happy" named in the brief; it exists and is under separate verification [P] — [GitHub](https://github.com/aklofas/kicad-happy)
+- **i2cjak/Backplane** (673★, MIT, created 2026-09-06): "Agentic hardware development with lawful, deterministic KiCad/STEP viewers". It ships a **KiCad fork** that "adds additional instrumentation for LLM control (IPC schematic API, for instance)" and is agent-agnostic (Claude, Codex, Grok, OpenCode). No placement or routing automation is described [P] — [GitHub](https://github.com/i2cjak/Backplane)
+- **copperheadhq/copperhead** (614★, Apache-2.0, created 2026-07-18; "Cursor for circuit boards"):
+  - It edits `.kicad_sch`/`.kicad_pcb` S-expressions directly and runs `kicad-cli` ERC/DRC in a loop. Each mutation is git-snapshotted and rolled back if verification fails.
+  - Verbatim: "**Not an autorouter.** Routing stays human or delegated; copperhead produces the DRC-clean draft that layout tools optimize from."
+  - Self-assessed maturity: the agent loop has "not been observed passing end to end". It has an experimental 5-tool MCP server.
+  - Show HN got 250 points and 115 comments [P] — [GitHub](https://github.com/copperheadhq/copperhead); [HN](https://news.ycombinator.com/item?id=49610059)
+- **paul356/KiCad-AI-Assistant** (119★, MIT, KiCad ≥10, PyPI `kcaa`):
+  - A wxPython chat panel inside KiCad that starts an embedded MCP server with **111 tools in 15 categories**, including PCB placement (align, distribute, move, rotate, group), zones and DRC, plus FreeRouting integration (`autorouter.py`) and some IPC calls (e.g., "Update PCB from Schematic").
+  - Providers: OpenAI, Anthropic, Ollama, Bedrock.
+  - Forum users report it works with GPT-5.4 or DeepSeek but local Ollama models fail to tool-call (one fix was raising the Ollama context window to 128k) [P] — [GitHub](https://github.com/paul356/KiCad-AI-Assistant); [KiCad forum thread](https://forum.kicad.info/t/kicad-ai-assistant-a-llm-powered-kicad-plugin/69770)
+- **rjwalters/kicad-tools** (70★, MIT, about 6.9k commits): a file-based Python toolkit "for AI agents".
+  - Placement: force-directed and genetic-algorithm optimizers plus a hybrid, and a CMA-ES/Bayesian `kct optimize-placement`.
+  - Routing: an "A* PCB autorouter with trace optimization" (optional C++ backend, "10-100x A* speedup") and a multi-strategy `kct route-auto`.
+  - It self-reports that KiCadRoutingTools is faster and completes more nets on sparse and medium boards, while kicad-tools does better on some dense boards [P] — [GitHub](https://github.com/rjwalters/kicad-tools)
+- **HeyPCB/heypcb-mcp** (MIT client, created 2026-10-12): a front end to a **paid cloud service** (`api.heypcb.ai/mcp`). "Let HeyPCB design the board" tools (`build_board`) cover parts, placement, routing and DRC server-side. Local tools wrap `kicad-cli`. Bound KiCad folders are uploaded on change [P] — [GitHub](https://github.com/HeyPCB/heypcb-mcp)
+- **Others with traction:**
+  - zxkmm/kicad-harness (33★; "eyes and hands on a KiCad project")
+  - Zane456/PCB-Agent-Teams (76★; 9-skill multi-agent pipeline; licence marked "Noncommercial", so **not reusable**)
+  - nevenfo/kicad-agentic-mcp (Rust, KiCad 10; "LLM-based planning … with deterministic execution, state tracking, evidence, rollback")
+  - JITx-Inc/jitx-skills (Section 3)
+  - devbisme/boardforge ("Claude Code plugin distilled from other KiCad-related AI tools")
+  - ChengminLi/AI-PCB-layout (power-electronics skill "with a human review gate after every step")
+  — [P] [kicad-harness](https://github.com/zxkmm/kicad-harness); [PCB-Agent-Teams](https://github.com/Zane456/PCB-Agent-Teams); [kicad-agentic-mcp](https://github.com/nevenfo/kicad-agentic-mcp); [boardforge](https://github.com/devbisme/boardforge); [AI-PCB-layout](https://github.com/ChengminLi/AI-PCB-layout)
+- **Adom/Hydrogen "KiCad Bridge"** (Windows): a native Rust bridge that lets an AI drive the user's own KiCad GUI (open editors, place parts, DRC/ERC, export, screenshot windows back to the AI). In the KiCad forum the vendor claims NSF funding ("$10M from National Science Foundation"). **Unverified vendor claim** [P for the page, claim unverified] — [Adom wiki](https://wiki.adom.inc/adom/kicad-bridge); [forum](https://forum.kicad.info/t/testing-kicad-ai-tools/71769)
+
+**Independent hands-on tests of KiCad AI tools [P]**
+- Dave Vandenbout (devbisme, SKiDL author) runs `ai-circuit-design-tests`: each tool designs the same dual-channel 10 MS/s 12-bit USB 2.0 ADC board from a blank slate. His caveat: "None of these designs or findings has been validated yet" — [GitHub](https://github.com/devbisme/ai-circuit-design-tests)
+- Reported results (API-equivalent cost of the design run):
+
+  | Tool | Reported result | Cost |
+  |---|---|---|
+  | Konnect | "Routed 4-layer board, DRC clean" | $61.12 |
+  | kicad-happy | 0 ERC/DRC errors | $29.37 |
+  | mixelpixx kicad-mcp-server | 4 DRC errors (stock USB-C footprint) | $16.93 |
+  | kicad-mcp-pro | 0 errors | $19.42 |
+  | eda-agent | 0 errors | $18.47 |
+  | KiCad-AI-Assistant | 0 errors | $19.38 |
+  | kicad-harness | 0 errors | $10.87 |
+  | boardforge | 0 errors | $23.89 |
+  | **Null baseline** (Claude Code, no KiCad tools) | "Routed 4-layer board, 0 ERC/DRC errors; signals routed through the In1 GND plane" | $11.16 |
+
+  — [GitHub](https://github.com/devbisme/ai-circuit-design-tests)
+- His summary in the forum (2026-10-14): "**I tested seven tools that actually created a routed PCB and they all used Freerouting.** The AI might route a few nets using an A* algorithm, but that's about it." — [KiCad forum](https://forum.kicad.info/t/testing-kicad-ai-tools/71769)
+
 ### Inferences
 - Most MCP servers repackage the same three primitives: file-level S-expression edits, `kicad-cli` runs, and (lately) IPC CRUD. The differentiator for a new project is not tool coverage, which already reaches 200–480 tools elsewhere. It is placement and routing quality, plus a tight verify loop of DRC, scoring and rendering feedback.
 - Tool-count inflation is a known LLM usability problem. eda-agent's two-tool "catalog/invoke" mode and Konnect's "on-demand toolsets" are both workarounds. A smaller set of high-level, verifiable tools is likely better.
 - KiCadRoutingTools is the closest existing analogue to "LLM agent + real routing engine for KiCad". Its MIT license makes it reusable in a GPL-3.0 project.
 - kiutils and kicad-skip PyPI releases predate KiCad 9 and 10. File-level editing may need its own maintained S-expression layer, or a move to KiCad 11 headless IPC.
+- **"AI KiCad tool" today in practice means LLM orchestration plus Freerouting for copper.** The devbisme tests show a no-tools Claude Code baseline producing a "DRC-clean" 4-layer board for $11, cheaper than most tool-augmented runs. Its flaw (signals routed through the GND plane layer) is exactly the kind DRC does not catch. So "0 DRC errors" is a weak quality metric. A differentiated project needs (a) its own placement intelligence, (b) routing quality beyond Freerouting defaults, and (c) layout-quality checks beyond DRC: plane integrity, return paths, decoupling distance.
+- The PCM has no AI plugins, and plugins are moving to the IPC runtime (18 already). An IPC-runtime plugin that also exposes MCP would be a first in the official catalog.
 
 ### Gaps
-- I did not find the "KiCad AI", "Circuit-Tracer" or "kicad-happy" projects named in the brief. GitHub search could not confirm they exist, and web search was exhausted.
-- I did not verify per-tool behaviour or quality for any MCP server, only README claims.
-- I could not confirm whether DeepPCB's KiCad plugin uses SWIG or IPC.
+- "Circuit-Tracer" and a KiCad plugin literally named "KiCad AI" were not found. Closest matches: KiCad-AI-Assistant (paul356), colaco1123/K-AI (2★) and jasiek/kicad-llm-plugin (9★) — [RepoRecon data](https://devbisme.github.io/RepoRecon/kicad_ai.json). kicad-happy exists (above).
+- The devbisme results are unvalidated. Apart from the null baseline, the table does not say which router each tool used. The forum summary says all seven routed tools used Freerouting.
+- I could not confirm whether DeepPCB's KiCad plugin uses SWIG or IPC. It is not in the official PCM index.
 
 ## 3. Commercial and open products for autorouting and AI placement/routing (Freerouting, Quilter, DeepPCB, Flux, JITX, tscircuit, atopile, incumbents)
 
 ### Takeaway
-Two kinds of serious automated layout products exist today. (1) **Cloud AI layout services**: Quilter (placement plus routing, physics-aware, KiCad/Altium/Cadence/Siemens files in and out, project-based pricing), DeepPCB (RL-based routing, now also placement, pay-per-hour, KiCad plugin), and Flux AI Auto-Layout (routing only, inside Flux's own editor). (2) **Classic autorouters**, led on the open side by **Freerouting**. Freerouting is GPL-3.0 and changed fast in 2026: v2.5.0 adds native CLI binaries, a REST `/v1/autoroute`, an MCP tool, a direct KiCad 10 IPC integration, and a 1,157-board benchmark. Incumbent EDA vendors (Cadence Allegro X AI, Zuken CR-8000 AIPR) announced AI place-and-route in 2023 but are closed and not KiCad-integrated. Code-first tools (atopile, tscircuit, JITX, SKiDL) automate design capture. Of these, only tscircuit ships its own autorouter (MIT).
+Three kinds of automated layout products exist today.
+
+1. **Cloud AI layout services:**
+   - Quilter: placement plus routing, physics-aware, KiCad/Altium/Cadence/Siemens files in and out, project-based pricing.
+   - DeepPCB: RL routing plus placement, pay-per-hour, KiCad plugin.
+   - Flux AI Auto-Layout: routing only, inside Flux.
+   - Newer entrants: HeyPCB (MCP-first cloud service) and Diode Computers (AI-plus-engineer design service with an MIT KiCad-generating toolchain).
+2. **Classic DSN/SES autorouters:**
+   - Open side: led by Freerouting (GPL-3.0, very active in 2026).
+   - Commercial: Cadence's Allegro PCB Router (the original Specctra, shape-based), Konekt Electra (shape-based, actively updated, v10.10 in July 2026, €145/month or €2,495 perpetual, lists KiCad), TopoR (topological; now a module of Eremex's Russian Delta Design suite, with the English product page gone) and a closed GPU/RL "PCB Auto Router" desktop tool.
+   - Altium's Situs (topological) is built into Altium Designer. EasyEDA/JLCEDA ships a Freerouting-derived router (Standard) and, since EasyEDA Pro V3.2.148 (2026-06-01), a "brand new auto placement (dual engine)" and auto routing with equal-length diff pairs.
+3. **Incumbent "AI" programmes:**
+   - Cadence Allegro X AI and Zuken AIPR (2023 announcements).
+   - Siemens: AI-assisted features in PADS Pro Essentials/Xpedition Standard (May 2025), and the agentic, MCP-based **Fuse EDA AI Agent** (March 2026), which "aids layout" in Xpedition but makes no autonomous-placement claim.
+
+Front-end AI startups (CELUS, Circuit Mind, SnapMagic, Cadstrom) do schematic, BOM or verification work, **not layout**. Frontier labs entered in Sept 2026, when OpenAI demoed GPT-6 Astra doing KiCad layout. Community testers report the routing went through Freerouting [S]. The atopile-run EEBench deliberately excludes layout from v1.
+
+Code-first tools (atopile, tscircuit, JITX, SKiDL, Diode's Zener) automate design capture. tscircuit (MIT autorouter plus a placement packer) and JITX (proprietary routing solvers in an AI-writes-Python loop) also automate geometry.
 
 ### Cited Findings
 **Freerouting** (GPL-3.0, 2,123 stars, pushed 2026-10-20)
