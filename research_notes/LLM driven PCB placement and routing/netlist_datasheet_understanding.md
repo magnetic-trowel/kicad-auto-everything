@@ -1,583 +1,831 @@
 # Circuit Understanding for Layout Intent: Netlist + Schematic + Datasheet → Semantically Annotated Design
 
-> Scope: front end of an LLM-driven KiCad placement+routing system — recognizing functional blocks, classifying nets, extracting layout constraints from datasheets/app notes, and capturing designer intent in KiCad.
+> **Scope.** The front end of an LLM-driven KiCad placement and routing system. It covers:
+> - recognizing functional blocks;
+> - classifying nets;
+> - extracting layout constraints from datasheets and app notes;
+> - capturing designer intent in KiCad.
 >
-> **Method note (read first).** In this session, the shared web-search budget ran out after about 20 queries. Direct page fetches were also blocked by the egress proxy for almost every host: arXiv, IEEE, ACM, docs.kicad.org, ti.com, flux.ai, quilter.ai, celus.io, digikey.com, nexar.com and huggingface.co all failed. **Only raw.githubusercontent.com was reachable.** As a result:
-> (a) primary GitHub sources (READMEs, docs and source code) were read in full;
-> (b) paper findings come from search-engine summaries of the arXiv/IEEE pages and were **not** read in full;
-> (c) where only an aggregator was found, it is flagged.
+> Per-interface rule packs (USB, Ethernet, DDR and so on) are covered by another researcher. They appear here only briefly.
+>
+> **Provenance tags (used on every finding).**
+> - **[P-full]**: primary source, read in full or across the relevant sections this session (PDF or page text pulled and checked).
+> - **[P-abs]**: primary source, but only the abstract or metadata was read (arXiv API record, publisher abstract).
+> - **[P-doc]**: vendor or project documentation, read directly.
+> - **[S]**: search-engine summary or aggregator. Not verified against the original.
+>
 > All arXiv items are **preprints** unless a venue is named. Dates are as of 2026-10-20.
+>
+> **Method.** There were two passes.
+> - **Pass 1** was restricted: only raw.githubusercontent.com was reachable.
+> - **Pass 2** had full internet access. arXiv, docs.kicad.org, ti.com, docs.quilter.ai, docs.flux.ai, celus.io, huggingface.co and PMC were all reachable.
+> - In pass 2 the shared web-search quota ran out partway through. After that, only known URLs were fetched directly; no further searching was done.
+> - Still unreachable in pass 2: IEEE Xplore (HTTP 418), dl.acm.org (403), analog.com, st.com and snapeda.com.
 
 ---
 
 ## 1. Subcircuit / structure recognition from netlists (graph matching, GNNs, rules, LLMs) and reported accuracy
 
 ### Takeaway
-There are four recognition approaches, and they have different strengths:
-- **Template subgraph matching (VF2)** is exact and fast on known topologies.
-- **GNNs** handle structural variants (GANA/ALIGN, analog IC level).
-- **Rule/heuristic detectors** over pin names plus neighbour types are the most mature approach at *board level* (kicad-happy: 60+ detectors tested on ~5,800 KiCad projects).
-- **Pure LLM netlist reading** is unreliable on topology. GENIE-ASI reaches F1 1.0 on simple structures but only 0.31 on complex subcircuits, and on the CIRCUIT benchmark the best model scores 48%.
+Recognition approaches split cleanly by reliability:
+- **Exact template matching (VF2)** is near-perfect on known topologies.
+- **GNNs** handle structural variants, but they need rule-based post-processing to reach 100%. GANA's GCN alone scored 79.8–98.2% node accuracy on its test sets. Post-processing lifted all 275 test cases to 100%.
+- **Rule/heuristic detectors over pin names plus neighbour types** are what production board-level tools actually ship (Quilter, kicad-happy).
+- **LLMs reading netlists directly are unreliable on relational/topological queries.** On NetlistBench, "terminal-neighbour incidence" ranges from 2% to 97% across models. GENIE-ASI's strict F1 falls from 0.97 to 0.31 as structures get more abstract.
 
-The strongest pattern so far is "the LLM writes detector code, and that code executes deterministically" (GENIE-ASI), or "deterministic detectors, with the LLM reasoning on top of them" (kicad-happy).
+LLMs do much better when they **write detector code** (GENIE-ASI), or when they are given a **compact JSON netlist with tool-based filtering** rather than raw KiCad files or PDFs (PCB-QA: 0.88 vs 0.55 vs 0.43 accuracy).
 
 ### Cited Findings
 
-**Graph/template matching (deterministic)**
-- ALIGN (an open-source analog layout generator from DARPA IDEA, built by UMN, Texas A&M and Intel) starts with a *circuit annotation* step. This step "creates a multilevel hierarchical representation of the input netlist", using a built-in template library (`basic_template.sp`) plus a user-extensible `user_template.sp` to "identify hierarchies in the design". Optional per-hierarchy constraint files are JSON (`<hierarchy>.const.json`). — [ALIGN-public README](https://github.com/ALIGN-analoglayout/ALIGN-public)
-- ALIGN's subgraph matcher is NetworkX `GraphMatcher(...).subgraph_isomorphisms_iter()`. Node matching is by device model class (a library model must be in the instance's model-class bases), and edge matching is by **pin label** (`x.get('pin') == y.get('pin')`). Matches are sorted to remove non-determinism, overlapping matches are skipped, and a match is kept only if `check_constraint_satisfiability` passes. — [ALIGN align/schema/graph.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/graph.py)
-- NetworkX's `GraphMatcher` is its VF2 implementation. — [NetworkX VF2 docs](https://networkx.org/documentation/stable/reference/algorithms/isomorphism.vf2.html) (standard library fact; page not fetched this session)
-- ALIGN constraint files use typed JSON records such as `{"constraint": "PowerPorts", "ports": ["VDD"]}` and `{"constraint": "GroundPorts", "ports": ["0"]}`. — [ALIGN telescopic_ota.const.json](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/examples/telescopic_ota/telescopic_ota.const.json)
-- Hierarchical symmetry-constraint extraction (UMN, ICCAD 2020): a graph-based, hierarchical method that extracts multiple symmetry axes. Prior approaches handled only simple symmetries. — [arXiv 2010.00051 (ar5iv)](https://ar5iv.labs.arxiv.org/html/2010.00051)
-- HiLSD (ASP-DAC 2004) pattern-matches subcircuits first and then looks for symmetry only inside those instances. This "significantly curtails the search-space and ignores all unintended axes of symmetry". — [HiLSD ASP-DAC'04](https://labs.ece.uw.edu/ssrl/workspace/iprail/web_IPRAIL/ASPDAC04_2.pdf)
+**Exact graph / template matching**
 
-**GNN-based recognition**
-- GANA (Kunal et al., DATE 2020, pp. 55–60):
-  - A trained GCN identifies netlist elements for blocks at the upper levels of the hierarchy. Lower-level structures are identified with graph-based algorithms.
-  - It is motivated by the observation that "traditional graph-based methods cannot easily identify the large number of structural variants".
-  - Recognition "organically detects layout constraints such as symmetry and matching".
-  - It recognizes OTAs, LNAs, mixers, oscillators and band-pass filters.
-  - Sources: [DATE 2020 proceedings](https://past.date-conference.com/proceedings-archive/2020/html/0921.html); [IEEE 9116329](https://ieeexplore.ieee.org/document/9116329)
-- GANA's input format is an N×N adjacency matrix, an N×D node-feature matrix and an N×E binary label matrix. The released data covers OTA circuits converted from SPICE (`read_netlist.py`, then `preprocess_data.py`). — [GANA_circuit_data repo](https://github.com/kkunal1408/GANA_circuit_data)
-- Journal extension: "GNN-Based Hierarchical Annotation for Analog Circuits", IEEE TCAD 2023, vol. 42, no. 9, pp. 2801–2814, covering "a variety of GNN strategies". — [DBLP entry](https://dblp.uni-trier.de/pid/241/4371.html); [UMN page](https://neurospin.umn.edu/gnn-based-hierarchical-annotation-analog-circuits)
-- PCB-level graph learning:
-  - A benchmark dataset frames **PCB netlist partitioning as graph node classification**: components are nodes, electrical connections are edges, and the stated use is tasks like functional recognition. — [PMC article](https://pmc.ncbi.nlm.nih.gov/articles/PMC13046837/)
-  - Separately, arXiv 2506.10577 models PCB schematics as **bipartite graphs** (net nodes plus symbol nodes, with pins as edges) and uses GNNs to predict automatic addition of components. Preprint. — [arXiv 2506.10577](https://arxiv.org/pdf/2506.10577)
+- **ALIGN** (DARPA IDEA; UMN, Texas A&M and Intel) starts with a *circuit annotation* step that "creates a multilevel hierarchical representation of the input netlist". Hierarchies are identified using a template library (`basic_template.sp`) plus `user_template.sp`. Optional constraint JSON files are per hierarchy. **[P-doc]** — [ALIGN-public README](https://github.com/ALIGN-analoglayout/ALIGN-public)
+  - Its matcher is NetworkX `GraphMatcher(...).subgraph_isomorphisms_iter()`.
+  - Node matching is by device model class; edge matching is by **pin label**.
+  - Matches are sorted to remove non-determinism, overlapping matches are skipped, and a match is kept only if `check_constraint_satisfiability` passes.
+  - **[P-full]** — [align/schema/graph.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/graph.py)
+- **GANA uses VF2** for primitives (current mirrors, differential pairs). Because library subgraphs have "O(1) diameter and O(1) degree", the authors estimate VF2's complexity at O(n) for their problem. **[P-full]** — [GANA, DATE 2020 PDF](https://www.date-conference.com/proceedings-archive/2020/pdf/0921.pdf)
+- **PCBSchemaGen v2** (board level) runs a verifier layer "L3 Topology".
+  - It does VF2 subgraph isomorphism against **five motifs**: half-bridge, synchronous buck, three-phase inverter, Pierce oscillator and Pi filter.
+  - It uses three relaxations:
+    - a *key-component filter*: only IC, MOSFET and inductor pins must match exactly;
+    - *boolean prefiltering*: a cheap signature gate before VF2;
+    - *passive-element grouping*: passive terminals on a shared net collapse to one class.
+  - Per-task motif eligibility is decided by the IC list.
+  - **[P-full]** — [arXiv 2602.00510v2, App. A.3](https://arxiv.org/abs/2602.00510); [PCBSchemaGen_v2 repo](https://github.com/HZou9/PCBSchemaGen_v2)
+- **HiLSD** (ASP-DAC 2004) pattern-matches subcircuits first and then searches for symmetry only inside those instances. **[S]** — [HiLSD PDF](https://labs.ece.uw.edu/ssrl/workspace/iprail/web_IPRAIL/ASPDAC04_2.pdf)
+- **ICCAD 2020 hierarchical symmetry extraction** (UMN) uses graph-based methods to find multiple symmetry axes. **[S]** — [arXiv 2010.00051](https://ar5iv.labs.arxiv.org/html/2010.00051)
+- **Classical rule-based recognition** still serves as ground truth in recent work. GENIE-ASI's labels come from the rule-based functional block decomposition of Abel, Neuner and Graeb (*Integration* 85, 2022) inside the ACST tool. The "sizing rules method" (Massier et al., TCAD 2008) is the classic library-based approach. **[P-full]** (as cited in GENIE-ASI) — [arXiv 2508.19393](https://arxiv.org/pdf/2508.19393)
 
-**Rule-based recognition at board level (most directly reusable)**
-- kicad-happy (MIT, Python) works as follows:
-  - It parses `.kicad_sch` S-expressions for KiCad 5–10 and walks hierarchical and multi-instance sheets.
-  - It builds nets by **union-find on pin coordinates** (0.01 mm merge tolerance).
-  - It then runs "60+ signal, domain, validation, and audit detectors", each "a pure function that looks for specific circuit patterns in the connectivity graph". Detectors include voltage dividers, RC/LC filters, regulators, transistor circuits, op-amp configurations, current sense, TVS/ESD mapped to the interfaces they protect, crystals with load caps, H-bridges, I2C/SPI/UART/CAN/RS-485, RF chains, Ethernet, HDMI, memory, BMS and more.
-  - Detectors run in dependency order: dividers are found first, then regulators reference them.
-  - Source: [kicad-happy how-it-works](https://github.com/aklofas/kicad-happy/blob/main/how-it-works.md)
-- kicad-happy regulator recognition:
-  - It scans IC pin names (normalized, with trailing digits stripped) for FB/ADJ/COMP, SW/BOOT/BST, VIN/VOUT, EN/SHDN, PG and SS.
-  - Classification rules: **LDO** = FB plus ≥2 power pins and no SW/BOOT; **Switching** = SW+BOOT, or SW plus an inductor on the output net; **Charge pump** = BOOST and no FB.
-  - False-positive guard: "An IC with SW but no inductor on the switch net and no regulator keywords… is NOT classified as a switching regulator" (to avoid motor drivers).
-  - Vout = Vref×(1+Rtop/Rbot), using a 150+ entry Vref table, with a fallback to the voltage encoded in the net name (e.g., `+3V3`).
-  - Source: [methodology_schematic.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
-- Other kicad-happy detector rules:
-  - **Crystal**: a crystal's two non-power nets, each with a capacitor to ground.
-  - **Decoupling**: capacitors directly between a power rail and ground, grouped per rail with capacitance summed.
-  - **RC filter**: an R–C pair sharing exactly one non-power net; the type depends on which element goes to ground.
-  - **Divider**: two resistors sharing a mid-node, with power at one end and ground or power at the other. It is rejected if the mid-node is a named rail with more than 4 pins.
-  - Source: [methodology_schematic.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
-- kicad-happy design stance: "bugs produce *missing data*, not *wrong data*… it's better to miss a voltage divider than to report one that doesn't exist".
-  - It is tested on a harness of **5,829 open-source KiCad projects** (KiCad 5–10) with baselines, assertions, and LLM review whose confirmed findings are promoted to assertions.
-  - "Detection accuracy is harder to quantify — you can't count what you didn't catch."
-  - Source: [kicad-happy how-it-works](https://github.com/aklofas/kicad-happy/blob/main/how-it-works.md)
-  - Note that the detector count is inconsistent across docs: the README says "40 detectors total" in the domain row, while how-it-works says "60+". — [kicad-happy README](https://github.com/aklofas/kicad-happy)
+**GNN-based recognition (analog IC level) — accuracy**
 
-**LLM-based netlist understanding and benchmarks**
-- **GENIE-ASI** (MLCAD 2025; arXiv 2508.19393, with Sony AI involvement):
-  - A training-free LLM method. First it derives natural-language instructions from a few examples, then it turns them into **Python code that identifies subcircuits in unseen SPICE netlists**.
-  - It introduces a benchmark built from op-amp netlists.
-  - Reported F1: **1.0 on simple structures** ("matching rule-based methods"), **0.81 on moderate abstractions** and **0.31 on complex subcircuits**.
-  - Sources: [arXiv 2508.19393](https://arxiv.org/pdf/2508.19393); [Sony AI publication page](https://ai.sony/publications/genie-asi-generative-instruction-and-executable-code-for-analog-subcircuit-identification); [Sony MLCAD 2025 blog](https://ai.sony/blog/advancing-analog-design-with-ai-sony-ais-contributions-at-mlcad-2025)
-  - The same Sony blog describes **Schemato**, a fine-tuned LLM that converts netlists into LTspice schematics. — [Sony blog](https://ai.sony/blog/advancing-analog-design-with-ai-sony-ais-contributions-at-mlcad-2025)
-- **CIRCUIT** (arXiv 2502.07980, Feb 2025; preprint): 510 QA pairs on analog circuit interpretation. The best model, GPT-4o, reached **48.04%**, and models "struggled most with circuit topology understanding". — [arXiv 2502.07980](https://www.arxiv.org/pdf/2502.07980)
-- **AMSbench** (arXiv 2505.24138; preprint): evaluates multimodal LLMs on analog/mixed-signal schematics, netlists and QA. Models do fairly well on textbook knowledge but poorly on industry-style performance trade-offs. — [arXiv 2505.24138](https://arxiv.org/pdf/2505.24138)
-- **AITEE** (arXiv 2505.21582; preprint): evaluates circuit description from 24 hand-made netlists, scored 0–4 with GPT-4 as judge. — [arXiv 2505.21582](https://arxiv.org/pdf/2505.21582)
-- **NetlistBench** (listed as arXiv 2608.12197): 2,342 cases across 24 task families (connectivity recognition, edits, equivalence judgment). Simple local edits score high, while device addition and equivalence judgment score noticeably lower. — **Aggregator only**: [tldr.takara.ai summary](https://tldr.takara.ai/p/2608.12197); primary paper not verified.
-- **Masala-CHAI** (NYU; arXiv 2411.14299; preprint):
-  - An LLM plus custom DNN pipeline (YOLO component detection and a Hough-transform model) that extracts SPICE netlists from schematic images. It covers about 7,500 schematics from 10 textbooks.
-  - Fine-tuned models used inside AnalogCoder give a "46% improvement in Pass@1".
-  - A May 2026 V2 adds a multi-agent pipeline: a component-validation agent, a connectivity/netlist agent that runs ngspice, and a judge allowed up to 2 revisions.
-  - Sources: [Masala-CHAI repo README](https://github.com/jitendra-bhandari/Masala-CHAI); [arXiv 2411.14299](https://arxiv.org/abs/2411.14299v5)
-- A data-quality audit by AnalogRetriever (arXiv 2604.23195; preprint) found that of Masala-CHAI's 6,371 schematic images, only 6,069 have paired netlists and captions, and the netlists needed LLM-based repair. — [arXiv 2604.23195](https://arxiv.org/pdf/2604.23195)
-- **AnalogCoder** (AAAI 2025 oral): a training-free LLM agent that frames analog design as Python code generation and keeps a "circuit skill library" of reusable subcircuits.
-  - It solved **20 of 24** benchmark tasks.
-  - The README's leaderboard shows small open models with near-zero Pass@1 (e.g., Llama2-7B 0.0, Llama3-8B 0.1).
-  - Source: [AnalogCoder repo](https://github.com/laiyao1/AnalogCoder); extended version AnalogCoder-Pro [arXiv 2508.02518](https://arxiv.org/abs/2508.02518)
-- **PCB-Bench** (ICLR 2026):
-  - About 3,700 text questions on placement and routing.
-  - About 500 image+text problems, including "functional block recognition" and "differential-pair continuity analysis".
-  - 174 real OSHWHub projects, where models describe board function from an EDA screenshot alone. Metrics are BERTScore/SBERT and P/R/F1.
-  - Sources: [PCB-Bench project page](https://digailab.github.io/PCB-Bench/); [OpenReview](https://openreview.net/forum?id=Q5QLu7XTWx)
-- Netlist→schematic and schematic→netlist conversion tools are related but separate problems: Netlistify (schematic image to netlist, validated by simulation) — [ResearchGate](https://www.researchgate.net/publication/396395178_Netlistify_Transforming_Circuit_Schematics_into_Netlists_with_Deep_Learning); Weave (verified netlist-to-schematic via layered graph layout; arXiv 2607.03835, preprint) — [arXiv 2607.03835](https://arxiv.org/pdf/2607.03835); AMSnet-KG (a netlist dataset with knowledge-graph RAG) — [ACM DL](https://dl.acm.org/doi/10.1145/3736166).
+- **GANA** (Kunal et al., DATE 2020, pp. 55–60). **[P-full]** — [DATE 2020 PDF](https://www.date-conference.com/proceedings-archive/2020/pdf/0921.pdf)
+  - **Training data:**
+    - OTA bias set: 624 circuits, 32,152 nodes, 2 labels.
+    - RF set: 608 circuits, 21,886 nodes, 3 labels (LNA, mixer, oscillator).
+    - 18 node features (element type, whether a value is low, medium or high, etc.).
+    - 80:20 train/validation split. Training circuits come from textbooks and papers in SPICE format.
+  - **Test results (GCN alone):**
+
+    | Test set | Circuits | Nodes | GCN accuracy |
+    |---|---|---|---|
+    | OTA bias | 168 | 9,296 | 90.5% |
+    | Switched-capacitor filter | 1 | 57 | 98.2% (56/57) |
+    | RF | 105 | 17,640 | 83.64% |
+    | Phased-array system | 1 | 902 | 79.8% |
+
+  - **After post-processing:**
+    - OTA bias goes from 90.5% to 100% after "Postprocessing I".
+    - RF goes from 83.64% to 89.24% after Postprocessing I, then to 100% after "Postprocessing II". Postprocessing II uses the antenna at the LNA port and the oscillating signal at the oscillator port.
+    - The paper's conclusion: "postprocessing provides 100% accuracy in all 275 test cases evaluated here".
+    - Postprocessing II "requires domain-specific annotation, and may require new rules as new classes of subcircuits are added".
+  - **Constraints per recognized class:**
+    - OTA: symmetric about the differential-pair axis.
+    - LNA: "placed close to the antenna".
+    - LNAs and mixers: guard rings.
+    - Oscillators and BPFs: symmetric about the cross-coupled pair.
+    - Wireless blocks: minimize wire length.
+- **GANA journal version**, "GNN-Based Hierarchical Annotation for Analog Circuits" (IEEE TCAD 2023, vol. 42, no. 9, pp. 2801–2814): the abstract reports a "high degree of accuracy". Its results tables were *not* retrieved because IEEE Xplore was blocked. **[S]** — [UMN page](https://neurospin.umn.edu/gnn-based-hierarchical-annotation-analog-circuits); [DBLP](https://dblp.uni-trier.de/pid/241/4371.html)
+- **R-SAGE (relational GraphSAGE)** (ISQED 2024) frames recognition as multi-class link prediction of "analog functional pairs".
+  - Dataset: 14 circuits, 219 transistors, 120 functional pairs across 7 primitive categories.
+  - **Macro F1 0.864 vs VF2 0.841**; test time 80.3 ms vs 594 ms.
+  - Device sizes are deliberately not used as features, so the model stays technology-independent.
+  - **[P-abs]** — [ISQED 2024 session page](https://isqed.org/English/Archives/2024/Technical_Sessions/144.html)
+- **MCE-HGCN** (*Micromachines*, June 2025) uses a heterogeneous attribute multigraph, mixed-domain attention and an SVM classifier to extract **matching constraints**. Mean **F1 0.917** across processes and circuit types. **[P-abs]** — [PMC12195540](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC12195540/)
+- **GCN classification with data augmentation** for analog circuit classes (*Sensors*, March 2023) is motivated by the small number of available schematics. **[P-abs]** — [PMC10054122](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10054122/)
+- **GNN region prediction for target-circuit matching** in large netlists (ICCAD 2025) predicts high-probability regions instead of doing node-to-node matching, for scalability. **[P-abs]** — [arXiv 2507.19518](https://arxiv.org/abs/2507.19518)
+- A GAT model for analog circuit design automation (ACCV 2024 workshop) reports 90.9% accuracy, 91.6% precision and 91.9% mAP versus GraphSAGE and other baselines. **[S]** — [CVF open access](https://openaccess.thecvf.com/content/ACCV2024W/MLCSA2024/html/Li_The_Application_of_Graph_Attention_Mechanism_in_the_Automation_of_ACCVW_2024_paper.html)
+
+**GNNs at PCB / board level**
+
+- **BenchPCNP** (*Scientific Data*, 25 Feb 2026; DOI 10.1038/s41597-026-06818-y) is the **only public board-level dataset with functional-module labels** found.
+  - **50** production-verified circuits, partitioned by **5 designers** following IPC-2612, into **54 module labels** (power supply, filter, LED, connector, voltage regulator, transceiver and others). The label distribution is long-tailed.
+  - Protel-2 netlists, released on figshare under **CC BY 4.0**. The designs were bought from a Taobao PCB design shop, with a copyright transfer.
+  - **Best baselines (node-classification accuracy / F1):**
+    - Hypergraph models: HyperResGCN 79.07 / 70.77; HyperJKNet 78.34 / 72.32.
+    - Plain-graph models are weaker: GraphSAGE 67.94 / 54.60; GAT 66.59 / 53.49.
+    - The authors attribute the gap to large power and ground nets creating redundant pairwise edges.
+  - **[P-full]** — [PMC13046837](https://pmc.ncbi.nlm.nih.gov/articles/PMC13046837/)
+- **Plettenberg et al., "GNNs for Automatic Addition of Optimizing Components in PCB Schematics"** (ECML-PKDD 2025, per HWE-Bench's citation).
+  - **Representation:** a bipartite graph of nets and symbols, with pins as edges. Node names are embedded with a pre-trained language model.
+  - **Task:** node-pair prediction.
+  - **Three expert-labelled proprietary datasets:**
+    - pull-ups/pull-downs: 2,396 graphs;
+    - RC filters: 849 graphs;
+    - decoupling caps: 944 graphs.
+    - Graphs range from 6 to 702 nodes; on average only 1.4–2.8 nodes are added per graph.
+  - **Findings:**
+    - GNNs with edge attributes beat MLPs.
+    - For decoupling, **node names alone carry most of the signal**, because "supply and ground nets... mostly have well-defined names".
+    - The predicted *count* of parallel decoupling caps is within ±1 in about 70% of cases.
+  - Only example graphs are public (github.com/pasplett/pcb-node-pair-gnn).
+  - **[P-full]** — [arXiv 2506.10577](https://arxiv.org/abs/2506.10577)
+
+**Rule-based recognition in board-level tools (production)**
+
+- **Quilter "Circuit Comprehension"** reads the schematic and board file, automatically detects physics constraints, and has the user validate them before layout. **[P-doc]** — [Quilter: Define physics comprehensions](https://docs.quilter.ai/using-quilter/define-physics-comprehensions)
+  - **Crystal:** reference designator starts with X or Y, and **both pins connect directly to the same parent component**. Crystals with load-limiting resistors are not supported. **[P-doc]** — [Quilter: Crystal Oscillators](https://docs.quilter.ai/physics-constraints/crystal-oscillators)
+  - **Switching converter:** reference designator starts with U, and **its output connects to an inductor whose reference designator starts with L**. It supports only configurations with ≥2 external capacitors plus an output inductor. With multiple input or output caps, it "somewhat arbitrarily select[s] one". **[P-doc]** — [Quilter: Switching Converters](https://docs.quilter.ai/physics-constraints/switching-converters)
+  - **Bypass capacitor:** a cap between a component and ground. It is assigned to a parent pin with this priority:
+    1. an explicit wire in the schematic;
+    2. parent pins with voltage-type names (e.g., Vin);
+    3. an equal split when connected to several same-named pins.
+
+    **[P-doc]** — [Quilter: Bypass Capacitors](https://docs.quilter.ai/physics-constraints/bypass-capacitors)
+- **kicad-happy** (MIT) does union-find net building on pin coordinates, then runs **60+ deterministic detectors** in dependency order. Examples:
+  - LDO = FB plus ≥2 power pins and no SW/BOOT;
+  - switching regulator = SW+BOOT, or SW plus an inductor;
+  - false-positive guard against motor drivers.
+
+  It is tested on a harness of 5,829 KiCad projects. "Detection accuracy is harder to quantify." **[P-full]** — [how-it-works](https://github.com/aklofas/kicad-happy/blob/main/how-it-works.md); [methodology_schematic.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
+
+**LLM-based netlist understanding — benchmarks (read in full where marked)**
+
+- **GENIE-ASI** (MLCAD 2025; Sony AI collaborators). **[P-full]** — [arXiv 2508.19393](https://arxiv.org/pdf/2508.19393)
+  - **Benchmark:** 300 synthetic op-amp netlists, curated from about 47,000 generated by ACST/FUBOCO. Device names are anonymized.
+  - **Hierarchy levels:**
+    - HL1: device level (MosfetDiode, load/compensation caps).
+    - HL2: structure level (DiffPair, current mirror, inverter).
+    - HL3: stage level (first/second stage, feedback, load and bias parts).
+  - **Method:** the LLM writes instructions, then Python code with test assertions, with a code-repair loop.
+  - **Overall results:** GPT-4.1 with GENIE-ASI has **F1strict 0.70** overall. **Zero-shot direct prompting reaches F1strict only 0.49–0.64** across frontier models.
+  - **Per level (GPT-4.1 with GENIE-ASI, F1strict):** HL1 **0.97**, HL2 **0.81**, HL3 **0.31**. For HL3, every model scores between 0.05 and 0.31.
+  - **GNN baseline:** the AnyGraph graph foundation model, given the same 6 demonstration netlists, reaches only F1 0.26–0.30 (HL1) and 0.12–0.15 (HL2/HL3).
+  - **Authors' observations:**
+    - Direct LLM analysis "proved unreliable in practice: LLMs often skipped" elements.
+    - LLMs "perform better when executing tasks via generated Python code rather than reasoning directly over netlists".
+    - With one-shot direct code generation, Claude 3.7 Sonnet and Gemini 2.5 did best.
+- **NetlistBench** (MLCAD 2026). **[P-full]** — [arXiv 2608.12197](https://arxiv.org/abs/2608.12197); [repo](https://github.com/WoshiMayou/NetlistBench)
+  - **Benchmark:** 2,342 analog CMOS SPICE cases in 24 task families, graded by a deterministic canonical-structure oracle.
+  - **Recognition subtotal:**
+
+    | Model | Recognition subtotal |
+    |---|---|
+    | Claude Sonnet 4.6 | **98%** |
+    | GPT-4.1 | 74% |
+    | Gemini 2.5 Flash | 75% |
+    | DeepSeek-V4-Flash | 74% |
+    | Qwen3.6-Flash | 62% |
+    | Qwen3-30B | 55% |
+
+  - **Relational queries vary enormously across models:**
+    - node incidence: 15–98%;
+    - semantic terminal connectivity: 6–99%;
+    - **terminal-neighbour incidence: 2–97%**;
+    - structural equivalence: 49–90%.
+  - **Explicit attributes are easy:** parameters, ordered terminals and subcircuit ports score about 99–100%.
+  - **Long-horizon edits fall off sharply:** Claude drops from 80% at 3 dependent edits to 26% at 15; GPT-4.1 drops from 71% to 34%.
+  - **Reasoning mode** adds 30–40 points for weaker models (DeepSeek-V4-Flash: 52% to 81%).
+  - **Limitation stated by the authors:** results "should not be assumed to transfer unchanged to RF, power, digital, or mixed-signal netlists".
+- **PCB-QA** (MLCAD 2026). **[P-full]** — [arXiv 2606.23704](https://arxiv.org/abs/2606.23704)
+  - **Benchmark:** 480 yes/no questions over 8 open-source **KiCad** projects. Categories: theory/layout connectivity, component datasheet, SPICE behaviour.
+  - **Input format strongly matters** (GPT-5.4 Nano, 25% split):
+
+    | Input format | Accuracy | F1 |
+    |---|---|---|
+    | KiCad-exported **PDF** | 0.43 | 0.28 |
+    | **Native KiCad `.net` + `.cir`** | 0.55 | 0.45 |
+    | **Proposed JSON** (hierarchical components and nets) | **0.88** | **0.90** |
+
+  - **Full dataset:** Gemini 3 Flash reaches **93%** with JSON.
+  - Inputs reach about 100k tokens on complex projects, so Python helper tools filter the relevant subcircuits and nets.
+  - Datasheet questions use a MiniLM-embedding retrieval with 500-character chunks. These are the weakest and most variable category.
+- **CIRCUIT** (510 analog QA pairs): GPT-4o reaches 48.04% on final answers, but **only 27.45% of grouped "unit tests"**. Topology is the hardest part. **[P-abs]** — [arXiv 2502.07980](https://arxiv.org/abs/2502.07980)
+- **AMSbench** (about 8,000 questions). **[P-full]** — [arXiv 2505.24138](https://arxiv.org/abs/2505.24138)
+  - On schematic-image perception, the best model (Gemini 2.5 Pro) scores:
+    - element classification: 0.94;
+    - connection judgment: 0.85;
+    - connection identification: F1 0.88;
+    - **full-netlist normalized edit distance (NED): 0.91**, where lower is better (GPT-4o 1.40, Claude 3.7 Sonnet 1.65).
+  - The authors: even Gemini's netlists "require substantial modifications to align with the ground truth".
+- **CircuitSense** (8,006+ problems): closed models score above 85% on component and topology perception but **below 19% on symbolic derivation**. **[P-abs]** — [arXiv 2509.22339](https://arxiv.org/abs/2509.22339)
+- **Image2Net** reaches an 80.77% success rate and mean NED 0.116 converting analog diagrams to netlists. **[P-abs]** — [arXiv 2508.13157](https://arxiv.org/abs/2508.13157)
+- **MMCircuitEval** (ICCAD 2025) has 3,614 QA pairs, drawn partly from datasheets. It shows gaps on back-end design and computation. **[P-abs]** — [arXiv 2507.19525](https://arxiv.org/abs/2507.19525)
+- **SPICED** (PAINE 2024): LLM chain-of-thought plus few-shot detection of syntactic bugs and analog Trojans in netlists. 93.32% average Trojan coverage and 93.4% TPR. **[P-abs]** — [arXiv 2408.16018](https://arxiv.org/abs/2408.16018)
+- **"Validation and Simulation Catch Different Errors"** (2026, preprint), on 150 LLM-generated circuits from gpt-4o-mini:
+  - 10.7% were rejected by a topology validator **yet ran in ngspice with no warning** (e.g., a dangling resistor gave 5.00 V instead of 2.50 V);
+  - 4.7% passed validation but failed in ngspice.
+  - **[P-abs]** — [arXiv 2609.26830](https://arxiv.org/abs/2609.26830)
+- **Masala-CHAI** extracts SPICE from schematic images: about 7,500 schematics, giving +46% Pass@1 in AnalogCoder. **[P-abs]** — [arXiv 2411.14299](https://arxiv.org/abs/2411.14299)
+  - An audit by AnalogRetriever found the original netlist **compile rate was 22%**, repaired to 100%. **[P-abs]** — [arXiv 2604.23195](https://arxiv.org/abs/2604.23195)
+- **AnalogCoder** (AAAI 2025) solved 20 of 24 tasks. **[P-doc]** — [repo](https://github.com/laiyao1/AnalogCoder)
+- **PCB-Bench** (ICLR 2026): about 3,700 text QAs and about 500 image QAs, including functional-block recognition, plus 174 OSHWHub boards for screenshot-to-description. **[P-doc]** — [project page](https://digailab.github.io/PCB-Bench/)
 
 ### Inferences
-- **Board-level recognition is mostly a pin-name + neighbour-type problem, not a deep-topology problem.** A buck converter on a PCB is "IC with SW/BOOT/FB pins + inductor on SW + caps on VIN/VOUT + divider on FB". That is easy for rules, and the hard IC-level variants that motivated GANA mostly do not exist at board level, where the transistors sit inside the IC. GNNs are therefore a lower priority for a KiCad tool than (a) good part metadata and (b) a rule and template library.
-- ALIGN's VF2 approach, which labels edges by pin role, carries over to PCBs if edges are labelled with **normalized pin roles** (SW, FB, VIN, PGND, XIN/XOUT, D+/D−) rather than pin numbers. A template like "buck_async = IC{SW,FB,VIN,GND} + L(SW,Vout) + D(SW,GND) + Cin(VIN,GND) + Cout(Vout,GND) + Rdiv(Vout,FB,GND)" becomes a small labelled-subgraph query.
-- GENIE-ASI's F1 collapse (1.0 → 0.31) argues against letting an LLM free-read a whole netlist to decide block membership. It is better to have the LLM (i) write or extend detector templates, (ii) label ICs from MPN, datasheet and pin names, and (iii) adjudicate the leftovers that deterministic passes could not explain.
-- Masala-CHAI V2 and kicad-happy share one pattern: an LLM proposes, a deterministic checker (ngspice, or the JSON netlist) verifies, and a judge loops. Block recognition should copy this. Every proposed block must explain all of its pins, and its members must be consistent with the graph.
+- **For a KiCad tool, the evidence favours rules plus templates over GNNs.**
+  - At board level, the transistor-level variants that motivated GANA live inside ICs.
+  - Production tools (Quilter, kicad-happy) recognize crystals, converters and bypass caps from *reference-designator prefixes, pin names and one-hop neighbours*.
+  - The only board-level labelled benchmark (BenchPCNP) tops out at about 79% node accuracy with hypergraph GNNs, on just 50 circuits.
+- PCBSchemaGen's motif VF2 with relaxations (key-component filter, passive grouping) is the right shape for a board-level template matcher. Edges should be labelled with **normalized pin roles**.
+- **LLMs should not be asked to trace connectivity from raw netlist text.**
+  - NetlistBench shows only the best model reliably answers "what is connected to this terminal".
+  - PCB-QA shows a compact hierarchical JSON with query tools beats native KiCad exports by 33 points.
+  - So: deterministic code builds the graph, and the LLM queries it through tools such as `neighbors(pin)`, `nets_of(ref)` and `path(a, b)`.
+- **Use GENIE-ASI's pattern for the long tail.** The LLM writes detector code from 1–6 examples. The code is unit-tested against the examples and then executed deterministically. Expect near-perfect results on low-level structures and poor results on large "stage-level" groupings.
+- **GANA's post-processing lesson transfers directly.** *Port semantics* resolved the remaining misclassifications: the antenna at the LNA port, the oscillating signal at the oscillator port. On PCBs the analogues are connector types, net names and part categories. Wire them in as post-processing rules after any learned or LLM classifier.
 
 ### Gaps
-- I found no published *quantitative* accuracy for board-level (PCB) functional-block recognition: no precision/recall for "buck detected", "crystal detected" and so on. kicad-happy explicitly declines to give one.
-- I could not retrieve GANA's per-class accuracy numbers (the search budget ran out).
-- I could not locate the specific papers the brief named as "CircuitBench" or "SPICED". They may exist under other names; this is not verified.
-- The NetlistBench primary paper was not verified (aggregator only).
+- GANA's TCAD 2023 results tables (IEEE blocked).
+- No published precision/recall for *board-level* recognition of specific blocks (buck, crystal, USB) on KiCad designs. Quilter and kicad-happy publish detection *rules* but no accuracy. BenchPCNP measures module partitioning, not typed recognition of layout-relevant blocks.
+- The LLM4-IC8K / LMM4-IC4K footprint-geometry results were not read in full (see §3).
 
 ---
 
-## 2. Net classification: diff pairs, power, clocks, high-speed — from names, pin metadata, and part data
+## 2. Net classification: diff pairs, power, clocks, high-speed — from names, pin metadata, part data and IBIS
 
 ### Takeaway
-In practice (kicad-happy, KiCad itself), net roles come from three cheap signals: **power symbols and power-net naming**, **net-name keyword and suffix rules** (`+`/`-`, `_P`/`_N`, CLK, SDA…), and **pin names and types on the connected IC pins**.
+Net roles in practice come from four signals:
+1. **Power symbols and power-net names**;
+2. **net-name suffix/keyword rules**;
+3. **pin names and roles on the connected IC pins**;
+4. **designer-assigned net classes** (both Quilter and Flux key off native net classes first).
 
-KiCad's own diff-pair router depends on net-name suffixes, which must be the last character, so the naming convention is load-bearing. Data rate and impedance are *not* in KiCad metadata. They must be inferred from the IC's interface (via datasheet or LLM) and written back as net classes.
+KiCad's diff-pair router is strictly name-based: `+`/`-` or `P`/`N` suffixes, which cannot be mixed. Quilter's detector is broader and also accepts A/B, P/M and t/c.
+
+**IBIS models** hold machine-readable facts that no other source has: explicit differential pairing (`[Diff Pin]`), pin→buffer-model mapping with `POWER`/`GND`/`NC` reserved names, buffer type (`Model_type`), and 20–80% edge rates (`[Ramp]`). KiCad's simulator already loads IBIS. Even so, no tool was found that uses IBIS to classify nets for layout. That is an open opportunity.
 
 ### Cited Findings
-- **Power rails in kicad-happy** come from two methods:
-  - Method 1, authoritative: any net with a pin from a `#PWR`/`#FLG` symbol.
-  - Method 2, heuristic: exact names (VCC, VDD, AVDD, VBUS, VBAT, VIN, VOUT…), names starting with `+` (`+3V3`), `V`+digits (`V1V8`), and prefixes like `VDD_*`.
-  - Ground = GND/VSS/AGND/DGND/PGND… or names starting or ending with GND.
-  - Source: [methodology_schematic.md §7](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
-- **kicad-happy name-based net classes**, from a keyword table:
+- **KiCad (official manual):**
+  - "Differential pairs in KiCad are defined as nets with a common base name and a positive and negative suffix. KiCad supports using + and -, or P and N as the suffix… The suffix styles cannot be mixed: the nets USB+ and USB_N do not form a differential pair."
+  - The differential gap comes from the net class settings.
+  - **[P-doc]** — [KiCad 9 PCB Editor manual](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html)
+- **KiCad net-class patterns (official):**
+  - Patterns use wildcards (`*`, `?`) **and regular expressions**. Assignments are dynamic: new matching nets join automatically.
+  - A net matching several patterns gets all of the classes. Values come from the highest-priority class that has the field set, with Default as the fallback.
+  - Net names include the full sheet path (e.g., `/` prefix for root-sheet local labels).
+  - **[P-doc]** — [KiCad 9 Schematic Editor manual](https://docs.kicad.org/9.0/en/eeschema/eeschema.html)
+- **KiCad diff-pair hazards (community):**
+  - The suffix must be the last character.
+  - Symbol pin names (e.g., `Pin_P`) do not create pairable nets.
+  - `XTAL_P`/`XTAL_N` names make the router apply diff-pair rules even to single-ended traces.
+  - **[S]** (forum) — [suffix thread](https://forum.kicad.info/t/differential-pair-doesnt-work-with-any-of-the-suffixes/26166); [pin-name thread](https://forum.kicad.info/t/differential-pair-defined-with-pin-names-in-symbol/41801); [XTAL thread](https://forum.kicad.info/t/kicad6-pcbnew-picks-wrong-trace-width-and-clearance-from-netclass/34007)
+- **Quilter diff-pair detection:**
+  - Nets "must be in differentialpair or synonymous net class (75ohm etc)", **and** names must end in a supported paired suffix:
 
-  | Class | Keywords |
-  |---|---|
-  | ground | GND/VSS |
-  | power | VCC/VDD/+3V3/VBUS |
-  | clock | SCL, SCK, CLK, MCLK, XTAL, OSC |
-  | data | SDA, MOSI, MISO, UART, TX, RX |
-  | high_speed | USB, CAN, LVDS, ETH |
-  | analog | ADC, AIN, VREF, VSENSE |
-  | control | RESET, NRST, EN |
-  | chip_select | CS, SS, NSS, CE |
-  | interrupt | INT, IRQ, ALERT, DRDY |
-  | debug | SWD, JTAG, TCK |
-  | config | BOOT, TEST |
-  | signal | everything else |
+    | Suffix | Example |
+    |---|---|
+    | `+`/`–` | TX+, TX- |
+    | `A`/`B` | SSTXA, SSTXB |
+    | `P`/`M`, last character | RFoutP, RFoutM |
+    | `P`/`M`, second-to-last character | USB_DPX, USB_DMX |
+    | `P`/`N` | DP, DN |
+    | `t`/`c` | ddr0_dqs_t, ddr0_dqs_c |
 
-  Diff-pair analysis covers USB D+/D-, CAN H/L and LVDS, with termination checks. Power-domain mapping separates IO rails (VDDIO, VIO, VCCA/VCCB) from core rails for cross-domain detection. — [methodology_schematic.md §10.2](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
-- **KiCad diff-pair recognition** is by net-name suffix: `+`/`-` (D+/D−) or `_P`/`_N` (or `P`/`N`).
-  - The suffix must be the last character. A net whose name ends in a parenthesis was not paired.
-  - Symbol *pin* names like `Pin_P` do not propagate, because auto-generated nets look like `Net-(J1-Pin_P)`, so explicit labels are needed.
-  - Vector buses such as `DACD_P[0..15]` did not work with the pair router in an older thread.
-  - Sources: [KiCad forum: suffixes](https://forum.kicad.info/t/differential-pair-doesnt-work-with-any-of-the-suffixes/26166); [KiCad forum: pin names](https://forum.kicad.info/t/differential-pair-defined-with-pin-names-in-symbol/41801); [KiCad forum: bus naming](https://forum.kicad.info/t/differential-bus-naming-and-pair-router/770); [DigiKey Maker USB diff-pair tutorial](https://www.digikey.com/en/maker/projects/how-to-route-differential-pairs-in-kicad-for-usb/45b99011f5d34879ae1831dce1f13e93)
-- **False-positive hazard:** names like `XTAL_P`/`XTAL_N` make the interactive router apply diff-pair width and gap even to single-ended routing. Forum replies say this is by design and advise not using those suffixes on non-differential nets. — [KiCad forum thread](https://forum.kicad.info/t/kicad6-pcbnew-picks-wrong-trace-width-and-clearance-from-netclass/34007) (forum, not official docs)
-- **KiCad pin electrical types** available as metadata: Bidirectional, Tri-state, Passive, Unspecified, Power input, Power output ("used for regulator outputs"), Open emitter, Open collector, Not connected. Plain Input and Output also exist. — [kicad-doc GitHub mirror, library editor chapter](https://github.com/KiCad/kicad-doc/blob/master/src/eeschema/eeschema_library_editor.adoc) (the mirror may be stale relative to the current GitLab docs)
-- **Signal-integrity parameters that should follow from net role** (one community rule set): USB HS skew 25 ps, PCIe 5 ps, Ethernet 50 ps, HDMI 20 ps. V_CM = V_diff×skew/(2·T_rise), so a 4 mm USB-HS mismatch gives about 8.8 mV of common-mode voltage. — [kicad-happy EMC guide](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md)
-- Regime triggers in another community skill set:
-  - **High-speed**: clocks or signals above 25 MHz, t_r < 2 ns, USB, Ethernet RMII/RGMII, SPI > 40 MHz, HDMI/MIPI.
-  - **High-current**: any rail above 3 A, or a converter above 15 W.
-  - **RF**: sub-GHz or 2.4 GHz, or sleep current < 50 µA.
-  - Inconsistency: the README's diagram says ">5A", while the SKILL file says ">3.0 A".
-  - Impedance targets: USB 2.0 90 Ω and Ethernet 100 Ω differential; RF 50 Ω CPWG.
-  - Sources: [IxTechCrypto/kicad-skills kicad-core SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-core/SKILL.md); [kicad-highspeed SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-highspeed/SKILL.md); [kicad-rf-lowpower SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-rf-lowpower/SKILL.md)
-- **PCBSchemaGen (v2)** uses a **32-role pin ontology** with four constraint-predicate templates extracted automatically per IC. This is a ready-made vocabulary for normalizing pin roles beyond KiCad's ERC types. Preprint. — [alphaXiv v2 summary of arXiv 2602.00510](https://www.alphaxiv.org/abs/2602.00510.md); [arXiv 2602.00510 v1](https://arxiv.org/html/2602.00510v1)
+  - Names starting with **V** are never treated as pairs, to avoid power nets.
+  - Pairs with series R/C show up as two pairs but are merged at compile.
+  - For each pair the user supplies differential impedance, the associated single-ended impedance and the carrier frequency (GHz).
+  - Limitations: no multi-drop or fly-by pairs; none on 2-layer stack-ups; microstrip only, no coplanar waveguide.
+  - **[P-doc]** — [Quilter: Differential Pairs](https://docs.quilter.ai/physics-constraints/differential-pairs)
+- **Quilter power nets:**
+  - Detected if the name "matches our various patterns for being a voltage or power net" **or** the net is in a "Power" net class. A motor net can be forced in this way.
+  - Default max current: **200 mA for nets detected below 3 V, 500 mA above 3 V**. The user overrides it per net.
+  - Width comes from IPC calculations per stack-up.
+  - PRC "Overheated Length" flags segments with **>20 °C** estimated rise.
+  - Single-ended impedance nets (50 or 75 Ω) are **manual only**: width within 5%, invalid-width tolerance 10%.
+  - Signals not captured "are treated as generic, low-speed digital signals".
+  - **[P-doc]** — [Quilter: Power Nets](https://docs.quilter.ai/physics-constraints/power-nets); [Single-ended Impedance](https://docs.quilter.ai/physics-constraints/single-ended-impedance-control); [Define physics comprehensions](https://docs.quilter.ai/using-quilter/define-physics-comprehensions)
+- **Flux "Net Type"**:
+  - Seven priority buckets: **High Speed, Analog, Power, Medium Speed, Low Speed, Uncertain, Ground**.
+  - "Flux will infer the Net Type of each net"; the user can change it. Auto-Layout routes the buckets in that order.
+  - Users are told to mark diff pairs and high-speed nets in the schematic, and to add "Max Current" or "Thermal Rise" to power nets.
+  - **[P-doc]** (Flux blog, July 2025) — [AI Auto-Layout Just Got Smarter](https://www.flux.ai/p/blog/ai-auto-layout-just-got-smarter)
+- **kicad-happy keyword classes:**
+  - Classes: ground, power, clock (SCL/SCK/CLK/XTAL), data, high_speed (USB/CAN/LVDS/ETH), analog (ADC/AIN/VREF), control, chip_select, interrupt, debug, config.
+  - Power rails are identified from `#PWR`/`#FLG` symbols plus name heuristics.
+  - IO-domain mapping uses VDDIO, VCCA/VCCB.
+  - **[P-full]** — [methodology_schematic.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_schematic.md)
+- **LLM pin-semantics evidence (HWE-Bench, 300 board-level tasks):**
+  - With conventional pin names such as "USBD, USBP, CLK, SDA, TXD, RXD, RST", "the connection accuracy of all models is extremely high".
+  - With "Multiplexed Pins" or "Redundant Pins" (parallel grounds), models "often produce serious omissions or connection hallucinations".
+  - Hundreds to thousands of pins cause "context cognition overload".
+  - **[P-full]** — [arXiv 2603.18102](https://arxiv.org/abs/2603.18102)
+- **PCBSchemaGen's 32-role pin ontology** spans 7 groups:
+  - power supply (supply/primary/secondary vdd and gnd);
+  - signal I/O (sense ±, out, out ±);
+  - logic in/out;
+  - MOSFET (gate, drain, source, **kelvin source**);
+  - **buck regulator (vin, gnd, sw, fb, en, boot)**;
+  - half-bridge (hb, hs, ho, lo);
+  - transformer and passive (terminal, anode, cathode).
+
+  It has four predicate templates: supply-pair, must-be-connected, driving-pair, diff-pair-distinct. **[P-full]** — [arXiv 2602.00510v2, Tables 8–9](https://arxiv.org/abs/2602.00510)
+- **KiCad pin electrical types:** Input, Output, Bidirectional, Tri-state, Passive, Unspecified, Power input, Power output, Open collector, Open emitter, Not connected. **[P-doc]** (kicad-doc GitHub mirror, possibly stale) — [eeschema_library_editor.adoc](https://github.com/KiCad/kicad-doc/blob/master/src/eeschema/eeschema_library_editor.adoc)
+
+**IBIS as a net-classification source** (specification read directly) — all from [IBIS Version 7.2 spec (PDF)](https://ibis.org/ver7.2/ver7_2.pdf), **[P-full]**:
+
+- **`[Pin]`** (required) associates each pin with a data-book `signal_name` and a `model_name`. The reserved model names **POWER, GND, NC** (and CIRCUITCALL) directly label supply, ground and unconnected pins. Optional per-pin R/L/C package parasitics are included.
+- **`[Diff Pin]`** "associates differential pins": a non-inverting pin, its `inv_pin`, the receiver threshold `vdiff`, and launch-delay skews `tdelay_typ/min/max`. This is **authoritative differential pairing, independent of net names**.
+- **`Model_type`** values:
+  - Input, Output, I/O, 3-state, Open_drain, I/O_open_drain, Open_sink, Open_source, the *_ECL variants, Terminator, Series, Series_switch;
+  - true-differential types: Input_diff, Output_diff, I/O_diff, 3-state_diff.
+  - Inputs carry Vinl/Vinh thresholds.
+- **`[Ramp]`** gives the rise and fall times of a buffer as dV/dt "from 20% to 80% of the final value", into a default 50 Ω load, with typ/min/max corners. Example given: 2.20 V / 1.06 ns typical.
+- **`[Model Selector]`** offers alternative drive strengths for the same pin.
+
+Related:
+- A practitioner constraint guide calls IBIS `[Ramp]` "the best place to get rise and fall times" for setting high-speed constraints. **[S]** — [PCEA High-Speed Constraint Values (Pfeil)](https://pcea.net/wp-content/uploads/2022/04/High-Speed-Constraint-Values-v2-Pfeil.pdf)
+- **KiCad already ingests IBIS** for simulation. The symbol fields are `Sim.Library`, `Sim.Ibis.Pin` and `Sim.Ibis.Model`; KiCad ships IBIS_DEVICE, IBIS_DEVICE_DIFF and IBIS_DRIVER helper symbols. "KiCad does not ship with IBIS models for symbols." **[P-doc]** — [KiCad 9 Schematic Editor manual, simulator section](https://docs.kicad.org/9.0/en/eeschema/eeschema.html)
 
 ### Inferences
-- **Use a pin-role-first, name-second classifier.** KiCad ERC pin types are too coarse: there is no "SW node", "FB" or "XIN" type, and many library symbols use Passive or Unspecified everywhere. The useful signal is the **pin name**, normalized to a role ontology (PCBSchemaGen-style), plus the connected component types.
-- A *net's role is a function of the pins on it*:
-  - SW pin + inductor → **switch node** (minimize copper area).
-  - FB pin + divider → **feedback** (high-Z, keep away from SW).
-  - XIN/XOUT + crystal → **crystal net** (short, guarded, no vias).
-  - USB_DP/DM on MCU + connector D+/D− → **90 Ω diff pair**.
-  - Antenna/RF pin + matching network → **50 Ω RF**.
-  - Connector power pin + fuse + high-current part → **high-current**.
-- Diff-pair detection should combine (a) KiCad's own suffix rule (so the router will actually pair the nets), (b) the pin-role pair on both endpoints, and (c) a check that rejects false pairs (`XTAL_P`/`XTAL_N`). When an LLM proposes a pair that KiCad will not recognize by name, the pipeline should **propose a label rename** (e.g., `USB_D_P`/`USB_D_N`) as a schematic edit for the user to confirm.
-- Data rate is the missing link. The interface standard (USB 2.0 HS vs FS, RGMII, PCIe Gen) usually has to come from the IC's datasheet or an LLM's knowledge of the MPN, and then map to impedance, skew and length rules through a static protocol table that deterministic code owns.
+- **Use a layered net classifier, in this order:**
+  1. **Explicit designer intent**: net classes, directive labels, Flux/Quilter-style "Power" or "differentialpair" classes.
+  2. **Authoritative part data**: IBIS `[Pin]`/`[Diff Pin]`/`Model_type`/`[Ramp]` when an `.ibs` file exists; otherwise datasheet pin roles mapped to a role ontology.
+  3. **Topology**: SW pin plus inductor gives a switch node; FB pin plus divider gives feedback; XIN/XOUT plus a crystal gives a crystal net.
+  4. **Names**: suffix and keyword rules.
+  5. **LLM adjudication** for what is left, citing the pins.
+
+  Each layer records its evidence, and higher layers override lower ones.
+- **Edge rate from IBIS turns "is this net fast?" into a computation.** Use t_r(20–80%) together with estimated route length (critical length roughly ∝ t_r × propagation velocity) rather than keyword guesses. Data-rate and impedance tables per protocol stay deterministic, and come from the other researcher's rule packs.
+- **Mismatches between detectors are warning signs.** Quilter's suffix set is broader than KiCad's. If the front end detects an A/B or t/c pair, KiCad's router will not pair it until the nets are renamed to `+`/`-` or `_P`/`_N`. The front end should *propose renames* and never silently rely on non-KiCad conventions.
+- HWE-Bench's multiplexed-pin failures argue for resolving MCU pin-mux (the role of each pin in *this* design) deterministically. Sources for that are the MCU vendor's pin-config exports or an explicit table in the schematic, rather than LLM inference.
 
 ### Gaps
-- **IBIS models.** I could not research whether IBIS model data (`[Model] Model_type`, edge rates, `[Diff Pin]`) is used anywhere to infer interface type or edge rate for PCB layout tools. Search budget was exhausted and ibis.org was unreachable. This is a promising source of rise times for the "fast edge" classification and deserves follow-up.
-- I found no paper that measures net-role classification accuracy on PCB netlists.
+- **No tool or paper found that classifies nets for layout from IBIS data.** The search quota ran out before vendor constraint managers (Allegro, Xpedition) could be checked for IBIS-driven classification.
+- Availability of IBIS files per MPN (what fraction of KiCad BOM parts have an `.ibs`) is not quantified.
+- No measured accuracy for net-role classification on PCB netlists.
 
 ---
 
-## 3. Datasheet / app-note mining: extracting layout guidelines and recommended layouts
+## 3. Datasheet / app-note mining: extracting layout guidelines, tables and figures — tools and reliability
 
 ### Takeaway
-Structured extraction of **electrical** facts from datasheets (pinouts, ratings, recommended external parts) works now. Production-minded tools page-anchor every value, score its quality and gate on trust.
+Extracting **electrical facts** from datasheets is now measurably reliable *when it is staged and grounded*:
+- 98.8% property faithfulness for a chunked, provenance-preserving pipeline, against 76.1% one-shot;
+- D2S-FLOW reaches exact match 0.86, F1 0.92;
+- datasheet-aware compatibility checking reaches 97.5% using deterministic scripts for the numbers.
 
-**Layout-guideline** extraction is largely unsolved and unbenchmarked. Even the best community pipeline (kicad-happy) deliberately *skips* application-note prose. Academic work extracts parameters or footprints, not placement and routing rules. Board-level reasoning from datasheets is weak: HWE-Bench's best model passes only 8.15% of board-level schematic tasks.
+Naive "upload the PDF and ask" is not reliable:
+- the best model passes only 30.7% of professional-PDF questions in GDP.pdf;
+- on PCB-QA, PDF input scores 0.43 accuracy;
+- one model **fabricated source text without ever opening the datasheet**.
+
+**Layout-guideline extraction remains unbenchmarked.** There is also an asymmetry in vendor content:
+- regulator datasheets are almost entirely qualitative ("as close as possible");
+- MCU/SoC hardware design guides (Espressif, Microchip) give **numeric** rules.
+
+**Tooling.** MinerU2.5-Pro leads open table parsing (TEDS 93.4 on OmniDocBench v1.6). Marker trails badly on tables (65.8).
 
 ### Cited Findings
-- **kicad-happy datasheet pipeline**:
-  - Distributor skills download PDFs ("96% success rate across 240+ manufacturers", each PDF verified against the expected MPN).
-  - A **page selector** picks 8–15 pages using a TOC → keyword-density → fallback cascade. It targets "Pin Configuration", "Absolute Maximum Ratings", "Electrical Characteristics" and "Typical Application", and always includes page 1 and the last page.
-  - Category extractor prompts cover base, pinout, regulator, diode, transistor, op-amp, MCU and crystal.
-  - Merge and validation follow, then invariant cross-checks and a quality scorer.
-  - The output is per-MPN JSON with `SpecValue{min, typ, max, unit, condition, evidence{page, section, confidence, method}}`.
-  - Source: [kicad-happy datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md); [README](https://github.com/aklofas/kicad-happy)
-- **Reliability controls in the same pipeline**:
-  - Trust gates (`best(spec, min_confidence="medium")`).
-  - Tri-state nullability: "not extracted" vs "extracted but below the gate" vs "trusted".
-  - A PDF SHA-256 staleness check.
-  - Per-project caches, because "a verified extraction for revision A should not quietly get used for revision B".
-  - A legacy scorer with `MIN_SCORE = 6.0/10` and up to 3 retries, keeping the best result ("easier to refuse an extraction than to mislead an analyzer").
-  - "It doesn't guess": missing parameters are recorded as `null`, never copied from sister parts.
-  - **"It doesn't interpret marketing claims. Application notes, reference designs, and 'recommended for X' prose are skipped."**
-  - Source: [kicad-happy datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md)
-  - Internal inconsistency: the v1.4 score is 0–100 with 3 dimensions, while the legacy rubric is 0–10 with 5 dimensions.
-- Example legacy extraction (TPS61023):
-  - Pins carry `function` (e.g., "Switch node"), `type` (power/ground/analog/digital) and voltage limits.
-  - `features.topology` = boost; `switching_freq_hz` = 1.2 MHz.
-  - `application_circuits` = recommended Cin/Cout/L.
-  - `thermal.rtheta_ja_cw` = 175.
-  - Source: [kicad-happy datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md)
-- kicad-happy v2.0 "Deep Review" does a per-IC LLM comparison of actual usage against the datasheet. Findings carry evidence links and are written to `analysis/deep_review.json`, kept separate from the deterministic findings ("stripping `llm_*` fields recovers the deterministic baseline"). — [how-it-works](https://github.com/aklofas/kicad-happy/blob/main/how-it-works.md); [deep-review.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/deep-review.md)
-- Multimodal reading of PDF reference designs: render pages, read 2–4 pages at a time, follow off-page connectors, and match net labels across pages. — [kicad-happy pdf-schematic-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/pdf-schematic-extraction.md)
-- **HWE-Bench** (arXiv 2603.18102; preprint):
-  - 300 board-level schematic tasks and **2,914 IC datasheets**.
-  - The best model passed **8.15%**.
-  - The authors say models show "usable documentation understanding but lack physical intuition".
-  - The paper also cites prior work on extracting **footprint geometry from datasheet diagrams** for placement, which I could not locate.
-  - Source: [arXiv 2603.18102](https://arxiv.org/pdf/2603.18102)
-- **PCBSchemaGen** (arXiv 2602.00510; preprint):
-  - v1 uses a knowledge graph derived from real IC datasheets plus **subgraph isomorphism** to check pin-role semantics and topological constraints.
-  - v2 adds a schema-induced KG (a 32-role pin ontology and 4 predicate templates per IC), a 5-layer reward oracle (electrical, role, template, topology, power) and Thompson-sampling refinement. It emits SKiDL, which compiles to KiCad.
-  - Benchmarks are on Hugging Face: 227 tasks across `pcbbench` and `open_schematics`, with `pcbbench` holding 62 tasks on 41 real ICs, all scored by a deterministic verifier.
-  - An author slide deck reports 86.3% / 84.0% / 61.0% (easy/medium/hard). These numbers are self-reported and were not verified against the paper.
-  - A NeurIPS 2026 poster page appears in search results.
-  - Sources: [arXiv v1](https://arxiv.org/html/2602.00510v1); [HF benchmarks](https://huggingface.co/datasets/Hzou9/PCBSchemaGen-Benchmarks); [Sandia DOE review slides](https://doepeerreview.sandia.gov/app/uploads/sites/82/2026/07/Han_Peng_20260727_DOE_Review_AIPE.pdf); [NeurIPS 2026 poster](https://neurips.cc/virtual/2026/poster/149018)
-- **DocEDA** (arXiv 2412.05301; preprint): computer vision plus an LLM with chain-of-thought to extract electrical parameters from circuit datasheets, aimed at analog design rather than layout. — [arXiv 2412.05301](https://arxiv.org/abs/2412.05301)
-- **DATE 2026 paper 1187**: multi-agent LLM generation of PCB **component libraries (symbols and footprints) from datasheets**, with preprocessing and error-repair stages. — [DATE 2026 PDF](https://past.date-conference.com/proceedings-archive/2026/DATA/1187.pdf)
-- **DS2SC-Agent** (arXiv 2603.21190; preprint): a multi-agent datasheet-to-model pipeline for chiplets. — [arXiv 2603.21190](https://arxiv.org/pdf/2603.21190)
-- Practitioner reports: Altium's article on building a local-LLM datasheet extractor (for IC driver development) — [Altium Resources](https://resources.altium.com/p/building-local-llm-datasheet-extractor-ic-driver-development); JITX's blog testing generative AI for board design — [JITX blog](https://blog.jitx.com/jitx-corporate-blog/testing-generative-ai-for-circuit-board-design).
-- Datasheet-to-footprint is also appearing in agent skills: IxTechCrypto `kicad-newpart` (parametric IPC-7351B synthesis with paste-gridding) — [kicad-skills README](https://github.com/IxTechCrypto/kicad-skills); kicad-harness (datasheet-to-footprint generation; AGPL) — as listed in [kicad-tools README](https://github.com/rjwalters/kicad-tools).
-- kicad-tools offers `kct datasheet convert` (PDF → markdown), `extract-images` and `extract-tables`. These are building blocks for locating "Layout Guidelines" sections and example-layout figures. — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
+
+**Extraction pipelines and their reliability**
+
+- **Hierarchical hardware knowledge-graph construction** (chunked property extraction, hierarchical routing, iterative refinement, source provenance, deterministic graph updates):
+  - **98.8% property faithfulness vs 76.1% for one-shot**, evaluated on 20 datasheets.
+  - It fully covers 83.6% of the baseline's faithful properties; the baseline covers only 10.5% of its properties.
+  - "Naïve one-shot processing omits relevant specifications even when the document fits within the model's context window."
+  - **[P-abs]** — [arXiv 2610.12762](https://arxiv.org/abs/2610.12762)
+- **"Fidelity Is Not Enough"** (EMNLP 2026 Industry):
+  - "One model passed our fidelity check without ever opening the datasheet". A structured-output constraint had silently disabled tool use, and the model answered "with fabricated source text".
+  - Logging every tool call ("dispatch-level instrumentation") caught all 50 planted faults that withheld the checked tools, with no false flags on 207 clean runs.
+  - Physical measurement could verify only 2 of 37 datasheet claims.
+  - **[P-abs]** — [arXiv 2608.28439](https://arxiv.org/abs/2608.28439)
+- **Datasheet-aware compatibility verification:**
+  - Builds a design graph, retrieves only the properties needed by explicit verification criteria, and **generates deterministic scripts** ("avoids reliance on LLMs for numerical computation").
+  - **97.5% accuracy** on 7 designs with 34 datasheets, and **8.6× less context** than upload-and-query.
+  - **[P-abs]** — [arXiv 2608.25217](https://arxiv.org/abs/2608.25217)
+- **D2S-FLOW** (datasheet → SPICE parameters): document focusing, hierarchy-aware retrieval and entity normalization give EM 0.86 / F1 0.92 / exact correctness 0.96, with 38% fewer tokens. **[P-abs]** — [arXiv 2502.16540](https://arxiv.org/abs/2502.16540)
+- **GDP.pdf** (CVPR 2026 workshop): professional-PDF questions, datasheets included, that at least two frontier models had failed.
+  - **The best of 17 models passes 30.7%.**
+  - Recurring errors: "misaligned tables, misread charts, skipped footnotes and exclusions… amendments that supersede earlier text".
+  - **[P-abs]** — [arXiv 2607.11192](https://arxiv.org/abs/2607.11192)
+- **ElecSafety:** using datasheet and manual rules improves LLM safety judgments, but results stay "unreliable on near-boundary and missing-information scenarios", and "a correct label often rests on the inaccurate constraints". **[P-abs]** — [arXiv 2610.06905](https://arxiv.org/abs/2610.06905)
+- **DRCY** (deployed on AllSpice Hub) runs a production multi-agent schematic review against datasheets. **[P-full]** — [arXiv 2603.15672](https://arxiv.org/abs/2603.15672)
+  - A Critic Agent scores each datasheet extraction out of 10: feature completeness 25%, **pin-function coverage 40%**, application info 20%, typical application circuits 15%.
+  - It retries alternative sources up to 5 times and keeps the best.
+  - Extractions are cached for 7 days, keyed by part number and source URL.
+  - **k parallel review runs** are reconciled by a consensus agent.
+  - It uses a "strong" model for review and a "weak" model for extraction.
+  - **The paper gives no accuracy numbers.**
+- **HWE-Bench preprocessing:** PDFs → Markdown via **MinerU**; an LLM then extracts descriptions and pin definitions into JSON, which "greatly mitigat[es] misunderstandings caused by document formatting". **[P-full]** — [arXiv 2603.18102](https://arxiv.org/abs/2603.18102)
+- **kicad-happy datasheets skill** (community, read in pass 1):
+  - Page selection: TOC → keyword density → fallback, 8–15 pages.
+  - Category prompts, then a typed `SpecValue{min, typ, max, unit, condition, evidence{page, confidence}}`.
+  - Quality-score trust gates, PDF-hash staleness, and "null, never guess".
+  - It **explicitly skips app-note and "recommended for X" prose**.
+  - **[P-full]** — [datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md)
+- **DocEDA**: a datasheet-specific layout-analysis model plus chain-of-thought LLM parameter extraction, and YOLO-based circuit-diagram parsing. **[P-abs]** — [arXiv 2412.05301](https://arxiv.org/abs/2412.05301)
+
+**Footprint and figure geometry**
+
+- **LLM4-IC8K / ICGeo8K** (arXiv 2508.03725; an ICML 2026 listing titled "LMM4-IC4K" appears to be a related version):
+  - Finding: current large multimodal models "severely suffer from inaccurate geometric perception" on IC mechanical drawings.
+  - Approach: split the task into pin count, pin centres and pin dimensions; train on synthetic drawings, then fine-tune on real ones.
+  - Dataset: 8,608 labelled samples.
+  - **[P-abs]** (via search summary) — [arXiv 2508.03725](https://arxiv.org/html/2508.03725v1); [ICML 2026 poster](https://icml.cc/virtual/2026/poster/65113)
+- **ICLabagent**, a multi-agent LMM framework for IC footprint-geometry labelling, is cited by HWE-Bench. **[S]** — [OpenReview d6tTnuWmTb](https://openreview.net/forum?id=d6tTnuWmTb)
+
+**PDF parsing tools (OmniDocBench v1.6, official leaderboard)** — all from the [OmniDocBench README](https://github.com/opendatalab/OmniDocBench), **[P-doc]**:
+
+| Parser | Table TEDS | Notes |
+|---|---|---|
+| MinerU2.5-Pro (1.2B) | **93.42** | overall 95.75 |
+| MinerU-2.5 | 87.88 | |
+| Gemini 3 Pro | 89.15 | |
+| Gemini 3 Flash | 89.29 | |
+| dots.ocr | 87.18 | |
+| olmOCR (7B) | 83.00 | |
+| GPT-5.2 | 82.95 | |
+| MinerU pipeline | 81.88 | |
+| Mistral OCR | 76.78 | |
+| **Marker** | **65.77** | |
+
+- The current overall leaders are TeleOCR 96.91, OvisOCR2 96.47 and PaddleOCR-VL-1.6 96.34.
+- Docling does not appear in the current table; an older snapshot showed it weak.
+- **Benchmark caveat:** OmniDocBench covers 10 general document types, not datasheets specifically.
+
+**Vendor layout content: numeric or not** (read directly)
+
+- **TI regulator datasheets** (all 9 checked; Layout Guidelines sections read): TPS62933, LMR33630, TPS54202, TPS563200, TPS62130, LM5146-Q1, TPS61023, LMR51430, TPS7A20. **[P-full]** — e.g., [TPS62933](https://www.ti.com/lit/ds/symlink/tps62933.pdf), [TPS54202](https://www.ti.com/lit/ds/symlink/tps54202.pdf), [LM5146-Q1](https://www.ti.com/lit/ds/symlink/lm5146-q1.pdf), [TPS7A20](https://www.ti.com/lit/ds/symlink/tps7a20.pdf)
+  - They use qualitative wording: "as close as possible", "loop area as small as possible", "sufficient vias".
+  - Rare numbers or hard rules:
+    - TPS62933: "A > 10-mil width trace" for the feedback divider, and a "separate VOUT trace to the upper feedback resistor".
+    - TPS54202 / TPS563200: "Kelvin connection to the GND pin for the feedback path".
+    - TPS7A20: do not place a thermal via directly under the DQN thermal pad.
+- **Microchip MCU decoupling:** caps "as close to the pins as possible". If a cap sits on another layer through a via, keep "the trace length from the pin to the capacitor… within one-quarter inch (6 mm)". **[P-doc]** — [Microchip online docs, 2.2 Decoupling Capacitors](https://onlinedocs.microchip.com/oxy/GUID-469A9E6E-3954-4CBA-A0EA-20BD77D40B54-en-US-4/GUID-F15B709B-5112-4669-BAE9-9DBAC5DA209C.html)
+- **Espressif ESP32-S3 hardware design guide** — many numeric rules. **[P-doc]** — [ESP32-S3 PCB Layout Design](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/pcb-layout-design.html)
+  - Main 3.3 V power trace ≥ 25 mil; VDD3P3 traces ≥ 20 mil.
+  - A 10 µF cap where power enters the chip.
+  - Crystal "far from the clock pin… The gap should be at least 2.0 mm".
+  - RF traces 50 Ω; 0201 matching parts placed in a zigzag; a 15 mil harmonic stub.
+  - ≥ 15 mm antenna clearance in the housing.
+  - SDIO lengths within ±50 mil of CLK, 50 Ω ±10%, total ≲ 2000 mil.
+  - Touch traces ≤ 300 mm long and ≤ 0.18 mm wide.
 
 ### Inferences
-- **The layout section is a different extraction target from the electrical tables**, and it needs its own schema. Most regulator, PHY and RF datasheets have a "Layout Guidelines" / "Layout Example" section: numbered prose rules plus one figure. A dedicated extractor should:
-  1. Locate the section (TOC/keyword, the same as kicad-happy's page selector).
-  2. Convert each rule into a **typed predicate**, e.g., `near(pin=VIN, part_role=Cin, max_mm=?, layer=same)`, `minimize_area(net=SW)`, `route_away(net=FB, from=SW/L)`, `kelvin(net=FB, at=Cout)`, `thermal_vias(pad=EP, count≥n)`, `no_copper_under(part=L|antenna, layers=…)`, `ground_return(PGND→AGND single point)`.
-  3. Keep the page and sentence as evidence.
-  4. Leave numbers `null` when the text is qualitative ("as close as possible"). The constraint solver then turns "as close as possible" into an objective weight instead of a hard bound.
-- Example layout **images** are best used as *topology hints* (relative placement order such as Cin–IC–L–Cout, and which side the FB divider sits on), interpreted by a VLM with low confidence. Their scale is unreliable. Recommended land patterns are a footprint concern and are already handled by KiCad libraries.
-- Key reliability issues to design for:
-  1. **Units and conditions**: values are only meaningful with their test conditions, as in `SpecValue.condition`.
-  2. **Variant confusion**: fixed vs ADJ versions, and package-specific θJA.
-  3. **Datasheet revision drift**: hash the PDF.
-  4. **Qualitative rules mis-quantified by the LLM**: never invent a millimetre value.
-  5. **Sister-part leakage**: the LLM "remembers" a similar part's guideline.
+- **Two extraction targets need two schemas:**
+  1. **Electrical tables** (pinout, absolute max, recommended externals, θJA). These are well served by staged extraction with provenance (kicad-happy, the hardware KG, D2S-FLOW).
+  2. **Layout guidance**: prose bullets plus one figure. This must be converted to typed predicates and keep qualitative strength levels ("as close as possible" → `weight=high, bound=null`). Never invent millimetres.
 
-  kicad-happy's controls (evidence page, confidence, null-not-guess, trust gates) are a good template for all five.
+  For MCUs and SoCs, look in the **hardware design guide** first. That is where numeric bounds live, not the datasheet.
+- **Reliability controls to implement**, each backed by a cited failure mode:
+  - Page or sentence evidence on every value (GDP.pdf: skipped footnotes, superseding amendments).
+  - **Tool-call audit**: refuse any extraction whose trace shows the PDF was never read ("Fidelity Is Not Enough").
+  - Chunked multi-pass extraction (76.1% → 98.8%).
+  - Deterministic computation of all derived numbers (2608.25217).
+  - Multi-run consensus for safety-critical checks (DRCY).
+  - PDF-hash plus revision pinning (kicad-happy).
+- **Parser choice:** run MinerU2.5-Pro (or a VLM like Gemini 3 Flash) for tables, and keep pdftotext `-layout` as a cheap fallback for prose. Treat figures (recommended layouts) as **low-confidence topology hints** only, because LMM geometric perception is poor (LLM4-IC8K).
 
 ### Gaps
-- I found **no tool or paper that specifically extracts PCB layout guidelines** (placement and routing rules) from datasheets or app notes and evaluates the result. This is a genuine gap in the literature, and possibly an opportunity.
-- I could not verify the named products "DatasheetGPT" or "PDF datasheet extraction for EDA".
-- I could not check TI WEBENCH's layout-export capability, or whether TI, ADI or ST publish machine-readable layout data (all hosts blocked).
-- I found no quantitative hallucination or unit-error rates for LLM datasheet extraction.
+- Still **no paper or tool that extracts PCB *layout* guidelines** (placement and routing rules) from datasheets or app notes and measures accuracy.
+- No datasheet-specific benchmark of PDF parsers. OmniDocBench is general-purpose.
+- Not checked: ADI, ST and NXP app notes (analog.com and st.com unreachable); whether any vendor publishes machine-readable layout constraints.
+- DRCY publishes no accuracy numbers.
 
 ---
 
 ## 4. Component knowledge bases and assembling a per-part "layout card"
 
 ### Takeaway
-Distributor APIs provide identity, package, a datasheet URL and loosely structured parametric key/value pairs:
-- **DigiKey v4**: `Parameters[]`, `DatasheetUrl`, plus filters like `Has3DModel`/`HasCadModel`.
-- **Nexar/Octopart GraphQL**: `specs { attribute, value }`.
-- **LCSC/JLC**: `attributes`, `encapStandard`, `pdfUrl`, and basic vs extended status.
+Distributor and part APIs give identity, package, datasheet URL and loosely typed parametrics:
+- Nexar: `specs { attribute { name id shortname } displayValue }`;
+- DigiKey v4: `Parameters[]`;
+- LCSC: `attributes` as a JSON string.
 
-None of them provide *layout* semantics: pin roles, hot-loop membership, keepouts or placement rules. A layout card must therefore be assembled from (i) the KiCad symbol and footprint, (ii) distributor parametrics, and (iii) datasheet extraction with evidence, plus (iv) the role-specific recipe.
+Exchange standards (**JEDEC JEP30 PartModel**, supported by Flux, including AI generation from datasheets) and **application-level block models** (CELUS "CUBOs": description, specs, BOM with lifecycle, app-note-based schematic, typed ports, resources) come closest to a "part + its application circuit" card.
+
+None of these sources carries layout constraints. Those must come from datasheet extraction and recipes (§3, §6).
 
 ### Cited Findings
-- **Nexar (Octopart) API**:
-  - A single GraphQL endpoint (`https://api.nexar.com/graphql`) with OAuth2 client-credentials auth.
-  - `supSearchMpn(q, limit)` returns `hits` and `results { part { mpn manufacturer { name } … } }`. Parts expose `specs { attribute { name shortname id } value }`.
-  - Each returned part counts against the organization's part quota, and partial matches are allowed.
-  - Sources: [Nexar Playground query examples](https://support.nexar.com/support/solutions/articles/101000494582-nexar-playground-graphql-query-examples); [Altium Octopart API docs](https://www.altium.com/documentation/altium-developer-center/octopart/api?version=5); [Altium quick-start (JP)](https://www.altium.com/jp/documentation/altium-developer-center/quick-starts/octopart-api)
-- **DigiKey Product Information API v4**:
-  - OAuth2 client credentials.
-  - `POST /products/v4/search/keyword`, with `SearchOptions` including `HasDatasheet`, `Has3DModel`, `HasCadModel`.
-  - The response includes `DatasheetUrl` and `Parameters[] {ParameterText, ValueText}` (e.g., Capacitance 100nF, Voltage Rated 16V, Temperature Coefficient X7R, Package / Case 0402).
-  - `GET /products/v4/search/{pn}/productdetails` returns full details, with `manufacturerId` to disambiguate.
-  - Other endpoints: `/media`, `/substitutions`, `/recommendedproducts`.
-  - Rate limits return HTTP 429 with `Retry-After`.
-  - Source (secondary; it documents the API): [kicad-happy digikey SKILL.md](https://github.com/aklofas/kicad-happy/blob/main/skills/digikey/SKILL.md)
-- **LCSC / JLCPCB**:
-  - The free community `jlcsearch` API (`https://jlcsearch.tscircuit.com`, no auth) returns `is_basic`/`is_preferred`, stock and price.
-  - "As of 2026-09" its general search no longer returns the `extra` block (manufacturer, datasheet, attributes). Category endpoints return `attributes` as a JSON **string** (e.g., `{"Resistance":"10kΩ","Power(Watts)":"100mW"}`).
-  - LCSC's own product-detail endpoint gives `productModel` (MPN), `brandNameEn`, `pdfUrl`, `encapStandard` (package) and price ladders.
-  - Source: [kicad-happy lcsc SKILL.md](https://github.com/aklofas/kicad-happy/blob/main/skills/lcsc/SKILL.md)
-  - Another skill set ships a local search over "630,000+ components in the JLCPCB/LCSC catalog". — [IxTechCrypto/kicad-skills](https://github.com/IxTechCrypto/kicad-skills)
-- **Datasheet-derived per-part facts** with evidence (pinout with `power_domain` and `alt_functions[]`, absolute max, thermal θJA, regulator topology, enable and PG pins) are already modelled as `DatasheetFacts`, with six categories in v1.4 (regulator, diode, transistor, op-amp, MCU catalog tier, crystal). — [kicad-happy datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md)
-- kicad-happy uses **package θJA lookup** with a thermal-via correction for junction-temperature estimates. It also keeps a per-part op-amp behavioral table (~100 parts: GBW, slew rate, output swing from distributor APIs or a built-in table). — [kicad-happy README](https://github.com/aklofas/kicad-happy)
-- KiCad 9 can **embed datasheets, 3D models and fonts** in schematic, PCB, symbol and footprint files, which makes self-contained projects possible. A layout card's datasheet can therefore travel with the design. — [KiCad 9.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/)
-- **PCBSchemaGen's per-IC KG** (pin roles plus constraint predicates, extracted automatically per IC) is the closest published analogue to a machine-checkable "part card", though it targets schematic correctness rather than layout. — [arXiv 2602.00510](https://arxiv.org/html/2602.00510v1); [alphaXiv v2](https://www.alphaxiv.org/abs/2602.00510.md)
-- CELUS models "CUBOs" as "digital datasets that serve as digital twins of component applications", meaning a part plus its application circuit, behind each functional block. — [CELUS: What are Functional Blocks](https://www.celus.io/knowledge/what-are-functional-blocks); [CELUS: Explore CUBOs](https://www.celus.io/knowledge/explore-cubos)
+- **Nexar / Octopart GraphQL:**
+  - `supSearchMpn(q, filters: {case_package: ["SSOP"]}, limit)` returns `hits` and `results { part { mpn specs { attribute { name id shortname } displayValue } } }`.
+  - "Not every component will have every attribute"; results can be filtered on attribute shortnames.
+  - Each returned part counts against the organization's part limit; the default is 10 parts.
+  - **[P-doc]** — [Nexar Playground query examples](https://support.nexar.com/support/solutions/articles/101000494582-nexar-playground-graphql-query-examples)
+- **DigiKey Product Information API v4:**
+  - `POST /products/v4/search/keyword` with `SearchOptions` (`HasDatasheet`, `Has3DModel`, `HasCadModel`) returns `DatasheetUrl` and `Parameters[] {ParameterText, ValueText}`.
+  - `GET …/productdetails`, `/substitutions` and `/recommendedproducts` provide more; rate limits return HTTP 429.
+  - **[P-full, secondary documentation]** — [kicad-happy digikey SKILL.md](https://github.com/aklofas/kicad-happy/blob/main/skills/digikey/SKILL.md). The official developer portal is a JavaScript app and was not readable.
+- **LCSC / JLCPCB:**
+  - The community `jlcsearch` API stopped returning the `extra` block (manufacturer, datasheet, attributes) in general search **as of 2026-09**.
+  - LCSC's product-detail endpoint gives `productModel`, `brandNameEn`, `pdfUrl` and `encapStandard`.
+  - **[P-full, secondary]** — [kicad-happy lcsc SKILL.md](https://github.com/aklofas/kicad-happy/blob/main/skills/lcsc/SKILL.md)
+- **JEDEC JEP30 PartModel** — "guidelines established by JEDEC… to facilitate the exchange of part data between manufacturers and their customers".
+  - Flux imports and exports JEP30 XML, and "can also generate JEP30 files from a datasheet using AI".
+  - **[P-doc]** — [Flux: JEP30 PartModel Import/Export](https://docs.flux.ai/reference/jep30-partmodel-reference.md)
+  - The JEDEC page itself did not render.
+- **CELUS CUBO data model** (each is "the smallest reusable functional block… a complete implementation of a function, structured as a digital, application-ready datasheet"). **[P-doc]** — [CELUS: What is a CUBO](https://www.celus.io/knowledge/what-is-a-cubo); [Functionality structure](https://www.celus.io/knowledge/functionality-structure-for-cubos-their-specs)
+  - Contents:
+    1. description;
+    2. structured specs;
+    3. BOM with lifecycle status;
+    4. schematic reflecting "decoupling capacitors, pull-up or pull-down resistors… based directly on manufacturer application notes";
+    5. **ports** with "signal types, electrical constraints, and connection requirements";
+    6. links to app notes and code.
+  - Functions sit in a **four-level hierarchy**: L1 parent (e.g., "Power Supply") → L2–L4 children (e.g., "Step-Down Converter"). A functional block appears only if a matching CUBO exists.
+  - Component data comes from Accuris. CELUS also offers an MCP server for Claude. **[S]** — [CELUS news](https://www.celus.io/news/define-design-develop)
+- **SnapMagic (SnapEDA):**
+  - Footprints follow IPC-7351B; symbols follow IEEE-315 plus internal standards.
+  - 3D models use nominal dimensions without internal features.
+  - An HTTP API exists, but no public field reference was found.
+  - **[S]** — [SnapMagic standards](https://support.snapmagic.com/en/articles/2702511-what-standards-does-snapmagic-follow); [apis.io listing](https://apis.io/providers/snapmagic/)
+- **Flux Knowledge Base** is persistent memory of preferences (preferred manufacturers, naming conventions, derating and testing protocols, "layout guidelines"). Each entry has a trigger and a scope (user or project), and is suggested automatically from chat ("We prefix signal nets with SIG_"). **[P-doc]** — [Flux Knowledge Base](https://docs.flux.ai/reference/knowledge-base.md)
+- **kicad-happy `DatasheetFacts`**: a typed per-MPN cache with evidence, confidence trust gates and staleness checks. It already covers regulator, diode, transistor, op-amp, MCU and crystal categories. **[P-full]** — [datasheet-extraction.md](https://github.com/aklofas/kicad-happy/blob/main/datasheet-extraction.md)
+- **PCBSchemaGen's schema-induced KG** holds per-IC pin roles plus constraint predicates; the KG files are in the repo (`kg.json`, `kg_component.json`). **[P-full]** — [PCBSchemaGen_v2](https://github.com/HZou9/PCBSchemaGen_v2)
 
 ### Inferences
-- A **layout card** per part (MPN + footprint) should contain:
-  - **Identity**: MPN, manufacturer, KiCad lib_id, footprint, package, datasheet hash.
-  - **Pin-role map**: pin number → role from the ontology (VIN, SW, BOOT, FB, PGND, AGND, EP, XIN…) + KiCad electrical type + power domain.
-  - **Electrical parametrics** relevant to layout: f_sw, max currents per pin, edge rate or interface standard, θJA/θJC, Tj_max, and voltage class (for creepage).
-  - **Required externals with roles**: Cin (which pins, value, "as close as possible"), Cboot, Cout, L, FB divider, crystal load caps.
-  - **Layout rules**: typed predicates with evidence (page, sentence) and confidence.
-  - **Thermal**: EP via count/pitch suggestion and copper area.
-  - **Keepouts**: e.g., no copper under an inductor or antenna.
-  - **Provenance** per field: kicad_lib / distributor / datasheet:p12 / llm_prior / user.
-- The distributor APIs are best used for **identity resolution, package, datasheet URL and coarse parametrics** (current rating, f_sw, package). They should not be the source of layout rules. Expect schema churn (the jlcsearch change in 2026-09 is an example) and design adapters accordingly.
-- Passive parts (R, C, L, ferrites) can get layout cards from parametrics alone (size, voltage rating, DC-bias derating, an L shielded-or-not flag for magnetic-leakage rules). ICs need datasheet extraction.
+- **The layout card should be a superset of a CUBO "ports" model plus the PCBSchemaGen pin-role KG.** Fields:
+  - identity: MPN, footprint, PDF hash;
+  - pin→role map;
+  - IBIS-derived pin facts where available (§2);
+  - required externals with roles;
+  - typed layout predicates with evidence;
+  - thermal and creepage data;
+  - provenance per field.
+
+  Keep it exportable to JEP30 for interchange where that makes sense.
+- **Distributor APIs are best used for identity resolution and coarse parametrics**: package, current rating, f_sw. Expect schema churn, such as the jlcsearch change in 2026-09.
+- **Copy Flux's "knowledge entry with trigger" pattern for team-specific recipe overrides**, e.g., "our bucks always get a 0402 HF cap on the same layer". These are user-scoped constraint templates that the recipe engine merges in.
 
 ### Gaps
-- I could not verify the SnapMagic (SnapEDA) API's metadata fields, Octopart's 3D-model and CAD fields, or whether any API exposes θJA or "recommended layout" data in structured form (hosts blocked, search exhausted).
-- I found no public "part knowledge graph" for board-level layout rules.
+- Not obtained: official DigiKey v4 field documentation (JavaScript portal); SnapMagic API fields; the JEP30 schema contents.
+- No public, structured source of θJA or layout data across vendors was found.
 
 ---
 
 ## 5. Design-intent capture in KiCad schematics, and LLM-proposed annotations and clarifying questions
 
 ### Takeaway
-KiCad 9/10 now give a schematic-side vocabulary for intent that round-trips to the PCB and to DRC:
-- **net-class directive labels**, net-class **rule areas** and multiple prioritized net classes per net;
-- **component classes** (set on symbols, on rule-area directives, or by rules), queryable in DRC;
-- **hierarchical sheets** and multichannel repeat;
-- **design blocks** (schematic in 9, PCB in 10);
-- **time-domain tuning profiles**, a **graphical DRC rule editor**, variants, jumpers and schematic groups (KiCad 10).
+KiCad 9/10 provide official, round-tripping carriers for every annotation an LLM front end needs:
+- net classes via **patterns (wildcards and regex), directive labels, net-label fields and rule areas**, with multiple prioritized classes per net and *implicit* classes usable only in DRC;
+- **component classes** via a `Component Class` symbol field or directive labels on rule areas;
+- **placement rule areas** generated per hierarchical sheet or component class, plus Repeat Layout;
+- design blocks (schematic in 9, PCB in 10);
+- time-domain tuning profiles and a graphical rule editor (10).
 
-An LLM front end can emit *all* of its annotations through these native mechanisms, as proposals for the user to accept, rather than in a side file.
+Commercial precedents (Quilter, Flux) confirm the workflow: **detect automatically → present to the user for validation → treat everything else as generic**.
 
 ### Cited Findings
-- **Component classes (KiCad 9)**:
-  - "Component classes are set on symbol in the schematic editor and then apply to the footprints associated with those symbols."
-  - "Directive labels attached to a rule area can now take a 'Component Class' field. Symbols within the rule area will be assigned that component class."
-  - Symbols can have multiple classes.
-  - New DRC expressions: `A.ComponentClass == 'CLASS_1,CLASS_2'`, `A.hasComponentClass('CLASS_1')` and `A.memberOfFootprint('${Class:CLASS_1}')`.
-  - Source: [KiCad 9.0.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/)
-- Component-class caveats from users:
-  - `hasComponentClass` matches only footprints, so a clearance rule on pads or tracks will not fire.
-  - The workaround is a spatial condition such as `intersectsCourtyard('${Class:fine_pitch}')`.
-  - Classes can also be assigned by condition-based rules.
-  - Community use cases: the multichannel tool, and writing custom rules.
-  - Sources: [KiCad forum: component classes for clearance](https://forum.kicad.info/t/using-component-classes-for-custom-clearance-settings/57733); [KiCad forum: component classes and directive labels](https://forum.kicad.info/t/component-classes-and-directive-labels-how-can-they-be-used/55950)
-- **Net classes (KiCad 9)**:
-  - A net can now have **multiple net classes**, ordered by priority. The effective class is built from non-null fields in priority order, with the default class as fallback.
-  - New DRC function `A.hasNetclass('x')`.
-  - **Net-class rule areas** let users "draw a shape to which net class directives can be attached to all nets defined by the shape".
-  - Source: [KiCad 9.0.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/)
-  - Assignment methods: a netclass directive label on a net, right-click → "Assign netclass", or **patterns** that group nets automatically. — [KiCad forum: netclasses](https://forum.kicad.info/t/netclasses/60014)
-- **Creepage DRC (KiCad 9)**: e.g., `(rule HV_HV (constraint creepage (min 20mm)) (condition "A.hasNetclass('A') && B.hasNetclass('B')"))`. — [KiCad 9.0.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/)
-  - kicad-tools exports voltage-domain netclasses plus pairwise HV clearance rules so that `kicad-cli` DRC enforces creepage. — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
-- **Design blocks and multichannel**:
-  - KiCad 9 adds schematic design blocks ("libraries of reusable schematic blocks") and multichannel design support that repeats PCB layout across channels.
-  - KiCad 10 extends design blocks to the PCB ("libraries of board layouts").
-  - Sources: [KiCad 9.0.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/); [KiCad 10.0.0 release notes](https://www.kicad.org/blog/2026/03/Version-10.0.0-Released/) (release dated 2026-03-20; URL inferred from KiCad's blog slug pattern)
-- **KiCad 10 additions relevant to intent**:
-  - Time-domain tuning: constraints in delay rather than only length, plus Tuning Profiles for per-layer routing parameters.
-  - A graphical DRC rule editor compatible with the custom-rules language.
-  - Variants.
-  - Jumpers: pin sets that are internally connected.
-  - Schematic grouping.
-  - Unconstrained pin/gate swap with forward and back annotation.
-  - Source: [KiCad 10.0.0 release notes](https://www.kicad.org/blog/2026/03/Version-10.0.0-Released/)
-- **Example of LLM intent detection with clarifying questions (kicad-happy)**:
-  - The analyzers emit a `design_intent` object: `product_class` (prototype/production), `ipc_class` (1–3), `target_market` (hobby/consumer/industrial/medical/automotive/aerospace), `confidence`, `detection_signals` and per-field `source` (config / pcb_fab_notes / schematic_title / auto).
-  - **When confidence < 0.5 the agent must ask the user to confirm** before applying stricter criteria. At ≥0.5 it applies the detected intent and states it.
-  - Extra LLM refinement signals: AEC-Q MPNs → automotive; isolation barriers → medical or industrial; TMR → safety-critical.
-  - Source: [kicad-happy design-intent.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/design-intent.md)
-- **Structured design interviews**: IxTechCrypto's `grill-me` skill runs a "relentless, round-based design tree interview" to stress-test PDN budgets and layout decisions before any copper is committed, optionally syncing to `CONTEXT.md`. — [IxTechCrypto/kicad-skills](https://github.com/IxTechCrypto/kicad-skills)
-- **Spec-gated edits**: copperhead lets "nothing start without a spec". Edit tools stay unavailable until a validated change proposal exists, and it keeps markdown design docs as memory plus a constraints registry. — [copperhead README](https://github.com/copperheadhq/copperhead)
-- **Hierarchy as identity**: atopile tags each footprint with an `atopile_address` (e.g., `usb_c.esd_protection.package`) taken from the module hierarchy, and uses it to keep and replay layouts across regenerations. — [kicad-tools analysis of atopile layout reuse](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-layout-reuse.md)
+- **KiCad official net-class assignment** (all from the [KiCad 9 Schematic Editor manual](https://docs.kicad.org/9.0/en/eeschema/eeschema.html), **[P-doc]**):
+  - **Directive labels** "behave like labels, except that they cannot be used to name a net". The attached net gets the directive's Net Class field.
+  - "You can also type in a net class that isn't explicitly listed… Such implicit net classes can't be assigned any design settings… but they can still be used in DRC rule queries."
+  - Several Net Class fields mean all listed classes are assigned. A directive on a bus applies to all of its members.
+  - **Net labels** can carry a Net Class field.
+  - **Rule areas**: "Any wire, bus, label, or symbol pin which crosses or is inside the rule area will be assigned the net class of a net class directive attached to the rule area border."
+- **KiCad official component classes:**
+  - "Named groupings of components: they are assigned to symbols… and also apply to the corresponding footprints". They are used for multichannel channels and "to group footprints in custom DRC rules".
+  - Assignment: a symbol field named **`Component Class`**, or a directive label with a Component Class field on a rule area. Multiple classes are allowed.
+  - **[P-doc]** — [KiCad 9 Schematic Editor manual](https://docs.kicad.org/9.0/en/eeschema/eeschema.html)
+- **KiCad DRC functions** (KiCad 9): `A.hasNetclass('x')`, `A.hasComponentClass('X')`, `A.memberOfFootprint('${Class:X}')`, `A.ComponentClass == 'A,B'`. **[P-doc]** — [KiCad 9.0.0 release notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/)
+  - Caveat from users: `hasComponentClass` matches footprints only. **[S]** — [forum](https://forum.kicad.info/t/using-component-classes-for-custom-clearance-settings/57733)
+- **KiCad placement rule areas:**
+  - Tools → Multi-Channel → **Generate Placement Rule Areas** "can draw basic placement rule areas for any of the hierarchical sheets or component classes… even if it is not intended to represent a channel".
+  - Each generated area is "the minimum size rectangle that encloses their constituent footprints". It can optionally be grouped with its footprints.
+  - **Repeat Layout** copies a reference channel's placement and routing when the topologies match.
+  - **[P-doc]** — [KiCad 9 PCB Editor manual](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html)
+- **KiCad 10 additions:**
+  - PCB design blocks ("libraries of board layouts");
+  - time-domain tuning with Tuning Profiles (per-layer parameters);
+  - a graphical DRC rule editor compatible with the custom-rule language;
+  - variants, jumpers, schematic grouping, unconstrained pin/gate swap.
+  - **[P-doc]** — [KiCad 10.0.0 release notes](https://www.kicad.org/blog/2026/03/Version-10.0.0-Released/)
+- **Quilter schematic guidance:**
+  - "Use native object classes whenever possible… to help identify important signals such as power nets, differential pairs, and important net classes".
+  - Supported CAD inputs: Altium, **KiCad**, Cadence Allegro, Siemens Xpedition.
+  - It parses hierarchical schematics but has no symmetric multichannel layout.
+  - **[P-doc]** — [Quilter: Design your schematic](https://docs.quilter.ai/using-quilter/design-your-schematic)
+  - Quilter "tries to automatically detect as many constraints as possible… However, some constraints need to be manually defined". Undetected signals are treated as "generic, low-speed digital". **[P-doc]** — [Quilter: Define physics comprehensions](https://docs.quilter.ai/using-quilter/define-physics-comprehensions)
+- **Flux**:
+  - The Net Type property is inferred and editable (§2).
+  - Copilot "understands your circuit's structure and connections", reads datasheets, and changes the schematic "with your approval".
+  - The Knowledge Base suggests persistent rules from conversation.
+  - **[P-doc]** — [Flux Copilot reference](https://docs.flux.ai/reference/copilot.md); [Knowledge Base](https://docs.flux.ai/reference/knowledge-base.md)
+- **kicad-happy design-intent detection** emits a `design_intent` object (product class, IPC class, target market, `confidence`, `detection_signals`, per-field `source`). It **asks the user when confidence < 0.5**. **[P-full]** — [design-intent.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/design-intent.md)
+- **copperhead**: "Nothing starts without a spec"; edit tools stay unavailable until a validated change proposal exists, and a constraints registry is kept. **[P-doc]** — [copperhead README](https://github.com/copperheadhq/copperhead)
+- **atopile** keeps layouts across regeneration by matching hierarchical addresses (`atopile_address`, e.g., `usb_c.esd_protection.package`) and sub-PCB templates. **[P-full, secondary analysis]** — [kicad-tools atopile-layout-reuse.md](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-layout-reuse.md)
 
 ### Inferences
-- **Mapping from annotation types to KiCad carriers**:
-  - Net role and class → net-class directive labels (or `.kicad_pro` net-class patterns), using multiple classes per net, e.g., `PWR_HICURRENT` + `SWITCH_NODE`.
-  - Block membership → **component class** per block instance, e.g., `BLK_BUCK1`. Each class can also carry a *role* class such as `ROLE_CIN_HOT`.
-  - Block-scoped rules → custom DRC rules in `.kicad_dru` keyed on `memberOfFootprint('${Class:BLK_BUCK1}')` or `hasNetclass`, plus courtyard or area conditions.
-  - Repeated channels → hierarchical sheets plus the multichannel tool.
-  - Approved block layouts → PCB design blocks (KiCad 10).
-- **Hierarchical sheet names are the cheapest high-precision intent signal.** Sheets named "Power", "USB" or "RF" give block boundaries a prior. Local labels inside a sheet give net roles. An LLM can be asked to propose a sheet split for flat schematics.
-- **Clarifying-question policy**: ask only where (a) a constraint is expensive to get wrong and (b) confidence is low or sources conflict. Examples:
-  - "Is J3 USB 2.0 HS or FS only?" (decides the 90 Ω rule).
-  - "Is +12V_MOTOR up to 5 A continuous?" (decides copper width).
-  - "Is net `SENSE` high-impedance analog?"
-  - "Should Y1 nets get guard rings?"
+- **Mapping from front-end annotations to KiCad carriers:**
+  - Net roles → net classes. Prefer **implicit classes** (DRC-queryable, no settings) for pure semantic tags like `ROLE_SW_NODE`. Use real classes for width, clearance and diff-pair gap.
+  - Block membership → a `Component Class` field (e.g., `BLK_BUCK1`), plus per-role classes such as `ROLE_CIN_HF`.
+  - Block placement regions → **generated placement rule areas per component class**. KiCad already sizes these from footprints and can group them, which gives the placer native region seeds.
+  - Block-scoped rules → `.kicad_dru` using `memberOfFootprint('${Class:…}')` or courtyard conditions, because `hasComponentClass` only applies to footprints.
+- **Validation UX should mirror Quilter's:**
+  - each detected constraint is shown with its evidence and editable fields;
+  - accept or reject is recorded;
+  - undetected nets default to "generic low-speed", stated explicitly.
 
-  Each question should be generated from a specific unresolved field in the annotation schema, never asked open-ended. kicad-happy's confidence threshold is a working precedent.
-- Write-back should be **diff-style and reversible**: proposed labels, component-class fields and `.kicad_dru` rules are shown as a patch and accepted per item. This also gives training data (accept or reject) for later fine-tuning.
+  Flux's "suggested knowledge" pattern can turn repeated user edits into reusable rules.
+- **Generate clarifying questions only for high-impact, low-confidence fields.** Typical examples: interface speed (USB FS vs HS), max current on unnamed power nets (Quilter's 200/500 mA defaults show why), whether the ground strategy should be split or single. kicad-happy's 0.5-confidence threshold is a working precedent.
 
 ### Gaps
-- I could not read the current official KiCad 9/10 manuals (docs.kicad.org was blocked). Details such as the exact field names for component classes in rule-area directives, and the netclass *pattern* syntax in `.kicad_pro`, should be checked against the official docs.
-- I could not check Flux's or Quilter's intent-capture UIs (hosts blocked, search exhausted).
+- Exact `.kicad_dru` syntax examples for component-class conditions in KiCad 10 were not re-verified.
 
 ---
 
-## 6. Mapping recognized function → layout recipe (existing codifications)
+## 6. Mapping recognized function → layout recipe (existing codifications and vendor numbers)
 
 ### Takeaway
-Recipes exist today in three forms:
-1. **Generator and module libraries** that bundle a circuit with its layout: JITX parametric circuits, atopile modules with sub-PCB layout reuse, CELUS functional blocks/CUBOs that produce a "prototype-grade PCB layout", KiCad 10 PCB design blocks, and kicad-tools circuit blocks.
-2. **Rule checkers** that encode the recipe as post-hoc checks: kicad-happy's EMC and PCB rules, such as input-cap loop area, SW copper area, decoupling distance, and TVS-to-connector distance.
-3. **Prose agent skills**: IxTechCrypto, kicad-happy deep-review heuristics.
+Function-to-layout recipes exist in three forms:
+1. **Physics-constraint engines with checks.** Quilter is the clearest. Bypass caps, crystals and switching converters are placement constraints, validated after layout by **Pin Distance** (an example acceptable range of 0–1 cm), Trace Path Length, Layer Switch Count and Ground Plane Overlap.
+2. **Generators and modules**: JITX parametric circuits, atopile sub-PCB reuse, CELUS CUBOs (with a floorplan handover), KiCad 10 PCB design blocks, Flux modules, TI WEBENCH PCB Export.
+3. **Prose rules** in app notes and agent skills.
 
-None of them publishes a general, machine-readable "function → placement/routing constraints" table. That table is the gap a new system has to fill.
+**Vendor numeric thresholds are scarce for regulators.** TI datasheets give "as close as possible". TI app notes give a few numbers:
+- traces ≥ 15 mil per ampere;
+- 1 via per 200 mA (AN-1149) vs 1 via per ampere (SLYT614) — these **conflict**;
+- a lateral hot loop of about 20 mm² (>1 nH) vs a vertical loop of about 2 mm² (SNVA803).
+
+MCU guides are more numeric: Microchip ≤ 6 mm decap trace when going through a via; Espressif crystal ≥ 2.0 mm from the clock pin.
 
 ### Cited Findings
-- **JITX**:
-  - In the power-layout tutorial, a buck regulator (24 V → 5.5 V) is defined by a constraints object (input range, output setpoint, ripple, output current, switching frequency, inductor sizing method), and a **TI TPS6293x parametric circuit** is instantiated from a TI-vreg library. A TPS6208 stage (5.5 V → 3.3 V) follows the same pattern.
-  - Placement and routing can be specified in code for repeatability, or adjusted interactively.
-  - Sources: [JITX power layout tutorial](https://docs.jitx.com/getting-started/quickstart-power-layout.html); [JITX physical design docs](https://docs.jitx.com/en/4.0/essentials/physical_design/index.html)
-  - A JITX skills plugin describes Python-based workflows for pours, wiring and SI constraints. — [Claude Plugin Hub listing](https://www.claudepluginhub.com/plugins/jitx-inc-jitx-skills)
-  - I did not find a JITX page that spells out buck hot-loop rules.
-- **atopile**:
-  - A declarative `.ato` language with modules, interfaces, units, tolerances and assertions. The compiler "solves constraints, picks parts, runs checks, and updates your KiCad layout".
-  - It emphasizes "reusable modules" and a package registry at packages.atopile.io.
-  - Source: [atopile README](https://github.com/atopile/atopile)
-  - Layout reuse: each module can have a sub-PCB with pre-laid-out footprints and routes. On regeneration, footprints are matched by hierarchical address. For new groups, the layout is pulled from the template with an anchor-footprint offset, and nets are remapped by matching pads. — [kicad-tools analysis of atopile layout reuse](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-layout-reuse.md)
-- **CELUS**:
-  - Functional blocks are "questions" that CUBOs "answer".
-  - From a canvas of blocks, "AI-powered software generates the corresponding schematics file, a Bill of Material and a prototype-grade PCB layout file in the EDA format of your choice".
-  - The vendor claims up to 90% time reduction (marketing claim, not independently measured).
-  - Sources: [CELUS functional blocks](https://www.celus.io/knowledge/what-are-functional-blocks); [CELUS blog](https://celus.io/blog/define-design-develop); [CELUS FAQ](https://www.celus.io/faq)
-- **kicad-tools** has reusable schematic blocks: `MCUBlock` (MCU with bypass capacitors), `LDOBlock` (regulator with input and output capacitors), USB, debug header, I2C and reset. It also has an A* autorouter "with net class awareness". — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
-- **kicad-happy rule checks that encode recipes**:
-  - SW-001..003: harmonic overlap with test bands, **switching-node copper area**, **input-capacitor loop area**.
-  - DC-001..003: cap too far from IC, IC with no decoupling, cap too far from via.
-  - ES-001/002: **TVS too far from connector**, TVS with too few ground vias.
-  - CK-001..004: clock on an outer layer, long clock trace, clock near a connector, stubs.
-  - DP-001..004: skew, reference-plane change, outer-layer routing.
-  - ML-001: **unshielded switching inductor within 15 mm** of ADCs, op-amps, crystals or RF.
-  - VS-001: stitching spacing > 2×λ/20.
-  - RP-001: a layer-change via without a nearby ground via.
-  - Physics: E ∝ f²·A·I, so doubling loop area adds +6 dB and doubling frequency adds +12 dB. "A 500 kHz buck converter has its 60th–176th harmonics in the FCC 30–88 MHz test band. Minimizing the switching loop area is the primary mitigation."
-  - Source: [kicad-happy EMC pre-compliance guide](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md)
-  - The PCB analyzer's decoupling check considers caps within 10 mm of each IC and reports the closest cap that shares a net. — [kicad-happy methodology_pcb.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_pcb.md)
-- **kicad-happy Deep Review per-class heuristics** (these become layout-relevant facts):
-  - **Regulators**: required externals vs datasheet minimums (inductance floor, Cin/Cout *after DC-bias derating*, bootstrap cap), plus thermal check P_diss×θJA + T_amb vs Tj_max.
-  - **MCUs**: per-domain decoupling vs datasheet placement requirements; crystal CL = C1·C2/(C1+C2) + Cstray; USB series resistors.
-  - **Interfaces**: termination and fail-safe biasing.
-  - **TVS**: working voltage and clamping vs abs-max.
-  - Source: [kicad-happy deep-review.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/deep-review.md)
-- **Community prose recipes (IxTechCrypto/kicad-skills)**:
-  - "Keep the high-frequency buck/boost switching loop (C_IN → FET → L → C_OUT) tight (< 15 mm² loop area)." — [kicad-rf-lowpower SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-rf-lowpower/SKILL.md)
-  - "Never sense buck regulator feedback at the output inductor. Route a dedicated differential Kelvin pair directly from the core bypass capacitor of the furthest critical ASIC back to the buck controller sense pins." Also: design one point-of-load decoupling and thermal pattern and clone it across N identical chip sites. — [kicad-highcurrent SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-highcurrent/SKILL.md)
-  - Clock lines: guard with ground copper or keep 3W spacing; critical clock or ADC lines get 5W or a coplanar ground guard with stitching vias every 5 mm. USB 2.0 is 90 Ω and Ethernet 100 Ω. — [kicad-highspeed SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-highspeed/SKILL.md)
-  - RF: a "sacred" antenna keepout on all layers, a 50 Ω CPWG feed and a via fence. — [kicad-rf-lowpower SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-rf-lowpower/SKILL.md)
-  - These are community rules of thumb, not vendor specifications.
-- A "spec-to-layout automation flow for buck converters" exists at IC level (NYCU), showing that recipe-driven buck layout has been automated in the IC domain (title only seen). — [NYCU scholar page](https://scholar.nycu.edu.tw/zh/publications/spec-to-layout-automation-flow-for-buck-converters-with-current-m/)
+
+**Physics-constraint engine: Quilter.** **[P-doc]** — [Quilter: PRC overview](https://docs.quilter.ai/physics-rule-checks-prcs/overview); [Pin Distance](https://docs.quilter.ai/physics-rule-checks-prcs/pin-distance); [Switching Converters](https://docs.quilter.ai/physics-constraints/switching-converters); [Bypass Capacitors](https://docs.quilter.ai/physics-constraints/bypass-capacitors); [Crystal Oscillators](https://docs.quilter.ai/physics-constraints/crystal-oscillators)
+
+- **Switching converter:** "ensures tight ground return loops for input and output paths"; "requires the three passive components to be positioned as closely as possible to the converter package".
+- **Bypass:** "places capacitors with smaller capacitance values closer to power pins". One cap may bypass several pins on the same IC.
+- **Crystal:** "position oscillators near their drivers".
+- **Checks per constraint:**
+
+  | Constraint | Physics Rule Checks |
+  |---|---|
+  | Bypass, crystal, switching converter | Pin Distance, Trace Path Length, Layer Switch Count, Ground Plane Overlap |
+  | Differential pairs | Ground Plane Overlap, Uncoupled Spacing, Length Mismatch |
+  | Power nets | Overheated Length |
+  | Single-ended impedance | Invalid Width Span, Ground Plane Overlap |
+
+- **Pin Distance** is the Euclidean distance between the closest edges of two pins. The documented example passes at "0.13cm within acceptable range (0cm to 1cm)" and fails at 1.11 cm.
+- Quilter frames its whole approach as "constraints at the physics level, not the rules level", computing geometric rules per stack-up. **[P-doc]** — [How does Quilter work?](https://docs.quilter.ai/about-quilter/how-does-quilter-work)
+
+**Generators and modules**
+
+- **TI WEBENCH PCB Export** (June 2014):
+  - Creates a power-supply PCB layout "using the sound layout principles provided by WEBENCH Power Designer", with footprints included.
+  - Exports to **Altium Designer, Cadence Allegro, CadSoft EAGLE, Mentor Graphics PADS and DesignSpark PCB**.
+  - **[P-doc]** — [TI press release (PRNewswire)](https://www.prnewswire.com/news-releases/create-a-power-supply-board-layout-in-minutes-with-tis-webench-pcb-export-262360801.html)
+  - TI's current WEBENCH Circuit Designer page still lists "Export your design into your favorite CAD tool", without a format list. **[P-doc]** — [TI WEBENCH page](https://www.ti.com/design-resources/design-tools-simulation/webench-power-designer.html)
+  - **No evidence of KiCad export was found.** **[S]**
+- **Ultra Librarian / TDK** published a multi-power-module reference design in 8 CAD formats including KiCad, so vendor reference layouts can arrive as native files. **[S]** — [ElectronicsForU press release](https://www.electronicsforu.com/press-releases/multi-power-module-reference-design-in-8-different-cad-formats)
+- **CELUS** generates schematics and BOMs from functional blocks. Its handover "involves generating a floorplan that simplifies the transition from schematic design to PCB layout". A third-party roundup lists CELUS as schematic and BOM, not layout. **[S]** — [CELUS news](https://www.celus.io/news/define-design-develop); [JLCPCB AI tools blog](https://jlcpcb.com/blog/ai-tools-for-pcb-design)
+- **JITX**: a buck is defined by a constraints object, then a TI TPS6293x parametric circuit is instantiated. Placement and routing can be in code. **[S]** — [JITX power layout tutorial](https://docs.jitx.com/getting-started/quickstart-power-layout.html) (the page did not render in pass 2)
+- **atopile**: package registry plus sub-PCB layout reuse matched by hierarchical address. **[P-doc / P-full secondary]** — [atopile README](https://github.com/atopile/atopile); [kicad-tools analysis](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-layout-reuse.md)
+- **Flux** has "Modules… reusing layout sections". **[P-doc, index only]** — [Flux docs index (llms.txt)](https://docs.flux.ai/llms.txt)
+  - Its layout rules include "Auto Layout Gravity", a 0–1 setting for how tightly parts are initially clustered. **[P-doc]** — [Flux Layout Rules List](https://docs.flux.ai/reference/layout-rules-types.md)
+
+**Rule checkers: kicad-happy.** EMC rules include:
+- SW-002/003: switch-node copper area, input-cap loop area;
+- DC-001..003: decap distance (caps within 10 mm considered);
+- ES-001: TVS distance to connector;
+- ML-001: unshielded inductor within 15 mm of sensitive analog;
+- skew limits: USB HS 25 ps, PCIe 5 ps, Ethernet 50 ps, HDMI 20 ps.
+
+**[P-full]** — [emc-precompliance.md](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md); [methodology_pcb.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_pcb.md)
+
+**Vendor numbers** (all **[P-full]**)
+
+- **TI AN-1149 (SNVA021C):**
+  - Run the feedback trace "as far from the inductor and noisy power traces as possible", "direct… somewhat thick", and possibly on the opposite side with a ground plane between.
+  - Power traces "an absolute minimum of 15 mils (0.381mm) per Ampere".
+  - "One standard via per 200 mA of current".
+  - Grounds of the IC, Cin, Cout and the diode connect close together to the ground plane.
+  - Switching current loops should "curl in the same direction".
+  - Source: [TI SNVA021C](https://www.ti.com/lit/pdf/snva021c)
+- **TI SLYT614** ("Five steps to a great PCB layout for a step-down converter"):
+  - The input cap "should be the first component placed in the layout after the IC. Route the capacitor to the IC immediately".
+  - Keep the SW node small.
+  - "A good rule of thumb for the number of vias necessary is to use one via per amp of current".
+  - Place vias outside the Cin–IC path.
+  - Source: [TI SLYT614](https://www.ti.com/lit/pdf/slyt614)
+- **TI SNVA803** (Hegarty, LM5146-Q1 power stage):
+  - Laterally oriented switching loop: "almost 20 mm²", loop inductance ">1 nH".
+  - Vertical loop with a layer-2 return path: "loop area of 2 mm²", with flux cancellation.
+  - Source: [TI SNVA803](https://www.ti.com/lit/pdf/snva803)
+- **TI datasheets:** see §3. They are qualitative apart from TPS62933's ">10-mil" FB trace and the Kelvin FB-ground rule on TPS54202/TPS563200.
+- **MCU guides:** Microchip ≤ 6 mm (¼ in) pin-to-cap trace when the cap is through a via. Espressif: crystal ≥ 2.0 mm from the clock pin, power trace widths, 15 mm antenna clearance. See §3. [Microchip](https://onlinedocs.microchip.com/oxy/GUID-469A9E6E-3954-4CBA-A0EA-20BD77D40B54-en-US-4/GUID-F15B709B-5112-4669-BAE9-9DBAC5DA209C.html); [Espressif](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/pcb-layout-design.html)
+- **Community rule:** "tight (< 15 mm² loop area)" for buck/boost loops (Cin → FET → L → Cout). This is a skill author's number, not a vendor's. **[P-doc]** — [IxTechCrypto kicad-rf-lowpower SKILL](https://github.com/IxTechCrypto/kicad-skills/blob/main/skills/kicad-rf-lowpower/SKILL.md)
 
 ### Inferences
-- **A draft recipe table** follows. The rules are *standard engineering practice*, partly backed by the community and tool sources above, and should be confirmed against vendor app notes. Pointers that were **not verified this session**: TI AN-1149 / SNVA021 "Layout Guidelines for Switching Power Supplies"; TI SPRAAR7 "USB 2.0 Board Design and Layout Guidelines"; ST AN2867 "Oscillator design guide for STM8/STM32"; ADI MT-101 "Decoupling Techniques".
+**Draft recipe table.** "Hard" means compiled to DRC or PRC checks. "Soft" means a placer objective weight. Numbers are cited where available, otherwise left as `null` with a qualitative weight.
 
-  | Block (recognizer) | Critical sub-structure (roles) | Hard/soft constraints to emit |
-  |---|---|---|
-  | **Buck** (IC with SW+FB±BOOT, L on SW) | Hot loop = Cin(HF) ↔ VIN pin ↔ high-side FET ↔ low-side FET/diode ↔ PGND, plus Cboot SW↔BOOT | Cin(HF) on the same layer, adjacent to VIN/PGND (minimize loop area; numeric bounds only from the datasheet); SW copper minimal and no SW under the FB network; FB divider near the FB pin, with its top tap Kelvin-sensed at Cout (or at the load); L right next to SW; Cout returns to PGND near Cin's return; PGND/AGND join at one point if the datasheet says so; EP thermal vias; keep sensitive nets ≥ X mm from L (ML-001 uses 15 mm) |
-  | **Boost** | Hot loop = Cout ↔ switch/diode ↔ PGND | Mirror of buck, with Cout as the critical loop cap |
-  | **LDO** | Cin, Cout at pins | Cout within the ESR/distance spec; thermal copper on the tab or EP |
-  | **Decoupling network** (cap between rail and GND, sharing a net with an IC power pin) | Cap ↔ specific power pin | Smallest cap closest to its pin; via to plane at the cap pad; one cap per pin group (kicad-happy DC-001..003) |
-  | **Crystal** (crystal + 2 load caps to GND on XIN/XOUT) | XIN/XOUT nets | Very short, symmetric, no vias, ground guard or keepout of other signals, load caps between the crystal and ground near the IC, no fast signals nearby |
-  | **USB 2.0** (MCU USB_DP/DM ↔ connector D+/D−, optional ESD, series R) | Diff pair | 90 Ω differential, skew ≤ ~25 ps (kicad-happy), ESD as close to the connector as possible (ES-001), continuous reference plane, minimal vias and stubs |
-  | **RF front end** (antenna/RF pin + matching network) | 50 Ω line | 50 Ω CPWG, matching parts in line with no stubs, antenna keepout, via fence |
-  | **Op-amp / ADC front end** (op-amp with feedback R/C; ADC input RC) | High-Z input nodes, feedback loop | Short high-Z nodes, guard rings where leakage matters, feedback parts close to the inverting pin, ADC RC close to the ADC pin, away from SW/L/clock |
-  | **ESD protection** (TVS mapped to a connector) | Connector pin → TVS → GND | TVS immediately at the connector, short low-inductance ground with multiple vias |
-  | **High-current path** (net with a high-current part/rating) | Power path | Width from IPC-2152 on current; via arrays (one community source gives 1.5–2 A/via); copper pours |
+| Block (recognizer) | Critical roles | Hard constraints | Soft constraints / defaults |
+|---|---|---|---|
+| **Buck** (U with SW/FB(/BOOT) + L on SW: the Quilter and kicad-happy rule) | Cin_HF, IC VIN/PGND, L, Cout, Cboot, FB divider | Power trace width from current (≥ 15 mil/A floor, AN-1149; IPC-2152 better); vias by current (1 per 200 mA conservative vs 1 per A, a noted conflict); Kelvin FB ground where the datasheet says so | Cin_HF placed first, same layer, adjacent to VIN/PGND (weight max); loop area target ≲ 2–20 mm² depending on stack-up (SNVA803 range) with a vertical return over a solid layer-2 GND; SW copper minimal; FB divider at the FB pin with a separate VOUT sense trace, away from SW/L (opposite side over GND); Pin Distance check (example 0–1 cm, Quilter); sensitive parts ≥ 15 mm from unshielded L (kicad-happy ML-001) |
+| **Boost** | Cout, switch/diode, PGND | as buck | Cout_HF is the critical loop cap |
+| **LDO** | Cin, Cout | no thermal via directly under a DQN pad if the datasheet says so (TPS7A20) | Cin/Cout adjacent; thermal copper |
+| **Decoupling** (cap between rail and GND sharing a net with an IC power pin; Quilter priority: wire, then voltage-named pin, then split) | cap ↔ pin | ≤ 6 mm trace if through a via (Microchip) | smallest cap closest (Quilter); ground via at the cap pad (Espressif) |
+| **Crystal** (X/Y with both pins on the same IC: Quilter) | XIN/XOUT | none universal | crystal near the driver; no signals underneath; ground isolation or keep-out; ≥ 2.0 mm from the clock pin (Espressif, chip-specific); no magnetics nearby |
+| **USB / diff pairs** (pin-role pair + KiCad suffix) | D± | Zdiff and skew from the protocol pack (other researcher); KiCad diff-pair net class | ESD at the connector |
+| **RF** (antenna / RF pin + matching network) | 50 Ω line | 50 Ω (±10% invalid-width tolerance, Quilter) | matching parts at the pin; antenna keep-out; clearance (15 mm housing, Espressif) |
+| **Power nets** (name or "Power" class: Quilter) | rail | width for max current, ΔT ≤ 20 °C (Quilter) | pour if the user requests it; defaults 200 mA (<3 V) / 500 mA (>3 V) need confirmation |
 
-- **Recipes should be data, not prompts.** Each row should be a parameterized template: a role pattern for recognition, plus a constraint set with default weights. Numbers are filled in from the part's layout card where the datasheet gives them, and stay qualitative or objective-weighted otherwise. This makes recipes testable against kicad-happy-style checkers, which already exist for several rows.
-- KiCad 10 PCB design blocks and atopile-style address matching suggest a second recipe channel: **"replay a known-good sub-layout"** (e.g., a vendor EVM layout for the same IC) when the block matches exactly. Generate from constraints when it does not.
+- **Recipes should be data.** Each has a recognizer pattern (pin roles plus refdes, as in Quilter's rules), a constraint set and a **check set**. Quilter's design of "every constraint has its own PRCs" is the model to copy: the same predicate drives the placer objective and the post-route acceptance test.
+- **Where vendor numbers conflict** (via-per-current rules), use the conservative value and attach both citations, so the user sees the discrepancy.
+- **Replaying a known-good sub-layout** (KiCad 10 PCB design blocks, atopile sub-PCBs, WEBENCH or vendor EVM exports) should be preferred when the block matches exactly. Generate from constraints otherwise.
 
 ### Gaps
-- I could not verify TI WEBENCH's layout export (formats, KiCad support) or Flux's template and AI-layout recipe system (hosts blocked, search exhausted).
-- I found no published, machine-readable cross-vendor recipe database.
-- I could not confirm which numeric thresholds (mm, mm²) vendors actually specify for Cin distance or loop area. Most vendor guidance is believed to be qualitative ("as close as possible"), but that is unverified.
+- Not obtained: the current WEBENCH export format list, or whether KiCad is supported; CELUS floorplan details; ADI/ST/NXP layout app-note numbers (hosts unreachable).
+- No published loop-area *targets* from vendors in mm² beyond SNVA803's worked examples.
 
 ---
 
 ## 7. Implications for an LLM-driven KiCad placer/router — proposed "design understanding" pipeline and data schema
 
 ### Takeaway
-Build the front end as **deterministic extraction → template/rule recognition → LLM adjudication and datasheet-rule extraction (evidence-gated) → user confirmation → compilation into native KiCad intent** (net classes, component classes, `.kicad_dru` rules, groups and design blocks), plus a soft-constraint objective for the placer.
+Build the front end as:
+1. **deterministic extraction**;
+2. **template/rule recognition** (pin-role-labelled VF2 motifs plus Quilter/kicad-happy-style heuristics);
+3. **LLM work through tools** on a compact JSON graph: adjudication, detector-writing, and staged datasheet extraction with evidence;
+4. **user validation** of detected constraints;
+5. **compilation to KiCad-native intent** (net classes, component classes, placement rule areas, `.kicad_dru`) plus a placer objective file;
+6. **constraint-specific post-layout checks**.
 
-The evidence favours keeping topology and graph facts deterministic. GENIE-ASI's F1 drops from 1.0 to 0.31, CIRCUIT tops out at 48%, and HWE-Bench at 8.15%. LLMs should be used where they are measurably useful: reading datasheets, labelling parts and pins, recognizing intent from names and context, writing new detector templates, and asking targeted questions. kicad-happy's architecture (deterministic JSON plus LLM reasoning with confidence and evidence labels) is the closest working precedent.
+The evidence for this split:
+- LLMs are strong on names, documents and code generation (HWE-Bench, PCB-QA, GENIE-ASI HL1/HL2, staged datasheet extraction at 98.8%);
+- LLMs are weak on raw-text connectivity (NetlistBench), stage-level grouping (GENIE-ASI HL3: 0.31), geometry (LLM4-IC8K) and multi-step edits (NetlistBench: 80% → 26%).
 
 ### Cited Findings
-- Deterministic-first architecture precedent: "The analysis scripts are data extraction tools, not AI… The AI part is the *reasoning about* the data." "Hallucination risk is bounded by the data… it can't invent components that aren't in your schematic." Every finding carries a `deterministic` / `heuristic` / `datasheet-backed` confidence label. — [kicad-happy how-it-works](https://github.com/aklofas/kicad-happy/blob/main/how-it-works.md)
-- "LLM writes executable code" beats "LLM answers directly" on subcircuit identification for simple and moderate structures (F1 1.0 / 0.81), but still fails on complex ones (0.31). — [GENIE-ASI arXiv 2508.19393](https://arxiv.org/pdf/2508.19393)
-- LLM topology comprehension is weak: CIRCUIT's best is 48.04%, with topology the hardest part. — [arXiv 2502.07980](https://www.arxiv.org/pdf/2502.07980)
-- Board-level datasheet-driven design is far from solved: HWE-Bench's best is 8.15%, with "usable documentation understanding but lack physical intuition". — [arXiv 2603.18102](https://arxiv.org/pdf/2603.18102)
-- A KG plus a deterministic verifier makes LLM output checkable at pin and topology level (PCBSchemaGen). — [arXiv 2602.00510](https://arxiv.org/html/2602.00510v1)
-- An intent-confidence threshold that triggers user confirmation (<0.5) is in production use. — [kicad-happy design-intent.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/references/design-intent.md)
-- KiCad-native carriers for every annotation exist as of v9/v10: component classes, multiple net classes, rule areas, DRC functions, design blocks, tuning profiles and the graphical rule editor. — [KiCad 9.0.0 notes](https://www.kicad.org/blog/2025/02/Version-9.0.0-Released/); [KiCad 10.0.0 notes](https://www.kicad.org/blog/2026/03/Version-10.0.0-Released/)
+- **Representation matters:** PCB-QA has JSON + tools at 0.88 vs native KiCad exports at 0.55 vs PDF at 0.43. **[P-full]** — [arXiv 2606.23704](https://arxiv.org/abs/2606.23704)
+- **Code-writing beats direct reading** for subcircuit identification, but stage-level grouping stays poor (F1strict 0.31). **[P-full]** — [arXiv 2508.19393](https://arxiv.org/pdf/2508.19393)
+- **Connectivity queries from raw netlists are model-dependent** (2–97%), and long edit chains collapse. **[P-full]** — [arXiv 2608.12197](https://arxiv.org/abs/2608.12197)
+- **Production precedent for detect → validate → check:** Quilter's Circuit Comprehension plus PRCs. **[P-doc]** — [Quilter docs](https://docs.quilter.ai/using-quilter/define-physics-comprehensions)
+- **Staged, provenance-preserving datasheet extraction** (98.8% vs 76.1%) and **tool-call auditing** against fabricated extractions. **[P-abs]** — [arXiv 2610.12762](https://arxiv.org/abs/2610.12762); [arXiv 2608.28439](https://arxiv.org/abs/2608.28439)
+- **A deterministic verifier makes LLM output checkable:** PCBSchemaGen's 5-layer verifier (ERC, role, template, VF2 topology, power invariants). With it, Gemma-4-31B passes 81.3% of PCBBench tasks. **[P-full]** — [arXiv 2602.00510](https://arxiv.org/abs/2602.00510)
+- **Topological validity ≠ simulates OK:** structural validation must be its own stage. **[P-abs]** — [arXiv 2609.26830](https://arxiv.org/abs/2609.26830)
+- **KiCad-native carriers exist** for every annotation type, including generated placement rule areas per component class. **[P-doc]** — [KiCad 9 manuals](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html)
+
+**Evaluation datasets available**
+
+| Dataset | What it contains | License / access |
+|---|---|---|
+| BenchPCNP | 50 boards, 54 module labels | CC BY 4.0 |
+| open-schematics | 87.9k schematic/PCB records, KiCad v5+ / legacy / Altium, kiutils JSON, no labels | CC-BY-4.0 overall; source licences vary |
+| Ohmatic human-verified-v1 | 1,000 native KiCad/Eagle schematics, no labels | CC-BY-4.0 |
+| PCBSchemaGen benchmarks | 227 tasks, 480 real ICs | MIT |
+| PCB-QA | 480 QA over 8 KiCad projects | — |
+| PCB-Bench | 174 OSHWHub boards with descriptions | — |
+| HWE-Bench | 300 tasks, 2,914 datasheets | — |
+| OmniLayout / OmniRouting | 1,681 schematic-coupled designs claimed | no licence; only 5 boards public as of 2026-08-15 (third-party recon) |
+
+Sources:
+- BenchPCNP **[P-full]** — [PMC13046837](https://pmc.ncbi.nlm.nih.gov/articles/PMC13046837/)
+- open-schematics **[P-doc]** — [HF bshada/open-schematics](https://huggingface.co/datasets/bshada/open-schematics)
+- Ohmatic **[P-doc]** — [HF Ohmatic/human-verified-schematics-v1](https://huggingface.co/datasets/Ohmatic/human-verified-schematics-v1)
+- PCBSchemaGen benchmarks **[P-doc]** — [HF Hzou9/PCBSchemaGen-Benchmarks](https://huggingface.co/datasets/Hzou9/PCBSchemaGen-Benchmarks). Note: the difficulty split for the 165 Open-Schematics tasks differs between the HF card (67/63/35) and the GitHub README (40/48/77).
+- PCB-QA **[P-full]** — [arXiv 2606.23704](https://arxiv.org/abs/2606.23704)
+- PCB-Bench **[P-doc]** — [project page](https://digailab.github.io/PCB-Bench/)
+- HWE-Bench **[P-full]** — [arXiv 2603.18102](https://arxiv.org/abs/2603.18102)
+- OmniLayout/OmniRouting **[P-abs]** — [arXiv 2607.03261](https://arxiv.org/abs/2607.03261); [arXiv 2608.04434](https://arxiv.org/abs/2608.04434). Licence recon: kicad-tools issue #4830, **[S]**, as summarized in the [kicad-tools README](https://github.com/rjwalters/kicad-tools)
 
 ### Inferences
 
-**Proposed pipeline.** Each stage is labelled D = deterministic code, L = LLM, U = user.
+**Pipeline.** Each stage is labelled D = deterministic code, L = LLM, U = user.
 
 1. **Ingest (D).**
-   - Parse `.kicad_sch` and `.kicad_pro` with the KiCad netlist export or an S-expression parser. Build the bipartite part–net–pin graph and expand hierarchy and multichannel instances.
-   - Capture existing intent: sheet names, net classes and patterns, directive labels, component classes, fields (MPN, Datasheet), power symbols.
-2. **Part resolution (D+L).**
-   - Resolve MPN → distributor record (DigiKey/Nexar/LCSC) → datasheet PDF, hashed (D).
-   - When the MPN is missing, the LLM proposes candidates from value, footprint and description, marked `proposed` (L).
-3. **Layout-card build (L, evidence-gated; D validation).**
-   - Page-select the PDF (D).
-   - The LLM extracts the pin-role map, required externals, f_sw, interface standards, thermal data, and **the layout-guidelines section as typed predicates**, each with a page/quote and confidence (L).
-   - Validators check units, conditions, pin-number existence against the KiCad symbol, and agreement between symbol pin names and datasheet pin names (D).
-   - Cache per MPN and PDF hash.
-4. **Net-role pass (D, then L for leftovers).**
-   - Deterministic rules: power symbols and names, ground, diff-pair suffixes, pin-role pairs, protocol buses (kicad-happy-style tables).
-   - The LLM labels only unexplained or ambiguous nets, using pin roles and names (e.g., `SENSE_A` → high-Z analog?), and must cite which pins justify the label.
-5. **Block recognition (D templates, then L adjudication).**
-   - VF2/rule templates over pin-role-labelled edges (ALIGN-style matcher, kicad-happy-style detectors) find bucks, LDOs, crystals, decoupling, USB, ESD, op-amp stages, RF chains and so on.
-   - Uncovered ICs and passives go to the LLM, which either assigns them to an existing block or **writes a new detector template** (GENIE-ASI pattern). The template is executed and must explain every member pin before it is accepted (D check).
-6. **Criticality and constraint synthesis (D recipe engine + L parameter fill).**
-   - Each recognized block instantiates its recipe (Section 6 table). Numeric parameters come from layout cards (L-extracted, trust-gated) or from defaults. Protocol tables (USB/PCIe/Ethernet impedance and skew) are D.
-   - Criticality score = f(edge rate or f_sw, current, impedance requirement, block type). Its main use is ordering placement and routing.
-7. **Clarify (L → U).**
-   - Generate questions only for low-confidence, high-impact fields (e.g., USB speed, motor current, which ground strategy) and present them as a short checklist. U answers update the schema with `source: user`.
-8. **Compile to KiCad (D).**
-   - Net classes (with patterns and multiple classes), component classes per block and role, `.kicad_dru` custom rules (diff pair, width, clearance, creepage, `memberOfFootprint`/`hasNetclass` conditions), rule areas or keepouts, groups, and time-domain tuning profiles.
-   - Soft constraints (proximity, loop area, keep-away) go to the placer objective as a JSON side file, because KiCad DRC cannot express "minimize area".
-   - All edits are proposed as a reviewable diff.
+   - Parse `.kicad_sch` / `.kicad_pro`; build the part–net–pin graph and expand hierarchy.
+   - Capture existing intent: net classes and patterns, directive labels, `Component Class` fields, sheet names, power symbols.
+   - Export a **compact hierarchical JSON** in the PCB-QA style, plus query tools: `neighbors`, `nets_of`, `path`, `pins_by_role`.
+2. **Part resolution (D, with L for gaps).**
+   - MPN → Nexar/DigiKey/LCSC → datasheet PDF (hashed) and, where available, an IBIS file.
+   - When the MPN is missing, the LLM proposes candidates, marked `proposed`.
+3. **Layout card (L staged; D validation).**
+   - MinerU-class parse.
+   - Chunked extraction of the pin-role map, externals, thermal data, and layout-guideline predicates, each with page and sentence evidence.
+   - Every LLM tool call is logged, and the run is rejected if the source was not read.
+   - Validators check units, pin existence against the KiCad symbol, and agreement between datasheet and symbol pin names.
+   - Use the HW design guide for MCUs and SoCs.
+4. **Net roles (D layered classifier, §2; L for leftovers with cited pins).**
+   - Priority: explicit intent → IBIS/datasheet roles → topology → names → LLM.
+5. **Blocks (D templates; L adjudication and detector-writing).**
+   - VF2 motifs over pin-role-labelled edges, with PCBSchemaGen relaxations, plus Quilter/kicad-happy heuristics.
+   - Uncovered parts: the LLM writes a detector (GENIE-ASI pattern). It is accepted only if unit tests pass and all of the block's pins are explained.
+   - Never ask the LLM to form stage-level groupings directly (HL3 F1 0.31). Use sheet hierarchy and designer intent for those.
+6. **Recipes → constraints + checks (D; L fills parameters from cards).**
+   - Each constraint carries its own check (Quilter PRC model): pin distance, trace length, layer switches, ground overlap, loop area, overheated length.
+7. **Validate (U).**
+   - Quilter-style review screen. Undetected nets are explicitly "generic low-speed".
+   - Ask questions only for high-impact, low-confidence fields.
+8. **Compile (D).**
+   - Real and implicit net classes; `Component Class` fields; generated **placement rule areas per block**; `.kicad_dru`; tuning profiles.
+   - Soft objectives go to a placer JSON.
 9. **Verify (D).**
-   - After placement and routing, run DRC plus recipe checkers (loop area, SW copper area, decoupling distance, TVS distance, skew). These are the kicad-happy-style EMC and PCB rules, re-used as acceptance tests. Feed violations back to the placer and router.
+   - DRC, constraint-specific checks, and structural LVS (topological validity as a separate stage, per 2609.26830).
+   - Violations feed back to the placer and router.
 
-**Proposed data schema** (annotated block graph, JSON). The field layout is a sketch:
+**Schema additions to the pass-1 sketch:**
+- each `constraints[]` item carries a `checks` list (e.g., `{"type": "pin_distance", "a": "C12.1", "b": "U3.VIN", "max_mm": 10, "source": "Quilter example range"}`);
+- each `nets.*` entry carries `ibis` facts (`model_type`, `diff_pin`, `ramp_20_80_ps`) when available;
+- each `parts.*.layout_card` has `extraction_audit` (tool-call trace hash, evidence pages, consensus count).
 
-```json
-{
-  "design": {"project": "...", "kicad_version": "10.0", "intent": {"product_class": "prototype", "ipc_class": 2, "source": "user|auto", "confidence": 0.8}},
-  "parts": {
-    "U3": {"mpn": "TPS62933DRLR", "footprint": "...", "layout_card": "cards/TPS62933DRLR@<pdfsha>.json",
-           "pins": {"1": {"name": "SW", "role": "SW", "net": "/PWR/SW1", "erc_type": "power_out"}},
-           "provenance": {"mpn": "schematic_field", "pin_roles": "datasheet:p3 (conf=high)"}}
-  },
-  "nets": {
-    "/PWR/SW1": {"roles": ["switch_node"], "classes": ["SWITCH_NODE", "PWR_2A"], "criticality": 0.9,
-                 "electrical": {"f_sw_hz": 1.2e6, "i_max_a": 3.0},
-                 "evidence": [{"kind": "rule", "id": "sw_pin+inductor"}], "status": "confirmed"},
-    "USB_D_P": {"roles": ["diff_p"], "pair": "USB_D_N", "protocol": "USB2_HS", "z_diff_ohm": 90, "skew_ps_max": 25,
-                "evidence": [{"kind": "suffix"}, {"kind": "pin_role", "pins": ["U1.USB_DP", "J1.D+"]}], "status": "proposed"}
-  },
-  "blocks": [
-    {"id": "BUCK1", "type": "buck_sync", "detector": "tmpl:buck_sync@v3", "confidence": 0.97,
-     "members": {"controller": "U3", "cin_hf": ["C12"], "cin_bulk": ["C11"], "cboot": ["C13"], "inductor": "L2",
-                 "cout": ["C14", "C15"], "fb_top": "R8", "fb_bot": "R9"},
-     "nets": {"vin": "+12V", "sw": "/PWR/SW1", "vout": "+5V", "fb": "/PWR/FB1", "pgnd": "GND"},
-     "kicad": {"component_class": "BLK_BUCK1", "sheet": "/Power/"}}
-  ],
-  "constraints": [
-    {"id": "c1", "type": "loop_area_min", "block": "BUCK1", "path": ["C12", "U3.VIN", "U3.PGND", "C12"], "hard": false, "weight": 10,
-     "bound_mm2": null, "source": "recipe:buck + datasheet:p28 'place input cap as close as possible'"},
-    {"id": "c2", "type": "keep_away", "a": {"net": "/PWR/FB1"}, "b": {"net": "/PWR/SW1"}, "min_mm": 1.0, "hard": false, "source": "recipe default"},
-    {"id": "c3", "type": "diff_pair", "nets": ["USB_D_P", "USB_D_N"], "z_diff_ohm": 90, "skew_ps": 25, "hard": true, "compile_to": "kicad_dru"}
-  ],
-  "questions": [{"field": "nets.USB_D_P.protocol", "ask": "Is J1 used at USB 2.0 High-Speed (480 Mb/s)?", "options": ["HS", "FS-only"], "impact": "90Ω controlled impedance"}]
-}
-```
-
-**LLMs do well (use them for):**
-- Reading datasheet prose and tables into typed facts *with page evidence*.
-- Recognizing part function from MPN, description and pin names.
-- Normalizing pin names to roles.
-- Interpreting designer naming conventions and sheet names.
-- Proposing block boundaries for unusual circuits.
-- **Writing new detector templates** that are then executed.
-- Converting qualitative guidelines into constraint types and weights.
-- Generating targeted clarifying questions.
-- Explaining rationale to the user.
+**LLMs are good at (use them for):**
+- normalizing pin names to roles;
+- interpreting designer naming and sheet names;
+- staged datasheet table/prose extraction with evidence;
+- turning qualitative guidelines into typed predicates;
+- writing detector code;
+- generating targeted questions and explanations.
 
 **Needs deterministic code:**
-- Parsing and connectivity (union-find, hierarchy expansion).
-- Exact subgraph matching (VF2) and the check that every pin is explained.
-- Numeric work: Vout from dividers, crystal CL, DC-bias derating, IPC-2152 widths, impedance from stackup.
-- Unit and condition normalization.
-- Protocol tables (impedance, skew).
-- KiCad file writing (net classes, `.kicad_dru`, component classes).
-- DRC and recipe verification (loop area, distances, skew).
-- Caching and staleness (PDF hash).
-- Never let an LLM emit coordinates or millimetre bounds that do not come from a source.
-
-**Highest-leverage near-term build order:**
-1. Pin-role ontology plus deterministic net-role and block detectors (port kicad-happy-style rules).
-2. A datasheet layout-guideline extractor that produces typed predicates with evidence. This is novel; nothing comparable was found.
-3. A recipe engine plus compilation to KiCad 9/10 native intent.
-4. Re-use of recipe checkers as post-route acceptance tests.
-5. LLM-written templates for the long tail.
+- parsing and connectivity;
+- every graph query;
+- VF2 matching;
+- numeric derivation (widths, impedance, Vout, loop area);
+- IBIS parsing;
+- unit normalization;
+- KiCad file writing;
+- all checks;
+- staleness and audit logging;
+- geometry (no LLM coordinates or millimetres without a cited source).
 
 ### Gaps
-- There is no public dataset of KiCad boards labelled with block types, net roles *and* layout constraints for evaluating this front end. A plausible evaluation source is mining existing net-class and component-class assignments and DRC rules from open KiCad projects; the 5,829-project kicad-happy harness corpus and PCB-Bench's 174 OSHWHub projects are candidates. I did not verify whether these contain enough intent annotations.
-- I could not verify whether commercial tools (Quilter, Flux, Cadence Allegro X AI, Siemens) publish how their "circuit comprehension" front ends classify nets and blocks (search budget exhausted, hosts blocked).
+- No public dataset combines block labels, net roles **and** layout constraints on KiCad boards. Candidate path: mine net classes, component classes and DRU rules from open-schematics or kicad-happy-corpus projects, plus BenchPCNP-style relabelling. Whether enough designers use these features to make that worthwhile is unmeasured.
+- Undisclosed by vendors: the internal accuracy of Quilter's or Flux's automatic detection, and how Cadence Allegro X AI / Siemens tools derive constraints from schematics (not found; search quota exhausted).

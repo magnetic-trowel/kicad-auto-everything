@@ -1,335 +1,573 @@
 # Infrastructure to evaluate, verify and constrain automated PCB layouts: constraint/intent IRs, open-source physics and verification tools, quality metrics, benchmarks and datasets (for an LLM-driven KiCad placer and router)
 
-Research date: 2026-10-20. **Method and source caveats (read first):**
-- This session's egress proxy blocked many primary hosts: docs.kicad.org, arxiv.org, antmicro.com, docs.atopile.io, docs.jitx.com, docs.tscircuit.com, docs.quilter.ai, iclr.cc, omnieda.com and forum.kicad.info. For KiCad I worked around the block by reading the **KiCad documentation sources on GitLab** (`kicad-doc` master branch, which documents KiCad 10 and current development) and the **KiCad source tree on GitLab**. For GitHub projects I read READMEs and docs directly. Facts about pages on blocked hosts come from search-engine result summaries, and each one is marked "(via search summary)". Treat those as secondary.
-- The shared web-search budget ran out partway through. Topics I could not search afterwards are listed under Gaps: ISPD/ICCAD contests, Cypress, Elmer thermal flows in detail, Allegro and Altium syntax specifics, the IPC-2581 constraint schema, and academic "design intent" literature.
-- GitHub star counts are point-in-time values from 2026-10-20 fetches. They differ between sources, which is noted where it happens.
+Research dates: first pass 2026-10-20; deep pass later the same day with full internet access. **Method and provenance (read first):**
+
+**Provenance tags** (one or more per bullet):
+- **[P]** — read directly from the primary source: official docs, source code/XSD, paper full text or abstract page, or project README/repo.
+- **[3P]** — read in full from a credible secondary source, e.g. a vendor partner's technical note or a third-party project's evaluation document.
+- **[S]** — search-engine snippet/summary only; not read at the source. Treat as unverified.
+
+**Coverage notes**
+- In the first pass, docs.kicad.org, arxiv.org, antmicro.com, docs.atopile.io, docs.jitx.com, docs.tscircuit.com, docs.quilter.ai and forum.kicad.info were unreachable. In the deep pass they were reachable via `curl` and were read directly.
+- Still unreachable or refused:
+  - community.cadence.com and www.cadence.com PDFs (403); the Cadence Constraint Manager user guide is behind support login.
+  - dl.acm.org (bot wall).
+  - Cornell csl.cornell.edu and artwork.com (TLS chain errors; TLS verification was not bypassed).
+  - iclr.cc, the ElmerCSC GitHub README (fetch refused), and wiki.freecad.org (bot challenge).
+- The shared web-search budget ran out twice. Thermal-ML and EMI-ML surrogate searches could not be completed in the deep pass (see Gaps).
+- Out of scope here: a separate agent produces the verified KiCad DRC-rules reference and the IPC API coverage matrix. KiCad DRC content below is kept at the level needed for IR design.
+- GitHub star counts are point-in-time values from 2026-10-20 and differ between sources.
 
 ---
 
 ## Q1. How can design constraints and intent be represented formally and fed to optimizers and LLMs? (KiCad rules language, net and component classes, rule areas, industry constraint managers, exchange formats, code-first EDA, analog constraint formats, IR design)
 
 ### Takeaway
-KiCad 10's `.kicad_dru` language is a capable **checking** language. Its condition predicates over pairs of objects (A/B) cover area, courtyard, net class, component class, sheet, group, diff pair and `fromTo` path. Its constraints cover clearance, width, length, skew, diff-pair gap and uncoupled length, via count, and creepage, and arbitrary `assertion`s are allowed. What it lacks is a vocabulary for **placement relations** such as "within X mm of pin", "aligned", "symmetric", "ordered" or "edge-of-board", and for **physics objectives** such as loop area, IR drop and temperature. Those concepts exist elsewhere:
-- analog layout formats (ALIGN's typed JSON constraints, split into hard and soft),
-- code-first EDA (tscircuit `calc()`/anchors/`<constraint>`; JITX SI constraints over topologies),
-- recent open-source intent files (the KiCadRoutingTools `floorplan-intent.json` with `proximity[]`, `decaps`, `edge_connectors`, `blocks/zones` and `keep_away`).
+There are three families of constraint model.
+- **Rule-scoping languages:** KiCad `.kicad_dru` (last matching rule wins), Altium query-scoped rules (explicit numeric priority), and JITX tag/condition/effect constraints (priority chosen by logical *specificity*). All three attach checkable limits to object sets selected by a boolean query over classes, areas, layers and pad-to-pad paths.
+- **Object-centric constraint managers:** Allegro CSets assigned to nets, classes, regions and pin pairs; match groups; topology schedules; Altium's Constraint Manager.
+- **Placement-relation languages:** ALIGN's typed JSON (hard vs soft, compiled to solver terms), tscircuit `calc()`, anchors and `<constraint>`, FloorSet hard constraints, KiCadRoutingTools floorplan intent, and Quilter "physics constraints" checked by named PRCs.
 
-A good IR should combine these. It should **compile** down to `.kicad_dru` wherever possible and to custom checkers and optimizer penalties everywhere else.
+Exchange formats carry little of this. IPC-2581C transports impedance and loss specs, net class *categories* and diff-pair links, and DFX queries. It does not carry clearance, length, skew or placement rules. KiCad's IPC-2581 exporter writes stackup material, finish and backdrill specs but no impedance specs.
+
+A good IR should therefore be a superset that compiles *down* to `.kicad_dru`, to geometric checkers and to optimizer penalties. Its rule-resolution semantics must be explicit, because KiCad, Altium and JITX resolve conflicting rules differently.
 
 ### Cited Findings
 
-**KiCad custom DRC rules (KiCad 10 / master docs)**
-- Rules live in a separate `<project>.kicad_dru` file. The language is s-expression based, and the file must start with `(version 1)`, which is the version as of KiCad 10.0. Rules are evaluated in **reverse order**: the last matching rule wins, so specific rules belong at the end of the file. The rule form is `(rule <name> [(severity …)] [(layer …)] [(condition "<expr>")] (constraint <type> …))`. Text variables such as `${hv_clearance}` are substituted in a preprocessing step. — [KiCad docs source: pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
-- The `layer` clause accepts any layer name, `outer` or `inner`. Severity is `error`, `warning`, `ignore` or `exclusion`. A rule set to `ignore` is still evaluated and can still override earlier rules. Error, warning and excluded rules are all observed by the interactive router. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
-- Conditions are boolean expressions over objects `A` and `B`; some functions use `AB`. Operators are `== != > >= < <= && || !`, all with equal precedence and evaluated left to right. Units are `mm`, `mil`/`th`, `in`, `deg` and `rad`, and simple math such as `1.0mm + 0.1mm` is allowed. Nullable properties are compared with `null`. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
-- **Constraint types documented** in master: `annular_width`, `assertion` (an arbitrary boolean expression that must hold), `bridged_mask`, `clearance` (a negative min allows collision), `connection_width`, `courtyard_clearance`, `creepage`, `diff_pair_gap` (min/opt/max; opt is the router default), `diff_pair_uncoupled` (max), `disallow` (track, via, through_via, micro_via, blind_via, buried_via, pad, zone, text, graphic, hole, footprint), `edge_clearance`, `hole_clearance`, `hole_size`, `hole_to_hole`, `length` (min/opt/max; opt is the length-tuner target), `microvia_aspect_ratio`, `microvia_stack_depth`, `min_resolved_spokes`, `physical_clearance` (net-agnostic and "much slower"), `physical_hole_clearance`, `silk_clearance`, `skew` (min/opt/max, with optional `within_diff_pairs`), `solder_mask_expansion`, `solder_paste_abs_margin`, `solder_paste_rel_margin`, `text_height`, `text_thickness`, `thermal_relief_gap`, `thermal_spoke_width`, `track_angle`, `track_segment_length`, `track_width` (opt is the router default), `via_count` (min/max per net), `via_dangling`, `via_diameter`, and `zone_connection`. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc). (Some entries, for example `microvia_*`, `track_angle`, `track_segment_length` and `isStackedVia`, may be KiCad 10 or development-only. The master docs do not tag each one with a version.)
-- **Expression functions**: `enclosedByArea`, `existsOnLayer`, `fromTo('x','y')` (copper path between pads, named `RefDes-PadNumber` such as `'U1-A5'`, or `RefDes` for all of a part's pads), `getField`, `hasComponentClass`, `hasExactNetclass`, `hasNetclass`, `inDiffPair`, `insideArea`, `insideCourtyard`, `intersectsArea`, `intersectsCourtyard`, `isBlindVia`, `isBuriedVia`, `isBlindBuriedVia`, `isCoupledDiffPair` (AB), `isMicroVia`, `isPlated`, `isStackedVia`, `memberOf`, `memberOfGroup`, `memberOfFootprint`, `memberOfSheet`, `memberOfSheetOrChildren`. Courtyard and area functions also accept `${Class:Name}` to mean "any footprint of component class Name". `fromTo()` is documented as most commonly used with `length`, `skew`, `track_width`, `clearance` and `diff_pair_gap`. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
-- Object properties include `Layer`, `Locked`, `Parent`, `Position_X` and `Position_Y`. Positions are measured at the footprint origin, which may not be the courtyard center. Other properties are `NetClass` (a comma-joined multi-class string, matched if any class matches), `Component_Class`, `Reference` and `Do_not_populate`. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
-- **Graphical rule editor (KiCad 10)**: Tools → Design Rule Editor writes the same `.kicad_dru` file as the text editor. Its categories are Electrical, Manufacturability, Highspeed (routing width, max via count, diff-pair skew, matched length with gap, absolute length) and Footprints (permitted layers, allowed orientation, vias under SMD). "Permitted layers" and "Allowed orientation" are implemented internally as `assertion` constraints, and their violations report as "Assertion violation". — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc). KiCad 10.0 was released in March 2026 with the graphical rule editor, a track-tuning revamp and design variants. — [KiCad 10.0.0 release post](https://www.kicad.org/blog/2026/03/Version-10.0.0-Released/); [Tech Explorations review](https://techexplorations.com/kicad/kicad-10-review-new-features-high-speed-tuning-variants-and-more/) (via search summary)
-- **Component classes** are named groups of components. They are assigned in the schematic or by Board Setup rules, and they apply to both symbols and footprints. One component can have several classes. Automatic assignment conditions are Reference (with wildcards), Footprint, Side, Rotation, Footprint Field Value, Sheet, and Custom Expression (any DRC condition, for example `A.intersectsArea('x')`). "Assign component class per sheet" creates one class per sheet automatically. — [pcbnew_create_board.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_create_board.adoc). A known pitfall is that `hasComponentClass` is true only for footprints and their children, so clearance rules need `insideCourtyard('${Class:X}')`-style workarounds. — [KiCad forum](https://forum.kicad.info/t/using-component-classes-for-custom-clearance-settings/57733) (via search summary)
-- **Tuning profiles** (KiCad 10 Board Setup) define per-layer track width, diff-pair gap and **unit propagation delay**, plus via propagation delays with per-layer-pair overrides. Target impedance is optional. A profile is assigned to net classes, and the length tuner can tune in the **time domain**. DRC can optionally flag tracks that don't match their profile. — [pcbnew_create_board.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_create_board.adoc)
-- **Rule areas** (formerly keepouts) are arbitrary polygons on selected layers with an optional name that DRC rules can reference. Their Keepouts tab can forbid tracks, vias, pads, zone fills and footprints. Their Placement tab defines **multichannel** channels, sourced from a sheet, a component class or a group. The Repeat Layout tool copies a manually placed and routed reference channel into the target rule areas. — [pcbnew_editing.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_editing.adoc); [pcbnew_multichannel.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_multichannel.adoc)
+**KiCad (constraint vocabulary relevant to IR design; full rule reference is another agent's deliverable)**
+- `.kicad_dru` rules: `(version 1)` header as of KiCad 10.0; rules are evaluated in reverse order with the last match winning; form is `(rule name [(severity)] [(layer)] [(condition "expr")] (constraint type …))`. — [P] [kicad-doc pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
+- Constraint types include:
+  - `clearance`, `physical_clearance`, `creepage`, `edge_clearance`, `courtyard_clearance`
+  - `track_width` (min/opt/max), `length` (opt is the tuner target), `skew` (with `within_diff_pairs`), `diff_pair_gap`, `diff_pair_uncoupled`
+  - `via_count`, `disallow`, `assertion`, `track_angle`, `track_segment_length`, `microvia_*`
+  - zone and thermal relief constraints
 
-**Industry constraint managers and exchange formats**
-- Altium decides where a rule applies by evaluating query-language expressions. For binary rules such as clearance, two queries run, one per object, and the default query is "All". Altium also offers an object-centric, spreadsheet-like Constraint Manager that is converted into the same rule format the PCB Rules and Constraints Editor uses. — [Altium: Scoping design rules](https://www.altium.com/jp/documentation/altium-designer/scoping-design-rules-ad); [Altium: Defining, scoping & managing design rules](https://www.altium.com/jp/documentation/altium-designer/pcb/defining-scoping-managing-design-rules) (via search summary). Altium "Rooms" are placement regions. — [Altium: Rooms](https://www.altium.com/documentation/altium-designer/pcb/rooms) (title only; details not verified)
-- In the Cadence Allegro Constraint Manager (Constraint Compiler guide, 17.4-2019), DEFAULT Physical and Spacing Constraint Sets serve as starting points. A single rule specification containing width, line-to-line spacing and max length generates Physical, Spacing and Electrical CSets. — [Cadence PCB best practices / Constraint Compiler guide](https://resources.pcb.cadence.com/i/1180274/18) (via search summary)
-- IPC-2581 Rev C, per secondary trade sources, can define impedance requirements at net, layer or stackup level, identify differential pairs, carry stackup thickness and tolerances, and includes a bidirectional DFX module for fabricator queries and responses. Some sources say the standard is being renamed IPC-DPMX. — [Sierra Circuits blog (Hemant Shah)](https://www.protoexpress.com/blog/ipc-2581-revision-c-facilitates-pcb-data-management-by-hemant-shah/); [PCD&F on the DFX module](https://pcdandf.com/pcdesign/index.php/editorial/menu-features/15219-new-dfx-module-for-ipc-2581-slices-design-manufacturing-time-errors) (via search summary)
-- `kicad-cli` can export IPC-2581 (`pcb export ipc2581`, with BOM column mapping, version and units options) and ODB++ (`pcb export odb`). — [kicad-cli docs source](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/cli/cli.adoc)
+  Selectors are `A.`/`B.`/`AB.` functions, including `fromTo('U1-7','C5-1')`, `insideArea`, `intersectsArea`, `enclosedByArea`, `insideCourtyard('${Class:X}')`, `hasNetclass`, `hasComponentClass`, `memberOfSheet`, `memberOfGroup` and `inDiffPair`. — [P] [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
+- Other primitives:
+  - **Component classes**: assigned by Reference, Footprint, Side, Rotation, Field, Sheet or custom expression, with automatic per-sheet classes.
+  - **Tuning profiles** (KiCad 10): per-layer width, gap and unit delay plus via delays; time-domain tuning.
+  - **Rule areas**: keepouts, and placement areas for multichannel layout.
+  - **Repeat Layout**.
 
-**Code-first EDA constraint languages**
-- **atopile**: `.ato` is "a declarative language for electronics: modules, interfaces, units, tolerances, and assertions". The compiler "solves constraints, picks parts, runs checks, and updates your KiCad layout". The project is MIT-licensed and has a `layout_reuse` example. — [atopile GitHub](https://github.com/atopile/atopile); [atopile examples tree](https://github.com/atopile/atopile/tree/main/examples). A third-party analysis describes interval arithmetic for tolerance propagation and hierarchical-address (`atopile_address`) matching to preserve layout across regenerations. — [kicad-tools atopile synthesis](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-research-synthesis.md)
-- **JITX** layers three SI constraint kinds on top of net statements: timing, timing difference (skew) and insertion loss. **Routing structures** define per-layer width, spacing, velocity, loss, clearances and keepouts or via fences. `DiffPairConstraint` takes a skew window and a loss limit (a typical skew window is about 0 ±10 ps). Topologies are built with `>>`, for example `self += driver.out >> receiver.inp`. In the current runtime, each layer change is modelled as a fixed 20 ps and 0.15 dB. — [JITX SI constraints](https://docs.jitx.com/essentials/constraints.html); [jitx.si API](https://docs.jitx.com/en/4.0/api/jitx.si.html); [JITX topology](https://docs.jitx.com/essentials/topology.html) (via search summary)
-- **tscircuit** props include `pcbX`, `pcbY`, `pcbRotation`, `pcbLeftEdgeX`/`RightEdgeX`/`TopEdgeY`/`BottomEdgeY`, `pcbOffsetX`/`Y`, `pcbPositionAnchor`, `pcbPositionMode` (`relative_to_group_anchor` | `auto` | `relative_to_board_anchor` | `relative_to_component_anchor`), `shouldBeOnEdgeOfBoard`, `pcbMargin*` and `pcbRelative`. Groups add CSS-like layout through `pcbGrid*`, `pcbFlex*`, `pcbPack` and `pcbLayout`, plus trace-level props `minTraceWidth` and `nominalTraceWidth`. — [tscircuit/props README](https://github.com/tscircuit/props). Relative placement also uses `calc()` expressions such as `pcbX="calc(R1.maxX + 2mm)"` and pad references such as `U1.pin1.x`. `<constraint />` elements set center-to-center or edge-to-edge distances and same-axis alignment. — [tscircuit relative positioning](https://docs.tscircuit.com/guides/tscircuit-essentials/relative-positioning); [tscircuit constraint element](https://docs.tscircuit.com/footprints/constraint); [constraint layout engine](https://docs.tscircuit.com/api-reference/layout-engines/constraint) (via search summary)
-- **SKiDL** (MIT) describes circuits in Python and emits netlists, XML BOMs and editable KiCad 6–10 schematics, with its own `ERC()`. It has no layout-constraint language. — [SKiDL GitHub](https://github.com/devbisme/skidl)
+  — [P] [pcbnew_create_board.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_create_board.adoc); [P] [pcbnew_editing.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_editing.adoc); [P] [pcbnew_multichannel.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_multichannel.adoc)
 
-**Analog layout constraint format (ALIGN)**
-- ALIGN constraints are typed Pydantic models in `<hierarchy>.const.json` files. The base classes are `SoftConstraint`, `HardConstraint` and `UserConstraint`. A `HardConstraint` must implement `translate(solver)`, which yields math expressions for a solver backend. A `UserConstraint` expands into lower-level constraints, which separates user-facing constraints from place-and-route constraints. Types include `Order` (instances plus a direction such as `left_to_right`, with optional `abut`), `Align` (for example `line: v_center`), `Spread`, `AspectRatio`, `Boundary`, `AlignInOrder`, `Floorplan` (ordered regions), `PlaceSymmetric`, `CompactPlacement`, `SameTemplate`, `PlaceCloser`, `PlaceOnBoundary`, `PowerPorts`, `GroundPorts`, `ClockPorts`, `SymmetricBlocks` (pairs plus axis H or V), `BlockDistance`, `VerticalDistance`, `HorizontalDistance`, `GuardRing`, `GroupCaps`, `NetPriority`, `NetConst` (nets, shield net, criticality), `PortLocation`, `SymmetricNets`, `ChargeFlow`, `MultiConnection`, `DoNotRoute`, `Route` and `GroupBlocks`. An example is `{"constraint":"SymmetricBlocks","pairs":[["MN0","MN1"],["MN4"]],"direction":"V"}`. — [ALIGN constraint.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py); [ALIGN README](https://github.com/ALIGN-analoglayout/ALIGN-public)
+**Altium Designer — query-scoped rules**
+- Rules are scoped by query expressions, for example `InNet('VBAT') And OnLayer('Bottom Layer')`. **Unary** rules take one scope; **binary** rules take two scopes, one for each object.
+- **Every rule has a priority.** A lower number means higher priority, and a new rule gets priority 1 while existing ones shift down. Priorities apply only within a rule type, across all rule sets.
+- The documented exception: **multiple Matched Lengths rules all apply** to the objects they target.
+- Invalid queries flag the rule as invalid.
 
-**Open-source PCB "design intent" files (2026)**
-- **KiCadRoutingTools `floorplan-intent.json`** (schema 1) uses these keys: `envelope` (read from the board, never authored), `blocks[]` (ref globs or sheet group, `zone` rect, `side`, `exclusive`, `rotation`, `rigid`), `keepouts[]` (rect or circle, sides, allow-list), `edge_connectors[]` (edge N/E/S/W, `overhang_mm` min/max, `center_on_edge` or `along_edge_band`), `decaps` (`max_distance_mm`, `max_pin_distance_mm`, `pin_functions`, `same_side`), `proximity[]` (`ref`, `near`, `max_mm`, `basis`: `pad_edge` or `body`, `pads`), `keep_away[]` (`AGGRESSOR:VICTIM:GAP`), `replicate[]`, `arrays[]`, `fixed_poses[]`, `must_lock`, `legality_budget` (overlap area, OoB count), `severity` (per rule) and `dispositions`. Unknown keys are **refused at load time** so that a typo can't silently drop a constraint. The intent has three roles: a construction source (`place_seed.py`), a **monotone hard per-move gate** inside the optimizer, and a rank gate. The docs give a measured example from the ulx3s board: an ungated quench "manufactures 4 `zone_containment` errors" and a gated one none. They warn that `--emit-intent` run on a damaged board records the damage as the requirement. — [KiCadRoutingTools floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md). The companion "design brief" records facts the board file can't contain, such as user-facing connectors and their edges, and compiles them into the intent. — [design-brief.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/design-brief.md)
-- Quilter exposes "placement regions" as a user design parameter. — [Quilter docs: placement regions](https://docs.quilter.ai/design-parameters/placement-regions) (title only)
+— [P] [Altium: Scoping design rules](https://www.altium.com/documentation/altium-designer/scoping-design-rules-ad)
+- Membership-check keywords include:
+  - `InNet`, `InNetClass`, `InComponent`, `InComponentClass`
+  - `InDifferentialPair(Class)`, `InFromTo('NET (C13-2 : U1-8)')`, `InFromToClass`
+  - `InxSignal(Class)` (xSignals are signal paths through series components)
+  - `InPadClass`, `InPolygonClass`, `InRegion`/`Absolute`/`Relative`, `InLayerClass`, `InStructureClass`, `OnLayer`, `ExistsOnLayer`
+  - `WithinRoom` (object totally inside the room; pads and vias by center point) and `TouchesRoom` (totally or partially inside)
+
+  Class names are single-quoted, and functions return Boolean. — [P] [Altium: query membership checks](https://www.altium.com/documentation/altium-designer/query-lang-pcbfunctions-membershipchecks-incomponentclassincomponentclass-ad)
+- **Rooms**: each room is automatically a named **Room Definition** constraint that says which objects it applies to and whether they are **kept inside or outside**. Rooms can also scope other rules, for example width under a BGA. Components assigned to a room move with it. In Altium's Constraint Manager, Room Definition sits in the Placement category, and Altium describes it as a "confinement" constraint. — [P] [Altium: Rooms](https://www.altium.com/documentation/altium-designer/pcb/rooms)
+
+**Cadence Allegro / OrCAD Constraint Manager — object-centric CSets**
+- Constraint Manager groups rules into Electrical, Physical, Spacing and Same Net Spacing domains. Physical and Spacing CSets hold per-layer values and are assigned to Net, Class and Region objects. Each non-Electrical domain has an undeletable DEFAULT CSet. Electrical CSets can be derived from SigXplorer topology templates. — [S] [Allegro CM User Guide 16.3 (Cadence community PDF)](https://community.cadence.com/cfs-file/__key/telligent-evolution-components-attachments/00-27-01-00-00-96-42-32/cmug.pdf) (403 when fetched; summary only)
+- Electrical constraint modes:
+
+  | Constraint | What it specifies |
+  |---|---|
+  | **Stub length / Net schedule** | Daisy-chain stub length and the Verify-schedule check |
+  | **Max via count**, **Match via count** | Via limits on a net; via-count matching across a group |
+  | **Max exposed length** | Maximum copper length on outer layers |
+  | **Propagation delay** | Min/max per pin pair, as delay, length or %length |
+  | **Relative propagation delay** | Match groups |
+  | **Max parallel** | A matrix of up to 4 length:gap entries |
+  | **Impedance** | Target with absolute or % tolerance |
+  | **Total etch length** | For a net or Xnet |
+  | **Layer sets** | Permitted routing layer sets; fanout etch is ignored |
+  | **Max xtalk**, **Max peak xtalk** | High-Speed option |
+  | **Return Path DRC** | High-Speed option |
+
+  Placement-related modes include Package-to-package overlap, Package to place keepin/keepout and **Package to room**. — [3P] [Parallel Systems (Cadence channel partner) technical note: Constraint Mode Options](https://www.parallel-systems.co.uk/wp-content/uploads/2020/02/Constraint_modes.pdf)
+- A **Match Group** is a set of nets, Xnets or pin pairs that must match in time or length, or be relative to a target.
+  - Groups resolve to **pin pairs**, which can be generated as All Drivers/All Receivers, Longest Driver/Receiver or Longest Pin Pair.
+  - Each group has Scope, Delta, Tolerance and Target.
+  - "Match" = Tolerance only; "Relative" = Delta + Tolerance against a Target.
+
+  — [3P] [Parallel Systems: Matched Groups](https://www.parallel-systems.co.uk/wp-content/uploads/2020/02/Match_groups.pdf)
+
+**JITX — tag/condition/effect constraints with specificity-based resolution**
+- The model has four parts:
+  - **Tag**: user tags are Python classes with inheritance; implicit tags include `IsCopper` ⊃ `IsTrace`/`IsPour`/`IsVia`/`IsPad`, `IsBoardEdge`, `IsHole`, `IsThroughHole`, `IsNeckdown` and `OnLayer(i)`.
+  - **Condition**: a boolean expression over tags using `& | ~`.
+  - **Effect**: `trace_width`, `clearance` (auto-symmetrized), `thermal_relief`, `stitch_via`, `fence_via`.
+  - **Constraint**: `design_constraint(cond[, cond2]).effect(v)`; unary or binary.
+
+  Tags can currently be assigned only to nets, and only in code. — [P] [JITX docs: Design Constraints](https://docs.jitx.com/en/latest/essentials/physical_design/design-constraints.html)
+- **Selection algorithm.** JITX picks one rule per query, filtering in this order:
+  1. Match the effect type.
+  2. Drop rules whose condition isn't satisfied; if none remain, fall back to a default.
+  3. Keep the highest explicit `priority`.
+  4. Global logical specificity: a stronger condition, as a set of tag assignments respecting inheritance, wins.
+  5. Local specificity by canonical tag order: object types, then user tags, then layers.
+  6. Tie-breaks.
+
+  The docs recommend specificity over explicit priority, because using a priority stops specificity from resolving rules at that priority level. — [P] [JITX docs: Design Constraints](https://docs.jitx.com/en/latest/essentials/physical_design/design-constraints.html)
+- **SI constraints** are layered on **topologies**:
+  - Topologies are ordered, acyclic trees of pad-to-pad "topo-nets" built with `>>`.
+  - Each node must be a physical pad. Pass-through parts need a `BridgingPinModel`, and endpoints may have a `TerminatingPinModel(delay, loss)` from IBIS or datasheet data.
+  - **Medium** constraints are `RoutingStructure` and `DifferentialRoutingStructure`: impedance, per-layer width, spacing, clearance, velocity, insertion loss, a `NeckDown`, and an uncoupled region.
+  - **Medium-dependent** constraints are `TimingConstraint` (for example 1.0 ns ±10 ps between elements), `TimingDifferenceConstraint` (skew, intra- or inter-pair) and `InsertionLossConstraint`.
+  - They are applied through `Constrain(Topology(a, b)).timing(...)`.
+  - The router tunes delay in "Signal Tuning" regions and reports "Unsatisfied Signal Constraints".
+
+  — [P] [JITX SI constraints](https://docs.jitx.com/en/latest/essentials/SI/constraints.html); [P] [JITX topology](https://docs.jitx.com/en/latest/essentials/SI/topology.html)
+- **JITX placement** is a kinematic tree of relative transforms (`Placement(translate, rotate, on=Side)`, `Positionable.at(x, y, on, rotate)`), not a constraint system. — [P] [jitx.placement API](https://docs.jitx.com/en/latest/api/jitx.placement.html)
+
+**tscircuit — constructive placement and routing properties**
+- Placement props:
+  - Position: `pcbX`, `pcbY`, `pcbRotation`.
+  - Edge anchors: `pcbLeftEdgeX`, `pcbRightEdgeX`, `pcbTopEdgeY`, `pcbBottomEdgeY`.
+  - Offsets and modes: `pcbOffsetX/Y`, `pcbPositionAnchor`, `pcbPositionMode` (`relative_to_group_anchor | auto | relative_to_board_anchor | relative_to_component_anchor`), `pcbRelative`.
+  - Edge and margins: `shouldBeOnEdgeOfBoard`, `pcbMargin*`.
+  - Group layouts: `pcbGrid*`, `pcbFlex*`, `pcbPack`, `pcbLayout`.
+  - Trace widths: `minTraceWidth`, `nominalTraceWidth`.
+
+  — [P] [tscircuit/props README](https://github.com/tscircuit/props)
+- `calc()` expressions can reference component bounds (`R1.maxX`), **pin/pad bounds** (`U1.pin1.x`, `R1.pin2.maxX`) and board bounds. For example, `pcbX="calc(R1.pin1.minX - 2mm)"` places a part relative to a specific pad. — [P] [tscircuit: Relative Positioning](https://docs.tscircuit.com/guides/tscircuit-essentials/relative-positioning)
+- `<constraint xDist="6.35mm" centerToCenter left=".H1" right=".H2" />` and `edgeToEdge` express footprint-internal geometry. — [P] [tscircuit: constraint](https://docs.tscircuit.com/footprints/constraint)
+- Groups: `<group>` gives relative positioning, plus packing "to minimize trace distance", for example an MCU with its decoupling capacitors. Automatic layout via `pcbFlex`, `pcbGrid` and `pcbPack` is marked **beta**. — [P] [tscircuit: groups for PCB layout](https://docs.tscircuit.com/guides/tscircuit-essentials/using-groups-for-pcb-layout); [P] [tscircuit: Automatic PCB Layout](https://docs.tscircuit.com/guides/tscircuit-essentials/automatic-pcb-layout)
+- Routing constraints:
+  - `<bus name connections preferredLayers maxLengthSkew="0.5mm">` (a bus does not connect its members electrically).
+  - `<differentialpair positiveConnection negativeConnection maxLengthSkew>`.
+  - `<breakout>` regions own package fanout. The DDR guide splits a channel into a controller fanout, a global channel and a memory fanout.
+
+  — [P] [tscircuit: Routing DDR](https://docs.tscircuit.com/guides/routing-ddr)
+- `<drccheck checkFn>` adds custom, design-local DRC functions that return circuit-json error objects, for example to detect an I²C address conflict. — [P] [tscircuit: drccheck](https://docs.tscircuit.com/elements/drccheck)
+
+**atopile — parametric assertions; layout delegated to KiCad**
+- Primary example syntax:
+  - `assert v_out is v_in * ratio` (equations for the solver)
+  - `assert my_vdiv.power.voltage is 10V +/- 1%`
+  - `assert ….voltage within 3.3V +/- 10%`
+  - `assert max_current within 10uA to 100uA`
+  - `r.resistance = 1kohm +/- 20%`, `capacitor.package = "C0402"`
+  - Connections: `~` and the bridge-connect operator `~>`, behind `#pragma experiment("BRIDGE_CONNECT")`.
+
+  — [P] [atopile examples/equations](https://github.com/atopile/atopile/blob/main/examples/equations/equations.ato); [P] [examples/auto-picking](https://github.com/atopile/atopile/blob/main/examples/auto-picking/auto-picking.ato)
+- **Layout reuse** works by building a sub-module as its own build target (`builds: sub: entry: layout_reuse.ato:Sub`), laying it out by hand in KiCad, then using the KiCad "atopile pull group" button to replicate it into the top layout. — [P] [examples/layout_reuse](https://github.com/atopile/atopile/blob/main/examples/layout_reuse/layout_reuse.ato)
+- docs.atopile.io now says the docs "live in the editor". It is marked pre-release, and it shows a newer syntax: `.ELEC: @STD::Import {…}`, `.Blinky: @type {…}`, `@trait(_): ELEC::is_pcb`, `.resistance &= 330ohm +/- 5%`. The language is therefore in flux. — [P] [docs.atopile.io](https://docs.atopile.io/)
+- I found no geometric or placement constraint vocabulary in atopile. Placement and routing remain KiCad's job. — [P] (inference from examples and README) [atopile README](https://github.com/atopile/atopile)
+
+**Quilter — "physics constraints" with explicit pass/fail PRCs** (primary docs, vendor-defined)
+- Quilter's Circuit Comprehension detects physics constraints automatically, and users can enter them manually. The types are:
+  - **Bypass Capacitors**: capacitor ref plus the component being bypassed. Parent pins are assigned by priority: explicit schematic wire, then voltage-named pins; a cap on several same-name pins is split equally.
+  - **Switching Converters**: refdes must start with `U`, the output inductor with `L`, with ≥2 external capacitors. All three passives are placed "as closely as possible" to the package.
+  - **Crystal Oscillators**, **Power Nets**, **Timing-sensitive Signals**, **Differential Pairs**, **Single-ended Impedance Control**.
+
+  Unconstrained nets are treated as generic low-speed signals. — [P] [Quilter: physics constraints overview](https://docs.quilter.ai/physics-constraints/overview); [P] [bypass capacitors](https://docs.quilter.ai/physics-constraints/bypass-capacitors); [P] [switching converters](https://docs.quilter.ai/physics-constraints/switching-converters)
+- **Physics Rule Checks (PRCs)** validate each constraint per candidate:
+
+  | PRC | What it measures | Pass criterion |
+  |---|---|---|
+  | Pin Distance | Euclidean distance between closest pin edges, in cm | Within a tolerance, e.g. 0–1 cm |
+  | Layer Switch Count | Layer switches on the path | — |
+  | Ground Plane Overlap | Ground plane under both diff-pair traces at all points | All points except the last 2×clearance at the ends |
+  | Trace Path Length | Pin-to-pin trace length | — |
+  | Length Mismatch | — | — |
+  | Uncoupled Spacing | — | — |
+  | Invalid Width Span | — | — |
+  | Overheated Length | % of a high-current net whose analytic temperature rise exceeds 20 °C | Below a tolerance, e.g. 0–10% |
+
+  — [P] [Quilter PRCs overview](https://docs.quilter.ai/physics-rule-checks-prcs/overview); [P] [Pin Distance](https://docs.quilter.ai/physics-rule-checks-prcs/pin-distance); [P] [Ground Plane Overlap](https://docs.quilter.ai/physics-rule-checks-prcs/ground-plane-overlap); [P] [Overheated Length](https://docs.quilter.ai/physics-rule-checks-prcs/overheated-length)
+- Quilter's design parameters include placement regions, keepouts, pre-placed components, pre-routed traces, preserved pours, single-sided placement, net widths by layer, stackups and fabricators. — [P] [docs.quilter.ai navigation](https://docs.quilter.ai/using-quilter/introduction)
+
+**Exchange format: IPC-2581C (schema read directly)**
+- The official XSDs (IPC-2581A, B, B1 and C) are published at webstds.ipc.org/2581/; the C version is dated 2020-07-31. — [P] [webstds.ipc.org/2581](https://webstds.ipc.org/2581/)
+- **Specs.** A `Spec` (attribute `name`, plus optional Xform, Location and Outline) holds abstract `SpecificationType` members:
+  - `Backdrill`, `Dielectric`, `Conductor`, `Compliance`, `Technology`, `General`, `Temperature`, `V_Cut`, `Tool`
+  - **`Impedance`**: `value` plus `tolPlus`/`tolMinus`/`tolPercent`, and a `TransmissionType` of `SingleEnded`, `EdgeCoupled`, `BroadsideCoupled` or `CoplanarWaveguide`. Each transmission type has `LineWidth`, `Spacing`/`Pitch`, `RefPlane layerOrGroupRef` and a structure enum such as `STRIPLINE_SYMMETRIC` or `MICROSTRIP_MASK_COVERED`.
+  - `Thieving`, `EdgeChamfer`, `EdgePlating`, `SecondaryDrill`, `SurfaceFinish`, `Flex`
+  - **`Loss`** (types ATTENUATION, IMPEDANCE, INSERTION, POWER, SIGNAL, VOLTAGE)
+
+  `LengthPropertyType` carries `constraintType` = MIN, MAX or NONE. — [P] [IPC-2581C.xsd](https://webstds.ipc.org/2581/IPC-2581C.xsd)
+- **Nets.** `LogicalNet` has `name`, **`netClass`** (enum CLK, FIXED, GROUND, SIGNAL, POWER, UNUSED), **`netPair`** (diff-pair partner), `PinRef` and `SpecRef`. Copper `Set` elements carry `net`, `netPair` and `SpecRef`, so specs can be bound to nets and features. — [P] [IPC-2581C.xsd](https://webstds.ipc.org/2581/IPC-2581C.xsd)
+- **DFX.** `Dfx` (category COMPONENT, BOARDFAB, ASSEMBLY, STACKUP, TESTING or DATAQUALITY) contains `Criteria` (with a measurementMode such as DISTANCE, IMPEDANCE, CURRENT or VOLTAGE_DC) and `DfxQuery`. Responses are YES, NO, APPROVED, CONDITIONALLY_APPROVED, REJECTED, WAIVED, etc. — [P] [IPC-2581C.xsd](https://webstds.ipc.org/2581/IPC-2581C.xsd)
+- **No** element types named for clearance rules, length/skew rules or placement rules were found in the C schema. The name grep found only generic length properties and the MIN/MAX enum. — [P] (my schema inspection) [IPC-2581C.xsd](https://webstds.ipc.org/2581/IPC-2581C.xsd)
+- **KiCad's IPC-2581 exporter** writes:
+  - `Spec` nodes for each stackup layer: material, plus copper conductivity 5.959E7 S/m and dielectric properties.
+  - `SURFACE_FINISH` (Rev C only).
+  - Backdrill and secondary-drill specs.
+  - `LogicalNet`, `PhyNetGroup`, BOM/AVL and `Dfx` section handling.
+
+  The source contains **no `Impedance` spec output**. — [P] [KiCad source: pcb_io_ipc2581.cpp](https://gitlab.com/kicad/code/kicad/-/blob/master/pcbnew/pcb_io/ipc2581/pcb_io_ipc2581.cpp)
+- Trade-press descriptions of Rev C: impedance at net, layer or stackup level, and a bidirectional DFX module. — [S] [Sierra Circuits](https://www.protoexpress.com/blog/ipc-2581-revision-c-facilitates-pcb-data-management-by-hemant-shah/). The IPC-2581 Consortium's validator checks schema compliance only, not design correctness. — [S] [IPC-2581 File Validation Tool](https://www.ipc2581.com/?p=2506)
+
+**Analog / VLSI constraint formats (placement-relation inspiration)**
+- **ALIGN**: typed Pydantic constraints in `<hier>.const.json`. A `HardConstraint` must implement `translate(solver)`, and a `UserConstraint` expands into low-level constraints. Types include Order, Align, Spread, AspectRatio, Boundary, Floorplan, SymmetricBlocks, BlockDistance, Horizontal/VerticalDistance, GuardRing, GroupCaps, NetPriority, NetConst (shield, criticality), SymmetricNets, PortLocation, MultiConnection, Route and GroupBlocks. — [P] [ALIGN constraint.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py)
+- **FloorSet** (Intel Labs, ICCAD 2026 Problem C base) is a set of synthetic floorplans with 1M training and 100 test samples per variant (Prime: rectilinear; Lite: rectangular). Its hard constraints are fixed-outline, shape (aspect ratio range), boundary (edge or corner), grouping, **multi-instantiation** (partitions that must share one shape) and pre-placement. They are encoded by extending Bookshelf `.blocks` with per-component placement constraints and adding net weights in `.nets`. — [P] [FloorSet arXiv 2405.05480](https://arxiv.org/abs/2405.05480); [P] [ICCAD 2026 contest problems](https://www.iccad-contest.org/2026/Problems.html)
+- **KiCadRoutingTools `floorplan-intent.json`** uses strict keys: blocks/zones, keepouts, edge_connectors, decaps, `proximity[]` (ref, near, max_mm, basis), keep_away, replicate, arrays, fixed_poses, must_lock, legality_budget and severity. Unknown keys are refused at load. The intent acts as a monotone per-move gate in the optimizer. — [P] [floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md)
+
+**Academic "design intent" / constraint-capture work**
+- Graph-attention extraction of analog **symmetry constraints** from netlists reports higher accuracy and F1 than earlier symmetry detectors. — [P] [arXiv 2312.14405 abstract](https://arxiv.org/abs/2312.14405)
+- **LLANA** uses LLM few-shot priors to speed up Bayesian optimization of analog layout constraint parameters. — [P] [arXiv 2406.05250 abstract](https://arxiv.org/abs/2406.05250)
+- **PCBSchemaGen** induces a per-IC domain schema (knowledge graph) from datasheets to ground LLM decoding, pairs it with a deterministic 5-layer verifier with pin-level error localization, and reports 81.3% pass on its PCBBench schematic tasks with Gemma-4-31B. It works on schematics, not layout. — [P] [arXiv 2602.00510 abstract](https://arxiv.org/abs/2602.00510)
+- An older ontology formalizes constraint types for custom IC design (prototyped in Protégé). — [S] [An ontology for constraints in custom IC design (ResearchGate)](https://www.researchgate.net/publication/220743841_An_ontology_for_constraints_in_custom_IC_design)
+- I found no peer-reviewed paper that defines a formal design-intent language for **PCB layout**, or that uses an LLM to extract **layout** rules from datasheets. Searches returned only vendor and marketing pages. — [S] (negative result across several searches)
 
 ### Inferences
-- **KiCad can already express part of "keep C5 within 2 mm of U1 pin 7 with via to GND plane" as a check.** `(rule "U1.7 decap" (condition "A.fromTo('U1-7','C5-1')") (constraint length (max 2mm)))` bounds the routed copper length on that pin-to-pad path. That is a routed-length proxy for proximity, and it is only meaningful after routing. An `assertion` on `Position_X`/`Position_Y` is single-object, so it cannot compare two footprints' positions, and footprint origins are not pad centers. There is no native "pad of A within d of pad of B" predicate and no "this pad has a via to plane P within d" predicate. Those need a custom checker. The IR should therefore compile each constraint into **(a)** a `.kicad_dru` rule where one exists, so the KiCad router and DRC enforce it, **(b)** a geometric checker for placement-time evaluation, and **(c)** a differentiable or penalty term for the optimizer.
-- ALIGN's hard/soft split, plus `translate(solver)` and `UserConstraint` expansion, is a clean pattern. LLM-facing high-level intents such as "decouple U1" expand into low-level primitives (proximity, via-to-plane, loop area, same side), and each primitive knows how to emit solver terms and checker code.
-- KiCadRoutingTools' strict-schema lesson matters for LLM-authored constraints. Reject unknown keys, track provenance (`source`, `context`, `dispositions`), and never auto-derive intent from a board under repair.
-- Selectors should reuse KiCad's own vocabulary: refs and globs, `${Class:…}`, net class, sheet path, group, named rule area and `fromTo` pads. Then any IR selector can be rendered as a DRC `condition` string and checked with KiCad's evaluator.
+- **Rule resolution must be explicit in the IR.** KiCad uses file order (last match wins), Altium explicit numeric priority (and Matched Lengths rules accumulate), JITX logical specificity, and Allegro object-precedence with CSet assignment. An IR that compiles to KiCad must emit rules in a deterministic order that reproduces the IR's own resolution semantics. JITX's "more specific condition wins", ordered general-to-specific when compiled to KiCad, is the most LLM-friendly choice, because it is order-independent for the author.
+- **Allegro's pin-pair / match-group / Xnet abstractions and JITX's topology + pin-model abstractions** are the right primitives for timing constraints. Length belongs to a pad-to-pad path through series parts, not to a net. KiCad covers part of this with `fromTo()` plus `length`/`skew`. tscircuit's `maxLengthSkew` on buses and pairs is a simpler subset.
+- **"Keep C5 within 2 mm of U1 pin 7 with via to GND plane" in each system:**
+
+  | System | How it expresses this |
+  |---|---|
+  | tscircuit | Constructively, as an equality: `pcbX="calc(U1.pin7.x + …)"` |
+  | Quilter | As a Bypass Capacitor constraint checked by Pin Distance, Layer Switch Count, Ground Plane Overlap and Trace Path Length PRCs |
+  | KiCadRoutingTools | As `proximity[]` or `decaps.max_pin_distance_mm` |
+  | KiCad | Only as a post-route `fromTo('U1-7','C5-1')` + `length (max 2mm)` proxy |
+  | IPC-2581 | Not at all |
+
+  The IR needs a native `proximity(pad, pad, max, basis)` primitive and a `via_to_plane(pad, net, max_dist)` primitive, and must compile them to checkers.
+- **IPC-2581C is useful as an *input* for impedance and stackup intent** (Impedance spec with transmission structure and RefPlane, Loss, netClass category, netPair) when importing from Altium or Allegro. It is not useful as a carrier of placement or routing rules. KiCad does not export impedance specs, so a KiCad-native IR must carry them itself, for example via KiCad 10 tuning profiles.
+- **IPC-2581 DFX** (Criteria / DfxMeasurement / DfxQuery / DfxResponse with severity and waiver states) is a good model for the IR's *findings and waivers* channel. A finding is a measurement with a severity, and a response can be APPROVED, WAIVED or REJECTED with a comment. This mirrors KiCad DRC exclusions.
+- Quilter's design (automatic detection from schematic patterns, then a user-editable constraint list, then named PRCs with explicit pass criteria and units) is a practical template for an LLM system. The LLM proposes constraints with detection evidence, a human confirms them, and deterministic PRC-style checkers grade every candidate.
 
 ### Gaps
-- I could not read the IPC-2581 Rev C schema itself, so I could not confirm whether it carries generic layout constraints (clearance, length or skew rules) as opposed to stackup, impedance and DFX data. Only trade-press summaries were available. I also could not establish whether KiCad's IPC-2581 exporter emits impedance or diff-pair intent.
-- Altium query function names (for example `InNetClass` and `WithinRoom`) and Allegro ECSet and topology syntax were not verified against primary docs.
-- The academic literature on "design intent capture" for PCBs could not be searched after the budget ran out.
-- I could not confirm exact atopile `assert … within …` syntax from primary docs, because docs.atopile.io was blocked and the example `.ato` paths returned 404.
+- Primary Cadence documentation is login-gated. Allegro facts come from a channel-partner note [3P] and a search summary of the 16.3 user guide [S].
+- The IPC-2581C standard text (paid) was not read; only the XSD was. Semantics of how `SpecRef` on `LogicalNet` versus `Set` is meant to bind impedance targets are inferred from the schema structure.
+- I found no formal PCB-specific design-intent language in the academic literature, and no LLM datasheet-to-layout-rule extraction paper.
 
 ---
 
 ## Q2. Which open-source or scriptable tools can score a layout beyond DRC (SI, PI, EMI, thermal, parasitics), which are fast enough for an optimization loop, and are there ML surrogates?
 
 ### Takeaway
-There is a usable tiered stack:
-1. **kicad-cli DRC** (JSON, exit codes, zone refill, schematic parity) for legality.
-2. **Analytic and heuristic checkers**: decap distance, return-path and plane-split analysis, loop-area estimates, crosstalk proxies, and closed-form impedance (Transcalc models in KiCad's calculator). These are fast enough to run inside a loop.
-3. **2.5D solvers** for DC IR drop (resistive-mesh plugins KiPIDA and KiPI) and 2D field solvers for Z0. These suit periodic checks.
-4. **Full-wave and FEM** (openEMS via gerber2ems, PCB_SI_Toolkit or KiCad-Electrodynamic-Static-Studio, and SPIKE's extensions). These are for final verification only.
+The open stack now spans every tier:
+- **kicad-cli DRC** (JSON output, exit codes, refill, parity).
+- **Heuristic and analytic checkers**: return-path/plane-split checks, decap distance, crosstalk proxies, Transcalc impedance, IPC-2221.
+- **2.5D solvers**: DC IR drop and PDN impedance (padne, KiPI, Ki-PIDA).
+- **Full-wave and FEM**: openEMS via gerber2ems and si-wrapper (CI-automatable, VNA-validated), and FreeCAD + gmsh + CalculiX thermal (Antmicro) or Salome + Elmer current-conduction flows. Palace is an emerging FEM backend with C/L matrix extraction.
 
-Most 2026 KiCad SI/PI/EMC plugins are alpha or community previews with little independent validation. ML surrogates for PCB SI exist mostly at the pre-layout or parameter level, not as layout-level EMI predictors.
+For speed, KiCad-native rule routers run in seconds per board (PCBWorld: Freerouting about 7 s and KRT about 0.65 s per small real board). An example gerber2ems run processes about 294 Mcells/s, roughly 34 s per excitation for a 10k-step run. A trained PDN-impedance DNN answers in 0.1 s.
+
+ML surrogates exist for PDN impedance (DNN over more than 1M BEM-labelled boards), decap selection (DevFormer DPP), eye metrics and pre-layout SI (buffer-parameterized and differentiable surrogates), and coupled-line crosstalk (MLP, LS-SVM). None is layout-generic or open and KiCad-integrated. I found no maintained layout-level EMI or thermal surrogate.
 
 ### Cited Findings
 
-**Legality and DRC**
-- `kicad-cli pcb drc` takes `--format report|json`, `--severity-all|error|warning|exclusions`, `--schematic-parity`, `--all-track-errors`, `--units`, `--refill-zones` (with `--save-board`), `-D VAR=VALUE` and `--exit-code-violations` (exit 0 when clean, 5 when there are violations). — [kicad-cli docs source](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/cli/cli.adoc)
-- The DRC JSON report schema (`drc.v1.json`) has these top-level fields: `source`, `date`, `kicad_version`, `violations[]`, `unconnected_items[]`, `schematic_parity[]`, `coordinate_units`, `included_severities`, `ignored_checks[]`. Each Violation has `type`, `description`, `severity`, `items[]` (each with `uuid`, `description`, `pos{x,y}`), `excluded` and `comment`. — [KiCad source: resources/schemas/drc.v1.json](https://gitlab.com/kicad/code/kicad/-/blob/master/resources/schemas/drc.v1.json)
-- `kicad-cli pcb export stats --format json` reports board statistics. Other useful automation commands include `gerber diff --format json`, `pcb render` (images), `pcb export pos`, and STEP/GLB/VRML export. — [kicad-cli docs source](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/cli/cli.adoc)
+**Legality / DRC (KiCad)**
+- `kicad-cli pcb drc` takes `--format json`, `--severity-*`, `--schematic-parity`, `--refill-zones` and `--exit-code-violations` (exit 5 on violations). — [P] [kicad-cli docs](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/cli/cli.adoc)
+- The `drc.v1.json` report schema has `violations[]` (type, description, severity, items[uuid, description, pos], excluded, comment), `unconnected_items[]`, `schematic_parity[]` and `ignored_checks[]`. — [P] [drc.v1.json](https://gitlab.com/kicad/code/kicad/-/blob/master/resources/schemas/drc.v1.json)
+- `kicad-cli` also exports XAO, BREP and STEP, which feed FEM meshing (see the thermal flows below), and `pcb export stats --format json`. — [P] [kicad-cli docs](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/cli/cli.adoc)
 
-**Impedance and transmission-line calculators**
-- KiCad's PCB Calculator TransLine tool is "heavily based on Transcalc". It covers microstrip, CPW, grounded CPW, rectangular waveguide, coax, coupled microstrip, stripline and twisted pair, using frequency-dependent closed-form models (Atwater; Kirschning–Jansen). Via Size gives via electrical and thermal properties, and Track Width uses IPC-2221 for current versus temperature rise. — [pcb_calculator.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcb_calculator/pcb_calculator.adoc)
-- KiCad 10 tuning profiles can calculate track geometry and unit delay from target impedance and stackup, and can drive time-domain length tuning. — [pcbnew_create_board.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_create_board.adoc)
+**Impedance calculators**
+- KiCad PCB Calculator TransLine is based on Transcalc and covers microstrip, CPW, grounded CPW, coax, coupled microstrip, stripline and twisted pair. Its Track Width tool uses IPC-2221. — [P] [pcb_calculator.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcb_calculator/pcb_calculator.adoc)
+- KiCad 10 tuning profiles compute geometry and unit delay from target impedance. — [P] [pcbnew_create_board.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_create_board.adoc)
 
-**Full-wave EM (openEMS family)**
-- openEMS is an open FDTD solver with graded 3D Cartesian and cylindrical meshes, multithreading and SIMD, Octave/Matlab and Python interfaces, dispersive materials, and vtk/hdf5 field dumps. — [openEMS-Project](https://github.com/thliebig/openEMS-Project)
-- **gerber2ems** (Antmicro, Apache-2.0, 272★, 220 commits, copyright 2023–2026, no tagged releases) is a "Python interface to OpenEMS, for PCB trace simulation". It takes per-layer Gerbers, `stackup.json`, an Excellon PTH drill file, a `-pos.csv` with "SP"-prefixed port designators and a `simulation.json`, and outputs S-parameters and impedance CSVs, plots, and optional ParaView field exports. Its stated limits: capacitors are not simulated and must be modelled as shorts, terminated traces need ports or grounding, ports must be at least 8× the mesh cell, field exports can reach hundreds of GB, and it runs **one simulation per excited port**. — [gerber2ems](https://github.com/antmicro/gerber2ems)
-- Antmicro's July 2025 update added trace propagation-delay estimation for checking intra-pair length matching, KiCad 9 support in the `kicad-si-simulation` wrapper (which defines a Region of Interest per simulation), adaptive grid generation, differential-pair simulation and `ems2paraview`. Antmicro says the flow now runs "mostly without manual tweaking". — [Antmicro blog 2025-07](https://antmicro.com/blog/2025/07/recent-improvements-to-antmicros-signal-integrity-simulation-flow) (via search summary). Earlier posts: [automated trace selection for SI (2024-07)](https://antmicro.com/blog/2024/07/automated-pcb-trace-selection-for-si-simulation); [open-source SI analysis (2023-11)](https://antmicro.com/blog/2023/11/open-source-signal-integrity-analysis) (titles via search)
-- **pcbmodelgen** converts KiCad PCB files into Octave function files plus mesh lines for openEMS and CSXCAD. It is an older C++ tool. — [pcbmodelgen](https://github.com/jcyrax/pcbmodelgen)
-- **KiCad Electrodynamic & Static Studio** (KiCad ≥10, uses the `kipy` IPC API) extracts tracks, vias, pads and zones, runs 2.5D and 3D openEMS FDTD for single-ended and mixed-mode S-parameters headlessly (`run_openems.py`), solves DC IR drop with a custom C++ MNA/Poisson solver, and post-processes with scikit-rf (Touchstone handling, vector fitting to SPICE). — [KiCad-Electrodynamic-Static-Studio](https://github.com/ravid1323/KiCad-Electrodynamic-Static-Studio)
-- **scikit-rf** is a BSD-licensed Python RF/microwave package and the de facto Touchstone and network-analysis library. — [scikit-rf](https://github.com/scikit-rf/scikit-rf). **Qucs-S** is a GUI over ngspice (recommended), Xyce and SpiceOpus. — [Qucs-S](https://github.com/ra3xdh/qucs_s)
-- **FastHenry** (inductance and resistance of 3D conductors) and **FastCap** (capacitance) are MIT-origin solvers, maintained with 64-bit Linux ports by FastFieldSolvers and described as "de-facto golden reference" solvers. — [FastHenry2](https://github.com/ediloren/FastHenry2); [FastCap2](https://github.com/ediloren/FastCap2)
+**Full-wave EM: openEMS / gerber2ems / si-wrapper**
+- openEMS is an EC-FDTD solver written in C++ with Python and Octave interfaces. The engine is **GPLv3+** and CSXCAD is **LGPLv3+**; it was started by Thorsten Liebig (Univ. Duisburg-Essen) in 2010. Most users build from source with `update_openEMS.sh`; ready-made packages exist for Windows, FreeBSD and macOS. — [P] [openEMS intro](https://docs.openems.de/en/latest/intro.html); [P] [openEMS install](https://docs.openems.de/en/latest/install/index.html); [P] [requirements](https://docs.openems.de/en/latest/install/requirements.html)
+- **gerber2ems flow** (Apache-2.0):
+  - **Inputs**: per-layer Gerbers named `*-<stackup-layer>.gbr`, `stackup.json`, an Excellon PTH drill file, a `-pos.csv` with `SP*` port designators, and `simulation.json`.
+  - **`-g` geometry step**: gerbv converts Gerbers to PNG at `pixel_size` (default 5 µm; must be raised for large boards because of a libcairo limit). The PNGs are triangulated and stacked by stackup Z.
+  - **`-s` simulate**: iterates over every excited port.
+  - **`-p` postprocess**: FFT to S-parameters and impedance CSV plus plots.
+  - **Grid defaults**: `optimal` 50 µm, `diagonal` 50 µm, `perpendicular` 200 µm, `max` 500 µm, 4 inter-layer lines, `margin` 1500 µm, and grid pitch must be ≤ λmin/10.
+  - **Ports** must be at least 8× the mesh cell long. **Capacitors** are not simulated and are shorted with a trace.
+  - **Runtime guidance**: the README's example log shows "Excitation signal length is: 3211 timesteps … Max. number of timesteps: 10000", and recommends at least 3× the pulse length. A sample engine line reads "Timestep: 4620 || Speed: 294.4 MC/s (3.372e-03 s/TS)".
+  - Field exports "can easily take hundreds GB".
 
-**Combined SI/PI/EMC KiCad plugins (2026, mostly alpha)**
-- **PCB_SI_Toolkit** (KiCad 10 plugin, installable through PCM) has these tabs:
-  - Layout checks: measured-versus-limit rows for decap distance to IC supply pins and their ground vias, reference-plane changes without a ground via, plane edge (limit 3×h), HV isolation against IPC-2221, dead branches, width steps, tombstoning, and crystal routing.
-  - Return Path: gap crossings plus an HF/DC return map.
-  - DC Current: a resistive network with IPC-2221 limits.
-  - Impedance: a 2D field solver from the real stackup.
-  - Diff pairs: odd and even mode.
-  - Crosstalk: estimated NEXT for parallel runs.
-  - openEMS: 3D FDTD with S-parameters and TDR/TDT.
-  It writes per-board JSON and HTML reports and ships a test board with one case per check. — [PCB_SI_Toolkit](https://github.com/ugo-silato/PCB_SI_Toolkit)
-- **KiPI** (GPL-3.0, standalone or KiCad 9/10 IPC plugin, 0.9.1 alpha, has CI) has three modes. DC voltage drop takes VRMs, loads and series parts, gives PASS/FAIL for loads, VRMs, vias and temperature, and writes HTML/PDF reports. AC PDN impedance sweeps the network with decap RLC models against a target-impedance calculator. Coupled Noise treats a switcher as aggressor and checks named victim nets against logic-family noise margins. Setup is saved as `<board>.kipi-setup.yml`. — [KiPI](https://github.com/drewsum/KiPI)
-- **Ki-PIDA** (KiCad 9+, IPC API) offers DC IR drop on a "hybrid 2.5D" resistive mesh with SciPy sparse solve, coupled electro-thermal analysis (temperature-dependent copper resistivity), power-tree and VRM efficiency modelling, voltage and current-density heatmaps, and config in `kipida_config.json`. Several forks exist (kbralten, Anercomp, Carter3DP, Gasman2014), and their maturity differs. — [KiPIDA (kbralten)](https://github.com/kbralten/KiPIDA); fork list via search: [Anercomp](https://github.com/Anercomp/KiPIDA), [Carter3DP](https://github.com/Carter3DP/KiPIDA)
-- **SPIKE** (Apache-2.0, v0.3.10, an "early community preview" for Windows; Linux Flatpak experimental) is a PI/SI/thermal workbench. Its thermal mode covers object-node, 2D plate and layered steady/transient models with airflow presets. It has optional openEMS and EMerge EM extensions, ngspice circuits, a CLI with batch runs, and an optional MCP bridge. — [SPIKE](https://github.com/krishna-swaroop/SPIKE)
-- **padne** is a finite-element DC power-delivery simulator for KiCad and a self-described side project. — [KiCad forum: padne](https://forum.kicad.info/t/presenting-padne-a-tool-for-dc-power-delivery-network-analysis/64966) (via search summary)
+  — [P] [gerber2ems README](https://github.com/antmicro/gerber2ems)
+- **kicad-si-simulation-wrapper** (`si-wrapper`) requires KiCad 9.0.x and was tested with 9.0.2 on Debian 12. It selects nets (for example from a "controlled impedance" net class), creates **slices**: the net or pair, neighbouring nets within a configurable distance and neighbour-point threshold, and all vias and planes in the area. It shorts 0 Ω resistors and large caps, terminates neighbours with nominal impedance (power and low-speed nets with 0 Ω), and auto-places ports as virtual footprints, prompting the user when the trace isn't two-point. It also writes `netinfo` (name, width, length, impedance, diff flag). — [P] [si-wrapper README](https://github.com/antmicro/kicad-si-simulation-wrapper); [P] [Antmicro blog 2024-07](https://antmicro.com/blog/2024/07/automated-pcb-trace-selection-for-si-simulation)
+- **Antmicro's July 2025 update**:
+  - An **adaptive grid**, dense around the trace of interest and sparse elsewhere, replaced equidistant grids.
+  - Differential-pair simulation and **trace delay** estimation were added for intra-pair skew checks.
+  - Slicing improved and `ems2paraview` was added.
+  - The flow "operate[s] mostly without manual tweaking", so it can run in CI for regression tracking.
+  - Results were **validated against VNA measurements** on the RDIMM DDR5 Tester clock pair; S-parameters "match pretty well in both character and order of magnitude". Antmicro's open 50 Ω VNA probe is used for low bands, and soldered coax for high bands.
 
-**EMI/EMC and return-path heuristics**
-- **jasonarnoldarnie/kicad-tools `return_path`** (KiCad 10.0.1, bundled Python, read-only on `.kicad_pcb`, 0★, 4 commits, no license shown) picks each layer's reference plane by dielectric distance and refills zones in memory. It flags VOID (detour computed by A* on a 0.05 mm raster, failing when the detour exceeds `--max-detour`, default 1.0 mm), ISLAND, SPLIT (plane net changes, so the return must pass through a capacitor), TERMINAL, VIA (layer change without a stitching via or bridging cap) and EDGE. Per net it reports return length, return/trace ratio and a **loop-area estimate**, which it calls "for comparing nets, not a field solve". Net criticality is classed from net-name globs. Output can be text, HTML, JSON or `--fail` exit codes. It models plane copper only and identifies capacitors by refdes only. — [kicad-tools (return_path)](https://github.com/jasonarnoldarnie/kicad-tools)
-- **emcvisual** runs in the browser and reads KiCad 6–10, IPC-2581, ODB++ and Eagle files. It computes a quasi-static magnetic near field (Biot–Savart with image currents in reference planes) and runs about 30 EMC rule checks covering interrupted return paths, reference changes at vias, missing stitching, regulator hot loops, cable common mode, filters and ESD at connectors, decoupling, and crystals near the edge. It gives a far-field estimate against CISPR 32/11/14-1 and FCC Part 15. The author reports that the fast far field agrees with openEMS "within 1 dB between 30 and 350 MHz" on a validation board, and that rules are documented with thresholds and test boards. — [emcvisual](https://github.com/tombueng/emcvisual)
-- **kicad-happy** (MIT, about 1.3k★) is a set of AI-agent skills. Its EMC skill has "44 rule checks" (ground voids, decoupling, I/O filtering, switching harmonics, diff-pair skew, edge radiation, PDN impedance via ngspice, ESD paths, crosstalk) and outputs an "EMC risk score". The README reports regression testing over a corpus of more than 5,800 repos (3,498 PCB files, 6,853 EMC analyses). — [kicad-happy](https://github.com/aklofas/kicad-happy)
-- **kicad-emi-guardian** (KiCad 10.0.5+ via `kicad-python`, MIT, 1 commit) checks GND antennas and islands, stubs, parallel coupling, sharp corners (default acute threshold 75°), electrically long nets, missing return vias, edge proximity and diff-pair mismatch, and estimates impedance, delay, quarter-wave resonance and a crosstalk proxy. It notes that KiCad 10's public IPC API does not expose stable custom DRC markers, and its author says it "is not an EMC compliance instrument". — [kicad-emi-guardian](https://github.com/hap231/kicad-emi-guardian)
-- Other heuristic tools: Kicad_GND_return_path_identifier, a 0–100 heuristic score for a component's ground return that calls itself "a heuristic geometric proxy, not a field solver". — [repo](https://github.com/Kevin-Davees/Kicad_GND_return_path_identifier/tree/main) (via search summary)
-- A KiCad forum thread exists on future built-in SI/PI functionality. — [KiCad forum](https://forum.kicad.info/t/future-plans-for-basic-signal-integrity-si-power-integrity-pi-funtionality/70585) (title only; content not readable here)
+  — [P] [Antmicro blog 2025-07](https://antmicro.com/blog/2025/07/recent-improvements-to-antmicros-signal-integrity-simulation-flow)
+- The 2023 introduction used a reference SI test board for validation, with PyBERT eye diagrams from gerber2ems output. — [P] [Antmicro blog 2023-11](https://antmicro.com/blog/2023/11/open-source-signal-integrity-analysis)
+- Other openEMS front-ends:
+  - pcbmodelgen: KiCad to Octave models. — [P] [pcbmodelgen](https://github.com/jcyrax/pcbmodelgen)
+  - KiCad Electrodynamic & Static Studio: `kipy` extraction, headless `run_openems.py`, a C++ MNA DC solver, scikit-rf vector fitting. — [P] [repo](https://github.com/ravid1323/KiCad-Electrodynamic-Static-Studio)
+  - The PCB_SI_Toolkit openEMS tab: S-parameters and TDR/TDT. — [P] [repo](https://github.com/ugo-silato/PCB_SI_Toolkit)
+  - SPIKE's openEMS and EMerge extensions. — [P] [repo](https://github.com/krishna-swaroop/SPIKE)
+- **Palace** (AWS, Apache-2.0) is a parallel 3D FEM code built on MFEM and libCEED. It does eigenmode, frequency-domain driven (lumped and wave ports, adaptive fast sweep) and time-domain analysis, **lumped capacitance and inductance matrix extraction** (electrostatic and magnetostatic), and adaptive mesh refinement (AMR). — [P] [awslabs/palace README](https://github.com/awslabs/palace)
+- **FastHenry/FastCap** are MIT-origin inductance and capacitance solvers with 64-bit ports. — [P] [FastHenry2](https://github.com/ediloren/FastHenry2); [P] [FastCap2](https://github.com/ediloren/FastCap2)
+- **scikit-rf** (BSD) handles Touchstone and network analysis. — [P] [scikit-rf](https://github.com/scikit-rf/scikit-rf)
 
-**Thermal**
-- Ki-PIDA (electro-thermal), KiPI (optional board temperature in DC mode) and SPIKE (layered steady and transient board thermal) are the scriptable KiCad-native options found. — [KiPIDA](https://github.com/kbralten/KiPIDA); [KiPI](https://github.com/drewsum/KiPI); [SPIKE](https://github.com/krishna-swaroop/SPIKE)
-- A 2024 write-up describes an open-source PCB thermal simulation workflow. — [jrainimo: Open-Source Thermal Simulation of PCBs](https://jrainimo.com/build/2024/11/oss-thermal-simulation-of-pcbs/) (title only; page blocked)
-- KiCad StepUp (a FreeCAD workbench) is the KiCad↔FreeCAD mechanical/STEP bridge that such FEM flows rely on. — [kicadStepUpMod](https://github.com/easyw/kicadStepUpMod)
+**DC IR drop / PDN**
+- **padne** is a KiCad-native **2.5D FEM** Laplace solver. Sources and sinks are declared as schematic text directives, e.g. `!padne VOLTAGE v=3.3V p=U1.1 n=U1.4`. It has a Qt GUI and ParaView export, CI tests, a bundled about 200 MB Linux binary that includes KiCad, and more than 30 KiCad test projects. — [P] [padne README](https://github.com/atx/padne); [P] [KiCad forum: Presenting padne (2025-10)](https://forum.kicad.info/t/presenting-padne-a-tool-for-dc-power-delivery-network-analysis/64966)
+  - The author says the FEM core is about 40 lines and "the vast majority of work developing these tools is ferrying data around". The **via model** (resistors stitching via-opening edges across layers) is uncertain except for "large and short" vias, and needs test-board validation. The author suggests awslabs/palace as a possible larger backend. A user reported macOS install failure (KiCad Python 3.9 vs padne's 3.10+ `match`). — [P] [same thread](https://forum.kicad.info/t/presenting-padne-a-tool-for-dc-power-delivery-network-analysis/64966)
+- **KiPI** (GPL-3.0, 0.9.1 alpha) covers DC drop, an AC PDN impedance sweep against a target-impedance calculator, and switcher **coupled noise**, with YAML setup and HTML/PDF reports. — [P] [KiPI](https://github.com/drewsum/KiPI)
+- **Ki-PIDA** (KiCad 9+, IPC API) is a hybrid 2.5D resistive mesh with electro-thermal coupling. — [P] [KiPIDA](https://github.com/kbralten/KiPIDA)
+- **PCB_SI_Toolkit** (KiCad 10) has measured-vs-limit layout checks: decap distance, plane edge 3×h, reference changes without ground vias, a DC network, a 2D field solver for Z0, NEXT estimates, and an openEMS tab. — [P] [PCB_SI_Toolkit](https://github.com/ugo-silato/PCB_SI_Toolkit)
+- The KiCad core team has made no commitment to built-in SI/PI. A July 2026 forum request for FEM-like SI/PI in KiCad got no developer response before auto-closing. — [P] [KiCad forum thread](https://forum.kicad.info/t/future-plans-for-basic-signal-integrity-si-power-integrity-pi-funtionality/70585). A GitLab issue (#8398) tracking FEM integration "has not seen much progress in the last 6 years", per a forum user. — [3P] [padne thread](https://forum.kicad.info/t/presenting-padne-a-tool-for-dc-power-delivery-network-analysis/64966)
 
-**Speed evidence and ML surrogates**
-- An analytic, non-ML method for estimating total radiated power from PCB signal and PDN layout returns results "within 30s versus ~5 hours" for full-wave simulation on the authors' test board. — [Microelectronics Journal (ScienceDirect)](https://www.sciencedirect.com/science/article/abs/pii/S0026269221002445) (via search summary)
-- ML SI surrogates: buffer-parameterized surrogates treat IC buffer characteristics as inputs alongside PCB parameters. In that work anisotropic GP regression was best with little data, NNs were best with large data, and validation used an interconnect with 44 parameters. — [arXiv 2605.18170](https://arxiv.org/pdf/2605.18170). Most ML SI work predicts eye height and width from PCB design parameters; differentiable surrogates have been used for amortized pre-layout design-space exploration. — [arXiv 2606.07463](https://arxiv.org/pdf/2606.07463) (via search summary)
-- A vendor blog claims physics-informed neural operators are 100–1000× faster than FEM/FDTD at 2–5% accuracy loss. I found no peer-reviewed support. — [AtlasPCB blog](https://www.atlaspcb.com/blog/ai-accelerated-pcb-simulation-ml-si-pi-thermal/)
+**EMI / return path heuristics**
+- `return_path` flags VOID, ISLAND, SPLIT, TERMINAL, VIA and EDGE on a 0.05 mm A* raster and gives a loop-area estimate. — [P] [kicad-tools](https://github.com/jasonarnoldarnie/kicad-tools)
+- **emcvisual** uses Biot–Savart with image currents and about 30 rule checks. Its fast far field agrees with openEMS "within 1 dB between 30 and 350 MHz" on a validation board. — [P] [emcvisual](https://github.com/tombueng/emcvisual)
+- kicad-happy's EMC skill has 44 rules. — [P] [kicad-happy](https://github.com/aklofas/kicad-happy)
+- kicad-emi-guardian is described by its author as "not an EMC compliance instrument". — [P] [repo](https://github.com/hap231/kicad-emi-guardian)
+- Allegro's commercial equivalents are the **Return Path DRC**, Max xtalk and Max parallel modes (High-Speed option). — [3P] [Parallel Systems note](https://www.parallel-systems.co.uk/wp-content/uploads/2020/02/Constraint_modes.pdf)
+
+**Thermal (FEM) flows**
+- **Antmicro thermal-simulation-scripts**:
+  - Tools: FreeCAD 1.0.0 for geometry, surface constraints and meshing (gmsh or netgen); CalculiX 2.20 (`ccx`) as solver; `ccx2paraview`; ParaView 6.0.0; Blender via PCBooth.
+  - CLI: `tpre parse-fcstd` → `.inp` plus `simulation.json`, then `ccx file.inp`, then `ccx2paraview file.frd vtk`, then `tpost csv/plot/preview/animation`. The output CSV holds max/min temperature over time.
+  - Validation: an RPi5 enclosure at 2.5 W and 8 W, with film coefficients of 5.14 and 6.61 W/(m²K) and 100 min of simulated time to equilibrium, compared with thermocouple measurements; also vacuum-chamber tests with emissivity 0.77.
+  - Antmicro describes the flow as "invoked from the command line" and suitable for CI.
+
+  — [P] [thermal-simulation-scripts README](https://github.com/antmicro/thermal-simulation-scripts); [P] [Antmicro blog 2025-03](https://antmicro.com/blog/2025/03/open-source-thermal-simulation-analysis-and-visualization/)
+- **KiCad + Salome + ElmerFEM current-conduction flow** (2024):
+  1. KiCad 8.99/9 exports **XAO** with only the copper of interest (net filter, fused shapes).
+  2. Salome defines input/output face groups and a 1D-2D-3D mesh (min/max of about 0.02–0.08 mm worked) and exports UNV.
+  3. Elmer runs "static current conduction".
+  4. Results are viewed in ParaView.
+
+  The author calls it "a bit tedious" with "four different software packages". The post covers current and voltage (Joule-heating inputs) rather than full thermal analysis. — [P] [jrainimo: Open-Source Thermal Simulation of PCBs](https://jrainimo.com/build/2024/11/oss-thermal-simulation-of-pcbs/)
+- Lighter-weight options: SPIKE's layered steady/transient board-thermal models, KiPI's optional board temperature and Ki-PIDA's electro-thermal coupling. — [P] [SPIKE](https://github.com/krishna-swaroop/SPIKE); [P] [KiPI](https://github.com/drewsum/KiPI); [P] [KiPIDA](https://github.com/kbralten/KiPIDA)
+- Quilter's analytic "Overheated Length" PRC (trace segments with temperature rise above 20 °C) is a cheap thermal proxy. — [P] [Quilter PRC](https://docs.quilter.ai/physics-rule-checks-prcs/overheated-length)
+
+**Speed evidence**
+- **PCBWorld per-rollout wall time** (@5 protocol, seconds):
+
+  | Router | D2 | D3-A (99 small real boards) | D3-B (10 medium) |
+  |---|---|---|---|
+  | Freerouting 2.1.0 | 2.69 | 7.09 | 9.94 |
+  | KiCadRoutingTools | 0.82 | 0.65 | 3.27 |
+  | PPO policy | 0.43 | 1.83 | — |
+  | GPT-5.4 interactive agent | — | 231 | 866 |
+
+  — [P] [PCBWorld paper Table 3](https://arxiv.org/html/2607.05915v2)
+- In the gerber2ems sample log, 3.37 ms/timestep × 10,000 steps ≈ 34 s per excited port for that example's mesh. This is a derived figure: runtime scales with cell count, steps and number of ports. — [P] (derived from) [gerber2ems README](https://github.com/antmicro/gerber2ems)
+- An analytic radiated-power method gives results in 30 s versus about 5 h for full-wave. — [S] [Microelectronics Journal](https://www.sciencedirect.com/science/article/abs/pii/S0026269221002445)
+
+**ML surrogates**
+- **PDN impedance DNN** (Zhang et al., Missouri S&T, 2021): BEM labels over more than **1M random boards** varying shape, stackup, IC location and decap placement. It generalizes to unseen configurations in **0.1 s**, over 100× faster than BEM and **5000× faster than full-wave**. — [P] [arXiv 2106.10693](https://arxiv.org/abs/2106.10693). A search snippet of the journal version says 10,000×. — [S] [Wiley IJNM](https://onlinelibrary.wiley.com/doi/10.1002/jnm.2956) (conflict between versions noted)
+- **DevFormer / DPP benchmark** (KAIST, ICML 2023): a symmetric transformer for decap placement that reduces component count by more than 30% with improved performance in simulated and real hardware. The open **DPP benchmark** provides a simulator call `decap_sim(probe=23, solution=[1,5,7], keep_out=[2,3,10])`, is also available as RL4CO environments, and was used by ReEvo (NeurIPS 2024) for LLM-discovered heuristics. — [P] [arXiv 2205.13225](https://arxiv.org/abs/2205.13225); [P] [devformer README](https://github.com/kaist-silab/devformer)
+- **SI eye-metric surrogates**: buffer-parameterized models compare tree, kernel, GPR and NN methods on a 44-parameter interconnect; NNs win with large data and anisotropic GPR with little data. — [P] [arXiv 2605.18170](https://arxiv.org/abs/2605.18170). Amortized neural optimization trains a policy through a differentiable surrogate: about 10% optimality loss for 10³–10⁴× speedups, and a 320,000-instance SerDes sweep in milliseconds. — [P] [arXiv 2606.07463](https://arxiv.org/abs/2606.07463)
+- **Crosstalk surrogates**: MLP time-domain crosstalk for coupled lines, and an LS-SVM for worst-case crosstalk under tolerances. — [S] [Springer NCA](https://link.springer.com/article/10.1007/s00521-019-04252-3); [S] [Sci. Reports](https://www.nature.com/articles/s41598-023-42728-4)
+- **EMI**: the only layout-to-emission neural work found is a 2003 IEICE paper that predicts far-field spectra from near-field spectra. — [S] [IEICE 2003](https://globals.ieice.org/en_transactions/communications/10.1587/e86-b_4_1364/_p)
+- An unsupported vendor claim of 100–1000× neural-operator speedups. — [S] [AtlasPCB blog](https://www.atlaspcb.com/blog/ai-accelerated-pcb-simulation-ml-si-pi-thermal/)
 
 ### Inferences
-- **Loop-speed tiers.** These are inferred from method complexity and tool descriptions. Except for the 30 s vs 5 h comparison, these are not measured numbers.
-  - (i) Microseconds to milliseconds per candidate, suitable for every optimizer step: HPWL and crossings, overlap and out-of-bounds, decap pad-to-pin distance, same-side checks, closed-form Z0 and delay (Transcalc), IPC-2221 width, parallel-run crosstalk proxies, and floorplan-intent grading.
-  - (ii) Sub-second to seconds per candidate, suitable every N steps or per accepted move: `kicad-cli pcb drc --format json` (includes zone refill), raster return-path A* (0.05 mm grid), and Biot–Savart near-field estimates.
-  - (iii) Seconds to minutes per board, for checkpoints and finalists: 2.5D resistive-mesh IR drop (Ki-PIDA, KiPI DC), PDN impedance sweeps, and 2D field-solver Z0 per cross-section.
-  - (iv) Minutes to hours per net or port, final verification only: openEMS/gerber2ems 3D FDTD and FEM thermal.
-- No tool provides a **standard machine-readable result schema** across SI, PI and EMC. Several emit JSON or HTML (return_path, PCB_SI_Toolkit, KiPI YAML setup plus reports). An LLM-driven system should wrap each tool behind a common `Finding{rule, severity, measured, limit, objects[uuid], location, evidence}` record that mirrors KiCad's DRC JSON (type, severity, items[uuid,pos]).
-- Many plugins depend on a **running KiCad GUI with the IPC API** (KiPIDA, KiPI plugin mode, emi-guardian, Electrodynamic Studio). A headless loop should prefer file-based tools (return_path reads `.kicad_pcb`; emcvisual, gerber2ems and kicad-cli are headless) or run KiCad headless with the API. A third-party evaluation notes that `kipy` requires a running KiCad instance with no offline path. — [kicad-tools README (rjwalters)](https://github.com/rjwalters/kicad-tools)
-- Validation is thin. Only emcvisual reports a quantitative agreement against openEMS (about 1 dB). The others warn "not compliance" or "alpha". A benchmark should therefore treat physics heuristics as **advisory soft scores** until each one has been calibrated against openEMS or measurements on a reference corpus.
+- **Loop tiers.**
+  - **T0 (µs–ms)**: geometry, intent and PRC-style checks; Transcalc Z0 and delay; IPC-2221; a PDN-impedance DNN if trained for the board class.
+  - **T1 (sub-second to seconds)**: kicad-cli DRC; raster return-path; Biot–Savart near field. Rule routers at 0.65–10 s per small or medium board are fast enough as post-route evaluators inside a placement loop, which is how Cypress used Freerouting.
+  - **T2 (seconds to minutes)**: 2.5D IR drop (padne, KiPI), PDN sweeps.
+  - **T3 (minutes to hours)**: openEMS per critical net or pair via si-wrapper slices; FreeCAD/CalculiX or Elmer thermal.
+- The **si-wrapper slice approach** is directly reusable for an automated loop: pick constrained net classes, slice, short passives, terminate neighbours, auto-place ports. Antmicro's claim of CI-ability and VNA validation makes it the most production-ready open SI verifier for KiCad, though only on KiCad 9.0.x so far.
+- Thermal FEM needs geometry/mesh tooling (FreeCAD/Salome/gmsh) and is not yet a one-command KiCad flow. For an optimizer, use analytic proxies (Quilter-style overheated length, Ki-PIDA electro-thermal) and run FEM only for sign-off.
+- The surrogate literature points to a **training-data strategy**. The PDN DNN was trained on more than 1M *synthetically generated* boards labelled by a fast physics solver (BEM). The same recipe applies here: use padne, KiPI, return_path or si-wrapper slices as fast labellers on synthetic KiCad boards to train layout-level surrogates. No ready-made open surrogate exists.
 
 ### Gaps
-- I found no published runtime figures for `kicad-cli pcb drc` on boards of various sizes, or for gerber2ems per-port runs, so tier boundaries are estimates.
-- I found no open-source tool that predicts **radiated emissions from layout features with an ML surrogate**, and no peer-reviewed layout-level crosstalk or EMI surrogate dataset.
-- Elmer FEM PCB thermal flows, atlc, Sonnet Lite, openEMS 2D and "KiCad openEMS" scripts other than those listed could not be researched after the search budget ran out. The Elmer GitHub README fetch also failed.
-- Sparse validation data exists for KiPIDA, KiPI and SPIKE accuracy against commercial tools.
+- Thermal-ML and EMI-ML surrogate searches could not be completed because the shared search budget was exhausted. Coverage there is thin.
+- I found no published wall-clock numbers for kicad-cli DRC versus board size, padne/KiPI solve times, or a full gerber2ems DDR-net slice.
+- The ElmerCSC README and FreeCAD FEM wiki were not readable (fetch refused or bot challenge). Elmer facts come from the jrainimo post only.
+- The validation of KiPI, Ki-PIDA, padne and SPIKE against measurement or commercial tools is not documented beyond the authors' own caveats.
 
 ---
 
 ## Q3. Which layout quality metrics exist beyond DRC, and how do Quilter, DeepPCB and academic and open benchmarks report quality? Are there "human-like" or "expert-acceptable" metrics?
 
 ### Takeaway
-The field has converged on a **gate-then-score** protocol:
-- **Gate**: "Clean Pass" means fully connected **and** zero error-level DRC, under the board's own rules, re-checked by KiCad on saved files.
-- **Routing secondaries**: routability (net-level and pad-pair level), DRV split by cause, wirelength, vias, layers, runtime, and parse-fail for LLMs.
-- **Placement**: HPWL, overlap, out-of-bounds, crossings and net separation.
+Metrics have converged into three layers:
+- **Absolute legality and connectivity**: Clean Pass / NRR / PRR, open, physical-short and logical-short rates, DRV by cause.
+- **Efficiency**: wirelength, vias, layers, runtime.
+- **Physics PRCs**: pin distance, layer switches, ground-plane overlap, length mismatch, uncoupled spacing, overheated length.
 
-Vendor tools add "physics rule checks" for decoupling, switcher loops, diff pairs and current capacity. HPWL and crossings are explicitly not enough to separate sensible placements from scattered ones, so open tools now grade against **declared floorplan intent**. True "expert-acceptability" metrics barely exist yet. The closest are intent-conformance grading and comparison against human reference copper.
+There is now one published **reference-relative "human-likeness" metric**, OmniRouting's Multi-Scale Graph Similarity (MGS). Human reference boards are not perfect: in OmniRouting they reach only 93.58% NRR under the published DRC. Placement-specific metrics include HPWL, overlap, out-of-bounds, net crossings, net separation, routability after a fixed router, and intent conformance.
 
 ### Cited Findings
-- **PCBWorld metrics.** Each board is routed 5 times, the rollout with the highest potential gain is kept (@5), and every board is re-opened and DRC-checked against its own project rules, so "a method never scores itself". The metrics are:
-  - CP: fraction of boards fully connected with zero DRC errors.
-  - Potential gain: Φ(routed) − Φ(bare).
-  - Routability: the fraction of required connections routed.
-  - DRV: error-level violations.
-  - WL: total routed copper in mm.
-  - Via.
-  - Time: averaged over all rollouts.
-  - Parse-fail: LLMs only.
+- **PCBWorld** reports CP (fully connected and 0 error-level DRVs), Potential gain (Φ over unconnected, DRV, WL and vias), Routability, DRV, WL, Via, Time and Parse-fail. It uses @5 best-of-five selection by potential gain, with Time averaged over all rollouts, and DRC re-run on saved boards against each board's own rules. — [P] [PCBWorld METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md); [P] [paper §4.3](https://arxiv.org/html/2607.05915v2)
+- **OmniRouting** definitions:
+  - **PR**: load and schema success.
+  - **NRR**: % of expected nets connected and DRC-clean.
+  - **PRR**: % of the Σ(|Pₙ|−1) minimum pad connections routed and DRC-clean. Missing outputs stay in denominators.
+  - **Open / PShort / NShort**: PShort counts only different-net wire–wire and via–wire contacts.
+  - **Clr. / Dist.**: violation counts by cause.
+  - **Polygon** (copper-pour usage), **TWL**, **#Vias**, **#Layers**, **RT**.
+  - **MGS**: predicted and reference routings become pad-aware, layer-specific graphs at coarse (corridor/topology) and fine (geometry) resolution, with the coarse graph weighted more. MGS measures agreement with the expert reference, not correctness.
 
-  "Clean pass is the headline". WL and vias are "secondary", because shortening copper by leaving nets unrouted games them. — [PCBWorld METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md)
-- PCBWorld's potential is Φ(s) = −unconnected − f_drv(DRC count, steepest near zero) − λ_w·wirelength − λ_v·vias + completion bonuses. The training potential also counts three promoted warnings (dangling track, dangling via, net conflict) that CP does not. — [PCBWorld ENVIRONMENT.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/ENVIRONMENT.md); [METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md). The DRC uses 35 stock error-level checks. — [PCBWorld arXiv HTML](https://arxiv.org/html/2607.05915v1) (via search summary)
-- **OmniRouting/OmniLayout metric vocabulary**, as transcribed by a third party:
-  - NRR: percentage of nets connected **and** DRC-clean.
-  - PRR: percentage of DRC-clean pad-to-pad connections.
-  - Open / PShort / NShort: net rates for opens, physical shorts and logical shorts.
-  - Total / Clr. / Dist.: violation counts by cause.
-  - Polygon: percentage of outputs with copper pours.
-  - TWL, #Vias, #Layers.
-  - PR: loadable-output rate.
-  - RT: runtime.
-  - Placement: OO (overlap), OoB, HPWL, NC (crossings), NS (net separation).
+  — [P] [OmniRouting arXiv 2608.04434 (HTML)](https://arxiv.org/html/2608.04434v1)
+- **OmniRouting results**:
+  - The **human engineer reference** scores NRR 93.58%, PRR 95.91%, Open 4.38%, PShort 0.38%, Clr. 0.80.
+  - The best zero-shot LMM gets NRR/PRR 12.60/15.41%; agentic refinement reaches only 27.98/30.34%.
+  - The OpenROAD PcbRouter baseline gets 56.20% NRR and 71.37% PRR.
+  - Base LMM outputs average 69.77–431.29 DRC violations.
+  - "Feedback quality matters more than iteration count."
 
-  The recon recommends adopting DRC-attributed NRR, pad-pair PRR and the violation-cause split. — [kicad-tools OmniLayout recon](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/omnilayout-recon.md)
-- OmniRouting reports that current multimodal models show weak path planning, poor design-rule adherence and inconsistent preservation of electrical functionality. — [arXiv 2608.04434](https://arxiv.org/abs/2608.04434) (via search summary). A third-party summary gives under 13% clean net routability for models against about 94% for humans, which I could not verify in the paper. — [Pith summary](https://pith.science/paper/2607.03261) (via search summary)
-- **RL_PCB** (DATE 2024) evaluates placement by HPWL, Euclidean wirelength, overlap, and **post-routing wirelength** after an A*-based router, against a simulated-annealing baseline. — [RL_PCB](https://github.com/LukeVassallo/RL_PCB)
-- **Quilter** (vendor, self-reported) scores routing completion as the percentage of pins routed (goal 100%) plus manufacturability (fab-supported rules, zero DRC). It describes "Physics Rule Checks" for impedance targets, return-path continuity, bypass-cap placement, switching-converter layout, diff-pair integrity and trace width for current. It reports adding the Simbeor field solver for impedance profiles. Its "Project Speedrun" claims 98% routing completion with 38.5 h of human cleanup against a quoted 428 h of manual layout. Quilter's own blog concedes that routing metrics without first-pass yield or bring-up data don't show whether boards work. — [Quilter docs intro](https://docs.quilter.ai/using-quilter/introduction); [Quilter 2026 routing guide](https://www.quilter.ai/blog/a-2026-guide-to-automated-pcb-routing-traditional-autorouters-vs-ai-powered-layout); [Quilter vs DeepPCB vs Flux](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai) (via search summary)
-- **DeepPCB** publishes per-board numbers. For example, on the open STRF RF board: 100% routed, 68 vias, under 3 min, 98 airwires. Its KiCad plugin is Apache-2.0, but routing runs in a closed, credit-metered cloud. — [kicad-tools external benchmark README (citing deeppcb.ai/benchmarks)](https://github.com/rjwalters/kicad-tools/blob/main/benchmarks/external/README.md); [deeppcb-kicad-plugin](https://github.com/instadeepai/deeppcb-kicad-plugin)
-- **KiCadRoutingTools** states that "placement … is judged by `crossings` and `hpwl`. Both are indifferent between a sensible layout and a scattered one with the same wirelength". It adds `check_floorplan.py` with 15 settable rules (envelope, zone_containment, zone_side, assembly_side, zone_exclusive, keepout, edge_connector, decap_distance, decap_ungraded, decap_pin_distance, proximity, must_lock, legality, pins_to_edge, array_formation) plus plan-feasibility findings such as `plan_zone_overfull`. Exit code 4 means "violations found", kept distinct from a crash. — [floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md). Every change is A/B-tested on a corpus of open-source boards and graded for DRC violations and unconnected nets. — [KiCadRoutingTools](https://github.com/drandyhaas/KiCadRoutingTools)
-- PCB_SI_Toolkit's "Layout checks" are framed as a "smart DRC that **measures** the layout instead of predicting physical quantities", with each row showing Measured next to Limit. Examples: decap distance to supply pins and ground vias, plane-edge distance (limit 3×h), width steps, dead branches, crystal routing. — [PCB_SI_Toolkit](https://github.com/ugo-silato/PCB_SI_Toolkit)
-- Net-separation-oriented placement via margin maximization is an academic placement objective, relevant to NS. — [arXiv 2210.14259](https://arxiv.org/pdf/2210.14259) (title via search)
+  — [P] [OmniRouting HTML](https://arxiv.org/html/2608.04434v1)
+- **Quilter** candidate metadata: % of pins routed, DRC count (candidates with DRC errors are not surfaced), single- or double-sided, layer count, minimum trace width, clearance, via and drill used, and via count. PRCs carry explicit pass criteria and units, e.g. Pin Distance 0–1 cm and Overheated Length 0–10%. — [P] [Quilter: candidate details](https://docs.quilter.ai/candidate-review/candidate-details); [P] [PRCs](https://docs.quilter.ai/physics-rule-checks-prcs/overview)
+- **Cypress** (ISPD 2025 Best Paper) measures placement quality as **routability = % of routed pin pairs using Freerouting v1.9.0 with two free copper layers at default settings**. It also reports routed track length and runtime. Claims: 1–5.9× higher routability, 1–19.7× shorter routed track length on fully routed designs, and up to 492.3× runtime speedup. Baselines are SA-PCB (OpenROAD) and NS-Place/NS-Place+ (ASP-DAC'22). — [P] [Cypress ISPD slides](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf); [S] [ISPD'25 TOC abstract](https://www.sigda.org/publications/ispd-25-toc/); [S] [Cornell news (award)](https://zhang.ece.cornell.edu/news/cypress_ispd_bpa.html) (title via search; the ISPD slides list it as a "Best Paper Nominee")
+- **RL_PCB** uses HPWL, Euclidean WL, overlap and post-route WL against a simulated-annealing baseline. — [P] [RL_PCB](https://github.com/LukeVassallo/RL_PCB)
+- **KiCadRoutingTools** argues that "crossings and hpwl … are indifferent between a sensible layout and a scattered one", which motivates floorplan-intent grading. — [P] [floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md)
+- Quilter's own blog says routing metrics without first-pass yield or bring-up data do not prove boards work. — [S] [Quilter blog](https://www.quilter.ai/blog/the-2026-guide-to-autonomous-pcb-design-quilter-vs-deeppcb-vs-flux-ai)
 
 ### Inferences
-- **Proposed metric hierarchy.**
-  - (1) Hard gates: loadable file, LVS/connectivity parity (`--schematic-parity`), CP (connected and zero error-level DRC under the board's own `.kicad_dru`), and zero hard-intent violations.
-  - (2) Routing quality: NRR, PRR, DRV by cause, WL normalized by the human reference or by MST/Steiner lower bound, vias per net, layer-change count on critical nets, length and skew slack against `length`/`skew` constraints, and uncoupled diff-pair length.
-  - (3) Placement quality: HPWL ratio to human, crossings, overlap and OoB (should be zero), intent conformance (floorplan-intent rules), decap pin distance distribution, and edge-connector compliance.
-  - (4) Physics proxies: return-path violations by class, loop-area estimate for hot loops and critical nets, IR-drop margin, plane-split crossings, and crosstalk-proxy exposure.
-  - (5) DFM and aesthetics: acute angles (`track_angle`), dangling segments, silk overlap, via-in-pad, and courtyard margins.
-- "Human-like" acceptability can be operationalized as **distance to the human reference** on the same netlist and outline (WL, vias and HPWL ratios, plus intent conformance where the intent is authored, not emitted from a damaged board), together with **pairwise expert or LLM-judge preferences** calibrated on a held-out human-labelled set. No published calibrated "expert-acceptability" score was found.
-- Selection effects matter. PCBWorld's best-of-5 by potential gain and its rule that Time is averaged over all rollouts are good conventions to copy so that stochastic LLM agents are compared fairly.
+- **Recommended metric set**, a union of PCBWorld, OmniRouting, Quilter and Cypress:
+  - **Gates**: PR/loadable, LVS parity, CP.
+  - **Routing**: NRR, PRR, Open/PShort/NShort, DRV by cause, TWL, vias, layers, RT.
+  - **Placement**: HPWL, overlap, OoB, net crossings, net separation, Freerouting-based routability (Cypress protocol), intent conformance.
+  - **Physics PRCs**: pin distance, layer-switch count, ground-plane overlap, length mismatch, uncoupled spacing, overheated length, return-path violations, IR-drop margin.
+  - **Human-relative**: MGS-style graph similarity plus WL, via and HPWL ratios to the human board.
+- Because human boards are themselves not DRC-clean under their declared rules (OmniRouting human NRR 93.58%; PCBWorld keeps only boards that were DRV-free after conversion), report human scores on the same metrics and normalize. Don't assume the human reference is 100%.
+- MGS rewards imitation. Use it as a *diagnostic* of human-likeness, not as an objective, because valid alternative routes score low on it.
 
 ### Gaps
-- I found no public, standardized "aesthetic" or "neatness" metric with human-rating validation.
-- I could not obtain Quilter's or DeepPCB's exact scoring formulas, and their published numbers measure different things, as Quilter itself acknowledges.
-- Thermal hot-spot metrics used in any public PCB layout benchmark were not found.
+- The full Cypress paper (ACM, bot-walled; Cornell PDF has TLS errors) was not read. Per-design tables and the benchmark statistics table are unread.
+- I found no human-rated aesthetic or "expert acceptability" dataset.
 
 ---
 
 ## Q4. What datasets and benchmarks exist for training or evaluating PCB placement and routing, and how could a benchmark be built from open-source KiCad repos?
 
 ### Takeaway
-As of late 2026 the strongest routing benchmark is **PCBWorld/PCBWorld-Bench** (BSD-3). It provides KiCad-native boards, its own design rules per board, human reference copper, an engine-grounded DRC referee and published baselines. Its D3 split comes from the **PCBench** corpus.
+**There are no ISPD or ICCAD contest problems on PCB or package routing or placement.**
+- ISPD contests from 2005 to 2027 are all IC or FPGA topics.
+- ICCAD contest routing problems are IC-level (bus routing 2018, routing with cell movement 2020/2021).
+- ICCAD 2026's problems are LLM netlist exploration, regression bucketing and FloorSet floorplanning.
 
-Placement benchmarks are weaker:
-- OmniLayout/OmniRouting have 1,681 Eagle-derived designs but no data license, and only 5 sample boards are public.
-- RL_PCB is small.
-- tscircuit's SRJ datasets are useful but lossy: they drop net classes, zones and keepouts.
-
-LLM *knowledge* benchmarks (PCB-Bench, PCB-QA) measure what a model knows, not what it produces. A new benchmark can be built from open KiCad repos by stripping routing, or placement and routing, while keeping the outline, rules and fixed mechanical parts, then scoring against the human board. License tracking per board is essential.
+The usable PCB benchmarks are:
+- **PCBWorld-Bench** (routing; KiCad-native; 679 PCBench-derived real boards in D3-A/B/C plus synthetic D1/D2; human reference copper).
+- **Cypress** (placement; NVlabs, Apache-2.0; small benchmarks synthesized from commercial designs plus 5 large commercial ones; Freerouting-routability protocol).
+- **OmniLayout/OmniRouting** (1,681 Eagle-derived designs; strong metric protocol; data not openly licensed).
+- **PCBench** (164-board routing corpus in its README).
+- **RL_PCB** (small).
+- **tscircuit SRJ datasets** (lossy).
+- **DevFormer DPP** (decap placement sub-problem).
+- **FloorSet** (VLSI floorplanning with constraints; a design analogue).
 
 ### Cited Findings
-- **PCBWorld** (LG AI Research, v1.1.0, BSD-3-Clause, engine GPLv3, KiCad 9.0.8 via submodule, Python 3.12+, Linux and macOS) wraps KiCad's push-and-shove router as a Gymnasium environment. It ships synthetic generators, real-board splits, a shared evaluation pipeline, and baselines: a decoder-only PPO/GRPO transformer, LLM tool-calling agents (Gemini, OpenAI, Anthropic, Together keys), FreeRouting and KRT. The state is exact geometry in mm (no grid or images), with a token wrapper for RL and an S-expression text wrapper for LLMs. The actions are `net_select`, `start_route`, `make_line`, `make_via`, `finish` and `net_end`. `tools/quickstart/prepare_pcbench.sh` builds D3 from PCBench. — [PCBWorld README](https://github.com/LGAI-Research/PCBWorld); [ENVIRONMENT.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/ENVIRONMENT.md)
-- PCBWorld-Bench combines a grid-based (D1) and a gridless (D2) synthetic generator with **679 real open-source boards** (D3). Instances range from a few nets to hundreds of nets and more than 2,000 pads. The 679 boards are "taken from PCBench's corpus". An RL policy trained only on synthetic boards transferred zero-shot to real boards and approached rule-based routers. — [arXiv 2607.05915](https://arxiv.org/abs/2607.05915); [alphaXiv summary](https://www.alphaxiv.org/de/abs/2607.05915) (via search summary). A related source pool of 1,182 boards converted to KiCad 9 is mentioned, with the note that format conversion can itself trigger DRC violations. — [PCBWorld arXiv HTML v2](https://arxiv.org/html/2607.05915v2) (via search summary)
-- Published Clean Pass on D3-A / D3-B (best-of-5): Freerouting 0.80 / 0.78, KiCadRoutingTools 0.74 / 0.20, as quoted by a third party from the paper. — [kicad-tools README ecosystem section](https://github.com/rjwalters/kicad-tools). OrthoRoute's own README reports 1% CP / 30% routability on D2 and 2% / 51% on D3-A (99 boards). It says Freerouting and KRT "performed dramatically better" and notes that OrthoRoute targets large backplanes. — [OrthoRoute](https://github.com/bbenchoff/OrthoRoute). A third party reports TraceMaker at about 0.99 / 1.00 / 0.90 clean on small / medium / large D3 splits, against about 0.7 / 0.7 / 0.2. This is self-reported and unreproduced. — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
-- **PCBench** describes itself as "a dataset for PCB routing" with **164 PCBs**. Each design folder contains `raw.kicad_pcb`, `processed.kicad_pcb`, `final.json` (PCB-RDL, a JSON routing-problem spec), `metadata.json` and `visual.png`. It also provides a net-subsampling augmentation script and a grid RL environment (`PCBRoutingEnv`). — [PCBench GitHub](https://github.com/PCBench/PCBench). **Conflict:** the README says 164 PCBs, while PCBWorld uses 679 PCBench boards. The README may be outdated or the corpus may have grown. I could not reconcile the two.
-- **PCB-Bench** (ICLR 2026, DigAI Lab, no LICENSE file, 49★) contains about 1,800 expert free-form QA items plus matching single-choice versions (about 3,700 questions in total), about 500 image-and-text problems, and **174** OSHWHub (JLCPCB) real projects with schematics, placement and routing files, and screenshots for a screenshot-to-description task. Evaluation is zero-shot. — [PCB-Bench GitHub](https://github.com/digailab/PCB-Bench). The ICLR abstract summary says "over 170" projects. — [ICLR 2026 poster](https://iclr.cc/virtual/2026/poster/10009621) (via search summary). It tests model knowledge, not tool output.
-- **OmniLayout** (arXiv 2607.03261, EMNLP Findings 2026) and **OmniRouting** (arXiv 2608.04434) draw on the same 1,681 designs: 2–8 layers, 109.9K components, 245.4K pads, 219.8K annotated nets, engineer reference routings, and 77.24K placement instances. A third-party audit (2026-08-15) found the records are JSON transcriptions of **Eagle 9.6.2** `.brd` files, not KiCad. Only 5 sample boards were public via Google Drive. The site's code, data and Hugging Face links were dead, there was **no data license**, and the papers are CC BY-NC-ND 4.0. — [kicad-tools OmniLayout recon](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/omnilayout-recon.md); [OmniRouting arXiv](https://arxiv.org/abs/2608.04434); [OmniLayout arXiv](https://arxiv.org/abs/2607.03261) (via search summary)
-- **RL_PCB** (MIT, 71★): its parser reads `.kicad_pcb`, it trained on "a relatively small training dataset of 6 circuits", and it ships a `dataset` folder. — [RL_PCB](https://github.com/LukeVassallo/RL_PCB)
-- **tscircuit autorouting datasets**:
-  - `dataset-srj18` has 16 Simple Route JSON problems converted from KiCad boards: 5 Arduino and 11 Antmicro boards (for example DDR5_TESTBED and OCULINK_PCIE_ADAPTER). The pipeline is `kicad-to-circuit-json` then `getSimpleRouteJsonFromCircuitJson`. — [dataset-srj18](https://github.com/tscircuit/dataset-srj18)
-  - The autorouter's main benchmark set is `dataset-srj33-drc-failures` (37 inputs, IDs 032–056 from bug reports), and results go to an external dashboard. — [tscircuit-autorouter](https://github.com/tscircuit/tscircuit-autorouter)
-  - The docs explain how to contribute datasets and point to `dataset-srj19`. — [tscircuit docs: contributing autorouting datasets](https://docs.tscircuit.com/contributing/contributing-autorouting-dataset) (via search summary)
-  - A community 45° obstacle dataset has 20 samples. — [dataset-srj11-45-degree](https://tscircuit.com/sangit/dataset-srj11-45-degree) (via search summary)
-  - A third-party evaluation found that SRJ drops net-class width, clearance, zones and keepouts, so SRJ completion is not comparable to KiCad-native completion. — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
-- **Freerouting** (GPL-3.0) routes Specctra DSN to SES headlessly through a CLI, a beta REST API (self-hostable) and an MCP server. A third party calls the DSN round-trip a "lossy interchange boundary". fastroute, a Rust port, claims byte-identical parity on its 20 benchmark boards with roughly 4–5× less wall time (2102 s vs 510 s). — [freerouting](https://github.com/freerouting/freerouting); [kicad-tools README](https://github.com/rjwalters/kicad-tools)
-- Other open corpora and datasets:
-  - `bshada/open-schematics`: CC-BY-4.0, KiCad-native, versioned on Hugging Face, with each record pairing a schematic with a human-completed board, per a third party. — [kicad-tools OmniLayout recon](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/omnilayout-recon.md)
-  - kicad-happy's test corpus: more than 5,800 repos, 3,498 PCB files analyzed. — [kicad-happy](https://github.com/aklofas/kicad-happy)
-  - A KiCad netlist SFT dataset with 100,179 examples (netlists, not layouts). — [Hugging Face](https://huggingface.co/datasets/AbijahKaj/kicad-netlist-sft-dataset)
-  - PCB-QA, a QA dataset built from KiCad files converted to JSON, where the best model scored about 93%. — [arXiv 2606.23704](https://arxiv.org/html/2606.23704) (via search summary)
-  - Related schematic-side work: SchGen ([arXiv 2605.30345](https://arxiv.org/pdf/2605.30345)), pcbGPT ([arXiv 2606.01188](https://arxiv.org/html/2606.01188v1)), PCBSchemaGen v2 (227 tasks with a deterministic verifier, [GitHub](https://github.com/HZou9/PCBSchemaGen_v2)), and a GenAI-for-PCB survey ([arXiv 2606.17074](https://arxiv.org/pdf/2606.17074)) (via search summary).
-- Practical benchmark-building precedent: a third-party harness fetches human-routed KiCad boards at **pinned commits** into a gitignored cache and never commits them, for license reasons. It upgrades legacy formats with `kicad-cli pcb upgrade`, captures "human baseline" routing stats, rips up tracks and vias while preserving placement, net assignments, net classes, zones and outline, and records upstream licenses in a manifest. — [kicad-tools benchmarks/external README](https://github.com/rjwalters/kicad-tools/blob/main/benchmarks/external/README.md). The same project integrates PCBWorld D3 CP@1/CP@5 aggregation. — [kicad-tools PR #6702](https://github.com/rjwalters/kicad-tools/pull/6702)
+- **ICCAD CAD Contest history** lists no PCB or package problem. Routing problems are obstacle-aware on-track bus routing, routing with cell movement (and its advanced version), system-level FPGA routing with TDM, and LEF/DEF open-source global routing. Placement problems include 3D placement with D2D vertical connections, 3D placement with macros, and routability-driven placement. — [P] [ICCAD contest history](https://www.iccad-contest.org/2025/History.html)
+- **ICCAD 2026** problems: A — LLM-Assisted Netlist Exploration and Transformation; B — Regression Failure Bucketing; C — The FloorSet Challenge: Data-Driven SoC Floorplanning. — [P] [ICCAD 2026 Problems](https://www.iccad-contest.org/2026/Problems.html)
+- **ISPD contests 2005–2026**: placement, global routing, clock synthesis, gate sizing, detailed-routing-driven placement, FPGA placement, initial detailed routing, wafer-scale, security closure, GPU/ML global routing (2024), performance-driven global routing (2025), post-placement buffering and sizing (2026). ISPD 2027 is MCMM post-CTS buffering and sizing on ASAP7. — [P] [ISPD previous contests](https://ispd.cc/?page=contests); [P] [ISPD27-Contest README](https://github.com/ABKGroup/ISPD27-Contest)
+- **PCBWorld-Bench** (v1.1.0, BSD-3; engine GPLv3; KiCad 9.0.8):
+  - **D1** (grid): 10,000/128/128 boards, 5 nets, 1 layer.
+  - **D2** (gridless): 10,000/128/128, 4–6 nets, 2 layers.
+  - **D3-A** (small, 100 boards: 2–13 nets, 6–31 pads), **D3-B** (medium, 287: 5–42 nets, 31–100 pads), **D3-C** (large, 292: 6–451 nets, 101–2,103 pads). 2–4 layers.
+  - **D3** is "679 boards derived from PCBench's open-source PCB corpus (He et al., 2024)". Boards were converted to KiCad 9 with their design rules kept, and only boards still fully connected and DRV-free after conversion were retained. Each keeps its original routing as the reference.
+  - Zero-shot evaluation uses 99 D3-A and 10 D3-B boards. D3-C is reserved as a challenge split.
+
+  — [P] [PCBWorld paper](https://arxiv.org/html/2607.05915v2); [P] [PCBWorld README](https://github.com/LGAI-Research/PCBWorld)
+- **PCBWorld Table 3** (CP on D3-A / D3-B, @5):
+
+  | Method | D3-A CP | D3-B CP |
+  |---|---|---|
+  | Freerouting | 0.80 | 0.78 |
+  | KRT | 0.74 | 0.20 |
+  | OrthoRoute | 0.02 | 0.00 |
+  | PPO (synthetic-only training) | 0.86 | 0.45 |
+  | PPO (w/o finish) | 0.94 | 0.42 |
+  | GPT-5.4 interactive | 0.65 | 0.00 |
+
+  "All LLM agents nonetheless obtain 0.00 CP on D3-B". On D3-A, GPT-5.4 scores CP **0.65 interactive vs 0.19 plan-and-execute vs 0.02 engine-free**, with DRV 1.31 vs 16.28 vs 34.58. "Leveraging the native API is essential for design-rule-clean routing." — [P] [PCBWorld paper Tables 3–4](https://arxiv.org/html/2607.05915v2)
+- **PCBench** README: "a dataset for PCB routing" with **164 PCBs**. Each has raw and processed `.kicad_pcb`, `final.json` (PCB-RDL), metadata and a PNG; the repo adds net-subsampling augmentation and a grid RL environment. — [P] [PCBench](https://github.com/PCBench/PCBench). **Conflict**: PCBWorld derives 679 boards from "PCBench's corpus". The README count may be outdated, or PCBWorld may count design versions or a larger pool. This is unresolved.
+- **Cypress benchmark**: the ISPD slides describe **10 small benchmarks** synthesized "based on functionality" (Ethernet controller, power controller, GPIO expander, CPLDs, …) with component shapes, side assignment, pin positions and nets, plus **5 commercial big benchmarks**. The NVlabs repo (Apache-2.0, 55★, built on DREAMPlace) has a `benchmarks/` folder listing at least `small-1`…`small-20`, so the count differs from the slides. The repo also has a `pcb-util/` folder. — [P] [Cypress slides](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf); [P] [NVlabs/Cypress](https://github.com/NVlabs/Cypress); [P] [benchmarks tree](https://github.com/NVlabs/Cypress/tree/main/benchmarks)
+- Cypress's placement formulation: SMD non-critical components on a rectilinear two-sided board; pre-assigned sides; constraints of spacing, non-overlap, and fixed critical and mechanical components; an orientation-aware LogSumExp wirelength; a two-sided electrostatic density; and a net-crossing model. — [P] [Cypress slides](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf)
+- **OmniLayout** (77.24K placement instances) and **OmniRouting** (2–8 layers, human reference routings, four tasks including tool-augmented agentic routing) draw on 1,681 designs collected from SparkFun, Arduino, Adafruit, GitHub and others. They promise to "open-source all benchmark data, evaluation code, and tool interfaces". — [P] [OmniRouting abstract and HTML](https://arxiv.org/abs/2608.04434); [P] [OmniLayout abstract](https://arxiv.org/abs/2607.03261). A third-party audit (2026-08-15) found Eagle-9.6.2-derived JSON, 5 public sample boards, no data license, and CC BY-NC-ND papers. — [3P] [kicad-tools OmniLayout recon](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/omnilayout-recon.md)
+- **PCB-Bench** (ICLR 2026) is a knowledge benchmark: about 3,700 text QA/CQ, about 500 image-text items, and 174 OSHWHub designs for screenshot-to-description. — [P] [PCB-Bench README](https://github.com/digailab/PCB-Bench)
+- **Other datasets**:
+  - **RL_PCB**: 6 training circuits. — [P] [RL_PCB](https://github.com/LukeVassallo/RL_PCB)
+  - **tscircuit `dataset-srj18`**: 16 boards from KiCad, 5 Arduino + 11 Antmicro. — [P] [dataset-srj18](https://github.com/tscircuit/dataset-srj18)
+  - **SRJ format**: drops net-class widths, clearances, zones and keepouts. — [3P] [kicad-tools README](https://github.com/rjwalters/kicad-tools)
+  - **DevFormer DPP**. — [P] [devformer](https://github.com/kaist-silab/devformer)
+  - **FloorSet** (2×1M synthetic floorplans with hard constraints). — [P] [arXiv 2405.05480](https://arxiv.org/abs/2405.05480)
+- **Older academic PCB routing work** (bus, escape and substrate routing) mostly used proprietary or industrial instances. An example is SAT-based multi-layer BGA escape routing on a 28×28 BGA with about 380 signals (ICCAD 2016). — [S] [MonoSAT BGA escape routing](https://www.cs.ubc.ca/labs/isd/Projects/monosat/monosat_bga_iccad2016.pdf); [S] [Substrate topological routing (TCAD 2008)](https://shenghua-liu.github.io/assets/pdf/papers/tcad2008_substraterouting.pdf)
 
 ### Inferences
-- **Benchmark construction recipe from open KiCad repos**, building on PCBWorld/PCBench practice:
-  1. Harvest boards with a manifest pinning repo, SHA and license. Exclude NC/ND and unlicensed boards, or keep them evaluation-only and never redistribute them.
-  2. Upgrade with `kicad-cli pcb upgrade` and run baseline DRC. Discard boards whose human copper fails their own rules, or record the baseline DRV, because conversion itself can introduce violations.
-  3. Create task variants:
-     - (R) route-only: strip tracks and vias, keep zones as outlines or strip them too.
-     - (P) place-only: keep the outline, mounting holes, edge connectors and locked parts, randomize or pile the rest, and score with a fixed router (for example Freerouting or KRT) to get post-route metrics.
-     - (P+R) both.
-     - (I) intent-constrained: author or verify a floorplan intent and constraint IR per board, ideally human-reviewed rather than `--emit-intent` from the board.
-  4. Score with the Q3 hierarchy and normalize against the human reference.
-  5. Split by size and layers (PCBWorld's small, medium and large splits).
-  6. Guard against contamination: popular open boards are likely in LLM pretraining data, so keep a private held-out set of recent or less-popular boards.
-- Synthetic generators (PCBWorld D1/D2) are valuable for RL pretraining and for unit-testing specific constraint types such as diff pairs, length groups and decap proximity, where real boards are sparse.
+- Since no contest benchmark exists, **PCBWorld D3 (routing) plus Cypress (placement) are the closest to "standard" open benchmarks**. Both are KiCad- or Freerouting-grounded. Use Cypress's protocol (Freerouting routability on two free layers) as a placement-quality evaluator, and PCBWorld's CP@5 protocol as the routing evaluator.
+- **PCBWorld's construction recipe** answers how to build a benchmark from open KiCad repos: convert to the current KiCad version, keep each board's own rules, drop boards not fully connected and DRV-clean after conversion, keep human copper as reference, and split by pad count. Extend it with placement-stripped variants: keep the outline, mechanical parts, connectors and locked parts, and re-place everything else. Then score placement through a fixed router (Cypress protocol) and compare with the human placement routed by the same router.
+- The PCBWorld finding that engine-free LLM agents get CP 0.02 against 0.65 for engine-interactive ones is a strong architectural signal. An LLM placer/router should act **through KiCad's router and DRC**, as tools with feedback, and never emit raw geometry.
 
 ### Gaps
-- I found no ISPD or ICCAD contest problem specifically for PCB or package routing; I could not search for one after the budget ran out.
-- The "Cypress" GPU PCB placement benchmark (ISPD 2025) could not be confirmed. A guessed repo URL returned 404.
-- Freerouting's in-repo test designs and their count were not verified.
-- The exact license mix of PCBench and PCBWorld D3 boards is unknown. PCBWorld ships a "recipe to rebuild D3" rather than the boards.
-- The discrepancy between 164 and 679 PCBench boards is unresolved.
+- I could not confirm whether Taiwan's MOE domestic CAD contest (separate from the international ICCAD track) ever ran a PCB problem; nothing surfaced.
+- The Cypress benchmark statistics table and large-benchmark availability (the commercial ones are likely not public) remain unread.
+- PCBench's 164 vs 679 discrepancy and per-board licenses are unresolved.
 
 ---
 
 ## Q5. How can datasheet reference layouts and existing open-source boards be reused as templates (layout retrieval)?
 
 ### Takeaway
-KiCad now has native reuse primitives:
-- **Design blocks**: schematic and/or layout fragments in `.kicad_blocks` libraries, where a saved layout can be applied to the footprints matching a schematic fragment.
-- **Multichannel Repeat Layout**: copies a reference channel into target rule areas.
-
-Code-first tools (atopile layout reuse) and agent toolkits (KiCadRoutingTools `replicate[]`) add hierarchical-address matching. I found no open dataset or retrieval system that mines datasheet reference layouts. Reference-layout reuse for an LLM system will have to be built from (a) design-block libraries, (b) subcircuit-matched fragments from open boards, and (c) datasheet-derived constraints rather than geometry.
+Reuse primitives exist across tools. Retrieval over a corpus, and extraction of datasheet layout guidance, remain unbuilt in open source and absent from the academic literature I found.
+- **KiCad**: design blocks with schematic and layout fragments; multichannel Repeat Layout.
+- **atopile**: sub-module build targets plus KiCad "pull group".
+- **JITX**: circuit-port forwarding, so constraints written at a sub-circuit boundary apply in any parent.
+- **tscircuit**: groups with relative or packed layout.
+- **Altium**: rooms that move their components.
+- **Quilter**: automatic detection of bypass caps and switchers from schematic patterns.
 
 ### Cited Findings
-- KiCad design blocks store a schematic fragment, a layout fragment or both, in `.kicad_blocks` library folders managed by global and project library tables. If a block has both fragments, "you can apply the saved layout to the footprints that correspond to the symbols in the schematic fragment". — [pcbnew_design_blocks.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_design_blocks.adoc)
-- Multichannel layout requires channels to have equal symbol counts, matching refdes prefixes, the same footprints and equivalent connectivity. Placement and routing are copied from the reference rule area to target rule areas. — [pcbnew_multichannel.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_multichannel.adoc)
-- atopile ships a `layout_reuse` example. A third-party analysis describes matching components by semantic module path (`atopile_address`, for example `power.ldo.package`) rather than refdes, so that layout survives regeneration. — [atopile examples](https://github.com/atopile/atopile/tree/main/examples); [kicad-tools atopile synthesis](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/atopile-research-synthesis.md)
-- The KiCadRoutingTools intent has `replicate[]` (from one sheet instance to others, with an anchor and `allow_net_mismatch`) and `arrays[]` (ordered member lists serving a ref, with shared rotation). — [floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md)
-- kicad-happy's datasheets skill extracts structured JSON from datasheet PDFs (pinouts, electrical characteristics, topology, SPICE coefficients), caches per MPN, and feeds its EMC, SPICE and thermal checks. — [kicad-happy](https://github.com/aklofas/kicad-happy)
-- rjwalters/kicad-tools offers parametric circuit "blocks" (MCUBlock with bypass caps, CrystalOscillator, LDOBlock, USB connector with ESD, DecouplingCaps) as reusable templates. — [kicad-tools README](https://github.com/rjwalters/kicad-tools)
+- KiCad design blocks can hold schematic and/or layout fragments in `.kicad_blocks` libraries. A saved layout can be applied to the footprints matching the schematic fragment. — [P] [pcbnew_design_blocks.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_design_blocks.adoc)
+- Multichannel Repeat Layout requires equivalent channels: the same symbol count, refdes prefixes, footprints and connectivity. — [P] [pcbnew_multichannel.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_multichannel.adoc)
+- atopile's layout reuse: build the `Sub` module as its own target, lay it out in KiCad, then use "atopile pull group" in the top layout. — [P] [examples/layout_reuse](https://github.com/atopile/atopile/blob/main/examples/layout_reuse/layout_reuse.ato)
+- JITX circuit-port forwarding: a circuit port connected to exactly one component port "forwards" to it, so `Constrain(Topology(...))` can be written at the parent level, and reusable sub-circuits don't need routing structures passed in. — [P] [JITX topology](https://docs.jitx.com/en/latest/essentials/SI/topology.html)
+- Altium components assigned to a room move with it, and rooms can be generated from component classes. — [P] [Altium Rooms](https://www.altium.com/documentation/altium-designer/pcb/rooms)
+- Quilter's detection rules (cap wired to a pin, voltage-named pins, `U`/`L` refdes for converter and inductor) show heuristic template matching from schematic patterns. — [P] [Quilter bypass capacitors](https://docs.quilter.ai/physics-constraints/bypass-capacitors); [P] [switching converters](https://docs.quilter.ai/physics-constraints/switching-converters)
+- PCBSchemaGen builds per-IC knowledge graphs from datasheets, for schematics only. — [P] [arXiv 2602.00510](https://arxiv.org/abs/2602.00510)
+- kicad-happy's datasheets skill extracts structured JSON (pinouts, characteristics, topology) per MPN. — [P] [kicad-happy](https://github.com/aklofas/kicad-happy)
 
 ### Inferences
-- Layout retrieval can be framed as **subgraph matching on the netlist**: find (IC MPN or footprint, connected passives, pin functions) in a corpus of human boards, then transfer *relative* poses (as in KiCad multichannel and design blocks) as a seed, and re-validate against the constraint IR. The corpus from Q4 can double as the retrieval index.
-- Datasheet layout guidance (for example "place CIN within X mm of VIN/PGND, minimize the SW node") is better captured as **constraints** (proximity, loop-area, keep-away, same-side) extracted by an LLM into the IR than as copied geometry, because packages and stackups differ. Extracted constraints should carry provenance (datasheet page) and be human-confirmable.
+- A retrieval index over PCBWorld-D3-style corpora, keyed by (IC footprint/MPN, connected passives, pin functions), can supply *relative* poses as seeds. The KiCad design-block format is the natural storage target. Datasheet guidance should be compiled into IR constraints (proximity, loop area, keep-away, same side) rather than copied geometry. Quilter's detection heuristics are a reasonable first-pass "intent extractor" for bypass caps and switchers.
 
 ### Gaps
-- I found no published dataset of datasheet reference layouts and no evaluation of LLM extraction accuracy for datasheet layout guidelines.
-- I found no open "layout retrieval" system or paper for PCBs; the search budget was exhausted before targeted searches.
+- I found no open dataset of datasheet reference layouts, no layout-retrieval paper for PCBs, and no evaluation of LLM extraction of layout guidelines.
 
 ---
 
 ## Q6. Implications for an LLM-driven KiCad placer/router: proposed constraint IR sketch, evaluation stack and benchmark plan
 
 ### Takeaway
-Build a typed, strict-schema **constraint IR** that compiles to three back-ends: `.kicad_dru` rules for KiCad routing and DRC enforcement, fast Python checkers, and optimizer penalty terms. Each constraint carries hard/soft status, a weight, a measurement method and provenance. Evaluate in tiers: cheap geometric checks every step, kicad-cli DRC and return-path checks per accepted move, IR drop and PDN per checkpoint, openEMS only on finalists. Benchmark on PCBWorld D3 plus your own license-tracked, KiCad-native corpus with route-only, place-only and place+route tasks, gated by Clean Pass and scored against human reference copper and authored intent.
+1. **Act through the engine.** PCBWorld shows that engine-interactive LLM agents reach CP 0.65 versus 0.02 when engine-free. OmniRouting adds that feedback quality matters more than iteration count.
+2. **Use a typed, strict, specificity-resolved constraint IR** that unifies KiCad selectors, JITX-style topologies and pin models, Allegro-style match groups, ALIGN/FloorSet/tscircuit placement relations and Quilter-style PRCs. It should compile to `.kicad_dru`, tuning profiles, Python checkers and optimizer penalties, and record findings and waivers in an IPC-2581-DFX-like channel.
+3. **Evaluate in tiers**, from µs geometry checks up to openEMS and CalculiX sign-off.
+4. **Benchmark** on PCBWorld D3 (routing) and the Cypress protocol (placement), plus our own license-tracked corpus with intent annotations. Report the union metric set, including MGS-style human similarity as a diagnostic.
 
 ### Cited Findings
-(Supporting facts, collected from above.)
-- KiCad DRC already supports `fromTo` path selection, `length`, `skew`, `via_count`, `diff_pair_*`, `assertion` and area/courtyard/class predicates, and it outputs machine-readable JSON with object UUIDs and positions. — [pcbnew_advanced.adoc](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc); [drc.v1.json](https://gitlab.com/kicad/code/kicad/-/blob/master/resources/schemas/drc.v1.json)
-- ALIGN's hard/soft and `translate(solver)` design and KiCadRoutingTools' strict-schema, monotone-gate intent are proven patterns. — [ALIGN constraint.py](https://github.com/ALIGN-analoglayout/ALIGN-public/blob/master/align/schema/constraint.py); [floorplan-intent.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/floorplan-intent.md)
-- PCBWorld provides an engine-grounded evaluation protocol (CP, Pot., Rout., DRV, WL, Via, Time, Parse-fail; @5 selection; DRC re-run on saved boards). — [PCBWorld METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md)
+(Key supporting facts; see Q1–Q5.)
+- Engine-interactive vs plan-and-execute vs engine-free CP is 0.65 / 0.19 / 0.02 for GPT-5.4 on D3-A. — [P] [PCBWorld Table 4](https://arxiv.org/html/2607.05915v2)
+- JITX specificity-based selection versus Altium numeric priority versus KiCad last-match ordering. — [P] [JITX](https://docs.jitx.com/en/latest/essentials/physical_design/design-constraints.html); [P] [Altium](https://www.altium.com/documentation/altium-designer/scoping-design-rules-ad); [P] [KiCad](https://gitlab.com/kicad/services/kicad-doc/-/blob/master/src/pcbnew/pcbnew_advanced.adoc)
+- IPC-2581C Impedance/Loss/netClass/netPair/Dfx structures. — [P] [IPC-2581C.xsd](https://webstds.ipc.org/2581/IPC-2581C.xsd)
+- Quilter PRC definitions with pass criteria. — [P] [Quilter PRCs](https://docs.quilter.ai/physics-rule-checks-prcs/overview)
+- The si-wrapper/gerber2ems flow is CI-able and VNA-validated. — [P] [Antmicro 2025](https://antmicro.com/blog/2025/07/recent-improvements-to-antmicros-signal-integrity-simulation-flow)
 
 ### Inferences
 
-**A. Proposed constraint IR sketch (YAML/JSON, strict schema, unknown keys rejected)**
+**A. Constraint IR sketch (YAML/JSON; strict schema; unknown keys rejected)**
 
 ```yaml
-schema: pcb-intent/0.1
+schema: pcb-intent/0.2
 units: mm
-selectors:                     # reusable, all renderable to KiCad DRC condition strings
+resolution: specificity        # specificity | explicit_priority ; compiled to KiCad in general->specific order
+tags:                          # JITX-style user tags with inheritance, bound to KiCad selectors
+  Power:     {netclass: PWR}
+  Power3V3:  {inherits: Power, nets: ["+3V3"]}
+  DDR_DQ:    {netclass: DDR_DQ}
+selectors:                     # all renderable to KiCad DRC condition strings
   U1_VDD7: {pad: "U1-7"}                       # KiCad fromTo pad syntax RefDes-Pad
-  U1_GND:  {pads_of: U1, net: GND}
   C5_hot:  {pad: "C5-1"}
   C5_gnd:  {pad: "C5-2"}
-  DDR_DQ0: {netclass: DDR_DQ, match: "/DDR/DQ[0-7]"}
-  PWR_BLK: {component_class: "BUCK1"}          # -> ${Class:BUCK1}
+  BUCK1:   {component_class: "BUCK1"}          # -> ${Class:BUCK1}
+topologies:                    # JITX/Allegro: ordered pad paths through series parts
+  dqs0_p: {path: ["U1-A3", "R12", "U7-B2"], bridging: {R12: series}, pin_models: {U1-A3: {delay_ps: 15}}}
 constraints:
+  - id: dec.U1.7
+    kind: bypass                # high-level intent (Quilter-like); expands to the primitives below
+    cap: C5
+    pin: U1_VDD7
+    expands_to: [dec.U1.7.prox, dec.U1.7.gndvia, dec.U1.7.loop, dec.U1.7.layersw]
+    provenance: {source: datasheet, doc: "U1 DS rev C", page: 23, confidence: 0.8, confirmed_by: null}
   - id: dec.U1.7.prox
-    kind: proximity                 # placement-time
+    kind: proximity             # Quilter "Pin Distance" PRC / KRT proximity[]
     a: C5_hot
     b: U1_VDD7
     max: 2.0
-    basis: pad_edge                 # pad_edge | pad_center | courtyard
+    basis: pad_edge
     hard: true
-    provenance: {source: datasheet, doc: "U1 DS rev C", page: 23}
     compile:
       checker: geom.pad_distance
       optimizer: {penalty: hinge_sq, weight: 50}
-      kicad_dru: |                  # post-route proxy only
-        (rule "dec.U1.7.len" (condition "A.fromTo('U1-7','C5-1')") (constraint length (max 2mm)))
+      kicad_dru: '(rule "dec.U1.7.len" (condition "A.fromTo(''U1-7'',''C5-1'')") (constraint length (max 2mm)))'   # post-route proxy
   - id: dec.U1.7.gndvia
     kind: via_to_plane
     pad: C5_gnd
@@ -337,73 +575,98 @@ constraints:
     max_via_distance: 0.5
     min_vias: 1
     hard: true
-    compile: {checker: geom.pad_via_to_zone}   # no native KiCad DRC equivalent
+    compile: {checker: geom.pad_via_to_zone}
+  - id: dec.U1.7.layersw
+    kind: layer_switch_count    # Quilter PRC
+    path: [U1_VDD7, C5_hot]
+    max: 0
+    hard: false
+    weight: 5
   - id: dec.U1.7.loop
-    kind: loop_area                 # physics proxy
-    path: [U1_VDD7, C5_hot, C5_gnd, "via", "plane:GND", U1_GND]
+    kind: loop_area
+    path: [U1_VDD7, C5_hot, C5_gnd, "via", "plane:GND", "U1:GND"]
     max_mm2: 4.0
     hard: false
     weight: 10
     compile: {checker: phys.loop_area_estimate}
-  - id: ddr.dq.skew
-    kind: skew
-    group: DDR_DQ0
-    max_ps: 5                       # time domain via KiCad tuning profile unit delay
-    compile:                        # length fallback below assumes ~6.3 ps/mm (illustrative; derive from stackup)
-      kicad_dru: |
-        (rule "ddr.dq.skew" (condition "A.hasNetclass('DDR_DQ')") (constraint skew (max 0.8mm)))
-  - id: buck.zone
-    kind: region                    # like ALIGN Floorplan / KRT blocks.zone
-    members: PWR_BLK
+  - id: ddr.byte0
+    kind: match_group           # Allegro match group / JITX TimingDifference / tscircuit bus maxLengthSkew
+    members: {tag: DDR_DQ, plus: [dqs0_p]}
+    mode: relative
+    target: dqs0_p
+    delta_ps: 0
+    tol_ps: 5
+    compile:
+      kicad_tuning_profile: {time_domain: true}
+      kicad_dru: '(rule "ddr.byte0" (condition "A.hasNetclass(''DDR_DQ'')") (constraint skew (max 0.8mm)))'  # fallback; ~6.3 ps/mm illustrative
+  - id: z.usb
+    kind: impedance             # maps to/from IPC-2581 <Impedance><EdgeCoupled .../></Impedance>
+    nets: {diff_pair: USB_D}
+    value_ohm: 90
+    tol_pct: 10
+    structure: EDGE_COUPLED
+    ref_plane: In1.Cu
+  - id: buck.region
+    kind: region                # Altium Room / FloorSet grouping / KRT block zone
+    members: BUCK1
     rect: [2, 2, 40, 30]
     side: F
-    exclusive: false
+    keep: inside
+  - id: buck.hotloop
+    kind: cluster_tight         # Quilter switching-converter constraint
+    anchor: U3
+    members: [L1, C10, C11]
+    max_span: 6.0
   - id: usb.edge
-    kind: edge_placement            # like KRT edge_connectors
+    kind: edge_placement        # FloorSet boundary / KRT edge_connectors
     ref: J1
     edge: north
     overhang: [0, 1.5]
   - id: sym.diffamp
-    kind: symmetry                  # ALIGN SymmetricBlocks analogue
+    kind: symmetry              # ALIGN SymmetricBlocks
     pairs: [[R10, R11], [C20, C21]]
     axis: V
     hard: false
-objectives:                         # soft, weighted; logged separately from gates
-  - {metric: hpwl, weight: 1}
-  - {metric: vias_on_critical, weight: 5}
-  - {metric: return_path_violations, weight: 20}
+  - id: pwr.overheat
+    kind: overheated_length     # Quilter PRC; analytic IPC-2152/2221-style
+    tag: Power
+    max_rise_c: 20
+    max_fraction: 0.10
+findings_schema:               # IPC-2581 DFX-like; mirrors KiCad DRC JSON items[uuid,pos]
+  fields: [constraint_id, measured, limit, unit, severity, objects, location, response]   # response: open|approved|waived|rejected
 ```
 
 Design rules for the IR:
-- (1) Every constraint compiles to **at least one checker**. A `.kicad_dru` rule is added whenever one exists, so the KiCad interactive router and DRC see it.
-- (2) Distinguish **placement-time vs post-route** measurability.
-- (3) Keep **hard (gate) vs soft (objective)** separate, as in ALIGN.
-- (4) Record **provenance and confidence** for LLM-extracted constraints, and require human confirmation for hard constraints extracted from datasheets.
-- (5) Render selectors to KiCad syntax (`fromTo`, `${Class:}`, net class, sheet, rule area) so they can be validated with KiCad's own evaluator.
-- (6) Be **monotone** inside optimizers: never accept a move that increases hard-violation count.
-- (7) Never auto-derive intent from a board under repair.
-- (8) The LLM's job is to *author and justify* IR entries and pick strategies. Numeric optimization and routing stay with deterministic engines.
+- (1) **Hard/soft split** (ALIGN), with a monotone optimizer gate on hard constraints (KRT).
+- (2) **High-level intents expand to primitives**: bypass, switcher hot loop, DDR byte lane, USB pair. This is ALIGN's `UserConstraint` idea, and it is what the LLM authors.
+- (3) Every primitive has a **checker with explicit pass criteria and units** (Quilter PRCs), and a KiCad compilation wherever one exists.
+- (4) **Specificity-based resolution** (JITX), emitted to KiCad general-to-specific so that KiCad's last-match semantics agree.
+- (5) **Topologies and match groups** for timing (Allegro, JITX, tscircuit), not net-level length.
+- (6) **Provenance and confirmation** for LLM-extracted constraints.
+- (7) **IPC-2581 import/export mapping** for impedance and loss specs.
+- (8) **Findings/waivers channel** modelled on IPC-2581 DFX and KiCad exclusions.
 
-**B. Recommended evaluation stack (fast to slow)**
+**B. Evaluation stack**
 
 | Tier | When | Checks | Tools |
 |---|---|---|---|
-| T0 (µs–ms) | every candidate move | overlap/OoB, intent rules (region, edge, proximity, decap distance, same-side, symmetry), HPWL, crossings, closed-form Z0 and delay, IPC-2221 widths | in-process Python/Rust geometry; KRT-style `check_floorplan` logic; Transcalc formulas |
-| T1 (s) | per accepted placement or route batch | `kicad-cli pcb drc --format json --refill-zones --schematic-parity --exit-code-violations`; return-path VOID/SPLIT/VIA/EDGE and loop-area estimates; crosstalk proxies | kicad-cli; return_path-style raster A*; PCB_SI_Toolkit-style measured-vs-limit checks |
-| T2 (s–min) | per checkpoint | DC IR drop and current density, PDN impedance vs target, switcher coupled noise, quasi-static near-field and far-field estimate | KiPI, Ki-PIDA, PCB_SI_Toolkit DC tab, emcvisual-style Biot–Savart |
-| T3 (min–h) | finalists only | 3D FDTD S-parameters, TDR and delay on critical nets; FEM thermal | gerber2ems/openEMS + scikit-rf; SPIKE/Elmer thermal |
+| T0 (µs–ms) | every move | overlap/OoB, intent and PRC geometry (proximity, region, edge, symmetry, layer-switch count once routed), HPWL, net crossings, Transcalc Z0/delay, IPC-2221/2152 widths, overheated-length proxy | in-process geometry; KRT-style intent grader; optionally a trained PDN surrogate |
+| T1 (s) | per accepted placement / route batch | `kicad-cli pcb drc --format json --refill-zones --schematic-parity --exit-code-violations`; return-path VOID/SPLIT/VIA; NRR/PRR/PShort; quick reference router (KRT ≈0.65 s, Freerouting ≈7 s per small board) for placement routability | kicad-cli; return_path; KRT/Freerouting |
+| T2 (s–min) | checkpoints | DC IR drop and current density; PDN impedance vs target; switcher coupled noise; near-field estimate | padne, KiPI, Ki-PIDA, emcvisual |
+| T3 (min–h) | finalists | openEMS S-params/TDR/delay per critical net or pair via si-wrapper slices; FEM thermal | gerber2ems + si-wrapper + scikit-rf; FreeCAD/gmsh/CalculiX (Antmicro scripts) or Salome/Elmer; Palace for C/L extraction |
 
-Normalize every tool's output into one `Finding` schema modelled on KiCad's DRC JSON, attributing each finding to nets and pads. Calibrate T0–T2 heuristics against T3 on a reference board set before trusting them as rewards. Treat T2/T3 as advisory unless they are validated.
+Calibrate T0/T1 proxies against T3 on reference boards before using them as rewards. Antmicro's VNA-validated slices and emcvisual's 1 dB agreement are the precedents.
 
-**C. Proposed benchmark plan**
-1. **External leaderboard**: run on PCBWorld D3 (route-only), reporting CP@1/@5, Pot., Rout., DRV, WL, Via, Time and Parse-fail per PCBWorld's protocol, against the published Freerouting and KRT baselines.
-2. **Own KiCad-native corpus**: 300–1,000 license-clean boards from open repos and open-schematics-style datasets, pinned by SHA, with fetch-at-runtime manifests. Build tasks R (route-only), P (place-only with fixed mechanicals, scored by a fixed reference router), P+R and I (intent-constrained, with human-reviewed IR per board), split small, medium and large by nets, pads and layers.
-3. **Metrics**: hard gates (loadable, LVS parity, CP, zero hard-intent violations); routing (NRR, PRR, DRV by cause, WL/human, vias/human, length and skew slack); placement (HPWL/human, crossings, intent conformance, decap distance distribution); physics proxies (return-path violations, loop area, IR-drop margin); and runtime and token cost.
-4. **Human-likeness**: report ratios to human copper and pairwise preference from a small expert-labelled set, then use it to calibrate an LLM-judge.
-5. **Synthetic unit suites** (PCBWorld D1/D2-style plus targeted generators) for each IR constraint kind: decap proximity, diff pair, length group, edge connector, symmetry, keep-away.
-6. **Hygiene**: a private, recent held-out split to limit pretraining contamination; deterministic seeds; record KiCad version (conversion changes DRC results); never let a method score itself, so always re-open saved boards and re-run DRC.
+**C. Benchmark plan**
+1. **Routing leaderboard**: PCBWorld D3-A/B (and later D3-C), using its @5 CP / Pot. / Rout. / DRV / WL / Via / Time / Parse-fail protocol, against the published Freerouting (0.80/0.78) and KRT (0.74/0.20) baselines.
+2. **Placement leaderboard**: Cypress small benchmarks under its protocol (Freerouting routability, two layers), plus HPWL, overlap, OoB and crossings. Also PCBWorld D3 boards with placement stripped: keep outline, mechanical parts, connectors and locks; route with a fixed router; compare with the human placement routed by the same router.
+3. **Intent track**: a subset of D3 and own boards annotated with IR constraints, human-confirmed. Score intent conformance (PRC pass rate by constraint kind) and hard-violation counts.
+4. **Physics track**: decap PRCs, return-path violations, IR-drop margin (padne/KiPI), and for a few high-speed boards si-wrapper/openEMS impedance and delay.
+5. **Human-relative diagnostics**: OmniRouting-style MGS, plus WL, via and HPWL ratios to the human board. Report human scores on every metric, since human boards are not 100% clean.
+6. **Unit suites**: synthetic generators per IR kind, PCBWorld D1/D2-style; the DPP simulator for the decap sub-problem; FloorSet-style constraint mixes for region, edge, grouping and pre-placed constraints.
+7. **Hygiene**: pinned KiCad version, a license manifest per board, a private recent held-out split against pretraining contamination, and methods never scoring themselves (re-open and re-run DRC on saved files).
 
 ### Gaps
-- The IR sketch is an untested design proposal. The proximity and via-to-plane checkers and the loop-area estimator need implementation and validation.
-- The tier latency figures are estimates. They should be measured on representative boards (small, medium, large) before fixing optimizer schedules.
-- Suitability of PCBench/PCBWorld D3 board licenses for redistribution was not verified.
+- The IR is an untested proposal. Its pad-distance, via-to-plane, loop-area and layer-switch checkers need implementation and validation against Quilter-style PRC definitions and openEMS.
+- Tier timings for DRC, padne and KiPI on representative boards still need to be measured.
+- Licenses on PCBWorld D3, PCBench and the Cypress benchmarks need per-board verification before redistributing derived artifacts.
