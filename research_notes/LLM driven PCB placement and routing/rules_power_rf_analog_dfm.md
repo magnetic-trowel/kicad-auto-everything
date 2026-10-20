@@ -28,6 +28,34 @@ Every source puts one rule first: find the loop that carries fully switched (pul
 - AN-139 also says a copper plane under the hot loop improves both functional and EMI behaviour. Kueck's Part 2 article recommends a board of four or more layers. Its reasoning is that a close inner-layer shield cancels the hot-loop field far better than a shield more than 1 mm away, which is what a 2-layer board gives. — [Kueck Part 1](https://www.analog.com/media/en/technical-documentation/technical-articles/kueck_layout_power_supply_part_1.pdf); [Kueck Part 2](https://www.analog.com/media/en/technical-documentation/technical-articles/Kueck_Layout_power_supply_part_2.pdf)
 - AN-136 says to keep the supply output near the load. It also says to put a ground or DC plane layer between the power-stage layer and the small-signal layer. The pulsating loop should be as small as possible, built from short, wide traces, and decoupled with a low-ESL/ESR X5R/X7R ceramic. — [ADI AN-136](https://www.analog.com/en/resources/app-notes/an-136.html); [PDF4PRO copy](https://pdf4pro.com/view/an136-pcb-layout-considerations-for-non-37e884.html)
 - In an AN-136 multiphase example, adding a 1 µF high-frequency input cap per channel shrank the hot loop and kept switching waveforms stable up to 30 A (secondary summary). — [PWChip summary of AN-136](https://www.pwchip.com/en/article/61.mhtml)
+- **[P] AN-136 (Henry J. Zhang, June 2012), read from a mirror of the LT PDF in pass 2:**
+  - Place DC ground or DC voltage layers between the high-current power-component layer and the small-signal layer, and "always have a ground layer next to the outside power stage layer". Do not segment ground or DC planes. Use thick copper on the external high-current layers.
+  - Place the power stage first; the small-signal control circuitry follows.
+  - C_HF is a 0.1–10 µF X5R/X7R ceramic with very low ESL.
+  - Put power components on the same side and power traces on the same layer. If a power trace must change layers, do it in a continuous-current path (not the hot loop), using multiple vias.
+  - Boost: C_HF goes on the output side, close to the MOSFET and the diode.
+  - Minimize SW copper area, but keep enough for current and heatsinking. "It is usually preferred to have a ground copper area placed underneath this SW node to provide additional shielding."
+  - Do not use thermal-relief land patterns or thermal-relief vias for power components; they raise interconnect impedance and weaken low-ESR caps. Keep a decoupling cap's +/− via pair as close together as possible.
+  - Locate the controller near VOUT+ (buck) or VIN+ (boost), away from the hot loop, shielded by ground if forced close. Connect controller decoupling caps directly to the pins without vias.
+  - One SGND–PGND connection, made just under the controller IC (or at a clean PGND point). Solder the exposed GND pad with multiple vias.
+  - Current-sense: signals are typically <100 mV. Route SENSE+/SENSE− in parallel with minimum spacing (Kelvin), with filter R/C as close to the IC pins as possible. For DCR sensing, R goes near the inductor and C near the IC. A sense-return via must not contact an internal VOUT+ layer.
+  — [AN-136 (mirror of LT PDF)](https://docs.ampnuts.ru/analog.com.datasheet/ltc3729l-6/related_data/an136f.pdf); [ADI AN-136 page](https://www.analog.com/en/resources/app-notes/an-136.html)
+- **[P] AN-139 (Christian Kueck, Oct 2012), measured loop inductance vs a plane under the loop.** Table 1: 10 × 10 cm rectangular loop at 27 MHz.
+
+  | Configuration | Plane distance d | L | Factor vs 0.12 mm plane |
+  |---|---|---|---|
+  | Single-layer open loop | — | 187 nH | 14.4× |
+  | Inner copper short-circuit loop | — | 141 nH | 10.85× |
+  | Solid plate | 1.5 mm | 42 nH | 3.23× |
+  | Rectangular loop, no overlap | 1.5 mm | 53 nH | 4.08× |
+  | Thin plane | 0.5 mm | 23 nH | 1.77× |
+  | Thin plane | 0.27 mm | 21 nH | 1.61× |
+  | Paper-thin insulation | 0.12 mm | 13 nH | 1.0× |
+
+  - "A solid plane on the next layer in a multilayer board (four layers or more) will have over 3× less inductance than a normal 1.5mm 2-layer board with a solid bottom plane, and over 14× less over a single-layer board."
+  - The mechanism is eddy currents in the plane, which mirror and cancel the hot-loop field, more effectively the closer the plane is.
+  - In AN-139's buck-boost example, RF energy in the input-cap hot loop was >20 dB higher than in the INTVCC decoupling loop. That makes the INTVCC/driver decoupling loop the second priority, shielded by a solid plane on the next layer.
+  — [AN-139 (mirror of LT PDF)](https://theengineer.markallengroup.com/production/content/uploads/2015/01/an139f.pdf)
 - TI SLYT614 ("Five steps to a great PCB layout for a step-down converter", 1Q 2015, TPS62130A example) gives this order. Step 1: the input capacitor is the most important part, so place it first after the IC and route it immediately, before anything else can block its path. Step 2: the inductor, with minimum SW-node copper area, plus an RC snubber if one is used. Step 3: output capacitors and the VOS pin. Step 4: small-signal components; VOS is the most critical small-signal connection. Step 5: a single-point ground connection to the rest of the system. — [TI SLYT614](https://www.ti.com/lit/an/slyt614/slyt614.pdf); [TI SLYT614 (Chinese edition)](https://www.ti.com.cn/cn/lit/an/zhct286/zhct286.pdf?ts=1792028952371)
 - SLYT614 shows an RC snubber layout but gives no R or C values; a TI E2E thread notes the omission. — [TI E2E TPS62130A snubber thread](https://e2e.ti.com/support/power-management-group/power-management/f/power-management-forum/927858/tps62130a-snubber)
 - TI SLVA818: place CIN as close as possible to the IC, with wide, short traces to VIN and PGND. Minimize the area of the CIN → VIN → PGND → CIN loop. — [TI SLVA818](https://www.ti.com/lit/pdf/slva818)
