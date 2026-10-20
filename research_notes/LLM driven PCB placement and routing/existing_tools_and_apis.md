@@ -439,7 +439,36 @@ Vendor numbers (Quilter Speedrun, DeepPCB's 27,721 boards, Cadence's 10×) are s
 
 ### Cited Findings
 - Freerouting PCBench: 1,157 fixtures added to the repo in v2.4.x. v2.5.0 reports clean-board completion rising from about 31% to 75% (self-reported) — [Freerouting releases](https://github.com/freerouting/freerouting/releases). Scoring definitions are in [docs/scoring.md](https://github.com/freerouting/freerouting/blob/master/docs/scoring.md)
-- PCBWorld (Song et al., arXiv:2607.05915), as cited in OrthoRoute's README: on synthetic dataset D2, OrthoRoute reached a 1% clean pass and 30% routability; on D3-A (99 open-source boards), 2% clean pass and 51% routability. "Freerouting and KiCadRoutingTools performed far better on both"; the benchmark used small boards and default settings — [OrthoRoute README](https://github.com/bbenchoff/OrthoRoute). I could not access the paper itself on arXiv.
+- **PCBWorld / PCBWorld-Bench** [P]:
+  - Hyungseok Song, Junseok Park, Won-Seok Choi, Seohui Bae, Han-Seul Jeong, Youngjoon Park, Soonyoung Lee, "PCBWorld: A Benchmark Environment for Engine-Grounded PCB Design Automation", arXiv:2607.05915 (v4). "Accepted to the KDD 2026 Workshop on Evaluation and Trustworthiness of Agentic AI (non-archival)" — [arXiv abstract](https://arxiv.org/abs/2607.05915)
+  - **Datasets:** D1 is synthetic grid routing (Jumanji Connector-style, grid sizes 10–500). D2 is synthetic gridless 2-layer multi-pin boards. D3 is "a curated set of 679 boards derived from PCBench's open-source PCB corpus (He et al., 2024)", normalized to KiCad 9 and kept only if fully connected and DRV-free, split by pad count into D3-A/B/C. Zero-shot evaluation uses 99 D3-A and 10 D3-B boards; D3-C ("hundreds of nets") is a challenge split — [paper HTML](https://arxiv.org/html/2607.05915)
+  - **Metrics:** primary "Clean Pass (CP)", meaning every net connected with zero DRC violations, plus Potential Gain, Routability, Time, DRV count, wirelength and vias; best-of-5 rollouts ("@5") — [paper HTML](https://arxiv.org/html/2607.05915)
+  - **Table 3 (CP / Routability, @5):**
+
+    | Method | D2 | D3-A (99 boards) | D3-B (10 boards) |
+    |---|---|---|---|
+    | Freerouting 2.1.0 | 1.00 / 1.00 | 0.80 / 0.91 | 0.78 / 1.00 |
+    | KiCadRoutingTools | 1.00 / 1.00 | 0.74 / 0.94 | 0.20 / 0.86 |
+    | OrthoRoute | 0.01 / 0.34 | 0.02 / 0.53 | 0.00 / 0.44 |
+    | GPT-5.4 via PCBWorld tools | 0.96 / 1.00 | 0.65 / 0.91 | 0.00 / 0.62 |
+    | GPT-5.4-mini | 0.58 | 0.28 | 0.00 |
+    | GPT-5.4-nano | 0.55 | 0.30 | 0.00 |
+    | Qwen3.5-397B | 0.33 | 0.34 | 0.00 |
+    | PPO transformer (trained only on synthetic D2) | 1.00 | 0.86 | 0.45 |
+
+    Mean times on D3-A: Freerouting 7.09 s, KRT 0.65 s, GPT-5.4 231 s, PPO 1.83 s. "All LLM agents nonetheless obtain 0.00 CP on D3-B, leaving large-board routing … an open challenge for current LLMs" — [paper HTML](https://arxiv.org/html/2607.05915)
+  - **Engine engagement (Table 4, GPT-5.4 on D3-A):** interactive CP 0.65 (DRV 1.31); plan-and-execute CP 0.19 (DRV 16.28); engine-free CP 0.02. "Leveraging the native API is essential for design-rule-clean routing … generating raw wire segments while keeping every track within the design rules is beyond current models". For GPT-5.4-nano in engine-free mode, on 10% of boards none of the five rollouts even loaded as a valid KiCad file — [paper HTML](https://arxiv.org/html/2607.05915)
+  - OrthoRoute's README quotes the OrthoRoute rows slightly differently (30% and 51% routability), probably @1 versus @5 — [OrthoRoute README](https://github.com/bbenchoff/OrthoRoute)
+- **PCBench** (`PCBench/PCBench`, MIT per GitHub sidebar, 21★): "a dataset consisting of 164 printed circuit boards", with `raw.kicad_pcb`, `processed.kicad_pcb`, a PCB-RDL `final.json`, an augmentation script and an RL environment [P] — [GitHub](https://github.com/PCBench/PCBench)
+  - **Count discrepancy:** the README says 164 boards, PCBWorld derives 679 boards from "PCBench's open-source PCB corpus", and Freerouting's release notes cite a "1,157-board PCBench corpus". These may be different versions or augmentations of the corpus. Unresolved — [PCBench](https://github.com/PCBench/PCBench); [PCBWorld](https://arxiv.org/html/2607.05915); [Freerouting releases](https://github.com/freerouting/freerouting/releases)
+- **EEBench** (by atopile):
+  - Agents submit atopile design bundles. Grading is deterministic: build checks, SPICE simulations at worst-case tolerance corners, and BOM cost. "The leaderboard score blends engineering and economics: 0.65 × technical + 0.35 × cost-efficiency".
+  - "**Layout is deliberately out of scope** — sequenced, not forgotten … V2 and beyond put layout in scope, fabricate the boards". Tasks are private.
+  — [P] [EEBench methodology](https://eebench.org/methodology.html); [blog](https://eebench.org/blog/can-ai-design-circuit-boards-yet/)
+  - Third-party leaderboard snapshot (Sept 2026): Claude Opus 5.5 (Claude Code) 75.0%, GPT-6 Astra (Codex CLI) 69.3%. An August snapshot had Claude Opus 5 at 61.6% [S] — [BenchLM mirror](https://benchlm.ai/benchmarks/eebench)
+- **EDA-bench** ("Execution-based benchmark for open-book KiCad PCB reconstruction agents"): 35 Harbor tasks; the agent must produce a full KiCad project. The verifier checks schematic, PCB, connectivity, physical realization, ERC/DRC and a functional contract, with difficulty-weighted scoring. No model results on the README [P] — [GitHub](https://github.com/EDA-bench/eda-bench). It is associated with an ICML 2026 paper, "EDA Bench: Functional Failure Modes in PCB-Generating Agents" [S] — [ICML](https://icml.cc/virtual/2026/77908)
+- **devbisme ai-circuit-design-tests:** the same dual-ADC prompt across about 10 KiCad AI tools plus a no-tools baseline. Results are unvalidated; see Section 2 [P] — [GitHub](https://github.com/devbisme/ai-circuit-design-tests)
+- **tscircuit Z01:** 1M zero-obstacle 2-layer routing samples for vision models [P] — [blog](https://blog.autorouting.com/p/were-releasing-z01-1-million-autorouting)
 - tscircuit: an "Autorouter Benchmark Dashboard" (autorouter-benchmark-dashboard.vercel.app), plus an SRJ33 DRC-failure dataset of "37 distinct inputs" — [tscircuit-autorouter README](https://github.com/tscircuit/tscircuit-autorouter); a 200-problem dataset — [autorouting-dataset-01](https://github.com/tscircuit/autorouting-dataset-01)
 - fastroute versus Freerouting over 20 boards: 510 s versus 2102 s (self-reported) — [fastroute](https://github.com/parisxmas/fastroute)
 - KiCadRoutingTools, self-reported: 47/47 FTDI single-ended nets in 8.6 s and 28/28 LVDS pairs in 29.7 s; ongoing A/B tests on a corpus of open-source boards — [GitHub](https://github.com/drandyhaas/KiCadRoutingTools)
@@ -449,13 +478,16 @@ Vendor numbers (Quilter Speedrun, DeepPCB's 27,721 boards, Cadence's 10×) are s
 - An older anecdote: an EEVblog user found Freerouting produced 11 vias against 18 for their manual routing on a single board (2010 thread) — [EEVblog (search snippet)](https://www.eevblog.com/forum/projects/can-you-route-better-than-an-autorouter/msg25819)
 
 ### Inferences
-- A GPL-3.0 project can adopt PCBench (GPL-3.0, same license) and Freerouting's scoring as its regression metric right away. tscircuit's datasets (MIT) and PCBWorld can serve as secondary suites. PCBGolf is a good public showcase board, since its scoring combines placement compactness, vias and layer count.
-- Completion percentage alone misleads. Freerouting splits "legal and complete" (router score) from "efficient" (optimizer score), and PCBWorld distinguishes "clean pass" from "routability". Use both kinds of metric, plus DRC-clean according to `kicad-cli`.
+- A GPL-3.0 project can adopt **PCBWorld-Bench** (BSD-3 harness, `.kicad_pcb` boards, engine-checked metrics) as its primary routing benchmark, with PCBench (MIT) and Freerouting's suite and scores as secondary suites. Per-board licences inside the corpus need checking before redistribution. PCBGolf is a good public showcase board, since its scoring combines placement compactness, vias and layer count.
+- Completion percentage alone misleads. Freerouting splits "legal and complete" from "efficient", and PCBWorld distinguishes "clean pass" from "routability". The devbisme baseline shows "0 DRC errors" can coexist with signals routed on a plane layer. Use clean-pass plus efficiency plus layout-quality checks.
+- **PCBWorld's engine-engagement result supports this project's architecture.** LLMs should not emit copper coordinates. They should drive a DRC-aware engine interactively (or delegate to a router) and reason about intent, constraints and ordering. A small RL policy beating LLMs at the step level suggests a split: the LLM plans and critiques, specialised solvers or policies execute.
+- No placement benchmark exists, so a placement-quality suite would be a novel open contribution. Candidate inputs: PCBWorld D3 boards with placement stripped, scored by downstream router clean pass, wirelength and vias, plus design-rule proxies such as decoupling distance.
 
 ### Gaps
-- PCBWorld paper details (authors beyond "Song et al.", dataset licenses, whether DeepPCB, Quilter or tscircuit were evaluated) — arXiv blocked.
-- No independent third-party benchmark of Quilter, DeepPCB or Flux was found.
-- tscircuit dashboard contents and any autorouting bounty or contest results could not be fetched.
+- Dataset licences for PCBWorld-Bench's 679 real boards and PCBench's per-board provenance were not checked.
+- The three different PCBench board counts (164 / 679 / 1,157) are unreconciled.
+- No independent third-party benchmark of Quilter, DeepPCB or Flux was found. PCBWorld did not evaluate them.
+- tscircuit dashboard contents and any autorouting bounty or contest results could not be fetched. EDA-bench and EEBench per-model layout results do not exist yet, since EEBench v1 excludes layout.
 
 ## 6. Practitioner sentiment
 

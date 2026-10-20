@@ -5,7 +5,7 @@
 > **How sources were read:**
 > - Most company blogs, case studies and HCI papers were downloaded and read in full, either as HTML-to-text or as PDF-to-text with `pdftotext`.
 > - The WebFetch tool itself still could not resolve hosts, so pages were fetched with curl through the session proxy instead.
-> - **github.com and the GitHub API are blocked by this session's repository policy.** GitHub issue and PR content therefore comes only from search-engine snippets of those pages. I did not attach the repositories, because the user had not asked for that.
+> - **github.com issue pages and the GitHub API are blocked by this session's repository policy.** GitHub issue and PR content therefore comes only from search-engine snippets of those pages. I did not attach the repositories, because the user had not asked for that. Public repository files on raw.githubusercontent.com were reachable, so the project READMEs and docs cited below are [read].
 > - The shared WebSearch budget ran out again late in this pass.
 > - Per coordinator instructions, forum/HN/Reddit mining is left to `practitioner_discussions.md`. Forum material here is kept short and limited to tool-design content.
 >
