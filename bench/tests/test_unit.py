@@ -23,7 +23,7 @@ def test_manifest_validation(tmp_path):
     assert [e["id"] for e in manifest.load(p)] == ["b1", "b2"]
     assert [e["id"] for e in manifest.load(p, tags=["rf"])] == ["b2"]
     assert [e["id"] for e in manifest.load(p, tiers=["permissive"])] == ["b2"]
-    for bad in (entry(commit="abc"), entry(pcb_path="x.brd"), entry(id="has space"),
+    for bad in (entry(commit="abc"), entry(pcb_path="x.step"), entry(id="has space"),
                 entry(license_tier="other"), {k: v for k, v in entry().items() if k != "license"}):
         with pytest.raises(manifest.ManifestError):
             manifest.validate(bad)
@@ -38,6 +38,14 @@ def test_duplicate_ids(tmp_path):
 
 def test_project_paths():
     assert manifest.project_paths(entry()) == {"kicad_pro": "a/b.kicad_pro", "kicad_dru": "a/b.kicad_dru"}
+    assert manifest.project_paths(entry(pcb_path="hw/x.PcbDoc")) == {}
+
+
+def test_import_formats():
+    assert manifest.validate(entry(pcb_path="hw/board.brd"))
+    assert manifest.import_format("hw/Board.PcbDoc") == "altium"
+    assert manifest.import_format("hw/board.brd") == "eagle"
+    assert manifest.import_format("a/b.kicad_pcb") is None
 
 
 def test_top_level_block_ignores_nested_and_strings():

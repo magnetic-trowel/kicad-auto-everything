@@ -11,7 +11,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .manifest import project_paths
+from . import tools
+from .manifest import import_format, project_paths
 
 
 def _raw_url(repo, commit, path):
@@ -62,6 +63,22 @@ def sha256(path):
     return h.hexdigest()
 
 
+def _import_board(src, fmt, dest_dir, timeout=1800):
+    """Convert an Eagle/Altium/PADS/... board to .kicad_pcb with `kicad-cli pcb import`.
+
+    pcb_sha256 stays the hash of the upstream source file; the import is redone locally.
+    """
+    out = Path(dest_dir) / (Path(src).stem + ".kicad_pcb")
+    cmd = [tools.kicad_cli(), "pcb", "import", "--format", fmt, "-o", str(out), str(src)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise tools.ToolError(f"pcb import timed out after {timeout}s")
+    if r.returncode or not out.exists():
+        raise tools.ToolError(f"pcb import ({fmt}) failed (rc={r.returncode}): {(r.stdout + r.stderr)[-400:]}")
+    return out
+
+
 def fetch(entry, cache_dir, force=False):
     """Fetch board + project files into cache_dir/<id>/. Returns a dict of local paths."""
     dest = Path(cache_dir) / entry["id"]
@@ -87,6 +104,10 @@ def fetch(entry, cache_dir, force=False):
     want = entry.get("pcb_sha256")
     if want and want != digest:
         raise ValueError(f"{entry['id']}: sha256 mismatch (manifest {want[:12]}, fetched {digest[:12]})")
+    fmt = import_format(entry["pcb_path"])
+    if fmt:
+        got["source_pcb"] = got["kicad_pcb"]
+        got["kicad_pcb"] = _import_board(got["source_pcb"], fmt, dest)
     meta = {k: str(v) for k, v in got.items()}
     meta.update(id=entry["id"], pcb_sha256=digest, repo=entry["repo"], commit=entry["commit"])
     meta_path.write_text(json.dumps(meta, indent=1))

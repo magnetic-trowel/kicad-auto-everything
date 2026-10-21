@@ -13,6 +13,13 @@ KEYS = REQUIRED + ("source", "sch_path", "pcb_sha256", "license_evidence", "lice
                    "kicad_file_version", "layers", "footprints", "nets", "tracks", "vias", "zones",
                    "board_mm", "routed", "tags", "dataset", "notes")
 TIERS = ("permissive", "weak-copyleft", "copyleft", "reciprocal-hardware")
+# Non-KiCad board formats that `kicad-cli pcb import` converts at fetch time.
+IMPORT_FORMATS = {".brd": "eagle", ".pcbdoc": "altium", ".asc": "pads", ".cpa": "cadstar"}
+
+
+def import_format(pcb_path):
+    """kicad-cli import format for a non-KiCad board path, or None for .kicad_pcb."""
+    return IMPORT_FORMATS.get(Path(pcb_path).suffix.lower())
 
 
 class ManifestError(ValueError):
@@ -28,8 +35,8 @@ def validate(entry, lineno=0):
         raise ManifestError(f"{where}: id must be a slug")
     if not re.fullmatch(r"[0-9a-f]{40}", entry["commit"]):
         raise ManifestError(f"{where}: commit must be a full 40-hex SHA")
-    if not entry["pcb_path"].endswith(".kicad_pcb"):
-        raise ManifestError(f"{where}: pcb_path must be a .kicad_pcb file")
+    if not entry["pcb_path"].endswith(".kicad_pcb") and not import_format(entry["pcb_path"]):
+        raise ManifestError(f"{where}: pcb_path must be a .kicad_pcb file or one of {sorted(IMPORT_FORMATS)}")
     tier = entry.get("license_tier")
     if tier is not None and tier not in TIERS:
         raise ManifestError(f"{where}: license_tier must be one of {TIERS}")
@@ -61,5 +68,7 @@ def load(path, only=None, tiers=None, tags=None, limit=None):
 def project_paths(entry):
     """Sibling project files with the same stem as the board (may not exist upstream)."""
     pcb = Path(entry["pcb_path"])
+    if import_format(pcb):
+        return {}
     return {"kicad_pro": str(pcb.with_suffix(".kicad_pro")),
             "kicad_dru": str(pcb.with_suffix(".kicad_dru"))}
