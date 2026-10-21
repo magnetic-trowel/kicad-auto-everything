@@ -15,7 +15,13 @@ Scripts and candidate lists behind `bench/manifests/wide*.jsonl`. See
 `found/<sector>.jsonl` are the agent-verified candidates (one row per board, licence evidence
 quoted); `*.rejected.jsonl` record why repos were left out. `unloadable.rejected.jsonl`
 lists boards that KiCad 10 cannot open or import, and why (old binary Eagle, ASCII Altium,
-corrupt upstream files); enrich still tries them and they land in its `.failed` output. `keep.txt` is the
+corrupt upstream files); enrich still tries them and they land in its `.failed` output.
+`fabacademy-mirror.jsonl` re-sources Fab Academy boards whose repos are on gitlab.fabcloud.org,
+whose robots.txt disallows `/*/raw`: each row is a single-file download from the student's
+fabacademy.org site (or Software Heritage) pinned by sha256, with `.kicad_pro` in `file_urls`. Only 16 hand-picked
+boards are kept (routed, DRC-clean, different assignments); the other 1,144 re-sourced boards are
+mostly small repeated assignment boards and are listed in `fabacademy-mirror.rejected.jsonl`.
+Do not fetch raw files from gitlab.fabcloud.org. `keep.txt` is the
 de-duplicated id list; `todo.txt` the ids still to enrich when this was committed.
 
 ## Running enrich on a big host
