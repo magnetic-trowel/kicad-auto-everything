@@ -18,7 +18,10 @@
 > - `sa_place.py`
 > - `geom_bench.py`
 > - `pathfinder_bench.py`
+> - `legalize_clusters.py`
 > - raw results: `results*.jsonl`
+>
+> The runs after a container restart (N=1000 SA + cluster legalization, fixed PathFinder) were each capped at 10 minutes.
 
 ---
 
@@ -236,7 +239,6 @@ s = cp_model.CpSolver(); s.parameters.num_workers = 8; s.parameters.max_time_in_
 ### Gaps
 - No open-source CP-SAT-based PCB placer was found. The search budget ran out again before targeted GitHub searches. HiePlace's code was not found.
 - My instances are synthetic. Real boards have irregular outlines, many more fixed parts, height/edge rules, and thermal and EMI constraints. The measurements bound scale, not quality.
-- The custom packing subsolver run at N=300 is pending or reported in the ablation above.
 - The MILP solver used by NS-Place is not stated in the paper.
 - The FSF GPL-compatibility list (gnu.org) could not be fetched; compatibility comes from the ASF and Mozilla statements only.
 
@@ -358,7 +360,7 @@ def loss(params, key, k):                                 # k = continuation ste
 Simulated annealing with incremental cost is still the strongest simple HPWL optimizer. In my runs, single-threaded pure-Python SA followed by CP-SAT legalization and LNS polish:
 - beat 60 s of 4-worker monolithic CP-SAT on every instance at N=30–100, by 4–46% (median ≈20%, against CP-SAT's best rotation encoding);
 - was on par with or better than hierarchical CP-SAT at N=300 (2,278 vs 2,461 mm);
-- at N=1000 reached roughly 45% lower HPWL than the hierarchical CP-SAT result, but with residual overlaps that need *windowed* legalization.
+- at N=1000 reached a legal 13,774 mm after cluster-wise CP-SAT legalization (3.9 s), 39% below hierarchical CP-SAT's 22,596 mm. Global legalization of all 1,000 parts failed; it had to be windowed per violation cluster.
 
 Penalty SA does not guarantee legality, so it needs a legalizer, which is CP-SAT's strength.
 
@@ -401,12 +403,21 @@ A newer option is LLM-driven heuristic/algorithm evolution (FunSearch-style ReEv
 | 300, 0.1 (0) | 2,467.1 (120 s) | – | **2,399.2** (+120 s) | 2,473.2 (131 s) | no solution |
 | 1000, 0.5 (0) | 12,843, **16 overlaps + 2 out-of-board** (300 s, 9.3k moves/s) | full-board min-displacement legalization: **no solution in 120 s** | – | 22,595.5 (294 s) | no solution |
 
-{{SA1000W}}
+**N=1000 with cluster-wise legalization [M].** Two attempts failed:
+- Full-board min-displacement legalization found no solution in 120 s.
+- A first windowed version (`legalize_windowed`, which clones the full model and frees the k=30 nearest parts around *every* violator in one model) did not finish inside a 10-minute run budget.
+
+`legalize_clusters.py` works. It groups nearby violators, then builds a *separate small CP-SAT model per group*: the 12 nearest parts free and confined to the group's window bbox (+3 mm), the parts overlapping the window plus decap partners fixed, and L1 displacement minimized at 3 s per window, growing k ×1.6 when a window is infeasible.
+- SA 240 s gave 13,552.5 mm with 16 overlaps and 2 decap violations.
+- Cluster-legalization then produced **legal 13,773.5 mm in 3.9 s** (4 rounds, 41 windows, 20 solved).
+- That is **39% lower HPWL than hierarchical CP-SAT + LNS (22,595.5 mm, 294 s)** in about 245 s total.
+- Across four N=1000 SA runs of 240–300 s, the raw result was 12,093–13,552 mm with 8–25 residual overlaps (0–2 decap, 0–2 out-of-board), at 8.9–9.7k moves/s.
+- One run was cut short by a container restart; its SA result is kept in `results_sa1000w_partial_killed.jsonl`.
 
 Pattern:
 - SA (wirelength) followed by CP-SAT (legality + local polish) beats monolithic CP-SAT on every instance.
 - It is on par with or better than hierarchical CP-SAT from N=300.
-- SA's penalty method leaves a few violations that CP-SAT repairs in seconds when the repair problem is small. At 1000 parts, legalization must itself be windowed.
+- SA's penalty method leaves a few violations that CP-SAT repairs in seconds when the repair problem is small. At 1000 parts, legalization must itself be windowed: one small model per violation cluster, never a clone of the full model.
 
 ### Inferences
 - **Recommended division of labour:**
@@ -535,7 +546,25 @@ Table 3, @5 protocol, CP / routability / time:
 - `pathfinding` 1.0.22 (MIT): A*, Dijkstra, … no Theta* — [PyPI](https://pypi.org/pypi/pathfinding/json) [P]
 - `rustworkx` 0.18.1 (Apache-2.0) and `networkx` 3.7 (BSD-3) — [PyPI](https://pypi.org/pypi/rustworkx/json) [P]
 
-{{PF}}
+**PathFinder prototype [M]** (`pathfinder_bench.py`; single-threaded Python). Setup:
+- 60×40 mm board at 0.25 mm pitch: 240×160 nodes per layer, 76,800 nodes and 382,400 directed edges for 2 layers.
+- Random 2-pin nets with locality, pins unique and ≥2 cells apart; 3 pad-blob obstacles (2×3 cells) per net on the top layer.
+- Via cost 8; VPR schedule (pres_fac 0 → 0.5 → ×1.3, acc_fac 1); only overused nets are rerouted.
+- Two engines: pure-Python heapq **A*** (Manhattan heuristic) vs **SciPy** `csgraph.dijkstra` (C, full single-source tree; CSR rebuilt per net).
+
+| nets, layers | engine | route time | iterations to 0 overuse | overused nodes after iter 0 / 1 / 2 | WL (mm, node count × pitch) | vias |
+|---|---|---|---|---|---|---|
+| 50, 2 | Python A* | **2.2 s** | 15 | 77 / 14 / 10 | 606.5 | 10 |
+| 50, 2 | SciPy Dijkstra | 4.7 s | 14 | 125 / 15 / 13 | 608.5 | 4 |
+| 150, 2 | Python A* | 13.0 s | 15 | 744 / 209 / 194 | 1,958.8 | 88 |
+| 300, 2 | Python A* | 32.7 s | 15 | 3,096 / 1,178 / 739 | 3,944.0 | 332 |
+| 300, 4 | Python A* | 60.9 s (153,600 nodes) | 15 | 3,096 / 1,178 / 739 | 3,937.0 | 342 |
+
+- **Goal-directed search beats raw C speed.** Python A* was about 2× faster than SciPy's C Dijkstra, because the latter expands the whole graph and rebuilds the CSR per net. A Rust A* with bounding windows should be another order of magnitude faster (KiCadRoutingTools reports about 10× from Rust).
+- **Negotiation converged in 14–15 iterations at every size**, well inside VPR's 50-iteration default.
+- Doubling layers 2→4 doubled runtime but barely changed the result. The 2-via hop (cost 16) to inner layers outweighs early congestion penalties, so layer and via costs need per-design tuning.
+- A first version of the instance generator allowed shared or abutting pin nodes. Its 150- and 300-net runs never converged (5 and 13 overused nodes left after 50 iterations; SciPy engine, 43 s and 98 s). This is a reminder that pins and pad escapes must be reserved per net before negotiation.
+- These are 2-pin nets on a uniform grid without design-rule geometry, so they bound algorithmic cost, not routing quality.
 
 ### Inferences
 - **Router strategy:**
@@ -650,7 +679,13 @@ GPU only pays off at Cypress-scale boards with thousands of parts, or for very l
 - DREAMPlace GPU gives over 30× on million-cell VLSI — [README](https://raw.githubusercontent.com/limbo018/DREAMPlace/master/README.md) [P]. Cypress small benchmarks took 200–1,765 s on 4 V100s including MOTPE exploration — [slides](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf) [P]
 - OrthoRoute parallelizes inside the single-net SSSP; nets stay sequential — [README](https://github.com/bbenchoff/OrthoRoute) [P]
 - jagua-rs: "millions of collision queries per second" — [arXiv 2508.08341](https://arxiv.org/abs/2508.08341) [P]
-- [M] SA: about 10.7–11.2k moves/s at N=30 (Python + NumPy); CP-SAT model build time 0.01 s (N=30) to 0.2 s (N=1000). {{PERF}}
+- [M] Python throughput ceilings measured in this session:
+  - SA: 9.0–11.7k moves/s from N=30 to N=1000 (Python + NumPy, single thread).
+  - Per-move collision checks: 12–30 µs (§6).
+  - PathFinder (Python A*): 2.2 s for 50 nets, 32.7 s for 300 nets on a 76.8k-node 2-layer grid, 60.9 s on 4 layers.
+  - CP-SAT model build: 0.01 s (N=30) to 0.2 s (N=1000).
+  - Full-model clone + presolve per LNS iteration at N=1000: about 5.6 s overhead on a 3 s solve. Per-window sub-models built from scratch legalized 41 windows in 3.9 s total.
+  - Hierarchical cluster solves (87 clusters × 2 variants: 112 s) are embarrassingly parallel.
 
 ### Inferences
 - **The Rust core should contain:**
@@ -720,6 +755,8 @@ A hybrid pipeline, validated piecewise by the literature and by my measurements:
 
 ### Cited Findings
 - Decomposition is needed. Monolithic exact models fail beyond about 50–100 parts: NS-Place MILP failed on 10/14 boards in 4 h; HiePlace's ILP baseline failed at 308–404 parts; my CP-SAT found nothing at 300/1000 parts. Hierarchical MP (HiePlace) handles 404 parts in ≤2 h, and my hierarchical CP-SAT+LNS stays feasible at 100–1000 parts (§1) [P][M]
+- SA for wirelength plus CP-SAT for legality (global legalization up to 300 parts, per-violation-cluster windows at 1000) gave the best HPWL at every size I tested: 1000 parts legal at 13,774 mm vs 22,596 mm hierarchical (§3) [M]
+- A Python A*+PathFinder prototype converges in 15 negotiation iterations for 50–300 nets (2.2–61 s); goal-directed A* beat C Dijkstra 2× (§5) [M]
 - Cypress's differentiable recipe scales to 6.6k parts, with MOTPE tuning and Freerouting evaluation [P]
 - Freerouting has the best clean-pass on medium real boards; KiCadRoutingTools is fastest; LLM agents are not routers (PCBWorld) [P]
 - pyclipr lacks Linux wheels, while pyclipper and jagua-rs are viable (§6) [P][M]
@@ -734,7 +771,7 @@ A hybrid pipeline, validated piecewise by the literature and by my measurements:
 | Clustering, sides, constraints | LLM + netlist graph (rustworkx/NetworkX) + rules | Cypress assumes pre-assigned sides | Apache/BSD |
 | Cluster placement (≤50 parts, hard decap/keep-out/alignment) | CP-SAT formulation A, 0.5 mm grid, "opt2" rotation, ≥2 aspect-ratio variants | Gurobi MP (HiePlace) as optional backend | Apache-2.0 |
 | Global placement 100–1000 parts | (a) Cypress-style JAX/PyTorch loss (Gumbel orientation, two-sided density, net crossing, decap/keep-out/thermal penalties) or (b) CP-SAT soft-macro floorplan (as benchmarked) | Cypress itself (Apache-2.0, GPU, Bookshelf) | Apache-2.0 |
-| Legalization | CP-SAT min-displacement model with hard constraints (`hier_place.py::legalize`) | Tetris + Abacus (Cypress), greedy (Rust) | Apache-2.0 |
+| Legalization | CP-SAT min-displacement model with hard constraints: global up to about 300 parts (`hier_place.py::legalize`), per-violation-cluster window sub-models beyond (`legalize_clusters.py`: 1000 parts in 3.9 s) | Tetris + Abacus (Cypress), greedy (Rust) | Apache-2.0 |
 | Detailed placement | SA (Rust, incremental HPWL/RUDY) + windowed CP-SAT LNS | tabu | own |
 | Weight tuning / Pareto | Optuna MOTPE / NSGA-II (+ OptunaHub LLAMBO for first ~10 trials) | SMAC (multi-fidelity), BoTorch, pymoo | MIT/BSD |
 | Diverse alternatives for the LLM | pyribs CMA-MAE over weights | pymoo fronts | MIT |
