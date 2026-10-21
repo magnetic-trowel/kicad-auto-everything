@@ -1,6 +1,7 @@
 # Open board sources for the benchmark harness
 
 **TL;DR**
+- **Second pass (2026-10-21): 14,318 more boards** in [`wide.jsonl`](../../../bench/manifests/wide.jsonl) + [`wide-noncommercial.jsonl`](../../../bench/manifests/wide-noncommercial.jsonl), de-duplicated by content, with KiCad 10.0.7 stats and DRC; NC accepted in its own tier, ND still excluded. See [wide-board-corpus.md](wide-board-corpus.md) [P, measured].
 - **We ship a pointer manifest, not boards.** [`bench/manifests/candidates.jsonl`](../../../bench/manifests/candidates.jsonl) lists **297 vetted boards**: each row has repo, pinned commit, path, sha256, licence and the licence file at that commit, plus our KiCad 10.0.7 stats and DRC result. Unlicensed, NC and ND boards are excluded [P, measured].
 - **Mix:**
   - by licence: permissive 159, copyleft 72, reciprocal-hardware 54, weak-copyleft 12;

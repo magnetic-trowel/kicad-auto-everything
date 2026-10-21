@@ -1,7 +1,7 @@
 # Board sourcing (second pass, 2026-10-21)
 
 Scripts and candidate lists behind `bench/manifests/wide*.jsonl`. See
-[docs/topics/data/open-board-sources.md](../../../docs/topics/data/open-board-sources.md) for results.
+[docs/topics/data/wide-board-corpus.md](../../../docs/topics/data/wide-board-corpus.md) for results and policy.
 
 | Step | Script | Output |
 |---|---|---|
@@ -11,6 +11,7 @@ Scripts and candidate lists behind `bench/manifests/wide*.jsonl`. See
 | Pick boards from the audited kicad-happy catalog | `kh_select.py` | `found/kicad-happy.jsonl` |
 | Fetch all candidates, fingerprint, drop near-duplicates | `sig.py 'found/*.jsonl' WORKDIR bench/manifests/candidates.jsonl` | `WORKDIR/keep.txt`, `dups.jsonl` |
 | Stats + DRC under each board's own rules | `enrich.py 'found/*.jsonl' OUT WORKDIR -j N --skip ... --only keep.txt` | manifest rows |
+| Merge host results into the wide manifests | `merge.py WORKDIR 'results/*.jsonl' bench/manifests` | `wide.jsonl`, `wide-noncommercial.jsonl`, `wide-duplicates.jsonl` |
 
 `found/<sector>.jsonl` are the agent-verified candidates (one row per board, licence evidence
 quoted); `*.rejected.jsonl` record why repos were left out. `unloadable.rejected.jsonl`

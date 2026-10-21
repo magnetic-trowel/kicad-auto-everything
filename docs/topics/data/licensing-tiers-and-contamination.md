@@ -62,7 +62,22 @@
 |---|---|---|
 | A | MIT, Apache, BSD, CC0, CERN-OHL-P, CC-BY | Training; redistributed derived data (attribution); retrieval that copies geometry |
 | B | GPL, CERN-OHL-S/W, CC-BY-SA, TAPR | Evaluation; retrieval that shows the fragment with licence and attribution, warning that copying makes the board a derivative; training only with counsel's sign-off, never in redistributed weights by default |
-| C | none, NC, ND | Private evaluation only, fetched at a pinned SHA, never redistributed |
+| C | NC (manifest tier `noncommercial`) | Private, non-commercial evaluation only, fetched at a pinned SHA, never redistributed |
+| — | none, ND, "personal use", vendor EULAs | Not collected (user decision 2026-10-21) |
+
+### What testing each tier allows [I]
+
+Our use: fetch at a pinned commit, modify locally (strip routing, move parts), run automated and LLM tools, publish only aggregate scores.
+
+| Licence family | Testing allowed? | Limit |
+|---|---|---|
+| Permissive, copyleft, reciprocal (MIT … GPL, CERN-OHL-S, CC-BY-SA, TAPR) | Yes | Obligations start only on distribution; we distribute pointers, not boards |
+| CC NC | Only if the use is non-commercial | CC defines NC as "not primarily intended for or directed towards commercial advantage"; internal R&D in a company can fall on the commercial side. Kept in a separate manifest so it can be switched off |
+| CC ND | Excluded | ND 4.0 allows private adaptations, but a routed/placed output is too easy to publish by accident |
+| Terms granting use but not modification, "personal use" | Excluded | Our tests modify every board |
+| No licence | Excluded | No grant of rights at all |
+
+Applied in [wide-board-corpus.md](wide-board-corpus.md#licence-policy-user-decisions-applied-to-every-row).
 
 - **Facts over expression:** aggregate statistics (percentiles, width ratios) and abstract constraint graphs are far less likely to carry copyright or reciprocal obligations than verbatim geometry. This is an inference, not legal advice.
 - Keep an **opt-out list**; record per-board SPDX (LICENSE + README + scancode).

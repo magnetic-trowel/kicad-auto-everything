@@ -109,6 +109,16 @@ The tool reads `{input}` (a `.kicad_pcb` with its project files beside it) and w
 `tags`. Boards are never redistributed; only manifests are committed
 (CDLA-Permissive-2.0).
 
+- `candidates.jsonl`: the 297-board benchmark set.
+- `wide.jsonl` (13,475) and `wide-noncommercial.jsonl` (843): the second sourcing pass,
+  see [wide-board-corpus](../docs/topics/data/wide-board-corpus.md). Filter with
+  `--tiers` and `--tags` (e.g. `--tags drc-clean`); `host-robots-restricted` marks rows on
+  hosts whose robots.txt disallows raw/git paths.
+- `pcb_path` may be an Eagle/Allegro `.brd`, Altium `.PcbDoc`, PADS `.asc` or CADSTAR `.cpa`;
+  `fetch` converts it with `kicad-cli pcb import` and `pcb_sha256` stays the upstream hash.
+- Rows with `archive_sha256` and `commit: null` are downloads (zip, tar or a single file),
+  pinned by that hash.
+
 ## Known limitations
 
 - KiCad 10 SES import deletes unlocked copper and applies placement. The adapter strips the SES placement block, and route tasks start without copper.

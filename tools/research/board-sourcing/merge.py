@@ -12,6 +12,7 @@ near-duplicate map. Prints summary stats.
 import collections
 import glob
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +24,12 @@ HERE = Path(__file__).parent
 # Manual decisions (see docs/topics/data/open-board-sources.md).
 DROP_REPOS = {  # licence only in wiki review notes
     "https://gitlab.com/ohwr/project/fmc-nanofip", "https://gitlab.com/ohwr/project/fmc-vme-carrier"}
+# robots.txt on these hosts disallows raw-file and/or git paths (checked 2026-10-21); rows are
+# tagged so they can be excluded with one filter. github/raw.githubusercontent, zenodo, arduino are fine.
+ROBOTS_RESTRICTED = {"gitlab.com", "codeberg.org", "hub.allspice.io", "gitlab.cba.mit.edu", "source.mnt.re",
+                     "openbeagle.org", "gitlab.cern.ch", "source.puri.sm", "git.sr.ht", "bitbucket.org",
+                     "gitlab.kit.edu", "gitlab.awi.de", "gitlab.postmarketos.org", "gitea.osmocom.org",
+                     "git.defproc.co.uk", "gogs.zenerdio.de"}
 FORCE_NC = {  # README: "some discontinued filter boards are NC" without saying which -> most restrictive
     "shruthi": "CC-BY-NC-SA-3.0"}
 
@@ -48,9 +55,9 @@ def main():
             missing.append(i)
             continue
         r = dict(res[bkey(cand)], id=i)
-        for k in ("license", "license_evidence", "license_tier", "dataset", "sch_path"):
-            r[k] = cand[k]
-        if r["repo"] in DROP_REPOS:
+        for k in ("license", "license_evidence", "license_tier", "dataset", "sch_path", "file_urls"):
+            r[k] = cand.get(k)
+        if r["repo"] in DROP_REPOS or "gitlab.fabcloud.org" in r["repo"]:  # fabcloud: see fabacademy-mirror
             continue
         for key, lic in FORCE_NC.items():
             if key in r["pcb_path"].lower() and "OR" in r["license"]:
@@ -59,7 +66,18 @@ def main():
                     " (ambiguous which boards are NC -> most restrictive)"
         if "ddr" in r["tags"] and not (r["layers"] >= 4 and {"bga", "fpga"} & set(r["tags"])):
             r["tags"] = [x for x in r["tags"] if x != "ddr"]  # early enrich regex matched plain BA0/MA1 nets
-        out.append({k: r.get(k) for k in enrich.KEYS if k != "archive_sha256" or r.get(k)})
+        if re.sub(r"^https?://", "", r["repo"]).split("/")[0] in ROBOTS_RESTRICTED:
+            r["tags"] = sorted(set(r["tags"]) | {"host-robots-restricted"})
+        out.append({k: r.get(k) for k in enrich.KEYS if k not in ("archive_sha256", "file_urls") or r.get(k)})
+    # same file reached via a mirror or a .git-suffixed URL: keep one, never re-add an existing board
+    old_sha = {json.loads(l).get("pcb_sha256") for l in open(HERE / "../../../bench/manifests/candidates.jsonl")}
+    by_sha = {}
+    for r in sorted(out, key=lambda r: ("github.com" not in r["repo"], r["id"])):
+        if r.get("pcb_sha256") in old_sha:
+            continue
+        by_sha.setdefault(r.get("pcb_sha256") or r["id"], r)
+    print(f"sha dedupe: {len(out)} -> {len(by_sha)}")
+    out = list(by_sha.values())
     out.sort(key=lambda r: r["id"])
     out_dir = Path(out_dir)
     main_rows = [r for r in out if r["license_tier"] != "noncommercial"]
