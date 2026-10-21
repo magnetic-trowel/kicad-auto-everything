@@ -13,7 +13,7 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 
 ## Benchmark harness (`bench/`, package `kaebench`)
 
-Setup on an Ubuntu host: `bench/scripts/setup.sh`, then `source bench/.venv/bin/activate`
+Setup on an Ubuntu host (works without sudo via Apptainer + uv): `bench/scripts/setup.sh`, then `source bench/.venv/bin/activate`
 and `kaebench doctor`. Tests: `pytest bench/tests` (KiCad tests skip without KiCad).
 
 Closed loop:
