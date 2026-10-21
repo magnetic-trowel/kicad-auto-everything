@@ -84,3 +84,11 @@ def test_report_best_of_k(tmp_path):
     assert m["cp1"] == 0.0 and m["cpk"] == 0.5
     assert m["completion"] == pytest.approx(0.95)
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
+
+
+def test_id_list_from_file(tmp_path):
+    from kaebench.cli import _split
+    f = tmp_path / "suite.txt"
+    f.write_text("b1\n# comment\nb2  # trailing\n\n")
+    assert _split(f"@{f}") == ["b1", "b2"]
+    assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None

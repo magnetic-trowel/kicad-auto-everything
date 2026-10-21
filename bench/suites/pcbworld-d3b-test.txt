@@ -1,0 +1,13 @@
+# PCBWorld D3 medium test split (10 boards): PCBench folder names after PCBWorld's
+# prepare_pcbench.sh chain. Source: LGAI-Research/PCBWorld configs/datasets/d3.json @ 1989a93
+# (BSD-3-Clause). Boards keep their upstream licences; many have none.
+0113_maytal_Maytal
+0144_ottawa-badges-2016_ottawa-badge-tagger-2016
+0174_sensorboard_DiffIR
+0203_MOD-MPU9150_mod-mpu9150
+0232_ATtiny461Breakout_ATTiny461DevBoard
+0260_NiMH-Charger_NiMH Charger
+0288_raspberrypi-3-usb-hub_usb_hub
+0316_kicad-workshop_fancyboard
+0344_mavbridge_mavbridge
+0376_cat-trainer_teensy_base_pcb

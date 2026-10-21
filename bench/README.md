@@ -39,6 +39,28 @@ Useful filters on `fetch`/`prepare`: `--tiers permissive`, `--tags rf,ddr`, `--o
 `--limit N`. On `run`: `--splits A,B` (A ≤ 31 pads, B ≤ 100, C larger), `--all` to include
 boards whose human layout is not clean.
 
+## Suites
+
+`bench/suites/*.txt` are board-id lists for `--only @FILE`:
+- `kaebench tasks --write-suite FILE` writes the boards that qualified on your KiCad version.
+- `pcbworld-d3{a,b,c}-test.txt` are PCBWorld's D3 eval splits (99 / 10 / 10).
+
+### Reproducing PCBWorld's routing baseline
+
+PCBWorld's D3 boards are PCBench boards run through PCBWorld's own chain: KiCad 5→9.0.8 conversion, DRC repair, guide generation. Build them with that chain, then import them:
+
+```bash
+# in a PCBWorld checkout (https://github.com/LGAI-Research/PCBWorld); builds its KiCad engine
+export PCBWORLD_DATA_ROOT=$PWD/var/datasets
+bash tools/quickstart/prepare_pcbench.sh --workers 16
+# back in this repo
+kaebench --workdir kae-d3 prepare-dir --dir $PCBWORLD_DATA_ROOT/pcbench/exacad_sorted \
+  --board-glob processed_v9_guide_v3.kicad_pcb --only @bench/suites/pcbworld-d3a-test.txt --kinds route -j 16
+kaebench --workdir kae-d3 run --adapter freerouting --passes 10 -k 5 -j 16 --name fr-2.5.0-mp10
+```
+
+PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) clean-pass @5. Our scoring re-saves boards with KiCad 10 and uses each board's own severities. Expect close but not identical numbers; report both.
+
 ## Adapters
 
 | Adapter | What it does |

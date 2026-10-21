@@ -19,7 +19,13 @@ from . import __version__, adapters, fetch, manifest, prepare, report, runner, t
 
 
 def _split(s):
-    return [x for x in s.split(",") if x] if s else None
+    """Comma-separated list, or @FILE with one entry per line (# comments allowed)."""
+    if not s:
+        return None
+    if s.startswith("@"):
+        lines = Path(s[1:]).read_text().splitlines()
+        return [ln.split("#")[0].strip() for ln in lines if ln.split("#")[0].strip()]
+    return [x for x in s.split(",") if x]
 
 
 def _dirs(a):
@@ -82,6 +88,49 @@ def cmd_prepare(a):
     return _parallel(_entries(a), one, a.jobs, "prepare")
 
 
+def _local_boards(root, pattern, only):
+    """Board folders under root (e.g. PCBWorld's exacad_sorted): one board per subfolder."""
+    root = Path(root)
+    items = []
+    for d in sorted(p for p in root.iterdir() if p.is_dir()):
+        if only and d.name not in only:
+            continue
+        pcbs = sorted(d.glob(pattern))
+        if not pcbs:
+            continue
+        pcb = pcbs[0]
+        pros = [pcb.with_suffix(".kicad_pro")] + sorted(d.glob("*.kicad_pro"))
+        pro = next((p for p in pros if p.exists()), None)
+        dru = pcb.with_suffix(".kicad_dru")
+        fetched = {"kicad_pcb": str(pcb), "pcb_sha256": fetch.sha256(pcb)}
+        if pro:
+            fetched["kicad_pro"] = str(pro)
+        if dru.exists():
+            fetched["kicad_dru"] = str(dru)
+        entry = dict(id=d.name, repo=f"local:{root}", commit=None, pcb_path=str(pcb.relative_to(root)),
+                     license="unknown (local)", license_tier=None, tags=[])
+        items.append((entry, fetched))
+    missing = sorted(set(only or []) - {e["id"] for e, _ in items})
+    if missing:
+        print(f"warning: {len(missing)} requested boards not found under {root}: {missing[:5]}...", file=sys.stderr)
+    return items
+
+
+def cmd_prepare_dir(a):
+    _, tasks, _ = _dirs(a)
+    kinds = _split(a.kinds) or list(prepare.TASK_KINDS)
+    items = _local_boards(a.dir, a.board_glob, _split(a.only))
+    by_id = {e["id"]: f for e, f in items}
+
+    def one(e):
+        r = prepare.prepare_board(e, by_id[e["id"]], tasks, kinds=kinds, keep_locked=a.keep_locked,
+                                  force=a.force)
+        rd = r["reference"]["drc"]
+        return (f"split={r['split']} pads={r['reference']['stats']['pads']} qualified={r['qualified']}"
+                f" (unconn={rd['unconnected']} err={rd['errors']})")
+    return _parallel([e for e, _ in items], one, a.jobs, "prepare-dir")
+
+
 def cmd_run(a):
     _, tasks, results = _dirs(a)
     ad = adapters.make(a.adapter, command=a.command, passes=a.passes)
@@ -95,6 +144,33 @@ def cmd_run(a):
     (run_dir / "report.md").write_text(md + "\n")
     print(md)
     print(f"\nresults: {run_dir}")
+    return 0
+
+
+def cmd_tasks(a):
+    """Qualification yield of prepared tasks by split, licence tier and tag."""
+    _, tasks, _ = _dirs(a)
+    recs = prepare.load_tasks(tasks, qualified_only=False)
+    if not recs:
+        print(f"no tasks under {tasks}")
+        return 1
+    def table(title, keyfn):
+        groups = {}
+        for r in recs:
+            for k in keyfn(r):
+                g = groups.setdefault(k, [0, 0])
+                g[0] += 1
+                g[1] += r["qualified"]
+        print(f"\n| {title} | boards | qualified |\n|---|---|---|")
+        for k, (n, q) in sorted(groups.items(), key=lambda kv: (-kv[1][0], str(kv[0]))):
+            print(f"| {k} | {n} | {q} |")
+    table("split", lambda r: [r["split"]])
+    table("license tier", lambda r: [r.get("license_tier")])
+    table("tag", lambda r: r.get("tags") or ["(none)"])
+    if a.write_suite:
+        ids = sorted(r["id"] for r in recs if r["qualified"])
+        Path(a.write_suite).write_text("\n".join(ids) + "\n")
+        print(f"\nwrote {len(ids)} qualified ids to {a.write_suite}")
     return 0
 
 
@@ -118,7 +194,7 @@ def main(argv=None):
 
     def board_filters(sp):
         sp.add_argument("-m", "--manifest", required=True)
-        sp.add_argument("--only", help="comma-separated board ids")
+        sp.add_argument("--only", help="comma-separated board ids, or @FILE with one id per line")
         sp.add_argument("--tiers", help="license tiers, e.g. permissive,weak-copyleft")
         sp.add_argument("--tags", help="keep boards with any of these tags")
         sp.add_argument("--limit", type=int)
@@ -135,6 +211,17 @@ def main(argv=None):
     sp.add_argument("--keep-locked", action="store_true", help="keep locked copper/footprints in tasks")
     sp.set_defaults(fn=cmd_prepare)
 
+    sp = sub.add_parser("prepare-dir", help="build tasks from local board folders (e.g. PCBWorld output)")
+    sp.add_argument("--dir", required=True, help="directory with one board per subfolder")
+    sp.add_argument("--board-glob", default="*.kicad_pcb",
+                    help="board file inside each folder, e.g. processed_v9_guide_v3.kicad_pcb")
+    sp.add_argument("--only", help="comma-separated folder names, or @FILE")
+    sp.add_argument("--kinds", default="route,place")
+    sp.add_argument("--keep-locked", action="store_true")
+    sp.add_argument("-j", "--jobs", type=int, default=4)
+    sp.add_argument("--force", action="store_true")
+    sp.set_defaults(fn=cmd_prepare_dir)
+
     sp = sub.add_parser("run", help="run an adapter on prepared tasks and score it")
     sp.add_argument("--adapter", required=True, help="reference | noop | freerouting | <name> with --command")
     sp.add_argument("--command", help="external tool template: {input} {output} {workdir} {kind} {attempt} {timeout}")
@@ -150,6 +237,10 @@ def main(argv=None):
     sp.add_argument("--name", help="run name (reuse to resume)")
     sp.add_argument("--keep-work", action="store_true")
     sp.set_defaults(fn=cmd_run)
+
+    sp = sub.add_parser("tasks", help="qualification yield of prepared tasks")
+    sp.add_argument("--write-suite", help="write qualified board ids to this file")
+    sp.set_defaults(fn=cmd_tasks)
 
     sp = sub.add_parser("report", help="summarize one or more runs")
     sp.add_argument("run_dirs", nargs="+")
