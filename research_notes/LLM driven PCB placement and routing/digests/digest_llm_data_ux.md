@@ -57,6 +57,8 @@ All facts are as of 2026-10-20.
 
 - **LMM errors:** outputs average 69.8–431.3 DRC violations, with 20.5–78.3% of nets physically shorted (humans: 0.80 and 0.38%). GND is routed as ordinary traces instead of pours.
 - **Agentic best:** GPT-5.5 with all tools reaches NRR 27.98% / PRR 30.34%. Its DRC total falls from 48.06 to 9.35 and shorts from 39.5% to 9.1%.
+- **More steps ≠ better:** GPT-5.5 went from 16.97 to 20.78 steps and NRR rose 21.71% → 27.98%; GPT-5-mini went from 18.38 to 23.65 steps and NRR fell 9.86% → 6.82%.
+- **Few-shot** examples "can reduce violations by routing less".
 - **(VER #29):** the "<13% vs ~94%" figure had been attributed to OmniLayout; it belongs to OmniRouting.
 
 **PCBWorld** [P via VER] ([arXiv 2607.05915 v4](https://arxiv.org/pdf/2607.05915)). LG AI Research; KDD 2026 Workshop on Evaluation and Trustworthiness of Agentic AI, non-archival. Interactive GPT-5.4 routing in KiCad's push-and-shove engine:
@@ -76,6 +78,10 @@ All facts are as of 2026-10-20.
 ### 1.2 Placement: connectivity-aware but geometrically illegal (VER #26 changes the story)
 
 **OmniLayout** [P] ([arXiv 2607.03261 v3](https://arxiv.org/pdf/2607.03261), Tab. 2). **(VER #25):** it is Penn State–led, not Microsoft Research; it evaluates 9 LMMs and 6 PnR tools.
+- **Data:** Specctra DSN from EAGLE 9.6.2: 77.24K placements, 168.82K pads, 55.83K netlist graphs, and 139.4K nets with layout and schematic spatial weights.
+- **Task input:** schematic image, DXF outline (JSON), a netlist with spatial weights, IC dimensions.
+- **Output:** x, y, side and orientation (including mirrored MR0–MR270).
+- **Metrics:** overlap, out-of-bounds, HPWL, crossings, net separation, FreeRouting PRWL/RR/vias, schematic relational distance, S_ref, and P/R/E2E pass.
 
 **FreeRouting routability (RR):**
 
@@ -162,6 +168,11 @@ Other OmniLayout findings:
   - Gemini-2.5-Pro scores 100% and GPT-5 90.9% on Basic Wiring Error Identification. That subset has only about 11 items, so the gap is one question.
   - Open-source models score 45–55%.
   - Claude-Opus-4.1's 93.3% is on Placement Macro-level CQ.
+  - Scale: about 3,700 text QAs and 500 image QAs, plus 174 OSHWHub boards for screenshot-to-description.
+- **Other netlist results:**
+  - SPICED: 93.32% Trojan coverage ([2408.16018](https://arxiv.org/abs/2408.16018)).
+  - Masala-CHAI: +46% Pass@1 for AnalogCoder ([2411.14299](https://arxiv.org/abs/2411.14299)).
+  - AnalogCoder: 20 of 24 tasks.
 - **PDAgent-Bench** ([2606.17253](https://arxiv.org/abs/2606.17253)), 353 problems: strong on concepts (GPT-5.5 73.3% on root cause), weak on long-horizon tool use.
 
 ### 1.5 Where LLMs add value (field and paper evidence)
