@@ -359,10 +359,14 @@ def main():
     with open(out_path, "w") as f:
         for r in good:
             f.write(json.dumps({k: r.get(k) for k in KEYS if k != "file_urls" or r.get(k)}) + "\n")
+    def unhome(s):  # the .failed file is committed: no host or user paths in it
+        return s and s.replace(workdir, "WORKDIR").replace(str(Path.home()), "~")
+
     with open(out_path + ".failed", "w") as f:
         for r in done:
             if not r.get("_ok"):
-                f.write(json.dumps({k: r.get(k) for k in ("id", "repo", "commit", "pcb_path", "_error", "_trace")}) + "\n")
+                f.write(json.dumps({k: unhome(r.get(k)) if k in ("_error", "_trace") else r.get(k)
+                                    for k in ("id", "repo", "commit", "pcb_path", "_error", "_trace")}) + "\n")
     print(f"wrote {len(good)} ok, {len(done) - len(good)} failed", file=sys.stderr)
 
 
