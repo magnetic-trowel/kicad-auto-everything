@@ -22,8 +22,10 @@ def _raw_url(repo, commit, path):
     qpath = urllib.parse.quote(path)
     if u.netloc == "github.com":
         return f"https://raw.githubusercontent.com/{slug}/{commit}/{qpath}"
-    if u.netloc == "gitlab.com":
-        return f"https://gitlab.com/{slug}/-/raw/{commit}/{qpath}"
+    if u.netloc == "gitlab.com" or u.netloc.startswith("gitlab.") or u.netloc == "gitlab.fabcloud.org":
+        return f"https://{u.netloc}/{slug}/-/raw/{commit}/{qpath}"
+    if u.netloc == "codeberg.org":
+        return f"https://codeberg.org/{slug}/raw/commit/{commit}/{qpath}"
     return None
 
 
