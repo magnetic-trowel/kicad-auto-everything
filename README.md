@@ -3,9 +3,11 @@ helper systems for LLMing KiCad
 
 ## Research
 
+- [`docs/INDEX.md`](docs/INDEX.md): start here. Short digests link to small
+  focused topic docs on placement and routing algorithms, LLMs for EDA, KiCad
+  integration, layout rules, verification, benchmarks, and licensing.
 - [`research_notes/LLM driven PCB placement and routing/`](research_notes/LLM%20driven%20PCB%20placement%20and%20routing/):
-  survey notes on placement and routing algorithms, LLMs for EDA, existing
-  tools and KiCad APIs, layout rules, verification, benchmarks, and licensing.
+  the raw survey notes the docs cite as evidence.
 
 ## License
 
