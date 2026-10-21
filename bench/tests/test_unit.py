@@ -65,6 +65,21 @@ def test_top_level_block_ignores_nested_and_strings():
     assert boardfiles.top_level_block(text, "missing") is None
 
 
+def test_art_zones_to_polys():
+    pts = "(pts (xy 0 0) (xy 1 0) (xy 1 1))"
+    text = ('(kicad_pcb (version 1)\n'
+            f' (footprint "x" (zone (layer "F.SilkS") (polygon {pts})))\n'
+            f' (zone (layer "B.SilkS") (uuid "u1") (fill (thermal_gap 0.5)) (polygon {pts}))\n'
+            f' (zone (net 1) (net_name "GND") (layer "F.Cu") (polygon {pts}))\n'
+            f' (zone (layer "F.Cu") (keepout (tracks not_allowed)) (polygon {pts}))\n'
+            f' (gr_text "(zone (layer \\"F.SilkS\\"))"))')
+    new, n = boardfiles.art_zones_to_polys(text)
+    assert n == 2
+    assert f'(fp_poly {pts} (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS"))' in new
+    assert f'(gr_poly {pts} (stroke (width 0) (type solid)) (fill yes) (layer "B.SilkS") (uuid "u1"))' in new
+    assert new.count("(zone") == 3  # copper zone, keepout and the string are untouched
+
+
 def test_strip_ses_placement(tmp_path):
     ses = tmp_path / "in.ses"
     ses.write_text('(session "b"\n (base_design "b")\n (placement (resolution um 10)\n  (component "R" (place R1 1 2 front 0)))\n (routes (resolution um 10)))\n')

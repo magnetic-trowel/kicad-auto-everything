@@ -55,30 +55,82 @@ def top_level_block(text, head):
         elif c == "(":
             depth += 1
             if depth == 2 and text.startswith(head, i + 1) and not text[i + 1 + len(head)].isalnum():
-                start, d = i, 0
-                j = i
-                s_in = False
-                while j < n:
-                    cj = text[j]
-                    if s_in:
-                        if cj == "\\":
-                            j += 1
-                        elif cj == '"':
-                            s_in = False
-                    elif cj == '"':
-                        s_in = True
-                    elif cj == "(":
-                        d += 1
-                    elif cj == ")":
-                        d -= 1
-                        if d == 0:
-                            return text[start:j + 1]
-                    j += 1
-                return None
+                end = block_end(text, i)
+                return None if end is None else text[i:end]
         elif c == ")":
             depth -= 1
         i += 1
     return None
+
+
+def block_end(text, start):
+    """Index just past the S-expression block opening at text[start] == "(", or None."""
+    d, j, n = 0, start, len(text)
+    s_in = False
+    while j < n:
+        cj = text[j]
+        if s_in:
+            if cj == "\\":
+                j += 1
+            elif cj == '"':
+                s_in = False
+        elif cj == '"':
+            s_in = True
+        elif cj == "(":
+            d += 1
+        elif cj == ")":
+            d -= 1
+            if d == 0:
+                return j + 1
+        j += 1
+    return None
+
+
+_ZONE_LAYER = re.compile(r'\(layer "([^"]+)"\)')
+_ZONE_UUID = re.compile(r'\(uuid "([^"]+)"\)')
+
+
+def art_zones_to_polys(text):
+    """Turn net-less zones on non-copper layers into filled graphic polygons.
+
+    The Eagle importer makes a zone of every <rectangle>, and bitmap logos are often
+    drawn as tens of thousands of silkscreen rectangles; DRC on such boards takes
+    100+ GB of RAM. As graphics they keep their shape and DRC treats them as silkscreen.
+    Returns (new_text, number_converted).
+    """
+    out, pos, n_conv = [], 0, 0
+    depth, i, n = 0, 0, len(text)
+    in_str = False
+    while i < n:
+        c = text[i]
+        if in_str:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "(":
+            depth += 1
+            if depth in (2, 3) and text.startswith("zone", i + 1) and text[i + 5].isspace():
+                end = block_end(text, i)
+                zone = text[i:end]
+                layer = _ZONE_LAYER.search(zone)
+                pi = zone.find("(pts", zone.find("(polygon"))
+                if (layer and not layer.group(1).endswith(".Cu") and pi >= 0
+                        and "(keepout" not in zone and "(net " not in zone):
+                    uid = _ZONE_UUID.search(zone)
+                    kw = "gr_poly" if depth == 2 else "fp_poly"
+                    out += [text[pos:i], f'({kw} {zone[pi:block_end(zone, pi)]} (stroke (width 0) (type solid)) '
+                            f'(fill yes) (layer "{layer.group(1)}")' + (f' (uuid "{uid.group(1)}")' if uid else "") + ")"]
+                    pos, n_conv = end, n_conv + 1
+                i, depth = end, depth - 1
+                continue
+        elif c == ")":
+            depth -= 1
+        i += 1
+    out.append(text[pos:])
+    return "".join(out), n_conv
 
 
 def block_hash(pcb, head):

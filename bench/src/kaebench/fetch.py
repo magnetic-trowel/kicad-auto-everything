@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from . import tools
+from . import boardfiles, tools
 from .manifest import import_format, project_paths
 
 
@@ -110,8 +110,10 @@ def _import_board(src, fmt, dest_dir, timeout=1800):
     # Eagle layers with no KiCad mapping (e.g. tDocu-style graphics) come out as layer
     # "UNDEFINED", which pcbnew refuses to load; they are documentation only.
     text = out.read_text(errors="replace")
-    if '(layer "UNDEFINED")' in text:
-        out.write_text(text.replace('(layer "UNDEFINED")', '(layer "Cmts.User")'))
+    fixed = text.replace('(layer "UNDEFINED")', '(layer "Cmts.User")')
+    fixed, _ = boardfiles.art_zones_to_polys(fixed)
+    if fixed != text:
+        out.write_text(fixed)
     return out
 
 
