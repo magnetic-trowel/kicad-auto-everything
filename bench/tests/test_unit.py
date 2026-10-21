@@ -90,6 +90,38 @@ def test_zip_fetch_reads_tar_gz(tmp_path, monkeypatch):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["b.PcbDoc"]
 
 
+def test_download_retries_rate_limit(tmp_path, monkeypatch):
+    import urllib.error
+    calls, sleeps = [], []
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        if len(calls) <= 2:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"Retry-After": "30"}, None)
+        return io.BytesIO(b"board")
+
+    clock = [0.0]
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(fetch.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(fetch.time, "sleep", lambda s: (sleeps.append(s), clock.__setitem__(0, clock[0] + s)))
+    monkeypatch.setattr(fetch, "_hold_until", {})
+    assert fetch._download("https://gitlab.example.org/a/-/raw/c/b.kicad_pcb", tmp_path / "b")
+    assert (tmp_path / "b").read_bytes() == b"board" and len(calls) == 3
+    assert len(sleeps) == 2 and all(30 <= s <= 37 for s in sleeps)  # Retry-After + jitter
+
+    # a persistent 503 is given up after RETRY_BUDGET seconds; 404 is "not found", not an error
+    def unavailable(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 503, "Service Unavailable", {}, None)
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", unavailable)
+    with pytest.raises(urllib.error.HTTPError):
+        fetch._download("https://gitlab.example.org/x", tmp_path / "x")
+    assert clock[0] <= 2 * fetch.RETRY_BUDGET
+    monkeypatch.setattr(fetch.urllib.request, "urlopen",
+                        lambda req, timeout: (_ for _ in ()).throw(
+                            urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)))
+    assert fetch._download("https://gitlab.example.org/y", tmp_path / "y") is False
+
+
 def test_art_zones_to_polys():
     pts = "(pts (xy 0 0) (xy 1 0) (xy 1 1))"
     text = ('(kicad_pcb (version 1)\n'

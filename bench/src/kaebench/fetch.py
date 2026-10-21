@@ -2,11 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fetch manifest boards at their pinned commit into a local cache."""
 import hashlib
+import itertools
+import email.utils
 import json
+import random
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,16 +35,53 @@ def _raw_url(repo, commit, path):
     return None
 
 
+# Rate limiting: GitLab instances (gitlab.fabcloud.org allows 60 unauthenticated raw GETs a
+# minute) answer 429 when many worker threads fetch at once. A 429/5xx makes every thread hold
+# off that host until the Retry-After time, then retry; a file is given up after RETRY_BUDGET s.
+RETRY_CODES = {429, 502, 503, 504}
+RETRY_BUDGET = 600
+_hold_lock = threading.Lock()
+_hold_until = {}  # host -> time.monotonic() before which no request is sent
+
+
+def _retry_after(headers, attempt):
+    """Seconds to wait: the Retry-After header (seconds or HTTP date), else 2**attempt; capped."""
+    v = (headers or {}).get("Retry-After")
+    delay = None
+    if v:
+        try:
+            delay = float(v)
+        except ValueError:
+            try:
+                delay = email.utils.parsedate_to_datetime(v).timestamp() - time.time()
+            except (TypeError, ValueError):
+                pass
+    if delay is None:
+        delay = 2 ** attempt
+    return min(max(delay, 1), 120) + random.uniform(0, 5)
+
+
 def _download(url, dest, timeout=120):
+    host = urllib.parse.urlparse(url).netloc
     req = urllib.request.Request(url, headers={"User-Agent": "kaebench"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
-            shutil.copyfileobj(r, f)
-        return True
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return False
-        raise
+    deadline = time.monotonic() + RETRY_BUDGET
+    for attempt in itertools.count():
+        with _hold_lock:
+            wait = _hold_until.get(host, 0) - time.monotonic()
+        if wait > 0:
+            time.sleep(wait + random.uniform(0, 2))  # jitter so held threads don't return at once
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+                shutil.copyfileobj(r, f)
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False
+            if e.code not in RETRY_CODES or time.monotonic() >= deadline:
+                raise
+            delay = min(_retry_after(e.headers, attempt), max(deadline - time.monotonic(), 0))
+            with _hold_lock:
+                _hold_until[host] = max(_hold_until.get(host, 0), time.monotonic() + delay)
 
 
 def _git_fetch(repo, commit, paths, dest_dir):

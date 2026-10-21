@@ -167,7 +167,10 @@ def process(row, workdir, kicad_ver):
     out = meta_dir / f"{row['id']}.json"
     if out.exists():
         cached = json.loads(out.read_text())
-        if all(cached.get(k) == row.get(k) for k in ("repo", "commit", "pcb_path", "archive_sha256")):
+        # network errors (HTTP 429/5xx, resets) are retried on the next run instead of cached
+        transient = re.match(r"(HTTPError: HTTP Error (429|5\d\d)|URLError|TimeoutError|Connection\w*Error)",
+                             cached.get("_error") or "")
+        if not transient and all(cached.get(k) == row.get(k) for k in ("repo", "commit", "pcb_path", "archive_sha256")):
             cached.update({k: row[k] for k in ("license", "license_evidence", "license_tier", "dataset", "sch_path")})
             return cached
         shutil.rmtree(Path(workdir) / "cache" / row["id"], ignore_errors=True)
