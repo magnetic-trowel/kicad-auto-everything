@@ -4,6 +4,7 @@
 import functools
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from importlib import resources
@@ -26,31 +27,56 @@ def _first_existing(cands):
     return None
 
 
+def _env_cmd(name):
+    """An environment variable holding a command, possibly with a wrapper prefix."""
+    v = os.environ.get(name)
+    return shlex.split(v) if v else None
+
+
 @functools.lru_cache(maxsize=None)
 def kicad_cli():
-    path = os.environ.get("KAE_KICAD_CLI") or shutil.which("kicad-cli") or _first_existing([
+    """Command prefix for kicad-cli.
+
+    KAE_KICAD_CLI overrides it (may include a wrapper, e.g. "flatpak run
+    --command=kicad-cli org.kicad.KiCad"); KAE_KICAD_WRAP prefixes the default name
+    (e.g. "apptainer exec ~/kicad.sif" for KiCad in a container, no root needed).
+    """
+    cmd = _env_cmd("KAE_KICAD_CLI")
+    if cmd:
+        return cmd
+    wrap = _env_cmd("KAE_KICAD_WRAP")
+    if wrap:
+        return [*wrap, "kicad-cli"]
+    path = shutil.which("kicad-cli") or _first_existing([
         "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
         r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
     ])
     if not path:
-        raise ToolError("kicad-cli not found; install KiCad 10 or set KAE_KICAD_CLI")
-    return path
+        raise ToolError("kicad-cli not found; install KiCad 10, or set KAE_KICAD_CLI / KAE_KICAD_WRAP")
+    return [path]
 
 
 @functools.lru_cache(maxsize=None)
 def kicad_python():
-    """An interpreter that can `import pcbnew`."""
-    cands = [os.environ.get("KAE_KICAD_PYTHON"), "/usr/bin/python3", "/usr/bin/python3.12",
-             "/usr/bin/python3.11",
-             "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3",
-             r"C:\Program Files\KiCad\10.0\bin\python.exe"]
+    """Command prefix for a Python that can `import pcbnew` (KAE_KICAD_PYTHON / KAE_KICAD_WRAP)."""
+    cmd = _env_cmd("KAE_KICAD_PYTHON")
+    wrap = _env_cmd("KAE_KICAD_WRAP")
+    if cmd:
+        cands = [cmd]
+    elif wrap:
+        cands = [[*wrap, "python3"]]
+    else:
+        cands = [[c] for c in ("/usr/bin/python3", "/usr/bin/python3.12", "/usr/bin/python3.11",
+                               "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3",
+                               r"C:\Program Files\KiCad\10.0\bin\python.exe") if Path(c).exists()]
     for c in cands:
-        if not c or not Path(c).exists():
+        try:
+            r = subprocess.run([*c, "-c", "import pcbnew"], capture_output=True, timeout=300)
+        except OSError:
             continue
-        r = subprocess.run([c, "-c", "import pcbnew"], capture_output=True, timeout=120)
         if r.returncode == 0:
             return c
-    raise ToolError("no Python with pcbnew found; set KAE_KICAD_PYTHON to KiCad's interpreter")
+    raise ToolError("no Python with pcbnew found; set KAE_KICAD_PYTHON or KAE_KICAD_WRAP")
 
 
 @functools.lru_cache(maxsize=None)
@@ -77,7 +103,7 @@ def ops_script():
 
 def run_ops(op, *args, timeout=600):
     """Run a pcbnew operation in KiCad's Python; return its JSON result."""
-    cmd = [kicad_python(), ops_script(), op, *map(str, args)]
+    cmd = [*kicad_python(), ops_script(), op, *map(str, args)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -98,8 +124,9 @@ def run_drc(board, out_json, timeout=None):
     """
     timeout = timeout or float(os.environ.get("KAE_DRC_TIMEOUT", 900))
     board = Path(board)
-    cmd = [kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
-           "--units", "mm", "-o", str(out_json), board.name]
+    # absolute paths, so wrapped (containerised) kicad-cli does not depend on the cwd
+    cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
+           "--units", "mm", "-o", str(Path(out_json).resolve()), str(board.resolve())]
     try:
         r = subprocess.run(cmd, cwd=board.parent, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -130,12 +157,12 @@ def summarize_drc(report, ignore=ENV_DEPENDENT_CHECKS):
 def versions():
     out = {}
     try:
-        out["kicad_cli"] = subprocess.run([kicad_cli(), "version"], capture_output=True, text=True,
+        out["kicad_cli"] = subprocess.run([*kicad_cli(), "version"], capture_output=True, text=True,
                                           timeout=60).stdout.strip()
     except (ToolError, OSError) as e:
         out["kicad_cli"] = f"unavailable: {e}"
     try:
-        out["kicad_python"] = kicad_python()
+        out["kicad_python"] = " ".join(kicad_python())
     except ToolError as e:
         out["kicad_python"] = f"unavailable: {e}"
     try:
