@@ -9,6 +9,22 @@
 
 ## Key facts
 
+**Numeric quick reference** ([interface_rule_packs.md § 8](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md), cross-checked with VR):
+
+| Item | Value | Source |
+|---|---|---|
+| HF input cap to IC | **<2 mm** (VCC cap also <2 mm, same layer, no via) | [MPS AN065](https://media.monolithicpower.com/document/PCB_Layout_Design_Guidelines_for_NB67xSeries.pdf) [P] |
+| Power vias | 10 mil drill / 20 mil pad; 1–2 per VIN/PGND pin (NB670/1), ≥3 (NB675); >20 between the input caps; ≥1 per A (TI) | MPS AN065; [TI SLYT614](https://www.ti.com/lit/an/slyt614/slyt614.pdf) [P] |
+| Bulk CIN | may sit ~2 cm from CBYPASS (0.1–0.47 µF) | [Rohm 60AN066E](https://fscdn.rohm.com/en/products/databook/applinote/ic/power/switching_regulator/converter_pcb_layout_appli-e.pdf) [P] |
+| CIN vs COUT ground | Rohm: **1–2 cm apart**. TI/MPS: short common return. **CONTESTED** | Rohm, [TI SNVA803](https://www.ti.com/lit/pdf/snva803), MPS [P] |
+| Power trace width | **>1 mm/A (1 oz)**, >0.7 mm/A (2 oz); 2 A → 0.53 mm for a 20 °C rise | Rohm [P] |
+| Thermal vias | **0.3 mm ID at ~1.2 mm pitch** (TI/Renesas: 0.3 mm at 1.0–1.2 mm) | Rohm [P]; [../thermal.md](../thermal.md) |
+| SW trace width | ≤100 mil (2.54 mm) | [TI LM10504](https://ti.com/document-viewer/LM10504/datasheet/layout) [P] |
+| Loop anchors | SNVA803: ~20 mm² lateral >1 nH; 2 mm² vertical <0.5 nH, ~4 V less overshoot. EPC: 0.4→2.9 nH costs >4% efficiency; overshoot 100% of V_in at 1.6 nH vs 30% at 0.4 nH. AN-139: 187 nH single-layer → 13 nH with a plane 0.12 mm below; next-layer plane >3× better than a 1.5 mm 2-layer board | [SNVA803](https://www.ti.com/lit/pdf/snva803); [EPC WP010](https://epc-co.com/epc/Portals/0/epc/documents/papers/Optimizing%20PCB%20Layout%20with%20eGaN%20FETs.pdf); [AN-139](https://theengineer.markallengroup.com/production/content/uploads/2015/01/an139f.pdf) [P]. Detail: [hot-loops.md](hot-loops.md) |
+| Overshoot | 5 A/ns × 2 nH = 10 V | [TI SLYT682](https://www.ti.com/lit/pdf/slyt682) [P] |
+| L1–L2 dielectric | ≤0.127 mm (5 mil) | SLYT682 [P] |
+| Loop tiers | ≤2 mm² excellent, ≤10 mm² acceptable, >20 mm² fail | [I], anchored on SNVA803 |
+
 **Order and CIN.**
 - **SLYT614** ([PDF](https://www.ti.com/lit/an/slyt614/slyt614.pdf)) [P], VERIFIED:
   - CIN is "the first component placed in the layout after the IC. Route the capacitor to the IC immediately"; "as close to the IC as allowed by manufacturing rules"; "no vias".
