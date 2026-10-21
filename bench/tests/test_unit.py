@@ -1,17 +1,20 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests that need no KiCad installation."""
+import hashlib
+import io
 import json
 import lzma
 import os
 import struct
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
 
-from kaebench import boardfiles, manifest, report, score, tools
+from kaebench import boardfiles, fetch, manifest, report, score, tools
 
 SHA = "0" * 40
 
@@ -63,6 +66,28 @@ def test_top_level_block_ignores_nested_and_strings():
     text = '(kicad_pcb (version 1) (footprint "x" (setup "(setup fake)")) (setup (a 1) (b "c)")) (net 0 ""))'
     assert boardfiles.top_level_block(text, "setup") == '(setup (a 1) (b "c)"))'
     assert boardfiles.top_level_block(text, "missing") is None
+
+
+def test_fix_unloadable():
+    text = '(pad 1 smd (net 34 313)) (pad 2 smd (net 1 GND)) (gr_line (layer "Rescue")) (fp_line (layer "UNDEFINED"))'
+    assert boardfiles.fix_unloadable(text) == ('(pad 1 smd (net 34 "313")) (pad 2 smd (net 1 GND)) '
+                                               '(gr_line (layer "Cmts.User")) (fp_line (layer "Cmts.User"))')
+
+
+def test_zip_fetch_reads_tar_gz(tmp_path, monkeypatch):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        for name, data in (("d/PCB/b.PcbDoc", b"board"), ("d/other.txt", b"x")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            t.addfile(info, io.BytesIO(data))
+    blob = buf.getvalue()
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: Path(dest).write_bytes(blob) or True)
+    e = entry(commit=None, repo="https://example.com/d.tar.gz", pcb_path="d/PCB/b.PcbDoc",
+              archive_sha256=hashlib.sha256(blob).hexdigest())
+    got = fetch._zip_fetch(e, {"kicad_pcb": e["pcb_path"]}, tmp_path)
+    assert got["kicad_pcb"].read_bytes() == b"board"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["b.PcbDoc"]
 
 
 def test_art_zones_to_polys():

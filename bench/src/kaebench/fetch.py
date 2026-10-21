@@ -5,6 +5,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import urllib.error
 import urllib.parse
@@ -61,7 +62,8 @@ def _git_fetch(repo, commit, paths, dest_dir):
 def _zip_fetch(entry, paths, dest_dir):
     """Download a design-file archive, check archive_sha256, extract the board and project files.
 
-    A download that is not a zip is taken to be the board file itself (e.g. a single Zenodo file).
+    Zip and tar (optionally compressed) archives are supported. A download that is neither
+    is taken to be the board file itself (e.g. a single Zenodo file).
     """
     archive = dest_dir / "archive.zip"
     if not _download(entry["repo"], archive):
@@ -71,6 +73,17 @@ def _zip_fetch(entry, paths, dest_dir):
         raise ValueError(f"{entry['id']}: archive sha256 mismatch "
                          f"(manifest {entry['archive_sha256'][:12]}, fetched {digest[:12]})")
     got = {}
+    if not zipfile.is_zipfile(archive) and tarfile.is_tarfile(archive):
+        with tarfile.open(archive) as t:
+            for m in t:
+                key = next((k for k, p in paths.items() if p == m.name), None)
+                if key and m.isfile():
+                    out = dest_dir / Path(m.name).name
+                    with t.extractfile(m) as f, open(out, "wb") as o:
+                        shutil.copyfileobj(f, o)
+                    got[key] = out
+        archive.unlink()
+        return got
     if not zipfile.is_zipfile(archive):
         out = dest_dir / Path(entry["pcb_path"]).name
         archive.rename(out)
@@ -107,11 +120,8 @@ def _import_board(src, fmt, dest_dir, timeout=1800):
         raise tools.ToolError(f"pcb import timed out after {timeout}s")
     if r.returncode or not out.exists():
         raise tools.ToolError(f"pcb import ({fmt}) failed (rc={r.returncode}): {(r.stdout + r.stderr)[-400:]}")
-    # Eagle layers with no KiCad mapping (e.g. tDocu-style graphics) come out as layer
-    # "UNDEFINED", which pcbnew refuses to load; they are documentation only.
     text = out.read_text(errors="replace")
-    fixed = text.replace('(layer "UNDEFINED")', '(layer "Cmts.User")')
-    fixed, _ = boardfiles.art_zones_to_polys(fixed)
+    fixed, _ = boardfiles.art_zones_to_polys(boardfiles.fix_unloadable(text))
     if fixed != text:
         out.write_text(fixed)
     return out
@@ -148,6 +158,11 @@ def fetch(entry, cache_dir, force=False):
     if fmt:
         got["source_pcb"] = got["kicad_pcb"]
         got["kicad_pcb"] = _import_board(got["source_pcb"], fmt, dest)
+    else:
+        text = got["kicad_pcb"].read_text(errors="replace")
+        fixed = boardfiles.fix_unloadable(text)
+        if fixed != text:
+            got["kicad_pcb"].write_text(fixed)
     meta = {k: str(v) for k, v in got.items()}
     meta.update(id=entry["id"], pcb_sha256=digest, repo=entry["repo"], commit=entry.get("commit"))
     meta_path.write_text(json.dumps(meta, indent=1))

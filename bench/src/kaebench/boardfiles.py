@@ -86,6 +86,23 @@ def block_end(text, start):
     return None
 
 
+_BARE_NET = re.compile(r'\(net (\d+) (\d+)\)')
+
+
+def fix_unloadable(text):
+    """Rewrite the few constructs that make KiCad 10 refuse to load an otherwise valid board.
+
+    - Items on layer "UNDEFINED" (Eagle layers with no KiCad mapping, e.g. tDocu graphics)
+      or "Rescue" (KiCad's own holding layer for unmappable items) move to Cmts.User;
+      they are documentation only.
+    - KiCad 4/5 files write purely numeric net names unquoted, `(net 34 313)`, which the
+      KiCad 10 parser rejects; quoting them changes nothing else.
+    """
+    for bad in ("UNDEFINED", "Rescue"):
+        text = text.replace(f'(layer "{bad}")', '(layer "Cmts.User")')
+    return _BARE_NET.sub(r'(net \1 "\2")', text)
+
+
 _ZONE_LAYER = re.compile(r'\(layer "([^"]+)"\)')
 _ZONE_UUID = re.compile(r'\(uuid "([^"]+)"\)')
 
