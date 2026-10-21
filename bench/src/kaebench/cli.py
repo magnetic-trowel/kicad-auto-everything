@@ -90,12 +90,20 @@ def cmd_prepare(a):
     return _parallel(_entries(a), one, a.jobs, "prepare")
 
 
+ROW_FIELDS = ("repo", "commit", "pcb_path", "license", "license_tier", "tags")
+
+
 def _local_boards(root, pattern, only):
-    """Board folders under root (e.g. PCBWorld's exacad_sorted): one board per subfolder."""
+    """Board folders under root (e.g. PCBWorld's exacad_sorted): one board per subfolder.
+
+    A folder's row.json (the local corpus writes one per board) supplies the manifest
+    fields: repo, commit, licence, licence tier and tags.
+    """
     root = Path(root)
     items = []
-    for d in sorted(p for p in root.iterdir() if p.is_dir()):
-        if only and d.name not in only:
+    dirs = [root / name for name in sorted(set(only))] if only else sorted(root.iterdir())
+    for d in dirs:
+        if not d.is_dir():
             continue
         pcbs = sorted(d.glob(pattern))
         if not pcbs:
@@ -111,6 +119,10 @@ def _local_boards(root, pattern, only):
             fetched["kicad_dru"] = str(dru)
         entry = dict(id=d.name, repo=f"local:{root}", commit=None, pcb_path=str(pcb.relative_to(root)),
                      license="unknown (local)", license_tier=None, tags=[])
+        row = d / "row.json"
+        if row.exists():
+            meta = json.loads(row.read_text())
+            entry.update({k: meta[k] for k in ROW_FIELDS if meta.get(k) is not None})
         items.append((entry, fetched))
     missing = sorted(set(only or []) - {e["id"] for e, _ in items})
     if missing:
