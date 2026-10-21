@@ -2,21 +2,25 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """corpus.py OUT_DIR NAME=ROWS.jsonl[@WORKDIR] ... [-j N] [--fetch-missing] [--drc]
+             [--no-fetch-tag TAG] [--prune]
 
 Build a local board corpus: one folder per board in the bench's board.* layout,
 plus OUT_DIR/manifest.jsonl. Rows come from enrich results or bench manifests; each
 NAME becomes the row's `collection`. Later arguments win for the same id, so list the
 benchmark manifest last to keep its rows. Boards are copied from WORKDIR/cache/<id>
 (as left by enrich.py or `kaebench fetch`); with --fetch-missing, boards not in the
-cache are fetched into WORKDIR/cache first. With --drc, boards without a DRC report get one (KiCad DRC as saved, under
-the board's own rules, the same command enrich.py runs). Boards are never committed (licences).
+cache are fetched into WORKDIR/cache first, except rows carrying a --no-fetch-tag tag
+(e.g. host-robots-restricted), which are included only when already cached. With --drc,
+boards without a DRC report get one (KiCad DRC as saved, under the board's own rules, the
+same command enrich.py runs). --prune deletes folders whose id is no longer in the inputs.
+Boards are never committed (licences).
 
-    python corpus.py ~/kae-boards \\
-      sourcing-batch1=results/wobbly-tibia.jsonl@$HOME/kae-sourcing-work \\
-      sourcing-batch2=results/wobbly-tibia-2.jsonl@$HOME/kae-sourcing-work \\
-      sourcing-fabacademy=results/wobbly-tibia-2-fabmirror.jsonl@$HOME/kae-sourcing-work \\
-      candidates=../../../bench/manifests/candidates.jsonl@$HOME/kicad-auto-everything/kae-work
+    python corpus.py ~/kae-boards --fetch-missing --drc --no-fetch-tag host-robots-restricted \\
+      wide=../../../bench/manifests/wide.jsonl@$HOME/kae-boards-work \\
+      wide-noncommercial=../../../bench/manifests/wide-noncommercial.jsonl@$HOME/kae-boards-work \\
+      candidates=../../../bench/manifests/candidates.jsonl@$HOME/kae-boards-work
 """
+import argparse
 import collections
 import concurrent.futures as cf
 import json
@@ -75,13 +79,19 @@ def copy_board(bid, name, row, work, boards, fetch_missing, run_drc):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("-")]
-    jobs = int(sys.argv[sys.argv.index("-j") + 1]) if "-j" in sys.argv else 16
-    if "-j" in sys.argv:
-        args.remove(sys.argv[sys.argv.index("-j") + 1])
-    out, specs = Path(args[0]).expanduser(), args[1:]
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[1], formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("out")
+    ap.add_argument("specs", nargs="+", metavar="NAME=ROWS.jsonl[@WORKDIR]")
+    ap.add_argument("-j", type=int, default=16)
+    ap.add_argument("--fetch-missing", action="store_true")
+    ap.add_argument("--drc", action="store_true")
+    ap.add_argument("--no-fetch-tag", action="append", default=[], metavar="TAG",
+                    help="never fetch rows with this tag; they are included only if already cached")
+    ap.add_argument("--prune", action="store_true", help="delete board folders not in the inputs")
+    a = ap.parse_args()
+    out = Path(a.out).expanduser()
     rows = {}
-    for spec in specs:
+    for spec in a.specs:
         name, rest = spec.split("=", 1)
         path, work = rest.split("@", 1) if "@" in rest else (rest, ".")
         for line in open(path):
@@ -91,10 +101,22 @@ def main():
                 rows[r["id"]] = (name, r, Path(work).expanduser(), prev[0] if prev else None)
     boards = out / "boards"
     boards.mkdir(parents=True, exist_ok=True)
-    flags = ("--fetch-missing" in sys.argv, "--drc" in sys.argv)
-    with cf.ThreadPoolExecutor(jobs) as ex:
-        res = list(ex.map(lambda kv: copy_board(kv[0], *kv[1][:3], boards, *flags), sorted(rows.items())))
+    no_fetch = set(a.no_fetch_tag)
+
+    def one(kv):
+        bid, (name, row, work, _) = kv
+        fetch_ok = a.fetch_missing and not no_fetch & set(row.get("tags") or [])
+        return copy_board(bid, name, row, work, boards, fetch_ok, a.drc)
+
+    with cf.ThreadPoolExecutor(a.j) as ex:
+        res = list(ex.map(one, sorted(rows.items())))
     ok = [r for _, r in res if isinstance(r, dict)]
+    if a.prune:
+        keep = {r["id"] for r in ok}
+        stale = [d for d in boards.iterdir() if d.name not in keep]
+        for d in stale:
+            shutil.rmtree(d)
+        print(f"pruned {len(stale)} folders not in the inputs")
     for r in ok:
         if rows[r["id"]][3] and rows[r["id"]][3] != r["collection"]:
             r["also_in"] = rows[r["id"]][3]

@@ -13,7 +13,7 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 
 ## Local board corpus
 
-~13.7k accepted boards live in one local folder (default `~/kae-boards`; the host's
+~14k accepted boards live in one local folder (default `~/kae-boards`; the host's
 `CLAUDE.local.md` says where), one `boards/<id>/board.kicad_pcb` each plus `manifest.jsonl`.
 It is never committed. Build it with `bench/scripts/build-corpus.sh` after `setup.sh`.
 Treat it as read-only and copy boards out before editing. Read

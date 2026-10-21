@@ -27,8 +27,9 @@ de-duplicated id list; `todo.txt` the ids still to enrich when this was committe
 
 ## Building the local corpus
 
-`corpus.py` turns the results files above plus `bench/manifests/candidates.jsonl` into one
-local folder of boards (`bench/scripts/build-corpus.sh` runs it with the committed inputs). See
+`corpus.py` turns the reviewed manifests (`bench/manifests/wide*.jsonl`, built by `merge.py`
+from the results files above) plus `candidates.jsonl` into one local folder of boards
+(`bench/scripts/build-corpus.sh` runs it with the committed inputs). See
 [docs/topics/data/local-board-corpus.md](../../../docs/topics/data/local-board-corpus.md).
 
 ## Running enrich on a big host

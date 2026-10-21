@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Build the local board corpus (~13.7k boards, ~26 GB) from the committed manifests:
+# Build the local board corpus (~13.8k boards, ~26 GB) from the reviewed manifests:
 # fetches every board at its pinned commit or hash, converts and load-fixes it with the
 # pinned KiCad image, runs DRC, and writes OUT_DIR/boards/<id>/ + OUT_DIR/manifest.jsonl.
 # Resumable: rerun the same command. See docs/topics/data/local-board-corpus.md.
@@ -23,8 +23,10 @@ source "$ROOT/bench/.venv/bin/activate"
 kaebench doctor >/dev/null || { echo "kaebench doctor failed: KiCad 10 is not available" >&2; exit 1; }
 ulimit -v 40000000  # 40 GB per process: a runaway DRC must not take the host down
 BS="$ROOT/tools/research/board-sourcing"
-python "$BS/corpus.py" "$OUT" -j "$J" --fetch-missing --drc \
-  "sourcing-batch1=$BS/results/wobbly-tibia.jsonl@$WORK" \
-  "sourcing-batch2=$BS/results/wobbly-tibia-2.jsonl@$WORK" \
-  "sourcing-fabacademy=$BS/results/wobbly-tibia-2-fabmirror.jsonl@$WORK" \
-  "candidates=$ROOT/bench/manifests/candidates.jsonl@$WORK"
+M="$ROOT/bench/manifests"
+# host-robots-restricted rows (hosts whose robots.txt disallows raw/git paths) are never fetched;
+# they are included only if WORKDIR/cache already holds them.
+python "$BS/corpus.py" "$OUT" -j "$J" --fetch-missing --drc --prune --no-fetch-tag host-robots-restricted \
+  "wide=$M/wide.jsonl@$WORK" \
+  "wide-noncommercial=$M/wide-noncommercial.jsonl@$WORK" \
+  "candidates=$M/candidates.jsonl@$WORK"

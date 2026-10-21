@@ -1,7 +1,7 @@
 # Local board corpus (`kae-boards`)
 
 **TL;DR**
-- **One folder holds every accepted board:** ~13,749 open-hardware PCBs. Each board is in `boards/<id>/` as `board.kicad_pcb`, plus its own `.kicad_pro`/`.kicad_dru`, a KiCad 10.0.7 DRC report and its manifest row. `manifest.jsonl` sits at the top.
+- **One folder holds every accepted board:** ~14,600 open-hardware PCBs (13,837 in a fresh build; see [Hosts and robots.txt](#hosts-and-robotstxt)). Each board is in `boards/<id>/` as `board.kicad_pcb`, plus its own `.kicad_pro`/`.kicad_dru`, a KiCad 10.0.7 DRC report and its manifest row. `manifest.jsonl` sits at the top.
 - **It is built locally and never committed** (third-party licences). Git holds only the manifests that pin each board by commit or sha256. To build it, run `bench/scripts/setup.sh --no-freerouting`, then `bench/scripts/build-corpus.sh`.
 - **The default location is `~/kae-boards`.** A host that keeps it elsewhere says so in its git-ignored `CLAUDE.local.md`.
 - **Treat the folder as read-only.** Copy a board to a scratch dir before changing it, and filter on `license_tier` before anything leaves the machine.
@@ -13,27 +13,48 @@
 |---|---|---|
 | Install KiCad 10.0.7 and the venv | `bench/scripts/setup.sh --no-freerouting` | Needs no sudo: rootless Apptainer and the official KiCad image. `kaebench doctor` must pass. |
 | Build | `bench/scripts/build-corpus.sh [OUT_DIR] [WORKDIR]` | Defaults are `~/kae-boards` and `~/kae-boards-work`. Set `J=8` for parallel jobs. The build is resumable: rerun the same command. |
-| Check | `wc -l ~/kae-boards/manifest.jsonl` | Expect 13,749 rows. |
+| Check | `wc -l ~/kae-boards/manifest.jsonl` | Expect 13,837 rows on a fresh host; more if the cache already held robots-restricted boards. |
 
-The build fetches each board at its pinned commit, or by sha256 for downloads. It then converts Eagle, Altium, Allegro and PADS boards with `kicad-cli pcb import`, applies the load fixes in [Fidelity](#fidelity-what-differs-from-upstream), and runs DRC. Expect several hours and about 26 GB for the corpus, plus a similar amount in `WORKDIR` (the fetch cache). That cache can be deleted afterwards.
+The build fetches each board at its pinned commit, or by sha256 for downloads. It then converts Eagle, Altium, Allegro and PADS boards with `kicad-cli pcb import`, applies the load fixes in [Fidelity](#fidelity-what-differs-from-upstream), and runs DRC. Expect several hours and about 28 GB for the corpus, plus a similar amount in `WORKDIR` (the fetch cache). That cache can be deleted afterwards.
 
 Host etiquette is built into the fetcher ([fetch.py](../../../bench/src/kaebench/fetch.py)):
 - it retries HTTP 429/5xx using Retry-After, holding off the whole host;
 - `J` stays modest;
+- rows tagged `host-robots-restricted` are never fetched (next section);
 - nothing is fetched from gitlab.fabcloud.org, whose robots.txt disallows raw files. Its Fab Academy boards come from fabacademy.org instead.
 
 Do not raise `J` against GitHub or GitLab to go faster.
 
-Inputs, all committed (later rows win for the same id):
+Inputs are the reviewed manifests, all committed. They carry the final licence decisions and the sha256 dedup ([wide-board-corpus](wide-board-corpus.md)); later rows win for the same id.
 
 | Collection | Rows | File |
 |---|---|---|
-| `sourcing-batch1` | 5,815 | [results/wobbly-tibia.jsonl](../../../tools/research/board-sourcing/results/wobbly-tibia.jsonl) |
-| `sourcing-batch2` | 7,621 | [results/wobbly-tibia-2.jsonl](../../../tools/research/board-sourcing/results/wobbly-tibia-2.jsonl) |
-| `sourcing-fabacademy` | 16 | [results/wobbly-tibia-2-fabmirror.jsonl](../../../tools/research/board-sourcing/results/wobbly-tibia-2-fabmirror.jsonl) |
+| `wide` | 13,475 | [bench/manifests/wide.jsonl](../../../bench/manifests/wide.jsonl) |
+| `wide-noncommercial` | 843 | [bench/manifests/wide-noncommercial.jsonl](../../../bench/manifests/wide-noncommercial.jsonl) |
 | `candidates` | 297 | [bench/manifests/candidates.jsonl](../../../bench/manifests/candidates.jsonl), the benchmark set |
 
-The builder is [corpus.py](../../../tools/research/board-sourcing/corpus.py). To add a new collection, pass `name=rows.jsonl@workdir`. Rows can be enrich results or any kaebench manifest.
+The builder is [corpus.py](../../../tools/research/board-sourcing/corpus.py):
+- To add a collection, pass `name=rows.jsonl@workdir`. Rows can be any kaebench manifest or enrich results.
+- `--prune` removes folders that are no longer in the inputs.
+
+### Hosts and robots.txt
+
+778 `wide` rows are tagged `host-robots-restricted`: their host's robots.txt disallows raw-file or git paths. Top hosts:
+
+| Host | Rows |
+|---|---|
+| gitlab.com | 391 |
+| codeberg.org | 258 |
+| hub.allspice.io | 33 |
+| gitlab.cba.mit.edu | 24 |
+| openbeagle.org | 19 |
+| source.mnt.re | 17 |
+| gitlab.cern.ch | 16 |
+
+Policy:
+- `build-corpus.sh` passes `--no-fetch-tag host-robots-restricted`, so those boards are included only when the work dir's cache already holds them.
+- A fresh build therefore has about 13,837 boards. The original sourcing host fetched 760 of them before the tag existed and keeps them, for 14,597.
+- `raw.githubusercontent.com` has no robots.txt, so GitHub rows are fetched normally.
 
 ## Layout
 
@@ -83,10 +104,12 @@ The `board.*` names match the harness's own layout. So `kaebench.boardfiles.copy
 
 | Tier | Boards | Use |
 |---|---|---|
-| permissive | 5,004 | anything, with attribution |
-| weak-copyleft | 225 | anything, with attribution; keep modifications to the files under the same licence |
-| copyleft, reciprocal-hardware | 7,687 | anything internal; derived boards or data products inherit the licence |
-| noncommercial | 833 | private, non-commercial evaluation only; never feeds a redistributed product |
+| permissive | 5,557 | anything, with attribution |
+| weak-copyleft | 244 | anything, with attribution; keep modifications to the files under the same licence |
+| copyleft, reciprocal-hardware | 7,953 | anything internal; derived boards or data products inherit the licence |
+| noncommercial | 843 | private, non-commercial evaluation only; never feeds a redistributed product |
+
+Counts are for the sourcing host's 14,597 boards.
 
 Rules: [licensing-tiers-and-contamination](licensing-tiers-and-contamination.md). Never commit board files or post them elsewhere. Commit IDs and summaries.
 
@@ -108,9 +131,10 @@ Reproducibility:
 - **Converted boards** get new random UUIDs on every import. A few overlap violations can then switch between `clearance` and `shorting_items`, or appear twice. Stats and unconnected counts are unchanged.
 
 Caveats:
-- 203 boards report 16 layers. Most are Eagle conversions that declare all 16 Eagle copper layers; count tracks per layer before trusting `layers`.
-- 14 boards were sourced from both GitHub and a Codeberg mirror. One row was kept for each.
+- 202 boards report 16 layers. Most are Eagle conversions that declare all 16 Eagle copper layers; count tracks per layer before trusting `layers`.
+- Mirror and `.git`-URL duplicates are removed by sha256 in the wide manifests ([wide-duplicates.jsonl](../../../bench/manifests/wide-duplicates.jsonl)).
 - Near-duplicates were removed before enrichment (Jaccard ≥ 0.75 on footprints, values and nets). Converted boards were compared by exact hash only.
+- Corpus counts on the sourcing host: 11,630 2-layer, 2,286 4-layer, 479 with 6 or more; 11,619 routed; 2,553 `drc-clean`; 2,937 converted.
 - Rejected boards and the reasons for each are in `tools/research/board-sourcing/found/*.rejected.jsonl`: unconvertible formats, corrupt upstream files, DRC that never finishes, and boards with no permitted source.
 
 ## Sources
