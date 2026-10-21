@@ -1,0 +1,74 @@
+{"repo": "https://github.com/softerhardware/Hermes-Lite2", "reason": "no licence file or licence statement in repo (README/sch title blocks checked)"}
+{"repo": "https://github.com/F6ITU/OCXO", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/F6ITU/Alexi2C", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/F6ITU/Mentor", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/F6ITU/Themis", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/f5bmi/Telemaque", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/mfkiwl/KiwiSDR_PCB", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/papamidas/ATU_0_HW", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/teodor961/Simple_SDR", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/arsenal007/STM32-SDR_PCB", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/vpcsln/spartacus_PCB_REV1", "reason": "no top-level licence; only bundled library licences"}
+{"repo": "https://github.com/hspil/polsk", "reason": "MIT but kicad_pcb is empty (no footprints)"}
+{"repo": "https://github.com/rwjblue/rigtether", "reason": "CERN-OHL-S but no board files at HEAD"}
+{"repo": "https://github.com/kholia/Easy-Transceiver", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/G8GYW-QRP-RF-Meter", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/Simple-TR-Switch", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/Easy-Beacons-STEM", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/Multi-WSPR", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/PolarModulationSSB", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/Easy-Field-Strength-Meter", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/kholia/Adjustable-Load-v1.1", "reason": "no licence (kholia's other repos are NC)"}
+{"repo": "https://github.com/Kampi/IoT-Gateway", "reason": "LICENSE files contain '404: Not Found'; only README GPL badge -> unclear"}
+{"repo": "https://github.com/aresta/MiniSolarMesh", "reason": "no licence"}
+{"repo": "https://github.com/brainstorm/pinha_lora_gateway", "reason": "no licence"}
+{"repo": "https://github.com/galopago/iot-badge-legacy", "reason": "no licence"}
+{"repo": "https://github.com/mlab-modules/CLKGEN02", "reason": "no licence file in repo"}
+{"repo": "https://github.com/HearnChristian/k-band-fmcw-radar", "reason": "no licence"}
+{"repo": "https://github.com/zoonman/ssb85", "reason": "no licence"}
+{"repo": "https://github.com/afiskon/hbr-3b", "reason": "MIT but kicad_pcb is empty stub"}
+{"repo": "https://github.com/emsec/ChameleonMini", "reason": "custom attribution licence 'All rights reserved' + mandatory visible attribution; Eagle"}
+{"repo": "https://github.com/BrendonHills/Parker1-Transmitter-Transceiver", "reason": "no licence"}
+{"repo": "https://github.com/NT7S/Yamhill", "reason": "no licence"}
+{"repo": "https://github.com/trackuino/trackuino", "reason": "GPLv2 but no board files in repo"}
+{"repo": "https://github.com/lightaprs/LightAPRS-1.0", "reason": "GPL-3 but no board files"}
+{"repo": "https://github.com/AndrewBCN/STM32-GPSDO", "reason": "GPL-3 but no PCB files"}
+{"repo": "https://github.com/afiskon/hbr-8b", "reason": "MIT but kicad_pcb is empty stub (LFS?)"}
+{"repo": "https://github.com/rotron/hbr-mk2", "reason": "copy of afiskon/hbr-mk2; used original"}
+{"repo": "https://github.com/barisdinc/SimpleButUsefulGPSDO", "reason": "CC0 but kicad_pcb is a Git LFS pointer"}
+{"repo": "https://github.com/gibbi/PicoGPSDO", "reason": "no licence"}
+{"repo": "https://github.com/W3AXL/Simple-GPSDO", "reason": "no licence"}
+{"repo": "https://github.com/pa3gsb/Radioberry-2.x", "reason": "no licence for hardware"}
+{"repo": "https://github.com/cariboulabs/cariboulite", "reason": "CC-BY-SA-4.0 but only gerbers (Altium sources not published)"}
+{"repo": "https://github.com/laurencebarker/Saturn", "reason": "no PCB sources; update_manager is CC-BY-NC"}
+{"repo": "https://github.com/jankae/Signalgenerator", "reason": "no licence (Eagle)"}
+{"repo": "https://github.com/jankae/SpectrumAnalyzer", "reason": "no licence (Eagle)"}
+{"repo": "https://github.com/jankae/LCR", "reason": "no licence (Eagle)"}
+{"repo": "https://github.com/buserror/rf_bridge", "reason": "no licence"}
+{"repo": "https://github.com/oi8509701-ui/radar-system", "reason": "no licence"}
+{"repo": "https://github.com/brainstorm/915Mhz", "reason": "no licence"}
+{"repo": "https://github.com/zsellera/openstint-transponder", "reason": "no licence"}
+{"repo": "https://github.com/motivemachine/APRS_Transciever", "reason": "no licence"}
+{"repo": "https://github.com/vlad-ivanov-name/mini-whip", "reason": "no licence"}
+{"repo": "https://github.com/Queens-Rocket-Engineering-Team/av-telemetry", "reason": "no licence"}
+{"repo": "https://github.com/uw-x/tinysdr", "reason": "NC-AGPL (now acceptable) but only a pcb zip + PDF schematic, no source board files"}
+{"repo": "https://github.com/kareiva/PCB-ict-xs-KiCad", "reason": "no licence"}
+{"repo": "https://github.com/danthepilotman/APRS_TRACKER_PCB", "reason": "no licence"}
+{"repo": "https://github.com/IgrikXD/WSPR-beacon", "reason": "GPL-3 but no board source files"}
+{"repo": "https://github.com/kholia/Easy-Digital-Beacons-v1", "reason": "custom NC licence also requires: \"All derivatives must be 100% free and fully-functional on GitHub by default.\" and \"All derivatives must be of similar quality or better.\" -> conflicts with private local modification for benchmarking"}
+{"repo": "https://github.com/kholia/pico-cw-beacon-drs", "reason": "custom NC licence also requires: \"All derivatives must be 100% free and fully-functional on GitHub by default.\" and \"All derivatives must be of similar quality or better.\" -> conflicts with private local modification for benchmarking"}
+{"repo": "https://github.com/kholia/HF-PA-v6", "reason": "custom NC licence also requires: \"All derivatives must be 100% free and fully-functional on GitHub by default.\" and \"All derivatives must be of similar quality or better.\" -> conflicts with private local modification for benchmarking"}
+{"repo": "https://github.com/kholia/Light-Intuitive-Digital-Interface", "reason": "custom NC licence also requires: \"All derivatives must be 100% free and fully-functional on GitHub by default.\" and \"All derivatives must be of similar quality or better.\" -> conflicts with private local modification for benchmarking"}
+{"repo": "https://gitea.osmocom.org/electronics/osmo-small-hardware", "reason": "README calls it OSHW but no licence stated (Eagle)"}
+{"repo": "https://gitea.osmocom.org/sim-card/simtrace", "reason": "no licence statement for hardware"}
+{"repo": "https://gitea.osmocom.org/sdr/osmo-sdr", "reason": "no board files"}
+{"repo": "https://gitlab.com/librespacefoundation/phasma/phasma-sband-ant-pcb", "reason": "kicad_pcb has no footprints"}
+{"repo": "https://github.com/WB2CBA/ADX", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/threeme3/usdx", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/WB2CBA/uSDX-mOnO", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/TekMaker/uSDX-QRP-Transceiver", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/WB2CBA/ADX-POCKET", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/WB2CBA/ADX-UnO-V1.4", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/chillmf/ADX-FT8-Pocket", "reason": "no licence or no board source files"}
+{"repo": "https://github.com/wj6c/uSDXn", "reason": "CERN-OHL-P but no board source files at HEAD"}
+{"repo": "https://github.com/kaefe64/Arduino_uSDX_Pico_FFT_Proj", "reason": "NC ok but no board files"}

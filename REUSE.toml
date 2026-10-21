@@ -12,7 +12,7 @@ SPDX-License-Identifier = "GPL-3.0-or-later"
 
 # Benchmark results and board manifests we generate are CDLA-Permissive-2.0.
 [[annotations]]
-path = ["tools/research/**/results/*.jsonl", "bench/manifests/*.jsonl"]
+path = ["tools/research/**/results/*.jsonl", "bench/manifests/*.jsonl", "tools/research/board-sourcing/found/*.jsonl", "tools/research/board-sourcing/*.txt"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
 SPDX-License-Identifier = "CDLA-Permissive-2.0"

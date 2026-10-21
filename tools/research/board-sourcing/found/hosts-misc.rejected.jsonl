@@ -1,0 +1,35 @@
+{"repo": "https://gitlab.com/ohwr/project/pandabox-hw", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/mrpc-25x18-24strip", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/pmtlib", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/armadillo", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/spec-ticks", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-sfp-4cha", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/atfc", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-adc-1g8b2cha", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/conv-ttl-nim-3i-30o", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/ertm15-llrf-wr", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-conn-tester", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-hv-sup", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/hicce-fmc-128", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/amc-ubackplane-sfp", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/tr-pmc", "reason": "no licence in repo, .ohwr.yaml or wiki (OHWR projects usually CERN-OHL but not stated); has PcbDoc/brd/kicad_pcb boards"}
+{"repo": "https://gitlab.com/ohwr/project/maroc_csa", "reason": ".ohwr.yaml licence W3C only (software licence), no hardware licence; Allegro boards"}
+{"repo": "https://huggingface.co/datasets/bshada/open-schematics", "reason": "auto-scraped GitHub KiCad/Altium projects under blanket CC-BY-4.0; upstream repos' own licences not tracked/verified (many unlicensed) - licence unclear per sample"}
+{"repo": "https://huggingface.co/datasets/Ohmatic/human-verified-schematics-v1", "reason": "1000 scraped KiCad/Eagle schematics under blanket CC-BY-4.0 with no per-sample upstream licence; schematics only"}
+{"repo": "https://huggingface.co/datasets/Si7li/ltspice-spice-circuits", "reason": "53k LTspice netlists scraped from GitHub under blanket MIT; upstream licences unverified; also IC/sim-level, no footprints"}
+{"repo": "https://huggingface.co/datasets/electron-rare/kicad9plus-sch-corpus", "reason": "deprecated by author (mixed incompatible licences under CC-BY-SA umbrella); use split datasets"}
+{"repo": "https://gitlab.com/HenrykRichter/a1200hddled", "reason": "CC BY-NC-ND 2.0 (ND rejected)"}
+{"repo": "https://gitlab.com/pawlakm/mp-aa01", "reason": "CC BY-NC-ND (ND rejected)"}
+{"repo": "https://gitlab.com/openventilator/openventilator", "reason": "custom 'Permissive License - Open Ventilator' (Medtronic PB560 COVID licence, time/scope limited) - not standard, unclear"}
+{"repo": "https://gitlab.com/pok3r-custom/vortex-keyboards", "reason": "reverse-engineered copies of commercial POK3R/Vortex keyboard PCBs"}
+{"repo": "https://gitlab.com/anatal/JP8-4-ALL", "reason": "Roland Jupiter-8 board recreations (likely copy of commercial design); MIT licence doubtful"}
+{"repo": "https://gitlab.com/scratje/a4000", "reason": "Commodore Amiga 4000 PCB replica (copy of commercial board)"}
+{"repo": "https://gitlab.com/amiga-projects/a4000-tk", "reason": "fork/replica of A4000 design, no licence stated"}
+{"repo": "https://gitlab.com/harrael/KaSe_PCB", "reason": "README: 'provided for personal, experimental, and educational use' - no actual licence grant"}
+{"repo": "https://codeberg.org/RevK/Tasmotizer-PCB", "reason": "README: 'you cannot sell boards' custom restriction and no licence file in repo"}
+{"repo": "https://codeberg.org/funnes/reform-split-keyboard", "reason": "fork of MNT Reform (already in existing list via source.mnt.re)"}
+{"repo": "https://codeberg.org/StarWitch/old-pcb-designs", "reason": "CC BY-NC 4.0 (accepted under new policy) but all 26 are binary/old Eagle .brd - not verified importable; not added"}
+{"repo": "https://gitlab.com/librespacefoundation/phasma/phasma-misc", "reason": "no root licence (only gs-power-monitor subdir AGPL); boards unlicensed"}
+{"repo": "https://gitlab.com/librespacefoundation/upsat/HeaterBoard", "reason": "no licence file (only third-party library licence)"}
+{"repo": "https://zenodo.org/records/20163936", "reason": "CC-BY-4.0 but Eagle .brd is old binary format (not XML), not importable"}
+{"repo": "https://gitlab.com/AVRunLocker/hw", "reason": "GPL-3.0 but Eagle .brd files are old binary format (not importable)"}

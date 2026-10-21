@@ -1,0 +1,64 @@
+{"repo":"https://github.com/sparkfun/SparkFun_Capacitive_Soil_Moisture_Sensor_CY8CMBR3102","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_DE9_Breakout","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Indoor_Air_Quality_Sensor-SCD41-SEN55","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_IoT_Node_LoRaWAN","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Portability_Shield","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Qwiic_DAC_MCP4725","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Qwiic_Fingerprint_Sensor_FPC2534","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Qwiic_OLED_1.5in","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Qwiic_Relay_Line","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Qwiic_WAV_Trigger_Pro","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Red_Vision_Camera_Board_HM01B0","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Red_Vision_Touch_Display_for_Pico","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Red_Vision_Touch_Display_for_RedBoard","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_Thing_Plus_ESP32-C5","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/Home_Air_Quality_Monitor","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/UBW32","reason":"no LICENSE file at pinned commit (README refers to missing LICENSE.md or nothing); licence unclear"}
+{"repo":"https://github.com/sparkfun/SparkFun_OpenScale_IoT","reason":"README says code is beerware; no explicit hardware licence file"}
+{"repo":"https://github.com/OLIMEX/OLINUXINO","reason":"licence OK (CC-BY-SA-3.0-US) but A20-LIME2/A20-MICRO/A33/A13/RT5350F .brd are binary pre-v6 Eagle (not importable by KiCad); KiCad and XML-Eagle boards from this repo were accepted"}
+{"repo":"https://github.com/thestumbler/supercon24-badge-kicad-redrawn","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/RetiaLLC/DefconBadge2026","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/dodgymike/dc26-monero-badge-pcb","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/s7a73farm/s7a73farm_Party_Badge_DC26","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/hamster/mk9-badge","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/NerdFlare/iFixit-SAO-2026","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/dczia/Defcon27-Badge","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/Cyber-Professionals-Enthusiast-Club/DC-34-Badge","reason":"no licence file covering hardware (none, or only library/software licence)"}
+{"repo":"https://github.com/mlab-modules/USBPDSINK01","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/mlab-modules/RP2040v01","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/mlab-modules/SIPM02","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/mlab-modules/USBHUB01","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/mattvenn/teensy-audio-fx","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/arturo182/bbq10kbd_breakout","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/jasiek/antenna-analyser","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/8BitMixtape/ESPTINY86_MixtapePCB","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/jasiek/ESP8266-PowerMonitor","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/8BitMixtape/mCore_Mixtape","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/kasbah/push-on-hold-off","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/ollyoid/TuneShroom","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/maltman23/ArduTouch","reason":"no licence file covering hardware at pinned commit"}
+{"repo":"https://github.com/sparkfun/SparkFun_Cellular_Function_Board_Blues_Wireless_Notecarrier","reason":"no LICENSE file at pinned commit"}
+{"repo":"https://github.com/sparkfun/SparkFun_RTK_Torch","reason":"no LICENSE file at pinned commit"}
+{"repo":"https://github.com/sparkfun/SparkFun_Thing_Plus_NINA-B306","reason":"no LICENSE file at pinned commit"}
+{"repo":"https://github.com/sparkfun/SparkFun_Thing_Plus_RP2350","reason":"no LICENSE file at pinned commit"}
+{"repo":"https://github.com/bitcraze/crazyflie2-exp-template-electronics","reason":"licence OK (CC-BY-3.0 in LICENSE.md) but it is only an expansion-deck template, not a real board; Crazyflie main hardware not published on GitHub / NC per brief"}
+{"repo":"https://github.com/ElectronicCats/CatWAN_Relay","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo":"https://github.com/ElectronicCats/CatWANShield","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo":"https://github.com/ElectronicCats/RS485_Modbus_FeatherWing","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo":"https://github.com/ElectronicCats/Vein-Finder","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo":"https://github.com/ElectronicCats/CatBellVR","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo":"https://github.com/ElectronicCats/Yavia_Carrier","reason":"no explicit hardware licence (only firmware licence / logo image in README)"}
+{"repo": "https://github.com/sparkfun/HX711-Load-Cell-Amplifier", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/OpenScale", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/Easy_Driver", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/PicoBoard", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/OpenPIR", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/Edison_H-Bridge_Block", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/MicroMod_Processor_Board-nRF52840", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Qwiic_6DoF_BMI270", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/Edison_Base_Block", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/ESP32_Power_Control_Shield", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/Qwiic_Air_Quality_Sensor_SGP40", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/P8X32A_Breakout", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Qwiic_Pocket_Dev_Board_ESP32_C6", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}
+{"repo": "https://github.com/sparkfun/Qwiic_Haptic_Driver_DA7280", "reason": "no hardware licence statement (no LICENSE file and README states no hardware licence)"}

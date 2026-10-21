@@ -1,0 +1,209 @@
+{"repo": "https://github.com/jonpe960/blixten", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/komar007/gh60", "reason": "no licence found"}
+{"repo": "https://github.com/jemtech/ILDA", "reason": "no licence found"}
+{"repo": "https://github.com/mlab-modules/DRV10987V01", "reason": "no licence file in repo (MLAB modules claim GPL on website only)"}
+{"repo": "https://gitlab.com/phodina/echo-debug-gen3", "reason": "no licence found"}
+{"repo": "https://github.com/rusefi/rusefi-hardware", "reason": "no root licence; only per-subdir licences in history folders"}
+{"repo": "https://github.com/ThunderFly-aerospace/TFSLOT01", "reason": "GPL-3.0 but no kicad_pcb in repo"}
+{"repo": "https://github.com/UniversalScientificTechnologies/LABDOS01", "reason": "GPL-3.0 but no board files in repo"}
+{"repo": "https://github.com/mooltipass/minible", "reason": "no board files in repo"}
+{"repo": "https://codeberg.org/Adroit/RCTronics-KiCAD", "reason": "no licence found"}
+{"repo": "https://codeberg.org/Daft-Freak/32blit-hardware-kicad", "reason": "no licence found"}
+{"repo": "https://codeberg.org/FPGAbot/HandAssemble_Pmod", "reason": "no licence found"}
+{"repo": "https://codeberg.org/Filka.io/floron-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/QSmally/Schematics-68000", "reason": "no licence found"}
+{"repo": "https://codeberg.org/RevK/KiCad-Parts", "reason": "no licence found"}
+{"repo": "https://codeberg.org/RevK/Tasmotizer-PCB", "reason": "no licence found"}
+{"repo": "https://codeberg.org/Sw3d15h-F1s4/interconnect_pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/TheBakedPotato/keyboard-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/Vaishnav-Sabari-Girish/My_PCB_stuff", "reason": "no licence found"}
+{"repo": "https://codeberg.org/WinterSys/DPU411TYPE2-Gameboy-Printer_Hardware_Pico-Software", "reason": "no licence found"}
+{"repo": "https://codeberg.org/allsnop/PCB-design-learning", "reason": "no licence found"}
+{"repo": "https://codeberg.org/anachrocomputer/DekaLED_PCB", "reason": "no licence found"}
+{"repo": "https://codeberg.org/annaaurora/hair-electrolysis-machine-hardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/barnslig/pcb-jlink-adapter", "reason": "no licence found"}
+{"repo": "https://codeberg.org/bcecoop/bce-pcb-a3901sejtr-t", "reason": "no licence found"}
+{"repo": "https://codeberg.org/bcecoop/bce-pcb-e22ra-fw280-n-0", "reason": "no licence found"}
+{"repo": "https://codeberg.org/bcecoop/bce-pcb-mcp23s17teml", "reason": "no licence found"}
+{"repo": "https://codeberg.org/bcecoop/bce-pcb-retina-mapper", "reason": "no licence found"}
+{"repo": "https://codeberg.org/bcecoop/bce-pcb-tpc5121s08-qf8r", "reason": "no licence found"}
+{"repo": "https://codeberg.org/blackmagic-debug/blackmagic-hardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/christopher-besch/watch_hardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/cincodenada/old_controllers-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/cryu/ISA_EGA_CHIPS", "reason": "no licence found"}
+{"repo": "https://codeberg.org/drone-project/esc_schematics", "reason": "no licence found"}
+{"repo": "https://codeberg.org/drone-project/flight_controller_schematics", "reason": "no licence found"}
+{"repo": "https://codeberg.org/eliaschr/T4_LED_Lamp_PCB", "reason": "no licence found"}
+{"repo": "https://codeberg.org/epsilon-lyrae/kicad-common", "reason": "no licence found"}
+{"repo": "https://codeberg.org/ermi/rj45-idc-adapter-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/ermi/rs485-controller-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/eyes-on-disabilities/hardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/fkfd/blobcat-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/flap/avr-dcf77-usb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/fridgehead/HexpansionHardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/gonzafernan/pool-cover-control", "reason": "no licence found"}
+{"repo": "https://codeberg.org/gugray/VoiceInTheShell", "reason": "no licence found"}
+{"repo": "https://codeberg.org/hkzlab/AppleII_SCSI_RevC_schematics", "reason": "no licence found"}
+{"repo": "https://codeberg.org/hqnicolas/RV1126B-hardware-design", "reason": "no licence found"}
+{"repo": "https://codeberg.org/icebreaker-fpga/icebreaker", "reason": "no licence found"}
+{"repo": "https://codeberg.org/j000bs/OBSPro-Display-PCB", "reason": "no licence found"}
+{"repo": "https://codeberg.org/jakobkg/j0xx", "reason": "no licence found"}
+{"repo": "https://codeberg.org/jiji-wp/KiCad", "reason": "no licence found"}
+{"repo": "https://codeberg.org/joelvonrotz/creditcard-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/keawade/keaboard", "reason": "no licence found"}
+{"repo": "https://codeberg.org/keesiemeijer/kicad-edge-cuts-validator", "reason": "no licence found"}
+{"repo": "https://codeberg.org/keesiemeijer/pcb-to-ergogen-converter", "reason": "no licence found"}
+{"repo": "https://codeberg.org/kuwoyuki/hp3478a_ext_pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/kyomawolf/fusion-rocket-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/livio/mPCI-E_routing_board", "reason": "no licence found"}
+{"repo": "https://codeberg.org/loreson/logic-gate-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/malcircuit/ps2_pcb_re", "reason": "no licence found"}
+{"repo": "https://codeberg.org/mdc/KiCAD-Projects", "reason": "no licence found"}
+{"repo": "https://codeberg.org/mitjajez/R2C2-KiCAD", "reason": "no licence found"}
+{"repo": "https://codeberg.org/mpkuti/kicad-tricks", "reason": "no licence found"}
+{"repo": "https://codeberg.org/noxet/2AM", "reason": "no licence found"}
+{"repo": "https://codeberg.org/noxet/LAMP", "reason": "no licence found"}
+{"repo": "https://codeberg.org/noxet/Moist-O-Matic", "reason": "no licence found"}
+{"repo": "https://codeberg.org/noxet/infinity-disco-lights", "reason": "no licence found"}
+{"repo": "https://codeberg.org/okhsunrog/esk8-wizard-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/orb-weaver/kicad-playground", "reason": "no licence found"}
+{"repo": "https://codeberg.org/paulcoomans/pcb_Amp_TDA2030", "reason": "no licence found"}
+{"repo": "https://codeberg.org/paulcoomans/pcb_PowerSupply_2x15V_60W", "reason": "no licence found"}
+{"repo": "https://codeberg.org/paulcoomans/pcb_PreAmpFullAnalog_RcaInputPcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/paulcoomans/pcb_PreAmpFullAnalog_ToneControl", "reason": "no licence found"}
+{"repo": "https://codeberg.org/randogoth/psithemius", "reason": "no licence found"}
+{"repo": "https://codeberg.org/revspace/decennium-kicad", "reason": "no licence found"}
+{"repo": "https://codeberg.org/richClubb/dactyl_hardware", "reason": "no licence found"}
+{"repo": "https://codeberg.org/rk0cc/RPi4_DS3231_CR2032_PCB", "reason": "no licence found"}
+{"repo": "https://codeberg.org/sahbi60/projet_kicad_lcd", "reason": "no licence found"}
+{"repo": "https://codeberg.org/saianonymous/KiCad-Lappy", "reason": "no licence found"}
+{"repo": "https://codeberg.org/segfault/atx-minus-5v", "reason": "no licence found"}
+{"repo": "https://codeberg.org/segfault/eurocard-computer-2025", "reason": "no licence found"}
+{"repo": "https://codeberg.org/segfault/ez80-computer", "reason": "no licence found"}
+{"repo": "https://codeberg.org/sillycodeonly/kicad-keyboards", "reason": "no licence found"}
+{"repo": "https://codeberg.org/subDIMENSION/rumble", "reason": "no licence found"}
+{"repo": "https://codeberg.org/tcoenen/wordclock", "reason": "no licence found"}
+{"repo": "https://codeberg.org/thrillman/soda-dream", "reason": "no licence found"}
+{"repo": "https://codeberg.org/thrillman/watering-controller", "reason": "no licence found"}
+{"repo": "https://codeberg.org/tmarsteel/bedtime-stories", "reason": "no licence found"}
+{"repo": "https://codeberg.org/ubuntourist/Tiny_Blinky", "reason": "no licence found"}
+{"repo": "https://codeberg.org/wanesty/keeb-x3", "reason": "no licence found"}
+{"repo": "https://codeberg.org/xiaolizhi/irrigato", "reason": "no licence found"}
+{"repo": "https://codeberg.org/xythobuz/osci-video-pcb", "reason": "no licence found"}
+{"repo": "https://codeberg.org/zhmu/hardware", "reason": "no licence found"}
+{"repo": "https://github.com/8BitMixtape/ESPTINY86_MixtapePCB", "reason": "no licence found"}
+{"repo": "https://github.com/8BitMixtape/mCore_Mixtape", "reason": "no licence found"}
+{"repo": "https://github.com/AntonioMR/ATMEGA328-Motor-Board", "reason": "no licence found"}
+{"repo": "https://github.com/AudioMorphology/Europi", "reason": "no licence found"}
+{"repo": "https://github.com/AudioMorphology/waft", "reason": "no licence found"}
+{"repo": "https://github.com/EvvL/Alchemy49", "reason": "no licence found"}
+{"repo": "https://github.com/GenericLab/GOSH-Board_UGM", "reason": "no licence found"}
+{"repo": "https://github.com/Irdroid/USB-Infrared-Transmitter-v3", "reason": "no licence found"}
+{"repo": "https://github.com/JKN0/DRX70", "reason": "no licence found"}
+{"repo": "https://github.com/KevinUsCh/Variables-AmbientalesDYCDE", "reason": "no licence found"}
+{"repo": "https://github.com/LouDnl/USBSID-Pico", "reason": "ND licence (NoDerivatives): NC in README.md: ### USBSID-Pico v1.5 PCB Hardware License ~ CC BY-NC-ND 4.0; NC in README.md: USBSID-Pico v1.5 PCB \u00a9 2026 by <a href=\"https://github.com/LouDnl\">LouD</a> is licensed under <a href=\"ht"}
+{"repo": "https://github.com/NebraLtd/LoRa-mPCIe", "reason": "no licence found"}
+{"repo": "https://github.com/NebraLtd/microSD-eMMC", "reason": "no licence found"}
+{"repo": "https://github.com/PiSupply/PiJuice-mPCIe", "reason": "no licence found"}
+{"repo": "https://github.com/PiSupply/Ryanteck", "reason": "only subdir licence RTK Motor Controller/Documentation/LICENSE (CC-BY-SA-4.0)"}
+{"repo": "https://github.com/SmartiLabIt/LoopMaxPro", "reason": "no licence found"}
+{"repo": "https://github.com/ademuri/open-motion-light", "reason": "no licence found"}
+{"repo": "https://github.com/arturo182/bbq10kbd_breakout", "reason": "no licence found"}
+{"repo": "https://github.com/atulravi/picuno", "reason": "only subdir licence RP2040/LICENSE.md (MIT)"}
+{"repo": "https://github.com/beagleboard/beaglebone-black", "reason": "no licence found"}
+{"repo": "https://github.com/bigtreetech/Tango", "reason": "no licence found"}
+{"repo": "https://github.com/bigtreetech/Tango-3D-Printer-Motherboard", "reason": "no licence found"}
+{"repo": "https://github.com/chirimen-oh/accessories", "reason": "only subdir licence others/neopixel_i2c_TH/LICENSE (CC-BY-SA-3.0)"}
+{"repo": "https://github.com/dusjagr/ESPTINY86_Stompbox", "reason": "no licence found"}
+{"repo": "https://github.com/google/makerspace-auth", "reason": "no licence found"}
+{"repo": "https://github.com/hutscape/oak", "reason": "no licence found"}
+{"repo": "https://github.com/jasiek/ESP8266-PowerMonitor", "reason": "no licence found"}
+{"repo": "https://github.com/jasiek/antenna-analyser", "reason": "no licence found"}
+{"repo": "https://github.com/jemtech/ILDA", "reason": "no licence found"}
+{"repo": "https://github.com/jharwinbarrozo/3-ch-diversity-system", "reason": "no licence found"}
+{"repo": "https://github.com/jonpe960/blixten", "reason": "no licence found"}
+{"repo": "https://github.com/julbouln/ice40_eink_controller", "reason": "no licence found"}
+{"repo": "https://github.com/julbouln/ifusb", "reason": "no licence found"}
+{"repo": "https://github.com/kasbah/corners", "reason": "no licence found"}
+{"repo": "https://github.com/kasbah/maulwurf", "reason": "no licence found"}
+{"repo": "https://github.com/kasbah/push-on-hold-off", "reason": "no licence found"}
+{"repo": "https://github.com/kb-consulting/pt101a", "reason": "no licence found"}
+{"repo": "https://github.com/kimitobo/Neocococat", "reason": "no licence found"}
+{"repo": "https://github.com/kitspace-forks/BQ25570_Harvester", "reason": "no licence found"}
+{"repo": "https://github.com/kitspace-forks/Bus_Pirate", "reason": "no licence found"}
+{"repo": "https://github.com/kitspace-forks/FM_Transmitter", "reason": "no licence found"}
+{"repo": "https://github.com/kitspace-forks/arduino-uno", "reason": "no licence found"}
+{"repo": "https://github.com/komar007/gh60", "reason": "no licence found"}
+{"repo": "https://github.com/maltman23/ArduTouch", "reason": "no licence found"}
+{"repo": "https://github.com/mattvenn/esp8266-breakout", "reason": "no licence found"}
+{"repo": "https://github.com/mattvenn/teensy-audio-fx", "reason": "no licence found"}
+{"repo": "https://github.com/mfolejewski/FEMTO", "reason": "only subdir licence Python/LICENSE (MIT)"}
+{"repo": "https://github.com/mlab-modules/DRV10987V01", "reason": "no licence found"}
+{"repo": "https://github.com/morgulbrut/LoRa32_Node", "reason": "no licence found"}
+{"repo": "https://github.com/myriadrf/LimeSDR-USB", "reason": "no licence found"}
+{"repo": "https://github.com/nerdyscout/NodeMCU", "reason": "only subdir licence CO2/LICENSE.TXT (CERN-OHL-1.2)"}
+{"repo": "https://github.com/nguyen-v/amulet_controller_kibot", "reason": "no licence found"}
+{"repo": "https://github.com/oshwa-terminated-cert-docs-repo/US002346", "reason": "only subdir licence SparkFun_DataLogger_IoT_9DoF-main/LICENSE.MD (CC-BY-SA-4.0)"}
+{"repo": "https://github.com/pilotak/eth-io", "reason": "only subdir licence hw/v2/LICENCE (CERN-OHL-P-2.0)"}
+{"repo": "https://github.com/rocketscream/TinyReflowController", "reason": "only subdir licence LICENSE.md/LICENSE.md (CC-BY-SA-4.0)"}
+{"repo": "https://github.com/rosmo-robot/micro-bot", "reason": "no licence found"}
+{"repo": "https://github.com/rusefi/rusefi-hardware", "reason": "only subdir licence classic-designs/rusefi_hardware_history/176122-6-connector_rev00.10/licence.txt (MIT)"}
+{"repo": "https://github.com/sasodoma/nrf52840-promicro", "reason": "no licence found"}
+{"repo": "https://github.com/sgmk/microNoise_SZ-Ready", "reason": "no licence found"}
+{"repo": "https://github.com/sgmk/solarbird_shenzen_rdy", "reason": "no licence found"}
+{"repo": "https://github.com/thatch/step_down_led_board", "reason": "no licence found"}
+{"repo": "https://github.com/vasanza/TSC-Lab", "reason": "no licence found"}
+{"repo": "https://github.com/yjmwxwx/stm32asm", "reason": "only subdir licence linux/fft/fftw3-master/COPYING (GPL-2.0)"}
+{"repo": "https://gitlab.com/DarthKitten2130/RPi-Z80_Controller", "reason": "no licence found"}
+{"repo": "https://gitlab.com/IObrizio/linear_psu", "reason": "no licence found"}
+{"repo": "https://gitlab.com/KingWeasel/jkheadphoneamp", "reason": "no licence found"}
+{"repo": "https://gitlab.com/LoesterFranco/ac922interposer", "reason": "no licence found"}
+{"repo": "https://gitlab.com/MakerinAsia/RPi-Z80_Controller", "reason": "no licence found"}
+{"repo": "https://gitlab.com/TeamChaos/LaserTag/Hardware", "reason": "no licence found"}
+{"repo": "https://gitlab.com/WilkoL/big-seven-segment-display", "reason": "no licence found"}
+{"repo": "https://gitlab.com/amiga-projects/a4000-tk", "reason": "no licence found"}
+{"repo": "https://gitlab.com/arres/standaert-ha-pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/azaneko/OpenHardware", "reason": "only subdir licence CardReader/LICENSE (MIT)"}
+{"repo": "https://gitlab.com/colponic/pcb-kicad", "reason": "no licence found"}
+{"repo": "https://gitlab.com/commonslabgr/troglometer/hardware", "reason": "no licence found"}
+{"repo": "https://gitlab.com/daveroboclub/kicad2mono4", "reason": "no licence found"}
+{"repo": "https://gitlab.com/desird/alakart/alakart_pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/digitalrane/uruz-busboard", "reason": "no licence found"}
+{"repo": "https://gitlab.com/dorfell/pcb_edu", "reason": "no licence found"}
+{"repo": "https://gitlab.com/ecolefrancodanoise/kicad-drone-controller", "reason": "no licence found"}
+{"repo": "https://gitlab.com/edea-dev/edea", "reason": "no licence found"}
+{"repo": "https://gitlab.com/fablab-pernes/atelier-kicad", "reason": "no licence found"}
+{"repo": "https://gitlab.com/fabtronic/tutoriels/kicad-demo-conception-projet", "reason": "no licence found"}
+{"repo": "https://gitlab.com/fsanches/MagnavoxOdyssey1_KICAD", "reason": "no licence found"}
+{"repo": "https://gitlab.com/hackerspacevlc1/pcbs-kicad_7", "reason": "no licence found"}
+{"repo": "https://gitlab.com/hasecilu/16x16-led-matrix", "reason": "no licence found"}
+{"repo": "https://gitlab.com/hasecilu/PCBsCollection", "reason": "no licence found"}
+{"repo": "https://gitlab.com/jamesfitzsimons/stm32f070-dev-board", "reason": "no licence found"}
+{"repo": "https://gitlab.com/jgtaylor/esp32-octobox", "reason": "no licence found"}
+{"repo": "https://gitlab.com/joia02/uterror-amp", "reason": "no licence found"}
+{"repo": "https://gitlab.com/kicad_BSI/kicad-lora_teensy3.2_simon", "reason": "no licence found"}
+{"repo": "https://gitlab.com/linalinn/kicad-render", "reason": "no licence found"}
+{"repo": "https://gitlab.com/mathemathilda/nanopiduo_rfid_pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/mini-z-speedmeter/kicad-pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/mpkuti/mikamem_meas_pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/mygnu/rregatta-kicad-pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/oaslananka/boardreadyops", "reason": "NC: NC in LICENSE; NC in README.md: [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE); NC in README.md: Current project-authored source is licensed under [PolyForm Noncommercial 1.0.0](LICENSE). Commerc"}
+{"repo": "https://gitlab.com/openpowerfoundation/ac922interposer", "reason": "no licence found"}
+{"repo": "https://gitlab.com/openventilator/openventilator", "reason": "no licence found"}
+{"repo": "https://gitlab.com/parkview/DFN1006-3_SMD_Breakout_PCB", "reason": "no licence found"}
+{"repo": "https://gitlab.com/patrykg/pcb-public-kicad", "reason": "no licence found"}
+{"repo": "https://gitlab.com/phodina/echo-debug-gen3", "reason": "no licence found"}
+{"repo": "https://gitlab.com/polemon/car_usb_power_adapter", "reason": "no licence found"}
+{"repo": "https://gitlab.com/rpi_at48_rli2c/hw_avr_rli2c", "reason": "no licence found"}
+{"repo": "https://gitlab.com/rzzzwilson/kicad-projects", "reason": "only subdir licence SquareWaveGenerator/LICENSE (MIT)"}
+{"repo": "https://gitlab.com/salfter/rc2014-compat", "reason": "no licence found"}
+{"repo": "https://gitlab.com/sarincr/pcb-designing-with-kicad", "reason": "no licence found"}
+{"repo": "https://gitlab.com/schaefer-services/pcb-pipeline", "reason": "no licence found"}
+{"repo": "https://gitlab.com/sixxie/dragon64", "reason": "no licence found"}
+{"repo": "https://gitlab.com/skoe/open1541", "reason": "no licence found"}
+{"repo": "https://gitlab.com/surafel911/open-steamvr", "reason": "no licence found"}
+{"repo": "https://gitlab.com/the_floe/kicad_pdn", "reason": "no licence found"}
+{"repo": "https://gitlab.com/theoreichel/zero-to-rust-kicad-workshop", "reason": "no licence found"}
+{"repo": "https://gitlab.com/vmayoral/PXF2", "reason": "no licence found"}
+{"repo": "https://gitlab.com/vurpo/soundblaster-pcb", "reason": "no licence found"}
+{"repo": "https://gitlab.com/wiredlab/Valpo-PCB-Ruler", "reason": "no licence found"}

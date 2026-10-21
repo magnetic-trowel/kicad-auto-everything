@@ -1,0 +1,25 @@
+{"repo": "https://source.mnt.re/reform/mnt-reform-raspberry-pi-cm4-som.git", "reason": "no licence file or licence statement in README"}
+{"repo": "https://source.mnt.re/reform/reform-som-template.git", "reason": "no licence file or licence statement in README"}
+{"repo": "https://source.mnt.re/reform/rack-reform.git", "reason": "no licence file or licence statement in README"}
+{"repo": "https://source.mnt.re/reform/reform-test-devices.git", "reason": "no licence file or licence statement in README"}
+{"repo": "https://github.com/RHSResearchLLC/NiteFury-and-LiteFury", "reason": "no PCB design files in repo (only sample projects, GPL-3)"}
+{"repo": "https://github.com/icebreaker-fpga/icebreaker", "reason": "no board files on default branch"}
+{"repo": "https://gitlab.com/ohwr/project/afck", "reason": "Altium AMC FMC carrier (Kintex); no licence file or statement in repo"}
+{"repo": "https://gitlab.com/ohwr/project/afcku", "reason": "Altium Kintex UltraScale AMC; no licence file in repo"}
+{"repo": "https://gitlab.com/ohwr/project/atfc", "reason": "Altium Artix FMC carrier; no licence in repo"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-adc-500m14b4cha", "reason": "Altium; no licence in repo"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-adc-130m-16b-4cha", "reason": "licence only as LICENSE.pdf (unverified text)"}
+{"repo": "https://gitlab.com/ohwr/project/bpm-rffe", "reason": "licence only as LICENSE.pdf (unverified text)"}
+{"repo": "https://gitlab.com/ohwr/project/diot-monimod", "reason": "KiCad boards but no licence file/statement"}
+{"repo": "https://gitlab.com/ohwr/project/wrs-fl-hw", "reason": "Altium WR switch backplane; no licence in repo"}
+{"repo": "https://gitlab.com/ohwr/project/spec", "reason": "repo holds no PCB design files (hardware released elsewhere); same for svec, spec7, svec7, diot-sb-zu"}
+{"repo": "https://gitlab.com/ohwr/project/fmc-mtlu-hw", "reason": "Cadence Allegro .brd (not Eagle), not importable"}
+{"repo": "https://github.com/beagleboard/beagleconnect", "reason": "no LICENSE file or licence statement for hw/ KiCad files"}
+{"repo": "https://github.com/beagleboard/beaglev-fire", "reason": "CC-BY-4.0 but only Allegro binary .brd (not importable); same for beagley-ai, beaglebone-ai-64"}
+{"repo": "https://github.com/opencomputeproject/Time-Appliance-Project", "reason": "MIT but Time Card PCB only as Allegro .brd (not importable)"}
+{"repo": "https://github.com/azonenberg/sata-sniffer", "reason": "no LICENSE file"}
+{"repo": "https://github.com/azonenberg/grover", "reason": "BSD-3 but kicad_pcb is an empty stub (layout not committed); same for azonenberg/ayrton and azonenberg/serial-console-server"}
+{"repo": "https://github.com/efabless/caravel_board", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/myriadrf/LimeSDR-PCIe-5G", "reason": "no LICENSE or README in repo (Altium X3 board)"}
+{"repo": "https://github.com/wuxx/icesugar-pro", "reason": "no board files / no licence"}
+{"repo": "https://github.com/mystorm-org/BlackIce-II", "reason": "no licence file or statement"}
