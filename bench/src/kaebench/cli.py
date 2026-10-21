@@ -47,8 +47,10 @@ def cmd_doctor(a):
 
 
 def _entries(a):
-    return manifest.load(a.manifest, only=_split(a.only), tiers=_split(a.tiers), tags=_split(a.tags),
-                         limit=a.limit)
+    es = manifest.load(a.manifest, only=_split(a.only), tiers=_split(a.tiers), tags=_split(a.tags))
+    # smallest boards first, so useful results arrive early on long runs (and --limit picks small ones)
+    es.sort(key=lambda e: e.get("footprints") or float("inf"))
+    return es[:a.limit] if a.limit else es
 
 
 def _parallel(items, fn, jobs, label):
