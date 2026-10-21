@@ -187,7 +187,7 @@ Takeaways:
   - Go hierarchical: cluster (IC + its passives) → soft-macro floorplan → windowed LNS. This matches how HiePlace (Gurobi) and Cypress's benchmark design describe engineers' practice: "local placement on a subset of components, then position the group" — [Cypress ISPD'25 slides](https://ispd.cc/ispd2026/slides/2025/protected/3_1_slides.pdf) [P].
 - **Use a 0.5 mm grid for global search and refine only in windows.** At N=100, 0.1 mm made first-feasible 12× slower (72 s vs 5.9 s).
 - **Prefer the two-optional-interval rotation encoding ("opt2")** for N ≥ 100. It produced the better 60 s HPWL in 3 of 4 cells, with fewer variables but more constraints.
-- **CP-SAT is a feasibility/legalization engine, not an HPWL optimizer.** On HPWL alone, simulated annealing beats it at small N (§3 [M]). Use CP-SAT where hard constraints dominate: legal non-overlap with keep-outs, decap distance, alignment/symmetry, edge connectors, and fixed parts. Feed it hints from an analytical or SA placement.
+- **CP-SAT is a feasibility/legalization engine, not an HPWL optimizer.** On HPWL, SA + CP-SAT legalize/polish beat monolithic CP-SAT on every instance and matched or beat hierarchical CP-SAT from N=300 (§3 table [M]). CP-SAT repaired SA's residual violations in 3.8–6.9 s at N ≤ 300. Use CP-SAT where hard constraints dominate: legal non-overlap with keep-outs, decap distance, alignment/symmetry, edge connectors, and fixed parts. Feed it hints from an analytical or SA placement.
 - **Keep-outs and non-rectangular outlines** become fixed boxes in the same NoOverlap2D (rectangle decomposition via Shapely). Turn on `maximum_regions_to_split_in_disconnected_no_overlap_2d` when keep-outs split the board.
 - **Symmetry-break interchangeable parts** (identical decaps in one group) with lexicographic order constraints.
 - **GPL-3.0.** Apache-2.0 is GPLv3-compatible per the ASF: "Apache 2 software can therefore be included in GPLv3 projects" — [ASF GPL-compatibility](https://www.apache.org/licenses/GPL-compatibility.html) [P]. MIT/BSD (HiGHS, Z3, PySCIPOpt, PySAT) are also fine; I could not re-fetch the FSF list (gnu.org blocked) to confirm this. Gurobi and OptiMathSAT can only be optional, user-supplied backends.
@@ -355,7 +355,12 @@ def loss(params, key, k):                                 # k = continuation ste
 ## 3. Metaheuristics (SA, GA, CMA-ES, NSGA-II/III, MAP-Elites, tabu, LNS) and LLM-driven heuristic search
 
 ### Takeaway
-Simulated annealing with incremental cost is still the strongest simple HPWL optimizer at small to medium N. In my runs, pure-Python SA beat 60 s of 4-worker CP-SAT on HPWL at N=30 in a few seconds. SA does not guarantee legality, though, and needs a legalizer, which is CP-SAT's strength.
+Simulated annealing with incremental cost is still the strongest simple HPWL optimizer. In my runs, single-threaded pure-Python SA followed by CP-SAT legalization and LNS polish:
+- beat 60 s of 4-worker monolithic CP-SAT on every instance at N=30–100, by 4–46% (median ≈20%, against CP-SAT's best rotation encoding);
+- was on par with or better than hierarchical CP-SAT at N=300 (2,278 vs 2,461 mm);
+- at N=1000 reached roughly 45% lower HPWL than the hierarchical CP-SAT result, but with residual overlaps that need *windowed* legalization.
+
+Penalty SA does not guarantee legality, so it needs a legalizer, which is CP-SAT's strength.
 
 For multi-objective trade-offs and diversity:
 - pymoo (Apache-2.0): NSGA-II/III, MOEA/D, …
@@ -380,13 +385,28 @@ A newer option is LLM-driven heuristic/algorithm evolution (FunSearch-style ReEv
   - AlphaEvolve: "evolutionary coding agent… improve an algorithm by making direct changes to the code… continuously receiving feedback from one or more evaluators" — [arXiv 2506.13131](https://arxiv.org/abs/2506.13131) [P]
   - LLM4AD is a unified Python platform with search methods, task suite and sandbox — [arXiv 2412.17287](https://arxiv.org/abs/2412.17287) [P]
   - OPRO: the LLM proposes solutions given prior solutions and scores — [arXiv 2309.03409](https://arxiv.org/abs/2309.03409) [P]
-- Own measurement [M], `sa_place.py`: pure Python + NumPy SA with penalty λ ramp, moves = shift/rotate/swap.
-  - About 10–11k moves/s at N=30.
-  - Within 4–5 s at N=30 (0.5 mm grid) it reached legal placements of **202–223 mm HPWL**, versus CP-SAT's best 218.5–243.5 mm after 60 s on 4 workers.
-  - One 5 s run ended with 2 residual overlaps; penalty SA alone does not guarantee legality.
-  - CP-SAT LNS polishing of a 202 mm SA result found no improvement in 3×2 s windows.
+- Own measurement [M], `sa_place.py`: pure Python + NumPy SA. Cost = HPWL + λ(t)·(overlap area + keep-out area + out-of-board area + 3·decap excess), with λ ramping 0.5→200 and geometric cooling. Moves are shift (radius shrinking with time), rotate and swap. Throughput is about 9.3–11.7k moves/s for N=30–1000. Optional follow-ups: CP-SAT min-displacement legalization (`legalize`), windowed legalization (`legalize_windowed`) and CP-SAT LNS polish (`lns_polish`).
 
-{{SA}}
+**SA vs CP-SAT head-to-head [M].** Same instances and the same legality checker: overlaps / decap violations / out-of-board / keep-out intrusions. SA runs single-threaded Python. CP-SAT uses 4 workers. Values are HPWL in mm, legal unless noted.
+
+| N, grid (seed) | SA alone | → CP-SAT legalize (if needed) | → + CP-SAT LNS polish | Hier. CP-SAT + LNS (§1) | Monolithic CP-SAT 60 s |
+|---|---|---|---|---|---|
+| 30, 0.5 (0) | 195.5 (10 s) | – | **182.0** (+20 s) | – | 218.5–243.5 |
+| 30, 0.1 (0) | 241.5, 1 decap viol. (10 s) | 243.9 (3.8 s) | **214.6** (+20 s) | – | 222.8–241.8 |
+| 100, 0.5 (0) | 521.5 (60 s) | – | 503.5 (+60 s) | **480.5** (71 s) | 616.5–643.5 |
+| 100, 0.1 (0) | 490.1 (60 s) | – | 465.9 (+60 s) | **454.4** (75 s) | 860–1,009 |
+| 100, 0.5 (1) | 691, 1 overlap (60 s) | 699 (3.8 s) | **664** (+30 s) | – | 858.5 |
+| 100, 0.5 (2) | 525.5 (60 s) | – | **517.5** (+30 s) | – | 681.0 |
+| 300, 0.5 (0) | 2,316, 1 decap viol. (120 s) | 2,316 (6.9 s) | **2,278** (+122 s) | 2,461.5 (124 s) | no solution |
+| 300, 0.1 (0) | 2,467.1 (120 s) | – | **2,399.2** (+120 s) | 2,473.2 (131 s) | no solution |
+| 1000, 0.5 (0) | 12,843, **16 overlaps + 2 out-of-board** (300 s, 9.3k moves/s) | full-board min-displacement legalization: **no solution in 120 s** | – | 22,595.5 (294 s) | no solution |
+
+{{SA1000W}}
+
+Pattern:
+- SA (wirelength) followed by CP-SAT (legality + local polish) beats monolithic CP-SAT on every instance.
+- It is on par with or better than hierarchical CP-SAT from N=300.
+- SA's penalty method leaves a few violations that CP-SAT repairs in seconds when the repair problem is small. At 1000 parts, legalization must itself be windowed.
 
 ### Inferences
 - **Recommended division of labour:**
