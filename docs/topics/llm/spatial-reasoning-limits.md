@@ -57,6 +57,7 @@
 
 - Would fine-tuned small models close the gap on PCB spatial tasks, as GSU and CoDeLayout suggest for other domains? Untested.
 - How many coupled relations per decision is safe for PCB groups? Unmeasured.
+- **Apparent conflict on code tools:** writing code helps *analysis* (GENIE-ASI detector code; FloorplanQA distance/angle +30–40 pp) but not geometric *construction* or planning (RAC coordinates + Python 21.0%; FloorplanQA planning). Use code for measurement and detection, solvers for construction [I].
 
 ## Sources
 - research notes:

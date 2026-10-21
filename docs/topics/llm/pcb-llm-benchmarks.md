@@ -120,6 +120,8 @@ Legality and other findings:
 - No independent replication of any LLM-PCB result exists.
 - No joint place-and-route comparison exists of an LLM-steered KiCad flow against Freerouting baselines on real boards.
 - The EEBench Astra score is disputed; OmniLayout's licence and data availability are disputed.
+- **Few-shot effects conflict:** few-shot lifted GPT-5.5 placement RR to 0.95, barely moved grouping AUC (−0.006), and in routing "can reduce violations by routing less".
+- **Paper errors to discount:** OmniRouting's agentic-framework text describes refining "component positions", apparently copied from OmniLayout. HiePlace wrongly calls Quilter "a widely used open-source tool".
 
 ## Sources
 - research notes:
