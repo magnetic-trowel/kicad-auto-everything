@@ -61,7 +61,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
     qualified = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
     record = dict(
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
-        repo=entry["repo"], commit=entry["commit"], pcb_path=entry["pcb_path"],
+        repo=entry["repo"], commit=entry.get("commit"), pcb_path=entry["pcb_path"],
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
         split=split_of(ref_stats["pads"]), qualified=qualified,
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),

@@ -9,6 +9,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
 
 from . import tools
@@ -55,6 +56,27 @@ def _git_fetch(repo, commit, paths, dest_dir):
     return got
 
 
+def _zip_fetch(entry, paths, dest_dir):
+    """Download a design-file archive, check archive_sha256, extract the board and project files."""
+    archive = dest_dir / "archive.zip"
+    if not _download(entry["repo"], archive):
+        raise FileNotFoundError(f"{entry['id']}: archive {entry['repo']} not found")
+    digest = sha256(archive)
+    if digest != entry["archive_sha256"]:
+        raise ValueError(f"{entry['id']}: archive sha256 mismatch "
+                         f"(manifest {entry['archive_sha256'][:12]}, fetched {digest[:12]})")
+    got = {}
+    with zipfile.ZipFile(archive) as z:
+        names = set(z.namelist())
+        for key, p in paths.items():
+            if p in names:
+                out = dest_dir / Path(p).name
+                out.write_bytes(z.read(p))
+                got[key] = out
+    archive.unlink()
+    return got
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -64,7 +86,7 @@ def sha256(path):
 
 
 def _import_board(src, fmt, dest_dir, timeout=1800):
-    """Convert an Eagle/Altium/PADS/... board to .kicad_pcb with `kicad-cli pcb import`.
+    """Convert an Eagle/Allegro/Altium/PADS/... board to .kicad_pcb with `kicad-cli pcb import`.
 
     pcb_sha256 stays the hash of the upstream source file; the import is redone locally.
     """
@@ -90,8 +112,10 @@ def fetch(entry, cache_dir, force=False):
     dest.mkdir(parents=True)
     paths = {"kicad_pcb": entry["pcb_path"], **project_paths(entry)}
     got = {}
-    raw = _raw_url(entry["repo"], entry["commit"], entry["pcb_path"])
-    if raw:
+    raw = None if entry.get("archive_sha256") else _raw_url(entry["repo"], entry["commit"], entry["pcb_path"])
+    if entry.get("archive_sha256"):
+        got = _zip_fetch(entry, paths, dest)
+    elif raw:
         for key, p in paths.items():
             out = dest / Path(p).name
             if _download(_raw_url(entry["repo"], entry["commit"], p), out):
@@ -109,6 +133,6 @@ def fetch(entry, cache_dir, force=False):
         got["source_pcb"] = got["kicad_pcb"]
         got["kicad_pcb"] = _import_board(got["source_pcb"], fmt, dest)
     meta = {k: str(v) for k, v in got.items()}
-    meta.update(id=entry["id"], pcb_sha256=digest, repo=entry["repo"], commit=entry["commit"])
+    meta.update(id=entry["id"], pcb_sha256=digest, repo=entry["repo"], commit=entry.get("commit"))
     meta_path.write_text(json.dumps(meta, indent=1))
     return meta

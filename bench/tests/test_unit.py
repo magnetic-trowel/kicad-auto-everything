@@ -44,7 +44,12 @@ def test_project_paths():
 def test_import_formats():
     assert manifest.validate(entry(pcb_path="hw/board.brd"))
     assert manifest.import_format("hw/Board.PcbDoc") == "altium"
-    assert manifest.import_format("hw/board.brd") == "eagle"
+    assert manifest.import_format("hw/board.brd") == "auto"
+    zipped = entry(commit=None, repo="https://example.com/cad.zip", archive_sha256="a" * 64, pcb_path="x/b.brd")
+    assert manifest.validate(zipped)
+    for bad in (dict(zipped, archive_sha256="abc"), dict(zipped, commit="b" * 40), entry(commit=None)):
+        with pytest.raises(manifest.ManifestError):
+            manifest.validate(bad)
     assert manifest.import_format("a/b.kicad_pcb") is None
 
 
