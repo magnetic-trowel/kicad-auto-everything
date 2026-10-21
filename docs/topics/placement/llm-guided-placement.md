@@ -52,6 +52,7 @@
 - Exploit repeated channels MAGE-style (place one, replicate by transform) [I].
 - Fine-tuning path: mine CCG-like relative-offset graphs from human boards; GNN preference reward from pairwise expert rankings [I].
 - Images later: text/relation channel first; renders for structure-level critique only [I].
+- Determinism and explainability: fix seeds; log the relation set, weights and solver versions; write a per-module "why" listing the binding constraints; apply results via IPC as one undo step, respect locked footprints, run DRC after each pass [I].
 
 ## Conflicts and open questions
 - No study compares LLM-authored vs expert-authored PCB constraint sets beyond ModuPlace's graph similarity and OmniLayout's relational metric.

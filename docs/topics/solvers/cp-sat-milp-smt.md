@@ -28,6 +28,16 @@
 | SMT analog placement (DATE'16) | Solver time *decreases* as physical constraints increase [S] |
 | Holodeck MILP | Gurobi disjunctions with binaries for scene layout ([scene transplants](../placement/scene-layout-transplants.md)) |
 
+**MILP / SMT / MaxSAT tooling** (PyPI metadata 2026-10-20 [P] unless noted; fit for GPL-3.0-or-later)
+| Package | License | Fit |
+|---|---|---|
+| highspy 1.15.1 (HiGHS) | MIT (HiPO builds Apache) | OK |
+| SCIP 10 / pyscipopt 6.3.0 | Apache-2.0 since 8.0.3 [S] / MIT | OK |
+| z3-solver 5.3.1.0 | MIT | OK |
+| python-sat (PySAT) | MIT; "easy … to implement a MaxSAT solver" | OK |
+| gurobipy 13.0.3 | Proprietary | Exclude |
+| OptiMathSAT | Research/evaluation only, no commercial use [S] | Exclude |
+
 **Escape routing as MILP/SAT**: unordered escape optimal by network flow; ordered exactly by SAT (ASP-DAC'08); two-stage flow ILP for escape + area routing (PeerJ CS 499); MonoSAT SAT + flow for multi-layer ([escape](../routing/escape-routing.md)) [S/P].
 
 **LLMs writing constraint models**: Text2Zinc ≤25.39% (GPT-4, MiniZinc); CP-Bench ~70% with documentation-rich prompts, repeated sampling and self-verification, Python (CPMpy, OR-Tools CP-SAT) easier than MiniZinc; per-global-constraint agent ensembles beat CoT ([arXiv 2503.10642](https://arxiv.org/abs/2503.10642), [2506.06052](https://arxiv.org/abs/2506.06052), [2509.08970](https://arxiv.org/abs/2509.08970) [S]).
