@@ -11,7 +11,7 @@ from pathlib import Path
 REQUIRED = ("id", "repo", "pcb_path", "license")
 KEYS = REQUIRED + ("source", "sch_path", "pcb_sha256", "license_evidence", "license_tier",
                    "kicad_file_version", "layers", "footprints", "nets", "tracks", "vias", "zones",
-                   "board_mm", "routed", "tags", "dataset", "notes", "archive_sha256")
+                   "board_mm", "routed", "tags", "dataset", "notes", "archive_sha256", "file_urls")
 # Least to most restrictive. noncommercial rows are for private,
 # non-commercial evaluation only and never feed redistributed data products.
 TIERS = ("permissive", "weak-copyleft", "copyleft", "reciprocal-hardware", "noncommercial")
@@ -42,6 +42,11 @@ def validate(entry, lineno=0):
             raise ManifestError(f"{where}: archive rows need a 64-hex archive_sha256 and commit null")
     elif not re.fullmatch(r"[0-9a-f]{40}", entry.get("commit") or ""):
         raise ManifestError(f"{where}: commit must be a full 40-hex SHA")
+    for key, f in (entry.get("file_urls") or {}).items():
+        # project files of a single-file download row, each pinned by its own hash
+        if not entry.get("archive_sha256") or not isinstance(f, dict) or not f.get("url") \
+                or not re.fullmatch(r"[0-9a-f]{64}", f.get("sha256") or ""):
+            raise ManifestError(f"{where}: file_urls[{key}] needs url and 64-hex sha256 on an archive row")
     if not entry["pcb_path"].endswith(".kicad_pcb") and not import_format(entry["pcb_path"]):
         raise ManifestError(f"{where}: pcb_path must be a .kicad_pcb file or one of {sorted(IMPORT_FORMATS)}")
     tier = entry.get("license_tier")

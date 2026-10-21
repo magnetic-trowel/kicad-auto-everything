@@ -97,6 +97,24 @@ def test_zip_fetch_reads_tar_gz(tmp_path, monkeypatch):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["b.PcbDoc"]
 
 
+def test_single_file_row_fetches_project_files(tmp_path, monkeypatch):
+    files = {"https://m.org/b.kicad_pcb": b"(kicad_pcb)", "https://m.org/b.kicad_pro": b"{}"}
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: Path(dest).write_bytes(files[url]) or True)
+    h = {u: hashlib.sha256(b).hexdigest() for u, b in files.items()}
+    e = entry(commit=None, repo="https://m.org/b.kicad_pcb", pcb_path="w6/b.kicad_pcb",
+              archive_sha256=h["https://m.org/b.kicad_pcb"],
+              file_urls={"kicad_pro": {"url": "https://m.org/b.kicad_pro", "sha256": h["https://m.org/b.kicad_pro"]}})
+    assert manifest.validate(e)
+    got = fetch._zip_fetch(e, manifest.project_paths(e) | {"kicad_pcb": e["pcb_path"]}, tmp_path)
+    assert got["kicad_pro"].read_bytes() == b"{}" and got["kicad_pcb"].name == "b.kicad_pcb"
+    e["file_urls"]["kicad_pro"]["sha256"] = "0" * 64
+    (tmp_path / "x").mkdir()
+    with pytest.raises(ValueError):
+        fetch._zip_fetch(e, manifest.project_paths(e) | {"kicad_pcb": e["pcb_path"]}, tmp_path / "x")
+    with pytest.raises(manifest.ManifestError):
+        manifest.validate(dict(e, file_urls={"kicad_pro": {"url": "u"}}))
+
+
 def test_download_retries_rate_limit(tmp_path, monkeypatch):
     import urllib.error
     calls, sleeps = [], []

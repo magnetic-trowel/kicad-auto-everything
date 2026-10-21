@@ -105,7 +105,8 @@ def _zip_fetch(entry, paths, dest_dir):
     """Download a design-file archive, check archive_sha256, extract the board and project files.
 
     Zip and tar (optionally compressed) archives are supported. A download that is neither
-    is taken to be the board file itself (e.g. a single Zenodo file).
+    is taken to be the board file itself (e.g. a single Zenodo file); its project files then
+    come from `file_urls` ({key: {url, sha256}}), each checked against its own hash.
     """
     archive = dest_dir / "archive.zip"
     if not _download(entry["repo"], archive):
@@ -129,7 +130,15 @@ def _zip_fetch(entry, paths, dest_dir):
     if not zipfile.is_zipfile(archive):
         out = dest_dir / Path(entry["pcb_path"]).name
         archive.rename(out)
-        return {"kicad_pcb": out}
+        got = {"kicad_pcb": out}
+        for key, f in (entry.get("file_urls") or {}).items():
+            if key in paths and key != "kicad_pcb":
+                out = dest_dir / Path(paths[key]).name
+                if _download(f["url"], out):
+                    if sha256(out) != f["sha256"]:
+                        raise ValueError(f"{entry['id']}: {key} sha256 mismatch")
+                    got[key] = out
+        return got
     with zipfile.ZipFile(archive) as z:
         names = set(z.namelist())
         for key, p in paths.items():

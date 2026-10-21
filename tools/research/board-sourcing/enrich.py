@@ -265,7 +265,7 @@ def process(row, workdir, kicad_ver):
 
 KEYS = ("id", "source", "repo", "commit", "pcb_path", "sch_path", "pcb_sha256", "license", "license_evidence",
         "license_tier", "kicad_file_version", "layers", "footprints", "nets", "tracks", "vias", "zones",
-        "board_mm", "routed", "tags", "dataset", "notes", "archive_sha256")
+        "board_mm", "routed", "tags", "dataset", "notes", "archive_sha256", "file_urls")
 
 
 def build_rows(found_glob, skip_paths=()):
@@ -324,7 +324,8 @@ def build_rows(found_glob, skip_paths=()):
                              dataset="pcb-corpus" if sector == "pcbcorpus" else "kicad-happy" if sector.startswith("kicad-happy")
                              else f"direct-{sector}",
                              notes=" ".join(x for x in (r.get("name"), r.get("notes")) if x).strip(),
-                             extra_tags=[r["category"]] if r.get("category") else []))
+                             extra_tags=[r["category"]] if r.get("category") else [],
+                             **({"file_urls": r["file_urls"]} if archive and r.get("file_urls") else {})))
     print(f"{len(rows)} rows to enrich; {len(rejected)} rejected by licence normaliser", file=sys.stderr)
     return rows, rejected
 
@@ -357,7 +358,7 @@ def main():
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         for r in good:
-            f.write(json.dumps({k: r.get(k) for k in KEYS}) + "\n")
+            f.write(json.dumps({k: r.get(k) for k in KEYS if k != "file_urls" or r.get(k)}) + "\n")
     with open(out_path + ".failed", "w") as f:
         for r in done:
             if not r.get("_ok"):
