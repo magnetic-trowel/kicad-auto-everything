@@ -100,6 +100,22 @@ def test_id_list_from_file(tmp_path):
     assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None
 
 
+def test_local_boards_read_row_json(tmp_path):
+    from kaebench.cli import _local_boards
+    for name, row in (("b1", dict(id="b1", repo="https://github.com/o/r", commit=SHA, pcb_path="x/b.kicad_pcb",
+                                  license="MIT", license_tier="permissive", tags=["rf"])), ("b2", None)):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "board.kicad_pcb").write_text("(kicad_pcb)")
+        if row:
+            (d / "row.json").write_text(json.dumps(row))
+    items = {e["id"]: e for e, _ in _local_boards(tmp_path, "board.kicad_pcb", ["b1", "b2", "missing"])}
+    assert items["b1"]["license_tier"] == "permissive" and items["b1"]["tags"] == ["rf"]
+    assert items["b1"]["repo"] == "https://github.com/o/r" and items["b1"]["commit"] == SHA
+    assert items["b2"]["license"] == "unknown (local)" and items["b2"]["tags"] == []
+    assert len(_local_boards(tmp_path, "board.kicad_pcb", None)) == 2
+
+
 def test_clamp_dsn_widths(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text("(pcb b (resolution um 10) (unit um)\n (structure (rule (width 101.6) (clearance 200)))\n"
