@@ -174,6 +174,20 @@ def test_art_zones_to_polys():
     assert new.count("(zone") == 3  # copper zone, keepout and the string are untouched
 
 
+def test_micro_arc_pile_and_remove_top_level():
+    def arc(x, uid, layer="F.Cu", d=0.0000005):
+        return (f'\t(arc\n\t\t(start {x} 5) (mid {x + d} 5.0000004) (end {x + 2 * d} 5)\n'
+                f'\t\t(width 0.1)\n\t\t(layer "{layer}")\n\t\t(net 1)\n\t\t(uuid "{uid}")\n\t)\n')
+    text = ("(kicad_pcb\n" + arc(1, "a") + arc(1.00001, "b") + arc(1, "c", "B.Cu") + arc(7, "d")
+            + arc(9, "e", d=0.01)  # a real (if short) arc is not counted
+            + '\t(zone (polygon (pts (arc (start 1 5) (mid 1 5) (end 1 5)))) (uuid "z"))\n)\n')
+    assert boardfiles.micro_arc_pile(text) == 2
+    new, n = boardfiles.remove_top_level(text, "arc", {"a", "d", "z"})
+    assert n == 2 and '"a"' not in new and '"d"' not in new
+    assert '(uuid "b")' in new and '(uuid "e")' in new and '(uuid "z")' in new  # zone pts arc kept
+    assert new.startswith("(kicad_pcb\n\t(arc") and new.endswith("\n)\n")
+
+
 def test_strip_ses_placement(tmp_path):
     ses = tmp_path / "in.ses"
     ses.write_text('(session "b"\n (base_design "b")\n (placement (resolution um 10)\n  (component "R" (place R1 1 2 front 0)))\n (routes (resolution um 10)))\n')

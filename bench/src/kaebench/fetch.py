@@ -175,7 +175,25 @@ def _import_board(src, fmt, dest_dir, timeout=1800):
     fixed, _ = boardfiles.art_zones_to_polys(boardfiles.fix_unloadable(text))
     if fixed != text:
         out.write_text(fixed)
+    _drop_covered_micro_arcs(out)
     return out
+
+
+def _drop_covered_micro_arcs(pcb):
+    """Remove piles of sub-micron track arcs whose copper other items already cover.
+
+    Only runs when a pile reaches boardfiles.MICRO_ARC_PILE, so ordinary boards with a few
+    degenerate arcs keep their file as fetched. KiCad decides what is covered; the copper
+    and connectivity stay the same, and DRC no longer stalls in its copper-union tests.
+    """
+    text = Path(pcb).read_text(errors="replace")
+    if boardfiles.micro_arc_pile(text) < boardfiles.MICRO_ARC_PILE:
+        return 0
+    res = tools.run_ops("covered-micro-arcs", pcb, timeout=1800)
+    fixed, n = boardfiles.remove_top_level(text, "arc", res["covered"])
+    if n:
+        Path(pcb).write_text(fixed)
+    return n
 
 
 def fetch(entry, cache_dir, force=False):
@@ -221,6 +239,7 @@ def fetch(entry, cache_dir, force=False):
         fixed = boardfiles.fix_unloadable(text)
         if fixed != text:
             got["kicad_pcb"].write_text(fixed)
+        _drop_covered_micro_arcs(got["kicad_pcb"])
     meta = {k: str(v) for k, v in got.items()}
     meta.update(id=entry["id"], pcb_sha256=digest, repo=entry["repo"], commit=entry.get("commit"))
     meta_path.write_text(json.dumps(meta, indent=1))
