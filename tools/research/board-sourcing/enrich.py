@@ -261,7 +261,7 @@ def build_rows(found_glob, skip_paths=()):
             e = json.loads(line)
             existing.add((e["repo"].rstrip("/").lower(), e.get("pcb_path")))
     rows, ids, rejected = [], set(), []
-    bulk = ("discovery", "kicad-happy", "hosts-misc")  # script-classified sources go last
+    bulk = ("discovery", "kicad-happy", "kicad-happy-review", "hosts-misc")  # script-classified sources go last
     for f in sorted(glob.glob(found_glob), key=lambda f: (Path(f).stem in bulk, Path(f).stem)):
         if f.endswith(".rejected.jsonl"):
             continue
