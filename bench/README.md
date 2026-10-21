@@ -16,9 +16,16 @@ source bench/.venv/bin/activate
 kaebench doctor
 ```
 
-Other OSes: install KiCad 10 and point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` (an
-interpreter that can `import pcbnew`) at it; set `KAE_FREEROUTING` to a Freerouting
-binary or JAR (the JAR needs Java 25). Run `pytest bench/tests` to check the install.
+**Without sudo** the same script still works:
+- KiCad runs from the official `kicad/kicad:10.0.7` image, unpacked into `~/.cache/kaebench` (~2.5 GB). It needs no root and no `/dev/fuse`.
+- It uses an installed Apptainer or Singularity. Without one, it installs Apptainer 1.5.4 rootless into `~/.cache/kaebench/apptainer` (~160 MB) with Apptainer's own `install-unprivileged.sh`, which unpacks EL8 RPMs. Python stand-ins replace `rpm2cpio` and `cpio` if they are missing.
+- The rootless install needs x86_64 and unprivileged user namespaces. Check with `unshare -Ur true && echo ok`. Ubuntu 22.04 allows them by default; 24.04 blocks them unless an admin relaxes `kernel.apparmor_restrict_unprivileged_userns`.
+- If `python3-venv` is missing, the venv comes from `uv`.
+- Freerouting, the venv and `env.sh` all live in your home directory. Set `KAE_HOME` to put the large files on another disk.
+- `source bench/.venv/bin/activate` picks up the KiCad wrapper. Force this route with `--kicad container`.
+- The container sees `$HOME`, `/tmp` and the current directory. For a `--workdir` elsewhere, export `APPTAINER_BIND=/that/path`.
+
+Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The Python must be able to `import pcbnew`. Set `KAE_FREEROUTING` to a Freerouting binary or JAR; the JAR needs Java 25. Run `pytest bench/tests` to check the install.
 
 ## Usage
 

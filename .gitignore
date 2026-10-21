@@ -4,3 +4,5 @@ tools/research/**/results/errors*.log
 *.egg-info/
 bench/.venv/
 kae-work/
+CLAUDE.local.md
+.claude/settings.local.json

@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests that need no KiCad installation."""
 import json
+import lzma
+import os
+import struct
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -114,3 +120,31 @@ def test_clamp_dsn_widths(tmp_path):
     assert boardfiles.clamp_dsn_widths(dsn, 0.127) == 1
     text = dsn.read_text()
     assert "(width 127)" in text and "(width 250)" in text and "(clearance 200)" in text
+
+
+def _newc(entries):
+    out = b""
+    for ino, (name, mode, body) in enumerate([*entries, ("TRAILER!!!", 0, b"")]):
+        nb = name.encode() + b"\0"
+        out += b"070701" + b"".join(b"%08x" % v for v in (ino, mode, 0, 0, 1, 0, len(body), 0, 0, 0, 0, len(nb), 0))
+        out += nb + b"\0" * ((-(110 + len(nb))) % 4) + body + b"\0" * ((-len(body)) % 4)
+    return out
+
+
+def test_rpm_shims(tmp_path):
+    """setup.sh's rpm2cpio/cpio stand-ins (rootless Apptainer install) round-trip an RPM."""
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    archive = _newc([("./usr/bin", 0o40755, b""), ("./usr/bin/tool", 0o100755, b"#!/bin/sh\n"),
+                     ("./usr/bin/alias", 0o120777, b"tool")])
+    hdr = b"\x8e\xad\xe8\x01" + b"\0" * 4 + struct.pack(">II", 0, 0)
+    rpm = b"\xed\xab\xee\xdb" + b"\0" * 92 + hdr + hdr + lzma.compress(archive)
+    cpio = subprocess.run([sys.executable, scripts / "rpm2cpio.py", "-"], input=rpm, capture_output=True, check=True)
+    assert cpio.stdout == archive
+    subprocess.run([sys.executable, scripts / "cpio_extract.py", "-idum"], input=cpio.stdout, cwd=tmp_path, check=True)
+    assert (tmp_path / "usr/bin/tool").read_bytes() == b"#!/bin/sh\n"
+    assert os.access(tmp_path / "usr/bin/tool", os.X_OK)
+    assert os.readlink(tmp_path / "usr/bin/alias") == "tool"
+    # empty or truncated input must fail, so the installer's download retry loop runs
+    for bad in (b"", archive[:150]):
+        r = subprocess.run([sys.executable, scripts / "cpio_extract.py", "-idum"], input=bad, cwd=tmp_path)
+        assert r.returncode != 0
