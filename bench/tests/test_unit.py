@@ -122,6 +122,18 @@ def test_download_retries_rate_limit(tmp_path, monkeypatch):
     assert fetch._download("https://gitlab.example.org/y", tmp_path / "y") is False
 
 
+def test_fetch_falls_back_to_git_when_raw_misses(tmp_path, monkeypatch):
+    # gitlab.cba.mit.edu projects that moved to forge.cba.mit.edu 404 on the guessed raw URL
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: False)
+    def git_fetch(repo, commit, paths, dest_dir):
+        out = dest_dir / "b.kicad_pcb"
+        out.write_text("(kicad_pcb (version 20240108))")
+        return {"kicad_pcb": out}
+    monkeypatch.setattr(fetch, "_git_fetch", git_fetch)
+    e = entry(repo="https://gitlab.cba.mit.edu/u/p", pcb_path="hw/b.kicad_pcb")
+    assert fetch.fetch(e, tmp_path)["kicad_pcb"].endswith("b.kicad_pcb")
+
+
 def test_art_zones_to_polys():
     pts = "(pts (xy 0 0) (xy 1 0) (xy 1 1))"
     text = ('(kicad_pcb (version 1)\n'

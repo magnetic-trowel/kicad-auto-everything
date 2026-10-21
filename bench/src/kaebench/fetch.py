@@ -188,6 +188,13 @@ def fetch(entry, cache_dir, force=False):
             out = dest / Path(p).name
             if _download(_raw_url(entry["repo"], entry["commit"], p), out):
                 got[key] = out
+        if "kicad_pcb" not in got:
+            # the raw URL is guessed from the host name, which goes stale when a project moves
+            # (gitlab.cba.mit.edu redirects to a Forgejo with other URLs); git follows redirects
+            try:
+                got = _git_fetch(entry["repo"], entry["commit"], paths, dest) or got
+            except subprocess.SubprocessError:
+                pass
     else:
         got = _git_fetch(entry["repo"], entry["commit"], paths, dest)
     if "kicad_pcb" not in got:
