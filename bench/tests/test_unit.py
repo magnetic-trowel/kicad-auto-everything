@@ -72,6 +72,13 @@ def test_fix_unloadable():
     text = '(pad 1 smd (net 34 313)) (pad 2 smd (net 1 GND)) (gr_line (layer "Rescue")) (fp_line (layer "UNDEFINED"))'
     assert boardfiles.fix_unloadable(text) == ('(pad 1 smd (net 34 "313")) (pad 2 smd (net 1 GND)) '
                                                '(gr_line (layer "Cmts.User")) (fp_line (layer "Cmts.User"))')
+    text = '(net 16 -5) (net 6 +3.3) (net 45 1.02) (net 3 "+5V") (net 1 VCC)'
+    assert boardfiles.fix_unloadable(text) == '(net 16 "-5") (net 6 "+3.3") (net 45 "1.02") (net 3 "+5V") (net 1 VCC)'
+    text = '(kicad_pcb\n\t(property "SPDX-License-Identifier" "MIT")\n\t(version 20260206)\n\t(generator "pcbnew")'
+    assert boardfiles.fix_unloadable(text).startswith(
+        '(kicad_pcb\n\t(version 20260206)\n\t(property "SPDX-License-Identifier" "MIT")\n\t\n\t(generator')
+    text = '(user_via 0.45 0.3 3 0 31) (user_via 0.6 0.4)'
+    assert boardfiles.fix_unloadable(text) == '(user_via 0.45 0.3) (user_via 0.6 0.4)'
 
 
 def test_zip_fetch_reads_tar_gz(tmp_path, monkeypatch):

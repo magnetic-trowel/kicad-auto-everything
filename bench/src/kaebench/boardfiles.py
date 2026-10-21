@@ -86,7 +86,9 @@ def block_end(text, start):
     return None
 
 
-_BARE_NET = re.compile(r'\(net (\d+) (\d+)\)')
+_BARE_NET = re.compile(r'\(net (\d+) ([-+]?(?:\d+\.?\d*|\.\d+))\)')
+_PROPS_FIRST = re.compile(r'\(kicad_pcb(\s+)((?:\(property "(?:[^"\\]|\\.)*" "(?:[^"\\]|\\.)*"\)\s+)+)(\(version \d+\))')
+_USER_VIA = re.compile(r'\(user_via ([\d.]+) ([\d.]+)(?: \d+)+\)')
 
 
 def fix_unloadable(text):
@@ -95,11 +97,18 @@ def fix_unloadable(text):
     - Items on layer "UNDEFINED" (Eagle layers with no KiCad mapping, e.g. tDocu graphics)
       or "Rescue" (KiCad's own holding layer for unmappable items) move to Cmts.User;
       they are documentation only.
-    - KiCad 4/5 files write purely numeric net names unquoted, `(net 34 313)`, which the
-      KiCad 10 parser rejects; quoting them changes nothing else.
+    - KiCad 4/5 files write number-like net names unquoted, `(net 34 313)`, `(net 16 -5)`,
+      `(net 6 +3.3)`, which the KiCad 10 parser rejects; quoting them changes nothing else.
+    - `(version ...)` must come first; some repos insert SPDX `(property ...)` lines above
+      it, so it is moved ahead of them.
+    - A 2017 pcbnew dev build ("via_types_in_design_rules") wrote via type and layer pair
+      after the size and drill of `(user_via ...)`; those are setup presets for the via
+      tool, not board items, so the extra fields are dropped.
     """
     for bad in ("UNDEFINED", "Rescue"):
         text = text.replace(f'(layer "{bad}")', '(layer "Cmts.User")')
+    text = _USER_VIA.sub(r'(user_via \1 \2)', text)
+    text = _PROPS_FIRST.sub(r'(kicad_pcb\1\3\1\2', text, count=1)
     return _BARE_NET.sub(r'(net \1 "\2")', text)
 
 
