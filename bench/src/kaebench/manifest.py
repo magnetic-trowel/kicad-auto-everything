@@ -12,9 +12,9 @@ REQUIRED = ("id", "repo", "commit", "pcb_path", "license")
 KEYS = REQUIRED + ("source", "sch_path", "pcb_sha256", "license_evidence", "license_tier",
                    "kicad_file_version", "layers", "footprints", "nets", "tracks", "vias", "zones",
                    "board_mm", "routed", "tags", "dataset", "notes")
-# Least to most restrictive. noncommercial/no-derivatives rows are for private,
+# Least to most restrictive. noncommercial rows are for private,
 # non-commercial evaluation only and never feed redistributed data products.
-TIERS = ("permissive", "weak-copyleft", "copyleft", "reciprocal-hardware", "noncommercial", "no-derivatives")
+TIERS = ("permissive", "weak-copyleft", "copyleft", "reciprocal-hardware", "noncommercial")
 # Non-KiCad board formats that `kicad-cli pcb import` converts at fetch time.
 IMPORT_FORMATS = {".brd": "eagle", ".pcbdoc": "altium", ".asc": "pads", ".cpa": "cadstar"}
 
