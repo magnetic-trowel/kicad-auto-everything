@@ -9,7 +9,7 @@ helper systems for LLMing KiCad
 
 ## License
 
-Split licensing: code is [MPL-2.0](LICENSE), documentation and research notes
-are CC-BY-4.0, rule packs CC0-1.0, datasets CDLA-Permissive-2.0, and model
-weights Apache-2.0. See [`LICENSING.md`](LICENSING.md) for details and
+Code is [GPL-3.0-or-later](LICENSE); documentation and research notes are
+CC-BY-4.0, rule packs CC0-1.0, datasets CDLA-Permissive-2.0, and model weights
+Apache-2.0. See [`LICENSING.md`](LICENSING.md) for details and
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute (DCO sign-off).

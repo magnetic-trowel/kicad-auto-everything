@@ -24,5 +24,6 @@ This adds a `Signed-off-by: Your Name <you@example.com>` trailer.
 AI-assisted contributions are welcome. The person signing off is responsible
 for the contribution: review it, make sure it does not reproduce code or text
 under incompatible terms, and follow the dependency rules in
-[`LICENSING.md`](LICENSING.md) (in particular, GPL code stays behind a process
-boundary and vendor documents are paraphrased with citations, not copied).
+[`LICENSING.md`](LICENSING.md) (in particular, no GPL-2.0-only or
+non-commercial code, and vendor documents are paraphrased with citations, not
+copied).
