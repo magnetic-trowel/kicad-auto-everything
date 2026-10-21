@@ -337,6 +337,7 @@ def main():
             print(f"[{i}/{len(rows)}] {res['id']} {'ok' if res.get('_ok') else res.get('_error')}", file=sys.stderr,
                   flush=True)
     good = sorted((r for r in done if r.get("_ok")), key=lambda r: r["id"])
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         for r in good:
             f.write(json.dumps({k: r.get(k) for k in KEYS}) + "\n")
