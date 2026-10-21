@@ -1,0 +1,15 @@
+{"repo": "https://github.com/adafruit/ADS1X15-Breakout-Board-PCBs", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/Adafruit-ADXL343-ADT7410-Featherwing-PCB", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/Adafruit-MiniPOV4-Kit", "reason": "only licence is GPL for bundled V-USB firmware (Bootloader/usbdrv); no licence stated for hardware files"}
+{"repo": "https://github.com/adafruit/Adafruit-Proto-Plate-for-Beagle-Bone-PCB", "reason": "no board files (.brd/.kicad_pcb) in repo"}
+{"repo": "https://github.com/adafruit/Adafruit-Swirly-Grid-PCB", "reason": "mounting-grid plates with no electronic parts"}
+{"repo": "https://github.com/adafruit/Adafruit_Atmega32u4_Breakout_Board", "reason": "only binary (pre-v6) Eagle .brd files"}
+{"repo": "https://github.com/adafruit/Adafruit_Brain-Machine-Kit", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/Adafruit_Conway-Game-of-Life-Kit", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/Adafruit_Microtouch", "reason": "only binary (pre-v6) Eagle .brd files"}
+{"repo": "https://github.com/adafruit/Adafruit_Motor-Shield-v1", "reason": "only binary (pre-v6) Eagle .brd files"}
+{"repo": "https://github.com/adafruit/BLM-Badge-PCB", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/Ice-Tube-Clock", "reason": "only binary (pre-v6) Eagle .brd files"}
+{"repo": "https://github.com/adafruit/Monochron", "reason": "no licence found (no LICENSE file, README has no licence statement): "}
+{"repo": "https://github.com/adafruit/SpokePOV", "reason": "no board files (.brd/.kicad_pcb) in repo"}
+{"repo": "https://github.com/adafruit/TV-B-Gone-kit", "reason": "only binary (pre-v6) Eagle .brd files"}

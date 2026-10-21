@@ -23,24 +23,34 @@ from kaebench.manifest import import_format
 TIER = {}
 for k in ("MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "0BSD", "Unlicense", "CC0-1.0", "CC-BY-4.0",
           "CC-BY-3.0", "CERN-OHL-P-2.0", "Zlib", "BSL-1.0", "MIT-0", "Solderpad-0.51", "SHL-0.51", "SHL-2.0", "SHL-2.1",
-          "WTFPL", "BSD-1-Clause", "CC-BY-2.0", "CC-BY-2.5", "PDDL-1.0", "Apache-1.1"):
+          "WTFPL", "Beerware", "blessing", "BSD-1-Clause", "CC-BY-2.0", "CC-BY-2.5", "PDDL-1.0", "Apache-1.1"):
     TIER[k] = "permissive"
-for k in ("CERN-OHL-W-2.0", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "MPL-2.0"):
+for k in ("CERN-OHL-W-2.0", "EPL-2.0", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "MPL-2.0"):
     TIER[k] = "weak-copyleft"
-for k in ("GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "AGPL-3.0-only",
+for k in ("GPL-1.0-or-later", "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "AGPL-3.0-only",
           "AGPL-3.0-or-later", "EUPL-1.2"):
     TIER[k] = "copyleft"
 for k in ("CERN-OHL-S-2.0", "CERN-OHL-1.1", "CERN-OHL-1.2", "TAPR-OHL-1.0", "CC-BY-SA-4.0", "CC-BY-SA-3.0",
           "CC-BY-SA-2.5", "CC-BY-SA-2.0", "OHL"):
     TIER[k] = "reciprocal-hardware"
 ORDER = ["permissive", "weak-copyleft", "copyleft", "reciprocal-hardware", "noncommercial"]
-BAD = re.compile(r"proprietary|all rights reserved|source-available|no-?licen[cs]e", re.I)
+BAD = re.compile(r"proprietary|all rights reserved|source-available|no-?licen[cs]e|personal-use", re.I)
 ND = re.compile(r"-ND\b|NoDeriv|no-derivatives", re.I)
 NC = re.compile(r"-NC\b|-NC-|NonCommercial|Non-?Commercial|No-?Commercial|NC-AGPL", re.I)
 LICREF = {"LicenseRef-Lone-Dynamics-Open-License": "permissive",
           "LicenseRef-ULX3S-modified-MIT": "permissive",
           "LicenseRef-CERN-OHL-unspecified-version": "reciprocal-hardware",  # OSHWA says only "CERN"
-          "LicenseRef-Solderpad-unspecified-version": "permissive"}
+          "LicenseRef-Solderpad-unspecified-version": "permissive",
+          "LicenseRef-CC-BY-SA-unversioned": "reciprocal-hardware",
+          "LicenseRef-CBA-permissive": "permissive",  # MIT CBA/Fab licence: any purpose, attribution
+          "LicenseRef-Fab-License": "permissive",
+          "LicenseRef-KCORES-1.0": "reciprocal-hardware",  # any use/modify; derivatives must be open
+          "LicenseRef-GNU-GPL-unversioned": "copyleft",
+          "LicenseRef-GPL-3.0-or-later-private-use-only": "noncommercial",
+          "LicenseRef-BSD-or-ISC": "permissive", "LicenseRef-OricMouse-BSD4-like": "permissive",
+          "LicenseRef-CERN-OHL-unversioned": "reciprocal-hardware",
+          "LicenseRef-TAPR-NCL-1.0": "noncommercial",  # TAPR Noncommercial Hardware License
+          "LicenseRef-Janelia-Open-Source-Hardware": "noncommercial"}
 ALIASES = {"GPL-3.0": "GPL-3.0-only", "GPL-2.0": "GPL-2.0-only", "GPLv3": "GPL-3.0-only", "LGPL-3.0": "LGPL-3.0-only",
            "LGPL-2.1": "LGPL-2.1-only", "AGPL-3.0": "AGPL-3.0-only", "CERN-OHL-S": "CERN-OHL-S-2.0",
            "CERN-OHL-W": "CERN-OHL-W-2.0", "CERN-OHL-P": "CERN-OHL-P-2.0", "CC-BY-SA": "CC-BY-SA-4.0",
@@ -261,7 +271,8 @@ def build_rows(found_glob, skip_paths=()):
             e = json.loads(line)
             existing.add((e["repo"].rstrip("/").lower(), e.get("pcb_path")))
     rows, ids, rejected = [], set(), []
-    bulk = ("discovery", "kicad-happy", "kicad-happy-review", "hosts-misc")  # script-classified sources go last
+    bulk = ("discovery", "kicad-happy", "kicad-happy-review", "kicad-happy2", "kicad-happy-review2", "hosts-misc",
+            "community2", "datasets2")  # script-classified sources go last
     for f in sorted(glob.glob(found_glob), key=lambda f: (Path(f).stem in bulk, Path(f).stem)):
         if f.endswith(".rejected.jsonl"):
             continue
@@ -305,7 +316,8 @@ def build_rows(found_glob, skip_paths=()):
                              sch_path=r["sch_path"] if re.search(r"\.(kicad_sch|sch|schdoc)$", str(r.get("sch_path") or ""), re.I)
                              and (r["sch_path"].endswith(".kicad_sch") or import_format(r["pcb_path"])) else None,
                              license=lic, license_evidence=r.get("license_evidence"), license_tier=tier,
-                             dataset={"pcbcorpus": "pcb-corpus", "kicad-happy": "kicad-happy"}.get(sector, f"direct-{sector}"),
+                             dataset="pcb-corpus" if sector == "pcbcorpus" else "kicad-happy" if sector.startswith("kicad-happy")
+                             else f"direct-{sector}",
                              notes=" ".join(x for x in (r.get("name"), r.get("notes")) if x).strip(),
                              extra_tags=[r["category"]] if r.get("category") else []))
     print(f"{len(rows)} rows to enrich; {len(rejected)} rejected by licence normaliser", file=sys.stderr)

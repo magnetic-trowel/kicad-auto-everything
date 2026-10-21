@@ -1,0 +1,15 @@
+{"repo": "https://github.com/BAbhiraman/Qynth", "reason": "No hardware licence: only licence texts are vendored STM32 CMSIS/HAL driver licences inside firmware projects; no root licence"}
+{"repo": "https://github.com/Bonemind/RSMP", "reason": "No hardware licence: firmware/LICENSE.md is vendored KMK firmware licence (\"Hardware schematics are licensed under individual terms\"), libs/foostan MIT is a footprint lib; no root licence"}
+{"repo": "https://github.com/BrownDogGadgets/SolarTracker", "reason": "Dual Axis Tracker/LICENSE.md: \"All rights reserved to Brown Dog Gadgets.\" no grant"}
+{"repo": "https://github.com/BryanGuan24/Custom-Keyboard-Project", "reason": "No hardware licence: licences only on vendored footprint libraries (keebs.pretty CERN-OHL-1.2, kicad-library Apache)"}
+{"repo": "https://github.com/adunkr/Air-Quality-IoT-UCSD-ECE-196", "reason": "No licence for boards: only SnapMagic part-model terms and node_modules licences"}
+{"repo": "https://github.com/barafael/attiny-programmer", "reason": "Unlicense only inside \"Old fritzing version/\" directory; no licence covering the KiCad board"}
+{"repo": "https://github.com/blackforestdev/datum-eda", "reason": "Proprietary: \"All rights reserved ... No part of the Software may be reproduced, distributed, modified\" (boards are test fixtures anyway)"}
+{"repo": "https://github.com/blueOkiris/ps-ktc", "reason": "No root/hardware licence: licence files only in pcb/lib/pmw3360 (third-party library: CERN-OHL-P, Nordic, QMK GPL)"}
+{"repo": "https://github.com/clacktronics/Eurorack_KiCAD_templates", "reason": "Templates only (front/connector panels and template main board), Unlicense; not real boards"}
+{"repo": "https://github.com/davidmolony/HVDCDC", "reason": "No hardware licence: only vendored STM32 CMSIS/HAL driver licences under Firmware/Drivers"}
+{"repo": "https://github.com/deokgonkim/example", "reason": "No licence covering kicad/: GPL-3/MIT only in unrelated sample sub-projects"}
+{"repo": "https://github.com/juliannevillecorrea/juliannevillecorrea.github.io", "reason": "Root CC0 but the only board guitar_pedal.kicad_pcb is empty (no footprints)"}
+{"repo": "https://github.com/ncarandini/KiCad-RP-Pico", "reason": "Footprint library; only board is Test/Test.kicad_pcb library test file"}
+{"repo": "https://github.com/JagdPietr/Skel50", "reason": "Unlicense root, but Skel50.kicad_pcb is empty (no footprints); only other board is a vendored copy of a third-party project"}
+{"repo": "https://github.com/splitkb/myriad", "reason": "terms_of_use grant non-commercial use and making objects, but no modification right: treated as no-derivatives (main session)"}
