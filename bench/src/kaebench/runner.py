@@ -116,6 +116,8 @@ def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, job
     if stale:
         raise ValueError(f"{len(stale)} place tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
+    if hasattr(adapter, "hide"):
+        adapter.hide(tasks_dir, results_dir)
     name = name or f"{adapter.name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -51,7 +51,8 @@ def summarize(rows):
         m = dict(boards=len(boards), k=k,
                  failures=sum(1 for r in every if r["status"] != "ok"),
                  time_s=_mean([r.get("runtime_s") for r in every]),
-                 suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")))
+                 suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")),
+                 unsandboxed=sum(1 for r in every if (r.get("adapter_meta") or {}).get("sandboxed") is False))
         if kind == "route":
             best = [_route_best(b) for b in boards]
             sc1 = [r.get("score") or {} for r in first]
@@ -96,6 +97,10 @@ def to_markdown(summary):
             vals = dict(m, adapter=adapter, split=split)
             lines.append("| " + " | ".join("" if vals.get(c) is None else str(vals.get(c)) for c in cols) + " |")
         lines.append("")
+    unsandboxed = sorted({key[0] for key, m in summary.items() if m.get("unsandboxed")})
+    if unsandboxed:
+        lines.append(f"**Unsandboxed attempts** ({', '.join(unsandboxed)}): these methods could read "
+                     "the reference layouts; do not treat their scores as results.\n")
     lines.append("cp1/cpk: clean pass on attempt 0 / best of k (fully connected, no error-level DRC, "
                  "nothing but routing changed). completion: share of start-of-task unconnected items "
                  "routed. invalid: best attempts that changed more than the task allows. suspect: "

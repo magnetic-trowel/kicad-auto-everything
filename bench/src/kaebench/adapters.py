@@ -5,7 +5,15 @@
 Adapters get a private working copy of the task input and must write
 `<workdir>/output/board.kicad_pcb`. They never score themselves: the runner
 re-opens the output in a fresh process with the reference rules installed.
+
+External tools (`--command`) run in a sandbox (bubblewrap) by default: no network, a
+private /tmp, and a home directory that shows only the kaebench tool cache, the current
+directory and paths passed with --sandbox-ro. The kaebench workdir (tasks, references,
+other results) and any KAE_SANDBOX_HIDE paths are hidden; only the attempt's own work
+directory is writable. A method therefore cannot read the human layout it is scored
+against, download it, or touch other attempts.
 """
+import os
 import shlex
 import shutil
 import subprocess
@@ -15,6 +23,52 @@ from pathlib import Path
 
 from . import tools
 from .boardfiles import board_path, clamp_dsn_widths, strip_ses_placement
+
+
+@dataclass
+class Sandbox:
+    """bubblewrap jail for an untrusted method. `hide` paths are replaced by empty dirs;
+    `ro` paths stay readable even inside the hidden home directory."""
+    enabled: bool = True
+    network: bool = False
+    ro: list = field(default_factory=list)
+    hide: list = field(default_factory=list)
+
+    def describe(self):
+        return dict(enabled=self.enabled, network=self.network, ro=[str(p) for p in self.ro],
+                    hide=[str(p) for p in self._hidden()])
+
+    def _hidden(self):
+        extra = [p for p in os.environ.get("KAE_SANDBOX_HIDE", "").split(os.pathsep) if p]
+        return [Path(p).resolve() for p in [*self.hide, *extra]]
+
+    def _readable(self):
+        paths = [tools.KAE_HOME, *self.ro]
+        cwd = Path.cwd().resolve()
+        if Path.home().resolve() in cwd.parents:
+            paths.append(cwd)  # e.g. the repo checkout holding the method's code
+        return [Path(p).resolve() for p in paths if Path(p).exists()]
+
+    def wrap(self, argv, workdir):
+        if not self.enabled:
+            return list(argv)
+        bwrap = shutil.which("bwrap")
+        if not bwrap:
+            raise tools.ToolError("bubblewrap (bwrap) not found; install it, or pass --no-sandbox "
+                                  "(results are then marked unsandboxed)")
+        home, work = Path.home().resolve(), Path(workdir).resolve()
+        cmd = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+               "--tmpfs", "/tmp", "--tmpfs", "/var/tmp", "--tmpfs", str(home)]
+        for p in self._readable():
+            cmd += ["--ro-bind", str(p), str(p)]
+        for p in self._hidden():
+            if p.exists():
+                cmd += ["--tmpfs", str(p)]
+        cmd += ["--bind", str(work), str(work), "--chdir", str(work),
+                "--unshare-pid", "--unshare-ipc", "--die-with-parent", "--new-session"]
+        if not self.network:
+            cmd.append("--unshare-net")
+        return cmd + list(argv)
 
 
 @dataclass
@@ -130,21 +184,27 @@ class Freerouting(Adapter):
 
 
 class Command(Adapter):
-    """Any external tool: a command template run in the work directory.
+    """Any external tool: a command template run in the work directory, sandboxed.
 
     Placeholders: {input} {output} {workdir} {kind} {attempt} {timeout}. The tool
     reads {input} (a .kicad_pcb with its project files beside it) and writes {output}.
     """
     name = "command"
 
-    def __init__(self, template, name=None, kinds=("route", "place")):
+    def __init__(self, template, name=None, kinds=("route", "place"), sandbox=None):
         self.template = template
         if name:
             self.name = name
         self.kinds = tuple(kinds)
+        self.sandbox = sandbox or Sandbox()
 
     def describe(self):
-        return dict(name=self.name, template=self.template, kinds=list(self.kinds))
+        return dict(name=self.name, template=self.template, kinds=list(self.kinds),
+                    sandbox=self.sandbox.describe())
+
+    def hide(self, *paths):
+        """Hide these paths from the method (the runner passes its tasks and results dirs)."""
+        self.sandbox.hide.extend(Path(p) for p in paths)
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         w = Path(workdir)
@@ -154,16 +214,18 @@ class Command(Adapter):
                                    output=shlex.quote(str(board_path(out))),
                                    workdir=shlex.quote(str(w)), kind=kind, attempt=attempt,
                                    timeout=int(timeout))
+        argv = self.sandbox.wrap(["sh", "-c", cmd], w)
         try:
-            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=w)
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=w)
             log = r.stdout[-20000:] + r.stderr[-5000:]
         except subprocess.TimeoutExpired:
             return AdapterResult(None, f"timed out after {timeout}s", dict(timed_out=True))
         ok = board_path(out).exists()
-        return AdapterResult(board_path(out) if ok else None, log, dict(rc=r.returncode))
+        return AdapterResult(board_path(out) if ok else None, log,
+                             dict(rc=r.returncode, sandboxed=self.sandbox.enabled))
 
 
-def make(name, command=None, passes=None):
+def make(name, command=None, passes=None, sandbox=None):
     if name == "reference":
         return Reference()
     if name == "noop":
@@ -173,6 +235,6 @@ def make(name, command=None, passes=None):
     if name == "freerouting-stock":
         return Freerouting(passes=passes, stock=True)
     if command:
-        return Command(command, name=name)
+        return Command(command, name=name, sandbox=sandbox)
     raise ValueError(f"unknown adapter {name!r} (built-ins: reference, noop, freerouting; "
                      "or pass --command for an external tool)")

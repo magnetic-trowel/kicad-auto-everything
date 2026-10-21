@@ -135,7 +135,9 @@ def cmd_prepare_dir(a):
 
 def cmd_run(a):
     _, tasks, results = _dirs(a)
-    ad = adapters.make(a.adapter, command=a.command, passes=a.passes)
+    sandbox = adapters.Sandbox(enabled=not a.no_sandbox, network=a.sandbox_net,
+                               ro=[Path(x) for x in a.sandbox_ro or []])
+    ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox)
     probe = adapters.make(a.probe) if a.probe else None
     run_dir = runner.run(tasks, results, ad, kinds=_split(a.kinds) or ["route"], k=a.k,
                          timeout=a.timeout, jobs=a.jobs, probe=probe, only=_split(a.only),
@@ -239,6 +241,12 @@ def main(argv=None):
     sp.add_argument("--all", action="store_true", help="include boards whose human layout is not clean")
     sp.add_argument("--name", help="run name (reuse to resume)")
     sp.add_argument("--keep-work", action="store_true")
+    sp.add_argument("--no-sandbox", action="store_true",
+                    help="run --command methods unsandboxed (they can then read reference layouts; "
+                         "results are marked unsandboxed)")
+    sp.add_argument("--sandbox-net", action="store_true", help="give sandboxed methods network access")
+    sp.add_argument("--sandbox-ro", action="append", metavar="PATH",
+                    help="extra path a sandboxed method may read (repeatable)")
     sp.set_defaults(fn=cmd_run)
 
     sp = sub.add_parser("tasks", help="qualification yield of prepared tasks")
