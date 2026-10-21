@@ -57,7 +57,10 @@ def _git_fetch(repo, commit, paths, dest_dir):
 
 
 def _zip_fetch(entry, paths, dest_dir):
-    """Download a design-file archive, check archive_sha256, extract the board and project files."""
+    """Download a design-file archive, check archive_sha256, extract the board and project files.
+
+    A download that is not a zip is taken to be the board file itself (e.g. a single Zenodo file).
+    """
     archive = dest_dir / "archive.zip"
     if not _download(entry["repo"], archive):
         raise FileNotFoundError(f"{entry['id']}: archive {entry['repo']} not found")
@@ -66,6 +69,10 @@ def _zip_fetch(entry, paths, dest_dir):
         raise ValueError(f"{entry['id']}: archive sha256 mismatch "
                          f"(manifest {entry['archive_sha256'][:12]}, fetched {digest[:12]})")
     got = {}
+    if not zipfile.is_zipfile(archive):
+        out = dest_dir / Path(entry["pcb_path"]).name
+        archive.rename(out)
+        return {"kicad_pcb": out}
     with zipfile.ZipFile(archive) as z:
         names = set(z.namelist())
         for key, p in paths.items():
