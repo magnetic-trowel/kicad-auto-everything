@@ -82,25 +82,38 @@ PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) cle
 Example external router: `kaebench run --adapter myrouter --command "python my_router.py {input} {output}"`.
 The tool reads `{input}` (a `.kicad_pcb` with its project files beside it) and writes `{output}`.
 
+**Sandbox.** `--command` methods run under bubblewrap (`bwrap`):
+- no network;
+- a private `/tmp` and `/var/tmp`;
+- a home directory that shows only the kaebench tool cache (`KAE_HOME`), the current directory and any `--sandbox-ro PATH`;
+- the workdir's tasks and results hidden, plus anything in `KAE_SANDBOX_HIDE` (colon-separated);
+- only the attempt's own work directory writable.
+
+A method can't read the human layout it is scored against, download it, or touch other attempts. On timeout the whole sandbox is killed. `--sandbox-net` allows network access, for LLM methods. `--no-sandbox` turns the sandbox off; the report then marks those attempts as unsandboxed.
+
 ## Scoring
 
-- **Fresh process, reference rules.** The output board is copied into a scoring
-  directory with the reference `.kicad_pro`/`.kicad_dru`, zones are refilled, and
-  `kicad-cli pcb drc` runs. Methods never score themselves and cannot change rules.
-- **Integrity.**
-  - Route results must keep placement, pad nets and the board `setup` block.
-  - Place results must keep pad nets, locked footprints and `setup`.
-  - Anything else is invalid.
+- **Rebuilt board, reference rules, fresh process.** The scorer never judges the file a method wrote. It rebuilds the board from the task input plus only the changes the task allows:
+  - route: the tracks, arcs and vias, copied as KiCad's own re-save of them;
+  - place: each unlocked footprint's position, rotation and side.
+
+  The rebuilt board gets the reference `.kicad_pro`/`.kicad_dru`, zones are refilled, and `kicad-cli pcb drc` runs. Edits to rules, outline, keepouts, zones, pads, layers or nets can't change a score. Rules files a method writes are never read.
+- **Integrity (`valid`).** Anything else the method changed is still detected, by comparing KiCad re-saves of output and input with the allowed changes normalized away (`foreign` lists them). Such a result is invalid.
+  - Route results must keep placement, pad nets and every other board object, and route only on the board's copper layers and nets.
+  - Place results must keep pad nets and every non-pose property, leave locked footprints where they are, and not add or remove footprints or copper.
+- **Copy check.** `copy` reports how much of the output reproduces the human layout exactly: tracks to 1 µm, or poses to 1 µm and 0.01°. `suspect_copy` flags at least 20 tracks and 60% matching, or at least 5 parts and 50%. It is report-only until calibrated on real methods. The sandbox is the enforcement.
 - **Route metrics.**
   - `clean`: valid, 0 unconnected, 0 error-level DRC violations. Severities come from the board's own project; library-environment checks are excluded.
   - `completion`: share of start-of-task unconnected items now routed.
   - `wl_ratio`: track length relative to the human layout.
   - `via_delta`: via count minus the human layout's.
 - **Place metrics.**
-  - `legal`: no courtyard/clearance errors, every pad inside the board outline.
+  - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, every pad inside the board outline.
   - `hpwl_ratio` relative to the human placement.
-  - With `--probe freerouting`, the placement is routed by a fixed router and scored like a route result, Cypress-style.
+  - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style.
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
+- **Versions.** Every attempt records `score_version`. Place tasks need task spec 2 (locked footprints stay in place); re-run `prepare --force` on older task folders.
+- **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests
 
