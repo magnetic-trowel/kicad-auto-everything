@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Tests that need no KiCad installation."""
+import json
+
+import pytest
+
+from kaebench import boardfiles, manifest, report, score, tools
+
+SHA = "0" * 40
+
+
+def entry(**kw):
+    e = dict(id="b1", repo="https://github.com/o/r", commit=SHA, pcb_path="a/b.kicad_pcb", license="MIT")
+    e.update(kw)
+    return e
+
+
+def test_manifest_validation(tmp_path):
+    p = tmp_path / "m.jsonl"
+    p.write_text("\n".join(json.dumps(e) for e in [
+        entry(), entry(id="b2", license_tier="permissive", tags=["rf"])]) + "\n# comment\n")
+    assert [e["id"] for e in manifest.load(p)] == ["b1", "b2"]
+    assert [e["id"] for e in manifest.load(p, tags=["rf"])] == ["b2"]
+    assert [e["id"] for e in manifest.load(p, tiers=["permissive"])] == ["b2"]
+    for bad in (entry(commit="abc"), entry(pcb_path="x.brd"), entry(id="has space"),
+                entry(license_tier="other"), {k: v for k, v in entry().items() if k != "license"}):
+        with pytest.raises(manifest.ManifestError):
+            manifest.validate(bad)
+
+
+def test_duplicate_ids(tmp_path):
+    p = tmp_path / "m.jsonl"
+    p.write_text(json.dumps(entry()) + "\n" + json.dumps(entry()) + "\n")
+    with pytest.raises(manifest.ManifestError):
+        manifest.load(p)
+
+
+def test_project_paths():
+    assert manifest.project_paths(entry()) == {"kicad_pro": "a/b.kicad_pro", "kicad_dru": "a/b.kicad_dru"}
+
+
+def test_top_level_block_ignores_nested_and_strings():
+    text = '(kicad_pcb (version 1) (footprint "x" (setup "(setup fake)")) (setup (a 1) (b "c)")) (net 0 ""))'
+    assert boardfiles.top_level_block(text, "setup") == '(setup (a 1) (b "c)"))'
+    assert boardfiles.top_level_block(text, "missing") is None
+
+
+def test_strip_ses_placement(tmp_path):
+    ses = tmp_path / "in.ses"
+    ses.write_text('(session "b"\n (base_design "b")\n (placement (resolution um 10)\n  (component "R" (place R1 1 2 front 0)))\n (routes (resolution um 10)))\n')
+    out = tmp_path / "out.ses"
+    assert boardfiles.strip_ses_placement(ses, out)
+    text = out.read_text()
+    assert "placement" not in text and "(routes" in text
+
+
+def test_summarize_drc_ignores_library_checks():
+    rep = dict(violations=[dict(type="clearance", severity="error"),
+                           dict(type="lib_footprint_issues", severity="error"),
+                           dict(type="silk_overlap", severity="warning")],
+               unconnected_items=[{}, {}])
+    s = tools.summarize_drc(rep)
+    assert s == dict(unconnected=2, errors=1, warnings=1, errors_by_type={"clearance": 1})
+
+
+def test_potential_orders_clean_first():
+    clean = dict(valid=True, clean=True, completion=1.0, errors=0, track_length_mm=100)
+    longer = dict(clean, track_length_mm=150)
+    dirty = dict(valid=True, clean=False, completion=1.0, errors=1, track_length_mm=50)
+    invalid = dict(valid=False, clean=True)
+    ranked = sorted([dirty, invalid, longer, clean], key=score.potential, reverse=True)
+    assert ranked == [clean, longer, dirty, invalid]
+
+
+def test_report_best_of_k(tmp_path):
+    def row(bid, a, clean, comp):
+        return dict(adapter="x", kind="route", id=bid, split="A", attempt=a, status="ok", runtime_s=1.0,
+                    score=dict(valid=True, clean=clean, completion=comp, errors=0 if clean else 3,
+                               track_length_mm=10, wl_ratio=1.0, via_delta=0))
+    rows = [row("b1", 0, False, 0.5), row("b1", 1, True, 1.0), row("b2", 0, False, 0.8), row("b2", 1, False, 0.9)]
+    m = report.summarize(rows)[("x", "route", "all")]
+    assert m["boards"] == 2 and m["k"] == 2
+    assert m["cp1"] == 0.0 and m["cpk"] == 0.5
+    assert m["completion"] == pytest.approx(0.95)
+    assert "| x | all |" in report.to_markdown(report.summarize(rows))
+
+
+def test_id_list_from_file(tmp_path):
+    from kaebench.cli import _split
+    f = tmp_path / "suite.txt"
+    f.write_text("b1\n# comment\nb2  # trailing\n\n")
+    assert _split(f"@{f}") == ["b1", "b2"]
+    assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None
+
+
+def test_clamp_dsn_widths(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    dsn.write_text("(pcb b (resolution um 10) (unit um)\n (structure (rule (width 101.6) (clearance 200)))\n"
+                   " (network (class kicad_default a b (rule (width 250) (clearance 200)))))\n")
+    assert boardfiles.clamp_dsn_widths(dsn, 0.127) == 1
+    text = dsn.read_text()
+    assert "(width 127)" in text and "(width 250)" in text and "(clearance 200)" in text

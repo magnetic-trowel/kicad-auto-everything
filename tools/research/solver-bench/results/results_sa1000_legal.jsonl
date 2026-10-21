@@ -1,0 +1,2 @@
+{"stage": "input", "hpwl_mm": 13552.5, "check": [16, 2, 0, 0]}
+{"stage": "cluster-legalize", "rounds": 4, "secs": 3.9, "windows": 41, "solved": 20, "hpwl_mm": 13773.5, "check": [0, 0, 0, 0]}

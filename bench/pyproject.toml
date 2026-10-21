@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kaebench"
+version = "0.1.0"
+description = "Benchmark harness for automated KiCad placement and routing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+kaebench = "kaebench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+kaebench = ["kicad_scripts/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["kicad: needs KiCad 10 (kicad-cli + pcbnew)", "freerouting: needs Freerouting"]

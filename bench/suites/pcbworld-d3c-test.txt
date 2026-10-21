@@ -1,0 +1,13 @@
+# PCBWorld D3 hard test split (10 boards): PCBench folder names after PCBWorld's
+# prepare_pcbench.sh chain. Source: LGAI-Research/PCBWorld configs/datasets/d3.json @ 1989a93
+# (BSD-3-Clause). Boards keep their upstream licences; many have none.
+0400_laptimer58_Chickadee
+0423_induction-hob_temperature-sender
+0448_uedaino_uedaino
+0473_data-manager_data-manager
+0496_kitspace_f-91w
+0520_RGBMatrixPanelCPLD-PhotonBackpack_RGBMatrixPanel_CPLD_negative
+0546_ozinverter_ozinverterkicad
+0571_Brushless_ESC_Brushless_ESC
+0599_RGBMatrixPanelCPLD-PhotonBackpack_RGBMatrixPanel_CPLD
+0626_TOBS_HybridChargeController
