@@ -30,7 +30,7 @@ Every exact method breaks down at roughly 50–100 freely placed parts with rota
 Exact solvers work well when the problem is decomposed:
 - **Per-cluster placement.** HiePlace places 13–404-part industrial boards with Gurobi using DP plus relaxation inside a hierarchy.
 - **Legalization with relative order fixed.** NS-Place's GD+MILP is an example.
-- **LNS windows.** My hierarchical CP-SAT + LNS beat monolithic CP-SAT by 25–55% HPWL at 100 parts in about the same wall time, and stayed feasible at 300 and 1000 parts (see below).
+- **LNS windows.** My hierarchical CP-SAT + LNS beat monolithic CP-SAT by 22–55% HPWL at 100 parts in about the same wall time (one seed; monolithic results vary up to 2× across seeds). It stayed feasible at 300 and 1000 parts (see below).
 
 OR-Tools CP-SAT (Apache-2.0) is the most practical exact engine. It has native `add_no_overlap_2d` over optional intervals, keep-out boxes, hints and packing-LNS workers. MILP (HiGHS/SCIP) suits network-flow sub-problems such as escape routing. SMT (Z3) needs hours for 30–300 blocks with rotation.
 
@@ -162,7 +162,24 @@ Observations:
 - Cluster solves (112 s for 87 clusters × 2 variants) are independent and trivially parallel.
 - The top-level floorplan at 0.1 mm with 87 macros needs either a coarser grid (0.5 mm worked) or its own hierarchy level.
 
-{{ABLATION}}
+*D. Ablation: what makes monolithic N≥300 hard?* Time to first feasible, 0.5 mm grid, 300 s limit, 4 workers:
+
+| variant | result |
+|---|---|
+| N=150, full model | 15.0 s |
+| N=200, full model | 72.7 s |
+| N=300, full model | none in 300 s |
+| N=300 without decap constraints | **none in 300 s** (decap distance is *not* the bottleneck) |
+| N=300 with **fixed orientation** | **82.6 s** |
+| N=300 "opt2" rotation encoding | none in 300 s |
+| N=300 at 35% utilization | 173.7 s |
+| N=300 + dedicated packing subsolver (area-energetic + energetic + timetabling NoOverlap2D reasoning, 5,000 pairwise pairs; the primer's recipe with the 9.15 API fix) | **271 s** (vs none without) |
+| N=100 seed variance (seeds 0–3) | first feasible 4.0–5.9 s; 60 s HPWL 616–1,177 mm (≈2× spread) |
+
+Takeaways:
+- Free 4-way rotation is the main driver of difficulty at scale. Choosing orientations upstream (rules, LLM, or a continuous placer's argmax) and fixing them in CP-SAT removes most of it.
+- The packing subsolver helps. Keep it as one extra worker, as the primer suggests.
+- Time to first feasible grows super-linearly: 0.24 s (30) → 5.9 s (100) → 15 s (150) → 73 s (200) → >300 s (300).
 
 ### Inferences
 - **Scale guidance, now backed by the measurements above.**
@@ -543,7 +560,22 @@ for it in range(MAX_IT := 50):
 - The old NFP libraries are LGPL/GPL or abandoned.
 - For triangulation use PythonCDT. Avoid `triangle` (non-free upstream).
 
-{{GEOM}}
+**Own micro-benchmark [M] (`geom_bench.py`).** Courtyard rectangles at random positions; 5,000 single-part moves, each followed by "violates 0.2 mm clearance with anyone?". Cost per move-check in µs, single thread:
+
+| N | NumPy AABB vs all | Python grid hash (2 mm cells) | rtree delete+insert+query | Shapely STRtree query (static tree) | STRtree rebuilt every move | Shapely exact octagons (STRtree + `dwithin`) | full all-pairs exact check (one shot) |
+|---|---|---|---|---|---|---|---|
+| 100 | 11.4 | 13.3 | 37.7 | 23.6 | 39.4 | 27.3 | 0.49 ms |
+| 300 | 11.5 | 14.0 | 153.7 | 23.5 | 69.9 | 27.4 | 1.29 ms |
+| 1000 | 14.9 | 14.7 | 62.7 | 24.6 | 280.7 | 31.8 | 4.95 ms |
+| 3000 | 23.1 | 16.4 | 239.1 | 26.9 | 889.0 | 29.0 | 15.7 ms |
+
+- STRtree build takes 0.1–0.6 ms.
+- Clearance offset per polygon: pyclipper 12.7–14.6 µs with `arc_tolerance` = 5 µm (about 100 µs per polygon with a too-fine tolerance); Shapely `buffer` 8.4–22.7 µs.
+
+Conclusions:
+- At 20–1000 parts, a full exact polygon re-check of the whole board (≤5 ms) is cheap enough to run after every accepted LNS window or SA temperature step.
+- Per-move checks cost about 12–30 µs in Python with any vectorized method. That caps Python SA at roughly 10⁴–10⁵ moves/s, which is why the hot loop belongs in Rust.
+- rtree's per-move delete+insert is the slowest dynamic option here.
 
 ### Cited Findings
 - Shapely 2.2.0 (BSD-3). STRtree is Sort-Tile-Recursive and "constructed directly at initialization and nodes cannot be added or removed". `query(geom, predicate=…, distance=…)` supports 'dwithin' and array inputs — [strtree.py](https://raw.githubusercontent.com/shapely/shapely/main/src/shapely/strtree.py) [P]. GEOS is LGPL-2.1 — [COPYING](https://raw.githubusercontent.com/libgeos/geos/main/COPYING) [P]
