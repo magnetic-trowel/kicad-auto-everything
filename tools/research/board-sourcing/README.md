@@ -13,7 +13,9 @@ Scripts and candidate lists behind `bench/manifests/wide*.jsonl`. See
 | Stats + DRC under each board's own rules | `enrich.py 'found/*.jsonl' OUT WORKDIR -j N --skip ... --only keep.txt` | manifest rows |
 
 `found/<sector>.jsonl` are the agent-verified candidates (one row per board, licence evidence
-quoted); `*.rejected.jsonl` record why repos were left out. `keep.txt` is the
+quoted); `*.rejected.jsonl` record why repos were left out. `unloadable.rejected.jsonl`
+lists boards that KiCad 10 cannot open or import, and why (old binary Eagle, ASCII Altium,
+corrupt upstream files); enrich still tries them and they land in its `.failed` output. `keep.txt` is the
 de-duplicated id list; `todo.txt` the ids still to enrich when this was committed.
 
 ## Running enrich on a big host
