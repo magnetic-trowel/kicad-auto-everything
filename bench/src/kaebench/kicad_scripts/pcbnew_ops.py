@@ -8,7 +8,7 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py stats BOARD
     python pcbnew_ops.py convert IN OUT
     python pcbnew_ops.py strip-routing IN OUT [--keep-locked]
-    python pcbnew_ops.py strip-placement IN OUT [--keep-locked]
+    python pcbnew_ops.py strip-placement IN OUT
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
 """
@@ -175,8 +175,12 @@ def strip_routing(src, dst, keep_locked):
     _out(dict(ok=True, path=dst, removed=removed))
 
 
-def strip_placement(src, dst, keep_locked):
-    """Strip routing and move every unlocked footprint to a staging grid right of the board."""
+def strip_placement(src, dst):
+    """Strip all routing and move every unlocked footprint to a staging grid right of the board.
+
+    Locked footprints stay where the designer put them: they are part of the task (mounting
+    holes, connectors), and the scorer requires them unmoved.
+    """
     board = _load(src)
     # Move footprints before removing tracks: after Remove() SWIG returns untyped objects.
     bb = board.GetBoardEdgesBoundingBox()
@@ -185,7 +189,7 @@ def strip_placement(src, dst, keep_locked):
     col_h = max(bb.GetHeight(), int(50 * NM))
     x, y, col_w = x0, y0, 0
     moved = 0
-    fps = [fp for fp in board.GetFootprints() if not (keep_locked and fp.IsLocked())]
+    fps = [fp for fp in board.GetFootprints() if not fp.IsLocked()]
     fps.sort(key=lambda f: f.GetReference())
     for fp in fps:
         fp.SetOrientationDegrees(0)
@@ -200,7 +204,7 @@ def strip_placement(src, dst, keep_locked):
         y += h
         col_w = max(col_w, w)
         moved += 1
-    removed = _strip_routing(board, keep_locked)
+    removed = _strip_routing(board, False)
     _save(board, dst)
     _out(dict(ok=True, path=dst, removed=removed, moved=moved))
 
@@ -236,7 +240,7 @@ def main(argv):
         elif op == "strip-routing":
             strip_routing(args[0], args[1], keep_locked)
         elif op == "strip-placement":
-            strip_placement(args[0], args[1], keep_locked)
+            strip_placement(args[0], args[1])
         elif op == "export-dsn":
             export_dsn(args[0], args[1])
         elif op == "import-ses":

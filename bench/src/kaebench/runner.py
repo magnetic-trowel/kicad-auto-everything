@@ -14,7 +14,7 @@ from pathlib import Path
 
 from . import __version__, tools
 from .boardfiles import board_path, copy_board, install_rules
-from .prepare import load_tasks
+from .prepare import TASK_SPEC, load_tasks
 from .score import score_place_task, score_route_task, score_routing
 
 
@@ -107,6 +107,10 @@ def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, job
         only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print):
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
+    stale = [r["id"] for r in recs if "place" in kinds and r.get("task_spec", 1) < TASK_SPEC]
+    if stale:
+        raise ValueError(f"{len(stale)} place tasks were prepared with an older task spec "
+                         f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
     name = name or f"{adapter.name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)

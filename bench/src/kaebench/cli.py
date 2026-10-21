@@ -210,7 +210,8 @@ def main(argv=None):
     sp = sub.add_parser("prepare", help="convert, qualify and build route/place tasks")
     board_filters(sp)
     sp.add_argument("--kinds", default="route,place")
-    sp.add_argument("--keep-locked", action="store_true", help="keep locked copper/footprints in tasks")
+    sp.add_argument("--keep-locked", action="store_true",
+                    help="route tasks keep locked copper (place tasks always keep locked footprints)")
     sp.set_defaults(fn=cmd_prepare)
 
     sp = sub.add_parser("prepare-dir", help="build tasks from local board folders (e.g. PCBWorld output)")

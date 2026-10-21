@@ -8,7 +8,8 @@ DRC violations, keep the human copper as the reference, split by pad count.
 
 Task kinds:
   route  placement kept, all tracks/vias removed (locked copper optionally kept)
-  place  tracks removed and unlocked footprints moved to a staging area off-board
+  place  all copper removed and unlocked footprints moved to a staging area off-board;
+         locked footprints stay where the designer put them
 """
 import json
 import shutil
@@ -18,6 +19,9 @@ from . import tools
 from .boardfiles import STEM, board_path, install_rules
 
 TASK_KINDS = ("route", "place")
+# 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
+#    locked parts could not be placed legally and the human placement scored invalid)
+TASK_SPEC = 2
 
 
 def split_of(pads):
@@ -63,7 +67,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
         repo=entry["repo"], commit=entry["commit"], pcb_path=entry["pcb_path"],
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
-        split=split_of(ref_stats["pads"]), qualified=qualified,
+        split=split_of(ref_stats["pads"]), qualified=qualified, task_spec=TASK_SPEC,
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),
         reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc),
         tasks={},
@@ -72,13 +76,15 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         kdir = tdir / kind / "input"
         kdir.mkdir(parents=True)
         install_rules(ref, kdir)
-        op = "strip-routing" if kind == "route" else "strip-placement"
-        args = ["--keep-locked"] if keep_locked else []
-        tools.run_ops(op, board_path(ref), board_path(kdir), *args)
+        if kind == "route":
+            tools.run_ops("strip-routing", board_path(ref), board_path(kdir),
+                          *(["--keep-locked"] if keep_locked else []))
+        else:
+            tools.run_ops("strip-placement", board_path(ref), board_path(kdir))
         st = tools.run_ops("stats", board_path(kdir))
         drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
-                                     keep_locked=keep_locked)
+                                     keep_locked=keep_locked if kind == "route" else "footprints")
     task_json.write_text(json.dumps(record, indent=1))
     return record
 
