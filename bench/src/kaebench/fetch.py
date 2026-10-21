@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fetch manifest boards at their pinned commit into a local cache."""
+import email.utils
 import hashlib
 import itertools
-import email.utils
 import json
 import random
 import shutil
