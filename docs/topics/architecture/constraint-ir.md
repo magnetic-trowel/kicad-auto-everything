@@ -159,7 +159,7 @@ findings_schema:               # IPC-2581 DFX-like; mirrors KiCad DRC JSON items
 - **Native**: courtyard spacing; side and orientation (`assertion` on `Layer`/`Orientation`); containment in named rule areas (`intersectsArea`/`enclosedByArea`); edge and keepout distances; length/skew on `fromTo` paths; diff-pair gap and uncoupled length; via count.
 - **Custom checkers needed**: proximity between footprints' pads (KiCad has only a post-route `fromTo`+`length` proxy), via-to-plane, loop area, alignment, symmetry, layer-switch count.
 
-The full verified rule reference is in [../kicad/drc-rule-language.md](../kicad/drc-rule-language.md).
+The full verified rule reference is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
 
 ### Practitioner version: `intent.yaml` fields
 
@@ -214,4 +214,4 @@ The LLM should ask about never-delegate items rather than guess them ([../workfl
 - corrections: [verification_kicad_and_tools.md § 2 (DRC language), § 5 (rule-name protocol, time domain)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 - research notes: [practitioner_discussions.md § Q5 Inferences](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 
-See also: [constraint-models-compared.md](constraint-models-compared.md), [../verification/critic-stack.md](../verification/critic-stack.md), [../workflow/layout-reuse.md](../workflow/layout-reuse.md)
+See also: [constraint-models-compared.md](constraint-models-compared.md), [../verification/critic-stack.md](../verification/critic-stack.md), [../workflow/layout-reuse.md](../workflow/layout-reuse.md), [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md), [../kicad/drc-report-and-repair-loop.md](../kicad/drc-report-and-repair-loop.md)

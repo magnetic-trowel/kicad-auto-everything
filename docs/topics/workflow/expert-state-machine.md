@@ -114,7 +114,7 @@ Tags as above; [P/A] marks a single practitioner's anecdote.
 
 - No primary source splits expert hours by phase in extractable form. Feranec's timesheet graphs are images that were not extracted.
 - No published, *evaluated* LLM-agent layout workflow exists. kicad-happy and the Adom audit skill are review tools with unpublished accuracy.
-- Whether the KiCad 10 IPC API can execute every state's actions is unverified; see [../kicad/ipc-api.md](../kicad/ipc-api.md).
+- Whether the KiCad 10 IPC API can execute every state's actions is unverified; see [../kicad/ipc-api-10-vs-11.md](../kicad/ipc-api-10-vs-11.md).
 
 ## Sources
 

@@ -56,4 +56,4 @@
 ## Sources
 - research notes: [field_reports_and_ux.md § 1A, § 1A2, § 1C, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/field_reports_and_ux.md)
 
-See also: [field-reports.md](field-reports.md), [agent-tooling-reliability-patterns.md](agent-tooling-reliability-patterns.md), [../kicad/mcp-server-lessons.md](../kicad/mcp-server-lessons.md)
+See also: [field-reports.md](field-reports.md), [agent-tooling-reliability-patterns.md](agent-tooling-reliability-patterns.md), [../kicad/mcp-server-lessons.md](../kicad/mcp-server-lessons.md), [../kicad/transform-math-pitfalls.md](../kicad/transform-math-pitfalls.md)

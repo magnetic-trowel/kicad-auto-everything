@@ -87,4 +87,4 @@
 ## Sources
 - research notes: [field_reports_and_ux.md § 1D, § 2, § 5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/field_reports_and_ux.md)
 
-See also: [explanations-and-alternatives.md](explanations-and-alternatives.md), [field-reports.md](field-reports.md), [../workflow/trust-requirements.md](../workflow/trust-requirements.md), [../landscape/commercial-systems.md](../landscape/commercial-systems.md)
+See also: [explanations-and-alternatives.md](explanations-and-alternatives.md), [field-reports.md](field-reports.md), [../workflow/trust-requirements.md](../workflow/trust-requirements.md), [../landscape/commercial-incumbents-and-startups.md](../landscape/commercial-incumbents-and-startups.md), [../landscape/quilter.md](../landscape/quilter.md), [../landscape/deeppcb.md](../landscape/deeppcb.md), [../workflow/autorouter-distrust.md](../workflow/autorouter-distrust.md)

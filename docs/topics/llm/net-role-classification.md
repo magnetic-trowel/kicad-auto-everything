@@ -70,7 +70,7 @@
    3. topology: SW pin + L → switch node; FB + divider → feedback; XIN/XOUT + crystal → crystal net;
    4. names: suffix and keyword rules;
    5. LLM adjudication for leftovers, citing pins.
-2. **"Is this net fast?" is a computation:** t_r(20–80%) × propagation velocity → critical length, compared with the estimated route length. Protocol data-rate and impedance tables stay deterministic (see [../rules/](../rules/) interface packs).
+2. **"Is this net fast?" is a computation:** t_r(20–80%) × propagation velocity → critical length, compared with the estimated route length. Protocol data-rate and impedance tables stay deterministic and come from the interface rule packs (rules area, owned by the rules_hs_emi cluster).
 3. **Propose renames** to `+`/`-` or `_P`/`_N` whenever a detected pair uses A/B, t/c or P/M; never silently rely on non-KiCad conventions.
 4. **Resolve MCU pin-mux** from vendor pin-config exports or an explicit schematic table, not by LLM inference.
 5. **Show defaults** (Quilter-style 200/500 mA) as needing confirmation; undetected nets are stated as "generic low-speed".

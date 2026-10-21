@@ -80,7 +80,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 
 - Severity/automation tags are one author's assignments and need validation against escaped-error data [I].
 - Thresholds conflict between sources (e.g. silk height 25 mil vs 1.0 mm vs 50 mil; edge clearance 8 vs 10 mil; part-to-edge 125 mil vs 5 mm).
-- KiCad DRC key names in the Auto column follow the source note; the verified KiCad 10 key list is in [../kicad/drc-rule-language.md](../kicad/drc-rule-language.md).
+- KiCad DRC key names in the Auto column follow the source note; the verified KiCad 10 key list is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
 
 ## Sources
 

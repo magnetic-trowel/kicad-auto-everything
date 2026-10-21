@@ -86,6 +86,16 @@ No study applies LLM → MILP formulation to PCB placement. RAC's fixed relation
 
 1. **Loop:** the LLM proposes a relation bundle; KiCad-side solvers realize it (group placement, MILP/CP-SAT legalization, critical-net routing, bulk routing via Freerouting or PNS, calculators for width, impedance and clearance); independent checkers (kicad-cli DRC/ERC, parity, per-relation oracles) verify it; feedback is structured conflicts and relaxations [I].
 2. **Repairs** come from rule-engine-generated menus, with DFS, backtracking and anti-cycle memory (DRC-Aid).
+2a. **No per-segment LLM routing.** PCBWorld shows about 425k–1.9M tokens per small or medium board and 0 clean-pass on medium boards. If a step router agent is built anyway, fix PCBWorld's gaps:
+   - echo DRC codes and positions;
+   - include zones;
+   - expose per-netclass rules;
+   - add rip-up and delete actions;
+   - keep a longer history;
+   - prefix-cache static state;
+   - make the first net selection an explicit planning step.
+
+   See [../routing/pcbworld.md](../routing/pcbworld.md).
 3. **Planner contract:** evidence, hypothesis, falsifier and intents; return to the planner on regression or stall.
 4. **Models:** a mid-tier model alone by default, escalating to a flagship planner only on verified failure. Keep a per-role ledger of tokens, spend and tool time. Keep observations compact.
 5. **Stateful sessions** with checkpoint and rollback (FluxEDA); no reload per shell call.

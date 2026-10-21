@@ -108,4 +108,4 @@ Tags: [P] primary; [V] vendor; [I] inference. Practitioner quotes: [P/C] communi
 - research notes: [practitioner_discussions.md § Q1e, Q2b–Q2e, Q3 Feranec](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 4 Quilter, DeepPCB](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 
-See also: [autorouter-distrust.md](autorouter-distrust.md), [trust-requirements.md](trust-requirements.md), [delegation-and-expert-review.md](delegation-and-expert-review.md)
+See also: [autorouter-distrust.md](autorouter-distrust.md), [trust-requirements.md](trust-requirements.md), [delegation-and-expert-review.md](delegation-and-expert-review.md), [../landscape/quilter.md](../landscape/quilter.md), [../landscape/deeppcb.md](../landscape/deeppcb.md), [../landscape/kicad-ai-tools-and-mcp-servers.md](../landscape/kicad-ai-tools-and-mcp-servers.md)

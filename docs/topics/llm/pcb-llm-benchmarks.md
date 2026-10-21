@@ -50,7 +50,13 @@ Legality and other findings:
 - Schematic context raised grouping AUC in all 15 comparisons (+0.079 to +0.091); few-shot examples −0.006.
 - **Licence conflict:** the ethics statement says code and data are CC-BY-4.0; third-party recon (2026-08-15) found no licence and only 5 boards public. The EMNLP venue was not confirmed.
 
-**PCBWorld** [P] ([2607.05915 v4](https://arxiv.org/pdf/2607.05915)): GPT-5.4 clean-pass 0.65 on D3-A, against 0.80 for Freerouting and 0.86 for PPO. Every LLM scores 0 on the 10-board D3-B set. See [pcbworld-stepwise-routing.md](pcbworld-stepwise-routing.md).
+**PCBWorld** [P] ([2607.05915 v4](https://arxiv.org/pdf/2607.05915)). Full detail is in [../routing/pcbworld.md](../routing/pcbworld.md).
+- **Clean-pass:** GPT-5.4 0.65 on D3-A (99 boards, ≤31 pads), against 0.80 for Freerouting and 0.86 for PPO. Every LLM scores 0 on the 10-board, 2-layer D3-B set.
+- **Engine engagement:** interactive 0.65 vs plan-and-execute 0.19 vs engine-free 0.02.
+- **Speed (corrected):** GPT-5.4 is 219× slower than PPO but 35× slower than Freerouting on D2; on D3-A, 126× / 33× / 356× slower than PPO / Freerouting / KRT.
+- **Tokens:** about 107k (D2), 425k (D3-A) and 1.92M (D3-B) per episode.
+- **Corrected:** the prompt had no reward and no DRC list, so LLM numbers are a lower bound.
+- **Seed protocol:** routers and RL are 4-seed means; LLMs are a single best-of-5 run.
 
 **RAC** [P]: 98 tasks; coordinates 23.2% vs relations 90.9%. See [interfaces-relations-vs-coordinates.md](interfaces-relations-vs-coordinates.md).
 
@@ -121,4 +127,4 @@ Legality and other findings:
   - [llm_for_eda.md § 1, § 7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/llm_for_eda.md)
   - [field_reports_and_ux.md § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/field_reports_and_ux.md)
 
-See also: [pcbworld-stepwise-routing.md](pcbworld-stepwise-routing.md), [spatial-reasoning-limits.md](spatial-reasoning-limits.md), [../data/imitation-and-learned-scores.md](../data/imitation-and-learned-scores.md)
+See also: [../routing/pcbworld.md](../routing/pcbworld.md), [spatial-reasoning-limits.md](spatial-reasoning-limits.md), [../data/imitation-and-learned-scores.md](../data/imitation-and-learned-scores.md)

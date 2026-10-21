@@ -44,7 +44,7 @@ Ritchey & Zasio *Right the First Time* Vol 2 lists the chapters "Designing the P
 
 - No published quantitative model links board area or layer count to cost and yield; this is vendor-specific.
 - Robertson's numbers are 2003-era; current fab capability must come from the fab profile.
-- The KiCad 10 IPC API treats the stackup as read-only (`UpdateBoardStackup` has no handler). Stackup writes need file edits; see [../kicad/ipc-api.md](../kicad/ipc-api.md).
+- The KiCad 10 IPC API treats the stackup as read-only (`UpdateBoardStackup` has no handler). Stackup writes need file edits; see [../kicad/ipc-api-10-vs-11.md](../kicad/ipc-api-10-vs-11.md).
 
 ## Sources
 

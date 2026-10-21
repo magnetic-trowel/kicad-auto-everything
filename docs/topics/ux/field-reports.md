@@ -67,4 +67,4 @@ Full forum mining lives in the practice cluster's workflow docs.
 - research notes: [field_reports_and_ux.md § 1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/field_reports_and_ux.md)
 - related: [llm_for_eda.md § 1 (RF workflow, industry demos)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/llm_for_eda.md)
 
-See also: [field-failure-modes.md](field-failure-modes.md), [agent-tooling-reliability-patterns.md](agent-tooling-reliability-patterns.md), [designer-demand-and-trust.md](designer-demand-and-trust.md), [../kicad/mcp-server-lessons.md](../kicad/mcp-server-lessons.md)
+See also: [field-failure-modes.md](field-failure-modes.md), [agent-tooling-reliability-patterns.md](agent-tooling-reliability-patterns.md), [designer-demand-and-trust.md](designer-demand-and-trust.md), [../workflow/llm-field-reports.md](../workflow/llm-field-reports.md) (forum-sourced complement), [../kicad/mcp-server-lessons.md](../kicad/mcp-server-lessons.md)

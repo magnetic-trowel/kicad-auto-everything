@@ -50,7 +50,7 @@ On the out-of-distribution set, SchGen reached 65.6% valid against GPT-5.2's 77.
 - the per-step message holds the routing geometry, the router head, a 2-turn history, rejected attempts and the valid verbs;
 - zones are dropped, rules collapse to the strictest netclass, and coordinates are rounded to 3 decimals.
 
-See [pcbworld-stepwise-routing.md](pcbworld-stepwise-routing.md).
+See [../routing/pcbworld.md](../routing/pcbworld.md).
 
 ### Code and API vs GUI
 

@@ -78,7 +78,7 @@ D = deterministic, L = LLM, U = user [I].
 - `nets.*.ibis` = `{model_type, diff_pin, ramp_20_80_ps}`.
 - `parts.*.layout_card.extraction_audit` = `{trace hash, evidence pages, consensus count}`.
 
-See [../architecture/constraint-intent-ir.md](../architecture/constraint-intent-ir.md).
+See [../architecture/constraint-ir.md](../architecture/constraint-ir.md).
 
 ### Division of labour
 - **LLM:**

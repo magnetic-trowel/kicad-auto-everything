@@ -88,7 +88,7 @@ PSDL's sequential imperative programs beat declarative solvers on scenes. On PCB
 4. **Feedback** returns, for each relation, realized or violated, the margin, conflict sets and admissible relaxations.
 5. **Self-consistency filter (optional):** drop a proposed relation if the LLM's own coarse sketch violates it (LayoutVLM: −12.4 points without it).
 6. **Numeric repair keeps relations:** restrict edits to constants and orientations, and weight movement by footprint area so connectors and ICs move less than passives (PSDL).
-7. **Persist the bundle** as the design-intent sidecar, so ECOs and resizes re-solve without new LLM calls. See [../ux/design-rationale-and-intent-record.md](../ux/design-rationale-and-intent-record.md) and [../architecture/constraint-intent-ir.md](../architecture/constraint-intent-ir.md).
+7. **Persist the bundle** as the design-intent sidecar, so ECOs and resizes re-solve without new LLM calls. See [../ux/design-rationale-and-intent-record.md](../ux/design-rationale-and-intent-record.md) and [../architecture/constraint-ir.md](../architecture/constraint-ir.md).
 8. Coordinates may be *observable* (in the read state) but are never *writable*.
 9. Prefer native function calling over coding-agent harnesses, to save 2.2–5.4× tokens.
 
@@ -111,4 +111,4 @@ PSDL's sequential imperative programs beat declarative solvers on scenes. On PCB
   - [SchGen 2605.30345](https://arxiv.org/abs/2605.30345)
   - [PCB-Migrator DOI](https://doi.org/10.23919/DATE69613.2026.11539307)
 
-See also: [read-representations.md](read-representations.md), [agent-loop-patterns.md](agent-loop-patterns.md), [spatial-reasoning-limits.md](spatial-reasoning-limits.md), [llm-guided-placement-systems.md](llm-guided-placement-systems.md)
+See also: [read-representations.md](read-representations.md), [agent-loop-patterns.md](agent-loop-patterns.md), [spatial-reasoning-limits.md](spatial-reasoning-limits.md), [llm-guided-placement-systems.md](llm-guided-placement-systems.md), [../routing/llm-routing-evidence.md](../routing/llm-routing-evidence.md), [../placement/scene-layout-transplants.md](../placement/scene-layout-transplants.md)

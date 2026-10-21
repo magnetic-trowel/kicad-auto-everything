@@ -86,4 +86,4 @@ Tags: [P] primary; [I] inference. Practitioner quotes: [P/E] expert, [P/C] commu
 
 - research notes: [practitioner_discussions.md § Q1a–Q1d, Q2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 
-See also: [llm-field-reports.md](llm-field-reports.md), [trust-requirements.md](trust-requirements.md), [what-good-looks-like.md](what-good-looks-like.md)
+See also: [llm-field-reports.md](llm-field-reports.md), [trust-requirements.md](trust-requirements.md), [what-good-looks-like.md](what-good-looks-like.md), [../routing/autorouter-skepticism.md](../routing/autorouter-skepticism.md)

@@ -32,7 +32,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
   - The schema file has a trailing comma (not strict JSON).
   - KiCad 10 has 67 `type` keys, and `physical_clearance` violations report as `clearance`.
 - **Freerouting** `-drc` writes the same format, plus a `freerouting_version` key.
-- **IPC API**: KiCad 10 cannot run DRC over IPC, has no rules access and no headless mode. Use `kicad-cli` on a saved copy as the referee. Details: [../kicad/kicad-cli.md](../kicad/kicad-cli.md), [../kicad/ipc-api.md](../kicad/ipc-api.md).
+- **IPC API**: KiCad 10 cannot run DRC over IPC, has no rules access and no headless mode. Use `kicad-cli` on a saved copy as the referee. Details: [../kicad/kicad-cli.md](../kicad/kicad-cli.md), [../kicad/ipc-api-10-vs-11.md](../kicad/ipc-api-10-vs-11.md).
 
 ### KiCad 10 backend for the evaluation loop (VK §3, §5)
 
@@ -111,4 +111,4 @@ The KiCad core has no SI/PI plans: a July 2026 forum request got no developer re
 - research notes: [constraints_verification_benchmarks.md § Q2, Q6B](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
 - corrections: [verification_kicad_and_tools.md § 2.9, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 
-See also: [critic-stack.md](critic-stack.md), [quality-metrics.md](quality-metrics.md), [benchmarks.md](benchmarks.md)
+See also: [critic-stack.md](critic-stack.md), [quality-metrics.md](quality-metrics.md), [benchmarks.md](benchmarks.md), [../kicad/kicad-cli.md](../kicad/kicad-cli.md), [../kicad/specctra-freerouting-integration.md](../kicad/specctra-freerouting-integration.md)

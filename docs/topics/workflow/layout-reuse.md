@@ -74,4 +74,4 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference. Practitione
 - research notes: [practitioner_discussions.md § Q1d, Q3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 3.4](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 
-See also: [expert-state-machine.md](expert-state-machine.md), [../architecture/constraint-ir.md](../architecture/constraint-ir.md)
+See also: [expert-state-machine.md](expert-state-machine.md), [../architecture/constraint-ir.md](../architecture/constraint-ir.md), [../data/layout-retrieval-and-reuse.md](../data/layout-retrieval-and-reuse.md)

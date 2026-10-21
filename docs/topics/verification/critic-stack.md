@@ -52,7 +52,7 @@ Tags: [P] primary; [I] inference.
   - `insideArea`/`insideCourtyard` are deprecated;
   - JSON violations carry no rule name, so prefix generated rule names with an IR ID and parse `description`.
 
-  The full verified reference is in [../kicad/drc-rule-language.md](../kicad/drc-rule-language.md).
+  The full verified reference is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
 - **What KiCad 10 DRC can express**: courtyard spacing, side and orientation (via `assertion`), area containment, and edge/keepout distances. **What it cannot**: pairwise pad distances between footprints, alignment, symmetry and loop area. Those need Python checkers [P, per VK].
 
 ### Prior art (LLM review tools)
@@ -86,4 +86,4 @@ Tags: [P] primary; [I] inference.
 - research notes: [expert_workflow_and_checklists.md § Implications (critic design)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
 - corrections: [verification_kicad_and_tools.md § 2, § 4 kicad-happy](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 
-See also: [review-checklist.md](review-checklist.md), [evaluation-stack.md](evaluation-stack.md), [../workflow/delegation-and-expert-review.md](../workflow/delegation-and-expert-review.md)
+See also: [review-checklist.md](review-checklist.md), [evaluation-stack.md](evaluation-stack.md), [../workflow/delegation-and-expert-review.md](../workflow/delegation-and-expert-review.md), [../kicad/drc-report-and-repair-loop.md](../kicad/drc-report-and-repair-loop.md)
