@@ -159,4 +159,4 @@ Sources and URLs: [research notes § Q1](../../../research_notes/LLM%20driven%20
   - [BenchPCNP](https://figshare.com/articles/dataset/BenchPCNP_Benchmark_Dataset_for_Printed_Circuit_Board_Netlist_Processing/30020125)
   - [Cypress](https://github.com/NVlabs/Cypress/tree/743b07c4e33dc52a00584d55d2e67f38f70957f5)
 
-See also: [corpora-and-yield.md](corpora-and-yield.md), [licensing-tiers-and-contamination.md](licensing-tiers-and-contamination.md), [data-pipeline-plan.md](data-pipeline-plan.md), [../verification/benchmarks.md](../verification/benchmarks.md), [../routing/pcbworld.md](../routing/pcbworld.md), [../placement/benchmarks-and-metrics.md](../placement/benchmarks-and-metrics.md)
+See also: [local-board-corpus.md](local-board-corpus.md) (all accepted boards as one local folder), [corpora-and-yield.md](corpora-and-yield.md), [licensing-tiers-and-contamination.md](licensing-tiers-and-contamination.md), [data-pipeline-plan.md](data-pipeline-plan.md), [../verification/benchmarks.md](../verification/benchmarks.md), [../routing/pcbworld.md](../routing/pcbworld.md), [../placement/benchmarks-and-metrics.md](../placement/benchmarks-and-metrics.md)

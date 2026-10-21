@@ -24,6 +24,12 @@ mostly small repeated assignment boards and are listed in `fabacademy-mirror.rej
 Do not fetch raw files from gitlab.fabcloud.org. `keep.txt` is the
 de-duplicated id list; `todo.txt` the ids still to enrich when this was committed.
 
+## Building the local corpus
+
+`corpus.py` turns the results files above plus `bench/manifests/candidates.jsonl` into one
+local folder of boards (`bench/scripts/build-corpus.sh` runs it with the committed inputs). See
+[docs/topics/data/local-board-corpus.md](../../../docs/topics/data/local-board-corpus.md).
+
 ## Running enrich on a big host
 
 ```bash

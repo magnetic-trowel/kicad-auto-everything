@@ -11,6 +11,14 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 - When writing docs, follow `docs/CONVENTIONS.md`: digests <= 800 words, topic docs
   <= 3,000 words, link instead of repeating.
 
+## Local board corpus
+
+~13.7k accepted boards live in one local folder (default `~/kae-boards`; the host's
+`CLAUDE.local.md` says where), one `boards/<id>/board.kicad_pcb` each plus `manifest.jsonl`.
+It is never committed. Build it with `bench/scripts/build-corpus.sh` after `setup.sh`.
+Treat it as read-only and copy boards out before editing. Read
+`docs/topics/data/local-board-corpus.md` before using it.
+
 ## Benchmark harness (`bench/`, package `kaebench`)
 
 Setup on an Ubuntu host (no sudo needed: installs Apptainer rootless and runs KiCad from its official image): `bench/scripts/setup.sh`, then `source bench/.venv/bin/activate`
