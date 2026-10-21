@@ -98,7 +98,7 @@ def _import_board(src, fmt, dest_dir, timeout=1800):
     pcb_sha256 stays the hash of the upstream source file; the import is redone locally.
     """
     out = Path(dest_dir) / (Path(src).stem + ".kicad_pcb")
-    cmd = [tools.kicad_cli(), "pcb", "import", "--format", fmt, "-o", str(out), str(src)]
+    cmd = [*tools.kicad_cli(), "pcb", "import", "--format", fmt, "-o", str(out), str(src)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:

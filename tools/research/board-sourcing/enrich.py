@@ -186,7 +186,7 @@ def process(row, workdir, kicad_ver):
             if k in got:
                 shutil.copy2(got[k], drc_dir / f"board.{k}")
                 has_pro |= k == "kicad_pro"
-        cmd = [tools.kicad_cli(), "pcb", "drc", "--format", "json", "--severity-all", "--units", "mm",
+        cmd = [*tools.kicad_cli(), "pcb", "drc", "--format", "json", "--severity-all", "--units", "mm",
                "-o", "saved.json", "board.kicad_pcb"]
         subprocess.run(cmd, cwd=drc_dir, capture_output=True, timeout=1800)
         rep = json.load(open(drc_dir / "saved.json"))
