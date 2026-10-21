@@ -29,6 +29,9 @@ kaebench report kae-work/results/<run> kae-work/results/<baseline-run>
 ```
 
 - Fast iteration: `--splits A` (≤ 31 pads) or `--only id1,id2`; full runs take hours.
+- Run long jobs detached and poll them instead of holding a foreground command:
+  `tmux new -d -s bench 'kaebench run ... > kae-work/<run>.log 2>&1'`, then `tail` the log.
+- Host-specific paths (KiCad, Freerouting, data dirs) go in a git-ignored `CLAUDE.local.md`.
 - Re-using `--name` resumes a run; use a new name after changing a method.
 - Per-attempt artifacts: `kae-work/results/<run>/<adapter>/<kind>/<id>/attempt-N/`
   (`attempt.json`, `adapter.log`, `score/drc.json`).
