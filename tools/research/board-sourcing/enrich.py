@@ -201,7 +201,9 @@ def process(row, workdir, kicad_ver):
                 has_pro |= k == "kicad_pro"
         cmd = [*tools.kicad_cli(), "pcb", "drc", "--format", "json", "--severity-all", "--units", "mm",
                "-o", "saved.json", "board.kicad_pcb"]
-        subprocess.run(cmd, cwd=drc_dir, capture_output=True, timeout=1800)
+        r = subprocess.run(cmd, cwd=drc_dir, capture_output=True, text=True, timeout=1800)
+        if not (drc_dir / "saved.json").exists():  # e.g. std::bad_alloc under the memory ulimit
+            raise tools.ToolError(f"DRC wrote no report (rc={r.returncode}): {(r.stdout + r.stderr)[-200:]}")
         rep = json.load(open(drc_dir / "saved.json"))
         s = tools.summarize_drc(rep)
         notes = [f"KiCad {kicad_ver} DRC as saved ({'own rules' if has_pro else 'default rules'}): "
