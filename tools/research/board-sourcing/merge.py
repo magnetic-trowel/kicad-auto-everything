@@ -32,22 +32,22 @@ def main():
     rows, _ = enrich.build_rows(str(HERE / "found" / "*.jsonl"), [str(HERE / "../../../bench/manifests/candidates.jsonl")])
     byid = {r["id"]: r for r in rows}
     keep = Path(workdir, "keep.txt").read_text().split()
+    bkey = lambda r: (r["repo"], r.get("commit"), r["pcb_path"])
     res = {}
-    sources = [json.loads(l) for f in sorted(glob.glob(results_glob)) for l in open(f)]
-    sources += [json.loads(p.read_text()) for p in Path(workdir, "meta").glob("*.json")]
+    # local cache first, then host results in name order: later (newer harness) results win
+    sources = [json.loads(p.read_text()) for p in Path(workdir, "meta").glob("*.json")]
+    sources += [json.loads(l) for f in sorted(glob.glob(results_glob)) if not f.endswith(".failed") for l in open(f)]
     for r in sources:
         if r.get("_ok") is False or not r.get("layers"):
             continue
-        cand = byid.get(r["id"])
-        if cand and all(r.get(k) == cand.get(k) for k in ("repo", "commit", "pcb_path", "archive_sha256")):
-            res[r["id"]] = r
+        res[bkey(r)] = r
     out, missing = [], []
     for i in keep:
-        if i not in res:
+        cand = byid[i]
+        if bkey(cand) not in res:
             missing.append(i)
             continue
-        r = dict(res[i])
-        cand = byid[i]
+        r = dict(res[bkey(cand)], id=i)
         for k in ("license", "license_evidence", "license_tier", "dataset", "sch_path"):
             r[k] = cand[k]
         if r["repo"] in DROP_REPOS:
@@ -57,6 +57,8 @@ def main():
                 r["license"], r["license_tier"] = lic, "noncommercial"
                 r["license_evidence"] = (r.get("license_evidence") or "") + \
                     " (ambiguous which boards are NC -> most restrictive)"
+        if "ddr" in r["tags"] and not (r["layers"] >= 4 and {"bga", "fpga"} & set(r["tags"])):
+            r["tags"] = [x for x in r["tags"] if x != "ddr"]  # early enrich regex matched plain BA0/MA1 nets
         out.append({k: r.get(k) for k in enrich.KEYS if k != "archive_sha256" or r.get(k)})
     out.sort(key=lambda r: r["id"])
     out_dir = Path(out_dir)

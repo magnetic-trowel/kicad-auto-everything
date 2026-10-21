@@ -119,7 +119,7 @@ IFACE = [
     ("ethernet", r"\bMDI|ETH|RJ45|PHY_|RGMII|RMII|SGMII|TRD\d"),
     ("hdmi", r"HDMI|TMDS"),
     ("pcie", r"PCIE|PERST|PE_?TX|PE_?RX|REFCLK"),
-    ("ddr", r"DDR|DQS|\bDQ\d|DQ\d+\b|_DQ\d|MA\d+|BA\d"),
+    ("ddr", r"DDR|DQS"),
     ("mipi", r"MIPI|CSI|DSI"),
     ("can", r"CAN_?H|CAN_?L|CANH|CANL"),
     ("lvds", r"LVDS"),
