@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import tools
-from .boardfiles import board_path, strip_ses_placement
+from .boardfiles import board_path, clamp_dsn_widths, strip_ses_placement
 
 
 @dataclass
@@ -62,18 +62,43 @@ class Noop(Adapter):
 class Freerouting(Adapter):
     """Freerouting via Specctra DSN/SES with the pitfalls from docs/topics/kicad/specctra-freerouting-integration.md:
     single-threaded optimizer, SES placement block stripped, analytics off, best-of-k via pass schedule.
+
+    By default it also closes two DSN translation gaps seen on real boards: automatic neck-down
+    (tracks thinner than the board minimum near pads) is disabled, and the board's copper-to-edge
+    and hole clearances are passed as router settings. `stock=True` runs Freerouting as shipped.
     """
     name = "freerouting"
     kinds = ("route",)
     PASS_SCHEDULE = (10, 20, 30, 15, 25, 40, 50, 60)
 
-    def __init__(self, passes=None, extra_args=()):
+    def __init__(self, passes=None, extra_args=(), stock=False):
         self.passes = passes
         self.extra_args = list(extra_args)
+        self.stock = stock
+        if stock:
+            self.name = "freerouting-stock"
 
     def describe(self):
         return dict(name=self.name, cmd=" ".join(tools.freerouting_cmd()), passes=self.passes or
-                    list(self.PASS_SCHEDULE), extra_args=self.extra_args)
+                    list(self.PASS_SCHEDULE), extra_args=self.extra_args, stock=self.stock)
+
+    def _apply_board_rules(self, input_dir, dsn):
+        """Router flags for the board's rules, and clamp DSN widths to the board minimum.
+
+        Edge clearance makes Freerouting shrink some tracks to 75% near the edge (seen on
+        real boards; `router.neck_width_um` does not prevent it), but on balance it removes
+        far more copper-to-edge errors than the track-width errors it adds.
+        """
+        if self.stock:
+            return [], 0
+        rules = tools.run_ops("stats", board_path(input_dir)).get("rules", {})
+        args = ["--router.automatic_neckdown=false"]
+        if rules.get("edge_clearance_mm"):
+            args.append(f"--router.copper_to_edge_clearance_um={round(rules['edge_clearance_mm'] * 1000)}")
+        if rules.get("hole_clearance_mm"):
+            args.append(f"--router.hole_clearance_um={round(rules['hole_clearance_mm'] * 1000)}")
+        raised = clamp_dsn_widths(dsn, rules["min_track_width_mm"]) if rules.get("min_track_width_mm") else 0
+        return args, raised
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         if kind != "route":
@@ -85,8 +110,9 @@ class Freerouting(Adapter):
         t0 = time.monotonic()
         tools.run_ops("export-dsn", board_path(input_dir), dsn)
         passes = self.passes or self.PASS_SCHEDULE[attempt % len(self.PASS_SCHEDULE)]
+        rule_args, widths_raised = self._apply_board_rules(input_dir, dsn)
         cmd = [*tools.freerouting_cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
-               "-mt", "1", "--gui.enabled=false", "-da", *self.extra_args]
+               "-mt", "1", "--gui.enabled=false", "-da", *rule_args, *self.extra_args]
         remaining = max(10.0, timeout - (time.monotonic() - t0))
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining, cwd=w)
@@ -98,7 +124,8 @@ class Freerouting(Adapter):
             return AdapterResult(None, log, dict(passes=passes, rc=r.returncode))
         stripped = strip_ses_placement(ses, ses2)
         tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
-        return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode,
+        return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode, rule_args=rule_args,
+                                                        dsn_widths_raised=widths_raised,
                                                         ses_placement_stripped=stripped))
 
 
@@ -143,6 +170,8 @@ def make(name, command=None, passes=None):
         return Noop()
     if name == "freerouting":
         return Freerouting(passes=passes)
+    if name == "freerouting-stock":
+        return Freerouting(passes=passes, stock=True)
     if command:
         return Command(command, name=name)
     raise ValueError(f"unknown adapter {name!r} (built-ins: reference, noop, freerouting; "

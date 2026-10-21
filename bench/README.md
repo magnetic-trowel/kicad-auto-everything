@@ -68,7 +68,8 @@ PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) cle
 |---|---|
 | `reference` | The human layout: original copper (route) or original placement (place) |
 | `noop` | Returns the task input unchanged (lower bound) |
-| `freerouting` | Specctra DSN → Freerouting (`-mt 1`, analytics off, per-attempt pass schedule) → SES with placement block stripped → import |
+| `freerouting` | Specctra DSN → Freerouting (`-mt 1`, analytics off, per-attempt pass schedule, neck-down off, board edge/hole clearances passed, DSN widths clamped to the board minimum) → SES with placement block stripped → import |
+| `freerouting-stock` | Same round trip with Freerouting's default settings |
 | any name + `--command` | External tool; template placeholders `{input} {output} {workdir} {kind} {attempt} {timeout}` |
 
 Example external router: `kaebench run --adapter myrouter --command "python my_router.py {input} {output}"`.
@@ -104,6 +105,6 @@ The tool reads `{input}` (a `.kicad_pcb` with its project files beside it) and w
 ## Known limitations
 
 - KiCad 10 SES import deletes unlocked copper and applies placement. The adapter strips the SES placement block, and route tasks start without copper.
-- Freerouting necks tracks down below the board's minimum width near fine-pitch pads. KiCad DRC flags this as `track_width`.
+- Freerouting necks tracks down below the board's minimum width near fine-pitch pads and shrinks some to 75% to meet edge clearance; the `freerouting` adapter disables neck-down, but edge-driven shrinking remains (KiCad flags it as `track_width`).
 - Freerouting has no seed flag, so best-of-k varies the pass count (`-mp` 10, 20, 30, ...).
 - `inside` uses pad centres against the board outline. Courtyard-vs-edge overhang is not checked.

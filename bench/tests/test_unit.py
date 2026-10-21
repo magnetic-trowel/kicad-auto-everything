@@ -92,3 +92,12 @@ def test_id_list_from_file(tmp_path):
     f.write_text("b1\n# comment\nb2  # trailing\n\n")
     assert _split(f"@{f}") == ["b1", "b2"]
     assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None
+
+
+def test_clamp_dsn_widths(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    dsn.write_text("(pcb b (resolution um 10) (unit um)\n (structure (rule (width 101.6) (clearance 200)))\n"
+                   " (network (class kicad_default a b (rule (width 250) (clearance 200)))))\n")
+    assert boardfiles.clamp_dsn_widths(dsn, 0.127) == 1
+    text = dsn.read_text()
+    assert "(width 127)" in text and "(width 250)" in text and "(clearance 200)" in text

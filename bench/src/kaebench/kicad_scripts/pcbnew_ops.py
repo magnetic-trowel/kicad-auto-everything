@@ -127,6 +127,9 @@ def stats(path):
         hpwl += _mm(max(xs) - min(xs) + max(ys) - min(ys))
         connections += len(pts) - 1
     bb = board.GetBoardEdgesBoundingBox()
+    ds = board.GetDesignSettings()
+    rules = dict(edge_clearance_mm=_mm(ds.m_CopperEdgeClearance), min_track_width_mm=_mm(ds.m_TrackMinWidth),
+                 min_clearance_mm=_mm(ds.m_MinClearance), hole_clearance_mm=_mm(ds.m_HoleClearance))
     placement = _placement(board)
     pad_nets = _pad_nets(board)
     _out(dict(
@@ -136,7 +139,7 @@ def stats(path):
         pads=n_pads, nets=len([1 for p in net_pads.values() if len(p) >= 2]),
         connections=connections, tracks=tracks, arcs=arcs, vias=vias,
         locked_routing=locked_routing, track_length_mm=round(length, 3),
-        zones=board.GetAreaCount(), hpwl_mm=round(hpwl, 3),
+        zones=board.GetAreaCount(), hpwl_mm=round(hpwl, 3), rules=rules,
         board_mm=[round(_mm(bb.GetWidth()), 3), round(_mm(bb.GetHeight()), 3)],
         board_origin_mm=[round(_mm(bb.GetX()), 3), round(_mm(bb.GetY()), 3)],
         placement_hash=_hash([(r["uuid"], r["x"], r["y"], r["rot"], r["back"]) for r in placement]),

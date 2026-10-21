@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Board file handling: project file sets and raw S-expression checks."""
 import hashlib
+import re
 import shutil
 from pathlib import Path
 
@@ -86,6 +87,35 @@ def block_hash(pcb, head):
     if blk is None:
         return None
     return hashlib.sha256(" ".join(blk.split()).encode()).hexdigest()
+
+
+_DSN_UNIT_PER_MM = {"um": 1000.0, "mm": 1.0, "mil": 1000.0 / 25.4, "inch": 1.0 / 25.4, "cm": 0.1}
+
+
+def clamp_dsn_widths(dsn_path, min_width_mm):
+    """Raise every `(width X)` rule in a Specctra DSN to at least the board's minimum track width.
+
+    Some projects give a netclass a track width below the board minimum; KiCad exports the
+    netclass width and the router then draws tracks the board's own DRC rejects.
+    Returns the number of widths raised.
+    """
+    text = Path(dsn_path).read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"\(unit\s+(\w+)\)", text)
+    scale = _DSN_UNIT_PER_MM.get(m.group(1) if m else "um", 1000.0)
+    floor = min_width_mm * scale
+    raised = 0
+
+    def bump(mo):
+        nonlocal raised
+        w = float(mo.group(1))
+        if w + 1e-9 < floor:
+            raised += 1
+            return f"(width {floor:g})"
+        return mo.group(0)
+
+    text = re.sub(r"\(width\s+([0-9.]+)\)", bump, text)
+    Path(dsn_path).write_text(text, encoding="utf-8")
+    return raised
 
 
 def strip_ses_placement(ses_in, ses_out):
