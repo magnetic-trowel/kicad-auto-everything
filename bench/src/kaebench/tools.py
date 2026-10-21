@@ -91,8 +91,12 @@ def run_ops(op, *args, timeout=600):
     return res
 
 
-def run_drc(board, out_json, timeout=900):
-    """kicad-cli DRC with zone refill; returns the parsed JSON report."""
+def run_drc(board, out_json, timeout=None):
+    """kicad-cli DRC with zone refill; returns the parsed JSON report.
+
+    Timeout defaults to $KAE_DRC_TIMEOUT or 900 s (zone refill on big boards is slow).
+    """
+    timeout = timeout or float(os.environ.get("KAE_DRC_TIMEOUT", 900))
     board = Path(board)
     cmd = [kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(out_json), board.name]

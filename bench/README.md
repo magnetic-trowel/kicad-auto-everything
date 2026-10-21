@@ -43,6 +43,7 @@ boards whose human layout is not clean.
 
 `bench/suites/*.txt` are board-id lists for `--only @FILE`:
 - `kaebench tasks --write-suite FILE` writes the boards that qualified on your KiCad version.
+- `qualified-kicad-10.0.7.txt`: the 112 manifest boards that qualified on KiCad 10.0.7.
 - `pcbworld-d3{a,b,c}-test.txt` are PCBWorld's D3 eval splits (99 / 10 / 10).
 
 ### Reproducing PCBWorld's routing baseline
