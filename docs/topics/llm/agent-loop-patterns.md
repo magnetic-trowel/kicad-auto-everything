@@ -63,6 +63,7 @@
 - **Older systems:**
   - LLM4EDA: P&R is too complex to apply LLMs directly; partition and cluster, or use the LLM to "optimize modules or act as a reward system for RL agents" ([2401.12224](https://arxiv.org/abs/2401.12224)) [P].
   - ChatEDA is peer-reviewed in TCAD 43(10) ([2308.10204](https://arxiv.org/abs/2308.10204)) [P].
+  - SmartonAI (2023) is a KiCad chat plugin: subtask splitting with RAG over documentation plus a plugin recommender. It only helps users operate KiCad and does no layout ([2307.14740](https://arxiv.org/abs/2307.14740)) [P].
 
 ### Iteration and sampling
 
