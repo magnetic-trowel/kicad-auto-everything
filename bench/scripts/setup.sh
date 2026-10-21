@@ -4,7 +4,8 @@
 #
 # Set up a kaebench host (Ubuntu 22.04/24.04 x86_64): KiCad 10, Freerouting 2.5.0, venv.
 # Works without sudo: KiCad then runs from the official kicad/kicad image via
-# Apptainer/Singularity, and the venv comes from uv if python3-venv is missing.
+# Apptainer/Singularity (installed rootless into KAE_HOME if absent; needs unprivileged
+# user namespaces), and the venv comes from uv if python3-venv is missing.
 #
 #   bench/scripts/setup.sh [--kicad auto|apt|container|none] [--no-freerouting] [--venv DIR]
 #
@@ -20,6 +21,8 @@ DO_FR=1
 FR_VERSION="2.5.0"
 FR_ZIP_SHA256="e8ffca14914e5307a2fa9aea723fb93d11b99bebda20d126472da5460c03196e"
 KICAD_IMAGE_TAG="${KICAD_IMAGE_TAG:-10.0.7}"
+APPTAINER_VERSION="1.5.4"
+APPTAINER_INSTALLER_SHA256="a097956eafa6ab3dd843ee429d0b774ed029753bfadf013b8046556228fac6f2"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,7 +44,27 @@ ENV_FILE="$KAE_HOME/env.sh"
 ENV_LINES=("export KAE_HOME=\"$KAE_HOME\"")
 
 kicad_major() { kicad-cli version 2>/dev/null | cut -d. -f1; }
-container_tool() { command -v apptainer || command -v singularity || true; }
+container_tool() {
+  command -v apptainer || command -v singularity ||
+    { [ -x "$KAE_HOME/apptainer/bin/apptainer" ] && echo "$KAE_HOME/apptainer/bin/apptainer"; } || true
+}
+userns_ok() { unshare -Ur true 2>/dev/null; }
+
+install_apptainer_unpriv() {
+  # Apptainer's own no-root installer unpacks EL8 RPMs; rpm2cpio and cpio fall back to
+  # Python shims when the host lacks them.
+  local dest="$KAE_HOME/apptainer" shims="$KAE_HOME/shims" inst="$KAE_HOME/install-unprivileged.sh"
+  echo "Installing Apptainer $APPTAINER_VERSION without root into $dest"
+  rm -rf "$dest" "$shims"
+  mkdir -p "$shims"
+  command -v rpm2cpio >/dev/null || ln -s "$BENCH_DIR/scripts/rpm2cpio.py" "$shims/rpm2cpio"
+  command -v cpio >/dev/null || ln -s "$BENCH_DIR/scripts/cpio_extract.py" "$shims/cpio"
+  curl -fsSL -o "$inst" \
+    "https://raw.githubusercontent.com/apptainer/apptainer/v$APPTAINER_VERSION/tools/install-unprivileged.sh"
+  echo "$APPTAINER_INSTALLER_SHA256  $inst" | sha256sum -c - >/dev/null
+  PATH="$shims:$PATH" bash "$inst" -d el8 -v "$APPTAINER_VERSION" "$dest"
+  rm -rf "$inst" "$shims"
+}
 
 install_kicad_apt() {
   . /etc/os-release
@@ -60,12 +83,13 @@ install_kicad_container() {
   local tool dir
   tool="$(container_tool)"
   dir="$KAE_HOME/kicad-$KICAD_IMAGE_TAG"
-  if [ ! -d "$dir" ]; then
+  if [ ! -x "$dir/usr/bin/kicad-cli" ]; then
+    rm -rf "$dir"   # a partial unpack from an interrupted run
     echo "Unpacking docker://kicad/kicad:$KICAD_IMAGE_TAG into $dir with $(basename "$tool") (~2.5 GB, no root needed)"
     # an unpacked directory needs neither root nor /dev/fuse at run time
     APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-$KAE_HOME/apptainer-cache}" \
       "$tool" build --sandbox "$dir" "docker://kicad/kicad:$KICAD_IMAGE_TAG"
-    rm -rf "${APPTAINER_CACHEDIR:-$KAE_HOME/apptainer-cache}"
+    [ -n "${APPTAINER_CACHEDIR:-}" ] || rm -rf "$KAE_HOME/apptainer-cache"   # keep a user-set cache
   fi
   ENV_LINES+=("export KAE_KICAD_WRAP=\"$tool exec $dir\"")
 }
@@ -76,8 +100,12 @@ case "$KICAD_MODE" in
       while IFS= read -r line; do ENV_LINES+=("$line"); done < <(grep '^export KAE_KICAD_' "$ENV_FILE" || true)
     fi ;;
   apt) install_kicad_apt ;;
-  container) [ -n "$(container_tool)" ] || { echo "apptainer/singularity not found" >&2; exit 1; }
-             install_kicad_container ;;
+  container)
+    if [ -z "$(container_tool)" ]; then
+      userns_ok || { echo "no apptainer/singularity, and unprivileged user namespaces are disabled" >&2; exit 1; }
+      install_apptainer_unpriv
+    fi
+    install_kicad_container ;;
   auto)
     if [ "$(kicad_major || echo 0)" -ge 10 ] 2>/dev/null; then
       echo "KiCad $(kicad-cli version) already installed"
@@ -85,9 +113,14 @@ case "$KICAD_MODE" in
       install_kicad_apt
     elif [ -n "$(container_tool)" ]; then
       install_kicad_container
+    elif [ "$(uname -m)" = x86_64 ] && userns_ok; then
+      install_apptainer_unpriv
+      install_kicad_container
     else
       cat >&2 <<'EOF'
-KiCad 10 is not installed and there is no sudo or Apptainer/Singularity. Options:
+KiCad 10 is not installed, there is no sudo or Apptainer/Singularity, and Apptainer cannot
+be installed rootless here (needs x86_64 and unprivileged user namespaces; `unshare -Ur true`
+fails, e.g. on Ubuntu 24.04 with kernel.apparmor_restrict_unprivileged_userns=1). Options:
   - ask an admin to run: bench/scripts/setup.sh --kicad apt   (KiCad PPA, no recommends)
   - ask an admin to install apptainer, then re-run this script (KiCad runs from the official image)
   - flatpak --user install flathub org.kicad.KiCad, then set
