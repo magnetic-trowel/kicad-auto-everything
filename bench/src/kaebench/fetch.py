@@ -105,6 +105,11 @@ def _import_board(src, fmt, dest_dir, timeout=1800):
         raise tools.ToolError(f"pcb import timed out after {timeout}s")
     if r.returncode or not out.exists():
         raise tools.ToolError(f"pcb import ({fmt}) failed (rc={r.returncode}): {(r.stdout + r.stderr)[-400:]}")
+    # Eagle layers with no KiCad mapping (e.g. tDocu-style graphics) come out as layer
+    # "UNDEFINED", which pcbnew refuses to load; they are documentation only.
+    text = out.read_text(errors="replace")
+    if '(layer "UNDEFINED")' in text:
+        out.write_text(text.replace('(layer "UNDEFINED")', '(layer "Cmts.User")'))
     return out
 
 
