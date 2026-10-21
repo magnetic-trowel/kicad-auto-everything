@@ -14,9 +14,10 @@ from . import tools
 from .boardfiles import block_hash, board_path, install_rules
 from .prepare import pose
 
-PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "edge_clearance", "clearance", "hole_clearance",
-                         "holes_co_located", "malformed_courtyard", "npth_inside_courtyard",
-                         "pth_inside_courtyard", "shorting_items")
+# KiCad 10 DRC type keys that make a placement illegal (as named in its JSON report).
+PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
+                         "hole_to_hole", "holes_co_located", "items_not_allowed", "malformed_courtyard",
+                         "npth_inside_courtyard", "pth_inside_courtyard", "shorting_items")
 
 
 def _stage(output_board, rules_dir, scoring_dir):
