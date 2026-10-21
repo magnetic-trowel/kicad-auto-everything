@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 tools/research/**/results/errors*.log
+*.egg-info/
+bench/.venv/
+kae-work/

@@ -36,6 +36,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | Encoding rules for one interface or converter | `topics/rules/interfaces/<iface>.md`, `topics/rules/power/<topology>.md` (start at [power/hot-loops](topics/rules/power/hot-loops.md)) |
 | Writing a checker | [rules/checkers-si-emi](topics/rules/checkers-si-emi.md), [rules/checkers-power](topics/rules/checkers-power.md), [verification/critic-stack](topics/verification/critic-stack.md) |
 | Evaluating results | [verification/evaluation-stack](topics/verification/evaluation-stack.md), [verification/benchmarks](topics/verification/benchmarks.md), [verification/benchmark-plan](topics/verification/benchmark-plan.md) |
+| Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md) |
 | Planning the agent's workflow | [workflow/expert-state-machine](topics/workflow/expert-state-machine.md), [workflow/trust-requirements](topics/workflow/trust-requirements.md) |
 | Reusing third-party code or data | [licensing/reuse-matrix](topics/licensing/reuse-matrix.md), [data/licensing-tiers-and-contamination](topics/data/licensing-tiers-and-contamination.md) |
 
