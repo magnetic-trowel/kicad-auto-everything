@@ -74,7 +74,7 @@ The hot loop is the set of branches whose current steps 0→I at each edge; cont
 - **AN-139 Table 1** (10×10 cm loop at 27 MHz) [P, VERIFIED]: open loop 187 nH; inner shorted loop 141; plate at 1.5 mm 42; non-overlapping rectangle at 1.5 mm 53; plane at 0.5 mm 23; at 0.27 mm 21; **at 0.12 mm (text says 0.13) 13 nH**.
   - A next-layer plane on ≥4 layers is ">3× less" than a 1.5 mm 2-layer board and ">14× less" than single-layer.
   - Mechanism: mirror eddy currents in the plane.
-- **Second hot loop:** INTVCC/driver decoupling, about 20 dB below the input loop. Keep it small and shielded ([Kueck Pt 2](https://www.analog.com/media/en/technical-documentation/technical-articles/Kueck_Layout_power_supply_part_2.pdf)). [Kueck Pt 1](https://www.analog.com/media/en/technical-documentation/technical-articles/kueck_layout_power_supply_part_1.pdf): use ≥4 layers, because a 2-layer shield sits >1 mm away.
+- **Second hot loop:** INTVCC/driver decoupling, about 20 dB below the input loop. Keep it small and shielded by a solid next-layer plane (AN-139; [Kueck Pt 1](https://www.analog.com/media/en/technical-documentation/technical-articles/kueck_layout_power_supply_part_1.pdf)). [Kueck Pt 2](https://www.analog.com/media/en/technical-documentation/technical-articles/Kueck_Layout_power_supply_part_2.pdf): use ≥4 layers, because a 2-layer shield sits >1 mm away.
 - **TI SNVA803** (LM5146-Q1) [P] ([SNVA803](https://www.ti.com/lit/pdf/snva803)):
   - Lateral loop ≈20 mm² is still >1 nH, even over an L2 image plane.
   - Vertical loop (L2 return): 2 mm², <500 pH, about 4 V less overshoot.
@@ -186,26 +186,9 @@ The hot loop is the set of branches whose current steps 0→I at each edge; cont
 - CIN at LDOIN/PGND, since trace impedance adds to dropout; route the output through COUT before branching or changing layers; copper-plugged vias ([Renesas AN-PM-179](https://www.renesas.com/en/document/apn/da9080-pcb-layout-recommendations) [P]).
 - P = (V_IN − V_OUT)·I. Size copper by §7, not by 2 cm²/W.
 
-### 1.10 Rule IDs (RPA §1) with status
-| ID | Rule | Status / class |
-|---|---|---|
-| PWR-01 | CIN_HF first, same layer, 0 vias; ≤2 mm | Topology HARD; distance soft |
-| PWR-02 | Next-layer GND ≤0.127 mm; ≥4 layers | Soft, strong |
-| PWR-03 | SW area ≤ k×(SW + L pads) | Soft |
-| PWR-04 | Inductor dot on SW (needs a pin-1 = dot convention) | +CTX |
-| PWR-05 | No sensitive nets under L or near SW, all layers | S1 for FB; mm heuristic |
-| PWR-06 | FB Kelvin from the COUT pad | HARD |
-| PWR-07 | Net-tie count = 1 at the EP | HARD where "mandatory" |
-| PWR-08 | CIN/COUT grounds close | CONTESTED; remove |
-| PWR-09 | Boost {LS, D, COUT_HF} loop | VERIFIED |
-| PWR-10 | ≥ceil(I) vias in arrays | Soft, strong |
-| PWR-11 | Gate pair; Kelvin pin used | + formula |
-| PWR-12 | Boot/VDD caps at pins | CORRECTED (≥) |
-| PWR-13 | Snubber loop area | VERIFIED |
-| PWR-14 | Kelvin pair, tap inside the pad | VERIFIED |
-| PWR-15 | EP vias 0.3 mm at 1.0–1.2 mm | Geometry VERIFIED; tenting CONTESTED |
-| PWR-16 | LDO caps at pins; copper from P | Partly CORRECTED |
-| PWR-17 | FB/comp parts outside the SW/L half-plane (angular-sector test) | Inference |
+### 1.10 Rule IDs (RPA §1)
+- PWR-01 CIN_HF; PWR-02 next-layer GND; PWR-03 SW area ≤ k×(SW + L pads); PWR-04 dot on SW (needs a pin-1 = dot convention); PWR-05 sensitive keep-out; PWR-06 FB Kelvin; PWR-07 tie count = 1; PWR-08 CIN/COUT grounds (CONTESTED, removed); PWR-09 boost loop; PWR-10 vias; PWR-11 gate pair; PWR-12 boot ratios (CORRECTED); PWR-13 snubber loop; PWR-14 Kelvin; PWR-15 EP vias; PWR-16 LDO; PWR-17 FB parts outside the SW/L half-plane (angular-sector test).
+- Hard/soft classes are in §11.
 
 ### Implications for our system
 - **Netlist role detector + topology table** gives the hot-loop members deterministically. The LLM only confirms the topology from the datasheet.
@@ -729,7 +712,7 @@ The hot loop is the set of branches whose current steps 0→I at each edge; cont
 **Others:** PCBWay hole tolerance ±0.08/±0.05, half-holes ≥0.4, panel gap 1.6 (routing) / 0 (V-score). OSH 4L FR408HR, 7.87 mil prepreg; no blind, buried or filled vias. Eurocircuits inner isolation = IAR + 0.075 (≥0.200); NPTH ring ≥0.30. Official pages beat blog numbers.
 
 **Assembly and mechanical:**
-- **Courtyards:** IPC-7351 A 0.50 / **B 0.25** / C 0.10 mm per side (fillet goals, not quality classes). Hausherr: users run 0.10/0.20/0.40, and Siemens, Cadence and Zuken users switch excess off ([PCB Libraries](https://www.pcblibraries.com/forum/placement-courtyard-excess_topic3372.html)). [S]: 1.0 mm around BGAs, ~1.5 mm rework; Cadence 0.25–0.3 mm side-to-side, 0.5–1 mm to edge; TI ≥0.508 mm between lands.
+- **Courtyards:** IPC-7351 A 0.50 / **B 0.25** / C 0.10 mm per side (fillet goals, not quality classes); B gives ≥0.5 mm land-to-land. Hausherr: users run 0.10/0.20/0.40, and Siemens, Cadence and Zuken users switch excess off ([PCB Libraries](https://www.pcblibraries.com/forum/placement-courtyard-excess_topic3372.html)). [S]: 1.0 mm around BGAs, ~1.5 mm rework; Cadence 0.25–0.3 mm side-to-side, 0.5–1 mm to edge; TI ≥0.508 mm between lands.
 - **Tombstoning** (0201/0402) [S]: symmetric pads; relief spokes 0.10–0.20 / gaps 0.20–0.30 mm; mirror vias within 1 mm; balanced paste; longer soak.
 - **Fiducials:** 1–3 mm; clear area ≥ radius (diameter preferred); edge ≥7.62 mm SMEMA + clearance; local fiducials at ≤0.5 mm pitch (others <1.0 / ≤0.4); 3 global in an asymmetric L, same size ([Solutions Mfg](https://www.solutionsmfg.com/images/pdf/fiducial.pdf)).
 - **Test points:** 0.100" pitch (0.050" minimum); ~0.035" pads; 0.125" from the edge; 0.040" from parts (handlers 0.138") ([Test Electronics](https://testelectronics.com/info/whitepapers/dft.php)). Flying probe [S]: 0.5/0.75 mm pads, 60/80 mil pitch. One side.
@@ -837,13 +820,8 @@ Score placement before routing (ratsnest, crossings, congestion, violations).
   4. [S] never beats [P] at equal precedence.
   5. [D] stays a warning until calibrated.
 - **Vendor profiles are mandatory** (values differ 5–25×). For unknown vendors, use the tightest primary value with an info note.
-- **Buck pack (IRP §11):**
-  - Roles: cin_hf ≤1 µF on VIN/PGND, smallest package; cin_bulk >1 µF; ind on SW; cout; rfb.
-  - Parameters: cin ≤2 mm (hard window); bulk ≤20 mm; loop 2/10/20 mm²; 5 A/ns; L1–L2 ≤0.127 mm; 1 via/A; 1 mm/A; SW ≤2.54 mm; FB ≤3 mm [D].
-  - Placement: priority order; same side; F.Cu inductor keep-out.
-  - Routing: SW = pad + minimum link, 0 vias; FB 0 vias, other layer with GND shield, not parallel to SW/VIN.
-  - Override: a datasheet reference layout at precedence 40 sets the target loop area measured from the eval board.
-- **Crystal pack:** annulus; pF budgets; 3 mm HS keep-out [D] on F.Cu/In1.Cu; magnetics keep-out; XIN/XOUT ≥3W [D]; 0 test points; `insideArea('XTAL_KEEPOUT')` disallow rule (verify syntax).
+- **Buck pack (IRP §11):** the §1 numbers as typed parameters. cin ≤2 mm is a hard window; the loop uses 2/10/20 mm² tiers; FB ≤3 mm is [D]. It adds a priority order, a same-side rule, an F.Cu inductor keep-out, SW = pad + minimum link with 0 vias, and FB with 0 vias on another layer behind a GND shield. A datasheet reference layout at precedence 40 sets the target loop area measured from the eval board.
+- **Crystal pack:** the §4.4 annulus and pF budgets, plus a 3 mm HS keep-out [D] on F.Cu/In1.Cu, a magnetics keep-out, XIN/XOUT ≥3W [D], 0 test points, and an `insideArea('XTAL_KEEPOUT')` disallow rule (verify syntax).
 - **KiCad 10:** `fromTo()` and ps units make many rules native. Loop area, plane-edge offsets, topology order and return-via distance stay geometric.
 
 ### Implications for our system
@@ -908,11 +886,7 @@ Each carries `severity` and `source`.
 - **Thermal:** EP via count and pitch; P vs connected copper; hot↔sensitive distances; airflow cone; cut-vs-radial angle.
 - **DFM:** courtyards; tombstone symmetry; rotation histogram; fiducials; test-point coverage; class edge/V-score distances; HV clearance.
 - **PDN:** cap and via distance per pin; derated C vs Z_t; bead resonance; full RLC sweep.
-- **Specials:**
-  - FB angular sector (PWR-17); nested-loop containment (FLY-02); SW on more than one layer (CHG-02); SW area cap;
-  - narrowest cross-section (HC-01); single quiet/power-ground join (FLY-05);
-  - shared copper between high-current paths and monitor or audio references (BMS-03, AUD-05);
-  - mirror symmetry (AMS-07); TC± symmetry (SEN-01); IN− copper (SEN-04/05); crystal trace C (XTAL-PAR).
+- **Specials:** the checks named in the body's rule IDs (PWR-17, FLY-02/05, CHG-02, HC-01, BMS-03, AUD-05, AMS-07, SEN-01/04/05, XTAL-PAR), plus an SW-area cap.
 - **Safety engine:** lookup → surface-geodesic creepage + 3-D clearance.
 - **KiCad encoding:**
   - Net classes `PWR_HOT`, `SW`, `SENSITIVE` (FB/COMP/RT/SS/REF/crystal), `RF50`, `HV`, `ANALOG`, `DIGITAL`, with widths and clearances from IPC and fab limits.

@@ -289,7 +289,18 @@ Other OmniLayout findings:
 
 ### 2.5 Code and API vs GUI
 
-- **SchGen** [P] ([2605.30345](https://arxiv.org/abs/2605.30345)): relative-offset, pin-name code gave **82.0% valid circuits**, against **32.5%** for the same model emitting raw KiCad files. GPT-5.2 scored 67.9% with the code prompt and 10.5% emitting raw KiCad.
+- **SchGen** [P] ([2605.30345](https://arxiv.org/abs/2605.30345)), GPT-oss-20B + LoRA:
+
+  | Configuration | Valid | Functional | Netlist Jaccard |
+  |---|---|---|---|
+  | Relative-offset, pin-name code | **82.0%** | 60.5% | 49.1 |
+  | Same model, raw KiCad files | **32.5%** | 3% | 9.1 |
+  | Code without CoT | 53.4% | — | — |
+  | Vanilla model | 11.0% | — | — |
+  | GPT-5.2, code prompt | 67.9% | — | — |
+  | GPT-5.2, raw KiCad | 10.5% | — | — |
+
+  On the out-of-distribution set, SchGen reached 65.6% valid vs GPT-5.2's 77.0%, with fewer overlaps (7.46 vs 12.12). Large models spontaneously adopt relative coordinates.
 - **Practitioner views:**
   - EEBench: code "has worked much better… than asking a model to draw lines in a GUI".
   - Diode: "schematics for humans, code for models".
@@ -349,7 +360,8 @@ Other OmniLayout findings:
 - **Placer:** an RL decision transformer on a 128×128 grid with masks for each of 4 rotations; step reward ΔHPWL; trajectory score 1000/HPWL + 0.01·NSLW; a prioritized buffer of hard-legal trajectories only.
 - **Placement order:** chips first, then their attached parts clockwise.
 - **LLM role:** an LLM agent maps requests and defects to tool calls. These reweight trajectory scores and re-run fine-tuning **only on violating components**. The LLM model, prompts and tools are unspecified.
-- **Results:** HPWL 1.04× and NSLW 0.94× relative to manual; "90% of the quality of manual results"; +39.6% on requested wire categories in 2–3 rounds.
+- **Benchmark:** 17 boards, 18–414 parts, density 0.33–0.76.
+- **Results:** HPWL 1.04× and NSLW 0.94× relative to manual, vs 1.13×/1.33×/2.05× for the baselines; "90% of the quality of manual results"; +39.6% on requested wire categories in 2–3 rounds. Placement ordering cut HPWL by 30%/22%.
 - **Baselines** had spacing-legality rates of **0** (MaskPlace, ChiPFormer, MILP).
 - **Independent checks:** ModuPlace found the most vias for PCBAgent (94.4); OmniLayout measured RR 0.42.
 
@@ -369,7 +381,8 @@ Other OmniLayout findings:
   | NS-Place | 1490.2 | 71.5 | 6.89 | −36.25 |
   | SA-PCB | 1528.5 | 81.7 | 6.52 | −39.22 |
 
-- **Ablations:** without SFT, WL +35.1% and vias +66.2%; without GRPO, +25.4% and +53.1%.
+- **Summary gains:** WL −17.14%/−15.01% and vias −40.51%/−32.02% vs baselines; IL and XT simulated in Keysight ADS. Removing the HMT degrades results most.
+- **Ablations:** without SFT, WL +35.1% and vias +66.2%; without GRPO, +25.4% and +53.1%. Zero-shot LLMs as generators are 25.82% (WL) and 42.56% (vias) worse.
 - **Zero-shot CCG generators:** GPT-4o 1756.8 WL / 84.6 vias; Claude-3.5 1707.5 / 92.1; Qwen-7B 1928.7 / 97.3.
 - **Per-board caveat:** "outperforms all baselines" holds only on averages; baselines win several individual boards. No code, prompts or hyperparameters are released.
 
@@ -378,16 +391,19 @@ Other OmniLayout findings:
 - **Results** on 6 industrial boards routed by the same commercial router: routed WL/vias improve by **55%/73% over a commercial placer, 34%/26% over NS-Place and 15%/13% over Quilter**. This may be the strongest reported LLM-in-the-loop PCB placement result.
 
 **Non-LLM PCB placers that matter as backends** (VER):
-- **NS-Place** (ASP-DAC'22 Best Paper): Laplacian init, a net-separation objective, MILP legalization with relative-position constraints. Routed WL −10% vs manual on average (−25% peak); fails at about 20% whitespace.
-- **Cypress** (ISPD'25): differentiable net crossing (Bézier intersection parameters through a bell function); Gumbel-Softmax orientation; two-sided density; MOTPE tuning on Freerouting routability. Routability up to 1.2× SA-PCB and 5.9× NS-Place; up to 492.3× faster.
-- **HiePlace** (TCAD'26): 7.7× faster, −16% WL, −46% misaligned regions.
+- **NS-Place** (ASP-DAC'22 Best Paper): Laplacian init, a net-separation objective, MILP legalization with relative-position constraints. Routed WL −10% vs manual and −6% vs GDMILP on average (−25% peak); vias −18% and −39%; Freerouting evaluation with a 4 h MILP limit. Fails at about 20% whitespace.
+- **Cypress** (ISPD'25): differentiable net crossing (Bézier intersection parameters through a bell function); Gumbel-Softmax orientation; two-sided density; MOTPE tuning on Freerouting routability.
+  - Routability up to 1.2× SA-PCB, 5.9× NS-Place and 1.6× NS-Place+; up to 492.3× faster than SA-PCB and 329.7× faster than Quilter; 1–19.7× shorter routed track.
+  - Evaluation: Freerouting v1.9.0, 2 layers; 10 synthesized plus 5 commercial designs; 200–1765 s on 4 V100s.
+- **HiePlace** (TCAD'26): 7.7× faster, 66% lower cost, −16% WL, −46% misaligned regions (19 benchmarks, Gurobi).
+- **Chip diffusion** (Lee, ICML'25): legality 0.88 → 0.997; HPWL −7.1%; 20% below DREAMPlace on clustered IBM, 4% on ISPD-style.
 - **Chen et al. DAC'25:** power-vs-signal wire-area model plus QP legalizer; best academic placer in OmniLayout (RR 0.62, reference similarity 0.86).
-- **Others:** Tsou DAC'24 (power-circuit anchor points); PCB-Migrator DATE'26 (offset constraint graph for resized boards); RL_PCB (TD3/SAC −17%/−21% WL vs SA on unseen circuits).
+- **Others:** Tsou DAC'24 (power-circuit anchor points); PCB-Migrator DATE'26 (offset constraint graph for resized boards); RL_PCB (TD3/SAC −17%/−21% WL vs SA on unseen circuits, trained on 6); DRLPlace (ASP-DAC'26) and MARS-Place (Integration'26), details not retrieved.
 
 ### 3.3 LLM steering IC placers (transferable patterns)
 
 - **VeoPlace** (NeurIPS 2026 main conference; Harvard/Kempner + Google DeepMind, not MSR, VER #15–17).
-  - **Loop:** each iteration runs 8 unguided rollouts, one VLM call returning 8 region suggestion sets, then 8 guided rollouts.
+  - **Loop:** each iteration runs 8 unguided rollouts, one VLM call returning 8 region suggestion sets, then 8 guided rollouts. A 2,000-rollout budget means 125 VLM calls. At most 256 macros are guided; the ChiPFormer fallback fires for about 20% of suggestions.
   - **Anchoring:** suggestions become a quadratic anchor in DREAMPlace. **λ_A = 0.01 is best; 0.1–1.0 over-constrains.**
   - **Prompt contract:** HISTORY SUMMARY (principles flagged "hypothesis") → STRATEGY (exactly one change, flagged "exploratory") → REGIONS (largest first).
   - **Context selection ("Top Stratified"):** K-means clustering of prior placements, rank-softmax over clusters (τ = 0.43), then the top C from the chosen cluster.
@@ -396,13 +412,13 @@ Other OmniLayout findings:
   - **Cost:** about $7 per run; 2–7% overhead; about 62 s per VLM call.
 - **MAGE** (UCSD, Claude Opus 4.6; VER #21–22).
   - Six phases: grouping into families of similar groups; flyline-render visual gate; **one reference placement per family, then transform-and-merge** to the others; a stateless independent auditor.
-  - Cost: $220–509 per tournament.
-  - **(VER):** the "+29.7% routed WL" is measured against the *commercial* placers. Against the human expert it is "comparable"; against Hier-RTLMP, −9.8% WL.
-- **HyperPlace** [PvS]: an agent proposes *and explains* hyperparameters. Up to 22.24% better than DREAMPlace 3.0 under fences.
-- **CHIP-MAP** [PvS]: agents exchange structured JSON; repairs 61.6% of TNS.
+  - Cost: 78–189M input tokens per variant ($6–14), $220–509 per tournament (about 10 h).
+  - **(VER):** the "+29.7% routed WL" is measured against the *commercial* placers (power +3.8% and +4.5%). Against the human expert it is "comparable"; against Hier-RTLMP, −9.8% WL and −1.1% power.
+- **HyperPlace** [PvS]: an agent proposes *and explains* hyperparameters. Up to 1.66% better HPWL on ISPD2005; under fences, up to 22.24% over DREAMPlace 3.0 and 19.28% over Xplace 2.0.
+- **CHIP-MAP** [PvS]: agents exchange structured JSON; up to 1.5% less area; repairs 61.6% of TNS.
 - **LLANA:** few-shot net-weight constraints for Bayesian optimization [S].
 - **LayoutCopilot** (TCAD; VER #23):
-  - command correctness 93.75% for multi-agent with instructions, vs 87.89% without instructions and 79.98% single-agent;
+  - command correctness 93.75% for multi-agent with instructions (Claude-3 96.80%, GPT-4 93.92%, GPT-3.5 90.92%), vs 87.89% without instructions and 79.98% single-agent;
   - 11 commands;
   - abstract suggestions go to the designer for approval.
 
@@ -412,7 +428,8 @@ Other OmniLayout findings:
 - **EvoPlace** (TCAD 2026, GPT-4o, VER #18): about 1,000 candidates per component and per case on about 210 GPUs. **Generalized gains are only 0.509% (MMS) and 2.85% (ISPD2005).** *Conflict:* EDA's "HPWL −5–8%" refers to case-specific gains.
 - **OrderPlace** (ICML 2026, Claude Sonnet 4.5, VER #19): macro HPWL −34.04% / −14.08%, with a three-stage proxy filter.
 - **CoEvoP&R** (gpt-5.4, VER #20):
-  - −16.9% routed WL and −36.7% congestion on ChiPBench;
+  - −16.9% routed WL, −36.7% congestion, +0.70 ns WNS and TNS improved by 912 ns on 8 ChiPBench designs × 3 seeds; Superblue −5.4% / −23.2%;
+  - robust across gpt-5.4, gpt-4.1-mini, claude-opus-4-8 and qwen3.7-max;
   - a restricted objective API over RUDY and density maps;
   - an AST check plus a finite-value/autograd gate;
   - cost-tiered evaluation (A/B/C);
@@ -423,10 +440,10 @@ Other OmniLayout findings:
 - GR-Evolve: −8.72% post-detailed-route WL ([2604.22234](https://arxiv.org/abs/2604.22234)).
 - VPR-Evolve: WL up to −18.1% vs stock VPR, but only −2.2% vs hyperparameter tuning ([2607.24998](https://arxiv.org/abs/2607.24998)).
 - FABO: −0.83% overall, −2.66% for nets with 30+ pins ([2608.30268](https://arxiv.org/abs/2608.30268)).
-- GoalEvolve: Teacher/Student agents with stage attribution; TNS +30.67% ([2608.16733](https://arxiv.org/abs/2608.16733)).
-- AlphaRoute: claims a 98.6% overflow cut; single group, treat with caution ([2607.19768](https://arxiv.org/abs/2607.19768)).
-- Prim–Dijkstra theory work ([2607.17005](https://arxiv.org/abs/2607.17005)).
-- AlphaEvolve: TPU Verilog change, also caught by downstream synthesis ([2506.13131](https://arxiv.org/abs/2506.13131)).
+- GoalEvolve: Teacher/Student agents with stage attribution; on 8 ASAP7 designs, TNS +30.67%, leakage −21.18%, dynamic power −9.42%; beats Codex goal mode by 26.46% TNS ([2608.16733](https://arxiv.org/abs/2608.16733)).
+- AlphaRoute: claims a 98.6% overflow cut and 29.8× lower overflow on ARIANE; single group, treat with caution ([2607.19768](https://arxiv.org/abs/2607.19768)).
+- Prim–Dijkstra: an HP-RCRST solver Pareto-dominates published methods on 23 of 28 instances ([2607.17005](https://arxiv.org/abs/2607.17005)).
+- AlphaEvolve: a TPU Verilog change, also caught by downstream synthesis; 23% kernel speedup, about 1% less Gemini training time ([2506.13131](https://arxiv.org/abs/2506.13131)).
 
 ### 3.5 Step-wise LLM routing: PCBWorld in detail (VER §2.1)
 
@@ -477,6 +494,14 @@ Other OmniLayout findings:
 - Errors map to DRC codes: via on pad, wrong-layer endpoint, cross-net contact, detours over the board edge, phantom waypoints.
 
 **@1 vs @5.** GPT-5.4-mini falls from 0.58 to 0.20 CP on D2; PPO-terminal from 0.92 to 0.61.
+
+**Other PCBWorld details.**
+- **Datasets:** D1 is a grid replica of Jumanji Connector (G ∈ {10…500}); D2 is synthetic gridless (2 layers, 4–6 nets, 8–21 pads; 10k/128/128 split).
+- **Serving:** OpenAI models with hidden reasoning; Qwen3.5-397B in FP4 via Together with thinking off. Nano had a parse-fail rate of 0.10 when engine-free.
+- **Baseline configs:**
+  - KRT: 0.1 mm grid, 200k A\* iterations, rip-up 3, heuristic weight 1.9, via cost 50, turn cost 1000;
+  - PPO policy: a d = 128, 4-layer Transformer with Fourier features and a pointer network; γ 0.995; 32 environments; 300 iterations on one L40.
+- **Metric quirks:** a board can clean-pass while still carrying the three promoted warnings. The repository's default potential adds −unconnected, completion bonuses and a step penalty.
 
 ### 3.6 LLM → MILP/CP formulation
 
@@ -869,7 +894,8 @@ The 0.63 (hint study) and 0.56 (score study) designer rates come from different 
   - A label collision shorted ISENSE to ISET, and ERC only warned.
   - The FB trace ran beside the SW node.
   - A placement batch ran twice.
-- **JLCPCB, EasyEDA** [V/A]: read-back found **6 missing GND connections behind API "success"**; the DRC API returns counts only.
+- **JLCPCB, EasyEDA** [V/A]: Claude Opus 5.5 built a 47-part board (33/33 nets, 0 DRC) with an API reference skill. Read-back of 138/138 pins found **6 missing GND connections behind API "success"**; the DRC API returns counts only; a human approved 8 part substitutions.
+- **RF workflow** [P] ([2608.31006](https://arxiv.org/abs/2608.31006)): Claude Fable 5 designed a GNSS L1 antenna board in about 2 h. Human review caught rounded line ends, a missing 45° miter, solder-mask openings, and a tee where the simulation had a crossing; the first schematic was "not human-readable".
 - **GPT-6 Astra (JLCPCB):**
   - 46 parity issues;
   - 9 DRC/ERC categories ignored;
@@ -930,9 +956,9 @@ This is the best large-board evidence: a dense 6-layer board with about 370 foot
 - **KiCadRoutingTools:** the Claude plan becomes an editable checklist that replays as JSON with no LLM call.
 - **Adom audit skill:** reads silenced rules; checks ERC-blind bugs.
 - **Commercial tools:**
-  - Flux explains why each issue was flagged; stops when search is unlikely to improve; lists prep steps.
-  - Quilter produces "dozens to hundreds of ranked candidates" and treats placed copper as "solved".
-  - Diode's Registry holds validated layout fragments; model proposals arrive as reviewable diffs; its reviewer rule is "no evidence, no report".
+  - Flux explains why each issue was flagged; stops when search is unlikely to improve; lists prep steps; costs about 375–1,250 credits per board.
+  - Quilter produces "dozens to hundreds of ranked candidates" and treats placed copper as "solved". Sweet spot: 100–1,000 parts, pin density <20%, ≤10 GHz.
+  - Diode built about 250 reference designs in two weeks. Its Registry holds validated layout fragments; model proposals arrive as reviewable diffs. Its read-only reviewer found 22 bugs in a public challenge, under the rule "no evidence, no report".
   - tscircuit: placement, then `tsci check placement`, then a PNG check, then routing. Its Sequential Optimal Packing method is legible, and constraints are "hardened" by LLM loops.
 
 **Implications for our system** (full list in the inventory, §11)
@@ -1017,7 +1043,7 @@ This is the best large-board evidence: a dense 6-layer board with about 370 foot
 | # | Topic | Conflict |
 |---|---|---|
 | 1 | PCBWorld prompt | Prompt carried no reward or DRC list; the LLM results are a lower bound |
-| 2 | PCBWorld timing | "0.43 s" is PPO only; slowdown is "200×" vs PPO but 33–35× vs Freerouting |
+| 2 | PCBWorld timing | "0.43 s" is PPO only; GPT-5.4 is 219×/126× slower than PPO but 35×/33× slower than Freerouting (D2/D3-A) |
 | 3 | PCBWorld-Engine | "Unmodified KiCad" (paper) vs a modified fork (repository) |
 | 4 | OmniLayout | Placement is "poor" (EDA) vs LMMs above academic placers on RR (VER) |
 | 5 | OmniLayout licence | CC-BY-4.0 (ethics statement) vs "no licence, only 5 boards public" (third-party recon in NET); EMNLP venue not found |
