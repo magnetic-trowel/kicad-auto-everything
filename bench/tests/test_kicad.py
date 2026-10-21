@@ -84,3 +84,14 @@ def test_freerouting_routes_fixture(tasks):
     root, _ = tasks
     s = _run(root, adapters.Freerouting(), name="fr", timeout=300)[0]["score"]
     assert s["valid"] and s["clean"], s
+
+
+@needs_kicad
+@needs_fr
+def test_probe_routes_the_rebuilt_placement(tasks):
+    root, _ = tasks
+    row = _run(root, adapters.Reference(), kinds=("place",), name="ref-probe", timeout=300,
+               probe=adapters.Freerouting())[0]
+    assert row["score"]["legal"], row["score"]
+    p = row["probe"]["score"]
+    assert p["valid"] and p["clean"], p

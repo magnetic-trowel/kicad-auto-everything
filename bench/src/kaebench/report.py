@@ -47,9 +47,11 @@ def summarize(rows):
         adapter, kind, split = key
         first = [b[0] for b in boards]
         k = max(len(b) for b in boards)
+        every = [r for b in boards for r in b]
         m = dict(boards=len(boards), k=k,
-                 failures=sum(1 for b in boards for r in b if r["status"] != "ok"),
-                 time_s=_mean([r.get("runtime_s") for b in boards for r in b]))
+                 failures=sum(1 for r in every if r["status"] != "ok"),
+                 time_s=_mean([r.get("runtime_s") for r in every]),
+                 suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")))
         if kind == "route":
             best = [_route_best(b) for b in boards]
             sc1 = [r.get("score") or {} for r in first]
@@ -66,6 +68,7 @@ def summarize(rows):
             sck = [r.get("score") or {} for r in best]
             prb = [((r.get("probe") or {}).get("score")) or {} for r in best]
             m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                     invalid=sum(1 for s in sck if s and not s.get("valid")),
                      hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]),
                      outside=_mean([s.get("outside") for s in sck]),
                      probe_cp=_mean([1.0 if p.get("clean") else 0.0 for p in prb]) if any(prb) else None,
@@ -75,9 +78,9 @@ def summarize(rows):
 
 
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
-              "wl_ratio", "via_delta", "time_s", "failures")
-PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "hpwl_ratio", "outside", "probe_cp",
-              "probe_completion", "time_s", "failures")
+              "suspect", "wl_ratio", "via_delta", "time_s", "failures")
+PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
+              "probe_cp", "probe_completion", "time_s", "failures")
 
 
 def to_markdown(summary):
@@ -94,8 +97,10 @@ def to_markdown(summary):
             lines.append("| " + " | ".join("" if vals.get(c) is None else str(vals.get(c)) for c in cols) + " |")
         lines.append("")
     lines.append("cp1/cpk: clean pass on attempt 0 / best of k (fully connected, no error-level DRC, "
-                 "placement and nets untouched). completion: share of start-of-task unconnected items "
-                 "routed. wl_ratio: track length / human. Scored by kicad-cli on re-opened boards.")
+                 "nothing but routing changed). completion: share of start-of-task unconnected items "
+                 "routed. invalid: best attempts that changed more than the task allows. suspect: "
+                 "attempts that reproduce the human layout. wl_ratio: track length / human. Scored by "
+                 "kicad-cli on boards rebuilt from the task input plus the method's allowed changes.")
     return "\n".join(lines)
 
 

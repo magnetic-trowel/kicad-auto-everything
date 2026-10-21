@@ -15,7 +15,7 @@ from pathlib import Path
 from . import __version__, tools
 from .boardfiles import board_path, copy_board, install_rules
 from .prepare import TASK_SPEC, load_tasks
-from .score import score_place_task, score_route_task, score_routing
+from .score import SCORE_VERSION, score_place_task, score_route_task, score_routing
 
 
 def _git_rev():
@@ -42,7 +42,7 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         reference = {"route": board_path(task_dir / "reference"),
                      "place": board_path(task_dir / "route" / "input")}
     row = dict(adapter=adapter.name, kind=kind, id=rec["id"], split=rec["split"], attempt=attempt,
-               tags=rec.get("tags", []))
+               tags=rec.get("tags", []), score_version=SCORE_VERSION)
     t0 = time.monotonic()
     try:
         res = adapter.run(kind, inp, work, attempt, timeout, reference=reference)
@@ -61,14 +61,19 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         out_dir = adir / "output"
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(res.output, board_path(out_dir))
+        # Only the built-in reference adapter may reproduce the human layout.
+        allow_copy = adapter.needs_reference
         try:
             if kind == "route":
-                row["score"] = score_route_task(task_dir, board_path(out_dir), adir / "score", rec)
+                row["score"] = score_route_task(task_dir, board_path(out_dir), adir / "score", rec,
+                                                allow_copy=allow_copy)
             else:
-                pscore, placed_stats = score_place_task(task_dir, board_path(out_dir), adir / "score", rec)
+                pscore, placed_stats = score_place_task(task_dir, board_path(out_dir), adir / "score", rec,
+                                                        allow_copy=allow_copy)
                 row["score"] = pscore
                 if probe is not None and pscore["valid"]:
-                    row["probe"] = _probe(task_dir, rec, probe, out_dir, placed_stats,
+                    # the probe routes the rebuilt placement, never the method's own file
+                    row["probe"] = _probe(task_dir, rec, probe, adir / "score", placed_stats,
                                           pscore["unconnected"], attempt, timeout, adir)
         except Exception as e:
             row["status"] = "score_error"
@@ -118,7 +123,8 @@ def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, job
                 platform=platform.platform(), started=datetime.now(timezone.utc).isoformat(),
                 tools=tools.versions(), adapter=adapter.describe(),
                 probe=probe.describe() if probe else None, kinds=list(kinds), k=k, timeout=timeout,
-                tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only)
+                tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only,
+                score_version=SCORE_VERSION, task_spec=TASK_SPEC)
     meta_path = run_dir / "run.json"
     if meta_path.exists():
         prev = json.loads(meta_path.read_text())

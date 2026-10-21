@@ -11,12 +11,17 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py strip-placement IN OUT
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
+    python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE]
+    python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
 """
 import hashlib
 import json
 import math
 import os
+import re
+import shutil
 import sys
+import tempfile
 
 # pcbnew prints wx asserts on import and SWIG prints leak warnings at exit, both
 # on stdout. Keep a private handle to the real stdout for JSON and send fd 1 to
@@ -226,6 +231,298 @@ def import_ses(src, ses, dst):
     _out(dict(ok=True, path=dst))
 
 
+# --- Scoring a method's output: transplant the allowed changes, report everything else ---
+#
+# The scorer never judges the file a method wrote. It rebuilds the board from the task
+# input plus only what the task lets a method change (tracks and vias for routing,
+# footprint poses for placement), so edits to rules, outline, keepouts, pads or layers
+# cannot affect the score. Those edits are still reported, as `foreign` changes, by
+# comparing canonical re-saves of the output and the input with the allowed changes
+# normalized away.
+
+_TOK = re.compile(r'"(?:[^"\\]|\\.)*"|\(|\)|[^\s()"]+')
+COORD_TOL = 5e-4  # mm (and degrees) when comparing canonical re-saves
+POSE_TOL_NM = 1000
+ROUTING_HEADS = ("segment", "arc", "via")
+# Never transplanted and without effect on DRC: groups, and the tuning patterns
+# ("generated") that wrap meandered tracks. Stripping routing drops the ones that held only
+# tracks, so they would otherwise show up as changes of every human layout.
+UNSCORED_HEADS = ("group", "generated")
+
+
+def _try_load(path):
+    try:
+        return _load(path), None
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _unfill(board):
+    for i in range(board.GetAreaCount()):
+        pcbnew.Cast_to_ZONE(board.GetArea(i)).UnFill()
+
+
+def _canonical(board):
+    """The board as KiCad itself saves it (fixed formatting and order)."""
+    d = tempfile.mkdtemp(prefix="kae-canon-")
+    try:
+        p = os.path.join(d, "canon.kicad_pcb")
+        _save(board, p)
+        with open(p, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _top_spans(text):
+    """(head, start, end) of each top-level child of (kicad_pcb ...), as text offsets."""
+    spans, depth, start, i, n = [], 0, None, 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+        elif c == "(":
+            depth += 1
+            if depth == 2:
+                start = i
+        elif c == ")":
+            if depth == 2:
+                head = _TOK.findall(text[start:start + 64])[1]
+                spans.append((head, start, i + 1))
+            depth -= 1
+        i += 1
+    return spans
+
+
+def _block_uuid(blk):
+    depth = 0
+    for i, t in enumerate(blk):
+        if t == "(":
+            depth += 1
+            if depth == 2 and i + 2 < len(blk) and blk[i + 1] == "uuid":
+                return blk[i + 2].strip('"')
+        elif t == ")":
+            depth -= 1
+    return None
+
+
+def _keyed(text, ignore_heads=()):
+    """Top-level objects keyed by (kind, uuid or ordinal), as comparable token lists."""
+    out, seen = {}, {}
+    for head, a, b in _top_spans(text):
+        if head in ignore_heads:
+            continue
+        blk = _TOK.findall(text[a:b])
+        u = _block_uuid(blk)
+        if u is None:
+            seen[head] = seen.get(head, 0) + 1
+            u = f"#{seen[head]}"
+        # nested uuids carry no electrical meaning, and KiCad invents fresh ones on load
+        # for some implicit fields; compare without them
+        out[(head, u)] = [("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
+                          for i, t in enumerate(blk)]
+    return out
+
+
+def _same_tokens(a, b):
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        try:
+            fx, fy = float(x), float(y)
+        except ValueError:
+            return False
+        d = abs(fx - fy)
+        if d > COORD_TOL and abs(d - 360.0) > COORD_TOL:
+            return False
+    return True
+
+
+def _foreign(out_text, in_text, limit=50):
+    """Top-level objects added, removed or changed, routing, zone fills, groups and tuning
+    patterns excepted."""
+    ignore = ROUTING_HEADS + UNSCORED_HEADS
+    a, b = _keyed(out_text, ignore), _keyed(in_text, ignore)
+    diffs = []
+    for k in sorted(set(a) | set(b)):
+        if k not in a:
+            diffs.append(dict(kind=k[0], id=k[1], change="removed"))
+        elif k not in b:
+            diffs.append(dict(kind=k[0], id=k[1], change="added"))
+        elif not _same_tokens(a[k], b[k]):
+            diffs.append(dict(kind=k[0], id=k[1], change="changed"))
+    counts = {}
+    for d in diffs:
+        counts[d["kind"]] = counts.get(d["kind"], 0) + 1
+    return dict(count=len(diffs), by_kind=counts, items=diffs[:limit])
+
+
+def _um(v):
+    return int(round(v / 1000.0))
+
+
+def _route_key(t):
+    cls = t.GetClass()
+    if cls == "PCB_VIA":
+        p = t.GetPosition()
+        return ("via", _um(p.x), _um(p.y), t.TopLayer(), t.BottomLayer())
+    s, e = t.GetStart(), t.GetEnd()
+    ends = tuple(sorted([(_um(s.x), _um(s.y)), (_um(e.x), _um(e.y))]))
+    if cls == "PCB_ARC":
+        m = t.GetMid()
+        return ("arc", t.GetLayer(), ends, _um(m.x), _um(m.y), _um(t.GetWidth()))
+    return ("seg", t.GetLayer(), ends, _um(t.GetWidth()))
+
+
+def _copy_stats(matched, total, min_items, min_frac):
+    frac = round(matched / total, 4) if total else 0.0
+    return dict(matched=matched, total=total, frac=frac,
+                suspect=matched >= min_items and frac >= min_frac)
+
+
+def _identity(board):
+    placement = _placement(board)
+    return dict(
+        placement_hash=_hash([(r["uuid"], r["x"], r["y"], r["rot"], r["back"]) for r in placement]),
+        padnet_hash=_hash(_pad_nets(board)),
+        copper_layers=board.GetCopperLayerCount(),
+    )
+
+
+def _net_names(board):
+    names = {""}
+    for fp in board.GetFootprints():
+        names.update(p.GetNetname() for p in fp.Pads())
+    for i in range(board.GetAreaCount()):
+        names.add(board.GetArea(i).GetNetname())
+    names.update(t.GetNetname() for t in board.GetTracks())
+    return names
+
+
+def transplant_routing(out_path, inp_path, dst, ref_path=None):
+    """DEST = INPUT + the tracks, arcs and vias of OUTPUT. Report OUTPUT's other changes.
+
+    Works on KiCad's own re-save of OUTPUT: accepted routing objects are copied as text
+    into INPUT (nets are referenced by name in KiCad 10 files). pcbnew objects are never
+    moved between boards or removed, which upsets SWIG's type tracking.
+    """
+    out, err = _try_load(out_path)
+    if out is None:
+        _out(dict(ok=True, loadable=False, error=err))
+        return
+    board = _load(inp_path)
+    ref = _load(ref_path) if ref_path else None
+    enabled = board.GetEnabledLayers()
+    nets = _net_names(board)
+    given = {_route_key(t) for t in board.GetTracks()}
+    out_keys, accepted = [], set()
+    bad_layer = unknown_net = 0
+    for t in out.GetTracks():
+        key = _route_key(t)
+        out_keys.append(key)
+        layers = [t.TopLayer(), t.BottomLayer()] if t.GetClass() == "PCB_VIA" else [t.GetLayer()]
+        if any(not pcbnew.IsCopperLayer(l) or not enabled.Contains(l) for l in layers):
+            bad_layer += 1
+        elif t.GetNetname() not in nets:
+            unknown_net += 1
+        elif key not in given:
+            accepted.add(t.m_Uuid.AsString())
+    copy = None
+    if ref is not None:
+        ref_keys = {_route_key(t) for t in ref.GetTracks()}
+        mine = [k for k in out_keys if k not in given]
+        copy = _copy_stats(sum(1 for k in mine if k in ref_keys), len(mine), 20, 0.6)
+    ident = _identity(out)
+    missing_given = len(given - set(out_keys))
+
+    out_text = _canonical(out)
+    blocks = []
+    for head, a, b in _top_spans(out_text):
+        if head in ROUTING_HEADS and _block_uuid(_TOK.findall(out_text[a:b])) in accepted:
+            blocks.append(out_text[a:b])
+    with open(inp_path, encoding="utf-8") as f:
+        in_text = f.read()
+    end = in_text.rstrip().rfind(")")
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(in_text[:end] + "".join("\t" + blk + "\n" for blk in blocks) + in_text[end:])
+    check = _load(dst)
+    n_routing = len(list(check.GetTracks()))
+    if n_routing != len(given) + len(blocks):
+        raise RuntimeError(f"transplant produced {n_routing} routing items, expected "
+                           f"{len(given)} + {len(blocks)}")
+
+    _unfill(out)
+    _unfill(board)
+    foreign = _foreign(_canonical(out), _canonical(board))
+    _out(dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, unknown_net=unknown_net,
+              missing_given=missing_given, output=ident, foreign=foreign, copy=copy))
+
+
+def _same_pose(a, b):
+    pa, pb = a.GetPosition(), b.GetPosition()
+    da = (a.GetOrientationDegrees() - b.GetOrientationDegrees()) % 360.0
+    return (abs(pa.x - pb.x) <= POSE_TOL_NM and abs(pa.y - pb.y) <= POSE_TOL_NM
+            and min(da, 360.0 - da) <= 0.01 and a.IsFlipped() == b.IsFlipped())
+
+
+def _set_pose(fp, pos, orientation, flipped):
+    if fp.IsFlipped() != flipped:
+        fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
+    fp.SetOrientation(orientation)
+    fp.SetPosition(pos)
+
+
+def transplant_placement(out_path, inp_path, dst, ref_path=None):
+    """DEST = INPUT with each unlocked footprint moved to its pose in OUTPUT (position,
+    orientation, side). Report OUTPUT's other changes, moved locked parts, and footprints
+    missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST."""
+    out, err = _try_load(out_path)
+    if out is None:
+        _out(dict(ok=True, loadable=False, error=err))
+        return
+    board, fresh = _load(inp_path), _load(inp_path)
+    ref = _load(ref_path) if ref_path else None
+    in_fps = {fp.m_Uuid.AsString(): fp for fp in board.GetFootprints()}
+    out_fps = {fp.m_Uuid.AsString(): fp for fp in out.GetFootprints()}
+    missing = sorted(u for u in in_fps if u not in out_fps)
+    extra = sorted(u for u in out_fps if u not in in_fps)
+    copy = None
+    if ref is not None:
+        ref_fps = {fp.m_Uuid.AsString(): fp for fp in ref.GetFootprints()}
+        free = [u for u, fp in in_fps.items() if not fp.IsLocked() and u in out_fps and u in ref_fps]
+        copy = _copy_stats(sum(1 for u in free if _same_pose(out_fps[u], ref_fps[u])), len(free), 5, 0.5)
+    ident = _identity(out)
+    routing_added = len(list(out.GetTracks()))
+    locked_moved = []
+    for u, fp in in_fps.items():
+        o = out_fps.get(u)
+        if o is None:
+            continue
+        if fp.IsLocked():
+            if not _same_pose(fp, o):
+                locked_moved.append(fp.GetReference())
+            continue
+        _set_pose(fp, o.GetPosition(), o.GetOrientation(), o.IsFlipped())
+    _save(board, dst)
+
+    # Normalize the allowed change away: put every output footprint back at its input pose.
+    fresh_fps = {fp.m_Uuid.AsString(): fp for fp in fresh.GetFootprints()}
+    for u, o in out_fps.items():
+        f = fresh_fps.get(u)
+        if f is not None:
+            _set_pose(o, f.GetPosition(), f.GetOrientation(), f.IsFlipped())
+    _unfill(out)
+    _unfill(fresh)
+    foreign = _foreign(_canonical(out), _canonical(fresh))
+    _out(dict(ok=True, loadable=True, missing=missing[:50], n_missing=len(missing), extra=extra[:50],
+              n_extra=len(extra), locked_moved=locked_moved[:50], n_locked_moved=len(locked_moved),
+              routing_added=routing_added, output=ident, foreign=foreign, copy=copy))
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -245,6 +542,10 @@ def main(argv):
             export_dsn(args[0], args[1])
         elif op == "import-ses":
             import_ses(args[0], args[1], args[2])
+        elif op == "transplant-routing":
+            transplant_routing(*args[:4])
+        elif op == "transplant-placement":
+            transplant_placement(*args[:4])
         else:
             raise SystemExit(f"unknown op {op}")
     except Exception as e:  # report failures as JSON so the harness can record them
