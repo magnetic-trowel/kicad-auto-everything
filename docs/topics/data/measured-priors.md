@@ -16,7 +16,7 @@
 - **Boards:** all **128 permissively licensed** boards (MIT, Apache-2.0, BSD-3, CC0, CERN-OHL-P, CC-BY) in the circuit-skills manifest, fetched at pinned commits; 110 have ICs.
 - **Parser:** a minimal S-expression parser computes absolute pad positions (footprint `at` plus rotated pad offset). The rotation convention was validated: pads land on track ends 66.9% of the time with the chosen sign vs 30.5% with the opposite sign.
 - **Decap definition:** a 2-pad `C*` part with one pad on a GND-like net and one on a power-like net (name heuristics).
-- **Distance:** cap power-pad centre to the nearest pad of any `U*`/`IC*` on the same net. The script was `decap_stats.py` in the note author's scratchpad.
+- **Distance:** cap power-pad centre to the nearest pad of any `U*`/`IC*` on the same net. Script: [`tools/research/layout-data/decap_stats.py`](../../../tools/research/layout-data/decap_stats.py).
 
 ### Decoupling-distance priors
 

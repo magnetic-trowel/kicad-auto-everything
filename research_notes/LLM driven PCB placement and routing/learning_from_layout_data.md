@@ -280,7 +280,7 @@ Measured PCB evidence (circuit-skills, 64 boards): **designer placements route c
   - **Parser:** a minimal S-expression parser computes absolute pad positions (footprint `at` plus a rotated pad offset). The rotation convention was validated: rotated pads land on track endpoints 66.9% of the time with this convention versus 30.5% with the opposite sign.
   - **Decap selection:** a "decap" is a 2-pad `C*` part with one pad on a GND-like net and one on a power-like net (name heuristics).
   - **Distance:** from the cap's power-pad centre to the **nearest pad of any `U*`/`IC*` footprint on the same net**.
-  - Script: `decap_stats.py` (scratchpad); 110 boards had ICs.
+  - Script: [`decap_stats.py`](../../tools/research/layout-data/decap_stats.py); 110 boards had ICs.
 - **1 nF–1 µF caps (n=809, 82 boards):** p10 1.55 mm, p25 2.21, **median 3.29**, p75 5.75, p90 15.1 mm. **17% within 2 mm, 44% within 3 mm, 70% within 5 mm.** 85% are on the same side as the IC. Exactly 100 nF (n=637): median 3.44 mm.
 - **By package:**
   - **0402:** median **2.51 mm**, p90 4.93, 63% within 3 mm, 95% same side;

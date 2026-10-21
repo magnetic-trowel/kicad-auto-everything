@@ -1,0 +1,22 @@
+{"n": 30, "grid_mm": 0.5, "method": "SA", "time_s": 10.0, "moves": 111600, "moves_per_s": 11160, "hpwl_mm": 195.5, "check": [0, 0, 0, 0]}
+{"n": 30, "grid_mm": 0.5, "method": "SA+CP-SAT-LNS", "polish_s": 20.2, "iters": 10, "accepted": 3, "hpwl_mm": 182.0, "check": [0, 0, 0, 0]}
+{"n": 30, "grid_mm": 0.1, "method": "SA", "time_s": 10.0, "moves": 110800, "moves_per_s": 11080, "hpwl_mm": 241.5, "check": [0, 1, 0, 0]}
+{"n": 30, "grid_mm": 0.1, "method": "SA+CP-SAT-legalize", "status": "OPTIMAL", "legalize_s": 3.8, "hpwl_mm": 243.9, "check": [0, 0, 0, 0]}
+{"n": 30, "grid_mm": 0.1, "method": "SA+CP-SAT-LNS", "polish_s": 20.3, "iters": 10, "accepted": 8, "hpwl_mm": 214.6, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA", "time_s": 60.0, "moves": 702000, "moves_per_s": 11700, "hpwl_mm": 521.5, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA+CP-SAT-LNS", "polish_s": 60.5, "iters": 30, "accepted": 10, "hpwl_mm": 503.5, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.1, "method": "SA", "time_s": 60.0, "moves": 673600, "moves_per_s": 11227, "hpwl_mm": 490.1, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.1, "method": "SA+CP-SAT-LNS", "polish_s": 60.5, "iters": 30, "accepted": 15, "hpwl_mm": 465.9, "check": [0, 0, 0, 0]}
+{"n": 300, "grid_mm": 0.5, "method": "SA", "time_s": 120.0, "moves": 1298800, "moves_per_s": 10823, "hpwl_mm": 2316.0, "check": [0, 1, 0, 0]}
+{"n": 300, "grid_mm": 0.5, "method": "SA+CP-SAT-legalize", "status": "OPTIMAL", "legalize_s": 6.91, "hpwl_mm": 2316.0, "check": [0, 0, 0, 0]}
+{"n": 300, "grid_mm": 0.5, "method": "SA+CP-SAT-LNS", "polish_s": 122.1, "iters": 60, "accepted": 19, "hpwl_mm": 2278.0, "check": [0, 0, 0, 0]}
+{"n": 300, "grid_mm": 0.1, "method": "SA", "time_s": 120.0, "moves": 1265600, "moves_per_s": 10547, "hpwl_mm": 2467.1, "check": [0, 0, 0, 0]}
+{"n": 300, "grid_mm": 0.1, "method": "SA+CP-SAT-LNS", "polish_s": 120.1, "iters": 59, "accepted": 26, "hpwl_mm": 2399.2, "check": [0, 0, 0, 0]}
+{"n": 1000, "grid_mm": 0.5, "method": "SA", "time_s": 300.0, "moves": 2786000, "moves_per_s": 9287, "hpwl_mm": 12843.0, "check": [16, 0, 2, 0]}
+{"n": 1000, "grid_mm": 0.5, "method": "SA+CP-SAT-legalize", "status": "UNKNOWN", "legalize_s": 134.01, "hpwl_mm": null, "check": null}
+{"n": 100, "grid_mm": 0.5, "method": "SA", "time_s": 60.0, "moves": 678200, "moves_per_s": 11303, "hpwl_mm": 691.0, "check": [1, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA+CP-SAT-legalize", "status": "OPTIMAL", "legalize_s": 3.81, "hpwl_mm": 699.0, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA+CP-SAT-LNS", "polish_s": 30.3, "iters": 15, "accepted": 7, "hpwl_mm": 664.0, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA", "time_s": 60.0, "moves": 669600, "moves_per_s": 11160, "hpwl_mm": 525.5, "check": [0, 0, 0, 0]}
+{"n": 100, "grid_mm": 0.5, "method": "SA+CP-SAT-LNS", "polish_s": 30.3, "iters": 15, "accepted": 6, "hpwl_mm": 517.5, "check": [0, 0, 0, 0]}
+DONE

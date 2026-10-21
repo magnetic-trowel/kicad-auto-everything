@@ -9,7 +9,7 @@
 
 ## Key facts
 
-**Setup** [M]: 4 vCPU, 15 GB RAM, Python 3.13, OR-Tools 9.15.6755, Shapely 2.2.0, rtree 1.4.1, pyclipper 1.4.0, NumPy 2.5.4; CP-SAT `num_workers=4`. Synthetic instances from `pcbgen.py`: R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers at courtyard size; board aspect 1.5 at 45% utilization; 4 mounting-hole keep-outs (6×6 mm) + one edge keep-out; 2–4 decaps per IC with **hard decap-pin ↔ IC-VDD-pin L1 ≤ 3 mm**; 2–4-pin nets with cluster locality; 4-way rotation; pin-level exact HPWL. Scripts (`pcbgen.py`, `cpsat_place.py`, `hier_place.py`, `sa_place.py`, `legalize_clusters.py`, `geom_bench.py`, `pathfinder_bench.py`, `results*.jsonl`) were in the session scratchpad listed in [solver_toolbox.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md).
+**Setup** [M]: 4 vCPU, 15 GB RAM, Python 3.13, OR-Tools 9.15.6755, Shapely 2.2.0, rtree 1.4.1, pyclipper 1.4.0, NumPy 2.5.4; CP-SAT `num_workers=4`. Synthetic instances from `pcbgen.py`: R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers at courtyard size; board aspect 1.5 at 45% utilization; 4 mounting-hole keep-outs (6×6 mm) + one edge keep-out; 2–4 decaps per IC with **hard decap-pin ↔ IC-VDD-pin L1 ≤ 3 mm**; 2–4-pin nets with cluster locality; 4-way rotation; pin-level exact HPWL. Scripts (`pcbgen.py`, `cpsat_place.py`, `hier_place.py`, `sa_place.py`, `legalize_clusters.py`, `geom_bench.py`, `pathfinder_bench.py`, `results*.jsonl`) are in [`tools/research/solver-bench/`](../../../tools/research/solver-bench/) (raw results in `results/`).
 
 | N | Board (mm) | Nets | Decap constraints | CP-SAT vars |
 |---|---|---|---|---|

@@ -21,8 +21,9 @@ None of this is legal advice.
 The root [`LICENSE`](LICENSE) is the GPL v3 text. Per-file licensing is
 declared in [`REUSE.toml`](REUSE.toml) and SPDX headers, following
 [REUSE](https://reuse.software); full texts are in [`LICENSES/`](LICENSES).
-When the first rule pack, dataset, or weights file lands, add its license text
-to `LICENSES/` and an annotation to `REUSE.toml`.
+When the first rule pack or weights file lands, add its license text to
+`LICENSES/` and an annotation to `REUSE.toml` (as done for the benchmark
+results in `tools/research/`).
 
 New source files should start with:
 

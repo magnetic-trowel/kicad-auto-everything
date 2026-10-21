@@ -11,7 +11,7 @@
 >
 > **Benchmark machine:** 4 vCPU, 15 GB RAM, Python 3.13, OR-Tools 9.15.6755, Shapely 2.2.0, rtree 1.4.1, pyclipper 1.4.0, SciPy, NumPy 2.5.4. CP-SAT ran with `num_workers=4`.
 >
-> **Scripts** are in `/tmp/claude-0/-home-user-kicad-auto-everything/009d7404-80d1-57ec-ba01-3ececa478fa8/scratchpad/bench/`:
+> **Scripts** are in [`tools/research/solver-bench/`](../../tools/research/solver-bench/) (originally run from the session scratchpad):
 > - `pcbgen.py`
 > - `cpsat_place.py`
 > - `hier_place.py`
