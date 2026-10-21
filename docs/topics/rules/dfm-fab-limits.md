@@ -9,7 +9,7 @@
 
 ## Key facts
 
-**Fab profiles** (official pages read 2026-10-20) [P]:
+**Fab profiles** (official pages read 2026-10-20; compiled in [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
 
 | Parameter | JLCPCB 2L (rec / abs) | JLCPCB ML (rec / abs) | PCBWay std | OSH Park 2L | OSH Park 4L | KiCad check |
 |---|---|---|---|---|---|---|
@@ -26,7 +26,7 @@
 
 Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB assembly](https://jlcpcb.com/capabilities/pcb-assembly-capabilities); [PCBWay](https://www.pcbway.com/capabilities.html); [OSH Park 2L](https://docs.oshpark.com/services/two-layer/), [4L](https://docs.oshpark.com/services/four-layer/); [Eurocircuits](https://www.eurocircuits.com/pcb-design-guidelines-classification/).
 
-**JLCPCB detail** [P]:
+**JLCPCB detail** (incl. V-cut, castellation and panel geometry; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
 - **Copper weight → min track/space:** 2 oz 0.16 (2L) / 0.15 mm (ML); 2.5 oz 0.20; 3.5 oz 0.25; 4.5 oz 0.30 mm (2L only). Available weights: 2L 1/2/2.5/3.5/4.5 oz; ML outer 1–2 oz, inner 0.5 oz default.
 - **Tolerances:** track width ±20%. PTH annular ring at 2 oz ≥0.254 mm; NPTH ring ≥0.45 mm.
 - **Vias:** ≥0.15 mm hole / 0.25 mm diameter (0.1/0.2 only for ≤1 mm boards with ENIG/OSP); diameter = hole + 0.1 (0.15 preferred); "Preferred Min. Via hole size: 0.2mm". Drill range 0.15–6.3 mm.
@@ -77,7 +77,7 @@ Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB
 - Polarized parts in one direction, 0/90°; clear pin-1 and polarity marks; avoid THT ([Cadence DFA](https://resources.pcb.cadence.com/home/2024-dfa-guidelines-for-pcb)).
 - FEDEVEL: extra silk on connectors and slots to prevent placement errors.
 
-**Mounting holes** (no standard):
+**Mounting holes** (no standard; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)):
 - Raspberry Pi RP2040 reference: "NPTH FD2.75mm SM3.15mm KO6mm"; other Pi boards FD2.7 / SM5.8 / KO6.2 ([RP2040 HW design](https://datasheets.raspberrypi.com/rp2040/hardware-design-with-rp2040.pdf)) [P].
 - ISO 273 clearance holes (M2 2.2/2.4/2.6; M2.5 2.7/2.9/3.1; **M3 3.2/3.4/3.6**; M4 4.3/4.5/4.8 mm) [S].
 - M3 socket head ≈5.5 mm; ~7 mm clearance in practice [S].
