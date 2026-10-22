@@ -35,8 +35,12 @@ by reciprocity of the heat equation).
            metals R_th = R_el / (L T) (copper: 0.15 K/W per micro-ohm); dielectrics
            G_th / C = k / eps. Checked against round 1's via (261 K/W) and TIM-pad
            (1.7 K/W) numbers.
+  environment  Rough mission boundary conditions: convection (~rho^0.5) vs linearised
+           radiation at 0/10/20 km (ISA), radiative equilibrium of a sunlit plate by
+           surface finish (alpha_s, eps), and the relative-humidity drop per kelvin of
+           local warming (Clausius-Clapeyron).
 
-Run:  python tools/research/physics/th_electrothermal.py [runaway|hogging|ackernel|peltier|exchange|all]
+Run:  python tools/research/physics/th_electrothermal.py [runaway|hogging|ackernel|peltier|exchange|environment|all]
 numpy + scipy; about 10 s on one core.
 """
 import math
@@ -178,9 +182,27 @@ def exp_exchange():
     print("     path is a capacitance (a coupling). Thermal design decisions belong in the electrical ledger too.")
 
 
+def exp_environment():
+    print("== environment: boundary conditions that move with the mission (rough closed forms)")
+    sigma_sb = 5.670e-8
+    # ISA: altitude km -> (T K, rho/rho0)
+    for alt, tk, rr in ((0, 288.15, 1.0), (10, 223.25, 0.3376), (20, 216.65, 0.0726)):
+        hc = 7.0 * math.sqrt(rr)                  # laminar natural convection ~ rho^0.5 (round 1's assumption)
+        hr = 4 * 0.9 * sigma_sb * tk ** 3         # linearised radiation, mask eps 0.9, surroundings at air T
+        print(f"  {alt:2d} km: h_conv ~ {hc:4.1f}, h_rad ~ {hr:4.1f} W/m^2K per face -> radiation share {hr/(hc+hr)*100:3.0f}%")
+    print("  sunlit plate, normal incidence, no convection, both faces radiating to a cold sky (T_sky 220 K):")
+    for name, a_s, eps in (("black mask", 0.9, 0.9), ("white mask (assumed alpha_s 0.3)", 0.3, 0.9), ("bare ENIG (alpha_s 0.4, eps 0.05)", 0.4, 0.05)):
+        t = (a_s * 1361.0 / (2 * eps * sigma_sb) + 220.0 ** 4) ** 0.25
+        print(f"    {name:34s}: absorbed {a_s*1361:5.0f} W/m^2 (= {a_s*1361*25e-4:3.1f} W on 50 x 50 mm), equilibrium {t-273.15:5.0f} C")
+    # Clausius-Clapeyron: dln p_sat/dT = L_v/(R_v T^2)
+    lv, rv, t = 2.5e6, 461.5, 293.15
+    k = lv / (rv * t * t)
+    print(f"  local warming lowers surface RH by {k*100:.1f} %/K (relative): +5 K takes 90 % RH to {90*math.exp(-5*k):.0f} %")
+
+
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     for name, fn in (("runaway", exp_runaway), ("hogging", exp_hogging), ("ackernel", exp_ackernel),
-                     ("peltier", exp_peltier), ("exchange", exp_exchange)):
+                     ("peltier", exp_peltier), ("exchange", exp_exchange), ("environment", exp_environment)):
         if which in (name, "all"):
             fn()

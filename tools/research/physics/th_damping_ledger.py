@@ -37,12 +37,15 @@ measurement (see the lens doc for caveats).
 import math
 import os
 import sys
+import warnings
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 import numpy as np  # noqa: E402
-from scipy.signal import impulse, lti  # noqa: E402
+from scipy.signal import BadCoefficients, impulse, lti  # noqa: E402
+
+warnings.filterwarnings("ignore", category=BadCoefficients)  # tiny leading numerator terms; results checked
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fe_cavity as fc  # noqa: E402
