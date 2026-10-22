@@ -25,8 +25,9 @@ and reports which critic fired at the planted site (mutation testing, idea V1).
 
 Net roles come from name regexes here; the real system takes them from the role
 model. With --roles FILE (written by suite_passports.py --roles-out), ground and power
-nets come from the inferred roles where those exist (regex otherwise), inferred switch
-nodes count as edge-critical, and every marker records its role source. All thresholds are defaults to be replaced by budgets. On a board with no
+nets come from the inferred roles where those exist (regex otherwise; a name-matched net
+the inference rejects, or a switch node, is a signal), and every marker records its role
+source. Edge-critical nets still come from FAST_RE. All thresholds are defaults to be replaced by budgets. On a board with no
 reference fill at all, the VOID detour saturates at the 50 mm ray and RPQF-lite is
 meaningless. Results on four open boards: docs/topics/physics/physics-critics.md.
 
@@ -369,7 +370,6 @@ def is_fast(b, net, all_signals):
 
 def critic_ret_cov(b, k=1.0, all_signals=False, ray_mm=50.0):
     refs = {ly: b.ref_fill(ly) for ly in b.cu}
-    prep_refs = {ly: prep(g) for ly, g in refs.items()}
     eroded = {}
 
     def er_fill(ly, m):
@@ -472,6 +472,7 @@ def critic_ret_cov(b, k=1.0, all_signals=False, ray_mm=50.0):
             markers.append(dict(critic='RET-REFNET', severity='info', net=net, layer=None, pos=None,
                                 measured=round(sum(r['ref_nets'][n] for n in pw), 2), unit='mm',
                                 detail=f"references power net(s) {pw}; return crosses to GND through decaps",
+                                ref_role_src={n_: b.role_src(n_) for n_ in pw},
                                 fix='reference to GND, or place a stitching cap at each end'))
         for key in ('primary', 'any', 'l_est', 'l_ideal'):
             r.pop(key)
@@ -502,7 +503,10 @@ def critic_ret_via(b, dmax=2.0, all_signals=False):
         p = Point(v['x'], v['y']).buffer(v['size'] / 2 + 0.8)  # reach past the via's own antipad
         refs = set()
         for ly in used:
-            _, l1, _ = b.neighbors(ly)[0]
+            nbs = b.neighbors(ly)
+            if not nbs:
+                continue
+            _, l1, _ = nbs[0]
             for net, g in sorted(fills_by_layer.get(l1, []), key=lambda t: b.role(t[0]) != 'gnd'):
                 if g.intersects(p):
                     refs.add((l1, net))
@@ -521,17 +525,24 @@ def critic_ret_via(b, dmax=2.0, all_signals=False):
                     caps.setdefault(pd['ref'], {})[pd['net']] = (pd['x'], pd['y'])
             dist = min((math.dist(c[na], (v['x'], v['y'])) for c in caps.values() if na in c and nb_ in c),
                        default=None)
-            (la, lb) = sorted(lys, key=lambda l: b.z[l])
-            t_pp = abs(b.z[lb] - b.z[la])
-            l_x = (MU0 * t_pp * 1e-3 / math.pi * math.log(max(dist, 0.3) / 0.15) + 1e-9) if dist else None
+            if len(lys) >= 2:
+                (la, lb) = sorted(lys, key=lambda l: b.z[l])[:2]
+                t_pp = abs(b.z[lb] - b.z[la])
+                l_x = (MU0 * t_pp * 1e-3 / math.pi * math.log(max(dist, 0.3) / 0.15) + 1e-9) if dist else None
+            else:      # both used layers see the same reference layer, with different nets next to the via
+                t_pp, l_x = 0.0, None
             markers.append(dict(critic='RET-VIA', severity='warning', net=v['net'], layer='/'.join(used),
                                 pos=[v['x'], v['y']], measured=round(l_x * 1e9, 2) if l_x else None, unit='nH',
                                 detail=f"reference changes net {sorted(nets)}: return through nearest bridging cap at "
                                        f"{dist if dist is None else round(dist, 1)} mm, est. +{'?' if not l_x else round(l_x * 1e9, 1)} nH "
-                                       f"(plane gap {t_pp:.2f} mm) [I]; Ott: 5-10 nH",
+                                       f"(plane gap {t_pp:.2f} mm) [I]; Ott: 5-10 nH"
+                                       + ('' if len(lys) >= 2 else '; both nets on one reference layer: no plane-pair estimate'),
+                                ref_role_src={n_: b.role_src(n_) for n_ in sorted(nets)},
                                 fix='keep both segments on layers referenced to the same net, or add a stitching cap'))
             continue
         net = nets.pop()
+        if len(lys) < 2:
+            continue
         cands = [math.hypot(o['x'] - v['x'], o['y'] - v['y']) for o in b.vias
                  if o['net'] == net and lys <= set(o['layers'])]
         cands += [math.hypot(pd['x'] - v['x'], pd['y'] - v['y']) for pd in b.pads
@@ -542,6 +553,7 @@ def critic_ret_via(b, dmax=2.0, all_signals=False):
                                 pos=[v['x'], v['y']], measured=round(d, 2) if d < 1e9 else None, unit='mm',
                                 detail=f"layer change {used} switches reference {sorted(lys)} of {net}; "
                                        f"nearest return via {d:.2f} mm > {dmax} mm",
+                                ref_role_src={net: b.role_src(net)},
                                 fix=f'add a {net} via within {dmax} mm'))
     return dict(checked=n_checked), markers
 
@@ -555,19 +567,25 @@ def critic_plane(b, frac=0.30, min_slot=2.0):
         for s in b.segments:
             if s['layer'] == ly and s['net'] != pnet:
                 foreign[s['net']] = foreign.get(s['net'], 0.0) + LineString(s['pts']).length
-        _, _, er = b.neighbors(ly)[0]
+        nbs = b.neighbors(ly)
+        er = nbs[0][2] if nbs else 4.5
         slots = []
         for pg in polys:
-            for ring in pg.interiors:
+            for ring in getattr(pg, 'interiors', []):
                 hole = Polygon(ring)
                 mrr = hole.minimum_rotated_rectangle
-                xs = list(mrr.exterior.coords)
-                ln = max(math.dist(xs[i], xs[i + 1]) for i in range(4))
+                if mrr.geom_type == 'Polygon':
+                    xs = list(mrr.exterior.coords)
+                    ln = max(math.dist(xs[i], xs[i + 1]) for i in range(len(xs) - 1))
+                else:      # degenerate hole (a line or a point)
+                    x0_, y0_, x1_, y1_ = hole.bounds
+                    ln = math.hypot(x1_ - x0_, y1_ - y0_)
                 if ln >= min_slot:
                     slots.append((ln, hole.representative_point()))
         slots.sort(key=lambda t: -t[0])
         eeff = (er + 1) / 2
-        out[ly] = dict(net=pnet, coverage_pct=round(100 * g.area / b.area, 1), islands=len(polys),
+        out[ly] = dict(net=pnet, role_src=b.role_src(pnet),
+                       coverage_pct=round(100 * g.area / b.area, 1) if b.area > 0 else None, islands=len(polys),
                        foreign_track_mm=round(sum(foreign.values()), 2), foreign_nets=len(foreign),
                        slots_ge_min=len(slots),
                        longest_slot_mm=round(slots[0][0], 2) if slots else 0.0,
@@ -606,7 +624,8 @@ def critic_pwr_trace(b, w_thin=0.4):
         thin = [s for s in segs if s['w'] < w_thin]
         r_thin = sum(1.72e-8 * LineString(s['pts']).length * 1e-3 / (s['w'] * 1e-3 * b.tcu.get(s['layer'], 0.035) * 1e-3)
                      for s in thin)
-        rec = dict(role=b.role(net), pads=len(pads), pads_on_pour=on_pour, fill_area_mm2=round(fill_area, 1),
+        rec = dict(role=b.role(net), role_src=b.role_src(net), pads=len(pads), pads_on_pour=on_pour,
+                   fill_area_mm2=round(fill_area, 1),
                    track_mm=round(sum(LineString(s['pts']).length for s in segs), 1),
                    thin_track_mm=round(sum(LineString(s['pts']).length for s in thin), 1),
                    thin_track_r_sum_mohm=round(r_thin * 1e3, 1))
@@ -652,19 +671,31 @@ def critic_cavity(b, frac=0.20, step=1.0):
             er = 4.5
             out[f'{a}|{c}'] = dict(overlap_mm2=round(ov.area, 1), stitch_vias=len(pts),
                                    max_empty_circle_d_mm=round(2 * r, 2),
-                                   first_mode_ghz=round(C0 / (2 * math.sqrt(er) * 2 * r * 1e-3) / 1e9, 2) if r < 1e9 else 0,
+                                   first_mode_ghz=round(C0 / (2 * math.sqrt(er) * 2 * r * 1e-3) / 1e9, 2) if 0 < r < 1e9 else 0,
                                    at=[round(float(at[0]), 2), round(float(at[1]), 2)])
     return out, []
 
 
-def run_all(b, args):
+def run_all(b, args, errors=None, timing=None):
+    """Run every critic; a critic that raises is recorded in errors (if given) and yields empty results."""
     res, markers = {}, []
     for name, fn in (('RET-COV', lambda: critic_ret_cov(b, args.k, args.all_signals)),
                      ('RET-VIA', lambda: critic_ret_via(b, args.via_dmax, args.all_signals)),
                      ('PLANE-PERF', lambda: critic_plane(b)),
                      ('PWR-TRACE', lambda: critic_pwr_trace(b)),
                      ('CAVITY', lambda: critic_cavity(b))):
-        r, m = fn()
+        t0 = time.perf_counter()
+        try:
+            r, m = fn()
+        except Exception as e:      # noqa: BLE001  (one bad geometry must not lose the other critics)
+            if errors is None:
+                raise
+            errors.append(dict(critic=name, error=f'{type(e).__name__}: {e}', trace=traceback.format_exc()[-1500:]))
+            r, m = ({'checked': 0} if name == 'RET-VIA' else {}), []
+        if timing is not None:
+            timing[name] = round(time.perf_counter() - t0, 3)
+        for mk in m:
+            mk.setdefault('role_src', b.role_src(mk.get('net')))
         res[name] = r
         markers += m
     return res, markers
@@ -821,9 +852,28 @@ def main(argv=None):
     ap.add_argument('--via-dmax', type=float, default=2.0, help='return-via distance limit (mm)')
     ap.add_argument('--selftest', action='store_true')
     ap.add_argument('--seed', type=int, default=1)
+    ap.add_argument('--roles', help='roles JSON from suite_passports.py --roles-out (ground, power, switch nodes)')
     args = ap.parse_args(argv)
-    b = Board(args.board)
-    res, markers = run_all(b, args)
+    t_start = time.perf_counter()
+    roles = None
+    if args.roles:
+        try:
+            with open(args.roles) as f:
+                roles = json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"roles file unreadable ({e}); using name regexes", file=sys.stderr)
+    try:
+        b = Board(args.board, roles=roles)
+    except Exception as e:      # noqa: BLE001
+        if args.json:
+            with open(args.json, 'w') as f:
+                json.dump(dict(summary=dict(board=args.board, error=f'{type(e).__name__}: {e}'), results={}, markers=[],
+                               errors=[dict(critic='parse', error=f'{type(e).__name__}: {e}', trace=traceback.format_exc()[-1500:])]),
+                          f, indent=1)
+        print(f"parse failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    errors, timing = [], {}
+    res, markers = run_all(b, args, errors, timing)
     cov = res['RET-COV']
     summary = dict(
         board=args.board, copper_layers=b.cu, board_area_mm2=round(b.area, 1),
@@ -835,11 +885,21 @@ def main(argv=None):
         ref_hops=sum(r['hops'] for r in cov.values()),
         edge_crowding=sum(r['edges'] for r in cov.values()),
         rpqf_lite_worst=max((r['rpqf_lite'] or 0 for r in cov.values()), default=None),
-        ret_via_checked=res['RET-VIA']['checked'],
+        ret_via_checked=res['RET-VIA'].get('checked', 0),
         markers_by_critic={c: sum(1 for m in markers if m['critic'] == c)
                            for c in sorted({m['critic'] for m in markers})},
     )
-    out = dict(summary=summary, results=res, markers=markers)
+    if roles is not None or b.skipped or errors:
+        nets = {s['net'] for s in b.segments} | {n for (_, n) in b.fills} | {p['net'] for p in b.pads}
+        nets.discard(None)
+        summary.update(
+            role_source='inferred roles where present, regex otherwise' if roles is not None else 'regex',
+            roles_inferred=sum(1 for n in nets if b.role_src(n) == 'inferred'),
+            role_changes_vs_regex={n: [b.regex_role(n), b.role(n)] for n in sorted(nets) if b.regex_role(n) != b.role(n)},
+            markers_by_role_src={src: sum(1 for m in markers if m.get('role_src') == src) for src in ('regex', 'inferred')},
+            board_area_src=b.area_src, skipped_items=b.skipped, critic_errors=len(errors),
+            critic_time_s=timing, runtime_s=round(time.perf_counter() - t_start, 3))
+    out = dict(summary=summary, results=res, markers=markers, errors=errors)
     if args.selftest:
         rows = selftest(b, args)
         out['selftest'] = [dict(op=o, site=s, detected=d, new_markers=n) for o, s, d, n in rows]

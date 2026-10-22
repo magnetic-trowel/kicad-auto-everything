@@ -286,9 +286,44 @@ def sec_wells():
               f" touches {o['touch'] * 1e6:.1f} uOhm ({100 * (o['touch'] / ex - 1):+.1f}%)")
 
 
+def sec_sdf(board):
+    """Signed distance and local width map (K7) on a real copper layer: cost per million pixels."""
+    import time
+    import shapely
+    import rb_board_passports as rb
+    from scipy import ndimage
+    b = rb.KBoard(board)
+    b.fill_report()
+    gnd = max({p['net'] for p in b.pads if p['net']}, key=lambda n: b.area(n))
+    ly = max(b.cu, key=lambda l: b.copper(gnd, l).area)
+    g = b.copper(gnd, ly)
+    shapely.prepare(g)
+    x0, y0, x1, y1 = g.bounds
+    print(f"== sdf: signed distance and width map of {gnd} on {ly} ({g.area:.0f} mm2)")
+    for h in (0.05, 0.025):
+        nx, ny = int((x1 - x0) / h) + 1, int((y1 - y0) / h) + 1
+        X, Y = np.meshgrid(x0 + (np.arange(nx) + 0.5) * h, y0 + (np.arange(ny) + 0.5) * h)
+        t0 = time.perf_counter()
+        m = shapely.contains_xy(g, X, Y)
+        t_r = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        d_in = ndimage.distance_transform_edt(m) * h
+        d_out = ndimage.distance_transform_edt(~m) * h
+        sdf = d_in - d_out
+        ridge = (sdf > 0) & (sdf >= ndimage.maximum_filter(sdf, size=3) - 1e-12)
+        width = 2 * sdf[ridge]
+        t_s = time.perf_counter() - t0
+        mp = nx * ny / 1e6
+        print(f"   h {h} mm: {mp:.2f} Mpixel; point-sampled raster {t_r:.2f} s ({t_r / mp:.2f} s/Mpx); signed EDT + ridge"
+              f" width map {t_s:.2f} s ({1e3 * t_s / mp:.0f} ms/Mpx); copper narrower than 0.3 mm on"
+              f" {100 * np.mean(width < 0.3):.1f}% of ridge pixels")
+
+
 if __name__ == "__main__":
     which = sys.argv[1:] or ["all"]
     if "bracket" in which or "all" in which:
         sec_bracket()
     if "wells" in which or "all" in which:
         sec_wells()
+    if "sdf" in which:
+        sec_sdf(which[which.index("sdf") + 1])

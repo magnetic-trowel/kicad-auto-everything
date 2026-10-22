@@ -404,8 +404,15 @@ def infer_roles_general(b):
             if ohm is not None and 0 < ohm <= 0.2 and all(nn) and nn[0] != nn[1]:
                 shunts.append(dict(ref=f['ref'], ohm=ohm, nets=nn, fp=f))
     shunt_nets = {n for s in shunts for n in s['nets']}
-    def one_sided(f):          # shunts this part touches on one side only (a bridge output, not a sense amplifier)
-        return [s for s in shunts if len(set(s['nets']) & netset_of[id(f)]) == 1]
+    conn_nets_all = {p['net'] for g in fps if is_conn(g) for p in g['pads'] if p['net']}
+
+    def one_sided(f):          # shunts this part touches on one side only, whose other side reaches a connector (a bridge
+        out = []               # output to an off-board load, not a sense amplifier or a resistor between stacked domains)
+        for s in shunts:
+            touch = set(s['nets']) & netset_of[id(f)]
+            if len(touch) == 1 and (set(s['nets']) - touch) & conn_nets_all:
+                out.append(s)
+        return out
     bridge_phase = set()
     for f in fps:
         if is_active(f) and len(one_sided(f)) >= 2:
@@ -704,11 +711,12 @@ def infer_roles_general(b):
     qs = [f for f in fps if pfx(f['ref']) in ('Q', 'T', 'VT') and len(f['pads']) >= 3]
     seen = set()
     shunt_to_gnd = {s['nets'][k]: s for s in shunts for k in (0, 1) if s['nets'][1 - k] in gnds}
-    for X in sorted({p['net'] for q in qs for p in q['pads'] if p['net']} - gnds - set(rails)):
+    live_rails = {n for n, r in rails.items() if r['confidence'] != 'low'}
+    for X in sorted({p['net'] for q in qs for p in q['pads'] if p['net']} - gnds - live_rails):
         on = [q for q in qs if X in netset_of[id(q)]]
         if len(on) < 2:
             continue
-        hi = [q for q in on if (netset_of[id(q)] - {X}) & {n for n, r in rails.items() if r['confidence'] != 'low'}]
+        hi = [q for q in on if (netset_of[id(q)] - {X}) & live_rails]
         lo = [q for q in on if q not in hi and ((netset_of[id(q)] - {X}) & gnds or (netset_of[id(q)] - {X}) & set(shunt_to_gnd))]
         if hi and lo:
             qa, qb = hi[0], lo[0]
@@ -716,7 +724,7 @@ def infer_roles_general(b):
             if key in seen:
                 continue
             seen.add(key)
-            rail = next(iter((netset_of[id(qa)] - {X}) & set(rails)))
+            rail = sorted((netset_of[id(qa)] - {X}) & live_rails)[0]
             cells.append(dict(type='half-bridge', ref=f"{qa['ref']}+{qb['ref']}", value=f"{qa['value']} / {qb['value']}",
                               rail=rail, gnd=gnd, sw=X, out=None, inductor=None, confidence='medium',
                               evidence=f"{qa['ref']} between '{short(rail)}' and '{short(X)}', {qb['ref']} between '{short(X)}' and ground"
@@ -1059,6 +1067,7 @@ def run_dc(b, roles, args, res, errors):
         except Exception as e:      # noqa: BLE001
             errors.append(dict(stage='dc ground', error=f'{type(e).__name__}: {e}', trace=traceback.format_exc()[-1500:]))
     out['status'] = 'ok'
+    N.lu, N.G = {}, None          # the HF stage needs only the barrels and the kept currents
     return out, (N, keep_ib)
 
 
@@ -1117,9 +1126,12 @@ def ground_islands(b, N, roles, h):
                     pad_isl.setdefault(id(p), set()).add(int(lab[pos[nd]]))
     gl = sorted(set(lay))
     main_comp = N.comp[ids[np.argmax(np.bincount(lab, minlength=nc)[lab])]]
-    biggest = {ly: max((k for k in range(nc) if lay[np.argmax(lab == k)] == ly), key=lambda k: area[k], default=None) for ly in gl}
     first_node = np.full(nc, -1)
     first_node[lab[::-1]] = np.arange(len(ids))[::-1]
+    isl_lay = lay[first_node]
+    biggest = {}
+    for k in np.argsort(-area):
+        biggest.setdefault(isl_lay[k], int(k))
     out = []
     floating_area = 0.0
     for k in range(nc):
@@ -1176,13 +1188,25 @@ def cell_roles(b, roles, cell):
         qa, qb = cell['_qa'], cell['_qb']
         if qa['layer'] != qb['layer']:
             raise ValueError('half-bridge transistors on opposite sides: the stack model needs one part side')
-        pads = [p for p in qa['pads'] if p['net'] == rail] + [p for p in qb['pads'] if p['net'] in roles['ground']]
-        if not any(p['net'] in roles['ground'] for p in pads):
-            raise ValueError('low-side transistor reaches ground only through a shunt; not modelled')
-        gnd = next(p['net'] for p in pads if p['net'] in roles['ground'])
+        lo_g = [p for p in qb['pads'] if p['net'] in roles['ground']]
+        if not lo_g:             # low side returns through a shunt: the body ends at the shunt's ground pad
+            qbn = {p['net'] for p in qb['pads']}
+            sh = next((s_ for s_ in roles['shunts'] if set(s_['nets']) & qbn and set(s_['nets']) & set(roles['ground'])), None)
+            if sh is None:
+                raise ValueError('low-side transistor has no ground pad and no shunt to ground')
+            lo_g = [p for p in sh['fp']['pads'] if p['net'] in roles['ground']]
+            cell['body_note'] = f"synthetic body ends at shunt {sh['ref']}'s ground pad"
+        pads = [p for p in qa['pads'] if p['net'] == rail] + lo_g
+        gnd = lo_g[0]['net']
         drv = dict(ref=cell['ref'], value=cell['value'], lib='', layer=qa['layer'], x=(qa['x'] + qb['x']) / 2,
                    y=(qa['y'] + qb['y']) / 2, pads=pads)
         phases = []
+        for f in b.fps:          # the inductor on the switch node, if any (synchronous buck with discrete transistors)
+            if is_ind(f) and not is_bead(f) and any(p['net'] == cell['sw'] for p in f['pads']):
+                lpad = next(p for p in f['pads'] if p['net'] == cell['sw'])
+                other = next((p['net'] for p in f['pads'] if p is not lpad), None)
+                phases = [dict(shunt=None, net_in=cell['sw'], net_out=other, load=None, amp=None, inductor=f, lpad=lpad)]
+                break
     rp = [p for p in drv['pads'] if p['net'] == rail]
     gp = [p for p in drv['pads'] if p['net'] == gnd]
     if not rp or not gp:
@@ -1257,7 +1281,8 @@ def run_cells(b, roles, dcN, args, res, errors, flush):
     for rank, i in enumerate(order):
         c = cells[i]
         rec = dict(type=c['type'], ref=c['ref'], value=c['value'], rail=c.get('rail'), sw=c.get('sw'), confidence=c['confidence'],
-                   calibrated=False)
+                   calibrated=False, body=('two-transistor strip from the high-side rail pad to the low-side ground pad'
+                                           if c['type'] == 'half-bridge' else 'package lead strips and paddle (rb_board_passports)'))
         out.append(rec)
         if rank >= args.max_cells:
             rec['status'] = f'skipped: over --max-cells {args.max_cells}'
@@ -1279,12 +1304,26 @@ def run_cells(b, roles, dcN, args, res, errors, flush):
                 col = {f"feed {short(rr['rail'])}": 0}
                 Ib = keep_ib[rr['rail']][:, None]
             buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                r = rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
+            try:
+                with contextlib.redirect_stdout(buf):
+                    r = rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
+            except (MemoryError, RuntimeError) as e:     # SuperLU allocation failure: one retry on a coarser grid
+                if not isinstance(e, MemoryError) and 'MALLOC' not in str(e).upper():
+                    raise
+                hargs.h_hf = round(hargs.h_hf * 1.35, 3)
+                rec['grid_mm'] = hargs.h_hf
+                rec['retry'] = f'{type(e).__name__} at the first grid; retried at {hargs.h_hf} mm'
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    r = rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
             txt = buf.getvalue()
             log(txt.rstrip())
             rec.update(hf_summary(r, rr['rail'], rr['gnd']))
+            m = re.search(r'(\d+) sheet cells', txt)
+            rec['sheet_cells'] = int(m.group(1)) if m else None
             rec['decaps_in_loop'] = [f['ref'] for d, f in rr['decaps'] if d < 12.0]
+            if c.get('body_note'):
+                rec['body'] += '; ' + c['body_note']
             rec['status'] = 'ok'
         except MemoryError:
             rec['status'] = 'error: MemoryError'

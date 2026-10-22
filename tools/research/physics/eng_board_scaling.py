@@ -215,6 +215,7 @@ def main(argv=None):
     ap.add_argument('--skip', default='', help='comma list of orderings to skip: colamd,mmd,nd')
     ap.add_argument('--no-quotes', action='store_true')
     ap.add_argument('--export', default=None)
+    ap.add_argument('--complex', action='store_true', help='also time a complex-symmetric factorization')
     ap.add_argument('--json', action='store_true')
     args = ap.parse_args(argv)
     skip = set(filter(None, args.skip.split(',')))
@@ -229,6 +230,21 @@ def main(argv=None):
         perm = nested_dissection(N.x[keep], N.y[keep], A)
         res['t_nd_order'] = time.perf_counter() - t0
         assert len(np.unique(perm)) == G.shape[0]
+    if args.complex:
+        # an AC band on the same pattern: complex symmetric, every branch lossy (Re Y positive definite),
+        # factored without pivoting in symmetric mode, as a telegrapher or R + jwL sheet would be
+        d = G.diagonal().mean()
+        Gc = (G * (1.0 + 0.7j) + sp.identity(G.shape[0]) * (0.05j * d)).tocsc()
+        _, st = factor_stats(Gc.real.astype(float), 'mmd')
+        t0 = time.perf_counter()
+        luc = spla.splu(Gc, permc_spec='MMD_AT_PLUS_A', diag_pivot_thresh=0.0, options=dict(SymmetricMode=True))
+        res['complex'] = dict(t_factor_real=st['t_factor'], t_factor_complex=time.perf_counter() - t0,
+                              nnz_LU_complex=int(luc.L.nnz + luc.U.nnz))
+        b = np.ones(G.shape[0], complex)
+        t0 = time.perf_counter()
+        luc.solve(b)
+        res['complex']['t_solve1_complex'] = time.perf_counter() - t0
+        del luc
     lus = {}
     for how in ('colamd', 'mmd', 'nd'):
         if how in skip:
@@ -289,8 +305,9 @@ def quotes(N, G, keep, lu, perm, wsize, res):
     inW[W] = True
     t0 = time.perf_counter()
     Gw = np.zeros((len(W), len(W)))
-    for c0 in range(0, len(W), 200):
-        c = np.arange(c0, min(len(W), c0 + 200))
+    chunk = max(8, min(200, int(2.5e8 / (8 * N.nn))))      # dense right-hand sides capped at ~250 MB
+    for c0 in range(0, len(W), chunk):
+        c = np.arange(c0, min(len(W), c0 + chunk))
         E = np.zeros((N.nn, len(c)))
         E[W[c], np.arange(len(c))] = 1.0
         Gw[:, c] = sol.solve(E)[W]
@@ -342,8 +359,8 @@ def quotes(N, G, keep, lu, perm, wsize, res):
     t_blk = time.perf_counter() - t0
     t0 = time.perf_counter()
     dz_dir = np.zeros(m)
-    for c0 in range(0, m, 48):
-        c = np.arange(c0, min(m, c0 + 48))
+    for c0 in range(0, m, min(48, chunk)):
+        c = np.arange(c0, min(m, c0 + min(48, chunk)))
         E = np.zeros((N.nn, len(c)))
         E[U[c], np.arange(len(c))] += 1.0
         E[V[c], np.arange(len(c))] -= 1.0
