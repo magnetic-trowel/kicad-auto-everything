@@ -143,7 +143,7 @@ def main():
 
     # skew-driven common mode on an unshielded differential cable
     print("\n== H. Unshielded differential cable: CM from intra-pair skew, V_cm(f) = V_d(f) sin(pi f dt)")
-    Vd, f0, tr = 2.0, 31.25e6, 3e-9   # 100BASE-TX-like MLT-3 envelope, 2 Vpp
+    Vd, f0, tr = 2.0, 31.25e6, 3e-9   # 2 Vpp differential square wave, upper bound for 100BASE-TX
     for dt in (5e-12, 50e-12, 200e-12):
         worst = 1e9
         imax = 0
@@ -151,7 +151,7 @@ def main():
             f = n * f0
             if f < 30e6:
                 continue
-            Vn = 2 * (Vd / 2) * 0.5 * abs(np.sinc(n * 0.5)) * abs(np.sinc(n * tr * f0))
+            Vn = 2 * Vd * 0.5 * abs(np.sinc(n * 0.5)) * abs(np.sinc(n * tr * f0))  # Vd = p-p swing
             Vcm = Vn * abs(math.sin(math.pi * f * dt)) / 2
             E = fmax_factor(f) * 0.55 * Vcm * cable_factor(f)
             worst = min(worst, cispr32_b_3m(f) - dbuv(E))

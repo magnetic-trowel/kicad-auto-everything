@@ -16,7 +16,7 @@ with dielectric + conductor loss in k^2. Stitching vias are ports shorted to 0 o
      (b) the "largest empty circle" metric (open edges handled by mirror images);
   2. isolation across a single via-fence row vs pitch, compared with the
      inductive-post closed form |T| = 2/sqrt(4 + B^2), B = lambda/(s ln(s/(2 pi r))).
-Run:  python tools/research/physics/fe_cavity.py      (about 1-2 min)
+Run:  python tools/research/physics/fe_cavity.py      (a few minutes on 4 cores)
 """
 import math
 
@@ -70,11 +70,27 @@ def reduced_Z(cav, probes, shorts, freqs):
     return np.array(out)
 
 
-def first_peak(freqs, zmag):
+def first_peak(freqs, zmag, need_rise=True):
+    """First local maximum; with shorting vias |Z| starts small (inductive), so also
+    require it to exceed 3x its low-frequency value. An open board starts capacitive."""
     for i in range(1, len(freqs) - 1):
-        if zmag[i] > zmag[i - 1] and zmag[i] >= zmag[i + 1] and zmag[i] > 3 * zmag[0]:
+        if zmag[i] > zmag[i - 1] and zmag[i] >= zmag[i + 1] and (not need_rise or zmag[i] > 3 * zmag[0]):
             return freqs[i]
     return float("nan")
+
+
+def first_resonance(cav, probes, vias, fmax=13e9, coarse=0.25e9, fine=0.05e9):
+    """Coarse scan for the first peak of max_i |Z_ii|, then refine around it."""
+    freqs = np.arange(0.1e9, fmax, coarse)
+    Z = reduced_Z(cav, probes, vias, freqs)
+    zmax = np.max(np.abs(np.diagonal(Z, axis1=1, axis2=2)), axis=1)
+    f1 = first_peak(freqs, zmax, need_rise=len(vias) > 0)
+    if not np.isfinite(f1):
+        return f1
+    ff = np.arange(f1 - coarse, f1 + coarse + fine / 2, fine)
+    Z = reduced_Z(cav, probes, vias, ff)
+    zm = np.max(np.abs(np.diagonal(Z, axis1=1, axis2=2)), axis=1)
+    return ff[int(np.argmax(zm))]
 
 
 def largest_empty_circle(vias, a, b):
@@ -126,11 +142,10 @@ def wire_medium_fp(p, r=VIA_R, er=ER):
 
 def main():
     a, b, d = 40e-3, 30e-3, 0.2e-3
-    cav = Cavity(a, b, d, 140, 105)
+    cav = Cavity(a, b, d, 120, 90)
     rng = np.random.default_rng(1)
-    freqs = np.linspace(0.1e9, 14e9, 140)
 
-    def probes_away(vias, n=16):
+    def probes_away(vias, n=10):
         pr = []
         while len(pr) < n:
             p = rng.uniform([1e-3, 1e-3], [a - 1e-3, b - 1e-3])
@@ -147,7 +162,7 @@ def main():
         "perimeter 5 mm + grid 10 mm": np.vstack([perimeter(a, b, 5e-3), grid(a, b, 10e-3)]),
     }
     for nvia in (12, 28, 48):
-        for seed in range(3):
+        for seed in range(2):
             r2 = np.random.default_rng(100 + seed)
             pats[f"random N={nvia} seed{seed}"] = r2.uniform([0.5e-3, 0.5e-3], [a - 0.5e-3, b - 0.5e-3], (nvia, 2))
     print(f"Board {a*1e3:.0f} x {b*1e3:.0f} mm, d = {d*1e3:.1f} mm, er = {ER}, via r = {VIA_R*1e3:.2f} mm")
@@ -157,9 +172,7 @@ def main():
     rows = []
     for name, vias in pats.items():
         pr = probes_away(vias)
-        Z = reduced_Z(cav, pr, vias, freqs)
-        zmax = np.max(np.abs(np.diagonal(Z, axis1=1, axis2=2)), axis=1)
-        f1 = first_peak(freqs, zmax)
+        f1 = first_resonance(cav, pr, vias)
         D = largest_empty_circle(vias, a, b)
         fpec = 2.405 * C0 / (math.pi * D * math.sqrt(ER)) if np.isfinite(D) else float("nan")
         fhalf = C0 / (2 * D * math.sqrt(ER)) if np.isfinite(D) else float("nan")
@@ -177,7 +190,7 @@ def main():
     # 2. fence isolation
     print("\nVia fence across a 60 x 30 mm GND-GND pair (fence at x = 30 mm), |Z21| ratio fence/no fence:")
     a2, b2 = 60e-3, 30e-3
-    cav2 = Cavity(a2, b2, d, 240, 120)
+    cav2 = Cavity(a2, b2, d, 180, 90)
     p2 = np.array([[15e-3, 15e-3], [45e-3, 15e-3]])
     fr = np.array([1e9, 2.4e9, 5e9])
     Z0 = reduced_Z(cav2, p2, np.zeros((0, 2)), fr)

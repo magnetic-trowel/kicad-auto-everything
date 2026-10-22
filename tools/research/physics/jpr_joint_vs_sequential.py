@@ -30,10 +30,13 @@ What it computes
               whose cost is the routed objective (+ overflow + placement penalties); then referee from
               scratch.
     joint_nophys  ablation: as joint but the optimizer ignores hot-loop area and bottom-layer length.
+    long_joint    seq_long's placement (B s), then TJ s of joint SA (total B + TJ); optional
+    seq_longer    control for long_joint: seq SA for B + TJ s; optional
 
 How to run (Python 3.11+, numpy):
   python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 10 --tj 40
   python jpr_joint_vs_sequential.py --n 50 --seed 1 --util 0.6 --arms seq,joint
+  python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 3 --proxy-study 40
 Prints one JSON line per arm. Deterministic for a given seed except for CPU-time budgets (SA move
 counts depend on machine speed). Results: docs/topics/physics/joint-place-route-experiment.md.
 """
@@ -686,6 +689,41 @@ def evaluate(b, X, Y, K):
     return out
 
 
+def proxy_study(b, k_place, tp):
+    """How well do placement proxies rank routed outcomes? K placements of varying quality (SA from random
+    starts with 0.3-1.0 x tp CPU-s), each routed by the referee; Spearman rho of proxy vs routed value, and
+    how often two placements within 3% HPWL differ by more than 10% in routed J."""
+    from scipy.stats import spearmanr
+    rows = []
+    for k in range(k_place):
+        X0, Y0, K0 = random_placement(b, random.Random(1000 + k))
+        X, Y, K, _ = sa_hpwl(b, X0, Y0, K0, tp * (0.3 + 0.7 * (k % 4) / 3), 1000 + k)
+        s = State(b, X, Y, K)
+        leg = s.legality()
+        if leg["overlaps"] + leg["keepout"]:
+            continue
+        segs = [(s.pin_xy(*net[0]), s.pin_xy(*t)) for net in b.nets for t in net[1:]]
+        sn = [ni for ni, net in enumerate(b.nets) for t in net[1:]]
+        orient = lambda p, q, r: (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        cross = sum(1 for i in range(len(segs)) for j in range(i + 1, len(segs)) if sn[i] != sn[j]
+                    and orient(*segs[i], segs[j][0]) * orient(*segs[i], segs[j][1]) < 0
+                    and orient(*segs[j], segs[i][0]) * orient(*segs[j], segs[i][1]) < 0)
+        hp = sum(s.net_hpwl(i) for i in range(b.M))
+        lp = sum(s.loop_proxy(h) for h in range(len(b.hot)))
+        s.referee()
+        sc = s.score()
+        rows.append(dict(hpwl=hp, cross=cross, loop_proxy=lp, J=sc["J"], wl=sc["wirelength_mm"], vias=sc["vias"],
+                         loop=sc["hot_loop_mm2"]))
+    rho = lambda x, y: round(float(spearmanr([r[x] for r in rows], [r[y] for r in rows]).correlation), 3)
+    pairs = [(a_, c_) for i, a_ in enumerate(rows) for c_ in rows[i + 1:]
+             if abs(a_["hpwl"] - c_["hpwl"]) / min(a_["hpwl"], c_["hpwl"]) < 0.03]
+    return dict(placements=len(rows), rho_hpwl_J=rho("hpwl", "J"), rho_hpwl_wl=rho("hpwl", "wl"),
+                rho_cross_J=rho("cross", "J"), rho_cross_vias=rho("cross", "vias"),
+                rho_loopproxy_loop=rho("loop_proxy", "loop") if b.hot else None,
+                near_equal_hpwl_pairs=len(pairs),
+                pairs_J_differs_gt10pct=sum(1 for a_, c_ in pairs if abs(a_["J"] - c_["J"]) / min(a_["J"], c_["J"]) > 0.10))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=30); ap.add_argument("--seed", type=int, default=0)
@@ -693,9 +731,14 @@ def main():
     ap.add_argument("--tp", type=float, default=10.0); ap.add_argument("--tj", type=float, default=50.0)
     ap.add_argument("--w-cross", type=float, default=0.5)   # tuned on seed 9 (held out)
     ap.add_argument("--arms", default="seq,seqx,seq_long,seq_port,joint,joint_nophys")
+    ap.add_argument("--proxy-study", type=int, default=0, help="K placements: proxy-vs-routed study, then exit")
     a = ap.parse_args()
     inst = build_instance(a.n, a.seed, a.util, a.hot)
     b = Board(inst)
+    if a.proxy_study:
+        print(json.dumps(dict(n=a.n, seed=a.seed, util=a.util, hot_loops=len(b.hot), study="proxy",
+                              **proxy_study(b, a.proxy_study, a.tp))), flush=True)
+        return
     arms = a.arms.split(",")
     B = a.tp + a.tj
     meta = dict(n=a.n, seed=a.seed, util=a.util, nets=b.M, hot_loops=len(b.hot), grid=[b.nx, b.ny, 2],
@@ -716,10 +759,21 @@ def main():
         t = time.process_time()
         X, Y, K, mvx = sa_hpwl(b, X0, Y0, K0, a.tp, a.seed, w_cross=wx)
         report("seqx", X, Y, K, time.process_time() - t, sa_moves=mvx)
-    if "seq_long" in arms:
+    if "seq_long" in arms or "long_joint" in arms:
         t = time.process_time()
-        X, Y, K, mv2 = sa_hpwl(b, X0, Y0, K0, B, a.seed)
-        report("seq_long", X, Y, K, time.process_time() - t, sa_moves=mv2)
+        Xl, Yl, Kl, mv2 = sa_hpwl(b, X0, Y0, K0, B, a.seed)
+        t_long = time.process_time() - t
+        if "seq_long" in arms:
+            report("seq_long", Xl, Yl, Kl, t_long, sa_moves=mv2)
+        if "long_joint" in arms:   # converged sequential placement, then TJ s of joint SA (total B + TJ)
+            t = time.process_time()
+            X, Y, K, mvj, acc, rr, own = sa_joint(b, Xl, Yl, Kl, a.tj, a.seed)
+            report("long_joint", X, Y, K, t_long + time.process_time() - t, joint_moves=mvj, accepted=acc,
+                   reroutes=rr, own_routes=own)
+    if "seq_longer" in arms:       # control for long_joint: seq SA for B + TJ s
+        t = time.process_time()
+        X, Y, K, mv3 = sa_hpwl(b, X0, Y0, K0, B + a.tj, a.seed)
+        report("seq_longer", X, Y, K, time.process_time() - t, sa_moves=mv3)
     if "seq_port" in arms:   # restart 0 repeats `seq` (same start and seed); then new seeds until B CPU-s
         t = time.process_time(); best = None; k = 0
         while time.process_time() - t < B:

@@ -239,6 +239,39 @@ def sec_ir():
               f"  max drop {-v.min()*1e3:.2f} mV")
         if d < 0.15e-3:
             incremental_edit(A, b, lu, v, mask, idx, d, rs, sinks, tf + ts)
+            if d > 0.07e-3:
+                adjoint_screen(v, mask, idx, d, rs, sinks)
+
+
+def adjoint_screen(v, mask, idx, d, rs, sinks):
+    """First-order (adjoint) estimate of the loss change for removing copper, vs exact re-solve.
+
+    DC loss P = sum g*dV^2 is self-adjoint, so dP/dg_e = -dV_e^2: removing a cell raises P by
+    about the power its edges carried. One solve prices every cell at once.
+    """
+    V = np.full(mask.shape, np.nan)
+    V[mask] = v[idx[mask]]
+    g = 1 / rs
+    px = g * np.nan_to_num(np.diff(V, axis=1)) ** 2
+    py = g * np.nan_to_num(np.diff(V, axis=0)) ** 2
+    E = np.zeros(mask.shape)
+    E[:, :-1] += px / 2
+    E[:, 1:] += px / 2
+    E[:-1, :] += py / 2
+    E[1:, :] += py / 2
+    edits = {"0.5 mm hole": (0.0145, 0.015, 0.026, 0.0265), "2x2 mm cut-out": (0.013, 0.015, 0.026, 0.028),
+             "6 mm slot across a band": (0.0, 0.006, 0.018, 0.018 + 2 * d)}
+    A, b, _ = build_ir(mask, d, rs, sinks)
+    P0 = b @ v
+    for name, (y0, y1, x0, x1) in edits.items():
+        j0, j1, i0, i1 = int(round(y0 / d)), int(round(y1 / d)), int(round(x0 / d)), int(round(x1 / d))
+        m2 = mask.copy()
+        m2[j0:j1, i0:i1] = False
+        A2, b2, idx2 = build_ir(m2, d, rs, sinks)
+        v2 = spla.splu(A2).solve(b2)
+        est = 2 * E[j0:j1, i0:i1][mask[j0:j1, i0:i1]].sum()
+        print(f"    adjoint screen, {name:24s}: loss +{(b2 @ v2 - P0)*1e3:7.3f} mW exact vs"
+              f" +{est*1e3:7.3f} mW first-order (total {P0*1e3:.1f} mW)")
 
 
 def incremental_edit(A, b, lu, v, mask, idx, d, rs, sinks, t_full):
@@ -295,26 +328,30 @@ def sec_fdtd():
 
 # ------------------------------------------------------------------ vector fitting
 def sec_vf():
+    import warnings
+
     import skrf
     from skrf.vectorFitting import VectorFitting
-    print("== scikit-rf vector fitting of the cavity Z11 (1-port, 600 points)")
-    f = np.logspace(6, np.log10(3e9), 600)
+    warnings.filterwarnings("ignore")
+    print("== scikit-rf vector fitting: 1-port PDN = 50x40 mm cavity + 10 x 100 nF + 2 x 22 uF MLCC,")
+    print("   S11 referenced to 1 ohm, 600 points 100 kHz-3 GHz")
+    f = np.logspace(5, np.log10(3e9), 600)
+    w = 2 * np.pi * f
     z = cavity_z11(f, 0.05, 0.04, 0.1e-3, 4.3, 0.02, 0.01, 0.012, 0.5e-3, M=40, N=40)
-    s11 = (z - 50) / (z + 50)
-    ntw = skrf.Network(frequency=skrf.Frequency.from_f(f, unit="Hz"), s=s11.reshape(-1, 1, 1), z0=50)
-    for nc in (10, 30):
+    zc = 0.01 + 1j * w * 0.5e-9 + 1 / (1j * w * 100e-9)
+    zb = 0.005 + 1j * w * 2e-9 + 1 / (1j * w * 22e-6)
+    zt = 1 / (1 / z + 10 / zc + 2 / zb)
+    s11 = (zt - 1.0) / (zt + 1.0)
+    ntw = skrf.Network(frequency=skrf.Frequency.from_f(f, unit="Hz"), s=s11.reshape(-1, 1, 1), z0=1.0)
+    for nc in (6, 9):
         vf = VectorFitting(ntw)
         t0 = tic()
         vf.vector_fit(n_poles_real=2, n_poles_cmplx=nc)
         s = tic() - t0
-        rms = vf.get_rms_error()
-        passive = vf.is_passive()
-        msg = ""
-        if not passive:
-            t0 = tic()
-            vf.passivity_enforce()
-            msg = f"; passivity_enforce {(tic()-t0)*1e3:.0f} ms -> passive={vf.is_passive()}, rms {vf.get_rms_error():.2e}"
-        print(f"  {nc} complex + 2 real poles: fit {s*1e3:6.0f} ms, rms error {rms:.2e}, passive={passive}{msg}")
+        print(f"  {nc} complex + 2 real poles: fit {s*1e3:6.0f} ms, rms error {vf.get_rms_error():.2e},"
+              f" passive={vf.is_passive()}")
+    print("  (on the undamped bare cavity, S11 ~ 1 everywhere: 10-30 poles took 6-76 s, rms 1-2e-2,"
+          " non-passive, and passivity_enforce() failed at default settings)")
 
 
 SECTIONS = {"zo": sec_zo, "via": sec_via, "cav": sec_cav, "ir": sec_ir, "fdtd": sec_fdtd, "vf": sec_vf}

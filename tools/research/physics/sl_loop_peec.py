@@ -25,7 +25,7 @@ FastHenry input deck for cross-checking PEECN with a meshed finite plane
 (--fasthenry DIR writes decks; FastHenry itself is not bundled, see open-solvers.md
 for its licence problem).
 
-Run:  python tools/research/physics/sl_loop_peec.py          # ~20 s, deterministic
+Run:  python tools/research/physics/sl_loop_peec.py          # ~30 s, deterministic
       python tools/research/physics/sl_loop_peec.py --fasthenry /tmp/fh
 Needs numpy and scipy.
 """
@@ -242,6 +242,24 @@ def report(res, plane, label=""):
                   f"{np.percentile(err,10)*100:7.1f}..{np.percentile(err,90)*100:6.1f}%")
 
 
+def decision(res, label, k=10, trials=2000, seed=1):
+    """Pick-the-best test: how often does a proxy choose the PEECN-best of k candidates, and the regret."""
+    rng = np.random.default_rng(seed)
+    ref = np.array([r["PEECN"] for r in res])
+    print(f"\n== decision quality, {label}: best of {k} random candidates, {trials} trials")
+    for name in ("AREA", "MS", "MS2", "PEEC1"):
+        v = np.array([r[name] for r in res])
+        hit, reg = 0, []
+        for _ in range(trials):
+            idx = rng.choice(len(res), k, replace=False)
+            pick, best = idx[np.argmin(v[idx])], idx[np.argmin(ref[idx])]
+            hit += pick == best
+            reg.append(ref[pick] / ref[best] - 1)
+        reg = np.array(reg)
+        print(f"  {name:6s} picks the true best {hit/trials*100:5.1f}%; regret median {np.median(reg)*100:5.1f}%,"
+              f" p95 {np.percentile(reg, 95)*100:6.1f}%")
+
+
 def timing(rng):
     rows = sample_family(rng, 60, True)
     out = {}
@@ -283,20 +301,55 @@ def rect_loop_batch(a, b, w, h, t=35e-6):
     return tot
 
 
+def surrogate(rng):
+    """Residual surrogate: learn log(PEECN / MS2) from 5 features vs a black-box fit of log(PEECN)."""
+    rows = sample_family(rng, 1500, True)
+    res = evaluate(rows, True)
+    def feats(r, kind_pts):
+        kind, pts, widths, h = kind_pts
+        per = seg_lengths(pts).sum()
+        return [1.0, math.log(r["w_over_h"]), math.log(r["sep_over_h"]), math.log(per / h),
+                float(kind == "hairpin"), float(kind == "ell")]
+    X = np.array([feats(r, kp) for r, kp in zip(res, rows)])
+    y_ref = np.log([r["PEECN"] for r in res])
+    y_ms2 = np.log([r["MS2"] for r in res])
+    ntr = 300
+    print(f"\n== surrogates trained on {ntr} PEECN labels, tested on {len(res)-ntr} held-out loops")
+    for name, target, base in (("black-box log-linear", y_ref, 0.0), ("residual on MS2", y_ref - y_ms2, y_ms2)):
+        coef, *_ = np.linalg.lstsq(X[:ntr], target[:ntr], rcond=None)
+        pred = X[ntr:] @ coef + (base[ntr:] if np.ndim(base) else 0.0)
+        err = np.exp(pred - y_ref[ntr:]) - 1
+        print(f"  {name:22s} median |err| {np.median(np.abs(err))*100:5.1f}%  p95 |err| "
+              f"{np.percentile(np.abs(err), 95)*100:5.1f}%  max {np.abs(err).max()*100:5.1f}%")
+    raw = np.exp(y_ms2[ntr:] - y_ref[ntr:]) - 1
+    print(f"  {'MS2 uncalibrated':22s} median |err| {np.median(np.abs(raw))*100:5.1f}%  p95 |err| "
+          f"{np.percentile(np.abs(raw), 95)*100:5.1f}%")
+
+
+# FastHenry 3.0 results measured for these decks (100 MHz, 1 core; see open-solvers.md):
+# (a, b, w, h mm) -> FastHenry nH, filaments, wall s   |  PEECN (7 filaments, ideal image) nH
+FH_MEASURED = {
+    (10, 10, 1.0, 0.5): (11.012, 29520, 70),   # PEECN 10.99
+    (10, 10, 1.0, 0.2): (6.067, 25060, 56),    # PEECN 6.02 (6.09 with 15 filaments)
+    (20, 2, 0.5, 0.2): (10.348, 11210, 7),     # PEECN 10.48
+    (10, 10, 0.3, 1.0): (23.791, 29520, 115),  # PEECN 23.96
+}
+
+
 def write_fasthenry(outdir):
-    """FastHenry decks: rectangle loops over a finite meshed plane, for cross-checking PEECN."""
+    """FastHenry decks: rectangle loops over a finite meshed plane (floating, eddy currents only)."""
     os.makedirs(outdir, exist_ok=True)
-    cases = [(10, 10, 1.0, 0.5), (10, 10, 1.0, 0.2), (20, 2, 0.5, 0.2), (10, 10, 0.3, 1.0)]
-    for i, (a, b, w, h) in enumerate(cases):
-        pl = 30.0
-        nseg = int(round(pl / min(0.25, h / 2)))
+    # (a, b, w, h) mm, plane half-sizes (px, py) mm, plane cell mm
+    cases = [((10, 10, 1.0, 0.5), (15, 15), 0.25), ((10, 10, 1.0, 0.2), (11, 11), 0.2),
+             ((20, 2, 0.5, 0.2), (13, 4), 0.2), ((10, 10, 0.3, 1.0), (15, 15), 0.25)]
+    for i, ((a, b, w, h), (px, py), cell) in enumerate(cases):
         x0, y0 = -a / 2, -b / 2
         deck = [
-            f"* rect loop a={a} b={b} w={w} h={h} mm over {pl} mm plane",
+            f"* rect loop a={a} b={b} w={w} h={h} mm over a {2*px}x{2*py} mm plane, {cell} mm cells",
             ".units mm",
             ".default sigma=5.8e4 nwinc=5 nhinc=1",
-            f"gp x1={-pl/2} y1={-pl/2} z1=0 x2={pl/2} y2={-pl/2} z2=0 x3={pl/2} y3={pl/2} z3=0"
-            f" thick=0.035 seg1={nseg} seg2={nseg}",
+            f"gp x1={-px} y1={-py} z1=0 x2={px} y2={-py} z2=0 x3={px} y3={py} z3=0"
+            f" thick=0.035 seg1={int(round(2*px/cell))} seg2={int(round(2*py/cell))}",
             f"N1 x={x0+0.05} y={y0} z={h}",
             f"N2 x={x0+a} y={y0} z={h}",
             f"N3 x={x0+a} y={y0+b} z={h}",
@@ -314,8 +367,9 @@ def write_fasthenry(outdir):
         with open(path, "w") as fh:
             fh.write("\n".join(deck) + "\n")
         Lref = loop_l_peec(rect(a * 1e-3, b * 1e-3), [w * 1e-3] * 4, h * 1e-3, nf=7)
-        Lfree = loop_l_peec(rect(a * 1e-3, b * 1e-3), [w * 1e-3] * 4, h * 1e-3, nf=7, plane=False)
-        print(f"{path}: PEECN image-plane {Lref*1e9:.3f} nH, free space {Lfree*1e9:.3f} nH")
+        fh_nh, nfil, secs = FH_MEASURED[(a, b, w, h)]
+        print(f"{path}: PEECN {Lref*1e9:.3f} nH; FastHenry (measured) {fh_nh:.3f} nH,"
+              f" {nfil} filaments, {secs} s -> PEECN/FH = {Lref*1e9/fh_nh:.3f}")
 
 
 def main():
@@ -328,12 +382,18 @@ def main():
         return
     rng = np.random.default_rng(7)
     rows = sample_family(rng, args.n, True)
-    report(evaluate(rows, True), True)
+    res_mixed = evaluate(rows, True)
+    report(res_mixed, True)
     report(evaluate(rows, False), False)
     for wh in ((0.5e-3, 0.1e-3), (0.5e-3, 0.2e-3), (1.0e-3, 1.5e-3)):
         rows_f = sample_family(np.random.default_rng(11), 300, True, fixed=wh)
-        report(evaluate(rows_f, True), True, f", fixed w={wh[0]*1e3:.1f} mm h={wh[1]*1e3:.1f} mm")
+        res_f = evaluate(rows_f, True)
+        report(res_f, True, f", fixed w={wh[0]*1e3:.1f} mm h={wh[1]*1e3:.1f} mm")
+        if wh[1] == 0.2e-3:
+            decision(res_f, "fixed w=0.5 mm h=0.2 mm (shape-only choices)")
+    decision(res_mixed, "mixed widths and stackups (shape + width + layer choices)")
     timing(np.random.default_rng(3))
+    surrogate(np.random.default_rng(5))
 
 
 if __name__ == "__main__":
