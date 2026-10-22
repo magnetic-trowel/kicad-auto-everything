@@ -12,7 +12,7 @@
 
 | Reference | Use | Licence / note | Tag |
 |---|---|---|---|
-| FastHenry (partial-inductance PEEC) | Loop L of hot loops, decap mounting, slot detours | Licence to verify: the original MIT release is believed permissive; FastFieldSolvers builds may differ | [S] |
+| FastHenry (partial-inductance PEEC) | Loop L of hot loops, decap mounting, slot detours | Source carries an MIT "internal, noncommercial … distribution strictly prohibited" notice: internal calibration only, never shipped; ship our PEEC or PyPEEC ([open-solvers](open-solvers.md)) | [P] |
 | openEMS via gerber2ems / si-wrapper slices | Return-path discontinuities, via transitions, stubs, near field | GPLv3+ engine; si-wrapper VNA-validated on a DDR5 clock pair ([evaluation-stack](../verification/evaluation-stack.md)) | [P] |
 | padne, KiPI, Ki-PIDA | IR drop, current density, PDN sweeps | KiPI GPL-3.0 alpha; padne via model uncertain except "large and short" vias | [P] |
 | Elmer / CalculiX (Antmicro scripts) | ΔT; validated on an RPi5 enclosure at 2.5/8 W | Open | [P] |

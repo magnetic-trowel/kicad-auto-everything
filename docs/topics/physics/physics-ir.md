@@ -5,7 +5,7 @@
 - Intent and evidence live in two files. `intent.yaml` holds what is *required* (written by detectors, the LLM and humans, with provenance). `ledger.json` holds what is *observed* (written only by code: the physics graph, regimes, budget spend, attribution). Critics diff the two.
 - Every number is a dimensioned quantity or an expression over named symbols (I2). The validator refuses bare numbers, unit mismatches, ports without a reference terminal, open loops, and couplings whose mechanism cannot act on the victim.
 - The LLM writes requirements, allocations, mechanism hypotheses and operator choices. It never writes geometry, regimes, spend or coordinates. Code drafts most entities from the schematic, IBIS, datasheets and simulation [I].
-- One entity compiles to up to six targets: KiCad objects, `.kicad_dru` rules, placer terms, router costs, checkers, and solver/simulator decks (FastHenry, FasterCap, openEMS, ngspice, thermal).
+- One entity compiles to up to six targets: KiCad objects, `.kicad_dru` rules, placer terms, router costs, checkers, and solver/simulator decks (our PEEC, FasterCap, openEMS, ngspice, thermal; FastHenry decks only for internal calibration, see its licence in [open-solvers](open-solvers.md)).
 
 ## Key facts
 
@@ -163,7 +163,7 @@ Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `fe
 - **Make `ledger.json` the only place a computed number lives.** Never write spend into `intent.yaml`. Then intent diffs stay readable and evidence can be regenerated [I].
 - **Build the validator before the compiler.** Dimensional analysis and the half-port rule catch most LLM authoring errors cheaply (I2 test plan) [I].
 - **Start with five kinds:** `port`, `loop`, `node`, `channel`, `coupling`. These cover hot loops, decoupling, FB routing, USB/PCIe and crosstalk. Add `exclusion`, `heat_path` and `barrier` next [I].
-- **Keep FastHenry and FasterCap decks as first solver targets.** Their input model (nodes, segments, planes, ports as terminal pairs) is nearly the physics graph itself. Check the MIT licence terms of the copy we vendor ([open-solvers](open-solvers.md)) [I].
+- **Use the FastHenry/FasterCap deck model (nodes, segments, planes, ports as terminal pairs) as the shape of our solver input; it is nearly the physics graph itself.** Ship our own PEEC, PyPEEC (MPL-2.0) and FasterCap (LGPL-2.1). FastHenry's source carries an MIT "internal, noncommercial … distribution strictly prohibited" notice, so FastHenry decks are for internal calibration runs only and FastHenry is never vendored or shipped ([open-solvers](open-solvers.md)) [P].
 
 ## Conflicts and open questions
 

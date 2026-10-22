@@ -157,7 +157,7 @@ This extends U5 ([workflow-ux](../../ideas/original/workflow-ux.md)). Glyphs com
 - **Adopt the 12 atoms and 5 value types** as the `physics:` block of `pcb-intent/0.3` ([physics-ir](physics-ir.md)); the LLM reasons in these nouns and never draws copper [I].
 - **Make port pairs and closed loops validation errors**, not warnings. Most "DRC-clean but physically wrong" layouts have a return path nobody named [I].
 - **Compute regimes before selecting rules.** f_x, skin depth, electrical length and cavity modes per structure decide which rule variant applies [I].
-- **Build the physics graph at two fidelities first:** closed forms for the placer's inner loop, FastHenry/FasterCap decks for verdicts; full-wave only for channels, transitions and antennas ([open-solvers](open-solvers.md)) [I].
+- **Build the physics graph at two fidelities first:** closed forms for the placer's inner loop, our PEEC and FasterCap for verdicts (FastHenry only as an internal, unshipped calibration reference because of its non-commercial notice); full-wave only for channels, transitions and antennas ([open-solvers](open-solvers.md)) [I].
 - **Render glyphs from the ledger** with the same ids as the IR, for humans and the VLM judge [I].
 
 ## Conflicts and open questions
