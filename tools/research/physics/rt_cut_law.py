@@ -35,7 +35,7 @@ def crack_row_dR(x, m_basis=10, n_terms=400000):
     k = 2 * math.pi * n / W
     ka = k * a
     B = np.array([a * math.pi * (2 * m + 1) * (-1) ** m * jv(2 * m + 1, ka) / ka for m in range(m_basis)])
-    # A_lm = (a/W) sum_n 2 k_n B_m(k_n) B_l(k_n); tail of the sum ~ 1/n^2, add the remainder estimate
+    # A_lm = (a/W) sum_n 2 k_n B_m(k_n) B_l(k_n); the tail falls as 1/n^2 (truncation checked in sec_strip)
     A = (a / W) * (2 * k * B) @ B.T
     rhs = np.zeros(m_basis)
     rhs[0] = a * math.pi / 2

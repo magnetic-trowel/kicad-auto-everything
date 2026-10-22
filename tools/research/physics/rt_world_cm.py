@@ -69,7 +69,7 @@ def sec_same_edge():
                 cells.append(f"{f/1e6:4.0f} MHz {20*math.log10(i_same/i_opp):+6.1f} / {20*math.log10(i_par/i_opp):+6.1f}")
             print(f"   C_tot {ct*1e12:4.1f} pF, Z_cm {z_cm:4.0f} ohm (worst / parallel, off-centre): " + "; ".join(cells))
     print("   -> moving both cables to one edge removes the inter-cable voltage (PEEC 43-63 dB) but leaves the")
-    print("      board-vs-cable mode: 6-30 dB of benefit in the worst orientation (6-17 dB at 300-450 MHz),")
+    print("      board-vs-cable mode: 6-30 dB of benefit in the worst orientation (6-21 dB at 300-450 MHz),")
     print("      24-48 dB when the return voltage runs parallel to the cable edge; 40 dB is not a constant.")
 
 
