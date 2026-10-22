@@ -158,3 +158,24 @@ def test_outside_is_judged_against_the_human_placement():
     rows = [dict(uuid="J1", pads_outside=2), dict(uuid="R1", pads_outside=0), dict(uuid="U1", pads_outside=None)]
     assert score.outside_count(rows, allowed) == 0
     assert score.outside_count([dict(uuid="J1", pads_outside=3), dict(uuid="R1", pads_outside=1)], allowed) == 2
+
+
+def test_work_list_interleaves_arms_per_board():
+    from kaebench import runner
+
+    class A:
+        kinds = ("route",)
+
+        def __init__(self, name):
+            self.name = name
+
+    recs = [dict(id=f"b{i}", tasks={"route": {}}) for i in range(40)]
+    arms = [(A("x"), None), (A("y"), None)]
+    work = runner.work_list(recs, arms, ("route",), 1)
+    # each board's arms are adjacent
+    assert [w[0]["id"] for w in work] == [r["id"] for r in recs for _ in arms]
+    firsts = [work[2 * i][3].name for i in range(len(recs))]
+    assert set(firsts) == {"x", "y"}  # neither arm always goes first
+    assert work == runner.work_list(recs, arms, ("route",), 1)  # deterministic
+    sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
+    assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]

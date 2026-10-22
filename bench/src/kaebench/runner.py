@@ -4,6 +4,7 @@
 import json
 import os
 import platform
+import random
 import shutil
 import subprocess
 import threading
@@ -148,6 +149,7 @@ def rescore(results_run_dir, jobs=1, progress=print, force=False):
     stamp = datetime.now(timezone.utc).isoformat()
     # Only the built-in reference adapter may reproduce the human layout (it may carry a --label).
     reference = meta.get("reference_adapter", meta["adapter"].get("name", "").startswith("reference"))
+    per_arm = meta.get("reference_adapters") or {}
 
     def one(path):
         row = json.loads(path.read_text())
@@ -162,7 +164,7 @@ def rescore(results_run_dir, jobs=1, progress=print, force=False):
         row.pop("scoring_usage", None)
         tools.usage_take()
         _score(row, tasks_dir / row["id"], recs[row["id"]], row["kind"], adir,
-               allow_copy=reference, rescore_probe=True)
+               allow_copy=per_arm.get(row["adapter"], reference), rescore_probe=True)
         u = tools.usage_take()
         row.setdefault("scoring_usage", u)
         row["score_version"] = SCORE_VERSION
@@ -218,49 +220,80 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     return out
 
 
-def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, jobs=1, probe=None,
-        only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print):
+def work_list(recs, arms, kinds, k):
+    """Attempts in execution order: board by board, and within a board every arm back to back
+    in an order shuffled per board (seeded), so all arms see the same host conditions and none
+    systematically runs first. Largest boards (by pads) start first, so the run does not end
+    waiting on a few slow stragglers. arms: [(adapter, probe)]."""
+    work = []
+    recs = sorted(recs, key=lambda r: -((r.get("reference") or {}).get("stats") or {}).get("pads", 0))
+    for rec in recs:
+        for a in range(k):
+            order = list(arms)
+            random.Random(f"{rec['id']}:{a}").shuffle(order)
+            for adapter, probe in order:
+                for kind in kinds:
+                    if kind in adapter.kinds and kind in rec["tasks"]:
+                        work.append((rec, kind, a, adapter, probe))
+    return work
+
+
+def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600, jobs=1, probe=None,
+        only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print,
+        arms=None):
+    """Run one adapter (with an optional placement probe), or several interleaved arms
+    [(adapter, probe)] in one run; results go to <run>/<adapter name>/<kind>/<id>/attempt-N."""
+    arms = list(arms) if arms else [(adapter, probe)]
+    names = [ad.name for ad, _ in arms]
+    if len(set(names)) != len(names):
+        raise ValueError(f"arm names must be unique (use labels): {names}")
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
     stale = [r["id"] for r in recs if r.get("task_spec", 1) < TASK_SPEC]
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
-    if hasattr(adapter, "hide"):
-        adapter.hide(tasks_dir, results_dir)
-    name = name or f"{adapter.name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    for ad, _ in arms:
+        if hasattr(ad, "hide"):
+            ad.hide(tasks_dir, results_dir)
+    name = name or f"{'+'.join(names)}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)
+    first_ad, first_probe = arms[0]
     meta = dict(name=name, harness=__version__, git=_git_rev(), host=platform.node(),
                 platform=platform.platform(), started=datetime.now(timezone.utc).isoformat(),
-                tools=tools.versions(), adapter=adapter.describe(),
-                probe=probe.describe() if probe else None, kinds=list(kinds), k=k, timeout=timeout,
+                tools=tools.versions(), adapter=first_ad.describe(),
+                probe=first_probe.describe() if first_probe else None,
+                arms=[dict(adapter=ad.describe(), probe=pr.describe() if pr else None,
+                           reference_adapter=ad.needs_reference) for ad, pr in arms],
+                interleaved=len(arms) > 1, kinds=list(kinds), k=k, timeout=timeout,
                 tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only,
                 score_version=SCORE_VERSION, task_spec=TASK_SPEC,
-                reference_adapter=adapter.needs_reference)
+                reference_adapter=first_ad.needs_reference,
+                reference_adapters={ad.name: ad.needs_reference for ad, _ in arms})
     meta_path = run_dir / "run.json"
     if meta_path.exists():
         prev = json.loads(meta_path.read_text())
         meta["started"] = prev.get("started", meta["started"])
         meta["resumed"] = datetime.now(timezone.utc).isoformat()
     meta_path.write_text(json.dumps(meta, indent=1))
-    work = [(rec, kind, a) for rec in recs for kind in kinds
-            if kind in adapter.kinds and kind in rec["tasks"] for a in range(k)]
+    work = work_list(recs, arms, kinds, k)
     lock = threading.Lock()
     rows = []
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
-        futs = {ex.submit(_attempt, tasks_dir / rec["id"], rec, adapter, kind, a, timeout,
-                          run_dir / adapter.name / kind / rec["id"] / f"attempt-{a}", probe,
-                          keep_work): (rec["id"], kind, a) for rec, kind, a in work}
+        # the pool starts work in submission order, so the interleaving holds in time
+        futs = {ex.submit(_attempt, tasks_dir / rec["id"], rec, ad, kind, a, timeout,
+                          run_dir / ad.name / kind / rec["id"] / f"attempt-{a}", pr,
+                          keep_work): (rec["id"], kind, a) for rec, kind, a, ad, pr in work}
         for i, f in enumerate(as_completed(futs), 1):
             row = f.result()
             with lock:
                 rows.append(row)
             s = row.get("score") or {}
-            progress(f"[{i}/{len(futs)}] {row['id']} {row['kind']} #{row['attempt']}: {row['status']}"
-                     f" clean={s.get('clean', s.get('legal'))} unconn={s.get('unconnected')}"
+            progress(f"[{i}/{len(futs)}] {row['adapter']} {row['id']} {row['kind']} #{row['attempt']}: "
+                     f"{row['status']} clean={s.get('clean', s.get('legal'))} unconn={s.get('unconnected')}"
                      f" err={s.get('errors')} t={row['runtime_s']}s")
-    rows.sort(key=lambda r: (r["kind"], r["id"], r["attempt"]))
+    rows.sort(key=lambda r: (r["adapter"], r["kind"], r["id"], r["attempt"]))
     with open(run_dir / "results.jsonl", "w") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
