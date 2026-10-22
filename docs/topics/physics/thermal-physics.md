@@ -167,7 +167,7 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 
 ### Other electro-thermal couplings
 
-- **Positive feedback:** silicon MOSFET R_DS(on) rises about 0.5–0.7%/K, and copper 0.39%/K. Hot copper next to a FET raises both losses.
+- **Positive feedback:** silicon MOSFET R_DS(on) rises about 0.5–0.8%/K (typical datasheet curves [I]), and copper 0.39%/K. Hot copper next to a FET raises both losses.
 - **Current-sense errors:** the shunt TCR (50–100 ppm/K) plus copper in the sense path (3900 ppm/K) ([current-sense-kelvin](../rules/power/current-sense-kelvin.md)).
 - **Intentional coupling:** a protection NTC must sit thermally close to the part it protects. The placer needs both "repel" and "attract" thermal relations (TM17).
 
@@ -185,8 +185,8 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 ## Conflicts and open questions
 
 - **λ definition:** ours, 38 mm on 2L 1 oz, counts two copper layers plus FR-4. [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) uses one layer (21–29 mm). Use the stackup-specific G_s.
-- **The 15.3 cm²/W rule is not anti-conservative for one ~1 W source in our model.** It is 26% above our FV answer, but it becomes anti-conservative for multi-watt sources and enclosures, as WS1 notes.
-- **The FV solver is steady-state and 2.5-D.** It ignores package θ_JC, contact resistance, enclosure air temperature rise and non-uniform h. Validate against an IR camera (emissivity-corrected) or Elmer (GPL-2.0-or-later solver, run as a separate process) before trusting absolute values.
+- **The 15.3 cm²/W rule is conservative for one ~1 W source in our model** (26% above our FV answer). It turns anti-conservative for multi-watt sources on 1 oz and in enclosures, as [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) notes: in E1 the rise saturates near 27 K/W beyond 64 cm², so 3 W cannot meet 40 K on any 1 oz area.
+- **The FV solver is steady-state and 2.5-D.** It ignores package θ_JC, contact resistance, enclosure air temperature rise and non-uniform h. Validate against an IR camera (emissivity-corrected) or Elmer FEM (GPL/LGPL, run as a separate process; licence to be confirmed) before trusting absolute values.
 - **IPC-2152 charts were not read** (paywalled). The line-source model is first-order.
 - **The thermocouple coefficients for resistor terminations are vendor-level.** Kovar vs copper ranges from 35 to 75 µV/K across sources.
 

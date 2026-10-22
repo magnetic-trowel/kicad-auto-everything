@@ -10,7 +10,7 @@
   - E_max at a 90° pour corner scales as (g/r)^(1/3): 4.9× the uniform field at r = 0.02g, 1.7× at r = g/2.
   - Our streamer-integral estimate of inception rises only ~1.4× from a sharp corner to r = g/2 (1 mm gap), because ionisation needs path length.
   - The 35 µm foil edge already costs 18–48% vs a uniform gap, whatever the plan-view shape.
-  - Standards give no credit for rounding: case A assumes a 30 µm point [C].
+  - Standards give no credit for rounding: case A assumes a 30 µm point [S].
 - **Above ~20 km, PCB gaps sit near the Paschen minimum (~300–330 V).** More clearance barely helps there. Only solid insulation (coating, potting, buried layers) or V_peak below ~300 V works [C].
 - **Manufacturing limits decompress into a few processes** [C]: etch (space ≈ 47 µm + 1.65·t), plating (throwing power set by the Wagner number; thieving evens current density), lamination (unbalanced copper or resin gives 0.04–0.3% bow vs the 0.75% limit), drilling (junction breakout Q(ring/σ)), soldering (surface tension is 2–110× gravity from 1206 to 01005; pad asynchrony is set by what the pad is thermally tied to, not by reliefs) and mechanics (a 0.1 mm screw-boss mismatch over 10 mm gives 9,600 µε vs 2,370 µε in the MLCC flex test).
 - **Encode by origin.** Legal limits are hard and never relaxed. Fab absolute limits are hard. Fab "recommended" values become yield costs (critical area, σ-margin). Physics budgets are soft costs. Curves and any-angle routing cost nothing at a modern fab; allow them where physics pays (HV, flex, RF, pulsed current).

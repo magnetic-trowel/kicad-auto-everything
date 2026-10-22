@@ -27,7 +27,7 @@ side unless stated):
   E6  placement scoring: exact multi-source solve vs (a) shift-invariant kernel
       and (b) kernel + method of images for the adiabatic board edges
 
-Run (numpy, scipy; about 1 minute on one core):
+Run (numpy, scipy; about 1.5 minutes on one core):
 
     python tools/research/physics/tm_board_thermal_fv.py
 """
