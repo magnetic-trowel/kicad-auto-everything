@@ -142,11 +142,20 @@ class KBoard:
         for fp in kids(tree, 'footprint') + kids(tree, 'module'):
             self._footprint(fp)
         self.tracks = []
+
+        def tlayer(node):           # (layer "F.Cu"), or (layers "B.Cu" "B.Mask") for a track with a mask opening
+            ly = first(node, 'layer')
+            if ly:
+                return ly[1], False
+            lys = (first(node, 'layers') or ['layers'])[1:]
+            return next((n for n in lys if n.endswith('.Cu')), None), any(n.endswith('.Mask') for n in lys)
         for s in kids(tree, 'segment'):
-            self.tracks.append(dict(layer=first(s, 'layer')[1], net=self.net_of(s), w=float(first(s, 'width')[1]),
+            ly, exposed = tlayer(s)
+            self.tracks.append(dict(layer=ly, net=self.net_of(s), w=float(first(s, 'width')[1]), exposed=exposed,
                                     pts=[xy(first(s, 'start')), xy(first(s, 'end'))]))
         for a in kids(tree, 'arc'):
-            self.tracks.append(dict(layer=first(a, 'layer')[1], net=self.net_of(a), w=float(first(a, 'width')[1]),
+            ly, exposed = tlayer(a)
+            self.tracks.append(dict(layer=ly, net=self.net_of(a), w=float(first(a, 'width')[1]), exposed=exposed,
                                     pts=arc_points(xy(first(a, 'start')), xy(first(a, 'mid')), xy(first(a, 'end')), 12)))
         self.vias = []
         for v in kids(tree, 'via'):
@@ -811,3 +820,1014 @@ class Terminals:
         return nid
 
 
+
+
+# ============================================================================ HF stack model
+RIGID = 1e13          # 1/H: a 0.1 pH link (vias, electrodes)
+
+
+def stack_A(nl):
+    """Field in the nl+1 regions (above, gaps, below) from layer sheet currents: H_r = sum_{l<r} K_l - sum_l K_l / 2.
+
+    The symmetric outer split is the field of the net stack current; a pure parallel-plate (difference) mode
+    therefore has no field outside the stack, as for large plates."""
+    T = np.zeros((nl + 1, nl))
+    for r in range(nl + 1):
+        T[r, :r] = 1.0
+    return T - 0.5
+
+
+def stack_M(gaps_mm, h_out):
+    """Per-face energy matrix (H): E = 1/2 I' M I for face currents I on all layers (parallel-plate limit)."""
+    nl = len(gaps_mm) + 1
+    w = np.array([h_out] + list(gaps_mm) + [h_out]) * 1e-3
+    A = stack_A(nl)
+    return MU0 * A.T @ np.diag(w) @ A, w
+
+
+class StackRaster:
+    """All copper of all nets in a window on one grid: owning net per layer cell, face coverage."""
+
+    def __init__(self, b, window, h, nets_all):
+        x0, y0, x1, y1 = window
+        self.x0, self.y0, self.h = x0, y0, h
+        self.nx, self.ny = int(round((x1 - x0) / h)), int(round((y1 - y0) / h))
+        nl = len(b.cu)
+        self.nl = nl
+        self.gaps = [b.gap[(b.cu[i], b.cu[i + 1])] for i in range(nl - 1)]
+        self.er = [b.er.get((b.cu[i], b.cu[i + 1]), 4.5) for i in range(nl - 1)]
+        wbox = box(x0, y0, x1, y1)
+        self.nets, subs = [], []
+        best = np.zeros((nl, self.ny, self.nx))
+        self.owner = -np.ones((nl, self.ny, self.nx), np.int64)
+        for net in nets_all:
+            for li, ly in enumerate(b.cu):
+                g = b.copper(net, ly)
+                if g.is_empty or not g.intersects(wbox):
+                    continue
+                g = g.intersection(wbox.buffer(h))
+                if g.is_empty or g.area < 1e-6:
+                    continue
+                gx0, gy0, gx1, gy1 = g.bounds
+                i0, i1 = max(0, int(math.floor((gx0 - x0) / h)) - 1), min(self.nx, int(math.ceil((gx1 - x0) / h)) + 1)
+                j0, j1 = max(0, int(math.floor((gy0 - y0) / h)) - 1), min(self.ny, int(math.ceil((gy1 - y0) / h)) + 1)
+                if i1 - i0 < 2 or j1 - j0 < 2:
+                    continue
+                cov, fx, fy = raster(g, x0 + i0 * h, y0 + j0 * h, i1 - i0, j1 - j0, h, ss=3, fs=4)
+                if net not in self.nets:
+                    self.nets.append(net)
+                ni = self.nets.index(net)
+                blk = best[li, j0:j1, i0:i1]
+                upd = cov > blk
+                self.owner[li, j0:j1, i0:i1][upd] = ni
+                blk[upd] = cov[upd]
+                subs.append((li, ni, j0, j1, i0, i1, fx, fy))
+        self.FX = np.zeros((nl, self.ny, self.nx - 1))
+        self.FY = np.zeros((nl, self.ny - 1, self.nx))
+        for li, ni, j0, j1, i0, i1, fx, fy in subs:
+            o = self.owner[li, j0:j1, i0:i1] == ni
+            sx = self.FX[li, j0:j1, i0:i1 - 1]
+            okx = o[:, :-1] & o[:, 1:]
+            sx[okx] = fx[okx]
+            sy = self.FY[li, j0:j1 - 1, i0:i1]
+            oky = o[:-1, :] & o[1:, :]
+            sy[oky] = fy[oky]
+
+
+def assemble_stack(sr, h_out, drop_layers=()):
+    """Coupled sheet Laplacian (1/H): per face location, the layers present couple through M^-1."""
+    nl = sr.nl
+    owner, FX, FY = sr.owner.copy(), sr.FX.copy(), sr.FY.copy()
+    for li in drop_layers:
+        owner[li], FX[li], FY[li] = -1, 0.0, 0.0
+    ids = -np.ones(owner.shape, np.int64)
+    m = owner >= 0
+    n = int(m.sum())
+    ids[m] = np.arange(n)
+    M, w = stack_M(sr.gaps, h_out)
+    rows, cols, vals, adj, faces = [], [], [], [], []
+    for axis, F in ((0, FX), (1, FY)):
+        code = np.zeros(F.shape[1:], np.int64)
+        for li in range(nl):
+            code |= (F[li] > 0).astype(np.int64) << li
+        for c in np.unique(code):
+            if c == 0:
+                continue
+            S = [li for li in range(nl) if c >> li & 1]
+            Minv = np.linalg.inv(M[np.ix_(S, S)])
+            jj, ii = np.nonzero(code == c)
+            f = np.stack([F[li][jj, ii] for li in S])
+            jb, ib = (jj, ii + 1) if axis == 0 else (jj + 1, ii)
+            na = np.stack([ids[li, jj, ii] for li in S])
+            nb = np.stack([ids[li, jb, ib] for li in S])
+            sf = np.sqrt(f)
+            for p in range(len(S)):
+                adj.append(np.stack([na[p], nb[p]], 1))
+                for q in range(len(S)):
+                    y = Minv[p, q] * sf[p] * sf[q]
+                    rows += [na[p], nb[p], na[p], nb[p]]
+                    cols += [na[q], nb[q], nb[q], na[q]]
+                    vals += [y, y, -y, -y]
+            faces.append((axis, S, jj, ii, f, Minv, na, nb))
+    G = sp.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(n, n)).tocsr()
+    return dict(G=G, ids=ids, owner=owner, n=n, faces=faces, adj=np.concatenate(adj), M=M, w=w, nl=nl, sr=sr)
+
+
+def face_flows(st, phi):
+    out = []
+    for axis, S, jj, ii, f, Minv, na, nb in st['faces']:
+        sf = np.sqrt(f)
+        I = sf * (Minv @ (sf * (phi[na] - phi[nb])))
+        out.append((axis, S, jj, ii, I, f))
+    return out
+
+
+def gap_energy(st, flows):
+    """Inductance (H) stored in each region (above, gaps, below) for unit loop current."""
+    A = stack_A(st['nl'])
+    E = np.zeros(st['nl'] + 1)
+    for axis, S, jj, ii, I, f in flows:
+        Ip = np.zeros((st['nl'], I.shape[1]))
+        Ip[S] = I / np.sqrt(f)
+        H = A @ Ip
+        E += MU0 * (st['w'][:, None] * H * H).sum(1)
+    return E
+
+
+class StackSolver:
+    """Lumped links (vias, electrodes, capacitors) on a stack Laplacian; one grounded node per conductor island."""
+
+    def __init__(self, st):
+        self.st, self.extra, self.n_extra = st, [], 0
+
+    def node(self):
+        self.n_extra += 1
+        return self.st['n'] + self.n_extra - 1
+
+    def link(self, a, b_, y, tag):
+        self.extra.append((int(a), int(b_), float(y), tag))
+        return len(self.extra) - 1
+
+    def cell(self, li, x, y):
+        sr = self.st['sr']
+        i, j = int(math.floor((x - sr.x0) / sr.h)), int(math.floor((y - sr.y0) / sr.h))
+        if 0 <= i < sr.nx and 0 <= j < sr.ny:
+            return int(self.st['ids'][li, j, i]), int(self.st['owner'][li, j, i])
+        return -1, -1
+
+    def pad_cells(self, b, p):
+        sr, st = self.st['sr'], self.st
+        if p['net'] not in sr.nets:
+            return []
+        ni = sr.nets.index(p['net'])
+        out = []
+        for ly in p['layers']:
+            li = b.cu.index(ly)
+            x0, y0, x1, y1 = p['poly'].bounds
+            i0, i1 = max(0, int((x0 - sr.x0) / sr.h) - 1), min(sr.nx, int((x1 - sr.x0) / sr.h) + 2)
+            j0, j1 = max(0, int((y0 - sr.y0) / sr.h) - 1), min(sr.ny, int((y1 - sr.y0) / sr.h) + 2)
+            if i1 <= i0 or j1 <= j0:
+                continue
+            ii, jj = np.meshgrid(np.arange(i0, i1), np.arange(j0, j1))
+            xs, ys = sr.x0 + (ii + 0.5) * sr.h, sr.y0 + (jj + 0.5) * sr.h
+            ok = shapely.contains_xy(p['poly'].buffer(0.3 * sr.h), xs, ys) & (st['owner'][li, jj, ii] == ni)
+            out += [int(c) for c in st['ids'][li, jj[ok], ii[ok]]]
+        return out
+
+    def electrode(self, b, pads, tag):
+        nid = self.node()
+        k = 0
+        for p in pads:
+            for c in self.pad_cells(b, p):
+                self.link(nid, c, RIGID, tag)
+                k += 1
+        if k == 0:
+            raise ValueError(f"no window copper under {tag}")
+        return nid
+
+    def finalize(self):
+        st = self.st
+        n = st['n'] + self.n_extra
+        G = st['G']
+        if self.n_extra:
+            G = sp.block_diag([G, sp.csr_matrix((self.n_extra, self.n_extra))]).tocsr()
+        a = np.array([e[0] for e in self.extra], np.int64)
+        bb = np.array([e[1] for e in self.extra], np.int64)
+        y = np.array([e[2] for e in self.extra])
+        if len(a):
+            G = G + sp.coo_matrix((np.r_[y, y, -y, -y], (np.r_[a, bb, a, bb], np.r_[a, bb, bb, a])), shape=(n, n)).tocsr()
+        adj = np.concatenate([st['adj'], np.stack([a, bb], 1)]) if len(a) else st['adj']
+        A = sp.coo_matrix((np.ones(len(adj)), (adj[:, 0], adj[:, 1])), shape=(n, n))
+        ncomp, comp = connected_components(A + A.T, directed=False)
+        order = np.argsort(comp, kind='stable')
+        roots = order[np.searchsorted(comp[order], np.arange(ncomp))]
+        keep = np.ones(n, bool)
+        keep[roots] = False
+        self.keep = np.nonzero(keep)[0]
+        self.n, self.G, self.comp, self.ncomp = n, G, comp, ncomp
+        self.a_, self.b_, self.y_ = a, bb, y
+        self.lu = spla.splu(G[self.keep][:, self.keep].tocsc(), permc_spec='COLAMD')
+
+    def solve(self, S):
+        S = np.asarray(S, float)
+        one = S.ndim == 1
+        S = S[:, None] if one else S
+        X = np.zeros_like(S)
+        X[self.keep] = self.lu.solve(np.ascontiguousarray(S[self.keep]))
+        return X[:, 0] if one else X
+
+    def woodbury_remove(self, links, phi):
+        """Exact change of the loop inductance s'phi when the given links are removed."""
+        links = np.asarray(links)
+        k = len(links)
+        a, bb, y = self.a_[links], self.b_[links], self.y_[links]
+        E = np.zeros((self.n, k))
+        E[a, np.arange(k)] += 1.0
+        E[bb, np.arange(k)] -= 1.0
+        P = self.solve(E)
+        Mw = np.diag(1.0 / y) - (P[a] - P[bb])
+        v = phi[a] - phi[bb]
+        sol = np.linalg.lstsq(Mw, v, rcond=1e-14)[0]
+        if np.linalg.norm(Mw @ sol - v) > 1e-6 * max(np.linalg.norm(v), 1e-30):
+            return np.inf
+        return float(v @ sol)
+
+
+class _SR:
+    """Minimal synthetic StackRaster for the self-tests."""
+
+    def __init__(self, owner, gaps, h):
+        self.owner, self.gaps, self.h, self.nl = owner, gaps, h, owner.shape[0]
+        self.ny, self.nx = owner.shape[1:]
+        self.x0 = self.y0 = 0.0
+        self.nets = sorted(set(owner[owner >= 0].ravel().tolist()))
+        same_x = (owner[:, :, :-1] == owner[:, :, 1:]) & (owner[:, :, :-1] >= 0)
+        same_y = (owner[:, :-1, :] == owner[:, 1:, :]) & (owner[:, :-1, :] >= 0)
+        self.FX, self.FY = same_x.astype(float), same_y.astype(float)
+
+
+def stack_selftest(h_out):
+    """(1) strip over a plane: L = mu0 h l/w exactly in this model; (2) via pair in a plane pair vs a sheet solve."""
+    h = 0.1
+    own = -np.ones((2, 40, 140), np.int64)
+    own[1] = 0
+    own[0, 15:25, 20:120] = 1
+    st = assemble_stack(_SR(own, [0.2], h), h_out)
+    sol = StackSolver(st)
+    for j in range(15, 25):
+        sol.link(st['ids'][0, j, 119], st['ids'][1, j, 119], RIGID, 'short')
+    ea, eb = sol.node(), sol.node()
+    for j in range(15, 25):
+        sol.link(ea, st['ids'][0, j, 20], RIGID, 'a')
+        sol.link(eb, st['ids'][1, j, 20], RIGID, 'b')
+    sol.finalize()
+    s = np.zeros(sol.n)
+    s[ea], s[eb] = 1.0, -1.0
+    L1 = float(s @ sol.solve(s))
+    ex1 = MU0 * 0.2e-3 * 99 / 10
+    # (2) two full planes 1.0 mm apart, 30 x 30 mm at 0.25 mm; a via at P1, a port at P2, 10 mm apart
+    h2, n2 = 0.25, 120
+    own = np.zeros((2, n2, n2), np.int64)
+    own[1] = 1
+    st = assemble_stack(_SR(own, [1.0], h2), h_out)
+    sol = StackSolver(st)
+    j0, i1, i2 = n2 // 2, n2 // 2 - 20, n2 // 2 + 20
+    sol.link(st['ids'][0, j0, i1], st['ids'][1, j0, i1], RIGID, 'via')
+    sol.finalize()
+    s = np.zeros(sol.n)
+    s[st['ids'][0, j0, i2]], s[st['ids'][1, j0, i2]] = 1.0, -1.0
+    L2 = float(s @ sol.solve(s))
+    # same squares from a plain one-sheet Laplacian (unit conductance per face)
+    nn = n2 * n2
+    idx = np.arange(nn).reshape(n2, n2)
+    e = np.r_[np.stack([idx[:, :-1].ravel(), idx[:, 1:].ravel()], 1), np.stack([idx[:-1].ravel(), idx[1:].ravel()], 1)]
+    Gs = sp.coo_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(nn, nn))
+    Gs = (sp.diags(np.asarray((Gs + Gs.T).sum(1)).ravel()) - Gs - Gs.T).tocsc()
+    keep = np.arange(1, nn)
+    v = np.zeros(nn)
+    rhs = np.zeros(nn)
+    rhs[idx[j0, i2]], rhs[idx[j0, i1]] = 1.0, -1.0
+    v[keep] = spla.splu(Gs[keep][:, keep]).solve(rhs[keep])
+    nsq = v[idx[j0, i2]] - v[idx[j0, i1]]
+    ex2 = MU0 * 1.0e-3 * nsq
+    inf2 = MU0 * 1.0e-3 / math.pi * math.log(10.0 / (0.198 * h2))
+    return L1, ex1, L2, ex2, inf2
+
+
+class HFModel:
+    def __init__(self, b, sr, roles, decaps, h_out):
+        self.b, self.sr, self.roles, self.decaps, self.h_out = b, sr, roles, decaps, h_out
+        self.barrels = [(v['x'], v['y'], v['net'], v['layers'], ('via', i)) for i, v in enumerate(b.vias)]
+        self.barrels += [(p['x'], p['y'], p['net'], p['layers'], ('pth', i)) for i, p in enumerate(b.pads)
+                         if p['kind'] == 'thru_hole' and p['drill'] > 0 and len(p['layers']) > 1]
+
+    def build(self, st, esl=True, add_link=None):
+        b, sr = self.b, self.sr
+        sol = StackSolver(st)
+        vias = []
+        for x, y, net, lys, tag in self.barrels:
+            if net not in sr.nets:
+                continue
+            ni = sr.nets.index(net)
+            cells = []
+            for ly in lys:
+                c, o = sol.cell(b.cu.index(ly), x, y)
+                if c >= 0 and o == ni:
+                    cells.append(c)
+            lk = [sol.link(c1, c2, RIGID, tag) for c1, c2 in zip(cells, cells[1:])]
+            if lk:
+                vias.append((tag, x, y, net, lk))
+        if add_link is not None:
+            sol.link(add_link[0], add_link[1], RIGID, ('new',))
+        drv = self.roles['driver']
+        e_rail = sol.electrode(b, [p for p in drv['pads'] if p['net'] == self.roles['rail']], 'drv.rail')
+        e_gnd = sol.electrode(b, [p for p in drv['pads'] if p['net'] == self.roles['gnd']], 'drv.gnd')
+        caps = {}
+        for f in self.decaps:
+            ea = sol.electrode(b, [p for p in f['pads'] if p['net'] == self.roles['rail']], f['ref'] + '+')
+            eb = sol.electrode(b, [p for p in f['pads'] if p['net'] == self.roles['gnd']], f['ref'] + '-')
+            sz = re.search(r'(0201|0402|0603|0805|1206|1210)', f['lib'] + ' ' + f['value'])
+            l_esl = {'0201': 0.2, '0402': 0.3, '0603': 0.4, '0805': 0.5, '1206': 0.6, '1210': 0.6}.get(
+                sz.group(1) if sz else '', 0.5) * 1e-9
+            caps[f['ref']] = (sol.link(ea, eb, 1.0 / (l_esl if esl else 1e-13), ('cap', f['ref'])), l_esl)
+        sol.finalize()
+        s = np.zeros(sol.n)
+        s[e_gnd] += 1.0          # current out of the die into the ground copper
+        s[e_rail] -= 1.0         # current from the rail copper into the die
+        phi = sol.solve(s)
+        return dict(sol=sol, vias=vias, caps=caps, s=s, phi=phi, L=float(s @ phi))
+
+
+def run_hf(b, roles, N, Ib, sdef, col, args):
+    gnd, rail, drv = roles['gnd'], roles['rail'], roles['driver']
+    t0 = tic()
+    L1, ex1, L2, ex2, inf2 = stack_selftest(args.h_out)
+    log("\n== HF hot loop (inductive limit, stack-local parallel-plate model)")
+    log(f"   self-test: strip 1 x 9.9 mm over a plane 0.2 mm below: {L1 * 1e9:.4f} nH vs mu0*h*l/w {ex1 * 1e9:.4f} nH;"
+        f" via pair 10 mm apart in a 1.0 mm plane pair: {L2 * 1e9:.4f} nH vs mu0*h*squares {ex2 * 1e9:.4f} nH"
+        f" (infinite plane (mu0 h/pi) ln(D/0.198 dx) = {inf2 * 1e9:.3f} nH)")
+    near = [f for d, f in roles['decaps'] if d < 12.0]
+    pts = [(p['x'], p['y']) for p in drv['pads']] + [(p['x'], p['y']) for f in near for p in f['pads']]
+    drv_gnd = [p for p in drv['pads'] if p['net'] == gnd]
+    gv = sorted((v for v in b.vias if v['net'] == gnd),
+                key=lambda v: min(math.hypot(v['x'] - p['x'], v['y'] - p['y']) for p in drv_gnd))
+    pts += [(v['x'], v['y']) for v in gv[:6]]
+    for ph in roles['phases']:
+        pts += [(p['x'], p['y']) for p in ph['shunt']['fp']['pads']]
+        if ph['load']:
+            pts += [(p['x'], p['y']) for p in ph['load']['pads']]
+    xs, ys = zip(*pts)
+    m = 2.5
+    window = [min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m]
+    if b.outline is not None:
+        bx = b.outline.bounds
+        window = [max(window[0], bx[0]), max(window[1], bx[1]), min(window[2], bx[2]), min(window[3], bx[3])]
+    h = args.h_hf
+    nets_all = sorted({p['net'] for p in b.pads if p['net']} | {t['net'] for t in b.tracks if t['net']}
+                      | {z['net'] for z in b.zones})
+    sr = StackRaster(b, window, h, nets_all)
+    st = assemble_stack(sr, args.h_out)
+    log(f"   window ({window[0]:.1f}, {window[1]:.1f})-({window[2]:.1f}, {window[3]:.1f}) mm at {h} mm: {st['n']} sheet cells on"
+        f" {len(b.cu)} layers, {len(sr.nets)} nets, all copper a conductor (passive nets carry eddy currents);"
+        f" decaps considered: {', '.join(f['ref'] for f in near)}; build {tic() - t0:.1f} s")
+    hm = HFModel(b, sr, roles, near, args.h_out)
+    res = {}
+    # board-only inductance (decaps shorted, no package): all decaps, then each alone by exact Woodbury removal
+    t1 = tic()
+    r0 = hm.build(st, esl=False)
+    parts = []
+    for ref, (k, _) in r0['caps'].items():
+        others = [kk for r2, (kk, _) in r0['caps'].items() if r2 != ref]
+        dL = r0['sol'].woodbury_remove(others, r0['phi']) if others else 0.0
+        parts.append(f"{ref} alone {(r0['L'] + dL) * 1e9:.2f} nH")
+    log(f"   board loop inductance seen by the die (decaps ideal, no ESL, no package): all {r0['L'] * 1e9:.2f} nH; " + "; ".join(parts))
+    res['L_board'] = r0['L']
+    r1 = hm.build(st, esl=True)
+    sol, phi, L = r1['sol'], r1['phi'], r1['L']
+    cur = sol.y_ * (phi[sol.a_] - phi[sol.b_])
+    log(f"   with generic ESL [I] ({', '.join(f'{r} {e * 1e9:.1f} nH' for r, (k, e) in r1['caps'].items())}): {L * 1e9:.2f} nH;"
+        f" HF current split: " + ", ".join(f"{r} {100 * abs(cur[k]):.0f}%" for r, (k, e) in r1['caps'].items())
+        + f" ({tic() - t1:.1f} s)")
+    res['L_esl'] = L
+    flows = face_flows(st, phi)
+    E = gap_energy(st, flows)
+    El = sum(cur[k] ** 2 * e for r, (k, e) in r1['caps'].items())
+    names = ['above ' + b.cu[0]] + [f"{b.cu[i]}-{b.cu[i + 1]} ({sr.gaps[i]:.3f} mm)" for i in range(len(b.cu) - 1)] \
+        + ['below ' + b.cu[-1]]
+    log("   where the loop's magnetic energy sits (share of L): " + ", ".join(
+        f"{n} {100 * e / L:.0f}%" for n, e in zip(names, E) if e > 0.005 * L) + f", capacitor ESL {100 * El / L:.0f}%"
+        + f" (sum {100 * (E.sum() + El) / L:.1f}% of the solve)")
+    res['Egap'] = {n: e / L for n, e in zip(names, E)}
+    # current per layer and owning net; eddy current in passive copper
+    per = defaultdict(float)
+    for axis, S, jj, ii, I, f in flows:
+        for p, li in enumerate(S):
+            o = st['owner'][li, jj, ii]
+            for ni in np.unique(o):
+                per[(li, sr.nets[ni])] += np.abs(I[p][o == ni]).sum() * h
+    top_ref = sum(v for (li, n), v in per.items() if li == 0)
+    rows = sorted(per.items(), key=lambda t: -t[1])
+    log("   HF current x length (A mm per A of loop current) by layer and net: " + "; ".join(
+        f"{b.cu[li]} {n.split('/')[-1]} {v:.1f}" for (li, n), v in rows[:8] if v > 0.02 * top_ref))
+    res['per'] = dict(per)
+    # vias: HF share and exact removal value
+    vrows = []
+    for tag, x, y, net, lk in r1['vias']:
+        c = max(abs(cur[k]) for k in lk)
+        vrows.append((c, tag, x, y, net, lk))
+    vrows.sort(key=lambda t: -t[0])
+    hm.hf_via = {(round(x, 3), round(y, 3)): c for c, tag, x, y, net, lk in vrows}
+    log("   vias in the HF loop (share of loop current; exact removal by Woodbury):")
+    for c, tag, x, y, net, lk in vrows[:9]:
+        if c < 0.02:
+            break
+        dL = sol.woodbury_remove(lk, phi)
+        log(f"     {net.split('/')[-1]:6s} {tag[0]} at {where(x, y)}: {100 * c:3.0f}%; removing it: "
+            + ("disconnects" if not np.isfinite(dL) else f"L {1e12 * dL:+.0f} pH ({pct(dL, L):+.0f}%)"))
+    # passive plane counterfactual
+    for li in range(len(b.cu)):
+        o = sr.owner[li]
+        if (o >= 0).sum() < 0.5 * o.size:
+            continue
+        main_net = sr.nets[Counter(o[o >= 0].ravel()).most_common(1)[0][0]]
+        if main_net in (gnd, rail):
+            continue
+        t1 = tic()
+        st2 = assemble_stack(sr, args.h_out, drop_layers=(li,))
+        r2 = hm.build(st2, esl=True)
+        log(f"   counterfactual: remove the {main_net} plane ({b.cu[li]}) from the window: L {L * 1e9:.2f} -> {r2['L'] * 1e9:.2f} nH"
+            f" ({pct(r2['L'] - L, L):+.0f}%) ({tic() - t1:.1f} s)")
+        res['plane_cf'] = (main_net, b.cu[li], L, r2['L'])
+    # Thevenin addition: one more ground via (top ground cell <-> next ground layer below) near the driver
+    gi = sr.nets.index(gnd)
+    plane_net = {li: sr.nets[Counter(sr.owner[li][sr.owner[li] >= 0].ravel()).most_common(1)[0][0]]
+                 for li in range(len(b.cu)) if (sr.owner[li] >= 0).any()}
+    cx = np.mean([p['x'] for p in drv_gnd])
+    cy = np.mean([p['y'] for p in drv_gnd])
+    cand = []
+    r = int(math.ceil(0.25 / h))
+    for j in range(sr.ny):
+        for i in range(sr.nx):
+            x, y = sr.x0 + (i + 0.5) * h, sr.y0 + (j + 0.5) * h
+            if math.hypot(x - cx, y - cy) > 6.0 or st['owner'][0, j, i] != gi:
+                continue
+            blk = st['owner'][0, max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
+            if np.any((blk >= 0) & (blk != gi)):
+                continue
+            lower = None
+            ok = True
+            for li in range(1, len(b.cu)):
+                o = st['owner'][li, j, i]
+                if o == gi and lower is None:
+                    lower = li
+                elif o >= 0 and o != gi and sr.nets[o] != plane_net.get(li):
+                    ok = False          # a foreign trace or pad would be hit (planes get an antipad)
+            if ok and lower is not None:
+                cand.append((i, j, int(st['ids'][0, j, i]), int(st['ids'][lower, j, i])))
+    if cand:
+        P = sol.solve(np.stack([np.eye(1, sol.n, u).ravel() - np.eye(1, sol.n, v).ravel() for _, _, u, v in cand], 1))
+        zth = np.array([P[u, k] - P[v, k] for k, (_, _, u, v) in enumerate(cand)])
+        dv = np.array([phi[u] - phi[v] for _, _, u, v in cand])
+        dL = -dv * dv / (1.0 / RIGID + zth)
+        order = np.argsort(dL)
+        bi = order[0]
+        i, j, u, v = cand[bi]
+        rb = hm.build(st, esl=True, add_link=(u, v))
+        bx_, by_ = sr.x0 + (i + 0.5) * h, sr.y0 + (j + 0.5) * h
+        log(f"   one more {gnd} via (exact Thevenin addition, {len(cand)} legal sites within 6 mm of the driver's ground pads):"
+            f" best at {where(bx_, by_)}: L {L * 1e9:.2f} -> {(L + dL[bi]) * 1e9:.2f} nH ({pct(dL[bi], L):+.0f}%;"
+            f" brute force {rb['L'] * 1e9:.2f} nH); median site {pct(np.median(dL), L):+.1f}%; next best "
+            + ", ".join(f"{where(sr.x0 + (cand[o][0] + 0.5) * h, sr.y0 + (cand[o][1] + 0.5) * h)} {pct(dL[o], L):+.0f}%"
+                        for o in order[1:5]))
+        res['add'] = (bx_, by_, L, L + dL[bi], rb['L'], float(np.median(dL)))
+    # switch-node charge
+    log("   switch-node charge to whom (parallel-plate C of each phase net's copper in the window to adjacent layers):")
+    res['charge'] = {}
+    for ph in roles['phases']:
+        for net in (ph['net_in'], ph['net_out']):
+            if net not in sr.nets:
+                continue
+            ni = sr.nets.index(net)
+            dest = defaultdict(float)
+            for li in range(len(b.cu)):
+                mine = sr.owner[li] == ni
+                if not mine.any():
+                    continue
+                for lj in (li - 1, li + 1):
+                    if not 0 <= lj < len(b.cu):
+                        continue
+                    k = min(li, lj)
+                    o2 = sr.owner[lj][mine]
+                    for n2 in np.unique(o2[o2 >= 0]):
+                        dest[sr.nets[n2]] += EPS0 * sr.er[k] * (h * 1e-3) ** 2 / (sr.gaps[k] * 1e-3) * np.sum(o2 == n2)
+            tot = sum(dest.values())
+            if tot > 0:
+                res['charge'][net] = (tot, dict(dest))
+                log(f"     {net.split('/')[-1]:10s}: {tot * 1e12:.2f} pF; " + ", ".join(
+                    f"{n.split('/')[-1]} {100 * v / tot:.0f}%" for n, v in sorted(dest.items(), key=lambda t: -t[1])[:3])
+                    + f"; displacement current {tot * 1e9 * 1e3:.1f} mA per V/ns of edge rate")
+    # DC vs HF for the same vias
+    feeds = [nm for nm in sdef if nm.startswith('feed')]
+    if feeds:
+        k = col[feeds[0]]
+        rows = []
+        for vv in N.vias:
+            key = (round(vv['x'], 3), round(vv['y'], 3))
+            if vv['segs'] and key in hm.hf_via:
+                rows.append((hm.hf_via[key], np.abs(Ib[np.array(vv['segs']), k]).max(), vv))
+        rows.sort(key=lambda t: -max(t[0], t[1]))
+        log(f"   the same vias at DC ({feeds[0]}, share of the supply current) and in the HF loop (share of the loop current):")
+        for hfc, dcc, vv in rows[:9]:
+            log(f"     {vv['net'].split('/')[-1]:6s} {vv['kind']} at {where(vv['x'], vv['y'])}: DC {100 * dcc:5.1f}%   HF {100 * hfc:5.1f}%")
+    res['window'] = window
+    return res
+
+
+# ============================================================================ convex floor (lens VP)
+def joint_floor(b, nets, terms, h, area_budget, domain, iters=150):
+    """Frank-Wolfe on the relaxed density of several two-terminal pours sharing a domain.
+
+    min sum_n R_n(rho_n)  s.t.  sum_n rho_n,c <= 1 per cell, sum rho h^2 <= area_budget, rho_n = 1 on the
+    net's own terminal pads. Face conductance (rho_i + rho_j)/(2 R_s): compliance is convex in rho, so the
+    Frank-Wolfe gap gives a certified lower bound for every layout (binary or not) on this grid and domain.
+    """
+    rs = b.rs[b.cu[0]]
+    bx = domain.bounds
+    x0, y0 = math.floor(bx[0] / h) * h - h, math.floor(bx[1] / h) * h - h
+    nx, ny = int(math.ceil((bx[2] - x0) / h)) + 2, int(math.ceil((bx[3] - y0) / h)) + 2
+    dom = raster(domain, x0, y0, nx, ny, h, ss=3, fs=2)[0] > 0.5
+    fixed, start, elec = [], [], []
+    for net, (pa, pb) in zip(nets, terms):
+        el = [raster(p['poly'], x0, y0, nx, ny, h, ss=3, fs=2)[0] > 0.3 for p in (pa, pb)]
+        fixed.append(el[0] | el[1])
+        elec.append(el)
+        start.append(raster(b.copper(net, b.cu[0]), x0, y0, nx, ny, h, ss=3, fs=2)[0])
+    anyfixed = np.any(fixed, axis=0)
+    dom = dom | anyfixed
+    cells = np.nonzero(dom.ravel())[0]
+    nc = len(cells)
+    idx = -np.ones(ny * nx, np.int64)
+    idx[cells] = np.arange(nc)
+    J, I = np.divmod(cells, nx)
+    E = []
+    for dj, di in ((0, 1), (1, 0)):
+        ok = (J + dj < ny) & (I + di < nx)
+        nb = np.where(ok, (J + dj) * nx + (I + di), 0)
+        ok &= dom.ravel()[nb]
+        E.append(np.stack([np.arange(nc)[ok], idx[nb[ok]]], 1))
+    E = np.concatenate(E)
+    design = ~anyfixed.ravel()[cells]
+    fixed_c = [f.ravel()[cells] for f in fixed]
+    elec_c = [(np.nonzero(e[0].ravel()[cells])[0], np.nonzero(e[1].ravel()[cells])[0]) for e in elec]
+    budget = area_budget / (h * h) - sum(f.sum() for f in fixed_c)
+
+    def solve_net(k, rho):
+        gf = (0.5 * (rho[E[:, 0]] + rho[E[:, 1]]) + 1e-6) / rs
+        ea, eb = elec_c[k]
+        big = 1e3 / rs
+        a = np.r_[E[:, 0], ea, eb]
+        c = np.r_[E[:, 1], np.full(len(ea), nc), np.full(len(eb), nc + 1)]
+        g = np.r_[gf, np.full(len(ea) + len(eb), big)]
+        G = sp.coo_matrix((np.r_[g, g, -g, -g], (np.r_[a, c, a, c], np.r_[a, c, c, a])), shape=(nc + 2, nc + 2)).tocsc()
+        G = G + sp.diags(np.r_[np.full(nc, 1e-9 / rs), 0.0, 0.0])
+        lu = spla.splu(G[:nc + 1, :nc + 1].tocsc(), permc_spec='COLAMD')
+        s = np.zeros(nc + 1)
+        s[nc] = 1.0
+        v = lu.solve(s)
+        dv = v[E[:, 0]] - v[E[:, 1]]
+        e = 0.5 * dv * dv / rs
+        grad = -(np.bincount(E[:, 0], e, nc) + np.bincount(E[:, 1], e, nc))
+        return v[nc], grad
+
+    def objective(rr):
+        out = [solve_net(k, rr[k]) for k in range(len(nets))]
+        return sum(o[0] for o in out), [o[1] for o in out], [o[0] for o in out]
+
+    rho = [np.clip(s_.ravel()[cells], 0, 1) for s_ in start]
+    for k in range(len(nets)):
+        for k2 in range(len(nets)):
+            rho[k2][fixed_c[k]] = 1.0 if k2 == k else 0.0
+    tot = sum(rho)
+    over = tot > 1
+    for k in range(len(nets)):
+        rho[k][over] /= tot[over]
+    used = sum(r_[design].sum() for r_ in rho)
+    if used > budget:
+        for k in range(len(nets)):
+            rho[k][design] *= budget / used
+    f0, grads, R0 = objective(rho)
+    f, best_lb, it = f0, -np.inf, 0
+    for it in range(iters):
+        gst = np.stack([-g for g in grads])
+        gst[:, ~design] = -np.inf
+        win = np.argmax(gst, 0)
+        val = gst[win, np.arange(nc)]
+        order = np.argsort(-val)
+        order = order[design[order] & (val[order] > 0)]
+        kf = int(min(len(order), math.floor(budget)))
+        s = [np.where(fixed_c[k], 1.0, 0.0) for k in range(len(nets))]
+        for k in range(len(nets)):
+            sel = order[:kf][win[order[:kf]] == k]
+            s[k][sel] = 1.0
+        if kf < len(order):
+            c = order[kf]
+            s[win[c]][c] = budget - kf
+        gap = sum(float(grads[k] @ (rho[k] - s[k])) for k in range(len(nets)))
+        best_lb = max(best_lb, f - gap)
+        if gap < 1e-3 * f:
+            break
+        g1 = 2.0 / (it + 3)
+        trial = [rho[k] + g1 * (s[k] - rho[k]) for k in range(len(nets))]
+        f1, gr1, _ = objective(trial)
+        a2 = (f1 - f + gap * g1) / (g1 * g1)
+        gam = min(1.0, max(1e-4, gap / (2 * a2))) if a2 > 0 else g1
+        if abs(gam - g1) > 1e-6:
+            cand = [rho[k] + gam * (s[k] - rho[k]) for k in range(len(nets))]
+            fc, grc, _ = objective(cand)
+            if fc < f1:
+                trial, f1, gr1 = cand, fc, grc
+        if f1 < f:
+            rho, f, grads = trial, f1, gr1
+    return dict(f0=f0, R0=R0, lb=best_lb, f=f, iters=it + 1, cells=nc, rho=rho, cellsidx=cells, nx=nx, ny=ny, x0=x0, y0=y0)
+
+
+def run_floor(b, roles, N, Ib, col, args):
+    log("\n== Floors for the phase pours (lens VP): how much of their resistance is avoidable?")
+    drv, top = roles['driver'], b.cu[0]
+    rs = b.rs[top]
+    nets, terms, areas, Racts, ds = [], [], [], [], []
+    for ph in roles['phases']:
+        pin = [p for p in drv['pads'] if p['net'] == ph['net_in']]
+        spad = [p for p in ph['shunt']['fp']['pads'] if p['net'] == ph['net_in']]
+        if not pin or not spad or 'src' not in ph:
+            continue
+        g = b.copper(ph['net_in'], top)
+        isl = max(getattr(g, 'geoms', [g]), key=lambda q: q.intersects(pin[0]['poly']) * q.area)
+        d = pin[0]['poly'].distance(spad[0]['poly'])
+        A = isl.area - pin[0]['poly'].area - spad[0]['poly'].area
+        k = col[ph['src']]
+        m = (N.net == ph['net_in']) & (N.kind <= 4)
+        Ract = float((Ib[m, k] ** 2 / N.g[m]).sum())
+        nets.append(ph['net_in'])
+        terms.append((pin[0], spad[0]))
+        areas.append(isl.area)
+        Racts.append(Ract)
+        ds.append(d)
+        log(f"   {ph['net_in'].split('/')[-1]:8s}: pour {isl.area:.1f} mm2, pin-to-shunt-pad gap {d:.1f} mm; actual copper R {fmt_r(Ract)};"
+            f" Beckmann floor R_s d^2/A = {fmt_r(rs * d * d / A)}")
+    if len(nets) < 2:
+        return None
+    Atot = sum(areas)
+    log(f"   joint Beckmann floor for {len(nets)} pours sharing {Atot:.1f} mm2: sum R >= R_s (sum d)^2 / A = "
+        f"{fmt_r(rs * sum(ds) ** 2 / Atot)}; actual sum {fmt_r(sum(Racts))}")
+    t0 = tic()
+    outl = unary_union([z['outline'] for z in b.zones if z['net'] in nets and top in z['layers']])
+    allnets = {p['net'] for p in b.pads if p['net']} | {t['net'] for t in b.tracks if t['net']} | {z['net'] for z in b.zones}
+    others = unary_union([g for g in (b.copper(n, top) for n in allnets if n not in nets) if g.intersects(outl)])
+    domain = unary_union([outl.difference(others)] + [b.copper(n, top) for n in nets])
+    res = joint_floor(b, nets, terms, 0.1, Atot, domain, iters=50 if args.quick else 150)
+    log(f"   joint convex floor (Frank-Wolfe, {res['iters']} iterations, {res['cells']} cells at 0.1 mm, {tic() - t0:.0f} s): same total"
+        f" area, any split, region = the pours' zone outlines minus other nets' fixed copper (clearances ignored)")
+    log(f"     actual layout in this relaxed model: sum R = {fmt_r(res['f0'])} (" + ", ".join(fmt_r(r) for r in res['R0'])
+        + f"); certified floor >= {fmt_r(res['lb'])}; best relaxed design found {fmt_r(res['f'])}")
+    log(f"     => avoidable phase-copper loss within the allotted region: between {100 * max(0, 1 - res['f'] / res['f0']):.0f}% "
+        f"(achieved by the relaxed design) and {100 * (1 - res['lb'] / res['f0']):.0f}% (certified bound)")
+    return res
+
+
+# ============================================================================ report
+def fmt_r(r):
+    return f"{r * 1e3:.3f} mOhm" if abs(r) >= 1e-4 else f"{r * 1e6:.1f} uOhm"
+
+
+def pct(x, tot):
+    return 100.0 * x / tot if tot else float('nan')
+
+
+def where(x, y):
+    return f"({x:.2f}, {y:.2f})"
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('board')
+    ap.add_argument('--current', type=float, default=1.0, help='nominal current per source (A) for loss numbers')
+    ap.add_argument('--h-small', type=float, default=0.05, help='grid for rails and phase nets (mm)')
+    ap.add_argument('--h-plane', type=float, default=0.2, help='grid for ground and plane nets (mm)')
+    ap.add_argument('--h-hf', type=float, default=0.15, help='grid for the HF stack window (mm)')
+    ap.add_argument('--h-out', type=float, default=1.0, help='outer field thickness in the stack model (mm)')
+    ap.add_argument('--sketch', type=int, default=48, help='JL sketch size for whole-board leverage')
+    ap.add_argument('--driver', help='override the inferred switching-cell reference')
+    ap.add_argument('--quick', action='store_true', help='coarser grids for a fast look')
+    ap.add_argument('--no-hf', action='store_true')
+    ap.add_argument('--no-floor', action='store_true')
+    args = ap.parse_args(argv)
+    if args.quick:
+        args.h_small, args.h_plane, args.h_hf = 0.1, 0.25, 0.25
+    I0 = args.current
+
+    # ------------------------------------------------------------------ 1. load
+    t0 = tic()
+    b = KBoard(args.board)
+    fills = b.fill_report()
+    log(f"== Board {os.path.basename(args.board)}: file version {b.version}; copper "
+        + ", ".join(f"{ly} {b.tcu[ly] * 1e3:.1f} um ({b.rs[ly] * 1e3:.2f} mOhm/sq)" for ly in b.cu) + f"; stackup {b.stackup_note}")
+    log("   dielectric gaps: " + ", ".join(f"{a}-{c} {g:.3f} mm" for (a, c), g in b.gap.items())
+        + f"; outline {b.outline.area if b.outline is not None else float('nan'):.0f} mm2; parsed in {tic() - t0:.1f} s")
+    log(f"   {len(b.fps)} footprints, {len(b.pads)} pads, {len(b.tracks)} tracks, {len(b.vias)} vias, {len(b.zones)} zones")
+    ex = [t for t in b.tracks if t.get('exposed')]
+    if ex:
+        log(f"   {len(ex)} tracks have a solder-mask opening (tinned copper): " + ", ".join(sorted({f"{t['net']} on {t['layer']}"
+            f" ({sum(LineString(u['pts']).length for u in ex if u['net'] == t['net']):.1f} mm, w {t['w']} mm)" for t in ex}))
+            + "; modelled as bare copper (solder would lower their resistance)")
+    nst = sum('OVERLAPS' in f[4] for f in fills)
+    nap = sum('NO saved' in f[4] for f in fills)
+    log(f"   zone fills: {len(fills) - nap} zone layers use the saved filled_polygon, {nap} approximated from the outline,"
+        f" {nst} overlap other-net copper (stale-fill check)")
+    for f in fills:
+        if f[4] != 'saved fill':
+            log(f"     {f[0]} on {f[1]}: outline {f[2]:.1f} mm2, fill {f[3]:.1f} mm2: {f[4]}")
+
+    # ------------------------------------------------------------------ 2. roles
+    roles, L = infer_roles(b, args)
+    log("\n== What the board is (inferred from names, values, footprints and adjacency)")
+    for line in L:
+        log("   - " + line)
+    gnd, rail, drv, phases = roles['gnd'], roles['rail'], roles['driver'], roles['phases']
+
+    # ------------------------------------------------------------------ 3. DC network, sources, ports
+    t0 = tic()
+    dc_nets = list(dict.fromkeys([gnd, rail] + [n for ph in phases for n in (ph['net_in'], ph['net_out'])]
+                                 + [r[0] for r in roles['regs']]))
+    hnet = {n: (args.h_plane if roles['area'][n] > 150 else args.h_small) for n in dc_nets}
+    N = build_dc(b, dc_nets, hnet, L)
+    T = Terminals(N, b)
+    drv_gnd = [p for p in drv['pads'] if p['net'] == gnd]
+    drv_rail = [p for p in drv['pads'] if p['net'] == rail]
+    lumped = []
+    for ph in phases:
+        s = ph['shunt']
+        pa = next(p for p in s['fp']['pads'] if p['net'] == ph['net_in'])
+        pb = next(p for p in s['fp']['pads'] if p['net'] == ph['net_out'])
+        k = N.add_br(T.pad(pa), T.pad(pb), 1.0 / s['ohm'], 5, 'lumped', 'lumped', s['fp']['x'], s['fp']['y'])[0]
+        N.bname[k] = s['ref']
+        lumped.append((s['ref'], k))
+    sdef, pdef = {}, {}
+    for J in roles['supplies']:
+        jr = [p for p in J['pads'] if p['net'] == rail]
+        jg = [p for p in J['pads'] if p['net'] == gnd]
+        sdef[f"feed {J['ref']}"] = [(T.group_of(f"{J['ref']}.rail", jr), 1.0), (T.group_of('drv.rail', drv_rail), -1.0),
+                                     (T.group_of('drv.gnd', drv_gnd), 1.0), (T.group_of(f"{J['ref']}.gnd", jg), -1.0)]
+    if len(roles['supplies']) >= 2:
+        Ja, Jb = roles['supplies'][:2]
+        sdef[f"bus {Ja['ref']}->{Jb['ref']}"] = [
+            (T.group_of(f"{Ja['ref']}.rail", [p for p in Ja['pads'] if p['net'] == rail]), 1.0),
+            (T.group_of(f"{Jb['ref']}.rail", [p for p in Jb['pads'] if p['net'] == rail]), -1.0),
+            (T.group_of(f"{Jb['ref']}.gnd", [p for p in Jb['pads'] if p['net'] == gnd]), 1.0),
+            (T.group_of(f"{Ja['ref']}.gnd", [p for p in Ja['pads'] if p['net'] == gnd]), -1.0)]
+    for ph in phases:
+        pin = [p for p in drv['pads'] if p['net'] == ph['net_in']]
+        out = [p for p in ph['load']['pads'] if p['net'] == ph['net_out']] if ph['load'] else []
+        if pin and out:
+            ph['src'] = f"phase {ph['net_in'].split('/')[-1]}"
+            sdef[ph['src']] = [(T.group_of(f"drv.{ph['net_in']}", pin), 1.0), (T.group_of(f"load.{ph['net_out']}", out), -1.0)]
+    host = roles['host']
+    for net, reg in roles['regs']:
+        rp = [p for p in reg['pads'] if p['net'] == net]
+        rg = [p for p in reg['pads'] if p['net'] == gnd]
+        hp = [p for p in host['pads'] if p['net'] == net]
+        hg = [p for p in host['pads'] if p['net'] == gnd]
+        if rp and rg and hp and hg:
+            sdef[f"{net} export"] = [(T.group_of(f"reg.{net}", rp), 1.0), (T.group_of(f"host.{net}", hp), -1.0),
+                                     (T.group_of('host.gnd', hg), 1.0), (T.group_of(f"reg.{net}.gnd", rg), -1.0)]
+    for ph in phases:
+        amp = ph['amp']
+        if amp is None:
+            continue
+        ain = [p for p in amp['pads'] if p['net'] == ph['net_in']]
+        aout = [p for p in amp['pads'] if p['net'] == ph['net_out']]
+        tag = ph['net_in'].split('/')[-1]
+        ph['port'] = f"Kelvin {amp['ref']} ({tag})"
+        pdef[ph['port']] = [(T.group_of(f"amp.{amp['ref']}.in", ain), 1.0), (T.group_of(f"amp.{amp['ref']}.out", aout), -1.0)]
+        ag = [p for p in amp['pads'] if p['net'] == gnd]
+        if host and ag:
+            pdef[f"gnd {amp['ref']}->{host['ref']}"] = [(T.group_of(f"amp.{amp['ref']}.gnd", ag), 1.0),
+                                                       (T.group_of('host.gnd', [p for p in host['pads'] if p['net'] == gnd]), -1.0)]
+    N.finalize()
+    names = list(sdef) + list(pdef)
+    S = np.zeros((N.nn, len(names)))
+    for k, nm in enumerate(names):
+        for node, c in (sdef.get(nm) or pdef.get(nm)):
+            S[node, k] += c
+    N.factor()
+    log(f"\n== DC conductor model: {N.nn} nodes, {N.nb} branches, {N.ncomp} components; grids "
+        + ", ".join(f"{n.split('/')[-1]} {hnet[n]} mm" for n in dc_nets)
+        + f"; {len(N.vias)} via/PTH barrels; build {tic() - t0 - N.t_factor:.1f} s, factor {N.t_factor:.1f} s")
+    t1 = tic()
+    Phi = N.solve(S)
+    Ib = N.currents(Phi)
+    col = {nm: k for k, nm in enumerate(names)}
+    srcs = list(sdef)
+    Rself = {nm: float(S[:, col[nm]] @ Phi[:, col[nm]]) for nm in srcs}
+    log(f"   sources: {', '.join(srcs)}; quiet ports: {', '.join(pdef)}; solved in {tic() - t1:.2f} s")
+
+    # ------------------------------------------------------------------ 4. leverage and exactness checks
+    t1 = tic()
+    rho_sk = N.leverage_sketch(k=args.sketch)
+    log(f"   leverage sketch ({args.sketch} solves, {tic() - t1:.1f} s): Foster check sum(rho) = {rho_sk.sum():.0f}"
+        f" vs nodes - components = {N.nn - N.ncomp} (the sketch is unbiased)")
+    face = N.kind <= 1
+    ns = len(srcs)
+    load_any = np.max(np.abs(Ib[:, :ns]), axis=1)
+    top = np.argsort(-np.where(face, load_any, 0))[:400]
+    via_br = np.concatenate([np.array(v['segs'], int) for v in N.vias if v['segs']])
+    p0 = 0
+    kf = int(np.argmax(np.where(face, np.abs(Ib[:, p0]), 0)))
+    kv = int(via_br[np.argmax(np.abs(Ib[via_br, p0]))])
+    sel = np.unique(np.r_[top, via_br, [k for _, k in lumped], kf, kv]).astype(int)
+    t1 = tic()
+    rho_ex = np.full(N.nb, np.nan)
+    rho_ex[sel] = N.g[sel] * N.reff(sel)
+    rel = np.abs(rho_sk[sel] - rho_ex[sel]) / np.maximum(rho_ex[sel], 1e-12)
+    log(f"   exact leverage for {len(sel)} pieces (all barrels, shunts, 400 most loaded faces) in {tic() - t1:.1f} s;"
+        f" sketch error on them: median {100 * np.median(rel):.0f}%")
+    chk = []
+    for k in (kf, kv):
+        act = np.ones(N.nb, bool)
+        act[k] = False
+        G2 = N.laplacian(act)
+        fr = N.free[N.comp[N.a[k]]]
+        x = np.zeros(N.nn)
+        x[fr] = spla.splu(G2[fr][:, fr].tocsc(), permc_spec='COLAMD').solve(S[fr, p0])
+        d_bf = float(S[:, p0] @ x) - Rself[srcs[p0]]
+        d_r1 = Ib[k, p0] ** 2 / (N.g[k] * (1 - rho_ex[k]))
+        chk.append(abs(d_r1 - d_bf) / max(abs(d_bf), 1e-30))
+    log(f"   exactness: rank-1 removal vs brute-force re-solve (a face and a via barrel on '{srcs[p0]}'): max rel. error {max(chk):.1e}")
+
+    # ------------------------------------------------------------------ 5. budgets
+    log(f"\n== DC budgets (unit current per source; loss at {I0:g} A); copper loss by net and layer")
+    for nm in srcs:
+        k = col[nm]
+        loss = Ib[:, k] ** 2 / N.g
+        by = defaultdict(float)
+        for net in dc_nets:
+            for ly in b.cu + ['barrel']:
+                mm = (N.net == net) & (N.lay == ly) & (N.kind <= 3)
+                if mm.any():
+                    by[(net, ly)] += float(loss[mm].sum())
+        tot = Rself[nm]
+        parts = ", ".join(f"{n.split('/')[-1]}/{ly} {pct(v, tot):.0f}%" for (n, ly), v in sorted(by.items(), key=lambda t: -t[1]) if v > 0.02 * tot)
+        lump = sum(loss[k2] for _, k2 in lumped)
+        log(f"   {nm:14s}: R = {fmt_r(tot)}" + (f" (shunt {fmt_r(lump)} + copper {fmt_r(tot - lump)})" if lump > 0 else "")
+            + f"; P = {tot * I0 ** 2 * 1e3:.2f} mW at {I0:g} A; copper loss: {parts}")
+
+    # ------------------------------------------------------------------ 6. vias
+    log("\n== Vias and plated holes at DC: share of each source, exact leverage, exact removal cost (Woodbury on the barrel)")
+    vrows = []
+    for v in N.vias:
+        if v['segs']:
+            segs = np.array(v['segs'])
+            cur = np.abs(Ib[segs, :ns]).max(0)
+            vrows.append((cur.max(), v, cur, segs))
+    vrows.sort(key=lambda t: -t[0])
+    nlive = sum(1 for r in vrows if r[0] > 1e-3)
+    log(f"   {len(vrows)} barrels in the modelled nets; {nlive} carry > 0.1% of some DC source, {len(vrows) - nlive} carry less")
+    for cmax, v, cur, segs in vrows[:16]:
+        k = int(np.argmax(cur))
+        src = srcs[k]
+        dz = N.woodbury(segs, Phi[:, col[src]], Phi[:, col[src]])
+        txt = 'disconnects' if not np.isfinite(dz) else f"+{pct(dz, Rself[src]):.2f}% R({src})"
+        log(f"   {v['kind']} {v['net'].split('/')[-1]:8s} at {where(v['x'], v['y'])} drill {v['d']:.2f}: "
+            + ", ".join(f"{s} {100 * c:.1f}%" for s, c in zip(srcs, cur) if c > 0.01)
+            + f"; rho {np.nanmax(rho_ex[segs]):.2f}; removal {txt}")
+
+    # ------------------------------------------------------------------ 7. where the loss is
+    log("\n== Where each source's copper loss is: near its terminals, its hottest 1 mm tile, peak current density")
+    tcu_b = np.array([b.tcu.get(l, 0.035) for l in N.lay[face]]) * 1e-3
+    for nm in srcs:
+        k = col[nm]
+        loss = Ib[face, k] ** 2 / N.g[face]
+        tot = loss.sum()
+        J = np.abs(Ib[face, k]) / np.maximum(N.w[face] * 1e-3 * tcu_b, 1e-18) / 1e6
+        jm = int(np.argmax(J))
+        txt = []
+        for node, c in sdef[nm]:
+            d = np.hypot(N.mx[face] - N.x[node], N.my[face] - N.y[node])
+            sh = loss[d < 0.5].sum() / tot
+            if sh > 0.02:
+                txt.append(f"{100 * sh:.0f}% within 0.5 mm of the {N.node_net[node].split('/')[-1]} terminal at {where(N.x[node], N.y[node])}")
+        key = np.floor(N.mx[face]).astype(int) * 100000 + np.floor(N.my[face]).astype(int)
+        u, inv = np.unique(key, return_inverse=True)
+        acc = np.bincount(inv, weights=loss)
+        kk = int(np.argmax(acc))
+        txt.append(f"hottest 1x1 mm tile ({u[kk] // 100000}-{u[kk] // 100000 + 1}, {u[kk] % 100000}-{u[kk] % 100000 + 1}) holds {100 * acc[kk] / tot:.0f}%")
+        log(f"   {nm:14s}: " + "; ".join(txt) + f"; peak |J| {J[jm]:.0f} A/mm2 per A at {where(N.mx[face][jm], N.my[face][jm])}"
+            f" ({N.net[face][jm].split('/')[-1]}, {N.lay[face][jm]})")
+
+    # ------------------------------------------------------------------ 8. leverage
+    log("\n== Irreplaceable copper (exact leverage rho: 1 = sole path; 0.5 = sheet; first-order prices are low by 1/(1-rho))")
+    for nm in srcs:
+        k = col[nm]
+        cand = sel[(N.kind[sel] <= 1) & (np.abs(Ib[sel, k]) > 0.02)]
+        hi = cand[rho_ex[cand] > 0.9]
+        if len(hi):
+            cost = Ib[hi, k] ** 2 / (N.g[hi] * np.maximum(1 - rho_ex[hi], 1e-12))
+            w_ = hi[np.argmax(cost)]
+            log(f"   {nm:14s}: {len(hi)} faces with rho > 0.9 carry > 2% of it; worst single-face removal at {where(N.mx[w_], N.my[w_])}"
+                f" ({N.net[w_].split('/')[-1]}): +{pct(cost.max(), Rself[nm]):.1f}% R, first-order +{pct(Ib[w_, k] ** 2 / N.g[w_], Rself[nm]):.3f}%"
+                f" (x{1 / max(1 - rho_ex[w_], 1e-12):.0f})")
+    for net in dc_nets:
+        mm = face & (N.net == net)
+        if mm.sum() > 100:
+            log(f"   leverage map {net.split('/')[-1]:10s} (sketch): median {np.median(rho_sk[mm]):.2f};"
+                f" faces with rho > 0.9: {100 * np.mean(rho_sk[mm] > 0.9):.1f}%")
+
+    # ------------------------------------------------------------------ 9. dead copper
+    log("\n== Dead copper at DC: islands and 1 mm tiles carrying < 0.1% of every modelled source")
+    nodeflow = np.zeros(N.nn)
+    smax = np.max(np.abs(Ib[:, :ns]), axis=1)
+    np.maximum.at(nodeflow, N.a, smax)
+    np.maximum.at(nodeflow, N.b, smax)
+    for net in dc_nets:
+        for ly in b.cu:
+            R = N.rasters.get((net, ly))
+            if R is None:
+                continue
+            ids = R['ids']
+            mem = ids >= 0
+            lab, nl = ndimage.label(mem)
+            flow = np.where(mem, nodeflow[np.maximum(ids, 0)], 0.0)
+            ca = R['h'] ** 2
+            tot_area = mem.sum() * ca
+            iflow = ndimage.maximum(flow, lab, np.arange(1, nl + 1)) if nl else np.zeros(0)
+            iarea = ndimage.sum(mem, lab, np.arange(1, nl + 1)) * ca if nl else np.zeros(0)
+            dead = np.nonzero(iflow < 1e-3)[0]
+            dead_area = iarea[dead].sum()
+            live = mem & ~np.isin(lab, dead + 1)
+            ti = (np.arange(R['nx']) * R['h']).astype(int)
+            tj = (np.arange(R['ny']) * R['h']).astype(int)
+            tkey = tj[:, None] * 10000 + ti[None, :]
+            u, inv = np.unique(tkey[live], return_inverse=True)
+            tmax = np.zeros(len(u))
+            np.maximum.at(tmax, inv, flow[live])
+            idle = (np.bincount(inv) * ca)[tmax < 1e-3].sum()
+            if tot_area > 0.5 and (dead_area > 0.1 or idle > 0.5):
+                big = dead[np.argsort(-iarea[dead])][:3]
+                bt = []
+                for q in big:
+                    jj, ii = np.nonzero(lab == q + 1)
+                    bt.append(f"{iarea[q]:.2f} mm2 at {where(R['x0'] + (ii.mean() + 0.5) * R['h'], R['y0'] + (jj.mean() + 0.5) * R['h'])}")
+                log(f"   {net.split('/')[-1]:10s} {ly:6s}: {tot_area:6.1f} mm2; {len(dead)} dead islands ({dead_area:.1f} mm2)"
+                    + (f", largest {', '.join(bt)}" if bt else "") + f"; idle 1 mm tiles inside live copper {idle:.1f} mm2"
+                    f" ({100 * idle / tot_area:.0f}%)")
+    flo = [(f['ref'], p['num'], p['poly'].area, p['layers']) for f in b.fps for p in f['pads']
+           if p['net'] and p['net'].startswith('unconnected') and p['poly'].area > 1.0]
+    if flo:
+        log("   floating metal (unconnected pads > 1 mm2): " + ", ".join(f"{r}.{n} {a:.1f} mm2 on {'/'.join(l)}" for r, n, a, l in flo))
+
+    # ------------------------------------------------------------------ 10. common impedance
+    log("\n== Quiet ports that share copper with power current (common impedance): exact value and Tellegen attribution")
+    keyt = np.array([f"{n.split('/')[-1]}/{l}" for n, l in zip(N.net, N.lay)], object)
+    tx, ty = np.floor(N.mx / 0.5).astype(int), np.floor(N.my / 0.5).astype(int)
+    lumped_idx = [k for _, k in lumped]
+    for qn in pdef:
+        q = col[qn]
+        for pn in srcs:
+            p = col[pn]
+            Z = float(S[:, q] @ Phi[:, p])
+            if abs(Z) < 1e-10:
+                continue
+            a_b = Ib[:, q] * Ib[:, p] / N.g
+            lump = float(a_b[lumped_idx].sum())
+            cu = Z - lump
+            if qn.startswith('Kelvin'):
+                if abs(lump) < 1e-9:
+                    continue
+                err = cu / lump
+                log(f"   {qn} <- {pn}: {fmt_r(Z)} per A = shunt {fmt_r(lump)} + copper {cu * 1e6:+.1f} uOhm: gain error"
+                    f" {100 * err:+.2f}%; copper TCR makes it drift {err * TCR_CU * 1e6:+.0f} ppm/K")
+            else:
+                log(f"   {qn} <- {pn}: {cu * 1e6:+.2f} uOhm (= {cu * 1e6 * I0:+.2f} uV at {I0:g} A)")
+            ac = a_b.copy()
+            ac[lumped_idx] = 0
+            if np.abs(ac).sum() == 0:
+                continue
+            chi = abs(ac.sum()) / np.abs(ac).sum()
+            big = np.nonzero(np.abs(ac) > 1e-4 * np.abs(ac).max())[0]
+            tiles = defaultdict(float)
+            for kk in big:
+                tiles[(keyt[kk], tx[kk], ty[kk])] += ac[kk]
+            topt = sorted(tiles.items(), key=lambda t: -abs(t[1]))[:4]
+            log(f"      chi = {chi:.2f}; largest terms (0.5 mm tiles): " + "; ".join(
+                f"{k_[0]} at ({(k_[1] + 0.5) * 0.5:.2f}, {(k_[2] + 0.5) * 0.5:.2f}) {pct(v_, cu):+.0f}%" for k_, v_ in topt))
+
+    # ------------------------------------------------------------------ 11-12. HF and floor
+    if not args.no_hf:
+        run_hf(b, roles, N, Ib, sdef, col, args)
+    if not args.no_floor:
+        run_floor(b, roles, N, Ib, col, args)
+    log(f"\nTotal runtime {tic() - T0:.0f} s")
+
+
+if __name__ == '__main__':
+    main()

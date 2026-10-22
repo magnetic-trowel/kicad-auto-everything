@@ -29,15 +29,15 @@ Kernels wired here:
              and the asymptotic crack screen of lenses CT/SY/CD.
   * K-TOP    band connectivity, bridges (Tarjan) and event classification, solver-free.
   * K-FLOOR  Beckmann floor; Prager-Synge bracket via vp_floors._q4_energy_solve (lens VP).
-  * facade   PhysicsCore.passport(), why_here(), what_if_cut(), where_add(), explain().
+  * facade   PhysicsCore.passport(), why_here(), what_if(), where_add(), explain().
 
 Sections: python pc2_core_skeleton.py [exact|events|dispatch|passport|floors|bench|all]
   exact     Woodbury/Thevenin/Tellegen/Foster vs re-factorization; certified first-order bounds
   events    grow a cut until it disconnects: Woodbury eigenvalue -> 1 exactly at the K-TOP event
   dispatch  when first-order and crack prices hold, vs frequency (local vs resonant amplification)
-  passport  passports, jobs, why_here(), explain(), what_if_cut(), where_add()
+  passport  passports, jobs, why_here(), explain(), what_if(), where_add()
   floors    Beckmann floor; Prager-Synge bracket vs the cell-graph value
-  bench     costs vs grid size (2.4k-153k cells)
+  bench     costs vs grid size (2.4k-153k cells); a hot-window Green block for microsecond quotes
 'all' runs everything except 'bench' in under a minute on one core; 'bench' takes about
 10-60 s. numpy + scipy; deterministic. Numbers quoted [C] in the pc2 docs come from here.
 """
@@ -144,7 +144,7 @@ class Passport:
     transit: dict        # port -> current through the piece per ampere of that port (A/A)
     attribution: dict    # budget -> exact additive Tellegen share (ohm)
     removal: dict        # budget -> Belief (exact change of Z if the piece's copper is removed)
-    proximity: float     # largest Woodbury eigenvalue of the removal (1 = topological event)
+    r: float             # Woodbury radius of the removal (1 = topological event at DC)
     events: list
     jobs: list = field(default_factory=list)
 
@@ -534,6 +534,10 @@ class PhysicsCore:
                            Belief(complex(first[q, p]), "ohm", Exactness.ASYMPTOTIC, rel, lineage=("K-RESP.adjoint",)))
         return out, lam, ev
 
+    def what_if(self, branches_by_band):
+        """'What breaks if I cut here?': a stage-2 quote of the same edit in every band."""
+        return {band: self.quote_remove(band, B) for band, B in branches_by_band.items()}
+
     def rel_change(self, bud, dz):
         z0 = self.Z[bud.band][self.pidx[bud.victim], self.pidx[bud.source]]
         if not np.isfinite(dz):
@@ -798,7 +802,7 @@ def sec_passport(core):
                 continue
             pp = core.passport(pid, band)
             tr = ", ".join(f"{p} {v:.2f}" for p, v in pp.transit.items())
-            print(f"    {band}: transit A/A [{tr}]; Woodbury lambda_max {pp.proximity:.3f}; events {pp.events or ['none']}")
+            print(f"    {band}: transit A/A [{tr}]; Woodbury radius r {pp.r:.3f}; events {pp.events or ['none']}")
         for line in core.why_here(pid):
             print(f"      why: {line}")
     print("  explain(): chi = |sum a|/sum|a| over tiles; attribution only when chi >= 0.5")
@@ -807,15 +811,14 @@ def sec_passport(core):
         txt = "; ".join(f"{p} {v * 100:+.0f}%" if mode == "counterfactual" else f"{p} {abs(v) * 100:.0f}%" for p, v in rows)
         print(f"    {bud.id:14s} ({bud.cls:11s}) chi {chi:4.2f} -> {mode}: {txt}")
     b = core.board
-    print("  what_if_cut(): extend the slot as a zero-width cut down to y = 6 mm")
+    print("  what_if(): extend the slot as a zero-width cut down to y = 6 mm")
     B = cut_line(b, core.ops["DC"], 14.5, 6.0, 12.0)
-    for band in core.ops:
-        q, lam, ev = core.quote_remove(band, B)
+    for band, (q, lam, ev) in core.what_if({band: B for band in core.ops}).items():
         for bid, (ex, fo) in q.items():
             bud = next(x for x in core.budgets if x.id == bid)
             print(f"    {bid:14s} exact {core.rel_change(bud, ex.value) * 100:+7.2f}%   first-order "
                   f"{core.rel_change(bud, fo.value) * 100:+7.2f}%   events {ev or ['none']}")
-    print("  what_if_cut(): a NEW 6 mm edge notch from the bottom edge at x = 20 mm (stage 1 vs stage 2 quote)")
+    print("  what_if(): a NEW 6 mm edge notch from the bottom edge at x = 20 mm (stage 1 vs stage 2 quote)")
     B = cut_line(b, core.ops["DC"], 20.0, 0.0, 6.0)
     for band in core.ops:
         op = core.ops[band]
