@@ -608,6 +608,7 @@ class Net:
         self.nn = 0
         self.nx_, self.ny_, self.nnet, self.nlay, self.nkind = [], [], [], [], []
         self.ba, self.bb, self.bg, self.bkind, self.bnet, self.blay, self.bmx, self.bmy, self.bw = ([] for _ in range(9))
+        self.nb = 0                # branch count; a running total keeps add_br O(1) per call
         self.bname = {}
         self.grids = {}
 
@@ -630,7 +631,7 @@ class Net:
     def add_br(self, a, b, g, kind, net, lay, mx, my, w=None):
         a, b, g = np.atleast_1d(a), np.atleast_1d(b), np.atleast_1d(np.asarray(g, float))
         k = len(a)
-        start = sum(len(x) for x in self.ba)
+        start, self.nb = self.nb, self.nb + k
         self.ba.append(a)
         self.bb.append(b)
         self.bg.append(np.broadcast_to(g, (k,)).copy())
@@ -1133,6 +1134,7 @@ def gap_energy(st, flows, sflows=()):
 
 class StackSolver:
     """Lumped links (vias, electrodes, capacitors) on a stack Laplacian; one grounded node per conductor island."""
+    permc = 'COLAMD'          # column ordering for splu; callers may choose 'MMD_AT_PLUS_A'
 
     def __init__(self, st):
         self.st, self.extra, self.n_extra = st, [], 0
@@ -1192,7 +1194,7 @@ class StackSolver:
         self.keep = np.nonzero(keep)[0]
         self.n, self.G, self.comp, self.ncomp = n, G, comp, ncomp
         self.a_, self.b_, self.y_ = a, bb, y
-        self.lu = spla.splu(G[self.keep][:, self.keep].tocsc(), permc_spec='COLAMD')
+        self.lu = spla.splu(G[self.keep][:, self.keep].tocsc(), permc_spec=self.permc)
 
     def solve(self, S):
         S = np.asarray(S, float)
