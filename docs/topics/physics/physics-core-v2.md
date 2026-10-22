@@ -14,7 +14,7 @@ Tags: [C] computed by [pc2_core_skeleton.py](../../../tools/research/physics/pc2
 
 ## Key facts
 
-Each round-2 lens forces one feature: [CD](lens-cd.md) pieces and exact counterfactuals; [CT](lens-ct.md) a world node and a solver-free topology layer; [SY](lens-sy.md) loop budgets and lead fields; [VP](lens-vp.md) floors and objective classes; [LS](lens-ls.md) one complex operator, complex images and a regime dispatcher; [TH](lens-th.md) a Q ledger from the dissipation matrix; [IN](lens-in.md) beliefs with lineage and VOI.
+Each lens forces a feature: [CD](lens-cd.md) pieces and counterfactuals; [CT](lens-ct.md) a world node and topology; [SY](lens-sy.md) loop budgets and lead fields; [VP](lens-vp.md) floors and classes; [LS](lens-ls.md) one complex operator and a dispatcher; [TH](lens-th.md) a Q ledger; [IN](lens-in.md) beliefs and VOI.
 
 ### 1. Data model
 
@@ -31,7 +31,7 @@ Each round-2 lens forces one feature: [CD](lens-cd.md) pieces and exact counterf
 | **Mode, floor** | Mode: complex frequency, Q, channel shares (1/Q = Σ 1/Q_k), participation per piece. Floor: value, kind, certificate, τ = bound/floor | code (K6, K5) |
 | **Belief** | Value, unit, exactness class (§2), relative_to (model, assumptions, epoch), interval, model-form spread (level and shape), validity, lineage | every kernel |
 
-Two passports from the test board [C]. Tile PWR.t07.05, beside the slot tip, at DC lowers the Kelvin-tap coupling Z_SA (+47% if removed) and Z_BA (+17.5%) and carries Z_AA (+15%). Decap C3 at 300 MHz lowers Z_BA (+25.5% if removed) but raises Z_SA (−19%): a job conflict for `separate_jobs` ([CD22](../../ideas/physics-first/lens-cd.md)).
+Test-board passports [C]: the tile beside the slot tip lowers the Kelvin-tap coupling Z_SA (+47% if removed) and carries Z_AA (+15%) at DC; decap C3 at 300 MHz lowers Z_BA (+25.5% if removed) but raises Z_SA (−19%), a job conflict for `separate_jobs` ([CD22](../../ideas/physics-first/lens-cd.md)).
 
 ### 2. Exactness ladder
 
@@ -39,14 +39,14 @@ Round 1's F0–F4 ladder grades accuracy. This one grades guarantees, always rel
 
 | Class | Meaning | Examples |
 |---|---|---|
-| E0 topological | Metric-free; holds for any geometry with this connectivity | b0, b1, articulation points, cut sets, return words; I_CM = −jωΣC_ext·V given C_ext |
+| E0 topological | Metric-free; holds for any geometry with this connectivity | b0, b1, articulation points, cut sets, return words |
 | E1 algebraic | Exact on the discretized model, to round-off | Woodbury, Thevenin, Tellegen, Foster: within 2×10⁻¹² of re-factorization [C] |
-| E2 certified | A variational bound on the continuum model | Beckmann and convex floors, Prager–Synge brackets, HS, capacity hull, coarse-PEEC L ≥ L, the DC bounds of §4 |
-| E3 asymptotic | A closed form with a known error law | crack and polarization laws, complex images (0.5–3.5%), MS2, wedge exponents |
+| E2 certified | A variational bound on the continuum model | floors, Prager–Synge brackets, HS, capacity hull, coarse-PEEC L ≥ L, §4's DC bounds |
+| E3 asymptotic | A closed form with a known error law | crack laws, complex images (0.5–3.5%), MS2, wedge exponents |
 | E4 calibrated | A spread from calibration data | surrogates; proxies with conformal σ |
 | E5 conjectured | Not yet checked by any model | LLM hypotheses; unknown world conductors |
 
-E1 is not E2. On a notched strip the cell-graph resistance lies 0.1–0.6% above the certified Prager–Synge upper bound at 2–8 cells/mm; the bracket is 0.17% wide at 8 cells/mm [C, reusing vp_floors]. Compliance verdicts on class-A quantities therefore quote the bracket, and E1 counterfactuals inherit their mesh's error.
+E1 is not E2: on a notched strip the cell-graph resistance lies 0.1–0.6% above the certified Prager–Synge upper bound at 2–8 cells/mm, where the bracket is 0.17% wide [C, reusing vp_floors]. Compliance verdicts on class-A quantities quote the bracket; E1 counterfactuals inherit their mesh's error.
 
 ### 3. Kernels
 
@@ -69,11 +69,7 @@ For an edit that removes branches B, let P_B = diag(y_B)·A_Bᵀ·Y⁻¹·A_B (k
 
  ΔZ_qp (exact) = Σ_i c_i/(1 − λ_i), where Σ_i c_i is the first-order (adjoint) price.
 
-Four round-2 results are special cases:
-- CD's 1/(1 − ρ) is the case k = 1.
-- The crack laws of CT, SY and VP are its closed-form sum for slits.
-- At DC, P_B is symmetric with 0 ≤ λ ≤ 1, and λ = 1 exactly when the edit disconnects a terminal (a K1 event).
-- At AC, |λ| ≥ 1 means the edit moves a mode by more than its bandwidth: LS's εQ ≥ 1.
+Four round-2 results are special cases: CD's 1/(1 − ρ) is k = 1; the crack laws of CT, SY and VP are its closed-form sum for slits; at DC, P_B is symmetric with 0 ≤ λ ≤ 1 and λ = 1 exactly when the edit disconnects a terminal (a K1 event); at AC, |λ| ≥ 1 means the edit moves a mode by more than its bandwidth, LS's εQ ≥ 1.
 
 The radius r = max|λ| comes free with each exact quote, so every quote says whether a first-order price was safe. Two certified DC bounds follow:
 - for self terms, 1 ≤ exact/first-order ≤ 1/(1 − λ_max);
@@ -83,26 +79,24 @@ Both held on all 444 and 296 tile removals [C].
 
 | Edit on the test board [C] | r | First-order price | Crack-law screen |
 |---|---|---|---|
-| one interior strip, DC | 0.50 | ½ of exact | — |
-| 2 × 2 mm tile removals, DC | ≤ 0.66 | self terms 1.5–5.7× low; Kelvin-tap coupling wrong sign twice in 148 | — |
+| 2 × 2 mm tile removals, DC | 0.51–0.83 | self terms 1.5–5.7× low; Kelvin-tap coupling wrong sign twice in 148 | — |
 | cut grown to a 0.5 mm neck, DC | 0.990 | +2.2% against +197% exact | — |
 | the same cut through, DC | 1.000 | finite; exact is infinite (K1: disconnects A, B, S) | — |
 | the same cut, 300 MHz | 0.993 | exact +27%: the island floats on displacement current | — |
 | 3 mm slit, DC to 2.8 GHz | 0.84 | 0.16–0.18 of exact | 1.00–1.14 of exact |
 | new 6 mm edge notch, DC | — | 0.05 of exact | 1.04–1.18 of exact |
-| decap removed, 300 MHz | 0.28 | 0.73 of exact | — |
-| decap removed at the 900 MHz anti-resonance | 1.36 | 0.43 at 143°: wrong sign | — |
-| decap added at 1 GHz | 1.45 | 0.55 at −137°: wrong sign | — |
+| decap removed, 300 MHz; at the 900 MHz anti-resonance | 0.28; 1.36 | 0.73 of exact; 0.43 at 143°, wrong sign | — |
+| decap added, 1 GHz | 1.45 | 0.55 at −137°, wrong sign | — |
 
 ### 5. Objective classes
 
 | Class | Examples | Structure | Optimizer | Ledger and explanation |
 |---|---|---|---|---|
-| A self, one dominant energy in the band | R; inductive-limit L; thermal R; 1/C at fixed charge; PDN \|Z\| away from resonances | convex in relaxed copper, monotone, free gradients, certified floors | convex first; floors give τ, warm starts and stop rules | Tellegen attribution (χ = 0.89–1.00 here); avoidable share 1 − floor/value |
+| A self, one dominant energy in the band | R, inductive-limit L, thermal R, 1/C, PDN \|Z\| off resonance | convex in relaxed copper, monotone, certified floors, free gradients | convex first; floors give τ, warm starts, stop rules | Tellegen attribution (χ = 0.89–1.00 here); avoidable share |
 | A′ self, raised by copper | C of a dv/dt node | concave, monotone | shrink to mandatory copper | attribution |
-| B interaction | M, C_m, transfer Z, one load's drop, a sense loop's reading, one part's ΔT, CM share | bilinear, sign-indefinite (χ = 0.34–0.48 here, 0.08 in CD) | one lead field per budget prices every aggressor site; continued after A; additions screened for Braess | exact counterfactuals whenever χ < 0.5 |
-| C non-variational | EMI mask (max over f), PDN \|Z\| near an anti-resonance, eye, thresholds | stationary, not minimal | binding frequencies; modal terms (Q, peak) where r ≥ 1 | per binding frequency and mode |
-| D damage | J_max, E_max, I²t, fatigue, electromigration, life | local high-p norms, corner-singular as r^(π/α−1) | smoothed p-norm constraints, regime-gated (t < w²/α; HV) | hotspots with locations |
+| B interaction | M, C_m, transfer Z, a sense loop's reading, one part's ΔT, CM share | bilinear, sign-indefinite (χ = 0.34–0.48 here, 0.08 in CD) | one lead field per budget prices every aggressor site; after A; Braess screen on additions | exact counterfactuals when χ < 0.5 |
+| C non-variational | EMI mask, PDN \|Z\| near anti-resonance, eye, thresholds | stationary, not minimal | binding frequencies; modal terms where r ≥ 1 | per binding frequency and mode |
+| D damage | J_max, E_max, I²t, fatigue, life | local high-p norms; corners r^(π/α−1) | smoothed p-norms, regime-gated (t < w²/α; HV) | hotspots with locations |
 | L legal and fab | creepage, clearance, width, space, keep-outs | hard sets | projection inside the loop (K7), never a penalty | pass or fail with its multiplier |
 
 The class belongs to a (budget, band) pair: at 300 MHz no added decap raised |Z_AA| (0/150 sites), at 1 GHz all did [C]. K6 assigns it: class A needs one dominant energy in the band. Any class may carry a chance constraint P(pass) ≥ 1 − α ([IN13](../../ideas/physics-first/lens-in.md)).
@@ -135,9 +129,9 @@ On one core, factorization scales as n^1.25 and solves as n^1.17 between 2.4k an
 | Sheet factor / solve | 6 ms / 0.2 ms at 2.4k cells; 0.8–1.2 s / 20–41 ms at 153k [C] |
 | Exact rank-32 quote | 8 ms–1.4 s direct; 0.19–0.23 ms inside a hot window whose 1,600-node Green block costs 5–6 s per epoch at 38k cells (agreement 4×10⁻¹⁵) [C] |
 | Thevenin addition quote | 0.2–53 ms [C] |
-| Leverage sketch, 24–48 solves | 0.01–1.4 s, median error 12% [C]; 96 solves found all 44 series pieces [cd] |
+| Leverage sketch, 24–48 solves | 0.01–1.4 s, median error 12% [C] |
 | Full model, 4-layer 60 × 40 mm at 0.1 mm (about 1M cells), 5 bands, 20 sources | 5–15 CPU-min: 20 factorizations of 10–25 s, 100 solves of 0.2–0.4 s, PEEC windows [I] |
-| Exact passports | lazy; binding-budget footprints (a few hundred pieces) in minutes; a hot window at 1M cells costs 5–10 core-min to cache [I] |
+| Exact passports | lazy: binding footprints in minutes; caching a hot window at 1M cells, 5–10 core-min [I] |
 | Inner loop | about 4,000 exact quotes per core-second inside hot windows [I, from C] |
 | GPU | batched right-hand sides, F1 and surrogates at 10⁶–10⁸ per s, full-wave finalists [I; [solver-ladder](solver-ladder.md)] |
 
@@ -147,9 +141,9 @@ On one core, factorization scales as n^1.25 and solves as n^1.17 between 2.4k an
 |---|---|---|
 | 1 | Data model, K1, K2 (DC, thermal), K4 | identities agree with re-factorization to ≤ 10⁻¹⁰ on 1,000 random edits (the skeleton: 2×10⁻¹²); DC bounds never fail; λ = 1 exactly at K1 disconnects |
 | 2 | Critics on the core; mutation benchmark | 31/31 planted faults found and 0/7 benign twins flagged, as [pc_refplane](physics-critics.md) did; each mutant changes a job verb at its site (CD16) |
-| 3 | K2 complex, K6 | f_p within 2% of ls_post_lattice; Q = h/δ; the dispatcher flags every wrong-sign first-order quote in 1,000 random PDN edits |
+| 3 | K2 complex, K6 | f_p within 2% of ls_post_lattice; Q = h/δ; r flags every wrong-sign first-order quote in 1,000 PDN edits |
 | 4 | K3 | within 3.5% of ls_thin_sheet and 1.3% of PEECN/FastHenry; cd_conductor_passport reproduced to 10⁻⁹ |
-| 5 | K5, K7, K8 | vp_floors' 1.527 and 1.761 mΩ reproduced; legalization keeps connectivity; in_emi_voi's ranking reproduced |
+| 5 | K5, K7, K8 | vp_floors and in_emi_voi reproduced; legalization keeps connectivity |
 | 6 | One real board | an open 4-layer bench board: DC and thermal passports for every piece, two HF windows, within budget; an engineer reviews 20 why_here answers |
 | 7 | Optimizer | inner-loop quotes beat the equal-CPU sequential portfolio on the JPR boards (JPR46) |
 

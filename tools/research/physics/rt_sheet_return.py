@@ -24,7 +24,7 @@ Sections (python rt_sheet_return.py [contain|mirror|carson|finite|q|all]):
            microstrip (Wheeler incremental-inductance rule): where copper alone gives Q <= 1-5
            (TH: "copper can never be it").
 
-Run: OMP_NUM_THREADS=1 python tools/research/physics/rt_sheet_return.py   (about 1 minute)
+Run: OMP_NUM_THREADS=1 python tools/research/physics/rt_sheet_return.py   (about 10 s)
 """
 import math
 import sys

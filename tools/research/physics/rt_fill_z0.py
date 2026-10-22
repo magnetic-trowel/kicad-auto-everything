@@ -10,7 +10,7 @@ electrostatic solve (own code; cell-face permittivities; 20 cells per h; grounde
 for t/h = 0.05, 0.175 and 0.35, w/h = 1.9 and 2.0, fill gap g/h = 0.5, 1, 2, 3, 5.
 Z0 = 1 / (c sqrt(C C_air)). No solder mask.
 
-Run: OMP_NUM_THREADS=1 python tools/research/physics/rt_fill_z0.py   (about 1 minute)
+Run: OMP_NUM_THREADS=1 python tools/research/physics/rt_fill_z0.py   (about 3-4 minutes; 72 sparse solves)
 """
 import math
 
