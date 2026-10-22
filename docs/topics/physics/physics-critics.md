@@ -116,7 +116,7 @@ A layer-type-hygiene adapter variant (idea PC44) would measure the first effect.
 | Board (4-layer) | Findings | Matters? |
 |---|---|---|
 | justbuchanan/oasis (GND / +18 V inner planes) | USB D± change reference GND → power at both F→B vias; nearest bridging cap 5.9–16 mm, est. +2.9–3.4 nH. In1 GND plane: 0.33 mm of foreign track, longest slot 7.6 mm | Probably not, if USB is full-speed: about 9 mA/ns × 3 nH ≈ 26 mV of bounce [I] |
-| brenocq/BLDCM-Power (3.3 V / GND inner) | Every USB, CAN and SWD layer change switches reference 3.3 V → GND (+2.4–2.9 nH est.). VBUS: 6/6 pads off-pour with 43 mm of < 0.4 mm track | Needs the rail current: VBUS on thin traces matters only if it carries amps |
+| brenocq/BLDCM-Power (3.3 V / GND inner) | Every USB, CAN and SWD layer change switches reference 3.3 V → GND (+2.4–2.9 nH est.). VBUS: 6/6 pads off-pour with 43 mm of < 0.4 mm track. Power stage: exposed pad without vias, an island ground under the input caps, one connector via carrying 52% of that connector's ground current ([real-board-passports](real-board-passports.md)) | Needs the rail current: VBUS on thin traces matters only if it carries amps |
 | caffeinated-labs/AFTONSPARV (ESP32) | USB D+ and D− only 46% and 30% over the near reference; 4 small voids near the connector (0.07–0.36 nH each) | Low at USB FS edge rates |
 | m1geo/Pi5_PCIe | PCIe TX/RX/CLK: zero voids, RPQF 1.01–1.09. Sidebands (WAKE#, SMCLK, SMDAT, CLKREQ#, PRSNT2#): 11 void crossings; In2 GND plane has 48 mm of foreign track and a 45 mm slot (half-wave ≈ 2.0 GHz) | No: the designer kept the fast pairs clean and put slow nets over the voids |
 
