@@ -118,3 +118,15 @@ def test_rescore_rescores_saved_outputs(tasks):
     assert json.loads((run_dir / "run.json").read_text())["rescored"][0]["attempts"] == 2
     runner.rescore(run_dir)  # already current: nothing is rescored again
     assert all(len(r["rescored"]) == 1 for r in report.load_rows(run_dir))
+
+
+@needs_kicad
+def test_command_probe_routes_the_rebuilt_placement(tasks):
+    """An external router can score placements (--probe NAME --probe-command TEMPLATE); it runs
+    sandboxed as a route method. This one returns the placement unrouted."""
+    root, _ = tasks
+    probe = adapters.Command("cp {input} {output}", name="copy-probe", kinds=("route",))
+    row = _run(root, adapters.Reference(), kinds=("place",), name="ref-cmd-probe", probe=probe)[0]
+    p = row["probe"]
+    assert p["router"] == "copy-probe" and p["status"] == "ok", p
+    assert p["adapter_meta"]["sandboxed"] and p["score"]["valid"] and not p["score"]["clean"], p
