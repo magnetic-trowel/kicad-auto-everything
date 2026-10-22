@@ -57,7 +57,11 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         res = None
         row["status"] = "adapter_error"
         row["error"] = f"{type(e).__name__}: {e}"
-        (adir / "adapter.log").write_text(traceback.format_exc())
+        meta = getattr(e, "adapter_meta", None)  # what an adapter got done before it failed
+        if meta:
+            row["adapter_meta"] = meta
+            _keep_artifacts(meta, adir / "artifacts")
+        (adir / "adapter.log").write_text(getattr(e, "adapter_log", "") + traceback.format_exc())
     row["runtime_s"] = round(time.monotonic() - t0, 3)
     row["method_usage"] = tools.usage_take()  # CPU and peak RSS of every process the method ran
     if row["runtime_s"] > timeout * 1.05:
