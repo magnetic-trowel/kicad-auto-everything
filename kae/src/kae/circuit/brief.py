@@ -127,7 +127,7 @@ def _structure_roles(st: dict) -> dict:
                 put(f, 'sense_filter', v['id'])
     for d in st['decaps']:
         for cpr in d.get('hf_caps') or []:
-            put(cpr, 'decoupling' if d['function'] in ('load', 'bypass') else d['function'] + '_cap', d['id'])
+            put(cpr, 'decoupling' if d['function'] in ('load', 'bypass', 'split_supply') else d['function'] + '_cap', d['id'])
         for cpr in d.get('bulk_caps') or []:
             put(cpr, 'bulk' if d['function'] in ('load', 'bypass') else d['function'] + '_cap', d['id'])
     for c in st['chains']:

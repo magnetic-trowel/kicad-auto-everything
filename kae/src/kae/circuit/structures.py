@@ -928,11 +928,12 @@ def decaps(b: _B, groups) -> list:
     for g in groups:
         by_rail[g['rail']].append(g)
     split_ok = {(g['ref'], r) for g in groups if g['function'] == 'split_supply' and g.get('caps') for r in g['rail']}
-    for rail, gs in by_rail.items():
-        split = isinstance(rail, tuple)
+    for key, gs in by_rail.items():
+        split = isinstance(key, tuple)
         n_pins = sum(len(g['pins']) for g in gs)
-        ncap = len(b.caps_between(*rail) if split else b.caps_on(rail))
+        ncap = len(b.caps_between(*key) if split else b.caps_on(key))
         for g in sorted(gs, key=lambda g: (_refkey(g['ref']), g['function'])):
+            rail = key[0] if split else key
             mine = g.get('caps') or []
             if not mine:
                 if g['function'] == 'load' and (g['ref'], rail) not in split_ok:
@@ -941,7 +942,7 @@ def decaps(b: _B, groups) -> list:
             ref = g['ref']
             ng = g.get('shared_by', len(gs))
             if split:
-                rail, gnd = rail
+                gnd = key[1]
                 gpins = sorted(g['return_pins'], key=_natkey)
             else:
                 gnd = _decap_ground(b, ref, rail)

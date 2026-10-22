@@ -170,29 +170,34 @@ def build(jit):
             py[k] = y
             sx += x
             sy += y
+        # reference-plane height per board side at the loop centroid; segments on opposite
+        # sides of a stack with planes seen from both sides are shielded from each other
         side = GS[ti[0]]
-        H = Hf if side > 0 else Hb
-        N = Nf if side > 0 else Nb
-        idx = lookup(H, rx0, ry0, rres, sx / n, sy / n)
-        h = INF if idx < 0 else H.flat[idx]
+        idx = lookup(Hf, rx0, ry0, rres, sx / n, sy / n)
+        hF = INF if idx < 0 else Hf.flat[idx]
+        hB = INF if idx < 0 else Hb.flat[idx]
+        h = hF if side > 0 else hB
+        shield = hF != INF and hB != INF
         A = 0.0
         B = 0.0
         for k in range(n):
+            sk = GS[ti[k]]
+            hk = hF if sk > 0 else hB
             if isbody[k]:
                 z = zb[k]
                 r = 0.2235 * (w[k] + TCU)
-                A += ties(z, r, bodyd[k], h)
-                hs[k] = INF if h == INF else h + z
+                A += ties(z, r, bodyd[k], hk)
+                hs[k] = INF if hk == INF else hk + z
                 A += strip_self(bodyd[k], w[k], hs[k])
             else:
-                hs[k] = h
+                hs[k] = hk
         # board hops (optionally stretched about their midpoints)
         for k in range(n):
             if isbody[k]:
                 continue
             k1 = k + 1 if k + 1 < n else 0
             ln = math.hypot(px[k1] - px[k], py[k1] - py[k]) * detour
-            sk = strip_self(ln, w[k], h)
+            sk = strip_self(ln, w[k], hs[k])
             if k == gnd:
                 B = sk
             else:
@@ -224,6 +229,8 @@ def build(jit):
                     cy = my + (cy - my) * detour
                     dx = mx + (dx - mx) * detour
                     dy = my + (dy - my) * detour
+                if shield and GS[ti[j]] != GS[ti[k]]:
+                    continue
                 dmin = 0.2235 * (min(w[j], w[k]) + TCU)
                 adj = (k == j + 1 or (j == 0 and k == n - 1)) and hs[j] == hs[k]
                 if k == j + 1 or not adj:
@@ -253,9 +260,11 @@ def build(jit):
         if gnd < 0:
             return A
         lateral = A + B + 2.0 * MAB
+        h = hs[gnd]
         if h == INF:
             return lateral
         g1 = gnd + 1 if gnd + 1 < n else 0
+        N = Nf if GS[ti[gnd]] > 0 else Nb
         gx = 0.5 * (px[gnd] + px[g1])
         gy = 0.5 * (py[gnd] + py[g1])
         gi = lookup(N, rx0, ry0, rres, gx, gy)

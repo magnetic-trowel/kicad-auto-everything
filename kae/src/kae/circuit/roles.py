@@ -590,9 +590,11 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     fns = {p.fn for p in part.pins}
     types = Counter(p.ptype for p in part.pins if p.ptype)
     if part.npads == 0:
+        # no pads, no electrical function: a logo, a panel cut-out drawing, a board outline
         add('graphic', 2.5, ev('count', 'no pads', 2.5))
-        for k in ('capacitor', 'resistor', 'ic', 'connector', 'diode', 'transistor'):
-            sc[k] -= 3.0
+        for k in list(sc):
+            if k not in ('graphic', 'mechanical', 'mounting_hole', 'fiducial', 'heatsink'):
+                sc[k] -= 3.0
     if part.npads == 1:
         for k in ('test_point', 'mounting_hole', 'fiducial', 'connector', 'antenna', 'heatsink'):
             add(k, 0.5, ev('count', 'one pad', 0.5))
@@ -604,6 +606,10 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
             add('fiducial', 0.8, ev('footprint', 'one SMD pad with no net', 0.8))
     if all(p.pad_kind == 'np_thru_hole' for p in part.pins) and part.pins:
         add('mounting_hole', 1.5, ev('footprint', 'only non-plated holes', 1.5))
+        # unplated holes carry no current: a panel cut-out or a tooling hole, whatever the footprint is named
+        for k in list(sc):
+            if k not in ('graphic', 'mechanical', 'mounting_hole', 'fiducial', 'heatsink'):
+                sc[k] -= 3.0
     if fns and fns <= {'G', 'D', 'S', '1', '2', '3', '4', '5', '6', '7', '8', 'TAB', 'EP'} and {'G', 'D', 'S'} <= fns:
         add('transistor', 3.0, ev('pinfunction', 'pins named G, D, S', 3.0))
         sub.setdefault('transistor', ('mosfet', 1.0))
@@ -1116,10 +1122,15 @@ def _rail_sources(nl: Netlist, roles: Roles):
             series[a].append((ref, b, k))
             series[b].append((ref, a, k))
         elif k == 'diode' and pr.subtype not in ('tvs', 'esd_array', 'zener'):
+            # supply flows anode -> cathode on a positive rail; on a negative rail the cathode side is the source
+            neg = any((V.net_voltage(n) or (1.0,))[0] < 0 or nl.nets[n].short.startswith('-') for n in (a, b))
             for x, y in ((a, b), (b, a)):
                 for p in part.pins_on(x):
                     if p.fn in ('K', 'CATHODE') or (p.number == '1' and not p.fn.isalpha()) or p.fn == '1':
-                        series[x].append((ref, y, 'diode'))
+                        if neg:
+                            series[y].append((ref, x, 'diode'))
+                        else:
+                            series[x].append((ref, y, 'diode'))
     for net, nr in roles.rails.items():
         pins = nl.nets[net].pins
         src = None
@@ -1171,7 +1182,7 @@ def _rail_sources(nl: Netlist, roles: Roles):
             if src.get('kind') == 'derived' and up in roles.rails:
                 ub = roles.rails[up].attrs.get('volts') or {}
                 if ub.get('value') is not None:
-                    v = ub['value'] - (0.4 if src.get('via') == 'diode' else 0.0)
+                    v = ub['value'] - (0.4 if src.get('via') == 'diode' else 0.0) * (1 if ub['value'] >= 0 else -1)
                     nr.attrs['volts'] = belief(round(v, 3), 'V', f"inherited from '{nl.nets[up].short}' through {src['ref']} ({src['via']})",
                                                round(v * 0.9, 3), round(ub['interval'][1] if ub.get('interval') else v * 1.05, 3),
                                                lineage=[ub.get('relative_to', '')])
@@ -1372,7 +1383,8 @@ def _pairs(nl: Netlist, roles: Roles):
             pfb = {p.fn for p in pb.pins}
             if any(re.search(r'[+PN-]$|D[PMN]$', f) for f in pfa) and any(re.search(r'[+PN-]$|D[PMN]$', f) for f in pfb):
                 evs.append(ev('pinfunction', 'complementary pin functions on the pair', WEAK))
-            if any(roles.parts[r].kind in ('resistor', 'led', 'diode') and len(nl.parts[r].nets) == 2 and {n, m} <= nl.parts[r].nets for r in common):
+            if any((roles.parts[r].kind in ('resistor', 'led', 'diode') and len(nl.parts[r].nets) == 2 or roles.parts[r].kind == 'optocoupler')
+                   and {n, m} <= nl.parts[r].nets for r in common):
                 if not any(roles.parts[r].kind == 'resistor' and 80 <= (V.resistance(nl.parts[r].value) or 0) <= 150 for r in common):
                     evs.append(ev('topology', 'a two-pin part spans the pair (LED or load, not a pair)', -1.5))
             iface, speed = name_iface(pa.short)
