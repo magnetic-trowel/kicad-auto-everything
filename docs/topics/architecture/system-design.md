@@ -38,7 +38,7 @@ The system takes a schematic and fixed constraints: outline, holes, connectors, 
 | `kae.circuit` | netlist import, MNA adjoints, ngspice and Xyce drivers, net passports, budget allocation |
 | `kae.physics` | pieces, world conductors, kernels K1–K8, the `PhysicsCore` facade ([API](../physics/physics-core-v2-api.md)) |
 | `kae.critics` | board physics model views, critic registry, scorecard, mutation operators |
-| `kae.engines` | Freerouting, KiCad PNS (PCBWorld-Engine), KRT, CP-SAT, openEMS, Palace, FasterCap |
+| `kae.engines` | adapters: Freerouting, PNS, KRT, CP-SAT, openEMS, Palace, FasterCap |
 | `kae.optimize` | joint state (P, T, C), seeders, legalizer, realizers, copper synthesis, search loops |
 | `kae.agent` | deterministic orchestrator, LLM contracts, brief builder, VOI questions, explanation renderer |
 | `kae.mcp`, `plugin/` | MCP server; KiCad IPC plugin with a local web view |
@@ -80,7 +80,7 @@ Required and observed live apart, so critics diff them and no computed number en
 5. For each binding finding, `physics` quotes candidate edits exactly (via sites, decap vias, plane order, bridges, tap moves, pour reshaping); `kicad-cli` checks each on a scratch copy first.
 6. `agent` explains; on approval, `board` applies the change at `expected_rev` as one undo step. The doctor re-runs; an observed change outside the quote's stated error becomes a finding.
 
-**(ii) Design from schematic and constraints.** The orchestrator is a deterministic state machine that calls the LLM at fixed points. Bounded menus beat free generation (92.5% vs 6.6% in DRC-Aid, [agent-loop-patterns](../llm/agent-loop-patterns.md)), and a deterministic loop can be replayed and bisected.
+**(ii) Design from schematic and constraints.** The orchestrator is a deterministic state machine that calls the LLM at fixed points. Bounded menus beat free generation (92.5% vs 6.6% in DRC-Aid, [agent-loop-patterns](../llm/agent-loop-patterns.md)), and a deterministic loop replays and bisects.
 
 | Step | Who works | Result (exactness) |
 |---|---|---|
@@ -100,7 +100,7 @@ Steps 5–8 follow three results [C]:
 - End-of-run legalization took one board's routed objective from 602.5 to 1163.5, so legality stays inside the loop.
 - Freerouting's log claimed "0 unrouted" where KiCad found 2 unconnected items, so the optimizer's own route state is never the score ([harness](../verification/harness.md)).
 
-**(iii) Interactive editing.** KiCad sends no change notifications and IPC cannot create persistent markers ([U1](../../ideas/original/workflow-ux.md)). So the plugin bridges selection to a side panel, and the session server polls item diffs, re-solves dirty regions by rank-k updates within the epoch, and refactors at topological events in the background. Selecting a piece answers `why_here`, a ghost drag `what_if`. "Why here, not there?" becomes a constraint and a re-solve, which answered 89.8% of user questions in a planning study ([explanations-and-alternatives](../ux/explanations-and-alternatives.md)). Until KiCad refills a zone, live physics uses its own provisional fill, tagged E3.
+**(iii) Interactive editing.** KiCad sends no change notifications and IPC cannot create persistent markers ([U1](../../ideas/original/workflow-ux.md)). So the plugin bridges selection to a side panel, and the session server polls item diffs, re-solves dirty regions by rank-k updates within the epoch, and refactors at topological events in the background. Selecting a piece answers `why_here`; a ghost drag, `what_if`. "Why here, not there?" becomes a constraint and a re-solve, which answered 89.8% of user questions in a planning study ([explanations-and-alternatives](../ux/explanations-and-alternatives.md)). Until KiCad refills a zone, live physics uses its own provisional fill, tagged E3.
 
 **Human approval points:** the brief (outputs, top budgets, world facts, contested choices); every ECO when τ < 1; every apply to the user's board; waivers; sign-off, with a residual-risk list of what was assumed or not checked.
 
@@ -140,7 +140,7 @@ It never writes coordinates, geometry, regimes, spend or classes. A renderer ins
 | Concern | Choice | Reason |
 |---|---|---|
 | Core | Python 3.11+, numpy, scipy (SuperLU; CHOLMOD for symmetric operators), Shapely 2, pyclipper | prototypes are numpy/scipy; 2-D factor and solve take ms to s ([solver-ladder](../physics/solver-ladder.md)) |
-| Hot loops | Rust via PyO3 from the joint-search milestone: grid router, SA moves, kinetic topology, morphology | a Python routed move costs ~25× an HPWL move; Rust gave ~10× in KRT ([performance-and-multifidelity](../solvers/performance-and-multifidelity.md)) |
+| Hot loops | Rust via PyO3 from the joint-search milestone: grid router, SA moves, kinetic topology, morphology | a Python routed move costs ~25× an HPWL move ([experiment](../physics/joint-place-route-experiment.md)); Rust gave ~10× in KRT ([performance-and-multifidelity](../solvers/performance-and-multifidelity.md)) |
 | GPU | JAX for placement kernels and batched F1/surrogates; Palace or openEMS for finalists | 2-D solves gain little on GPU |
 | Discrete solves | OR-Tools CP-SAT in windows | monolithic models fail beyond ~100 parts ([cp-sat-milp-smt](../solvers/cp-sat-milp-smt.md)) |
 | Circuits | ngspice batch; Xyce from source for harmonic balance | `.noise` is the adjoint ([schematic-to-physics](../physics/schematic-to-physics.md)) |
@@ -176,12 +176,12 @@ Research scripts are rewritten into packages with tests, not moved, so doc citat
 ## Conflicts and open questions
 
 - **Joint state vs staged spine.** [hybrid-architecture-options](hybrid-architecture-options.md) builds a staged pipeline first. This design keeps its substrate, orders work by τ inside joint refinement, and falls back to a portfolio plus refiner if joint search fails its kill test.
-- **Live physics on KiCad 10** relies on polled diffs and asynchronous refills; the provisional fill may disagree with KiCad's.
+- **Live physics on KiCad 10** relies on polled diffs and asynchronous refills; provisional fills may disagree with KiCad's.
 - **Piece ids under large edits** need an overlap matcher, or passport diffs misattribute.
 
 ## Sources
 
-- Research notes: [kicad_mcp_codebases.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/kicad_mcp_codebases.md), [llm_for_eda.md § 1, § 8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/llm_for_eda.md).
+- Research notes: [kicad_mcp_codebases.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/kicad_mcp_codebases.md), [llm_for_eda.md § 8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/llm_for_eda.md).
 - [bench/README](../../../bench/README.md), [CLAUDE.md](../../../CLAUDE.md), [`tools/research/physics/`](../../../tools/research/physics/).
 
 See also: [system-design-build-plan](system-design-build-plan.md) · [physics-engine-design](physics-engine-design.md) · [physics-core-v2](../physics/physics-core-v2.md) · [joint-place-route](../physics/joint-place-route.md) · [design-reasoning-architecture](../physics/design-reasoning-architecture.md) · [constraint-ir](constraint-ir.md)
