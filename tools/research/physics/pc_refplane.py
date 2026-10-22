@@ -24,12 +24,15 @@ through the plane, deleted return vias, swapped plane nets) plus benign controls
 and reports which critic fired at the planted site (mutation testing, idea V1).
 
 Net roles come from name regexes here; the real system takes them from the role
-model. All thresholds are defaults to be replaced by budgets. On a board with no
+model. With --roles FILE (written by suite_passports.py --roles-out), ground and power
+nets come from the inferred roles where those exist (regex otherwise), inferred switch
+nodes count as edge-critical, and every marker records its role source. All thresholds are defaults to be replaced by budgets. On a board with no
 reference fill at all, the VOID detour saturates at the 50 mm ray and RPQF-lite is
 meaningless. Results on four open boards: docs/topics/physics/physics-critics.md.
 
-Usage:  python3 -I pc_refplane.py BOARD.kicad_pcb [--json OUT] [--all-signals]
+Usage:  python3 -I pc_refplane.py BOARD.kicad_pcb [--json OUT] [--all-signals] [--roles ROLES.json]
                                   [--k 1.0] [--via-dmax 2.0] [--selftest] [--seed 1]
+Each critic runs in isolation: an exception is recorded under "errors" and the others still run.
 Needs:  shapely>=2, numpy, scipy.  Deterministic for a given --seed.
 """
 import argparse
@@ -38,6 +41,8 @@ import math
 import random
 import re
 import sys
+import time
+import traceback
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -112,8 +117,14 @@ def arc_points(s, m, e, n=8):
 
 
 class Board:
-    def __init__(self, path):
+    def __init__(self, path, roles=None):
         tree = parse(open(path, encoding='utf-8', errors='replace').read())
+        self.skipped = {}
+        self.roles = roles
+        self._rg = set(roles.get('ground', ())) if roles else set()
+        self._rp = set(roles.get('power', ())) if roles else set()
+        self._rs = set(roles.get('rejected_power', ())) | set(roles.get('switch_nodes', ())) if roles else set()
+        self._sw = set(roles.get('switch_nodes', ())) if roles else set()
         self.netname = {}
         for n in kids(tree, 'net'):
             if len(n) >= 3:
@@ -121,31 +132,59 @@ class Board:
         self._stack(tree)
         self.segments, self.vias, self.pads = [], [], []
         self.fills = {}  # (layer, net) -> geometry
+        if not self.cu:
+            raise ValueError('no copper layers in the layer table')
+
+        def guarded(kind, fn, node):
+            try:
+                fn(node)
+            except (TypeError, ValueError, IndexError, KeyError, AttributeError):
+                self.skipped[kind] = self.skipped.get(kind, 0) + 1
+        guarded_seg = lambda s: self._track(s, [xy(first(s, 'start')), xy(first(s, 'end'))])  # noqa: E731
+        guarded_arc = lambda a: self._track(a, arc_points(xy(first(a, 'start')), xy(first(a, 'mid')), xy(first(a, 'end'))))  # noqa: E731
         for s in kids(tree, 'segment'):
-            self._track(s, [xy(first(s, 'start')), xy(first(s, 'end'))])
+            guarded('segment', guarded_seg, s)
         for a in kids(tree, 'arc'):
-            self._track(a, arc_points(xy(first(a, 'start')), xy(first(a, 'mid')), xy(first(a, 'end'))))
-        for v in kids(tree, 'via'):
+            guarded('arc', guarded_arc, a)
+
+        def via(v):
             ly = first(v, 'layers')
             x, y = xy(first(v, 'at'))
-            self.vias.append(dict(x=x, y=y, size=float(first(v, 'size')[1]), net=self._net(v),
+            sz = first(v, 'size')
+            dr = first(v, 'drill')
+            size = float(sz[1]) if sz else (float(dr[1]) + 0.2 if dr else 0.6)
+            self.vias.append(dict(x=x, y=y, size=size, net=self._net(v),
                                   layers=self._span(ly[1], ly[2]) if ly and len(ly) >= 3 else list(self.cu),
                                   uuid=(first(v, 'uuid') or [None, None])[1]))
+        for v in kids(tree, 'via'):
+            guarded('via', via, v)
         for fp in kids(tree, 'footprint') + kids(tree, 'module'):
-            self._footprint(fp)
+            guarded('footprint', self._footprint, fp)
         for z in kids(tree, 'zone'):
             net = self._net(z) or (first(z, 'net_name') or [None, ''])[1]
             if not net or first(z, 'keepout'):
                 continue
+            zl = first(z, 'layer')
             for fpoly in kids(z, 'filled_polygon'):
-                layer = first(fpoly, 'layer')[1]
-                pts = [xy(p) for p in first(fpoly, 'pts') if isinstance(p, list) and p[0] == 'xy']
+                fl = first(fpoly, 'layer') or zl
+                pl = first(fpoly, 'pts')
+                if not fl or not pl:
+                    self.skipped['filled_polygon'] = self.skipped.get('filled_polygon', 0) + 1
+                    continue
+                layer = fl[1]
+                pts = [xy(p) for p in pl if isinstance(p, list) and p[0] == 'xy']
                 if len(pts) >= 3:
                     g = Polygon(pts).buffer(0)  # KiCad stores fractured (keyhole) polygons
                     key = (layer, net)
                     self.fills[key] = unary_union([self.fills[key], g]) if key in self.fills else g
         self.outline = self._outline(tree)
-        self.area = self.outline.area if self.outline is not None else unary_union(list(self.fills.values())).envelope.area
+        self.area = self.outline.area if self.outline is not None else 0.0
+        if self.area <= 0:   # no closed Edge.Cuts: the envelope of the copper
+            parts = list(self.fills.values()) + [p['shape'] for p in self.pads]
+            self.area = unary_union(parts).envelope.area if parts else 0.0
+            self.area_src = 'copper envelope'
+        else:
+            self.area_src = 'Edge.Cuts'
 
     # ---- helpers
     def _net(self, node):
@@ -197,6 +236,8 @@ class Board:
 
     def _track(self, node, pts):
         ly = first(node, 'layer') or [None] + [n for n in (first(node, 'layers') or [])[1:] if n.endswith('.Cu')]
+        if len(ly) < 2 or ly[1] not in self.z:
+            raise ValueError('track without a known copper layer')
         self.segments.append(dict(layer=ly[1], net=self._net(node),
                                   w=float(first(node, 'width')[1]), pts=pts,
                                   uuid=(first(node, 'uuid') or [None, None])[1]))
@@ -253,11 +294,30 @@ class Board:
     def role(self, net):
         if not net:
             return 'none'
+        if self.roles:
+            if net in self._rg:
+                return 'gnd'
+            if net in self._rp:
+                return 'power'
+            if net in self._rs:
+                return 'signal'
+        return self.regex_role(net)
+
+    @staticmethod
+    def regex_role(net):
+        if not net:
+            return 'none'
         if GND_RE.search(net):
             return 'gnd'
         if PWR_RE.search(net.split('/')[-1]):
             return 'power'
         return 'signal'
+
+    def role_src(self, net):
+        """'inferred' when the role came from the passport role inference, else 'regex'."""
+        if not net or not self.roles:
+            return 'regex'
+        return 'inferred' if net in self._rg or net in self._rp or net in self._rs else 'regex'
 
     def neighbors(self, layer):
         """Adjacent copper layers with dielectric distance h (mm) and eps_r."""

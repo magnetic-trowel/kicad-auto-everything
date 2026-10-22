@@ -310,20 +310,22 @@ class SBoard(rb.KBoard):
 # ============================================================================ role inference
 def is_cap(f):
     p = pfx(f['ref'])
-    return len(f['pads']) == 2 and ((p[:1] == 'C' and p not in ('CN', 'CON', 'CONN', 'CR', 'CJ'))
-                                    or re.search(r'(^|:)C_|Capacitor', f['lib'] or '') is not None)
+    return len(f['pads']) == 2 and (p == 'C' or re.search(r'(^|:)C_|Capacitor', f['lib'] or '') is not None
+                                    or (p[:1] == 'C' and p not in ('CN', 'CON', 'CONN', 'CR', 'CJ')
+                                        and parse_value(f['value'], 'F') is not None))
 
 
 def is_res(f):
     p = pfx(f['ref'])
-    return len(f['pads']) == 2 and ((p[:1] == 'R' and p not in ('RV', 'RT', 'RN', 'RLY', 'RL'))
-                                    or re.search(r'(^|:)R_|Resistor', f['lib'] or '') is not None)
+    return len(f['pads']) == 2 and (p == 'R' or re.search(r'(^|:)R_|Resistor', f['lib'] or '') is not None
+                                    or (p[:1] == 'R' and p not in ('RV', 'RT', 'RN', 'RLY', 'RL')
+                                        and rb.parse_ohms(f['value'] or '') is not None))
 
 
 def is_ind(f):
     p = pfx(f['ref'])
-    return len(f['pads']) == 2 and ((p[:1] == 'L' and p not in ('LED', 'LD', 'LS')) or p == 'FB'
-                                    or re.search(r'(^|:)L_|Inductor|Ferrite', f['lib'] or '') is not None)
+    return len(f['pads']) == 2 and (p in ('L', 'FB') or re.search(r'(^|:)L_|Inductor|Ferrite', f['lib'] or '') is not None
+                                    or (p[:1] == 'L' and p not in ('LED', 'LD', 'LS') and parse_value(f['value'], 'H') is not None))
 
 
 def diode_side(f, net):
