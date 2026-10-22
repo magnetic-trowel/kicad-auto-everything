@@ -7,7 +7,7 @@
 - **Several conflicts dissolve when two workstreams' results are combined.** "SW copper area: heat vs EMI" becomes "capacitance *to whom*". "Pours vs routing space" becomes "cut along streamlines, priced by the stream function". "Keep-out distance" becomes "multipole order after cancellation".
 - **Lessons transfer.** OP and JPR both found that post-hoc legalization destroys results, so hard constraints go inside the loop. Proxies fail on near-ties, which is where to escalate fidelity. Grid rank-1 updates, reservoir well models, robust topology-optimization filters and data assimilation each solve a named problem elsewhere.
 
-Ids refer to the [physics-first ideas](../../ideas/physics-first/README.md). [C] numbers are from the workstreams' scripts. This doc is synthesis [I] unless a number is tagged.
+**Round 2–3 status:** S1 holds only between topological events, S5 is corrected below, and the nine objects became the eight kernels of [physics-core-v2](physics-core-v2.md); see [foundations](foundations.md) and [red-team](red-team.md). Ids refer to the [physics-first ideas](../../ideas/physics-first/README.md). [C] numbers are from the workstreams' scripts. This doc is synthesis [I] unless a number is tagged.
 
 ## Key facts
 
@@ -44,7 +44,6 @@ The consequence for building: one physics core with these nine kernels. Every cr
 | Physics kernels replace HPWL and density | XD112, OP23, OP24, TM2, FE3, FE11 | A placer objective of FFT convolutions with real kernels |
 | Rules as warm starts and move generators | RG41–RG43, JPR7, JPR10, OP19 | Human practice seeds the search; physics judges |
 | Frequency planning | FE13, FE50, DR36, PW31, OP16, PC12 | Spectral coincidence (source × structure × victim) is one check (S8) |
-| Fields for humans, sensitivities for the LLM | LA24 and FE9 (field tiles) vs SIM44 (sensitivities, not fields) | Not a conflict but two audiences: humans build intuition from fields, the LLM decides from priced sensitivities |
 
 ### 3. Synergies: combinations worth more than their parts
 
@@ -53,7 +52,7 @@ The consequence for building: one physics core with these nine kernels. Every cr
 2. The passive macromodels (SIM33, LA22, XD28) connect that partial element to the PEEC graph.
 3. The field adjoint (OP38, OP40, PW39) gives ∂parasitic/∂geometry.
 
-The product is ∂(layout invisibility index)/∂(every copper cell, via and pad pose), for two extra solves. That gives the budget ledger (I1) gradients rather than only totals. The joint optimizer can then descend directly on "how much does this layout change the circuit". Check it the way DR3 was checked (adjoint vs direct AC to 6e-13 [C]), on one buck plus ADC board.
+The product is ∂(layout invisibility index)/∂(every copper cell, via and pad pose), for two extra solves, within one topology and one linearization. Vias, cuts and new connections are topological events priced by exact rank-k updates, and switching or sampled circuits need a periodic adjoint ([lens-ct](lens-ct.md), [lens-cd](lens-cd.md), [lens-sy](lens-sy.md)). Check it against direct AC (DR3 matched to 6e-13 [C]) on one buck plus ADC board.
 
 **S2. Pours and routes trade through ψ.** Copper-shape synthesis, the router and the critics each met the same conflict: signals need channels through power pours.
 - XD2 and SIM25 price any cut as ΔR ≈ (π/4)·R_s·(Δψ/I)². A cut along a streamline is nearly free, while across one it costs ~90× more [C].
@@ -77,7 +76,7 @@ The coupling of every aggressor–victim pair is then an inner product, a lookup
 
 Together: spread switch-node heat into the node's *own return plane* and bond external metal to quiet nodes. The EMI budget then counts only the capacitance that leaves the cell. At low voltage the conflict largely disappears; at 400 V the ½CV²f term binds. That replaces "never heatsink through SW copper" with a computed trade.
 
-**S5. Cancel first, then the keep-out shrinks.** The cancellation primitives come from several places: LA35 the `cancel` operator, XD11 figure-8 loops, PW36 opposite-current via pairs, PW51 interdigitated fingers, XD76 gradiometric sense traces and XD15 the orthogonal gate loop. Each raises the aggressor's multipole order. XD68 shows that the order sets how fast coupling decays: a dipole falls as 1/r³, a quadrupole as 1/r⁴. So the halo radius from LA25 and RG53 shrinks after cancellation, and the joint optimizer can pack parts tighter. The chain runs cancel → multipole order → halo → density → shorter loops. It links PW, XD, LA, RG and JPR.
+**S5. Cancellation aims nulls (corrected).** The cancellation primitives come from several places: LA35 the `cancel` operator, XD11 figure-8 loops, PW36 opposite-current via pairs, PW51 interdigitated fingers, XD76 gradiometric sense traces and XD15 the orthogonal gate loop. Each raises the aggressor's multipole order. XD68 shows that the order sets how fast coupling decays: a dipole falls as 1/r³, a quadrupole as 1/r⁴. **Corrected in round 2:** over a plane, mirrored halves shrink the halo radius by only ~2%; what cancellation buys is a null plane and a quieter far field (−22 dB at 100 mm), capped near 20·log ε by imbalance ε ([lens-sy](lens-sy.md)). Use cancellation to aim nulls at victims, not to pack parts tighter.
 
 **S6. The cell as one unit for four jobs.**
 - **Hierarchy:** DR22's cells, closed by HF current, become JPR's macros. JPR20 solves inside a cell exactly, and JPR16 handles the multigrid across cells.
@@ -154,7 +153,7 @@ Combined: choose L, C_snub, plane shape, stitching pitch and clock frequencies t
 - S1 assumes the circuit is linearizable around its operating point. WS8 showed linear budgets fail for a slow 48 V bridge, so the chain needs trust-region re-linearization (DR11) or transient adjoints there.
 - S2's Δψ² law holds for spread sheet current; a narrow return under a trace is a different regime (ℓ·ln ℓ) ([cross-domain-lessons](cross-domain-lessons.md)).
 - S10's market may not converge on non-convex problems, and duals are local. Every price needs a "valid within" margin ([physics-in-the-loop-optimization](physics-in-the-loop-optimization.md)).
-- The convergence counts are our reading of the idea files [I]; some "independent" findings shared the shared brief's framing.
+- Convergence counts are our reading [I]; some findings shared the brief's framing.
 
 ## Sources
 

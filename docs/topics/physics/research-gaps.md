@@ -1,15 +1,27 @@
 # Research gaps, convergent findings and limits of the physics-first thesis
 
 **TL;DR**
-- **Ten results were found independently by two to five workstreams.** That is the strongest signal this pass produced. Two stand out: one regime boundary, f_x = R_s/(2π·μ0·h), and one equation, the screened Laplace equation, keep reappearing. The value of a decision is also front-loaded: stackup, topology and part choice beat geometry tweaks by 10–40 dB or several times. And every coordination signal we invented (congestion history, adjoint sensitivity, budget share, constraint price tag) is a Lagrange multiplier of one problem.
+- **Ten results were found independently by two to five workstreams.** That is the strongest signal this pass produced. Two stand out: one regime boundary, f_x = R_s/(2π·μ0·h), and one equation, the screened Laplace equation, keep reappearing. The value of a decision is also front-loaded: stackup, topology and part choice beat geometry tweaks, in one EMI case 24 dB (removing a slot) against 3 dB (slower edges). And every coordination signal we invented (congestion history, adjoint sensitivity, budget share, constraint price tag) is a Lagrange multiplier of one problem.
 - **The largest gap is ground truth.** Every [C] number is model against model. The workstreams already disagree in places: bridging cap 1.2–3 nH vs Ott's 5–10 nH, slot inductance vs Ott's data, heatsink 22 vs 26 pF. No open dataset ties a layout to measured physics.
-- **The hardest physics regime is where most converters switch.** For 4-layer boards with 0.1–0.2 mm prepreg, f_x is 0.3–1.2 MHz [C]. A 300 kHz–2 MHz buck's fundamental and low harmonics return through a resistive-inductive mix that neither image-plane PEEC nor DC Laplace models.
+- **The R–L transition was first flagged as the hardest regime; rounds 2–3 re-scoped it.** It is a length band, not a frequency: half the return lies within ℓ_m/2 = R_s/(2π·μ0·f) of the trace. Converter fundamentals above ~300 kHz return within a few mm on 1 oz, and intact planes now have closed forms (complex images, [lens-ls](lens-ls.md)). What stays open is slotted, perforated and finite planes, and DC to tens of kHz near precision analog.
 - **Whole physics areas are thin.** Immunity and ESD, nonlinear transients, the system around the board (enclosure, cables, heatsink, mounting), environment and mission profile, lifetime reliability, and platform noise into radios all need more work.
-- **The thesis has limits.** Sometimes the board should *be* a component, not be invisible. The schematic is not fixed. "Near-optimal" needs lower bounds we do not have. A second research wave is proposed at the end.
+- **The thesis has limits.** Sometimes the board should *be* a component, not be invisible. The schematic is not fixed. "Near-optimal" is provable only for self terms (certified floors, [lens-vp](lens-vp.md)). A second research wave is proposed at the end; §0 says what rounds 2–3 already closed.
 
 Tags: [P] primary, [S] secondary, [I] inference, [C] computed (scripts named). This doc synthesizes the "Conflicts and open questions" sections of all physics-first docs; it adds two calculations (f_x table, altitude cooling) and no new literature search.
 
 ## Key facts
+
+### 0. Status after rounds 2 and 3
+
+| Gap | Status | Where |
+|---|---|---|
+| 1 Ground truth | Still open. Replaced "one coupon per quantity" with a VOI-ranked program and a pre-registered first board | [validation-program](validation-program.md), [lens-in](lens-in.md) |
+| 2 R–L transition | Re-scoped; closed forms for intact planes | [lens-ls](lens-ls.md), [lens-vp](lens-vp.md) |
+| 3 Floors | Certified for self terms; open for couplings | [lens-vp](lens-vp.md) |
+| 5 Infrastructure | Core designed (8 kernels, API, skeleton) | [physics-core-v2](physics-core-v2.md) |
+| 6 Immunity | World node and designed damping added; nonlinear victims still open | [lens-ct](lens-ct.md), [lens-th](lens-th.md) |
+| 20 Consistency | 76 corrections from an independent re-derivation | [red-team](red-team.md) |
+
 
 ### 1. Convergent findings inside this work
 
@@ -21,7 +33,7 @@ When separate workstreams, given different briefs, derive the same result, the r
 | **One equation, the screened Laplace equation on sheets, with a length scale.** | IR drop and pour L (OP1); heat fin length ([thermal-physics](thermal-physics.md)); decap reach and via transfer length ([cross-domain-lessons](cross-domain-lessons.md)); plane spreading L ([pdn-and-commutation](pdn-and-commutation.md)) | One solver core. "Close" means "within λ". | Coupled electro-thermal solves; anisotropic and multi-layer coupling |
 | **Loop area is the wrong proxy near a plane.** | Quadrupole loops ([vocabulary](vocabulary.md)); MS2 vs area ([solver-ladder](solver-ladder.md)); height × squares ([pdn-and-commutation](pdn-and-commutation.md)); perimeter ([physics-in-the-loop-optimization](physics-in-the-loop-optimization.md)) | Retire area tiers wherever there is a plane | The right proxy for 2-layer boards, slotted planes and frequencies below f_x |
 | **Three PEEC solvers were written separately.** | `sl_`, `pw_`, `fe_` scripts | PEEC is the natural engine, and no open board-level PEEC exists | One maintained core (SIM46); a KiCad → physics-graph exporter |
-| **Decisions made early matter most.** | EMI: topology 20–40 dB vs tweaks 3 dB ([fields-emi-budget](fields-emi-budget.md)). Stackup and edge rates beat geometry ([worked-thought-experiments](worked-thought-experiments.md)). Copper area beats copper shape ([copper-shape-synthesis](copper-shape-synthesis.md)). Late co-optimization gains ~2% ([joint-place-route](joint-place-route.md)). Only length lowers L, C and R together ([power-copper](power-copper.md)) | The most leverage is in decisions made before routing | Gap 5 |
+| **Decisions made early matter most.** | One EMI case: removing a slot 24 dB, a split 38 dB, slower edges 3 dB; co-located cables 6–48 dB by orientation (the often-quoted 40 dB was an assumed input) ([fields-emi-budget](fields-emi-budget.md), [red-team](red-team.md)). Stackup and edge rates beat geometry ([worked-thought-experiments](worked-thought-experiments.md)). Copper area beats copper shape ([copper-shape-synthesis](copper-shape-synthesis.md)). Late co-optimization gains ~2% ([joint-place-route](joint-place-route.md)). Only length lowers L, C and R together ([power-copper](power-copper.md)) | The most leverage is in decisions made before routing | Gap 5 |
 | **Everything is a price.** | PathFinder history costs; adjoint shadow prices (OP38); √(k·s) budget shares (DR9); constraint price tags (JPR34, I4); congestion prices as placement forces | One dual vector over budgets, routing resources and constraints. The LLM negotiates by reading duals | Duals of a non-convex problem hold only locally; explanations need a "valid within" margin |
 | **Ranking matters more than accuracy.** | Proxies judged by decision quality (SIM7); the EMI chain is ±10–20 dB in absolute terms but ranks fixes correctly; RUDY ranks at chance and HPWL fails on near-ties ([joint-place-route](joint-place-route.md)) | Calibrate estimators on pairwise decisions that actually occur in optimization | No such dataset exists |
 | **Return accounting is the central bookkeeping.** | Half-ports (LA1); return-path EMF (FE1); connectivity-qualified reference (PC9); current-free sense paths (XD72); ADC plane gradients ([worked-thought-experiments](worked-thought-experiments.md)) | One rule: no foreign current between the two points of any voltage that matters | Inferring return intent automatically (which pin returns which signal) |
@@ -38,13 +50,12 @@ Independent fields converged on the same structures, so physics, not convention,
 | **Periodic walls with a cut-off** | Waveguides below cut-off, Faraday cages, photonic crystals, EBG | Via fences, stitching lattices |
 | **Keep foreign current out of the measurement path** | Kelvin four-wire, audio star grounds, single-point aerospace grounds, guard rings | Sense ports, exclusion zones |
 | **Trees for steady flow, loops for fluctuating loads and damage tolerance** | Blood vessels, leaf veins, power grids | Traces for steady feeds, planes for decoupling |
-| **Matching and tapers** | Acoustics, optical anti-reflection, horns | RF matching, impedance tapers |
 | **Negotiated prices** | PathFinder, Wardrop traffic equilibrium, Lagrangian unit commitment, markets | Routing and placement prices |
 | **Topology optimization with fab filters** | Structures, photonics, heat sinks, fluidics | Copper pours |
 
 Two lessons follow [I]:
 - **Encode convergent structures as strong priors and as move generators**, not as rules to check.
-- **Divergence is the research map.** Where human PCB practice diverges (vendor values 5–25× apart, the contested-rule list in [myths-and-contested](../rules/myths-and-contested.md)), the physics is regime-dependent. That is exactly where computation beats rules. So the contested list is also the list of places a physics-first system should show its value first.
+- **Divergence is the research map.** Where human practice diverges (vendor values 5–25× apart, the contested rules in [myths-and-contested](../rules/myths-and-contested.md)), the physics is regime-dependent, which is where computation beats rules first.
 
 ### 3. Gaps, ranked by value and neglect
 
@@ -61,7 +72,7 @@ Two lessons follow [I]:
    - thermal spreaders with via arrays.
    
    Measure with VNA/TDR, a near-field probe, an LCR meter and an IR camera, and publish under CDLA. Mine vendor EVM reports with both layout and measurements. Effort M; hardware cost small [I].
-2. **The f_x transition regime.** Most DC-DC converters switch near f_x ([C], table below), so their fundamental and low harmonics spread under the board while their edges hug the loop. That plausibly explains the stubborn folklore about separating grounds near bucks and ADCs [I]. Image-plane PEEC underestimates L there and DC Laplace ignores L ([open-solvers](open-solvers.md)). Needed: a fast thin-sheet eddy-current (RL) solver with resistive planes, validated against meshed-plane PEEC, plus per-harmonic return maps of real converters.
+2. **The R–L transition band (re-scoped in rounds 2–3).** f_x (table below) marks where the band crosses ℓ = h, not a regime boundary. At 100 kHz about 18% of the return still flows beyond ±5 mm (h = 0.1 mm), but above ~300 kHz on 1 oz it returns within a few mm, and 4–6 complex images reproduce intact planes within 0.5–3.5% ([lens-ls](lens-ls.md), [red-team](red-team.md)) [C]. Still open: slotted, perforated and finite planes, and DC to tens of kHz near precision analog, where star grounds pay only below ~6 kHz at 10 mm on 1 oz ([derivation-audit](derivation-audit.md)).
 
    | Plane copper | f_x at h = 0.075 / 0.1 / 0.2 / 1.6 mm |
    |---|---|
@@ -69,7 +80,7 @@ Two lessons follow [I]:
    | 1 oz (35 µm) | 830 / 622 / 311 / 39 kHz |
    | 2 oz (70 µm) | 415 / 311 / 156 / 19 kHz |
 
-3. **Physical floors and lower bounds.** Least-slack ordering needs the achievable floor of each structure, and only N7 and N8 have one ([design-reasoning-architecture](design-reasoning-architecture.md)). "Near-optimal" needs an optimality gap. Relaxations can give bounds: copper allowed everywhere, an unlimited layer count, Lagrangian duals. Without bounds we cannot say how far from optimal a layout is, or when to stop.
+3. **Physical floors and lower bounds (partly closed in round 2).** Self terms (loss, loop L, thermal R) have certified floors from convex relaxation with dual certificates: round 1's synthesized pour sits within 1.6% of its floor on the 0.1 mm raster, and the floor moves 2–13% with the grid ([lens-vp](lens-vp.md), [red-team](red-team.md)). Still open: floors for couplings and EMI masks, a continuum (not raster) bound, and joint placement.
 4. **Front-loaded levers as variables.** The architecture still treats stackup, outline, connector edge, part and package, pinout, switching frequency and edge rate as inputs. The evidence says these levers dominate. Needed:
    - a lever catalog with physics leverage and cost per lever;
    - **stackup synthesis** with a fab cost model;
@@ -111,7 +122,7 @@ Two lessons follow [I]:
 - **Invisibility is not always the goal.** Sometimes the board should be part of the circuit: embedded or buried capacitance, planar inductors and transformers, PCB antennas, copper as a heat spreader, trace inductance as a filter element, fusible traces. A physics-first system should also *exploit* the board. That needs designed bodies with specs, which the vocabulary allows but no workstream developed [I].
 - **The schematic is not fixed.** The strongest levers were often circuit changes: edge rate, series R, heatsink bonding, frequency choice ([worked-thought-experiments](worked-thought-experiments.md)). The layout system must be allowed to propose ECOs, with costs, to the circuit designer.
 - **Worst-case budgets compound pessimism.** Summing worst cases across many structures over-constrains. Statistical budgets (RSS, chance constraints) need the calibration data from gap 1 to be defensible.
-- **"Near-optimal" is unprovable today** without the bounds of gap 3.
+- **"Near-optimal" is provable only for self terms on a fixed raster** (lens VP's floors). For continuous layouts it needs a refinement study; for couplings and joint placement it remains unprovable.
 - **Models from one author.** Critics and mutants, and estimators and the models that check them, were often written by the same workstream. Independent re-derivation (RG40) and real-escape seeding (V5) are needed before any physics score becomes a reward.
 
 ## Recommendations for our system
@@ -132,11 +143,11 @@ Keep the existing wave's first experiments ([report](../../../reports/Physics-fi
 ## Conflicts and open questions
 
 - The altitude cooling figures are a rough model: laminar natural convection scaled by ρ^0.5, radiation to local air temperature, no sun and no forced flow. Real boards in a closed enclosure at altitude need an FV run with measured h.
-- Ranking the gaps is a judgement call [I]. Tier 1 is ordered by how many other results each gap unblocks.
+- Gap ranking is a judgement call [I], ordered by how many results each gap unblocks.
 
 ## Sources
 
 - Every physics-first topic doc's "Conflicts and open questions" section (linked inline).
-- The f_x table and altitude estimate were computed inline for this doc with numpy (R_s = ρ_Cu/t, ρ_Cu = 1.72×10⁻⁸ Ω·m; ISA densities). They reproduce the f_x values in [vocabulary](vocabulary.md) and [copper-shape-synthesis](copper-shape-synthesis.md) [C].
+- The f_x table and altitude estimate were computed inline (R_s = ρ_Cu/t; ISA densities); f_x matches [vocabulary](vocabulary.md) [C].
 
 See also: [physics/README](README.md) · [ideas catalog](../../ideas/physics-first/README.md) · [myths-and-contested](../rules/myths-and-contested.md)
