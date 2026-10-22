@@ -66,6 +66,7 @@
 		(fp_rect (start -1 -1) (end 1 1) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd"))
 		(pad "1" smd circle (at 0 0) (size 1 1) (layers "F.Cu"))
 	)
+	(gr_line (start 102 118) (end 106 118) (stroke (width 0.2) (type solid)) (layer "B.Cu") (uuid "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"))
 	(gr_rect (start 100 100) (end 140 120) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") (uuid "33333333-3333-3333-3333-333333333331"))
 	(zone
 		(net 0)

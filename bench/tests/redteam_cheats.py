@@ -101,6 +101,8 @@ ROUTE = {
     "swap_net": lambda t: routed(first(t, '(net "N1")', '(net "N2")')),
     "add_layer": lambda t: add_items(first(t, '(0 "F.Cu" signal)', '(0 "F.Cu" signal)\n\t\t(4 "In1.Cu" signal)'),
                                      [segment((109.2, 105), (119.2, 105), "N1", layer="In1.Cu")]),
+    # a copper graphic given a net (KiCad does this itself when imported tracks touch one)
+    "graphic_net": lambda t: routed(first(t, '(layer "B.Cu")\n\t\t(uuid "aaaaaaaa', '(layer "B.Cu")\n\t\t(net "N1")\n\t\t(uuid "aaaaaaaa')),
     # one invented-net track touching N1's track, one floating
     "bogus_net": lambda t: add_items(routed(t), [segment((115, 106.5), (115, 107.5), "BOGUS"),
                                                  segment((101, 101), (105, 101), "BOGUS2")]),

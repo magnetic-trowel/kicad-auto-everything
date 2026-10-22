@@ -25,7 +25,7 @@ from pathlib import Path
 from . import tools
 from .boardfiles import board_path, install_rules
 
-SCORE_VERSION = 4
+SCORE_VERSION = 5
 
 # KiCad 10 DRC type keys that make a placement illegal (as named in its JSON report).
 PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
