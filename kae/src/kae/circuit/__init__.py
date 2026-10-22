@@ -13,6 +13,12 @@ docs/topics/physics/comprehension.md.
 Modules: values (parsers), evidence (the evidence model), netlist (the board view),
 roles (part and net roles), structures (physical structures), brief (assembly, JSON).
 """
-from .brief import build, write  # noqa: F401
-
 __all__ = ['build', 'write']
+
+
+def __getattr__(name):
+    # lazy, so `python -m kae.circuit.brief` does not import the module twice
+    if name in __all__:
+        from . import brief
+        return getattr(brief, name)
+    raise AttributeError(name)
