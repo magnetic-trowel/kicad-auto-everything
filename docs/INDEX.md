@@ -9,6 +9,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 
 - [Executive report](../reports/LLM%20driven%20PCB%20placement%20and%20routing.md): conclusions, recommended architecture, roadmap.
 - [Hybrid architecture options](topics/architecture/hybrid-architecture-options.md)
+- **Building it:** [one-month plan](topics/architecture/month-plan.md) (physics-first joint placement and routing), [system design](topics/architecture/system-design.md), [build plan](topics/architecture/system-design-build-plan.md), [physics engine design](topics/architecture/physics-engine-design.md).
 - [Original ideas](ideas/original/README.md): new ideas, top 10 to try first.
 - [Physics-first report](../reports/Physics-first%20PCB%20layout.md), [philosophy](topics/physics/README.md) and [foundations](topics/physics/foundations.md): circuits as Maxwell at zeroth order, rules derived from first principles, what each conductor is doing, joint place+route, validation.
 

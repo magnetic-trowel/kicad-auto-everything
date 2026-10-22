@@ -6,3 +6,4 @@ bench/.venv/
 kae-work/
 CLAUDE.local.md
 .claude/settings.local.json
+kae/.venv/
