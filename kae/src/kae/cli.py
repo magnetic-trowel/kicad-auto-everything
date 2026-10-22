@@ -3,6 +3,7 @@
 """kae command line.
 
     kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--workers W] [--writer auto|pcbnew|sexpr]
+                           [--edge-mate] [--report FILE]
     kae brief INPUT [--out FILE]
 
 `kae place` reads INPUT (.kicad_pcb with its project files beside it), places every unlocked
@@ -36,7 +37,7 @@ def cmd_place(a):
     board = load(a.input)
     _log(f"loaded {a.input}: {len(board.footprints)} footprints ({time.monotonic() - t0:.2f}s)")
     res = place(board, seed=a.seed, time_s=a.time, physics=not a.no_physics, workers=a.workers, log=_log,
-                anneal=not a.no_anneal)
+                anneal=not a.no_anneal, edge_mate=a.edge_mate)
     t1 = time.monotonic()
     wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
     if wrep is None:
@@ -46,7 +47,7 @@ def cmd_place(a):
     res.report["writer"] = wrep
     res.report["write_s"] = round(time.monotonic() - t1, 2)
     res.report["total_s"] = round(time.monotonic() - t0, 2)
-    legal = res.report.get("legal_grid") and not res.report.get("exact")
+    legal = res.report.get("legal_grid") and not res.report.get("exact") and not res.report.get("outline_incomplete")
     res.report["legal"] = bool(legal)
     text = json.dumps(res.report, default=str)
     print(text, flush=True)
@@ -84,6 +85,9 @@ def main(argv=None):
     sp.add_argument("--no-anneal", action="store_true", help="seed and legalize only")
     sp.add_argument("--workers", type=int, default=None, help="CP-SAT threads (default: KAE_WORKERS or cores/2)")
     sp.add_argument("--writer", default="auto", choices=("auto", "pcbnew", "sexpr"))
+    sp.add_argument("--edge-mate", action="store_true",
+                    help="place staged footprints that carry Edge.Cuts where their open pieces close the "
+                         "outline exactly (default: hold them and flag outline_incomplete)")
     sp.add_argument("--report", help="also write the JSON report here")
     sp.set_defaults(fn=cmd_place)
     sb = sub.add_parser("brief", help="print the physics brief of a board")

@@ -759,21 +759,20 @@ TIE_ORDER = 'schematic'   # 'schematic': equal scores fill consumers in referenc
                           # reference order (block rank order); 'random': seeded shuffle (ablation)
 CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
 CELL_QUOTA = 2      # one HF commutation cap and one more
-CELL_SLOT2 = None   # score offset for a cell's second capacitor (None: no offset)
-CELL_CLASS = 'hf'   # 'hf': cells prefer ceramics <= 220 nF; 'count': prefer them only when loads leave some spare
-MERGE_REG_OUT = False   # a converter's own output-pin group on its cell's rail merges into the cell
+CELL_CLASS = 'count'   # 'count': cells prefer small ceramics only when the loads' pins leave some spare (else the
+                       # bulk ones, largest first); 'hf': always prefer small ceramics (ablation, -0.2 pp ownership)
 
 
 def _decap_groups(b: _B, cells) -> list:
-    """Power pins grouped per (IC, rail, function); a switching regulator's input pins belong to its cell."""
+    """Power pins grouped per (IC, rail, function); a converter's pins on its cell's rail belong to the cell."""
     in_cell = {(c['controller'], c['cap_rail']) for c in cells if c.get('controller')}
     groups = {}
     for ref, part in b.nl.parts.items():
         if b.k(ref) not in LOAD_KINDS or part.dnp:
             continue
         for p, func in _power_pins(b, ref):
-            if (ref, p.net) in in_cell and (func in ('regulator_input', 'load') or MERGE_REG_OUT):
-                continue
+            if (ref, p.net) in in_cell:
+                continue           # the converter's own pins on its cell's rail are the cell (input or output side)
             g = groups.setdefault((ref, p.net, func), {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
             if p.number not in g['pins']:
                 g['pins'].append(p.number)
@@ -785,7 +784,8 @@ def allocate_caps(b: _B, cells, groups):
 
     Score of capacitor c for consumer j: a base (cells CELL_BASE, groups log(1 + power pins)),
     plus schematic affinity (same sheet +2 / other -1, same reference block +1.5), plus a class
-    preference (cells and loads take ceramics, regulator outputs take bulk), plus RANK_W times the
+    preference (loads take small ceramics; cells take them too unless the loads' pins need every one, then
+    the largest bulk ones; regulator outputs take bulk), plus RANK_W times the
     agreement of c's reference rank with j's rank on that rail. Greedy assignment by score with
     quotas (cells CELL_QUOTA, loads one per power pin, regulator pins one); leftovers go to the
     best-scoring consumer. Ownership probabilities are the softmax of the same scores."""
@@ -849,28 +849,11 @@ def allocate_caps(b: _B, cells, groups):
             tie = lambda t: (-t[0], corder[t[1]], jorder[t[2]])   # noqa: E731
         else:
             tie = lambda t: (-t[0], _refkey(t[1]), t[2])          # noqa: E731
-        if CELL_SLOT2 is None:
-            for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
-                if c in owner or count[j] >= quota[j]:
-                    continue
-                owner[c] = j
-                count[j] += 1
-        else:
-            # greedy with a lower score for a cell's second capacitor: values only fall, so a lazily
-            # re-pushed heap stays exact
-            import heapq
-            heap = [(tie((v, c, j)), v, c, j, False) for (c, j), v in S.items()]
-            heapq.heapify(heap)
-            while heap:
-                _, v, c, j, pen = heapq.heappop(heap)
-                if c in owner or count[j] >= quota[j]:
-                    continue
-                if lst[j][0] == 'cell' and count[j] >= 1 and not pen:
-                    v2 = v + CELL_SLOT2
-                    heapq.heappush(heap, (tie((v2, c, j)), v2, c, j, True))
-                    continue
-                owner[c] = j
-                count[j] += 1
+        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
+            if c in owner or count[j] >= quota[j]:
+                continue
+            owner[c] = j
+            count[j] += 1
         for c in caps:
             if c not in owner:
                 owner[c] = max(range(ng), key=lambda j: (S[(c, j)], -j))

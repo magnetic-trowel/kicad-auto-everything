@@ -298,11 +298,11 @@ def build(jit):
         k = 1.0 / (4.0 * math.pi * eps0)
         cm = 0.0
         for a in range(XA.shape[0]):
-            ca = eps0 * eps_r * AA[a] / h + eps0 * 2.0 * math.sqrt(AA[a])
+            ca = eps0 * AA[a] / h + eps0 * 2.0 * math.sqrt(AA[a])
             for v in range(XV.shape[0]):
                 rr = max(math.hypot(XA[a] - XV[v], YA[a] - YV[v]), 0.5 * (math.sqrt(AA[a]) + math.sqrt(AV[v])))
                 p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
-                cm += ca * (eps0 * eps_r * AV[v] / h + eps0 * 2.0 * math.sqrt(AV[v])) * p
+                cm += ca * (eps0 * AV[v] / h + eps0 * 2.0 * math.sqrt(AV[v])) * p
         return cm
 
     @jit
@@ -496,8 +496,8 @@ def build(jit):
         k = 1.0 / (4.0 * math.pi * eps0)
         if r > 3.0 * (ea + ev) + 2.0 * h:
             p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
-            ca = eps0 * eps_r * ta / h + eps0 * 2.0 * math.sqrt(ta)
-            cv = eps0 * eps_r * tv / h + eps0 * 2.0 * math.sqrt(tv)
+            ca = eps0 * ta / h + eps0 * 2.0 * math.sqrt(ta)
+            cv = eps0 * tv / h + eps0 * 2.0 * math.sqrt(tv)
             return ca * cv * p
         return patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0)
 

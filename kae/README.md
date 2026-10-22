@@ -16,7 +16,8 @@ kae/.venv/bin/pytest kae/tests          # KiCad tests skip without pcbnew
   Units are mm and degrees in KiCad board coordinates (y down). The footprint uuid is
   the part key (the loader synthesizes a stable one when a file has none or repeats one).
 - `kicad_file.load(path)`: pure-Python reader for `.kicad_pcb` (KiCad 10, tolerant of
-  6-9), with the sibling `.kicad_pro` and `.kicad_dru`. Median 0.05 s per board (max 1.1 s, 17.7 MB).
+  6-9), with the sibling `.kicad_pro` and `.kicad_dru`. Median 0.05 s per board
+  (max 1.1 s for a 17.7 MB file).
 - `transform`: `pad_xy`, `pads_xy` (vectorized), `courtyard`; KiCad's rotation and flip
   conventions, verified against pcbnew pad by pad.
 - `pcbnew_io`: `extract(path)`, `write_poses(src, dst, {uuid: (x, y, rot, side)})` and

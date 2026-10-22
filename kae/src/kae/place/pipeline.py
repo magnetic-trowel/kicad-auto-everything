@@ -125,7 +125,8 @@ def physics_summary(terms, poses, breakdown=True):
     return out
 
 
-def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True):
+def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
+          edge_mate=False):
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -147,10 +148,18 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     stage("brief", t)
 
     t = time.monotonic()
-    mated = edges.mate(board, log=log)        # footprints that complete the board edge
+    # Footprints that carry Edge.Cuts but sit in the staging area: the task does not say where
+    # the board edge they draw goes. Held where they are and reported (default), or, with
+    # edge_mate, put where their open pieces close the outline exactly.
+    mated = edges.mate(board, log=log) if edge_mate else {}
     if mated:
         rep["edge_mated"] = {u: list(p) for u, p in mated.items()}
-    P = Problem.build(board, net_kinds=_net_kinds(brief))
+    held = [fp for fp in board.footprints if fp.edge_cuts and not fp.locked and not fp.on_board]
+    if held:
+        rep["outline_incomplete"] = sorted(fp.ref for fp in held)
+        log(f"outline_incomplete: staged footprints carry Edge.Cuts ({', '.join(rep['outline_incomplete'][:8])}); "
+            "held off the board, the board cannot be legal")
+    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held})
     margin = P.auto_margin()
     P.set_margin(margin)
     roles = _net_roles(brief)

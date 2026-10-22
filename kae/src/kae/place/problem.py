@@ -321,16 +321,20 @@ class Problem:
         self.inside = None          # bool (ncx, ncy): cell fully inside the outline
         self.sat_out = None         # summed-area table of cells NOT inside, shape (ncx+1, ncy+1)
         self.cover = []             # grid rects (i0, i1, j0, j1) inside the outline, overlapping
+        self.held = set()
         self.clearance = 0.0
         self.edge_clearance = 0.0
         self.notes = []
 
     # ------------------------------------------------------------------ construction
     @classmethod
-    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS):
-        """net_kinds: optional {net name: 'ground'|'power'|'signal'|role} (from the brief)."""
+    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS, held=()):
+        """net_kinds: optional {net name: 'ground'|'power'|'signal'|role} (from the brief).
+        held: footprint uuids kept where they are and left out of the nets (e.g. staged parts
+        that carry Edge.Cuts, whose place on the board the task does not tell)."""
         P = cls()
         P.board = board
+        P.held = set(held)
         P._rules(board)
         P._domain(board, grid)
         name_to_net = P._nets(board, net_kinds)
@@ -405,6 +409,8 @@ class Problem:
     def _nets(self, board, net_kinds):
         pins = {}
         for i, fp in enumerate(board.footprints):
+            if fp.uuid in self.held:
+                continue
             for k, p in enumerate(fp.pads):
                 if p.net:
                     pins.setdefault(p.net, []).append((i, k))
@@ -465,7 +471,7 @@ class Problem:
         lib_board_pads = rect_union([lib_edge if lib_edge is not None else lib_own, lib_cut])
         pad_net = np.array([name_to_net.get(p.net, -1) if p.net else -1 for p in pads], dtype=int)
         local = transform.local_pads(fp)
-        movable = not fp.locked
+        movable = not fp.locked and fp.uuid not in self.held
         part = Part(i=i, uuid=fp.uuid, ref=fp.ref, value=fp.value, lib_id=fp.lib_id, side=fp.side, s=s,
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
@@ -566,7 +572,7 @@ class Problem:
     def _fixed_obstacles(self, board):
         g = self.g
         for p in self.parts:
-            if p.movable:
+            if p.movable or p.uuid in self.held:
                 continue
             r = p.rots[0]
             si = 0 if p.s > 0 else 1

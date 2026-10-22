@@ -282,17 +282,18 @@ def _commutation(ctx, s, Struct):
                 continue
             Tc = [ctx.term(c, kr[:1])] + T[1:-1] + [ctx.term(c, kg[:1])]
             variants.append((Tc, pmap.get(c, 1.0 if c == cap_i else 0.5), cp.ref))
+    pmax = max(w for _, w, _ in variants)
+    variants = [v for v in variants if v[1] >= 0.5 * pmax]          # the caps this cell most likely owns
     comps = [_loop_comp(ctx, Tc, power=True) for Tc, _, _ in variants]
-    weights = [w for _, w, _ in variants]
     labels = [lab for _, _, lab in variants]
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
     vin = ex.get('V') or ctx.net_volts(s.get('rail')) or 12.0
     alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'))
     excite = PR.hot_loop_excite(cls, vin, ex.get('I'), ex.get('t_sw_ns'))
-    return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s),
-                  alloc=alloc, comps=comps, reduce='wparallel', labels=labels,
-                  info=dict(cls=cls, V_in=vin, excite=excite, weights=weights, sw=s.get('sw'),
+    return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s) * pmax,
+                  alloc=alloc, comps=comps, reduce='parallel', labels=labels,
+                  info=dict(cls=cls, V_in=vin, excite=excite, ownership=pmax, sw=s.get('sw'),
                             sw_nets=s.get('sw_nets') or ([s.get('sw')] if s.get('sw') else [])))
 
 
@@ -344,12 +345,11 @@ def _decap(ctx, s, Struct):
         all_paired = set().union(*pin_caps.values()) if pin_caps else set()
         if paired:
             use = [c for c in caps if c[0] in paired]
-            wfac = 1.0
         else:
-            use = [c for c in caps if c[0] not in all_paired]
-            wfac = 1.0
-            if not use:
-                use, wfac = caps, 0.25
+            use = [c for c in caps if c[0] not in all_paired] or caps
+        if use:
+            pm = max(pmap.get(c[0], 1.0) for c in use)
+            use = [c for c in use if pmap.get(c[0], 1.0) >= 0.5 * pm]
         for i, kr, kgc in use:
             tr = ctx.term(i, kr)
             tc = ctx.term(i, kgc)
@@ -358,15 +358,15 @@ def _decap(ctx, s, Struct):
             else:
                 comps.append(_loop_comp(ctx, [tp, tr, tc, tg], power=False))
             labels.append(bv.parts[i].ref)
-            weights.append(pmap.get(i, 1.0) * wfac)
+            weights.append(pmap.get(i, 1.0))
         if not comps:
             continue
         a = PR.Belief(alloc_pin.value / max(1, len(ks)), 'nH',
                       alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls)
         out.append(Struct(id=(s.get('id') or f'decap:{P.ref}:{rail}') + (f'#{gi}' if len(groups) > 1 else ''),
-                          kind='decap', conf=ctx.conf(s), alloc=a, comps=comps, reduce='wparallel', labels=labels,
-                          info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None,
-                                    weights=weights, function=s.get('function'))))
+                          kind='decap', conf=ctx.conf(s) * max(weights), alloc=a, comps=comps, reduce='parallel',
+                          labels=labels, info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None,
+                                                   ownership=max(weights), function=s.get('function'))))
     return out
 
 

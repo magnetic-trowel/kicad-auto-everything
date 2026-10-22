@@ -234,7 +234,15 @@ def mutual_paths(pa, za, pv, zv, ha_via, hv_via, n=3):
 
 
 def _cself(A, h, eps_r):
-    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)       # plate + fringe (E5)
+    """Patch capacitance to the plane (pF): plate eps A / h plus an edge term 2 eps0 sqrt(A)."""
+    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)
+
+
+def _cext(A, h):
+    """The patch's external (air-side) dipole strength as a capacitance: the field above the
+    board of a patch at V over a plane is that of a dipole 2 eps0 A V, whatever the
+    dielectric under it (lens SY, D1), so the mutual product uses eps0 A / h, not eps_r."""
+    return EPS0 * A / h + EPS0 * 2.0 * math.sqrt(A)
 
 
 def patches_cm(na, nv, h, eps_r):
@@ -248,16 +256,16 @@ def patches_cm(na, nv, h, eps_r):
     h = 1.6 if h == INF else max(h, 0.05)
     k = 1.0 / (4.0 * math.pi * EPS0)
     r = _hyp(ax - vx, ay - vy)
-    if r > 1.5 * (ea + ev) + 2.0 * h:
+    if r > 3.0 * (ea + ev) + 2.0 * h:
         p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
-        return _cself(Aa, h, eps_r) * _cself(Av, h, eps_r) * p
+        return _cext(Aa, h) * _cext(Av, h) * p
     cm = 0.0
     for xa, ya, A1 in pa:
-        ca = _cself(A1, h, eps_r)
+        ca = _cext(A1, h)
         for xv, yv, A2 in pv:
             rr = max(_hyp(xa - xv, ya - yv), 0.5 * (math.sqrt(A1) + math.sqrt(A2)))
             p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
-            cm += ca * _cself(A2, h, eps_r) * p
+            cm += ca * _cext(A2, h) * p
     return cm
 
 
