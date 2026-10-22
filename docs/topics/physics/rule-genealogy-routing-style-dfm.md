@@ -43,7 +43,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R21 | Tent/plug policy; no open via in pad | Mf | **Fab**: solder wicking, voids | R | [LU] |
 | R22 | Merged antipads form slots | Ph | **L** detour (Ott: separate holes ≈ no slot) | R | void-polygon slot length [GE] |
 | R23 | Remove non-functional pads | Ph+Mf | **Z**/**Res**: pad capacitance on stubs; also drill wear | R ≥ ~5 Gb/s | [FW/LU] |
-| R24 | KiCad stitching default max(2 mm, 2× via) | Tl | **Res** | C for most boards | λ-based pitch [CF] |
+| R24 | KiCad stitching default max(2 mm, 2× via) | Tl | **Res** | C for most boards | pitch from the isolation target (S37) [CF] |
 
 ### Pours, planes and reliefs
 
@@ -52,7 +52,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R25 | Thermal reliefs on plane connections | Mf (hand/wave soldering) | **Th** 4 spokes 0.25×0.5 mm ≈37 K/W; adds ~50–90 pH and 0.25 mΩ [C §I]. In reflow a pad couples ~0.1 mW/K to the oven vs 27–54 mW/K through spokes, so it follows the plane either way (Wiedemann–Franz: decoupling it would cost ≥ 66 mΩ) [C da §A] | M: needed for hand/wave/TH; no physical basis in reflow, which contradicts vendor 0201/0402 balance guidance and needs an assembly test; harmful on sub-nH loops and >~3 A pads | per-pad process heat balance vs ΔL, ΔR [TN] |
 | R26 | Direct-connect thermal and power pads | Ph | **Th**, **R**, **L** | R | same check [TN] |
 | R27 | Pour all unused copper (2-layer) | Ph | **L**: the pour becomes the return plane if stitched | R on 2-layer when stitched and continuous | return-path map [2D] |
-| R28 | Ground fill on multilayer | Hb | **Z** −0.9% at 2h; floating islands **Res** | X as default | s/h ≥ 2 and stitched islands [2D/CF] |
+| R28 | Ground fill on multilayer | Hb | **Z** −1.2% at 2h (S18); floating islands **Res** | X as default | s/h ≥ 2 and stitched islands [2D/CF] |
 | R29 | No floating or isolated copper | Ph+Mf | **Res**, **Cm** re-radiation; copper balance | R | island detect + stitch or delete [GE] |
 | R30 | Hatched vs solid planes | Hb+Mech | **Z** if hatch pitch ≳ h; flex stiffness | M: hatched for flex; solid for rigid | hatch pitch vs h [2D] |
 | R31 | Copper balance, thieving | Mf | plating uniformity, warp (**Mech**) | R | density map [GE] |
