@@ -535,7 +535,7 @@ def infer_roles_general(b):
             ev.append(f"tracks up to {F['wmax']:.2f} mm wide")
         powered = F['pin_out'] or F['reg_out'] or F['ind_out'] or F['pin_in']
         counter = []
-        if F['ctrl'] and not (F['pin_out'] or F['reg_out'] or F['ind_out'] or F['name']):
+        if F['ctrl'] and not (F['pin_out'] or F['reg_out'] or F['ind_out'] or F['name'] or F['weak_name']):
             score -= 4
             counter.append('control/signal name (FB, EN, data, ...)')
         if F['sig'] and not powered:
@@ -549,7 +549,8 @@ def infer_roles_general(b):
         if not strong:
             continue
         conf = 'high' if score >= 6 else 'medium' if score >= 3 else 'low'
-        if conf == 'low' and (F['name'] or F['weak_name']) and counter:
+        hard = [c for c in counter if not c.startswith('two pads')]      # pad count alone lowers confidence only
+        if conf == 'low' and (F['name'] or F['weak_name']) and hard:
             rejected[n] = f"counter-evidence (score {score}): " + '; '.join(counter)
         rails[n] = dict(confidence=conf, score=score, evidence=ev, volts=parse_volts(n))
     # regex power names that are switch nodes

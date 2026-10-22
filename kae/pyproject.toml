@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kae"
+version = "0.1.0"
+description = "Physics-first joint placement and routing for KiCad boards"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+dependencies = [
+    "numpy",
+    "scipy",
+    "shapely>=2",
+    "ortools",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+kae = ["board/kicad_scripts/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["kicad: needs KiCad's Python with pcbnew (skipped without it)"]

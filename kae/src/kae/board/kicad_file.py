@@ -1,0 +1,699 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Pure-Python reader for .kicad_pcb files: KiCad 10, tolerant of KiCad 6-9 (and 5).
+
+    board = load("board.kicad_pcb")   # also reads board.kicad_pro and board.kicad_dru
+
+No KiCad needed. Zone fills and embedded files are skipped unread (kae.board.sexpr).
+
+Format facts this relies on (checked against pcbnew 10, see kae.board.pcbnew_io.verify):
+- Footprint children are stored in the footprint's placed frame: board =
+  (x, y) + R(rot) (u, v); for a back-side footprint (u, v) is already mirrored, so the
+  library frame is (u, -v) with layers flipped.
+- A pad's `(at u v a)` angle is absolute (footprint angle included).
+- Zones inside footprints are stored in board coordinates.
+- Boards stamped above 20241229 (KiCad 10) name nets in place, `(net "GND")`, and have
+  no net table; older boards use `(net 3 "GND")` in pads and `(net 3)` elsewhere.
+- Locks: `(locked yes)` (KiCad 9+) or a bare `locked` atom (KiCad 6-8).
+
+`on_board`: a footprint is on the board when its extent (courtyard, else body, else
+pads) touches the region inside the board-level Edge.Cuts outline (or, without a closed
+outline, its bounding box). kaebench place tasks stage unplaced parts 10 mm right of the
+board's bounding box, so those load with on_board=False. Board.outline adds the Edge.Cuts
+graphics of on-board footprints (as pcbnew does); off-board footprints keep theirs in
+`Footprint.edge_cuts`.
+"""
+import json
+import math
+import re
+from pathlib import Path
+
+from shapely.geometry import LineString, MultiPoint, Point, Polygon, box
+from shapely.ops import unary_union
+
+from . import geom, sexpr
+from .model import Board, Footprint, Keepout, Net, NetClass, Pad, Rules, Stackup, Track, Via, Zone
+from .sexpr import first, flag, kids, value
+from .transform import courtyard, flip_layer, fp_pads_xy, norm_deg, rotate, transform_coords
+
+NAMED_NETS_AFTER = 20241229   # KiCad 10 boards (stamp > this) name nets in place
+CHAIN_EPS = 0.01              # mm: endpoints closer than this are joined
+FP_SHAPES = ("fp_line", "fp_arc", "fp_circle", "fp_rect", "fp_poly", "fp_curve")
+GR_SHAPES = ("gr_line", "gr_arc", "gr_circle", "gr_rect", "gr_poly", "gr_curve")
+_NUM = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
+
+
+def _f(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _xy(node):
+    return float(node[1]), float(node[2])
+
+
+def _pts(node, tol):
+    """Points of a (pts (xy ..) (arc (start) (mid) (end)) ..) list."""
+    out = []
+    for e in node[1:] if node else ():
+        if type(e) is list and e:
+            if e[0] == "xy":
+                out.append((float(e[1]), float(e[2])))
+            elif e[0] == "arc":
+                a = geom.arc_points(_xy(first(e, "start")), _xy(first(e, "mid")), _xy(first(e, "end")), tol)
+                if out and out[-1] == a[0]:
+                    a = a[1:]
+                out.extend(a)
+    return out
+
+
+def shape_pieces(node, tol=geom.ARC_TOL):
+    """A graphic shape as (open polylines, closed rings), in its stored coordinates."""
+    kind = node[0][3:]   # fp_line -> line, gr_arc -> arc
+    if kind == "line":
+        return [[_xy(first(node, "start")), _xy(first(node, "end"))]], []
+    if kind == "arc":
+        if first(node, "mid") is not None:
+            return [geom.arc_points(_xy(first(node, "start")), _xy(first(node, "mid")),
+                                    _xy(first(node, "end")), tol)], []
+        ang = first(node, "angle")   # KiCad 5: (start center) (end arc-start) (angle sweep)
+        if ang is not None:
+            return [geom.arc_center_points(_xy(first(node, "start")), _xy(first(node, "end")),
+                                           float(ang[1]), tol)], []
+        return [], []
+    if kind == "circle":
+        c = _xy(first(node, "center"))
+        e = _xy(first(node, "end"))
+        r = math.hypot(e[0] - c[0], e[1] - c[1])
+        return ([], [geom.circle_points(c, r, tol)]) if r > 0 else ([], [])
+    if kind == "rect":
+        (x1, y1), (x2, y2) = _xy(first(node, "start")), _xy(first(node, "end"))
+        if x1 == x2 or y1 == y2:
+            return [], []
+        return [], [[(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)]]
+    if kind == "poly":
+        p = _pts(first(node, "pts"), tol)
+        if len(p) >= 3:
+            if p[0] != p[-1]:
+                p.append(p[0])
+            return [], [p]
+        return [], []
+    if kind == "curve":
+        p = _pts(first(node, "pts"), tol)
+        if len(p) == 4:
+            return [geom.bezier_points(*p, tol=tol)], []
+        return ([p], []) if len(p) >= 2 else ([], [])
+    return [], []
+
+
+def _map_pieces(pieces, fn):
+    opens, rings = pieces
+    return [[fn(*p) for p in pl] for pl in opens], [[fn(*p) for p in r] for r in rings]
+
+
+class _Reader:
+    def __init__(self, tree, path, arc_tol):
+        self.tree = tree
+        self.path = str(path)
+        self.tol = arc_tol
+        self.warnings = []
+        self.version = int(_f(value(tree, "version"), 0))
+        self.named_nets = self.version > NAMED_NETS_AFTER
+        self.netname = {}
+        for n in kids(tree, "net"):
+            if len(n) >= 3:
+                self.netname[n[1]] = n[2]
+        self._layers()
+        self.stackup = self._stackup()
+        self.ncu = len(self.cu)
+
+    # ------------------------------------------------------------------ layers, stackup
+    def _layers(self):
+        self.layer_types = {}
+        lay = first(self.tree, "layers")
+        for e in (lay[1:] if lay else []):
+            if type(e) is list and len(e) >= 3:
+                self.layer_types[e[1]] = e[2]
+        names = [n for n in self.layer_types if n.endswith(".Cu")]
+        if not names:
+            names = ["F.Cu", "B.Cu"]
+            self.warnings.append("no copper layers in the layer table; assuming F.Cu, B.Cu")
+
+        def order(nm):
+            return -1 if nm == "F.Cu" else 10**6 if nm == "B.Cu" else int(re.sub(r"\D", "", nm) or 0)
+        self.cu = sorted(names, key=order)
+        self.cu_set = set(self.cu)
+
+    def _stackup(self):
+        thickness = _f(value(first(self.tree, "general") or [], "thickness"), 1.6)
+        su = first(first(self.tree, "setup") or [], "stackup")
+        order, tcu, gaps, ers = [], [], [], []
+        diel = []   # (thickness, er) since the last copper layer
+        if su is not None:
+            for e in kids(su, "layer"):
+                name = e[1] if len(e) > 1 else ""
+                typ = value(e, "type", "")
+                groups, cur = [], []
+                for c in e[2:]:
+                    if c == "addsublayer":
+                        groups.append(cur)
+                        cur = []
+                    elif type(c) is list:
+                        cur.append(c)
+                groups.append(cur)
+
+                def th(g):
+                    t = next((c for c in g if c[0] == "thickness"), None)
+                    return _f(t[1]) if t is not None and len(t) > 1 and _NUM.match(t[1]) else 0.0
+                if name.endswith(".Cu"):
+                    if order:
+                        tot = sum(t for t, _ in diel)
+                        gaps.append(tot)
+                        ers.append(sum(t * x for t, x in diel) / tot if tot > 0 else 4.5)
+                    order.append(name)
+                    tcu.append(th(groups[0]) or 0.035)
+                    diel = []
+                elif typ in ("core", "prepreg") or "dielectric" in name:
+                    for g in groups:
+                        er = next((_f(c[1], 4.5) for c in g if c[0] == "epsilon_r" and len(c) > 1), 4.5)
+                        diel.append((th(g), er))
+        if order and sorted(order) == sorted(self.cu) and all(g > 0 for g in gaps):
+            self.cu = order
+            return Stackup(copper=order, cu_thickness=tcu, gaps=gaps, er=ers, thickness=thickness, source="file")
+        if su is not None and order:
+            self.warnings.append("stackup does not match the copper layers; using KiCad's default stackup")
+        # KiCad's default (BOARD_STACKUP::BuildDefaultStackupList): 35 um copper, 10 um mask
+        # per side, the rest split evenly between the dielectrics
+        n = len(self.cu)
+        d = (thickness - 0.035 * n - 0.02) / max(1, n - 1)
+        return Stackup(copper=list(self.cu), cu_thickness=[0.035] * n, gaps=[d] * (n - 1), er=[4.5] * (n - 1),
+                       thickness=thickness, source="default")
+
+    def expand_layers(self, names):
+        out = []
+        for nm in names:
+            if not isinstance(nm, str):
+                continue
+            if nm == "*.Cu":
+                out += self.cu
+            elif nm == "F&B.Cu":
+                out += ["F.Cu", "B.Cu"]
+            elif nm.startswith("*."):
+                out += ["F." + nm[2:], "B." + nm[2:]]
+            elif nm.startswith("F&B."):
+                out += ["F." + nm[4:], "B." + nm[4:]]
+            else:
+                out.append(nm)
+        seen = set()
+        return [x for x in out if not (x in seen or seen.add(x))]
+
+    def span(self, a, b):
+        """Copper layers from a to b inclusive, in stackup order."""
+        if a not in self.cu_set or b not in self.cu_set:
+            return list(self.cu)
+        i, j = sorted((self.cu.index(a), self.cu.index(b)))
+        return self.cu[i:j + 1]
+
+    def net(self, node):
+        n = first(node, "net")
+        if n is None or len(n) < 2:
+            return ""
+        if self.named_nets:
+            return n[1]
+        if len(n) >= 3:
+            return n[2]
+        return self.netname.get(n[1], "")
+
+    # ------------------------------------------------------------------ footprints
+    def footprint(self, node):
+        lib_id = node[1] if len(node) > 1 and type(node[1]) is str else ""
+        layer = value(node, "layer", "F.Cu")
+        side = "B" if layer == "B.Cu" else "F"
+        s = -1.0 if side == "B" else 1.0
+        at = first(node, "at")
+        fx, fy = (float(at[1]), float(at[2])) if at else (0.0, 0.0)
+        frot = float(at[3]) if at is not None and len(at) > 3 else 0.0
+        fields = {}
+        for p in kids(node, "property"):
+            if len(p) > 1 and type(p[1]) is str:
+                fields[p[1]] = p[2] if len(p) > 2 and type(p[2]) is str else ""
+        for t in kids(node, "fp_text"):
+            if len(t) > 2 and t[1] in ("reference", "value"):
+                fields.setdefault(t[1].capitalize(), t[2])
+        attrs = [a for a in (first(node, "attr") or [])[1:] if type(a) is str]
+        uuid = value(node, "uuid") or value(node, "tstamp") or ""
+        fp = Footprint(ref=fields.get("Reference", ""), value=fields.get("Value", ""), lib_id=lib_id,
+                       uuid=uuid, x=fx, y=fy, rot=norm_deg(frot), side=side,
+                       locked=flag(node, "locked"), attrs=attrs, fields=fields,
+                       path=value(node, "path", "") or "", sheet=value(node, "sheetname", "") or "")
+        if flag(node, "dnp") and "dnp" not in fp.attrs:
+            fp.attrs.append("dnp")
+        cr, sr = rotate(1.0, 0.0, frot)   # (cos, -sin)
+        c, sn = cr, -sr
+
+        for pd in kids(node, "pad"):
+            fp.pads.append(self.pad(pd, fx, fy, frot, c, sn, s))
+
+        # graphics in the library frame: (u, v) stored -> (u, s*v), layers flipped on the back
+        by_layer = {}
+        for g in node:
+            if type(g) is not list or not g or g[0] not in FP_SHAPES:
+                continue
+            ly = value(g, "layer")
+            if ly is None:
+                continue
+            if s < 0:
+                ly = flip_layer(ly, self.ncu)
+            by_layer.setdefault(ly, []).append(g)
+        if s < 0:
+            def lib(u, v):
+                return (u, -v)
+        else:
+            lib = None
+
+        def pieces_on(ly):
+            opens, rings = [], []
+            for g in by_layer.get(ly, ()):
+                try:
+                    o, r = shape_pieces(g, self.tol)
+                except (TypeError, ValueError, IndexError):
+                    fp.flags.append(f"bad_graphic:{g[0]}")
+                    continue
+                opens += o
+                rings += r
+            if lib is not None:
+                opens, rings = _map_pieces((opens, rings), lib)
+            return opens, rings
+
+        for ly, attr in (("F.CrtYd", "courtyard"), ("B.CrtYd", "courtyard_back")):
+            if ly in by_layer:
+                polys, dangling = geom.polygons(*pieces_on(ly), eps=CHAIN_EPS)
+                setattr(fp, attr, polys)
+                if dangling or not polys:
+                    fp.flags.append(f"courtyard_malformed:{ly}")
+        if "Edge.Cuts" in by_layer:
+            opens, rings = pieces_on("Edge.Cuts")
+            fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
+        if not fp.courtyard:
+            fp.body = self._body(fp, pieces_on, by_layer)
+        for z in kids(node, "zone"):
+            self.zone(z, fp.uuid)
+        return fp
+
+    def pad(self, pd, fx, fy, frot, c, sn, s):
+        number = pd[1] if len(pd) > 1 and type(pd[1]) is str else ""
+        kind = pd[2] if len(pd) > 2 and type(pd[2]) is str else "smd"
+        shape = pd[3] if len(pd) > 3 and type(pd[3]) is str else "rect"
+        at = first(pd, "at")
+        u, v = float(at[1]), float(at[2])
+        arot = float(at[3]) if len(at) > 3 else 0.0
+        size = first(pd, "size")
+        sx = float(size[1]) if size else 0.0
+        sy = float(size[2]) if size is not None and len(size) > 2 else sx
+        drill, slot, offset = 0.0, None, (0.0, 0.0)
+        dr = first(pd, "drill")
+        if dr is not None:
+            nums = [float(t) for t in dr[1:] if type(t) is str and _NUM.match(t)]
+            if "oval" in dr[1:] and len(nums) >= 2:
+                slot = (nums[0], nums[1])
+                drill = min(nums[0], nums[1])
+            elif nums:
+                drill = nums[0]
+            off = first(dr, "offset")
+            if off is not None:
+                offset = (float(off[1]), s * float(off[2]))
+        # absolute position: KiCad's SetFPRelativePosition = pos + RotatePoint(local, angle)
+        px = fx + u * c + v * sn
+        py = fy - u * sn + v * c
+        layers = self.expand_layers((first(pd, "layers") or ["layers"])[1:])
+        return Pad(number=number, net=self.net(pd), kind=kind, shape=shape, size=(sx, sy),
+                   lx=u, ly=s * v, lrot=norm_deg(s * (arot - frot)), x=px, y=py, layers=layers,
+                   drill=drill, pinfunction=value(pd, "pinfunction", "") or "",
+                   pintype=value(pd, "pintype", "") or "",
+                   uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
+                   rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset)
+
+    def _body(self, fp, pieces_on, by_layer):
+        """Fallback extent when there is no courtyard: the box around the closed Fab
+        shapes and the pads; without either, around all graphics."""
+        xs, ys = [], []
+        if "F.Fab" in by_layer:
+            polys, _ = geom.polygons(*pieces_on("F.Fab"), eps=CHAIN_EPS)
+            for p in polys:
+                b = p.bounds
+                xs += [b[0], b[2]]
+                ys += [b[1], b[3]]
+        for p in fp.pads:
+            w, h = p.size
+            ox, oy = p.offset
+            for du, dv in ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)):
+                ru, rv = rotate(du + ox, dv + oy, p.lrot)
+                xs.append(p.lx + ru)
+                ys.append(p.ly + rv)
+        if not xs:
+            for ly in by_layer:
+                o, r = pieces_on(ly)
+                for pl in o + r:
+                    xs += [q[0] for q in pl]
+                    ys += [q[1] for q in pl]
+        if not xs or max(xs) - min(xs) <= 0 or max(ys) - min(ys) <= 0:
+            return []
+        return [box(min(xs), min(ys), max(xs), max(ys))]
+
+    # ------------------------------------------------------------------ zones
+    def zone(self, z, fp_uuid=""):
+        lys = []
+        for key in ("layer", "layers"):
+            e = first(z, key)
+            if e is not None:
+                lys += self.expand_layers(e[1:])
+        rings = []
+        for pol in kids(z, "polygon"):
+            p = _pts(first(pol, "pts"), self.tol)
+            if len(p) >= 3:
+                rings.append(p)
+        if not rings:
+            return
+        outline = Polygon(rings[0], rings[1:])
+        if not outline.is_valid:
+            outline = outline.buffer(0)
+            if outline.geom_type != "Polygon":
+                outline = max(getattr(outline, "geoms", [Polygon()]), key=lambda g: g.area, default=Polygon())
+        uuid = value(z, "uuid") or value(z, "tstamp") or ""
+        name = value(z, "name", "") or ""
+        ko = first(z, "keepout")
+        if ko is not None:
+            rules = {c[0]: (len(c) > 1 and c[1] == "not_allowed") for c in ko[1:] if type(c) is list and c}
+            pl = first(z, "placement")
+            placement = None
+            if pl is not None:
+                placement = {c[0]: (c[1] if len(c) > 1 else True) for c in pl[1:] if type(c) is list and c}
+                if "enabled" in placement:
+                    placement["enabled"] = placement["enabled"] in ("yes", True)
+            self.keepouts.append(Keepout(
+                uuid=uuid, name=name, layers=lys, outline=outline,
+                tracks=rules.get("tracks", False), vias=rules.get("vias", False), pads=rules.get("pads", False),
+                copperpour=rules.get("copperpour", False), footprints=rules.get("footprints", False),
+                placement=placement, footprint=fp_uuid))
+            return
+        cp = first(z, "connect_pads")
+        mode = "thermal"
+        if cp is not None:
+            atoms = [a for a in cp[1:] if type(a) is str]
+            mode = {"yes": "solid", "no": "none", "thru_hole_only": "thru_hole_only"}.get(atoms[0], "thermal") \
+                if atoms else "thermal"
+        attr = first(z, "attr")
+        self.zones.append(Zone(
+            uuid=uuid, name=name, net=self.net(z) or (value(z, "net_name", "") or ""), layers=lys,
+            outline=outline, priority=int(_f(value(z, "priority"), 0)),
+            clearance=_f(value(cp or [], "clearance"), 0.0), min_thickness=_f(value(z, "min_thickness"), 0.0),
+            connect=mode, teardrop=attr is not None and first(attr, "teardrop") is not None,
+            locked=flag(z, "locked"), footprint=fp_uuid))
+
+    # ------------------------------------------------------------------ routing
+    def track(self, node, arc):
+        ly = value(node, "layer")
+        if ly is None:  # KiCad 9 track with a mask opening: (layers "F.Cu" "F.Mask")
+            ly = next((n for n in (first(node, "layers") or [])[1:] if type(n) is str and n.endswith(".Cu")), "")
+        mid = first(node, "mid") if arc else None
+        return Track(uuid=value(node, "uuid") or value(node, "tstamp") or "", net=self.net(node), layer=ly,
+                     width=_f(value(node, "width"), 0.0), start=_xy(first(node, "start")),
+                     end=_xy(first(node, "end")), mid=_xy(mid) if mid is not None else None,
+                     locked=flag(node, "locked"))
+
+    def via(self, node):
+        at = first(node, "at")
+        ly = [n for n in (first(node, "layers") or [])[1:] if type(n) is str]
+        atoms = [a for a in node[1:] if type(a) is str]
+        typ = next((a for a in atoms if a in ("blind", "buried", "micro", "through")), None)
+        t = value(node, "type")
+        typ = t if t in ("blind", "buried", "micro", "through") else typ
+        lys = self.span(ly[0], ly[-1]) if len(ly) >= 2 else list(self.cu)
+        if typ is None:
+            typ = "through" if lys == self.cu else "blind"
+        return Via(uuid=value(node, "uuid") or value(node, "tstamp") or "", net=self.net(node),
+                   x=float(at[1]), y=float(at[2]), size=_f(value(node, "size"), 0.0),
+                   drill=_f(value(node, "drill"), 0.0), layers=lys, type=typ, locked=flag(node, "locked"))
+
+
+# ----------------------------------------------------------------------------- rules
+def _mm(v):
+    """A DRU value ('0.2mm', '10mil', '0.2') in mm, or the raw string."""
+    if not isinstance(v, str):
+        return v
+    m = re.match(r"^([-+]?[\d.]+(?:[eE][-+]?\d+)?)\s*(mm|mil|in|um)?$", v.strip())
+    if not m:
+        return v
+    x = float(m.group(1))
+    return x * {None: 1.0, "mm": 1.0, "mil": 0.0254, "in": 25.4, "um": 1e-3}[m.group(2)]
+
+
+def read_dru(path):
+    """Custom rules from a .kicad_dru: [{'name', 'condition', 'layer', 'constraints'}]."""
+    text = "\n".join(ln for ln in Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+                     if not ln.lstrip().startswith("#"))
+    tree = sexpr.parse("(dru " + text + ")")
+    out = []
+    for r in kids(tree, "rule"):
+        cons = []
+        for c in kids(r, "constraint"):
+            d = {"type": c[1] if len(c) > 1 and type(c[1]) is str else ""}
+            for k in ("min", "opt", "max"):
+                v = value(c, k)
+                if v is not None:
+                    d[k] = _mm(v)
+            extra = [a for a in c[2:] if type(a) is str]
+            if extra:
+                d["args"] = extra
+            cons.append(d)
+        out.append(dict(name=r[1] if len(r) > 1 and type(r[1]) is str else "",
+                        condition=value(r, "condition", ""), layer=value(r, "layer", ""), constraints=cons))
+    return out
+
+
+def read_rules(pcb_path, tree=None):
+    """Rules from the sibling .kicad_pro (KiCad 6+) and .kicad_dru; legacy KiCad 5
+    setup and net_class blocks in the board as a fallback."""
+    pcb_path = Path(pcb_path)
+    r = Rules()
+    pro = pcb_path.with_suffix(".kicad_pro")
+    d = None
+    if pro.exists():
+        try:
+            d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+        except (ValueError, OSError):
+            d = None
+    if d is not None:
+        ds = (d.get("board") or {}).get("design_settings") or {}
+        rr = ds.get("rules") or {}
+        r.clearance = float(rr.get("min_clearance", 0.0))
+        r.track_min = float(rr.get("min_track_width", 0.0))
+        r.via_min = float(rr.get("min_via_diameter", 0.0))
+        r.edge_clearance = float(rr.get("min_copper_edge_clearance", 0.0))
+        r.hole_clearance = float(rr.get("min_hole_clearance", 0.0))
+        r.via_drill_min = float(rr.get("min_through_hole_diameter", 0.0))
+        r.hole_to_hole = float(rr.get("min_hole_to_hole", 0.0))
+        r.annular_min = float(rr.get("min_via_annular_width", 0.0))
+        r.microvia_min = float(rr.get("min_microvia_diameter", 0.0))
+        r.microvia_drill_min = float(rr.get("min_microvia_drill", 0.0))
+        r.silk_clearance = float(rr.get("min_silk_clearance", 0.0))
+        r.max_error = float(rr.get("max_error", 0.005))
+        r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]
+        r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
+                       for v in ds.get("via_dimensions") or [] if v.get("diameter")]
+        ns = d.get("net_settings") or {}
+        for c in ns.get("classes") or []:
+            nc = NetClass(name=c.get("name", ""), clearance=c.get("clearance"), track_width=c.get("track_width"),
+                          via_diameter=c.get("via_diameter"), via_drill=c.get("via_drill"),
+                          microvia_diameter=c.get("microvia_diameter"), microvia_drill=c.get("microvia_drill"),
+                          diff_pair_width=c.get("diff_pair_width"), diff_pair_gap=c.get("diff_pair_gap"),
+                          priority=c.get("priority"))
+            r.netclasses[nc.name] = nc
+        r.netclass_patterns = [(p.get("pattern", ""), p.get("netclass", "")) for p in ns.get("netclass_patterns") or []]
+        assign = ns.get("netclass_assignments") or {}
+        r._assign = {k: ([v] if isinstance(v, str) else list(v)) for k, v in assign.items()} \
+            if isinstance(assign, dict) else {}
+        r.source = pro.name
+    elif tree is not None:
+        _legacy_rules(r, tree)
+    if "Default" not in r.netclasses:
+        r.netclasses["Default"] = NetClass(name="Default", clearance=0.2, track_width=0.2, via_diameter=0.6,
+                                           via_drill=0.3, microvia_diameter=0.3, microvia_drill=0.1,
+                                           diff_pair_width=0.2, diff_pair_gap=0.25, priority=2147483647)
+    dru = pcb_path.with_suffix(".kicad_dru")
+    if dru.exists():
+        try:
+            r.custom = read_dru(dru)
+            r.source = (r.source + " + " if r.source else "") + dru.name
+        except (ValueError, OSError) as e:
+            r.custom = [dict(name="(unreadable)", condition=str(e), layer="", constraints=[])]
+    return r
+
+
+def _legacy_rules(r, tree):
+    """KiCad 5 boards keep rules in (setup) and (net_class) blocks."""
+    st = first(tree, "setup") or []
+    r.track_min = _f(value(st, "trace_min"), 0.0)
+    r.via_min = _f(value(st, "via_min_size"), 0.0)
+    r.via_drill_min = _f(value(st, "via_min_drill"), 0.0)
+    r.edge_clearance = _f(value(st, "edge_clearance"), 0.0)
+    r.source = "board setup (legacy)"
+    r._assign = {}
+    for nc in kids(tree, "net_class"):
+        name = nc[1] if len(nc) > 1 else ""
+        r.netclasses[name] = NetClass(name=name, clearance=_f(value(nc, "clearance"), None),
+                                      track_width=_f(value(nc, "trace_width"), None),
+                                      via_diameter=_f(value(nc, "via_dia"), None), via_drill=_f(value(nc, "via_drill"), None),
+                                      microvia_diameter=_f(value(nc, "uvia_dia"), None),
+                                      microvia_drill=_f(value(nc, "uvia_drill"), None),
+                                      diff_pair_width=_f(value(nc, "diff_pair_width"), None),
+                                      diff_pair_gap=_f(value(nc, "diff_pair_gap"), None))
+        for a in kids(nc, "add_net"):
+            r._assign.setdefault(a[1], []).append(name)
+    if r.netclasses:
+        r.clearance = min((c.clearance for c in r.netclasses.values() if c.clearance), default=0.0)
+
+
+def _wildcard_re(p):
+    return "".join(".*" if ch == "*" else "." if ch == "?" else re.escape(ch) for ch in p)
+
+
+def netclass_of(rules, net):
+    """Effective netclass name of a net: explicit assignments, then every matching pattern
+    (KiCad matches a pattern as an anchored regex or an anchored wildcard); several
+    classes join in priority order with ','; none gives 'Default'."""
+    names = list(getattr(rules, "_assign", {}).get(net, []))
+    for pat, cls in rules.netclass_patterns:
+        if cls in names:
+            continue
+        ok = False
+        try:
+            ok = re.fullmatch(pat, net) is not None
+        except re.error:
+            pass
+        if not ok:
+            ok = re.fullmatch(_wildcard_re(pat), net) is not None
+        if ok:
+            names.append(cls)
+    names = [n for n in dict.fromkeys(names) if n]
+    if not names:
+        return "Default"
+    if len(names) == 1:
+        return names[0]
+
+    def prio(n):
+        c = rules.netclasses.get(n)
+        return c.priority if c is not None and c.priority is not None else 2147483647
+    return ",".join(sorted(names, key=prio))
+
+
+# ----------------------------------------------------------------------------- load
+def _outline_pieces(tree, tol, warnings):
+    opens, rings = [], []
+    for g in tree:
+        if type(g) is not list or not g or g[0] not in GR_SHAPES:
+            continue
+        if value(g, "layer") != "Edge.Cuts":
+            continue
+        try:
+            o, r = shape_pieces(g, tol)
+        except (TypeError, ValueError, IndexError):
+            warnings.append(f"unreadable Edge.Cuts {g[0]}")
+            continue
+        opens += o
+        rings += r
+    return opens, rings
+
+
+def _place_edges(fp):
+    """A footprint's Edge.Cuts pieces at its pose, as open polylines."""
+    out = []
+    for ls in fp.edge_cuts:
+        xy = transform_coords(list(ls.coords), fp.x, fp.y, fp.rot, fp.side)
+        out.append([tuple(p) for p in xy.tolist()])
+    return out
+
+
+def _extent(fp):
+    g = courtyard(fp, which="extent")
+    if g:
+        return unary_union(g)
+    xy = fp_pads_xy(fp)
+    if len(xy):
+        return MultiPoint(xy.tolist())
+    return Point(fp.x, fp.y)
+
+
+def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
+    """Read a .kicad_pcb (and its sibling .kicad_pro / .kicad_dru) into a Board."""
+    path = Path(path)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    tree = sexpr.parse(sexpr.strip_blocks(text))
+    if not tree or tree[0] not in ("kicad_pcb",):
+        raise ValueError(f"{path}: not a KiCad board")
+    rd = _Reader(tree, path, arc_tol)
+    rd.keepouts, rd.zones = [], []
+    fps = []
+    for node in tree:
+        if type(node) is list and node and node[0] in ("footprint", "module"):
+            fps.append(rd.footprint(node))
+    for node in tree:
+        if type(node) is list and node and node[0] == "zone":
+            rd.zone(node)
+    tracks = [rd.track(n, False) for n in kids(tree, "segment")] + [rd.track(n, True) for n in kids(tree, "arc")]
+    vias = [rd.via(n) for n in kids(tree, "via")]
+
+    # outline: board-level Edge.Cuts decide what is on the board; on-board footprints'
+    # Edge.Cuts (cut-outs, card edges) join the outline as pcbnew does
+    opens, rings = _outline_pieces(tree, arc_tol, rd.warnings)
+    base, dangling = geom.polygons(opens, rings, eps=CHAIN_EPS) if (opens or rings) else ([], 0)
+    region = unary_union([Polygon(p.exterior) for p in base]) if base else None
+    bbox = None
+    if region is None:
+        pts = [q for pl in opens + rings for q in pl]
+        for fp in fps:
+            if fp.locked and fp.edge_cuts:
+                pts += [q for pl in _place_edges(fp) for q in pl]
+        if pts:
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            bbox = box(min(xs), min(ys), max(xs), max(ys))
+    for fp in fps:
+        if region is not None:
+            fp.on_board = bool(region.intersects(_extent(fp)))
+        elif bbox is not None:
+            fp.on_board = bool(bbox.intersects(_extent(fp)))
+    fp_edges = [pl for fp in fps if fp.on_board and fp.edge_cuts for pl in _place_edges(fp)]
+    if fp_edges:
+        outline, dangling = geom.polygons(opens + fp_edges, rings, eps=CHAIN_EPS)
+    else:
+        outline = base
+    if dangling:
+        rd.warnings.append(f"Edge.Cuts: {dangling} pieces not in a closed outline")
+    if not outline:
+        rd.warnings.append("no closed Edge.Cuts outline")
+
+    rules_obj = read_rules(path, tree) if rules else Rules()
+    nets = {}
+    for name in rd.netname.values():
+        if name:
+            nets.setdefault(name, Net(name=name))
+    for fp in fps:
+        for p in fp.pads:
+            if p.net:
+                nets.setdefault(p.net, Net(name=p.net)).pads.append((fp.ref, p.number))
+    for item in [*rd.zones, *tracks, *vias]:
+        if item.net:
+            nets.setdefault(item.net, Net(name=item.net))
+    for n in nets.values():
+        n.netclass = netclass_of(rules_obj, n.name)
+    if hasattr(rules_obj, "_assign"):
+        del rules_obj._assign
+
+    gen = value(tree, "generator", "") or ""
+    gv = value(tree, "generator_version")
+    return Board(path=str(path), version=rd.version, footprints=fps, nets=nets, outline=outline,
+                 keepouts=rd.keepouts, zones=rd.zones, tracks=tracks, vias=vias, stackup=rd.stackup,
+                 rules=rules_obj, generator=f"{gen} {gv}".strip() if gv else gen,
+                 layers=dict(rd.layer_types), thickness=rd.stackup.thickness, warnings=rd.warnings)
