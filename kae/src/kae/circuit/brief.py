@@ -180,7 +180,7 @@ def build(board, *, use_sheets: bool = True) -> dict:
             p.sheet = None
     roles = infer_roles(nl)
     st = find_structures(nl, roles)
-    ids = _Ids(nl)
+    ids = _Ids(nl)        # part key -> footprint uuid, for every part reference the brief emits
     sroles = _structure_roles(st)
     member_of = {}
     for key in STRUCT_ORDER:
@@ -202,13 +202,32 @@ def build(board, *, use_sheets: bool = True) -> dict:
              'confidence': round(nr.confidence, 3), 'evidence': evidence_json(nr.evidence, 6)}
         if vb:
             d['volts_belief'] = vb
-        for k in ('interface', 'speed', 'pair', 'source'):
+        for k in ('interface', 'speed', 'pair'):
             if nr.attrs.get(k):
                 d[k] = nr.attrs[k]
+        src = nr.attrs.get('source')
+        if isinstance(src, str):          # a clock's source part (crystal or oscillator)
+            src = {'kind': 'part', 'ref': src}
+        if src:
+            # parts by footprint uuid ('part'), with the reference beside it for reading
+            d['source'] = {k: v for k, v in src.items() if k != 'ref'}
+            if src.get('ref') in nl.parts:
+                d['source'].update(part=ids(src['ref']), ref=nl.parts[src['ref']].refdes)
         if nr.tags:
             d['tags'] = nr.tags
         if nr.role == 'switch_node':
-            d['switch'] = {k: v for k, v in nr.attrs.items() if k in ('kind', 'inductors', 'high', 'low', 'ic', 'via', 'of')}
+            sw = {}
+            refs = []
+            for k, v in nr.attrs.items():
+                if k in ('inductors', 'high', 'low', 'ic'):
+                    xs = v if isinstance(v, list) else [v]
+                    refs += [x for x in xs if isinstance(x, str) and x in nl.parts]
+                    sw[k] = [ids(x) for x in v] if isinstance(v, list) else ids(v) if isinstance(v, str) else v
+                elif k in ('kind', 'via', 'of'):
+                    sw[k] = v
+            if refs:
+                sw['members_ref'] = {ids(r): nl.parts[r].refdes for r in refs}
+            d['switch'] = sw
         cls = nl.netclass(name)
         if cls:
             d['netclass'] = cls

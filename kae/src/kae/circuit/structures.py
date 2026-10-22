@@ -38,6 +38,8 @@ from .netlist import Netlist, Part
 from .roles import (BOOT_PIN, EN_PIN, FB_PIN, GND_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, XTAL_PIN, Roles, belief,
                     cap_class, regulator_vout)
 
+CTRL_PIN = re.compile(r'^(N?PG|PGOOD|POK|MODE\w*|SYNC\w*|SS\w*|TR|TRK|RT\w*|ILIM\w*|COMP|SEL\w*|CFG\w*|PS|FSW|FREQ|CTRL|'
+                      r'DIS|N?SLEEP|N?FAULT|STAT\w*)$', re.I)
 REGULATOR_SUBS = ('regulator_linear', 'regulator_switching', 'regulator_module', 'pmic', 'charger', 'charge_pump')
 LOAD_KINDS = ('ic', 'module', 'oscillator', 'led', 'optocoupler', 'microphone', 'crystal')
 
@@ -123,6 +125,12 @@ class _B:
 
     def cap_pad(self, cref, net):
         return self.pad_sel(cref, net)
+
+    def supply_pads(self, ref, net):
+        """The part's pads on a rail that carry the power current: control pins tied to the rail (EN, MODE,
+        PG pull-ups, FB) are left out unless nothing else is there."""
+        ps = [p for p in self.nl.parts[ref].pins_on(net) if not (EN_PIN.match(p.fn) or FB_PIN.match(p.fn) or CTRL_PIN.match(p.fn))]
+        return sorted({p.number for p in ps}, key=_natkey) or self.pads(ref, net)
 
     def volts(self, net):
         nr = self.r.nets.get(net)
@@ -543,7 +551,7 @@ def _converter(b: _B, L, lpart, swn, other):
         if hs and hs_rail != other:
             loop += [[hs, b.pad_sel(hs, rail)], [hs, b.pad_sel(hs, swn)]]
         elif ctrl:
-            loop.append([ctrl, [p.number for p in vin_pins if p.net == rail] or b.pads(ctrl, rail)])
+            loop.append([ctrl, [p.number for p in vin_pins if p.net == rail] or b.supply_pads(ctrl, rail)])
             if d_catch or ls:
                 loop.append([ctrl, b.pads(ctrl, swn)])
         if ls:
@@ -566,7 +574,7 @@ def _converter(b: _B, L, lpart, swn, other):
             if ls:
                 loop += [[ls, b.pad_sel(ls, swn)], [ls, b.pad_sel(ls, ls_ret)]]
         elif ctrl:
-            loop.append([ctrl, b.pads(ctrl, rail)])
+            loop.append([ctrl, b.supply_pads(ctrl, rail)])
             loop.append([ctrl, sorted({p.number for p in _gnd_pins(b, ctrl, suffix)}, key=_natkey)])
     if hf:
         loop.append([hf, b.cap_pad(hf, gnd if gnd in b.nl.parts[hf].nets else next(iter(b.nl.parts[hf].nets - {rail})))])
@@ -614,7 +622,7 @@ def _buck_boost(b: _B, L, swnets):
         comp = [x for x in _consumers(b, rail, exclude={ctrl, L})]
         caps, cp = _caps_with_p(b, rail, gnd, ctrl, comp)
         hf = caps[0] if caps else None
-        loop = ([[hf, b.cap_pad(hf, rail)]] if hf else []) + [[ctrl, b.pads(ctrl, rail)], [ctrl, gp]] + \
+        loop = ([[hf, b.cap_pad(hf, rail)]] if hf else []) + [[ctrl, b.supply_pads(ctrl, rail)], [ctrl, gp]] + \
                ([[hf, b.cap_pad(hf, gnd)]] if hf else [])
         evs = [ev('topology', f"both ends of {L} are switch nodes of {ctrl} (4-switch buck-boost)", STRONG),
                ev('pinfunction', f"{kind} side: {ctrl} pins on '{b.short(rail)}'", MODERATE)]
@@ -624,7 +632,7 @@ def _buck_boost(b: _B, L, swnets):
                            **{'class': kind, 'loop': loop, 'rail': rail, 'sw': swn, 'gnd': gnd,
                               'excite': _excite(b, ctrl, L, b.volts(rail), kind), 'controller': ctrl, 'inductor': L,
                               'caps': caps, 'caps_p': cp, 'topology': 'buck_boost_4switch', 'integrated_switches': True,
-                              'loop_core': [[ctrl, b.pads(ctrl, rail)], [ctrl, gp]], 'cap_rail': rail, 'cap_gnd': gnd,
+                              'loop_core': [[ctrl, b.supply_pads(ctrl, rail)], [ctrl, gp]], 'cap_rail': rail, 'cap_gnd': gnd,
                               'anchor': ctrl}))
     return out
 
@@ -699,7 +707,7 @@ def _integrated_bridge(b: _B, ic, outs):
     hf = caps[0] if caps else None
     evs = [ev('pinfunction', f"{ic} ({part.value}) bridge outputs on {len(outs)} net(s)", STRONG),
            ev('pinfunction', f"supply pin(s) on '{b.short(rail)}'", MODERATE)]
-    loop = ([[hf, b.cap_pad(hf, rail)]] if hf else []) + [[ic, b.pads(ic, rail)], [ic, gp]] + ([[hf, b.cap_pad(hf, gnd)]] if hf else [])
+    loop = ([[hf, b.cap_pad(hf, rail)]] if hf else []) + [[ic, b.supply_pads(ic, rail)], [ic, gp]] + ([[hf, b.cap_pad(hf, gnd)]] if hf else [])
     shunts = []
     for o in outs:
         for p in b.nl.pins(o):
@@ -710,7 +718,7 @@ def _integrated_bridge(b: _B, ic, outs):
                       'excite': _excite(b, ic, None, b.volts(rail), 'half_bridge'), 'controller': ic, 'caps': caps, 'caps_p': cp,
                       'integrated_switches': True, 'phase_shunts': sorted(set(shunts), key=_refkey),
                       'bridge': {'legs': len(outs), 'type': 'integrated', 'sw_nets': outs},
-                      'loop_core': [[ic, b.pads(ic, rail)], [ic, gp]], 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ic})
+                      'loop_core': [[ic, b.supply_pads(ic, rail)], [ic, gp]], 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ic})
 
 
 def _module_cell(b: _B, ref):
@@ -769,8 +777,9 @@ TIE_ORDER = 'schematic'   # 'schematic': equal scores fill consumers in referenc
                           # reference order (block rank order); 'random': seeded shuffle (ablation)
 CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
 CELL_QUOTA = 2      # one HF commutation cap and one more
-CELL_CLASS = 'count'   # 'count': cells prefer small ceramics only when the loads' pins leave some spare (else the
-                       # bulk ones, largest first); 'hf': always prefer small ceramics (ablation, -0.2 pp ownership)
+CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only when the loads' pins leave some spare
+                       # (else the bulk ones, largest first); 'hf': always prefer them (ablation)
+ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
 
 
 def _decap_groups(b: _B, cells) -> list:
@@ -799,7 +808,25 @@ def _decap_groups(b: _B, cells) -> list:
                 if b.caps_between(hi, lo):
                     groups[(ref, (hi, lo), 'split_supply')] = {'ref': ref, 'rail': (hi, lo), 'function': 'split_supply',
                                                                'pins': list(rp[hi]), 'return_pins': list(rp[lo])}
+    if ENTRY_BULK:
+        # a rail that enters through a connector (or its series diode or fuse) keeps its polarized bulk
+        # capacitors at the entry: they hold the cable's inductance up, not one load's pins
+        for rail, nr in b.r.rails.items():
+            src = nr.attrs.get('source') or {}
+            if src.get('kind') not in ('connector', 'battery') and not (src.get('kind') == 'derived' and src.get('via') in ('diode', 'fuse')):
+                continue
+            big = [c for c in b.caps_on(rail) if _entry_cap(b, c)]
+            pins = b.pads(src['ref'], rail) if src.get('ref') in b.nl.parts else []
+            if big and pins:
+                groups[(src['ref'], rail, 'entry')] = {'ref': src['ref'], 'rail': rail, 'function': 'entry', 'pins': pins,
+                                                       'quota': len(big)}
     return list(groups.values())
+
+
+def _entry_cap(b: _B, c) -> bool:
+    part = b.nl.parts[c]
+    far = cap_class(part)[1]
+    return part.package.polarized and (far is None or far >= 9.9e-6)
 
 
 def allocate_caps(b: _B, cells, groups):
@@ -856,11 +883,14 @@ def allocate_caps(b: _B, cells, groups):
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
+                    elif f == 'entry':
+                        v += 1.0 if _entry_cap(b, c) else -3.0
                 v += _affinity(b, c, anchor)
                 if len(ranked) > 1 and j in rank_of:
                     v += RANK_W * (1.0 - abs(rc - rank_of[j]))
                 S[(c, j)] = v
-        quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] in ('load', 'split_supply') else 1) for t, x, _ in lst]
+        quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] in ('load', 'split_supply') else x.get('quota', 1))
+                 for t, x, _ in lst]
         count = [0] * ng
         owner = {}
         if TIE_ORDER == 'random':
@@ -953,7 +983,10 @@ def decaps(b: _B, groups) -> list:
             pins = sorted(g['pins'], key=_natkey)
             pin_caps = {pn: [hf[i % len(hf)]] for i, pn in enumerate(pins)} if hf else {}
             cp = g['caps_p']
-            evs = [ev('topology', f"{len(pins)} power pin(s) of {ref} on '{b.short(rail)}'", MODERATE)]
+            if g['function'] == 'entry':
+                evs = [ev('topology', f"'{b.short(rail)}' enters through {ref}; polarized bulk capacitor(s) {', '.join(mine)}", MODERATE)]
+            else:
+                evs = [ev('topology', f"{len(pins)} power pin(s) of {ref} on '{b.short(rail)}'", MODERATE)]
             if split:
                 evs.append(ev('topology', f"capacitor(s) straight across {ref}'s supply pins ('{b.short(rail)}' to '{b.short(gnd)}')", STRONG))
                 if ng > 1:

@@ -90,7 +90,7 @@ class _Ctx:
         y0 = float(np.min(p.pad_ly[ks] - p.pad_sy[ks] / 2))
         y1 = float(np.max(p.pad_ly[ks] + p.pad_sy[ks] / 2))
         a = max(x1 - x0, y1 - y0) if len(ks) > 1 else min(p.pad_sx[ks[0]], p.pad_sy[ks[0]])
-        return Term(i, lx, ly, a, net if net is not None else p.pad_net[ks[0]])
+        return Term(i, lx, ly, a, net if net is not None else p.pad_net[ks[0]], ks)
 
     def member_term(self, m):
         if not m:
@@ -134,6 +134,7 @@ def _loop_comp(ctx, terms, power, gnd_hop=None):
     bv = ctx.bv
     n = len(terms)
     kinds, widths, zb = [], [], []
+    body_min = [0.0] * n
     g = None
     for k in range(n):
         a, b = terms[k], terms[(k + 1) % n]
@@ -142,6 +143,9 @@ def _loop_comp(ctx, terms, power, gnd_hop=None):
             p = bv.parts[a.i]
             widths.append(0.3 if _is_ic(p) else float(min(max(min(a.a, b.a), 0.2), 3.0)))
             zb.append(p.zbody)
+            if a.ks and b.ks:
+                body_min[k] = float(min(math.hypot(p.pad_lx[u] - p.pad_lx[v], p.pad_ly[u] - p.pad_ly[v])
+                                        for u in a.ks for v in b.ks))
         else:
             kinds.append('board')
             widths.append(_hop_width(ctx, a.a, b.a, power))
@@ -149,7 +153,7 @@ def _loop_comp(ctx, terms, power, gnd_hop=None):
             if g is None and a.net in ctx.gnd and b.net in ctx.gnd:
                 g = k
     return LoopComp(bv, terms, kinds, widths, zb, gnd_hop=g if gnd_hop is None else gnd_hop,
-                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs, kern=ctx.t.kern)
+                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs, kern=ctx.t.kern, body_min=body_min)
 
 
 def _cluster(points, dmax=3.0):

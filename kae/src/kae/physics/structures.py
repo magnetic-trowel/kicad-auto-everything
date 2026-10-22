@@ -37,11 +37,13 @@ _hyp = math.hypot
 
 
 class Term:
-    """A terminal: part i, library-frame point (lx, ly), effective width a (mm)."""
-    __slots__ = ('i', 'lx', 'ly', 'a', 'net')
+    """A terminal: part i, library-frame point (lx, ly), effective width a (mm), and the
+    pad indices it stands for (ks; the point is their centroid)."""
+    __slots__ = ('i', 'lx', 'ly', 'a', 'net', 'ks')
 
-    def __init__(self, i, lx, ly, a, net=''):
+    def __init__(self, i, lx, ly, a, net='', ks=()):
         self.i, self.lx, self.ly, self.a, self.net = i, float(lx), float(ly), float(a), net
+        self.ks = tuple(ks)
 
 
 def txy(st, t):
@@ -111,7 +113,8 @@ class LoopComp:
     'body'; widths[k]; zb[k] body height for 'body' hops; gnd_hop: index of the board hop
     on the return (ground) net, or None; gnd_nets: set of ground net names."""
 
-    def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15, kern=None):
+    def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15, kern=None,
+                 body_min=None):
         self.bv = bv
         self.T = terms
         self.kinds = kinds
@@ -128,7 +131,12 @@ class LoopComp:
         bodyd = []
         for k in range(n):
             t0, t1 = terms[k], terms[(k + 1) % n]
-            bodyd.append(_hyp(t0.lx - t1.lx, t0.ly - t1.ly) if kinds[k] == 'body' else 0.0)
+            d = _hyp(t0.lx - t1.lx, t0.ly - t1.ly) if kinds[k] == 'body' else 0.0
+            if kinds[k] == 'body' and body_min:
+                # two pad groups whose centroids nearly coincide (interleaved BGA balls) are
+                # still at least one pad pitch apart
+                d = max(d, body_min[k])
+            bodyd.append(d)
         self.l_ti = [t.i for t in terms]
         self.l_lx = [t.lx for t in terms]
         self.l_ly = [t.ly for t in terms]

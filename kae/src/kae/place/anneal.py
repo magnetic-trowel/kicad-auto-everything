@@ -27,6 +27,8 @@ import time
 
 from .cost import Congestion
 
+BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
+
 
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
@@ -90,7 +92,12 @@ class Annealer:
                 ys.append(y)
             self.nx.append(xs)
             self.ny.append(ys)
-        self.part_nets = [sorted({nn for (nn, _, _) in pp}) for pp in self.part_pins]
+        # ground/power nets with many pins span the board whatever one part does, and are
+        # poured in practice (H11): their (down-weighted) length is frozen, which keeps every
+        # move from re-measuring hundreds of pins
+        self.frozen = {net.i for net in P.nets if net.kind in ("ground", "power") and len(net.pins) > BIG_NET}
+        self.part_nets = [sorted({nn for (nn, _, _) in pp if nn not in self.frozen}) for pp in self.part_pins]
+        self.part_pins = [[(nn, sl, k) for (nn, sl, k) in pp if nn not in self.frozen] for pp in self.part_pins]
         self.ncost = [self._net_cost(j) for j in range(len(P.nets))]
         self.wl = sum(self.ncost)
         self.W0 = max(1e-6, self.wl)
@@ -458,7 +465,6 @@ class Annealer:
                     leg=self.leg_total, disp=round(disp, 5))
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25):
-        rng = self.rng
         n = len(self.mov)
         if n == 0:
             return self.report(0.0)

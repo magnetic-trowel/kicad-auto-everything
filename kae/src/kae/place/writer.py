@@ -81,6 +81,7 @@ def _top_blocks(text):
     out = []
     depth = 0
     start = None
+    head = None
     head_next = False
     for m in _TOK.finditer(text):
         t = m.group(0)

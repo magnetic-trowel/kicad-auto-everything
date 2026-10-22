@@ -87,6 +87,11 @@ def _seed_state(P, macros, net_w, seed, log):
     """Quadratic + spread: an initial state (macros at their best layout)."""
     objs, owner = seedmod._objects(P, macros)
     pos = seedmod.quadratic(P, objs, owner, net_w)
+    # connectors are anchors: pinned inside the nearest edge, then the rest re-solved
+    wmax = max([net_w.get(net.i, net.weight) for net in P.nets] or [1.0])
+    anchors = seedmod.connector_anchors(P, objs, pos, weight=5.0 * wmax)
+    if anchors:
+        pos = seedmod.quadratic(P, objs, owner, net_w, anchors=anchors)
     pos = seedmod.spread(P, objs, pos, owner, net_w, seed=seed)
     st = State(P)
     lay_of = {}

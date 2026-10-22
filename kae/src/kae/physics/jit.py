@@ -81,7 +81,9 @@ def build(jit):
 
     @jit
     def ties(z, r, d, h):
-        """Two antiparallel vertical terminations of height z, distance d, from height h."""
+        """Two antiparallel vertical terminations of height z, distance d, from height h
+        (d floored at the radius: coincident terminations carry no loop)."""
+        d = max(d, r)
         if h == INF:
             return 2.0 * m_self(z, r) - 2.0 * m_par(z, z, 0.0, max(d, 1e-6))
         return 2.0 * (m_self(z, r) + collinear(z, z, 2.0 * h)) \

@@ -102,6 +102,25 @@ def _edge_point(P, x, y):
     return q.x, q.y
 
 
+def connector_anchors(P, objs, pos, weight):
+    """Anchors pulling every object that holds a connector to just inside the nearest board
+    edge (mechanics puts connectors there, and it keeps them out of the routing core)."""
+    from shapely.geometry import Point
+    anchors = {}
+    cx, cy = P.outline.centroid.x, P.outline.centroid.y
+    for o, (members, w, h, rel) in enumerate(objs):
+        if not any(getattr(P.parts[i], "kind", "") == "connector" for i in members):
+            continue
+        x, y = pos[o]
+        qx, qy = _edge_point(P, x, y)
+        inside = P.outline.contains(Point(x, y))
+        dx, dy = (x - qx, y - qy) if inside else (cx - qx, cy - qy)
+        L = math.hypot(dx, dy) or 1.0
+        inset = 0.5 * min(w, h) + P.edge_clearance + 0.5
+        anchors[o] = (qx + dx / L * inset, qy + dy / L * inset, weight)
+    return anchors
+
+
 def spread(P, objs, pos, owner, net_w, iters=300, seed=0):
     """Push overlapping objects apart inside the board; springs keep nets together."""
     rng = np.random.default_rng(seed)

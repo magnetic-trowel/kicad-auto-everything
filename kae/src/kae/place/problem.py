@@ -555,19 +555,28 @@ class Problem:
     def set_margin(self, m):
         """Grow every movable part's occupancy and board rectangles by m/2 on each side (0
         restores the exact rectangles): routing room between parts and towards the board edge.
-        Legality does not need it; routability does."""
+        Parts with many pins get more (escape space: m * min(0.8, 0.1 sqrt(pins)) extra, so a
+        32-pin QFN on an empty board keeps about 0.6 mm more around it than a resistor).
+        Legality does not need any of it; routability does."""
         g = self.g
         self.margin = float(m)
-        k = int(round(m / 2 / g)) if m > 0 else 0
+        # room for a track between a pad and the edge (beyond the copper-to-edge clearance), as
+        # far as the board's slack allows: Freerouting narrows tracks it squeezes in there
+        r = self.board.rules
+        track = (r.track_min if r and r.track_min else 0.2)
+        edge_room = min(1.0, m / 0.5) * (track + self.clr_min) if m > 0 else 0.0
         for p in self.parts:
             if not p.movable:
                 continue
+            esc = m * min(0.8, 0.1 * math.sqrt(len(p.fp.pads))) if m > 0 else 0.0
+            k = int(round((m + esc) / 2 / g)) if m > 0 else 0
+            kb = int(round((m / 2 + edge_room) / g)) if m > 0 else 0
             for r in p.rots:
                 a, b, c, d = r.g_own_exact
                 r.g_own = (a - k, b + k, c - k, d + k)
                 a, b, c, d = r.g_board_exact          # room to route between parts and the edge
-                r.g_board = (a - k, b + k, c - k, d + k)
-        return k
+                r.g_board = (a - kb, b + kb, c - kb, d + kb)
+        return int(round(m / 2 / g)) if m > 0 else 0
 
     def _fixed_obstacles(self, board):
         g = self.g

@@ -187,6 +187,8 @@ def _vertical_terms(H, V):
             sb = 1.0 if zb1 > zb0 else -1.0
             lo_b = min(zb0, zb1)
             d = _hyp(xa - xb, ya - yb)     # 0 for stacked collinear segments: m_par stays finite
+            if d < max(ra, rb) and min(zb0, zb1) < max(za0, za1) and max(zb0, zb1) > min(za0, za1):
+                d = max(ra, rb)            # overlapping in z: the conductors cannot be closer
             m = m_par(la, lb, lo_b - lo_a, d)
             # b's image spans [-(lo_b+lb), -lo_b], same direction
             m += m_par(la, lb, -(lo_b + lb) - lo_a, d)

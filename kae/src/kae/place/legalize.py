@@ -200,12 +200,6 @@ def _copper_sides(p, part_side):
     return tuple(sorted(sides))
 
 
-def _side_of_layer_pad(p, part, placed_side):
-    """Pad layers in the model are for the footprint's current side; a pad keeps its side
-    relative to the part (v0: sides never change)."""
-    return _copper_sides(p, placed_side)
-
-
 def exact_check(P, st, parts=None, max_items=60):
     """Exact legality of the placement (movable parts against everything). Returns a list of
     violations {type, refs, detail}."""
@@ -280,7 +274,7 @@ def exact_check(P, st, parts=None, max_items=60):
         for ia, ib in zip(qa.tolist(), qb.tolist()):
             if ia >= ib:
                 continue
-            (i, k, pa), (j, l, pb) = meta[ia], meta[ib]
+            (i, _k, pa), (j, _l, pb) = meta[ia], meta[ib]
             if i == j or (i not in check and j not in check):
                 continue
             if pa.net and pa.net == pb.net:

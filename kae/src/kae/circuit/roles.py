@@ -174,7 +174,7 @@ TEXT_RULES = [
     ('optocoupler', None, 4.0, rx(r'opto.?coupler|optoisolator|photocoupler|solid.?state relay|PhotoMOS|\bPC817|\b6N13[5-9]|\bTLP\d{3}|\bH11[A-L]\d|\b4N2[5-8]|\b4N3[5-7]|'
                                    r'\bMOC\d{4}|\bGAQY|\bEL817|\bPS2501|\bVTL5C|\bLTV-?\d|\bSFH\d{3}|\bACPL|\bHCPL|\bVO\d{3,4}')),
     ('module', None, 3.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
-                              r'\bWeMos|\bDevKit|\bbreakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
+                              r'\bWeMos|\bDevKit|breakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
                               r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module')),
     ('graphic', None, 2.5, rx(r'\blogo\b|\bOSHW\b|\bWEEE\b|\bROHS\b|\bkibuzzard|\bQRCode|\bgraphic|\bSign_|\bLONGTHING|\bart\b|\bCreative_Commons')),
     ('mechanical', None, 1.5, rx(r'\bMECHANICAL\b|\bPCM_kikit:Board|\bpanel|\bmouse.?bite|\bcutout')),
@@ -969,6 +969,13 @@ def _switch_nodes(nl: Netlist, roles: Roles):
 # ------------------------------------------------------------------------------- rails
 INT_OUT_PIN = rx(r'^\d+(\.\d+)?V\d*_?OUT$|^\d+V\d+$|^VREG(_?OUT)?$|^VCAP\w*|^LDO_?OUT\w*|^REG_?OUT\w*|^VDD_?CORE$|^VCORE$|^DCPL\w*|^VCP$|'
                   r'^CP_?OUT$|^VDD_?OUT$|^V_?REG$|^VREG_VOUT$|^VDD_?(1V\d|1V|2V5|1P\d)\w*_?OUT$|^AVDD_?OUT$|^VINT\w*|^VDD_?INT\w*|^BYP\w*$|^VL$')
+# a differential input (VIN+, IN-, SENSE+, CS-) is a measurement pin even where a library types it power_in
+DIFF_IN_PIN = rx(r'^(V?IN[+-]|[+-]V?IN|V?IN[PN]|SENSE[+-PN]|[+-]SENSE|CS[+-PN]|RS[+-]|ISENSE[+-PN]?|SNS[+-PN]|I?SNS[PN])$')
+# a rail-like name with a control suffix is a control line: 12V0_OUT_EN, VBUS_DET, 3V3_PG
+CTRL_SUFFIX = rx(r'[_-](N?EN|ENABLE|N?PG|PGOOD|PWRGD|POK|OK|GOOD|FAULT|FLT|ALERT|OFF|CTRL|CTL|SEL|DET|STAT|STATUS|INT|IRQ|MON|SENSE|SNS|'
+                 r'ADC|DIV|FB|BTN)$')
+POWER_SUBS = ('regulator_linear', 'regulator_switching', 'regulator_module', 'pmic', 'charger', 'charge_pump', 'load_switch',
+              'gate_driver', 'motor_driver', 'audio_amp')
 SENSE_NAME = rx(r'SENSE|SNS|KELVIN|(^|[^A-Z])K(ELV)?$|_MON$|MONITOR|MEAS|_DIV$|DIVIDER|_ADC$|ADC_|_FB$|^FB_|VFB|_REF$|REF_')
 
 
@@ -1001,8 +1008,9 @@ def _rails(nl: Netlist, roles: Roles):
         # a power_out pin makes a source only on an IC or module: library symbols of connectors, fuses
         # and resistors carry power_out pins too (suite run, docs/topics/physics/suite-physics-results.md)
         p_out = [p for p in pins if p.ptype == 'power_out' and roles.parts[p.ref].kind in ('ic', 'module')]
+        diff_in = [p for p in pins if DIFF_IN_PIN.match(p.fn) and roles.parts[p.ref].kind == 'ic' and roles.parts[p.ref].subtype not in POWER_SUBS]
         p_in = [p for p in pins if p.ptype == 'power_in' and roles.parts[p.ref].kind in ('ic', 'module', 'oscillator', 'led', 'crystal')
-                and not GND_PIN.match(p.fn)]
+                and not GND_PIN.match(p.fn) and p not in diff_in]
         n_in_parts = len({p.ref for p in p_in})
         reg_out = [p for p in pins if OUT_PIN.match(p.fn) and roles.parts[p.ref].subtype in ('regulator_linear', 'regulator_switching', 'regulator_module', 'pmic', 'charger', 'charge_pump')]
         name_pin_in = [p for p in pins if roles.parts[p.ref].kind in ('ic', 'module', 'oscillator') and not GND_PIN.match(p.fn) and
@@ -1044,9 +1052,15 @@ def _rails(nl: Netlist, roles: Roles):
             evs.append(ev('name', f"control/signal name '{s}'", -3.0))
         sig = [p for p in pins if p.ptype in ('input', 'output', 'bidirectional', 'tri_state', 'open_collector') and roles.parts[p.ref].kind in ('ic', 'module')
                and not SUPPLY_PIN.match(p.fn)]
+        if diff_in and not (p_out or reg_out or ind_out or p_in or name_pin_in):
+            # a differential sense input on a net named after a rail: the Kelvin line of a shunt (suite run)
+            evs.append(ev('pinfunction', f"differential sense input {diff_in[0].label} and no supply pin (a Kelvin or sense line)", -4.0))
+        if CTRL_SUFFIX.search(s) and not (p_out or reg_out or ind_out or p_in or name_pin_in):
+            evs.append(ev('name', f"rail name with a control suffix '{s}' and no supply pin (an enable, status or sense line)", -4.0))
         if sig and not powered:
             evs.append(ev('pintype', f"{len(sig)} IC pin(s) typed as logic I/O ({sig[0].label}) and none as power", -2.0))
-        con_sup = [p for p in conns if re.match(r'^(VBUS|VIN|VCC|VDD|V\+|\+\d+V\w*|\d+V\w*|PWR\w*|POWER|VBAT|BAT\+|\+)$', p.fn)]
+        con_sup = [p for p in conns if re.match(r'^(VBUS|VIN|VCC|VDD|V\+|\+\d+V\w*|\d+V\w*|PWR\w*|POWER|VBAT|BAT\+|\+)$', p.fn)
+                   and not CTRL_SUFFIX.search(p.fn)]
         if con_sup:
             evs.append(ev('pinfunction', f"connector supply pin {con_sup[0].label}", MODERATE))
         if len(pins) <= 2 and not nl.zone_layers.get(net) and not (p_out or reg_out) and not ((powered_pins(pins) or name or con_sup) and caps) \
@@ -1110,6 +1124,13 @@ def _rail_sources(nl: Netlist, roles: Roles):
     for ref, part in nl.parts.items():
         pr = roles.parts[ref]
         t = nl.two_nets(part)
+        if pr.kind == 'resistor' and pr.subtype == 'shunt' and not t:
+            # a four-terminal shunt: the two rails are the current path, the other two nets the Kelvin taps
+            power = sorted(n for n in part.nets if n in roles.rails)
+            if len(power) == 2:
+                series[power[0]].append((ref, power[1], 'shunt'))
+                series[power[1]].append((ref, power[0], 'shunt'))
+            continue
         if not t or len(part.active_pins()) > 3:
             continue
         a, b = t
@@ -1141,6 +1162,12 @@ def _rail_sources(nl: Netlist, roles: Roles):
         reg += [p for p in pins if roles.parts[p.ref].subtype == 'charger' and re.match(r'^(V?BAT\w*|BATT?\+?)$', p.fn) and p not in reg]
         if reg:
             src = {'kind': 'regulator', 'ref': reg[0].ref, 'pin': reg[0].number}
+            if roles.parts[reg[0].ref].subtype == 'load_switch':
+                # a load switch passes its input rail through: the output sits at the input's voltage
+                up = [p.net for p in nl.parts[reg[0].ref].pins if p.net in roles.rails and p.net != net and
+                      (IN_PIN.match(p.fn) or re.match(r'^(P?VIN\w*|VBUS)$', p.fn))]
+                if up:
+                    src.update(upstream=up[0], via='load_switch')
         elif net in ind_out:
             src = {'kind': 'converter', 'ref': ind_out[net][0], 'switch_node': ind_out[net][1]}
         else:
@@ -1148,6 +1175,8 @@ def _rail_sources(nl: Netlist, roles: Roles):
             con = [p for p in pins if roles.parts[p.ref].kind == 'connector']
             con.sort(key=lambda p: (roles.parts[p.ref].subtype not in ('power', 'usb'), p.ref))
             internal = [p for p in pins if roles.parts[p.ref].kind in ('ic', 'module') and (p.ptype == 'power_out' or INT_OUT_PIN.search(p.fn))]
+            devmod = [p for p in pins if roles.parts[p.ref].kind == 'module' and DEVBOARD.search(nl.parts[p.ref].text())
+                      and re.match(r'^\+?3V3(_?OUT)?$|^\+?3\.3V(_?OUT)?$|^V3V3$', p.fn, re.I)]
             act = {p.ref for p in pins if roles.parts[p.ref].kind not in ('capacitor', 'test_point')}
             # an auto-named net ('Net-(U22-VDD)') that only one IC and capacitors touch is that IC's own node;
             # a named rail ('+3V3') in the same state is fed from somewhere the board does not show
@@ -1156,6 +1185,9 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 src = {'kind': 'battery', 'ref': bat[0].ref}
             elif internal:
                 src = {'kind': 'internal', 'ref': internal[0].ref, 'pin': internal[0].number}
+            elif devmod:
+                src = {'kind': 'module', 'ref': devmod[0].ref, 'pin': devmod[0].number,
+                       'note': 'development-board module: its 3V3 pin is its own regulator output'}
             elif only_ic:
                 ic = next(iter(act))
                 p0 = next(p for p in pins if p.ref == ic)
@@ -1166,6 +1198,13 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 if up:
                     ref, upn, k = up[0]
                     src = {'kind': 'derived', 'ref': ref, 'upstream': upn, 'via': k}
+                else:
+                    # through an unnamed middle net (fuse then diode, a fuse then a bead): follow up to 3 parts
+                    path = _series_path(nl, roles, series, net)
+                    if path:
+                        (ref, _, k), upn = path[0], path[-1][1]
+                        src = {'kind': 'derived', 'ref': ref, 'upstream': upn, 'via': k, 'path': [x[0] for x in path],
+                               'path_via': [x[2] for x in path]}
             if src is None and con:
                 src = {'kind': 'connector', 'ref': con[0].ref, 'note': 'source or export, undecided'}
             if src is None:
@@ -1179,13 +1218,38 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 continue
             src = nr.attrs.get('source') or {}
             up = src.get('upstream')
-            if src.get('kind') == 'derived' and up in roles.rails:
+            if (src.get('kind') == 'derived' or src.get('via') == 'load_switch') and up in roles.rails:
                 ub = roles.rails[up].attrs.get('volts') or {}
                 if ub.get('value') is not None:
-                    v = ub['value'] - (0.4 if src.get('via') == 'diode' else 0.0) * (1 if ub['value'] >= 0 else -1)
+                    n_d = (src.get('path_via') or [src.get('via')]).count('diode')
+                    v = ub['value'] - 0.4 * n_d * (1 if ub['value'] >= 0 else -1)
                     nr.attrs['volts'] = belief(round(v, 3), 'V', f"inherited from '{nl.nets[up].short}' through {src['ref']} ({src['via']})",
                                                round(v * 0.9, 3), round(ub['interval'][1] if ub.get('interval') else v * 1.05, 3),
                                                lineage=[ub.get('relative_to', '')])
+
+
+DEVBOARD = rx(r'breakout|\bPico|XIAO|Arduino|DevKit|\bnano\b|_nano|nano_|WeMos|ProMicro|Pro_?Micro|RP2040.?Zero|SUPERMINI|nice_nano|'
+              r'\bBlue_?Pill|\bBlack_?Pill|Feather|ItsyBitsy|QT_?Py|Teensy')
+
+
+def _series_path(nl, roles, series, net, depth=3):
+    """[(part, net reached, kind), ...] from `net` up through series parts and two-part middle nets to a rail."""
+    seen = {net}
+    frontier = [(net, [])]
+    for _ in range(depth):
+        nxt = []
+        for n, path in frontier:
+            for ref, up, k in series.get(n, []):
+                if up in seen or up in roles.grounds:
+                    continue
+                p2 = path + [(ref, up, k)]
+                if up in roles.rails:
+                    return p2
+                if len({p.ref for p in nl.nets[up].pins}) <= 2:
+                    seen.add(up)
+                    nxt.append((up, p2))
+        frontier = nxt
+    return None
 
 
 def belief(value, unit, src, lo=None, hi=None, exactness='E5', lineage=()):
@@ -1513,6 +1577,7 @@ def _signal_roles(nl: Netlist, roles: Roles):
         if evs:
             sub = 'adc_input' if re.search(r'ADC|AIN|AN\d', s + ' '.join(fns)) else 'reference' if re.search(r'REF', s + ' '.join(fns)) else (
                 'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR', s + ' '.join(fns))
+                or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
                 else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s) else 'opamp_input' if net in opamp_in else 'analog')
             add('analog', sub, evs, prior=-1.5)
         # reset / boot
