@@ -150,8 +150,11 @@ def cmd_run(a):
     _, tasks, results = _dirs(a)
     sandbox = adapters.Sandbox(enabled=not a.no_sandbox, network=a.sandbox_net,
                                ro=[Path(x) for x in a.sandbox_ro or []])
-    ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox)
-    probe = adapters.make(a.probe) if a.probe else None
+    ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox,
+                       freerouting=a.freerouting)
+    probe = adapters.make(a.probe, freerouting=a.freerouting) if a.probe else None
+    if a.label:
+        ad.name = a.label
     run_dir = runner.run(tasks, results, ad, kinds=_split(a.kinds) or ["route"], k=a.k,
                          timeout=a.timeout, jobs=a.jobs, probe=probe, only=_split(a.only),
                          splits=_split(a.splits), qualified_only=not a.all, name=a.name,
@@ -267,6 +270,10 @@ def main(argv=None):
     sp.add_argument("-j", "--jobs", type=int, default=1)
     sp.add_argument("--probe", help="router used to score placements, e.g. freerouting")
     sp.add_argument("--passes", type=int, help="freerouting: fixed -mp instead of the per-attempt schedule")
+    sp.add_argument("--freerouting", metavar="PATH",
+                    help="Freerouting binary or JAR for the freerouting adapters and the probe "
+                         "(default: KAE_FREEROUTING or the installed release)")
+    sp.add_argument("--label", help="name the adapter in results and reports (e.g. freerouting-fork)")
     sp.add_argument("--only")
     sp.add_argument("--splits", help="e.g. A,B")
     sp.add_argument("--all", action="store_true", help="include boards whose human layout is not clean")
