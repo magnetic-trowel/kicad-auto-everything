@@ -336,7 +336,9 @@ class KBoard:
             dr = first(pd, 'drill')
             dv = [float(v) for v in (dr[1:] if dr else []) if isinstance(v, str) and re.match(r'^[\d.]+$', v)]
             p = dict(ref=ref, num=num, kind=kind, x=cx, y=cy, poly=poly, layers=sorted(set(layers), key=self.cu.index),
-                     drill=min(dv) if dv else 0.0, net=self.net_of(pd), fp=rec)
+                     drill=min(dv) if dv else 0.0, net=self.net_of(pd), fp=rec,
+                     pinfunction=(first(pd, 'pinfunction') or [None, ''])[1],
+                     pintype=(first(pd, 'pintype') or [None, ''])[1])
             rec['pads'].append(p)
             self.pads.append(p)
         self.fps.append(rec)
@@ -600,6 +602,7 @@ def raster(geom, x0, y0, nx, ny, h, ss=3, fs=5):
 # ============================================================================ DC network
 class Net:
     """A conductance network: nodes (cells, via barrels, electrodes) and branches."""
+    permc = 'COLAMD'          # column ordering for splu; callers may choose 'MMD_AT_PLUS_A' (less fill on big boards)
 
     def __init__(self):
         self.nn = 0
@@ -671,7 +674,7 @@ class Net:
             r = nodes[np.argmax(deg[nodes])]
             fr = nodes[nodes != r]
             self.root[c], self.free[c] = r, fr
-            self.lu[c] = spla.splu(self.G[fr][:, fr].tocsc(), permc_spec='COLAMD')
+            self.lu[c] = spla.splu(self.G[fr][:, fr].tocsc(), permc_spec=self.permc)
         self.t_factor = tic() - t0
 
     def solve(self, S, comps=None):
