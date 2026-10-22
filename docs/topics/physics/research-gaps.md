@@ -61,17 +61,7 @@ Two lessons follow [I]:
 
 **Tier 1: blocking or highest leverage**
 
-1. **Ground truth (the F4 rung is empty).** No open dataset links layouts to measured R, L, coupling, emissions or temperature, and the CM-voltage and loop-radiation critics have no EMI ground truth ([physics-critics-validation](physics-critics-validation.md)). Proposal: a **calibration coupon panel** with one coupon per basis quantity:
-   - hot loops at h = 0.075/0.1/0.2/1.5 mm, lateral vs vertical;
-   - slots of several lengths and widths under a trace;
-   - via fields fed from the side;
-   - decap clusters in both orientations;
-   - stitching lattices vs perimeter rings;
-   - bridging caps;
-   - HV corner radii;
-   - thermal spreaders with via arrays.
-   
-   Measure with VNA/TDR, a near-field probe, an LCR meter and an IR camera, and publish under CDLA. Mine vendor EVM reports with both layout and measurements. Effort M; hardware cost small [I].
+1. **Ground truth (the F4 rung is empty).** No open dataset links layouts to measured R, L, coupling, emissions or temperature, and the CM-voltage and loop-radiation critics have no EMI ground truth ([physics-critics-validation](physics-critics-validation.md)). Round 3 replaced the first proposal (one coupon per basis quantity) with a value-of-information-ranked program: coupons only where rival predictions differ by 13× to 28 dB, led by the ℓ_m return-band coupon, plus a pre-registered two-arm first board (rules vs physics) measured in its enclosure with real cables ([validation-program](validation-program.md), [validation-coupons](validation-coupons.md)). Also mine vendor EVM reports with layouts and measurements.
 2. **The R–L transition band (re-scoped in rounds 2–3).** f_x (table below) marks where the band crosses ℓ = h, not a regime boundary. At 100 kHz about 18% of the return still flows beyond ±5 mm (h = 0.1 mm), but above ~300 kHz on 1 oz it returns within a few mm, and 4–6 complex images reproduce intact planes within 0.5–3.5% ([lens-ls](lens-ls.md), [red-team](red-team.md)) [C]. Still open: slotted, perforated and finite planes, and DC to tens of kHz near precision analog, where star grounds pay only below ~6 kHz at 10 mm on 1 oz ([derivation-audit](derivation-audit.md)).
 
    | Plane copper | f_x at h = 0.075 / 0.1 / 0.2 / 1.6 mm |
@@ -131,7 +121,7 @@ A second research wave, in this order (each is one workstream, about the size of
 
 | Wave-2 workstream | Output | Why first |
 |---|---|---|
-| A. Calibration coupons and measured-data mining | Coupon designs (KiCad), a measurement protocol, a mined dataset of EVM layouts with measured results | Unblocks every [C] number and gaps 18 and 20 |
+| A. Validation program ([designed](validation-program.md)) | Order the VOI-ranked coupons and the two-arm first board; mine EVM layouts with measured results | Unblocks every [C] number and gaps 18 and 20 |
 | B. f_x transition and thin-sheet RL solver | Solver, per-harmonic return maps of 10 converter layouts | Most converters live there |
 | C. Front-loaded levers: stackup synthesis, lever catalog, cost oracle | Stackup optimizer with fab prices; ECO menu with leverage/cost | Largest leverage per decision |
 | D. Immunity, ESD and transients | ESD/EFT/surge path budgets, nonlinear victim models, macromodel pipeline | Uncovered physics with field-failure impact |
