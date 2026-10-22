@@ -42,7 +42,6 @@ def solve_caps(X, Y, dx, layers, conductors, top_plane=None, gnd_rects=()):
     xs = -X + dx * np.arange(nx)
     ys = dx * np.arange(ny)
     # permittivity per cell (cell (i,j) spans x[i]..x[i+1], y[j]..y[j+1])
-    xc = 0.5 * (xs[:-1] + xs[1:])
     yc = 0.5 * (ys[:-1] + ys[1:])
     er = np.ones((nx - 1, ny - 1))
     for y0, y1, e in layers:
@@ -113,11 +112,6 @@ def solve_caps(X, Y, dx, layers, conductors, top_plane=None, gnd_rects=()):
                 q += d[cmask[j]].sum()
             Cm[i, j] = EPS0 * q
     return Cm
-
-
-def line_params(Cd, Ca):
-    L = MU0 * EPS0 * np.linalg.inv(Ca)
-    return L, Cd
 
 
 def hj_microstrip(w, h, er):

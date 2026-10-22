@@ -21,9 +21,12 @@ of h and results in nH for h = 1 mm; multiply by h[mm] for a real stackup):
      the slotline estimate dL ~ mu0*l / (2*ln(4*l/g));
   3. "net plane inductance" between the two board ends (cable attachment
      points), i.e. the current-driven common-mode source, vs the LearnEMC MREMC
-     closed form (mu0/pi)*h*l/W, for a centred trace and a trace near an edge.
+     closed form (mu0/pi)*h*l/W, for a centred trace and a trace near an edge
+     (node potentials from (A A^T) phi = A (L I + m));
+  4. the same board with a slot under the trace: plane voltage between cable
+     points on opposite board ends vs two points on the same end.
 
-Run (about 1-2 min, ~0.5 GB RAM):
+Run (a few minutes on 4 cores, ~0.5 GB RAM):
     python tools/research/physics/fe_peec_plane.py
 """
 import math
