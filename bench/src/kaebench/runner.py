@@ -260,9 +260,10 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
-    for ad, _ in arms:
-        if hasattr(ad, "hide"):
-            ad.hide(tasks_dir, results_dir)
+    for ad, pr in arms:
+        for method in (ad, pr):  # a command probe is as untrusted as a command method
+            if method is not None and hasattr(method, "hide"):
+                method.hide(tasks_dir, results_dir)
     name = name or f"{'+'.join(names)}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)
