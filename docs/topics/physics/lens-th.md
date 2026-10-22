@@ -70,9 +70,9 @@ The circuit limit is isothermal and lossless: one temperature and 4kTR noise per
 | n = 1, tuned (L_s ≈ L) | 1.01 | 2.72 | −27.2 dB | 72 mW |
 | n = 3, L_s = L ("far") | 1.91 | — | −28.8 dB | 216 mW |
 
-Overshoot still prefers L_s → 0 (first peak 0.57 vs 0.65 of I·Z0); ring decay and emission prefer tuning, at some cost in robustness to C_oss nonlinearity.
+Overshoot still prefers L_s → 0 (first peak 0.57 vs 0.65 of I·Z0); ring decay and emission prefer tuning, at some cost in robustness to C_oss nonlinearity. Edge rate competes with damping at the ring band: slowing the switch edge from 1.5 to 4 ns gives −8.5 dB (trapezoid edge) to −60 dB (erf edge) for +30 mW ([validation-program](validation-program.md)).
 
-**D4. Thin power cores damp themselves** (extends "thin dielectric = capacitance", README principle 3). Since 1/Q = tanδ + δ/d and Z_pk ≈ Q·Z_mode ∝ d·Q(d); round 1's cavity model, 100 × 80 mm PWR–GND pair [C]:
+**D4. Thin power cores damp themselves** (extends "thin dielectric = capacitance"). Since 1/Q = tanδ + δ/d and Z_pk ≈ Q·Z_mode ∝ d·Q(d); cavity model ([fe_cavity.py](../../../tools/research/physics/fe_cavity.py)), 100 × 80 mm PWR–GND pair [C]:
 - **Plane spacing.** |Z|_pk is 0.38/3.5/22/96 Ω at d = 0.025/0.1/0.4/1.5 mm on FR-4; the local exponent runs 1.66 → 1.08 (1.87 → 1.22 at tanδ 0.004).
 - **Low-loss laminate** raises the peaks 1.7× at 0.1 mm and 3.3× at 1.5 mm.
 - **Edge termination.** RC terminations every 10 mm at R_m = η0·d/(√εr·p) cut the peaks 5.5–8.5× (ideal parts) and 2.8–8× (0.5 nH ESL each).
@@ -81,30 +81,32 @@ Overshoot still prefers L_s → 0 (first peak 0.57 vs 0.65 of I·Z0); ring decay
 - **Copper loss dominates thin cores:** δ/d = 0.10 at d = 25 µm and 0.72 GHz vs tanδ 0.02, hence the TL;DR's scope.
 - **Stitching is not damping.** A shorting via reflects (moves modes, keeps their Q); a matched resistor absorbs (removes Q): only the second of these dual edge treatments is designed dissipation.
 
-**D5. The Peltier bound** (new). Heat Π·I = S·T·I is pumped between an alloy element's terminal junctions. With the element as the only path (R_th = R/(L0·T)), R_P/R = S²/L0 (Harman's zT): 41 ppm for manganin (1.0 µV/K vs Cu [P]) and 6.8% for constantan (40.6 µV/K [S]). With 40 K/W pads, a 1 mΩ shunt sees 15 ppm or 2.5% [C].
+**D5. The Peltier bound.** Heat Π·I = S·T·I is pumped between an alloy element's terminal junctions. With the element as the only path (R_th = R/(L0·T)), R_P/R = S²/L0 (Harman's zT): 41 ppm for manganin (1.0 µV/K vs Cu [P]) and 6.8% for constantan (40.6 µV/K [S]). With 40 K/W pads, a 1 mΩ shunt sees 15 ppm or 2.5% [C].
 
 Unequal pads (25 vs 80 K/W) add an EMF ∝ I² from Joule asymmetry: 156 ppm at 10 A in manganin, ten times the Peltier term. A metering patent asks for both junctions within 0.6 K ([US 12631667](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12631667) [S]). Symmetry cannot cancel the dissipative Peltier loss, but pad symmetry removes the I² term.
 
 **D6. Electro-thermal stability is board-level on small boards.** Below ~2λ every θ_ij contains 1/(h_tot·A), so g ≥ Σα_iP_i/(h_tot·A): the board's conductance to ambient must exceed the summed loss slopes.
 
-Four 0.5 W parts (α 0.6%/K) on a 60 × 40 mm board (round 1's FV solver) [C]:
+Four 0.5 W parts (α 0.6%/K) on a 60 × 40 mm board ([tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py)) [C]:
 - clustered: g = 0.36, rise 59.5 → 92.5 K;
 - spread: g = 0.32, rise 52.7 → 77.1 K;
 - the board floor alone gives g = 0.25 in both.
+
+Across 1–3 W examples g = 0.16–0.54, so parts run 1.2–2.2× hotter than the cold estimate [C]: the coupling matters well away from runaway.
 
 Parts whose current rises with T (BJTs, diodes, linear-mode FETs) fail first in the differential mode, at P·φ·(θ11 − θ12) = 1 with φ = 0.077/K. For θ_jc = 15 K/W parts [C]:
 - moving them from 32 to 4 mm apart raises the hogging limit from 0.29 to 0.48 W;
 - ballast (I·R_E = 10V_T) gives 3.2–5.3 W;
 - a dual die gives 4.3 W.
 
-**D7. When corners matter** (regime predicate for PW18, TM47, RG44). Inside-corner crowding is local, J ∝ r^(−1/3), and shows in temperature only while √(αt) < w: t* = w²/α_Cu is 0.8 ms at 0.3 mm, 9 ms at 1 mm, 80 ms at 3 mm. Round 1's 1 mm table (1.75× at 1 ms, < 1× at 10 ms) fits.
+**D7. When corners matter** (regime predicate for PW18, TM47, RG44). Inside-corner crowding is local, J ∝ r^(−1/3), and shows in temperature only while √(αt) < w: t* = w²/α_Cu is 0.8 ms at 0.3 mm, 9 ms at 1 mm, 80 ms at 3 mm. The 1 mm table of [power-copper](power-copper.md) (1.75× at 1 ms, < 1× at 10 ms) fits.
 
-### 3. Convergences and synergies round 1 missed
+### 3. Convergences and synergies
 
 - **The Q ledger joins five threads:** the EMI chain (trapezoids only, [fields-emi-budget](fields-emi-budget.md)), snubber BOM (PW29), cavity eigenvalues (FE26–FE28, OP16), antenna efficiency (FE51) and desense. The "eigenmodes" object needs complex frequencies and channel shares (and, with TP3, gives noise temperature).
-- **Every conductive heat path is an electrical element.** Round 1 had the pieces: G/C = k/ε (PW5, S4), the heatsink as a 22 pF feed (DR28), standoffs as heat sinks (TM10) and chassis bonds (FE14), and the 261 K/W via (1.74 mΩ divided by L·T [C]). The copper thermal network *is* the DC network scaled by L·T: one factorization serves both.
-- **DR3 used the fluctuation–dissipation engine without the physics.** Back-annotate real losses (R_ac(f), ωC·tanδ, ferrite Re Z, leakage) and the same `.noise` run gives the layout's own noise; SIM33's passivity enforcement becomes the second law it requires.
-- **Five electro-thermal rediscoveries split.** Dissipative coupling (TM16, RG50, TM19, OP11, XD20, PW49) needs a fixed point plus an eigenvalue. Reciprocal coupling (TM13, TM14, DR27, part of LA28) is post-processing of T. TM17 and current hogging are modal.
+- **Every conductive heat path is an electrical element.** The pieces exist: G/C = k/ε (PW5, S4), the heatsink as a 22 pF feed (DR28), standoffs as heat sinks (TM10) and chassis bonds (FE14), and the 261 K/W via (1.74 mΩ divided by L·T [C]). The copper thermal network *is* the DC network scaled by L·T: one factorization serves both.
+- **DR3's `.noise` run is a fluctuation–dissipation engine.** Back-annotate real losses (R_ac(f), ωC·tanδ, ferrite Re Z, leakage) and the same run gives the layout's own noise; SIM33's passivity enforcement becomes the second law it requires.
+- **Electro-thermal ideas split into two kinds.** Dissipative coupling (TM16, RG50, TM19, OP11, XD20, PW49) needs a fixed point plus an eigenvalue. Reciprocal coupling (TM13, TM14, DR27, part of LA28) is post-processing of T. TM17 and current hogging are modal.
 - **Damage is one family:** XD8, XD23, XD52, PW18, TM47, TM22, FE44, TM24 and PC19 are local high-p objectives on one solve.
 
 ### 4. Transfers
@@ -117,7 +119,7 @@ Parts whose current rises with T (BJTs, diodes, linear-mode FETs) fail first in 
 | Perron eigenvalue of coupling | Power-module SOA | Margin 1 − g as a placement critic |
 | Absorptive, not reflective, filters | RF, PDN damping | I/O filters that would ring with the cable |
 | Crowding-driven solder electromigration (~10⁴ A/cm², >10× local [S]) | Flip-chip reliability | Fine-pitch high-current pins (feed geometry sets crowding) |
-| Complex screening length | Round 1's decap and heat kernels | Mission cycles: swing within ~2\|Λ\| (18 mm at 60 s), mean within ~2λ (76 mm) [C] |
+| Complex screening length | Decap and heat kernels ([cross-domain-lessons](cross-domain-lessons.md)) | Mission cycles: swing within ~2\|Λ\| (18 mm at 60 s), mean within ~2λ (76 mm) [C] |
 
 ### 5. What each conductor is doing, thermodynamically
 
@@ -132,17 +134,6 @@ The conductor record ([lens-cd](lens-cd.md)) gains six fields per piece b:
 | Makes EMF | Σ ΔS·ΔT at material junctions | T field + BOM |
 | Ages | ḋ_b(J, T, ΔT_cyc, E, RH) | DC and AC kernels |
 
-### 6. Critique of round 1's synthesis
-
-1. **No principle says where energy goes.** Damping appears once ("damping resistance where a resonance needs it"); Res carries Q without loss attribution; no physics critic measures Q of rings, filters or cable modes (PDN-10 covers PDN peaks only). Add principle 15: *every excited mode needs a designed loss channel that owns most of its damping, placed at an antinode and tuned.*
-2. **The thesis needs a qualifier.** A lossless parasitic network rings, so minimizing alone cannot reach "invisible": some dissipation must be visible and designed, including **layout-born parts** (terminations, damping links, tuned mounting) as mandatory ECOs ([research-gaps](research-gaps.md) §4).
-3. **The EMI chain omits the ring** (TL;DR: damping buys 12–21 dB at the ring band [C, rt_damping]). "Slower edges 3 dB" is a clock-harmonic figure: at the ring band, slowing the switch edge from 1.5 to 4 ns gives −8.5 dB (trapezoid edge) to −60 dB (erf edge) for +30 mW, so edge rate competes with damping ([validation-program](validation-program.md)).
-4. **"Cheap away from runaway"** ([cross-workstream-synthesis](cross-workstream-synthesis.md)) understates the coupling: the 1–3 W examples in D6 sit at g = 0.16–0.54 (1.2–2.2× hotter) [C]. It also conflated reciprocal and dissipative coupling.
-5. **"Spacing buys little below 2λ"** ([thermal-physics](thermal-physics.md)) holds for mean ΔT only, not for fatigue (local swing), hogging (proximity helps) or plumes ("upstream", TH-06 in [thermal](../rules/thermal.md)).
-6. **Noise is absent as physics.** LII lists noise outputs ([schematic-to-physics](schematic-to-physics.md)) but no doc applies fluctuation–dissipation to layout; guards are recommended for fA inputs (AMS-05, RG24) though dielectric noise survives them.
-7. **The basis set lacks dissipation destination** (Q, W, noise temperature) **and life fraction.** Gap 10 asks for lifetime but names no unit.
-8. **The boundary was idealized.** At 20 km radiation does ~52% of the cooling; sunlit black mask sits ~64 K above white [C, rough].
-
 ## Recommendations for our system
 
 1. **Modal Q ledger in `ledger.json`:** per mode f, Q, channel shares and ring-band emission; flag modes whose designed share is < 50% while excitation × Q exceeds budget.
@@ -151,10 +142,10 @@ The conductor record ([lens-cd](lens-cd.md)) gains six fields per piece b:
 4. **Back-annotate losses as noisy elements and temperatures as instance TEMP,** so LII covers drift and layout noise.
 5. **Critics:** electro-thermal margin g with mode-aware relations; thermoelectric loop EMF with congruence and shunt pad symmetry; a life ledger (DC and AC kernels, crowded-pin electromigration, CAF).
 6. **Tag every heat path with its electrical twin** (Ω or pF).
+7. **Add dissipation destination** (Q, W, noise temperature) **and life fraction** D (TP7, the unit for lifetime) to the [basis set](rule-basis-set.md).
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** copper damping scoped to rings above ~50 MHz; damping lever 12–21 dB; the Q 31–173 match is an identity ([red-team](red-team.md)).
 - **Snubber tuning** assumes linear C_oss and copper Q 50; validate with vendor models and a coupon.
 - **Cavity model:** PMC edges, no radiation loss; terminations need an openEMS check.
 - **S²/L0 is an upper bound:** alloy Lorenz numbers reach ~1.3 L0, and S varies by lot.

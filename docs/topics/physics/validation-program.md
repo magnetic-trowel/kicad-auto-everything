@@ -1,14 +1,14 @@
 # Validation program: anchoring physics-first in measurement
 
 **TL;DR**
-- **Every number in rounds 1–2 is model against model.** This program anchors them in measurement, in the order that most changes decisions. By value of information (VOI), two claims lead robustly [C]:
+- **Every computed number in the physics docs is model against model.** This program anchors them in measurement, in the order that most changes decisions. By value of information (VOI), two claims lead robustly [C]:
   - the thesis itself: physics-first beats competent rule-following;
-  - lens VP/SY/LS's return-current band, which decides a solver build and how to protect precision nodes.
+  - the return-current band ℓ_m(f) (lenses VP, SY, LS), which decides a solver build and how to protect precision nodes.
   
   Claims whose robust action is cheap (world node, via spreading) should be acted on, not tested.
 - **The first board, VAL-1, is the main experiment.** It has a 12 V buck, an ESP32-S3 module with USB 2.0 and a 24-bit ADC, on 4 layers with a fixed USB-C connector and fixed holes. It is laid out twice, rule-following (R) and physics-first (P). Variants by population (snubbers, edge rate, connector edge, bonds, a ground-current injector) turn most budgets into differential predictions. Design-stage examples [C]: overshoot 36% vs 5%; PDN |Z| at 100 MHz 0.68 vs 0.065 Ω; ADC offset 364 µV/A vs < 1% of that with a Kelvin tie.
 - **Five coupons settle disputes that flip rules,** with predictions 13× to 28 dB apart ([validation-coupons](validation-coupons.md)).
-- **The computational track starts now.** A pilot floor census of 14 nets on four open boards: within the zones as drawn, pour shape wastes a median 4%. Thermal-relief connections cost 7–48% on the one board that uses them. Re-partitioning the planes would remove 107 of 135 mW, almost all of it on one 12 V strip. The copper leverage is front-loaded, as round 1 argued for EMI.
+- **The computational track needs no hardware.** A pilot floor census of 14 nets on four open boards: within the zones as drawn, pour shape wastes a median 4%. Thermal-relief connections cost 7–48% on the one board that uses them. Re-partitioning the planes would remove 107 of 135 mW, almost all of it on one 12 V strip. The copper leverage is front-loaded.
 - **Kill criteria are explicit.** Say which result falsifies which part of the philosophy, and report physics apart from cp1/cpk.
 
 Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [val_voi_rank.py](../../../tools/research/physics/val_voi_rank.py), [val_board.py](../../../tools/research/physics/val_board.py), [val_floor_census.py](../../../tools/research/physics/val_floor_census.py) and the coupon scripts. VAL-1 values are design-stage: the registered numbers are recomputed from the frozen copper.
@@ -21,8 +21,8 @@ For each claim, A acts as if it holds and B does not. EVPI = n·min(p·r_A, (1�
 
 | Rank | Claim (source) | Competing view | Decision it flips | EVPI EW | P(top 3) | Test |
 |---|---|---|---|---|---|---|
-| 1 | Physics-first beats competent rules on binding budgets ([README](README.md)) | "Corrected rules suffice" ([red-team](red-team.md) §5) | Build the physics core, or rules + critics | 10.5 | 0.78 | VAL-1 |
-| 2 | Return spread follows ℓ_m(f), not f_x(h) (VP, SY, LS) | Round 1's f_x; gap 2 | Transition solver; topology vs distance near ADCs | 5.0 | 0.66 | LM coupon, VAL-1 injector |
+| 1 | Physics-first beats competent rules on binding budgets ([README](README.md)) | "Better rules suffice" ([verification-and-limits](verification-and-limits.md) §3) | Build the physics core, or rules + critics | 10.5 | 0.78 | VAL-1 |
+| 2 | Return spread follows ℓ_m(f), not f_x(h) (VP, SY, LS) | One boundary at f_x(h); gap 2 | Transition solver; topology vs distance near ADCs | 5.0 | 0.66 | LM coupon, VAL-1 injector |
 | 3 | Critics are fit to be rewards ([physics-critics](physics-critics.md)) | Goodhart; circular mutants | Reward on critics, or report only | 3.0 | 0.32 | Mutation benchmark |
 | 4 | F1 proxies rank real contenders ([solver-ladder](solver-ladder.md)) | Need F2 in the loop | Inner-loop fidelity | 2.0 | 0.24 | VAL-1 signs, cross-solver |
 | 5 | Designed damping, tuned snubbers ([lens-th](lens-th.md)) | Edge rate or device damping suffice | Q ledger; snubber design | 1.7 | 0.23 | VAL-1 variants |
@@ -70,7 +70,7 @@ Three lessons:
 | ADC noise and aliasing | Shorted-input noise at 20 SPS, PGA 128, buck off and on; spectrum while SYNC sweeps through 4·f_MOD = 1.024 MHz | About 0.1 µV rms in both arms, under 10% rise with the buck on [I]; tones only within the sinc passband of k·f_MOD, amplitude = coupled ripple × sinc response |
 | Decap impedance at pins | 2-port shunt, 1–300 MHz | \|Z\|(100 MHz) R 0.68 Ω (rail on L3 across the core), P 0.065 Ω (pour over L2 at 0.1 mm); ratio 0.09 |
 | Conducted emissions | LISN + tinySA, 150 kHz–30 MHz, 12 V cable | DM about 30 dBµV at 1 MHz (±10 dB) behind the π filter [I]; arms differ by filter-bypass coupling and SW-node C_ext |
-| Cable CM and radiated pre-scan | Clamp probe on both cables in an aluminium box; antenna at 1 m | Ratios between variants [I]: connector edge 6–30 dB ([red-team](red-team.md) claim 12; the 40 dB was an input), board-to-box bonds as in the CM coupon. Absolute E ±15 dB, used to calibrate the enclosure class |
+| Cable CM and radiated pre-scan | Clamp probe on both cables in an aluminium box; antenna at 1 m | Ratios between variants [I]: connector edge 6–30 dB ([verification-and-limits](verification-and-limits.md) §2), board-to-box bonds as in the CM coupon. Absolute E ±15 dB, used to calibrate the enclosure class |
 | IR temperatures | Thermal camera at 2 A, after calibrating h_conv on the heater | Buck IC rise 20–50 K; P minus R ≤ −5 K [I]; ±25% after calibration |
 | Radio desense | ESP32 noise floor with the buck on and off | < 1 dB (a registered null) [I] |
 
@@ -95,7 +95,7 @@ A class that ranks well but misses levels is fit for ranking, not compliance (IN
 1. **Common factors first:** R_s (strips), ε_r and h (TDR), probe transfer impedances, h_conv (heater), enclosure and cable offset (pre-scan vs model).
 2. **Then one discrepancy term per model lineage:** image PEEC, cavity, MREMC chain, thermal FV, lumped CM graph (IN30). An identifiability check (IN29) must pass first.
 3. **Store posteriors** per fab, stackup and enclosure class in a versioned registry.
-4. **Re-register for the next board of the class.** Success means the error shrinks while coverage holds. Post-build data cannot improve this board's layout, only the next one's ([red-team](red-team.md) claim 15).
+4. **Re-register for the next board of the class.** Success means the error shrinks while coverage holds. Post-build data cannot improve this board's layout, only the next one's ([verification-and-limits](verification-and-limits.md) §1).
 
 ### 3. Coupons
 
@@ -113,11 +113,11 @@ LM, FP (with VC), SS, CM and NL, with geometries, predictions and pass rules in 
 | BLDCM-Power | 2 | 6.5 | 0 / 4 / 67% | VIN on tracks |
 
 Readings:
-- **Inside the drawn zones, KiCad fills sit on the floor** where pads connect solidly. This confirms VP: the domain, not the shape, sets the loss.
+- **Inside the drawn zones, KiCad fills sit on the floor** where pads connect solidly. This confirms [lens-vp](lens-vp.md): the domain, not the shape, sets the loss.
 - **Relief connections are a priced trade.** They cost 7–48% of a pour's resistance. Solderability is the other side of it.
-- **What remains is front-loaded.** Plane partition alone holds 79% of the loss across all 14 nets (107 of 135 mW); layer reassignment was not even allowed. So VP's "report avoidable loss for every pour" should report the partition-level floor.
+- **What remains is front-loaded.** Plane partition alone holds 79% of the loss across all 14 nets (107 of 135 mW), even without layer reassignment. So VP's "report avoidable loss for every pour" should report the partition-level floor.
 - **The absolute loss is negligible on three of four boards.** A pour synthesizer earns its keep on high-current designs only.
-- **Caveats.** Assumed currents; single-net floors that ignore other nets' needs; raster scope (0.15/0.25 mm; [red-team](red-team.md) claim 4).
+- **Caveats.** Assumed currents; single-net floors that ignore other nets' needs; raster scope (0.15/0.25 mm; [verification-and-limits](verification-and-limits.md) §1).
 - **Next.** Run the 112 qualified boards, with DC currents from the schematic operating point.
 
 **Mutation benchmark** (PC29–31, IN36, V5):
@@ -149,10 +149,10 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
 
 | Result | Falsifies | Then |
 |---|---|---|
-| P beats R by less than fab and measurement scatter (≈ 2–3 dB EMI, 10% overshoot or ripple, 2 K, 3σ ADC noise) on every binding budget, where ≥ 6 dB or 2× was predicted | The thesis for this board class (cf. [red-team](red-team.md) §5) | Rules + critics; physics for calibration and diagnosis |
+| P beats R by less than fab and measurement scatter (≈ 2–3 dB EMI, 10% overshoot or ripple, 2 K, 3σ ADC noise) on every binding budget, where ≥ 6 dB or 2× was predicted | The thesis for this board class (cf. [verification-and-limits](verification-and-limits.md) §3) | Rules + critics; physics for calibration and diagnosis |
 | More than 20% of differentials wrong-signed | Ranking-grade proxies | F2 in the inner loop |
 | Coverage < 50% after common-factor calibration | That model class for compliance | Ranking use only |
-| LM: features scale as 1/h, no near-trace rise | The ℓ_m band | Round 1's f_x; build the transition solver |
+| LM: features scale as 1/h, no near-trace rise | The ℓ_m band | One boundary at f_x(h); build the transition solver |
 | FP: first peak > 25% from f_p | Wire-medium unification | Empirical stitching rules |
 | NL: wide-strip C_m ratio ≥ 50× | Duality break | Thin prepreg helps nodes; guards return |
 | CM: V3 not ≥ 15 dB below V2 at 10–30 MHz | The lumped board–world cut | Bonding by practice; full-wave world model |
@@ -180,7 +180,7 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
 
 ## Conflicts and open questions
 
-- **The VOI inputs are elicited.** Lens IN's own priors moved its headline 33–84% to 10–49% ([red-team](red-team.md) claim 15). Only rankings that survive ×/÷3 are claimed.
+- **The VOI inputs are elicited,** and VOI shares are prior-driven: lens IN's off-board share is 33–84% under its priors and 10–49% under other plausible ones ([verification-and-limits](verification-and-limits.md) §1). Only rankings that survive ×/÷3 are claimed.
 - **VAL-1 is one board class with one designer per arm.** Designer skill confounds the arms; a second R designer, or the F arm, bounds it.
 - **The design-stage predictions** assume a generic part (C_oss 100–220 pF, Q0 5–20) and a generic plane. The frozen-copper values supersede them.
 - **The census uses assumed currents and single-net floors.** A multi-net partition floor needs a joint formulation.
@@ -190,7 +190,7 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
 - [S]: Gneiting and Raftery, JASA 102(477), 2007 (interval scores); Kennedy and O'Hagan, JRSS B 63(3), 2001 (model discrepancy).
 - [P]: JLCPCB stackups ([impedance page](https://jlcpcb.com/impedance)).
 - Boards: kaebench candidates manifest, fetched at pinned commits (not redistributed).
-- Round-2 inputs: [lens-in](lens-in.md), [lens-vp](lens-vp.md), [lens-ct](lens-ct.md), [lens-sy](lens-sy.md), [lens-ls](lens-ls.md), [lens-th](lens-th.md), [lens-cd](lens-cd.md).
-- Round-3 red team: [red-team](red-team.md).
+- Lens inputs: [lens-in](lens-in.md), [lens-vp](lens-vp.md), [lens-ct](lens-ct.md), [lens-sy](lens-sy.md), [lens-ls](lens-ls.md), [lens-th](lens-th.md), [lens-cd](lens-cd.md).
+- Verification: [verification-and-limits](verification-and-limits.md).
 
 See also: [validation-coupons](validation-coupons.md) · [research-gaps](research-gaps.md) · [physics-critics-validation](physics-critics-validation.md) · [solver-ladder](solver-ladder.md) · [benchmark-plan](../verification/benchmark-plan.md)
