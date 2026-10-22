@@ -56,7 +56,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP3. Avoidable-loss report.** For every pour or trace tree, report (R − R_floor)/R alongside the copper's area elasticity −dlnR/dlnA. The elasticity is exactly 1 at the floor.
 - **Principle:** V1.
-- **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss, and round 1's synthesis captured 14.5% of it [C]. Below a few percent, reshaping is not worth the review cost.
+- **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss, and round 1's synthesis recovered 14.5 of those 15.8 points [C]. Below a few percent, reshaping is not worth the review cost.
 - **Test:** compute it on high-current nets of 30 open boards. Check whether the boards with the largest avoidable loss are the ones designers later reworked (git history).
 
 *new, S*
@@ -144,8 +144,8 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 **VP14. Two-sided cavity-mode bracket for stitching.**
 - **Mechanism:** bound the first mode from both sides.
   - The upper bound is the largest empty circle, a domain-monotonicity bound: f1 ≤ 0.766·c/(D·√εr), with D measured to via edges and open board edges mirrored.
-  - The lower bound is the homogenized via-lattice capacity (wire-medium form).
-  - Decide stitching without the eigen-solve when the bracket clears the protected band.
+  - The lower estimate is the homogenized via-lattice capacity (wire-medium form). It is not rigorous; round 1 found it within 3–16% of the eigen-solve on grids.
+  - Decide stitching without the eigen-solve when the bracket clears the protected band. The upper bound alone can prove a pattern insufficient.
 - **Principle:** V6, V10.
 - **Beats:** round 1 used the empty circle as a ±30% estimate. It is a one-sided bound: round 1's κ of 0.32–0.64 is always below 0.766.
 - **Test:** check bracket containment on round 1's 11 patterns plus 50 random ones, and count the decisions settled.
@@ -156,7 +156,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP15. Tuned magnetically coupled damping layer.** Put a resistive film, or a copper ring closed through a resistor, between the hot loop and its plane. Choose its sheet resistance so its eddy mode relaxes at the ring frequency, R_s ≈ ω_r·μ0·ℓ_eff/2 (ring: R ≈ ω_r·L_ring). The optimizer treats the layer as a stackup variable.
 - **Principle:** V4, V9: loss peaks where a coupled mode's relaxation rate equals ω. The limit is Q ≥ 2/k² − 1.
-- **Beats:** copper alone gives Q 30–170 (round 1; lens TH proves Q = h/δ). In 2-D, a film at about 0.1 Ω/sq gave Q_film ≈ 7.6 at 200 MHz while raising L′ only from 0.07 to 0.106 nH/mm, relative to a solid plane at the film's depth [C]. Prior art: Hartmann, Müsing and Kolar (2009) [S]. It complements TH3's tuned snubber.
+- **Beats:** copper alone gives Q 30–170 (round 1; lens TH proves Q = h/δ). In 2-D, a film at about 0.1 Ω/sq gave Q_film ≈ 7.6 at 200 MHz [C]. L′ was 0.106 nH/mm with the film, between 0.124 without it and 0.070 with a solid plane at the film's depth. Prior art: Hartmann, Müsing and Kolar (2009) [S]. It complements TH3's tuned snubber.
 - **Test:** 3-D PEEC or openEMS of a GaN half-bridge loop with and without the layer, then double-pulse ringing and near-field on a coupon.
 
 *combo, M*
@@ -283,7 +283,7 @@ Add one more column: the energy density at its boundary, which is its sensitivit
 
 ## F. Thermal and robustness
 
-**VP29. Thermal transport floor.** Heat conducted through copper of area A_cu (sheet conductance k·t) to a sink obeys Σ P_k·ΔT_k ≥ (Σ P_k·d_k)²/(k·t·A_cu). That is the Beckmann bound for heat, and convex relaxation tightens it. It says before layout whether a spreader of a given area can possibly meet a ΔT budget.
+**VP29. Thermal transport floor.** Heat conducted through copper of area A_cu (sheet conductance k·t) to a sink obeys Σ P_k·ΔT_k ≥ (Σ P_k·d_k)²/(k·t·A_cu). That is the Beckmann bound for heat, and convex relaxation tightens it. It says before layout whether a spreader of a given area can possibly meet a ΔT budget. It is valid when the spreader's heat leaves through the designated sink (sealed, vacuum or high-altitude boards, conduction to a cold plate). Where convection matters, add it as a distributed sink in the convex relaxation.
 - **Principle:** V1 (thermal form).
 - **Beats:** "15.3 cm²/W" and fin rules, which carry no proof of feasibility.
 - **Test:** compare with finite-volume thermal solves for 10 parts on copper spreaders; check that the floor never exceeds the solved value.
