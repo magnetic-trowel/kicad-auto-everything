@@ -11,14 +11,18 @@ Each section times a small, representative kernel on this machine (numpy/scipy,
   via   via inductance: Goldfarb-Pucel vs the Johnson rule (values only).
   cav   plane-pair cavity model Z11(f) (double modal sum): cost per sweep.
   ir    2.5-D DC IR drop on a copper pour raster (finite volume, SuperLU):
-        cost vs grid, and incremental re-solve after a local edit (slot cut)
-        using the stale LU factor as a CG preconditioner.
+        cost vs grid; incremental re-solve after a local edit (slot cut)
+        using the stale LU factor as a CG preconditioner; and a first-order
+        adjoint (one-solve) estimate of the loss change for three copper
+        removals (hole, cut-out, slot) vs the exact re-solve.
   fdtd  3-D Yee FDTD throughput in numpy (Mcell-updates/s), for scaling
         published openEMS / GPU numbers to PCB regions.
-  vf    scikit-rf vector fitting of the cavity Z11 into a rational macromodel.
+  vf    scikit-rf vector fitting of a damped PDN (cavity + MLCCs) into a rational
+        macromodel, with the passivity check.
 
 Run:  python tools/research/physics/sl_tier_costs.py [zo|via|cav|ir|fdtd|vf|all]
-Deterministic; 'all' takes ~3 min (the 'zo' FD reference dominates). Needs numpy, scipy, scikit-rf (vf only).
+Deterministic results; timings vary ~2x with machine load. 'all' takes ~3-5 min.
+Needs numpy, scipy, scikit-rf (vf only).
 """
 
 import math

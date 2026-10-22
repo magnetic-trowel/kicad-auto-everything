@@ -12,6 +12,8 @@ in free space (no plane). For each loop it evaluates:
   PP     sum(l * mu0 * h / w), the parallel-plate "trace over plane" estimate;
   MS     sum(l * L'(w, h)), L' from the Hammerstad-Jensen air microstrip Z0 / c0
          (fringing included, mutual coupling between loop sides ignored);
+  MS2    MS minus the coupled-line mutual of antiparallel overlapping sides,
+         2 * overlap * (mu0 / 4 pi) * ln(1 + (2h / s)^2);
   PEEC1  partial-inductance sum, one filament per segment (+ images);
   PEECN  reference: N filaments across each trace width, high-frequency current
          split solved exactly (Z = jwL, filaments of a segment in parallel),
@@ -19,13 +21,17 @@ in free space (no plane). For each loop it evaluates:
          parallel filaments; self terms use the rectangle GMD 0.2235 (w + t).
 
 It prints (1) Spearman rank correlation and error spread of each proxy against
-PEECN over random loop families, split by regime, i.e. the "trust radius" of each
-proxy; (2) wall-clock time per evaluation, single and batched; (3) optionally a
-FastHenry input deck for cross-checking PEECN with a meshed finite plane
-(--fasthenry DIR writes decks; FastHenry itself is not bundled, see open-solvers.md
-for its licence problem).
+PEECN over random loop families (mixed and fixed stackups), split by regime, i.e.
+the "trust radius" of each proxy; (2) decision quality: how often each proxy picks
+the PEECN-best of 10 candidates, and the regret; (3) wall-clock time per
+evaluation, single and batched; (4) a residual surrogate (log-linear correction of
+MS2) vs a black-box fit, trained on 300 PEECN labels. With --fasthenry DIR it
+writes FastHenry decks for four rectangles over a finite meshed plane and prints
+PEECN next to the FastHenry results measured for them (FH_MEASURED; PEECN within
+1.3 %). FastHenry itself is not bundled: see docs/topics/physics/open-solvers.md
+for its non-commercial licence header.
 
-Run:  python tools/research/physics/sl_loop_peec.py          # ~30 s, deterministic
+Run:  python tools/research/physics/sl_loop_peec.py          # ~10-30 s, deterministic
       python tools/research/physics/sl_loop_peec.py --fasthenry /tmp/fh
 Needs numpy and scipy.
 """
@@ -256,8 +262,10 @@ def decision(res, label, k=10, trials=2000, seed=1):
             hit += pick == best
             reg.append(ref[pick] / ref[best] - 1)
         reg = np.array(reg)
+        miss = reg[reg > 0]
+        mtxt = f"; misses: median {np.median(miss)*100:.1f}%, max {miss.max()*100:.1f}%" if miss.size else ""
         print(f"  {name:6s} picks the true best {hit/trials*100:5.1f}%; regret median {np.median(reg)*100:5.1f}%,"
-              f" p95 {np.percentile(reg, 95)*100:6.1f}%")
+              f" p95 {np.percentile(reg, 95)*100:6.1f}%{mtxt}")
 
 
 def timing(rng):
