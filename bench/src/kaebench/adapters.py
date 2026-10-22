@@ -173,10 +173,15 @@ class Freerouting(Adapter):
         passes = self.passes or self.PASS_SCHEDULE[attempt % len(self.PASS_SCHEDULE)]
         rule_args, widths_raised = self._apply_board_rules(input_dir, dsn)
         result = w / "result.json"
-        cmd = [*self.cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
-               "-mt", "1", "--gui.enabled=false", "-da", f"--router.result_json={result}", *rule_args,
-               *self.extra_args]
         remaining = max(10.0, timeout - (time.monotonic() - t0))
+        # Freerouting's own deadline, inside ours: it then stops between items and still writes
+        # what it has routed (it overran by 20-40 s in tests), so a board that runs out of time
+        # is scored on its partial routing instead of returning nothing.
+        job_s = int(max(10.0, remaining - max(120.0, 0.1 * remaining)))
+        cmd = [*self.cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
+               "-mt", "1", "--gui.enabled=false", "-da", f"--router.result_json={result}",
+               f"--router.job_timeout={job_s // 3600:02d}:{job_s % 3600 // 60:02d}:{job_s % 60:02d}",
+               *rule_args, *self.extra_args]
         # kept with the attempt: the exchange with the router and its own report
         artifacts = [dsn, ses, result]
         try:
@@ -184,17 +189,20 @@ class Freerouting(Adapter):
             log = r.stdout + r.stderr
         except subprocess.TimeoutExpired as e:
             log = f"freerouting timed out after {remaining:.0f}s\n{e.stdout or ''}{e.stderr or ''}"
-            return AdapterResult(None, log, dict(passes=passes, timed_out=True, artifacts=artifacts))
+            return AdapterResult(None, log, dict(passes=passes, timed_out=True, job_timeout_s=job_s,
+                                                 artifacts=artifacts))
         own = _router_report(result)
+        partial = bool(own and own.get("final_state") == "TIMED_OUT")
         if not ses.exists():
             return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own,
-                                                 artifacts=artifacts))
+                                                 job_timeout_s=job_s, partial=partial, artifacts=artifacts))
         stripped = strip_ses_placement(ses, ses2)
         tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
         return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode, rule_args=rule_args,
                                                         dsn_widths_raised=widths_raised,
                                                         ses_placement_stripped=stripped,
-                                                        router_report=own, artifacts=artifacts))
+                                                        router_report=own, job_timeout_s=job_s,
+                                                        partial=partial, artifacts=artifacts))
 
 
 def _router_report(path):
