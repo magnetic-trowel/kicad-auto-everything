@@ -18,6 +18,8 @@ from kaebench.boardfiles import board_path
 
 HERE = Path(__file__).parent
 FIXTURE = HERE / "fixtures" / "redteam.kicad_pcb"
+# A project with a text variable: KiCad turns it into a board property on load.
+PROJECT = HERE / "fixtures" / "redteam.kicad_pro"
 CHEATS = HERE / "redteam_cheats.py"
 
 
@@ -43,10 +45,11 @@ def rt(tmp_path_factory):
     src = root / "src"
     src.mkdir()
     shutil.copy2(FIXTURE, src / "redteam.kicad_pcb")
+    shutil.copy2(PROJECT, src / "redteam.kicad_pro")
     entry = dict(id="redteam", repo="https://example.invalid/r", commit="0" * 40,
                  pcb_path="redteam.kicad_pcb", license="GPL-3.0-or-later", tags=["2layer"])
-    rec = prepare.prepare_board(entry, {"kicad_pcb": str(src / "redteam.kicad_pcb"), "pcb_sha256": "x"},
-                                root / "tasks")
+    rec = prepare.prepare_board(entry, {"kicad_pcb": str(src / "redteam.kicad_pcb"), "pcb_sha256": "x",
+                                        "kicad_pro": str(src / "redteam.kicad_pro")}, root / "tasks")
     assert rec["qualified"], rec["reference"]["drc"]
     assert rec["footprint_uuids_reassigned"] == 1
     return root, rec
@@ -72,6 +75,15 @@ def _sha(p):
 
 
 # --- the honest baselines must pass, so the cheat failures below mean something ---
+
+def test_tasks_carry_no_routing_leftovers(rt):
+    """Teardrops belong to the routing: stripped from both inputs (in a place task they
+    would also mark where the human put the pads)."""
+    root, _ = rt
+    assert "(teardrop" in FIXTURE.read_text()
+    for kind in ("route", "place"):
+        assert "(teardrop" not in board_path(root / "tasks" / "redteam" / kind / "input").read_text()
+
 
 def test_reference_is_valid(rt):
     root, _ = rt
