@@ -95,7 +95,10 @@ class LoopComp:
 
     terms: list of Term in current order; kinds[k] for the hop T_k -> T_{k+1}: 'board' or
     'body'; widths[k]; zb[k] body height for 'body' hops; gnd_hop: index of the board hop
-    on the return (ground) net, or None; gnd_nets: set of ground net names."""
+    on the return (ground) net, or None; gnd_nets: set of ground net names.
+
+    Fast path: per-height caches for the rigid parts (body self terms, terminations, the via
+    return); one fused direct-minus-image kernel per surviving segment pair."""
 
     def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15):
         self.bv = bv
@@ -109,122 +112,128 @@ class LoopComp:
         self.cos_min = knobs.pair_cos_min if knobs else 0.3
         self.detour = knobs.hop_detour if knobs else 1.0
         self.rvia = rvia
-        self._tie = {}
+        n = len(terms)
+        self.n = n
+        self.body = [k for k in range(n) if kinds[k] == 'body']
+        self.board = [k for k in range(n) if kinds[k] != 'body']
+        self.pairs = [(j, k) for j in range(n) for k in range(j + 1, n)]
+        self.dmin = [[0.2235 * (min(widths[j], widths[k]) + 0.035) for k in range(n)] for j in range(n)]
+        self._hc = {}
+        self._vc = {}
+        self.tl = [(t.i, t.lx, t.ly) for t in terms]
 
-    def _ties(self, h):
-        """Self + own-pair mutual of the vertical terminations of every body hop (rigid)."""
+    def _hcache(self, h):
         key = round(h, 3) if h != INF else INF
-        v = self._tie.get(key)
+        v = self._hc.get(key)
         if v is None:
-            v = 0.0
             hb = 0.0 if h == INF else h
-            for k, kind in enumerate(self.kinds):
-                if kind != 'body':
-                    continue
-                t0, t1 = self.T[k], self.T[(k + 1) % len(self.T)]
-                # library-frame distance between the two terminations (rigid)
+            ties = 0.0
+            selfb = {}
+            for k in self.body:
+                t0, t1 = self.T[k], self.T[(k + 1) % self.n]
                 d = _hyp(t0.lx - t1.lx, t0.ly - t1.ly)
                 r = gmd_rect(self.w[k])
-                V = [(0.0, 0.0, hb, hb + self.zb[k], r), (d, 0.0, hb + self.zb[k], hb, r)]
-                v += FL._vertical_terms([], V) if h != INF else (FL.m_self(self.zb[k], r) * 2.0
-                                                                 - 2.0 * FL.m_par(self.zb[k], self.zb[k], 0.0, max(d, 1e-6)))
-            self._tie[key] = v
+                z = self.zb[k]
+                if h != INF:
+                    ties += FL._vertical_terms([], [(0.0, 0.0, hb, hb + z, r), (d, 0.0, hb + z, hb, r)])
+                else:
+                    ties += 2.0 * FL.m_self(z, r) - 2.0 * FL.m_par(z, z, 0.0, max(d, 1e-6))
+                selfb[k] = FL.strip_self(d, self.w[k], (h + z) if h != INF else INF)
+            consts = {k: FL.strip_consts(self.w[k], h) for k in self.board}
+            v = (ties, selfb, consts)
+            self._hc[key] = v
+        return v
+
+    def _via_return(self, h, d):
+        key = (round(h, 3), round(d, 2))
+        v = self._vc.get(key)
+        if v is None:
+            r = self.rvia
+            d = max(d, 2.0 * r)
+            v = 2.0 * (FL.m_self(h, r) + FL._collinear(h, h, 0.0)) \
+                - 2.0 * (FL.m_par(h, h, 0.0, d) + FL.m_par(h, h, -2.0 * h, d))
+            if len(self._vc) < 50000:
+                self._vc[key] = v
         return v
 
     def value(self, st):
-        T = self.T
-        n = len(T)
-        P = [txy(st, t) for t in T]
-        G = st.G
-        side = G[T[0].i]
-        cx = sum(p[0] for p in P) / n
-        cy = sum(p[1] for p in P) / n
-        bv = self.bv
-        h = bv.h_ref(side, cx, cy)
-        H = []
-        Vthru = []
-        for k in range(n):
-            x0, y0 = P[k]
-            x1, y1 = P[(k + 1) % n]
-            if self.kinds[k] == 'body':
-                H.append((x0, y0, x1, y1, self.w[k], (h + self.zb[k]) if h != INF else INF))
-            else:
-                if self.detour != 1.0:
-                    # stretch the hop about its midpoint
-                    mx, my = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
-                    f = self.detour
-                    x0, y0 = mx + (x0 - mx) * f, my + (y0 - my) * f
-                    x1, y1 = mx + (x1 - mx) * f, my + (y1 - my) * f
-                H.append((x0, y0, x1, y1, self.w[k], h))
-                ia, ib = T[k].i, T[(k + 1) % n].i
-                if G[ia] != G[ib]:
-                    Vthru.append((x1, y1))
-        L = self._sum(H, h, side)
-        L += self._ties(h)
-        if Vthru:
-            t = bv.thickness
-            r = self.rvia
-            for a in range(len(Vthru)):
-                L += FL.m_self(t, r)
-                for b in range(a + 1, len(Vthru)):
-                    d = _hyp(Vthru[a][0] - Vthru[b][0], Vthru[a][1] - Vthru[b][1])
-                    L -= 2.0 * FL.m_par(t, t, 0.0, max(d, r))
-        return L
-
-    def _sum(self, H, h, side):
-        """Sum over horizontal segments; the ground hop in parallel with a via return when
-        the plane under the loop belongs to a ground net."""
-        n = len(H)
-        cm = self.cos_min
-        selfs = [FL.strip_self(_hyp(s[2] - s[0], s[3] - s[1]), s[4], s[5]) for s in H]
+        n = self.n
+        X, Y, C, S, G = st.X, st.Y, st.C, st.S, st.G
+        px = [0.0] * n
+        py = [0.0] * n
+        sx = sy = 0.0
+        for k, (i, lx, ly) in enumerate(self.tl):
+            c = C[i]
+            s = S[i]
+            ly = ly * G[i]
+            x = X[i] + lx * c + ly * s
+            y = Y[i] - lx * s + ly * c
+            px[k] = x
+            py[k] = y
+            sx += x
+            sy += y
+        side = G[self.tl[0][0]]
+        h = self.bv.h_ref(side, sx / n, sy / n)
+        ties, selfb, consts = self._hcache(h)
+        zb = self.zb
+        hs = [((h + zb[k]) if h != INF else INF) if self.kinds[k] == 'body' else h for k in range(n)]
+        f = self.detour
+        ex0, ey0, ex1, ey1 = px[:], py[:], px[1:] + px[:1], py[1:] + py[:1]
+        if f != 1.0:
+            for k in self.board:
+                mx, my = 0.5 * (ex0[k] + ex1[k]), 0.5 * (ey0[k] + ey1[k])
+                ex0[k], ey0[k] = mx + (ex0[k] - mx) * f, my + (ey0[k] - my) * f
+                ex1[k], ey1[k] = mx + (ex1[k] - mx) * f, my + (ey1[k] - my) * f
         g = self.gnd_hop
-        A = 0.0
+        A = ties
+        B = 0.0
+        for k in self.body:
+            A += selfb[k]
+        msf = FL.m_self
+        for k in self.board:
+            a, de = consts[k]
+            ln = _hyp(ex1[k] - ex0[k], ey1[k] - ey0[k])
+            sk = msf(ln, a) - (msf(ln, de) if de != INF else 0.0)
+            if k == g:
+                B = sk
+            else:
+                A += sk
         MAB = 0.0
-        for k in range(n):
-            if k != g:
-                A += selfs[k]
-        for j in range(n):
-            ax, ay, bx, by, wj, hj = H[j]
-            lj = _hyp(bx - ax, by - ay)
-            if lj < 1e-9:
-                continue
-            for k in range(j + 1, n):
-                cx_, cy_, dx_, dy_, wk, hk = H[k]
-                lk = _hyp(dx_ - cx_, dy_ - cy_)
-                if lk < 1e-9:
-                    continue
-                c = ((bx - ax) * (dx_ - cx_) + (by - ay) * (dy_ - cy_)) / (lj * lk)
-                if -cm < c < cm:
-                    continue
-                same = abs(hj - hk) < 1e-9 if (hj != INF and hk != INF) else (hj == hk)
-                if same and abs(bx - cx_) < 1e-9 and abs(by - cy_) < 1e-9:
-                    m = FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, 0.0, True)
-                elif same and abs(dx_ - ax) < 1e-9 and abs(dy_ - ay) < 1e-9:
-                    m = FL.m_hh(cx_, cy_, dx_, dy_, ax, ay, bx, by, 0.0, True)
-                else:
-                    dz = abs(hj - hk) if (hj != INF and hk != INF) else 0.0
-                    m = FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, dz, False)
-                if hj != INF and hk != INF:
-                    m -= FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, hj + hk, False)
-                if j == g or k == g:
-                    MAB += m
-                else:
-                    A += 2.0 * m
+        cm = self.cos_min
+        pm = FL.pair_mut
+        dmin = self.dmin
+        for j, k in self.pairs:
+            adj = (k == j + 1 or (j == 0 and k == n - 1)) and hs[j] == hs[k]
+            if k == j + 1 or not adj:
+                m = pm(ex0[j], ey0[j], ex1[j], ey1[j], ex0[k], ey0[k], ex1[k], ey1[k], hs[j], hs[k], adj, cm, dmin[j][k])
+            else:   # (0, n-1): segment n-1 ends where segment 0 starts
+                m = pm(ex0[k], ey0[k], ex1[k], ey1[k], ex0[j], ey0[j], ex1[j], ey1[j], hs[k], hs[j], adj, cm, dmin[j][k])
+            if j == g or k == g:
+                MAB += 0.5 * m
+            else:
+                A += m
+        thru = [k for k in self.board if G[self.tl[k][0]] != G[self.tl[(k + 1) % n][0]]]
+        if thru:
+            t = self.bv.thickness
+            r = self.rvia
+            for a_ in range(len(thru)):
+                A += FL.m_self(t, r)
+                for b_ in range(a_ + 1, len(thru)):
+                    ka, kb = thru[a_], thru[b_]
+                    d = _hyp(ex1[ka] - ex1[kb], ey1[ka] - ey1[kb])
+                    A -= 2.0 * FL.m_par(t, t, 0.0, max(d, r))
         if g is None:
             return A
-        B = selfs[g]
         lateral = A + B + 2.0 * MAB
-        if h == INF or self.bv.plane_net(side, 0.5 * (H[g][0] + H[g][2]), 0.5 * (H[g][1] + H[g][3])) not in self.gnd_nets:
+        if h == INF:
             return lateral
-        # via return: two vias of height h at the ends of the ground hop, antiparallel
-        x0, y0, x1, y1 = H[g][0], H[g][1], H[g][2], H[g][3]
-        d = max(_hyp(x1 - x0, y1 - y0), 2.0 * self.rvia)
-        r = self.rvia
-        C = 2.0 * (FL.m_self(h, r) + FL._collinear(h, h, 0.0)) \
-            - 2.0 * (FL.m_par(h, h, 0.0, d) + FL.m_par(h, h, -2.0 * h, d))
-        if B + C <= 1e-12:
+        if self.bv.plane_net(side, 0.5 * (ex0[g] + ex1[g]), 0.5 * (ey0[g] + ey1[g])) not in self.gnd_nets:
             return lateral
-        return A + MAB + (B + MAB) * (C - MAB) / (B + C)
+        Cv = self._via_return(h, _hyp(ex1[g] - ex0[g], ey1[g] - ey0[g]))
+        if B + Cv <= 1e-12:
+            return lateral
+        return A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv)
+
 
 class PlanePairLoop:
     """Decap loop over a rail/ground plane pair: cap mounting + spreading + IC mounting."""

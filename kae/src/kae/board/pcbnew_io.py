@@ -186,10 +186,52 @@ def shape_distance(a, b, densify=0.25):
     return float(hd), float(ga.symmetric_difference(gb).area)
 
 
+def pair_pads(pads, kpads, predicted=None):
+    """Pair our pads with pcbnew's pad records of the same footprint.
+
+    By file order when the counts and numbers agree (pcbnew keeps file order on load);
+    otherwise by (uuid, number), the nearest to the predicted position first, because
+    footprints may repeat a pad uuid (e.g. four pads "2" sharing one) and pcbnew's save
+    re-sorts pads. predicted: [(x, y)] per pad (default: the pads' own x, y).
+    Returns [(pad, record)] for the pads that found a partner."""
+    if len(pads) == len(kpads) and all(p.number == q["number"] for p, q in zip(pads, kpads)):
+        if len({p.uuid for p in pads}) == len(pads) and all(p.uuid == q["uuid"] for p, q in zip(pads, kpads)):
+            return list(zip(pads, kpads))
+        if predicted is None:
+            return list(zip(pads, kpads))
+    groups = {}
+    for q in kpads:
+        groups.setdefault((q["uuid"], q["number"]), []).append(q)
+        groups.setdefault(("", q["number"]), []).append(q)
+    used = set()
+    out = []
+    for i, p in enumerate(pads):
+        px, py = predicted[i] if predicted is not None else (p.x, p.y)
+        cands = [q for q in groups.get((p.uuid, p.number), []) if id(q) not in used] or \
+                [q for q in groups.get(("", p.number), []) if id(q) not in used]
+        if not cands:
+            continue
+        q = min(cands, key=lambda q: (q["x"] - px) ** 2 + (q["y"] - py) ** 2)
+        used.add(id(q))
+        out.append((p, q))
+    return out
+
+
 def _has_curves(fp, which):
-    """Whether a library-frame courtyard came from arcs or circles (many vertices)."""
+    """Whether a library-frame courtyard has polygonized arcs: three or more vertices
+    turning by less than 20 degrees (straight outlines turn by 45 or 90)."""
     polys = fp.courtyard if which == "own" else fp.courtyard_back
-    return any(len(p.exterior.coords) > 12 for p in polys)
+    for p in polys:
+        for ring in [p.exterior, *p.interiors]:
+            c = np.asarray(ring.coords)[:-1]
+            if len(c) < 5:
+                continue
+            d = np.diff(np.vstack([c, c[:1]]), axis=0)
+            a = np.arctan2(d[:, 1], d[:, 0])
+            turn = np.abs((np.diff(np.concatenate([a, a[:1]])) + np.pi) % (2 * np.pi) - np.pi)
+            if np.count_nonzero((turn > 1e-6) & (turn < np.radians(20))) >= 3:
+                return True
+    return False
 
 
 def verify(path, board=None, data=None, courtyards=True, worst=10):
@@ -209,7 +251,7 @@ def verify(path, board=None, data=None, courtyards=True, worst=10):
                net_mismatch=0, kind_mismatch=0, layer_mismatch=0, worst_pads=[])
     worst_pads = []
     lx, ly, X, Y, R, S, KX, KY = [], [], [], [], [], [], [], []
-    max_error = x.get("rules", {}).get("max_error", b.rules.max_error)
+    deflate = transform.KICAD_COURTYARD_DEFLATE
     cy = dict(n=0, n_arcs=0, max_straight=0.0, max_arcs=0.0, area_straight=0.0, missing=0, extra=0, worst=[])
     klist = x["footprints"]
     for i, fp in enumerate(b.footprints):
@@ -229,13 +271,7 @@ def verify(path, board=None, data=None, courtyards=True, worst=10):
         kp = k["pads"]
         if len(kp) != len(fp.pads):
             rep["pad_count_mismatch"].append(fp.ref)
-        by_uuid = {p["uuid"]: p for p in kp}
-        for i, p in enumerate(fp.pads):
-            q = by_uuid.get(p.uuid) if p.uuid else None
-            if q is None and i < len(kp):
-                q = kp[i]
-            if q is None:
-                continue
+        for p, q in pair_pads(fp.pads, kp):
             rep["pads"] += 1
             ex, ey = transform.pad_xy(fp, p)
             err = math.hypot(ex - q["x"], ey - q["y"])
@@ -261,7 +297,9 @@ def verify(path, board=None, data=None, courtyards=True, worst=10):
         if courtyards and "courtyard" in k:
             own, opp = transform.courtyard_layers(fp)
             for which, layer in (("own", own), ("opposite", opp)):
-                ours = transform.courtyard(fp, which=which, deflate=max_error)
+                lib_layer = "F.CrtYd" if which == "own" else "B.CrtYd"
+                raw = f"courtyard_overlap:{lib_layer}" in fp.flags   # KiCad keeps such contours raw
+                ours = transform.courtyard(fp, which=which, deflate=0.0 if raw else deflate)
                 theirs = _polys(k["courtyard"].get(layer, []))
                 if not ours and not theirs:
                     continue

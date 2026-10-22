@@ -26,6 +26,8 @@ import numpy as np
 import shapely
 from shapely import affinity
 
+KICAD_COURTYARD_DEFLATE = 0.005   # mm, see courtyard()
+
 # exact cos/sin at multiples of 90 degrees, as RotatePoint special-cases them
 _QUARTER = {0: (1.0, 0.0), 90: (0.0, 1.0), 180: (-1.0, 0.0), 270: (0.0, -1.0)}
 
@@ -163,9 +165,10 @@ def courtyard(fp, x=None, y=None, rot=None, side=None, which="own", deflate=0.0)
     the back); 'opposite': the other side's courtyard (e.g. a through-hole part's);
     'extent': the courtyard, or the body fallback when the footprint has none.
 
-    The polygons are the drawn courtyard. KiCad's DRC tests a copy deflated by the
-    board's max_error (FOOTPRINT::BuildCourtyardCaches, 0.005 mm by default) so touching
-    courtyards are legal; pass deflate=board.rules.max_error to get that copy.
+    The polygons are the drawn courtyard. KiCad's DRC tests a copy deflated by a fixed
+    5 um (FOOTPRINT::BuildCourtyardCaches; measured on pcbnew 10 with board max_error
+    0.005 and 0.01), so touching courtyards are legal; pass deflate=KICAD_COURTYARD_DEFLATE
+    to get that copy.
     """
     x, y, rot, side = _pose(fp, x, y, rot, side)
     if which == "own":
@@ -190,7 +193,10 @@ def _parts(g):
         return []
     if g.geom_type == "Polygon":
         return [g]
-    return [p for p in getattr(g, "geoms", []) if p.geom_type == "Polygon"]
+    out = []
+    for p in getattr(g, "geoms", []):
+        out += _parts(p)
+    return out
 
 
 def courtyard_layers(fp, side=None):

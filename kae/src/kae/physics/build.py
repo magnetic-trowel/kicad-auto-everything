@@ -228,23 +228,22 @@ def build_structures(terms):
                     S.append(st)
         except Exception as e:      # noqa: BLE001 - a bad structure must not kill the others
             terms.warnings.append(f"{s.get('id', kind)}: {type(e).__name__}: {e}")
-    # aggressors
+    # aggressors: hot loops (inductive) with their switch-node copper (capacitive), and clocks
     aggs = []
     for st, s in cells:
         lc = st.comps[0]
         loop = LoopShape(lc.T, closed=True)
-        sw = s.get('sw')
-        node = None
-        if sw:
-            ts, areas = [], []
-            for i, p in enumerate(bv.parts):
-                for k, n in enumerate(p.pad_net):
-                    if n == sw:
-                        ts.append(Term(i, p.pad_lx[k], p.pad_ly[k], 0.5, sw))
-                        areas.append(float(p.pad_sx[k] * p.pad_sy[k]))
-            if ts:
-                node = NodeShape(ts, areas, w=1.0)
+        node = _node_of(ctx, st.info.get('sw_nets') or [], w=1.0)
         aggs.append((st, loop, node, st.info['excite']))
+    for s in specs:
+        if s.get('kind') == 'oscillator' and s.get('out_net'):
+            node = _node_of(ctx, [s['out_net']], w=0.2)
+            if node is not None:
+                ex = dict(didt=0.0, dvdt=3.3 / 2.0, I=0.0, V=3.3, t_sw=2.0)     # E5: 3.3 V CMOS, 2 ns edges
+                st = Struct(id=s.get('id') or 'osc', kind='aggressor', conf=ctx.conf(s), alloc=PR.Belief(1, '', ''),
+                            comps=[], info=dict(excite=ex))
+                st.comps_parts = node.parts
+                aggs.append((st, None, node, ex))
     for s in specs:
         if s.get('kind') == 'victim':
             try:
@@ -259,17 +258,42 @@ def build_structures(terms):
 
 # ----------------------------------------------------------------------------- (a)
 def _commutation(ctx, s, Struct):
-    T = [ctx.member_term(m) for m in s.get('loop') or []]
+    """Hot loop through each candidate input cap; caps in parallel weighted by the brief's
+    ownership probability (expected admittance 1/L = sum_c p_c / L_c)."""
+    bv = ctx.bv
+    loop = s.get('loop') or []
+    T = [ctx.member_term(m) for m in loop]
     if len(T) < 3 or any(t is None for t in T):
         return None
-    lc = _loop_comp(ctx, T, power=True)
+    cap_i = T[0].i if T[0].i == T[-1].i else None
+    caps = [ctx.part(c) for c in (s.get('caps') or s.get('input_caps') or [])]
+    caps = [c for c in caps if c is not None]
+    pmap = {ctx.part(k): float(v) for k, v in (s.get('caps_p') or {}).items() if ctx.part(k) is not None}
+    if cap_i is None or not caps:
+        variants = [(T, 1.0, bv.parts[T[0].i].ref)]
+    else:
+        rail_net, gnd_net = T[0].net, T[-1].net
+        variants = []
+        for c in dict.fromkeys([cap_i] + caps):
+            cp = bv.parts[c]
+            kr = [k for k, n in enumerate(cp.pad_net) if n == rail_net]
+            kg = [k for k, n in enumerate(cp.pad_net) if n == gnd_net]
+            if not kr or not kg:
+                continue
+            Tc = [ctx.term(c, kr[:1])] + T[1:-1] + [ctx.term(c, kg[:1])]
+            variants.append((Tc, pmap.get(c, 1.0 if c == cap_i else 0.5), cp.ref))
+    comps = [_loop_comp(ctx, Tc, power=True) for Tc, _, _ in variants]
+    weights = [w for _, w, _ in variants]
+    labels = [lab for _, _, lab in variants]
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
     vin = ex.get('V') or ctx.net_volts(s.get('rail')) or 12.0
     alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'))
     excite = PR.hot_loop_excite(cls, vin, ex.get('I'), ex.get('t_sw_ns'))
-    return Struct(id=s.get('id') or f'cell:{ctx.bv.parts[T[0].i].ref}', kind='commutation', conf=ctx.conf(s),
-                  alloc=alloc, comps=[lc], labels=['loop'], info=dict(cls=cls, V_in=vin, excite=excite))
+    return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s),
+                  alloc=alloc, comps=comps, reduce='wparallel', labels=labels,
+                  info=dict(cls=cls, V_in=vin, excite=excite, weights=weights, sw=s.get('sw'),
+                            sw_nets=s.get('sw_nets') or ([s.get('sw')] if s.get('sw') else [])))
 
 
 # ----------------------------------------------------------------------------- (b)
@@ -285,18 +309,20 @@ def _decap(ctx, s, Struct):
         rail = P.pad_net[pp[0]]
     gp = ctx.pads(ic, s.get('ground_pins')) if s.get('ground_pins') else [k for k, n in enumerate(P.pad_net) if n in ctx.gnd]
     caps = []
-    for c in s.get('caps') or []:
+    pmap = {ctx.part(k): float(v) for k, v in (s.get('caps_p') or {}).items() if ctx.part(k) is not None}
+    for c in (s.get('hf_caps') or s.get('caps') or []):
         i = ctx.part(c)
         if i is None:
             continue
         cp = bv.parts[i]
         kr = [k for k, n in enumerate(cp.pad_net) if n == rail]
-        kg = [k for k, n in enumerate(cp.pad_net) if n in ctx.gnd]
+        kg = [k for k, n in enumerate(cp.pad_net) if n in ctx.gnd or n == s.get('ground')]
         if kr and kg:
             caps.append((i, kr[:1], kg[:1]))
+    pin_caps = {str(k): {ctx.part(u) for u in v} for k, v in (s.get('pin_caps') or {}).items()}
     if not pp or not gp or not caps:
         return []
-    groups = _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 3.0)
+    groups = _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6)
     vr = ctx.net_volts(rail) or 3.3
     npins = len(P.pad_num)
     alloc_pin = ctx.budget(s, 'L_nH') or PR.decap_budget(vr, npins, len(pp))
@@ -311,8 +337,20 @@ def _decap(ctx, s, Struct):
             return math.hypot(P.pad_lx[k] - cx, P.pad_ly[k] - cy) - 0.5 * min(P.pad_sx[k], P.pad_sy[k])
         kg = min(gp, key=gdist)
         tg = ctx.term(ic, [kg])
-        comps, labels = [], []
-        for i, kr, kgc in caps:
+        comps, labels, weights = [], [], []
+        paired = set()
+        for k in ks:
+            paired |= pin_caps.get(P.pad_num[k], set())
+        all_paired = set().union(*pin_caps.values()) if pin_caps else set()
+        if paired:
+            use = [c for c in caps if c[0] in paired]
+            wfac = 1.0
+        else:
+            use = [c for c in caps if c[0] not in all_paired]
+            wfac = 1.0
+            if not use:
+                use, wfac = caps, 0.25
+        for i, kr, kgc in use:
             tr = ctx.term(i, kr)
             tc = ctx.term(i, kgc)
             if pair is not None:
@@ -320,11 +358,15 @@ def _decap(ctx, s, Struct):
             else:
                 comps.append(_loop_comp(ctx, [tp, tr, tc, tg], power=False))
             labels.append(bv.parts[i].ref)
+            weights.append(pmap.get(i, 1.0) * wfac)
+        if not comps:
+            continue
         a = PR.Belief(alloc_pin.value / max(1, len(ks)), 'nH',
                       alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls)
         out.append(Struct(id=(s.get('id') or f'decap:{P.ref}:{rail}') + (f'#{gi}' if len(groups) > 1 else ''),
-                          kind='decap', conf=ctx.conf(s), alloc=a, comps=comps, reduce='parallel', labels=labels,
-                          info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None)))
+                          kind='decap', conf=ctx.conf(s), alloc=a, comps=comps, reduce='wparallel', labels=labels,
+                          info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None,
+                                    weights=weights, function=s.get('function'))))
     return out
 
 
@@ -379,26 +421,34 @@ def _crystal(ctx, s, Struct):
 
 
 # ----------------------------------------------------------------------------- (c)
+def _node_of(ctx, nets, w=0.2, max_pads=24):
+    bv = ctx.bv
+    ts, areas = [], []
+    for net in nets:
+        for i, k in bv.nets.get(net, [])[:max_pads]:
+            p = bv.parts[i]
+            ts.append(Term(i, p.pad_lx[k], p.pad_ly[k], 0.3, net))
+            areas.append(float(p.pad_sx[k] * p.pad_sy[k]))
+    return NodeShape(ts, areas, w=w) if ts else None
+
+
 def _victim(ctx, s, aggs, Struct):
     if not aggs:
         return None
     bv = ctx.bv
     T = [ctx.member_term(m) for m in s.get('loop') or []]
     T = [t for t in T if t is not None]
+    nets = s.get('nets') or sorted({t.net for t in T if t.net and t.net not in ctx.gnd})
     loop = None
     if len(T) >= 2:
         open_ = T[0].net in ctx.gnd and T[-1].net in ctx.gnd
         loop = LoopShape(T, closed=not open_)
-    node = None
-    nets = s.get('nets') or sorted({t.net for t in T if t.net and t.net not in ctx.gnd})
-    ts, areas = [], []
-    for net in nets:
-        for i, k in bv.nets.get(net, []):
-            p = bv.parts[i]
-            ts.append(Term(i, p.pad_lx[k], p.pad_ly[k], 0.3, net))
-            areas.append(float(p.pad_sx[k] * p.pad_sy[k]))
-    if ts:
-        node = NodeShape(ts, areas, w=0.2)
+    elif nets and len(bv.nets.get(nets[0], [])) >= 2:
+        # a signal net returning through the reference plane: its pads in netlist order
+        pads = bv.nets[nets[0]][:8]
+        T = [Term(i, bv.parts[i].pad_lx[k], bv.parts[i].pad_ly[k], 0.3, nets[0]) for i, k in pads]
+        loop = LoopShape(T, closed=False)
+    node = _node_of(ctx, nets, w=0.2)
     if loop is None and node is None:
         return None
     cls = s.get('class') or 'analog'
@@ -406,8 +456,10 @@ def _victim(ctx, s, aggs, Struct):
     alloc = ctx.budget(s, 'V_mV') or alloc
     comps, labels = [], []
     gp = bool(ctx.gnd)
+    vparts = set((loop.parts if loop else ()) + (node.parts if node else ()))
     for st, aloop, anode, ex in aggs:
-        if set(st.comps[0].parts) & set((loop.parts if loop else ()) + (node.parts if node else ())):
+        own = set(st.comps[0].parts) if st.comps else set(getattr(st, 'comps_parts', ()))
+        if own & vparts and st.kind == 'commutation' and s.get('class') != 'feedback':
             continue        # the victim is part of the aggressor's own cell
         comps.append(CouplingComp(bv, aloop, anode, loop, node, ex['didt'], ex['V'], ex['t_sw'], zv, gp))
         labels.append(st.id)
@@ -420,7 +472,7 @@ def _victim(ctx, s, aggs, Struct):
 # ----------------------------------------------------------------------------- (f)
 def _esd(ctx, s, Struct):
     ch = s.get('chain') or []
-    if len(ch) < 2:
+    if len(ch) < 2 or not s.get('protection'):
         return None
     tc = ctx.member_term(ch[0])
     tp = ctx.member_term(ch[1])
@@ -472,7 +524,7 @@ def _world_cm(ctx, specs, aggs, Struct):
         cn = NodeShape(ts, areas, w=0.0)
         comps, labels = [], []
         for st, aloop, anode, ex in aggs:
-            if i in st.comps[0].parts:
+            if st.comps and i in st.comps[0].parts:
                 continue
             comps.append(CmComp(bv, aloop, anode, cl, cn, ex['I'], ex['V'], ex['t_sw'], bool(ctx.gnd), PR.WORLD))
             labels.append(st.id)
@@ -490,13 +542,16 @@ def _thermal(ctx, specs):
     seen = set()
     for s in specs:
         if s.get('kind') == 'heat_source':
-            i = ctx.part(s.get('ref'))
+            i = ctx.part(s.get('part') or s.get('ref'))
             if i is None or i in seen:
                 continue
             seen.add(i)
             pw = s.get('P_W')
             if pw is None:
-                continue
+                role = ((ctx.parts.get(s.get('part') or '') or {}).get('role') or '').lower()
+                kind = 'ldo' if 'ldo' in role else 'buck' if ('buck' in role or 'regulator' in role) else \
+                    'fet' if ('fet' in role or 'transistor' in role) else 'mcu' if role in ('mcu', 'fpga', 'soc', 'processor') else 'generic'
+                pw = PR.source_power_prior(kind, n_pins=len(bv.parts[i].pad_num), pkg=bv.parts[i].lib_id)[0]
             p = bv.parts[i]
             a0, b0, a1, b1 = p.cy_bbox
             rad = max(0.5, 0.5 * math.sqrt(max((a1 - a0) * (b1 - b0), 0.25)))
@@ -504,10 +559,17 @@ def _thermal(ctx, specs):
             conf_s.append(ctx.conf(s))
     for s in specs:
         if s.get('kind') == 'thermal_victim':
-            i = ctx.part(s.get('ref'))
+            i = ctx.part(s.get('part') or s.get('ref'))
             if i is None or any(i == x[0] for x in src) or i in vic:
                 continue
             cls = s.get('class') or 'precision'
+            if cls == 'crystal':
+                f = None
+                for s2 in specs:
+                    if s2.get('kind') == 'crystal' and ctx.part(s2.get('crystal')) == i:
+                        f = s2.get('f_Hz')
+                if f is not None and f < 2e5:
+                    cls = 'crystal_32k'
             dt = ctx.budget(s, 'dT_K')
             dt = dt or PR.Belief(PR.THERMAL_VICTIM.get(cls, 5.0), 'K', f'{cls}: allowed rise from neighbours')
             vic.append(i)

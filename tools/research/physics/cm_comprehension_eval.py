@@ -22,7 +22,7 @@ Weak labels:
                     centroid against random placement (percentile).
 
 Usage:
-  python -I cm_comprehension_eval.py --tasks kae-work/tasks --out DIR [-j 2] [--only id,id] [--no-sheets]
+  python -I cm_comprehension_eval.py --tasks kae-work/tasks --out DIR [-j 2] [--only id,id] [--no-sheets] [--rank-w W]
 Writes DIR/eval.json (per-board rows and pooled numbers) and DIR/suite.md (tables).
 Needs kae (kae/src on sys.path is added here) and numpy. Deterministic (fixed seeds).
 """
@@ -373,7 +373,11 @@ def main(argv=None):
     ap.add_argument('-j', type=int, default=2)
     ap.add_argument('--only', default='')
     ap.add_argument('--no-sheets', action='store_true')
+    ap.add_argument('--rank-w', type=float, default=None, help='override kae.circuit.structures.RANK_W (ablation)')
     a = ap.parse_args(argv)
+    if a.rank_w is not None:
+        import kae.circuit.structures as _st
+        _st.RANK_W = a.rank_w
     paths = sorted(glob.glob(os.path.join(a.tasks, '*', 'reference', 'board.kicad_pcb')))
     if a.only:
         keep = set(a.only.split(','))

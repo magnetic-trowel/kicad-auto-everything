@@ -266,22 +266,35 @@ def commutation_cells(b: _B) -> list:
     return cells
 
 
-def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = ''):
-    """Supply-input pins of a controller (VIN, PVIN, VCC ...) on non-ground nets not in `exclude`."""
+def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = '', token: str = ''):
+    """Supply-input pins of a controller (VIN, PVIN, VCC, VDDSMPS, VREG_VIN ...) on non-ground nets not in
+    `exclude`; pins sharing the switch pin's channel suffix or token (SMPS, VREG) first. Without a named
+    input pin, the controller's pins on decoupled rails stand in (libraries without pin names)."""
     part = b.nl.parts[ic]
-    pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and
-            (IN_PIN.match(p.fn) or re.match(r'^P?VIN\w*|^VIN\d?$|^PVIN\w*|^VS$|^VCC$|^VM$|^VBAT$|^VSYS$|^AVIN$', p.fn))]
+    named = re.compile(r'^P?VIN\w*|^VIN\d?$|^PVIN\w*|^VS$|^VCC$|^VM$|^VBAT$|^VSYS$|^AVIN$|^VDD_?SMPS|^VREG_?(VIN|IN)|^VIN_?SMPS|'
+                       r'^VDD_?(DCDC|BUCK|REG)|^(DCDC|BUCK|SMPS)_?(VIN|IN|VDD)')
+    pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and (IN_PIN.match(p.fn) or named.match(p.fn))]
     if suffix:
         same = [p for p in pins if p.fn.endswith(suffix)]
         pins = same or pins
+    if token:
+        same = [p for p in pins if token in p.fn]
+        pins = same or pins
+    if not pins:
+        pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and p.net in b.r.rails
+                and b.r.caps_to.get(p.net) and not FB_PIN.match(p.fn) and not EN_PIN.match(p.fn)]
     # rank: named PVIN/VIN first, then nets with capacitors
-    pins.sort(key=lambda p: (not re.match(r'^P?VIN', p.fn), -len(b.r.caps_to.get(p.net, ())), p.number))
+    pins.sort(key=lambda p: (not re.match(r'^P?VIN', p.fn), -len(b.r.caps_to.get(p.net, ())), _natkey(p.number)))
     return pins
 
 
-def _gnd_pins(b: _B, ic: str, suffix: str = ''):
+def _gnd_pins(b: _B, ic: str, suffix: str = '', token: str = ''):
     part = b.nl.parts[ic]
     pins = [p for p in part.active_pins() if p.net in b.g]
+    if token:
+        tk = [p for p in pins if token in p.fn]
+        if tk:
+            return tk
     pg = [p for p in pins if re.match(r'^PGND', p.fn)]
     if suffix and pg:
         same = [p for p in pg if p.fn.endswith(suffix)]
@@ -406,10 +419,12 @@ def _converter(b: _B, L, lpart, swn, other):
     ctrl = sw_pins[0].ref if sw_pins else (ics[0] if ics else None)
     fets = sorted({p.ref for p in nv.pins if b.k(p.ref) == 'transistor'}, key=_refkey)
     diodes = sorted({p.ref for p in nv.pins if b.k(p.ref) == 'diode' and b.sub(p.ref) not in ('tvs', 'esd_array', 'zener')}, key=_refkey)
-    suffix = ''
+    suffix = token = ''
     if sw_pins:
         m = re.search(r'(\d|[AB])$', sw_pins[0].fn)
         suffix = m.group(1) if m else ''
+        mt = re.search(r'SMPS|VREG|DCDC|BUCK|BOOST', sw_pins[0].fn)
+        token = mt.group(0) if mt else ''
     # gate driver/controller for external FETs
     if ctrl is None and fets:
         for q in fets:
@@ -448,7 +463,7 @@ def _converter(b: _B, L, lpart, swn, other):
             d_catch = d
         elif side == 'A' and o and o not in b.g and o != other:
             d_boost = (d, o)
-    vin_pins = _vin_pins(b, ctrl, {swn, other}, suffix) if ctrl else []
+    vin_pins = _vin_pins(b, ctrl, {swn, other}, suffix, token) if ctrl else []
     out_pins = [p for p in b.nl.parts[ctrl].active_pins() if OUT_PIN.match(p.fn) and p.net not in (swn,) and p.net not in b.g] if ctrl else []
     ctrl_in_on_other = ctrl and any(p.net == other and (IN_PIN.match(p.fn) or p.ptype == 'power_in') for p in b.nl.parts[ctrl].active_pins())
     sb, eb, sbo, ebo = 0.0, [], 0.0, []
@@ -526,7 +541,7 @@ def _converter(b: _B, L, lpart, swn, other):
         elif d_catch:
             loop += [[d_catch, b.pad_sel(d_catch, swn)], [d_catch, b.pad_sel(d_catch, gnd)]]
         elif ctrl:
-            gp = _gnd_pins(b, ctrl, suffix)
+            gp = _gnd_pins(b, ctrl, suffix, token)
             loop.append([ctrl, sorted({p.number for p in gp}, key=_natkey)])
     else:
         if d_boost:
@@ -545,6 +560,7 @@ def _converter(b: _B, L, lpart, swn, other):
             loop.append([ctrl, sorted({p.number for p in _gnd_pins(b, ctrl, suffix)}, key=_natkey)])
     if hf:
         loop.append([hf, b.cap_pad(hf, gnd if gnd in b.nl.parts[hf].nets else next(iter(b.nl.parts[hf].nets - {rail})))])
+    core = loop[1:-1] if hf else loop
     vin_net = rail if kind == 'buck' else other
     V_ = b.volts(rail)
     exc = _excite(b, ctrl, L, V_, kind)
@@ -563,8 +579,9 @@ def _converter(b: _B, L, lpart, swn, other):
                       'switches': {'high': hs or (ctrl if kind == 'buck' else None), 'low': ls or d_catch or (ctrl if not d_boost else None),
                                    'rectifier': (d_boost[0] if d_boost else d_catch)},
                       'vin': vin_net, 'vout': out if kind == 'buck' else rail, 'output_caps': out_caps[:6] if kind == 'buck' else [],
-                      'input_caps': out_caps[:6] if kind == 'boost' else caps[:6], 'bootstrap_cap': boot,
-                      'integrated_switches': bool(ctrl and not hs and not ls)})
+                      'input_caps': out_caps[:6] if kind == 'boost' else [], 'bootstrap_cap': boot,
+                      'integrated_switches': bool(ctrl and not hs and not ls),
+                      'loop_core': core, 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ctrl or hs or L})
 
 
 def _buck_boost(b: _B, L, swnets):
@@ -596,7 +613,9 @@ def _buck_boost(b: _B, L, swnets):
         out.append(_struct('commutation_cell', f"cell:{kind}:{ctrl}", evs, conf_cap=0.9, prior=-0.5,
                            **{'class': kind, 'loop': loop, 'rail': rail, 'sw': swn, 'gnd': gnd,
                               'excite': _excite(b, ctrl, L, b.volts(rail), kind), 'controller': ctrl, 'inductor': L,
-                              'caps': caps, 'caps_p': cp, 'topology': 'buck_boost_4switch', 'integrated_switches': True}))
+                              'caps': caps, 'caps_p': cp, 'topology': 'buck_boost_4switch', 'integrated_switches': True,
+                              'loop_core': [[ctrl, b.pads(ctrl, rail)], [ctrl, gp]], 'cap_rail': rail, 'cap_gnd': gnd,
+                              'anchor': ctrl}))
     return out
 
 
@@ -644,7 +663,8 @@ def _half_bridge_leg(b: _B, swn, d):
     return _struct('commutation_cell', f"cell:half_bridge:{hs}+{ls}", evs, conf_cap=b.r.nets[swn].confidence, prior=-0.5,
                    **{'class': 'half_bridge', 'loop': loop, 'rail': rail, 'sw': swn, 'gnd': gnd, 'excite': exc,
                       'controller': drv, 'switches': {'high': hs, 'low': ls}, 'shunt': shunt, 'caps': caps, 'caps_p': cp,
-                      'integrated_switches': False})
+                      'integrated_switches': False, 'loop_core': loop[1:-1] if hf else loop, 'cap_rail': rail, 'cap_gnd': gnd,
+                      'anchor': hs})
 
 
 def _integrated_bridge(b: _B, ic, outs):
@@ -679,7 +699,8 @@ def _integrated_bridge(b: _B, ic, outs):
                    **{'class': 'half_bridge', 'loop': loop, 'rail': rail, 'sw': outs[0], 'sw_nets': outs, 'gnd': gnd,
                       'excite': _excite(b, ic, None, b.volts(rail), 'half_bridge'), 'controller': ic, 'caps': caps, 'caps_p': cp,
                       'integrated_switches': True, 'phase_shunts': sorted(set(shunts), key=_refkey),
-                      'bridge': {'legs': len(outs), 'type': 'integrated', 'sw_nets': outs}})
+                      'bridge': {'legs': len(outs), 'type': 'integrated', 'sw_nets': outs},
+                      'loop_core': [[ic, b.pads(ic, rail)], [ic, gp]], 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ic})
 
 
 def _module_cell(b: _B, ref):
@@ -702,7 +723,8 @@ def _module_cell(b: _B, ref):
     return _struct('commutation_cell', f"cell:buck:{ref}", evs, conf_cap=0.85, prior=-0.5,
                    **{'class': 'buck', 'loop': loop, 'rail': rail, 'sw': None, 'gnd': gnd,
                       'excite': _excite(b, ref, None, b.volts(rail), 'buck'), 'controller': ref, 'caps': caps, 'caps_p': cp,
-                      'integrated_switches': True, 'integrated_inductor': True})
+                      'integrated_switches': True, 'integrated_inductor': True,
+                      'loop_core': loop[1:-1], 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ref})
 
 
 # =============================================================================== decoupling
@@ -733,57 +755,77 @@ def _power_pins(b: _B, ref):
 
 
 RANK_W = 0.5        # weight of the schematic rank-order term in capacitor ownership (ablated in the eval)
+CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
+CELL_QUOTA = 2      # one HF commutation cap and one more
 
 
-def decaps(b: _B, cells) -> list:
-    """Decoupling per (IC, rail, function). Capacitors on a rail shared by several ICs are split by a
-    greedy assignment with quotas (one per power pin), scored by pin count, schematic sheet,
-    reference block, capacitor class and schematic rank order; `caps_p` is the softmax of the same
-    scores (ownership probability)."""
-    in_cell = set()
-    for c in cells:
-        if c.get('controller'):
-            in_cell.add((c['controller'], c['rail']))
-    groups = {}         # (ref, rail, function) -> dict
+def _decap_groups(b: _B, cells) -> list:
+    """Power pins grouped per (IC, rail, function); a switching regulator's input pins belong to its cell."""
+    in_cell = {(c['controller'], c['cap_rail']) for c in cells if c.get('controller')}
+    groups = {}
     for ref, part in b.nl.parts.items():
         if b.k(ref) not in LOAD_KINDS or part.dnp:
             continue
         for p, func in _power_pins(b, ref):
             if (ref, p.net) in in_cell and func == 'regulator_input':
                 continue
-            key = (ref, p.net, func)
-            g = groups.setdefault(key, {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
+            g = groups.setdefault((ref, p.net, func), {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
             if p.number not in g['pins']:
                 g['pins'].append(p.number)
-    by_rail = defaultdict(list)
-    for key, g in groups.items():
-        by_rail[g['rail']].append(g)
-    out = []
-    b.uncovered = []
-    for rail, gs in by_rail.items():
-        gs.sort(key=lambda g: (_refkey(g['ref']), g['function']))
+    return list(groups.values())
+
+
+def allocate_caps(b: _B, cells, groups):
+    """Joint per-rail allocation of rail-to-ground capacitors to commutation cells and decap groups.
+
+    Score of capacitor c for consumer j: a base (cells CELL_BASE, groups log(1 + power pins)),
+    plus schematic affinity (same sheet +2 / other -1, same reference block +1.5), plus a class
+    preference (cells and loads take ceramics, regulator outputs take bulk), plus RANK_W times the
+    agreement of c's reference rank with j's rank on that rail. Greedy assignment by score with
+    quotas (cells CELL_QUOTA, loads one per power pin, regulator pins one); leftovers go to the
+    best-scoring consumer. Ownership probabilities are the softmax of the same scores."""
+    cons = defaultdict(list)
+    for c in cells:
+        cons[c['cap_rail']].append(('cell', c, c['anchor']))
+    for g in groups:
+        cons[g['rail']].append(('decap', g, g['ref']))
+    for rail, lst in cons.items():
+        lst.sort(key=lambda t: (_refkey(t[2]), t[0]))
         caps = sorted(b.caps_on(rail), key=_refkey)
+        for _, x, _ in lst:
+            x['caps'], x['caps_p'] = [], {}
         if not caps:
-            b.uncovered += [(g['ref'], rail, len(g['pins'])) for g in gs if g['function'] == 'load']
             continue
-        ncap, ng = len(caps), len(gs)
+        ncap, ng = len(caps), len(lst)
         cls = {c: cap_class(b.nl.parts[c])[0] for c in caps}
+        far = {c: cap_class(b.nl.parts[c])[1] for c in caps}
+        known = sorted(f for f in far.values() if f)
+        med = known[len(known) // 2] if known else None
+        # schematic rank order: the k-th load (by reference) tends to own the k-th capacitors; sources and
+        # bypass pins sit outside that order (a regulator drawn first would shift every load by one)
+        ranked = [j for j, (typ, x, _) in enumerate(lst) if typ == 'cell' or x['function'] == 'load']
+        rank_of = {j: (k / (len(ranked) - 1) if len(ranked) > 1 else 0.5) for k, j in enumerate(ranked)}
         S = {}
         for i, c in enumerate(caps):
             rc = i / (ncap - 1) if ncap > 1 else 0.5
-            for j, g in enumerate(gs):
-                rg = j / (ng - 1) if ng > 1 else 0.5
-                v = math.log(1 + len(g['pins'])) + _affinity(b, c, g['ref'])
-                if g['function'] == 'regulator_output':
-                    v += 1.0 if cls[c] in ('bulk', 'mid') else 0.0
-                elif g['function'] == 'bypass':
-                    v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
-                elif g['function'] == 'load':
-                    v += 0.3 if cls[c] == 'hf' else 0.0
-                if ng > 1:
-                    v += RANK_W * (1.0 - abs(rc - rg))
+            big = math.log10(far[c] / med) if far[c] and med else 0.0
+            for j, (typ, x, anchor) in enumerate(lst):
+                if typ == 'cell':
+                    v = CELL_BASE + (0.5 if cls[c] in ('hf', 'mid') else 0.3)
+                else:
+                    v = math.log(1 + len(x['pins']))
+                    f = x['function']
+                    if f in ('regulator_output', 'regulator_input'):
+                        v += 0.5 + 0.5 * big          # sources and inputs take the larger capacitors
+                    elif f == 'bypass':
+                        v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
+                    elif f == 'load':
+                        v += 0.3 if cls[c] == 'hf' else 0.0
+                v += _affinity(b, c, anchor)
+                if len(ranked) > 1 and j in rank_of:
+                    v += RANK_W * (1.0 - abs(rc - rank_of[j]))
                 S[(c, j)] = v
-        quota = [len(g['pins']) if g['function'] == 'load' else 1 for g in gs]
+        quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] == 'load' else 1) for t, x, _ in lst]
         count = [0] * ng
         owner = {}
         for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=lambda t: (-t[0], _refkey(t[1]), t[2])):
@@ -794,28 +836,71 @@ def decaps(b: _B, cells) -> list:
         for c in caps:
             if c not in owner:
                 owner[c] = max(range(ng), key=lambda j: (S[(c, j)], -j))
-        pmap = {}
         for c in caps:
             mx = max(S[(c, j)] for j in range(ng))
             z = [math.exp(S[(c, j)] - mx) for j in range(ng)]
             tz = sum(z)
-            for j in range(ng):
-                pmap[(c, j)] = round(z[j] / tz, 3)
+            j0 = owner[c]
+            lst[j0][1]['caps'].append(c)
+            lst[j0][1]['caps_p'][c] = round(z[j0] / tz, 3)
+        for j, (typ, x, _) in enumerate(lst):
+            x['shared_by'] = ng
+            if typ == 'cell' and not x['caps']:
+                # more converters than capacitors: borrow the best-scoring one, flagged as shared
+                c = max(caps, key=lambda c: S[(c, j)])
+                x['caps'] = [c]
+                x['caps_p'] = {c: 0.0}
+                x['cap_shared'] = True
+
+
+def _finish_cells(b: _B, cells):
+    for c in cells:
+        caps = _hf_order(b.nl, c['caps'])
+        c['caps'] = caps
+        rail, gnd = c['cap_rail'], c['cap_gnd']
+        if caps:
+            hf = caps[0]
+            gpad = b.cap_pad(hf, gnd) if gnd in b.nl.parts[hf].nets else b.cap_pad(hf, next(iter(b.nl.parts[hf].nets - {rail})))
+            c['loop'] = [[hf, b.cap_pad(hf, rail)]] + c['loop_core'] + [[hf, gpad]]
+            if c.get('cap_shared'):
+                c['evidence'].append(ev('count', f"no capacitor left for this converter on '{b.short(rail)}'; {hf} is shared", -1.0))
+            elif c.get('shared_by', 1) > 1:
+                c['evidence'].append(ev('count', f"{c['shared_by']} consumers on '{b.short(rail)}'; ownership {c['caps_p'].get(hf, 0):.2f}",
+                                        0.0))
+        else:
+            c['loop'] = list(c['loop_core'])
+            c['evidence'].append(ev('topology', f"no capacitor from '{b.short(rail)}' to ground: the loop is open", -2.0))
+        c['confidence'] = round(min(c['confidence'], confidence(c['evidence'], prior=-0.5) + 0.0), 3) if not caps or c.get('cap_shared') \
+            else c['confidence']
+        for k in ('loop_core', 'cap_rail', 'cap_gnd', 'anchor', 'shared_by'):
+            c.pop(k, None)
+
+
+def decaps(b: _B, groups) -> list:
+    out = []
+    b.uncovered = []
+    by_rail = defaultdict(list)
+    for g in groups:
+        by_rail[g['rail']].append(g)
+    for rail, gs in by_rail.items():
         n_pins = sum(len(g['pins']) for g in gs)
-        for j, g in enumerate(gs):
-            mine = [c for c in caps if owner[c] == j]
+        ncap = len(b.caps_on(rail))
+        for g in sorted(gs, key=lambda g: (_refkey(g['ref']), g['function'])):
+            mine = g.get('caps') or []
             if not mine:
                 if g['function'] == 'load':
                     b.uncovered.append((g['ref'], rail, len(g['pins'])))
                 continue
             ref = g['ref']
+            ng = g.get('shared_by', len(gs))
             gnd = _decap_ground(b, ref, rail)
             gpins = sorted({p.number for p in b.nl.parts[ref].active_pins() if p.net == gnd}, key=_natkey)
+            cls = {c: cap_class(b.nl.parts[c])[0] for c in mine}
             hf = [c for c in mine if cls[c] in ('hf', 'mid')]
             bulk = [c for c in mine if c not in hf]
             pins = sorted(g['pins'], key=_natkey)
             pin_caps = {pn: [hf[i % len(hf)]] for i, pn in enumerate(pins)} if hf else {}
-            cp = {c: pmap[(c, j)] for c in mine}
+            cp = g['caps_p']
             evs = [ev('topology', f"{len(pins)} power pin(s) of {ref} on '{b.short(rail)}'", MODERATE)]
             if ng == 1:
                 evs.append(ev('topology', f"only consumer on the rail: all {ncap} capacitor(s) to ground serve it", STRONG))
@@ -832,9 +917,8 @@ def decaps(b: _B, cells) -> list:
             conf_cap = min(b.r.nets[rail].confidence if rail in b.r.nets else 0.6, 0.97)
             out.append(_struct('decap', f"decap:{ref}:{b.short(rail)}" + ('' if g['function'] == 'load' else f":{g['function']}"), evs,
                                conf_cap=conf_cap, prior=0.0,
-                               ic=ref, power_pins=pins, ground_pins=gpins, rail=rail, ground=gnd, caps=mine,
-                               caps_p=cp, hf_caps=hf, bulk_caps=bulk, pin_caps=pin_caps, function=g['function'],
-                               shared_by=ng))
+                               ic=ref, power_pins=pins, ground_pins=gpins, rail=rail, ground=gnd, caps=sorted(mine, key=_refkey),
+                               caps_p=cp, hf_caps=hf, bulk_caps=bulk, pin_caps=pin_caps, function=g['function'], shared_by=ng))
     return out
 
 
@@ -1167,6 +1251,7 @@ def feedback_victims(b: _B) -> list:
                     vrail = b.volts(top[1])
                     if vals:
                         div['vref_V'] = vals[0]
+                        div['vref_source'] = 'table'
                         div['vout_implied_V'] = round(vals[0] * ratio, 3)
                         if vrail and abs(vals[0] * ratio - abs(vrail)) <= 0.06 * abs(vrail):
                             evs.append(ev('derived', f"Vref {vals[0]} V x {ratio:.3f} = {vals[0] * ratio:.2f} V matches '{b.short(top[1])}'", MODERATE))
@@ -1174,6 +1259,7 @@ def feedback_victims(b: _B) -> list:
                         for vr in (0.5, 0.6, 0.765, 0.8, 0.9, 1.0, 1.21, 1.23, 1.25):
                             if abs(vr * ratio - abs(vrail)) <= 0.04 * abs(vrail):
                                 div['vref_V'] = vr
+                                div['vref_source'] = 'matched to the rail name'
                                 div['vout_implied_V'] = round(vr * ratio, 3)
                                 evs.append(ev('derived', f"a common Vref {vr} V x {ratio:.3f} matches '{b.short(top[1])}' ({vrail} V)", WEAK))
                                 break
@@ -1430,17 +1516,48 @@ def thermal_victims(b: _B) -> list:
     return out
 
 
+def _apply_dividers(b: _B, fb, cells):
+    """A feedback divider with a known reference states its rail's voltage: Vout = Vref (1 + Rtop/Rbot).
+    It fills rails whose voltage is unknown or only estimated, flags conflicts with a stated one, and
+    refreshes the excitation of cells on those rails."""
+    for v in fb:
+        d = v.get('divider') or {}
+        net, vo = d.get('sense_net'), d.get('vout_implied_V')
+        if not net or not vo or net not in b.r.rails or d.get('vref_source') != 'table':
+            continue
+        nr = b.r.rails[net]
+        vb = nr.attrs.get('volts') or {}
+        src = f"feedback divider {d.get('top')}/{d.get('bottom')} x Vref {d.get('vref_V')} V of {v['ic']}"
+        if vb.get('value') is None or str(vb.get('relative_to', '')).startswith('estimate'):
+            nr.attrs['volts'] = belief(vo, 'V', src, round(vo * 0.95, 3), round(vo * 1.05, 3), lineage=[vb.get('relative_to', '')] if vb else [])
+        elif abs(abs(vb['value']) - vo) > 0.08 * abs(vb['value']):
+            vb.setdefault('lineage', []).append(f"conflict: {src} gives {vo:g} V")
+    for c in cells:
+        ex = c['excite']
+        v = b.volts(c['rail'])
+        vb = (b.r.nets.get(c['rail']).attrs.get('volts') or {}) if b.r.nets.get(c['rail']) else {}
+        if v is not None and ex.get('V') != v:
+            ex['V'] = v
+            ex['basis'] = [x for x in ex['basis'] if not x.startswith('V ')] + [f"V from '{b.short(c['rail'])}': {vb.get('relative_to', '')}"]
+        elif v is not None and str(vb.get('relative_to', '')).startswith('estimate'):
+            ex['basis'].append(f"V {v:g} V is an estimate from capacitor ratings")
+
+
 # =============================================================================== entry
 def find_structures(nl: Netlist, roles: Roles) -> dict:
     b = _B(nl, roles)
     cells = commutation_cells(b)
+    groups = _decap_groups(b, cells)
+    allocate_caps(b, cells, groups)
+    _finish_cells(b, cells)
     st = {'commutation_cells': cells}
-    st['decaps'] = decaps(b, cells)
+    st['decaps'] = decaps(b, groups)
     st['uncovered'] = [{'ic': r, 'rail': n, 'pins': k} for r, n, k in getattr(b, 'uncovered', [])]
     st['crystals'] = crystals(b)
     st['oscillators'] = oscillators(b)
     st['chains'] = connector_chains(b)
     fb = feedback_victims(b)
+    _apply_dividers(b, fb, cells)
     se = sense_victims(b)
     taken = {n for v in fb + se for n in v.get('nets', [])}
     xv = []

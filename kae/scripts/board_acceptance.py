@@ -147,13 +147,11 @@ def _pad_err(b, poses, x):
     worst, n = 0.0, 0
     for fp in b.footprints:
         X, Y, R, S = poses.get(fp.uuid, (fp.x, fp.y, fp.rot, fp.side))
-        kf = k[fp.uuid]
-        kp = {p["uuid"]: p for p in kf["pads"]}
-        for p in fp.pads:
-            q = kp.get(p.uuid)
-            if q is None:
-                continue
-            ex, ey = transform.pad_xy(fp, p, X, Y, R, S)
+        pred = [transform.pad_xy(fp, p, X, Y, R, S) for p in fp.pads]
+        pairs = pcbnew_io.pair_pads(fp.pads, k[fp.uuid]["pads"], pred)
+        at = {id(p): xy for p, xy in zip(fp.pads, pred)}
+        for p, q in pairs:
+            ex, ey = at[id(p)]
             worst = max(worst, math.hypot(ex - q["x"], ey - q["y"]))
             n += 1
     return worst, n
@@ -264,7 +262,7 @@ def roundtrip_one(arg):
         res = pcbnew_io.write_poses(src, out, poses)
         x = pcbnew_io.extract(out, courtyards=True, outline=False)
         pad_err, n_pads = _pad_err(b, poses, x)
-        cs, ca, ncy = _courtyard_err(b, poses, x, x["rules"]["max_error"])
+        cs, ca, ncy = _courtyard_err(b, poses, x, transform.KICAD_COURTYARD_DEFLATE)
         b2 = kicad_file.load(out)
         dpos, drot, dcy, dlayer = _library_frame_drift(b, b2, poses)
         rep2 = pcbnew_io.verify(out, board=b2, data=x)

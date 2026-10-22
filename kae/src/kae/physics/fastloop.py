@@ -90,10 +90,12 @@ def m_corner(l1, l2, cosang, R):
     return MU * cosang * (l1 * _log((1 + a) / (1 - a)) + l2 * _log((1 + b) / (1 - b)))
 
 
-def m_hh(ax, ay, bx, by, cx, cy, dx, dy, dz, adjacent):
+def m_hh(ax, ay, bx, by, cx, cy, dx, dy, dz, adjacent, dmin=0.0):
     """Mutual (nH) of horizontal filaments A->B and C->D whose planes are dz apart.
 
-    adjacent: B == C (consecutive in a loop, same height) -> exact corner form."""
+    adjacent: B == C (consecutive in a loop, same height) -> exact corner form, used for
+    corners between 45 and 135 degrees; sharper corners use the projected form with the
+    distance floored at dmin (strips cannot come closer than their GMD without merging)."""
     ux, uy = bx - ax, by - ay
     l1 = _hyp(ux, uy)
     vx, vy = dx - cx, dy - cy
@@ -107,7 +109,7 @@ def m_hh(ax, ay, bx, by, cx, cy, dx, dy, dz, adjacent):
     c = ux * vx + uy * vy
     if -PERP_COS < c < PERP_COS:
         return 0.0
-    if adjacent and dz < 1e-12:
+    if adjacent and dz < 1e-12 and -0.7 < c < 0.7:
         # both pointing away from the shared vertex B=C: -u and v
         R = _hyp(dx - ax, dy - ay)
         return -m_corner(l1, l2, -c, R)
@@ -118,6 +120,8 @@ def m_hh(ax, ay, bx, by, cx, cy, dx, dy, dz, adjacent):
     p1 = (dx - ax) * uy - (dy - ay) * ux
     dperp = 0.5 * abs(p0 + p1)
     d = _sqrt(dperp * dperp + dz * dz)
+    if d < dmin:
+        d = dmin
     if s1 >= s0:
         m = m_par(l1, s1 - s0, s0, d)
     else:
@@ -196,3 +200,61 @@ def _collinear(l1, l2, g):
     def f(x):
         return x * _log(x) if x > 1e-12 else 0.0
     return MU * (f(l1 + l2 + g) - f(l1 + g) - f(l2 + g) + f(g))
+
+
+def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, hj, hk, adjacent, cos_min, dmin):
+    """2 [M(j, k) - M(j, image k)] for horizontal segments j = A->B at height hj and
+    k = C->D at height hk over a plane (inf = no plane: no image term). Returns 0 for pairs
+    closer to perpendicular than cos_min. The projection is shared by the direct and image
+    terms; Grover's G(u, d) = u asinh(u/d) - sqrt(u^2 + d^2) is inlined."""
+    ux = bx - ax
+    uy = by - ay
+    l1 = _sqrt(ux * ux + uy * uy)
+    vx = dx - cx
+    vy = dy - cy
+    l2 = _sqrt(vx * vx + vy * vy)
+    if l1 < 1e-9 or l2 < 1e-9:
+        return 0.0
+    ux /= l1
+    uy /= l1
+    c = (ux * vx + uy * vy) / l2
+    if -cos_min < c < cos_min:
+        return 0.0
+    noplane = hj == INF or hk == INF
+    qx = cx - ax
+    qy = cy - ay
+    rx = dx - ax
+    ry = dy - ay
+    s0 = qx * ux + qy * uy
+    s1 = rx * ux + ry * uy
+    dp = 0.5 * abs(qx * uy - qy * ux + rx * uy - ry * ux)
+    if s1 >= s0:
+        lo, e1 = s0, s1
+    else:
+        lo, e1 = s1, s0
+    e2 = e1 - l1
+    e3 = lo - l1
+    asinh = _asinh
+    sqrt = _sqrt
+    if adjacent and -0.7 < c < 0.7:
+        R = _hyp(dx - ax, dy - ay)
+        a = min(l2 / (l1 + R), 1.0 - 1e-12)
+        b = min(l1 / (l2 + R), 1.0 - 1e-12)
+        m = c * (l1 * _log((1 + a) / (1 - a)) + l2 * _log((1 + b) / (1 - b)))
+    else:
+        dz = 0.0 if noplane else abs(hj - hk)
+        d = sqrt(dp * dp + dz * dz)
+        if d < dmin:
+            d = dmin
+        dd = d * d
+        m = (e1 * asinh(e1 / d) - sqrt(e1 * e1 + dd)) - (e2 * asinh(e2 / d) - sqrt(e2 * e2 + dd)) \
+            - (lo * asinh(lo / d) - sqrt(lo * lo + dd)) + (e3 * asinh(e3 / d) - sqrt(e3 * e3 + dd))
+        if c < 0:
+            m = -m
+    if not noplane:
+        d = sqrt(dp * dp + (hj + hk) ** 2)
+        dd = d * d
+        mi = (e1 * asinh(e1 / d) - sqrt(e1 * e1 + dd)) - (e2 * asinh(e2 / d) - sqrt(e2 * e2 + dd)) \
+            - (lo * asinh(lo / d) - sqrt(lo * lo + dd)) + (e3 * asinh(e3 / d) - sqrt(e3 * e3 + dd))
+        m -= mi if c > 0 else -mi
+    return 2.0 * MU * m

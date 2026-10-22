@@ -104,7 +104,8 @@ TEXT_RULES = [
                                 r'\bCBW\d|\bLMSC\d|\b744\d{3}')),
     ('inductor', 'rf', 1.0, rx(r'\bLQW\d|\bLQG\d|\bLQP\d|\b0402CS|\b0603CS|\bL-07C|\bLL1005|\bLQW15')),
     ('ferrite', None, 3.0, rx(r'ferrite|\bbead\b|\bBLM\d|\bMPZ\d|\bBK\d{4}|\bHZ\d{4}|\bFBMH|\bMMZ\d|\bBLA\d|\bHI\d{4}|\bMI\d{4}|'
-                               r'\bPE-\d{4}PFB|\bFB_\d|\bWE-CBF|\bUPZ\d|\bCIM\d|\bBKP\d|\b\d+\s*(R|Ω|ohm|Ohm|OHM|Z)\s*@|@\s*100\s*MHz')),
+                               r'\bPE-\d{4}PFB|\bFB_\d|\bWE-CBF|\bUPZ\d|\bCIM\d|\bBKP\d|\bCBW\d{6}|\bGZ\d{4}|\bSBY\d|'
+                               r'\b\d+\s*(R|Ω|ohm|Ohm|OHM|Z)\s*@|@\s*100\s*MHz')),
     ('common_mode_choke', None, 3.0, rx(r'common.?mode|\bCMC\b|\bACM\d|\bDLW\d|\bDLP\d|\bWE-CNSW|\bSRF\d{4}|\bACT45|\bCMM\d|\bMCZ\d')),
     ('transformer', None, 2.5, rx(r'transformer|\btrafo\b|\bpulse transformer|\bmagnetics\b|\bHX\d{4}|\bH1102|\bHR6\d{4}|\bTL016')),
     # diodes
@@ -221,32 +222,7 @@ LIB_RULES = [
 ]
 
 # IC subtypes from part numbers; first match wins, order matters
-IC_RULES = [
-    ('regulator_module', rx(r'\bTPSM\d|\bMPM\d{4}|\bLMZ\d|\bMYMG|\bMYRG|\bLTM4\d|\bLTM8\d|\bMUN12|\bRPM\d|\bRPX-|\bR-78|\bRAC\d|\bIRM-\d|'
-                            r'\bTSR[ -]?\d|\bTMR[ -]?\d|\bTEN[ -]?\d|\bA05\d\dS|\bA12\d\dS|\bB05\d\dS|\bMORNSUN|\bURB\d{4}|\bP78E|\bVX78|\bCRV1D|'
-                            r'\bMini360|\bDC-?DC\b|\bConverter_DCDC|\bMPT1584|\bVXO\d')),
-    ('charge_pump', rx(r'\bICL7660|\bLM2664|\bLM2775|\bTPS60\d{3}|\bMAX1044|\bLTC1044|\bMAX660|\bCAT3200|\bLM27762|\bMAX1680')),
-    ('pmic', rx(r'\bnPM\d{4}|\bAXP\d{3}|\bTPS65\d{3}|\bDA9\d{3}|\bACT88\d{2}|\bRT5\d{3}|\bMAX7765|\bBD71\d{3}|\bPF\d{4}|\bMP5\d{3}|\bTPS6521')),
-    ('charger', rx(r'\bBQ24\d{3}|\bBQ25\d{3}|\bMCP7383\d|\bMCP73831|\bTP4056|\bTP4054|\bLTC4054|\bIP5306|\bMAX1555|\bCN3065|\bLTC4067|'
-                   r'\bSL9062|\bMCP7303\d|\bBQ2105\d|\bLTC4162|\bMAX7765')),
-    ('regulator_switching', rx(r'\bTPS5\d{3,4}|\bTPS56\d|\bTPS6[0-3]\d{2,3}|\bTPS82|\bTLV6[12]\d{3}|\bLMR\d{4,5}|\bLM259[16]|\bLM257[56]|'
-                               r'\bLM267\d|\bLM25\d{3}|\bLM3671|\bLM3670|\bMP1584|\bMP2\d{3}|\bMP1\d{3}|\bMP8\d{3}|\bMPQ\d|\bSY8\d{3}|'
-                               r'\bAP63\d{3}|\bAP62\d{3}|\bAP3441|\bAP3012|\bAP3015|\bAOZ\d{4}|\bRT8\d{3}|\bRT60\d{2}|\bRT7\d{3}|\bXL[1-7]\d{3}|'
-                               r'\bMT2492|\bMT3410|\bMT3608|\bSX1308|\bTX4138|\bFAN53\d{2}|\bFAN5622|\bISL85\d{2}|\bLTC3\d{3}|\bLT8\d{3}|'
-                               r'\bLT3\d{3}|\bLT1373|\bLT1930|\bLT1935|\bMAX1503\d|\bMAX17\d{3}|\bMIC2\d{4}|\bMIC28\d{3}|\bNCP3\d{3}|\bADP2\d{3}|'
-                               r'\bST1S\d|\bL5973|\bBD9\w+|\bSC4\d{2}|\bJW5\d|\bETA\d{4}|\bLM27313|\bLM2731|\bLM2735|\bMCP16\d{2}|\bNCP1402|'
-                               r'\bBL8530|\bCE8301|\bRT9266|\bHT77\d\d|\bACT4\d{3}|\bSGM61\d{2}|\bLM5\d{3}|\bLM3478|\bMAX1724|\bMIC2250|'
-                               r'\bME2108|\bLT8364|\bLM25119|\bTPS55340|\bLM2842|\bLM2853|\bAP3211|\bMIC28517|\bR7\d{3}|\bbuck\b|\bboost\b|'
-                               r'step.?down|step.?up|switching regulator')),
-    ('regulator_linear', rx(r'\bLDO\b|\b(AMS|AZ|LM|LT|LD|NCP|SPX|TLV|BL|REG|IL|CJT|MC33|UA)?1117|\bLM317|\bLM337|\b(L|LM|MC|UA|KA|NJM|AN|LM3)?78[LM]?\d\d\b|'
-                            r'\b(L|LM|MC|UA|KA)?79[LM]?\d\d\b|\bAP21\d{2}|\bAP22\d{2}|\bAP7\d{3}|\bMCP17\d{2}|\bMCP18\d{2}|\bXC62\d{2}|\bRT90\d{2}|'
-                            r'\bRT91\d{2}|\bTLV7\d{2,3}|\bTLV1117|\bTPS7\d{2}|\bTPS7A|\bLP59\d{2}|\bLP29\d{2}|\bLP38\d{2}|\bMIC5\d{3}|\bMIC29\d{3}|'
-                            r'\bSPX\d{4}|\bHT7[0-9]{3}|\bME62\d{2}|\bME2188|\bLD39\d{3}|\bLD29\d{3}|\bLDL\d|\bLDLN|\bLDO\d{2}|\bL4931|'
-                            r'\bNCP1[01]\d|\bNCP7\d{2}|\bNCV\d{4}|\bNCP177|\bNJM\d{4}|\bLT1129|\bLT1763|\bLT3042|\bLT1086|\bADP1\d{2}|\bADP7\d{3}|'
-                            r'\bRT9078|\bSGM2\d{3}|\bTC1185|\bTC1262|\bTPL810|\bR5617|\bZLDO|\blinear regulator|\blow.?dropout|\bvoltage regulator')),
-    ('reference', rx(r'\bLM4040|\bLM4041|\bREF\d{2,4}|\bTL431|\bLM431|\bADR\d{3}|\bMAX6\d{3}|\bLT6656|\bLT1009|\bAZ431|\bvoltage reference|\bshunt reference')),
-    ('load_switch', rx(r'\bTPS22\d{3}|\bTPS2[01]\d{2}|\bAP2[25]\d{2}|\bSLG5NT|\bRT9742|\bMAX17613|\bNCP4556\d|\bSY62\d{2}|\bMIC20\d{2}|'
-                       r'\bLTC4412|\bTPS2115|\bLM6600|\bpower switch|\bload switch|\bideal diode|\bLM5050|\bLTC435\d|\bTPS2116')),
+IC_RULES = [  # specific families first: the first match wins
     ('esd_array', rx(r'\bUSBLC\d|\bTPD\d+E|\bESD\d{3}|\bPRTR5V|\bRCLAMP|\bSRV05|\bIP42\d{2}|\bNUP\d|\bSP05\d|\bCM1213|\bECMF|\bNUF\d|\bCDDFN|\bH5VU')),
     ('fpga', rx(r'\bXC[2-7][A-Z]?\d|\bXCR3|\bXC95|\bXCKU|\bXCZU|\bICE40|\bLFE5|\bLCMXO|\bECP5|\b10M\d{2}|\bEP4C|\bEP2C|\bEPM\d|\bGW1N|'
                   r'\bATF1[56]|\bGAL\d|\bPAL\d|\bAGL\d|\bA3P\d|\bT20F|\bTi60|\bCCGM|\bS5933|\bXC1736|\bXC4\d{3}')),
@@ -275,12 +251,11 @@ IC_RULES = [
                      r'\bWM8\d{3}|\bTLV320|\bSGTL5000|\bES8\d{3}|\bAK4\d{3}|\bCS42\d{2}|\bmax98357')),
     ('current_sense', rx(r'\bINA1[89]\d|\bINA2[0-9]\d|\bINA3\d{2}|\bINA4\d{2}|\bACS7\d{2}|\bMAX40\d{2}|\bMAX9938|\bLMP86\d{2}|\bAD8418|'
                          r'\bZXCT\d|\bLT6106|\bINA2\d{2}A|\bcurrent sense')),
-    ('opamp', rx(r'\bLM358|\bLM324|\bLM2904|\bLM6\d{3}|\bTL07\d|\bTL08\d|\bNE5532|\bNE5534|\bOPA\d{3,4}|\bMCP60\d{2}|\bMCP6\d{3}|\bMCP6N|'
-                   r'\bLMV3\d{2}|\bLMV7\d{2}|\bAD8\d{2,3}|\bAD86\d{2}|\bADA4\d{3}|\bLT1\d{3}|\bLT6\d{3}|\bTLV9\d{3}|\bTLV2\d{3}|'
-                   r'\bTSV\d{3}|\bGS32\d|\bGSV33\d|\bINA8\d{2}|\bINA12\d|\bTHS4\d{3}|\bECC83|\bop.?amp|\boperational amplifier|'
-                   r'\binstrumentation amp|\bLM393|\bLM339|\bLMV331|\bTLV3\d{3}|\bcomparator|\bAD8338|\bLT1794')),
+    ('load_switch', rx(r'\bTPS22\d{3}|\bTPS2[01]\d{2}|\bAP22[89]\d|\bAP25\d{2}|\bSLG5NT|\bRT9742|\bMAX17613|\bNCP4556\d|\bSY62\d{2}|\bMIC20\d{2}|'
+                       r'\bLTC4412|\bTPS2115|\bLM6600|\bpower switch|\bload switch|\bideal diode|\bLM5050|\bLTC435\d|\bTPS2116')),
     ('adc_dac', rx(r'\bADS\d{4}|\bADS1\d{3}|\bMCP3\d{3}|\bMCP4\d{3}|\bAD7\d{3}|\bAD5\d{3}|\bDAC\d{3,5}|\bMAX11\d{3}|\bMAX5\d{3}|\bLTC2\d{3}|'
                     r'\bMAX6675|\bMAX31855|\bMAX318\d{2}|\bADC\d{3,4}|\bPCM18\d{2}|\bDS4432|\bAD9\d{3}|\bHX711|\bNAU7802|\bCS55\d{2}')),
+    ('reference', rx(r'\bLM4040|\bLM4041|\bREF\d{2,4}|\bTL431|\bLM431|\bADR\d{3}|\bMAX6\d{3}|\bLT6656|\bLT1009|\bAZ431|\bvoltage reference|\bshunt reference')),
     ('rf', rx(r'\bSX12\d{2}|\bSX127\d|\bSX126\d|\bCC1101|\bCC1\d{3}|\bnRF24|\bAT86RF|\bSI44\d{2}|\bRFM6\d|\bRFM9\d|\bA7105|\bRFX\d{4}|'
                 r'\bSKY\d{5}|\bQPF\d{4}|\bLNA\b|\bBGA7\d{2}|\bMAX2\d{3}|\bTRF\d{4}|\bADF\d{4}|\bSi4\d{3}|\bLR11\d{2}|\bRF\s*transceiver')),
     ('sensor', rx(r'\bBME\d{3}|\bBMP\d{3}|\bBMI\d{3}|\bBMA\d{3}|\bBNO\d{3}|\bBMM\d{3}|\bLIS[23]\w+|\bLSM\d|\bISM330|\bLSM6|\bMPU\d{4}|'
@@ -288,6 +263,32 @@ IC_RULES = [
                     r'\bSHTC\d|\bHDC\d{4}|\bSi70\d{2}|\bMCP98\d{2}|\bTMP\d{3,4}|\bAT30TS|\bLM75|\bDS18B20|\bMAX3\d{4}|\bSCD\d{2}|'
                     r'\bSGP\d{2}|\bCCS811|\bMQ-\d|\bVL53|\bAH\d{4}|\bDRV5\d{3}|\bA13\d{2}|\bTMAG|\bTSOP\d{4}|\bQRE1113|\bRV-8263|'
                     r'\bPCF85\d{2}|\bDS3231|\bRV-\d{4}|\bsensor\b|\bAS5\d{3}|\bMLX9\d{4}')),
+    ('regulator_module', rx(r'\bTPSM\d|\bMPM\d{4}|\bLMZ\d|\bMYMG|\bMYRG|\bLTM4\d|\bLTM8\d|\bMUN12|\bRPM\d|\bRPX-|\bR-78|\bRAC\d|\bIRM-\d|'
+                            r'\bTSR[ -]?\d|\bTMR[ -]?\d|\bTEN[ -]?\d|\bA05\d\dS|\bA12\d\dS|\bB05\d\dS|\bMORNSUN|\bURB\d{4}|\bP78E|\bVX78|\bCRV1D|'
+                            r'\bMini360|\bDC-?DC\b|\bConverter_DCDC|\bMPT1584|\bVXO\d')),
+    ('charge_pump', rx(r'\bICL7660|\bLM2664|\bLM2775|\bTPS60\d{3}|\bMAX1044|\bLTC1044|\bMAX660|\bCAT3200|\bLM27762|\bMAX1680')),
+    ('pmic', rx(r'\bnPM\d{4}|\bAXP\d{3}|\bTPS65\d{3}|\bDA9\d{3}|\bACT88\d{2}|\bRT5\d{3}|\bMAX7765|\bBD71\d{3}|\bPF\d{4}|\bMP5\d{3}|\bTPS6521')),
+    ('charger', rx(r'\bBQ24\d{3}|\bBQ25\d{3}|\bMCP7383\d|\bMCP73831|\bTP4056|\bTP4054|\bLTC4054|\bIP5306|\bMAX1555|\bCN3065|\bLTC4067|'
+                   r'\bSL9062|\bMCP7303\d|\bBQ2105\d|\bLTC4162|\bMAX7765')),
+    ('regulator_switching', rx(r'\bTPS5\d{3,4}|\bTPS56\d|\bTPS6[0-3]\d{2,3}|\bTPS82|\bTLV6[12]\d{3}|\bLMR\d{4,5}|\bLM259[16]|\bLM257[56]|'
+                               r'\bLM267\d|\bLM25\d{3}|\bLM3671|\bLM3670|\bMP1584|\bMP2\d{3}|\bMP1\d{3}|\bMP8\d{3}|\bMPQ\d|\bSY8\d{3}|'
+                               r'\bAP63\d{3}|\bAP62\d{3}|\bAP3441|\bAP3012|\bAP3015|\bAOZ\d{4}|\bRT8\d{3}|\bRT60\d{2}|\bRT7\d{3}|\bXL[1-7]\d{3}|'
+                               r'\bMT2492|\bMT3410|\bMT3608|\bSX1308|\bTX4138|\bFAN53\d{2}|\bISL85\d{2}|\bLTC3\d{3}|\bLT8\d{3}|'
+                               r'\bLT3\d{3}|\bLT1373|\bLT1930|\bLT1935|\bMAX1503\d|\bMAX1750\d|\bMIC2\d{4}|\bMIC28\d{3}|\bNCP3\d{3}|\bADP2\d{3}|'
+                               r'\bST1S\d|\bL5973|\bBD9\w+|\bSC4\d{2}|\bJW5\d|\bETA\d{4}|\bLM27313|\bLM2731|\bLM2735|\bMCP16\d{2}|\bNCP1402|'
+                               r'\bBL8530|\bCE8301|\bRT9266|\bHT77\d\d|\bACT4\d{3}|\bSGM61\d{2}|\bLM5\d{3}|\bLM3478|\bMAX1724|\bMIC2250|'
+                               r'\bME2108|\bLT8364|\bLM25119|\bTPS55340|\bLM2842|\bLM2853|\bAP3211|\bMIC28517|\bR7\d{3}|\bbuck\b|\bboost\b|'
+                               r'step.?down|step.?up|switching regulator')),
+    ('regulator_linear', rx(r'\bLDO\b|\b(AMS|AZ|LM|LT|LD|NCP|SPX|TLV|BL|REG|IL|CJT|MC33|UA)?1117|\bLM317|\bLM337|\b(L|LM|MC|UA|KA|NJM|AN|LM3)?78[LM]?\d\d\b|'
+                            r'\b(L|LM|MC|UA|KA)?79[LM]?\d\d\b|\bAP21\d{2}|\bAP22\d{2}|\bAP7\d{3}|\bMCP17\d{2}|\bMCP18\d{2}|\bXC62\d{2}|\bRT90\d{2}|'
+                            r'\bRT91\d{2}|\bTLV7\d{2,3}|\bTLV1117|\bTPS7\d{2}|\bTPS7A|\bLP59\d{2}|\bLP29\d{2}|\bLP38\d{2}|\bMIC5\d{3}|\bMIC29\d{3}|'
+                            r'\bSPX\d{4}|\bHT7[0-9]{3}|\bME62\d{2}|\bME2188|\bLD39\d{3}|\bLD29\d{3}|\bLDL\d|\bLDLN|\bLDO\d{2}|\bL4931|'
+                            r'\bNCP1[01]\d|\bNCP7\d{2}|\bNCV\d{4}|\bNCP177|\bNJM\d{4}|\bLT1129|\bLT1763|\bLT3042|\bLT1086|\bADP1\d{2}|\bADP7\d{3}|'
+                            r'\bRT9078|\bSGM2\d{3}|\bTC1185|\bTC1262|\bTPL810|\bR5617|\bZLDO|\blinear regulator|\blow.?dropout|\bvoltage regulator')),
+    ('opamp', rx(r'\bLM358|\bLM324|\bLM2904|\bLM6\d{3}|\bTL07\d|\bTL08\d|\bNE5532|\bNE5534|\bOPA\d{3,4}|\bMCP60\d{2}|\bMCP6\d{3}|\bMCP6N|'
+                   r'\bLMV3\d{2}|\bLMV7\d{2}|\bAD8\d{2,3}|\bAD86\d{2}|\bADA4\d{3}|\bLT1\d{3}|\bLT6\d{3}|\bTLV9\d{3}|\bTLV2\d{3}|'
+                   r'\bTSV\d{3}|\bGS32\d|\bGSV33\d|\bINA8\d{2}|\bINA12\d|\bTHS4\d{3}|\bECC83|\bop.?amp|\boperational amplifier|'
+                   r'\binstrumentation amp|\bLM393|\bLM339|\bLMV331|\bTLV3\d{3}|\bcomparator|\bAD8338|\bLT1794')),
     ('logic', rx(r'\b74[A-Z]*\d{2,4}|\bSN74|\bCD40\d{2}|\bCD74|\bNC7[SZ]|\bHEF4\d{3}|\bMC14\d{3}|\bTC74|\bAiP74|\b4C\d{3}|\bTC7S|\bMAX809|'
                    r'\bAPX8\d{2}|\bTPS3\d{3}|\bSTM6\d{3}|\bMCP1[0-3]\d\b|\bsupervisor|\bDS1\d{3}|\bNE555|\bLM555|\bTLC555|\bICM7555')),
 ]
@@ -298,8 +299,10 @@ PWR_PIN = rx(r'^(P?VIN\d*[A-Z]?|VIN_?\w*|VCC\w*|VDD\w*|AVDD\w*|DVDD\w*|IOVDD|PVD
              r'3V3|5V|1V8|1V2|VLED|VDRV|VAUX|VHV|VPWR|PWR|V_?IN|V_?CC|V_?DD|VLOGIC|VL|VCP)$')
 GND_PIN = rx(r'^(P?GND\w*|AGND\w*|DGND\w*|SGND|VSS\w*|AVSS\w*|DVSS\w*|EP|EPAD|E?PAD|THERMAL\w*|TAB|GNDA|GNDD|0V|COM|V-|-VS|PAD\d?|'
              r'GND_?EP|EXP|SLUG|PGND\d*|GROUND|SUB)$')
-SW_PIN = rx(r'^(SW\d?[A-Z]?|LX\d?|PH|PHASE\d?|SW_?\d|LX_?\d|L\d|SWA|SWB|SW[12]|L[12]|LXA|LXB|DRAIN|SH[ABC]?)$')
-OUT_PIN = rx(r'^(V?OUT\d?|VO|OUTPUT|VREG(_?OUT)?|V_?OUT|LDO_?OUT|VOUT_?\w*|VREG_VOUT|OUT[12]?)$')
+SW_PIN = rx(r'^(SW\d?[A-Z]?|LX\d?|PH|PHASE\d?|SW_?\d|LX_?\d|L\d|SWA|SWB|SW[12]|L[12]|LXA|LXB|DRAIN|SH[ABC]?|VSW\d?|'
+            r'V?LX_?SMPS|VLX\w*|\w*_LX\d?|LX_\w+|SW_(BUCK|BOOST|REG|DCDC)\w*|(BUCK|BOOST|DCDC|SMPS|REG)\d?_?(SW|LX)\d?|SMPS_?(SW|LX))$')
+OUT_PIN = rx(r'^(V?OUT\d?|VO|OUTPUT|VREG(_?OUT)?|V_?OUT|LDO_?OUT|VOUT_?\w*|VREG_VOUT|OUT[12]?|[+-]V?O(UT)?\d?|V?O(UT)?[+-]|'
+             r'[+-]VOUT\w*|VOUT[+-]\w*|V[+-]OUT)$')
 IN_PIN = rx(r'^(P?VIN\d?|VCC|VDD|IN|VS|VBAT|PVDD|AVIN|VSUP|VSYS|V\+|INPUT|VIN_\w+)$')
 FB_PIN = rx(r'^(V?FB\d?|FB[+-]?|ADJ|ADJ/GND|VSENSE|VOS|FBK|FB_?\w*|SENSE)$')
 BOOT_PIN = rx(r'^(BST\d?|BOOT\d?|CB|BS|CBOOT|VBST|BOOTSTRAP|HB|BTST|C_?BOOT)$')
@@ -358,7 +361,7 @@ IFACE = [
 ]
 CLOCK_NET = rx(r'CLK|CLOCK|XTAL|^XIN|^XOUT|^XI$|^XO$|^X[12]$|OSC|^HSE|^LSE|REFCLK|MCLK|BCLK|SCK|SCLK|^CK_?[PN]?$|_CK$|^CK\d|32K|RTC_?X|'
               r'^EXTAL|^XTAL')
-ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENSE|SNS|ISENSE|ISNS|IMON|VSENSE|VMON|CSP|CSN|FB|VFB|COMP|'
+ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENSE|SNS|KELVIN|ISENSE|ISNS|IMON|VSENSE|VMON|CSP|CSN|FB|VFB|COMP|'
                r'AUDIO|MIC|LINE_?(IN|OUT)?|HP_?[LR]|HPL|HPR|HPCOM|IN[+-]|INP|INN|AINP|AINN|THERM|NTC|RTD|TC[+-]?|TEMP|BRIDGE|STRAIN|LOADCELL|'
                r'PIEZO|PHOTO|TIA|VCM|BIAS|ECG|EEG|EMG|XADC|CV|SIGNAL_?IN|PREAMP|GAIN|VOL|POT|DRY|WET|MIX|AUDIO|SPDIF|SENS|SENSOR|LDR|'
                r'CURR|CURRENT|SHUNT|VBAT_?SENSE|VBAT_?ADC|VDIV|DIV|ISET|IREF|IPROG|PROG|RSET)([^A-Z]|$)')
@@ -554,7 +557,7 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     res = V.resistance(val)
     if res is not None and re.search(r'\d\s*[kKM]\b|\d[kKMR]\d|\dR\b|\d\s*(Ω|ohm|Ohm)|^R\d|\dm\b|^0$|^0R$', val):
         add('resistor', 1.2, ev('value', f"value '{val}' reads as {V.si(res, 'Ω')}", 1.2))
-        if re.search(r'Ω|ohm|Ohm|\dR\b', val) and sc.get('inductor', 0) > 0 and res >= 10:
+        if re.search(r'Ω|ohm|\dR\b', val, re.I) and sc.get('inductor', 0) > 0 and res >= 10:
             add('ferrite', 2.0, ev('value', f"impedance value '{val}' on an inductor footprint", 2.0))
     fq = V.frequency(val)
     if fq is not None and re.search(r'hz|\dk\d|\dM\b', val, re.I):
@@ -588,8 +591,8 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     if {'A', 'K'} <= fns and len(fns) <= 3:
         add('diode', 2.0, ev('pinfunction', 'pins named A, K', 2.0))
         add('led', 0.5, ev('pinfunction', 'pins named A, K', 0.5))
-    if types.get('power_out'):
-        add('ic', 1.0, ev('pintype', f"{types['power_out']} pin(s) typed power_out", 1.0))
+    if types.get('power_out') and n_act >= 3 and not (sc.get('connector', 0) > 0 or sc.get('fuse', 0) > 0 or sc.get('resistor', 0) > 0):
+        add('ic', 0.5, ev('pintype', f"{types['power_out']} pin(s) typed power_out", 0.5))
     sig_t = sum(types.get(t, 0) for t in ('input', 'output', 'bidirectional', 'tri_state', 'open_collector'))
     if sig_t >= 2 and n_act >= 4:
         add('ic', 1.0, ev('pintype', f"{sig_t} pins typed as logic I/O", 1.0))
@@ -799,6 +802,12 @@ def _switch_nodes(nl: Netlist, roles: Roles):
                   and roles.parts[p.ref].kind in ('ic', 'module') and not SW_PIN.match(p.fn)]
         if pin_in:
             evs.append(ev('pinfunction', f"supply pin {pin_in[0].label} on it", -2.0))
+        alone = [p for p in nv.pins if p.ref != ind_ref]
+        if (len(alone) == 1 and roles.parts[alone[0].ref].kind in ('ic', 'module') and not caps and len(roles.caps_to.get(other, ())) >= 2
+                and alone[0].ptype != 'power_in' and not PWR_PIN.match(alone[0].fn)
+                and (alone[0].ptype == 'power_out' or re.search(r'REG|LX|SW|VOUT|DCDC|SMPS|BUCK', alone[0].fn))):
+            evs.append(ev('topology', f"only {alone[0].label} and the inductor on this node; far end decoupled (integrated converter output)",
+                          MODERATE + 1.0))
         if re.search(r'(^|[^A-Z])(SW|LX|PH|PHASE|SW_?NODE|SWN|SWITCH_?NODE)\d?([^A-Z]|$)', nv.short) and not re.search(r'^SW\d+$|KEY|BTN|ROW|COL', nv.short):
             evs.append(ev('name', f"name '{nv.short}'", MODERATE))
         if PWR_NET.search(nv.short) or V.net_voltage(net):
@@ -850,7 +859,25 @@ def _switch_nodes(nl: Netlist, roles: Roles):
             elif any(roles.caps_to.get(o) for o in others):
                 hi.append(q)
         if lo and hi:
+            # power-stage evidence: an inductor or a connector on the node, a shunt in the return, a driver IC
+            # on the gates, or power packages (logic pairs and level shifters have none)
+            ind = [p.ref for p in nv.pins if roles.parts[p.ref].kind == 'inductor']
+            con = [p.ref for p in nv.pins if roles.parts[p.ref].kind in ('connector',)]
+            shunt = any(o in shunt_to_g for q in lo for o in nl.parts[q].nets - {net})
+            pkg = all(re.search(r'TO-?220|TO-?252|TO-?263|D2?PAK|PowerPAK|PowerDI|LFPAK|DFN.?5x6|PG-?HSOF|TDSON|SuperSO|SO-?8|SOIC-8|'
+                                r'DirectFET|PQFN|VSONP|HSOF|Q5A|DQJ|SON5x6|TOLL', nl.parts[q].lib_id, re.I) for q in hi[:1] + lo[:1])
+            drv = False
+            for q in hi[:1] + lo[:1]:
+                for gn in nl.parts[q].nets - {net}:
+                    for p in nl.pins(gn):
+                        if roles.parts[p.ref].kind == 'ic' and roles.parts[p.ref].subtype in ('gate_driver', 'motor_driver', 'regulator_switching'):
+                            drv = True
+            power = ind or shunt or drv or pkg or (con and pkg)
+            if not power:
+                continue
             evs = [ev('topology', f"{hi[0]} to a decoupled net and {lo[0]} to ground share this node", STRONG)]
+            evs.append(ev('topology', 'power stage: ' + ', '.join(x for x, y in (('inductor on the node', ind), ('shunt in the return', shunt),
+                                                                                   ('gate driver', drv), ('power packages', pkg)) if y), MODERATE))
             if any(SW_PIN.match(p.fn) or p.fn in ('S', 'D') for p in nv.pins):
                 evs.append(ev('pinfunction', 'drain/source pins on the node', 0.5))
             if roles.caps_to.get(net):
@@ -858,6 +885,26 @@ def _switch_nodes(nl: Netlist, roles: Roles):
             s = sum(e.weight for e in evs)
             if s >= 2.0:
                 sw[net] = dict(kind='half_bridge', transistors=qs, high=hi, low=lo, evidence=evs, score=s)
+    # integrated half-bridge stages (GaN/Si power stages): a switch pin with no inductor on its net, on an IC
+    # that also has a decoupled supply input and a ground
+    for ref, part in nl.parts.items():
+        pr = roles.parts[ref]
+        if pr.kind != 'ic':
+            continue
+        if pr.subtype in ('fpga', 'mcu', 'memory', 'logic', 'regulator_module', 'interface', 'phy', 'sensor'):
+            continue
+        for p in part.active_pins():
+            if not re.match(r'^(SW\d?|PH|PHASE\d?|VSW|OUT_?SW|SW_?OUT|VPH|HSW|SW_?NODE)$', p.fn) or p.net in g or p.net in sw \
+                    or roles.caps_to.get(p.net):
+                continue
+            if any(roles.parts[q.ref].kind == 'inductor' for q in nl.pins(p.net)):
+                continue
+            if not any(q.ref != ref for q in nl.pins(p.net)):
+                continue          # a module's internal switch node brought out to pads only
+            vin = [q for q in part.active_pins() if (IN_PIN.match(q.fn) or re.match(r'^P?VIN', q.fn)) and roles.caps_to.get(q.net)]
+            if vin and any(q.net in g for q in part.active_pins()):
+                sw[p.net] = dict(kind='bridge_output', ic=ref, evidence=[ev('pinfunction', f"switch pin {p.label} with no inductor; supply {vin[0].label} decoupled (integrated half-bridge)", STRONG)],
+                                 score=STRONG)
     # integrated bridges: output pins of motor drivers / class-D amplifiers
     for ref, part in nl.parts.items():
         pr = roles.parts[ref]
@@ -889,8 +936,15 @@ def _switch_nodes(nl: Netlist, roles: Roles):
 
 
 # ------------------------------------------------------------------------------- rails
+SENSE_NAME = rx(r'SENSE|SNS|KELVIN|(^|[^A-Z])K(ELV)?$|_MON$|MONITOR|MEAS|_DIV$|DIVIDER|_ADC$|ADC_|_FB$|^FB_|VFB|_REF$|REF_')
+
+
 def _rails(nl: Netlist, roles: Roles):
     g = set(roles.grounds)
+
+    def powered_pins(pins):
+        return [p for p in pins if roles.parts[p.ref].kind in ('ic', 'module', 'oscillator', 'led') and
+                (p.ptype in ('power_in', 'power_out') or PWR_PIN.match(p.fn)) and not GND_PIN.match(p.fn)]
     sw = set(roles.switch_nodes)
     pd_ctrl = any(re.search(r'FUSB30|STUSB|HUSB\d|CYPD|TPS6598|IP2721|CH224|AP33771|PD controller', p.text(), re.I) for p in nl.parts.values())
     for net, nv in nl.nets.items():
@@ -911,7 +965,9 @@ def _rails(nl: Netlist, roles: Roles):
         if re.search(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP', cls) and 'DEFAULT' != cls:
             evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
         pins = nv.pins
-        p_out = [p for p in pins if p.ptype == 'power_out']
+        # a power_out pin makes a source only on an IC or module: library symbols of connectors, fuses
+        # and resistors carry power_out pins too (suite run, docs/topics/physics/suite-physics-results.md)
+        p_out = [p for p in pins if p.ptype == 'power_out' and roles.parts[p.ref].kind in ('ic', 'module')]
         p_in = [p for p in pins if p.ptype == 'power_in' and roles.parts[p.ref].kind in ('ic', 'module', 'oscillator', 'led', 'crystal')
                 and not GND_PIN.match(p.fn)]
         n_in_parts = len({p.ref for p in p_in})
@@ -943,13 +999,25 @@ def _rails(nl: Netlist, roles: Roles):
         sig = [p for p in pins if p.ptype in ('input', 'output', 'bidirectional', 'tri_state', 'open_collector') and roles.parts[p.ref].kind in ('ic', 'module')]
         if sig and not powered:
             evs.append(ev('pintype', f"{len(sig)} IC pin(s) typed as logic I/O ({sig[0].label}) and none as power", -2.0))
-        if len(pins) <= 2 and not nl.zone_layers.get(net) and not (p_out or reg_out):
+        if len(pins) <= 2 and not nl.zone_layers.get(net) and not (p_out or reg_out) and not (powered_pins(pins) and caps):
             evs.append(ev('count', f"only {len(pins)} pin(s)", -1.5))
+        if SENSE_NAME.search(s) and not (p_out or reg_out or ind_out):
+            evs.append(ev('name', f"sense/monitor name '{s}' (a Kelvin or measurement line, not a supply)", -4.0))
         for iface, _, r in IFACE:
-            if iface not in ('i2c', 'uart') and r.search(s) and not name:
+            if iface not in ('i2c', 'uart') and r.search(s) and not name and not weak:
                 evs.append(ev('name', f"interface name ({iface})", -2.5))
                 break
+        filt = [p for p in pins if roles.parts[p.ref].kind in ('ferrite', 'inductor') and roles.parts[p.ref].ref not in
+                {i for d in roles.switch_nodes.values() for i in d.get('inductors', [])}]
+        if caps and filt:
+            o = nl.other_net(nl.parts[filt[0].ref], net)
+            if o and o not in g and (roles.caps_to.get(o) or PWR_NET.search(nl.nets[o].short)):
+                evs.append(ev('topology', f"{roles.parts[filt[0].ref].kind} {filt[0].ref} from '{nl.nets[o].short}' with capacitors on both "
+                                          f"sides (filtered supply branch)", MODERATE))
+                powered = True
         strong = name or powered or len(caps) >= 2 or bool(nl.zone_layers.get(net)) or (vname is not None and len(caps) >= 1)
+        if SENSE_NAME.search(s) and not (p_out or reg_out or ind_out):
+            strong = False
         if not strong:
             continue
         conf = confidence(evs, prior=-2.5)
@@ -959,6 +1027,7 @@ def _rails(nl: Netlist, roles: Roles):
         nr.attrs['volts'] = _rail_voltage(nl, roles, net, vname, pd_ctrl)
         roles.rails[net] = nr
         roles.nets[net] = nr
+    _rail_sources(nl, roles)
     # sub-roles
     for net, nr in roles.rails.items():
         s = nl.nets[net].short
@@ -974,6 +1043,83 @@ def _rails(nl: Netlist, roles: Roles):
             nr.subrole = 'negative'
         else:
             nr.subrole = 'rail'
+
+
+def _rail_sources(nl: Netlist, roles: Roles):
+    """Where each rail comes from: a regulator or converter output, a connector or battery, a series part
+    from another rail (derived), an IC's own supply output (internal: core LDO, VCAP), or unknown.
+    A rail without a stated voltage inherits one through a series part (fuse, bead, 0 ohm, switch;
+    a diode costs ~0.4 V)."""
+    g = set(roles.grounds)
+    ind_out = {}
+    for net, d in roles.switch_nodes.items():
+        for L in d.get('inductors', []):
+            o = nl.other_net(nl.parts[L], net)
+            if o:
+                ind_out[o] = (L, net)
+    series = defaultdict(list)          # rail -> [(part, upstream net, kind)]
+    for ref, part in nl.parts.items():
+        pr = roles.parts[ref]
+        t = nl.two_nets(part)
+        if not t or len(part.active_pins()) > 3:
+            continue
+        a, b = t
+        if a in g or b in g:
+            continue
+        k = pr.kind
+        ohm = V.resistance(part.value) if k == 'resistor' else None
+        if k in ('ferrite', 'fuse', 'jumper', 'net_tie') or (k == 'resistor' and ohm is not None and ohm <= 1.0) or \
+                (k == 'inductor' and not any(ref in d.get('inductors', []) for d in roles.switch_nodes.values())):
+            series[a].append((ref, b, k))
+            series[b].append((ref, a, k))
+        elif k == 'diode' and pr.subtype not in ('tvs', 'esd_array', 'zener'):
+            for x, y in ((a, b), (b, a)):
+                for p in part.pins_on(x):
+                    if p.fn in ('K', 'CATHODE') or (p.number == '1' and not p.fn.isalpha()) or p.fn == '1':
+                        series[x].append((ref, y, 'diode'))
+    for net, nr in roles.rails.items():
+        pins = nl.nets[net].pins
+        src = None
+        reg = [p for p in pins if roles.parts[p.ref].subtype in ('regulator_linear', 'regulator_switching', 'regulator_module', 'pmic',
+                                                                    'charger', 'charge_pump', 'load_switch')
+               and (OUT_PIN.match(p.fn) or p.ptype == 'power_out')]
+        if reg:
+            src = {'kind': 'regulator', 'ref': reg[0].ref, 'pin': reg[0].number}
+        elif net in ind_out:
+            src = {'kind': 'converter', 'ref': ind_out[net][0], 'switch_node': ind_out[net][1]}
+        else:
+            bat = [p for p in pins if roles.parts[p.ref].kind == 'battery']
+            con = [p for p in pins if roles.parts[p.ref].kind == 'connector' and roles.parts[p.ref].subtype in ('power', 'usb', 'wire_to_board', 'header', 'board_to_board')]
+            internal = [p for p in pins if p.ptype == 'power_out' and roles.parts[p.ref].kind in ('ic', 'module')]
+            if bat:
+                src = {'kind': 'battery', 'ref': bat[0].ref}
+            elif internal:
+                src = {'kind': 'internal', 'ref': internal[0].ref, 'pin': internal[0].number}
+            elif series.get(net):
+                up = [x for x in series[net] if x[1] in roles.rails or x[1] in roles.nets]
+                if up:
+                    ref, upn, k = up[0]
+                    src = {'kind': 'derived', 'ref': ref, 'upstream': upn, 'via': k}
+            if src is None and con:
+                src = {'kind': 'connector', 'ref': con[0].ref, 'note': 'source or export, undecided'}
+            if src is None:
+                src = {'kind': 'unknown'}
+        nr.attrs['source'] = src
+    # voltage through series parts
+    for _ in range(3):
+        for net, nr in roles.rails.items():
+            vb = nr.attrs.get('volts')
+            if vb and vb.get('value') is not None:
+                continue
+            src = nr.attrs.get('source') or {}
+            up = src.get('upstream')
+            if src.get('kind') == 'derived' and up in roles.rails:
+                ub = roles.rails[up].attrs.get('volts') or {}
+                if ub.get('value') is not None:
+                    v = ub['value'] - (0.4 if src.get('via') == 'diode' else 0.0)
+                    nr.attrs['volts'] = belief(round(v, 3), 'V', f"inherited from '{nl.nets[up].short}' through {src['ref']} ({src['via']})",
+                                               round(v * 0.9, 3), round(ub['interval'][1] if ub.get('interval') else v * 1.05, 3),
+                                               lineage=[ub.get('relative_to', '')])
 
 
 def belief(value, unit, src, lo=None, hi=None, exactness='E5', lineage=()):
@@ -1005,6 +1151,14 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
             srcs.append(('usb', 5.0, 'USB VBUS (5 V nominal)', 4.4, 5.5))
     if re.search(r'VBAT|BATT|LIPO|LIION', s) and not vname:
         srcs.append(('battery', 3.7, 'battery rail, single Li-ion cell assumed', 3.0, 4.2))
+    if not srcs:
+        for p in nl.nets[net].pins:
+            if roles.parts[p.ref].kind in ('connector', 'battery'):
+                part = nl.parts[p.ref]
+                cv = V.net_voltage(part.value) or V.net_voltage(part.refdes)
+                if cv and abs(cv[0]) <= 60:
+                    srcs.append(('connector', cv[0], f"connector {part.refdes} value '{part.value}'", abs(cv[0]) * 0.9, abs(cv[0]) * 1.1))
+                    break
     ratings = []
     for cref, _ in roles.caps_to.get(net, []):
         part = nl.parts[cref]
@@ -1014,7 +1168,9 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     cap_hi = min(ratings) if ratings else None
     if not srcs:
         if cap_hi:
-            return belief(None, 'V', f"unknown; capacitor {cap_hi[1]} rated {cap_hi[0]:g} V bounds it", 0.0, cap_hi[0])
+            # designers derate ceramics and electrolytics by 1.25-3x: the rail most likely sits near rating/1.6
+            return belief(round(cap_hi[0] / 1.6, 2), 'V', f"estimate: lowest capacitor rating on the rail ({cap_hi[1]}, {cap_hi[0]:g} V) / 1.6",
+                          round(cap_hi[0] / 3.0, 2), cap_hi[0], lineage=['capacitor-rating estimate'])
         return None
     best = srcs[0]
     lineage = [x[2] for x in srcs]

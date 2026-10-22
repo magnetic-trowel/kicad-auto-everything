@@ -57,11 +57,15 @@ class Struct:
     info: dict = field(default_factory=dict)
 
 
-def _red(kind, vals):
+def _red(kind, vals, weights=None):
     if kind == 'sum':
         return sum(vals)
     if kind == 'parallel':
         inv = sum(1.0 / v for v in vals if v > 1e-12)
+        return 1.0 / inv if inv > 0 else INF
+    if kind == 'wparallel':
+        # expected admittance over alternatives present with probability w
+        inv = sum(w / v for v, w in zip(vals, weights) if v > 1e-12)
         return 1.0 / inv if inv > 0 else INF
     if kind == 'max':
         return max(vals) if vals else 0.0
@@ -161,7 +165,7 @@ class Terms:
                     vals.append(cache[ci][0])
             for i, p in saved:
                 st.set(i, *p)
-            new = _red(s.reduce, vals)
+            new = _red(s.reduce, vals, s.info.get('weights'))
             d += self._cost(s, new) - self._cost(s, cur)
         if self.thermal is not None and mset & self.th_parts:
             d += self._th_delta(poses, mv)
@@ -225,7 +229,7 @@ class Terms:
                 cc = (c.value(self.st), e)
                 cache[ci] = cc
             vals.append(cc[0])
-        return _red(s.reduce, vals)
+        return _red(s.reduce, vals, s.info.get('weights'))
 
     # thermal ---------------------------------------------------------------
     def _th_targets_of(self, i):

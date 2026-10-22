@@ -195,6 +195,10 @@ def net_voltage(name: str | None) -> tuple[float, str] | None:
             return True
         pre = n[:i]
         return re.search(r'(^[PNM]|VCC|VDD|VIN|VOUT|VBAT|VSYS|VBUS|VCCIO|VDDIO|PWR|AVDD|DVDD|VREG|V)$', pre) is not None
+    m = re.search(r'(?<![0-9.])(\d{1,3})P(\d{1,3})V(?![0-9A-Z])', n)                  # 12P0V, 3P3V
+    if m and prefix_ok(m.start()):
+        v = float(f"{m.group(1)}.{m.group(2)}")
+        return (-v if neg else v), m.group(0)
     for m in re.finditer(r'(?<![0-9.])(\d{1,3})V(\d{1,3})(?![0-9])', n):              # 3V3, 12V0, P3V3, VDD3V3
         if prefix_ok(m.start()):
             v = float(f"{m.group(1)}.{m.group(2)}")

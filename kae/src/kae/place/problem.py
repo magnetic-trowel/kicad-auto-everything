@@ -151,6 +151,20 @@ def _cluster_rects(rects, max_n=8):
     return [rect_union([rects[i] for i in grp]) for grp in groups if len(grp)]
 
 
+def edge_cut_polys(fp):
+    """Closed regions a footprint's Edge.Cuts graphics cut out (library frame)."""
+    if not fp.edge_cuts:
+        return []
+    polys = list(shapely.polygonize(fp.edge_cuts).geoms)
+    return [p for p in polys if p.area > 0]
+
+
+def edge_cut_lib_rect(fp):
+    if not fp.edge_cuts:
+        return None
+    return polys_lib_rect(list(fp.edge_cuts))
+
+
 def is_drilled(p):
     return p.kind in ("thru_hole", "np_thru_hole") or bool(p.drill)
 
@@ -191,6 +205,7 @@ class Part:
     pad_net: np.ndarray = None                   # net index per pad, -1 = none
     fits: bool = True     # the courtyard fits on the board (else only pads must be inside)
     shape_key: tuple = ()  # parts with equal keys are interchangeable geometrically
+    kind: str = ""        # the brief's part kind (connector, capacitor, ic, ...)
 
     @property
     def area(self):
@@ -352,6 +367,13 @@ class Problem:
         if fp.courtyard_back:
             lib_opp.append(polys_lib_rect(fp.courtyard_back))
         lib_opp = [r for r in lib_opp if r is not None]
+        cut = edge_cut_lib_rect(fp)
+        if cut is not None:
+            # the footprint cuts the board (a lens hole, a notch): nothing on either side may
+            # come within the copper-to-edge clearance of the cut
+            cut = rect_grow(cut, self.edge_clearance + 0.002)
+            lib_own = rect_union([lib_own, cut])
+            lib_opp.append(cut)
         copper = rect_union(pad_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:
             copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard

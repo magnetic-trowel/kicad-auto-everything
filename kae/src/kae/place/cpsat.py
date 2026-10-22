@@ -76,6 +76,37 @@ def allowed_boxes(P, bb):
     return out
 
 
+def disjoint_union(rects):
+    """Disjoint rectangles (i0, i1, j0, j1) covering exactly the union of `rects`: vertical
+    slabs between distinct x edges, merged y intervals per slab, equal neighbouring slabs
+    joined."""
+    rects = [r for r in rects if r[1] > r[0] and r[3] > r[2]]
+    if len(rects) <= 1:
+        return rects
+    xs = sorted({v for r in rects for v in (r[0], r[1])})
+    out = []
+    prev = None   # (x0, intervals)
+    for x0, x1 in zip(xs[:-1], xs[1:]):
+        iv = sorted((r[2], r[3]) for r in rects if r[0] <= x0 and r[1] >= x1)
+        merged = []
+        for a, b in iv:
+            if merged and a <= merged[-1][1]:
+                if b > merged[-1][1]:
+                    merged[-1][1] = b
+            else:
+                merged.append([a, b])
+        merged = [tuple(v) for v in merged]
+        if prev is not None and prev[2] == merged and prev[1] == x0:
+            prev = (prev[0], x1, merged)
+        else:
+            if prev is not None:
+                out += [(prev[0], prev[1], a, b) for a, b in prev[2]]
+            prev = (x0, x1, merged)
+    if prev is not None:
+        out += [(prev[0], prev[1], a, b) for a, b in prev[2]]
+    return out
+
+
 class Model:
     """Builds and solves one CP-SAT placement model."""
 
@@ -166,8 +197,10 @@ class Model:
                 m.add_hint(Y, min(max(it.Y0, ylo), max(ylo, yhi)))
                 for v, l in enumerate(lits):
                     m.add_hint(l, int(v == it.v0))
-        for side, (i0, i1, j0, j1) in obstacles:
-            if i1 > i0 and j1 > j0:
+        for side in (0, 1):
+            # fixed rectangles may overlap each other (locked parts, keepouts, parts outside
+            # a window): NoOverlap2D needs them disjoint, so add their union as disjoint pieces
+            for (i0, i1, j0, j1) in disjoint_union([r for sd, r in obstacles if sd == side]):
                 xi[side].append(m.new_fixed_size_interval_var(i0, i1 - i0, ""))
                 yi[side].append(m.new_fixed_size_interval_var(j0, j1 - j0, ""))
         for side in (0, 1):

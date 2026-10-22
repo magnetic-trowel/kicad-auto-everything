@@ -4,17 +4,33 @@
 polygons with holes (Edge.Cuts, courtyards).
 
 Arcs are polygonized with vertices on the true arc and a chord error <= `tol` (mm).
-`polygons(opens, rings, eps)` follows KiCad's ConvertOutlineToPolygon in effect: open
-pieces whose endpoints meet within `eps` are chained into closed loops, and loops nest
-by the even-odd rule (a loop inside one loop is a hole, inside two an island).
+`polygons(opens, rings, eps)` follows KiCad's ConvertOutlineToPolygon: open pieces whose
+endpoints meet within `eps` are chained into closed contours; a contour whose first point
+lies strictly inside an odd number of other contours is a hole of the one that encloses it
+one level up, the others are outlines; outlines are then united (KiCad's courtyard and
+outline caches go through Clipper, which merges overlapping or repeated outlines).
 """
 import math
 
 import shapely
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
 
 ARC_TOL = 0.001  # mm; KiCad itself uses the board's max_error (default 0.005 mm)
+
+
+class ArcPiece(list):
+    """An arc's polyline that remembers its mid point, so chaining can redefine the arc
+    through a snapped start the way KiCad does."""
+    __slots__ = ("mid", "tol")
+
+    def __init__(self, pts, mid, tol):
+        super().__init__(pts)
+        self.mid = tuple(mid)
+        self.tol = tol
+
+    def mapped(self, fn):
+        return ArcPiece([fn(*p) for p in self], fn(*self.mid), self.tol)
 
 
 def _nseg(r, sweep, tol):
@@ -96,119 +112,152 @@ def bezier_points(p0, p1, p2, p3, tol=ARC_TOL):
     return pts
 
 
-def _snap(opens, eps):
-    """Make endpoints within eps identical (union of nearby endpoints on a hash grid)."""
-    if eps <= 0 or not opens:
-        return opens
-    ends = []
-    for k, pl in enumerate(opens):
-        ends.append((k, 0, pl[0]))
-        ends.append((k, -1, pl[-1]))
-    parent = list(range(len(ends)))
+def _chain_kicad(opens, eps):
+    """Chain open polylines into closed contours as KiCad's ConvertOutlineToPolygon does:
+    start at the first unused piece (list order) from its start, then repeatedly take an
+    unused piece with an endpoint exactly at the chain's end, else the nearest endpoint of
+    any other piece within eps; the joined piece's near endpoint is dropped (the chain keeps
+    its own point), its far endpoint appended. A chain closes when no unused piece follows
+    and its end is within eps of its start.
 
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-    grid = {}
-    for i, (_, _, p) in enumerate(ends):
-        gx, gy = int(math.floor(p[0] / eps)), int(math.floor(p[1] / eps))
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for j in grid.get((gx + dx, gy + dy), ()):
-                    q = ends[j][2]
-                    if (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= eps * eps:
-                        ri, rj = find(i), find(j)
-                        if ri != rj:
-                            parent[max(ri, rj)] = min(ri, rj)
-        grid.setdefault((gx, gy), []).append(i)
-    out = [list(pl) for pl in opens]
-    for i, (k, w, _) in enumerate(ends):
-        out[k][w] = ends[find(i)][2]
-    return out
-
-
-def _chain_simple(opens):
-    """Join open polylines into closed rings when every endpoint has exactly two
-    pieces (the common case); None otherwise."""
+    Returns (contours, open_ends, gap): open_ends counts chains that did not close, gap is
+    the largest endpoint distance bridged."""
+    n = len(opens)
+    used = [False] * n
     at = {}
     for k, pl in enumerate(opens):
-        for p in (pl[0], pl[-1]):
-            at.setdefault(p, []).append(k)
-    if any(len(v) != 2 for v in at.values()):
-        return None
-    used = [False] * len(opens)
-    rings = []
-    for k0 in range(len(opens)):
+        at.setdefault(pl[0], []).append(k)
+        at.setdefault(pl[-1], []).append(k)
+    eps2 = eps * eps
+    grid = {}
+    if eps > 0:
+        for k, pl in enumerate(opens):
+            for p in (pl[0], pl[-1]):
+                grid.setdefault((int(math.floor(p[0] / eps)), int(math.floor(p[1] / eps))), []).append(k)
+
+    def find_next(cur, pt):
+        for k in at.get(pt, ()):
+            if k != cur and not used[k]:
+                return k
+        best, bd = None, eps2
+        if eps > 0:
+            gx, gy = int(math.floor(pt[0] / eps)), int(math.floor(pt[1] / eps))
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for k in grid.get((gx + dx, gy + dy), ()):
+                        if k == cur:
+                            continue
+                        for q in (opens[k][0], opens[k][-1]):
+                            d = (pt[0] - q[0]) ** 2 + (pt[1] - q[1]) ** 2
+                            if d < bd or (d == bd and best is not None and k < best):
+                                best, bd = k, d
+        return best
+
+    contours, open_ends, gap = [], 0, 0.0
+    for k0 in range(n):
         if used[k0]:
             continue
         used[k0] = True
-        ring = list(opens[k0])
-        start = ring[0]
-        cur = ring[-1]
-        while cur != start:
-            nxt = next((k for k in at[cur] if not used[k]), None)
-            if nxt is None:
-                return None
-            used[nxt] = True
-            pl = opens[nxt]
-            seg = pl if pl[0] == cur else pl[::-1]
-            ring.extend(seg[1:])
-            cur = ring[-1]
-        if len(ring) >= 4:
-            rings.append(ring)
-    return rings
+        chain = list(opens[k0])
+        start, prev, cur = chain[0], chain[-1], k0
+        while True:
+            k = find_next(cur, prev)
+            if k is not None and not used[k]:
+                used[k] = True
+                pl = opens[k]
+                d0 = (pl[0][0] - prev[0]) ** 2 + (pl[0][1] - prev[1]) ** 2
+                d1 = (pl[-1][0] - prev[0]) ** 2 + (pl[-1][1] - prev[1]) ** 2
+                seg = pl if d0 <= d1 else pl[::-1]
+                gap = max(gap, math.sqrt(min(d0, d1)))
+                if isinstance(pl, ArcPiece) and seg[0] != prev:
+                    # KiCad snaps the arc's start to the chain and redefines the arc
+                    # through (chain point, mid, end)
+                    seg = arc_points(prev, pl.mid, seg[-1], pl.tol)
+                chain.extend(seg[1:])
+                prev, cur = chain[-1], k
+                continue
+            d = math.hypot(prev[0] - start[0], prev[1] - start[1])
+            if d <= eps:
+                gap = max(gap, d)
+                if d > 0 and len(chain) > 2:
+                    chain[-1] = start   # KiCad keeps the chain's start, drops the near copy
+                contours.append(chain if chain[0] == chain[-1] else chain + [chain[0]])
+            else:
+                open_ends += 1
+            break
+    return contours, open_ends, gap
 
 
-def _even_odd(rings):
-    """Polygons from closed rings nested by the even-odd rule."""
-    polys = []
+def _nest(rings, info=None):
+    """Polygons from closed contours, nested as KiCad's ConvertOutlineToPolygon does.
+    A self-touching contour (e.g. two slots closed by one line drawn back over them)
+    keeps all its pieces, as KiCad's later Simplify does."""
+    polys, firsts = [], []
     for r in rings:
         p = Polygon(r)
         if not p.is_valid:
-            p = shapely.make_valid(p)
+            parts = _parts(shapely.make_valid(p))
+            if not parts:
+                continue
+            p = parts[0] if len(parts) == 1 else unary_union(parts)
+            # drop the zero-width spikes a line drawn back over itself leaves
+            p = p.buffer(-1e-7, join_style="mitre").buffer(1e-7, join_style="mitre")
         if p.area > 0:
             polys.append(p)
-    if not polys:
+            firsts.append(Point(r[0]))
+    n = len(polys)
+    if n == 0:
         return []
-    if len(polys) == 1:
-        g = polys[0]
-    else:
-        polys.sort(key=lambda p: -p.area)
-        g = polys[0]
-        for p in polys[1:]:
-            g = g.symmetric_difference(p)
-    return _parts(g)
+    if n == 1:
+        return _parts(polys[0])
+    parents = [[j for j in range(n) if j != i and polys[j].contains(firsts[i])] for i in range(n)]
+    outlines = [i for i in range(n) if len(parents[i]) % 2 == 0]
+    holes = {}
+    for i in range(n):
+        if len(parents[i]) % 2 == 1:
+            j = next((j for j in parents[i] if len(parents[j]) == len(parents[i]) - 1), None)
+            if j is not None:
+                holes.setdefault(j, []).append(i)
+    parts = []
+    for j in outlines:
+        g = polys[j]
+        for h in holes.get(j, ()):
+            g = g.difference(polys[h])
+        parts.append(g)
+    if info is not None and len(parts) > 1:
+        info["overlap"] = any(parts[a].intersects(parts[b]) for a in range(len(parts))
+                              for b in range(a + 1, len(parts)))
+    return _parts(parts[0] if len(parts) == 1 else unary_union(parts))
 
 
 def _parts(g):
+    """The polygons in a geometry, flattening (nested) collections."""
     if g.is_empty:
         return []
     if g.geom_type == "Polygon":
-        return [g]
-    return [p for p in getattr(g, "geoms", []) if p.geom_type == "Polygon" and p.area > 0]
+        return [g] if g.area > 0 else []
+    out = []
+    for p in getattr(g, "geoms", []):
+        out += _parts(p)
+    return out
 
 
 def polygons(opens, rings, eps=0.01):
     """Closed regions from open polylines and closed rings (lists of (x, y)).
 
-    Returns (polygons, open_ends): shapely Polygons (with holes) and the number of
-    piece endpoints (after snapping within eps) that no other piece meets; non-zero means
-    some piece is not part of a closed loop (KiCad calls such an outline malformed).
+    Returns (polygons, info): shapely Polygons (with holes) and info = {open_ends:
+    chains that do not close (KiCad: malformed), gap: the largest endpoint gap bridged,
+    overlap: outlines that overlap or touch each other (KiCad then keeps the raw contours
+    and does not deflate a courtyard; we return their union)}.
     """
-    opens = [[tuple(p) for p in pl] for pl in opens if len(pl) >= 2]
+    opens = [pl if isinstance(pl, ArcPiece) else [tuple(p) for p in pl] for pl in opens if len(pl) >= 2]
     rings = [[tuple(p) for p in r] for r in rings if len(r) >= 4]
-    opens = _snap(opens, eps)
-    chained = _chain_simple(opens) if opens else []
-    if chained is not None:
-        return _even_odd(rings + chained), 0
-    deg = {}
-    for pl in opens:
-        for p in (pl[0], pl[-1]):
-            deg[p] = deg.get(p, 0) + 1
-    open_ends = sum(1 for d in deg.values() if d % 2)
-    # general case: node everything, take the faces, nest by even-odd
-    lines = [LineString(pl) for pl in opens if len(set(pl)) >= 2] + [LineString(r) for r in rings]
-    faces = list(polygonize(unary_union(lines)))
-    return _even_odd([list(f.exterior.coords) for f in faces]), open_ends
+    chained, open_ends, gap = _chain_kicad(opens, eps) if opens else ([], 0, 0.0)
+    info = dict(open_ends=open_ends, gap=gap, overlap=False)
+    polys = _nest(rings + chained, info)
+    if open_ends and not polys:
+        # T-junctions or crossings: node everything and take the faces as contours
+        lines = [LineString(pl) for pl in opens if len(set(pl)) >= 2] + [LineString(r) for r in rings]
+        faces = list(polygonize(unary_union(lines)))
+        polys = _nest([list(f.exterior.coords) for f in faces], info)
+    return polys, info

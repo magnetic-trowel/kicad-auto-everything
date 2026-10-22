@@ -28,7 +28,7 @@ from shapely.strtree import STRtree
 from kae.board import transform
 
 from . import cpsat
-from .problem import is_drilled
+from .problem import edge_cut_polys, is_drilled
 from .state import grid_violations
 
 
@@ -302,6 +302,24 @@ def exact_check(P, st, parts=None, max_items=60):
                 add("copper_edge_clearance", [P.parts[i].ref], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
             elif not outline.contains(geom):
                 add("copper_edge_clearance", [P.parts[i].ref], f"{pd.number} crosses the edge")
+    # cut-outs that placed footprints carry (Edge.Cuts in the footprint)
+    for p in P.parts:
+        cuts = edge_cut_polys(p.fp)
+        if not cuts:
+            continue
+        x, y, rot, side = st.pose(p.i)
+        for c in cuts:
+            cg = transform.place_geom(c, x, y, rot, side)
+            cb = cg.boundary
+            for i in check:
+                if i == p.i:
+                    continue
+                for geom, k, pd in shapes[i]["pads"]:
+                    if geom.distance(cb) < e - 1e-4 or cg.contains(geom.centroid):
+                        add("copper_edge_clearance", [P.parts[i].ref, p.ref], f"{pd.number} near the cut-out of {p.ref}")
+                cyo = shapes[i]["cy"].get(shapes[i]["side"])
+                if cyo is not None and cyo.intersection(cg).area > 1e-6:
+                    add("over_cutout", [P.parts[i].ref, p.ref], "courtyard over a cut-out")
     # rule areas
     for ko in board.keepouts:
         if not (ko.footprints or ko.pads):

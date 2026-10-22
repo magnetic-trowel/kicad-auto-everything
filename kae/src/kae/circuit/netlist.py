@@ -78,9 +78,14 @@ class Pin:
 
     @property
     def fn(self) -> str:
-        """Pin function, upper case, KiCad overbar markup removed."""
+        """Pin function, upper case, KiCad overbar markup removed, and a trailing copy of the pad number
+        dropped ('SW_6' on pad 6 -> 'SW': some libraries name pins function_number)."""
         f = re.sub(r'~\{([^}]*)\}', r'\1', self.function or '')
-        return f.replace('{slash}', '/').strip().upper()
+        f = f.replace('{slash}', '/').strip().upper()
+        num = (self.number or '').upper()
+        if num and f.endswith('_' + num) and len(f) > len(num) + 1:
+            f = f[:-(len(num) + 1)]
+        return f
 
     @property
     def label(self) -> str:

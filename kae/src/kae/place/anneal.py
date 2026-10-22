@@ -126,6 +126,8 @@ class Annealer:
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc)
         self.lam0, self.lam1 = lam0, lam1
         self.stats = dict(moves=0, accepted=0, by_move={})
+        self.leg_total = self.total_leg()
+        self.best_legal = None
 
     # ------------------------------------------------------------------ geometry
     def _new_rect(self, owner, side):
@@ -431,6 +433,21 @@ class Annealer:
         c = self.cong.total() if self.cong is not None else 0.0
         return (w["wl"] * self.wl / self.W0 + lam * self.leg_total / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + w["cong"] * c)
+
+    def evaluate(self, st):
+        """Full cost of another state with this annealer's weights and normalization (seed
+        HPWL, mean part area and size, seed positions, final legality weight)."""
+        o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
+                     w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1)
+        o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
+        o.Xs, o.Ys = self.Xs, self.Ys
+        return o.cost(self.lam1), o.terms_report()
+
+    def terms_report(self):
+        disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0) if self.mov else 0.0
+        return dict(wl=round(self.wl / self.W0, 5), phys=round(self.phys / self.nstruct, 5),
+                    cong=round(self.cong.total(), 6) if self.cong is not None else None,
+                    leg=self.leg_total, disp=round(disp, 5))
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25):
         rng = self.rng

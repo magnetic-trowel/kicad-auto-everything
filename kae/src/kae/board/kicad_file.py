@@ -38,7 +38,8 @@ from .sexpr import first, flag, kids, value
 from .transform import courtyard, flip_layer, fp_pads_xy, norm_deg, rotate, transform_coords
 
 NAMED_NETS_AFTER = 20241229   # KiCad 10 boards (stamp > this) name nets in place
-CHAIN_EPS = 0.01              # mm: endpoints closer than this are joined
+CHAIN_EPS = 0.01              # mm: Edge.Cuts endpoints closer than this are joined
+COURTYARD_CHAIN_EPS = 0.02    # mm: the same for courtyards (FOOTPRINT::BuildCourtyardCaches)
 FP_SHAPES = ("fp_line", "fp_arc", "fp_circle", "fp_rect", "fp_poly", "fp_curve")
 GR_SHAPES = ("gr_line", "gr_arc", "gr_circle", "gr_rect", "gr_poly", "gr_curve")
 _NUM = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
@@ -77,8 +78,9 @@ def shape_pieces(node, tol=geom.ARC_TOL):
         return [[_xy(first(node, "start")), _xy(first(node, "end"))]], []
     if kind == "arc":
         if first(node, "mid") is not None:
-            return [geom.arc_points(_xy(first(node, "start")), _xy(first(node, "mid")),
-                                    _xy(first(node, "end")), tol)], []
+            mid = _xy(first(node, "mid"))
+            return [geom.ArcPiece(geom.arc_points(_xy(first(node, "start")), mid, _xy(first(node, "end")), tol),
+                                  mid, tol)], []
         ang = first(node, "angle")   # KiCad 5: (start center) (end arc-start) (angle sweep)
         if ang is not None:
             return [geom.arc_center_points(_xy(first(node, "start")), _xy(first(node, "end")),
@@ -127,7 +129,8 @@ def _kiid(v):
 
 def _map_pieces(pieces, fn):
     opens, rings = pieces
-    return [[fn(*p) for p in pl] for pl in opens], [[fn(*p) for p in r] for r in rings]
+    return ([pl.mapped(fn) if isinstance(pl, geom.ArcPiece) else [fn(*p) for p in pl] for pl in opens],
+            [[fn(*p) for p in r] for r in rings])
 
 
 class _Reader:
@@ -306,10 +309,14 @@ class _Reader:
 
         for ly, attr in (("F.CrtYd", "courtyard"), ("B.CrtYd", "courtyard_back")):
             if ly in by_layer:
-                polys, dangling = geom.polygons(*pieces_on(ly), eps=CHAIN_EPS)
+                polys, info = geom.polygons(*pieces_on(ly), eps=COURTYARD_CHAIN_EPS)
                 setattr(fp, attr, polys)
-                if dangling or not polys:
+                if info["open_ends"] or not polys:
                     fp.flags.append(f"courtyard_malformed:{ly}")
+                if info["overlap"]:
+                    fp.flags.append(f"courtyard_overlap:{ly}")
+                if info["gap"] > 1e-6:
+                    fp.flags.append(f"courtyard_gap:{ly}")
         if "Edge.Cuts" in by_layer:
             opens, rings = pieces_on("Edge.Cuts")
             fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
@@ -357,7 +364,7 @@ class _Reader:
         shapes and the pads; without either, around all graphics."""
         xs, ys = [], []
         if "F.Fab" in by_layer:
-            polys, _ = geom.polygons(*pieces_on("F.Fab"), eps=CHAIN_EPS)
+            polys, _ = geom.polygons(*pieces_on("F.Fab"), eps=COURTYARD_CHAIN_EPS)
             for p in polys:
                 b = p.bounds
                 xs += [b[0], b[2]]
@@ -633,11 +640,13 @@ def netclass_of(rules, net):
         return c.priority if c is not None and c.priority is not None else 2147483646
     names = sorted(names, key=prio)
     if "Default" not in names:
+        raws = getattr(rules, "_raw_classes", None)   # None: legacy board classes, complete
         have = set()
         for n in names:
-            c = rules.netclasses.get(n)
-            raw = getattr(rules, "_raw_classes", {}).get(n, {})
-            have |= {f for f in _NC_REQUIRED if raw.get(f) is not None}
+            if raws is None:
+                have |= set(_NC_REQUIRED) if n in rules.netclasses else set()
+            else:
+                have |= {f for f in _NC_REQUIRED if (raws.get(n) or {}).get(f) is not None}
         if not set(_NC_REQUIRED) <= have:
             names.append("Default")
     return ",".join(names)
@@ -719,7 +728,8 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     # outline: board-level Edge.Cuts decide what is on the board; on-board footprints'
     # Edge.Cuts (cut-outs, card edges) join the outline as pcbnew does
     opens, rings = _outline_pieces(tree, arc_tol, rd.warnings)
-    base, dangling = geom.polygons(opens, rings, eps=CHAIN_EPS) if (opens or rings) else ([], 0)
+    base, info = geom.polygons(opens, rings, eps=CHAIN_EPS) if (opens or rings) else ([], dict(open_ends=0))
+    dangling = info["open_ends"]
     region = unary_union([Polygon(p.exterior) for p in base]) if base else None
     bbox = None
     if region is None:
@@ -737,11 +747,12 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             fp.on_board = bool(bbox.intersects(_extent(fp)))
     fp_edges = [pl for fp in fps if fp.on_board and fp.edge_cuts for pl in _place_edges(fp)]
     if fp_edges:
-        outline, dangling = geom.polygons(opens + fp_edges, rings, eps=CHAIN_EPS)
+        outline, info = geom.polygons(opens + fp_edges, rings, eps=CHAIN_EPS)
+        dangling = info["open_ends"]
     else:
         outline = base
     if dangling:
-        rd.warnings.append(f"Edge.Cuts: {dangling} pieces not in a closed outline")
+        rd.warnings.append(f"Edge.Cuts: {dangling} chains do not close")
     if not outline:
         rd.warnings.append("no closed Edge.Cuts outline")
 
