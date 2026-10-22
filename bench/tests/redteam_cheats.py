@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import urllib.request
+import uuid
 from pathlib import Path
 
 # The human routing of redteam.kicad_pcb, which respects the keepout.
@@ -17,8 +18,12 @@ HONEST_ROUTES = [
     ((109.2, 105), (109.2, 107), "N1"), ((109.2, 107), (119.2, 107), "N1"), ((119.2, 107), (119.2, 105), "N1"),
     ((110.8, 105), (110.8, 103), "N2"), ((110.8, 103), (120.8, 103), "N2"), ((120.8, 103), (120.8, 105), "N2"),
 ]
+# TP1 and TP2 share an all-zero uuid in the fixture (as some old-library footprints do);
+# prepare gives the second a uuid derived from it.
+ZERO = "00000000-0000-0000-0000-000000000000"
 HUMAN_POSES = {"11111111-1111-1111-1111-111111111111": (110, 105),
-               "22222222-2222-2222-2222-222222222221": (120, 105)}
+               "22222222-2222-2222-2222-222222222221": (120, 105),
+               ZERO: (105, 115), str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{ZERO}:1")): (110, 115)}
 R2 = "22222222-2222-2222-2222-222222222221"
 H1 = "55555555-5555-5555-5555-555555555551"
 

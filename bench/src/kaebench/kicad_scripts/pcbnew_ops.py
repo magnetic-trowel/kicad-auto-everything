@@ -22,6 +22,7 @@ import re
 import shutil
 import sys
 import tempfile
+import uuid
 
 # pcbnew prints wx asserts on import and SWIG prints leak warnings at exit, both
 # on stdout. Keep a private handle to the real stdout for JSON and send fd 1 to
@@ -66,17 +67,19 @@ def _track_length(t):
 
 
 def _placement(board):
-    # "inside" = every pad centre lies within the board outline (connectors may overhang).
+    # "inside" = every pad centre lies within the board outline; "pads_outside" counts the
+    # pad centres that do not (edge connectors may overhang).
     outline = pcbnew.SHAPE_POLY_SET()
     has_outline = board.GetBoardPolygonOutlines(outline, False) and outline.OutlineCount() > 0
     rows = []
     for fp in board.GetFootprints():
         p = fp.GetPosition()
-        inside = all(outline.Contains(pad.GetCenter()) for pad in fp.Pads()) if has_outline else None
+        out = sum(1 for pad in fp.Pads() if not outline.Contains(pad.GetCenter())) if has_outline else None
         rows.append(dict(ref=fp.GetReference(), uuid=fp.m_Uuid.AsString(),
                          x=round(_mm(p.x), 4), y=round(_mm(p.y), 4),
                          rot=round(fp.GetOrientationDegrees() % 360.0, 3),
-                         back=bool(fp.IsFlipped()), locked=bool(fp.IsLocked()), inside=inside))
+                         back=bool(fp.IsFlipped()), locked=bool(fp.IsLocked()),
+                         inside=None if out is None else out == 0, pads_outside=out))
     rows.sort(key=lambda r: r["uuid"])
     return rows
 
@@ -156,21 +159,60 @@ def stats(path):
 def convert(src, dst):
     board = _load(src)
     _save(board, dst)
-    _out(dict(ok=True, path=dst))
+    _out(dict(ok=True, path=dst, footprint_uuids_reassigned=_dedupe_footprint_uuids(dst)))
+
+
+_FP_UUID = re.compile(r'^\t\t\(uuid "([^"]+)"\)', re.M)
+
+
+def _dedupe_footprint_uuids(path):
+    """Give footprints that share a uuid unique ones (old libraries left placeholders such
+    as all-zero uuids on logos and mounting holes). Everything that matches an output to its
+    task input goes by footprint uuid. The new uuids are derived from the old, so every task
+    built from the same board gets the same ones. Returns the number reassigned."""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    seen, parts, last, n = set(), [], 0, 0
+    for head, a, b in _top_spans(text):
+        if head != "footprint":
+            continue
+        m = _FP_UUID.search(text, a, b)
+        if not m:
+            continue
+        u = m.group(1)
+        if u in seen:
+            n += 1
+            new = str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{u}:{n}"))
+            parts += [text[last:m.start(1)], new]
+            last = m.end(1)
+        seen.add(u)
+    if n:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("".join(parts) + text[last:])
+    return n
 
 
 def _strip_routing(board, keep_locked):
+    """Remove tracks, arcs and vias, and the teardrops KiCad generated at their ends.
+
+    Teardrops are zones that belong to the routing: left behind, they are stray copper at
+    old track ends and, in a place task, they mark the human pad positions.
+    """
     # Stale fills would hide unrouted connections; DRC refills zones before checking.
-    # Unfill before removing tracks: after Remove() SWIG returns untyped zone objects.
-    for i in range(board.GetAreaCount()):
-        pcbnew.Cast_to_ZONE(board.GetArea(i)).UnFill()
+    # Unfill before removing anything: after Remove() SWIG returns untyped zone objects.
+    zones = [pcbnew.Cast_to_ZONE(board.GetArea(i)) for i in range(board.GetAreaCount())]
+    for z in zones:
+        z.UnFill()
+    teardrops = [z for z in zones if z.IsTeardropArea()]
     removed = 0
     for t in list(board.GetTracks()):
         if keep_locked and t.IsLocked():
             continue
         board.Remove(t)
         removed += 1
-    return removed
+    for z in teardrops:
+        board.Remove(z)
+    return removed + len(teardrops)
 
 
 def strip_routing(src, dst, keep_locked):

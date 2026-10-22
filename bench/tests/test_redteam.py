@@ -48,6 +48,7 @@ def rt(tmp_path_factory):
     rec = prepare.prepare_board(entry, {"kicad_pcb": str(src / "redteam.kicad_pcb"), "pcb_sha256": "x"},
                                 root / "tasks")
     assert rec["qualified"], rec["reference"]["drc"]
+    assert rec["footprint_uuids_reassigned"] == 1
     return root, rec
 
 
