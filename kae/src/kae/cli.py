@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """kae command line.
 
-    kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--workers W] [--writer auto|pcbnew|sexpr]
-                           [--edge-mate] [--report FILE]
+    kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--stages seed,anneal,legalize]
+                           [--workers W] [--writer auto|pcbnew|sexpr] [--edge-mate] [--report FILE]
     kae brief INPUT [--out FILE]
 
 `kae place` reads INPUT (.kicad_pcb with its project files beside it), places every unlocked
-footprint (locked ones stay; sides are kept) and writes OUTPUT; a JSON report goes to
-stdout (and to --report FILE). As a kaebench method:
+footprint (locked ones stay; sides are kept) and writes OUTPUT; a JSON report goes to the
+last line of stdout, to OUTPUT.kae.json beside the board, and to --report FILE. (kaebench
+keeps only the board and the method's log of a --command method, so in a run the report is
+the last line of adapter.log.) As a kaebench method:
 
     kaebench run --adapter kae --kinds place --probe freerouting \\
       --command "<venv>/bin/python -m kae.cli place {input} {output} --seed {attempt} --time {timeout}"
@@ -36,8 +38,14 @@ def cmd_place(a):
     t0 = time.monotonic()
     board = load(a.input)
     _log(f"loaded {a.input}: {len(board.footprints)} footprints ({time.monotonic() - t0:.2f}s)")
+    stages = {x.strip() for x in a.stages.split(",") if x.strip()}
+    unknown = stages - {"seed", "anneal", "legalize"}
+    if unknown:
+        raise SystemExit(f"unknown stages {sorted(unknown)} (seed, anneal, legalize)")
+    anneal = "anneal" in stages and not a.no_anneal
     res = place(board, seed=a.seed, time_s=a.time, physics=not a.no_physics, workers=a.workers, log=_log,
-                anneal=not a.no_anneal, edge_mate=a.edge_mate)
+                anneal=anneal, edge_mate=a.edge_mate)
+    res.report["stages_run"] = sorted({"seed", "legalize"} | ({"anneal"} if anneal else set()))
     t1 = time.monotonic()
     wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
     if wrep is None:
@@ -50,7 +58,12 @@ def cmd_place(a):
     legal = res.report.get("legal_grid") and not res.report.get("exact") and not res.report.get("outline_incomplete")
     res.report["legal"] = bool(legal)
     text = json.dumps(res.report, default=str)
-    print(text, flush=True)
+    print(text, flush=True)          # last line of stdout: what kaebench keeps (adapter.log)
+    side = Path(str(a.output) + ".kae.json")
+    try:
+        side.write_text(json.dumps(res.report, indent=1, default=str))
+    except OSError as e:
+        _log(f"could not write {side}: {e}")
     if a.report:
         Path(a.report).write_text(json.dumps(res.report, indent=1, default=str))
     _log(f"wrote {a.output} with {wrep.get('writer')} in {res.report['total_s']}s; legal={legal}")
@@ -82,7 +95,9 @@ def main(argv=None):
     sp.add_argument("--seed", type=int, default=0)
     sp.add_argument("--time", type=float, default=300.0, help="wall-clock seconds the caller allows")
     sp.add_argument("--no-physics", action="store_true", help="routability and legality only (ablation)")
-    sp.add_argument("--no-anneal", action="store_true", help="seed and legalize only")
+    sp.add_argument("--no-anneal", action="store_true", help="seed and legalize only (= --stages seed,legalize)")
+    sp.add_argument("--stages", default="seed,anneal,legalize",
+                    help="stages to run; seed and legalize always run, so 'seed,legalize' skips the annealer")
     sp.add_argument("--workers", type=int, default=None, help="CP-SAT threads (default: KAE_WORKERS or cores/2)")
     sp.add_argument("--writer", default="auto", choices=("auto", "pcbnew", "sexpr"))
     sp.add_argument("--edge-mate", action="store_true",

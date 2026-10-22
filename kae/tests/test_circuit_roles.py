@@ -182,3 +182,113 @@ def test_can_pair_and_termination():
     nl, r = roles_of(parts)
     assert any(p.interface == 'can' and {p.p, p.n} == {'CAN_H', 'CAN_L'} for p in r.pairs)
     assert r.parts['R1'].role == 'termination'
+
+
+# ------------------------------------------------------------------------------- audit fixes (docs/topics/physics/comprehension.md)
+def test_supply_pins_typed_input_still_make_a_rail():
+    """Libraries type VIN/VBAT/VDD as input or bidirectional (TPS63802 VIN, MCP73031 VBAT, CP2102 VDD)."""
+    parts = [IC('U1', 'TPS63802', 'Package_SON:Texas_DLA0010A', [('10', 'VIN', '+BATT', 'input'), ('1', 'EN', '+BATT', 'input'),
+                                                                   ('8', 'GND', 'GND', 'power_in')]),
+             IC('U2', 'MCP73031', 'Package_TO_SOT_SMD:SOT-23-5', [('3', 'VBAT', '+BATT', 'input'), ('2', 'VSS', 'GND', 'input'),
+                                                                   ('4', 'VDD', 'VBUS', 'input')]),
+             C('C1', '4.7uF', '+BATT', 'GND'), C('C2', '10uF', '+BATT', 'GND'),
+             IC('U3', 'CP2102-GMR', 'Package_DFN_QFN:QFN-28', [('6', 'VDD', 'Net-(U3-VDD)', 'bidirectional'), ('3', 'GND', 'GND', 'bidirectional')]),
+             C('C3', '4.7uF', 'Net-(U3-VDD)', 'GND'), C('C4', '100nF', 'Net-(U3-VDD)', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['+BATT'].role == 'rail' and r.nets['+BATT'].subrole == 'battery'
+    assert r.nets['+BATT'].attrs['source'] == {'kind': 'regulator', 'ref': 'U2', 'pin': '3'}     # the charger's battery pin
+    assert r.nets['Net-(U3-VDD)'].role == 'rail' and r.nets['Net-(U3-VDD)'].attrs['source']['kind'] == 'internal'
+
+
+def test_rail_named_control_lines_are_not_rails():
+    """'12V0_OUT_EN' is an enable line; INA VIN+/VIN- typed power_in on '12V0_LC1_P' are Kelvin taps."""
+    parts = [fp('J1', 'MGMT', 'Connector_Molex:Molex_PicoBlade', [('1', '12V0_OUT_EN', '12V0_OUT_EN', 'input'), ('2', 'GND', 'GND', 'passive')]),
+             fp('J2', 'MGMT', 'Connector_Molex:Molex_PicoBlade', [('1', '12V0_OUT_EN', '12V0_OUT_EN', 'output'), ('2', 'GND', 'GND', 'passive')]),
+             IC('U1', 'INA230', 'Package_DFN_QFN:QFN-16', [('13', 'VIN+', '12V0_LC1_P', 'power_in'), ('12', 'VIN-', '12V0_LC1_N', 'power_in'),
+                                                          ('11', 'VBUS', '12V0_LC1', 'power_in'), ('9', 'VS', '3V3', 'power_in'),
+                                                          ('10', 'GND', 'GND', 'power_in')]),
+             fp('R1', 'LVK25R005FER', 'Resistor_SMD:R_Shunt_Ohmite_LVK25', [('1', '12V0_LC1_N', 'ILO', 'power_out'), ('2', '12V0_LC1', 'VO', 'power_out'),
+                                                                         ('3', '12V0_LC1_P', 'IHI', 'power_out'), ('4', 'SW_OUT', 'VI', 'power_out')]),
+             IC('U2', 'NCP45560', 'Package_DFN_QFN:DFN-12', [('1', 'VIN', '12V0', 'power_in'), ('8', 'VOUT', 'SW_OUT', 'power_out'),
+                                                            ('4', 'GND', 'GND', 'power_in'), ('3', 'VCC', '3V3', 'power_in')]),
+             fp('J3', 'MiniFit', 'Connector_Molex:Molex_Mini-Fit_Jr', [('1', '12V0_LC1', '', 'passive'), ('2', 'GND', '', 'passive')]),
+             fp('J4', 'MiniFit', 'Connector_Molex:Molex_Mini-Fit_Jr', [('1', '12V0', '', 'passive'), ('2', 'GND', '', 'passive')]),
+             C('C1', '470nF', '3V3', 'GND'), C('C2', '10uF', '12V0', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['12V0_OUT_EN'].role != 'rail'
+    for n in ('12V0_LC1_P', '12V0_LC1_N'):
+        assert r.nets[n].role == 'analog' and r.nets[n].subrole == 'sense', n
+    assert r.parts['R1'].subtype == 'shunt'
+    assert r.nets['SW_OUT'].attrs['volts']['value'] == 12.0                        # a load switch passes its input through
+    assert r.nets['12V0_LC1'].attrs['source'] == {'kind': 'derived', 'ref': 'R1', 'upstream': 'SW_OUT', 'via': 'shunt'}
+
+
+def test_i2c_clock_and_gpio_named_oscillator_pins():
+    parts = [IC('U1', 'STM32F030C8T6', 'Package_QFP:LQFP-48', [('3', 'PC14', 'PC14', 'bidirectional'), ('4', 'PC15', 'BUTTON', 'bidirectional'),
+                                                             ('42', 'PB6', 'I2C1_SCLK', 'bidirectional'), ('1', 'VDD', '+3V3', 'power_in'),
+                                                             ('8', 'VSS', 'GND', 'power_in')]),
+             IC('U2', 'AT24C128C', 'Package_SO:SOIC-8', [('6', 'SCL', 'I2C1_SCLK', 'input'), ('8', 'VCC', '+3V3', 'power_in'), ('4', 'GND', 'GND', 'power_in')]),
+             R('R1', '2k2', 'I2C1_SCLK', '+3V3'), C('C1', '100nF', '+3V3', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['I2C1_SCLK'].role == 'signal' and r.nets['I2C1_SCLK'].subrole == 'i2c'
+    assert r.nets['PC14'].role != 'clock' and r.nets['BUTTON'].role != 'clock'
+
+
+def test_negative_rail_series_diode_direction():
+    parts = [fp('J1', 'EuroPower', 'Connector_IDC:IDC-Header_2x05', [('1', '-12V_IN', '-12V', 'passive'), ('3', 'GND', 'GND', 'passive'),
+                                                                    ('9', '+12V_IN', '+12V', 'passive')]),
+             D('D1', '1N4001', '+12V', '+12V_IN'), D('D2', '1N4001', '-12V_IN', '-12V'),
+             C('C1', '22uF', '+12V', 'GND', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             C('C2', '22uF', 'GND', '-12V', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm')]
+    nl, r = roles_of(parts)
+    assert r.nets['+12V'].attrs['source']['upstream'] == '+12V_IN'
+    assert r.nets['-12V'].attrs['source']['kind'] == 'derived' and r.nets['-12V'].attrs['source']['upstream'] == '-12V_IN'
+    assert r.nets['-12V_IN'].attrs['source']['kind'] == 'connector'
+
+
+def test_rail_sources_through_middle_nets_jacks_and_modules():
+    parts = [fp('J1', 'USB_C', 'Connector_USB:USB_C_Receptacle_HRO', [('A4', 'VBUS', 'VBUS', 'passive'), ('A1', 'GND', 'GND', 'passive')]),
+             fp('F1', 'MF-NSMF050', 'Fuse:Fuse_1206_3216Metric', [('1', 'VBUS', '', 'passive'), ('2', 'MID', '', 'passive')]),
+             D('D1', 'RB160M-30', '5V0', 'MID'), C('C1', '10uF', '5V0', 'GND'), C('C2', '1uF', '5V0', 'GND'),
+             fp('J2', 'TRRS', 'Connector_Audio:Jack_3.5mm_PJ320A', [('S', '5V0', '', 'passive'), ('T', 'GND', '', 'passive')]),
+             fp('U1', 'RP2040_breakout', 'lib:RP2040_Breakout-PTH', [('1', '3V3', '+3V3', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                                     ('3', '5V0', 'VSYS', 'power_in')]),
+             fp('J3', 'OLED', 'Connector_PinHeader_2.54mm:PinHeader_1x04', [('1', '3V3', 'VCC', 'passive'), ('2', 'GND', 'GND', 'passive')]),
+             C('C3', '100nF', '3V3', 'GND'),
+             fp('JP1', 'SolderJumper_2_Open', 'Jumper:SolderJumper-2_P1.3mm_Open_Pad1.0x1.5mm', [('1', '5V0', 'A', 'passive'), ('2', '3V3', 'B', 'passive')])]
+    nl, r = roles_of(parts)
+    s = r.nets['5V0'].attrs['source']
+    assert s['kind'] == 'derived' and s['upstream'] == 'VBUS' and s['path'] == ['D1', 'F1']
+    assert r.nets['VBUS'].attrs['source']['kind'] == 'connector' and r.nets['VBUS'].attrs['source']['ref'] == 'J1'
+    assert r.nets['3V3'].attrs['source']['kind'] == 'module'                       # not the open jumper, not the OLED header
+    assert abs(r.nets['5V0'].attrs['volts']['value'] - 5.0) < 1e-6                 # named 5V0
+
+
+def test_signal_role_fixes():
+    """GPIO0 is a strap only on ESP parts; bridge-driver AIN1 is a logic input; a converter's BOOT net is a bootstrap."""
+    parts = [IC('U1', 'RP2350B', 'Package_DFN_QFN:QFN-80', [('2', 'GPIO0', 'GPIO0/TRIG', 'bidirectional'), ('5', 'IOVDD', '+3V3', 'power_in'),
+                                                          ('3', 'GPIO10', 'MOTOR_IN1', 'bidirectional'), ('81', 'GND', 'GND', 'power_in')]),
+             IC('U2', 'DRV8411A', 'Package_DFN_QFN:QFN-16', [('13', 'AIN1', 'MOTOR_IN1', 'input'), ('10', 'VM', 'VM', 'power_in'),
+                                                            ('1', 'PGND', 'GND', 'power_in')]),
+             IC('U3', 'ESP32-S3-WROOM-1', 'RF_Module:ESP32-S3-WROOM-1', [('27', 'IO0', 'BOOT_BTN', 'bidirectional'), ('2', '3V3', '+3V3', 'power_in'),
+                                                                        ('1', 'GND', 'GND', 'power_in')]),
+             fp('SW1', 'BOOT', 'Button_Switch_SMD:SW_SPST_B3U', [('1', 'BOOT_BTN', '1', 'passive'), ('2', 'GND', '2', 'passive')]),
+             C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', 'VM', 'GND')] + buck_board()
+    nl, r = roles_of(parts)
+    assert r.nets['GPIO0/TRIG'].role != 'boot'
+    assert r.nets['BOOT_BTN'].role == 'boot'
+    assert r.nets['MOTOR_IN1'].role != 'analog'
+    assert r.nets['BST'].role == 'signal' and r.nets['BST'].subrole == 'bootstrap'
+
+
+def test_mechanical_and_relay_part_kinds():
+    panel = fp('REF1', 'PanelHole_Potentiometer_RV09', 'Panel:PanelHole_Potentiometer_RV09', [('', '', '', '')])
+    panel.pads[0].kind = 'np_thru_hole'                 # one unplated hole: a front-panel cut-out drawing
+    nl = Netlist.from_board(board([panel]))
+    assert classify_part(next(iter(nl.parts.values())))[0] not in ('potentiometer', 'connector', 'switch')
+    assert kind('BOOT0', 'BOOT0_SW', 'Project:K3-1270L-F1', [('1', 'A', '', 'passive'), ('2', 'B', '', 'passive'), ('3', 'C', '', 'passive')])[0] == 'switch'
+    assert kind('U3', 'GAQY252G3S', 'Package_SO:SOP-4_4.4x2.6mm_P1.27mm',
+                [('1', 'A', '1', 'input'), ('2', 'K', '2', 'input'), ('3', 'X', '3', 'passive'), ('4', 'Y', '4', 'passive')])[0] == 'optocoupler'
+    k, sub, _ = kind('U1', 'FUSB302BMPX', 'Package_DFN_QFN:WQFN-14', [('1', 'CC2', 'CC2', 'bidirectional'), ('2', 'VBUS', 'VBUS', 'power_in'),
+                                                                       ('3', 'VDD', 'VDD', 'power_in'), ('8', 'GND', 'GND', 'power_in')])
+    assert (k, sub) == ('ic', 'usb_pd')

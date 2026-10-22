@@ -171,3 +171,88 @@ def test_antenna_feed_through_a_matching_network():
     a = one(st['antennas'], part='AE1')
     assert a['feed'][0] == ['AE1', '1'] and a['feed'][-1] == ['U1', '30']
     assert {'C1', 'L1', 'C2'} <= set(a['match']) and a['f_Hz'] == 2.45e9
+
+
+# ------------------------------------------------------------------------------- audit fixes
+def _opamp(ref, sheet=''):
+    return IC(ref, 'NE5532', 'Package_DIP:DIP-8_W7.62mm', [('8', 'V+', '+12V', 'power_in'), ('4', 'V-', '-12V', 'power_in'),
+                                                          ('3', '+', f'IN_{ref}', 'input'), ('1', '', f'OUT_{ref}', 'output')], sheet=sheet)
+
+
+def test_split_supply_decoupling_and_entry_bulk():
+    """Op-amps decoupled V+ to V- (one cap across each), and the electrolytics stay at the power entry."""
+    parts = [fp('J1', 'EuroPower', 'Connector_IDC:IDC-Header_2x05', [('1', '-12V_IN', '-12V', 'passive'), ('3', 'GND', 'GND', 'passive'),
+                                                                    ('9', '+12V_IN', '+12V', 'passive')]),
+             D('D1', '1N4001', '+12V', '+12V_IN'), D('D2', '1N4001', '-12V_IN', '-12V'),
+             C('C1', '22uF', '+12V', 'GND', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             C('C2', '22uF', 'GND', '-12V', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             _opamp('U1'), _opamp('U2'), _opamp('U3'),
+             C('C3', '100nF', '+12V', '-12V'), C('C4', '100nF', '+12V', '-12V'), C('C5', '100nF', '+12V', '-12V')]
+    nl, r, st = structures(parts)
+    split = {d['ic']: d for d in st['decaps'] if d['function'] == 'split_supply'}
+    assert {k: v['caps'] for k, v in split.items()} == {'U1': ['C3'], 'U2': ['C4'], 'U3': ['C5']}
+    assert split['U1']['rail'] == '+12V' and split['U1']['ground'] == '-12V' and split['U1']['ground_pins'] == ['4']
+    entry = {d['rail']: d for d in st['decaps'] if d['function'] == 'entry'}
+    assert entry['+12V']['ic'] == 'D1' and entry['+12V']['caps'] == ['C1']
+    assert entry['-12V']['ic'] == 'D2' and entry['-12V']['caps'] == ['C2']
+    assert not any(u['ic'] in ('U1', 'U2', 'U3') for u in st['uncovered'])
+
+
+def test_converter_output_caps_sit_at_the_inductor():
+    nl, r, st = structures(buck_board() + mcu_parts())
+    d = one(st['decaps'], function='converter_output')
+    assert d['ic'] == 'L1' and d['rail'] == '+3V3' and set(d['caps']) == {'C4', 'C5'}
+    mcu = one(st['decaps'], ic='U2', rail='+3V3')
+    assert set(mcu['caps']) >= {'C10', 'C11', 'C12', 'C13'}       # the 100 nF caps stay with the MCU's VDD pins
+
+
+def test_boost_cell_leaves_the_mcu_its_small_caps():
+    """A boost converter's output loop closes on the large ceramic when the loads' pins need every 100 nF."""
+    u = IC('U1', 'TPS61023', 'Package_TO_SOT_SMD:SOT-563', [('1', 'VIN', '+BATT', 'power_in'), ('2', 'SW', 'SW', 'power_out'),
+                                                           ('3', 'GND', 'GND', 'power_in'), ('4', 'VOUT', '+3V3', 'power_out'),
+                                                           ('5', 'FB', 'FB', 'input'), ('6', 'EN', '+BATT', 'input')])
+    parts = [u, L('L1', '1uH', '+BATT', 'SW'), C('C1', '10uF', '+BATT', 'GND', lib='Capacitor_SMD:C_0603_1608Metric'),
+             C('C2', '22uF', '+3V3', 'GND', lib='Capacitor_SMD:C_0603_1608Metric'), R('R1', '732k', '+3V3', 'FB'), R('R2', '100k', 'FB', 'GND'),
+             fp('BT1', 'LiPo', 'Battery:BatteryHolder_Keystone_1042_1x18650', [('1', '+BATT', '+', 'passive'), ('2', 'GND', '-', 'passive')])]
+    parts += [x for x in mcu_parts() if x.ref not in ('C14',)]
+    nl, r, st = structures(parts)
+    c = one(st['commutation_cells'], controller='U1', **{'class': 'boost'})
+    assert c['caps'][0] == 'C2' and c['loop'][0][0] == 'C2'
+    mcu = one(st['decaps'], ic='U2', rail='+3V3')
+    assert set(mcu['caps']) == {'C10', 'C11', 'C12', 'C13'}
+    assert c['loop'][1] == ['U1', ['4']]                       # VOUT only, not the EN pin tied to the rail
+
+
+def test_mcu_internal_smps_keeps_its_io_supply_pins_as_loads():
+    mcu = IC('U1', 'RP2350A', 'Package_DFN_QFN:QFN-60', [('44', 'VREG_VIN', '+3V3', 'power_in'), ('45', 'VREG_LX', 'LX', 'power_out'),
+                                                        ('46', 'VREG_PGND', 'GND', 'power_in'), ('47', 'VREG_FB', '+1V1', 'input'),
+                                                        ('1', 'IOVDD', '+3V3', 'power_in'), ('10', 'IOVDD', '+3V3', 'power_in'),
+                                                        ('22', 'IOVDD', '+3V3', 'power_in'), ('23', 'DVDD', '+1V1', 'power_in'),
+                                                        ('61', 'GND', 'GND', 'power_in')])
+    parts = [mcu, L('L1', '3.3uH', 'LX', '+1V1'), C('C1', '4.7uF', '+3V3', 'GND'), C('C2', '100nF', '+3V3', 'GND'),
+             C('C3', '100nF', '+3V3', 'GND'), C('C4', '100nF', '+3V3', 'GND'), C('C5', '4.7uF', '+1V1', 'GND')]
+    nl, r, st = structures(parts)
+    one(st['commutation_cells'], controller='U1')
+    io = one(st['decaps'], ic='U1', rail='+3V3')
+    assert io['power_pins'] == ['1', '10', '22'] and len(io['caps']) >= 2
+
+
+def test_chains_skip_cell_parts_and_led_zeners():
+    parts = buck_board() + [fp('J2', 'Out', 'TerminalBlock:TerminalBlock_bornier-2_P5.08mm', [('1', '+3V3', '', ''), ('2', 'GND', '', '')]),
+                            D('D5', 'BZV55C6V2', '+3V3', 'LEDZ', lib='Diode_SMD:D_MiniMELF'), R('R5', '1k', 'LEDZ', 'LEDA'),
+                            D('D6', 'LED', 'GND', 'LEDA', lib='LED_SMD:LED_0603_1608Metric')]
+    nl, r, st = structures(parts)
+    for ch in st['chains']:
+        if ch['connector'] == 'J2':
+            assert 'D5' not in ch['protection'] and 'L1' not in ch['series']
+
+
+def test_feedback_found_from_the_net_name_when_pins_are_unnamed():
+    u = IC('U1', 'TX4138', 'Package_SO:SOIC-8', [('1', '', 'SW', 'passive'), ('3', '', 'VIN', 'passive'), ('4', '', 'GND', 'passive'),
+                                                 ('5', '', 'Vfb', 'passive')])
+    parts = [u, L('L1', '33uH', 'SW', 'VOUT'), D('D1', 'SS510', 'SW', 'GND', lib='Diode_SMD:D_SMC'),
+             C('C1', '100nF', 'VIN', 'GND'), C('C2', '470uF', 'VOUT', 'GND', lib='Capacitor_THT:CP_Radial_D8.0mm_P3.50mm'),
+             R('R1', '56.2k', 'VOUT', 'Vfb'), R('R2', '10k', 'Vfb', 'GND')]
+    nl, r, st = structures(parts)
+    v = one(st['victims'], **{'class': 'feedback'})
+    assert v['divider']['top'] == 'R1' and v['divider']['bottom'] == 'R2'

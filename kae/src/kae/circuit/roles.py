@@ -1192,13 +1192,13 @@ def _rail_sources(nl: Netlist, roles: Roles):
                     re.match(r'^(VBUS\w*|PWR|POWER|VIN|V\+|\+|\+?\d+V\w*|DC\+?|VCC|BAT\+?)$', p.fn, re.I) and not CTRL_SUFFIX.search(p.fn)]
             if bat:
                 src = {'kind': 'battery', 'ref': bat[0].ref}
+            elif devmod:
+                src = {'kind': 'module', 'ref': devmod[0].ref, 'pin': devmod[0].number,
+                       'note': 'development-board module: its 3V3 pin is its own regulator output'}
             elif jack:
                 src = {'kind': 'connector', 'ref': jack[0].ref, 'pin': jack[0].number, 'note': 'supply pin of an input connector'}
             elif internal:
                 src = {'kind': 'internal', 'ref': internal[0].ref, 'pin': internal[0].number}
-            elif devmod:
-                src = {'kind': 'module', 'ref': devmod[0].ref, 'pin': devmod[0].number,
-                       'note': 'development-board module: its 3V3 pin is its own regulator output'}
             elif only_ic:
                 ic = next(iter(act))
                 p0 = next(p for p in pins if p.ref == ic)

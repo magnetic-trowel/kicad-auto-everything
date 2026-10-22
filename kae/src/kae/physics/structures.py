@@ -30,7 +30,7 @@ import math
 import numpy as np
 
 from . import fastloop as FL
-from .kernels import EPS0, cprime_hj, gmd_rect, trapezoid_envelope
+from .kernels import EPS0, cprime_hj, gmd_rect, lprime_hj, trapezoid_envelope
 
 INF = float('inf')
 _hyp = math.hypot
@@ -659,8 +659,13 @@ class CmComp:
 
 
 class EsdComp:
-    """ESD path inductance (nH): protection device stub + its ground connection, plus the
-    path between the protected pin and the protector when the protected pin is hit first."""
+    """ESD surge path (nH): the surge enters at the connector pin, runs along the trace to
+    the protector and leaves through the protector's ground via into the plane. Its
+    inductance L'(w, h) l(conn -> prot) + L_via sets the area over which the surge's dI/dt
+    spreads before it is shunted (designers place the protector at the connector and route
+    the protected net through its pad, so a lateral offset from the conn -> IC line costs
+    nothing). A protector farther from the connector than the protected pin (projected on
+    the conn -> IC line) lets the pin see the surge first: the excess is charged twice."""
 
     def __init__(self, bv, t_conn, t_prot, t_ic, t_prot_gnd, w=0.25):
         self.bv = bv
@@ -677,27 +682,18 @@ class EsdComp:
         hh = self.bv.thickness if h == INF else h
         cc = self._hc.get(hh)
         if cc is None:
-            cc = (FL.strip_self(1.0, self.w, hh), FL.m_self(hh, 0.15) + FL._collinear(hh, hh, 0.0))
+            cc = (lprime_hj(self.w, hh), FL.m_self(hh, 0.15) + FL._collinear(hh, hh, 0.0))
             self._hc[hh] = cc
         lp, lv = cc
+        ln = _hyp(px - ax, py - ay)
+        beyond = 0.0
         if self.ti is not None:
             bx, by = txy(st, self.ti)
             ux, uy = bx - ax, by - ay
             lab = _hyp(ux, uy)
             if lab > 1e-9:
-                ux /= lab
-                uy /= lab
-                s = (px - ax) * ux + (py - ay) * uy          # projection of the protector on conn->IC
-                stub = abs((px - ax) * uy - (py - ay) * ux)
-                beyond = max(0.0, s - lab)                     # protector farther than the IC: IC hit first
-                before = max(0.0, -s)
-                stub += before
-            else:
-                stub, beyond = _hyp(px - ax, py - ay), 0.0
-        else:
-            stub, beyond = _hyp(px - ax, py - ay), 0.0
-        # ground connection of the protector: a via to the plane (or the board thickness)
-        return lp * (stub + 2.0 * beyond) + lv
+                beyond = max(0.0, ((px - ax) * ux + (py - ay) * uy) / lab - lab)
+        return lp * (ln + 2.0 * beyond) + lv
 
 
 class FeedComp:

@@ -488,10 +488,10 @@ class Problem:
             lib_opp.append(cut)
         else:
             lib_cut = None
-        # copper keeps the copper-to-edge clearance; a bare NPTH hole only stays inside
-        cu_rects = [r for p, r in zip(pads, pad_rects) if p.kind != "np_thru_hole" or
-                    max(p.size) > (max(p.slot) if p.slot else p.drill) + 1e-6]
-        holes = [hole_lib_rect(p) for p in pads if p.kind == "np_thru_hole"]
+        # every pad, bare NPTH holes included, keeps the copper-to-edge clearance (conservative:
+        # whether KiCad exempts bare holes is unverified, and agreement with KiCad comes first)
+        cu_rects = list(pad_rects)
+        holes = []
         copper = rect_union(cu_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:
             copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard

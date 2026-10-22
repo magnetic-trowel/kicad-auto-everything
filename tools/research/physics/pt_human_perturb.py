@@ -12,27 +12,31 @@ per term kind, whether the human placement scores better than its own perturbati
   legal-ish: the part's courtyard adds no overlap with same-side courtyards beyond what
            the human placement already has, and stays inside the board outline.
 
-It records the share of perturbations that score worse than the human placement, where
-the human boards spend their budgets (utilisation per structure), and every case in which a
-local perturbation scores better, classified as either an estimator error or a human
-choice:
+A perturbation is worse or better by the sign of the kind's cost change; it is *material*
+when it moves some structure of the kind by at least 1 % of its allocation (|du| >= 0.01).
+Shares are worse / (worse + better), reported over all decided perturbations and over the
+material ones. The census records where the human boards spend their budgets (value and
+utilisation per structure). Every material local perturbation that scores better than the
+human placement is classified:
 
-  estimator: quadrature   the exact-in-model reference (kernels.loop_L: all pairs, oblique
-                          pairs by quadrature, lateral return) disagrees in sign;
-  estimator: route        the perturbed straight hop crosses another part's courtyard, so
-                          the expected route would detour (route model optimistic);
-  estimator: assignment   the structure pairs parts the human placed far apart (> 15 mm)
-                          while nothing forced it (brief pairing doubtful);
-  human: slack            a legal move improves the term and nothing else in the physics
-                          gets worse (room the human left);
-  human: trade-off        it improves this term but worsens other physics terms or the
-                          moved part's signal wirelength (the human balanced them).
+  estimator: route        loop kinds (decap, commutation, esd): with each board hop routed
+                          around other nets' pads (pt_grid_route, 45-degree grid router;
+                          L'(w, h) per mm of detour) the perturbation is no longer better;
+                          the straight-hop model was optimistic;
+  estimator: assignment   the moved part sits > 15 mm from every partner in its structure in
+                          the human placement (cap far from the pins it is said to decouple,
+                          protector far from its connector): the brief's pairing is doubtful;
+  human: trade-off        it improves this term but worsens other physics terms or the moved
+                          part's signal wirelength (> 0.5 mm): the human balanced them;
+  human: slack            a routable, legal move that improves the term and worsens nothing
+                          else in the physics: room the human left.
+  (loop kinds whose hop has no single-layer route, e.g. BGA escapes, are 'unroutable'.)
 
 Usage:
   python tools/research/physics/pt_human_perturb.py --out kae-work/physics/place-terms/<run> [-j 2]
          [--only id1,id2] [--seed 1] [--local-parts 40] [--shuffles 20]
   python tools/research/physics/pt_human_perturb.py --out DIR --aggregate-only
-Needs kae (kae/.venv). Deterministic for a given seed.
+Needs kae (kae/.venv). Deterministic for a given seed and brief.
 """
 from __future__ import annotations
 
@@ -61,7 +65,10 @@ from shapely.geometry import LineString, box  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
 
 KINDS = ('commutation', 'decap', 'coupling', 'crystal', 'thermal', 'esd', 'world_cm', 'antenna')
+LOOP_KINDS = ('decap', 'commutation', 'esd')
 EPS = 1e-9
+MATERIAL = 0.01          # |du| of some structure of the kind, fraction of its allocation
+FAR_MM = 15.0
 
 
 # ============================================================================ legality
@@ -170,62 +177,153 @@ def net_hpwl(T, poses, i):
     return tot
 
 
-def loop_reference(T, comp):
-    """Exact-in-model reference of a LoopComp at the current state: kernels.loop_L on the
-    same straight segments (lateral return; all pairs; oblique pairs by quadrature)."""
-    from kae.physics import kernels as K
-    from kae.physics.structures import txy
-    bv = T.bv
+def kind_values(T, ks, i=None, q=None):
+    """Values of structures ks, with part i at pose q when given (direct component
+    evaluation; the state is restored)."""
+    from kae.physics.place_terms import _red
     st = T.st
-    P = [txy(st, t) for t in comp.T]
-    n = len(P)
-    cx = sum(p[0] for p in P) / n
-    cy = sum(p[1] for p in P) / n
-    side = st.G[comp.T[0].i]
-    h = bv.h_ref(side, cx, cy)
-    plane = h != float('inf')
-    hb = h if plane else 1.0
-    segs = []
-    for k in range(n):
-        a, b = P[k], P[(k + 1) % n]
-        if comp.kinds[k] == 'body':
-            z = comp.zb[k]
-            r = K.gmd_rect(comp.w[k])
-            segs.append(dict(p0=(a[0], a[1], hb), p1=(a[0], a[1], hb + z), r=r))
-            segs.append(dict(p0=(a[0], a[1], hb + z), p1=(b[0], b[1], hb + z), w=comp.w[k]))
-            segs.append(dict(p0=(b[0], b[1], hb + z), p1=(b[0], b[1], hb), r=r))
-        else:
-            if math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-6:
-                segs.append(dict(p0=(a[0], a[1], hb), p1=(b[0], b[1], hb), w=comp.w[k]))
-    return K.loop_L(segs, plane=plane)
+    saved = None
+    if i is not None:
+        saved = st.get(i)
+        st.set(i, *q)
+    try:
+        return [_red(T.structs[k].reduce, [c.value(st) for c in T.structs[k].comps], T.structs[k].info.get('weights'))
+                for k in ks]
+    finally:
+        if saved is not None:
+            st.set(i, *saved)
 
 
-def crosses_courtyard(T, legal, comp, moved):
-    """True when a board hop of the loop that touches a moved part crosses another part's
-    courtyard (the router would detour)."""
-    from kae.physics.structures import txy
+def thermal_rise(T, i=None, q=None):
+    """(rise vector K, allocations K) at the state, with part i at pose q when given."""
+    th = T.thermal
+    T0 = T._th_current()
+    al = np.array([a.value for a in T._th_alloc])
+    if i is None:
+        return T0.copy(), al
     st = T.st
-    P = [txy(st, t) for t in comp.T]
-    n = len(P)
-    for k in range(n):
-        if comp.kinds[k] == 'body':
-            continue
-        a, b = comp.T[k], comp.T[(k + 1) % n]
-        if a.i not in moved and b.i not in moved:
-            continue
-        seg = LineString([P[k], P[(k + 1) % n]])
-        if seg.length < 0.3:
-            continue
-        side = 1 if st.G[a.i] > 0 else -1
-        ids = legal.ids[side]
-        for q in legal.trees[side].query(seg):
-            j = ids[q]
-            if j in (a.i, b.i):
+    saved = st.get(i)
+    st.set(i, *q)
+    try:
+        Gn = th.G.copy()
+        tix = {j: t for t, j in enumerate(th.targets)}
+        t = tix.get(i)
+        if t is not None:
+            if t < len(th.src):
+                Gn[:, t] = th.column(st, t)
+            Gn[t, :] = th.row(st, t)
+        return Gn @ th.P, al
+    finally:
+        st.set(i, *saved)
+
+
+def material_du(T, kind, i, q):
+    """Largest |change of utilisation| over the kind's structures touched by moving part i."""
+    if kind == 'thermal':
+        if T.thermal is None or i not in T.th_parts:
+            return 0.0
+        a, al = thermal_rise(T)
+        b, _ = thermal_rise(T, i, q)
+        return float(np.max(np.abs(b - a) / al)) if len(al) else 0.0
+    ks = [k for k in T.inc.get(i, ()) if T.structs[k].kind == kind]
+    if not ks:
+        return 0.0
+    v0 = kind_values(T, ks)
+    v1 = kind_values(T, ks, i, q)
+    return max(abs(b - a) / T.structs[k].alloc.value for k, a, b in zip(ks, v0, v1))
+
+
+def _nearest_pad(bv, st, t, toward):
+    from kae.physics.structures import txy
+    if not t.ks:
+        return txy(st, t)
+    best = None
+    for k in t.ks:
+        x, y = bv.pad_xy(t.i, k, st.X[t.i], st.Y[t.i], st.R[t.i], st.G[t.i])
+        d = math.hypot(x - toward[0], y - toward[1])
+        if best is None or d < best[0]:
+            best = (d, (x, y))
+    return best[1]
+
+
+def hop_detour_nH(T, R, pads, comp):
+    """Extra inductance (nH) of a loop component when its board hops are routed around
+    other nets' pads: sum of L'(w, h) x (routed - straight length) over the hops (a ground
+    hop returned through its own plane is not routed). 0 for components without board hops;
+    None when a hop has no single-layer route."""
+    from kae.physics.kernels import lprime_hj
+    from kae.physics.structures import EsdComp, LoopComp, txy
+    st, bv = T.st, T.bv
+    hops = []
+    if isinstance(comp, LoopComp):
+        n = comp.n
+        P = [txy(st, t) for t in comp.T]
+        for k in range(n):
+            if comp.kinds[k] != 'board':
                 continue
-            g = legal.geo[j] if j not in moved else legal.at(j, st.get(j))
-            if g.intersection(seg).length > 0.3:
-                return True
-    return False
+            t0, t1 = comp.T[k], comp.T[(k + 1) % n]
+            if k == comp.g:
+                mx, my = 0.5 * (P[k][0] + P[(k + 1) % n][0]), 0.5 * (P[k][1] + P[(k + 1) % n][1])
+                side = st.G[t0.i]
+                if bv.h_ref(side, mx, my) != float('inf') and bv.plane_net(side, mx, my) in comp.gnd_nets:
+                    continue
+            hops.append((t0, t1, comp.w[k]))
+    elif isinstance(comp, EsdComp):
+        hops.append((comp.tc, comp.tp, comp.w))
+    else:
+        return 0.0
+    extra = 0.0
+    for t0, t1, w in hops:
+        c1 = txy(st, t1)
+        a = _nearest_pad(bv, st, t0, c1)
+        b = _nearest_pad(bv, st, t1, a)
+        straight = math.hypot(b[0] - a[0], b[1] - a[1])
+        if straight < 0.05:
+            continue
+        L = min(R.length(st, sd, a, b, t0.net, w, pads=pads) for sd in {st.G[t0.i], st.G[t1.i]})
+        if not math.isfinite(L):
+            return None
+        h = bv.h_ref(st.G[t0.i], 0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1]))
+        extra += lprime_hj(w, h if h != float('inf') else bv.thickness) * (L - straight)
+    return extra
+
+
+def routed_cost(T, R, ks, i=None, q=None):
+    """Cost of structures ks with route detours added to every loop component (part i at
+    pose q when given), or None when some hop is unroutable."""
+    from kae.physics.place_terms import _red
+    st = T.st
+    saved = None
+    if i is not None:
+        saved = st.get(i)
+        st.set(i, *q)
+    try:
+        pads = R.pads_board(st)
+        tot = 0.0
+        for k in ks:
+            s = T.structs[k]
+            vals = []
+            for c in s.comps:
+                e = hop_detour_nH(T, R, pads, c)
+                if e is None:
+                    return None
+                vals.append(c.value(st) + e)
+            tot += T._cost(s, _red(s.reduce, vals, s.info.get('weights')))
+        return tot
+    finally:
+        if saved is not None:
+            st.set(i, *saved)
+
+
+def partner_min_dist(T, i, ks):
+    """Distance (mm) from part i to its nearest partner over structures ks, at the state."""
+    st = T.st
+    d = float('inf')
+    for k in ks:
+        for j in T.structs[k].members:
+            if j != i:
+                d = min(d, math.hypot(st.X[i] - st.X[j], st.Y[i] - st.Y[j]))
+    return d
 
 
 # ============================================================================ per board
@@ -233,7 +331,7 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
     from kae.board.kicad_file import load
     from kae.circuit.brief import build
     from kae.physics.place_terms import Terms
-    from kae.physics.structures import LoopComp
+    from pt_grid_route import HopRouter
     bid = Path(path).parents[1].name
     rng = random.Random(f'{seed}:{bid}')
     t0 = time.time()
@@ -252,6 +350,7 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
     poses = bv.pose0()
     base = T.total_by_kind(poses)
     legal = Legal(T)
+    router = HopRouter(bv)
     rec['parts'] = len(bv.parts)
     rec['layers'] = len(bv.copper)
     rec['physics_parts'] = len(T.parts())
@@ -264,7 +363,7 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
     rec['census'] = census
     rec['base'] = base
     locked = {p.i for p in bv.parts if p.locked}
-    results = defaultdict(lambda: dict(translate=Counter(), rotate=Counter(), shuffle=Counter(), total_local=Counter()))
+    results = defaultdict(lambda: defaultdict(Counter))
     better = []
     for kind in KINDS:
         if kind not in base:
@@ -294,10 +393,14 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
                 dK = dk.get(kind, 0.0)
                 tot = sum(dk.values())
                 res = 'worse' if dK > EPS else 'better' if dK < -EPS else 'tie'
+                T.total(poses)
+                du = material_du(T, kind, i, q)
+                mat = du >= MATERIAL
                 results[kind][mtype][res] += 1
+                results[kind][mtype + '_material'][res if mat else 'tie'] += 1
                 results[kind]['total_local']['worse' if tot > EPS else 'better' if tot < -EPS else 'tie'] += 1
-                if res == 'better':
-                    better.append(_explain(T, legal, poses, kind, i, u, q, mtype, dK, dk, LoopComp))
+                if res == 'better' and mat:
+                    better.append(_explain(T, router, poses, kind, i, q, mtype, dK, dk, du))
         # ---- global shuffles of the kind's parts
         for _ in range(n_shuffle):
             p2 = dict(poses)
@@ -325,60 +428,39 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
     return dict(id=bid, status='ok', seconds=rec['seconds'])
 
 
-def _explain(T, legal, poses, kind, i, u, q, mtype, dK, dk, LoopComp):
-    """Classify one better-than-human local perturbation."""
+def _explain(T, router, poses, kind, i, q, mtype, dK, dk, du):
+    """Classify one material better-than-human local perturbation."""
     bv = T.bv
-    st = T.st
     T.total(poses)
-    d0 = partner_dist(T, poses, i, kind)
-    w0 = net_hpwl(T, poses, i)
-    saved = st.get(i)
-    # the structures of this kind that changed, with their loop comps
     ks = [k for k in T.inc.get(i, []) if T.structs[k].kind == kind]
-    loops = [(k, ci, c) for k in ks for ci, c in enumerate(T.structs[k].comps)
-             if isinstance(c, LoopComp) and i in c.parts]
-    def lateral(c):
-        g = c.g
-        c.g = -1
-        try:
-            return c.value(st)
-        finally:
-            c.g = g
-    ref0 = [loop_reference(T, c) for _, _, c in loops]
-    est0 = [lateral(c) for _, _, c in loops]
-    st.set(i, *q)
-    d1 = partner_dist(T, poses, i, kind)
+    d0 = partner_min_dist(T, i, ks) if ks else float('nan')
+    w0 = net_hpwl(T, poses, i)
+    saved = T.st.get(i)
+    T.st.set(i, *q)
+    d1 = partner_min_dist(T, i, ks) if ks else float('nan')
     w1 = net_hpwl(T, poses, i)
-    ref1 = [loop_reference(T, c) for _, _, c in loops]
-    est1 = [lateral(c) for _, _, c in loops]
-    crosses = any(crosses_courtyard(T, legal, c, {i}) for _, _, c in loops)
-    st.set(i, *saved)
+    T.st.set(i, *saved)
     other = sum(v for k2, v in dk.items() if k2 != kind)
-    far_pair = False
-    for k in ks:
-        s = T.structs[k]
-        for j in s.members:
-            if j != i and math.hypot(bv.parts[i].x0 - bv.parts[j].x0, bv.parts[i].y0 - bv.parts[j].y0) > 15.0:
-                far_pair = True
+    rc0 = rc1 = None
     cat, why = None, ''
-    if loops:
-        sgn_est = sum(e1 - e0 for e0, e1 in zip(est0, est1))
-        sgn_ref = sum(r1 - r0 for r0, r1 in zip(ref0, ref1))
-        if sgn_est < 0 <= sgn_ref:
-            cat, why = 'estimator: quadrature', f'fast {sgn_est:+.3f} nH, reference {sgn_ref:+.3f} nH (lateral)'
-    if cat is None and crosses:
-        cat, why = 'estimator: route', 'perturbed hop crosses another courtyard'
-    if cat is None and far_pair and kind in ('decap', 'commutation', 'crystal', 'esd'):
-        cat, why = 'estimator: assignment', 'members > 15 mm apart in the human placement'
+    if kind in LOOP_KINDS and ks:
+        rc0 = routed_cost(T, router, ks)
+        rc1 = routed_cost(T, router, ks, i, q)
+        if rc0 is None or rc1 is None:
+            cat, why = 'unroutable', 'a hop has no single-layer route (BGA escape, enclosed pin)'
+        elif rc1 - rc0 >= -EPS:
+            cat, why = 'estimator: route', f'routed cost change {rc1 - rc0:+.4f} (straight {dK:+.4f})'
+    if cat is None and kind in ('decap', 'commutation', 'crystal', 'esd') and d0 > FAR_MM:
+        cat, why = 'estimator: assignment', f'nearest partner {d0:.1f} mm away in the human placement'
     if cat is None:
-        if other > EPS or w1 > w0 + 0.5:
+        if other > 1e-6 or w1 > w0 + 0.5:
             cat = 'human: trade-off'
-            why = f'other physics {other:+.3f}, signal HPWL {w1 - w0:+.1f} mm'
+            why = f'other physics {other:+.4f}, signal HPWL {w1 - w0:+.1f} mm'
         else:
             cat = 'human: slack'
-            why = f'partner distance {d0:.1f} -> {d1:.1f} mm'
-    return dict(kind=kind, part=bv.parts[i].ref, move=mtype, dK=dK, d_other=other, cat=cat, why=why,
-                partner_mm=[d0, d1], hpwl_mm=[w0, w1], est=[est0, est1], ref=[ref0, ref1],
+            why = f'nearest partner {d0:.1f} -> {d1:.1f} mm'
+    return dict(kind=kind, part=bv.parts[i].ref, move=mtype, dK=dK, du=du, d_other=other, cat=cat, why=why,
+                partner_mm=[d0, d1], hpwl_mm=[w0, w1], routed=[rc0, rc1],
                 structs=[T.structs[k].id for k in ks])
 
 

@@ -782,7 +782,7 @@ CELL_QUOTA = 2      # one HF commutation cap and one more
 CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only when the loads' pins leave some spare
                        # (else the bulk ones, largest first); 'hf': always prefer them (ablation)
 CONVERTER_OUT = True   # a buck's output (a boost's input) bulk capacitors (>= 10 uF) belong at its inductor
-LOAD_PRIORITY = True   # equal scores: ICs and modules before LEDs and oscillators
+CELL_HF_SCARCE = -3.0  # a cell's score offset for a small ceramic when the loads need them all ('count' mode)
 ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
 
 
@@ -895,8 +895,9 @@ def allocate_caps(b: _B, cells, groups):
                     if hf_spare:
                         v = CELL_BASE + (0.5 if cls[c] in ('hf', 'mid') else 0.3)
                     else:
-                        # the loads' pins need every small ceramic: the converter takes the bulk ones, largest first
-                        v = CELL_BASE + (0.3 if cls[c] in ('hf', 'mid') else 0.5 + 0.1 * max(0.0, big))
+                        # the loads' pins need every small ceramic: the converter takes the bulk ones, largest first,
+                        # and a small one only if the loads leave it over
+                        v = CELL_BASE + (CELL_HF_SCARCE if cls[c] in ('hf', 'mid') else 0.5 + 0.1 * max(0.0, big))
                 else:
                     v = 0.0               # pin counts enter through the quotas, not the score (layout check)
                     f = x['function']
@@ -908,8 +909,6 @@ def allocate_caps(b: _B, cells, groups):
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
-                        if LOAD_PRIORITY and b.k(x['ref']) in ('ic', 'module'):
-                            v += 0.1      # an IC or module before an LED or oscillator when nothing else decides
                     elif f == 'entry':
                         v += 1.0 if _entry_cap(b, c) else -3.0
                 v += _affinity(b, c, anchor)

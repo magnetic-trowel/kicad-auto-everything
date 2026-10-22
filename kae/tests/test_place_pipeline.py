@@ -31,7 +31,7 @@ def test_budget_plan():
     assert plan_budget(5, 10) == 5.0
 
 
-@pytest.mark.parametrize("arm", [[], ["--no-physics"]])
+@pytest.mark.parametrize("arm", [[], ["--no-physics"], ["--no-physics", "--stages", "seed,legalize"]])
 def test_place_cli_end_to_end(tmp_path, arm):
     src = _copy(tmp_path)
     out = tmp_path / "out" / "board.kicad_pcb"
@@ -40,8 +40,10 @@ def test_place_cli_end_to_end(tmp_path, arm):
                "--report", str(rep_path), *arm])
     rep = json.loads(rep_path.read_text())
     assert rc == 0 and rep["legal"] and rep["exact"] == []
-    assert rep["physics"] is (not arm)
-    assert "scorecard" in rep and rep["scorecard"]["structures"] >= 0   # both arms report physics
+    assert rep["physics"] is ("--no-physics" not in arm)
+    assert "scorecard" in rep and rep["scorecard"]["structures"] >= 0   # every arm reports physics
+    assert ("anneal" in rep["stages"]) is ("seed,legalize" not in arm)
+    assert json.loads(Path(str(out) + ".kae.json").read_text())["legal"] == rep["legal"]
     b0 = kicad_file.load(src).by_uuid()
     b1 = kicad_file.load(out)
     outline = b1.outline[0]
