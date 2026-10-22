@@ -46,52 +46,53 @@ def rect(y0, y1, z0, z1, ny, nz, py=2.0, pz=1.0):
     return cells
 
 
-def _G(x, y):
-    """4th antiderivative of ln(r)/1 (i.e. d4G/dx2dy2 = ln sqrt(x^2+y^2)), even in x and y (sympy-derived)."""
-    x = np.abs(x)
-    y = np.abs(y)
-    r2 = x * x + y * y
-    lg = np.where(r2 > 0, np.log(np.where(r2 > 0, r2, 1.0)), 0.0)
-    a1 = np.arctan2(y, x)
-    a2 = np.arctan2(x, y)
-    return (x ** 3 * y * a1 / 3 + x ** 3 * y * a2 / 6 - 25 * x * x * y * y / 48 + x * y ** 3 * a2 / 6
-            + 7 * y ** 4 / 288 + (-x ** 4 / 48 + x * x * y * y / 8 - y ** 4 / 48) * lg)
+def _pieces(y, w, z, t):
+    """Split a flat cell into near-square pieces; return piece centres and piece size."""
+    if w >= t:
+        m = max(1, int(round(w / t)))
+        return np.stack([y - w / 2 + (np.arange(m) + 0.5) * w / m, np.full(m, z)], 1), (w / m, t)
+    m = max(1, int(round(t / w)))
+    return np.stack([np.full(m, y), z - t / 2 + (np.arange(m) + 0.5) * t / m], 1), (w, t / m)
 
 
-def lngmd(ya, wa, za, ta, yb, wb, zb, tb):
-    """Exact mean of ln(distance) between two axis-aligned rectangles (centre, size), vectorised."""
-    tot = 0.0
-    for sx1, ex1 in ((1, 0.5), (-1, -0.5)):
-        for sx2, ex2 in ((1, 0.5), (-1, -0.5)):
-            X = (ya + ex1 * wa) - (yb + ex2 * wb)
-            sx = sx1 * sx2 * -1  # (b,a):+ (a,a):- (b,b):- (a,b):+
-            for sy1, ey1 in ((1, 0.5), (-1, -0.5)):
-                for sy2, ey2 in ((1, 0.5), (-1, -0.5)):
-                    Y = (za + ey1 * ta) - (zb + ey2 * tb)
-                    sy = sy1 * sy2 * -1
-                    tot = tot + sx * sy * _G(X, Y)
-    return tot / (wa * ta * wb * tb)
-
-
-def solve(conductors, currents, f):
-    """conductors: list of cell lists; currents: net current per conductor (None = not used).
-    Returns Z' (V/m per A) between conductor 0 and 1 for currents (+1, -1, 0...), and filament currents."""
-    cells = [c for cond in conductors for c in cond]
-    owner = np.concatenate([[k] * len(cond) for k, cond in enumerate(conductors)])
+def lmatrix(cells):
+    """Per-unit-length partial inductance matrix (H/m) up to a constant that cancels for zero net current.
+    Far pairs: ln(centre distance). Near pairs: mean ln(distance) over near-square sub-pieces."""
     y = np.array([c[0] for c in cells])
     z = np.array([c[1] for c in cells])
     w = np.array([c[2] for c in cells])
     t = np.array([c[3] for c in cells])
-    n = len(cells)
     d = np.hypot(y[:, None] - y[None, :], z[:, None] - z[None, :])
     lnd = np.log(np.where(d > 0, d, 1.0))
-    # exact rectangle-rectangle mean log distance for near pairs (and the self terms)
     size = np.maximum(w, t)
-    near = d < 6 * np.maximum(size[:, None], size[None, :])
-    ii, jj = np.nonzero(near)
-    sc = 1e6  # work in micrometres for conditioning
-    lnd[ii, jj] = lngmd(y[ii] * sc, w[ii] * sc, z[ii] * sc, t[ii] * sc, y[jj] * sc, w[jj] * sc, z[jj] * sc, t[jj] * sc) - math.log(sc)
-    Lp = -MU0 / (2 * math.pi) * lnd
+    near = d < 4 * np.maximum(size[:, None], size[None, :])
+    pcs = [_pieces(*c[:1], c[2], c[1], c[3]) for c in cells]
+    ii, jj = np.nonzero(np.triu(near))
+    for i, j in zip(ii, jj):
+        Pi, (ai, bi) = pcs[i]
+        Pj, _ = pcs[j]
+        D = np.hypot(Pi[:, None, 0] - Pj[None, :, 0], Pi[:, None, 1] - Pj[None, :, 1])
+        if i == j:
+            np.fill_diagonal(D, 0.2235 * (ai + bi))
+        v = np.log(np.maximum(D, 1e-15)).mean()
+        lnd[i, j] = lnd[j, i] = v
+    return -MU0 / (2 * math.pi) * lnd, (y, z, w, t)
+
+
+_CACHE = {}
+
+
+def solve(conductors, currents, f):
+    """conductors: list of cell lists; currents: net current per conductor.
+    Returns Z' (V/m per A) between conductor 0 and 1 for currents (+1, -1, 0...), and filament currents."""
+    cells = [c for cond in conductors for c in cond]
+    owner = np.concatenate([[k] * len(cond) for k, cond in enumerate(conductors)])
+    key = hash(np.array(cells).tobytes())
+    if key not in _CACHE:
+        _CACHE.clear()
+        _CACHE[key] = lmatrix(cells)
+    Lp, (y, z, w, t) = _CACHE[key]
+    n = len(cells)
     R = RHO / (w * t)
     om = 2 * math.pi * f
     Z = np.diag(R).astype(complex) + 1j * om * Lp
@@ -142,8 +143,8 @@ def main():
     W = 2 * mm
     for f in (1e6, 1e7, 1e8):
         print(f"skin depth in Cu at {f:.0e} Hz: {math.sqrt(RHO/(math.pi*f*MU0))*1e6:5.1f} um")
-    nt = 8
-    trace = lambda y0, z0: rect(y0, y0 + W, z0, z0 + t, 40, nt, 2.0, 1.6)
+    nt = 10
+    trace = lambda y0, z0: rect(y0, y0 + W, z0, z0 + t, 40, nt, 2.0, 1.0)
     print("== plane: trace over a 20 mm wide plane (return); DC R' counts trace + plane")
     for h in (0.1 * mm, 0.5 * mm, 1.5 * mm):
         plane = rect(-9 * mm, 11 * mm, -h - t, -h, 80, nt, 2.2, 1.6)

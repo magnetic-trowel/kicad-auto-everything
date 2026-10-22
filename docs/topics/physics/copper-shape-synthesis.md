@@ -1,9 +1,9 @@
 # Copper shape synthesis: topology optimization for pours, planes and power copper
 
 **TL;DR**
-- **A pour is a conductivity field, and three of its physics share one operator.** DC IR drop, the inductive limit of a pour over a reference plane, and heat spreading are all a 2-D (screened) Laplace problem. Only the sheet coefficient changes: 1/R_s, 1/(μ0·h_eff), or k·t plus convection. Structural topology optimization (SIMP, level set, phase field, ESO) therefore transfers almost unchanged. The closest published analogues are busbars, solar-cell front metallization and "volume-to-point" heat conduction. We found no published PCB-pour version other than an expired IBM heuristic patent.
+- **A pour is a conductivity field, and three of its physics share one operator.** DC IR drop, the inductive limit of a pour over a reference plane, and heat spreading are each a 2-D (screened) Laplace problem with a different sheet coefficient: 1/R_s, 1/(μ0·h_eff), or k·t plus convection. Structural topology optimization (SIMP, level set, phase field, ESO) transfers almost unchanged. The nearest published analogues are busbars, solar-cell metallization and volume-to-point heat conduction. The only PCB-pour precedent we found is an expired IBM heuristic patent.
 - **Proof of concept** ([op_topopt_pour.py](../../../tools/research/physics/op_topopt_pour.py)): a 24×14 mm 1 oz region where a 6 A source feeds three loads. At equal copper area (105 mm²), topology optimization gives 1.79 mΩ loss resistance against 2.09 mΩ for a well-drawn trunk-and-branch layout (−14.5%). A full pour (323 mm²) gives 0.68 mΩ [C].
-- **Honest magnitude: area matters more than shape.** A competent tree is already on the 1-D optimum for its topology (width ∝ current). Shape optimization is worth roughly 15–35% at a fixed area. It pays only where amps are high (≳5 A), IR or thermal margins are tight, or several rails compete for one layer. For most low-current rails it does not matter [C/I].
+- **Honest magnitude: area matters more than shape.** A competent tree is already on the 1-D optimum for its topology (width ∝ current). Shape optimization was worth about 15% at equal area, and 18% over uniform widening at +25% area. It pays where amps are high (≳5 A), where IR or thermal margins are tight, or where several rails compete for one layer. For most low-current rails it does not matter [C/I].
 - **DC-optimal is not HF-optimal once the reference is cut.** Above f_c = R_s/(2π·μ0·h) (0.3–0.6 MHz for 1 oz over 0.1–0.2 mm, ~40 kHz on 2-layer 1.6 mm), current in a pour spreads by inductance. Over a uniform plane, the DC- and HF-optimal shapes coincide. Across a reference slot they differ: in the POC the slot-aware shape cut L_eff by 10% for +9% R [C].
 - **Fab rules map cleanly and must be in the optimizer, not only after it.** Filter radius and robust erode/dilate correspond to minimum width, space and etch tolerance. Contour plus Minkowski open/close removes slivers and acid traps. Island removal enforces connectivity. Legalization cost 0.0–2.8% in R. An opening wider than a drawn neck disconnected one design, so the minimum width must set the filter radius [C].
 
@@ -32,27 +32,26 @@
 
 | Method | Representation | PCB fit | Source |
 |---|---|---|---|
-| SIMP density + density filter + Heaviside projection, OC or MMA update | cell density ρ ∈ [0,1], conductivity ∝ ρ^p | Default: simple, robust, adjoint-cheap; grey cells need thresholding | Bendsøe–Sigmund; top88 (Andreassen et al. 2011); Bruns–Tortorelli 2001; Guest et al. 2004; Svanberg 1987 (MMA) [S] |
-| Robust erode/nominal/dilate | three projections of one field | Etch tolerance (±20% width at JLCPCB) and strict minimum width/space | Wang, Lazarov, Sigmund 2011; Qian & Sigmund 2013 (over/under-etching) [S] |
-| Level set (SDF evolved by shape derivative) | crisp boundary, implicit topology | Polish step after SIMP; smooth, arc-friendly outlines | Wang, Wang, Guo 2003; Allaire, Jouve, Toader 2004 [S] |
-| Phase field (Allen–Cahn / Cahn–Hilliard) | diffuse interface, multi-phase | Several rails on one layer (N phases with a sum-to-one rule) | Takezawa et al. 2010 [S] |
+| SIMP + density filter + Heaviside projection, OC or MMA update | density ρ ∈ [0,1], conductivity ∝ ρ^p | Default: simple, adjoint-cheap; threshold grey cells | Bendsøe–Sigmund; top88 (Andreassen 2011); Svanberg 1987 (MMA) [S] |
+| Robust erode/nominal/dilate | three projections of one field | Etch tolerance (±20% width at JLCPCB), strict min width/space | Wang, Lazarov, Sigmund 2011; Qian & Sigmund 2013 [S] |
+| Level set (SDF moved by shape derivative) | crisp boundary | Polish after SIMP; smooth, arc-friendly outlines | Wang, Wang, Guo 2003; Allaire et al. 2004 [S] |
+| Phase field (Allen–Cahn) | diffuse interface, multi-phase | Several rails on one layer (sum-to-one per cell) | Takezawa et al. 2010 [S] |
 | ESO/BESO (hard-kill by sensitivity) | binary cells | Fast screening; within 5% of SIMP in our POC | Xie & Steven 1993; Huang & Xie 2007 [S] |
-| Constructal / growth heuristics | trees grown from the sink | Intuition and seeds; beaten by SIMP in the volume-to-point literature | Bejan; Ikonen & Sobester [S] |
-| IBM power-plane heuristic | equal-resistance unit blocks between sources, a current "centre" and sinks | Minimum copper under an IR limit; patent expired (fees) | [US10546089B1](https://patents.google.com/patent/US10546089B1/en) [P] |
+| Constructal / growth heuristics | trees grown from the sink | Seeds and intuition | Bejan; Ikonen & Sobester [S] |
+| IBM power-plane heuristic | equal-resistance blocks via a current "centre" | Minimum copper under an IR limit; expired | [US10546089B1](https://patents.google.com/patent/US10546089B1/en) [P] |
 
-At scale, topology optimization has been run with 1.1 × 10⁹ voxels on a supercomputer (Aage et al., *Nature* 2017) [S]. Our problems are 10⁴–10⁶ cells per layer.
+Topology optimization has run at 1.1 × 10⁹ voxels (Aage et al., *Nature* 2017) [S]; ours are 10⁴–10⁶ cells per layer.
 
 ### Prior art closest to PCB copper
 
 | Domain | What was optimized | Result / note |
 |---|---|---|
-| Laminated busbars | per-element electric and thermal conductivity; minimum copper at temperature limit | >50% volume reduction (HAL hal-01735587) [S] |
-| Busbar eddy currents and inductance | topology vs eddy-current loss and stray L | "inductance" ill-defined for multi-contact bars; transient expansions needed (TUM; Augsburg) [S] |
-| Solar-cell front metallization (Gupta, Langelaar, van Keulen, TU Delft) | metal grid trading resistive loss against shading area | the nearest analogue of a pour (area cost vs resistance); >50% output gain on free-form cells; code [topsol](https://github.com/dkgupta90/topsol) [S] |
+| Busbars | conductivity per element vs temperature; topology vs eddy loss and stray L | >50% copper saved at a temperature limit (laminated busbar, HAL); "inductance" ill-defined for multi-contact bars (TUM, Augsburg) [S] |
+| Solar-cell front metallization (Gupta et al., TU Delft) | metal grid: resistive loss vs shading area | nearest analogue of a pour; >50% output gain on free-form cells; code [topsol](https://github.com/dkgupta90/topsol) [S] |
 | Volume-to-point heat conduction | high-k inserts draining a heated area | SIMP and constructal trees; same Laplace structure [S] |
-| Metallic antennas and microwave devices | conductivity per cell under Maxwell's equations | Hassan, Wadbro, Berggren, IEEE TAP 62(5) 2014; Aage, Mortensen, Sigmund, IJNME 83(2) 2010 (skin-depth interpolation) [S] |
+| Metallic antennas, microwave devices | conductivity per cell under Maxwell | Hassan et al., IEEE TAP 2014; Aage et al., IJNME 2010 [S] |
 | mm-wave passives (Princeton) | pixelated multi-port EM structures, deep-learning inverse design | designs in minutes (Karahan et al., *Nat. Commun.* 15:10734, 2024) [S] |
-| Silicon photonics | foundry design rules inside topology optimization | minimum width, space, area and enclosed area with differentiable morphology (Hammond et al., *Opt. Express* 29(15), 2021) [S] |
+| Silicon photonics | foundry rules inside topology optimization | width, space, area, enclosed area via differentiable morphology (Hammond et al. 2021) [S] |
 | Photonic legalization | morphological and differentiable legalizers | design-rule violations "from thousands to zero" (OptiClear, [arXiv 2607.03632](https://arxiv.org/abs/2607.03632)) [P] |
 | IC power grids | wire widths under IR and EM limits | sequence-of-linear-programs sizing (Tan, Shi); EM- and lifetime-aware SLP (TVLSI 2018) [S] |
 | Power modules | die placement and traces vs parasitic L and temperature | PowerSynth (Arkansas): **academic/non-commercial licence, reference only** [S] |
@@ -146,9 +145,16 @@ The L-only result is worse than 50/50, a local optimum. Multi-start or continuat
 - Adding 26 mm² (+25%) at the boundary cells ranked by energy density gives 1.531 mΩ. Uniform widening gives 1.666 mΩ. Re-optimizing at that total area gives 1.370 mΩ.
 - Removing the 20% least-loaded copper raises R by 21%: this layout has little dead copper.
 
-**Legalization stress test** (15% excess area, filter 0.2 mm): the raw design has a 0.70 mm neck. Legalizing at 0.5 mm costs +2.8% R. Legalizing at 1.0 mm **disconnected** the C/B limb. See [drv results below](#runtime) for the re-optimized case.
+**Legalization stress test** (area = pads + 15% of the free area, 77 mm²) [C]:
 
-**Runtime** (CPU time, one core, shared VM) [C]:<a id="runtime"></a>
+| Filter radius | Raw R_loss, min feature | Legalized at 0.5 mm | Legalized at 1.0 mm |
+|---|---|---|---|
+| 0.2 mm | 2.843 mΩ, 0.70 mm neck | 2.921 mΩ (+2.8%) | **disconnected** (C/B limb cut) |
+| 1.0 mm | 2.952 mΩ, ≈0.9–1.0 mm | 2.944 mΩ (−0.3%) | 2.946 mΩ (−0.2%) |
+
+A minimum width built into the filter costs 3.8% up front. Afterwards legalization is free and cannot cut the net.
+
+**Runtime** (CPU time, one core, shared VM) [C]:
 
 | Grid | Nodes | Sparse LU solve | Topology-optimization iteration | Human-layout R |
 |---|---|---|---|---|
@@ -157,8 +163,8 @@ The L-only result is worse than 50/50, a local optimum. Multi-start or continuat
 | 0.1 mm | 34k | 145 ms | 0.38–0.40 s | 2.092 mΩ |
 | 0.05 mm | 135k | 1.0 s | 3.2 s | 2.083 mΩ |
 
-- R converges to 0.5% at 0.1 mm. A full 200-iteration run at 0.1 mm takes about 80 s.
-- Smoothed-aggregation AMG (pyamg, MIT) needed a grid-independent 12–17 CG iterations from 33k to 524k unknowns (scratch benchmark). That is the route to O(n) GPU solves. In Python, AMG setup dominated and LU was faster at these sizes [C].
+- R converges to 0.5% at 0.1 mm; a 200-iteration run at 0.1 mm takes about 80 s.
+- Smoothed-aggregation AMG (pyamg, MIT) needed a grid-independent 12–17 CG iterations from 33k to 524k unknowns (scratch benchmark), the route to O(n) GPU solves; in Python its setup made LU faster at these sizes [C].
 
 ### Export to KiCad zones
 
@@ -172,31 +178,31 @@ The L-only result is worse than 50/50, a local optimum. Multi-start or continuat
 ```
 
 - Write it through the IPC API (zone create + refill), never by hand-editing fills ([file-format hazards](../kicad/file-format-and-version-hazards.md)).
-- `connect_pads yes` (solid) suits power pads. Hand-soldered or THT pads need relief, at the cost in the table above.
-- Set `min_thickness` at or below the legalizer's w_min so KiCad's filler does not erode the shape a second time.
+- `connect_pads yes` (solid) suits power pads; hand-soldered or THT pads need relief (cost above).
+- Set `min_thickness` ≤ the legalizer's w_min so KiCad's filler does not erode the shape again.
 - Keep the synthesis recipe (terminals, currents, area or price, filter radius) as intent, so the zone can be re-synthesized after parts move ([OP55](../../ideas/physics-first/optimization.md)).
 
 ## Recommendations for our system
 
 - **Ship one sheet solver with three coefficient maps and an adjoint.** DC, HF-inductive and thermal need no extra tools. Validate against padne (DC) and FastHenry (plane-pair L) ([open-solvers](open-solvers.md), [solver-ladder](solver-ladder.md)) [I].
 - **Use synthesis for power nets above about 3–5 A, sense and Kelvin paths, heat-spreading copper, and multi-rail plane partitions.** Below that, a width-∝-current tree ([OP29](../../ideas/physics-first/optimization.md)) is within noise of optimal [C/I].
-- **Run the adjoint advisor on every layout,** human or agent-made. It is the cheapest physics feature with direct value: it shows where copper buys mΩ, mK or nH, and where copper is dead [C].
+- **Run the adjoint advisor on every layout,** human or agent-made: the cheapest physics feature with direct value (where copper buys mΩ, K or nH; where it is dead) [C].
 - **Put fab rules in the optimizer.** Set the filter radius or robust thresholds from minimum width, then legalize by contour + close + open with a connectivity and physics re-check. Reject any legalization that breaks connectivity or moves a budget by more than its margin [C].
 - **Evaluate pours while parts move.** A coarse 0.4–0.5 mm grid solves in about 10 ms, so the joint optimizer can carry copper-density and price fields per layer ([joint-place-route](joint-place-route.md), [OP56](../../ideas/physics-first/optimization.md)) [C/I].
 - **Map h_eff from the stackup and reference-layer copper before any HF objective.** Cross-check the 2-D model with PEEC on the first boards ([power-copper](power-copper.md), [pdn-and-commutation](pdn-and-commutation.md)) [I].
 
 ## Conflicts and open questions
 
-- **The parallel-plate inductive model is a proxy across slots.** It assumes the return drops to the next plane. Real return current detours around the slot end, so L depends on slot length. Check against FastHenry or openEMS before trusting the slot variant's magnitudes [I].
-- **Is −14.5% worth the complexity?** Against a sloppy layout (uniform widths, long detours) the gain is larger. Against an expert tree it is modest. The case for synthesis rests on multi-rail partitions, thermal coupling and HF return awareness, which the single-net DC POC does not show [I].
+- **The parallel-plate inductive model is a proxy across slots.** It assumes the return drops to the next plane; real return current detours around the slot end, so L depends on slot length. Check with FastHenry or openEMS before trusting the slot magnitudes [I].
+- **Is −14.5% worth the complexity?** It is larger against sloppy layouts and modest against an expert tree. The stronger case (multi-rail partitions, thermal coupling, HF return awareness) is not shown by this single-net DC POC [I].
 - **Non-convexity.** Mixed objectives found local optima (L-only worse than 50/50). Production needs multi-start, continuation or QD over seeds [C].
 - **Grey-cell physics.** SIMP's intermediate densities are not manufacturable copper. Results above are evaluated on thresholded designs only [C].
 - **KiCad zone outlines are polygons.** Arc support in zone outlines was not verified for KiCad 10/11. Export segments at ≤0.01 mm deviation until it is [I].
-- **Nobody has published PCB-pour topology optimization** apart from the expired IBM heuristic. We may be missing commercial internals (Quilter, Cadence) [S].
+- **No published PCB-pour topology optimization** beyond the IBM heuristic; commercial internals (Quilter, Cadence) are unknown [S].
 
 ## Sources
 
-- Research notes: [constraints_verification_benchmarks.md § padne](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md) (padne: KiCad-native 2.5-D FEM DC solver; via model uncertain)
+- Research notes: [constraints_verification_benchmarks.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md) (padne DC solver)
 - Scripts: [op_topopt_pour.py](../../../tools/research/physics/op_topopt_pour.py) (all [C] numbers here), [op_placement_kernels.py](../../../tools/research/physics/op_placement_kernels.py)
 - IBM power-plane shape patent US10546089B1: https://patents.google.com/patent/US10546089B1/en [P]
 - OptiClear, arXiv 2607.03632: https://arxiv.org/abs/2607.03632 [P]
@@ -207,7 +213,7 @@ The L-only result is worse than 50/50, a local optimum. Multi-start or continuat
 - Hassan, Wadbro, Berggren, IEEE TAP 62(5):2488, 2014: https://people.cs.umu.se/martinb/downloads/Papers/HaWaBe14a.pdf [S]
 - Aage, Mortensen, Sigmund, IJNME 83(2):228, 2010: https://orbit.dtu.dk/en/publications/topology-optimization-of-metallic-devices-for-microwave-applicati/ [S]
 - Karahan et al., *Nat. Commun.* 15:10734, 2024: https://www.nature.com/nature-index/article/10.1038/s41467-024-54178-1 [S]
-- Laminated busbar thermal topology optimization: https://bibliotheque.univ-catholille.fr/doc/OAI_1/oai-HAL-hal-01735587v1 [S]; Augsburg busbar eddy currents: https://opus.bibliothek.uni-augsburg.de/opus4/files/29666/29666.pdf [S]; TUM busbars: https://www.ee.cit.tum.de/msa/forschung/leistungselektronik/busbar/ [S]
+- Busbars: https://bibliotheque.univ-catholille.fr/doc/OAI_1/oai-HAL-hal-01735587v1 ; https://opus.bibliothek.uni-augsburg.de/opus4/files/29666/29666.pdf ; https://www.ee.cit.tum.de/msa/forschung/leistungselektronik/busbar/ [S]
 - Gupta et al., solar-cell metallization: https://research.tudelft.nl/en/publications/optimizing-front-metallization-patterns-efficiency-with-aesthetic [S]
 - Volume-to-point SIMP vs constructal (Ikonen & Sobester): https://eprints.soton.ac.uk/422930/1/manuscript_ikonen_sobester.pdf [S]
 - IC P/G sizing with SLP, EM-aware (Zhou et al., TVLSI 2018): https://par.nsf.gov/servlets/purl/10104322 [S]

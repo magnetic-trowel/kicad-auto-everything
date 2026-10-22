@@ -598,12 +598,20 @@ def repair(b, s, sweeps=4):
 
 def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
     """Joint arm: SA whose moves rip up and re-route affected nets; cost = routed objective.
-    w_loop=0, bottom_cost=False gives the `joint_nophys` ablation (routed length + vias + overflow only;
-    the router's own A* costs are unchanged)."""
+    Overlaps and keep-out intrusions are hard: such moves are rejected before any routing (the start is
+    legal after `repair`). Decap violations are priced as in J (W_ILLEGAL each, plus 1 mm per cell of
+    excess). w_loop=0, bottom_cost=False gives the `joint_nophys` ablation (routed length + vias +
+    overflow only; the router's own A* costs are unchanged)."""
     wbot = W_BOT if bottom_cost else 0.0
     rnd = random.Random(seed + 7)
     s = State(b, X, Y, K)
     s.referee()                                   # warm start: negotiated routes of the start placement
+    start = s.score()
+    start.update(s.legality())
+
+    def dec_cost(ids):
+        ex = [s.dec_ex(d) for d in {d for i in ids for d in b.dec_of[i]}]
+        return W_ILLEGAL * sum(1 for e in ex if e > 0) + G * sum(ex)
     movable = [i for i in range(b.N) if i not in b.fixed]
     hot_of = [[hi for hi, h in enumerate(b.hot) if i in (h[2], h[4])] for i in range(b.N)]
     nxny = b.nx * b.ny
@@ -613,14 +621,13 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
 
     t0 = time.process_time()
     T0, T1 = 3.0, 0.02
-    moves = acc = 0
+    moves = acc = routed_moves = 0
     reroutes = 0
     while True:
         frac = (time.process_time() - t0) / secs
         if frac >= 1:
             break
         T = T0 * (T1 / T0) ** frac
-        lam = 4.0 * (400.0 / 4.0) ** frac            # placement-penalty weight (per mm^2)
         w_ovf = 2.0 * (40.0 / 2.0) ** frac            # overflow weight (mm per overused node)
         pres = 1.0 + 9.0 * frac                       # router's present-congestion cost (steps per sharer)
         rad = max(1, int(6 * (1 - frac)) + 1)
@@ -630,7 +637,16 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
         moves += 1
         ids, new = mv
         old = [(s.X[i], s.Y[i], s.K[i]) for i in ids]
-        p0 = s.pen_local(ids)
+        p0 = dec_cost(ids)
+        for i, (x, y, k) in zip(ids, new):
+            s.X[i], s.Y[i], s.K[i] = x, y, k
+        geo = sum(s.pen_one(i, skip=ids[:k]) for k, i in enumerate(ids))
+        p1 = dec_cost(ids)
+        for i, (x, y, k) in zip(ids, old):
+            s.X[i], s.Y[i], s.K[i] = x, y, k
+        if geo > 0:                                   # hard: no overlaps or keep-out intrusions
+            continue
+        routed_moves += 1
         hots = {h for i in ids for h in hot_of[i]}
         for i in ids:
             s.del_pads(i)
@@ -638,7 +654,6 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
             s.X[i], s.Y[i], s.K[i] = x, y, k
         for i in ids:
             s.add_pads(i)
-        p1 = s.pen_local(ids)
         newpads = {v for i in ids for _, v in s.pad_nodes(i)}
         aff = {n for i in ids for n in b.nets_of[i]}
         for n in range(b.M):
@@ -656,7 +671,7 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
             s.occ_add(n, +1)
         reroutes += len(aff)
         c1 = sum(net_cost(n) for n in aff) + w_loop * sum(s.loop_routed(h) for h in hots)
-        d = (c1 - c0) + w_ovf * (s.ovf - ovf0) + lam * G * G * (p1 - p0)
+        d = (c1 - c0) + w_ovf * (s.ovf - ovf0) + (p1 - p0)
         if d <= 0 or rnd.random() < math.exp(-d / T):
             acc += 1
             continue
@@ -673,7 +688,10 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
             s.occ_add(n, +1)
     own = s.score()                               # the joint optimizer's own maintained routes
     own.update(s.legality())
-    repair(b, s)                                  # pads/routes go stale here; the referee re-routes
+    own["routed_moves"] = routed_moves
+    own["start_J_routes"] = start["J"]            # the start placement's referee J (before illegal terms)
+    own["start_legality"] = {k: start[k] for k in ("overlaps", "keepout", "decap_viol")}
+    repair(b, s)                                  # no-op unless the start was illegal
     return s.X, s.Y, s.K, moves, acc, reroutes, own
 
 
