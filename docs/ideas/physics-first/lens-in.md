@@ -4,6 +4,8 @@ Round-2 lens IN. These ideas treat layout as decision-making under belief. The s
 
 Scripts: [in_decision_quality.py](../../../tools/research/physics/in_decision_quality.py) and [in_emi_voi.py](../../../tools/research/physics/in_emi_voi.py). They build on round-1 ideas without repeating them: SIM1/SIM7/SIM9/SIM10/SIM14 ([simulation](simulation.md)), DR15/DR16/DR19/DR33 ([reasoning](reasoning.md)), LA15/LA39/LA40 ([language](language.md)), FE19/FE56 ([si-emi-rf](si-emi-rf.md)), TM53/TM54 ([thermal-hv-mfg](thermal-hv-mfg.md)), XD110/XD111 ([cross-domain](cross-domain.md)), and I5, U3, V4 and S4 ([original](../original/README.md)).
 
+**Round-3 corrections (2026-10-22):** the +64% winner error was the 7-filament reference's; the 33–84% VOI share is prior-driven. ([red-team](../../topics/physics/red-team.md))
+
 Tags: *new* (not in the corpus), *combo* (new combination of known parts), *sharp* (a known idea made precise or given a number). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless tagged [C].
 
 **Build first:**
@@ -40,7 +42,7 @@ Principle E1/E6. SIM1 attaches σ to an evaluator call, and PC4 marks coverage. 
 
 Code writes the card; the LLM reads it. Principles E1/E5/E7. It answers "what is this conductor doing, and how sure are we?" Today the system holds only net membership and a role label. Test: reviewers find a seeded wrong role or a missing return faster with cards than with the ledger table. *combo, S*
 
-**IN6. Off-board conductor inventory.** Make cable shields, enclosure panels, heatsinks, chassis bonds and mounting hardware first-class bodies, each with priors and an "ask or measure" action. They are absent from both schematic and board file. Principle E1. In the EMI VOI study the enclosure, cable and test-setup offset carried 33–84% of all decision value [C]. The vocabulary has the atoms (Antenna, Port) but no workflow that gathers these facts. Test: on five products, count verdict changes after the inventory is filled versus left at defaults. *new, S*
+**IN6. Off-board conductor inventory.** Make cable shields, enclosure panels, heatsinks, chassis bonds and mounting hardware first-class bodies, each with priors and an "ask or measure" action. They are absent from both schematic and board file. Principle E1. In the EMI VOI study the enclosure, cable and test-setup offset carried 33–84% of all decision value [C] under round 1's priors; 10–49% under plausible alternatives [C, rt_voi_sensitivity]. The vocabulary has the atoms (Antenna, Port) but no workflow that gathers these facts. Test: on five products, count verdict changes after the inventory is filled versus left at defaults. *new, S*
 
 ## B. Value of information and actions
 
@@ -80,7 +82,7 @@ Report its resolution limit √nugget in the evaluator's metadata. Principle E2.
 
 **IN16. Contender-restricted calibration.** Calibrate each proxy's dispersion and bias on the top-k candidates the optimizer actually compares, not on random layouts or all visited states. Principle E2. Round-1 data show why. PP's error is 0.50 (log sd) over all loops but 0.06 among contenders, so its choices are good (91%). Area's error is smaller than PP's yet its choices are poor (16%), because the error is the omitted w/h [C]. SIM14 reweights the whole visited distribution, which still mixes in losers. Test: predicted vs observed pick-best per proxy using contender σ (here within 1–4 points for MS, MS2, PP). *sharp, S*
 
-**IN17. Two-evaluator protocol.** Select candidates with one evaluator and report the winner's physics from an independent one: a different idealization, or at least a different code base. This applies to optimizer outputs, benchmark "best-of-k" columns (PC43) and LLM-proposed repairs. Principle E6, D4. Selection on a proxy biases the winner. MS2's error on the winner grew to +64% beyond its median bias under strong selection, while its regret stayed 0% [C]. Test: reported vs independently re-evaluated winner values on 50 optimizer runs. *new, S*
+**IN17. Two-evaluator protocol.** Select candidates with one evaluator and report the winner's physics from an independent one: a different idealization, or at least a different code base. This applies to optimizer outputs, benchmark "best-of-k" columns (PC43) and LLM-proposed repairs. Principle E6, D4. Selection on a proxy biases the winner. Against PEECN, MS2's error on the winner grew to +64% beyond its median bias under strong selection; against a graded reference it is only +6.5%, so most of the drift was the reference's own error. Its regret stayed 0% [C, rt_loop_proxy]. Test: reported vs independently re-evaluated winner values on 50 optimizer runs. *new, S*
 
 **IN18. Post-selection shrinkage.** When only the selecting evaluator is available, report the winner's value shrunk by the expected selection bias: e_k·σ_u²/√(σ_u² + s²) for independent error, plus the contender-specific bias from IN16. Flag winners outside the calibration hull. Principle E2 (Smith and Winkler 2006). It converts the Goodhart audit (SIM9) from an alarm into a correction. Test: shrunk vs raw estimates against F2 on optimizer winners. *new, S*
 

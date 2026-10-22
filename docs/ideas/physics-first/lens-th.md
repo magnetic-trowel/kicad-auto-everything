@@ -29,6 +29,8 @@ These ideas build on round-1 ideas without repeating them:
 - [rule-replacements](rule-replacements.md): RG24.
 - [optimization](optimization.md): OP1, OP11.
 
+**Round-3 corrections (2026-10-22):** copper cannot damp rings above ~50 MHz but does damp plane pairs below ~30 MHz; the damping lever is 12–21 dB, not 20–27. ([red-team](../../topics/physics/red-team.md))
+
 Tags: *new* (not in the corpus), *combo* (a new combination of known parts), *sharp* (a known idea made precise or given a number). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless tagged [C].
 
 **Build first:**
@@ -50,7 +52,7 @@ The budget row reads "designed share ≥ 50%" wherever excitation × Q exceeds t
 
 Principle TP4. Res carries frequencies today. Nothing records where a mode's energy goes, yet ring-band emission rises 19.9 dB per decade of Q [C]. Test: on 5 converter EVMs, compare predicted ring-band levels and fix rankings with near-field scans. *new, M*
 
-**TH2. Copper-only Q alarm.** Flag any mode whose only loss channels are copper and laminate as undamped. Q_cu = h/δ comes from the stackup and the frequency, at F1 cost. Principle TP4 (D1). It catches LC filters, hot loops and plane pairs with no designed loss, and retires the intuition "the copper will damp it": Q_cu is 8–720 for gaps of 0.05–1.5 mm at 0.1–1 GHz [C]. Test: in the mutation benchmark, delete snubbers and ESR parts; the alarm must fire at the planted site. *sharp, S*
+**TH2. Copper-only Q alarm.** Flag any mode whose only loss channels are copper and laminate as undamped. Q_cu = h/δ comes from the stackup and the frequency, at F1 cost; it holds for rings above ~50 MHz, while plane pairs below ~30 MHz on thin cores get Q 1–10 from copper alone [C, rt_sheet_return]. Principle TP4 (D1). It catches LC filters, hot loops and plane pairs with no designed loss, and retires the intuition "the copper will damp it": Q_cu is 8–720 for gaps of 0.05–1.5 mm at 0.1–1 GHz [C]. Test: in the mutation benchmark, delete snubbers and ESR parts; the alarm must fire at the planted site. *sharp, S*
 
 **TH3. Tuned snubber synthesis.** Choose R_s, C_s and the snubber's own mounting inductance L_s together, aiming at L_s·C_s ≈ L·C_oss (Den Hartog's tuned absorber). L_s is realized through part size, via count and trace length, so snubber placement becomes a tuning variable for the joint optimizer. Accept a design only after a ±2× C_oss robustness check and an overshoot check. Principle TP4 (D3). It reaches the same Q at a third of the loss: n = 1 tuned gives Q 1.01 at 72 mW, against Q 0.96 at 216 mW for the textbook n = 3 [C]. The cost is robustness: Q rises to 2.7 when C_oss doubles. Builds on XD19, XD81 and PW29. Test: transient SPICE with vendor GaN and Si models, then one bench half-bridge with three snubber geometries. *combo, S*
 

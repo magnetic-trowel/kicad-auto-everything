@@ -6,6 +6,8 @@ prototype are in [lens-cd](../../topics/physics/lens-cd.md). Numbers tagged [C] 
 synthetic 26 × 18 mm, 2-layer, 0.8 mm board with a buck cell, a sensitive trace and a slotted
 plane. Ids from round 1 refer to the [physics-first catalog](README.md).
 
+**Round-3 corrections (2026-10-22):** ρ = ½ (×2) is a square-grid property (×1.5 triangular, ×3 honeycomb); the 2×10⁻⁹ match is algebra, not physics. ([red-team](../../topics/physics/red-team.md))
+
 Tags: **new** (not in round 1 or the corpus), **combo** (combines known pieces), **sharp**
 (sharpens a round-1 idea with an exact form, a number or a test). Effort: S (days), M (weeks),
 L (months). Principles, defined in the topic doc: P1 superposition (shares), P2 Tellegen
@@ -25,7 +27,7 @@ counterfactual signs, CD10 cancellation index, CD18 cycle-rank budgeting per ban
 2. **CD2. All-budget removal table from one diagonal** *(sharp of XD51 and SIM24, S; P3)*.
    - *Mechanism:* per band, compute the cut-admittance diagonal y_bb = (N K⁻¹ Nᵀ)_bb once. The exact change of every budget when piece b is removed is then ΔZ_qp = s_b^p s_b^q / y_bb, for all pieces and all budgets at once.
    - *Beats:* first-order adjoint prices are off by 1/(1 − ρ). That is exactly 2× for any strip of a uniform sheet, and 11× for a 3 mm notch in our board's plane neck (+22% vs +2% on the ADC's DC error) [C].
-   - *Test:* the prototype matches brute-force re-solves to 2×10⁻⁹. Repeat on a real 4-layer board.
+   - *Test:* the prototype matches brute-force re-solves to 2×10⁻⁹ (an algebraic check, not a physical one). Repeat on a real 4-layer board.
 
 3. **CD3. Thevenin addition oracle for non-local copper** *(new, S; P3)*.
    - *Mechanism:* the exact value of adding a via, jumper or bridge of impedance z between nodes m and n is ΔZ_qp = −ΔV_mn^p ΔV_mn^q / (z + Z_th,mn). The open-circuit voltages come from the existing solve; Z_th needs one solve per site, batched.

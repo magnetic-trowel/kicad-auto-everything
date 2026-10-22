@@ -2,6 +2,8 @@
 
 Round-2 lens ideas. The argument, principles P1–P7 and numbers are in [lens-sy](../../topics/physics/lens-sy.md). Everything here is a proposal [I] unless a number is tagged [C], computed by [sy_duality_balance.py](../../../tools/research/physics/sy_duality_balance.py) or [sy_images_symmetry.py](../../../tools/research/physics/sy_images_symmetry.py).
 
+**Round-3 corrections (2026-10-22):** "1 oz mirrors a 5 mm loop above 12 kHz" is only the onset (~5%); half-mirroring needs a/ℓ_m ≈ 2–5; one adjoint prices small edits only. ([red-team](../../topics/physics/red-team.md))
+
 Tags:
 - **new**: not in the 660 round-1 ideas.
 - **combo**: a new combination of existing ideas.
@@ -114,7 +116,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   
   This replaces "removed area × energy density".
 - **Principle:** P2b, P3.
-- **Why:** the area-based adjoint underestimates cuts 13–35× [C] (30× in round 1). With the tensor it is accurate to about 10%, so one adjoint really does price every edit.
+- **Why:** the area-based adjoint underestimates cuts 13–35× [C] (30× in round 1). With the tensor it is accurate to about 10%, so one adjoint prices every small edit; finite edits need exact Woodbury updates.
 - **Test:** SIM25's 100-slot set, error before and after.
 
 ## C. Nodes and loops once the plane breaks duality
@@ -263,7 +265,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Compare it with each structure's scale: h for a trace return, loop size for a commutation loop, region size for an ADC ground.
   - Pick image PEEC, a resistive sheet or a thin-sheet eddy solve per structure and band.
 - **Principle:** P6.
-- **Why:** a 1 oz plane mirrors a 5 mm loop above 12 kHz, but a trace return at h = 0.1 mm only above 0.6 MHz [C]. One f_x per stackup mislabels both.
+- **Why:** a 1 oz plane starts to mirror a 5 mm loop at 12 kHz (about 5% mirrored; half at ~93 kHz for h = 0.1 mm), but a trace return at h = 0.1 mm forms only above 0.6 MHz [C, rt_sheet_return]. One f_x per stackup mislabels both.
 - **Test:** thin-sheet eddy solver against image PEEC across these scales.
 
 **SY26. Corner-type-aware rounding** — *sharp, S.*

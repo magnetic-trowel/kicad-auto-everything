@@ -36,6 +36,8 @@ These ideas build on round-1 ideas without repeating them:
 
 Edit pricing by polarization tensors is not repeated here. It is in CT1/CT2 ([lens-ct](lens-ct.md)) and SY6/SY7/SY9 ([lens-sy](lens-sy.md)), and lens VP confirms it.
 
+**Round-3 corrections (2026-10-22):** floors are certified on the 0.1 mm raster only; a refinement study is needed for real layouts. ([red-team](../../topics/physics/red-team.md))
+
 Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), M (weeks), L (months).
 
 ## A. Floors and certificates
@@ -56,7 +58,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP3. Avoidable-loss report.** For every pour or trace tree, report (R − R_floor)/R alongside the copper's area elasticity −dlnR/dlnA. The elasticity is exactly 1 at the Beckmann floor; lower values show copper that spreading, not transport, limits.
 - **Principle:** V1.
-- **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss, and round 1's synthesis recovered 14.5 of those 15.8 points [C]. Below a few percent, reshaping is not worth the review cost.
+- **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss on the 0.1 mm raster (the floor moved 2–13% between grids), and round 1's synthesis recovered 14.5 of those 15.8 points [C]. Below a few percent, reshaping is not worth the review cost.
 - **Test:** compute it on high-current nets of 30 open boards. Check whether the boards with the largest avoidable loss are the ones designers later reworked (git history).
 
 *new, S*

@@ -6,6 +6,8 @@ Workstream 3. These ideas make physics cheap enough to call inside optimizers an
 
 Numbers tagged [C] come from [sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py) and [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py). The ideas build on [V4 proxy trust radius](../original/verification.md), the [I1 ledger and I5 criticality field](../original/intent-and-why.md), [N7/N8 exact specialist placers](../original/priority-agents-and-negotiation.md) and the [physics IR](../../topics/physics/physics-ir.md).
 
+**Round-3 corrections (2026-10-22):** PEEC's FastHenry match is scoped to 4 loops, w/h 0.3–5, 100 MHz; adjoint price maps need the polarization tensor for cuts. ([red-team](../../topics/physics/red-team.md))
+
 Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination for PCB), *sharp* (makes an existing rule or idea precise). Effort: S (days), M (weeks), L (months).
 
 **Try first:**
@@ -31,7 +33,7 @@ Each is cheap and already has a measured result behind it.
 
 **SIM6. Solver golden tests in CI.** — *sharp, S.* Fixed decks with known answers run on every commit:
 - Hammerstad-Jensen inside its range;
-- the four FastHenry rectangles (PEEC within 1.3%);
+- the four FastHenry rectangles (PEEC within 1.3%; 4 loops, w/h 0.3–5, 100 MHz);
 - the cavity f₁₀;
 - Ott's radiation formulas.
 
@@ -41,7 +43,7 @@ They catch unit, mesh and port regressions in our wrappers. Test: seed 10 plumbi
 
 ## B. Trust, calibration and escalation
 
-**SIM7. Calibrate on decision quality, not R².** — *new, S.* Score each proxy by how often it picks the true best from realistic candidate sets, and by the regret when it doesn't. For best-of-10 hot loops, plan-view area picks the PEEC-best 66% (fixed stackup) or 16% (mixed) of the time; MS2 picks it 96–98% [C]. Correlation over random layouts overstates usefulness when an optimizer's choices are near-ties. Test: report both metrics for every registered proxy; check which one predicts final-design quality.
+**SIM7. Calibrate on decision quality, not R².** — *new, S.* Score each proxy by how often it picks the true best from realistic candidate sets, and by the regret when it doesn't. For best-of-10 hot loops, plan-view area picks the PEEC-best 66% (fixed stackup) or 16% (mixed) of the time; MS2 picks it 96–98% [C]; at a fixed stackup, plain trace length picks it 82–99% and MS2 97–100% [C, rt_loop_proxy]. Correlation over random layouts overstates usefulness when an optimizer's choices are near-ties. Test: report both metrics for every registered proxy; check which one predicts final-design quality.
 
 **SIM8. Conformal σ per feature region.** — *combo, S.* Split-conformal residual quantiles (F1 vs F2, F2 vs F3) give intervals with finite-sample coverage. They widen automatically where calibration data is sparse, unlike one global Gaussian σ. Test: empirical coverage within ±3% of nominal on held-out loop families and on optimizer outputs.
 
@@ -72,7 +74,7 @@ Residuals train per-stackup bias models stored in the ledger with provenance. Te
 
 **SIM15. MS2 as the default loop-inductance spend model.** — *sharp, S.* MS2 = Σ length·L′(w,h) (air Hammerstad Z0/c) minus coupled-line mutual terms −2·overlap·(µ0/4π)·ln(1+(2h/s)²). It costs µs and has Spearman 0.999 against multi-filament PEEC with a stable +9…+14% bias that one scalar per stackup removes [C]. It replaces both "minimize loop area" (Spearman 0.36 over a plane) and µ0·h·l/w (+50…+1000% bias). Test: N7 micro-placer designs optimized with MS2 vs with area, scored by PEEC.
 
-**SIM16. Image-plane multi-filament PEEC as the F2 default.** — *sharp, S.* N filaments across each width, the high-frequency current split solved, and a PEC image for the plane. It costs 0.25–1.7 ms per loop and agrees with FastHenry on a meshed plane within 1.3% (FastHenry: 7–115 s) [C]. Escalate to meshed-plane solves only where RET-COV finds voids within ~3h. Test: 30 extracted hot loops, some with voids, against meshed-plane references.
+**SIM16. Image-plane multi-filament PEEC as the F2 default.** — *sharp, S.* N filaments across each width, the high-frequency current split solved, and a PEC image for the plane. It costs 0.25–1.7 ms per loop and agrees with FastHenry on a meshed plane within 1.3% (4 loops, w/h 0.3–5, 100 MHz; FastHenry: 7–115 s) [C]. With 7 equal filaments it reads 11–65% low for w/h ≥ 10; use ≥ 31 graded filaments. Escalate to meshed-plane solves only where RET-COV finds voids within ~3h. Test: 30 extracted hot loops, some with voids, against meshed-plane references.
 
 **SIM17. Hybrid image + local plane mesh.** — *new, M.* Keep the image for intact plane areas and mesh only the plane cells within a few h of voids, slots and antipad rows. Cost then scales with the defect, not the board. Test: accuracy against full meshed planes on slot crossings; cost against FastHenry's 56–115 s per case.
 
@@ -98,7 +100,7 @@ Routers price per mm from the table; Hammerstad-Jensen (1–2.5 µs, within 0.7%
 
 **SIM23. Dirty-region invalidation from IPC commits.** — *sharp, S.* Each commit lists the changed items. Invalidate pairwise interactions within a cutoff (~10h over planes, where mutual inductance falls as (2h/D)²) and recompute only the budgets that touch them. Test: agreement and speedup of incremental vs full recompute over a 1,000-edit session.
 
-**SIM24. Adjoint price maps for copper edits.** — *combo, S.* One adjoint solve per objective gives the first-order cost of adding or removing copper anywhere: IR loss, plane inductance, thermal resistance. Render it as a map for the router, the placer and the LLM. It was within ~15% for compact holes (0.268 vs 0.303 mW) [C]. Test: rank 100 random edits by price vs exact re-solve.
+**SIM24. Adjoint price maps for copper edits.** — *combo, S.* One adjoint solve per objective gives the first-order cost of adding or removing copper anywhere: IR loss, plane inductance, thermal resistance. Render it as a map for the router, the placer and the LLM. It was within ~15% for compact holes (0.268 vs 0.303 mW) [C]; cuts need the edit's polarization tensor and finite edits exact Woodbury updates ([solver-ladder](../../topics/physics/solver-ladder.md)). Test: rank 100 random edits by price vs exact re-solve.
 
 **SIM25. Stream-function (Δψ) screen for cuts.** — *new, S.* A line of removed copper across the current is a topological change. First-order adjoint underestimated a 6 mm slot 30× (0.27 vs 8.06 mW) [C]. The current crossing the proposed cut, Δψ along it, predicts the harm instead ([xd_sheet.py](../../../tools/research/physics/xd_sheet.py)). Run it before accepting slots, splits and antipad rows. Test: Δψ against exact ΔR for 100 slots.
 

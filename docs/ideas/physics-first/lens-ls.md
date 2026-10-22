@@ -11,6 +11,8 @@ Ideas from the round-2 lens on scales and the circuit limit. Principles P1–P7,
 
 Numbers tagged [C] come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). Ids from round 1 refer to the [physics-first catalog](README.md); CT, SY, TH, IN and CD ids refer to the sibling lens files.
 
+**Round-3 corrections (2026-10-22):** matching a resistive-terminated short line removes only the second-order error (first order is a pure delay for any Z0); "topology beats tweaks" is one case. ([red-team](../../topics/physics/red-team.md))
+
 Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (known pieces, new combination), **sharp** (an existing idea given an exact form, a number or a test). Effort: S (days), M (weeks), L (months).
 
 **Top five:** LS1 complex-image PEEC, LS8 wire-medium model, LS5 impedance-level classifier, LS15 non-perturbative trigger, LS12 ℓ–f regime plane. **Quick wins:** LS7 critical-length family, LS32 ESD path threshold.
@@ -188,7 +190,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
   2. board: stackup, plane partition, cell placement;
   3. cell interior;
   4. feature.
-- **Beats:** far-field budgets see only the low-order moments of the sources. That explains why topology beats tweaks by 20–40 dB, and it gives JPR50's outer loop a physical basis.
+- **Beats:** far-field budgets see only the low-order moments of the sources. That explains why topology beat tweaks by 20–35 dB in round 1's one EMI case (the 40 dB was an input), and it gives JPR50's outer loop a physical basis.
 - **Test:** on 5 boards, coarse-first against τ-only ordering; compare spend and backtracks.
 
 **LS25. Cells as multipole particles.** — *combo, M; P5.*

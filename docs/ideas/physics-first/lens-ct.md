@@ -2,6 +2,8 @@
 
 Round-2 lens. These ideas follow from one reading of the physics: Kirchhoff's laws are the exact, metric-free half of Maxwell's equations, and a board is a cell complex with cycles, cuts and holes. The argument, the principles CT-P1 to CT-P7 and the computed checks are in [lens-ct](../../topics/physics/lens-ct.md); the script is [ct_cut_topology.py](../../../tools/research/physics/ct_cut_topology.py). The ideas build on [language](language.md) (LA1, LA12, LA20, LA34), [critics](critics.md), [cross-domain](cross-domain.md) (XD2, XD3, XD51, XD70, XD73) and [joint-place-route](joint-place-route.md) (JPR2–JPR4), and do not repeat them.
 
+**Round-3 corrections (2026-10-22):** I_CM = −jω·ΣC_ext·V needs world-referenced V; with circuit V divide by (1 + jω·C_tot·Z_A). ([red-team](../../topics/physics/red-team.md))
+
 Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless a number is tagged [C].
 
 ## A. Cuts, holes and sheets
@@ -80,7 +82,7 @@ Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days
 
 ## Most promising
 
-1. **CT2** (crack-augmented adjoint): restores "one solve prices every edit" for cuts, with a computed check.
+1. **CT2** (crack-augmented adjoint): restores "one solve prices every small edit" for cuts, with a computed check; finite edits need exact rank-k updates.
 2. **CT9 + CT11** (board–world ledger, close locally): turns the one-cable CM problem into one electrostatic solve and a sized local cycle.
 3. **CT27 + CT28** (topological gates and events): an exact, cheap layer under every critic and the trust region for every gradient.
 4. **CT19** (neck at the stagnation point): a placement rule worth three orders of magnitude, from a 2-D solve.

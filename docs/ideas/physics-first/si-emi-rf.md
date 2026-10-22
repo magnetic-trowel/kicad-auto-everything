@@ -9,6 +9,8 @@ Evidence and numbers are in:
 - [fields-emi-budget](../../topics/physics/fields-emi-budget.md): the EMI chain;
 - [rf-geometry](../../topics/physics/rf-geometry.md): geometry thresholds and RF.
 
+**Round-3 corrections (2026-10-22):** same-edge cables buy 6–48 dB by orientation, not 40; slot ΔL is not a per-mm constant. ([red-team](../../topics/physics/red-team.md))
+
 Scripts are `tools/research/physics/fe_*.py`. Everything here is [I] until tested.
 
 **Try first:**
@@ -34,7 +36,7 @@ Each is small, rests on a model we already validated, and replaces several rules
 - **Test:** Use [pc_refplane](../../topics/physics/physics-critics.md)-style planted faults on 20 boards. Measure the rank correlation of ledger spend against PEEC/openEMS plane voltage, and confirm zero firings on benign twins.
 
 **FE2 Slot price, not slot ban** (sharp, S).
-- **Mechanism:** The router charges ω_knee·ΔL_slot·I for each void crossing, using 0.08–0.13 nH per mm of slot (PEEC-calibrated), instead of forbidding all crossings.
+- **Mechanism:** The router charges ω_knee·ΔL_slot·I for each void crossing, using ΔL ≈ μ0·l/(2 ln(4l/g)) (2.5 nH for 20 × 0.5 mm; not linear in l), instead of forbidding all crossings.
 - **Why it beats the rules:** A 2 mm antipad gap is cheap; a 20 mm slot costs as much as 8 mm of extra trace inductance.
 - **Test:** In the [R2](../original/routing.md) shadow-net router, compare price against forbid on 20 boards: completion and ledger spend.
 
@@ -81,12 +83,12 @@ Each is small, rests on a model we already validated, and replaces several rules
 
 **FE11 EMI margin as a placement loss** (combo, M).
 - **Mechanism:** The [fe_emi_budget](../../topics/physics/fields-emi-budget.md) chain plus FE3 maps gives a margin per (net, harmonic, connector pair). The placement loss is softplus(E − limit + guard).
-- **Why it beats the rules:** It subsumes "cabled connectors on one edge" (worth 40 dB in our case) and "no fast circuitry between connectors".
+- **Why it beats the rules:** It subsumes "cabled connectors on one edge" (an assumed 40 dB in our case; 6–48 dB by orientation once the board-vs-cable mode is modelled) and "no fast circuitry between connectors".
 - **Test:** A [P8](../original/placement.md) A/B on 10 boards with two or more cabled connectors, scored by PEEC/MREMC margin.
 
 **FE12 Fix ranking by sensitivity** (new, S).
 - **Mechanism:** Compute ∂margin/∂parameter for each fix: cable side, slot, edge distance, caps, t_r, series R. Offer the cheapest fix with its dB gain.
-- **Physics:** In our case the gains were 40 / 24 / 15 / 10 / 3 / 2.5 dB. Topology beats tweaks, and the ranking is case-specific, so compute it.
+- **Physics:** In our case the gains were 40 (assumed; 6–48 by orientation) / 24 / 15 / 10 / 3 / 2.5 dB. Topology beat tweaks there, and the ranking is case-specific, so compute it.
 - **Test:** Agreement with EMC engineers' fix rankings on 10 cases.
 
 **FE13 Clock plan against resonances** (new, S).
