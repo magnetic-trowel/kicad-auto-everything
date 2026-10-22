@@ -11,7 +11,7 @@ docs/
   CONVENTIONS.md           this file
   digests/<cluster>.md     executive digests, <= 800 words each
   topics/<area>/<topic>.md focused topic docs
-  ideas/                   idea inventories and the original-ideas catalog
+  ideas/                   idea inventories, the original-ideas catalog, the physics-first catalog
 reports/                   executive summary report (short, links into docs/)
 research_notes/LLM driven PCB placement and routing/
                            raw research notes = evidence; topic docs cite them
@@ -39,6 +39,7 @@ checked at the end).
 | `workflow/` | expert workflow state machine, practitioner views, trust requirements | practice |
 | `verification/` | review checklist, evaluation stack, metrics, benchmarks | practice |
 | `architecture/` | constraint/intent IR | practice |
+| `physics/` | physics-first layout: rule genealogy and basis set, vocabulary and physics IR, design reasoning, joint place+route, physics in the optimizer, solvers, power/SI/EMI/RF/thermal/HV/manufacturing physics, physics critics | physics |
 
 ## Size limits
 
@@ -73,7 +74,8 @@ See also: related topic docs (relative links)
 
 - Corrections from `verification_*.md` notes override the original notes.
 - Keep evidence tags: `[P]` read in primary source, `[S]` snippet/secondary,
-  `[V]` vendor claim, `[I]` our inference.
+  `[V]` vendor claim, `[I]` our inference, `[C]` computed by our own script
+  (name the script, under `tools/research/`).
 - Use relative links. Encode spaces in paths as `%20`.
 - Licensing: code is GPL-3.0-or-later; GPL engines can be integrated in-process.
   Avoid GPL-2.0-only, AGPL (reference only), non-commercial, and

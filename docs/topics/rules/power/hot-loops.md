@@ -84,6 +84,7 @@
 - **Stack-up advice:** ≥4 layers with an L1–L2 dielectric ≤0.127 mm under power stages (soft, strong); prefer vertical loops when there is room.
 
 ## Conflicts and open questions
+- **Physics-first challenge (2026-10-22):** near a plane (≲0.2 mm) loop area does not rank loop inductance. Equal-area loops differ 1.7×, and L follows height × squares (Σ μ0·h·dl/w). A µs proxy (MS2) picks the PEEC-best of 10 loops 96–98% of the time, against 16–66% for area [C]. Treat the area tiers above as a 2-layer/no-plane proxy. See [pdn-and-commutation](../../physics/pdn-and-commutation.md) and [solver-ladder](../../physics/solver-ladder.md).
 - **Hubing** ([LearnEMC](https://learnemc.com/not-so-good-emc-design-guidelines)) [P]: the "one layer over an adjacent plane" advice "can be misleading … supplies generating 100 Watts or more may require an isolated return". This needs a power-level context switch.
 - **No primary loop-area limit.** EPC's 0.4 vs 1.6 nH and AN-139's 13 vs 187 nH are performance data, not limits (VR §3).
 - **The estimator is uncalibrated.** Calibrate it on vendor eval-board layouts.

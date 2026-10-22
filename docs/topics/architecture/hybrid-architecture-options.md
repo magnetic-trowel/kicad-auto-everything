@@ -244,6 +244,7 @@ Why this order:
 - D turns spare compute into alternatives and learning once the pipeline is trustworthy.
 
 ## Conflicts and open questions
+- **Physics-first update (2026-10-22):** the physics-first pass recommends one joint placement+routing optimizer on a topology-carrying state, with physics spend models as the shared objective, in place of the staged place → gate → route spine for critical structures. See [joint-place-route](../physics/joint-place-route.md) and [physics/README](../physics/README.md).
 - **KiCad limits.**
   - KiCad 10 IPC has no DRC run or routing calls, so file-level work plus `kicad-cli` is required until KiCad 11 (~Q1 2027).
   - PCBWorld-Engine maintenance across 10/11 is unknown, which matters for R8 and Option C ([kicad-pns-router](../routing/kicad-pns-router.md)).

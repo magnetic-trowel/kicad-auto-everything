@@ -37,3 +37,23 @@ Input boards are third-party and are not redistributed here; see
 
 Scripts are GPL-3.0-or-later; `solver-bench/results/*.jsonl` are
 CDLA-Permissive-2.0 (see [LICENSING.md](../../LICENSING.md)).
+
+## `physics/`: physics-first layout checks and prototypes
+
+Results and interpretation: [docs/topics/physics/](../../docs/topics/physics/README.md); each topic doc tags the numbers these scripts produce as [C]. Prefix = workstream: `rg_` rule genealogy, `vo_` vocabulary/IR, `sl_` solver ladder, `pw_` power, `fe_` SI/EMI/RF, `op_` optimization, `tm_` thermal/HV/manufacturing, `dr_` design reasoning, `pc_` physics critics, `xd_` cross-domain, `jpr_` joint placement and routing. They need NumPy and SciPy (some also Shapely, pyamg or scikit-rf); quasi-static models, uncalibrated against measurement. Three PEEC solvers (`sl_loop_peec`, `pw_peec`, `fe_peec_plane`) and four sheet/thermal Laplace solvers (`pw_sheet`, `op_topopt_pour`, `xd_sheet`, `tm_board_thermal_fv`) overlap and should be merged (idea SIM46).
+
+| Script | What it does |
+|---|---|
+| `rg_proxies.py`, `rg_corners.py`, `rg_fill_and_decaps.py` | Closed forms and 2-D solves that decompress rules (3W, corners, ground fill, decap distance) |
+| `vo_return_spread.py`, `vo_numbers.py` | Return-current spread vs frequency; the vocabulary's closed-form numbers |
+| `vo_ir_check.py` | Validator prototype for the `physics:` block of `pcb-intent/0.3` |
+| `sl_loop_peec.py` | Hot-loop inductance: µs proxies (area, MS2) vs image-plane PEEC |
+| `sl_tier_costs.py` | Cost and accuracy per fidelity tier |
+| `pw_sheet.py`, `pw_xsec.py`, `pw_peec.py`, `pw_eddy.py`, `pw_cells.py` | 2-D current flow in copper masks; skin and proximity; filament PEEC; eddy currents under inductors; switching-cell width optimum |
+| `fe_peec_plane.py`, `fe_field2d.py`, `fe_cavity.py`, `fe_emi_budget.py`, `fe_geometry.py` | Return current in a meshed plane with slots; 2-D cross-section fields; plane-pair cavity with stitching; EMI budget chain; geometry thresholds |
+| `op_topopt_pour.py`, `op_placement_kernels.py` | Topology optimization of a power pour with adjoints and fab filters; differentiable placement kernels |
+| `tm_board_thermal_fv.py`, `tm_thermal_analytic.py`, `tm_hv_field.py`, `tm_paschen_altitude.py`, `tm_mfg_physics.py`, `tm_solder_reflow.py`, `tm_impedance_tolerance.py` | Board thermal FV solver; thermal closed forms; HV corner fields; Paschen and altitude; DFM process physics; tombstoning; impedance tolerance |
+| `dr_switch_cell_budget.py`, `dr_coupling_oracles.py`, `dr_noise_adjoint.py` | Sensitivity-derived hot-loop budgets; coupling oracles; adjoint susceptibility (optional ngspice cross-check via `NGSPICE`) |
+| `pc_refplane.py`, `pc_budget_calcs.py` | Physics-critic prototype (return path and plane integrity from a `.kicad_pcb`, with an in-memory mutation self-test); critic numbers |
+| `xd_sheet.py`, `xd_power_tree.py`, `xd_lengths.py`, `xd_loop_coupling.py` | Via-field transfer length and slot cost; branching power trees; screening lengths; loop coupling with plane images |
+| `jpr_joint_vs_sequential.py` | Joint vs sequential placement and routing on synthetic boards (uses `solver-bench/pcbgen.py`) |

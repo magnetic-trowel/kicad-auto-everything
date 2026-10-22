@@ -72,6 +72,7 @@
 - When explaining "why not", the LLM should quote the primary verdict (Johnson, LearnEMC). This addresses the user's need to understand why each choice was made.
 
 ## Conflicts and open questions
+- **Physics-first update (2026-10-22):** each myth and contested rule now has a computed replacement and regime in the [rule genealogy](../physics/rule-basis-set.md). Contested pairs usually optimise different quantities or the same quantity in different regimes. Examples: perimeter vs distributed stitching ([fields-si-emi](../physics/fields-si-emi.md)), copper under inductors ([pdn-and-commutation](../physics/pdn-and-commutation.md)), and the 60% vs 100% pad void, solved per stackup ([rf-geometry](../physics/rf-geometry.md)).
 - **20-H:** Archambeault's own 20-H papers were not retrieved, and Shim & Hubing's 3.6 dB figure is NOT RETR.
 - **TI "no stripline":** TI does not say what drives this advice, so the selector cannot yet be parameterised from the source alone.
 

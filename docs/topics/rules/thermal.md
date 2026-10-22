@@ -94,6 +94,7 @@
 - **Make tenting an assembly-process context switch,** not a default.
 
 ## Conflicts and open questions
+- **Physics-first challenge (2026-10-22):** a board is a fin with a spreading length of 8 mm (bare FR-4) to 38–64 mm (with copper planes) in still air [C]. On boards smaller than ~2λ, spacing hot parts buys little, and total power over area sets the floor. Placement scoring by a kernel plus edge images is within ~2% of a full solve [C]. See [thermal-physics](../physics/thermal-physics.md).
 - **Tenting:** SLOA122 vs SLUA271/TB389.
 - **Void limit:** 25% vs 50%.
 - **The estimator is first-order.** SNVA419 says it doesn't replace FEA. No JESD51-7 board definitions or package copper-area curves were extracted.
