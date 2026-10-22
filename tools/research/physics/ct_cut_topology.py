@@ -35,7 +35,7 @@ Sections (each prints a short table):
            aggressor loop (nested) vs just outside, in free space and over a plane.
   cm       Board-world cut set on a lumped half-bridge + heatsink + chassis + LISN
            graph: CM current = d/dt of the board's external charge; heatsink bond
-           options as cycle insertion; fundamental cycles that contain the LISN.
+           options as cycle insertion; a cycle census from a minimum-|Z| spanning tree.
 
 Run:  python tools/research/physics/ct_cut_topology.py [strip|pour|neck|closure|nest|cm|all]
 Deterministic. 'all' takes about 4-6 min on one CPU (strip ~2-3 min, pour ~1 min).
@@ -343,8 +343,8 @@ def sec_pour():
     print(f"    uniform crack law (pi/2) Rs dpsi^2                       : +{unif*1e3:6.3f} mW  ({exact/unif:5.2f}x low)")
     print(f"    Chebyshev crack form (non-uniform J_n), same base solve  : +{crack*1e3:6.3f} mW  ({exact/crack:5.2f}x low)")
     print(f"    x width factor {widthf:.3f} x ligament factor F({lcut/0.008:.2f}) = {lig:.3f}       : +{crack*widthf*lig*1e3:6.3f} mW  ({exact/(crack*widthf*lig):5.2f}x)")
-    print(f"    adjoint miss vs (pi/2)(l/w): exact/adjoint = {exact/adj:.1f}; aspect-ratio prediction (pi/2)(l/w)F = "
-          f"{(np.pi/2)*(lcut/wcut)*lig/2:.1f} (cell-power adjoint counts both cell columns)")
+    print(f"    adjoint miss: exact/adjoint = {exact/adj:.1f}; aspect-ratio prediction (pi/4)(l/w)F = "
+          f"{(np.pi/4)*(lcut/wcut)*lig:.1f} (edge crack (pi/2) l^2 vs cell-power adjoint 4 l d, w = 2d)")
 
     # (b) random zero-width cuts, exact by Woodbury on the base factorization
     A0, b0, idx0 = _pour_system(mask, d, rs, sinks)
@@ -556,7 +556,8 @@ def sec_nest():
         Mf = neumann(agg, vic)
         Mp = Mf + neumann(agg, img)
         print(f"  {xc:8.1f}            {lab:20s} {Mf*1e12:12.2f}          {Mp*1e12:12.3f}")
-    print("  (nesting fixes the sign and the order of magnitude of M without any distance: a topological class)")
+    print("  (free space: nesting fixes the sign and the size of M, a topological class. Over a close plane each")
+    print("   conductor closes through its image, so nesting fixes only the sign; distance to the nearest conductor sets the size)")
 
 
 # ----------------------------------------------------------------------------- cm
@@ -622,53 +623,61 @@ def sec_cm():
     for option in ("HS floating", "HS to chassis", "HS to DC-", "HS to DC- + 4.7 nF Y-cap N-CH"):
         for f in (3e6, 30e6, 100e6):
             il, ic, idisp = solve(f, option)
-            print(f"  {option:32s} {f/1e6:6.0f}     {abs(il)*1e6:10.3f}              {abs(il)/abs(idisp):8.4f}"
+            print(f"  {option:32s} {f/1e6:6.0f}     {abs(il)*1e6:10.3f}              {abs(il)/abs(idisp):10.2e}"
                   f"                 {abs(il+ic)/max(abs(il),1e-30):.1e}")
-    # fundamental cycles that contain the LISN edge, by a spanning tree of the extended graph
-    edges = [("N", "E", "LISN"), ("CH", "E", "green wire"), ("SW", "HS", "C_sw-hs"), ("N", "CH", "C_board-ch"),
-             ("HS", "CH", "C_hs-ch"), ("HS", "N", "strap (DC- bond)"), ("SW", "N", "switch")]
-    verts = sorted({e[0] for e in edges} | {e[1] for e in edges})
-    parent = {v: v for v in verts}
+    # Cycle census: fundamental cycles of a minimum-|Z| spanning tree at 30 MHz. The tree holds the
+    # low-impedance edges, so each chord's cycle is the least-impedance way that chord's current closes.
+    w30 = 2 * np.pi * 30e6
+    zc = lambda c: 1 / (w30 * c)       # noqa: E731
+    zl = lambda l: w30 * l             # noqa: E731
+    base = [("N", "E", "LISN", 25.0), ("CH", "E", "green wire", zl(L_green)), ("SW", "HS", "C_sw-hs", zc(C_sw_hs)),
+            ("N", "CH", "C_board-ch", zc(C_n_ch)), ("SW", "N", "switch", 0.0)]
+    variants = {"HS to chassis": base + [("HS", "CH", "strap to chassis", zl(L_strap))],
+                "HS to DC-": base + [("HS", "CH", "C_hs-ch", zc(C_hs_ch)), ("HS", "N", "strap to DC-", zl(L_strap))]}
+    for name, edges in variants.items():
+        verts = sorted({e[0] for e in edges} | {e[1] for e in edges})
+        parent = {v: v for v in verts}
 
-    def find(x):
-        while parent[x] != x:
-            x = parent[x]
-        return x
-    tree, chords = [], []
-    for e in edges:
-        ra, rb = find(e[0]), find(e[1])
-        if ra != rb:
-            parent[ra] = rb
-            tree.append(e)
-        else:
-            chords.append(e)
-    print(f"  extended graph (HS bonded to DC-): V = {len(verts)}, E = {len(edges)}, b1 = E - V + 1 = {len(edges)-len(verts)+1}")
-    adj = {v: [] for v in verts}
-    for e in tree:
-        adj[e[0]].append((e[1], e))
-        adj[e[1]].append((e[0], e))
+        def find(x):
+            while parent[x] != x:
+                x = parent[x]
+            return x
+        tree, chords = [], []
+        for e in sorted(edges, key=lambda e: e[3]):
+            ra, rb = find(e[0]), find(e[1])
+            if ra != rb:
+                parent[ra] = rb
+                tree.append(e)
+            else:
+                chords.append(e)
+        adj = {v: [] for v in verts}
+        for e in tree:
+            adj[e[0]].append((e[1], e))
+            adj[e[1]].append((e[0], e))
 
-    def path(a, b):
-        prev = {a: None}
-        stack = [a]
-        while stack:
-            x = stack.pop()
-            for y, e in adj[x]:
-                if y not in prev:
-                    prev[y] = (x, e)
-                    stack.append(y)
-        out = []
-        x = b
-        while prev[x] is not None:
-            out.append(prev[x][1][2])
-            x = prev[x][0]
-        return out
-    for c in chords:
-        cyc = [c[2]] + path(c[0], c[1])
-        ext = any(k in ("LISN", "green wire") for k in cyc)
-        src = "switch" in cyc or "C_sw-hs" in cyc
-        print(f"    cycle via chord '{c[2]}': {' + '.join(cyc)}   [{'external' if ext else 'internal'}"
-              f"{', driven' if src else ''}]")
+        def path(a, b):
+            prev = {a: None}
+            stack = [a]
+            while stack:
+                x = stack.pop()
+                for y, e in adj[x]:
+                    if y not in prev:
+                        prev[y] = (x, e)
+                        stack.append(y)
+            out = []
+            x = b
+            while prev[x] is not None:
+                out.append(prev[x][1][2])
+                x = prev[x][0]
+            return out
+        print(f"  cycle census, {name}: V = {len(verts)}, E = {len(edges)}, b1 = {len(edges) - len(verts) + 1}"
+              " (fundamental cycles of the minimum-|Z| tree at 30 MHz)")
+        for c in chords:
+            cyc = [c[2]] + path(c[0], c[1])
+            ext = any(k in ("LISN", "green wire") for k in cyc)
+            src = "switch" in cyc
+            print(f"    chord {c[2]:12s} ({c[3]:6.1f} ohm): {' + '.join(cyc)}   [{'external' if ext else 'internal'}"
+                  f"{', driven' if src else ''}]")
 
 
 SECTIONS = {"strip": sec_strip, "pour": sec_pour, "neck": sec_neck, "closure": sec_closure,
