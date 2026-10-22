@@ -66,6 +66,13 @@ def _track_length(t):
     return _mm(math.hypot(e.x - s.x, e.y - s.y))
 
 
+def _anchored(fp):
+    """A footprint that may not move in a place task: locked by the designer, or carrying
+    Edge.Cuts graphics (switch cut-outs, slots, card edges), which are part of the board
+    outline itself."""
+    return fp.IsLocked() or any(g.GetLayer() == pcbnew.Edge_Cuts for g in fp.GraphicalItems())
+
+
 def _placement(board):
     # "inside" = every pad centre lies within the board outline; "pads_outside" counts the
     # pad centres that do not (edge connectors may overhang).
@@ -79,6 +86,7 @@ def _placement(board):
                          x=round(_mm(p.x), 4), y=round(_mm(p.y), 4),
                          rot=round(fp.GetOrientationDegrees() % 360.0, 3),
                          back=bool(fp.IsFlipped()), locked=bool(fp.IsLocked()),
+                         anchored=bool(_anchored(fp)),
                          inside=None if out is None else out == 0, pads_outside=out))
     rows.sort(key=lambda r: r["uuid"])
     return rows
@@ -224,10 +232,13 @@ def strip_routing(src, dst, keep_locked):
 
 
 def strip_placement(src, dst):
-    """Strip all routing and move every unlocked footprint to a staging grid right of the board.
+    """Strip all routing and move every footprint that is not anchored to a staging grid right
+    of the board.
 
-    Locked footprints stay where the designer put them: they are part of the task (mounting
-    holes, connectors), and the scorer requires them unmoved.
+    Anchored footprints stay where the designer put them, and the scorer requires them
+    unmoved: locked ones are part of the task (mounting holes, connectors), and ones carrying
+    Edge.Cuts are part of the board outline (staged off-board they would leave holes or open
+    edges in the outline and add outline polygons in the staging area).
     """
     board = _load(src)
     # Move footprints before removing tracks: after Remove() SWIG returns untyped objects.
@@ -237,7 +248,7 @@ def strip_placement(src, dst):
     col_h = max(bb.GetHeight(), int(50 * NM))
     x, y, col_w = x0, y0, 0
     moved = 0
-    fps = [fp for fp in board.GetFootprints() if not fp.IsLocked()]
+    fps = [fp for fp in board.GetFootprints() if not _anchored(fp)]
     fps.sort(key=lambda f: f.GetReference())
     for fp in fps:
         fp.SetOrientationDegrees(0)
@@ -572,8 +583,9 @@ def _set_pose(fp, pos, orientation, flipped):
 
 
 def transplant_placement(out_path, inp_path, dst, ref_path=None):
-    """DEST = INPUT with each unlocked footprint moved to its pose in OUTPUT (position,
-    orientation, side). Report OUTPUT's other changes, moved locked parts, and footprints
+    """DEST = INPUT with each footprint that is not anchored (_anchored) moved to its pose in
+    OUTPUT (position, orientation, side). Report OUTPUT's other changes, moved anchored parts
+    (as locked_moved), and footprints
     missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST."""
     out, err = _try_load(out_path)
     if out is None:
@@ -592,7 +604,7 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
     copy = None
     if ref is not None:
         ref_fps = {fp.m_Uuid.AsString(): fp for fp in ref.GetFootprints()}
-        free = [u for u, fp in in_fps.items() if not fp.IsLocked() and u in out_fps and u in ref_fps]
+        free = [u for u, fp in in_fps.items() if not _anchored(fp) and u in out_fps and u in ref_fps]
         copy = _copy_stats(sum(1 for u in free if _same_pose(out_fps[u], ref_fps[u])), len(free), 5, 0.5)
     ident = _identity(out)
     routing_added = len(list(out.GetTracks()))
@@ -601,7 +613,7 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
         o = out_fps.get(u)
         if o is None:
             continue
-        if fp.IsLocked():
+        if _anchored(fp):
             if not _same_pose(fp, o):
                 locked_moved.append(fp.GetReference())
             continue

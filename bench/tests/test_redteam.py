@@ -84,6 +84,9 @@ def test_tasks_carry_no_routing_leftovers(rt):
     assert "(teardrop" in FIXTURE.read_text()
     for kind in ("route", "place"):
         assert "(teardrop" not in board_path(root / "tasks" / "redteam" / kind / "input").read_text()
+    # a footprint carrying Edge.Cuts is part of the outline: it stays where the designer put it
+    place = board_path(root / "tasks" / "redteam" / "place" / "input").read_text()
+    assert '(uuid "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1")\n\t\t(at 125 114)' in place
 
 
 def test_reference_is_valid(rt):
@@ -154,6 +157,7 @@ def test_deleted_keepout_still_applies(rt):
 
 @pytest.mark.parametrize("mode,broken", [
     ("move_locked", "locked"),
+    ("move_edge_cut", "locked"),
     ("delete_footprint", "footprints"),
     ("shrink_courtyard", "untouched"),
     ("add_copper", "no_copper"),

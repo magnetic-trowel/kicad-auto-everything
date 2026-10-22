@@ -30,7 +30,9 @@ TASK_KINDS = ("route", "place")
 # 4: qualification also requires the round trip (the human layout scored like a method's
 #    output); it drops boards whose routing relies on what tasks strip, e.g. teardrops that
 #    carry a connection or DRC rules keyed to the human copper's groups
-TASK_SPEC = 4
+# 5: footprints carrying Edge.Cuts graphics stay in place in place tasks and may not be moved,
+#    like locked ones (staged off-board they broke the board outline)
+TASK_SPEC = 5
 
 
 def split_of(pads):
