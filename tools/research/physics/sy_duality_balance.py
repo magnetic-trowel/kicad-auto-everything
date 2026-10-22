@@ -3,7 +3,7 @@
 """Symmetry, reciprocity and duality checks for the round-2 SY lens (docs/topics/physics/lens-sy.md).
 
 Quasi-static 2-D cross-section solves (graded finite-volume grid, Dirichlet conductors) and
-small closed-form calculations. numpy/scipy only; about 1-2 minutes in total.
+small closed-form calculations. numpy/scipy only; about 15 s (about 1 minute with --converge).
 
 Sections (run all, or name them: python sy_duality_balance.py duality antenna pair):
   duality  A ground plane breaks electric/magnetic duality. Two strips over a plane:
@@ -14,13 +14,14 @@ Sections (run all, or name them: python sy_duality_balance.py duality antenna pa
   antenna  Reciprocity + the Maxwell edge distribution give the MREMC edge law. A trace over a
            finite plane (width W) inside a far "world" box: plane voltage per unit DM current
            L_ret(x) = L22 - L21 vs mu0*h_e/(2*pi*sqrt((W/2)^2 - x^2)); capacitive imbalance
-           h_C(x) = C10/(C10+C20) vs w_e/(2*pi*sqrt((W/2)^2 - x^2)). L_ret scales with height,
-           h_C with width (the duality break again).
+           chi_C(x) = C10/(C10+C20) vs w_e/(2*pi*sqrt((W/2)^2 - x^2)). L_ret scales with height,
+           chi_C with width (the duality break again).
   pair     Mode conversion from geometric asymmetry of a 100-ohm-class microstrip pair:
-           current-division (imbalance) factor h = C1g/(C1g+C2g); |V_cm/V_dm| = |h - 1/2| at a
+           current-division (imbalance) factor chi = C1g/(C1g+C2g); |V_cm/V_dm| = |chi - 1/2| at a
            junction; equivalent skew at 1 GHz. Cases: one-sided pour, third trace, board edge,
            width mismatch, a reference slot under one leg; symmetric controls.
-Grid convergence is checked by repeating one case of each section at half the cell size.
+Grid convergence: --converge repeats every section at half the minimum cell size (in our run, duality and
+antenna values moved by <=2% and pair imbalances by <=8%).
 """
 import math
 import sys
@@ -32,7 +33,6 @@ import scipy.sparse.linalg as spla
 
 EPS0 = 8.854187e-12
 MU0 = 4e-7 * math.pi
-ETA0 = math.sqrt(MU0 / EPS0)
 MM = 1e-3
 
 
@@ -223,13 +223,13 @@ def sec_duality(fine=1.0):
 def sec_antenna(fine=1.0):
     print("== antenna: trace over a finite plane (W = 40 mm) in a far grounded box (the 'world', 400 mm)")
     print("   L_ret = L22 - L21 (plane voltage per unit DM current, pH/mm); prediction mu0*h_e/(2*pi*sqrt((W/2)^2-x^2))")
-    print("   h_C = C10/(C10+C20) (trace's share of the board's external charge); shape w_e/(2*pi*sqrt((W/2)^2-x^2))")
+    print("   chi_C = C10/(C10+C20) (trace's share of the board's external charge); shape w_e/(2*pi*sqrt((W/2)^2-x^2))")
     t, W, box = 0.035 * MM, 40.0 * MM, 400.0 * MM
     out = []
     for (w_mm, h_mm) in ((0.2, 0.1), (0.2, 0.4), (1.0, 0.1)):
         w, h = w_mm * MM, h_mm * MM
         print(f"  trace w = {w_mm} mm at h = {h_mm} mm above the plane (air; homogeneous so L = mu0 eps0 C0^-1)")
-        print("     x(mm)  x/(W/2)  L_ret(pH/mm)  pred     ratio   h_C        w_e = h_C*2pi*sqrt(..)(mm)")
+        print("     x(mm)  x/(W/2)  L_ret(pH/mm)  pred     ratio   chi_C      w_e = chi_C*2pi*sqrt(..)(mm)")
         for xr in (0.0, 0.5, 0.8, 0.9, 0.95, 0.975):
             x0 = xr * W / 2
             if W / 2 - x0 < w / 2 + 2 * h:
@@ -257,8 +257,8 @@ def sec_antenna(fine=1.0):
 # --------------------------------------------------------------------------------------------
 def sec_pair(fine=1.0):
     print("== pair: microstrip pair w = 0.15 mm, gap 0.20 mm, h = 0.10 mm, er 4.3, t = 35 um")
-    print("   h_C = C1g/(C1g+C2g) (row sums, plane = ground); |V_cm/V_dm| at a junction = |h_C - 1/2|.")
-    print("   dt_eq = skew giving the same conversion at 1 GHz: 2|dh|/(pi f). h_L from the air L matrix.")
+    print("   chi_C = C1g/(C1g+C2g) (row sums, plane = ground); |V_cm/V_dm| at a junction = |chi_C - 1/2|.")
+    print("   dt_eq = skew giving the same conversion at 1 GHz: 2|dchi|/(pi f). chi_L from the air L matrix.")
     w, s, h, t, er_sub = 0.15 * MM, 0.20 * MM, 0.10 * MM, 0.035 * MM, 4.3
     half, Y = 15 * MM, 15 * MM
     l1 = (-s / 2 - w, -s / 2, h, h + t)
@@ -276,7 +276,7 @@ def sec_pair(fine=1.0):
     cases.append(("leg 2 wider by 25 um", {"dw": 0.025}))
     cases.append(("slot 0.3 mm in plane under leg 2 (next plane 0.3 mm down)", {"slot": 0.3}))
     results = []
-    print("     case                                                h_C - 1/2    dB      h_L - 1/2    dt_eq@1GHz(ps)")
+    print("     case                                                chi_C - 1/2  dB      chi_L - 1/2  dt_eq@1GHz(ps)")
     for name, spec in cases:
         keys = [l1[0], l1[1], l2[0], l2[1]]
         grounds = []

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Image theory, duality and symmetry-group checks for the round-2 SY lens (lens-sy.md).
 
-numpy/scipy only; about 1 minute. Sections (run all, or name them):
+numpy/scipy only; about 1.5 minutes in total. Sections (run all, or name them):
   slit     The slit-cost law is a mode-III crack with images. Zero-width cuts in a resistor-network
            strip (R_s = 1, W = 20 mm, L = 100 mm). Compares FD with round 1's (pi/4)(dpsi/I)^2 and
            with the exact image-array forms: interior centred slit dR = -(2/pi) ln cos(pi q/2),
@@ -10,10 +10,12 @@ numpy/scipy only; about 1 minute. Sections (run all, or name them):
            Also the dual (Keller): a perfectly conducting needle ALONG the flow saves
            ~ (pi/4)(dphi/(R_s I))^2 for short needles.
   xobj     The cut price generalizes to any objective by reciprocity: dJ = (pi/4) R_s dpsi_u dpsi_lam
-           (forward x adjoint stream-function steps), where the naive first-order adjoint misses ~10-30x.
+           (forward x adjoint stream-function steps) for a Kelvin-pair objective; the naive first-order
+           adjoint over the removed links misses by 13-35x.
   halo     Cancellation with imbalance. Flat loops (vertical moments) with and without a plane
            image (h = 0.1 mm); mirrored half-loops (+/-, 3 mm apart) with current imbalance eps.
-           Halo radius vs eps against the floor eps^(1/3) (free) and eps^(1/5) (plane).
+           Worst-direction halo radius and exceedance area vs eps, field at 10/30/100 mm, and the
+           mirror-plane null; compare with the far-field floor eps^(1/3) (free) and eps^(1/5) (plane).
   share    Curie's principle for paralleled parts: same-end comb, reverse return (Z2), and a
            binary tree (transitive symmetry). Max/min current share.
   corners  Wedge exponents pi/alpha - 1 vs round-1 computed numbers; Babinet slot inductance
@@ -395,7 +397,7 @@ def sec_weave():
                          ("square (0.45 x 0.45 mm)", 0.45e-3, 0.45e-3),
                          ("1080-like (0.42 x 0.54 mm)", 0.423e-3, 0.540e-3)):
         for kappa in (0.0, 0.5):
-            A, B = 0.4, 0.5 * 0.4 if kappa else 0.0
+            A = 0.4
             B = kappa * A
             row = []
             for th in thetas:
@@ -417,8 +419,8 @@ def sec_weave():
             print(f"  {name:38s} kappa={kappa:.1f}: " + "  ".join(f"{th:5.2f}deg {v:5.2f}" for th, v in zip(thetas, row)))
 
 
-SECTIONS = {"slit": sec_slit, "xobj": sec_cross_objective, "halo": sec_halo, "share": sec_share, "corners": sec_corners, "scales": sec_scales,
-            "weave": sec_weave}
+SECTIONS = {"slit": sec_slit, "xobj": sec_cross_objective, "halo": sec_halo, "share": sec_share,
+            "corners": sec_corners, "scales": sec_scales, "weave": sec_weave}
 
 
 def main(argv):
