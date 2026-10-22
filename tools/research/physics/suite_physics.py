@@ -231,10 +231,16 @@ def process_board(it, args):
             pass
         meta['steps']['refill'] = r
         env = dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1')
-        meta['steps']['passports'] = run_child(
-            [args.python, '-I', PASSPORTS, board, '--json', out / 'passports.json', '--roles-out', out / 'roles.json',
-             '--budget-s', str(int(args.timeout * 0.85))] + args.passport_args,
-            log, args.timeout, args.mem_gb, env=env)
+        pcmd = [args.python, '-I', PASSPORTS, board, '--json', out / 'passports.json', '--roles-out', out / 'roles.json',
+                '--budget-s', str(int(args.timeout * 0.85))] + args.passport_args
+        meta['steps']['passports'] = run_child(pcmd, log, args.timeout, args.mem_gb, env=env)
+        if meta['steps']['passports']['status'] in ('memory', 'timeout'):
+            # second attempt with a smaller DC node budget and one HF cell; both attempts are recorded
+            meta['steps']['passports_first'] = meta['steps']['passports']
+            meta['steps']['passports'] = run_child(pcmd + ['--max-nodes', '100000', '--max-cells', '1'], log, args.timeout,
+                                                   args.mem_gb, env=env)
+            meta['steps']['passports']['retry'] = 'second attempt: --max-nodes 100000 --max-cells 1'
+        meta['passport_args'] = [str(x) for x in args.passport_args]
         cmd = [args.python, '-I', CRITICS, board, '--json', out / 'critics.json']
         if (out / 'roles.json').exists():
             cmd += ['--roles', out / 'roles.json']
@@ -278,7 +284,7 @@ def board_record(d):
     rec = {k: meta.get(k) for k in ('id', 'label', 'license', 'license_tier', 'split', 'copper_layers', 'footprints', 'pads',
                                     'completion', 'drc_errors', 'drc_unconnected', 'wall_s', 'error')}
     st = meta.get('steps', {})
-    rec['steps'] = {k: {kk: v.get(kk) for kk in ('status', 'reason', 'wall_s', 'peak_rss_mb', 'fills')} for k, v in st.items()}
+    rec['steps'] = {k: {kk: v.get(kk) for kk in ('status', 'reason', 'wall_s', 'peak_rss_mb', 'fills', 'retry')} for k, v in st.items()}
     rec['fills'] = (st.get('refill') or {}).get('fills')
     bi = pp.get('board_info') or {}
     rec['outline_mm2'] = bi.get('outline_mm2')
@@ -373,7 +379,7 @@ def aggregate(out):
     S['status'] = {st: dict(Counter(status_of(r, st) for r in recs)) for st in ('refill', 'passports', 'critics')}
     S['fills'] = dict(Counter((r.get('fills') or 'none').split(' (')[0] for r in recs))
     S['failures'] = [dict(id=r['id'], step=st, status=status_of(r, st), reason=(r['steps'].get(st) or {}).get('reason'))
-                     for r in recs for st in ('refill', 'passports', 'critics') if status_of(r, st) not in ('ok', None)]
+                     for r in recs for st in ('refill', 'passports_first', 'passports', 'critics') if status_of(r, st) not in ('ok', None)]
     S['failures'] += [dict(id=r['id'], step='runner', status='error', reason=r['error']) for r in recs if r.get('error')]
     S['passport_stage_errors'] = Counter(e['stage'].split(' ')[0] + ': ' + e['error'].split(':')[0]
                                          for r in recs for e in r.get('passport_errors') or [])

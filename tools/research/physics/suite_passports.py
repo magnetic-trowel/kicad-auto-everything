@@ -838,7 +838,9 @@ def run_dc(b, roles, args, res, errors):
     t0 = now()
     hnet, est0 = choose_grids(nets, gnd, roles['area'], roles['perim'], args.max_nodes)
     N = rb.build_dc(b, nets, hnet, [])
-    N.permc = 'MMD_AT_PLUS_A'
+    # COLAMD (rb's default): minimum degree on A'+A collapses on the terminals' high-degree electrode nodes
+    # (100-400 s and > 4 GB on boards COLAMD factors in 1-3 s)
+    N.permc = 'COLAMD'
     T = rb.Terminals(N, b)
     t_build = now() - t0
     # terminal groups (all created before the factorization)
@@ -871,7 +873,9 @@ def run_dc(b, roles, args, res, errors):
         plan[n] = dict(src=src, srcg=srcg, loads=loads, nloads_total=len(r['loads']))
     N.finalize()
     N.factor()
+    deg = np.bincount(np.r_[N.a, N.b], minlength=N.nn)
     out['model'] = dict(nodes=int(N.nn), branches=int(N.nb), components=int(N.ncomp), est_nodes_default_grid=int(est0),
+                        max_degree=int(deg.max()), lu_nnz=int(sum(lu.L.nnz + lu.U.nnz for lu in N.lu.values())),
                         grids_mm={n: rnd(hnet[n], 3) for n in nets}, barrels=len(N.vias), t_build_s=rnd(t_build, 3),
                         t_factor_s=rnd(N.t_factor, 3), ordering=N.permc, pads_without_cells=len(bad_pads))
     log(f"\n== DC model: {N.nn} nodes, {N.nb} branches, {N.ncomp} components; grids "
@@ -1491,7 +1495,7 @@ def main(argv=None):
     ap.add_argument('--max-loads', type=int, default=12, help='loads modelled per rail (farthest from the source first)')
     ap.add_argument('--max-rails', type=int, default=24)
     ap.add_argument('--max-cells', type=int, default=3, help='switching cells given the HF analysis')
-    ap.add_argument('--max-hf-cells', type=int, default=250000, help='HF window cells x layers budget')
+    ap.add_argument('--max-hf-cells', type=int, default=120000, help='HF window cells x layers budget (~2 GB at 120k)')
     ap.add_argument('--h-hf', type=float, default=0.15)
     ap.add_argument('--lev-faces', type=int, default=40, help='exact leverage for this many most loaded faces per rail')
     ap.add_argument('--budget-s', type=float, default=540.0, help='soft time budget; later stages are skipped past it')
