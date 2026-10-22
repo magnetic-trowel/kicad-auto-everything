@@ -44,7 +44,7 @@ The circuit limit is isothermal and lossless: one temperature and 4kTR noise per
 - "Widen entries first; 31% of loss within 3 mm" (PW9) (TP1): Explained, plus a feed law (D2).
 - "Snubber at the switch, R ≈ √(L/C_oss)" (XD19, PW29) (TP4): Qualified: tune it (D3).
 - "Controlled-ESR damping, not more values" (PDN-10 in [decoupling-pdn](../rules/decoupling-pdn.md), XD88) (TP4): R ≈ Z0 per anti-resonance, frequency-selective.
-- "Thin prepreg"; "lossy edge termination" (README P3, FE31, XD78) (TP4): Double benefit; pitch law (D4).
+- "Thin prepreg"; "lossy edge termination" (FE31, XD78) (TP4): Double benefit; pitch law (D4).
 - "LNA at the antenna"; "guard fA inputs" (AMS-05, RG24) (TP3): Loss is noise, (L−1)T; guards leave dielectric noise.
 - "261 K/W per via"; "no heatsinking through SW copper" (TP8): WF and k/ε exchange rates.
 - "Isotherm-aligned parts" (TM13, DR27); manganin shunts (TP5): Loop integral; S²/L0; pad symmetry (D5).
