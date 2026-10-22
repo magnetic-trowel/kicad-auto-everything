@@ -311,7 +311,7 @@ def _own_all(br, F):
                 continue
             f = s.get('function')
             cid = ('entry', s['rail']) if f == 'entry' else ('conv', s['rail']) if f in ('converter_output', 'converter_input') else s['id']
-            cons[s['rail']].append((cid, [_pad_xy(fp, pn) for pn in s['power_pins']], list(s['caps']), s['confidence']))
+            cons[s['rail']].append((cid, [_pad_xy(fp, pn) for pn in s['power_pins']], list(s['caps']), s.get('caps_p') or {}))
         elif s['kind'] == 'commutation_cell' and len(s['loop']) >= 3:
             fc = F.get(s['loop'][0][0])
             u, pads = s['loop'][1][0], s['loop'][1][1]
@@ -322,14 +322,14 @@ def _own_all(br, F):
                     and any(pd.net == rail for pd in F[m].pads)]
             pl = pads if isinstance(pads, list) else [pads]
             if rail:
-                cons[rail].append((s['id'], [_pad_xy(F[u], pn) for pn in pl], caps, s['confidence']))
+                cons[rail].append((s['id'], [_pad_xy(F[u], pn) for pn in pl], caps, s.get('caps_p') or {}))
     for rail, lst in cons.items():           # candidate owners the brief may not name
         src = br['nets'].get(rail, {}).get('source') or {}
         if (src.get('kind') in ('connector', 'battery') or (src.get('kind') == 'derived' and src.get('via') in ('diode', 'fuse'))) \
                 and src.get('part') in F and not any(c[0] == ('entry', rail) for c in lst):
             xy = [_pad_xy(F[src['part']], pd.number) for pd in F[src['part']].pads if pd.net == rail]
             if xy:
-                lst.append((('entry', rail), xy, [], None))
+                lst.append((('entry', rail), xy, [], {}))
     for s in br['structures']:
         if s['kind'] != 'commutation_cell' or not s.get('inductor') or s['inductor'] not in F:
             continue
@@ -337,7 +337,7 @@ def _own_all(br, F):
         if far in cons and not any(c[0] == ('conv', far) for c in cons[far]):
             xy = [_pad_xy(F[s['inductor']], pd.number) for pd in F[s['inductor']].pads if pd.net == far]
             if xy:
-                cons[far].append((('conv', far), xy, [], None))
+                cons[far].append((('conv', far), xy, [], {}))
     out = []
     for rail, lst in cons.items():
         if len(lst) < 2:
@@ -346,14 +346,14 @@ def _own_all(br, F):
         npin = defaultdict(int)
         for cid, _ in pins:
             npin[cid] += 1
-        for cid, _, caps, conf in lst:
+        for cid, _, caps, cp in lst:
             for c in caps:
                 fc = F.get(c)
                 if fc is None:
                     continue
                 cxy = _pad_xy(fc, next((pd.number for pd in fc.pads if pd.net == rail), '1'))
                 near = min(pins, key=lambda t: math.hypot(t[1][0] - cxy[0], t[1][1] - cxy[1]))[0]
-                out.append([int(near == cid), round(npin[cid] / len(pins), 4), conf])
+                out.append([int(near == cid), round(npin[cid] / len(pins), 4), cp.get(c)])
     return out
 
 
@@ -372,9 +372,10 @@ def pool_rows(rows):
     bins = {}
     for lo, hi in ((0.0, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.01)):
         sel = [o[0] for o in oa if o[2] is not None and lo <= o[2] < hi]
-        bins[f'{lo:.1f}-{min(hi, 1.0):.1f}'] = {'n': len(sel), 'acc': _mean(sel)}
+        bins[f'{lo:.1f}-{min(hi, 1.0):.1f}'] = {'n': len(sel), 'acc': _mean(sel),
+                                                'mean_p': _mean([o[2] for o in oa if o[2] is not None and lo <= o[2] < hi])}
     P['cap_ownership_all'] = {'n': len(oa), 'acc': _mean([o[0] for o in oa]), 'baseline': _mean([o[1] for o in oa]),
-                              'boards': len(per), 'per_board_mean': _mean(per), 'by_structure_confidence': bins}
+                              'boards': len(per), 'per_board_mean': _mean(per), 'by_ownership_p': bins}
     gk = [x for r in rows if 'decap' in r for x in r['decap']['_group_knn']]
     P['decap_group_knn3'] = {'n': len(gk), 'acc': _mean(gk)}
     for k in (1, 2, 3):

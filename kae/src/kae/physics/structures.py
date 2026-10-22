@@ -400,7 +400,6 @@ class ThermalField:
     jit.k0 in both the JIT and the fallback path."""
 
     def __init__(self, bv, sources, victims, gs, lam, rings=1, kern=None):
-        from scipy.special import k1
         from .jit import PY
         self.kern = kern
         self.py = PY
@@ -421,7 +420,8 @@ class ThermalField:
         x = self.a / lam
         htot = gs / (lam * lam)
         k0v = np.array([PY.k0(float(v)) for v in x])
-        self.selfcorr = (1.0 - x * k1(x)) / (math.pi * self.a * self.a * htot) - k0v / (2.0 * math.pi * gs)
+        k1v = np.array([PY.k1(float(v)) for v in x])
+        self.selfcorr = (1.0 - x * k1v) / (math.pi * self.a * self.a * htot) - k0v / (2.0 * math.pi * gs)
         r = rings
         self.ms = np.arange(-r, r + 1, dtype=float)
         self.norm = 1.0 / (2.0 * math.pi * gs)

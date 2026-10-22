@@ -90,14 +90,21 @@ class Terms:
         self.structs: list[Struct] = []
         self.thermal = None
         self.warnings = []
-        from . import jit as _jit
         self.kern = None
-        if self.knobs.jit == 'on' or (self.knobs.jit == 'auto' and _jit.enabled()):
-            self.kern = _jit.nb()
-            if _jit.compile_seconds() == 0.0:
-                _jit.warm(self.kern)
         from .build import build_structures
         build_structures(self)
+        if self.structs or self.thermal is not None:
+            # JIT kernels only when some term needs them; each compiles (or loads from
+            # numba's on-disk cache) on its first call, not here
+            from . import jit as _jit
+            if self.knobs.jit == 'on' or (self.knobs.jit == 'auto' and _jit.enabled()):
+                self.kern = _jit.nb()
+                for s in self.structs:
+                    for c in s.comps:
+                        if hasattr(c, 'kern'):
+                            c.kern = self.kern
+                if self.thermal is not None:
+                    self.thermal.kern = self.kern
         # incidence
         self.inc = {}
         for k, s in enumerate(self.structs):

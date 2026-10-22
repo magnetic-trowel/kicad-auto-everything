@@ -14,8 +14,11 @@
    crystal + its caps becomes one macro around the IC), anchors each macro on its largest
    (or locked) member, and micro-places the members around the anchor with CP-SAT: 4
    rotations, NoOverlap2D per side, minimizing the weighted segment L1 length plus a little
-   compactness. The best K distinct layouts (no-good cuts on the rotation assignment) are
-   kept as alternatives for the floorplan and the annealer's re-layout move.
+   compactness, several distinct layouts (no-good cuts on the rotation assignment).
+3. With the place terms: the layouts are ranked by the structures' own cost
+   (Terms.breakdown), the best are annealed on the terms themselves (`refine`: the proxy
+   proposes, the physics decides), and the best K are kept as alternatives for the
+   floorplan and the annealer's re-layout move.
 """
 from __future__ import annotations
 
@@ -402,6 +405,12 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
         if terms is not None:
             try:
                 rerank(P, mac, terms)
+                # anneal the best few layouts on the place terms themselves
+                for lay0 in list(mac.layouts[:top_k]):
+                    better = refine(P, mac, lay0, terms, seed=seed)
+                    if better is not None:
+                        mac.layouts.append(better)
+                rerank(P, mac, terms)
             except Exception as e:   # ranking is an improvement, never a requirement
                 if log:
                     log(f"macro {P.parts[anchor].ref}: self-term ranking failed ({type(e).__name__}: {e})")
@@ -413,6 +422,116 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
                 f"{len(mac.layouts)} layouts, proxy {st.cost:.1f} mm"
                 + (f", self term {st.self_cost:.3f}" if st.self_cost is not None else ""))
     return out
+
+
+def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02):
+    """Anneal one macro layout on the place terms themselves (the CP-SAT proxy only proposes):
+    members shift and turn around the fixed anchor; cost = Terms total (the macro's
+    structures change, everything else is fixed) + overlap of the members' rectangles (per
+    side) + a little compactness. Returns a new Layout, or None if it ends with overlaps or
+    no better than it started."""
+    import math
+    import random
+    rng = random.Random(seed)
+    g = P.g
+    a = P.parts[mac.anchor]
+    if a.movable:
+        x0, y0, x1, y1 = P.outline.bounds
+        ax, ay = (x0 + x1) / 2, (y0 + y1) / 2
+    else:
+        ax, ay = a.x0, a.y0
+    off = {i: list(v) for i, v in lay.offsets.items()}
+    mem = [i for i in off if i != mac.anchor and P.parts[i].movable]
+    if not mem:
+        return None
+    poses = {p.uuid: (p.x0, p.y0, p.rot0, p.side) for p in P.parts}
+
+    def pose(i):
+        dx, dy, k = off[i]
+        p = P.parts[i]
+        return (ax + dx * g, ay + dy * g, p.rots[k].rot, p.side)
+    for i in off:
+        if P.parts[i].movable:
+            poses[P.parts[i].uuid] = pose(i)
+
+    def rects(i):
+        dx, dy, k = off[i]
+        p = P.parts[i]
+        r = p.rots[k]
+        si = 0 if p.s > 0 else 1
+        out = [(si, (dx + r.g_own[0], dx + r.g_own[1], dy + r.g_own[2], dy + r.g_own[3]))]
+        out += [(1 - si, (dx + q[0], dx + q[1], dy + q[2], dy + q[3])) for q in r.g_opp]
+        return out
+
+    def overlap(i):
+        tot = 0
+        ri = rects(i)
+        for j in off:
+            if j == i:
+                continue
+            for sa, A in ri:
+                for sb, B in rects(j):
+                    if sa != sb:
+                        continue
+                    dx = min(A[1], B[1]) - max(A[0], B[0])
+                    dy = min(A[3], B[3]) - max(A[2], B[2])
+                    if dx > 0 and dy > 0:
+                        tot += dx * dy
+        return tot
+
+    def compact():
+        xs = [off[i][0] for i in off]
+        ys = [off[i][1] for i in off]
+        return (max(xs) - min(xs) + max(ys) - min(ys)) * g
+
+    A0 = max(1.0, sum((P.parts[i].rots[0].g_own[1] - P.parts[i].rots[0].g_own[0]) *
+                      (P.parts[i].rots[0].g_own[3] - P.parts[i].rots[0].g_own[2]) for i in off) / len(off))
+    phys = terms.total(poses)
+    start = phys
+    ov = sum(overlap(i) for i in off) / 2
+    comp = compact()
+    cost = phys + w_overlap * ov / A0 + w_compact * comp
+    r0 = max(2, int(2.0 / g))
+    T0 = 0.05 * max(1e-3, abs(phys))
+    best = None
+    for it in range(moves):
+        frac = it / moves
+        T = T0 * (1e-3 ** frac)
+        r = max(1, int(r0 * (1 - frac)))
+        i = mem[rng.randrange(len(mem))]
+        old = list(off[i])
+        ov_i = overlap(i)
+        if rng.random() < 0.7:
+            off[i][0] += rng.randint(-r, r)
+            off[i][1] += rng.randint(-r, r)
+        else:
+            k0 = off[i][2]
+            k1 = (k0 + rng.choice((1, 2, 3))) % len(P.parts[i].rots)
+            o0, o1 = P.parts[i].rots[k0].g_own, P.parts[i].rots[k1].g_own
+            off[i][0] += ((o0[0] + o0[1]) - (o1[0] + o1[1])) // 2
+            off[i][1] += ((o0[2] + o0[3]) - (o1[2] + o1[3])) // 2
+            off[i][2] = k1
+        u = P.parts[i].uuid
+        newp = pose(i)
+        d_phys = terms.delta(poses, [u], {u: newp})
+        d_ov = overlap(i) - ov_i
+        comp1 = compact()
+        delta = d_phys + w_overlap * d_ov / A0 + w_compact * (comp1 - comp)
+        if delta <= 0 or rng.random() < math.exp(-delta / T):
+            poses[u] = newp
+            phys += d_phys
+            ov += d_ov
+            comp = comp1
+            cost += delta
+            if ov == 0 and (best is None or cost < best[0]):
+                best = (cost, phys, {j: tuple(v) for j, v in off.items()})
+        else:
+            off[i] = old
+    if best is None or best[1] >= start - 1e-9:
+        return None
+    new = _layout(P, best[2], lay.cost)
+    new.self_cost = None
+    return new
 
 
 def rerank(P, mac, terms):
