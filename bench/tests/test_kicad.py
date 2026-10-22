@@ -84,3 +84,37 @@ def test_freerouting_routes_fixture(tasks):
     root, _ = tasks
     s = _run(root, adapters.Freerouting(), name="fr", timeout=300)[0]["score"]
     assert s["valid"] and s["clean"], s
+
+
+@needs_kicad
+@needs_fr
+def test_probe_routes_the_rebuilt_placement(tasks):
+    root, _ = tasks
+    row = _run(root, adapters.Reference(), kinds=("place",), name="ref-probe", timeout=300,
+               probe=adapters.Freerouting())[0]
+    assert row["score"]["legal"], row["score"]
+    p = row["probe"]["score"]
+    assert p["valid"] and p["clean"], p
+
+
+@needs_kicad
+def test_rescore_rescores_saved_outputs(tasks):
+    """A scoring fix is applied to a finished run without re-running the method."""
+    import json
+    from kaebench.score import SCORE_VERSION
+    root, _ = tasks
+    _run(root, adapters.Reference(), kinds=("route", "place"), name="ref-rescore")
+    run_dir = root / "results" / "ref-rescore"
+    for p in run_dir.glob("*/*/*/attempt-*/attempt.json"):  # as if scored by an older, wrong scorer
+        row = json.loads(p.read_text())
+        row["score"] = dict(valid=False, clean=False, legal=False)
+        row["score_version"] = 0
+        p.write_text(json.dumps(row))
+    runner.rescore(run_dir)
+    rows = {r["kind"]: r for r in report.load_rows(run_dir)}
+    assert rows["route"]["score"]["clean"] and rows["place"]["score"]["legal"]
+    assert all(r["score_version"] == SCORE_VERSION and r["rescored"][0]["from_version"] == 0
+               for r in rows.values())
+    assert json.loads((run_dir / "run.json").read_text())["rescored"][0]["attempts"] == 2
+    runner.rescore(run_dir)  # already current: nothing is rescored again
+    assert all(len(r["rescored"]) == 1 for r in report.load_rows(run_dir))

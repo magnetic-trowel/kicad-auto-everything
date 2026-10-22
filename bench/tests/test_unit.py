@@ -61,6 +61,41 @@ def test_strip_ses_placement(tmp_path):
     assert "placement" not in text and "(routes" in text
 
 
+def test_quote_ses_net_names(tmp_path):
+    ses = tmp_path / "b.ses"
+    ses.write_text('(session b (routes (network_out\n  (net ADD|SUB (wire (path F.Cu 250 0 0 1 1)))\n'
+                   '  (net "XOR_NOT" (via "Via[0-1]_800:400_um" 0 0))\n  (net \\JMP (wire)))))\n')
+    assert boardfiles.quote_ses_net_names(ses) == 2
+    text = ses.read_text()
+    assert '(net "ADD|SUB" (wire' in text and '(net "XOR_NOT"' in text and '(net "\\JMP"' in text
+
+
+def test_unblock_all_power_dsn(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    head = "(pcb b (structure\n (layer F.Cu (type {}) (property (index 0)))\n (layer B.Cu (type power))\n"
+    dsn.write_text(head.format("power") + " (plane GND (polygon F.Cu 0 0 0 1 1))))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 2
+    assert "power" not in dsn.read_text() and dsn.read_text().count("(type signal)") == 2
+    dsn.write_text(head.format("signal") + "))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 0 and "(type power)" in dsn.read_text()
+
+
+def test_dsn_unset_netclass_sizes(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
+                   '  (rule (width -0.001) (clearance 150)))\n (library\n'
+                   '  (padstack "Via[0-1]_-0.001:-0.001_um" (shape (circle F.Cu -0.001)) (shape (circle B.Cu -0.001))'
+                   ' (attach off))\n  (padstack "Via[0-1]_600:300_um" (shape (circle F.Cu 600)) (attach off)))\n'
+                   ' (network (class kicad_default a b (circuit (use_via "Via[0-1]_-0.001:-0.001_um"))'
+                   ' (rule (width -0.001)))))\n')
+    assert boardfiles.clamp_dsn_widths(dsn, 0.2) == 2
+    assert boardfiles.fix_dsn_unsized_vias(dsn, 0.5, 0.3) == 1
+    text = dsn.read_text()
+    assert "-0.001" not in text and text.count("(width 200)") == 2
+    assert text.count('"Via[0-1]_500:300_um"') == 3 and "(circle F.Cu 500)" in text and "(circle B.Cu 500)" in text
+    assert "(circle F.Cu 600)" in text and "Via[0-1]_600:300_um" in text
+
+
 def test_summarize_drc_ignores_library_checks():
     rep = dict(violations=[dict(type="clearance", severity="error"),
                            dict(type="lib_footprint_issues", severity="error"),
@@ -100,6 +135,22 @@ def test_id_list_from_file(tmp_path):
     assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None
 
 
+def test_local_boards_read_row_json(tmp_path):
+    from kaebench.cli import _local_boards
+    for name, row in (("b1", dict(id="b1", repo="https://github.com/o/r", commit=SHA, pcb_path="x/b.kicad_pcb",
+                                  license="MIT", license_tier="permissive", tags=["rf"])), ("b2", None)):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "board.kicad_pcb").write_text("(kicad_pcb)")
+        if row:
+            (d / "row.json").write_text(json.dumps(row))
+    items = {e["id"]: e for e, _ in _local_boards(tmp_path, "board.kicad_pcb", ["b1", "b2", "missing"])}
+    assert items["b1"]["license_tier"] == "permissive" and items["b1"]["tags"] == ["rf"]
+    assert items["b1"]["repo"] == "https://github.com/o/r" and items["b1"]["commit"] == SHA
+    assert items["b2"]["license"] == "unknown (local)" and items["b2"]["tags"] == []
+    assert len(_local_boards(tmp_path, "board.kicad_pcb", None)) == 2
+
+
 def test_clamp_dsn_widths(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text("(pcb b (resolution um 10) (unit um)\n (structure (rule (width 101.6) (clearance 200)))\n"
@@ -135,3 +186,31 @@ def test_rpm_shims(tmp_path):
     for bad in (b"", archive[:150]):
         r = subprocess.run([sys.executable, scripts / "cpio_extract.py", "-idum"], input=bad, cwd=tmp_path)
         assert r.returncode != 0
+
+
+def test_outside_is_judged_against_the_human_placement():
+    allowed = {"J1": 2}  # the designer's edge connector has 2 pads over the edge
+    rows = [dict(uuid="J1", pads_outside=2), dict(uuid="R1", pads_outside=0), dict(uuid="U1", pads_outside=None)]
+    assert score.outside_count(rows, allowed) == 0
+    assert score.outside_count([dict(uuid="J1", pads_outside=3), dict(uuid="R1", pads_outside=1)], allowed) == 2
+
+
+def test_work_list_interleaves_arms_per_board():
+    from kaebench import runner
+
+    class A:
+        kinds = ("route",)
+
+        def __init__(self, name):
+            self.name = name
+
+    recs = [dict(id=f"b{i}", tasks={"route": {}}) for i in range(40)]
+    arms = [(A("x"), None), (A("y"), None)]
+    work = runner.work_list(recs, arms, ("route",), 1)
+    # each board's arms are adjacent
+    assert [w[0]["id"] for w in work] == [r["id"] for r in recs for _ in arms]
+    firsts = [work[2 * i][3].name for i in range(len(recs))]
+    assert set(firsts) == {"x", "y"}  # neither arm always goes first
+    assert work == runner.work_list(recs, arms, ("route",), 1)  # deterministic
+    sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
+    assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]

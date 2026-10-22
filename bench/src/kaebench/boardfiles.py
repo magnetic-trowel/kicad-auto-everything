@@ -96,7 +96,8 @@ def clamp_dsn_widths(dsn_path, min_width_mm):
     """Raise every `(width X)` rule in a Specctra DSN to at least the board's minimum track width.
 
     Some projects give a netclass a track width below the board minimum; KiCad exports the
-    netclass width and the router then draws tracks the board's own DRC rejects.
+    netclass width and the router then draws tracks the board's own DRC rejects. A netclass
+    with no track width at all (the project file omits it) exports as `(width -0.001)`.
     Returns the number of widths raised.
     """
     text = Path(dsn_path).read_text(encoding="utf-8", errors="replace")
@@ -113,9 +114,51 @@ def clamp_dsn_widths(dsn_path, min_width_mm):
             return f"(width {floor:g})"
         return mo.group(0)
 
-    text = re.sub(r"\(width\s+([0-9.]+)\)", bump, text)
+    text = re.sub(r"\(width\s+(-?[0-9.]+)\)", bump, text)
     Path(dsn_path).write_text(text, encoding="utf-8")
     return raised
+
+
+def _paren_block(text, start):
+    """The balanced `(...)` starting at text[start] (Specctra via padstacks hold no quoted parens)."""
+    depth = 0
+    for j in range(start, len(text)):
+        depth += {"(": 1, ")": -1}.get(text[j], 0)
+        if depth == 0:
+            return text[start:j + 1]
+    return None
+
+
+def fix_dsn_unsized_vias(dsn_path, diameter_mm, drill_mm):
+    """Give vias that KiCad exported without a size the board's minimum via size.
+
+    A netclass with no via diameter or drill (the project file omits them) exports as padstack
+    `Via[0-1]_-0.001:-0.001_um` with `(circle F.Cu -0.001)` shapes. The router then places
+    zero-size vias and KiCad's SES import reads the drill from the padstack name, so both the
+    shapes and the name are rewritten. Returns the number of padstacks fixed.
+    """
+    if not diameter_mm or not drill_mm or diameter_mm <= 0 or drill_mm <= 0:
+        return 0
+    text = Path(dsn_path).read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"\(unit\s+(\w+)\)", text)
+    scale = _DSN_UNIT_PER_MM.get(m.group(1) if m else "um", 1000.0)
+    names = set(re.findall(r'"?(Via\[\d+-\d+\]_(-?[0-9.]+):(-?[0-9.]+)_um)"?', text))
+    fixed = 0
+    for name, dia, drill in sorted(names):
+        if float(dia) > 0 and float(drill) > 0:
+            continue
+        new = f"Via[{name[4:name.index(']')]}]_{diameter_mm * 1000:g}:{drill_mm * 1000:g}_um"
+        start = text.find(f'(padstack "{name}"')
+        if start < 0:
+            start = text.find(f"(padstack {name}")
+        blk = _paren_block(text, start) if start >= 0 else None
+        if blk:
+            shapes = re.sub(r"(\(circle\s+\S+\s+)-?[0-9.]+", lambda mo: f"{mo.group(1)}{diameter_mm * scale:g}", blk)
+            text = text.replace(blk, shapes, 1)
+        text = text.replace(name, new)
+        fixed += 1
+    Path(dsn_path).write_text(text, encoding="utf-8")
+    return fixed
 
 
 def strip_ses_placement(ses_in, ses_out):
@@ -130,3 +173,33 @@ def strip_ses_placement(ses_in, ses_out):
         text = text.replace(blk, "", 1)
     Path(ses_out).write_text(text, encoding="utf-8")
     return blk is not None
+
+
+def quote_ses_net_names(ses_path):
+    """Quote every bare net name in a Specctra session, in place; return how many.
+
+    KiCad writes a net like `ADD|SUB` bare in the DSN and Freerouting echoes it bare in
+    `(net ADD|SUB ...)`, but KiCad 10's SES import then rejects the whole session
+    ("ImportSpecctraSES failed"); the same name in double quotes imports onto the right net.
+    """
+    text = Path(ses_path).read_text(encoding="utf-8", errors="replace")
+    text, n = re.subn(r'\(net(\s+)([^\s"()]+)', r'(net\1"\2"', text)
+    Path(ses_path).write_text(text, encoding="utf-8")
+    return n
+
+
+def unblock_all_power_dsn(dsn_path):
+    """When every copper layer of a Specctra DSN is `(type power)`, make them signal layers.
+
+    KiCad exports its "power" layer type as Specctra `power`, but KiCad routes tracks on
+    such layers while Freerouting treats them as planes only. With no signal layer left it
+    refuses the board ("all layers are disabled"; 2.5.0 then hangs instead of exiting).
+    Boards that still have a signal layer are left alone. Returns the layers changed.
+    """
+    text = Path(dsn_path).read_text(encoding="utf-8", errors="replace")
+    kinds = re.findall(r"\(layer\s+(?:\"[^\"]*\"|[^\s()]+)\s+\(type\s+(\w+)\)", text)
+    if not kinds or any(k != "power" for k in kinds):
+        return 0
+    text, n = re.subn(r"(\(layer\s+(?:\"[^\"]*\"|[^\s()]+)\s+\(type\s+)power\)", r"\1signal)", text)
+    Path(dsn_path).write_text(text, encoding="utf-8")
+    return n
