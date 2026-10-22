@@ -50,6 +50,8 @@ def summarize(rows):
         every = [r for b in boards for r in b]
         m = dict(boards=len(boards), k=k,
                  failures=sum(1 for r in every if r["status"] != "ok"),
+                 timeouts=sum(1 for r in every if (r.get("adapter_meta") or {}).get("timed_out")),
+                 partial=sum(1 for r in every if (r.get("adapter_meta") or {}).get("partial")),
                  time_s=_mean([r.get("runtime_s") for r in every]),
                  cpu_s=_mean([(r.get("method_usage") or {}).get("cpu_s") for r in every]),
                  rss_mb_max=max([(r.get("method_usage") or {}).get("max_rss_mb") or 0 for r in every] or [0]) or None,
@@ -82,7 +84,8 @@ def summarize(rows):
 
 
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
-              "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
+              "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
+              "timeouts", "failures")
 PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
               "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
