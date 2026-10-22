@@ -77,3 +77,4 @@ Results: the `lens-*.md`, [foundations](../../docs/topics/physics/foundations.md
 | `pc2_` | `pc2_core_skeleton` | Physics core v2 skeleton: one factorization, exact edit quotes, brackets behind the proposed API |
 | `val_` | `val_voi_rank`, `val_board`, `val_floor_census`, `val_*_coupon` | VOI ranking of claims; VAL-1 predictions; pilot floor census on real boards; registered coupon predictions |
 | `rb_` | `rb_board_passports` | Conductor passports on a real `.kicad_pcb` passed on the command line |
+| `suite_` | `suite_passports`, `suite_physics` | Roles, DC passports, ground topology and hot loops for any board; batch runner over a kaebench suite or router outputs, with aggregation and router-vs-human pairing ([suite-physics-results](../../docs/topics/physics/suite-physics-results.md)) |
