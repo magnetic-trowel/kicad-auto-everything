@@ -256,3 +256,30 @@ def test_feedback_found_from_the_net_name_when_pins_are_unnamed():
     nl, r, st = structures(parts)
     v = one(st['victims'], **{'class': 'feedback'})
     assert v['divider']['top'] == 'R1' and v['divider']['bottom'] == 'R2'
+
+
+def test_pmic_buck_input_is_not_its_own_output():
+    """nPM1300: the bucks run from VSYS (pin V_DD); +1V8 is buck 1's output through a 0 ohm link, not its input."""
+    pm = IC('U1', 'nPM1300-QEXX', 'Package_DFN_QFN:QFN-32', [('1', 'VOUT1', 'VOUT1', 'power_out'), ('2', 'PVSS1', 'GND', 'input'),
+                                                            ('3', 'SW1', 'SW1', 'input'), ('4', 'V_{DD}', 'VSYS', 'power_in'),
+                                                            ('12', 'V_{IO}', '+1V8', 'power_in'), ('20', 'V_{SYS}', 'VSYS', 'power_out'),
+                                                            ('33', 'GND', 'GND', 'passive')])
+    parts = [pm, L('L1', '2u2', 'VOUT1', 'SW1'), C('C1', '10uF', 'VOUT1', 'GND'), R('R1', '0R', 'VOUT1', '+1V8'),
+             C('C2', '100n', '+1V8', 'GND'), C('C3', '100n', '+1V8', 'GND'), C('C4', '10uF', 'VSYS', 'GND'), C('C5', '10uF', 'VSYS', 'GND')]
+    nl, r, st = structures(parts)
+    c = one(st['commutation_cells'], controller='U1')
+    assert c['class'] == 'buck' and c['rail'] == 'VSYS' and c['loop'][1] == ['U1', ['4']]
+
+
+def test_logic_strap_divider_is_no_victim_but_an_adc_divider_is():
+    parts = [IC('U1', 'STM32F030C8T6', 'Package_QFP:LQFP-48', [('10', 'PA0', 'TOUCH_EN', 'bidirectional'), ('11', 'PA1', 'ADC_VBAT', 'bidirectional'),
+                                                             ('1', 'VDD', '+3V3', 'power_in'), ('8', 'VSS', 'GND', 'power_in')]),
+             IC('U2', 'AP2112K-3.3', 'Package_TO_SOT_SMD:SOT-23-5', [('1', 'VIN', 'VBAT', 'power_in'), ('5', 'VOUT', '+3V3', 'power_out'),
+                                                                     ('2', 'GND', 'GND', 'power_in')]),
+             C('C1', '1uF', '+3V3', 'GND'), C('C2', '1uF', 'VBAT', 'GND'),
+             R('R1', '100k', '+3V3', 'TOUCH_EN'), R('R2', '100k', 'TOUCH_EN', 'GND'),
+             R('R3', '1M', 'VBAT', 'ADC_VBAT'), R('R4', '1M', 'ADC_VBAT', 'GND'),
+             fp('BT1', 'LiPo', 'Battery:BatteryHolder_Keystone_1042_1x18650', [('1', 'VBAT', '+', 'passive'), ('2', 'GND', '-', 'passive')])]
+    nl, r, st = structures(parts)
+    ids = {v['id'] for v in st['victims']}
+    assert 'victim:divider:ADC_VBAT' in ids and 'victim:divider:TOUCH_EN' not in ids

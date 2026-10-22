@@ -37,7 +37,8 @@ def test_incremental_terms_match_a_fresh_evaluation():
     fresh = Annealer(P, ann.st.copy(), terms=terms, seed=0)
     assert abs(fresh.wl - ann.wl) < 1e-6 * max(1.0, fresh.wl)
     assert fresh.leg_total == ann.leg_total == ann.total_leg()
-    assert np.allclose(fresh.cong.D, ann.cong.D, atol=1e-9)
+    for name in ("Dn", "Dp", "Bk"):            # RUDY, pin escape and pad blockage stay exact
+        assert np.allclose(getattr(fresh.cong, name), getattr(ann.cong, name), atol=1e-9), name
     assert abs(fresh.phys - ann.phys) < 1e-6 * max(1.0, abs(fresh.phys))
     # the rectangles in the spatial hash are where the parts are
     for i in P.mov:

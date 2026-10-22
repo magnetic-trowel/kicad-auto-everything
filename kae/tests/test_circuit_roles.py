@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Part and net roles (kae.circuit.roles), including the failure modes found by the suite physics run
 (docs/topics/physics/suite-physics-results.md)."""
-from circuit_fixtures import C, D, IC, Q, R, board, buck_board, fp, mcu_parts
+from circuit_fixtures import C, D, IC, L, Q, R, board, buck_board, fp, mcu_parts
 
 from kae.circuit.netlist import Netlist
 from kae.circuit.roles import classify_part, infer_roles, regulator_vout
@@ -292,3 +292,55 @@ def test_mechanical_and_relay_part_kinds():
     k, sub, _ = kind('U1', 'FUSB302BMPX', 'Package_DFN_QFN:WQFN-14', [('1', 'CC2', 'CC2', 'bidirectional'), ('2', 'VBUS', 'VBUS', 'power_in'),
                                                                        ('3', 'VDD', 'VDD', 'power_in'), ('8', 'GND', 'GND', 'power_in')])
     assert (k, sub) == ('ic', 'usb_pd')
+
+
+# ------------------------------------------------------------------------------- held-out audit fixes
+def test_amplifier_known_only_by_its_pins_and_volt_valued_zeners():
+    parts = [IC('U1', '1512P08-U', 'Package_DIP:DIP-8_W7.62mm', [('2', '-', 'INM', 'input'), ('3', '+', 'INP', 'input'), ('4', 'V-', 'GND', 'power_in'),
+                                                               ('7', 'V+', 'V35P', 'power_in'), ('1', 'RG1', 'RG1', 'passive')]),
+             C('C1', '100n', 'V35P', 'GND'), C('C2', '220u', 'V35P', 'GND', lib='Capacitor_THT:CP_Radial_D10.0mm_P5.00mm'),
+             R('R1', '1k2', 'INM', 'MID'), R('R2', '1k2', 'INP', 'MID'),
+             D('D1', '16V', 'V35P', 'GND', lib='Diode_THT:D_DO-34_SOD68_P7.62mm_Horizontal')]
+    nl, r = roles_of(parts)
+    assert r.nets['INM'].role == 'analog' and r.nets['INP'].role == 'analog'
+    assert r.parts['D1'].subtype == 'zener'
+
+
+def test_input_jack_through_fuse_and_filter_is_the_source():
+    parts = [fp('J1', 'BarrelJack', 'Connector_BarrelJack:BarrelJack_Horizontal', [('1', 'JIN', '', 'passive'), ('2', 'JRET', '', 'passive')]),
+             fp('F1', '0ZRC0015', 'Fuse:Fuse_Bourns_MF-RHT050', [('1', 'JIN', '', 'passive'), ('2', 'FILT', '', 'passive')]),
+             D('D7', '1N4004', 'FILT', 'JRET', lib='Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal'), C('C9', '100n', 'FILT', 'JRET'),
+             L('L3', '10u', 'FILT', 'VIN', lib='Inductor_THT:L_Axial_L5.3mm_D2.2mm_P10.16mm'), L('L2', '10u', 'JRET', 'GND'),
+             C('C8', '220u-63V', 'VIN', 'GND', lib='Capacitor_THT:CP_Radial_D10.0mm_P5.00mm'), C('C1', '100n', 'VIN', 'GND')]
+    nl, r = roles_of(parts)
+    s = r.nets['VIN'].attrs['source']
+    assert s['kind'] == 'connector' and s['ref'] == 'J1' and s['path'] == ['L3', 'F1']
+
+
+def test_bms_shunt_and_cell_sense_inputs():
+    afe = IC('U4', 'BQ76952', 'Package_QFP:TQFP-48_7x7mm_P0.5mm',
+             [('18', 'SRP', 'SRP', 'input'), ('20', 'SRN', 'SRN', 'input'), ('3', 'VC1', 'VC1', 'input'), ('2', 'VC0', 'VC0', 'input'),
+              ('17', 'VSS', 'GND', 'power_in'), ('24', 'REG18', 'REG18', 'power_out')])
+    parts = [afe, fp('R45', '300µ', 'LibreSolar:R_Shunt_5931_Kelvin', [('1', 'BAT-', '1', 'passive'), ('2', 'SHUNT_P', '2', 'passive'),
+                                                                      ('3', 'SHUNT_N', '3', 'passive'), ('4', 'PACK-', '4', 'passive')]),
+             R('R19', '100', 'SHUNT_P', 'SRP'), R('R20', '100', 'SHUNT_N', 'SRN'), C('C28', '100nF', 'SRP', 'SRN'),
+             C('C20', '2.2uF', 'REG18', 'GND'), R('R2', '20', 'C1+', 'VC1'), C('C1', '220nF', 'VC1', 'VC0'),
+             fp('P2', 'BAT-', 'Connector:Wuerth_PowerOne', [('1', 'BAT-', '', 'passive')]),
+             fp('P4', 'PACK-', 'Connector:Wuerth_PowerOne', [('1', 'PACK-', '', 'passive')]),
+             fp('J1', 'Cells', 'Connector_Molex:Molex_Micro-Fit_3.0', [('1', 'C1+', '', 'passive'), ('2', 'GND', '', 'passive')])]
+    nl, r = roles_of(parts)
+    assert r.parts['R45'].subtype == 'shunt' and r.parts['U4'].subtype == 'battery_monitor'
+    assert r.nets['VC1'].role == 'analog' and r.nets['VC1'].subrole == 'cell_sense'
+    assert r.nets['SRP'].subrole == 'sense'
+
+
+def test_xtal_named_gpio_driving_an_led_is_not_a_clock_and_driver_enable_is_not_reset():
+    parts = [fp('U5', 'ESP32-C3-MINI-1', 'RF_Module:ESP32-C3-MINI-1', [('12', 'XTAL_32K_P', 'LED_RED', 'bidirectional'), ('3', '3V3', '+3V3', 'power_in'),
+                                                                        ('1', 'GND', 'GND', 'power_in')]),
+             R('R22', '1k', 'LED_A', 'LED_RED'), D('LED1', 'Red', 'GND', 'LED_A', lib='LED_SMD:LED_0603_1608Metric'),
+             IC('U2', 'DRV2603RUNT', 'Package_DFN_QFN:WQFN-10', [('1', 'EN', 'VIB_EN', 'input'), ('7', 'VDD', '+3V3', 'power_in'), ('5', 'GND', 'GND', 'power_in')]),
+             R('R5', '100k', 'VIB_EN', 'GND'), C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['LED_RED'].role != 'clock'
+    assert r.nets['VIB_EN'].role != 'reset'
+    assert kind('X608', 'Display', 'zswatch:ER-CON0.4-24P', [(str(i), f'N{i}', 'VDD' if i == 3 else f'P{i}', 'passive') for i in range(1, 25)])[0] == 'connector'

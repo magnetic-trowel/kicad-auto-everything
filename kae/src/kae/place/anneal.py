@@ -32,7 +32,8 @@ BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
 
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
-                 w_cong=0.3, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None):
+                 w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
+                 cong_args=None):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -118,7 +119,7 @@ class Annealer:
             self.nstruct = 1
             self.phys = 0.0
         # ---- congestion (RUDY) and escape halos
-        self.cong = Congestion(P, self) if w_cong > 0 else None
+        self.cong = Congestion(P, self, **(cong_args or {})) if w_cong > 0 else None
         # ---- macros
         self.macros = [m for m in macros if len(m.members) >= 2]
         self.macro_of = {}
@@ -132,6 +133,7 @@ class Annealer:
             cls.setdefault(P.parts[i].shape_key, []).append(i)
         self.swap_class = {i: c for c in cls.values() if len(c) > 1 for i in c}
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc)
+        self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
         self.lam0, self.lam1 = lam0, lam1
@@ -303,7 +305,7 @@ class Annealer:
         disp_new = self._disp(S)
         d_cong = 0.0
         if self.cong is not None:
-            d_cong = self.cong.trial(nets) - cong_old
+            d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
         d_phys = 0.0
         moved_u = [self.uuid[i] for i in S if self.uuid[i] in self.tparts]
         if moved_u:
@@ -453,7 +455,7 @@ class Annealer:
         HPWL, mean part area and size, seed positions, final legality weight)."""
         o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
                      w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
-                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier)
+                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()

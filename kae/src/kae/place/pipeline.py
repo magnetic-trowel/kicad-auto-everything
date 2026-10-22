@@ -194,11 +194,16 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     #      structures -> macros
     macros, terms, report_terms = [], None, None
     t = time.monotonic()
-    try:
-        report_terms, tsrc = make_terms(board, brief, barrier=0.0)   # linear utilization in the annealer
-    except Exception as e:
-        log(f"place terms failed ({type(e).__name__}: {e})")
-        report_terms, tsrc = None, "none"
+    if not (brief or {}).get("structures"):
+        tsrc = "none (no structures in the brief)"     # nothing to price: skip the build
+        rep["scorecard"] = dict(total_linear=0.0, total=0.0, structures=0, over_budget=0)
+        rep["scorecard_seed"] = dict(rep["scorecard"])
+    else:
+        try:
+            report_terms, tsrc = make_terms(board, brief, barrier=0.0)   # linear utilization in the annealer
+        except Exception as e:
+            log(f"place terms failed ({type(e).__name__}: {e})")
+            report_terms, tsrc = None, "none"
     stage("terms", t)
     if physics:
         t = time.monotonic()

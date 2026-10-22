@@ -1631,7 +1631,7 @@ def _signal_roles(nl: Netlist, roles: Roles):
             evs.append(ev('topology', 'crystal terminal (high impedance)', MODERATE))
         if evs:
             sub = 'adc_input' if re.search(r'ADC|AIN|AN\d', s + ' '.join(fns)) else 'reference' if re.search(r'REF', s + ' '.join(fns)) else (
-                'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR', s + ' '.join(fns))
+                'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR|SR[PN]\b', s + ' ' + ' '.join(fns))
                 or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
                 else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s)
                 else ('cell_sense' if roles.parts[opamp_in[net][0]].subtype == 'battery_monitor' else 'opamp_input') if net in opamp_in else 'analog')

@@ -10,6 +10,11 @@ Weak labels:
   decap ownership   on rails shared by several ICs, is the IC a capacitor is assigned to the
                     owner of the nearest power pin on that rail? Baseline: an owner drawn with
                     probability proportional to its power-pin count.
+  cap ownership     the same question for every rail-to-ground capacitor on a rail with two or more
+    (all owners)    candidate owners: decap groups (their power pins), commutation cells (the IC's loop
+                    pins), a connector-fed rail's entry (the source part's pins) and a converter's output
+                    (the inductor's far pad); the entry and converter-output owners are candidates even when
+                    the brief does not name them. Baseline: owner drawn in proportion to its pin count.
   decap k-nearest   is the cap assigned to a power pin among the k nearest capacitors to that
                     pin (k = 1, 2, 3), and among the k nearest capacitors on the same rail?
                     Baseline: a capacitor drawn uniformly from the same rail.
@@ -208,6 +213,7 @@ def eval_board(args):
                     knn[k].append(c in order[:k])
                     knn_rail[k].append(c in rc[:k])
                     knn_base[k].append(min(k, nr) / nr if nr else 0.0)
+    row['own_all'] = _own_all(br, by_uuid)
     row['decap'] = {'groups': len(dec), 'own_n': len(own), 'own_acc': _mean([o[0] for o in own]),
                     'own_base': _mean([o[1] for o in own]), 'group_knn3': _mean(group_knn), 'group_knn_n': len(group_knn),
                     'pin_n': len(knn[1]), **{f'knn{k}': _mean(knn[k]) for k in (1, 2, 3)},
@@ -295,6 +301,62 @@ def eval_board(args):
     return row
 
 
+def _own_all(br, F):
+    """[(correct, baseline)] per capacitor on rails with two or more candidate owners (all owner kinds)."""
+    cons = defaultdict(list)            # rail -> [(owner id, [pin xy], [caps])]
+    for s in br['structures']:
+        if s['kind'] == 'decap':
+            fp = F.get(s['ic'])
+            if fp is None or not isinstance(s['rail'], str):
+                continue
+            f = s.get('function')
+            cid = ('entry', s['rail']) if f == 'entry' else ('conv', s['rail']) if f in ('converter_output', 'converter_input') else s['id']
+            cons[s['rail']].append((cid, [_pad_xy(fp, pn) for pn in s['power_pins']], list(s['caps']), s['confidence']))
+        elif s['kind'] == 'commutation_cell' and len(s['loop']) >= 3:
+            fc = F.get(s['loop'][0][0])
+            u, pads = s['loop'][1][0], s['loop'][1][1]
+            if fc is None or F.get(u) is None:
+                continue
+            rail = next((pd.net for pd in fc.pads if pd.number == str(s['loop'][0][1])), None)
+            caps = [m for m in s['members_ref'] if br['parts'].get(m, {}).get('kind') == 'capacitor' and F.get(m) is not None
+                    and any(pd.net == rail for pd in F[m].pads)]
+            pl = pads if isinstance(pads, list) else [pads]
+            if rail:
+                cons[rail].append((s['id'], [_pad_xy(F[u], pn) for pn in pl], caps, s['confidence']))
+    for rail, lst in cons.items():           # candidate owners the brief may not name
+        src = br['nets'].get(rail, {}).get('source') or {}
+        if (src.get('kind') in ('connector', 'battery') or (src.get('kind') == 'derived' and src.get('via') in ('diode', 'fuse'))) \
+                and src.get('part') in F and not any(c[0] == ('entry', rail) for c in lst):
+            xy = [_pad_xy(F[src['part']], pd.number) for pd in F[src['part']].pads if pd.net == rail]
+            if xy:
+                lst.append((('entry', rail), xy, [], None))
+    for s in br['structures']:
+        if s['kind'] != 'commutation_cell' or not s.get('inductor') or s['inductor'] not in F:
+            continue
+        far = s.get('vout') if s['class'] == 'buck' else s.get('vin') if s['class'] == 'boost' else None
+        if far in cons and not any(c[0] == ('conv', far) for c in cons[far]):
+            xy = [_pad_xy(F[s['inductor']], pd.number) for pd in F[s['inductor']].pads if pd.net == far]
+            if xy:
+                cons[far].append((('conv', far), xy, [], None))
+    out = []
+    for rail, lst in cons.items():
+        if len(lst) < 2:
+            continue
+        pins = [(cid, xy) for cid, xys, _, _ in lst for xy in xys]
+        npin = defaultdict(int)
+        for cid, _ in pins:
+            npin[cid] += 1
+        for cid, _, caps, conf in lst:
+            for c in caps:
+                fc = F.get(c)
+                if fc is None:
+                    continue
+                cxy = _pad_xy(fc, next((pd.number for pd in fc.pads if pd.net == rail), '1'))
+                near = min(pins, key=lambda t: math.hypot(t[1][0] - cxy[0], t[1][1] - cxy[1]))[0]
+                out.append([int(near == cid), round(npin[cid] / len(pins), 4), conf])
+    return out
+
+
 def _mean(v):
     v = [float(x) for x in v if x is not None]
     return round(sum(v) / len(v), 4) if v else None
@@ -305,6 +367,14 @@ def pool_rows(rows):
     own = [o for r in rows if 'decap' in r for o in r['decap']['_own']]
     P['decap_ownership'] = {'n': len(own), 'acc': _mean([o[0] for o in own]), 'baseline': _mean([o[1] for o in own]),
                             'boards': sum(1 for r in rows if r.get('decap', {}).get('own_n'))}
+    oa = [o for r in rows for o in r.get('own_all', [])]
+    per = [sum(o[0] for o in r['own_all']) / len(r['own_all']) for r in rows if r.get('own_all')]
+    bins = {}
+    for lo, hi in ((0.0, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.01)):
+        sel = [o[0] for o in oa if o[2] is not None and lo <= o[2] < hi]
+        bins[f'{lo:.1f}-{min(hi, 1.0):.1f}'] = {'n': len(sel), 'acc': _mean(sel)}
+    P['cap_ownership_all'] = {'n': len(oa), 'acc': _mean([o[0] for o in oa]), 'baseline': _mean([o[1] for o in oa]),
+                              'boards': len(per), 'per_board_mean': _mean(per), 'by_structure_confidence': bins}
     gk = [x for r in rows if 'decap' in r for x in r['decap']['_group_knn']]
     P['decap_group_knn3'] = {'n': len(gk), 'acc': _mean(gk)}
     for k in (1, 2, 3):

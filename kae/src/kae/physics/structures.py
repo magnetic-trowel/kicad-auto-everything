@@ -201,103 +201,6 @@ def _loop_points(st, terms, closed):
     return [txy(st, t) for t in terms] + ([txy(st, terms[0])] if closed else [])
 
 
-_GL3 = np.polynomial.legendre.leggauss(3)
-_GL6 = np.polynomial.legendre.leggauss(6)
-
-
-def mutual_paths(pa, za, pv, zv, ha_via, hv_via, n=3):
-    """Neumann mutual (nH) between an aggressor path and a victim path over a plane at z=0.
-
-    pa, pv: (k, 2) arrays of path vertices (closed paths repeat the first vertex);
-    za, zv: heights of the horizontal parts; ha_via/hv_via: if not None, the open path is
-    closed through the plane by vertical vias of that height at both ends. The aggressor
-    is imaged (horizontal reversed, vertical same direction)."""
-    def segs(p, z, hv):
-        a = np.column_stack([p[:-1], np.full(len(p) - 1, z)])
-        b = np.column_stack([p[1:], np.full(len(p) - 1, z)])
-        if hv is not None:
-            a = np.vstack([[p[0][0], p[0][1], 0.0], a, [p[-1][0], p[-1][1], z]])
-            b = np.vstack([[p[0][0], p[0][1], z], b, [p[-1][0], p[-1][1], 0.0]])
-        return a, b
-    x, wq = (_GL3 if n == 3 else _GL6)
-    t = 0.5 * (x + 1.0)
-    w = 0.5 * wq
-
-    def gauss(a, b):
-        d = b - a
-        P = (a[:, None, :] + t[None, :, None] * d[:, None, :]).reshape(-1, 3)
-        dl = (w[None, :, None] * d[:, None, :]).reshape(-1, 3)
-        return P, dl
-    Aa, Ab = segs(np.asarray(pa, float), za, ha_via)
-    Va, Vb = segs(np.asarray(pv, float), zv, hv_via)
-    Pa, dla = gauss(Aa, Ab)
-    Pv, dlv = gauss(Va, Vb)
-    diff = Pa[:, None, :] - Pv[None, :, :]
-    R = np.sqrt((diff * diff).sum(-1))
-    m = ((dla @ dlv.T) / np.maximum(R, 1e-6)).sum()
-    Pi = Pa * np.array([1.0, 1.0, -1.0])
-    dli = dla * np.array([-1.0, -1.0, 1.0])
-    diff = Pi[:, None, :] - Pv[None, :, :]
-    R = np.sqrt((diff * diff).sum(-1))
-    m += ((dli @ dlv.T) / np.maximum(R, 1e-6)).sum()
-    return 0.1 * float(m)
-
-
-def _cself(A, h, eps_r):
-    """Patch capacitance to the plane (pF): plate eps A / h plus an edge term 2 eps0 sqrt(A)."""
-    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)
-
-
-def _cext(A, h):
-    """The patch's external (air-side) dipole strength as a capacitance: the field above the
-    board of a patch at V over a plane is that of a dipole 2 eps0 A V, whatever the
-    dielectric under it (lens SY, D1), so the mutual product uses eps0 A / h, not eps_r."""
-    return EPS0 * A / h + EPS0 * 2.0 * math.sqrt(A)
-
-
-def patches_cm(na, nv, h, eps_r):
-    """Mutual capacitance (pF) between the copper of an aggressor node and a victim net,
-    given as cached patch sets (patches (x, y, A mm^2), cx, cy, total A, extent), at height
-    h over a plane (h = inf: free space, approximated by h = 1.6 mm). First order in the
-    potential coefficients with the plane image: C_av ~ C_a C_v p_av,
-    p_av = (1/(4 pi eps0)) (1/r - 1/sqrt(r^2 + 4 h^2)); far apart, the totals at the centroids."""
-    pa, ax, ay, Aa, ea = na
-    pv, vx, vy, Av, ev = nv
-    h = 1.6 if h == INF else max(h, 0.05)
-    k = 1.0 / (4.0 * math.pi * EPS0)
-    r = _hyp(ax - vx, ay - vy)
-    if r > 3.0 * (ea + ev) + 2.0 * h:
-        p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
-        return _cext(Aa, h) * _cext(Av, h) * p
-    cm = 0.0
-    for xa, ya, A1 in pa:
-        ca = _cext(A1, h)
-        for xv, yv, A2 in pv:
-            rr = max(_hyp(xa - xv, ya - yv), 0.5 * (math.sqrt(A1) + math.sqrt(A2)))
-            p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
-            cm += ca * _cext(A2, h) * p
-    return cm
-
-
-def loop_mutual(al, vl, st, h, near_quad=True):
-    """|M| (nH) between an aggressor LoopShape and a victim LoopShape over the plane at h
-    (inf: free space). Far apart (centroid distance >= 2 max size and >= 4h): point dipoles
-    of each loop with its image system; near: Gauss quadrature of the Neumann integral."""
-    ga = al.geo(st)
-    gv = vl.geo(st)
-    ca, cv = ga[1], gv[1]
-    r = _hyp(ca[0] - cv[0], ca[1] - cv[1])
-    if h == INF:
-        if not (al.closed and vl.closed):
-            return 0.0
-        if r >= 2.0 * max(ga[2], gv[2], 1e-3):
-            return abs(0.1 * ga[3] * gv[3] / (r ** 3))        # coplanar dipoles, free space
-        return abs(_free_mutual(ga[0], gv[0]))
-    if r >= 2.0 * max(ga[2], gv[2]) and r >= 4.0 * h:
-        return abs(far_mutual(_dipoles(ga, h, al.closed, al.z), _victim_moments(gv, h, vl.closed, vl.z)))
-    m = mutual_paths(ga[0], h + al.z, gv[0], h + vl.z, None if al.closed else h, None if vl.closed else h,
-                     n=6 if r < max(ga[2], gv[2]) else 3)
-    return abs(m)
 
 
 class LoopShape:
@@ -338,42 +241,6 @@ class LoopShape:
     def arr(self, st):
         self.geo(st)
         return self._arr
-
-
-def _dipoles(geo, h, closed, z):
-    """Magnetic dipole system (per unit current) of a loop shape plus its plane image:
-    list of (x, y, z, mx, my, mz). Closed loop at height h: m = A z^ at +h and -A z^ at -h
-    (a quadrupole); a path closed through the plane: its vertical rectangle and image, one
-    horizontal dipole m = 2h z^ x chord at the plane."""
-    pts, (cx, cy), size, area, chord = geo
-    if closed:
-        return [(cx, cy, h + z, 0.0, 0.0, area), (cx, cy, -(h + z), 0.0, 0.0, -area)]
-    hh = h + z
-    # moment of the closed path top (at +hh) -> via down -> image path back (at -hh) -> via up
-    return [(cx, cy, 0.0, -2.0 * hh * chord[1], 2.0 * hh * chord[0], 0.0)]
-
-
-def _victim_moments(geo, h, closed, z):
-    """Physical area vectors (no image) of a victim loop: closed on top: A z^ at height h;
-    closed through the plane: the curtain under its path, h z^ x chord at height h/2."""
-    pts, (cx, cy), size, area, chord = geo
-    hh = h + z
-    if closed:
-        return [(cx, cy, hh, 0.0, 0.0, area)]
-    return [(cx, cy, 0.5 * hh, -hh * chord[1], hh * chord[0], 0.0)]
-
-
-def far_mutual(dip_a, mom_v):
-    """M (nH) = sum_v m_v . B_a(r_v) with B of point dipoles: (mu0/4pi)(3 (m.n) n - m)/R^3."""
-    M = 0.0
-    for xa, ya, za, mx, my, mz in dip_a:
-        for xv, yv, zv, vx, vy, vz in mom_v:
-            rx, ry, rz = xv - xa, yv - ya, zv - za
-            R2 = rx * rx + ry * ry + rz * rz
-            R = math.sqrt(R2)
-            mr = (mx * rx + my * ry + mz * rz) / R2
-            M += (3.0 * mr * (vx * rx + vy * ry + vz * rz) - (mx * vx + my * vy + mz * vz)) / (R2 * R)
-    return 0.1 * M
 
 
 class NodeShape:
@@ -423,21 +290,27 @@ def _scratch():
 
 
 def _mutual(kern, al, vl, st, h):
-    if kern is None:
-        return loop_mutual(al, vl, st, h)
-    from .jit import GAUSS
+    """|M| (nH) between an aggressor and a victim LoopShape (kernel: jit.loop_mutual_core)."""
+    from .jit import GAUSS, PY
+    kern = kern or PY
     PA = al.arr(st)
     PV = vl.arr(st)
-    if (PA.shape[0] + 2) * 6 > 512 or (PV.shape[0] + 2) * 6 > 512:
-        return loop_mutual(al, vl, st, h)
     za = (1.6 if h == INF else h) + al.z
     zv = (1.6 if h == INF else h) + vl.z
     return kern.loop_mutual_core(PA, al.closed, za, PV, vl.closed, zv, h, *GAUSS, *_scratch())
 
 
+def _cself(A, h, eps_r):
+    """Patch capacitance to the plane (pF): plate eps A / h plus an edge term 2 eps0 sqrt(A)."""
+    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)
+
+
 def _cm(kern, an, vn, st, h, eps_r):
-    if kern is None:
-        return patches_cm(an.patches(st), vn.patches(st), h, eps_r)
+    """Mutual capacitance (pF) between two NodeShapes over the plane at h (kernel:
+    jit.patches_cm_core: first order in the potential coefficients with the plane image,
+    air-side patch strengths eps0 A / h, lens SY D1)."""
+    from .jit import PY
+    kern = kern or PY
     xa, ya, aa = an.arrs(st)
     xv, yv, av = vn.arrs(st)
     hh = 1.6 if h == INF else max(h, 0.05)
@@ -477,23 +350,6 @@ class CouplingComp:
             v_c = self.dv * self.tsw * cm / (cm + cv + self.tsw * 1e3 / self.zv)   # ns*1e3/ohm = pF
             v += 1e3 * v_c
         return v
-
-
-def _free_mutual(pa, pv):
-    """Free-space Neumann mutual (nH) of two closed planar loops (no plane)."""
-    x, wq = _GL3
-    t = 0.5 * (x + 1.0)
-    w = 0.5 * wq
-    a = np.asarray(pa, float)
-    b = np.asarray(pv, float)
-    da = a[1:] - a[:-1]
-    db = b[1:] - b[:-1]
-    Pa = (a[:-1, None, :] + t[None, :, None] * da[:, None, :]).reshape(-1, 2)
-    Pb = (b[:-1, None, :] + t[None, :, None] * db[:, None, :]).reshape(-1, 2)
-    dla = (w[None, :, None] * da[:, None, :]).reshape(-1, 2)
-    dlb = (w[None, :, None] * db[:, None, :]).reshape(-1, 2)
-    R = np.sqrt(((Pa[:, None, :] - Pb[None, :, :]) ** 2).sum(-1))
-    return 0.1 * float(((dla @ dlb.T) / np.maximum(R, 1e-6)).sum())
 
 
 # ============================================================================ crystal

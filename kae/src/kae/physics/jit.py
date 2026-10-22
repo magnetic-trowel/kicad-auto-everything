@@ -9,14 +9,14 @@ compilation at import). Both run the same code, so they agree to rounding
 fallback. `compile_seconds()` reports the first-call cost.
 
 Kernels (units mm, nH):
-  loop_core     loop inductance of a chain of terminals over the reference plane
-                (partial inductances with images; Hammerstad-Jensen strip self terms;
-                ground hop in parallel with a via return through a ground plane)
-  mutual_quad   Neumann mutual between an aggressor path (with its plane image) and a victim
-                path, Gauss-Legendre quadrature, for near pairs
-  patches_near  first-order mutual capacitance between two sets of copper patches over a plane
-  k0            modified Bessel K0 (Abramowitz & Stegun 9.8.5-9.8.6, |rel err| < 2e-7)
-  fin_sum       sum over image positions of K0(max(r, a)/lam)
+  loop_core         loop inductance of a chain of terminals over the reference plane
+                    (partial inductances with images; Hammerstad-Jensen strip self terms;
+                    ground hop in parallel with a via return through a ground plane)
+  loop_mutual_core  |M| between an aggressor and a victim loop over the plane: dipoles of
+                    each loop and its image far apart, segment-pair Neumann integrals near
+  patches_cm_core   first-order mutual capacitance between two sets of copper patches
+  k0, fin_column, fin_row
+                    board fin temperature kernel K0(r/lam) with adiabatic-edge images
 """
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ MU = 0.1                 # mu0 / 4 pi, nH/mm
 ETA0 = 376.730313        # ohm
 C0 = 299.792458          # mm/ns
 TCU = 0.035
+A2_NEAR = 0.3 ** 2       # mm^2: closest approach of two distinct conductors' axes (coupling)
 
 
 def build(jit):
@@ -320,30 +321,6 @@ def build(jit):
         return A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv)
 
     @jit
-    def mutual_quad(PA, DLA, PV, DLV):
-        """0.1 sum (dla . dlv)/R over Gauss points, aggressor plus its PEC image (mirror z,
-        tangent (-dx, -dy, +dz)); PA (na, 3), DLA (na, 3), PV (nv, 3), DLV (nv, 3)."""
-        m = 0.0
-        for a in range(PA.shape[0]):
-            ax = PA[a, 0]
-            ay = PA[a, 1]
-            az = PA[a, 2]
-            tx = DLA[a, 0]
-            ty = DLA[a, 1]
-            tz = DLA[a, 2]
-            for v in range(PV.shape[0]):
-                dx = ax - PV[v, 0]
-                dy = ay - PV[v, 1]
-                dz1 = az - PV[v, 2]
-                dz2 = -az - PV[v, 2]
-                dot1 = tx * DLV[v, 0] + ty * DLV[v, 1] + tz * DLV[v, 2]
-                dot2 = -tx * DLV[v, 0] - ty * DLV[v, 1] + tz * DLV[v, 2]
-                r1 = math.sqrt(dx * dx + dy * dy + dz1 * dz1)
-                r2 = math.sqrt(dx * dx + dy * dy + dz2 * dz2)
-                m += dot1 / max(r1, 1e-6) + dot2 / max(r2, 1e-6)
-        return MU * m
-
-    @jit
     def patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
         k = 1.0 / (4.0 * math.pi * eps0)
         cm = 0.0
@@ -407,67 +384,6 @@ def build(jit):
         return cx, cy, 2.0 * size, area, P[k - 1, 0] - P[0, 0], P[k - 1, 1] - P[0, 1]
 
     @jit
-    def path_gauss(P, closed, z, ng, gt, gw, out_p, out_d):
-        """Gauss points of a path at height z (closed: polygon; open: vias at both ends from
-        the plane z = 0). Returns the number of points written."""
-        k = P.shape[0]
-        nseg = k if closed else k - 1
-        c = 0
-        if not closed:
-            for q in range(ng):
-                out_p[c, 0] = P[0, 0]
-                out_p[c, 1] = P[0, 1]
-                out_p[c, 2] = gt[q] * z
-                out_d[c, 0] = 0.0
-                out_d[c, 1] = 0.0
-                out_d[c, 2] = gw[q] * z
-                c += 1
-        for i in range(nseg):
-            j = i + 1 if i + 1 < k else 0
-            dx = P[j, 0] - P[i, 0]
-            dy = P[j, 1] - P[i, 1]
-            for q in range(ng):
-                out_p[c, 0] = P[i, 0] + gt[q] * dx
-                out_p[c, 1] = P[i, 1] + gt[q] * dy
-                out_p[c, 2] = z
-                out_d[c, 0] = gw[q] * dx
-                out_d[c, 1] = gw[q] * dy
-                out_d[c, 2] = 0.0
-                c += 1
-        if not closed:
-            for q in range(ng):
-                out_p[c, 0] = P[k - 1, 0]
-                out_p[c, 1] = P[k - 1, 1]
-                out_p[c, 2] = z - gt[q] * z
-                out_d[c, 0] = 0.0
-                out_d[c, 1] = 0.0
-                out_d[c, 2] = -gw[q] * z
-                c += 1
-        return c
-
-    @jit
-    def neumann(PA, DA, na, PV, DV, nv, image):
-        m = 0.0
-        for a in range(na):
-            ax = PA[a, 0]
-            ay = PA[a, 1]
-            az = PA[a, 2]
-            tx = DA[a, 0]
-            ty = DA[a, 1]
-            tz = DA[a, 2]
-            for v in range(nv):
-                dx = ax - PV[v, 0]
-                dy = ay - PV[v, 1]
-                dz = az - PV[v, 2]
-                r = math.sqrt(dx * dx + dy * dy + dz * dz)
-                m += (tx * DV[v, 0] + ty * DV[v, 1] + tz * DV[v, 2]) / max(r, 1e-6)
-                if image:
-                    dz = -az - PV[v, 2]
-                    r = math.sqrt(dx * dx + dy * dy + dz * dz)
-                    m += (-tx * DV[v, 0] - ty * DV[v, 1] + tz * DV[v, 2]) / max(r, 1e-6)
-        return MU * m
-
-    @jit
     def dip_field(xa, ya, za, mx, my, mz, xv, yv, zv, vx, vy, vz):
         rx = xv - xa
         ry = yv - ya
@@ -478,11 +394,119 @@ def build(jit):
         return (3.0 * mr * (vx * rx + vy * ry + vz * rz) - (mx * vx + my * vy + mz * vz)) / (R2 * R)
 
     @jit
+    def seg_mut(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, a2, ng, gt, gw):
+        """Neumann integral (mm; times mu0/4pi gives nH) of two straight filaments A = a->b and
+        V = c->d: inner integral along V in closed form (asinh), outer along A by ng-point
+        Gauss-Legendre. The squared distance to V's line is floored at a2 (conductors of
+        finite section cannot coincide), which keeps crossing filaments finite."""
+        ux = bx - ax
+        uy = by - ay
+        uz = bz - az
+        la = math.sqrt(ux * ux + uy * uy + uz * uz)
+        wx = dx - cx
+        wy = dy - cy
+        wz = dz - cz
+        lv = math.sqrt(wx * wx + wy * wy + wz * wz)
+        if la < 1e-9 or lv < 1e-9:
+            return 0.0
+        wx /= lv
+        wy /= lv
+        wz /= lv
+        cs = (ux * wx + uy * wy + uz * wz) / la
+        if -1e-12 < cs < 1e-12:
+            return 0.0
+        acc = 0.0
+        for q in range(ng):
+            px = ax + gt[q] * ux - cx
+            py = ay + gt[q] * uy - cy
+            pz = az + gt[q] * uz - cz
+            t0 = px * wx + py * wy + pz * wz
+            rho2 = px * px + py * py + pz * pz - t0 * t0
+            if rho2 < a2:
+                rho2 = a2
+            rho = math.sqrt(rho2)
+            acc += gw[q] * (math.asinh((lv - t0) / rho) + math.asinh(t0 / rho))
+        return cs * la * acc
+
+    @jit
+    def path_segments(P, closed, z, image, out0, out1, start):
+        """Write the straight segments of a path at height z into out0/out1 (start, end) from
+        row `start` (closed: polygon; open: via up at the first point, vias down at the
+        last, through the plane z = 0); with image, append the plane images (z mirrored,
+        direction reversed). Returns the next free row."""
+        k = P.shape[0]
+        c = start
+        if not closed:
+            out0[c, 0] = P[0, 0]
+            out0[c, 1] = P[0, 1]
+            out0[c, 2] = 0.0
+            out1[c, 0] = P[0, 0]
+            out1[c, 1] = P[0, 1]
+            out1[c, 2] = z
+            c += 1
+        nseg = k if closed else k - 1
+        for i in range(nseg):
+            j = i + 1 if i + 1 < k else 0
+            out0[c, 0] = P[i, 0]
+            out0[c, 1] = P[i, 1]
+            out0[c, 2] = z
+            out1[c, 0] = P[j, 0]
+            out1[c, 1] = P[j, 1]
+            out1[c, 2] = z
+            c += 1
+        if not closed:
+            out0[c, 0] = P[k - 1, 0]
+            out0[c, 1] = P[k - 1, 1]
+            out0[c, 2] = z
+            out1[c, 0] = P[k - 1, 0]
+            out1[c, 1] = P[k - 1, 1]
+            out1[c, 2] = 0.0
+            c += 1
+        if image:
+            n = c - start
+            for q in range(n):
+                r = start + q
+                out0[c, 0] = out1[r, 0]
+                out0[c, 1] = out1[r, 1]
+                out0[c, 2] = -out1[r, 2]
+                out1[c, 0] = out0[r, 0]
+                out1[c, 1] = out0[r, 1]
+                out1[c, 2] = -out0[r, 2]
+                c += 1
+        return c
+
+    @jit
+    def segs_mutual(A0, A1, na, V0, V1, nv, a2, gt3, gw3, gt6, gw6):
+        """mu0/4pi sum over segment pairs of seg_mut: 6-point outer rule for pairs closer than
+        their summed lengths, 3-point otherwise."""
+        m = 0.0
+        for i in range(na):
+            mx = 0.5 * (A0[i, 0] + A1[i, 0])
+            my = 0.5 * (A0[i, 1] + A1[i, 1])
+            mz = 0.5 * (A0[i, 2] + A1[i, 2])
+            la = math.sqrt((A1[i, 0] - A0[i, 0]) ** 2 + (A1[i, 1] - A0[i, 1]) ** 2 + (A1[i, 2] - A0[i, 2]) ** 2)
+            for j in range(nv):
+                lv = math.sqrt((V1[j, 0] - V0[j, 0]) ** 2 + (V1[j, 1] - V0[j, 1]) ** 2 + (V1[j, 2] - V0[j, 2]) ** 2)
+                ex = 0.5 * (V0[j, 0] + V1[j, 0]) - mx
+                ey = 0.5 * (V0[j, 1] + V1[j, 1]) - my
+                ez = 0.5 * (V0[j, 2] + V1[j, 2]) - mz
+                near = ex * ex + ey * ey + ez * ez < (la + lv) ** 2
+                # integrate along the longer segment's partner: outer over A
+                if near:
+                    m += seg_mut(A0[i, 0], A0[i, 1], A0[i, 2], A1[i, 0], A1[i, 1], A1[i, 2],
+                                 V0[j, 0], V0[j, 1], V0[j, 2], V1[j, 0], V1[j, 1], V1[j, 2], a2, 6, gt6, gw6)
+                else:
+                    m += seg_mut(A0[i, 0], A0[i, 1], A0[i, 2], A1[i, 0], A1[i, 1], A1[i, 2],
+                                 V0[j, 0], V0[j, 1], V0[j, 2], V1[j, 0], V1[j, 1], V1[j, 2], a2, 3, gt3, gw3)
+        return MU * m
+
+    @jit
     def loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, vd):
         """|M| (nH) between aggressor path PA (closed if ca) at za and victim PV (cv) at zv over
         the plane at height reference h (inf: free space). Far apart: point dipoles of the loop
         plus its image (closed: +A at +z, -A at -z; open: 2 z z^ x chord) against the victim's
-        physical area vector; near: Gauss quadrature of the Neumann integral with images."""
+        physical area vector; near: segment-pair Neumann integrals (inner closed form, outer
+        Gauss) with the aggressor's plane images."""
         xa, ya, sa, aa, cha_x, cha_y = shape_geo(PA, ca)
         xv, yv, sv, av, chv_x, chv_y = shape_geo(PV, cv)
         r = math.hypot(xa - xv, ya - yv)
@@ -492,9 +516,9 @@ def build(jit):
                 return 0.0
             if r >= 2.0 * big:
                 return abs(MU * aa * av / (r * r * r))
-            na = path_gauss(PA, True, 0.0, 3, gt3, gw3, sp, sd)
-            nv = path_gauss(PV, True, 0.0, 3, gt3, gw3, vp, vd)
-            return abs(neumann(sp, sd, na, vp, vd, nv, False))
+            na = path_segments(PA, True, 0.0, False, sp, sd, 0)
+            nv = path_segments(PV, True, 0.0, False, vp, vd, 0)
+            return abs(segs_mutual(sp, sd, na, vp, vd, nv, A2_NEAR, gt3, gw3, gt6, gw6))
         if r >= 2.0 * big and r >= 4.0 * h:
             m = 0.0
             if cv:
@@ -507,13 +531,9 @@ def build(jit):
             else:
                 m += dip_field(xa, ya, 0.0, -2.0 * za * cha_y, 2.0 * za * cha_x, 0.0, vx_, vy_, vz_, mvx, mvy, mvz)
             return abs(MU * m)
-        if r < max(sa, sv):
-            na = path_gauss(PA, ca, za, 6, gt6, gw6, sp, sd)
-            nv = path_gauss(PV, cv, zv, 6, gt6, gw6, vp, vd)
-        else:
-            na = path_gauss(PA, ca, za, 3, gt3, gw3, sp, sd)
-            nv = path_gauss(PV, cv, zv, 3, gt3, gw3, vp, vd)
-        return abs(neumann(sp, sd, na, vp, vd, nv, True))
+        na = path_segments(PA, ca, za, True, sp, sd, 0)
+        nv = path_segments(PV, cv, zv, False, vp, vd, 0)
+        return abs(segs_mutual(sp, sd, na, vp, vd, nv, A2_NEAR, gt3, gw3, gt6, gw6))
 
     @jit
     def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
@@ -564,9 +584,9 @@ def build(jit):
             out[k] = fin_sum(tx, ty, SX[k], SY[k], A[k], lam)
 
     ns = dict(z0_air=z0_air, deff=deff, m_self=m_self, G=G, m_par=m_par, collinear=collinear, strip_self=strip_self,
-              ties=ties, via_return=via_return, lnspan=lnspan, gmd_lin=gmd_lin, pair_mut=pair_mut, loop_core=loop_core, mutual_quad=mutual_quad,
+              ties=ties, via_return=via_return, seg_mut=seg_mut, path_segments=path_segments, segs_mutual=segs_mutual, lnspan=lnspan, gmd_lin=gmd_lin, pair_mut=pair_mut, loop_core=loop_core,
               patches_near=patches_near, k0=k0, fin_sum=fin_sum, lookup=lookup,
-              shape_geo=shape_geo, path_gauss=path_gauss, neumann=neumann, dip_field=dip_field,
+              shape_geo=shape_geo, dip_field=dip_field,
               loop_mutual_core=loop_mutual_core, patches_cm_core=patches_cm_core,
               fin_column=fin_column, fin_row=fin_row)
     return type('Kernels', (), ns)
@@ -624,8 +644,6 @@ def warm(nbk):
     g = np.zeros(1, np.bool_)
     nbk.loop_core(f, f, f + 1, f, f + 1, ii, f, f, bb, f + 0.2, f, f, 4, -1, 0.3, 0.15, 1.0, 1.6, 0.15,
                   H, H, N, N, g, 0.0, 0.0, 1.0, np.zeros(8), np.zeros(8), np.zeros(8))
-    P = np.zeros((3, 3))
-    nbk.mutual_quad(P, P, P + 1, P)
     nbk.patches_near(f, f, f + 1, f + 1, f, f + 1, 0.2, 4.3, 8.85e-3)
     nbk.patches_cm_core(f, f, f + 1, f + 1, f, f + 1, 0.2, 4.3, 8.85e-3)
     Q = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])
