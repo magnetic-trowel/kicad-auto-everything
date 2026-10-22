@@ -62,7 +62,7 @@ Required and observed live apart, so critics diff them and no computed number en
 ### Process model
 
 - **Library first; one session server per board.** Batch review, bench adapters and tests run in-process. For live and optimizer use, `kae serve` owns the only KiCad IPC connection, because KiCad answers on one UI thread and clients "should not open multiple connections" ([ipc-api-10-vs-11](../kicad/ipc-api-10-vs-11.md)). It also owns the store, the orchestrator and one writer lock; stale `board_rev` writes are refused.
-- **Its physics service keeps factorizations warm.** Actor workers own the factorizations for some (operator, band, epoch) keys and answer solves, quotes and passports. A factorization costs about 10–25 s at 1M cells [I]; a quote in a cached hot window costs 0.2 ms [C]. Optimizer workers receive exact hot-window models (Green blocks or boundary Schur complements) and quote and commit locally ([physics-core-v2](../physics/physics-core-v2.md), [physics-engine-design](physics-engine-design.md)).
+- **Its physics service keeps factorizations warm.** Actor workers own the factorizations for some (operator, band, epoch) keys and answer solves, quotes and passports. A compiled factorization costs about 1 s at 0.8M nodes (SuperLU 7–9 s); a quote in a cached window 25–110 µs [C]. Optimizer workers receive exact window models, boundary Schur complements, and quote and commit locally ([physics-core-v2](../physics/physics-core-v2.md), [physics-engine-design](physics-engine-design.md)).
 - **Helpers run as subprocesses** for crash isolation: SWIG DSN/SES, Freerouting (`-mt 1`, hash-pinned), PNS, ngspice, openEMS.
 - **KiCad 10 uses four channels:** IPC CRUD in commit groups (≤ 32 creates, one undo entry); direct `.kicad_dru` writes; `kicad-cli pcb drc --refill-zones` on a saved copy, the only legal referee; SWIG DSN/SES. Live snapshots come from `SaveDocumentToString`. File mode writes by byte-preserving splice, never `SaveBoard`, and is refused once a board has been seen live ([file-format-and-version-hazards](../kicad/file-format-and-version-hazards.md)).
 - **KiCad 11** adds a `HeadlessSession` on `kicad-cli api-server`, with DSN/SES and structured `CustomRule` over IPC; DRC stays with `kicad-cli`; baselines are re-run per version.
@@ -139,7 +139,7 @@ It never writes coordinates, geometry, regimes, spend or classes. A renderer ins
 
 | Concern | Choice | Reason |
 |---|---|---|
-| Core | Python 3.11+, numpy, scipy (SuperLU; CHOLMOD for symmetric operators), Shapely 2, pyclipper | prototypes are numpy/scipy; 2-D factor and solve take ms to s ([solver-ladder](../physics/solver-ladder.md)) |
+| Core | Python 3.11+, numpy, scipy; CHOLMOD from M1, SuperLU fallback, Shapely 2, pyclipper | prototypes are numpy/scipy; 2-D factor and solve take ms to s ([solver-ladder](../physics/solver-ladder.md)) |
 | Hot loops | Rust via PyO3 from the joint-search milestone: grid router, SA moves, kinetic topology, morphology | a Python routed move costs ~25× an HPWL move ([experiment](../physics/joint-place-route-experiment.md)); Rust gave ~10× in KRT ([performance-and-multifidelity](../solvers/performance-and-multifidelity.md)) |
 | GPU | JAX for placement kernels and batched F1/surrogates; Palace or openEMS for finalists | 2-D solves gain little on GPU |
 | Discrete solves | OR-Tools CP-SAT in windows | monolithic models fail beyond ~100 parts ([cp-sat-milp-smt](../solvers/cp-sat-milp-smt.md)) |

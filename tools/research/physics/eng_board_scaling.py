@@ -41,7 +41,6 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
 
 import argparse  # noqa: E402
 import json  # noqa: E402
-import math  # noqa: E402
 import resource  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402

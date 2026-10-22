@@ -332,6 +332,17 @@ def board_record(d):
                           t_s=c.get('t_s'), decaps=c.get('decaps_in_loop')))
     rec['hf_cells'] = cells
     rec['passport_findings'] = pp.get('findings_by_type') or {}
+    m = rec.get('dc_model') or {}
+    rec['unknowns'] = dict(dc_nodes=m.get('nodes'), dc_branches=m.get('branches'), dc_factor_s=m.get('t_factor_s'),
+                           hf_sheet_cells=[c.get('cells') for c in cells if c.get('cells')],
+                           hf_sheet_cells_total=sum(c.get('cells') or 0 for c in cells))
+    fails = [f"{k}: {v.get('status')} ({v.get('reason')})" for k, v in rec['steps'].items() if v.get('status') not in ('ok', None)]
+    fails += [f"passport stage {e['stage']}: {e['error']}" for e in rec['passport_errors']]
+    if rec.get('fills') and not rec['fills'].startswith('refilled'):
+        fails.append(rec['fills'])
+    if meta.get('error'):
+        fails.append(f"runner: {meta['error']}")
+    rec['failure'] = '; '.join(fails) or None
     s = cr.get('summary') or {}
     res = cr.get('results') or {}
     planes = res.get('PLANE-PERF') or {}

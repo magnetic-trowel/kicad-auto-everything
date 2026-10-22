@@ -77,6 +77,8 @@ from pc_refplane import PWR_RE as PC_PWR_RE  # noqa: E402
 
 T_START = time.perf_counter()
 GND_RE = rb.GND_RE
+GND_ANY = re.compile(r'GND|VSS|EARTH|CHASSIS', re.I)     # ground-like names GND_RE misses (XADCGND, CHASSISGND)
+SIG_TYPES = ('input', 'output', 'bidirectional', 'tri_state', 'open_collector', 'open_emitter')
 PWR_RE = PC_PWR_RE                      # the critics' regex: name evidence for a rail
 PWR_WEAK_RE = re.compile(r'VOUT|VREF|VDD|VCC|VBUS|VBAT|VIN|PWR|SUPPLY|BATT|\bV\d|^P\d+V\d*', re.I)
 CTRL_RE = re.compile(r'(^|[^A-Z])(FB|VFB|BOOT|BST|BS|EN|ENABLE|COMP|SS|PG|PGOOD|ILIM|RT|CT|TRK|SENSE|SNS|ISNS|CS|'
@@ -370,11 +372,13 @@ def infer_roles_general(b):
     def cap_other_counts(n):
         return sum(1 for f in fps if is_cap(f) and n in netset_of[id(f)] and len(netset_of[id(f)]) == 2)
     gnd_pin_count = Counter(p['net'] for p in b.pads if p['net'] and GND_PIN_RE.match((p.get('pinfunction') or '').strip()))
-    gcands = [n for n in nets if GND_RE.search(n) and not n.lower().startswith('unconnected')]
+    strict = [n for n in nets if GND_RE.search(n) and not n.lower().startswith('unconnected')]
+    loose = [n for n in nets if n not in strict and GND_ANY.search(short(n)) and not n.lower().startswith('unconnected')]
+    gcands = strict + loose
     gscore = {n: cap_other_counts(n) + gnd_pin_count[n] + A.get(n, 0) / 100.0 for n in gcands}
     ground = {}
     if gcands:
-        primary = max(gcands, key=lambda n: gscore[n])
+        primary = max(strict or loose, key=lambda n: gscore[n])
         largest = max(nets, key=lambda n: A.get(n, 0))
         conf = 'high' if (primary == largest or cap_other_counts(primary) >= 2) else 'medium'
         ground[primary] = dict(confidence=conf, primary=True, evidence=[
@@ -383,14 +387,16 @@ def infer_roles_general(b):
         for n in gcands:
             if n != primary and len(pads_by_net.get(n, ())) >= 2:
                 ground[n] = dict(confidence='medium' if (cap_other_counts(n) or gnd_pin_count[n]) else 'low', primary=False,
-                                 evidence=['name matches GND_RE', f'copper {A.get(n, 0):.0f} mm2', f'{cap_other_counts(n)} capacitors'])
+                                 evidence=['name matches GND_RE' if n in strict else 'name contains GND/VSS/EARTH/CHASSIS',
+                                           f'copper {A.get(n, 0):.0f} mm2', f'{cap_other_counts(n)} capacitors'])
     else:
-        # no ground name: the net with the most capacitor connections among the three largest nets
+        # no ground name: the net with the most capacitor connections among the three largest nets, if it has some
         big = sorted(nets, key=lambda n: -A.get(n, 0))[:3]
         if big:
             primary = max(big, key=lambda n: (cap_other_counts(n) + gnd_pin_count[n], A.get(n, 0)))
-            ground[primary] = dict(confidence='low', primary=True, evidence=[
-                'no net name matches GND_RE', f'largest-copper net with most capacitor connections ({cap_other_counts(primary)})'])
+            if cap_other_counts(primary) + gnd_pin_count[primary] >= 2:
+                ground[primary] = dict(confidence='low', primary=True, evidence=[
+                    'no net name matches GND_RE', f'largest-copper net with most capacitor connections ({cap_other_counts(primary)})'])
     gnds = set(ground)
     gnd = next((n for n, r in ground.items() if r['primary']), None)
     L.append("ground: " + (", ".join(f"'{n}' ({r['confidence']}; {'; '.join(r['evidence'])})" for n, r in ground.items()) or 'none found'))
@@ -470,12 +476,16 @@ def infer_roles_general(b):
         reg_out = [p for p in ps if p['fp'] in regs and OUT_PIN_RE.match((p.get('pinfunction') or '').strip())]
         ind_out = [c for c in cells_sw if c['out'] == n]
         ic_pins = [p for p in ps if is_active(p['fp'])]
+        sig = [p for p in ic_pins if (p.get('pintype') or '').split('+')[0] in SIG_TYPES]
+        conns = {p['ref'] for p in ps if is_conn(p['fp']) and netset_of[id(p['fp'])] & gnds}
+        wmax = max((t['w'] for t in b.t_by.get(n, ())), default=0.0)
         return dict(name=bool(PWR_RE.search(short(n))), weak_name=bool(PWR_WEAK_RE.search(short(n))),
                     ctrl=bool(CTRL_RE.search(short(n))), pin_out=pin_out, pin_in=pin_in, reg_out=reg_out, ind_out=ind_out,
-                    ncaps=len(caps_to_gnd.get(n, ())), pour=pour_area.get(n, 0.0), ic_pins=ic_pins, npads=len(ps))
+                    ncaps=len(caps_to_gnd.get(n, ())), pour=pour_area.get(n, 0.0), ic_pins=ic_pins, npads=len(ps),
+                    sig=sig, conns=conns, wmax=wmax)
     rails, rejected = {}, {}
     for n in nets:
-        if n in gnds or n in sw_nets or n.lower().startswith('unconnected') or n.lower().startswith('net-(') and False:
+        if n in gnds or n in sw_nets or n.lower().startswith('unconnected') or GND_ANY.search(short(n)):
             continue
         F = feat(n)
         ev, score = [], 0
@@ -504,25 +514,35 @@ def infer_roles_general(b):
         if len({p['ref'] for p in F['ic_pins']}) >= 2:
             score += 1
             ev.append(f"pins on {len({p['ref'] for p in F['ic_pins']})} ICs")
+        if F['conns'] and (F['name'] or F['weak_name']):
+            score += 1
+            ev.append(f"on {len(F['conns'])} connector(s) with ground pins")
+        if F['wmax'] >= 0.5:
+            score += 1
+            ev.append(f"tracks up to {F['wmax']:.2f} mm wide")
+        powered = F['pin_out'] or F['reg_out'] or F['ind_out'] or F['pin_in']
+        counter = []
         if F['ctrl'] and not (F['pin_out'] or F['reg_out'] or F['ind_out'] or F['name']):
             score -= 4
-            ev.append('control/signal name (FB, EN, data, ...): counts against')
+            counter.append('control/signal name (FB, EN, data, ...)')
+        if F['sig'] and not powered:
+            score -= 3
+            counter.append(f"{len(F['sig'])} IC pin(s) typed as signals ({F['sig'][0]['pintype']}) and none typed power")
         if F['npads'] <= 2 and F['pour'] <= 1.0 and not (F['pin_out'] or F['reg_out']):
             score -= 2
-            ev.append('two pads or fewer and no pour: counts against')
-        strong = F['name'] or F['pin_out'] or F['reg_out'] or F['ind_out'] or F['pin_in'] or F['ncaps'] >= 2 or F['pour'] > 1.0
+            counter.append('two pads or fewer and no pour')
+        ev += [c + ': counts against' for c in counter]
+        strong = F['name'] or powered or F['ncaps'] >= 2 or F['pour'] > 1.0
         if not strong:
-            if F['name'] or F['weak_name']:
-                rejected[n] = 'name only, and no capacitor to ground, power pin, regulator or pour'
             continue
         conf = 'high' if score >= 6 else 'medium' if score >= 3 else 'low'
-        if conf == 'low' and (F['name'] or F['weak_name']):
-            rejected[n] = f"weak evidence (score {score}): " + '; '.join(ev)
+        if conf == 'low' and (F['name'] or F['weak_name']) and counter:
+            rejected[n] = f"counter-evidence (score {score}): " + '; '.join(counter)
         rails[n] = dict(confidence=conf, score=score, evidence=ev, volts=parse_volts(n))
-    # regex power names that the evidence rejects
+    # regex power names that are switch nodes
     for n in nets:
-        if n not in rails and n not in gnds and PWR_RE.search(short(n)) and n not in rejected:
-            rejected[n] = 'switch node' if n in sw_nets else 'no supporting evidence'
+        if n not in rails and n not in gnds and PWR_RE.search(short(n)) and n not in rejected and n in sw_nets:
+            rejected[n] = 'switch node'
     L.append(f"power rails: {sum(r['confidence'] == 'high' for r in rails.values())} high, "
              f"{sum(r['confidence'] == 'medium' for r in rails.values())} medium, {sum(r['confidence'] == 'low' for r in rails.values())} low"
              f" confidence; name-matched nets rejected: {len(rejected)}")
@@ -1304,18 +1324,39 @@ def run_cells(b, roles, dcN, args, res, errors, flush):
                 col = {f"feed {short(rr['rail'])}": 0}
                 Ib = keep_ib[rr['rail']][:, None]
             buf = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buf):
-                    r = rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
-            except (MemoryError, RuntimeError) as e:     # SuperLU allocation failure: one retry on a coarser grid
-                if not isinstance(e, MemoryError) and 'MALLOC' not in str(e).upper():
-                    raise
-                hargs.h_hf = round(hargs.h_hf * 1.35, 3)
-                rec['grid_mm'] = hargs.h_hf
-                rec['retry'] = f'{type(e).__name__} at the first grid; retried at {hargs.h_hf} mm'
+            tries = []
+
+            def attempt():
+                nonlocal buf
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
-                    r = rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
+                    return rb.run_hf(b, rr, N, Ib, sdef, col, hargs)
+            while True:
+                try:
+                    r = attempt()
+                    break
+                except (MemoryError, RuntimeError) as e:     # SuperLU allocation failure: one retry on a coarser grid
+                    if (not isinstance(e, MemoryError) and 'MALLOC' not in str(e).upper()) or 'coarser grid' in tries:
+                        raise
+                    hargs.h_hf = round(hargs.h_hf * 1.35, 3)
+                    tries.append('coarser grid')
+                except ValueError as e:
+                    # adjacent lead strips merge on the raster and leave no cut for the drive EMF: first drop the
+                    # bridge-return strips (one strip from the supply pin into the ground pad), then a finer grid
+                    if 'no complete cut' not in str(e) or len(tries) >= 2:
+                        raise
+                    if rr.get('foot'):
+                        rr = dict(rr, foot=[])
+                        tries.append('no bridge-return strips')
+                    else:
+                        hn = round(hargs.h_hf * 0.67, 3)
+                        if area * (len(b.cu) + 1) / hn ** 2 > 1.5 * args.max_hf_cells:
+                            raise
+                        hargs.h_hf = hn
+                        tries.append('finer grid')
+            if tries:
+                rec['retry'] = '; '.join(tries)
+                rec['grid_mm'] = hargs.h_hf
             txt = buf.getvalue()
             log(txt.rstrip())
             rec.update(hf_summary(r, rr['rail'], rr['gnd']))

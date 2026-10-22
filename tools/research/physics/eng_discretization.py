@@ -111,10 +111,7 @@ def fv_graph_resistance(n):
         if x0f[k] > 0 and ids[0, k] >= 0:        # y = 0 face of cell (row 0, col k): electrode 1 (phi = 0)
             add(ids[0, k], e1, 2 * x0f[k])
     G = sp.coo_matrix((vals, (rows, cols)), shape=(nn, nn)).tocsr()
-    keep = np.arange(nn - 1)                  # ground electrode 2's partner: solve with e2 driven
-    rhs = np.zeros(nn - 1)
-    rhs[e1] = 0.0
-    # potential phi: e1 = 0 (grounded, removed), e2 = 1: inject unit current at e2, ground e1
+    # ground electrode 1 (removed) and inject a unit current at electrode 2: its potential is R
     sel = np.r_[np.arange(nn - 2), e2]
     Gs = G[sel][:, sel].tocsc()
     b = np.zeros(len(sel))
@@ -164,20 +161,58 @@ def q4_bounds(mask, n):
     return 1.0 / g, psi
 
 
+# P1 stiffness of the two right-isoceles halves of a unit square split along (1,0)-(0,1); local nodes
+# (0,0), (1,0), (1,1), (0,1). Non-obtuse triangles give non-positive off-diagonals (a resistor network).
+P1_KE = np.zeros((4, 4))
+for tri, ke in (((0, 1, 3), [[1.0, -0.5, -0.5], [-0.5, 0.5, 0.0], [-0.5, 0.0, 0.5]]),
+                ((1, 2, 3), [[0.5, -0.5, 0.0], [-0.5, 1.0, -0.5], [0.0, -0.5, 0.5]])):
+    P1_KE[np.ix_(tri, tri)] += np.array(ke)
+
+
+def q4_coverage_resistance(n, elem='q4'):
+    """Node-based Q4 (or P1 on right-isoceles triangles) on the true geometry, each element's conductivity
+    = its copper coverage (a conforming FEM of the smeared sheet and a resistor network)."""
+    cov = coverage(n)[0]
+    m = cov.shape[0]
+    jj, ii = np.nonzero(cov > 0)
+    n1 = jj * (m + 1) + ii
+    edof = np.stack([n1, n1 + 1, n1 + m + 2, n1 + m + 1], 1)
+    KE = vp_floors.tp.KE if elem == 'q4' else P1_KE
+    w = cov[jj, ii]
+    nn = (m + 1) ** 2
+    K = sp.csr_matrix(((KE.ravel()[None, :] * w[:, None]).ravel(),
+                       (np.repeat(edof, 4, 1).ravel(), np.tile(edof, (1, 4)).ravel())), shape=(nn, nn))
+    nj, ni = np.divmod(np.arange(nn), m + 1)
+    x, y = ni / n, nj / n
+    used = np.zeros(nn, bool)
+    used[edof.ravel()] = True
+    e0 = used & (nj == 0) & (x >= A_IN - 1e-12) & (x <= B_OUT + 1e-12)      # y = 0 electrode, phi = 0
+    e1 = used & (ni == 0) & (y >= A_IN - 1e-12) & (y <= B_OUT + 1e-12)      # x = 0 electrode, phi = 1
+    u = np.zeros(nn)
+    u[e1] = 1.0
+    fixed = e0 | e1
+    free = np.nonzero(used & ~fixed)[0]
+    u[free] = spla.spsolve(K[free][:, free].tocsc(), -(K[free][:, np.nonzero(fixed)[0]] @ u[fixed]))
+    return 1.0 / float(u @ (K @ u))
+
+
 def sec_bracket():
     print("== bracket: certified sheet resistance from rasters (quarter annulus 1 < r < 2, exact "
           f"{R_EXACT:.5f} squares)")
     print("   n/unit  R_lo = phi-Q4(outer)  R_hi = psi-Q4(inner)  width   contains | pixel-geometry brackets:"
-          " outer [lo, hi], inner [lo, hi] | cell graph on true geometry (no guarantee)")
+          " outer [lo, hi], inner [lo, hi] | cell graph on true geometry (no guarantee) | nodal Q4 and P1, element weight = coverage")
     for n in (4, 8, 16, 32, 64):
         inner, outer = annulus_masks(n)
         lo_o, hi_o = q4_bounds(outer, n)
         lo_i, hi_i = q4_bounds(inner, n)
         fv = fv_graph_resistance(n)
+        q4 = q4_coverage_resistance(n)
+        p1 = q4_coverage_resistance(n, 'p1')
         ok = lo_o <= R_EXACT <= hi_i
         print(f"   {n:5d}   {lo_o:10.5f}            {hi_i:10.5f}         {100 * (hi_i - lo_o) / R_EXACT:5.1f}%  "
               f"{'yes' if ok else 'NO ':3s}      | [{lo_o:.4f}, {hi_o:.4f}], [{lo_i:.4f}, {hi_i:.4f}]"
-              f" | {fv:.5f} ({100 * (fv / R_EXACT - 1):+.2f}%)")
+              f" | {fv:.5f} ({100 * (fv / R_EXACT - 1):+.2f}%) | Q4 {q4:.5f} ({100 * (q4 / R_EXACT - 1):+.2f}%),"
+              f" P1 {p1:.5f} ({100 * (p1 / R_EXACT - 1):+.2f}%)")
 
 
 # ---------------------------------------------------------------------------- wells
