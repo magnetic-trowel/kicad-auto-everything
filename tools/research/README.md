@@ -57,3 +57,23 @@ Results and interpretation: [docs/topics/physics/](../../docs/topics/physics/REA
 | `pc_refplane.py`, `pc_budget_calcs.py` | Physics-critic prototype (return path and plane integrity from a `.kicad_pcb`, with an in-memory mutation self-test); critic numbers |
 | `xd_sheet.py`, `xd_power_tree.py`, `xd_lengths.py`, `xd_loop_coupling.py` | Via-field transfer length and slot cost; branching power trees; screening lengths; loop coupling with plane images |
 | `jpr_joint_vs_sequential.py` | Joint vs sequential placement and routing on synthetic boards (uses `solver-bench/pcbgen.py`) |
+
+### Rounds 2 and 3 (first-principles lenses, foundations, red team, validation)
+
+Results: the `lens-*.md`, [foundations](../../docs/topics/physics/foundations.md), [derivation-audit](../../docs/topics/physics/derivation-audit.md), [red-team](../../docs/topics/physics/red-team.md), [physics-core-v2](../../docs/topics/physics/physics-core-v2.md), [validation-program](../../docs/topics/physics/validation-program.md) and [real-board-passports](../../docs/topics/physics/real-board-passports.md) docs. Run with `OMP_NUM_THREADS=1` on shared machines. The `rt_*` scripts re-derive other scripts' claims by independent methods and are the regression reference for the numbers they correct. Third-party boards are read from a path you pass in and are never stored in the repo.
+
+| Prefix | Scripts | What they compute |
+|---|---|---|
+| `vp_` | `vp_floors`, `vp_rl_band`, `vp_edit_pricing` | Certified floors and two-sided brackets; the R–L band as an eddy-mode spectrum; edit pricing by polarization tensor |
+| `ct_` | `ct_cut_topology` | Exact cut law, neck leakage, board–world charge ledger, loop nesting |
+| `sy_` | `sy_duality_balance`, `sy_images_symmetry` | Node vs loop coupling vs h, guards, image-exact slit and notch prices, mode conversion, scaling |
+| `ls_` | `ls_thin_sheet`, `ls_post_lattice`, `ls_regime_map` | Complex images for planes, the wire medium (decaps + stitching), regime map of a reference board |
+| `th_` | `th_damping_ledger`, `th_dissipation_noise`, `th_electrothermal` | Modal Q, tuned snubbers, cavity damping; dissipation and noise; electro-thermal stability and thermoelectric checks |
+| `in_` | `in_decision_quality`, `in_emi_voi` | Proxy decision quality; value of information for an EMI decision |
+| `cd_` | `cd_conductor_passport` | Conductor passports per piece and band, exact removal costs, job verbs (synthetic board) |
+| `fd_` | `fd_gentleness`, `fd_impedance_level` | Radius of convergence of circuit + parasitics; the impedance-level theorem |
+| `da_` | `da_derivations`, `da_inductor_cutout`, `da_coverage` | Checks behind the derivation audit; copper under inductors; coverage statistics |
+| `rt_` | `rt_cut_law`, `rt_sheet_return`, `rt_damping`, `rt_impedance_match`, `rt_world_cm`, `rt_loop_proxy`, `rt_voi_sensitivity`, `rt_jpr_stats`, `rt_fill_z0` | Independent re-derivations of load-bearing claims |
+| `pc2_` | `pc2_core_skeleton` | Physics core v2 skeleton: one factorization, exact edit quotes, brackets behind the proposed API |
+| `val_` | `val_voi_rank`, `val_board`, `val_floor_census`, `val_*_coupon` | VOI ranking of claims; VAL-1 predictions; pilot floor census on real boards; registered coupon predictions |
+| `rb_` | `rb_board_passports` | Conductor passports on a real `.kicad_pcb` passed on the command line |

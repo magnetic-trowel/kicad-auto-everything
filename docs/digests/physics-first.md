@@ -1,56 +1,63 @@
 # Digest: physics-first placement and routing
 
-Executive statements from the physics-first pass (eleven workstreams). Every statement links to the topic doc that holds the numbers, sources and caveats. The philosophy is in [physics/README](../topics/physics/README.md); the ~650 ideas are in the [physics-first catalog](../ideas/physics-first/README.md). [C] means computed by our scripts in `tools/research/physics/`.
+This digest covers three rounds: 11 workstreams, 7 first-principles lenses, then foundations, an audit, a red team, an architecture and a validation program. Every statement links to the doc with the numbers and caveats. The philosophy is in [physics/README](../topics/physics/README.md); the ~890 ideas are in the [catalog](../ideas/physics-first/README.md). [C] means computed by our scripts: quasi-static, model against model, not yet measured.
 
 ## The idea
-- **A layout is what the schematic leaves out:** a parasitic R, L, M and C network, field structures, heat paths and a manufactured object. Physics-first layout makes it invisible to the circuit and the outside world, within budgets in physical units. → [physics/README](../topics/physics/README.md), [schematic-to-physics](../topics/physics/schematic-to-physics.md)
-- **About 160 rules reduce to 12 quantities:** L, M, Cm, R, Z, Bal, Vcm, Res, Ins, Th, Mech, Fab. The electrical ones come from four PEEC primitives. Rules fail by regime, not direction. → [rule-basis-set](../topics/physics/rule-basis-set.md)
-- **Most rules are cheap to replace:** 143 of 160 need only a closed form, a 2-D solve, PEEC, a thermal network or SPICE; 8 need full-wave. → [rule-basis-set](../topics/physics/rule-basis-set.md), [genealogy: power](../topics/physics/rule-genealogy-power-analog-thermal.md), [SI/EMI/RF](../topics/physics/rule-genealogy-si-emi-rf.md), [routing/DFM](../topics/physics/rule-genealogy-routing-style-dfm.md)
+- **A circuit is Maxwell at zeroth order, and layout adds a series of corrections.** The series converges only inside the nearest natural mode (gentleness G). Keep each part of the realization invisible, known (budgeted with σ) or designed (a line, a damper, a sense path, an antenna). Match or damp to stay gentle. → [foundations](../topics/physics/foundations.md)
+- **Seven principles plus damage:**
+  - conservation and topology, with a world node;
+  - linear, reciprocal media;
+  - extremum;
+  - symmetry;
+  - locality and scale;
+  - dissipation and fluctuation;
+  - decisions under belief;
+  - extremes and accumulation (damage).
+  
+  → [foundations](../topics/physics/foundations.md), [derivations](../topics/physics/foundations-derivations.md)
+- **132 of 160 rules of thumb derive from them** (51 everywhere, 81 within a regime). Of the rest, 12 are habit and wrong, 9 are convention, 5 are legal and 2 are material data. Only 12 of 67 quoted numbers derive. → [derivation-audit](../topics/physics/derivation-audit.md), [table](../topics/physics/derivation-audit-table.md), [rule-basis-set](../topics/physics/rule-basis-set.md)
 
-## The language and the reasoning
-- **12 atoms and 5 value types:**
-  - Atoms: Port, Node, Loop, Body, Reference, Channel, Cavity, Discontinuity, Antenna, Heat path, Barrier, Coupling.
-  - Value types: Spectrum, Sensitivity, Budget, Band, Regime.
-  - A net is half a port: every port names its return.
+## What changes
+- **Thirteen design theorems replace slogans:**
+  - impedance level (Z0 toward ΔV/ΔI; damp with R = Z0);
+  - self vs interaction objectives;
+  - exact edit pricing;
+  - budgets on closed loops;
+  - the world as a node;
+  - exact topology;
+  - band-limited plane mirrors;
+  - designed dissipation;
+  - loss vs damage.
   
-  → [vocabulary](../topics/physics/vocabulary.md)
-- **`pcb-intent/0.3` adds bands, symbols, physics entities and operators to 0.2.** `intent.yaml` holds what is required, `ledger.json` what is observed. The LLM never writes geometry or spend. → [physics-ir](../topics/physics/physics-ir.md), [examples](../topics/physics/physics-ir-examples.md)
-- **Simulate the schematic first.** Measured dv/dt, di/dt and spectra replace name-based roles. SPICE `.noise` gives every susceptibility in one adjoint solve. Budgets are allocated in proportion to √(cost × sensitivity), and priority goes to least slack (τ). → [schematic-to-physics](../topics/physics/schematic-to-physics.md), [design-reasoning-architecture](../topics/physics/design-reasoning-architecture.md)
-- **Ask which output binds.** In the four worked cases the physics-first answer differs from the rules: a 0.1 mm prepreg, heatsink common-mode current, plane gradients for a 24-bit ADC, the slew plan for an antenna. → [worked-thought-experiments](../topics/physics/worked-thought-experiments.md)
+  → [foundations](../topics/physics/foundations.md) §4
+- **What a conductor is doing:** the per-piece, per-band column of exact counterfactuals on every budget. It is computable with one factorization per band. → [lens-cd](../topics/physics/lens-cd.md), [real-board-passports](../topics/physics/real-board-passports.md)
+- **Self terms have certified floors:** pour shapes on four open boards sit a median 4% above theirs. Losses come from reliefs and partitioning [C]. → [lens-vp](../topics/physics/lens-vp.md), [validation-program](../topics/physics/validation-program.md)
+- **Exact cut law (found four ways):** a slit costs (2/π)·R_s·ln sec(πx/2). First-order adjoints miss finite edits; the edit spectrum Σ c/(1 − λ) prices them exactly. → [lens-ct](../topics/physics/lens-ct.md), [lens-sy](../topics/physics/lens-sy.md), [physics-core-v2](../topics/physics/physics-core-v2.md)
+- **The R–L crossover is a length band:** ℓ_m = R_s/(π·μ0·f). Converter fundamentals return locally; the open regime is DC to tens of kHz near precision analog. → [lens-ls](../topics/physics/lens-ls.md), [lens-vp](../topics/physics/lens-vp.md)
+- **Planes break E/M duality:** height is a lever for loops, not for wide dv/dt copper. Guards do little over thin dielectric. → [lens-sy](../topics/physics/lens-sy.md)
+- **Damping:**
+  - Copper does not damp hot-loop rings, though it damps plane pairs below ~30 MHz.
+  - Tuned snubbers reach the same Q at a third of the loss.
+  - Every loss is also a noise source.
+  
+  → [lens-th](../topics/physics/lens-th.md)
+- **Off-board conductors** (cable, enclosure, heatsink) carry much of the value of information (10–84% by prior). → [lens-in](../topics/physics/lens-in.md), [lens-ct](../topics/physics/lens-ct.md)
 
-## What the physics says
-- **Power: classify copper by waveform.** Width trades L, C and R against each other; only length lowers all three. Near a plane, loop L follows height × squares, not area (equal-area loops differ 1.7×) [C]. → [power-copper](../topics/physics/power-copper.md), [pdn-and-commutation](../topics/physics/pdn-and-commutation.md)
-- **Pours, vias and decaps:**
-  - Widen pour entries first: 31% of the loss sits within 3 mm of the pads [C].
-  - Via fields conduct at their edges.
-  - 4 vias at 0.6 mm pitch give 0.71× one via's inductance, not 0.25× [C].
-  - Internal-vertical hot loops are ~3.5× lower in L than lateral ones [C].
+## Domain physics (round 1, corrected)
+- **Power:** classify copper by waveform; height × squares, not area; via clusters by perimeter; keep the plane under shielded inductors. → [power-copper](../topics/physics/power-copper.md), [pdn-and-commutation](../topics/physics/pdn-and-commutation.md)
+- **SI/EMI:**
+  - The return-path EMF replaces about a dozen plane rules.
+  - One worked case: removing a slot gives 24 dB, slower edges 3 dB.
+  - Co-located cables give 6–48 dB by orientation; the "40 dB" was an assumed input.
   
-  → [pdn-and-commutation](../topics/physics/pdn-and-commutation.md), [cross-domain-lessons](../topics/physics/cross-domain-lessons.md)
-- **SI/EMI: one metric, ΔZ_ret × I(f), replaces about a dozen plane rules.** In the EMI chain topology beats tweaks by 20–40 dB. The 1 mV and 5 µA rules are one rule. → [fields-si-emi](../topics/physics/fields-si-emi.md), [fields-emi-budget](../topics/physics/fields-emi-budget.md)
-- **Geometry is regime-gated.** Corners and arcs are cosmetic for SI above ~30 ps edges; pads, stubs and vias are not. Fibre weave justifies angled routing. Pad voids are solved per stackup. → [rf-geometry](../topics/physics/rf-geometry.md)
-- **Thermal:** a board is a fin with a spreading length of 8 mm (bare FR-4) to 38–64 mm (copper). A kernel plus edge images scores placements within ~2% [C]. → [thermal-physics](../topics/physics/thermal-physics.md)
-- **HV and manufacturing:**
-  - HV corner fields scale as (g/r)^(1/3).
-  - Altitude factors are air-pressure ratios.
-  - Fab limits decompress into etch, plating, lamination, drilling, soldering and stress physics.
-  
-  → [hv-and-manufacturing-physics](../topics/physics/hv-and-manufacturing-physics.md)
+  → [fields-si-emi](../topics/physics/fields-si-emi.md), [fields-emi-budget](../topics/physics/fields-emi-budget.md), [rf-geometry](../topics/physics/rf-geometry.md)
+- **Thermal, HV, fab:** spreading lengths, kernel-plus-images placement scoring, HV corner fields, altitude as air density, fab limits as process physics. → [thermal-physics](../topics/physics/thermal-physics.md), [hv-and-manufacturing-physics](../topics/physics/hv-and-manufacturing-physics.md)
 
 ## The machine
-- **Placement and routing in one optimizer:**
-  - The state carries topology: part poses, route homotopy classes, layers and vias.
-  - Rubber bands re-tighten as parts move.
-  - Congestion and physics prices act as placement forces.
-  - LNS windows repair parts and copper together.
-  
-  → [joint-place-route](../topics/physics/joint-place-route.md), [experiment](../topics/physics/joint-place-route-experiment.md)
-- **Physics enters as spend models with gradients.** One adjoint solve prices every copper edit. Topology optimization gives pours shaped by physics, with fab rules as filters inside the optimizer: −14.5% loss at equal area [C]. → [physics-in-the-loop-optimization](../topics/physics/physics-in-the-loop-optimization.md), [copper-shape-synthesis](../topics/physics/copper-shape-synthesis.md)
-- **Fidelity ladder F0–F4 plus surrogates, escalated on value of information:**
-  - Numpy PEEC agrees with FastHenry within 1.3% at ~1 ms [C].
-  - Residual surrogates reach 3.5% median error from 300 labels [C].
-  - FastHenry is internal-only (non-commercial notice).
-  
-  → [solver-ladder](../topics/physics/solver-ladder.md), [open-solvers](../topics/physics/open-solvers.md)
-- **A separate physics scorecard, never blended into cp1/cpk.** A DRC-equivalent mutation benchmark provides the ground truth. The prototype found 31/31 planted faults with 0/7 false alarms on 4 boards (same author for critic and faults). → [physics-critics](../topics/physics/physics-critics.md), [catalog](../topics/physics/physics-critics-catalog.md), [validation](../topics/physics/physics-critics-validation.md)
-- **Cross-domain transplants:** stream functions, transfer length, Murray-type width laws, screening lengths and power-module commutation cells. → [cross-domain-lessons](../topics/physics/cross-domain-lessons.md)
+- **Physics core v2:** Piece/Passport/Job on an extended graph with world conductors. It has 8 kernels sharing one factorization per band; every number is a Belief with an exactness class. → [physics-core-v2](../topics/physics/physics-core-v2.md), [API](../topics/physics/physics-core-v2-api.md)
+- **Joint placement and routing on a topology-carrying state,** used as a refiner: on toy boards it improves its start by 18% but ties an equal-CPU restart portfolio. → [joint-place-route](../topics/physics/joint-place-route.md), [red-team](../topics/physics/red-team.md)
+- **A physics scorecard separate from cp1/cpk,** with a DRC-equivalent mutation benchmark. → [physics-critics](../topics/physics/physics-critics.md)
+
+## Truth
+- **The red team re-derived 15 load-bearing claims.** The core maths holds; five headline numbers and the impedance principle were corrected (76 edits). → [red-team](../topics/physics/red-team.md)
+- **Validation:** a VOI-ranked coupon panel (ℓ_m coupon first) and a pre-registered two-arm first board (rules vs physics), with 11 kill criteria. → [validation-program](../topics/physics/validation-program.md), [coupons](../topics/physics/validation-coupons.md)

@@ -10,7 +10,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 - [Executive report](../reports/LLM%20driven%20PCB%20placement%20and%20routing.md): conclusions, recommended architecture, roadmap.
 - [Hybrid architecture options](topics/architecture/hybrid-architecture-options.md)
 - [Original ideas](ideas/original/README.md): new ideas, top 10 to try first.
-- [Physics-first report](../reports/Physics-first%20PCB%20layout.md) and [philosophy](topics/physics/README.md): lay out the board the schematic leaves out; rules decompressed to physics, joint place+route, physics critics.
+- [Physics-first report](../reports/Physics-first%20PCB%20layout.md), [philosophy](topics/physics/README.md) and [foundations](topics/physics/foundations.md): circuits as Maxwell at zeroth order, rules derived from first principles, what each conductor is doing, joint place+route, validation.
 
 ## Digests
 
@@ -22,7 +22,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | [rules-hs-emi-interfaces](digests/rules-hs-emi-interfaces.md) | SI/EMC physics, stackup, diff pairs, per-interface rule packs, SI/EMI checkers |
 | [rules-power-rf-analog-dfm](digests/rules-power-rf-analog-dfm.md) | converters and hot loops, decoupling/PDN, RF, analog, isolation, thermal, DFM, power checkers |
 | [practice-evaluation](digests/practice-evaluation.md) | expert workflow, trust, review checklist, constraint IR, evaluation stack, benchmarks |
-| [physics-first](digests/physics-first.md) | rules reduced to 12 physical quantities, physics vocabulary and IR, simulate-the-schematic, joint place+route, solver ladder, physics critics |
+| [physics-first](digests/physics-first.md) | foundations (gentleness, 7 principles, 13 theorems), rules derived from physics, conductor passports, exact edit pricing, certified floors, physics core v2, joint place+route, red team, validation program |
 
 ## By task
 
@@ -40,9 +40,12 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | Evaluating results | [verification/evaluation-stack](topics/verification/evaluation-stack.md), [verification/benchmarks](topics/verification/benchmarks.md), [verification/benchmark-plan](topics/verification/benchmark-plan.md) |
 | Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md) |
 | Planning the agent's workflow | [workflow/expert-state-machine](topics/workflow/expert-state-machine.md), [workflow/trust-requirements](topics/workflow/trust-requirements.md) |
-| Replacing a rule of thumb with physics | [physics/rule-basis-set](topics/physics/rule-basis-set.md), then the matching `physics/rule-genealogy-*.md` |
+| Understanding the physics-first principles | [physics/foundations](topics/physics/foundations.md), then one `physics/lens-*.md` |
+| Replacing a rule of thumb with physics | [physics/derivation-audit-table](topics/physics/derivation-audit-table.md) (one row per rule), [physics/rule-basis-set](topics/physics/rule-basis-set.md) |
+| Knowing what each conductor is doing | [physics/lens-cd](topics/physics/lens-cd.md), [physics/real-board-passports](topics/physics/real-board-passports.md), [physics/physics-core-v2](topics/physics/physics-core-v2.md) |
 | Writing physics budgets or the physics IR | [physics/vocabulary](topics/physics/vocabulary.md), [physics/physics-ir](topics/physics/physics-ir.md), [physics/schematic-to-physics](topics/physics/schematic-to-physics.md) |
-| Choosing a field/circuit/thermal solver | [physics/solver-ladder](topics/physics/solver-ladder.md), [physics/open-solvers](topics/physics/open-solvers.md) |
+| Choosing a field/circuit/thermal solver | [physics/physics-core-v2](topics/physics/physics-core-v2.md), [physics/solver-ladder](topics/physics/solver-ladder.md), [physics/open-solvers](topics/physics/open-solvers.md) |
+| Checking a physics claim or planning a measurement | [physics/red-team](topics/physics/red-team.md), [physics/validation-program](topics/physics/validation-program.md), [physics/validation-coupons](topics/physics/validation-coupons.md) |
 | Placing and routing together | [physics/joint-place-route](topics/physics/joint-place-route.md), [physics/physics-in-the-loop-optimization](topics/physics/physics-in-the-loop-optimization.md) |
 | Shaping pours and power copper | [physics/power-copper](topics/physics/power-copper.md), [physics/copper-shape-synthesis](topics/physics/copper-shape-synthesis.md) |
 | Checking that a board is physically right, not just DRC-clean | [physics/physics-critics](topics/physics/physics-critics.md), [physics/physics-critics-catalog](topics/physics/physics-critics-catalog.md) |
@@ -76,4 +79,4 @@ Every approach found in the survey, one line each, linked to its topic doc:
 [rules-power](ideas/inventory-rules-power.md),
 [practice-evaluation](ideas/inventory-practice-evaluation.md),
 [cross-domain transplants (ranked)](ideas/cross-domain-transplants.md),
-[physics-first catalog](ideas/physics-first/README.md) (~650 ideas in 11 theme files).
+[physics-first catalog](ideas/physics-first/README.md) (~890 ideas in 11 theme files and 7 lens files).
