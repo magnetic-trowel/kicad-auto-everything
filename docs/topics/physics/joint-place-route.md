@@ -44,7 +44,7 @@ Three structural causes follow [I]:
 
 | Formulation | Joint state | Strength | Weakness | Verdict |
 |---|---|---|---|---|
-| Grid joint SA with incremental rip-up (PROXI, Starfish, our PoC) | Poses + grid routes | Simple, exact routed cost | ~100× costlier per move than HPWL SA (measured); path-dependent route state | Inner-loop tool and baseline |
+| Grid joint SA with incremental rip-up (PROXI, Starfish, our PoC) | Poses + grid routes | Simple, exact routed cost | ~30× costlier per move than HPWL SA (measured); path-dependent route state | Inner-loop tool and baseline |
 | Lagrangian/ADMM price coupling | Poses; routes; congestion prices | Scales; prices are explanations | Oscillation; needs damping | Middle loop |
 | Joint LNS (destroy parts + copper in a window, repair with CP-SAT + router) | Poses + routes | Exact locally, escapes local minima | Window choice; CPU per iteration | Inner loop for dense windows |
 | Hierarchical coarse-to-fine (floorplan + corridors + layer budgets → cells → detail) | Regions, corridors, then poses | Necessary for scale; matches experts | Commits early | Scaffold for everything |

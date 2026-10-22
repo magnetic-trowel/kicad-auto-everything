@@ -104,7 +104,7 @@ Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, wh
 
 **JPR40. Shared-incumbent portfolio.** Run joint SA, joint LNS, price-coupled analytical placement and the MCTS outer loop concurrently, sharing the best solution and the current congestion prices, as CP-SAT workers share bounds. Test: portfolio vs best single method at equal CPU. *combo*, M.
 
-**JPR41. Delayed-acceptance joint SA.** Make each move pass a cheap first Metropolis test on HPWL, crossings and loop proxies, and route only moves that pass; the second test on the routed objective corrects the first (Christen–Fox delayed acceptance), so the chain still targets the routed objective. The PoC measured a ~10–100× per-move cost gap between proxy and routed moves; most routed evaluations are spent on moves a proxy would reject. Test: J vs CPU against plain joint SA. *sharp*, S.
+**JPR41. Delayed-acceptance joint SA.** Make each move pass a cheap first Metropolis test on HPWL, crossings and loop proxies, and route only moves that pass; the second test on the routed objective corrects the first (Christen–Fox delayed acceptance), so the chain still targets the routed objective. The PoC measured a ~30× per-move cost gap between HPWL moves and routed moves (Python, 30–50 parts), and most routed moves are rejected anyway. Test: J vs CPU against plain joint SA. *sharp*, S.
 
 **JPR42. Online per-board surrogate for move screening.** Fit a small linear model of ΔJ on cheap features (ΔHPWL, Δcrossings, Δband length, Δloop proxy) from the board's own exact evaluations and use it as the first stage of JPR41. The model is per board and never pretrained, which keeps clear of the learned-routability patents. Test: screening precision and recall over a run. *combo*, S.
 

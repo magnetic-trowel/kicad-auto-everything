@@ -5,7 +5,7 @@
 - **Proof of concept** ([op_topopt_pour.py](../../../tools/research/physics/op_topopt_pour.py)): a 24×14 mm 1 oz region where a 6 A source feeds three loads. At equal copper area (105 mm²), topology optimization gives 1.79 mΩ loss resistance against 2.09 mΩ for a well-drawn trunk-and-branch layout (−14.5%). A full pour (323 mm²) gives 0.68 mΩ [C].
 - **Honest magnitude: area matters more than shape.** A competent tree is already on the 1-D optimum for its topology (width ∝ current). Shape optimization was worth about 15% at equal area, and 18% over uniform widening at +25% area. It pays where amps are high (≳5 A), where IR or thermal margins are tight, or where several rails compete for one layer. For most low-current rails it does not matter [C/I].
 - **DC-optimal is not HF-optimal once the reference is cut.** Above f_c = R_s/(2π·μ0·h) (0.3–0.6 MHz for 1 oz over 0.1–0.2 mm, ~40 kHz on 2-layer 1.6 mm), current in a pour spreads by inductance. Over a uniform plane, the DC- and HF-optimal shapes coincide. Across a reference slot they differ: in the POC the slot-aware shape cut L_eff by 10% for +9% R [C].
-- **Fab rules map cleanly and must be in the optimizer, not only after it.** Filter radius and robust erode/dilate correspond to minimum width, space and etch tolerance. Contour plus Minkowski open/close removes slivers and acid traps. Island removal enforces connectivity. Legalization cost 0.0–2.8% in R. An opening wider than a drawn neck disconnected one design, so the minimum width must set the filter radius [C].
+- **Fab rules map cleanly and belong in the optimizer, not only after it.** Filter radius and robust erode/dilate give minimum width, space and etch tolerance; contour plus Minkowski open/close removes slivers and acid traps; island removal enforces connectivity. Legalization cost 0.0–2.8% in R, but an opening wider than a drawn neck disconnected one design, so the minimum width must set the filter radius [C].
 
 ## Key facts
 
@@ -115,9 +115,9 @@ Topology-optimized shape at equal area ('#' copper, 'o' keep-out; source at left
 ```
 
 What the optimizer found:
-- It splits at the source into two straight, tapered limbs around the hole. The upper limb absorbs C and continues to B; the lower limb runs straight to A.
-- It flares into every pad: there are no constant-width runs and no 45° doglegs.
-- Grey fraction is 0.6% and the minimum feature 1.5 mm. DC conduction favours thick members, so minimum-width rules rarely bind at this area.
+- Two straight, tapered limbs split at the source around the hole; the upper one absorbs C and continues to B, the lower one runs straight to A.
+- Every pad entry flares; there are no constant-width runs and no 45° doglegs.
+- Grey measure 0.6%, minimum feature 1.5 mm: DC conduction favours thick members, so minimum-width rules rarely bind at this area.
 
 **Area sweep** (DC only; area includes 34.5 mm² of pads) [C]:
 
@@ -150,20 +150,20 @@ The L-only result is worse than 50/50, a local optimum. Multi-start or continuat
 | Filter radius | Raw R_loss, min feature | Legalized at 0.5 mm | Legalized at 1.0 mm |
 |---|---|---|---|
 | 0.2 mm | 2.843 mΩ, 0.70 mm neck | 2.921 mΩ (+2.8%) | **disconnected** (C/B limb cut) |
-| 1.0 mm | 2.952 mΩ, ≈0.9–1.0 mm | 2.944 mΩ (−0.3%) | 2.946 mΩ (−0.2%) |
+| 1.0 mm | 2.952 mΩ, 0.9 mm | — | 2.946 mΩ (−0.2%) |
 
 A minimum width built into the filter costs 3.8% up front. Afterwards legalization is free and cannot cut the net.
 
-**Runtime** (CPU time, one core, shared VM) [C]:
+**Runtime** (CPU time, one core, loaded shared VM, ±20% run to run; `--timing`) [C]:
 
-| Grid | Nodes | Sparse LU solve | Topology-optimization iteration | Human-layout R |
-|---|---|---|---|---|
-| 0.4 mm | 2.2k | 8 ms | 8 ms | 2.170 mΩ |
-| 0.2 mm | 8.6k | 28 ms | 47 ms | 2.102 mΩ |
-| 0.1 mm | 34k | 145 ms | 0.38–0.40 s | 2.092 mΩ |
-| 0.05 mm | 135k | 1.0 s | 3.2 s | 2.083 mΩ |
+| Grid | Nodes | Assemble + LU + solve | Extra back-substitution (adjoint) | Optimization iteration | Human-layout R |
+|---|---|---|---|---|---|
+| 0.4 mm | 2.2k | 9 ms | 0.3 ms | 9 ms | 2.170 mΩ |
+| 0.2 mm | 8.6k | 27 ms | 1.0 ms | 39 ms | 2.102 mΩ |
+| 0.1 mm | 34k | 0.18 s | 4.7 ms | 0.40 s | 2.092 mΩ |
+| 0.05 mm | 135k | 0.88 s | 30 ms | 3.1 s | 2.083 mΩ |
 
-- R converges to 0.5% at 0.1 mm; a 200-iteration run at 0.1 mm takes about 80 s.
+- R converges to 0.5% at 0.1 mm; a 200-iteration run at 0.1 mm takes about 80 s. An adjoint costs 2–5% of a factorization.
 - Smoothed-aggregation AMG (pyamg, MIT) needed a grid-independent 12–17 CG iterations from 33k to 524k unknowns (scratch benchmark), the route to O(n) GPU solves; in Python its setup made LU faster at these sizes [C].
 
 ### Export to KiCad zones
@@ -184,7 +184,7 @@ A minimum width built into the filter costs 3.8% up front. Afterwards legalizati
 
 ## Recommendations for our system
 
-- **Ship one sheet solver with three coefficient maps and an adjoint.** DC, HF-inductive and thermal need no extra tools. Validate against padne (DC) and FastHenry (plane-pair L) ([open-solvers](open-solvers.md), [solver-ladder](solver-ladder.md)) [I].
+- **Ship one sheet solver with three coefficient maps and an adjoint.** DC, HF-inductive and thermal need no extra tools. Validate against padne (DC, GPL-3.0) and PEECN or FastHenry (plane-pair L; FastHenry licence caveat in [open-solvers](open-solvers.md)) ([solver-ladder](solver-ladder.md)) [I].
 - **Use synthesis for power nets above about 3–5 A, sense and Kelvin paths, heat-spreading copper, and multi-rail plane partitions.** Below that, a width-∝-current tree ([OP29](../../ideas/physics-first/optimization.md)) is within noise of optimal [C/I].
 - **Run the adjoint advisor on every layout,** human or agent-made: the cheapest physics feature with direct value (where copper buys mΩ, K or nH; where it is dead) [C].
 - **Put fab rules in the optimizer.** Set the filter radius or robust thresholds from minimum width, then legalize by contour + close + open with a connectivity and physics re-check. Reject any legalization that breaks connectivity or moves a budget by more than its margin [C].

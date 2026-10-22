@@ -17,18 +17,22 @@ pad feeding three loads A=3 A, B=2 A, C=1 A, a mounting-hole keep-out):
      the high-frequency loop inductance (sheet impedance j*w*mu0*h_eff) to DC loss.
 5. Adjoint sensitivities on the baseline: adjoint-vs-finite-difference check for
    the IR drop at load A, and adjoint-guided copper growth vs uniform widening.
-6. Legalization: threshold, island removal, morphological close/open at the
-   minimum width, polygonize with Shapely, round, re-rasterize, re-evaluate.
-7. A thermal-relief resistance study and a DC-vs-inductive crossover table.
+6. Legalization: marching-squares contour of the density (contourpy), pad-connected
+   islands only, Minkowski close/open at the minimum gap/width with round joins,
+   keep-out clip, simplify, re-rasterize, re-evaluate; a low-area stress test with
+   filter radius 0.2 vs 1.0 mm; greedy energy-ranked removal (ESO style) for comparison.
+7. A thermal-relief resistance study, a DC-vs-inductive crossover table, and a
+   runtime table (LU factorization vs adjoint back-substitution vs iteration).
 
 Physics: 2-D Laplace on bilinear Q4 elements; sheet conductance 1/R_s for DC
 (R_s = rho_Cu / t), 1/(mu0*h_eff) per square for the inductive limit of a pour
 over a reference plane at depth h_eff (parallel-plate, wide-conductor limit).
 
-Run (about 6-10 minutes on one CPU core at h = 0.1 mm; about 1.5 minutes with --quick):
+Run (about 10-25 minutes of CPU at h = 0.1 mm; a few minutes with --quick):
     python tools/research/physics/op_topopt_pour.py            # default h = 0.1 mm
     python tools/research/physics/op_topopt_pour.py --quick    # h = 0.2 mm, fewer runs
     python tools/research/physics/op_topopt_pour.py --export zone.txt  # KiCad zone text
+    python tools/research/physics/op_topopt_pour.py --timing   # runtime table only (~1 min)
 Needs numpy, scipy, shapely >= 2.0, contourpy (ships with matplotlib). Deterministic (no random numbers).
 """
 import argparse
@@ -421,7 +425,11 @@ def main():
     ap.add_argument("--h", type=float, default=0.1, help="grid pitch, mm")
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--export", default=None, help="write KiCad zone S-expression here")
+    ap.add_argument("--timing", action="store_true", help="only print the runtime table")
     a = ap.parse_args()
+    if a.timing:
+        runtime_table()
+        return
     h = 0.2 if a.quick else a.h
     print(f"R_s(1 oz) = {RS_1OZ * 1e3:.3f} mOhm/sq; crossover f_c = R_s/(2 pi mu0 h):")
     for oz, t in [(0.5, 17.5e-6), (1, 35e-6), (2, 70e-6)]:
@@ -537,14 +545,29 @@ def main():
         print(f"  {k:9s}: {v:.3f} mOhm (pad to pour edge)  +{v - rel['solid']:.3f} vs solid")
 
     if not a.quick:
-        print("\nRuntime vs grid (one LU solve; topopt iteration = 1 solve + filter + OC):")
-        for hh in (0.4, 0.2, 0.1, 0.05):
-            gg = Grid(hh)
-            hu = human_layout(gg)
-            r_, _, t_, _ = evaluate(gg, hu)
-            _, ti, _ = topopt(gg, hu.sum() * hh**2, [np.full(gg.nel, 1 / RS_1OZ)], [1.0], iters=8)
-            print(f"  h={hh:4.2f} mm {gg.nx:4d}x{gg.ny:<4d} nodes {gg.nnod:7d}: solve {t_ * 1e3:7.1f} ms, "
-                  f"iter {ti * 1e3:7.1f} ms, human R_loss {r_ * 1e3:.3f} mOhm")
+        runtime_table()
+
+
+def runtime_table():
+    """CPU time per LU factorization, per extra (adjoint) back-substitution, per topopt iteration."""
+    print("\nRuntime vs grid (CPU s; topopt iteration = 8-iteration average incl. setup):")
+    for hh in (0.4, 0.2, 0.1, 0.05):
+        gg = Grid(hh)
+        hu = human_layout(gg)
+        r_, _, t_, _ = evaluate(gg, hu)
+        coef = np.where(hu, 1 / RS_1OZ, 1e-9 / RS_1OZ)
+        sk = (coef[:, None] * KE.ravel()[None, :]).ravel()[gg.keep]
+        k = sp.csc_matrix((sk, (gg.ri, gg.rj)), shape=(gg.nf, gg.nf))
+        t0 = time.process_time()
+        lu = spla.splu(k, permc_spec="MMD_AT_PLUS_A")
+        t1 = time.process_time()
+        for _ in range(5):
+            lu.solve(gg.f[gg.free])
+        t2 = time.process_time()
+        _, ti, _ = topopt(gg, hu.sum() * hh**2, [np.full(gg.nel, 1 / RS_1OZ)], [1.0], iters=8)
+        print(f"  h={hh:4.2f} mm {gg.nx:4d}x{gg.ny:<4d} nodes {gg.nnod:7d}: assemble+factor+solve {t_ * 1e3:7.1f} ms "
+              f"(factor {(t1 - t0) * 1e3:6.1f} ms, back-substitution {(t2 - t1) / 5 * 1e3:5.1f} ms), "
+              f"iter {ti * 1e3:7.1f} ms, human R_loss {r_ * 1e3:.3f} mOhm")
 
 
 def ascii_render(g, cu, cols=60):

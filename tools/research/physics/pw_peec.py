@@ -315,12 +315,12 @@ def vertical_loop(l, w, h1, h_plane=None, t=35e-6, nw=None, nvia=3, z0=0.0):
 def exp_loops():
     print("== loops: commutation-loop inductance, l = 4 mm (cap to switch pair), conductor w = 2 mm")
     l, w = 4 * mm, 2 * mm
-    print("  lateral (go/return side by side on top, gap s = 0.5 mm; enclosed area ~ l*(w+s) = 10 mm2):")
+    print("  lateral (go/return side by side on top, gap s = 0.5 mm; centreline enclosed area (l+w)*(w+s) = 15 mm2):")
     for hp in (None, 1.5 * mm, 0.5 * mm, 0.2 * mm, 0.1 * mm):
         net, (p, n) = lateral_loop(l, w, 0.5 * mm, hp)
         L = net.L_port(p, n)
         print(f"    plane at {('none' if hp is None else f'{hp/mm:.2f} mm'):>8s}: L = {L*1e9:6.3f} nH")
-    print("  lateral with larger gap s = 3 mm (area ~ 28 mm2):")
+    print("  lateral with larger gap s = 3 mm (centreline area 30 mm2):")
     for hp in (None, 1.5 * mm, 0.1 * mm):
         net, (p, n) = lateral_loop(l, w, 3 * mm, hp)
         print(f"    plane at {('none' if hp is None else f'{hp/mm:.2f} mm'):>8s}: L = {net.L_port(p, n)*1e9:6.3f} nH")
@@ -514,7 +514,7 @@ def exp_kelvin():
         print(f"  {name}: L_err = {Lerr*1e12:6.0f} pH -> {Lerr*1e9*1e3/1e3:5.2f} mV per A/us;"
               f" R = L_err/1 mOhm corner {1e-3/(2*math.pi*abs(Lerr))/1e3:6.0f} kHz")
     print("  (signal for comparison: 1 mOhm shunt at 20 A = 20 mV)")
-    # nearby hot loop (lateral, 10 mm2) at 5 mm from a 30 mm2 sense loop vs a 1 mm2 loop
+    # nearby hot loop (lateral, 15 mm2) at 5 mm from a 30 mm2 sense loop vs a 1 mm2 loop
     hot, (p, n) = lateral_loop(4 * mm, 2 * mm, 0.5 * mm, h)
     Z, I = hot.solve(p, n)
     for area_name, ysep in (("30 mm2 sense loop (3 mm x 10 mm)", 3 * mm), ("1 mm2 sense loop (0.1 mm x 10 mm)", 0.1 * mm)):

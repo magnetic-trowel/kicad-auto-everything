@@ -15,7 +15,7 @@ N_sq is the number of "squares" between two electrodes, which this solver
 computes for any copper mask. Grid: square cells of side dx, one node per copper
 cell, unit conductance between edge-neighbours (units of 1/R_s).
 
-Experiments (python pw_sheet.py [corner|thermal|pour|viafield|spread|cluster|all]):
+Experiments (python pw_sheet.py [corner|thermal|pour|viafield|spread|cluster|terminal|all]):
   corner   squares and current crowding of 90 deg / chamfer / arc bends
   thermal  steady and pulse (adiabatic) temperature penalty of corner crowding
   pour     regulator-to-load: traces vs pours vs full region; entry constriction;
@@ -25,6 +25,7 @@ Experiments (python pw_sheet.py [corner|thermal|pour|viafield|spread|cluster|all
            sub-cell well correction, checked against (1/pi) ln(D/r) and against
            Archambeault's 154 pH / 545 pH anchors
   cluster  N parallel vias at pitch p feeding a plane pair: diminishing returns
+  terminal overlapped-loop plate fed by narrow terminals: where widening stops helping
 
 Deterministic. Each experiment runs in seconds to about a minute on one core
 (numpy + scipy only). All numbers quoted with [C] in docs/topics/physics/
@@ -456,10 +457,28 @@ def exp_cluster():
     return rows
 
 
+def exp_terminal():
+    print("== terminal: overlapped (vertical) loop plate of length l between two terminal rows of width a;")
+    print("   L = mu0 h N_sq (h = 0.1 mm). Widening the plate helps only while the terminals can spread into it.")
+    dx = 0.02  # mm
+    for l, a in ((2.0, 1.0), (2.0, 3.0), (4.0, 1.0)):
+        print(f"  l = {l} mm, terminal width a = {a} mm:")
+        for W in (a, 1.5 * a, 2 * a, 3 * a, 6 * a, 12 * a):
+            ny, nx = int(round(W / dx)), int(round(l / dx))
+            m = np.ones((ny, nx), bool)
+            ea = np.zeros_like(m)
+            eb = np.zeros_like(m)
+            j0, j1 = int(round((W - a) / 2 / dx)), int(round((W + a) / 2 / dx))
+            ea[j0:j1, 0] = True
+            eb[j0:j1, -1] = True
+            nsq = squares(m, ea, eb) * nx / (nx - 1)
+            print(f"    W = {W:5.1f} mm: N_sq {nsq:6.3f}  L = {MU0*0.1e-3*nsq*1e12:6.1f} pH  (ideal l/W = {l/W:5.3f} sq)")
+
+
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     exps = {"corner": exp_corner, "thermal": exp_thermal, "pour": exp_pour, "viafield": exp_viafield,
-            "spread": exp_spread, "cluster": exp_cluster}
+            "spread": exp_spread, "cluster": exp_cluster, "terminal": exp_terminal}
     for k, f in exps.items():
         if which in (k, "all"):
             f()

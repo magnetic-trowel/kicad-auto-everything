@@ -18,7 +18,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 
 **OP2. Synthesize a power zone by topology optimization.** — *combo, M.* SIMP with a density filter, Heaviside projection and an OC/MMA update turns "pour for net X with area A between these pads" into a minimum-loss copper shape, legalized to a KiCad zone. At equal area it beat a well-drawn trunk-and-branch layout by 14.5% in loss on our test case (1.79 vs 2.09 mΩ) [C]. Test: 20 high-current nets from open boards, loss and peak J vs the designer's copper at equal area.
 
-**OP3. Copper priced by routing demand.** — *new, M.* Give the pour optimizer a per-cell area price equal to the router's congestion price, so pours yield where signals need to pass and fill where they do not. In the POC a 4× price on a corridor halved the copper placed there for a 26% loss penalty [C]. Test: on 2-layer boards, route completion and IR drop with priced vs unpriced pours.
+**OP3. Copper priced by routing demand.** — *new, M.* Give the pour optimizer a per-cell area price equal to the router's congestion price, so pours yield where signals need to pass and fill where they do not. In the POC a 4× price on a 2 mm corridor halved the copper there (8.0 → 4.0 mm²) at +24% loss [C]. Test: on 2-layer boards, route completion and IR drop with priced vs unpriced pours.
 
 **OP4. Multi-rail plane partition as multi-phase optimization.** — *combo, L.* One density field per rail on a shared layer, a sum-to-one constraint per cell, and a clearance term on the overlap of the fields dilated by half the gap; solve by phase-field or alternating priced single-rail solves. It replaces hand-drawn splits and the Voronoi default with partitions that equalize marginal loss per mm². Test: 10 boards with 3+ rails on one plane, IR margin and split crossings vs the designer's partition.
 
@@ -56,9 +56,9 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 
 ## B. Physics terms for placement (evaluated while parts move)
 
-**OP21. Filament-PEEC loop term with an image plane.** — *sharp, S.* A Manhattan filament model with Grover's closed-form parallel-filament mutuals and a mirror image for the reference plane gives loop L within 1.5% of Grover's rectangle and within 1% of microstrip L′ [C]. It costs about 0.35 ms per loop in numpy on one core, about 1 µs on a GPU batch [I]. It is differentiable in pad positions and replaces "loop area" in the placer. Test: rank correlation with FastHenry on 30 hot loops vs the area proxy.
+**OP21. Filament-PEEC loop term with an image plane.** — *sharp, S.* A Manhattan filament model with Grover's closed-form parallel-filament mutuals and a mirror image for the reference plane gives loop L within 1.5% of Grover's rectangle and within 1–10% of microstrip L′ [C]. It costs about 0.35 ms per loop in numpy, and an estimated ~1 µs per loop in a GPU batch [I]. It is differentiable in pad positions and replaces "loop area" in the placer. Workstream 3's PEECN (solved current split, FastHenry within 1.3%) is the reference ([open-solvers](../../topics/physics/open-solvers.md)). Test: rank correlation with PEECN on 30 hot loops vs the area proxy.
 
-**OP22. Use path length × plane depth, not loop area, when a plane is close.** — *sharp, S.* With a solid plane 0.1 mm below, equal-area loops differ 1.7× in L, and L tracks perimeter to within 3% (0.052–0.055 nH/mm for 1.5 mm strips) [C]. Without a plane, area is a ±20% proxy. The objective must switch with h_eff/w, which the regime classifier knows. Test: same as OP21, split by stackup.
+**OP22. Use path length × plane depth, not loop area, when a plane is close.** — *sharp, S.* With a solid plane 0.1 mm below, equal-area loops differ 1.7× in L, and L tracks perimeter to within 3% (0.052–0.055 nH/mm for 1.5 mm strips) [C]. L ∝ perimeter holds within ±8% once h ≤ b/4 (b = forward-to-return spacing), with a constant near 0.85·L′(w, h). Without a plane, equal-area loops still differ by 18%. Test: same as OP21, split by h/b.
 
 **OP23. Thermal Green's-function placement term.** — *sharp, S.* A convectively cooled board is a fin with spreading length λ = √(k·t/2h): about 5 mm for bare 1.6 mm FR-4 and 37–64 mm with copper planes [C]. Superpose K0(r/λ) kernels, with images for board edges, as a smooth ΔT term. Spacing then follows λ instead of "keep hot parts apart". Test: rank correlation with a finite-volume thermal solver on 20 boards.
 
@@ -94,7 +94,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 
 ## D. Adjoints and sensitivities
 
-**OP38. Adjoint copper advisor for any layout.** — *new, S.* One extra solve gives dJ/d(every cell) for J = loss, IR drop at a load, loop L or ΔT. Show the top cells where added copper buys the most mΩ per mm², and the copper that does nothing. Adjoint and finite-difference gradients agree to 10⁻⁶ in the POC [C]. Test: designers' acceptance of suggestions and the realized mΩ per mm².
+**OP38. Adjoint copper advisor for any layout.** — *new, S.* One extra solve gives dJ/d(every cell) for J = loss, IR drop at a load, loop L or ΔT. Show the top cells where added copper buys the most mΩ per mm², and the copper that does nothing. Adjoint and central-difference gradients agree to 3.5 × 10⁻⁷ in the POC, and adjoint-ranked growth beat uniform widening (1.53 vs 1.67 mΩ for +25% area) [C]. Test: designers' acceptance of suggestions and the realized mΩ per mm².
 
 **OP39. Neck finder by sensitivity.** — *sharp, S.* Rank copper by ∂R/∂(local width): the top cells are the bottlenecks that the "narrowest cross-section" graph check approximates. This also covers 2-D necks between vias and pads that a graph misses. Test: agreement with designer-identified bottlenecks; false positives vs the graph check.
 
