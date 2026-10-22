@@ -116,3 +116,5 @@ def test_rescore_rescores_saved_outputs(tasks):
     assert all(r["score_version"] == SCORE_VERSION and r["rescored"][0]["from_version"] == 0
                for r in rows.values())
     assert json.loads((run_dir / "run.json").read_text())["rescored"][0]["attempts"] == 2
+    runner.rescore(run_dir)  # already current: nothing is rescored again
+    assert all(len(r["rescored"]) == 1 for r in report.load_rows(run_dir))

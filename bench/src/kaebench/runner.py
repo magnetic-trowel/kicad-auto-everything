@@ -132,9 +132,10 @@ def _rescore_probe(task_dir, rec, old, pscore, placed_stats, adir):
     return new
 
 
-def rescore(results_run_dir, jobs=1, progress=print):
+def rescore(results_run_dir, jobs=1, progress=print, force=False):
     """Score every saved output of a run again with the current scorer (after a scoring fix),
-    without re-running the method. Attempts that produced no output keep their status."""
+    without re-running the method. Attempts that produced no output keep their status;
+    attempts already scored by this scorer version are skipped unless force."""
     run_dir = Path(results_run_dir)
     meta = json.loads((run_dir / "run.json").read_text())
     tasks_dir = Path(meta["tasks_dir"])
@@ -152,6 +153,8 @@ def rescore(results_run_dir, jobs=1, progress=print):
         row = json.loads(path.read_text())
         adir = path.parent
         if row["status"] not in ("ok", "score_error") or not board_path(adir / "output").exists():
+            return row
+        if row.get("score_version") == SCORE_VERSION and row["status"] == "ok" and not force:
             return row
         old = row.get("score_version")
         row["status"] = "ok"
