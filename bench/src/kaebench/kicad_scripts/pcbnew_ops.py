@@ -137,7 +137,8 @@ def stats(path):
     bb = board.GetBoardEdgesBoundingBox()
     ds = board.GetDesignSettings()
     rules = dict(edge_clearance_mm=_mm(ds.m_CopperEdgeClearance), min_track_width_mm=_mm(ds.m_TrackMinWidth),
-                 min_clearance_mm=_mm(ds.m_MinClearance), hole_clearance_mm=_mm(ds.m_HoleClearance))
+                 min_clearance_mm=_mm(ds.m_MinClearance), hole_clearance_mm=_mm(ds.m_HoleClearance),
+                 min_via_diameter_mm=_mm(ds.m_ViasMinSize), min_through_drill_mm=_mm(ds.m_MinThroughDrill))
     placement = _placement(board)
     pad_nets = _pad_nets(board)
     _out(dict(

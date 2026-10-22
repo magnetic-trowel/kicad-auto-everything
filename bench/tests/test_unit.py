@@ -61,6 +61,41 @@ def test_strip_ses_placement(tmp_path):
     assert "placement" not in text and "(routes" in text
 
 
+def test_quote_ses_net_names(tmp_path):
+    ses = tmp_path / "b.ses"
+    ses.write_text('(session b (routes (network_out\n  (net ADD|SUB (wire (path F.Cu 250 0 0 1 1)))\n'
+                   '  (net "XOR_NOT" (via "Via[0-1]_800:400_um" 0 0))\n  (net \\JMP (wire)))))\n')
+    assert boardfiles.quote_ses_net_names(ses) == 2
+    text = ses.read_text()
+    assert '(net "ADD|SUB" (wire' in text and '(net "XOR_NOT"' in text and '(net "\\JMP"' in text
+
+
+def test_unblock_all_power_dsn(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    head = "(pcb b (structure\n (layer F.Cu (type {}) (property (index 0)))\n (layer B.Cu (type power))\n"
+    dsn.write_text(head.format("power") + " (plane GND (polygon F.Cu 0 0 0 1 1))))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 2
+    assert "power" not in dsn.read_text() and dsn.read_text().count("(type signal)") == 2
+    dsn.write_text(head.format("signal") + "))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 0 and "(type power)" in dsn.read_text()
+
+
+def test_dsn_unset_netclass_sizes(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
+                   '  (rule (width -0.001) (clearance 150)))\n (library\n'
+                   '  (padstack "Via[0-1]_-0.001:-0.001_um" (shape (circle F.Cu -0.001)) (shape (circle B.Cu -0.001))'
+                   ' (attach off))\n  (padstack "Via[0-1]_600:300_um" (shape (circle F.Cu 600)) (attach off)))\n'
+                   ' (network (class kicad_default a b (circuit (use_via "Via[0-1]_-0.001:-0.001_um"))'
+                   ' (rule (width -0.001)))))\n')
+    assert boardfiles.clamp_dsn_widths(dsn, 0.2) == 2
+    assert boardfiles.fix_dsn_unsized_vias(dsn, 0.5, 0.3) == 1
+    text = dsn.read_text()
+    assert "-0.001" not in text and text.count("(width 200)") == 2
+    assert text.count('"Via[0-1]_500:300_um"') == 3 and "(circle F.Cu 500)" in text and "(circle B.Cu 500)" in text
+    assert "(circle F.Cu 600)" in text and "Via[0-1]_600:300_um" in text
+
+
 def test_summarize_drc_ignores_library_checks():
     rep = dict(violations=[dict(type="clearance", severity="error"),
                            dict(type="lib_footprint_issues", severity="error"),

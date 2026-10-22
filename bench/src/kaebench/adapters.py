@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import tools
-from .boardfiles import board_path, clamp_dsn_widths, strip_ses_placement
+from .boardfiles import (board_path, clamp_dsn_widths, fix_dsn_unsized_vias, quote_ses_net_names,
+                         strip_ses_placement, unblock_all_power_dsn)
 
 
 @dataclass
@@ -118,9 +119,11 @@ class Freerouting(Adapter):
     """Freerouting via Specctra DSN/SES with the pitfalls from docs/topics/kicad/specctra-freerouting-integration.md:
     single-threaded optimizer, SES placement block stripped, analytics off, best-of-k via pass schedule.
 
-    By default it also closes two DSN translation gaps seen on real boards: automatic neck-down
-    (tracks thinner than the board minimum near pads) is disabled, and the board's copper-to-edge
-    and hole clearances are passed as router settings. `stock=True` runs Freerouting as shipped.
+    By default it also closes DSN translation gaps seen on real boards: automatic neck-down
+    (tracks thinner than the board minimum near pads) is disabled, the board's copper-to-edge
+    and hole clearances are passed as router settings, track widths below the board minimum
+    (or unset) and unsized vias get the board minimum, and a board whose copper layers are all
+    KiCad "power" layers gets them as signal layers. `stock=True` runs Freerouting as shipped.
     """
     name = "freerouting"
     kinds = ("route",)
@@ -151,7 +154,7 @@ class Freerouting(Adapter):
         far more copper-to-edge errors than the track-width errors it adds.
         """
         if self.stock:
-            return [], 0
+            return [], {}
         rules = tools.run_ops("stats", board_path(input_dir)).get("rules", {})
         args = ["--router.automatic_neckdown=false"]
         if rules.get("edge_clearance_mm"):
@@ -159,7 +162,9 @@ class Freerouting(Adapter):
         if rules.get("hole_clearance_mm"):
             args.append(f"--router.hole_clearance_um={round(rules['hole_clearance_mm'] * 1000)}")
         raised = clamp_dsn_widths(dsn, rules["min_track_width_mm"]) if rules.get("min_track_width_mm") else 0
-        return args, raised
+        sized = fix_dsn_unsized_vias(dsn, rules.get("min_via_diameter_mm"), rules.get("min_through_drill_mm"))
+        return args, dict(dsn_widths_raised=raised, dsn_vias_sized=sized,
+                          dsn_power_layers_unblocked=unblock_all_power_dsn(dsn))
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         if kind != "route":
@@ -171,7 +176,7 @@ class Freerouting(Adapter):
         t0 = time.monotonic()
         tools.run_ops("export-dsn", board_path(input_dir), dsn)
         passes = self.passes or self.PASS_SCHEDULE[attempt % len(self.PASS_SCHEDULE)]
-        rule_args, widths_raised = self._apply_board_rules(input_dir, dsn)
+        rule_args, dsn_fixes = self._apply_board_rules(input_dir, dsn)
         result = w / "result.json"
         remaining = max(10.0, timeout - (time.monotonic() - t0))
         # Freerouting's own deadline, inside ours: it then stops between items and still writes
@@ -195,14 +200,20 @@ class Freerouting(Adapter):
         partial = bool(own and own.get("final_state") == "TIMED_OUT")
         if not ses.exists():
             return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own,
-                                                 job_timeout_s=job_s, partial=partial, artifacts=artifacts))
+                                                 job_timeout_s=job_s, partial=partial, **dsn_fixes,
+                                                 artifacts=artifacts))
         stripped = strip_ses_placement(ses, ses2)
-        tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
-        return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode, rule_args=rule_args,
-                                                        dsn_widths_raised=widths_raised,
-                                                        ses_placement_stripped=stripped,
-                                                        router_report=own, job_timeout_s=job_s,
-                                                        partial=partial, artifacts=artifacts))
+        quoted = quote_ses_net_names(ses2)
+        meta = dict(passes=passes, rc=r.returncode, rule_args=rule_args, **dsn_fixes,
+                    ses_placement_stripped=stripped, ses_nets_quoted=quoted, router_report=own,
+                    job_timeout_s=job_s, partial=partial, artifacts=artifacts)
+        try:
+            tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
+        except tools.ToolError as e:
+            # still an adapter error, but keep the router's log and files for diagnosis
+            e.adapter_log, e.adapter_meta = log, dict(meta, artifacts=[*artifacts, ses2])
+            raise
+        return AdapterResult(board_path(out), log, meta)
 
 
 def _router_report(path):
