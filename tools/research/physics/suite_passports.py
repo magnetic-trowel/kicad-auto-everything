@@ -177,6 +177,14 @@ def parse_value(val, unit):
     return None
 
 
+PKG_RE = re.compile(r'(?<![\d.])[RCL]?(0201|0402|0603|0805|1206|1210|1812|2010|2512)(?!\d)', re.I)
+
+
+def ohms(val):
+    """rb.parse_ohms after removing package codes ('10k/R0402' would otherwise read as 0.0402 ohm)."""
+    return rb.parse_ohms(PKG_RE.sub(' ', val or ''))
+
+
 def parse_volts(net):
     """Nominal voltage from a rail name ('+3V3', '5V', 'VCC_12V', '+1.8V'); None if absent."""
     n = short(net)
@@ -205,12 +213,17 @@ class SBoard(rb.KBoard):
         for zi, z in enumerate(self.zones):
             self.z_by[z['net']].append(zi)
         self.fill_approx = {}
+        if self.outline is not None and self.pads:
+            inside = shapely.contains_xy(self.outline, np.array([p['x'] for p in self.pads]), np.array([p['y'] for p in self.pads]))
+            if inside.mean() < 0.8:      # the largest closed Edge.Cuts face is a cut-out: the real outline is open
+                self.outline = None
+                self.outline_note = f'Edge.Cuts face holds only {100 * inside.mean():.0f}% of the pads'
         if self.outline is None:
             parts = [g for z in self.zones for g in z['fills'].values()]
             parts += [p['poly'] for p in self.pads]
             parts += [LineString(t['pts']).buffer(t['w'] / 2) for t in self.tracks[:20000]]
             env = unary_union(parts).envelope if parts else Polygon()
-            self.outline_src = 'envelope of copper (no closed Edge.Cuts)'
+            self.outline_src = 'envelope of copper (' + getattr(self, 'outline_note', 'no closed Edge.Cuts') + ')'
             self.outline = env if not env.is_empty else None
         else:
             self.outline_src = 'Edge.Cuts'
@@ -321,7 +334,7 @@ def is_res(f):
     p = pfx(f['ref'])
     return len(f['pads']) == 2 and (p == 'R' or re.search(r'(^|:)R_|Resistor', f['lib'] or '') is not None
                                     or (p[:1] == 'R' and p not in ('RV', 'RT', 'RN', 'RLY', 'RL')
-                                        and rb.parse_ohms(f['value'] or '') is not None))
+                                        and ohms(f['value']) is not None))
 
 
 def is_ind(f):
@@ -405,7 +418,7 @@ def infer_roles_general(b):
     shunts = []
     for f in fps:
         if is_res(f):
-            ohm = rb.parse_ohms(f['value'] or '')
+            ohm = ohms(f['value'])
             nn = [p['net'] for p in f['pads']]
             if ohm is not None and 0 < ohm <= 0.2 and all(nn) and nn[0] != nn[1]:
                 shunts.append(dict(ref=f['ref'], ohm=ohm, nets=nn, fp=f))
@@ -612,7 +625,7 @@ def infer_roles_general(b):
             if o is None or o in gnds or o in sw_nets:
                 continue
             if is_res(f):
-                ohm = rb.parse_ohms(f['value'] or '')
+                ohm = ohms(f['value'])
                 if ohm is None or ohm > 1.0:
                     continue
             if pfx(f['ref']) == 'D' and diode_side(f, n) == 'A':
@@ -738,7 +751,10 @@ def infer_roles_general(b):
             continue
         hi = [q for q in on if (netset_of[id(q)] - {X}) & live_rails]
         lo = [q for q in on if q not in hi and ((netset_of[id(q)] - {X}) & gnds or (netset_of[id(q)] - {X}) & set(shunt_to_gnd))]
-        if hi and lo:
+        x_ind = any(is_ind(f) and not is_bead(f) for f in fps if X in netset_of[id(f)])
+        x_conn = any(is_conn(f) for f in fps if X in netset_of[id(f)])
+        big = max((p['poly'].area for q in on for p in q['pads']), default=0) >= 4.0
+        if hi and lo and (x_ind or x_conn or big):      # not a logic gate: drives an inductor, a connector, or power packages
             qa, qb = hi[0], lo[0]
             key = (qa['ref'], qb['ref'])
             if key in seen:
@@ -1021,10 +1037,12 @@ def run_dc(b, roles, args, res, errors):
                     kmax = segs[np.argmax(np.abs(IbP[segs]))]
                     rho = float(N.g[kmax] * N.reff(np.array([kmax]))[0])
                     dz = N.woodbury(segs, PhiP, PhiP)
+                    # the lstsq residual test misses near-singular cases: a sole path (rho ~ 1) disconnects
+                    cut = (not np.isfinite(dz)) or rho >= 0.999 or (RP > 0 and abs(dz / RP) > 100)
                     vb.append(dict(column=kind, share=rnd(sh, 3), rho=rnd(rho, 3), kind=v['kind'],
                                    at=[rnd(v['x'], 5), rnd(v['y'], 5)], drill=rnd(v['d'], 3),
-                                   removal='disconnects' if not np.isfinite(dz) else rnd(100 * dz / RP, 3) if RP > 0 else None,
-                                   flagged=bool(rho >= 0.8 or not np.isfinite(dz))))
+                                   removal='disconnects' if cut else rnd(100 * dz / RP, 3) if RP > 0 else None,
+                                   sole_path=bool(cut), flagged=bool(rho >= 0.8 or cut)))
             rr['via_bottlenecks'] = vb
             # loads whose own current passes >= 90% through one via (statistic, not a finding)
             single = 0
@@ -1281,7 +1299,8 @@ def hf_summary(res, rail, gnd):
     out['vias'] = [dict(share=rnd(c, 3), at=[rnd(x, 5), rnd(y, 5)], net=net) for c, x, y, net in res.get('vias', [])[:8]]
     if res.get('plane_cf'):
         net, ly, L0, L2 = res['plane_cf']
-        out['remove_plane'] = dict(net=net, layer=ly, ratio=rnd(L2 / L0, 3))
+        out['remove_plane'] = dict(net=net, layer=ly, ratio=rnd(L2 / L0, 3) if L2 < 1e-6 else None,
+                                   opens_loop=bool(L2 >= 1e-6))
     if res.get('swap'):
         pn, la, lb_, L0, L3 = res['swap']
         out['swap_planes'] = dict(plane=pn, layers=[la, lb_], change=rnd(L3 / L0 - 1, 3))
@@ -1363,6 +1382,9 @@ def run_cells(b, roles, dcN, args, res, errors, flush):
                 rec['grid_mm'] = hargs.h_hf
             txt = buf.getvalue()
             log(txt.rstrip())
+            if r['L_esl'] > 1e-6:      # > 1 uH: no closed return path inside the window (open loop), not a loop inductance
+                raise ValueError(f"open loop: the capacitor return does not reach the driver's ground inside the window"
+                                 f" (L = {r['L_esl']:.3g} H)")
             rec.update(hf_summary(r, rr['rail'], rr['gnd']))
             m = re.search(r'(\d+) sheet cells', txt)
             rec['sheet_cells'] = int(m.group(1)) if m else None
@@ -1477,7 +1499,7 @@ def make_findings(res, args):
                           unit='fraction of L',
                           detail=f"cell {c['ref']}: one added ground via changes hot-loop L by {100 * c['best_added_via']['change']:+.0f}%"
                                  f" (median site {100 * c['best_added_via']['median_site_change']:+.1f}%)"))
-        if c.get('remove_plane') and c['remove_plane']['ratio'] >= 1.5:
+        if c.get('remove_plane') and (c['remove_plane'].get('ratio') or 0) >= 1.5:
             F.append(dict(type='HF-INDUCED-PLANE', net=c['remove_plane']['net'], role_confidence=c['confidence'],
                           measured=c['remove_plane']['ratio'], unit='L ratio',
                           detail=f"cell {c['ref']}: the {c['remove_plane']['net']} plane ({c['remove_plane']['layer']}) is an image"
