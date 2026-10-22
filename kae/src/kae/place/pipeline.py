@@ -159,9 +159,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     mated = edges.mate(board, log=log) if edge_mate else {}
     if mated:
         rep["edge_mated"] = {u: list(p) for u, p in mated.items()}
-    held = [fp for fp in board.footprints if fp.edge_cuts and not fp.locked and not fp.on_board]
-    if held:
-        rep["outline_incomplete"] = sorted(fp.ref for fp in held)
+    # Footprints carrying Edge.Cuts are fixed obstacles (spec-5 tasks keep them in place and
+    # score moving them as illegal); staged ones cannot be placed: the board is flagged.
+    held = [fp for fp in board.footprints if fp.edge_cuts and not fp.locked]
+    staged = [fp for fp in held if not fp.on_board]
+    if staged:
+        rep["outline_incomplete"] = sorted(fp.ref for fp in staged)
         log(f"outline_incomplete: staged footprints carry Edge.Cuts ({', '.join(rep['outline_incomplete'][:8])}); "
             "held off the board, the board cannot be legal")
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held})

@@ -137,7 +137,7 @@ def grid_violations(st, parts=None):
                 out.setdefault(ib, []).append(("obstacle", ka))
     for i in mov:
         X, Y = int(st.X[i]), int(st.Y[i])
-        n = P.outside_cells(X, Y, P.parts[i].rots[st.K[i]].g_board)
+        n = P.outside_cells_all(X, Y, P.parts[i].rots[st.K[i]].g_boards)
         if n:
             out.setdefault(i, []).append(("outline", n))
     return out

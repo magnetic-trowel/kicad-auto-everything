@@ -162,12 +162,14 @@ class LoopComp:
         _, _, _, Hb, Nb = bv._hraster[-1]
         if self.kern is not None:
             return self.kern.loop_core(st.Xa, st.Ya, st.Ca, st.Sa, st.Ga, self.a_ti, self.a_lx, self.a_ly, self.a_body,
-                                       self.a_w, self.a_zb, self.a_bd, self.n, self.g, self.cos_min, self.detour,
+                                       self.a_w, self.a_zb, self.a_bd, self.n, self.g, self.cos_min, bv.clearance,
+                                       self.detour,
                                        bv.thickness, self.rvia, Hf, Hb, Nf, Nb, bv.gmask(self.gnd_nets), x0, y0, res,
                                        *self.a_scr)
         from .jit import PY
         return PY.loop_core(st.X, st.Y, st.C, st.S, st.G, self.l_ti, self.l_lx, self.l_ly, self.l_body, self.l_w,
-                            self.l_zb, self.l_bd, self.n, self.g, self.cos_min, self.detour, bv.thickness, self.rvia,
+                            self.l_zb, self.l_bd, self.n, self.g, self.cos_min, bv.clearance, self.detour,
+                            bv.thickness, self.rvia,
                             Hf, Hb, Nf, Nb, bv.gmask(self.gnd_nets), x0, y0, res, *self.l_scr)
 
 

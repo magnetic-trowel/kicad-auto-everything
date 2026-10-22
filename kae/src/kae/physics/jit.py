@@ -95,7 +95,32 @@ def build(jit):
         return 2.0 * (m_self(h, r) + collinear(h, h, 0.0)) - 2.0 * (m_par(h, h, 0.0, d) + m_par(h, h, -2.0 * h, d))
 
     @jit
-    def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, hj, hk, adjacent, cos_min, dmin):
+    def lnspan(p, z):
+        """Antiderivative of ln sqrt(p^2 + z^2) in p."""
+        if z > 0.0:
+            return 0.5 * p * math.log(p * p + z * z) - p + z * math.atan(p / z)
+        if p == 0.0:
+            return 0.0
+        return p * math.log(abs(p)) - p
+
+    @jit
+    def gmd_lin(d1, d2, z):
+        """Geometric mean of sqrt(p^2 + z^2) for p running linearly from d1 to d2 (signed
+        lateral offsets; a crossing pair has d1 d2 < 0 and a finite mean)."""
+        if abs(d2 - d1) <= 1e-9 * (abs(d1) + abs(d2) + z) + 1e-12:
+            q = 0.5 * (d1 + d2)
+            return math.sqrt(q * q + z * z)
+        return math.exp((lnspan(d2, z) - lnspan(d1, z)) / (d2 - d1))
+
+    @jit
+    def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, dsep):
+        """2 [M(j, k) - M(j, image k)] for horizontal segments j = A->B and k = C->D, k lying
+        dz above or below j, with the plane image of k at vertical distance zi from j
+        (inf: no plane). Pairs closer to perpendicular than cos_min give 0; adjacent pairs
+        (sharing a corner) with |cos| < 0.7 use the corner formula. Otherwise the parallel-
+        filament formula over the projected overlap with the geometric mean distance of the
+        linearly varying offset, floored at dsep (antiparallel or non-adjacent pairs: two
+        conductors on one layer cannot overlap) or dmin (the conductor's own GMD)."""
         ux = bx - ax
         uy = by - ay
         l1 = math.sqrt(ux * ux + uy * uy)
@@ -109,14 +134,14 @@ def build(jit):
         c = (ux * vx + uy * vy) / l2
         if -cos_min < c < cos_min:
             return 0.0
-        noplane = hj == INF or hk == INF
         qx = cx - ax
         qy = cy - ay
         rx = dx - ax
         ry = dy - ay
         s0 = qx * ux + qy * uy
         s1 = rx * ux + ry * uy
-        dp = 0.5 * abs(qx * uy - qy * ux + rx * uy - ry * ux)
+        d1 = qx * uy - qy * ux
+        d2 = rx * uy - ry * ux
         if s1 >= s0:
             lo = s0
             e1 = s1
@@ -131,15 +156,15 @@ def build(jit):
             b = min(l1 / (l2 + R), 1.0 - 1e-12)
             m = c * (l1 * math.log((1 + a) / (1 - a)) + l2 * math.log((1 + b) / (1 - b)))
         else:
-            dz = 0.0 if noplane else abs(hj - hk)
-            d = math.sqrt(dp * dp + dz * dz)
-            if d < dmin:
-                d = dmin
+            d = gmd_lin(d1, d2, dz)
+            fl = dsep if (c < 0.0 or not adjacent) else dmin
+            if d < fl:
+                d = fl
             m = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
             if c < 0:
                 m = -m
-        if not noplane:
-            d = math.sqrt(dp * dp + (hj + hk) ** 2)
+        if zi != INF:
+            d = gmd_lin(d1, d2, zi)
             mi = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
             if c > 0:
                 m -= mi
@@ -156,9 +181,10 @@ def build(jit):
         return j * H.shape[1] + i
 
     @jit
-    def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, detour, thick, rvia,
+    def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, clr, detour, thick, rvia,
                   Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs):
-        """Loop inductance (nH). px, py, hs: scratch arrays of length >= n."""
+        """Loop inductance (nH). clr: copper clearance (mm); px, py, hs: scratch arrays of
+        length >= n."""
         sx = 0.0
         sy = 0.0
         for k in range(n):
@@ -231,14 +257,27 @@ def build(jit):
                     cy = my + (cy - my) * detour
                     dx = mx + (dx - mx) * detour
                     dy = my + (dy - my) * detour
-                if shield and GS[ti[j]] != GS[ti[k]]:
+                sj = GS[ti[j]]
+                sk = GS[ti[k]]
+                if shield and sj != sk:
                     continue
-                dmin = 0.2235 * (min(w[j], w[k]) + TCU)
-                adj = (k == j + 1 or (j == 0 and k == n - 1)) and hs[j] == hs[k]
-                if k == j + 1 or not adj:
-                    m = pair_mut(ax, ay, bx, by, cx, cy, dx, dy, hs[j], hs[k], adj, cos_min, dmin)
+                hj = hs[j]
+                hk = hs[k]
+                if hj == INF or hk == INF:
+                    zi = INF
+                    dz = thick if sj != sk else 0.0
                 else:
-                    m = pair_mut(cx, cy, dx, dy, ax, ay, bx, by, hs[k], hs[j], adj, cos_min, dmin)
+                    zi = hj + hk
+                    dz = abs(hj - hk)
+                dmin = 0.2235 * (min(w[j], w[k]) + TCU)
+                dsep = dmin
+                if dz == 0.0 and not isbody[j] and not isbody[k]:
+                    dsep = 0.5 * (w[j] + w[k]) + clr
+                adj = (k == j + 1 or (j == 0 and k == n - 1)) and hj == hk
+                if k == j + 1 or not adj:
+                    m = pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adj, cos_min, dmin, dsep)
+                else:
+                    m = pair_mut(cx, cy, dx, dy, ax, ay, bx, by, dz, zi, adj, cos_min, dmin, dsep)
                 if j == gnd or k == gnd:
                     MAB += 0.5 * m
                 else:
@@ -525,7 +564,7 @@ def build(jit):
             out[k] = fin_sum(tx, ty, SX[k], SY[k], A[k], lam)
 
     ns = dict(z0_air=z0_air, deff=deff, m_self=m_self, G=G, m_par=m_par, collinear=collinear, strip_self=strip_self,
-              ties=ties, via_return=via_return, pair_mut=pair_mut, loop_core=loop_core, mutual_quad=mutual_quad,
+              ties=ties, via_return=via_return, lnspan=lnspan, gmd_lin=gmd_lin, pair_mut=pair_mut, loop_core=loop_core, mutual_quad=mutual_quad,
               patches_near=patches_near, k0=k0, fin_sum=fin_sum, lookup=lookup,
               shape_geo=shape_geo, path_gauss=path_gauss, neumann=neumann, dip_field=dip_field,
               loop_mutual_core=loop_mutual_core, patches_cm_core=patches_cm_core,
@@ -583,7 +622,7 @@ def warm(nbk):
     H = np.zeros((2, 2))
     N = np.zeros((2, 2), np.int32)
     g = np.zeros(1, np.bool_)
-    nbk.loop_core(f, f, f + 1, f, f + 1, ii, f, f, bb, f + 0.2, f, f, 4, -1, 0.3, 1.0, 1.6, 0.15,
+    nbk.loop_core(f, f, f + 1, f, f + 1, ii, f, f, bb, f + 0.2, f, f, 4, -1, 0.3, 0.15, 1.0, 1.6, 0.15,
                   H, H, N, N, g, 0.0, 0.0, 1.0, np.zeros(8), np.zeros(8), np.zeros(8))
     P = np.zeros((3, 3))
     nbk.mutual_quad(P, P, P + 1, P)

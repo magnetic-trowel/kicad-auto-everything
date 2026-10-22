@@ -51,6 +51,7 @@ class Annealer:
         self.own = [[r.g_own for r in p.rots] for p in P.parts]
         self.opp = [[r.g_opp for r in p.rots] for p in P.parts]
         self.brd = [[r.g_board for r in p.rots] for p in P.parts]
+        self.brds = [[r.g_boards for r in p.rots] for p in P.parts]
         self.side = [0 if p.s > 0 else 1 for p in P.parts]
         self.pinx = [[[float(v) for v in r.pins[:, 0]] for r in p.rots] for p in P.parts]
         self.piny = [[[float(v) for v in r.pins[:, 1]] for r in p.rots] for p in P.parts]
@@ -231,8 +232,7 @@ class Annealer:
         return tot
 
     def _outline(self, i):
-        a, b, c, d = self.brd[i][self.K[i]]
-        return self.P.outside_cells(self.X[i] + 0, self.Y[i] + 0, (a, b, c, d))
+        return self.P.outside_cells_all(self.X[i], self.Y[i], self.brds[i][self.K[i]])
 
     def _leg(self, S):
         """Legality cost of the parts in S (cells^2), each pair counted once."""

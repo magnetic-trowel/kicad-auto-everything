@@ -1098,7 +1098,7 @@ def _rails(nl: Netlist, roles: Roles):
             nr.subrole = 'usb_vbus'
         elif re.search(r'VBAT|BATT?|CELL|LIPO|LIION', s):
             nr.subrole = 'battery'
-        elif any(OUT_PIN.match(p.fn) or p.ptype == 'power_out' for p in nl.nets[net].pins):
+        elif any((OUT_PIN.match(p.fn) or p.ptype == 'power_out') and roles.parts[p.ref].kind in ('ic', 'module') for p in nl.nets[net].pins):
             nr.subrole = 'regulated'
         elif re.search(r'VIN|IN$|_IN|RAW|DC_?IN|PWR_?IN|VCC_?IN|EXT', s):
             nr.subrole = 'input'
@@ -1138,6 +1138,9 @@ def _rail_sources(nl: Netlist, roles: Roles):
             continue
         k = pr.kind
         ohm = V.resistance(part.value) if k == 'resistor' else None
+        if k == 'jumper' and re.search(r'open|close when|\bNO\b|DNP|DNF', f"{part.value} {part.lib_id}", re.I) and \
+                not re.search(r'bridged|closed\b|_NC\b', f"{part.value} {part.lib_id}", re.I):
+            continue           # a normally-open solder jumper carries nothing until someone bridges it
         if k in ('ferrite', 'fuse', 'jumper', 'net_tie') or (k == 'resistor' and ohm is not None and ohm <= 1.0) or \
                 (k == 'inductor' and not any(ref in d.get('inductors', []) for d in roles.switch_nodes.values())):
             series[a].append((ref, b, k))
@@ -1181,8 +1184,13 @@ def _rail_sources(nl: Netlist, roles: Roles):
             # an auto-named net ('Net-(U22-VDD)') that only one IC and capacitors touch is that IC's own node;
             # a named rail ('+3V3') in the same state is fed from somewhere the board does not show
             only_ic = len(act) == 1 and roles.parts[next(iter(act))].kind in ('ic', 'module') and nl.nets[net].nn.auto
+            # a supply pin of an input jack (barrel jack, USB VBUS, a power connector's +V) is where the rail enters
+            jack = [p for p in con if roles.parts[p.ref].subtype in ('power', 'usb') and
+                    re.match(r'^(VBUS\w*|PWR|POWER|VIN|V\+|\+|\+?\d+V\w*|DC\+?|VCC|BAT\+?)$', p.fn, re.I) and not CTRL_SUFFIX.search(p.fn)]
             if bat:
                 src = {'kind': 'battery', 'ref': bat[0].ref}
+            elif jack:
+                src = {'kind': 'connector', 'ref': jack[0].ref, 'pin': jack[0].number, 'note': 'supply pin of an input connector'}
             elif internal:
                 src = {'kind': 'internal', 'ref': internal[0].ref, 'pin': internal[0].number}
             elif devmod:
@@ -1565,10 +1573,15 @@ def _signal_roles(nl: Netlist, roles: Roles):
         evs = []
         if ANALOG_NET.search(s) and not re.search(r'REFCLK|SCK|CLK', s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
+        no_ana = ('logic', 'memory', 'motor_driver', 'gate_driver', 'load_switch')    # AIN1/BIN2 on a bridge driver are logic inputs
         ap = [p for p in pins if ANALOG_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and p.fn not in ('-', '+')
-              and roles.parts[p.ref].subtype not in ('logic', 'memory')]
+              and roles.parts[p.ref].subtype not in no_ana]
+        alt = [p for p in pins if '/' in p.fn and any(ANALOG_PIN.match(x) for x in p.fn.split('/')) and roles.parts[p.ref].kind in ('ic', 'module')
+               and roles.parts[p.ref].subtype not in no_ana]
         if ap:
             evs.append(ev('pinfunction', f"analog pin {ap[0].label}", MODERATE))
+        elif alt:
+            evs.append(ev('pinfunction', f"pin with an analog alternate function {alt[0].label}", WEAK))
         if net in opamp_in:
             ref, p = opamp_in[net]
             evs.append(ev('topology', f"input of {roles.parts[ref].subtype} {ref} ({p.label})", STRONG))
@@ -1592,7 +1605,8 @@ def _signal_roles(nl: Netlist, roles: Roles):
         evs = []
         if BOOT_NET.search(s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
-        bp = [p for p in pins if BOOTSEL_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and roles.parts[p.ref].subtype in ('mcu', 'fpga', None)]
+        bp = [p for p in pins if BOOTSEL_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and roles.parts[p.ref].subtype in ('mcu', 'fpga', None)
+              and (not re.match(r'^(IO0|GPIO0)$', p.fn, re.I) or re.search(r'ESP32|ESP8266|ESP-|WROOM|WROVER', nl.parts[p.ref].text(), re.I))]
         if bp:
             evs.append(ev('pinfunction', f"boot-strap pin {bp[0].label}", WEAK + 0.3))
         if evs:

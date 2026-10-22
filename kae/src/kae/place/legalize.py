@@ -18,6 +18,7 @@ board stays the judge.
 from __future__ import annotations
 
 import math
+import re
 import time
 
 import numpy as np
@@ -80,16 +81,20 @@ def _window_solve(P, st, free, margin_cells, time_s, workers, seed, w_rot=1.0):
     return sol, model
 
 
-def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None):
-    """Repair grid violations in place. Returns a report dict."""
+def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None, force=()):
+    """Repair grid violations in place (parts in `force` are re-placed in the first round even
+    when the grid finds them legal, e.g. after a KiCad violation). Returns a report dict."""
     t0 = time.monotonic()
     deadline = t0 + time_s
     rep = dict(rounds=0, windows=0, solved=0, global_used=False, start_violators=0)
     kk = {}
+    force = {i for i in force if P.parts[i].movable}
     for rnd in range(max_rounds):
         viol = grid_violations(st)
         if rnd == 0:
             rep["start_violators"] = len(viol)
+            for i in force:
+                viol.setdefault(i, []).append(("kicad", None))
         if not viol:
             break
         rep["rounds"] = rnd + 1
@@ -131,6 +136,73 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None)
     rep["end_violators"] = len(viol)
     rep["violations"] = {P.parts[i].ref: [str(r) for r in rs[:3]] for i, rs in list(viol.items())[:20]}
     rep["seconds"] = round(time.monotonic() - t0, 2)
+    return rep
+
+
+# ----------------------------------------------------------------------------- KiCad feedback
+PLACEMENT_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance", "hole_to_hole",
+                   "holes_co_located", "items_not_allowed", "malformed_courtyard", "npth_inside_courtyard",
+                   "pth_inside_courtyard", "shorting_items", "solder_mask_bridge")
+_OF_REF = re.compile(r"\bof (\S+)")
+_FP_REF = re.compile(r"^(?:Footprint|Courtyard of) (\S+)")
+
+
+def kicad_violations(drc):
+    """Violations from a kicad-cli DRC report (path, JSON text or dict): [{type, severity,
+    items: [{description, pos: {x, y}}]}], placement-relevant types only."""
+    import json
+    from pathlib import Path
+    if isinstance(drc, (str, Path)) and Path(str(drc)).exists():
+        drc = json.loads(Path(drc).read_text())
+    elif isinstance(drc, str):
+        drc = json.loads(drc)
+    out = []
+    for v in (drc or {}).get("violations", []):
+        if v.get("type") in PLACEMENT_TYPES and v.get("severity", "error") == "error":
+            out.append(dict(type=v.get("type"), severity=v.get("severity"), items=v.get("items", [])))
+    return out
+
+
+def violation_parts(P, st, v):
+    """Part indices a KiCad violation names: by reference in an item's text ('Pad 2 [GND] of
+    C3 on F.Cu', 'Footprint U1'), else the part with a pad nearest the item's position."""
+    by_ref = {}
+    for p in P.parts:
+        by_ref.setdefault(p.ref, []).append(p.i)
+    out = set()
+    for it in v.get("items", []):
+        d = it.get("description", "")
+        m = _OF_REF.search(d) or _FP_REF.search(d)
+        cands = by_ref.get(m.group(1), []) if m else []
+        pos = it.get("pos") or {}
+        if len(cands) == 1:
+            out.add(cands[0])
+            continue
+        if "x" in pos and "y" in pos:
+            pool = cands or [p.i for p in P.parts]
+            best = min(pool, key=lambda i: float(np.min(np.hypot(*(st.pins_xy(i) - [pos["x"], pos["y"]]).T)))
+                       if len(P.parts[i].fp.pads) else math.hypot(st.xy(i)[0] - pos["x"], st.xy(i)[1] - pos["y"]))
+            out.add(best)
+    return out
+
+
+def repair_kicad(P, st, violations, time_s=30.0, workers=2, seed=0, step_mm=0.1, log=None):
+    """Feed KiCad's verdict on a candidate placement back as constraints: every movable part
+    a placement violation names grows its occupancy rectangle by `step_mm` (kept for the rest
+    of the run, P.bump) and is re-placed by the windowed legalizer. Returns a report."""
+    if violations and isinstance(violations, (str, dict)):
+        violations = kicad_violations(violations)
+    parts = set()
+    by_type = {}
+    for v in violations or []:
+        ps = violation_parts(P, st, v)
+        by_type[v["type"]] = by_type.get(v["type"], 0) + 1
+        parts |= {i for i in ps if P.parts[i].movable}
+    for i in parts:
+        P.bump(i, step_mm)
+    rep = dict(violations=sum(by_type.values()), by_type=by_type, parts=sorted(P.parts[i].ref for i in parts))
+    if parts:
+        rep["legalize"] = legalize(P, st, time_s=time_s, workers=workers, seed=seed, log=log, force=parts)
     return rep
 
 

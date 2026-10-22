@@ -779,19 +779,27 @@ CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
 CELL_QUOTA = 2      # one HF commutation cap and one more
 CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only when the loads' pins leave some spare
                        # (else the bulk ones, largest first); 'hf': always prefer them (ablation)
+CONVERTER_OUT = True   # a buck's output (a boost's input) bulk capacitors (>= 10 uF) belong at its inductor
 ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
 
 
 def _decap_groups(b: _B, cells) -> list:
     """Power pins grouped per (IC, rail, function); a converter's pins on its cell's rail belong to the cell."""
-    in_cell = {(c['controller'], c['cap_rail']) for c in cells if c.get('controller')}
+    # the controller's pins that close a cell's loop belong to the cell; its other supply pins on the same
+    # rail (an MCU's IOVDD beside its internal SMPS input) stay loads
+    in_cell = defaultdict(set)
+    for c in cells:
+        if c.get('controller'):
+            for t in c.get('loop_core') or []:
+                if t[0] == c['controller']:
+                    in_cell[(c['controller'], c['cap_rail'])].update(t[1] if isinstance(t[1], list) else [t[1]])
     groups = {}
     for ref, part in b.nl.parts.items():
         if b.k(ref) not in LOAD_KINDS or part.dnp:
             continue
         for p, func in _power_pins(b, ref):
-            if (ref, p.net) in in_cell:
-                continue           # the converter's own pins on its cell's rail are the cell (input or output side)
+            if p.number in in_cell.get((ref, p.net), ()) or (func in ('regulator_input', 'regulator_output') and (ref, p.net) in in_cell):
+                continue           # the converter's own loop pins on its cell's rail are the cell (input or output side)
             g = groups.setdefault((ref, p.net, func), {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
             if p.number not in g['pins']:
                 g['pins'].append(p.number)
@@ -808,6 +816,18 @@ def _decap_groups(b: _B, cells) -> list:
                 if b.caps_between(hi, lo):
                     groups[(ref, (hi, lo), 'split_supply')] = {'ref': ref, 'rail': (hi, lo), 'function': 'split_supply',
                                                                'pins': list(rp[hi]), 'return_pins': list(rp[lo])}
+    if CONVERTER_OUT:
+        # the output filter of a buck (input filter of a boost): bulk capacitors at the inductor's far terminal
+        for c in cells:
+            L = c.get('inductor')
+            far = c.get('vout') if c['class'] == 'buck' else c.get('vin') if c['class'] == 'boost' else None
+            if not L or not far or far == c.get('cap_rail') or far not in b.r.rails:
+                continue
+            big = [x for x in b.caps_on(far) if (cap_class(b.nl.parts[x])[1] or 0) >= 9.9e-6 or b.nl.parts[x].package.polarized]
+            pins = b.pads(L, far)
+            if big and pins:
+                func = 'converter_output' if c['class'] == 'buck' else 'converter_input'
+                groups[(L, far, func)] = {'ref': L, 'rail': far, 'function': func, 'pins': pins, 'quota': len(big), 'cell': c['id']}
     if ENTRY_BULK:
         # a rail that enters through a connector (or its series diode or fuse) keeps its polarized bulk
         # capacitors at the entry: they hold the cable's inductance up, not one load's pins
@@ -879,6 +899,8 @@ def allocate_caps(b: _B, cells, groups):
                     f = x['function']
                     if f in ('regulator_output', 'regulator_input'):
                         v += 0.5 + 0.5 * big          # sources and inputs take the larger capacitors
+                    elif f in ('converter_output', 'converter_input'):
+                        v += 0.5 + 0.5 * big if (far[c] or 0) >= 9.9e-6 or b.nl.parts[c].package.polarized else -3.0
                     elif f == 'bypass':
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
@@ -985,6 +1007,9 @@ def decaps(b: _B, groups) -> list:
             cp = g['caps_p']
             if g['function'] == 'entry':
                 evs = [ev('topology', f"'{b.short(rail)}' enters through {ref}; polarized bulk capacitor(s) {', '.join(mine)}", MODERATE)]
+            elif g['function'] in ('converter_output', 'converter_input'):
+                evs = [ev('topology', f"bulk capacitor(s) {', '.join(mine)} on '{b.short(rail)}' at power inductor {ref} "
+                                      f"({'output' if g['function'] == 'converter_output' else 'input'} filter of {g['cell']})", MODERATE)]
             else:
                 evs = [ev('topology', f"{len(pins)} power pin(s) of {ref} on '{b.short(rail)}'", MODERATE)]
             if split:
@@ -1694,6 +1719,10 @@ def find_structures(nl: Netlist, roles: Roles) -> dict:
     cells = commutation_cells(b)
     groups = _decap_groups(b, cells)
     allocate_caps(b, cells, groups)
+    by_id = {c['id']: c for c in cells}
+    for g in groups:
+        if g['function'] in ('converter_output', 'converter_input') and g.get('caps') and g.get('cell') in by_id:
+            by_id[g['cell']]['output_caps' if g['function'] == 'converter_output' else 'input_caps'] = sorted(g['caps'], key=_refkey)
     _finish_cells(b, cells)
     st = {'commutation_cells': cells}
     st['decaps'] = decaps(b, groups)

@@ -182,6 +182,10 @@ def build(board, *, use_sheets: bool = True) -> dict:
     st = find_structures(nl, roles)
     ids = _Ids(nl)        # part key -> footprint uuid, for every part reference the brief emits
     sroles = _structure_roles(st)
+    for ref, (role, sid) in list(sroles.items()):
+        # an MCU or SoC that runs an internal SMPS keeps its own role
+        if role == 'switching_regulator' and roles.parts[ref].subtype not in ('regulator_switching', 'regulator_module', 'pmic', 'charger', None):
+            del sroles[ref]
     member_of = {}
     for key in STRUCT_ORDER:
         for s in st[key]:
@@ -213,6 +217,8 @@ def build(board, *, use_sheets: bool = True) -> dict:
             d['source'] = {k: v for k, v in src.items() if k != 'ref'}
             if src.get('ref') in nl.parts:
                 d['source'].update(part=ids(src['ref']), ref=nl.parts[src['ref']].refdes)
+            if src.get('path'):
+                d['source'].update(path=[ids(x) for x in src['path']], path_ref=[nl.parts[x].refdes for x in src['path']])
         if nr.tags:
             d['tags'] = nr.tags
         if nr.role == 'switch_node':

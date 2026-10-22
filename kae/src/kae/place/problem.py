@@ -139,17 +139,39 @@ def polys_lib_rect(polys):
     return tuple(float(v) for v in b)
 
 
-def _cluster_rects(rects, max_n=8):
-    """Merge rectangles into at most max_n groups (by sorting along the longer spread)."""
-    if len(rects) <= max_n:
-        return list(rects)
-    arr = np.array(rects)
-    cx = (arr[:, 0] + arr[:, 2]) / 2
-    cy = (arr[:, 1] + arr[:, 3]) / 2
-    key = cx if np.ptp(cx) >= np.ptp(cy) else cy
-    order = np.argsort(key, kind="stable")
-    groups = np.array_split(order, max_n)
-    return [rect_union([rects[i] for i in grp]) for grp in groups if len(grp)]
+def _cluster_rects(rects, max_n=64):
+    """Merge rectangles that touch or overlap into their bounding boxes (rows and columns of
+    pads become one rectangle each, the gaps between them stay open), repeated until stable;
+    beyond max_n groups, the nearest groups merge."""
+    rs = [tuple(r) for r in rects if r is not None]
+    changed = True
+    while changed and len(rs) > 1:
+        changed = False
+        out = []
+        while rs:
+            a = rs.pop()
+            merged = True
+            while merged:
+                merged = False
+                for k in range(len(rs) - 1, -1, -1):
+                    b = rs[k]
+                    if a[0] <= b[2] + 1e-9 and b[0] <= a[2] + 1e-9 and a[1] <= b[3] + 1e-9 and b[1] <= a[3] + 1e-9:
+                        a = rect_union([a, b])
+                        rs.pop(k)
+                        merged = changed = True
+            out.append(a)
+        rs = out
+    while len(rs) > max_n:
+        best = None
+        for i in range(len(rs)):
+            for j in range(i + 1, len(rs)):
+                u = rect_union([rs[i], rs[j]])
+                cost = rect_area(u) - rect_area(rs[i]) - rect_area(rs[j])
+                if best is None or cost < best[0]:
+                    best = (cost, i, j, u)
+        _, i, j, u = best
+        rs = [r for k, r in enumerate(rs) if k not in (i, j)] + [u]
+    return rs
 
 
 def edge_cut_polys(fp):
@@ -258,6 +280,9 @@ class Rot:
     g_board: tuple = None
     g_own_exact: tuple = None   # g_own without the routing margin
     g_board_exact: tuple = None  # g_board without the routing margin
+    boards: tuple = ()           # rectangles that must each lie inside (one, or pad groups)
+    g_boards: tuple = ()
+    g_boards_exact: tuple = ()
 
 
 @dataclass
@@ -409,8 +434,8 @@ class Problem:
     def _nets(self, board, net_kinds):
         pins = {}
         for i, fp in enumerate(board.footprints):
-            if fp.uuid in self.held:
-                continue
+            if fp.uuid in self.held and not fp.on_board:
+                continue      # a staged part held off the board: its pins would only mislead
             for k, p in enumerate(fp.pads):
                 if p.net:
                     pins.setdefault(p.net, []).append((i, k))
@@ -463,12 +488,23 @@ class Problem:
             lib_opp.append(cut)
         else:
             lib_cut = None
-        copper = rect_union(pad_rects)
+        # copper keeps the copper-to-edge clearance; a bare NPTH hole only stays inside
+        cu_rects = [r for p, r in zip(pads, pad_rects) if p.kind != "np_thru_hole" or
+                    max(p.size) > (max(p.slot) if p.slot else p.drill) + 1e-6]
+        holes = [hole_lib_rect(p) for p in pads if p.kind == "np_thru_hole"]
+        copper = rect_union(cu_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:
             copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard
-        lib_edge = rect_grow(copper, self.edge_clearance + 0.002) if copper is not None else None
+        lib_edge = rect_union([rect_grow(copper, self.edge_clearance + 0.002) if copper is not None else None,
+                               rect_union(holes)])
         lib_board_full = rect_union([lib_edge, cy if cy is not None else lib_own, lib_cut])
         lib_board_pads = rect_union([lib_edge if lib_edge is not None else lib_own, lib_cut])
+        # pad groups that must each lie inside (a module may bridge a cut-out with its pad rows)
+        groups = _cluster_rects([rect_grow(r, self.edge_clearance + 0.002) for r in cu_rects] +
+                                [h for h in holes if h is not None], max_n=4)
+        if lib_cut is not None:
+            groups.append(lib_cut)
+        lib_board_groups = groups or [lib_board_pads]
         pad_net = np.array([name_to_net.get(p.net, -1) if p.net else -1 for p in pads], dtype=int)
         local = transform.local_pads(fp)
         movable = not fp.locked and fp.uuid not in self.held
@@ -476,7 +512,7 @@ class Problem:
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
-                         crt=cy if cy is not None else lib_own)
+                         board_groups=lib_board_groups, crt=cy if cy is not None else lib_own)
         rots = list(rotations) if movable else [fp.rot]
         for rot in rots:
             part.rots.append(self._rot(part, rot, local, lib_board_full))
@@ -496,8 +532,9 @@ class Problem:
             pins = np.column_stack([px, py])
         else:
             pins = np.zeros((0, 2))
-        return Rot(rot=float(rot), own=rr(L["own"]), opp=tuple(rr(r) for r in L["opp"]), board=rr(lib_board),
-                   crt=rr(L["crt"]), pins=pins)
+        board = rr(lib_board)
+        return Rot(rot=float(rot), own=rr(L["own"]), opp=tuple(rr(r) for r in L["opp"]), board=board,
+                   crt=rr(L["crt"]), pins=pins, boards=(board,))
 
     def _fit_check(self):
         """A part whose courtyard cannot fit inside the outline in any rotation only keeps
@@ -514,6 +551,7 @@ class Problem:
                 p.fits = False
                 for r in p.rots:
                     r.board = rot_rect(p._lib["board_pads"], r.rot, p.s)
+                    r.boards = tuple(rot_rect(gr, r.rot, p.s) for gr in p._lib["board_groups"])
                 self.notes.append(f"{p.ref}: courtyard does not fit on the board; only its pads are kept inside")
 
     def _fits_somewhere(self, gr):
@@ -528,9 +566,19 @@ class Problem:
                 r.g_own = to_grid(r.own, g)
                 r.g_opp = tuple(to_grid(o, g) for o in r.opp)
                 r.g_board = to_grid(r.board, g)
+                r.g_boards = tuple(to_grid(b, g) for b in r.boards)
                 r.g_own_exact = r.g_own
                 r.g_board_exact = r.g_board
+                r.g_boards_exact = r.g_boards
         self.margin = 0.0
+
+    def bump(self, i, mm):
+        """Grow part i's occupancy rectangle by `mm` more on every side, for good (a KiCad
+        violation the rectangles missed becomes a constraint the model keeps)."""
+        if not hasattr(self, "extra_cells"):
+            self.extra_cells = {}
+        self.extra_cells[i] = self.extra_cells.get(i, 0) + max(1, int(math.ceil(mm / self.g - EPS)))
+        self.set_margin(self.margin)
 
     def utilization(self):
         """Per side: occupancy-rectangle area of all parts on (or drilling through) the side
@@ -560,6 +608,7 @@ class Problem:
         Legality does not need any of it; routability does."""
         g = self.g
         self.margin = float(m)
+        extra = getattr(self, "extra_cells", {})
         # room for a track between a pad and the edge (beyond the copper-to-edge clearance), as
         # far as the board's slack allows: Freerouting narrows tracks it squeezes in there
         r = self.board.rules
@@ -569,19 +618,20 @@ class Problem:
             if not p.movable:
                 continue
             esc = m * min(0.8, 0.1 * math.sqrt(len(p.fp.pads))) if m > 0 else 0.0
-            k = int(round((m + esc) / 2 / g)) if m > 0 else 0
+            k = (int(round((m + esc) / 2 / g)) if m > 0 else 0) + extra.get(p.i, 0)
             kb = int(round((m / 2 + edge_room) / g)) if m > 0 else 0
             for r in p.rots:
                 a, b, c, d = r.g_own_exact
                 r.g_own = (a - k, b + k, c - k, d + k)
                 a, b, c, d = r.g_board_exact          # room to route between parts and the edge
                 r.g_board = (a - kb, b + kb, c - kb, d + kb)
+                r.g_boards = tuple((a - kb, b + kb, c - kb, d + kb) for (a, b, c, d) in r.g_boards_exact)
         return int(round(m / 2 / g)) if m > 0 else 0
 
     def _fixed_obstacles(self, board):
         g = self.g
         for p in self.parts:
-            if p.movable or p.uuid in self.held:
+            if p.movable or (p.uuid in self.held and not p.fp.on_board):
                 continue
             r = p.rots[0]
             si = 0 if p.s > 0 else 1
@@ -631,6 +681,9 @@ class Problem:
         """Cells of grid rect gr (relative to origin X, Y) not inside the outline."""
         a, b, c, d = gr
         return sat_query(self.sat_out, X + a, X + b, Y + c, Y + d, self.ncx, self.ncy)
+
+    def outside_cells_all(self, X, Y, grs):
+        return sum(self.outside_cells(X, Y, gr) for gr in grs)
 
     def summary(self):
         mov = [p for p in self.parts if p.movable]

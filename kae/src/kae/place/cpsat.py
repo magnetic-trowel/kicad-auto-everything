@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+import numpy as np
 from ortools.sat.python import cp_model
 
 
@@ -45,10 +46,11 @@ def single(P, i, X0, Y0, k0=0, weight=1.0):
 
 
 def _rects_of(P, item, v):
-    """Per side: grid rectangles (a, b, c, d) relative to the item origin; and the bounding
-    box of the board rectangles."""
+    """Per side: grid rectangles (a, b, c, d) relative to the item origin; and the board
+    rectangles that must each lie inside the outline (a part that fits contributes its
+    bounding box; one that does not, its pad groups)."""
     out = {0: [], 1: []}
-    bb = None
+    boards = []
     for i, (dx, dy, k) in item.variants[v].items():
         p = P.parts[i]
         r = p.rots[k]
@@ -57,17 +59,19 @@ def _rects_of(P, item, v):
         out[si].append((dx + a, dx + b, dy + c, dy + d))
         for (a, b, c, d) in r.g_opp:
             out[1 - si].append((dx + a, dx + b, dy + c, dy + d))
-        a, b, c, d = r.g_board
-        rb = (dx + a, dx + b, dy + c, dy + d)
-        bb = rb if bb is None else (min(bb[0], rb[0]), max(bb[1], rb[1]), min(bb[2], rb[2]), max(bb[3], rb[3]))
+        for (a, b, c, d) in (r.g_boards or (r.g_board,)):
+            boards.append((dx + a, dx + b, dy + c, dy + d))
+    # one bounding box for the members that fit whole; the rest stay separate
+    whole = [b for b in boards]
+    if len(whole) > 1 and len(item.members) > 1:
+        bb = (min(b[0] for b in whole), max(b[1] for b in whole), min(b[2] for b in whole), max(b[3] for b in whole))
+        whole = [bb]
     # an item's own rectangles may overlap each other (drilled pads and a back courtyard):
     # NoOverlap2D needs them as disjoint pieces
-    return {side: disjoint_union(rs) for side, rs in out.items()}, bb
+    return {side: disjoint_union(rs) for side, rs in out.items()}, whole
 
 
-def allowed_boxes(P, bb):
-    """Origin boxes (xlo, xhi, ylo, yhi) inclusive for which grid rect bb lies inside one of
-    the cover rectangles."""
+def _boxes_one(P, bb):
     a, b, c, d = bb
     out = []
     for (i0, i1, j0, j1) in P.cover:
@@ -76,6 +80,32 @@ def allowed_boxes(P, bb):
         if xlo <= xhi and ylo <= yhi:
             out.append((xlo, xhi, ylo, yhi))
     return out
+
+
+def allowed_boxes(P, boards, cap=32):
+    """Origin boxes (xlo, xhi, ylo, yhi), inclusive, for which every board rectangle lies
+    inside some cover rectangle (each may pick a different one): the intersection over the
+    rectangles of their unions of boxes, largest kept."""
+    if isinstance(boards, tuple) and len(boards) == 4 and all(isinstance(v, (int, np.integer)) for v in boards):
+        boards = [boards]
+    cur = None
+    for bb in boards:
+        opts = _boxes_one(P, bb)
+        if cur is None:
+            cur = opts
+            continue
+        nxt = []
+        for (a0, a1, b0, b1) in cur:
+            for (c0, c1, d0, d1) in opts:
+                x0, x1, y0, y1 = max(a0, c0), min(a1, c1), max(b0, d0), min(b1, d1)
+                if x0 <= x1 and y0 <= y1:
+                    nxt.append((x0, x1, y0, y1))
+        nxt = sorted(set(nxt), key=lambda q: -((q[1] - q[0] + 1) * (q[3] - q[2] + 1)))
+        cur = [q for k, q in enumerate(nxt)
+               if not any(o[0] <= q[0] and q[1] <= o[1] and o[2] <= q[2] and q[3] <= o[3] for o in nxt[:k])][:cap]
+        if not cur:
+            return []
+    return cur or []
 
 
 def disjoint_union(rects):
