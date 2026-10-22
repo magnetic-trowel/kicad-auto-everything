@@ -165,26 +165,14 @@ In both higher-inductance cells, a plane that is not part of the loop lies betwe
 ## Conflicts and open questions
 
 **Model limits** (they bound the confidence of the numbers above):
-- **DC:**
-  - bare copper at 20 °C;
-  - 20 µm via plating assumed;
-  - no solder on the tinned bus, so its R is overestimated;
-  - no package resistance;
-  - shunt terminations ignored, which is the worst case for the Kelvin counterfactual.
-- **HF:**
-  - no lateral fringing, so narrow features read high: ×1.52 for a 1 mm strip 0.2 mm over a plane, about ×3 at w/h ≈ 1;
-  - lossless;
-  - crude part paths (25–31% of L) and outer field;
-  - one window.
+- **DC.** The copper is bare and at 20 °C, and via plating is assumed to be 20 µm. There is no solder on the tinned bus, so its R is overestimated. Package resistance is left out. Shunt terminations are ignored, which is the worst case for the Kelvin counterfactual.
+- **HF.** There is no lateral fringing, so narrow features read high: ×1.52 for a 1 mm strip 0.2 mm over a plane, and about ×3 at w/h ≈ 1. The model is lossless, its part paths (25–31% of L) and outer field are crude, and it covers one window.
 - **Not modelled:** temperature, the transition band near f_x (CD19), the PWM fundamental, full-wave effects.
 - **Role inference** is heuristic: the driver is a part on the shunt nets, or else an IC driving an inductor from a decoupled rail. It has been checked by hand on three boards.
 
 **Beliefs, with confidence:**
 - **The true loop inductance lies in 6–9 nH (moderate).** The model gives 7.8–9.1 nH across settings. Scaling the 44% of L in the top gap by the strip error gives 7.8 nH; scaling all of L gives 6.0 nH [I].
-- **The rankings survive calibration (moderately high).** Across the grid and outer-field settings, L moves 7–14%, yet [C]:
-  - the capacitor split moves at most 2 points;
-  - the best via site stays in the exposed pad (−15% to −16%);
-  - the plane swap stays at −19% to −21%.
+- **The rankings survive calibration (moderately high).** Across the grid and outer-field settings, L moves 7–14%. The capacitor split moves at most 2 points, the best via site stays in the exposed pad (−15% to −16%), and the plane swap stays at −19% to −21% [C].
 - **The exposed-pad neck is also a thermal neck (moderate).** The pad is the package's heat path: about 1 W at 2 A, and 40 K/W only on a "thermally optimized layout" [P]. Its copper leaves through one 0.6 mm corridor. No thermal model was run [I].
 
 **Open questions:**
