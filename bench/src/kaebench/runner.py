@@ -62,27 +62,96 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(res.output, board_path(out_dir))
         # Only the built-in reference adapter may reproduce the human layout.
-        allow_copy = adapter.needs_reference
-        try:
-            if kind == "route":
-                row["score"] = score_route_task(task_dir, board_path(out_dir), adir / "score", rec,
-                                                allow_copy=allow_copy)
-            else:
-                pscore, placed_stats = score_place_task(task_dir, board_path(out_dir), adir / "score", rec,
-                                                        allow_copy=allow_copy)
-                row["score"] = pscore
-                if probe is not None and pscore["valid"]:
-                    # the probe routes the rebuilt placement, never the method's own file
-                    row["probe"] = _probe(task_dir, rec, probe, adir / "score", placed_stats,
-                                          pscore["unconnected"], attempt, timeout, adir)
-        except Exception as e:
-            row["status"] = "score_error"
-            row["error"] = f"{type(e).__name__}: {e}"
-            (adir / "score_error.log").write_text(traceback.format_exc())
+        _score(row, task_dir, rec, kind, adir, adapter.needs_reference, probe=probe,
+               probe_args=(attempt, timeout))
     if not keep_work and work.exists():
         shutil.rmtree(work, ignore_errors=True)
     done.write_text(json.dumps(row, indent=1))
     return row
+
+
+def _score(row, task_dir, rec, kind, adir, allow_copy, probe=None, probe_args=None, rescore_probe=False):
+    """Score adir/output into row (and route the placement with the probe, or re-score the
+    probe's saved output when rescoring)."""
+    out = board_path(adir / "output")
+    try:
+        if kind == "route":
+            row["score"] = score_route_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
+            return
+        pscore, placed_stats = score_place_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
+        row["score"] = pscore
+        if probe is not None and pscore["valid"]:
+            # the probe routes the rebuilt placement, never the method's own file
+            row["probe"] = _probe(task_dir, rec, probe, adir / "score", placed_stats,
+                                  pscore["unconnected"], *probe_args, adir)
+        elif rescore_probe and row.get("probe"):
+            row["probe"] = _rescore_probe(task_dir, rec, row["probe"], pscore, placed_stats, adir)
+    except Exception as e:
+        row["status"] = "score_error"
+        row["error"] = f"{type(e).__name__}: {e}"
+        (adir / "score_error.log").write_text(traceback.format_exc())
+
+
+def _rescore_probe(task_dir, rec, old, pscore, placed_stats, adir):
+    """Re-score a probe's saved route of the placement. The probe routed the board rebuilt
+    by the old scorer; if the new one rebuilds it differently, the probe result comes out
+    invalid (its placement no longer matches) instead of silently mixing versions."""
+    pdir = adir / "probe"
+    routed = board_path(pdir / "output")
+    if old.get("status") != "ok" or not routed.exists():
+        return old
+    if not pscore["valid"]:
+        return dict(old, status="skipped_invalid_placement", score=None)
+    new = dict(old)
+    new["score"] = score_routing(routed, board_path(pdir / "input"), placed_stats, pscore["unconnected"],
+                                 rec["reference"]["stats"], task_dir / "reference", pdir / "score")
+    return new
+
+
+def rescore(results_run_dir, jobs=1, progress=print):
+    """Score every saved output of a run again with the current scorer (after a scoring fix),
+    without re-running the method. Attempts that produced no output keep their status."""
+    run_dir = Path(results_run_dir)
+    meta = json.loads((run_dir / "run.json").read_text())
+    tasks_dir = Path(meta["tasks_dir"])
+    recs = {r["id"]: r for r in load_tasks(tasks_dir, qualified_only=False)}
+    stale = sorted({r["id"] for r in recs.values() if r.get("task_spec", 1) < TASK_SPEC})
+    if stale:
+        raise ValueError(f"{len(stale)} tasks were prepared with an older task spec (e.g. {stale[0]}); "
+                         "re-prepare and re-run instead")
+    paths = sorted(run_dir.glob("*/*/*/attempt-*/attempt.json"))
+    stamp = datetime.now(timezone.utc).isoformat()
+
+    def one(path):
+        row = json.loads(path.read_text())
+        adir = path.parent
+        if row["status"] not in ("ok", "score_error") or not board_path(adir / "output").exists():
+            return row
+        old = row.get("score_version")
+        row["status"] = "ok"
+        row.pop("error", None)
+        _score(row, tasks_dir / row["id"], recs[row["id"]], row["kind"], adir,
+               allow_copy=row["adapter"] == "reference", rescore_probe=True)
+        row["score_version"] = SCORE_VERSION
+        row.setdefault("rescored", []).append(dict(at=stamp, from_version=old))
+        path.write_text(json.dumps(row, indent=1))
+        return row
+
+    rows = []
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        for i, row in enumerate(ex.map(one, paths), 1):
+            rows.append(row)
+            s = row.get("score") or {}
+            progress(f"[{i}/{len(paths)}] {row['id']} {row['kind']} #{row['attempt']}: {row['status']}"
+                     f" clean={s.get('clean', s.get('legal'))} valid={s.get('valid')}")
+    rows.sort(key=lambda r: (r["kind"], r["id"], r["attempt"]))
+    with open(run_dir / "results.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    meta.setdefault("rescored", []).append(dict(at=stamp, score_version=SCORE_VERSION, git=_git_rev(),
+                                                attempts=len(rows)))
+    (run_dir / "run.json").write_text(json.dumps(meta, indent=1))
+    return run_dir
 
 
 def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, attempt, timeout, adir):

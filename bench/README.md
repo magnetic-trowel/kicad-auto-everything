@@ -113,7 +113,8 @@ A method can't read the human layout it is scored against, download it, or touch
   - `hpwl_ratio` relative to the human placement.
   - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style.
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
-- **Versions.** Every attempt records `score_version` (now 3). Tasks need task spec 3: locked footprints stay in place, teardrops are stripped, and repeated footprint uuids are made unique. Re-run `prepare --force` on older task folders.
+- **Rescoring.** After a scoring fix, `kaebench rescore RUN_DIR -j N` scores a run's saved outputs (and saved probe routes) again with the current scorer, without re-running the method. Each attempt records the version it was rescored from.
+- **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 3: locked footprints stay in place, teardrops are stripped, and repeated footprint uuids are made unique. Re-run `prepare --force` on older task folders.
 - **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests

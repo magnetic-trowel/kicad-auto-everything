@@ -7,6 +7,7 @@
     kaebench prepare -m MANIFEST
     kaebench run     --adapter freerouting -k 5
     kaebench report  RUN_DIR [RUN_DIR ...]
+    kaebench rescore RUN_DIR [RUN_DIR ...]
 """
 import argparse
 import json
@@ -163,6 +164,16 @@ def cmd_run(a):
     return 0
 
 
+def cmd_rescore(a):
+    for d in a.run_dirs:
+        run_dir = runner.rescore(d, jobs=a.jobs)
+        summary, _ = report.report([run_dir])
+        md = report.to_markdown(summary)
+        (Path(run_dir) / "report.md").write_text(md + "\n")
+        print(md)
+    return 0
+
+
 def cmd_tasks(a):
     """Qualification yield of prepared tasks by split, licence tier and tag."""
     _, tasks, _ = _dirs(a)
@@ -268,6 +279,11 @@ def main(argv=None):
     sp.add_argument("--sandbox-ro", action="append", metavar="PATH",
                     help="extra path a sandboxed method may read (repeatable)")
     sp.set_defaults(fn=cmd_run)
+
+    sp = sub.add_parser("rescore", help="score a run's saved outputs again with the current scorer")
+    sp.add_argument("run_dirs", nargs="+")
+    sp.add_argument("-j", "--jobs", type=int, default=1)
+    sp.set_defaults(fn=cmd_rescore)
 
     sp = sub.add_parser("tasks", help="qualification yield of prepared tasks")
     sp.add_argument("--write-suite", help="write qualified board ids to this file")
