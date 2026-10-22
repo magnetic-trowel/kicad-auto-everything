@@ -1,9 +1,9 @@
 # Lens LS: locality, causality, scales and the circuit limit
 
 **TL;DR**
-- **A circuit is Maxwell at zeroth order inside a window with four edges:** θ = ωℓ/v, Z/Z0, ℓ_m/ℓ (plane resolution) and ωτ_e (insulator relaxation). On a PCB the window is huge (η0/R_s ≈ 7.7×10⁵ for 1 oz), and layout is where structures approach an edge. Both first-order corrections are θ·(Z0/Z)^±1. Their product θ² depends only on length, and at Z0 = Z they reduce to a pure delay. This derives PW2, principle 3 and node/loop duality, and it turns t_r/6-vs-t_r/2 into a family [C].
+- **A circuit is Maxwell at zeroth order inside a window with four edges:** θ = ωℓ/v, Z/Z0, ℓ_m/ℓ (plane resolution) and ωτ_e (insulator relaxation). On a PCB the window is huge (η0/R_s ≈ 7.7×10⁵ for 1 oz), and layout is where structures approach an edge. Both first-order corrections are θ·(Z0/Z)^±1. Their product θ² depends only on length, and at Z0 = Z they reduce to a pure delay. It derives PW2, principle 3 and node/loop duality, and settles t_r/6-vs-t_r/2 [C].
 - **A copper plane is a spatial low-pass filter.** It mirrors patterns larger than ℓ_m(f) = R_s/(πμ0f) = δ²/t, and in the time domain it is an image receding at 2R_s/μ0 (782 m/s for 1 oz). f_x and the loop-mirror onset are two ends of one band. On intact planes, 4–6 complex images fall within 0.5–3.5% of the exact result, where the perfect image is up to 79% off [C]. That closes most of round 1's Tier-1 gap 2.
-- **Decap fields and stitching lattices are one wire medium:** ω² = ω_p² + v²k², with ω_p² = n/(L_post·C′). The field screens below ω_p (decap reach, stitching attenuation). At ω_p sits the PDN anti-resonance (k = 0). Above it, modes sit at √(f_mn² + f_p²). A lattice check agrees within 0–3% [C].
+- **Decap fields and stitching lattices are one wire medium:** ω² = ω_p² + v²k², with ω_p² = n/(L_post·C′). It screens below ω_p (decap reach, stitching attenuation), puts the PDN anti-resonance at ω_p (k = 0), and moves modes to √(f_mn² + f_p²). A lattice check agrees within 0–3% [C].
 - **Every interaction has a decay class and a natural length** (about 20 lengths from 1 µm to 5 m). Measure distance as r/ℓ_q, and above cut-off use position on the mode shapes instead.
 - **"Circuit + parasitics" is a perturbation series.** It diverges where a small parameter meets a Q, a diffusion kernel, radiation or a field singularity. There the representation must switch. The order a victim needs is n* ≈ ln(B/S)/ln ε: 1 for digital, 3 for 16-bit and 4 for 24-bit at ε = 0.01.
 
@@ -35,7 +35,7 @@ L = Z0·ℓ/v and C = ℓ/(Z0·v), so ωLI/V = θ·Z0/Z and ωCV/I = θ·Z/Z0. F
 | Minimum ε_L + ε_C at Z0 = Z | PW2's Z0* = V/I |
 | θ² is independent of width and height | Principle 3: L·C = l²/v², "only length lowers all three" |
 | Loops have Z ≪ Z0; nodes have Z ≫ Z0 | Principle 2 and LA4. The variable is Z/Z0 |
-| PCB Z0 spans ≈ 0.5 Ω (30 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ | Plane pairs for the PDN; void the plane under high-Z inputs (LA36). Height should move Z0 toward Z |
+| PCB Z0 spans ≈ 0.5 Ω (30 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ | PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z |
 | A series-matched line is a pure delay at any length: 0% overshoot [C] | "Series-terminate"; the critical-length family (§6) |
 
 ### 3. Derivation B: the plane as a spatial filter
@@ -141,7 +141,7 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 
 - **One dispersion law, four workstreams.** Decap reach (XD), stitching cut-off (FE), the anti-resonance (rules) and post-raised modes are one law. f_p becomes one knob for the frequency plan (S8, DR36).
 - **One length, five findings.** f_x, PW24, RG19, PW21's 0.39 → 0.068 nH/mm and the slot-law switch (XD2 vs FE) are each ℓ_m against a scale. A 20 mm slot turns inductive above ≈ 6 kHz [I].
-- **One diffusion test.** Pulse corners, I²t fusing, image hold times and transient heat ([lens-th](lens-th.md)) all compare a diffusion length with the feature size.
+- **One diffusion test.** Pulse corners, I²t fusing, image hold times and transient heat ([lens-th](lens-th.md)) all compare a diffusion length with a feature.
 - **One reason early decisions win.** Topology over tweaks, area over shape, length over width: the leading scale dominates.
 - **One selector.** RG2's 14 groups, SIM4 and the band table reduce to θ, Z/Z0, ℓ_m/ℓ and ωτ_e, plus budget scaling.
 
@@ -197,9 +197,9 @@ A conductor's job depends on the frequency and on the length scale of the questi
 
 - **Complex images.** They are checked only on infinite, intact, thin planes (2-D and axisymmetric 3-D), and the (φ, β) parameters were tuned on two cases.
 - **Lattice checks are model against model,** with lumped posts.
-- **The RB4 design points, S/B values and σ_s ranges are illustrative** [I]. n* assumes geometric hierarchies.
+- **RB4 design points, S/B values and σ_s ranges are illustrative** [I]; n* assumes geometric hierarchies.
 - **The critical-length family** uses a capacitive load and a lossless line; clamps and losses shift it.
-- **Notation across lenses.** [lens-sy](lens-sy.md)'s ℓ_d is ℓ_m/2. [lens-ct](lens-ct.md)'s K_C and K_L equal ε_C and ε_L with Z0 eliminated.
+- **Notation.** [lens-sy](lens-sy.md)'s ℓ_d = ℓ_m/2; [lens-ct](lens-ct.md)'s K_C, K_L are ε_C, ε_L without Z0.
 
 ## Sources
 
