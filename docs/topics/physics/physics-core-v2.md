@@ -21,7 +21,7 @@ Lens map: [CD](lens-cd.md) pieces and counterfactuals; [CT](lens-ct.md) world an
 | **World conductor** | Chassis, cable (Z_cm(f)), heatsink, enclosure, LISN, test setup; bonds are branches; C_i,ext from one electrostatic solve ([CT D2](lens-ct.md)) | code; facts from humans |
 | **Extended graph** | Per band: pieces, parts in band models, partial R, L, M, and C to references, victims, world | code |
 | **Topology layer** | Per band: b0, b1, block–cut tree, cycle basis, holes per reference, return words ([CT29](../../ideas/physics-first/lens-ct.md)), board–world cut, closure type per port, symmetries; events bump the epoch | code (K1) |
-| **Band, regime cell** | Band: a frequency interval with source spectra. Regime cell (structure × band): ℓ_m(f)/h, ℓ_m/a, ℓ_m/W, θ = ωℓ/v, Z0/Z, ωτ_e, f/f_p, edit radius r; it picks the representation (§6) and replaces f_x | code |
+| **Band, regime cell** | Band: a frequency interval with source spectra. Regime cell (structure × band): ℓ_m(f)/h, ℓ_m/a, ℓ_m/W, θ = ωℓ/v, Z0/Z, ωτ_e, f/f_p, edit radius r; it picks the representation (§6) | code |
 | **Closed-loop budget** | Names the victim's closed observation loop (terminal pair plus closure), sources, metric, bound, criticality c/L and, per band, a class (§5) | detectors, LLM, human; class by code |
 | **Passport** | Piece × band: topological role (bridge, shared edge, chord, dead end, ring, handle, cut member, linked); share per source; transport vs circulation κ; charge destination; energies; exact removal change per budget with its Woodbury spectrum; damping share per mode; jobs. Lazy, cached per epoch | code (K4) |
 | **Job** | Verb (carries, returns, images, lowers or raises p→q, senses, anchors, spreads heat, holds charge, damps, radiates, bonds, shields, dead), objects, band, its exact counterfactual, value Σλ_k\|ΔB_k\|/slack_k, designed or parasitic | code; designed flag by humans or LLM |
@@ -32,7 +32,7 @@ Test-board passports [C]: the tile beside the slot tip lowers the Kelvin-tap cou
 
 ### 2. Exactness ladder
 
-Round 1's F0–F4 ladder grades accuracy; this one grades guarantees, relative to a stated model.
+The fidelity tiers F0–F4 ([solver-ladder](solver-ladder.md)) grade accuracy; this ladder grades guarantees, relative to a stated model.
 
 | Class | Meaning | Examples |
 |---|---|---|
@@ -50,7 +50,7 @@ E1 is not E2: on a notched strip the cell-graph resistance lies 0.1–0.6% above
 | Kernel | In → out | Exactness | Cost, one core | Incremental rule | Merges |
 |---|---|---|---|---|---|
 | K1 Topology | band graph → invariants, return words, board–world cut, closure types, events, symmetry checks | E0 | O(V + E), ms [I] | recheck the dirty component; an event is a changed invariant | ct_cut_topology, pc_refplane connectivity, CT27–CT29, LA12, JPR2's physics events |
-| K2 Sheet operator | stack, band → ∇·(Z_s⁻¹∇φ) − Y_p·φ = −s, complex γ² = Z_s·Y_p: DC, heat, diffusion, screening, waves, posts (wire medium), eigenmodes; φ and ψ solves for brackets | E1; brackets E2 | factor 6 ms (2.4k cells) to 1.2 s (153k); solve 0.2–41 ms [C] | rank-k Woodbury in an epoch; refactor reusing the symbolic analysis | pw_sheet, op_topopt_pour, xd_sheet, tm_board_thermal_fv, ls_post_lattice; round-1 objects 1, 2, 6 |
+| K2 Sheet operator | stack, band → ∇·(Z_s⁻¹∇φ) − Y_p·φ = −s, complex γ² = Z_s·Y_p: DC, heat, diffusion, screening, waves, posts (wire medium), eigenmodes; φ and ψ solves for brackets | E1; brackets E2 | factor 6 ms (2.4k cells) to 1.2 s (153k); solve 0.2–41 ms [C] | rank-k Woodbury in an epoch; refactor reusing the symbolic analysis | pw_sheet, op_topopt_pour, xd_sheet, tm_board_thermal_fv, ls_post_lattice; objects 1, 2, 6 of [cross-workstream-synthesis](cross-workstream-synthesis.md) |
 | K3 Complex-image PEEC | pieces, stackup, band → partial R, L_p, P; 4–6 complex images per intact plane, meshed planes only at slots and edges; C with C_ext; Foster eddy models; passive SPICE reduction | E1; images E3; coarse L ≥ L (E2) | 0.1–1.7 ms per loop [sl_loop_peec]; 4.4k branches 1.5–3 s per band [cd_conductor_passport] | bordered updates; windows refactor in seconds | sl_loop_peec, pw_peec, fe_peec_plane, cd, ls_thin_sheet (SIM46, LS1) |
 | K4 Response | any factored reciprocal operator (sheet, PEEC, thermal, MNA, harmonic balance) → states, adjoints (also periodic), lead fields, attribution and χ, exact removals (Woodbury) and additions (Thevenin) with their spectrum, leverage, Foster check; crack screens | E1; screens E3; DC first-order E2 | rank-32 quote 5 ms–1.4 s, or 0.2 ms from a cached window; Thevenin 0.2–53 ms [C] | one Woodbury update moves states, adjoints and cached blocks | cd, ct, sy and vp edit laws; dr_noise_adjoint; SIM24, SIM25, OP38, OP41, CD2–CD6 |
 | K5 Floors | net or structure → Beckmann, convex relaxation with dual certificate, capacity hull, HS, cavity bound, fab floor; τ | E2 | Beckmann 150 µs, convex minutes [vp_floors] | Beckmann every move; convex warm-started per epoch | vp_floors, DR18, OP57, JPR30 |
@@ -66,7 +66,7 @@ For an edit that removes branches B, let P_B = diag(y_B)·A_Bᵀ·Y⁻¹·A_B (k
 
  ΔZ_qp (exact) = Σ_i c_i/(1 − λ_i), where Σ_i c_i is the first-order (adjoint) price.
 
-Four round-2 results are special cases: CD's 1/(1 − ρ) is k = 1; the crack laws of CT, SY and VP are its closed-form sum for slits; at DC, 0 ≤ λ ≤ 1, and λ = 1 exactly when the edit cuts copper off (a K1 event: an infinite price if that copper holds a terminal, none if it merely floats); at AC, |λ| ≥ 1 means the edit moves a mode by more than its bandwidth, LS's εQ ≥ 1.
+Four lens results are special cases: CD's 1/(1 − ρ) is k = 1; the crack laws of CT, SY and VP are its closed-form sum for slits; at DC, 0 ≤ λ ≤ 1, and λ = 1 exactly when the edit cuts copper off (a K1 event: an infinite price if that copper holds a terminal, none if it merely floats); at AC, |λ| ≥ 1 means the edit moves a mode by more than its bandwidth, LS's εQ ≥ 1.
 
 The radius r = max|λ| comes free with each exact quote, which thus says whether first-order was safe. At DC, two certified bounds follow: 1 ≤ exact/first-order ≤ 1/(1 − λ_max) for self terms, and |exact − first-order| ≤ ‖w_q‖‖w_p‖·λ_max/(1 − λ_max) for any term, with w = diag(y_B)^½·A_Bᵀ·u. Both held on all 444 and 296 tile removals [C].
 
@@ -101,7 +101,7 @@ The state stays (P, T, C) of [joint-place-route](joint-place-route.md).
 - **Middle loop (seconds).** Continuous poses. Class-A gradients are free (energy density at moving boundaries); class B costs one lead field per budget, then each aggressor site is an inner product; C uses binding frequencies; D is smoothed; L is projected. A step stops at the next K1 certificate or where its copper change reaches r ≈ 0.5.
 - **Inner loop (milliseconds).** Each discrete edit gets a three-stage quote: E2/E3 screens (µs); an exact quote with spectrum and events (0.2 ms in a cached window, 5 ms–1.4 s otherwise); commit, bumping the epoch at events and diffing passports for role-change alarms (CD15). Accept or reject on stage-2 numbers; their r values recalibrate stage-1 trust.
 - **Convex first.** Each power net starts from its class-A relaxation (floor, warm start), then continues into B and C terms; morphology stays inside the loop.
-- **Regime dispatcher.** The regime cell picks the representation: a resistive sheet where ℓ_m exceeds the structure; complex-image PEEC across the transition band on intact planes, meshed thin-sheet PEEC on slotted or finite ones (the real remaining gap 2); the telegrapher sheet with posts below f_p, modes above it; lines where θ ≳ 0.1 (delay-only at Z0 = Z, LS6); circuit co-simulation of a reduced macromodel where inserting the parasitic has r ≥ 1; full-wave slices for radiation.
+- **Regime dispatcher.** The regime cell picks the representation: a resistive sheet where ℓ_m exceeds the structure; complex-image PEEC across the transition band on intact planes, meshed thin-sheet PEEC on slotted or finite ones (gap 2); the telegrapher sheet with posts below f_p, modes above it; lines where θ ≳ 0.1 (delay-only at Z0 = Z, LS6); circuit co-simulation of a reduced macromodel where inserting the parasitic has r ≥ 1; full-wave slices for radiation.
 
 ### 7. The LLM and the human
 
@@ -129,7 +129,7 @@ On one core, factor and solve times both grow about as n^1.2 between 2.4k and 15
 | 1 | Data model, K1, K2 (DC, thermal), K4 | identities agree with re-factorization to ≤ 10⁻¹⁰ on 1,000 random edits (the skeleton: ≤ 4×10⁻¹¹); DC bounds never fail; λ = 1 exactly at K1 disconnects |
 | 2 | Critics on the core; mutation benchmark | 31/31 planted faults found, 0/7 benign twins flagged ([pc_refplane](physics-critics.md)); each mutant changes a job verb at its site (CD16) |
 | 3 | K2 complex, K6 | f_p within 2% of ls_post_lattice; Q = h/δ; r flags every wrong-sign first-order quote in 1,000 PDN edits |
-| 4 | K3 | within 3.5% of ls_thin_sheet, 1.3% of PEECN/FastHenry; cd passports to 10⁻⁹ |
+| 4 | K3 | within 3.5% of ls_thin_sheet, 1.3% of PEECN/FastHenry at w/h 0.3–5; cd passports to 10⁻⁹ |
 | 5 | K5, K7, K8 | vp_floors and in_emi_voi reproduced; legalization keeps connectivity |
 | 6 | One real board | an open 4-layer bench board: passports for every piece (DC, thermal) and two HF windows within budget; an engineer reviews 20 why_here answers |
 | 7 | Optimizer | beats the equal-CPU sequential portfolio on the JPR boards (JPR46) |

@@ -62,7 +62,7 @@ Full statements, conditions and the derivation tree are in [foundations](foundat
 
 ### What a conductor is doing
 
-A piece of copper (strip, via, pad cell, plane region) does whatever would change if it changed: its column of exact counterfactuals on every budget, per band ([foundations](foundations.md) §6). Its *passport* explains the column through eight things:
+A piece of copper (strip, via, pad cell, plane region) does whatever would change if it changed: its column of exact counterfactuals on every budget, per band ([foundations](foundations.md) §5). Its *passport* explains the column through eight things:
 1. currents by source;
 2. charges and where their field lines end;
 3. stored, dissipated and radiated energy;

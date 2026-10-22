@@ -252,7 +252,7 @@ menu:
     r: 1.75                      # DC addition: first-order over-promises 2.75x
     events: [hole_created]       # K1 (geometric): the slot below the bridge closes into a hole
   - op: extend_slot              # zero-width cut down to y = 6 mm
-    deltas: {Z_SA: +39.2%, Z_AA: +37.1%, Z_BA: +47.9%}  # first-order said +2.4%
+    deltas: {Z_SA: +39.2%, Z_AA: +37.1%, Z_BA: +47.9%}  # first-order price: +2.4%
     r: 0.955
     events: []
 ```
@@ -297,7 +297,7 @@ A human asks, and the answers come straight from passports and quotes:
 | **Mode** | Extends Cavity and Res with complex frequency and a Q ledger ([lens-th](lens-th.md)) |
 | **Regime cell** | Regime gains scales: the ℓ–f plane replaces labels ([lens-ls](lens-ls.md)) |
 | **Event, epoch, floor, closure type, symmetry declaration** | Topology and bounds become first-class ([lens-ct](lens-ct.md), [lens-vp](lens-vp.md), [lens-sy](lens-sy.md)) |
-| **Operators** `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | Round-2 levers with no operator so far |
+| **Operators** `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | Lens levers that 0.3 has no operator for |
 
 Deprecate or demote:
 - Body as the physics unit (it stays a geometry handle);
@@ -328,6 +328,6 @@ The twelve atoms stay as the language of intent; pieces and jobs are the languag
 ## Sources
 
 - [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) [C].
-- Round-1 contracts this extends: [physics-ir](physics-ir.md), [vocabulary](vocabulary.md), the evaluator contract in [solver-ladder](solver-ladder.md), the critic contract in [physics-critics](physics-critics.md).
+- Contracts this extends: [physics-ir](physics-ir.md), [vocabulary](vocabulary.md), the evaluator contract in [solver-ladder](solver-ladder.md), the critic contract in [physics-critics](physics-critics.md).
 
 See also: [physics-core-v2](physics-core-v2.md) · [lens-cd](lens-cd.md) · [lens-ct](lens-ct.md) · [lens-in](lens-in.md) · [physics-ir-examples](physics-ir-examples.md) · [design-reasoning-architecture](design-reasoning-architecture.md)

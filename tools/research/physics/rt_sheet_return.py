@@ -8,7 +8,7 @@ the oscillatory tails) and an independently written 2-D PEEC for the finite plan
 
 Physics: a thin copper sheet (sheet resistance R_s) reflects a field pattern of lateral
 wavenumber k with Gamma(k) = 1 / (1 - j |k| l_m), l_m = 2 R_s / (omega mu0) = R_s/(pi mu0 f)
-(derived in the red-team doc from E = -j w A, K = E / R_s, A_sheet = mu0 K / (2|k|)).
+(derived in docs/topics/physics/verification-and-limits.md from E = -j w A, K = E / R_s, A_sheet = mu0 K / (2|k|)).
 
 Sections (python rt_sheet_return.py [contain|mirror|carson|finite|q|all]):
   contain  |share of the return within +-l| for a line current at height h over an infinite

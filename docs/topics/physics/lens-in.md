@@ -3,7 +3,7 @@
 **TL;DR**
 - **Layout is decided under belief, not knowledge.** The state should be a belief about the physics (value, spread, lineage, validity); moves include *learning* (compute, ask, measure) and *robustifying* (make the decision insensitive), chosen by value of information (VOI) per cost. Escalation rules, criticality fields, question ranking and compute markets all approximate it (§6).
 - **Choosing needs less than knowing, precisely.** A ranking is a differential measurement: common bias cancels, and what decides is the error spread *among contenders* and whether the error follows the truth's dominant direction. That predicts the [solver-ladder](solver-ladder.md) proxy results within 1–4 points (MS, MS2, PP); area fails because its error *is* the omitted w/h [C]. Compliance verdicts (budgets, LII ≤ 1) need absolute accuracy. Under strong selection MS2's winner error drifts only +3% → +6.5% against a graded PEEC reference; a 7-equal-filament reference (PEECN) reads 11–42% low where winners sit (w/h ≫ 10) and inflates that drift to +64% [C, [rt_loop_proxy](../../../tools/research/physics/rt_loop_proxy.py)]. So validate the reference too where the optimizer selects.
-- **The most valuable unknowns can be off the board.** In round 1's EMI case, with its stated ranges, the enclosure, cable and test-setup offset carries 33–84% of total VOI: 49% with a 10 dB-wide offset prior, and 10–13% if co-locating the cables buys 6–30 dB rather than the assumed 35–60 dB (the best action then changes too) [C, [rt_voi_sensitivity](../../../tools/research/physics/rt_voi_sensitivity.py)]. The slot and stitching-cap disputes flagged for coupons carry 0–11%. A pre-scan informs the next board of the enclosure class; for the scanned board the layout is fixed (post-build EVSI 0).
+- **The most valuable unknowns can be off the board.** In the EMI case of [fields-emi-budget](fields-emi-budget.md), with its stated ranges, the enclosure, cable and test-setup offset carries 33–84% of total VOI: 49% with a 10 dB-wide offset prior, and 10–13% if co-locating the cables buys 6–30 dB rather than the assumed 35–60 dB (the best action then changes too) [C, [rt_voi_sensitivity](../../../tools/research/physics/rt_voi_sensitivity.py)]. The slot and stitching-cap disputes flagged for coupons carry 0–11%. A pre-scan informs the next board of the enclosure class; for the scanned board the layout is fixed (post-build EVSI 0).
 - **A rule of thumb is a compressed posterior:** a threshold along its home regime's dominant parameter direction, regime variables dropped. Monotone physics keeps the direction and moves the threshold: "fails by regime, not direction". Plan-view area is free-space loop inductance's dominant direction (cosine 0.95), not over a plane (0.69), where height × squares is (0.95) [C].
 - **Robustness and information are substitutes.** A robust action caps what learning is worth: cables on one edge cut total VOI 30× [C] if co-location buys the assumed 35–60 dB. Squeezing margins raises the knowledge an optimizer must buy: margin and measurement are one trade.
 
@@ -22,16 +22,16 @@ Symbols: θ unknowns, a action, ℓ loss, ŷ estimate of y, b common bias, u can
 | E3 | Rules are compressed posteriors | A rule stores a threshold x*(z₀) from home regime z₀; the truth is x*(z). Threshold error ≈ (∂x*/∂z)(z − z₀). The direction survives iff sign(∂y/∂x) holds for all z |
 | E4 | Budget the unknown | p = p̂ + δ. A known p̂ is compensated (C_L choice, trim, tuning); only δ spends budget, s·σ_δ. Var(y) ≈ Σ s_j²σ_j²: shrink s_j (robust geometry) or σ_j (information), whichever is cheaper |
 | E5 | Locality of knowledge | Footprint F_ε(q) = {x : \|∂q/∂g(x)\| > ε}, from one adjoint solve. Small footprints keep local models valid, verification incremental and verdicts stable under distant edits |
-| E6 | Independent evidence | Two estimates with error correlation ρ average to variance σ²(1+ρ)/2. Methods sharing an idealization (ρ → 1) add nothing by agreeing |
+| E6 | Independent evidence | Two estimates with error correlation ρ average to variance σ²(1+ρ)/2. Methods sharing an idealization (ρ → 1) add nothing by agreeing: AN-139, EPC, SNVA803, Archambeault and Ott are independent evidence; three PEEC codes sharing the image-plane idealization are not |
 | E7 | Predict, then observe | Register ŷ ± σ before every run; the surprise −log p(y_obs \| ŷ, σ) updates model trust; interval coverage sets trust radii and autonomy (Bogatin rule 9; [S4](../../ideas/original/system-loop.md)) |
 
-Circuits are the gentle limit: every parasitic known and zero. Layout makes them nonzero and only *partly* known.
+Circuits are the gentle limit: every parasitic known and zero. Layout makes them nonzero and only *partly* known, so a good layout keeps parasitics invisible *or known*. Solid planes, symmetry, Kelvin, differential and ratiometric topology, controlled impedance and guards make parasitics *predictable*: over a solid adjacent plane, local geometry gives the return. Locality of fields has an epistemic twin (E5), which is why reviewers prize convention; organic copper must beat convention by more than its extra σ and review cost.
 
 ### 2. Derivations
 
 **D1. The escalation threshold is a cost ratio** (derives SIM10/DR33's z = 1 cosmetic, z = 3 safety). For a belief y ~ N(ŷ, σ²) with margin m = B − ŷ > 0 (default: accept), a wrong acceptance costs L and escalating costs c, removing the error. Then VOI = L·Φ(−m/σ): escalate iff m < zσ, z = Φ⁻¹(1 − c/L). z = 1 means c/L = 0.16; z = 3 means c/L = 1.35×10⁻³: a wrong safety verdict is worth ~740 escalations [C]. The [criticality field](../../ideas/original/intent-and-why.md) should store c/L.
 
-**D2. Ranking vs accuracy** (explains SIM7: MS2 picks the best loop 96–98%, area 16–66%). Pick-best uses only differences, so b drops out; with independent Gaussian u, accuracy depends only on σ_u/s. Round 1's 600 mixed loops, best of 10, same candidate sets per proxy [C]:
+**D2. Ranking vs accuracy** (explains SIM7: MS2 picks the best loop 96–98%, area 16–66%). Pick-best uses only differences, so b drops out; with independent Gaussian u, accuracy depends only on σ_u/s. The 600 mixed loops of [solver-ladder](solver-ladder.md), best of 10, same candidate sets per proxy [C]:
 
 | Proxy | Median bias | σ_u all | σ_u contenders (best 20%) | corr(error, ln w/h) | Observed | Predicted (σ_u all / contenders) |
 |---|---|---|---|---|---|---|
@@ -49,7 +49,7 @@ Circuits are the gentle limit: every parasitic known and zero. Layout makes them
 - **3W:** K = 1/(1 + (D/h)²) with D = 3w omits w/h. Every 50 Ω microstrip has w/h ≈ 2, so 3W gives ~2.8% on any such stackup: the rule encodes D/h by accident. 0.25 mm on 1.6 mm (w/h = 0.16) gets K ≈ 0.8 ([rule-genealogy-si-emi-rf](rule-genealogy-si-emi-rf.md)).
 - **The direction flips only when z enters the sign.** "Smallest cap closest" assumed leads set ESL; with MLCCs package and mounting do, so the ordering changes. Habit rules fail this way.
 
-As priors (Jeffreys Beta, single auditor), P(about right) is 0.88 (95% 0.80–0.93) for physics rules, 0.15 (0.04–0.31) for simplicity proxies and 0.03 (0.00–0.15) for habit rules [C].
+As priors (Jeffreys Beta, single auditor), P(about right) is 0.88 (95% 0.80–0.93) for physics rules, 0.15 (0.04–0.31) for simplicity proxies and 0.03 (0.00–0.15) for habit rules [C]; the habit "wrong" share (10 of 15, [rule-basis-set](rule-basis-set.md)) spans 0.42–0.86. Genealogy counts are wide priors.
 
 **D4. The optimizer's curse and Goodhart** (explains SIM9, SIM14). With independent error the selected candidate looks better by e_k·σ_u²/√(σ_u² + s²) (Smith and Winkler 2006 [S]; e_k = 1.54 for k = 10): only −0.2 to −0.5% for MS2 [C]. The real effect is structured: as selection strengthens (best of 10, 100, 600), area's true regret grows 171% → 767% → 1,407%. MS2's regret stays 0%, and its error on the winner drifts +2.9% → +5.8% → +6.5% against a graded reference (+16/+33/+64% against PEECN, whose error grows with w/h) [C, rt_loop_proxy]. Winners sit at the domain edge (w/h ≫ 10): calibrate the proxy *and the reference* where the optimizer selects, and never use a ranking proxy's *number* for a winner's compliance.
 
@@ -68,7 +68,7 @@ Best of 10 candidates drawn ever closer to a 12 × 6 mm loop (w 0.5 mm, h 0.2 mm
 
 - **Smooth proxies keep resolving** (MS2's gradient is within cosine 0.999 of PEEC's).
 - **Evaluators with a nugget** (grids, meshes, routers) lose resolution once spread falls below it.
-- Round 1's proxy study (58 of 131 near-equal-HPWL pairs differed > 10% once routed) implies a routed-J nugget of ~13% per pair (11–16% at 95%), ~9% per placement [C]. Near-tie failure is a router nugget, not a trait of physics proxies.
+- The [joint-place-route-experiment](joint-place-route-experiment.md) proxy study (58 of 131 near-equal-HPWL pairs differed > 10% once routed) implies a routed-J nugget of ~13% per pair (11–16% at 95%), ~9% per placement [C]. Near-tie failure is a router nugget, not a trait of physics proxies.
 
 ### 4. Sloppiness: why minimal models work
 
@@ -85,7 +85,7 @@ Outputs depend on one or two parameter combinations ("sloppiness", Transtrum et 
 
 [in_emi_voi.py](../../../tools/research/physics/in_emi_voi.py) takes [fields-emi-budget](fields-emi-budget.md) case B (a 50 MHz clock crossing a slot, cables on opposite edges).
 - **Actions:** leave it, stitching cap, reroute, reroute + slow edge, co-locate the connectors.
-- **Units, priors:** % of one respin; round 1's ranges.
+- **Units, priors:** % of one respin; the ranges of [fields-emi-budget](fields-emi-budget.md).
 - **EVPPI** (partial perfect information) by binning (Strong et al. 2014 [S]).
 
 | Scenario | EVPI | Enclosure/cable/test offset | Slot share × law | Cap path L | Short-slot model | Pre-scan before layout (earlier board), 3 dB |
@@ -101,7 +101,7 @@ Outputs depend on one or two parameter combinations ("sloppiness", Transtrum et 
 - **The bridging-cap dispute** (1.2–3 vs Ott's 5–10 nH) has no decision value.
 - **The short-slot dispute matters:** the slot formula fails below l ≈ 25h, and the Ott fit's "2 mm is nearly free" extrapolates below his shortest (6.35 mm) slot.
 
-Round 1's coupon list ([research-gaps](research-gaps.md) gap 1) through VOI:
+The coupon list of [research-gaps](research-gaps.md) gap 1, through VOI:
 
 | Coupon | Verdict |
 |---|---|
@@ -110,7 +110,7 @@ Round 1's coupon list ([research-gaps](research-gaps.md) gap 1) through VOI:
 | Bridging caps, lattices, decap clusters, via fields | Only when a decision hinges on them |
 | *Missing* | **Pre-scan with real cables in the enclosure, stackup TDR, IR image**, fixing common factors once per class |
 
-### 6. Convergences round 1 did not name
+### 6. Convergences
 
 | One phenomenon | Scattered as | Consequence |
 |---|---|---|
@@ -149,9 +149,9 @@ predictions: [{observable: "4-wire TP7-TP9 at 0.3 A", interval: [0.8, 2.4] uV}]
 Three epistemic classes:
 - **Self-evident:** local, validated (a trace over an adjacent solid plane).
 - **Computed:** need a board solve (pours, slots, via fields).
-- **Conjectured:** outside every model, or with an uncertain role; the biggest are in neither schematic nor board file: cable shields, enclosure, heatsink, chassis. Under round 1's priors they carry most decision value (§5); only asking or measuring reaches them.
+- **Conjectured:** outside every model, or with an uncertain role; the biggest are in neither schematic nor board file: cable shields, enclosure, heatsink, chassis. Under the §5 priors they carry most decision value; only asking or measuring reaches them.
 
-The LLM works the card by abduction ([LA39](../../ideas/physics-first/language.md)):
+The LLM works the card by abduction ([LA39](../../ideas/physics-first/language.md)); without this protocol every hypothesized coupling becomes a budget, moving over-constraint from rules to imagination:
 1. Propose a mechanism with a base-rate prior and a discriminating observable.
 2. Register a prediction.
 3. Choose think, compute, ask, measure or robustify by EVPPI per cost.
@@ -160,31 +160,17 @@ The LLM works the card by abduction ([LA39](../../ideas/physics-first/language.m
 
 Explanations curb over-reliance only if they make verifying cheaper ([Vasconcelos](../ux/explanations-and-alternatives.md) [P]), as flip thresholds do. Representation: [lens-cd](lens-cd.md).
 
-### 9. Critique of round 1
-
-1. **Ranking and compliance are conflated.** [Principle 11](README.md) and "ranking matters more than accuracy" hold for selection, but the ledger and LII are absolute: a proxy, or its reference, can rank perfectly and miss the winner's value (D4). Report P(LII ≤ 1), not a point.
-2. **"Proxies fail on near-ties" is mis-stated** (§3): smooth proxies hold 98–99.6% down to 1% spreads. SIM7's metric on random sets also mixes in non-contenders (PP: 66% predicted vs 91% observed).
-3. **The coupon program is a coverage design.** It re-measures anchored physics and omits the off-board common factors that dominate VOI under round 1's priors (§5).
-4. **Calibration debt is uneven; lineage is missing.** AN-139, EPC, SNVA803, Archambeault and Ott are independent evidence; three PEEC codes sharing the image-plane idealization are not (E6). Genealogy counts are wide single-auditor priors (habit "wrong": 0.42–0.86).
-5. **Uncertainty is a side channel, not the state.** σ sits in SIM1 and PC4, but no principle says "budget the unknown" (LA15 is buried), no objective has a variance term and no optimizer can buy knowledge. Round 1 prices constraints, not information.
-6. **The thesis should read "invisible or known".**
-   - Solid planes, symmetry, Kelvin, differential and ratiometric topology, controlled impedance and guards make parasitics *predictable*: over a solid adjacent plane, local geometry gives the return.
-   - [Principle 14](README.md) ("beauty is locality") has an epistemic twin (E5); hence reviewers prize convention.
-   - Organic copper must beat convention by more than its extra σ and review cost.
-7. **LLM hypotheses need a protocol,** or every hypothesized coupling becomes a budget, moving over-constraint from rules to imagination.
-
 ## Recommendations for our system
 
 1. **Keep an epistemic ledger.** Each quantity carries a belief, lineage, validity, a level/shape error split and links to its decisions. Rank actions by EVPPI per cost, *robustify* included.
-2. **Separate rankings from compliance.** Rankings may use calibrated proxies; compliance needs level calibration or F2/F3, reported as a probability.
+2. **Separate rankings from compliance.** Rankings may use calibrated proxies; compliance needs level calibration or F2/F3, reported as a probability, P(LII ≤ 1), not a point.
 3. **Calibrate proxies (and references) on contenders:** check gradient alignment, measure each nugget, escalate as population spread nears it.
 4. **Make the first prototype the experiment:** register predictions before fabrication. Pre-scan with real cables, TDR, an IR image; assimilate; keep priors per fab and enclosure class (the scan informs the next board). Build coupons only where models disagree *and* decisions flip.
 5. **Add a variance or chance-constraint term to the joint objective** to trade margin against measurement.
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** the +64% was the reference's error (graded: +6.5%); VOI shares are prior-driven; a pre-scan informs the next board ([red-team](red-team.md)).
-- VOI values depend on round 1's priors and assumed costs (respin 100, connector move 25) in one scenario; the claim is the *ranking* of unknowns, itself prior-driven.
+- VOI values depend on the [fields-emi-budget](fields-emi-budget.md) priors and assumed costs (respin 100, connector move 25) in one scenario; the claim is the *ranking* of unknowns, itself prior-driven.
 - "Contenders" here are the true best 20%, unknowable in practice: use the optimizer's top-k.
 - The active-subspace result covers rectangles over an ideal plane only.
 

@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Coverage statistics for the derivation audit (round 3, prefix da).
+"""Coverage statistics for the derivation audit (prefix da).
 
 Parses docs/topics/physics/derivation-audit-table.md (one row per rule P01-P59, S01-S55, R01-R46) and
-counts verdicts, principles, number status and changes against round 1.  The counts quoted in
+counts verdicts, principles, number status and origins.  The counts quoted in
 docs/topics/physics/derivation-audit.md come from this script, so the table is the single source.
 
-Columns: ID | Rule | R1 (origin/verdict) | Principles (';'-separated, first = primary; code + sub-tag) |
-Derivation | Regime | Num | Verdict | Change vs round 1.
+Columns: ID | Rule | Origin | Principles (';'-separated, first = primary; code + sub-tag) |
+Derivation | Regime | Num | Verdict.
 
 Run:  python da_coverage.py [path/to/derivation-audit-table.md]
 """
@@ -31,9 +31,9 @@ def parse(path):
         if not m:
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 9:
-            raise SystemExit(f"{m.group(1)}: expected 9 cells, got {len(cells)}")
-        rid, rule, r1, princ, deriv, regime, num, verdict, change = cells
+        if len(cells) != 8:
+            raise SystemExit(f"{m.group(1)}: expected 8 cells, got {len(cells)}")
+        rid, rule, origin_cell, princ, deriv, regime, num, verdict = cells
         if verdict not in VERDICTS:
             raise SystemExit(f"{rid}: bad verdict {verdict!r}")
         if num not in NUMS:
@@ -49,11 +49,9 @@ def parse(path):
             if code not in CODES:
                 raise SystemExit(f"{rid}: bad principle code {code!r}")
             plist.append((code, tag.strip()))
-        origin = re.split(r"[+/?]", r1)[0]
-        r1v = r1.split("/", 1)[1].split()[0] if "/" in r1 else "?"
-        ctag = change.split(":", 1)[0].strip()
-        rows.append(dict(id=rid, rule=rule, origin=origin, r1v=r1v, princ=plist, regime=regime, num=num,
-                         verdict=verdict, change=change, ctags=set(ctag.split("+")) - {"none"}))
+        origin = re.split(r"[+/?\s]", origin_cell)[0]
+        rows.append(dict(id=rid, rule=rule, origin=origin, princ=plist, regime=regime, num=num,
+                         verdict=verdict))
     return rows
 
 
@@ -118,7 +116,7 @@ def main():
         c = collections.Counter(r["num"] for r in rows if r["verdict"] == v)
         print(f"   {v:24s} " + ", ".join(f"{k} {c.get(k, 0)}" for k in NUMS))
 
-    print("\nOrigin (round 1, first listed) x verdict")
+    print("\nOrigin (first listed) x verdict")
     groups = ["physics", "simplicity", "manufacturing", "habit", "cog/tool/legal/CT"]
     print("   " + " " * 20 + "".join(f"{v[:14]:>15s}" for v in VERDICTS) + "   total")
     for g in groups:
@@ -129,17 +127,6 @@ def main():
     if unk:
         print(f"   unknown origin: {unk}")
 
-    print("\nRound-1 verdict x new verdict")
-    r1keys = sorted({r["r1v"] for r in rows})
-    for k in r1keys:
-        c = collections.Counter(r["verdict"] for r in rows if r["r1v"] == k)
-        print(f"   R1 {k:12s}: " + ", ".join(f"{v} {c[v]}" for v in VERDICTS if c.get(v)))
-
-    ct = collections.Counter(t for r in rows for t in r["ctags"])
-    table("Change tags", ct, ["principle", "adds", "verdict", "regime", "derived"])
-    print(f"   rows with any change: {sum(1 for r in rows if r['ctags'])}")
-    ph_principle = [r["id"] for r in rows if "principle" in r["ctags"] and r["origin"] == "Ph"]
-    print(f"   physics-origin rows whose principle changed: {len(ph_principle)}: {ph_principle}")
     hb = [r for r in rows if r["origin"] == "Hb"]
     print(f"   habit-origin rows: {len(hb)}; verdicts {dict(collections.Counter(r['verdict'] for r in hb))}")
 
