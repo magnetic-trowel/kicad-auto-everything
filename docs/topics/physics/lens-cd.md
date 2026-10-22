@@ -87,11 +87,11 @@ The first row was reached from six directions (grids, coils, topology optimizati
 
 | From | Lesson | Apply to |
 |---|---|---|
-| Power grids (N-1, LODF) | security means no single outage breaks a limit | returns, ESD and surge paths: no budget hangs on a piece with ρ > 0.9 (CD4) |
-| Structural redundancy matrix ([Tkachuk et al.](https://arxiv.org/abs/2303.03945)) | indeterminacy is distributed over members; its diagonal predicts robustness | fab opens and etch sensitivity (CD30) |
-| Spectral graph theory (Spielman–Srivastava) | sampling by leverage keeps quadratic forms within 1 ± ε | sparse copper surrogates in the inner loop (CD28) |
-| Computational EM (loop–tree) | separate solenoidal from irrotational current | carry vs image jobs; stable low-frequency passports |
-| Thermal (TM5: a cut across the flow costs 20–30× one along it) | the same Δψ² law | exact thermal removal values (CD32) |
+| Power grids (N-1, LODF) | no single outage may break a limit | returns, ESD and surge paths: no budget hangs on a piece with ρ > 0.9 (CD4) |
+| Structural redundancy matrix ([Tkachuk et al.](https://arxiv.org/abs/2303.03945)) | its diagonal distributes indeterminacy and predicts robustness | fab opens and etch sensitivity (CD30) |
+| Spectral graph theory | sampling by leverage keeps quadratic forms within 1 ± ε | sparse copper surrogates in the inner loop (CD28) |
+| Computational EM (loop–tree) | split solenoidal from irrotational current | carry vs image jobs; stable low-frequency passports |
+| Thermal (TM5: cuts across the flow cost 20–30×) | the same Δψ² law | exact thermal removal values (CD32) |
 
 ### 7. What each conductor is doing: the passport
 
