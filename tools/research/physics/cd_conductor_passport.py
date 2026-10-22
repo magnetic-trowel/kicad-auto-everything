@@ -48,11 +48,14 @@ potential coefficients in a homogeneous medium (eps_r = 1; fractions are
 eps-independent, absolute pF are not). Thermal: 2-layer finite-volume network
 with FR-4, vias and h = 10 W/m^2K per face.
 
-Also: checks of the removal identity against brute-force re-solves, the
-non-additivity of collective removals, the crack (slit) law, and a
-Johnson-Lindenstrauss (Spielman-Srivastava) estimate of whole-board leverage.
+Also: checks of the removal identity against brute-force re-solves (rank-1 and
+Woodbury), Foster's sum, an f/f_x sweep of where the hot-loop and victim currents
+live, the Thevenin addition test for stitching vias (with a brute-force check),
+a slot bridge and the unslotted board, the non-additivity of collective
+removals, the crack (slit) law on a uniform sheet, and a Johnson-Lindenstrauss
+(Spielman-Srivastava) estimate of whole-board leverage.
 
-Run:  python tools/research/physics/cd_conductor_passport.py   (~2-4 min, ~1.5 GB)
+Run:  python tools/research/physics/cd_conductor_passport.py   (~2 min on 2 threads, ~1 GB)
 Deterministic (fixed seeds). Numbers quoted [C] in lens-cd.md come from here.
 """
 import os
@@ -433,6 +436,23 @@ def budgets_for(band):
             ("Z_vic<-rip", "victim", "ripple"), ("Z_vic", "victim", "victim")]
 
 
+BUDGET_PQ = {nm: (p, q) for band in ("DC", "AC") for nm, p, q in budgets_for(band)}
+
+
+def bmetric(nm, z, f):
+    """The scalar a budget is judged by: DC -> R; AC self term -> L (H); AC coupling -> |Z| (V per A)."""
+    if f == 0:
+        return np.real(z)
+    p, q = BUDGET_PQ[nm]
+    return np.imag(z) / (2 * math.pi * f) if p == q else np.abs(z)
+
+
+def dpct(nm, z0, dz, f):
+    """Exact % change of a budget's metric when its Z changes by dz (array-safe)."""
+    m0 = bmetric(nm, z0, f)
+    return 100.0 * (bmetric(nm, z0 + dz, f) - m0) / abs(m0)
+
+
 def active_mask(cu, band):
     act = np.ones(cu.nb, bool)
     if band == "DC":
@@ -618,7 +638,8 @@ def main():
               f" cut admittances {bd.t_cut:.1f} s, total {tic() - t0:.1f} s")
 
     # ---------------------------------------------------------------- budgets
-    print("\n== Budgets (per unit source current; Z_qp = open-circuit volts at q per amp at p)")
+    print("\n== Budgets (per unit source current; Z_qp = open-circuit volts at q per amp at p);"
+          "\n   chi = |sum of per-piece Tellegen terms| / sum of their magnitudes (small = a residual of cancelling terms)")
     for bname, f in BANDS:
         o = res[bname]; w = 2 * math.pi * f
         si = {s: k for k, s in enumerate(o["srcs"])}
@@ -626,9 +647,11 @@ def main():
         for nm_, p, q in budgets_for(bname):
             Zqp = o["V"][:, si[p]] @ o["I"][:, si[q]]
             o["Z"][nm_] = Zqp
-            extra = ""
+            a_b = 0.5 * (o["V"][:, si[p]] * o["I"][:, si[q]] + o["V"][:, si[q]] * o["I"][:, si[p]])
+            chi = abs(a_b.sum()) / np.abs(a_b).sum()          # cancellation index (1 = no cancellation)
+            extra = f"  chi = {chi:.3f}"
             if bname == "DC" and nm_ == "Z_vic<-load":
-                extra = f"  -> {abs(Zqp) * 3.0 * 1e6:.1f} uV error at the ADC for a 3 A load"
+                extra += f"  -> {abs(Zqp) * 3.0 * 1e6:.1f} uV error at the ADC for a 3 A load"
             print(f"  {bname:4s} {nm_:12s} {fmt_z(Zqp, w):34s}{extra}")
 
     # ---------------------------------------------------------------- checks
@@ -668,17 +691,19 @@ def main():
     # ---------------------------------------------------------------- per-band region passports
     print("\n== Region passports")
     print("   hold% = Tellegen share of a self budget (DC: of R; AC: of the inductive part of Z)")
-    print("   cut%  = exact change of each budget if the WHOLE region were removed (Woodbury; inf = a source loses its path)")
+    print("   rm%   = sum over the region's strips of the EXACT change of each budget when that one strip is removed")
+    print("           (rank-1, % of the budget; S = the region contains sole-path strips for that budget)")
     print("   kappa = sum|I(f)| / sum|I_R| per source: >1 the band pulls current in (image), <1 it releases the copper,")
-    print("           'eddy' = no transport current at all (pure induced circulation)")
+    print("           'eddy' = no transport current at all (pure induced circulation); '.' = region holds < 1% of that current")
     passports = {}
     for bname, f in BANDS:
         o = res[bname]; bd = o["band"]; I, V, IR = o["I"], o["V"], o["IR"]
         si = {s_: k for k, s_ in enumerate(o["srcs"])}
         bud = budgets_for(bname)
         part = "real" if f == 0 else "imag"
-        print(f"\n[{bname}] {'region':26s} | hold% " + " ".join(f"{b_[0]:>9s}" for b_ in bud if b_[1] == b_[2])
-              + " | cut% " + " ".join(f"{b_[0][:11]:>11s}" for b_ in bud) + " | kappa " + " ".join(o["srcs"]))
+        ymax = np.abs(bd.y).max()
+        print(f"\n[{bname}] {'region':26s} | hold% " + " ".join(f"{b_[0]:>8s}" for b_ in bud if b_[1] == b_[2])
+              + " | rm% " + " ".join(f"{b_[0][:11]:>12s}" for b_ in bud) + " | kappa " + " ".join(o["srcs"]))
         rows = {}
         for r, rn in enumerate(rnames):
             sel = np.nonzero((reg == r) & bd.active)[0]
@@ -690,79 +715,111 @@ def main():
                     continue
                 ap = (V[sel, si[p_]] * I[sel, si[p_]]).sum()
                 hold.append(pct(getattr(ap, part), getattr(o["Z"][nm_], part)))
-            # whole-region removal, exact
-            NB = bd.N[sel].toarray()
-            W = sla.lu_solve(bd.lu, NB.T)
-            Y = NB @ W
-            xs = {}
-            for s_ in o["srcs"]:
-                ip = I[sel, si[s_]]
-                if np.linalg.norm(ip) < 1e-12:
-                    xs[s_] = np.zeros(len(sel)); continue
-                x_, *_ = np.linalg.lstsq(Y, ip, rcond=1e-10)
-                xs[s_] = x_ if np.linalg.norm(Y @ x_ - ip) < 1e-6 * np.linalg.norm(ip) else None
-            cut = []
+            rm, sole = [], []
+            yb = bd.y[sel]
+            bridge = np.abs(yb) < 1e-9 * ymax
             for nm_, p_, q_ in bud:
-                if xs[p_] is None or xs[q_] is None:
-                    cut.append(np.inf); continue
-                dz = I[sel, si[q_]] @ xs[p_]
-                z0 = getattr(o["Z"][nm_], part)
-                cut.append(pct(abs(getattr(o["Z"][nm_] + dz, part)) - abs(z0), abs(z0)))
+                prod = I[sel, si[p_]] * I[sel, si[q_]]
+                hit = bridge & (np.abs(prod) > 1e-9)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    dz = np.where(bridge, 0, prod / np.where(bridge, 1, yb))
+                rm.append(float(np.sum(dpct(nm_, o["Z"][nm_], dz, f))))
+                sole.append(bool(hit.any()))
             kap = []
             for s_ in o["srcs"]:
                 a_ = np.abs(I[sel, si[s_]]).sum(); r_ = np.abs(IR[sel, si[s_]]).sum()
-                kap.append("eddy" if (r_ < 1e-6 and a_ > 1e-4) else ("-" if a_ < 1e-6 else f"{a_ / r_:.2f}"))
-            rows[rn] = (hold, cut, kap)
-            cs = " ".join(("        inf" if np.isinf(v) else f"{v:+11.1f}") for v in cut)
-            print(f"[{bname}] {rn:26s} | " + "      ".join(f"{v:5.1f}" for v in hold) + "     | " + cs
+                tot_ = np.abs(I[bd.active, si[s_]]).sum()
+                if a_ < 0.01 * tot_:
+                    kap.append(".")
+                else:
+                    kap.append("eddy" if r_ < 1e-6 else f"{a_ / r_:.2f}")
+            rows[rn] = (hold, rm, sole, kap)
+            cs = " ".join(f"{v:+11.1f}{'S' if so else ' '}" for v, so in zip(rm, sole))
+            print(f"[{bname}] {rn:26s} | " + "     ".join(f"{v:5.1f}" for v in hold) + "    | " + cs
                   + " | " + " ".join(f"{k_:>5s}" for k_ in (kap if f else ["", "", ""])))
         passports[bname] = rows
 
     # ---------------------------------------------------------------- what each conductor is doing
-    print("\n== What each conductor is doing (verbs from the signs of exact region removals; thresholds 5% / 10%)")
+    print("\n== What each conductor is doing (verbs from the signs of exact single-strip removals; thresholds 5% / 10%)")
     for r, rn in enumerate(rnames):
         jobs = []
         for bname, f in BANDS:
             if rn not in passports[bname]:
                 continue
-            hold, cut, kap = passports[bname][rn]
+            hold, rm, sole, kap = passports[bname][rn]
             o = res[bname]
             selfb = [b_ for b_ in budgets_for(bname) if b_[1] == b_[2]]
             for (nm_, p_, q_), h_ in zip(selfb, hold):
                 if h_ >= 10:
                     jobs.append(f"{bname}: holds {h_:.0f}% of {nm_}")
-            for (nm_, p_, q_), c_ in zip(budgets_for(bname), cut):
-                if np.isinf(c_):
-                    jobs.append(f"{bname}: sole path for {nm_}")
+            for (nm_, p_, q_), c_, so in zip(budgets_for(bname), rm, sole):
+                if so:
+                    jobs.append(f"{bname}: series path (sole) for {nm_}")
                 elif p_ == q_ and c_ >= 5:
-                    jobs.append(f"{bname}: carries {p_} (+{c_:.0f}% {nm_} if removed)")
+                    jobs.append(f"{bname}: carries {p_} (strip removals +{c_:.0f}% {nm_})")
                 elif p_ != q_ and c_ >= 10:
-                    jobs.append(f"{bname}: shields {q_} from {p_} (+{c_:.0f}% coupling if removed)")
+                    jobs.append(f"{bname}: lowers coupling {q_}->{p_} (strip removals +{c_:.0f}%)")
                 elif p_ != q_ and c_ <= -10:
-                    jobs.append(f"{bname}: couples {p_} into {q_} ({c_:.0f}% coupling if removed)")
+                    jobs.append(f"{bname}: raises coupling {q_}->{p_} (strip removals {c_:.0f}%)")
             for s_, k_ in zip(o["srcs"], kap):
                 if f and k_ == "eddy":
                     nm_ = [b_[0] for b_ in budgets_for(bname) if b_[1] == b_[2] == s_]
-                    c_ = cut[[b_[0] for b_ in budgets_for(bname)].index(nm_[0])] if nm_ else 0
+                    c_ = rm[[b_[0] for b_ in budgets_for(bname)].index(nm_[0])] if nm_ else 0
                     if c_ >= 1:
-                        jobs.append(f"{bname}: images {s_} by induced current (+{c_:.1f}% {nm_[0]} if removed)")
+                        jobs.append(f"{bname}: images {s_} by induced current (strip removals +{c_:.1f}% {nm_[0]})")
         if jobs:
             print(f"  {rn}: " + "; ".join(dict.fromkeys(jobs)))
         else:
             print(f"  {rn}: no electrical job above threshold in any band")
 
-    # ---------------------------------------------------------------- per-band locality of the hot loop
-    print("\n== Where the hot loop's current lives, per band (plane strips only)")
-    for bname, f in BANDS[1:]:
-        o = res[bname]; si = {s_: k for k, s_ in enumerate(o["srcs"])}
-        pl = o["band"].active & (cu.layer == 1)
-        dist = np.hypot(cu.mx - 7.5, cu.my - 3.25)
-        a_ = np.abs(o["I"][:, si["hot"]]); r_ = np.abs(o["IR"][:, si["hot"]])
-        cinv = [cu.via_idx["via CIN-a"], cu.via_idx["via CIN-b"]]
-        sh = abs(o["I"][cinv, si["hot"]].sum()); shR = abs(o["IR"][cinv, si["hot"]].sum())
-        print(f"  [{bname}] share of the hot loop's plane current within 4 mm of the loop:"
-              f" {a_[pl & (dist < 4)].sum() / a_[pl].sum():.2f} (resistive limit {r_[pl & (dist < 4)].sum() / r_[pl].sum():.2f});"
-              f" share of its return that dives into the plane at CIN-: {sh:.2f} (resistive limit {shR:.2f})")
+    print("\n== Whole-region removal (Woodbury, exact): what would break without each region?")
+    for rn in ("plane at slot end", "plane under hot loop", "plane neck under L1", "vias at hot loop", "other G1/G2 vias",
+               "G1 top, rest"):
+        r = rnames.index(rn)
+        txt = []
+        for bname, f in BANDS:
+            o = res[bname]; bd = o["band"]; I = o["I"]
+            si = {s_: k for k, s_ in enumerate(o["srcs"])}
+            part = "real" if f == 0 else "imag"
+            sel = np.nonzero((reg == r) & bd.active)[0]
+            items = []
+            for nm_, p_, q_ in budgets_for(bname):
+                if nm_ in ("R_vic", "Z_vic"):
+                    continue
+                dz = bd.woodbury(sel, I[:, si[p_]], I[:, si[q_]])
+                z0 = o["Z"][nm_]
+                if np.isinf(dz):
+                    items.append(f"{nm_} disconnects")
+                else:
+                    items.append(f"{nm_} {dpct(nm_, z0, dz, f):+.0f}%")
+            txt.append(f"{bname}: " + ", ".join(items))
+        print(f"  {rn} ({len(np.nonzero(reg == r)[0])} pieces): " + " | ".join(txt))
+
+    # ---------------------------------------------------------------- per-harmonic return maps (f / f_x sweep)
+    print("\n== Where the currents live vs f/f_x (plane strips; the f_x transition, per source)")
+    print("   hot: share of its plane current within 4 mm of the loop, and share of its return that dives into the plane at CIN-")
+    print("   victim: share of its plane current within 1.5 mm of the trace line (away from the slot), loop L")
+    pl = cu.layer == 1
+    dist = np.hypot(cu.mx - 7.5, cu.my - 3.25)
+    under = pl & (np.abs(cu.my - 14.75) <= 1.5) & (np.abs(cu.mx - 13.25) > 2.0)
+    cinv = [cu.via_idx["via CIN-a"], cu.via_idx["via CIN-b"]]
+    act = active_mask(cu, "HF")
+    rowsf = []
+    for label, ff, ronly in [("R-limit", FX, True)] + [(f"{r_:g} f_x", r_ * FX, False) for r_ in (0.1, 0.3, 1, 3, 10, 100, 1000)]:
+        b_ = Band(cu, ff, act, copper_R_only=ronly, need_cut=False)
+        I_ = b_.solve_inj(injections(cu, ["hot", "victim"]))
+        V_ = b_.Zv(I_)
+        ah, av = np.abs(I_[:, 0]), np.abs(I_[:, 1])
+        w_ = 2 * math.pi * ff
+        Lh = (V_[:, 0] @ I_[:, 0]).imag / w_ * 1e9
+        Lv = (V_[:, 1] @ I_[:, 1]).imag / w_ * 1e9
+        rowsf.append((label, ah[pl & (dist < 4)].sum() / ah[pl].sum(), abs(I_[cinv, 0].sum()),
+                      av[under].sum() / av[pl].sum(), Lh, Lv))
+    print("   f            hot: within 4 mm   dives at CIN-   victim: under trace    L_hot (nH)   L_vic (nH)")
+    for label, a1, a2, a3, lh, lv in rowsf:
+        lhs = "    -" if label == "R-limit" else f"{lh:7.3f}"
+        lvs = "    -" if label == "R-limit" else f"{lv:7.2f}"
+        print(f"   {label:10s}        {a1:5.2f}            {a2:5.2f}              {a3:5.2f}            {lhs}      {lvs}")
 
     # ---------------------------------------------------------------- first-order vs exact
     print("\n== First-order (attribution) vs exact removal cost, per strip")
@@ -805,12 +862,14 @@ def main():
         si = {s: m for m, s in enumerate(o["srcs"])}
         txt = []
         for nm_, p, q in budgets_for(bname):
+            if nm_ in ("R_vic", "Z_vic", "R_feed", "Z_hot"):
+                continue
             dz = bd.woodbury(notch, I[:, si[p]], I[:, si[q]])
+            single = (I[notch, si[p]] * I[notch, si[q]] / bd.y[notch]).sum()
             fo = (0.5 * (V[notch, si[p]] * I[notch, si[q]] + V[notch, si[q]] * I[notch, si[p]])).sum()
             tot = o["Z"][nm_]
-            part = "real" if f == 0 else "imag"
-            txt.append(f"{nm_} {pct(getattr(dz, part), abs(getattr(tot, part))):+.1f}% (1st-order"
-                       f" {pct(getattr(fo, part), abs(getattr(tot, part))):+.1f}%)")
+            extra = f", 1st-order {dpct(nm_, tot, fo, f):+.1f}%" if f == 0 else ""
+            txt.append(f"{nm_} {dpct(nm_, tot, dz, f):+.1f}% (sum of single strips {dpct(nm_, tot, single, f):+.1f}%{extra})")
         print(f"  [{bname}] " + "; ".join(txt))
     # brute-force check of the notch at DC
     o = res["DC"]; bd = o["band"]; si = {s: m for m, s in enumerate(o["srcs"])}
@@ -878,8 +937,7 @@ def main():
         for nm_, p, q in budgets_for(bname):
             z2 = V2[:, si[p]] @ I2[:, si[q]]
             z1 = o["Z"][nm_]
-            part = "real" if f == 0 else "imag"
-            txt.append(f"{nm_} {pct(getattr(z2 - z1, part), abs(getattr(z1, part))):+.1f}%")
+            txt.append(f"{nm_} {dpct(nm_, z1, z2 - z1, f):+.1f}%")
         print(f"  [{bname}] " + "; ".join(txt))
 
     # ---------------------------------------------------------------- non-additivity
@@ -898,7 +956,13 @@ def main():
             single = single[np.isfinite(single)].sum()
             act2 = bd.active.copy(); act2[B] = False
             b2 = Band(cu, 0.0, act2, need_cut=False)
-            I2 = b2.solve_inj(injections(cu, o["srcs"])); V2 = b2.Zv(I2)
+            try:
+                I2 = b2.solve_inj(injections(cu, o["srcs"])); V2 = b2.Zv(I2)
+            except AssertionError:
+                print(f"  {label:9s} {int(frac * 100)}% least-loaded ({nsel} strips, {100 * diss[order_[:nsel]].sum() / diss.sum():.2f}%"
+                      f" of its load dissipation): removing them together disconnects a terminal;"
+                      f" summed single removal costs only +{pct(single, o['Z']['R_load'].real):.3f}%")
+                continue
             coll = (V2[:, si["load"]] @ I2[:, si["load"]] - o["Z"]["R_load"]).real
             dzv = (V2[:, si["load"]] @ I2[:, si["victim"]] - o["Z"]["Z_vic<-load"]).real
             print(f"  {label:9s} {int(frac * 100)}% least-loaded ({nsel} strips, {100 * diss[order_[:nsel]].sum() / diss.sum():.2f}% of"
@@ -918,7 +982,7 @@ def main():
         txt = []
         for nm_, p_, q_ in budgets_for(bname):
             z0 = V0[:, si[p_]] @ I0[:, si[q_]]
-            txt.append(f"{nm_} x{abs(getattr(o['Z'][nm_], part)) / abs(getattr(z0, part)):.2f}")
+            txt.append(f"{nm_} x{abs(bmetric(nm_, o['Z'][nm_], f)) / abs(bmetric(nm_, z0, f)):.2f}")
         print(f"  [{bname}] slotted / unslotted: " + "; ".join(txt))
 
     # ---------------------------------------------------------------- SW pour: three jobs, one piece of copper
@@ -941,7 +1005,8 @@ def main():
     ex_x = XC[E[:, 6].astype(int)] + np.where(E[:, 7] == 0, D / 2, 0)
     o = res["DC"]; si = {s: m for m, s in enumerate(o["srcs"])}
     swbr = (cu.layer == 0) & (cu.net == SW) & (cu.fam < 2)
-    dR = (o["I"][:, si["load"]] ** 2 / o["band"].y).real
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dR = (o["I"][:, si["load"]] ** 2 / o["band"].y).real
     print("  x column (mm) | world charge share | removal: dC_world (fF)  dC_victim (fF) | dT(U1) (mK) | dR_load (uOhm)")
     for x0 in np.unique(np.round(sx, 2)):
         m = np.abs(sx - x0) < 0.01
@@ -953,6 +1018,37 @@ def main():
         mr = swbr & (cu.mx - x0 > -1e-6) & (cu.mx - x0 < D / 2 + 1e-6)
         drl = dR[mr][np.isfinite(dR[mr])].sum() * 1e6
         print(f"   {x0:6.2f}      |      {share:6.3f}        |   {dw:+7.2f}         {dv:+7.3f}       |  {dt:+7.1f}    |  {drl:+8.2f}")
+
+    # ---------------------------------------------------------------- leverage sketch on the board itself
+    print("\n== Whole-board leverage at DC: exact (cut admittances) vs a Johnson-Lindenstrauss sketch (Spielman-Srivastava)")
+    o = res["DC"]; bd = o["band"]
+    act = np.nonzero(bd.active)[0]
+    g = 1.0 / cu.R[act]
+    m_ = len(act)
+    Bi = sp.csr_matrix((np.r_[np.ones(m_), -np.ones(m_)], (np.r_[np.arange(m_), np.arange(m_)], np.r_[cu.a[act], cu.b[act]])),
+                       shape=(m_, cu.nn))
+    Gl = (Bi.T @ sp.diags(g) @ Bi).tocsc()
+    roots = np.nonzero(bd.tree[0] < 0)[0]
+    keep = np.setdiff1d(np.arange(cu.nn), roots)
+    t0 = tic()
+    luG = spla.splu(Gl[keep][:, keep].tocsc())
+    rho_ex = o["rho"][act]
+    rng = np.random.default_rng(3)
+    crit = rho_ex > 0.9
+    print(f"  {m_} pieces; exact leverage: {np.sum(rho_ex > 0.999)} sole-path pieces (rho = 1), {np.sum(crit)} with rho > 0.9,"
+          f" median {np.median(rho_ex):.3f}")
+    for k in (24, 96):
+        t0 = tic()
+        Q = rng.choice([-1.0, 1.0], size=(k, m_)) / math.sqrt(k)
+        rhs = (Bi.T @ (np.sqrt(g)[:, None] * Q.T))          # n x k
+        Y = np.zeros((cu.nn, k))
+        Y[keep] = luG.solve(np.asarray(rhs[keep]))
+        est = g * (((Y[cu.a[act]] - Y[cu.b[act]]) ** 2).sum(1))
+        tk = tic() - t0
+        rel = np.abs(est - rho_ex) / rho_ex
+        flag = est > 0.9
+        print(f"  k = {k:3d} solves ({tk * 1e3:.0f} ms): median rel. error {np.median(rel):.2f}, 90th pct {np.percentile(rel, 90):.2f};"
+              f" pieces with exact rho > 0.9 recovered {np.sum(flag & crit)}/{np.sum(crit)}, false flags {np.sum(flag & ~crit)}")
 
     # ---------------------------------------------------------------- crack law and leverage sketch
     crack_and_sketch()

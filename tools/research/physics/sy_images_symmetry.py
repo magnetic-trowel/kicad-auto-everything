@@ -9,6 +9,8 @@ numpy/scipy only; about 1 minute. Sections (run all, or name them):
            edge notch dR = -(4/pi) ln cos(pi q/2), q = dpsi/I (edge factor exactly 2).
            Also the dual (Keller): a perfectly conducting needle ALONG the flow saves
            ~ (pi/4)(dphi/(R_s I))^2 for short needles.
+  xobj     The cut price generalizes to any objective by reciprocity: dJ = (pi/4) R_s dpsi_u dpsi_lam
+           (forward x adjoint stream-function steps), where the naive first-order adjoint misses ~10-30x.
   halo     Cancellation with imbalance. Flat loops (vertical moments) with and without a plane
            image (h = 0.1 mm); mirrored half-loops (+/-, 3 mm apart) with current imbalance eps.
            Halo radius vs eps against the floor eps^(1/3) (free) and eps^(1/5) (plane).
@@ -18,6 +20,8 @@ numpy/scipy only; about 1 minute. Sections (run all, or name them):
            (Booker) vs round 1's slotline formula and PEEC table.
   scales   The image-validity length l_d = R_s/(omega mu0) and the 3-D node-vs-loop crossover
            distance over a plane (patch dipole 2*eps0*A*V vs loop quadrupole).
+  weave    Woven glass as a 2-D lattice: skew vs routing angle in a toy Dk model; commensurate
+           directions (axes, and the cell diagonal when a knuckle term exists) accumulate skew.
 """
 import math
 import sys
@@ -65,6 +69,66 @@ def strip_resistance(nx, ny, cut=None, needle=None, gbig=1e8):
     v = spla.spsolve(A, rhs)
     I = (2.0 * (1.0 - v[idx[0, :]])).sum()
     return 1.0 / I
+
+
+def sheet_system(nx, ny, cut=None):
+    """Unit-R_s strip network; both end rows tied to 0 V through conductance 2 (Dirichlet ends).
+    Returns (A, idx, link arrays) so forward and adjoint problems share one matrix."""
+    n = nx * ny
+    idx = np.arange(n).reshape(ny, nx)
+    a1 = idx[:, :-1].ravel(); a2 = idx[:, 1:].ravel()
+    gb = np.ones((ny - 1, nx))
+    if cut is not None:
+        r, i0, i1 = cut
+        gb[r, i0:i1] = 0.0
+    b1 = idx[:-1, :].ravel(); b2 = idx[1:, :].ravel()
+    e1 = np.concatenate([a1, b1]); e2 = np.concatenate([a2, b2])
+    g = np.concatenate([np.ones(a1.size), gb.ravel()])
+    keep = g > 0
+    e1, e2, g = e1[keep], e2[keep], g[keep]
+    diag = np.bincount(e1, g, n) + np.bincount(e2, g, n)
+    diag[idx[0, :]] += 2.0
+    diag[idx[-1, :]] += 2.0
+    A = sp.csc_matrix((np.concatenate([diag, -g, -g]),
+                       (np.concatenate([np.arange(n), e1, e2]), np.concatenate([np.arange(n), e2, e1]))),
+                      shape=(n, n))
+    return A, idx
+
+
+def sec_cross_objective():
+    print("== cross-objective cut price: J = phi(P1) - phi(P2), a sense pair 6 mm apart along the flow in a")
+    print("   20 mm strip carrying uniform current. Cuts of length l across the flow near the pair.")
+    print("   Compare FD dJ with (a) the naive first-order adjoint over the removed links, +sum(g*du*dlam), and")
+    print("   (b) the crack (polarization-tensor) form  +(pi/4) R_s dpsi_u dpsi_lam, dpsi = current through")
+    print("   the cut line in the forward and adjoint (unit P1->P2) solutions (same orientation).")
+    a = 0.1
+    nx, ny = 200, 600
+    A0, idx = sheet_system(nx, ny)
+    lu = spla.splu(A0)
+    b = np.zeros(nx * ny); b[idx[0, :]] = 2.0  # forward: 1 V at row 0 through the ties
+    u0 = lu.solve(b)
+    yc = ny // 2
+    P1, P2 = idx[yc - 30, 120], idx[yc + 30, 120]  # x = 12 mm, y = yc -/+ 3 mm
+    lamb = np.zeros(nx * ny); lamb[P1] = 1.0; lamb[P2] = -1.0
+    lam0 = lu.solve(lamb)
+    J0 = u0[P1] - u0[P2]
+    print(f"   J0 = {J0*1e3:.3f} mV per volt across the strip (reciprocity check lam.b = {lam0 @ b * 1e3:.3f})")
+    print("     cut (row, x-range mm)        dpsi_u/I   dpsi_lam   FD dJ (uV/V)  naive adj   crack form   FD/crack")
+    I = (2.0 * (1.0 - u0[idx[0, :]])).sum()
+    for (dy, x0, x1) in ((0, 90, 110), (0, 100, 115), (0, 105, 135), (5, 110, 130), (0, 60, 100), (-20, 100, 140)):
+        r = yc + dy
+        cols = np.arange(x0, x1)
+        du = u0[idx[r, cols]] - u0[idx[r + 1, cols]]
+        dl = lam0[idx[r, cols]] - lam0[idx[r + 1, cols]]
+        dpsi_u, dpsi_l = du.sum(), dl.sum()
+        A1, _ = sheet_system(nx, ny, cut=(r, x0, x1))
+        lu1 = spla.splu(A1)
+        u1 = lu1.solve(b)
+        dJ = (u1[P1] - u1[P2]) - J0
+        naive = (du * dl).sum()
+        crack = (math.pi / 4) * dpsi_u * dpsi_l
+        print(f"     row yc{dy:+3d}, {x0*a:4.1f}-{x1*a:4.1f}           {dpsi_u/I:7.4f}   {dpsi_l:8.4f}   {dJ*1e6:9.3f}   "
+              f"{naive*1e6:9.3f}   {crack*1e6:9.3f}    {dJ/crack if abs(crack) > 0 else float('nan'):6.2f}")
 
 
 def sec_slit():
@@ -353,7 +417,7 @@ def sec_weave():
             print(f"  {name:38s} kappa={kappa:.1f}: " + "  ".join(f"{th:5.2f}deg {v:5.2f}" for th, v in zip(thetas, row)))
 
 
-SECTIONS = {"slit": sec_slit, "halo": sec_halo, "share": sec_share, "corners": sec_corners, "scales": sec_scales,
+SECTIONS = {"slit": sec_slit, "xobj": sec_cross_objective, "halo": sec_halo, "share": sec_share, "corners": sec_corners, "scales": sec_scales,
             "weave": sec_weave}
 
 

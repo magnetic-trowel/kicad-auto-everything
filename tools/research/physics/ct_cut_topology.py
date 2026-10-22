@@ -356,29 +356,39 @@ def sec_pour():
     rng = np.random.default_rng(7)
     cuts = _random_cuts(mask, wall, rng, 15, d)
     rows = []
+    wood_err = []
     t0 = time.perf_counter()
-    for c in cuts:
+    for ci, c in enumerate(cuts):
         s = np.arange(c["s0"], c["s1"])
+        cut_h = np.zeros((ny, nx - 1), bool)
+        cut_v = np.zeros((ny - 1, nx), bool)
         if c["orient"] == "v":
             ic = c["pos"]
             p_nodes = idx0[s, ic]
             q_nodes = idx0[s, ic + 1]
+            cut_h[s, ic] = True
         else:
             jc = c["pos"]
             p_nodes = idx0[jc, s]
             q_nodes = idx0[jc + 1, s]
-        k = s.size
-        n = A0.shape[0]
-        U = sp.csc_matrix((np.r_[np.ones(k), -np.ones(k)], (np.r_[p_nodes, q_nodes], np.r_[np.arange(k), np.arange(k)])),
-                          shape=(n, k))
-        Z = lu0.solve(U.toarray())
-        K = U.T @ Z
-        Smat = np.eye(k) * rs - K          # D^-1 - U^T G^-1 U with D = g I
+            cut_v[jc, s] = True
         w = v0[p_nodes] - v0[q_nodes]      # base edge voltages (V)
+        # exact: re-factorize the cut sheet (independent of the base factorization)
+        A1, b1, _ = _pour_system(mask, d, rs, sinks, cut_h=cut_h, cut_v=cut_v)
         try:
-            dP_exact = float(w @ np.linalg.solve(Smat, w))
-        except np.linalg.LinAlgError:
+            dP_exact = float(b1 @ spla.splu(A1).solve(b1) - P0b)
+        except RuntimeError:
             continue
+        if ci < 3:
+            # Woodbury on the base LU: dP = w^T (D^-1 - U^T G^-1 U)^-1 w; its Neumann series'
+            # first term w^T D w is the first-order adjoint
+            k = s.size
+            n = A0.shape[0]
+            U = sp.csc_matrix((np.r_[np.ones(k), -np.ones(k)],
+                               (np.r_[p_nodes, q_nodes], np.r_[np.arange(k), np.arange(k)])), shape=(n, k))
+            K = U.T @ lu0.solve(U.toarray())
+            dP_w = float(w @ np.linalg.solve(np.eye(k) * rs - K, w))
+            wood_err.append(abs(dP_w / dP_exact - 1))
         dP_adj = float(g * (w ** 2).sum())
         jn = g * w / d                     # A/m, normal sheet current along the cut
         dpsi = abs(float(g * w.sum()))
@@ -395,8 +405,10 @@ def sec_pour():
         lig = ligament_factor(x)[0]
         rows.append((c, dP_exact, dP_adj, unif, crack, crack * lig, x))
     t1 = time.perf_counter()
+    n_all = len(rows)
     rows = [r for r in rows if r[1] > 1e-3 * max(rr[1] for rr in rows)]
-    print(f"  {len(rows)} random zero-width cuts (1-8 mm; half edge-touching), exact by Woodbury on the base LU ({t1-t0:.1f} s)")
+    print(f"  {len(rows)} of {n_all} random zero-width cuts (1-8 mm; half edge-touching) cost > 0.1% of the largest;"
+          f" exact by re-factorization ({t1-t0:.1f} s); Woodbury on the base LU agrees to {max(wood_err):.1e}")
     print("  predictor / exact                      median   10%-90% range      within +-25%   within 2x")
     names = ["first-order adjoint", "uniform dpsi^2 law", "Chebyshev crack form", "Chebyshev x ligament"]
     for col, name in zip(range(2, 6), names):

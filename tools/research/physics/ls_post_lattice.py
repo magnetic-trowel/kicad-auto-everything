@@ -27,7 +27,7 @@ with a Peaceman correction for vias) is solved at each frequency (sparse LU): dr
 impedance at a central load, share of post current within radius R, compared with the continuum
 1 - gamma R K1(gamma R) and with w_p.
 
-Run:  python ls_post_lattice.py      (numpy + scipy, about a minute)
+Run:  python ls_post_lattice.py      (numpy + scipy, one to a few minutes)
 """
 import math
 
@@ -88,7 +88,7 @@ class Lattice:
         self.lap = (sp.diags(deg) - adj).tocsc()  # graph Laplacian (positive semidefinite)
         self.n_area = 1.0 / pitch ** 2
 
-    def solve(self, f):
+    def solve(self, f, uniform=False):
         w = 2 * math.pi * f
         zsq = 2 * rs_f(f) + 1j * w * MU0 * self.d
         cp = EPS0 * ER / self.d
@@ -99,8 +99,11 @@ class Lattice:
         diag = np.full(self.N * self.N, yn, dtype=complex)
         diag[self.posts] += 1.0 / zpost
         Y = (self.lap / zsq + sp.diags(diag)).tocsc()
-        b = np.zeros(self.N * self.N, complex)
-        b[self.load] = 1.0
+        if uniform:  # k = 0 drive: the same current density everywhere (what a lumped PDN model assumes)
+            b = np.full(self.N * self.N, 1.0 / (self.N * self.N), complex)
+        else:
+            b = np.zeros(self.N * self.N, complex)
+            b[self.load] = 1.0
         V = spla.spsolve(Y, b)
         ip = V[self.posts] / zpost
         return V, ip, zsq, zpost
@@ -111,6 +114,16 @@ class Lattice:
         yp = 1j * w * cp * (1 - 1j * TAND) + self.n_area / zpost
         g = np.sqrt(zsq * yp)
         return g if g.real >= 0 else -g
+
+
+def lattice_post_L(Lpost, d, pitch, dx):
+    """Post inductance as the lattice sees it: the post's own L plus its share of plane spreading inside the
+    unit cell, (mu0 d / 2pi)(ln(a / 2 pi r_eq) + 0.5275), r_eq = 0.198 dx for a post on a grid node."""
+    return Lpost + MU0 * d / (2 * math.pi) * (math.log(pitch / (2 * math.pi * 0.198 * dx)) + 0.5275)
+
+
+def local_maxima(fs, z):
+    return [i for i in range(1, len(fs) - 1) if z[i] > z[i - 1] and z[i] > z[i + 1]]
 
 
 def share(r, ip, R):
@@ -165,12 +178,36 @@ def run_decaps(d, pitch, size, dx, freqs_share, label):
         sc = [abs(1 - g * x * lam * kv(1, g * x * lam)) for x in (0.5, 1, 2, 3)]
         print(f"   {f/1e6:8.0f}    {abs(V[lat.load])*1e3:8.2f}       " + " ".join(f"{v:5.2f}" for v in sl)
               + "  |  " + " ".join(f"{v:5.2f}" for v in sc) + f"     {lam*1e3:6.1f}")
-    fs = np.logspace(math.log10(5e6), math.log10(4e9), 70)
+    fpl = plasma(n, lattice_post_L(Lc, d, pitch, dx), d)
+    fs = np.linspace(0.4 * fpl, 1.6 * fpl, 61)
+    zu = np.array([abs(lat.solve(f, uniform=True)[0].mean()) for f in fs])
+    i = int(np.argmax(zu))
+    print(f"   k = 0 (uniform-drive) anti-resonance: {fs[i]/1e6:.0f} MHz; plasma f_p with the post's cell spreading "
+          f"included {fpl/1e6:.0f} MHz (ratio {fs[i]/fpl:.3f}); without it {fp/1e6:.0f} MHz")
+    zp = np.array([abs(lat.solve(f)[0][lat.load]) for f in fs])
+    print(f"   point load at the same frequencies: |Z_in| {zp.min()*1e3:.0f}-{zp.max()*1e3:.0f} mOhm vs uniform-drive peak "
+          f"{zu.max()*1e3:.1f} mOhm per (A spread over the board): a point load barely sees the k = 0 mode")
+    return lat, fpl
+
+
+def cavity_modes(d, pitch, size, dx):
+    """Board modes with posts: predicted sqrt(f_mn^2 + f_p^2) for even-even modes seen by a central load."""
+    lat = Lattice(size, dx, d, pitch, decap_z())
+    fpl = plasma(1 / pitch ** 2, lattice_post_L(0.7e-9, d, pitch, dx), d)
+    v = C0 / math.sqrt(ER)
+    L_side = lat.N * dx
+    pred = sorted({math.sqrt((v / (2 * L_side)) ** 2 * (mx ** 2 + my ** 2) + fpl ** 2)
+                   for mx in (0, 2, 4) for my in (0, 2, 4) if (mx, my) != (0, 0) and mx <= my})
+    fs = np.linspace(0.3e9, 4.5e9, 211)
     z = np.array([abs(lat.solve(f)[0][lat.load]) for f in fs])
-    peaks = [i for i in range(1, len(fs) - 1) if z[i] > z[i - 1] and z[i] > z[i + 1]]
-    print("   |Z_in| local maxima (MHz): " + ", ".join(f"{fs[i]/1e6:.0f} ({z[i]*1e3:.0f} mOhm)" for i in peaks[:4])
-          + f"; minimum near SRF at {fs[int(np.argmin(z[:30]))]/1e6:.0f} MHz")
-    return lat
+    peaks = local_maxima(fs, z)
+    bare = sorted({(v / (2 * L_side)) * math.sqrt(mx ** 2 + my ** 2) for mx in (0, 2, 4) for my in (0, 2, 4)
+                   if (mx, my) != (0, 0) and mx <= my})
+    print(f"== cavity modes of a {size*1e3:.0f} mm GND-PWR pair (d = {d*1e3} mm) with decaps every {pitch*1e3:.0f} mm, "
+          f"central load (even-even modes)")
+    print("   bare-board modes (GHz): " + ", ".join(f"{x/1e9:.2f}" for x in bare[:4]))
+    print("   predicted with posts sqrt(f_mn^2 + f_p^2) (GHz): " + ", ".join(f"{x/1e9:.2f}" for x in pred[:4]))
+    print("   lattice |Z_in| peaks (GHz): " + ", ".join(f"{fs[i]/1e9:.2f}" for i in peaks[:4]))
 
 
 def continuum_zin(f, d, n, Lc, rload):
@@ -188,26 +225,30 @@ def lc_sensitivity():
     for d, pitch, size in ((0.1e-3, 5e-3, 0.1), (1.0e-3, 5e-3, 0.1)):
         out = []
         for Lc in (0.35e-9, 0.7e-9, 1.4e-9):
-            lat = Lattice(size, 0.5e-3, d, pitch, decap_z(Lc), peaceman_r=None)
+            lat = Lattice(size, 1.0e-3, d, pitch, decap_z(Lc), peaceman_r=None)
             V, *_ = lat.solve(1e8)
             # lattice node equivalent radius 0.198 dx; report both
-            zc = continuum_zin(1e8, d, 1 / pitch ** 2, Lc, 0.198 * 0.5e-3)
+            zc = continuum_zin(1e8, d, 1 / pitch ** 2, Lc, 0.198 * 1.0e-3)
             out.append((Lc, V[lat.load].imag / (2 * math.pi * 1e8), zc.imag / (2 * math.pi * 1e8)))
         s_lat = math.log(out[2][1] / out[0][1]) / math.log(4)
         s_con = math.log(out[2][2] / out[0][2]) / math.log(4)
-        print(f"   d = {d*1e3:.1f} mm (N_sq = {0.7e-9/(MU0*d):.2f}): L_in for Lc 0.35/0.7/1.4 nH = "
+        print(f"   d = {d*1e3:.1f} mm (N_sq = {0.7e-9/(MU0*d):.2f}, decaps per screening disc {math.pi*0.7e-9/(MU0*d):.1f}): "
+              "L_in for Lc 0.35/0.7/1.4 nH = "
               + " / ".join(f"{o[1]*1e12:.0f}" for o in out) + " pH (lattice), "
               + " / ".join(f"{o[2]*1e12:.0f}" for o in out) + f" pH (continuum); d ln L_in / d ln Lc = {s_lat:.2f} "
-              f"(lattice), {s_con:.2f} (continuum); 1 means 'each decap counts', ~0 means 'the plane counts'")
+              f"(lattice), {s_con:.2f} (continuum)")
+    print("   reading: a point load's inductance is the plane spreading term (mu0 d/2pi) ln(1.12 lambda/r): linear in d,"
+          " only logarithmic in decap ESL; the continuum formula holds while many decaps sit inside lambda (N_sq >> 1)")
 
 
 def run_vias(pitch, size, dx):
     d, r = 0.2e-3, 0.15e-3
     lat = Lattice(size, dx, d, pitch, lambda f: 1e-6 + 0j, peaceman_r=r)  # shorting via + Peaceman spreading
-    kp = math.sqrt(2 * math.pi / (pitch ** 2 * (math.log(pitch / (2 * math.pi * r)) + 0.5275)))
+    a_eff = round(pitch / dx) * dx  # the lattice can only place posts on grid nodes
+    kp = math.sqrt(2 * math.pi / (a_eff ** 2 * (math.log(a_eff / (2 * math.pi * r)) + 0.5275)))
     fp = kp * C0 / (2 * math.pi * math.sqrt(ER))
-    print(f"== stitching-via lattice in a GND-GND pair: pitch {pitch*1e3:.0f} mm, r = 0.15 mm, d = 0.2 mm, "
-          f"board {size*1e3:.0f} mm, grid {dx*1e3} mm; Belov f_p = {fp/1e9:.2f} GHz, 1/k_p = {1/kp*1e3:.2f} mm")
+    print(f"== stitching-via lattice in a GND-GND pair: pitch {pitch*1e3:.0f} mm (on the grid {a_eff*1e3:.1f} mm), r = 0.15 mm,"
+          f" d = 0.2 mm, board {size*1e3:.0f} mm, grid {dx*1e3} mm; Belov f_p = {fp/1e9:.2f} GHz, 1/k_p = {1/kp*1e3:.2f} mm")
     for f in (0.5e9, 0.5 * fp, 0.8 * fp):
         V, ip, zsq, zpost = lat.solve(f)
         # decay of |V| between posts along the row through the load: fit an exponential over 1..4 pitches
@@ -220,17 +261,18 @@ def run_vias(pitch, size, dx):
         lam_pred = (C0 / math.sqrt(ER)) / math.sqrt((2 * math.pi * fp) ** 2 - (2 * math.pi * f) ** 2)
         print(f"   f = {f/1e9:5.2f} GHz: |V| decay length along the row {-1/slope*1e3:5.2f} mm; predicted "
               f"v/sqrt(w_p^2 - w^2) = {lam_pred*1e3:5.2f} mm")
-    fs = np.linspace(0.2 * fp, 1.6 * fp, 57)
-    z = np.array([abs(lat.solve(f)[0][lat.load]) for f in fs])
-    i = int(np.argmax(z))
-    print(f"   first |Z_in| peak at the central launch: {fs[i]/1e9:.2f} GHz (Belov f_p {fp/1e9:.2f} GHz, "
-          f"ratio {fs[i]/fp:.3f})")
+    fpe = fp
+    fs = np.linspace(0.6 * fpe, 1.4 * fpe, 41)
+    zu = np.array([abs(lat.solve(f, uniform=True)[0].mean()) for f in fs])
+    i = int(np.argmax(zu))
+    print(f"   k = 0 (uniform-drive) resonance: {fs[i]/1e9:.2f} GHz vs Belov f_p for the lattice's pitch "
+          f"{a_eff*1e3:.1f} mm: {fpe/1e9:.2f} GHz (ratio {fs[i]/fpe:.3f})")
 
 
 if __name__ == "__main__":
     closed_forms()
-    run_decaps(0.1e-3, 5e-3, 0.10, 0.5e-3, (50e6, 200e6, 500e6, 1000e6, 1500e6), "A (thin, continuum)")
-    run_decaps(0.1e-3, 10e-3, 0.06, 0.5e-3, (200e6,), "B (60 mm board, 10 mm pitch: cavity modes)")
+    run_decaps(0.1e-3, 5e-3, 0.10, 1.0e-3, (50e6, 200e6, 500e6, 1000e6, 1500e6), "A (thin, continuum)")
+    cavity_modes(0.1e-3, 10e-3, 0.06, 1.0e-3)
     lc_sensitivity()
     run_vias(5e-3, 0.08, 0.8e-3)
     run_vias(10e-3, 0.12, 1.0e-3)

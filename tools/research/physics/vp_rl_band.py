@@ -31,10 +31,13 @@ Sections (python vp_rl_band.py [spectrum|contain|damper|all]):
 Deterministic, numpy/scipy only, about 1-2 minutes in total.
 """
 import math
+import os
 import sys
 
-import numpy as np
-import scipy.linalg as sla
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np  # noqa: E402
+import scipy.linalg as sla  # noqa: E402
 
 MU0 = 4e-7 * math.pi
 RHO = 1.72e-8
@@ -199,7 +202,7 @@ def contained(cur, x, grp, ell):
 
 def f50(h, ell, w=0.3e-3, width=100e-3, level=0.5):
     x, grp, r, lm = build(h, w, width, n_tr=1)
-    fs = np.logspace(1, 8, 57)
+    fs = np.logspace(1, 8, 36)
     fr = []
     for f in fs:
         _, cur = loop_z(f, x, grp, r, lm, {0: 1.0, 1: -1.0})
@@ -223,7 +226,7 @@ def sec_contain():
                 continue
             fv, _ = f50(h, ell)
             print(f"   {h * 1e3:4.1f} | {ell * 1e3:6.2f} | {fv:10.4g} | {fv * ell:10.4g}     | {fv / fx:7.3f}   |"
-                  f" {fv / (RS / (math.pi * MU0 * ell)):6.3f}")
+                  f" {fv / (RS / (math.pi * MU0 * ell)):6.3f}", flush=True)
 
 
 def sec_damper():
