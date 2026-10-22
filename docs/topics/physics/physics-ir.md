@@ -67,6 +67,8 @@ Kind-specific fields (required in bold):
 
 In code, each kind is a typed class with `expand()` (to 0.2 constraints) and `compile(target)`, mirroring ALIGN's `HardConstraint.translate(solver)` ([constraint-models-compared](../architecture/constraint-models-compared.md)); cell templates are functions that return entity lists, so YAML and a Python DSL are two spellings of one model.
 
+The data model is extended in [physics-core-v2-api](physics-core-v2-api.md): Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell, Event.
+
 Spectrum forms for `excite`: `{wave: trapezoid, V|I, f0, duty, tr}`, `{wave: data, rate, tr, V}`, `{wave: sine, f0, V|I}`, `{wave: edge, tr, V|I}` (ESD, hot plug), `{wave: dc, I}`, `{wave: sim, file}` (back-annotated from SPICE). Code derives `dvdt`, `didt` and a piecewise log-log envelope ([LearnEMC trapezoid calculator](https://learnemc.com/ext/calculators/trapezoid_harmonics/index.html) [S]).
 
 Sensitivity form for `sense`: `{threshold, band, transfer}`, where `transfer` names a filter, PSRR or CMRR curve from the layout card, so a victim's threshold applies after its own rejection.
@@ -167,7 +169,6 @@ Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `fe
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** [physics-core-v2-api](physics-core-v2-api.md) §6–7 adds the types Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell and Event, and deprecates Body as the physics unit, the `mech` allocation, two-point AC voltage budgets and point LII. The schemas here are unchanged ([red-team](red-team.md)).
 - **Spend-model trust.** The L·di/dt overshoot model and the LC step model disagree when the edge is shorter than the ring period ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) [C]). The ledger must name the model per regime, not one formula per budget.
 - **Granularity of `alloc`.** Partial inductances are not additive without their mutual terms; allocations over sub-structures are approximate when sub-structures couple strongly [I].
 - **`ledger.json` size.** A dense partial-inductance matrix grows as N²; storing it per revision needs sparsification ([vocabulary § physics graph](vocabulary.md#the-physics-graph)).

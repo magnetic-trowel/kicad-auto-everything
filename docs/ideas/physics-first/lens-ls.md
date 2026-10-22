@@ -1,6 +1,6 @@
 # Lens LS ideas: locality, causality, scales and the circuit limit (LS1–LS32)
 
-Ideas from the round-2 lens on scales and the circuit limit. Principles P1–P7, the derivations and the checks are in [lens-ls](../../topics/physics/lens-ls.md). The principles are:
+Ideas from the lens on scales and the circuit limit. Principles P1–P7, the derivations and the checks are in [lens-ls](../../topics/physics/lens-ls.md). The principles are:
 - P1 quasi-static limit;
 - P2 impedance-level split;
 - P3 conductor imperfection (plane resolution ℓ_m = δ²/t, receding image);
@@ -9,11 +9,9 @@ Ideas from the round-2 lens on scales and the circuit limit. Principles P1–P7,
 - P6 causality;
 - P7 scale separation.
 
-Numbers tagged [C] come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). Ids from round 1 refer to the [physics-first catalog](README.md); CT, SY, TH, IN and CD ids refer to the sibling lens files.
+Numbers tagged [C] come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). Other ids refer to the [physics-first catalog](README.md); CT, SY, TH, IN and CD ids refer to the sibling lens files.
 
-**Round-3 corrections (2026-10-22):** matching a resistive-terminated short line removes only the second-order error (first order is a pure delay for any Z0); "topology beats tweaks" is one case. ([red-team](../../topics/physics/red-team.md))
-
-Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (known pieces, new combination), **sharp** (an existing idea given an exact form, a number or a test). Effort: S (days), M (weeks), L (months).
+Tags: **new** (not in the catalog, the sibling lenses or the corpus), **combo** (known pieces, new combination), **sharp** (an existing idea given an exact form, a number or a test). Effort: S (days), M (weeks), L (months).
 
 **Top five:** LS1 complex-image PEEC, LS8 wire-medium model, LS5 impedance-level classifier, LS15 non-perturbative trigger, LS12 ℓ–f regime plane. **Quick wins:** LS7 critical-length family, LS32 ESD path threshold.
 
@@ -45,7 +43,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
 - **Mechanism:** per structure and band, compute four numbers: θ = ωℓ/v, m = Z0/Z (Z from the net passport's V/I, Z0 from the cross-section), ε_L = θ·m and ε_C = θ/m. Classify the structure:
   - m > 1: L-critical. Move Z0 down: lower h, widen, stack.
   - m < 1: C-critical. Move Z0 up: narrow, raise, void the plane.
-  - m ≈ 1: matched.
+  - m ≈ 1: matched. With resistive ends a short line is a pure delay to first order at any m; matching removes the second-order error.
   
   If Z falls outside the PCB Z0 span (about 0.4 Ω for a 50 mm plane pair at 0.1 mm, up to ~170 Ω for a thin trace on a 1.6 mm two-layer board), flag it as "unmatchable". The remedy is then structural: a plane pair, parallel paths, a shorter ℓ or a void.
 - **Beats:** name-based roles (PW1) and threshold numbers (CT26's K_C and K_L) say what is critical. This one ratio also says which knob to turn and in which direction, and it contains PW2's Z0* = V/I.
@@ -53,7 +51,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
 
 **LS6. Delay-only certificate for matched nets.** — *new, S; P2, P6.*
 - **Mechanism:** where source and load satisfy |m − 1| < δ (series-terminated or matched pairs), bound the amplitude error by (θ²/8)(m − 1/m)² plus the tolerance reflection. Then skip the transmission-line simulation and budget only delay and skew.
-- **Beats:** the exact two-port has zero amplitude error at any length when matched (§2 of the topic doc) [C]. Round 1 found that USB impedance tolerance barely moves the eye; this turns that one observation into a gate that removes SI simulation from most matched nets.
+- **Beats:** the exact two-port has zero amplitude error at any length when matched (§2 of the topic doc) [C]. USB impedance tolerance barely moves the eye ([worked-thought-experiments](../../topics/physics/worked-thought-experiments.md)); this turns that one observation into a gate that removes SI simulation from most matched nets.
 - **Test:** compare certified nets with IBIS/SPICE eyes on 50 nets and count false certificates.
 
 **LS7. Critical-length family instead of t_r/6 vs t_r/2.** — *sharp, S; P2, P6.*
@@ -74,7 +72,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
   - mode shifts to √(f_mn² + f_p²).
   
   Posts are decaps (L_c, C, ESR) or vias (Belov's L_post).
-- **Beats:** four round-1 results become one formula: XD113 reach, the Belov stitching check, the lumped anti-resonance and decaps raising cavity modes. The lattice agrees within 0–3% [C]. It replaces "stitch at λ/20", "decap within N mm" and separate anti-resonance calculators.
+- **Beats:** four results become one formula: XD113 reach, the Belov stitching check, the lumped anti-resonance and decaps raising cavity modes. The lattice agrees within 0–3% [C]. It replaces "stitch at λ/20", "decap within N mm" and separate anti-resonance calculators.
 - **Test:** compare with a PDN tool or Palace on 3 stackups with real decap sets, then with bench Z(f).
 
 **LS9. Plasma-frequency band plan.** — *new, S; P5.*
@@ -103,7 +101,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
 
 **LS12. The ℓ–f regime plane as the regime selector.** — *new, M; P1–P7.*
 - **Mechanism:** a log size–log frequency map whose boundaries are ℓ = δ, δ²/t, λ/10, λ/2, λ/2π, λ_th, √(α/ω), λ_pdn(f), 1/k_p and v·t_r/6. Each structure is a segment: its scales run from h to its size, its band from the fundamental to the knee. The cells it crosses choose the representation (ideal, lumped R/L/C, complex images, line, wire medium or modes, antenna, thermal kernel) and the solver rung.
-- **Beats:** replaces design-reasoning's fixed band table and RG2's 14 groups with four primitive ratios. One object serves the LLM's explanations, the ledger's Regime type (LA11, now with a scale coordinate) and the SIM4 dispatcher.
+- **Beats:** replaces design-reasoning's fixed band table and RG2's 14 groups with four primitive ratios. One object serves the LLM's explanations, the ledger's Regime type (LA11, given a scale coordinate) and the SIM4 dispatcher.
 - **Test:** dispatch 100 structures, then check the chosen representation against F3 on 10 of them.
 
 **LS13. Victim-relative expansion order.** — *new, S; P7.*
@@ -127,7 +125,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
 
 **LS15. Non-perturbative trigger.** — *new, S; P1, P2.*
 - **Mechanism:** when ε_L·Q ≥ 1, ε_C·Q ≥ 1 or any ε ≥ 1, stop adding parasitic budgets. Switch that structure to circuit-plus-network co-simulation (C2) or to a modal model (cavity, cable or ring modes).
-- **Beats:** round 1 found that linear budgets fail for a slow 48 V bridge, and that the LC-step model predicts about 100% overshoot regardless of L. Both are a series diverging. The trigger says where this will happen before it does; on RB4's hot loop, ε_L = 0.39 with a ring Q of 30–170 [C].
+- **Beats:** linear budgets fail for a slow 48 V bridge (DR11), and the LC-step model predicts about 100% overshoot regardless of L. Both are a series diverging. The trigger says where this will happen before it does; on RB4's hot loop, ε_L = 0.39 with a ring Q of 30–170 [C].
 - **Test:** on the worked cases and 10 converter boards, compare additive verdicts with co-simulation inside and outside the trigger.
 
 **LS16. Causal stackup model.** — *sharp, S; P6.*
@@ -146,7 +144,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
 - **Mechanism:** per insulating gap, τ_e ≈ ε_eff·g/σ_s, with σ_s taken from a humidity and contamination class.
   - Below 1/(2πτ_e) the surface potential follows conductivity. Guards must then be driven to equal potential, and HV DC stress follows contamination, so the fix is grading or coating.
   - Above that frequency the surface behaves capacitively.
-- **Beats:** round 1's Ins quantity has a leakage ratio but no regime. A 1 mm gap has τ_e from 23 µs (humid, with residue) to 2.4 s (clean, dry) [C, assumed σ_s]. The same gap can be capacitive in the lab and resistive in the field.
+- **Beats:** the Ins basis quantity ([rule-basis-set](../../topics/physics/rule-basis-set.md)) has a leakage ratio but no regime. A 1 mm gap has τ_e from 23 µs (humid, with residue) to 2.4 s (clean, dry) [C, assumed σ_s]. The same gap can be capacitive in the lab and resistive in the field.
 - **Test:** SIR comb coupons at 40% and 85% RH under DC plus AC; measure the crossover.
 
 **LS19. Laminate dielectric absorption near high-Z nodes.** — *new, S; P6, P4.*
@@ -190,7 +188,7 @@ Tags: **new** (not in round 1, the sibling lenses or the corpus), **combo** (kno
   2. board: stackup, plane partition, cell placement;
   3. cell interior;
   4. feature.
-- **Beats:** far-field budgets see only the low-order moments of the sources. That explains why topology beat tweaks by 20–35 dB in round 1's one EMI case (the 40 dB was an input), and it gives JPR50's outer loop a physical basis.
+- **Beats:** far-field budgets see only the low-order moments of the sources. That explains why, in the one worked EMI case ([fields-emi-budget](../../topics/physics/fields-emi-budget.md)), removing a slot or split beat edge-rate and series-R tweaks by 20–35 dB, and it gives JPR50's outer loop a physical basis.
 - **Test:** on 5 boards, coarse-first against τ-only ordering; compare spend and backtracks.
 
 **LS25. Cells as multipole particles.** — *combo, M; P5.*

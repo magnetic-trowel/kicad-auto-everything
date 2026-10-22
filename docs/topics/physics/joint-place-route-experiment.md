@@ -1,7 +1,7 @@
 # Joint vs sequential placement and routing: a proof of concept
 
 **TL;DR**
-- At equal CPU (50 s), joint SA (an HPWL start, then moves accepted on routed length, vias, ground-plane cuts and hot-loop area) beat a longer sequential SA on 5/5 30-part boards (median −17% routed objective J) and an equal-CPU restart portfolio on 3/5 (median −10%) (exact sign tests: p = 0.06 and p = 1.0). Over both sizes, joint ties the equal-CPU portfolio 5/10 (median J ratio 0.96, 95% CI 0.83–1.24). The physics term's effect is 0.99 (0.93–1.05). Only "joint improves its own start" is significant (10/10, p = 0.002); run-to-run spread of one board is ×1.18 [C, [rt_jpr_stats](../../../tools/research/physics/rt_jpr_stats.py)]. The gains were fewer vias (median 16 vs 24) and smaller hot loops (3 vs 6–8.5 mm²), not shorter wire.
+- At equal CPU (50 s), joint SA (an HPWL start, then moves accepted on routed length, vias, ground-plane cuts and hot-loop area) significantly improves its own sequential start (10/10, p = 0.002) but ties an equal-CPU restart portfolio over both sizes (5/10; median J ratio 0.96, 95% CI 0.83–1.24). At 30 parts it beat a longer sequential SA on 5/5 boards (median −17% routed objective J; exact sign test p = 0.06) and the portfolio on 3/5 (median −10%; p = 1.0). The physics term's effect is 0.99 (0.93–1.05); run-to-run spread of one board is ×1.18 [C, [rt_jpr_stats](../../../tools/research/physics/rt_jpr_stats.py)]. The gains were fewer vias (median 16 vs 24) and smaller hot loops (3 vs 6–8.5 mm²), not shorter wire.
 - At 50 parts it was a coin flip: 2/5 against each control (median +4% and +9%). Routed moves cost ~25× an HPWL move, and when the start sits in a bad basin, restarts escape it and local joint moves do not.
 - The joint stage improved its own start in 10/10 runs (median −18% at 30 parts, −24% at 50). After a converged 50 s sequential run, 40 s of joint search beat 40 s more SA on 3 of 4 boards.
 - Proxies rank coarse differences (HPWL vs routed J, Spearman 0.87–0.94) but not near-equal placements: 44% of pairs within 3% HPWL differed by more than 10% in J. A straight-line hot-loop proxy ranked the routed loop at only 0.23–0.79.
@@ -95,8 +95,8 @@ This matches Cadence's 12,000-placement finding at small scale ([joint-place-rou
 
 **Cost** (median per CPU second): HPWL SA 13.9k moves (N = 30) and 12.2k (N = 50); joint 1.6k proposals, of which 510–550 were legal and routed (2.5 and 1.6 nets re-routed per move). The gap is ~25× per routed move. Five restarts fit in the portfolio budget.
 
-### Development lessons [C]
-- **Keep hard constraints hard.** A first version of `joint` priced overlaps with a ramped penalty. It ended with 2–7 overlaps, and the end-of-run legalizer moved parts without regard to their routes: on one board the joint's own routed J of 602.5 became 1163.5 after legalization and re-routing. Rejecting illegal moves before routing fixed this and raised the routed-move rate 3–7× (from 70–170 to 510–550 per second). A joint optimizer must stay legal throughout, or legalize with its routes in view (JPR14, JPR37).
+### Method lessons [C]
+- **Keep hard constraints hard.** Pricing overlaps with a ramped penalty left 2–7 overlaps at the end of the run, and the end-of-run legalizer then moved parts without regard to their routes: on one board the joint's own routed J of 602.5 became 1163.5 after legalization and re-routing. Rejecting illegal moves before routing avoids this and raises the routed-move rate 3–7× (70–170 → 510–550 per second). A joint optimizer must stay legal throughout, or legalize with its routes in view (JPR14, JPR37).
 - **Incremental route state drifts.** At N = 50 the joint's maintained routes ended with 2–10 failed nets in 4/5 runs, while a from-scratch PathFinder re-route of the same placement was clean. Periodic global renegotiation, or LPA* repair with history costs, is needed (JPR6). Scoring the joint's own routes instead of the referee gives the same picture at N = 30 (wins 5/5 and 4/5 against the two controls) and a worse one at N = 50 (2/5 and 1/5).
 - **Variance is large.** Three runs of one board and seed gave `seq` J of 241, 290 and 337 (CPU budgets change move counts). Five seeds show direction, not significance.
 
@@ -109,14 +109,13 @@ This matches Cadence's 12,000-placement finding at small scale ([joint-place-rou
 - Score hot loops with MS2 or height × squares on boards with a near plane; the area term here fits only the 2-layer far-plane case [I].
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** sign tests and confidence intervals added; joint ties the equal-CPU portfolio 5/10, so the supported claim is refinement of a sequential start ([red-team](red-team.md)).
 - **Not a real-board result.** No clearance geometry, diff pairs, pours, 4+ layers, or DRC; nets have 2–4 pins; the router always completed. Whether the via and loop gains survive Freerouting realization and `kicad-cli` DRC on PCBWorld D3 is the open test.
 - **Language bias.** Both arms are pure Python; Rust may shift the 50-part outcome [I].
-- **Post-hoc fix.** The legality fix to `joint` was made after a first matrix in which `joint` lost badly. It is a correctness fix, applied before the final runs, but it was not pre-registered.
+- **Post-hoc fix.** Rejecting illegal moves before routing was adopted after a first matrix in which the penalty variant of `joint` lost badly. It is a correctness fix, applied before the final runs, but it was not pre-registered.
 - **Weights.** J's weights are choices; the I1 ledger should set them.
 
 ## Sources
-- Script: [`tools/research/physics/jpr_joint_vs_sequential.py`](../../../tools/research/physics/jpr_joint_vs_sequential.py); instance generator and earlier SA and PathFinder measurements: [solver benchmarks](../solvers/benchmarks.md)
+- Script: [`tools/research/physics/jpr_joint_vs_sequential.py`](../../../tools/research/physics/jpr_joint_vs_sequential.py); instance generator and SA and PathFinder measurements: [solver benchmarks](../solvers/benchmarks.md)
 - Prior art for the method (PROXI, Starfish) and Cadence's proxy study: [joint-place-route](joint-place-route.md)
 
 See also: [joint-place-route](joint-place-route.md) · [ideas: joint placement and routing](../../ideas/physics-first/joint-place-route.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md) · [metaheuristics-and-qd](../solvers/metaheuristics-and-qd.md) · [solver-ladder](solver-ladder.md)

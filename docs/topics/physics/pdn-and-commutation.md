@@ -192,7 +192,6 @@ The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 m
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** PEEC–FastHenry match scoped to w/h 0.3–5; a body-sized inductor cut-out is worse than either choice ([red-team](red-team.md)).
 - **[hot-loops](../rules/power/hot-loops.md) tiers in mm²** are soft scores; area is a poor proxy over a close plane, so prefer nH.
 - **f_ext values and the cut-out model are assumptions** (the latter axisymmetric, air-core). Calibrate with one LCR measurement per inductor family, with and without plane and cut-out, or a magnetostatic FEM.
 - **The Kelvin L_err assumes the taps sit at the element ends.**

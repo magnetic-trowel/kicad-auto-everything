@@ -76,6 +76,8 @@ We adopt it with three amendments [I]:
 
 **Atoms are *where*; quantities are *what*.** Each atom exposes part of the 12-quantity basis in [rule-basis-set](rule-basis-set.md): Loop → L, M, Vcm, Res; Node → Cm, Vcm; Body → R, L, Th; Channel → Z, Bal, Res; Cavity → Res; Barrier → Ins; Heat path → Th. Fab and Mech attach to bodies as constraints ([thermal-hv-mfg ideas](../../ideas/physics-first/thermal-hv-mfg.md)); Cog and Std attach to budgets as provenance.
 
+The data model is extended in [physics-core-v2-api](physics-core-v2-api.md): Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell, Event.
+
 ### Relations
 
 - `carries(Body, Loop/Feed)`: body is part of the current path. Required by templates; observed by J solve.
@@ -158,7 +160,6 @@ This extends U5 ([workflow-ux](../../ideas/original/workflow-ux.md)). Glyphs com
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** [physics-core-v2-api](physics-core-v2-api.md) §6–7 adds the types Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell and Event, and deprecates Body as the physics unit, the `mech` allocation, two-point AC voltage budgets and point LII. The schemas here are unchanged ([red-team](red-team.md)).
 - **Body granularity.** One body per net per layer is simple, but J solves need a mesh; per connected component may be the better id.
 - **The image results are idealized.** A perfect, infinite plane overstates shielding below f_x, near plane edges and over slots; the [C] table bounds the effect and does not predict it.
 - **Designed vs parasitic can overlap.** A VIN pour is a feed (widen it) and part of a hot loop (keep it tight); a heat-spreading pour on a switch node is a dv/dt aggressor. The ledger must hold both budgets and show the trade.

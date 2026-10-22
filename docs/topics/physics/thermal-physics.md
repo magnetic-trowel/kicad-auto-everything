@@ -66,7 +66,7 @@ At 10 mm a neighbour sees 40% of the source's own rise. The ~4–5 K floor is P/
 | "As many vias as fit" | Vias in parallel with spreading and the FR-4 column (a 1×1 mm FR-4 cell is 5333 K/W) | Top pour attached: 0→9 vias, 41.9 → 36.4 K. EP-only top copper: 126 → 97 (1 via) → 53 K (9 vias) [C, E2] | Physics, but conditional. Vias pay only when the heat must change layer |
 | 1 / 2 / 4 oz by dissipation | λ ∝ √t, near-field slope ∝ 1/t | 0.5 → 1 → 2 → 4 oz: 49.8 → 35.6 → 27.6 → 23.3 K (40×40 mm pour) [C, E3]; TI: −25% for 1 → 2 oz [P] | Physics, with diminishing returns once λ exceeds the pour |
 | No cuts across heat flow | Directional resistance in the flux field | 20 × 0.5 mm cut at 5 mm: across the flow +0.87 K (top layer), +1.61 K (both layers); along the flow +0.04 to +0.06 K [C, E4]; TI +5.5 vs +1.5 K [P] | Physics. Score cuts by flux·normal (TM5) |
-| SLVA959 5.73 °C/W per via | Would need 0.72 mm² of copper, a 0.95 mm solid rod | [C] §A | Error, as already flagged in [motor-drivers](../rules/power/motor-drivers.md) |
+| SLVA959 5.73 °C/W per via | Would need 0.72 mm² of copper, a 0.95 mm solid rod | [C] §A | Error, as flagged in [motor-drivers](../rules/power/motor-drivers.md) |
 
 **Fills** [C, §A]:
 - 0.3 mm, 25 µm, 1.6 mm via, epoxy-filled: 190 K/W, no gain.
@@ -184,7 +184,6 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** "spacing buys little" scoped to the mean rise; spacing still moves neighbour peaks 10–20% and matters for fatigue, hogging and plumes ([red-team](red-team.md)).
 - **λ definition:** ours, 38 mm on 2L 1 oz, counts two copper layers plus FR-4. [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) uses one layer (21–29 mm). Use the stackup-specific G_s.
 - **The 15.3 cm²/W rule is conservative for one ~1 W source in our model** (26% above our FV answer). It turns anti-conservative for multi-watt sources on 1 oz and in enclosures, as [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) notes: in E1 the rise saturates near 27 K/W beyond 64 cm², so 3 W cannot meet 40 K on any 1 oz area.
 - **The FV solver is steady-state and 2.5-D.** It ignores package θ_JC, contact resistance, enclosure air temperature rise and non-uniform h. Validate against an IR camera (emissivity-corrected) or Elmer FEM (GPL/LGPL, run as a separate process; licence to be confirmed) before trusting absolute values.

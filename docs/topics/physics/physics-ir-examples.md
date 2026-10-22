@@ -46,7 +46,7 @@ ops:
 ```
 
 - **Spectra** [C]: di/dt = 1.5 A/ns, dv/dt = 6 V/ns; knee 1/(π·t_r) = 159 MHz, which defines the `edge` band.
-- **The hot loop budget is a peak voltage, not an area.** Code chooses the spend model by regime. When the edge is shorter than the ring period, an LC step model applies instead of L·di/dt; WS8's [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) shows that the two can disagree by an order of magnitude [C]. The `alloc` splits the budget across the cap's ESL and pads, the vias and the lateral path, so the ledger can attribute spend.
+- **The hot loop budget is a peak voltage, not an area.** Code chooses the spend model by regime. When the edge is shorter than the ring period, an LC step model applies instead of L·di/dt; [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) shows that the two can disagree by an order of magnitude [C]. The `alloc` splits the budget across the cap's ESL and pads, the vias and the lateral path, so the ledger can attribute spend.
 - **The switch node is the second aggressor and has the opposite sign.** A 20 mm² SW pour over a plane 0.1 mm down is 7.6 pF and injects C·dv/dt = 46 mA of displacement current each edge [C]. `widen_to_pour` would help the feed and hurt this node, which is why node and loop are separate primitives.
 - **FB coupling.** Johnson's K = 1/(1+(D/H)²) as a capacitive-divider bound: at H = 0.1 mm a fully parallel FB trace picks up 462 mV at D = 0.5 mm, 119 mV at 1 mm and 30 mV at 2 mm [C, rough]. The compiler emits `clearance (min 2mm)` between SW and FB as a proxy; the checker integrates the actual parallel length.
 - **Feed.** 3 A over 20 mm of 1 mm, 1 oz track is 9.8 mΩ (29 mV, 88 mW); a 5 mm pour is 2 mΩ [C]. That is why `R ≤ 5 mOhm` triggers `widen_to_pour` on VOUT but not on SW.
@@ -205,7 +205,7 @@ ops:
 
 ## Conflicts and open questions
 
-- WS8's undamped LC-step model ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py)) predicts near-100% overshoot almost independent of L for both power examples, so V_pk budgets need a damped, vendor-calibrated cell model before they gate anything.
+- The undamped LC-step model of [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) predicts near-100% overshoot almost independent of L for both power examples, so V_pk budgets need a damped, vendor-calibrated cell model before they gate anything.
 - The Johnson K bound for FB pickup and the dB/in loss rule are rough; both need a 2D field-solver check ([solver-ladder](solver-ladder.md)).
 - Desense budgets (`P ≤ −110 dBm` in channel) are placeholders; they need the radio's blocking and spur specs.
 

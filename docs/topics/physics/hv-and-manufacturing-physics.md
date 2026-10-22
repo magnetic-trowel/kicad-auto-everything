@@ -184,7 +184,7 @@ Curves pay where physics does: HV convex corners (r ≥ g/2), flex bends (strain
 
 ## Conflicts and open questions
 
-- **Thermal reliefs vs tombstoning:** our lumped model says reliefs change pad asynchrony by under 5%; vendor guidance and WS1 R25 say they balance small pads. No controlled study was found. Needs an assembly DOE or a transient FV check.
+- **Thermal reliefs vs tombstoning:** our lumped model says reliefs change pad asynchrony by under 5%; vendor guidance says they balance small pads ([rule-genealogy-routing-style-dfm](rule-genealogy-routing-style-dfm.md) R25). No controlled study was found. Needs an assembly DOE or a transient FV check.
 - **The streamer estimate is 2-D,** ignores surface flashover (lower) and fails near the Paschen minimum. Use it to rank geometries, not to certify.
 - **IEC 60664-1 altitude factors other than 5000 m are from memory and secondary reproductions.** The 2020 edition moved them to Table F.10 [S].
 - **Warp numbers are bilayer estimates.** Warp at reflow (above Tg) needs FEA or shadow moiré.

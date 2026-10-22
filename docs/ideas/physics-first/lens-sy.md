@@ -1,11 +1,9 @@
 # Physics-first ideas: lens SY (symmetry, reciprocity and duality)
 
-Round-2 lens ideas. The argument, principles P1–P7 and numbers are in [lens-sy](../../topics/physics/lens-sy.md). Everything here is a proposal [I] unless a number is tagged [C], computed by [sy_duality_balance.py](../../../tools/research/physics/sy_duality_balance.py) or [sy_images_symmetry.py](../../../tools/research/physics/sy_images_symmetry.py).
-
-**Round-3 corrections (2026-10-22):** "1 oz mirrors a 5 mm loop above 12 kHz" is only the onset (~5%); half-mirroring needs a/ℓ_m ≈ 2–5; one adjoint prices small edits only. ([red-team](../../topics/physics/red-team.md))
+The argument, principles P1–P7 and numbers are in [lens-sy](../../topics/physics/lens-sy.md). Everything here is a proposal [I] unless a number is tagged [C], computed by [sy_duality_balance.py](../../../tools/research/physics/sy_duality_balance.py) or [sy_images_symmetry.py](../../../tools/research/physics/sy_images_symmetry.py).
 
 Tags:
-- **new**: not in the 660 round-1 ideas.
+- **new**: not in the [catalog](README.md).
 - **combo**: a new combination of existing ideas.
 - **sharp**: an existing idea made exact or buildable.
 
@@ -28,7 +26,7 @@ Effort: S (days), M (weeks), L (months). Principles:
 | 4 | SY2 periodic adjoint | The missing susceptibility engine for converters and sampled ADCs |
 | 5 | SY18 feed symmetry group | A seconds-long graph check that guarantees current sharing |
 
-**Convergence with lens CT.** Four ideas were reached independently by [lens CT](lens-ct.md), CT from conservation and SY from symmetry and duality. Treat each pair as one idea with two derivations:
+**Shared with lens CT.** Four ideas also appear in [lens CT](lens-ct.md), derived there from conservation and here from symmetry and duality. Treat each pair as one idea with two derivations:
 - SY6 ≈ CT1 (the exact cut law);
 - SY9 ≈ CT2 (crack-augmented adjoint);
 - SY16 ≈ CT10 (antiphase node pairing);
@@ -46,7 +44,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - The field lead field is a forward field solve with unit current fed into the victim port. That is valid because the interconnect is reciprocal.
   - Every coupling query is ∫source·lead field, and every output sensitivity is adjoint × lead field.
 - **Principle:** P1, P1′.
-- **Why:** round 1 files both as one object. Keeping them apart shows which shortcut fails where: active parts break reciprocity but not adjoints, and nonlinear victims break both.
+- **Why:** keeping them apart shows which shortcut fails where: active parts break reciprocity but not adjoints, and nonlinear victims break both.
 - **Test:** compute 20 couplings on a buck + ADC board by per-aggressor solves and by lead fields; they must agree to solver tolerance. Check `.noise` against a transposed MNA with a non-reciprocal op-amp model.
 
 **SY2. Periodic adjoint for switching and sampled victims** — *new, M.*
@@ -72,7 +70,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Reject passive macromodels (SIM33) whose fit breaks it.
 - **Principle:** P1.
 - **Why:** an asymmetric mutual always means a meshing, port or assembly bug. The check is free and catches errors before they become rewards.
-- **Test:** run on all round-1 solvers and on deliberately mis-meshed cases; count bugs found.
+- **Test:** run on all existing solvers (SIM46) and on deliberately mis-meshed cases; count bugs found.
 
 **SY5. Emission and immunity from one solve** — *combo, S.*
 - **Mechanism:**
@@ -116,7 +114,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   
   This replaces "removed area × energy density".
 - **Principle:** P2b, P3.
-- **Why:** the area-based adjoint underestimates cuts 13–35× [C] (30× in round 1). With the tensor it is accurate to about 10%, so one adjoint prices every small edit; finite edits need exact Woodbury updates.
+- **Why:** the area-based adjoint underestimates cuts 13–35× [C]. With the tensor it is accurate to about 10%, so one adjoint prices every small edit; finite edits need exact Woodbury updates.
 - **Test:** SIM25's 100-slot set, error before and after.
 
 ## C. Nodes and loops once the plane breaks duality
@@ -145,7 +143,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
 
   Beyond r* the node sets the halo (area × swing, 1/r³); inside it the loop does.
 - **Principle:** P2 broken by P3.
-- **Why:** round 1 sizes halos mainly from magnetic coupling. Over a 0.1 mm plane the electric term dominates beyond 2.2 mm for a 1 kΩ victim and 9.7 mm for 50 Ω [C].
+- **Why:** halos sized from magnetic coupling alone miss the electric term. Over a 0.1 mm plane it dominates beyond 2.2 mm for a 1 kΩ victim and 9.7 mm for 50 Ω [C].
 - **Test:** E- and H-probe near-field scans at 3, 5, 10 and 20 mm on a buck coupon with 50 Ω and 1 kΩ victim terminations.
 
 ## D. Mirror symmetry and balance
@@ -164,7 +162,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Merge Bal and Vcm into one quantity, mode conversion, with a level index: pair vs its reference, or board vs world.
   - Express every source in one currency: geometric asymmetry (Δχ, the change in current-division factor χ = C1g/(C1g+C2g)) and skew alike, in dB or as equivalent skew Δt_eq = 2|Δχ|/(π·f).
 - **Principle:** P4.
-- **Why:** round 1 budgets skew in ps and asymmetry nowhere. A 10 µm width mismatch (−41 dB, about 6 ps at 1 GHz) can outweigh a whole skew allowance, while copper beyond 3h is negligible [C].
+- **Why:** common practice budgets skew in ps and asymmetry nowhere. A 10 µm width mismatch (−41 dB, about 6 ps at 1 GHz) can outweigh a whole skew allowance, while copper beyond 3h is negligible [C].
 - **Test:** rank conversion sources on 20 pairs; compare with openEMS Scd21.
 
 **SY15. Imbalance-step ledger for pairs and connectors** — *sharp, M.*
@@ -183,7 +181,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Place those nodes adjacent, with equal copper area over the same plane. Their voltage-area moments cancel, at every harmonic for complementary switching and at odd harmonics for interleaving.
   - Budget the area imbalance the way XD11 budgets current imbalance.
 - **Principle:** P2c (the dual of mirrored loops), P4.
-- **Why:** round 1 cancels loops (XD11, LA35) but has no node twin, and node coupling is what remains over a plane (SY10).
+- **Why:** XD11 and LA35 cancel loops but have no node twin, and node coupling is what remains over a plane (SY10).
 - **Test:** near-field E scan and cable CM current for adjacent equal-area vs separated layouts of a full bridge.
 
 **SY17. Null-plane placement for cancelled aggressors** — *sharp, S.*
@@ -236,7 +234,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Critics evaluate φ(A) − φ(B) − jω∫A·dl along that path. The sum is gauge-invariant even though its parts are not.
   - A budget without a loop is a validation error, like LA1's half-port.
 - **Principle:** P5.
-- **Why:** at frequency, "the voltage between two ground points" depends on the path. Round 1's Kelvin L_err of 0.55–0.87 nH, which changes with sense routing, is exactly this.
+- **Why:** at frequency, "the voltage between two ground points" depends on the path. PW41's Kelvin L_err of 0.55–0.87 nH, which changes with sense routing, is exactly this.
 - **Test:** count ambiguous budgets on 5 boards; compare loop-EMF predictions with probes routed two ways.
 
 **SY23. Gauge-invariant ledger attribution** — *sharp, S.*
@@ -273,7 +271,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - **Concave:** current crowds as r^(−1/3), and the corner is E-free. Fillet concave corners on pulse, fuse and ESD paths.
   - **Convex:** E crowds in the 270° gap, and the corner carries no current (r^(+1)). Round convex corners on HV nets, and chamfer convex pour corners freely.
 - **Principle:** P6 plus conductor/dielectric complementarity.
-- **Why:** round 1 found the two effects separately (PW18, TM22). The duality says they live on opposite corners.
+- **Why:** PW18 and TM22 treat the two effects separately. The duality says they live on opposite corners.
 - **Test:** FD bends plus an HV field solve; pulse heating and inception against corner type.
 
 **SY27. One antenna-mode map, both CM mechanisms** — *combo, S.*
@@ -283,7 +281,7 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   
   The edge law is Maxwell's 1/√(1−(2x/W)²) [C].
 - **Principle:** P1, P6.
-- **Why:** round 1 used MREMC (current-driven) for traces and the voltage-driven form only for heatsinks. SW pours near edges are voltage-driven antennas.
+- **Why:** MREMC-style budgets treat traces as current-driven and apply the voltage-driven form mainly to heatsinks. SW pours near edges are voltage-driven antennas.
 - **Test:** against openEMS on 3 boards; ranking of the top CM contributors.
 
 **SY28. Designed cuts that steer current off a measurement** — *new, M.*
@@ -322,5 +320,5 @@ SY7 (cross-objective price) and SY8 (bridge dual) appear only here.
   - Flag where the plane breaks the dual (P3), and send each new dual to the solvers for a verdict.
   - This lens's examples: SY8, SY11, SY16, SY21, SY26.
 - **Principle:** P2, P3.
-- **Why:** round 1 found duals one at a time. A generator finds the missing half of the vocabulary and the asymmetries a plane creates.
+- **Why:** duals are otherwise found one at a time. A generator finds the missing half of the vocabulary and the asymmetries a plane creates.
 - **Test:** generate duals for 40 operators and count the physically valid new ones after solver checks.

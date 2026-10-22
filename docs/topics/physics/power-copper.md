@@ -183,7 +183,6 @@ Skin depth in copper is 66 µm at 1 MHz, 21 µm at 10 MHz and 6.6 µm at 100 MHz
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** "copper never damps" scoped to hot-loop rings; mirroring onset vs half-mirroring ([red-team](red-team.md)).
 - **SW area.** "Never heatsink through SW copper" (Rohm, TH-08 in [thermal](../rules/thermal.md)) is too strong for low-voltage converters over a solid plane, right at high voltage and near cables; a computed trade replaces it [I].
 - **The EMI numbers in §1 are an upper-bound coupling model** (all displacement current onto a 1 m cable). Calibrate them against the [fields-emi-budget](fields-emi-budget.md) chain and measurements.
 - **2-D sheet models ignore copper thickness at corners and etch rounding.** The pulse hot-spot factors are 2-D, grid-limited at 10 µs, and need a 3-D transient check before becoming limits.

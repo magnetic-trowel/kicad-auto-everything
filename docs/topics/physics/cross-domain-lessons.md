@@ -122,7 +122,7 @@ All [C] numbers come from four deterministic scripts (each under a minute) in `t
 ### L9. Topology optimization with manufacturing filters → DRC-clean, etch-robust copper
 
 - **Source.** Robust erode/nominal/dilate projection (Wang, Lazarov and Sigmund 2011). Foundry-rule-constrained photonic optimization with differentiable morphology (Hammond et al. 2021) [S].
-- **Transfers.** Put minimum width, clearance and area inside the optimizer. Optimize the worst of ±etch bias. Use multi-load-case objectives (light load, full load, fault). Workstream 6 owns the solver ([copper-shape-synthesis](copper-shape-synthesis.md)); this adds the manufacturing discipline.
+- **Transfers.** Put minimum width, clearance and area inside the optimizer. Optimize the worst of ±etch bias. Use multi-load-case objectives (light load, full load, fault). The solver is in [copper-shape-synthesis](copper-shape-synthesis.md); this adds the manufacturing discipline.
 - **Does not.** Compliance problems are self-adjoint and well conditioned. Inductance-weighted multi-net problems with keep-outs are not; expect local minima.
 
 ### L10. Antenna engineering → characteristic modes and reciprocity
@@ -178,10 +178,10 @@ All [C] numbers come from four deterministic scripts (each under a minute) in `t
 ## Conflicts and open questions
 
 - **Via counts.** [high-current](../rules/power/high-current.md) counts vias as I divided by per-via ampacity, which assumes even sharing. Current arriving from the side is not shared evenly. Exposed-pad thermal arrays ([thermal](../rules/thermal.md) TH-01) are unaffected.
-- **Decap placement.** [decoupling-pdn](../rules/decoupling-pdn.md) still quotes "as close as possible" (MT-101). L4 supports the contested view with a formula that is not yet validated against a PDN tool with plane capacitance.
+- **Decap placement.** [decoupling-pdn](../rules/decoupling-pdn.md) quotes "as close as possible" (MT-101). L4 supports the contested view with a formula that is not yet validated against a PDN tool with plane capacitance.
 - **IPC sizing.** IPC widths are a heating limit, not an optimum. The 35% figure comes from one synthetic tree.
 - **Slit law validity.** The Δψ² law is for spread-out sheet current (pours, plane pairs). A narrow return stream under a trace crossing a slot is a different regime: there Δψ = I, and the cost grows roughly as ℓ·ln ℓ, which matches the Ott-slot fit in [physics-critics-validation](physics-critics-validation.md). Interior slits came out 12–19% under the formula in a finite strip; the edge factor of about 2 is empirical.
-- **Thermal λ.** It depends on assumptions: in-plane FR-4 k = 0.3 and h = 10 W/m²K per side. Cross-check with workstream 7.
+- **Thermal λ.** It depends on assumptions: in-plane FR-4 k = 0.3 and h = 10 W/m²K per side. Cross-check with [thermal-physics](thermal-physics.md).
 - **Star vs trunk.** The result depends on the clearance-overhead model.
 - **Unverified.** Peeren (2003) details; the KQCircuits and Qiskit Metal licences ([S]); characteristic-mode analysis applied to PCB grounds (only the heatsink precedent found).
 

@@ -126,9 +126,8 @@ Each term uses the cheapest model that ranks candidates correctly: for loops ove
 4. **Outer MCTS/QD** over coarse decisions, with LLM menus.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** joint ties an equal-CPU portfolio 5/10 (restated as refinement); fixed-stackup MS2 numbers; trust regions add r < 0.5 ([red-team](red-team.md)).
 - **Phase order.** [Hybrid architecture options](../architecture/hybrid-architecture-options.md) builds the staged Option A first and topology-first Option C last, for critical nets only. We argue the topological state should be the substrate for all nets once phase 1 works, since it makes joint moves cheap; geometry stays engine-made in both.
-- **Quilter.** [quilter](../landscape/quilter.md) summarizes Quilter as "one coupled search"; it discloses a ranked placement × router matrix (X.Y): a portfolio, not joint search [I].
+- **Quilter.** Quilter presents placement and routing as one coupled search [V]; what it discloses is a ranked placement × router matrix (X.Y): a portfolio, not joint search ([quilter](../landscape/quilter.md)) [I].
 - **The 85% gate.** In a joint flow, Olney's test-route gate ([expert-state-machine](../workflow/expert-state-machine.md)) becomes a continuous objective signal, not a stage gate.
 - **Patents.** Keep search deterministic over placement-level decisions; use per-board online surrogates only, never a pretrained routability fitness (Cadence) or NN-guided particle look-ahead over net orders (DeepPCB) ([patents-watchlist](../landscape/patents-watchlist.md)).
 - **Unverified.** PROXI and Independence numbers come from citing papers; IPR, SimPLR, Starfish from abstracts. Kinetic bands with multi-layer vias are unstudied; band-tension forces are untested.

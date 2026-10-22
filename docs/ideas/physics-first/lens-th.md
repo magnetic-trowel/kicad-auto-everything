@@ -1,6 +1,6 @@
 # Physics-first ideas: thermodynamics, dissipation, noise and irreversibility (TH)
 
-Round-2 lens TH. These ideas treat a layout as a dissipative system. Every unwanted joule needs a designed destination. Every loss is also a noise source and a heat source. Every conductive heat path is also an electrical element. Damage accumulates where loss and stress concentrate.
+These ideas treat a layout as a dissipative system. Every unwanted joule needs a destination, and for rings above ~50 MHz copper is not one, so it must be designed. Every loss is also a noise source and a heat source. Every conductive heat path is also an electrical element. Damage accumulates where loss and stress concentrate.
 
 The argument, derivations and numbers are in [lens-th](../../topics/physics/lens-th.md), which defines the principles cited below:
 
@@ -20,7 +20,7 @@ Scripts:
 - [th_electrothermal.py](../../../tools/research/physics/th_electrothermal.py)
 - [th_dissipation_noise.py](../../../tools/research/physics/th_dissipation_noise.py)
 
-These ideas build on round-1 ideas without repeating them:
+These ideas build on, and do not repeat:
 - [thermal-hv-mfg](thermal-hv-mfg.md): TM2, TM6, TM13–TM17, TM21, TM24.
 - [cross-domain](cross-domain.md): XD8, XD19, XD35, XD78, XD81, XD84, XD88.
 - [si-emi-rf](si-emi-rf.md): FE26, FE31.
@@ -29,13 +29,11 @@ These ideas build on round-1 ideas without repeating them:
 - [rule-replacements](rule-replacements.md): RG24.
 - [optimization](optimization.md): OP1, OP11.
 
-**Round-3 corrections (2026-10-22):** copper cannot damp rings above ~50 MHz but does damp plane pairs below ~30 MHz; the damping lever is 12–21 dB, not 20–27. ([red-team](../../topics/physics/red-team.md))
-
 Tags: *new* (not in the corpus), *combo* (a new combination of known parts), *sharp* (a known idea made precise or given a number). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless tagged [C].
 
 **Build first:**
 - **TH2 + TH1:** an undamped-mode alarm, then the full Q ledger.
-- **TH29:** the electro-thermal margin, computed from round 1's thermal matrix.
+- **TH29:** the electro-thermal margin, computed from the FV thermal matrix.
 - **TH24 + TH25:** the thermoelectric loop critic.
 - **TH14:** dielectric noise at high-impedance nodes.
 - **TH19:** the Wiedemann–Franz dual solve.
@@ -50,7 +48,7 @@ Tags: *new* (not in the corpus), *combo* (a new combination of known parts), *sh
 
 The budget row reads "designed share ≥ 50%" wherever excitation × Q exceeds the emission or overshoot budget. The modes are hot-loop rings, LC filters, PDN anti-resonances, plane cavities and cable common mode.
 
-Principle TP4. Res carries frequencies today. Nothing records where a mode's energy goes, yet ring-band emission rises 19.9 dB per decade of Q [C]. Test: on 5 converter EVMs, compare predicted ring-band levels and fix rankings with near-field scans. *new, M*
+Principle TP4. Res carries frequencies today. Nothing records where a mode's energy goes, yet ring-band emission rises 19.9 dB per decade of Q until the edge spectrum takes over; damping Q 10–20 to ~1 buys 12–21 dB [C]. Test: on 5 converter EVMs, compare predicted ring-band levels and fix rankings with near-field scans. *new, M*
 
 **TH2. Copper-only Q alarm.** Flag any mode whose only loss channels are copper and laminate as undamped. Q_cu = h/δ comes from the stackup and the frequency, at F1 cost; it holds for rings above ~50 MHz, while plane pairs below ~30 MHz on thin cores get Q 1–10 from copper alone [C, rt_sheet_return]. Principle TP4 (D1). It catches LC filters, hot loops and plane pairs with no designed loss, and retires the intuition "the copper will damp it": Q_cu is 8–720 for gaps of 0.05–1.5 mm at 0.1–1 GHz [C]. Test: in the mutation benchmark, delete snubbers and ESR parts; the alarm must fire at the planted site. *sharp, S*
 
@@ -96,7 +94,7 @@ Test: cavity model plus a coupon S21 with terminations at two pitches. *sharp, S
 - ferrite Re Z(f);
 - leakage conductance.
 
-Run the real `.noise` analysis and include noise outputs in LII. Principle TP3. Round 1 used `.noise` only for transfer functions (DR3), so the layout's own noise comes for free. Passivity enforcement (SIM33) becomes a correctness requirement for noise too. Test: fA TIA and LNA front ends, predicted vs measured noise floors. *new, M*
+Run the real `.noise` analysis and include noise outputs in LII. Principle TP3. DR3 already runs `.noise` for transfer functions, so the layout's own noise comes for free. Passivity enforcement (SIM33) becomes a correctness requirement for noise too. Test: fA TIA and LNA front ends, predicted vs measured noise floors. *new, M*
 
 **TH14. Dielectric-noise critic for high-impedance nodes.** For nodes above ~1 GΩ (electrometers, photodiode TIAs, charge amplifiers, ion sensors), sum C·tanδ of the board dielectric each node touches: pads, trace, guard gap. Compare 4kT·ωC·tanδ with the amplifier's noise and the feedback resistor's noise. The remedies are smaller pads, slots or air gaps, PTFE inserts and lifting the node; a guard ring is not one. Principle TP3. One pF of FR-4 out-noises a 1 TΩ resistor above 8 Hz [C]. A guard removes the signal current through the dielectric but not its thermal noise current. Test: noise of two TIA layouts on a bench, an FR-4 guard ring against a slot or PTFE island. *new, S*
 
@@ -111,7 +109,7 @@ Run the real `.noise` analysis and include noise outputs in LII. Principle TP3. 
 - thermal mass on both junctions;
 - shared copper islands that make the fluctuations common-mode.
 
-Principle TP5/TP3. Round 1 treated thermal EMF as a static offset. At a 7 nV rms ADC floor, millikelvin fluctuations times µV/K coefficients matter. Test: 0.01–1 Hz noise of a covered vs uncovered input stage. *new, M*
+Principle TP5/TP3. TM13 and DR27 treat thermal EMF as a static offset. At a 7 nV rms ADC floor, millikelvin fluctuations times µV/K coefficients matter. Test: 0.01–1 Hz noise of a covered vs uncovered input stage. *new, M*
 
 ## C. Heat paths are electrical elements
 
@@ -127,7 +125,7 @@ Principle TP5/TP3. Round 1 treated thermal EMF as a static offset. At a 7 nV rms
 
 Principle TP2/TP7. "Keep sensitive parts cool" is wrong when leakage binds. Test: dew-cycling leakage tests with warm vs cold placement. *new, S*
 
-**TH23. Plume-aware thermal kernel.** For vertical boards in natural convection, add an upwind (advective) term to the thermal kernel. The "upstream" rule then becomes a computed, non-reciprocal coupling θ_ij ≠ θ_ji. Principle TP2. Round 1's kernels are reciprocal, while rules TH-06 and TH-07 encode advection. Test: IR camera on a vertical board with a heater below vs above a sensor. *new, M*
+**TH23. Plume-aware thermal kernel.** For vertical boards in natural convection, add an upwind (advective) term to the thermal kernel. The "upstream" rule then becomes a computed, non-reciprocal coupling θ_ij ≠ θ_ji. Principle TP2. The TM2 and OP23 kernels are reciprocal, while rules TH-06 and TH-07 encode advection. Test: IR camera on a vertical board with a heater below vs above a sensor. *new, M*
 
 ## D. Thermoelectric precision
 
@@ -147,7 +145,7 @@ Report µV and the top three segments. Principle TP5. TM13 orients single parts;
 
 ## E. Electro-thermal stability
 
-**TH29. Electro-thermal margin critic.** Compute g = ρ(D^½ΘD^½) from round 1's FV Θ and datasheet slopes dP/dT: R_DS(on) TC, copper TCR, diode and BJT TC, and 0 for LDOs. Report the amplification 1/(1−g) and the board-floor bound Σα_iP_i/(h_tot·A), and flag g > 0.3. Principle TP6 (D6). It generalizes TM16 (one conductor) to all parts. On small boards the margin is board-level: the floor alone gives 0.25 of g = 0.32–0.36 in a 2 W example [C]. Test: FV fixed point vs bench on a four-FET board at three loads. *new, S*
+**TH29. Electro-thermal margin critic.** Compute g = ρ(D^½ΘD^½) from the FV thermal matrix Θ and datasheet slopes dP/dT: R_DS(on) TC, copper TCR, diode and BJT TC, and 0 for LDOs. Report the amplification 1/(1−g) and the board-floor bound Σα_iP_i/(h_tot·A), and flag g > 0.3. Principle TP6 (D6). It generalizes TM16 (one conductor) to all parts. On small boards the margin is board-level: the floor alone gives 0.25 of g = 0.32–0.36 in a 2 W example [C]. Test: FV fixed point vs bench on a four-FET board at three loads. *new, S*
 
 **TH30. Mode-aware thermal relations for paralleled parts.** Classify paralleled devices by the sign of ∂I/∂T at fixed voltage.
 - Negative-TC parts (BJTs, diodes, linear-mode and hot-swap FETs) get `thermal_couple`: minimize θ11 − θ12, share a pad or a die, and carry a ballast budget.
@@ -155,7 +153,7 @@ Report µV and the top three segments. Principle TP5. TM13 orients single parts;
 
 Principle TP6. A single "spread hot parts" rule is wrong for half the cases. Moving from 32 to 4 mm apart raised the hogging limit 1.7×, and a dual die raised it 15× [C]. Sharpens TM17. Test: current sharing of paralleled BJTs or diodes at two spacings. *sharp, S*
 
-**TH31. Thermal back-annotation into SPICE.** Write a per-instance TEMP from the thermal field into the netlist, and iterate with the losses. LII then sees shifts in R_DS(on), V_f, reference drift, crystal ppm and MLCC C(T). Principle TP6. Round 1's LII compares outputs at a single temperature. Test: predicted vs measured output drift of a reference-plus-ADC board with a heater. *new, M*
+**TH31. Thermal back-annotation into SPICE.** Write a per-instance TEMP from the thermal field into the netlist, and iterate with the losses. LII then sees shifts in R_DS(on), V_f, reference drift, crystal ppm and MLCC C(T). Principle TP6. DR10's LII compares outputs at a single temperature. Test: predicted vs measured output drift of a reference-plus-ADC board with a heater. *new, M*
 
 ## F. Irreversible damage
 
@@ -163,6 +161,6 @@ Principle TP6. A single "spread hot parts" rule is wrong for half the cases. Mov
 
 **TH33. Fourier-number gate for corner rounding.** Round inside corners only where t_pulse < w²/α_Cu, or where fields or HV bind. The threshold is 0.8 ms at 0.3 mm, 9 ms at 1 mm and 80 ms at 3 mm. Principle TP7 (D7). It replaces the fixed "~1 ms" with a width-scaled predicate. Test: transient 2-D sheet solves at three widths. *sharp, S*
 
-**TH34. Crowded-pin electromigration check.** For high-current fine-pitch pins (QFN power pins, BGA balls), compute the pad-entry current density, including crowding, from the sheet solve at the pin's temperature. Compare it with ~10⁴ A/cm² for Sn-based solder [S]. The lever is the feed geometry: a pour all around the pad vs a one-sided trace. Principle TP7. Round 1 declared electromigration irrelevant for PCB copper, but the solder joint is the weak point. Test: predicted crowding sites vs published EM failure sites, then EM coupons. *new, S*
+**TH34. Crowded-pin electromigration check.** For high-current fine-pitch pins (QFN power pins, BGA balls), compute the pad-entry current density, including crowding, from the sheet solve at the pin's temperature. Compare it with ~10⁴ A/cm² for Sn-based solder [S]. The lever is the feed geometry: a pour all around the pad vs a one-sided trace. Principle TP7. Electromigration is usually dismissed on PCBs because the copper is safe, but the solder joint is the weak point. Test: predicted crowding sites vs published EM failure sites, then EM coupons. *new, S*
 
-**TH35. Damage-weighted copper shapes.** After a loss-optimal pour (p = 2), continue the objective toward a damage norm (p ≈ 4–8, Arrhenius-weighted by T), but only where the life budget binds. This rounds entries and corners exactly where life is at stake and nowhere else. Principle TP1/TP7. It separates shape changes that buy life from those that buy nothing. Extends XD8 and OP11. Test: life-weighted vs loss-optimal shapes on round 1's pour. *combo, M*
+**TH35. Damage-weighted copper shapes.** After a loss-optimal pour (p = 2), continue the objective toward a damage norm (p ≈ 4–8, Arrhenius-weighted by T), but only where the life budget binds. This rounds entries and corners exactly where life is at stake and nowhere else. Principle TP1/TP7. It separates shape changes that buy life from those that buy nothing. Extends XD8 and OP11. Test: life-weighted vs loss-optimal shapes on the OP2 test pour. *combo, M*

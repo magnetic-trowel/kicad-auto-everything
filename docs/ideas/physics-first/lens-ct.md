@@ -1,8 +1,6 @@
 # Physics-first ideas: conservation, continuity and topology lens (CT)
 
-Round-2 lens. These ideas follow from one reading of the physics: Kirchhoff's laws are the exact, metric-free half of Maxwell's equations, and a board is a cell complex with cycles, cuts and holes. The argument, the principles CT-P1 to CT-P7 and the computed checks are in [lens-ct](../../topics/physics/lens-ct.md); the script is [ct_cut_topology.py](../../../tools/research/physics/ct_cut_topology.py). The ideas build on [language](language.md) (LA1, LA12, LA20, LA34), [critics](critics.md), [cross-domain](cross-domain.md) (XD2, XD3, XD51, XD70, XD73) and [joint-place-route](joint-place-route.md) (JPR2–JPR4), and do not repeat them.
-
-**Round-3 corrections (2026-10-22):** I_CM = −jω·ΣC_ext·V needs world-referenced V; with circuit V divide by (1 + jω·C_tot·Z_A). ([red-team](../../topics/physics/red-team.md))
+These ideas follow from one reading of the physics: Kirchhoff's laws are the exact, metric-free half of Maxwell's equations, and a board is a cell complex with cycles, cuts and holes. The argument, the principles CT-P1 to CT-P7 and the computed checks are in [lens-ct](../../topics/physics/lens-ct.md); the script is [ct_cut_topology.py](../../../tools/research/physics/ct_cut_topology.py). The ideas build on [language](language.md) (LA1, LA12, LA20, LA34), [critics](critics.md), [cross-domain](cross-domain.md) (XD2, XD3, XD51, XD70, XD73) and [joint-place-route](joint-place-route.md) (JPR2–JPR4), and do not repeat them.
 
 Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless a number is tagged [C].
 
@@ -18,7 +16,7 @@ Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days
 
 **CT5. Seams and apertures along the shielding-current streamlines.** — *combo, M.* For shield cans, enclosure seams and plane slots near cables, solve the induced surface current at the band of concern once and orient seams and slots along its ψ contours. Aperture leakage then follows CT1, which is why the longest dimension, not the area, sets leakage. *Principle:* CT-P7 transferred from DC pours to shields. *Beats:* the λ/20 aperture slogan ignores orientation. *Test:* openEMS can with a slot at 0°, 45° and 90° to the induced current.
 
-**CT6. Shorted-turn critic.** — *new, S.* Enumerate the H1 generators of each net's copper: holes in pours, closed rings, and loops closed through vias across layers. Flag those that link the flux of a magnetic part (inductor or transformer axis, stray dipole) or of a hot loop, and report the EMF jωΦ and the circulating current. The fix is a radial slit that breaks the ring. *Principle:* CT-P5 (each hole is one circulation mode, driven by the flux through it). *Beats:* no round-1 critic sees closed rings; magnetics practice has always slit shields and bands. *Test:* planar-transformer and buck boards with pours around the inductor; PEEC circulating current with and without a slit.
+**CT6. Shorted-turn critic.** — *new, S.* Enumerate the H1 generators of each net's copper: holes in pours, closed rings, and loops closed through vias across layers. Flag those that link the flux of a magnetic part (inductor or transformer axis, stray dipole) or of a hot loop, and report the EMF jωΦ and the circulating current. The fix is a radial slit that breaks the ring. *Principle:* CT-P5 (each hole is one circulation mode, driven by the flux through it). *Beats:* no critic in [critics](critics.md) sees closed rings; magnetics practice has always slit shields and bands. *Test:* planar-transformer and buck boards with pours around the inductor; PEEC circulating current with and without a slit.
 
 **CT7. Notch, don't hole, under open-core magnetics.** — *sharp, S.* When copper under an open drum core must go, cut a notch to the pour edge rather than a closed cut-out. A hole conserves AC flux through itself (its rim is a shorted turn above its L/R corner); a notch has no rim. *Principle:* CT-P5. *Beats:* the Rohm/TI dispute (P13, PW46) compares only "solid" against "removed". *Test:* PEEC of a plane with a hole, a notch and no cut under a drum core: L, loss and rim current.
 
@@ -26,7 +24,7 @@ Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days
 
 ## B. The board–world cut and external cycles
 
-**CT9. Board–world charge ledger.** — *new, M.* For a board with one cable, the common-mode current is the time derivative of the board's external charge: I_CM = −jω·Σ_i C_i,ext·V_i. One electrostatic solve, with the outside at 1 V and every board conductor at 0 V, gives C_i,ext for all conductors at once (reciprocity). Multiply by the node spectra from schematic simulation (DR1) to get one ledger row per band, with every conductor's share and phase. *Principle:* CT-P1 on the board's boundary surface. *Beats:* FE17 and PC22 treat parts one at a time and ignore phase. *Test:* openEMS board with a 1 m cable on 5 layouts: I_CM against the ledger.
+**CT9. Board–world charge ledger.** — *new, M.* For a board with one cable, the common-mode current is the time derivative of the board's external charge: I_CM = −jω·Σ_i C_i,ext·V_i, with V_i referenced to the outside world; with circuit voltages, divide by (1 + jω·C_tot·Z_A), Z_A being the CM path impedance. One electrostatic solve, with the outside at 1 V and every board conductor at 0 V, gives C_i,ext for all conductors at once (reciprocity). Multiply by the node spectra from schematic simulation (DR1) to get one ledger row per band, with every conductor's share and phase. *Principle:* CT-P1 on the board's boundary surface. *Beats:* FE17 and PC22 treat parts one at a time and ignore phase. *Test:* openEMS board with a 1 m cable on 5 layouts: I_CM against the ledger.
 
 **CT10. Antiphase charge balancing.** — *new, M.* Make Σ C_i,ext·dV_i/dt small by pairing complementary dv/dt nodes (bridge legs, transformer winding ends, push-pull drains) with matched external capacitance: mirrored switch-node copper, a symmetric heatsink, matched tab exposure. The objective term is |Σ C_i,ext·V_i(f)|² per band. *Principle:* CT-P1. *Beats:* "minimize SW area" treats each node alone; a 10% mismatch already leaves only one tenth of the single-ended current [I]. *Test:* full bridge, mirrored vs unmirrored SW copper, simulated CM current.
 
@@ -82,8 +80,8 @@ Tags: *new*, *combo* and *sharp* as in the [catalog](README.md). Effort: S (days
 
 ## Most promising
 
-1. **CT2** (crack-augmented adjoint): restores "one solve prices every small edit" for cuts, with a computed check; finite edits need exact rank-k updates.
-2. **CT9 + CT11** (board–world ledger, close locally): turns the one-cable CM problem into one electrostatic solve and a sized local cycle.
+1. **CT2** (crack-augmented adjoint): one solve prices every small edit, cuts included, with a computed check; finite edits need exact rank-k updates.
+2. **CT9 + CT11** (board–world ledger, close locally): turns the one-cable CM problem into one electrostatic solve, the CM path impedance and a sized local cycle.
 3. **CT27 + CT28** (topological gates and events): an exact, cheap layer under every critic and the trust region for every gradient.
 4. **CT19** (neck at the stagnation point): a placement rule worth three orders of magnitude, from a 2-D solve.
 5. **CT22** (cycle-honest ledger): fixes a bookkeeping error before it enters the IR.

@@ -15,7 +15,7 @@
 - **Incremental work:**
   - Cache per-object physics by geometry and stackup hash, and re-extract only dirty neighbourhoods.
   - In 2-D, simply refactor (0.6–1.5 s at 10⁵ cells).
-  - One adjoint solve gives the first-order price of every small edit once the edit's polarization tensor is applied: a slit across the flow costs (π/4)R_s·Δψ_u·Δψ_λ (lenses [CT](lens-ct.md), [SY](lens-sy.md)). The plain area-weighted adjoint missed a 6 mm slot 30× (0.27 vs 8.1 mW) [C].
+  - One adjoint solve gives the first-order price of every small edit once the edit's polarization tensor is applied: a slit across the flow costs (π/4)R_s·Δψ_u·Δψ_λ (lenses [CT](lens-ct.md), [SY](lens-sy.md)). The plain area-weighted adjoint prices a 6 mm slot 30× low (0.27 vs 8.1 mW) [C].
   - Finite edits use exact Woodbury (removal) and Thevenin (addition) quotes ([lens CD](lens-cd.md)). Each comes with its radius r = max|λ| over the edit spectrum: exact change = Σ c_i/(1 − λ_i), the c_i summing to the first-order price, so r says whether first-order was safe ([physics-core-v2](physics-core-v2.md) §4).
 - **Spend compute on batched F1/S over candidate populations, F2 label factories and GPU F3 for finalists.** Never use FDTD for an electrically small loop: ~75 CPU-minutes versus ~1 ms of PEEC for the same quasi-static answer [C/I].
 
@@ -33,6 +33,8 @@ Tags as in [open-solvers](open-solvers.md). [C] numbers come from [sl_loop_peec.
 | F2 | Quasi-static field solve on real copper | Image PEEC, multi-filament PEEC, 2-D FD cross-sections, 2.5-D FV IR/thermal, plane-pair modes, meshed-plane PEEC | PEEC 0.1–1.7 ms; 2-D FD 0.02–12 s; IR 0.1–9 s; meshed plane 7–115 s [C] | Image PEEC within 1.3% of FastHenry at 100 MHz on 4 loops with w/h 0.3–5. With 7 equal filaments it reads 11% (w/h 10–20) to 21% (w/h 20–60, p10 42%) low; use ≥ 31 cosine-graded filaments [C, rt_loop_proxy] | Accepted placements, route batches, post-route critics |
 | F3 | Full-wave/FEM on slices | openEMS via gerber2ems/si-wrapper, Palace, EMerge, CalculiX/Elmer thermal | Minutes–hours on CPU, ~10× less on GPU [I] | VNA-matched "in character and order of magnitude" (Antmicro) [P] | Finalists, sign-off, calibration of F1/F2 |
 | F4 | Measurement and vendor data | Coupons (VNA/TDR), thermal camera, near-field scan, EMC pre-scan, vendor S-parameters, EVMs | Days per panel; free per part | Ground truth within measurement error | Bias models per stackup, fab and part family |
+
+FastHenry, the F2 loop reference, carries a non-commercial notice, so it is an internal calibration tool only; the shipped quasi-static engines are our own PEEC, PyPEEC and FasterCap ([open-solvers](open-solvers.md)).
 
 ### Name mapping
 
@@ -176,12 +178,10 @@ The hot-loop data supports this. MS2 errs on 2–4% of choices. At fixed stackup
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** F4 calibration now follows the validation program; adjoint pricing needs the edit's polarization tensor and Woodbury quotes with radius r; PEEC's FastHenry match is scoped to w/h 0.3–5; MS2 bias restated against a graded reference; exactness classes E0–E5 added ([red-team](red-team.md)).
 - **Tier names.** Four schemes coexist (table above). We propose F0–F4 + S as canonical. design-reasoning's "T2 SPICE" is the circuit axis (C2).
 - **"Minimize hot-loop area"** ([hot-loops](../rules/power/hot-loops.md), [checkers-power](../rules/checkers-power.md) `loop_area` with `max_mm2`) is a weak objective over a plane (mixed-stackup Spearman 0.36). Score nH with MS2 or PEEC. Area stays valid for planeless boards.
 - **F3 runtimes are estimates.** Time a gerber2ems slice of a DDR lane and a USB3 launch on this harness, CPU and GPU.
 - **σ from few F4 points.** Per-stackup bias may not transfer across fabs. Verify coupon-to-board transfer.
-- **Licences.** FastHenry is a calibration-only tool ([open-solvers](open-solvers.md)), which conflicts with [physics-ir](physics-ir.md)'s "first solver target".
 - **Ideal-plane PEEC** ignores plane voids, which need meshed-plane PEEC ([pc_refplane.py](../../../tools/research/physics/pc_refplane.py) flags them first), and the low-frequency return spread.
 
 ## Sources

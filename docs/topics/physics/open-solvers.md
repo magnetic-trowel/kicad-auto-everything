@@ -2,23 +2,23 @@
 
 **TL;DR**
 - Every fidelity tier has a licence-compatible open engine. The gap is plumbing (KiCad copper → geometry + ports → solver → budget ledger), not solvers. Fidelity tiers F0–F4 are defined in [solver-ladder](solver-ladder.md).
-- **Licence traps that change existing docs:** FastHenry's MIT source carries a 1994 notice, "internal, noncommercial purposes … any distribution … strictly prohibited", in 18 files and no permissive notice. Ki-PIDA is **AGPL-3.0**. Tidy3D's solver is proprietary. The clean quasi-static engines are PyPEEC (MPL-2.0 or GPL), FasterCap (LGPL-2.1), Palace (Apache-2.0) and our own PEEC [P].
+- **Licence traps:** FastHenry's MIT source carries a 1994 notice, "internal, noncommercial purposes … any distribution … strictly prohibited", in 18 files and no permissive notice. Ki-PIDA is **AGPL-3.0**. Tidy3D's solver is proprietary. The clean quasi-static engines are PyPEEC (MPL-2.0 or GPL), FasterCap (LGPL-2.1), Palace (Apache-2.0) and our own PEEC [P].
 - **Closed forms are accurate inside their range and useless outside it.** Hammerstad-Jensen matches an extrapolated 2-D field solve within 0.2–0.7% at 1–2.5 µs per call. IPC-2141 is −12% off at w/h = 3 and −65% at w/h = 6 [C].
-- **Quasi-static PEEC is the workhorse for loops.** Image-plane PEEC in numpy (0.1–1.7 ms per loop) agrees with FastHenry on a meshed plane within 1.3% (4 loops, w/h 0.3–5, 100 MHz; FastHenry: 7–115 s) [C]. With 7 equal filaments per trace it reads 11–65% low on wide traces (w/h ≥ 10), so the reference needs ≥ 31 graded filaments ([red-team](red-team.md)). For electrically small structures FDTD is the wrong tool: a hot loop needs ~2×10⁵ time steps.
+- **Quasi-static PEEC is the workhorse for loops.** Image-plane PEEC in numpy (0.1–1.7 ms per loop) agrees with FastHenry on a meshed plane within 1.3% (4 loops, w/h 0.3–5, 100 MHz; FastHenry: 7–115 s) [C]. With 7 equal filaments per trace it reads 11–65% low on wide traces (w/h ≥ 10), so the reference needs ≥ 31 graded filaments ([verification-and-limits](verification-and-limits.md)). For electrically small structures FDTD is the wrong tool: a hot loop needs ~2×10⁵ time steps.
 - **GPU today:** Palace (CUDA/HIP), gprMax (CUDA/OpenCL/Metal), fdtdx (JAX), PyPEEC (CuPy), EMerge (GPU direct solvers), plus an unreleased openEMS GPU engine (HIP/Metal, master branch, Oct 2026) [P].
 
 ## Key facts
 
 Tags: [P] read in repo/primary, [S] snippet/abstract, [I] inference, [C] computed here by [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py) or [sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py) (numpy/scipy, 1 thread, shared 4-core VM). "Last commit" is the default-branch HEAD on 2026-10-22, from shallow clones. Action key as in [reuse-matrix](../licensing/reuse-matrix.md): IN (vendor/link), PROC (separate process), REF (patterns only), AVOID.
 
-### Licence verdicts that correct earlier docs
+### Licence verdicts
 
-| Item | Finding | Earlier claim | Action |
-|---|---|---|---|
-| FastHenry 3.0 ([ediloren/FastHenry2](https://github.com/ediloren/FastHenry2), master and WRCad branches; last commit 2015-09) | `src/fasthenry/induct.h` and 17 other files: "Permission to use, copy and modify for internal, noncommercial purposes … Any distribution … strictly prohibited without prior written consent of M.I.T." No file carries a permissive grant. The FreeBSD port labels it MIT ([FreshPorts](https://freshports.org/science/fasthenry/)) [P]/[S] | "MIT-origin" ([evaluation-stack](../verification/evaluation-stack.md)); "keep FastHenry decks as first solver targets … check the MIT licence" ([physics-ir](physics-ir.md)) | REF; at most a user-installed calibration tool. Never vendor or redistribute. Generating decks is fine |
-| FastCap2 ([repo](https://github.com/ediloren/FastCap2), 2015) | 42 files carry the 2003 MIT grant ("use, copy, modify, sell and/or distribute … without royalty", plus an indemnity clause); 1 file still has the 1994 non-commercial header [P] | "MIT-origin" | Audit file by file before vendoring; prefer FasterCap |
-| Ki-PIDA ([repo](https://github.com/kbralten/KiPIDA)) | LICENSE is AGPL-3.0 [P] | Listed as a T2 tool without a flag | REF (same rule as Konnect) |
-| Tidy3D ([client](https://github.com/flexcompute/tidy3d)) | pyproject says LGPLv2+, the COPYRIGHT file says AGPL-3.0+; the solver runs in Flexcompute's cloud [P] | — | Commercial reference only |
+| Item | Finding | Action |
+|---|---|---|
+| FastHenry 3.0 ([ediloren/FastHenry2](https://github.com/ediloren/FastHenry2), master and WRCad branches; last commit 2015-09) | `src/fasthenry/induct.h` and 17 other files: "Permission to use, copy and modify for internal, noncommercial purposes … Any distribution … strictly prohibited without prior written consent of M.I.T." No file carries a permissive grant. The FreeBSD port labels it MIT ([FreshPorts](https://freshports.org/science/fasthenry/)) [P]/[S] | REF; at most a user-installed calibration tool. Never vendor or redistribute. Generating decks is fine |
+| FastCap2 ([repo](https://github.com/ediloren/FastCap2), 2015) | 42 files carry the 2003 MIT grant ("use, copy, modify, sell and/or distribute … without royalty", plus an indemnity clause); 1 file keeps the 1994 non-commercial header [P] | Audit file by file before vendoring; prefer FasterCap |
+| Ki-PIDA ([repo](https://github.com/kbralten/KiPIDA)) | LICENSE is AGPL-3.0 [P] | REF (same rule as Konnect) |
+| Tidy3D ([client](https://github.com/flexcompute/tidy3d)) | pyproject says LGPLv2+, the COPYRIGHT file says AGPL-3.0+; the solver runs in Flexcompute's cloud [P] | Commercial reference only |
 
 ### F1: closed forms (µs, vectorizable)
 
@@ -60,7 +60,7 @@ Tags: [P] read in repo/primary, [S] snippet/abstract, [I] inference, [C] compute
 | [Elmer](https://github.com/ElmerCSC/elmerfem) | Static current conduction, magnetodynamics (Whitney), heat | GPL-2.0-or-later; ElmerSolver sources LGPL-2.1+ [P] → IN | active (2026-10) | kicad-cli XAO/STEP → Salome or gmsh → Elmer ("a bit tedious", [jrainimo](https://jrainimo.com/build/2024/11/oss-thermal-simulation-of-pcbs/)) |
 | [padne](https://github.com/atx/padne) | KiCad-native 2.5-D FEM DC IR drop | GPL-3.0 → IN | active (2026-10) | Reads KiCad directly; schematic directives |
 | [KiPI](https://github.com/drewsum/KiPI) | DC drop, AC PDN impedance, coupled noise | GPL-3.0 → IN | active (2026-10) | KiCad + YAML |
-| [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py) (workstream 7) | Multi-layer 2-D FV thermal with via barrels and convection | ours | ~1 s at 0.5 mm, 2 layers ([thermal-physics](thermal-physics.md)) | Raster of copper per layer |
+| [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py) | Multi-layer 2-D FV thermal with via barrels and convection | ours | ~1 s at 0.5 mm, 2 layers ([thermal-physics](thermal-physics.md)) | Raster of copper per layer |
 | Own 2.5-D FV IR drop | Sheet FV + SuperLU | ours | 40×30 mm pour: 27k cells 0.08–0.2 s, 109k 0.6–1.5 s, 436k 6–9 s factorization; 6–300 ms per extra right-hand side [C] | Raster of filled zones |
 
 ### F3: full-wave (minutes–hours)
@@ -127,7 +127,7 @@ Ansys HFSS, SIwave and Q3D; Cadence Sigrity and Clarity; Siemens HyperLynx; Dass
 ## Recommendations for our system
 
 - **Own the F1/F2 kernels; wrap F3.** Closed forms, image-plane PEEC, 2-D FD cross-sections and 2.5-D FV sheets are each under 300 lines and ms-fast ([sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py), [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py)). Wrap openEMS (via gerber2ems/si-wrapper slices) and Palace for F3 [I].
-- **Merge the three PEEC prototypes.** [sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py) (image plane, proxies), [pw_peec.py](../../../tools/research/physics/pw_peec.py) (workstream 4: nodal R + jωL with vias and capacitor bodies) and [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py) (workstream 5: meshed plane, slot crossings) share the same Grover kernels. Put one library behind the evaluator contract and keep the FastHenry decks as its regression tests [I].
+- **Merge the three PEEC prototypes.** [sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py) (image plane, proxies), [pw_peec.py](../../../tools/research/physics/pw_peec.py) (nodal R + jωL with vias and capacitor bodies) and [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py) (meshed plane, slot crossings) share the same Grover kernels. Put one library behind the evaluator contract and keep the FastHenry decks as its regression tests [I].
 - **Quasi-static default for anything electrically small** (largest dimension < λ/10 at the top frequency of interest). Hot loops, decap mounts and via fields go to PEEC, not FDTD [C/I].
 - **Licences:** generate FastHenry decks for internal cross-checks only. Ship PyPEEC or our PEEC. Keep Ki-PIDA, Tidy3D and the unlicensed Studio as REF. Re-run the clone-and-grep audit before each release [I].
 - **Treat every closed form as a function with a validity domain** (w/h, εr, frequency, geometry class). Refuse to evaluate outside it, or escalate (see [solver-ladder](solver-ladder.md)) [C].
@@ -135,9 +135,7 @@ Ansys HFSS, SIwave and Q3D; Cadence Sigrity and Clarity; Siemens HyperLynx; Dass
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** the PEEC–FastHenry agreement is scoped to 4 loops, w/h 0.3–5, 100 MHz; wide traces need graded filaments ([red-team](red-team.md)).
-- **FastHenry:** [physics-ir](physics-ir.md), [vocabulary](vocabulary.md) and [V4](../../ideas/original/verification.md) use it as a calibration solver. That is acceptable only as an internal, unshipped tool. Someone should ask FastFieldSolvers or MIT whether the 2003 FastCap-style grant also covers FastHenry. The FreeBSD "MIT" label suggests it might.
-- **[evaluation-stack](../verification/evaluation-stack.md)** lists Ki-PIDA as T2 without an AGPL flag, and calls FastHenry/FastCap "MIT-origin".
+- **FastHenry:** [physics-ir](physics-ir.md), [vocabulary](vocabulary.md) and [V4](../../ideas/original/verification.md) use it only as an internal, unshipped calibration solver. Whether MIT's 2003 FastCap-style grant also covers FastHenry is open; the FreeBSD "MIT" label suggests it might. FastFieldSolvers or MIT could answer.
 - **Johnson's via formula** ([checkers-power](../rules/checkers-power.md) loop estimator) gives 2–6× the partial inductance of Rosa/Goldfarb-Pucel. Replace it with a loop model that includes the return via or plane.
 - **Unverified:** OpenParEM licence and repository; openEMS GPU throughput (unreleased, no published numbers); Palace and EMerge PCB runtimes; whether ngspice's S-parameter analysis is exposed in KiCad.
 - **Ideal-plane PEEC** is the high-frequency limit. Below roughly 1 MHz for 35 µm planes the return spreads out ([vo_return_spread.py](../../../tools/research/physics/vo_return_spread.py)), and image PEEC underestimates L.
