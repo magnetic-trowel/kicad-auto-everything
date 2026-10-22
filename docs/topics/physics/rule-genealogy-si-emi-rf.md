@@ -34,10 +34,10 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
-| S15 | 3W spacing | Sp | **M**+**Cm**: K=1/(1+(D/h)²); 2.8% for any 50 Ω microstrip; 31% for 0.1 mm traces at h 0.2 mm; 80% for 0.25 mm traces at h 1.5 mm [C §A] | M: R for controlled-Z lines (w encodes h), A for thin uncontrolled traces | D ≥ h√(1/K−1) [CF] |
-| S16 | Reduce h before adding spacing | Ph | **M**, **Cm**: K ∝ h² at fixed D | R | stackup [CF] |
-| S17 | Guard traces | Hb | **M**/**Cm**; −50 dB already adequate | X except end-shorted stripline | 3-D check for a named problem [FW] |
-| S18 | Ground fill near traces on multilayer boards | Hb | **Z**: Z0 −3.7% at gap h, −0.9% at 2h, −0.3% at 3h [C fill]; floating fill **Res** | X as default; harmless ≥2h and stitched | gap/h + island resonance [2D] |
+| S15 | 3W spacing | Sp | **M**+**Cm**: K=1/(1+(D/h)²); 2.8% for any 50 Ω microstrip; 31% for 0.1 mm traces at h 0.2 mm; 80% for 0.25 mm traces at h 1.5 mm [C §A]; in stripline coupling decays as e^(−πD/b) instead (lens [LS](lens-ls.md)) | M: R for controlled-Z microstrip (w encodes h), A for thin uncontrolled traces; stripline is its own regime | D ≥ h√(1/K−1) in microstrip [CF] |
+| S16 | Reduce h before adding spacing | Ph | **M**: inductive coupling ∝ h_a·h_v/D² at fixed D; **Cm** of wide dv/dt copper only ∝ h^0.19–0.74 (planes break E/M duality, lens [SY](lens-sy.md) D1) | R for loops and narrow traces; regime-gated, not for wide dv/dt copper | stackup [CF] |
+| S17 | Guard traces | Hb | **M**/**Cm**; over a plane at h ≪ D the image already confines the field: a grounded guard removes −1–3% at h 0.1 mm, −48% at h 1.6 mm (D 5 mm, lens SY D1) | X on multilayer boards; useful only where h ≳ D/3 (thick or two-layer), stitched along its length | 3-D check for a named problem [FW] |
+| S18 | Ground fill near traces on multilayer boards | Hb | **Z**: Z0 −5.0% at gap h, −1.2% at 2h, −0.4% at 3h for thin copper (−8.4%/−2.2%/−0.8% at t = 0.35h) [C, [rt_fill_z0](../../../tools/research/physics/rt_fill_z0.py)]; the earlier −3.7% came from a thin strip on a coarse grid (12 cells per h, box 12h tall); floating fill **Res** | X as default; harmless ≥2h and stitched | gap/h + island resonance [2D] |
 | S19 | Adjacent signal layers orthogonal | Ph+Tl | broadside **Cm**/**M** ∝ overlap length; also a router convention | R | overlap length × coupling [2D] |
 | S20 | Pairs are not self-returning | Ph | **L**/**Z** per leg | R | per-leg reference check [2D] |
 | S21 | Skew ≤ min(spec, 0.1·t_r); compensate near the mismatch | Ph | **Bal**: V_cm/V_d ≈ Δt/(2t_r); 20 ps at 100 ps = 10% [C §V] | R | mode conversion Scd21 [2D/FW] |
@@ -61,7 +61,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S34 | Group by type, high speed far from connector | Hb | **Vcm**: longer cross-board links raise Vcm | X ("worst guideline") | Vcm [CF] |
 | S35 | TVS at connector; no via or stub before it | Ph | **L**·di/dt: 8 kV contact ≈3.75×10¹⁰ A/s; 1 nH via = 37.5 V [C §E] | R | pH budget connector→TVS→ground [PEEC] |
 | S36 | CMC/filter within 5 mm of entry | Ph | **Cm**/**M** coupling around the filter defeats it | R as proxy | bypass capacitance across filter (fF) [2D/PEEC] |
-| S37 | Stitch every λ/20; perimeter ring vs distributed | Sp+CT | **Res**: unstitched size vs λ/2 at f_max; λ/20 = 7.2 mm at 1 GHz [C §Q] | M: usually C | largest unstitched region vs λ [CF/FW] |
+| S37 | Stitch every λ/20; perimeter ring vs distributed | Sp+CT | **Res**: unstitched size vs λ/2 at f_max; λ/20 = 7.2 mm at 1 GHz [C §Q]. A via lattice is a wire medium: below its cut-off f_p each pitch screens 11–19 dB at any f, and λ/20 puts f_p ≈ 6·f_max ([derivation-audit](derivation-audit.md), [C da §B]); perimeter-only lifts f₁ only 1.5–1.7× | M: usually C; pitch from the isolation distance (f_p > f_max), not λ/20 | pitches to the isolation target, f_p check [CF/FW] |
 | S38 | 20-H | CT | edge fringing ~h; **Res** | X generally; small benefit with planes sandwiched | full-wave if it matters [FW] |
 | S39 | One solid ground; no I/O island with single-point tie; no ferrite in ground | Ph | **L** in the return path raises **Vcm** | R | Vcm [PEEC] |
 | S40 | Chassis bond: many caps at HF, one LF path | Ph | **L**, **R**, **Vcm**: R vs ωL crossover | R | frequency-split impedance [PEEC] |
@@ -77,7 +77,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S45 | Match at the pin; shunt grounded via the named VSS pin | Ph | **L** of the ground return is part of the filter | R | [FW/SP] |
 | S46 | Arcs or 135° on RF lines | Ph | **Z**: unmitred bend reaches −20 dB at ~3/h GHz·mm (C only) to ~4/h (with bend L) [C corners] | M: R at 2.4 GHz on h ≈ 1.5 mm (−20 dB per bend), marginal at 0.8 mm; X below ~10 GHz on h ≤ 0.2 mm | corner Γ from w/h [CF] |
 | S47 | "50–60% optimal miter" (marked NOT FOUND in corpus) | Ph | **Z**: Douville & James 1978: M = 52+65·e^(−1.35W/h) % [S] | R, source found | [CF] |
-| S48 | Via fence ≤λ_g/20 | Sp | **Res** of gaps and fence cavity | C usually | gap vs λ/2 at harmonics [FW] |
+| S48 | Via fence ≤λ_g/20 | Sp | **Res** of gaps and fence cavity; one row is an inductive grid leaking ≈ 2X/η, X/η = (a/λ)ln(a/2πr): −19 dB per row at λ_g/20, −9 dB at λ_g/10 [C da §B] | C usually; set pitch from the per-row isolation target | per-row isolation from a/λ, gaps vs λ/2 at harmonics [CF/FW] |
 | S49 | Antenna keep-out polygon | Ph+Lg | **Cm**, **M** (near field): near-field detuning; certification | R | per-part polygon [LU] |
 | S50 | RF ↔ SMPS ≥20 mm | Sp [V] | **M**/**Cm** at harmonics | M | coupling dB budget [PEEC/FW] |
 | S51 | Crystal ≤12 mm, same side; ≥2–2.7 mm from chip (Espressif) | Sp | **Cm**: 0.07–0.10 pF/mm, pulling 11–20 ppm/pF [C §J]; **M** pickup | M | ppm + pickup budget [2D] |
@@ -93,6 +93,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Keep CT rules (S37, S38, S53, S55) as selectors; resolve them with a solver, not a vote.
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** S18 fill numbers converged (−5.0% at h, thin copper); S16 and S17 regime-gated; S37/S48 stitching pitch set by isolation per pitch, not λ/20; S15 gains a stripline regime ([red-team](red-team.md), [derivation-audit](derivation-audit.md)).
 - **S03 vs S07:** both are return-inductance rules; on a tight P/G pair (<0.1 mm) a power-plane reference costs little above a few hundred MHz. The selector is the P/G spacing and edge rate.
 - **S11 vs S25/S30:** "short" fights length matching; the budget is timing or skew, not length.
 - **S46:** Gupta and Kirschning capacitance agree within 3%; their bend-inductance formulas differ ~4×, so the "with L" column is soft. A 2-D/3-D check should calibrate.

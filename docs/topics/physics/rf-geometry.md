@@ -106,7 +106,7 @@ A 0.5 mm wide pad on a 50 Ω line, with L2 at h = 0.1 mm and L3 0.235 mm below L
 - **Return vias** at a transition are sized by cavity excitation, s ≈ λ_d/10 at Nyquist ([fields-si-emi](fields-si-emi.md) §2).
 
 ### 6. RF transmission lines, bends, fences, shields
-- **Microstrip vs CPWG.** A coplanar ground at gap g ≥ 2h changes Z0 by < 2%; at g = h by −6.5%; at g = 0.5h by −16% [C]. CPWG with g ≥ 2h is microstrip with a fence. u-blox's "use the CPW model if gap ≤ 5× track width" is conservative but safe ([rf](../rules/rf.md)).
+- **Microstrip vs CPWG.** A coplanar ground at gap g ≥ 2h changes Z0 by < 2.2%; at g = h by −5% (thin copper) to −8.4% (t = 0.35h); at g = 0.5h by −13% to −21% [C, [rt_fill_z0](../../../tools/research/physics/rt_fill_z0.py), converged to 0.1 point]. CPWG with g ≥ 2h is microstrip with a fence. u-blox's "use the CPW model if gap ≤ 5× track width" is conservative but safe ([rf](../rules/rf.md)).
 - **Bends on RF:** 57% mitre or an arc. A radius of a few w makes the bend's excess C negligible [I]. At 2.4 GHz on h = 0.1–0.2 mm even a square corner is below −30 dB return loss (it reaches −30 dB at ~4.6 GHz for h = 0.2 mm, per rg_corners.py). The rule is real for 5 GHz and up, and for thick boards.
 - **Fence rows.** Two rows of vias form a dielectric-filled channel. It must stay below the TE10 cut-off, W < c/(2f√εr): 30 mm at 2.44 GHz (FR-4), 12 mm at 6 GHz, 3.3 mm at 24 GHz (RO4350B), 1.1 mm at 77 GHz (RO3003) [C].
 - **Fence pitch.** For an infinite parallel plate, one row passes |T| = 2/√(4 + B²), with B = λ_d/(s·ln(s/2πr)): −19 dB at λ_d/20 and −9 dB at λ_d/10 [I]. In finite boards the cavity model scattered the realised isolation from +3 to −33 dB around this [C fe_cavity], because the fence creates new resonant rooms. Use the closed form to choose pitch and the cavity model to verify. SIW walls that must guide a mode need pitch ≤ 2d and d ≤ λ_g/5 (Deslandes and Wu; Xu and Wu, via [Wikipedia](https://en.wikipedia.org/wiki/Substrate-integrated_waveguide) [S]).
@@ -145,6 +145,7 @@ So "first match element ≤ ~1 mm" ([rf](../rules/rf.md) RF-03) is right for hig
 5. **RF:** a fence generator driven by isolation targets and channel cut-off, with a cavity-model check. Chu-sphere keep-out volumes in the 3-D mechanical check. A pin-Q-based l_max for the first match element.
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** coplanar-ground Z0 shifts replaced by converged values that depend on copper thickness ([red-team](red-team.md)).
 - The arc-radius guidance ("a few w") is [I]. A Kirschning-style closed form for curved bends was not found.
 - The Bragg-in-band risk at small weave angles is inferred, not measured; spread-glass data disagree on how much it helps.
 - Pin impedances in §7 are illustrative, not from a datasheet. Real optimum loads come from vendor reference designs.

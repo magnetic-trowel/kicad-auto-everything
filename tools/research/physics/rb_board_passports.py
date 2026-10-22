@@ -45,9 +45,9 @@ accurate), lossless (perfect conductors above a few MHz), no package/ESL unless 
 Usage:
   python -I rb_board_passports.py BOARD.kicad_pcb [--current 1.0] [--h-small 0.05]
          [--h-plane 0.2] [--h-hf 0.15] [--quick] [--no-hf] [--no-floor] [--sketch 48]
-Runtime on the bldcpower board (32 mm round, 4 layers): about 2-3 min on one core, peak
-memory about 1.5 GB with default grids (--quick: ~40 s). OMP_NUM_THREADS=1 is set here.
-Deterministic (fixed seeds).
+Runtime on the bldcpower board (32 mm round, 4 layers; 111k DC nodes, 64k HF sheet cells): 42 s on one
+core, peak memory 1.7 GB with the default grids; --quick about 15 s and 0.7 GB. OMP_NUM_THREADS=1 is set
+here. Deterministic (fixed seeds).
 """
 import os
 
@@ -442,6 +442,18 @@ def infer_roles(b, args):
     L.append("shunts (R <= 0.2 ohm from the value field): " + (", ".join(f"{s['ref']} {s['ohm'] * 1e3:.0f} mOhm "
                                                                      f"between {s['nets'][0]} and {s['nets'][1]}" for s in shunts) or 'none'))
     shunt_nets = {n for s in shunts for n in s['nets']}
+    inductors = []
+    for f in b.fps:
+        if f['ref'][:1] == 'L' and len(f['pads']) == 2 and all(p['net'] for p in f['pads']):
+            for k in (0, 1):
+                sw, out = f['pads'][k]['net'], f['pads'][1 - k]['net']
+                ics = [g for g in b.fps if g['ref'][:1] in 'UQ' and any(p['net'] == sw for p in g['pads'])]
+                if sw != gnd and sw not in pwr and ics:
+                    inductors.append(dict(L=f, sw=sw, out=out, ic=ics[0]))
+                    break
+    if inductors:
+        L.append("inductors driven by an IC (switch nodes): " + ", ".join(
+            f"{d['L']['ref']} {d['L']['value']}: {d['ic']['ref']} ({d['ic']['value']}) '{d['sw']}' -> '{d['out']}'" for d in inductors))
     driver = None
     cands = []
     for f in b.fps:
@@ -452,20 +464,48 @@ def infer_roles(b, args):
                 cands.append((score, sum(1 for p in f['pads'] if p['net'] in set(pwr) | {gnd}), f))
     if args.driver:
         driver = b.fp(args.driver)
+    elif cands and shunts:
+        driver = max(cands, key=lambda t: (t[0], t[1]))[2]
+    elif inductors:
+        def has_rail(ic):
+            return any(p['net'] in pwr or (p['net'] and p['net'] != gnd and sum(
+                1 for f in b.fps if f['ref'][:1] == 'C' and {q['net'] for q in f['pads']} == {p['net'], gnd}) > 0)
+                for p in ic['pads'] if p['net'] not in {d['sw'] for d in inductors})
+        inductors.sort(key=lambda d: (d['ic']['ref'][:1] != 'U', not has_rail(d['ic'])))
+        driver = inductors[0]['ic']
     elif cands:
         driver = max(cands, key=lambda t: (t[0], t[1]))[2]
     if driver is None:
         raise SystemExit("could not identify a power stage; pass --driver REF")
     dnets = {p['net'] for p in driver['pads']}
+    swn = {d['sw'] for d in inductors if d['ic'] is driver}
+
+    def ncaps(n):                # capacitors from this net to ground: an input rail is decoupled
+        return sum(1 for f in b.fps if f['ref'][:1] == 'C' and len(f['pads']) == 2
+                   and {p['net'] for p in f['pads']} == {n, gnd})
 
     def conn_rank(n):          # a supply rail arrives on a connector with few nets (power connector)
         cs = [len({p['net'] for p in f['pads']}) for f in b.fps if f['ref'][:1] in 'JPX'
               and any(p['net'] == n for p in f['pads']) and any(p['net'] == gnd for p in f['pads'])]
         return (min(cs) if cs else 999, -area[n])
-    rail = min((n for n in dnets if n in pwr), key=conn_rank)
+    railc = [n for n in dnets if n in pwr and n not in swn] or \
+        [n for n in dnets if n and n != gnd and n not in swn and ncaps(n) > 0
+         and not re.search(r'FB|BS|BOOT|EN|COMP|SS|PG|ILIM|RT', n.split('/')[-1], re.I)]
+    if not railc:
+        raise SystemExit(f"could not identify the supply rail of {driver['ref']}; pass --driver REF")
+    rail = min(railc, key=lambda n: (conn_rank(n)[0] if n in pwr else 500, -ncaps(n), -area[n]))
+    gpads = [p for p in driver['pads'] if p['net'] == gnd]
+    epad = max(gpads, key=lambda p: p['poly'].area) if gpads else None
+    foot = [p for p in gpads if p is not epad and min(math.hypot(p['x'] - q['x'], p['y'] - q['y'])
+                                                     for q in driver['pads'] if q['net'] == rail) <= 1.0]
+    kind = ('the switching cell (integrated bridge with shunt-sensed outputs)' if dnets & shunt_nets else
+             'the switching cell (regulator driving an inductor)' if swn else 'the main power consumer (no switch node found)')
     L.append(f"driver: {driver['ref']} ({driver['value']}): pads on the rail '{rail}', on {gnd} "
-             f"({sum(p['net'] == gnd for p in driver['pads'])} pads incl. exposed pad) and on "
-             f"{len(dnets & shunt_nets)} shunt nets: this is the switching cell (integrated bridge)")
+             f"({sum(p['net'] == gnd for p in driver['pads'])} pads) and on {len(dnets & shunt_nets)} shunt nets"
+             f"{', switch node ' + ', '.join(swn) if swn else ''}: {kind}")
+    if foot:
+        L.append(f"bridge return pins: {', '.join(driver['ref'] + '.' + p['num'] for p in foot)} (ground pins next to the supply pin:"
+                 f" the low-side current leaves the package there; taken as the DC return terminal and the HF die return)")
     phases = []
     for s in shunts:
         a, c = s['nets']
@@ -487,7 +527,13 @@ def infer_roles(b, args):
         L.append(f"phase via {s['ref']}: driver pin net '{a}' -> shunt -> '{c}' -> "
                  f"{load['ref'] + ' (' + load['value'] + ')' if load else 'no connector'}; sense amplifier "
                  f"{amp['ref'] + ' (' + amp['value'] + ')' if amp else 'none'} reads across the shunt (in-line phase sensing)")
-    supplies = [f for f in b.fps if f['ref'][:1] in 'JPX' and any(p['net'] == rail for p in f['pads'])
+    if not phases:
+        for d in inductors:
+            if d['ic'] is driver:
+                pl = next(p for p in d['L']['pads'] if p['net'] == d['sw'])
+                phases.append(dict(shunt=None, net_in=d['sw'], net_out=d['out'], load=None, amp=None, inductor=d['L'], lpad=pl))
+                L.append(f"switch node '{d['sw']}': {driver['ref']} pin -> {d['L']['ref']} ({d['L']['value']}) -> '{d['out']}'")
+    supplies = [f for f in b.fps if f['ref'][:1] in 'JPX' and not f['ref'].startswith('PS') and any(p['net'] == rail for p in f['pads'])
                 and any(p['net'] == gnd for p in f['pads'])]
     L.append("supply connectors (pads on the rail and ground): " + ", ".join(f"{f['ref']} ({f['value']})" for f in supplies)
              + ("; two of them carry the same rail: a daisy-chain bus passes through this board" if len(supplies) > 1 else ""))
@@ -519,7 +565,7 @@ def infer_roles(b, args):
                 L.append(f"plane rail '{n}' ({pl:.0f} mm2 on one layer): regulator {src[0]['ref']} ({src[0]['value']}), "
                          f"exported through {host['ref']}")
     return dict(gnd=gnd, rail=rail, pwr=pwr, driver=driver, phases=phases, supplies=supplies, host=host,
-                decaps=decaps, shunts=shunts, regs=regs, area=area), L
+                decaps=decaps, shunts=shunts, regs=regs, area=area, foot=foot, epad=epad), L
 
 
 # ============================================================================ rasterization
@@ -863,7 +909,16 @@ def add_shunt_body(N, b, s, pa, pb, h):
         k = N.add_br(na, nb_, 1.0 / (s['ohm'] * m), 5, 'lumped', 'lumped', s['fp']['x'], s['fp']['y'])[0]
         N.bname[k] = s['ref']
         out.append(k)
-    return out
+    # outer-edge midpoints of both pads (where a non-Kelvin tap would sit), for the counterfactual
+    outer = []
+    for p, c, sgn in ((pa, ca, -1.0), (pb, cb, 1.0)):
+        ids = np.concatenate([sel for ly, sel in pad_cells(N, b, p) if len(sel)])
+        xy_ = np.stack(N.xy_of(ids), 1) - c
+        sa = xy_ @ (sgn * u)
+        ta = np.abs(xy_ @ v)
+        score = sa - 0.5 * ta
+        outer.append(int(ids[np.argmax(score)]))
+    return out, [q[0] for q in pairs], [q[1] for q in pairs], outer
 
 
 # ============================================================================ HF stack model
@@ -890,42 +945,53 @@ def stack_M(gaps_mm, h_out):
 
 
 class StackRaster:
-    """All copper of all nets in a window on one grid: owning net per layer cell, face coverage."""
+    """All copper of all nets in a window on one grid: owning net per cell and face coverage, per layer.
 
-    def __init__(self, b, window, h, nets_all):
+    With bodies, a virtual component layer is put h_comp above the top copper: it carries the current paths of
+    lumped parts (capacitor bodies, the driver's supply lead and paddle), so that every current in the loop is a
+    sheet current that the planes can image (no current 'jumps' between pads)."""
+
+    def __init__(self, b, window, h, nets_all, bodies=(), h_comp=0.3, side='top'):
         x0, y0, x1, y1 = window
         self.x0, self.y0, self.h = x0, y0, h
         self.nx, self.ny = int(round((x1 - x0) / h)), int(round((y1 - y0) / h))
-        nl = len(b.cu)
-        self.nl = nl
-        self.gaps = [b.gap[(b.cu[i], b.cu[i + 1])] for i in range(nl - 1)]
-        self.er = [b.er.get((b.cu[i], b.cu[i + 1]), 4.5) for i in range(nl - 1)]
+        self.off = 1 if bodies else 0
+        order = list(b.cu) if side == 'top' else list(reversed(b.cu))     # the stack seen from the parts' side
+        self.layers = (['COMP'] if bodies else []) + order
+        nl = self.nl = len(self.layers)
+
+        def gap(u, v):
+            return b.gap.get((u, v), b.gap.get((v, u)))
+        self.gaps = ([h_comp] if bodies else []) + [gap(order[i], order[i + 1]) for i in range(len(order) - 1)]
+        self.er = ([1.0] if bodies else []) + [b.er.get((order[i], order[i + 1]), b.er.get((order[i + 1], order[i]), 4.5))
+                                                 for i in range(len(order) - 1)]
         wbox = box(x0, y0, x1, y1)
+        items = [(net, ly, None) for net in nets_all for ly in b.cu] + [(name, 'COMP', g) for name, g in bodies]
         self.nets, subs = [], []
         best = np.zeros((nl, self.ny, self.nx))
         self.owner = -np.ones((nl, self.ny, self.nx), np.int64)
-        for net in nets_all:
-            for li, ly in enumerate(b.cu):
-                g = b.copper(net, ly)
-                if g.is_empty or not g.intersects(wbox):
-                    continue
-                g = g.intersection(wbox.buffer(h))
-                if g.is_empty or g.area < 1e-6:
-                    continue
-                gx0, gy0, gx1, gy1 = g.bounds
-                i0, i1 = max(0, int(math.floor((gx0 - x0) / h)) - 1), min(self.nx, int(math.ceil((gx1 - x0) / h)) + 1)
-                j0, j1 = max(0, int(math.floor((gy0 - y0) / h)) - 1), min(self.ny, int(math.ceil((gy1 - y0) / h)) + 1)
-                if i1 - i0 < 2 or j1 - j0 < 2:
-                    continue
-                cov, fx, fy = raster(g, x0 + i0 * h, y0 + j0 * h, i1 - i0, j1 - j0, h, ss=3, fs=4)
-                if net not in self.nets:
-                    self.nets.append(net)
-                ni = self.nets.index(net)
-                blk = best[li, j0:j1, i0:i1]
-                upd = cov > blk
-                self.owner[li, j0:j1, i0:i1][upd] = ni
-                blk[upd] = cov[upd]
-                subs.append((li, ni, j0, j1, i0, i1, fx, fy))
+        for net, ly, g in items:
+            g = b.copper(net, ly) if g is None else g
+            if g.is_empty or not g.intersects(wbox):
+                continue
+            g = g.intersection(wbox.buffer(h))
+            if g.is_empty or g.area < 1e-6:
+                continue
+            li = self.layers.index(ly)
+            gx0, gy0, gx1, gy1 = g.bounds
+            i0, i1 = max(0, int(math.floor((gx0 - x0) / h)) - 1), min(self.nx, int(math.ceil((gx1 - x0) / h)) + 1)
+            j0, j1 = max(0, int(math.floor((gy0 - y0) / h)) - 1), min(self.ny, int(math.ceil((gy1 - y0) / h)) + 1)
+            if i1 - i0 < 2 or j1 - j0 < 2:
+                continue
+            cov, fx, fy = raster(g, x0 + i0 * h, y0 + j0 * h, i1 - i0, j1 - j0, h, ss=3, fs=4)
+            if net not in self.nets:
+                self.nets.append(net)
+            ni = self.nets.index(net)
+            blk = best[li, j0:j1, i0:i1]
+            upd = cov > blk
+            self.owner[li, j0:j1, i0:i1][upd] = ni
+            blk[upd] = cov[upd]
+            subs.append((li, ni, j0, j1, i0, i1, fx, fy))
         self.FX = np.zeros((nl, self.ny, self.nx - 1))
         self.FY = np.zeros((nl, self.ny - 1, self.nx))
         for li, ni, j0, j1, i0, i1, fx, fy in subs:
@@ -937,10 +1003,22 @@ class StackRaster:
             oky = o[:-1, :] & o[1:, :]
             sy[oky] = fy[oky]
 
+    def xy(self, j, i):
+        return self.x0 + (i + 0.5) * self.h, self.y0 + (j + 0.5) * self.h
 
-def assemble_stack(sr, h_out, drop_layers=()):
-    """Coupled sheet Laplacian (1/H): per face location, the layers present couple through M^-1."""
+    def cells_of(self, li, net):
+        if net not in self.nets:
+            return np.zeros(0, int), np.zeros(0, int)
+        return np.nonzero(self.owner[li] == self.nets.index(net))
+
+
+def assemble_stack(sr, h_out, drop_layers=(), special=None):
+    """Coupled sheet Laplacian (1/H): per face location, the layers present couple through M^-1.
+
+    special: {(axis, j, i): dict(emf=bool, L=extra)} for faces of the component layer (layer 0): an EMF face
+    drives the loop (Norton injections into every layer present there); L adds a series self-inductance (ESL)."""
     nl = sr.nl
+    special = special or {}
     owner, FX, FY = sr.owner.copy(), sr.FX.copy(), sr.FY.copy()
     for li in drop_layers:
         owner[li], FX[li], FY[li] = -1, 0.0, 0.0
@@ -949,32 +1027,57 @@ def assemble_stack(sr, h_out, drop_layers=()):
     n = int(m.sum())
     ids[m] = np.arange(n)
     M, w = stack_M(sr.gaps, h_out)
-    rows, cols, vals, adj, faces = [], [], [], [], []
+    rows, cols, vals, adj, faces, spec = [], [], [], [], [], []
+
+    def emit(S, Y, na, nb):
+        for p in range(len(S)):
+            adj.append(np.stack([na[p], nb[p]], 1))
+            for q in range(len(S)):
+                y = Y[p, q]
+                rows.extend([na[p], nb[p], na[p], nb[p]])
+                cols.extend([na[q], nb[q], nb[q], na[q]])
+                vals.extend([y, y, -y, -y])
     for axis, F in ((0, FX), (1, FY)):
         code = np.zeros(F.shape[1:], np.int64)
         for li in range(nl):
             code |= (F[li] > 0).astype(np.int64) << li
+        sk = [(j, i) for (ax, j, i) in special if ax == axis]
+        smask = np.zeros(F.shape[1:], bool)
+        for j, i in sk:
+            smask[j, i] = True
         for c in np.unique(code):
             if c == 0:
                 continue
             S = [li for li in range(nl) if c >> li & 1]
             Minv = np.linalg.inv(M[np.ix_(S, S)])
-            jj, ii = np.nonzero(code == c)
+            jj, ii = np.nonzero((code == c) & ~smask)
+            if not len(jj):
+                continue
             f = np.stack([F[li][jj, ii] for li in S])
             jb, ib = (jj, ii + 1) if axis == 0 else (jj + 1, ii)
             na = np.stack([ids[li, jj, ii] for li in S])
             nb = np.stack([ids[li, jb, ib] for li in S])
             sf = np.sqrt(f)
-            for p in range(len(S)):
-                adj.append(np.stack([na[p], nb[p]], 1))
-                for q in range(len(S)):
-                    y = Minv[p, q] * sf[p] * sf[q]
-                    rows += [na[p], nb[p], na[p], nb[p]]
-                    cols += [na[q], nb[q], nb[q], na[q]]
-                    vals += [y, y, -y, -y]
+            emit(S, Minv[:, :, None] * sf[:, None, :] * sf[None, :, :], na, nb)
             faces.append((axis, S, jj, ii, f, Minv, na, nb))
-    G = sp.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(n, n)).tocsr()
-    return dict(G=G, ids=ids, owner=owner, n=n, faces=faces, adj=np.concatenate(adj), M=M, w=w, nl=nl, sr=sr)
+        for j, i in sk:
+            c = code[j, i]
+            S = [li for li in range(nl) if c >> li & 1]
+            if 0 not in S:
+                continue
+            f = np.array([F[li][j, i] for li in S])
+            Meff = M[np.ix_(S, S)] / np.sqrt(np.outer(f, f))
+            Meff[0, 0] += special[(axis, j, i)].get('L', 0.0)
+            Y = np.linalg.inv(Meff)
+            jb, ib = (j, i + 1) if axis == 0 else (j + 1, i)
+            na = np.array([[ids[li, j, i]] for li in S])
+            nb = np.array([[ids[li, jb, ib]] for li in S])
+            emit(S, Y[:, :, None], na, nb)
+            spec.append(dict(axis=axis, j=j, i=i, S=S, Y=Y, f=f, na=na[:, 0], nb=nb[:, 0], **special[(axis, j, i)]))
+    G = sp.coo_matrix((np.concatenate([np.ravel(v) for v in vals]),
+                       (np.concatenate([np.ravel(r) for r in rows]), np.concatenate([np.ravel(c) for c in cols]))),
+                      shape=(n, n)).tocsr()
+    return dict(G=G, ids=ids, owner=owner, n=n, faces=faces, spec=spec, adj=np.concatenate(adj), M=M, w=w, nl=nl, sr=sr)
 
 
 def face_flows(st, phi):
@@ -986,8 +1089,20 @@ def face_flows(st, phi):
     return out
 
 
-def gap_energy(st, flows):
-    """Inductance (H) stored in each region (above, gaps, below) for unit loop current."""
+def special_flows(st, phi, E=1.0):
+    """Face currents at the special faces (EMF faces subtract the EMF in their component-layer entry)."""
+    out = []
+    for sf in st['spec']:
+        d = phi[sf['na']] - phi[sf['nb']]
+        if sf.get('emf'):
+            d = d.copy()
+            d[0] -= E
+        out.append((sf, sf['Y'] @ d))
+    return out
+
+
+def gap_energy(st, flows, sflows=()):
+    """Inductance x I^2 (H A^2) stored in each region (above, gaps, below), and in the extra series inductances."""
     A = stack_A(st['nl'])
     E = np.zeros(st['nl'] + 1)
     for axis, S, jj, ii, I, f in flows:
@@ -995,7 +1110,14 @@ def gap_energy(st, flows):
         Ip[S] = I / np.sqrt(f)
         H = A @ Ip
         E += MU0 * (st['w'][:, None] * H * H).sum(1)
-    return E
+    El = 0.0
+    for sf, I in sflows:
+        Ip = np.zeros(st['nl'])
+        Ip[sf['S']] = I / np.sqrt(sf['f'])
+        H = A @ Ip
+        E += MU0 * st['w'] * H * H
+        El += sf.get('L', 0.0) * I[0] ** 2
+    return E, El
 
 
 class StackSolver:
@@ -1019,14 +1141,14 @@ class StackSolver:
             return int(self.st['ids'][li, j, i]), int(self.st['owner'][li, j, i])
         return -1, -1
 
-    def pad_cells(self, b, p):
+    def pad_cells(self, p, buf=0.3):
         sr, st = self.st['sr'], self.st
         if p['net'] not in sr.nets:
             return []
         ni = sr.nets.index(p['net'])
         out = []
         for ly in p['layers']:
-            li = b.cu.index(ly)
+            li = sr.layers.index(ly)
             x0, y0, x1, y1 = p['poly'].bounds
             i0, i1 = max(0, int((x0 - sr.x0) / sr.h) - 1), min(sr.nx, int((x1 - sr.x0) / sr.h) + 2)
             j0, j1 = max(0, int((y0 - sr.y0) / sr.h) - 1), min(sr.ny, int((y1 - sr.y0) / sr.h) + 2)
@@ -1034,20 +1156,9 @@ class StackSolver:
                 continue
             ii, jj = np.meshgrid(np.arange(i0, i1), np.arange(j0, j1))
             xs, ys = sr.x0 + (ii + 0.5) * sr.h, sr.y0 + (jj + 0.5) * sr.h
-            ok = shapely.contains_xy(p['poly'].buffer(0.3 * sr.h), xs, ys) & (st['owner'][li, jj, ii] == ni)
-            out += [int(c) for c in st['ids'][li, jj[ok], ii[ok]]]
+            ok = shapely.contains_xy(p['poly'].buffer(buf * sr.h), xs, ys) & (st['owner'][li, jj, ii] == ni)
+            out += [(li, int(j_), int(i_)) for j_, i_ in zip(jj[ok], ii[ok])]
         return out
-
-    def electrode(self, b, pads, tag):
-        nid = self.node()
-        k = 0
-        for p in pads:
-            for c in self.pad_cells(b, p):
-                self.link(nid, c, RIGID, tag)
-                k += 1
-        if k == 0:
-            raise ValueError(f"no window copper under {tag}")
-        return nid
 
     def finalize(self):
         st = self.st
@@ -1096,6 +1207,21 @@ class StackSolver:
             return np.inf
         return float(v @ sol)
 
+    def thevenin_add(self, pairs, phi, z_new, chunk=48):
+        """Exact change of s'phi for each candidate link (u, v) added alone: -dphi^2 / (z_new + Z_th)."""
+        out = np.zeros(len(pairs))
+        for c0 in range(0, len(pairs), chunk):
+            pc = pairs[c0:c0 + chunk]
+            E = np.zeros((self.n, len(pc)))
+            for k, (u, v) in enumerate(pc):
+                E[u, k] += 1.0
+                E[v, k] -= 1.0
+            P = self.solve(E)
+            for k, (u, v) in enumerate(pc):
+                dv = phi[u] - phi[v]
+                out[c0 + k] = -dv * dv / (z_new + P[u, k] - P[v, k])
+        return out
+
 
 class _SR:
     """Minimal synthetic StackRaster for the self-tests."""
@@ -1104,6 +1230,7 @@ class _SR:
         self.owner, self.gaps, self.h, self.nl = owner, gaps, h, owner.shape[0]
         self.ny, self.nx = owner.shape[1:]
         self.x0 = self.y0 = 0.0
+        self.off = 0
         self.nets = sorted(set(owner[owner >= 0].ravel().tolist()))
         same_x = (owner[:, :, :-1] == owner[:, :, 1:]) & (owner[:, :, :-1] >= 0)
         same_y = (owner[:, :-1, :] == owner[:, 1:, :]) & (owner[:, :-1, :] >= 0)
@@ -1111,7 +1238,7 @@ class _SR:
 
 
 def stack_selftest(h_out):
-    """(1) strip over a plane: L = mu0 h l/w exactly in this model; (2) via pair in a plane pair vs a sheet solve."""
+    """(1) strip over a plane: L = mu0 h l/w in this model; (2) via pair in a plane pair vs a plain sheet solve."""
     h = 0.1
     own = -np.ones((2, 40, 140), np.int64)
     own[1] = 0
@@ -1129,7 +1256,6 @@ def stack_selftest(h_out):
     s[ea], s[eb] = 1.0, -1.0
     L1 = float(s @ sol.solve(s))
     ex1 = MU0 * 0.2e-3 * 99 / 10
-    # (2) two full planes 1.0 mm apart, 30 x 30 mm at 0.25 mm; a via at P1, a port at P2, 10 mm apart
     h2, n2 = 0.25, 120
     own = np.zeros((2, n2, n2), np.int64)
     own[1] = 1
@@ -1141,7 +1267,6 @@ def stack_selftest(h_out):
     s = np.zeros(sol.n)
     s[st['ids'][0, j0, i2]], s[st['ids'][1, j0, i2]] = 1.0, -1.0
     L2 = float(s @ sol.solve(s))
-    # same squares from a plain one-sheet Laplacian (unit conductance per face)
     nn = n2 * n2
     idx = np.arange(nn).reshape(n2, n2)
     e = np.r_[np.stack([idx[:, :-1].ravel(), idx[:, 1:].ravel()], 1), np.stack([idx[:-1].ravel(), idx[1:].ravel()], 1)]
@@ -1152,74 +1277,202 @@ def stack_selftest(h_out):
     rhs = np.zeros(nn)
     rhs[idx[j0, i2]], rhs[idx[j0, i1]] = 1.0, -1.0
     v[keep] = spla.splu(Gs[keep][:, keep]).solve(rhs[keep])
-    nsq = v[idx[j0, i2]] - v[idx[j0, i1]]
-    ex2 = MU0 * 1.0e-3 * nsq
+    ex2 = MU0 * 1.0e-3 * (v[idx[j0, i2]] - v[idx[j0, i1]])
     inf2 = MU0 * 1.0e-3 / math.pi * math.log(10.0 / (0.198 * h2))
     return L1, ex1, L2, ex2, inf2
 
 
+def loop_bodies(roles, decaps, h):
+    """Current paths of the lumped parts of the hot loop, drawn on the component layer.
+
+    Driver: one conductor made of the paddle (exposed pad) and a 0.3 mm lead strip from each supply pin into it
+    (lead + bond); the loop is driven by an EMF across that strip between the pin and the paddle. Capacitor: its
+    body as a strip between its pad centres; internal ESL sits on a cut at mid-length."""
+    from shapely.ops import nearest_points
+    drv = roles['driver']
+    gp = [p for p in drv['pads'] if p['net'] == roles['gnd']]
+    ep = max(gp, key=lambda p: p['poly'].area)
+    rails = [q for q in drv['pads'] if q['net'] == roles['rail']]
+    meta = dict(die=f"@{drv['ref']}.die", ep=ep, vs=[], caps={}, ret=[])
+    if roles.get('foot'):
+        # die at the paddle centre; supply lead(s) and bridge-return lead(s) run to it (0.2 mm strips)
+        D = (ep['x'], ep['y']) if ep['poly'].area >= 1.0 else (np.mean([p['x'] for p in drv['pads']]), np.mean([p['y'] for p in drv['pads']]))
+        die = []
+        for p in rails:
+            die.append(LineString([(p['x'], p['y']), D]).buffer(0.1, cap_style='round'))
+            meta['vs'].append((p, (p['x'], p['y']), D))
+        for p in roles['foot']:
+            die.append(LineString([(p['x'], p['y']), D]).buffer(0.1, cap_style='round'))
+        meta['ret'] = list(roles['foot'])
+    else:
+        if ep['poly'].area < 1.0:                # no exposed pad: the ground pin nearest the supply pin
+            ep = min(gp, key=lambda p: math.hypot(p['x'] - rails[0]['x'], p['y'] - rails[0]['y']))
+            meta['ep'] = ep
+        die = [ep['poly']]
+        for p in rails:
+            q = nearest_points(ep['poly'], Point(p['x'], p['y']))[0]
+            d = math.hypot(q.x - p['x'], q.y - p['y'])
+            ux, uy = (q.x - p['x']) / d, (q.y - p['y']) / d
+            die.append(LineString([(p['x'], p['y']), (q.x + 0.3 * ux, q.y + 0.3 * uy)]).buffer(0.15, cap_style='flat'))
+            meta['vs'].append((p, (p['x'], p['y']), (q.x, q.y)))
+        meta['ret'] = [ep]
+    out = [(meta['die'], unary_union(die))]
+    for f in decaps:
+        pa = next(p for p in f['pads'] if p['net'] == roles['rail'])
+        pb = next(p for p in f['pads'] if p['net'] == roles['gnd'])
+        A, B = np.array([pa['x'], pa['y']]), np.array([pb['x'], pb['y']])
+        u = (B - A) / np.linalg.norm(B - A)
+        v = np.array([-u[1], u[0]])
+        width = 0.9 * min(np.ptp(np.array(pp['poly'].exterior.coords) @ v) for pp in (pa, pb))
+        out.append((f"@{f['ref']}", LineString([tuple(A), tuple(B)]).buffer(width / 2, cap_style='flat')))
+        sz = re.search(r'(0201|0402|0603|0805|1206|1210)', f['lib'] + ' ' + f['value'])
+        esl = {'0201': 0.1, '0402': 0.15, '0603': 0.2, '0805': 0.25, '1206': 0.3, '1210': 0.3}.get(sz.group(1) if sz else '', 0.25) * 1e-9
+        meta['caps'][f['ref']] = (f"@{f['ref']}", pa, pb, tuple(A), tuple(B), esl, f)
+    return out, meta
+
+
 class HFModel:
-    def __init__(self, b, sr, roles, decaps, h_out):
-        self.b, self.sr, self.roles, self.decaps, self.h_out = b, sr, roles, decaps, h_out
+    """Hot-loop model on a stack raster: vias and ties as rigid links, die EMF and capacitor ESL as special faces."""
+
+    def __init__(self, b, sr, roles, meta, h_out):
+        self.b, self.sr, self.roles, self.meta, self.h_out = b, sr, roles, meta, h_out
         self.barrels = [(v['x'], v['y'], v['net'], v['layers'], ('via', i)) for i, v in enumerate(b.vias)]
         self.barrels += [(p['x'], p['y'], p['net'], p['layers'], ('pth', i)) for i, p in enumerate(b.pads)
                          if p['kind'] == 'thru_hole' and p['drill'] > 0 and len(p['layers']) > 1]
+        # vertical ties from part bodies to their pads (top copper cells under the pad, owned by the pad's net)
+        self.ties = []
+        top = sr.off
+        die = sr.nets.index(meta['die'])
+        groups = [(die, meta['ret'], [v[0] for v in meta['vs']])]
+        groups += [(sr.nets.index(c[0]), [c[1]], [c[2]]) for c in meta['caps'].values()]
+        tieside = {}
+        for bi, side_a, side_b in groups:
+            for side, pads in ((0, side_a), (1, side_b)):
+                for pp in pads:
+                    if pp['net'] not in sr.nets:
+                        continue
+                    ni = sr.nets.index(pp['net'])
+                    x0, y0, x1, y1 = pp['poly'].bounds
+                    i0, i1 = max(0, int((x0 - sr.x0) / sr.h) - 1), min(sr.nx, int((x1 - sr.x0) / sr.h) + 2)
+                    j0, j1 = max(0, int((y0 - sr.y0) / sr.h) - 1), min(sr.ny, int((y1 - sr.y0) / sr.h) + 2)
+                    ii, jj = np.meshgrid(np.arange(i0, i1), np.arange(j0, j1))
+                    xs, ys = sr.x0 + (ii + 0.5) * sr.h, sr.y0 + (jj + 0.5) * sr.h
+                    ok = shapely.contains_xy(pp['poly'], xs, ys) & (sr.owner[0, jj, ii] == bi) & (sr.owner[top, jj, ii] == ni)
+                    for j, i in zip(jj[ok], ii[ok]):
+                        self.ties.append((int(j), int(i)))
+                        tieside[(bi, int(j), int(i))] = side
+        self.tieside = tieside
+        self.emf = {}
+        k = self._cut(die, [(P0, P1) for pin, P0, P1 in meta['vs']], 0.1)
+        if not k:
+            raise ValueError('no complete cut across the driver lead strip(s) for the EMF; try a finer --h-hf')
+        for key in k:
+            self.emf[key] = dict(emf=True)
+        self.capcut = {}
+        for ref, (name, pa, pb, A, B, esl, f) in meta['caps'].items():
+            self.capcut[ref] = (self._cut(sr.nets.index(name), [(A, B)], 1.0) or [], esl)
 
-    def build(self, st, esl=True, add_link=None):
-        b, sr = self.b, self.sr
+    def _cut(self, own, segs, half_width):
+        """Faces of component-layer conductor `own` across rows (or columns) near the midpoints of the segments P0-P1,
+        all shifted together, such that removing them separates the cells tied to one side's pads from those tied to
+        the other's (a complete cut)."""
+        sr = self.sr
+        o = sr.owner[0] == own
+        jj, ii = np.nonzero(o)
+        idx = -np.ones(o.shape, np.int64)
+        idx[jj, ii] = np.arange(len(jj))
+        e = []
+        ok = o[:, :-1] & o[:, 1:] & (sr.FX[0] > 0)
+        a_, b_ = np.nonzero(ok)
+        e += [((0, int(j), int(i)), idx[j, i], idx[j, i + 1]) for j, i in zip(a_, b_)]
+        ok = o[:-1, :] & o[1:, :] & (sr.FY[0] > 0)
+        a_, b_ = np.nonzero(ok)
+        e += [((1, int(j), int(i)), idx[j, i], idx[j + 1, i]) for j, i in zip(a_, b_)]
+        sides = [np.array([idx[j, i] for (bi, j, i), sd in self.tieside.items() if bi == own and sd == s_]) for s_ in (0, 1)]
+        if not len(sides[0]) or not len(sides[1]):
+            return None
+        for shift in range(0, 14):
+            for sgn in ((0,) if shift == 0 else (-1, 1)):
+                keys = set()
+                for P0, P1 in segs:
+                    P0, P1 = np.array(P0, float), np.array(P1, float)
+                    mid = 0.5 * (P0 + P1)
+                    d = P1 - P0
+                    if abs(d[1]) >= abs(d[0]):
+                        j = int(round((mid[1] - sr.y0) / sr.h - 1)) + sgn * shift
+                        keys |= {k for k, _, _ in e if k[0] == 1 and k[1] == j
+                                 and abs(sr.x0 + (k[2] + 0.5) * sr.h - mid[0]) <= half_width + sr.h}
+                    else:
+                        i = int(round((mid[0] - sr.x0) / sr.h - 1)) + sgn * shift
+                        keys |= {k for k, _, _ in e if k[0] == 0 and k[2] == i
+                                 and abs(sr.y0 + (k[1] + 0.5) * sr.h - mid[1]) <= half_width + sr.h}
+                if not keys:
+                    continue
+                rest = [(u, v) for k, u, v in e if k not in keys]
+                A = sp.coo_matrix((np.ones(len(rest)), ([u for u, v in rest], [v for u, v in rest])), shape=(len(jj), len(jj)))
+                _, lab = connected_components(A + A.T, directed=False)
+                if not set(lab[sides[0]]) & set(lab[sides[1]]):
+                    return sorted(keys)
+        return None
+
+    def build(self, esl=True, add_link=None, drop_layers=(), drop_vias=(), cap_L=None):
+        sr = self.sr
+        special = dict(self.emf)
+        for ref, (keys, l_esl) in self.capcut.items():
+            lv = (cap_L or {}).get(ref, l_esl if esl else 0.0)
+            for key in keys:
+                special[key] = dict(L=lv * len(keys), cap=ref)
+        st = assemble_stack(sr, self.h_out, drop_layers=drop_layers, special=special)
         sol = StackSolver(st)
+        ids = st['ids']
         vias = []
         for x, y, net, lys, tag in self.barrels:
-            if net not in sr.nets:
+            if net not in sr.nets or tag in drop_vias:
                 continue
             ni = sr.nets.index(net)
             cells = []
             for ly in lys:
-                c, o = sol.cell(b.cu.index(ly), x, y)
+                c, o = sol.cell(sr.layers.index(ly), x, y)
                 if c >= 0 and o == ni:
                     cells.append(c)
             lk = [sol.link(c1, c2, RIGID, tag) for c1, c2 in zip(cells, cells[1:])]
             if lk:
                 vias.append((tag, x, y, net, lk))
+        for j, i in self.ties:
+            if ids[0, j, i] >= 0 and ids[sr.off, j, i] >= 0:
+                sol.link(ids[0, j, i], ids[sr.off, j, i], RIGID, ('tie',))
         if add_link is not None:
             sol.link(add_link[0], add_link[1], RIGID, ('new',))
-        drv = self.roles['driver']
-        e_rail = sol.electrode(b, [p for p in drv['pads'] if p['net'] == self.roles['rail']], 'drv.rail')
-        e_gnd = sol.electrode(b, [p for p in drv['pads'] if p['net'] == self.roles['gnd']], 'drv.gnd')
-        caps = {}
-        for f in self.decaps:
-            ea = sol.electrode(b, [p for p in f['pads'] if p['net'] == self.roles['rail']], f['ref'] + '+')
-            eb = sol.electrode(b, [p for p in f['pads'] if p['net'] == self.roles['gnd']], f['ref'] + '-')
-            sz = re.search(r'(0201|0402|0603|0805|1206|1210)', f['lib'] + ' ' + f['value'])
-            l_esl = {'0201': 0.2, '0402': 0.3, '0603': 0.4, '0805': 0.5, '1206': 0.6, '1210': 0.6}.get(
-                sz.group(1) if sz else '', 0.5) * 1e-9
-            caps[f['ref']] = (sol.link(ea, eb, 1.0 / (l_esl if esl else 1e-13), ('cap', f['ref'])), l_esl)
         sol.finalize()
-        s = np.zeros(sol.n)
-        s[e_gnd] += 1.0          # current out of the die into the ground copper
-        s[e_rail] -= 1.0         # current from the rail copper into the die
-        phi = sol.solve(s)
-        return dict(sol=sol, vias=vias, caps=caps, s=s, phi=phi, L=float(s @ phi))
+        J = np.zeros(sol.n)
+        for sf in st['spec']:
+            if sf.get('emf'):
+                np.add.at(J, sf['na'], sf['Y'][:, 0])
+                np.add.at(J, sf['nb'], -sf['Y'][:, 0])
+        phi = sol.solve(J)
+        I = sum(float(sf['Y'][0] @ (phi[sf['na']] - phi[sf['nb']]) - sf['Y'][0, 0]) for sf in st['spec'] if sf.get('emf'))
+        return dict(st=st, sol=sol, vias=vias, phi=phi, I=I, L=1.0 / abs(I))
 
 
 def run_hf(b, roles, N, Ib, sdef, col, args):
     gnd, rail, drv = roles['gnd'], roles['rail'], roles['driver']
+    side = 'bottom' if drv['layer'] == b.cu[-1] else 'top'
     t0 = tic()
     L1, ex1, L2, ex2, inf2 = stack_selftest(args.h_out)
-    log("\n== HF hot loop (inductive limit, stack-local parallel-plate model)")
     wh = MU0 * 9.9e-3 / (5 + 1.393 + 0.667 * math.log(5 + 1.444))
+    log("\n== HF hot loop (inductive limit, stack-local parallel-plate model)")
     log(f"   self-test: strip 1 x 9.9 mm over a plane 0.2 mm below: {L1 * 1e9:.4f} nH vs mu0*h*l/w {ex1 * 1e9:.4f} nH"
         f" (Wheeler with fringing {wh * 1e9:.3f} nH: the local model over-estimates narrow strips by x{L1 / wh:.2f});"
         f" via pair 10 mm apart in a 1.0 mm plane pair: {L2 * 1e9:.4f} nH vs mu0*h*squares {ex2 * 1e9:.4f} nH"
         f" (infinite plane (mu0 h/pi) ln(D/0.198 dx) = {inf2 * 1e9:.3f} nH)")
     near = [f for d, f in roles['decaps'] if d < 12.0]
     pts = [(p['x'], p['y']) for p in drv['pads']] + [(p['x'], p['y']) for f in near for p in f['pads']]
-    drv_gnd = [p for p in drv['pads'] if p['net'] == gnd]
+    drv_gnd = roles['foot'] or [p for p in drv['pads'] if p['net'] == gnd]
     gv = sorted((v for v in b.vias if v['net'] == gnd),
                 key=lambda v: min(math.hypot(v['x'] - p['x'], v['y'] - p['y']) for p in drv_gnd))
     pts += [(v['x'], v['y']) for v in gv[:6]]
     for ph in roles['phases']:
-        pts += [(p['x'], p['y']) for p in ph['shunt']['fp']['pads']]
+        pts += [(p['x'], p['y']) for p in (ph['shunt']['fp']['pads'] if ph['shunt'] else ph['inductor']['pads'])]
         if ph['load']:
             pts += [(p['x'], p['y']) for p in ph['load']['pads']]
     xs, ys = zip(*pts)
@@ -1231,67 +1484,80 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
     h = args.h_hf
     nets_all = sorted({p['net'] for p in b.pads if p['net']} | {t['net'] for t in b.tracks if t['net']}
                       | {z['net'] for z in b.zones})
-    sr = StackRaster(b, window, h, nets_all)
-    st = assemble_stack(sr, args.h_out)
-    log(f"   window ({window[0]:.1f}, {window[1]:.1f})-({window[2]:.1f}, {window[3]:.1f}) mm at {h} mm: {st['n']} sheet cells on"
-        f" {len(b.cu)} layers, {len(sr.nets)} nets, all copper a conductor (passive nets carry eddy currents);"
-        f" decaps considered: {', '.join(f['ref'] for f in near)}; build {tic() - t0:.1f} s")
-    hm = HFModel(b, sr, roles, near, args.h_out)
+    bodies, meta = loop_bodies(roles, near, h)
+    sr = StackRaster(b, window, h, nets_all, bodies=bodies, h_comp=args.h_comp, side=side)
+    hm = HFModel(b, sr, roles, meta, args.h_out)
+    off = sr.off
     res = {}
-    # board-only inductance (decaps shorted, no package): all decaps, then each alone by exact Woodbury removal
-    t1 = tic()
-    r0 = hm.build(st, esl=False)
+    r0 = hm.build(esl=False)
+    st = r0['st']
+    log(f"   window ({window[0]:.1f}, {window[1]:.1f})-({window[2]:.1f}, {window[3]:.1f}) mm at {h} mm: {st['n']} sheet cells on"
+        f" {len(b.cu)} copper layers + a component layer {args.h_comp} mm beyond {sr.layers[1]} (part bodies, driver lead and paddle);"
+        f" {len(sr.nets)} conductors, every copper island one (passive nets carry eddy currents); outer-field thickness"
+        f" {args.h_out} mm; loop driven by an EMF across the driver's supply lead; decaps {', '.join(f['ref'] for f in near)};"
+        f" build + solve {tic() - t0:.1f} s")
+    # each decap alone: exact Woodbury is not available for special faces, so open the others by re-assembly
     parts = []
-    for ref, (k, _) in r0['caps'].items():
-        others = [kk for r2, (kk, _) in r0['caps'].items() if r2 != ref]
-        dL = r0['sol'].woodbury_remove(others, r0['phi']) if others else 0.0
-        parts.append(f"{ref} alone {(r0['L'] + dL) * 1e9:.2f} nH")
-    log(f"   board loop inductance seen by the die (decaps ideal, no ESL, no package): all {r0['L'] * 1e9:.2f} nH; " + "; ".join(parts))
+    for ref in hm.capcut:
+        r_ = hm.build(esl=False, cap_L={r2: (0.0 if r2 == ref else 1.0) for r2 in hm.capcut})   # others open (1 H)
+        parts.append(f"{ref} alone {r_['L'] * 1e9:.2f} nH")
+    log(f"   loop inductance seen by the die (copper + part current paths; no internal ESL, no bond wires): all decaps"
+        f" {r0['L'] * 1e9:.2f} nH; " + "; ".join(parts))
     res['L_board'] = r0['L']
-    r1 = hm.build(st, esl=True)
-    sol, phi, L = r1['sol'], r1['phi'], r1['L']
-    cur = sol.y_ * (phi[sol.a_] - phi[sol.b_])
-    log(f"   with generic ESL [I] ({', '.join(f'{r} {e * 1e9:.1f} nH' for r, (k, e) in r1['caps'].items())}): {L * 1e9:.2f} nH;"
-        f" HF current split: " + ", ".join(f"{r} {100 * abs(cur[k]):.0f}%" for r, (k, e) in r1['caps'].items())
-        + f" ({tic() - t1:.1f} s)")
+    t1 = tic()
+    r1 = hm.build(esl=True)
+    st, sol, phi, I, L = r1['st'], r1['sol'], r1['phi'], r1['I'], r1['L']
+    cur = sol.y_ * (phi[sol.a_] - phi[sol.b_]) / abs(I)
+    sfl = special_flows(st, phi)
+    split = defaultdict(float)
+    for sf, Iv in sfl:
+        if 'cap' in sf:
+            split[sf['cap']] += Iv[0] / abs(I)
+    log("   adding generic internal ESL [I] (" + ", ".join(f"{r} {e * 1e9:.2f} nH" for r, (k, e) in hm.capcut.items())
+        + f"): {L * 1e9:.2f} nH; HF current split among the capacitors: " + ", ".join(
+            f"{r} {100 * abs(v):.0f}%" for r, v in split.items()) + f" ({tic() - t1:.1f} s)")
     res['L_esl'] = L
+    res['split'] = dict(split)
     flows = face_flows(st, phi)
-    E = gap_energy(st, flows)
-    El = sum(cur[k] ** 2 * e for r, (k, e) in r1['caps'].items())
-    names = ['above ' + b.cu[0]] + [f"{b.cu[i]}-{b.cu[i + 1]} ({sr.gaps[i]:.3f} mm)" for i in range(len(b.cu) - 1)] \
-        + ['below ' + b.cu[-1]]
+    E, El = gap_energy(st, flows, sfl)
+    E, El = E / I ** 2, El / I ** 2
+    names = ['beyond the parts'] + [f"{sr.layers[i]}-{sr.layers[i + 1]} ({sr.gaps[i]:.3f} mm)"
+                                     for i in range(sr.nl - 1)] + ['beyond ' + sr.layers[-1]]
     log("   where the loop's magnetic energy sits (share of L): " + ", ".join(
-        f"{n} {100 * e / L:.0f}%" for n, e in zip(names, E) if e > 0.005 * L) + f", capacitor ESL {100 * El / L:.0f}%"
+        f"{n} {100 * e / L:.0f}%" for n, e in zip(names, E) if e > 0.005 * L) + f", internal ESL {100 * El / L:.0f}%"
         + f" (sum {100 * (E.sum() + El) / L:.1f}% of the solve)")
     res['Egap'] = {n: e / L for n, e in zip(names, E)}
-    # current per layer and owning net; eddy current in passive copper
     per = defaultdict(float)
-    for axis, S, jj, ii, I, f in flows:
+    for axis, S, jj, ii, Iv, f in flows:
         for p, li in enumerate(S):
             o = st['owner'][li, jj, ii]
             for ni in np.unique(o):
-                per[(li, sr.nets[ni])] += np.abs(I[p][o == ni]).sum() * h
-    top_ref = sum(v for (li, n), v in per.items() if li == 0)
-    rows = sorted(per.items(), key=lambda t: -t[1])
+                per[(li, sr.nets[ni])] += np.abs(Iv[p][o == ni]).sum() * h / abs(I)
+    rows = sorted(((k, v) for k, v in per.items() if not k[1].startswith('@')), key=lambda t: -t[1])
     log("   HF current x length (A mm per A of loop current) by layer and net: " + "; ".join(
-        f"{b.cu[li]} {n.split('/')[-1]} {v:.1f}" for (li, n), v in rows[:8] if v > 0.02 * top_ref))
+        f"{sr.layers[li]} {n.split('/')[-1]} {v:.1f}" for (li, n), v in rows[:8] if v > 0.3))
     res['per'] = dict(per)
-    # vias: HF share and exact removal value
     vrows = []
     for tag, x, y, net, lk in r1['vias']:
-        c = max(abs(cur[k]) for k in lk)
-        vrows.append((c, tag, x, y, net, lk))
+        vrows.append((max(abs(cur[k]) for k in lk), tag, x, y, net, lk))
     vrows.sort(key=lambda t: -t[0])
     hm.hf_via = {(round(x, 3), round(y, 3)): c for c, tag, x, y, net, lk in vrows}
-    log("   vias in the HF loop (share of loop current; exact removal by Woodbury):")
+    log("   vias in the HF loop (share of the loop current; exact removal by Woodbury):")
+    chk = None
     for c, tag, x, y, net, lk in vrows[:9]:
         if c < 0.02:
             break
-        dL = sol.woodbury_remove(lk, phi)
+        dI = sol.woodbury_remove(lk, phi)
+        L2 = 1.0 / abs(I + dI) if np.isfinite(dI) else np.inf
+        if chk is None:
+            chk = (tag, L2)
         log(f"     {net.split('/')[-1]:6s} {tag[0]} at {where(x, y)}: {100 * c:3.0f}%; removing it: "
-            + ("disconnects" if not np.isfinite(dL) else f"L {1e12 * dL:+.0f} pH ({pct(dL, L):+.0f}%)"))
-    # passive plane counterfactual
-    for li in range(len(b.cu)):
+            + ("disconnects" if not np.isfinite(L2) else f"L {1e12 * (L2 - L):+.0f} pH ({pct(L2 - L, L):+.1f}%)"))
+    if chk:
+        rb_ = hm.build(esl=True, drop_vias={chk[0]})
+        log(f"     (check, first row by brute force: {1e12 * (rb_['L'] - L):+.0f} pH)")
+    res['vias'] = [(c, x, y, net) for c, tag, x, y, net, lk in vrows[:12]]
+    for li in range(off, sr.nl):
         o = sr.owner[li]
         if (o >= 0).sum() < 0.5 * o.size:
             continue
@@ -1299,54 +1565,47 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
         if main_net in (gnd, rail):
             continue
         t1 = tic()
-        st2 = assemble_stack(sr, args.h_out, drop_layers=(li,))
-        r2 = hm.build(st2, esl=True)
-        log(f"   counterfactual: remove the {main_net} plane ({b.cu[li]}) from the window: L {L * 1e9:.2f} -> {r2['L'] * 1e9:.2f} nH"
+        r2 = hm.build(esl=True, drop_layers=(li,))
+        log(f"   counterfactual: remove the {main_net} plane ({sr.layers[li]}) from the window: L {L * 1e9:.2f} -> {r2['L'] * 1e9:.2f} nH"
             f" ({pct(r2['L'] - L, L):+.0f}%) ({tic() - t1:.1f} s)")
-        res['plane_cf'] = (main_net, b.cu[li], L, r2['L'])
-    # Thevenin addition: one more ground via (top ground cell <-> next ground layer below) near the driver
+        res['plane_cf'] = (main_net, sr.layers[li], L, r2['L'])
     gi = sr.nets.index(gnd)
     plane_net = {li: sr.nets[Counter(sr.owner[li][sr.owner[li] >= 0].ravel()).most_common(1)[0][0]]
-                 for li in range(len(b.cu)) if (sr.owner[li] >= 0).any()}
+                 for li in range(off, sr.nl) if (sr.owner[li] >= 0).any()}
     cx = np.mean([p['x'] for p in drv_gnd])
     cy = np.mean([p['y'] for p in drv_gnd])
     cand = []
     r = int(math.ceil(0.25 / h))
     for j in range(sr.ny):
         for i in range(sr.nx):
-            x, y = sr.x0 + (i + 0.5) * h, sr.y0 + (j + 0.5) * h
-            if math.hypot(x - cx, y - cy) > 6.0 or st['owner'][0, j, i] != gi:
+            x, y = sr.xy(j, i)
+            if math.hypot(x - cx, y - cy) > 6.0 or st['owner'][off, j, i] != gi:
                 continue
-            blk = st['owner'][0, max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
+            blk = st['owner'][off, max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
             if np.any((blk >= 0) & (blk != gi)):
                 continue
-            lower = None
-            ok = True
-            for li in range(1, len(b.cu)):
+            lower, ok = None, True
+            for li in range(off + 1, sr.nl):
                 o = st['owner'][li, j, i]
                 if o == gi and lower is None:
                     lower = li
                 elif o >= 0 and o != gi and sr.nets[o] != plane_net.get(li):
-                    ok = False          # a foreign trace or pad would be hit (planes get an antipad)
+                    ok = False          # would hit a foreign trace or pad (planes get an antipad)
             if ok and lower is not None:
-                cand.append((i, j, int(st['ids'][0, j, i]), int(st['ids'][lower, j, i])))
+                cand.append((i, j, int(st['ids'][off, j, i]), int(st['ids'][lower, j, i])))
     if cand:
-        P = sol.solve(np.stack([np.eye(1, sol.n, u).ravel() - np.eye(1, sol.n, v).ravel() for _, _, u, v in cand], 1))
-        zth = np.array([P[u, k] - P[v, k] for k, (_, _, u, v) in enumerate(cand)])
-        dv = np.array([phi[u] - phi[v] for _, _, u, v in cand])
-        dL = -dv * dv / (1.0 / RIGID + zth)
-        order = np.argsort(dL)
-        bi = order[0]
-        i, j, u, v = cand[bi]
-        rb = hm.build(st, esl=True, add_link=(u, v))
-        bx_, by_ = sr.x0 + (i + 0.5) * h, sr.y0 + (j + 0.5) * h
-        log(f"   one more {gnd} via (exact Thevenin addition, {len(cand)} legal sites within 6 mm of the driver's ground pads):"
-            f" best at {where(bx_, by_)}: L {L * 1e9:.2f} -> {(L + dL[bi]) * 1e9:.2f} nH ({pct(dL[bi], L):+.0f}%;"
-            f" brute force {rb['L'] * 1e9:.2f} nH); median site {pct(np.median(dL), L):+.1f}%; next best "
-            + ", ".join(f"{where(sr.x0 + (cand[o][0] + 0.5) * h, sr.y0 + (cand[o][1] + 0.5) * h)} {pct(dL[o], L):+.0f}%"
-                        for o in order[1:5]))
-        res['add'] = (bx_, by_, L, L + dL[bi], rb['L'], float(np.median(dL)))
-    # switch-node charge
+        dI = sol.thevenin_add([(u, v) for _, _, u, v in cand], phi, 1.0 / RIGID)
+        Lc = 1.0 / np.abs(I + dI)
+        order = np.argsort(Lc)
+        i, j, u, v = cand[order[0]]
+        rb_ = hm.build(esl=True, add_link=(u, v))
+        bx_, by_ = sr.xy(j, i)
+        on_ep = meta['ep']['poly'].contains(Point(bx_, by_))
+        log(f"   one more {gnd} via (exact Thevenin addition over {len(cand)} legal sites within 6 mm of the driver's ground pads):"
+            f" best at {where(bx_, by_)}{' (in the exposed pad)' if on_ep else ''}: L {L * 1e9:.2f} -> {Lc[order[0]] * 1e9:.2f} nH"
+            f" ({pct(Lc[order[0]] - L, L):+.0f}%; brute force {rb_['L'] * 1e9:.2f} nH); median site {pct(np.median(Lc) - L, L):+.1f}%;"
+            " next: " + ", ".join(f"{where(*sr.xy(cand[o][1], cand[o][0]))} {pct(Lc[o] - L, L):+.0f}%" for o in order[1:5]))
+        res['add'] = (bx_, by_, L, Lc[order[0]], rb_['L'], float(np.median(Lc)))
     log("   switch-node charge to whom (parallel-plate C of each phase net's copper in the window to adjacent layers):")
     res['charge'] = {}
     for ph in roles['phases']:
@@ -1355,12 +1614,12 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
                 continue
             ni = sr.nets.index(net)
             dest = defaultdict(float)
-            for li in range(len(b.cu)):
+            for li in range(off, sr.nl):
                 mine = sr.owner[li] == ni
                 if not mine.any():
                     continue
                 for lj in (li - 1, li + 1):
-                    if not 0 <= lj < len(b.cu):
+                    if not off <= lj < sr.nl:
                         continue
                     k = min(li, lj)
                     o2 = sr.owner[lj][mine]
@@ -1372,7 +1631,6 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
                 log(f"     {net.split('/')[-1]:10s}: {tot * 1e12:.2f} pF; " + ", ".join(
                     f"{n.split('/')[-1]} {100 * v / tot:.0f}%" for n, v in sorted(dest.items(), key=lambda t: -t[1])[:3])
                     + f"; displacement current {tot * 1e9 * 1e3:.1f} mA per V/ns of edge rate")
-    # DC vs HF for the same vias
     feeds = [nm for nm in sdef if nm.startswith('feed')]
     if feeds:
         k = col[feeds[0]]
@@ -1494,17 +1752,21 @@ def joint_floor(b, nets, terms, h, area_budget, domain, iters=150):
                 trial, f1, gr1 = cand, fc, grc
         if f1 < f:
             rho, f, grads = trial, f1, gr1
-    return dict(f0=f0, R0=R0, lb=best_lb, f=f, iters=it + 1, cells=nc, rho=rho, cellsidx=cells, nx=nx, ny=ny, x0=x0, y0=y0)
+    _, _, Rf = objective(rho)
+    areas = [float(r_.sum()) * h * h for r_ in rho]
+    return dict(f0=f0, R0=R0, lb=best_lb, f=f, Rf=Rf, areas=areas, iters=it + 1, cells=nc, rho=rho, cellsidx=cells,
+                nx=nx, ny=ny, x0=x0, y0=y0)
 
 
 def run_floor(b, roles, N, Ib, col, args):
     log("\n== Floors for the phase pours (lens VP): how much of their resistance is avoidable?")
-    drv, top = roles['driver'], b.cu[0]
+    drv = roles['driver']
+    top = next((p['layers'][0] for p in drv['pads'] if p['layers']), b.cu[0])
     rs = b.rs[top]
     nets, terms, areas, Racts, ds = [], [], [], [], []
     for ph in roles['phases']:
         pin = [p for p in drv['pads'] if p['net'] == ph['net_in']]
-        spad = [p for p in ph['shunt']['fp']['pads'] if p['net'] == ph['net_in']]
+        spad = [p for p in ph['shunt']['fp']['pads'] if p['net'] == ph['net_in']] if ph['shunt'] else [ph['lpad']]
         if not pin or not spad or 'src' not in ph:
             continue
         g = b.copper(ph['net_in'], top)
@@ -1522,6 +1784,7 @@ def run_floor(b, roles, N, Ib, col, args):
         log(f"   {ph['net_in'].split('/')[-1]:8s}: pour {isl.area:.1f} mm2, pin-to-shunt-pad gap {d:.1f} mm; actual copper R {fmt_r(Ract)};"
             f" Beckmann floor R_s d^2/A = {fmt_r(rs * d * d / A)}")
     if len(nets) < 2:
+        log("   (joint floor needs two or more pours sharing a region; single-pour Beckmann floor only)")
         return None
     Atot = sum(areas)
     log(f"   joint Beckmann floor for {len(nets)} pours sharing {Atot:.1f} mm2: sum R >= R_s (sum d)^2 / A = "
@@ -1536,6 +1799,8 @@ def run_floor(b, roles, N, Ib, col, args):
         f" area, any split, region = the pours' zone outlines minus other nets' fixed copper (clearances ignored)")
     log(f"     actual layout in this relaxed model: sum R = {fmt_r(res['f0'])} (" + ", ".join(fmt_r(r) for r in res['R0'])
         + f"); certified floor >= {fmt_r(res['lb'])}; best relaxed design found {fmt_r(res['f'])}")
+    log("     relaxed design per pour: " + ", ".join(f"{n.split('/')[-1]} {fmt_r(r)} on {a:.1f} mm2 (now {a0:.1f} mm2)"
+                                              for n, r, a, a0 in zip(nets, res['Rf'], res['areas'], areas)))
     log(f"     => avoidable phase-copper loss within the allotted region: between {100 * max(0, 1 - res['f'] / res['f0']):.0f}% "
         f"(achieved by the relaxed design) and {100 * (1 - res['lb'] / res['f0']):.0f}% (certified bound)")
     return res
@@ -1563,6 +1828,7 @@ def main(argv=None):
     ap.add_argument('--h-hf', type=float, default=0.15, help='grid for the HF stack window (mm)')
     ap.add_argument('--h-out', type=float, default=10.0, help='outer field thickness in the stack model (mm); large = '
                     'planes confine the field (the parallel-plate limit)')
+    ap.add_argument('--h-comp', type=float, default=0.3, help='height of part current paths above the top copper (mm)')
     ap.add_argument('--sketch', type=int, default=48, help='JL sketch size for whole-board leverage')
     ap.add_argument('--driver', help='override the inferred switching-cell reference')
     ap.add_argument('--quick', action='store_true', help='coarser grids for a fast look')
@@ -1604,19 +1870,23 @@ def main(argv=None):
 
     # ------------------------------------------------------------------ 3. DC network, sources, ports
     t0 = tic()
-    dc_nets = list(dict.fromkeys([gnd, rail] + [n for ph in phases for n in (ph['net_in'], ph['net_out'])]
+    dc_nets = list(dict.fromkeys([gnd, rail] + [n for ph in phases for n in ((ph['net_in'], ph['net_out']) if ph['shunt']
+                                                                             else (ph['net_in'],))]
                                  + [r[0] for r in roles['regs']]))
     hnet = {n: (args.h_plane if roles['area'][n] > 150 else args.h_small) for n in dc_nets}
     N = build_dc(b, dc_nets, hnet, L)
     T = Terminals(N, b)
-    drv_gnd = [p for p in drv['pads'] if p['net'] == gnd]
+    drv_gnd = roles['foot'] or [p for p in drv['pads'] if p['net'] == gnd]
     drv_rail = [p for p in drv['pads'] if p['net'] == rail]
     lumped = []
     for ph in phases:
         s = ph['shunt']
+        if s is None:
+            continue
         pa = next(p for p in s['fp']['pads'] if p['net'] == ph['net_in'])
         pb = next(p for p in s['fp']['pads'] if p['net'] == ph['net_out'])
-        for k in add_shunt_body(N, b, s, pa, pb, hnet[ph['net_in']]):
+        brs, ph['inA'], ph['inB'], ph['outer'] = add_shunt_body(N, b, s, pa, pb, hnet[ph['net_in']])
+        for k in brs:
             lumped.append((s['ref'], k))
         ph['nbody'] = sum(1 for r_, _ in lumped if r_ == s['ref'])
     sdef, pdef = {}, {}
@@ -1634,7 +1904,8 @@ def main(argv=None):
             (T.group_of(f"{Ja['ref']}.gnd", [p for p in Ja['pads'] if p['net'] == gnd]), -1.0)]
     for ph in phases:
         pin = [p for p in drv['pads'] if p['net'] == ph['net_in']]
-        out = [p for p in ph['load']['pads'] if p['net'] == ph['net_out']] if ph['load'] else []
+        out = [p for p in ph['load']['pads'] if p['net'] == ph['net_out']] if ph['load'] else \
+            ([ph['lpad']] if ph.get('lpad') else [])
         if pin and out:
             ph['src'] = f"phase {ph['net_in'].split('/')[-1]}"
             sdef[ph['src']] = [(T.group_of(f"drv.{ph['net_in']}", pin), 1.0), (T.group_of(f"load.{ph['net_out']}", out), -1.0)]
@@ -1648,7 +1919,7 @@ def main(argv=None):
             sdef[f"{net} export"] = [(T.group_of(f"reg.{net}", rp), 1.0), (T.group_of(f"host.{net}", hp), -1.0),
                                      (T.group_of('host.gnd', hg), 1.0), (T.group_of(f"reg.{net}.gnd", rg), -1.0)]
     for ph in phases:
-        amp = ph['amp']
+        amp = ph.get('amp')
         if amp is None:
             continue
         ain = [p for p in amp['pads'] if p['net'] == ph['net_in']]
@@ -1662,6 +1933,9 @@ def main(argv=None):
                                                        (T.group_of('host.gnd', [p for p in host['pads'] if p['net'] == gnd]), -1.0)]
     N.finalize()
     names = list(sdef) + list(pdef)
+    if not sdef:
+        log("\n   no DC source could be defined (no supply connector or switch-node load found); stopping after roles")
+        return None
     S = np.zeros((N.nn, len(names)))
     for k, nm in enumerate(names):
         for node, c in (sdef.get(nm) or pdef.get(nm)):
@@ -1687,10 +1961,10 @@ def main(argv=None):
     ns = len(srcs)
     load_any = np.max(np.abs(Ib[:, :ns]), axis=1)
     top = np.argsort(-np.where(face, load_any, 0))[:400]
-    via_br = np.concatenate([np.array(v['segs'], int) for v in N.vias if v['segs']])
+    via_br = np.concatenate([np.array(v['segs'], int) for v in N.vias if v['segs']] + [np.zeros(0, int)])
     p0 = 0
     kf = int(np.argmax(np.where(face, np.abs(Ib[:, p0]), 0)))
-    kv = int(via_br[np.argmax(np.abs(Ib[via_br, p0]))])
+    kv = int(via_br[np.argmax(np.abs(Ib[via_br, p0]))]) if len(via_br) else kf
     sel = np.unique(np.r_[top, via_br, [k for _, k in lumped], kf, kv]).astype(int)
     t1 = tic()
     rho_ex = np.full(N.nb, np.nan)
@@ -1772,7 +2046,7 @@ def main(argv=None):
             f" ({N.net[face][jm].split('/')[-1]}, {N.lay[face][jm]})")
 
     for ph in phases:
-        if 'src' not in ph:
+        if 'src' not in ph or ph['shunt'] is None:
             continue
         k = col[ph['src']]
         cuk = (N.kind <= 3) & np.isin(N.net, [ph['net_in'], ph['net_out']])
@@ -1876,9 +2150,12 @@ def main(argv=None):
                 ph = next(x for x in phases if x.get('port') == qn)
                 R0 = ph['shunt']['ohm']
                 err = Z / R0 - 1
+                ph_ = Phi[:, p]
+                outer_err = ((ph_[ph['outer'][0]] - ph_[ph['inA']].mean()) + (ph_[ph['inB']].mean() - ph_[ph['outer'][1]])) / R0
                 log(f"   {qn} <- {pn}: {fmt_r(Z)} per A for a {fmt_r(R0)} shunt: gain error {100 * err:+.2f}%"
                     f" (shared copper {100 * cu / R0:+.2f}%, uneven current across the element {100 * (lump - R0) / R0:+.2f}%);"
-                    f" the copper part drifts {cu / R0 * TCR_CU * 1e6:+.0f} ppm/K")
+                    f" the copper part drifts {cu / R0 * TCR_CU * 1e6:+.0f} ppm/K. Counterfactual: taps at the pads' outer edges"
+                    f" would read {100 * outer_err:+.1f}% ({outer_err * TCR_CU * 1e6:+.0f} ppm/K)")
             else:
                 log(f"   {qn} <- {pn}: {cu * 1e6:+.2f} uOhm (= {cu * 1e6 * I0:+.2f} uV at {I0:g} A)")
             ac = a_b.copy()
@@ -1895,11 +2172,15 @@ def main(argv=None):
                 f"{k_[0]} at ({(k_[1] + 0.5) * 0.5:.2f}, {(k_[2] + 0.5) * 0.5:.2f}) {pct(v_, cu):+.0f}%" for k_, v_ in topt))
 
     # ------------------------------------------------------------------ 11-12. HF and floor
+    hf = None
     if not args.no_hf:
-        run_hf(b, roles, N, Ib, sdef, col, args)
-    if not args.no_floor:
-        run_floor(b, roles, N, Ib, col, args)
+        try:
+            hf = run_hf(b, roles, N, Ib, sdef, col, args)
+        except (ValueError, StopIteration) as e:
+            log(f"\n== HF hot loop skipped: {e}")
+    fl = run_floor(b, roles, N, Ib, col, args) if not args.no_floor else None
     log(f"\nTotal runtime {tic() - T0:.0f} s")
+    return dict(board=b, roles=roles, N=N, Phi=Phi, Ib=Ib, S=S, col=col, sources=sdef, ports=pdef, hf=hf, floor=fl)
 
 
 if __name__ == '__main__':

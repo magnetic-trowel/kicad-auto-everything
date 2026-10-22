@@ -49,7 +49,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
-| R25 | Thermal reliefs on plane connections | Mf (hand/wave soldering) | **Th** 4 spokes 0.25×0.5 mm ≈37 K/W; adds ~50–90 pH and 0.25 mΩ [C §I] | M: needed for hand/wave/TH; reflow mainly for 0201/0402 heat balance; harmful on sub-nH loops and >~3 A pads | per-pad process heat balance vs ΔL, ΔR [TN] |
+| R25 | Thermal reliefs on plane connections | Mf (hand/wave soldering) | **Th** 4 spokes 0.25×0.5 mm ≈37 K/W; adds ~50–90 pH and 0.25 mΩ [C §I]. In reflow a pad couples ~0.1 mW/K to the oven vs 27–54 mW/K through spokes, so it follows the plane either way (Wiedemann–Franz: decoupling it would cost ≥ 66 mΩ) [C da §A] | M: needed for hand/wave/TH; no physical basis in reflow, which contradicts vendor 0201/0402 balance guidance and needs an assembly test; harmful on sub-nH loops and >~3 A pads | per-pad process heat balance vs ΔL, ΔR [TN] |
 | R26 | Direct-connect thermal and power pads | Ph | **Th**, **R**, **L** | R | same check [TN] |
 | R27 | Pour all unused copper (2-layer) | Ph | **L**: the pour becomes the return plane if stitched | R on 2-layer when stitched and continuous | return-path map [2D] |
 | R28 | Ground fill on multilayer | Hb | **Z** −0.9% at 2h; floating islands **Res** | X as default | s/h ≥ 2 and stitched islands [2D/CF] |
@@ -85,6 +85,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Never let the LLM emit "short", "wide", "close", "no vias" or "keep away" without the quantity it means (RG10).
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** R25 drops "reflow 0201/0402 balance": reliefs have no physical effect in reflow ([derivation-audit](derivation-audit.md); [red-team](red-team.md)).
 - **R05 vs R10/R13:** short vs over-plane vs length-matched; each optimises a different quantity (L vs Z-delay).
 - **R25 vs R26:** solderability (Fab/Th of the joint) vs loop L and IR; the selector is the assembly process plus the loop budget.
 - **R34:** a big pour lowers R, L and Th on quiet nets, but raises Cm on switching nodes (P07). Pour shape is a multi-objective problem, not a style choice; see [power-copper](power-copper.md) and [copper-shape-synthesis](copper-shape-synthesis.md).

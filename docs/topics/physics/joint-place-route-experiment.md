@@ -1,7 +1,7 @@
 # Joint vs sequential placement and routing: a proof of concept
 
 **TL;DR**
-- At equal CPU (50 s), joint SA (an HPWL start, then moves accepted on routed length, vias, ground-plane cuts and hot-loop area) beat a longer sequential SA on 5/5 30-part boards (median −17% routed objective J) and an equal-CPU restart portfolio on 3/5 (median −10%). The gains were fewer vias (median 16 vs 24) and smaller hot loops (3 vs 6–8.5 mm²), not shorter wire.
+- At equal CPU (50 s), joint SA (an HPWL start, then moves accepted on routed length, vias, ground-plane cuts and hot-loop area) beat a longer sequential SA on 5/5 30-part boards (median −17% routed objective J) and an equal-CPU restart portfolio on 3/5 (median −10%) (exact sign tests: p = 0.06 and p = 1.0). Over both sizes, joint ties the equal-CPU portfolio 5/10 (median J ratio 0.96, 95% CI 0.83–1.24). The physics term's effect is 0.99 (0.93–1.05). Only "joint improves its own start" is significant (10/10, p = 0.002); run-to-run spread of one board is ×1.18 [C, [rt_jpr_stats](../../../tools/research/physics/rt_jpr_stats.py)]. The gains were fewer vias (median 16 vs 24) and smaller hot loops (3 vs 6–8.5 mm²), not shorter wire.
 - At 50 parts it was a coin flip: 2/5 against each control (median +4% and +9%). Routed moves cost ~25× an HPWL move, and when the start sits in a bad basin, restarts escape it and local joint moves do not.
 - The joint stage improved its own start in 10/10 runs (median −18% at 30 parts, −24% at 50). After a converged 50 s sequential run, 40 s of joint search beat 40 s more SA on 3 of 4 boards.
 - Proxies rank coarse differences (HPWL vs routed J, Spearman 0.87–0.94) but not near-equal placements: 44% of pairs within 3% HPWL differed by more than 10% in J. A straight-line hot-loop proxy ranked the routed loop at only 0.23–0.79.
@@ -109,6 +109,7 @@ This matches Cadence's 12,000-placement finding at small scale ([joint-place-rou
 - Score hot loops with MS2 or height × squares on boards with a near plane; the area term here fits only the 2-layer far-plane case [I].
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** sign tests and confidence intervals added; joint ties the equal-CPU portfolio 5/10, so the supported claim is refinement of a sequential start ([red-team](red-team.md)).
 - **Not a real-board result.** No clearance geometry, diff pairs, pours, 4+ layers, or DRC; nets have 2–4 pins; the router always completed. Whether the via and loop gains survive Freerouting realization and `kicad-cli` DRC on PCBWorld D3 is the open test.
 - **Language bias.** Both arms are pure Python; Rust may shift the 50-part outcome [I].
 - **Post-hoc fix.** The legality fix to `joint` was made after a first matrix in which `joint` lost badly. It is a correctness fix, applied before the final runs, but it was not pre-registered.

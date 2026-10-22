@@ -1,7 +1,7 @@
 # Thermal and electro-thermal physics of the board
 
 **TL;DR**
-- **A board is a 2-D fin.** Two numbers describe it. The sheet conductance G_s = Σ k·t gives the near-field slope P/(2πG_s): 5.6 K per watt per e-fold of distance on 2-layer 1 oz. The spreading length λ = √(G_s/h_total) is 38 mm on 2-layer 1 oz in still air, 46 mm on a 4-layer board with planes and 8 mm on bare FR-4. A board smaller than about 2λ is nearly isothermal plus local peaks. On such a board "keep hot parts 5–10 mm apart" buys little; total power over total area sets the floor [C].
+- **A board is a 2-D fin.** Two numbers describe it. The sheet conductance G_s = Σ k·t gives the near-field slope P/(2πG_s): 5.6 K per watt per e-fold of distance on 2-layer 1 oz. The spreading length λ = √(G_s/h_total) is 38 mm on 2-layer 1 oz in still air, 46 mm on a 4-layer board with planes and 8 mm on bare FR-4. A board smaller than about 2λ is nearly isothermal plus local peaks. On such a board, spacing hot parts lowers the mean rise little; total power over total area sets the floor [C]. Spacing still moves a neighbour's peak by 10–20% (E5) and matters for fatigue, current hogging and plumes ([lens-th](lens-th.md)).
 - **TI's rules decompress exactly.**
   - 15.3 cm²/W is an isothermal two-sided plate with h ≈ 8 W/m²K per side; "500 °C·cm²/W" is 1/(2h) at h = 10.
   - 261 °C/W is barrel conduction of a 12 mil via with a 17.5 µm wall through 1.6 mm.
@@ -173,7 +173,7 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 
 ## Recommendations for our system
 
-1. **Express every thermal spacing in units of λ.** Compute λ per region from the stackup and local copper fraction (§fin table). Below about 2λ, the placer stops spreading hot parts. It maximises connected copper, edge exposure and metal-standoff paths, and uses moats to protect victims.
+1. **Express every thermal spacing in units of λ.** Compute λ per region from the stackup and local copper fraction (§fin table). Below about 2λ, the placer stops spreading hot parts for the mean rise (it still prices neighbour peaks, and current-hogging parts want proximity). It maximises connected copper, edge exposure and metal-standoff paths, and uses moats to protect victims.
 2. **THERM-DT and THERM-COUPLE** ([physics-critics-catalog](physics-critics-catalog.md)) should use the image-lattice kernel for proposals and the FV solver for accepted states. Report ΔT in K and victim drift in ppm, µV or life fraction, never in mm.
 3. **Replace fixed rules with conditional physics.**
    - Via counts: compute ∂T/∂N_via.
@@ -184,6 +184,7 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** "spacing buys little" scoped to the mean rise; spacing still moves neighbour peaks 10–20% and matters for fatigue, hogging and plumes ([red-team](red-team.md)).
 - **λ definition:** ours, 38 mm on 2L 1 oz, counts two copper layers plus FR-4. [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) uses one layer (21–29 mm). Use the stackup-specific G_s.
 - **The 15.3 cm²/W rule is conservative for one ~1 W source in our model** (26% above our FV answer). It turns anti-conservative for multi-watt sources on 1 oz and in enclosures, as [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) notes: in E1 the rise saturates near 27 K/W beyond 64 cm², so 3 W cannot meet 40 K on any 1 oz area.
 - **The FV solver is steady-state and 2.5-D.** It ignores package θ_JC, contact resistance, enclosure air temperature rise and non-uniform h. Validate against an IR camera (emissivity-corrected) or Elmer FEM (GPL/LGPL, run as a separate process; licence to be confirmed) before trusting absolute values.

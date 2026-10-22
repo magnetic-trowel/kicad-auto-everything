@@ -4,7 +4,7 @@
 - Every fidelity tier has a licence-compatible open engine. The gap is plumbing (KiCad copper → geometry + ports → solver → budget ledger), not solvers. Fidelity tiers F0–F4 are defined in [solver-ladder](solver-ladder.md).
 - **Licence traps that change existing docs:** FastHenry's MIT source carries a 1994 notice, "internal, noncommercial purposes … any distribution … strictly prohibited", in 18 files and no permissive notice. Ki-PIDA is **AGPL-3.0**. Tidy3D's solver is proprietary. The clean quasi-static engines are PyPEEC (MPL-2.0 or GPL), FasterCap (LGPL-2.1), Palace (Apache-2.0) and our own PEEC [P].
 - **Closed forms are accurate inside their range and useless outside it.** Hammerstad-Jensen matches an extrapolated 2-D field solve within 0.2–0.7% at 1–2.5 µs per call. IPC-2141 is −12% off at w/h = 3 and −65% at w/h = 6 [C].
-- **Quasi-static PEEC is the workhorse for loops.** Image-plane PEEC in numpy (0.1–1.7 ms per loop) agrees with FastHenry on a meshed plane within 1.3% (FastHenry: 7–115 s) [C]. For electrically small structures FDTD is the wrong tool: a hot loop needs ~2×10⁵ time steps.
+- **Quasi-static PEEC is the workhorse for loops.** Image-plane PEEC in numpy (0.1–1.7 ms per loop) agrees with FastHenry on a meshed plane within 1.3% (4 loops, w/h 0.3–5, 100 MHz; FastHenry: 7–115 s) [C]. With 7 equal filaments per trace it reads 11–65% low on wide traces (w/h ≥ 10), so the reference needs ≥ 31 graded filaments ([red-team](red-team.md)). For electrically small structures FDTD is the wrong tool: a hot loop needs ~2×10⁵ time steps.
 - **GPU today:** Palace (CUDA/HIP), gprMax (CUDA/OpenCL/Metal), fdtdx (JAX), PyPEEC (CuPy), EMerge (GPU direct solvers), plus an unreleased openEMS GPU engine (HIP/Metal, master branch, Oct 2026) [P].
 
 ## Key facts
@@ -135,6 +135,7 @@ Ansys HFSS, SIwave and Q3D; Cadence Sigrity and Clarity; Siemens HyperLynx; Dass
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** the PEEC–FastHenry agreement is scoped to 4 loops, w/h 0.3–5, 100 MHz; wide traces need graded filaments ([red-team](red-team.md)).
 - **FastHenry:** [physics-ir](physics-ir.md), [vocabulary](vocabulary.md) and [V4](../../ideas/original/verification.md) use it as a calibration solver. That is acceptable only as an internal, unshipped tool. Someone should ask FastFieldSolvers or MIT whether the 2003 FastCap-style grant also covers FastHenry. The FreeBSD "MIT" label suggests it might.
 - **[evaluation-stack](../verification/evaluation-stack.md)** lists Ki-PIDA as T2 without an AGPL flag, and calls FastHenry/FastCap "MIT-origin".
 - **Johnson's via formula** ([checkers-power](../rules/checkers-power.md) loop estimator) gives 2–6× the partial inductance of Rosa/Goldfarb-Pucel. Replace it with a loop model that includes the return via or plane.

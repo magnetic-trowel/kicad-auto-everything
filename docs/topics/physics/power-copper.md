@@ -1,6 +1,6 @@
 # Power copper: node and branch physics, trace vs pour vs plane, current density, corners, AC effects
 
-*Tags: [P] primary source read, [S] snippet or secondary, [V] vendor claim, [I] our inference, [C] computed by us.*
+*Tags: [P] primary, [S] secondary, [V] vendor claim, [I] inference, [C] computed by us.*
 *Scripts: [pw_cells.py](../../../tools/research/physics/pw_cells.py) (closed forms), [pw_sheet.py](../../../tools/research/physics/pw_sheet.py) (2-D Laplace on copper masks, electro-thermal), [pw_xsec.py](../../../tools/research/physics/pw_xsec.py) (2-D skin and proximity solver). Each runs in seconds to about a minute, numpy/scipy only. Loops, vias, decoupling and Kelvin sensing are in [pdn-and-commutation](pdn-and-commutation.md).*
 
 **TL;DR**
@@ -11,17 +11,17 @@
   - a quiet sensitive node minimises M and C to aggressors.
   Only the switch node is both fast-dv/dt and inside the hot loop. The SW copper inside that loop should have near-zero length.
 - **Every piece of copper over a plane trades L, C and R through its width.** Minimise a·L + b·C + g·R with L ∝ h·l/w, C ∝ w·l/h and R ∝ l/w. Two length invariants hold: L·C = l²/v² and R·Area = R_s·l². Width trades one parasitic for another; only length lowers all of them.
-  - In a low-voltage buck, loss alone would make SW copper about 60 mm wide [C]. What really limits SW area is coupling to the outside world and to victims, an EMI budget.
+  - In a low-voltage buck, loss alone would make SW copper about 60 mm wide [C]. What really limits SW area is coupling to the world and victims: an EMI budget.
   - In a 400 V converter, capacitive switching loss itself limits SW copper to about 1–3 mm wide [C].
 - **Pour vs trace.** A two-terminal connection gains little once the copper is wider than its feeds. In a large pour, 31% of the loss sits within 3 mm of the pads [C]. So widen the entries (pads, via rows, parallel parts) before the body. Via fields multiply sheet resistance by 1.8× at antipad/pitch 0.6, 3.1× at 0.8 and 5.2× at 0.9 [C].
 - **Corners do not matter for steady current.** A sharp corner's steady peak temperature equals the straight trace's within 0.5% [C]. They matter for pulses shorter than about 1 ms: a sharp inside corner sees 2–8× the local J² [C]. Round inside corners only on surge, fault, fuse and ESD paths.
-- **AC effects are small in power copper below about 1 MHz** (R_ac/R_dc ≤ 1.6) [C]. The big AC effect is where the return flows. A stacked go/return pair has 0.07 nH/mm against 0.55–0.66 nH/mm side by side. Even a floating plane 0.1 mm below cuts side-by-side L by 5× through eddy currents [C].
+- **AC effects are small in power copper below about 1 MHz** (R_ac/R_dc ≤ 1.6) [C]. The big AC effect is where the return flows. A stacked go/return pair has 0.07 nH/mm vs 0.55–0.66 nH/mm side by side. Even a floating plane 0.1 mm below cuts side-by-side L by 5× through eddy currents [C].
 
 ## Key facts
 
 ### 1. Node and branch classification (the decision procedure)
 
-Inputs come from a SPICE run of the schematic, or from the topology template in [hot-loops](../rules/power/hot-loops.md) with datasheet values. Worked case [C, `pw_cells.py classify`]: an idealised sync buck, 12 V → 1.2 V, 10 A, 500 kHz, 1 µH, 2 ns edges.
+Inputs: a SPICE run of the schematic, or the [hot-loops](../rules/power/hot-loops.md) topology template with datasheet values. Worked case [C, `pw_cells.py classify`]: an idealised sync buck, 12 V → 1.2 V, 10 A, 500 kHz, 1 µH, 2 ns edges.
 
 | Copper piece | dv/dt (node) | di/dt (branch) | I_rms / I_dc | Objective | What the rule of thumb says |
 |---|---|---|---|---|---|
@@ -51,8 +51,8 @@ Decision procedure for each copper piece k [I]:
 | Pour size vs coupling | A pour on a quiet node is a shield. A pour on a fast node is an antenna. Rayleigh monotonicity: more copper never raises DC R ([cross-domain-lessons](cross-domain-lessons.md)) | Pour freely on quiet nodes. Size fast-node copper by the width trade |
 
 **Thermal via a dielectric.** A 1 cm² SW pad over 0.1 mm FR-4 to a plane has 3.3 K/W and 38 pF [C].
-- At 12 V and 500 kHz, ½CV²f = 1.4 mW, which is free.
-- At 400 V and 100 kHz it is 0.3 W, which is not free.
+- At 12 V and 500 kHz, ½CV²f = 1.4 mW: free.
+- At 400 V and 100 kHz it is 0.3 W: not free.
 - Thermal prepreg (1–3 W/m·K) improves the trade 3–9×, and AlN about 280×.
 
 ### 2. The width trade and two invariants
@@ -68,7 +68,7 @@ w* = sqrt((a·μ0·h + g·ρ/t) / (b·ε/h)), and with no R term Z0* = sqrt(b/a)
 | 48 V GaN SW (20 A, 1 MHz) | 17 mm | |
 | 400 V PFC drain (2 A rms, 100 kHz), h 0.1 / 1.5 mm | 0.8 / 3.1 mm | HV nodes: capacitance costs real loss |
 
-- **Invariants.** L·C = (l/v)² and R·A = R_s·l² for a strip. w/h moves parasitics between L, C and R; only shorter copper lowers all of them.
+- **Invariants.** L·C = (l/v)² and R·A = R_s·l² for a strip: w/h only moves parasitics between L, C and R.
 - **Rule origin.** "Make power traces wide" is physics for quiet high-current pieces. "Keep SW small" is EMI physics, and loss physics only at high V. Rohm's ">1 mm/A" ([buck](../rules/power/buck.md)) is a thermal proxy (§6).
 
 ### 3. Trace vs pour vs plane
@@ -92,7 +92,7 @@ Experiment [C, `pw_sheet.py pour`]: a 2×2 mm source pad and a 2×2 mm load pad,
 | Pour 16 mm | 608 | 2.1 | 1.0 | 1295 |
 | Full 44×30 mm region | 1320 | 1.47 | 0.72 | 1942 |
 
-- **Area efficiency peaks at feed width.** Wider pours pay a logarithmic spreading toll at the pads.
+- **Area efficiency peaks at feed width;** wider pours pay a logarithmic spreading toll at the pads.
 - **In the full region:**
   - 50% of the loss sits in 19% of the area;
   - 31% sits within 3 mm of the two pads, 43% within 5 mm.
@@ -108,7 +108,7 @@ Experiment [C, `pw_sheet.py pour`]: a 2×2 mm source pad and a 2×2 mm load pad,
   |---|---|---|---|---|---|---|---|---|
   | Sheet-R multiplier | 1.16 | 1.50 | 1.80 | 2.28 | 3.14 | 3.89 | 5.18 | 8.23 |
 
-  Rayleigh's (1+f)/(1−f) (f = hole fraction) holds to within 4% up to D/p = 0.8, then under-predicts. Example: a 0.8 mm-pitch field with 0.7 mm antipads is a 4× neck.
+  Rayleigh's (1+f)/(1−f) (f = hole fraction) holds within 4% up to D/p = 0.8, then under-predicts. Example: a 0.8 mm-pitch field with 0.7 mm antipads is a 4× neck.
 - **Copper that carries no current** can be a heat spreader, a shield if tied at many points, or fab balance (keep all three). On a fast node, a floating or single-tied stub is capacitance or an antenna, so remove or stitch it. A deliberately isolated noisy local PGND is also kept ([Hedrich, MPS](https://media.monolithicpower.com/mps_cms_document/2/0/2019-aip-pcb-design-for-low-emi-dc-dc-converters_r1.0.pdf) [P]).
 
 **A narrow trace is right** for fast nodes with little current (BOOT, snubber legs), victim nets, low-current rails, and deliberate impedance (net ties, fuse necks, thermal isolation for sensors).
@@ -134,7 +134,7 @@ Unit-width L-bends, arms of 8 widths [C, `pw_sheet.py corner`]. Our 0.55 □ for
   - over a bare 1.6 mm board: a sharp corner's peak rise is 49.2 K against 49.3 K for a straight trace of the same length;
   - over an isothermal plane 0.1 mm down: 3.39 K vs 3.44 K.
 
-  Copper conducts heat sideways over millimetres, so the crowding never shows. The corner even shortens the path.
+  Copper conducts heat sideways over millimetres, so crowding never shows; the corner even shortens the path.
 - **Pulses.** Heat diffuses only √(α·t) in copper (α = 1.1×10⁻⁴ m²/s). J² averaged over that radius at a sharp inside corner:
 
   | Pulse | 10 µs | 100 µs | 1 ms | 10 ms |
@@ -160,23 +160,22 @@ Skin depth in copper is 66 µm at 1 MHz, 21 µm at 10 MHz and 6.6 µm at 100 MHz
   - at 1 kHz the return spreads across the plane by resistance (0.39 nH/mm);
   - by 1 MHz it gathers under the trace (0.068 nH/mm).
 
-  The crossover f_c = R_s/(2π·μ0·h) is the same one [copper-shape-synthesis](copper-shape-synthesis.md) derives. Design DC paths for R and fast paths for L. They can differ.
-- **Proximity effect is why overlap lowers L.** The current moves to the facing surfaces (99% in the facing halves at 100 MHz), which confines the field to the gap.
-- **R_ac matters little below ~1 MHz** (≤1.6× DC). Planar-magnetics windings (Dowell) are the exception.
-- **Copper never damps ringing.** A commutation loop (0.3–3 nH) with C_oss 1 nF rings at 90–290 MHz with Z0 0.55–1.7 Ω. The copper's 10–18 mΩ gives Q 31–173 [C, `pw_cells.py ring`]. Damping comes from snubbers and ESR.
-- **A conducting sheet starts to mirror a loop of size a** above f_c = 1/(π·μ0·σ·t·a): 124 kHz at a = 1 mm, 41 kHz at 3 mm and 12 kHz at 10 mm, for 35 µm copper [C]. So "skin depth (66 µm at 1 MHz) exceeds the copper thickness, so the plane does not shield" is wrong. A thin plane mirrors mm-scale loops at the switching frequency.
+  The crossover f_c = R_s/(2π·μ0·h) is the same one [copper-shape-synthesis](copper-shape-synthesis.md) derives. Design DC paths for R, fast paths for L.
+- **Proximity effect is why overlap lowers L.** Current moves to the facing surfaces (99% in the facing halves at 100 MHz), confining the field to the gap.
+- **R_ac matters little below ~1 MHz** (≤1.6× DC), except in planar-magnetics windings (Dowell).
+- **Copper barely damps hot-loop ringing.** A commutation loop (0.3–3 nH) with C_oss 1 nF rings at 90–290 MHz with Z0 0.55–1.7 Ω. The copper's 10–18 mΩ gives Q 31–173 [C, `pw_cells.py ring`], using R from a fixed 2-square loop while L is a free input. For wide copper the Q is h/δ ([lens-th](lens-th.md)). Plane pairs below ~30 MHz are different: there copper alone gives Q 1–10 on 0.1 mm cores [C, [rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py)]. Damping comes from snubbers and ESR.
+- **A conducting sheet starts to mirror a loop of size a** above f_c = 1/(π·μ0·σ·t·a): 124 kHz at a = 1 mm, 41 kHz at 3 mm and 12 kHz at 10 mm, for 35 µm copper [C]; that is the onset, and half-mirroring needs 2–5× higher f ([lens-sy](lens-sy.md)). So "skin depth (66 µm at 1 MHz) exceeds the copper thickness, so the plane does not shield" is wrong. A thin plane mirrors mm-scale loops at the switching frequency.
 
 ### 6. Coupling to the thermal model (owner: [thermal-physics](thermal-physics.md))
 
 - IPC-2152 is a thermal model of one test board. The physics replacement is a network: trace I²R → dielectric → plane → board → ambient.
-- A 1 mm trace 0.1 mm above a plane couples 3 W/(m·K) of conductance into it. Its own top surface convects only 0.02 W/(m·K). So a trace near a plane is cooled by the plane and the board, which is why IPC-2152 lets inner traces near planes carry more than IPC-2221 implied ([high-current](../rules/power/high-current.md)) [C].
-- In the corner experiment the same 5 A trace rose 49 K over a bare board and 3.4 K over a 0.1 mm-distant isothermal plane [C].
+- A 1 mm trace 0.1 mm above a plane couples 3 W/(m·K) of conductance into it, while its top surface convects only 0.02 W/(m·K): a trace near a plane is cooled by the plane and board, which is why IPC-2152 lets inner traces near planes carry more than IPC-2221 implied ([high-current](../rules/power/high-current.md)) [C].
 - A copper plane spreads heat over a healing length √(k·t/h_total): 26–37 mm for 1 oz and 37–52 mm for 2 oz, at 10–20 W/m²·K [C].
-- Resistivity rises 0.39%/K, so iterate electro-thermally above ~20 K rise [I].
+- Resistivity rises 0.39%/K: iterate electro-thermally above ~20 K rise [I].
 
 ## Recommendations for our system
 
-- **Role extraction emits waveforms, not just labels.** The LLM proposes topology and operating points. Code runs a SPICE operating sweep or a topology template, and writes per-node dv/dt and per-branch di/dt, I_rms and I_dc into the physics IR ([physics-ir](physics-ir.md)).
+- **Role extraction emits waveforms, not just labels.** The LLM proposes topology and operating points; code runs a SPICE operating sweep or topology template and writes per-node dv/dt and per-branch di/dt, I_rms and I_dc into the physics IR ([physics-ir](physics-ir.md)).
 - **Generate per-piece objectives (a, b, g, victim weights) from those numbers.** Compile them to router costs, width constraints and keep-outs, replacing the PWR_HOT/SW/SENSITIVE net-class heuristics in [checkers-power](../rules/checkers-power.md).
 - **Add the N□ solver as a T1 critic,** with grid plus Peaceman sub-cell vias ([pdn-and-commutation](pdn-and-commutation.md)). It reports R, IR drop, entry-constriction share, via-field necks and, where a return copy exists, μ0·d·N□.
 - **Treat corner style as a pulse-path property only** (net classes `SURGE`, `FUSE`, `ESD_UNPROTECTED`).
@@ -184,9 +183,10 @@ Skin depth in copper is 66 µm at 1 MHz, 21 µm at 10 MHz and 6.6 µm at 100 MHz
 
 ## Conflicts and open questions
 
-- **SW area.** "Never heatsink through SW copper" (Rohm, TH-08 in [thermal](../rules/thermal.md)) is too strong for low-voltage converters over a solid plane. It is right at high voltage and near cables. We replace it with a computed trade [I].
+- **Round-3 corrections (2026-10-22):** "copper never damps" scoped to hot-loop rings; mirroring onset vs half-mirroring ([red-team](red-team.md)).
+- **SW area.** "Never heatsink through SW copper" (Rohm, TH-08 in [thermal](../rules/thermal.md)) is too strong for low-voltage converters over a solid plane, right at high voltage and near cables; a computed trade replaces it [I].
 - **The EMI numbers in §1 are an upper-bound coupling model** (all displacement current onto a 1 m cable). Calibrate them against the [fields-emi-budget](fields-emi-budget.md) chain and measurements.
-- **2-D sheet models ignore copper thickness at corners and etch rounding.** The pulse hot-spot factors are 2-D, grid-limited at 10 µs, and need a 3-D transient check before they become limits.
+- **2-D sheet models ignore copper thickness at corners and etch rounding.** The pulse hot-spot factors are 2-D, grid-limited at 10 µs, and need a 3-D transient check before becoming limits.
 - **Not verified:** IPC-2152 charts (paywalled), and the claim that electromigration limits are irrelevant at PCB scale (no primary source read).
 
 ## Sources

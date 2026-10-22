@@ -8,8 +8,8 @@
 - **Worked case [C]:** a 50 MHz, 1 ns, 3.3 V clock drives 10 pF over 30 mm, with cables on opposite board edges.
   - Over a solid plane it sits near the Class B line: −6 dB by the worst-case MREMC model, but 1.9 µA of cable current against Ott's 5 µA.
   - A 20 mm slot under it costs 24 dB. A split plane costs 38 dB.
-  - Putting both cables on the same edge buys about 40 dB. A stitching cap buys about 10 dB. Slowing edges from 1 to 3 ns buys 3 dB, and raising the series R from 33 to 100 Ω buys 2.5 dB.
-  - **Topology beats tweaks by 20–40 dB.**
+  - Putting both cables on the same edge removes the voltage between them (PEEC: 43–63 dB). It leaves the board-vs-cable mode, so it buys 6–30 dB when the return voltage runs away from the cable edge and 24–48 dB when it runs parallel to it (lumped estimate, [C, [rt_world_cm](../../../tools/research/physics/rt_world_cm.py)]). A stitching cap buys about 10 dB. Slowing edges from 1 to 3 ns buys 3 dB, and raising the series R from 33 to 100 Ω buys 2.5 dB.
+  - **In this case, removing a slot or split beats edge-rate and series-R tweaks by 20–35 dB; ring damping, not modelled here, is worth 12–21 dB at the ring band** ([lens-th](lens-th.md)).
 - **The 1 mV and 5 µA rules are one rule:** 1 mV across a typical 150 Ω common-mode impedance is 6.7 µA. MREMC's worst-case resonant cable (about 36 Ω) is ~13 dB harsher: 1 mV gives 61 dBµV/m, 21 dB over the Class B limit.
 - **Use the chain for ranking and placement cost, not pass/fail.** It brackets reality within ±10–20 dB, but it ranks layouts and fixes correctly, and it names the dominant (net, harmonic, connector pair).
 - **The skew → common-mode path on unshielded differential cables is the same chain** with V_cm = V_d·|sin(πfΔt)|/2: 50 ps of skew on a 2 Vpp, 31 MHz link leaves ~30 dB for the magnetics and common-mode choke to cover.
@@ -46,18 +46,18 @@ Common setup: 50 MHz, 50% duty, 3.3 V, t_r = 1 ns; R_s = 33 Ω; load 10 pF; 30 m
 | B2. Slot splits the plane (bridge far away) | 30 pH + 2.48 nH | −44.1 dB | 159 µA | −38 dB |
 | C. B + one 10 nF cap at the crossing (1 nH path) | shunted | −20.0 dB | 9.9 µA | +10 dB vs B |
 | C2 / C3 / C4. B2 + one cap / two caps / one cap 5 mm along the slot | shunted | −33.5 / −29.1 / −36.1 dB | 47 / 28 / 63 µA | +11 / +15 / +8 dB vs B2 |
-| D. B with both cables on the same edge | B − 40 dB (PEEC: 43–63 dB less) | +10.3 dB | 0.3 µA | +40 dB vs B |
+| D. B with both cables on the same edge | B − 40 dB assumed (PEEC: 43–63 dB less voltage between the cables); the board-vs-cable mode limits the real benefit to 6–30 dB in the worst orientation | +10.3 dB (assumed) | 0.3 µA | +40 dB vs B (assumed; 6–48 dB by orientation) |
 | E. B with t_r = 3 ns | — | −26.8 dB @ 150 MHz | 13 µA | +3 dB vs B |
 | F. B with R_s = 100 Ω | — | −27.2 dB | 16 µA | +2.5 dB vs B |
 
 **Unshielded differential cable** (2 Vpp square wave at 31.25 MHz with t_r 3 ns, an upper bound for 100BASE-TX, before magnetics and CMC): skew 5 / 50 / 200 ps gives a worst margin of −10 / −30 / −42 dB and I_cm of 2 / 21 / 82 µA. Ethernet magnetics and chokes provide the ~30–40 dB that closes this. So **skew is a budget shared with the magnetics, not a free number.**
 
 ### 3. What buys dB, in order (this case)
-1. **Cable attachment points on one edge** (κ → ~0): 40 dB. This is the physics behind LearnEMC's "connectors on one edge; nothing fast between connectors" ([emc-placement](../rules/emc-placement.md)).
+1. **Cable attachment points on one edge** (κ → ~0 removes the inter-cable term): 6–48 dB by orientation. This is the physics behind LearnEMC's "connectors on one edge; nothing fast between connectors" ([emc-placement](../rules/emc-placement.md)).
 2. **No slot or split under the net:** 24–38 dB.
 3. **Distance from the board edge, and a thin dielectric:** 15–17 dB. A 2-layer board loses most of this ([Ott](https://hott.shielddigitaldesign.com/techtips/pcb-stack-up-1.html): 4-layer radiates ~15 dB less [P]).
 4. **Stitching capacitors:** 8–15 dB above their self-resonance. They help at the frequency they resonate at, and a cap placed 5 mm down the slot loses 2–3 dB of that.
-5. **Edge rate and series R:** 2.5–3 dB here. Slowing t_r from 1 to 3 ns moves the spectral corner 1/(π·t_r) from 318 to 106 MHz, but the worst harmonic then becomes the 3rd (150 MHz), which barely moves. Edge control matters more when the cable resonances sit well above the corner.
+5. **Edge rate and series R:** 2.5–3 dB here (one 50 MHz clock). Slowing t_r from 1 to 3 ns moves the spectral corner 1/(π·t_r) from 318 to 106 MHz, but the worst harmonic then becomes the 3rd (150 MHz), which barely moves. Edge control matters more when the cable resonances sit well above the corner.
 
 The ranking changes with the case, so the system should compute it: every candidate fix is a parameter of the chain, and ∂margin/∂parameter tells the agent which fix to try first.
 
@@ -86,11 +86,13 @@ The ranking changes with the case, so the system should compute it: every candid
 ## Recommendations for our system
 1. **Ship fe_emi_budget as the reference spend model** for EMI budgets. Inputs are net spectra, the outline, connector positions and κ maps. Outputs are a margin per (net, harmonic, connector pair) and the sensitivities.
 2. **Calibrate the absolute level once** against a measured board or openEMS run per enclosure class. Until then use the worst-case MREMC level and label results "ranking only".
-3. **Make cable-point topology a first-class placement variable.** It is worth 40 dB here, more than any routing rule.
+3. **Make cable-point topology a first-class placement variable.** It is worth 6–48 dB here, depending on orientation; model the board-vs-cable mode, not only κ.
 4. **Price stitching caps honestly:** about 10 dB each, near their SRF. Offer "remove the split" first.
 5. **Treat skew on cables that leave the board as a common-mode budget** shared with the CMC and magnetics, not as a timing number only.
+6. **Replace the `same_edge_db = 40` input** of fe_emi_budget.py (and in_emi_voi.py) with a board-vs-cable term, I_same ≈ ω·c_far·ΔV/|1 + jω·C_tot·Z_cm|, where c_far is the capacitance to the world of the board region beyond the return's voltage drop ([rt_world_cm](../../../tools/research/physics/rt_world_cm.py)). Add a ring term with the edge floor ([lens-th](lens-th.md)).
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** case D's 40 dB was a script input; co-located cables buy 6–48 dB by orientation, and "topology beats tweaks" is restated as one case ([red-team](red-team.md)).
 - MREMC is a worst case; how far real boards in plastic enclosures sit below it (6 dB? 20 dB?) is not known for our corpus. Measurement or full-wave calibration is needed.
 - κ for slots was computed on one outline (60 × 50 mm, h = 0.2 mm). The PEEC needs to be run per board.
 - CISPR 32 3 m Class B values (40/47 dBµV/m) come from vendor summaries; verify them against the standard text.
