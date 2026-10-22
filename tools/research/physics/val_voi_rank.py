@@ -31,7 +31,9 @@ BOARDS = 50       # horizon: boards designed with the system
 # id: (claim, decisions [(p_wrong, r_A, r_B, n)], source)
 CLAIMS = {
     "THESIS": ("physics-first layout beats competent rule-following on a board's binding budgets",
-               [(0.30, 40.0, 0.3 * RESPIN * BOARDS / 1.0 * 0.25, 1)],       # build the core (A) or rules + critics (B)
+               # A: build the physics core and joint optimizer (~60 EW; 40 EW wasted if no advantage);
+               # B: rules + DRC + cheap critics, losing ~0.075 avoided respins per board if the advantage is real
+               [(0.30, 40.0, 0.075 * RESPIN * BOARDS, 1)],
                "README; user brief"),
     "CRITICS": ("physics critics are trustworthy enough to be optimizer rewards (recall, few false alarms)",
                 [(0.30, 10.0, 8.0, 1)],                                     # reward on critics vs report only
