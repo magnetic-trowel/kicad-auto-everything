@@ -33,6 +33,8 @@ TASK_KINDS = ("route", "place")
 # 5: footprints carrying Edge.Cuts graphics stay in place in place tasks and may not be moved,
 #    like locked ones (staged off-board they broke the board outline)
 TASK_SPEC = 5
+# Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
+MIN_TASK_SPEC = {"route": 4, "place": 5}
 
 
 def split_of(pads):
