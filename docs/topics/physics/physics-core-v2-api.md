@@ -5,7 +5,7 @@
 - **Every return is a Belief** or a container of Beliefs, each with an exactness class and a `relative_to` model. Edits are quoted before they are committed; a commit returns topological events and passport diffs.
 - **One operator protocol serves all physics.** Anything that exposes incidence, branch admittances and a solve can be priced by the response kernel: sheets, PEEC in mesh form, thermal networks, circuit MNA, harmonic-balance conversion matrices.
 - **pcb-intent 0.4** adds `world`, `symmetry`, `hypotheses`, loop-named budgets and criticality to `intent.yaml`, and pieces, passports, jobs, beliefs, events, regimes, modes, floors, quotes and VOI to `ledger.json`. It deprecates net × layer bodies as the physics unit, `mech`-keyed allocation, two-point AC voltage budgets and point LII.
-- **The skeleton runs.** [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) implements a subset (operator, quotes, attribution, leverage, events, passport, `why_here`, `explain`, `where_add`); its identities match re-factorization to ≤ 4×10⁻¹¹ [C].
+- **The skeleton runs.** [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) implements a subset (operator, quotes, attribution, leverage, events, passport, `why_here`, `what_if`, `explain`, `where_add`); its identities match re-factorization to ≤ 4×10⁻¹¹ [C].
 
 Tags: [C] computed by the skeleton on the 30 × 20 mm plane pair of [physics-core-v2](physics-core-v2.md); [I] inference. The design rationale is in that doc.
 
@@ -268,7 +268,6 @@ hypotheses:
     prediction: {observable: Z_SA@DC, after: bridge@16.75, interval: [75, 90] uOhm}
     discriminator: "what_if(remove PWR.t07.05) above +30% supports H1"
 choices: [{op: bridge, at: slot@16.75, because: [H1], accepts_events: [hole_created]}]
-asks: [{world: heatsink1, fact: "bonded to chassis or to DC-?"}]
 ```
 
 A human asks, and the answers come straight from passports and quotes:
