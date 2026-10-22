@@ -9,7 +9,7 @@
 
 ## Key facts
 
-The hypothesis we adopt, sharpened: a layout is the physical realization the schematic leaves out (an unintended R, L, C and M network, field structures, heat paths and a manufactured object). Physics-first layout makes that realization invisible to the circuit's function and to the outside world, within budgets in physical units, at the lowest manufacturing cost and risk. Bogatin's version: aggressor noise exists "only in the traces and white space of the board, not in the schematic" ([what-good-looks-like](../workflow/what-good-looks-like.md)) [P/E]. One sharpening: "invisible" is measured on the outputs that matter, so a parasitic that moves no output is free (see [schematic-to-physics](schematic-to-physics.md)).
+The working hypothesis: a layout is the physical realization the schematic leaves out (an unintended R, L, C and M network, field structures, heat paths and a manufactured object). Physics-first layout makes that realization invisible to the circuit's function and to the outside world, within budgets in physical units, at the lowest manufacturing cost and risk. Bogatin's version: aggressor noise exists "only in the traces and white space of the board, not in the schematic" ([what-good-looks-like](../workflow/what-good-looks-like.md)) [P/E]. "Invisible" is measured on the outputs that matter, so a parasitic that moves no output is free (see [schematic-to-physics](schematic-to-physics.md)).
 
 ### Rule-following vs physics-first
 
@@ -47,7 +47,7 @@ Hubing's first common error is "blindly following guidelines", and a board meeti
     budgets → repair (geometry intent, stackup, part, edge rate, circuit) → R5/R6
 ```
 
-R1 reuses the [design-understanding pipeline](../llm/design-understanding-pipeline.md). R2 replaces name-based [net-role classification](../llm/net-role-classification.md) with measured physics, keeping names as a fallback. R5 makes the budget ledger and dimensioned constraints ([intent-and-why I1/I2](../../ideas/original/intent-and-why.md)) quantitative and mostly automatic. The package is written in workstream 2's [vocabulary](vocabulary.md) and [physics IR](physics-ir.md); solver choice per question is in the [solver ladder](solver-ladder.md).
+R1 reuses the [design-understanding pipeline](../llm/design-understanding-pipeline.md). R2 replaces name-based [net-role classification](../llm/net-role-classification.md) with measured physics, keeping names as a fallback. R5 makes the budget ledger and dimensioned constraints ([intent-and-why I1/I2](../../ideas/original/intent-and-why.md)) quantitative and mostly automatic. The package is written in the [vocabulary](vocabulary.md) and [physics IR](physics-ir.md); solver choice per question is in the [solver ladder](solver-ladder.md).
 
 ### Decomposition: the structures that get ranked
 
@@ -101,7 +101,7 @@ Ordering does not mean sequence. The optimizer is joint, with one objective J = 
 | Outline, slots, keep-outs | holes in the field and flow domain | plane inductance and spreading resistance, current crowding |
 | Enclosure | metal or plastic at a distance | antenna detuning, chassis capacitance, airflow |
 
-Workstream 7 owns the thermal and HV side ([thermal-physics](thermal-physics.md), [thermal-hv-mfg ideas](../../ideas/physics-first/thermal-hv-mfg.md)); this table is the interface.
+The thermal and HV side is in [thermal-physics](thermal-physics.md) and the [thermal-hv-mfg ideas](../../ideas/physics-first/thermal-hv-mfg.md); this table is the interface.
 
 ### Plans made before geometry
 

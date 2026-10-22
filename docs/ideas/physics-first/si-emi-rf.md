@@ -1,6 +1,6 @@
 # Physics-first ideas: SI, EMI and RF (FE1–FE56)
 
-Workstream 5. Each idea gives its mechanism, the physics behind it, why it beats the rule of thumb, and how to test it.
+Each idea gives its mechanism, the physics behind it, why it beats the rule of thumb, and how to test it.
 - **Tags:** **new** (not in the corpus), **combo** (a novel combination), **sharp** (an existing idea made buildable).
 - **Effort:** S / M / L.
 
@@ -8,8 +8,6 @@ Evidence and numbers are in:
 - [fields-si-emi](../../topics/physics/fields-si-emi.md): return path, crosstalk, cavities, pairs;
 - [fields-emi-budget](../../topics/physics/fields-emi-budget.md): the EMI chain;
 - [rf-geometry](../../topics/physics/rf-geometry.md): geometry thresholds and RF.
-
-**Round-3 corrections (2026-10-22):** same-edge cables buy 6–48 dB by orientation, not 40; slot ΔL is not a per-mm constant. ([red-team](../../topics/physics/red-team.md))
 
 Scripts are `tools/research/physics/fe_*.py`. Everything here is [I] until tested.
 
@@ -83,12 +81,12 @@ Each is small, rests on a model we already validated, and replaces several rules
 
 **FE11 EMI margin as a placement loss** (combo, M).
 - **Mechanism:** The [fe_emi_budget](../../topics/physics/fields-emi-budget.md) chain plus FE3 maps gives a margin per (net, harmonic, connector pair). The placement loss is softplus(E − limit + guard).
-- **Why it beats the rules:** It subsumes "cabled connectors on one edge" (an assumed 40 dB in our case; 6–48 dB by orientation once the board-vs-cable mode is modelled) and "no fast circuitry between connectors".
+- **Why it beats the rules:** It subsumes "cabled connectors on one edge" (6–48 dB by orientation, counting the board-vs-cable mode) and "no fast circuitry between connectors".
 - **Test:** A [P8](../original/placement.md) A/B on 10 boards with two or more cabled connectors, scored by PEEC/MREMC margin.
 
 **FE12 Fix ranking by sensitivity** (new, S).
 - **Mechanism:** Compute ∂margin/∂parameter for each fix: cable side, slot, edge distance, caps, t_r, series R. Offer the cheapest fix with its dB gain.
-- **Physics:** In our case the gains were 40 (assumed; 6–48 by orientation) / 24 / 15 / 10 / 3 / 2.5 dB. Topology beat tweaks there, and the ranking is case-specific, so compute it.
+- **Physics:** In one worked case the gains were 6–48 (by orientation) / 24 / 15 / 10 / 3 / 2.5 dB. Topology beat tweaks there; the ranking is case-specific, so compute it.
 - **Test:** Agreement with EMC engineers' fix rankings on 10 cases.
 
 **FE13 Clock plan against resonances** (new, S).

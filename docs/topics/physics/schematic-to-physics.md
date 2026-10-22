@@ -32,7 +32,7 @@ Hot-loop membership is a good example. [hot-loops](../rules/power/hot-loops.md) 
 | Behavioural stand-ins | switch + dead time + Coss for converters; averaged models for regulation; Butterworth–Van Dyke crystal; current-profile sources for digital loads; sensor bridges | the LLM picks them; a validation test against datasheet curves must pass first |
 | Datasheet envelopes | anything else | (V, I, t_r, f) with intervals; propagate the intervals into budgets |
 
-Simulators: ngspice (KiCad's engine; per-file licences, check each, see [reuse-matrix](../licensing/reuse-matrix.md)) and Xyce (GPL-3.0 per Sandia's [About Xyce](https://xyce.sandia.gov/about-xyce/); its binary installers add proprietary compact models, so build from source) [S]. Both are usable from our GPL-3.0-or-later code. ngspice 42 ran here in batch mode from the Ubuntu package, unpacked without root [C]. Vendor models stay under vendor terms; never redistribute them [I]. Simulator selection is workstream 3's ([open-solvers](open-solvers.md)).
+Simulators: ngspice (KiCad's engine; per-file licences, check each, see [reuse-matrix](../licensing/reuse-matrix.md)) and Xyce (GPL-3.0 per Sandia's [About Xyce](https://xyce.sandia.gov/about-xyce/); its binary installers add proprietary compact models, so build from source) [S]. Both are usable from our GPL-3.0-or-later code. ngspice 42 ran here in batch mode from the Ubuntu package, unpacked without root [C]. Vendor models stay under vendor terms; never redistribute them [I]. Simulator selection: [open-solvers](open-solvers.md).
 
 ### Susceptibility from one adjoint solve
 
@@ -70,7 +70,7 @@ Replace each schematic net with a graph: pins → trace segments → vias → pl
 | capacitor mounting L | pads + vias + depth to the plane pair | vendor S-parameters |
 | thermal R and ∇T | fin model in the board sheet; finite volume | FEM, IR camera |
 
-Mutual inductances go in as SPICE `K` couplings; capacitive coupling as capacitors between net graphs; thermal networks as electrical analogues in the same run. Workstream 3 owns the solver ladder for each of these ([solver-ladder](solver-ladder.md)), and workstream 9 owns the critics that read them ([physics-critics](physics-critics-catalog.md)).
+Mutual inductances go in as SPICE `K` couplings; capacitive coupling as capacitors between net graphs; thermal networks as electrical analogues in the same run. The [solver ladder](solver-ladder.md) picks the solver for each, and the [physics critics](physics-critics-catalog.md) read them.
 
 ### Outputs, deviation and the invisibility index
 
@@ -97,7 +97,7 @@ First order: Δy ≈ Σ_i s_i·p_i ≤ B, with s_i = ∂y/∂p_i from the adjoin
 - **Independent random contributions (RSS).** Spend is proportional to (k_i·s_i)^(1/3).
 - **Several outputs.** Each parasitic takes the tightest of its per-output limits, per band.
 
-Highly sensitive, costly structures get a larger share; cheap ones are squeezed. This is the allocation step the I1 ledger left to the LLM, now a formula [I].
+Highly sensitive, costly structures get a larger share; cheap ones are squeezed. This formula is the allocation step of the I1 ledger [I].
 
 Demonstration, switch-node overshoot vs commutation-loop inductance with an erf-shaped edge, ring Q = 8 and no reverse recovery ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py)) [C]:
 

@@ -1,6 +1,6 @@
 # Physics-first ideas: thermal, high voltage, manufacturing physics (TM)
 
-Workstream 7. These ideas treat heat, insulation, fabrication, assembly and mechanics as physics that bounds and interacts with the electrical design. Evidence and numbers are in [thermal-physics](../../topics/physics/thermal-physics.md) and [hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md). [C] results come from `tools/research/physics/tm_*.py`.
+These ideas treat heat, insulation, fabrication, assembly and mechanics as physics that bounds and interacts with the electrical design. Evidence and numbers are in [thermal-physics](../../topics/physics/thermal-physics.md) and [hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md). [C] results come from `tools/research/physics/tm_*.py`.
 
 The ideas build on:
 - the ledger and dimensioned constraints ([I1/I2](../original/intent-and-why.md));

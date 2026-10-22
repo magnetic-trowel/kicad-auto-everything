@@ -1,6 +1,6 @@
 # Physics-first ideas: power copper, commutation and PDN (PW)
 
-Workstream 4 of the physics-first effort. Detail and evidence:
+Detail and evidence:
 [power-copper](../../topics/physics/power-copper.md) and
 [pdn-and-commutation](../../topics/physics/pdn-and-commutation.md). These ideas build on the
 budget ledger and dimensioned constraints ([I1, I2](../original/intent-and-why.md)), the hot-loop

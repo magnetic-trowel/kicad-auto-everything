@@ -1,12 +1,10 @@
 # Physics-first ideas: simulation and the solver ladder (SIM)
 
-Workstream 3. These ideas make physics cheap enough to call inside optimizers and trustworthy enough to sign off with. Detail and evidence:
+These ideas make physics cheap enough to call inside optimizers and trustworthy enough to sign off with. Detail and evidence:
 - [solver-ladder](../../topics/physics/solver-ladder.md): rungs F0–F4 + S, trust radius, escalation, caching, compute;
 - [open-solvers](../../topics/physics/open-solvers.md): engines, licences, speed, KiCad paths.
 
 Numbers tagged [C] come from [sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py) and [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py). The ideas build on [V4 proxy trust radius](../original/verification.md), the [I1 ledger and I5 criticality field](../original/intent-and-why.md), [N7/N8 exact specialist placers](../original/priority-agents-and-negotiation.md) and the [physics IR](../../topics/physics/physics-ir.md).
-
-**Round-3 corrections (2026-10-22):** PEEC's FastHenry match is scoped to 4 loops, w/h 0.3–5, 100 MHz; adjoint price maps need the polarization tensor for cuts. ([red-team](../../topics/physics/red-team.md))
 
 Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination for PCB), *sharp* (makes an existing rule or idea precise). Effort: S (days), M (weeks), L (months).
 
@@ -39,7 +37,7 @@ Each is cheap and already has a measured result behind it.
 
 They catch unit, mesh and port regressions in our wrappers. Test: seed 10 plumbing bugs (mm vs m, εr on the wrong layer, a flipped port); CI must catch all of them.
 
-**SIM46. One PEEC core for every workstream.** — *sharp, S.* Three PEEC prototypes now exist: image-plane loops ([sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py)), nodal R + jωL with vias ([pw_peec.py](../../../tools/research/physics/pw_peec.py)) and a meshed plane ([fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py)). They share the same Grover kernels. Merge them into one library behind SIM1, so critics, placers and the ledger cannot disagree through re-implementation. Test: the three scripts' published [C] numbers reproduce through the merged library within 1%.
+**SIM46. One PEEC core for every tool.** — *sharp, S.* Three PEEC prototypes exist: image-plane loops ([sl_loop_peec.py](../../../tools/research/physics/sl_loop_peec.py)), nodal R + jωL with vias ([pw_peec.py](../../../tools/research/physics/pw_peec.py)) and a meshed plane ([fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py)). They share the same Grover kernels. Merge them into one library behind SIM1, so critics, placers and the ledger cannot disagree through re-implementation. Test: the three scripts' published [C] numbers reproduce through the merged library within 1%.
 
 ## B. Trust, calibration and escalation
 

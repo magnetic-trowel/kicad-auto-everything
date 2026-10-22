@@ -1,12 +1,12 @@
 # Language ideas: a shared physics vocabulary for layout (LA1–LA52)
 
-Ideas from the vocabulary workstream. The concepts are defined in
+Ideas for a physics vocabulary. The concepts are defined in
 [vocabulary](../../topics/physics/vocabulary.md), the schema in
 [physics-ir](../../topics/physics/physics-ir.md), and six worked circuits in
 [physics-ir-examples](../../topics/physics/physics-ir-examples.md). These ideas build on the
 budget ledger, dimensioned types and why-graph (I1–I3 in
 [intent-and-why](../original/intent-and-why.md)) and do not repeat them. Where another
-workstream owns the computation (RG = [rule-replacements](rule-replacements.md), XD =
+catalog owns the computation (RG = [rule-replacements](rule-replacements.md), XD =
 [cross-domain](cross-domain.md), JPR = [joint-place-route](joint-place-route.md)), the idea here
 is the *language handle* for it.
 

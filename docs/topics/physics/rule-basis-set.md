@@ -53,6 +53,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 - **Independence.** For each quantity there are rules that bind on it alone: L (P01 hot loop), M (P11 single tie), Cm (P42 summing node), R (P36 Kelvin), Z (S12 stubs), Bal (S21 skew), Vcm (S31 connector edge), Res (P22 three values), Ins (P47 creepage), Th (P54 copper area), Mech (R39 MLCC near V-score), Fab (R19 annular ring). Two layouts can match in all others and differ in that one.
 - **Merged, not separate:** "crosstalk" = M + Cm (+ Z for saturation); "ground bounce" = L or M of a shared branch; "PDN impedance" = L + R + Res + capacitor data; "EMI" = Vcm (+ Res); "SI" = Z + Bal; "loop area" = L at fixed h, and Vcm only for DM emission (Hubing: radiation is not proportional to loop area for well-referenced lines).
 - **Rejected as quantities:** "reference continuity" (it is the cause of excess L, Z steps, mode conversion and Vcm, and is measured through them); "distance" (meaningful only through M, Cm, Th, Ins); "via count" (L, Z, Res, Fab); "neatness" (Cog).
+- **Finer structure** ([foundations](foundations.md), [derivation-audit](derivation-audit.md)): M has two parts, shared-edge coupling (removable by re-routing) and field coupling (never zero). Bal is a view of Vcm: mode conversion happens only where current division changes, V_cm = Δχ·V_dm ([lens-sy](lens-sy.md)); budgets may still be written in dB and ps. Three further quantities complete the basis: Q destination (where dissipation and damping go), life fraction (damage from extremes and accumulation) and τ_e (insulator charge relaxation).
 - **One step further down:** all electrical quantities except Ins are views of four solver primitives: the resistance matrix R, the partial-inductance matrix Lp, the capacitance (or potential-coefficient) matrix, and retardation τ. That is exactly a PEEC model; full-wave is PEEC with retardation kept. Thermal is a conductance network. So a physics-first checker needs about four engines, not 160 rules ([solver-ladder](solver-ladder.md)).
 
 ### Proxy words decoded
@@ -81,7 +82,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | Dimensionless group | Binds when | Gates rules |
 |---|---|---|
 | Electrical length l·√εe/(c·t_r) | >1/6 review, >1/2 terminate | S08, S12, S13, R07 |
-| Return spread vs distance: ℓ50(f) = R_s/(2πμ0f) against the aggressor–victim distance D (round 3; earlier f/f_x, f_x ≈ 0.3–1 MHz [C]) | ℓ50 < D: plane rules; ℓ50 > D: star/Kelvin rules (only below ~6 kHz at 10 mm on 1 oz) | P11, P38, P45, S01, S39, S40 |
+| Return spread vs distance: ℓ50(f) = R_s/(2πμ0f) against the aggressor–victim distance D ([derivation-audit](derivation-audit.md)) | ℓ50 < D: plane rules; ℓ50 > D: star/Kelvin rules (only below ~6 kHz at 10 mm on 1 oz) | P11, P38, P45, S01, S39, S40 |
 | Coupling D/h | K=1/(1+(D/h)²) above victim budget | S15, S16, S24, R12, R46 |
 | Plane proximity w/h | w≫h: L∝h/w; w≲h: L only log in w | P04, P24, R09, R34 |
 | Size over half-wavelength a·2√εr·f/c | >~0.3 at f_max | P22, S37, S48, R28 |
@@ -139,15 +140,9 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 - Resolve conflicts by computing both rules' quantities on the actual geometry; same-quantity conflicts become regime lookups, different-quantity conflicts become explicit Pareto choices for the user.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** the basis changes in four ways ([foundations](foundations.md), [derivation-audit](derivation-audit.md); [red-team](red-team.md)):
-  - M splits into shared-edge coupling (removable by re-routing) and field coupling (never zero);
-  - Bal merges into Vcm: mode conversion happens only at changes of current division, V_cm = Δχ·V_dm ([lens-sy](lens-sy.md));
-  - three quantities join: Q destination (where dissipation and damping go), life fraction (damage from extremes and accumulation) and τ_e (insulator charge relaxation);
-  - the star/plane selector is ℓ50(f) against the aggressor–victim distance, not f_x.
 - The counts come from our own classification of 160 rules; another auditor would shift some rows between "about right" and "mixed". The ranking (L ≫ others) is robust.
-- Is Bal a separate quantity or derived from L, Cm and Z asymmetry? Round 3 merges it into Vcm (above); budgets may still be written in dB and ps.
 - Ins mixes field (physics) and table (Std). Splitting physics-insulation (leakage, migration, Paschen) from legal spacing may be cleaner.
-- Mech and Fab are thinly covered by the corpus; workstream 7 ([thermal-hv-mfg](../../ideas/physics-first/thermal-hv-mfg.md)) should extend them.
+- Mech and Fab are thinly covered by the corpus; [thermal-hv-mfg](../../ideas/physics-first/thermal-hv-mfg.md) should extend them.
 
 ## Sources
 - The three genealogy docs (all row-level sources are cited there) and their scripts: [rg_proxies.py](../../../tools/research/physics/rg_proxies.py), [rg_corners.py](../../../tools/research/physics/rg_corners.py), [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py)

@@ -1,7 +1,7 @@
 # RF structures and trace geometry: when shape matters
 
 *Tags: [P] primary source read, [S] snippet or secondary, [V] vendor claim, [I] our inference, [C] computed by us.*
-*Scripts: [fe_geometry.py](../../../tools/research/physics/fe_geometry.py) (closed forms), [fe_field2d.py](../../../tools/research/physics/fe_field2d.py) (2-D field solver), [fe_cavity.py](../../../tools/research/physics/fe_cavity.py) (fences). Corner closed forms are cross-checked with workstream 1's [rg_corners.py](../../../tools/research/physics/rg_corners.py).*
+*Scripts: [fe_geometry.py](../../../tools/research/physics/fe_geometry.py) (closed forms), [fe_field2d.py](../../../tools/research/physics/fe_field2d.py) (2-D field solver), [fe_cavity.py](../../../tools/research/physics/fe_cavity.py) (fences). Corner closed forms are cross-checked with [rg_corners.py](../../../tools/research/physics/rg_corners.py) ([rule-genealogy-si-emi-rf](rule-genealogy-si-emi-rf.md)).*
 
 **TL;DR**
 - **Geometry matters when a feature's excess charge or flux is a visible fraction of the edge:** |Γ| ≈ Z0·ΔC/(2·t_r). On a 50 Ω line with h = 0.1 mm:
@@ -35,8 +35,8 @@
 | 35 ps (≈10–16 Gb/s) | 10 GHz | 1.4% | 1.0% | 1.4% | 4.6% | 1 | 0.46 mm |
 | 15 ps (≈28–56 Gb/s) | 23 GHz | 3.4% | 2.2% | 3.3% | 10.7% | 1 | 0.20 mm |
 
-- Corner capacitance uses the Kirschning-Jansen fits ([Qucs notes](https://qucs.sourceforge.net/tech/node76.html) [S], valid w/h 0.2–6, εr 2.4–10.4, to 14 GHz). Workstream 1 gets 21–22 fF with the Gupta fit. In the frequency domain a single corner reaches −30 dB return loss at ~9 GHz and −20 dB at ~29 GHz for h = 0.1 mm. These frequencies scale as 1/h, so thick 2-layer boards (h = 1.5 mm) reach −20 dB near 2 GHz ([rg_corners.py](../../../tools/research/physics/rg_corners.py)).
-- **The optimal mitre** is M = 0.52 + 0.65·exp(−1.35·w/h), 57% at w/h = 1.9 (Douville and James, via [RF Essentials](https://rfessentials.com/resources/rf-glossary/bend-discontinuity/) [S]). This closes the "50–60% optimal miter NOT FOUND" gap in [rf](../rules/rf.md). Rounding removes only 21% of the corner copper, while compensation needs 70–90% ([Johnson](https://www.sigcon.com/Pubs/edn/bigbadbend.htm) [P]).
+- Corner capacitance uses the Kirschning-Jansen fits ([Qucs notes](https://qucs.sourceforge.net/tech/node76.html) [S], valid w/h 0.2–6, εr 2.4–10.4, to 14 GHz); the Gupta fit gives 21–22 fF. In the frequency domain a single corner reaches −30 dB return loss at ~9 GHz and −20 dB at ~29 GHz for h = 0.1 mm. These frequencies scale as 1/h, so thick 2-layer boards (h = 1.5 mm) reach −20 dB near 2 GHz ([rg_corners.py](../../../tools/research/physics/rg_corners.py)).
+- **The optimal mitre** is M = 0.52 + 0.65·exp(−1.35·w/h), 57% at w/h = 1.9 (Douville and James, via [RF Essentials](https://rfessentials.com/resources/rf-glossary/bend-discontinuity/) [S]). Rounding removes only 21% of the corner copper, while compensation needs 70–90% ([Johnson](https://www.sigcon.com/Pubs/edn/bigbadbend.htm) [P]).
 - **A reflection of 1% is invisible on an eye.** Several in phase (periodic bends, serpentines) add, so use the budget per net, not per feature.
 - **Skew per bend** is p·θ for an arc and 2p·tan(θ/2) for a sharp corner: 2.8 ps (arc) and 3.5 ps (square) per 90° turn at 0.3 mm pitch. Rounding does not remove skew ([diff-pairs](../rules/diff-pairs.md)); alternating left and right turns does.
 - **Serpentine self-coupling.** A coupled switchback short-circuits part of its own delay: up to 2× NEXT per switchback (Johnson, [diff-pairs](../rules/diff-pairs.md)). Use the per-layer kernel ([fields-si-emi](fields-si-emi.md) §4): at D = 6h, NEXT is 1.3% in microstrip and 0.02% in stripline, so stripline serpentines can be packed much tighter.
@@ -145,7 +145,6 @@ So "first match element ≤ ~1 mm" ([rf](../rules/rf.md) RF-03) is right for hig
 5. **RF:** a fence generator driven by isolation targets and channel cut-off, with a cavity-model check. Chu-sphere keep-out volumes in the 3-D mechanical check. A pin-Q-based l_max for the first match element.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** coplanar-ground Z0 shifts replaced by converged values that depend on copper thickness ([red-team](red-team.md)).
 - The arc-radius guidance ("a few w") is [I]. A Kirschning-style closed form for curved bends was not found.
 - The Bragg-in-band risk at small weave angles is inferred, not measured; spread-glass data disagree on how much it helps.
 - Pin impedances in §7 are illustrative, not from a datasheet. Real optimum loads come from vendor reference designs.

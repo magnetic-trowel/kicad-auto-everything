@@ -37,7 +37,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S15 | 3W spacing | Sp | **M**+**Cm**: K=1/(1+(D/h)²); 2.8% for any 50 Ω microstrip; 31% for 0.1 mm traces at h 0.2 mm; 80% for 0.25 mm traces at h 1.5 mm [C §A]; in stripline coupling decays as e^(−πD/b) instead (lens [LS](lens-ls.md)) | M: R for controlled-Z microstrip (w encodes h), A for thin uncontrolled traces; stripline is its own regime | D ≥ h√(1/K−1) in microstrip [CF] |
 | S16 | Reduce h before adding spacing | Ph | **M**: inductive coupling ∝ h_a·h_v/D² at fixed D; **Cm** of wide dv/dt copper only ∝ h^0.19–0.74 (planes break E/M duality, lens [SY](lens-sy.md) D1) | R for loops and narrow traces; regime-gated, not for wide dv/dt copper | stackup [CF] |
 | S17 | Guard traces | Hb | **M**/**Cm**; over a plane at h ≪ D the image already confines the field: a grounded guard removes −1–3% at h 0.1 mm, −48% at h 1.6 mm (D 5 mm, lens SY D1) | X on multilayer boards; useful only where h ≳ D/3 (thick or two-layer), stitched along its length | 3-D check for a named problem [FW] |
-| S18 | Ground fill near traces on multilayer boards | Hb | **Z**: Z0 −5.0% at gap h, −1.2% at 2h, −0.4% at 3h for thin copper (−8.4%/−2.2%/−0.8% at t = 0.35h) [C, [rt_fill_z0](../../../tools/research/physics/rt_fill_z0.py)]; the earlier −3.7% came from a thin strip on a coarse grid (12 cells per h, box 12h tall); floating fill **Res** | X as default; harmless ≥2h and stitched | gap/h + island resonance [2D] |
+| S18 | Ground fill near traces on multilayer boards | Hb | **Z**: Z0 −5.0% at gap h, −1.2% at 2h, −0.4% at 3h for thin copper (−8.4%/−2.2%/−0.8% at t = 0.35h) [C, [rt_fill_z0](../../../tools/research/physics/rt_fill_z0.py)]; floating fill **Res** | X as default; harmless ≥2h and stitched | gap/h + island resonance [2D] |
 | S19 | Adjacent signal layers orthogonal | Ph+Tl | broadside **Cm**/**M** ∝ overlap length; also a router convention | R | overlap length × coupling [2D] |
 | S20 | Pairs are not self-returning | Ph | **L**/**Z** per leg | R | per-leg reference check [2D] |
 | S21 | Skew ≤ min(spec, 0.1·t_r); compensate near the mismatch | Ph | **Bal**: V_cm/V_d ≈ Δt/(2t_r); 20 ps at 100 ps = 10% [C §V] | R | mode conversion Scd21 [2D/FW] |
@@ -93,11 +93,10 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Keep CT rules (S37, S38, S53, S55) as selectors; resolve them with a solver, not a vote.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** S18 fill numbers converged (−5.0% at h, thin copper); S16 and S17 regime-gated; S37/S48 stitching pitch set by isolation per pitch, not λ/20; S15 gains a stripline regime ([red-team](red-team.md), [derivation-audit](derivation-audit.md)).
 - **S03 vs S07:** both are return-inductance rules; on a tight P/G pair (<0.1 mm) a power-plane reference costs little above a few hundred MHz. The selector is the P/G spacing and edge rate.
 - **S11 vs S25/S30:** "short" fights length matching; the budget is timing or skew, not length.
 - **S46:** Gupta and Kirschning capacitance agree within 3%; their bend-inductance formulas differ ~4×, so the "with L" column is soft. A 2-D/3-D check should calibrate.
-- The closed-form CPWG formula overstates fill effects at s ≫ h (it predicted −6.5% at 5h; the 2-D solve gives −0.1%), so the fill result uses the solve.
+- The closed-form CPWG formula overstates fill effects at s ≫ h (−6.5% at 5h where the 2-D solve gives −0.1%), so the fill result uses the solve.
 
 ## Sources
 - research notes: [rules_highspeed_emi.md § 1–10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [interface_rule_packs.md § 1–9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md); [verification_rules.md § 1A, 2, 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)

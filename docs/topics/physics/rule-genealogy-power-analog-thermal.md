@@ -5,7 +5,7 @@
 - Three famous power rules are **anti-conservative** in a common regime: IPC-2221 width on ≤3.3 V rails (IR drop), "decap within N mm" on 2-layer or thick-dielectric boards, and "15.3 cm²/W" for a single hot part on 1 oz copper (area beyond the ~25 mm fin length barely helps).
 - Analog rules split by **which parasitic dominates**: shared-path impedance (grounds, Kelvin), node capacitance (summing nodes, fast TIAs) or leakage (electrometers). The same copper (a guard or a pour) helps one regime and hurts another.
 - Creepage and clearance tables are mostly **standards-legal** plus contamination and surge physics, not steady-state field physics: mean fields at mains clearances are ≤1.6 kV/mm, and below the ~327 V Paschen minimum air does not break down at any gap. Keep the tables; add physics side checks.
-- Each rule below gets a replacement budget. All but one need only a closed form, a lookup, a 2-D solve, a PEEC/thermal network or SPICE; P13 needs a magnetostatic solve to size a cut-out (the default, keep the plane, is settled), and P52 reduces to V/E_bd.
+- Each rule below gets a replacement budget. All but one need only a closed form, a lookup, a 2-D solve, a PEEC/thermal network or SPICE; P13 needs a magnetostatic solve to size a cut-out (the default is to keep the plane), and P52 reduces to V/E_bd.
 
 Legend. **Origin:** Ph physics, Mf manufacturing, Hb habit/legacy, Sp simplicity proxy, Cg cognition, Tl tool limit, Lg standard/legal. **Basis** (defined in [rule-basis-set](rule-basis-set.md)): L loop/partial inductance, M mutual/shared-path coupling, Cm node capacitance, R resistance and current density, Z propagation, Bal balance, Vcm common mode on antennas, Res resonance, Ins insulation, Th thermal, Mech strain, Fab process margin; non-physical axes Cog (review and editability) and Std (standards). **Verdict:** R about right, C conservative, A anti-conservative, M mixed (C in one regime, A in another), X wrong as stated, CT contested. **Cost:** CF closed form, 2D field solve, PEEC quasi-static 3-D, FW full-wave, SP circuit/SPICE, TN thermal network/FEM, LU lookup, GE geometry only. [C] numbers come from [rg_proxies.py](../../../tools/research/physics/rg_proxies.py) (sections A–W), [rg_corners.py](../../../tools/research/physics/rg_corners.py) and [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py), FR-4 εr 4.3.
 
@@ -74,7 +74,7 @@ Legend. **Origin:** Ph physics, Mf manufacturing, Hb habit/legacy, Sp simplicity
 | P42 | Remove pour under IN− of fast TIA; minimise summing node | Ph | **Cm**: 1 pF across 1 kΩ peaks (Williams) | R | fF budget from phase margin [2D+SP] |
 | P43 | Thermocouple cold junction isothermal, symmetric | Ph | **Th** gradient × Seebeck (K: 39 µV/°C) | R | ΔT across junction pairs [TN] |
 | P44 | Precision parts away from heat | Ph | **Th** drift, thermal EMF | R; distance is a proxy | gradient budget [TN] |
-| P45 | Audio <100 kHz: star at entry, planned returns | Ph | **R**-dominated spread: half a return spreads beyond distance x below f = R_s/(2πμ0x), 6 kHz at 10 mm, 62 kHz at 1 mm on 1 oz [C da §C]; above that a plane confines returns and a star only adds L. (not f_x ≈ 0.3–1.1 MHz [C §W]) | R in regime: DC to ~10 kHz at board scale | current solve at audio f [2D] |
+| P45 | Audio <100 kHz: star at entry, planned returns | Ph | **R**-dominated spread: half a return spreads beyond distance x below f = R_s/(2πμ0x), 6 kHz at 10 mm, 62 kHz at 1 mm on 1 oz [C da §C]; above that a plane confines returns and a star only adds L | R in regime: DC to ~10 kHz at board scale | current solve at audio f [2D] |
 | P46 | Bridge: 6-wire Kelvin, balanced traces | Ph | **R**, **Th** (copper TCR 3900 ppm/K) | R | matched-R check [CF] |
 
 ### Isolation and HV ([isolation-creepage](../rules/isolation-creepage.md))
@@ -108,8 +108,7 @@ Legend. **Origin:** Ph physics, Mf manufacturing, Hb habit/legacy, Sp simplicity
 - Keep isolation tables as `Lg` rules that physics may tighten but never relax.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** P13 resolved (keep the plane), P15/P29/P31/P52 derived, P38/P45 moved to DC–kHz, P16/P41/P57 qualified ([derivation-audit](derivation-audit-table.md), [red-team](red-team.md)).
-- **Same quantity, opposite rules:** P13 and P14 are M-coupling trade-offs whose sign depends on the inductor's leakage flux and the ring frequency. P13's default is now computed (keep the plane); one LCR measurement per inductor family, with and without cut-outs, would confirm it. P14 still needs a field solve or vendor data.
+- **Same quantity, opposite rules:** P13 and P14 are M-coupling trade-offs whose sign depends on the inductor's leakage flux and the ring frequency. P13's default is computed (keep the plane; [derivation-audit-table](derivation-audit-table.md)); one LCR measurement per inductor family, with and without cut-outs, would confirm it. P14 still needs a field solve or vendor data.
 - **Different quantities:** P07/P08 (SW area: Cm vs Th vs R) and P41/P42 (guard copper: leakage vs capacitance). See the conflict table in [rule-basis-set](rule-basis-set.md).
 - **Unverified:** IPC-2221's 1956 origin and untested internal chart are [S]; the fin model ignores FR-4 in-plane conduction and radiation non-linearity.
 

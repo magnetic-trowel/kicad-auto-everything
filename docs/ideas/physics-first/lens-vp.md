@@ -1,6 +1,6 @@
 # Physics-first ideas: variational principles and energy (VP)
 
-Round-2 lens VP. Nature minimizes energy inside the copper we draw. That gives four things these ideas exploit:
+Nature minimizes energy inside the copper we draw. That gives four things these ideas exploit:
 - floors that are provable;
 - two-sided bounds;
 - gradients that cost nothing for self-energy objectives;
@@ -26,7 +26,7 @@ Scripts:
 - [vp_rl_band.py](../../../tools/research/physics/vp_rl_band.py)
 - [vp_edit_pricing.py](../../../tools/research/physics/vp_edit_pricing.py)
 
-These ideas build on round-1 ideas without repeating them:
+These ideas build on, and do not repeat:
 - [optimization](optimization.md): OP2, OP6, OP27, OP43, OP57;
 - [joint-place-route](joint-place-route.md): JPR30;
 - [reasoning](reasoning.md): DR17, DR18, DR41;
@@ -35,8 +35,6 @@ These ideas build on round-1 ideas without repeating them:
 - [cross-domain](cross-domain.md): XD84, XD108.
 
 Edit pricing by polarization tensors is not repeated here. It is in CT1/CT2 ([lens-ct](lens-ct.md)) and SY6/SY7/SY9 ([lens-sy](lens-sy.md)), and lens VP confirms it.
-
-**Round-3 corrections (2026-10-22):** floors are certified on the 0.1 mm raster only; a refinement study is needed for real layouts. ([red-team](../../topics/physics/red-team.md))
 
 Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), M (weeks), L (months).
 
@@ -51,21 +49,21 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP2. Convex-relaxation floor with a dual certificate.** Solve the variable-thickness relaxation (SIMP with p = 1, no filter), which is convex. Bound it from below with the Lagrangian dual: for any trial potential v, R ≥ (fᵀv)²/(I²·max_ρ vᵀK(ρ)v), where the max is a fractional knapsack. The result is an interval that contains the best possible layout of that area.
 - **Principle:** V1, V2, BL-A.
-- **Beats:** round 1 could not say how far a pour was from optimal. Here the gap is 4×10⁻⁴ after 400 solves; SIMP sits 1.6% above the floor and the human tree 18.8% [C].
+- **Beats:** nothing else says how far a pour is from optimal. On a 0.1 mm raster the gap is 4×10⁻⁴ after 400 solves; SIMP sits 1.6% above the floor and a human tree 18.8% [C]. The certificate holds on that raster; real layouts need a refinement study.
 - **Test:** run on 20 board pours. Every manufacturable design must lie above the floor. Report the gap distribution.
 
 *new, S*
 
 **VP3. Avoidable-loss report.** For every pour or trace tree, report (R − R_floor)/R alongside the copper's area elasticity −dlnR/dlnA. The elasticity is exactly 1 at the Beckmann floor; lower values show copper that spreading, not transport, limits.
 - **Principle:** V1.
-- **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss on the 0.1 mm raster (the floor moved 2–13% between grids), and round 1's synthesis recovered 14.5 of those 15.8 points [C]. Below a few percent, reshaping is not worth the review cost.
+- **Beats:** "should we reshape this copper?" is answered today by taste. On the 0.1 mm raster a well-drawn human tree had 15.8% avoidable loss, and SIMP synthesis (OP2) recovered 14.5 of those points [C]; the raster floor moves 2–13% between 0.2 and 0.1 mm grids. Below a few percent, reshaping is not worth the review cost.
 - **Test:** compute it on high-current nets of 30 open boards. Check whether the boards with the largest avoidable loss are the ones designers later reworked (git history).
 
 *new, S*
 
 **VP4. Convex-first continuation for every compliance objective.** Start topology optimization from the convex p = 1 optimum, then ramp p from 1 to 3 and sharpen the projection. This applies to loss, pour inductance over a mapped h_eff, thermal compliance, and weighted sums of them.
 - **Principle:** V1, V3, BL-A.
-- **Beats:** round 1's uniform start found a local optimum for inductance-only pours over a slotted reference. The convex start reached 0.546 instead of 0.613 nH, and 2.02 instead of 2.40 mΩ, at areas within 1.2% [C]. It replaces multi-start for class-A terms.
+- **Beats:** a uniform start finds a local optimum for inductance-only pours over a slotted reference. The convex start reached 0.546 instead of 0.613 nH, and 2.02 instead of 2.40 mΩ, at areas within 1.2% [C]. It replaces multi-start for class-A terms.
 - **Test:** run 20 multi-objective pour problems. Compare final objective and CPU against cold multi-start.
 
 *sharp (OP43, OP2), S*
@@ -97,7 +95,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
   - High-frequency loop inductance: current-based PEEC with restricted current gives an upper bound (V3); a divergence-free trial B gives a lower bound.
   - Report the bracket as the extraction's own error.
 - **Principle:** V3, V5.
-- **Beats:** round 1's [C] numbers carry no error bars and disagree between workstreams (22 vs 26 pF). Brackets say which is right, or that both are within error.
+- **Beats:** single-solver [C] numbers carry no error bars, and two estimates of one heatsink capacitance differ (22 vs 26 pF). Brackets say which is right, or that both are within error.
 - **Test:** on 20 structures, check that brackets contain FasterCap and openEMS results, and plot bracket width against mesh density.
 
 *new, M*
@@ -124,7 +122,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
   - N8 then maximizes the capacity of the via set inside the footprint.
   - Vias inside the hull are flagged as low-value.
 - **Principle:** V10.
-- **Beats:** counting vias. The formula reproduces round 1's grid solves within 2%. The hull floor shows that 4 vias at 2 mm need at least 40.1 pH against 44 realized [C].
+- **Beats:** counting vias. The formula reproduces the grid solves behind PW32 within 2%. The hull floor shows that 4 vias at 2 mm need at least 40.1 pH against 44 realized [C].
 - **Test:** compare with PEEC on 50 decap via patterns. Then compare N8 decisions with and without the capacity objective.
 
 *sharp (PW32, N8), S*
@@ -146,11 +144,11 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 **VP14. Two-sided cavity-mode bracket for stitching.**
 - **Mechanism:** bound the first mode from both sides.
   - The upper bound is the largest empty circle, a domain-monotonicity bound: f1 ≤ 0.766·c/(D·√εr), with D measured to via edges and open board edges mirrored.
-  - The lower estimate is the homogenized via-lattice capacity (wire-medium form). It is not rigorous; round 1 found it within 3–16% of the eigen-solve on grids.
+  - The lower estimate is the homogenized via-lattice capacity (wire-medium form). It is not rigorous; on grids it is within 3–16% of the eigen-solve.
   - Decide stitching without the eigen-solve when the bracket clears the protected band. The upper bound alone can prove a pattern insufficient.
 - **Principle:** V6, V10.
-- **Beats:** round 1 used the empty circle as a ±30% estimate. It is a one-sided bound: round 1's κ of 0.32–0.64 is always below 0.766.
-- **Test:** check bracket containment on round 1's 11 patterns plus 50 random ones, and count the decisions settled.
+- **Beats:** FE26 treats the empty circle as a ±30% estimate. It is a one-sided bound: the fitted κ of 0.32–0.64 is always below 0.766.
+- **Test:** check bracket containment on the 11 FE26 patterns plus 50 random ones, and count the decisions settled.
 
 *sharp (FE26, FE27), S*
 
@@ -158,7 +156,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP15. Tuned magnetically coupled damping layer.** Put a resistive film, or a copper ring closed through a resistor, between the hot loop and its plane. Choose its sheet resistance so its eddy mode relaxes at the ring frequency, R_s ≈ ω_r·μ0·ℓ_eff/2 (ring: R ≈ ω_r·L_ring). The optimizer treats the layer as a stackup variable.
 - **Principle:** V4, V9: loss peaks where a coupled mode's relaxation rate equals ω. The limit is Q ≥ 2/k² − 1.
-- **Beats:** copper alone gives Q 30–170 (round 1; lens TH proves Q = h/δ). In 2-D, a film at about 0.1 Ω/sq gave Q_film ≈ 7.6 at 200 MHz [C]. L′ was 0.106 nH/mm with the film, between 0.124 without it and 0.070 with a solid plane at the film's depth. Prior art: Hartmann, Müsing and Kolar (2009) [S]. It complements TH3's tuned snubber.
+- **Beats:** copper alone leaves a hot-loop ring at Q = h/δ, 30–170 ([lens-th](lens-th.md)). In 2-D, a film at about 0.1 Ω/sq gave Q_film ≈ 7.6 at 200 MHz [C]. L′ was 0.106 nH/mm with the film, between 0.124 without it and 0.070 with a solid plane at the film's depth. Prior art: Hartmann, Müsing and Kolar (2009) [S]. It complements TH3's tuned snubber.
 - **Test:** 3-D PEEC or openEMS of a GaN half-bridge loop with and without the layer, then double-pulse ringing and near-field on a coupon.
 
 *combo, M*
@@ -166,14 +164,14 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 **VP16. Eddy-mode Foster macromodels for plane returns.**
 - **Mechanism:** solve the generalized eigenproblem R·v = λ·L·v on the plane's zero-net-current subspace. Each mode becomes one RL section of a passive Foster ladder. Keep modes by their share c_k² of the inductance drop, about 3 per decade.
 - **Principle:** V4.
-- **Beats:** vector fitting needs passivity enforcement (round 1 saw it fail). This is passive by construction and reproduced the direct solve exactly [C]. It is the fast solver research-gaps gap 2 asked for, aimed at kHz-band precision analog.
+- **Beats:** vector fitting needs passivity enforcement, which fails on an undamped cavity (SIM33). This is passive by construction and reproduced the direct solve exactly [C]. It is the fast solver research-gaps gap 2 asked for, aimed at kHz-band precision analog.
 - **Test:** compare with full PEEC from 10 Hz to 10 MHz on 5 layouts, plus SPICE runtime and passivity checks.
 
 *combo (SIM33), M*
 
 **VP17. Containment-distance regime predicate.** For each aggressor return and victim at distance D, the return can pass under the victim only below f ≈ R_s/(2π·μ0·D): 12 kHz at 5 mm on 1 oz. Use this per-pair predicate, not one f_x per stackup, to gate star-ground, separation and split rules.
 - **Principle:** V3, V4.
-- **Beats:** f_x = R_s/(2π·μ0·h) answers a different question (D5 in [lens-vp](../../topics/physics/lens-vp.md)). Containment obeyed f50·ℓ = 56–70 Hz·m for h = 0.1–1.6 mm [C]. This complements SY25's ℓ_d map.
+- **Beats:** f_x = R_s/(2π·μ0·h) answers a different question (D5 in [lens-vp](../../topics/physics/lens-vp.md)). Containment obeyed f50·ℓ = 56–70 Hz·m for h = 0.1–1.6 mm and ℓ ≥ 6h [C]. This complements SY25's ℓ_d map.
 - **Test:** check the predicate against 2-D and 3-D PEEC containment on 30 aggressor–victim pairs, and its rule-gating accuracy against expert verdicts.
 
 *sharp (RG19, SY25), S*
@@ -202,7 +200,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
   - **C (non-variational):** worst-frequency sensitivity.
   - Schedule: optimize A jointly and convexly first, then continue into B, and treat C at its binding frequencies.
 - **Principle:** BL.
-- **Beats:** round 1 mixes all terms from the start (or by an ad hoc continuation, OP43), and so meets local optima that class A does not have.
+- **Beats:** mixing all terms from the start, or by an ad hoc continuation (OP43), meets local optima that class A does not have.
 - **Test:** joint runs with and without the schedule, comparing final budget spend, runtime and local-optimum rate on 10 boards.
 
 *new, S*

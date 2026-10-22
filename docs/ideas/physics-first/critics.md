@@ -1,6 +1,6 @@
 # Physics-first ideas: critics and metrics (PC)
 
-Workstream 9. Ideas for measuring "physically right" so that DRC-clean but physically wrong boards are caught, scored and fed back to optimizers and the LLM. Design and catalog: [physics-critics](../../topics/physics/physics-critics.md), [catalog](../../topics/physics/physics-critics-catalog.md), [validation](../../topics/physics/physics-critics-validation.md). Prototype: [pc_refplane.py](../../../tools/research/physics/pc_refplane.py). Builds on [V1–V5](../original/verification.md) and the [I1 budget ledger](../original/intent-and-why.md).
+Ideas for measuring "physically right" so that DRC-clean but physically wrong boards are caught, scored and fed back to optimizers and the LLM. Design and catalog: [physics-critics](../../topics/physics/physics-critics.md), [catalog](../../topics/physics/physics-critics-catalog.md), [validation](../../topics/physics/physics-critics-validation.md). Prototype: [pc_refplane.py](../../../tools/research/physics/pc_refplane.py). Builds on [V1–V5](../original/verification.md) and the [I1 budget ledger](../original/intent-and-why.md).
 
 Tags: *new* (not found in the survey), *combo* (new combination of known parts), *sharp* (a known idea made precise). Effort: S (days), M (weeks), L (months).
 

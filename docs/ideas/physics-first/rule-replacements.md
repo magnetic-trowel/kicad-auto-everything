@@ -1,6 +1,6 @@
 # Rule replacements: turning rules of thumb into physics checks (RG1–RG53)
 
-Ideas from the rule-genealogy workstream. The evidence is in
+Ideas from the rule genealogy. The evidence is in
 [rule-basis-set](../../topics/physics/rule-basis-set.md) and the three genealogy docs
 ([power-analog-thermal](../../topics/physics/rule-genealogy-power-analog-thermal.md),
 [si-emi-rf](../../topics/physics/rule-genealogy-si-emi-rf.md),
@@ -76,7 +76,7 @@ These build on, and do not repeat, the budget ledger and dimensioned constraints
 
 29. **RG29. Tombstone heat-balance check** *(sharp, S)*. Estimate each small passive's two pad heat-up time constants from connected copper and planes and flag ratios above a calibrated threshold. Replaces "symmetric copper" with the quantity that causes the defect. Test: reflow a panel of 0201/0402 parts with controlled asymmetry.
 
-30. **RG30. Power-pour shape objective** *(combo, M)*. Shape pours by minimising R + ωL (at the relevant spectrum) + thermal resistance, subject to Cm caps on switching nodes and to fab rules, using a 2-D sheet solver. Replaces "wide pours" and "round the corners". Hands over to workstream 6 ([optimization](optimization.md)). Test: compare optimised and hand pours on a 20 A buck by IR, loop nH and SW fF.
+30. **RG30. Power-pour shape objective** *(combo, M)*. Shape pours by minimising R + ωL (at the relevant spectrum) + thermal resistance, subject to Cm caps on switching nodes and to fab rules, using a 2-D sheet solver. Replaces "wide pours" and "round the corners". Hands over to [optimization](optimization.md). Test: compare optimised and hand pours on a 20 A buck by IR, loop nH and SW fF.
 
 31. **RG31. Isolation physics side-checks** *(new, M)*. Keep the legal creepage/clearance engine, and add physics flags: Paschen check at altitude or low pressure, electrochemical-migration risk ∝ V/gap × humidity for low-voltage dense boards, and field enhancement at sharp HV copper. These catch cases the tables do not cover. Test: list boards where a physics flag fires but the table passes.
 

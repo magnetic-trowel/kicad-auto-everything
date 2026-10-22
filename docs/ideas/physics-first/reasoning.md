@@ -1,6 +1,6 @@
 # Physics-first ideas: design reasoning (DR)
 
-Workstream 8 of the physics-first effort: how a system looks at a schematic plus a partial layout and decides, from physics, what the joint placement+routing optimizer must achieve. The topic docs hold the argument and the numbers:
+How a system looks at a schematic plus a partial layout and decides, from physics, what the joint placement+routing optimizer must achieve. The topic docs hold the argument and the numbers:
 - [design-reasoning-architecture](../../topics/physics/design-reasoning-architecture.md): pipeline, decomposition, least-slack ordering, roles, hand-off, beauty as coherence;
 - [schematic-to-physics](../../topics/physics/schematic-to-physics.md): simulate the schematic, adjoint susceptibility, invisibility index, sensitivity budgets;
 - [worked-thought-experiments](../../topics/physics/worked-thought-experiments.md): four boards, with numbers.

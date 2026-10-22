@@ -5,7 +5,7 @@
 
 **TL;DR**
 - **One quantity replaces about a dozen plane rules:** the extra impedance a fast net's return current meets, ΔZ_ret(f) (mostly jωΔL), times the net's current spectrum I(f). The product is a voltage charged to an SI budget (mV at the receiver) and an EMI budget (mV between cable attachment points). Slots, splits, merged antipads, reference changes, return-via distance, stitching caps, plane-edge offsets and "no fast nets between connectors" are all terms of it.
-- **Sizes [C]:** a slot under a trace adds ΔL ≈ μ0·l/(2 ln(4l/g)), 2.5 nH for 20 × 0.5 mm, nearly independent of trace height and not linear in l (up to 1.5× above PEEC for short narrow slots, below Ott's l·ln l data for long ones; [red-team](red-team.md) §2). A return via at distance s adds only (μ0·t/π)·ln(s/r), about 0.1–0.3 nH; its main job is to stop the via launching a wave into the plane pair. s ≈ λ_d/10 at Nyquist reproduces TI's 200 mil (5 Gb/s) and, within 30%, its 50 mil (Gen5).
+- **Sizes [C]:** a slot under a trace adds ΔL ≈ μ0·l/(2 ln(4l/g)), 2.5 nH for 20 × 0.5 mm, nearly independent of trace height and not linear in l (up to 1.5× above PEEC for short narrow slots, below Ott's l·ln l data for long ones; [verification-and-limits](verification-and-limits.md) §2). A return via at distance s adds only (μ0·t/π)·ln(s/r), about 0.1–0.3 nH; its main job is to stop the via launching a wave into the plane pair. s ≈ λ_d/10 at Nyquist reproduces TI's 200 mil (5 Gb/s) and, within 30%, its 50 mil (Gen5).
 - **Crosstalk is field overlap.** Microstrip coupling falls as ~(h/D)², stripline as exp(−πD/b) (about −11 dB per extra h), and stripline FEXT is zero. At 3W, saturated NEXT is 1.3% in microstrip and 0.02% in stripline, so spacing must come from a per-victim noise budget, not "3W".
 - **Plane pairs are cavities.** A stitching pattern has a computable first resonance. Square grids follow the wire-medium cut-off within 3–16%. A grid beats random vias of the same count by up to 2.2×. Perimeter-only stitching raises the first mode only ~1.5×. "Largest empty circle" predicts the first mode within about ±30%; the cavity eigenvalue takes seconds.
 - **Differential pairs:** tighter coupling lowers emission only while k·s exceeds the driver imbalance ε, so it stops helping below s* = ελ/2π (0.5 mm at 1 GHz and 1%: Johnson's number). At 100 Ω, loose coupling allows ~55% wider traces (about 30% less conductor loss). Skew converts to common mode as |sin(πfΔt)|/2.
@@ -19,7 +19,7 @@
 | Microstrip, height h | K(x) = (I/π)·h/(h²+x²) | within ±1h / ±3h / ±10h / ±20h: 50 / 80 / 94 / 97% = (2/π)·atan(x/h) [I]. PEEC with w = 2h: 51 / 78 / 94% [C fe_peec_plane] |
 | Stripline, trace at h1 in a cavity of height b | ∝ sin(πh1/b) / (cosh(πx/b) − cos(πh1/b)) (conformal map) [I] | tails fall as exp(−π\|x\|/b); share on the nearer plane = 1 − h1/b (75% for h1 = b/4, matching Adamczyk [S]) |
 
-- **Correction to [si-fundamentals](../rules/si-fundamentals.md):** its "97% within ±10h" should be ±20h: Adamczyk's 97% is for 200 mil either side of a trace 10 mil up ([In Compliance](https://incompliancemag.com/pcb-return-current-distribution-in-a-microstrip-line/) [S]); the filament formula gives 94% at ±10h.
+- **Adamczyk's measurement:** 97% lies within 200 mil either side of a trace 10 mil up, i.e. ±20h ([In Compliance](https://incompliancemag.com/pcb-return-current-distribution-in-a-microstrip-line/) [S]), as the filament formula predicts.
 - **Validation of our PEEC:** loop inductance of a w = 2h microstrip is 0.302 nH/mm vs 0.298 nH/mm from Z0_air/c [C].
 
 ### 2. Discontinuities as extra return impedance
@@ -49,7 +49,7 @@ It has two projections:
 | Stitching caps ≤ 1 µF at unavoidable crossings | A shunt across ΔZ_slot: ~10 dB above its SRF (EMI case C) |
 | Avoid power-plane references and P↔G changes | Decap path plus cavity term |
 | ≥ 2h / 3h / 90 mil from plane edges | Edge enhancement of L_net (smooth, ~1/√d) |
-| No fast circuitry between connectors; cabled connectors on one edge | κ_ab: ≥ 40 dB less plane voltage between cable points on one edge (PEEC); the board-vs-cable mode leaves a 6–48 dB benefit ([fields-emi-budget](fields-emi-budget.md)) |
+| No fast circuitry between connectors; cabled connectors on one edge | κ_ab: 43–63 dB less plane voltage between cable points on one edge (PEEC); the board-vs-cable mode limits the benefit to 6–48 dB by orientation ([fields-emi-budget](fields-emi-budget.md)) |
 | Ott's layer-change order 1→4 | Ranking of ΔZ by transition type |
 | No ground fill on multilayer boards | No term: fill adds no return path beside a plane |
 | Slow edges first; series termination | I_n(f) |
@@ -131,7 +131,6 @@ Cavity model [C fe_cavity]: a 40 × 30 mm GND–GND pair, 0.2 mm apart, εr 4.3,
 6. **Choose pair coupling** from loss, density and skew, not EMI. Budget skew from the common-mode spec through sin(πfΔt)/2.
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** slot ΔL is not per-mm; converged fill Z0 shifts; same-edge cables 6–48 dB, not 40 ([red-team](red-team.md)).
 - PEEC here is quasi-static (no radiation, valid while slots are < λ/4), with zero-thickness planes. Check the ΔL formula against openEMS on 2–3 geometries.
 - The cavity model has open (PMC) edges and no radiation loss, so overstates resonance Q. Edge-radiation claims (the Ott side of the stitching debate) need full-wave checks.
 - Fence isolation scatters widely in finite boards, so no simple pitch rule is safe for compartments.

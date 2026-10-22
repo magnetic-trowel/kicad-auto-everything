@@ -1,6 +1,6 @@
 # Physics-first ideas: joint placement and routing (JPR)
 
-Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, why it beats staged place-then-route, and how to test it. Tags: *new* (not found in the survey), *combo* (known parts, new combination), *sharp* (a sharpened version of an existing idea). Effort: S (days), M (weeks), L (months). Evidence and the recommended architecture are in [joint-place-route](../../topics/physics/joint-place-route.md); the proof of concept is in [joint-place-route-experiment](../../topics/physics/joint-place-route-experiment.md). Existing ideas referenced: P1, P7, S1, S6, R1, R2, I1, I4 in the [original catalog](../original/README.md).
+Each idea is a numbered entry with a bold name, its mechanism, why it beats staged place-then-route, and how to test it. Tags: *new* (not found in the survey), *combo* (known parts, new combination), *sharp* (a sharpened version of an existing idea). Effort: S (days), M (weeks), L (months). Evidence and the recommended architecture are in [joint-place-route](../../topics/physics/joint-place-route.md); the proof of concept is in [joint-place-route-experiment](../../topics/physics/joint-place-route-experiment.md). Existing ideas referenced: P1, P7, S1, S6, R1, R2, I1, I4 in the [original catalog](../original/README.md).
 
 ## Top 5 to try first
 

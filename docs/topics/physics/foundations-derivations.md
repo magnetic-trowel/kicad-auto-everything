@@ -69,7 +69,7 @@ Use ℓ_m = R_s/(πμ0f) = δ²/t as the canonical plane length. [Lens-vp](lens-
 
 Near a wedge of interior angle α, J ∝ r^(π/α−1) ([lens-sy](lens-sy.md) P6). ∫\|J\|²·r·dr converges for every α ≤ 2π, so a corner adds a bounded loss (0.56 squares for 90°). The peak diverges for α > π, so local high-p damage measures see it. Heat diffusion smooths it once √(κt) exceeds the width w (κ: copper's thermal diffusivity), which gives the pulse threshold t* = w²/κ ([lens-th](lens-th.md) D7).
 
-### D9. The netlist as a quotient (§6 of foundations)
+### D9. The netlist as a quotient (§5 of foundations)
 
 Let X be the copper complex: pieces, adjacency, vias, and displacement edges to references and the world. A netlist is X/∼, each connected conductor collapsed to one node. It keeps H0 (which pins share copper) and drops the metric (R, L, C), H1 (holes, rings, handles that carry circulation), the world node and the band dependence. Two layouts with one netlist differ only in what the quotient drops, so no netlist rule can rank them. DRC adds clearances between conductors, not the fields they guide.
 
@@ -119,6 +119,6 @@ Let X be the copper complex: pieces, adjacency, vias, and displacement edges to 
 
 - [C]: [fd_gentleness.py](../../../tools/research/physics/fd_gentleness.py), [fd_impedance_level.py](../../../tools/research/physics/fd_impedance_level.py), reusing [th_damping_ledger.py](../../../tools/research/physics/th_damping_ledger.py) and [fe_cavity.py](../../../tools/research/physics/fe_cavity.py).
 - [S]: R. M. Fano, J. Franklin Inst. 249, 1950 (Bode–Fano); O. J. Zobel, Bell Syst. Tech. J. 2, 1923 (constant-resistance networks); B. D. H. Tellegen, Philips Res. Rep. 7, 1952; Jackson, *Classical Electrodynamics* §3.4 (wedges).
-- Round-2 lens docs, linked inline.
+- Lens docs, linked inline.
 
 See also: [foundations](foundations.md) · [lens-ls](lens-ls.md) · [lens-th](lens-th.md) · [lens-cd](lens-cd.md) · [lens-sy](lens-sy.md) · [lens-vp](lens-vp.md) · [lens-ct](lens-ct.md) · [lens-in](lens-in.md)

@@ -43,7 +43,7 @@ role model + budgets (frozen per task) ─┐
 - **Inputs.** The routed board and its stackup; the role model (net roles, edge rates, currents, rails, connector classes, voltage classes); budgets from the IR (`intent.yaml` in [physics-ir](physics-ir.md); [I1/I2](../../ideas/original/intent-and-why.md)). Roles and budgets are frozen and installed by the scorer, like the DRC rules, so a method cannot relabel a clock as slow.
 - **Board physics model.** Built once and read by every critic. It removes the most common field failure in checkers, re-implementations that disagree with KiCad ([field-failure-modes](../ux/field-failure-modes.md)).
 - **Tiers** follow the evaluation stack ([evaluation-stack](../verification/evaluation-stack.md)). F0/F1 run on every candidate, F2 at stage gates, F3 on sampled findings and for calibration.
-- **Critic contract.** `critic(bpm, roles, budgets) -> (rows, markers, coverage)`. Rows are continuous values with attribution; in round 3 each value is a `Belief` with an exactness class E0–E5 and the model it is exact relative to ([physics-core-v2-api](physics-core-v2-api.md)). Coverage says, per object, whether the critic ran and whether its proxy was inside its calibrated range.
+- **Critic contract.** `critic(bpm, roles, budgets) -> (rows, markers, coverage)`. Rows are continuous values with attribution; each value is a `Belief` with an exactness class E0–E5 and the model it is exact relative to ([physics-core-v2-api](physics-core-v2-api.md)). Coverage says, per object, whether the critic ran and whether its proxy was inside its calibrated range.
 
 ### 3. Reporting
 
@@ -120,9 +120,9 @@ A layer-type-hygiene adapter variant (idea PC44) would measure the first effect.
 | caffeinated-labs/AFTONSPARV (ESP32) | USB D+ and D− only 46% and 30% over the near reference; 4 small voids near the connector (0.07–0.36 nH each) | Low at USB FS edge rates |
 | m1geo/Pi5_PCIe | PCIe TX/RX/CLK: zero voids, RPQF 1.01–1.09. Sidebands (WAKE#, SMCLK, SMDAT, CLKREQ#, PRSNT2#): 11 void crossings; In2 GND plane has 48 mm of foreign track and a 45 mm slot (half-wave ≈ 2.0 GHz) | No: the designer kept the fast pairs clean and put slow nets over the voids |
 
-Self-test with fast-net roles: M-SLOT 12/12, M-TRACE-IN-PLANE 12/12, M-DEL-RETURN-VIA 4/4, and M-SWAP-REF 3/3 (any change in reference findings counts as detection). Benign twins: 0/3 far slots and 0/4 extra GND vias fired. Two bugs found during development were themselves critic blind spots:
-- Planted slots under a same-net pad were hidden by the own-antipad exclusion, until the exclusion was limited to antipad-sized voids (≤ 2 mm).
-- Via reference tests failed inside the via's own antipad.
+Self-test with fast-net roles: M-SLOT 12/12, M-TRACE-IN-PLANE 12/12, M-DEL-RETURN-VIA 4/4, and M-SWAP-REF 3/3 (any change in reference findings counts as detection). Benign twins: 0/3 far slots and 0/4 extra GND vias fired. The self-test exposes two blind spots a critic must guard against:
+- An own-antipad exclusion hides slots under a same-net pad unless it is limited to antipad-sized voids (≤ 2 mm).
+- Via reference tests fail inside the via's own antipad.
 
 Both are the kind of escape a red team would exploit.
 
@@ -131,12 +131,11 @@ Both are the kind of escape a red team would exploit.
 1. Build the BPM, the refill contract and the six cheap critics (RET-COV, RET-VIA, PLANE-PERF, PWR-TRACE, DECAP-L, HOTLOOP-L). Productionize pc_refplane.py into a small package under `tools/` with tests on synthetic unit boards.
 2. Build the mutation benchmark before any optimizer uses a critic. Report detection, false alarms and magnitude agreement per critic version.
 3. Run the router audit on the qualified suite, Freerouting vs reference, and publish router-induced physics findings next to the existing cp1/cpk table.
-4. Calibrate F1 proxies against FastHenry, openEMS slices and the in-repo PEEC scripts (`sl_loop_peec.py`, `pw_peec.py`, `fe_peec_plane.py`, `fe_cavity.py`) before using them as rewards. Record a trust range per proxy.
+4. Calibrate F1 proxies against FastHenry, openEMS slices, the in-repo PEEC scripts (`sl_loop_peec.py`, `pw_peec.py`, `fe_peec_plane.py`, `fe_cavity.py`) and the [validation coupons](validation-coupons.md) before using them as rewards. Record a trust range per proxy.
 5. Make roles and budgets first-class task inputs. Without them a critic cannot tell a PCIe pair from a WAKE# line.
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** critic values become Beliefs with exactness classes; coupon calibration follows [validation-coupons](validation-coupons.md) ([red-team](red-team.md)).
 - **Threshold sources.** Many budgets have no primary source (hot-loop area caps, decap distances). The scorecard should show "unbudgeted" rather than invent limits ([checkers-power](../rules/checkers-power.md)).
 - **Plane inference vs declaration.** The prototype infers planes from fill share (≥ 30%), which also catches outer-layer pours. Declared planes in the IR stackup are the right source; inference is a fallback.
 - **Bridging-cap estimate.** Ours (1.2–3 nH) disagrees with Ott's 5–10 nH. It probably misses the cap's own via loop and ESL.

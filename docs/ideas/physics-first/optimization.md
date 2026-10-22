@@ -1,6 +1,6 @@
 # Physics-first ideas: optimization and generative geometry (OP)
 
-Workstream 6 of the physics-first effort. Detail and evidence:
+Detail and evidence:
 [physics-in-the-loop-optimization](../../topics/physics/physics-in-the-loop-optimization.md) and
 [copper-shape-synthesis](../../topics/physics/copper-shape-synthesis.md). The joint
 placement-and-routing state these ideas plug into is owned by
@@ -8,8 +8,6 @@ placement-and-routing state these ideas plug into is owned by
 [physics-ir](../../topics/physics/physics-ir.md). Numbers tagged [C] come from
 [op_topopt_pour.py](../../../tools/research/physics/op_topopt_pour.py) and
 [op_placement_kernels.py](../../../tools/research/physics/op_placement_kernels.py).
-
-**Round-3 corrections (2026-10-22):** PEECN's FastHenry agreement is scoped to w/h 0.3–5 and needs graded filaments on wide traces. ([red-team](../../topics/physics/red-team.md))
 
 Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination for PCB),
 *sharp* (sharpens an existing rule or idea). Effort: S (days), M (weeks), L (months).
@@ -58,7 +56,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 
 ## B. Physics terms for placement (evaluated while parts move)
 
-**OP21. Filament-PEEC loop term with an image plane.** — *sharp, S.* A Manhattan filament model with Grover's closed-form parallel-filament mutuals and a mirror image for the reference plane gives loop L within 1.5% of Grover's rectangle and within 1–10% of microstrip L′ [C]. It costs about 0.35 ms per loop in numpy, and an estimated ~1 µs per loop in a GPU batch [I]. It is differentiable in pad positions and replaces "loop area" in the placer. Workstream 3's PEECN (solved current split, FastHenry within 1.3% for 4 loops, w/h 0.3–5, 100 MHz; graded filaments needed for w/h > 10) is the reference ([open-solvers](../../topics/physics/open-solvers.md)). Test: rank correlation with PEECN on 30 hot loops vs the area proxy.
+**OP21. Filament-PEEC loop term with an image plane.** — *sharp, S.* A Manhattan filament model with Grover's closed-form parallel-filament mutuals and a mirror image for the reference plane gives loop L within 1.5% of Grover's rectangle and within 1–10% of microstrip L′ [C]. It costs about 0.35 ms per loop in numpy, and an estimated ~1 µs per loop in a GPU batch [I]. It is differentiable in pad positions and replaces "loop area" in the placer. The PEECN solver (solved current split, FastHenry within 1.3% for 4 loops, w/h 0.3–5, 100 MHz; graded filaments needed for w/h > 10) is the reference ([open-solvers](../../topics/physics/open-solvers.md)). Test: rank correlation with PEECN on 30 hot loops vs the area proxy.
 
 **OP22. Use path length × plane depth, not loop area, when a plane is close.** — *sharp, S.* With a solid plane 0.1 mm below, equal-area loops differ 1.7× in L, and L tracks perimeter to within 3% (0.052–0.055 nH/mm for 1.5 mm strips) [C]. L ∝ perimeter holds within ±8% once h ≤ b/4 (b = forward-to-return spacing), with a constant near 0.85·L′(w, h). Without a plane, equal-area loops still differ by 18%. Test: same as OP21, split by h/b.
 

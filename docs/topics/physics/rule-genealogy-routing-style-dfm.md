@@ -85,7 +85,6 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Never let the LLM emit "short", "wide", "close", "no vias" or "keep away" without the quantity it means (RG10).
 
 ## Conflicts and open questions
-- **Round-3 corrections (2026-10-22):** R25 drops "reflow 0201/0402 balance": reliefs have no physical effect in reflow ([derivation-audit](derivation-audit.md); [red-team](red-team.md)).
 - **R05 vs R10/R13:** short vs over-plane vs length-matched; each optimises a different quantity (L vs Z-delay).
 - **R25 vs R26:** solderability (Fab/Th of the joint) vs loop L and IR; the selector is the assembly process plus the loop budget.
 - **R34:** a big pour lowers R, L and Th on quiet nets, but raises Cm on switching nodes (P07). Pour shape is a multi-objective problem, not a style choice; see [power-copper](power-copper.md) and [copper-shape-synthesis](copper-shape-synthesis.md).
