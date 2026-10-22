@@ -19,11 +19,11 @@ Part roles come in two steps.
    body) is a shunt; a resistor pair from a node to a rail and to ground is a divider; and so
    on. structures.py refines roles for parts that belong to a structure.
 
-Net roles: ground (signal, analog, power, chassis, isolated), power rails with a voltage
+Net roles: ground (signal, analog, power, chassis, isolated), rails with a voltage
 Belief (name, regulator part number, USB, battery; capacitor ratings bound it), switch
 nodes, clocks, high-speed nets and differential pairs (by interface), analog-sensitive nets,
 RF, reset and boot, and general signals with an interface tag. Each net gets one primary
-role (priority ground > power > switch_node > rf > clock > high_speed > analog > reset/boot
+role (priority ground > rail > switch_node > rf > clock > high_speed > analog > reset/boot
 > signal) and keeps the others as tags.
 
 All decisions carry `Evidence` (evidence.py); confidences are logistic in summed log odds.
@@ -43,6 +43,10 @@ I = re.I
 
 
 def rx(p, flags=I):
+    """Compile a pattern; rx(0, pattern) compiles it case-sensitively (lib ids are CamelCase, and
+    case-insensitive substrings misfire: 'ExtraFootprints' contains 'traFo')."""
+    if isinstance(p, int):
+        p, flags = flags, p
     return re.compile(p, flags)
 
 
@@ -78,7 +82,7 @@ PREFIX = {
     'RV': {'potentiometer': 2.0, 'varistor': 0.8}, 'POT': {'potentiometer': 2.5},
     'TH': {'thermistor': 1.5}, 'RT': {'thermistor': 1.5}, 'NTC': {'thermistor': 2.5},
     'AE': {'antenna': 3.0}, 'ANT': {'antenna': 3.0}, 'E': {'antenna': 0.5},
-    'HS': {'heatsink': 3.0}, 'A': {'module': 1.0}, 'MOD': {'module': 2.0},
+    'HS': {'heatsink': 3.0}, 'A': {'module': 1.0}, 'MOD': {'module': 2.0}, 'SH': {'mechanical': 1.5}, 'MCU': {'ic': 1.5, 'module': 1.0},
     'OK': {'optocoupler': 2.0}, 'OC': {'optocoupler': 1.5}, 'ISO': {'optocoupler': 1.0, 'ic': 1.0},
     'LOGO': {'graphic': 3.0}, 'KIBUZZARD': {'graphic': 3.0}, 'GRAPHIC': {'graphic': 3.0},
 }
@@ -166,7 +170,7 @@ TEXT_RULES = [
     ('varistor', None, 3.0, rx(r'varistor|\bMOV\b|\bMOV-|\bV\d{2,3}E|\bS\d{2}K\d')),
     ('optocoupler', None, 3.0, rx(r'opto.?coupler|optoisolator|photocoupler|\bPC817|\b6N13[5-9]|\bTLP\d{3}|\bH11[A-L]\d|\b4N2[5-8]|\b4N3[5-7]|'
                                    r'\bMOC\d{4}|\bGAQY|\bEL817|\bPS2501|\bVTL5C|\bLTV-?\d|\bSFH\d{3}|\bACPL|\bHCPL|\bVO\d{3,4}')),
-    ('module', None, 2.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
+    ('module', None, 3.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
                               r'\bWeMos|\bDevKit|\bbreakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
                               r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module')),
     ('graphic', None, 2.5, rx(r'\blogo\b|\bOSHW\b|\bWEEE\b|\bROHS\b|\bkibuzzard|\bQRCode|\bgraphic|\bSign_|\bLONGTHING|\bart\b|\bCreative_Commons')),
@@ -174,46 +178,46 @@ TEXT_RULES = [
 ]
 
 LIB_RULES = [
-    ('capacitor', 3.0, rx(r'(^|:)(C|CP|CAP)_|Capacitor|CAP[CM]\d{4}|EIA_\d{4}_CAP|Cap_|_Elec_|C_Elec|Capacitors|CP_Radial|C_Disc|C_Rect')),
-    ('resistor', 3.0, rx(r'(^|:)R_(?!Array|Pack|POT)|Resistor(?!_Array)|RES[CM]\d{4}|EIA_\d{4}_RES|Resistors')),
-    ('resistor_array', 3.0, rx(r'R_Array|Resistor_Array|R_Pack|Resistor_Pack|ARRAY|CAY16|_Array_')),
-    ('inductor', 2.5, rx(r'(^|:)L_|Inductor|IND[CM]?\d{4}|IND_|EIA_\d{4}_INDUCTOR|IHLP|SRP\d|SRN\d|SRR\d|CD5\d|SWPA|Coil|INDC|HSMRH|SMDRI')),
-    ('ferrite', 3.0, rx(r'Ferrite|(^|:)FB_\d|Bead')),
-    ('common_mode_choke', 3.0, rx(r'CommonMode|Choke_Common|L_CommonMode|CMC_')),
-    ('transformer', 3.0, rx(r'Transformer|Trafo|PulseTransformer|Audio_transformer')),
-    ('diode', 2.5, rx(r'(^|:)D_|Diode|SOD-?\d{2,3}|(^|[_:])SMA(_|$)|(^|[_:])SM[BC](_|$)|DO-?\d{2}|MELF|DO214|SMA-KA|SOD\d{3}|D_SMA|Diodes_SM')),
-    ('led', 3.0, rx(r'(^|:)LED|LED_|_LED|WS2812|SK6812|SK6805|APA102|PLCC.?\d|LED-\d')),
-    ('transistor', 1.0, rx(r'Package_TO_SOT|SOT-?23|SOT-?323|SOT-?523|TO-92|TO-220|TO-252|TO-263|D2PAK|DPAK|PowerPAK|PowerDI|LFPAK|SOT-?89|'
+    ('capacitor', 3.0, rx(0, r'(^|:)(C|CP|CAP)_|Capacitor|CAP[CM]\d{4}|EIA_\d{4}_CAP|Cap_|_Elec_|C_Elec|Capacitors|CP_Radial|C_Disc|C_Rect')),
+    ('resistor', 3.0, rx(0, r'(^|:)R_(?!Array|Pack|POT)|Resistor(?!_Array)|RES[CM]\d{4}|EIA_\d{4}_RES|Resistors')),
+    ('resistor_array', 3.0, rx(0, r'R_Array|Resistor_Array|R_Pack|Resistor_Pack|ARRAY|CAY16|_Array_')),
+    ('inductor', 2.5, rx(0, r'(^|:)L_|Inductor|IND[CM]?\d{4}|IND_|EIA_\d{4}_INDUCTOR|IHLP|SRP\d|SRN\d|SRR\d|CD5\d|SWPA|Coil|INDC|HSMRH|SMDRI')),
+    ('ferrite', 3.0, rx(0, r'Ferrite|(^|:)FB_\d|Bead')),
+    ('common_mode_choke', 3.0, rx(0, r'CommonMode|Choke_Common|L_CommonMode|CMC_')),
+    ('transformer', 3.0, rx(0, r'Transformer|Trafo|PulseTransformer|Audio_transformer')),
+    ('diode', 2.5, rx(0, r'(^|:)D_|Diode|SOD-?\d{2,3}|(^|[_:])SMA(_|$)|(^|[_:])SM[BC](_|$)|DO-?\d{2}|MELF|DO214|SMA-KA|SOD\d{3}|D_SMA|Diodes_SM')),
+    ('led', 3.0, rx(0, r'(^|:)LED|LED_|_LED|WS2812|SK6812|SK6805|APA102|PLCC.?\d|LED-\d')),
+    ('transistor', 1.0, rx(0, r'Package_TO_SOT|SOT-?23|SOT-?323|SOT-?523|TO-92|TO-220|TO-252|TO-263|D2PAK|DPAK|PowerPAK|PowerDI|LFPAK|SOT-?89|'
                            r'SOT-?223|SC-?70|PG-HSOF|TDSON|SuperSO|Transistor')),
-    ('ic', 1.5, rx(r'Package_(SO|QFP|DFN_QFN|BGA|DIP|SON|CSP|LGA|PLCC|SIP)|SOIC|SSOP|TSSOP|MSOP|QFN|DFN|LQFP|TQFP|PQFP|BGA|WSON|USON|VSON|'
+    ('ic', 1.5, rx(0, r'Package_(SO|QFP|DFN_QFN|BGA|DIP|SON|CSP|LGA|PLCC|SIP)|SOIC|SSOP|TSSOP|MSOP|QFN|DFN|LQFP|TQFP|PQFP|BGA|WSON|USON|VSON|'
                    r'VQFN|WQFN|UQFN|LGA-\d|LFCSP|TSOT|PLCC|SOP-?\d|DIP-\d|WLCSP|XQFN|XSON|SON\d|QFP')),
-    ('crystal', 3.0, rx(r'Crystal|Resonator|XTAL|(^|:)Q_|Quartz')),
-    ('oscillator', 3.0, rx(r'Oscillator|(^|:)OSC|_OSC|TCXO|VCXO')),
-    ('connector', 3.0, rx(r'Connector|Conn_|CONN|PinHeader|PinSocket|Pin_Header|Socket_Strip|TerminalBlock|Terminal_|BarrelJack|DC_?Jack|'
+    ('crystal', 3.0, rx(0, r'Crystal|Resonator|XTAL|(^|:)Q_|Quartz')),
+    ('oscillator', 3.0, rx(0, r'Oscillator|(^|:)OSC|_OSC|TCXO|VCXO')),
+    ('connector', 3.0, rx(0, r'Connector|connector|Conn_|CONN|_jst_|jst_ph|jst_sh|PinHeader|PinSocket|Pin_Header|Socket_Strip|TerminalBlock|Terminal_|BarrelJack|DC_?Jack|'
                           r'(^|[_:])USB|Jack_|_Jack|AudioJack|RJ45|RJ11|MagJack|Coax|(^|[_:])SMA_|U\.?FL|IPEX|MMCX|BNC|SMPM|DSUB|D-Sub|IDC-|JST|'
                           r'Molex|Phoenix|Hirose|HRS_|FFC|FPC|microSD|SD_?Card|SDCARD|SIM_|M\.2|PCIe|PCBEdge|PCB-Edge|SODIMM|Tag-Connect|TC20[35]0|'
                           r'Samtec|FTSH|SHF|HDR-|SolderWirePad|Solderpad|WirePad|Wire_Pads|XT30|XT60|Harwin|Keystone5|MIDI|DIN5|XLR|SCART|HDMI|'
                           r'DisplayPort|SFP|QSFP|CardEdge|FMC|USB-C|TYPE-C|MINI-USB|Eurorack_Power|FanPinHeader|Power_Jack|JACK_ALIM|'
                           r'powertab|SolderPads|Socket|_Plug|Receptacle|Header')),
-    ('antenna', 3.5, rx(r'RF_Antenna|Antenna|(^|[_:])ANT_|_ANT(_|$)|PCB_Antenna')),
-    ('test_point', 3.5, rx(r'TestPoint|Test_Point|(^|:)TP_|TestPad')),
-    ('mounting_hole', 3.5, rx(r'MountingHole|Mounting_Hole|MTG\d|SCREWHOLE|ClearanceHole|Tooling_Hole|Standoff|(^|:)Hole|MECHANICAL_CLEARANCE|MTG_')),
-    ('fiducial', 3.5, rx(r'Fiducial')),
-    ('switch', 3.0, rx(r'Button_Switch|(^|:)SW_|Switch|Tactile|TASV|TL3305|SKRK|choc|Kailh|Cherry|MX_|Rotary_Encoder|Encoder|Slide')),
-    ('heatsink', 3.5, rx(r'Heatsink|HEATSINK|Heat_Sink')),
-    ('jumper', 3.0, rx(r'Jumper|SolderJumper|SolderBridge')),
-    ('net_tie', 3.5, rx(r'NetTie|Net_Tie')),
-    ('fuse', 3.0, rx(r'(^|:)Fuse|Fuse_|PTC_|Polyfuse|Littelfuse')),
-    ('battery', 3.0, rx(r'Battery|CellHolder|BatteryHolder|Keystone_?30\d\d')),
-    ('buzzer', 3.0, rx(r'Buzzer|Speaker|Beeper')),
-    ('microphone', 3.0, rx(r'Microphone|Sensor_Audio|MIC_')),
-    ('relay', 3.0, rx(r'Relay')),
-    ('potentiometer', 3.0, rx(r'Potentiometer|TRIM_|Trimmer|RV2X4')),
-    ('optocoupler', 2.5, rx(r'OptoDevice|Opto')),
-    ('module', 2.5, rx(r'(^|:)Module|RF_Module|ESP32-|WROOM|XIAO|RPi_Pico|Arduino|WeMos|DevKit|Breakout|XBEE|NORA-|RFM9\d|BL54L|SC14CVMDECT|'
-                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos')),
-    ('graphic', 3.0, rx(r'Logo|LOGO|(^|:)Symbol|kibuzzard|Graphic|OSHW|QRCode|Sign_|Panelization|w_logo|logo|Aesthetic|LONGTHING|bongo|Bongo')),
-    ('mechanical', 2.0, rx(r'(^|:)Board$|kikit|MECHANICAL|Mechanical|mikoto|Cutout')),
+    ('antenna', 3.5, rx(0, r'RF_Antenna|Antenna|(^|[_:])ANT_|_ANT(_|$)|PCB_Antenna')),
+    ('test_point', 3.5, rx(0, r'TestPoint|Test_Point|(^|:)TP_|TestPad')),
+    ('mounting_hole', 4.0, rx(0, r'MountingHole|Mounting_Hole|MTG\d|SCREWHOLE|ClearanceHole|_Clearance_|Tooling_Hole|Standoff|(^|:)Hole|MECHANICAL_CLEARANCE|MTG_|DrillHole|(^|:)M[2-6]_|PanelHole_Bourns')),
+    ('fiducial', 3.5, rx(0, r'Fiducial')),
+    ('switch', 3.0, rx(0, r'Button_Switch|(^|:)SW_|Switch|_switch|switch_|button|Tactile|TASV|TL3305|SKRK|choc|Kailh|Cherry|MX_|Rotary_Encoder|Encoder|Slide')),
+    ('heatsink', 3.5, rx(0, r'Heatsink|HEATSINK|Heat_Sink')),
+    ('jumper', 3.0, rx(0, r'Jumper|SolderJumper|SolderBridge')),
+    ('net_tie', 3.5, rx(0, r'NetTie|Net_Tie')),
+    ('fuse', 3.0, rx(0, r'(^|:)Fuse|Fuse_|PTC_|Polyfuse|Littelfuse')),
+    ('battery', 3.0, rx(0, r'Battery|CellHolder|BatteryHolder|Keystone_?30\d\d|battery_holder')),
+    ('buzzer', 3.0, rx(0, r'Buzzer|Speaker|Beeper')),
+    ('microphone', 3.0, rx(0, r'Microphone|Sensor_Audio|MIC_')),
+    ('relay', 3.0, rx(0, r'Relay')),
+    ('potentiometer', 3.0, rx(0, r'Potentiometer|TRIM_|Trimmer|RV2X4')),
+    ('optocoupler', 2.5, rx(0, r'OptoDevice|Opto')),
+    ('module', 3.5, rx(0, r'(^|:)Module|RF_Module|ESP32-|WROOM|XIAO|RPi_Pico|Arduino|WeMos|DevKit|Breakout|XBEE|NORA-|RFM9\d|BL54L|SC14CVMDECT|'
+                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos|nice_nano|nano_|_nano|xiao')),
+    ('graphic', 3.0, rx(0, r'Logo|LOGO|logo|(^|:)Symbol|kibuzzard|Graphic|GRAPHIC|OSHW|oshw|QRCode|Sign_|Panelization|w_logo|Aesthetic|LONGTHING|bongo|Bongo')),
+    ('mechanical', 2.0, rx(0, r'(^|:)Board$|kikit|MECHANICAL|Mechanical|mikoto|Cutout|PanelHole|Mech_')),
 ]
 
 # IC subtypes from part numbers; first match wins, order matters
@@ -345,7 +349,7 @@ IFACE = [
     ('qspi', 'medium', rx(r'QSPI|OSPI|OCTOSPI|QIO\d|QSPI_?SD|FLASH_?(IO|D)\d|^IO[0-3]$|_SIO\d|QSPI_?S?CLK|QSPI_?SS|OSPI_?')),
     ('spi', 'medium', rx(r'SPI|MOSI|MISO|^SCK|_SCK|SCLK|^SDO$|^SDI$|COPI|CIPO|^SDA$(?!)')),
     ('i2s', 'medium', rx(r'I2S|BCLK|LRCLK|LRCK|^WS$|MCLK|^SDOUT|^SDIN|^DOUT$|^DIN$|PDM|^ASDO|^DSDI')),
-    ('can', 'ls', rx(r'^CAN_?[HL]$|CANH|CANL|CAN_?[+-]$|CAN\d?_[HL]$|CAN.*_(H|L)$|CAN\.[HL]')),
+    ('can', 'ls', rx(r'^CAN_?[HL]$|CANH|CANL|CAN_?[+-]$|CAN\d?_[HL]$|CAN.*[_.](H|L|DP|DN|P|N)$|CAN\.[HL]')),
     ('rs485', 'ls', rx(r'RS-?485|485_?[AB]|RS485_?[AB+-]|^RS_?[AB]$|MODBUS|DMX')),
     ('i2c', 'ls', rx(r'SDA|SCL|I2C|IIC|TWI|I3C')),
     ('uart', 'ls', rx(r'UART|USART|TXD|RXD|^TX\d?$|^RX\d?$|RTS|CTS|_TX$|_RX$|^TX_|^RX_|SERIAL|CONSOLE')),
@@ -425,7 +429,7 @@ class Roles:
     nets: dict = field(default_factory=dict)      # net -> NetRole
     grounds: list = field(default_factory=list)   # ground nets, primary first
     gnd: str | None = None                        # primary ground
-    rails: dict = field(default_factory=dict)     # net -> NetRole (role 'power')
+    rails: dict = field(default_factory=dict)     # net -> NetRole (role 'rail')
     pairs: list = field(default_factory=list)     # DiffPair
     switch_nodes: dict = field(default_factory=dict)   # net -> dict(kind, parts, evidence)
     caps_to: dict = field(default_factory=dict)   # net -> [(cap ref, gnd net)]
@@ -498,6 +502,14 @@ def regulator_vout(text: str) -> tuple[float, str] | None:
                 return None
         if 0.5 <= v <= 60:
             return v, m.group(0)
+    return None
+
+
+def shunt_ohms(text: str) -> float | None:
+    """Milliohm codes in shunt part numbers: 'LVK25R005FER' -> 0.005, 'WSL2512R0100FEA' -> 0.01."""
+    m = re.search(r'\d(?:R|L)(\d{3,4})(?=[A-Z]|\b)', text or '')
+    if m and re.search(r'LVK|LVR|WSL|WSK|WSR|CSS|CSR|PMR|KRL|TLR|ULR|CSM|SMV|BVS|ERJ', text or '', re.I):
+        return float('0.' + m.group(1))
     return None
 
 
@@ -598,8 +610,16 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     if isub == 'esd_array':
         add('diode', 2.5, ev('table', f"ESD array part number '{imatch}'", 2.5))
         sub['diode'] = ('esd_array', 9.0)
-    elif isub and n_act >= 3:
+        sc['ic'] -= 2.0
+    elif isub == 'reference' and n_act >= 2:
+        add('ic', 3.0, ev('table', f"voltage reference part number '{imatch}'", 3.0))
+    elif isub and n_act >= 3 and not (sc.get('module', 0) >= 3.0 and isub in ('mcu', 'rf')):
         add('ic', 1.5, ev('table', f"part number '{imatch}' ({isub})", 1.5))
+    if sc.get('mounting_hole', 0) >= 3.5 and part.npads <= 1 or (sc.get('mounting_hole', 0) >= 3.5 and
+                                                                  len({p.net for p in part.pins}) <= 1):
+        add('mounting_hole', 1.0, ev('footprint', 'a mounting-hole footprint with one net at most', 1.0))
+    if re.search(r'\bjumper\b', part.value, re.I) and part.npads <= 3:
+        add('jumper', 1.0, ev('value', f"value '{part.value}'", 1.0))
     # two-terminal crystal vs oscillator: an oscillator has a supply pin
     if (sc.get('crystal') or sc.get('oscillator')) and any(PWR_PIN.match(f) or f in ('OUT', 'OUTPUT', 'CLK', 'VDD', 'VCC', 'EN', 'OE', 'ST', 'TRI-STATE')
                                                            for f in fns):
@@ -615,8 +635,10 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
                     subtype = k2
     if kind == 'connector':
         subtype = None          # set from nets later (connector_type)
-    if kind == 'resistor' and res is not None and 0 < res <= 0.2:
-        subtype = 'shunt'
+    if kind == 'resistor':
+        ohm = res if res is not None else shunt_ohms(text)
+        if ohm is not None and 0 < ohm <= 0.2:
+            subtype = 'shunt'
     return kind, subtype, p, sorted(evs.get(kind, []), key=lambda e: -e.weight)
 
 
@@ -850,6 +872,17 @@ def _switch_nodes(nl: Netlist, roles: Roles):
                     continue
                 sw[p.net] = dict(kind='bridge_output', ic=ref, evidence=[ev('pinfunction', f"bridge output pin {p.label} of {pr.subtype}", STRONG)],
                                  score=STRONG)
+    # an in-line phase shunt (<= 0.2 ohm) carries the switch node on to its far side
+    for net, d in list(sw.items()):
+        for p in nl.pins(net):
+            if roles.parts[p.ref].kind != 'resistor':
+                continue
+            o = V.resistance(nl.parts[p.ref].value)
+            far = nl.other_net(nl.parts[p.ref], net)
+            if o is not None and 0 < o <= 0.2 and far and far not in g and far not in sw and not roles.caps_to.get(far):
+                sw[far] = dict(kind=d['kind'] + '_via_shunt', via=p.ref, of=net, ic=d.get('ic'),
+                               evidence=[ev('topology', f"far side of in-line shunt {p.ref} from switch node '{nl.nets[net].short}'", STRONG)],
+                               score=STRONG)
     roles.switch_nodes = sw
     for net, d in sw.items():
         roles.nets[net] = NetRole(net, 'switch_node', d['kind'], confidence(d['evidence'], prior=-1.0), d['evidence'], attrs={k: v for k, v in d.items() if k not in ('evidence',)})
@@ -922,7 +955,7 @@ def _rails(nl: Netlist, roles: Roles):
         conf = confidence(evs, prior=-2.5)
         if conf < 0.5:
             continue
-        nr = NetRole(net, 'power', None, conf, evs)
+        nr = NetRole(net, 'rail', None, conf, evs)
         nr.attrs['volts'] = _rail_voltage(nl, roles, net, vname, pd_ctrl)
         roles.rails[net] = nr
         roles.nets[net] = nr
@@ -1039,7 +1072,8 @@ def connector_type(nl: Netlist, roles: Roles, part: Part) -> tuple[str, list]:
         evs.append(ev('pinfunction', 'Ethernet pair pin functions', MODERATE))
         ctype = 'ethernet'
     sw_nets = [n for n in nets if re.search(r'SWDIO|SWCLK|^TCK$|^TMS$|^TDI$|^TDO$|JTAG|SWD|UPDI', n)]
-    if len(sw_nets) >= 2 and ctype in (None, 'header', 'wire_to_board'):
+    n_sig = len({p.net for p in part.pins if p.net and p.net not in roles.grounds and p.net not in roles.rails}) or 1
+    if len(sw_nets) >= 2 and len(sw_nets) >= 0.3 * n_sig and ctype in (None, 'header', 'wire_to_board'):
         evs.append(ev('name', f"debug nets ({', '.join(sw_nets[:3])})", MODERATE))
         ctype = 'debug'
     can = [n for n in nets if re.search(r'CAN_?[HL]$|CANH|CANL|CAN.*_[HL]$', n)]
@@ -1136,6 +1170,13 @@ def _pairs(nl: Netlist, roles: Roles):
                 if r.search(pa.short) or r.search(base.replace('*', 'P')):
                     iface, speed = name_, sp
                     break
+            if iface == 'unknown' and cl.strip():
+                for name_, sp, r in IFACE:
+                    if name_ not in ('i2c', 'uart', 'debug', 'spi', 'mdio') and r.search(cl):
+                        iface, speed = name_, sp
+                        break
+                if iface == 'unknown' and 'CAN' in cl:
+                    iface, speed = 'can', 'ls'
             if iface in ('i2c', 'uart', 'debug', 'spi', 'mdio'):
                 continue
             if iface == 'unknown':
@@ -1214,10 +1255,10 @@ def _signal_roles(nl: Netlist, roles: Roles):
             evs.append(ev('topology', f"crystal {xtal_nets[net]} terminal", STRONG + 1))
         if net in osc_out:
             evs.append(ev('topology', f"oscillator {osc_out[net]} output", STRONG + 1))
-        xp = [p for p in pins if XTAL_PIN.search(p.fn) and roles.parts[p.ref].kind in ('ic', 'module')]
+        xp = [p for p in pins if XTAL_PIN.search(p.fn) and not re.search(r'SWCLK|TCK|JTAG', p.fn) and roles.parts[p.ref].kind in ('ic', 'module')]
         if xp:
             evs.append(ev('pinfunction', f"clock pin {xp[0].label}", MODERATE))
-        if CLOCK_NET.search(s) and not re.search(r'SCL|I2C', s):
+        if CLOCK_NET.search(s) and not re.search(r'SCL|I2C|SWCLK|SWDCLK|TCK|JTAG|SWD', s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
         if evs:
             sub = 'xtal' if net in xtal_nets else 'oscillator_out' if net in osc_out else (
@@ -1374,8 +1415,10 @@ def _part_roles(nl: Netlist, roles: Roles):
                 if a in roles.switch_nodes or b in roles.switch_nodes:
                     role = 'bootstrap_or_snubber'
                 evs = [ev('topology', 'between two non-ground nets', WEAK)]
-        elif k == 'resistor' and t:
+        elif k == 'resistor' and t and len(part.active_pins()) <= 2:
             ohm = V.resistance(part.value)
+            if ohm is None:
+                ohm = shunt_ohms(part.text())
             pr.attrs['ohms'] = ohm
             a, b = t
             if ohm is not None and 0 < ohm <= 0.2:
@@ -1408,8 +1451,10 @@ def _part_roles(nl: Netlist, roles: Roles):
                 elif any(x and x.role == 'high_speed' for x in (sa, sb)) and ohm is not None and ohm <= 100:
                     role = 'series_termination'
                     evs.append(ev('value', f"{V.si(ohm, 'Ω')} on a high-speed net", MODERATE))
-        elif k == 'resistor' and part.npads == 4:
+        elif k == 'resistor' and len(part.active_pins()) >= 3:
             ohm = V.resistance(part.value)
+            if ohm is None:
+                ohm = shunt_ohms(part.text())
             if ohm is not None and ohm <= 0.2:
                 role = 'shunt'
                 pr.attrs['ohms'] = ohm

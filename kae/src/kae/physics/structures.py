@@ -1,0 +1,628 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Structure models of the place terms: each returns a spend in physical units from the
+current poses, through a shared pose state (lists X, Y, C, S, G per part: position,
+cos/sin of the rotation, side sign).
+
+A structure is a sum (or other reduction) of *components*; each component depends on a
+few parts and is cached by Terms against those parts' pose epochs, so a move recomputes
+only what it touches. Models (derivations and validation: docs/topics/physics/place-terms.md):
+
+* `LoopComp`: loop inductance of a chain of terminals (commutation cell; decap loop) by
+  partial inductances with images (fastloop): board hops are straight strips at the
+  reference-plane height, part-internal paths are strips at the body height with vertical
+  terminations; a ground hop over a plane of its own net is combined in parallel with the
+  via return through that plane (two-mesh formula).
+* `PlanePairLoop`: decap loop when the rail and ground are an adjacent plane pair:
+  mounting (cap body, vias) + plane-pair spreading (mu0 d / 2 pi) ln(D^2 / (r_c r_i)).
+* `CouplingComp`: aggressor-victim coupling: Neumann mutual of the two loops with images
+  (inductive, M di/dt) and patch mutual capacitance (C dv/dt into the victim impedance).
+* `CrystalComp`: Pierce load pulling from the trace capacitance of the XIN/XOUT nets.
+* `ThermalField`: fin kernel with adiabatic-edge images; victims' rise from all sources
+  and each source's own rise, incremental by rows and columns.
+* `CmComp`, `EsdComp`, `FeedComp`: world node (cable common-mode current), protection
+  order (ESD loop inductance), antenna feed loss.
+"""
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from . import fastloop as FL
+from .kernels import EPS0, cprime_hj, gmd_rect, trapezoid_envelope
+
+INF = float('inf')
+_hyp = math.hypot
+
+
+class Term:
+    """A terminal: part i, library-frame point (lx, ly), effective width a (mm)."""
+    __slots__ = ('i', 'lx', 'ly', 'a', 'net')
+
+    def __init__(self, i, lx, ly, a, net=''):
+        self.i, self.lx, self.ly, self.a, self.net = i, float(lx), float(ly), float(a), net
+
+
+def txy(st, t):
+    i = t.i
+    c, s, g = st.C[i], st.S[i], st.G[i]
+    ly = t.ly * g
+    return st.X[i] + t.lx * c + ly * s, st.Y[i] - t.lx * s + ly * c
+
+
+class State:
+    """Pose arrays shared by all components (lists for fast scalar access)."""
+
+    def __init__(self, n):
+        self.X = [0.0] * n
+        self.Y = [0.0] * n
+        self.R = [0.0] * n
+        self.C = [1.0] * n
+        self.S = [0.0] * n
+        self.G = [1.0] * n
+
+    def set(self, i, x, y, rot, side):
+        self.X[i] = float(x)
+        self.Y[i] = float(y)
+        rot = float(rot) % 360.0
+        self.R[i] = rot
+        if rot == 0.0:
+            c, s = 1.0, 0.0
+        elif rot == 90.0:
+            c, s = 0.0, 1.0
+        elif rot == 180.0:
+            c, s = -1.0, 0.0
+        elif rot == 270.0:
+            c, s = 0.0, -1.0
+        else:
+            r = math.radians(rot)
+            c, s = math.cos(r), math.sin(r)
+        self.C[i] = c
+        self.S[i] = s
+        if isinstance(side, str):
+            self.G[i] = -1.0 if side[:1] in ('B', 'b') else 1.0
+        else:
+            self.G[i] = -1.0 if side < 0 else 1.0
+
+    def get(self, i):
+        return (self.X[i], self.Y[i], self.R[i], 'F' if self.G[i] > 0 else 'B')
+
+
+# ============================================================================ loops
+class LoopComp:
+    """Loop inductance (nH) of a closed chain of terminals.
+
+    terms: list of Term in current order; kinds[k] for the hop T_k -> T_{k+1}: 'board' or
+    'body'; widths[k]; zb[k] body height for 'body' hops; gnd_hop: index of the board hop
+    on the return (ground) net, or None; gnd_nets: set of ground net names."""
+
+    def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15):
+        self.bv = bv
+        self.T = terms
+        self.kinds = kinds
+        self.w = widths
+        self.zb = zb
+        self.gnd_hop = gnd_hop
+        self.gnd_nets = set(gnd_nets)
+        self.parts = tuple(sorted({t.i for t in terms}))
+        self.cos_min = knobs.pair_cos_min if knobs else 0.3
+        self.detour = knobs.hop_detour if knobs else 1.0
+        self.rvia = rvia
+        self._tie = {}
+
+    def _ties(self, h):
+        """Self + own-pair mutual of the vertical terminations of every body hop (rigid)."""
+        key = round(h, 3) if h != INF else INF
+        v = self._tie.get(key)
+        if v is None:
+            v = 0.0
+            hb = 0.0 if h == INF else h
+            for k, kind in enumerate(self.kinds):
+                if kind != 'body':
+                    continue
+                t0, t1 = self.T[k], self.T[(k + 1) % len(self.T)]
+                # library-frame distance between the two terminations (rigid)
+                d = _hyp(t0.lx - t1.lx, t0.ly - t1.ly)
+                r = gmd_rect(self.w[k])
+                V = [(0.0, 0.0, hb, hb + self.zb[k], r), (d, 0.0, hb + self.zb[k], hb, r)]
+                v += FL._vertical_terms([], V) if h != INF else (FL.m_self(self.zb[k], r) * 2.0
+                                                                 - 2.0 * FL.m_par(self.zb[k], self.zb[k], 0.0, max(d, 1e-6)))
+            self._tie[key] = v
+        return v
+
+    def value(self, st):
+        T = self.T
+        n = len(T)
+        P = [txy(st, t) for t in T]
+        G = st.G
+        side = G[T[0].i]
+        cx = sum(p[0] for p in P) / n
+        cy = sum(p[1] for p in P) / n
+        bv = self.bv
+        h = bv.h_ref(side, cx, cy)
+        H = []
+        Vthru = []
+        for k in range(n):
+            x0, y0 = P[k]
+            x1, y1 = P[(k + 1) % n]
+            if self.kinds[k] == 'body':
+                H.append((x0, y0, x1, y1, self.w[k], (h + self.zb[k]) if h != INF else INF))
+            else:
+                if self.detour != 1.0:
+                    # stretch the hop about its midpoint
+                    mx, my = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+                    f = self.detour
+                    x0, y0 = mx + (x0 - mx) * f, my + (y0 - my) * f
+                    x1, y1 = mx + (x1 - mx) * f, my + (y1 - my) * f
+                H.append((x0, y0, x1, y1, self.w[k], h))
+                ia, ib = T[k].i, T[(k + 1) % n].i
+                if G[ia] != G[ib]:
+                    Vthru.append((x1, y1))
+        L = self._sum(H, h, side)
+        L += self._ties(h)
+        if Vthru:
+            t = bv.thickness
+            r = self.rvia
+            for a in range(len(Vthru)):
+                L += FL.m_self(t, r)
+                for b in range(a + 1, len(Vthru)):
+                    d = _hyp(Vthru[a][0] - Vthru[b][0], Vthru[a][1] - Vthru[b][1])
+                    L -= 2.0 * FL.m_par(t, t, 0.0, max(d, r))
+        return L
+
+    def _sum(self, H, h, side):
+        """Sum over horizontal segments; the ground hop in parallel with a via return when
+        the plane under the loop belongs to a ground net."""
+        n = len(H)
+        cm = self.cos_min
+        selfs = [FL.strip_self(_hyp(s[2] - s[0], s[3] - s[1]), s[4], s[5]) for s in H]
+        g = self.gnd_hop
+        A = 0.0
+        MAB = 0.0
+        for k in range(n):
+            if k != g:
+                A += selfs[k]
+        for j in range(n):
+            ax, ay, bx, by, wj, hj = H[j]
+            lj = _hyp(bx - ax, by - ay)
+            if lj < 1e-9:
+                continue
+            for k in range(j + 1, n):
+                cx_, cy_, dx_, dy_, wk, hk = H[k]
+                lk = _hyp(dx_ - cx_, dy_ - cy_)
+                if lk < 1e-9:
+                    continue
+                c = ((bx - ax) * (dx_ - cx_) + (by - ay) * (dy_ - cy_)) / (lj * lk)
+                if -cm < c < cm:
+                    continue
+                same = abs(hj - hk) < 1e-9 if (hj != INF and hk != INF) else (hj == hk)
+                if same and abs(bx - cx_) < 1e-9 and abs(by - cy_) < 1e-9:
+                    m = FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, 0.0, True)
+                elif same and abs(dx_ - ax) < 1e-9 and abs(dy_ - ay) < 1e-9:
+                    m = FL.m_hh(cx_, cy_, dx_, dy_, ax, ay, bx, by, 0.0, True)
+                else:
+                    dz = abs(hj - hk) if (hj != INF and hk != INF) else 0.0
+                    m = FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, dz, False)
+                if hj != INF and hk != INF:
+                    m -= FL.m_hh(ax, ay, bx, by, cx_, cy_, dx_, dy_, hj + hk, False)
+                if j == g or k == g:
+                    MAB += m
+                else:
+                    A += 2.0 * m
+        if g is None:
+            return A
+        B = selfs[g]
+        lateral = A + B + 2.0 * MAB
+        if h == INF or self.bv.plane_net(side, 0.5 * (H[g][0] + H[g][2]), 0.5 * (H[g][1] + H[g][3])) not in self.gnd_nets:
+            return lateral
+        # via return: two vias of height h at the ends of the ground hop, antiparallel
+        x0, y0, x1, y1 = H[g][0], H[g][1], H[g][2], H[g][3]
+        d = max(_hyp(x1 - x0, y1 - y0), 2.0 * self.rvia)
+        r = self.rvia
+        C = 2.0 * (FL.m_self(h, r) + FL._collinear(h, h, 0.0)) \
+            - 2.0 * (FL.m_par(h, h, 0.0, d) + FL.m_par(h, h, -2.0 * h, d))
+        if B + C <= 1e-12:
+            return lateral
+        return A + MAB + (B + MAB) * (C - MAB) / (B + C)
+
+class PlanePairLoop:
+    """Decap loop over a rail/ground plane pair: cap mounting + spreading + IC mounting."""
+
+    def __init__(self, bv, t_pwr, cap_terms, d_pair, mount_cap, mount_ic, r_eff=0.3):
+        self.bv = bv
+        self.tp = t_pwr          # IC power terminal
+        self.tc = cap_terms      # (rail pad terminal, gnd pad terminal)
+        self.d = d_pair
+        self.mc = mount_cap      # function(h) -> nH
+        self.mi = mount_ic
+        self.r = r_eff
+        self.parts = tuple(sorted({t_pwr.i, cap_terms[0].i}))
+
+    def value(self, st):
+        px, py = txy(st, self.tp)
+        cx, cy = txy(st, self.tc[0])
+        D = max(_hyp(px - cx, py - cy), self.r)
+        side = st.G[self.tc[0].i]
+        h = self.bv.h_ref(side, cx, cy)
+        return self.mc(h if h != INF else self.bv.thickness) + self.mi + \
+            0.2 * self.d * math.log(D * D / (self.r * self.r))
+
+
+# ============================================================================ coupling
+def _loop_points(st, terms, closed):
+    return [txy(st, t) for t in terms] + ([txy(st, terms[0])] if closed else [])
+
+
+_GL3 = np.polynomial.legendre.leggauss(3)
+_GL6 = np.polynomial.legendre.leggauss(6)
+
+
+def mutual_paths(pa, za, pv, zv, ha_via, hv_via, n=3):
+    """Neumann mutual (nH) between an aggressor path and a victim path over a plane at z=0.
+
+    pa, pv: (k, 2) arrays of path vertices (closed paths repeat the first vertex);
+    za, zv: heights of the horizontal parts; ha_via/hv_via: if not None, the open path is
+    closed through the plane by vertical vias of that height at both ends. The aggressor
+    is imaged (horizontal reversed, vertical same direction)."""
+    def segs(p, z, hv):
+        a = np.column_stack([p[:-1], np.full(len(p) - 1, z)])
+        b = np.column_stack([p[1:], np.full(len(p) - 1, z)])
+        if hv is not None:
+            a = np.vstack([[p[0][0], p[0][1], 0.0], a, [p[-1][0], p[-1][1], z]])
+            b = np.vstack([[p[0][0], p[0][1], z], b, [p[-1][0], p[-1][1], 0.0]])
+        return a, b
+    x, wq = (_GL3 if n == 3 else _GL6)
+    t = 0.5 * (x + 1.0)
+    w = 0.5 * wq
+
+    def gauss(a, b):
+        d = b - a
+        P = (a[:, None, :] + t[None, :, None] * d[:, None, :]).reshape(-1, 3)
+        dl = (w[None, :, None] * d[:, None, :]).reshape(-1, 3)
+        return P, dl
+    Aa, Ab = segs(np.asarray(pa, float), za, ha_via)
+    Va, Vb = segs(np.asarray(pv, float), zv, hv_via)
+    Pa, dla = gauss(Aa, Ab)
+    Pv, dlv = gauss(Va, Vb)
+    diff = Pa[:, None, :] - Pv[None, :, :]
+    R = np.sqrt((diff * diff).sum(-1))
+    m = ((dla @ dlv.T) / np.maximum(R, 1e-6)).sum()
+    Pi = Pa * np.array([1.0, 1.0, -1.0])
+    dli = dla * np.array([-1.0, -1.0, 1.0])
+    diff = Pi[:, None, :] - Pv[None, :, :]
+    R = np.sqrt((diff * diff).sum(-1))
+    m += ((dli @ dlv.T) / np.maximum(R, 1e-6)).sum()
+    return 0.1 * float(m)
+
+
+def patches_cm(pa, pv, h, eps_r, wa=0.3, wv=0.2):
+    """Mutual capacitance (pF) between the copper of an aggressor node and a victim net,
+    each a list of patches (x, y, area mm^2), at height h over a plane (h = inf: free
+    space, approximated by h = 1.6 mm). First order in the potential coefficients."""
+    if not pa or not pv:
+        return 0.0
+    h = 1.6 if h == INF else max(h, 0.05)
+    cm = 0.0
+    k = 1.0 / (4.0 * math.pi * EPS0)
+    for xa, ya, Aa in pa:
+        ca = EPS0 * eps_r * Aa / h + EPS0 * 2.0 * math.sqrt(Aa)      # plate + fringe (E5)
+        for xv, yv, Av in pv:
+            cv = EPS0 * eps_r * Av / h + EPS0 * 2.0 * math.sqrt(Av)
+            r = max(_hyp(xa - xv, ya - yv), 0.5 * (math.sqrt(Aa) + math.sqrt(Av)))
+            p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
+            cm += ca * cv * p
+    return cm
+
+
+class LoopShape:
+    """A loop for coupling: terminals in order, closed on top or through the plane."""
+
+    def __init__(self, terms, closed=True, z_extra=0.0):
+        self.T = terms
+        self.closed = closed
+        self.z = z_extra
+        self.parts = tuple(sorted({t.i for t in terms}))
+
+    def points(self, st):
+        return _loop_points(st, self.T, self.closed)
+
+
+class NodeShape:
+    """Copper of a net for capacitive coupling: its pads (terminals with areas) plus the
+    expected hops between consecutive pads (strips of width w)."""
+
+    def __init__(self, terms, areas, w=0.25):
+        self.T = terms
+        self.A = areas
+        self.w = w
+        self.parts = tuple(sorted({t.i for t in terms}))
+
+    def patches(self, st):
+        P = [txy(st, t) for t in self.T]
+        out = [(x, y, a) for (x, y), a in zip(P, self.A)]
+        for (x0, y0), (x1, y1) in zip(P[:-1], P[1:]):
+            ln = _hyp(x1 - x0, y1 - y0)
+            if ln > 1e-6:
+                out.append((0.5 * (x0 + x1), 0.5 * (y0 + y1), ln * self.w))
+        return out
+
+
+class CouplingComp:
+    """Noise (mV) one aggressor puts on one victim: |M| di/dt + capacitive pickup."""
+
+    def __init__(self, bv, agg_loop, agg_node, vic_loop, vic_node, didt, dv, t_sw, z_v, gnd_plane):
+        self.bv = bv
+        self.al, self.an, self.vl, self.vn = agg_loop, agg_node, vic_loop, vic_node
+        self.didt, self.dv, self.tsw, self.zv = didt, dv, t_sw, z_v
+        self.gp = gnd_plane
+        ps = set()
+        for o in (agg_loop, agg_node, vic_loop, vic_node):
+            if o is not None:
+                ps |= set(o.parts)
+        self.parts = tuple(sorted(ps))
+
+    def value(self, st):
+        bv = self.bv
+        v = 0.0
+        if self.al is not None and self.vl is not None:
+            pa = self.al.points(st)
+            pv = self.vl.points(st)
+            ca = np.mean(np.asarray(pa), 0)
+            cv = np.mean(np.asarray(pv), 0)
+            h = bv.h_ref(st.G[self.al.T[0].i], ca[0], ca[1])
+            if h == INF:
+                h_eff = None
+                za = zv = 1.6
+            else:
+                h_eff = h
+                za, zv = h + self.al.z, h + self.vl.z
+            if h_eff is None:
+                m = _free_mutual(pa, pv)
+            else:
+                size = max(np.ptp(np.asarray(pa), 0).max(), np.ptp(np.asarray(pv), 0).max(), 1.0)
+                dist = float(np.hypot(*(ca - cv)))
+                n = 6 if dist < 2.0 * size else 3
+                m = mutual_paths(pa, za, pv, zv, None if self.al.closed else h,
+                                 None if (self.vl.closed or not self.gp) else h, n=n)
+            v += abs(m) * self.didt        # nH * A/ns = V -> mV below
+        v *= 1e3
+        if self.an is not None and self.vn is not None:
+            pa = self.an.patches(st)
+            pv = self.vn.patches(st)
+            x0, y0 = pa[0][0], pa[0][1]
+            h = bv.h_ref(st.G[self.an.T[0].i], x0, y0)
+            cm = patches_cm(pa, pv, h, bv.er)
+            cv = sum(EPS0 * bv.er * a / (1.6 if h == INF else max(h, 0.05)) for _, _, a in pv) + 5.0  # + pins (E5 5 pF)
+            # charge division for a high-impedance victim, C dv/dt Z for a low one
+            v_c = self.dv * self.tsw * cm / (cm + cv + self.tsw * 1e3 / self.zv)   # ns*1e3/ohm = pF
+            v += 1e3 * v_c
+        return v
+
+
+def _free_mutual(pa, pv):
+    """Free-space Neumann mutual (nH) of two closed planar loops (no plane)."""
+    x, wq = _GL3
+    t = 0.5 * (x + 1.0)
+    w = 0.5 * wq
+    a = np.asarray(pa, float)
+    b = np.asarray(pv, float)
+    da = a[1:] - a[:-1]
+    db = b[1:] - b[:-1]
+    Pa = (a[:-1, None, :] + t[None, :, None] * da[:, None, :]).reshape(-1, 2)
+    Pb = (b[:-1, None, :] + t[None, :, None] * db[:, None, :]).reshape(-1, 2)
+    dla = (w[None, :, None] * da[:, None, :]).reshape(-1, 2)
+    dlb = (w[None, :, None] * db[:, None, :]).reshape(-1, 2)
+    R = np.sqrt(((Pa[:, None, :] - Pb[None, :, :]) ** 2).sum(-1))
+    return 0.1 * float(((dla @ dlb.T) / np.maximum(R, 1e-6)).sum())
+
+
+# ============================================================================ crystal
+class CrystalComp:
+    """Load pulling (ppm) of a Pierce oscillator from the expected trace capacitance."""
+
+    def __init__(self, bv, xin_terms, xout_terms, s_ppm_per_pf, w=0.2):
+        self.bv = bv
+        self.ti = xin_terms
+        self.to = xout_terms
+        self.s = s_ppm_per_pf
+        self.w = w
+        self.parts = tuple(sorted({t.i for t in xin_terms + xout_terms}))
+        self._cp = {}
+
+    def _cprime(self, h):
+        key = round(h, 3) if h != INF else INF
+        v = self._cp.get(key)
+        if v is None:
+            if h == INF:
+                v = cprime_hj(self.w, self.bv.thickness, 1.0) * 0.6      # no plane: weak, E5
+            else:
+                v = cprime_hj(self.w, h, self.bv.er)
+            self._cp[key] = v
+        return v
+
+    def length(self, st, terms):
+        xs, ys = zip(*[txy(st, t) for t in terms])
+        return (max(xs) - min(xs)) + (max(ys) - min(ys))      # RSMT = HPWL for <= 3 pins
+
+    def value(self, st):
+        x0, y0 = txy(st, self.ti[0])
+        h = self.bv.h_ref(st.G[self.ti[0].i], x0, y0)
+        cp = self._cprime(h)
+        dcl = cp * (self.length(st, self.ti) + self.length(st, self.to)) / 4.0
+        return self.s * dcl
+
+
+# ============================================================================ thermal
+class ThermalField:
+    """Board temperature rise at victims and sources by the fin kernel with images.
+
+    G(t, s) = sum_images K0(|r_t - r_img|/lam) / (2 pi G_s) over the adiabatic-edge image
+    lattice of the board's bounding box (`rings` rings); a source's own rise replaces its
+    real (r ~ 0) term by the disk-averaged self term (1 - x K1(x)) / (pi a^2 h_tot),
+    x = a/lam. Cached as a matrix G[t, s] (K/W); a moved source updates a column, a moved
+    victim a row."""
+
+    def __init__(self, bv, sources, victims, gs, lam, rings=1):
+        from scipy.special import k0, k1
+        self._k0 = k0
+        self.bv = bv
+        self.src = [s[0] for s in sources]
+        self.P = np.array([s[1] for s in sources], float)
+        self.a = np.array([max(s[2], 0.5) for s in sources], float)
+        self.vic = list(victims)
+        self.gs = gs
+        self.lam = lam
+        self.rings = rings
+        x0, y0, x1, y1 = bv.bbox
+        self.box = (x0, y0, max(x1 - x0, 1e-3), max(y1 - y0, 1e-3))
+        self.targets = list(self.src) + [v for v in self.vic]
+        self.parts = tuple(sorted(set(self.targets)))
+        ns = len(self.src)
+        self.G = np.zeros((len(self.targets), ns))
+        x = self.a / lam
+        htot = gs / (lam * lam)
+        # self correction: disk-averaged self term minus the point kernel at r = a
+        self.selfcorr = (1.0 - x * k1(x)) / (math.pi * self.a * self.a * htot) - k0(x) / (2.0 * math.pi * gs)
+        r = rings
+        self.ms = np.arange(-r, r + 1, dtype=float)
+
+    def _imgs(self, xs, ys):
+        """x- and y-image coordinates (..., 2(2r+1)) for source positions xs, ys (arrays)."""
+        x0, y0, Lx, Ly = self.box
+        u = np.asarray(xs, float)[..., None] - x0
+        v = np.asarray(ys, float)[..., None] - y0
+        m = self.ms
+        ix = x0 + np.concatenate([2 * m * Lx + u, 2 * m * Lx - u], axis=-1)
+        iy = y0 + np.concatenate([2 * m * Ly + v, 2 * m * Ly - v], axis=-1)
+        return ix, iy
+
+    def _kern(self, tx, ty, ix, iy, a):
+        """sum over images of K0(max(r, a)/lam)/(2 pi G_s); tx, ty: (n,), ix, iy: (n, k), a: (n,)"""
+        dx = tx[:, None, None] - ix[:, :, None]
+        dy = ty[:, None, None] - iy[:, None, :]
+        r = np.sqrt(dx * dx + dy * dy)
+        r = np.maximum(r, a[:, None, None])
+        return self._k0(r / self.lam).sum(axis=(1, 2)) / (2.0 * math.pi * self.gs)
+
+    def column(self, st, k):
+        i = self.src[k]
+        ix, iy = self._imgs([st.X[i]], [st.Y[i]])
+        nt = len(self.targets)
+        tx = np.array([st.X[t] for t in self.targets])
+        ty = np.array([st.Y[t] for t in self.targets])
+        g = self._kern(tx, ty, np.repeat(ix, nt, 0), np.repeat(iy, nt, 0), np.full(nt, self.a[k]))
+        g[k] += self.selfcorr[k]
+        return g
+
+    def row(self, st, t):
+        i = self.targets[t]
+        xs = np.array([st.X[s] for s in self.src])
+        ys = np.array([st.Y[s] for s in self.src])
+        ix, iy = self._imgs(xs, ys)
+        ns = len(self.src)
+        g = self._kern(np.full(ns, st.X[i]), np.full(ns, st.Y[i]), ix, iy, self.a)
+        if t < ns:
+            g[t] += self.selfcorr[t]
+        return g
+
+    def full(self, st):
+        for k in range(len(self.src)):
+            self.G[:, k] = self.column(st, k)
+        return self.G @ self.P
+
+
+# ============================================================================ world node
+class CmComp:
+    """Common-mode current (uA) an aggressor drives onto one cable connector's cable."""
+
+    def __init__(self, bv, agg_loop, agg_node, conn_loop, conn_node, I, V, t_sw, gnd_plane, world):
+        self.bv = bv
+        self.al, self.an, self.cl, self.cn = agg_loop, agg_node, conn_loop, conn_node
+        f = world['f_ref_ghz']
+        self.f = f
+        self.Iamp = trapezoid_envelope(I, f, world['period_ns'], t_sw)
+        self.Vamp = trapezoid_envelope(V, f, world['period_ns'], t_sw)
+        self.zcm = world['z_cm']
+        self.gp = gnd_plane
+        ps = set()
+        for o in (agg_loop, agg_node, conn_loop, conn_node):
+            if o is not None:
+                ps |= set(o.parts)
+        self.parts = tuple(sorted(ps))
+
+    def value(self, st):
+        bv = self.bv
+        w = 2.0 * math.pi * self.f        # rad/ns
+        i_cm = 0.0
+        if self.al is not None and self.cl is not None:
+            pa = self.al.points(st)
+            pv = self.cl.points(st)
+            ca = np.mean(np.asarray(pa), 0)
+            h = bv.h_ref(st.G[self.al.T[0].i], ca[0], ca[1])
+            if h == INF:
+                m = _free_mutual(pa, pv) if self.cl.closed else 0.0
+            else:
+                m = mutual_paths(pa, h + self.al.z, pv, h, None if self.al.closed else h,
+                                 None if self.cl.closed else h)
+            i_cm += w * abs(m) * self.Iamp / self.zcm          # nH*rad/ns*A/ohm = A
+        if self.an is not None and self.cn is not None:
+            pa = self.an.patches(st)
+            pv = self.cn.patches(st)
+            h = bv.h_ref(st.G[self.an.T[0].i], pa[0][0], pa[0][1])
+            cm = patches_cm(pa, pv, h, bv.er)
+            i_cm += w * cm * 1e-3 * self.Vamp                  # pF*rad/ns*V = mA -> A
+        return i_cm * 1e6
+
+
+class EsdComp:
+    """ESD path inductance (nH): protection device stub + its ground connection, plus the
+    path between the protected pin and the protector when the protected pin is hit first."""
+
+    def __init__(self, bv, t_conn, t_prot, t_ic, t_prot_gnd, w=0.25):
+        self.bv = bv
+        self.tc, self.tp, self.ti, self.tg = t_conn, t_prot, t_ic, t_prot_gnd
+        self.w = w
+        self.parts = tuple(sorted({t.i for t in (t_conn, t_prot, t_ic) if t is not None}))
+
+    def value(self, st):
+        ax, ay = txy(st, self.tc)
+        px, py = txy(st, self.tp)
+        side = st.G[self.tp.i]
+        h = self.bv.h_ref(side, px, py)
+        hh = self.bv.thickness if h == INF else h
+        lp = FL.strip_self(1.0, self.w, hh)          # nH per mm (1 mm segment)
+        if self.ti is not None:
+            bx, by = txy(st, self.ti)
+            ux, uy = bx - ax, by - ay
+            lab = _hyp(ux, uy)
+            if lab > 1e-9:
+                ux /= lab
+                uy /= lab
+                s = (px - ax) * ux + (py - ay) * uy          # projection of the protector on conn->IC
+                stub = abs((px - ax) * uy - (py - ay) * ux)
+                beyond = max(0.0, s - lab)                     # protector farther than the IC: IC hit first
+                before = max(0.0, -s)
+                stub += before
+            else:
+                stub, beyond = _hyp(px - ax, py - ay), 0.0
+        else:
+            stub, beyond = _hyp(px - ax, py - ay), 0.0
+        # ground connection of the protector: a via to the plane (or the board thickness)
+        r = 0.15
+        lv = FL.m_self(hh, r) + FL._collinear(hh, hh, 0.0)
+        return lp * (stub + 2.0 * beyond) + lv
+
+
+class FeedComp:
+    """Antenna feed loss (dB) from the expected route length between RF pin and antenna."""
+
+    def __init__(self, terms, alpha):
+        self.T = terms
+        self.alpha = alpha
+        self.parts = tuple(sorted({t.i for t in terms}))
+
+    def value(self, st):
+        P = [txy(st, t) for t in self.T]
+        ln = sum(_hyp(b[0] - a[0], b[1] - a[1]) for a, b in zip(P[:-1], P[1:]))
+        return self.alpha * ln

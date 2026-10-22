@@ -1,0 +1,614 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The placement problem: what moves, what is fixed, and the shapes legality is judged on.
+
+    prob = Problem.build(board)            # kae.board.model.Board
+    prob.parts[i].rots[k]                  # shapes of movable part i at rotation 90*k degrees
+
+Movable parts are the unlocked footprints with pads or graphics; fixed obstacles are the
+locked footprints, rule areas that keep out footprints (or pads), and everything outside the
+Edge.Cuts outline. Each part keeps its side (v0). Through-hole and NPTH pads block both
+sides.
+
+Shapes, per rotation, as rectangles (x0, y0, x1, y1) in mm relative to the footprint origin
+(board frame, y down):
+- `own`: the occupancy on the part's side: the bounding box of the courtyard (else the body,
+  else the pads), grown to cover every pad inflated by half the copper clearance. Two parts
+  whose `own` rectangles are disjoint have disjoint courtyards and pads at least the
+  clearance apart.
+- `opp`: rectangles on the other side: drilled pads (inflated likewise) and the courtyard the
+  footprint draws on the opposite side (`Footprint.courtyard_back`).
+- `board`: what must lie inside the outline: the pads' copper inflated by the copper-to-edge
+  clearance, plus the courtyard when the part fits on the board with it.
+- `pins`: every pad's position.
+CP-SAT works on these rectangles at the grid `g` (rounded outward, so grid-legal is legal);
+the exact check in kae.place.legalize uses KiCad's polygons.
+
+Grid coordinates: a part's origin is at (ox + X*g, oy + Y*g) for integers X, Y; grid cell
+(i, j) covers [ox + i*g, ox + (i+1)*g] x [oy + j*g, oy + (j+1)*g]. A grid rectangle
+(a, b, c, d) relative to the origin covers cells X+a .. X+b-1 and Y+c .. Y+d-1.
+"""
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass, field
+
+import numpy as np
+import shapely
+from shapely.geometry import box
+
+from kae.board import transform
+
+ROTS = (0.0, 90.0, 180.0, 270.0)
+GRID_LADDER = (0.025, 0.05, 0.1, 0.2, 0.25)
+EPS = 1e-6
+
+_GROUND_RE = re.compile(r"^(A|D|P|S|C|PWR|SIG|CHASSIS|EARTH)?(GND|VSS|GROUND|0V)\w*$|^(EARTH|PE|SHIELD)$", re.I)
+_POWER_RE = re.compile(
+    r"^([+-]?\d+V\d*|[+-]?\d+V\d*\w*|V(CC|DD|BUS|BAT|IN|SYS|CORE|IO|USB|EE|SS|PP|M|AA|CCA|CCIO|DDA|DDIO)\w*|"
+    r"\+\w+|PWR\w*|VPWR\w*|BAT\w*|VBAT\w*|[+-]?\d+V\d*_\w+|\w*_(\d+V\d*|VCC|VDD|PWR))$", re.I)
+
+
+def clean_net(name):
+    """Net name without the sheet path, for name heuristics."""
+    n = name.rsplit("/", 1)[-1] if name else ""
+    return n.replace("{slash}", "/").strip()
+
+
+def net_class_guess(name, n_pins, n_parts_total):
+    """'ground', 'power' or 'signal' from the name and fan-out (fallback without a brief)."""
+    n = clean_net(name)
+    if _GROUND_RE.match(n):
+        return "ground"
+    if _POWER_RE.match(n):
+        return "power"
+    if n_pins >= max(12, 0.4 * n_parts_total):
+        return "power"
+    return "signal"
+
+
+# ----------------------------------------------------------------------------- rectangles
+def rect_union(rs):
+    rs = [r for r in rs if r is not None]
+    if not rs:
+        return None
+    return (min(r[0] for r in rs), min(r[1] for r in rs), max(r[2] for r in rs), max(r[3] for r in rs))
+
+
+def rect_grow(r, d):
+    return None if r is None else (r[0] - d, r[1] - d, r[2] + d, r[3] + d)
+
+
+def rect_area(r):
+    return max(0.0, r[2] - r[0]) * max(0.0, r[3] - r[1])
+
+
+def rot_rect(r, rot, s):
+    """A library-frame rectangle at pose rotation `rot` (a multiple of 90 degrees) and side
+    sign `s`, as offsets from the origin. Exact: axis-aligned rectangles stay axis-aligned."""
+    x0, y0, x1, y1 = r
+    px, py = transform.pads_xy(np.array([x0, x1, x1, x0]), np.array([y0, y0, y1, y1]), 0.0, 0.0, rot, s)
+    return (float(px.min()), float(py.min()), float(px.max()), float(py.max()))
+
+
+def to_grid(r, g):
+    """mm offsets -> grid rectangle (a, b, c, d), rounded outward."""
+    return (math.floor(r[0] / g + EPS), math.ceil(r[2] / g - EPS), math.floor(r[1] / g + EPS),
+            math.ceil(r[3] / g - EPS))
+
+
+def pad_corners(p):
+    """(4, 2) library-frame corners of a pad's copper (its rectangle; circles and ovals by
+    their bounding rectangle)."""
+    w, h = p.size
+    ox, oy = p.offset or (0.0, 0.0)
+    u = np.array([-w / 2, w / 2, w / 2, -w / 2]) + ox
+    v = np.array([-h / 2, -h / 2, h / 2, h / 2]) + oy
+    c, s = transform.cos_sin(p.lrot)
+    return np.column_stack([p.lx + u * c + v * s, p.ly - u * s + v * c])
+
+
+def pad_lib_rect(p):
+    """Library-frame bounding rectangle of a pad's copper and hole (custom pads: of their
+    anchor only; the courtyard covers the primitives, see Problem._part)."""
+    c = pad_corners(p)
+    r = (float(c[:, 0].min()), float(c[:, 1].min()), float(c[:, 0].max()), float(c[:, 1].max()))
+    return rect_union([r, hole_lib_rect(p)])
+
+
+def hole_lib_rect(p):
+    if not p.drill:
+        return None
+    w, h = p.slot if p.slot else (p.drill, p.drill)
+    u = np.array([-w / 2, w / 2, w / 2, -w / 2])
+    v = np.array([-h / 2, -h / 2, h / 2, h / 2])
+    c, s = transform.cos_sin(p.lrot)
+    x = p.lx + u * c + v * s
+    y = p.ly - u * s + v * c
+    return (float(x.min()), float(y.min()), float(x.max()), float(y.max()))
+
+
+def polys_lib_rect(polys):
+    if not polys:
+        return None
+    b = shapely.total_bounds(np.asarray(polys, dtype=object))
+    if not np.all(np.isfinite(b)):
+        return None
+    return tuple(float(v) for v in b)
+
+
+def _cluster_rects(rects, max_n=8):
+    """Merge rectangles into at most max_n groups (by sorting along the longer spread)."""
+    if len(rects) <= max_n:
+        return list(rects)
+    arr = np.array(rects)
+    cx = (arr[:, 0] + arr[:, 2]) / 2
+    cy = (arr[:, 1] + arr[:, 3]) / 2
+    key = cx if np.ptp(cx) >= np.ptp(cy) else cy
+    order = np.argsort(key, kind="stable")
+    groups = np.array_split(order, max_n)
+    return [rect_union([rects[i] for i in grp]) for grp in groups if len(grp)]
+
+
+def is_drilled(p):
+    return p.kind in ("thru_hole", "np_thru_hole") or bool(p.drill)
+
+
+# ----------------------------------------------------------------------------- types
+@dataclass
+class Rot:
+    """One rotation of a part: rectangles in mm (offsets from the origin) and on the grid."""
+    rot: float
+    own: tuple
+    opp: tuple            # tuple of rects on the other side
+    board: tuple          # must lie inside the outline
+    crt: tuple            # courtyard (or body) only, for reporting
+    pins: np.ndarray      # (n_pads, 2) mm offsets
+    g_own: tuple = None
+    g_opp: tuple = ()
+    g_board: tuple = None
+
+
+@dataclass
+class Part:
+    i: int
+    uuid: str
+    ref: str
+    value: str
+    lib_id: str
+    side: str
+    s: float              # +1 front, -1 back
+    movable: bool
+    fp: object            # kae.board.model.Footprint
+    x0: float             # input pose
+    y0: float
+    rot0: float
+    tht: bool             # has drilled pads (blocks both sides)
+    decor: bool           # no pads (logo, graphic): never blocks routing
+    has_courtyard: bool
+    rots: list = field(default_factory=list)   # Rot per allowed rotation (fixed parts: one)
+    pad_net: np.ndarray = None                   # net index per pad, -1 = none
+    fits: bool = True     # the courtyard fits on the board (else only pads must be inside)
+    shape_key: tuple = ()  # parts with equal keys are interchangeable geometrically
+
+    @property
+    def area(self):
+        return rect_area(self.rots[0].own)
+
+
+@dataclass
+class Net:
+    i: int
+    name: str
+    kind: str             # ground | power | signal (or a brief role)
+    weight: float
+    pins: list            # [(part index, pad index)]
+
+
+@dataclass
+class Obstacle:
+    """A fixed rectangle on one side (0 = front, 1 = back), in mm and on the grid."""
+    side: int
+    rect: tuple
+    g: tuple              # absolute grid rect (i0, i1, j0, j1): cells i0..i1-1, j0..j1-1
+    why: str
+
+
+class Problem:
+    """Everything the seed, annealer and legalizer need, derived once from a Board."""
+
+    def __init__(self):
+        self.board = None
+        self.parts = []
+        self.nets = []
+        self.obstacles = []
+        self.g = 0.1
+        self.ox = self.oy = 0.0
+        self.ncx = self.ncy = 0
+        self.outline = None
+        self.inside = None          # bool (ncx, ncy): cell fully inside the outline
+        self.sat_out = None         # summed-area table of cells NOT inside, shape (ncx+1, ncy+1)
+        self.cover = []             # grid rects (i0, i1, j0, j1) inside the outline, overlapping
+        self.clearance = 0.0
+        self.edge_clearance = 0.0
+        self.notes = []
+
+    # ------------------------------------------------------------------ construction
+    @classmethod
+    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS):
+        """net_kinds: optional {net name: 'ground'|'power'|'signal'|role} (from the brief)."""
+        P = cls()
+        P.board = board
+        P._rules(board)
+        P._domain(board, grid)
+        name_to_net = P._nets(board, net_kinds)
+        for i, fp in enumerate(board.footprints):
+            P.parts.append(P._part(i, fp, name_to_net, rotations))
+        P._fit_check()
+        P._grid_shapes()
+        P._fixed_obstacles(board)
+        P.mov = [p.i for p in P.parts if p.movable]
+        return P
+
+    def _rules(self, board):
+        r = board.rules
+        clr = [r.clearance or 0.0] if r else [0.0]
+        if r:
+            for nc in r.netclasses.values():
+                if nc.clearance:
+                    clr.append(float(nc.clearance))
+        self.clr_min = min([c for c in clr if c > 0] or [0.2])
+        self.clr_max = max(clr + [0.0])
+        self.clearance = self.clr_max
+        e = (r.edge_clearance if r else 0.0) or 0.0
+        if r:
+            for rule in r.custom or []:
+                for c in rule.get("constraints", []):
+                    if c.get("type") == "edge_clearance" and isinstance(c.get("min"), (int, float)):
+                        e = max(e, float(c["min"]))
+        self.edge_clearance = e
+        self.max_error = (r.max_error if r else 0.005) or 0.005
+        self.netclass_clr = {}
+        if r:
+            for name, nc in r.netclasses.items():
+                self.netclass_clr[name] = float(nc.clearance) if nc.clearance else self.clr_min
+
+    def _domain(self, board, grid):
+        polys = [p for p in board.outline if p.area > 0]
+        if polys:
+            outline = shapely.union_all(polys)
+        else:
+            # no closed outline: the box around locked parts, else around everything
+            fps = [f for f in board.footprints if f.locked] or board.footprints
+            pts = np.array([[f.x, f.y] for f in fps]) if fps else np.zeros((1, 2))
+            area = sum(rect_area(polys_lib_rect(f.courtyard or f.body) or (0, 0, 1, 1)) for f in board.footprints)
+            half = max(10.0, math.sqrt(max(area, 1.0) * 2.5) / 2)
+            c = pts.mean(axis=0)
+            outline = box(c[0] - half, c[1] - half, c[0] + half, c[1] + half)
+            self.notes.append("no closed Edge.Cuts outline: placing in a box")
+        self.outline = outline
+        x0, y0, x1, y1 = outline.bounds
+        span = max(x1 - x0, y1 - y0)
+        if grid is None:
+            grid = next((g for g in GRID_LADDER if span / g <= 1000), GRID_LADDER[-1])
+        self.g = g = float(grid)
+        self.ox, self.oy = x0, y0
+        self.ncx = max(1, int(math.ceil((x1 - x0) / g - EPS)))
+        self.ncy = max(1, int(math.ceil((y1 - y0) / g - EPS)))
+        # a cell is inside when its whole square is: test centres against the outline
+        # shrunk by the half-diagonal
+        shrunk = outline.buffer(-g * 0.70711, join_style="mitre")
+        cx = x0 + (np.arange(self.ncx) + 0.5) * g
+        cy = y0 + (np.arange(self.ncy) + 0.5) * g
+        XX, YY = np.meshgrid(cx, cy, indexing="ij")
+        if shrunk.is_empty:
+            inside = np.zeros((self.ncx, self.ncy), dtype=bool)
+        else:
+            inside = shapely.contains_xy(shrunk, XX, YY)
+        self.inside = inside
+        self.sat_out = sat(~inside)
+        self.cover = cover_rects(inside)
+        self.rect_board = abs(outline.area - (x1 - x0) * (y1 - y0)) < 1e-6 * max(1.0, outline.area)
+
+    def _nets(self, board, net_kinds):
+        pins = {}
+        for i, fp in enumerate(board.footprints):
+            for k, p in enumerate(fp.pads):
+                if p.net:
+                    pins.setdefault(p.net, []).append((i, k))
+        n_parts = max(1, len(board.footprints))
+        name_to_net = {}
+        for name in sorted(pins):
+            pl = pins[name]
+            kind = (net_kinds or {}).get(name) or net_class_guess(name, len(pl), n_parts)
+            w = {"ground": 0.1, "power": 0.2}.get(kind, 1.0)
+            net = Net(i=len(self.nets), name=name, kind=kind, weight=w, pins=pl)
+            name_to_net[name] = net.i
+            self.nets.append(net)
+        return name_to_net
+
+    def _part(self, i, fp, name_to_net, rotations):
+        s = transform.side_sign(fp.side)
+        has_cy = bool(fp.courtyard)
+        cy = polys_lib_rect(fp.courtyard) or polys_lib_rect(fp.body)
+        pads = fp.pads
+        pad_rects = [pad_lib_rect(p) for p in pads]
+        # pads inflated by the clearance they need from other copper (see module docstring)
+        infl = []
+        for p, r in zip(pads, pad_rects):
+            c = self.clr_min / 2
+            if p.net and self.board.nets.get(p.net) is not None:
+                nc = self.board.nets[p.net].netclass or "Default"
+                cn = self.netclass_clr.get(nc, self.netclass_clr.get(nc.split(",")[0], self.clr_min))
+                c = max(self.clr_min / 2, cn - self.clr_min / 2)
+            infl.append(rect_grow(r, c))
+        lib_own = rect_union([cy] + infl)
+        if lib_own is None:   # no courtyard, body or pads: a point
+            lib_own = (-0.05, -0.05, 0.05, 0.05)
+        drilled = [k for k, p in enumerate(pads) if is_drilled(p)]
+        lib_opp = _cluster_rects([rect_union([infl[k], rect_grow(hole_lib_rect(pads[k]), self.clr_min / 2)])
+                                  for k in drilled])
+        if fp.courtyard_back:
+            lib_opp.append(polys_lib_rect(fp.courtyard_back))
+        lib_opp = [r for r in lib_opp if r is not None]
+        copper = rect_union(pad_rects)
+        if any(p.shape == "custom" for p in pads) and cy is not None:
+            copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard
+        lib_edge = rect_grow(copper, self.edge_clearance + 0.002) if copper is not None else None
+        lib_board_full = rect_union([lib_edge, cy if cy is not None else lib_own])
+        lib_board_pads = lib_edge if lib_edge is not None else lib_own
+        pad_net = np.array([name_to_net.get(p.net, -1) if p.net else -1 for p in pads], dtype=int)
+        local = transform.local_pads(fp)
+        movable = not fp.locked
+        part = Part(i=i, uuid=fp.uuid, ref=fp.ref, value=fp.value, lib_id=fp.lib_id, side=fp.side, s=s,
+                    movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
+                    decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
+        part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
+                         crt=cy if cy is not None else lib_own)
+        rots = list(rotations) if movable else [fp.rot]
+        for rot in rots:
+            part.rots.append(self._rot(part, rot, local, lib_board_full))
+        part.shape_key = (fp.lib_id, fp.side, tuple(np.round(local.ravel(), 4)),
+                          tuple(round(v, 4) for v in lib_own))
+        return part
+
+    def _rot(self, part, rot, local, lib_board):
+        s = part.s
+        if rot % 90.0 == 0.0:
+            rr = lambda r: rot_rect(r, rot, s)  # noqa: E731
+        else:  # a fixed part at an odd angle: bounding box of the rotated rectangle
+            rr = lambda r: rot_rect_any(r, rot, s)  # noqa: E731
+        L = part._lib
+        if len(local):
+            px, py = transform.pads_xy(local[:, 0], local[:, 1], 0.0, 0.0, rot, s)
+            pins = np.column_stack([px, py])
+        else:
+            pins = np.zeros((0, 2))
+        return Rot(rot=float(rot), own=rr(L["own"]), opp=tuple(rr(r) for r in L["opp"]), board=rr(lib_board),
+                   crt=rr(L["crt"]), pins=pins)
+
+    def _fit_check(self):
+        """A part whose courtyard cannot fit inside the outline in any rotation only keeps
+        its pads inside (e.g. a sensor overhanging the board edge)."""
+        for p in self.parts:
+            if not p.movable:
+                continue
+            ok = False
+            for r in p.rots:
+                if self._fits_somewhere(to_grid(r.board, self.g)):
+                    ok = True
+                    break
+            if not ok:
+                p.fits = False
+                for r in p.rots:
+                    r.board = rot_rect(p._lib["board_pads"], r.rot, p.s)
+                self.notes.append(f"{p.ref}: courtyard does not fit on the board; only its pads are kept inside")
+
+    def _fits_somewhere(self, gr):
+        a, b, c, d = gr
+        w, h = b - a, d - c
+        return any(i1 - i0 >= w and j1 - j0 >= h for (i0, i1, j0, j1) in self.cover)
+
+    def _grid_shapes(self):
+        g = self.g
+        for p in self.parts:
+            for r in p.rots:
+                r.g_own = to_grid(r.own, g)
+                r.g_opp = tuple(to_grid(o, g) for o in r.opp)
+                r.g_board = to_grid(r.board, g)
+
+    def _fixed_obstacles(self, board):
+        g = self.g
+        for p in self.parts:
+            if p.movable:
+                continue
+            r = p.rots[0]
+            si = 0 if p.s > 0 else 1
+            self._add_obstacle(si, shift(r.own, p.x0, p.y0), f"locked {p.ref}")
+            for o in r.opp:
+                self._add_obstacle(1 - si, shift(o, p.x0, p.y0), f"locked {p.ref} (through)")
+        for ko in board.keepouts:
+            if not (ko.footprints or ko.pads):
+                continue
+            sides = set()
+            for ly in ko.layers or []:
+                if ly in ("F.Cu", "F.Courtyard", "F.CrtYd") or ly.startswith("F."):
+                    sides.add(0)
+                elif ly in ("B.Cu",) or ly.startswith("B."):
+                    sides.add(1)
+                elif ly in ("*.Cu", "F&B.Cu") or ly.startswith("In"):
+                    sides.update((0, 1))
+            if not sides:
+                sides = {0, 1}
+            for r in poly_cover_rects(ko.outline, g * 2):
+                for si in sides:
+                    self._add_obstacle(si, r, f"keepout {ko.name or ko.uuid[:8]}")
+        _ = g
+
+    def _add_obstacle(self, side, rect, why):
+        g = self.g
+        gi = (math.floor((rect[0] - self.ox) / g + EPS), math.ceil((rect[2] - self.ox) / g - EPS),
+              math.floor((rect[1] - self.oy) / g + EPS), math.ceil((rect[3] - self.oy) / g - EPS))
+        self.obstacles.append(Obstacle(side=side, rect=rect, g=gi, why=why))
+
+    # ------------------------------------------------------------------ helpers
+    def xy(self, X, Y):
+        """Grid origin -> board mm."""
+        return self.ox + X * self.g, self.oy + Y * self.g
+
+    def grid_of(self, x, y):
+        return int(round((x - self.ox) / self.g)), int(round((y - self.oy) / self.g))
+
+    def side_index(self, i):
+        return 0 if self.parts[i].s > 0 else 1
+
+    def outside_cells(self, X, Y, gr):
+        """Cells of grid rect gr (relative to origin X, Y) not inside the outline."""
+        a, b, c, d = gr
+        return sat_query(self.sat_out, X + a, X + b, Y + c, Y + d, self.ncx, self.ncy)
+
+    def summary(self):
+        mov = [p for p in self.parts if p.movable]
+        return dict(parts=len(self.parts), movable=len(mov), fixed=len(self.parts) - len(mov),
+                    nets=len(self.nets), grid_mm=self.g, cells=[self.ncx, self.ncy], cover_rects=len(self.cover),
+                    rectangular=self.rect_board, obstacles=len(self.obstacles),
+                    clearance=self.clearance, edge_clearance=self.edge_clearance,
+                    not_fitting=[p.ref for p in mov if not p.fits], notes=self.notes)
+
+
+def shift(r, x, y):
+    return (r[0] + x, r[1] + y, r[2] + x, r[3] + y)
+
+
+def rot_rect_any(r, rot, s):
+    x0, y0, x1, y1 = r
+    px, py = transform.pads_xy(np.array([x0, x1, x1, x0]), np.array([y0, y0, y1, y1]), 0.0, 0.0, rot, s)
+    return (float(px.min()), float(py.min()), float(px.max()), float(py.max()))
+
+
+# ----------------------------------------------------------------------------- raster
+def sat(mask):
+    """Summed-area table with a zero first row and column: S[i, j] = sum(mask[:i, :j])."""
+    S = np.zeros((mask.shape[0] + 1, mask.shape[1] + 1), dtype=np.int64)
+    S[1:, 1:] = np.cumsum(np.cumsum(mask.astype(np.int64), axis=0), axis=1)
+    return S
+
+
+def sat_query(S, i0, i1, j0, j1, ni, nj):
+    """Count of mask cells in [i0, i1) x [j0, j1); cells beyond the grid count as set."""
+    area = max(0, i1 - i0) * max(0, j1 - j0)
+    if area == 0:
+        return 0
+    a0, a1 = min(max(i0, 0), ni), min(max(i1, 0), ni)
+    b0, b1 = min(max(j0, 0), nj), min(max(j1, 0), nj)
+    inside_grid = max(0, a1 - a0) * max(0, b1 - b0)
+    cnt = int(S[a1, b1] - S[a0, b1] - S[a1, b0] + S[a0, b0]) if inside_grid else 0
+    return cnt + (area - inside_grid)
+
+
+def _best_rect(mask, weight_sat=None):
+    """The all-True rectangle of a bool matrix with the highest score, among the maximal
+    rectangles the histogram method enumerates. Score = area, or the count of cells of a
+    weight mask (given by its summed-area table) inside the rectangle.
+    Returns (score, i0, i1, j0, j1) with i1, j1 exclusive."""
+    ni, nj = mask.shape
+    h = np.zeros(nj, dtype=np.int64)
+    best = (0, 0, 0, 0, 0)
+    for i in range(ni):
+        h = np.where(mask[i], h + 1, 0)
+        stack = []
+        hl = h.tolist()
+        for j in range(nj + 1):
+            cur = hl[j] if j < nj else 0
+            start = j
+            while stack and stack[-1][1] >= cur:
+                sj, sh = stack.pop()
+                if sh > 0:
+                    i0, i1 = i - sh + 1, i + 1
+                    if weight_sat is None:
+                        score = sh * (j - sj)
+                    else:
+                        S = weight_sat
+                        score = int(S[i1, j] - S[i0, j] - S[i1, sj] + S[i0, sj])
+                    if score > best[0]:
+                        best = (score, i0, i1, sj, j)
+                start = sj
+            if not stack or stack[-1][1] < cur:
+                stack.append((start, cur))
+    return best
+
+
+def cover_rects(inside, max_rects=8, coarse=120, min_gain=0.004):
+    """A few overlapping rectangles inside the mask that together cover most of it: greedy
+    on a coarse copy (each next rectangle holds the most still-uncovered cells), then every
+    rectangle grown back to full resolution."""
+    ni, nj = inside.shape
+    if not inside.any():
+        return []
+    if inside.all():
+        return [(0, ni, 0, nj)]
+    f = max(1, int(math.ceil(max(ni, nj) / coarse)))
+    ci, cj = (ni + f - 1) // f, (nj + f - 1) // f
+    pad = np.zeros((ci * f, cj * f), dtype=bool)
+    pad[:ni, :nj] = inside
+    coarse_m = pad.reshape(ci, f, cj, f).all(axis=(1, 3))
+    S = sat(~inside)
+    total = int(inside.sum())
+    covered = np.zeros_like(inside)
+    rects = []
+    uncov = coarse_m.copy()
+    for _ in range(max_rects):
+        if not uncov.any():
+            break
+        score, i0, i1, j0, j1 = _best_rect(coarse_m, sat(uncov) if rects else None)
+        if score <= 0:
+            break
+        r = _grow_rect([i0 * f, min(i1 * f, ni), j0 * f, min(j1 * f, nj)], S, ni, nj)
+        gain = int((~covered[r[0]:r[1], r[2]:r[3]]).sum())
+        if rects and gain < min_gain * total:
+            break
+        rects.append(tuple(r))
+        covered[r[0]:r[1], r[2]:r[3]] = True
+        uncov[i0:i1, j0:j1] = False
+    return rects
+
+
+def _grow_rect(r, S_out, ni, nj):
+    """Grow a grid rectangle edge by edge while it stays free of outside cells."""
+    i0, i1, j0, j1 = r
+    changed = True
+    while changed:
+        changed = False
+        if i0 > 0 and sat_query(S_out, i0 - 1, i0, j0, j1, ni, nj) == 0:
+            i0 -= 1
+            changed = True
+        if i1 < ni and sat_query(S_out, i1, i1 + 1, j0, j1, ni, nj) == 0:
+            i1 += 1
+            changed = True
+        if j0 > 0 and sat_query(S_out, i0, i1, j0 - 1, j0, ni, nj) == 0:
+            j0 -= 1
+            changed = True
+        if j1 < nj and sat_query(S_out, i0, i1, j1, j1 + 1, ni, nj) == 0:
+            j1 += 1
+            changed = True
+    return (i0, i1, j0, j1)
+
+
+def poly_cover_rects(poly, step):
+    """Rectangles whose union covers a polygon (vertical strips of width ~step, each the
+    polygon's extent within the strip); a rectangle polygon gives itself."""
+    if poly is None or poly.is_empty:
+        return []
+    x0, y0, x1, y1 = poly.bounds
+    if abs(poly.area - (x1 - x0) * (y1 - y0)) < 1e-6 * max(poly.area, 1e-9):
+        return [(x0, y0, x1, y1)]
+    n = max(1, min(64, int(math.ceil((x1 - x0) / max(step, 1e-3)))))
+    xs = np.linspace(x0, x1, n + 1)
+    out = []
+    for a, b in zip(xs[:-1], xs[1:]):
+        piece = poly.intersection(box(a, y0 - 1, b, y1 + 1))
+        if not piece.is_empty and piece.area > 0:
+            px0, py0, px1, py1 = piece.bounds
+            out.append((a, py0, b, py1))
+    return out

@@ -9,8 +9,8 @@
   Net.name, netclass.
 Positions (x, y, rot, side), courtyards, tracks and vias are never read: comprehension
 must not depend on where parts sit, so the same brief serves the place task (parts off the
-board) and the routed reference. The only optional extra is a footprint's schematic sheet
-(`sheet` attribute, or the 'Sheetname'/'Sheetfile' fields) when a loader provides it.
+board) and the routed reference. The only extra read is a footprint's schematic sheet (kae.board's
+`Footprint.sheet`, else its symbol `path`), which comes from the .kicad_pcb, not the schematic.
 
 Pins are deduplicated per (pad number, net): an exposed pad split into nine pads is one pin.
 """
@@ -51,12 +51,16 @@ def _netname(n) -> str | None:
 
 
 def _sheet_of(fp) -> str | None:
-    for attr in ('sheet', 'sheet_path', 'sheetname'):
-        s = getattr(fp, attr, None)
-        if s:
-            return str(s)
+    """The schematic sheet instance a footprint came from: kae.board's `sheet` (sheet name path,
+    e.g. '/Power/'), else the symbol `path` without its last UUID, else a Sheetname field."""
+    s = getattr(fp, 'sheet', None)
+    if s:
+        return str(s)
+    path = str(getattr(fp, 'path', '') or '')
+    if path.count('/') >= 2:
+        return path.rsplit('/', 1)[0]
     flds = getattr(fp, 'fields', None) or {}
-    for k in ('Sheetname', 'Sheetfile', 'sheetname', 'sheetfile'):
+    for k in ('Sheetname', 'Sheetfile'):
         if flds.get(k):
             return str(flds[k])
     return None
@@ -180,7 +184,8 @@ class Netlist:
         for n in _items(getattr(board, 'nets', None)):
             nm = _netname(n)
             if nm:
-                netclass[nm] = str(getattr(n, 'netclass', '') or '')
+                cl = str(getattr(n, 'netclass', '') or '')
+                netclass[nm] = '' if cl == 'Default' else cl
         for fp in _items(getattr(board, 'footprints', None)):
             refdes = str(getattr(fp, 'ref', '') or '?')
             seen[refdes] += 1

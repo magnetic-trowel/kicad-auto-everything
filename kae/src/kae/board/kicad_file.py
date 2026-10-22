@@ -26,6 +26,7 @@ graphics of on-board footprints (as pcbnew does); off-board footprints keep thei
 import json
 import math
 import re
+import uuid as _uuid
 from pathlib import Path
 
 from shapely.geometry import LineString, MultiPoint, Point, Polygon, box
@@ -106,6 +107,22 @@ def shape_pieces(node, tol=geom.ARC_TOL):
             return [geom.bezier_points(*p, tol=tol)], []
         return ([p], []) if len(p) >= 2 else ([], [])
     return [], []
+
+
+def synth_uuid(lib_id, x, y, rot, side, index):
+    """Stable key for a footprint without a usable uuid (missing, or repeating an earlier
+    footprint's): a hash of lib_id, pose (nm, millidegrees) and file index. pcbnew_bridge
+    computes the same key, so write_poses accepts it."""
+    xn, yn = int(round(x * 1e6)), int(round(y * 1e6))
+    rm = int(round((rot % 360.0) * 1000)) % 360000
+    return str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-footprint:{lib_id}:{xn}:{yn}:{rm}:{side}:{index}"))
+
+
+def _kiid(v):
+    """KiCad 5 tstamps (8 hex digits) become KIIDs as pcbnew reads them."""
+    if v and len(v) == 8 and re.fullmatch(r"[0-9A-Fa-f]{8}", v):
+        return "00000000-0000-0000-0000-0000" + v.lower()
+    return v
 
 
 def _map_pieces(pieces, fn):
@@ -243,7 +260,7 @@ class _Reader:
             if len(t) > 2 and t[1] in ("reference", "value"):
                 fields.setdefault(t[1].capitalize(), t[2])
         attrs = [a for a in (first(node, "attr") or [])[1:] if type(a) is str]
-        uuid = value(node, "uuid") or value(node, "tstamp") or ""
+        uuid = value(node, "uuid") or _kiid(value(node, "tstamp")) or ""
         fp = Footprint(ref=fields.get("Reference", ""), value=fields.get("Value", ""), lib_id=lib_id,
                        uuid=uuid, x=fx, y=fy, rot=norm_deg(frot), side=side,
                        locked=flag(node, "locked"), attrs=attrs, fields=fields,
@@ -369,6 +386,8 @@ class _Reader:
             e = first(z, key)
             if e is not None:
                 lys += self.expand_layers(e[1:])
+        cu = [l for l in self.cu if l in lys]   # copper in stackup order, then the rest
+        lys = cu + [l for l in lys if l not in self.cu_set]
         rings = []
         for pol in kids(z, "polygon"):
             p = _pts(first(pol, "pts"), self.tol)
@@ -473,11 +492,28 @@ def read_dru(path):
     return out
 
 
+# KiCad 10's BOARD_DESIGN_SETTINGS defaults, used for keys a .kicad_pro leaves out
+# (measured: pcbnew on a board without a project file)
+RULE_DEFAULTS = dict(min_clearance=0.0, min_track_width=0.2, min_via_diameter=0.5,
+                     min_copper_edge_clearance=0.5, min_hole_clearance=0.25, min_through_hole_diameter=0.3,
+                     min_hole_to_hole=0.25, min_via_annular_width=0.1, min_microvia_diameter=0.2,
+                     min_microvia_drill=0.1, min_silk_clearance=0.0, max_error=0.005)
+_RULE_FIELDS = dict(clearance="min_clearance", track_min="min_track_width", via_min="min_via_diameter",
+                    edge_clearance="min_copper_edge_clearance", hole_clearance="min_hole_clearance",
+                    via_drill_min="min_through_hole_diameter", hole_to_hole="min_hole_to_hole",
+                    annular_min="min_via_annular_width", microvia_min="min_microvia_diameter",
+                    microvia_drill_min="min_microvia_drill", silk_clearance="min_silk_clearance",
+                    max_error="max_error")
+
+
 def read_rules(pcb_path, tree=None):
     """Rules from the sibling .kicad_pro (KiCad 6+) and .kicad_dru; legacy KiCad 5
-    setup and net_class blocks in the board as a fallback."""
+    setup and net_class blocks in the board as a fallback; KiCad's defaults otherwise."""
     pcb_path = Path(pcb_path)
     r = Rules()
+    for f, key in _RULE_FIELDS.items():
+        setattr(r, f, RULE_DEFAULTS[key])
+    r._assign = {}
     pro = pcb_path.with_suffix(".kicad_pro")
     d = None
     if pro.exists():
@@ -488,18 +524,9 @@ def read_rules(pcb_path, tree=None):
     if d is not None:
         ds = (d.get("board") or {}).get("design_settings") or {}
         rr = ds.get("rules") or {}
-        r.clearance = float(rr.get("min_clearance", 0.0))
-        r.track_min = float(rr.get("min_track_width", 0.0))
-        r.via_min = float(rr.get("min_via_diameter", 0.0))
-        r.edge_clearance = float(rr.get("min_copper_edge_clearance", 0.0))
-        r.hole_clearance = float(rr.get("min_hole_clearance", 0.0))
-        r.via_drill_min = float(rr.get("min_through_hole_diameter", 0.0))
-        r.hole_to_hole = float(rr.get("min_hole_to_hole", 0.0))
-        r.annular_min = float(rr.get("min_via_annular_width", 0.0))
-        r.microvia_min = float(rr.get("min_microvia_diameter", 0.0))
-        r.microvia_drill_min = float(rr.get("min_microvia_drill", 0.0))
-        r.silk_clearance = float(rr.get("min_silk_clearance", 0.0))
-        r.max_error = float(rr.get("max_error", 0.005))
+        for f, key in _RULE_FIELDS.items():
+            if rr.get(key) is not None:
+                setattr(r, f, float(rr[key]))
         r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]
         r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
                        for v in ds.get("via_dimensions") or [] if v.get("diameter")]
@@ -533,15 +560,20 @@ def read_rules(pcb_path, tree=None):
 
 
 def _legacy_rules(r, tree):
-    """KiCad 5 boards keep rules in (setup) and (net_class) blocks."""
+    """KiCad 5 boards keep rules in (setup) and (net_class) blocks; keys they lack keep
+    KiCad's defaults."""
     st = first(tree, "setup") or []
-    r.track_min = _f(value(st, "trace_min"), 0.0)
-    r.via_min = _f(value(st, "via_min_size"), 0.0)
-    r.via_drill_min = _f(value(st, "via_min_drill"), 0.0)
-    r.edge_clearance = _f(value(st, "edge_clearance"), 0.0)
+    for f, key in (("track_min", "trace_min"), ("via_min", "via_min_size"), ("via_drill_min", "via_min_drill"),
+                   ("edge_clearance", "edge_clearance"), ("microvia_min", "uvia_min_size"),
+                   ("microvia_drill_min", "uvia_min_drill")):
+        v = value(st, key)
+        if v is not None:
+            setattr(r, f, _f(v, getattr(r, f)))
+    ncs = kids(tree, "net_class")
+    if not ncs:
+        return
     r.source = "board setup (legacy)"
-    r._assign = {}
-    for nc in kids(tree, "net_class"):
+    for nc in ncs:
         name = nc[1] if len(nc) > 1 else ""
         r.netclasses[name] = NetClass(name=name, clearance=_f(value(nc, "clearance"), None),
                                       track_width=_f(value(nc, "trace_width"), None),
@@ -552,8 +584,6 @@ def _legacy_rules(r, tree):
                                       diff_pair_gap=_f(value(nc, "diff_pair_gap"), None))
         for a in kids(nc, "add_net"):
             r._assign.setdefault(a[1], []).append(name)
-    if r.netclasses:
-        r.clearance = min((c.clearance for c in r.netclasses.values() if c.clearance), default=0.0)
 
 
 def _wildcard_re(p):
@@ -561,9 +591,10 @@ def _wildcard_re(p):
 
 
 def netclass_of(rules, net):
-    """Effective netclass name of a net: explicit assignments, then every matching pattern
-    (KiCad matches a pattern as an anchored regex or an anchored wildcard); several
-    classes join in priority order with ','; none gives 'Default'."""
+    """Effective netclass name of a net, as KiCad 10 names it: explicit assignments and
+    every matching pattern (a pattern matches as an anchored regex or an anchored
+    wildcard); with any class besides Default, the classes in priority order with
+    Default last, joined by ',' (e.g. 'HS,Default'); else 'Default'."""
     names = list(getattr(rules, "_assign", {}).get(net, []))
     for pat, cls in rules.netclass_patterns:
         if cls in names:
@@ -577,16 +608,25 @@ def netclass_of(rules, net):
             ok = re.fullmatch(_wildcard_re(pat), net) is not None
         if ok:
             names.append(cls)
-    names = [n for n in dict.fromkeys(names) if n]
+    names = [n for n in dict.fromkeys(names) if n and n != "Default"]
     if not names:
         return "Default"
-    if len(names) == 1:
-        return names[0]
 
     def prio(n):
         c = rules.netclasses.get(n)
-        return c.priority if c is not None and c.priority is not None else 2147483647
-    return ",".join(sorted(names, key=prio))
+        return c.priority if c is not None and c.priority is not None else 2147483646
+    return ",".join(sorted(names, key=prio) + ["Default"])
+
+
+def _composite(rules, name):
+    """A NetClass for a composite name: each value from the first class (in priority
+    order) that sets it, as KiCad's effective netclass."""
+    parts = [rules.netclasses[n] for n in name.split(",") if n in rules.netclasses]
+    nc = NetClass(name=name)
+    for f in ("clearance", "track_width", "via_diameter", "via_drill", "microvia_diameter", "microvia_drill",
+              "diff_pair_width", "diff_pair_gap", "priority"):
+        setattr(nc, f, next((getattr(p, f) for p in parts if getattr(p, f) is not None), None))
+    return nc
 
 
 # ----------------------------------------------------------------------------- load
@@ -639,6 +679,12 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     for node in tree:
         if type(node) is list and node and node[0] in ("footprint", "module"):
             fps.append(rd.footprint(node))
+    seen = set()
+    for i, fp in enumerate(fps):   # the footprint uuid is the part key: make it unique
+        if not fp.uuid or fp.uuid in seen:
+            fp.flags.append("uuid_synthesized" if not fp.uuid else "uuid_duplicate")
+            fp.uuid = synth_uuid(fp.lib_id, fp.x, fp.y, fp.rot, fp.side, i)
+        seen.add(fp.uuid)
     for node in tree:
         if type(node) is list and node and node[0] == "zone":
             rd.zone(node)
@@ -688,6 +734,8 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             nets.setdefault(item.net, Net(name=item.net))
     for n in nets.values():
         n.netclass = netclass_of(rules_obj, n.name)
+        if n.netclass not in rules_obj.netclasses:
+            rules_obj.netclasses[n.netclass] = _composite(rules_obj, n.netclass)
     if hasattr(rules_obj, "_assign"):
         del rules_obj._assign
 

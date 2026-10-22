@@ -21,6 +21,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 
+[project.scripts]
+kae = "kae.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

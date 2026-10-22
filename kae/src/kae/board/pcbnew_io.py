@@ -3,7 +3,7 @@
 """Bridge to KiCad's pcbnew, run as a subprocess in KiCad's own Python.
 
     extract(path)                      pcbnew's poses, pads, courtyards, outline, rules
-    write_poses(path_in, poses, path_out)   set x, y, rot, side through pcbnew and save
+    write_poses(src, dst, poses)       set x, y, rot, side through pcbnew and save
     verify(path)                       kicad_file + transform vs pcbnew, pad by pad
 
 KiCad's Python is found as in kaebench: KAE_KICAD_PYTHON (a command, possibly with a
@@ -109,24 +109,37 @@ def extract(path, courtyards=True, outline=True, timeout=900):
 
 
 def _pose_list(poses):
-    """Accepts {uuid: (x, y, rot, side)}, {uuid: {...}}, or [{uuid, x, y, rot, side}]."""
+    """Poses as [{uuid, x, y, rot, side}] from {uuid: (x, y, rot, side)},
+    {uuid: {x, y, rot, side}}, or [{uuid, x, y, rot, side}]."""
     if isinstance(poses, dict):
         items = []
-        for u, p in poses.items():
+        for key, p in poses.items():
             if isinstance(p, dict):
-                items.append(dict(uuid=u, **{k: p[k] for k in ("x", "y", "rot", "side")}))
+                items.append(dict(uuid=key, **{k: p[k] for k in ("x", "y", "rot", "side")}))
             else:
                 x, y, rot, side = p
-                items.append(dict(uuid=u, x=x, y=y, rot=rot, side=side))
+                items.append(dict(uuid=key, x=x, y=y, rot=rot, side=side))
         return items
-    return [dict(uuid=p["uuid"], x=p["x"], y=p["y"], rot=p["rot"], side=p["side"]) for p in poses]
+    return [dict(uuid=p.get("uuid") or p.get("ref"), x=p["x"], y=p["y"], rot=p["rot"], side=p["side"])
+            for p in poses]
 
 
-def write_poses(path_in, poses, path_out, allow_locked=False, timeout=900):
-    """Write `path_out` = `path_in` with footprints moved to `poses` (by footprint uuid),
-    through pcbnew: Flip (left-right) for a side change, then SetOrientation and
-    SetPosition. Locked footprints are refused unless allow_locked. Returns the bridge's
-    report ({moved, flipped})."""
+def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
+    """Write `dst_path` = `src_path` with footprints moved to `poses`, through pcbnew.
+
+    poses: {fp_uuid: (x, y, rot, side)} (values may also be dicts, or poses a list of
+    {uuid, x, y, rot, side}); x, y in mm, rot in degrees as KiCad reports it for the placed
+    part, side 'F' or 'B'. Keys are footprint uuids (Footprint.uuid, including the keys the
+    loader synthesizes); a key that is no uuid but names exactly one reference is accepted.
+    A side change uses FOOTPRINT::Flip (left-right, about the footprint's own position),
+    then SetOrientation and SetPosition; nothing else changes. Unknown, ambiguous or
+    locked footprints (unless allow_locked) fail the call before anything is written.
+    pcbnew's SaveBoard writes `dst_path` only (no project files). Returns {moved, flipped}.
+
+    The older argument order write_poses(src_path, poses, dst_path) is also accepted.
+    """
+    if isinstance(dst_path, (dict, list, tuple)) and not isinstance(poses, (dict, list, tuple)):
+        dst_path, poses = poses, dst_path
     items = _pose_list(poses)
     for p in items:
         if p["side"] not in ("F", "B"):
@@ -137,7 +150,7 @@ def write_poses(path_in, poses, path_out, allow_locked=False, timeout=900):
         with open(pj, "w") as f:
             json.dump(items, f)
         flags = ["--allow-locked"] if allow_locked else []
-        return _run("write-poses", lambda out: [_abs(path_in), pj, out, _abs(path_out), *flags], timeout)
+        return _run("write-poses", lambda out: [_abs(src_path), pj, out, _abs(dst_path), *flags], timeout)
 
 
 def resave(path_in, path_out, timeout=900):
@@ -198,8 +211,11 @@ def verify(path, board=None, data=None, courtyards=True, worst=10):
     lx, ly, X, Y, R, S, KX, KY = [], [], [], [], [], [], [], []
     max_error = x.get("rules", {}).get("max_error", b.rules.max_error)
     cy = dict(n=0, n_arcs=0, max_straight=0.0, max_arcs=0.0, area_straight=0.0, missing=0, extra=0, worst=[])
-    for fp in b.footprints:
+    klist = x["footprints"]
+    for i, fp in enumerate(b.footprints):
         k = kfp.get(fp.uuid)
+        if k is None and i < len(klist) and klist[i]["lib_id"] == fp.lib_id:
+            k = klist[i]  # no uuid in the file: pcbnew invents one; same file order
         if k is None:
             rep["missing_fp"].append(fp.ref)
             continue

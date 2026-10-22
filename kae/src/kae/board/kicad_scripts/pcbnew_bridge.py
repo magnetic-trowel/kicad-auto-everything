@@ -12,7 +12,9 @@ extract: pcbnew's own footprint poses, pads (absolute and footprint-relative), c
 (F/B.CrtYd caches), the board outline (GetBoardPolygonOutlines), design rules, net classes
 and layers. Lengths in mm, angles in degrees as pcbnew reports them.
 
-write-poses: POSES is a JSON list of {uuid, x, y, rot, side}. A side change uses
+write-poses: POSES is a JSON list of {uuid or ref, x, y, rot, side}; a reference must
+name exactly one footprint, and unknown, ambiguous or locked footprints fail the whole
+call (unless --allow-locked) before anything is written. A side change uses
 FOOTPRINT::Flip (left-right, about the footprint's own position); then SetOrientation
 and SetPosition. Nothing else is touched. Saved with SaveBoard(skip settings) to a
 temporary directory and moved to DEST, so no project file is written.
@@ -22,6 +24,7 @@ import os
 import shutil
 import sys
 import tempfile
+import uuid as _uuid
 
 # pcbnew prints wx asserts on import and SWIG prints leak warnings at exit, both on stdout.
 # Keep a private handle to the real stdout and send fd 1 to stderr for the rest.
@@ -34,6 +37,29 @@ NM = 1e6
 
 def _mm(v):
     return v / NM
+
+
+def _synth_uuid(fp, index):
+    """Same key as kae.board.kicad_file.synth_uuid (footprints without a usable uuid)."""
+    p = fp.GetPosition()
+    rm = int(round((fp.GetOrientationDegrees() % 360.0) * 1000)) % 360000
+    side = "B" if fp.IsFlipped() else "F"
+    return str(_uuid.uuid5(_uuid.NAMESPACE_URL,
+                           f"kae-footprint:{fp.GetFPIDAsString()}:{p.x}:{p.y}:{rm}:{side}:{index}"))
+
+
+def _keys(board):
+    """Each footprint's key: its uuid, or the synthesized key when the uuid repeats an
+    earlier footprint's. Also every footprint's synthesized key, for files whose
+    footprints had no uuid (pcbnew then invents random ones)."""
+    keys, alias, seen = [], {}, set()
+    for i, fp in enumerate(board.GetFootprints()):
+        u = fp.m_Uuid.AsString()
+        a = _synth_uuid(fp, i)
+        alias[a] = fp
+        keys.append(a if u in seen else u)
+        seen.add(u)
+    return keys, alias
 
 
 def _status(obj):
@@ -70,7 +96,8 @@ def _polyset(ps):
 
 
 def _layer_names(board, lset, enabled):
-    return [board.GetLayerName(l) for l in lset.Seq() if l in enabled]
+    # canonical names (GetLayerName returns user names such as "GND" for In1.Cu)
+    return [board.GetStandardLayerName(l) for l in lset.Seq() if l in enabled]
 
 
 _PAD_ATTR = {pcbnew.PAD_ATTRIB_PTH: "thru_hole", pcbnew.PAD_ATTRIB_SMD: "smd",
@@ -81,9 +108,10 @@ def extract(path, out, courtyards=True, outline=True):
     board = _load(path)
     enabled = set(board.GetEnabledLayers().Seq())
     fps = []
-    for fp in board.GetFootprints():
+    keys, _ = _keys(board)
+    for fp, key in zip(board.GetFootprints(), keys):
         p = fp.GetPosition()
-        rec = dict(uuid=fp.m_Uuid.AsString(), ref=fp.GetReference(), value=fp.GetValue(),
+        rec = dict(uuid=key, kicad_uuid=fp.m_Uuid.AsString(), ref=fp.GetReference(), value=fp.GetValue(),
                    lib_id=fp.GetFPIDAsString(), x=_mm(p.x), y=_mm(p.y),
                    rot=fp.GetOrientationDegrees(), side="B" if fp.IsFlipped() else "F",
                    locked=bool(fp.IsLocked()), attrs=int(fp.GetAttributes()),
@@ -118,7 +146,7 @@ def extract(path, out, courtyards=True, outline=True):
                         microvia_min=_mm(ds.m_MicroViasMinSize), microvia_drill_min=_mm(ds.m_MicroViasMinDrill),
                         max_error=_mm(ds.m_MaxError))
     res["thickness"] = _mm(ds.GetBoardThickness())
-    res["copper"] = [board.GetLayerName(l) for l in board.GetEnabledLayers().CuStack()]
+    res["copper"] = [board.GetStandardLayerName(l) for l in board.GetEnabledLayers().CuStack()]
     nets = {}
     for code, item in board.GetNetInfo().NetsByNetcode().items():
         name = item.GetNetname()
@@ -144,16 +172,42 @@ def write_poses(path, poses_path, out, dest, allow_locked=False):
     with open(poses_path) as f:
         poses = json.load(f)
     board = _load(path)
-    fps = {fp.m_Uuid.AsString(): fp for fp in board.GetFootprints()}
-    missing, locked, moved, flipped = [], [], 0, 0
+    keys, alias = _keys(board)
+    by_uuid, by_ref = dict(alias), {}
+    for fp, key in zip(board.GetFootprints(), keys):
+        by_uuid.setdefault(key, fp)
+        by_ref.setdefault(fp.GetReference(), []).append(fp)
+    missing, ambiguous, locked, seen = [], [], [], set()
+    todo = []
     for p in poses:
-        fp = fps.get(p["uuid"])
+        key = p.get("uuid") or p.get("ref")
+        fp = by_uuid.get(key)
         if fp is None:
-            missing.append(p["uuid"])
+            cands = by_ref.get(key, [])
+            if len(cands) > 1:
+                ambiguous.append(key)
+                continue
+            fp = cands[0] if cands else None
+        if fp is None:
+            missing.append(key)
             continue
+        if id(fp) in seen:
+            ambiguous.append(key)
+            continue
+        seen.add(id(fp))
         if fp.IsLocked() and not allow_locked:
             locked.append(fp.GetReference())
             continue
+        todo.append((fp, p))
+    if missing or ambiguous or locked:
+        res = dict(ok=False, error=f"{len(missing)} unknown footprints, {len(ambiguous)} ambiguous or repeated "
+                                   f"references, {len(locked)} locked footprints",
+                   missing=missing[:50], ambiguous=ambiguous[:50], locked=locked[:50])
+        _write(out, res)
+        _status(dict(ok=False, error=res["error"]))
+        return
+    moved = flipped = 0
+    for fp, p in todo:
         back = p["side"] == "B"
         if bool(fp.IsFlipped()) != back:
             fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
@@ -161,12 +215,6 @@ def write_poses(path, poses_path, out, dest, allow_locked=False):
         fp.SetOrientation(pcbnew.EDA_ANGLE(float(p["rot"]), pcbnew.DEGREES_T))
         fp.SetPosition(pcbnew.VECTOR2I(int(round(float(p["x"]) * NM)), int(round(float(p["y"]) * NM))))
         moved += 1
-    if missing or locked:
-        res = dict(ok=False, error=f"{len(missing)} unknown footprint uuids, {len(locked)} locked footprints",
-                   missing=missing[:50], locked=locked[:50])
-        _write(out, res)
-        _status(dict(ok=False, error=res["error"]))
-        return
     _save(board, dest)
     _write(out, dict(ok=True, moved=moved, flipped=flipped, path=dest))
     _status(dict(ok=True, moved=moved, flipped=flipped))

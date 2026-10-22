@@ -164,7 +164,7 @@ class Footprint(_Dict):
 @dataclass
 class Net(_Dict):
     name: str
-    netclass: str = "Default"
+    netclass: str = "Default"     # KiCad's effective class name; key into Rules.netclasses
     pads: list = field(default_factory=list)   # [(ref, number)]
 
     _to = {"pads": lambda v: [list(p) for p in v]}
@@ -268,7 +268,7 @@ class Rules(_Dict):
     via_min: float = 0.0             # minimum via diameter
     edge_clearance: float = 0.0      # copper to board edge
     hole_clearance: float = 0.0
-    netclasses: dict = field(default_factory=dict)   # name -> NetClass
+    netclasses: dict = field(default_factory=dict)   # name -> NetClass, incl. composites ('HS,Default')
     # extras
     via_drill_min: float = 0.0       # min_through_hole_diameter
     hole_to_hole: float = 0.0
