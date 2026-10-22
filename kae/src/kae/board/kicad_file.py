@@ -531,6 +531,7 @@ def read_rules(pcb_path, tree=None):
         r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
                        for v in ds.get("via_dimensions") or [] if v.get("diameter")]
         ns = d.get("net_settings") or {}
+        r._raw_classes = {c.get("name", ""): c for c in ns.get("classes") or []}
         for c in ns.get("classes") or []:
             nc = NetClass(name=c.get("name", ""), clearance=c.get("clearance"), track_width=c.get("track_width"),
                           via_diameter=c.get("via_diameter"), via_drill=c.get("via_drill"),
@@ -590,32 +591,56 @@ def _wildcard_re(p):
     return "".join(".*" if ch == "*" else "." if ch == "?" else re.escape(ch) for ch in p)
 
 
+# Fields whose absence from every matched class makes KiCad 10 fill them from Default and
+# name the effective class "<classes>,Default" (measured with pcbnew, one field at a time;
+# diff_pair_via_gap, line_style, colours and tuning_profile do not count)
+_NC_REQUIRED = ("clearance", "track_width", "via_diameter", "via_drill", "microvia_diameter",
+                "microvia_drill", "diff_pair_width", "diff_pair_gap", "wire_width", "bus_width")
+
+
+def _nc_match(pat, net):
+    """KiCad's netclass pattern match: an anchored regex (EDA_PATTERN_MATCH_REGEX_ANCHORED
+    adds '^' and '$' by plain concatenation, so '/SW*|/RST' matches any '/S...'), or an
+    anchored wildcard."""
+    rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
+    try:
+        if re.search(rx, net) is not None:
+            return True
+    except re.error:
+        pass
+    return re.fullmatch(_wildcard_re(pat), net) is not None
+
+
 def netclass_of(rules, net):
-    """Effective netclass name of a net, as KiCad 10 names it: explicit assignments and
-    every matching pattern (a pattern matches as an anchored regex or an anchored
-    wildcard); with any class besides Default, the classes in priority order with
-    Default last, joined by ',' (e.g. 'HS,Default'); else 'Default'."""
+    """Effective netclass name of a net, as KiCad 10 names it.
+
+    Classes come from explicit assignments and every matching pattern. One class that
+    sets all the fields in _NC_REQUIRED keeps its name; otherwise the classes in priority
+    order are joined by ',' with 'Default' last when it fills a missing field
+    (e.g. 'HS,Default'); no class gives 'Default'."""
     names = list(getattr(rules, "_assign", {}).get(net, []))
     for pat, cls in rules.netclass_patterns:
-        if cls in names:
-            continue
-        ok = False
-        try:
-            ok = re.fullmatch(pat, net) is not None
-        except re.error:
-            pass
-        if not ok:
-            ok = re.fullmatch(_wildcard_re(pat), net) is not None
-        if ok:
+        if cls not in names and _nc_match(pat, net):
             names.append(cls)
-    names = [n for n in dict.fromkeys(names) if n and n != "Default"]
-    if not names:
+    names = [n for n in dict.fromkeys(names) if n]
+    if not names or names == ["Default"]:
         return "Default"
 
     def prio(n):
         c = rules.netclasses.get(n)
+        if n == "Default":
+            return 2147483647
         return c.priority if c is not None and c.priority is not None else 2147483646
-    return ",".join(sorted(names, key=prio) + ["Default"])
+    names = sorted(names, key=prio)
+    if "Default" not in names:
+        have = set()
+        for n in names:
+            c = rules.netclasses.get(n)
+            raw = getattr(rules, "_raw_classes", {}).get(n, {})
+            have |= {f for f in _NC_REQUIRED if raw.get(f) is not None}
+        if not set(_NC_REQUIRED) <= have:
+            names.append("Default")
+    return ",".join(names)
 
 
 def _composite(rules, name):
@@ -736,8 +761,9 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
         n.netclass = netclass_of(rules_obj, n.name)
         if n.netclass not in rules_obj.netclasses:
             rules_obj.netclasses[n.netclass] = _composite(rules_obj, n.netclass)
-    if hasattr(rules_obj, "_assign"):
-        del rules_obj._assign
+    for tmp in ("_assign", "_raw_classes"):
+        if hasattr(rules_obj, tmp):
+            delattr(rules_obj, tmp)
 
     gen = value(tree, "generator", "") or ""
     gv = value(tree, "generator_version")

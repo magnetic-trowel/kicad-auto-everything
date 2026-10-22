@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Write placed poses into a copy of the input board.
 
-    write(path_in, poses, path_out, mode="auto")   # poses: {uuid: (x, y, rot, side)}
+    write(src_path, dst_path, poses, mode="auto")   # poses: {uuid: (x, y, rot, side)}
 
 Two writers:
 - `pcbnew`: kae.board.pcbnew_io.write_poses (KiCad's own Flip/SetOrientation/SetPosition),
@@ -199,8 +199,9 @@ def _zone_edits(text, zone, ox, oy, x, y, d):
     return edits
 
 
-def write_sexpr(path_in, poses, path_out):
-    """Pure-Python writer (see module docstring). Returns {moved}."""
+def write_sexpr(src_path, dst_path, poses):
+    """Pure-Python writer (see module docstring). Returns {moved, writer}."""
+    path_in, path_out = src_path, dst_path
     text = Path(path_in).read_text(encoding="utf-8")
     edits = []
     moved = 0
@@ -264,8 +265,11 @@ def pcbnew_ready(timeout=60):
         return False
 
 
-def write(path_in, poses, path_out, mode="auto", log=None):
-    """Write poses with the chosen writer. Returns a report dict."""
+def write(src_path, dst_path, poses, mode="auto", log=None):
+    """Write poses ({uuid: (x, y, rot, side)}) into a copy of src_path saved as dst_path, with
+    the chosen writer ('auto', 'pcbnew' or 'sexpr'; env KAE_WRITER overrides). Returns a
+    report dict with the writer used."""
+    path_in, path_out = src_path, dst_path
     mode = os.environ.get("KAE_WRITER", mode)
     Path(path_out).parent.mkdir(parents=True, exist_ok=True)
     if mode in ("auto", "pcbnew") and pcbnew_ready():
@@ -286,7 +290,7 @@ def write(path_in, poses, path_out, mode="auto", log=None):
                 raise
             if log:
                 log(f"pcbnew writer failed ({type(e).__name__}: {e}); using the S-expression writer")
-    rep = write_sexpr(path_in, poses, path_out)
+    rep = write_sexpr(path_in, path_out, poses)
     _copy_project(path_in, path_out)
     return rep
 

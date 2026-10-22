@@ -38,7 +38,7 @@ def cmd_place(a):
     res = place(board, seed=a.seed, time_s=a.time, physics=not a.no_physics, workers=a.workers, log=_log,
                 anneal=not a.no_anneal)
     t1 = time.monotonic()
-    wrep = write(a.input, res.poses, a.output, mode=a.writer, log=_log) if res.poses else None
+    wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
     if wrep is None:
         import shutil
         shutil.copy2(a.input, a.output)
