@@ -21,11 +21,11 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed by `rt_*` scripts 
 | # | Claim (source) | Verdict | Evidence [C] | Fix |
 |---|---|---|---|---|
 | 1 | Exact cut law, ln sec and 2× notch (CT, SY, CD, VP) | **Holds** | A Galerkin crack-row solution, a method no lens used, matches (2/π)R_s ln sec(πx/2) to 6 digits, x = 0.02–0.9 ([rt_cut_law](../../../tools/research/physics/rt_cut_law.py)) | Cite as classical (Johnson; polarization tensors). DC and sheet inductance only |
-| 2 | Copper Q = h/δ, "copper can never damp" (TH) | **Holds for rings, wrong for planes below ~30 MHz** | 0.1 mm, 1 oz plates: Q = 1.0/2.8/6.2/9.3 at 1/3/10/30 MHz; a 25 µm core: 4.8 at 100 MHz. Microstrip Q is −7% to +18% of h/δ, not "up to 2× lower". "Reproduces round 1 exactly" is an identity ([rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py) `q`) | Scope to rings ≳ 50 MHz with h ≫ δ; count copper loss in PDN damping |
+| 2 | Copper Q = h/δ, "copper can never damp" (TH) | **Holds for rings, wrong for planes below ~30 MHz** | 0.1 mm, 1 oz plates: Q = 1.0/2.8/6.2/9.3 at 1/3/10/30 MHz; a 25 µm core: 4.8 at 100 MHz. Microstrip Q (w/h ≥ 0.5) is −7% to +18% of h/δ. "Reproduces round 1 exactly" is an identity ([rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py) `q`) | Scope to rings ≳ 50 MHz with h ≫ δ; count copper loss in PDN damping |
 | 3 | Ring damping is a 20–27 dB lever (TH) | **Overstated by 6–8 dB** | Snubber Q values reproduce in an independent state-space model (n = 3: 0.96, 1.59 over C_oss 0.5–2×; n = 1 tuned: 1.05, 2.69). With the edge spectrum included, Q 10→1 buys 12.5–15 dB and Q 20→1 18–21 dB ([rt_damping](../../../tools/research/physics/rt_damping.py)) | Ring term = 20 log Q₀ minus the edge floor |
 | 4 | Convex floors; SIMP "certified within 1.6%", human "15.8% avoidable" (VP) | **Holds on the raster only** | The math is right, but at equal area the floor fell 2.2–12.8% from the 0.2 to the 0.1 mm grid (5.6% near the headline area; VP's own logs) | Add a refinement study; "14.5–15.8% on the 0.1 mm raster" |
 | 5 | ℓ50 = R_s/(2πμ0f) "whatever h"; the R–L band (VP, SY, LS) | **Holds, with three slips** | ℓ50/ℓ_m = 0.42–0.53 for h ≤ 0.1ℓ_m, but f50·ℓ = 79 Hz·m at ℓ = 3h. VP's "1.3% outside ±5 mm at ≥ 100 kHz" uses 1 − \|F\|; the current outside, \|1 − F\|, is 18% (h 0.1 mm) and 27% (1.6 mm). The band edges are for a 50 mm plane (text: 100 mm); my PEEC moves f10 and f90 by 1.4–1.6× | Quote ℓ ≥ 6h, \|1 − F\| and plane width |
-| 6 | "1 oz mirrors a 5 mm loop above 12 kHz" (SY) | **Wrong** | At 12 kHz the mirrored share is 0.06. Half-mirroring needs a/ℓ_m = 2.2–4.8, i.e. ~93 kHz. LS's own 3-D table agrees with this, not with SY | Mirroring is complete at a/ℓ_m ≳ 10–40 |
+| 6 | "1 oz mirrors a 5 mm loop above 12 kHz" (SY) | **Wrong** | At 12 kHz the mirrored share is 0.06. Half-mirroring needs a/ℓ_m = 2.2–4.8, i.e. ~93 kHz. LS's own 3-D table agrees with this, not with SY | 90% mirrored needs a/ℓ_m ≈ 10–45 |
 | 7 | Decaps and stitching are one wire medium (LS) | **Holds** | ω_p equals the lumped anti-resonance by identity (975 MHz both). Reach ≈ 23.6 mm reproduces | The uncertainty is the input: a 2–6× via-model spread gives 1.4–2.4× in reach. Uniform lattice only |
 | 8 | I_CM = −jω·ΣC_ext·V from "one electrostatic solve" (CT) | **Identity holds; not a one-solve predictor** | V must be world-referenced, which needs the cable or LISN impedance. With circuit voltages it over-predicts by \|1 + jωC_tot·Z_A\|: ≤ 5 dB for a free 5 pF board to 300 MHz, 10–29 dB at 100–300 MHz for 30 pF and 150–500 Ω ([rt_world_cm](../../../tools/research/physics/rt_world_cm.py)). CT's D2 table solved the circuit, so it is right | Pair C_ext with the CM path impedance |
 | 9 | MS2 picks the PEEC-best loop 96–98%, area 16–66% (round-1 SIM) | **Holds numerically, oversold** | Graded reference: MS2 96.8%, area 17.3%. The 16% comes from candidates mixing stackups (h 0.08–1.6 mm), which no real decision does; at a fixed stackup perimeter scores 82–99% ([rt_loop_proxy](../../../tools/research/physics/rt_loop_proxy.py)) | Quote fixed-stackup numbers; the truth shares MS2's idealizations |
@@ -49,7 +49,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed by `rt_*` scripts 
 |---|---|
 | Fill at gap h: −3.7% ([genealogy](rule-genealogy-si-emi-rf.md)) vs −6.5% ([fields-si-emi](fields-si-emi.md)) | Conductor thickness (t/h 0.08 vs 0.35), and both grids are coarse. A converged solve gives −5.0% (thin) to −8.4% (t = 0.35h); ≤ 2.2% at g ≥ 2h ([rt_fill_z0](../../../tools/research/physics/rt_fill_z0.py)). "Harmless at ≥ 2h" stands |
 | Heatsink 22 vs 26 pF | Both are parallel-plate estimates with different area, ε_r and pad thickness; the difference is 1.4 dB. The missing number is the heatsink's C to chassis, which decides where the current returns (CT D2) |
-| λ: 21–29, 26–37, 38, 46, 52, 64 mm | All right: one vs two vs four copper layers, h_tot 10–60 W/m²K |
+| λ: 21–29, 26–37, 38, 46, 52, 64 mm | All right: one to six copper layers, h_tot 10–60 W/m²K |
 | Slot "0.08–0.13 nH/mm" | The law is ℓ/ln(4ℓ/g), not linear. It holds for 10–40 mm slots; PEEC reads 1.5× lower on short narrow slots and Ott's data grow as ℓ ln ℓ |
 | f_x, ℓ50, ℓ_d, ℓ_m, the PW24 onset | One length up to factors of 2: ℓ50 = ℓ_d = ℓ_m/2, f_x ↔ ℓ_m = 2h, PW24 ↔ ℓ_m = a. Each "50% point" uses a different observable (L drop, containment, mirroring, share under the trace), so the "transition" moves by 10× between docs |
 | CD: crack law "0.96–1.02 of exact" | The script prints 1.57 / 1.14 / 1.02 / 0.96 for 1 / 4 / 16 / 32 strips. The range holds only for 16–32 |
@@ -67,7 +67,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed by `rt_*` scripts 
 - **`th_damping_ledger.py`** models the ring without the edge spectrum.
 - **`rg_fill_and_decaps.py` and `fe_field2d.py`** are both under-resolved, by 1.3–1.9 points.
 
-Re-run and confirmed [C]: CT `cm`/`closure`/`nest`, SY duality, LS thin sheet, XD lengths, TM λ, the FE chain, TH `qcu`. Five [P] citations checked in full text are honest.
+Re-run and confirmed [C]: CT `cm`/`closure`/`nest`, SY duality, LS thin sheet, XD lengths, TM λ, the FE chain, TH `qcu`. Five citations checked (three in full text) are accurate.
 
 ### 4. The coordinator's thirteen points
 
@@ -112,7 +112,7 @@ Re-run and confirmed [C]: CT `cm`/`closure`/`nest`, SY duality, LS thin sheet, X
 ## Recommendations for our system
 
 1. **A three-part check for every [C] number the architecture uses:** an independent method, a refinement study, and a reference whose validated domain covers where the optimizer selects. Put it in the regression suite ([research-gaps](research-gaps.md) gap 20); it would have caught every error above.
-2. **Replace PEECN's 7 equal filaments with graded filaments (≥ 31)** or converged 2-D L′ plus corner terms. Then re-run IN D2–D4 and its active-subspace analysis.
+2. **Replace PEECN's 7 equal filaments with graded filaments (≥ 31)** or converged 2-D L′ plus corner terms. Then re-run IN D2, D4 and §4.
 3. **EMI chain.** Replace `same_edge_db` with a board-vs-cable term from the charge identity and region capacitances. Add a ring term with the edge floor (TH6).
 4. **Every guarantee carries its scope** ("raster 0.1 mm", "square grid", "ideal plane, HF"). Report model error separately from solver error.
 5. **Restate the impedance principle** as the (ε_L, ε_C) regime pair plus "terminate to absorb". Re-scope "copper cannot damp" to rings.
