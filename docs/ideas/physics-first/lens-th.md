@@ -1,6 +1,6 @@
 # Physics-first ideas: thermodynamics, dissipation, noise and irreversibility (TH)
 
-These ideas treat a layout as a dissipative system. Every unwanted joule needs a destination, and for rings above ~50 MHz copper is not one, so it must be designed. Every loss is also a noise source and a heat source. Every conductive heat path is also an electrical element. Damage accumulates where loss and stress concentrate.
+These ideas treat a layout as a dissipative system. Every unwanted joule needs a destination, and for rings above ~50 MHz it must be designed. Every loss is also a noise source and a heat source. Every conductive heat path is also an electrical element. Damage accumulates where loss and stress concentrate.
 
 The argument, derivations and numbers are in [lens-th](../../topics/physics/lens-th.md), which defines the principles cited below:
 

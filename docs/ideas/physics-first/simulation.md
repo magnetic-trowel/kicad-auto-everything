@@ -70,7 +70,7 @@ Residuals train per-stackup bias models stored in the ledger with provenance. Te
 
 ## C. Fast physics kernels (F1/F2)
 
-**SIM15. MS2 as the default loop-inductance spend model.** — *sharp, S.* MS2 = Σ length·L′(w,h) (air Hammerstad Z0/c) minus coupled-line mutual terms −2·overlap·(µ0/4π)·ln(1+(2h/s)²). It costs µs and has Spearman 0.999 against multi-filament PEEC with a stable +9…+14% bias that one scalar per stackup removes [C]. It replaces both "minimize loop area" (Spearman 0.36 over a plane) and µ0·h·l/w (+50…+1000% bias). Test: N7 micro-placer designs optimized with MS2 vs with area, scored by PEEC.
+**SIM15. MS2 as the default loop-inductance spend model.** — *sharp, S.* MS2 = Σ length·L′(w,h) (air Hammerstad Z0/c) minus coupled-line mutual terms −2·overlap·(µ0/4π)·ln(1+(2h/s)²). It costs µs and has Spearman 0.999 against multi-filament PEEC with a stable bias (+7.7% against a graded-filament reference) that one scalar per stackup removes [C, rt_loop_proxy]. It replaces both "minimize loop area" (Spearman 0.36 over a plane) and µ0·h·l/w (+50…+1000% bias). Test: N7 micro-placer designs optimized with MS2 vs with area, scored by PEEC.
 
 **SIM16. Image-plane multi-filament PEEC as the F2 default.** — *sharp, S.* N filaments across each width, the high-frequency current split solved, and a PEC image for the plane. It costs 0.25–1.7 ms per loop and agrees with FastHenry on a meshed plane within 1.3% (4 loops, w/h 0.3–5, 100 MHz; FastHenry: 7–115 s) [C]. With 7 equal filaments it reads 11–65% low for w/h ≥ 10; use ≥ 31 graded filaments. Escalate to meshed-plane solves only where RET-COV finds voids within ~3h. Test: 30 extracted hot loops, some with voids, against meshed-plane references.
 

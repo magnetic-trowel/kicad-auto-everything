@@ -20,7 +20,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 **PW1. Waveform-derived copper roles.** — *new, M.*
 - **Mechanism:** run the schematic once in SPICE (ngspice, an operating point plus one switching period), or use a topology template. Record dv/dt per node and di/dt, I_rms and I_dc per branch. Map each copper piece to weights: a for L, b for C (split into local, world and victim), g for R, plus victim sensitivity.
 - **Why it beats the rule:** this replaces net-name classes (PWR_HOT, SW, SENSITIVE) with numbers. It catches the cases names miss: the inductor branch's di/dt is set by L (0.011 A/ns), not by the edges (5.5 A/ns) [C].
-- **Test:** on 30 open converter boards, compare role labels against expert labels. Then check whether the weights rank the copper the way the datasheet layout guide orders it.
+- **Test:** on 30 open converter boards, compare role labels with expert labels, and check that the weights rank copper as the datasheet layout guide does.
 
 **PW2. Width from the a·L + b·C + g·R optimum.** — *sharp, S.*
 - **Mechanism:** for each piece over a plane, w* = sqrt((a·μ0·h + g·ρ/t)/(b·ε/h)). For a piece in both a fast node and a fast loop, Z0* = V/I of the cell.
@@ -49,7 +49,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 
 **PW6. Length invariants as the first placement metric.** — *sharp, S.*
 - **Mechanism:** L·C = (l/v)² and R·A = R_s·l² for a strip. During coarse placement, score power pieces by length weighted by √(a·b) and g. Optimise widths after placement.
-- **Why:** widths can trade one parasitic for another but cannot beat length. So placement should minimise length, and width optimisation comes later.
+- **Why:** widths trade one parasitic for another but cannot beat length, so placement minimises length and widths come later.
 - **Test:** compare the correlation of placement-stage length scores with post-route physics scores against loop-area scores.
 
 **PW7. Edge rate as a layout variable.** — *combo, M.*
@@ -111,7 +111,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
   - it must spread heat.
 
   Keep narrow traces for fast low-current nodes, victims and deliberate impedances.
-- **Why:** this turns "pours are better" into a per-piece rule with a reason attached.
+- **Why:** this turns "pours are better" into a per-piece rule with a reason.
 - **Test:** compare conversions proposed on open boards with expert judgement.
 
 **PW16. Streamline-routed power traces.** — *new, M.*
@@ -159,7 +159,7 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 - **Test:** the share of boards whose loss estimate changes by more than 1% when AC resistance is included.
 
 **PW24. Plane as magnetic shield credit.** — *new, S.*
-- **Mechanism:** above f_c = 1/(π·μ0·σ·t·a), 12–125 kHz for 35 µm [C], a solid plane mirrors a loop of size a. Credit that reduction to the near-field term of the EMI ledger.
+- **Mechanism:** a solid plane begins to mirror a loop of size a at f_c = 1/(π·μ0·σ·t·a), 12–125 kHz for 35 µm [C]; it mirrors half the field at about 2–5·f_c and 90% at 10–45·f_c. Credit the reduction to the EMI ledger's near-field term.
 - **Why:** this corrects the myth that a plane thinner than a skin depth does not shield.
 - **Test:** near-field scans over a loop with 18, 35 and 70 µm planes, 50 kHz–5 MHz.
 
@@ -313,6 +313,6 @@ Tags: *new* (not found in prior PCB work), *combo* (known parts, new combination
 - **Test:** PEEC sweep of N; VNA on a coupon.
 
 **PW52. "Physics diff" for power edits.** — *new, S.*
-- **Mechanism:** every proposed edit to power copper (move, widen, add via, trim) returns a delta in nH, mΩ, mV pickup and K. The numbers come from the incremental Laplace and PEEC solvers, and the LLM sees them before accepting the edit.
+- **Mechanism:** every proposed edit to power copper (move, widen, add via, trim) returns a delta in nH, mΩ, mV pickup and K from the incremental Laplace and PEEC solvers, which the LLM sees before accepting the edit.
 - **Why:** this gives the LLM physics feedback in its own words ("this via saves 14 pH and costs 0.3 mm of channel"), not a DRC pass or fail.
 - **Test:** compare LLM edit acceptance quality with and without the diff on 10 repair tasks.

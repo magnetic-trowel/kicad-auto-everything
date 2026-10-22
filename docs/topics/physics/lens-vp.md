@@ -5,7 +5,7 @@
 - **Floor oracles exist and are cheap** [C]. On the test pour of [copper-shape-synthesis](copper-shape-synthesis.md) at equal area, a closed form gives R ≥ 1.53 mΩ in 150 µs and a convex relaxation with a dual certificate R ≥ 1.761 mΩ. On its 0.1 mm raster the synthesized pour (1.789 mΩ) is within 1.6% of the best possible, and the human tree (2.092 mΩ) carries 14.5–15.8% avoidable loss. The raster floor is not grid-converged (it fell 2.2–12.8% at equal area from a 0.2 to a 0.1 mm grid), so certificates for real layouts need a refinement study or a discretization with known-sign error. A convex start also avoids the inductance-only local optimum of a penalized start (0.546 vs 0.613 nH).
 - **Complementary principles give two-sided bounds** [C]. Potential and stream-function solves on one coarse mesh bracket a corner at 0.530–0.581 squares (exact 0.5587). Logarithmic capacity gives via-cluster inductance within 2%. Hashin–Shtrikman explains why Rayleigh's via-field formula only under-predicts: hexagonal fields sit within 5% of the bound, square ones up to 40% above.
 - **The R–L crossover is a spectrum, not one frequency.** Half the return lies within ℓ50 ≈ R_s/(2π·μ0·f) of the trace for ℓ ≳ 6h (D5): 62 mm at 1 kHz, 0.12 mm at 500 kHz for 1 oz. ℓ50 is ℓ_m/2, with ℓ_m = R_s/(π·μ0·f) = δ²/t the common length ([foundations](foundations.md)). f_x = R_s/(2π·μ0·h) is the case ℓ = h. Converter fundamentals above ~300 kHz on 1 oz return under the loop (at 100 kHz ~18% still flows beyond ±5 mm); the open regime is DC to tens of kHz near precision analog.
-- **Energy is the right currency only for self terms:** they add, with free gradients and provable floors. Couplings are interaction energies (one adjoint each); EMI limits are a maximum over frequency.
+- **Energy is the right currency only for self terms** (S10, PW30): they add, with free gradients and provable floors. Couplings are interaction energies (one adjoint each); EMI limits are a maximum over frequency.
 
 Tags: [S] secondary, [I] inference, [C] computed by [vp_floors.py](../../../tools/research/physics/vp_floors.py), [vp_rl_band.py](../../../tools/research/physics/vp_rl_band.py) or [vp_edit_pricing.py](../../../tools/research/physics/vp_edit_pricing.py) (quasi-static, uncalibrated). Ideas VP1–VP30: [lens-vp ideas](../../ideas/physics-first/lens-vp.md).
 
@@ -98,7 +98,7 @@ Two crossovers are distinct: the R/ωL corner of a fixed distribution, and the f
 
 **D6. Width as equipartition.** Copper of length l switching I and V stores ½LI² + ½CV² per cycle, with LC = (l/v)². By AM–GM this is ≥ V·I·l/v, the Poynting energy in flight, with equality at Z0 = V/I (PW2's optimum; LS too). For 2 mm at 12 V, 10 A and 500 kHz it is 0.8 mW: the parts' C_oss and package L set the real floors.
 
-**D7. Monotonicity has a scope.** Self quantities are monotone (R and HF L fall, node C rises with any copper); transfer quantities are not: ∂R_ab,cd/∂g_k = −ΔV_k^ab·ΔV_k^cd (V7) changes sign with the alignment of the two fields.
+**D7. Monotonicity has a scope.** Self quantities are monotone (R and HF L fall, node C rises with any copper); transfer quantities are not, so Rayleigh arguments for pours (XD122) cover self terms only: ∂R_ab,cd/∂g_k = −ΔV_k^ab·ΔV_k^cd (V7) changes sign with the alignment of the two fields.
 
 On the human trunk-and-branch pour [C], a 1.5 mm bridge between branches cut total loss 1.0% and raised load C's drop 1%; on a 0.2 mm grid, B and C rose about 3%. Small, but the sign is wrong: "star versus plane" is a dispute about transfer terms (also lens CD, CD24).
 
@@ -136,7 +136,6 @@ A budget's sensitivity to the piece is the energy density at its boundary: free 
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** raster-only floors; ℓ50 for ℓ ≳ 6h; |1 − F| is 18% at 100 kHz; width-dependent band edges; class A needs one dominant energy ([red-team](red-team.md)).
 - **Floors assume fixed terminals;** as parts move, Beckmann becomes a placement term.
 - **The convex floor assumes variable-thickness copper;** minimum width and space raise the real floor (TM52).
 - **D5 is 2-D;** the 3-D extension follows from the receding image [I]; verify with meshed-plane PEEC.

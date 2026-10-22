@@ -1,7 +1,7 @@
 # Lens TH: thermodynamics, dissipation, noise and irreversibility
 
 **TL;DR**
-- **Every unwanted joule needs a destination.** For rings above ~50 MHz over gaps ≥ 0.1 mm copper cannot be it: for wide copper (δ ≪ t) the copper-loss Q is h/δ, 15–170 for hot loops. Below ~30 MHz on thin cores copper is a real damper (0.1 mm, 1 oz: Q = 1.0/2.8/6.2 at 1/3/10 MHz; 25 µm cores: Q ≈ 5 at 100 MHz) [C, [rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py)]. A **modal Q ledger** (1/Q = Σ 1/Q_k) tracks each mode's energy. The ring-band peak scales with Q (19.9 dB per decade) until the edge spectrum takes over, so damping Q 10–20 to ~1 buys 12–21 dB there (2–5 ns edges, ring amplitude ≈ supply) [C, [rt_damping](../../../tools/research/physics/rt_damping.py)], a lever round 1's EMI chain leaves out.
+- **Every unwanted joule needs a destination.** For rings above ~50 MHz over gaps ≥ 0.1 mm copper cannot be it: for wide copper (δ ≪ t) the copper-loss Q is h/δ, 15–170 for hot loops. Below ~30 MHz on thin cores copper is a real damper (0.1 mm, 1 oz: Q = 1.0/2.8/6.2 at 1/3/10 MHz; 25 µm cores: Q ≈ 5 at 100 MHz) [C, [rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py)]. A **modal Q ledger** (1/Q = Σ 1/Q_k) tracks each mode's energy. The ring-band peak scales with Q (19.9 dB per decade) until the edge spectrum takes over, so damping Q 10–20 to ~1 buys 12–21 dB there (2–5 ns edges, ring amplitude ≈ supply) [C, [rt_damping](../../../tools/research/physics/rt_damping.py)], a lever a trapezoid-spectrum EMI chain ([fields-emi-budget](fields-emi-budget.md)) cannot see.
 - **Dissipation is placed by mode shape and tuned, not put "as close as possible".**
   - A snubber is best tuned to the ring by its own inductance, L_s·C_s ≈ L·C_oss (Den Hartog's absorber): Q ≈ 1 at a third of the loss, 72 vs 216 mW [C].
   - Thin cores (Z_pk ∝ d·Q(d)) and edge RC terminations at open-edge mode antinodes damp plane cavities [C].
@@ -32,11 +32,11 @@ The circuit limit is isothermal and lossless: one temperature and 4kTR noise per
 | TP5 | Onsager thermoelectricity | EMF = ∮S∇T·dl = Σ_k ΔS_k·(T_k,in − T_k,out) over the loop's non-copper segments. Π = ST, so current through a segment adds R_P = S²T·R_th,diff > 0, at most R·S²/L0 |
 | TP6 | Electro-thermal stability | ΔT = (I − ΘD)⁻¹ΘP₀ with D = diag(∂P_i/∂T_i). Stable iff g = ρ(D^½ΘD^½) < 1; amplification ≈ 1/(1−g). Common mode: θ11 + θ12. Hogging: θ11 − θ12 |
 | TP7 | Irreversible damage | Life fraction D = Σ ∫ ḋ(T, ΔT_cyc, J, E, RH) dt ≤ 1 (Miner; Arrhenius, Coffin–Manson, Black, Peck). These rates are local high-p norms. Cycles use Λ(ω) = √(G_s/(h + jωc_s)) |
-| TP8 | Exchange rates, boundaries | Metal: G_th = L·T·G_el. Dielectric: G_th/C = k/ε. The boundary (h, ε, α_solar, standoffs) moves with altitude, enclosure and sun |
+| TP8 | Exchange rates, boundaries | Metal: G_th = L·T·G_el. Dielectric: G_th/C = k/ε. The boundary (h, ε, α_solar, standoffs) moves with altitude, enclosure and sun: at 20 km radiation does ~52% of the cooling, and sunlit black mask sits ~64 K above white [C, rough] |
 
-**One matrix, four roles [I].** The dissipation form R (partial resistances plus dielectric conductances) sets current flow by its minimum (TP1), each Q by its ratio to stored energy (TP4), noise as covariance 4kT·R (TP3), and heat (TP2, TP6, TP7).
+**One matrix, four roles [I].** The dissipation form R (partial resistances plus dielectric conductances) sets current flow by its minimum (TP1), each Q by its ratio to stored energy (TP4), noise as covariance 4kT·R (TP3), and heat (TP2, TP6, TP7). A PEEC model that holds R serves all four.
 
-Round 1's PEEC holds R but used only the first role.
+**Designed dissipation.** A lossless parasitic network rings, so minimizing parasitics alone cannot make layout invisible. Every mode whose excitation × Q exceeds its budget needs a designed loss channel that owns most of its damping, placed at an antinode and tuned, including layout-born parts (terminations, damping links, tuned mounting) added as ECOs ([research-gaps](research-gaps.md) §4).
 
 ### 2. Derivation map, then derivations
 
@@ -49,16 +49,17 @@ Round 1's PEEC holds R but used only the first role.
 - "261 K/W per via"; "no heatsinking through SW copper" (TP8): WF and k/ε exchange rates.
 - "Isotherm-aligned parts" (TM13, DR27); manganin shunts (TP5): Loop integral; S²/L0; pad symmetry (D5).
 - "R_DS(on) at 100 °C"; "spread hot parts"; emitter ballast (TP6): Eigenvalue modes (D6).
+- "Spacing buys little below 2λ" ([thermal-physics](thermal-physics.md)) (TP2, TP6, TP7): Holds for mean ΔT only; not for fatigue (local swing), current hogging (proximity helps, D6) or plumes.
 - "Electrolytics upstream and away" (P58, TH-06) (TP2, TP7): Arrhenius mean field; plumes are non-reciprocal.
 - "Curves only for pulses under ~1 ms" (PW18) (TP7): t* = w²/α (D7).
 
 **ESD vs surge.** An 8 kV IEC discharge stores 4.8 mJ, nearly all spent in the gun's 330 Ω; a 10 V clamp takes ~12 µJ, so ESD is a charge-path and L·di/dt problem ([CT](lens-ct.md)). Surge is TH: its joules arrive in 20 µs, while heat diffuses ~50 µm in copper, so the clamp absorbs them adiabatically.
 
-**D1. Copper barely damps rings** (explains round 1's computed "Q 31–173", [power-copper](power-copper.md)). Per square of wide conductors with gap h, L = μ0·h and R = 2R_s = ωμ0δ, so Q = h/δ, independent of length and width. Round 1's 2-square loops imply h = L/(2μ0) = 0.12/0.40/1.19 mm and h/δ = 30.8/76.0/173.4 and 102.8, round 1's 31/76/173/103 by identity (same formula) [C]. Above 100 MHz δ ≤ 6.6 µm while gaps are ≥ 50 µm. By Wheeler's incremental-inductance rule, microstrip Q is within −7% to +18% of h/δ for w/h ≥ 0.5 and 0.67·h/δ at w/h = 0.25 [C, rt_sheet_return]. Real rings decay mainly through C_oss and capacitor losses (not modelled) [I].
+**D1. Copper barely damps rings** (explains the computed "Q 31–173" of [power-copper](power-copper.md)). Per square of wide conductors with gap h, L = μ0·h and R = 2R_s = ωμ0δ, so Q = h/δ, independent of length and width. Its 2-square loops imply h = L/(2μ0) = 0.12/0.40/1.19 mm and h/δ = 30.8/76.0/173.4 and 102.8, its 31/76/173/103 by identity (same formula, not an independent check) [C]. Above 100 MHz δ ≤ 6.6 µm while gaps are ≥ 50 µm. By Wheeler's incremental-inductance rule, microstrip Q is within −7% to +18% of h/δ for w/h ≥ 0.5 and 0.67·h/δ at w/h = 0.25 [C, rt_sheet_return]. Real rings decay mainly through C_oss and capacitor losses (not modelled) [I].
 
 **D2. Equal loss per e-fold near a feed** (explains "31% of loss within 3 mm of the pads").
 - **The law.** Near a feed of log-radius a, φ = (I·R_s/2π)·ln(r/a); the whole current crosses each equipotential band, so every e-fold of radius dissipates I²R_s/2π. The fraction within r is ln(r/a)/(π·N□) for two feeds.
-- **Check on round 1's pour.** The law gives 20/26% at r = 3/4 mm, the solve 22/29%, reproducing round 1's 31% (30.9%); the law holds until board edges confine the field (~5 mm) [C].
+- **Check on the [power-copper](power-copper.md) pour.** The law gives 20/26% at r = 3/4 mm, the solve 22/29%, reproducing its 31% (30.9%); the law holds until board edges confine the field (~5 mm) [C].
 - **Corollary.** Doubling both feeds saves (ln 2)/π = 0.22 squares in any pour (solved: 0.24) [C].
 
 **D3. A snubber is a tuned absorber** (sharpens XD19, PW29 and [buck](../rules/power/buck.md)'s "snubber at the switch"). At the ring frequency the branch impedance is Z_b = R_s + jZ0·(l − 1/n), with l = L_s/L and n = C_s/C_oss. It is resistive when L_s·C_s = L·C_oss. Minimizing the worst modal Q gives l* = 0.97/0.46/0.32/0.18 for n = 1/2/3/5, vs 1/n [C].

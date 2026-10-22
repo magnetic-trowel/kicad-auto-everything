@@ -1,15 +1,13 @@
 # Lens CD ideas: what each conductor is doing (CD1–CD34)
 
-Ideas from the round-2 conductor-centric lens. The principles, derivations and the
+Ideas from the conductor-centric lens. The principles, derivations and the
 prototype are in [lens-cd](../../topics/physics/lens-cd.md). Numbers tagged [C] come from
 [cd_conductor_passport.py](../../../tools/research/physics/cd_conductor_passport.py), run on a
 synthetic 26 × 18 mm, 2-layer, 0.8 mm board with a buck cell, a sensitive trace and a slotted
-plane. Ids from round 1 refer to the [physics-first catalog](README.md).
+plane. Other ids refer to the [physics-first catalog](README.md).
 
-**Round-3 corrections (2026-10-22):** ρ = ½ (×2) is a square-grid property (×1.5 triangular, ×3 honeycomb); the 2×10⁻⁹ match is algebra, not physics. ([red-team](../../topics/physics/red-team.md))
-
-Tags: **new** (not in round 1 or the corpus), **combo** (combines known pieces), **sharp**
-(sharpens a round-1 idea with an exact form, a number or a test). Effort: S (days), M (weeks),
+Tags: **new** (not in the catalog or the corpus), **combo** (combines known pieces), **sharp**
+(sharpens a catalog idea with an exact form, a number or a test). Effort: S (days), M (weeks),
 L (months). Principles, defined in the topic doc: P1 superposition (shares), P2 Tellegen
 attribution, P3 rank-1 counterfactuals, P4 leverage and redundancy, P5 transport vs
 circulation, P6 charge to whom, P7 jobs as signs.
@@ -21,12 +19,12 @@ counterfactual signs, CD10 cancellation index, CD18 cycle-rank budgeting per ban
 
 1. **CD1. Piece passport ledger** *(new, M; P1–P7)*.
    - *Mechanism:* for every piece of copper (mesh strip, via, pad cell) and every band, code writes one sparse row to `ledger.json`: the current share of each source, the charge share by destination (fast nodes), the leverage, the exact removal value per budget, the transport/circulation ratio κ, the heat-flux share and the job verbs. Bodies (net × layer) become aggregations of pieces.
-   - *Beats:* round 1 indexes physics by structure (loop, node), so nothing answers "what is this copper doing?".
+   - *Beats:* the physics IR indexes by structure (loop, node), so nothing answers "what is this copper doing?".
    - *Test:* build passports for 5 open boards. Check that every DRC-clean physics fault planted by the mutation benchmark (PC29) changes at least one verb at the planted site.
 
 2. **CD2. All-budget removal table from one diagonal** *(sharp of XD51 and SIM24, S; P3)*.
    - *Mechanism:* per band, compute the cut-admittance diagonal y_bb = (N K⁻¹ Nᵀ)_bb once. The exact change of every budget when piece b is removed is then ΔZ_qp = s_b^p s_b^q / y_bb, for all pieces and all budgets at once.
-   - *Beats:* first-order adjoint prices are off by 1/(1 − ρ). That is exactly 2× for any strip of a uniform sheet, and 11× for a 3 mm notch in our board's plane neck (+22% vs +2% on the ADC's DC error) [C].
+   - *Beats:* first-order adjoint prices are off by 1/(1 − ρ). That is exactly 2× for any interior strip on a square grid (1.5× triangular, 3× honeycomb), and 11× for a 3 mm notch in our board's plane neck (+22% vs +2% on the ADC's DC error) [C].
    - *Test:* the prototype matches brute-force re-solves to 2×10⁻⁹ (an algebraic check, not a physical one). Repeat on a real 4-layer board.
 
 3. **CD3. Thevenin addition oracle for non-local copper** *(new, S; P3)*.
@@ -35,9 +33,9 @@ counterfactual signs, CD10 cancellation index, CD18 cycle-rank budgeting per ban
    - *Test:* rank stitching and bridging candidates on 3 boards and compare the top 10 with openEMS.
 
 4. **CD4. Leverage map per band** *(new, S; P4)*.
-   - *Mechanism:* ρ_b = 1 − z_b·y_bb is the probability that the piece lies in a random spanning tree. Get it exactly by selected inversion, or for the whole board by a Johnson–Lindenstrauss sketch (24–96 solves). ρ = 1 marks a series path, ρ ≈ ½ a sheet, ρ → 0 a redundant mesh.
+   - *Mechanism:* ρ_b = 1 − z_b·y_bb is the probability that the piece lies in a random spanning tree. Get it exactly by selected inversion, or for the whole board by a Johnson–Lindenstrauss sketch (24–96 solves). ρ = 1 marks a series path, ρ ≈ ½ a square-grid sheet, ρ → 0 a redundant mesh.
    - *Beats:* geometric neck finders (XD95 medial axis, PC20 min-cut) see width, not irreplaceability.
-   - *Test:* sketch vs exact; recall of pieces with ρ > 0.9. On our board 96 solves found all 44 such pieces with no false flag [C].
+   - *Test:* sketch vs exact; recall of pieces with ρ > 0.9. On our board 96 solves found all 44 such pieces with no false flag [C]; these are ρ = 1 bridges; on a uniform slotted sheet the sketch over-flags.
 
 5. **CD5. Foster self-test on every solve** *(new, S; P4)*.
    - *Mechanism:* Σ_b ρ_b = n − c (nodes minus components) at DC and in thermal networks. The generalized trace equals n − c with mutual inductance too.

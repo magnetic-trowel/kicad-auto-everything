@@ -29,7 +29,7 @@ Tags: **new** (not in the catalog, the sibling lenses or the corpus), **combo** 
 
 **LS3. Receding-image kernel for transients.** — *new, S; P3, P6.*
 - **Mechanism:** after a current step, a thin plane acts as an image receding at w_s = 2R_s/μ0 (782 m/s for 1 oz) ([Liu & Belcher eq. 1](https://arxiv.org/abs/0712.0182)). The coupling to a victim is then M(t) = M_image(depth h + w_s·t). A structure of size a stays shielded for about a/w_s: 6.4 µs for a 5 mm loop and 128 ns for an h = 0.1 mm trace image at 1 oz [C].
-- **Beats:** pulse coupling from inrush, ESD, hot-plug and load steps no longer needs many frequency-domain harmonics. The kernel is exact for thin sheets and also says when PW24's shield credit holds for a pulse of length T: only while a > w_s·T.
+- **Beats:** pulse coupling from inrush, ESD, hot-plug and load steps needs no sum over many frequency-domain harmonics. The kernel is exact for thin sheets and also says when PW24's shield credit holds for a pulse of length T: only while a > w_s·T.
 - **Test:** compare M(t) against a time-stepped thin-sheet PEEC or transient FEM for 3 aggressor–victim pairs.
 
 **LS4. Thin-sheet Carson term in the ledger.** — *sharp, S; P3.*

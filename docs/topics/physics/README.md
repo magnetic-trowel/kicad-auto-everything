@@ -81,7 +81,11 @@ Computed so far [C]:
   - 62% of the ADC's DC error sits in two plane regions.
   - One 0.5 mm slot bridge removes 78% of the high-frequency coupling.
   - Deleting "useless" copper in one batch cost 7.3× its summed single costs.
-- **Real open boards** ([real-board-passports](real-board-passports.md)): REAL_BOARD_SUMMARY.
+- **A real open board** (BLDCM-Power, MIT; 4 layers, 32 mm, three-phase bridge with shunts; [real-board-passports](real-board-passports.md)). The exact DC passport takes seconds, and removal costs match brute force to 3.5×10⁻¹¹. Four findings no netlist or DRC shows:
+  - The bridge IC's exposed pad has no vias and joins ground through one corridor.
+  - The input capacitors' ground is an island: its vias carry under 5% of DC current but 86% of the switching current.
+  - The 3.3 V plane carries the hot loop's largest high-frequency current, all of it induced. Without the plane, loop inductance would be 2.8× higher.
+  - One via in the exposed pad cuts loop inductance by 15%, the best of 511 candidate sites (the median site gives 0.4%).
 - **Pilot floor census of 14 pours on four open boards** ([validation-program](validation-program.md)): shapes sit near their certified floors (median 4% avoidable). Losses come from thermal-relief gaps and plane partitioning.
 
 ### The machine

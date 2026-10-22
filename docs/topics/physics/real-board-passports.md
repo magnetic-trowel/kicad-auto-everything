@@ -11,7 +11,7 @@
 - **Exact counterfactuals rank the fixes [C]:**
   - one via in the exposed pad: −15% loop inductance (best of 511 sites; median −0.4%);
   - swapping the inner planes: −19%;
-  - reshaping the phase pours: at most −24 to −25% of their resistance at equal area (certified relaxed floor).
+  - reshaping the phase pours: at most 24–25% less resistance at equal area (certified relaxed floor).
 - **Confidence.** DC numbers are exact for the raster, and HF shares and rankings are stable across model settings. The 9.1 nH loop inductance is uncalibrated; the true value is believed to lie in 6–9 nH (moderate confidence).
 
 Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [rb_board_passports.py](../../../tools/research/physics/rb_board_passports.py).
@@ -36,23 +36,22 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 ### 2. Definitions, formulas and checks
 
 **Passport quantities** (derivations in [lens-cd](lens-cd.md)).
-- **Setting.** A unit source p drives 1 A between its terminals. i_p(b) is the current this causes in branch b, whose resistance is z_b = 1/g_b.
-- **Attribution.** By Tellegen, Z_qp = Σ_b a_b with a_b = i_p(b)·i_q(b)·z_b. The cancellation index is χ = |Σ a_b| / Σ |a_b|.
+- **Attribution.** A unit source p drives 1 A between its terminals and causes current i_p(b) in branch b, of resistance z_b = 1/g_b. By Tellegen, Z_qp = Σ_b a_b with a_b = i_p(b)·i_q(b)·z_b; the cancellation index is χ = |Σ a_b| / Σ |a_b|.
 - **Leverage.** ρ_b = g_b·R_eff(b). Foster's theorem gives Σ ρ_b = n − c for n nodes and c components.
-- **Exact removal.** Removing b changes Z_qp by a_b/(1 − ρ_b). The first-order price a_b is therefore low by 1/(1 − ρ_b), which equals 2 on a uniform square grid, where ρ = ½. Sets of branches use the Woodbury identity.
-- **Exact addition.** Adding impedance z between two nodes changes a self-impedance by −Δφ²/(z + Z_th). Here Δφ is the open-circuit potential difference and Z_th the Thevenin impedance between the nodes.
+- **Exact removal.** Removing b changes Z_qp by a_b/(1 − ρ_b). The first-order price a_b is therefore low by 1/(1 − ρ_b), which equals 2 on an infinite uniform square grid, where ρ = ½. Sets of branches use the Woodbury identity.
+- **Exact addition.** Adding impedance z between two nodes changes a self-impedance by −Δφ²/(z + Z_th), where Δφ is their open-circuit potential difference and Z_th the Thevenin impedance between them.
 
 **HF loop inductance.**
 - **Drive.** An EMF across the chip's supply lead drives the loop current I, and W = ½LI² defines L.
 - **Conductors.** Every copper island in the window is a sheet conductor, whatever its net. Part current paths (chip leads, capacitor bodies) lie on a layer 0.3 mm above the parts.
-- **Energy.** The energy per unit face area is (μ0/2)·Σ_g h_g·H_g². Here h_g is the thickness of gap g, and H_g is the sheet current above g minus half the net stack current. So a plane of any net images currents on both of its sides.
+- **Energy.** The energy per unit face area is (μ0/2)·Σ_g h_g·H_g². Here h_g is the thickness of gap g, and H_g is the summed sheet current of the layers above g minus half the net stack current. So a plane of any net images currents on both of its sides.
 - **Validity.** The model is the inductive limit, valid well above f_x = R_s/(2π·μ0·h) ([lens-vp](lens-vp.md) D5). For In1 (R_s = 1.13 mΩ/sq, h = 0.21 mm), f_x ≈ 0.7 MHz. The model therefore covers edge harmonics, not the PWM fundamental.
 
 **Floors** ([lens-vp](lens-vp.md)).
 - **Beckmann bound.** A pour of sheet resistance R_s and area A carries current between terminals d apart. Each unit of current travels at least d, so by Cauchy–Schwarz R ≥ R_s·d²/A.
 - **Relaxed floor.** Give each cell a per-net copper density, with the per-cell sum ≤ 1 and the total area fixed. R is then convex in the densities (Thomson's principle), so the Frank–Wolfe duality gap certifies a lower bound.
 
-**Discretization [C].** Each net has its own grid: 0.05 mm for VIN and the phases, 0.2 mm for the planes, with supersampled coverage. Via barrels are ρl/(π(d+t)t), with t = 20 µm. Terminal pads are equipotential. Shunt pads are bare copper, with the resistive element along their facing edges.
+**Discretization [C].** Each net has its own grid: 0.05 mm for VIN and the phases, 0.2 mm for the planes, with supersampled coverage. A via barrel of length l, drill d and plating t = 20 µm has resistance ρ_Cu·l/(π(d+t)t). Terminal pads are equipotential. Shunt pads are bare copper, with the resistive element along their facing edges.
 
 | Stage | Size | Time |
 |---|---|---|
@@ -64,7 +63,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 **Checks [C]:**
 - **Exactness.** Rank-1 removal agrees with brute force to 3.5×10⁻¹¹. Woodbury and Thevenin via edits agree to the printed digit. The Foster sum is 110,875, against n − c = 110,879.
 - **Fields.** A strip over a plane agrees with μ0hl/w to 0.7%. A via pair in a plate pair agrees with a sheet solve to 5×10⁻⁵.
-- **Convergence.** A 0.1 mm DC ground grid moves R by under 1%. A 0.2 mm HF grid moves L by 7%. A 1 mm outer field instead of 10 mm moves L by 14%.
+- **Convergence.** A DC ground grid of 0.1 mm instead of 0.2 mm moves R by under 1%. An HF grid of 0.2 mm instead of 0.15 mm moves L by 7%. A 1 mm outer field instead of 10 mm moves L by 14%.
 
 ### 3. Findings [C unless tagged]
 
@@ -91,10 +90,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
    - The return runs 10 mm through the inner ground plane, under the 3.3 V plane, to three vias north of the chip. Each of those carries 24–29% at both DC and HF.
    - L = 9.1 nH, and 25–31% of it lies in the part current paths.
    - The datasheet asks for >10 µF "near pin with shortest possible loop to GND pad" [P].
-7. **The 3.3 V plane is the hot loop's image conductor.**
-   - It carries 30 A·mm of current-length per A. The ground plane carries 18 and the top ground copper 16.
-   - All of its current is induced; it has no transport role in this loop. That makes it an incidental shield in the sense of [lens-cd](lens-cd.md) CD20.
-   - Removing it from the window raises L from 9.1 to 25.4 nH. That is +178%, and +126% to +182% across settings.
+7. **The 3.3 V plane is the hot loop's image conductor.** It carries 30 A·mm of current-length per A; the ground plane carries 18 and the top ground copper 16. All of its current is induced, since it has no transport role in this loop: it is an incidental shield in the sense of [lens-cd](lens-cd.md) CD20. Removing it from the window raises L from 9.1 to 25.4 nH (+178%; +126% to +182% across settings).
 8. **The fixes rank exactly.**
    - One ground via in the exposed pad, at the edge nearest the bridge pins, cuts L by 15%. It is the best of 511 legal sites (median −0.4%), and brute force agrees.
    - Swapping the inner planes cuts L by 19%.
@@ -106,23 +102,16 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 
 **Phase paths, sensing and floors**
 
-11. **The Kelvin taps are placed correctly.**
-    - The 0.1 mm taps leave the shunt pads' inner edges, so copper changes the 50 mΩ reading by ±0.01%.
-    - Outer-edge taps would read +0.9% and drift +34 ppm/K.
-    - The per-tile Tellegen terms cancel (χ = 0.02–0.03), so only exact removal can assign the error.
+11. **The Kelvin taps are placed correctly.** The 0.1 mm taps leave the shunt pads' inner edges, so copper changes the 50 mΩ reading by ±0.01%; outer-edge taps would read +0.9% and drift +34 ppm/K. The per-tile Tellegen terms cancel (χ = 0.02–0.03), so only exact removal can assign the error.
 12. **Ground offsets are small.**
     - Supply and bus currents move the amplifiers' ground against the host's by ≤0.29 mΩ per A: 0.03% of the 1 V/A signal (20 V/V on 50 mΩ [S]).
     - The host's own 3.3 V current moves it by 1.3–1.4 mΩ per A, mostly through two ground vias near the host connector (36% of that return each; removal +9%).
 13. **Two phases detour around the decoupling capacitor.**
     - Phase copper is 7.5, 6.9 and 4.0 mΩ (V, U, W), beside the 50 mΩ shunt. U and V wrap round C9, and 48–61% of their copper loss lies in the pour body.
-    - At equal total area, the relaxed floor is ≥10.92 mΩ, against 14.47 mΩ for the actual pours in the same model (duality gap 0.2%). At most 24–25% is avoidable: reshape V (−1.5 mΩ) and U (−1.9 mΩ), and move 1.5 mm² to U.
+    - At equal total area the relaxed floor is ≥10.92 mΩ, against 14.47 mΩ for the actual pours in the same model (duality gap 0.2%; Beckmann bound 4.8 mΩ). At most 24–25% is avoidable, by reshaping V (−1.5 mΩ) and U (−1.9 mΩ) and moving 1.5 mm² to U.
     - The relaxation allows fractional copper, ignores clearances and lets the nets trade area, so this bounds a real redesign from above.
-    - The Beckmann bound is 4.8 mΩ.
 14. **Leverage is near ½ on every net.** The median ρ is 0.49–0.54 (sketch), and 0.7–3.9% of faces exceed 0.9. On the 400 most loaded faces, 1/(1 − ρ) has a median of 2.08 (10–90%: 1.93–2.71).
-15. **Some copper is dead or idle.**
-    - 11% of the top ground pour and 8% of the bottom pour carry under 0.1% of every modelled current.
-    - Four connector mounting pads (27 mm²) float.
-    - The top VIN island is 43% idle at DC but is the hot loop's forward path at HF.
+15. **Some copper is dead or idle.** 11% of the top ground pour and 8% of the bottom pour carry under 0.1% of every modelled current, and four connector mounting pads (27 mm²) float. The top VIN island is 43% idle at DC but is the hot loop's forward path at HF.
 
 ### 4. What a netlist-only view misses
 
@@ -132,7 +121,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 | U3's ground pins and pad are on GND | the motor return crosses 0.2 mm tracks and a pad without vias |
 | 3.3 V plane: a logic rail | it carries the hot loop's largest HF current and is the switch nodes' main charge destination |
 | U, V and W are equivalent | U and V cost 1.7–1.9× W; the relaxed floor cuts V by 23% and U by 33% |
-| A via is a via | a capacitor-island via carries 0.4% of the DC feed but 39% of the HF loop |
+| A via is a via | a capacitor-island via carries 0.4% of the J4 DC feed but 39% of the HF loop |
 
 ### 5. The same HF model on three boards [C]
 
@@ -147,8 +136,7 @@ In both higher-inductance cells, a plane that is not part of the loop lies betwe
 ## Recommendations for our system
 
 1. **Make the passport the reviewer-facing output** ([lens-cd](lens-cd.md) CD1, CD13, CD21).
-   - For each via, pin, track and pour tile, give its DC and HF shares, exact removal or addition value, leverage and job verb (CD8).
-   - Protect pieces whose role differs between DC and HF, and induced-current conductors (CD20), from trimming.
+   For each via, pin, track and pour tile, give its DC and HF shares, exact removal or addition value, leverage and job verb (CD8). Protect pieces whose role differs between DC and HF, and induced-current conductors (CD20), from trimming.
 2. **Take return terminals from pin semantics.** With the bridge-return pins as the return, the supply path is 8.78 mΩ. With all six driver ground pads tied into one terminal it is 7.05 mΩ, because the tie shorts the neck of finding 1 [C].
 3. **Add four critics, each exact or topological:**
    - a power IC's exposed pad without vias, or reaching ground only through tracks no wider than its pins;
@@ -161,10 +149,10 @@ In both higher-inductance cells, a plane that is not part of the loop lies betwe
 ## Conflicts and open questions
 
 **Model limits** (they bound the confidence of the numbers above):
-- **DC.** The copper is bare and at 20 °C, and via plating is assumed to be 20 µm. There is no solder on the tinned bus, so its R is overestimated. Package resistance is left out. Shunt terminations are ignored, which is the worst case for the Kelvin counterfactual.
-- **HF.** There is no lateral fringing, so narrow features read high: ×1.52 for a 1 mm strip 0.2 mm over a plane, and about ×3 at w/h ≈ 1. The model is lossless, its part paths (25–31% of L) and outer field are crude, and it covers one window.
+- **DC:** bare 20 °C copper; 20 µm via plating assumed; no solder on the tinned bus (its R is overestimated); no package resistance; shunt terminations ignored (the worst case for the Kelvin counterfactual).
+- **HF:** no lateral fringing, so narrow features read high (×1.52 for a 1 mm strip 0.2 mm over a plane; about ×3 at w/h ≈ 1); lossless; crude part paths (25–31% of L) and outer field; one window.
 - **Not modelled:** temperature, the transition band near f_x (CD19), the PWM fundamental, full-wave effects.
-- **Role inference** is heuristic: the driver is a part on the shunt nets, or else an IC driving an inductor from a decoupled rail. It has been checked by hand on three boards.
+- **Role inference** is heuristic (the driver is a part on the shunt nets, else an IC driving an inductor from a decoupled rail) and was checked by hand on three boards.
 
 **Beliefs, with confidence:**
 - **The true loop inductance lies in 6–9 nH (moderate).** The model gives 7.8–9.1 nH across settings. Scaling the 44% of L in the top gap by the strip error gives 7.8 nH; scaling all of L gives 6.0 nH [I].
@@ -180,10 +168,8 @@ In both higher-inductance cells, a plane that is not part of the loop lies betwe
 
 - Trinamic, *TMC6300 Datasheet* rev. 1.01 (2019): pin table, thermal data, layout §8.1–8.3 ([PDF](https://shop.mev-elektronik.com/wp-content/uploads/TMC6300_datasheet.pdf)) [P]. Rev. 1.08 (ADI) was not read.
 - Board licences: `bench/manifests/candidates.jsonl`, whose hashes match the files used [P].
-- Wheeler microstrip inductance with fringing, in [pc_refplane.py](../../../tools/research/physics/pc_refplane.py) [S].
-- Peaceman's equivalent radius 0.198·Δx (1978), in [pw_sheet.py](../../../tools/research/physics/pw_sheet.py) [S].
-- Spielman and Srivastava, [arXiv:0803.0929](https://arxiv.org/abs/0803.0929) [S].
-- Jaggi, "Revisiting Frank–Wolfe", ICML 2013 [S].
+- Wheeler microstrip inductance with fringing, in [pc_refplane.py](../../../tools/research/physics/pc_refplane.py); Peaceman's equivalent radius 0.198·Δx (1978), in [pw_sheet.py](../../../tools/research/physics/pw_sheet.py) [S].
+- Spielman and Srivastava, [arXiv:0803.0929](https://arxiv.org/abs/0803.0929); Jaggi, "Revisiting Frank–Wolfe", ICML 2013 [S].
 - Scripts: [rb_board_passports.py](../../../tools/research/physics/rb_board_passports.py), [cd_conductor_passport.py](../../../tools/research/physics/cd_conductor_passport.py), [vp_floors.py](../../../tools/research/physics/vp_floors.py).
 
 See also: [lens-cd](lens-cd.md) · [lens-vp](lens-vp.md) · [lens-ct](lens-ct.md) · [physics-critics](physics-critics.md) · [validation-program](validation-program.md) · [pdn-and-commutation](pdn-and-commutation.md) · [power-copper](power-copper.md)
