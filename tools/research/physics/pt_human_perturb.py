@@ -337,13 +337,20 @@ def _explain(T, legal, poses, kind, i, u, q, mtype, dK, dk, LoopComp):
     ks = [k for k in T.inc.get(i, []) if T.structs[k].kind == kind]
     loops = [(k, ci, c) for k in ks for ci, c in enumerate(T.structs[k].comps)
              if isinstance(c, LoopComp) and i in c.parts]
+    def lateral(c):
+        g = c.g
+        c.g = -1
+        try:
+            return c.value(st)
+        finally:
+            c.g = g
     ref0 = [loop_reference(T, c) for _, _, c in loops]
-    est0 = [c.value(st) for _, _, c in loops]
+    est0 = [lateral(c) for _, _, c in loops]
     st.set(i, *q)
     d1 = partner_dist(T, poses, i, kind)
     w1 = net_hpwl(T, poses, i)
     ref1 = [loop_reference(T, c) for _, _, c in loops]
-    est1 = [c.value(st) for _, _, c in loops]
+    est1 = [lateral(c) for _, _, c in loops]
     crosses = any(crosses_courtyard(T, legal, c, {i}) for _, _, c in loops)
     st.set(i, *saved)
     other = sum(v for k2, v in dk.items() if k2 != kind)
@@ -358,7 +365,7 @@ def _explain(T, legal, poses, kind, i, u, q, mtype, dK, dk, LoopComp):
         sgn_est = sum(e1 - e0 for e0, e1 in zip(est0, est1))
         sgn_ref = sum(r1 - r0 for r0, r1 in zip(ref0, ref1))
         if sgn_est < 0 <= sgn_ref:
-            cat, why = 'estimator: quadrature', f'fast {sgn_est:+.3f} nH, reference {sgn_ref:+.3f} nH'
+            cat, why = 'estimator: quadrature', f'fast {sgn_est:+.3f} nH, reference {sgn_ref:+.3f} nH (lateral)'
     if cat is None and crosses:
         cat, why = 'estimator: route', 'perturbed hop crosses another courtyard'
     if cat is None and far_pair and kind in ('decap', 'commutation', 'crystal', 'esd'):
@@ -397,6 +404,7 @@ def aggregate(out_dir):
         for c in r.get('census', []):
             census[c['kind']].append(c)
     lines = [f"boards: {len(recs)} ({len(ok)} ok, {len(recs) - len(ok)} errors)"]
+    lines.append('worse = share of decided perturbations (worse + better) that score worse than the human placement')
     lines.append('| term | boards | local translate worse | local rotate worse | shuffle worse | total J worse (local) |')
     lines.append('|---|---|---|---|---|---|')
     summ = {}
@@ -404,14 +412,14 @@ def aggregate(out_dir):
         a = agg[k]
 
         def share(c):
-            n = sum(c.values())
-            return (c['worse'] / n, n) if n else (float('nan'), 0)
+            n = c['worse'] + c['better']
+            return (c['worse'] / n, n, c['tie'] / max(1, n + c['tie'])) if n else (float('nan'), 0, float('nan'))
         st, sr, ss, sj = share(a['translate']), share(a['rotate']), share(a['shuffle']), share(a['total_local'])
         summ[k] = dict(boards=boards_with[k], translate=st, rotate=sr, shuffle=ss, total=sj,
                        better=dict(cats[k]))
         if boards_with[k]:
-            lines.append(f"| {k} | {boards_with[k]} | {st[0]:.1%} of {st[1]} | {sr[0]:.1%} of {sr[1]} | "
-                         f"{ss[0]:.1%} of {ss[1]} | {sj[0]:.1%} |")
+            lines.append(f"| {k} | {boards_with[k]} | {st[0]:.1%} of {st[1]} (ties {st[2]:.0%}) | "
+                         f"{sr[0]:.1%} of {sr[1]} (ties {sr[2]:.0%}) | {ss[0]:.1%} of {ss[1]} | {sj[0]:.1%} |")
     lines.append('')
     lines.append('| term | structures | value median (p90) | utilisation median | p90 | share over budget |')
     lines.append('|---|---|---|---|---|---|')

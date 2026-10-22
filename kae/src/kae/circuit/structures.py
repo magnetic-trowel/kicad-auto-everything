@@ -111,6 +111,16 @@ class _B:
             lst = sorted(lst, key=lambda t: (t[1] != gnd, _refkey(t[0])))
         return [c for c, _ in lst]
 
+    def caps_between(self, a, b_):
+        """Two-terminal capacitors from rail `a` to rail `b_` (split-supply decoupling, V+ to V-)."""
+        if not hasattr(self, '_rr'):
+            self._rr = defaultdict(list)
+            for ref, part in self.nl.parts.items():
+                t = self.nl.two_nets(part)
+                if t and self.k(ref) == 'capacitor' and not part.dnp and t[0] in self.r.rails and t[1] in self.r.rails:
+                    self._rr[frozenset(t)].append(ref)
+        return sorted(self._rr.get(frozenset((a, b_)), []), key=_refkey)
+
     def cap_pad(self, cref, net):
         return self.pad_sel(cref, net)
 
@@ -776,6 +786,19 @@ def _decap_groups(b: _B, cells) -> list:
             g = groups.setdefault((ref, p.net, func), {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
             if p.number not in g['pins']:
                 g['pins'].append(p.number)
+    # split supplies: an IC with supply pins on two rails and capacitors straight across them (an op-amp's
+    # V+ to V-) owns one of those capacitors; the higher rail is the 'rail', the lower one the return
+    by_ic = defaultdict(dict)
+    for (ref, rail, func), g in groups.items():
+        if func == 'load':
+            by_ic[ref][rail] = g['pins']
+    for ref, rp in by_ic.items():
+        rails = sorted(rp, key=lambda n: (-(b.volts(n) if b.volts(n) is not None else 0.0), n))
+        for i, hi in enumerate(rails):
+            for lo in rails[i + 1:]:
+                if b.caps_between(hi, lo):
+                    groups[(ref, (hi, lo), 'split_supply')] = {'ref': ref, 'rail': (hi, lo), 'function': 'split_supply',
+                                                               'pins': list(rp[hi]), 'return_pins': list(rp[lo])}
     return list(groups.values())
 
 
@@ -796,7 +819,7 @@ def allocate_caps(b: _B, cells, groups):
         cons[g['rail']].append(('decap', g, g['ref']))
     for rail, lst in cons.items():
         lst.sort(key=lambda t: (_refkey(t[2]), t[0]))
-        caps = sorted(b.caps_on(rail), key=_refkey)
+        caps = b.caps_between(*rail) if isinstance(rail, tuple) else sorted(b.caps_on(rail), key=_refkey)
         for _, x, _ in lst:
             x['caps'], x['caps_p'] = [], {}
         if not caps:
@@ -831,13 +854,13 @@ def allocate_caps(b: _B, cells, groups):
                         v += 0.5 + 0.5 * big          # sources and inputs take the larger capacitors
                     elif f == 'bypass':
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
-                    elif f == 'load':
+                    elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
                 v += _affinity(b, c, anchor)
                 if len(ranked) > 1 and j in rank_of:
                     v += RANK_W * (1.0 - abs(rc - rank_of[j]))
                 S[(c, j)] = v
-        quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] == 'load' else 1) for t, x, _ in lst]
+        quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] in ('load', 'split_supply') else 1) for t, x, _ in lst]
         count = [0] * ng
         owner = {}
         if TIE_ORDER == 'random':
@@ -904,19 +927,25 @@ def decaps(b: _B, groups) -> list:
     by_rail = defaultdict(list)
     for g in groups:
         by_rail[g['rail']].append(g)
+    split_ok = {(g['ref'], r) for g in groups if g['function'] == 'split_supply' and g.get('caps') for r in g['rail']}
     for rail, gs in by_rail.items():
+        split = isinstance(rail, tuple)
         n_pins = sum(len(g['pins']) for g in gs)
-        ncap = len(b.caps_on(rail))
+        ncap = len(b.caps_between(*rail) if split else b.caps_on(rail))
         for g in sorted(gs, key=lambda g: (_refkey(g['ref']), g['function'])):
             mine = g.get('caps') or []
             if not mine:
-                if g['function'] == 'load':
+                if g['function'] == 'load' and (g['ref'], rail) not in split_ok:
                     b.uncovered.append((g['ref'], rail, len(g['pins'])))
                 continue
             ref = g['ref']
             ng = g.get('shared_by', len(gs))
-            gnd = _decap_ground(b, ref, rail)
-            gpins = sorted({p.number for p in b.nl.parts[ref].active_pins() if p.net == gnd}, key=_natkey)
+            if split:
+                rail, gnd = rail
+                gpins = sorted(g['return_pins'], key=_natkey)
+            else:
+                gnd = _decap_ground(b, ref, rail)
+                gpins = sorted({p.number for p in b.nl.parts[ref].active_pins() if p.net == gnd}, key=_natkey)
             cls = {c: cap_class(b.nl.parts[c])[0] for c in mine}
             hf = [c for c in mine if cls[c] in ('hf', 'mid')]
             bulk = [c for c in mine if c not in hf]
@@ -924,7 +953,11 @@ def decaps(b: _B, groups) -> list:
             pin_caps = {pn: [hf[i % len(hf)]] for i, pn in enumerate(pins)} if hf else {}
             cp = g['caps_p']
             evs = [ev('topology', f"{len(pins)} power pin(s) of {ref} on '{b.short(rail)}'", MODERATE)]
-            if ng == 1:
+            if split:
+                evs.append(ev('topology', f"capacitor(s) straight across {ref}'s supply pins ('{b.short(rail)}' to '{b.short(gnd)}')", STRONG))
+                if ng > 1:
+                    evs.append(ev('count', f"{ng} ICs share the {ncap} capacitor(s) across these rails", 0.0))
+            elif ng == 1:
                 evs.append(ev('topology', f"only consumer on the rail: all {ncap} capacitor(s) to ground serve it", STRONG))
             else:
                 mp = sum(cp.values()) / len(cp)
@@ -937,7 +970,10 @@ def decaps(b: _B, groups) -> list:
             if len(hf) >= len(pins):
                 evs.append(ev('count', f"{len(hf)} HF caps for {len(pins)} pins", WEAK))
             conf_cap = min(b.r.nets[rail].confidence if rail in b.r.nets else 0.6, 0.97)
-            out.append(_struct('decap', f"decap:{ref}:{b.short(rail)}" + ('' if g['function'] == 'load' else f":{g['function']}"), evs,
+            if split:
+                conf_cap = min(conf_cap, b.r.nets[gnd].confidence if gnd in b.r.nets else 0.6)
+            sid = f"decap:{ref}:{b.short(rail)}" + (f"~{b.short(gnd)}" if split else '') + ('' if g['function'] == 'load' else f":{g['function']}")
+            out.append(_struct('decap', sid, evs,
                                conf_cap=conf_cap, prior=0.0,
                                ic=ref, power_pins=pins, ground_pins=gpins, rail=rail, ground=gnd, caps=sorted(mine, key=_refkey),
                                caps_p=cp, hf_caps=hf, bulk_caps=bulk, pin_caps=pin_caps, function=g['function'], shared_by=ng))
