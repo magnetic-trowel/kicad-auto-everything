@@ -9,7 +9,7 @@
   - plane distance moves it 0.93 → 4.1 nH (0.1 → 1.5 mm);
   - conductor width moves it 1.74 → 0.75 nH (0.5 → 4 mm).
 
-  The right metric is Σ μ0·h·dl/w (height × squares), which is the same Laplace solve as IR drop.
+  The right metric is Σ μ0·h·dl/w (height × squares; exact for wide copper, microstrip L' for narrow). It is the same Laplace solve as IR drop.
 - **Internal-vertical loops beat lateral loops by about 3.5×** (0.27 vs 0.93 nH, same footprint, 0.1 mm dielectric) [C]. That matches EPC's "about 65% lower". A through-board vertical loop is worse (2.2 nH). Its inductance rises 71% from 0.8 to 1.6 mm board thickness (EPC: up to 80%). Widening a loop helps only up to W ≈ terminal width + loop length; past that, widen the terminals (more caps across).
 - **Parallel vias and caps are coupled.** In a plane pair, 4 vias at 0.6 mm pitch give 0.71× one via's spreading inductance, not 0.25×; 4 vias at 2 mm give 0.51× [C]. The cluster's outer size matters more than via count. Alternating decap orientation is 16–39% lower than same-orientation, more so with deeper planes. Side vias match via-in-pad. N8 should optimise cluster geometry and orientation, not count.
 - **Plane-pair spreading inductance is μ0·d·N□.** 157 pH for 1 inch at d = 75 µm reproduces Archambeault's 154 pH [C]. IR drop, spreading L and decap reach come from one solver.
