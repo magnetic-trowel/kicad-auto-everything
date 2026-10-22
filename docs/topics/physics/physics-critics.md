@@ -43,7 +43,7 @@ role model + budgets (frozen per task) ─┐
 - **Inputs.** The routed board and its stackup; the role model (net roles, edge rates, currents, rails, connector classes, voltage classes); budgets from the IR (`intent.yaml` in [physics-ir](physics-ir.md); [I1/I2](../../ideas/original/intent-and-why.md)). Roles and budgets are frozen and installed by the scorer, like the DRC rules, so a method cannot relabel a clock as slow.
 - **Board physics model.** Built once and read by every critic. It removes the most common field failure in checkers, re-implementations that disagree with KiCad ([field-failure-modes](../ux/field-failure-modes.md)).
 - **Tiers** follow the evaluation stack ([evaluation-stack](../verification/evaluation-stack.md)). F0/F1 run on every candidate, F2 at stage gates, F3 on sampled findings and for calibration.
-- **Critic contract.** `critic(bpm, roles, budgets) -> (rows, markers, coverage)`. Rows are continuous values with attribution. Coverage says, per object, whether the critic ran and whether its proxy was inside its calibrated range.
+- **Critic contract.** `critic(bpm, roles, budgets) -> (rows, markers, coverage)`. Rows are continuous values with attribution; in round 3 each value is a `Belief` with an exactness class E0–E5 and the model it is exact relative to ([physics-core-v2-api](physics-core-v2-api.md)). Coverage says, per object, whether the critic ran and whether its proxy was inside its calibrated range.
 
 ### 3. Reporting
 
@@ -136,6 +136,7 @@ Both are the kind of escape a red team would exploit.
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** critic values become Beliefs with exactness classes; coupon calibration follows [validation-coupons](validation-coupons.md) ([red-team](red-team.md)).
 - **Threshold sources.** Many budgets have no primary source (hot-loop area caps, decap distances). The scorecard should show "unbudgeted" rather than invent limits ([checkers-power](../rules/checkers-power.md)).
 - **Plane inference vs declaration.** The prototype infers planes from fill share (≥ 30%), which also catches outer-layer pours. Declared planes in the IR stackup are the right source; inference is a fallback.
 - **Bridging-cap estimate.** Ours (1.2–3 nH) disagrees with Ott's 5–10 nH. It probably misses the cap's own via loop and ESL.

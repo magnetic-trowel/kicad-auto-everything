@@ -1,8 +1,8 @@
 # Lens LS: locality, causality, scales and the circuit limit
 
 **TL;DR**
-- **A circuit is Maxwell at zeroth order inside a window with four edges:** θ = ωℓ/v, Z/Z0, ℓ_m/ℓ (plane resolution) and ωτ_e (insulator relaxation). On a PCB the window is huge (η0/R_s ≈ 7.7×10⁵ for 1 oz), and layout is where structures approach an edge. Both first-order corrections are θ·(Z0/Z)^±1. Their product θ² depends only on length, and at Z0 = Z they reduce to a pure delay. It derives PW2, principle 3 and node/loop duality, and settles t_r/6-vs-t_r/2 [C].
-- **A copper plane is a spatial low-pass filter.** It mirrors patterns larger than ℓ_m(f) = R_s/(πμ0f) = δ²/t, and in the time domain it is an image receding at 2R_s/μ0 (782 m/s for 1 oz). f_x and the loop-mirror onset are two ends of one band. On intact planes, 4–6 complex images fall within 0.5–3.5% of the exact result, where the perfect image is up to 79% off [C]. That closes most of round 1's Tier-1 gap 2.
+- **A circuit is Maxwell at zeroth order inside a window with four edges:** θ = ωℓ/v, Z/Z0, ℓ_m/ℓ (plane resolution) and ωτ_e (insulator relaxation). On a PCB the window is huge (η0/R_s ≈ 7.7×10⁵ for 1 oz), and layout is where structures approach an edge. Both first-order corrections are θ·(Z0/Z)^±1. Their product θ² depends only on length. With resistive terminations each first-order term is already a pure delay; Z0 = Z removes the second-order amplitude error −(θ²/8)(m − 1/m)² and the excess delay [C, [rt_impedance_match](../../../tools/research/physics/rt_impedance_match.py)]. It derives PW2, principle 3 and node/loop duality, and explains t_r/6 vs t_r/2 for capacitive loads [C].
+- **A copper plane is a spatial low-pass filter.** It mirrors patterns larger than ℓ_m(f) = R_s/(πμ0f) = δ²/t, and in the time domain it is an image receding at 2R_s/μ0 (782 m/s for 1 oz). f_x and the loop-mirror onset are two ends of one band. On intact planes, 4–6 complex images fall within 0.5–3.5% of the exact result, where the perfect image is up to 79% off [C]. That closes gap 2 for intact, thin, infinite planes (images tuned on two cases); slotted, perforated and finite planes stay open.
 - **Decap fields and stitching lattices are one wire medium:** ω² = ω_p² + v²k², with ω_p² = n/(L_post·C′). It screens below ω_p (decap reach, stitching attenuation), puts the PDN anti-resonance at ω_p (k = 0), and moves modes to √(f_mn² + f_p²). A lattice check agrees within 0–3% [C].
 - **Every interaction has a decay class and a natural length** (about 20 lengths from 1 µm to 5 m). Measure distance as r/ℓ_q, and above cut-off use position on the mode shapes instead.
 - **"Circuit + parasitics" is a perturbation series.** It diverges where a small parameter meets a Q, a diffusion kernel, radiation or a field singularity. There the representation must switch. The order a victim needs is n* ≈ ln(B/S)/ln ε: 1 for digital, 3 for 16-bit and 4 for 24-bit at ε = 0.01.
@@ -13,15 +13,13 @@ Tags as usual; [C] numbers come from [ls_thin_sheet.py](../../../tools/research/
 
 ### 1. Principles
 
-| # | Principle | Statement |
-|---|---|---|
-| P1 | Quasi-static limit | θ = ωℓ/v ≪ 1 gives EQS or MQS ([Haus & Melcher §3.3](https://ocw.mit.edu/courses/res-6-001-electromagnetic-fields-and-energy-spring-2008/pages/chapter-3/) [S]). KCL and KVL are order 0, exact with displacement and flux edges ([lens-ct](lens-ct.md)). τ_e·τ_m = (ℓ/v)² [I] |
-| P2 | Impedance-level split | For Z0 = √(L′/C′) and circuit level Z = V/I: ε_L = θ·Z0/Z breaks KVL, ε_C = θ·Z/Z0 breaks KCL (CT26's K_L, K_C). ε_L·ε_C = θ² and ε_L + ε_C ≥ 2θ, with equality at Z0 = Z |
-| P3 | Conductor imperfection | ε_R = R/Z. A thin sheet reflects wavenumber k by Γ = 1/(1 − jkℓ_m), ℓ_m = 2R_s/(ωμ0) = δ²/t; its image recedes at 2/(μ0σt) ([Liu & Belcher eq. 1](https://arxiv.org/abs/0712.0182) [P]) |
-| P4 | Insulator imperfection | ωτ_e with τ_e = ε/σ, or ε_eff·g/σ_s for a surface gap. Below 1/τ_e, conductivity sets fields and leakage |
-| P5 | Locality | Sheets obey ∇²u = γ²u, γ² = Z_s·Y_p: Re > 0 screens, Re < 0 propagates, arg ≈ π/2 diffuses. The magnetic sheet is non-local (\|k\|). Open space decays by multipole order; images raise it |
-| P6 | Causality | Delay is ℓ/v and f_knee ≈ 0.35/t_r. Kramers–Kronig: dε′/d ln ω = −(2/π)·ε″ |
-| P7 | Scale separation | Homogenize when pitch ≪ field length; average when τ_fast ≪ τ_slow. A model's error is its first neglected term |
+- **P1 Quasi-static limit.** θ = ωℓ/v ≪ 1 gives EQS or MQS ([Haus & Melcher §3.3](https://ocw.mit.edu/courses/res-6-001-electromagnetic-fields-and-energy-spring-2008/pages/chapter-3/) [S]). KCL and KVL are order 0, exact with displacement and flux edges ([lens-ct](lens-ct.md)). τ_e·τ_m = (ℓ/v)² [I].
+- **P2 Impedance-level split.** For Z0 = √(L′/C′) and circuit level Z = V/I: ε_L = θ·Z0/Z breaks KVL, ε_C = θ·Z/Z0 breaks KCL (CT26's K_L, K_C). ε_L·ε_C = θ² for uniform pieces (≥ θ² otherwise) and ε_L + ε_C ≥ 2θ, with equality at Z0 = Z.
+- **P3 Conductor imperfection.** ε_R = R/Z. A thin sheet reflects wavenumber k by Γ = 1/(1 − jkℓ_m), ℓ_m = 2R_s/(ωμ0) = δ²/t; its image recedes at 2/(μ0σt) ([Liu & Belcher eq. 1](https://arxiv.org/abs/0712.0182) [P]).
+- **P4 Insulator imperfection.** ωτ_e with τ_e = ε/σ, or ε_eff·g/σ_s for a surface gap. Below 1/τ_e, conductivity sets fields and leakage.
+- **P5 Locality.** Sheets obey ∇²u = γ²u, γ² = Z_s·Y_p: Re > 0 screens, Re < 0 propagates, arg ≈ π/2 diffuses. The magnetic sheet is non-local (|k|). Open space decays by multipole order; images raise it.
+- **P6 Causality.** Delay is ℓ/v and f_knee ≈ 0.35/t_r. Kramers–Kronig: dε′/d ln ω = −(2/π)·ε″.
+- **P7 Scale separation.** Homogenize when pitch ≪ field length; average when τ_fast ≪ τ_slow. A model's error is its first neglected term.
 
 ### 2. Derivation A: the impedance split
 
@@ -30,13 +28,11 @@ L = Z0·ℓ/v and C = ℓ/(Z0·v), so ωLI/V = θ·Z0/Z and ωCV/I = θ·Z/Z0. F
 - the amplitude error is |H|/|H0| − 1 ≈ −(θ²/8)(m − 1/m)²: zero at m = 1, −2.93% (series −3.06%) at θ = 0.05, m = 10 [C];
 - the phase is θ(m + 1/m)/2, and the series fails near θ·m ≈ 2.
 
-| Consequence | Explains |
-|---|---|
-| Minimum ε_L + ε_C at Z0 = Z | PW2's Z0* = V/I (equipartition, [lens-vp](lens-vp.md) D6) |
-| θ² is independent of width and height | Principle 3: L·C = l²/v², "only length lowers all three" |
-| Loops have Z ≪ Z0; nodes have Z ≫ Z0 | Principle 2 and LA4. The variable is Z/Z0 |
-| PCB Z0 spans 0.4–0.6 Ω (30–50 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ | PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z |
-| A series-matched line is a pure delay at any length: 0% overshoot [C] | "Series-terminate"; the critical-length family (§6) |
+- Minimum ε_L + ε_C at Z0 = Z: PW2's Z0* = V/I (equipartition, [lens-vp](lens-vp.md) D6).
+- θ² is independent of width and height: Principle 3: L·C = l²/v², "only length lowers all three".
+- Loops have Z ≪ Z0; nodes have Z ≫ Z0: Principle 2 and LA4. The variable is Z/Z0.
+- PCB Z0 spans 0.4–0.6 Ω (30–50 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ: PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z.
+- A series-matched line is a pure delay at any length: 0% overshoot [C]: "Series-terminate"; the critical-length family (§6).
 
 ### 3. Derivation B: the plane as a spatial filter
 
@@ -66,12 +62,10 @@ K = σ_s·E and A = μ0K/(2|k|) give K(k) = −I·F(k)·e^{−kh}·Γ(k), with �
 
 For a plane pair, Z_s = 2R_s + jωμ0d per square and Y_p = jωC′ + n/Z_post. With inductive posts this gives γ² = (ω_p² − ω²)/v², ω_p² = n/(L_post·C′):
 
-| Band | Physics | Round-1 result contained |
-|---|---|---|
-| Below SRF | γ² < 0: slow wave | "Location doesn't matter" |
-| SRF to f_p | Screening, λ = v/√(ω_p² − ω²) → √(L_c/(μ0dn)) | XD113 reach; Belov cut-off |
-| At f_p | λ → ∞, the k = 0 mode | Lumped anti-resonance |
-| Above f_p | Modes at √(f_mn² + f_p²) | Posts raise cavity modes |
+- **Below SRF:** γ² < 0: slow wave. *Contains:* "Location doesn't matter".
+- **SRF to f_p:** Screening, λ = v/√(ω_p² − ω²) → √(L_c/(μ0dn)). *Contains:* XD113 reach; Belov cut-off.
+- **At f_p:** λ → ∞, the k = 0 mode. *Contains:* Lumped anti-resonance.
+- **Above f_p:** Modes at √(f_mn² + f_p²). *Contains:* Posts raise cavity modes.
 
 Lattice checks [C]:
 - **Screening.** Decap share curves match 1 − γR·K1(γR) within 0.05 from 50 MHz to 1.5 GHz, as λ grows from 10.9 to 18.5 mm.
@@ -126,16 +120,14 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 
 ### 7. Derivation map
 
-| Rule or result | Principle |
-|---|---|
-| "δ > t, so the plane cannot shield" is wrong | P3: ℓ_m = δ²/t ≪ δ |
-| Star ground vs plane (RG19, PW21, P45 vs S39) | P3: the victim band vs f(ℓ_m = W), f(ℓ_m = 2h) |
-| Area → height × squares (PW25, LA26) | P2, P3: L = Σ Z0·T_d while ℓ_m < a |
-| 3W is 60× apart in microstrip vs stripline | P5: (h/D)² vs e^{−πD/b} |
-| Corners matter only for pulses under 1 ms; I²t | P7: √(αt) vs feature |
-| Via fields conduct at edges (XD22) | P7: L_T/p ≈ 0.4–1, so no homogenization |
-| Spreading parts futile below 2λ (TM1); electro-thermal fixed point (TM16) | P5 saturation; P7 averaging |
-| Topology beats tweaks by 20–40 dB | P5: far fields see low-order moments [I] |
+- "δ > t, so the plane cannot shield" is wrong: P3: ℓ_m = δ²/t ≪ δ.
+- Star ground vs plane (RG19, PW21, P45 vs S39): P3: the victim band vs f(ℓ_m = W), f(ℓ_m = 2h).
+- Area → height × squares (PW25, LA26): P2, P3: L = Σ Z0·T_d while ℓ_m < a.
+- 3W is 60× apart in microstrip vs stripline: P5: (h/D)² vs e^{−πD/b}.
+- Corners matter only for pulses under 1 ms; I²t: P7: √(αt) vs feature.
+- Via fields conduct at edges (XD22): P7: L_T/p ≈ 0.4–1, so no homogenization.
+- Spreading parts futile below 2λ (TM1); electro-thermal fixed point (TM16): P5 saturation; P7 averaging.
+- Topology beats tweaks by 20–40 dB (one case; the 40 dB was an input): P5: far fields see low-order moments [I].
 
 ### 8. Convergences and synergies round 1 missed
 
@@ -147,14 +139,12 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 
 ### 9. Transfers
 
-| From | To |
-|---|---|
-| Wire-medium metamaterials | Decap and stitching design by f_p (LS8, LS9) |
-| Earth-return complex images; Carson's ωμ0/8 | Transition-band plane returns (LS1, LS4) |
-| Microwave matching | Power and high-Z analog through Z/Z0 (LS5) |
-| HV grading by ωτ_e | Humid creepage, guards (LS18) |
-| SI causal fitting | Coupon calibration; TM35 tolerances (LS16) |
-| Homogenization, multigrid, two-timescale SA | Optimizer levels, JPR50 step ratios (LS22–LS27) |
+- Wire-medium metamaterials → Decap and stitching design by f_p (LS8, LS9).
+- Earth-return complex images; Carson's ωμ0/8 → Transition-band plane returns (LS1, LS4).
+- Microwave matching → Power and high-Z analog through Z/Z0 (LS5).
+- HV grading by ωτ_e → Humid creepage, guards (LS18).
+- SI causal fitting → Coupon calibration; TM35 tolerances (LS16).
+- Homogenization, multigrid, two-timescale SA → Optimizer levels, JPR50 step ratios (LS22–LS27).
 
 ### 10. What each conductor is doing, across scales
 
@@ -171,30 +161,29 @@ A conductor's job depends on the frequency and on the length scale of the questi
 
 ### 11. Critique of round 1's synthesis
 
-| Claim | Problem | Restatement |
-|---|---|---|
-| Synthesis object #1, "screened Laplace on sheets" | Only real γ²; eigenmodes (#6) are the same operator; magnetic sheets are non-local | One complex-γ² operator plus the \|k\| kernel |
-| "Decap reach 4–24 mm" (principle 4) | Holds only from SRF to f_p; diverges at the anti-resonance | λ(f) = v/√(ω_p² − ω²) |
-| f_x as one boundary; gap 2 "the hardest regime" ([gaps](research-gaps.md)) | One point of a band; intact planes have a closed form | Gap 2 = slotted, perforated, finite planes |
-| Principles 2–3 | No impedance level; "height is the strongest knob" in one direction only | Move Z0 toward Z; length sets θ² |
-| Fixed band table (design-reasoning) | Edges are scale ratios | ℓ–f regime plane; Regime gets a scale (LA11) |
-| Fidelity ladder (principle 11) | Series diverge at ε·Q ≥ 1; fidelity won't fix it | Switch representation; error = first neglected term |
-| Basis set | No causality and no ωτ_e | Causal stackup model; τ_e in Ins |
-| Principle 14, DR42 | Below f(ℓ_m = cell), no layout closes current in a cell | Locality per band; DC isolation by topology ([lens-ct](lens-ct.md)) |
-| JPR three timescales | Compute schedules, not physics scales | Order by spatial scale, then τ |
+- **Synthesis object #1, "screened Laplace on sheets".** Only real γ²; eigenmodes (#6) are the same operator; magnetic sheets are non-local. *Restate:* One complex-γ² operator plus the |k| kernel.
+- **"Decap reach 4–24 mm" (principle 4).** Holds only from SRF to f_p; diverges at the anti-resonance. *Restate:* λ(f) = v/√(ω_p² − ω²).
+- **f_x as one boundary; gap 2 "the hardest regime" ([gaps](research-gaps.md)).** One point of a band; intact planes have a closed form. *Restate:* Gap 2 = slotted, perforated, finite planes.
+- **Principles 2–3.** No impedance level; "height is the strongest knob" in one direction only. *Restate:* Move Z0 toward Z; length sets θ².
+- **Fixed band table (design-reasoning).** Edges are scale ratios. *Restate:* ℓ–f regime plane; Regime gets a scale (LA11).
+- **Fidelity ladder (principle 11).** Series diverge at ε·Q ≥ 1; fidelity won't fix it. *Restate:* Switch representation; error = first neglected term.
+- **Basis set.** No causality and no ωτ_e. *Restate:* Causal stackup model; τ_e in Ins.
+- **Principle 14, DR42.** Below f(ℓ_m = cell), no layout closes current in a cell. *Restate:* Locality per band; DC isolation by topology ([lens-ct](lens-ct.md)).
+- **JPR three timescales.** Compute schedules, not physics scales. *Restate:* Order by spatial scale, then τ.
 
 ## Recommendations for our system
 
-1. **Give each structure θ, Z/Z0, ε_L and ε_C per band.** At ε·Q ≥ 1, switch to co-simulation or modes (LS5, LS15).
+1. **Give each structure θ, Z/Z0, ε_L and ε_C per band.** Switch to co-simulation or modes when the edit's (or back-annotation's) Woodbury radius r reaches 1; ε·Q ≥ 1 is its modal estimate (LS5, LS15; [physics-core-v2](physics-core-v2.md) §4).
 2. **Put 4–6 complex images into the PEEC core (SIM16, SIM46).** Mesh only slots and edges (LS1–LS4).
 3. **One wire-medium module** for reach, anti-resonance and mode shifts; f_p becomes a plan variable (LS8–LS11).
 4. **The ℓ–f regime plane as regime selector,** with truncation σ and n* (LS12–LS14).
 5. **A causal stackup model, a loss-length gate, surface τ_e** (LS16–LS19).
 6. **Placer kernels by decay class,** mode-shape coordinates above cut-off, scale-ordered decisions (LS20–LS27).
-7. **Add ℓ_m and f_p coupons** to the calibration panel (LS30, LS31).
+7. **Add ℓ_m and f_p coupons** to the calibration panel (LS30, LS31; [validation-coupons](validation-coupons.md)). On a finite plane, far-offset features are set by the plane width: use sense offsets x ≤ W/6 and name the sense loop.
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** with resistive terminations a short line is a pure delay to first order for any Z0, so matching removes only the second-order error; gap 2 closes for intact thin planes only; ε_L·ε_C ≥ θ² off uniform pieces ([red-team](red-team.md)).
 - **Complex images.** They are checked only on infinite, intact, thin planes (2-D and axisymmetric 3-D), and the (φ, β) parameters were tuned on two cases.
 - **Lattice checks are model against model,** with lumped posts.
 - **RB4 design points, S/B values and σ_s ranges are illustrative** [I]; n* assumes geometric hierarchies.

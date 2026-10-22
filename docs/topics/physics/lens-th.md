@@ -40,19 +40,17 @@ Round 1's PEEC holds R but used only the first role.
 
 ### 2. Derivation map, then derivations
 
-| Rule or round-1 result | Principle | Verdict |
-|---|---|---|
-| "Copper never damps, Q 31–173" (PW) | TP4 | Holds for rings, Q = h/δ (D1); fails for plane pairs below ~30 MHz (D4) |
-| "Widen entries first; 31% of loss within 3 mm" (PW9) | TP1 | Explained, plus a feed law (D2) |
-| "Snubber at the switch, R ≈ √(L/C_oss)" (XD19, PW29) | TP4 | Qualified: tune it (D3) |
-| "Controlled-ESR damping, not more values" (PDN-10 in [decoupling-pdn](../rules/decoupling-pdn.md), XD88) | TP4 | R ≈ Z0 per anti-resonance, frequency-selective |
-| "Thin prepreg"; "lossy edge termination" (README P3, FE31, XD78) | TP4 | Double benefit; pitch law (D4) |
-| "LNA at the antenna"; "guard fA inputs" (AMS-05, RG24) | TP3 | Loss is noise, (L−1)T; guards leave dielectric noise |
-| "261 K/W per via"; "no heatsinking through SW copper" | TP8 | WF and k/ε exchange rates |
-| "Isotherm-aligned parts" (TM13, DR27); manganin shunts | TP5 | Loop integral; S²/L0; pad symmetry (D5) |
-| "R_DS(on) at 100 °C"; "spread hot parts"; emitter ballast | TP6 | Eigenvalue modes (D6) |
-| "Electrolytics upstream and away" (P58, TH-06) | TP2, TP7 | Arrhenius mean field; plumes are non-reciprocal |
-| "Curves only for pulses under ~1 ms" (PW18) | TP7 | t* = w²/α (D7) |
+- "Copper never damps, Q 31–173" (PW) (TP4): Holds for rings, Q = h/δ (D1); fails for plane pairs below ~30 MHz (D4).
+- "Widen entries first; 31% of loss within 3 mm" (PW9) (TP1): Explained, plus a feed law (D2).
+- "Snubber at the switch, R ≈ √(L/C_oss)" (XD19, PW29) (TP4): Qualified: tune it (D3).
+- "Controlled-ESR damping, not more values" (PDN-10 in [decoupling-pdn](../rules/decoupling-pdn.md), XD88) (TP4): R ≈ Z0 per anti-resonance, frequency-selective.
+- "Thin prepreg"; "lossy edge termination" (README P3, FE31, XD78) (TP4): Double benefit; pitch law (D4).
+- "LNA at the antenna"; "guard fA inputs" (AMS-05, RG24) (TP3): Loss is noise, (L−1)T; guards leave dielectric noise.
+- "261 K/W per via"; "no heatsinking through SW copper" (TP8): WF and k/ε exchange rates.
+- "Isotherm-aligned parts" (TM13, DR27); manganin shunts (TP5): Loop integral; S²/L0; pad symmetry (D5).
+- "R_DS(on) at 100 °C"; "spread hot parts"; emitter ballast (TP6): Eigenvalue modes (D6).
+- "Electrolytics upstream and away" (P58, TH-06) (TP2, TP7): Arrhenius mean field; plumes are non-reciprocal.
+- "Curves only for pulses under ~1 ms" (PW18) (TP7): t* = w²/α (D7).
 
 **ESD vs surge.** An 8 kV IEC discharge stores 4.8 mJ, nearly all spent in the gun's 330 Ω; a 10 V clamp takes ~12 µJ, so ESD is a charge-path and L·di/dt problem ([CT](lens-ct.md)). Surge is TH: its joules arrive in 20 µs, while heat diffuses ~50 µm in copper, so the clamp absorbs them adiabatically.
 
@@ -137,7 +135,7 @@ The conductor record ([lens-cd](lens-cd.md)) gains six fields per piece b:
 
 1. **No principle says where energy goes.** Damping appears once ("damping resistance where a resonance needs it"); Res carries Q without loss attribution; no physics critic measures Q of rings, filters or cable modes (PDN-10 covers PDN peaks only). Add principle 15: *every excited mode needs a designed loss channel that owns most of its damping, placed at an antinode and tuned.*
 2. **The thesis needs a qualifier.** A lossless parasitic network rings, so minimizing alone cannot reach "invisible": some dissipation must be visible and designed, including **layout-born parts** (terminations, damping links, tuned mounting) as mandatory ECOs ([research-gaps](research-gaps.md) §4).
-3. **The EMI chain omits the ring** (TL;DR): 12–21 dB at the ring band, against "slower edges 3 dB" [C, rt_damping].
+3. **The EMI chain omits the ring** (TL;DR: damping buys 12–21 dB at the ring band [C, rt_damping]). "Slower edges 3 dB" is a clock-harmonic figure: at the ring band, slowing the switch edge from 1.5 to 4 ns gives −8.5 dB (trapezoid edge) to −60 dB (erf edge) for +30 mW, so edge rate competes with damping ([validation-program](validation-program.md)).
 4. **"Cheap away from runaway"** ([cross-workstream-synthesis](cross-workstream-synthesis.md)) understates the coupling: the 1–3 W examples in D6 sit at g = 0.16–0.54 (1.2–2.2× hotter) [C]. It also conflated reciprocal and dissipative coupling.
 5. **"Spacing buys little below 2λ"** ([thermal-physics](thermal-physics.md)) holds for mean ΔT only, not for fatigue (local swing), hogging (proximity helps) or plumes ("upstream", TH-06 in [thermal](../rules/thermal.md)).
 6. **Noise is absent as physics.** LII lists noise outputs ([schematic-to-physics](schematic-to-physics.md)) but no doc applies fluctuation–dissipation to layout; guards are recommended for fA inputs (AMS-05, RG24) though dielectric noise survives them.

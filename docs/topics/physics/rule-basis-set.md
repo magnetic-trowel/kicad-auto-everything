@@ -81,7 +81,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | Dimensionless group | Binds when | Gates rules |
 |---|---|---|
 | Electrical length l·√εe/(c·t_r) | >1/6 review, >1/2 terminate | S08, S12, S13, R07 |
-| Inductive vs resistive f/f_x, f_x=R′/(2πL′) ≈ 0.3–1 MHz (1 oz over h 0.2 mm) [C] | f>f_x: plane rules; f<f_x: star/Kelvin rules | P11, P38, P45, S01, S39, S40 |
+| Return spread vs distance: ℓ50(f) = R_s/(2πμ0f) against the aggressor–victim distance D (round 3; earlier f/f_x, f_x ≈ 0.3–1 MHz [C]) | ℓ50 < D: plane rules; ℓ50 > D: star/Kelvin rules (only below ~6 kHz at 10 mm on 1 oz) | P11, P38, P45, S01, S39, S40 |
 | Coupling D/h | K=1/(1+(D/h)²) above victim budget | S15, S16, S24, R12, R46 |
 | Plane proximity w/h | w≫h: L∝h/w; w≲h: L only log in w | P04, P24, R09, R34 |
 | Size over half-wavelength a·2√εr·f/c | >~0.3 at f_max | P22, S37, S48, R28 |
@@ -101,7 +101,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 |---|---|---|---|
 | Switch-node area: small vs large for heat and current | P07 vs P08, R34 | different quantities (Cm vs Th, R) | cool through the quiet node; SW area sized by current density only |
 | Guard copper vs no copper at the input | P41 vs P42 | different (Ins vs Cm) | pick by signal current and bandwidth |
-| Star vs plane grounding | P45, S40 vs S39, P11 | same (return Z), regime f/f_x | star/Kelvin below f_x, plane above |
+| Star vs plane grounding | P45, S40 vs S39, P11 | same (return Z), regime ℓ50(f) vs D | star/Kelvin only while the return spreads past the victim (DC to a few kHz at board scale), plane above |
 | "Smallest cap closest" vs "lowest L closest" | P23 | same (L), legacy regime (leaded parts) | rank by mounting L |
 | Decap "within 2 mm" vs "location doesn't matter" | P24 | same (L), regime: plane spacing d | spreading term (µ0d/π)ln(s/a) |
 | Return via 200 mil vs 50 mil | S03 | same (L), ln(s) vs linear d | pH budget; reduce d first |
@@ -139,8 +139,13 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 - Resolve conflicts by computing both rules' quantities on the actual geometry; same-quantity conflicts become regime lookups, different-quantity conflicts become explicit Pareto choices for the user.
 
 ## Conflicts and open questions
+- **Round-3 corrections (2026-10-22):** the basis changes in four ways ([foundations](foundations.md), [derivation-audit](derivation-audit.md); [red-team](red-team.md)):
+  - M splits into shared-edge coupling (removable by re-routing) and field coupling (never zero);
+  - Bal merges into Vcm: mode conversion happens only at changes of current division, V_cm = Δχ·V_dm ([lens-sy](lens-sy.md));
+  - three quantities join: Q destination (where dissipation and damping go), life fraction (damage from extremes and accumulation) and τ_e (insulator charge relaxation);
+  - the star/plane selector is ℓ50(f) against the aggressor–victim distance, not f_x.
 - The counts come from our own classification of 160 rules; another auditor would shift some rows between "about right" and "mixed". The ranking (L ≫ others) is robust.
-- Is Bal a separate quantity or derived from L, Cm and Z asymmetry? We keep it because budgets are written in it (dB, ps), not because it is independent physics.
+- Is Bal a separate quantity or derived from L, Cm and Z asymmetry? Round 3 merges it into Vcm (above); budgets may still be written in dB and ps.
 - Ins mixes field (physics) and table (Std). Splitting physics-insulation (leakage, migration, Paschen) from legal spacing may be cleaner.
 - Mech and Fab are thinly covered by the corpus; workstream 7 ([thermal-hv-mfg](../../ideas/physics-first/thermal-hv-mfg.md)) should extend them.
 

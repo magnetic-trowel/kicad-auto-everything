@@ -102,7 +102,7 @@ Let X be the copper complex: pieces, adjacency, vias, and displacement edges to 
 | Thermal vias under hot parts | F6 | Heat path = electrical element: 261 K/W per via is 1.74 mΩ ÷ L·T |
 | Spread hot parts | F6 | Mean ΔT only beyond about 2λ; swing, hogging and plumes differ |
 | Isothermal layout for precision | F6 (Onsager) | EMF = ∮S∇T·dl; pad symmetry removes the I² term, not Peltier |
-| One via per amp | F3 capacity floor ([lens-vp](lens-vp.md) D3) | Via sets act by capacity (outer size); edge vias carry the current |
+| One via per amp | F3 capacity floor ([lens-vp](lens-vp.md) D3) | Via sets act by capacity (outer size); edge vias carry the current. Heating is bounded by ΔT = V²/(8·L0·T) for an end-cooled barrel (Wiedemann–Franz, L0 the Lorenz number): 1 A gives 0.03 K ([derivation-audit](derivation-audit.md)) |
 
 ## Recommendations for our system
 

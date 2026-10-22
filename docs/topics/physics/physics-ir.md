@@ -167,6 +167,7 @@ Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `fe
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** [physics-core-v2-api](physics-core-v2-api.md) §6–7 adds the types Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell and Event, and deprecates Body as the physics unit, the `mech` allocation, two-point AC voltage budgets and point LII. The schemas here are unchanged ([red-team](red-team.md)).
 - **Spend-model trust.** The L·di/dt overshoot model and the LC step model disagree when the edge is shorter than the ring period ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) [C]). The ledger must name the model per regime, not one formula per budget.
 - **Granularity of `alloc`.** Partial inductances are not additive without their mutual terms; allocations over sub-structures are approximate when sub-structures couple strongly [I].
 - **`ledger.json` size.** A dense partial-inductance matrix grows as N²; storing it per revision needs sparsification ([vocabulary § physics graph](vocabulary.md#the-physics-graph)).

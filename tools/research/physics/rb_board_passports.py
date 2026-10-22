@@ -7,47 +7,55 @@ passport (docs/topics/physics/lens-cd.md) to a routed .kicad_pcb instead of a sy
 board. Report: docs/topics/physics/real-board-passports.md.
 
 Pipeline (no KiCad needed; reads the saved file):
-  1. Parse nets, stackup, footprints/pads (rect, roundrect, oval, circle, custom), tracks,
-     arcs, vias and zones. Zone fills: the saved filled_polygon is used; a zone with no fill
-     on a layer is approximated by its outline minus other-net copper (flagged), and fills
-     that overlap other-net copper are flagged as possibly stale.
-  2. Infer roles from net names and footprints (printed as a log, overridable): ground,
-     power rails, shunts (R <= 0.2 ohm), the driver IC that feeds them, the load connector,
-     supply connectors, sense amplifiers across each shunt, the host connector, decaps.
-  3. DC conductor model: every power-relevant net is rasterized on its own grid (cell
-     coverage and face coverage by supersampling; 0.05 mm for small nets, 0.2 mm for planes),
-     vias are barrels (rho*l/(pi*(d+t)*t), t = 20 um plating) contacting the cells they
-     pierce, pads used as terminals are equipotential electrodes, shunts are lumped.
-     One sparse factorization per connected component.
-  4. DC passports: per-source current shares, I^2R attribution, current density, exact
-     removal costs (rank-1: dZ_qp = i_p i_q / (g (1 - rho)); Woodbury for sets), leverage
-     rho (exact for selected pieces, Johnson-Lindenstrauss sketch for all), dead copper,
-     and common impedance at quiet ports (Kelvin sense of each shunt; amplifier ground vs
-     host-connector ground), with Tellegen attribution and its cancellation index chi.
-  5. HF (inductive limit) hot-loop passport with a stack-local magnetostatic model: every
-     copper layer in a window around the driver is a sheet; the stored energy per face is
-     (mu0/2) * sum over gaps h_g * H_g^2 with H_g the cumulative sheet current above gap g
-     (parallel-plate limit, outer field optimised). It generalises "mu0*h*squares over the
-     nearest plane" to a full stack, so a passive plane (another net) carries its eddy
-     image current by itself. Gives loop L, where the HF current flows, energy by gap,
-     exact via removal / Thevenin via-addition values, and the no-plane counterfactual.
+  1. Parse nets, stackup, footprints/pads (rect, roundrect, oval, circle, custom), tracks
+     (incl. KiCad 9 mask-opening tracks), arcs, vias and zones. Zone fills: the saved
+     filled_polygon is used; a zone with no fill on a layer is approximated by its outline
+     minus other-net copper (flagged); fills overlapping other-net copper are flagged stale.
+  2. Infer roles from net names, values and footprints (printed as a log; --driver overrides):
+     ground, rails, shunts (R <= 0.2 ohm), the driver IC that feeds them (or a regulator that
+     drives an inductor), its bridge-return pins (ground pins next to the supply pin), the load
+     connector, supply connectors, sense amplifiers across each shunt, the host connector, decaps.
+  3. DC conductor model: each power-relevant net is rasterized on its own grid (cell and face
+     coverage by supersampling; 0.05 mm for small nets, 0.2 mm for planes); vias and plated
+     holes are barrels (rho*l/(pi*(d+t)*t), t = 20 um) contacting the cells they pierce;
+     terminal pads are equipotential electrodes, except shunt pads, which stay bare copper with
+     the resistive element attached along their facing edges (so Kelvin quality is computed).
+     One sparse LU per connected component.
+  4. DC passports: per-source shares, I^2R attribution, current density, exact removal costs
+     (rank-1 dZ_qp = i_p i_q / (g (1 - rho)); Woodbury for sets), leverage rho (exact for
+     selected pieces, Johnson-Lindenstrauss sketch for all), dead copper, and common impedance
+     at quiet ports (shunt Kelvin taps; amplifier ground vs host ground) with Tellegen
+     attribution, its cancellation index chi, and an outer-edge-tap counterfactual.
+  5. HF (inductive limit) hot-loop passport, stack-local magnetostatic model: every copper
+     layer in a window round the driver is a sheet, plus a component layer 0.3 mm above the
+     parts' side that carries the part current paths (die leads, capacitor bodies), so all
+     loop current is sheet current. Energy per face = (mu0/2) sum_g h_g H_g^2 with H_g the
+     cumulative sheet current above gap g minus half the net stack current (parallel-plate
+     limit; a plane of any net images what is above and below it). Driven by an EMF across
+     the die's supply lead; ESL is a series term on a cut of each capacitor body. Gives loop L,
+     energy by gap, current by layer and net, per-via shares with exact Woodbury removal
+     values, exact Thevenin values for one added ground via at every legal site, the
+     no-plane and swapped-plane counterfactuals, and the DC-vs-HF share of each via.
   6. Switch-node charge to whom (parallel-plate C of the phase copper to adjacent layers).
   7. Floors (lens VP): Beckmann R >= R_s*d^2/A per phase pour, and a joint convex floor for
-     the phase pours sharing the region around the driver (Frank-Wolfe on the relaxed
-     density with a per-cell sum <= 1 and a total-area budget; the FW gap certifies it).
+     the pours sharing the region round the driver (Frank-Wolfe on the relaxed density with a
+     per-cell sum <= 1 and a total-area budget; the FW gap certifies the bound).
 
-Model limits: quasi-static; DC is exact for the rasterized geometry (zone fills as saved,
-copper thickness from the stackup, 20 C copper); no solder, lead-frame or package
-resistance (pads are equipotential); HF model is local (no lateral fringing: narrow strips
-over a plane are over-estimated by ~1.3-1.5x at w/h = 5-10; plane-pair via spreading is
-accurate), lossless (perfect conductors above a few MHz), no package/ESL unless stated.
+Model limits: quasi-static. DC is exact for the rasterized geometry (saved fills, stackup
+copper thickness, 20 C copper, no solder, no lead-frame or package resistance). The HF model
+is local: no lateral fringing, so narrow strips over a plane are over-estimated (x1.5 at
+w/h = 5, about x3 at w/h = 1; plane-pair via spreading is exact); lossless (perfect
+conductors, valid above the plane's imaging frequency, ~1 MHz here); part current paths and
+the outer field (--h-out) are crude; use it for shares, rankings and relative changes.
 
 Usage:
   python -I rb_board_passports.py BOARD.kicad_pcb [--current 1.0] [--h-small 0.05]
          [--h-plane 0.2] [--h-hf 0.15] [--quick] [--no-hf] [--no-floor] [--sketch 48]
-Runtime on the bldcpower board (32 mm round, 4 layers; 111k DC nodes, 64k HF sheet cells): 42 s on one
-core, peak memory 1.7 GB with the default grids; --quick about 15 s and 0.7 GB. OMP_NUM_THREADS=1 is set
-here. Deterministic (fixed seeds).
+Runtime on the bldcpower board (32 mm round, 4 layers; 111k DC nodes, 73k HF sheet cells): about 50 s on
+one core, peak memory 2.2 GB with the default grids; --quick about 15 s and 0.7 GB; --no-hf 20 s, 0.6 GB.
+OMP_NUM_THREADS=1 is set here. Deterministic (fixed seeds). Also runs on boards whose power stage is a
+regulator driving an inductor (the switch node is then the 'phase'); on the other two test boards it takes
+5-30 s.
 """
 import os
 
@@ -439,8 +447,8 @@ def infer_roles(b, args):
             nn = [p['net'] for p in f['pads']]
             if ohm is not None and ohm <= 0.2 and all(nn):
                 shunts.append(dict(ref=f['ref'], ohm=ohm, nets=nn, fp=f))
-    L.append("shunts (R <= 0.2 ohm from the value field): " + (", ".join(f"{s['ref']} {s['ohm'] * 1e3:.0f} mOhm "
-                                                                     f"between {s['nets'][0]} and {s['nets'][1]}" for s in shunts) or 'none'))
+    L.append("shunts (R <= 0.2 ohm from the value field): " + (", ".join(
+        f"{s['ref']} {s['ohm'] * 1e3:.0f} mOhm between {s['nets'][0]} and {s['nets'][1]}" for s in shunts) or 'none'))
     shunt_nets = {n for s in shunts for n in s['nets']}
     inductors = []
     for f in b.fps:
@@ -1296,7 +1304,8 @@ def loop_bodies(roles, decaps, h):
     meta = dict(die=f"@{drv['ref']}.die", ep=ep, vs=[], caps={}, ret=[])
     if roles.get('foot'):
         # die at the paddle centre; supply lead(s) and bridge-return lead(s) run to it (0.2 mm strips)
-        D = (ep['x'], ep['y']) if ep['poly'].area >= 1.0 else (np.mean([p['x'] for p in drv['pads']]), np.mean([p['y'] for p in drv['pads']]))
+        D = (ep['x'], ep['y']) if ep['poly'].area >= 1.0 else \
+            (np.mean([p['x'] for p in drv['pads']]), np.mean([p['y'] for p in drv['pads']]))
         die = []
         for p in rails:
             die.append(LineString([(p['x'], p['y']), D]).buffer(0.1, cap_style='round'))
@@ -1468,15 +1477,15 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
     near = [f for d, f in roles['decaps'] if d < 12.0]
     pts = [(p['x'], p['y']) for p in drv['pads']] + [(p['x'], p['y']) for f in near for p in f['pads']]
     drv_gnd = roles['foot'] or [p for p in drv['pads'] if p['net'] == gnd]
-    gv = sorted((v for v in b.vias if v['net'] == gnd),
-                key=lambda v: min(math.hypot(v['x'] - p['x'], v['y'] - p['y']) for p in drv_gnd))
-    pts += [(v['x'], v['y']) for v in gv[:6]]
+    for p in (q for q in drv['pads'] if q['net'] == gnd):       # the ground vias any driver ground pin can reach first
+        gv = sorted((v for v in b.vias if v['net'] == gnd), key=lambda v: math.hypot(v['x'] - p['x'], v['y'] - p['y']))
+        pts += [(v['x'], v['y']) for v in gv[:4]]
     for ph in roles['phases']:
         pts += [(p['x'], p['y']) for p in (ph['shunt']['fp']['pads'] if ph['shunt'] else ph['inductor']['pads'])]
         if ph['load']:
             pts += [(p['x'], p['y']) for p in ph['load']['pads']]
     xs, ys = zip(*pts)
-    m = 2.5
+    m = 3.0
     window = [min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m]
     if b.outline is not None:
         bx = b.outline.bounds
@@ -1572,6 +1581,20 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
     gi = sr.nets.index(gnd)
     plane_net = {li: sr.nets[Counter(sr.owner[li][sr.owner[li] >= 0].ravel()).most_common(1)[0][0]]
                  for li in range(off, sr.nl) if (sr.owner[li] >= 0).any()}
+    # stackup counterfactual: if the ground plane is not the plane next to the parts' copper, swap the two planes
+    planes = [li for li in range(off + 1, sr.nl - 1) if (sr.owner[li] >= 0).sum() >= 0.5 * sr.owner[li].size]
+    gpl = [li for li in planes if plane_net.get(li) == gnd]
+    if gpl and planes and planes[0] != gpl[0]:
+        import copy
+        a_, b_ = planes[0], gpl[0]
+        sr2 = copy.copy(sr)
+        sr2.owner, sr2.FX, sr2.FY = sr.owner.copy(), sr.FX.copy(), sr.FY.copy()
+        for arr in (sr2.owner, sr2.FX, sr2.FY):
+            arr[[a_, b_]] = arr[[b_, a_]]
+        r3 = HFModel(b, sr2, roles, meta, args.h_out).build(esl=True)
+        log(f"   stackup counterfactual: swap the {plane_net[a_]} plane ({sr.layers[a_]}) and the {gnd} plane ({sr.layers[b_]}) so that"
+            f" {gnd} is next to the power stage: L {L * 1e9:.2f} -> {r3['L'] * 1e9:.2f} nH ({pct(r3['L'] - L, L):+.0f}%)")
+        res['swap'] = (plane_net[a_], sr.layers[a_], sr.layers[b_], L, r3['L'])
     cx = np.mean([p['x'] for p in drv_gnd])
     cy = np.mean([p['y'] for p in drv_gnd])
     cand = []
@@ -1642,7 +1665,8 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
         rows.sort(key=lambda t: -max(t[0], t[1]))
         log(f"   the same vias at DC ({feeds[0]}, share of the supply current) and in the HF loop (share of the loop current):")
         for hfc, dcc, vv in rows[:9]:
-            log(f"     {vv['net'].split('/')[-1]:6s} {vv['kind']} at {where(vv['x'], vv['y'])}: DC {100 * dcc:5.1f}%   HF {100 * hfc:5.1f}%")
+            log(f"     {vv['net'].split('/')[-1]:6s} {vv['kind']} at {where(vv['x'], vv['y'])}:"
+                f" DC {100 * dcc:5.1f}%   HF {100 * hfc:5.1f}%")
     res['window'] = window
     return res
 
@@ -1781,7 +1805,8 @@ def run_floor(b, roles, N, Ib, col, args):
         areas.append(isl.area)
         Racts.append(Ract)
         ds.append(d)
-        log(f"   {ph['net_in'].split('/')[-1]:8s}: pour {isl.area:.1f} mm2, pin-to-shunt-pad gap {d:.1f} mm; actual copper R {fmt_r(Ract)};"
+        log(f"   {ph['net_in'].split('/')[-1]:8s}: pour {isl.area:.1f} mm2, pin-to-shunt-pad gap {d:.1f} mm;"
+            f" actual copper R {fmt_r(Ract)};"
             f" Beckmann floor R_s d^2/A = {fmt_r(rs * d * d / A)}")
     if len(nets) < 2:
         log("   (joint floor needs two or more pours sharing a region; single-pour Beckmann floor only)")
@@ -1997,7 +2022,8 @@ def main(argv=None):
                 if mm.any():
                     by[(net, ly)] += float(loss[mm].sum())
         tot = Rself[nm]
-        parts = ", ".join(f"{n.split('/')[-1]}/{ly} {pct(v, tot):.0f}%" for (n, ly), v in sorted(by.items(), key=lambda t: -t[1]) if v > 0.02 * tot)
+        parts = ", ".join(f"{n.split('/')[-1]}/{ly} {pct(v, tot):.0f}%"
+                          for (n, ly), v in sorted(by.items(), key=lambda t: -t[1]) if v > 0.02 * tot)
         lump = sum(loss[k2] for _, k2 in lumped)
         log(f"   {nm:14s}: R = {fmt_r(tot)}" + (f" (shunt {fmt_r(lump)} + copper {fmt_r(tot - lump)})" if lump > 0 else "")
             + f"; P = {tot * I0 ** 2 * 1e3:.2f} mW at {I0:g} A; copper loss: {parts}")
@@ -2036,12 +2062,14 @@ def main(argv=None):
             d = np.hypot(N.mx[face] - N.x[node], N.my[face] - N.y[node])
             sh = loss[d < 0.5].sum() / tot
             if sh > 0.02:
-                txt.append(f"{100 * sh:.0f}% within 0.5 mm of the {N.node_net[node].split('/')[-1]} terminal at {where(N.x[node], N.y[node])}")
+                txt.append(f"{100 * sh:.0f}% within 0.5 mm of the {N.node_net[node].split('/')[-1]} terminal"
+                           f" at {where(N.x[node], N.y[node])}")
         key = np.floor(N.mx[face]).astype(int) * 100000 + np.floor(N.my[face]).astype(int)
         u, inv = np.unique(key, return_inverse=True)
         acc = np.bincount(inv, weights=loss)
         kk = int(np.argmax(acc))
-        txt.append(f"hottest 1x1 mm tile ({u[kk] // 100000}-{u[kk] // 100000 + 1}, {u[kk] % 100000}-{u[kk] % 100000 + 1}) holds {100 * acc[kk] / tot:.0f}%")
+        tx_, ty_ = u[kk] // 100000, u[kk] % 100000
+        txt.append(f"hottest 1x1 mm tile ({tx_}-{tx_ + 1}, {ty_}-{ty_ + 1}) holds {100 * acc[kk] / tot:.0f}%")
         log(f"   {nm:14s}: " + "; ".join(txt) + f"; peak |J| {J[jm]:.0f} A/mm2 per A at {where(N.mx[face][jm], N.my[face][jm])}"
             f" ({N.net[face][jm].split('/')[-1]}, {N.lay[face][jm]})")
 
@@ -2074,7 +2102,8 @@ def main(argv=None):
             cost = Ib[hi, k] ** 2 / (N.g[hi] * np.maximum(1 - rho_ex[hi], 1e-12))
             w_ = hi[np.argmax(cost)]
             log(f"   {nm:14s}: {len(hi)} faces with rho > 0.9 carry > 2% of it; worst single-face removal at {where(N.mx[w_], N.my[w_])}"
-                f" ({N.net[w_].split('/')[-1]}): +{pct(cost.max(), Rself[nm]):.1f}% R, first-order +{pct(Ib[w_, k] ** 2 / N.g[w_], Rself[nm]):.3f}%"
+                f" ({N.net[w_].split('/')[-1]}): +{pct(cost.max(), Rself[nm]):.1f}% R,"
+                f" first-order +{pct(Ib[w_, k] ** 2 / N.g[w_], Rself[nm]):.3f}%"
                 f" (x{1 / max(1 - rho_ex[w_], 1e-12):.0f})")
     okr = np.isfinite(rho_ex) & face & (load_any > 0.01)
     log(f"   exact price / first-order (Tellegen) price = 1/(1 - rho) over the {okr.sum()} loaded faces with exact rho: median"
@@ -2120,7 +2149,8 @@ def main(argv=None):
                 bt = []
                 for q in big:
                     jj, ii = np.nonzero(lab == q + 1)
-                    bt.append(f"{iarea[q]:.2f} mm2 at {where(R['x0'] + (ii.mean() + 0.5) * R['h'], R['y0'] + (jj.mean() + 0.5) * R['h'])}")
+                    cxy = (R['x0'] + (ii.mean() + 0.5) * R['h'], R['y0'] + (jj.mean() + 0.5) * R['h'])
+                    bt.append(f"{iarea[q]:.2f} mm2 at {where(*cxy)}")
                 log(f"   {net.split('/')[-1]:10s} {ly:6s}: {tot_area:6.1f} mm2; {len(dead)} dead islands ({dead_area:.1f} mm2)"
                     + (f", largest {', '.join(bt)}" if bt else "") + f"; idle 1 mm tiles inside live copper {idle:.1f} mm2"
                     f" ({100 * idle / tot_area:.0f}%)")

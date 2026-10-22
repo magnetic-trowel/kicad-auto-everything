@@ -130,12 +130,10 @@ The hot-loop data supports this. MS2 errs on 2–4% of choices. At fixed stackup
 
 ### 5. Calibration against F4
 
-- **Coupon panel per stackup and fab:**
-  - hot loops of known geometry;
-  - decap mounts;
-  - via transitions;
-  - slots across references;
-  - thermal pads.
+- **Three measurement layers** ([validation-program](validation-program.md)):
+  - common-factor structures on every board (stackup TDR, a pre-scan with real cables, an IR image), fixing per-class bias once;
+  - a pre-registered bring-up of the first board, with predictions logged before fabrication;
+  - the value-ranked coupon panel of [validation-coupons](validation-coupons.md), built only where models disagree and decisions flip.
   
   Measure with VNA/TDR, thermal camera and near-field probe. Store the bias per (stackup, fab) with provenance [I].
 - **Vendor data:** capacitor and inductor S-parameters, de-embedded from the vendor fixture to our mounting [I].
@@ -178,7 +176,7 @@ The hot-loop data supports this. MS2 errs on 2–4% of choices. At fixed stackup
 
 ## Conflicts and open questions
 
-- **Round-3 corrections (2026-10-22):** adjoint pricing needs the edit's polarization tensor and Woodbury quotes with radius r; PEEC's FastHenry match is scoped to w/h 0.3–5; MS2 bias restated against a graded reference; exactness classes E0–E5 added ([red-team](red-team.md)).
+- **Round-3 corrections (2026-10-22):** F4 calibration now follows the validation program; adjoint pricing needs the edit's polarization tensor and Woodbury quotes with radius r; PEEC's FastHenry match is scoped to w/h 0.3–5; MS2 bias restated against a graded reference; exactness classes E0–E5 added ([red-team](red-team.md)).
 - **Tier names.** Four schemes coexist (table above). We propose F0–F4 + S as canonical. design-reasoning's "T2 SPICE" is the circuit axis (C2).
 - **"Minimize hot-loop area"** ([hot-loops](../rules/power/hot-loops.md), [checkers-power](../rules/checkers-power.md) `loop_area` with `max_mm2`) is a weak objective over a plane (mixed-stackup Spearman 0.36). Score nH with MS2 or PEEC. Area stays valid for planeless boards.
 - **F3 runtimes are estimates.** Time a gerber2ems slice of a DDR lane and a USB3 launch on this harness, CPU and GPU.

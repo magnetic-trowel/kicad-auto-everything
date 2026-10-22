@@ -78,16 +78,14 @@ We adopt it with three amendments [I]:
 
 ### Relations
 
-| Relation | Meaning | Required by | Observed by |
-|---|---|---|---|
-| `carries(Body, Loop/Feed)` | body is part of the current path | templates | J solve |
-| `returns_through(Loop/Channel, Reference, band)` | return conductor per band | LLM, templates | current split |
-| `references(Channel/Node, Reference, band)` | field is guided against it | stackup | reference map |
-| `couples(aggr, victim, mech, band)` | entity with a budget | screen, LLM | C_m, M, R_shared, ΔT |
-| `shields(Shield, victim, band)` | designed protection | LLM | coupling with and without |
-| `excludes(region, Loop, band)` | aggressor J kept out | LLM | J solve |
-| `senses(Port, Body@point)` | zero-current tap | templates | J on the tap segment |
-| `feeds`, `bonds`, `isolates`, `spreads_heat`, `part_of` | DC delivery, chassis bond, barrier, heat flow, membership | detectors | solvers |
+- `carries(Body, Loop/Feed)`: body is part of the current path. Required by templates; observed by J solve.
+- `returns_through(Loop/Channel, Reference, band)`: return conductor per band. Required by LLM, templates; observed by current split.
+- `references(Channel/Node, Reference, band)`: field is guided against it. Required by stackup; observed by reference map.
+- `couples(aggr, victim, mech, band)`: entity with a budget. Required by screen, LLM; observed by C_m, M, R_shared, ΔT.
+- `shields(Shield, victim, band)`: designed protection. Required by LLM; observed by coupling with and without.
+- `excludes(region, Loop, band)`: aggressor J kept out. Required by LLM; observed by J solve.
+- `senses(Port, Body@point)`: zero-current tap. Required by templates; observed by J on the tap segment.
+- `feeds`, `bonds`, `isolates`, `spreads_heat`, `part_of`: DC delivery, chassis bond, barrier, heat flow, membership. Required by detectors; observed by solvers.
 
 ### Bands and regimes
 
@@ -137,18 +135,16 @@ Each operator carries a sensitivity card: which budgets move, sign, magnitude mo
 
 ### Visual vocabulary (board view and VLM renders)
 
-| Element | Glyph | Encodes |
-|---|---|---|
-| Loop | translucent filled polygon, arrowed outline | fill colour = budget used (green < 50%, amber, red > 100%); label "0.7/1.0 nH" |
-| Node | hatched area with a dashed halo | halo radius = distance at which the worst victim's budget is met |
-| Return path | dashed ghost of the signal on its reference layer | red ✕ at each discontinuity crossed |
-| Port | filled dot (signal) and open dot (reference) joined by a bar; arrow for power flow | edge-anchored ports drawn on the outline |
-| Coupling | zig-zag spring between aggressor and victim | letter C/M/Z/R/T/G for mechanism; thickness = budget used |
-| Antenna | both halves outlined, joined by a "V_cm" label | budget used |
-| Heat path | orange arrows from source to sink; isotherms | ΔT label |
-| Barrier | double line; creepage path drawn | "needed / present" mm |
-| Sense tap | small "K" diamond at the tap point | — |
-| Budget bar | stacked bar per budget, split by spender | ledger attribution |
+- **Loop:** translucent filled polygon, arrowed outline; fill colour = budget used (green < 50%, amber, red > 100%); label "0.7/1.0 nH".
+- **Node:** hatched area with a dashed halo; halo radius = distance at which the worst victim's budget is met.
+- **Return path:** dashed ghost of the signal on its reference layer; red ✕ at each discontinuity crossed.
+- **Port:** filled dot (signal) and open dot (reference) joined by a bar; arrow for power flow; edge-anchored ports drawn on the outline.
+- **Coupling:** zig-zag spring between aggressor and victim; letter C/M/Z/R/T/G for mechanism; thickness = budget used.
+- **Antenna:** both halves outlined, joined by a "V_cm" label; budget used.
+- **Heat path:** orange arrows from source to sink; isotherms; ΔT label.
+- **Barrier:** double line; creepage path drawn; "needed / present" mm.
+- **Sense tap:** small "K" diamond at the tap point; —.
+- **Budget bar:** stacked bar per budget, split by spender; ledger attribution.
 
 This extends U5 ([workflow-ux](../../ideas/original/workflow-ux.md)). Glyphs come from the *observed* graph and share ids with the text, so a VLM judge and a human see the same objects.
 
@@ -162,6 +158,7 @@ This extends U5 ([workflow-ux](../../ideas/original/workflow-ux.md)). Glyphs com
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** [physics-core-v2-api](physics-core-v2-api.md) §6–7 adds the types Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell and Event, and deprecates Body as the physics unit, the `mech` allocation, two-point AC voltage budgets and point LII. The schemas here are unchanged ([red-team](red-team.md)).
 - **Body granularity.** One body per net per layer is simple, but J solves need a mesh; per connected component may be the better id.
 - **The image results are idealized.** A perfect, infinite plane overstates shielding below f_x, near plane edges and over slots; the [C] table bounds the effect and does not predict it.
 - **Designed vs parasitic can overlap.** A VIN pour is a feed (widen it) and part of a hot loop (keep it tight); a heat-spreading pour on a switch node is a dv/dt aggressor. The ledger must hold both budgets and show the trade.
