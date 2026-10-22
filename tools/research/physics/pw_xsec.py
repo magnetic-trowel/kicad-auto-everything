@@ -90,7 +90,7 @@ def run_case(name, conds, currents, freqs):
     r0 = rdc(conds)
     rdc_loop = r0[0] + r0[1] if currents[1] != 0 else r0[0]
     print(f"  {name}")
-    print("     f        R'/R'dc   L' nH/mm   share of go-current on the face toward the return")
+    print("     f        R'/R'dc   L' nH/mm   |current| in the go conductor's half facing the return")
     for f in freqs:
         Zp, I, owner, (y, z, w, t) = solve(conds, currents, f)
         go = owner == 0
@@ -99,7 +99,7 @@ def run_case(name, conds, currents, freqs):
             face = go & (y > np.median(y[go]))
         else:
             face = go & (z < np.median(z[go]))
-        share = abs(I[face].sum()) / abs(I[go]).sum()
+        share = abs(I[face].sum()) / abs(I[go].sum())
         print(f"  {f:9.0e}  {Zp.real/rdc_loop:7.2f}   {Zp.imag/(2*math.pi*f)*1e9/1e3:8.4f}   {share:5.2f}")
 
 
@@ -109,13 +109,14 @@ def main():
     W = 2 * mm
     for f in (1e6, 1e7, 1e8):
         print(f"skin depth in Cu at {f:.0e} Hz: {math.sqrt(RHO/(math.pi*f*MU0))*1e6:5.1f} um")
-    nt = 10
+    nt = 8
     trace = lambda y0, z0: rect(y0, y0 + W, z0, z0 + t, 40, nt, 2.0, 1.6)
     print("== plane: trace over a 20 mm wide plane (return); DC R' counts trace + plane")
     for h in (0.1 * mm, 0.5 * mm, 1.5 * mm):
         plane = rect(-9 * mm, 11 * mm, -h - t, -h, 80, nt, 2.2, 1.6)
         # grade the plane toward the centre under the trace: map cells with a centre-weighted grid
-        ey = np.concatenate([np.linspace(-9, -1, 9)[:-1], np.linspace(-1, 3, 50)[:-1], np.linspace(3, 11, 9)]) * mm
+        nf = int(min(140, max(50, 4.0 / (h / mm / 3))))
+        ey = np.concatenate([np.linspace(-9, -1, 17)[:-1], np.linspace(-1, 3, nf)[:-1], np.linspace(3, 11, 17)]) * mm
         ez = np.linspace(-h - t, -h, nt + 1)
         plane = [((ey[i] + ey[i + 1]) / 2, (ez[j] + ez[j + 1]) / 2, ey[i + 1] - ey[i], ez[j + 1] - ez[j])
                  for i in range(len(ey) - 1) for j in range(nt)]
@@ -123,7 +124,7 @@ def main():
     print("== side: go and return side by side, 0.5 mm gap, same layer, no plane")
     run_case("side", [trace(0, 0), trace(W + 0.5 * mm, 0)], [1, -1], freqs)
     print("== side + floating plane 0.1 mm below (eddy currents only)")
-    ey = np.linspace(-6, 10.5, 67) * mm
+    ey = np.concatenate([np.linspace(-6, -1, 11)[:-1], np.linspace(-1, 5.5, 196)[:-1], np.linspace(5.5, 10.5, 11)]) * mm
     ez = np.linspace(-0.1 * mm - t, -0.1 * mm, nt + 1)
     fplane = [((ey[i] + ey[i + 1]) / 2, (ez[j] + ez[j + 1]) / 2, ey[i + 1] - ey[i], ez[j + 1] - ez[j])
               for i in range(len(ey) - 1) for j in range(nt)]

@@ -181,7 +181,8 @@ class Net:
         v = np.linalg.solve(Y, src)
         I = np.linalg.solve(Zb, Ar.T @ v)
         Z = v[kp]
-        self._last = dict(L=L, I=I, w=w)
+        phi = {nd: (v[keep.index(k)] if k in keep else 0.0) for nd, k in nodes.items()}
+        self._last = dict(L=L, I=I, w=w, phi=phi)
         return Z, I
 
     def L_port(self, p, n, **kw):
@@ -478,37 +479,40 @@ def exp_caps():
 # Kelvin sense pickup
 # ----------------------------------------------------------------------
 def exp_kelvin():
-    print("== kelvin: mutual inductance into a sense loop -> V = M di/dt (plane 0.2 mm below top)")
+    print("== kelvin: inductive error in a shunt's sense voltage, V_err = L_err di/dt (plane 0.2 mm below top)")
     h = 0.2 * mm
     t = 35e-6
-    # 2512 shunt: body 6.3 mm long along x at height h+0.3, current from a wide feed trace on the left to the right
+    zb = h + 0.3 * mm   # resistive element height (2512 body, 6.3 mm long, 3 mm wide)
     net = Net(plane_z=0.0)
-    net.bar("IN", "s0", (-10 * mm, -1.5 * mm, h), 0, 7 * mm, 3 * mm, t, nw=_nw(3 * mm, h))   # feed x -10..-3
-    net.bar("s0", "s1", (-3.15 * mm, -1.5 * mm, h + 0.3 * mm), 0, 6.3 * mm, 3 * mm, 0.1 * mm, nw=30, nt=1)  # body (resistive element)
+    net.bar("IN", "s0", (-10 * mm, -1.5 * mm, h), 0, 6.85 * mm, 3 * mm, t, nw=_nw(3 * mm, h))   # feed x -10..-3.15
+    net.bar("s0", "s1", (-3.15 * mm, -1.5 * mm, zb), 0, 6.3 * mm, 3 * mm, 0.1 * mm, nw=30, nt=1)  # body
     net.bar("s1", "OUT", (3.15 * mm, -1.5 * mm, h), 0, 7 * mm, 3 * mm, t, nw=_nw(3 * mm, h))
     net.bar("PLANE", "IN", (-10 * mm - t, -1.5 * mm, 0.0), 2, h, t, 3 * mm, nw=1, nt=_nw(3 * mm, h))
     net.bar("OUT", "P", (10.15 * mm, -1.5 * mm, 0.0), 2, h, t, 3 * mm, nw=1, nt=_nw(3 * mm, h))
     net.bars[-1] = ("P", "OUT", net.bars[-1][2])
     Z, I = net.solve("P", "PLANE")
-    # sense taps at the inner pad edges x = +-2.2 mm, y = 0, on the top layer; amplifier 10 mm away in +y
-    xt = 2.2 * mm
-    cases = {
-        "pair leaves together (0.2 mm apart), taps 4.4 mm apart joined under body": [
-            ((-xt, 0, h), 0, 2 * xt - 0.2 * mm),          # run along under the body to near the other tap
-            ((xt - 0.2 * mm, 0, h), 1, 10 * mm), ((xt, 10 * mm, h), 1, -10 * mm)],
-        "taps leave separately (4.4 mm apart) to the amplifier 10 mm away": [
-            ((-xt, 0, h), 1, 10 * mm), ((-xt, 10 * mm, h), 0, 2 * xt), ((xt, 0, h), 1, 10 * mm)],
-        "taps at the outer pad ends (8 mm apart), separate traces": [
-            ((-4 * mm, 0, h), 1, 10 * mm), ((-4 * mm, 10 * mm, h), 0, 8 * mm), ((4 * mm, 0, h), 1, 10 * mm)],
+    w = net._last["w"]
+    phi = net._last["phi"]
+    dphi = (phi[net.find("s1")] - phi[net.find("s0")]).imag / w   # inductive drop across the element (current flows s1 -> s0)
+    xt = 3.15 * mm
+    down1 = ((xt, 0, zb), 2, -(zb - h))      # from the element end down to the pad level
+    up0 = ((-xt, 0, h), 2, zb - h)           # from the pad level up to the element end (reverse direction)
+    routes = {
+        "taps leave separately (+y), 6.3 mm apart, join at the amplifier 10 mm away": [
+            down1, ((xt, 0, h), 1, 10 * mm), ((xt, 10 * mm, h), 0, -2 * xt), ((-xt, 10 * mm, h), 1, -10 * mm), up0],
+        "taps converge 1.8 mm out (beside the body), then a tight pair to the amplifier": [
+            down1, ((xt, 0, h), 1, 1.8 * mm), ((xt, 1.8 * mm, h), 0, -2 * xt + 0.2 * mm),
+            ((-xt + 0.2 * mm, 1.8 * mm, h), 1, 8.2 * mm), ((-xt + 0.2 * mm, 10 * mm, h), 0, -0.2 * mm),
+            ((-xt, 10 * mm, h), 1, -10 * mm), up0],
+        "one sense trace runs back under the element (between element and plane)": [
+            down1, ((xt, 0, h), 0, -2 * xt + 0.2 * mm), ((-xt + 0.2 * mm, 0, h), 1, 10 * mm),
+            ((-xt + 0.2 * mm, 10 * mm, h), 0, -0.2 * mm), ((-xt, 10 * mm, h), 1, -10 * mm), up0],
     }
-    # sign: probe path from tap- to tap+ around the loop; return path segments with negative length go backwards
-    for name, path in cases.items():
-        # fix last segment direction for 'separate' cases: come back down from amplifier to tap+
-        p = list(path)
-        if name.startswith("taps"):
-            p[-1] = ((p[-1][0][0], 10 * mm, h), 1, -10 * mm)
-        M = net.induced(p, I.real if np.iscomplexobj(I) else I)
-        print(f"  {name}: M = {abs(M)*1e12:6.1f} pH -> {abs(M)*1e9:5.2f} mV per A/us, {abs(M)*5e9*1e3:6.1f} mV at 5 A/ns")
+    print(f"  inductive drop across the element itself (with its image return): {dphi*1e12:6.0f} pH")
+    for name, path in routes.items():
+        Lerr = dphi - net.induced(path, I.real)
+        print(f"  {name}: L_err = {Lerr*1e12:6.0f} pH -> {Lerr*1e9*1e3/1e3:5.2f} mV per A/us;"
+              f" R = L_err/1 mOhm corner {1e-3/(2*math.pi*abs(Lerr))/1e3:6.0f} kHz")
     print("  (signal for comparison: 1 mOhm shunt at 20 A = 20 mV)")
     # nearby hot loop (lateral, 10 mm2) at 5 mm from a 30 mm2 sense loop vs a 1 mm2 loop
     hot, (p, n) = lateral_loop(4 * mm, 2 * mm, 0.5 * mm, h)
