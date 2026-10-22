@@ -3,29 +3,29 @@
 **TL;DR**
 - **A netlist is the support of the DC share matrix; layout physics is its values, band by band.** Every piece of copper (strip, via, pad cell, plane region) gets a *passport*: its share of each source's current, where its charge's field lines end, the share of each budget it holds, and the exact change of every budget if it were removed or extended. Superposition, Tellegen's theorem and rank-1 updates make this exact: one factorization per band, one back-substitution per source, one diagonal for all removals.
 - **Removal cost = attribution ÷ (1 − leverage).** Leverage ρ, the probability that a piece lies in a random spanning tree (Σρ = nodes − components), maps irreplaceability without any source. In a uniform sheet ρ = ½, so deleting a strip costs exactly twice its first-order price; a slit costs the crack polarizability (π/4)·R_s·(Δψ)² however thin it is. This explains round 1's hand-set factor 2 and its 30× slot miss [C].
-- **Jobs are signs of exact counterfactuals:** carries, lowers or raises a coupling, images (induced current only), series path (ρ = 1), senses (zero foreign share). On a synthetic 2-layer buck + ADC board, passports for 4,415 pieces × 4 bands × 10 budgets took ~25 s and matched brute force to 2×10⁻⁹ [C]. They put 63% of the ADC's 1.5 mV DC error in two plane regions and showed one 0.5 mm slot bridge removing 78% of the HF coupling.
+- **Jobs are signs of exact counterfactuals:** carries, lowers or raises a coupling, images (induced current only), series path (ρ = 1), senses (zero foreign share). On a synthetic buck + ADC board, passports for 4,415 pieces × 4 bands × 10 budgets took ~25 s and matched brute force to 2×10⁻⁹ [C]. They put 62% of the ADC's 1.5 mV DC error in two plane regions and showed one 0.5 mm slot bridge removing 78% of the HF coupling.
 - **Three surprises.** A coupling's per-piece attribution is a residual of cancelling go and return terms (hot loop→ADC: 8% of the sum of its terms), so blame must be counterfactual. Adding copper can raise a coupling: Rayleigh protects only self terms. Deleting "useless" copper in one batch cost 7.3× its summed single costs.
 - **Round 1 is net-centric at the bottom:** Body = net × layer, roles assigned top-down, designed/parasitic on structures, and "one adjoint prices every edit", which is false for finite edits. Add Piece, Passport and Job; derive loops, references, cells and exclusions as queries on the share matrix.
 
-Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [cd_conductor_passport.py](../../../tools/research/physics/cd_conductor_passport.py) (reuses the Neumann kernels of [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py)). Ideas CD1–CD34: [lens-cd ideas](../../ideas/physics-first/lens-cd.md).
+Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [cd_conductor_passport.py](../../../tools/research/physics/cd_conductor_passport.py). Ideas CD1–CD34: [lens-cd ideas](../../ideas/physics-first/lens-cd.md).
 
 ## Key facts
 
 ### 1. Principles
 
-The circuit is the gentle limit: each conductor is one node. Layout bends the limit, because a conductor is a field boundary with internal structure. These hold in any linear, reciprocal, quasi-static band (resistive, RL with mutuals, thermal); P6 is the electrostatic dual.
+The circuit is the gentle limit: each conductor is one node. Layout bends it, because a conductor is a field boundary with internal structure. These hold in any linear, reciprocal, quasi-static band (resistive, RL with mutuals, thermal); P6 is the electrostatic dual.
 
 | # | Principle | Equation | Meaning for a conductor |
 |---|---|---|---|
 | P1 | Superposition | i_b(f) = Σ_p S_bp(f)·I_p(f); q_c = Σ_n Q_cn·V_n | its state is its row of S (current by source) and Q (charge by driven node) |
 | P2 | Tellegen attribution | Z_qp = Σ_b v_b^p·i_b^q (v^p = Z·i^p obeys KVL, i^q KCL); a_b = ½(v_b^p i_b^q + v_b^q i_b^p) | every impedance, coupling, loss and stored energy is an exact sum over pieces; the split, not the sum, depends on piece size and test current |
 | P3 | Rank-1 counterfactuals | remove b: ΔZ_qp = s_b^p·s_b^q / y_bb, y_bb = (N K⁻¹ Nᵀ)_bb = 1/Z_cut,b; set B: s_Bᵀ Y_BB⁻¹ s_B; add z across m,n: −ΔV_mn^p ΔV_mn^q / (z + Z_th,mn) | exact; Z_cut is what a current meets going round the piece |
-| P4 | Leverage | ρ_b = 1 − z_b·y_bb; Σρ_b = n − c; Σ(1 − ρ_b) = cycle rank; removal = a_b/(1 − ρ_b) | 1: series path; ½: sheet; → 0: redundant mesh |
+| P4 | Leverage | ρ_b = 1 − z_b·y_bb; Σρ_b = n − c; Σ(1 − ρ_b) = cycle rank; removal = a_b/(1 − ρ_b) without mutuals | 1: series path; ½: sheet; → 0: redundant mesh |
 | P5 | Transport vs circulation | J^p(f) = J_R^p + J_c^p(f), ∇·J_c = 0, no port flux; κ = \|J(f)\|/\|J_R\| | J_R carries; J_c images and shields; a tree cannot circulate |
 | P6 | Charge to whom | δq_O = −P_OO⁻¹ P_Oe·q_e; Δq(remove e) = −C_:e q_e / C_ee | field lines end on the local return, quiet nets, victims or the world |
 | P7 | Jobs are signs; arbitration is prices | verb = sign of ΔB_k(b); value = Σ_k λ_k·ΔB_k(b)/slack_k | conflicts are pieces with large opposite-signed components |
 
-P2 underlies both the energy ledger and the adjoint method: Director and Rohrer built the adjoint network on it ([schematic-to-physics](schematic-to-physics.md)) [S]. P3 is the power-grid LODF, PTDF/(1 − PTDF); P4 is Kirchhoff and Foster; P5 is the loop–tree basis of computational EM [S].
+P2 also underlies the adjoint method of Director and Rohrer ([schematic-to-physics](schematic-to-physics.md)); P3 is the power-grid LODF, PTDF/(1 − PTDF); P4 is Kirchhoff and Foster; P5 is computational EM's loop–tree basis [S].
 
 ### 2. Derivation map
 
@@ -41,13 +41,13 @@ P2 underlies both the energy ledger and the adjoint method: Director and Rohrer 
 
 ### 3. Four derivations
 
-**D1. First-order prices are off by 1/(1 − ρ).** For an uncoupled piece with impedance z_b and share s_b, the adjoint price is the attribution a_b = z_b·s_b². Exactly, ΔZ = s_b²/y_bb = s_b²(z_b + Z_rest) = a_b/(1 − ρ_b), where Z_rest is the path round b. On an infinite square lattice neighbours are R/2 apart, so ρ = ½ and every strip costs 2a_b: the "2 ×" round 1 set by hand in [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py) and found within 15% for compact holes. A slit removes no area (a_b → 0) while its strips have ρ → 1; the limit is the crack polarizability ΔR = (π/4)R_s(Jℓ/I)² = (π/4)R_s(Δψ/I)², the constant of a flat plate's added mass in potential flow [S]. Exact/first-order is 2.0, 4.3, 13.9 and 27.8 for slits of 1, 4, 16 and 32 strips, and the crack law with length (k+1) cells gives 0.96–1.02 of exact [C]. Round 1's 30× was a 60-cell slot.
+**D1. First-order prices are off by 1/(1 − ρ).** For an uncoupled piece with impedance z_b and share s_b, the adjoint price is the attribution a_b = z_b·s_b². Exactly, ΔZ = s_b²/y_bb = s_b²(z_b + Z_rest) = a_b/(1 − ρ_b), where Z_rest is the path round b. On an infinite square lattice the resistance between neighbours is R/2, so ρ = ½ and every strip costs 2a_b: the "2 ×" round 1 set by hand in [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py) and found within 15% for compact holes. A slit removes no area (a_b → 0) while its strips have ρ → 1; the limit is the crack polarizability ΔR = (π/4)R_s(Jℓ/I)² = (π/4)R_s(Δψ/I)², the constant of a flat plate's added mass in potential flow [S]. Exact/first-order is 2.0, 4.3, 13.9 and 27.8 for slits of 1, 4, 16 and 32 strips, and the crack law with length (k+1) cells gives 0.96–1.02 of exact [C]. Round 1's 30× was a 60-cell slot. Lenses [CT](lens-ct.md) and [SY](lens-sy.md) reached the same crack law independently, with exact strip forms; leverage adds why holes cost 2× and extends the rule to every piece and budget.
 
-**D2. Rayleigh protects self impedances, not couplings.** ΔZ_pp = s²/y ≥ 0 at DC and ΔL ≥ 0 in the inductive limit: no strip of 4,369 lowered L_hot at 100 MHz [C]. But ΔZ_qp = s^p·s^q/y, and −ΔV^p·ΔV^q/(z + Z_th) for additions, carry the sign of a product. Of 203 via sites, the worst raised the hot→ADC coupling by 1.2 pH (+3%) and another raised the ADC's DC common impedance by 8.9 µΩ (+1.8%). Where two currents cross a piece in the same direction, cutting it raises their coupling: a 3 mm notch in the shared plane neck raised the ADC error 22% [C].
+**D2. Rayleigh protects self impedances, not couplings.** ΔZ_pp = s²/y ≥ 0 at DC and ΔL ≥ 0 in the inductive limit: no strip of 4,369 lowers L_hot at 100 MHz beyond round-off [C]. But ΔZ_qp = s^p·s^q/y, and −ΔV^p·ΔV^q/(z + Z_th) for additions, carry the sign of a product. Of 203 via sites, the worst raised the hot→ADC coupling by 1.2 pH (+3%) and another raised the ADC's DC common impedance by 8.9 µΩ (+1.8%). Where two currents cross a piece in the same direction, cutting it raises their coupling: a 3 mm notch in the shared plane neck raised the ADC error 22% [C].
 
-**D3. Star vs plane is a choice of cycle rank per band.** A star (tree) has cycle rank 0: every piece is a series path and J_c ≡ 0, so external flux drives no loop current (no ground loops), but no return can re-route under its signal either. A plane has cycle rank ≈ n and ρ ≈ ½: returns image their signals above f_x, and below it foreign transport currents share its pieces. Hybrid grounds (capacitors that close loops only at HF, beads that open them) set the cycle rank per band. The "single-point below 1 MHz, multipoint above 10 MHz" folklore is this crossover [S]; its spread between sources (100 kHz to 10 MHz) is the geometry-dependence of f_x.
+**D3. Star vs plane is a choice of cycle rank per band.** A star (tree) has cycle rank 0 (CT's articulation points): every piece is a series path and J_c ≡ 0, so external flux drives no loop current (no ground loops), but no return can re-route under its signal either. A plane has cycle rank ≈ n and ρ ≈ ½: returns image their signals above f_x, and below it foreign transport currents share its pieces. Hybrid grounds (capacitors that close loops only at HF, beads that open them) set the cycle rank per band. The "single-point below 1 MHz, multipoint above 10 MHz" folklore is this crossover [S]; its spread between sources (100 kHz to 10 MHz) is plausibly the geometry-dependence of the ωL = R crossover [I].
 
-**D4. Kelvin from Tellegen.** A load p puts V_err = Σ_b s_b^q·v_b^p on a sense port q (P2). It vanishes when the sense loop's pieces carry none of the load's drop: no shared pieces, or taps on a load equipotential. That is LA8, XD72 and S11 in one line, at every band, inductive pickup included.
+**D4. Kelvin from Tellegen.** A load p puts V_err = Σ_b s_b^q·v_b^p on a sense port q (P2). It vanishes when the sense loop's pieces carry none of the load's drop: no shared pieces, or taps on a load equipotential. That is LA8, XD72 and S11 in one line, at every band, inductive pickup included; SY's lead field says the same.
 
 ### 4. Prototype: a buck cell, a sensitive trace and a slotted plane
 
@@ -56,18 +56,18 @@ P2 underlies both the energy ledger and the adjoint method: Director and Rohrer 
 | Question | Result [C] |
 |---|---|
 | Exactness | rank-1 vs brute force 2×10⁻⁹; Woodbury notch and via addition agree to all printed digits; Σρ = 2,330 = n − c |
-| Cost (2 threads) | per AC band: factor 1.5–3 s plus cut diagonal 2 s; whole script with all checks 99 s |
+| Cost (2 threads) | per AC band: factor 1.5–3 s plus cut diagonal 2 s; whole script with all checks ~100 s |
 | Leverage | interior plane 0.501; sheet edge 0.64; slot tip ≤ 0.63; 44 series pieces (the trace and its vias). A 96-solve sketch (27 ms) finds all 44, no false flag, median error 8% |
-| ADC's DC error | 1.47 mV at 3 A (0.49 mΩ): 44% in the plane neck under the inductor, 19% at the slot end, 17% under VOUT |
+| ADC's DC error | 1.47 mV at 3 A (0.49 mΩ): 43.7% in the plane neck under the inductor, 18.6% at the slot end, 16.7% under VOUT |
 | The slot | ×2.25 DC common impedance, ×5–8 hot→ADC, ×5 ripple→ADC; one 0.5 mm bridge: −26% at DC, −78% at 100 MHz |
 | First-order vs exact | DC: exact = 2.01× attribution (median). 3 mm notch: exact +22.3%, its strips' sum +4.3%, first-order +2.0%. 100 MHz: exact/attribution median 0.04 (10–90%: −0.10 to 0.66) |
-| f_x transition (R-limit, f_x, 3f_x, 10f_x) | hot-loop plane current within 4 mm 0.56, 0.62, 0.69, 0.72; its return diving into the plane at CIN− 0.26, 0.28, 0.33, 0.39; ADC return under its trace 0.17, 0.27, 0.33, 0.35; L_ADC 20.0, 17.5, 15.8, 15.1 nH |
-| Vias | each CIN− via: 2.6% of the DC feed, 23% of the hot loop at 100 MHz, +26 pH if removed. Best new via of 203 sites −35.5 pH; median −0.03 pH |
+| f_x transition (0.1, 1, 3, 10 f_x) | hot-loop plane current within 4 mm 0.56, 0.62, 0.69, 0.72; its return diving into the plane at CIN− 0.26, 0.28, 0.33, 0.39; ADC return under its trace 0.18, 0.27, 0.33, 0.35; L_ADC 20.0, 17.5, 15.8, 15.1 nH |
+| Vias | a CIN− via: 2.6% of the DC feed, 23% of the hot loop at 100 MHz, +26 pH if removed. Best new via of 203 sites −35.5 pH; median −0.03 pH |
 | Cancellation χ = \|Σa\|/Σ\|a\| | self budgets 0.85–1.0; DC common impedance 0.35–0.61; hot→ADC 0.08–0.10; ripple→ADC 0.21–0.28 |
 | Batch removal | 20% least-loaded plane strips (0.04% of loss): 7.3× their summed single costs; 40% isolates a terminal |
 | One pour, three jobs | SW pour pin column: +10.8 K if its strips go, world-charge share 0.15. Far column past the inductor pad: 9 mK, 25 µΩ, world share 0.19, the highest. Trim the antenna end, keep the spreader |
 
-**What surprised me.** Coupling attributions swing from −182% to +161% by region: the coupling is a small residual, so "who causes it" must be asked counterfactually, and the HF attribution does not even predict a removal's sign. The plane under the hot loop *lowers* the ADC coupling at every band; the top GND pour away from the loop *raises* it at f_x. My first run judged couplings by their inductive part, which is wrong near f_x: there Z_ADC←hot = 35 + j18 µΩ is mostly common impedance, and several verbs flipped once judged by |Z|.
+**What surprised me.** Coupling attributions swing from −182% to +161% by region, so "who causes it" must be asked counterfactually; the HF attribution does not even predict a removal's sign. The plane under the hot loop *lowers* the ADC coupling at every band; the top GND pour away from the loop *raises* it at f_x. My first run judged couplings by their inductive part, wrong near f_x, where Z_ADC←hot = 35 + j18 µΩ is mostly common impedance: several verbs flipped once judged by |Z|.
 
 ### 5. Convergences and synergies round 1 missed
 
@@ -79,7 +79,7 @@ P2 underlies both the energy ledger and the adjoint method: Director and Rohrer 
 | Node–loop duality per piece | PW1, PW4, LA4, XD122, S4, DR28 |
 | The leverage diagonal outside PCB | LODF (only XD51 saw it), structural redundancy matrix, statistical leverage, spanning trees, loop–tree bases |
 
-The first row was reached from six directions (grids, coils, topology optimization, critics, power, thermal), each with a different approximation.
+Six workstreams approximated the first row.
 
 **Synergies.** Passport × S1: exact ΔZ per piece times the circuit adjoint gives each piece's value in µV or ppm, extending S1 to finite edits (CD29). × JPR19: destroy low-value pieces, repair where the addition gain is high (CD26). × TM30: defect probability × removal value is physics-weighted yield (CD30). × SIM44/DR14: the LLM reads verbs and numbers, not fields (CD13). × [lens-in](lens-in.md): decisions need counterfactuals; attributions are for explanation.
 
@@ -90,7 +90,6 @@ The first row was reached from six directions (grids, coils, topology optimizati
 | Power grids (N-1, LODF) | no single outage may break a limit | returns, ESD and surge paths: no budget hangs on a piece with ρ > 0.9 (CD4) |
 | Structural redundancy matrix ([Tkachuk et al.](https://arxiv.org/abs/2303.03945)) | its diagonal distributes indeterminacy and predicts robustness | fab opens and etch sensitivity (CD30) |
 | Spectral graph theory | sampling by leverage keeps quadratic forms within 1 ± ε | sparse copper surrogates in the inner loop (CD28) |
-| Computational EM (loop–tree) | split solenoidal from irrotational current | carry vs image jobs; stable low-frequency passports |
 | Thermal (TM5: cuts across the flow cost 20–30×) | the same Δψ² law | exact thermal removal values (CD32) |
 
 ### 7. What each conductor is doing: the passport
@@ -103,7 +102,7 @@ HF:  {hold: {Z_ADC: 5%}, jobs: [lowers hot->ADC (+44%; whole region +125%)], kap
 flag: parasitic, protect  # no spec, yet load-bearing for two couplings
 ```
 
-- **Jobs:** carries p; holds x% of B; lowers or raises p→q; images p (eddy only); series path; senses; spreads heat; holds charge to the world, victims or its return; anchor and balance (non-electrical).
+- **Jobs:** the P7 verbs, plus spreads heat, holds charge (world, victims, own return), anchor and balance.
 - **Queries:** *why is this copper here?* (jobs by value ÷ slack); *what breaks if I cut here?* (Woodbury plus the detour); *what is this via doing at 100 MHz?* (shares and removal per band); *where would one more via help?* (Thevenin ranking).
 - **Arbitration:** net value = Σ λ_k·ΔB_k/slack_k with the optimizer's shadow prices; opposite-signed jobs mark a decision point for `separate_jobs` (CD22).
 - **Incremental upkeep:** a move changes k pieces; a rank-k Woodbury step updates all shares with k solves. Refactor when the core turns ill-conditioned: a near-bridge forming is a topological event, the copper analogue of JPR2.
@@ -111,7 +110,7 @@ flag: parasitic, protect  # no spec, yet load-bearing for two couplings
 
 ### 8. Critique of round 1's synthesis
 
-1. **The vocabulary is net-centric at the bottom.** Body = net × layer; `carries` and `returns_through` are booleans; nothing indexes physics by piece (LA47's entity cursor is only a UI). The [vocabulary](vocabulary.md)'s open questions, body granularity and overlapping designed/parasitic roles, are symptoms. Keep the 12 atoms for intent; add Piece, Passport and Job for observation, with designed/parasitic per (piece, job).
+1. **The vocabulary is net-centric at the bottom.** Body = net × layer; `carries` and `returns_through` are booleans; nothing indexes physics by piece (LA47 is only a UI). The [vocabulary](vocabulary.md)'s open questions, body granularity and overlapping designed/parasitic roles, are symptoms. Keep the 12 atoms for intent; add Piece, Passport and Job for observation, with designed/parasitic per (piece, job).
 2. **"One adjoint solve prices every copper edit" ([README](README.md) TL;DR) is false for finite edits.** Removals are off by 1/(1 − ρ): ×2 even for a compact hole, unbounded for slits and necks; at HF the attribution misses even the sign. Restate: one adjoint prices infinitesimal edits; one extra solve per piece prices finite ones exactly.
 3. **The IR's `mech` enum is basis-dependent.** Common impedance and mutual inductance trade places as the mesh changes, so per-mechanism `alloc` can double-count. Use the label to explain, not to budget.
 4. **Spender bars (LA45) and the I1 ledger mislead for couplings** (χ = 0.08 for hot→ADC). Attribute self budgets; use counterfactuals for couplings.
@@ -132,9 +131,9 @@ flag: parasitic, protect  # no spec, yet load-bearing for two couplings
 
 ## Conflicts and open questions
 
-- **Model limits:** no skin effect or retardation, no via–via mutuals, ε_r = 1 electrostatics, one synthetic board; 0.5 mm cells resolve h = 0.8 mm, not 0.1 mm prepregs. Calibration debt as in [research-gaps](research-gaps.md).
+- **Model limits:** no skin effect or retardation, no via–via mutuals, ε_r = 1 electrostatics, one synthetic board; 0.5 mm cells resolve h = 0.8 mm, not 0.1 mm prepregs; uncalibrated ([research-gaps](research-gaps.md)).
 - **Attribution is a convention; counterfactuals are physical but not additive** (the notch cost 5× its strips' sum). Shapley splits are possible but costly.
-- **HF passports need compression;** dense PEEC does not reach a whole board.
+- **HF passports need compression:** dense PEEC cannot cover a board.
 - **Passports are linear per band;** switching nonlinearity enters only through source spectra, and ESD or surge need transient passports.
 
 ## Sources
@@ -147,4 +146,4 @@ flag: parasitic, protect  # no spec, yet load-bearing for two couplings
 - Flat-plate added mass ρπℓ²/4: classical potential flow (Lamb, *Hydrodynamics*) [S].
 - Scripts: [cd_conductor_passport.py](../../../tools/research/physics/cd_conductor_passport.py), [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py), [sl_tier_costs.py](../../../tools/research/physics/sl_tier_costs.py), [xd_sheet.py](../../../tools/research/physics/xd_sheet.py).
 
-See also: [README](README.md) · [cross-workstream-synthesis](cross-workstream-synthesis.md) · [research-gaps](research-gaps.md) · [vocabulary](vocabulary.md) · [physics-ir](physics-ir.md) · [physics-in-the-loop-optimization](physics-in-the-loop-optimization.md) · [solver-ladder](solver-ladder.md) · lenses [VP](lens-vp.md), [CT](lens-ct.md), [SY](lens-sy.md), [LS](lens-ls.md), [TH](lens-th.md), [IN](lens-in.md) · [ideas](../../ideas/physics-first/lens-cd.md)
+See also: [README](README.md) · [vocabulary](vocabulary.md) · [physics-ir](physics-ir.md) · [solver-ladder](solver-ladder.md) · lenses [VP](lens-vp.md), [CT](lens-ct.md), [SY](lens-sy.md), [LS](lens-ls.md), [TH](lens-th.md), [IN](lens-in.md)

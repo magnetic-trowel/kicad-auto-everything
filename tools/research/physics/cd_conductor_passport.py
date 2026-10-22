@@ -409,7 +409,7 @@ class Band:
 # sources and budgets
 # ----------------------------------------------------------------------------
 def injections(cu, names):
-    pad = cu.pad
+    """Node injection vectors (current INTO the copper) for the named sources; columns sum to zero per conductor."""
     defs = {
         "feed": [("J1.VIN", "U1.VIN"), ("U1.GND", "J1.GND")],
         "load": [("U1.SW", "L1.1"), ("L1.2", "J2.VOUT"), ("J2.GND", "U1.GND")],
@@ -738,6 +738,25 @@ def main():
             print(f"[{bname}] {rn:26s} | " + "     ".join(f"{v:5.1f}" for v in hold) + "    | " + cs
                   + " | " + " ".join(f"{k_:>5s}" for k_ in (kap if f else ["", "", ""])))
         passports[bname] = rows
+
+    # ---------------------------------------------------------------- coupling attributions (cancellation)
+    print("\n== Tellegen attribution of two couplings by region (sums to 100%; large +/- terms = cancellation)")
+    for bname, nm_ in (("DC", "Z_vic<-load"), ("HF", "Z_vic<-hot")):
+        o = res[bname]; I, V = o["I"], o["V"]; si = {s_: k for k, s_ in enumerate(o["srcs"])}
+        p_, q_ = BUDGET_PQ[nm_]
+        a_b = 0.5 * (V[:, si[p_]] * I[:, si[q_]] + V[:, si[q_]] * I[:, si[p_]])
+        z0 = o["Z"][nm_]
+        proj = (a_b * np.conj(z0)).real / abs(z0)          # component along the total
+        shares = sorted(((100 * proj[reg == r].sum() / abs(z0), rn) for r, rn in enumerate(rnames)), reverse=True)
+        hi_s = ", ".join(f"{rn} {v:+.1f}%" for v, rn in shares[:3])
+        lo_s = ", ".join(f"{rn} {v:+.1f}%" for v, rn in shares[-2:])
+        print(f"  [{bname}] {nm_}: largest {hi_s}; most negative {lo_s}")
+    o = res["HF"]; bd = o["band"]; si = {s_: k for k, s_ in enumerate(o["srcs"])}
+    okb = bd.active & (np.abs(bd.y) > 1e-9 * np.abs(bd.y).max())
+    dLh = (o["I"][okb, si["hot"]] ** 2 / bd.y[okb]).imag
+    zh = o["Z"]["Z_hot"].imag
+    print(f"  [HF] magnetic Rayleigh check: strips whose removal lowers L_hot by more than 1e-9 of it:"
+          f" {np.sum(dLh < -1e-9 * zh)} of {okb.sum()}; most negative change {dLh.min() / zh:.1e} of L_hot")
 
     # ---------------------------------------------------------------- what each conductor is doing
     print("\n== What each conductor is doing (verbs from the signs of exact single-strip removals; thresholds 5% / 10%)")
@@ -1087,7 +1106,6 @@ def crack_and_sketch():
         x = np.zeros(n); x[keep] = lu.solve(s_[keep]); return x
     s0 = np.zeros(n); s0[idx[:, 0]] = 1.0 / ny; s0[idx[:, -1]] = -1.0 / ny
     phi = solve(s0)
-    P0 = s0 @ phi
     ic = nx // 2
     xb = {E[k, 0] // nx: k for k in range(len(E)) if E[k, 0] % nx == ic and E[k, 1] == E[k, 0] + 1}
     for k in (1, 4, 16, 32):
