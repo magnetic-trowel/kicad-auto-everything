@@ -7,7 +7,7 @@
 - **Every interaction has a decay class and a natural length** (about 20 lengths from 1 µm to 5 m). Measure distance as r/ℓ_q, and above cut-off use position on the mode shapes instead.
 - **"Circuit + parasitics" is a perturbation series.** It diverges where a small parameter meets a Q, a diffusion kernel, radiation or a field singularity. There the representation must switch. The order a victim needs is n* ≈ ln(B/S)/ln ε: 1 for digital, 3 for 16-bit and 4 for 24-bit at ε = 0.01.
 
-Tags: [P], [S], [I] as usual. [C] numbers come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). LS ids are in the [lens-ls ideas](../../ideas/physics-first/lens-ls.md).
+Tags as usual; [C] numbers come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). LS ids are in the [lens-ls ideas](../../ideas/physics-first/lens-ls.md).
 
 ## Key facts
 
@@ -32,10 +32,10 @@ L = Z0·ℓ/v and C = ℓ/(Z0·v), so ωLI/V = θ·Z0/Z and ωCV/I = θ·Z/Z0. F
 
 | Consequence | Explains |
 |---|---|
-| Minimum ε_L + ε_C at Z0 = Z | PW2's Z0* = V/I |
+| Minimum ε_L + ε_C at Z0 = Z | PW2's Z0* = V/I (equipartition, [lens-vp](lens-vp.md) D6) |
 | θ² is independent of width and height | Principle 3: L·C = l²/v², "only length lowers all three" |
 | Loops have Z ≪ Z0; nodes have Z ≫ Z0 | Principle 2 and LA4. The variable is Z/Z0 |
-| PCB Z0 spans ≈ 0.5 Ω (30 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ | PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z |
+| PCB Z0 spans 0.4–0.6 Ω (30–50 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ | PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z |
 | A series-matched line is a pure delay at any length: 0% overshoot [C] | "Series-terminate"; the critical-length family (§6) |
 
 ### 3. Derivation B: the plane as a spatial filter
@@ -46,7 +46,7 @@ K = σ_s·E and A = μ0K/(2|k|) give K(k) = −I·F(k)·e^{−kh}·Γ(k), with �
   - ℓ_m = a is the loop onset (PW24).
   - ℓ_m = W (2–4 kHz on 60 mm) makes the plane resistive at board scale.
 
-  ℓ_m is 124 mm at 1 kHz and 0.124 mm at 1 MHz for 1 oz [C]. [lens-sy](lens-sy.md) found the same length (ℓ_d = ℓ_m/2).
+  ℓ_m is 124 mm at 1 kHz and 0.124 mm at 1 MHz for 1 oz [C]. [lens-sy](lens-sy.md) and [lens-vp](lens-vp.md) found it independently.
 - **A band, not a frequency.** A structure spanning h to a is mirrored scale by scale. For a 10 mm loop at h = 0.1 mm the band runs from 12 kHz to 0.6 MHz, and half-mirroring falls at a/ℓ_m = 1.3–4.5 [C].
 - **Checks.** The share within ±3h collapses onto ℓ_m/h (0.342 / 0.760 / 0.794 at 10 / 1 / 0.3, any h). It matches vo_return_spread within 2–11%, pw_xsec's transition shape within 0.007 and pw_eddy within 0.3 points [C].
 - **Closed forms** (worst L′ error, 10 kHz–10 MHz) [C]:
@@ -199,7 +199,7 @@ A conductor's job depends on the frequency and on the length scale of the questi
 - **Lattice checks are model against model,** with lumped posts.
 - **RB4 design points, S/B values and σ_s ranges are illustrative** [I]; n* assumes geometric hierarchies.
 - **The critical-length family** uses a capacitive load and a lossless line; clamps and losses shift it.
-- **Notation.** [lens-sy](lens-sy.md)'s ℓ_d = ℓ_m/2; [lens-ct](lens-ct.md)'s K_C, K_L are ε_C, ε_L without Z0.
+- **Notation.** ℓ_d (SY) = ℓ50 (VP) = ℓ_m/2; CT's K_C, K_L are ε_C, ε_L without Z0.
 
 ## Sources
 
