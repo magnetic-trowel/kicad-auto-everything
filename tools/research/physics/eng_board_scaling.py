@@ -168,6 +168,43 @@ class Solver:
         return X[:, 0] if one else X
 
 
+# ---------------------------------------------------------------------------- build
+def build_operator(path, h, h_small=None):
+    """Whole-board DC network (all nets, all layers, via barrels) and its grounded matrix."""
+    res = dict(board=os.path.basename(os.path.dirname(os.path.abspath(path))), h=h, h_small=h_small or h)
+    t0 = time.perf_counter()
+    b = rb.KBoard(path)
+    b.fill_report()
+    res['t_parse'] = time.perf_counter() - t0
+    nets = sorted({p['net'] for p in b.pads if p['net']} | {t['net'] for t in b.tracks if t['net']}
+                  | {z['net'] for z in b.zones})
+    t0 = time.perf_counter()
+    area = {n: b.area(n) for n in nets}
+    res['t_geometry'] = time.perf_counter() - t0
+    nets = [n for n in nets if area[n] > 0]
+    hnet = {n: (h if area[n] > 150 else (h_small or h)) for n in nets}
+    res.update(layers=len(b.cu), nets=len(nets), vias=len(b.vias), copper_mm2=float(sum(area.values())))
+    t0 = time.perf_counter()
+    N = rb.build_dc(b, nets, hnet, [])
+    res['t_build'] = time.perf_counter() - t0
+    res['t_raster'] = _RASTER['t']
+    res['raster_points'] = _RASTER['pts']
+    t0 = time.perf_counter()
+    N.finalize()
+    res['t_finalize'] = time.perf_counter() - t0
+    res.update(nodes=int(N.nn), branches=int(N.nb), islands=int(N.ncomp), rss_build_mb=rss_mb())
+    order = np.argsort(N.comp, kind='stable')
+    starts = np.searchsorted(N.comp[order], np.arange(N.ncomp))
+    roots = order[starts]
+    keep = np.ones(N.nn, bool)
+    keep[roots] = False
+    keep = np.nonzero(keep)[0]
+    G = N.G[keep][:, keep].tocsc()
+    res['n_grounded'] = int(G.shape[0])
+    res['nnz_A'] = int(G.nnz)
+    return N, G, keep, res
+
+
 # ---------------------------------------------------------------------------- main
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
@@ -181,41 +218,7 @@ def main(argv=None):
     ap.add_argument('--json', action='store_true')
     args = ap.parse_args(argv)
     skip = set(filter(None, args.skip.split(',')))
-    res = dict(board=os.path.basename(os.path.dirname(os.path.abspath(args.board))), h=args.h,
-               h_small=args.h_small or args.h)
-
-    t0 = time.perf_counter()
-    b = rb.KBoard(args.board)
-    b.fill_report()
-    res['t_parse'] = time.perf_counter() - t0
-    nets = sorted({p['net'] for p in b.pads if p['net']} | {t['net'] for t in b.tracks if t['net']}
-                  | {z['net'] for z in b.zones})
-    t0 = time.perf_counter()
-    area = {n: b.area(n) for n in nets}
-    res['t_geometry'] = time.perf_counter() - t0
-    nets = [n for n in nets if area[n] > 0]
-    hnet = {n: (args.h if area[n] > 150 else (args.h_small or args.h)) for n in nets}
-    res.update(layers=len(b.cu), nets=len(nets), vias=len(b.vias), copper_mm2=float(sum(area.values())))
-    t0 = time.perf_counter()
-    N = rb.build_dc(b, nets, hnet, [])
-    res['t_build'] = time.perf_counter() - t0
-    res['t_raster'] = _RASTER['t']
-    res['raster_points'] = _RASTER['pts']
-    t0 = time.perf_counter()
-    N.finalize()
-    res['t_finalize'] = time.perf_counter() - t0
-    res.update(nodes=int(N.nn), branches=int(N.nb), islands=int(N.ncomp), rss_build_mb=rss_mb())
-
-    deg = np.asarray(abs(N.G).sum(1)).ravel()
-    order = np.argsort(N.comp, kind='stable')
-    starts = np.searchsorted(N.comp[order], np.arange(N.ncomp))
-    roots = order[starts]
-    keep = np.ones(N.nn, bool)
-    keep[roots] = False
-    keep = np.nonzero(keep)[0]
-    G = N.G[keep][:, keep].tocsc()
-    res['n_grounded'] = int(G.shape[0])
-    res['nnz_A'] = int(G.nnz)
+    N, G, keep, res = build_operator(args.board, args.h, args.h_small)
 
     perm = None
     if 'nd' not in skip or args.export:
@@ -299,16 +302,19 @@ def quotes(N, G, keep, lu, perm, wsize, res):
     brW = np.nonzero(inW[N.a] & inW[N.b] & (N.kind <= 1))[0]
     out = {}
     for k in (1, 8, 32):
-        B = rng.choice(brW, k, replace=False)
-        # direct Woodbury: k solves
-        t0 = time.perf_counter()
-        E = np.zeros((N.nn, k))
-        E[N.a[B], np.arange(k)] += 1.0
-        E[N.b[B], np.arange(k)] -= 1.0
-        P = sol.solve(E)
-        RBB = P[N.a[B]] - P[N.b[B]]
-        M = np.diag(1.0 / N.g[B]) - RBB
-        v = phi[N.a[B]] - phi[N.b[B]]
+        for _try in range(50):      # skip edits that cut copper off (a topological event: M singular)
+            B = rng.choice(brW, k, replace=False)
+            # direct Woodbury: k solves
+            t0 = time.perf_counter()
+            E = np.zeros((N.nn, k))
+            E[N.a[B], np.arange(k)] += 1.0
+            E[N.b[B], np.arange(k)] -= 1.0
+            P = sol.solve(E)
+            RBB = P[N.a[B]] - P[N.b[B]]
+            M = np.diag(1.0 / N.g[B]) - RBB
+            v = phi[N.a[B]] - phi[N.b[B]]
+            if np.linalg.cond(M) < 1e10:
+                break
         dz_direct = float(v @ np.linalg.solve(M, v))
         t_direct = time.perf_counter() - t0
         # from the Green block: no solve
