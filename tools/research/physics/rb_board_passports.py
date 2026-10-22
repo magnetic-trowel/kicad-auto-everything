@@ -565,6 +565,11 @@ class Net:
         self.nkind.append(np.full(k, kind))
         return ids
 
+    def xy_of(self, ids):
+        """Node coordinates (works before finalize())."""
+        x, y = np.concatenate(self.nx_), np.concatenate(self.ny_)
+        return x[ids], y[ids]
+
     def add_br(self, a, b, g, kind, net, lay, mx, my, w=None):
         a, b, g = np.atleast_1d(a), np.atleast_1d(b), np.atleast_1d(np.asarray(g, float))
         k = len(a)
@@ -833,7 +838,7 @@ def add_shunt_body(N, b, s, pa, pb, h):
     side = []
     for p, c, sgn in ((pa, ca, 1.0), (pb, cb, -1.0)):
         ids = np.concatenate([sel for ly, sel in pad_cells(N, b, p) if len(sel)])
-        xy_ = np.stack([N.x[ids], N.y[ids]], 1) - c
+        xy_ = np.stack(N.xy_of(ids), 1) - c
         sa, ta = xy_ @ (sgn * u), xy_ @ v
         inner = sa >= sa.max() - max(0.12, 1.5 * h)
         side.append((ids[inner], ta[inner]))
@@ -847,7 +852,8 @@ def add_shunt_body(N, b, s, pa, pb, h):
         if len(sel[0]) and len(sel[1]):
             nodes = []
             for ids_, p in zip(sel, (pa, pb)):
-                nd = N.add_nodes([float(N.x[ids_].mean())], [float(N.y[ids_].mean())], p['net'], 'electrode', 2)[0]
+                xs_, ys_ = N.xy_of(ids_)
+                nd = N.add_nodes([float(xs_.mean())], [float(ys_.mean())], p['net'], 'electrode', 2)[0]
                 N.add_br(np.full(len(ids_), nd), ids_, 500.0 / b.rs[p['layers'][0]], 4, p['net'], p['layers'][0], p['x'], p['y'])
                 nodes.append(nd)
             pairs.append(nodes)

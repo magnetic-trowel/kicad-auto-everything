@@ -15,16 +15,19 @@ given DC currents; capacitors carry no DC):
   R_act    loss-equivalent resistance P/I^2 of the copper as drawn: cell-centred finite volumes,
            0.1 mm cells, each footprint's pads one equipotential node, via barrels as resistors;
   R_B      Beckmann floor at the net's area (any shape, any place; via resistance ignored);
-  R_fix    convex floor at equal area inside the ROUTE-FIXED domain: the net's zone outlines and
-           copper minus every other net's copper (with the zone clearance) and holes, so only the
-           net's own shape may change (pour shaping: thermal reliefs, islands, necks);
-  R_free   the same inside the ROUTE-FREE domain: other nets' tracks and vias removed, their pads,
-           higher-priority zones and holes kept (what co-routing could buy).
+  floors   convex floors at equal area inside three domains of growing freedom:
+           shape      the net's zone outlines and copper minus every other net's copper (zone
+                      clearance) and holes: only the net's own pour shape may change (thermal
+                      reliefs, islands, necks);
+           routing    other nets' tracks and vias removed (what co-routing could buy);
+           partition  the whole layer within the board edge, other nets' pads, tracks and vias kept,
+                      other nets' zone fills negotiable (what re-partitioning the planes could buy).
 Floors use bilinear (Q4) elements on 0.15 mm cells (0.25 mm for domains over 400 mm^2) with the net's vias as fixed links, solved by
 optimality-criteria updates at the actual layout's copper area on that grid; the reported floor is
 the best Lagrangian-dual bound (fractional knapsack), certified for every layout on that grid. The
 actual copper is re-evaluated on the same grid (R_q4) so that it is a feasible point, and the
-avoidable fraction is 1 - floor / R_q4 (Beckmann's: 1 - R_B / R_act).
+avoidable fraction is 1 - floor / R_q4 (Beckmann's: 1 - R_B / R_act). The partition floor ignores what
+the other nets' planes lose, so it bounds a multi-net trade rather than prescribing one.
 
 Nets and currents are a pilot assignment by inspection of the footprints (PILOT below), not a
 circuit simulation; the census at scale needs the schematic's DC operating point.
@@ -126,14 +129,15 @@ class Census:
                 parts.append(Point(v["x"], v["y"]).buffer(v["size"] / 2))
         return unary_union(parts) if parts else Polygon()
 
-    def others(self, net, layer, with_routing):
+    def others(self, net, layer, with_routing, with_fills=True):
         parts = []
         for p in self.b.pads:
             if p["net"] != net and layer in p["layers"]:
                 parts.append(p["shape"])
-        for (l, n), g in self.b.fills.items():
-            if l == layer and n != net:
-                parts.append(g)
+        if with_fills:
+            for (l, n), g in self.b.fills.items():
+                if l == layer and n != net:
+                    parts.append(g)
         if with_routing:
             for s in self.b.segments:
                 if s["net"] != net and s["layer"] == layer:
@@ -143,13 +147,18 @@ class Census:
                     parts.append(Point(v["x"], v["y"]).buffer(v["size"] / 2))
         return unary_union(parts) if parts else Polygon()
 
-    def domain(self, net, layer, with_routing):
-        outl = [z["poly"] for z in self.zones if z["net"] == net and layer in z["layers"]]
+    def domain(self, net, layer, mode):
+        """mode 'shape': own zone outlines, all other copper fixed; 'routing': other nets' tracks and vias
+        removed; 'partition': the whole layer, other nets' pads, tracks and vias fixed, their zone fills negotiable."""
         clr = max([z["clearance"] for z in self.zones if z["net"] == net and layer in z["layers"]] or [0.2])
+        if mode == "partition" and self.edge is not None:
+            base = self.edge.union(self.copper(net, layer))
+            return base.difference(self.others(net, layer, True, with_fills=False).buffer(clr))
+        outl = [z["poly"] for z in self.zones if z["net"] == net and layer in z["layers"]]
         base = unary_union(outl + [self.copper(net, layer)])
         if self.edge is not None:
             base = base.intersection(self.edge.union(self.copper(net, layer)))
-        return base.difference(self.others(net, layer, with_routing).buffer(clr))
+        return base.difference(self.others(net, layer, mode == "shape").buffer(clr))
 
 
 # ----------------------------------------------------------------------------------------------- grids
@@ -432,9 +441,11 @@ def convex_floor(q, iters=150, eta=0.5, move=0.2, tol=1e-3):
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "."
     print("== pilot floor census (R in mOhm, loss-equivalent P/I^2 for the stated current pattern; avoidable = 1 - floor/R)")
-    print("   R_act: 0.1 mm finite volumes; R_q4: the same copper on the 0.15 mm floor grid (floors compare with R_q4)")
-    print(f"   {'board':10s} {'net':12s} {'layers':10s} {'A mm2':>7s} {'I A':>5s} {'R_act':>8s} {'R_q4':>8s} {'R_B':>8s}"
-          f" {'R_fix':>8s} {'R_free':>8s}  avoid(B/fix/free)   avoidable mW   note")
+    print("   R_act from 0.1 mm finite volumes; each floor is compared with the same copper on its own Q4 grid")
+    print("   avoidable fraction at equal area when the freedom is: shape (own zones) / routing (+ other tracks, vias)")
+    print("   / partition (+ other zones' fills) / anywhere (Beckmann, no domain)")
+    print(f"   {'board':10s} {'net':12s} {'layers':10s} {'A mm2':>7s} {'I A':>5s} {'R mOhm':>8s} {'P mW':>7s}   "
+          "shape/rout/part/any %   avoidable mW (same order)   note")
     rows = []
     for board, nets in PILOT.items():
         path = os.path.join(root, board, "board.kicad_pcb")
@@ -454,31 +465,28 @@ def main():
             a_tot = sum(areas.values())
             floors, r_grid = [], []
             fulls = []
-            for with_routing in (True, False):
-                doms = {l: cs.domain(net, l, with_routing) for l in layers}
+            for mode in ("shape", "routing", "partition"):
+                doms = {l: cs.domain(net, l, mode) for l in layers}
                 dom_area = sum(d.area for d in doms.values())
                 q = Q4Net(cs, net, src, sinks, layers, doms, h=0.15 if dom_area < 400 else 0.25)
                 r_grid.append(q.r_of(q.act))
                 fulls.append(q.r_of(q.des))
                 _, lb = convex_floor(q)
-                floors.append(lb)
-            r_q = r_grid[0]
-            r_fix, r_free = floors
+                floors.append(lb / r_grid[-1])
             itot = sum(sinks.values())
-            av = [1 - r_b / r_act, 1 - r_fix / r_q, 1 - r_free / r_q]
-            mw = [itot ** 2 * r_act * x * 1e3 for x in av[1:]]
+            av = [1 - f for f in floors] + [1 - r_b / r_act]
+            mw = [itot ** 2 * r_act * x * 1e3 for x in av]
             lay = "/".join(l.replace(".Cu", "") for l in layers)
-            rows.append((board, net, av))
-            print(f"   {board:10s} {net:12s} {lay:10s} {a_tot:7.1f} {itot:5.2f} {r_act*1e3:8.3f} {r_q*1e3:8.3f} {r_b*1e3:8.3f}"
-                  f" {r_fix*1e3:8.3f} {r_free*1e3:8.3f}  {av[0]*100:4.0f}/{av[1]*100:3.0f}/{av[2]*100:3.0f} %"
-                  f"   {mw[0]:6.1f}/{mw[1]:6.1f}   {note} ({time.time()-t0:.0f} s)", flush=True)
-            print(f"   {'':10s} {'':12s} domain filled (more area): R_full fixed {fulls[0]*1e3:.3f}, free {fulls[1]*1e3:.3f};"
-                  f" floor grid R_q4 fixed/free {r_grid[0]*1e3:.3f}/{r_grid[1]*1e3:.3f}", flush=True)
+            rows.append((board, net, av, itot ** 2 * r_act * 1e3))
+            print(f"   {board:10s} {net:12s} {lay:10s} {a_tot:7.1f} {itot:5.2f} {r_act*1e3:8.3f} {itot**2*r_act*1e3:7.2f}   "
+                  + "/".join(f"{x*100:3.0f}" for x in av) + " %   " + "/".join(f"{x:6.2f}" for x in mw)
+                  + f"   {note} ({time.time()-t0:.0f} s)", flush=True)
     if rows:
-        fix = np.array([r[2][1] for r in rows])
-        free = np.array([r[2][2] for r in rows])
-        print(f"\n   median avoidable fraction: route-fixed {np.median(fix)*100:.0f} %, route-free {np.median(free)*100:.0f} %"
-              f" over {len(rows)} nets; Beckmann's bound is loose by construction (any shape, no domain)")
+        av = np.array([r[2] for r in rows])
+        p = np.array([r[3] for r in rows])
+        print(f"\n   {len(rows)} nets: median avoidable shape {np.median(av[:,0])*100:.0f} %, routing {np.median(av[:,1])*100:.0f} %,"
+              f" partition {np.median(av[:,2])*100:.0f} %, anywhere {np.median(av[:,3])*100:.0f} %;"
+              f" total loss {p.sum():.1f} mW, of which avoidable by partition {np.sum(p*av[:,2]):.1f} mW")
 
 
 if __name__ == "__main__":
