@@ -13,6 +13,7 @@ other results) and any KAE_SANDBOX_HIDE paths are hidden; only the attempt's own
 directory is writable. A method therefore cannot read the human layout it is scored
 against, download it, or touch other attempts.
 """
+import json
 import os
 import shlex
 import shutil
@@ -125,15 +126,21 @@ class Freerouting(Adapter):
     kinds = ("route",)
     PASS_SCHEDULE = (10, 20, 30, 15, 25, 40, 50, 60)
 
-    def __init__(self, passes=None, extra_args=(), stock=False):
+    def __init__(self, passes=None, extra_args=(), stock=False, binary=None):
         self.passes = passes
         self.extra_args = list(extra_args)
         self.stock = stock
+        self.binary = binary
         if stock:
             self.name = "freerouting-stock"
 
+    def cmd(self):
+        if not self.binary:
+            return tools.freerouting_cmd()
+        return ["java", "-jar", str(self.binary)] if str(self.binary).endswith(".jar") else [str(self.binary)]
+
     def describe(self):
-        return dict(name=self.name, cmd=" ".join(tools.freerouting_cmd()), passes=self.passes or
+        return dict(name=self.name, cmd=" ".join(self.cmd()), passes=self.passes or
                     list(self.PASS_SCHEDULE), extra_args=self.extra_args, stock=self.stock)
 
     def _apply_board_rules(self, input_dir, dsn):
@@ -165,8 +172,10 @@ class Freerouting(Adapter):
         tools.run_ops("export-dsn", board_path(input_dir), dsn)
         passes = self.passes or self.PASS_SCHEDULE[attempt % len(self.PASS_SCHEDULE)]
         rule_args, widths_raised = self._apply_board_rules(input_dir, dsn)
-        cmd = [*tools.freerouting_cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
-               "-mt", "1", "--gui.enabled=false", "-da", *rule_args, *self.extra_args]
+        result = w / "result.json"
+        cmd = [*self.cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
+               "-mt", "1", "--gui.enabled=false", "-da", f"--router.result_json={result}", *rule_args,
+               *self.extra_args]
         remaining = max(10.0, timeout - (time.monotonic() - t0))
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining, cwd=w)
@@ -174,13 +183,28 @@ class Freerouting(Adapter):
         except subprocess.TimeoutExpired as e:
             log = f"freerouting timed out after {remaining:.0f}s\n{(e.stdout or b'')[-5000:]!r}"
             return AdapterResult(None, log, dict(passes=passes, timed_out=True))
+        own = _router_report(result)
         if not ses.exists():
-            return AdapterResult(None, log, dict(passes=passes, rc=r.returncode))
+            return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own))
         stripped = strip_ses_placement(ses, ses2)
         tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
         return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode, rule_args=rule_args,
                                                         dsn_widths_raised=widths_raised,
-                                                        ses_placement_stripped=stripped))
+                                                        ses_placement_stripped=stripped,
+                                                        router_report=own))
+
+
+def _router_report(path):
+    """Freerouting's own view of its result (--router.result_json): kept as a diagnostic next
+    to the score, never as the score (only kicad-cli on the rebuilt board counts)."""
+    try:
+        d = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    use = d.get("resource_usage") or {}
+    return dict(app_version=d.get("app_version"), final_state=d.get("final_state"),
+                router_score=d.get("normalized_score"), optimizer_score=d.get("optimizer_score"),
+                cpu_time_s=use.get("cpu_time"), peak_memory_mb=use.get("peak_memory"))
 
 
 class Command(Adapter):
@@ -225,15 +249,15 @@ class Command(Adapter):
                              dict(rc=r.returncode, sandboxed=self.sandbox.enabled))
 
 
-def make(name, command=None, passes=None, sandbox=None):
+def make(name, command=None, passes=None, sandbox=None, freerouting=None):
     if name == "reference":
         return Reference()
     if name == "noop":
         return Noop()
     if name == "freerouting":
-        return Freerouting(passes=passes)
+        return Freerouting(passes=passes, binary=freerouting)
     if name == "freerouting-stock":
-        return Freerouting(passes=passes, stock=True)
+        return Freerouting(passes=passes, stock=True, binary=freerouting)
     if command:
         return Command(command, name=name, sandbox=sandbox)
     raise ValueError(f"unknown adapter {name!r} (built-ins: reference, noop, freerouting; "
