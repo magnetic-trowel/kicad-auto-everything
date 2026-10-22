@@ -19,6 +19,7 @@ Clean pass = valid, fully connected, and no error-level DRC violations (board's 
 severities; library-environment checks excluded). Each score also reports how much of the
 output matches the human layout exactly (`copy`), a check for leaked reference answers.
 """
+import json
 import shutil
 from pathlib import Path
 
@@ -57,6 +58,7 @@ def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_bo
     install_rules(Path(input_board).parent, method_dir)
     extra = [reference_board] if reference_board else []
     tr = tools.run_ops(op, board_path(method_dir), input_board, staged, *extra)
+    (scoring_dir / "rebuild.json").write_text(json.dumps(tr, indent=1))  # what was transplanted, what else changed
     if tr.get("loadable"):
         install_rules(rules_dir, scoring_dir)
     return staged, tr
@@ -65,6 +67,7 @@ def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_bo
 def _measure(staged, scoring_dir):
     st = tools.run_ops("stats", staged)
     drc = tools.summarize_drc(tools.run_drc(staged, Path(scoring_dir) / "drc.json"))
+    (Path(scoring_dir) / "stats.json").write_text(json.dumps(st, indent=1))  # full KiCad statistics
     return st, drc
 
 

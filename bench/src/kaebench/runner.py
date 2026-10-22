@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Run an adapter over prepared tasks, k attempts each, and score every attempt."""
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -42,19 +43,22 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         reference = {"route": board_path(task_dir / "reference"),
                      "place": board_path(task_dir / "route" / "input")}
     row = dict(adapter=adapter.name, kind=kind, id=rec["id"], split=rec["split"], attempt=attempt,
-               tags=rec.get("tags", []), score_version=SCORE_VERSION)
+               tags=rec.get("tags", []), score_version=SCORE_VERSION, load_avg_start=os.getloadavg())
+    tools.usage_take()  # start this attempt's accounting from zero
     t0 = time.monotonic()
     try:
         res = adapter.run(kind, inp, work, attempt, timeout, reference=reference)
         row["status"] = "ok" if res.output else "no_output"
         row["adapter_meta"] = res.meta
         (adir / "adapter.log").write_text(res.log or "")
+        _keep_artifacts(res.meta, adir / "artifacts")
     except Exception as e:  # adapters are untrusted; record and move on
         res = None
         row["status"] = "adapter_error"
         row["error"] = f"{type(e).__name__}: {e}"
         (adir / "adapter.log").write_text(traceback.format_exc())
     row["runtime_s"] = round(time.monotonic() - t0, 3)
+    row["method_usage"] = tools.usage_take()  # CPU and peak RSS of every process the method ran
     if row["runtime_s"] > timeout * 1.05:
         row["over_time"] = True
     if res and res.output:
@@ -62,12 +66,31 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         out_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(res.output, board_path(out_dir))
         # Only the built-in reference adapter may reproduce the human layout.
+        t1 = time.monotonic()
         _score(row, task_dir, rec, kind, adir, adapter.needs_reference, probe=probe,
                probe_args=(attempt, timeout))
+        row["scoring_s"] = round(time.monotonic() - t1, 3)
+        u = tools.usage_take()  # rebuild, stats and DRC (a placement's probe is counted separately)
+        row.setdefault("scoring_usage", u)
+    row["load_avg_end"] = os.getloadavg()
     if not keep_work and work.exists():
         shutil.rmtree(work, ignore_errors=True)
     done.write_text(json.dumps(row, indent=1))
     return row
+
+
+def _keep_artifacts(meta, dest):
+    """Copy the files a method lists in meta["artifacts"] (e.g. the router's DSN, SES and own
+    result report) into the attempt before its work directory is deleted."""
+    paths = [Path(p) for p in (meta or {}).pop("artifacts", []) or []]
+    kept = []
+    for p in paths:
+        if p.is_file():
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dest / p.name)
+            kept.append(p.name)
+    if kept:
+        meta["artifacts_kept"] = kept
 
 
 def _score(row, task_dir, rec, kind, adir, allow_copy, probe=None, probe_args=None, rescore_probe=False):
@@ -80,6 +103,7 @@ def _score(row, task_dir, rec, kind, adir, allow_copy, probe=None, probe_args=No
             return
         pscore, placed_stats = score_place_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
         row["score"] = pscore
+        row["scoring_usage"] = tools.usage_take()  # before the probe starts its own accounting
         if probe is not None and pscore["valid"]:
             # the probe routes the rebuilt placement, never the method's own file
             row["probe"] = _probe(task_dir, rec, probe, adir / "score", placed_stats,
@@ -132,8 +156,12 @@ def rescore(results_run_dir, jobs=1, progress=print):
         old = row.get("score_version")
         row["status"] = "ok"
         row.pop("error", None)
+        row.pop("scoring_usage", None)
+        tools.usage_take()
         _score(row, tasks_dir / row["id"], recs[row["id"]], row["kind"], adir,
                allow_copy=reference, rescore_probe=True)
+        u = tools.usage_take()
+        row.setdefault("scoring_usage", u)
         row["score_version"] = SCORE_VERSION
         row.setdefault("rescored", []).append(dict(at=stamp, from_version=old))
         path.write_text(json.dumps(row, indent=1))
@@ -164,18 +192,26 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     install_rules(task_dir / "reference", pin)  # the probe routes under the board's own rules
     t0 = time.monotonic()
     out = {"router": probe.name}
+    tools.usage_take()  # the placement's own scoring was taken just before
     try:
         res = probe.run("route", pin, pdir, attempt, timeout)
     except Exception as e:
-        out.update(status="adapter_error", error=f"{type(e).__name__}: {e}")
+        out.update(status="adapter_error", error=f"{type(e).__name__}: {e}", method_usage=tools.usage_take())
         return out
     out["runtime_s"] = round(time.monotonic() - t0, 3)
+    out["method_usage"] = tools.usage_take()
+    out["adapter_meta"] = res.meta
+    (pdir / "probe.log").write_text(res.log or "")
+    _keep_artifacts(res.meta, pdir / "artifacts")
     if not res.output:
         out["status"] = "no_output"
         return out
     out["status"] = "ok"
+    t1 = time.monotonic()
     out["score"] = score_routing(res.output, board_path(pin), placed_stats, placed_unconnected,
                                  rec["reference"]["stats"], task_dir / "reference", pdir / "score")
+    out["scoring_s"] = round(time.monotonic() - t1, 3)
+    out["scoring_usage"] = tools.usage_take()
     return out
 
 

@@ -51,6 +51,9 @@ def summarize(rows):
         m = dict(boards=len(boards), k=k,
                  failures=sum(1 for r in every if r["status"] != "ok"),
                  time_s=_mean([r.get("runtime_s") for r in every]),
+                 cpu_s=_mean([(r.get("method_usage") or {}).get("cpu_s") for r in every]),
+                 rss_mb_max=max([(r.get("method_usage") or {}).get("max_rss_mb") or 0 for r in every] or [0]) or None,
+                 score_cpu_s=_mean([(r.get("scoring_usage") or {}).get("cpu_s") for r in every]),
                  suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")),
                  unsandboxed=sum(1 for r in every if (r.get("adapter_meta") or {}).get("sandboxed") is False))
         if kind == "route":
@@ -79,9 +82,9 @@ def summarize(rows):
 
 
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
-              "suspect", "wl_ratio", "via_delta", "time_s", "failures")
+              "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
-              "probe_cp", "probe_completion", "time_s", "failures")
+              "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
 
 def to_markdown(summary):
@@ -104,7 +107,9 @@ def to_markdown(summary):
     lines.append("cp1/cpk: clean pass on attempt 0 / best of k (fully connected, no error-level DRC, "
                  "nothing but routing changed). completion: share of start-of-task unconnected items "
                  "routed. invalid: best attempts that changed more than the task allows. suspect: "
-                 "attempts that reproduce the human layout. wl_ratio: track length / human. Scored by "
+                 "attempts that reproduce the human layout. wl_ratio: track length / human. cpu_s / "
+                 "rss_mb_max: the method's CPU seconds (mean) and peak memory (max) over all processes it "
+                 "ran; score_cpu_s: the scorer's. Scored by "
                  "kicad-cli on boards rebuilt from the task input plus the method's allowed changes.")
     return "\n".join(lines)
 
