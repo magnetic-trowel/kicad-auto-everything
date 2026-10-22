@@ -65,7 +65,7 @@ Thermal Green's function in still air (h_c = 10 W/m²K per side) [C]:
 
 ### Adjoint sensitivities
 
-- **Mechanics.** For K(p)·u = f and J = lᵀu, solve Kᵀλ = l once; then dJ/dp = −λᵀ(∂K/∂p)u for every parameter p at once. For loss or compliance (J = fᵀu), λ = u: no extra solve. For a non-self-adjoint J (drop at one load, temperature at one part, coupling into one victim), the extra solve reuses the LU factors; the back-substitution costs 2–5% of the factorization [C].
+- **Mechanics.** For K(p)·u = f and J = lᵀu, solve Kᵀλ = l once; then dJ/dp = −λᵀ(∂K/∂p)u for every parameter p at once. For loss or compliance (J = fᵀu), λ = u: no extra solve. For a non-self-adjoint J (drop at one load, temperature at one part, coupling into one victim), the extra solve reuses the LU factors; the back-substitution costs 2–6% of the factorization [C].
 - **Shape derivative.** Moving a copper edge outward by δn changes loss by about −σ|∇V|²·δn per unit length, i.e. by the square of the tangential current density at the edge. That is the physics behind teardrops, inside-corner fillets and flared pad entries: copper pays where current crowds [I].
 - **Topological derivative.** The same quantities rank where to punch a small hole (antipad, slot) or add a small conductor (stitching via).
 - **EM.** Frequency-domain adjoints cost one extra solve per objective (Nikolova, Bandler, Bakr, IEEE MTT 2004) [S]. FDTD gets gradients by time reversal: FDTDX (JAX, MIT) and ceviche (MIT) [P: licence files]; Meep is GPL-2.0-or-later, so usable [S].

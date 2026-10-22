@@ -163,7 +163,7 @@ A minimum width built into the filter costs 3.8% up front. Afterwards legalizati
 | 0.1 mm | 34k | 0.18 s | 4.7 ms | 0.40 s | 2.092 mΩ |
 | 0.05 mm | 135k | 0.88 s | 30 ms | 3.1 s | 2.083 mΩ |
 
-- R converges to 0.5% at 0.1 mm; a 200-iteration run at 0.1 mm takes about 80 s. An adjoint costs 2–5% of a factorization.
+- R converges to 0.5% at 0.1 mm; a 200-iteration run at 0.1 mm takes about 80 s. An adjoint costs 2–6% of a factorization.
 - Smoothed-aggregation AMG (pyamg, MIT) needed a grid-independent 12–17 CG iterations from 33k to 524k unknowns (scratch benchmark), the route to O(n) GPU solves; in Python its setup made LU faster at these sizes [C].
 
 ### Export to KiCad zones
