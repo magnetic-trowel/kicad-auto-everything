@@ -22,7 +22,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | [rules-hs-emi-interfaces](digests/rules-hs-emi-interfaces.md) | SI/EMC physics, stackup, diff pairs, per-interface rule packs, SI/EMI checkers |
 | [rules-power-rf-analog-dfm](digests/rules-power-rf-analog-dfm.md) | converters and hot loops, decoupling/PDN, RF, analog, isolation, thermal, DFM, power checkers |
 | [practice-evaluation](digests/practice-evaluation.md) | expert workflow, trust, review checklist, constraint IR, evaluation stack, benchmarks |
-| [physics-first](digests/physics-first.md) | foundations (gentleness, 7 principles, 13 theorems), rules derived from physics, conductor passports, exact edit pricing, certified floors, physics core v2, joint place+route, red team, validation program |
+| [physics-first](digests/physics-first.md) | foundations (gentleness, 7 principles, 13 theorems), rules derived from physics, conductor passports, exact edit pricing, certified floors, physics core v2, joint place+route, verification and validation |
 
 ## By task
 
@@ -45,7 +45,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | Knowing what each conductor is doing | [physics/lens-cd](topics/physics/lens-cd.md), [physics/real-board-passports](topics/physics/real-board-passports.md), [physics/physics-core-v2](topics/physics/physics-core-v2.md) |
 | Writing physics budgets or the physics IR | [physics/vocabulary](topics/physics/vocabulary.md), [physics/physics-ir](topics/physics/physics-ir.md), [physics/schematic-to-physics](topics/physics/schematic-to-physics.md) |
 | Choosing a field/circuit/thermal solver | [physics/physics-core-v2](topics/physics/physics-core-v2.md), [physics/solver-ladder](topics/physics/solver-ladder.md), [physics/open-solvers](topics/physics/open-solvers.md) |
-| Checking a physics claim or planning a measurement | [physics/red-team](topics/physics/red-team.md), [physics/validation-program](topics/physics/validation-program.md), [physics/validation-coupons](topics/physics/validation-coupons.md) |
+| Checking a physics claim or planning a measurement | [physics/verification-and-limits](topics/physics/verification-and-limits.md), [physics/validation-program](topics/physics/validation-program.md), [physics/validation-coupons](topics/physics/validation-coupons.md) |
 | Placing and routing together | [physics/joint-place-route](topics/physics/joint-place-route.md), [physics/physics-in-the-loop-optimization](topics/physics/physics-in-the-loop-optimization.md) |
 | Shaping pours and power copper | [physics/power-copper](topics/physics/power-copper.md), [physics/copper-shape-synthesis](topics/physics/copper-shape-synthesis.md) |
 | Checking that a board is physically right, not just DRC-clean | [physics/physics-critics](topics/physics/physics-critics.md), [physics/physics-critics-catalog](topics/physics/physics-critics-catalog.md) |

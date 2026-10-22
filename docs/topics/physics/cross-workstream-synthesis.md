@@ -1,13 +1,13 @@
 # Cross-workstream synthesis: convergences, synergies and transfers
 
 **TL;DR**
-- **Eleven workstreams started from rules, language, solvers, power, fields, optimization, manufacturing, reasoning, critics, other fields and joint P&R. They kept arriving at the same nine mathematical objects**, listed in §1. Physics-first layout needs about nine kernels, not hundreds of rules or dozens of tools.
+- **Eleven workstreams started from rules, language, solvers, power, fields, optimization, manufacturing, reasoning, critics, other fields and joint P&R. They kept arriving at the same nine mathematical objects**, listed in §1, implemented as the eight kernels of [physics-core-v2](physics-core-v2.md). Physics-first layout needs a handful of kernels, not hundreds of rules or dozens of tools.
 - **Several ideas were invented two to five times from different directions.** Examples: reverse-return feeding (power and hydronic heating), inductor orientation by dipole algebra (power and NMR), "curves only where physics pays" (five workstreams), calibration coupons (five), electro-thermal coupling (five) and per-pad thermal-relief decisions (three). Independent rediscovery is the strongest evidence that an idea is fundamental.
 - **The biggest synergy is two adjoints chained.** A circuit adjoint (SPICE `.noise`: which parasitic moves which output) times a field adjoint (which copper edit moves which parasitic) gives the gradient from the circuit specification to the copper geometry in two extra solves. No single workstream proposed the whole chain.
-- **Several conflicts dissolve when two workstreams' results are combined.** "SW copper area: heat vs EMI" becomes "capacitance *to whom*". "Pours vs routing space" becomes "cut along streamlines, priced by the stream function". "Keep-out distance" becomes "multipole order after cancellation".
-- **Lessons transfer.** OP and JPR both found that post-hoc legalization destroys results, so hard constraints go inside the loop. Proxies fail on near-ties, which is where to escalate fidelity. Grid rank-1 updates, reservoir well models, robust topology-optimization filters and data assimilation each solve a named problem elsewhere.
+- **Several conflicts dissolve when two workstreams' results are combined.** "SW copper area: heat vs EMI" becomes "capacitance *to whom*". "Pours vs routing space" becomes "cut along streamlines, priced by the stream function". "Keep-out distance" becomes "which field couples, and where its null points".
+- **Lessons transfer.** OP and JPR both found that post-hoc legalization destroys results, so hard constraints go inside the loop. Evaluators whose error does not shrink as candidates converge fail among near-equal candidates, which is where to escalate fidelity. Grid rank-1 updates, reservoir well models, robust topology-optimization filters and data assimilation each solve a named problem elsewhere.
 
-**Round 2–3 status:** S1 holds only between topological events, S5 is corrected below, and the nine objects became the eight kernels of [physics-core-v2](physics-core-v2.md); see [foundations](foundations.md) and [red-team](red-team.md). Ids refer to the [physics-first ideas](../../ideas/physics-first/README.md). [C] numbers are from the workstreams' scripts. This doc is synthesis [I] unless a number is tagged.
+The principles behind these objects are in [foundations](foundations.md). Ids refer to the [physics-first ideas](../../ideas/physics-first/README.md). [C] numbers are from the workstreams' scripts. This doc is synthesis [I] unless a number is tagged.
 
 ## Key facts
 
@@ -76,7 +76,7 @@ The coupling of every aggressor–victim pair is then an inner product, a lookup
 
 Together: spread switch-node heat into the node's *own return plane* and bond external metal to quiet nodes. The EMI budget then counts only the capacitance that leaves the cell. At low voltage the conflict largely disappears; at 400 V the ½CV²f term binds. That replaces "never heatsink through SW copper" with a computed trade.
 
-**S5. Cancellation aims nulls (corrected).** The cancellation primitives come from several places: LA35 the `cancel` operator, XD11 figure-8 loops, PW36 opposite-current via pairs, PW51 interdigitated fingers, XD76 gradiometric sense traces and XD15 the orthogonal gate loop. Each raises the aggressor's multipole order. XD68 shows that the order sets how fast coupling decays: a dipole falls as 1/r³, a quadrupole as 1/r⁴. **Corrected in round 2:** over a plane, mirrored halves shrink the halo radius by only ~2%; what cancellation buys is a null plane and a quieter far field (−22 dB at 100 mm), capped near 20·log ε by imbalance ε ([lens-sy](lens-sy.md)). Use cancellation to aim nulls at victims, not to pack parts tighter.
+**S5. Cancellation aims nulls.** The cancellation primitives come from several places: LA35 the `cancel` operator, XD11 figure-8 loops, PW36 opposite-current via pairs, PW51 interdigitated fingers, XD76 gradiometric sense traces and XD15 the orthogonal gate loop. Each raises the aggressor's multipole order. XD68 shows that the order sets how fast coupling decays far away: a dipole falls as 1/r³, a quadrupole as 1/r⁴. Over a plane the near halo barely changes (radius −2%); what cancellation buys is an exact null plane and a quieter far field (−22 dB at 100 mm), capped near 20·log ε by imbalance ε ([lens-sy](lens-sy.md)) [C]. Use cancellation to aim nulls at victims.
 
 **S6. The cell as one unit for four jobs.**
 - **Hierarchy:** DR22's cells, closed by HF current, become JPR's macros. JPR20 solves inside a cell exactly, and JPR16 handles the multigrid across cells.
@@ -116,8 +116,8 @@ Combined: choose L, C_snub, plane shape, stitching pitch and clock frequencies t
 | Lesson | Learned in | Apply in |
 |---|---|---|
 | Post-hoc legalization destroys optimized results; keep hard constraints inside the loop | OP (an opening disconnected a load); JPR (the final legalizer turned 602 into 1,164) | LLM repair proposals (legalize inside the generator), critic-driven repairs, pour synthesis, any RL policy |
-| Proxies rank coarse differences but fail on near-ties (44% of pairs within 3% HPWL differ >10% routed) | JPR; Cadence 12k-placement data | SIM10 value-of-information escalation: near-ties are exactly where F2/F3 pays. JPR41 delayed acceptance should use MS2 and decision-calibrated surrogates (SIM7) as its first stage |
-| Joint search refines; restarts find basins | JPR (wins at 30 parts, coin flip at 50) | OP (non-convex pours need multi-start, OP44 QD); DR40 continuation by τ. One protocol: diverse coarse starts → joint refinement → physics continuation |
+| Proxies rank coarse differences but not near-equal candidates when their error has a component that does not shrink (44% of pairs within 3% HPWL differ >10% routed) | JPR; Cadence 12k-placement data; [lens-in](lens-in.md) | SIM10 value-of-information escalation: near-ties are exactly where F2/F3 pays. JPR41 delayed acceptance should use MS2 and decision-calibrated surrogates (SIM7) as its first stage |
+| Joint search refines; restarts find basins | JPR: joint refinement improves its start 10/10 and ties an equal-CPU restart portfolio ([joint-place-route-experiment](joint-place-route-experiment.md)) | OP (non-convex pours need multi-start, OP44 QD); DR40 continuation by τ. One protocol: diverse coarse starts → joint refinement → physics continuation |
 | Robust erode/nominal/dilate optimization | Topology optimization (XD33, OP7) | Impedance tolerance (TM35), σ-margin maps (TM31), critics: evaluate every physics term at ±etch for free robustness |
 | Rank-1 (Sherman–Morrison) updates of a factored network | Power-grid PTDF/LODF (XD51) | Incremental critics (PC20 via-field min-cut, OP39 neck finder), LA27 operator previews, JPR move screening, the U1 live HUD |
 | Well index for sub-grid vias | Reservoir simulation (PW13) | Thermal vias in TM2/TM3 kernels, decap via fields (PW35), whole-board IR inside placement (SIM47) |
@@ -129,16 +129,15 @@ Combined: choose L, C_snub, plane shape, stitching pitch and clock frequencies t
 | Pinout sets the return at the cable boundary | Ball-map logic (XD24), pin swaps (JPR22), half-ports (LA1) | EMI: connector pinout is a lever in the CM chain ([fields-emi-budget](fields-emi-budget.md)) |
 | Air density drives both breakdown and cooling | TM21 (Paschen), [research-gaps](research-gaps.md) gap 9 (convection ∝ ρ^0.5) | Make one environment regime parameter that shifts HV and thermal budgets together |
 
-### 5. Conflicts that turned into insight
+### 5. Expert conflicts that physics resolves
 
-| Apparent conflict | Resolution from combining workstreams |
+| Conflict in practice | Resolution |
 |---|---|
 | Ott (perimeter stitching) vs Hubing (distributed) | They optimise different outputs: edge radiation vs the first cavity mode. Perimeter-only raises the first mode only ~1.5× (FE33, [fields-si-emi](fields-si-emi.md)) |
 | Rohm vs MPS: copper under the inductor | Shield class decides it: −0.2% L for shielded parts, ~6% for open drum cores (PW46) |
-| Area vs perimeter for loops | A regime boundary: plane distance (S, §2) |
+| "Minimize loop area" vs "minimize loop length" | Plane distance decides: with a close plane, L follows height × squares; without one, area ([pdn-and-commutation](pdn-and-commutation.md)) |
 | Thermal reliefs: balance vs inductance | Process decides (TM42). Reflow balance depends on what the pad's plane carries, not the relief (TM39) |
-| Joint vs portfolio | Scale and basin structure: portfolio for exploration, joint for refinement (JPR51) |
-| "Keep high current away" vs dense placement | Distance is the weak lever over a plane. Cancellation and plane images dominate (S5) |
+| "Keep high current away" vs dense placement | For loops over a close plane, height dominates distance. For wide dv/dt copper, height barely helps, so distance or burying the victim matters ([lens-sy](lens-sy.md)) |
 
 ## Recommendations for our system
 
@@ -150,13 +149,13 @@ Combined: choose L, C_snub, plane shape, stitching pitch and clock frequencies t
 
 ## Conflicts and open questions
 
-- S1 assumes the circuit is linearizable around its operating point. WS8 showed linear budgets fail for a slow 48 V bridge, so the chain needs trust-region re-linearization (DR11) or transient adjoints there.
+- S1 assumes the circuit is linearizable around its operating point. Linear budgets fail for a slow 48 V bridge ([schematic-to-physics](schematic-to-physics.md)), so the chain needs trust-region re-linearization (DR11) or transient adjoints there.
 - S2's Δψ² law holds for spread sheet current; a narrow return under a trace is a different regime (ℓ·ln ℓ) ([cross-domain-lessons](cross-domain-lessons.md)).
 - S10's market may not converge on non-convex problems, and duals are local. Every price needs a "valid within" margin ([physics-in-the-loop-optimization](physics-in-the-loop-optimization.md)).
-- Convergence counts are our reading [I]; some findings shared the brief's framing.
+- Convergence counts are a judgement [I].
 
 ## Sources
 
-The eleven idea files in [docs/ideas/physics-first/](../../ideas/physics-first/README.md) and the topic docs linked inline. No new measurements; [C] values are quoted from the workstream scripts in [`tools/research/physics/`](../../../tools/research/physics/).
+The eleven idea files in [docs/ideas/physics-first/](../../ideas/physics-first/README.md) and the topic docs linked inline. [C] values are quoted from the scripts in [`tools/research/physics/`](../../../tools/research/physics/).
 
 See also: [physics/README](README.md) · [research-gaps](research-gaps.md) · [cross-domain-lessons](cross-domain-lessons.md)

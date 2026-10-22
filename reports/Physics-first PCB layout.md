@@ -1,13 +1,8 @@
 # Physics first: lay out what the schematic leaves out
 
-This report covers three rounds of work on physics-first placement and routing, with 25 agents in total:
-1. eleven workstreams surveyed and decompressed the human rules;
-2. seven first-principles lenses re-read everything;
-3. a final round wrote the foundations, audited every rule, red-teamed the claims, designed the physics core, planned validation and ran passports on a real board.
+This report summarizes physics-first placement and routing: the foundations, the derivation of the human rules, the conductor-centric model, the physics core, joint placement and routing, and the validation program. It extends the [first report](LLM%20driven%20PCB%20placement%20and%20routing.md): the LLM still authors intent, never copper. What changes is the currency of that intent, the state the solvers carry, and what counts as evidence. Philosophy: [docs/topics/physics/README](../docs/topics/physics/README.md); short version: [digest](../docs/digests/physics-first.md); ideas: [catalog](../docs/ideas/physics-first/README.md). Status: 2026-10-22.
 
-It extends the [first report](LLM%20driven%20PCB%20placement%20and%20routing.md): the LLM still authors intent, never copper. What changes is the currency of that intent, the state the solvers carry, and what counts as evidence. Philosophy: [docs/topics/physics/README](../docs/topics/physics/README.md); short version: [digest](../docs/digests/physics-first.md); ideas: [catalog](../docs/ideas/physics-first/README.md). Status: 2026-10-22.
-
-**Evidence caveat.** Every number tagged [C] comes from our own quasi-static models. They were checked against closed forms, each other, FastHenry (four loops) and an independent red team, but **never against measurement**. The architecture is untested [I].
+**Evidence caveat.** Every number tagged [C] comes from our own quasi-static models. They were checked against closed forms, independent re-derivations and FastHenry (four loops), but **never against measurement**. The architecture is untested [I].
 
 ## 1. Bottom line
 
@@ -24,18 +19,18 @@ It extends the [first report](LLM%20driven%20PCB%20placement%20and%20routing.md)
   - Interaction terms (couplings, EMI) are sign-indefinite residuals, judged by counterfactuals.
   
   The edit spectrum Σ c_i/(1 − λ_i) prices any edit exactly, and its largest λ tells when first-order reasoning fails ([physics-core-v2](../docs/topics/physics/physics-core-v2.md)).
-- **Placement, routing and copper shape belong in one optimizer** on a topology-carrying state, with physics as the shared objective and fixed parts as boundary conditions. On toy boards it works as a refiner, not as a substitute for diverse restarts ([joint-place-route](../docs/topics/physics/joint-place-route.md), [red-team](../docs/topics/physics/red-team.md)).
+- **Placement, routing and copper shape belong in one optimizer** on a topology-carrying state, with physics as the shared objective and fixed parts as boundary conditions. On toy boards it works as a refiner after diverse restarts ([joint-place-route](../docs/topics/physics/joint-place-route.md), [experiment](../docs/topics/physics/joint-place-route-experiment.md)).
 - **What to do first is measure.** Order the ℓ_m return-band coupon. Lay out the pre-registered two-arm first board (rules vs physics). Run the floor and mutation benchmarks on real boards ([validation-program](../docs/topics/physics/validation-program.md)).
 
 ## 2. What the physics changes
 
 | Slogan | Physics replacement | Key number [C] | Doc |
 |---|---|---|---|
-| "Minimize hot-loop area" | Height × squares or MS2 near a plane; area only without one | Equal-area loops differ 1.7×. At a fixed stackup MS2 picks the best loop 97–100%, area 66–97% | [pdn-and-commutation](../docs/topics/physics/pdn-and-commutation.md), [red-team](../docs/topics/physics/red-team.md) |
+| "Minimize hot-loop area" | Height × squares or MS2 near a plane; area only without one | Equal-area loops differ 1.7×. At a fixed stackup MS2 picks the best loop 97–100%, area 66–97% | [pdn-and-commutation](../docs/topics/physics/pdn-and-commutation.md), [solver-ladder](../docs/topics/physics/solver-ladder.md) |
 | "Short and wide" | Impedance level: Z0 toward ΔV/ΔI per piece (self terms); switch-node copper set by its outside coupling | SW piece self-optimal at 15 mm, but its external dipole grows 7.5× | [foundations](../docs/topics/physics/foundations.md) T1 |
 | "Pour the power nets" | Pours for DC feeds; shapes already near their floor; leverage in partitioning and pad connections | Median 4% avoidable on 14 real pours; reliefs cost 7–48% on one board | [validation-program](../docs/topics/physics/validation-program.md) |
 | "No 90° corners" | Corners matter for damage, HV, short pulses and sub-30 ps edges, not for loss | 0.56 squares; peak T within 0.5% | [foundations](../docs/topics/physics/foundations.md) T11, [power-copper](../docs/topics/physics/power-copper.md) |
-| "Don't cut the plane", "return via within 200 mil" | Exact cut law plus return-path EMF on closed loops | Slit cost (2/π)·R_s·ln sec(πx/2), found four ways; a slot under a trace ≈ 0.08–0.13 nH/mm | [lens-ct](../docs/topics/physics/lens-ct.md), [fields-si-emi](../docs/topics/physics/fields-si-emi.md) |
+| "Don't cut the plane", "return via within 200 mil" | Exact cut law plus return-path EMF on closed loops | Slit cost (2/π)·R_s·ln sec(πx/2), derived independently four ways; a slot under a trace ≈ 0.08–0.13 nH/mm | [lens-ct](../docs/topics/physics/lens-ct.md), [fields-si-emi](../docs/topics/physics/fields-si-emi.md) |
 | "Stitch at λ/20" | Wire medium: ω² = ω_p² + v²k²; pitch from the isolation needed | 10 mm pitch screens 2.45 GHz by 36 dB | [lens-ls](../docs/topics/physics/lens-ls.md), [validation-coupons](../docs/topics/physics/validation-coupons.md) |
 | "Keep high current away", "3W", guards | Planes break E/M duality: height helps loops, not wide dv/dt copper; guards ~1% over thin dielectric | Loop coupling ∝ h_a·h_v; node coupling ∝ h^0.19 | [lens-sy](../docs/topics/physics/lens-sy.md) |
 | "Star ground for analog" | Topology plus the R–L length band; foreign current kept out of the measurement cycle | Star pays only below ~6 kHz at 10 mm on 1 oz | [derivation-audit](../docs/topics/physics/derivation-audit.md), [lens-ct](../docs/topics/physics/lens-ct.md) |
@@ -70,13 +65,8 @@ Everything runs beside the [benchmark harness](../bench/README.md) without chang
 
 ## 5. Risks and open questions
 
-- **No measurement yet.** Some round-1 numbers already failed independent checks:
-  - "40 dB for co-located cables" was a script input.
-  - PEEC accuracy was claimed beyond its tested range.
-  - IN's +64% winner error was a reference artifact.
-  
-  The red team's rule now applies to every [C] number: an independent method, a refinement study, and a reference validated where the optimizer selects ([red-team](../docs/topics/physics/red-team.md)).
-- **Where rules win.** Robust rules beat model optima when the decisive unknowns are off the board (cables, enclosure, test setup) or the mechanism is unmodelled. The red team's steelman of the expert is the baseline VAL-1 must beat.
+- **No measurement yet.** Every [C] number must pass three checks before it steers an optimizer: an independent method, a refinement study, and a reference validated where the optimizer selects ([verification-and-limits](../docs/topics/physics/verification-and-limits.md)).
+- **Where rules win.** Robust rules beat model optima when the decisive unknowns are off the board (cables, enclosure, test setup) or the mechanism is unmodelled. The steelman of the rule-based expert in [verification-and-limits](../docs/topics/physics/verification-and-limits.md) is the baseline VAL-1 must beat.
 - **Outside the linear frame.** Nonlinear victims, ESD and surge fall outside F2 and need co-simulation.
 - **No joint guarantees.** No principle yet prices self and interaction terms jointly with guarantees.
 - **Licences.** FastHenry is internal calibration only (MIT non-commercial notice), and Ki-PIDA is AGPL. Ship our PEEC, PyPEEC, FasterCap, openEMS and Palace ([open-solvers](../docs/topics/physics/open-solvers.md)).

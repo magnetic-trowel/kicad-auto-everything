@@ -58,9 +58,9 @@ Results and interpretation: [docs/topics/physics/](../../docs/topics/physics/REA
 | `xd_sheet.py`, `xd_power_tree.py`, `xd_lengths.py`, `xd_loop_coupling.py` | Via-field transfer length and slot cost; branching power trees; screening lengths; loop coupling with plane images |
 | `jpr_joint_vs_sequential.py` | Joint vs sequential placement and routing on synthetic boards (uses `solver-bench/pcbgen.py`) |
 
-### Rounds 2 and 3 (first-principles lenses, foundations, red team, validation)
+### First-principles lenses, foundations, verification and validation
 
-Results: the `lens-*.md`, [foundations](../../docs/topics/physics/foundations.md), [derivation-audit](../../docs/topics/physics/derivation-audit.md), [red-team](../../docs/topics/physics/red-team.md), [physics-core-v2](../../docs/topics/physics/physics-core-v2.md), [validation-program](../../docs/topics/physics/validation-program.md) and [real-board-passports](../../docs/topics/physics/real-board-passports.md) docs. Run with `OMP_NUM_THREADS=1` on shared machines. The `rt_*` scripts re-derive other scripts' claims by independent methods and are the regression reference for the numbers they correct. Third-party boards are read from a path you pass in and are never stored in the repo.
+Results: the `lens-*.md`, [foundations](../../docs/topics/physics/foundations.md), [derivation-audit](../../docs/topics/physics/derivation-audit.md), [verification-and-limits](../../docs/topics/physics/verification-and-limits.md), [physics-core-v2](../../docs/topics/physics/physics-core-v2.md), [validation-program](../../docs/topics/physics/validation-program.md) and [real-board-passports](../../docs/topics/physics/real-board-passports.md) docs. Run with `OMP_NUM_THREADS=1` on shared machines. The `rt_*` scripts re-derive key results by independent methods and serve as regression references. Third-party boards are read from a path you pass in and are never stored in the repo.
 
 | Prefix | Scripts | What they compute |
 |---|---|---|

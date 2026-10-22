@@ -114,7 +114,7 @@
 - **Add beads only on explicit requirement,** and always run the resonance check.
 
 ## Conflicts and open questions
-- **Physics-first challenge (2026-10-22):** "as close as possible" is bounded by a screening length λ = √(L_c/(μ0·d·n)), 4–24 mm for typical plane pairs [C]. Within it, cluster geometry and orientation matter more than via count: 4 vias at 0.6 mm pitch give 0.71× one via's inductance, not 0.25×, and alternating orientation is 16–39% better [C]. See [pdn-and-commutation](../physics/pdn-and-commutation.md) and [cross-domain-lessons](../physics/cross-domain-lessons.md).
+- **Physics:** "as close as possible" is bounded by a screening length λ = √(L_c/(μ0·d·n)), 4–24 mm for typical plane pairs [C]. Within it, cluster geometry and orientation matter more than via count: 4 vias at 0.6 mm pitch give 0.71× one via's inductance, not 0.25×, and alternating orientation is 16–39% better [C]. See [pdn-and-commutation](../physics/pdn-and-commutation.md) and [cross-domain-lessons](../physics/cross-domain-lessons.md).
 - **"Smallest closest":** MT-101 (2009) vs Bogatin (2020) and Archambeault (2012). Default to mounting L; context switch for legacy designs.
 - **No authoritative cap-to-pin maximum distance exists.** The mm values are heuristics; prefer the inductance estimate.
 - **Not read in full:** Keysight and Novak. MLCC derating figures are secondary.

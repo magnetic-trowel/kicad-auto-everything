@@ -58,7 +58,7 @@ Converter micro-order (generalises): IC → CIN (route immediately) → L/SW (+s
 - **Feranec's fan-out rules become generator constraints** (one via per power pad, never shared; DDR inner pads first). 20H is optional/soft, not a default ([datasheet-to-constraints.md](datasheet-to-constraints.md)).
 
 ## Conflicts and open questions
-- **Physics-first challenge (2026-10-22):** a fixed placement order is replaced by least-slack-first priorities, τ = budget ÷ achievable floor, computed per board inside one joint placement+routing optimizer. The expert order reappears only where the physics agrees. See [design-reasoning-architecture](../physics/design-reasoning-architecture.md) and [joint-place-route](../physics/joint-place-route.md).
+- **Physics:** a fixed placement order is replaced by least-slack-first priorities, τ = budget ÷ achievable floor, computed per board inside one joint placement+routing optimizer. The expert order reappears only where the physics agrees. See [design-reasoning-architecture](../physics/design-reasoning-architecture.md) and [joint-place-route](../physics/joint-place-route.md).
 - **Feranec's method** is known only through a student review and blog snippets. No Phil's Lab transcripts were read. Pease's common-centroid column was not retrieved.
 - **The 20H rule** is contested (Montrose vs Shim/Hubing).
 

@@ -65,7 +65,7 @@
 - **Surface copper-weight choices early,** because they change fab minimums (see [../dfm-fab-limits.md](../dfm-fab-limits.md)).
 
 ## Conflicts and open questions
-- **Physics-first challenge (2026-10-22):** current does not share evenly across a via field. It transfers between layers within ~1 mm (transfer length), so in a 10×4 array the two end columns carry 59% and removing the 32 inner vias raises R by only 1.8% [C]. "Via count = I / per-via rating" holds only for heating, not for current sharing. Place via rows across the flow. See [cross-domain-lessons](../../physics/cross-domain-lessons.md) and [power-copper](../../physics/power-copper.md).
+- **Physics:** current does not share evenly across a via field. It transfers between layers within ~1 mm (transfer length), so in a 10×4 array the two end columns carry 59% and removing the 32 inner vias raises R by only 1.8% [C]. "Via count = I / per-via rating" holds only for heating, not for current sharing. Place via rows across the flow. See [cross-domain-lessons](../../physics/cross-domain-lessons.md) and [power-copper](../../physics/power-copper.md).
 - **SLAA896 vs SLVA959:** 2.21 A vs 0.84 A at 12 mil, probably different ΔT and plating assumptions; neither states them fully.
 - **IPC-2152 chart values** were not verified (paywalled), and calculators disagree.
 - **Not read:** copper-inlay and coin rules, and the Würth press-fit hole spec.

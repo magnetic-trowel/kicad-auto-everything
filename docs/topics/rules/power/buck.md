@@ -119,7 +119,7 @@
 - **Check the inductor dot net** only when the footprint follows the pin-1 = dot convention.
 
 ## Conflicts and open questions
-- **Physics-first challenge (2026-10-22):** for shielded inductors a plane underneath costs about 0.2% of L and under 1 mW of eddy loss; for open drum cores, up to ~6% and ~24 mW [C]. Default to keeping the plane (MPS) and use the Rohm keep-out only for open or unshielded cores. See [pdn-and-commutation](../../physics/pdn-and-commutation.md) (PW46).
+- **Physics:** for shielded inductors a plane underneath costs about 0.2% of L and under 1 mW of eddy loss; for open drum cores, up to ~6% and ~24 mW [C]. Default to keeping the plane (MPS) and use the Rohm keep-out only for open or unshielded cores. See [pdn-and-commutation](../../physics/pdn-and-commutation.md) (PW46).
 - **CIN/COUT ground separation.**
   - Rohm: "separated from each other by at least 1cm to 2cm", because several hundred MHz reaches the CIN ground even with CBYPASS close.
   - MPS: output-cap GND "close to the IC's PGND".

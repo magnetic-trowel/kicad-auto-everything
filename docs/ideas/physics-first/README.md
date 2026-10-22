@@ -1,12 +1,12 @@
 # Physics-first ideas catalog
 
-About 890 ideas: ~660 from the eleven round-1 workstreams and 232 from the seven round-2 first-principles lenses. They build on the [original-ideas catalog](../original/README.md) (I1 budget ledger, N7 hot-loop placer, N8 decap assignment, R2 shadow returns, V1/V2 verification gates) and do not repeat it.
+About 890 ideas: ~660 in eleven theme files and 232 in seven first-principles lens files. They build on the [original-ideas catalog](../original/README.md) (I1 budget ledger, N7 hot-loop placer, N8 decap assignment, R2 shadow returns, V1/V2 verification gates) and do not repeat it.
 
-The philosophy is in [topics/physics/README](../../topics/physics/README.md) and the principles in [foundations](../../topics/physics/foundations.md). Corrections found by the [red team](../../topics/physics/red-team.md) override the numbers quoted in individual ideas.
+The philosophy is in [topics/physics/README](../../topics/physics/README.md) and the principles in [foundations](../../topics/physics/foundations.md). Where an idea quotes a number, the topic doc it links to is authoritative.
 
 Tags inside each file: **new** (not in the corpus), **combo** (known parts, new combination), **sharp** (an existing idea made buildable or given a number). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless a number is tagged [C] (computed by us) or [P].
 
-## Theme files (round 1)
+## Theme files
 
 | File | Ids | Count | Covers |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Tags inside each file: **new** (not in the corpus), **combo** (known parts, new 
 | [critics](critics.md) | PC1–PC44 | 44 | physics scorecard, DRC-equivalent mutation benchmark, return-path quality, calibration |
 | [cross-domain](cross-domain.md) | XD1–XD125 | 125 | IC power grids, power modules, stream-function coils, flow networks, topology optimization, graphics, biology |
 
-## Lens files (round 2)
+## Lens files
 
 | File | Ids | Count | Covers |
 |---|---|---|---|
@@ -36,7 +36,7 @@ Tags inside each file: **new** (not in the corpus), **combo** (known parts, new 
 
 ## Start here: 30 ideas in build order
 
-Ordered so that each step gives the next one something to stand on. Round 3 reordered this list: measurement and exact kernels now come before optimization.
+Ordered so that each step gives the next one something to stand on: measurement and exact kernels before optimization.
 
 **1. Anchor in reality** ([validation-program](../../topics/physics/validation-program.md))
 - **IN27** pre-registered bring-up as the measurement rung: predict every budget before the first board is built.
@@ -47,7 +47,7 @@ Ordered so that each step gives the next one something to stand on. Round 3 reor
 **2. Exact kernels** ([physics-core-v2](../../topics/physics/physics-core-v2.md))
 - **CT27 + CT28** topological gate first, metric weight second; physics events in the joint state.
 - **CD1 + CD2 + CD3** piece passports; the exact removal cost of every piece from one diagonal; Thevenin additions.
-- **SY7 / CT1** cut price for any objective (four lenses derived the same law).
+- **SY7 / CT1** cut price for any objective (the same law follows from conservation, images, spanning-tree leverage and energy).
 - **VP2 + VP3 + VP7** certified floors with dual certificates, avoidable-loss reports, and evaluators that return guaranteed intervals.
 - **LS1** complex-image PEEC across the R–L band.
 - **SIM46** one PEEC core for every workstream.
@@ -71,7 +71,7 @@ Ordered so that each step gives the next one something to stand on. Round 3 reor
 - **JPR1 + JPR14 + JPR41** band-tension placement forces, a channel-width legalizer, delayed acceptance.
 - **LS15** switch representation (to modes, lines or dampers) when the loop gain reaches 1.
 - **TH3** tuned snubber synthesis.
-- **OP38** adjoint copper advisor (with the edit-shape correction).
+- **OP38** adjoint copper advisor, with edits priced by their shape (polarization tensor).
 - **JPR46** joint-versus-portfolio protocol at equal CPU.
 
 Runners-up worth a day each: PW2, PW41, PW46, XD2, XD22, XD39, XD47, TM20+TM22, TM30, TM39, LA7, OP29, FE40, CD10, CD18, SY11, TH14, TH24, VP11, CT19, IN8+IN9.
