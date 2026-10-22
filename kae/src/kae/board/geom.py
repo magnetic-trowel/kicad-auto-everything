@@ -194,6 +194,10 @@ def _nest(rings, info=None):
     keeps all its pieces, as KiCad's later Simplify does."""
     polys, firsts = [], []
     for r in rings:
+        if len(set(r)) < 3:          # e.g. a line drawn there and back: no area
+            if info is not None:
+                info["degenerate"] = info.get("degenerate", 0) + 1
+            continue
         p = Polygon(r)
         if not p.is_valid:
             parts = _parts(shapely.make_valid(p))
@@ -205,6 +209,8 @@ def _nest(rings, info=None):
         if p.area > 0:
             polys.append(p)
             firsts.append(Point(r[0]))
+        elif info is not None:
+            info["degenerate"] = info.get("degenerate", 0) + 1
     n = len(polys)
     if n == 0:
         return []
@@ -248,12 +254,13 @@ def polygons(opens, rings, eps=0.01):
     Returns (polygons, info): shapely Polygons (with holes) and info = {open_ends:
     chains that do not close (KiCad: malformed), gap: the largest endpoint gap bridged,
     overlap: outlines that overlap or touch each other (KiCad then keeps the raw contours
-    and does not deflate a courtyard; we return their union)}.
+    and does not deflate a courtyard; we return their union), degenerate: closed contours
+    without area (fewer than 3 distinct points or collinear), dropped}.
     """
     opens = [pl if isinstance(pl, ArcPiece) else [tuple(p) for p in pl] for pl in opens if len(pl) >= 2]
     rings = [[tuple(p) for p in r] for r in rings if len(r) >= 4]
     chained, open_ends, gap = _chain_kicad(opens, eps) if opens else ([], 0, 0.0)
-    info = dict(open_ends=open_ends, gap=gap, overlap=False)
+    info = dict(open_ends=open_ends, gap=gap, overlap=False, degenerate=0)
     polys = _nest(rings + chained, info)
     if open_ends and not polys:
         # T-junctions or crossings: node everything and take the faces as contours

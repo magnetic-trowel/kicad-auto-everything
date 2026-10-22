@@ -317,6 +317,8 @@ class _Reader:
                     fp.flags.append(f"courtyard_overlap:{ly}")
                 if info["gap"] > 1e-6:
                     fp.flags.append(f"courtyard_gap:{ly}")
+                if info["degenerate"]:
+                    fp.flags.append(f"courtyard_degenerate:{ly}")
         if "Edge.Cuts" in by_layer:
             opens, rings = pieces_on("Edge.Cuts")
             fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
@@ -728,8 +730,9 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     # outline: board-level Edge.Cuts decide what is on the board; on-board footprints'
     # Edge.Cuts (cut-outs, card edges) join the outline as pcbnew does
     opens, rings = _outline_pieces(tree, arc_tol, rd.warnings)
-    base, info = geom.polygons(opens, rings, eps=CHAIN_EPS) if (opens or rings) else ([], dict(open_ends=0))
-    dangling = info["open_ends"]
+    base, info = geom.polygons(opens, rings, eps=CHAIN_EPS) if (opens or rings) else \
+        ([], dict(open_ends=0, degenerate=0))
+    dangling, degenerate = info["open_ends"], info["degenerate"]
     region = unary_union([Polygon(p.exterior) for p in base]) if base else None
     bbox = None
     if region is None:
@@ -748,11 +751,13 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     fp_edges = [pl for fp in fps if fp.on_board and fp.edge_cuts for pl in _place_edges(fp)]
     if fp_edges:
         outline, info = geom.polygons(opens + fp_edges, rings, eps=CHAIN_EPS)
-        dangling = info["open_ends"]
+        dangling, degenerate = info["open_ends"], info["degenerate"]
     else:
         outline = base
     if dangling:
         rd.warnings.append(f"Edge.Cuts: {dangling} chains do not close")
+    if degenerate:
+        rd.warnings.append(f"Edge.Cuts: {degenerate} closed contours without area dropped")
     if not outline:
         rd.warnings.append("no closed Edge.Cuts outline")
 

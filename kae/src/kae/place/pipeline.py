@@ -101,8 +101,27 @@ def _seed_state(P, macros, net_w, seed, log):
     return st, objs
 
 
-def _cost(ann_like):
-    return ann_like.cost(ann_like.lam1)
+def physics_summary(terms, poses, breakdown=True):
+    """Physics scorecard: the annealer's linear total, the official total with the
+    over-budget barrier (priors.phi), and per-structure utilization."""
+    rows = terms.breakdown(poses)
+    try:
+        from kae.physics.priors import Knobs, phi
+        beta = Knobs().barrier
+    except ImportError:
+        def phi(u, b):
+            return u
+        beta = 0.0
+    lin = sum(float(r.get("confidence", 1.0)) * float(r.get("util", r.get("utilization", 0.0))) for r in rows)
+    off = sum(float(r.get("confidence", 1.0)) * phi(float(r.get("util", r.get("utilization", 0.0))), beta)
+              for r in rows)
+    out = dict(total_linear=round(lin, 4), total=round(off, 4), structures=len(rows),
+               over_budget=sum(1 for r in rows if float(r.get("util", r.get("utilization", 0.0))) > 1.0))
+    if breakdown:
+        out["breakdown"] = [dict(id=r.get("id"), kind=r.get("kind"), util=round(float(r.get("util", r.get("utilization", 0.0))), 4),
+                                 value=round(float(r.get("value", 0.0)), 4), unit=r.get("unit"),
+                                 members=r.get("members", [])[:8]) for r in rows[:40]]
+    return out
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True):
@@ -146,18 +165,22 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep.update(legal_grid=True, exact=[])
         return Result(poses={}, report=rep, state=st, problem=P)
 
-    # ---- physics: structures -> macros, place terms
-    macros, terms = [], None
+    # ---- physics: place terms (both arms report them; only the physics arm optimizes them),
+    #      structures -> macros
+    macros, terms, report_terms = [], None, None
+    t = time.monotonic()
+    try:
+        report_terms, tsrc = make_terms(board, brief, barrier=0.0)   # linear utilization in the annealer
+    except Exception as e:
+        log(f"place terms failed ({type(e).__name__}: {e})")
+        report_terms, tsrc = None, "none"
+    stage("terms", t)
     if physics:
         t = time.monotonic()
+        terms = report_terms
         structs = clusters.structures(P, brief)
         macros = clusters.build_macros(P, structs, time_s=min(0.1 * budget, 30.0), workers=workers,
                                        seed=seed, log=log)
-        try:
-            terms, tsrc = make_terms(board, brief)
-        except Exception as e:
-            log(f"place terms failed ({type(e).__name__}: {e}); physics proxy off")
-            terms, tsrc = None, "none"
         rep["physics_terms"] = dict(source=tsrc, structures=len(structs), macros=len(macros),
                                     macro_sizes=[len(m.members) for m in macros])
         # nets inside structures are critical: pull them together harder in the seed
@@ -270,11 +293,11 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     stage("exact_check", t)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
-    if terms is not None:
+    if report_terms is not None:
         try:
-            poses = {p.uuid: st.pose(p.i) for p in P.parts}
-            rep["physics_total"] = round(float(terms.total(poses)), 4)
-            rep["physics_breakdown"] = terms.breakdown(poses)[:30]
+            rep["physics"] = physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts})
+            rep["physics_seed"] = physics_summary(report_terms, {p.uuid: seed_state.pose(p.i) for p in P.parts},
+                                                  breakdown=False)
         except Exception as e:
             rep["physics_error"] = f"{type(e).__name__}: {e}"
     rep["seconds"] = round(time.monotonic() - t0, 2)

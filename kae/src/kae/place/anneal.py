@@ -30,7 +30,7 @@ from .cost import Congestion
 
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
-                 w_cong=0.3, w_esc=0.3, lam0=1.0, lam1=40.0, log=None):
+                 w_cong=0.3, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -124,6 +124,8 @@ class Annealer:
             cls.setdefault(P.parts[i].shape_key, []).append(i)
         self.swap_class = {i: c for c in cls.values() if len(c) > 1 for i in c}
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc)
+        # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
+        self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
         self.lam0, self.lam1 = lam0, lam1
         self.stats = dict(moves=0, accepted=0, by_move={})
         self.leg_total = self.total_leg()
@@ -302,7 +304,7 @@ class Annealer:
             d_phys = self.terms.delta(self.poses, moved_u, {u: newp[u] for u in moved_u})
         w = self.w
         g2 = 1.0
-        delta = (w["wl"] * (wl_new - wl_old) / self.W0
+        delta = (w["wl"] * (self._wl_cost(self.wl + wl_new - wl_old) - self._wl_cost(self.wl))
                  + lam * (leg_new - leg_old) * g2 / self.A0
                  + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
                  + w["phys"] * d_phys / self.nstruct
@@ -427,18 +429,24 @@ class Annealer:
             tot += self._overlap_part(i, set(self.mov[:idx + 1])) + self._outline(i)
         return tot
 
+    def _wl_cost(self, wl):
+        u = wl / self.W0
+        over = u - 1.0 - self.wl_slack
+        return u + (self.wl_barrier * over * over if over > 0 else 0.0)
+
     def cost(self, lam):
         w = self.w
         disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0)
         c = self.cong.total() if self.cong is not None else 0.0
-        return (w["wl"] * self.wl / self.W0 + lam * self.leg_total / self.A0 + w["disp"] * disp
+        return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + w["cong"] * c)
 
     def evaluate(self, st):
         """Full cost of another state with this annealer's weights and normalization (seed
         HPWL, mean part area and size, seed positions, final legality weight)."""
         o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
-                     w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1)
+                     w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
+                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()

@@ -7,6 +7,8 @@
     board_acceptance.py roundtrip [--tasks DIR] [-n 20]  write_poses -> pcbnew -> pad_xy, structural diff
     board_acceptance.py place     [--tasks DIR]          staging off-board, locked parts in place
     board_acceptance.py loadtime  [--tasks DIR]          load time per board, sequential, median of 3
+    board_acceptance.py loadall   [--tasks DIR]          regression: every board loads (exit 1 if not)
+    board_acceptance.py merge --name OUT RUN [RUN...]    verify runs merged, later rows win
 
 Boards: DIR/<id>/reference/board.kicad_pcb and DIR/<id>/place/input/board.kicad_pcb.
 Results: kae-work/kae-board/acceptance/<run>.jsonl plus a summary on stdout and in
@@ -14,6 +16,7 @@ Results: kae-work/kae-board/acceptance/<run>.jsonl plus a summary on stdout and 
 """
 import argparse
 import importlib
+import inspect
 import json
 import math
 import os
@@ -215,7 +218,11 @@ def _fallback_check(wr, b, src, base, work, poses):
     same_side = {u: (x, y, r, old[u].side) for u, (x, y, r, _) in poses.items()}
     ref_out, fb = work / "same_side.kicad_pcb", work / "fallback.kicad_pcb"
     pcbnew_io.write_poses(src, ref_out, same_side)
-    wr.write_sexpr(src, same_side, fb)
+    names = list(inspect.signature(wr.write_sexpr).parameters)
+    if len(names) >= 2 and names[1] == "poses":
+        wr.write_sexpr(src, same_side, fb)
+    else:
+        wr.write_sexpr(src, fb, same_side)
     xr = pcbnew_io.extract(ref_out, courtyards=True, outline=False)
     xf = pcbnew_io.extract(fb, courtyards=True, outline=False)
     kf = {f["uuid"]: f for f in xf["footprints"]}
@@ -393,6 +400,25 @@ def summarize_loadtime(rows):
     return s
 
 
+def loadall(items):
+    rows = []
+    for bid, kind, p in items:
+        try:
+            b = kicad_file.load(p)
+            rows.append(dict(id=bid, kind=kind, ok=True, warnings=b.warnings,
+                             flags=sorted({f for fp in b.footprints for f in fp.flags})))
+        except Exception as e:
+            rows.append(dict(id=bid, kind=kind, ok=False, error=f"{type(e).__name__}: {e}",
+                             trace=traceback.format_exc()[-1500:]))
+    return rows
+
+
+def summarize_loadall(rows):
+    return dict(boards=len(rows), failed=[(r["id"], r["kind"], r["error"]) for r in rows if not r["ok"]],
+                warnings=[(r["id"], r["kind"], r["warnings"]) for r in rows if r["ok"] and r["warnings"]],
+                flags=sorted({f.split(":")[0] for r in rows if r["ok"] for f in r["flags"]}))
+
+
 def _run(fn, args, jobs):
     if jobs <= 1:
         return [fn(a) for a in args]
@@ -411,7 +437,8 @@ def _save(name, rows, summary):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", choices=["verify", "roundtrip", "place", "loadtime"])
+    ap.add_argument("what", choices=["verify", "roundtrip", "place", "loadtime", "loadall", "merge"])
+    ap.add_argument("runs", nargs="*", help="merge: verify run names")
     ap.add_argument("--tasks", default=str(ROOT / "kae-work" / "tasks"))
     ap.add_argument("--kinds", default="reference,place")
     ap.add_argument("--only", default="", help="comma-separated task ids")
@@ -440,6 +467,19 @@ def main(argv=None):
     elif a.what == "loadtime":
         rows = loadtime(items)
         _save(name, rows, summarize_loadtime(rows))
+    elif a.what == "loadall":
+        rows = loadall(items)
+        summary = summarize_loadall(rows)
+        _save(name, rows, summary)
+        return 1 if summary["failed"] else 0
+    elif a.what == "merge":
+        merged = {}
+        for run in a.runs:
+            for line in open(OUT / f"{run}.jsonl"):
+                r = json.loads(line)
+                merged[(r["id"], r["kind"])] = r
+        rows = [merged[k] for k in sorted(merged)]
+        _save(name, rows, summarize_verify(rows))
     return 0
 
 

@@ -305,56 +305,154 @@ def mutual_paths(pa, za, pv, zv, ha_via, hv_via, n=3):
     return 0.1 * float(m)
 
 
-def patches_cm(pa, pv, h, eps_r, wa=0.3, wv=0.2):
+def _cself(A, h, eps_r):
+    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)       # plate + fringe (E5)
+
+
+def patches_cm(na, nv, h, eps_r):
     """Mutual capacitance (pF) between the copper of an aggressor node and a victim net,
-    each a list of patches (x, y, area mm^2), at height h over a plane (h = inf: free
-    space, approximated by h = 1.6 mm). First order in the potential coefficients."""
-    if not pa or not pv:
-        return 0.0
+    given as cached patch sets (patches (x, y, A mm^2), cx, cy, total A, extent), at height
+    h over a plane (h = inf: free space, approximated by h = 1.6 mm). First order in the
+    potential coefficients with the plane image: C_av ~ C_a C_v p_av,
+    p_av = (1/(4 pi eps0)) (1/r - 1/sqrt(r^2 + 4 h^2)); far apart, the totals at the centroids."""
+    pa, ax, ay, Aa, ea = na
+    pv, vx, vy, Av, ev = nv
     h = 1.6 if h == INF else max(h, 0.05)
-    cm = 0.0
     k = 1.0 / (4.0 * math.pi * EPS0)
-    for xa, ya, Aa in pa:
-        ca = EPS0 * eps_r * Aa / h + EPS0 * 2.0 * math.sqrt(Aa)      # plate + fringe (E5)
-        for xv, yv, Av in pv:
-            cv = EPS0 * eps_r * Av / h + EPS0 * 2.0 * math.sqrt(Av)
-            r = max(_hyp(xa - xv, ya - yv), 0.5 * (math.sqrt(Aa) + math.sqrt(Av)))
-            p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
-            cm += ca * cv * p
+    r = _hyp(ax - vx, ay - vy)
+    if r > 1.5 * (ea + ev) + 2.0 * h:
+        p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
+        return _cself(Aa, h, eps_r) * _cself(Av, h, eps_r) * p
+    cm = 0.0
+    for xa, ya, A1 in pa:
+        ca = _cself(A1, h, eps_r)
+        for xv, yv, A2 in pv:
+            rr = max(_hyp(xa - xv, ya - yv), 0.5 * (math.sqrt(A1) + math.sqrt(A2)))
+            p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
+            cm += ca * _cself(A2, h, eps_r) * p
     return cm
 
 
+def loop_mutual(al, vl, st, h, near_quad=True):
+    """|M| (nH) between an aggressor LoopShape and a victim LoopShape over the plane at h
+    (inf: free space). Far apart (centroid distance >= 2 max size and >= 4h): point dipoles
+    of each loop with its image system; near: Gauss quadrature of the Neumann integral."""
+    ga = al.geo(st)
+    gv = vl.geo(st)
+    ca, cv = ga[1], gv[1]
+    r = _hyp(ca[0] - cv[0], ca[1] - cv[1])
+    if h == INF:
+        if not (al.closed and vl.closed):
+            return 0.0
+        if r >= 2.0 * max(ga[2], gv[2], 1e-3):
+            return abs(0.1 * ga[3] * gv[3] / (r ** 3))        # coplanar dipoles, free space
+        return abs(_free_mutual(ga[0], gv[0]))
+    if r >= 2.0 * max(ga[2], gv[2]) and r >= 4.0 * h:
+        return abs(far_mutual(_dipoles(ga, h, al.closed, al.z), _victim_moments(gv, h, vl.closed, vl.z)))
+    m = mutual_paths(ga[0], h + al.z, gv[0], h + vl.z, None if al.closed else h, None if vl.closed else h,
+                     n=6 if r < max(ga[2], gv[2]) else 3)
+    return abs(m)
+
+
 class LoopShape:
-    """A loop for coupling: terminals in order, closed on top or through the plane."""
+    """A loop for coupling: terminals in order, closed on top or (closed=False) through the
+    reference plane by vias at both ends. Geometry is cached per pose of its parts."""
 
     def __init__(self, terms, closed=True, z_extra=0.0):
         self.T = terms
         self.closed = closed
         self.z = z_extra
         self.parts = tuple(sorted({t.i for t in terms}))
+        self._key = None
+        self._geo = None
 
     def points(self, st):
         return _loop_points(st, self.T, self.closed)
 
+    def geo(self, st):
+        """(points list, centroid (x, y), size, signed area, chord (dx, dy))."""
+        key = tuple((st.X[i], st.Y[i], st.R[i], st.G[i]) for i in self.parts)
+        if key != self._key:
+            pts = self.points(st)
+            n = len(pts) - (1 if self.closed else 0)
+            cx = sum(p[0] for p in pts[:n]) / n
+            cy = sum(p[1] for p in pts[:n]) / n
+            size = max(max(abs(p[0] - cx), abs(p[1] - cy)) for p in pts) * 2.0
+            area = 0.0
+            if self.closed:
+                for a, b in zip(pts[:-1], pts[1:]):
+                    area += a[0] * b[1] - a[1] * b[0]
+                area *= 0.5
+            chord = (pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1])
+            self._geo = (pts, (cx, cy), size, area, chord)
+            self._key = key
+        return self._geo
+
+
+def _dipoles(geo, h, closed, z):
+    """Magnetic dipole system (per unit current) of a loop shape plus its plane image:
+    list of (x, y, z, mx, my, mz). Closed loop at height h: m = A z^ at +h and -A z^ at -h
+    (a quadrupole); a path closed through the plane: its vertical rectangle and image, one
+    horizontal dipole m = 2h z^ x chord at the plane."""
+    pts, (cx, cy), size, area, chord = geo
+    if closed:
+        return [(cx, cy, h + z, 0.0, 0.0, area), (cx, cy, -(h + z), 0.0, 0.0, -area)]
+    hh = h + z
+    # moment of the closed path top (at +hh) -> via down -> image path back (at -hh) -> via up
+    return [(cx, cy, 0.0, -2.0 * hh * chord[1], 2.0 * hh * chord[0], 0.0)]
+
+
+def _victim_moments(geo, h, closed, z):
+    """Physical area vectors (no image) of a victim loop: closed on top: A z^ at height h;
+    closed through the plane: the curtain under its path, h z^ x chord at height h/2."""
+    pts, (cx, cy), size, area, chord = geo
+    hh = h + z
+    if closed:
+        return [(cx, cy, hh, 0.0, 0.0, area)]
+    return [(cx, cy, 0.5 * hh, -hh * chord[1], hh * chord[0], 0.0)]
+
+
+def far_mutual(dip_a, mom_v):
+    """M (nH) = sum_v m_v . B_a(r_v) with B of point dipoles: (mu0/4pi)(3 (m.n) n - m)/R^3."""
+    M = 0.0
+    for xa, ya, za, mx, my, mz in dip_a:
+        for xv, yv, zv, vx, vy, vz in mom_v:
+            rx, ry, rz = xv - xa, yv - ya, zv - za
+            R2 = rx * rx + ry * ry + rz * rz
+            R = math.sqrt(R2)
+            mr = (mx * rx + my * ry + mz * rz) / R2
+            M += (3.0 * mr * (vx * rx + vy * ry + vz * rz) - (mx * vx + my * vy + mz * vz)) / (R2 * R)
+    return 0.1 * M
+
 
 class NodeShape:
     """Copper of a net for capacitive coupling: its pads (terminals with areas) plus the
-    expected hops between consecutive pads (strips of width w)."""
+    expected hops between consecutive pads (strips of width w). Cached per pose."""
 
     def __init__(self, terms, areas, w=0.25):
         self.T = terms
         self.A = areas
         self.w = w
         self.parts = tuple(sorted({t.i for t in terms}))
+        self._key = None
+        self._pat = None
 
     def patches(self, st):
-        P = [txy(st, t) for t in self.T]
-        out = [(x, y, a) for (x, y), a in zip(P, self.A)]
-        for (x0, y0), (x1, y1) in zip(P[:-1], P[1:]):
-            ln = _hyp(x1 - x0, y1 - y0)
-            if ln > 1e-6:
-                out.append((0.5 * (x0 + x1), 0.5 * (y0 + y1), ln * self.w))
-        return out
+        key = tuple((st.X[i], st.Y[i], st.R[i], st.G[i]) for i in self.parts)
+        if key != self._key:
+            P = [txy(st, t) for t in self.T]
+            out = [(x, y, a) for (x, y), a in zip(P, self.A)]
+            for (x0, y0), (x1, y1) in zip(P[:-1], P[1:]):
+                ln = _hyp(x1 - x0, y1 - y0)
+                if ln > 1e-6 and self.w > 0:
+                    out.append((0.5 * (x0 + x1), 0.5 * (y0 + y1), ln * self.w))
+            at = sum(a for _, _, a in out) or 1e-6
+            cx = sum(x * a for x, _, a in out) / at
+            cy = sum(y * a for _, y, a in out) / at
+            ext = max(max(abs(x - cx), abs(y - cy)) for x, y, _ in out) * 2.0
+            self._pat = (out, cx, cy, at, ext)
+            self._key = key
+        return self._pat
 
 
 class CouplingComp:
@@ -374,35 +472,17 @@ class CouplingComp:
     def value(self, st):
         bv = self.bv
         v = 0.0
-        if self.al is not None and self.vl is not None:
-            pa = self.al.points(st)
-            pv = self.vl.points(st)
-            ca = np.mean(np.asarray(pa), 0)
-            cv = np.mean(np.asarray(pv), 0)
-            h = bv.h_ref(st.G[self.al.T[0].i], ca[0], ca[1])
-            if h == INF:
-                h_eff = None
-                za = zv = 1.6
-            else:
-                h_eff = h
-                za, zv = h + self.al.z, h + self.vl.z
-            if h_eff is None:
-                m = _free_mutual(pa, pv)
-            else:
-                size = max(np.ptp(np.asarray(pa), 0).max(), np.ptp(np.asarray(pv), 0).max(), 1.0)
-                dist = float(np.hypot(*(ca - cv)))
-                n = 6 if dist < 2.0 * size else 3
-                m = mutual_paths(pa, za, pv, zv, None if self.al.closed else h,
-                                 None if (self.vl.closed or not self.gp) else h, n=n)
-            v += abs(m) * self.didt        # nH * A/ns = V -> mV below
-        v *= 1e3
+        if self.al is not None and self.vl is not None and self.didt > 0:
+            ga = self.al.geo(st)
+            h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
+            v += loop_mutual(self.al, self.vl, st, h) * self.didt * 1e3        # nH * A/ns = V -> mV
         if self.an is not None and self.vn is not None:
-            pa = self.an.patches(st)
-            pv = self.vn.patches(st)
-            x0, y0 = pa[0][0], pa[0][1]
-            h = bv.h_ref(st.G[self.an.T[0].i], x0, y0)
-            cm = patches_cm(pa, pv, h, bv.er)
-            cv = sum(EPS0 * bv.er * a / (1.6 if h == INF else max(h, 0.05)) for _, _, a in pv) + 5.0  # + pins (E5 5 pF)
+            na = self.an.patches(st)
+            nv = self.vn.patches(st)
+            h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
+            cm = patches_cm(na, nv, h, bv.er)
+            hh = 1.6 if h == INF else max(h, 0.05)
+            cv = _cself(nv[3], hh, bv.er) + 5.0                                  # + pins (E5 5 pF)
             # charge division for a high-impedance victim, C dv/dt Z for a low one
             v_c = self.dv * self.tsw * cm / (cm + cv + self.tsw * 1e3 / self.zv)   # ns*1e3/ohm = pF
             v += 1e3 * v_c
@@ -564,22 +644,15 @@ class CmComp:
         bv = self.bv
         w = 2.0 * math.pi * self.f        # rad/ns
         i_cm = 0.0
-        if self.al is not None and self.cl is not None:
-            pa = self.al.points(st)
-            pv = self.cl.points(st)
-            ca = np.mean(np.asarray(pa), 0)
-            h = bv.h_ref(st.G[self.al.T[0].i], ca[0], ca[1])
-            if h == INF:
-                m = _free_mutual(pa, pv) if self.cl.closed else 0.0
-            else:
-                m = mutual_paths(pa, h + self.al.z, pv, h, None if self.al.closed else h,
-                                 None if self.cl.closed else h)
-            i_cm += w * abs(m) * self.Iamp / self.zcm          # nH*rad/ns*A/ohm = A
+        if self.al is not None and self.cl is not None and self.Iamp > 0:
+            ga = self.al.geo(st)
+            h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
+            i_cm += w * loop_mutual(self.al, self.cl, st, h) * self.Iamp / self.zcm   # nH*rad/ns*A/ohm = A
         if self.an is not None and self.cn is not None:
-            pa = self.an.patches(st)
-            pv = self.cn.patches(st)
-            h = bv.h_ref(st.G[self.an.T[0].i], pa[0][0], pa[0][1])
-            cm = patches_cm(pa, pv, h, bv.er)
+            na = self.an.patches(st)
+            nv = self.cn.patches(st)
+            h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
+            cm = patches_cm(na, nv, h, bv.er)
             i_cm += w * cm * 1e-3 * self.Vamp                  # pF*rad/ns*V = mA -> A
         return i_cm * 1e6
 

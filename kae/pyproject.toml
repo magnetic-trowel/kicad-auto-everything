@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+fast = ["numba"]
 
 [project.scripts]
 kae = "kae.cli:main"

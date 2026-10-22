@@ -754,7 +754,9 @@ def _power_pins(b: _B, ref):
     return out
 
 
-RANK_W = 0.5        # weight of the schematic rank-order term in capacitor ownership (ablated in the eval)
+RANK_W = 0.0        # weight of a linear rank-order term in capacitor ownership; 0 measured best (eval ablation)
+TIE_ORDER = 'schematic'   # 'schematic': equal scores fill consumers in reference order with capacitors in
+                          # reference order (block rank order); 'random': seeded shuffle (ablation)
 CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
 CELL_QUOTA = 2      # one HF commutation cap and one more
 
@@ -828,7 +830,16 @@ def allocate_caps(b: _B, cells, groups):
         quota = [CELL_QUOTA if t == 'cell' else (len(x['pins']) if x['function'] == 'load' else 1) for t, x, _ in lst]
         count = [0] * ng
         owner = {}
-        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=lambda t: (-t[0], _refkey(t[1]), t[2])):
+        if TIE_ORDER == 'random':
+            import random
+            import zlib
+            rnd = random.Random(zlib.crc32(rail.encode()))
+            corder = {c: rnd.random() for c in caps}
+            jorder = {j: rnd.random() for j in range(ng)}
+            tie = lambda t: (-t[0], corder[t[1]], jorder[t[2]])   # noqa: E731
+        else:
+            tie = lambda t: (-t[0], _refkey(t[1]), t[2])          # noqa: E731
+        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
             if c in owner or count[j] >= quota[j]:
                 continue
             owner[c] = j
