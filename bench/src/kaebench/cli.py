@@ -146,16 +146,42 @@ def cmd_prepare_dir(a):
     return _parallel([e for e, _ in items], one, a.jobs, "prepare-dir")
 
 
+ARM_KEYS = ("name", "adapter", "probe", "freerouting", "passes")
+
+
+def _arms(a, sandbox):
+    """--arm name=LABEL,adapter=NAME[,probe=NAME][,freerouting=PATH][,passes=N] (repeatable):
+    built-in adapters run interleaved in one run."""
+    arms = []
+    for spec in a.arm:
+        kv = dict(part.split("=", 1) for part in spec.split(",") if part)
+        bad = set(kv) - set(ARM_KEYS)
+        if bad or "adapter" not in kv or "name" not in kv:
+            raise SystemExit(f"--arm {spec!r}: need name= and adapter=, allowed keys {ARM_KEYS}")
+        passes = int(kv["passes"]) if kv.get("passes") else a.passes
+        ad = adapters.make(kv["adapter"], passes=passes, sandbox=sandbox, freerouting=kv.get("freerouting"))
+        ad.name = kv["name"]
+        pr = adapters.make(kv["probe"], freerouting=kv.get("freerouting")) if kv.get("probe") else None
+        arms.append((ad, pr))
+    return arms
+
+
 def cmd_run(a):
     _, tasks, results = _dirs(a)
     sandbox = adapters.Sandbox(enabled=not a.no_sandbox, network=a.sandbox_net,
                                ro=[Path(x) for x in a.sandbox_ro or []])
-    ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox,
-                       freerouting=a.freerouting)
-    probe = adapters.make(a.probe, freerouting=a.freerouting) if a.probe else None
-    if a.label:
-        ad.name = a.label
-    run_dir = runner.run(tasks, results, ad, kinds=_split(a.kinds) or ["route"], k=a.k,
+    if a.arm:
+        arms, ad, probe = _arms(a, sandbox), None, None
+    elif a.adapter:
+        arms = None
+        ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox,
+                           freerouting=a.freerouting)
+        probe = adapters.make(a.probe, freerouting=a.freerouting) if a.probe else None
+        if a.label:
+            ad.name = a.label
+    else:
+        raise SystemExit("run needs --adapter or --arm")
+    run_dir = runner.run(tasks, results, ad, arms=arms, kinds=_split(a.kinds) or ["route"], k=a.k,
                          timeout=a.timeout, jobs=a.jobs, probe=probe, only=_split(a.only),
                          splits=_split(a.splits), qualified_only=not a.all, name=a.name,
                          keep_work=a.keep_work)
@@ -262,7 +288,10 @@ def main(argv=None):
     sp.set_defaults(fn=cmd_prepare_dir)
 
     sp = sub.add_parser("run", help="run an adapter on prepared tasks and score it")
-    sp.add_argument("--adapter", required=True, help="reference | noop | freerouting | <name> with --command")
+    sp.add_argument("--adapter", help="reference | noop | freerouting | <name> with --command")
+    sp.add_argument("--arm", action="append", metavar="SPEC",
+                    help="interleaved arm: name=LABEL,adapter=NAME[,probe=NAME][,freerouting=PATH]"
+                         "[,passes=N]; repeat to compare built-in adapters board by board in one run")
     sp.add_argument("--command", help="external tool template: {input} {output} {workdir} {kind} {attempt} {timeout}")
     sp.add_argument("--kinds", default="route")
     sp.add_argument("-k", type=int, default=1, help="attempts per board (best-of-k)")
