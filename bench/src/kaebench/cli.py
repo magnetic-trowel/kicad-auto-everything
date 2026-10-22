@@ -181,6 +181,14 @@ def cmd_tasks(a):
         for k, (n, q) in sorted(groups.items(), key=lambda kv: (-kv[1][0], str(kv[0]))):
             print(f"| {k} | {n} | {q} |")
     table("split", lambda r: [r["split"]])
+    def why(r):
+        if r["qualified"]:
+            return []
+        if not r.get("human_clean", True):
+            return ["human layout not DRC-clean"]
+        return [f"round trip fails: {k}" for k, v in (r.get("roundtrip") or {}).items() if not v["ok"]]
+    if any(why(r) for r in recs):
+        table("not qualified because", why)
     table("license tier", lambda r: [r.get("license_tier")])
     table("tag", lambda r: r.get("tags") or ["(none)"])
     if a.write_suite:

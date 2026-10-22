@@ -4,7 +4,10 @@
 
 Recipe (after PCBWorld): convert to the installed KiCad version, keep each board's own
 rules, qualify boards whose human layout is fully connected and free of error-level
-DRC violations, keep the human copper as the reference, split by pad count.
+DRC violations, keep the human copper as the reference, split by pad count. A board also
+qualifies only if its human layout passes the benchmark's own scoring as if it were a
+method's output (the round trip), so every qualified task is solvable under the rules
+methods are held to.
 
 Task kinds:
   route  placement kept, all tracks/vias removed (locked copper optionally kept)
@@ -15,7 +18,7 @@ import json
 import shutil
 from pathlib import Path
 
-from . import tools
+from . import score, tools
 from .boardfiles import STEM, board_path, install_rules
 
 TASK_KINDS = ("route", "place")
@@ -24,7 +27,10 @@ TASK_KINDS = ("route", "place")
 # 3: teardrops are stripped with the routing (left behind they were stray copper and marked
 #    the human pad positions in place tasks); footprints sharing a uuid get unique ones; the
 #    record lists the pads each footprint has outside the outline in the human placement
-TASK_SPEC = 3
+# 4: qualification also requires the round trip (the human layout scored like a method's
+#    output); it drops boards whose routing relies on what tasks strip, e.g. teardrops that
+#    carry a connection or DRC rules keyed to the human copper's groups
+TASK_SPEC = 4
 
 
 def split_of(pads):
@@ -65,12 +71,12 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
     conv = tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
     ref_stats = tools.run_ops("stats", board_path(ref))
     ref_drc = tools.summarize_drc(tools.run_drc(board_path(ref), ref / "drc.json"))
-    qualified = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
+    human_clean = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
     record = dict(
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
         repo=entry["repo"], commit=entry["commit"], pcb_path=entry["pcb_path"],
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
-        split=split_of(ref_stats["pads"]), qualified=qualified, task_spec=TASK_SPEC,
+        split=split_of(ref_stats["pads"]), qualified=human_clean, human_clean=human_clean, task_spec=TASK_SPEC,
         footprint_uuids_reassigned=conv.get("footprint_uuids_reassigned", 0),
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),
         reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc,
@@ -91,8 +97,39 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
                                      keep_locked=keep_locked if kind == "route" else "footprints")
+    if human_clean:
+        record["roundtrip"] = _roundtrip(tdir, record)
+        record["qualified"] = all(v["ok"] for v in record["roundtrip"].values())
     task_json.write_text(json.dumps(record, indent=1))
     return record
+
+
+def _verdict(s, ok):
+    return dict(ok=bool(s.get("valid") and ok),
+                integrity=[k for k, v in (s.get("integrity") or {}).items() if not v],
+                foreign=(s.get("foreign") or {}).get("by_kind"), errors_by_type=s.get("errors_by_type"),
+                unconnected=s.get("unconnected"), outside=s.get("outside"),
+                placement_errors=s.get("placement_errors"))
+
+
+def _roundtrip(tdir, record):
+    """Score the human layout of each task kind as if a method had produced it."""
+    rt = tdir / "roundtrip"
+    out = {}
+    try:
+        if "route" in record["tasks"]:
+            s = score.score_route_task(tdir, board_path(tdir / "reference"), rt / "route", record,
+                                       allow_copy=True)
+            out["route"] = _verdict(s, s.get("clean"))
+        if "place" in record["tasks"]:
+            human = rt / "human-placement"
+            human.mkdir(parents=True, exist_ok=True)
+            tools.run_ops("strip-routing", board_path(tdir / "reference"), board_path(human))
+            s, _ = score.score_place_task(tdir, board_path(human), rt / "place", record, allow_copy=True)
+            out["place"] = _verdict(s, s.get("legal"))
+    finally:
+        shutil.rmtree(rt, ignore_errors=True)
+    return out
 
 
 def load_tasks(tasks_dir, only=None, qualified_only=True, splits=None):
