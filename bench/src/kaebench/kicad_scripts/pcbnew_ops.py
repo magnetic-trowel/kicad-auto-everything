@@ -373,8 +373,25 @@ def _keyed(text, ignore_heads=()):
             u = f"{name.strip(chr(34))}#{seen[(head, name)]}"
         # nested uuids carry no electrical meaning, and KiCad invents fresh ones on load
         # for some implicit fields; compare without them
-        out[(head, u)] = _drop_zero_angles([("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
-                                            for i, t in enumerate(blk)])
+        toks = _drop_zero_angles([("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
+                                  for i, t in enumerate(blk)])
+        if head.startswith("gr_"):
+            toks = _drop_net(toks)
+        out[(head, u)] = toks
+    return out
+
+
+def _drop_net(toks):
+    """Drop (net X) from a board graphic: KiCad gives copper graphics the net of the tracks
+    that touch them when routing is imported, so the net is derived, not set by a method
+    (the rebuilt board keeps the input's)."""
+    out, i, n = [], 0, len(toks)
+    while i < n:
+        if toks[i] == "(" and i + 3 < n and toks[i + 1] == "net" and toks[i + 3] == ")":
+            i += 4
+            continue
+        out.append(toks[i])
+        i += 1
     return out
 
 
@@ -507,8 +524,11 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
             accepted.add(t.m_Uuid.AsString())
     copy = None
     if ref is not None:
+        # Straight pad-to-pad segments are what any router draws, so they are not evidence
+        # of copying (a breadboard is nothing else).
+        pads = {(_um(p.GetCenter().x), _um(p.GetCenter().y)) for fp in board.GetFootprints() for p in fp.Pads()}
         ref_keys = {_route_key(t) for t in ref.GetTracks()}
-        mine = [k for k in out_keys if k not in given]
+        mine = [k for k in out_keys if k not in given and not (k[0] == "seg" and all(e in pads for e in k[2]))]
         copy = _copy_stats(sum(1 for k in mine if k in ref_keys), len(mine), 20, 0.6)
     ident = _identity(out)
     missing_given = len(given - set(out_keys))

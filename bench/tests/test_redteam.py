@@ -135,6 +135,14 @@ def test_copper_on_an_invented_net_gains_nothing(rt):
     assert s["valid"] and s["clean"] and s["new_net_items"] == 1, s
 
 
+def test_copper_graphic_net_is_not_a_change(rt):
+    """KiCad assigns nets to copper graphics that imported tracks touch; the rebuilt board
+    keeps the input's graphic, so the net is ignored when comparing."""
+    root, _ = rt
+    s = cheat(root, "graphic_net")[0]["score"]
+    assert s["valid"] and s["clean"], s
+
+
 def test_deleted_keepout_still_applies(rt):
     """The scored board is rebuilt from the task input, so the keepout is still there."""
     root, _ = rt
