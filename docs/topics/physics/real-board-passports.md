@@ -26,7 +26,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 |---|---|
 | Nets: GND (1,583 mm²), VIN, and a 3.3 V plane (696 mm² on In1) | net names, copper area |
 | Stackup: F.Cu 35 µm / 0.21 mm / In1 3.3 V, 15 µm / 1.065 mm / In2 GND, 15 µm / 0.21 mm / B.Cu 35 µm | file stackup |
-| U3 (TMC6300) is the switching cell; pins 16 and 20 are its bridge return | pads on VIN, GND and all three shunt nets; GND pins beside the supply pin, called bridge "foot points" in the datasheet [P] |
+| U3 (TMC6300) is the switching cell; pins 16 and 20 are its bridge return | pads on VIN, GND and all three shunt nets; the datasheet's pin table names 16 and 20 as bridge foot points [P] |
 | R2, R4, R12: 50 mΩ in-line phase shunts, read by INA240s (U1, U4, U6) on 3.3 V | value "50m"; amplifier pads on both shunt nets |
 | J2 is the motor connector. J3 and J4 both carry VIN and GND, so a daisy-chain bus crosses the board. J1 is the host connector (27 nets) | adjacency |
 | C9 10 µF (2.8 mm from the supply pin), C10 100 nF (3.2 mm) and C11 1 µF (8.6 mm) decouple VIN | capacitors between VIN and GND |
@@ -73,8 +73,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 **Supply and bridge return**
 
 1. **The bridge return is a neck of 0.2 mm tracks.**
-   - Each of the two return pins joins the 1.8 mm exposed pad by one 0.2 mm track.
-   - The pad has no vias. Its copper reaches the ground pour only through a 0.6 mm corridor between two ground pins on the far side. The nearest ground vias are 3 mm beyond that.
+   - Each of the two return pins joins the 1.8 mm exposed pad by one 0.2 mm track. The pad has no vias; its copper reaches the ground pour only through a 0.6 mm corridor between two ground pins on the far side, 3 mm from the nearest ground vias.
    - Ground copper inside the footprint holds 1.76 mΩ, 20% of the 8.8 mΩ supply path.
    - The return tracks run at 73 A/mm² per A. Cutting either one adds 6.3–6.8% to R.
    - The datasheet asks for "as many as possible vias" in the pad, and for "solid, thermally conducting vias between the die attach pad and the ground plane" [P].
@@ -104,7 +103,6 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 10. **The switch nodes couple mainly to the 3.3 V plane.**
     - The six phase nets in the window have 13.4 pF of parallel-plate capacitance, 78% of it to that plane (50–90% per net).
     - Each phase edge drives 3.0–3.8 mA per V/ns into the amplifiers' supply plane, or about 10 mA per V/ns if all three phases switch together.
-    - The datasheet's dV/dt warning concerns "high resistive signals" [P].
 
 **Phase paths, sensing and floors**
 
@@ -114,7 +112,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
     - The per-tile Tellegen terms cancel (χ = 0.02–0.03), so only exact removal can assign the error.
 12. **Ground offsets are small.**
     - Supply and bus currents move the amplifiers' ground against the host's by ≤0.29 mΩ per A: 0.03% of the 1 V/A signal (20 V/V on 50 mΩ [S]).
-    - The host's own 3.3 V current moves it by 1.3–1.4 mΩ per A. This is mostly in two ground vias near the host connector, each carrying 36% of that return (removal +9%).
+    - The host's own 3.3 V current moves it by 1.3–1.4 mΩ per A, mostly through two ground vias near the host connector (36% of that return each; removal +9%).
 13. **Two phases detour around the decoupling capacitor.**
     - Phase copper is 7.5, 6.9 and 4.0 mΩ (V, U, W), beside the 50 mΩ shunt. U and V wrap round C9, and 48–61% of their copper loss lies in the pour body.
     - At equal total area, the relaxed floor is ≥10.92 mΩ, against 14.47 mΩ for the actual pours in the same model (duality gap 0.2%). At most 24–25% is avoidable: reshape V (−1.5 mΩ) and U (−1.9 mΩ), and move 1.5 mm² to U.
@@ -133,9 +131,7 @@ The board is BLDCM-Power from [brenocq/bldc-motor](https://github.com/brenocq/bl
 | C9 decouples the supply to GND | its HF return dives under a foreign plane to vias 10 mm away |
 | U3's ground pins and pad are on GND | the motor return crosses 0.2 mm tracks and a pad without vias |
 | 3.3 V plane: a logic rail | it carries the hot loop's largest HF current and is the switch nodes' main charge destination |
-| J3 GND is connected | half of J3's ground current goes through one via |
 | U, V and W are equivalent | U and V cost 1.7–1.9× W; the relaxed floor cuts V by 23% and U by 33% |
-| In1 and In2 are "planes" | their order is worth 19% of the loop inductance |
 | A via is a via | a capacitor-island via carries 0.4% of the DC feed but 39% of the HF loop |
 
 ### 5. The same HF model on three boards [C]

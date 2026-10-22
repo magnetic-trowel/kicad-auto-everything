@@ -83,26 +83,26 @@ Perforated planes:
 - Rayleigh's (1+f)/(1−f) is the 2-D HS lower bound for isotropic hole patterns; 1/(1−f) bounds any pattern, and cuts along the flow attain it.
 - Square lattices exceed HS by 4/15/40% at D/p = 0.8/0.9/0.95; a hexagonal lattice with the same via density stays within 5% [C].
 
-**D4. Pricing an edit is a polarization problem.** Lenses CT and SY found this too. Cutting a small insulating hole B where the current density is K costs ΔP = R_s·KᵀM(B)K. A disc has M = 2·area, exactly round 1's estimate. An ellipse with semi-axis b across the flow and a along it has M = π·b·(a+b), so a slit across costs πℓ²/4, one along about 0, and an edge slit twice the interior value. The area estimate thus misses slits by about ℓ/(2w), or ℓ/w from an edge: 30 for round 1's 6 × 0.2 mm slot.
+**D4. Pricing an edit is a polarization problem.** Lenses CT and SY found this too. Cutting a small insulating hole B where the current density is K costs ΔP = R_s·KᵀM(B)K. A disc has M = 2·area, exactly the area-based estimate. An ellipse with semi-axis b across the flow and a along it has M = π·b·(a+b), so a slit across costs πℓ²/4, one along about 0, and an edge slit twice the interior value. The area estimate thus misses slits by about ℓ/(2w), or ℓ/w from an edge: 30 for the 6 × 0.2 mm slot of [solver-ladder](solver-ladder.md).
 
 On 16 edits [C], the area estimate gave 0.03–0.88× the exact change and the polarization estimate 0.78–0.89×. Polarizability grows with the set, so the inscribed ellipse under-prices a rectangle (the one-sided bias). CT adds the exact strip law; SY extends it to any objective.
 
 **D5. The R–L crossover is a spectrum.** A thin sheet's eddy pattern of wavenumber k relaxes at λ(k) = 2R_s·\|k\|/μ0. This is Maxwell's receding image (2R_s/μ0 ≈ 780 m/s in 1 oz copper). Confining a return within ±ℓ needs \|k\| ≳ 1/ℓ, which forms above f ≈ R_s/(π·μ0·ℓ).
 
 2-D PEEC with exact Galerkin kernels [C; 0.3 mm trace, 50 mm plane unless noted]:
-- **Containment.** The half-containment frequency gives f50·ℓ = 56–70 Hz·m for ℓ ≥ 6h, matching R_s/(2π·μ0) = 62 Hz·m, but 80–84 Hz·m at ℓ = 3h (two rows of vp_rl_band's own log that the earlier range included); exactly, ℓ50 = 0.42–0.53·ℓ_m for h ≤ 0.1·ℓ_m [C, [rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py)].
+- **Containment.** The half-containment frequency gives f50·ℓ = 56–70 Hz·m for ℓ ≥ 6h, matching R_s/(2π·μ0) = 62 Hz·m, but 80–84 Hz·m at ℓ = 3h; exactly, ℓ50 = 0.42–0.53·ℓ_m for h ≤ 0.1·ℓ_m [C, [rt_sheet_return](../../../tools/research/physics/rt_sheet_return.py)].
 - **Away from the trace.** The current outside ±5 mm, |1 − F|, is 18% (h 0.1 mm) and 27% (1.6 mm) at 100 kHz, 3.4% and 20% at 500 kHz, 61–62% at 20 kHz. At 100 kHz most is in quadrature, which the in-band 1 − |F| (1.6%, 21%) hides, but a common-impedance victim sees it [C].
 - **Spectrum.** A Foster modal model of (R, L) reproduces the direct solve exactly and puts 10/50/90% of the DC-to-HF inductance drop at 17/65/360 kHz for h = 0.1 mm on a 50 mm plane and 8.6/41/315 kHz on 100 mm (f_x = 622 kHz); an independent PEEC gives 10.7/60/490 kHz (50 mm), so band edges are uncertain by ±50% and width-dependent [C].
 
-Round 1's f_x merged the R/ωL corner of a fixed distribution and the frequency at which the return reaches its image width h. A return leaves a victim 5 mm away below about 12 kHz on 1 oz. Lenses SY and LS reach the same length independently ([lens-ls](lens-ls.md)).
+Two crossovers are distinct: the R/ωL corner of a fixed distribution, and the frequency at which the return narrows to its image width h (f_x). A return leaves a victim 5 mm away below about 12 kHz on 1 oz. Lenses SY and LS reach the same length independently ([lens-ls](lens-ls.md)).
 
 **D6. Width as equipartition.** Copper of length l switching I and V stores ½LI² + ½CV² per cycle, with LC = (l/v)². By AM–GM this is ≥ V·I·l/v, the Poynting energy in flight, with equality at Z0 = V/I (PW2's optimum; LS too). For 2 mm at 12 V, 10 A and 500 kHz it is 0.8 mW: the parts' C_oss and package L set the real floors.
 
 **D7. Monotonicity has a scope.** Self quantities are monotone (R and HF L fall, node C rises with any copper); transfer quantities are not: ∂R_ab,cd/∂g_k = −ΔV_k^ab·ΔV_k^cd (V7) changes sign with the alignment of the two fields.
 
-On round 1's human pour [C], a 1.5 mm bridge between branches cut total loss 1.0% and raised load C's drop 1%; on a 0.2 mm grid, B and C rose about 3%. Small, but the sign is wrong: "star versus plane" is a dispute about transfer terms (also lens CD, CD24).
+On the human trunk-and-branch pour [C], a 1.5 mm bridge between branches cut total loss 1.0% and raised load C's drop 1%; on a 0.2 mm grid, B and C rose about 3%. Small, but the sign is wrong: "star versus plane" is a dispute about transfer terms (also lens CD, CD24).
 
-### 4. Convergences and synergies round 1 missed
+### 4. Convergences and synergies
 
 - **φ, ψ, adjoints and prices are one object.** In V1 the potential is the multiplier of current conservation (∂P/∂I_k = 2V_k), so "everything is a price" ([research-gaps](research-gaps.md)) is an identity; objects 1, 2, 4 and 5 of [cross-workstream-synthesis](cross-workstream-synthesis.md) are primal, dual, gradient and multiplier of one saddle point, and (φ, ψ) give certified error bars.
 - **S7's "unified via theory" is capacity theory** (PW32, PW13, FE26, FE27, via fields; D3).
@@ -123,18 +123,6 @@ On round 1's human pour [C], a 1.5 mm bridge between branches cut total loss 1.0
 Per piece and band, one PEEC or sheet solve gives six numbers [I]: **guide** (Poynting flux along its gap), **store** (½·I_k·(L_p·I)_k and ½·q_k·φ_k), **dissipate** (I_k²·R_k, the Poynting flux into its surface), **radiate** (its share of the cell's dipole moment), **couple** (interaction energy with each victim) and **damp** (participation in each ringing mode's loss).
 
 A budget's sensitivity to the piece is the energy density at its boundary: free for self terms, one adjoint for interactions. Lens CD builds the passport ([lens-cd](lens-cd.md)); VP supplies the energies.
-
-### 7. Critique of round 1
-
-1. **No principle says the physics is a minimum.** "Nature minimizes energy within the copper you draw" gives monotonicity, floors, free gradients and convexity: principle 0.
-2. **"Near-optimal is unprovable" is false for class A on a fixed raster** ([research-gaps](research-gaps.md) §4): round 1's own SIMP is certified within 1.6% of every layout on its 0.1 mm raster. Continuous layouts need a refinement study; couplings and joint placement stay unprovable.
-3. **The f_x convergence merged two crossovers** (D5). Gap 2 concerns DC-to-kHz returns near precision analog, not converter fundamentals above ~300 kHz on 1 oz (at 100 kHz ~18% of the return flows beyond ±5 mm), and a Foster eddy model suffices.
-4. **Rayleigh monotonicity was over-applied** (XD122, power-copper): it protects self terms only.
-5. **The nine objects double-count** (φ, ψ, adjoints, prices) and miss capacity.
-6. **Gap 3's relaxations are weak:** "copper everywhere" (0.677 mΩ) ignores the area budget, 2.6× below the convex floor.
-7. **"One energy currency"** (S10, PW30) fits self terms only (TL;DR).
-8. **Two misdiagnoses:** the shape factor, not the adjoint, missed cuts (D4); the empty-circle error is one-sided.
-9. **Principle 3** needs the floor N□ ≥ d²/A and equipartition: height wins because the energy sits in the gap.
 
 ## Recommendations for our system
 

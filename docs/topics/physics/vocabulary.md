@@ -93,7 +93,7 @@ The data model is extended in [physics-core-v2-api](physics-core-v2-api.md): Pie
 
 | Boundary | Formula | Value [C] | Rule valid on one side only |
 |---|---|---|---|
-| Return localization | f_x ≈ R_□/(2πµ0h) | 0.31 MHz (h = 0.2 mm, 1 oz); 39 kHz (1.6 mm) | Star ground below; "return under the trace" above |
+| Return localization | f_x ≈ R_□/(2πµ0h) | 0.31 MHz (h = 0.2 mm, 1 oz); 39 kHz (1.6 mm) | "Return under the trace" above. Star grounding pays only where the return spread ℓ_m/2 exceeds the aggressor–victim distance (below ~6 kHz at 10 mm on 1 oz; [derivation-audit](derivation-audit.md)) |
 | Skin depth = copper thickness | f = ρ/(πµ0t²) | 3.56 MHz for 35 µm | DC width tables below |
 | Lumped vs distributed | ℓ > (t_r/6)·v | 27.8 mm at 1 ns; 2.8 mm at 100 ps | Termination and stub rules above |
 | Spectral knee | 1/(π·t_r) | 159 MHz at 2 ns | −40 dB/decade above |
