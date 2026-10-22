@@ -21,7 +21,10 @@ from .boardfiles import STEM, board_path, install_rules
 TASK_KINDS = ("route", "place")
 # 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
 #    locked parts could not be placed legally and the human placement scored invalid)
-TASK_SPEC = 2
+# 3: teardrops are stripped with the routing (left behind they were stray copper and marked
+#    the human pad positions in place tasks); footprints sharing a uuid get unique ones; the
+#    record lists the pads each footprint has outside the outline in the human placement
+TASK_SPEC = 3
 
 
 def split_of(pads):
@@ -59,7 +62,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         if fetched.get(key):
             shutil.copy2(fetched[key], ref / f"{STEM}{ext}")
     # Converting writes the current KiCad format; rules stay in the project files.
-    tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
+    conv = tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
     ref_stats = tools.run_ops("stats", board_path(ref))
     ref_drc = tools.summarize_drc(tools.run_drc(board_path(ref), ref / "drc.json"))
     qualified = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
@@ -68,8 +71,11 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         repo=entry["repo"], commit=entry["commit"], pcb_path=entry["pcb_path"],
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
         split=split_of(ref_stats["pads"]), qualified=qualified, task_spec=TASK_SPEC,
+        footprint_uuids_reassigned=conv.get("footprint_uuids_reassigned", 0),
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),
-        reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc),
+        reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc,
+                       pads_outside={r["uuid"]: r["pads_outside"] for r in ref_stats["placement"]
+                                     if r.get("pads_outside")}),
         tasks={},
     )
     for kind in kinds:

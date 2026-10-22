@@ -112,9 +112,9 @@ def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, job
         only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print):
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
-    stale = [r["id"] for r in recs if "place" in kinds and r.get("task_spec", 1) < TASK_SPEC]
+    stale = [r["id"] for r in recs if r.get("task_spec", 1) < TASK_SPEC]
     if stale:
-        raise ValueError(f"{len(stale)} place tasks were prepared with an older task spec "
+        raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
     if hasattr(adapter, "hide"):
         adapter.hide(tasks_dir, results_dir)
