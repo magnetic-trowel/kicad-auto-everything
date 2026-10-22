@@ -6,7 +6,10 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
+import threading
+import time
 from importlib import resources
 from pathlib import Path
 
@@ -18,6 +21,73 @@ ENV_DEPENDENT_CHECKS = ("lib_footprint_issues", "lib_footprint_mismatch")
 
 class ToolError(RuntimeError):
     pass
+
+
+# --- resource accounting -------------------------------------------------------------
+# Every external process (method, router, KiCad) runs through run_measured, which reaps it
+# with wait4 to read its CPU time and peak memory. Totals accumulate per thread, so the
+# runner (one attempt per thread) can split them into method, scoring and probe costs.
+
+_usage = threading.local()
+
+
+def usage_take():
+    """Return and reset this thread's accumulated usage of external processes."""
+    u = getattr(_usage, "u", None) or dict(cpu_user_s=0.0, cpu_sys_s=0.0, max_rss_mb=0.0, processes=0)
+    _usage.u = None
+    return dict(cpu_s=round(u["cpu_user_s"] + u["cpu_sys_s"], 3), cpu_user_s=round(u["cpu_user_s"], 3),
+                cpu_sys_s=round(u["cpu_sys_s"], 3), max_rss_mb=round(u["max_rss_mb"], 1),
+                processes=u["processes"])
+
+
+def _account(ru):
+    u = getattr(_usage, "u", None)
+    if u is None:
+        u = _usage.u = dict(cpu_user_s=0.0, cpu_sys_s=0.0, max_rss_mb=0.0, processes=0)
+    u["cpu_user_s"] += ru.ru_utime
+    u["cpu_sys_s"] += ru.ru_stime
+    u["max_rss_mb"] = max(u["max_rss_mb"], ru.ru_maxrss / 1024.0)  # Linux: KiB
+    u["processes"] += 1
+
+
+def run_measured(cmd, timeout=None, cwd=None):
+    """subprocess.run(cmd, capture_output=True, text=True) that also accounts the process
+    tree's CPU time and peak RSS (wait4), and kills the whole tree on timeout
+    (raises subprocess.TimeoutExpired like subprocess.run)."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
+                         errors="replace", start_new_session=True)
+    chunks = {}
+
+    def read(name, f):
+        chunks[name] = f.read()
+
+    readers = [threading.Thread(target=read, args=(n, f), daemon=True)
+               for n, f in (("out", p.stdout), ("err", p.stderr))]
+    for t in readers:
+        t.start()
+    deadline = time.monotonic() + timeout if timeout else None
+    timed_out = False
+    while True:
+        pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+        if pid:
+            break
+        if deadline and time.monotonic() > deadline:
+            timed_out = True
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            pid, status, ru = os.wait4(p.pid, 0)
+            break
+        time.sleep(0.05)
+    p.returncode = os.waitstatus_to_exitcode(status)
+    for t in readers:
+        t.join(timeout=30)
+    _account(ru)
+    out, err = chunks.get("out", ""), chunks.get("err", "")
+    if timed_out:
+        raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
+    return subprocess.CompletedProcess(cmd, p.returncode, out, err)
 
 
 def _first_existing(cands):
@@ -105,7 +175,7 @@ def run_ops(op, *args, timeout=600):
     """Run a pcbnew operation in KiCad's Python; return its JSON result."""
     cmd = [*kicad_python(), ops_script(), op, *map(str, args)]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = run_measured(cmd, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise ToolError(f"pcbnew {op} timed out after {timeout}s")
     lines = [ln for ln in r.stdout.splitlines() if ln.startswith("{")]
@@ -128,7 +198,7 @@ def run_drc(board, out_json, timeout=None):
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(Path(out_json).resolve()), str(board.resolve())]
     try:
-        r = subprocess.run(cmd, cwd=board.parent, capture_output=True, text=True, timeout=timeout)
+        r = run_measured(cmd, timeout=timeout, cwd=board.parent)
     except subprocess.TimeoutExpired:
         raise ToolError(f"DRC timed out after {timeout}s")
     if not Path(out_json).exists():

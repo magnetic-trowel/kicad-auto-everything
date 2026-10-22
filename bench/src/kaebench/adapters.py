@@ -177,21 +177,24 @@ class Freerouting(Adapter):
                "-mt", "1", "--gui.enabled=false", "-da", f"--router.result_json={result}", *rule_args,
                *self.extra_args]
         remaining = max(10.0, timeout - (time.monotonic() - t0))
+        # kept with the attempt: the exchange with the router and its own report
+        artifacts = [dsn, ses, result]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=remaining, cwd=w)
-            log = r.stdout[-20000:] + r.stderr[-5000:]
+            r = tools.run_measured(cmd, timeout=remaining, cwd=w)
+            log = r.stdout + r.stderr
         except subprocess.TimeoutExpired as e:
-            log = f"freerouting timed out after {remaining:.0f}s\n{(e.stdout or b'')[-5000:]!r}"
-            return AdapterResult(None, log, dict(passes=passes, timed_out=True))
+            log = f"freerouting timed out after {remaining:.0f}s\n{e.stdout or ''}{e.stderr or ''}"
+            return AdapterResult(None, log, dict(passes=passes, timed_out=True, artifacts=artifacts))
         own = _router_report(result)
         if not ses.exists():
-            return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own))
+            return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own,
+                                                 artifacts=artifacts))
         stripped = strip_ses_placement(ses, ses2)
         tools.run_ops("import-ses", board_path(input_dir), ses2, board_path(out))
         return AdapterResult(board_path(out), log, dict(passes=passes, rc=r.returncode, rule_args=rule_args,
                                                         dsn_widths_raised=widths_raised,
                                                         ses_placement_stripped=stripped,
-                                                        router_report=own))
+                                                        router_report=own, artifacts=artifacts))
 
 
 def _router_report(path):
@@ -240,8 +243,8 @@ class Command(Adapter):
                                    timeout=int(timeout))
         argv = self.sandbox.wrap(["sh", "-c", cmd], w)
         try:
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, cwd=w)
-            log = r.stdout[-20000:] + r.stderr[-5000:]
+            r = tools.run_measured(argv, timeout=timeout, cwd=w)
+            log = r.stdout + r.stderr
         except subprocess.TimeoutExpired:
             return AdapterResult(None, f"timed out after {timeout}s", dict(timed_out=True))
         ok = board_path(out).exists()
