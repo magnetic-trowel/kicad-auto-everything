@@ -12,7 +12,7 @@
 - Fixed-thickness copper sits exactly at the tree/loop transition of transport networks (γ = 1). Clearance overhead, moving loads, failure tolerance and free layers decide tree vs mesh vs pour. Rayleigh monotonicity makes "pour everything" free only on low-dV/dt nets.
 - These do not transfer: photonic curvature rules, fractal trees, EBG as a general fix, Lorentz forces. Graphics geometry transfers for beauty: offsets of lines and arcs stay exact, offsets of clothoids do not.
 
-All [C] numbers come from four deterministic scripts (each under 30 s) in `tools/research/physics/`: [xd_sheet.py](../../../tools/research/physics/xd_sheet.py), [xd_power_tree.py](../../../tools/research/physics/xd_power_tree.py), [xd_lengths.py](../../../tools/research/physics/xd_lengths.py) and [xd_loop_coupling.py](../../../tools/research/physics/xd_loop_coupling.py). They assume 1 oz copper (R_s = 0.49 mΩ/sq) and DC unless stated. The full list of 125 ideas is in [cross-domain ideas](../../ideas/physics-first/cross-domain.md).
+All [C] numbers come from four deterministic scripts (each under a minute) in `tools/research/physics/`: [xd_sheet.py](../../../tools/research/physics/xd_sheet.py), [xd_power_tree.py](../../../tools/research/physics/xd_power_tree.py), [xd_lengths.py](../../../tools/research/physics/xd_lengths.py) and [xd_loop_coupling.py](../../../tools/research/physics/xd_loop_coupling.py). They assume 1 oz copper (R_s = 0.49 mΩ/sq) and DC unless stated. The full list of 125 ideas is in [cross-domain ideas](../../ideas/physics-first/cross-domain.md).
 
 ## Key facts
 

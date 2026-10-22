@@ -7,7 +7,7 @@ Workstream 10. These are ideas from fields that already shape conductors, fields
 - Effort: S (days), M (weeks), L (months).
 - Evidence: [P] read in the primary source, [S] snippet or secondary, [V] vendor claim, [I] our inference, [C] computed by us.
 
-**Scripts.** All [C] numbers come from four scripts in `tools/research/physics/`, each deterministic and under 30 s:
+**Scripts.** All [C] numbers come from four scripts in `tools/research/physics/`, each deterministic and under a minute:
 - [xd_sheet.py](../../../tools/research/physics/xd_sheet.py): finite-difference copper sheets: corners, pours, slots, via fields.
 - [xd_power_tree.py](../../../tools/research/physics/xd_power_tree.py): width exponents, star vs trunk, reverse return.
 - [xd_lengths.py](../../../tools/research/physics/xd_lengths.py): thermal and PDN screening lengths, paralleled layers, I²t, step voltage.

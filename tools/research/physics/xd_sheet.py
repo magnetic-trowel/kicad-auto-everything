@@ -252,7 +252,7 @@ def exp_vias():
         print(f"  {label}: R_via={rvia*1e3:.2f} mOhm, TLM transfer length L_T=p*sqrt(Rvia/(Rs1+Rs2))={lt*1e3:.2f} mm")
         print("   share of current per via column (entry -> exit): " + " ".join(f"{c*100:4.1f}%" for c in colI))
         print(f"   first+last column carry {100*(colI[0]+colI[-1]):.0f}% of the current; middle 6 columns {100*sum(colI[2:8]):.0f}%")
-        # same number of vias (40) placed as two 1x20?? not geometrically possible in 4 mm; instead compare 2 cols only
+        # keep only the two end columns (8 vias) to show the inner 32 add little
         vias2 = [v for v, cx in zip(vias, [c for c in cols for _ in rowsv]) if cx in (cols[0], cols[-1])]
         (Vt2, Vb2), idx2, inj2, *_ = solve([top, bot], [RS_1OZ, RS_1OZ], vias=vias2,
                                             fixed=[(0, t1, 1.0), (1, t2, 0.0)])
