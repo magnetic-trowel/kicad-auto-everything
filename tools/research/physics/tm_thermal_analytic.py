@@ -16,6 +16,9 @@ Sections (all printed):
   F  Arrhenius: electrolytic life vs temperature (10 K doubling) and the
      implied activation energy
   G  thermocouple error of a 2-terminal part in a gradient from a 1 W source
+  H  interfaces and alternative heat paths: TIM pad vs grease, a metal
+     standoff to a chassis, and what bare copper/ENIG loses in radiation
+  I  thermal diffusion length sqrt(alpha*t) in copper and FR-4 (pulsed loads)
 
 Run (numpy, scipy):
 
@@ -183,6 +186,33 @@ def section_g():
                   f"{dv*1e6:6.2f} uV  (rotated 90 deg: ~0)")
 
 
+def section_h():
+    print("H  interfaces and alternative heat paths")
+    for name, t, k, a in (("TIM pad 0.5 mm, k 3, 10x10 mm", 0.5e-3, 3.0, 1e-4),
+                          ("grease 50 um, k 3, 10x10 mm", 50e-6, 3.0, 1e-4),
+                          ("Sil-pad-like 0.23 mm, k 1, TO-220 tab 1.2 cm^2", 0.23e-3, 1.0, 1.2e-4),
+                          ("FR-4 1.6 mm under a 10x10 mm area (no vias)", 1.6e-3, 0.3, 1e-4)):
+        print(f"    {name:48s} R = {t/(k*a):6.2f} K/W")
+    a_hex = 0.866 * 5e-3 ** 2 - math.pi * (1.25e-3) ** 2
+    r_st = 10e-3 / (110 * a_hex)
+    gs = 2 * K_CU * OZ + 0.8 * 1.53e-3
+    r_spread = math.log(38e-3 / 3e-3) / (2 * math.pi * gs)
+    print(f"    brass M3 standoff 10 mm (5 mm hex): {r_st:4.1f} K/W; board spreading into a 6 mm screw pad"
+          f" (2L 1 oz): {r_spread:4.1f} K/W; + 2 contacts ~2 K/W -> ~{r_st+r_spread+2:4.0f} K/W total")
+    a_eq = 1 / ((r_st + r_spread + 2) * 2 * 10)
+    print(f"    = convective conductance of {a_eq*1e4:4.0f} cm^2 of two-sided board at h = 10 W/m^2K")
+    for eps, name in ((0.9, "solder mask"), (0.05, "bare/ENIG copper"), (0.6, "oxidised copper")):
+        print(f"    radiation at dT 40 K, {name:17s} eps {eps:4.2f}: h_rad {h_rad(338.15, 298.15, eps):4.1f} W/m^2K")
+
+
+def section_i():
+    print("I  thermal diffusion length sqrt(alpha*t)")
+    a_cu = K_CU / 3.45e6
+    a_fr4 = 0.3 / (1850 * 1100)
+    for t in (1e-3, 10e-3, 0.1, 1.0, 10.0, 100.0):
+        print(f"    t = {t:7.3f} s   copper {math.sqrt(a_cu*t)*1e3:6.2f} mm   FR-4 (z) {math.sqrt(a_fr4*t)*1e3:5.2f} mm")
+
+
 if __name__ == "__main__":
     section_a()
     section_b()
@@ -191,3 +221,5 @@ if __name__ == "__main__":
     section_e()
     section_f()
     section_g()
+    section_h()
+    section_i()

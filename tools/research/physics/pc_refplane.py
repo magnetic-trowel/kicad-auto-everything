@@ -516,8 +516,9 @@ def critic_plane(b, frac=0.30, min_slot=2.0):
                                 detail=f"slot in {pnet} plane; half-wave resonance ~"
                                        f"{C0 / (2 * ln * 1e-3 * math.sqrt(eeff)) / 1e9:.2f} GHz",
                                 fix='move foreign copper off the plane layer, or shorten/bridge the slot'))
-        if foreign:
-            markers.append(dict(critic='PLANE-PERF', severity='warning', net=pnet, layer=ly, pos=None,
+        if foreign:  # outer-layer pours carry signals by design; inner planes should not
+            markers.append(dict(critic='PLANE-PERF', severity='info' if ly in ('F.Cu', 'B.Cu') else 'warning',
+                                net=pnet, layer=ly, pos=None,
                                 measured=out[ly]['foreign_track_mm'], unit='mm',
                                 detail=f"{len(foreign)} foreign net(s) routed on the {pnet} plane layer",
                                 fix='route on signal layers; keep plane layers solid'))
