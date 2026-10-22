@@ -113,7 +113,6 @@ def test_honest_methods_pass(rt):
     ("pad_clearance", "untouched"),
     ("swap_net", "pad_nets"),
     ("add_layer", None),  # either unloadable or flagged; both are invalid
-    ("bogus_net", "nets"),
 ])
 def test_route_tampering_is_invalid(rt, mode, broken):
     root, _ = rt
@@ -123,6 +122,16 @@ def test_route_tampering_is_invalid(rt, mode, broken):
     assert not s["valid"] and not s["clean"], s
     if broken:
         assert s["integrity"][broken] is False, s["integrity"]
+
+
+def test_copper_on_an_invented_net_gains_nothing(rt):
+    """KiCad gives a track with an unknown net name the net of the copper it touches, so an
+    invented name buys nothing a method could not get by naming the right net; floating
+    copper keeps its new net, is counted, and connects nothing. The result scores like the
+    honest routing it was added to."""
+    root, _ = rt
+    s = cheat(root, "bogus_net")[0]["score"]
+    assert s["valid"] and s["clean"] and s["new_net_items"] == 1, s
 
 
 def test_deleted_keepout_still_applies(rt):
