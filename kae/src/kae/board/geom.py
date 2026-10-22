@@ -193,8 +193,9 @@ def _parts(g):
 def polygons(opens, rings, eps=0.01):
     """Closed regions from open polylines and closed rings (lists of (x, y)).
 
-    Returns (polygons, n_dangling): shapely Polygons (with holes) and the number of open
-    pieces that did not end up in a closed loop.
+    Returns (polygons, open_ends): shapely Polygons (with holes) and the number of
+    piece endpoints (after snapping within eps) that no other piece meets; non-zero means
+    some piece is not part of a closed loop (KiCad calls such an outline malformed).
     """
     opens = [[tuple(p) for p in pl] for pl in opens if len(pl) >= 2]
     rings = [[tuple(p) for p in r] for r in rings if len(r) >= 4]
@@ -202,14 +203,12 @@ def polygons(opens, rings, eps=0.01):
     chained = _chain_simple(opens) if opens else []
     if chained is not None:
         return _even_odd(rings + chained), 0
+    deg = {}
+    for pl in opens:
+        for p in (pl[0], pl[-1]):
+            deg[p] = deg.get(p, 0) + 1
+    open_ends = sum(1 for d in deg.values() if d % 2)
     # general case: node everything, take the faces, nest by even-odd
     lines = [LineString(pl) for pl in opens if len(set(pl)) >= 2] + [LineString(r) for r in rings]
-    merged = unary_union(lines)
-    faces = list(polygonize(merged))
-    n_dangling = 0
-    if faces:
-        covered = unary_union([f.boundary for f in faces])
-        n_dangling = sum(1 for pl in opens if not covered.buffer(eps).covers(LineString(pl)))
-    else:
-        n_dangling = len(opens)
-    return _even_odd([list(f.exterior.coords) for f in faces]), n_dangling
+    faces = list(polygonize(unary_union(lines)))
+    return _even_odd([list(f.exterior.coords) for f in faces]), open_ends

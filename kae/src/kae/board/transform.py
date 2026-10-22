@@ -156,12 +156,16 @@ def place_geom(geom, x, y, rot, side):
     return affinity.affine_transform(geom, affine(x, y, rot, side))
 
 
-def courtyard(fp, x=None, y=None, rot=None, side=None, which="own"):
+def courtyard(fp, x=None, y=None, rot=None, side=None, which="own", deflate=0.0):
     """Courtyard polygons of `fp` at a trial pose, in board coordinates.
 
     which='own': the courtyard on the part's own side (F.CrtYd on the front, B.CrtYd on
     the back); 'opposite': the other side's courtyard (e.g. a through-hole part's);
     'extent': the courtyard, or the body fallback when the footprint has none.
+
+    The polygons are the drawn courtyard. KiCad's DRC tests a copy deflated by the
+    board's max_error (FOOTPRINT::BuildCourtyardCaches, 0.005 mm by default) so touching
+    courtyards are legal; pass deflate=board.rules.max_error to get that copy.
     """
     x, y, rot, side = _pose(fp, x, y, rot, side)
     if which == "own":
@@ -175,7 +179,18 @@ def courtyard(fp, x=None, y=None, rot=None, side=None, which="own"):
     if not polys:
         return []
     m = affine(x, y, rot, side)
-    return [affinity.affine_transform(p, m) for p in polys]
+    out = [affinity.affine_transform(p, m) for p in polys]
+    if deflate:
+        out = [q for p in out for q in _parts(p.buffer(-deflate, join_style="mitre"))]
+    return out
+
+
+def _parts(g):
+    if g.is_empty:
+        return []
+    if g.geom_type == "Polygon":
+        return [g]
+    return [p for p in getattr(g, "geoms", []) if p.geom_type == "Polygon"]
 
 
 def courtyard_layers(fp, side=None):
