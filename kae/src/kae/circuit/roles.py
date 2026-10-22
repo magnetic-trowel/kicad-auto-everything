@@ -171,7 +171,7 @@ TEXT_RULES = [
     ('potentiometer', None, 3.0, rx(r'potentiometer|\btrimmer\b|\btrimpot|\bR_POT|\b3296W|\b3362P|\b3266W|\bRV09|\bAlpha_RV')),
     ('thermistor', None, 3.0, rx(r'thermistor|\bNTC\b|\bNTCG|\bNCP\d{2}[XW]|\b\d+k\s*\d{4}K\b|\bB57\d{3}')),
     ('varistor', None, 3.0, rx(r'varistor|\bMOV\b|\bMOV-|\bV\d{2,3}E|\bS\d{2}K\d')),
-    ('optocoupler', None, 4.0, rx(r'opto.?coupler|optoisolator|photocoupler|solid.?state relay|PhotoMOS|\bPC817|\b6N13[5-9]|\bTLP\d{3}|\bH11[A-L]\d|\b4N2[5-8]|\b4N3[5-7]|'
+    ('optocoupler', None, 5.5, rx(r'opto.?coupler|optoisolator|photocoupler|solid.?state relay|PhotoMOS|\bPC817|\b6N13[5-9]|\bTLP\d{3}|\bH11[A-L]\d|\b4N2[5-8]|\b4N3[5-7]|'
                                    r'\bMOC\d{4}|\bGAQY|\bEL817|\bPS2501|\bVTL5C|\bLTV-?\d|\bSFH\d{3}|\bACPL|\bHCPL|\bVO\d{3,4}')),
     ('module', None, 3.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
                               r'\bWeMos|\bDevKit|breakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
@@ -236,8 +236,9 @@ IC_RULES = [  # specific families first: the first match wins
                     r'\bMT29|\bMT25|\bMT60|\bMT53|\bIS6[1-6]|\bIS4[2-6]|\bIDT61|\bSST\d{2}|\bAPS6404|\bS27K|\beMMC|\bMB85|\bFM25|\bFM24|'
                     r'\b23LC|\bCY62|\bAS4C|\bK4[ABT]\d|\bH5[TA]Q|\bDDR\d|\bSDRAM|\bZDSD|\b4C4001|\bKGST|\bTHGB|\bFLASH\b|\bEEPROM\b|'
                     r'\bSRAM\b|\b28C\d{2}|\b27C\d{2}|\b62256|\bAT28|\bAT49')),
+    ('usb_pd', rx(r'\bFUSB3\d{2}|\bSTUSB|\bHUSB\d{3}|\bCYPD\d|\bTPS6598\d|\bIP2721|\bCH224|\bAP33771|\bPD controller')),
     ('phy', rx(r'\bRTL8\d{3}|\bDP83\d{3}|\bKSZ\d{4}|\bLAN87\d{2}|\bLAN9\d{3}|\bVSC8\d{3}|\bAR8\d{3}|\bW5500|\bENC28J60|\bTUSB\d{3,4}|'
-                 r'\bUSB33\d\d|\bUSB2514|\bUSB4604|\bFUSB3\d{2}|\bSTUSB|\bHUSB\d{3}|\bCYPD\d|\bTPS65987|\bLT8912|\bADV7\d{3}|\bTFP\d{3}|'
+                 r'\bUSB33\d\d|\bUSB2514|\bUSB4604|\bLT8912|\bADV7\d{3}|\bTFP\d{3}|'
                  r'\bSN65DSI|\bTC358|\bPTN3\d{3}|\bIT66\d{2}|\bDS90|\bSN75LVDS|\bCH7\d{3}|\bAD724|\bTDA8501|\bTHS7\d{3}|\bMAX985')),
     ('interface', rx(r'\bFT2232|\bFT232|\bFT230|\bFT231|\bFT4232|\bFT201|\bCP210\d|\bCH340|\bCH341|\bCH343|\bCH9102|\bPL2303|\bMCP2200|'
                        r'\bMCP2221|\bMCP255\d|\bMCP2562|\bMCP251\d|\bSN65HVD|\bTCAN\d|\bSIT10\d{2}|\bPCA82C|\bTJA10\d{2}|\bMAX3485|'
@@ -1178,6 +1179,8 @@ def _rail_sources(nl: Netlist, roles: Roles):
             con = [p for p in pins if roles.parts[p.ref].kind == 'connector']
             con.sort(key=lambda p: (roles.parts[p.ref].subtype not in ('power', 'usb'), p.ref))
             internal = [p for p in pins if roles.parts[p.ref].kind in ('ic', 'module') and (p.ptype == 'power_out' or INT_OUT_PIN.search(p.fn))]
+            rect = [p for p in pins if roles.parts[p.ref].kind == 'diode' and roles.parts[p.ref].subtype == 'bridge' and
+                    re.match(r'^(\+|AC?\+|DC\+|V\+|OUT\+|POS)$', p.fn, re.I)]
             devmod = [p for p in pins if roles.parts[p.ref].kind == 'module' and DEVBOARD.search(nl.parts[p.ref].text())
                       and re.match(r'^\+?3V3(_?OUT)?$|^\+?3\.3V(_?OUT)?$|^V3V3$', p.fn, re.I)]
             act = {p.ref for p in pins if roles.parts[p.ref].kind not in ('capacitor', 'test_point')}
@@ -1201,8 +1204,12 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 p0 = next(p for p in pins if p.ref == ic)
                 src = {'kind': 'internal', 'ref': ic, 'pin': p0.number,
                        'note': 'only this IC and capacitors on the rail: its own regulator output or bypass node'}
+            elif rect:
+                src = {'kind': 'rectifier', 'ref': rect[0].ref, 'pin': rect[0].number}
             elif series.get(net):
-                up = [x for x in series[net] if x[1] in roles.rails or x[1] in roles.nets]
+                # OR-ed inputs (two diodes into one node): prefer an upstream rail whose voltage is known
+                up = sorted((x for x in series[net] if x[1] in roles.rails or x[1] in roles.nets),
+                            key=lambda x: (((roles.rails.get(x[1]) or roles.nets[x[1]]).attrs.get('volts') or {}).get('value') is None, x[0]))
                 if up:
                     ref, upn, k = up[0]
                     src = {'kind': 'derived', 'ref': ref, 'upstream': upn, 'via': k}
@@ -1270,12 +1277,25 @@ def belief(value, unit, src, lo=None, hi=None, exactness='E5', lineage=()):
     return d
 
 
+# core-regulator outputs of common MCUs: (part pattern, pin pattern, volts), datasheet defaults
+INT_VOUT_TABLE = [(r'RP2040|RP2350', r'^(VREG_?VOUT|VREG_?OUT|DVDD)$', 1.1), (r'STM32', r'^VCAP\w*$', 1.2),
+                  (r'ATSAM[DLCE]|SAM[DLCE]\d', r'^VDDCORE$', 1.2), (r'nRF52', r'^DEC1$', 0.9), (r'ESP32', r'^VDD_?SDIO$', 3.3)]
+
+
 def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     s = nl.nets[net].short
     srcs = []
     if vname:
         v = vname[0]
         srcs.append(('name', v, f"net name '{s}' ({vname[1]})", abs(v) * 0.95, abs(v) * 1.05))
+    for p in nl.nets[net].pins:
+        if roles.parts[p.ref].kind in ('ic', 'module') and not vname:
+            for prx, pin_rx, v in INT_VOUT_TABLE:
+                if re.match(pin_rx, p.fn, re.I) and re.search(prx, nl.parts[p.ref].text(), re.I):
+                    srcs.append(('internal', v, f"{p.ref} {p.fn}: core regulator of {prx.split('|')[0]} ({v:g} V default)", v * 0.95, v * 1.05))
+                    break
+            if srcs:
+                break
     for p in nl.nets[net].pins:
         pr = roles.parts.get(p.ref)
         if pr and pr.subtype in ('regulator_linear', 'regulator_switching', 'regulator_module') and (OUT_PIN.match(p.fn) or p.ptype == 'power_out'):
@@ -1603,6 +1623,12 @@ def _signal_roles(nl: Netlist, roles: Roles):
         if evs:
             add('reset', 'reset', evs, prior=-1.0)
         evs = []
+        bst = [p for p in pins if BOOT_PIN.match(p.fn) and roles.parts[p.ref].subtype in POWER_SUBS + ('regulator_switching', None)
+               and roles.parts[p.ref].kind == 'ic' and any(roles.parts[q.ref].kind == 'capacitor' for q in pins)]
+        if bst:
+            # a converter's bootstrap node (BST/BOOT to a capacitor): it rides on the switch node, it is no boot strap
+            roles.nets[net] = NetRole(net, 'signal', 'bootstrap', 0.8, [ev('pinfunction', f"bootstrap pin {bst[0].label} with a capacitor", STRONG)])
+            continue
         if BOOT_NET.search(s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
         bp = [p for p in pins if BOOTSEL_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and roles.parts[p.ref].subtype in ('mcu', 'fpga', None)

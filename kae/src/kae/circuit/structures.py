@@ -762,6 +762,8 @@ def _power_pins(b: _B, ref):
             func = 'load'
             if sub in REGULATOR_SUBS and (IN_PIN.match(p.fn) or re.match(r'^P?VIN', p.fn)):
                 func = 'regulator_input'
+                if {q.ref for q in b.nl.pins(n) if b.k(q.ref) != 'capacitor'} == {ref} and not re.match(r'^P?VIN', p.fn):
+                    func = 'bypass'      # a converter's VCC/VDD bias pin on its own capacitor-only node (internal LDO)
             out.append((p, func))
         elif p.ptype == 'power_out' or OUT_PIN.match(p.fn) or INT_OUT_PIN.search(p.fn) or \
                 re.match(r'^(VREFOUT|REFOUT|VREF)$', p.fn):
@@ -780,6 +782,7 @@ CELL_QUOTA = 2      # one HF commutation cap and one more
 CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only when the loads' pins leave some spare
                        # (else the bulk ones, largest first); 'hf': always prefer them (ablation)
 CONVERTER_OUT = True   # a buck's output (a boost's input) bulk capacitors (>= 10 uF) belong at its inductor
+LOAD_PRIORITY = True   # equal scores: ICs and modules before LEDs and oscillators
 ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
 
 
@@ -905,6 +908,8 @@ def allocate_caps(b: _B, cells, groups):
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
+                        if LOAD_PRIORITY and b.k(x['ref']) in ('ic', 'module'):
+                            v += 0.1      # an IC or module before an LED or oscillator when nothing else decides
                     elif f == 'entry':
                         v += 1.0 if _entry_cap(b, c) else -3.0
                 v += _affinity(b, c, anchor)
@@ -1245,6 +1250,7 @@ def _shield_bond(b: _B, cref, pin, net):
 
 
 def _walk_chain(b: _B, cref, pin, net):
+    cell_parts = getattr(b, 'cell_parts', set())
     chain = [[cref, pin.number]]
     prot, series_parts = [], []
     evs = [ev('topology', f"connector pin {pin.label} on '{b.short(net)}'", WEAK)]
@@ -1258,7 +1264,11 @@ def _walk_chain(b: _B, cref, pin, net):
                 continue
             k = b.k(p.ref)
             sub = b.sub(p.ref)
-            if (k == 'diode' and sub in PROTECT_SUBS) or k == 'varistor' or (k == 'diode' and _clamps(b, p.ref, cur)):
+            if p.ref in cell_parts:
+                continue
+            o_clamp = b.nl.other_net(b.nl.parts[p.ref], cur) if k == 'diode' else None
+            if (k == 'diode' and sub in PROTECT_SUBS and (sub == 'esd_array' or o_clamp is None or o_clamp in b.g or o_clamp in b.r.rails)) \
+                    or k == 'varistor' or (k == 'diode' and _clamps(b, p.ref, cur)):
                 if p.ref not in prot:
                     prot.append(p.ref)
                     chain.append([p.ref, p.number])
@@ -1275,6 +1285,8 @@ def _walk_chain(b: _B, cref, pin, net):
             part = b.nl.parts[p.ref]
             if p.ref == cref or k not in ('resistor', 'ferrite', 'inductor', 'fuse', 'common_mode_choke', 'capacitor', 'diode', 'jumper', 'net_tie'):
                 continue
+            if p.ref in cell_parts:
+                continue           # a converter's inductor or rectifier is the cell, not a cable filter
             if k == 'diode' and (b.sub(p.ref) in PROTECT_SUBS or _clamps(b, p.ref, cur)):
                 continue
             o = _through(b, p.ref, cur)
@@ -1334,7 +1346,9 @@ def feedback_victims(b: _B) -> list:
         if pr.subtype not in REGULATOR_SUBS + ('led_driver', 'motor_driver', None) and not any(SW_PIN.match(p.fn) for p in part.pins):
             continue
         for p in part.active_pins():
-            if not FB_PIN.match(p.fn) or p.net in b.g:
+            unnamed = not p.fn or p.fn == p.number
+            if not (FB_PIN.match(p.fn) or (unnamed and pr.subtype in REGULATOR_SUBS and re.search(r'(^|[^A-Z])V?FB([^A-Z]|$)', b.short(p.net)))) \
+                    or p.net in b.g:
                 continue
             f = p.net
             if f in b.r.rails and not re.search(r'FB', b.short(f)):
@@ -1717,6 +1731,7 @@ def _apply_dividers(b: _B, fb, cells):
 def find_structures(nl: Netlist, roles: Roles) -> dict:
     b = _B(nl, roles)
     cells = commutation_cells(b)
+    b.cell_parts = {x for c in cells for x in [c.get('inductor')] + list((c.get('switches') or {}).values()) if x and x != c.get('controller')}
     groups = _decap_groups(b, cells)
     allocate_caps(b, cells, groups)
     by_id = {c['id']: c for c in cells}

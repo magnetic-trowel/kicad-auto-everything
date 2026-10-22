@@ -512,7 +512,8 @@ class Problem:
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
-                         board_groups=lib_board_groups, crt=cy if cy is not None else lib_own)
+                         board_groups=lib_board_groups, crt=cy if cy is not None else lib_own,
+                         own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own)
         rots = list(rotations) if movable else [fp.rot]
         for rot in rots:
             part.rots.append(self._rot(part, rot, local, lib_board_full))
@@ -571,6 +572,25 @@ class Problem:
                 r.g_board_exact = r.g_board
                 r.g_boards_exact = r.g_boards
         self.margin = 0.0
+
+    def relax_bodies(self):
+        """Footprints without a courtyard keep only their pads (plus the courtyard excess) as
+        occupancy: KiCad does not check bodies, and on a full board a body standing above
+        others (a display on headers) must be allowed to. Returns the parts relaxed."""
+        out = []
+        g = self.g
+        for p in self.parts:
+            if not p.movable or p.has_courtyard or p.decor or getattr(p, "relaxed", False):
+                continue
+            p.relaxed = True
+            for r in p.rots:
+                r.own = rot_rect(p._lib["own_pads"], r.rot, p.s)
+                r.g_own_exact = to_grid(r.own, g)
+            out.append(p.ref)
+        if out:
+            self.set_margin(self.margin)
+            self.notes.append(f"bodies relaxed to pads: {', '.join(out[:10])}")
+        return out
 
     def bump(self, i, mm):
         """Grow part i's occupancy rectangle by `mm` more on every side, for good (a KiCad

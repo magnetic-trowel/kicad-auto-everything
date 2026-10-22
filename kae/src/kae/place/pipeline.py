@@ -168,6 +168,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         log(f"outline_incomplete: staged footprints carry Edge.Cuts ({', '.join(rep['outline_incomplete'][:8])}); "
             "held off the board, the board cannot be legal")
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held})
+    if max(P.utilization()) > 0.95:
+        rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
     margin = P.auto_margin()
     P.set_margin(margin)
     roles = _net_roles(brief)
@@ -256,11 +258,17 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                                        net_w=net_w, log=log)
         rep["floorplan"] = dict(status=model.status, seconds=round(model.wall, 2), items=len(items),
                                 infeasible=model.infeasible_items)
-        # a proven infeasibility (not a timeout) frees the macros, then shrinks the margin
-        for m2 in ([margin] if macros else []) + [margin / 2, 0.0]:
+        # a proven infeasibility (not a timeout) frees the macros, then shrinks the margin, then
+        # lets bodies without courtyards overlap
+        for m2 in ([margin] if macros else []) + [margin / 2, 0.0, "relax"]:
             if sol is not None or model.status != "INFEASIBLE":
                 break
-            if m2 < P.margin or (m2 == P.margin and macros):
+            if m2 == "relax":
+                if not P.relax_bodies():
+                    break
+                rep["bodies_relaxed"] = True
+                m2 = 0.0
+            if m2 < P.margin or (m2 == P.margin and (macros or rep.get("bodies_relaxed"))):
                 P.set_margin(m2)
                 items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
                 sol, model = seedmod.floorplan(P, items, max(2.0, 0.15 * (deadline - time.monotonic())),
