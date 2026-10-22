@@ -103,7 +103,7 @@ class Freerouting(Adapter):
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         if kind != "route":
             raise ValueError("freerouting only routes")
-        w = Path(workdir)
+        w = Path(workdir).resolve()  # Freerouting runs with cwd=w, so its paths must be absolute
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         dsn, ses, ses2 = w / "board.dsn", w / "board.ses", w / "board_noplace.ses"
@@ -147,7 +147,8 @@ class Command(Adapter):
         return dict(name=self.name, template=self.template, kinds=list(self.kinds))
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
-        w = Path(workdir)
+        # The command runs with cwd=w, so every path it is given must be absolute.
+        w, input_dir = Path(workdir).resolve(), Path(input_dir).resolve()
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         cmd = self.template.format(input=shlex.quote(str(board_path(input_dir))),
