@@ -17,6 +17,7 @@ MU = 0.1                 # mu0 / 4 pi, nH/mm
 ETA0 = 376.730313        # ohm
 C0 = 299.792458          # mm/ns
 TCU = 0.035
+EPS0 = 8.8541878128e-3     # pF/mm
 A2_NEAR = 0.3 ** 2       # mm^2: closest approach of two distinct conductors' axes (coupling)
 
 
@@ -148,6 +149,7 @@ def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, ds
         e1 = s0
     e2 = e1 - l1
     e3 = lo - l1
+    di = INF
     if adjacent and -0.7 < c < 0.7:
         R = math.hypot(dx - ax, dy - ay)
         a = min(l2 / (l1 + R), 1.0 - 1e-12)
@@ -157,12 +159,20 @@ def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, ds
         d = gmd_lin(d1, d2, dz)
         fl = dsep if (c < 0.0 or not adjacent) else dmin
         if d < fl:
+            # the conductors' axes cannot come closer than fl: the image sees the same
+            # floored lateral offset
+            if zi != INF:
+                di = math.sqrt(max(fl * fl - dz * dz, 0.0) + zi * zi)
             d = fl
+        elif zi != INF:
+            di = gmd_lin(d1, d2, zi)
         m = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
         if c < 0:
             m = -m
     if zi != INF:
-        d = gmd_lin(d1, d2, zi)
+        if adjacent and -0.7 < c < 0.7:
+            di = gmd_lin(d1, d2, zi)
+        d = di
         mi = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
         if c > 0:
             m -= mi
@@ -321,15 +331,27 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
 
 
 @jit
+def cext(A, h):
+    """Charge strength (pF) of a copper patch of area A at height h over a plane, seen from
+    the air side: a square of side s with the per-length capacitance of an air microstrip,
+    C'_air(s, h) = 1 / (c0 Z0_air(s, h)) (Hammerstad-Jensen), along it and its fringe f
+    across its ends: s (2 C'_air - eps0 s / h). Within 4 % of a method-of-moments solve for
+    s / h >= 1.5 (16 % low at s / h = 0.6)."""
+    s = math.sqrt(A)
+    cpa = 1e3 / (C0 * z0_air(s, h))
+    return s * (2.0 * cpa - EPS0 * s / h)
+
+
+@jit
 def patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
     k = 1.0 / (4.0 * math.pi * eps0)
     cm = 0.0
     for a in range(XA.shape[0]):
-        ca = eps0 * AA[a] / h + eps0 * 2.0 * math.sqrt(AA[a])
+        ca = cext(AA[a], h)
         for v in range(XV.shape[0]):
             rr = max(math.hypot(XA[a] - XV[v], YA[a] - YV[v]), 0.5 * (math.sqrt(AA[a]) + math.sqrt(AV[v])))
             p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
-            cm += ca * (eps0 * AV[v] / h + eps0 * 2.0 * math.sqrt(AV[v])) * p
+            cm += ca * cext(AV[v], h) * p
     return cm
 
 
@@ -561,19 +583,25 @@ def loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, 
 
 @jit
 def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
-    """First-order mutual capacitance (pF) of two patch sets over a plane at h."""
+    """First-order mutual capacitance (pF) of two patch sets over a plane at h:
+    C_m = sum C_a C_v p_av, p_av = (1/(4 pi eps0)) (1/r - 1/sqrt(r^2 + 4 h^2)), with the
+    patches' air-side strengths (cext); far apart, the strength-weighted centroids."""
     ta = 0.0
     tv = 0.0
+    sa = 0.0
+    sv = 0.0
     ax = 0.0
     ay = 0.0
     vx = 0.0
     vy = 0.0
     for a in range(XA.shape[0]):
         ta += AA[a]
+        sa += cext(AA[a], h)
         ax += XA[a] * AA[a]
         ay += YA[a] * AA[a]
     for v in range(XV.shape[0]):
         tv += AV[v]
+        sv += cext(AV[v], h)
         vx += XV[v] * AV[v]
         vy += YV[v] * AV[v]
     ax /= ta
@@ -590,9 +618,7 @@ def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
     k = 1.0 / (4.0 * math.pi * eps0)
     if r > 3.0 * (ea + ev) + 2.0 * h:
         p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
-        ca = eps0 * ta / h + eps0 * 2.0 * math.sqrt(ta)
-        cv = eps0 * tv / h + eps0 * 2.0 * math.sqrt(tv)
-        return ca * cv * p
+        return sa * sv * p
     return patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0)
 
 

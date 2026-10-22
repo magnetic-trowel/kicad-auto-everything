@@ -55,3 +55,28 @@ def test_place_cli_end_to_end(tmp_path, arm):
         assert f.side == f0.side
         for p in f.pads:
             assert outline.buffer(1e-6).contains(Point(p.x, p.y)), (f.ref, p.number)
+
+
+def test_read_only_numba_cache_is_copied(tmp_path, monkeypatch):
+    """numba ignores a cache directory it cannot write to (the sandboxed snapshot), so the
+    CLI copies it to a private directory before numba loads."""
+    import os
+    import sys
+
+    from kae import cli
+    src = tmp_path / "nc"
+    (src / "kernels").mkdir(parents=True)
+    (src / "kernels" / "k.nbi").write_text("index")
+    monkeypatch.setenv("NUMBA_CACHE_DIR", str(src))
+    monkeypatch.delitem(sys.modules, "numba", raising=False)
+    real = os.access
+    monkeypatch.setattr(os, "access", lambda p, m, **kw: False if (str(p) == str(src) and m == os.W_OK)
+                        else real(p, m, **kw))
+    used = cli._numba_cache()
+    assert used is not None and used[0] == str(src)
+    assert os.environ["NUMBA_CACHE_DIR"] == used[1] != str(src)
+    assert (Path(used[1]) / "kernels" / "k.nbi").read_text() == "index"
+    shutil.rmtree(used[1])
+    monkeypatch.setattr(os, "access", real)          # a writable directory is used as it is
+    monkeypatch.setenv("NUMBA_CACHE_DIR", str(src))
+    assert cli._numba_cache() is None and os.environ["NUMBA_CACHE_DIR"] == str(src)

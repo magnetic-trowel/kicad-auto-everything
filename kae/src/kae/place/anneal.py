@@ -10,6 +10,9 @@ tools/research/solver-bench/sa_place.py):
                                      obstacles) + area outside the outline, / mean part area;
                                      lam ramps up geometrically
          + w_disp * displacement     L1 distance from the seed / (parts * mean part size)
+         + w_order * order           protection order of protected connector chains (a rule:
+                                     the TVS nearer the connector than the protected part),
+                                     violation distance / mean part size
 
 Moves: shift (radius shrinking with the temperature), rotate in place, swap equal
 footprints (or similar sizes), macro shift, macro rotate, macro re-layout from its top-K.
@@ -33,7 +36,7 @@ BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
-                 cong_args=None):
+                 cong_args=None, order=(), w_order=1.0, order_margin=0.5):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -132,7 +135,16 @@ class Annealer:
         for i in self.mov:
             cls.setdefault(P.parts[i].shape_key, []).append(i)
         self.swap_class = {i: c for c in cls.values() if len(c) > 1 for i in c}
-        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc)
+        # ---- protection order rules ((conn, pads), (prot, pads), (target, pads))
+        self.order = list(order)
+        self.order_margin = order_margin
+        self.order_of = {}
+        for j, rule in enumerate(self.order):
+            for (i, _) in rule:
+                self.order_of.setdefault(i, []).append(j)
+        self.open = [self._order_pen(j) for j in range(len(self.order))]
+        self.order_total = sum(self.open)
+        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order)
         self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
@@ -272,6 +284,32 @@ class Annealer:
             nx[j][slot] = x0 + px[k]
             ny[j][slot] = y0 + py[k]
 
+    def _centroid(self, i, pads):
+        xs = ys = 0.0
+        for k in pads:
+            x, y = self._pin_xy(i, k)
+            xs += x
+            ys += y
+        return xs / len(pads), ys / len(pads)
+
+    def _order_dist(self, j):
+        """(connector-to-protection distance, the protected part's distance from either) mm."""
+        (ci, cp), (ti, tp), (ii, ip) = self.order[j]
+        cx, cy = self._centroid(ci, cp)
+        tx, ty = self._centroid(ti, tp)
+        ix, iy = self._centroid(ii, ip)
+        return math.hypot(tx - cx, ty - cy), min(math.hypot(ix - cx, iy - cy), math.hypot(ix - tx, iy - ty))
+
+    def _order_pen(self, j):
+        d_ct, d_i = self._order_dist(j)
+        over = d_ct + self.order_margin - d_i
+        return over / self.S0 if over > 0 else 0.0
+
+    def order_violations(self):
+        """Rules broken outright (no margin): the protected part is nearer the connector than
+        the protection is, or nearer the protection than the connector is."""
+        return sum(1 for j in range(len(self.order)) if (lambda d: d[0] > d[1])(self._order_dist(j)))
+
     # ------------------------------------------------------------------ evaluation
     def _apply(self, S, newpos):
         """Move parts S to newpos [(X, Y, K)]; returns the old positions."""
@@ -306,6 +344,9 @@ class Annealer:
         d_cong = 0.0
         if self.cong is not None:
             d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
+        rules = {j for i in S for j in self.order_of.get(i, ())}
+        newo = {j: self._order_pen(j) for j in rules}
+        d_order = sum(newo[j] - self.open[j] for j in rules)
         d_phys = 0.0
         moved_u = [self.uuid[i] for i in S if self.uuid[i] in self.tparts]
         if moved_u:
@@ -317,7 +358,8 @@ class Annealer:
                  + lam * (leg_new - leg_old) * g2 / self.A0
                  + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
                  + w["phys"] * d_phys / self.nstruct
-                 + w["cong"] * d_cong)
+                 + w["cong"] * d_cong
+                 + w["order"] * d_order)
         st = self.stats
         st["moves"] += 1
         bm = st["by_move"].setdefault(kind, [0, 0])
@@ -327,6 +369,9 @@ class Annealer:
                 self.ncost[j] = c
             self.wl += wl_new - wl_old
             self.phys += d_phys
+            for j, v in newo.items():
+                self.open[j] = v
+            self.order_total += d_order
             if self.cong is not None:
                 self.cong.commit()
             for i in S:
@@ -403,13 +448,15 @@ class Annealer:
         if not mem:
             return None
         u = rng.random()
-        if u < 0.5 or m.anchor not in self.movset:
+        # rotating a whole macro in place is almost never accepted (0.2% on split B: it swings
+        # the members into their neighbours), so it is tried least
+        if u < 0.6 or m.anchor not in self.movset:
             dX = rng.randint(-r, r)
             dY = rng.randint(-r, r)
             return tuple(mem), [(self.X[i] + dX, self.Y[i] + dY, self.K[i]) for i in mem], "macro_shift"
         a = m.anchor
         AX, AY = self.X[a], self.Y[a]
-        if u < 0.8 or len(m.layouts) < 2:
+        if u < 0.7 or len(m.layouts) < 2:
             q = rng.choice((1, 2, 3))
             out = []
             for i in mem:
@@ -448,23 +495,28 @@ class Annealer:
         disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0)
         c = self.cong.total() if self.cong is not None else 0.0
         return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
-                + w["phys"] * self.phys / self.nstruct + w["cong"] * c)
+                + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total)
 
     def evaluate(self, st):
         """Full cost of another state with this annealer's weights and normalization (seed
         HPWL, mean part area and size, seed positions, final legality weight)."""
         o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
                      w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
-                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args)
+                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
+                     order=self.order, w_order=self.w["order"], order_margin=self.order_margin)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
 
     def terms_report(self):
         disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0) if self.mov else 0.0
-        return dict(wl=round(self.wl / self.W0, 5), phys=round(self.phys / self.nstruct, 5),
-                    cong=round(self.cong.total(), 6) if self.cong is not None else None,
-                    leg=self.leg_total, disp=round(disp, 5))
+        out = dict(wl=round(self.wl / self.W0, 5), phys=round(self.phys / self.nstruct, 5),
+                   cong=round(self.cong.total(), 6) if self.cong is not None else None,
+                   leg=self.leg_total, disp=round(disp, 5))
+        if self.order:
+            out.update(order=round(self.order_total, 5), order_rules=len(self.order),
+                       order_violations=self.order_violations())
+        return out
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25):
         n = len(self.mov)

@@ -49,6 +49,13 @@ class Congestion:
     # Calibrated on 55 probed split-A placements (human and kae, probe unconnected > 0 as the
     # positives): escape demand separates (peak AUC 0.84, p95 0.95), pad blockage only adds
     # noise (beta 0), and target 0.5 leaves 30 of 42 negatives at zero cost.
+    # Checked across boards on the human placements of splits B and C (75 boards whose three
+    # Freerouting attempts completed below the 499 report cap; label = unconnected / start):
+    # the overflow at target 0.5 ranks them with Spearman +0.42 (B alone +0.54) with escape 2
+    # against +0.29 without escape demand; escape 4 is no better; pad blockage halves the
+    # peak's correlation (+0.40 -> +0.18); coarser bins (1.6, 2.4 mm minimum) are worse.
+    # Across boards, signal HPWL per layer-area does as well (+0.61): hotspots add little to
+    # density there, and timeouts follow board size (pins AUC 0.92), not congestion (< 0.5).
     def __init__(self, P, ann, bins=None, target=0.5, escape=2.0, beta=0.0, smin=0.1, signal_only=False):
         self.P = P
         self.ann = ann

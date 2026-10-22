@@ -173,6 +173,39 @@ class LoopComp:
                             Hf, Hb, Nf, Nb, bv.gmask(self.gnd_nets), x0, y0, res, *self.l_scr)
 
 
+class NearestLoopComp:
+    """Loop inductance (nH) to the nearest of several candidate load pins: a capacitor on a
+    rail with many interchangeable loads serves whichever load it sits next to. Each
+    candidate is a LoopComp [load power pin, cap rail pad, cap ground pad, load return]; the
+    nearest by power-pin to rail-pad distance at the current poses is evaluated."""
+
+    def __init__(self, loops):
+        self.loops = loops
+        self.tr = loops[0].T[1]
+        self.parts = tuple(sorted({i for c in loops for i in c.parts}))
+
+    @property
+    def kern(self):
+        return self.loops[0].kern
+
+    @kern.setter
+    def kern(self, k):
+        for c in self.loops:
+            c.kern = k
+
+    def value(self, st):
+        x, y = txy(st, self.tr)
+        best = None
+        bd = INF
+        for c in self.loops:
+            px, py = txy(st, c.T[0])
+            d = (px - x) * (px - x) + (py - y) * (py - y)
+            if d < bd:
+                bd = d
+                best = c
+        return best.value(st)
+
+
 class PlanePairLoop:
     """Decap loop over a rail/ground plane pair: cap mounting + spreading + IC mounting."""
 
@@ -301,8 +334,11 @@ def _mutual(kern, al, vl, st, h):
 
 
 def _cself(A, h, eps_r):
-    """Patch capacitance to the plane (pF): plate eps A / h plus an edge term 2 eps0 sqrt(A)."""
-    return EPS0 * eps_r * A / h + EPS0 * 2.0 * math.sqrt(A)
+    """Capacitance to the plane (pF) of copper of area A at height h in a dielectric eps_r:
+    a square of side s with the microstrip per-length capacitance C'(s, h, eps_r) along it
+    and its fringe across the ends, s (2 C' - eps0 eps_r s / h) (cf. jit cext)."""
+    s = math.sqrt(max(A, 1e-6))
+    return s * (2.0 * cprime_hj(s, h, eps_r) - EPS0 * eps_r * s / h)
 
 
 def _cm(kern, an, vn, st, h, eps_r):
@@ -346,8 +382,9 @@ class CouplingComp:
             cm = _cm(self.kern, self.an, self.vn, st, h, bv.er)
             hh = 1.6 if h == INF else max(h, 0.05)
             cv = _cself(nv[3], hh, bv.er) + 5.0                                  # + pins (E5 5 pF)
-            # charge division for a high-impedance victim, C dv/dt Z for a low one
-            v_c = self.dv * self.tsw * cm / (cm + cv + self.tsw * 1e3 / self.zv)   # ns*1e3/ohm = pF
+            # dV Cm / (Cm + Cv + t_sw / Z_v): charge division into a high-impedance victim,
+            # Cm (dV / t_sw) Z_v into a low-impedance one (t_sw / Z_v in pF: ns * 1e3 / ohm)
+            v_c = self.dv * cm / (cm + cv + self.tsw * 1e3 / self.zv)
             v += 1e3 * v_c
         return v
 
@@ -395,7 +432,8 @@ class ThermalField:
     G(t, s) = sum_images K0(|r_t - r_img|/lam) / (2 pi G_s) over the adiabatic-edge image
     lattice of the board's bounding box (`rings` rings: (2(2 rings + 1))^2 images); a
     source's own rise replaces its real (r ~ 0) term by the disk-averaged self term
-    (1 - x K1(x)) / (pi a^2 h_tot), x = a/lam. Cached as a matrix G[t, s] (K/W); a moved
+    (1 - x K1(x)) / (pi a^2 h_tot), x = a/lam; the images beyond the rings are added as a
+    continuum (a constant per watt). Cached as a matrix G[t, s] (K/W); a moved
     source updates a column and its row, a moved victim its row. K0 is the polynomial of
     jit.k0 in both the JIT and the fallback path."""
 
@@ -425,6 +463,12 @@ class ThermalField:
         r = rings
         self.ms = np.arange(-r, r + 1, dtype=float)
         self.norm = 1.0 / (2.0 * math.pi * gs)
+        # images beyond the computed rings, as a continuum of density 1/(Lx Ly) outside the
+        # radius R of the computed lattice: lam R K1(R/lam) / (G_s Lx Ly), the same at every
+        # target (it restores the board's total heat balance; rankings are unaffected)
+        Lx, Ly = self.box[2], self.box[3]
+        R = (2 * r + 1) * 2.0 * math.sqrt(Lx * Ly / math.pi)
+        self.tail = lam * R * PY.k1(R / lam) / (gs * Lx * Ly)
         self._colbuf = np.zeros(len(self.targets))
         self._rowbuf = np.zeros(ns)
 
@@ -452,7 +496,7 @@ class ThermalField:
         else:
             for t in range(len(tx)):
                 out[t] = self.py.fin_sum(tx[t], ty[t], ix, iy, self.a[k], self.lam)
-        g = out * self.norm
+        g = out * self.norm + self.tail
         g[k] += self.selfcorr[k]
         return g
 
@@ -467,7 +511,7 @@ class ThermalField:
         else:
             for k in range(len(xs)):
                 out[k] = self.py.fin_sum(st.X[i], st.Y[i], ix[k], iy[k], self.a[k], self.lam)
-        g = out * self.norm
+        g = out * self.norm + self.tail
         if t < len(self.src):
             g[t] += self.selfcorr[t]
         return g

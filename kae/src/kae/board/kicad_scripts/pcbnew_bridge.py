@@ -7,6 +7,23 @@ and prints one status line ({"ok": ...}) on stdout.
     python pcbnew_bridge.py extract BOARD OUT [--no-courtyards] [--no-outline]
     python pcbnew_bridge.py write-poses BOARD POSES OUT_JSON DEST [--allow-locked]
     python pcbnew_bridge.py resave BOARD OUT_JSON DEST
+    python pcbnew_bridge.py export-dsn BOARD DSN OUT_JSON [--no-probes]
+    python pcbnew_bridge.py import-ses BOARD SES OUT_JSON DEST
+    python pcbnew_bridge.py edit-routing BOARD EDITS OUT_JSON DEST
+
+export-dsn: KiCad's Specctra export of BOARD (loaded with its project, so net classes and
+the .kicad_dru rules are active), plus what the DSN leaves out, as JSON (see route_info):
+design settings, net classes, every pad with its DSN pin id, copper polygons, hole, local
+clearances, mask expansion and zone connection; copper graphics and texts, Edge.Cuts and
+Margin shapes, zones and rule areas; and KiCad's own rule engine evaluated on probe tracks
+and vias of every net on every copper layer (width, via diameter and drill as min/opt/max,
+own clearance, annular ring).
+
+import-ses: KiCad's Specctra session import into BOARD (unlocked routing is replaced,
+locked routing kept), written to DEST with the plain writer.
+
+edit-routing: EDITS is JSON {delete: [uuid], width: {uuid: mm}, lock_all: bool,
+unlock_all: bool}; applied to BOARD's tracks and vias, written to DEST with the plain writer.
 
 extract: pcbnew's own footprint poses, pads (absolute and footprint-relative), courtyards
 (F/B.CrtYd caches), the board outline (GetBoardPolygonOutlines), design rules, net classes
@@ -21,6 +38,7 @@ plain S-expression reader and writer (PCB_IO_MGR.Load/Save). pcbnew.LoadBoard an
 SaveBoard build connectivity, which gives copper overlapping a pad that pad's net. The
 file is written to a temporary directory and moved to DEST, so no project file is written.
 """
+import ctypes
 import json
 import os
 import shutil
@@ -266,6 +284,407 @@ def resave(path, out, dest):
     _status(dict(ok=True))
 
 
+# ----------------------------------------------------------------------------- routing
+# Used by kae.route: the Specctra round trip and what the DSN cannot carry. Lengths in mm,
+# board coordinates (y down), polygons as lists of rings.
+
+class _MinOptMax(ctypes.Structure):
+    """KiCad's MINOPTMAX<int> (libs/core/include/core/minoptmax.h): SWIG returns it as an
+    unwrapped pointer, so its fields are read in place."""
+    _fields_ = [("is_null", ctypes.c_bool), ("min", ctypes.c_int), ("opt", ctypes.c_int),
+                ("max", ctypes.c_int), ("has_min", ctypes.c_bool), ("has_opt", ctypes.c_bool),
+                ("has_max", ctypes.c_bool)]
+
+
+def _mom(obj):
+    """[min, opt, max] in mm (None where unset) of a MINOPTMAX<int> returned by SWIG."""
+    try:
+        m = _MinOptMax.from_address(int(obj))
+    except (TypeError, ValueError):
+        return None
+    if m.is_null:
+        return [None, None, None]
+    return [_mm(m.min) if m.has_min else None, _mm(m.opt) if m.has_opt else None,
+            _mm(m.max) if m.has_max else None]
+
+
+def _xy(p):
+    return [_mm(p.x), _mm(p.y)]
+
+
+def _item_poly(item, layer, max_error, clearance=0):
+    ps = pcbnew.SHAPE_POLY_SET()
+    item.TransformShapeToPolygon(ps, layer, int(clearance), int(max_error), pcbnew.ERROR_OUTSIDE)
+    ps.Simplify()
+    return _polyset(ps)
+
+
+def _component_ids(board):
+    """KiCad's DSN component ids (specctra_export.cpp FromBOARD): the reference, REF** when
+    empty, uniquified case-insensitively with _1, _2 ... in footprint order."""
+    used, out = set(), []
+    for fp in board.GetFootprints():
+        ref = fp.GetReference() or "REF**"
+        unique, k = ref, 0
+        while unique.lower() in used:
+            k += 1
+            unique = f"{ref}_{k}"
+        used.add(unique.lower())
+        out.append(unique)
+    return out
+
+
+def _is_round_keepout(pad):
+    """specctra_export.cpp isRoundKeepout: a circular pad whose drill fills it, or without
+    copper, is exported as a round keepout instead of a pin."""
+    al = pcbnew.PADSTACK.ALL_LAYERS
+    if pad.GetShape(al) == pcbnew.PAD_SHAPE_CIRCLE:
+        if pad.GetDrillSize().x >= pad.GetSize(al).x:
+            return True
+        if not _has_copper(pad):
+            return True
+    return False
+
+
+def _has_copper(pad):
+    return any(pcbnew.IsCopperLayer(l) for l in pad.GetLayerSet().Seq())
+
+
+def _pin_ids(fp):
+    """DSN pin id per pad (None for pads that are not pins), as makeIMAGE names them:
+    the pad number, with @1, @2 ... appended to repeats within the footprint."""
+    pinmap, out = {}, []
+    for pad in fp.Pads():
+        if _is_round_keepout(pad) or not _has_copper(pad):
+            out.append(None)
+            continue
+        num = pad.GetNumber()
+        if num != "" and num not in pinmap:
+            pinmap[num] = 0
+            out.append(num)
+        else:
+            pinmap[num] = pinmap.get(num, 0) + 1
+            out.append(f"{num}@{pinmap[num]}")
+    return out
+
+
+_ZC = {-1: "inherited", 0: "none", 1: "thermal", 2: "full"}
+
+
+def _design_settings(board):
+    ds = board.GetDesignSettings()
+    out = {}
+    for key, attr in (("min_clearance", "m_MinClearance"), ("min_track", "m_TrackMinWidth"),
+                      ("min_conn", "m_MinConn"), ("min_via", "m_ViasMinSize"),
+                      ("min_annular", "m_ViasMinAnnularWidth"), ("min_drill", "m_MinThroughDrill"),
+                      ("min_uvia", "m_MicroViasMinSize"), ("min_uvia_drill", "m_MicroViasMinDrill"),
+                      ("hole_clearance", "m_HoleClearance"), ("hole_to_hole", "m_HoleToHoleMin"),
+                      ("edge_clearance", "m_CopperEdgeClearance"), ("mask_expansion", "m_SolderMaskExpansion"),
+                      ("mask_min_web", "m_SolderMaskMinWidth"), ("mask_to_copper", "m_SolderMaskToCopperClearance"),
+                      ("max_error", "m_MaxError"), ("zone_clearance", "m_ZoneClearance"),
+                      ("zone_min_thickness", "m_ZoneMinThickness"), ("thermal_spoke", "m_ThermalReliefSpokeWidth")):
+        if hasattr(ds, attr):
+            out[key] = _mm(getattr(ds, attr))
+    for key, attr in (("min_resolved_spokes", "m_MinResolvedSpokes"),
+                      ("allow_mask_bridges_in_fps", "m_AllowSoldermaskBridgesInFPs"),
+                      ("tent_vias_front", "m_TentViasFront"), ("tent_vias_back", "m_TentViasBack")):
+        if hasattr(ds, attr):
+            v = getattr(ds, attr)
+            out[key] = bool(v) if isinstance(v, bool) else int(v)
+    return out
+
+
+def _netclasses(board):
+    """Effective net classes by name (composites such as 'HS,Default' included); a net's
+    NETINFO_ITEM.GetNetClass() comes back unwrapped from SWIG, NET_SETTINGS' does not."""
+    out = {}
+    ns = board.GetDesignSettings().m_NetSettings
+    for code, net in board.GetNetInfo().NetsByNetcode().items():
+        name = net.GetNetClassName()
+        if name in out:
+            continue
+        nc = ns.GetEffectiveNetClass(net.GetNetname()) if net.GetNetname() else ns.GetDefaultNetclass()
+        # GetConstituentNetclasses() comes back unwrapped from SWIG; a composite class is
+        # named by joining its constituents with ',' (see transform-math-pitfalls.md)
+        rec = dict(constituents=[c for c in name.split(",") if c])
+        for key, has, get in (("clearance", "HasClearance", "GetClearance"),
+                              ("track_width", "HasTrackWidth", "GetTrackWidth"),
+                              ("via_diameter", "HasViaDiameter", "GetViaDiameter"),
+                              ("via_drill", "HasViaDrill", "GetViaDrill"),
+                              ("uvia_diameter", "HasuViaDiameter", "GetuViaDiameter"),
+                              ("uvia_drill", "HasuViaDrill", "GetuViaDrill"),
+                              ("dp_width", "HasDiffPairWidth", "GetDiffPairWidth"),
+                              ("dp_gap", "HasDiffPairGap", "GetDiffPairGap")):
+            try:
+                rec[key] = _mm(getattr(nc, get)()) if getattr(nc, has)() else None
+            except AttributeError:
+                rec[key] = None
+        out[name] = rec
+    return out
+
+
+_PAD_PROPS = None
+
+
+def _pad_prop(pad):
+    """The pad's fabrication property as the rule language names it (ENUM_MAP<PAD_PROP>)."""
+    global _PAD_PROPS
+    if _PAD_PROPS is None:
+        names = (("NONE", "None"), ("BGA", "BGA pad"), ("FIDUCIAL_GLBL", "Fiducial, global to board"),
+                 ("FIDUCIAL_LOCAL", "Fiducial, local to footprint"), ("TESTPOINT", "Test point pad"),
+                 ("HEATSINK", "Heatsink pad"), ("CASTELLATED", "Castellated pad"),
+                 ("MECHANICAL", "Mechanical pad"), ("PRESSFIT", "Press-fit pad"))
+        _PAD_PROPS = {getattr(pcbnew, "PAD_PROP_" + k): v for k, v in names if hasattr(pcbnew, "PAD_PROP_" + k)}
+    try:
+        return _PAD_PROPS.get(int(pad.GetProperty()), "None")
+    except Exception:
+        return "None"
+
+
+def _hole(pad):
+    if not pad.HasHole():
+        return None
+    hs = pad.GetEffectiveHoleShape()
+    seg = hs.GetSeg()
+    return dict(a=_xy(seg.A), b=_xy(seg.B), width=_mm(hs.GetWidth()),
+                plated=pad.GetAttribute() != pcbnew.PAD_ATTRIB_NPTH)
+
+
+def _pads(board, cu, max_error, comp_ids):
+    out = []
+    ds = board.GetDesignSettings()
+    for fi, fp in enumerate(board.GetFootprints()):
+        pins = _pin_ids(fp)
+        fp_rec = dict(ref=fp.GetReference(), comp=comp_ids[fi], fp_index=fi, lib=fp.GetFPIDAsString(),
+                      fp_clearance=None, allow_bridges=False, net_tie=False)
+        lc = fp.GetLocalClearance()
+        fp_rec["fp_clearance"] = None if lc is None else _mm(lc)
+        if hasattr(fp, "AllowSolderMaskBridges"):
+            fp_rec["allow_bridges"] = bool(fp.AllowSolderMaskBridges())
+        if hasattr(fp, "IsNetTie"):
+            fp_rec["net_tie"] = bool(fp.IsNetTie())
+        for pad, pin in zip(fp.Pads(), pins):
+            layers = [board.GetStandardLayerName(l) for l in cu if pad.IsOnLayer(l) and pad.FlashLayer(l)]
+            polys = {}
+            shapes = set()
+            for l in cu:
+                if pad.IsOnLayer(l) and pad.FlashLayer(l):
+                    rings = _item_poly(pad, l, max_error)
+                    key = json.dumps(rings)
+                    polys[board.GetStandardLayerName(l)] = rings
+                    shapes.add(key)
+            rec = dict(fp_rec, number=pad.GetNumber(), pin=pin, net=pad.GetNetname(),
+                       attr={pcbnew.PAD_ATTRIB_PTH: "pth", pcbnew.PAD_ATTRIB_SMD: "smd",
+                             pcbnew.PAD_ATTRIB_CONN: "conn", pcbnew.PAD_ATTRIB_NPTH: "npth"}.get(pad.GetAttribute(), "?"),
+                       pos=_xy(pad.GetPosition()), layers=layers, hole=_hole(pad),
+                       local_clearance=None if pad.GetLocalClearance() is None else _mm(pad.GetLocalClearance()),
+                       override=None if pad.GetClearanceOverrides(None) is None else _mm(pad.GetClearanceOverrides(None)),
+                       own_clearance={board.GetStandardLayerName(l): _mm(pad.GetOwnClearance(l)) for l in cu
+                                      if pad.IsOnLayer(l)},
+                       mask={}, zone_connection=_ZC.get(int(pad.GetZoneConnectionOverrides(None)), "inherited"),
+                       thermal_gap=None, spoke_width=None, spoke_angle=pad.GetThermalSpokeAngleDegrees(),
+                       round_keepout=_is_round_keepout(pad), fab=_pad_prop(pad),
+                       drilled=bool(pad.HasHole() and pad.GetDrillSizeX() == pad.GetDrillSizeY()))
+            if len(shapes) == 1 and polys:
+                rec["poly"] = next(iter(polys.values()))
+            else:
+                rec["poly_by_layer"] = polys
+            for side, ml in (("F", pcbnew.F_Mask), ("B", pcbnew.B_Mask)):
+                if pad.IsOnLayer(ml):
+                    rec["mask"][side] = _mm(pad.GetSolderMaskExpansion(ml))
+            g = pad.GetLocalThermalGapOverride(None) if hasattr(pad, "GetLocalThermalGapOverride") else None
+            rec["thermal_gap"] = _mm(g) if g else None
+            s = pad.GetLocalSpokeWidthOverride(None) if hasattr(pad, "GetLocalSpokeWidthOverride") else None
+            rec["spoke_width"] = _mm(s) if s else None
+            out.append(rec)
+    return out
+
+
+def _graphic_rec(board, item, owner, cu, max_error):
+    """A copper graphic or text: its polygon on each copper layer it is on, and its net."""
+    rec = dict(cls=item.GetClass(), owner=owner, net=item.GetNetname() if hasattr(item, "GetNetname") else "",
+               layers={})
+    for l in cu:
+        if item.IsOnLayer(l):
+            try:
+                rec["layers"][board.GetStandardLayerName(l)] = _item_poly(item, l, max_error)
+            except Exception as e:  # odd items (images, tables) are reported, not fatal
+                rec.setdefault("errors", []).append(f"{type(e).__name__}: {e}")
+    return rec if rec["layers"] else None
+
+
+def _edge_rec(board, shape, owner):
+    """An Edge.Cuts or Margin shape as primitives (the DRC tests edges at zero width on
+    Edge.Cuts and at their stroke width on Margin)."""
+    t = shape.GetShape()
+    rec = dict(owner=owner, layer=board.GetStandardLayerName(shape.GetLayer()), width=_mm(shape.GetWidth()))
+    if t == pcbnew.SHAPE_T_SEGMENT:
+        rec.update(kind="segment", pts=[_xy(shape.GetStart()), _xy(shape.GetEnd())])
+    elif t == pcbnew.SHAPE_T_ARC:
+        rec.update(kind="arc", pts=[_xy(shape.GetStart()), _xy(shape.GetArcMid()), _xy(shape.GetEnd())])
+    elif t == pcbnew.SHAPE_T_CIRCLE:
+        rec.update(kind="circle", center=_xy(shape.GetCenter()), radius=_mm(shape.GetRadius()))
+    elif t == pcbnew.SHAPE_T_RECTANGLE:
+        r = shape.GetCornerRadius() if hasattr(shape, "GetCornerRadius") else 0
+        rec.update(kind="rect", pts=[_xy(shape.GetStart()), _xy(shape.GetEnd())], radius=_mm(r))
+    elif t == pcbnew.SHAPE_T_POLY:
+        rec.update(kind="poly", rings=_polyset(shape.GetPolyShape()))
+    elif t == pcbnew.SHAPE_T_BEZIER:
+        shape.RebuildBezierToSegmentsPointsList(int(board.GetDesignSettings().m_MaxError))
+        rec.update(kind="polyline", pts=[_xy(p) for p in shape.GetBezierPoints()])
+    else:
+        return None
+    rec["filled"] = bool(shape.IsSolidFill()) if hasattr(shape, "IsSolidFill") else False
+    return rec
+
+
+def _zone_rec(board, z, owner, cu, max_error):
+    layers = [board.GetStandardLayerName(l) for l in cu if z.IsOnLayer(l)]
+    rec = dict(owner=owner, name=z.GetZoneName(), layers=layers, rings=_polyset(z.Outline()),
+               rule_area=bool(z.GetIsRuleArea()))
+    if z.GetIsRuleArea():
+        rec.update(no_tracks=bool(z.GetDoNotAllowTracks()), no_vias=bool(z.GetDoNotAllowVias()),
+                   no_pads=bool(z.GetDoNotAllowPads()), no_fills=bool(z.GetDoNotAllowZoneFills()),
+                   no_footprints=bool(z.GetDoNotAllowFootprints()))
+    else:
+        lc = z.GetLocalClearance()
+        rec.update(net=z.GetNetname(), priority=z.GetAssignedPriority(),
+                   clearance=None if lc is None else _mm(lc), min_thickness=_mm(z.GetMinThickness()),
+                   pad_connection=_ZC.get(int(z.GetPadConnection()), "thermal"),
+                   thermal_gap=_mm(z.GetThermalReliefGap()), spoke_width=_mm(z.GetThermalReliefSpokeWidth()),
+                   teardrop=bool(z.IsTeardropArea()) if hasattr(z, "IsTeardropArea") else False)
+    return rec
+
+
+def _probes(board, cu):
+    """KiCad's rule engine on a probe track (each net, each copper layer) and a probe through
+    via (each net): what the DRC will require of routing that has no partner item."""
+    out = {}
+    lnames = [board.GetStandardLayerName(l) for l in cu]
+    for code, net in board.GetNetInfo().NetsByNetcode().items():
+        name = net.GetNetname()
+        if code <= 0 or not name:
+            continue
+        rec = dict(netclass=net.GetNetClassName(), track={}, via={})
+        for l, ln in zip(cu, lnames):
+            t = pcbnew.PCB_TRACK(board)
+            t.SetLayer(l)
+            t.SetNet(net)
+            t.SetWidth(100000)
+            t.SetStart(pcbnew.VECTOR2I(0, 0))
+            t.SetEnd(pcbnew.VECTOR2I(100000, 0))
+            rec["track"][ln] = dict(width=_mom(t.GetWidthConstraint()), clearance=_mm(t.GetOwnClearance(l)))
+        v = pcbnew.PCB_VIA(board)
+        v.SetNet(net)
+        v.SetLayerPair(cu[0], cu[-1])
+        v.SetWidth(400000)
+        v.SetDrill(200000)
+        rec["via"] = dict(diameter=_mom(v.GetWidthConstraint()), drill=_mom(v.GetDrillConstraint()),
+                          clearance={ln: _mm(v.GetOwnClearance(l)) for l, ln in zip(cu, lnames)},
+                          annulus={ln: _mm(v.GetMinAnnulus(l, None)) for l, ln in zip(cu, lnames)})
+        out[name] = rec
+    return out
+
+
+def route_info(board, probes=True):
+    cu = list(board.GetEnabledLayers().CuStack())
+    max_error = board.GetDesignSettings().m_MaxError
+    comp_ids = _component_ids(board)
+    info = dict(kicad_version=pcbnew.Version(), copper=[board.GetStandardLayerName(l) for l in cu],
+                layer_types={board.GetStandardLayerName(l): int(board.GetLayerType(l)) for l in cu},
+                settings=_design_settings(board), netclasses=_netclasses(board))
+    nets = {}
+    for code, net in board.GetNetInfo().NetsByNetcode().items():
+        if code > 0 and net.GetNetname():
+            nets[net.GetNetname()] = dict(code=code, netclass=net.GetNetClassName())
+    info["nets"] = nets
+    info["pads"] = _pads(board, cu, max_error, comp_ids)
+    graphics, edges = [], []
+    edge_layers = (pcbnew.Edge_Cuts, pcbnew.Margin)
+    for d in board.GetDrawings():
+        if d.GetClass() == "PCB_SHAPE" and d.GetLayer() in edge_layers:
+            r = _edge_rec(board, d, "")
+            if r:
+                edges.append(r)
+        elif d.IsOnCopperLayer() if hasattr(d, "IsOnCopperLayer") else False:
+            r = _graphic_rec(board, d, "", cu, max_error)
+            if r:
+                graphics.append(r)
+    zones = [_zone_rec(board, z, "", cu, max_error) for z in board.Zones()]
+    for fi, fp in enumerate(board.GetFootprints()):
+        owner = comp_ids[fi]
+        items = list(fp.GraphicalItems())
+        if hasattr(fp, "GetFields"):
+            items += [f for f in fp.GetFields() if f.IsVisible() and any(f.IsOnLayer(l) for l in cu)]
+        for g in items:
+            if g.GetClass() == "PCB_SHAPE" and g.GetLayer() in edge_layers:
+                r = _edge_rec(board, g, owner)
+                if r:
+                    edges.append(r)
+            elif any(g.IsOnLayer(l) for l in cu):
+                r = _graphic_rec(board, g, owner, cu, max_error)
+                if r:
+                    graphics.append(r)
+        for z in fp.Zones():
+            zones.append(_zone_rec(board, z, owner, cu, max_error))
+    info["graphics"], info["edges"], info["zones"] = graphics, edges, zones
+    ps = pcbnew.SHAPE_POLY_SET()
+    info["outline_ok"] = bool(board.GetBoardPolygonOutlines(ps, True))
+    info["outline"] = _polyset(ps)
+    info["tracks"] = sum(1 for t in board.GetTracks())
+    info["probes"] = _probes(board, cu) if probes else {}
+    return info
+
+
+def export_dsn(path, dsn, out, probes=True):
+    board = _load(path)
+    ok = pcbnew.ExportSpecctraDSN(board, dsn)
+    if ok is not True:
+        raise RuntimeError("ExportSpecctraDSN failed")
+    info = route_info(board, probes=probes)
+    _write(out, dict(ok=True, path=path, dsn=dsn, **info))
+    _status(dict(ok=True, pads=len(info["pads"])))
+
+
+def import_ses(path, ses, out, dest):
+    board = _load(path)
+    ok = pcbnew.ImportSpecctraSES(board, ses)
+    if ok is not True:
+        raise RuntimeError("ImportSpecctraSES failed")
+    n = sum(1 for _ in board.GetTracks())
+    _save(board, dest)
+    _write(out, dict(ok=True, path=dest, routing=n))
+    _status(dict(ok=True, routing=n))
+
+
+def edit_routing(path, edits_path, out, dest):
+    with open(edits_path) as f:
+        edits = json.load(f)
+    board = _load_plain(path)
+    delete = set(edits.get("delete") or [])
+    widths = edits.get("width") or {}
+    removed = widened = 0
+    keep = []
+    for t in list(board.GetTracks()):
+        u = t.m_Uuid.AsString()
+        if u in delete:
+            keep.append(t)
+            continue
+        if u in widths and t.GetClass() != "PCB_VIA":
+            t.SetWidth(int(round(float(widths[u]) * NM)))
+            widened += 1
+        if edits.get("lock_all"):
+            t.SetLocked(True)
+        elif edits.get("unlock_all"):
+            t.SetLocked(False)
+    for t in keep:  # remove after iterating: Remove() untypes SWIG objects
+        board.Remove(t)
+        removed += 1
+    _save(board, dest)
+    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened))
+    _status(dict(ok=True, removed=removed, widened=widened))
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -279,6 +698,12 @@ def main(argv):
             write_poses(args[0], args[1], args[2], args[3], allow_locked="--allow-locked" in flags)
         elif op == "resave":
             resave(args[0], args[1], args[2])
+        elif op == "export-dsn":
+            export_dsn(args[0], args[1], args[2], probes="--no-probes" not in flags)
+        elif op == "import-ses":
+            import_ses(args[0], args[1], args[2], args[3])
+        elif op == "edit-routing":
+            edit_routing(args[0], args[1], args[2], args[3])
         else:
             raise SystemExit(f"unknown op {op}")
     except Exception as e:  # report failures as JSON

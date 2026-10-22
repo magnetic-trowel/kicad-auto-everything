@@ -11,7 +11,8 @@ budget (Contract 3 of docs/topics/architecture/month-plan.md).
     t.structures_of(uuid)              # ids of the structures a part belongs to
 
 One currency: each structure reports spend / allocation (utilisation u); the objective is
-sum_s c_s phi(u_s) with c_s the brief's confidence and phi(u) = u + beta max(0, u-1)^2
+sum_s c_s phi(u_s) with c_s the brief's confidence and phi(u) = u + beta max(0, u-1)^2 up to
+u_sat = 10, logarithmic beyond
 (knobs in priors.Knobs). Allocations come from the brief's budgets or, when absent, from
 the E5 priors in kae.physics.priors. Terms:
 
@@ -257,7 +258,7 @@ class Terms:
                 out.append(dict(id=f'thermal:{self.bv.parts[i].ref}', kind='thermal', confidence=self._th_conf[t],
                                 members=[self.bv.parts[i].ref], uuids=[self.uids[i]], value=float(T[t]), unit='K',
                                 alloc=a.to_json(), util=float(T[t]) / a.value,
-                                cost=self._th_conf[t] * PR.phi(float(T[t]) / a.value, self.knobs.barrier),
+                                cost=self._th_conf[t] * PR.phi(float(T[t]) / a.value, self.knobs.barrier, self.knobs.u_sat),
                                 components=[], info=dict(role='source' if t < len(th.src) else 'victim')))
         return out
 
@@ -265,7 +266,7 @@ class Terms:
     def _cost(self, s, v):
         u = v / s.alloc.value if s.alloc.value > 0 else 0.0
         c = s.conf if self.knobs.use_confidence else 1.0
-        return c * PR.phi(u, self.knobs.barrier)
+        return c * PR.phi(u, self.knobs.barrier, self.knobs.u_sat)
 
     def _sync(self, j, poses):
         p = poses.get(self.uids[j])
@@ -330,7 +331,7 @@ class Terms:
 
     def _th_cost(self, T):
         b = self.knobs.barrier
-        return float(sum(c * PR.phi(T[t] / a.value, b) for t, (a, c) in enumerate(zip(self._th_alloc, self._th_conf))))
+        return float(sum(c * PR.phi(T[t] / a.value, b, self.knobs.u_sat) for t, (a, c) in enumerate(zip(self._th_alloc, self._th_conf))))
 
     def _th_delta(self, poses, mv):
         th = self.thermal

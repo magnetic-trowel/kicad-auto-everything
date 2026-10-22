@@ -31,6 +31,14 @@ from .cpsat import disjoint_union
 
 KIND_WEIGHT = {"commutation_cell": 3.0, "decap": 2.0, "crystal": 2.0, "oscillator": 1.5, "connector_chain": 1.0}
 MAX_MACRO = 24
+# kae.circuit's cap ownership (caps_p) ranks well but is underconfident (p 0.24 right 52% of
+# the time, 0.96 right 91%): it weights the micro-placement softly, and only a cap owned with
+# p >= BIND_P is bound into its load's macro. Rails with many interchangeable loads (all caps
+# at p <= LOW_OWNERSHIP, shared by 3 or more loads; keyboards, LED strings) get no macro: the
+# brief's owner is right 0-20% of the time there, and the place terms charge each such cap
+# to its nearest load pin instead.
+BIND_P = 0.5
+LOW_OWNERSHIP = 0.35
 
 
 @dataclass
@@ -88,11 +96,16 @@ def _nums(v):
 def structures(P, brief):
     """The brief's placement-relevant structures as Structs over part indices.
 
-    Policies: a decoupling cap claimed by several ICs goes to the structure with the highest
-    ownership probability (`caps_p`), so two ICs never merge through a shared cap; `pin_caps`
-    pairs caps with power pins, other caps get a weaker pull to the rail pins; connector
-    chains count only when protected, with the connector and its protection parts (the IC
-    at the far end of the chain stays out)."""
+    Policies: a decoupling cap claimed by several loads goes to the structure with the highest
+    ownership probability (`caps_p`), so two loads never merge through a shared cap, and joins
+    it only at p >= BIND_P; segment weights scale with p; rails of many interchangeable loads
+    are left to the place terms (LOW_OWNERSHIP). A decap's `ic` is whatever the caps serve:
+    an IC, a module, an LED, or (functions entry, converter_input/output, split_supply) a
+    connector, diode, fuse or inductor, whose ground may be another rail (V-); nothing here
+    assumes it is an IC. `pin_caps` pairs caps with power pins, other caps get a weaker pull
+    to the rail pins; connector chains count only when protected, with the connector and its
+    protection parts (the part at the far end of the chain stays out; `protection_order`
+    keeps it behind the protection)."""
     by_uuid = {p.uuid: p.i for p in P.parts}
 
     def pads(i, nums):
@@ -103,14 +116,19 @@ def structures(P, brief):
         return [k for k, pd in enumerate(P.parts[i].fp.pads) if pd.net == net]
 
     structs_in = list((brief or {}).get("structures", []))
+
+    def low_ownership(s):
+        ps = [float(v) for v in (s.get("caps_p") or {}).values() if v is not None]
+        return bool(ps) and max(ps) <= LOW_OWNERSHIP and int(s.get("shared_by") or 1) >= 3
     # owner of each shared decoupling cap
     owner = {}
     for j, s in enumerate(structs_in):
-        if s.get("kind") != "decap":
+        if s.get("kind") != "decap" or low_ownership(s):
             continue
         cp = s.get("caps_p") or {}
         for c in _ids(s.get("caps")):
-            pr = float(cp.get(c, 1.0 / max(1, int(s.get("shared_by") or 1))))
+            v = cp.get(c)
+            pr = float(v) if v is not None else 1.0 / max(1, int(s.get("shared_by") or 1))
             if c not in owner or pr > owner[c][0]:
                 owner[c] = (pr, j)
     out = []
@@ -122,12 +140,13 @@ def structures(P, brief):
         segs = []
         if kind == "decap":
             ic = by_uuid.get(s.get("ic"))
-            if ic is None:
+            if ic is None or low_ownership(s):
                 continue
             rail, gnd = s.get("rail"), s.get("ground")
             pins = _nums(s.get("power_pins"))
             gpins = _nums(s.get("ground_pins"))
-            mine = [c for c in _ids(s.get("caps")) if c in by_uuid and owner.get(c, (0, j))[1] == j]
+            mine = [c for c in _ids(s.get("caps")) if c in by_uuid and c in owner and owner[c][1] == j
+                    and owner[c][0] >= BIND_P]
             paired = {}
             pc = s.get("pin_caps")
             if isinstance(pc, dict):
@@ -142,7 +161,7 @@ def structures(P, brief):
                 members.add(ci)
                 ca = pads_on(ci, rail) or [0]
                 ia = pads(ic, paired[c]) if c in paired else pads(ic, pins) if pins else pads_on(ic, rail)
-                wc = w if (c in paired or c in hf) else 0.3 * w
+                wc = (w if (c in paired or c in hf) else 0.3 * w) * owner[c][0]
                 if ia:
                     segs.append(((ci, ca), (ic, ia), wc))
                 cg = pads_on(ci, gnd)
@@ -210,6 +229,42 @@ def structures(P, brief):
         segs = [sg for sg in segs if sg[0][1] and sg[1][1] and sg[0][0] in members and sg[1][0] in members]
         if segs and len(members) >= 2:
             out.append(Struct(kind=kind, members=members, segs=segs, src=s))
+    return out
+
+
+def protection_order(P, brief):
+    """Order rules of protected connector chains: each protection part (TVS, ESD array, fuse)
+    must sit nearer the connector pin than the part it protects does, and nearer the
+    connector than to that part. kae.circuit finds only 60% of human boards following this,
+    so it is enforced as a rule (a steep term in the annealer), not learnt from them.
+    Returns [((conn, pads), (prot, pads), (target, pads))] over part indices."""
+    by_uuid = {p.uuid: p.i for p in P.parts}
+    out, seen = [], set()
+    for s in (brief or {}).get("structures", []):
+        if s.get("kind") != "connector_chain" or s.get("protected") is False:
+            continue
+        prot = set(_ids(s.get("protection")))
+        conn = s.get("connector")
+        if not prot or conn not in by_uuid:
+            continue
+        ch = []
+        for m in s.get("chain", []):
+            if isinstance(m, (list, tuple)) and m and m[0] in by_uuid:
+                i = by_uuid[m[0]]
+                nums = _nums(m[1] if len(m) > 1 else None)
+                pads = [k for k, pd in enumerate(P.parts[i].fp.pads) if not nums or pd.number in nums]
+                if pads:
+                    ch.append((m[0], i, pads))
+        c = next(((i, pads) for u, i, pads in ch if u == conn), None)
+        tgt = next(((i, pads) for u, i, pads in reversed(ch) if u != conn and u not in prot), None)
+        if c is None or tgt is None:
+            continue
+        for u, i, pads in ch:
+            if u in prot and i not in (c[0], tgt[0]):
+                key = (c[0], tuple(c[1]), i, tuple(pads), tgt[0], tuple(tgt[1]))
+                if key not in seen and (P.parts[i].movable or P.parts[tgt[0]].movable or P.parts[c[0]].movable):
+                    seen.add(key)
+                    out.append((c, (i, pads), tgt))
     return out
 
 
@@ -414,7 +469,13 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
             except Exception as e:   # ranking is an improvement, never a requirement
                 if log:
                     log(f"macro {P.parts[anchor].ref}: self-term ranking failed ({type(e).__name__}: {e})")
-        mac.layouts = mac.layouts[:top_k]
+        uniq, seen = [], set()
+        for lay_ in mac.layouts:          # a re-layout to an identical layout is a wasted move
+            key = tuple(sorted(lay_.offsets.items()))
+            if key not in seen:
+                seen.add(key)
+                uniq.append(lay_)
+        mac.layouts = uniq[:top_k]
         out.append(mac)
         if log:
             st = mac.layouts[0]
@@ -540,6 +601,13 @@ def rerank(P, mac, terms):
     ids = {s.src.get("id") for s in mac.structs if s.src.get("id")}
     if not ids:
         return
+    mem = {P.parts[i].uuid for i in mac.members}
+
+    def own(r):
+        # the macro's structures (decaps split per power-pin cluster carry '#k'), and any
+        # other term whose parts all sit in the macro (thermal, a loop of its members)
+        rid = str(r.get("id") or "")
+        return rid in ids or rid.split("#")[0] in ids or (r.get("uuids") and set(r["uuids"]) <= mem)
     base = {p.uuid: (p.x0, p.y0, p.rot0, p.side) for p in P.parts}
     a = P.parts[mac.anchor]
     if a.movable:
@@ -554,7 +622,7 @@ def rerank(P, mac, terms):
             if p.movable:
                 poses[p.uuid] = (ax + dx * P.g, ay + dy * P.g, p.rots[k].rot, p.side)
         rows = terms.breakdown(poses)
-        lay.self_cost = float(sum(r.get("cost", 0.0) for r in rows if r.get("id") in ids))
+        lay.self_cost = float(sum(r.get("cost", 0.0) for r in rows if own(r)))
     mac.layouts.sort(key=lambda l: (l.self_cost, l.cost))
 
 

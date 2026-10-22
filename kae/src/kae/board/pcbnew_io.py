@@ -160,6 +160,33 @@ def resave(path_in, path_out, timeout=900):
     return _run("resave", lambda out: [_abs(path_in), out, _abs(path_out)], timeout)
 
 
+# ----------------------------------------------------------------------------- routing
+def export_dsn(path, dsn_path, probes=True, timeout=900):
+    """KiCad's Specctra DSN export of `path` (loaded with its project and design rules) to
+    `dsn_path`, plus what the DSN leaves out (pcbnew_bridge.route_info): design settings,
+    net classes, pads with their DSN pin ids, copper graphics, edges, zones and, with
+    `probes`, KiCad's rule engine evaluated per net and copper layer."""
+    flags = [] if probes else ["--no-probes"]
+    return _run("export-dsn", lambda out: [_abs(path), _abs(dsn_path), out, *flags], timeout)
+
+
+def import_ses(path, ses_path, dst_path, timeout=900):
+    """KiCad's Specctra session import into `path`, written to `dst_path` with the plain
+    writer (unlocked routing is replaced, locked routing kept). Returns {routing}."""
+    return _run("import-ses", lambda out: [_abs(path), _abs(ses_path), out, _abs(dst_path)], timeout)
+
+
+def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_all=False, timeout=900):
+    """Delete tracks and vias by uuid, set track widths ({uuid: mm}), lock or unlock all
+    routing; written to `dst_path` with the plain writer. Returns {removed, widened}."""
+    with tempfile.TemporaryDirectory(prefix="kae-edit-", dir=os.environ.get("KAE_TMPDIR")) as d:
+        ej = os.path.join(d, "edits.json")
+        with open(ej, "w") as f:
+            json.dump(dict(delete=list(delete), width=dict(widths or {}), lock_all=lock_all,
+                           unlock_all=unlock_all), f)
+        return _run("edit-routing", lambda out: [_abs(path), ej, out, _abs(dst_path)], timeout)
+
+
 # ----------------------------------------------------------------------------- verify
 def _polys(rings_list):
     out = []

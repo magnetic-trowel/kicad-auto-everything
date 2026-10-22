@@ -68,7 +68,8 @@ class HopRouter:
 
     def length(self, st, side, a, b, net, w, clr=None, pads=None):
         """Routed length (mm) from point a to point b on `side` (+1 front, -1 back) for a trace
-        of net `net` and width w; inf when no route exists in the window."""
+        of net `net` (or a tuple of nets: a hop that skips a series part joins two) and width
+        w; inf when no route exists in the window."""
         clr = self.bv.clearance if clr is None else clr
         (ax, ay), (bx, by) = a, b
         straight = math.hypot(bx - ax, by - ay)
@@ -85,11 +86,12 @@ class HopRouter:
             nx = int(math.ceil((x1 - x0) / res)) + 1
             ny = int(math.ceil((y1 - y0) / res)) + 1
         px, py, hx, hy, G = pads if pads is not None else self.pads_board(st)
-        own = self.net_id.get(net, -1)
+        nets = net if isinstance(net, (tuple, list, set, frozenset)) else (net,)
+        own = np.array([self.net_id.get(n, -1) for n in nets], np.int64)
         on_side = self.tht | (G == side)
         # a trace necks down to the minimum width between pins; its own width only sets L'
         infl = 0.5 * min(w, self.bv.track_min) + clr
-        sel = on_side & (self.nid != own) & (px + hx + infl >= x0) & (px - hx - infl <= x1) & \
+        sel = on_side & ~np.isin(self.nid, own) & (px + hx + infl >= x0) & (px - hx - infl <= x1) & \
             (py + hy + infl >= y0) & (py - hy - infl <= y1)
         blocked = np.zeros((ny, nx), bool)
         for cx, cy, ex, ey in zip(px[sel], py[sel], hx[sel] + infl, hy[sel] + infl):

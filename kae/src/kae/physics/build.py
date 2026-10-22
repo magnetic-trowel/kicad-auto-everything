@@ -29,7 +29,7 @@ import numpy as np
 from . import priors as PR
 from .kernels import fin_params
 from .structures import (CmComp, CouplingComp, CrystalComp, EsdComp, FeedComp, LoopComp, LoopShape,
-                         NodeShape, PlanePairLoop, Term, ThermalField)
+                         NearestLoopComp, NodeShape, PlanePairLoop, Term, ThermalField)
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
 
@@ -61,6 +61,8 @@ class _Ctx:
         if not gn:
             gn = {n for n in self.bv.nets if GND_RE.search(n.split('/')[-1] or n)}
         self.gnd = gn
+        gm = self.bv.gmask(gn) if gn else None
+        self.has_plane = bool(gm is not None and gm.any())
 
     def part(self, key):
         if key is None:
@@ -207,6 +209,7 @@ def build_structures(terms):
     S = terms.structs
     specs = (terms.brief or {}).get('structures', []) or []
     cells = []
+    low = []
     from .place_terms import Struct
     for s in specs:
         kind = s.get('kind')
@@ -217,7 +220,10 @@ def build_structures(terms):
                     S.append(st)
                     cells.append((st, s))
             elif kind == 'decap':
-                S.extend(_decap(ctx, s, Struct))
+                if _low_ownership(s):
+                    low.append(s)
+                else:
+                    S.extend(_decap(ctx, s, Struct))
             elif kind == 'crystal':
                 st = _crystal(ctx, s, Struct)
                 if st:
@@ -232,6 +238,10 @@ def build_structures(terms):
                     S.append(st)
         except Exception as e:      # noqa: BLE001 - a bad structure must not kill the others
             terms.warnings.append(f"{s.get('id', kind)}: {type(e).__name__}: {e}")
+    try:
+        S.extend(_decap_nearest(ctx, low, Struct))
+    except Exception as e:      # noqa: BLE001
+        terms.warnings.append(f'nearest-load decaps: {type(e).__name__}: {e}')
     # aggressors: hot loops (inductive) with their switch-node copper (capacitive), and clocks
     aggs = []
     for st, s in cells:
@@ -262,8 +272,9 @@ def build_structures(terms):
 
 # ----------------------------------------------------------------------------- (a)
 def _commutation(ctx, s, Struct):
-    """Hot loop through each candidate input cap; caps in parallel weighted by the brief's
-    ownership probability (expected admittance 1/L = sum_c p_c / L_c)."""
+    """Hot loop through each candidate input cap: the caps whose calibrated ownership is at
+    least half the best one's, in parallel (the loop through the nearest dominates); the
+    structure's weight is the brief's confidence times that best ownership."""
     bv = ctx.bv
     loop = s.get('loop') or []
     T = [ctx.member_term(m) for m in loop]
@@ -272,7 +283,8 @@ def _commutation(ctx, s, Struct):
     cap_i = T[0].i if T[0].i == T[-1].i else None
     caps = [ctx.part(c) for c in (s.get('caps') or s.get('input_caps') or [])]
     caps = [c for c in caps if c is not None]
-    pmap = {ctx.part(k): float(v) for k, v in (s.get('caps_p') or {}).items() if ctx.part(k) is not None}
+    pmap = {ctx.part(k): PR.ownership_calibrated(v) for k, v in (s.get('caps_p') or {}).items()
+            if ctx.part(k) is not None and v is not None}
     if cap_i is None or not caps:
         variants = [(T, 1.0, bv.parts[T[0].i].ref)]
     else:
@@ -285,14 +297,14 @@ def _commutation(ctx, s, Struct):
             if not kr or not kg:
                 continue
             Tc = [ctx.term(c, kr[:1])] + T[1:-1] + [ctx.term(c, kg[:1])]
-            variants.append((Tc, pmap.get(c, 1.0 if c == cap_i else 0.5), cp.ref))
+            variants.append((Tc, pmap.get(c, 1.0 if c == cap_i else PR.ownership_calibrated(0.5)), cp.ref))
     pmax = max(w for _, w, _ in variants)
     variants = [v for v in variants if v[1] >= 0.5 * pmax]          # the caps this cell most likely owns
     comps = [_loop_comp(ctx, Tc, power=True) for Tc, _, _ in variants]
     labels = [lab for _, _, lab in variants]
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
-    vin = ex.get('V') or ctx.net_volts(s.get('rail')) or 12.0
+    vin = ex.get('V') or ctx.net_volts(s.get('rail')) or PR.V_IN_UNKNOWN.value
     alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'))
     excite = PR.hot_loop_excite(cls, vin, ex.get('I'), ex.get('t_sw_ns'))
     return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s) * pmax,
@@ -302,30 +314,77 @@ def _commutation(ctx, s, Struct):
 
 
 # ----------------------------------------------------------------------------- (b)
-def _decap(ctx, s, Struct):
-    bv = ctx.bv
+def _decap_side(ctx, s):
+    """(ic index, rail, power pads, ground pads, ground net) of a decap spec. The 'ic' is the
+    load or source the caps serve: an IC, a module, an LED, or (functions entry,
+    converter_input/output) a connector, diode, fuse or inductor; split_supply names the
+    return rail (V-) as its ground."""
     ic = ctx.part(s.get('ic'))
     if ic is None:
-        return []
-    P = bv.parts[ic]
+        return None
+    P = ctx.bv.parts[ic]
     rail = s.get('rail')
+    gnd = s.get('ground')
     pp = ctx.pads(ic, s.get('power_pins')) if s.get('power_pins') else [k for k, n in enumerate(P.pad_net) if n == rail]
     if not rail and pp:
         rail = P.pad_net[pp[0]]
-    gp = ctx.pads(ic, s.get('ground_pins')) if s.get('ground_pins') else [k for k, n in enumerate(P.pad_net) if n in ctx.gnd]
-    caps = []
-    pmap = {ctx.part(k): float(v) for k, v in (s.get('caps_p') or {}).items() if ctx.part(k) is not None}
+    if s.get('ground_pins'):
+        gp = ctx.pads(ic, s.get('ground_pins'))
+    else:
+        gp = [k for k, n in enumerate(P.pad_net) if n in ctx.gnd or (gnd and n == gnd)]
+    if not gnd:
+        gnd = next((P.pad_net[k] for k in gp), None) or next(iter(sorted(ctx.gnd)), 'GND')
+    return ic, rail, pp, gp, gnd
+
+
+def _decap_caps(ctx, s, rail, gnd):
+    """(cap index, rail pad, ground pad) of the spec's HF caps (all caps when none is HF)."""
+    out = []
     for c in (s.get('hf_caps') or s.get('caps') or []):
         i = ctx.part(c)
         if i is None:
             continue
-        cp = bv.parts[i]
+        cp = ctx.bv.parts[i]
         kr = [k for k, n in enumerate(cp.pad_net) if n == rail]
-        kg = [k for k, n in enumerate(cp.pad_net) if n in ctx.gnd or n == s.get('ground')]
+        kg = [k for k, n in enumerate(cp.pad_net) if n == gnd or n in ctx.gnd]
         if kr and kg:
-            caps.append((i, kr[:1], kg[:1]))
+            out.append((i, kr[:1], kg[:1]))
+    return out
+
+
+def _ic_terms(ctx, ic, ks, rail, gp, gnd):
+    """Power terminal (centroid of the pin cluster ks) and its return terminal: the ground
+    pad nearest to it, or, for a part without a return pin (inductor, diode, fuse), the same
+    point on the ground net: the return then closes through the plane (or laterally) under
+    the power pin."""
+    P = ctx.bv.parts[ic]
+    tp = ctx.term(ic, ks, rail)
+    if gp:
+        def gdist(k):
+            return math.hypot(P.pad_lx[k] - tp.lx, P.pad_ly[k] - tp.ly) - 0.5 * min(P.pad_sx[k], P.pad_sy[k])
+        tg = ctx.term(ic, [min(gp, key=gdist)])
+    else:
+        tg = Term(ic, tp.lx, tp.ly, tp.a, gnd, ks)
+    return tp, tg
+
+
+def _low_ownership(s):
+    ps = [float(v) for v in (s.get('caps_p') or {}).values() if v is not None]
+    return bool(ps) and max(ps) <= PR.OWNERSHIP_NEAREST and (s.get('shared_by') or 1) >= 3
+
+
+def _decap(ctx, s, Struct):
+    side = _decap_side(ctx, s)
+    if side is None:
+        return []
+    ic, rail, pp, gp, gnd = side
+    bv = ctx.bv
+    P = bv.parts[ic]
+    caps = _decap_caps(ctx, s, rail, gnd)
+    pmap = {ctx.part(k): PR.ownership_calibrated(v) for k, v in (s.get('caps_p') or {}).items()
+            if ctx.part(k) is not None and v is not None}
     pin_caps = {str(k): {ctx.part(u) for u in v} for k, v in (s.get('pin_caps') or {}).items()}
-    if not pp or not gp or not caps:
+    if not pp or not caps:
         return []
     groups = _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6)
     vr = ctx.net_volts(rail) or 3.3
@@ -335,13 +394,7 @@ def _decap(ctx, s, Struct):
     out = []
     for gi, grp in enumerate(groups):
         ks = [pp[j] for j in grp]
-        tp = ctx.term(ic, ks, rail)
-        cx, cy = tp.lx, tp.ly
-
-        def gdist(k):
-            return math.hypot(P.pad_lx[k] - cx, P.pad_ly[k] - cy) - 0.5 * min(P.pad_sx[k], P.pad_sy[k])
-        kg = min(gp, key=gdist)
-        tg = ctx.term(ic, [kg])
+        tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
         comps, labels, weights = [], [], []
         paired = set()
         for k in ks:
@@ -371,6 +424,54 @@ def _decap(ctx, s, Struct):
                           kind='decap', conf=ctx.conf(s) * max(weights), alloc=a, comps=comps, reduce='parallel',
                           labels=labels, info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None,
                                                    ownership=max(weights), function=s.get('function'))))
+    return out
+
+
+def _decap_nearest(ctx, specs, Struct):
+    """Decaps on rails with many interchangeable loads (raw ownership <= OWNERSHIP_NEAREST):
+    one structure per capacitor, charged its loop to the nearest load power pin on the rail
+    at the current poses (NearestLoopComp), with the rail's median per-pin budget."""
+    bv = ctx.bv
+    by_rail = {}
+    for s in specs:
+        side = _decap_side(ctx, s)
+        if side is None:
+            continue
+        by_rail.setdefault(side[1], []).append((s, side))
+    out = []
+    for rail, items in by_rail.items():
+        cands, caps, budgets, confs = [], {}, [], []
+        for s, (ic, _, pp, gp, gnd) in items:
+            P = bv.parts[ic]
+            if not pp:
+                continue
+            vr = ctx.net_volts(rail) or 3.3
+            b = ctx.budget(s, 'L_nH') or PR.decap_budget(vr, len(P.pad_num), len(pp))
+            for grp in _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6):
+                ks = [pp[j] for j in grp]
+                cands.append((ic, ks, gp, gnd))
+                budgets.append(b.value / max(1, len(ks)))
+            for i, kr, kg in _decap_caps(ctx, s, rail, gnd):
+                caps.setdefault(i, (kr, kg))
+            confs.append(ctx.conf(s))
+        if not cands or not caps:
+            continue
+        alloc = PR.Belief(float(np.median(budgets)), 'nH', f'median per-pin budget of the {len(cands)} load pin '
+                          f'cluster(s) on {rail} (nearest-load decap: ownership unresolved)')
+        for i, (kr, kg) in caps.items():
+            tr = ctx.term(i, kr)
+            tc = ctx.term(i, kg)
+            loops = []
+            for ic, ks, gp, gnd in cands:
+                if ic == i:
+                    continue
+                tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
+                loops.append(_loop_comp(ctx, [tp, tr, tc, tg], power=False))
+            if not loops:
+                continue
+            out.append(Struct(id=f'decap:{rail}:{bv.parts[i].ref}:nearest', kind='decap', conf=float(np.median(confs)),
+                              alloc=alloc, comps=[NearestLoopComp(loops)], reduce='single', labels=[bv.parts[i].ref],
+                              info=dict(rail=rail, nearest=True, candidates=len(loops), function='load')))
     return out
 
 
@@ -445,7 +546,15 @@ def _victim(ctx, s, aggs, Struct):
     nets = s.get('nets') or sorted({t.net for t in T if t.net and t.net not in ctx.gnd})
     loop = None
     if len(T) >= 2:
-        open_ = T[0].net in ctx.gnd and T[-1].net in ctx.gnd
+        n = len(T)
+        if ctx.has_plane:
+            # a return hop between two ground terminals runs in the plane: open the loop
+            # there (the path then closes through the plane by vias at both ends)
+            for k in range(n):
+                if T[k].net in ctx.gnd and T[(k + 1) % n].net in ctx.gnd:
+                    T = T[k + 1:] + T[:k + 1]
+                    break
+        open_ = ctx.has_plane and T[0].net in ctx.gnd and T[-1].net in ctx.gnd
         loop = LoopShape(T, closed=not open_)
     elif nets and len(bv.nets.get(nets[0], [])) >= 2:
         # a signal net returning through the reference plane: its pads in netlist order
@@ -476,18 +585,38 @@ def _victim(ctx, s, aggs, Struct):
 
 # ----------------------------------------------------------------------------- (f)
 def _esd(ctx, s, Struct):
+    """Surge path of a protected connector pin: connector pin -> first protector on the chain
+    (its pad on the protected line) -> protected part (the chain's far end)."""
     ch = s.get('chain') or []
-    if len(ch) < 2 or not s.get('protection'):
+    prot = [u for u in (s.get('protection') or [])
+            if ((ctx.parts.get(u) or {}).get('role') or 'connector_protection') == 'connector_protection']
+    if len(ch) < 2 or not prot:
         return None
     tc = ctx.member_term(ch[0])
-    tp = ctx.member_term(ch[1])
-    ti = ctx.member_term(ch[2]) if len(ch) > 2 else None
-    if tc is None or tp is None:
+    if tc is None:
         return None
+    tp = None
+    for m in ch[1:]:
+        if m and m[0] in prot:
+            tp = ctx.member_term(m)
+            break
+    if tp is None:
+        # a shunt protector hanging off the line: its pad on the connector pin's net
+        i = ctx.part(prot[0])
+        if i is None:
+            return None
+        ks = [k for k, n in enumerate(ctx.bv.parts[i].pad_net) if n == tc.net]
+        if not ks:
+            return None
+        tp = ctx.term(i, ks[:1])
+    ti = ctx.member_term(ch[-1]) if len(ch) > 2 else None
+    if ti is not None and ti.i in (tc.i, tp.i):
+        ti = None
     comp = EsdComp(ctx.bv, tc, tp, ti, None)
     alloc = ctx.budget(s, 'L_nH') or PR.esd_budget()
     return Struct(id=s.get('id') or f'esd:{ctx.bv.parts[tc.i].ref}', kind='esd', conf=ctx.conf(s), alloc=alloc,
-                  comps=[comp], labels=['esd path'])
+                  comps=[comp], labels=['surge path'], info=dict(protector=ctx.bv.parts[tp.i].ref,
+                                                                   protected=ctx.bv.parts[ti.i].ref if ti else None))
 
 
 def _antenna(ctx, s, Struct):

@@ -131,7 +131,7 @@ def physics_summary(terms, poses, breakdown=True):
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
-          edge_mate=False):
+          edge_mate=False, anneal_args=None):
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -192,7 +192,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
 
     # ---- physics: place terms (both arms report them; only the physics arm optimizes them),
     #      structures -> macros
-    macros, terms, report_terms = [], None, None
+    macros, terms, report_terms, order = [], None, None, []
+    anneal_args = dict(anneal_args or {})
+    terms_knobs = anneal_args.pop("terms_knobs", None) or {}
     t = time.monotonic()
     if not (brief or {}).get("structures"):
         tsrc = "none (no structures in the brief)"     # nothing to price: skip the build
@@ -200,7 +202,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["scorecard_seed"] = dict(rep["scorecard"])
     else:
         try:
-            report_terms, tsrc = make_terms(board, brief, barrier=0.0)   # linear utilization in the annealer
+            report_terms, tsrc = make_terms(board, brief, barrier=0.0, **terms_knobs)   # linear utilization in the annealer
         except Exception as e:
             log(f"place terms failed ({type(e).__name__}: {e})")
             report_terms, tsrc = None, "none"
@@ -211,8 +213,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         structs = clusters.structures(P, brief)
         macros = clusters.build_macros(P, structs, time_s=min(0.1 * budget, 30.0), workers=workers,
                                        seed=seed, log=log, terms=terms)
+        order = clusters.protection_order(P, brief)
         rep["physics_terms"] = dict(source=tsrc, structures=len(structs), macros=len(macros),
-                                    macro_sizes=[len(m.members) for m in macros])
+                                    macro_sizes=[len(m.members) for m in macros], order_rules=len(order))
         # nets inside structures are critical: pull them together harder in the seed
         crit = set()
         for s in structs:
@@ -305,8 +308,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     final = seed_state
     if anneal:
         t = time.monotonic()
+        kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order)
+        kw.update(anneal_args or {})
+        if terms is None:
+            kw["w_phys"] = 0.0
         ann = Annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
-                       w_phys=1.0 if terms is not None else 0.0, log=log)
+                       log=log, **kw)
+        if anneal_args:
+            rep["anneal_args"] = dict(anneal_args)
         seed_cost = ann.cost(ann.lam1) if seed_legal else None
         seed_terms = ann.terms_report()
         cpu = max(1.0, 0.6 * (deadline - time.monotonic() - 3.0))
@@ -348,6 +357,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     stage("exact_check", t)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
+    if order:
+        chk = Annealer(P, st.copy(), terms=None, w_cong=0.0, order=order)
+        rep["protection_order"] = dict(rules=len(order), violated=chk.order_violations())
     if report_terms is not None:
         try:
             rep["scorecard"] = physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts})

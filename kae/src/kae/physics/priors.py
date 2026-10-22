@@ -32,17 +32,27 @@ class Belief:
 @dataclass
 class Knobs:
     """The few explicit knobs of the objective (everything else is a budget)."""
-    barrier: float = 4.0          # phi(u) = u + barrier * max(0, u - 1)^2
+    barrier: float = 4.0          # phi(u) = u + barrier * max(0, u - 1)^2 ...
+    u_sat: float = 10.0           # ... and a logarithmic tail beyond u_sat (estimates 10x over budget are model error)
     use_confidence: bool = True   # weight each structure by the brief's confidence
     hop_detour: float = 1.0       # expected route length / octilinear pad distance (E5, measured on human boards)
     pair_cos_min: float = 0.3     # loop pairs with |cos| below this are dropped in the fast path
     jit: str = 'auto'             # 'auto' (numba when installed), 'on', 'off' (pure Python)
 
 
-def phi(u, barrier=4.0):
-    """One currency: utilisation u = spend / allocation, priced linearly below budget and
-    with a quadratic barrier above it."""
-    return u + barrier * (u - 1.0) ** 2 if u > 1.0 else u
+def phi(u, barrier=4.0, u_sat=10.0):
+    """One currency: utilisation u = spend / allocation, priced linearly below budget, with a
+    quadratic barrier above it, and a logarithmic tail beyond u_sat: an estimate an order of
+    magnitude over budget says "fails" whatever its exact value (and is as likely an
+    estimator outlier: a straight hop through an obstacle, a misidentified structure), so it
+    keeps a gradient without dominating every other term. phi and phi' are continuous."""
+    if u <= 1.0:
+        return u
+    if u <= u_sat:
+        return u + barrier * (u - 1.0) ** 2
+    ps = u_sat + barrier * (u_sat - 1.0) ** 2
+    dps = 1.0 + 2.0 * barrier * (u_sat - 1.0)
+    return ps + dps * u_sat * math.log(u / u_sat)
 
 
 # ----------------------------------------------------------------------------- (a) hot loops
@@ -57,6 +67,11 @@ CELL_CLASS = {
     'half_bridge': (500.0, 10.0, 5.0, 1.25, 8.0),   # discrete FETs
     'unknown': (150.0, 3.0, 1.0, 1.25, 8.0),
 }
+
+
+# GaN half-bridges (edges <= 2 ns): C_oss ~ 50-300 pF in EPC/GaN Systems datasheets at the
+# currents these boards switch, about 5x below silicon at equal R_on (E5)
+GAN_C_OSS_PF = 100.0
 
 
 def v_abs_rating(v_in, margin=1.25):
@@ -77,6 +92,8 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     with a = (derate V_abs - V_in) / V_in and V_abs the next standard rating above
     1.25 V_in. Example: 12 V, 120 pF, 1.5 ns -> 1.3 nH (the ODE gives 1.05 nH)."""
     c0, t0, _, margin, q0 = CELL_CLASS.get(cell_class, CELL_CLASS['unknown'])
+    if cell_class == 'half_bridge' and t_sw_ns and t_sw_ns <= 2.0:
+        c0 = GAN_C_OSS_PF          # edges this fast mean GaN switches
     c = c_oss_pf or c0
     t = t_sw_ns or t0
     q = q or q0
@@ -95,12 +112,37 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     return Belief(min(lmax, 50.0), 'nH', basis)
 
 
+# Input voltage of a converter whose input rail the brief cannot name (excite.V null, about
+# 20 % of cells). A high prior, so these loops still count rather than vanish: 24 V lies above
+# 90 % of the 51 named converter inputs of the 112-board corpus (median 12 V, p80 15 V), and a
+# higher V_in both tightens the overshoot budget and raises the excitation (E5).
+V_IN_UNKNOWN = Belief(24.0, 'V', 'unnamed converter input: high prior, above 90 % of named inputs in the corpus')
+
+
 def hot_loop_excite(cell_class='buck', v_in=12.0, i_out=None, t_sw_ns=None):
     """(dI/dt A/ns, dV/dt V/ns, I A, V V, t_sw ns) of a commutation cell (E5 class priors)."""
     c0, t0, i0, _, _ = CELL_CLASS.get(cell_class, CELL_CLASS['unknown'])
     t = t_sw_ns or t0
     i = i_out or i0
     return dict(didt=i / t, dvdt=v_in / t, I=i, V=v_in, t_sw=t)
+
+
+# ----------------------------------------------------------------------------- ownership
+def ownership_calibrated(p):
+    """Calibrated probability that a capacitor belongs to a structure, from the brief's
+    caps_p. kae.circuit's p is underconfident: p 0.24 is right 52 % of the time and p 0.96
+    91 % (its reliability check over the corpus). A logistic recalibration through those two
+    points, logit(q) = 0.67 + 0.515 logit(p), maps 0.24 -> 0.52, 0.5 -> 0.66, 0.96 -> 0.91,
+    and keeps the order of the p's (E5: two-point fit)."""
+    p = min(max(float(p), 0.01), 0.99)
+    z = 0.67 + 0.515 * math.log(p / (1.0 - p))
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+# Below this raw caps_p on a rail shared by >= 3 loads, the brief cannot tell which load a
+# capacitor serves (keyboards, LED strings: p ~ 1/loads). The decap term then charges each
+# such capacitor its loop to the nearest load power pin on the rail instead of the named one.
+OWNERSHIP_NEAREST = 0.35
 
 
 # ----------------------------------------------------------------------------- (b) decoupling
@@ -220,14 +262,23 @@ WORLD = dict(f_ref_ghz=0.1,          # 100 MHz: cables of ~1 m radiate efficient
              i_cm_budget_uA=5.0,     # Ott: < 5 uA on a >= 1 m cable for CISPR 32 / FCC class B
              period_ns=1000.0,       # 1 MHz switching
              esd_didt=37.5,          # A/ns: IEC 61000-4-2 level 4 contact, 30 A in 0.8 ns
-             esd_dv=40.0,            # V the protected pin's internal clamp absorbs on top of V_clamp
+             esd_dv=40.0,            # V a neighbouring (protected) pin's clamp absorbs on top of V_clamp
+             esd_k_adj=0.2,          # M/L of an adjacent trace at minimum spacing over a plane (0.1-0.3)
              feed_alpha_db_mm=0.015, # 2.4 GHz FR-4 50-ohm microstrip, conductor + dielectric loss
              feed_budget_db=0.5)
 
 
 def esd_budget():
-    lb = WORLD['esd_dv'] / WORLD['esd_didt']
-    return Belief(lb, 'nH', f'ESD: {WORLD["esd_dv"]:g} V of L di/dt at {WORLD["esd_didt"]:g} A/ns (IEC 61000-4-2 level 4)')
+    """Surge-path inductance budget (connector pin -> protector -> its ground via).
+
+    The surge current runs from the connector pin to the protector before it is shunted; a
+    trace at minimum spacing alongside that path picks up k L dI/dt (k = M/L ~ 0.2 over a
+    plane). Keeping that pickup within the 40 V a protected pin's own clamp absorbs at the
+    IEC 61000-4-2 level-4 edge (37.5 A/ns) gives L <= 40 / (0.2 x 37.5) = 5.3 nH, about
+    12 mm of 0.25 mm trace plus the via (E5)."""
+    lb = WORLD['esd_dv'] / (WORLD['esd_k_adj'] * WORLD['esd_didt'])
+    return Belief(lb, 'nH', f'ESD surge path: k L dI/dt <= {WORLD["esd_dv"]:g} V on an adjacent trace, '
+                            f'k {WORLD["esd_k_adj"]:g}, {WORLD["esd_didt"]:g} A/ns (IEC 61000-4-2 level 4)')
 
 
 def cm_budget():

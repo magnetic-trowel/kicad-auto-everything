@@ -303,18 +303,21 @@ class StubTerms:
         return out
 
 
-def make_terms(board, brief, barrier=None):
+def make_terms(board, brief, barrier=None, **knobs):
     """The real place_terms when importable, else the stub. `barrier` overrides the
-    over-budget barrier of phi(u) (0 = linear utilization)."""
+    over-budget barrier of phi(u) (0 = linear utilization); other keywords override
+    kae.physics.priors.Knobs fields (e.g. u_sat)."""
     try:
         from kae.physics.place_terms import Terms
     except ImportError:
         return StubTerms(board, brief), "kae.place.stubs.StubTerms"
-    knobs = None
-    if barrier is not None:
+    kn = None
+    if barrier is not None or knobs:
         from kae.physics.priors import Knobs
-        knobs = Knobs(barrier=barrier)
-    return Terms(board, brief, knobs=knobs), "kae.physics.place_terms"
+        if barrier is not None:
+            knobs["barrier"] = barrier
+        kn = Knobs(**knobs)
+    return Terms(board, brief, knobs=kn), "kae.physics.place_terms"
 
 
 def make_brief(board):
