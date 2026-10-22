@@ -12,7 +12,7 @@
 
 | Reference | Use | Licence / note | Tag |
 |---|---|---|---|
-| FastHenry (partial-inductance PEEC) | Loop L of hot loops, decap mounting, slot detours | Free MIT-era code; check the FastFieldSolvers build's terms | [S] |
+| FastHenry (partial-inductance PEEC) | Loop L of hot loops, decap mounting, slot detours | Licence to verify: the original MIT release is believed permissive; FastFieldSolvers builds may differ | [S] |
 | openEMS via gerber2ems / si-wrapper slices | Return-path discontinuities, via transitions, stubs, near field | GPLv3+ engine; si-wrapper VNA-validated on a DDR5 clock pair ([evaluation-stack](../verification/evaluation-stack.md)) | [P] |
 | padne, KiPI, Ki-PIDA | IR drop, current density, PDN sweeps | KiPI GPL-3.0 alpha; padne via model uncertain except "large and short" vias | [P] |
 | Elmer / CalculiX (Antmicro scripts) | ΔT; validated on an RPi5 enclosure at 2.5/8 W | Open | [P] |
@@ -20,6 +20,8 @@
 | Own coupons | 5–10 small boards with planted faults; VNA, near-field probe scan, thermal camera | The only route to EMI ground truth; see idea PC39 | [I] |
 
 **Worked calibration example [C].** Ott measured plane voltage across 1" under a trace crossing slots of ¼, ½, 1 and 1.5" (+5, +11, +34, +60 mV over the 15 mV no-slot case). A linear-in-length model misses by 2–3× across that range. ΔV = a·ℓ·ln(ℓ/ℓ0) fits all four points within 1.4 mV with ℓ0 ≈ 0.09" (2.3 mm) ([pc_budget_calcs.py](../../../tools/research/physics/pc_budget_calcs.py) §8). Two conclusions follow. Slots shorter than about 2 mm hardly matter, which matches Ott's "15 separate holes = no slot". And the VOID severity should grow faster than slot length. Two fitted parameters on four points is a shape check, not a validated model.
+
+**Worked calibration example 2 [C].** The shorted-slot-line VOID proxy in pc_refplane.py (Z_slot = 100 Ω, two stubs in parallel, so L = Z_s/v·ℓ/4 for a centred slot) was compared with workstream 5's quasi-static PEEC plane solver ([fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py); trace width 2h, slot length 10–100h). The proxy/PEEC ratio is 0.97–1.18 for slot width g = 2h and 1.75–1.94 for g = 0.5h ([pc_budget_calcs.py](../../../tools/research/physics/pc_budget_calcs.py) §11). So the proxy is usable for wide voids and pessimistic for narrow ones; a g/h-dependent Z_slot fixes most of the gap. The same PEEC run reproduces the lateral return-current spread 2/π·atan(x/h) within 0.02 at x = h, 3h and 10h, which supports RET-COV's w/2 + k·h margin.
 
 ### Per-critic validation plan
 
@@ -81,7 +83,7 @@ Mutation operators are DRC-neutral by construction (a pour keep-out rule area on
 
 ## Conflicts and open questions
 
-- Ott's slot data are one geometry at one frequency. The slot-line VOID model (3.5 nH for a centred 1" slot, Z_slot = 100 Ω assumed) is unverified.
+- Ott's slot data are one geometry at one frequency, and the PEEC comparison is quasi-static (no slot resonance). The slot-line VOID proxy is checked only against PEEC, not against full-wave or measurement.
 - The bridging-cap estimate (1.2–3 nH [C]) is well below Ott's 5–10 nH; the cap's own ESL and via loop are probably under-counted. Calibrate with FastHenry before use.
 - No open EMI ground truth exists for KiCad boards. Coupons with pre-scan data are the only way to calibrate CM-V and LOOP-RAD.
 

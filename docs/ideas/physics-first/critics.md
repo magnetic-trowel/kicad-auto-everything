@@ -28,7 +28,7 @@ Tags: *new* (not found in the survey), *combo* (new combination of known parts),
 
 **PC10. Bridging-cap return estimator.** When a layer change switches the reference net, find the nearest capacitor between the two nets and estimate plane-pair spreading plus mounting L; report nH and the resulting ground-bounce mV at the net's dI/dt. This replaces "stitching cap within X mm" with a number. Test: FastHenry on 20 transitions; the current estimate (1.2–3 nH) is below Ott's 5–10 nH and needs calibration. *sharp, S*
 
-**PC11. Ott-anchored slot severity.** Use ΔV ∝ ℓ·ln(ℓ/ℓ0), fitted to Ott's measurements (ℓ0 ≈ 2.3 mm), as the default slot severity. Slots under about 2 mm are noise; longer slots grow faster than linearly. Test: openEMS sweep of slot length and width under a 50 Ω line. *sharp, S*
+**PC11. Ott-anchored slot severity.** Use ΔV ∝ ℓ·ln(ℓ/ℓ0), fitted to Ott's measurements (ℓ0 ≈ 2.3 mm), as the default slot severity. Slots under about 2 mm are noise; longer slots grow faster than linearly. Make the slot-line Z a function of g/h: the current proxy is within 18% of the in-repo PEEC for wide slots but 1.8× high for narrow ones. Test: openEMS sweep of slot length and width under a 50 Ω line. *sharp, S*
 
 **PC12. Spectral coincidence critic.** List the board's structural resonances (plane cavity, slot half-waves, island quarter-waves, via stubs) and its excitation lines (clock and switching harmonics up to f_knee). Score overlaps in dB. A resonance only matters if something drives it, so this beats blanket λ/20 stitching rules. Test: openEMS resonance list vs the critic's list on 5 boards. *new, M*
 
@@ -98,7 +98,7 @@ Tags: *new* (not found in the survey), *combo* (new combination of known parts),
 
 **PC41. Physics diff between two boards.** Per-budget deltas with attribution ("+1.2 nH: GND via of C12 moved 4 mm"). Reviewers and the LLM see what an edit cost. Test: reviewer time on 20 diffs. *new, M*
 
-**PC42. Human-relative physics.** Score the human reference with the same critics and report regressions relative to it, separating board-inherent issues from router-induced ones. Human boards are not physically perfect either: the prototype found USB lines on two of four boards changing reference from GND to a power plane through vias. Test: the router audit in [physics-critics](../../topics/physics/physics-critics.md). *sharp, S*
+**PC42. Human-relative physics.** Score the human reference with the same critics and report regressions relative to it, separating board-inherent issues from router-induced ones. Human boards are not physically perfect either: the prototype found USB lines on three of four boards changing reference between GND and a power plane at vias. Test: the router audit in [physics-critics](../../topics/physics/physics-critics.md). *sharp, S*
 
 **PC43. Physics best-of-k as a separate column.** Among clean attempts, pick the best by the physics scorecard and report "cpk-phys" next to cpk. It never changes cpk, but shows whether k attempts buy physics. Test: cpk-phys vs cpk on the Freerouting baseline. *new, S*
 

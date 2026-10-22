@@ -24,7 +24,9 @@ through the plane, deleted return vias, swapped plane nets) plus benign controls
 and reports which critic fired at the planted site (mutation testing, idea V1).
 
 Net roles come from name regexes here; the real system takes them from the role
-model. All thresholds are defaults to be replaced by budgets.
+model. All thresholds are defaults to be replaced by budgets. On a board with no
+reference fill at all, the VOID detour saturates at the 50 mm ray and RPQF-lite is
+meaningless. Results on four open boards: docs/topics/physics/physics-critics.md.
 
 Usage:  python3 -I pc_refplane.py BOARD.kicad_pcb [--json OUT] [--all-signals]
                                   [--k 1.0] [--via-dmax 2.0] [--selftest] [--seed 1]

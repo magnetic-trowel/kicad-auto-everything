@@ -108,3 +108,13 @@ for t_mm in (0.2, 1.0):
     for dmm in (2, 5, 10, 20):
         lx = MU0 * t_mm * 1e-3 / math.pi * math.log(dmm / 0.15) + 1e-9
         print(f"plane gap {t_mm} mm, cap at {dmm:>2} mm: +{lx * 1e9:.2f} nH")
+
+section("11. Shorted-slot-line VOID proxy (used by pc_refplane.py) vs the in-repo PEEC")
+# Reference values: tools/research/physics/fe_peec_plane.py (workstream 5), section "Slot crossing",
+# nH per mm of h for a trace (w = 2h) crossing the centre of a slot of length l and width g.
+peec = {(10, 0.5): 0.714, (25, 0.5): 1.960, (50, 0.5): 3.945, (100, 0.5): 7.670,
+        (10, 2.0): 1.421, (25, 2.0): 3.409, (50, 2.0): 6.376, (100, 2.0): 11.690}
+zs_over_v = 100.0 / (C0 / math.sqrt((4.5 + 1) / 2)) * 1e6  # nH per mm
+for (l_h, g_h), ref in peec.items():
+    proxy = zs_over_v * l_h / 4  # centred slot: two shorted stubs of l/2 in parallel -> Z_s/v * l/4
+    print(f"l/h {l_h:>3}, g/h {g_h}: proxy {proxy:5.2f}, PEEC {ref:5.2f} nH per mm of h -> ratio {proxy / ref:.2f}")
