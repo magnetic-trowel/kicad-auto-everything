@@ -26,6 +26,7 @@ HUMAN_POSES = {"11111111-1111-1111-1111-111111111111": (110, 105),
                ZERO: (105, 115), str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{ZERO}:1")): (110, 115)}
 R2 = "22222222-2222-2222-2222-222222222221"
 H1 = "55555555-5555-5555-5555-555555555551"
+SLOT = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"  # unlocked, but its Edge.Cuts slot is part of the outline
 
 
 def segment(a, b, net, layer="F.Cu", n=[0]):
@@ -111,6 +112,7 @@ ROUTE = {
 PLACE = {
     "place_honest": placed,
     "move_locked": lambda t: placed(set_pose(t, H1, 130, 112)),
+    "move_edge_cut": lambda t: placed(set_pose(t, SLOT, 130, 104)),
     "delete_footprint": lambda t: set_pose(remove_block(t, "footprint", R2),
                                            "11111111-1111-1111-1111-111111111111", 110, 105),
     "shrink_courtyard": lambda t: placed(first(t, "(start -1.5 -1)", "(start -0.1 -0.1)")),
