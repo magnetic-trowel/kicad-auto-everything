@@ -16,8 +16,10 @@ write-poses: POSES is a JSON list of {uuid or ref, x, y, rot, side}; a reference
 name exactly one footprint, and unknown, ambiguous or locked footprints fail the whole
 call (unless --allow-locked) before anything is written. A side change uses
 FOOTPRINT::Flip (left-right, about the footprint's own position); then SetOrientation
-and SetPosition. Nothing else is touched. Saved with SaveBoard(skip settings) to a
-temporary directory and moved to DEST, so no project file is written.
+and SetPosition. Nothing else is touched: the board is read and written with KiCad's
+plain S-expression reader and writer (PCB_IO_MGR.Load/Save). pcbnew.LoadBoard and
+SaveBoard build connectivity, which gives copper overlapping a pad that pad's net. The
+file is written to a temporary directory and moved to DEST, so no project file is written.
 """
 import json
 import os
@@ -79,6 +81,38 @@ def _load(path):
     if board is None:
         raise RuntimeError(f"could not load {path}")
     return board
+
+
+_WARM = []
+
+
+def _warm_up():
+    """pcbnew.LoadBoard sets up what KiCad's reader needs (wx image handlers for embedded
+    images); without that, PCB_IO_MGR.Load aborts the whole process on a board with an
+    image ("Failed to read image data"). Loading a minimal board once is enough (~5 ms)."""
+    if _WARM:
+        return
+    d = tempfile.mkdtemp(prefix="kae-warm-")
+    try:
+        p = os.path.join(d, "warm.kicad_pcb")
+        with open(p, "w") as f:
+            f.write('(kicad_pcb (version 20240108) (generator "pcbnew") (generator_version "8.0"))\n')
+        pcbnew.LoadBoard(p)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    _WARM.append(True)
+
+
+def _load_plain(path):
+    """The board as KiCad's S-expression reader returns it, with no project and no
+    connectivity. pcbnew.LoadBoard builds connectivity, which gives copper overlapping a
+    pad that pad's net, and a writer must not carry that into its output."""
+    if hasattr(pcbnew, "PCB_IO_MGR") and hasattr(pcbnew.PCB_IO_MGR, "KICAD_SEXP"):
+        _warm_up()
+        board = pcbnew.PCB_IO_MGR.Load(pcbnew.PCB_IO_MGR.KICAD_SEXP, path)
+        if board is not None:
+            return board
+    return _load(path)
 
 
 def _chain(lc):
@@ -158,10 +192,16 @@ def extract(path, out, courtyards=True, outline=True):
 
 
 def _save(board, dest):
+    """Write the board with KiCad's plain S-expression writer. pcbnew.SaveBoard first
+    rebuilds connectivity, which gives copper under a moved pad that pad's net (a GND
+    track became Net-(U1B-K) in a test); PCB_IO_MGR.Save writes the board as it is.
+    The file goes to a temporary directory first, so no project file is written."""
     d = tempfile.mkdtemp(prefix="kae-save-")
     try:
         tmp = os.path.join(d, os.path.basename(dest))
-        if not pcbnew.SaveBoard(tmp, board, True):
+        if hasattr(pcbnew, "PCB_IO_MGR") and hasattr(pcbnew.PCB_IO_MGR, "KICAD_SEXP"):
+            pcbnew.PCB_IO_MGR.Save(pcbnew.PCB_IO_MGR.KICAD_SEXP, tmp, board)
+        elif not pcbnew.SaveBoard(tmp, board, True):
             raise RuntimeError(f"could not save {dest}")
         shutil.move(tmp, dest)
     finally:
@@ -171,7 +211,7 @@ def _save(board, dest):
 def write_poses(path, poses_path, out, dest, allow_locked=False):
     with open(poses_path) as f:
         poses = json.load(f)
-    board = _load(path)
+    board = _load_plain(path)
     keys, alias = _keys(board)
     by_uuid, by_ref = dict(alias), {}
     for fp, key in zip(board.GetFootprints(), keys):
@@ -221,7 +261,7 @@ def write_poses(path, poses_path, out, dest, allow_locked=False):
 
 
 def resave(path, out, dest):
-    _save(_load(path), dest)
+    _save(_load_plain(path), dest)
     _write(out, dict(ok=True, path=dest))
     _status(dict(ok=True))
 

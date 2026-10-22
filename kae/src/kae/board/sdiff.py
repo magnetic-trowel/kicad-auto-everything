@@ -3,7 +3,8 @@
 """Structural diff of two .kicad_pcb files.
 
 Top-level objects are keyed by (head, uuid), or (head, name#ordinal) for objects
-without a uuid, and compared as token trees: numbers within `tol` (mm or degrees) are
+without a uuid (zones without one, i.e. teardrops, by their content), and compared as
+token trees: numbers within `tol` (mm or degrees) are
 equal, and an `(at x y a)` with a = 0 mod 360 equals `(at x y)`. A footprint's items are
 paired by uuid (KiCad sorts them when it saves). Zone fills are compared too.
 
@@ -13,14 +14,27 @@ paired by uuid (KiCad sorts them when it saves). Zone fills are compared too.
 With rotation_artifacts=True, two things pcbnew does when it rotates or flips a
 footprint, and does not undo when it turns it back, compare equal: an `fp_rect` turned to
 an off-axis angle is stored from then on as a 4-point `fp_poly` with the same corners,
-and text (fields, fp_text) angles are kept upright, so they may differ by 180 degrees.
+and text (fields, fp_text) is kept upright, so its angle may differ by 180 degrees with
+left and right justification swapped.
 """
+import hashlib
 from pathlib import Path
 
 from . import sexpr
 
 
+def _canon(node):
+    """A stable text for a token tree, numbers rounded to 1e-4."""
+    if type(node) is list:
+        return "(" + " ".join(_canon(x) for x in node) + ")"
+    f = _num(node)
+    return node if f is None else f"{f:.4f}"
+
+
 def _key_items(tree):
+    """Top-level objects by (head, uuid); objects without a uuid by (head, name#ordinal),
+    except zones without one (teardrops, which KiCad saves in no fixed order), which are
+    keyed by their content."""
     out, seen = {}, {}
     for node in tree[1:]:
         if type(node) is not list or not node:
@@ -28,7 +42,10 @@ def _key_items(tree):
         head = node[0]
         u = sexpr.value(node, "uuid") or sexpr.value(node, "tstamp")
         if u is None:
-            name = node[1] if len(node) > 1 and type(node[1]) is str else ""
+            if head == "zone":
+                name = "content:" + hashlib.sha1(_canon(node).encode()).hexdigest()[:16]
+            else:
+                name = node[1] if len(node) > 1 and type(node[1]) is str else ""
             seen[(head, name)] = seen.get((head, name), 0) + 1
             u = f"{name}#{seen[(head, name)]}"
         out[(head, u)] = node
@@ -81,6 +98,9 @@ def _artifacts(node):
             if type(c) is list and len(c) == 4 and c[0] == "at":
                 a = _num(c[3])
                 c = c[:3] if a is None or a % 180.0 == 0 else c[:3] + [str(a % 180.0)]
+            elif type(c) is list and c and c[0] == "effects":
+                c = [[x for x in e if x not in ("left", "right")] if type(e) is list and e and e[0] == "justify"
+                      else e for e in c]
             out.append(c)
         return out
     return node

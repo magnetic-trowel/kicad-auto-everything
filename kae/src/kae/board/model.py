@@ -21,6 +21,13 @@ Beyond the contract (documented extras, all with defaults): `Pad.uuid, slot, rra
 offset`; `Footprint.courtyard_back, edge_cuts, path, sheet, flags`; `Board.generator,
 layers, thickness, warnings`; `Stackup.thickness, source`; the `Rules` extras below.
 
+Footprint.flags (loader notes, "<flag>:<library layer>" for courtyards):
+courtyard_malformed (a chain does not close); courtyard_gap (drawn endpoints joined across
+a gap of up to 20 um, as KiCad's chaining does); courtyard_overlap (outlines overlap or
+touch: we keep their union, KiCad's DRC copy is not deflated); courtyard_degenerate (a
+contour without area was dropped); uuid_synthesized / uuid_duplicate (see
+kicad_file.synth_uuid); bad_graphic:<kind>.
+
 Geometry fields hold shapely objects; `to_dict` writes polygons as lists of rings
 (`[shell, hole, ...]`, each ring a list of [x, y]) and lines as lists of [x, y].
 """
@@ -153,7 +160,7 @@ class Footprint(_Dict):
     edge_cuts: list = field(default_factory=list)       # LineStrings on Edge.Cuts, library frame
     path: str = ""                   # schematic path
     sheet: str = ""                  # schematic sheet name
-    flags: list = field(default_factory=list)  # loader notes, e.g. 'courtyard_malformed'
+    flags: list = field(default_factory=list)  # loader notes (module docstring)
 
     _to = {"pads": lambda v: [p.to_dict() for p in v], "courtyard": _polys_to, "body": _polys_to,
            "courtyard_back": _polys_to, "edge_cuts": _lines_to}

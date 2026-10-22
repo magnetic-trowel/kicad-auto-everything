@@ -90,6 +90,12 @@ class Terms:
         self.structs: list[Struct] = []
         self.thermal = None
         self.warnings = []
+        from . import jit as _jit
+        self.kern = None
+        if self.knobs.jit == 'on' or (self.knobs.jit == 'auto' and _jit.enabled()):
+            self.kern = _jit.nb()
+            if _jit.compile_seconds() == 0.0:
+                _jit.warm(self.kern)
         from .build import build_structures
         build_structures(self)
         # incidence
@@ -102,9 +108,16 @@ class Terms:
             for i in s.members:
                 self.inc.setdefault(i, []).append(k)
         self.th_parts = set(self.thermal.parts) if self.thermal is not None else set()
+        for s in self.structs:
+            cof = {}
+            for ci, c in enumerate(s.comps):
+                for i in c.parts:
+                    cof.setdefault(i, []).append(ci)
+            s.info['_cof'] = cof
         self._last = [None] * n
         self._epoch = [0] * n
         self._ccache = [[None] * len(s.comps) for s in self.structs]
+        self._scache = [None] * len(self.structs)
         self._th_epochs = None
         self._th_T = None
 
@@ -132,43 +145,89 @@ class Terms:
             tot += self._th_cost(self._th_current())
         return tot
 
+    def total_by_kind(self, poses):
+        """{kind: cost} at these poses."""
+        self._sync_all(poses)
+        out = {}
+        for k, s in enumerate(self.structs):
+            out[s.kind] = out.get(s.kind, 0.0) + self._cost(s, self._value(k))
+        if self.thermal is not None:
+            out['thermal'] = self._th_cost(self._th_current())
+        return out
+
     def delta(self, poses, moved_uuids, new_poses):
+        return self._delta(poses, moved_uuids, new_poses, None)
+
+    def delta_by_kind(self, poses, moved_uuids, new_poses):
+        """Like delta, split by structure kind: {kind: change of that kind's cost}."""
+        out = {}
+        self._delta(poses, moved_uuids, new_poses, out)
+        return out
+
+    def _delta(self, poses, moved_uuids, new_poses, per_kind):
         if isinstance(new_poses, dict):
             new_poses = [new_poses[u] for u in moved_uuids]
         mv = []
+        u2i = self.u2i
+        inc = self.inc
         for u, p in zip(moved_uuids, new_poses):
-            i = self.u2i.get(u)
-            if i is not None and (i in self.inc or i in self.th_parts):
+            i = u2i.get(u)
+            if i is not None and (i in inc or i in self.th_parts):
                 mv.append((i, p))
         if not mv:
             return 0.0
-        touched = set()
-        for i, _ in mv:
-            touched.update(self.inc.get(i, ()))
+        if len(mv) == 1:
+            touched = inc.get(mv[0][0], ())
+        else:
+            touched = set()
+            for i, _ in mv:
+                touched.update(inc.get(i, ()))
         st = self.st
-        d = 0.0
-        mset = {i for i, _ in mv}
+        structs = self.structs
+        uids = self.uids
+        last = self._last
+        # 1. bring the touched structures' members in step with `poses`; current values
+        cur = []
         for k in touched:
-            s = self.structs[k]
-            for j in s.members:
-                self._sync(j, poses)
-            cur = self._value(k)
-            saved = [(i, st.get(i)) for i, _ in mv]
-            for i, p in mv:
-                st.set(i, *p)
-            vals = []
+            for j in structs[k].members:
+                p = poses.get(uids[j])
+                if p is not None and p is not last[j]:
+                    self._sync(j, poses)
+            cur.append(self._value(k))
+        # 2. new values with the moved parts at their trial poses
+        saved = [(i, st.get(i)) for i, _ in mv]
+        for i, p in mv:
+            st.set(i, *p)
+        d = 0.0
+        for idx, k in enumerate(touched):
+            s = structs[k]
+            cof = s.info['_cof']
             cache = self._ccache[k]
-            for ci, c in enumerate(s.comps):
-                if mset.intersection(c.parts):
-                    vals.append(c.value(st))
-                else:
-                    vals.append(cache[ci][0])
-            for i, p in saved:
-                st.set(i, *p)
-            new = _red(s.reduce, vals, s.info.get('weights'))
-            d += self._cost(s, new) - self._cost(s, cur)
-        if self.thermal is not None and mset & self.th_parts:
-            d += self._th_delta(poses, mv)
+            if len(s.comps) == 1:
+                new = _red(s.reduce, [s.comps[0].value(st)], s.info.get('weights'))
+            else:
+                vals = [c[0] for c in cache]
+                for i, _ in mv:
+                    for ci in cof.get(i, ()):
+                        vals[ci] = None
+                for ci, v in enumerate(vals):
+                    if v is None:
+                        vals[ci] = s.comps[ci].value(st)
+                new = _red(s.reduce, vals, s.info.get('weights'))
+            dk = self._cost(s, new) - self._cost(s, cur[idx])
+            d += dk
+            if per_kind is not None:
+                per_kind[s.kind] = per_kind.get(s.kind, 0.0) + dk
+        for i, p in saved:
+            st.set(i, *p)
+        if self.thermal is not None:
+            for i, _ in mv:
+                if i in self.th_parts:
+                    dt = self._th_delta(poses, mv)
+                    d += dt
+                    if per_kind is not None:
+                        per_kind['thermal'] = per_kind.get('thermal', 0.0) + dt
+                    break
         return d
 
     def breakdown(self, poses):
@@ -219,17 +278,23 @@ class Terms:
 
     def _value(self, k):
         s = self.structs[k]
-        cache = self._ccache[k]
         ep = self._epoch
+        e = tuple([ep[i] for i in s.members])
+        sc = self._scache[k]
+        if sc is not None and sc[0] == e:
+            return sc[1]
+        cache = self._ccache[k]
         vals = []
         for ci, c in enumerate(s.comps):
-            e = tuple(ep[i] for i in c.parts)
+            ce = tuple([ep[i] for i in c.parts])
             cc = cache[ci]
-            if cc is None or cc[1] != e:
-                cc = (c.value(self.st), e)
+            if cc is None or cc[1] != ce:
+                cc = (c.value(self.st), ce)
                 cache[ci] = cc
             vals.append(cc[0])
-        return _red(s.reduce, vals, s.info.get('weights'))
+        v = _red(s.reduce, vals, s.info.get('weights'))
+        self._scache[k] = (e, v)
+        return v
 
     # thermal ---------------------------------------------------------------
     def _th_targets_of(self, i):

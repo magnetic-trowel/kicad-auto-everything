@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import shapely
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from . import kicad_file, transform
@@ -134,7 +134,9 @@ def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
     A side change uses FOOTPRINT::Flip (left-right, about the footprint's own position),
     then SetOrientation and SetPosition; nothing else changes. Unknown, ambiguous or
     locked footprints (unless allow_locked) fail the call before anything is written.
-    pcbnew's SaveBoard writes `dst_path` only (no project files). Returns {moved, flipped}.
+    KiCad's plain reader and writer (PCB_IO_MGR.Load/Save) are used, with no connectivity
+    (pcbnew.LoadBoard/SaveBoard's would give copper under a moved pad that pad's net), and
+    only `dst_path` is written, no project files. Returns {moved, flipped}.
 
     The older argument order write_poses(src_path, poses, dst_path) is also accepted.
     """
@@ -154,7 +156,7 @@ def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
 
 
 def resave(path_in, path_out, timeout=900):
-    """pcbnew load + save, nothing changed (the baseline for structural diffs)."""
+    """pcbnew load + plain save, nothing changed (the baseline for structural diffs)."""
     return _run("resave", lambda out: [_abs(path_in), out, _abs(path_out)], timeout)
 
 
@@ -297,9 +299,7 @@ def verify(path, board=None, data=None, courtyards=True, worst=10):
         if courtyards and "courtyard" in k:
             own, opp = transform.courtyard_layers(fp)
             for which, layer in (("own", own), ("opposite", opp)):
-                lib_layer = "F.CrtYd" if which == "own" else "B.CrtYd"
-                raw = f"courtyard_overlap:{lib_layer}" in fp.flags   # KiCad keeps such contours raw
-                ours = transform.courtyard(fp, which=which, deflate=0.0 if raw else deflate)
+                ours = transform.courtyard(fp, which=which, deflate=deflate)
                 theirs = _polys(k["courtyard"].get(layer, []))
                 if not ours and not theirs:
                     continue

@@ -95,4 +95,5 @@ def mcu_parts(rail='+3V3', sheet=''):
            [('1', 'XIN', '1', 'passive'), ('2', 'GND', '2', 'passive'), ('3', 'XOUT', '3', 'passive'), ('4', 'GND', '4', 'passive')]),
         C('C16', '20pF', 'XIN', 'GND'), C('C17', '20pF', 'XOUT', 'GND'),
         R('R10', '10k', rail, 'NRST'),
+        R('R11', '1k', 'SENSOR', 'ADC_IN0'), C('C18', '10nF', 'ADC_IN0', 'GND'),
     ]

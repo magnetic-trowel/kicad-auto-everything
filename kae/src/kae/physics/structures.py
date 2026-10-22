@@ -52,7 +52,8 @@ def txy(st, t):
 
 
 class State:
-    """Pose arrays shared by all components (lists for fast scalar access)."""
+    """Pose arrays shared by all components: Python lists for scalar access and numpy
+    mirrors for the JIT kernels (kept in step by `set`)."""
 
     def __init__(self, n):
         self.X = [0.0] * n
@@ -61,10 +62,17 @@ class State:
         self.C = [1.0] * n
         self.S = [0.0] * n
         self.G = [1.0] * n
+        self.Xa = np.zeros(n)
+        self.Ya = np.zeros(n)
+        self.Ca = np.ones(n)
+        self.Sa = np.zeros(n)
+        self.Ga = np.ones(n)
 
     def set(self, i, x, y, rot, side):
-        self.X[i] = float(x)
-        self.Y[i] = float(y)
+        x = float(x)
+        y = float(y)
+        self.X[i] = x
+        self.Y[i] = y
         rot = float(rot) % 360.0
         self.R[i] = rot
         if rot == 0.0:
@@ -81,9 +89,15 @@ class State:
         self.C[i] = c
         self.S[i] = s
         if isinstance(side, str):
-            self.G[i] = -1.0 if side[:1] in ('B', 'b') else 1.0
+            g = -1.0 if side[:1] in ('B', 'b') else 1.0
         else:
-            self.G[i] = -1.0 if side < 0 else 1.0
+            g = -1.0 if side < 0 else 1.0
+        self.G[i] = g
+        self.Xa[i] = x
+        self.Ya[i] = y
+        self.Ca[i] = c
+        self.Sa[i] = s
+        self.Ga[i] = g
 
     def get(self, i):
         return (self.X[i], self.Y[i], self.R[i], 'F' if self.G[i] > 0 else 'B')
@@ -91,16 +105,13 @@ class State:
 
 # ============================================================================ loops
 class LoopComp:
-    """Loop inductance (nH) of a closed chain of terminals.
+    """Loop inductance (nH) of a closed chain of terminals (kernel: jit.loop_core).
 
     terms: list of Term in current order; kinds[k] for the hop T_k -> T_{k+1}: 'board' or
     'body'; widths[k]; zb[k] body height for 'body' hops; gnd_hop: index of the board hop
-    on the return (ground) net, or None; gnd_nets: set of ground net names.
+    on the return (ground) net, or None; gnd_nets: set of ground net names."""
 
-    Fast path: per-height caches for the rigid parts (body self terms, terminations, the via
-    return); one fused direct-minus-image kernel per surviving segment pair."""
-
-    def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15):
+    def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15, kern=None):
         self.bv = bv
         self.T = terms
         self.kinds = kinds
@@ -114,125 +125,42 @@ class LoopComp:
         self.rvia = rvia
         n = len(terms)
         self.n = n
-        self.body = [k for k in range(n) if kinds[k] == 'body']
-        self.board = [k for k in range(n) if kinds[k] != 'body']
-        self.pairs = [(j, k) for j in range(n) for k in range(j + 1, n)]
-        self.dmin = [[0.2235 * (min(widths[j], widths[k]) + 0.035) for k in range(n)] for j in range(n)]
-        self._hc = {}
-        self._vc = {}
-        self.tl = [(t.i, t.lx, t.ly) for t in terms]
-
-    def _hcache(self, h):
-        key = round(h, 3) if h != INF else INF
-        v = self._hc.get(key)
-        if v is None:
-            hb = 0.0 if h == INF else h
-            ties = 0.0
-            selfb = {}
-            for k in self.body:
-                t0, t1 = self.T[k], self.T[(k + 1) % self.n]
-                d = _hyp(t0.lx - t1.lx, t0.ly - t1.ly)
-                r = gmd_rect(self.w[k])
-                z = self.zb[k]
-                if h != INF:
-                    ties += FL._vertical_terms([], [(0.0, 0.0, hb, hb + z, r), (d, 0.0, hb + z, hb, r)])
-                else:
-                    ties += 2.0 * FL.m_self(z, r) - 2.0 * FL.m_par(z, z, 0.0, max(d, 1e-6))
-                selfb[k] = FL.strip_self(d, self.w[k], (h + z) if h != INF else INF)
-            consts = {k: FL.strip_consts(self.w[k], h) for k in self.board}
-            v = (ties, selfb, consts)
-            self._hc[key] = v
-        return v
-
-    def _via_return(self, h, d):
-        key = (round(h, 3), round(d, 2))
-        v = self._vc.get(key)
-        if v is None:
-            r = self.rvia
-            d = max(d, 2.0 * r)
-            v = 2.0 * (FL.m_self(h, r) + FL._collinear(h, h, 0.0)) \
-                - 2.0 * (FL.m_par(h, h, 0.0, d) + FL.m_par(h, h, -2.0 * h, d))
-            if len(self._vc) < 50000:
-                self._vc[key] = v
-        return v
+        bodyd = []
+        for k in range(n):
+            t0, t1 = terms[k], terms[(k + 1) % n]
+            bodyd.append(_hyp(t0.lx - t1.lx, t0.ly - t1.ly) if kinds[k] == 'body' else 0.0)
+        self.l_ti = [t.i for t in terms]
+        self.l_lx = [t.lx for t in terms]
+        self.l_ly = [t.ly for t in terms]
+        self.l_body = [k == 'body' for k in kinds]
+        self.l_w = list(map(float, widths))
+        self.l_zb = list(map(float, zb))
+        self.l_bd = bodyd
+        self.a_ti = np.array(self.l_ti, np.int64)
+        self.a_lx = np.array(self.l_lx)
+        self.a_ly = np.array(self.l_ly)
+        self.a_body = np.array(self.l_body, np.bool_)
+        self.a_w = np.array(self.l_w)
+        self.a_zb = np.array(self.l_zb)
+        self.a_bd = np.array(bodyd)
+        self.g = -1 if gnd_hop is None else int(gnd_hop)
+        self.l_scr = ([0.0] * n, [0.0] * n, [0.0] * n)
+        self.a_scr = (np.zeros(n), np.zeros(n), np.zeros(n))
+        self.kern = kern
 
     def value(self, st):
-        n = self.n
-        X, Y, C, S, G = st.X, st.Y, st.C, st.S, st.G
-        px = [0.0] * n
-        py = [0.0] * n
-        sx = sy = 0.0
-        for k, (i, lx, ly) in enumerate(self.tl):
-            c = C[i]
-            s = S[i]
-            ly = ly * G[i]
-            x = X[i] + lx * c + ly * s
-            y = Y[i] - lx * s + ly * c
-            px[k] = x
-            py[k] = y
-            sx += x
-            sy += y
-        side = G[self.tl[0][0]]
-        h = self.bv.h_ref(side, sx / n, sy / n)
-        ties, selfb, consts = self._hcache(h)
-        zb = self.zb
-        hs = [((h + zb[k]) if h != INF else INF) if self.kinds[k] == 'body' else h for k in range(n)]
-        f = self.detour
-        ex0, ey0, ex1, ey1 = px[:], py[:], px[1:] + px[:1], py[1:] + py[:1]
-        if f != 1.0:
-            for k in self.board:
-                mx, my = 0.5 * (ex0[k] + ex1[k]), 0.5 * (ey0[k] + ey1[k])
-                ex0[k], ey0[k] = mx + (ex0[k] - mx) * f, my + (ey0[k] - my) * f
-                ex1[k], ey1[k] = mx + (ex1[k] - mx) * f, my + (ey1[k] - my) * f
-        g = self.gnd_hop
-        A = ties
-        B = 0.0
-        for k in self.body:
-            A += selfb[k]
-        msf = FL.m_self
-        for k in self.board:
-            a, de = consts[k]
-            ln = _hyp(ex1[k] - ex0[k], ey1[k] - ey0[k])
-            sk = msf(ln, a) - (msf(ln, de) if de != INF else 0.0)
-            if k == g:
-                B = sk
-            else:
-                A += sk
-        MAB = 0.0
-        cm = self.cos_min
-        pm = FL.pair_mut
-        dmin = self.dmin
-        for j, k in self.pairs:
-            adj = (k == j + 1 or (j == 0 and k == n - 1)) and hs[j] == hs[k]
-            if k == j + 1 or not adj:
-                m = pm(ex0[j], ey0[j], ex1[j], ey1[j], ex0[k], ey0[k], ex1[k], ey1[k], hs[j], hs[k], adj, cm, dmin[j][k])
-            else:   # (0, n-1): segment n-1 ends where segment 0 starts
-                m = pm(ex0[k], ey0[k], ex1[k], ey1[k], ex0[j], ey0[j], ex1[j], ey1[j], hs[k], hs[j], adj, cm, dmin[j][k])
-            if j == g or k == g:
-                MAB += 0.5 * m
-            else:
-                A += m
-        thru = [k for k in self.board if G[self.tl[k][0]] != G[self.tl[(k + 1) % n][0]]]
-        if thru:
-            t = self.bv.thickness
-            r = self.rvia
-            for a_ in range(len(thru)):
-                A += FL.m_self(t, r)
-                for b_ in range(a_ + 1, len(thru)):
-                    ka, kb = thru[a_], thru[b_]
-                    d = _hyp(ex1[ka] - ex1[kb], ey1[ka] - ey1[kb])
-                    A -= 2.0 * FL.m_par(t, t, 0.0, max(d, r))
-        if g is None:
-            return A
-        lateral = A + B + 2.0 * MAB
-        if h == INF:
-            return lateral
-        if self.bv.plane_net(side, 0.5 * (ex0[g] + ex1[g]), 0.5 * (ey0[g] + ey1[g])) not in self.gnd_nets:
-            return lateral
-        Cv = self._via_return(h, _hyp(ex1[g] - ex0[g], ey1[g] - ey0[g]))
-        if B + Cv <= 1e-12:
-            return lateral
-        return A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv)
+        bv = self.bv
+        x0, y0, res, Hf, Nf = bv._hraster[1]
+        _, _, _, Hb, Nb = bv._hraster[-1]
+        if self.kern is not None:
+            return self.kern.loop_core(st.Xa, st.Ya, st.Ca, st.Sa, st.Ga, self.a_ti, self.a_lx, self.a_ly, self.a_body,
+                                       self.a_w, self.a_zb, self.a_bd, self.n, self.g, self.cos_min, self.detour,
+                                       bv.thickness, self.rvia, Hf, Hb, Nf, Nb, bv.gmask(self.gnd_nets), x0, y0, res,
+                                       *self.a_scr)
+        from .jit import PY
+        return PY.loop_core(st.X, st.Y, st.C, st.S, st.G, self.l_ti, self.l_lx, self.l_ly, self.l_body, self.l_w,
+                            self.l_zb, self.l_bd, self.n, self.g, self.cos_min, self.detour, bv.thickness, self.rvia,
+                            Hf, Hb, Nf, Nb, bv.gmask(self.gnd_nets), x0, y0, res, *self.l_scr)
 
 
 class PlanePairLoop:
@@ -385,8 +313,13 @@ class LoopShape:
                 area *= 0.5
             chord = (pts[-1][0] - pts[0][0], pts[-1][1] - pts[0][1])
             self._geo = (pts, (cx, cy), size, area, chord)
+            self._arr = np.array(pts[:n], float)
             self._key = key
         return self._geo
+
+    def arr(self, st):
+        self.geo(st)
+        return self._arr
 
 
 def _dipoles(geo, h, closed, z):
@@ -451,12 +384,51 @@ class NodeShape:
             cy = sum(y * a for _, y, a in out) / at
             ext = max(max(abs(x - cx), abs(y - cy)) for x, y, _ in out) * 2.0
             self._pat = (out, cx, cy, at, ext)
+            a = np.array(out, float)
+            self._arrs = (np.ascontiguousarray(a[:, 0]), np.ascontiguousarray(a[:, 1]), np.ascontiguousarray(a[:, 2]))
             self._key = key
         return self._pat
+
+    def arrs(self, st):
+        self.patches(st)
+        return self._arrs
+
+
+_SCR = None
+
+
+def _scratch():
+    global _SCR
+    if _SCR is None:
+        _SCR = tuple(np.zeros((512, 3)) for _ in range(4))
+    return _SCR
+
+
+def _mutual(kern, al, vl, st, h):
+    if kern is None:
+        return loop_mutual(al, vl, st, h)
+    from .jit import GAUSS
+    PA = al.arr(st)
+    PV = vl.arr(st)
+    if (PA.shape[0] + 2) * 6 > 512 or (PV.shape[0] + 2) * 6 > 512:
+        return loop_mutual(al, vl, st, h)
+    za = (1.6 if h == INF else h) + al.z
+    zv = (1.6 if h == INF else h) + vl.z
+    return kern.loop_mutual_core(PA, al.closed, za, PV, vl.closed, zv, h, *GAUSS, *_scratch())
+
+
+def _cm(kern, an, vn, st, h, eps_r):
+    if kern is None:
+        return patches_cm(an.patches(st), vn.patches(st), h, eps_r)
+    xa, ya, aa = an.arrs(st)
+    xv, yv, av = vn.arrs(st)
+    hh = 1.6 if h == INF else max(h, 0.05)
+    return kern.patches_cm_core(xa, ya, aa, xv, yv, av, hh, eps_r, EPS0)
 
 
 class CouplingComp:
     """Noise (mV) one aggressor puts on one victim: |M| di/dt + capacitive pickup."""
+    kern = None
 
     def __init__(self, bv, agg_loop, agg_node, vic_loop, vic_node, didt, dv, t_sw, z_v, gnd_plane):
         self.bv = bv
@@ -475,12 +447,12 @@ class CouplingComp:
         if self.al is not None and self.vl is not None and self.didt > 0:
             ga = self.al.geo(st)
             h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
-            v += loop_mutual(self.al, self.vl, st, h) * self.didt * 1e3        # nH * A/ns = V -> mV
+            v += _mutual(self.kern, self.al, self.vl, st, h) * self.didt * 1e3        # nH * A/ns = V -> mV
         if self.an is not None and self.vn is not None:
             na = self.an.patches(st)
             nv = self.vn.patches(st)
             h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
-            cm = patches_cm(na, nv, h, bv.er)
+            cm = _cm(self.kern, self.an, self.vn, st, h, bv.er)
             hh = 1.6 if h == INF else max(h, 0.05)
             cv = _cself(nv[3], hh, bv.er) + 5.0                                  # + pins (E5 5 pF)
             # charge division for a high-impedance victim, C dv/dt Z for a low one
@@ -547,14 +519,17 @@ class ThermalField:
     """Board temperature rise at victims and sources by the fin kernel with images.
 
     G(t, s) = sum_images K0(|r_t - r_img|/lam) / (2 pi G_s) over the adiabatic-edge image
-    lattice of the board's bounding box (`rings` rings); a source's own rise replaces its
-    real (r ~ 0) term by the disk-averaged self term (1 - x K1(x)) / (pi a^2 h_tot),
-    x = a/lam. Cached as a matrix G[t, s] (K/W); a moved source updates a column, a moved
-    victim a row."""
+    lattice of the board's bounding box (`rings` rings: (2(2 rings + 1))^2 images); a
+    source's own rise replaces its real (r ~ 0) term by the disk-averaged self term
+    (1 - x K1(x)) / (pi a^2 h_tot), x = a/lam. Cached as a matrix G[t, s] (K/W); a moved
+    source updates a column and its row, a moved victim its row. K0 is the polynomial of
+    jit.k0 in both the JIT and the fallback path."""
 
-    def __init__(self, bv, sources, victims, gs, lam, rings=1):
-        from scipy.special import k0, k1
-        self._k0 = k0
+    def __init__(self, bv, sources, victims, gs, lam, rings=1, kern=None):
+        from scipy.special import k1
+        from .jit import PY
+        self.kern = kern
+        self.py = PY
         self.bv = bv
         self.src = [s[0] for s in sources]
         self.P = np.array([s[1] for s in sources], float)
@@ -571,13 +546,15 @@ class ThermalField:
         self.G = np.zeros((len(self.targets), ns))
         x = self.a / lam
         htot = gs / (lam * lam)
-        # self correction: disk-averaged self term minus the point kernel at r = a
-        self.selfcorr = (1.0 - x * k1(x)) / (math.pi * self.a * self.a * htot) - k0(x) / (2.0 * math.pi * gs)
+        k0v = np.array([PY.k0(float(v)) for v in x])
+        self.selfcorr = (1.0 - x * k1(x)) / (math.pi * self.a * self.a * htot) - k0v / (2.0 * math.pi * gs)
         r = rings
         self.ms = np.arange(-r, r + 1, dtype=float)
+        self.norm = 1.0 / (2.0 * math.pi * gs)
+        self._colbuf = np.zeros(len(self.targets))
+        self._rowbuf = np.zeros(ns)
 
     def _imgs(self, xs, ys):
-        """x- and y-image coordinates (..., 2(2r+1)) for source positions xs, ys (arrays)."""
         x0, y0, Lx, Ly = self.box
         u = np.asarray(xs, float)[..., None] - x0
         v = np.asarray(ys, float)[..., None] - y0
@@ -586,21 +563,22 @@ class ThermalField:
         iy = y0 + np.concatenate([2 * m * Ly + v, 2 * m * Ly - v], axis=-1)
         return ix, iy
 
-    def _kern(self, tx, ty, ix, iy, a):
-        """sum over images of K0(max(r, a)/lam)/(2 pi G_s); tx, ty: (n,), ix, iy: (n, k), a: (n,)"""
-        dx = tx[:, None, None] - ix[:, :, None]
-        dy = ty[:, None, None] - iy[:, None, :]
-        r = np.sqrt(dx * dx + dy * dy)
-        r = np.maximum(r, a[:, None, None])
-        return self._k0(r / self.lam).sum(axis=(1, 2)) / (2.0 * math.pi * self.gs)
+    def _fin(self, tx, ty, ix, iy, a):
+        k = self.kern if self.kern is not None else self.py
+        return k.fin_sum(tx, ty, ix, iy, a, self.lam)
 
     def column(self, st, k):
         i = self.src[k]
-        ix, iy = self._imgs([st.X[i]], [st.Y[i]])
-        nt = len(self.targets)
+        ix, iy = self._imgs(st.X[i], st.Y[i])
         tx = np.array([st.X[t] for t in self.targets])
         ty = np.array([st.Y[t] for t in self.targets])
-        g = self._kern(tx, ty, np.repeat(ix, nt, 0), np.repeat(iy, nt, 0), np.full(nt, self.a[k]))
+        out = self._colbuf
+        if self.kern is not None:
+            self.kern.fin_column(tx, ty, ix, iy, self.a[k], self.lam, out)
+        else:
+            for t in range(len(tx)):
+                out[t] = self.py.fin_sum(tx[t], ty[t], ix, iy, self.a[k], self.lam)
+        g = out * self.norm
         g[k] += self.selfcorr[k]
         return g
 
@@ -609,9 +587,14 @@ class ThermalField:
         xs = np.array([st.X[s] for s in self.src])
         ys = np.array([st.Y[s] for s in self.src])
         ix, iy = self._imgs(xs, ys)
-        ns = len(self.src)
-        g = self._kern(np.full(ns, st.X[i]), np.full(ns, st.Y[i]), ix, iy, self.a)
-        if t < ns:
+        out = self._rowbuf
+        if self.kern is not None:
+            self.kern.fin_row(st.X[i], st.Y[i], ix, iy, self.a, self.lam, out)
+        else:
+            for k in range(len(xs)):
+                out[k] = self.py.fin_sum(st.X[i], st.Y[i], ix[k], iy[k], self.a[k], self.lam)
+        g = out * self.norm
+        if t < len(self.src):
             g[t] += self.selfcorr[t]
         return g
 
@@ -624,6 +607,7 @@ class ThermalField:
 # ============================================================================ world node
 class CmComp:
     """Common-mode current (uA) an aggressor drives onto one cable connector's cable."""
+    kern = None
 
     def __init__(self, bv, agg_loop, agg_node, conn_loop, conn_node, I, V, t_sw, gnd_plane, world):
         self.bv = bv
@@ -647,12 +631,11 @@ class CmComp:
         if self.al is not None and self.cl is not None and self.Iamp > 0:
             ga = self.al.geo(st)
             h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
-            i_cm += w * loop_mutual(self.al, self.cl, st, h) * self.Iamp / self.zcm   # nH*rad/ns*A/ohm = A
+            i_cm += w * _mutual(self.kern, self.al, self.cl, st, h) * self.Iamp / self.zcm   # nH*rad/ns*A/ohm = A
         if self.an is not None and self.cn is not None:
             na = self.an.patches(st)
-            nv = self.cn.patches(st)
             h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
-            cm = patches_cm(na, nv, h, bv.er)
+            cm = _cm(self.kern, self.an, self.cn, st, h, bv.er)
             i_cm += w * cm * 1e-3 * self.Vamp                  # pF*rad/ns*V = mA -> A
         return i_cm * 1e6
 
@@ -665,6 +648,7 @@ class EsdComp:
         self.bv = bv
         self.tc, self.tp, self.ti, self.tg = t_conn, t_prot, t_ic, t_prot_gnd
         self.w = w
+        self._hc = {}
         self.parts = tuple(sorted({t.i for t in (t_conn, t_prot, t_ic) if t is not None}))
 
     def value(self, st):
@@ -673,7 +657,11 @@ class EsdComp:
         side = st.G[self.tp.i]
         h = self.bv.h_ref(side, px, py)
         hh = self.bv.thickness if h == INF else h
-        lp = FL.strip_self(1.0, self.w, hh)          # nH per mm (1 mm segment)
+        cc = self._hc.get(hh)
+        if cc is None:
+            cc = (FL.strip_self(1.0, self.w, hh), FL.m_self(hh, 0.15) + FL._collinear(hh, hh, 0.0))
+            self._hc[hh] = cc
+        lp, lv = cc
         if self.ti is not None:
             bx, by = txy(st, self.ti)
             ux, uy = bx - ax, by - ay
@@ -691,8 +679,6 @@ class EsdComp:
         else:
             stub, beyond = _hyp(px - ax, py - ay), 0.0
         # ground connection of the protector: a via to the plane (or the board thickness)
-        r = 0.15
-        lv = FL.m_self(hh, r) + FL._collinear(hh, hh, 0.0)
         return lp * (stub + 2.0 * beyond) + lv
 
 

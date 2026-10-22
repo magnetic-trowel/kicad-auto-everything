@@ -35,7 +35,7 @@ from collections import defaultdict
 from . import values as V
 from .evidence import MODERATE, STRONG, WEAK, confidence, ev
 from .netlist import Netlist, Part
-from .roles import (BOOT_PIN, EN_PIN, FB_PIN, GND_PIN, IN_PIN, OUT_PIN, PWR_PIN, SW_PIN, XTAL_PIN, Roles, belief,
+from .roles import (BOOT_PIN, EN_PIN, FB_PIN, GND_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, XTAL_PIN, Roles, belief,
                     cap_class, regulator_vout)
 
 REGULATOR_SUBS = ('regulator_linear', 'regulator_switching', 'regulator_module', 'pmic', 'charger', 'charge_pump')
@@ -44,7 +44,7 @@ LOAD_KINDS = ('ic', 'module', 'oscillator', 'led', 'optocoupler', 'microphone', 
 # switching frequency (Hz) and rated output current (A) by part-number prefix: datasheet values,
 # typical where the part is programmable (E5 in the brief, with the table as basis)
 SWITCHER_TABLE = [
-    (r'AP6320[0-9]', 500e3, 2.0), (r'AP6330[0-9]', 500e3, 3.0), (r'AP63357', 450e3, 3.5), (r'AP62300', 750e3, 3.0),
+    (r'AP6320[35]', 1.1e6, 2.0), (r'AP6320[01]', 500e3, 2.0), (r'AP6330[35]', 1.1e6, 3.0), (r'AP6330[01]', 500e3, 3.0), (r'AP63357', 450e3, 3.5), (r'AP62300', 750e3, 3.0),
     (r'AP3441', 1.5e6, 1.0), (r'TPS54202', 500e3, 2.0), (r'TPS561201', 580e3, 1.0), (r'TPS56\d', 600e3, 2.0),
     (r'TPS5430', 500e3, 3.0), (r'TPS6213\d', 2.5e6, 3.0), (r'TPS6216\d', 2.25e6, 1.0), (r'TPS6223\d', 2e6, 0.5),
     (r'TPS6208\d', 4e6, 0.5), (r'TPS62\d{3}', 2e6, 1.0), (r'TLV6256[89]', 1.5e6, 2.0), (r'TLV6256[5-7]', 1.5e6, 1.0),
@@ -745,8 +745,8 @@ def _power_pins(b: _B, ref):
             if sub in REGULATOR_SUBS and (IN_PIN.match(p.fn) or re.match(r'^P?VIN', p.fn)):
                 func = 'regulator_input'
             out.append((p, func))
-        elif p.ptype == 'power_out' or OUT_PIN.match(p.fn) or re.match(r'^(VCAP\w*|VREG\w*|VDDCORE|VCORE|DCPL\w*|BYP\w*|VREFOUT|REFOUT|'
-                                                                          r'VDD_?CORE|LDO\w*|VREF)$', p.fn):
+        elif p.ptype == 'power_out' or OUT_PIN.match(p.fn) or INT_OUT_PIN.search(p.fn) or \
+                re.match(r'^(VREFOUT|REFOUT|VREF)$', p.fn):
             if sub in REGULATOR_SUBS or b.k(ref) in ('ic', 'module'):
                 src = sub in REGULATOR_SUBS + ('load_switch',) and (OUT_PIN.match(p.fn) or p.ptype == 'power_out')
                 func = 'regulator_output' if src else 'bypass'
@@ -759,6 +759,9 @@ TIE_ORDER = 'schematic'   # 'schematic': equal scores fill consumers in referenc
                           # reference order (block rank order); 'random': seeded shuffle (ablation)
 CELL_BASE = 2.0     # commutation cells claim their rail's capacitors first
 CELL_QUOTA = 2      # one HF commutation cap and one more
+CELL_SLOT2 = None   # score offset for a cell's second capacitor (None: no offset)
+CELL_CLASS = 'hf'   # 'hf': cells prefer ceramics <= 220 nF; 'count': prefer them only when loads leave some spare
+MERGE_REG_OUT = False   # a converter's own output-pin group on its cell's rail merges into the cell
 
 
 def _decap_groups(b: _B, cells) -> list:
@@ -769,7 +772,7 @@ def _decap_groups(b: _B, cells) -> list:
         if b.k(ref) not in LOAD_KINDS or part.dnp:
             continue
         for p, func in _power_pins(b, ref):
-            if (ref, p.net) in in_cell and func == 'regulator_input':
+            if (ref, p.net) in in_cell and (func in ('regulator_input', 'load') or MERGE_REG_OUT):
                 continue
             g = groups.setdefault((ref, p.net, func), {'ref': ref, 'rail': p.net, 'function': func, 'pins': []})
             if p.number not in g['pins']:
@@ -808,14 +811,21 @@ def allocate_caps(b: _B, cells, groups):
         ranked = [j for j, (typ, x, _) in enumerate(lst) if typ == 'cell' or x['function'] == 'load']
         rank_of = {j: (k / (len(ranked) - 1) if len(ranked) > 1 else 0.5) for k, j in enumerate(ranked)}
         S = {}
+        n_hf = sum(cls[c] in ('hf', 'mid') for c in caps)
+        n_load = sum(len(x['pins']) for t, x, _ in lst if t == 'decap' and x['function'] == 'load')
+        hf_spare = CELL_CLASS == 'hf' or n_hf > n_load
         for i, c in enumerate(caps):
             rc = i / (ncap - 1) if ncap > 1 else 0.5
             big = math.log10(far[c] / med) if far[c] and med else 0.0
             for j, (typ, x, anchor) in enumerate(lst):
                 if typ == 'cell':
-                    v = CELL_BASE + (0.5 if cls[c] in ('hf', 'mid') else 0.3)
+                    if hf_spare:
+                        v = CELL_BASE + (0.5 if cls[c] in ('hf', 'mid') else 0.3)
+                    else:
+                        # the loads' pins need every small ceramic: the converter takes the bulk ones, largest first
+                        v = CELL_BASE + (0.3 if cls[c] in ('hf', 'mid') else 0.5 + 0.1 * max(0.0, big))
                 else:
-                    v = math.log(1 + len(x['pins']))
+                    v = 0.0               # pin counts enter through the quotas, not the score (layout check)
                     f = x['function']
                     if f in ('regulator_output', 'regulator_input'):
                         v += 0.5 + 0.5 * big          # sources and inputs take the larger capacitors
@@ -839,17 +849,35 @@ def allocate_caps(b: _B, cells, groups):
             tie = lambda t: (-t[0], corder[t[1]], jorder[t[2]])   # noqa: E731
         else:
             tie = lambda t: (-t[0], _refkey(t[1]), t[2])          # noqa: E731
-        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
-            if c in owner or count[j] >= quota[j]:
-                continue
-            owner[c] = j
-            count[j] += 1
+        if CELL_SLOT2 is None:
+            for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
+                if c in owner or count[j] >= quota[j]:
+                    continue
+                owner[c] = j
+                count[j] += 1
+        else:
+            # greedy with a lower score for a cell's second capacitor: values only fall, so a lazily
+            # re-pushed heap stays exact
+            import heapq
+            heap = [(tie((v, c, j)), v, c, j, False) for (c, j), v in S.items()]
+            heapq.heapify(heap)
+            while heap:
+                _, v, c, j, pen = heapq.heappop(heap)
+                if c in owner or count[j] >= quota[j]:
+                    continue
+                if lst[j][0] == 'cell' and count[j] >= 1 and not pen:
+                    v2 = v + CELL_SLOT2
+                    heapq.heappush(heap, (tie((v2, c, j)), v2, c, j, True))
+                    continue
+                owner[c] = j
+                count[j] += 1
         for c in caps:
             if c not in owner:
                 owner[c] = max(range(ng), key=lambda j: (S[(c, j)], -j))
         for c in caps:
-            mx = max(S[(c, j)] for j in range(ng))
-            z = [math.exp(S[(c, j)] - mx) for j in range(ng)]
+            sp = [S[(c, j)] + (math.log(quota[j]) if lst[j][0] == 'decap' else 0.0) for j in range(ng)]
+            mx = max(sp)
+            z = [math.exp(v - mx) for v in sp]
             tz = sum(z)
             j0 = owner[c]
             lst[j0][1]['caps'].append(c)
@@ -1191,10 +1219,15 @@ def _walk_chain(b: _B, cref, pin, net):
 
 
 def _clamps(b: _B, ref, net):
-    """A plain diode from a signal net to a ground or rail acts as a clamp."""
+    """A plain diode from a signal net to a ground or rail acts as a clamp; one from a supply input
+    into a rail (OR-ing, reverse protection) is a series power part, not a clamp."""
     part = b.nl.parts[ref]
     o = b.nl.other_net(part, net)
-    return o is not None and (o in b.g or o in b.r.rails) and b.sub(ref) in ('signal', 'schottky') and net not in b.r.rails
+    if o is None or not (o in b.g or o in b.r.rails) or b.sub(ref) not in ('signal', 'schottky') or net in b.r.rails:
+        return False
+    if o in b.r.rails and not any(b.k(p.ref) in ('ic', 'module') for p in b.nl.pins(net)):
+        return False          # nothing on the input but the connector: the diode carries the supply
+    return True
 
 
 def _through(b: _B, ref, net):
@@ -1280,6 +1313,49 @@ def feedback_victims(b: _B) -> list:
                 div['feedforward_cap'] = cff[0]
             out.append(_struct('victim', f"victim:feedback:{ref}:{p.number}", evs, conf_cap=0.95, prior=0.0,
                                **{'class': 'feedback', 'loop': loop, 'nets': [f], 'ic': ref, 'fb_pin': p.number, 'divider': div}))
+    return out
+
+
+def divider_victims(b: _B, taken: set) -> list:
+    """Resistive dividers that are not regulator feedback: a node with one resistor from a rail, a switch
+    node, a connector net or an analog net, and one resistor to ground, read by an IC or a connector
+    (voltage monitors, back-EMF sense, thresholds). The node is high impedance: a victim."""
+    out = []
+    for m, nv in sorted(b.nl.nets.items()):
+        if m in taken or m in b.g or m in b.r.rails or m in b.r.switch_nodes:
+            continue
+        res = [p for p in nv.pins if b.k(p.ref) == 'resistor' and len(b.nl.parts[p.ref].nets) == 2]
+        if len(res) < 2 or len(res) > 3:
+            continue
+        top = bot = None
+        for p in res:
+            o = b.nl.other_net(b.nl.parts[p.ref], m)
+            if o in b.g:
+                bot = bot or p.ref
+            elif o is not None:
+                onr = b.r.nets.get(o)
+                feeds = o in b.r.rails or o in b.r.switch_nodes or (onr and onr.role in ('analog', 'switch_node')) or \
+                    any(b.k(q.ref) == 'connector' for q in b.nl.pins(o))
+                if feeds and top is None:
+                    top = (p.ref, o)
+        if not top or not bot:
+            continue
+        others = [p for p in nv.pins if p.ref not in (top[0], bot)]
+        if any(b.k(p.ref) == 'transistor' for p in others):
+            continue          # a gate network, not a measurement
+        readers = [p for p in others if b.k(p.ref) in ('ic', 'module', 'connector')]
+        if not readers:
+            continue
+        rt, rb = V.resistance(b.nl.parts[top[0]].value), V.resistance(b.nl.parts[bot].value)
+        evs = [ev('topology', f"divider {top[0]} from '{b.short(top[1])}' and {bot} to ground on '{b.short(m)}', read by {readers[0].label}",
+                  MODERATE + 0.5)]
+        if rt is not None and rb is not None and rt + rb > 0:
+            evs.append(ev('value', f"ratio {rb / (rt + rb):.3f}", 0.3))
+        loop = [[top[0], b.pad_sel(top[0], m)], [bot, b.pad_sel(bot, m)]] + [[p.ref, p.number] for p in readers[:2]]
+        out.append(_struct('victim', f"victim:divider:{b.short(m)}", evs, conf_cap=0.9, prior=0.0,
+                           **{'class': 'analog', 'subclass': 'divider', 'nets': [m], 'loop': loop,
+                              'divider': {'top': top[0], 'bottom': bot, 'sense_net': top[1], 'r_top_ohm': rt, 'r_bot_ohm': rb,
+                                          'ratio': round(rb / (rt + rb), 4) if rt and rb else None}}))
     return out
 
 
@@ -1403,6 +1479,11 @@ def antennas(b: _B) -> list:
                     ic_pin = p
                     break
             if ic_pin:
+                # shunt parts on the IC-side net belong to the match too
+                for p in sorted(b.nl.pins(cur), key=lambda x: _refkey(x.ref)):
+                    if p.ref not in match and b.k(p.ref) in RF_PASS and b.nl.other_net(b.nl.parts[p.ref], cur) in b.g:
+                        match.append(p.ref)
+                        feed.append([p.ref, p.number])
                 break
             for p in sorted(b.nl.pins(cur), key=lambda x: _refkey(x.ref)):
                 if p.ref == ref or p.ref in [x[0] for x in feed]:
@@ -1571,6 +1652,9 @@ def find_structures(nl: Netlist, roles: Roles) -> dict:
     _apply_dividers(b, fb, cells)
     se = sense_victims(b)
     taken = {n for v in fb + se for n in v.get('nets', [])}
+    dv = divider_victims(b, taken)
+    taken |= {n for v in dv for n in v['nets']}
+    se = se + dv
     xv = []
     for x in st['crystals']:
         taken |= set(x['nets'])

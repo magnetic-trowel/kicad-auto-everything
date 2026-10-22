@@ -320,6 +320,16 @@ class BoardView:
             return None
         return self._plane_nets[int(N[j, i])]
 
+    def gmask(self, nets):
+        """Boolean mask over plane-net ids: True for the given (ground) nets. Cached."""
+        key = frozenset(nets)
+        cache = self.__dict__.setdefault('_gmask', {})
+        m = cache.get(key)
+        if m is None:
+            m = np.array([n in key for n in self._plane_nets] or [False], np.bool_)
+            cache[key] = m
+        return m
+
     def net_plane_layers(self, net):
         """Copper layers on which `net` has a zone, with the zone's coverage fraction of the board."""
         out = {}

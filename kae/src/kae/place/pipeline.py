@@ -31,7 +31,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from . import clusters, cpsat, seed as seedmod
+from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer
 from .legalize import exact_check, legalize
 from .problem import Problem
@@ -39,6 +39,7 @@ from .state import State, grid_violations
 from .stubs import make_brief, make_terms
 
 ROLE_KIND = {"ground": "ground", "rail": "power", "power": "power"}
+FLOORPLAN_MAX_ITEMS = 40   # above this the global HPWL floorplan rarely finds a solution in time
 ROLE_WEIGHT = {"clock": 1.5, "high_speed": 1.5, "analog": 1.2, "rf": 1.5, "switch_node": 1.0}
 
 
@@ -146,7 +147,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     stage("brief", t)
 
     t = time.monotonic()
+    mated = edges.mate(board, log=log)        # footprints that complete the board edge
+    if mated:
+        rep["edge_mated"] = {u: list(p) for u, p in mated.items()}
     P = Problem.build(board, net_kinds=_net_kinds(brief))
+    margin = P.auto_margin()
+    P.set_margin(margin)
     roles = _net_roles(brief)
     for net in P.nets:
         net.weight *= ROLE_WEIGHT.get(roles.get(net.name), 1.0)
@@ -162,8 +168,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     log(f"problem: {n} movable, {len(P.parts) - n} fixed, {len(P.nets)} nets, grid {P.g} mm, budget {budget:.0f}s")
     if n == 0:
         st = State(P)
-        rep.update(legal_grid=True, exact=[])
-        return Result(poses={}, report=rep, state=st, problem=P)
+        rep.update(legal_grid=True, exact=exact_check(P, st))
+        return Result(poses=dict(mated), report=rep, state=st, problem=P)
 
     # ---- physics: place terms (both arms report them; only the physics arm optimizes them),
     #      structures -> macros
@@ -180,7 +186,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         terms = report_terms
         structs = clusters.structures(P, brief)
         macros = clusters.build_macros(P, structs, time_s=min(0.1 * budget, 30.0), workers=workers,
-                                       seed=seed, log=log)
+                                       seed=seed, log=log, terms=terms)
         rep["physics_terms"] = dict(source=tsrc, structures=len(structs), macros=len(macros),
                                     macro_sizes=[len(m.members) for m in macros])
         # nets inside structures are critical: pull them together harder in the seed
@@ -223,19 +229,32 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     for i in P.mov:
         if i not in in_macro:
             items.append(cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])))
-    fp_time = max(2.0, 0.25 * (deadline - time.monotonic()))
-    w_wl = 1.0 if n <= 150 else 0.0
-    sol, model = seedmod.floorplan(P, items, fp_time, workers=workers, seed=seed, w_wl=w_wl,
-                                   w_disp=0.05 if w_wl else 1.0, net_w=net_w, log=log)
-    rep["floorplan"] = dict(status=model.status, seconds=round(model.wall, 2), items=len(items),
-                            infeasible=model.infeasible_items)
-    if sol is None and macros:
-        # macros may not fit as rigid blocks: free their members
-        log("floorplan with macros failed; retrying with single parts")
-        items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
-        sol, model = seedmod.floorplan(P, items, max(2.0, 0.2 * (deadline - time.monotonic())), workers=workers,
-                                       seed=seed, w_wl=w_wl, w_disp=0.05 if w_wl else 1.0, net_w=net_w, log=log)
-        rep["floorplan_retry"] = dict(status=model.status, seconds=round(model.wall, 2))
+    sol, model = None, None
+    retries = []
+    if len(items) <= FLOORPLAN_MAX_ITEMS:
+        # small boards: CP-SAT places everything at once (NoOverlap2D, 4 rotations, macros with
+        # their layouts), minimizing weighted HPWL with a little displacement from the spread
+        fp_time = max(2.0, 0.25 * (deadline - time.monotonic()))
+        sol, model = seedmod.floorplan(P, items, fp_time, workers=workers, seed=seed, w_wl=1.0, w_disp=0.05,
+                                       net_w=net_w, log=log)
+        rep["floorplan"] = dict(status=model.status, seconds=round(model.wall, 2), items=len(items),
+                                infeasible=model.infeasible_items)
+        # a proven infeasibility (not a timeout) frees the macros, then shrinks the margin
+        for m2 in ([margin] if macros else []) + [margin / 2, 0.0]:
+            if sol is not None or model.status != "INFEASIBLE":
+                break
+            if m2 < P.margin or (m2 == P.margin and macros):
+                P.set_margin(m2)
+                items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
+                sol, model = seedmod.floorplan(P, items, max(2.0, 0.15 * (deadline - time.monotonic())),
+                                               workers=workers, seed=seed, w_wl=1.0, w_disp=0.05,
+                                               net_w=net_w, log=log)
+                retries.append(dict(margin=m2, status=model.status, seconds=round(model.wall, 2)))
+    else:
+        rep["floorplan"] = dict(status="skipped", items=len(items),
+                                reason=f"more than {FLOORPLAN_MAX_ITEMS} items: windowed legalization of the spread")
+    if retries:
+        rep["floorplan_retry"] = retries
     if sol is not None:
         for it, (X, Y, v) in zip(items, sol):
             for i, (dx, dy, k) in it.variants[v].items():
@@ -284,10 +303,16 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             final = cand
     st = final
     viol = grid_violations(st)
+    if viol and P.margin > 0:
+        # the routing margin is a wish, legality is not: judge (and repair) without it
+        P.set_margin(0.0)
+        rep["margin_dropped"] = True
+        viol = grid_violations(st)
     if viol and time.monotonic() < deadline + 0.1 * budget:
         rep["legalize_final"] = legalize(P, st, time_s=max(3.0, 0.1 * budget), workers=workers, seed=seed, log=log)
         viol = grid_violations(st)
     rep["legal_grid"] = not viol
+    rep["margin_mm"] = P.margin
     t = time.monotonic()
     rep["exact"] = exact_check(P, st)
     stage("exact_check", t)
@@ -295,10 +320,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     if report_terms is not None:
         try:
-            rep["physics"] = physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts})
-            rep["physics_seed"] = physics_summary(report_terms, {p.uuid: seed_state.pose(p.i) for p in P.parts},
-                                                  breakdown=False)
+            rep["scorecard"] = physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts})
+            rep["scorecard_seed"] = physics_summary(report_terms, {p.uuid: seed_state.pose(p.i) for p in P.parts},
+                                                    breakdown=False)
         except Exception as e:
             rep["physics_error"] = f"{type(e).__name__}: {e}"
     rep["seconds"] = round(time.monotonic() - t0, 2)
-    return Result(poses=st.poses(), report=rep, state=st, problem=P)
+    poses = st.poses()
+    poses.update(mated)          # held fixed here, but movable in the file: write them too
+    return Result(poses=poses, report=rep, state=st, problem=P)

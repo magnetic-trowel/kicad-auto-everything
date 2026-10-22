@@ -60,7 +60,9 @@ def _rects_of(P, item, v):
         a, b, c, d = r.g_board
         rb = (dx + a, dx + b, dy + c, dy + d)
         bb = rb if bb is None else (min(bb[0], rb[0]), max(bb[1], rb[1]), min(bb[2], rb[2]), max(bb[3], rb[3]))
-    return out, bb
+    # an item's own rectangles may overlap each other (drilled pads and a back courtyard):
+    # NoOverlap2D needs them as disjoint pieces
+    return {side: disjoint_union(rs) for side, rs in out.items()}, bb
 
 
 def allowed_boxes(P, bb):

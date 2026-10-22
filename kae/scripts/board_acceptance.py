@@ -8,7 +8,7 @@
     board_acceptance.py place     [--tasks DIR]          staging off-board, locked parts in place
     board_acceptance.py loadtime  [--tasks DIR]          load time per board, sequential, median of 3
     board_acceptance.py loadall   [--tasks DIR]          regression: every board loads (exit 1 if not)
-    board_acceptance.py merge --name OUT RUN [RUN...]    verify runs merged, later rows win
+    board_acceptance.py merge --name OUT RUN [RUN...]    runs merged (verify or roundtrip), later rows win
 
 Boards: DIR/<id>/reference/board.kicad_pcb and DIR/<id>/place/input/board.kicad_pcb.
 Results: kae-work/kae-board/acceptance/<run>.jsonl plus a summary on stdout and in
@@ -29,7 +29,6 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from shapely.geometry import Polygon
 
 from kae.board import kicad_file, pcbnew_io, sdiff, transform
 
@@ -249,7 +248,8 @@ def _fallback_check(wr, b, src, base, work, poses):
                     dcy = max(dcy, pcbnew_io.shape_distance(a, c)[0])
     pred, _ = _pad_err(b, same_side, xf)
     moved = set(poses)
-    foreign = [c for c in sdiff.diff(base, fb) if c["id"] not in moved]
+    # the S-expression writer edits the original text, so compare with the source itself
+    foreign = [c for c in sdiff.diff(src, fb) if c["id"] not in moved]
     return dict(fallback_pads=n, fallback_missing=missing, fallback_vs_pcbnew=dpos, fallback_angle_vs_pcbnew=dang,
                 fallback_courtyard_vs_pcbnew=dcy, fallback_vs_pad_xy=pred, fallback_foreign=foreign[:10])
 
@@ -477,9 +477,10 @@ def main(argv=None):
         for run in a.runs:
             for line in open(OUT / f"{run}.jsonl"):
                 r = json.loads(line)
-                merged[(r["id"], r["kind"])] = r
+                merged[(r["id"], r.get("kind", ""))] = r
         rows = [merged[k] for k in sorted(merged)]
-        _save(name, rows, summarize_verify(rows))
+        is_rt = any("moved" in r for r in rows)
+        _save(name, rows, summarize_roundtrip(rows) if is_rt else summarize_verify(rows))
     return 0
 
 

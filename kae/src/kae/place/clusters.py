@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
 
+from .cpsat import disjoint_union
+
 KIND_WEIGHT = {"commutation_cell": 3.0, "decap": 2.0, "crystal": 2.0, "oscillator": 1.5, "connector_chain": 1.0}
 MAX_MACRO = 24
 
@@ -43,6 +45,7 @@ class Layout:
     cx: float             # bbox centre relative to the anchor origin, mm
     cy: float
     cost: float           # proxy length, mm
+    self_cost: float = None   # the structures' own cost under the place terms, when ranked
 
 
 @dataclass
@@ -280,7 +283,8 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
         si = 0 if p.s > 0 else 1
         for k in range(nk):
             r = p.rots[k]
-            rects = [(si, r.g_own)] + [(1 - si, o) for o in r.g_opp]
+            rects = [(si, q) for q in disjoint_union([r.g_own])] + \
+                [(1 - si, q) for q in disjoint_union(list(r.g_opp))]
             for side, (a, b, c, d) in rects:
                 if b <= a or d <= c:
                     continue
@@ -376,26 +380,63 @@ def _layout(P, off, cost):
                   cost=cost)
 
 
-def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None):
-    """Macros from structures; the micro-placement budget is split across them."""
+def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, terms=None, candidates=6):
+    """Macros from structures; the micro-placement budget is split across them. With `terms`
+    (kae.physics.place_terms), CP-SAT proposes `candidates` layouts by the proxy and the
+    structures' own self terms (Terms.breakdown of their ids) pick the best `top_k`."""
     groups = _groups(P, structs)
     if not groups:
         return []
-    per = max(0.3, time_s / len(groups) / max(1, top_k))
+    n_try = max(top_k, candidates) if terms is not None else top_k
+    per = max(0.3, time_s / len(groups) / max(1, n_try))
     out = []
     for mem, sts in groups:
         fixed = [i for i in mem if not P.parts[i].movable]
         anchor = fixed[0] if fixed else max(mem, key=lambda i: P.parts[i].area)
-        lay = micro_place(P, mem, sts, anchor, time_s=per, top_k=top_k, workers=workers, seed=seed)
+        lay = micro_place(P, mem, sts, anchor, time_s=per, top_k=n_try, workers=workers, seed=seed)
         if not lay:
             if log:
                 log(f"macro around {P.parts[anchor].ref}: no layout")
             continue
-        out.append(Macro(members=mem, anchor=anchor, layouts=lay, structs=sts, anchored=bool(fixed)))
+        mac = Macro(members=mem, anchor=anchor, layouts=lay, structs=sts, anchored=bool(fixed))
+        if terms is not None:
+            try:
+                rerank(P, mac, terms)
+            except Exception as e:   # ranking is an improvement, never a requirement
+                if log:
+                    log(f"macro {P.parts[anchor].ref}: self-term ranking failed ({type(e).__name__}: {e})")
+        mac.layouts = mac.layouts[:top_k]
+        out.append(mac)
         if log:
+            st = mac.layouts[0]
             log(f"macro {P.parts[anchor].ref} +{len(mem) - 1} ({','.join(sorted({s.kind for s in sts}))}): "
-                f"{len(lay)} layouts, proxy {lay[0].cost:.1f} mm")
+                f"{len(mac.layouts)} layouts, proxy {st.cost:.1f} mm"
+                + (f", self term {st.self_cost:.3f}" if st.self_cost is not None else ""))
     return out
+
+
+def rerank(P, mac, terms):
+    """Order a macro's layouts by the summed cost of its own structures under the place
+    terms (members at the layout around the anchor; everything else where it is)."""
+    ids = {s.src.get("id") for s in mac.structs if s.src.get("id")}
+    if not ids:
+        return
+    base = {p.uuid: (p.x0, p.y0, p.rot0, p.side) for p in P.parts}
+    a = P.parts[mac.anchor]
+    if a.movable:
+        x0, y0, x1, y1 = P.outline.bounds
+        ax, ay = (x0 + x1) / 2, (y0 + y1) / 2
+    else:
+        ax, ay = a.x0, a.y0
+    for lay in mac.layouts:
+        poses = dict(base)
+        for i, (dx, dy, k) in lay.offsets.items():
+            p = P.parts[i]
+            if p.movable:
+                poses[p.uuid] = (ax + dx * P.g, ay + dy * P.g, p.rots[k].rot, p.side)
+        rows = terms.breakdown(poses)
+        lay.self_cost = float(sum(r.get("cost", 0.0) for r in rows if r.get("id") in ids))
+    mac.layouts.sort(key=lambda l: (l.self_cost, l.cost))
 
 
 def macro_item(P, mac, X0=0, Y0=0, v0=0):

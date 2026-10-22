@@ -41,6 +41,7 @@ from shapely.geometry import box
 from kae.board import transform
 
 ROTS = (0.0, 90.0, 180.0, 270.0)
+COURTYARD_EXCESS = 0.25   # mm around pads for footprints that draw no courtyard
 GRID_LADDER = (0.025, 0.05, 0.1, 0.2, 0.25)
 EPS = 1e-6
 
@@ -169,6 +170,79 @@ def is_drilled(p):
     return p.kind in ("thru_hole", "np_thru_hole") or bool(p.drill)
 
 
+def fixed_copper(board):
+    """Copper graphics at board level (gr_line/arc/circle/rect/poly on F.Cu or B.Cu): fixed
+    copper a place task keeps, with its net. [(side, shapely geometry, net)].
+    Read from the board file with kae.board's own S-expression parser (the board model does
+    not carry copper graphics yet)."""
+    from pathlib import Path
+
+    from kae.board import sexpr
+    from kae.board.kicad_file import GR_SHAPES, shape_pieces
+    path = getattr(board, "path", "")
+    if not path or not Path(path).exists():
+        return []
+    try:
+        tree = sexpr.parse(sexpr.strip_blocks(Path(path).read_text(encoding="utf-8", errors="replace")))
+    except (ValueError, OSError):
+        return []
+    out = []
+    for node in tree:
+        if type(node) is not list or not node or node[0] not in GR_SHAPES:
+            continue
+        layer = sexpr.value(node, "layer")
+        if layer not in ("F.Cu", "B.Cu"):
+            continue
+        st = sexpr.first(node, "stroke")
+        w = sexpr.value(st, "width") if st is not None else sexpr.value(node, "width")
+        try:
+            w = float(w) if w is not None else 0.0
+        except ValueError:
+            w = 0.0
+        try:
+            opens, rings = shape_pieces(node)
+        except (TypeError, ValueError, IndexError):
+            continue
+        fill = sexpr.value(node, "fill")
+        geoms = []
+        from shapely.geometry import LineString, Polygon
+        for pl in opens:
+            if len(pl) >= 2:
+                geoms.append(LineString(pl).buffer(max(w, 1e-3) / 2))
+        for r in rings:
+            if len(r) >= 4:
+                geoms.append(Polygon(r).buffer(w / 2) if fill in ("yes", "solid") else
+                             LineString(r).buffer(max(w, 1e-3) / 2))
+        net = ""
+        nn = sexpr.first(node, "net")
+        if nn is not None and len(nn) > 1:
+            net = nn[-1] if len(nn) > 2 else nn[1]
+        for gm in geoms:
+            if not gm.is_empty:
+                out.append((0 if layer == "F.Cu" else 1, gm, net))
+    return out
+
+
+def geom_cover_rects(geom, tol):
+    """Small rectangles covering a geometry: its outline simplified at `tol` and cut into
+    one bounding box per piece of a grid of cells (keeps thin arcs from blocking the area
+    they enclose)."""
+    x0, y0, x1, y1 = geom.bounds
+    if geom.area >= 0.9 * max(1e-12, (x1 - x0) * (y1 - y0)):
+        return [(x0, y0, x1, y1)]
+    step = max(tol * 10, max(x1 - x0, y1 - y0) / 24)
+    out = []
+    nx = max(1, int(math.ceil((x1 - x0) / step)))
+    ny = max(1, int(math.ceil((y1 - y0) / step)))
+    for i in range(nx):
+        for j in range(ny):
+            cell = box(x0 + i * step, y0 + j * step, min(x1, x0 + (i + 1) * step), min(y1, y0 + (j + 1) * step))
+            piece = geom.intersection(cell)
+            if not piece.is_empty and piece.area > 0:
+                out.append(piece.bounds)
+    return out
+
+
 # ----------------------------------------------------------------------------- types
 @dataclass
 class Rot:
@@ -182,6 +256,8 @@ class Rot:
     g_own: tuple = None
     g_opp: tuple = ()
     g_board: tuple = None
+    g_own_exact: tuple = None   # g_own without the routing margin
+    g_board_exact: tuple = None  # g_board without the routing margin
 
 
 @dataclass
@@ -351,13 +427,16 @@ class Problem:
         pad_rects = [pad_lib_rect(p) for p in pads]
         # pads inflated by the clearance they need from other copper (see module docstring)
         infl = []
+        # a footprint without a courtyard gets the courtyard excess IPC-7351 would have drawn
+        # (0.25 mm): pads closer than that bridge solder mask and starve routing
+        excess = 0.0 if has_cy else COURTYARD_EXCESS
         for p, r in zip(pads, pad_rects):
             c = self.clr_min / 2
             if p.net and self.board.nets.get(p.net) is not None:
                 nc = self.board.nets[p.net].netclass or "Default"
                 cn = self.netclass_clr.get(nc, self.netclass_clr.get(nc.split(",")[0], self.clr_min))
                 c = max(self.clr_min / 2, cn - self.clr_min / 2)
-            infl.append(rect_grow(r, c))
+            infl.append(rect_grow(r, max(c, excess)))
         lib_own = rect_union([cy] + infl)
         if lib_own is None:   # no courtyard, body or pads: a point
             lib_own = (-0.05, -0.05, 0.05, 0.05)
@@ -369,17 +448,21 @@ class Problem:
         lib_opp = [r for r in lib_opp if r is not None]
         cut = edge_cut_lib_rect(fp)
         if cut is not None:
-            # the footprint cuts the board (a lens hole, a notch): nothing on either side may
-            # come within the copper-to-edge clearance of the cut
+            # the footprint cuts the board (a lens hole, a window): nothing on either side may
+            # come within the copper-to-edge clearance of the cut, and the cut stays inside the
+            # outline (a hole across the edge would turn it into a notch)
+            lib_cut = cut
             cut = rect_grow(cut, self.edge_clearance + 0.002)
             lib_own = rect_union([lib_own, cut])
             lib_opp.append(cut)
+        else:
+            lib_cut = None
         copper = rect_union(pad_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:
             copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard
         lib_edge = rect_grow(copper, self.edge_clearance + 0.002) if copper is not None else None
-        lib_board_full = rect_union([lib_edge, cy if cy is not None else lib_own])
-        lib_board_pads = lib_edge if lib_edge is not None else lib_own
+        lib_board_full = rect_union([lib_edge, cy if cy is not None else lib_own, lib_cut])
+        lib_board_pads = rect_union([lib_edge if lib_edge is not None else lib_own, lib_cut])
         pad_net = np.array([name_to_net.get(p.net, -1) if p.net else -1 for p in pads], dtype=int)
         local = transform.local_pads(fp)
         movable = not fp.locked
@@ -439,6 +522,46 @@ class Problem:
                 r.g_own = to_grid(r.own, g)
                 r.g_opp = tuple(to_grid(o, g) for o in r.opp)
                 r.g_board = to_grid(r.board, g)
+                r.g_own_exact = r.g_own
+                r.g_board_exact = r.g_board
+        self.margin = 0.0
+
+    def utilization(self):
+        """Per side: occupancy-rectangle area of all parts on (or drilling through) the side
+        over the board area."""
+        area = max(1e-9, float(self.outline.area))
+        u = [0.0, 0.0]
+        for p in self.parts:
+            r = p.rots[0]
+            si = 0 if p.s > 0 else 1
+            u[si] += rect_area(r.own)
+            for o in r.opp:
+                u[1 - si] += rect_area(o)
+        return [x / area for x in u]
+
+    def auto_margin(self):
+        """Routing room between movable parts, from how full the board is: about 1 mm on an
+        empty board, nothing above 70% utilization (part rectangles are mutually exclusive
+        inflated by half the margin each)."""
+        util = max(self.utilization())
+        return float(min(1.0, max(0.0, 2.0 * (0.7 - util))))
+
+    def set_margin(self, m):
+        """Grow every movable part's occupancy and board rectangles by m/2 on each side (0
+        restores the exact rectangles): routing room between parts and towards the board edge.
+        Legality does not need it; routability does."""
+        g = self.g
+        self.margin = float(m)
+        k = int(round(m / 2 / g)) if m > 0 else 0
+        for p in self.parts:
+            if not p.movable:
+                continue
+            for r in p.rots:
+                a, b, c, d = r.g_own_exact
+                r.g_own = (a - k, b + k, c - k, d + k)
+                a, b, c, d = r.g_board_exact          # room to route between parts and the edge
+                r.g_board = (a - k, b + k, c - k, d + k)
+        return k
 
     def _fixed_obstacles(self, board):
         g = self.g
@@ -450,6 +573,10 @@ class Problem:
             self._add_obstacle(si, shift(r.own, p.x0, p.y0), f"locked {p.ref}")
             for o in r.opp:
                 self._add_obstacle(1 - si, shift(o, p.x0, p.y0), f"locked {p.ref} (through)")
+        self.fixed_copper = fixed_copper(board)
+        for side, gm, net in self.fixed_copper:
+            for r in geom_cover_rects(gm.buffer(self.clr_max / 2), g):
+                self._add_obstacle(side, r, f"fixed copper {net or '(no net)'}")
         for ko in board.keepouts:
             if not (ko.footprints or ko.pads):
                 continue
@@ -493,7 +620,8 @@ class Problem:
     def summary(self):
         mov = [p for p in self.parts if p.movable]
         return dict(parts=len(self.parts), movable=len(mov), fixed=len(self.parts) - len(mov),
-                    nets=len(self.nets), grid_mm=self.g, cells=[self.ncx, self.ncy], cover_rects=len(self.cover),
+                    nets=len(self.nets), grid_mm=self.g, margin_mm=self.margin,
+                    utilization=[round(u, 3) for u in self.utilization()], cells=[self.ncx, self.ncy], cover_rects=len(self.cover),
                     rectangular=self.rect_board, obstacles=len(self.obstacles),
                     clearance=self.clearance, edge_clearance=self.edge_clearance,
                     not_fitting=[p.ref for p in mov if not p.fits], notes=self.notes)

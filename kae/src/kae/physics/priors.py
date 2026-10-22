@@ -36,6 +36,7 @@ class Knobs:
     use_confidence: bool = True   # weight each structure by the brief's confidence
     hop_detour: float = 1.0       # expected route length / octilinear pad distance (E5, measured on human boards)
     pair_cos_min: float = 0.3     # loop pairs with |cos| below this are dropped in the fast path
+    jit: str = 'auto'             # 'auto' (numba when installed), 'on', 'off' (pure Python)
 
 
 def phi(u, barrier=4.0):

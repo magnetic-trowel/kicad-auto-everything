@@ -171,7 +171,7 @@ def clean_net(name: str | None) -> NetName:
     s = re.sub(r'_\{([^}]*)\}', r'_\1', s)
     s = _ESC_RE.sub(lambda m: _ESC_MAP[m.group(1).lower()], s)
     s = s.replace('{', '').replace('}', '').strip()
-    up = s.upper()
+    up = re.sub(r'\s+', '_', s.upper())          # '+24V Bus' reads like '+24V_BUS'
     if not low and (re.match(r'^N(?=[A-Z]{3})|^N_', up) and re.search(r'RST|RESET|CS|EN|INT|IRQ|OE|WE|RD|WR|FAULT|PG|SHDN|BOOT', up)):
         low = True
     if not low and re.search(r'_(N|B|L)$', up) and re.search(r'RST|RESET|CS|EN|INT|IRQ|OE|WE|FAULT|SHDN', up):

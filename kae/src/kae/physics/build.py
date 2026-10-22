@@ -149,7 +149,7 @@ def _loop_comp(ctx, terms, power, gnd_hop=None):
             if g is None and a.net in ctx.gnd and b.net in ctx.gnd:
                 g = k
     return LoopComp(bv, terms, kinds, widths, zb, gnd_hop=g if gnd_hop is None else gnd_hop,
-                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs)
+                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs, kern=ctx.t.kern)
 
 
 def _cluster(points, dmax=3.0):
@@ -462,6 +462,7 @@ def _victim(ctx, s, aggs, Struct):
         if own & vparts and st.kind == 'commutation' and s.get('class') != 'feedback':
             continue        # the victim is part of the aggressor's own cell
         comps.append(CouplingComp(bv, aloop, anode, loop, node, ex['didt'], ex['V'], ex['t_sw'], zv, gp))
+        comps[-1].kern = ctx.t.kern
         labels.append(st.id)
     if not comps:
         return None
@@ -527,6 +528,7 @@ def _world_cm(ctx, specs, aggs, Struct):
             if st.comps and i in st.comps[0].parts:
                 continue
             comps.append(CmComp(bv, aloop, anode, cl, cn, ex['I'], ex['V'], ex['t_sw'], bool(ctx.gnd), PR.WORLD))
+            comps[-1].kern = ctx.t.kern
             labels.append(st.id)
         if comps:
             out.append(Struct(id=f'cm:{p.ref}', kind='world_cm', conf=0.5, alloc=PR.cm_budget(), comps=comps,
@@ -585,7 +587,7 @@ def _thermal(ctx, specs):
         fill.append(PR.THERMAL['plane_fill'] if cov >= 0.5 else PR.THERMAL['signal_fill'])
     fr4 = max(bv.thickness - sum(tc), 0.1)
     gs, lam = fin_params(tc, fill, fr4, PR.THERMAL['k_cu'], PR.THERMAL['k_fr4'], PR.THERMAL['h_top'], PR.THERMAL['h_bot'])
-    th = ThermalField(bv, src, vic, gs, lam, rings=1)
+    th = ThermalField(bv, src, vic, gs, lam, rings=1, kern=t.kern)
     t.thermal = th
     rise = PR.THERMAL['source_rise_K']
     t._th_alloc = [PR.Belief(rise, 'K', 'board-level rise at a heat source (40 K design target)')] * len(src) + alloc_v

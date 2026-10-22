@@ -168,17 +168,23 @@ def courtyard(fp, x=None, y=None, rot=None, side=None, which="own", deflate=0.0)
     The polygons are the drawn courtyard. KiCad's DRC tests a copy deflated by a fixed
     5 um (FOOTPRINT::BuildCourtyardCaches; measured on pcbnew 10 with board max_error
     0.005 and 0.01), so touching courtyards are legal; pass deflate=KICAD_COURTYARD_DEFLATE
-    to get that copy.
+    to get that copy. KiCad leaves a courtyard whose outlines overlap or touch (flag
+    courtyard_overlap) undeflated, and so does this.
     """
     x, y, rot, side = _pose(fp, x, y, rot, side)
     if which == "own":
         polys = fp.courtyard
+        lib_layer = "F.CrtYd"
     elif which == "opposite":
         polys = fp.courtyard_back
+        lib_layer = "B.CrtYd"
     elif which == "extent":
         polys = fp.courtyard or fp.body
+        lib_layer = "F.CrtYd" if fp.courtyard else None
     else:
         raise ValueError(f"which={which!r}")
+    if deflate and lib_layer and f"courtyard_overlap:{lib_layer}" in fp.flags:
+        deflate = 0.0
     if not polys:
         return []
     m = affine(x, y, rot, side)

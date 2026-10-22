@@ -11,8 +11,8 @@ Two writers:
   reachable (e.g. inside a sandbox without the KiCad container). It does what
   FOOTPRINT::SetOrientation + SetPosition do to the saved file for a same-side move: the
   footprint `(at x y rot)`, every pad's and text's absolute angle (+ the rotation change),
-  and the board-frame points of zones the footprint owns (rotated about the old position
-  and translated). Library-frame children (graphics, pad positions) are untouched. Side
+  and the board-frame coordinates of zones and reference points (`point`) the footprint
+  owns (rotated about the old position and translated). Library-frame children (graphics, pad positions) are untouched. Side
   changes are not supported here (v0 keeps sides).
 `auto` tries pcbnew when a KiCad Python answers quickly and falls back to sexpr.
 """
@@ -167,6 +167,16 @@ def edit_footprint(text, a, b, pose):
                     edits.append(e)
         elif k.head == "zone":
             edits += _zone_edits(text, k, ox, oy, x, y, d)
+        elif k.head == "point":
+            # KiCad 10 reference points are stored in board coordinates, like zones
+            kat = _child(k, "at")
+            if kat is not None and len(kat.atoms) >= 2:
+                px, py = float(kat.atoms[0][0]), float(kat.atoms[1][0])
+                u, v = transform.rotate(px - ox, py - oy, d)
+                rest = [t for (t, _, _) in kat.atoms[2:]]
+                if rest and _is_num(rest[0]):
+                    rest[0] = fmt(_norm_angle(float(rest[0]) + d))
+                edits.append((kat.a, kat.b, "(at " + " ".join([fmt(x + u), fmt(y + v)] + rest) + ")"))
         elif k.head in ("fp_text_box",):
             # text boxes keep (start)/(end) in the footprint frame; their angle is absolute
             ang = _child(k, "angle")

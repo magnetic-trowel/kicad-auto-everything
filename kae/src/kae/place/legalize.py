@@ -320,6 +320,15 @@ def exact_check(P, st, parts=None, max_items=60):
                 cyo = shapes[i]["cy"].get(shapes[i]["side"])
                 if cyo is not None and cyo.intersection(cg).area > 1e-6:
                     add("over_cutout", [P.parts[i].ref, p.ref], "courtyard over a cut-out")
+    # fixed copper graphics (kept by place tasks) against pads of other nets
+    for side, gm, net in getattr(P, "fixed_copper", []):
+        for i in check:
+            for geom, k, pd in shapes[i]["pads"]:
+                if side not in _copper_sides(pd, P.parts[i].side) or (net and pd.net == net):
+                    continue
+                need = max(_net_clr(P, pd.net, clr_of), _net_clr(P, net, clr_of))
+                if geom.distance(gm) < need - 1e-4:
+                    add("clearance", [P.parts[i].ref], f"pad {pd.number} vs fixed copper {net}")
     # rule areas
     for ko in board.keepouts:
         if not (ko.footprints or ko.pads):

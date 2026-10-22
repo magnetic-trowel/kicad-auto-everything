@@ -117,7 +117,7 @@ def _structure_roles(st: dict) -> dict:
         for rr in x.get('feedback_r') or []:
             put(rr, 'crystal_feedback_r', x['id'])
     for v in st['victims']:
-        if v['class'] == 'feedback':
+        if v['class'] == 'feedback' or v.get('subclass') == 'divider':
             d = v.get('divider') or {}
             put(d.get('top'), 'divider_top', v['id'])
             put(d.get('bottom'), 'divider_bottom', v['id'])
@@ -187,7 +187,14 @@ def build(board, *, use_sheets: bool = True) -> dict:
         for s in st[key]:
             for ref in _refs_in(s):
                 member_of.setdefault(ref, []).append(s['id'])
-    # ---- nets
+    # ---- nets (a victim structure makes a signal net analog-sensitive)
+    for v in st['victims']:
+        for n in v.get('nets', []):
+            nr = roles.nets.get(n)
+            if nr is not None and nr.role in ('signal',):
+                nr.role, nr.subrole = 'analog', v.get('subclass') or v['class']
+                nr.confidence = max(nr.confidence, v['confidence'])
+                nr.evidence = list(nr.evidence) + [e for e in v['evidence'] if e.weight > 0][:2]
     nets = {}
     for name, nr in sorted(roles.nets.items()):
         vb = nr.attrs.get('volts')

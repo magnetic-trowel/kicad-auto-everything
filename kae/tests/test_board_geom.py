@@ -23,7 +23,7 @@ def _lines(pts):
 def test_lines_chain_into_one_polygon():
     polys, info = geom.polygons(_lines(SQ), [])
     assert len(polys) == 1 and polys[0].equals(Polygon(SQ))
-    assert info == dict(open_ends=0, gap=0.0, overlap=False)
+    assert info == dict(open_ends=0, gap=0.0, overlap=False, degenerate=0)
 
 
 def test_gap_keeps_the_chain_start():
