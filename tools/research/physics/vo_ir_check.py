@@ -204,6 +204,8 @@ WAVES = {"trapezoid": ["f0", "tr"], "data": ["rate", "tr"], "sine": ["f0"],
          "edge": ["tr"], "dc": [], "sim": ["file"]}
 WAVE_DIM = {"V": "V", "I": "A", "f0": "Hz", "tr": "s", "rate": "bps", "duty": "%"}
 BUILTIN_BANDS = {"dc", "esd"}
+TOP_LEVEL = {"schema", "units", "resolution", "tags", "selectors", "topologies", "constraints",
+             "findings_schema", "bands", "symbols", "physics", "ops"}
 MECH = {  # mechanism -> (allowed aggressor kinds, allowed victim kinds)
     "capacitive": ({"node", "port"}, {"node", "port", "channel", "loop"}),
     "inductive": ({"loop", "channel", "feed"}, {"loop", "channel", "port", "node"}),
@@ -234,6 +236,8 @@ class Checker:
             self.err(eid, "%s %r has the wrong dimension (want %s)" % (what, value, unit))
 
     def run(self, doc):
+        for k in set(doc) - TOP_LEVEL:
+            self.err("top", "unknown top-level key %r" % k)
         bands = set((doc.get("bands") or {}).keys()) | BUILTIN_BANDS
         for name, iv in (doc.get("bands") or {}).items():
             self.dim_is("bands." + name, "band edge", iv, "Hz")

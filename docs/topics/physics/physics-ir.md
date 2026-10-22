@@ -4,7 +4,7 @@
 - `pcb-intent/0.3` is `0.2` plus four top-level keys: `bands`, `symbols`, `physics` (typed entities from the [vocabulary](vocabulary.md)) and `ops` (an operator plan). Every `0.2` file stays valid. Physics entities *expand to* `0.2` constraints, so the existing `.kicad_dru` emitter and checkers keep working [I].
 - Intent and evidence live in two files. `intent.yaml` holds what is *required* (written by detectors, the LLM and humans, with provenance). `ledger.json` holds what is *observed* (written only by code: the physics graph, regimes, budget spend, attribution). Critics diff the two.
 - Every number is a dimensioned quantity or an expression over named symbols (I2). The validator refuses bare numbers, unit mismatches, ports without a reference terminal, open loops, and couplings whose mechanism cannot act on the victim.
-- The LLM writes requirements, allocations, mechanism hypotheses and operator choices. It never writes geometry, regimes, spend or coordinates. Code derives about 80% of a first draft from the schematic, IBIS and datasheets [I].
+- The LLM writes requirements, allocations, mechanism hypotheses and operator choices. It never writes geometry, regimes, spend or coordinates. Code drafts most entities from the schematic, IBIS, datasheets and simulation [I].
 - One entity compiles to up to six targets: KiCad objects, `.kicad_dru` rules, placer terms, router costs, checkers, and solver/simulator decks (FastHenry, FasterCap, openEMS, ngspice, thermal).
 
 ## Key facts
@@ -30,7 +30,7 @@ expr      := arithmetic over quantities and symbol calls, e.g.
 ```
 
 - Units: SI with prefixes, plus `mil`, `oz`, `dB`, `dBm`, `ppm`, `degC`, `%`. Dimensions are checked (pint-style); `dB` budgets must name the quantity they are a ratio of (`IL`, `S11`, `margin`).
-- Symbols resolve lazily: stackup (`h(F.Cu,In1.Cu)`, `er(...)`, `vp(layer)`), parts (`V_abs(pin)`, `Coss(Q1)`, `ESL(C10)`), nets (`tr(node)`, `f_sw(cell)`, `I_max(net)`, `UI(iface)`), derived (`didt(loop)`, `dvdt(node)`, `lambda_g(f, layer)`, `LSB(adc)`). Every resolved number carries its derivation chain into the ledger (I2).
+- `symbols:` binds or overrides facts locally with provenance, e.g. `{"tr(buck1.sw)": 2 ns}`. Symbols resolve lazily: stackup (`h(F.Cu,In1.Cu)`, `er(...)`, `vp(layer)`), parts (`V_abs(pin)`, `Coss(Q1)`, `ESL(C10)`), nets (`tr(node)`, `f_sw(cell)`, `I_max(net)`, `UI(iface)`), derived (`didt(loop)`, `dvdt(node)`, `lambda_g(f, layer)`, `LSB(adc)`). Every resolved number carries its derivation chain into the ledger (I2).
 
 ### Entity schema
 
@@ -65,6 +65,8 @@ Kind-specific fields (required in bold):
 | `cell` | **`template`** (buck, boost, half_bridge, flyback, ldo, xtal_pierce, ...), **`parts`** (role → refdes) | Composite; code expands it into loops, nodes, ports and couplings |
 | `feed` | **`from`**, **`to`** (ports), `I` | DC power delivery; budgets in mΩ, mV, degC |
 
+In code, each kind is a typed class with `expand()` (to 0.2 constraints) and `compile(target)`, mirroring ALIGN's `HardConstraint.translate(solver)` ([constraint-models-compared](../architecture/constraint-models-compared.md)); cell templates are functions that return entity lists, so YAML and a Python DSL are two spellings of one model.
+
 Spectrum forms for `excite`: `{wave: trapezoid, V|I, f0, duty, tr}`, `{wave: data, rate, tr, V}`, `{wave: sine, f0, V|I}`, `{wave: edge, tr, V|I}` (ESD, hot plug), `{wave: dc, I}`, `{wave: sim, file}` (back-annotated from SPICE). Code derives `dvdt`, `didt` and a piecewise log-log envelope ([LearnEMC trapezoid calculator](https://learnemc.com/ext/calculators/trapezoid_harmonics/index.html) [S]).
 
 Sensitivity form for `sense`: `{threshold, band, transfer}`, where `transfer` names a filter, PSRR or CMRR curve from the layout card, so a victim's threshold applies after its own rejection.
@@ -88,7 +90,7 @@ The prototype catches 12 of 12 errors seeded in a test file, and the 46 entities
 | Step | Input | Output entities |
 |---|---|---|
 | 1 Net roles | layered classifier ([net-role-classification](../llm/net-role-classification.md)) | role tags |
-| 2 Band netlists | per band, replace parts by band models: caps above C_min(band) → short, inductors and beads → open, switches → both states | cycles = candidate `loop`s; low-Z clusters = candidate `reference`s ([LA23](../../ideas/physics-first/language.md)) |
+| 2 Band netlists | per band, replace parts by band models: caps above C_min(band) → short, inductors and beads → open, switches → both states | cycles = candidate `loop`s; low-Z clusters = candidate `reference`s ([LA12](../../ideas/physics-first/language.md)) |
 | 3 Templates | topology detectors (hot-loop table in [hot-loops](../rules/power/hot-loops.md)) | `cell` → `loop`, `node`, `port` |
 | 4 Spectra | IBIS `[Ramp]`, datasheet f_sw, t_r, I_out; schematic simulation ([schematic-to-physics](schematic-to-physics.md)) | `excite` on nodes and loops |
 | 5 Sensitivities | roles: ADC resolution → LSB; FB divider → V_ref tolerance; XIN → ppm/pF; RX sensitivity | `sense` on victims |
@@ -132,7 +134,7 @@ Code fills `expect` (predicted delta per budget from the operator's sensitivity 
 | `loop` | component class `loop:<id>`, group, rule area on the hull | `disallow track via` for foreign nets inside the hull rule area | N7 nH micro-placer objective; same-layer reservation | `HOTLOOP-L`, `SENSE-M` | FastHenry deck cut at the decoupling cap (`.external`), then ngspice LC-step for V_pk ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py)) |
 | `node` | net class; zone with max area | `clearance` to victim classes from a coupling budget | area-aware cost | `SW-AREA` | FasterCap |
 | `channel` | net class, diff pair, tuning profile (ps) | `skew (within_diff_pairs)`, `via_count`, `length` in ps | chain order (N9); PNS diff-pair; shadow return (R2) | `RET-COV`, `RET-VIA`, `DIFF-BAL`, loss spend | scikit-rf cascade; openEMS for transitions |
-| `reference` | zones (net, layer, priority) | `return_path` on KiCad 11 | router cost field | reference map (`RET-COV`) | mesh for PEEC |
+| `reference` | zones (net, layer, priority) | `return_path` (master; KiCad 11 if it ships) | router cost field | reference map (`RET-COV`) | mesh for PEEC |
 | `discontinuity` | stitching vias or caps for `bridge` | — | via-site reservation (R3) | `SPLIT-X`, `RET-VIA` | openEMS for the crossing |
 | `coupling` | rule-area halo | `clearance` from D ≥ H·√(1/K − 1) for capacitive budgets | halo repulsion; parallel-run cost | `IO-COUPLE`, `SENSE-M`, `THERM-COUPLE` | FasterCap/FastHenry two-body |
 | `exclusion` | rule area | `disallow` foreign tracks | cost field | `IR-DROP` solve, J inside the region | sheet-resistance solver |

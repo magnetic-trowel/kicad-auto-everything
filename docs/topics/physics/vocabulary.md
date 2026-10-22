@@ -29,7 +29,7 @@
   | 0.2 mm | 0.14 MHz | 0.43 MHz | 0.31 MHz |
   | 1.6 mm | 18 kHz | 46 kHz | 39 kHz |
 
-  The boundary does not depend on plane width (20–100 mm). The high-frequency limit, 0.77–0.80 within ±3h, matches the closed form (2/π)·atan 3 = 0.795, Adamczyk's "80% within ±3h" ([si-fundamentals](../rules/si-fundamentals.md)). Published crossovers ("beyond 10 kHz", "500–1,000 kHz split") differ because their geometries differ ([InCompliance, Adamczyk](https://digital.incompliancemag.com/issue/august-2023/return-current-distribution-in-a-pcb-microstrip-line-configuration/)) [S]. Below f_x/10, return current spreads by resistance, and star-point and separation rules are physics. Above about 3·f_x it rides under the trace, and the same rules are harmful.
+  The boundary does not depend on plane width (20–100 mm). The high-frequency limit, 0.77–0.80 within ±3h, matches the closed form (2/π)·atan 3 = 0.795, Adamczyk's "80% within ±3h" ([si-fundamentals](../rules/si-fundamentals.md)). Published crossovers ("beyond 10 kHz", "500–1,000 kHz split") differ because their geometries differ ([InCompliance, Adamczyk](https://digital.incompliancemag.com/issue/august-2023/return-current-distribution-in-a-pcb-microstrip-line-configuration/)) [S]. Below about f_x/10, most return current spreads by resistance, and star-point and separation rules are physics. Above about 3·f_x it rides under the trace, and the same rules are harmful.
 - **Loop area is the wrong scalar.** LearnEMC: "Radiation is NOT proportional to loop area" [P]. Mutual inductance between coplanar loops of 20 mm² and 10 mm² ([vo_numbers.py halo](../../../tools/research/physics/vo_numbers.py)) [C]:
 
   | Distance | Free space | Plane 1.6 mm below | Plane 0.1 mm below |
@@ -43,7 +43,7 @@
 
 We adopt it with three amendments [I]:
 1. **"Invisible" becomes "designed or budgeted".** Some realizations *are* the function: antennas, transmission lines, PCB shunts and inductors, heat spreaders, Kelvin senses, guards, spark gaps. They use the same primitives with the objective's sign flipped.
-2. **Invisibility is relative to a victim in a band.** Ott's source → path → receptor triple becomes a Coupling with a margin in dB: threshold − (spectrum × transfer).
+2. **Invisibility is relative to a victim in a band.** Ott's source → path → receptor triple (*Electromagnetic Compatibility Engineering*, 2009) [S] becomes a Coupling with a margin in dB: threshold − (spectrum × transfer).
 3. **The spectrum is partly a layout output.** A clean 12 V, 2 ns trapezoid is 90 dB down at 2.45 GHz [C], but switch-node ringing at hundreds of MHz, set by loop L and C_oss, dominates the GHz content. Excitations must be back-annotated from layout-aware simulation ([schematic-to-physics](schematic-to-physics.md)).
 
 ### Atoms
@@ -127,7 +127,7 @@ Each operator carries a sensitivity card: which budgets move, sign, magnitude mo
 
 ### The physics graph
 
-- **Graph.** Nodes are mesh cells of bodies, port terminals and thermal nodes. Edges are partial R, partial L, M (dense, sparsified by distance or hierarchy), C to references and between bodies, G (leakage) and thermal conductances, with electrothermal coupling through I²R. This is PEEC (Ruehli 1972) [S]; FastHenry and FasterCap inputs are nearly this graph [P].
+- **Graph.** Nodes are mesh cells of bodies, port terminals and thermal nodes. Edges are partial R, partial L, M (dense, sparsified by distance or hierarchy), C to references and between bodies, G (leakage) and thermal conductances, with electrothermal coupling through I²R. This is PEEC (Ruehli 1972) [S]; FastHenry's input (nodes, segments, planes, terminal-pair ports) is nearly this graph [P].
 - **Per band.** R regime: resistive network; L regime: R + jωL; distributed: line segments or a full-wave call ([solver-ladder](solver-ladder.md)).
 - **Queries.** Loop L (impedance between two port terminals), M and C_m between named structures, IR drop, J inside an exclusion region, ΔT. A budget is a query plus a bound.
 - **Three views and five transforms.**
