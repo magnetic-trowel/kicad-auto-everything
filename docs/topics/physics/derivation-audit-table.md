@@ -11,7 +11,7 @@ This is the row-level evidence for [derivation-audit](derivation-audit.md). Each
   - **P4** locality and scales: Z/Z0, θ, ℓm, screen, homog, ωτ.
   - **P5** dissipation and fluctuation: Q, noise, WF (Wiedemann–Franz), joule.
   - **P6** information: margin, VOI, prior.
-  - **P7** extremes and accumulation: damage (required by failure rules; [audit §4](derivation-audit.md#4-what-does-not-derive-and-principle-p7)).
+  - **P7** extremes and accumulation: damage (principle D, required by failure rules; [audit §4](derivation-audit.md#4-what-does-not-derive-and-principle-d)).
   - **MP** manufacturing process; **LG** legal or standard; **CG** cognition or tools.
 - **Num** (for a number stated in the rule):
   - derived: follows from principles and constants;

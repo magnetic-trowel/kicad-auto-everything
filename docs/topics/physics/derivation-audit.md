@@ -3,7 +3,7 @@
 **TL;DR**
 - **132 of 160 rules (83%) derive from first principles, but only 51 cleanly; 81 need a stated regime condition.** Of the rest, 9 are conventions, 5 legal tables and 12 wrong habits. Only 2 cannot be derived: a material law and undisclosed vendor margins.
 - **Rules derive; their numbers mostly do not.** Of 67 stated numbers, 12 derive, 23 are a budget evaluated at one regime, 14 are data and 18 are arbitrary. Locality and scales (θ, Z/Z0, ℓ_m, decay lengths) appears in 46% of the derivations: it turns a slogan into a rule.
-- **Failure rules require principle P7, extremes and accumulation.** Breakdown, fracture, fatigue and ageing follow local maxima and accumulated rates, not energies. Thomson's principle bounds a corner's loss, not its damage, so corner, teardrop and fatigue rules derive only with P7. Twelve rules need it.
+- **Failure rules require principle D, extremes and accumulation (code P7).** Breakdown, fracture, fatigue and ageing follow local maxima and accumulated rates, not energies. Thomson's principle bounds a corner's loss, not its damage, so corner, teardrop and fatigue rules derive only with P7. Twelve rules need it.
 - **Several rules hold for a different reason than the one usually given.** Switch-node copper is a board–world charge rule, Kelvin taps a reciprocity rule, snubbers designed loss. Impedance level (T1, Z0 → ΔV/ΔI) derives 18 rules, all self terms and no couplings.
 - **Several widespread rules are wrong outside a narrow regime** [C]. A body-sized cut-out under an inductor is worse than keeping or clearing the plane. Reliefs do nothing physical in reflow. Stitching pitch follows the isolation distance, not λ/20. Guards help only on thick boards. Star grounds pay only from DC to a few kHz at board scale.
 
@@ -25,7 +25,7 @@ Tags: [S] secondary, [I] inference, [C] computed by [da_derivations.py](../../..
 | P4 | Locality and scales: θ = ωℓ/v, Z/Z0, ℓ_m = R_s/(πμ0f), screening and decay lengths, ωτ_e | F5; T1, T8 |
 | P5 | Dissipation and fluctuation: Q, noise, Wiedemann–Franz (WF), Joule heating | F6; T2, T10 |
 | P6 | Information: margins, value of information (VOI), rules as compressed priors | F7; T13 |
-| P7 | Extremes and accumulation (damage) | F6 damage clause; T11 |
+| P7 | Extremes and accumulation (damage): principle D of the [README](README.md) | F6 damage clause; T11 |
 | MP, LG, CG | Manufacturing process; legal and standards; cognition and tools | outer feasible set |
 
 **Verdicts:**
@@ -106,13 +106,13 @@ P4, P2 and P5.
 | TI's ESD corner radius ≥ 2.6 mm | an isolated feature at 8 kV has surface field ≈ V/r; air breaks down at 3 kV/mm | r = V/E_bd = 2.7 mm (Peek: 1.5 mm) |
 | ≥ 1 via per amp | an end-cooled barrel self-heats ΔT = V²/(8L0T) (Kohlrausch, from WF) | 1 A heats a 1.3 mΩ via by 0.03 K; 10 K takes ~18 A, so loop L or IR sets the count |
 
-### 4. What does not derive, and principle P7
+### 4. What does not derive, and principle D
 
 **Not derivable (2).** MLCC DC-bias derating (P27) is a ferroelectric constitutive law, an F2 break in [foundations](foundations.md). Vendor skew tables (S29) encode undisclosed margins. Physics states the budget each replaces, not the number.
 
 **Habit-wrong (12):** 11 habit rules plus 20-H, each with the wrong variable or an obsolete regime (leaded capacitors, immersion etching, clock-λ termination).
 
-**Principle P7: extremes and accumulation.** Failure is governed by local maxima and accumulated damage, not by energy.
+**Principle D (P7): extremes and accumulation is required.** Failure is governed by local maxima and accumulated damage, not by energy.
 - Damage rates are steep: Arrhenius ageing doubles per 10 °C; Coffin–Manson fatigue is a power law; breakdown, yield and fracture are thresholds.
 - They are local: they see corner singularities r^(π/α−1), so the governing quantity is a maximum or high-power norm, not a quadratic energy.
 - Energy principles cannot stand in for it: Thomson's principle bounds a corner's loss effect at ≤ 0.3 squares and says nothing about pulses, HV, ESD or fatigue.
