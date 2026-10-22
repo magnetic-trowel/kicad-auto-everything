@@ -121,6 +121,8 @@ def rescore(results_run_dir, jobs=1, progress=print):
                          "re-prepare and re-run instead")
     paths = sorted(run_dir.glob("*/*/*/attempt-*/attempt.json"))
     stamp = datetime.now(timezone.utc).isoformat()
+    # Only the built-in reference adapter may reproduce the human layout (it may carry a --label).
+    reference = meta.get("reference_adapter", meta["adapter"].get("name", "").startswith("reference"))
 
     def one(path):
         row = json.loads(path.read_text())
@@ -131,7 +133,7 @@ def rescore(results_run_dir, jobs=1, progress=print):
         row["status"] = "ok"
         row.pop("error", None)
         _score(row, tasks_dir / row["id"], recs[row["id"]], row["kind"], adir,
-               allow_copy=row["adapter"] == "reference", rescore_probe=True)
+               allow_copy=reference, rescore_probe=True)
         row["score_version"] = SCORE_VERSION
         row.setdefault("rescored", []).append(dict(at=stamp, from_version=old))
         path.write_text(json.dumps(row, indent=1))
@@ -195,7 +197,8 @@ def run(tasks_dir, results_dir, adapter, kinds=("route",), k=1, timeout=600, job
                 tools=tools.versions(), adapter=adapter.describe(),
                 probe=probe.describe() if probe else None, kinds=list(kinds), k=k, timeout=timeout,
                 tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only,
-                score_version=SCORE_VERSION, task_spec=TASK_SPEC)
+                score_version=SCORE_VERSION, task_spec=TASK_SPEC,
+                reference_adapter=adapter.needs_reference)
     meta_path = run_dir / "run.json"
     if meta_path.exists():
         prev = json.loads(meta_path.read_text())
