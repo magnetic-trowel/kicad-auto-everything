@@ -169,7 +169,7 @@ def cmd_run(a):
 
 def cmd_rescore(a):
     for d in a.run_dirs:
-        run_dir = runner.rescore(d, jobs=a.jobs)
+        run_dir = runner.rescore(d, jobs=a.jobs, force=a.force)
         summary, _ = report.report([run_dir])
         md = report.to_markdown(summary)
         (Path(run_dir) / "report.md").write_text(md + "\n")
@@ -290,6 +290,7 @@ def main(argv=None):
     sp = sub.add_parser("rescore", help="score a run's saved outputs again with the current scorer")
     sp.add_argument("run_dirs", nargs="+")
     sp.add_argument("-j", "--jobs", type=int, default=1)
+    sp.add_argument("--force", action="store_true", help="rescore attempts already scored by this version")
     sp.set_defaults(fn=cmd_rescore)
 
     sp = sub.add_parser("tasks", help="qualification yield of prepared tasks")
