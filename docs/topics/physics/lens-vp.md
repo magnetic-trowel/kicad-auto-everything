@@ -36,34 +36,34 @@ Outer: the designer's domain D (copper, parts, stackup). Inner: nature's u*(D) =
 - **B. Interaction** (aggressor–victim M or C; one load's drop; one part's ΔT). Structure: truly bilevel. One adjoint per objective; non-convex; adding copper can hurt.
 - **C. Non-variational** (EMI mask, i.e. max over f; thresholds; corners). Structure: many inner solves. Sensitivities per binding frequency.
 
-Class A needs one dominant energy in the band: PDN |Z| near an anti-resonance is class C (a decap raised |Z_AA| at 0/150 sites at 300 MHz, 150/150 at 1 GHz; [physics-core-v2](physics-core-v2.md)). Pours are class A: the adjoint is the state itself, and SIMP with p = 1 is convex, so its optimum floors every binary layout of that area. Round 1's non-convexity came from the p = 3 penalty, not the physics.
+Class A needs one dominant energy in the band: PDN |Z| near an anti-resonance is class C (a decap raised |Z_AA| at 0/150 sites at 300 MHz, 150/150 at 1 GHz; [physics-core-v2](physics-core-v2.md)). Pours are class A: the adjoint is the state itself, and SIMP with p = 1 is convex, so its optimum floors every binary layout of that area. Non-convexity in pour synthesis comes from the p = 3 penalty, not the physics. Near-optimality is therefore certifiable for class A on a fixed raster; couplings and joint placement have no such certificate.
 
 ### 3. Derivations
 
 - "Short and wide"; R·A = R_s·l² ([power-copper](power-copper.md)) (V1): N□ ≥ d²/A for any shape (D1).
 - Topology optimization −14.5% (OP2) (V1): At most 15.8% was available on the 0.1 mm raster (D1).
-- Inductance-only optimum worse than 50/50; "not self-adjoint" ([copper-shape-synthesis](copper-shape-synthesis.md), L9) (V3): A penalty artifact (D1).
+- Inductance-only pour worse than a 50/50 mix ([copper-shape-synthesis](copper-shape-synthesis.md), L9) (V3): A penalty artifact (D1).
 - DC- and HF-optimal pours coincide over a uniform plane (V1 ∝ V3): both are ∫c·|K|² (c = R_s or μ0·h); they differ only where h or R_s varies.
 - Loop L ∝ perimeter near a plane (0.052–0.055 nH/mm) (V3): The energy sits under the copper: L = μ0·h·P/w.
 - Via clusters: "outer size, not count" (PW32) (V10): Capacity (D3).
 - Rayleigh's via-field formula "under-predicts" (V10): It is the HS bound (D3).
-- Largest empty circle "±30%" (FE26) (V6): One-sided: f1 ≤ 0.766·c/(D·√εr). Round 1's κ = 0.32–0.64 all lie below 0.766.
+- Largest empty circle "±30%" (FE26) (V6): One-sided: f1 ≤ 0.766·c/(D·√εr). The fitted κ = 0.32–0.64 all lie below 0.766.
 - Adjoint misses a slot 30× ([solver-ladder](solver-ladder.md)) (V1): Polarization of the edit's shape (D4).
-- f_x = R_s/(2π·μ0·h), "found four times" (V3, V4): Two crossovers merged (D5).
+- f_x = R_s/(2π·μ0·h), "found four times" ([research-gaps](research-gaps.md)) (V3, V4): One of two distinct crossovers (D5).
 - w* at Z0 = V/I (PW2) (V3, V5): Equipartition (D6).
 
 **D1. Floors for copper of area A.** By Cauchy–Schwarz,
 
  P = R_s·∫\|K\|² ≥ R_s·(∫\|K\|)²/A ≥ R_s·W1²/A,
 
-where W1 = min ∫\|K\| is the earth-mover distance between sources and sinks (Beckmann 1952); with one source, W1 = Σ I_k·d_k. Round 1 used it for trees ([cross-domain-lessons](cross-domain-lessons.md) L2); Cauchy–Schwarz makes it a floor for any shape.
+where W1 = min ∫\|K\| is the earth-mover distance between sources and sinks (Beckmann 1952); with one source, W1 = Σ I_k·d_k. [cross-domain-lessons](cross-domain-lessons.md) L2 applies it to trees; Cauchy–Schwarz makes it a floor for any shape.
 
 A tighter floor makes conductance linear in a density ρ ∈ [0, 1], so P(ρ) = max_v [2fᵀv − vᵀK(ρ)v] is convex. For any trial potential v, P* ≥ (fᵀv)²/max_ρ vᵀK(ρ)v, a fractional knapsack.
 
-On round 1's pour [C, 0.1 mm grid, 105 mm², 6 A]: Beckmann floor (156 µs) ≥ 1.527 mΩ; convex floor (dual gap 4×10⁻⁴) ≥ 1.761 mΩ; round 1 SIMP, binary, 1.789 mΩ (+1.6%); human trunk and branches 2.092 mΩ (+18.8%).
+On the [copper-shape-synthesis](copper-shape-synthesis.md) pour [C, 0.1 mm grid, 105 mm², 6 A]: Beckmann floor (156 µs) ≥ 1.527 mΩ; convex floor (dual gap 4×10⁻⁴) ≥ 1.761 mΩ; SIMP, binary, 1.789 mΩ (+1.6%); human trunk and branches 2.092 mΩ (+18.8%). "Copper everywhere" (0.677 mΩ) ignores the area budget and lies 2.6× below the convex floor.
 
 - **Area sweep:** at 20–70% of free area, SIMP is 0.5–10% above the floor.
-- **Slotted reference** (0.2 mm grid; convex inductance floor 0.524 nH). From round 1's uniform start vs a convex start: inductance only 0.613 nH, 2.40 mΩ vs 0.546 nH, 2.02 mΩ; a 50/50 mix 0.604 nH, 2.05 mΩ vs 0.562 nH, 1.91 mΩ.
+- **Slotted reference** (0.2 mm grid; convex inductance floor 0.524 nH). From a uniform p = 3 start vs a convex start: inductance only 0.613 nH, 2.40 mΩ vs 0.546 nH, 2.02 mΩ; a 50/50 mix 0.604 nH, 2.05 mΩ vs 0.562 nH, 1.91 mΩ.
 
 **D2. Certified evaluation of a fixed geometry.** In 2-D, K = ∇ψ × n turns V1 into a Dirichlet problem for the stream function ψ with terminals and sides swapped. Conforming FEM on φ over-estimates conductance and on ψ resistance, so R_φ ≤ R ≤ R_ψ on any mesh (Prager–Synge).
 
@@ -73,7 +73,7 @@ Decisions are certified when intervals do not overlap ([lens-in](lens-in.md)).
 
 **D3. Vias are a capacity problem.** The spreading inductance from a via set into a plane pair of spacing d, out to radius R, is (μ0·d/2π)·ln(R/cap), with cap the set's logarithmic capacity. Closed forms: r for one via, √(r·s) for two, (N·r·ρ^(N−1))^(1/N) for N on a circle, 0.590·s for a filled square.
 
-Spreading L (pH), round 1's grid solves vs capacity [C]: 85/83.9, 70/69.5, 59/58.0, 61/60.2, 44/43.3, 41/41.2, 30/29.4, 43/42.5, 34/33.7.
+Spreading L (pH), grid solves vs capacity [C]: 85/83.9, 70/69.5, 59/58.0, 61/60.2, 44/43.3, 41/41.2, 30/29.4, 43/42.5, 34/33.7.
 
 Capacity grows with the set, so the convex hull gives a floor (4 vias at 2 mm: ≥ 40.1 pH vs 44 realized); vias inside the hull add almost nothing.
 
