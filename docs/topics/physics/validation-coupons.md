@@ -1,8 +1,8 @@
 # Validation coupons: a panel chosen by decision value
 
 **TL;DR**
-- **Five coupons earn a place, out of about fifteen proposed.** Each separates competing round-1/round-2 predictions by more than its measurement error, and the answer changes a rule or an architecture choice. By value per cost [C]: return-current band (LM) ≫ stitching cut-off (FP) > short voids (SS) ≈ bonding (CM) > node-vs-loop coupling (NL). Via clusters (VC) ride free on the FP panel; the rest are dropped.
-- **The predictions differ by 13× to 28 dB.** Round 1's f_x puts the lane-B return transition 13× lower in frequency than lane A; round 2 says within 10%. Symmetric node/loop duality predicts +43 dB of capacitive coupling for the thick dielectric; lens SY predicts +14.5 dB. The λ/20 stitching rule needs 2.9 mm pitch at 2.45 GHz; the wire medium says 10 mm already screens 36 dB.
+- **Five coupons earn a place, out of about fifteen proposed.** Each separates competing predictions by more than its measurement error, and the answer changes a rule or an architecture choice. By value per cost [C]: return-current band (LM) ≫ stitching cut-off (FP) > short voids (SS) ≈ bonding (CM) > node-vs-loop coupling (NL). Via clusters (VC) ride free on the FP panel; the rest are dropped.
+- **The predictions differ by 13× to 28 dB.** A single boundary at f_x(h) puts the lane-B return transition 13× lower in frequency than lane A; ℓ_m(f) puts it within 10%. Symmetric node/loop duality predicts +43 dB of capacitive coupling for the thick dielectric; lens SY predicts +14.5 dB. The λ/20 stitching rule needs 2.9 mm pitch at 2.45 GHz; the wire medium says 10 mm already screens 36 dB.
 - **Most predictions are differential:** twins or variants on one panel cancel fab and probe offsets (lens IN, E2).
 - **Intervals cover input tolerances; model error is what the panel measures.**
 - **One panel costs about $200–500 [I] and 3 engineer-weeks** with NanoVNA-class tools, an audio lock-in and a DMM.
@@ -26,11 +26,11 @@ Intervals are corner or Monte Carlo ranges over stated tolerances, read as about
 
 | Coupon | Dispute it settles | Decision it informs | Value per cost [C] |
 |---|---|---|---|
-| LM return band | f_x(h) (round 1) vs ℓ_m(f) = R_s/(πμ0f) (VP, SY, LS) | Distance or topology to protect precision nodes; whether a transition-band solver is needed | 6.6 per EW |
-| FP stitching cut-off | Wire medium (LS) vs empty circle (VP) vs κ fit (round 1) vs λ/20 | Stitching pitch and via count; decap reach | 2.5 |
+| LM return band | f_x(h) vs ℓ_m(f) = R_s/(πμ0f) (VP, SY, LS) | Distance or topology to protect precision nodes; whether a transition-band solver is needed | 6.6 per EW |
+| FP stitching cut-off | Wire medium (LS) vs empty circle (VP) vs κ fit (FE26) vs λ/20 | Stitching pitch and via count; decap reach | 2.5 |
 | SS short voids | Slot-line, Babinet, PEEC vs Ott-fit extrapolation | Critic severity and DFM rule for merged antipads | 1.7 |
 | CM board–world cut | Chassis bond (practice) vs local closure (CT, DR28) | Heatsink, Y-capacitor and standoff bonding | 1.7 |
-| NL node vs loop | Symmetric duality (round 1) vs duality break (SY) | Guards, prepreg as a lever, SW-to-high-Z keep-outs | 1.4 |
+| NL node vs loop | Symmetric node/loop duality vs duality break (SY) | Guards, prepreg as a lever, SW-to-high-Z keep-outs | 1.4 |
 | VC via clusters (add-on) | Logarithmic capacity (VP) vs count rule L/N | Via arrangement at decaps and power entries | 0.4: only as free copper on the FP panel |
 | ET edge terminations | Cavity model (TH) vs radiating edges | PDN damping by edge RC | 0.15: openEMS check first |
 
@@ -57,10 +57,10 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 - **Lane A, near the trace.** The ratio *rises* before it falls, peaking at f_peak = 223 kHz (×5.0), 112 kHz (×2.5) and 56 kHz (×1.24) at x = 1.5, 3 and 6 mm. Hence f_peak·x = 336 Hz·m, i.e. 1.17·R_s/(πμ0).
 - **Far from the trace.** f_half = 82 kHz [70, 95] at 12 mm and 65 kHz [55, 74] at 18 mm.
 - **Lane B / lane A** feature frequencies at x ≥ 6 mm: 1.05–1.09.
-- **Round 1's f_x reading** predicts no rise. It puts the transition near 1.34 MHz in lane A and 103 kHz in lane B, a ratio of 0.077.
+- **A single f_x(h) boundary** predicts no rise. It puts the transition near 1.34 MHz in lane A and 103 kHz in lane B, a ratio of 0.077.
 - **Optional 1 oz order:** every frequency drops by the R_s ratio, 2.30.
 
-**Decision.** Below f_half(x), distance does not protect a precision node from a nearby return current; only topology does (a cut, Kelvin taps, a neck at a stagnation point, [lens-ct](lens-ct.md) D3), and prepreg thickness does not move that frequency. If the curves hold, closed forms suffice and no transition-band solver is needed ([research-gaps](research-gaps.md) gap 2). "The transition" moved 10× between docs because each used a different observable ([red-team](red-team.md) claim 5); this coupon fixes one.
+**Decision.** Below f_half(x), distance does not protect a precision node from a nearby return current; only topology does (a cut, Kelvin taps, a neck at a stagnation point, [lens-ct](lens-ct.md) D3), and prepreg thickness does not move that frequency. If the curves hold, closed forms suffice and no transition-band solver is needed ([research-gaps](research-gaps.md) gap 2). Reported "transition" frequencies differ by up to 10× with the observable ([verification-and-limits](verification-and-limits.md) §2); this coupon fixes one.
 
 ### 4. Coupon FP: stitching cut-off, plus via clusters
 
@@ -80,7 +80,7 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 | 20 mm | 1.47 | 1.48 [1.44, 1.52] | −18 [−22, −16] | above f_p: +19 [+10, +28] |
 | 30 mm | 0.93 | 0.92 [0.92, 0.96] | above f_p: +13 [+10, +18] | ~0 |
 
-**Competing predictions.** VP's empty-circle bound (7.6/5.1/3.8/2.5 GHz) holds but is loose; round 1's κ = 0.32–0.64 spans 2× at every pitch; λ/20 needs p ≤ 2.9 mm at 2.45 GHz, about 15× the vias of the 10 mm that the wire medium says suffices (LS: ≤ 12 mm, [lens-ls](lens-ls.md)).
+**Competing predictions.** VP's empty-circle bound (7.6/5.1/3.8/2.5 GHz) holds but is loose; the κ fit (FE26, κ = 0.32–0.64) spans 2× at every pitch; λ/20 needs p ≤ 2.9 mm at 2.45 GHz, about 15× the vias of the 10 mm that the wire medium says suffices (LS: ≤ 12 mm, [lens-ls](lens-ls.md)).
 
 **VC add-on.**
 - **Geometry.** On the same core: clusters of 1, 2 (2 mm apart), 4 (2 mm square), 9 (3 × 3 at 1 mm) and 4 (0.6 mm square) vias. Each feeds L1 to L3 through L2 antipads inside a ring of 24 vias at R = 10 mm.
@@ -163,7 +163,7 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 **Method.** VNA S21 from the pad drive to the probe, 3–200 MHz, registered as ratios to V2. The probe transfer impedance cancels.
 
-**Predictions** [C, val_cm_coupon; lumped extended graph of [lens-ct](lens-ct.md) D2 with the cable as a line, as [red-team](red-team.md) claim 8 requires]:
+**Predictions** [C, val_cm_coupon; lumped extended graph of [lens-ct](lens-ct.md) D2 with the cable as a line, so V is world-referenced ([verification-and-limits](verification-and-limits.md) §1)]:
 
 | vs V2 | 10 MHz | 30 MHz | 100 MHz | 200 MHz |
 |---|---|---|---|---|
@@ -178,7 +178,7 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 | ID | Observable | Registered value [interval] | Competing value | Script |
 |---|---|---|---|---|
-| LM1 | f_peak·x, lane A, x = 1.5–6 mm | 336 Hz·m [285, 385] | no rise below ~1.3 MHz (round 1) | val_lm_coupon |
+| LM1 | f_peak·x, lane A, x = 1.5–6 mm | 336 Hz·m [285, 385] | no rise below ~1.3 MHz (f_x model) | val_lm_coupon |
 | LM2 | Feature frequency ratio B/A, x ≥ 6 mm | 1.05–1.09 (±15%) | 0.077 | val_lm_coupon |
 | LM3 | f_half at 12 / 18 mm, lane A | 82 [70, 95] / 65 [55, 74] kHz | ~1.3 MHz | val_lm_coupon |
 | FP1 | First S21 peak vs Belov f_p, 4 pitches | ratio 1.00 ±0.03 | κ fit: 0.96–1.93× f_p at 10 mm | val_fp_coupon |
@@ -211,7 +211,7 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 ## Sources
 
 - JLCPCB stackup table ([impedance page](https://jlcpcb.com/impedance)) [P]. Ott's slot data via [physics-critics-validation](physics-critics-validation.md) [P].
-- Round-2 lenses: [lens-ls](lens-ls.md) (wire medium, ℓ_m), [lens-vp](lens-vp.md) (capacity, floors), [lens-sy](lens-sy.md) (duality), [lens-ct](lens-ct.md) (board–world cut), [lens-th](lens-th.md) (damping), [lens-in](lens-in.md) (VOI).
+- Lenses: [lens-ls](lens-ls.md) (wire medium, ℓ_m), [lens-vp](lens-vp.md) (capacity, floors), [lens-sy](lens-sy.md) (duality), [lens-ct](lens-ct.md) (board–world cut), [lens-th](lens-th.md) (damping), [lens-in](lens-in.md) (VOI).
 - Reused scripts: vp_rl_band, fe_cavity, vp_floors, sy_duality_balance, fe_peec_plane, ct_cut_topology.
 
-See also: [validation-program](validation-program.md) · [red-team](red-team.md) · [research-gaps](research-gaps.md) · [physics-critics-validation](physics-critics-validation.md) · [solver-ladder](solver-ladder.md)
+See also: [validation-program](validation-program.md) · [verification-and-limits](verification-and-limits.md) · [research-gaps](research-gaps.md) · [physics-critics-validation](physics-critics-validation.md) · [solver-ladder](solver-ladder.md)
