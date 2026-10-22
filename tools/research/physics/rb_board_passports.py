@@ -822,6 +822,44 @@ class Terminals:
 
 
 
+def add_shunt_body(N, b, s, pa, pb, h):
+    """Resistive element of a 2-terminal shunt as parallel strips attached along the pads' facing (inner) edges.
+
+    The pad copper itself stays ordinary copper (bare: solder and terminations in parallel are ignored, the
+    worst case), so a sense tap anywhere on or near a pad sees the real copper drop. Returns the strip branches."""
+    ca, cb = np.array([pa['x'], pa['y']]), np.array([pb['x'], pb['y']])
+    u = (cb - ca) / np.linalg.norm(cb - ca)
+    v = np.array([-u[1], u[0]])
+    side = []
+    for p, c, sgn in ((pa, ca, 1.0), (pb, cb, -1.0)):
+        ids = np.concatenate([sel for ly, sel in pad_cells(N, b, p) if len(sel)])
+        xy_ = np.stack([N.x[ids], N.y[ids]], 1) - c
+        sa, ta = xy_ @ (sgn * u), xy_ @ v
+        inner = sa >= sa.max() - max(0.12, 1.5 * h)
+        side.append((ids[inner], ta[inner]))
+    lo = max(side[0][1].min(), side[1][1].min())
+    hi = min(side[0][1].max(), side[1][1].max())
+    nbins = max(4, int(round((hi - lo) / max(h, 0.1))))
+    edges = np.linspace(lo - 1e-9, hi + 1e-9, nbins + 1)
+    pairs = []
+    for k in range(nbins):
+        sel = [ids[(t >= edges[k]) & (t < edges[k + 1])] for ids, t in side]
+        if len(sel[0]) and len(sel[1]):
+            nodes = []
+            for ids_, p in zip(sel, (pa, pb)):
+                nd = N.add_nodes([float(N.x[ids_].mean())], [float(N.y[ids_].mean())], p['net'], 'electrode', 2)[0]
+                N.add_br(np.full(len(ids_), nd), ids_, 500.0 / b.rs[p['layers'][0]], 4, p['net'], p['layers'][0], p['x'], p['y'])
+                nodes.append(nd)
+            pairs.append(nodes)
+    m = len(pairs)
+    out = []
+    for na, nb_ in pairs:
+        k = N.add_br(na, nb_, 1.0 / (s['ohm'] * m), 5, 'lumped', 'lumped', s['fp']['x'], s['fp']['y'])[0]
+        N.bname[k] = s['ref']
+        out.append(k)
+    return out
+
+
 # ============================================================================ HF stack model
 RIGID = 1e13          # 1/H: a 0.1 pH link (vias, electrodes)
 
@@ -1163,7 +1201,9 @@ def run_hf(b, roles, N, Ib, sdef, col, args):
     t0 = tic()
     L1, ex1, L2, ex2, inf2 = stack_selftest(args.h_out)
     log("\n== HF hot loop (inductive limit, stack-local parallel-plate model)")
-    log(f"   self-test: strip 1 x 9.9 mm over a plane 0.2 mm below: {L1 * 1e9:.4f} nH vs mu0*h*l/w {ex1 * 1e9:.4f} nH;"
+    wh = MU0 * 9.9e-3 / (5 + 1.393 + 0.667 * math.log(5 + 1.444))
+    log(f"   self-test: strip 1 x 9.9 mm over a plane 0.2 mm below: {L1 * 1e9:.4f} nH vs mu0*h*l/w {ex1 * 1e9:.4f} nH"
+        f" (Wheeler with fringing {wh * 1e9:.3f} nH: the local model over-estimates narrow strips by x{L1 / wh:.2f});"
         f" via pair 10 mm apart in a 1.0 mm plane pair: {L2 * 1e9:.4f} nH vs mu0*h*squares {ex2 * 1e9:.4f} nH"
         f" (infinite plane (mu0 h/pi) ln(D/0.198 dx) = {inf2 * 1e9:.3f} nH)")
     near = [f for d, f in roles['decaps'] if d < 12.0]
@@ -1515,7 +1555,8 @@ def main(argv=None):
     ap.add_argument('--h-small', type=float, default=0.05, help='grid for rails and phase nets (mm)')
     ap.add_argument('--h-plane', type=float, default=0.2, help='grid for ground and plane nets (mm)')
     ap.add_argument('--h-hf', type=float, default=0.15, help='grid for the HF stack window (mm)')
-    ap.add_argument('--h-out', type=float, default=1.0, help='outer field thickness in the stack model (mm)')
+    ap.add_argument('--h-out', type=float, default=10.0, help='outer field thickness in the stack model (mm); large = '
+                    'planes confine the field (the parallel-plate limit)')
     ap.add_argument('--sketch', type=int, default=48, help='JL sketch size for whole-board leverage')
     ap.add_argument('--driver', help='override the inferred switching-cell reference')
     ap.add_argument('--quick', action='store_true', help='coarser grids for a fast look')
@@ -1569,9 +1610,9 @@ def main(argv=None):
         s = ph['shunt']
         pa = next(p for p in s['fp']['pads'] if p['net'] == ph['net_in'])
         pb = next(p for p in s['fp']['pads'] if p['net'] == ph['net_out'])
-        k = N.add_br(T.pad(pa), T.pad(pb), 1.0 / s['ohm'], 5, 'lumped', 'lumped', s['fp']['x'], s['fp']['y'])[0]
-        N.bname[k] = s['ref']
-        lumped.append((s['ref'], k))
+        for k in add_shunt_body(N, b, s, pa, pb, hnet[ph['net_in']]):
+            lumped.append((s['ref'], k))
+        ph['nbody'] = sum(1 for r_, _ in lumped if r_ == s['ref'])
     sdef, pdef = {}, {}
     for J in roles['supplies']:
         jr = [p for p in J['pads'] if p['net'] == rail]
@@ -1659,7 +1700,7 @@ def main(argv=None):
         fr = N.free[N.comp[N.a[k]]]
         x = np.zeros(N.nn)
         x[fr] = spla.splu(G2[fr][:, fr].tocsc(), permc_spec='COLAMD').solve(S[fr, p0])
-        d_bf = float(S[:, p0] @ x) - Rself[srcs[p0]]
+        d_bf = float(S[fr, p0] @ x[fr] - S[fr, p0] @ Phi[fr, p0])
         d_r1 = Ib[k, p0] ** 2 / (N.g[k] * (1 - rho_ex[k]))
         chk.append(abs(d_r1 - d_bf) / max(abs(d_bf), 1e-30))
     log(f"   exactness: rank-1 removal vs brute-force re-solve (a face and a via barrel on '{srcs[p0]}'): max rel. error {max(chk):.1e}")
@@ -1699,7 +1740,7 @@ def main(argv=None):
         txt = 'disconnects' if not np.isfinite(dz) else f"+{pct(dz, Rself[src]):.2f}% R({src})"
         log(f"   {v['kind']} {v['net'].split('/')[-1]:8s} at {where(v['x'], v['y'])} drill {v['d']:.2f}: "
             + ", ".join(f"{s} {100 * c:.1f}%" for s, c in zip(srcs, cur) if c > 0.01)
-            + f"; rho {np.nanmax(rho_ex[segs]):.2f}; removal {txt}")
+            + f"; rho {rho_ex[segs[np.argmax(np.abs(Ib[segs, k]))]]:.2f}; removal {txt}")
 
     # ------------------------------------------------------------------ 7. where the loss is
     log("\n== Where each source's copper loss is: near its terminals, its hottest 1 mm tile, peak current density")
@@ -1724,6 +1765,25 @@ def main(argv=None):
         log(f"   {nm:14s}: " + "; ".join(txt) + f"; peak |J| {J[jm]:.0f} A/mm2 per A at {where(N.mx[face][jm], N.my[face][jm])}"
             f" ({N.net[face][jm].split('/')[-1]}, {N.lay[face][jm]})")
 
+    for ph in phases:
+        if 'src' not in ph:
+            continue
+        k = col[ph['src']]
+        cuk = (N.kind <= 3) & np.isin(N.net, [ph['net_in'], ph['net_out']])
+        loss = Ib[cuk, k] ** 2 / N.g[cuk]
+        tot = loss.sum()
+        pts_ = shapely.points(N.mx[cuk], N.my[cuk])
+        pin = unary_union([p['poly'] for p in drv['pads'] if p['net'] == ph['net_in']])
+        dpin = shapely.distance(pin, pts_)
+        pads_ = unary_union([p['poly'].buffer(0.05) for p in ph['shunt']['fp']['pads']])
+        onpad = shapely.contains(pads_, pts_)
+        isin = N.net[cuk] == ph['net_in']
+        bands = [('pin pad and first 0.5 mm', isin & (dpin < 0.5)), ('0.5-1.5 mm from the pin', isin & (dpin >= 0.5) & (dpin < 1.5)),
+                 ('shunt pads', onpad), ('rest of the pin-side pour', isin & (dpin >= 1.5) & ~onpad),
+                 ('connector side (after the shunt)', ~isin & ~onpad)]
+        log(f"   {ph['src']} copper loss by region ({fmt_r(tot)} total): " + ", ".join(
+            f"{nm_} {100 * loss[m_].sum() / tot:.0f}%" for nm_, m_ in bands))
+
     # ------------------------------------------------------------------ 8. leverage
     log("\n== Irreplaceable copper (exact leverage rho: 1 = sole path; 0.5 = sheet; first-order prices are low by 1/(1-rho))")
     for nm in srcs:
@@ -1736,6 +1796,10 @@ def main(argv=None):
             log(f"   {nm:14s}: {len(hi)} faces with rho > 0.9 carry > 2% of it; worst single-face removal at {where(N.mx[w_], N.my[w_])}"
                 f" ({N.net[w_].split('/')[-1]}): +{pct(cost.max(), Rself[nm]):.1f}% R, first-order +{pct(Ib[w_, k] ** 2 / N.g[w_], Rself[nm]):.3f}%"
                 f" (x{1 / max(1 - rho_ex[w_], 1e-12):.0f})")
+    okr = np.isfinite(rho_ex) & face & (load_any > 0.01)
+    log(f"   exact price / first-order (Tellegen) price = 1/(1 - rho) over the {okr.sum()} loaded faces with exact rho: median"
+        f" {np.median(1 / (1 - rho_ex[okr])):.2f}, 10-90% {np.percentile(1 / (1 - rho_ex[okr]), 10):.2f}-"
+        f"{np.percentile(1 / (1 - rho_ex[okr]), 90):.2f}")
     for net in dc_nets:
         mm = face & (N.net == net)
         if mm.sum() > 100:
@@ -1803,9 +1867,12 @@ def main(argv=None):
             if qn.startswith('Kelvin'):
                 if abs(lump) < 1e-9:
                     continue
-                err = cu / lump
-                log(f"   {qn} <- {pn}: {fmt_r(Z)} per A = shunt {fmt_r(lump)} + copper {cu * 1e6:+.1f} uOhm: gain error"
-                    f" {100 * err:+.2f}%; copper TCR makes it drift {err * TCR_CU * 1e6:+.0f} ppm/K")
+                ph = next(x for x in phases if x.get('port') == qn)
+                R0 = ph['shunt']['ohm']
+                err = Z / R0 - 1
+                log(f"   {qn} <- {pn}: {fmt_r(Z)} per A for a {fmt_r(R0)} shunt: gain error {100 * err:+.2f}%"
+                    f" (shared copper {100 * cu / R0:+.2f}%, uneven current across the element {100 * (lump - R0) / R0:+.2f}%);"
+                    f" the copper part drifts {cu / R0 * TCR_CU * 1e6:+.0f} ppm/K")
             else:
                 log(f"   {qn} <- {pn}: {cu * 1e6:+.2f} uOhm (= {cu * 1e6 * I0:+.2f} uV at {I0:g} A)")
             ac = a_b.copy()
