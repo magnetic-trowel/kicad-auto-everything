@@ -18,9 +18,11 @@ For inductive posts (decaps above their SRF, stitching vias) this is a plasma:
 * above w_p: propagating cavity modes, shifted to sqrt(f_mn^2 + f_p^2).
 For vias, L_post = (mu0 d / 2 pi)(ln(a/2 pi r) + 0.5275) and w_p is Belov's wire-medium cut-off.
 The dimensionless number N_sq = L_post/(mu0 d) (decap inductance in plane-pair squares, independent
-of pitch) separates the continuum regime (many posts within lambda; input inductance
-~ (mu0 d / 2 pi) ln(1.12 lambda / r), only logarithmic in Lc) from the discrete regime (the nearest
-post dominates and its distance matters).
+of pitch; pi N_sq posts sit inside one screening disc) measures how well the continuum holds: a point
+load's inductance ~ (mu0 d / 2 pi) ln(1.12 lambda / r) is within 1% of the lattice at N_sq = 5.6 and
+12-20% low at N_sq = 0.56.  In both regimes that inductance is dominated by plane spreading: linear in
+d, only logarithmic in the decap ESL (an earlier expectation that the nearest decap's ESL dominates
+below N_sq ~ 1 did not hold in the lattice).
 
 Checks: a finite-difference lattice of the plane pair (nodes every D, posts as nodal admittances
 with a Peaceman correction for vias) is solved at each frequency (sparse LU): driving-point

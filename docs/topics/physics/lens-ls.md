@@ -163,7 +163,7 @@ A conductor's job depends on the frequency and on the length scale of the questi
 | Conductor | Low f | Transition | Middle band | High f |
 |---|---|---|---|---|
 | L2 GND plane | resistive return, heat spreader | receding image; return width ≈ 2h + ℓ_m | mirror at trace scale, antenna arm at cable scale (same f) | cavity wall above f_p |
-| Stitching via | 1 mΩ | — | (μ0t/π)·ln(s/r) | plasma post; launch ∝ (ks)² |
+| Stitching via | 1 mΩ | — | (μ0d/π)·ln(s/r) | plasma post; launch ∝ (ks)² |
 | Decap + mount | capacitor (slow wave) | resistor at SRF | screening post | k = 0 partner at f_p |
 | 1 m cable | return | — | antenna, 30–300 MHz | — |
 
