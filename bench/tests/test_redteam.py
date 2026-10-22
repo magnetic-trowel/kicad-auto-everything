@@ -52,6 +52,7 @@ def rt(tmp_path_factory):
                                         "kicad_pro": str(src / "redteam.kicad_pro")}, root / "tasks")
     assert rec["qualified"], rec["reference"]["drc"]
     assert rec["footprint_uuids_reassigned"] == 1
+    assert rec["roundtrip"]["route"]["ok"] and rec["roundtrip"]["place"]["ok"], rec["roundtrip"]
     return root, rec
 
 
