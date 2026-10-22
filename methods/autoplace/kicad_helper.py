@@ -42,9 +42,13 @@ def _union(a, b):
     return [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
 
 
+COPPER_MASK = (pcbnew.F_Cu, pcbnew.B_Cu, pcbnew.F_Mask, pcbnew.B_Mask)
+
+
 def _rect(fp):
-    """Courtyard bbox (either side) united with the pads' bboxes. None for artwork (no
-    courtyard, no pads): DRC never checks it against anything."""
+    """Courtyard bbox (either side) united with the pads' bboxes. Artwork (no courtyard, no
+    pads) counts by its copper and mask graphics (a copper logo clashes with copper); None if
+    it has neither, since DRC then never checks it against anything."""
     fp.BuildCourtyardCaches()
     r = None
     for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
@@ -53,7 +57,23 @@ def _rect(fp):
             r = _union(r, _box(ps.BBox()))
     for p in fp.Pads():
         r = _union(r, _box(p.GetBoundingBox()))
+    if r is None:
+        for g in fp.GraphicalItems():
+            if g.GetLayer() in COPPER_MASK:
+                r = _union(r, _box(g.GetBoundingBox()))
     return r
+
+
+def _board_obstacles(board):
+    """Board-level drawings and text on copper or mask layers (not part of any footprint)."""
+    out = []
+    for d in board.GetDrawings():
+        layer = d.GetLayer()
+        if layer in COPPER_MASK:
+            out.append(dict(uuid=d.m_Uuid.AsString(), ref="(board %s)" % board.GetLayerName(layer),
+                            back=layer in (pcbnew.B_Cu, pcbnew.B_Mask), tht=False,
+                            rect=_box(d.GetBoundingBox()), pads=[]))
+    return out
 
 
 def _tht(fp):
@@ -79,7 +99,7 @@ def extract(path, out):
                                      polys=_polys(z.Outline())))
         elif z.GetNetCode() > 0:
             pour_nets.add(z.GetNetname())
-    fixed, free = [], []
+    fixed, free = _board_obstacles(board), []
     for fp in board.GetFootprints():
         rec = dict(uuid=fp.m_Uuid.AsString(), ref=fp.GetReference(), back=fp.IsFlipped(), tht=_tht(fp))
         if fp.IsLocked():

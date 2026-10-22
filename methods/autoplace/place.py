@@ -72,7 +72,7 @@ def _poly(p):
 
 
 class Problem:
-    def __init__(self, g, halo_base=0.15, halo_coef=0.12, margin=None):
+    def __init__(self, g, halo_base=0.15, halo_coef=0.12, halo_floor=0.2, margin=None):
         self.g = g
         board = unary_union([_poly(p) for p in g["outline"]])
         m = max(g.get("edge_clearance") or 0.0, 0.25) if margin is None else margin
@@ -104,7 +104,7 @@ class Problem:
         # nothing as the parts fill the board (fill 0.55 -> full halo, 0.75 -> none)
         self.fill = float(self.area.sum() / max(self.region[None].area, 1e-9))
         self.halo_scale = float(np.clip((0.75 - self.fill) / 0.2, 0.0, 1.0))
-        self.halo = (halo_base + halo_coef * np.sqrt(self.npads)) * self.halo_scale * ~self.art
+        self.halo = (halo_floor + (halo_base + halo_coef * np.sqrt(self.npads)) * self.halo_scale) * ~self.art
         # conflicts: same side, or either part has holes through the board
         same = self.back[:, None] == self.back[None, :]
         self.conflict = (same | self.tht[:, None] | self.tht[None, :]) & ~self.art[:, None] & ~self.art[None, :]
@@ -673,6 +673,7 @@ def main(argv=None):
     ap.add_argument("--cross-w", type=float, default=None, help="cost of one crossing (mm); default 0.25*diag")
     ap.add_argument("--halo-coef", type=float, default=0.12)
     ap.add_argument("--halo-base", type=float, default=0.15)
+    ap.add_argument("--halo-floor", type=float, default=0.2, help="halo kept even on full boards")
     ap.add_argument("--seeds", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0, help="varies all random choices (the attempt index does too)")
     ap.add_argument("--rounds", type=int, default=6)
@@ -687,7 +688,7 @@ def main(argv=None):
     gj = work / "geometry.json"
     kicad_py("extract", a.input, gj)
     g = json.loads(gj.read_text())
-    P = Problem(g, halo_base=a.halo_base, halo_coef=a.halo_coef)
+    P = Problem(g, halo_base=a.halo_base, halo_coef=a.halo_coef, halo_floor=a.halo_floor)
     log = dict(algo=a.algo, parts=P.n, nets=len(P.nets), signal_nets=int(P.signal.sum()), fixed=len(g["fixed"]))
     print(json.dumps(log), flush=True)
     if P.n == 0:
