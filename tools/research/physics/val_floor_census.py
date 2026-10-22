@@ -15,25 +15,27 @@ given DC currents; capacitors carry no DC):
   R_act    loss-equivalent resistance P/I^2 of the copper as drawn: cell-centred finite volumes,
            0.1 mm cells, each footprint's pads one equipotential node, via barrels as resistors;
   R_B      Beckmann floor at the net's area (any shape, any place; via resistance ignored);
-  floors   convex floors at equal area inside three domains of growing freedom:
+  floors   convex floors at equal area inside three domains (different freedoms, not nested):
            shape      the net's zone outlines and copper minus every other net's copper (zone
                       clearance) and holes: only the net's own pour shape may change (thermal
                       reliefs, islands, necks);
            routing    other nets' tracks and vias removed (what co-routing could buy);
            partition  the whole layer within the board edge, other nets' pads, tracks and vias kept,
                       other nets' zone fills negotiable (what re-partitioning the planes could buy).
-Floors use bilinear (Q4) elements on 0.15 mm cells (0.25 mm for domains over 400 mm^2) with the net's vias as fixed links, solved by
-optimality-criteria updates at the actual layout's copper area on that grid; the reported floor is
-the best Lagrangian-dual bound (fractional knapsack), certified for every layout on that grid. The
-actual copper is re-evaluated on the same grid (R_q4) so that it is a feasible point, and the
-avoidable fraction is 1 - floor / R_q4 (Beckmann's: 1 - R_B / R_act). The partition floor ignores what
-the other nets' planes lose, so it bounds a multi-net trade rather than prescribing one.
+Floors use bilinear (Q4) elements on 0.15 mm cells (0.25 mm for domains over 400 mm^2) with the
+net's vias as fixed links, solved by optimality-criteria updates at the actual layout's copper area
+on that grid; the reported floor is the best Lagrangian-dual bound (fractional knapsack), certified
+for every layout on that grid (raster scope). The actual copper is re-evaluated on the same grid so
+that it is a feasible point, and the avoidable fraction is 1 - floor / R(actual on that grid)
+(Beckmann's: 1 - R_B / R_act). The partition floor ignores what the other nets' planes lose, so it
+bounds a multi-net trade rather than prescribing one. Boards without a closed Edge.Cuts outline use
+the envelope of their copper as the board edge.
 
 Nets and currents are a pilot assignment by inspection of the footprints (PILOT below), not a
 circuit simulation; the census at scale needs the schematic's DC operating point.
 
 Run:  python -I tools/research/physics/val_floor_census.py DIR      (DIR/<board>/board.kicad_pcb)
-      Boards are third-party data: never copy them into the repo. ~5-10 min for the pilot set.
+      Boards are third-party data: never copy them into the repo. ~3 min for the pilot set.
 """
 import math
 import os

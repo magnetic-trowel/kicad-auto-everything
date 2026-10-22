@@ -205,7 +205,7 @@ def sec_adc():
     for dx in (-3, 0, 3):
         for dy in (-3, 0, 3):
             vals.append(abs(phi[node(77, 20 + dy)] - phi[node(58 + dx, 20 + dy)]))
-    print(f"   R arm: plane carries the injector current; bridge EXC- into the plane at the connector, REFN at the ADC")
+    print("   R arm: plane carries the injector current; bridge EXC- into the plane at the connector, REFN at the ADC")
     print(f"     transfer resistance {r_t*1e6:7.1f} uOhm = uV of error per A injected"
           f" [{min(vals)*1e6*0.85:.1f}, {max(vals)*1e6*1.15:.1f}] (tie positions +-3 mm, copper +-15 %)")
     print("   P arm: REFN sensed at the bridge's EXC- pin (Kelvin), excitation returned on its own trace, one plane tie:")

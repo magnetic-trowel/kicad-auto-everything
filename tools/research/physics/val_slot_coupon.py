@@ -15,10 +15,10 @@ under a fast trace costs. The candidate models disagree most there:
 
 Coupon (JLC04161H-3313, L1 trace over the L2 plane, h_eff = 0.0994 + 0.0175 + 0.0076 mm):
 50-ohm traces (0.19 mm), 20 mm long, SMA at one end, shorted to L2 with two vias at the
-other; each crosses one void at mid-length, at right angles. Twins without a void on the
-same panel give the differential. Voids: 1/2/3/5/10 x 0.3 mm slots, 2 and 5 x 0.8 mm slots,
-five 0.9 mm antipads at 0.8 mm pitch (merged, a 4.1 x 0.9 mm void) and at 1.0 mm pitch
-(separate holes). Observable: dL from S11 of each trace against its twin at 20-100 MHz
+other; nine cross one void each at mid-length, at right angles, and three twins without a
+void on the same panel give the differential. Voids: 1/2/3/5/10 x 0.3 mm slots, 2 and
+5 x 0.8 mm slots, five 0.9 mm antipads at 0.8 mm pitch (merged, a 4.1 x 0.9 mm void) and
+at 1.0 mm pitch (separate holes). Observable: dL from S11 of each trace against its twin at 20-100 MHz
 (NanoVNA, SOL calibration at the SMA). Second observable, Ott's: the plane voltage over
 25.4 mm straddling the void, read through a thin Kelvin pair (sense traces on L1, 1 mm
 beside the trace). Intervals: PEEC corners at h x 0.9 and x 1.1 and a model-form allowance
@@ -32,8 +32,6 @@ import sys
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-import numpy as np  # noqa: E402,F401
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fe_peec_plane as fp  # noqa: E402  (round-1 plane PEEC, reused)
 
@@ -80,23 +78,25 @@ def peec_dl(kind, l_mm, g_mm, h_mm):
     return (run(rem, ykeys, n * pitch) - base) * h_mm
 
 
-def plane_v_1in(l_mm, g_mm, h_mm):
-    """Plane voltage between points 25.4 mm apart on the trace axis, straddling the slot (Ott's observable),
-    per unit trace current, in nH (V / (j w I)); returns (no slot, with slot)."""
+def plane_v_1in(l_mm, g_mm, h_mm, y_mm=1.0):
+    """Plane voltage between points 25.4 mm apart along the trace, straddling the slot, at the Kelvin vias' lateral
+    offset y_mm from the trace axis (Ott's observable), per unit trace current, in nH (V / (j w I)), in the PEEC's
+    partial-inductance gauge; the sense loop's own pickup is common to a void coupon and its twin to first order,
+    so only the ratio is registered. Returns (no slot, with slot)."""
     h, g, w = 1.0, g_mm / h_mm, W_TR / h_mm
     lt = 30.0 / h_mm
-    xp = 12.7 / h_mm
+    xp, yp = 12.7 / h_mm, y_mm / h_mm
     out = []
     for l_ in (0.0, l_mm / h_mm):
         X, Y = lt / 2 + 25, max(40.0, l_ / 2 + 30)
         xkeys = [(-lt / 2, 0.5), (lt / 2, 0.5), (-xp, 0.5), (xp, 0.5), (-g / 2, min(0.5, g / 3)), (g / 2, min(0.5, g / 3))]
-        ykeys = [(0.0, 0.33)] + ([(-l_ / 2, min(0.5, g / 3)), (l_ / 2, min(0.5, g / 3))] if l_ else [])
+        ykeys = [(0.0, 0.33), (yp, 0.5)] + ([(-l_ / 2, min(0.5, g / 3)), (l_ / 2, min(0.5, g / 3))] if l_ else [])
         xs = fp.graded_lines(-X, X, xkeys, 8.0)
         ys = fp.graded_lines(-Y, Y, ykeys, 8.0)
         rem = (lambda xc, y, l_=l_: abs(xc) < g / 2 and abs(y) <= l_ / 2 + 1e-9) if l_ else None
         pl = fp.Plane(xs, ys, rem)
         r = fp.solve_loop(pl, 0.0, h, w, -lt / 2, lt / 2, want_potential=True)
-        out.append(abs(fp.phi_at(pl, r["phi"], -xp, 0.0) - fp.phi_at(pl, r["phi"], xp, 0.0)) * h_mm)
+        out.append(abs(fp.phi_at(pl, r["phi"], -xp, yp) - fp.phi_at(pl, r["phi"], xp, yp)) * h_mm)
     return out
 
 
@@ -114,7 +114,6 @@ def proxy(l):
 
 def main():
     print(f"== short-slot coupon: 0.19 mm trace, {LT:.0f} mm, h_eff = {H_EFF:.4f} mm over L2; dL in nH")
-    base_l = None
     rows = []
     for label, kind, l, g in CASES:
         dl = peec_dl(kind, l, g, H_EFF)
@@ -136,10 +135,8 @@ def main():
     m = [r for r in rows if r[0].startswith("5 antipads") and "merged" in r[0]][0][4]
     s = [r for r in rows if r[0].startswith("5 antipads") and "holes" in r[0]][0][4]
     print(f"\n  merged vs separate antipads: {m:.3f} vs {s:.3f} nH (ratio {m/max(s,1e-6):.1f})")
-    # what the critic decides: slot cost relative to the trace's own loop L and to an L budget
-    lp = fp.MU0_4PI_NH_PER_MM  # unused, kept for reference to the module's units
-    del lp
-    print("\n  Ott's observable: plane voltage over 25.4 mm straddling the slot, per unit trace current (nH), 30 mm trace")
+    print("\n  Ott's observable: plane voltage over 25.4 mm straddling the slot, 1 mm beside the trace, per unit trace"
+          " current (nH), 30 mm trace")
     print("    slot          no slot   with slot   ratio   (Ott, 1/4-1.5 in slots at his h: ratios 1.33/1.73/3.27/5.0)")
     for l in (1.0, 2.0, 3.0, 5.0, 10.0):
         v0, v1 = plane_v_1in(l, 0.3, H_EFF)
