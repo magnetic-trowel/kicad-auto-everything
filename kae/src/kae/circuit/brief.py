@@ -95,7 +95,7 @@ def _structure_roles(st: dict) -> dict:
         if caps:
             put(caps[0], 'commutation_cap', sid)
             for x in caps[1:]:
-                put(x, 'commutation_cap_bulk' if c['class'] != 'boost' else 'commutation_cap_bulk', sid)
+                put(x, 'commutation_cap_bulk', sid)
         put(c.get('inductor'), 'power_inductor', sid)
         sw = c.get('switches') or {}
         if sw.get('high') and sw['high'] != c.get('controller'):

@@ -76,6 +76,9 @@ def resistance(text: str | None) -> float | None:
     m = re.search(r'(?<![\w.])(\d+(?:\.\d+)?)\s*m(?:R)?(?![\w])', v)                # 50m, 50mR
     if m:
         return float(m.group(1)) * 1e-3
+    m = re.search(r'(?<![\w.])(\d+(?:\.\d+)?)\s*[uµμ](?:R)?(?![\w])', v)            # 300µ (a shunt)
+    if m:
+        return float(m.group(1)) * 1e-6
     m = re.search(r'(?<![\w.])(\d+)R(\d+)(?![\w.])', v)                              # 0R05, 2R2
     if m:
         return float(f"{m.group(1)}.{m.group(2)}")

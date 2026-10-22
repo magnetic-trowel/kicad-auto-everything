@@ -58,10 +58,11 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'kae' / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np  # noqa: E402
 import shapely  # noqa: E402
-from shapely.geometry import LineString, box  # noqa: E402
+from shapely.geometry import box  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
 
 KINDS = ('commutation', 'decap', 'coupling', 'crystal', 'thermal', 'esd', 'world_cm', 'antenna')
@@ -133,24 +134,6 @@ def kind_parts(T, kind):
         if s.kind == kind:
             out |= set(s.members)
     return out
-
-
-def structs_of_kind(T, kind):
-    return [k for k, s in enumerate(T.structs) if s.kind == kind]
-
-
-def partner_dist(T, poses, i, kind):
-    """Mean distance (mm) from part i to the other members of its structures of this kind."""
-    st = T.st
-    ds = []
-    for k in T.inc.get(i, []):
-        s = T.structs[k]
-        if s.kind != kind:
-            continue
-        for j in s.members:
-            if j != i:
-                ds.append(math.hypot(st.X[i] - st.X[j], st.Y[i] - st.Y[j]))
-    return float(np.mean(ds)) if ds else float('nan')
 
 
 def net_hpwl(T, poses, i):
@@ -465,6 +448,12 @@ def _explain(T, router, poses, kind, i, q, mtype, dK, dk, du):
 
 
 # ============================================================================ aggregate
+def _share(c):
+    n = c.get('worse', 0) + c.get('better', 0)
+    t = c.get('tie', 0)
+    return dict(worse=c.get('worse', 0) / n if n else float('nan'), n=n, ties=t / (n + t) if n + t else float('nan'))
+
+
 def aggregate(out_dir):
     recs = []
     for f in sorted(glob.glob(os.path.join(out_dir, '*.json'))):
@@ -472,7 +461,7 @@ def aggregate(out_dir):
             continue
         recs.append(json.load(open(f)))
     ok = [r for r in recs if r.get('status') == 'ok']
-    agg = {k: dict(translate=Counter(), rotate=Counter(), shuffle=Counter(), total_local=Counter()) for k in KINDS}
+    agg = {k: defaultdict(Counter) for k in KINDS}
     cats = defaultdict(Counter)
     census = defaultdict(list)
     boards_with = Counter()
@@ -485,26 +474,30 @@ def aggregate(out_dir):
             cats[bt['kind']][bt['cat']] += 1
         for c in r.get('census', []):
             census[c['kind']].append(c)
-    lines = [f"boards: {len(recs)} ({len(ok)} ok, {len(recs) - len(ok)} errors)"]
-    lines.append('worse = share of decided perturbations (worse + better) that score worse than the human placement')
-    lines.append('| term | boards | local translate worse | local rotate worse | shuffle worse | total J worse (local) |')
-    lines.append('|---|---|---|---|---|---|')
+    lines = [f"boards: {len(recs)} ({len(ok)} ok, {len(recs) - len(ok)} errors)", '',
+             'worse = worse / (worse + better) over decided perturbations; material = some structure moves by '
+             f'>= {MATERIAL:.0%} of its allocation (the rest count as ties)', '',
+             '| term | boards | translate worse (n) | material (n, ties) | rotate worse (n) | material (n, ties) '
+             '| shuffle worse (n) | all terms, local |',
+             '|---|---|---|---|---|---|---|---|']
     summ = {}
+
+    def f(x):
+        return f"{x['worse']:.0%} ({x['n']})" if x['n'] else '-'
+
+    def fm(x):
+        return f"{x['worse']:.0%} ({x['n']}, {x['ties']:.0%})" if x['n'] else f"- (0, {x['ties']:.0%})"
     for k in KINDS:
         a = agg[k]
-
-        def share(c):
-            n = c['worse'] + c['better']
-            return (c['worse'] / n, n, c['tie'] / max(1, n + c['tie'])) if n else (float('nan'), 0, float('nan'))
-        st, sr, ss, sj = share(a['translate']), share(a['rotate']), share(a['shuffle']), share(a['total_local'])
-        summ[k] = dict(boards=boards_with[k], translate=st, rotate=sr, shuffle=ss, total=sj,
-                       better=dict(cats[k]))
+        sh = {m: _share(a[m]) for m in ('translate', 'translate_material', 'rotate', 'rotate_material', 'shuffle',
+                                       'total_local')}
+        summ[k] = dict(boards=boards_with[k], **sh, better=dict(cats[k]))
         if boards_with[k]:
-            lines.append(f"| {k} | {boards_with[k]} | {st[0]:.1%} of {st[1]} (ties {st[2]:.0%}) | "
-                         f"{sr[0]:.1%} of {sr[1]} (ties {sr[2]:.0%}) | {ss[0]:.1%} of {ss[1]} | {sj[0]:.1%} |")
-    lines.append('')
-    lines.append('| term | structures | value median (p90) | utilisation median | p90 | share over budget |')
-    lines.append('|---|---|---|---|---|---|')
+            lines.append(f"| {k} | {boards_with[k]} | {f(sh['translate'])} | {fm(sh['translate_material'])} | "
+                         f"{f(sh['rotate'])} | {fm(sh['rotate_material'])} | {f(sh['shuffle'])} | "
+                         f"{f(sh['total_local'])} |")
+    lines += ['', '| term | structures | value median (p90) | utilisation median | p90 | share over budget |',
+              '|---|---|---|---|---|---|']
     for k in KINDS:
         cs = census.get(k, [])
         if not cs:
@@ -517,8 +510,7 @@ def aggregate(out_dir):
         summ[k]['census'] = dict(n=len(cs), value_median=float(np.median(v)), value_p90=float(np.percentile(v, 90)),
                                  unit=unit, util_median=float(np.median(u)), util_p90=float(np.percentile(u, 90)),
                                  over=float((u > 1).mean()))
-    lines.append('')
-    lines.append('better-than-human local perturbations by explanation:')
+    lines += ['', 'material better-than-human local perturbations by explanation:']
     for k in KINDS:
         if cats[k]:
             lines.append(f"  {k}: " + ', '.join(f'{c} {n}' for c, n in cats[k].most_common()))

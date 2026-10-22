@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Part and net roles (kae.circuit.roles), including the failure modes found by the suite physics run
 (docs/topics/physics/suite-physics-results.md)."""
-from circuit_fixtures import C, D, IC, L, Q, R, board, buck_board, fp, mcu_parts
+from circuit_fixtures import C, D, IC, Q, R, board, buck_board, fp, mcu_parts
 
 from kae.circuit.netlist import Netlist
 from kae.circuit.roles import classify_part, infer_roles, regulator_vout

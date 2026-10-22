@@ -35,8 +35,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from . import values as V
-from .evidence import MODERATE, STRONG, WEAK, Evidence, confidence, ev, softmax_pick
-from .netlist import Netlist, Part, Pin
+from .evidence import MODERATE, STRONG, WEAK, confidence, ev, softmax_pick
+from .netlist import Netlist, Part
 
 # =============================================================================== keyword tables
 I = re.I
@@ -201,7 +201,7 @@ LIB_RULES = [
                           r'Molex|Phoenix|Hirose|HRS_|FFC|FPC|microSD|SD_?Card|SDCARD|SIM_|M\.2|PCIe|PCBEdge|PCB-Edge|SODIMM|Tag-Connect|TC20[35]0|'
                           r'Samtec|FTSH|SHF|HDR-|SolderWirePad|Solderpad|WirePad|Wire_Pads|XT30|XT60|Harwin|Keystone5|MIDI|DIN5|XLR|SCART|HDMI|'
                           r'DisplayPort|SFP|QSFP|CardEdge|FMC|USB-C|TYPE-C|MINI-USB|Eurorack_Power|FanPinHeader|Power_Jack|JACK_ALIM|'
-                          r'powertab|SolderPads|Socket|_Plug|Receptacle|Header')),
+                          r'powertab|SolderPads|Socket|_Plug|Receptacle|Header|(^|[-_:])CON\d')),
     ('antenna', 3.5, rx(0, r'RF_Antenna|Antenna|(^|[_:])ANT_|_ANT(_|$)|PCB_Antenna')),
     ('test_point', 3.5, rx(0, r'TestPoint|Test_Point|(^|:)TP_|TestPad')),
     ('mounting_hole', 4.0, rx(0, r'MountingHole|Mounting_Hole|MTG\d|SCREWHOLE|ClearanceHole|_Clearance_|Tooling_Hole|Standoff|(^|:)Hole|MECHANICAL_CLEARANCE|MTG_|DrillHole|(^|:)M[2-6]_|PanelHole_Bourns')),
@@ -236,6 +236,8 @@ IC_RULES = [  # specific families first: the first match wins
                     r'\bMT29|\bMT25|\bMT60|\bMT53|\bIS6[1-6]|\bIS4[2-6]|\bIDT61|\bSST\d{2}|\bAPS6404|\bS27K|\beMMC|\bMB85|\bFM25|\bFM24|'
                     r'\b23LC|\bCY62|\bAS4C|\bK4[ABT]\d|\bH5[TA]Q|\bDDR\d|\bSDRAM|\bZDSD|\b4C4001|\bKGST|\bTHGB|\bFLASH\b|\bEEPROM\b|'
                     r'\bSRAM\b|\b28C\d{2}|\b27C\d{2}|\b62256|\bAT28|\bAT49')),
+    ('battery_monitor', rx(r'\bBQ769\d{2}|\bBQ7695\d|\bBQ7690\d|\bBQ7693\d|\bLTC68\d{2}|\bADBMS\d|\bISL942\d|\bMAX1785\d|\bBQ2970|'
+                            r'\bBQ77\d{3}|\bBQ40Z|\bS-8254|\bMP279\d|\bBMS AFE')),
     ('usb_pd', rx(r'\bFUSB3\d{2}|\bSTUSB|\bHUSB\d{3}|\bCYPD\d|\bTPS6598\d|\bIP2721|\bCH224|\bAP33771|\bPD controller')),
     ('phy', rx(r'\bRTL8\d{3}|\bDP83\d{3}|\bKSZ\d{4}|\bLAN87\d{2}|\bLAN9\d{3}|\bVSC8\d{3}|\bAR8\d{3}|\bW5500|\bENC28J60|\bTUSB\d{3,4}|'
                  r'\bUSB33\d\d|\bUSB2514|\bUSB4604|\bLT8912|\bADV7\d{3}|\bTFP\d{3}|'
@@ -653,8 +655,8 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     if re.search(r'\bjumper\b', part.value, re.I) and part.npads <= 3:
         add('jumper', 1.0, ev('value', f"value '{part.value}'", 1.0))
     # two-terminal crystal vs oscillator: an oscillator has a supply pin
-    if (sc.get('crystal') or sc.get('oscillator')) and any(PWR_PIN.match(f) or f in ('OUT', 'OUTPUT', 'CLK', 'VDD', 'VCC', 'EN', 'OE', 'ST', 'TRI-STATE')
-                                                           for f in fns):
+    if (sc.get('crystal') or sc.get('oscillator')) and n_act <= 8 and any(PWR_PIN.match(f) or f in ('OUT', 'OUTPUT', 'CLK', 'VDD', 'VCC', 'EN', 'OE', 'ST', 'TRI-STATE')
+                                                                          for f in fns):
         add('oscillator', 1.5, ev('pinfunction', 'a supply or output pin (active oscillator)', 1.5))
     kind, p = softmax_pick({k: v for k, v in sc.items() if v > 0}, unknown=1.0)
     subtype = sub.get(kind, (None, 0))[0]
@@ -669,8 +671,10 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
         subtype = None          # set from nets later (connector_type)
     if kind == 'resistor':
         ohm = res if res is not None else shunt_ohms(text)
-        if ohm is not None and 0 < ohm <= 0.2:
+        if (ohm is not None and 0 < ohm <= 0.2) or re.search(r'Shunt|Kelvin|_4T_|4-?Terminal', part.lib_id):
             subtype = 'shunt'
+    if kind == 'diode' and subtype is None and re.match(r'^\d+(\.\d+)?V\d*$|^\d+V\d+$', part.value.strip(), re.I):
+        subtype = 'zener'            # a diode valued in volts ('16V', '5V1') is a zener
     return kind, subtype, p, sorted(evs.get(kind, []), key=lambda e: -e.weight)
 
 
@@ -1216,7 +1220,10 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 else:
                     # through an unnamed middle net (fuse then diode, a fuse then a bead): follow up to 3 parts
                     path = _series_path(nl, roles, series, net)
-                    if path:
+                    if path and path[-1][2] == 'connector':
+                        src = {'kind': 'connector', 'ref': path[-1][0], 'note': 'input connector through series parts',
+                               'path': [x[0] for x in path[:-1]], 'path_via': [x[2] for x in path[:-1]]}
+                    elif path:
                         (ref, _, k), upn = path[0], path[-1][1]
                         src = {'kind': 'derived', 'ref': ref, 'upstream': upn, 'via': k, 'path': [x[0] for x in path],
                                'path_via': [x[2] for x in path]}
@@ -1248,19 +1255,27 @@ DEVBOARD = rx(r'breakout|\bPico|XIAO|Arduino|DevKit|\bnano\b|_nano|nano_|WeMos|P
 
 
 def _series_path(nl, roles, series, net, depth=3):
-    """[(part, net reached, kind), ...] from `net` up through series parts and two-part middle nets to a rail."""
+    """[(part, net reached, kind), ...] from `net` up through series parts and middle nets to a rail or to the
+    supply pin of an input connector (barrel jack -> fuse -> LC filter -> rail). A middle net may carry shunt
+    parts (capacitors, clamp diodes, test points) besides the two series parts."""
     seen = {net}
     frontier = [(net, [])]
     for _ in range(depth):
         nxt = []
         for n, path in frontier:
-            for ref, up, k in series.get(n, []):
+            for ref, up, k in sorted(series.get(n, []), key=lambda x: (x[2] == 'diode', x[0])):    # diodes last: a clamp across the input is no path
                 if up in seen or up in roles.grounds:
                     continue
                 p2 = path + [(ref, up, k)]
                 if up in roles.rails:
                     return p2
-                if len({p.ref for p in nl.nets[up].pins}) <= 2:
+                jack = [p for p in nl.nets[up].pins if roles.parts[p.ref].kind == 'battery' or
+                        (roles.parts[p.ref].kind == 'connector' and roles.parts[p.ref].subtype in ('power', 'usb'))]
+                if jack:
+                    return p2 + [(jack[0].ref, up, 'connector')]
+                through = {p.ref for p in nl.nets[up].pins if roles.parts[p.ref].kind not in ('capacitor', 'test_point', 'varistor') and
+                           not (roles.parts[p.ref].kind == 'diode' and p.ref != ref and not any(x[0] == p.ref for x in series.get(up, [])))}
+                if len(through) <= 3:
                     seen.add(up)
                     nxt.append((up, p2))
         frontier = nxt
@@ -1526,7 +1541,14 @@ def _signal_roles(nl: Netlist, roles: Roles):
     opamp_in = {}
     for ref, part in nl.parts.items():
         pr = roles.parts[ref]
-        if pr.kind == 'ic' and pr.subtype in ('opamp', 'adc_dac', 'current_sense'):
+        # an IC known only by its pins: '+' and '-' (or IN+/IN-) make it an amplifier (THAT1512, INA-style parts)
+        amp_pins = pr.kind == 'ic' and pr.subtype in (None, 'sensor') and (
+            {'+', '-'} <= {p.fn for p in part.pins} or sum(bool(re.match(r'^(IN[+-]|[+-]IN)$', p.fn)) for p in part.pins) >= 2)
+        if pr.kind == 'ic' and pr.subtype == 'battery_monitor':
+            for p in part.active_pins():
+                if p.net not in g and p.net not in roles.rails and re.match(r'^(VC\d+[A-Z]?|C\d+|S\d+|SR[PN]|BAT|TS\d)$', p.fn):
+                    opamp_in[p.net] = (ref, p)
+        if pr.kind == 'ic' and (pr.subtype in ('opamp', 'adc_dac', 'current_sense') or amp_pins):
             for p in part.active_pins():
                 if p.net in g or p.net in roles.rails:
                     continue
@@ -1567,7 +1589,7 @@ def _signal_roles(nl: Netlist, roles: Roles):
             evs.append(ev('topology', f"oscillator {osc_out[net]} output", STRONG + 1))
         xp = [p for p in pins if XTAL_PIN.search(p.fn) and not re.search(r'SWCLK|TCK|JTAG', p.fn) and roles.parts[p.ref].kind in ('ic', 'module')]
         if xp:
-            evs.append(ev('pinfunction', f"clock pin {xp[0].label}", MODERATE))
+            evs.append(ev('pinfunction', f"clock pin {xp[0].label}", MODERATE if (net in xtal_nets or net in osc_out) else WEAK))
         if CLOCK_NET.search(s) and not re.search(r'SCL|I2C|SWCLK|SWDCLK|TCK|JTAG|SWD', s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
         if evs:
@@ -1611,13 +1633,15 @@ def _signal_roles(nl: Netlist, roles: Roles):
             sub = 'adc_input' if re.search(r'ADC|AIN|AN\d', s + ' '.join(fns)) else 'reference' if re.search(r'REF', s + ' '.join(fns)) else (
                 'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR', s + ' '.join(fns))
                 or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
-                else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s) else 'opamp_input' if net in opamp_in else 'analog')
+                else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s)
+                else ('cell_sense' if roles.parts[opamp_in[net][0]].subtype == 'battery_monitor' else 'opamp_input') if net in opamp_in else 'analog')
             add('analog', sub, evs, prior=-1.5)
         # reset / boot
         evs = []
         if RESET_NET.search(s):
             evs.append(ev('name', f"name '{s}'", MODERATE))
-        rp = [p for p in pins if RESET_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and roles.parts[p.ref].subtype not in ('regulator_linear', 'regulator_switching', 'regulator_module', 'load_switch', 'charger', 'pmic')]
+        rp = [p for p in pins if RESET_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and roles.parts[p.ref].subtype not in ('regulator_linear', 'regulator_switching', 'regulator_module', 'load_switch', 'charger', 'pmic')
+              and not (re.match(r'^(EN|RUN)$', p.fn, re.I) and not (roles.parts[p.ref].kind == 'module' or roles.parts[p.ref].subtype in ('mcu', 'rf', 'fpga')))]
         if rp:
             evs.append(ev('pinfunction', f"reset pin {rp[0].label}", MODERATE))
         if evs:

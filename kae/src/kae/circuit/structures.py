@@ -35,8 +35,8 @@ from collections import defaultdict
 from . import values as V
 from .evidence import MODERATE, STRONG, WEAK, confidence, ev
 from .netlist import Netlist, Part
-from .roles import (BOOT_PIN, EN_PIN, FB_PIN, GND_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, XTAL_PIN, Roles, belief,
-                    cap_class, regulator_vout)
+from .roles import (ANALOG_NET, ANALOG_PIN, BOOT_PIN, EN_PIN, FB_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, Roles, belief,
+                    cap_class)
 
 CTRL_PIN = re.compile(r'^(N?PG|PGOOD|POK|MODE\w*|SYNC\w*|SS\w*|TR|TRK|RT\w*|ILIM\w*|COMP|SEL\w*|CFG\w*|PS|FSW|FREQ|CTRL|'
                       r'DIS|N?SLEEP|N?FAULT|STAT\w*)$', re.I)
@@ -299,11 +299,31 @@ def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = '', token: str = ''):
         same = [p for p in pins if token in p.fn]
         pins = same or pins
     if not pins:
+        # no named input: the controller's power_in pins on decoupled rails it does not itself feed
         pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and p.net in b.r.rails
-                and b.r.caps_to.get(p.net) and not FB_PIN.match(p.fn) and not EN_PIN.match(p.fn)]
+                and b.r.caps_to.get(p.net) and not FB_PIN.match(p.fn) and not EN_PIN.match(p.fn) and not _downstream_of(b, p.net, ic)]
+        if any(p.ptype == 'power_in' for p in pins):
+            pins = [p for p in pins if p.ptype == 'power_in']
     # rank: named PVIN/VIN first, then nets with capacitors
     pins.sort(key=lambda p: (not re.match(r'^P?VIN', p.fn), -len(b.r.caps_to.get(p.net, ())), _natkey(p.number)))
     return pins
+
+
+def _downstream_of(b: _B, net, ic, depth=4) -> bool:
+    """True when `net` is the far end of one of `ic`'s power inductors, or derives from one through series
+    parts: the converter's own output, which cannot be its input. (A PMIC's VSYS output still feeds its bucks.)"""
+    ic_nets = set(b.nl.parts[ic].nets)
+    outs = {d_out for sw, d in b.r.switch_nodes.items() if sw in ic_nets
+            for L in d.get('inductors', []) for d_out in [b.nl.other_net(b.nl.parts[L], sw)] if d_out}
+    for _ in range(depth):
+        if net in outs:
+            return True
+        nr = b.r.rails.get(net)
+        src = (nr.attrs.get('source') if nr else None) or {}
+        net = src.get('upstream') if src.get('kind') == 'derived' else None
+        if not net:
+            return False
+    return False
 
 
 def _gnd_pins(b: _B, ic: str, suffix: str = '', token: str = ''):
@@ -1437,6 +1457,13 @@ def divider_victims(b: _B, taken: set) -> list:
         readers = [p for p in others if b.k(p.ref) in ('ic', 'module', 'connector')]
         if not readers:
             continue
+        src = (b.r.rails[top[1]].attrs.get('source') or {}) if top[1] in b.r.rails else {}
+        vtop = b.volts(top[1])
+        analog_reader = any(ANALOG_PIN.match(p.fn) or any(ANALOG_PIN.match(x) for x in p.fn.split('/')) for p in readers
+                            if b.k(p.ref) in ('ic', 'module'))
+        if src.get('kind') in ('regulator', 'converter', 'internal', 'module', 'derived') and vtop is not None and abs(vtop) <= 5.5 \
+                and not ANALOG_NET.search(b.short(m)) and not analog_reader:
+            continue          # a strap or bias on a logic pin from a regulated rail, not a measurement
         rt, rb = V.resistance(b.nl.parts[top[0]].value), V.resistance(b.nl.parts[bot].value)
         evs = [ev('topology', f"divider {top[0]} from '{b.short(top[1])}' and {bot} to ground on '{b.short(m)}', read by {readers[0].label}",
                   MODERATE + 0.5)]
