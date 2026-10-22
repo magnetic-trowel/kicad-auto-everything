@@ -19,7 +19,7 @@ The argument, derivations and numbers are in [lens-vp](../../topics/physics/lens
 | V8 | Poynting |
 | V9 | least action, Rayleigh dissipation |
 | V10 | composite (Voigt, Hashin–Shtrikman) and capacity bounds |
-| BL | bilevel classes: A (self-energy), B (interaction), C (non-variational) |
+| BL | bilevel classes: A (self-energy copper lowers), A′ (self-energy copper raises), B (interaction), C (non-variational) |
 
 Scripts:
 - [vp_floors.py](../../../tools/research/physics/vp_floors.py)
@@ -42,7 +42,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP1. Beckmann floor oracle for every power net.** For any copper of area A, R ≥ R_s·(Σ_k I_k·d_k)²/(A·I²), with d_k the geodesic distance from source to load k. It comes from Cauchy–Schwarz on Thomson's functional and holds for any shape, not only trees. Its cost is microseconds per net.
 - **Principle:** V1.
-- **Beats:** DR18's floors need a micro-solver run per structure, and JPR30's bounds are geometric proxies. This one is a closed form, provably below every realized layout, and differentiable in pad positions. It was 1.527 mΩ against 1.761 (convex floor) and 1.789 (best design) [C].
+- **Beats:** DR18's floors need a micro-solver run per structure, and JPR30's bounds are geometric proxies. This one is a closed form, provably below every realized layout, and differentiable in pad positions. It was 1.527 mΩ against 1.761 (convex floor) and 1.789 (SIMP design) [C].
 - **Test:** check that the floor stays below the realized R on 200 synthesized and human pours. Then compare τ-ordering computed from it with expert criticality.
 
 *sharp (OP6, L2), S*
@@ -54,7 +54,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 *new, S*
 
-**VP3. Avoidable-loss report.** For every pour or trace tree, report (R − R_floor)/R alongside the copper's area elasticity −dlnR/dlnA. The elasticity is exactly 1 at the floor.
+**VP3. Avoidable-loss report.** For every pour or trace tree, report (R − R_floor)/R alongside the copper's area elasticity −dlnR/dlnA. The elasticity is exactly 1 at the Beckmann floor; lower values show copper that spreading, not transport, limits.
 - **Principle:** V1.
 - **Beats:** "should we reshape this copper?" is answered today by taste. The human tree in round 1's test had 15.8% avoidable loss, and round 1's synthesis recovered 14.5 of those 15.8 points [C]. Below a few percent, reshaping is not worth the review cost.
 - **Test:** compute it on high-current nets of 30 open boards. Check whether the boards with the largest avoidable loss are the ones designers later reworked (git history).
@@ -63,7 +63,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 **VP4. Convex-first continuation for every compliance objective.** Start topology optimization from the convex p = 1 optimum, then ramp p from 1 to 3 and sharpen the projection. This applies to loss, pour inductance over a mapped h_eff, thermal compliance, and weighted sums of them.
 - **Principle:** V1, V3, BL-A.
-- **Beats:** round 1's uniform start found a local optimum for inductance-only pours over a slotted reference. The convex start reached 0.546 instead of 0.613 nH, and 2.02 instead of 2.40 mΩ [C]. It replaces multi-start for class-A terms.
+- **Beats:** round 1's uniform start found a local optimum for inductance-only pours over a slotted reference. The convex start reached 0.546 instead of 0.613 nH, and 2.02 instead of 2.40 mΩ, at areas within 1.2% [C]. It replaces multi-start for class-A terms.
 - **Test:** run 20 multi-objective pour problems. Compare final objective and CPU against cold multi-start.
 
 *sharp (OP43, OP2), S*
@@ -75,7 +75,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 *sharp (OP6), S*
 
-**VP6. Transport-work placement term for power nets.** Add Σ_n R_s·W1,n²/A_n to the analytical placer. W1,n is the current-weighted geodesic star distance between a net's source and load pads. Its gradient is a current-weighted unit vector toward the source, scaled by the net's loss per unit length.
+**VP6. Transport-work placement term for power nets.** Add Σ_n R_s·W1,n²/A_n to the analytical placer. W1,n is the current-weighted geodesic star distance between a net's source and load pads. Its gradient on load pad k is 2·(P_floor/W1)·I_k along the unit vector away from the source.
 - **Principle:** V1, envelope theorem.
 - **Beats:** HPWL treats a 10 A feed and a 1 mA feed alike. Pour forces (OP27) need a sheet solve. This is closed-form, admissible and differentiable.
 - **Test:** on 10 power-heavy boards, compare post-route loss and worst IR drop against HPWL placement at equal CPU.
@@ -127,7 +127,7 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 *sharp (PW32, N8), S*
 
-**VP12. Hexagonal (staggered) via fields.** Thermal, stitching and power via arrays (not BGA fields) should use a hexagonal lattice. At equal via density and antipad size it keeps the plane within 1–5% of the Hashin–Shtrikman floor up to D/p_s = 0.95. A square lattice is 15% above it at D/p_s = 0.9 and 40% above at 0.95 [C]. The larger nearest-neighbour spacing also helps drill-to-drill and CAF rules.
+**VP12. Hexagonal (staggered) via fields.** Thermal, stitching and power via arrays (not BGA fields) should use a hexagonal lattice. At equal via density and antipad size it keeps the plane within 5% of the Hashin–Shtrikman floor up to D/p_s = 0.95. A square lattice is 15% above it at D/p_s = 0.9 and 40% above at 0.95 [C]. The larger nearest-neighbour spacing also helps drill-to-drill and CAF rules.
 - **Principle:** V10.
 - **Beats:** grids are chosen by CAD convenience.
 - **Test:** unit-cell and board-level solves, plus fab DRC, on 10 thermal pads and power transitions.
@@ -192,9 +192,10 @@ Tags: *new*, *combo*, *sharp* as in the [catalog](README.md). Effort: S (days), 
 
 ## D. Bilevel structure, gradients and monotonicity
 
-**VP20. A/B/C tagging of every objective term.**
+**VP20. A/A′/B/C tagging of every objective term.**
 - **Mechanism:** tag each optimizer term by class.
-  - **A (aligned self-energy):** convex when relaxed, free gradient, monotone.
+  - **A (self-energy that copper lowers: R, L, thermal resistance, 1/C):** convex when relaxed, free gradient, monotone.
+  - **A′ (self-energy that copper raises, e.g. a dv/dt node's C):** monotone and free gradient, but concave when relaxed; its floor is the mandatory copper alone.
   - **B (interaction or misaligned):** one adjoint, non-convex.
   - **C (non-variational):** worst-frequency sensitivity.
   - Schedule: optimize A jointly and convexly first, then continue into B, and treat C at its binding frequencies.
@@ -305,6 +306,6 @@ Add one more column: the energy density at its boundary, which is its sensitivit
 
 1. **VP2 + VP3:** floors and avoidable-loss reports on the existing sheet solver.
 2. **VP4:** convex-first continuation, a few lines of change to OP2.
-3. **VP20:** A/B/C tagging in the joint optimizer.
+3. **VP20:** A/A′/B/C tagging in the joint optimizer.
 4. **VP11 + VP14:** capacity and empty-circle brackets for vias and stitching.
 5. **VP17 + VP16:** containment predicate and Foster eddy models.

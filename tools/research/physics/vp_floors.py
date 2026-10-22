@@ -7,7 +7,7 @@ currents) and Dirichlet's principle (potential minimises energy for given termin
 voltages) bracket every resistance, sheet inductance and capacitance. This script
 turns that into numbers for four round-1 results.
 
-Sections (python vp_floors.py [floor|slot|cluster|lattice|all] [--h 0.2]):
+Sections (python vp_floors.py [floor|slot|cluster|lattice|bracket|braess|all] [--h 0.2]):
 
   floor    Floors for the op_topopt_pour.py test pour (24 x 14 mm, 1 oz, 6 A into
            three loads, equal copper area):
@@ -35,10 +35,16 @@ Sections (python vp_floors.py [floor|slot|cluster|lattice|all] [--h 0.2]):
            the 2-D Hashin-Shtrikman bound (1+f)/(1-f) (identical to Rayleigh's formula)
            is a rigorous lower bound; square vs hexagonal (staggered) lattices at equal
            via density and antipad size (unit-cell Laplace solves via pw_sheet.squares).
+  bracket  Certified two-sided bounds for a fixed geometry: potential FEM (Dirichlet)
+           under-estimates resistance, stream-function FEM (Thomson) over-estimates it,
+           on the same mesh; sharp 90-degree L-bend (exact corner excess 0.5587 sq).
+  braess   Rayleigh monotonicity covers self terms only: a copper bridge on round 1's
+           human layout lowers total loss but raises another load's drop.
 
-Deterministic. 'all' takes about 2-4 minutes of CPU at --h 0.2 (default); --h 0.1
-reproduces round 1's grid (about 4x longer). Needs numpy, scipy, shapely, contourpy.
-Imports op_topopt_pour.py and pw_sheet.py from this directory.
+Deterministic. 'all' takes about 3-5 minutes of CPU at --h 0.2 (default); --h 0.1
+reproduces round 1's grid (about 4x longer for floor/slot). Set OMP_NUM_THREADS=1 on a
+shared machine. Needs numpy, scipy, shapely, contourpy. Imports op_topopt_pour.py and
+pw_sheet.py from this directory.
 """
 import argparse
 import math
