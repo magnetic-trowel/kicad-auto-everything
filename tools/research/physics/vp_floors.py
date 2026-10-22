@@ -411,15 +411,87 @@ def sec_lattice():
               f"   hex/square {hx / sq:5.3f}")
 
 
+def _q4_energy_solve(mask, dir_nodes, dir_vals):
+    """Q4 FEM Laplace on a pixel mask (unit sheet coefficient): returns u'Ku for the solution."""
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+    ny, nx = mask.shape
+    jj, ii = np.nonzero(mask)
+    n1 = jj * (nx + 1) + ii                                   # node (j, i) -> j*(nx+1)+i
+    edof = np.stack([n1, n1 + 1, n1 + nx + 2, n1 + nx + 1], 1)  # counter-clockwise
+    nn = (ny + 1) * (nx + 1)
+    k = sp.csr_matrix((np.tile(tp.KE.ravel(), len(edof)),
+                       (np.repeat(edof, 4, 1).ravel(), np.tile(edof, (1, 4)).ravel())), shape=(nn, nn))
+    used = np.unique(edof)
+    u = np.zeros(nn)
+    u[dir_nodes] = dir_vals
+    free = np.setdiff1d(used, dir_nodes)
+    kff = k[free][:, free].tocsc()
+    u[free] = spla.spsolve(kff, -(k[free][:, dir_nodes] @ u[dir_nodes]))
+    return u @ (k @ u)
+
+
+def sec_bracket():
+    print("== bracket: certified two-sided bounds for a fixed geometry (Dirichlet vs Thomson)")
+    print("   sharp 90-degree L-bend of unit width, arms of A = 4 widths; corner excess squares d = N_sq - 2A")
+    print("   potential FEM (Dirichlet): N_sq <= true; stream-function FEM (Thomson): N_sq >= true")
+    a_len = 4
+    for n in (2, 4, 8, 16, 32):
+        s = a_len + 1
+        ny = nx = s * n
+        jj, ii = np.mgrid[0:ny, 0:nx]
+        xc, yc = (ii + 0.5) / n, (jj + 0.5) / n
+        mask = ((yc < 1) | (xc > a_len)) & (xc < s) & (yc < s)
+        nj, ni = np.mgrid[0:ny + 1, 0:nx + 1]
+        xn, yn = (ni / n).ravel(), (nj / n).ravel()
+        idx = np.arange(len(xn))
+        eps = 1e-9
+        # potential: phi = 0 on x = 0 (0<=y<=1), phi = 1 on y = s (a_len<=x<=s)
+        t1 = idx[(np.abs(xn) < eps) & (yn <= 1 + eps)]
+        t2 = idx[(np.abs(yn - s) < eps) & (xn >= a_len - eps)]
+        g = _q4_energy_solve(mask, np.concatenate([t1, t2]), np.concatenate([np.zeros(len(t1)), np.ones(len(t2))]))
+        r_lo = 1.0 / g
+        # stream function: psi = 0 on the inner boundary, 1 on the outer boundary, free on terminals
+        inner = idx[((np.abs(yn - 1) < eps) & (xn <= a_len + eps)) | ((np.abs(xn - a_len) < eps) & (yn >= 1 - eps))]
+        outer = idx[(np.abs(yn) < eps) | (np.abs(xn - s) < eps)]
+        r_hi = _q4_energy_solve(mask, np.concatenate([inner, outer]),
+                                np.concatenate([np.zeros(len(inner)), np.ones(len(outer))]))
+        print(f"   {n:2d} cells/width: {r_lo - 2 * a_len:.4f} <= d <= {r_hi - 2 * a_len:.4f}"
+              f"   (bracket {r_hi - r_lo:.4f} sq; midpoint {0.5 * (r_lo + r_hi) - 2 * a_len:.4f})")
+
+
+def sec_braess(h):
+    """Rayleigh monotonicity covers self-resistance and total loss, not transfer resistance:
+    a copper bridge that lowers total loss can raise the drop at another load."""
+    from shapely.geometry import box as sbox
+    print(f"== braess: adding copper lowers total loss but can raise one load's drop (grid {h} mm)")
+    g = tp.Grid(h)
+    hum = tp.human_layout(g)
+    r0, d0, _, u0 = tp.evaluate(g, hum)
+    for name, rect in (("bridge x 17.0-18.5, y 2.5-12 (A branch to B branch)", (17.0, 2.5, 18.5, 12.0)),
+                       ("bridge x 13.0-14.5, y 2.5-12 (A branch to C/B branch)", (13.0, 2.5, 14.5, 12.0))):
+        cu = hum | g.rasterize(sbox(*rect))
+        cu &= ~g.void
+        r1, d1, _, _ = tp.evaluate(g, cu)
+        print(f"  {name}: +{(cu.sum() - hum.sum()) * h * h:.1f} mm2 copper")
+        print(f"    total loss R {r0 * 1e3:.3f} -> {r1 * 1e3:.3f} mOhm ({(r1 / r0 - 1) * 100:+.1f}%);"
+              f" drops A/B/C {d0[0]:.2f}/{d0[1]:.2f}/{d0[2]:.2f} -> {d1[0]:.2f}/{d1[1]:.2f}/{d1[2]:.2f} mV")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("section", nargs="?", default="all", choices=["floor", "slot", "cluster", "lattice", "all"])
+    ap.add_argument("section", nargs="?", default="all",
+                    choices=["floor", "slot", "cluster", "lattice", "bracket", "braess", "all"])
     ap.add_argument("--h", type=float, default=0.2, help="grid pitch for floor/slot, mm (round 1 used 0.1)")
     a = ap.parse_args()
     if a.section in ("cluster", "all"):
         sec_cluster()
     if a.section in ("lattice", "all"):
         sec_lattice()
+    if a.section in ("bracket", "all"):
+        sec_bracket()
+    if a.section in ("braess", "all"):
+        sec_braess(a.h)
     if a.section in ("floor", "all"):
         sec_floor(a.h)
     if a.section in ("slot", "all"):
