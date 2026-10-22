@@ -21,7 +21,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 |---|---|---|---|
 | T0 (µs–ms) | Every move | Overlap/out-of-bounds; intent and PRC geometry (proximity, region, edge, symmetry, layer-switch count once routed); HPWL; net crossings; Transcalc Z0/delay; IPC-2221/2152 widths; overheated-length proxy; convention metrics ([looks-right-metrics.md](looks-right-metrics.md)) | In-process geometry; KRT-style intent grader; optional trained PDN-impedance DNN (0.1 s) |
 | T1 (s) | Per accepted placement or route batch | `kicad-cli pcb drc --format json --refill-zones --schematic-parity --exit-code-violations`; return-path VOID/SPLIT/VIA flags; NRR/PRR/PShort; quick reference router as routability probe | kicad-cli; `return_path`; KRT ≈0.65 s and Freerouting 2.1.0 ≈7 s per small PCBWorld D3-A board ([PCBWorld Table 3](https://arxiv.org/html/2607.05915v2)) [P] |
-| T2 (s–min) | Checkpoints | DC IR drop and current density; PDN impedance vs target; switcher coupled noise; near-field estimate | padne, KiPI, Ki-PIDA, emcvisual |
+| T2 (s–min) | Checkpoints | DC IR drop and current density; PDN impedance vs target; switcher coupled noise; near-field estimate | padne, KiPI, Ki-PIDA (AGPL, reference only), emcvisual |
 | T3 (min–h) | Finalists | openEMS S-parameters, TDR and delay per critical net/pair via si-wrapper slices; FEM thermal | gerber2ems + si-wrapper + scikit-rf; FreeCAD/gmsh/CalculiX (Antmicro scripts) or Salome/Elmer; Palace for C/L extraction |
 
 ### Legality: `kicad-cli pcb drc` (VK-verified)
@@ -59,10 +59,10 @@ Pitfalls and patterns:
 | kicad-si-simulation-wrapper | Selects nets (e.g. a controlled-impedance class); slices net/pair + neighbours + vias + planes; shorts 0 Ω and large caps; terminates neighbours; auto-places ports; writes netinfo | Needs KiCad 9.0.x. 2025: adaptive grid, diff pairs, trace delay; "operate[s] mostly without manual tweaking", CI-capable; VNA-validated on the RDIMM DDR5 tester clock pair ("match pretty well") ([Antmicro 2025](https://antmicro.com/blog/2025/07/recent-improvements-to-antmicros-signal-integrity-simulation-flow)) | [P] |
 | openEMS | EC-FDTD; Python/Octave | Engine GPLv3+, CSXCAD LGPLv3+ | [P] |
 | Palace (AWS) | 3D FEM: eigenmode, driven, time-domain; lumped C/L matrix extraction; AMR | Apache-2.0 | [P] |
-| FastHenry/FastCap; scikit-rf | Inductance/capacitance extraction; Touchstone/network analysis | scikit-rf is BSD | [P] |
+| FastHenry/FastCap; scikit-rf | Inductance/capacitance extraction; Touchstone/network analysis | scikit-rf is BSD. FastHenry's source carries MIT's "internal, noncommercial … distribution strictly prohibited" notice: internal calibration only, never shipped. FastCap2 mostly carries MIT's later permissive grant but one file keeps the old header: audit before vendoring, prefer FasterCap (LGPL-2.1) ([open-solvers](../physics/open-solvers.md)) | [P] |
 | padne | KiCad-native 2.5D FEM DC solver; sources declared in schematic text (`!padne VOLTAGE v=3.3V p=U1.1 n=U1.4`) | FEM core ~40 lines: "the vast majority of work … is ferrying data around"; via model uncertain except "large and short" vias | [P] |
 | KiPI | DC drop, AC PDN impedance sweep vs a target-impedance calculator, switcher coupled noise; YAML setup, HTML/PDF reports | GPL-3.0, 0.9.1 alpha | [P] |
-| Ki-PIDA | Hybrid 2.5D resistive mesh with electro-thermal coupling | KiCad 9+, IPC API | [P] |
+| Ki-PIDA | Hybrid 2.5D resistive mesh with electro-thermal coupling | KiCad 9+, IPC API. **AGPL-3.0: reference only** (same rule as other AGPL tools) | [P] |
 | PCB_SI_Toolkit | Measured-vs-limit checks: decap distance, plane edge 3×h, reference changes without ground vias, DC network, 2D Z0 solver, NEXT, openEMS tab | KiCad 10 | [P] |
 | `return_path` (kicad-tools) | VOID, ISLAND, SPLIT, TERMINAL, VIA and EDGE flags on a 0.05 mm A* raster; loop-area estimate | — | [P] |
 | emcvisual | Biot–Savart with image currents; ~30 rule checks | Far field "within 1 dB between 30 and 350 MHz" of openEMS on a validation board | [P] |
