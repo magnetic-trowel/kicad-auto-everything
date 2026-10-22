@@ -26,7 +26,7 @@ def cell(r):
     pr = (r.get("probe") or {}).get("score") or {}
     return dict(legal=bool(s.get("legal")), valid=bool(s.get("valid")), hpwl=s.get("hpwl_ratio"),
                 clean=bool(pr.get("clean")), comp=pr.get("completion"), err=pr.get("errors") or 0,
-                types=(pr.get("error_types") or {}), unc=pr.get("unconnected"), t=r.get("runtime_s"),
+                types=(pr.get("errors_by_type") or {}), unc=pr.get("unconnected"), t=r.get("runtime_s"),
                 status=r["status"], perr=s.get("placement_errors") or {})
 
 

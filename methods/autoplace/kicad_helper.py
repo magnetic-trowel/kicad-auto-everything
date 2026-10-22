@@ -43,15 +43,14 @@ def _union(a, b):
 
 
 def _rect(fp):
-    """Courtyard bbox (either side) united with the pads' bboxes; body bbox if no courtyard."""
+    """Courtyard bbox (either side) united with the pads' bboxes. None for artwork (no
+    courtyard, no pads): DRC never checks it against anything."""
     fp.BuildCourtyardCaches()
     r = None
     for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
         ps = fp.GetCourtyard(layer)
         if ps.OutlineCount():
             r = _union(r, _box(ps.BBox()))
-    if r is None:
-        r = _box(fp.GetBoundingBox(False))
     for p in fp.Pads():
         r = _union(r, _box(p.GetBoundingBox()))
     return r

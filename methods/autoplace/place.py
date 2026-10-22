@@ -93,25 +93,31 @@ class Problem:
         self.ref = [p["ref"] for p in parts]
         self.back = np.array([p["back"] for p in parts])
         self.tht = np.array([p["tht"] for p in parts])
+        # artwork (no courtyard, no pads) collides with nothing; it is parked and never moved
+        self.art = np.array([p["rots"][0]["rect"] is None for p in parts], dtype=bool)
         # rect per part per rotation, relative to the footprint origin
-        self.rects = np.array([[r["rect"] for r in p["rots"]] for p in parts]).reshape(n, 4, 4)
+        self.rects = np.array([[r["rect"] or [0, 0, 0, 0] for r in p["rots"]] for p in parts],
+                              dtype=float).reshape(n, 4, 4)
         self.npads = np.array([len(p["rots"][0]["pads"]) for p in parts])
         self.area = (self.rects[:, 0, 2] - self.rects[:, 0, 0]) * (self.rects[:, 0, 3] - self.rects[:, 0, 1])
         # escape halo: half on each side of every rectangle, grows with sqrt(pins); shrinks to
         # nothing as the parts fill the board (fill 0.55 -> full halo, 0.75 -> none)
         self.fill = float(self.area.sum() / max(self.region[None].area, 1e-9))
         self.halo_scale = float(np.clip((0.75 - self.fill) / 0.2, 0.0, 1.0))
-        self.halo = (halo_base + halo_coef * np.sqrt(self.npads)) * self.halo_scale
+        self.halo = (halo_base + halo_coef * np.sqrt(self.npads)) * self.halo_scale * ~self.art
         # conflicts: same side, or either part has holes through the board
         same = self.back[:, None] == self.back[None, :]
-        self.conflict = same | self.tht[:, None] | self.tht[None, :]
+        self.conflict = (same | self.tht[:, None] | self.tht[None, :]) & ~self.art[:, None] & ~self.art[None, :]
         np.fill_diagonal(self.conflict, False)
-        # fixed obstacles (locked footprints)
+        self.movable = [i for i in range(n) if not self.art[i]]
+        # fixed obstacles (locked footprints; locked artwork is ignored)
         fx = g["fixed"]
-        self.frects = np.array([f["rect"] for f in fx]).reshape(-1, 4)
-        fback = np.array([f["back"] for f in fx], dtype=bool)
-        ftht = np.array([f["tht"] for f in fx], dtype=bool)
-        self.fconflict = (self.back[:, None] == fback[None, :]) | self.tht[:, None] | ftht[None, :]
+        fobs = [f for f in fx if f["rect"] is not None]
+        self.frects = np.array([f["rect"] for f in fobs], dtype=float).reshape(-1, 4)
+        fback = np.array([f["back"] for f in fobs], dtype=bool)
+        ftht = np.array([f["tht"] for f in fobs], dtype=bool)
+        self.fconflict = ((self.back[:, None] == fback[None, :]) | self.tht[:, None] | ftht[None, :]) & \
+            ~self.art[:, None]
         # nets: pins are (part, pad index) or fixed points
         names = {}
         pins_part, pins_pad, pins_fixed = [], [], []
@@ -431,9 +437,10 @@ def place_constructive(P, rng, random_order=False, step=None, jitter=0.0):
     x, y, r = np.zeros(n), np.zeros(n), np.zeros(n, int)
     rects = np.zeros((n, 4))
     placed = []
-    todo = set(range(n))
+    todo = set(P.movable)
     centre = np.array(P.region[False].representative_point().coords[0]) if not P.region[False].is_empty else \
         (P.bbox[:2] + P.bbox[2:]) / 2
+    x[P.art], y[P.art] = centre
     while todo:
         if random_order:
             i = int(rng.choice(sorted(todo)))
@@ -481,6 +488,7 @@ def place_random(P, rng):
         q = P.rects[i, r[i]]
         x[i] = rng.uniform(x0, x1) - (q[0] + q[2]) / 2
         y[i] = rng.uniform(y0, y1) - (q[1] + q[3]) / 2
+    x[P.art], y[P.art] = (x0 + x1) / 2, (y0 + y1) / 2
     return x, y, r
 
 
@@ -489,7 +497,7 @@ def place_random(P, rng):
 
 def anneal(S, rng, moves, movable=None, t_start=None, t_end_frac=1e-3, max_step=None, mu_end=None):
     P = S.P
-    movable = list(range(P.n)) if movable is None else list(movable)
+    movable = list(P.movable if movable is None else (i for i in movable if not P.art[i]))
     if not movable:
         return S
     max_step = max_step or P.diag / 3
