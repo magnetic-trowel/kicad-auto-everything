@@ -24,7 +24,7 @@ Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, wh
 
 **JPR5. Layer assignment as a fast inner solve.** After each topology change, assign layers to band segments by a min-cut on the crossing graph of the affected region (via minimization), as in Dayan–Dai "defer decisions". It keeps the expensive discrete choice out of the placement loop but still lets placement see via counts. Test: via count and runtime vs fixed preferred-direction layers. *sharp*, M.
 
-**JPR6. Incremental route repair with LPA*/D* Lite.** When a part moves, update only the graph costs that changed and repair affected paths with lifelong A*, instead of ripping them up. Reroute work then scales with the size of the change, which is what makes per-move routing affordable. Test: nodes expanded per move vs rip-up-and-A* in the PoC script. *sharp*, M.
+**JPR6. Incremental route repair with LPA*/D* Lite, plus periodic renegotiation.** When a part moves, update only the graph costs that changed and repair affected paths with lifelong A*, instead of ripping them up; every few hundred accepted moves, renegotiate all routes PathFinder-style. In the PoC the incrementally maintained routes drifted into 2–10 failed nets at 50 parts while a fresh re-route was clean. Test: nodes expanded per move and drift vs rip-up-and-A* in the PoC script. *sharp*, M.
 
 **JPR7. Lock topology, not copper.** Experts route and lock critical nets before bulk routing. Instead, freeze a critical net's homotopy class and layer plan but keep its geometry elastic, so later part moves re-tighten it rather than collide with it. This keeps expert priorities without the rigidity that forces late rip-ups. Test: number of re-place iterations and critical-net length drift on boards with locked vs topology-locked critical nets. *new*, S.
 
@@ -70,7 +70,7 @@ Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, wh
 
 ## D. Physics as the shared objective
 
-**JPR26. Routed hot-loop area, not the pin triangle.** Compute hot-loop area from the actual band paths plus the return path on the reference plane, including the vertical extent of any segment on another layer. The PoC shows the straight-line proxy and the routed area diverge once routing detours exist. Test: proxy vs routed area rank correlation; nH from a loop solver on the final boards. *sharp*, S.
+**JPR26. Routed hot-loop inductance, not the pin triangle.** Score each hot loop on the routed bands and their return: MS2 or height × squares (Σ μ0·h·dl/w) when a reference plane is near, plan-view area plus vertical extent only on planeless or far-plane boards ([solver-ladder](../../topics/physics/solver-ladder.md)). The PoC shows a straight-line placement proxy ranks the routed loop poorly (Spearman 0.23–0.79) once routing detours exist. Test: proxy vs routed rank correlation against PEEC on the final boards. *sharp*, S.
 
 **JPR27. Plane-cut length as a joint term.** Charge every millimetre of copper on a layer that should be a solid reference, and every slot it leaves, in budget units. Placement influences it through crossings, routing through layer choice; neither stage can minimize it alone. Test: plane-cut length and return-path checker findings, staged vs joint. *new*, S.
 
@@ -112,7 +112,7 @@ Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, wh
 
 **JPR44. GPU batched window routing.** Batch thousands of small-window shortest-path relaxations as tensor wavefronts on a GPU to evaluate candidate moves or LNS repairs en masse. Use it only once the CPU version is the bottleneck on boards above 300 parts. Test: evaluations per second per watt vs Rust A* on CPU cores. *new*, L.
 
-**JPR45. Successive halving over joint fidelity.** Seeds get topology-only evaluation, survivors get grid routing, finalists get Freerouting plus `kicad-cli` DRC plus physics critics. This extends S6 from placement × router candidates to joint candidates. Test: best final score at equal CPU vs route-all-at-low-budget. *sharp*, S.
+**JPR45. Successive halving over joint fidelity.** Seeds get topology-only evaluation, survivors get grid routing and joint refinement, finalists get Freerouting plus `kicad-cli` DRC plus physics critics. This extends S6 from placement × router candidates to joint candidates. Test: best final score at equal CPU vs route-all-at-low-budget. *sharp*, S.
 
 ## G. LLM role, explanation and evaluation
 
@@ -125,6 +125,8 @@ Workstream 11. Each idea is a numbered entry with a bold name, its mechanism, wh
 **JPR49. Event narration from the joint state.** Every topological event and every newly binding constraint generates one line of explanation ("C12 moved under U3's escape, so the USB pair now goes around the left side: +1.8 mm, +0 vias"). Designers get the why that staged autorouters never give. Test: designer ratings of explanations vs plain DRC reports. *new*, S.
 
 **JPR50. Three-timescale controller.** Organize the system as an outer discrete loop (minutes: regions, sides, orientations, critical homotopies), a middle elastic loop (seconds: band-tension placement with congestion prices) and an inner incremental loop (milliseconds: re-tightening, local reroutes, LNS windows), with the hand-off rules of JPR13, JPR17 and JPR18. This is the recommended architecture in [joint-place-route](../../topics/physics/joint-place-route.md). Test: the phased plan in that doc, each phase with a kill criterion. *combo*, L.
+
+**JPR51. Restart-or-refine controller.** At each budget step, choose between a new cheap restart and more joint refinement of the incumbent by expected J improvement per CPU second, estimated online (a two-armed bandit). In the PoC, restarts won where the start sat in a bad basin and joint refinement won where it did not (50 parts: 2/5 each way). Test: J vs CPU against fixed splits. *new*, S.
 
 ---
 

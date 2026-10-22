@@ -1,11 +1,11 @@
 # Joint placement and routing: why, prior art, and the recommended architecture
 
 **TL;DR**
-- Staged place-then-route gets stuck for three measurable reasons: placement proxies do not rank routed outcomes where it matters (equal crossings, routability 0.83–0.94 across 12,000 placements; RUDY at chance), the router cannot move parts, and the physics that decides quality (loop area, plane cuts, coupling) only exists once copper exists.
+- Staged place-then-route gets stuck for three measurable reasons: placement proxies do not rank routed outcomes where it matters (equal crossings, routability 0.83–0.94 across 12,000 placements; RUDY at chance), the router cannot move parts, and the physics that decides quality (loop inductance, plane cuts, coupling) only exists once copper exists.
 - Truly simultaneous P&R works but is expensive per move (PROXI 1995: 8–15% better delay at 6–11× CPU). Everything that scaled since couples placement to routing at the **right granularity**: global routing or topology inside placement (IPR, SimPLR, Ripple), or cell moves with partial reroute (Starfish). Commercial PCB tools run placement × router candidate matrices, not joint search.
 - **Recommendation: a topology-carrying joint state optimized on three timescales.** The state is part poses plus each net's homotopy class, layer plan and via sites; geometry is derived. Part moves re-tighten rubber bands with no rip-up until a topological event. Congestion prices and physics gradients act as placement forces, and LNS windows destroy and repair parts and copper together.
-- Physics is the shared objective that makes this work: hot-loop area, return-path continuity and via count pull placement and routing the same way (planar, short, straight). Thermal spreading, isolation and density are the real conflicts and get explicit Pareto handling.
-- Our proof of concept on 30–80-part synthetic 2-layer boards: RESULT_TLDR ([experiment](joint-place-route-experiment.md)).
+- Physics is the shared objective that makes this work: hot-loop inductance, return-path continuity and via count pull placement and routing the same way (planar, short, straight). Score loop inductance as height × squares (Σ μ0·h·dl/w) or the MS2 proxy whenever a reference plane is near; plan-view loop area is only a planeless-board simplification. Thermal spreading, isolation and density are the real conflicts.
+- Proof of concept on synthetic 2-layer boards: at equal CPU, joint SA beat a longer sequential run on 5/5 30-part boards (median −17%, mostly fewer vias and smaller hot loops) and a restart portfolio on 3/5, but only 2/5 at 50 parts, where ~25× costlier moves let restarts catch up ([experiment](joint-place-route-experiment.md)).
 
 ## Key facts
 
@@ -21,9 +21,9 @@
 | Late co-optimization has little headroom | CR&P re-places and re-routes an already routed VLSI design: −2.06% vias, −0.14% wirelength ([DATE'22](https://past.date-conference.com/proceedings-archive/2022/html/0201.html) [P-abs]). The gains are in topology, early |
 
 Three structural causes follow [I]:
-1. **Objective mismatch.** Placement minimizes HPWL or RUDY; routing minimizes length, vias and overflow; physics wants loop area, plane continuity and coupling. Nobody minimizes the same thing.
+1. **Objective mismatch.** Placement minimizes HPWL or RUDY; routing minimizes length, vias and overflow; physics wants low loop inductance, plane continuity and low coupling. Nobody minimizes the same thing.
 2. **Asymmetric authority.** The placer cannot see copper and the router cannot move parts, pins or sides. Each stage's best response to the other is not a joint optimum (a coordinate-descent trap).
-3. **Physics observability.** Loop inductance, return-path breaks and coupled length are functions of routed copper. A placement-only proxy of them (pin triangles, distances) diverges from the routed value whenever routing detours, which is when it matters.
+3. **Physics observability.** Loop inductance, return-path breaks and coupled length are functions of routed copper. A placement-only proxy of them (pin triangles, distances) diverges from the routed value whenever routing detours, which is when it matters. On our synthetic boards the straight-line loop proxy ranked routed loop area with Spearman 0.23–0.79 [C] ([experiment](joint-place-route-experiment.md)).
 
 ### 2. Prior art on joint placement and routing
 
@@ -38,7 +38,7 @@ Three structural causes follow [I]:
 | CGRA mappers (e.g. Chin & Anderson, DAC'18) | Exact ILP over placement and routing | Small arrays only [S] | Exact joint is a window tool |
 | TopoR, Altium Situs | Topological map first; TopoR moves parts on a routed board "preserving the topology" | Vendor claims, unaudited ([topological-routing](../routing/topological-routing.md) [V]) | Persisting topology makes moves cheap |
 | Quilter, DeepPCB, Cadence, Zuken | Quilter X.Y = placement × router matrix ranked by PRCs; DeepPCB places then routes; Cadence patents dispatch Place/Via/Route agents with a learned routability reward; Zuken needs parts placed | [V]/[P-pat] ([commercial patterns](../landscape/commercial-architecture-patterns.md)) | Portfolios, not joint search, are the commercial state of the art |
-| Warehouse layout + MAPF (IJCAI'23) | Layout optimized for routed robot throughput: MAP-Elites, MILP repair, surrogate | Up to 2× robots supported ([metaheuristics-and-qd](../solvers/metaheuristics-and-qd.md) [P]) | Evaluate layouts by routing them, repair exactly, use compute |
+| Warehouse layout + MAPF (IJCAI'23) | Layout scored by routed robot throughput; MAP-Elites, MILP repair | Up to 2× robots ([metaheuristics-and-qd](../solvers/metaheuristics-and-qd.md) [P]) | Score layouts by routing them |
 
 ### 3. Candidate joint formulations
 
@@ -85,7 +85,7 @@ Geometry is derived: each band is the shortest path in its homotopy class (Hersh
 5. **Diagnostic.** Stop when the share of nets changing topology per outer round plateaus (JPR18).
 6. **Realization.** Corridor rule areas and band waypoints go to PNS/Freerouting for geometry; `kicad-cli` DRC on the re-opened board scores it, as the bench rules require.
 
-Why not plain joint SA? It is the right inner loop for windows and the honest baseline, but it pays a full A* for every move and its incremental route state drifts (in the PoC its own routes ended with overflow that the referee then fixed). The topological state removes most reroutes by making small moves free.
+Why not plain joint SA? It is the right inner loop and the honest baseline, but it pays an A* per move, its route state drifts (in the PoC, failed nets that a fresh re-route avoided), and it must keep legality hard: end-of-run legalization erased its gains. The topological state makes small moves free.
 
 ### Fixed constraints as boundary conditions
 
@@ -104,7 +104,7 @@ Why not plain joint SA? It is the right inner loop for windows and the honest ba
 
 | Term | Placement wants | Routing wants | Aligned? |
 |---|---|---|---|
-| Hot-loop inductance (area, vias) | Input cap next to the switch pins, pins facing | Short, wide, no vias, return on the adjacent layer | Yes |
+| Hot-loop inductance (MS2 or height × squares near a plane; area only without one) | Input cap next to the switch pins, pins facing | Short, wide, no vias, return on the adjacent layer | Yes |
 | Return continuity (plane cuts, unstitched layer changes) | Planar net ordering, few crossings | Stay above the plane, stitch at transitions | Yes |
 | Via count and inductance | Few netlist crossings | Few layer changes | Yes |
 | Crosstalk | Aggressor and victim groups apart | Spacing, short parallel runs | Mostly; conflicts with compactness |
@@ -112,15 +112,15 @@ Why not plain joint SA? It is the right inner loop for windows and the honest ba
 | Thermal | Hot parts spread, copper area for heat | Wide copper, thermal vias | **Conflicts** with loop compactness |
 | Isolation, creepage | Distance across barriers | Slots, keep-outs | **Conflicts** with density |
 
-One objective: J = Σ w·φ(spend/budget) over the I1 budget ledger, with φ flat below about 70% of budget and a steep barrier towards 100%, plus manufacturing cost (JPR29). Owners of the individual terms: [power-copper](power-copper.md), [pdn-and-commutation](pdn-and-commutation.md), [fields-si-emi](fields-si-emi.md), [fields-emi-budget](fields-emi-budget.md), [rf-geometry](rf-geometry.md), [thermal-physics](thermal-physics.md), [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md). Conflicting pairs get a local two-objective LNS and a priced Pareto choice (JPR31). The design-reasoning layer sets budgets and weights ([design-reasoning-architecture](design-reasoning-architecture.md)); this optimizer consumes them.
+Each term uses the cheapest model that ranks candidates correctly: for loops over a plane that is MS2 (Σ length·L′(w,h) minus coupled-line mutuals), which picks the PEEC-best loop 96–98% of the time where plan-view area picks it 16–66% ([solver-ladder](solver-ladder.md), [pdn-and-commutation](pdn-and-commutation.md)) [C, other workstreams]. One objective: J = Σ w·φ(spend/budget) over the I1 budget ledger, with φ flat below about 70% of budget and a steep barrier towards 100%, plus manufacturing cost (JPR29). Owners of the individual terms: [power-copper](power-copper.md), [pdn-and-commutation](pdn-and-commutation.md), [fields-si-emi](fields-si-emi.md), [fields-emi-budget](fields-emi-budget.md), [rf-geometry](rf-geometry.md), [thermal-physics](thermal-physics.md), [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md). Conflicting pairs get a local two-objective LNS and a priced Pareto choice (JPR31). The design-reasoning layer sets budgets and weights ([design-reasoning-architecture](design-reasoning-architecture.md)); this optimizer consumes them.
 
 ### Compute
-- **Measured gap** [C]: in the PoC, HPWL SA ran COMPUTE_SEQ moves per CPU second and joint SA COMPUTE_JOINT, a ~100× gap in pure Python (script: `tools/research/physics/jpr_joint_vs_sequential.py`).
+- **Measured gap** [C]: in the PoC, HPWL SA ran 12–14k moves per CPU second and joint SA 510–550 routed moves, a ~25× gap in pure Python ([experiment](joint-place-route-experiment.md)).
 - **Closing it** [I]: Rust (~10×, per KRT), delayed acceptance that routes only moves a cheap first stage accepts (JPR41), the kinetic state that makes most small moves reroute-free, and speculative parallel moves with disjoint footprints (JPR38, ×cores).
-- **Using massive compute** [I]: islands from different floorplans with block crossover (JPR39), a shared-incumbent portfolio of SA, LNS, price-coupled analytical and MCTS workers (JPR40), successive halving over joint fidelity (JPR45), and background price probes (JPR35). GPU pays for density fields and batched window routing only above a few hundred parts (JPR44; [performance-and-multifidelity](../solvers/performance-and-multifidelity.md)).
+- **Using massive compute** [I]: island search with block crossover (JPR39), a shared-incumbent portfolio of SA, LNS, analytical and MCTS workers (JPR40), successive halving over restarts with joint refinement of survivors (JPR45), background price probes (JPR35). GPU pays only above a few hundred parts (JPR44; [performance-and-multifidelity](../solvers/performance-and-multifidelity.md)).
 
 ### Build order and kill criteria
-1. **Joint LNS and SA in Rust on grid windows**, with delayed acceptance. Kill if, at equal CPU, it does not beat the equal-CPU sequential portfolio (JPR46) on PCBWorld D3 and the Cypress small suite.
+1. **Joint LNS and SA in Rust on grid windows**, as refinement after a fast sequential placement, with delayed acceptance. Kill if, at equal CPU, it does not beat the equal-CPU sequential portfolio (JPR46) on PCBWorld D3 and the Cypress small suite.
 2. **Price coupling** of PathFinder history into the Cypress-style placer (supersedes P1). Kill if completion does not beat RUDY at equal CPU.
 3. **Topological state for 2-layer boards** (CDT + kinetic bands, from Topola or toporouter code) plus the channel-width legalizer. Kill if band length does not out-predict HPWL for routed length.
 4. **Outer MCTS/QD** over coarse decisions, with LLM menus.
@@ -130,7 +130,7 @@ One objective: J = Σ w·φ(spend/budget) over the I1 budget ledger, with φ fla
 - **Quilter.** [quilter](../landscape/quilter.md) summarizes Quilter as "one coupled search"; what it discloses is a ranked placement × router matrix (X.Y), which is a portfolio, not joint search [I].
 - **The 85% gate.** In a joint flow, Olney's test-route gate ([expert-state-machine](../workflow/expert-state-machine.md)) becomes a continuous signal inside the objective, not a stage gate.
 - **Patents.** Keep search deterministic over placement-level decisions; use per-board online surrogates only, never a pretrained routability model as fitness (Cadence) or NN-guided particle look-ahead over net orders (DeepPCB) ([patents-watchlist](../landscape/patents-watchlist.md)).
-- **Unverified.** PROXI and Independence numbers come from citing papers; IPR, SimPLR and Starfish from abstracts. No independent benchmark of TopoR exists. Kinetic band maintenance with multi-layer vias is unstudied, and band-tension forces have not been tested for convergence with legality.
+- **Unverified.** PROXI and Independence numbers come from citing papers; IPR, SimPLR and Starfish from abstracts. Kinetic band maintenance with multi-layer vias is unstudied, and band-tension forces are untested.
 
 ## Sources
 - research notes: [patents_and_industry.md § Cadence](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/patents_and_industry.md); [learning_from_layout_data.md § Q6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/learning_from_layout_data.md); [routing_classics_supplement.md § Q2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/routing_classics_supplement.md); [cross_domain_ideas.md § Q9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md)

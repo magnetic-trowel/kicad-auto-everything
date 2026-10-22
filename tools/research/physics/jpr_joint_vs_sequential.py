@@ -17,6 +17,9 @@ What it computes
   where a net "fails" if the referee leaves it unrouted or sharing a node with another net. The bottom
   layer is meant to stay a solid ground plane, so bottom copper is "plane-cut length" (a return-path
   physics term), and the hot-loop area counts 1.5 mm of vertical extent per mm of loop on the bottom.
+  Plan-view loop area is a 2-layer, far-plane simplification; with a plane within ~0.2 mm, loop
+  inductance follows height x squares (sum of mu0*h*dl/w) or the MS2 proxy instead
+  (docs/topics/physics/solver-ladder.md).
 
   Arms (B = TP + TJ seconds of process CPU time for all but `seq` and `seqx`; budgets use CPU time so that
   a busy machine does not change the comparison):
@@ -25,15 +28,16 @@ What it computes
               0.5, the best of {0.5, 1.5, 3} on held-out seed 9); informational, same TP budget
     seq_long  the seq SA for B s, then referee
     seq_port  `seq`, then more (seq SA for TP s with a new seed + referee) until B s are used; best J
-    joint     seq's placement + its referee routes as warm start, then SA for TJ s whose moves rip up and
-              A*-re-route the affected nets (nets on moved parts plus nets crossing the new pads) and
-              whose cost is the routed objective (+ overflow + placement penalties); then referee from
-              scratch.
+    joint     seq's placement + its referee routes as warm start, then SA for TJ s. Moves that create an
+              overlap or keep-out intrusion are rejected before routing (hard); legal moves rip up and
+              A*-re-route the affected nets (nets on moved parts plus nets crossing the new pads) and are
+              accepted on the routed objective (+ an overflow penalty; decap violations priced as in J);
+              then referee from scratch.
     joint_nophys  ablation: as joint but the optimizer ignores hot-loop area and bottom-layer length.
     long_joint    seq_long's placement (B s), then TJ s of joint SA (total B + TJ); optional
     seq_longer    control for long_joint: seq SA for B + TJ s; optional
 
-How to run (Python 3.11+, numpy):
+How to run (Python 3.11+, numpy, shapely, scipy; imports ../solver-bench/pcbgen.py):
   python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 10 --tj 40
   python jpr_joint_vs_sequential.py --n 50 --seed 1 --util 0.6 --arms seq,joint
   python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 3 --proxy-study 40
@@ -314,7 +318,7 @@ class State:
             wy0, wy1 = max(0, min(ys) - m), min(ny - 1, max(ys) + m)
             tree = set(pins[0])
             pad_set = {v for pn in pins for v in pn}
-            nodes, ln, nv, nb_, path_out = set(), 0, 0, 0, None
+            ln, nv, nb_, path_out = 0, 0, 0, None
             ok = True
             remaining = [list(pn) for pn in pins[1:]]
             while remaining:
@@ -451,13 +455,6 @@ def loop_area(pts):
     if len(pts) < 3:
         return 0.0
     return make_valid(Polygon(pts)).area
-
-
-def shoelace(pts):
-    s = 0.0
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
-        s += x0 * y1 - x1 * y0
-    return abs(s) / 2.0
 
 
 def random_placement(b, rnd):
@@ -614,7 +611,6 @@ def sa_joint(b, X, Y, K, secs, seed, w_loop=W_LOOP, bottom_cost=True):
         return W_ILLEGAL * sum(1 for e in ex if e > 0) + G * sum(ex)
     movable = [i for i in range(b.N) if i not in b.fixed]
     hot_of = [[hi for hi, h in enumerate(b.hot) if i in (h[2], h[4])] for i in range(b.N)]
-    nxny = b.nx * b.ny
 
     def net_cost(n):
         return (s.rlen[n] * G + VIA_MM * s.rvia[n] + wbot * s.rbot[n] * G) if s.routed[n] else W_FAIL

@@ -9,7 +9,7 @@ About 650 ideas from the eleven physics-first workstreams. They build on the [or
 | [rule-replacements](rule-replacements.md) | RG1–RG53 | 53 | rule records, regime predicates, physics replacements for slogans, rule-retirement tests, rules as warm starts |
 | [language](language.md) | LA1–LA52 | 52 | the vocabulary and `pcb-intent/0.3`: ports, loops, bands, budgets, operators, glyphs |
 | [reasoning](reasoning.md) | DR1–DR56 | 56 | simulate the schematic, adjoint susceptibility, budgets from sensitivity, least-slack ordering, explanation |
-| [joint-place-route](joint-place-route.md) | JPR1–JPR50 | 50 | simultaneous placement and routing, topology-carrying state, convergence, constraint prices |
+| [joint-place-route](joint-place-route.md) | JPR1–JPR51 | 51 | simultaneous placement and routing, topology-carrying state, convergence, constraint prices |
 | [optimization](optimization.md) | OP1–OP57 | 57 | physics spend models with gradients, adjoints, topology optimization of copper, legalization, search at scale |
 | [simulation](simulation.md) | SIM1–SIM47 | 47 | fidelity ladder, proxies judged by decision quality, surrogates, caching, compute strategy |
 | [power](power.md) | PW1–PW52 | 52 | waveform-derived copper roles, width optimum, commutation cells, PDN, Kelvin, inductor fields |

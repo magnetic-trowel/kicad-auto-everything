@@ -163,5 +163,7 @@ All [C] numbers come from scripts in [`tools/research/physics/`](../../../tools/
 | [open-solvers](open-solvers.md), [solver-ladder](solver-ladder.md) | engines, licences, fidelity tiers |
 | [physics-critics](physics-critics.md), [catalog](physics-critics-catalog.md), [validation](physics-critics-validation.md) | measuring "physically right" |
 | [cross-domain-lessons](cross-domain-lessons.md) | analogies that transfer from other fields |
+| [cross-workstream-synthesis](cross-workstream-synthesis.md) | where workstreams converged, how they combine, what transfers between them |
+| [research-gaps](research-gaps.md) | what is still missing, ranked; limits of the thesis; a proposed second wave |
 
 See also: [ideas catalog](../../ideas/physics-first/README.md) · [digest](../../digests/physics-first.md) · [executive report](../../../reports/Physics-first%20PCB%20layout.md)

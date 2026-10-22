@@ -60,7 +60,11 @@ schematic + datasheets + fixed constraints
 | Engines | F0 geometry → F1 closed forms → F2 PEEC/sheet/thermal → F3 full-wave slices → F4 measurement; S residual surrogates; escalate on value of information | [solver-ladder](../docs/topics/physics/solver-ladder.md), [open-solvers](../docs/topics/physics/open-solvers.md) |
 | Judgement | ~40 physics critics, markers, a scorecard, a mutation benchmark | [physics-critics](../docs/topics/physics/physics-critics.md), [catalog](../docs/topics/physics/physics-critics-catalog.md), [validation](../docs/topics/physics/physics-critics-validation.md) |
 
-**Joint placement and routing, proof of concept.** JPR_RESULT ([experiment](../docs/topics/physics/joint-place-route-experiment.md)).
+**Joint placement and routing, proof of concept** ([experiment](../docs/topics/physics/joint-place-route-experiment.md)), on synthetic 2-layer boards with equal CPU [C]:
+- **30 parts:** joint search beat a longer sequential run on 5/5 boards (median −17% routed objective) and a restart portfolio on 3/5. It did so through fewer vias (16 vs 24) and smaller hot loops, not shorter wire.
+- **50 parts:** it won only 2/5. Routed moves cost ~25× an HPWL move, and restarts escape bad starting basins that local joint moves cannot.
+- **Proxies:** HPWL tracks routed cost overall (Spearman 0.87–0.94), but 44% of pairs within 3% HPWL differed by more than 10% once routed.
+- **Reading:** joint search is a refiner after a fast sequential start, with hard constraints kept hard inside the loop. It is not a cold start.
 
 ## 4. Roadmap: first experiments
 
