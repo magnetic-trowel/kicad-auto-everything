@@ -151,3 +151,10 @@ def test_rpm_shims(tmp_path):
     for bad in (b"", archive[:150]):
         r = subprocess.run([sys.executable, scripts / "cpio_extract.py", "-idum"], input=bad, cwd=tmp_path)
         assert r.returncode != 0
+
+
+def test_outside_is_judged_against_the_human_placement():
+    allowed = {"J1": 2}  # the designer's edge connector has 2 pads over the edge
+    rows = [dict(uuid="J1", pads_outside=2), dict(uuid="R1", pads_outside=0), dict(uuid="U1", pads_outside=None)]
+    assert score.outside_count(rows, allowed) == 0
+    assert score.outside_count([dict(uuid="J1", pads_outside=3), dict(uuid="R1", pads_outside=1)], allowed) == 2

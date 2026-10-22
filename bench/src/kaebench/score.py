@@ -24,7 +24,7 @@ from pathlib import Path
 from . import tools
 from .boardfiles import board_path, install_rules
 
-SCORE_VERSION = 2
+SCORE_VERSION = 3
 
 # KiCad 10 DRC type keys that make a placement illegal (as named in its JSON report).
 PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
@@ -42,11 +42,20 @@ def _fresh_dir(d):
 
 def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_board=None):
     """Transplant the allowed changes of output_board into input_board (pcbnew op), install
-    the reference rules beside the result. Returns (staged board path, transplant report)."""
+    the reference rules beside the result. Returns (staged board path, transplant report).
+
+    The output is opened next to the input's project files, never its own: KiCad takes
+    board properties (text variables) and other settings from the project, so a board
+    opened without them re-saves differently and every output would look changed.
+    """
     scoring_dir = _fresh_dir(scoring_dir)
     staged = board_path(scoring_dir)
+    method_dir = scoring_dir / "method"
+    method_dir.mkdir()
+    shutil.copy2(output_board, board_path(method_dir))
+    install_rules(Path(input_board).parent, method_dir)
     extra = [reference_board] if reference_board else []
-    tr = tools.run_ops(op, output_board, input_board, staged, *extra)
+    tr = tools.run_ops(op, board_path(method_dir), input_board, staged, *extra)
     if tr.get("loadable"):
         install_rules(rules_dir, scoring_dir)
     return staged, tr
@@ -130,7 +139,7 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
         untouched=foreign["count"] == 0,
     )
     valid = all(integrity.values())
-    outside = sum(1 for r in st["placement"] if r.get("inside") is False)
+    outside = outside_count(st["placement"], record["reference"].get("pads_outside", {}))
     place_errors = {k: v for k, v in drc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
     ref = record["reference"]["stats"]
     score = dict(
@@ -141,6 +150,12 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
         unconnected=drc["unconnected"], score_version=SCORE_VERSION,
     )
     return score, st
+
+
+def outside_count(placement, allowed):
+    """Footprints with more pad centres outside the board outline than the same footprint
+    has in the human placement (edge connectors may overhang as far as the designer's do)."""
+    return sum(1 for r in placement if (r.get("pads_outside") or 0) > allowed.get(r["uuid"], 0))
 
 
 def potential(s):

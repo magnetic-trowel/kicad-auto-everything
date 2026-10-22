@@ -97,7 +97,8 @@ A method can't read the human layout it is scored against, download it, or touch
   - route: the tracks, arcs and vias, copied as KiCad's own re-save of them;
   - place: each unlocked footprint's position, rotation and side.
 
-  The rebuilt board gets the reference `.kicad_pro`/`.kicad_dru`, zones are refilled, and `kicad-cli pcb drc` runs. Edits to rules, outline, keepouts, zones, pads, layers or nets can't change a score. Rules files a method writes are never read.
+  The rebuilt board gets the reference `.kicad_pro`/`.kicad_dru`, zones are refilled, and `kicad-cli pcb drc` runs. Edits to rules, outline, keepouts, zones, pads, layers or nets can't change a score. Rules files a method writes are never read: the output is opened next to the task's own project files.
+  - Teardrops, groups and tuning patterns are part of the routing. They are stripped from task inputs and are not transplanted or scored.
 - **Integrity (`valid`).** Anything else the method changed is still detected, by comparing KiCad re-saves of output and input with the allowed changes normalized away (`foreign` lists them). Such a result is invalid.
   - Route results must keep placement, pad nets and every other board object, and route only on the board's copper layers and nets.
   - Place results must keep pad nets and every non-pose property, leave locked footprints where they are, and not add or remove footprints or copper.
@@ -108,11 +109,11 @@ A method can't read the human layout it is scored against, download it, or touch
   - `wl_ratio`: track length relative to the human layout.
   - `via_delta`: via count minus the human layout's.
 - **Place metrics.**
-  - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, every pad inside the board outline.
+  - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, and no footprint with more pad centres outside the board outline than the same footprint has in the human placement. Edge connectors may overhang as far as the designer's do.
   - `hpwl_ratio` relative to the human placement.
   - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style.
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
-- **Versions.** Every attempt records `score_version`. Place tasks need task spec 2 (locked footprints stay in place); re-run `prepare --force` on older task folders.
+- **Versions.** Every attempt records `score_version` (now 3). Tasks need task spec 3: locked footprints stay in place, teardrops are stripped, and repeated footprint uuids are made unique. Re-run `prepare --force` on older task folders.
 - **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests

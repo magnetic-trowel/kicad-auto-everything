@@ -288,7 +288,8 @@ POSE_TOL_NM = 1000
 ROUTING_HEADS = ("segment", "arc", "via")
 # Never transplanted and without effect on DRC: groups, and the tuning patterns
 # ("generated") that wrap meandered tracks. Stripping routing drops the ones that held only
-# tracks, so they would otherwise show up as changes of every human layout.
+# tracks, so they would otherwise show up as changes of every human layout. Teardrop zones
+# are skipped the same way (see _keyed): they are part of the routing and are not scored.
 UNSCORED_HEADS = ("group", "generated")
 
 
@@ -350,17 +351,26 @@ def _block_uuid(blk):
     return None
 
 
+def _is_teardrop(blk):
+    return any(t == "teardrop" and blk[i - 1] == "(" for i, t in enumerate(blk) if i)
+
+
 def _keyed(text, ignore_heads=()):
-    """Top-level objects keyed by (kind, uuid or ordinal), as comparable token lists."""
+    """Top-level objects keyed by (kind, uuid), or (kind, name) for named objects without a
+    uuid such as board properties, or (kind, ordinal); as comparable token lists.
+    Teardrops (saved without uuid, in no fixed order) are skipped like ignore_heads."""
     out, seen = {}, {}
     for head, a, b in _top_spans(text):
         if head in ignore_heads:
             continue
         blk = _TOK.findall(text[a:b])
+        if head == "zone" and _is_teardrop(blk):
+            continue
         u = _block_uuid(blk)
         if u is None:
-            seen[head] = seen.get(head, 0) + 1
-            u = f"#{seen[head]}"
+            name = blk[2] if len(blk) > 2 and blk[2].startswith('"') else ""
+            seen[(head, name)] = seen.get((head, name), 0) + 1
+            u = f"{name.strip(chr(34))}#{seen[(head, name)]}"
         # nested uuids carry no electrical meaning, and KiCad invents fresh ones on load
         # for some implicit fields; compare without them
         out[(head, u)] = [("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
@@ -529,9 +539,13 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
     board, fresh = _load(inp_path), _load(inp_path)
     ref = _load(ref_path) if ref_path else None
     in_fps = {fp.m_Uuid.AsString(): fp for fp in board.GetFootprints()}
-    out_fps = {fp.m_Uuid.AsString(): fp for fp in out.GetFootprints()}
+    if len(in_fps) != len(board.GetFootprints()):
+        raise RuntimeError("task input has duplicate footprint uuids; re-run prepare")
+    out_list = list(out.GetFootprints())
+    out_fps = {fp.m_Uuid.AsString(): fp for fp in out_list}
     missing = sorted(u for u in in_fps if u not in out_fps)
-    extra = sorted(u for u in out_fps if u not in in_fps)
+    # a footprint repeated under an existing uuid counts as added
+    extra = sorted(u for u in out_fps if u not in in_fps) + ["(duplicate uuid)"] * (len(out_list) - len(out_fps))
     copy = None
     if ref is not None:
         ref_fps = {fp.m_Uuid.AsString(): fp for fp in ref.GetFootprints()}
