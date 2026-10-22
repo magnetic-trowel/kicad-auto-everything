@@ -46,9 +46,9 @@ COPPER_MASK = (pcbnew.F_Cu, pcbnew.B_Cu, pcbnew.F_Mask, pcbnew.B_Mask)
 
 
 def _rect(fp):
-    """Courtyard bbox (either side) united with the pads' bboxes. Artwork (no courtyard, no
-    pads) counts by its copper and mask graphics (a copper logo clashes with copper); None if
-    it has neither, since DRC then never checks it against anything."""
+    """Courtyard bbox (either side) united with the pads' and the copper/mask graphics' bboxes
+    (a printed coil or copper logo is copper). None for pure artwork without any of these,
+    since DRC then never checks it against anything."""
     fp.BuildCourtyardCaches()
     r = None
     for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
@@ -57,10 +57,9 @@ def _rect(fp):
             r = _union(r, _box(ps.BBox()))
     for p in fp.Pads():
         r = _union(r, _box(p.GetBoundingBox()))
-    if r is None:
-        for g in fp.GraphicalItems():
-            if g.GetLayer() in COPPER_MASK:
-                r = _union(r, _box(g.GetBoundingBox()))
+    for g in fp.GraphicalItems():
+        if g.GetLayer() in COPPER_MASK:
+            r = _union(r, _box(g.GetBoundingBox()))
     return r
 
 

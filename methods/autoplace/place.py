@@ -648,14 +648,35 @@ def route_probe(board, work, passes, timeout):
     t0 = time.monotonic()
     res = Freerouting(passes=passes).run("route", Path(board).parent, work, 0, timeout)
     if not res.output:
-        return dict(unconnected=10 ** 6, failed={}, t=time.monotonic() - t0)
+        return dict(unconnected=10 ** 6, errors=10 ** 6, failed={}, blame=[], t=time.monotonic() - t0)
     d = json.loads(kicad_py("unconnected", res.output))
+    # DRC of the routed candidate under the board's own project rules (the task input's)
+    from kaebench import tools
+    for f in Path(board).parent.iterdir():
+        if f.suffix in (".kicad_pro", ".kicad_dru"):
+            shutil.copy2(f, Path(res.output).parent / f.name)
+    rep = tools.run_drc(res.output, work / "drc.json")
+    s = tools.summarize_drc(rep)
+    d.update(errors=s["errors"], errors_by_type=s["errors_by_type"])
+    # parts to move: owners of unrouted nets and of the items in error-level violations
+    blame = {ref for clusters in d["failed"].values() for c in clusters for ref in c}
+    for v in rep.get("violations", []):
+        if v.get("severity") == "error" and v.get("type") not in tools.ENV_DEPENDENT_CHECKS:
+            for it in v.get("items", []):
+                m = re.search(r" of (\S+)$", it.get("description", ""))
+                if m:
+                    blame.add(m.group(1))
+    d["blame"] = sorted(blame)
     d["t"] = round(time.monotonic() - t0, 1)
     return d
 
 
 def _rank(d):
-    return (d["unconnected"], d.get("vias", 0), d.get("length_mm", 0.0))
+    return (d["unconnected"], d.get("errors", 0), d.get("vias", 0), d.get("length_mm", 0.0))
+
+
+def _clean(d):
+    return d["unconnected"] == 0 and d.get("errors", 0) == 0
 
 
 # ---------------------------------------------------------------- driver
@@ -735,21 +756,28 @@ def main(argv=None):
             S_ = run_sa(np.random.default_rng(1000 + a.attempt * 100 + s + 7919 * a.seed), 0.0 if s == 0 else 0.3)
             b = write_board(a.input, S_.poses(), work / f"cand-{s}")
             d = route_probe(b, work / f"probe-{s}", a.probe_passes, probe_t)
-            print(json.dumps(dict(stage="probe", cand=s, unconnected=d["unconnected"], vias=d.get("vias"),
+            print(json.dumps(dict(stage="probe", cand=s, unconnected=d["unconnected"], errors=d.get("errors"),
+                                  errors_by_type=d.get("errors_by_type"), vias=d.get("vias"),
                                   length=d.get("length_mm"), failed=sorted(d.get("failed", {}))[:12],
                                   t=d["t"], legal=not S_.violators())), flush=True)
-            cands.append((not S_.violators(), d, S_))
+            cands.append((not S_.violators(), d, S_, P.halo.copy()))
+            if cands[-1][0] and _clean(d):
+                break  # routed clean in the loop: no need for more seeds
         cands.sort(key=lambda c: (not c[0], _rank(c[1])))
-        ok, best_d, S = cands[0]
+        ok, best_d, S, halo = cands[0]
+        P.halo[:] = halo
         if a.algo == "sa-loop":
             step = P.diag / 12
             for rnd in range(a.rounds):
-                if best_d["unconnected"] == 0 or time.monotonic() - t_start > budget - sa_s - probe_t:
+                if _clean(best_d) or time.monotonic() - t_start > budget - sa_s - probe_t:
                     break
                 failed = [P.net_name.index(n) for n in best_d.get("failed", {}) if n in P.net_name]
-                movers = sorted({i for k in failed for i in range(P.n) if k in P.part_nets[i]})
+                blamed = [i for i in P.movable if P.ref[i] in set(best_d.get("blame", []))]
+                movers = sorted({i for k in failed for i in P.movable if k in P.part_nets[i]} | set(blamed))
                 if not movers:
                     break
+                halo_before = P.halo.copy()
+                P.halo[blamed] += 0.3  # DRC trouble around these parts: give them room
                 trial = State(P, S.x.copy(), S.y.copy(), S.r.copy(), cross_w, mu)
                 P.weight[:] = P.base_weight
                 P.weight[failed] *= 3.0
@@ -761,11 +789,14 @@ def main(argv=None):
                 b = write_board(a.input, trial.poses(), work / f"loop-{rnd}")
                 d = route_probe(b, work / f"loop-probe-{rnd}", a.probe_passes, probe_t)
                 better = legal and _rank(d) < _rank(best_d)
-                print(json.dumps(dict(stage="loop", round=rnd, movers=len(movers), unconnected=d["unconnected"],
-                                      vias=d.get("vias"), kept=better, step=round(step, 2), t=d["t"])), flush=True)
+                print(json.dumps(dict(stage="loop", round=rnd, movers=len(movers), blamed=len(blamed),
+                                      unconnected=d["unconnected"], errors=d.get("errors"),
+                                      errors_by_type=d.get("errors_by_type"), vias=d.get("vias"), kept=better,
+                                      step=round(step, 2), t=d["t"])), flush=True)
                 if better:
                     S, best_d, ok = trial, d, legal
                 else:
+                    P.halo[:] = halo_before
                     step *= 1.5
     poses = S.poses()
     out = write_board(a.input, poses, work / "final")
