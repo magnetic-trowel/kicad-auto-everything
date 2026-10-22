@@ -373,8 +373,27 @@ def _keyed(text, ignore_heads=()):
             u = f"{name.strip(chr(34))}#{seen[(head, name)]}"
         # nested uuids carry no electrical meaning, and KiCad invents fresh ones on load
         # for some implicit fields; compare without them
-        out[(head, u)] = [("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
-                          for i, t in enumerate(blk)]
+        out[(head, u)] = _drop_zero_angles([("~" if i > 1 and blk[i - 1] == "uuid" and blk[i - 2] == "(" else t)
+                                            for i, t in enumerate(blk)])
+    return out
+
+
+def _drop_zero_angles(toks):
+    """(at x y A) with A = 0 mod 360 -> (at x y): KiCad writes a zero angle as 360 or leaves
+    it out depending on how the object was rotated."""
+    out, i, n = [], 0, len(toks)
+    while i < n:
+        if toks[i] == "at" and i and toks[i - 1] == "(" and i + 4 < n and toks[i + 4] == ")":
+            try:
+                a = float(toks[i + 3]) % 360.0
+            except ValueError:
+                a = None
+            if a is not None and min(a, 360.0 - a) <= COORD_TOL:
+                out += toks[i:i + 3]
+                i += 4
+                continue
+        out.append(toks[i])
+        i += 1
     return out
 
 
@@ -472,16 +491,19 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
     nets = _net_names(board)
     given = {_route_key(t) for t in board.GetTracks()}
     out_keys, accepted = [], set()
-    bad_layer = unknown_net = 0
+    bad_layer = new_net = 0
     for t in out.GetTracks():
         key = _route_key(t)
         out_keys.append(key)
         layers = [t.TopLayer(), t.BottomLayer()] if t.GetClass() == "PCB_VIA" else [t.GetLayer()]
         if any(not pcbnew.IsCopperLayer(l) or not enabled.Contains(l) for l in layers):
             bad_layer += 1
-        elif t.GetNetname() not in nets:
-            unknown_net += 1
-        elif key not in given:
+            continue
+        # A net no pad, zone or given copper uses (e.g. stray copper on a pad-less net in an
+        # imported design) becomes a new net: it cannot connect anything, only add errors.
+        if t.GetNetname() not in nets:
+            new_net += 1
+        if key not in given:
             accepted.add(t.m_Uuid.AsString())
     copy = None
     if ref is not None:
@@ -510,7 +532,7 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
     _unfill(out)
     _unfill(board)
     foreign = _foreign(_canonical(out), _canonical(board))
-    _out(dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, unknown_net=unknown_net,
+    _out(dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, new_net_items=new_net,
               missing_given=missing_given, output=ident, foreign=foreign, copy=copy))
 
 

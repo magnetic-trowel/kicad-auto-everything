@@ -10,7 +10,8 @@ outline, keepouts, zones, pads, layers, nets) therefore cannot change a score. T
 still detected, and make the result invalid:
 
   route  placement, pad nets, every other board object untouched; routing only on the
-         board's copper layers and nets
+         board's copper layers (copper on a new net is kept and counted: it cannot
+         connect anything)
   place  pad nets and every non-pose property untouched; locked footprints unmoved; no
          footprints added or removed; no copper added
 
@@ -24,7 +25,7 @@ from pathlib import Path
 from . import tools
 from .boardfiles import board_path, install_rules
 
-SCORE_VERSION = 3
+SCORE_VERSION = 4
 
 # KiCad 10 DRC type keys that make a placement illegal (as named in its JSON report).
 PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
@@ -90,7 +91,6 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
         placement=out["placement_hash"] == input_stats["placement_hash"],
         pad_nets=out["padnet_hash"] == input_stats["padnet_hash"],
         layers=tr["bad_layer"] == 0,
-        nets=tr["unknown_net"] == 0,
         untouched=foreign["count"] == 0,
     )
     valid = all(integrity.values())
@@ -98,6 +98,7 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
     ref_wl = ref_stats.get("track_length_mm") or 0
     return dict(
         valid=valid, integrity=integrity, foreign=foreign, **_copy_fields(tr, allow_copy),
+        new_net_items=tr["new_net_items"],
         clean=valid and drc["unconnected"] == 0 and drc["errors"] == 0,
         completion=round(completion, 4) if valid else 0.0,
         start_unconnected=start_unconnected,
