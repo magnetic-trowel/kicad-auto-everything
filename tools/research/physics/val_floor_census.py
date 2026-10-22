@@ -105,7 +105,11 @@ class Census:
                 clr = float(c[1]) if c else clr
             if len(pts) >= 3:
                 self.zones.append(dict(net=net, layers=layers, poly=Polygon(pts).buffer(0), clearance=clr))
-        self.edge = self.b.outline.buffer(-0.3) if self.b.outline is not None else None
+        if self.b.outline is not None:
+            self.edge = self.b.outline.buffer(-0.3)
+        else:   # no closed Edge.Cuts outline parsed: fall back to the envelope of all copper fills and pads
+            env = unary_union(list(self.b.fills.values()) + [p["shape"] for p in self.b.pads]).envelope
+            self.edge = env.buffer(-0.3)
 
     def net_layers(self, net):
         ls = set(k[0] for k in self.b.fills if k[1] == net)

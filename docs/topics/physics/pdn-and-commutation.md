@@ -24,7 +24,7 @@
 
 ### 1. Commutation-loop geometry
 
-PEEC filaments with a perfect image plane (inductive limit). The method was validated against closed forms (wire over plane within 1–7%; wide strip over plane within 1–4% of μ0·h·l/(w+2h)). Image-plane PEEC agrees with FastHenry within 1.3% ([open-solvers](open-solvers.md)). Loop: l = 4 mm from cap to switch pair, conductor w = 2 mm [C, `pw_peec.py loops`].
+PEEC filaments with a perfect image plane (inductive limit). The method was validated against closed forms (wire over plane within 1–7%; wide strip over plane within 1–4% of μ0·h·l/(w+2h)). Image-plane PEEC agrees with FastHenry within 1.3% (4 loops, w/h 0.3–5, 100 MHz; [open-solvers](open-solvers.md)). Loop: l = 4 mm from cap to switch pair, conductor w = 2 mm [C, `pw_peec.py loops`].
 
 | Configuration | Plane / return distance | L (nH) |
 |---|---|---|
@@ -180,7 +180,7 @@ The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 m
   - MPS: copper "somewhat reduces the effective inductance of the coil (typically less than 5%)", and a plane on the component side keeps the field off the bottom and cables ([Hedrich](https://media.monolithicpower.com/mps_cms_document/2/0/2019-aip-pcb-design-for-low-emi-dc-dc-converters_r1.0.pdf) [P]).
   - A grounded sheet raised peak current ~8% only with an unshielded inductor ([MPS article via repost](https://www.linkedin.com/pulse/beneficial-lay-copper-under-dc-power-supply-livia-qiu) [S]).
   - A usenet bench test: 22 µH SRU1048 at 500 kHz, −3%, and −1.5% with a 10 mm hole ([thread](https://www.electronics-related.com/showthread/sci.electronics.design/524048-3.php) [S]).
-- **Resolution.** Rohm's "no ground under the inductor" protects L and Q for open-flux cores close to a plane. TI's "keep L2, clear top copper" limits SW → VOUT capacitance. MPS's "copper under the coil" buys H-field shielding. They are one trade with different weights. Default to a solid plane. Consider a cut-out only for open drum cores within ~0.5 mm, at high ripple, with no EMI requirement.
+- **Resolution.** Rohm's "no ground under the inductor" protects L and Q for open-flux cores close to a plane. TI's "keep L2, clear top copper" limits SW → VOUT capacitance. MPS's "copper under the coil" buys H-field shielding. They are one trade with different weights. Default to a solid plane. Never cut a body-sized hole: it is a ring that still carries eddy current at its rim, so loss rises 1.05–1.4× and much of the shielding is lost. Only a cut-out ≥ 2–3× the winding radius cuts loss and ΔL (to 3–50% at 0.5–2 MHz), and it unshields lower layers. Consider it only for open drum cores within ~0.5 mm, at high ripple, with no EMI requirement [C, [da_inductor_cutout.py](../../../tools/research/physics/da_inductor_cutout.py), [derivation-audit](derivation-audit.md)].
 
 ## Recommendations for our system
 
@@ -188,10 +188,11 @@ The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 m
 - **N8 objective.** Optimise via-cluster spread and decap orientation, with site L from PEEC and spreading L from a one-off Laplace map per rail. Count vias for DC ampacity separately.
 - **Victim ledger.** M between each high-di/dt loop and each sensitive loop (FB, sense, gate return, reference), checked against a mV budget, replaces fixed keep-out distances.
 - **Kelvin critic.** Compute L_err for the routed sense path and emit τ_RC = L_err/R as a BOM constraint.
-- **Copper-under-inductor selector.** Inputs: shield class, ripple, f_sw, plane depth. Output: ΔL and P_eddy. Default: keep the plane.
+- **Copper-under-inductor selector.** Inputs: shield class, ripple, f_sw, plane depth, cut-out radius. Output: ΔL and P_eddy. Default: keep the plane; never offer a body-sized cut-out.
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** the PEEC–FastHenry match is scoped to w/h 0.3–5; a body-sized cut-out under an inductor is worse than either keeping or clearing the plane ([red-team](red-team.md)).
 - **[hot-loops](../rules/power/hot-loops.md) tiers in mm².** These are soft scores, and our data show area is a poor proxy over a close plane. Prefer nH.
 - **Archambeault's 10-inch spreading anchor** and AN-139's flat curve are not reproduced; both geometries are unknown.
 - **f_ext values are assumptions.** Calibrate them with one bench measurement per inductor family (LCR meter, with and without plane) or a magnetostatic FEM.

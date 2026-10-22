@@ -11,11 +11,12 @@
 
   Names match the [critic catalog](physics-critics-catalog.md). The brief's T0–T3 are F1–F4.
 - **Every evaluator returns value, σ, validity, provenance and cost.** An optimizer may exploit a value only inside the evaluator's trust region ([V4](../../ideas/original/verification.md)); outside it the evaluator escalates.
-- **Escalate on value of information, not on schedule.** Call a higher rung only when its answer could flip a decision. Choosing the best of 10 hot-loop candidates, the µs proxy MS2 picks the PEEC-best 96–98% of the time; plan-view loop area picks it 66% (fixed stackup) or 16% (mixed widths and layers) [C].
+- **Escalate on value of information, not on schedule.** Call a higher rung only when its answer could flip a decision. Choosing the best of 10 hot-loop candidates, the µs proxy MS2 picks the PEEC-best 96–98% of the time; plan-view loop area picks it 66% (fixed stackup) or 16% (mixed widths and layers) [C]; at a fixed stackup plain trace length picks it 82–99% [C, [rt_loop_proxy](../../../tools/research/physics/rt_loop_proxy.py)].
 - **Incremental work:**
   - Cache per-object physics by geometry and stackup hash, and re-extract only dirty neighbourhoods.
   - In 2-D, simply refactor (0.6–1.5 s at 10⁵ cells).
-  - One adjoint solve prices every copper edit, but it misses cuts: a 6 mm slot was estimated at 0.27 mW against 8.1 mW exact [C].
+  - One adjoint solve gives the first-order price of every small edit once the edit's polarization tensor is applied: a slit across the flow costs (π/4)R_s·Δψ_u·Δψ_λ (lenses [CT](lens-ct.md), [SY](lens-sy.md)). The plain area-weighted adjoint missed a 6 mm slot 30× (0.27 vs 8.1 mW) [C].
+  - Finite edits use exact Woodbury (removal) and Thevenin (addition) quotes ([lens CD](lens-cd.md)). Each comes with its radius r = max|λ| over the edit spectrum: exact change = Σ c_i/(1 − λ_i), the c_i summing to the first-order price, so r says whether first-order was safe ([physics-core-v2](physics-core-v2.md) §4).
 - **Spend compute on batched F1/S over candidate populations, F2 label factories and GPU F3 for finalists.** Never use FDTD for an electrically small loop: ~75 CPU-minutes versus ~1 ms of PEEC for the same quasi-static answer [C/I].
 
 ## Key facts
@@ -29,7 +30,7 @@ Tags as in [open-solvers](open-solvers.md). [C] numbers come from [sl_loop_peec.
 | F0 | Geometry and topology | Return coverage, path length, loop polygon, clearances | µs–ms | Exact geometry, no physics | Every move |
 | F1 | Closed forms | Hammerstad-Jensen, L′(w,h)·length, MS2, cavity model, Johnson K, fin and thermal kernels | 0.05–2.5 µs; cavity 2–300 ms per sweep [C] | 0.2–15% inside validity; wrong outside (IPC-2141 −65% at w/h 6) [C] | Placer and router inner loops; ledger spend models |
 | S | Learned residual or operator | Residual-on-MS2, CNN/GNN capacitance, PDN DNN | µs–ms batched | Ours: median 3.5%, p95 9.8%, max 114% [C] | Inner loop where F1 lacks a formula |
-| F2 | Quasi-static field solve on real copper | Image PEEC, multi-filament PEEC, 2-D FD cross-sections, 2.5-D FV IR/thermal, plane-pair modes, meshed-plane PEEC | PEEC 0.1–1.7 ms; 2-D FD 0.02–12 s; IR 0.1–9 s; meshed plane 7–115 s [C] | Image PEEC within 1.3% of FastHenry at 100 MHz [C] | Accepted placements, route batches, post-route critics |
+| F2 | Quasi-static field solve on real copper | Image PEEC, multi-filament PEEC, 2-D FD cross-sections, 2.5-D FV IR/thermal, plane-pair modes, meshed-plane PEEC | PEEC 0.1–1.7 ms; 2-D FD 0.02–12 s; IR 0.1–9 s; meshed plane 7–115 s [C] | Image PEEC within 1.3% of FastHenry at 100 MHz on 4 loops with w/h 0.3–5. With 7 equal filaments it reads 11% (w/h 10–20) to 21% (w/h 20–60, p10 42%) low; use ≥ 31 cosine-graded filaments [C, rt_loop_proxy] | Accepted placements, route batches, post-route critics |
 | F3 | Full-wave/FEM on slices | openEMS via gerber2ems/si-wrapper, Palace, EMerge, CalculiX/Elmer thermal | Minutes–hours on CPU, ~10× less on GPU [I] | VNA-matched "in character and order of magnitude" (Antmicro) [P] | Finalists, sign-off, calibration of F1/F2 |
 | F4 | Measurement and vendor data | Coupons (VNA/TDR), thermal camera, near-field scan, EMC pre-scan, vendor S-parameters, EVMs | Days per panel; free per part | Ground truth within measurement error | Bias models per stackup, fab and part family |
 
@@ -42,6 +43,8 @@ Tags as in [open-solvers](open-solvers.md). [C] numbers come from [sl_loop_peec.
 | F2 | T1 | F2 | T2 (padne, KiPI) | — |
 | F3 | T2 | F3 | T3 | T3 |
 | F4 | T3 | — | — | — |
+
+The rungs grade accuracy. [physics-core-v2](physics-core-v2.md) §2 adds exactness classes that grade guarantees relative to a stated model: E0 topological, E1 algebraic (exact on the discretized model), E2 certified bound, E3 asymptotic, E4 calibrated, E5 conjectured. A result carries both, e.g. (F2, E1); "exact" never covers the model's own error.
 
 DRC and router probes (evaluation-stack T1) check legality, not physics, so they sit on a separate axis. Circuit simulation is a second axis too:
 - **C0:** budget arithmetic (L·di/dt, I·R, K·V).
@@ -66,15 +69,15 @@ F3 rows are [I] estimates. Cells come from the region size and mesh. Δt = Δmin
 
 ### Measured trust radii for loop inductance [C]
 
-Reference: multi-filament image PEEC (PEECN), itself within 1.3% of FastHenry on 4 cases. The test set is 600 random rectangle, hairpin and L loops: w 0.15–4 mm, h 0.08–1.6 mm, sides 1.5–25 mm, over an ideal plane, plus fixed-stackup families.
+Reference: multi-filament image PEEC (PEECN), itself within 1.3% of FastHenry on 4 cases (w/h 0.3–5 only; with 7 equal filaments it reads low on wide traces, see F2 above). The test set is 600 random rectangle, hairpin and L loops: w 0.15–4 mm, h 0.08–1.6 mm, sides 1.5–25 mm, over an ideal plane, plus fixed-stackup families.
 
-| Proxy | Over a plane | Free space | Pick-best-of-10 |
-|---|---|---|---|
-| Plan-view area (the rule of thumb) | Spearman 0.36 across mixed w/h; 0.88–0.97 at fixed w and h | 0.79 | 66% at fixed stackup (regret p95 77%); 16% mixed (median regret 169%) |
-| µ0·h·l/w (parallel plate) | Biased +50…+1000%; ranks well only for w/h ≥ 3 (Spearman 0.99, still +65% median bias) | Wrong | — |
-| MS = Σ l·L′(w,h) | Spearman 0.99; median +13%; +30% for hairpins with s < 4h | Wrong (−45%) | 95–96% |
-| MS2 = MS + coupled-line mutual | Spearman 0.999; median +9…+14%; p90 ≤ +31% | Wrong | 96–98%, regret p95 0% |
-| PEEC1 (one filament) | 3–5% for w/h < 1; fails for w/h ≥ 3 | 3–4% | 67% mixed |
+| Proxy | Over a plane | Free space | Pick-best-of-10 | Valid where |
+|---|---|---|---|---|
+| Plan-view area (the rule of thumb) | Spearman 0.36 across mixed w/h; 0.88–0.97 at fixed w and h | 0.79 | 66% at fixed stackup (regret p95 77%); 16% mixed (median regret 169%) | No plane, or fixed w and h |
+| µ0·h·l/w (parallel plate) | Biased +50…+1000%; ranks well only for w/h ≥ 3 (Spearman 0.99, still +65% median bias) | Wrong | — | Ranking only, w/h ≥ 3 |
+| MS = Σ l·L′(w,h) | Spearman 0.99; median +13%; +30% for hairpins with s < 4h | Wrong (−45%) | 95–96% | Over a plane, sides ≥ 4h apart |
+| MS2 = MS + coupled-line mutual | Spearman 0.999; median +7.7% against a graded reference (+9…+14% against PEECN, part of which is PEECN's own error); p90 ≤ +31% | Wrong | 96–98%, regret p95 0% | Over an ideal plane |
+| PEEC1 (one filament) | 3–5% for w/h < 1; fails for w/h ≥ 3 | 3–4% | 67% mixed | w/h < 1 |
 
 The physics behind the table:
 - Over a solid plane at depth h, much smaller than the loop, the plane carries an image current directly under each conductor (eddy current if the plane floats, return current if it is the return), so the field is confined to the dielectric under the copper.
@@ -146,11 +149,11 @@ The hot-loop data supports this. MS2 errs on 2–4% of choices. At fixed stackup
 - **Linear solves:**
   - 2-D: refactor. Stale-LU-preconditioned CG converged in 22–30 iterations but was slower in scipy: 3.9–6.3 s vs 0.65–1.2 s at 1.1×10⁵ cells; at 4.4×10⁵ it ranged from break-even to 2× slower (10–14 s vs 5–16 s) [C].
   - 3-D (F3): use warm starts and Schur-complement window macro-models [I].
-- **Adjoint price maps.** One solve gives ∂loss/∂copper everywhere.
+- **Adjoint price maps.** One solve gives ∂loss/∂copper everywhere, but the plain area-weighted map is only right for compact holes.
   - Compact holes: within ~15% (0.012 vs 0.014 mW; 0.268 vs 0.303 mW).
   - A slot across the current: 30× low (0.27 vs 8.06 mW) [C].
   
-  Pair the map with a stream-function (Δψ) screen for cuts ([xd_sheet.py](../../../tools/research/physics/xd_sheet.py)).
+  Multiply forward and adjoint fields by the edit's polarization tensor (the Δψ crack law for cuts, [xd_sheet.py](../../../tools/research/physics/xd_sheet.py)); quote finite edits exactly by Woodbury and check r.
 - **Reuse F3 across boards** through a library of canonical structures (via launches, connector transitions, decap mounts), stored as parameterized surrogates [I].
 
 ### 7. Spending "near-infinite" compute
@@ -175,6 +178,7 @@ The hot-loop data supports this. MS2 errs on 2–4% of choices. At fixed stackup
 
 ## Conflicts and open questions
 
+- **Round-3 corrections (2026-10-22):** adjoint pricing needs the edit's polarization tensor and Woodbury quotes with radius r; PEEC's FastHenry match is scoped to w/h 0.3–5; MS2 bias restated against a graded reference; exactness classes E0–E5 added ([red-team](red-team.md)).
 - **Tier names.** Four schemes coexist (table above). We propose F0–F4 + S as canonical. design-reasoning's "T2 SPICE" is the circuit axis (C2).
 - **"Minimize hot-loop area"** ([hot-loops](../rules/power/hot-loops.md), [checkers-power](../rules/checkers-power.md) `loop_area` with `max_mm2`) is a weak objective over a plane (mixed-stackup Spearman 0.36). Score nH with MS2 or PEEC. Area stays valid for planeless boards.
 - **F3 runtimes are estimates.** Time a gerber2ems slice of a DDR lane and a USB3 launch on this harness, CPU and GPU.
