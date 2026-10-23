@@ -63,3 +63,50 @@ def test_barrier_rules_and_lib_parts(tmp_path):
     assert 'Q_NMOS_G1S2D3' in lib
     errs = {f.check for f in findings if f.severity == "error" and not f.waived_by}
     assert not errs, [f.message for f in findings if f.severity == "error"]
+
+
+def two_board_design(with_connector=True):
+    from kaesynth import Design
+    from kaesynth.lib import Conn, Fuse
+    d = Design("twob")
+    d.net("GND", domain="LV", v=0, kind="ground")
+    d.domain("LV", ref="GND")
+    d.board("main", width_mm=40, height_mm=30)
+    d.board("remote", width_mm=20, height_mm=15)
+    hv = d.net("PWR", domain="LV", v=(0, 12), kind="power", i_max=1)
+    hdr = lambda: Conn(2, "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", v_max=50, i_max=3)
+    a = d.block("a", board="main")
+    j1 = a.add(hdr(), ref="J1")
+    r1 = a.add(R("10k"))
+    b = d.block("b", board="remote")
+    j2 = b.add(hdr(), ref="J2")
+    r2 = b.add(R("10k"))
+    h = d.block("harness", board="off")
+    f = h.add(Fuse(2, 32, None, mpn="ATO-2", manufacturer="Littelfuse"))
+    mid = d.net("PWR_F", domain="LV", v=(0, 12), kind="power", i_max=1)
+    hv.connect(j1[1], r1[1], f[1])
+    mid.connect(f[2], j2[1] if with_connector else r2[2], r2[1])
+    d.nets["GND"].connect(j1[2], r1[2], j2[2])
+    if with_connector:
+        d.nets["GND"].connect(r2[2])
+    return d
+
+
+def test_crossing_needs_connector():
+    from kaesynth.checks import Checker
+    errs = [f for f in Checker(two_board_design(False)).run() if f.check == "board.crossing_without_connector"]
+    assert errs and "remote" in errs[0].message
+
+
+@pytest.mark.kicad
+def test_multi_board_projects(tmp_path):
+    d = two_board_design()
+    _, findings, status, kicad = build(d, tmp_path, date="2026-01-01")
+    errs = [f.message for f in findings if f.severity == "error" and not f.waived_by]
+    assert not errs, errs
+    assert kicad["boards"] == {"main": [], "remote": []}
+    assert (tmp_path / "board-main" / "twob-main.kicad_sch").exists()
+    main_intent = (tmp_path / "board-main" / "intent.yaml").read_text()
+    assert "J1" in main_intent and "J2" not in main_intent
+    bom = (tmp_path / "bom.csv").read_text()
+    assert "off,F" in bom.replace('"', "") and "harness" in bom

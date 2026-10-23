@@ -105,19 +105,27 @@ def run_kicad(design, outdir, netclasses):
     warns = [i for i in items if i["severity"] != "error" and i["type"] not in ENV_ERC]
     res["erc_summary"] = (f"{len(errs)} errors, {len(warns)} warnings" if erc_json.exists()
                           else f"failed: {res.get('erc_error', '')[:200]}")
-    xml = outdir / f"{design.slug}.net.xml"
-    p = subprocess.run([*cli, "sch", "export", "netlist", "--format", "kicadxml", "-o", str(xml), str(sch)],
-                       capture_output=True, text=True, env=_env(), cwd=outdir)
-    if xml.exists():
-        res["netlist_problems"] = nl.compare(design, xml) + nl.netclass_mismatches(xml, netclasses)
-        xml.unlink()          # derived and timestamped; netlist.json is the committed form
-    else:
-        res["netlist_problems"] = [f"netlist export failed: {p.stderr.strip()[:300]}"]
+    res["netlist_problems"] = parity(cli, sch, design, netclasses)
     res["dru"] = lint_dru(cli, outdir, design, netclasses)
     prl = outdir / f"{design.slug}.kicad_prl"
     if prl.exists():
         prl.unlink()          # per-user view state written by kicad-cli
     return res
+
+
+def parity(cli, sch, design, netclasses, blocks=None):
+    """Export KiCad's netlist for `sch` and compare it with the IR (empty list = identical)."""
+    xml = sch.with_suffix(".net.xml")
+    p = subprocess.run([*cli, "sch", "export", "netlist", "--format", "kicadxml", "-o", str(xml), str(sch)],
+                       capture_output=True, text=True, env=_env(), cwd=sch.parent)
+    if not xml.exists():
+        return [f"netlist export failed: {p.stderr.strip()[:300]}"]
+    probs = nl.compare(design, xml, blocks) + nl.netclass_mismatches(xml, netclasses)
+    xml.unlink()              # derived and timestamped; netlist.json is the committed form
+    prl = sch.with_suffix(".kicad_prl")
+    if prl.exists():
+        prl.unlink()
+    return probs
 
 
 def lint_dru(cli, outdir, design, netclasses):
@@ -184,6 +192,24 @@ def build(design_path, outdir=None, use_kicad=True, date=None):
                 findings.append(Finding("kicad.netlist_roundtrip", "error", prob))
             if str(kicad.get("dru", "")).startswith("FAIL"):
                 findings.append(Finding("kicad.dru_parse", "error", kicad["dru"]))
+            checker.findings = findings
+            checker.apply_waivers()
+        boards = d.board_names()
+        if len(boards) > 1:
+            kicad["boards"] = {}
+            for name in boards:
+                blocks = [b for b in d.blocks if b.board_name == name]
+                sub, slug = outdir / f"board-{name}", f"{d.slug}-{name}"
+                w = SchematicWriter(d, symlibs, title_date=date, blocks=blocks, slug=slug, board=name)
+                w.write(sub)
+                write_project(sub, d, w.st, netclasses, slug=slug, parts=[p for b in blocks for p in b.parts])
+                (sub / f"{slug}.kicad_dru").write_text(dru_text(d, netclasses))
+                (sub / "intent.yaml").write_text(intent_yaml(d, netclasses, board=name))
+                if use_kicad and kicad.get("ran"):
+                    probs = parity(kicad_cli(), sub / f"{slug}.kicad_sch", d, netclasses, blocks)
+                    kicad["boards"][name] = probs
+                    for prob in probs:
+                        findings.append(Finding("kicad.netlist_roundtrip", "error", f"board {name}: {prob}"))
             checker.findings = findings
             checker.apply_waivers()
     elif not symlibs:

@@ -28,11 +28,11 @@ those sources are tagged [S] and must be checked before fabrication (Q-5, Q-6).
   - Board copper is ordered by potential, so only electrically adjacent domains are physically
     adjacent.
   - The alarm output is opto-isolated.
-- **Efficiency.** Asleep: ≤ 35 µA per battery, with ≤ 26 µA difference between batteries. A
+- **Efficiency.** Asleep: ≤ 36 µA per battery, with ≤ 26 µA difference between batteries. A
   channel wakes only while a charger holds its pair at ≥ 13.2 V per battery. Active overhead is
   0.22 W per channel, paid by the charger.
-- **Part count:** 377 placed parts, plus the off-board harness: 122 per channel × 3, and 11 at
-  board level. Fourteen distinct ICs and transistors, all with verified datasheets.
+- **Part count:** 383 placed parts, plus the off-board harness: 124 per channel × 3, and 11 at
+  board level. Eleven distinct semiconductors plus two LEDs. Datasheets were read for all of them except the SOT-323 BAS16W (its SOT-23 sibling was read).
 
 ## 1. Brief
 
@@ -63,8 +63,8 @@ Verbatim:
 | REQ-7 | Charge-transfer efficiency | ≥ 97 % for ΔV ≤ 0.3 V | brief ("as efficient as possible") | V-4 |
 | REQ-8 | Active overhead per channel | ≤ 0.25 W, only while a charger is present | derived | V-4 |
 | REQ-9 | Sleep current per battery / mismatch between batteries | ≤ 50 µA / ≤ 40 µA | brief ("tiny and equal") | V-5 |
-| REQ-10 | Wake threshold (pair voltage, rising / falling) | 26.4 ± 0.17 V / 26.1–26.4 V (13.2 / ≥ 13.05 V per battery) | derived §7.7 (Q-2) | V-6 |
-| REQ-11 | Ratio lockout: stop, red LED and alarm when V_top/V_bot leaves the window | 0.907–1.088 (±1 %) | derived: a shorted cell is −16.7 % | V-7 |
+| REQ-10 | Wake threshold (pair voltage, rising / falling) | 26.45 ± 0.17 V / 26.0–26.4 V (13.23 / ≥ 13.0 V per battery) | derived §7.7 (Q-2) | V-6 |
+| REQ-11 | Ratio lockout: stop, red LED and alarm when V_top/V_bot leaves the window | 0.907–1.088 (±1.5 %) | derived: a shorted cell is −16.7 % | V-7 |
 | REQ-12 | Worst-case board dissipation / thermal cut-out | ≤ 3.1 W per channel / 92–99 °C | derived §7.6 | V-8 |
 | REQ-13 | Fault containment | No single fault causes a sustained short or connects ≥ 2 batteries through < 100 kΩ. Every board fault current is interrupted by an on-board fuse. | brief ("no pathways") | FMEA §4; V-9…V-15 |
 | REQ-14 | Tap fusing | At the battery end (≤ 150 mm from the post): ≥ 80 VDC rating, ≥ 10 kA DC interrupt. On board: ≥ 80 VDC, ≥ 1 kA. | brief + derived §7.10 | Inspection; V-9 |
@@ -97,7 +97,7 @@ Verbatim:
 | ID | Question for a human | Blocking? |
 |---|---|---|
 | Q-1 | Confirm the supported N = 2–4. Is a > 4-battery (96 V) bank needed? Two boards can overlap by one battery, but a > 70 V stack is outside this design's safety analysis. | **BLOCKING** |
-| Q-2 | Which battery model and charger set-points (float, absorb, equalize, temperature compensation)? The wake threshold is 13.2 V per battery. Float below 13.25 V, for example a hot room or a 13.2 V AGM float, will never wake the balancer. It is set by R120–R124. | **BLOCKING** |
+| Q-2 | Which battery model and charger set-points (float, absorb, equalize, temperature compensation)? The wake threshold is 13.23 ± 0.09 V per battery. Float below ≈ 13.3 V, for example a hot room or a 13.2 V AGM float, may never wake the balancer. It is set by R120–R125. | **BLOCKING** |
 | Q-3 | Are flooded batteries equalized at 16.2 V or more? Then the stack exceeds 60 VDC (ES2), which drives labelling and enclosure requirements. | no |
 | Q-4 | MLCCs and an electrolytic sit directly across each battery. If one shorts, the on-board fuse clears and the battery is not shorted indefinitely. Is that acceptable, or must these caps be series-redundant pairs? Pairs add 16 caps per channel and an 8 mm larger board. | **BLOCKING** |
 | Q-5 | The Littelfuse 477 DC interrupting rating (1.5 kA at 400 VDC) and cold resistance are only [S]. Verify before ordering, or substitute a fuse with a read DC rating ≥ 1 kA at ≥ 80 VDC. | **BLOCKING** |
@@ -115,15 +115,16 @@ Verbatim:
 |---|---|---|---|---|
 | H-1 | Arc, fire or burns from a battery short through the harness. One 200 Ah AGM delivers 3.3 kA, and internal R ≤ 4 mΩ [P]. | Chafed or crushed tap wire; tool across terminals | KLKD010 fuse (600 VDC; DC 10 kA UL 248-19, 50 kA UL 248-14 [P]) in a sealed in-line holder ≤ 150 mm from each post (HARNESS). 600 V insulation. Loom and strain relief. | Yes for a wire fault. The ≤ 150 mm pigtail before the fuse is unprotected: double-insulate and clamp it. |
 | H-2 | Fire on the board | Shorted FET, flying cap or bulk cap; contamination | On-board 4 A T, 400 VDC fuse per tap (INPUT, F1–F5). Bounded prospective current: 108–191 A for one battery, ≤ 676 A for the full stack (§7.10). | Yes: the harness fuse backs up the board fuse. |
-| H-3 | Two or more batteries bridged ("voltage jumping") | Creepage failure; a component spanning taps | Potential-ordered layout (§9). Spacing rules (§6). No part spans ≥ 2 batteries except ≥ 4.99 MΩ divider strings, the 100 kΩ level shifter and certified isolation barriers (UCC21520, SFH617A). | Yes |
+| H-3 | Two or more batteries bridged ("voltage jumping") | Creepage failure; a component spanning taps | Potential-ordered layout (§9). Spacing rules (§6). No part spans ≥ 2 batteries except the divider strings (≥ 4.99 MΩ), the level shifter (2 × 49.9 kΩ in series, so ≥ 49.9 kΩ after any single short) and certified isolation barriers (UCC21520, SFH617A). Each string's top resistors are also split. | Yes |
 | H-4 | Balancer drains good batteries into a failed one | Shorted cell (−2.1 V) | Ratio lockout of ±8.7 % (SUPV, U108 B/C) stops the channel and raises the alarm | Lockout and thermal cut-out are independent comparators |
-| H-5 | Mis-wiring: swapped taps or a reversed battery | Installer | Keyed single plug, numbered and colour-coded wires, and a pre-plug voltage check (V-13 procedure). Body diodes conduct, the 4 A T fuse clears in ≈ 10 ms at ≈ 70 A [I], and FET energy is ≈ 0.5 J. | No fire. A FET may fail short; the fuse still clears. |
+| H-5 | Mis-wiring: swapped taps or a reversed battery | Installer | Keyed single plug, numbered and colour-coded wires, and a pre-plug voltage check (V-13 procedure). Body diodes conduct, the 4 A T fuse clears in ≈ 10 ms at ≈ 70 A [I], and FET energy is ≈ 0.6 J. | No fire. A FET may fail short; the fuse still clears. |
 | H-6 | Hydrogen ignition (LEL 4 %) | Flooded or overcharged cells vent H₂; plug spark (22 mJ per battery leg); fuse operation | Enclosure outside the battery box and not above vents. Plug only at the board, away from the batteries. Harness fuses are enclosed. No relays. | Yes |
 | H-7 | Board overheating | ΔV at the window edge with short wires (3.1 W per channel); blocked vents | Thermal cut-out at 92–99 °C (NTC + U108 D). Power is bounded by the window (§7.6). | Yes: the window and the cut-out are independent. |
 | H-8 | Shock | Stack up to 70.2 VDC (ES2 during cold equalize) | Enclosure; pluggable insulated connector; alarm opto with basic insulation (§6) | Yes |
-| H-9 | Bank drained in storage | Balancer awake at rest | Wakes only at ≥ 13.2 V per battery. Sleep ≤ 35 µA. A stuck-awake fault costs 0.22 W per channel, and the green LED shows it. | Partial: needs a human to see the LED |
+| H-9 | Bank drained in storage | Balancer awake at rest | Wakes only at ≥ 13.2 V per battery. Sleep ≤ 36 µA. A stuck-awake fault costs 0.22 W per channel, and the green LED shows it. | Partial: needs a human to see the LED |
 | H-10 | Battery opens internally under load | Broken strap | That position reverses. Body diodes carry string current until the tap fuses clear (ms). | Yes (fuses) |
 | H-11 | Corrosion or leakage across divider nodes | Acid mist, humidity | Strings ≤ 10 MΩ. Conformal coat (Q-9). IP54 box. | Yes |
+| H-12 | Unused or broken top tap floats | N < 4 without plug bridges, or a broken T_H wire | The divider strings pull the floating tap ≈ 0.8 V below T_M through body diodes, at µA, which reverse-biases that channel's upper LDO and bulk cap. Mitigation: plug bridges (§9), and the ratio window lights FAULT on a broken wire. | No fire; LDO stress at µA only |
 
 ## 5. Architecture trade study
 
@@ -151,28 +152,20 @@ Scores run from 1 to 5.
 **Why the losers lose.**
 
 - **A** is a bleed balancer, which the brief forbids. It turns the whole imbalance into heat.
-- **C** keeps losing about 10–15 % of every amp it moves, whatever ΔV is.
-  - Moving 1 Ah at 0.3 V imbalance costs ≈ 2 Wh in C against ≈ 0.3 Wh in B.
-  - C adds a magnetic part, current sensing and a direction comparator.
-  - A shorted switch shorts a battery through an inductor.
-  - C only wins on current near balance. Lead-acid's steep OCV curve makes that advantage small.
-  - The commercial HA02 claims "energy transfer, 0–10 A, starts at 10 mV" [V]. Its topology is
-    not published and no teardown was found.
-- **D** needs a fifth battery that cycles continuously and wears out.
-  - Its FET matrix connects that battery to every position.
-  - One shorted switch plus normal sequencing can put the auxiliary battery across non-adjacent
-    taps. That violates the brief's "no pathways".
-  - The LTC3305 is listed as recommended for new designs [S], but its datasheet was not readable
-    here.
-- **E** needs custom magnetics per N. Winding-to-winding insulation must hold the full stack, and a
-  winding fault couples every tap.
-- **B2** is the same physics as B with fewer parts, and would be preferred once verified.
-  - Its datasheet could not be retrieved, so pin numbers and fault behaviour are unverified.
-  - Its start-up prebalance sources ≈ 93 mA into VLOW [S]. Its window logic assumes a capacitor on
-    VLOW, not a battery [I].
-  - Its over-current sense is on the input current. Whether that works in reverse flow is
-    unknown [I].
-  - Revisit under Q-10.
+- **C** loses 10–15 % of every amp it moves, whatever ΔV is. Moving 1 Ah at 0.3 V costs ≈ 2 Wh in C
+  against ≈ 0.3 Wh in B. It adds a magnetic part, current sensing and a direction comparator, and a
+  shorted switch shorts a battery through the inductor. Its only advantage, current near balance,
+  is small for lead-acid's steep OCV. The HA02 claims "energy transfer, 0–10 A, starts at 10 mV"
+  [V]; its topology is unpublished and no teardown was found.
+- **D** needs a fifth, continuously cycling battery. Its FET matrix reaches every position, so one
+  shorted switch plus normal sequencing can put the auxiliary battery across non-adjacent taps,
+  which violates "no pathways". Its datasheet was not readable here; ADI lists it as recommended for new designs [S].
+- **E** needs custom magnetics per N. Winding insulation must hold the full stack, and one winding
+  fault couples every tap.
+- **B2** is B's physics with fewer parts and would be preferred once verified. Its datasheet could
+  not be retrieved. Its prebalance sources ≈ 93 mA into VLOW and its fault window assumes a
+  capacitor, not a battery, on VLOW [S/I]. Whether its input-current OCP works in reverse flow is
+  unknown (Q-10).
 
 **Decisions.**
 
@@ -186,14 +179,11 @@ Scores run from 1 to 5.
   - The cost is that middle batteries carry two channels' sleep current. §7.9 bounds this
     difference at ≤ 26 µA.
 
-**Lead-acid specifics.**
+**Lead-acid specifics** (numbers in §7.1).
 
-- OCV runs from 12.73 V at 100 % to 11.51 V at 10 % SOC (Trojan [P]), about 13.5 mV per % SOC.
-- Float is 13.50 V for Trojan flooded and 13.2–13.8 V for AIMS AGM standby.
-- Absorption is 14.82 V for Trojan and 14.4–14.7 V for AIMS.
-- Equalize is 16.20 V for Trojan flooded only.
-- Temperature compensation is −30 mV/K per battery (Trojan 5 mV/K/cell; AIMS −30 mV/K for cycle
-  use) [P].
+- OCV slope is ≈ 13.5 mV per % SOC (Trojan [P]).
+- Float is 13.2–13.8 V and absorption 14.4–14.8 V. Equalize is 16.2 V, flooded only.
+- Temperature compensation is −30 mV/K per battery (Trojan, AIMS [P]).
 
 In a series string every battery carries the same current, but self-discharge (AGM 3 %/month,
 flooded 5–15 %/month [P]), charge acceptance and temperature differ. The charger controls only the
@@ -350,28 +340,22 @@ stops when the charger stops (Q-8).
 
 ### 7.6 Ratio lockout, edge power and thermal
 
-- **The window** measures ΔV at the board: lockout when V_top/V_bot > 1.088 or < 0.907 (§7.7).
-  - While running, the board ΔV is ΔV_posts · R_SC/(R_SC + R_ext). Running therefore moves the
-    measured ratio toward 1, which is natural hysteresis.
-  - At rest it equals ΔV at the posts. A shorted cell gives 0.83 or 1.20, so the channel never
-    starts.
-- **Edge case.** The ratio drifts to the window while the channel is running. At V_bot = 13.5 V,
-  ΔV_board = 1.18 V and I = 2.27 A.
-  - P_board = 2.69 W; at V_bot = 14.4 V, 3.06 W.
-  - Reaching this needs ΔV_posts ≥ 1.8–2.3 V, which is a failing battery.
-  - Component power at the edge:
-    - R101 and R102: (2.13 × 2.27)² × 0.043 = 1.00 W each, which is 50 % of the 2 W WSL2816 rating
-      at 70 °C and 68 % at 97 °C (Vishay linear derating from 70 °C [P]). This is accepted for an
-      edge state limited by the thermal cut-out.
-    - Each FET: (1.51 × 2.27)² × 13.9 mΩ = 0.16 W, giving Tj ≈ 50 + 0.16 × 55 = 59 °C
-      (R_θJA 55 °C/W [P]).
-    - Bulk capacitor ripple at the edge: C117/C118 see ≈ 0.7 A rms against a 0.27 A rating [S].
-      This is accepted because the edge is transient (normal ≤ 0.13 A). Alternative: a hybrid
-      polymer capacitor.
-- **Thermal cut-out.** NTC NCP15WM474 (470 kΩ ±3 %, B25/85 4582 K ±3 % [P]) under 24.9 kΩ from V5,
-  compared with VREF = 2.5 V. The trip is 95.5 °C nominal and 92–99 °C across tolerances, with
-  0.1–0.6 °C internal hysteresis. Thermal mass makes the resulting on/off cycle slow, seconds to
-  minutes. The thermal fault also lights FAULT.
+- **Window.** The lockout uses ΔV at the board (r = V_top/V_bot outside 0.907–1.088, §7.7). While
+  running, ΔV_board = ΔV_posts · R_SC/(R_SC + R_ext), so running pulls r toward 1 (natural
+  hysteresis). At rest ΔV_board = ΔV_posts, so a shorted cell (r = 0.83 or 1.20) never starts.
+- **Edge** (r drifts to the window while running, which needs ΔV_posts ≥ 1.8–2.3 V, a failing
+  battery). At V_bot = 13.5 V: ΔV_board 1.18 V, I = 2.27 A, P_board 2.69 W (3.06 W at 14.4 V).
+  - R101/R102: (2.13 × 2.27)² × 0.043 = 1.00 W each: 50 % of 2 W at 70 °C, 68 % at 97 °C (linear
+    derating above 70 °C [P]). Accepted because the thermal cut-out bounds it.
+  - Each FET: (1.51 × 2.27)² × 13.9 mΩ = 0.16 W, Tj ≈ 50 + 0.16 × 55 = 59 °C [P].
+  - C117/C118 ripple ≈ 0.7 A rms against 0.27 A rated [S]. Transient only (normal ≤ 0.13 A).
+    Alternative: a hybrid polymer capacitor.
+- **Thermal cut-out.** NCP15WM474 (470 kΩ ±3 %, B 4582 K ±3 % [P]) under 24.9 kΩ from V5, compared
+  with VREF 2.5 V. Trip is 95.5 °C nominal, 92–99 °C over tolerances, with 0.1–0.6 °C internal
+  hysteresis. Thermal mass makes the on/off cycle slow (seconds to minutes). It also lights FAULT.
+- **Board heat.** Overhead 0.22 W plus I²·R_SC: ≤ 0.3 W per channel normally, ≤ 3.1 W at the edge.
+  About 45 cm² of 2 oz copper per channel gives a ≈ 35–45 °C rise at the edge [I], using
+  ≥ 15.3 cm²/W from [thermal.md](../../docs/topics/rules/thermal.md).
 
 ### 7.7 Thresholds
 
@@ -379,14 +363,14 @@ stops when the charger stops (Q-8).
   0.335 µA/channel [P].
 - **Reference.** REF35250: 2.500 V ±0.05 %, 12 ppm/K, 0.65 µA [P].
 - **Wake (CMP A).**
-  - Divider: P_ON = V_pair · 0.945 MΩ / (9.03 + 0.945) MΩ, built from 3 × 3.01 MΩ and
-    2 × 1.89 MΩ 0.1 %.
-  - Rising threshold: 2.5 × 9.975/0.945 = **26.39 V (13.19 V per battery)**.
-  - Falling threshold: 26.12–26.36 V, set by the 3–25 mV hysteresis.
+  - Divider: P_ON = V_pair · 0.835 MΩ / (8.0 + 0.835) MΩ, built from 4 × 2.00 MΩ in series and
+    2 × 1.67 MΩ in parallel, all TNPW1206 0.1 % (the 0.1 % range ends at 2 MΩ [P]).
+  - Rising threshold: 2.5 × 8.835/0.835 = **26.45 V (13.23 V per battery)**.
+  - Falling threshold: 26.19–26.42 V, set by the 3–25 mV hysteresis.
   - Tolerance (0.05 % + 0.07 % drift + 0.32 % offset + 2 × 0.1 %): ±0.64 %, or ±0.085 V per
     battery.
   - Fully charged AGM rests at ≈ 12.8–12.95 V [I], which is below even the worst-case falling
-    threshold of 12.98 V.
+    threshold of 13.01 V.
 - **Ratio window (CMP B, C).** N = V_bot · 0.0996 (2 × 2.26 MΩ over 2 × 1.00 MΩ).
   - P_LO = V_pair · 0.04771 (2 × 4.99 MΩ over 2 × 1.00 MΩ).
   - P_HI = V_pair · 0.05223 (2 × 4.99 MΩ over 2 × 1.10 MΩ).
@@ -398,29 +382,27 @@ stops when the charger stops (Q-8).
   open or shorted resistor at most doubles the node voltage, to ≤ 6.1 V, which is under the 7 V
   input absolute maximum [P]. The fault shows up as a lockout or a missed wake; it never damages
   the comparator.
-- **Filters.** All four nodes have time constants of 0.21–0.45 s (470 nF), matched within 15 % for
+- **Filters.** All four nodes have time constants of 0.21–0.36 s (470 nF), matched within 15 % for
   the ratio nodes. A common-mode step therefore causes < 6 mV transient error against ≥ 100 mV
   margin.
 
 ### 7.8 Gate drive, timing, start-up
 
-- **Gate drive.** U104 and U105 give 12.04 V (1.193 V × (1 + 909 k/100 k) [P]); at low battery the
-  rail falls to ≈ 10.4 V. V_GS is 12 V against ±20 V, which is 60 %.
-- **Bootstrap.** C = 1 µF ≥ 70 × Qg/ΔV, giving ΔV = 13 mV. The BAS16W sees ≤ 17.6 V reverse against
-  75 V. Refresh happens every low-side phase (50 %).
-- **Dead time against skew.** DT = 160–240 ns [P]. The skew between the upper and lower drivers is
-  ≤ 19 ns (t_PD 26–45 ns [P]) plus the gate fall time (~20 ns). The rule is DT_min > skew + t_off,
-  and 160 ns > 39 ns. This break-before-make holds across *both* half-bridges, which an SC needs:
-  overlap would short the flying cap or put two batteries across it.
-- **Start-up.** R103/R104 (100 kΩ) hold X = T_H and Y = T_M at rest. C_FLY is therefore pre-charged
-  to V_top and the first commutation draws only ΔV-proportional current.
-  - The bootstrap capacitors are empty, so high sides stay in UVLO for the first half-cycle. The
-    first low-side phase charges them.
-  - If the upper driver powers up later, its half-bridge stays off. Body diodes then run a
-    harmless diode-rectified SC.
-- **Wake latency.** Divider τ ≈ 0.45 s, then LDO start ≤ 1 ms, then driver UVLO ≤ 50 µs [P].
-- **Fault reaction.** Divider τ 0.2–0.45 s, then 74LVC1G02 → LDO EN (≈ µs), and switching stops when
-  VDD falls (ms). This is fine because power at the edge is bounded (§7.6).
+- **Gate drive.** U104/U105 give 1.193 V × (1 + 909 k/100 k) = 12.04 V [P], falling to ≈ 10.4 V at
+  low battery. V_GS 12 V against ±20 V is 60 %.
+- **Bootstrap.** C_boot = 1 µF ≈ 80 × the effective gate capacitance (13 nC/12 V), above the ≥ 10×
+  rule in [gate-drive-bootstrap.md](../../docs/topics/rules/power/gate-drive-bootstrap.md). Droop
+  is 13 mV per cycle. BAS16W reverse voltage ≤ 17.6 V against 75 V. Refresh every low-side phase.
+- **Dead time against skew.** DT = 160–240 ns [P]. Skew between the two drivers is ≤ 19 ns (t_PD
+  26–45 ns [P]) plus ~20 ns gate fall, so DT_min 160 ns > 39 ns. An SC needs break-before-make
+  across *both* half-bridges: any overlap shorts the flying cap or puts two batteries across it.
+- **Start-up.** R103/R104 (100 kΩ) hold X = T_H and Y = T_M at rest, so C_FLY is pre-charged to
+  V_top and the first commutation draws only ΔV-proportional current. Empty bootstrap caps keep
+  the high sides in UVLO for the first half-cycle; the first low-side phase charges them. If the
+  upper driver powers up later, body diodes run a harmless diode-rectified SC.
+- **Latency.** Wake: divider τ ≈ 0.36 s, LDO start ≤ 1 ms, driver UVLO ≤ 50 µs [P]. Fault: divider
+  τ 0.2–0.36 s, then gate → LDO EN in µs, and switching stops as VDD decays (ms). Edge power is
+  bounded (§7.6), so this is fast enough.
 
 ### 7.9 Sleep current (per channel, typical, 25 °C, 12.8 V per battery)
 
@@ -432,13 +414,13 @@ stops when the charger stops (Q-8).
   - NTC string: 5 V/(24.9 k + 470 k) = 10.1 µA
   - N string: 2.55 µA
   - U104 shutdown: 0.59 µA [P]
-- **From both batteries (pair strings):** P_ON 2.57 + P_LO 2.44 + P_HI 2.43 = 7.4 µA. U105
+- **From both batteries (pair strings):** P_ON 2.99 + P_LO 2.44 + P_HI 2.43 = 7.9 µA. U105
   shutdown adds 0.59 µA on B_top.
 - **Electrolytic leakage:** ~1 µA each [I].
-- **Totals:** B_bot 25 µA, B_top 9 µA.
+- **Totals:** B_bot 26 µA, B_top 10 µA.
 
-Per battery with N = 4: B1 = 25, B2 = 34, B3 = 34, B4 = 9 µA. The maximum mismatch is
-**25 µA**, or 0.11 Ah in 6 months, which is 0.06 % of 200 Ah. That is < 1 % of the natural
+Per battery with N = 4: B1 = 26, B2 = 36, B3 = 36, B4 = 10 µA. The maximum mismatch is
+**26 µA**, or 0.11 Ah in 6 months, which is 0.06 % of 200 Ah. That is < 1 % of the natural
 self-discharge spread, so REQ-9 is met.
 
 Perfect equality is impossible with overlapping channels, because middle batteries serve two
@@ -446,36 +428,22 @@ channels. A dummy load to equalize would itself be a bleed resistor.
 
 ### 7.10 Fuses, wire, fault currents
 
-- **Harness fuse KLKD010.** Fast-acting, 600 VDC, 10 kA (UL 248-19) or 50 kA (UL 248-14) [P].
-  - It protects 16 AWG wire, whose ampacity is ≥ 10 A (fuse ≤ wire).
-  - Prospective current at the holder: up to 3.3 kA for one battery and 2.3 kA for a stack fault
-    through the pigtail. Both are ≤ 10 kA.
-  - Normal current ≤ 1 A; at the edge 4.5 A = 45 %.
-- **Board fuse.** Littelfuse 477, 4 A, IEC 60127-2/5 time-lag, 400 VDC, 1.5 kA DC [S].
-  - Prospective current at the board: 108–191 A for a one-battery short and 401–676 A for TAP0–TAP4
-    (2 · R_tap + R_batts, L = 3 m … 0.3 m). Both are ≤ 1.5 kA.
-  - Normal ≤ 1 A, which is 25 % (≤ 75 % rule ✓).
-  - At the edge the middle tap carries 4.5 A = 113 %. That is accepted: it holds ≥ 1 h below 1.5 ×
-    I_n and the thermal cut-out intervenes first.
-  - Selectivity: the board 4 A T melting I²t is ≈ 30–60 A²s [I], against KLKD010 melting I²t of
-    ≈ 150 A²s [I], interpolated from KLKD 6 A 63 A²s and 20 A 462 A²s [P]. Board faults should clear
-    on board. Verify this in V-9.
-- **Mis-wiring.** Through two body diodes the current is ≈ 11 V/0.15 Ω ≈ 70 A. The 4 A T fuse clears
-  in ~5–20 ms [I], so FET energy is 0.9 V × 70 A × 10 ms ≈ 0.6 J. That is likely survivable but not
-  guaranteed (Q-11).
-- **Hot-plug inrush.** About 140 µF per battery leg charges from 0 V: peak ≤ 200 A,
-  τ ≈ 14 µs, I²t ≈ 0.3 A²s, which is ≪ fuse I²t. Spark energy is ½CV² = 22 mJ per leg.
-- **Wire drop at 4 A, 3 m:** 0.16 V.
-
-### 7.11 Thermal summary
-
-Per channel, the dissipation is 0.22 W overhead + I²R_SC. That is ≤ 0.3 W in normal operation
-(ΔV ≤ 0.3 V) and ≤ 3.1 W at the edge.
-
-With 2 oz outer copper and a ≈ 45 cm² column per channel, the edge case gives a board rise of
-≈ 35–45 °C [I], using ≥ 15.3 cm²/W from
-[docs/topics/rules/thermal.md](../../docs/topics/rules/thermal.md). The cut-out covers blocked
-vents.
+- **Harness fuse KLKD010.** Fast, 600 VDC, DC 10 kA (UL 248-19) / 50 kA (UL 248-14) [P]. It
+  protects 16 AWG (ampacity ≥ 10 A). Prospective current at the holder is ≤ 3.3 kA (one battery) or
+  ≈ 2.3 kA (stack through the pigtail), both ≤ 10 kA. Load is ≤ 1 A normal and 4.5 A at the edge
+  (45 %).
+- **Board fuse.** Littelfuse 477, 4 A T (IEC 60127-2 sheet 5), 400 VDC, 1.5 kA DC [S]. Prospective
+  current at the board (2 · R_tap + R_batteries, L = 3 m … 0.3 m) is 108–191 A for one battery and
+  401–676 A for TAP0↔TAP4, both ≤ 1.5 kA. Load is ≤ 1 A normal (25 %). The middle tap at the edge
+  carries 4.5 A (113 %): a T fuse holds ≥ 1 h below 1.5 × I_n, and the cut-out acts first.
+- **Selectivity.** Board 4 A T melting I²t ≈ 30–60 A²s [I] against KLKD010 ≈ 150 A²s [I],
+  interpolated from KLKD 6 A (63 A²s) and 20 A (462 A²s) [P]. Board faults should clear on board
+  (check in V-9).
+- **Mis-wiring.** Two body diodes conduct ≈ 11 V/0.15 Ω ≈ 70 A. The fuse clears in ~5–20 ms [I], so
+  each FET absorbs ≈ 0.9 V × 70 A × 10 ms ≈ 0.6 J. Likely survivable, not guaranteed (Q-11).
+- **Hot-plug.** ≈ 140 µF per battery leg charges from 0 V: ≤ 200 A peak, τ ≈ 14 µs,
+  I²t ≈ 0.3 A²s ≪ fuse I²t. Spark energy ½CV² is 22 mJ per leg.
+- **Wire drop** at 4 A over 3 m is 0.16 V.
 
 ## 8. Parts
 
@@ -498,22 +466,14 @@ is tagged.
 | Bootstrap diode | Diodes | BAS16W-7-F | 75 V; 150 mA | V_R ≤ 17.6 V (23 %); 1.3 mA average | SOT-323 | Diode:BAS16W / Package_TO_SOT_SMD:SOT-323_SC-70 | https://www.diodes.com/assets/Datasheets/BAS16.pdf (SOT-23 version read [P]; BAS16W sheet not retrieved [S]) | Active [S] | Nexperia BAS16W [S] |
 | Red LED | Rohm | SML-D12V1WT86 | I_F 20 mA; V_F 2.2 V; Topr −40…85 °C | 2.6 mA (13 %) | 0603 | Device:LED / LED_SMD:LED_0603_1608Metric | https://fscdn.rohm.com/en/products/databook/datasheet/opto/led/chip_mono/sml-d12x1-e.pdf | Active [S] | Vishay VLMS1300 [S] |
 | Green LED | Rohm | SML-D12M1WT86 | as above, 572 nm | 1.0 mA (5 %) | 0603 | Device:LED / LED_SMD:LED_0603_1608Metric | same | Active [S] | Vishay VLMG1300 [S] |
-| NTC | Murata | NCP15WM474E03RC | 470 kΩ ±3 %, B25/85 4582 K, −40…125 °C | 10 µA (self-heating ≪ 0.1 K) | 0402 | Device:Thermistor_NTC / Resistor_SMD:R_0402_1005Metric | https://pim.murata.com/asset/pim4/ntcForTemperatureSensor/SPEC_NCP15_PDF_NTCFORTEMPERATURESENSOR | Active [P] | TDK B57230V2474 [I] |
-| Flying-path resistor 0.043 Ω | Vishay | WSL2816R0430FEH | 2 W at 70 °C, 0.002–0.1 Ω, 1 % | 1.0 W edge (50 % at 70 °C; 68 % at 97 °C); 0.03 W normal | 2816 | Device:R / Resistor_SMD:R_2816_7142Metric | https://www.vishay.com/docs/30100/wsl.pdf | Active [P] | Bourns CRA2512 [I] |
-| C_FLY, C_TOP, C_BOT | Murata | GCJ32EC71H106KA01L | 10 µF 50 V X7S, soft termination | ≤ 17.6 V (35 %); effective ~5–6 µF [I]; 0.6 A rms per cap at edge | 1210 | Device:C / Capacitor_SMD:C_1210_3225Metric | https://pim.murata.com/en-us/pim/details/?partNum=GCJ32EC71H106KA01%23 (mirror read [P]) | In production [P] | TDK CGA6P3X7S1H106K [I] |
+| NTC | Murata | NCP15WM474E03RC | 470 kΩ ±3 %, B25/85 4582 K, −40…125 °C | 10 µA (self-heating ≪ 0.1 K) | 0402 | Device:Thermistor_NTC / Resistor_SMD:R_0402_1005Metric | https://pim.murata.com/asset/pim4/ntcForTemperatureSensor/SPEC_NCP15_PDF_NTCFORTEMPERATURESENSOR | In current spec [P]; a 70-week lead time was reported [S] | — (no verified 470 kΩ alternative; any 0402 470 kΩ, B ≈ 4500 K NTC with re-check of R138) |
+| Flying-path resistor 0.043 Ω | Vishay | WSL2816R0430FEH | 2 W at 70 °C, 0.002–0.1 Ω, 1 % | 1.0 W edge (50 % at 70 °C; 68 % at 97 °C); 0.03 W normal | 2816 | Device:R / Resistor_SMD:R_2816_7142Metric | https://www.vishay.com/docs/30100/wsl.pdf | Active [P] | 2 × WSL2512 0.086 Ω in parallel per position [P range] |
+| C_FLY, C_TOP, C_BOT | Murata | GCJ32EC71H106KA01L | 10 µF 50 V X7S, soft termination | ≤ 17.6 V (35 %); effective ~5–6 µF [I]; 0.6 A rms per cap at edge | 1210 | Device:C / Capacitor_SMD:C_1210_3225Metric | https://pim.murata.com/en-us/pim/details/?partNum=GCJ32EC71H106KA01%23 (mirror read [P]) | In production (±20 % MA01 sheet read, Mar 2026 [P]; ±10 % KA01 listed at Arrow [S]) | TDK CGA6P3X7S1H106K [I] |
 | Bulk damping cap | Nichicon | UCZ1V101MCL1GS | 100 µF 35 V, 125 °C 3000 h, ESR 0.2 Ω, 270 mA at 100 kHz | 17.6 V (50 %); ripple ≤ 0.13 A normal (48 %), 0.7 A edge (exceeds rating, transient) | 8×10 mm SMD | Device:C_Polarized / Capacitor_SMD:CP_Elec_8x10 | https://www.nichicon.co.jp (UCZ series) [S] | Active [S] | Panasonic EEE-FK1V101P [S] |
-| 1 µF 50 V (LDO inputs) | Murata | GRM21BR71H105KA12L | 50 V X7R | ≤ 17.6 V (35 %) | 0805 | Device:C / Capacitor_SMD:C_0805_2012Metric | Murata | Active [S] | Samsung CL21B105KBFNNNE [S] |
-| 1 µF 25 V (driver VCCI, VDD, bootstrap; REF output) | Murata | GRM188R71E105KA12D | 25 V X7R | 12 V (48 %) | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | Samsung CL10B105KA8NNNC [S] |
-| 10 µF 25 V (LDO outputs) | Murata | GRM31CR71E106KA12L | 25 V X7R | 12 V (48 %) | 1206 | Device:C / Capacitor_SMD:C_1206_3216Metric | Murata | Active [S] | Samsung CL31B106KAHNNNE [S] |
-| 2.2 µF 16 V (V5 output) | Murata | GRM188R71C225KE11D | 16 V X7R | 5 V (31 %) | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | — |
-| 100 nF 50 V (decoupling) | Murata | GRM188R71H104KA93D | 50 V X7R | ≤ 12 V (24 %) | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | Samsung CL10B104KB8NNNC [S] |
-| 470 nF 25 V (divider filters) | Murata | GRM188R71E474KA12D | 25 V X7R | ≤ 3.3 V | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | — |
-| 10 nF 50 V | Murata | GRM188R71H103KA01D | 50 V X7R | ≤ 9 V | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | — |
-| 470 pF 50 V C0G (DT pin) | Murata | GRM1885C1H471JA01D | 50 V C0G | ~0 V | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | — |
-| 100 pF 50 V C0G (timing) | Murata | GRM1885C1H101JA01D | 50 V C0G, ±5 % | 12 V | 0603 | Device:C / Capacitor_SMD:C_0603_1608Metric | Murata | Active [S] | — |
-| 3.01 MΩ 0.1 % (wake divider) | Vishay | TNPW12103M01BEEA | 1210 thin film, ≤ 3.01 MΩ range, 0.1 % | ≤ 11.7 V each; µW | 1210 | Device:R / Resistor_SMD:R_1210_3225Metric | https://www.vishay.com/docs/28758/tnpw_e3.pdf | Active [P] | Panasonic ERA [I] |
-| 1.89 MΩ 0.1 % | Vishay | TNPW12061M89BEEA | 1206 thin film, ≤ 2 MΩ | ≤ 3.3 V | 1206 | Device:R / Resistor_SMD:R_1206_3216Metric | same | Active [P] | — |
-| Thick-film 1 % 0603: 4.7 Ω, 750 Ω, 10.0 k, 20.0 k, 22.1 k, 24.9 k, 100 k, 909 k, 1.00 M, 1.10 M, 2.26 M, 4.99 M (one MPN per value, CRCW0603xxxxFKEA) | Vishay | CRCW0603…FKEA | 0.1 W, 75 V, 1 Ω–10 MΩ, 1 % | Worst: R146 100 k at 35 V gives 12 mW (12 %); divider tops ≤ 17.6 V (23 % of 75 V) | 0603 | Device:R / Resistor_SMD:R_0603_1608Metric | https://www.vishay.com/docs/20035/dcrcwe3.pdf | Active [P] | Yageo RC0603FR [I] |
+| Small MLCCs, X7R/C0G (one MPN per value) | Murata | 1 µF 50 V 0805 GRM21BR71H105KA12L (LDO inputs); 1 µF 25 V 0603 GRM188R71E105KA12D (driver VCCI/VDD, bootstrap, REF out, TH filter); 10 µF 25 V 1206 GRM31CR71E106KA12L (LDO outputs); 2.2 µF 16 V 0603 GRM188R71C225KE11D (V5 out); 100 nF 50 V 0603 GRM188R71H104KA93D; 470 nF 25 V 0603 GRM188R71E474KA12D (divider filters); 10 nF 50 V 0603 GRM188R71H103KA01D; 470 pF 50 V C0G GRM1885C1H471JA01D (DT); 100 pF 50 V C0G ±5 % GRM1885C1H101JA01D (timing) | rated 16–50 V | ≤ 17.6 V on 50 V parts (35 %); ≤ 12 V on 25 V parts (48 %); 5 V on 16 V (31 %) | 0603 / 0805 / 1206 | Device:C / Capacitor_SMD:C_0603_1608Metric, C_0805_2012Metric, C_1206_3216Metric | murata.com product search | Active [S] | Samsung CL series [S] |
+| 2.00 MΩ 0.1 % (wake divider top ×4) | Vishay | TNPW12062M00BEEA | 1206 thin film, 0.1 % up to 2 MΩ, 25 ppm/K | ≤ 8.8 V each; µW | 1206 | Device:R / Resistor_SMD:R_1206_3216Metric | https://www.vishay.com/docs/28758/tnpw_e3.pdf | Active [P] | Panasonic ERA [I] |
+| 1.67 MΩ 0.1 % (wake divider bottom ×2) | Vishay | TNPW12061M67BEEA | 1206 thin film, 0.1 %, 25 ppm/K | ≤ 3.3 V (≤ 6.1 V single fault) | 1206 | Device:R / Resistor_SMD:R_1206_3216Metric | same | Active [P] | — |
+| Thick-film 1 % 0603: 4.7 Ω, 750 Ω, 10.0 k, 49.9 k, 20.0 k, 22.1 k, 24.9 k, 100 k, 909 k, 1.00 M, 1.10 M, 2.26 M, 4.99 M (one MPN per value, CRCW0603xxxxFKEA) | Vishay | CRCW0603…FKEA | 0.1 W, 75 V, 1 Ω–10 MΩ, 1 % | Worst: R147/R151 49.9 k at ≤ 35 V after a single short gives 25 mW (25 %); divider tops ≤ 17.6 V (23 % of 75 V) | 0603 | Device:R / Resistor_SMD:R_0603_1608Metric | https://www.vishay.com/docs/20035/dcrcwe3.pdf | Active [P] | Yageo RC0603FR [I] |
 | Board tap fuse | Littelfuse | 0477004.MXP | 4 A T, 500 VAC/400 VDC, 1.5 kA DC [S] | 1 A normal (25 %); 4.5 A edge | 5×20 | Device:Fuse / Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal | https://www.littelfuse.com (477 series) [S] | Active [S] | Schurter SPT 5x20 [S] |
 | Fuse clips (2 per fuse) | Littelfuse | 01000056Z | 5×20, 10 A, 250 V | 4.5 A (45 %) | THT | (in fuse footprint) | [S] | Active [S] | Keystone 3517 [S] |
 | Tap header, 5-pin | Phoenix | MSTBA 2,5/5-G-5,08 (1757271) | 12 A, 320 V (III/2) [S] | 4.5 A (38 %), 70 V | THT, 5.08 mm | Connector_Generic:Conn_01x05 / Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_5-G-5,08_1x05_P5.08mm_Horizontal | phoenixcontact.com [S] | Active [S] | Würth 691313710005 [S] |
@@ -521,7 +481,7 @@ is tagged.
 | Alarm header / plug | Phoenix | 1757242 / 1757019 | 12 A, 320 V [S] | 1 mA | THT, 5.08 mm | Connector_Generic:Conn_01x02 / Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_2-G-5,08_1x02_P5.08mm_Horizontal | [S] | Active [S] | — |
 | Channel enable jumper | Würth | 61300211121 + shunt 60900213421 | 2.54 mm, 3 A | ≤ 50 µA | THT | Jumper:Jumper_2_Open / Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical | we-online.com [S] | Active [S] | any 2.54 mm header |
 | Mounting hole | — | M3, non-plated | — | — | — | Mechanical:MountingHole / MountingHole:MountingHole_3.2mm_M3 | — | — | — |
-| Harness fuse (×5) | Littelfuse | KLKD010.T | 10 A fast, 600 VAC/VDC, DC 10 kA / 50 kA | ≤ 4.5 A (45 %); ≤ 70 V | 10×38 | off-board | https://www.farnell.com/datasheets/2603270.pdf | Active [P] | Bussmann KTK-R-10 [S] |
+| Harness fuse (×5) | Littelfuse | KLKD010.T | 10 A fast, 600 VAC/VDC, DC 10 kA / 50 kA | ≤ 4.5 A (45 %); ≤ 70 V | 10×38 | off-board | https://www.farnell.com/datasheets/2603270.pdf | Active [P] | other DC-rated 10×38 midget (verify ≥ 10 kA DC) [I] |
 | In-line holder (×5) | Eaton Bussmann | HEB-AW-RLC-A | 30 A, 600 V, 13/32 × 1-1/2 in, crimp 16–8 AWG | 10 A fuse, 16 AWG | in-line | off-board | [S] | Active [S] | Littelfuse LEY [S] |
 | Wire | Alpha Wire (example) | 3075 (UL1015 16 AWG, 600 V, 105 °C) | 13.2 mΩ/m | ≤ 4.5 A | — | off-board | [S] | Active [S] | any UL1015 / TXL 16 AWG |
 | Ring terminal | Panduit | PV14-516R-L | 16–14 AWG, 5/16 in stud, vinyl insulated | — | — | off-board | [S] | Active [S] | TE PIDG |
@@ -546,7 +506,10 @@ is tagged.
     between the lug and the post.
   - The fuse holder sits within 150 mm of the lug.
   - Wires run in split loom to the plug, using ferrules.
-  - For N < 4, leave the unused plug positions empty and remove JP for unused channels.
+  - For N < 4, remove JP for unused channels and **bridge every unused plug position to the
+    highest used position** with a short wire in the plug. A floating top tap is otherwise pulled
+    ≈ 0.8 V below its neighbour: the divider strings draw µA through two body diodes. That
+    reverse-biases U305/C317 beyond the −0.3 V absolute maximum of the LDO.
 - **Heatsinking.** No heatsink. Power copper is poured on L1/L4 per net (X, Y, TAPs), with thermal
   vias under Q_A–Q_D and R101/R102.
 
@@ -628,9 +591,9 @@ group(SUPV_1); group(SUP_1)
 far(SUPV_1, PWR_1)                                  # divider nodes are 0.2-1 Mohm
 near(U104, U102, close); near(U105, U101, close)
 near(U108, U107, close); near([C143,C144,C145,C146,C147], U108, tight)
-connect_at(TAP2 -> R120, R125, R129, at: C109.1)    # NEW: sense taps at C_TOP pads (channel side of fuses)
-connect_at(TAP1 -> R133, at: C113.1)
-connect_at(TAP0 -> R123,R124,R127,R128,R131,R132,R135,R136, at: C113.2)
+connect_at(TAP2 -> R120, R126, R130, at: C109.1)    # NEW: sense taps at C_TOP pads (channel side of fuses)
+connect_at(TAP1 -> R134, at: C113.1)
+connect_at(TAP0 -> R124,R125,R128,R129,R132,R133,R136,R137, at: C113.2)
 guard(CH1_PON, CH1_PLO, CH1_PHI, CH1_N, ring: TAP0)  # NEW: guard ring for high-Z nodes
 near(Q106, Q107, loose); near(Q107, U105, close)
 edge([D103, D104, JP101], north); align([D103, D104, JP101], x)
@@ -670,12 +633,12 @@ Equipment:
 |---|---|---|
 | S-1 | SPICE of one SC cell (TI CSD18543 and UCC21520 models): sweep ΔV, C, R_on; start-up from precharge; DT and skew corners | R_SC 0.48–0.57 Ω; no overlap; first-cycle current ≤ 2 × steady |
 | S-2 | Monte Carlo of the wake, ratio and NTC thresholds (1 % / 0.1 % parts, offset, hysteresis) | Matches §7.7 bounds |
-| V-1 | N = 2, 3, 4 with jumpers; unused channels dark | No false FAULT; correct channels ACTIVE |
+| V-1 | N = 2, 3, 4 with jumpers and plug bridges; unused channels dark | No false FAULT; correct channels ACTIVE; no unused T_H − T_M below −0.1 V |
 | V-2 | Pair 21–35.2 V sweep (10.5–17.6 V per battery), −20 / +25 / +50 °C chamber | Stable operation; LDOs regulate |
 | V-3 | Imposed ΔV 0.05–1.0 V; measure tap currents | ≥ REQ-6; within ±25 % of §7.4 |
 | V-4 | Coulomb-count transfer between two batteries, 24 h; measure overhead power | Transfer efficiency ≥ 97 % at ΔV 0.3 V; overhead ≤ 0.25 W per channel |
 | V-5 | Sleep current in each tap at 12.8 V per battery | ≤ 50 µA each; max difference ≤ 40 µA |
-| V-6 | Ramp the pair voltage slowly | Wake 26.39 ± 0.17 V; sleep ≥ 26.12 V; green LED follows |
+| V-6 | Ramp the pair voltage slowly | Wake 26.45 ± 0.17 V; sleep 26.0–26.4 V; green LED follows |
 | V-7 | Ratio sweep at rest and running: replace one battery with a supply | Lockout at r = 1.088 / 0.907 ± 1.5 %; red LED and alarm |
 | V-8 | Edge test: ΔV_board ≈ 1.15 V, 0.3 m harness, blocked vents | Thermal trip 92–99 °C; no part above its rating |
 | V-9 | Fault: board short TAP1–TAP2 behind the fuses with batteries; also TAP0–TAP4 | Board fuse clears; harness fuse intact; no smoke |
@@ -754,3 +717,5 @@ Equipment:
 - [chargers-bms.md](../../docs/topics/rules/power/chargers-bms.md)
 - [hot-loops.md](../../docs/topics/rules/power/hot-loops.md)
 - [thermal.md](../../docs/topics/rules/thermal.md)
+- [gate-drive-bootstrap.md](../../docs/topics/rules/power/gate-drive-bootstrap.md)
+- Rohm SML-D12x1 [P]: https://fscdn.rohm.com/en/products/databook/datasheet/opto/led/chip_mono/sml-d12x1-e.pdf

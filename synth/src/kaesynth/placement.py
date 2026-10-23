@@ -29,6 +29,7 @@ class Hole:
 @dataclass
 class BoardSpec:
     """Mechanical envelope. Coordinates in mm, origin at the outline's lower-left corner."""
+    name: str = "main"
     width_mm: float = None
     height_mm: float = None
     outline: list = None              # polygon [(x, y), ...]; overrides width/height

@@ -114,10 +114,14 @@ class _Group:
 
 
 class SchematicWriter:
-    def __init__(self, design, symlibs, title_date=None):
+    def __init__(self, design, symlibs, title_date=None, blocks=None, slug=None, board=None):
+        """Write `blocks` (default: all) as project `slug`; `board` names the board for notes."""
         self.d = design
+        self.blocks = list(blocks if blocks is not None else design.blocks)
+        self.slug = slug or design.slug
+        self.board = board
         self.st = SymbolTable(symlibs)
-        self.u = Uuids(design.slug)
+        self.u = Uuids(self.slug)
         self.root_uuid = self.u("root")
         self.date = title_date or datetime.date.today().isoformat()
         self.flags = {}           # net -> list of PWR_FLAG refs
@@ -130,13 +134,14 @@ class SchematicWriter:
         files = {}
         flag_nets = self._nets_needing_flag()
         sheet_of_flag = {}
+        mine = set(id(b) for b in self.blocks)
         for n in flag_nets:
-            first = n.pins[0].part.block
+            first = next(r.part.block for r in n.pins if id(r.part.block) in mine)
             sheet_of_flag.setdefault(first.name, []).append(n)
-        for i, b in enumerate(d.blocks):
+        for i, b in enumerate(self.blocks):
             text = self._sheet(b, page=i + 2, flag_nets=sheet_of_flag.get(b.name, []))
             files[f"{b.name}.kicad_sch"] = text
-        files[f"{d.slug}.kicad_sch"] = self._root()
+        files[f"{self.slug}.kicad_sch"] = self._root()
         for name, text in files.items():
             (outdir / name).write_text(text)
         (outdir / "kaesynth.kicad_sym").write_text(self.st.project_library())
@@ -145,8 +150,10 @@ class SchematicWriter:
     # -- helpers --------------------------------------------------------------------------------
     def _nets_needing_flag(self):
         out = []
+        mine = set(id(b) for b in self.blocks)
         for n in self.d.all_nets():
-            types = {r.pin.type for r in n.pins}
+            pins = [r for r in n.pins if id(r.part.block) in mine]
+            types = {r.pin.type for r in pins}
             if "power_in" in types and "power_out" not in types:
                 out.append(n)
         return out
@@ -271,7 +278,7 @@ class SchematicWriter:
         node = S("symbol", S("lib_id", it.lib_id), S("at", x, y, 0), S("unit", it.unit),
                  S("exclude_from_sim", Sym("no")),
                  S("in_bom", Sym("yes" if part and part.defn.in_bom and not part.dnp else "no")),
-                 S("on_board", Sym("yes" if part is None or part.defn.on_board else "no")),
+                 S("on_board", Sym("yes" if part is None or part.on_board else "no")),
                  S("dnp", Sym("yes" if part and part.dnp else "no")),
                  S("uuid", self.u("sym", *key)))
         lib_props = {p[1]: p for p in sexpr.find_all(it.sym.node, "property")}
@@ -313,7 +320,7 @@ class SchematicWriter:
             node.append(prop("Footprint", "", x, y, hide=True))
         for p in it.sym.pins_of(it.unit):
             node.append(S("pin", p.number, S("uuid", self.u("pin", *key, p.number))))
-        node.append(S("instances", S("project", self.d.slug,
+        node.append(S("instances", S("project", self.slug,
                                       S("path", sheet_path, S("reference", it.ref), S("unit", it.unit)))))
         return node
 
@@ -395,7 +402,7 @@ class SchematicWriter:
         notes = self._root_notes()
         x, y, row_h = MARGIN, snap(MARGIN + (notes.count("\n") + 2) * 2.54 + 5.08), 0.0
         width_limit = 420 - 2 * MARGIN
-        for i, b in enumerate(d.blocks):
+        for i, b in enumerate(self.blocks):
             w = snap(max(40.64, len(b.title) * 1.6 + 10))
             h = 15.24
             if x > MARGIN and x + w > MARGIN + width_limit:
@@ -410,7 +417,7 @@ class SchematicWriter:
                           S("uuid", self.u("sheet", b.name)),
                           prop("Sheetname", b.name, sx, sy - 0.7, justify="left bottom"),
                           prop("Sheetfile", f"{b.name}.kicad_sch", sx, sy + h + 0.6, justify="left top"),
-                          S("instances", S("project", d.slug, S("path", f"/{self.root_uuid}", S("page", str(i + 2)))))))
+                          S("instances", S("project", self.slug, S("path", f"/{self.root_uuid}", S("page", str(i + 2)))))))
             body.append(S("text", b.title, S("exclude_from_sim", Sym("no")), S("at", sx + 1.27, sy + 7.62, 0),
                           S("effects", S("font", S("size", 1.27, 1.27)), S("justify", Sym("left"))),
                           S("uuid", self.u("sheettext", b.name))))
@@ -431,7 +438,12 @@ class SchematicWriter:
 
     def _root_note_lines(self):
         d = self.d
-        lines = [f"{d.title} (rev {d.revision})"]
+        lines = [f"{d.title} (rev {d.revision})" + (f" — board '{self.board}'" if self.board else "")]
+        boards = d.board_names()
+        if len(boards) > 1 or any(b.board_name == "off" for b in d.blocks):
+            lines.append("Boards: " + "; ".join(
+                f"{name}: {', '.join(b.name for b in d.blocks if b.board_name == name)}"
+                for name in boards + (["off"] if any(b.board_name == "off" for b in d.blocks) else [])))
         if d.domains:
             lines.append("Domains: " + "; ".join(
                 f"{x.name} ({x.kind}, 0 V = {x.ref})" for x in d.domains.values()))

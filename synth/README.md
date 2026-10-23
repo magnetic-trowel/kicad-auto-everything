@@ -131,6 +131,21 @@ The build adds inferred relations (block groups, decoupling caps next to their I
 connectors on an edge) marked `source: auto`. `d.board(...)` records outline, layers, holes,
 height limits, enclosure and coating.
 
+### Several boards and harness items
+
+`d.board("main", ...)`, `d.board("batt_end", ...)` declare boards; `d.block(..., board="batt_end")`
+puts a block on one (default: the first). `board="off"` is for harness items with no PCB
+(inline fuses, ring terminals): they are in the BOM, not on a board. A net may run between
+boards only through a connector on every board it touches (`board.crossing_without_connector`).
+The build writes the whole system schematic in `out/` (review, ERC, system parity) and one
+KiCad project plus `intent.yaml` per board in `out/board-<name>/`, each with its own parity check.
+
+### Nets that ride on other nets
+
+A bootstrap or high-side gate supply rides on a switch node: give it a domain floating on that
+net, `d.domain("BST1", ref="SW1")`, and `v=(0, 12)` relative to it. Worst-case voltages to
+everything else then follow from the switch node's own range.
+
 ### Calculations and waivers
 
 `d.calc(name, value, unit, expr=, note=, limit=, op="<=")` records a calculation in the report

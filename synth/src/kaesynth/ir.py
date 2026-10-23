@@ -210,6 +210,10 @@ class Part:
         return self.ref or f"{self.block.name}.{self.name}"
 
     @property
+    def on_board(self):
+        return self.defn.on_board and self.block.board_name != OFF_BOARD
+
+    @property
     def pins(self):
         if self._pins is None:
             self._pins = self.block.design._resolve_pins(self.defn)
@@ -416,11 +420,16 @@ class Waiver:
 # Blocks and the design
 
 
+OFF_BOARD = "off"     # Block(board="off"): harness items (inline fuses, ring terminals, cable)
+
+
 class Block:
-    def __init__(self, design, name, title="", description="", domain=None, reqs=None, recipe=None):
+    def __init__(self, design, name, title="", description="", domain=None, reqs=None, recipe=None,
+                 board=None):
         if not re.match(r"^[A-Za-z][A-Za-z0-9_]*$", name):
             raise DesignError(f"block name {name!r}: letters, digits, underscore; start with a letter")
         self.design = design
+        self.board = board           # board name, OFF_BOARD for harness items, None = first board
         self.name = name
         self.title = title or name
         self.description = description
@@ -430,6 +439,12 @@ class Block:
         self.parts = []
         self.nets = {}
         self.index = len(design.blocks) + 1
+
+    @property
+    def board_name(self):
+        if self.board is not None:
+            return self.board
+        return next(iter(self.design.boards), "main")
 
     def add(self, defn, name=None, ref=None, **kw):
         if not isinstance(defn, PartDef):
@@ -500,7 +515,7 @@ class Design:
         self.calcs = []
         self.waivers = []
         self.derating = dict(DEFAULT_DERATING)
-        self.board_spec = None
+        self.boards = {}             # name -> BoardSpec, in declaration order
         from .placement import Placement
         self.place = Placement(self)
         self._pin_cache = {}
@@ -560,10 +575,26 @@ class Design:
     def waive(self, check, match, reason, by="designer"):
         self.waivers.append(Waiver(check, match, reason, by))
 
-    def board(self, **kw):
+    def board(self, name="main", **kw):
+        """Declare a physical board (several for multi-board designs; blocks pick one)."""
         from .placement import BoardSpec
-        self.board_spec = BoardSpec(**kw)
-        return self.board_spec
+        if name == OFF_BOARD or name in self.boards:
+            raise DesignError(f"board name {name!r} is reserved or already declared")
+        spec = BoardSpec(name=name, **kw)
+        self.boards[name] = spec
+        return spec
+
+    @property
+    def board_spec(self):
+        """The first declared board (single-board designs)."""
+        return next(iter(self.boards.values()), None)
+
+    def board_names(self):
+        """Physical boards that have blocks on them, in declaration order."""
+        used = {b.board_name for b in self.blocks}
+        names = [n for n in self.boards if n in used]
+        names += sorted(n for n in used if n not in self.boards and n != OFF_BOARD)
+        return names
 
     # -- queries ----------------------------------------------------------------------------
     def all_nets(self):

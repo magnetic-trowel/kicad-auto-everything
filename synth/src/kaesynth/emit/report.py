@@ -12,15 +12,16 @@ def bom_rows(design):
     for p in design.all_parts():
         if not p.defn.in_bom:
             continue
-        key = (p.defn.mpn or "", p.value or "", p.defn.footprint or "", p.dnp)
+        key = (p.block.board_name, p.defn.mpn or "", p.value or "", p.defn.footprint or "", p.dnp)
         groups.setdefault(key, []).append(p)
     rows = []
-    for (mpn, value, fp, dnp), parts in sorted(groups.items(), key=lambda kv: (kv[1][0].defn.prefix, kv[0])):
+    for (board, mpn, value, fp, dnp), parts in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[1][0].defn.prefix, kv[0])):
         defn = parts[0].defn
-        rows.append({"Refs": " ".join(sorted((p.ref for p in parts), key=_nat)), "Qty": len(parts),
+        rows.append({"Board": board, "Refs": " ".join(sorted((p.ref for p in parts), key=_nat)), "Qty": len(parts),
                      "Value": value, "MPN": mpn or ("generic" if defn.generic else ""),
                      "Manufacturer": defn.manufacturer or "", "Footprint": fp, "Category": defn.category,
                      "Description": defn.description, "Lifecycle": defn.lifecycle or "",
+                     "On board": "yes" if parts[0].on_board else "no (harness/off-board)",
                      "Second source": defn.second_source or "", "Datasheet": defn.datasheet or "",
                      "DNP": "yes" if dnp else ""})
     return rows

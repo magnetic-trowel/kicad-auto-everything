@@ -10,7 +10,8 @@ def ir_netlist(design):
     d = design.finalize()
     parts = []
     for p in d.all_parts():
-        parts.append({"ref": p.ref, "block": p.block.name, "name": p.name, "value": p.value,
+        parts.append({"ref": p.ref, "block": p.block.name, "board": p.block.board_name, "name": p.name,
+                      "value": p.value,
                       "mpn": p.defn.mpn, "manufacturer": p.defn.manufacturer,
                       "footprint": p.defn.footprint, "category": p.defn.category,
                       "dnp": p.dnp, "p_diss": p.p_diss,
@@ -22,7 +23,8 @@ def ir_netlist(design):
         if not n.pins:
             continue
         dom = d.domain_of(n)
-        nets.append({"name": kicad_net_name(n), "domain": dom.name if dom else None,
+        boards = sorted({r.part.block.board_name for r in n.pins})
+        nets.append({"name": kicad_net_name(n), "domain": dom.name if dom else None, "boards": boards,
                      "v": list(n.v) if n.v else None, "kind": n.kind, "i_max": n.i_max,
                      "external": n.external,
                      "nodes": sorted([[r.part.ref, r.pin.number] for r in n.pins])})
@@ -39,8 +41,11 @@ def parse_kicad_xml(path):
     return nets, comps
 
 
-def compare(design, xml_path):
-    """Mismatches between IR connectivity and KiCad's exported netlist (empty list = identical)."""
+def compare(design, xml_path, blocks=None):
+    """Mismatches between IR connectivity and KiCad's exported netlist (empty list = identical).
+    With `blocks`, only those blocks' parts are expected (one board of a multi-board design)."""
+    mine = None if blocks is None else {id(b) for b in blocks}
+    keep = lambda part: mine is None or id(part.block) in mine
     kn, comps = parse_kicad_xml(xml_path)
     problems = []
     # drop pseudo parts (#FLG, #PWR) and KiCad's single-node 'unconnected-' nets for NC pins
@@ -55,9 +60,9 @@ def compare(design, xml_path):
         for x in nodes:
             by_node[x] = name
     for n in design.all_nets():
-        if not n.pins:
+        want = {(r.part.ref, r.pin.number) for r in n.pins if keep(r.part)}
+        if not want:
             continue
-        want = {(r.part.ref, r.pin.number) for r in n.pins}
         got_names = {by_node.get(x) for x in want}
         if None in got_names:
             missing = sorted(x for x in want if x not in by_node)
@@ -70,15 +75,17 @@ def compare(design, xml_path):
         if knets[kname] != want:
             extra = sorted(knets[kname] - want)
             problems.append(f"net {kicad_net_name(n)}: KiCad net {kname} also contains {extra}")
-        elif kname != kicad_net_name(n):
+        elif kname != kicad_net_name(n) and len(want) > 1:
             problems.append(f"net {kicad_net_name(n)} is named {kname} in KiCad")
-    ir_refs = {p.ref for p in design.all_parts()}
+    ir_refs = {p.ref for p in design.all_parts() if keep(p)}
     k_refs = {r for r in comps if not r.startswith("#")}
     if ir_refs - k_refs:
         problems.append(f"parts missing from KiCad netlist: {sorted(ir_refs - k_refs)}")
     if k_refs - ir_refs:
         problems.append(f"unexpected parts in KiCad netlist: {sorted(k_refs - ir_refs)}")
     for p in design.all_parts():
+        if not keep(p):
+            continue
         c = comps.get(p.ref)
         if c is None:
             continue

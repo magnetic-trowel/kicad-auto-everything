@@ -10,7 +10,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .ir import GRADES, THREATS, DesignError
+from .ir import GRADES, OFF_BOARD, THREATS, DesignError
 from .units import parse_value
 
 
@@ -48,6 +48,7 @@ class Checker:
     def run(self):
         d = self.d.finalize()
         self.check_domains()
+        self.check_boards()
         self.check_connectivity()
         self.check_pin_types()
         self.check_voltage()
@@ -163,6 +164,28 @@ class Checker:
             for x in (b.a, b.b):
                 if x not in names:
                     self.add("barrier.domain", "error", f"barrier {b.a}-{b.b}: unknown domain {x}", [x])
+
+    def check_boards(self):
+        """Nets that leave a board must do so through a connector on that board."""
+        d = self.d
+        for b in d.blocks:
+            if b.board is not None and b.board != OFF_BOARD and b.board not in d.boards:
+                self.add("board.unknown", "error", f"block {b.name} is on undeclared board {b.board!r}", [b.name])
+        if len(d.board_names()) + any(b.board_name == OFF_BOARD for b in d.blocks) < 2:
+            return
+        for n in d.all_nets():
+            by_board = {}
+            for r in n.pins:
+                by_board.setdefault(r.part.block.board_name, []).append(r)
+            if len(by_board) < 2:
+                continue
+            for board, refs in by_board.items():
+                if board == OFF_BOARD:
+                    continue
+                if not any(r.part.defn.category == "connector" for r in refs):
+                    self.add("board.crossing_without_connector", "error",
+                             f"net {n.full_name} runs from board {board!r} to {sorted(set(by_board) - {board})} "
+                             f"but has no connector pin on {board!r}", [n.full_name])
 
     def check_connectivity(self):
         for p in self.d.all_parts():
@@ -397,7 +420,7 @@ class Checker:
                     self.add("lib.hidden_power_pins", "error",
                              f"{who}: symbol {defn.symbol} has hidden power pins {[x.number for x in hidden]} that "
                              f"connect implicitly by name; use a symbol without hidden pins", [p.ref])
-            if not defn.on_board:
+            if not p.on_board:
                 continue
             if not defn.footprint:
                 self.add("lib.footprint_missing", "error", f"{who}: no footprint", [p.ref])
