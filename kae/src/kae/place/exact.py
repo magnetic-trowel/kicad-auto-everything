@@ -170,9 +170,14 @@ class ExactModel:
             for geom, k, pd in A["pads"]:
                 if side not in self.cs[i][k] or (net and pd.net == net):
                     continue
-                need = max(self._net_clr(pd.net), self._net_clr(net))
+                need = max(self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
                 if geom.distance(gm) < need - 1e-4:
                     add("clearance", [i], f"pad {pd.number} vs fixed copper {net}")
+        for side, gm in getattr(P, "fixed_mask", []):
+            for geom, k, pd in A["pads"]:
+                if side in self.cs[i][k] and gm.intersects(geom):
+                    add("solder_mask_bridge", [i], f"pad {pd.number} under a board mask aperture")
+                    break
         for ko, sides, outline_k in self.ko_board:
             self._keepout(i, A, ko, sides, outline_k, add, None)
         for g, why in self.avoid.get(i, ()):

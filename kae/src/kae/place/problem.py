@@ -299,12 +299,25 @@ def is_drilled(p):
     return p.kind in ("thru_hole", "np_thru_hole") or bool(p.drill)
 
 
+def fixed_mask(board):
+    """Solder-mask apertures drawn at board level (F/B.Mask graphics): a pad under one is
+    exposed with whatever else the aperture opens (KiCad's solder_mask_bridge). [(side,
+    geometry)]."""
+    g = getattr(board, "graphics", None)
+    if not isinstance(g, dict):
+        return []
+    return [(0 if ly == "F.Mask" else 1, q) for ly in ("F.Mask", "B.Mask") for q in g.get(ly, ()) if not q.is_empty]
+
+
 def fixed_copper(board):
-    """Copper graphics at board level (gr_line/arc/circle/rect/poly on F.Cu or B.Cu): fixed
-    copper a place task keeps, with its net. [(side, shapely geometry, net)].
-    Read from the board file with kae.board's own S-expression parser (the board model does
-    not carry copper graphics yet)."""
+    """Copper graphics at board level (gr_line/arc/circle/rect/poly/text on F.Cu or B.Cu):
+    fixed copper a place task keeps. [(side, shapely geometry, net)]. From kae.board's
+    Board.graphics (no net: clearance to every net); boards loaded without it are read with
+    kae.board's S-expression parser (with nets, no text)."""
     from pathlib import Path
+    if isinstance(getattr(board, "graphics", None), dict):
+        return [(0 if ly == "F.Cu" else 1, g, "") for ly in ("F.Cu", "B.Cu")
+                for g in board.graphics.get(ly, ()) if not g.is_empty]
 
     from kae.board import sexpr
     from kae.board.kicad_file import GR_SHAPES, shape_pieces
@@ -950,6 +963,10 @@ class Problem:
         for side, gm, net in self.fixed_copper:
             for r in geom_cover_rects(gm.buffer(self.clr_max / 2), g):
                 self._add_obstacle(side, r, f"fixed copper {net or '(no net)'}")
+        self.fixed_mask = fixed_mask(board) if self.is_error("solder_mask_bridge") else []
+        for side, gm in self.fixed_mask:
+            for r in geom_cover_rects(gm, g):
+                self._add_obstacle(side, r, "fixed mask aperture")
         owners = {p.uuid for p in self.parts}
         for ko in board.keepouts if self.is_error("items_not_allowed") else ():
             if not (ko.footprints or ko.pads) or (ko.footprint and ko.footprint in owners):

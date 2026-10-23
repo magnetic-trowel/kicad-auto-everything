@@ -403,3 +403,23 @@ def test_mask_and_copper_graphics_take_room_and_are_checked():
     st.K[u7.i] = 0
     hits = [v for v in exact_check(P, st, max_items=500) if v["type"] == "solder_mask_bridge"]
     assert hits and all(set(v["refs"]) == {"U1", "U7"} for v in hits)
+
+
+def test_board_mask_apertures_and_copper_graphics_are_fixed():
+    """Board-level copper (text, graphics) keeps clearance from every pad and a board-level
+    mask aperture may not expose a part's pads (kae.board Board.graphics)."""
+    from shapely.geometry import box as sbox
+    from kae.place.legalize import exact_check
+    b = load(FIXTURE)
+    b.graphics = {"F.Mask": [sbox(20.0, 30.0, 24.0, 34.0)], "F.Cu": [sbox(40.0, 30.0, 41.0, 31.0)]}
+    P = Problem.build(b)
+    assert any(o.why == "fixed mask aperture" for o in P.obstacles)
+    assert any(o.why.startswith("fixed copper") for o in P.obstacles)
+    st = _state_at_input(P)
+    u = next(p for p in P.parts if p.ref == "U1")
+    pad = u.fp.pads[2]
+    st.X[u.i], st.Y[u.i] = P.grid_of(22.0 - pad.lx, 32.0 - pad.ly)
+    st.K[u.i] = 0
+    assert any(v["type"] == "solder_mask_bridge" for v in exact_check(P, st, parts=[u.i]))
+    st.X[u.i], st.Y[u.i] = P.grid_of(40.5 - pad.lx, 30.5 - pad.ly)
+    assert any(v["type"] == "clearance" for v in exact_check(P, st, parts=[u.i]))
