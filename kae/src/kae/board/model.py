@@ -158,14 +158,18 @@ class Footprint(_Dict):
     # extras
     courtyard_back: list = field(default_factory=list)  # library B.CrtYd (the side opposite the part)
     edge_cuts: list = field(default_factory=list)       # LineStrings on Edge.Cuts, library frame
+    graphics: dict = field(default_factory=dict)  # library layer (F/B.Cu, F/B.Mask) -> [Polygon], library frame,
+    #                                               stroke widths included (logos, mask apertures, copper shapes)
     path: str = ""                   # schematic path
     sheet: str = ""                  # schematic sheet name
     flags: list = field(default_factory=list)  # loader notes (module docstring)
 
     _to = {"pads": lambda v: [p.to_dict() for p in v], "courtyard": _polys_to, "body": _polys_to,
-           "courtyard_back": _polys_to, "edge_cuts": _lines_to}
+           "courtyard_back": _polys_to, "edge_cuts": _lines_to,
+           "graphics": lambda v: {k: _polys_to(p) for k, p in v.items()}}
     _from = {"pads": lambda v: [Pad.from_dict(p) for p in v], "courtyard": _polys_from,
-             "body": _polys_from, "courtyard_back": _polys_from, "edge_cuts": _lines_from}
+             "body": _polys_from, "courtyard_back": _polys_from, "edge_cuts": _lines_from,
+             "graphics": lambda v: {k: _polys_from(p) for k, p in v.items()}}
 
 
 @dataclass

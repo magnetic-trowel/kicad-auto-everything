@@ -133,6 +133,9 @@ def _map_pieces(pieces, fn):
             [[fn(*p) for p in r] for r in rings])
 
 
+GRAPHIC_LAYERS = ("F.Cu", "B.Cu", "F.Mask", "B.Mask")
+
+
 class _Reader:
     def __init__(self, tree, path, arc_tol):
         self.tree = tree
@@ -322,6 +325,7 @@ class _Reader:
         if "Edge.Cuts" in by_layer:
             opens, rings = pieces_on("Edge.Cuts")
             fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
+        fp.graphics = self._graphics(fp, by_layer, lib)
         if not fp.courtyard:
             fp.body = self._body(fp, pieces_on, by_layer)
         for z in kids(node, "zone"):
@@ -360,6 +364,41 @@ class _Reader:
                    pintype=value(pd, "pintype", "") or "",
                    uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
                    rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset)
+
+    def _graphics(self, fp, by_layer, lib):
+        """Copper and mask graphics of a footprint (logos, mask apertures, copper shapes) as
+        polygons per library layer, with stroke widths: lines and arcs buffered by half their
+        width, closed shapes filled when KiCad fills them (fp_poly by default), else stroked."""
+        out = {}
+        for ly in GRAPHIC_LAYERS:
+            shapes = []
+            for g in by_layer.get(ly, ()):
+                try:
+                    o, r = shape_pieces(g, self.tol)
+                except (TypeError, ValueError, IndexError):
+                    fp.flags.append(f"bad_graphic:{g[0]}")
+                    continue
+                if lib is not None:
+                    o, r = _map_pieces((o, r), lib)
+                st = first(g, "stroke")
+                w = _f(value(st, "width") if st is not None else value(g, "width"), 0.0)
+                fill = value(g, "fill")
+                filled = fill in ("solid", "yes") or (fill is None and g[0] == "fp_poly")
+                for pl in o:
+                    if len(pl) >= 2 and w > 0:
+                        shapes.append(LineString(list(pl)).buffer(w / 2))
+                for ring in r:
+                    if filled:
+                        p = Polygon(ring).buffer(0)
+                        shapes.append(p.buffer(w / 2) if w > 0 else p)
+                    elif w > 0:
+                        shapes.append(LineString(ring).buffer(w / 2))
+            u = unary_union(shapes) if shapes else None
+            if u is not None and not u.is_empty:
+                polys = [p for p in getattr(u, "geoms", [u]) if p.geom_type == "Polygon" and p.area > 0]
+                if polys:
+                    out[ly] = polys
+        return out
 
     def _body(self, fp, pieces_on, by_layer):
         """Fallback extent when there is no courtyard: the box around the closed Fab

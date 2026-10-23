@@ -12,6 +12,7 @@ pcbnew 10.0.7 wrote it (poses through kae.board.pcbnew_io.write_poses) and produ
 fixture.pcbnew.json (pcbnew_io.extract).
 """
 import json
+import math
 import re
 import shutil
 from pathlib import Path
@@ -210,3 +211,28 @@ def test_rule_severities_come_from_the_project(tmp_path):
     assert "bogus_check" not in r.severities              # only KiCad's three levels are kept
     assert r.severity("missing_in_project", default="warning") == "warning"
     assert type(r).from_dict(r.to_dict()).severities == r.severities
+
+
+def test_footprint_copper_and_mask_graphics(tmp_path):
+    """Footprint.graphics holds copper and mask graphics (with stroke widths) per library layer,
+    so placement legality can see logos and mask apertures that KiCad's DRC sees."""
+    txt = FIXTURE.read_text()
+    anchor = '(uuid "00000000-0000-4000-8000-000000000011")\n\t\t(at 10 10)'
+    assert txt.count(anchor) == 1
+    extra = ('\n\t\t(fp_rect (start -0.5 -1) (end 0.5 1) (stroke (width 0.1) (type solid)) (fill solid) (layer "F.Mask"))'
+             '\n\t\t(fp_line (start 2 0) (end 5 0) (stroke (width 0.2) (type solid)) (layer "F.Cu"))'
+             '\n\t\t(fp_circle (center 0 4) (end 1 4) (stroke (width 0.2) (type solid)) (fill none) (layer "F.Cu"))')
+    p = tmp_path / "gfx.kicad_pcb"
+    p.write_text(txt.replace(anchor, anchor + extra))
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(FIXTURE.with_suffix(ext), p.with_suffix(ext))
+    u1 = next(f for f in kicad_file.load(p).footprints if f.ref == "U1")
+    mask = u1.graphics["F.Mask"]
+    assert len(mask) == 1 and abs(mask[0].area - (1.1 * 2.1 - 0.05 ** 2 * (4 - math.pi))) < 1e-3
+    cu = sorted(u1.graphics["F.Cu"], key=lambda g: g.area)
+    assert len(cu) == 2
+    assert abs(cu[0].area - (3 * 0.2 + math.pi * 0.1 ** 2)) < 2e-3          # stroked line, round caps
+    assert abs(cu[1].area - math.pi * ((1.1 ** 2) - (0.9 ** 2))) < 5e-3      # unfilled circle: a ring
+    assert "B.Cu" not in u1.graphics
+    rt = type(u1).from_dict(u1.to_dict())
+    assert abs(rt.graphics["F.Mask"][0].area - mask[0].area) < 1e-9
