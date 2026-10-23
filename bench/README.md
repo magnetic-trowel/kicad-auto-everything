@@ -9,7 +9,7 @@ the saved board with `kicad-cli` under the board's own rules. Design rationale:
 ## Setup (Ubuntu 22.04/24.04)
 
 ```bash
-git clone -b claude/gallant-newton-lt98do https://github.com/magnetic-trowel/kicad-auto-everything
+git clone https://github.com/magnetic-trowel/kicad-auto-everything
 cd kicad-auto-everything
 bench/scripts/setup.sh          # KiCad 10 (PPA, no recommends), Freerouting 2.5.0, bench/.venv
 source bench/.venv/bin/activate
