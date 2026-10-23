@@ -110,10 +110,53 @@ def _parse_report(data):
     return rep
 
 
-def run_measured(cmd, timeout=None, cwd=None, env=None):
+class Stalled(subprocess.TimeoutExpired):
+    """The command made no CPU progress for `stall` seconds (see run_measured)."""
+
+    def __init__(self, cmd, timeout, stall, output=None, stderr=None):
+        super().__init__(cmd, timeout, output=output, stderr=stderr)
+        self.stall = stall
+
+    def __str__(self):
+        return f"Command {self.cmd!r} made no CPU progress for {self.stall} seconds"
+
+
+# A command whose process tree uses less than this share of one core over the whole stall
+# window is waiting on something that will not come (KiCad's zone filler polls a deadlocked
+# job graph at ~0.4% of a core).
+STALL_CPU_SHARE = 0.02
+_CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+
+
+def _tree_cpu_s(pid):
+    """CPU seconds of a live process and its descendants, including reaped children
+    (Linux /proc; 0 elsewhere)."""
+    ticks, stack, seen = 0, [pid], set()
+    while stack:
+        q = stack.pop()
+        if q in seen:
+            continue
+        seen.add(q)
+        try:
+            with open(f"/proc/{q}/stat") as f:
+                fields = f.read().rpartition(")")[2].split()
+            ticks += sum(int(x) for x in fields[11:15])  # utime stime cutime cstime
+            for t in os.listdir(f"/proc/{q}/task"):
+                with open(f"/proc/{q}/task/{t}/children") as f:
+                    stack += [int(c) for c in f.read().split()]
+        except (OSError, ValueError, IndexError):
+            pass
+    return ticks / _CLK_TCK
+
+
+def run_measured(cmd, timeout=None, cwd=None, env=None, stall=None):
     """subprocess.run(cmd, capture_output=True, text=True) that also accounts the process
     tree's CPU time and peak RSS (wait4, via _LAUNCHER), and kills the whole tree on
-    timeout (raises subprocess.TimeoutExpired like subprocess.run)."""
+    timeout (raises subprocess.TimeoutExpired like subprocess.run).
+
+    With `stall` (seconds), the tree is also killed once it has used less than
+    STALL_CPU_SHARE of one core over the last `stall` seconds, and Stalled (a
+    TimeoutExpired) is raised: a hang is cut short instead of waiting out the timeout."""
     cmd = [os.fspath(c) for c in cmd]
     rfd, wfd = os.pipe()
     try:
@@ -131,15 +174,25 @@ def run_measured(cmd, timeout=None, cwd=None, env=None):
                for n, f in (("out", p.stdout), ("err", p.stderr))]
     for t in readers:
         t.start()
-    deadline = time.monotonic() + timeout if timeout else None
-    timed_out = False
+    start = time.monotonic()
+    deadline = start + timeout if timeout else None
+    timed_out = stalled = False
     early = b""
+    samples, next_sample = [], start
     try:
         while True:
             pid, status, ru = os.wait4(p.pid, os.WNOHANG)
             if pid:
                 break
-            if deadline and time.monotonic() > deadline:
+            now = time.monotonic()
+            if stall and now >= next_sample:
+                next_sample = now + min(5.0, stall / 4)
+                samples.append((now, _tree_cpu_s(p.pid)))
+                while len(samples) > 1 and samples[1][0] <= now - stall:
+                    samples.pop(0)
+                t0, c0 = samples[0]
+                stalled = now - t0 >= stall and samples[-1][1] - c0 < STALL_CPU_SHARE * (now - t0)
+            if stalled or (deadline and now > deadline):
                 timed_out = True
                 # Kill the command's group first so the launcher can still reap it and
                 # report its usage; then the launcher itself.
@@ -184,6 +237,8 @@ def run_measured(cmd, timeout=None, cwd=None, env=None):
     if "exec" in rep and not timed_out:
         e = int(rep["exec"][0])
         raise OSError(e, os.strerror(e), cmd[0])
+    if stalled:
+        raise Stalled(cmd, timeout, stall, output=out, stderr=err)
     if timed_out:
         raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
     return subprocess.CompletedProcess(cmd, p.returncode, out, err)
@@ -286,18 +341,23 @@ def run_ops(op, *args, timeout=600):
     return res
 
 
-def run_drc(board, out_json, timeout=None):
+def run_drc(board, out_json, timeout=None, stall=None):
     """kicad-cli DRC with zone refill; returns the parsed JSON report.
 
     Timeout defaults to $KAE_DRC_TIMEOUT or 900 s (zone refill on big boards is slow).
+    A DRC that makes no CPU progress for `stall` seconds ($KAE_DRC_STALL, default 600;
+    0 disables) is a hang and fails early (see run_measured).
     """
     timeout = timeout or float(os.environ.get("KAE_DRC_TIMEOUT", 900))
+    stall = float(os.environ.get("KAE_DRC_STALL", 600)) if stall is None else stall
     board = Path(board)
     # absolute paths, so wrapped (containerised) kicad-cli does not depend on the cwd
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(Path(out_json).resolve()), str(board.resolve())]
     try:
-        r = run_measured(cmd, timeout=timeout, cwd=board.parent)
+        r = run_measured(cmd, timeout=timeout, cwd=board.parent, stall=stall or None)
+    except Stalled:
+        raise ToolError(f"DRC stalled: no CPU progress for {stall}s (KiCad hang)")
     except subprocess.TimeoutExpired:
         raise ToolError(f"DRC timed out after {timeout}s")
     if not Path(out_json).exists():
