@@ -4,8 +4,8 @@
 
     python -m kae.route.critical_cli route INPUT OUTPUT [--seed N] [--time S] [--no-bridge]
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
-                                     [--guards cell,crystal|none] [--rounds N] [--workdir DIR]
-                                     [--keep] [--report FILE]
+                                     [--guards cell,crystal|none] [--no-chain-tail] [--rounds N]
+                                     [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE]
 
 `route` routes the critical copper of INPUT (a placed .kicad_pcb with its project files

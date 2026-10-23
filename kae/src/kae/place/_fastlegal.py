@@ -168,18 +168,29 @@ def ripup_spot(H0, H1, C0, C1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, w_cost,
     return best_c, bx, by, bk
 
 
-def part_arrays(p):
+def rotations_for_fit(p, k_now):
+    """Rotation indices the greedy fit may use: the right angles, plus the current rotation
+    when the part was turned to an odd angle (repaired where it is turned)."""
+    ks = list(range(getattr(p, "n_ortho", len(p.rots))))
+    if 0 <= k_now < len(p.rots) and k_now not in ks:
+        ks.append(int(k_now))
+    return ks
+
+
+def part_arrays(p, ks=None):
     """(own (nk, 4), opp (nk, m, 4), opp_n (nk,), brd (nk, m, 4), brd_n (nk,)) int64 arrays
-    of a Problem part's grid rectangles per rotation."""
-    nk = len(p.rots)
-    mo = max(1, max(len(r.g_opp) for r in p.rots))
-    mb = max(1, max(len(r.g_boards or (r.g_board,)) for r in p.rots))
+    of a Problem part's grid rectangles for the rotation indices ks (default: all)."""
+    ks = list(range(len(p.rots))) if ks is None else list(ks)
+    rots = [p.rots[k] for k in ks]
+    nk = len(rots)
+    mo = max(1, max(len(r.g_opp) for r in rots))
+    mb = max(1, max(len(r.g_boards or (r.g_board,)) for r in rots))
     own = np.zeros((nk, 4), np.int64)
     opp = np.zeros((nk, mo, 4), np.int64)
     opp_n = np.zeros(nk, np.int64)
     brd = np.zeros((nk, mb, 4), np.int64)
     brd_n = np.zeros(nk, np.int64)
-    for k, r in enumerate(p.rots):
+    for k, r in enumerate(rots):
         own[k] = r.g_own
         for m, o in enumerate(r.g_opp):
             opp[k, m] = o

@@ -47,8 +47,8 @@ PAIR_FIELDS = {'loop', 'chain', 'feed', 'loads', 'ic_pins'}
 GROUP_FIELDS = {'snubbers', 'stages'}   # lists of reference groups: [[r, c], ...], [[q1, q2], [q3, q4]]
 KEYED_FIELDS = {'caps_p', 'caps_p_all'}
 NESTED = {'switches', 'divider', 'pin_caps'}
-STRUCT_ORDER = ('commutation_cells', 'power_paths', 'antennas', 'crystals', 'oscillators', 'decaps', 'victims', 'chains', 'heat_sources',
-                'thermal_victims')
+STRUCT_ORDER = ('commutation_cells', 'power_paths', 'antennas', 'crystals', 'oscillators', 'decaps', 'rail_groups', 'victims', 'chains',
+                'heat_sources', 'thermal_victims')
 
 
 # ------------------------------------------------------------------------------- uuid rewriting
@@ -127,10 +127,6 @@ def _structure_roles(st: dict) -> dict:
     for pp in st.get('power_paths', []):
         for q in pp.get('switches') or []:
             put(q, 'power_switch', pp['id'])
-        for x in pp.get('caps_in') or []:
-            put(x, 'path_input_cap', pp['id'])
-        for x in pp.get('caps_out') or []:
-            put(x, 'path_output_cap', pp['id'])
     for x in st['crystals']:
         for cpr in x.get('load_caps') or []:
             put(cpr, 'crystal_load_cap', x['id'])
@@ -152,6 +148,11 @@ def _structure_roles(st: dict) -> dict:
             put(cpr, 'decoupling' if d['function'] in ('load', 'bypass', 'split_supply') else d['function'] + '_cap', d['id'])
         for cpr in d.get('bulk_caps') or []:
             put(cpr, 'bulk' if d['function'] in ('load', 'bypass') else d['function'] + '_cap', d['id'])
+    for pp in st.get('power_paths', []):      # a capacitor a decap group holds keeps that role
+        for x in pp.get('caps_in') or []:
+            put(x, 'path_input_cap', pp['id'])
+        for x in pp.get('caps_out') or []:
+            put(x, 'path_output_cap', pp['id'])
     for c in st['chains']:
         for pr in c.get('protection') or []:
             put(pr, 'connector_protection', c['id'])
@@ -186,6 +187,9 @@ def _priority(s: dict) -> tuple[float, str]:
         n = len(s.get('power_pins') or [])
         base = 55.0 if s.get('function', 'load') != 'load' else 50.0
         return base + 5 * math.log10(1 + n), f"decoupling of {n} power pin(s)"
+    if k == 'rail_group':
+        n = len(s.get('loads') or [])
+        return 48.0 + 2 * math.log10(1 + n), f"{n} identical loads: capacitors pair with the nearest load"
     if k == 'connector_chain':
         return (45.0 if s.get('protection') else 20.0), 'protection order at a cable' if s.get('protection') else 'cable pin'
     if k == 'heat_source':

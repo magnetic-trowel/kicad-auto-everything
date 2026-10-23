@@ -233,9 +233,12 @@ def _nearest_spot(P, p, X0, Y0, K0, occ, pad, w_rot, span, cost_occ=None, w_cost
     size = max(max(r.g_own[1] - r.g_own[0], r.g_own[3] - r.g_own[2]) for r in p.rots)
     R = max(20, 2 * size)
     best = None
+    from ._fastlegal import rotations_for_fit
+    ks = rotations_for_fit(p, K0)
     while True:
         xa, xb, ya, yb = X0 - R, X0 + R, Y0 - R, Y0 + R
-        for k, r in enumerate(p.rots):
+        for k in ks:
+            r = p.rots[k]
             ok = np.ones((xb - xa + 1, yb - ya + 1), dtype=bool)
             for brd in (r.g_boards or (r.g_board,)):
                 ok &= _inside_origins(P, brd, xa, xb, ya, yb)
@@ -301,9 +304,11 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
     arrs = {}
 
     def arrays(i):
-        if i not in arrs:
-            arrs[i] = FL.part_arrays(P.parts[i])
-        return arrs[i]
+        key = (i, int(st.K[i]))
+        if key not in arrs:
+            ks = FL.rotations_for_fit(P.parts[i], int(st.K[i]))
+            arrs[key] = (ks,) + FL.part_arrays(P.parts[i], ks)
+        return arrs[key]
 
     def add(i, v):
         for side, (a, b, c, d), _ in st.grid_rects(i):
@@ -319,11 +324,11 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
         p = P.parts[i]
         if reach >= max_d:
             return _global_spot(i)
-        own, opp, opp_n, brd, brd_n = arrays(i)
+        ks, own, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.nearest_spot(S[0], S[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1, int(st.X[i]),
-                                     int(st.Y[i]), int(st.K[i]), float(w_rot), own, opp, opp_n, brd, brd_n,
-                                     int(min(reach, max_d)))
-        return None if c < 0 else (c, X, Y, k)
+                                     int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), own, opp, opp_n, brd,
+                                     brd_n, int(min(reach, max_d)))
+        return None if c < 0 else (c, X, Y, ks[k])
 
     def _global_spot(i):
         """Nearest free origin anywhere: every origin at once from the summed-area tables
@@ -336,7 +341,8 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
         ys = np.arange(ny)[None, :]
         dist = np.abs(xs - X0) + np.abs(ys - Y0)
         best = None
-        for k, r in enumerate(p.rots):
+        for k in FL.rotations_for_fit(p, K0):
+            r = p.rots[k]
             ok = np.ones((nx, ny), dtype=bool)
             for brd in (r.g_boards or (r.g_board,)):
                 ok &= _inside_origins(P, brd, 0, nx - 1, 0, ny - 1)
@@ -394,11 +400,11 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
                 _mark(tgt[side], r, pad, 1)
         H = [sat(hard[0]), sat(hard[1])]
         C = [sat(soft[0]), sat(soft[1])]
-        own, opp, opp_n, brd, brd_n = arrays(i)
+        ks, own, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.ripup_spot(H[0], H[1], C[0], C[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1,
-                                   int(st.X[i]), int(st.Y[i]), int(st.K[i]), float(w_rot), 4.0, own, opp, opp_n,
-                                   brd, brd_n, int(min(reach, max_d)))
-        return None if c < 0 else (c, X, Y, k, "ripup")
+                                   int(st.X[i]), int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), 4.0, own, opp,
+                                   opp_n, brd, brd_n, int(min(reach, max_d)))
+        return None if c < 0 else (c, X, Y, ks[k], "ripup")
     while queue:
         if out_of_time or (time_s is not None and time.monotonic() - t0 > time_s):
             out_of_time = True

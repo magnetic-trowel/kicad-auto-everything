@@ -325,7 +325,12 @@ WORLD = dict(f_ref_ghz=0.1,          # 100 MHz: cables of ~1 m radiate efficient
              esd_dv=40.0,            # V a neighbouring (protected) pin's clamp absorbs on top of V_clamp
              esd_k_adj=0.2,          # M/L of an adjacent trace at minimum spacing over a plane (0.1-0.3)
              feed_alpha_db_mm=0.015, # 2.4 GHz FR-4 50-ohm microstrip, conductor + dielectric loss
-             feed_budget_db=0.5)
+             feed_budget_db=0.5,
+             # cable pickup decays as the cube of distance: beyond 15 mm of gap between the
+             # aggressor's and the connector's copper it is < 1e-3 of the 5 uA budget on the
+             # corpus; a smooth window to zero at 30 mm keeps the term local (E5)
+             cm_r0_mm=15.0,
+             cm_r1_mm=30.0)
 
 
 def esd_budget():

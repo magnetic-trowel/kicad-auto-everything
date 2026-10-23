@@ -4,9 +4,10 @@
 
 Three sweeps, CPU seconds on one core:
 
-  peec     a rectangular strip loop over a plane (ex_exact.peec_net/peec_solve) with the strip
-           width swept so that the filament count n grows; fits t ~ n^p (dense Cholesky of the
-           n x n partial-inductance matrix dominates: p -> 3) and the matrix memory 8 n^2 bytes;
+  peec     a meander hop of 2-48 strips (1 mm wide, 0.2 mm over a plane) closed by a part body
+           (ex_exact.peec_net/peec_solve), so that the filament count n grows; fits t ~ n^p
+           (assembling the n x n partial-inductance matrix dominates to n ~ 800, its dense
+           Cholesky beyond) and reports the matrix memory 8 n^2 bytes and the closed forms' time;
   route    hops of growing length on a real board (ex_exact.Router, any-angle and Manhattan):
            time against the window's cell count;
   fv       the finite-volume thermal operator of ex_exact.FVThermal on one real board at grid

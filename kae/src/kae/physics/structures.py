@@ -31,9 +31,11 @@ import numpy as np
 
 from . import fastloop as FL
 from .kernels import EPS0, cprime_hj, lprime_hj, trapezoid_envelope
+from .priors import WORLD
 
 INF = float('inf')
 _hyp = math.hypot
+WIN_R = (WORLD['cm_r0_mm'], WORLD['cm_r1_mm'])       # cable-pickup window (CmComp)
 
 
 class Term:
@@ -287,6 +289,7 @@ class NodeShape:
         self.parts = tuple(sorted({t.i for t in terms}))
         self._key = None
         self._pat = None
+        self._cx = None
 
     def patches(self, st):
         key = tuple((st.X[i], st.Y[i], st.R[i], st.G[i]) for i in self.parts)
@@ -310,6 +313,18 @@ class NodeShape:
     def arrs(self, st):
         self.patches(st)
         return self._arrs
+
+    def cext(self, st, hh, kern):
+        """Air-side strengths (pF) of the patches at plane height hh (jit.cext), cached."""
+        self.patches(st)
+        c = self._cx
+        if c is None or c[0] is not self._pat or c[1] != hh:
+            a = self._arrs[2]
+            out = np.empty(a.shape[0])
+            kern.cext_arr(a, hh, out)
+            c = (self._pat, hh, out)
+            self._cx = c
+        return c[2]
 
 
 _SCR = None
@@ -353,40 +368,84 @@ def _cm(kern, an, vn, st, h, eps_r):
     return kern.patches_cm_core(xa, ya, aa, xv, yv, av, hh, eps_r, EPS0)
 
 
-class CouplingComp:
-    """Noise (mV) one aggressor puts on one victim: |M| di/dt + capacitive pickup."""
+def _sub_parts(a, b):
+    return tuple(sorted(set(a.parts) | set(b.parts)))
+
+
+def _h_loop(bv, st, shape):
+    ga = shape.geo(st)
+    return bv.h_ref(st.G[shape.T[0].i], ga[1][0], ga[1][1])
+
+
+def _h_node(bv, st, shape):
+    na = shape.patches(st)
+    h = bv.h_ref(st.G[shape.T[0].i], na[1], na[2])
+    return 1.6 if h == INF else max(h, 0.05)
+
+
+class _Coupled:
+    """An aggressor (loop al, node an) against one target (loop tl, node tn), as two
+    additive sub-terms: inductive k_l |M(al, tl)| over the parts of the two loops, and
+    capacitive over the parts of the two nodes (kernels jit.ind_one, jit.cap_one; target
+    kind 0 a victim, 1 a cable connector). `subparts` lets Terms cache and invalidate the two
+    separately; an AggGroup evaluates one sub-term for all of an aggressor's targets in one
+    kernel call (Terms.delta)."""
     kern = None
+    kind_code = 0
+
+    def _setup(self, al, an, tl, tn, k_l, k_c, k_c2):
+        self.tl, self.tn = tl, tn
+        self.k_l = float(k_l) if (al is not None and tl is not None and k_l > 0) else 0.0
+        self.k_c = float(k_c) if (an is not None and tn is not None and k_c > 0) else 0.0
+        self.k_c2 = float(k_c2)
+        self.subparts = (_sub_parts(al, tl) if self.k_l else (), _sub_parts(an, tn) if self.k_c else ())
+        ps = set()
+        for o in (al, an, tl, tn):
+            if o is not None:
+                ps |= set(o.parts)
+        self.parts = tuple(sorted(ps))
+        self.group = None
+        self.tidx = -1
+
+    def value_sub(self, st, si):
+        from .jit import GAUSS, PY
+        kern = self.kern or PY
+        bv = self.bv
+        if si == 0:
+            if not self.k_l:
+                return 0.0
+            al, tl = self.al, self.tl
+            h = _h_loop(bv, st, al)
+            zb = 1.6 if h == INF else h
+            r0, r1 = WIN_R
+            return kern.ind_one(al.arr(st), al.closed, zb + al.z, tl.arr(st), tl.closed, zb + tl.z, h, self.kind_code,
+                                self.k_l, r0, r1, *GAUSS, *_scratch())
+        if not self.k_c:
+            return 0.0
+        an, tn = self.an, self.tn
+        hh = _h_node(bv, st, an)
+        xa, ya, aa = an.arrs(st)
+        xv, yv, av = tn.arrs(st)
+        r0, r1 = WIN_R
+        return kern.cap_one(xa, ya, aa, an.cext(st, hh, kern), xv, yv, av, tn.cext(st, hh, kern), hh, bv.er,
+                            self.kind_code, self.k_c, self.k_c2, r0, r1)
+
+    def value(self, st):
+        return self.value_sub(st, 0) + self.value_sub(st, 1)
+
+
+class CouplingComp(_Coupled):
+    """Noise (mV) one aggressor puts on one victim: |M| di/dt (inductive) + the charge
+    division dV Cm / (Cm + C_victim + t_sw / Z_v) of the aggressor's swing (capacitive)."""
+    kind_code = 0
 
     def __init__(self, bv, agg_loop, agg_node, vic_loop, vic_node, didt, dv, t_sw, z_v, gnd_plane):
         self.bv = bv
         self.al, self.an, self.vl, self.vn = agg_loop, agg_node, vic_loop, vic_node
         self.didt, self.dv, self.tsw, self.zv = didt, dv, t_sw, z_v
         self.gp = gnd_plane
-        ps = set()
-        for o in (agg_loop, agg_node, vic_loop, vic_node):
-            if o is not None:
-                ps |= set(o.parts)
-        self.parts = tuple(sorted(ps))
-
-    def value(self, st):
-        bv = self.bv
-        v = 0.0
-        if self.al is not None and self.vl is not None and self.didt > 0:
-            ga = self.al.geo(st)
-            h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
-            v += _mutual(self.kern, self.al, self.vl, st, h) * self.didt * 1e3        # nH * A/ns = V -> mV
-        if self.an is not None and self.vn is not None:
-            na = self.an.patches(st)
-            nv = self.vn.patches(st)
-            h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
-            cm = _cm(self.kern, self.an, self.vn, st, h, bv.er)
-            hh = 1.6 if h == INF else max(h, 0.05)
-            cv = _cself(nv[3], hh, bv.er) + 5.0                                  # + pins (E5 5 pF)
-            # dV Cm / (Cm + Cv + t_sw / Z_v): charge division into a high-impedance victim,
-            # Cm (dV / t_sw) Z_v into a low-impedance one (t_sw / Z_v in pF: ns * 1e3 / ohm)
-            v_c = self.dv * cm / (cm + cv + self.tsw * 1e3 / self.zv)
-            v += 1e3 * v_c
-        return v
+        # nH * A/ns = V -> mV; dV Cm / (Cm + Cv + t_sw / Z_v) with t_sw / Z_v in pF (ns * 1e3 / ohm)
+        self._setup(agg_loop, agg_node, vic_loop, vic_node, didt * 1e3, dv, t_sw * 1e3 / z_v)
 
 
 # ============================================================================ crystal
@@ -527,9 +586,11 @@ class ThermalField:
 
 
 # ============================================================================ world node
-class CmComp:
-    """Common-mode current (uA) an aggressor drives onto one cable connector's cable."""
-    kern = None
+class CmComp(_Coupled):
+    """Common-mode current (uA) an aggressor drives onto one cable connector's cable:
+    omega (M I / Z_cm + Cm V) at f_ref, windowed by the gap between the copper extents
+    (priors.WORLD cm_r0_mm, cm_r1_mm)."""
+    kind_code = 1
 
     def __init__(self, bv, agg_loop, agg_node, conn_loop, conn_node, I, V, t_sw, gnd_plane, world):
         self.bv = bv
@@ -540,26 +601,114 @@ class CmComp:
         self.Vamp = trapezoid_envelope(V, f, world['period_ns'], t_sw)
         self.zcm = world['z_cm']
         self.gp = gnd_plane
-        ps = set()
-        for o in (agg_loop, agg_node, conn_loop, conn_node):
-            if o is not None:
-                ps |= set(o.parts)
-        self.parts = tuple(sorted(ps))
+        w = 2.0 * math.pi * f          # rad/ns
+        # nH * rad/ns * A / ohm = A; pF * rad/ns * V = mA; both to uA
+        self._setup(agg_loop, agg_node, conn_loop, conn_node, w * self.Iamp / self.zcm * 1e6, w * self.Vamp * 1e3, 0.0)
 
-    def value(self, st):
+
+class AggGroup:
+    """The coupling targets (victims, cable connectors) of one aggressor. When an aggressor
+    part moves, Terms.delta evaluates the affected sub-term of all targets in one kernel
+    call (jit.ind_batch, jit.cap_batch) on the targets' geometry as last ensured (a target
+    whose own parts move is evaluated alone)."""
+
+    def __init__(self, bv, al, an):
+        self.bv = bv
+        self.al, self.an = al, an
+        self.comps = []
+        self.kern = None
+        self.stale = [True, True]       # Terms: an aggressor part moved since the last refresh
+        self.tparts = [[], []]          # Terms: per target, its own parts per sub-term
+        self._ok = [False, False]
+        self._d = [None, None]
+        self._cv = {}
+
+    def add(self, c):
+        c.group = self
+        c.tidx = len(self.comps)
+        self.comps.append(c)
+
+    def agg_parts(self, si):
+        o = self.al if si == 0 else self.an
+        return set(o.parts) if o is not None else set()
+
+    def target_parts(self, si):
+        out = set()
+        for c in self.comps:
+            o = c.tl if si == 0 else c.tn
+            if o is not None and (c.k_l if si == 0 else c.k_c):
+                out |= set(o.parts)
+        return out
+
+    def invalidate(self, si):
+        self._ok[si] = False
+
+    def ensure(self, si, st):
+        """Concatenate the targets' current geometry for sub-term si (st: synced poses)."""
+        if self._ok[si]:
+            return
+        cs = self.comps
+        n = len(cs)
+        off = np.zeros(n + 1, np.int64)
+        kind = np.array([c.kind_code for c in cs], np.int64)
+        if si == 0:
+            pts, closed, zx, k1 = [], np.zeros(n, np.bool_), np.zeros(n), np.zeros(n)
+            for t, c in enumerate(cs):
+                if c.k_l:
+                    a = c.tl.arr(st)
+                    pts.append(a)
+                    off[t + 1] = off[t] + a.shape[0]
+                    closed[t] = c.tl.closed
+                    zx[t] = c.tl.z
+                    k1[t] = c.k_l
+                else:
+                    off[t + 1] = off[t]
+            P = np.ascontiguousarray(np.concatenate(pts)) if pts else np.zeros((0, 2))
+            self._d[0] = (P, off, closed, zx, kind, k1)
+        else:
+            xs, ys, As, k1, k2 = [], [], [], np.zeros(n), np.zeros(n)
+            for t, c in enumerate(cs):
+                if c.k_c:
+                    x, y, a = c.tn.arrs(st)
+                    xs.append(x)
+                    ys.append(y)
+                    As.append(a)
+                    off[t + 1] = off[t] + x.shape[0]
+                    k1[t] = c.k_c
+                    k2[t] = c.k_c2
+                else:
+                    off[t + 1] = off[t]
+            cat = (lambda v: np.ascontiguousarray(np.concatenate(v)) if v else np.zeros(0))
+            self._d[1] = (cat(xs), cat(ys), cat(As), off, kind, k1, k2)
+            self._cv = {}
+        self._ok[si] = True
+
+    def batch(self, si, st):
+        """Sub-term si of every target with the aggressor at its poses in st (array)."""
+        from .jit import GAUSS, PY
+        kern = self.kern or PY
         bv = self.bv
-        w = 2.0 * math.pi * self.f        # rad/ns
-        i_cm = 0.0
-        if self.al is not None and self.cl is not None and self.Iamp > 0:
-            ga = self.al.geo(st)
-            h = bv.h_ref(st.G[self.al.T[0].i], ga[1][0], ga[1][1])
-            i_cm += w * _mutual(self.kern, self.al, self.cl, st, h) * self.Iamp / self.zcm   # nH*rad/ns*A/ohm = A
-        if self.an is not None and self.cn is not None:
-            na = self.an.patches(st)
-            h = bv.h_ref(st.G[self.an.T[0].i], na[1], na[2])
-            cm = _cm(self.kern, self.an, self.cn, st, h, bv.er)
-            i_cm += w * cm * 1e-3 * self.Vamp                  # pF*rad/ns*V = mA -> A
-        return i_cm * 1e6
+        out = np.zeros(len(self.comps))
+        r0, r1 = WIN_R
+        if si == 0:
+            al = self.al
+            P, off, closed, zx, kind, k1 = self._d[0]
+            h = _h_loop(bv, st, al)
+            zb = 1.6 if h == INF else h
+            kern.ind_batch(al.arr(st), al.closed, zb + al.z, h, P, off, closed, zx, kind, k1, r0, r1, *GAUSS,
+                           *_scratch(), out)
+        else:
+            an = self.an
+            X, Y, A, off, kind, k1, k2 = self._d[1]
+            hh = _h_node(bv, st, an)
+            cv = self._cv.get(hh)
+            if cv is None:
+                cv = np.empty(A.shape[0])
+                kern.cext_arr(A, hh, cv)
+                self._cv[hh] = cv
+            xa, ya, aa = an.arrs(st)
+            kern.cap_batch(xa, ya, aa, an.cext(st, hh, kern), hh, bv.er, X, Y, A, cv, off, kind, k1, k2, r0, r1, out)
+        return out
 
 
 class EsdComp:

@@ -68,7 +68,24 @@ def run_one(args, tid, extra):
     return tid, rc
 
 
+def warm(args):
+    """Compile (or load) every numba kernel into SNAP/.numba_cache once, before the sweep:
+    the place-term kernels and a fixture placement (annealing engine, greedy legalizer)."""
+    snap = str(Path(args.snap).resolve())
+    env = dict(os.environ, PYTHONPATH=snap, NUMBA_CACHE_DIR=str(Path(snap) / ".numba_cache"), KAE_WORKERS="1")
+    fixture = Path(__file__).resolve().parents[3] / "kae" / "tests" / "data" / "board" / "fixture.kicad_pcb"
+    out = Path(args.out) / "_warm"
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.monotonic()
+    subprocess.run([args.python, "-c", "from kae.physics import jit; jit.warm(jit.nb())"], env=env, check=False)
+    subprocess.run([args.python, "-m", "kae.cli", "place", str(fixture), str(out / "board.kicad_pcb"), "--time", "40",
+                    "--writer", "sexpr"], env=env, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"numba warm-up {time.monotonic() - t0:.1f}s", flush=True)
+
+
 def cmd_run(args, extra):
+    if not args.no_warm:
+        warm(args)
     ids = board_ids(args.tasks, args.split, args.ids.split(",") if args.ids else None)
     print(f"{len(ids)} boards of split {args.split}, {args.j} at a time, {args.time} s each", flush=True)
     rcs = {}
@@ -134,7 +151,7 @@ def _human(snap, tasks, tid):
 
 def cmd_summary(args):
     out = Path(args.out)
-    ids = sorted(p.stem for p in out.glob("*.json") if p.stem not in ("summary", "rc"))
+    ids = sorted(p.stem for p in out.glob("*.json") if p.stem not in ("summary", "rc") and not p.stem.startswith("_"))
     rcs = json.loads((out / "rc.json").read_text()) if (out / "rc.json").exists() else {}
     rows = []
     for tid in ids:
@@ -244,6 +261,7 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--python", default=sys.executable)
     ap.add_argument("--no-human", action="store_true")
+    ap.add_argument("--no-warm", action="store_true")
     args = ap.parse_args(argv)
     if args.mode == "run":
         cmd_run(args, extra)

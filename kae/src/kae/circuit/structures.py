@@ -1211,6 +1211,55 @@ def decaps(b: _B, groups) -> list:
     return out
 
 
+RG_MIN = 6          # identical loads on one rail that make a rail group
+RG_MIN_SCARCE = 4   # ... or this many when the rail has fewer capacitors than those loads
+
+
+def rail_groups(b: _B, groups, dec) -> list:
+    """Rails that feed many identical loads (per-key LEDs, LED strings, sensor arrays). Which capacitor serves
+    which of them is not in the netlist (reference order is a guess there), so the brief names the group and
+    the placer pairs each capacitor with its nearest load; the decap structures of those loads say so
+    (`rail_group`, pairing 'nearest_load', no pin pairs)."""
+    by_rail = defaultdict(lambda: defaultdict(list))
+    for g in groups:
+        if g['function'] != 'load' or isinstance(g['rail'], tuple):
+            continue
+        value = b.nl.parts[g['ref']].value.strip().upper()
+        if value not in ('', '~'):
+            # one part number; footprint variants (rotated, reverse-mount) of it are the same load
+            by_rail[g['rail']][(b.k(g['ref']), value)].append(g)
+    out = []
+    for rail, classes in sorted(by_rail.items()):
+        _, gs = max(classes.items(), key=lambda t: (len(t[1]), t[0]))
+        n, ncap_rail = len(gs), len(b.caps_on(rail))
+        if not (n >= RG_MIN or (n >= RG_MIN_SCARCE and ncap_rail < n)):
+            continue
+        loads = sorted((g['ref'] for g in gs), key=_refkey)
+        caps = sorted({c for g in gs for c in g.get('caps') or []}, key=_refkey)
+        if not caps:
+            continue                     # nothing to pair
+        libs = sorted({b.nl.parts[x].lib_id.split(':')[-1] for x in loads})
+        gcount = defaultdict(int)
+        for c, gn in b.r.caps_to.get(rail, []):
+            if c in caps:
+                gcount[gn] += 1
+        gnd = max(gcount, key=lambda n_: (gcount[n_], n_ == b.r.gnd)) if gcount else b.r.gnd
+        basis = f"{n} identical loads ({b.nl.parts[loads[0]].value}, {' / '.join(libs[:3])}) on '{b.short(rail)}' with {len(caps)} capacitor(s)"
+        evs = [ev('count', basis, STRONG if n >= RG_MIN else MODERATE)]
+        if ncap_rail < n:
+            evs.append(ev('count', f"fewer capacitors ({ncap_rail}) than loads ({n}) on the rail: each serves its neighbours", WEAK))
+        sid = f"rg:{b.short(rail)}"
+        out.append(_struct('rail_group', sid, evs, conf_cap=min(0.95, b.r.nets[rail].confidence if rail in b.r.nets else 0.6),
+                           prior=0.0, rail=rail, ground=gnd, loads=loads, caps=caps, pairing='nearest_load', basis=basis))
+        members = set(loads)
+        for d in dec:
+            if d['function'] == 'load' and d['rail'] == rail and d['ic'] in members:
+                d['rail_group'] = sid
+                d['pairing'] = 'nearest_load'
+                d['pin_caps'] = {}
+    return out
+
+
 def _decap_ground(b: _B, ref, rail):
     part = b.nl.parts[ref]
     gnds = defaultdict(int)
@@ -1915,6 +1964,7 @@ def find_structures(nl: Netlist, roles: Roles) -> dict:
     _finish_cells(b, cells)
     st = {'commutation_cells': cells}
     st['decaps'] = decaps(b, groups)
+    st['rail_groups'] = rail_groups(b, groups, st['decaps'])
     st['uncovered'] = [{'ic': r, 'rail': n, 'pins': k} for r, n, k in getattr(b, 'uncovered', [])]
     st['crystals'] = crystals(b)
     st['oscillators'] = oscillators(b)
@@ -2059,9 +2109,10 @@ def _path_current(b: _B, sws, rail_in, rail_out, series, ic=None, stages=None):
     """(I, basis) for a power path: fuse rating > load-switch table > shunt full scale > connector or FET class."""
     for f in series + [p.ref for n in (rail_in, rail_out) for p in b.nl.pins(n) if b.k(p.ref) == 'fuse']:
         v = b.nl.parts[f].value
-        m = re.search(r'(\d+(?:\.\d+)?)\s*A\b', v) or re.search(r'(?<![\d.])(\d+(?:\.\d+)?)A(?![a-z])', v)
+        m = re.search(r'(?<![\d.])(\d+(?:\.\d+)?)\s*(m?)A(?![a-z])', v)
         if m:
-            return float(m.group(1)), f"fuse {f} rated {m.group(1)} A ('{v}')"
+            amps = float(m.group(1)) * (1e-3 if m.group(2) else 1.0)
+            return amps, f"fuse {f} rated {amps:g} A ('{v}')"
         m = re.search(r'MF-\w*?(\d{3})|0ZC[A-Z](\d{4})', v)
         if m:
             amps = int(m.group(1)) / 100 if m.group(1) else int(m.group(2)) / 100
@@ -2121,6 +2172,38 @@ def _path_series(b: _B, net):
     return sorted(set(out), key=_refkey)
 
 
+def _low_side_load(b: _B, n, fets):
+    """(supply rail, loop terminals) of the load a low-side switch returns through `n`: a connector with a pin
+    on a rail (an off-board heater, motor, LED string), an on-board two-terminal load, or (only the rail) the
+    cathode of a flyback diode; None when no rail is found."""
+    others = [p for p in b.nl.pins(n) if p.ref not in fets]
+    for p in others:
+        if b.k(p.ref) == 'connector':
+            up = next((q for q in b.nl.parts[p.ref].active_pins() if q.net in b.r.rails and q.net != n), None)
+            if up:
+                return up.net, [[p.ref, up.number], [p.ref, p.number]]
+    for p in others:
+        part = b.nl.parts[p.ref]
+        o = b.nl.other_net(part, n)
+        if o in b.r.rails and b.k(p.ref) in ('resistor', 'inductor', 'led', 'relay', 'heater', 'motor', 'buzzer', 'speaker') and \
+                not (b.k(p.ref) == 'resistor' and (V.resistance(part.value) or 0) >= 1e3):
+            return o, [[p.ref, b.pad_sel(p.ref, o)], [p.ref, p.number]]
+    for p in others:
+        part = b.nl.parts[p.ref]
+        if b.k(p.ref) == 'diode' and diode_side(part, n) == 'A' and b.nl.other_net(part, n) in b.r.rails:
+            return b.nl.other_net(part, n), []
+    return None
+
+
+def _sw_pads(b: _B, ref, net, rx_=None):
+    """The pass element's pads on `net`: for an IC its switch pins (VIN, VOUT), not control pins tied there."""
+    if rx_ is not None:
+        ps = sorted({p.number for p in b.nl.parts[ref].pins_on(net) if rx_.match(p.fn)}, key=_natkey)
+        if ps:
+            return ps[0] if len(ps) == 1 else ps
+    return b.pad_sel(ref, net)
+
+
 def _cap_owners(cells, groups) -> dict:
     """cap -> (owner reference, function, ownership probability) after the allocation."""
     owned = {}
@@ -2134,23 +2217,27 @@ def _cap_owners(cells, groups) -> dict:
 
 
 def _path_caps(b: _B, net, ic, owned) -> list:
-    """A power path's capacitors on `net` (at most 4), the ones it can claim first: the path IC's own, then
-    entry bulk, converter filters and capacitors nobody holds firmly, then regulator pins', then those a load's
-    pin or a cell owns (p >= 0.5). Capacitors to a chassis ground (Y-capacitors) carry no path current."""
+    """A power path's capacitors on `net`: the path IC's own, entry bulk, converter filters and capacitors no
+    consumer holds, up to 4; failing those, up to 2 of a regulator pin's, or the one best capacitor a load or a
+    cell holds, only to close the loop. Capacitors to a chassis ground (Y-capacitors) carry no path current."""
     chassis = {n for n in b.g if b.r.nets[n].subrole == 'chassis'}
     caps = [c for c, g_ in b.r.caps_to.get(net, []) if g_ not in chassis]
     hf = {c: i for i, c in enumerate(_hf_order(b.nl, caps))}
 
     def rank(c):
-        ref, func, pr = owned.get(c, (None, None, 0.0))
+        ref, func, _ = owned.get(c, (None, None, 0.0))
         if ic and ref == ic:
             return 0
-        if func is None or pr < 0.5 or func in ('entry', 'converter_output', 'converter_input'):
+        if func is None or func in ('entry', 'converter_output', 'converter_input'):
             return 1
         if func in ('regulator_input', 'regulator_output'):
             return 2
         return 3
-    return sorted(caps, key=lambda c: (rank(c), hf[c]))[:4]
+    srt = sorted(caps, key=lambda c: (rank(c), hf[c]))
+    if not srt:
+        return []
+    best = rank(srt[0])        # claim what nobody holds; borrow a held one only to close the loop
+    return [c for c in srt if rank(c) <= max(best, 1)][:{0: 4, 1: 4, 2: 2}.get(best, 1)]
 
 
 def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
@@ -2218,6 +2305,15 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
         banks[frozenset((t['D'], t['S']))].append(ref)
         fet_nets[t['D']] += 1
         fet_nets[t['S']] += 1
+    for ref, t in fets.items():
+        # a low-side switch's drain: the return of an off-board load (a connector pin) or of an inductive load
+        # (a flyback diode to a rail) carries the load current
+        d = t['D'] if t['S'] in b.g else None
+        if d and d not in b.g and not SMALL_FET.search(b.nl.parts[ref].text()) and any(
+                b.k(p.ref) == 'connector' or (b.k(p.ref) == 'diode' and diode_side(b.nl.parts[p.ref], d) == 'A' and
+                                               (b.nl.other_net(b.nl.parts[p.ref], d) in b.r.rails))
+                for p in b.nl.pins(d)):
+            fet_nets[d] += 1           # counts as a power net below (one more main terminal than its FETs)
     bank_nets = {k: tuple(sorted(k)) for k in banks}
     adj = defaultdict(list)
     for k, (a, c) in bank_nets.items():
@@ -2289,10 +2385,10 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
             ron += r1 / len(st_)
             rb.append(basis + (f", {len(st_)} in parallel" if len(st_) > 1 else ''))
         ctrl = None
-        for p in b.nl.pins(t0['G']):
+        for p in b.nl.pins(t0['G']) if t0['G'] not in b.g and t0['G'] not in b.r.rails else ():
             if b.k(p.ref) in ('ic', 'module'):
                 ctrl = p.ref
-        if ctrl is None:
+        if ctrl is None and t0['G'] not in b.g:
             for p in b.nl.pins(t0['G']):
                 if b.k(p.ref) == 'resistor':
                     o = b.nl.other_net(b.nl.parts[p.ref], t0['G'])
@@ -2327,29 +2423,40 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
             gnd = next(iter(b.nl.parts[c0].nets - {n0}), gnd)
         sw0 = p['switches'][0]
         last = p['stages'][-1][0]
-        loop = []
+        loop, top, load_terms = [], rin, []
+        if rout in b.g:
+            # low side: the load hangs between a supply rail and the drain; the loop closes through the load's
+            # terminals (a connector's two pins, or an on-board load) and that rail's capacitor
+            ld = _low_side_load(b, rin, set(p['switches']))
+            if ld:
+                top, load_terms = ld
+                caps_in = _path_caps(b, top, None, owned)
         if caps_in:
-            loop.append([caps_in[0], b.cap_pad(caps_in[0], rin)])
-        loop += [[sw0, b.pad_sel(sw0, rin)], [last, b.pad_sel(last, rout)]]
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], top)])
+        loop += load_terms
+        loop += [[sw0, _sw_pads(b, sw0, rin, IN_SW_PIN if p['ic'] else None)],
+                 [last, _sw_pads(b, last, rout, OUT_SW_PIN if p['ic'] else None)]]
         if caps_out:
             loop += [[caps_out[0], b.cap_pad(caps_out[0], rout)], [caps_out[0], b.cap_pad(caps_out[0], next(iter(b.nl.parts[caps_out[0]].nets - {rout})))]]
         if caps_in:
-            loop.append([caps_in[0], b.cap_pad(caps_in[0], next(iter(b.nl.parts[caps_in[0]].nets - {rin})))])
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], next(iter(b.nl.parts[caps_in[0]].nets - {top})))])
         I_, ibasis = _path_current(b, p['switches'], rin, rout, series, p['ic'], p['stages'])
         cap = _dissipation_cap(b, p)
         if cap is not None and cap < I_:
             ibasis = f"{ibasis}, capped at {cap:.2g} A by what the pass element(s) can dissipate"
             I_ = round(cap, 3)
-        V_ = b.volts(rin) if rin not in b.g else b.volts(rout)
+        V_ = b.volts(top) if top not in b.g else b.volts(rout)
         P_ = round(I_ ** 2 * p['ron'], 4)
         evs = [ev('topology', f"{p['class'].replace('_', ' ')}: {', '.join(p['switches'])} from '{b.short(rin)}' to '{b.short(rout)}'", STRONG)]
         if p.get('drive'):
             evs.append(ev('topology', f"gate drive: {p['drive']}", WEAK))
-        if not caps_in or not caps_out:
+        if load_terms:
+            evs.append(ev('topology', f"low side: the load between '{b.short(top)}' and '{b.short(rin)}' ({load_terms[0][0]})", WEAK))
+        if not caps_in or (not caps_out and rout not in b.g):
             evs.append(ev('topology', 'no capacitor on one side: the loop closes off the board', -1.0))
         if p['group']:
             evs.append(ev('topology', f"one of several paths into '{b.short(rout)}' (group {p['group']})", 0.0))
-        pid = f"path:{'+'.join(p['switches'][:3])}" + (f":{b.short(rin)}" if p['ic'] and p['group'] else '')
+        pid = f"path:{'+'.join(st_[0] for st_ in p['stages'])}" + (f":{b.short(rin)}" if p['ic'] and p['group'] else '')
         out_s.append(_struct('power_path', pid, evs, conf_cap=0.9, prior=0.5,
                              **{'class': p['class'], 'switches': p['switches'], 'stages': p['stages'], 'controller': p['controller'],
                                 'rail_in': rin, 'rail_out': rout, 'gnd': gnd, 'series': series, 'caps_in': caps_in,
@@ -2366,4 +2473,8 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
                     heat_s.append(_struct('heat_source', f"heat:{q}", [ev('derived', basis, MODERATE)], conf_cap=0.6, prior=0.0,
                                           part=q, P_W=Pq, P_W_belief={'value': Pq, 'unit': 'W', 'class': 'E5', 'basis': basis,
                                                                       'interval': [round(Pq / 9, 4), round(Pq, 4)]}))
-    return out_s, heat_s
+    best = {}           # one heat source per pass element (a power mux's paths share their IC; one conducts at a time)
+    for h in heat_s:
+        if h['part'] not in best or h['P_W'] > best[h['part']]['P_W']:
+            best[h['part']] = h
+    return out_s, [h for h in heat_s if best[h['part']] is h]

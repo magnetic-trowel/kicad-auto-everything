@@ -16,8 +16,9 @@ For a board this script builds:
            a victim reads the interpolated temperature at its centre, a source the mean over
            its box;
 and compares them on the thermal candidates of ex_decision_flips.py (each part's human pose,
-translations, rotations): rise error, cost error, and the decision flips between the two
-among materially different pairs. Reports the table's build time, memory and lookup time.
+translations, rotations; drawn the same way here when the board has no record yet): rise
+error and the decision flips between the two among materially different pairs. Reports the
+table's build time, memory and lookup time (numpy prototype).
 
 Usage:  python tools/research/physics/ex_thermal_table.py --flips kae-work/physics/exact-options/flips
         [--only id1,id2] [--pitch 1.0] [--out kae-work/physics/exact-options/thermal-table]

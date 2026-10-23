@@ -599,10 +599,20 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                                     hard_s=max(budget, min(budget + grace, left() - 15)),
                                     log_path=rdir / "freerouting.log")
             rec["router"] = dict(seconds=run.seconds, state=run.report.get("final_state"),
-                                 score=run.report.get("router_score"))
+                                 score=run.report.get("router_score"), killed=run.timed_out)
             if run.ses is None:
-                rec["stopped"] = "router produced no session"
-                break
+                # a failed round like any other: the best board stays, the next round escalates
+                rec["kept"] = False
+                log(f"repair round {k} ({mode}): the router wrote no session "
+                    f"({'killed' if run.timed_out else 'rc=' + str(run.rc)})")
+                fails += 1
+                level = min(level + 1, len(LEVELS) - 1)
+                if use_split:
+                    split_failed = True
+                if fails >= FAILS:
+                    rec["stopped"] = "no improvement"
+                    break
+                continue
             ses = specctra.read(run.ses)
             translate.fix_session(ses, plan)
             ses_k = rdir / "board_kicad.ses"

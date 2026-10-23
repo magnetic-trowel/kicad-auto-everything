@@ -6,6 +6,8 @@ functions only, so that numba can cache them; `jit` is the decorator the loader 
 (identity when the file is imported directly). Units: mm, nH, pF, K, W."""
 import math
 
+import numpy as np
+
 try:
     jit = _JIT          # noqa: F821  (injected by kae.physics.jit before execution)
 except NameError:       # imported directly: plain Python
@@ -421,15 +423,29 @@ def cext(A, h):
 
 @jit
 def patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
+    CA = np.empty(XA.shape[0])
+    for a in range(XA.shape[0]):
+        CA[a] = cext(AA[a], h)
+    CV = np.empty(XV.shape[0])
+    for v in range(XV.shape[0]):
+        CV[v] = cext(AV[v], h)
+    return patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
+
+
+@jit
+def patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0):
+    """Pairwise sum of patches_near with the patch strengths precomputed (CA, CV)."""
     k = 1.0 / (4.0 * math.pi * eps0)
+    h4 = 4.0 * h * h
     cm = 0.0
     for a in range(XA.shape[0]):
-        ca = cext(AA[a], h)
+        sa = math.sqrt(AA[a])
+        acc = 0.0
         for v in range(XV.shape[0]):
-            rr = max(math.hypot(XA[a] - XV[v], YA[a] - YV[v]), 0.5 * (math.sqrt(AA[a]) + math.sqrt(AV[v])))
-            p = k * (1.0 / rr - 1.0 / math.sqrt(rr * rr + 4.0 * h * h))
-            cm += ca * cext(AV[v], h) * p
-    return cm
+            rr = max(math.hypot(XA[a] - XV[v], YA[a] - YV[v]), 0.5 * (sa + math.sqrt(AV[v])))
+            acc += CV[v] * (1.0 / rr - 1.0 / math.sqrt(rr * rr + h4))
+        cm += CA[a] * acc
+    return k * cm
 
 
 @jit
@@ -662,7 +678,19 @@ def loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, 
 def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
     """First-order mutual capacitance (pF) of two patch sets over a plane at h:
     C_m = sum C_a C_v p_av, p_av = (1/(4 pi eps0)) (1/r - 1/sqrt(r^2 + 4 h^2)), with the
-    patches' air-side strengths (cext); far apart, the strength-weighted centroids."""
+    patches' air-side strengths (cext); far apart, the area-weighted centroids."""
+    CA = np.empty(XA.shape[0])
+    for a in range(XA.shape[0]):
+        CA[a] = cext(AA[a], h)
+    CV = np.empty(XV.shape[0])
+    for v in range(XV.shape[0]):
+        CV[v] = cext(AV[v], h)
+    return patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
+
+
+@jit
+def patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0):
+    """patches_cm_core with the patch strengths precomputed: CA = cext(AA, h), CV = cext(AV, h)."""
     ta = 0.0
     tv = 0.0
     sa = 0.0
@@ -673,12 +701,12 @@ def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
     vy = 0.0
     for a in range(XA.shape[0]):
         ta += AA[a]
-        sa += cext(AA[a], h)
+        sa += CA[a]
         ax += XA[a] * AA[a]
         ay += YA[a] * AA[a]
     for v in range(XV.shape[0]):
         tv += AV[v]
-        sv += cext(AV[v], h)
+        sv += CV[v]
         vx += XV[v] * AV[v]
         vy += YV[v] * AV[v]
     ax /= ta
@@ -696,7 +724,136 @@ def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
     if r > 3.0 * (ea + ev) + 2.0 * h:
         p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
         return sa * sv * p
-    return patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0)
+    return patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
+
+
+@jit
+def eps_eff(w, h, er):
+    """Hammerstad-Jensen effective permittivity of a microstrip (zero thickness)."""
+    u = max(w, 1e-6) / max(h, 1e-6)
+    a = 1.0 + math.log((u ** 4 + (u / 52.0) ** 2) / (u ** 4 + 0.432)) / 49.0 \
+        + math.log(1.0 + (u / 18.1) ** 3) / 18.7
+    b = 0.564 * ((er - 0.9) / (er + 3.0)) ** 0.053
+    return (er + 1.0) / 2.0 + (er - 1.0) / 2.0 * (1.0 + 10.0 / u) ** (-a * b)
+
+
+@jit
+def cself(A, h, er):
+    """Capacitance to the plane (pF) of copper of area A at height h in a dielectric er: a
+    square of side s with the microstrip C'(s, h, er) along it and its fringe across the
+    ends, s (2 C' - eps0 er s / h) (Hammerstad-Jensen C' = sqrt(e_eff) / (c0 Z0))."""
+    s = math.sqrt(max(A, 1e-6))
+    ee = eps_eff(s, h, er)
+    cp = math.sqrt(ee) / (C0 * z0_air(s, h) / math.sqrt(ee)) * 1e3
+    return s * (2.0 * cp - EPS0 * er * s / h)
+
+
+@jit
+def window(g, r0, r1):
+    """Smooth cut-off of a coupling with the gap g between the two copper extents: 1 up to
+    r0, 0 beyond r1, a cubic step (C1) between."""
+    if g <= r0:
+        return 1.0
+    if g >= r1:
+        return 0.0
+    t = (g - r0) / (r1 - r0)
+    return 1.0 - t * t * (3.0 - 2.0 * t)
+
+
+@jit
+def box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1):
+    dx = max(0.0, max(ax0, bx0) - min(ax1, bx1))
+    dy = max(0.0, max(ay0, by0) - min(ay1, by1))
+    return math.hypot(dx, dy)
+
+
+@jit
+def xy_box(X, Y):
+    x0 = X[0]
+    x1 = X[0]
+    y0 = Y[0]
+    y1 = Y[0]
+    for i in range(1, X.shape[0]):
+        x0 = min(x0, X[i])
+        x1 = max(x1, X[i])
+        y0 = min(y0, Y[i])
+        y1 = max(y1, Y[i])
+    return x0, y0, x1, y1
+
+
+@jit
+def ind_one(PA, ca, za, PV, cv, zv, h, kind, k1, r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd):
+    """Inductive coupling of one target: k1 |M(aggressor, target)| (kind 1, a cable
+    connector: times the window of the gap between the two loops' extents)."""
+    if k1 == 0.0:
+        return 0.0
+    w = 1.0
+    if kind == 1:
+        ax0, ay0, ax1, ay1 = xy_box(PA[:, 0], PA[:, 1])
+        bx0, by0, bx1, by1 = xy_box(PV[:, 0], PV[:, 1])
+        w = window(box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1), r0, r1)
+        if w == 0.0:
+            return 0.0
+    return k1 * w * loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, vd)
+
+
+@jit
+def ind_batch(PA, ca, za, h, P, off, closed, zx, kind, k1, r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd, out):
+    """ind_one for many targets: loop t is P[off[t]:off[t + 1]] (closed[t]) at height
+    (plane height or 1.6) + zx[t]."""
+    zb = 1.6 if h == INF else h
+    for t in range(off.shape[0] - 1):
+        lo = off[t]
+        hi = off[t + 1]
+        if hi - lo < 2:
+            out[t] = 0.0
+        else:
+            out[t] = ind_one(PA, ca, za, P[lo:hi], closed[t], zb + zx[t], h, kind[t], k1[t], r0, r1,
+                             gt3, gw3, gt6, gw6, sp, sd, vp, vd)
+
+
+@jit
+def cap_one(XA, YA, AA, CA, XV, YV, AV, CV, hh, er, kind, k1, k2, r0, r1):
+    """Capacitive coupling of one target (patch strengths precomputed at hh):
+    kind 0, a victim: 1e3 k1 Cm / (Cm + C_self(victim copper) + 5 pF + k2), the charge
+    division of the aggressor's swing k1 (V) into the victim (k2 = t_sw / Z_v, pF), mV;
+    kind 1, a cable connector: k1 Cm times the window of the gap between the extents."""
+    if k1 == 0.0:
+        return 0.0
+    w = 1.0
+    if kind == 1:
+        ax0, ay0, ax1, ay1 = xy_box(XA, YA)
+        bx0, by0, bx1, by1 = xy_box(XV, YV)
+        w = window(box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1), r0, r1)
+        if w == 0.0:
+            return 0.0
+    cm = patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, hh, EPS0)
+    if kind == 0:
+        at = 0.0
+        for v in range(AV.shape[0]):
+            at += AV[v]
+        cv = cself(at, hh, er) + 5.0
+        return 1e3 * k1 * cm / (cm + cv + k2)
+    return k1 * w * cm
+
+
+@jit
+def cap_batch(XA, YA, AA, CA, hh, er, X, Y, A, CV, off, kind, k1, k2, r0, r1, out):
+    """cap_one for many targets: target t's patches are rows off[t]:off[t + 1]."""
+    for t in range(off.shape[0] - 1):
+        lo = off[t]
+        hi = off[t + 1]
+        if hi <= lo:
+            out[t] = 0.0
+        else:
+            out[t] = cap_one(XA, YA, AA, CA, X[lo:hi], Y[lo:hi], A[lo:hi], CV[lo:hi], hh, er, kind[t], k1[t], k2[t],
+                             r0, r1)
+
+
+@jit
+def cext_arr(A, h, out):
+    for i in range(A.shape[0]):
+        out[i] = cext(A[i], h)
 
 
 @jit

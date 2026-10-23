@@ -382,3 +382,31 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
     rep2 = bridge.route(board, out2, time_s=30, workdir=tmp_path / "wd2", opts=fast)
     assert rep2["status"] == "no_session" and rep2["router"]["timed_out"]
     assert out2.read_bytes() == board.read_bytes()
+
+
+@needs_router
+def test_repair_round_without_a_session_is_a_failed_round(routed, exported, tmp_path, monkeypatch):
+    """A repair round whose router run is killed before writing anything counts as a failed
+    round: the loop goes on (up to its failure limit) and the best board stays."""
+    from kae.route import repair
+    board, out, _, _ = routed
+    _, info, _ = exported
+    cur = tmp_path / "board.kicad_pcb"
+    shutil.copy(out, cur)
+    before = cur.read_bytes()
+    calls = []
+
+    def killed(*a, **k):
+        calls.append(k.get("budget_s"))
+        return freerouting.Run(rc=-9, ses=None, log="", seconds=0.1, timed_out=True)
+
+    monkeypatch.setattr(repair.freerouting, "route", killed)
+    p = constraints.plan(info, board)
+    rep = repair.loop(board, cur, tmp_path / "wd", p, info, dict(rounds=4, severities={}),
+                      deadline=__import__("time").monotonic() + 600)
+    rounds = [r for r in rep["rounds"] if r.get("round", 0) > 0]
+    if not rounds:
+        pytest.skip("the routed fixture needed no repair")
+    assert len(calls) == repair.FAILS and rounds[-1].get("stopped") == "no improvement"
+    assert all(r.get("kept") is False for r in rounds)
+    assert cur.read_bytes() == before

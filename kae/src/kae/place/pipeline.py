@@ -164,7 +164,7 @@ def physics_summary(terms, poses, breakdown=True):
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
-          edge_mate=False, anneal_args=None):
+          edge_mate=False, anneal_args=None, angle_step=None):
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -200,7 +200,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["outline_incomplete"] = sorted(fp.ref for fp in staged)
         log(f"outline_incomplete: staged footprints carry Edge.Cuts ({', '.join(rep['outline_incomplete'][:8])}); "
             "held off the board, the board cannot be legal")
-    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held})
+    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held}, angle_step=angle_step)
+    if angle_step:
+        rep["angle_step"] = angle_step
     if max(P.utilization()) > 0.95:
         rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
     margin = P.auto_margin()

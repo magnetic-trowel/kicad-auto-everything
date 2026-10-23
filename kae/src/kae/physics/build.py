@@ -31,8 +31,8 @@ import numpy as np
 
 from . import priors as PR
 from .kernels import fin_params
-from .structures import (CmComp, CouplingComp, CrystalComp, EsdComp, FeedComp, LoopComp, LoopShape,
-                         NearestLoopComp, NodeShape, PlanePairLoop, Term, ThermalField)
+from .structures import (AggGroup, CmComp, CouplingComp, CrystalComp, EsdComp, FeedComp, LoopComp, LoopShape,
+                         NearestLoopComp, NodeShape, PlanePairLoop, Term, ThermalField, _Coupled)
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
 
@@ -270,6 +270,17 @@ def build_structures(terms):
             except Exception as e:  # noqa: BLE001
                 terms.warnings.append(f"{s.get('id')}: {type(e).__name__}: {e}")
     S.extend(_world_cm(ctx, specs, aggs, Struct))
+    # each aggressor's coupling targets, for batched evaluation (Terms.delta)
+    groups = {}
+    for s in S:
+        for c in s.comps:
+            if isinstance(c, _Coupled):
+                key = (id(c.al), id(c.an))
+                g = groups.get(key)
+                if g is None:
+                    g = groups[key] = AggGroup(ctx.bv, c.al, c.an)
+                g.add(c)
+    terms.groups = list(groups.values())
     _thermal(ctx, specs)
 
 

@@ -73,7 +73,7 @@ def cmd_place(a):
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     res = place(board, seed=a.seed, time_s=a.time, physics=not a.no_physics, workers=a.workers, log=_log,
-                anneal=anneal, edge_mate=a.edge_mate, anneal_args=anneal_args)
+                anneal=anneal, edge_mate=a.edge_mate, anneal_args=anneal_args, angle_step=a.angles)
     res.report["stages_run"] = sorted({"seed", "legalize"} | ({"anneal"} if anneal else set()))
     t1 = time.monotonic()
     wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
@@ -133,6 +133,9 @@ def main(argv=None):
                     help="place staged footprints that carry Edge.Cuts where their open pieces close the "
                          "outline exactly (default: hold them and flag outline_incomplete)")
     sp.add_argument("--report", help="also write the JSON report here")
+    sp.add_argument("--angles", type=float, default=None, metavar="STEP",
+                    help="let parts turn to any multiple of STEP degrees, not only right angles "
+                         "(heatsink-mount packages keep right angles; CP-SAT stays on right angles)")
     sp.add_argument("--anneal-args", help="JSON of annealer weights for experiments, e.g. '{\"w_phys\": 2.0}' "
                                           "(w_phys, w_wl, w_cong, w_order, w_disp, cong_args, ...)")
     sp.set_defaults(fn=cmd_place)

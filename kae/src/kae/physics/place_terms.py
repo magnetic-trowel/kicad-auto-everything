@@ -25,10 +25,13 @@ the E5 priors in kae.physics.priors. Terms:
 
 Routability (wirelength, congestion, escape) is not here: it lives in kae.place.cost.
 
-Incrementality: every structure is a reduction of components that depend on a few parts.
-A component's cached value is valid while the pose epochs of its parts are unchanged;
-`delta` re-reads the poses of the touched structures' members from `poses` (identity, then
-equality), so callers may mutate their pose dict freely between calls.
+Incrementality: every structure is a reduction of components that depend on a few parts;
+a coupling component is two additive sub-terms (inductive over the two loops' parts,
+capacitive over the two nodes' parts). Each sub-term's cached value is marked dirty when
+one of its parts changes pose; `delta` re-reads the poses of the touched structures'
+members from `poses` (identity, then equality), so callers may mutate their pose dict
+freely between calls. A moved aggressor part re-evaluates the affected sub-term of all of
+that aggressor's victims and cable connectors in one kernel call (structures.AggGroup).
 """
 from __future__ import annotations
 
@@ -86,6 +89,7 @@ class Terms:
         for p in bv.parts:
             self.st.set(p.i, p.x0, p.y0, p.rot0, p.side0)
         self.structs: list[Struct] = []
+        self.groups = []                  # structures.AggGroup: an aggressor's coupling targets
         self.thermal = None
         self.warnings = []
         self.kern = None
@@ -101,6 +105,8 @@ class Terms:
                     for c in s.comps:
                         if hasattr(c, 'kern'):
                             c.kern = self.kern
+                for g in self.groups:
+                    g.kern = self.kern
                 if self.thermal is not None:
                     self.thermal.kern = self.kern
         # incidence
@@ -119,10 +125,45 @@ class Terms:
                 for i in c.parts:
                     cof.setdefault(i, []).append(ci)
             s.info['_cof'] = cof
+        # sub-terms: (k, ci, si) per part; one per component unless it has `subparts`
+        self._psub = {}
+        self._nsub = []
+        where = {}
+        for k, s in enumerate(self.structs):
+            ns = []
+            for ci, c in enumerate(s.comps):
+                sp = getattr(c, 'subparts', None)
+                if sp is None:
+                    sp = (c.parts,)
+                ns.append(len(sp))
+                for si, ps in enumerate(sp):
+                    for i in ps:
+                        self._psub.setdefault(i, []).append((k, ci, si))
+                where[id(c)] = (k, ci)
+            self._nsub.append(ns)
+        self._sub = [[[0.0] * m for m in ns] for ns in self._nsub]
+        self._sd = [[[True] * m for m in ns] for ns in self._nsub]
+        self._cv = [[0.0] * len(s.comps) for s in self.structs]
+        self._sval = [0.0] * len(self.structs)
+        self._scost = [0.0] * len(self.structs)
+        self._sdirty = [True] * len(self.structs)
+        # aggressor groups: their (k, ci) per target, aggressor and target parts per sub-term
+        self._gkc = {}
+        self._gagg = {}
+        self._gtgt = {}
+        for g in self.groups:
+            self._gkc[id(g)] = [where[id(c)] for c in g.comps]
+            g.stale = [True, True]
+            g.tparts = [[set((c.tl if si == 0 else c.tn).parts) if c.subparts[si] else set() for c in g.comps]
+                        for si in (0, 1)]
+            for si in (0, 1):
+                for i in g.agg_parts(si):
+                    self._gagg.setdefault(i, []).append((g, si))
+                for i in g.target_parts(si):
+                    self._gtgt.setdefault(i, []).append((g, si))
+        self._nbr = {i: tuple(sorted(set().union(*(self.structs[k].members for k in ks)))) for i, ks in self.inc.items()}
         self._last = [None] * n
         self._epoch = [0] * n
-        self._ccache = [[None] * len(s.comps) for s in self.structs]
-        self._scache = [None] * len(self.structs)
         self._th_epochs = None
         self._th_T = None
 
@@ -144,8 +185,9 @@ class Terms:
     def total(self, poses):
         self._sync_all(poses)
         tot = 0.0
-        for k, s in enumerate(self.structs):
-            tot += self._cost(s, self._value(k))
+        for k in range(len(self.structs)):
+            self._value(k)
+            tot += self._scost[k]
         if self.thermal is not None:
             tot += self._th_cost(self._th_current())
         return tot
@@ -155,7 +197,8 @@ class Terms:
         self._sync_all(poses)
         out = {}
         for k, s in enumerate(self.structs):
-            out[s.kind] = out.get(s.kind, 0.0) + self._cost(s, self._value(k))
+            self._value(k)
+            out[s.kind] = out.get(s.kind, 0.0) + self._scost[k]
         if self.thermal is not None:
             out['thermal'] = self._th_cost(self._th_current())
         return out
@@ -182,49 +225,81 @@ class Terms:
         if not mv:
             return 0.0
         if len(mv) == 1:
-            touched = inc.get(mv[0][0], ())
+            moved = (mv[0][0],)
+            touched = inc.get(moved[0], ())
+            nbr = self._nbr.get(moved[0], ())
         else:
-            touched = set()
-            for i, _ in mv:
-                touched.update(inc.get(i, ()))
+            moved = tuple(i for i, _ in mv)
+            ts, nb = set(), set()
+            for i in moved:
+                ts.update(inc.get(i, ()))
+                nb.update(self._nbr.get(i, ()))
+            touched = sorted(ts)
+            nbr = nb
         st = self.st
         structs = self.structs
         uids = self.uids
         last = self._last
         # 1. bring the touched structures' members in step with `poses`; current values
-        cur = []
+        for j in nbr:
+            p = poses.get(uids[j])
+            if p is not None and p is not last[j]:
+                self._sync(j, poses)
+        sdirty = self._sdirty
         for k in touched:
-            for j in structs[k].members:
-                p = poses.get(uids[j])
-                if p is not None and p is not last[j]:
-                    self._sync(j, poses)
-            cur.append(self._value(k))
-        # 2. new values with the moved parts at their trial poses
-        saved = [(i, st.get(i)) for i, _ in mv]
+            if sdirty[k]:
+                self._value(k)
+        batches = []
+        if self._gagg:
+            seen = set()
+            for i in moved:
+                for g, si in self._gagg.get(i, ()):
+                    if (id(g), si) not in seen:
+                        seen.add((id(g), si))
+                        g.ensure(si, st)
+                        batches.append((g, si))
+        # 2. trial values of the sub-terms the moved parts touch
+        saved = [(i, st.get(i)) for i in moved]
         for i, p in mv:
             st.set(i, *p)
+        new = {}
+        for g, si in batches:
+            out = g.batch(si, st)
+            kc = self._gkc[id(g)]
+            tp = g.tparts[si]
+            for t, c in enumerate(g.comps):
+                if c.subparts[si] and not any(i in tp[t] for i in moved):
+                    k, ci = kc[t]
+                    new[(k, ci, si)] = float(out[t])
+        nsub = self._nsub
+        for i in moved:
+            for key in self._psub.get(i, ()):
+                if key not in new:
+                    k, ci, si = key
+                    c = structs[k].comps[ci]
+                    new[key] = c.value_sub(st, si) if nsub[k][ci] > 1 else c.value(st)
+        for i, p in saved:
+            st.set(i, *p)
+        # 3. changed structures only
+        sub = self._sub
+        chg = {}
+        for (k, ci, si), v in new.items():
+            if v != sub[k][ci][si]:
+                chg.setdefault(k, {}).setdefault(ci, {})[si] = v
         d = 0.0
-        for idx, k in enumerate(touched):
+        for k, cs in chg.items():
             s = structs[k]
-            cof = s.info['_cof']
-            cache = self._ccache[k]
-            if len(s.comps) == 1:
-                new = _red(s.reduce, [s.comps[0].value(st)], s.info.get('weights'))
-            else:
-                vals = [c[0] for c in cache]
-                for i, _ in mv:
-                    for ci in cof.get(i, ()):
-                        vals[ci] = None
-                for ci, v in enumerate(vals):
-                    if v is None:
-                        vals[ci] = s.comps[ci].value(st)
-                new = _red(s.reduce, vals, s.info.get('weights'))
-            dk = self._cost(s, new) - self._cost(s, cur[idx])
+            vals = list(self._cv[k])
+            for ci, sv in cs.items():
+                old = sub[k][ci]
+                if len(old) == 1:
+                    vals[ci] = sv[0]
+                else:
+                    vals[ci] = sv.get(0, old[0]) + sv.get(1, old[1])
+            dk = self._cost(s, _red(s.reduce, vals, s.info.get('weights'))) - self._scost[k]
             d += dk
             if per_kind is not None:
                 per_kind[s.kind] = per_kind.get(s.kind, 0.0) + dk
-        for i, p in saved:
-            st.set(i, *p)
         if self.thermal is not None:
             for i, _ in mv:
                 if i in self.th_parts:
@@ -241,7 +316,7 @@ class Terms:
         for k, s in enumerate(self.structs):
             v = self._value(k)
             u = v / s.alloc.value if s.alloc.value > 0 else 0.0
-            comps = [dict(label=lab, value=round(c[0], 6)) for lab, c in zip(s.labels, self._ccache[k])]
+            comps = [dict(label=lab, value=round(c, 6)) for lab, c in zip(s.labels, self._cv[k])]
             out.append(dict(id=s.id, kind=s.kind, confidence=s.conf,
                             members=[self.bv.parts[i].ref for i in s.members],
                             uuids=[self.uids[i] for i in s.members],
@@ -279,29 +354,65 @@ class Terms:
         self._last[j] = p
         self.st.set(j, *p)
         self._epoch[j] += 1
+        sd = self._sd
+        sdirty = self._sdirty
+        for k, ci, si in self._psub.get(j, ()):
+            sd[k][ci][si] = True
+            sdirty[k] = True
+        for g, si in self._gagg.get(j, ()):
+            g.stale[si] = True
+        for g, si in self._gtgt.get(j, ()):
+            g.invalidate(si)
 
     def _sync_all(self, poses):
         for j in set(self.inc) | self.th_parts:
             self._sync(j, poses)
 
+    def _refresh_group(self, g, si):
+        """Sub-term si of all of g's targets at the synced poses, in one kernel call."""
+        g.ensure(si, self.st)
+        out = g.batch(si, self.st)
+        sub = self._sub
+        sd = self._sd
+        for (k, ci), c, v in zip(self._gkc[id(g)], g.comps, out):
+            if c.subparts[si] and sd[k][ci][si]:
+                sub[k][ci][si] = float(v)
+                sd[k][ci][si] = False
+                self._sdirty[k] = True
+                self._cv[k][ci] = sub[k][ci][0] + sub[k][ci][1]
+        g.stale[si] = False
+
     def _value(self, k):
+        if not self._sdirty[k]:
+            return self._sval[k]
         s = self.structs[k]
-        ep = self._epoch
-        e = tuple([ep[i] for i in s.members])
-        sc = self._scache[k]
-        if sc is not None and sc[0] == e:
-            return sc[1]
-        cache = self._ccache[k]
-        vals = []
+        st = self.st
+        subk = self._sub[k]
+        sdk = self._sd[k]
+        cv = self._cv[k]
         for ci, c in enumerate(s.comps):
-            ce = tuple([ep[i] for i in c.parts])
-            cc = cache[ci]
-            if cc is None or cc[1] != ce:
-                cc = (c.value(self.st), ce)
-                cache[ci] = cc
-            vals.append(cc[0])
-        v = _red(s.reduce, vals, s.info.get('weights'))
-        self._scache[k] = (e, v)
+            d = sdk[ci]
+            if len(d) == 1:
+                if d[0]:
+                    v = c.value(st)
+                    subk[ci][0] = v
+                    cv[ci] = v
+                    d[0] = False
+                continue
+            if d[0] or d[1]:
+                for si in (0, 1):
+                    if d[si]:
+                        g = c.group
+                        if g is not None and g.stale[si]:
+                            self._refresh_group(g, si)
+                        if d[si]:
+                            subk[ci][si] = c.value_sub(st, si)
+                            d[si] = False
+                cv[ci] = subk[ci][0] + subk[ci][1]
+        v = _red(s.reduce, cv, s.info.get('weights'))
+        self._sval[k] = v
+        self._scost[k] = self._cost(s, v)
+        self._sdirty[k] = False
         return v
 
     # thermal ---------------------------------------------------------------
