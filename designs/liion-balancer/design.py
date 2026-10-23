@@ -198,6 +198,8 @@ def domains_and_nets(d):
                              notes=f"cell {k} + after F1{kk(k)}")
         n[f"S_{k}"] = d.net(f"S_{k}", domain=f"C{k}", v=V_CELL, kind="signal",
                             notes=f"ADBMS1818 S{k} -> LT8584 DIN (low = enable)")
+        d.domain(f"SW{k}", ref=f"TAP{k - 1}", kind="battery",
+                 description=f"channel {k} switch and clamp nodes (SW_{k}, SNB_{k}): up to 38.5 V above TAP{k - 1}")
     for t in TAPS:
         dom = "BAT0" if t == 0 else f"C{t}"
         n[f"TAP{t}_IN"] = d.net(
@@ -264,8 +266,7 @@ def barriers(d):
         d.barrier(a, b, grade="functional", v_work=8.4, creepage_mm=0.2, clearance_mm=0.2,
                   standard=f"{ipc} B2 0-15 V: 0.1 mm [S]", pollution_degree=2,
                   source="DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used",
-                  notes="SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom "
-                        "relation 'spacing'); the LT8584 pins themselves are ADI's pitch")
+                  notes="SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)")
     # B-2: two or more positions apart (up to 67 V). Each barrier covers seq[i] vs everything that
     # floats on seq[i+2] (inherited), so this chain covers every non-adjacent pair.
     for a, b in zip(seq, seq[2:]):
@@ -274,6 +275,13 @@ def barriers(d):
                   pollution_degree=2,
                   source="DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. "
                          "1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins")
+    # B-1a: the LT8584 switch and clamp nodes reach 38.5 V above their own cell's bottom, so they
+    # keep the 31-50 V class to the taps on both sides (their own pads are exempt as a bridging part).
+    for k in CH:
+        for other in (seq[k - 1], f"C{k}"):
+            d.barrier(f"SW{k}", other, grade="functional", v_work=38.5, creepage_mm=0.6, clearance_mm=0.6,
+                      standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
+                      source="DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)")
     # B-2 / B-3: return bus and controller vs every cell. RET carries the T1kk secondaries: the
     # transformer primary/secondary interface is this functional barrier (T1kk Isolation 1500 Vrms).
     d.barrier("RET", "C1", grade="functional", v_work=V_STACK + 38.5, creepage_mm=0.6, clearance_mm=0.6,
@@ -363,9 +371,9 @@ def channel_block(d, n, k):
     r2 = b.add(P.R_33K, ref=f"R2{x}")
     r4 = b.add(P.R_10K, ref=f"R4{x}")
     opto = b.add(P.TLP293, ref=f"U2{x}")
-    sw = b.net(f"SW_{k}", v=V_SW, kind="switching", i_max=3.2, i_peak=6.8,
+    sw = b.net(f"SW_{k}", domain=f"SW{k}", v=V_SW, kind="switching", i_max=3.2, i_peak=6.8,
                notes="primary switch node: 21.4 V flat top, 38.5 V clamped spike (C-5)")
-    snb = b.net(f"SNB_{k}", v=(0, 38.5), kind="switching", i_max=0.05, i_peak=6.8,
+    snb = b.net(f"SNB_{k}", domain=f"SW{k}", v=(0, 38.5), kind="switching", i_max=0.05, i_peak=6.8,
                 notes="RCD clamp node, TAPk + 15..34 V")
     out = b.net(f"OUT_{k}", v=V_CELL, kind="analog", notes="LT8584 OUT, needs 47 nF")
     dch = b.net(f"DCH_{k}", v=V_CELL, kind="signal", notes="DCHRG: high (opto on) = enable")
@@ -942,9 +950,6 @@ def placement(d, n, tp, chs, ret, afe, psu, mcu, en, iso, holes):
         pl.thermal(t, 0.5, "air")
         pl.custom("island", net=n[f"TAP{k - 1}"], layers="In1.Cu", under=c["blk"],
                   note="per-channel reference plane at the channel's own potential")
-        pl.custom("spacing", nets=[c["sw"], f"ch{k}/SNB_{k}"], min_mm=0.6,
-                  note="SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the "
-                       "U1kk/T1kk/D2kk pads themselves")
         pl.keepout(t, what="foreign-domain copper in the primary-secondary pad gap", layers="all")
     pl.custom("corridor", nets=[n[f"TAP{t}"] for t in range(0, 9)] + [n[f"S_{k}"] for k in range(1, 9)],
               edge="south", layer="In2.Cu", ordered="by index",
@@ -1017,19 +1022,10 @@ def waivers(d):
       "Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI "
       "pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is "
       "checked in T-EFF (calc xfmr_ipk_ratio <= 1.0).")
-    W("rating.voltage", r"^(D3\d\d \(SMA6T6V7AY|D2 \(SMBJ70A|U7 \(TPD4E05U06)",
-      "TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating "
-      "(leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it "
-      "protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V).")
-    W("rating.voltage", r"^(U2 \(STM32G031K8T6\)|U5 \(ISO7721DWV\)|U1 \(ADBMS1818ASWZ\)|U3 \(LM5164\)): "
-      r"V\((VDD|PA0|VCC2|OUTB|VREG|IPB|BST)",
-      "IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; "
-      "ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V "
-      "VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply.")
-    W("protect.threat", r"TAP\d+_IN declares threat 'reverse_polarity'",
-      "Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts "
-      "forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A "
-      "per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories.")
+    W("rating.voltage", r"^U3 \(LM5164\): V\(BST-SW\)",
+      "BST-SW is charged by the LM5164's internal 5 V VCC regulator through its internal boot diode (SNVSAU4D "
+      "6.3.2); the design cannot change it and TI gives no separate recommended maximum. The required 2.2 nF 50 V "
+      "X7R BST capacitor is fitted (C10).")
     W("protect.entry_fuse", r"VIO_ISO",
       "VIO_ISO is the host's logic supply into U5 side 2 only (<= 4 mA, ISO7721 SLLSEP3G); the host port limits "
       "it. A fuse would not open at these currents.")
@@ -1037,9 +1033,6 @@ def waivers(d):
       "The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B "
       "(U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so "
       "the MCU can remove isolator power when no host is present). Neither is a driver conflict.")
-    W("conn.empty_net", r"CHASSIS",
-      "Chassis has no copper on the board by design; the net exists so the BAT0-CHASSIS barrier (B-5) reaches "
-      "intent.yaml and the .kicad_dru.")
 
 
 def build():

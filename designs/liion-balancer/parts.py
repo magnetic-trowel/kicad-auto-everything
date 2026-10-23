@@ -216,9 +216,9 @@ _ADBMS_PINS += [
 _adbms_limits = [VLimit(("V+",), ("V-",), 112.5, "V+ to V- 112.5 V"),
                  VLimit(("V+",), ("C12",), 50, "V+ to C12 50 V"),
                  VLimit(("C0",), ("V-",), 6, "C0 -0.3..6 V"),
-                 VLimit(("IPB", "IMB"), ("V-",), 6, "-0.3 V..VREG + 0.3 V, <= 6 V"),
+                 VLimit(("IPB", "IMB"), ("V-",), 6, "-0.3 V..VREG + 0.3 V, <= 6 V; operate within VREG", v_rec=5.5),
                  VLimit(("DRIVE",), ("V-",), 7, "DRIVE -0.3..7 V"),
-                 VLimit(("VREG",), ("V-",), 6, "VREG -0.3..6 V (all other pins)"),
+                 VLimit(("VREG",), ("V-",), 6, "VREG -0.3..6 V; recommended 4.5-5.5 V", v_rec=5.5),
                  VLimit(("VREF1", "VREF2", "GPIO1", "GPIO2", "GPIO3", "GPIO4", "GPIO5", "GPIO6", "GPIO7",
                          "GPIO8", "GPIO9", "DTEN", "SDI", "SDO", "ISOMD", "WDT", "IBIAS", "ICMP", "CSB", "SCK"),
                         ("V-",), 6, "all other pins -0.3..6 V")]
@@ -241,7 +241,7 @@ ADBMS1818 = IC(
             "ratings": "ADBMS1818 Rev A p.11 Table 11 Absolute Maximum Ratings: V+ to V- 112.5 V; V+ to C12 50 V; "
                        "C0 -0.3..6 V; C(n), S(n) -0.3..MIN(8n, 112.5) V; IPx/IMx -0.3..VREG+0.3 <= 6 V; DRIVE "
                        "7 V; others 6 V; C(n)-C(n-1), S(n)-C(n-1) -0.3..8 V; C18-C15 ... C3-C0 21 V; specified "
-                       "TJ -40..85 C",
+                       "TJ -40..85 C. Recommended: VREG 4.5-5.5 V (Rev A p.6 Table 3); IPx/IMx stay within VREG",
             "lifecycle": "Digi-Key ADBMS1818ASWZ Active, 52-week lead time (Oct 2026)"})
 
 R_100_0805 = R("100", "0805", mpn="RC0805FR-07100RL", manufacturer="Yageo", datasheet=YAGEO_RC,
@@ -386,14 +386,16 @@ STM32G031 = PartDef(
     footprint="Package_QFP:LQFP-32_7x7mm_P0.8mm", value="STM32G031K8T6", category="ic",
     description="Arm Cortex-M0+ MCU 64 KB flash, 8 KB RAM, LQFP-32, -40..85 C",
     datasheet="https://www.st.com/resource/en/datasheet/stm32g031c6.pdf",
-    ratings=Ratings(limits=[VLimit(("VDD",), ("VSS",), 4.0, "VDD-VSS -0.3..4.0 V"),
+    ratings=Ratings(limits=[VLimit(("VDD",), ("VSS",), 4.0, "VDD-VSS -0.3..4.0 V; operating 1.7-3.6 V", v_rec=3.6),
                             VLimit(("PA0", "PA1", "PA2", "PA3", "PA4", "PA5", "PA6", "PA7", "PA8", "PA13", "PA14",
                                     "PB0", "PB1", "PB2", "PB8", "PB9", "PF2"), ("VSS",), 4.0,
-                                   "4.0 V for non-FT pins; FT_xx pins allow VDD+4.0 - the lower bound is used")],
+                                   "4.0 V for non-FT pins; FT_xx pins allow VDD+4.0 - the lower bound is used; "
+                                   "driven at the VDD rail (<= 3.6 V operating)", v_rec=3.6)],
                     t_min=-40, t_max=85),
     lifecycle="active", second_source="STM32G031K6T6 (32 KB, same pinout)",
     source={"ratings": "ST DS12992 Rev 1 p.44 Table 18 Voltage characteristics: VDD-VSS -0.3..4.0 V; FT_xx "
-                       "VSS-0.3..VDD+4.0; other pins VSS-0.3..4.0 V; 'T6' suffix -40..85 C",
+                       "VSS-0.3..VDD+4.0; other pins VSS-0.3..4.0 V; p.45 Table 21 general operating conditions: "
+                       "VDD 1.7-3.6 V, VIN -0.3..min(VDD+3.6, 5.5) V; 'T6' suffix -40..85 C",
             "pins": "DS12992 p.32 Figure 5 (LQFP32 pinout), Table 13 alternate functions (PA2/PA3 USART2 AF1, "
                     "PA5/6/7 SPI1 AF0), Table 12 (PA0 = ADC_IN0); KiCad symbol pins 19/21 are NC on G031",
             "lifecycle": "LCSC C432203 Active [S]"})
@@ -450,10 +452,10 @@ ISO7721 = PartDef(
     description="Reinforced dual digital isolator (1 forward / 1 reverse), 5000 Vrms, 8.5 mm creepage, SOIC-8 DWV",
     datasheet="https://www.ti.com/lit/ds/symlink/iso7721.pdf",
     ratings=Ratings(
-        limits=[VLimit(("VCC1",), ("GND1",), 6, "supply -0.5..6 V"),
-                VLimit(("VCC2",), ("GND2",), 6, "supply -0.5..6 V"),
-                VLimit(("OUTA", "INB"), ("GND1",), 6, "-0.5..VCC1+0.5 (<= 6 V)"),
-                VLimit(("OUTB", "INA"), ("GND2",), 6, "-0.5..VCC2+0.5 (<= 6 V)")],
+        limits=[VLimit(("VCC1",), ("GND1",), 6, "supply -0.5..6 V; recommended 2.25-5.5 V", v_rec=5.5),
+                VLimit(("VCC2",), ("GND2",), 6, "supply -0.5..6 V; recommended 2.25-5.5 V", v_rec=5.5),
+                VLimit(("OUTA", "INB"), ("GND1",), 6, "-0.5..VCC1+0.5 (<= 6 V); VIH max = VCCI", v_rec=5.5),
+                VLimit(("OUTB", "INA"), ("GND2",), 6, "-0.5..VCC2+0.5 (<= 6 V); VIH max = VCCI", v_rec=5.5)],
         pin_i_max={"OUTA": 0.015, "OUTB": 0.015},
         isolation=[Isolation(("VCC1", "OUTA", "INB", "GND1"), ("GND2", "OUTB", "INA", "VCC2"), v_iso_rms=5000,
                              grade="reinforced", v_work_rms=1500, creepage_mm=8.5,
@@ -461,7 +463,8 @@ ISO7721 = PartDef(
                                       "IEC 62368-1")],
         t_min=-40, t_max=125),
     lifecycle="active", second_source="ADuM1201BRWZ (narrower ratings) [unverified]",
-    source={"ratings": "TI SLLSEP3G (May 2024) p.7 section 6.1 abs max (VCC 6 V, IO +/-15 mA); p.10 section 6.6 "
+    source={"ratings": "TI SLLSEP3G (May 2024) p.7 section 6.1 abs max (VCC 6 V, IO +/-15 mA); p.8 section 6.3 "
+                       "recommended VCC1/VCC2 2.25-5.5 V, VIH <= VCCI; p.10 section 6.6 "
                        "DWV: CLR/CPG 8.5 mm, VIORM 2121 Vpk, VIOWM 1500 Vrms, VIOTM 7071 Vpk, VISO 5000 Vrms, "
                        "CTI > 600 V, reinforced",
             "pins": "SLLSEP3G p.6 Table 5-1 (D/DWV): 1 VCC1, 2 OUTA, 3 INB, 4 GND1, 5 GND2, 6 OUTB, 7 INA, 8 VCC2 "
@@ -479,9 +482,12 @@ AQY210EH = PartDef(
         limits=[VLimit(("LED_A",), ("LED_K",), 3, "LED reverse voltage VR 3 V"),
                 VLimit(("OUT1",), ("OUT2",), 350, "load voltage 350 V peak AC/DC")],
         pin_i_max={"LED_A": 0.05, "OUT1": 0.13, "OUT2": 0.13},
+        # creepage_mm: the PCB gap between the pad rows of Package_DIP:SMDIP-4_W7.62mm (pads at +/-3.81 mm,
+        # 2.0 mm long) [I]; Panasonic states no package creepage. The board barrier needs 5.0 mm.
         isolation=[Isolation(("LED_A", "LED_K"), ("OUT1", "OUT2"), v_iso_rms=5000, grade="reinforced",
+                             creepage_mm=5.6,
                              standard="Panasonic: 'reinforced insulation 5,000 V type', EN 41003 / EN 60950 "
-                                      "reinforced; package creepage not stated (footprint pad gap 5.6 mm)")],
+                                      "reinforced; creepage = SMDIP-4 pad gap 5.6 mm [I]")],
         t_min=-40, t_max=85),
     lifecycle="active", second_source="Panasonic AQY214EHAX (400 V 120 mA, same package)",
     source={"pin_names": "Panasonic AQY21xEH catalog p.1 schematic/terminal diagram: 1 LED anode, 2 LED cathode, "

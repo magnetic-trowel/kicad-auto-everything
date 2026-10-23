@@ -19008,7 +19008,7 @@
   },
   {
    "name": "/ch1/SW_1",
-   "domain": "C1",
+   "domain": "SW1",
    "boards": [
     "main"
    ],
@@ -19052,7 +19052,7 @@
   },
   {
    "name": "/ch1/SNB_1",
-   "domain": "C1",
+   "domain": "SW1",
    "boards": [
     "main"
    ],
@@ -19180,7 +19180,7 @@
   },
   {
    "name": "/ch2/SW_2",
-   "domain": "C2",
+   "domain": "SW2",
    "boards": [
     "main"
    ],
@@ -19224,7 +19224,7 @@
   },
   {
    "name": "/ch2/SNB_2",
-   "domain": "C2",
+   "domain": "SW2",
    "boards": [
     "main"
    ],
@@ -19352,7 +19352,7 @@
   },
   {
    "name": "/ch3/SW_3",
-   "domain": "C3",
+   "domain": "SW3",
    "boards": [
     "main"
    ],
@@ -19396,7 +19396,7 @@
   },
   {
    "name": "/ch3/SNB_3",
-   "domain": "C3",
+   "domain": "SW3",
    "boards": [
     "main"
    ],
@@ -19524,7 +19524,7 @@
   },
   {
    "name": "/ch4/SW_4",
-   "domain": "C4",
+   "domain": "SW4",
    "boards": [
     "main"
    ],
@@ -19568,7 +19568,7 @@
   },
   {
    "name": "/ch4/SNB_4",
-   "domain": "C4",
+   "domain": "SW4",
    "boards": [
     "main"
    ],
@@ -19696,7 +19696,7 @@
   },
   {
    "name": "/ch5/SW_5",
-   "domain": "C5",
+   "domain": "SW5",
    "boards": [
     "main"
    ],
@@ -19740,7 +19740,7 @@
   },
   {
    "name": "/ch5/SNB_5",
-   "domain": "C5",
+   "domain": "SW5",
    "boards": [
     "main"
    ],
@@ -19868,7 +19868,7 @@
   },
   {
    "name": "/ch6/SW_6",
-   "domain": "C6",
+   "domain": "SW6",
    "boards": [
     "main"
    ],
@@ -19912,7 +19912,7 @@
   },
   {
    "name": "/ch6/SNB_6",
-   "domain": "C6",
+   "domain": "SW6",
    "boards": [
     "main"
    ],
@@ -20040,7 +20040,7 @@
   },
   {
    "name": "/ch7/SW_7",
-   "domain": "C7",
+   "domain": "SW7",
    "boards": [
     "main"
    ],
@@ -20084,7 +20084,7 @@
   },
   {
    "name": "/ch7/SNB_7",
-   "domain": "C7",
+   "domain": "SW7",
    "boards": [
     "main"
    ],
@@ -20212,7 +20212,7 @@
   },
   {
    "name": "/ch8/SW_8",
-   "domain": "C8",
+   "domain": "SW8",
    "boards": [
     "main"
    ],
@@ -20256,7 +20256,7 @@
   },
   {
    "name": "/ch8/SNB_8",
-   "domain": "C8",
+   "domain": "SW8",
    "boards": [
     "main"
    ],
@@ -20384,7 +20384,7 @@
   },
   {
    "name": "/ch9/SW_9",
-   "domain": "C9",
+   "domain": "SW9",
    "boards": [
     "main"
    ],
@@ -20428,7 +20428,7 @@
   },
   {
    "name": "/ch9/SNB_9",
-   "domain": "C9",
+   "domain": "SW9",
    "boards": [
     "main"
    ],
@@ -20556,7 +20556,7 @@
   },
   {
    "name": "/ch10/SW_10",
-   "domain": "C10",
+   "domain": "SW10",
    "boards": [
     "main"
    ],
@@ -20600,7 +20600,7 @@
   },
   {
    "name": "/ch10/SNB_10",
-   "domain": "C10",
+   "domain": "SW10",
    "boards": [
     "main"
    ],
@@ -20728,7 +20728,7 @@
   },
   {
    "name": "/ch11/SW_11",
-   "domain": "C11",
+   "domain": "SW11",
    "boards": [
     "main"
    ],
@@ -20772,7 +20772,7 @@
   },
   {
    "name": "/ch11/SNB_11",
-   "domain": "C11",
+   "domain": "SW11",
    "boards": [
     "main"
    ],
@@ -20900,7 +20900,7 @@
   },
   {
    "name": "/ch12/SW_12",
-   "domain": "C12",
+   "domain": "SW12",
    "boards": [
     "main"
    ],
@@ -20944,7 +20944,7 @@
   },
   {
    "name": "/ch12/SNB_12",
-   "domain": "C12",
+   "domain": "SW12",
    "boards": [
     "main"
    ],
@@ -21072,7 +21072,7 @@
   },
   {
    "name": "/ch13/SW_13",
-   "domain": "C13",
+   "domain": "SW13",
    "boards": [
     "main"
    ],
@@ -21116,7 +21116,7 @@
   },
   {
    "name": "/ch13/SNB_13",
-   "domain": "C13",
+   "domain": "SW13",
    "boards": [
     "main"
    ],
@@ -21244,7 +21244,7 @@
   },
   {
    "name": "/ch14/SW_14",
-   "domain": "C14",
+   "domain": "SW14",
    "boards": [
     "main"
    ],
@@ -21288,7 +21288,7 @@
   },
   {
    "name": "/ch14/SNB_14",
-   "domain": "C14",
+   "domain": "SW14",
    "boards": [
     "main"
    ],
@@ -21416,7 +21416,7 @@
   },
   {
    "name": "/ch15/SW_15",
-   "domain": "C15",
+   "domain": "SW15",
    "boards": [
     "main"
    ],
@@ -21460,7 +21460,7 @@
   },
   {
    "name": "/ch15/SNB_15",
-   "domain": "C15",
+   "domain": "SW15",
    "boards": [
     "main"
    ],
@@ -21588,7 +21588,7 @@
   },
   {
    "name": "/ch16/SW_16",
-   "domain": "C16",
+   "domain": "SW16",
    "boards": [
     "main"
    ],
@@ -21632,7 +21632,7 @@
   },
   {
    "name": "/ch16/SNB_16",
-   "domain": "C16",
+   "domain": "SW16",
    "boards": [
     "main"
    ],

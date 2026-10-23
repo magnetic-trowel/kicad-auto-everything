@@ -4,7 +4,7 @@
   "error": 0,
   "warning": 0,
   "info": 4,
-  "waived": 31,
+  "waived": 25,
   "blocking_questions": [
    "Q-1",
    "Q-2",
@@ -16,65 +16,11 @@
   {
    "check": "rating.voltage",
    "severity": "warning",
-   "message": "U1 (ADBMS1818ASWZ): V(IPB/IMB-V-) 5.15 vs rating 6 (86%) (afe/IPB to GND_B) \u2014 above 80% derating",
-   "objects": [
-    "U1"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "U1 (ADBMS1818ASWZ): V(VREG-V-) 5.15 vs rating 6 (86%) (5V_SYS to GND_B) \u2014 above 80% derating",
-   "objects": [
-    "U1"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
    "message": "U3 (LM5164): V(BST-SW) 5 vs rating 5.5 (91%) (psu/BUCK_BST to psu/BUCK_SW) \u2014 above 80% derating",
    "objects": [
     "U3"
    ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "U2 (STM32G031K8T6): V(VDD-VSS) 3.37 vs rating 4 (84%) (+3V3 to GND_B) \u2014 above 80% derating",
-   "objects": [
-    "U2"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "U2 (STM32G031K8T6): V(PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7/PA8/PA13/PA14/PB0/PB1/PB2/PB8/PB9/PF2-VSS) 3.37 vs rating 4 (84%) (BAL_EN to GND_B) \u2014 above 80% derating",
-   "objects": [
-    "U2"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "U5 (ISO7721DWV): V(VCC2-GND2) 5.5 vs rating 6 (92%) (iso/VIO_ISO to GND_ISO) \u2014 above 80% derating",
-   "objects": [
-    "U5"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
-  },
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "U5 (ISO7721DWV): V(OUTB/INA-GND2) 5.5 vs rating 6 (92%) (iso/ISO_OUTB to GND_ISO) \u2014 above 80% derating",
-   "objects": [
-    "U5"
-   ],
-   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+   "waived_by": "designer: BST-SW is charged by the LM5164's internal 5 V VCC regulator through its internal boot diode (SNVSAU4D 6.3.2); the design cannot change it and TI gives no separate recommended maximum. The required 2.2 nF 50 V X7R BST capacitor is fitted (C10)."
   },
   {
    "check": "rating.current",

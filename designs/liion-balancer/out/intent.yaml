@@ -117,81 +117,161 @@ domains:
     ref: TAP0
     earthed: false
     description: "cell 1: floats on TAP0; TAP1 is 0-4.2 V above it"
+  - name: SW1
+    kind: battery
+    ref: TAP0
+    earthed: false
+    description: "channel 1 switch and clamp nodes (SW_1, SNB_1): up to 38.5 V above TAP0"
   - name: C2
     kind: battery
     ref: TAP1
     earthed: false
     description: "cell 2: floats on TAP1; TAP2 is 0-4.2 V above it"
+  - name: SW2
+    kind: battery
+    ref: TAP1
+    earthed: false
+    description: "channel 2 switch and clamp nodes (SW_2, SNB_2): up to 38.5 V above TAP1"
   - name: C3
     kind: battery
     ref: TAP2
     earthed: false
     description: "cell 3: floats on TAP2; TAP3 is 0-4.2 V above it"
+  - name: SW3
+    kind: battery
+    ref: TAP2
+    earthed: false
+    description: "channel 3 switch and clamp nodes (SW_3, SNB_3): up to 38.5 V above TAP2"
   - name: C4
     kind: battery
     ref: TAP3
     earthed: false
     description: "cell 4: floats on TAP3; TAP4 is 0-4.2 V above it"
+  - name: SW4
+    kind: battery
+    ref: TAP3
+    earthed: false
+    description: "channel 4 switch and clamp nodes (SW_4, SNB_4): up to 38.5 V above TAP3"
   - name: C5
     kind: battery
     ref: TAP4
     earthed: false
     description: "cell 5: floats on TAP4; TAP5 is 0-4.2 V above it"
+  - name: SW5
+    kind: battery
+    ref: TAP4
+    earthed: false
+    description: "channel 5 switch and clamp nodes (SW_5, SNB_5): up to 38.5 V above TAP4"
   - name: C6
     kind: battery
     ref: TAP5
     earthed: false
     description: "cell 6: floats on TAP5; TAP6 is 0-4.2 V above it"
+  - name: SW6
+    kind: battery
+    ref: TAP5
+    earthed: false
+    description: "channel 6 switch and clamp nodes (SW_6, SNB_6): up to 38.5 V above TAP5"
   - name: C7
     kind: battery
     ref: TAP6
     earthed: false
     description: "cell 7: floats on TAP6; TAP7 is 0-4.2 V above it"
+  - name: SW7
+    kind: battery
+    ref: TAP6
+    earthed: false
+    description: "channel 7 switch and clamp nodes (SW_7, SNB_7): up to 38.5 V above TAP6"
   - name: C8
     kind: battery
     ref: TAP7
     earthed: false
     description: "cell 8: floats on TAP7; TAP8 is 0-4.2 V above it"
+  - name: SW8
+    kind: battery
+    ref: TAP7
+    earthed: false
+    description: "channel 8 switch and clamp nodes (SW_8, SNB_8): up to 38.5 V above TAP7"
   - name: C9
     kind: battery
     ref: TAP8
     earthed: false
     description: "cell 9: floats on TAP8; TAP9 is 0-4.2 V above it"
+  - name: SW9
+    kind: battery
+    ref: TAP8
+    earthed: false
+    description: "channel 9 switch and clamp nodes (SW_9, SNB_9): up to 38.5 V above TAP8"
   - name: C10
     kind: battery
     ref: TAP9
     earthed: false
     description: "cell 10: floats on TAP9; TAP10 is 0-4.2 V above it"
+  - name: SW10
+    kind: battery
+    ref: TAP9
+    earthed: false
+    description: "channel 10 switch and clamp nodes (SW_10, SNB_10): up to 38.5 V above TAP9"
   - name: C11
     kind: battery
     ref: TAP10
     earthed: false
     description: "cell 11: floats on TAP10; TAP11 is 0-4.2 V above it"
+  - name: SW11
+    kind: battery
+    ref: TAP10
+    earthed: false
+    description: "channel 11 switch and clamp nodes (SW_11, SNB_11): up to 38.5 V above TAP10"
   - name: C12
     kind: battery
     ref: TAP11
     earthed: false
     description: "cell 12: floats on TAP11; TAP12 is 0-4.2 V above it"
+  - name: SW12
+    kind: battery
+    ref: TAP11
+    earthed: false
+    description: "channel 12 switch and clamp nodes (SW_12, SNB_12): up to 38.5 V above TAP11"
   - name: C13
     kind: battery
     ref: TAP12
     earthed: false
     description: "cell 13: floats on TAP12; TAP13 is 0-4.2 V above it"
+  - name: SW13
+    kind: battery
+    ref: TAP12
+    earthed: false
+    description: "channel 13 switch and clamp nodes (SW_13, SNB_13): up to 38.5 V above TAP12"
   - name: C14
     kind: battery
     ref: TAP13
     earthed: false
     description: "cell 14: floats on TAP13; TAP14 is 0-4.2 V above it"
+  - name: SW14
+    kind: battery
+    ref: TAP13
+    earthed: false
+    description: "channel 14 switch and clamp nodes (SW_14, SNB_14): up to 38.5 V above TAP13"
   - name: C15
     kind: battery
     ref: TAP14
     earthed: false
     description: "cell 15: floats on TAP14; TAP15 is 0-4.2 V above it"
+  - name: SW15
+    kind: battery
+    ref: TAP14
+    earthed: false
+    description: "channel 15 switch and clamp nodes (SW_15, SNB_15): up to 38.5 V above TAP14"
   - name: C16
     kind: battery
     ref: TAP15
     earthed: false
     description: "cell 16: floats on TAP15; TAP16 is 0-4.2 V above it"
+  - name: SW16
+    kind: battery
+    ref: TAP15
+    earthed: false
+    description: "channel 16 switch and clamp nodes (SW_16, SNB_16): up to 38.5 V above TAP15"
   - name: SNS1
     kind: battery
     ref: TAP1
@@ -394,7 +474,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C1
     b: C2
     grade: functional
@@ -406,7 +486,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C2
     b: C3
     grade: functional
@@ -418,7 +498,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C3
     b: C4
     grade: functional
@@ -430,7 +510,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C4
     b: C5
     grade: functional
@@ -442,7 +522,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C5
     b: C6
     grade: functional
@@ -454,7 +534,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C6
     b: C7
     grade: functional
@@ -466,7 +546,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C7
     b: C8
     grade: functional
@@ -478,7 +558,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C8
     b: C9
     grade: functional
@@ -490,7 +570,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C9
     b: C10
     grade: functional
@@ -502,7 +582,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C10
     b: C11
     grade: functional
@@ -514,7 +594,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C11
     b: C12
     grade: functional
@@ -526,7 +606,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C12
     b: C13
     grade: functional
@@ -538,7 +618,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C13
     b: C14
     grade: functional
@@ -550,7 +630,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C14
     b: C15
     grade: functional
@@ -562,7 +642,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C15
     b: C16
     grade: functional
@@ -574,7 +654,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: C16
     b: STACK
     grade: functional
@@ -586,7 +666,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
-    notes: "SW_k/SNB_k reach 38.5 V on their own cell: their copper keeps 0.6 mm (custom relation 'spacing'); the LT8584 pins themselves are ADI's pitch"
+    notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: BAT0
     b: C2
     grade: functional
@@ -763,6 +843,358 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
+  - a: SW1
+    b: BAT0
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW1
+    b: C1
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW2
+    b: C1
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW2
+    b: C2
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW3
+    b: C2
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW3
+    b: C3
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW4
+    b: C3
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW4
+    b: C4
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW5
+    b: C4
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW5
+    b: C5
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW6
+    b: C5
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW6
+    b: C6
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW7
+    b: C6
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW7
+    b: C7
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW8
+    b: C7
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW8
+    b: C8
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW9
+    b: C8
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW9
+    b: C9
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW10
+    b: C9
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW10
+    b: C10
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW11
+    b: C10
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW11
+    b: C11
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW12
+    b: C11
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW12
+    b: C12
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW13
+    b: C12
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW13
+    b: C13
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW14
+    b: C13
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW14
+    b: C14
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW15
+    b: C14
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW15
+    b: C15
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW16
+    b: C15
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+  - a: SW16
+    b: C16
+    grade: functional
+    v_work: 38.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
+    pollution_degree: 2
+    material_group: IIIb
+    slot: false
+    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
   - a: RET
     b: C1
     grade: functional
@@ -869,322 +1301,242 @@ netclasses:
     nets: ["/psu/BUCK_BST"]
   - name: C1
     domain: C1
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch1/DCH_1", "/ch1/OUT_1", "/ch1/SNB_1", S_1]
+    nets: ["/ch1/DCH_1", "/ch1/OUT_1", S_1]
   - name: C10
     domain: C10
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch10/DCH_10", "/ch10/OUT_10", "/ch10/SNB_10", S_10]
+    nets: ["/ch10/DCH_10", "/ch10/OUT_10", S_10]
   - name: C10_3A
     domain: C10
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM10", TAP10_IN]
-  - name: C10_5A
-    domain: C10
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch10/SW_10"]
   - name: C10_W1p5
     domain: C10
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP10]
   - name: C11
     domain: C11
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch11/DCH_11", "/ch11/OUT_11", "/ch11/SNB_11", S_11]
+    nets: ["/ch11/DCH_11", "/ch11/OUT_11", S_11]
   - name: C11_3A
     domain: C11
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM11", TAP11_IN]
-  - name: C11_5A
-    domain: C11
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch11/SW_11"]
   - name: C11_W1p5
     domain: C11
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP11]
   - name: C12
     domain: C12
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch12/DCH_12", "/ch12/OUT_12", "/ch12/SNB_12", S_12]
+    nets: ["/ch12/DCH_12", "/ch12/OUT_12", S_12]
   - name: C12_3A
     domain: C12
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM12", TAP12_IN]
-  - name: C12_5A
-    domain: C12
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch12/SW_12"]
   - name: C12_W1p5
     domain: C12
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP12]
   - name: C13
     domain: C13
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch13/DCH_13", "/ch13/OUT_13", "/ch13/SNB_13", S_13]
+    nets: ["/ch13/DCH_13", "/ch13/OUT_13", S_13]
   - name: C13_3A
     domain: C13
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM13", TAP13_IN]
-  - name: C13_5A
-    domain: C13
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch13/SW_13"]
   - name: C13_W1p5
     domain: C13
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP13]
   - name: C14
     domain: C14
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch14/DCH_14", "/ch14/OUT_14", "/ch14/SNB_14", S_14]
+    nets: ["/ch14/DCH_14", "/ch14/OUT_14", S_14]
   - name: C14_3A
     domain: C14
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM14", TAP14_IN]
-  - name: C14_5A
-    domain: C14
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch14/SW_14"]
   - name: C14_W1p5
     domain: C14
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP14]
   - name: C15
     domain: C15
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch15/DCH_15", "/ch15/OUT_15", "/ch15/SNB_15", S_15]
+    nets: ["/ch15/DCH_15", "/ch15/OUT_15", S_15]
   - name: C15_3A
     domain: C15
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM15", TAP15_IN]
-  - name: C15_5A
-    domain: C15
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch15/SW_15"]
   - name: C15_W1p5
     domain: C15
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP15]
   - name: C16
     domain: C16
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch16/DCH_16", "/ch16/OUT_16", "/ch16/SNB_16", S_16]
+    nets: ["/ch16/DCH_16", "/ch16/OUT_16", S_16]
   - name: C16_3A
     domain: C16
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM16", TAP16_IN]
-  - name: C16_5A
-    domain: C16
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch16/SW_16"]
   - name: C16_W1p5
     domain: C16
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP16]
   - name: C1_3A
     domain: C1
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM1", TAP1_IN]
-  - name: C1_5A
-    domain: C1
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch1/SW_1"]
   - name: C1_W1p5
     domain: C1
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP1]
   - name: C2
     domain: C2
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch2/DCH_2", "/ch2/OUT_2", "/ch2/SNB_2", S_2]
+    nets: ["/ch2/DCH_2", "/ch2/OUT_2", S_2]
   - name: C2_3A
     domain: C2
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM2", TAP2_IN]
-  - name: C2_5A
-    domain: C2
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch2/SW_2"]
   - name: C2_W1p5
     domain: C2
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP2]
   - name: C3
     domain: C3
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch3/DCH_3", "/ch3/OUT_3", "/ch3/SNB_3", S_3]
+    nets: ["/ch3/DCH_3", "/ch3/OUT_3", S_3]
   - name: C3_3A
     domain: C3
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM3", TAP3_IN]
-  - name: C3_5A
-    domain: C3
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch3/SW_3"]
   - name: C3_W1p5
     domain: C3
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP3]
   - name: C4
     domain: C4
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch4/DCH_4", "/ch4/OUT_4", "/ch4/SNB_4", S_4]
+    nets: ["/ch4/DCH_4", "/ch4/OUT_4", S_4]
   - name: C4_3A
     domain: C4
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM4", TAP4_IN]
-  - name: C4_5A
-    domain: C4
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch4/SW_4"]
   - name: C4_W1p5
     domain: C4
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP4]
   - name: C5
     domain: C5
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch5/DCH_5", "/ch5/OUT_5", "/ch5/SNB_5", S_5]
+    nets: ["/ch5/DCH_5", "/ch5/OUT_5", S_5]
   - name: C5_3A
     domain: C5
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM5", TAP5_IN]
-  - name: C5_5A
-    domain: C5
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch5/SW_5"]
   - name: C5_W1p5
     domain: C5
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP5]
   - name: C6
     domain: C6
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch6/DCH_6", "/ch6/OUT_6", "/ch6/SNB_6", S_6]
+    nets: ["/ch6/DCH_6", "/ch6/OUT_6", S_6]
   - name: C6_3A
     domain: C6
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM6", TAP6_IN]
-  - name: C6_5A
-    domain: C6
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch6/SW_6"]
   - name: C6_W1p5
     domain: C6
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP6]
   - name: C7
     domain: C7
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch7/DCH_7", "/ch7/OUT_7", "/ch7/SNB_7", S_7]
+    nets: ["/ch7/DCH_7", "/ch7/OUT_7", S_7]
   - name: C7_3A
     domain: C7
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM7", TAP7_IN]
-  - name: C7_5A
-    domain: C7
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch7/SW_7"]
   - name: C7_W1p5
     domain: C7
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP7]
   - name: C8
     domain: C8
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch8/DCH_8", "/ch8/OUT_8", "/ch8/SNB_8", S_8]
+    nets: ["/ch8/DCH_8", "/ch8/OUT_8", S_8]
   - name: C8_3A
     domain: C8
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM8", TAP8_IN]
-  - name: C8_5A
-    domain: C8
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch8/SW_8"]
   - name: C8_W1p5
     domain: C8
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP8]
   - name: C9
     domain: C9
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
-    nets: ["/ch9/DCH_9", "/ch9/OUT_9", "/ch9/SNB_9", S_9]
+    nets: ["/ch9/DCH_9", "/ch9/OUT_9", S_9]
   - name: C9_3A
     domain: C9
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM9", TAP9_IN]
-  - name: C9_5A
-    domain: C9
-    clearance: 0.6
-    track_width: 1.4
-    nets: ["/ch9/SW_9"]
   - name: C9_W1p5
     domain: C9
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP9]
   - name: CTRL
@@ -1421,6 +1773,166 @@ netclasses:
     clearance: 0.2
     track_width: 0.25
     nets: [LEDA_9]
+  - name: SW1
+    domain: SW1
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch1/SNB_1"]
+  - name: SW10
+    domain: SW10
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch10/SNB_10"]
+  - name: SW10_5A
+    domain: SW10
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch10/SW_10"]
+  - name: SW11
+    domain: SW11
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch11/SNB_11"]
+  - name: SW11_5A
+    domain: SW11
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch11/SW_11"]
+  - name: SW12
+    domain: SW12
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch12/SNB_12"]
+  - name: SW12_5A
+    domain: SW12
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch12/SW_12"]
+  - name: SW13
+    domain: SW13
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch13/SNB_13"]
+  - name: SW13_5A
+    domain: SW13
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch13/SW_13"]
+  - name: SW14
+    domain: SW14
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch14/SNB_14"]
+  - name: SW14_5A
+    domain: SW14
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch14/SW_14"]
+  - name: SW15
+    domain: SW15
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch15/SNB_15"]
+  - name: SW15_5A
+    domain: SW15
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch15/SW_15"]
+  - name: SW16
+    domain: SW16
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch16/SNB_16"]
+  - name: SW16_5A
+    domain: SW16
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch16/SW_16"]
+  - name: SW1_5A
+    domain: SW1
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch1/SW_1"]
+  - name: SW2
+    domain: SW2
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch2/SNB_2"]
+  - name: SW2_5A
+    domain: SW2
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch2/SW_2"]
+  - name: SW3
+    domain: SW3
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch3/SNB_3"]
+  - name: SW3_5A
+    domain: SW3
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch3/SW_3"]
+  - name: SW4
+    domain: SW4
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch4/SNB_4"]
+  - name: SW4_5A
+    domain: SW4
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch4/SW_4"]
+  - name: SW5
+    domain: SW5
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch5/SNB_5"]
+  - name: SW5_5A
+    domain: SW5
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch5/SW_5"]
+  - name: SW6
+    domain: SW6
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch6/SNB_6"]
+  - name: SW6_5A
+    domain: SW6
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch6/SW_6"]
+  - name: SW7
+    domain: SW7
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch7/SNB_7"]
+  - name: SW7_5A
+    domain: SW7
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch7/SW_7"]
+  - name: SW8
+    domain: SW8
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch8/SNB_8"]
+  - name: SW8_5A
+    domain: SW8
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch8/SW_8"]
+  - name: SW9
+    domain: SW9
+    clearance: 0.6
+    track_width: 0.25
+    nets: ["/ch9/SNB_9"]
+  - name: SW9_5A
+    domain: SW9
+    clearance: 0.6
+    track_width: 1.4
+    nets: ["/ch9/SW_9"]
   - name: USER
     domain: USER
     clearance: 0.2
@@ -1890,7 +2402,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [BAT0, C1, SNS1]
+    domains: [BAT0, C1, SNS1, SW1]
     mpn: "LT8584EFE#PBF"
   - ref: T101
     block: ch1
@@ -1898,7 +2410,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C1, RET]
+    domains: [BAT0, C1, RET, SW1]
     mpn: NA5743-ALD
   - ref: D101
     block: ch1
@@ -1914,7 +2426,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C1]
+    domains: [SW1]
     mpn: ES1G-13-F
   - ref: D301
     block: ch1
@@ -1962,7 +2474,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C1]
+    domains: [C1, SW1]
     mpn: GCM188R72A223KA37D
   - ref: C601
     block: ch1
@@ -1978,7 +2490,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C1]
+    domains: [C1, SW1]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R201
@@ -2011,7 +2523,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C1, C2, SNS2]
+    domains: [C1, C2, SNS2, SW2]
     mpn: "LT8584EFE#PBF"
   - ref: T102
     block: ch2
@@ -2019,7 +2531,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C2, RET]
+    domains: [BAT0, C2, RET, SW2]
     mpn: NA5743-ALD
   - ref: D102
     block: ch2
@@ -2035,7 +2547,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C2]
+    domains: [SW2]
     mpn: ES1G-13-F
   - ref: D302
     block: ch2
@@ -2083,7 +2595,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C2]
+    domains: [C2, SW2]
     mpn: GCM188R72A223KA37D
   - ref: C602
     block: ch2
@@ -2099,7 +2611,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C2]
+    domains: [C2, SW2]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R202
@@ -2132,7 +2644,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C2, C3, SNS3]
+    domains: [C2, C3, SNS3, SW3]
     mpn: "LT8584EFE#PBF"
   - ref: T103
     block: ch3
@@ -2140,7 +2652,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C3, RET]
+    domains: [BAT0, C3, RET, SW3]
     mpn: NA5743-ALD
   - ref: D103
     block: ch3
@@ -2156,7 +2668,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C3]
+    domains: [SW3]
     mpn: ES1G-13-F
   - ref: D303
     block: ch3
@@ -2204,7 +2716,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C3]
+    domains: [C3, SW3]
     mpn: GCM188R72A223KA37D
   - ref: C603
     block: ch3
@@ -2220,7 +2732,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C3]
+    domains: [C3, SW3]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R203
@@ -2253,7 +2765,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C3, C4, SNS4]
+    domains: [C3, C4, SNS4, SW4]
     mpn: "LT8584EFE#PBF"
   - ref: T104
     block: ch4
@@ -2261,7 +2773,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C4, RET]
+    domains: [BAT0, C4, RET, SW4]
     mpn: NA5743-ALD
   - ref: D104
     block: ch4
@@ -2277,7 +2789,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C4]
+    domains: [SW4]
     mpn: ES1G-13-F
   - ref: D304
     block: ch4
@@ -2325,7 +2837,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C4]
+    domains: [C4, SW4]
     mpn: GCM188R72A223KA37D
   - ref: C604
     block: ch4
@@ -2341,7 +2853,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C4]
+    domains: [C4, SW4]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R204
@@ -2374,7 +2886,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C4, C5, SNS5]
+    domains: [C4, C5, SNS5, SW5]
     mpn: "LT8584EFE#PBF"
   - ref: T105
     block: ch5
@@ -2382,7 +2894,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C5, RET]
+    domains: [BAT0, C5, RET, SW5]
     mpn: NA5743-ALD
   - ref: D105
     block: ch5
@@ -2398,7 +2910,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C5]
+    domains: [SW5]
     mpn: ES1G-13-F
   - ref: D305
     block: ch5
@@ -2446,7 +2958,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C5]
+    domains: [C5, SW5]
     mpn: GCM188R72A223KA37D
   - ref: C605
     block: ch5
@@ -2462,7 +2974,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C5]
+    domains: [C5, SW5]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R205
@@ -2495,7 +3007,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C5, C6, SNS6]
+    domains: [C5, C6, SNS6, SW6]
     mpn: "LT8584EFE#PBF"
   - ref: T106
     block: ch6
@@ -2503,7 +3015,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C6, RET]
+    domains: [BAT0, C6, RET, SW6]
     mpn: NA5743-ALD
   - ref: D106
     block: ch6
@@ -2519,7 +3031,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C6]
+    domains: [SW6]
     mpn: ES1G-13-F
   - ref: D306
     block: ch6
@@ -2567,7 +3079,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C6]
+    domains: [C6, SW6]
     mpn: GCM188R72A223KA37D
   - ref: C606
     block: ch6
@@ -2583,7 +3095,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C6]
+    domains: [C6, SW6]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R206
@@ -2616,7 +3128,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C6, C7, SNS7]
+    domains: [C6, C7, SNS7, SW7]
     mpn: "LT8584EFE#PBF"
   - ref: T107
     block: ch7
@@ -2624,7 +3136,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C7, RET]
+    domains: [BAT0, C7, RET, SW7]
     mpn: NA5743-ALD
   - ref: D107
     block: ch7
@@ -2640,7 +3152,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C7]
+    domains: [SW7]
     mpn: ES1G-13-F
   - ref: D307
     block: ch7
@@ -2688,7 +3200,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C7]
+    domains: [C7, SW7]
     mpn: GCM188R72A223KA37D
   - ref: C607
     block: ch7
@@ -2704,7 +3216,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C7]
+    domains: [C7, SW7]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R207
@@ -2737,7 +3249,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C7, C8, SNS8]
+    domains: [C7, C8, SNS8, SW8]
     mpn: "LT8584EFE#PBF"
   - ref: T108
     block: ch8
@@ -2745,7 +3257,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C8, RET]
+    domains: [BAT0, C8, RET, SW8]
     mpn: NA5743-ALD
   - ref: D108
     block: ch8
@@ -2761,7 +3273,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C8]
+    domains: [SW8]
     mpn: ES1G-13-F
   - ref: D308
     block: ch8
@@ -2809,7 +3321,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C8]
+    domains: [C8, SW8]
     mpn: GCM188R72A223KA37D
   - ref: C608
     block: ch8
@@ -2825,7 +3337,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C8]
+    domains: [C8, SW8]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R208
@@ -2858,7 +3370,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C8, C9, SNS9]
+    domains: [C8, C9, SNS9, SW9]
     mpn: "LT8584EFE#PBF"
   - ref: T109
     block: ch9
@@ -2866,7 +3378,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C9, RET]
+    domains: [BAT0, C9, RET, SW9]
     mpn: NA5743-ALD
   - ref: D109
     block: ch9
@@ -2882,7 +3394,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C9]
+    domains: [SW9]
     mpn: ES1G-13-F
   - ref: D309
     block: ch9
@@ -2930,7 +3442,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C9]
+    domains: [C9, SW9]
     mpn: GCM188R72A223KA37D
   - ref: C609
     block: ch9
@@ -2946,7 +3458,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C9]
+    domains: [C9, SW9]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R209
@@ -2979,7 +3491,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C10, C9, SNS10]
+    domains: [C10, C9, SNS10, SW10]
     mpn: "LT8584EFE#PBF"
   - ref: T110
     block: ch10
@@ -2987,7 +3499,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C10, RET]
+    domains: [BAT0, C10, RET, SW10]
     mpn: NA5743-ALD
   - ref: D110
     block: ch10
@@ -3003,7 +3515,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C10]
+    domains: [SW10]
     mpn: ES1G-13-F
   - ref: D310
     block: ch10
@@ -3051,7 +3563,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C10]
+    domains: [C10, SW10]
     mpn: GCM188R72A223KA37D
   - ref: C610
     block: ch10
@@ -3067,7 +3579,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C10]
+    domains: [C10, SW10]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R210
@@ -3100,7 +3612,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C10, C11, SNS11]
+    domains: [C10, C11, SNS11, SW11]
     mpn: "LT8584EFE#PBF"
   - ref: T111
     block: ch11
@@ -3108,7 +3620,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C11, RET]
+    domains: [BAT0, C11, RET, SW11]
     mpn: NA5743-ALD
   - ref: D111
     block: ch11
@@ -3124,7 +3636,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C11]
+    domains: [SW11]
     mpn: ES1G-13-F
   - ref: D311
     block: ch11
@@ -3172,7 +3684,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C11]
+    domains: [C11, SW11]
     mpn: GCM188R72A223KA37D
   - ref: C611
     block: ch11
@@ -3188,7 +3700,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C11]
+    domains: [C11, SW11]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R211
@@ -3221,7 +3733,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C11, C12, SNS12]
+    domains: [C11, C12, SNS12, SW12]
     mpn: "LT8584EFE#PBF"
   - ref: T112
     block: ch12
@@ -3229,7 +3741,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C12, RET]
+    domains: [BAT0, C12, RET, SW12]
     mpn: NA5743-ALD
   - ref: D112
     block: ch12
@@ -3245,7 +3757,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C12]
+    domains: [SW12]
     mpn: ES1G-13-F
   - ref: D312
     block: ch12
@@ -3293,7 +3805,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C12]
+    domains: [C12, SW12]
     mpn: GCM188R72A223KA37D
   - ref: C612
     block: ch12
@@ -3309,7 +3821,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C12]
+    domains: [C12, SW12]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R212
@@ -3342,7 +3854,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C12, C13, SNS13]
+    domains: [C12, C13, SNS13, SW13]
     mpn: "LT8584EFE#PBF"
   - ref: T113
     block: ch13
@@ -3350,7 +3862,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C13, RET]
+    domains: [BAT0, C13, RET, SW13]
     mpn: NA5743-ALD
   - ref: D113
     block: ch13
@@ -3366,7 +3878,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C13]
+    domains: [SW13]
     mpn: ES1G-13-F
   - ref: D313
     block: ch13
@@ -3414,7 +3926,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C13]
+    domains: [C13, SW13]
     mpn: GCM188R72A223KA37D
   - ref: C613
     block: ch13
@@ -3430,7 +3942,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C13]
+    domains: [C13, SW13]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R213
@@ -3463,7 +3975,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C13, C14, SNS14]
+    domains: [C13, C14, SNS14, SW14]
     mpn: "LT8584EFE#PBF"
   - ref: T114
     block: ch14
@@ -3471,7 +3983,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C14, RET]
+    domains: [BAT0, C14, RET, SW14]
     mpn: NA5743-ALD
   - ref: D114
     block: ch14
@@ -3487,7 +3999,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C14]
+    domains: [SW14]
     mpn: ES1G-13-F
   - ref: D314
     block: ch14
@@ -3535,7 +4047,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C14]
+    domains: [C14, SW14]
     mpn: GCM188R72A223KA37D
   - ref: C614
     block: ch14
@@ -3551,7 +4063,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C14]
+    domains: [C14, SW14]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R214
@@ -3584,7 +4096,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C14, C15, SNS15]
+    domains: [C14, C15, SNS15, SW15]
     mpn: "LT8584EFE#PBF"
   - ref: T115
     block: ch15
@@ -3592,7 +4104,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C15, RET]
+    domains: [BAT0, C15, RET, SW15]
     mpn: NA5743-ALD
   - ref: D115
     block: ch15
@@ -3608,7 +4120,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C15]
+    domains: [SW15]
     mpn: ES1G-13-F
   - ref: D315
     block: ch15
@@ -3656,7 +4168,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C15]
+    domains: [C15, SW15]
     mpn: GCM188R72A223KA37D
   - ref: C615
     block: ch15
@@ -3672,7 +4184,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C15]
+    domains: [C15, SW15]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R215
@@ -3705,7 +4217,7 @@ components:
     value: "LT8584EFE#PBF"
     footprint: Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm
     category: ic
-    domains: [C15, C16, STACK]
+    domains: [C15, C16, STACK, SW16]
     mpn: "LT8584EFE#PBF"
   - ref: T116
     block: ch16
@@ -3713,7 +4225,7 @@ components:
     value: NA5743-ALD
     footprint: custom:Coilcraft_NA5743_2x4_P2.50mm
     category: transformer
-    domains: [BAT0, C16, RET]
+    domains: [BAT0, C16, RET, SW16]
     mpn: NA5743-ALD
   - ref: D116
     block: ch16
@@ -3729,7 +4241,7 @@ components:
     value: ES1G-13-F
     footprint: Diode_SMD:D_SMA
     category: diode
-    domains: [C16]
+    domains: [SW16]
     mpn: ES1G-13-F
   - ref: D316
     block: ch16
@@ -3777,7 +4289,7 @@ components:
     value: "22n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
-    domains: [C16]
+    domains: [C16, SW16]
     mpn: GCM188R72A223KA37D
   - ref: C616
     block: ch16
@@ -3793,7 +4305,7 @@ components:
     value: "4.99k"
     footprint: Resistor_SMD:R_2010_5025Metric
     category: resistor
-    domains: [C16]
+    domains: [C16, SW16]
     mpn: RC2010FK-074K99L
     p_diss_w: 0.23
   - ref: R216
@@ -5625,11 +6137,6 @@ relations:
     under: block:ch1
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch1/SW_1, net:ch1/SNB_1]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T101
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -5739,11 +6246,6 @@ relations:
     layers: In1.Cu
     under: block:ch2
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch2/SW_2, net:ch2/SNB_2]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T102
@@ -5855,11 +6357,6 @@ relations:
     under: block:ch3
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch3/SW_3, net:ch3/SNB_3]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T103
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -5969,11 +6466,6 @@ relations:
     layers: In1.Cu
     under: block:ch4
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch4/SW_4, net:ch4/SNB_4]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T104
@@ -6085,11 +6577,6 @@ relations:
     under: block:ch5
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch5/SW_5, net:ch5/SNB_5]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T105
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -6199,11 +6686,6 @@ relations:
     layers: In1.Cu
     under: block:ch6
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch6/SW_6, net:ch6/SNB_6]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T106
@@ -6315,11 +6797,6 @@ relations:
     under: block:ch7
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch7/SW_7, net:ch7/SNB_7]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T107
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -6429,11 +6906,6 @@ relations:
     layers: In1.Cu
     under: block:ch8
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch8/SW_8, net:ch8/SNB_8]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T108
@@ -6545,11 +7017,6 @@ relations:
     under: block:ch9
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch9/SW_9, net:ch9/SNB_9]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T109
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -6659,11 +7126,6 @@ relations:
     layers: In1.Cu
     under: block:ch10
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch10/SW_10, net:ch10/SNB_10]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T110
@@ -6775,11 +7237,6 @@ relations:
     under: block:ch11
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch11/SW_11, net:ch11/SNB_11]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T111
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -6889,11 +7346,6 @@ relations:
     layers: In1.Cu
     under: block:ch12
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch12/SW_12, net:ch12/SNB_12]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T112
@@ -7005,11 +7457,6 @@ relations:
     under: block:ch13
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch13/SW_13, net:ch13/SNB_13]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T113
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -7119,11 +7566,6 @@ relations:
     layers: In1.Cu
     under: block:ch14
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch14/SW_14, net:ch14/SNB_14]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T114
@@ -7235,11 +7677,6 @@ relations:
     under: block:ch15
     note: "per-channel reference plane at the channel's own potential"
     source: design
-  - kind: x-spacing
-    nets: [net:ch15/SW_15, net:ch15/SNB_15]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
-    source: design
   - kind: keepout
     obj: T115
     what: "foreign-domain copper in the primary-secondary pad gap"
@@ -7349,11 +7786,6 @@ relations:
     layers: In1.Cu
     under: block:ch16
     note: "per-channel reference plane at the channel's own potential"
-    source: design
-  - kind: x-spacing
-    nets: [net:ch16/SW_16, net:ch16/SNB_16]
-    min_mm: 0.6
-    note: "SW/SNB reach 38.5 V above TAP(k-1): IPC-2221B B2 31-50 V external, except at the U1kk/T1kk/D2kk pads themselves"
     source: design
   - kind: keepout
     obj: T116
@@ -7879,6 +8311,166 @@ relations:
     slot: false
     source: design
   - kind: separate
+    a: domain:SW1
+    b: domain:BAT0
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW1
+    b: domain:C1
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW2
+    b: domain:C1
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW2
+    b: domain:C2
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW3
+    b: domain:C2
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW3
+    b: domain:C3
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW4
+    b: domain:C3
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW4
+    b: domain:C4
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW5
+    b: domain:C4
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW5
+    b: domain:C5
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW6
+    b: domain:C5
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW6
+    b: domain:C6
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW7
+    b: domain:C6
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW7
+    b: domain:C7
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW8
+    b: domain:C7
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW8
+    b: domain:C8
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW9
+    b: domain:C8
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW9
+    b: domain:C9
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW10
+    b: domain:C9
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW10
+    b: domain:C10
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW11
+    b: domain:C10
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW11
+    b: domain:C11
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW12
+    b: domain:C11
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW12
+    b: domain:C12
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW13
+    b: domain:C12
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW13
+    b: domain:C13
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW14
+    b: domain:C13
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW14
+    b: domain:C14
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW15
+    b: domain:C14
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW15
+    b: domain:C15
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW16
+    b: domain:C15
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:SW16
+    b: domain:C16
+    slot: false
+    source: design
+  - kind: separate
     a: domain:RET
     b: domain:C1
     slot: false
@@ -8015,96 +8607,6 @@ relations:
     strength: tight
     source: auto
     note: "decoupling VIO_ISO"
-  - kind: edge
-    obj: HP1
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT0
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT1
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT2
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT3
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT4
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT5
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT6
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT7
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT8
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT9
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT10
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT11
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT12
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT13
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT14
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT15
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: HT16
-    side: any
-    source: auto
-    note: "carries external nets"
 constraints:
   - id: rel.1
     from: side
@@ -9484,29 +9986,24 @@ constraints:
     layers: In1.Cu
     under: block:ch1
   - id: rel.163
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch1/SW_1, net:ch1/SNB_1]
-    min_mm: 0.6
-  - id: rel.164
     from: keepout
     kind: keepout
     obj: T101
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.165
+  - id: rel.164
     from: pins_toward
     kind: pins_toward
     obj: T102
     pins: [T102.1, T102.2, T102.3, T102.4]
     side: south
-  - id: rel.166
+  - id: rel.165
     from: pins_toward
     kind: pins_toward
     obj: T102
     pins: [T102.8, T102.5]
     side: north
-  - id: rel.167
+  - id: rel.166
     from: hot_loop
     kind: loop_area
     path:
@@ -9521,14 +10018,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.168
+  - id: rel.167
     from: hot_loop
     kind: loop_area
     path: [T102.5, D102.2, D102.1, C602.1, C602.2, T102.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.169
+  - id: rel.168
     from: hot_loop
     kind: loop_area
     path:
@@ -9541,7 +10038,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.170
+  - id: rel.169
     from: near
     kind: proximity
     a: C302
@@ -9549,7 +10046,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.171
+  - id: rel.170
     from: near
     kind: proximity
     a: C202
@@ -9557,7 +10054,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.172
+  - id: rel.171
     from: near
     kind: proximity
     a: C202
@@ -9565,7 +10062,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.173
+  - id: rel.172
     from: near
     kind: proximity
     a: C102
@@ -9573,7 +10070,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.174
+  - id: rel.173
     from: near
     kind: proximity
     a: C402
@@ -9581,7 +10078,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.175
+  - id: rel.174
     from: near
     kind: proximity
     a: R202
@@ -9589,7 +10086,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.176
+  - id: rel.175
     from: near
     kind: proximity
     a: R402
@@ -9597,7 +10094,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.177
+  - id: rel.176
     from: near
     kind: proximity
     a: U202
@@ -9605,7 +10102,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.178
+  - id: rel.177
     from: near
     kind: proximity
     a: C602
@@ -9613,55 +10110,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.179
+  - id: rel.178
     from: far
     kind: separation
     a: U1
     b: T102
     min: 16.0
     hard: false
-  - id: rel.180
+  - id: rel.179
     from: thermal
     kind: thermal
     obj: U102
     watts: 0.6
     sink: copper
-  - id: rel.181
+  - id: rel.180
     from: thermal
     kind: thermal
     obj: T102
     watts: 0.5
     sink: air
-  - id: rel.182
+  - id: rel.181
     from: x-island
     kind: x-island
     net: net:TAP1
     layers: In1.Cu
     under: block:ch2
-  - id: rel.183
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch2/SW_2, net:ch2/SNB_2]
-    min_mm: 0.6
-  - id: rel.184
+  - id: rel.182
     from: keepout
     kind: keepout
     obj: T102
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.185
+  - id: rel.183
     from: pins_toward
     kind: pins_toward
     obj: T103
     pins: [T103.1, T103.2, T103.3, T103.4]
     side: south
-  - id: rel.186
+  - id: rel.184
     from: pins_toward
     kind: pins_toward
     obj: T103
     pins: [T103.8, T103.5]
     side: north
-  - id: rel.187
+  - id: rel.185
     from: hot_loop
     kind: loop_area
     path:
@@ -9676,14 +10168,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.188
+  - id: rel.186
     from: hot_loop
     kind: loop_area
     path: [T103.5, D103.2, D103.1, C603.1, C603.2, T103.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.189
+  - id: rel.187
     from: hot_loop
     kind: loop_area
     path:
@@ -9696,7 +10188,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.190
+  - id: rel.188
     from: near
     kind: proximity
     a: C303
@@ -9704,7 +10196,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.191
+  - id: rel.189
     from: near
     kind: proximity
     a: C203
@@ -9712,7 +10204,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.192
+  - id: rel.190
     from: near
     kind: proximity
     a: C203
@@ -9720,7 +10212,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.193
+  - id: rel.191
     from: near
     kind: proximity
     a: C103
@@ -9728,7 +10220,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.194
+  - id: rel.192
     from: near
     kind: proximity
     a: C403
@@ -9736,7 +10228,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.195
+  - id: rel.193
     from: near
     kind: proximity
     a: R203
@@ -9744,7 +10236,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.196
+  - id: rel.194
     from: near
     kind: proximity
     a: R403
@@ -9752,7 +10244,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.197
+  - id: rel.195
     from: near
     kind: proximity
     a: U203
@@ -9760,7 +10252,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.198
+  - id: rel.196
     from: near
     kind: proximity
     a: C603
@@ -9768,55 +10260,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.199
+  - id: rel.197
     from: far
     kind: separation
     a: U1
     b: T103
     min: 16.0
     hard: false
-  - id: rel.200
+  - id: rel.198
     from: thermal
     kind: thermal
     obj: U103
     watts: 0.6
     sink: copper
-  - id: rel.201
+  - id: rel.199
     from: thermal
     kind: thermal
     obj: T103
     watts: 0.5
     sink: air
-  - id: rel.202
+  - id: rel.200
     from: x-island
     kind: x-island
     net: net:TAP2
     layers: In1.Cu
     under: block:ch3
-  - id: rel.203
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch3/SW_3, net:ch3/SNB_3]
-    min_mm: 0.6
-  - id: rel.204
+  - id: rel.201
     from: keepout
     kind: keepout
     obj: T103
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.205
+  - id: rel.202
     from: pins_toward
     kind: pins_toward
     obj: T104
     pins: [T104.1, T104.2, T104.3, T104.4]
     side: south
-  - id: rel.206
+  - id: rel.203
     from: pins_toward
     kind: pins_toward
     obj: T104
     pins: [T104.8, T104.5]
     side: north
-  - id: rel.207
+  - id: rel.204
     from: hot_loop
     kind: loop_area
     path:
@@ -9831,14 +10318,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.208
+  - id: rel.205
     from: hot_loop
     kind: loop_area
     path: [T104.5, D104.2, D104.1, C604.1, C604.2, T104.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.209
+  - id: rel.206
     from: hot_loop
     kind: loop_area
     path:
@@ -9851,7 +10338,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.210
+  - id: rel.207
     from: near
     kind: proximity
     a: C304
@@ -9859,7 +10346,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.211
+  - id: rel.208
     from: near
     kind: proximity
     a: C204
@@ -9867,7 +10354,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.212
+  - id: rel.209
     from: near
     kind: proximity
     a: C204
@@ -9875,7 +10362,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.213
+  - id: rel.210
     from: near
     kind: proximity
     a: C104
@@ -9883,7 +10370,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.214
+  - id: rel.211
     from: near
     kind: proximity
     a: C404
@@ -9891,7 +10378,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.215
+  - id: rel.212
     from: near
     kind: proximity
     a: R204
@@ -9899,7 +10386,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.216
+  - id: rel.213
     from: near
     kind: proximity
     a: R404
@@ -9907,7 +10394,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.217
+  - id: rel.214
     from: near
     kind: proximity
     a: U204
@@ -9915,7 +10402,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.218
+  - id: rel.215
     from: near
     kind: proximity
     a: C604
@@ -9923,55 +10410,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.219
+  - id: rel.216
     from: far
     kind: separation
     a: U1
     b: T104
     min: 16.0
     hard: false
-  - id: rel.220
+  - id: rel.217
     from: thermal
     kind: thermal
     obj: U104
     watts: 0.6
     sink: copper
-  - id: rel.221
+  - id: rel.218
     from: thermal
     kind: thermal
     obj: T104
     watts: 0.5
     sink: air
-  - id: rel.222
+  - id: rel.219
     from: x-island
     kind: x-island
     net: net:TAP3
     layers: In1.Cu
     under: block:ch4
-  - id: rel.223
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch4/SW_4, net:ch4/SNB_4]
-    min_mm: 0.6
-  - id: rel.224
+  - id: rel.220
     from: keepout
     kind: keepout
     obj: T104
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.225
+  - id: rel.221
     from: pins_toward
     kind: pins_toward
     obj: T105
     pins: [T105.1, T105.2, T105.3, T105.4]
     side: south
-  - id: rel.226
+  - id: rel.222
     from: pins_toward
     kind: pins_toward
     obj: T105
     pins: [T105.8, T105.5]
     side: north
-  - id: rel.227
+  - id: rel.223
     from: hot_loop
     kind: loop_area
     path:
@@ -9986,14 +10468,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.228
+  - id: rel.224
     from: hot_loop
     kind: loop_area
     path: [T105.5, D105.2, D105.1, C605.1, C605.2, T105.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.229
+  - id: rel.225
     from: hot_loop
     kind: loop_area
     path:
@@ -10006,7 +10488,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.230
+  - id: rel.226
     from: near
     kind: proximity
     a: C305
@@ -10014,7 +10496,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.231
+  - id: rel.227
     from: near
     kind: proximity
     a: C205
@@ -10022,7 +10504,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.232
+  - id: rel.228
     from: near
     kind: proximity
     a: C205
@@ -10030,7 +10512,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.233
+  - id: rel.229
     from: near
     kind: proximity
     a: C105
@@ -10038,7 +10520,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.234
+  - id: rel.230
     from: near
     kind: proximity
     a: C405
@@ -10046,7 +10528,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.235
+  - id: rel.231
     from: near
     kind: proximity
     a: R205
@@ -10054,7 +10536,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.236
+  - id: rel.232
     from: near
     kind: proximity
     a: R405
@@ -10062,7 +10544,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.237
+  - id: rel.233
     from: near
     kind: proximity
     a: U205
@@ -10070,7 +10552,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.238
+  - id: rel.234
     from: near
     kind: proximity
     a: C605
@@ -10078,55 +10560,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.239
+  - id: rel.235
     from: far
     kind: separation
     a: U1
     b: T105
     min: 16.0
     hard: false
-  - id: rel.240
+  - id: rel.236
     from: thermal
     kind: thermal
     obj: U105
     watts: 0.6
     sink: copper
-  - id: rel.241
+  - id: rel.237
     from: thermal
     kind: thermal
     obj: T105
     watts: 0.5
     sink: air
-  - id: rel.242
+  - id: rel.238
     from: x-island
     kind: x-island
     net: net:TAP4
     layers: In1.Cu
     under: block:ch5
-  - id: rel.243
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch5/SW_5, net:ch5/SNB_5]
-    min_mm: 0.6
-  - id: rel.244
+  - id: rel.239
     from: keepout
     kind: keepout
     obj: T105
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.245
+  - id: rel.240
     from: pins_toward
     kind: pins_toward
     obj: T106
     pins: [T106.1, T106.2, T106.3, T106.4]
     side: south
-  - id: rel.246
+  - id: rel.241
     from: pins_toward
     kind: pins_toward
     obj: T106
     pins: [T106.8, T106.5]
     side: north
-  - id: rel.247
+  - id: rel.242
     from: hot_loop
     kind: loop_area
     path:
@@ -10141,14 +10618,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.248
+  - id: rel.243
     from: hot_loop
     kind: loop_area
     path: [T106.5, D106.2, D106.1, C606.1, C606.2, T106.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.249
+  - id: rel.244
     from: hot_loop
     kind: loop_area
     path:
@@ -10161,7 +10638,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.250
+  - id: rel.245
     from: near
     kind: proximity
     a: C306
@@ -10169,7 +10646,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.251
+  - id: rel.246
     from: near
     kind: proximity
     a: C206
@@ -10177,7 +10654,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.252
+  - id: rel.247
     from: near
     kind: proximity
     a: C206
@@ -10185,7 +10662,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.253
+  - id: rel.248
     from: near
     kind: proximity
     a: C106
@@ -10193,7 +10670,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.254
+  - id: rel.249
     from: near
     kind: proximity
     a: C406
@@ -10201,7 +10678,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.255
+  - id: rel.250
     from: near
     kind: proximity
     a: R206
@@ -10209,7 +10686,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.256
+  - id: rel.251
     from: near
     kind: proximity
     a: R406
@@ -10217,7 +10694,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.257
+  - id: rel.252
     from: near
     kind: proximity
     a: U206
@@ -10225,7 +10702,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.258
+  - id: rel.253
     from: near
     kind: proximity
     a: C606
@@ -10233,55 +10710,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.259
+  - id: rel.254
     from: far
     kind: separation
     a: U1
     b: T106
     min: 16.0
     hard: false
-  - id: rel.260
+  - id: rel.255
     from: thermal
     kind: thermal
     obj: U106
     watts: 0.6
     sink: copper
-  - id: rel.261
+  - id: rel.256
     from: thermal
     kind: thermal
     obj: T106
     watts: 0.5
     sink: air
-  - id: rel.262
+  - id: rel.257
     from: x-island
     kind: x-island
     net: net:TAP5
     layers: In1.Cu
     under: block:ch6
-  - id: rel.263
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch6/SW_6, net:ch6/SNB_6]
-    min_mm: 0.6
-  - id: rel.264
+  - id: rel.258
     from: keepout
     kind: keepout
     obj: T106
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.265
+  - id: rel.259
     from: pins_toward
     kind: pins_toward
     obj: T107
     pins: [T107.1, T107.2, T107.3, T107.4]
     side: south
-  - id: rel.266
+  - id: rel.260
     from: pins_toward
     kind: pins_toward
     obj: T107
     pins: [T107.8, T107.5]
     side: north
-  - id: rel.267
+  - id: rel.261
     from: hot_loop
     kind: loop_area
     path:
@@ -10296,14 +10768,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.268
+  - id: rel.262
     from: hot_loop
     kind: loop_area
     path: [T107.5, D107.2, D107.1, C607.1, C607.2, T107.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.269
+  - id: rel.263
     from: hot_loop
     kind: loop_area
     path:
@@ -10316,7 +10788,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.270
+  - id: rel.264
     from: near
     kind: proximity
     a: C307
@@ -10324,7 +10796,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.271
+  - id: rel.265
     from: near
     kind: proximity
     a: C207
@@ -10332,7 +10804,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.272
+  - id: rel.266
     from: near
     kind: proximity
     a: C207
@@ -10340,7 +10812,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.273
+  - id: rel.267
     from: near
     kind: proximity
     a: C107
@@ -10348,7 +10820,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.274
+  - id: rel.268
     from: near
     kind: proximity
     a: C407
@@ -10356,7 +10828,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.275
+  - id: rel.269
     from: near
     kind: proximity
     a: R207
@@ -10364,7 +10836,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.276
+  - id: rel.270
     from: near
     kind: proximity
     a: R407
@@ -10372,7 +10844,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.277
+  - id: rel.271
     from: near
     kind: proximity
     a: U207
@@ -10380,7 +10852,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.278
+  - id: rel.272
     from: near
     kind: proximity
     a: C607
@@ -10388,55 +10860,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.279
+  - id: rel.273
     from: far
     kind: separation
     a: U1
     b: T107
     min: 16.0
     hard: false
-  - id: rel.280
+  - id: rel.274
     from: thermal
     kind: thermal
     obj: U107
     watts: 0.6
     sink: copper
-  - id: rel.281
+  - id: rel.275
     from: thermal
     kind: thermal
     obj: T107
     watts: 0.5
     sink: air
-  - id: rel.282
+  - id: rel.276
     from: x-island
     kind: x-island
     net: net:TAP6
     layers: In1.Cu
     under: block:ch7
-  - id: rel.283
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch7/SW_7, net:ch7/SNB_7]
-    min_mm: 0.6
-  - id: rel.284
+  - id: rel.277
     from: keepout
     kind: keepout
     obj: T107
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.285
+  - id: rel.278
     from: pins_toward
     kind: pins_toward
     obj: T108
     pins: [T108.1, T108.2, T108.3, T108.4]
     side: south
-  - id: rel.286
+  - id: rel.279
     from: pins_toward
     kind: pins_toward
     obj: T108
     pins: [T108.8, T108.5]
     side: north
-  - id: rel.287
+  - id: rel.280
     from: hot_loop
     kind: loop_area
     path:
@@ -10451,14 +10918,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.288
+  - id: rel.281
     from: hot_loop
     kind: loop_area
     path: [T108.5, D108.2, D108.1, C608.1, C608.2, T108.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.289
+  - id: rel.282
     from: hot_loop
     kind: loop_area
     path:
@@ -10471,7 +10938,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.290
+  - id: rel.283
     from: near
     kind: proximity
     a: C308
@@ -10479,7 +10946,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.291
+  - id: rel.284
     from: near
     kind: proximity
     a: C208
@@ -10487,7 +10954,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.292
+  - id: rel.285
     from: near
     kind: proximity
     a: C208
@@ -10495,7 +10962,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.293
+  - id: rel.286
     from: near
     kind: proximity
     a: C108
@@ -10503,7 +10970,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.294
+  - id: rel.287
     from: near
     kind: proximity
     a: C408
@@ -10511,7 +10978,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.295
+  - id: rel.288
     from: near
     kind: proximity
     a: R208
@@ -10519,7 +10986,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.296
+  - id: rel.289
     from: near
     kind: proximity
     a: R408
@@ -10527,7 +10994,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.297
+  - id: rel.290
     from: near
     kind: proximity
     a: U208
@@ -10535,7 +11002,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.298
+  - id: rel.291
     from: near
     kind: proximity
     a: C608
@@ -10543,55 +11010,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.299
+  - id: rel.292
     from: far
     kind: separation
     a: U1
     b: T108
     min: 16.0
     hard: false
-  - id: rel.300
+  - id: rel.293
     from: thermal
     kind: thermal
     obj: U108
     watts: 0.6
     sink: copper
-  - id: rel.301
+  - id: rel.294
     from: thermal
     kind: thermal
     obj: T108
     watts: 0.5
     sink: air
-  - id: rel.302
+  - id: rel.295
     from: x-island
     kind: x-island
     net: net:TAP7
     layers: In1.Cu
     under: block:ch8
-  - id: rel.303
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch8/SW_8, net:ch8/SNB_8]
-    min_mm: 0.6
-  - id: rel.304
+  - id: rel.296
     from: keepout
     kind: keepout
     obj: T108
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.305
+  - id: rel.297
     from: pins_toward
     kind: pins_toward
     obj: T109
     pins: [T109.1, T109.2, T109.3, T109.4]
     side: north
-  - id: rel.306
+  - id: rel.298
     from: pins_toward
     kind: pins_toward
     obj: T109
     pins: [T109.8, T109.5]
     side: south
-  - id: rel.307
+  - id: rel.299
     from: hot_loop
     kind: loop_area
     path:
@@ -10606,14 +11068,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.308
+  - id: rel.300
     from: hot_loop
     kind: loop_area
     path: [T109.5, D109.2, D109.1, C609.1, C609.2, T109.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.309
+  - id: rel.301
     from: hot_loop
     kind: loop_area
     path:
@@ -10626,7 +11088,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.310
+  - id: rel.302
     from: near
     kind: proximity
     a: C309
@@ -10634,7 +11096,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.311
+  - id: rel.303
     from: near
     kind: proximity
     a: C209
@@ -10642,7 +11104,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.312
+  - id: rel.304
     from: near
     kind: proximity
     a: C209
@@ -10650,7 +11112,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.313
+  - id: rel.305
     from: near
     kind: proximity
     a: C109
@@ -10658,7 +11120,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.314
+  - id: rel.306
     from: near
     kind: proximity
     a: C409
@@ -10666,7 +11128,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.315
+  - id: rel.307
     from: near
     kind: proximity
     a: R209
@@ -10674,7 +11136,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.316
+  - id: rel.308
     from: near
     kind: proximity
     a: R409
@@ -10682,7 +11144,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.317
+  - id: rel.309
     from: near
     kind: proximity
     a: U209
@@ -10690,7 +11152,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.318
+  - id: rel.310
     from: near
     kind: proximity
     a: C609
@@ -10698,55 +11160,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.319
+  - id: rel.311
     from: far
     kind: separation
     a: U1
     b: T109
     min: 16.0
     hard: false
-  - id: rel.320
+  - id: rel.312
     from: thermal
     kind: thermal
     obj: U109
     watts: 0.6
     sink: copper
-  - id: rel.321
+  - id: rel.313
     from: thermal
     kind: thermal
     obj: T109
     watts: 0.5
     sink: air
-  - id: rel.322
+  - id: rel.314
     from: x-island
     kind: x-island
     net: net:TAP8
     layers: In1.Cu
     under: block:ch9
-  - id: rel.323
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch9/SW_9, net:ch9/SNB_9]
-    min_mm: 0.6
-  - id: rel.324
+  - id: rel.315
     from: keepout
     kind: keepout
     obj: T109
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.325
+  - id: rel.316
     from: pins_toward
     kind: pins_toward
     obj: T110
     pins: [T110.1, T110.2, T110.3, T110.4]
     side: north
-  - id: rel.326
+  - id: rel.317
     from: pins_toward
     kind: pins_toward
     obj: T110
     pins: [T110.8, T110.5]
     side: south
-  - id: rel.327
+  - id: rel.318
     from: hot_loop
     kind: loop_area
     path:
@@ -10761,14 +11218,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.328
+  - id: rel.319
     from: hot_loop
     kind: loop_area
     path: [T110.5, D110.2, D110.1, C610.1, C610.2, T110.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.329
+  - id: rel.320
     from: hot_loop
     kind: loop_area
     path:
@@ -10781,7 +11238,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.330
+  - id: rel.321
     from: near
     kind: proximity
     a: C310
@@ -10789,7 +11246,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.331
+  - id: rel.322
     from: near
     kind: proximity
     a: C210
@@ -10797,7 +11254,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.332
+  - id: rel.323
     from: near
     kind: proximity
     a: C210
@@ -10805,7 +11262,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.333
+  - id: rel.324
     from: near
     kind: proximity
     a: C110
@@ -10813,7 +11270,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.334
+  - id: rel.325
     from: near
     kind: proximity
     a: C410
@@ -10821,7 +11278,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.335
+  - id: rel.326
     from: near
     kind: proximity
     a: R210
@@ -10829,7 +11286,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.336
+  - id: rel.327
     from: near
     kind: proximity
     a: R410
@@ -10837,7 +11294,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.337
+  - id: rel.328
     from: near
     kind: proximity
     a: U210
@@ -10845,7 +11302,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.338
+  - id: rel.329
     from: near
     kind: proximity
     a: C610
@@ -10853,55 +11310,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.339
+  - id: rel.330
     from: far
     kind: separation
     a: U1
     b: T110
     min: 16.0
     hard: false
-  - id: rel.340
+  - id: rel.331
     from: thermal
     kind: thermal
     obj: U110
     watts: 0.6
     sink: copper
-  - id: rel.341
+  - id: rel.332
     from: thermal
     kind: thermal
     obj: T110
     watts: 0.5
     sink: air
-  - id: rel.342
+  - id: rel.333
     from: x-island
     kind: x-island
     net: net:TAP9
     layers: In1.Cu
     under: block:ch10
-  - id: rel.343
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch10/SW_10, net:ch10/SNB_10]
-    min_mm: 0.6
-  - id: rel.344
+  - id: rel.334
     from: keepout
     kind: keepout
     obj: T110
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.345
+  - id: rel.335
     from: pins_toward
     kind: pins_toward
     obj: T111
     pins: [T111.1, T111.2, T111.3, T111.4]
     side: north
-  - id: rel.346
+  - id: rel.336
     from: pins_toward
     kind: pins_toward
     obj: T111
     pins: [T111.8, T111.5]
     side: south
-  - id: rel.347
+  - id: rel.337
     from: hot_loop
     kind: loop_area
     path:
@@ -10916,14 +11368,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.348
+  - id: rel.338
     from: hot_loop
     kind: loop_area
     path: [T111.5, D111.2, D111.1, C611.1, C611.2, T111.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.349
+  - id: rel.339
     from: hot_loop
     kind: loop_area
     path:
@@ -10936,7 +11388,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.350
+  - id: rel.340
     from: near
     kind: proximity
     a: C311
@@ -10944,7 +11396,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.351
+  - id: rel.341
     from: near
     kind: proximity
     a: C211
@@ -10952,7 +11404,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.352
+  - id: rel.342
     from: near
     kind: proximity
     a: C211
@@ -10960,7 +11412,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.353
+  - id: rel.343
     from: near
     kind: proximity
     a: C111
@@ -10968,7 +11420,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.354
+  - id: rel.344
     from: near
     kind: proximity
     a: C411
@@ -10976,7 +11428,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.355
+  - id: rel.345
     from: near
     kind: proximity
     a: R211
@@ -10984,7 +11436,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.356
+  - id: rel.346
     from: near
     kind: proximity
     a: R411
@@ -10992,7 +11444,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.357
+  - id: rel.347
     from: near
     kind: proximity
     a: U211
@@ -11000,7 +11452,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.358
+  - id: rel.348
     from: near
     kind: proximity
     a: C611
@@ -11008,55 +11460,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.359
+  - id: rel.349
     from: far
     kind: separation
     a: U1
     b: T111
     min: 16.0
     hard: false
-  - id: rel.360
+  - id: rel.350
     from: thermal
     kind: thermal
     obj: U111
     watts: 0.6
     sink: copper
-  - id: rel.361
+  - id: rel.351
     from: thermal
     kind: thermal
     obj: T111
     watts: 0.5
     sink: air
-  - id: rel.362
+  - id: rel.352
     from: x-island
     kind: x-island
     net: net:TAP10
     layers: In1.Cu
     under: block:ch11
-  - id: rel.363
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch11/SW_11, net:ch11/SNB_11]
-    min_mm: 0.6
-  - id: rel.364
+  - id: rel.353
     from: keepout
     kind: keepout
     obj: T111
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.365
+  - id: rel.354
     from: pins_toward
     kind: pins_toward
     obj: T112
     pins: [T112.1, T112.2, T112.3, T112.4]
     side: north
-  - id: rel.366
+  - id: rel.355
     from: pins_toward
     kind: pins_toward
     obj: T112
     pins: [T112.8, T112.5]
     side: south
-  - id: rel.367
+  - id: rel.356
     from: hot_loop
     kind: loop_area
     path:
@@ -11071,14 +11518,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.368
+  - id: rel.357
     from: hot_loop
     kind: loop_area
     path: [T112.5, D112.2, D112.1, C612.1, C612.2, T112.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.369
+  - id: rel.358
     from: hot_loop
     kind: loop_area
     path:
@@ -11091,7 +11538,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.370
+  - id: rel.359
     from: near
     kind: proximity
     a: C312
@@ -11099,7 +11546,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.371
+  - id: rel.360
     from: near
     kind: proximity
     a: C212
@@ -11107,7 +11554,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.372
+  - id: rel.361
     from: near
     kind: proximity
     a: C212
@@ -11115,7 +11562,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.373
+  - id: rel.362
     from: near
     kind: proximity
     a: C112
@@ -11123,7 +11570,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.374
+  - id: rel.363
     from: near
     kind: proximity
     a: C412
@@ -11131,7 +11578,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.375
+  - id: rel.364
     from: near
     kind: proximity
     a: R212
@@ -11139,7 +11586,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.376
+  - id: rel.365
     from: near
     kind: proximity
     a: R412
@@ -11147,7 +11594,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.377
+  - id: rel.366
     from: near
     kind: proximity
     a: U212
@@ -11155,7 +11602,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.378
+  - id: rel.367
     from: near
     kind: proximity
     a: C612
@@ -11163,55 +11610,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.379
+  - id: rel.368
     from: far
     kind: separation
     a: U1
     b: T112
     min: 16.0
     hard: false
-  - id: rel.380
+  - id: rel.369
     from: thermal
     kind: thermal
     obj: U112
     watts: 0.6
     sink: copper
-  - id: rel.381
+  - id: rel.370
     from: thermal
     kind: thermal
     obj: T112
     watts: 0.5
     sink: air
-  - id: rel.382
+  - id: rel.371
     from: x-island
     kind: x-island
     net: net:TAP11
     layers: In1.Cu
     under: block:ch12
-  - id: rel.383
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch12/SW_12, net:ch12/SNB_12]
-    min_mm: 0.6
-  - id: rel.384
+  - id: rel.372
     from: keepout
     kind: keepout
     obj: T112
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.385
+  - id: rel.373
     from: pins_toward
     kind: pins_toward
     obj: T113
     pins: [T113.1, T113.2, T113.3, T113.4]
     side: north
-  - id: rel.386
+  - id: rel.374
     from: pins_toward
     kind: pins_toward
     obj: T113
     pins: [T113.8, T113.5]
     side: south
-  - id: rel.387
+  - id: rel.375
     from: hot_loop
     kind: loop_area
     path:
@@ -11226,14 +11668,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.388
+  - id: rel.376
     from: hot_loop
     kind: loop_area
     path: [T113.5, D113.2, D113.1, C613.1, C613.2, T113.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.389
+  - id: rel.377
     from: hot_loop
     kind: loop_area
     path:
@@ -11246,7 +11688,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.390
+  - id: rel.378
     from: near
     kind: proximity
     a: C313
@@ -11254,7 +11696,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.391
+  - id: rel.379
     from: near
     kind: proximity
     a: C213
@@ -11262,7 +11704,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.392
+  - id: rel.380
     from: near
     kind: proximity
     a: C213
@@ -11270,7 +11712,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.393
+  - id: rel.381
     from: near
     kind: proximity
     a: C113
@@ -11278,7 +11720,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.394
+  - id: rel.382
     from: near
     kind: proximity
     a: C413
@@ -11286,7 +11728,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.395
+  - id: rel.383
     from: near
     kind: proximity
     a: R213
@@ -11294,7 +11736,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.396
+  - id: rel.384
     from: near
     kind: proximity
     a: R413
@@ -11302,7 +11744,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.397
+  - id: rel.385
     from: near
     kind: proximity
     a: U213
@@ -11310,7 +11752,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.398
+  - id: rel.386
     from: near
     kind: proximity
     a: C613
@@ -11318,55 +11760,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.399
+  - id: rel.387
     from: far
     kind: separation
     a: U1
     b: T113
     min: 16.0
     hard: false
-  - id: rel.400
+  - id: rel.388
     from: thermal
     kind: thermal
     obj: U113
     watts: 0.6
     sink: copper
-  - id: rel.401
+  - id: rel.389
     from: thermal
     kind: thermal
     obj: T113
     watts: 0.5
     sink: air
-  - id: rel.402
+  - id: rel.390
     from: x-island
     kind: x-island
     net: net:TAP12
     layers: In1.Cu
     under: block:ch13
-  - id: rel.403
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch13/SW_13, net:ch13/SNB_13]
-    min_mm: 0.6
-  - id: rel.404
+  - id: rel.391
     from: keepout
     kind: keepout
     obj: T113
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.405
+  - id: rel.392
     from: pins_toward
     kind: pins_toward
     obj: T114
     pins: [T114.1, T114.2, T114.3, T114.4]
     side: north
-  - id: rel.406
+  - id: rel.393
     from: pins_toward
     kind: pins_toward
     obj: T114
     pins: [T114.8, T114.5]
     side: south
-  - id: rel.407
+  - id: rel.394
     from: hot_loop
     kind: loop_area
     path:
@@ -11381,14 +11818,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.408
+  - id: rel.395
     from: hot_loop
     kind: loop_area
     path: [T114.5, D114.2, D114.1, C614.1, C614.2, T114.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.409
+  - id: rel.396
     from: hot_loop
     kind: loop_area
     path:
@@ -11401,7 +11838,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.410
+  - id: rel.397
     from: near
     kind: proximity
     a: C314
@@ -11409,7 +11846,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.411
+  - id: rel.398
     from: near
     kind: proximity
     a: C214
@@ -11417,7 +11854,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.412
+  - id: rel.399
     from: near
     kind: proximity
     a: C214
@@ -11425,7 +11862,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.413
+  - id: rel.400
     from: near
     kind: proximity
     a: C114
@@ -11433,7 +11870,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.414
+  - id: rel.401
     from: near
     kind: proximity
     a: C414
@@ -11441,7 +11878,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.415
+  - id: rel.402
     from: near
     kind: proximity
     a: R214
@@ -11449,7 +11886,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.416
+  - id: rel.403
     from: near
     kind: proximity
     a: R414
@@ -11457,7 +11894,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.417
+  - id: rel.404
     from: near
     kind: proximity
     a: U214
@@ -11465,7 +11902,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.418
+  - id: rel.405
     from: near
     kind: proximity
     a: C614
@@ -11473,55 +11910,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.419
+  - id: rel.406
     from: far
     kind: separation
     a: U1
     b: T114
     min: 16.0
     hard: false
-  - id: rel.420
+  - id: rel.407
     from: thermal
     kind: thermal
     obj: U114
     watts: 0.6
     sink: copper
-  - id: rel.421
+  - id: rel.408
     from: thermal
     kind: thermal
     obj: T114
     watts: 0.5
     sink: air
-  - id: rel.422
+  - id: rel.409
     from: x-island
     kind: x-island
     net: net:TAP13
     layers: In1.Cu
     under: block:ch14
-  - id: rel.423
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch14/SW_14, net:ch14/SNB_14]
-    min_mm: 0.6
-  - id: rel.424
+  - id: rel.410
     from: keepout
     kind: keepout
     obj: T114
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.425
+  - id: rel.411
     from: pins_toward
     kind: pins_toward
     obj: T115
     pins: [T115.1, T115.2, T115.3, T115.4]
     side: north
-  - id: rel.426
+  - id: rel.412
     from: pins_toward
     kind: pins_toward
     obj: T115
     pins: [T115.8, T115.5]
     side: south
-  - id: rel.427
+  - id: rel.413
     from: hot_loop
     kind: loop_area
     path:
@@ -11536,14 +11968,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.428
+  - id: rel.414
     from: hot_loop
     kind: loop_area
     path: [T115.5, D115.2, D115.1, C615.1, C615.2, T115.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.429
+  - id: rel.415
     from: hot_loop
     kind: loop_area
     path:
@@ -11556,7 +11988,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.430
+  - id: rel.416
     from: near
     kind: proximity
     a: C315
@@ -11564,7 +11996,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.431
+  - id: rel.417
     from: near
     kind: proximity
     a: C215
@@ -11572,7 +12004,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.432
+  - id: rel.418
     from: near
     kind: proximity
     a: C215
@@ -11580,7 +12012,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.433
+  - id: rel.419
     from: near
     kind: proximity
     a: C115
@@ -11588,7 +12020,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.434
+  - id: rel.420
     from: near
     kind: proximity
     a: C415
@@ -11596,7 +12028,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.435
+  - id: rel.421
     from: near
     kind: proximity
     a: R215
@@ -11604,7 +12036,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.436
+  - id: rel.422
     from: near
     kind: proximity
     a: R415
@@ -11612,7 +12044,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.437
+  - id: rel.423
     from: near
     kind: proximity
     a: U215
@@ -11620,7 +12052,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.438
+  - id: rel.424
     from: near
     kind: proximity
     a: C615
@@ -11628,55 +12060,50 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.439
+  - id: rel.425
     from: far
     kind: separation
     a: U1
     b: T115
     min: 16.0
     hard: false
-  - id: rel.440
+  - id: rel.426
     from: thermal
     kind: thermal
     obj: U115
     watts: 0.6
     sink: copper
-  - id: rel.441
+  - id: rel.427
     from: thermal
     kind: thermal
     obj: T115
     watts: 0.5
     sink: air
-  - id: rel.442
+  - id: rel.428
     from: x-island
     kind: x-island
     net: net:TAP14
     layers: In1.Cu
     under: block:ch15
-  - id: rel.443
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch15/SW_15, net:ch15/SNB_15]
-    min_mm: 0.6
-  - id: rel.444
+  - id: rel.429
     from: keepout
     kind: keepout
     obj: T115
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.445
+  - id: rel.430
     from: pins_toward
     kind: pins_toward
     obj: T116
     pins: [T116.1, T116.2, T116.3, T116.4]
     side: north
-  - id: rel.446
+  - id: rel.431
     from: pins_toward
     kind: pins_toward
     obj: T116
     pins: [T116.8, T116.5]
     side: south
-  - id: rel.447
+  - id: rel.432
     from: hot_loop
     kind: loop_area
     path:
@@ -11691,14 +12118,14 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.448
+  - id: rel.433
     from: hot_loop
     kind: loop_area
     path: [T116.5, D116.2, D116.1, C616.1, C616.2, T116.8]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.449
+  - id: rel.434
     from: hot_loop
     kind: loop_area
     path:
@@ -11711,7 +12138,7 @@ constraints:
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.450
+  - id: rel.435
     from: near
     kind: proximity
     a: C316
@@ -11719,7 +12146,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.451
+  - id: rel.436
     from: near
     kind: proximity
     a: C216
@@ -11727,7 +12154,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.452
+  - id: rel.437
     from: near
     kind: proximity
     a: C216
@@ -11735,7 +12162,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.453
+  - id: rel.438
     from: near
     kind: proximity
     a: C116
@@ -11743,7 +12170,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.454
+  - id: rel.439
     from: near
     kind: proximity
     a: C416
@@ -11751,7 +12178,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.455
+  - id: rel.440
     from: near
     kind: proximity
     a: R216
@@ -11759,7 +12186,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.456
+  - id: rel.441
     from: near
     kind: proximity
     a: R416
@@ -11767,7 +12194,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.457
+  - id: rel.442
     from: near
     kind: proximity
     a: U216
@@ -11775,7 +12202,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.458
+  - id: rel.443
     from: near
     kind: proximity
     a: C616
@@ -11783,43 +12210,38 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.459
+  - id: rel.444
     from: far
     kind: separation
     a: U1
     b: T116
     min: 16.0
     hard: false
-  - id: rel.460
+  - id: rel.445
     from: thermal
     kind: thermal
     obj: U116
     watts: 0.6
     sink: copper
-  - id: rel.461
+  - id: rel.446
     from: thermal
     kind: thermal
     obj: T116
     watts: 0.5
     sink: air
-  - id: rel.462
+  - id: rel.447
     from: x-island
     kind: x-island
     net: net:TAP15
     layers: In1.Cu
     under: block:ch16
-  - id: rel.463
-    from: x-spacing
-    kind: x-spacing
-    nets: [net:ch16/SW_16, net:ch16/SNB_16]
-    min_mm: 0.6
-  - id: rel.464
+  - id: rel.448
     from: keepout
     kind: keepout
     obj: T116
     what: "foreign-domain copper in the primary-secondary pad gap"
     layers: all
-  - id: rel.465
+  - id: rel.449
     from: x-corridor
     kind: x-corridor
     nets:
@@ -11843,7 +12265,7 @@ constraints:
     edge: south
     layer: In2.Cu
     ordered: "by index"
-  - id: rel.466
+  - id: rel.450
     from: x-corridor
     kind: x-corridor
     nets:
@@ -11867,132 +12289,132 @@ constraints:
     edge: north
     layer: In2.Cu
     ordered: "by index"
-  - id: rel.467
+  - id: rel.451
     from: x-current
     kind: x-current
     net: net:TAP0
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.468
+  - id: rel.452
     from: x-current
     kind: x-current
     net: net:TAP1
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.469
+  - id: rel.453
     from: x-current
     kind: x-current
     net: net:TAP2
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.470
+  - id: rel.454
     from: x-current
     kind: x-current
     net: net:TAP3
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.471
+  - id: rel.455
     from: x-current
     kind: x-current
     net: net:TAP4
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.472
+  - id: rel.456
     from: x-current
     kind: x-current
     net: net:TAP5
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.473
+  - id: rel.457
     from: x-current
     kind: x-current
     net: net:TAP6
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.474
+  - id: rel.458
     from: x-current
     kind: x-current
     net: net:TAP7
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.475
+  - id: rel.459
     from: x-current
     kind: x-current
     net: net:TAP8
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.476
+  - id: rel.460
     from: x-current
     kind: x-current
     net: net:TAP9
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.477
+  - id: rel.461
     from: x-current
     kind: x-current
     net: net:TAP10
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.478
+  - id: rel.462
     from: x-current
     kind: x-current
     net: net:TAP11
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.479
+  - id: rel.463
     from: x-current
     kind: x-current
     net: net:TAP12
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.480
+  - id: rel.464
     from: x-current
     kind: x-current
     net: net:TAP13
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.481
+  - id: rel.465
     from: x-current
     kind: x-current
     net: net:TAP14
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.482
+  - id: rel.466
     from: x-current
     kind: x-current
     net: net:TAP15
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.483
+  - id: rel.467
     from: x-current
     kind: x-current
     net: net:TAP16
     amps: 2.6
     layer: In2.Cu
     width_mm: 1.5
-  - id: rel.484
+  - id: rel.468
     from: x-current
     kind: x-current
     net: net:FLYBUS
     amps: 1.6
     layer: F.Cu
-  - id: rel.485
+  - id: rel.469
     from: x-keepout_mlcc
     kind: x-keepout_mlcc
     parts:
@@ -12047,7 +12469,7 @@ constraints:
       - C8
       - C11
     what: "1210 MLCC within 5 mm of a board edge or hole"
-  - id: rel.486
+  - id: rel.470
     from: near
     kind: proximity
     a: D1
@@ -12055,7 +12477,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.487
+  - id: rel.471
     from: near
     kind: proximity
     a: D2
@@ -12063,13 +12485,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.488
+  - id: rel.472
     from: thermal
     kind: thermal
     obj: D1
     watts: 0.7
     sink: copper
-  - id: rel.489
+  - id: rel.473
     from: near
     kind: proximity
     a: TH1
@@ -12077,7 +12499,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.490
+  - id: rel.474
     from: near
     kind: proximity
     a: TH2
@@ -12085,7 +12507,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.491
+  - id: rel.475
     from: near
     kind: proximity
     a: TH3
@@ -12093,7 +12515,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.492
+  - id: rel.476
     from: near
     kind: proximity
     a: C1
@@ -12101,7 +12523,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.493
+  - id: rel.477
     from: near
     kind: proximity
     a: C2
@@ -12109,7 +12531,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.494
+  - id: rel.478
     from: near
     kind: proximity
     a: C3
@@ -12117,7 +12539,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.495
+  - id: rel.479
     from: near
     kind: proximity
     a: C4
@@ -12125,14 +12547,14 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.496
+  - id: rel.480
     from: hot_loop
     kind: loop_area
     path: [C8.1, U3.2, U3.8, L1.1, L1.2, C11.1, C11.2, U3.1, C8.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.497
+  - id: rel.481
     from: near
     kind: proximity
     a: C8
@@ -12140,7 +12562,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.498
+  - id: rel.482
     from: near
     kind: proximity
     a: C10
@@ -12148,7 +12570,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.499
+  - id: rel.483
     from: near
     kind: proximity
     a: R12
@@ -12156,7 +12578,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.500
+  - id: rel.484
     from: near
     kind: proximity
     a: R13
@@ -12164,14 +12586,14 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.501
+  - id: rel.485
     from: far
     kind: separation
     a: U3
     b: U1
     min: 16.0
     hard: false
-  - id: rel.502
+  - id: rel.486
     from: near
     kind: proximity
     a: C16
@@ -12179,7 +12601,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.503
+  - id: rel.487
     from: near
     kind: proximity
     a: C18
@@ -12187,45 +12609,45 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.504
+  - id: rel.488
     from: far
     kind: separation
     a: block:iso
     b: block:ch8
     min: 16.0
     hard: false
-  - id: rel.505
+  - id: rel.489
     from: far
     kind: separation
     a: block:iso
     b: block:ch9
     min: 16.0
     hard: false
-  - id: rel.506
+  - id: rel.490
     from: x-straddle
     kind: x-straddle
     part: U5
     a: domain:CTRL
     b: domain:USER
-  - id: rel.507
+  - id: rel.491
     from: x-straddle
     kind: x-straddle
     part: U6
     a: domain:CTRL
     b: domain:FAULT
-  - id: rel.508
+  - id: rel.492
     from: keepout
     kind: keepout
     obj: U5
     what: "copper and vias in the pad-row gap"
     layers: all
-  - id: rel.509
+  - id: rel.493
     from: keepout
     kind: keepout
     obj: U6
     what: "copper and vias in the pad-row gap"
     layers: all
-  - id: rel.510
+  - id: rel.494
     from: separate
     kind: isolation
     domains: [BAT0, C1]
@@ -12234,7 +12656,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.BAT0.C1
-  - id: rel.511
+  - id: rel.495
     from: separate
     kind: isolation
     domains: [C1, C2]
@@ -12243,7 +12665,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C1.C2
-  - id: rel.512
+  - id: rel.496
     from: separate
     kind: isolation
     domains: [C2, C3]
@@ -12252,7 +12674,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C2.C3
-  - id: rel.513
+  - id: rel.497
     from: separate
     kind: isolation
     domains: [C3, C4]
@@ -12261,7 +12683,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C3.C4
-  - id: rel.514
+  - id: rel.498
     from: separate
     kind: isolation
     domains: [C4, C5]
@@ -12270,7 +12692,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C4.C5
-  - id: rel.515
+  - id: rel.499
     from: separate
     kind: isolation
     domains: [C5, C6]
@@ -12279,7 +12701,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C5.C6
-  - id: rel.516
+  - id: rel.500
     from: separate
     kind: isolation
     domains: [C6, C7]
@@ -12288,7 +12710,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C6.C7
-  - id: rel.517
+  - id: rel.501
     from: separate
     kind: isolation
     domains: [C7, C8]
@@ -12297,7 +12719,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C7.C8
-  - id: rel.518
+  - id: rel.502
     from: separate
     kind: isolation
     domains: [C8, C9]
@@ -12306,7 +12728,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C8.C9
-  - id: rel.519
+  - id: rel.503
     from: separate
     kind: isolation
     domains: [C9, C10]
@@ -12315,7 +12737,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C9.C10
-  - id: rel.520
+  - id: rel.504
     from: separate
     kind: isolation
     domains: [C10, C11]
@@ -12324,7 +12746,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C10.C11
-  - id: rel.521
+  - id: rel.505
     from: separate
     kind: isolation
     domains: [C11, C12]
@@ -12333,7 +12755,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C11.C12
-  - id: rel.522
+  - id: rel.506
     from: separate
     kind: isolation
     domains: [C12, C13]
@@ -12342,7 +12764,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C12.C13
-  - id: rel.523
+  - id: rel.507
     from: separate
     kind: isolation
     domains: [C13, C14]
@@ -12351,7 +12773,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C13.C14
-  - id: rel.524
+  - id: rel.508
     from: separate
     kind: isolation
     domains: [C14, C15]
@@ -12360,7 +12782,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C14.C15
-  - id: rel.525
+  - id: rel.509
     from: separate
     kind: isolation
     domains: [C15, C16]
@@ -12369,7 +12791,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C15.C16
-  - id: rel.526
+  - id: rel.510
     from: separate
     kind: isolation
     domains: [C16, STACK]
@@ -12378,7 +12800,7 @@ constraints:
     creepage_mm: 0.2
     slot: false
     kicad_dru: IR:barrier.C16.STACK
-  - id: rel.527
+  - id: rel.511
     from: separate
     kind: isolation
     domains: [BAT0, C2]
@@ -12387,7 +12809,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.BAT0.C2
-  - id: rel.528
+  - id: rel.512
     from: separate
     kind: isolation
     domains: [C1, C3]
@@ -12396,7 +12818,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C1.C3
-  - id: rel.529
+  - id: rel.513
     from: separate
     kind: isolation
     domains: [C2, C4]
@@ -12405,7 +12827,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C2.C4
-  - id: rel.530
+  - id: rel.514
     from: separate
     kind: isolation
     domains: [C3, C5]
@@ -12414,7 +12836,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C3.C5
-  - id: rel.531
+  - id: rel.515
     from: separate
     kind: isolation
     domains: [C4, C6]
@@ -12423,7 +12845,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C4.C6
-  - id: rel.532
+  - id: rel.516
     from: separate
     kind: isolation
     domains: [C5, C7]
@@ -12432,7 +12854,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C5.C7
-  - id: rel.533
+  - id: rel.517
     from: separate
     kind: isolation
     domains: [C6, C8]
@@ -12441,7 +12863,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C6.C8
-  - id: rel.534
+  - id: rel.518
     from: separate
     kind: isolation
     domains: [C7, C9]
@@ -12450,7 +12872,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C7.C9
-  - id: rel.535
+  - id: rel.519
     from: separate
     kind: isolation
     domains: [C8, C10]
@@ -12459,7 +12881,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C8.C10
-  - id: rel.536
+  - id: rel.520
     from: separate
     kind: isolation
     domains: [C9, C11]
@@ -12468,7 +12890,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C9.C11
-  - id: rel.537
+  - id: rel.521
     from: separate
     kind: isolation
     domains: [C10, C12]
@@ -12477,7 +12899,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C10.C12
-  - id: rel.538
+  - id: rel.522
     from: separate
     kind: isolation
     domains: [C11, C13]
@@ -12486,7 +12908,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C11.C13
-  - id: rel.539
+  - id: rel.523
     from: separate
     kind: isolation
     domains: [C12, C14]
@@ -12495,7 +12917,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C12.C14
-  - id: rel.540
+  - id: rel.524
     from: separate
     kind: isolation
     domains: [C13, C15]
@@ -12504,7 +12926,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C13.C15
-  - id: rel.541
+  - id: rel.525
     from: separate
     kind: isolation
     domains: [C14, C16]
@@ -12513,7 +12935,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C14.C16
-  - id: rel.542
+  - id: rel.526
     from: separate
     kind: isolation
     domains: [C15, STACK]
@@ -12522,7 +12944,295 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.C15.STACK
+  - id: rel.527
+    from: separate
+    kind: isolation
+    domains: [SW1, BAT0]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW1.BAT0
+  - id: rel.528
+    from: separate
+    kind: isolation
+    domains: [SW1, C1]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW1.C1
+  - id: rel.529
+    from: separate
+    kind: isolation
+    domains: [SW2, C1]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW2.C1
+  - id: rel.530
+    from: separate
+    kind: isolation
+    domains: [SW2, C2]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW2.C2
+  - id: rel.531
+    from: separate
+    kind: isolation
+    domains: [SW3, C2]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW3.C2
+  - id: rel.532
+    from: separate
+    kind: isolation
+    domains: [SW3, C3]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW3.C3
+  - id: rel.533
+    from: separate
+    kind: isolation
+    domains: [SW4, C3]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW4.C3
+  - id: rel.534
+    from: separate
+    kind: isolation
+    domains: [SW4, C4]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW4.C4
+  - id: rel.535
+    from: separate
+    kind: isolation
+    domains: [SW5, C4]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW5.C4
+  - id: rel.536
+    from: separate
+    kind: isolation
+    domains: [SW5, C5]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW5.C5
+  - id: rel.537
+    from: separate
+    kind: isolation
+    domains: [SW6, C5]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW6.C5
+  - id: rel.538
+    from: separate
+    kind: isolation
+    domains: [SW6, C6]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW6.C6
+  - id: rel.539
+    from: separate
+    kind: isolation
+    domains: [SW7, C6]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW7.C6
+  - id: rel.540
+    from: separate
+    kind: isolation
+    domains: [SW7, C7]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW7.C7
+  - id: rel.541
+    from: separate
+    kind: isolation
+    domains: [SW8, C7]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW8.C7
+  - id: rel.542
+    from: separate
+    kind: isolation
+    domains: [SW8, C8]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW8.C8
   - id: rel.543
+    from: separate
+    kind: isolation
+    domains: [SW9, C8]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW9.C8
+  - id: rel.544
+    from: separate
+    kind: isolation
+    domains: [SW9, C9]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW9.C9
+  - id: rel.545
+    from: separate
+    kind: isolation
+    domains: [SW10, C9]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW10.C9
+  - id: rel.546
+    from: separate
+    kind: isolation
+    domains: [SW10, C10]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW10.C10
+  - id: rel.547
+    from: separate
+    kind: isolation
+    domains: [SW11, C10]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW11.C10
+  - id: rel.548
+    from: separate
+    kind: isolation
+    domains: [SW11, C11]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW11.C11
+  - id: rel.549
+    from: separate
+    kind: isolation
+    domains: [SW12, C11]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW12.C11
+  - id: rel.550
+    from: separate
+    kind: isolation
+    domains: [SW12, C12]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW12.C12
+  - id: rel.551
+    from: separate
+    kind: isolation
+    domains: [SW13, C12]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW13.C12
+  - id: rel.552
+    from: separate
+    kind: isolation
+    domains: [SW13, C13]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW13.C13
+  - id: rel.553
+    from: separate
+    kind: isolation
+    domains: [SW14, C13]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW14.C13
+  - id: rel.554
+    from: separate
+    kind: isolation
+    domains: [SW14, C14]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW14.C14
+  - id: rel.555
+    from: separate
+    kind: isolation
+    domains: [SW15, C14]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW15.C14
+  - id: rel.556
+    from: separate
+    kind: isolation
+    domains: [SW15, C15]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW15.C15
+  - id: rel.557
+    from: separate
+    kind: isolation
+    domains: [SW16, C15]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW16.C15
+  - id: rel.558
+    from: separate
+    kind: isolation
+    domains: [SW16, C16]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.SW16.C16
+  - id: rel.559
     from: separate
     kind: isolation
     domains: [RET, C1]
@@ -12531,7 +13241,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.RET.C1
-  - id: rel.544
+  - id: rel.560
     from: separate
     kind: isolation
     domains: [CTRL, C1]
@@ -12540,7 +13250,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.CTRL.C1
-  - id: rel.545
+  - id: rel.561
     from: separate
     kind: isolation
     domains: [BAT0, RET]
@@ -12549,7 +13259,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.BAT0.RET
-  - id: rel.546
+  - id: rel.562
     from: separate
     kind: isolation
     domains: [USER, FAULT]
@@ -12558,7 +13268,7 @@ constraints:
     creepage_mm: 0.5
     slot: false
     kicad_dru: IR:barrier.USER.FAULT
-  - id: rel.547
+  - id: rel.563
     from: separate
     kind: isolation
     domains: [BAT0, CHASSIS]
@@ -12567,7 +13277,7 @@ constraints:
     creepage_mm: 3.0
     slot: false
     kicad_dru: IR:barrier.BAT0.CHASSIS
-  - id: rel.548
+  - id: rel.564
     from: separate
     kind: isolation
     domains: [BAT0, USER]
@@ -12576,7 +13286,7 @@ constraints:
     creepage_mm: 8.0
     slot: false
     kicad_dru: IR:barrier.BAT0.USER
-  - id: rel.549
+  - id: rel.565
     from: separate
     kind: isolation
     domains: [BAT0, FAULT]
@@ -12585,65 +13295,65 @@ constraints:
     creepage_mm: 5.0
     slot: false
     kicad_dru: IR:barrier.BAT0.FAULT
-  - id: rel.550
+  - id: rel.566
     from: keepout
     kind: keepout
     obj: H1
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.551
+  - id: rel.567
     from: keepout
     kind: keepout
     obj: H2
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.552
+  - id: rel.568
     from: keepout
     kind: keepout
     obj: H3
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.553
+  - id: rel.569
     from: keepout
     kind: keepout
     obj: H4
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.554
+  - id: rel.570
     from: keepout
     kind: keepout
     obj: H5
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.555
+  - id: rel.571
     from: keepout
     kind: keepout
     obj: H6
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.556
+  - id: rel.572
     from: x-label
     kind: x-label
     obj: J1
     text: "TAP 0 (B- CELL, NOT P-) ... 16 (B+); bridge N+1..16 for N < 16"
-  - id: rel.557
+  - id: rel.573
     from: x-label
     kind: x-label
     obj: J2
     text: "UART: GND VIO TX RX (isolated)"
-  - id: rel.558
+  - id: rel.574
     from: x-label
     kind: x-label
     obj: J4
     text: "FAULT contact, <= 30 V 50 mA"
-  - id: rel.559
+  - id: rel.575
     from: group
     kind: cluster
     component_class: tapin
     members: [J1, NT1]
     max_span: 32.0
     hard: false
-  - id: rel.560
+  - id: rel.576
     from: group
     kind: cluster
     component_class: harness
@@ -12685,14 +13395,14 @@ constraints:
       - HF16
     max_span: 32.0
     hard: false
-  - id: rel.561
+  - id: rel.577
     from: group
     kind: cluster
     component_class: mech
     members: [H1, H2, H3, H4, H5, H6]
     max_span: 32.0
     hard: false
-  - id: rel.562
+  - id: rel.578
     from: near
     kind: proximity
     a: C9
@@ -12700,7 +13410,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.563
+  - id: rel.579
     from: near
     kind: proximity
     a: C11
@@ -12708,7 +13418,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.564
+  - id: rel.580
     from: near
     kind: proximity
     a: C14
@@ -12716,7 +13426,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.565
+  - id: rel.581
     from: near
     kind: proximity
     a: C15
@@ -12724,7 +13434,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.566
+  - id: rel.582
     from: near
     kind: proximity
     a: C17
@@ -12732,7 +13442,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.567
+  - id: rel.583
     from: near
     kind: proximity
     a: C20
@@ -12740,7 +13450,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.568
+  - id: rel.584
     from: near
     kind: proximity
     a: C21
@@ -12748,93 +13458,3 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.569
-    from: edge
-    kind: edge_placement
-    ref: HP1
-    edge: any
-  - id: rel.570
-    from: edge
-    kind: edge_placement
-    ref: HT0
-    edge: any
-  - id: rel.571
-    from: edge
-    kind: edge_placement
-    ref: HT1
-    edge: any
-  - id: rel.572
-    from: edge
-    kind: edge_placement
-    ref: HT2
-    edge: any
-  - id: rel.573
-    from: edge
-    kind: edge_placement
-    ref: HT3
-    edge: any
-  - id: rel.574
-    from: edge
-    kind: edge_placement
-    ref: HT4
-    edge: any
-  - id: rel.575
-    from: edge
-    kind: edge_placement
-    ref: HT5
-    edge: any
-  - id: rel.576
-    from: edge
-    kind: edge_placement
-    ref: HT6
-    edge: any
-  - id: rel.577
-    from: edge
-    kind: edge_placement
-    ref: HT7
-    edge: any
-  - id: rel.578
-    from: edge
-    kind: edge_placement
-    ref: HT8
-    edge: any
-  - id: rel.579
-    from: edge
-    kind: edge_placement
-    ref: HT9
-    edge: any
-  - id: rel.580
-    from: edge
-    kind: edge_placement
-    ref: HT10
-    edge: any
-  - id: rel.581
-    from: edge
-    kind: edge_placement
-    ref: HT11
-    edge: any
-  - id: rel.582
-    from: edge
-    kind: edge_placement
-    ref: HT12
-    edge: any
-  - id: rel.583
-    from: edge
-    kind: edge_placement
-    ref: HT13
-    edge: any
-  - id: rel.584
-    from: edge
-    kind: edge_placement
-    ref: HT14
-    edge: any
-  - id: rel.585
-    from: edge
-    kind: edge_placement
-    ref: HT15
-    edge: any
-  - id: rel.586
-    from: edge
-    kind: edge_placement
-    ref: HT16
-    edge: any

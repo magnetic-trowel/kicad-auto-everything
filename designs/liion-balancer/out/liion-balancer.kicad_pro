@@ -62,7 +62,7 @@
       },
       {
         "name": "C1",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -70,7 +70,7 @@
       },
       {
         "name": "C10",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -78,499 +78,371 @@
       },
       {
         "name": "C10_3A",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 6
       },
       {
-        "name": "C10_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 7
-      },
-      {
         "name": "C10_W1p5",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 8
+        "priority": 7
       },
       {
         "name": "C11",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 8
+      },
+      {
+        "name": "C11_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 9
       },
       {
-        "name": "C11_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 10
-      },
-      {
-        "name": "C11_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 11
-      },
-      {
         "name": "C11_W1p5",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 12
+        "priority": 10
       },
       {
         "name": "C12",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 13
+        "priority": 11
       },
       {
         "name": "C12_3A",
-        "clearance": 0.6,
+        "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
+        "via_drill": 0.3,
+        "priority": 12
+      },
+      {
+        "name": "C12_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
+        "priority": 13
+      },
+      {
+        "name": "C13",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 14
       },
       {
-        "name": "C12_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
+        "name": "C13_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
         "priority": 15
       },
       {
-        "name": "C12_W1p5",
-        "clearance": 0.6,
+        "name": "C13_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
         "priority": 16
       },
       {
-        "name": "C13",
-        "clearance": 0.6,
+        "name": "C14",
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 17
       },
       {
-        "name": "C13_3A",
-        "clearance": 0.6,
+        "name": "C14_3A",
+        "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 18
       },
       {
-        "name": "C13_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 19
-      },
-      {
-        "name": "C13_W1p5",
-        "clearance": 0.6,
+        "name": "C14_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
+        "priority": 19
+      },
+      {
+        "name": "C15",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
         "priority": 20
       },
       {
-        "name": "C14",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
+        "name": "C15_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 21
       },
       {
-        "name": "C14_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 22
-      },
-      {
-        "name": "C14_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 23
-      },
-      {
-        "name": "C14_W1p5",
-        "clearance": 0.6,
+        "name": "C15_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 24
+        "priority": 22
       },
       {
-        "name": "C15",
-        "clearance": 0.6,
+        "name": "C16",
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
+        "priority": 23
+      },
+      {
+        "name": "C16_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
+        "priority": 24
+      },
+      {
+        "name": "C16_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
         "priority": 25
       },
       {
-        "name": "C15_3A",
-        "clearance": 0.6,
+        "name": "C1_3A",
+        "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 26
       },
       {
-        "name": "C15_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 27
-      },
-      {
-        "name": "C15_W1p5",
-        "clearance": 0.6,
+        "name": "C1_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
+        "priority": 27
+      },
+      {
+        "name": "C2",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
         "priority": 28
       },
       {
-        "name": "C16",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
+        "name": "C2_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 29
       },
       {
-        "name": "C16_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
+        "name": "C2_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
         "priority": 30
       },
       {
-        "name": "C16_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 31
-      },
-      {
-        "name": "C16_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 32
-      },
-      {
-        "name": "C1_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 33
-      },
-      {
-        "name": "C1_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 34
-      },
-      {
-        "name": "C1_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 35
-      },
-      {
-        "name": "C2",
-        "clearance": 0.6,
+        "name": "C3",
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
+        "priority": 31
+      },
+      {
+        "name": "C3_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
+        "priority": 32
+      },
+      {
+        "name": "C3_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
+        "priority": 33
+      },
+      {
+        "name": "C4",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 34
+      },
+      {
+        "name": "C4_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
+        "priority": 35
+      },
+      {
+        "name": "C4_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
         "priority": 36
       },
       {
-        "name": "C2_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
+        "name": "C5",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 37
       },
       {
-        "name": "C2_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
+        "name": "C5_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
         "priority": 38
       },
       {
-        "name": "C2_W1p5",
-        "clearance": 0.6,
+        "name": "C5_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
         "priority": 39
       },
       {
-        "name": "C3",
-        "clearance": 0.6,
+        "name": "C6",
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 40
       },
       {
-        "name": "C3_3A",
-        "clearance": 0.6,
+        "name": "C6_3A",
+        "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 41
       },
       {
-        "name": "C3_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 42
-      },
-      {
-        "name": "C3_W1p5",
-        "clearance": 0.6,
+        "name": "C6_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
+        "priority": 42
+      },
+      {
+        "name": "C7",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
         "priority": 43
       },
       {
-        "name": "C4",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
+        "name": "C7_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
         "via_drill": 0.3,
         "priority": 44
       },
       {
-        "name": "C4_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 45
-      },
-      {
-        "name": "C4_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 46
-      },
-      {
-        "name": "C4_W1p5",
-        "clearance": 0.6,
+        "name": "C7_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 47
+        "priority": 45
       },
       {
-        "name": "C5",
-        "clearance": 0.6,
+        "name": "C8",
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
+        "priority": 46
+      },
+      {
+        "name": "C8_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
+        "priority": 47
+      },
+      {
+        "name": "C8_W1p5",
+        "clearance": 0.2,
+        "track_width": 1.5,
+        "via_diameter": 1.5,
+        "via_drill": 0.6,
         "priority": 48
       },
       {
-        "name": "C5_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
+        "name": "C9",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 49
       },
       {
-        "name": "C5_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
+        "name": "C9_3A",
+        "clearance": 0.2,
+        "track_width": 0.7,
+        "via_diameter": 0.86,
+        "via_drill": 0.3,
         "priority": 50
       },
       {
-        "name": "C5_W1p5",
-        "clearance": 0.6,
+        "name": "C9_W1p5",
+        "clearance": 0.2,
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
         "priority": 51
-      },
-      {
-        "name": "C6",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
-        "via_drill": 0.3,
-        "priority": 52
-      },
-      {
-        "name": "C6_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 53
-      },
-      {
-        "name": "C6_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 54
-      },
-      {
-        "name": "C6_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 55
-      },
-      {
-        "name": "C7",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
-        "via_drill": 0.3,
-        "priority": 56
-      },
-      {
-        "name": "C7_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 57
-      },
-      {
-        "name": "C7_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 58
-      },
-      {
-        "name": "C7_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 59
-      },
-      {
-        "name": "C8",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
-        "via_drill": 0.3,
-        "priority": 60
-      },
-      {
-        "name": "C8_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 61
-      },
-      {
-        "name": "C8_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 62
-      },
-      {
-        "name": "C8_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 63
-      },
-      {
-        "name": "C9",
-        "clearance": 0.6,
-        "track_width": 0.25,
-        "via_diameter": 0.6,
-        "via_drill": 0.3,
-        "priority": 64
-      },
-      {
-        "name": "C9_3A",
-        "clearance": 0.6,
-        "track_width": 0.7,
-        "via_diameter": 0.86,
-        "via_drill": 0.3,
-        "priority": 65
-      },
-      {
-        "name": "C9_5A",
-        "clearance": 0.6,
-        "track_width": 1.4,
-        "via_diameter": 1.42,
-        "via_drill": 0.56,
-        "priority": 66
-      },
-      {
-        "name": "C9_W1p5",
-        "clearance": 0.6,
-        "track_width": 1.5,
-        "via_diameter": 1.5,
-        "via_drill": 0.6,
-        "priority": 67
       },
       {
         "name": "CTRL",
@@ -578,7 +450,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 68
+        "priority": 52
       },
       {
         "name": "FAULT",
@@ -586,7 +458,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 69
+        "priority": 53
       },
       {
         "name": "RET",
@@ -594,7 +466,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 70
+        "priority": 54
       },
       {
         "name": "RET_2A",
@@ -602,7 +474,7 @@
         "track_width": 0.4,
         "via_diameter": 0.62,
         "via_drill": 0.3,
-        "priority": 71
+        "priority": 55
       },
       {
         "name": "SNS1",
@@ -610,7 +482,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 72
+        "priority": 56
       },
       {
         "name": "SNS10",
@@ -618,7 +490,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 73
+        "priority": 57
       },
       {
         "name": "SNS11",
@@ -626,7 +498,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 74
+        "priority": 58
       },
       {
         "name": "SNS12",
@@ -634,7 +506,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 75
+        "priority": 59
       },
       {
         "name": "SNS13",
@@ -642,7 +514,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 76
+        "priority": 60
       },
       {
         "name": "SNS14",
@@ -650,7 +522,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 77
+        "priority": 61
       },
       {
         "name": "SNS15",
@@ -658,7 +530,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 78
+        "priority": 62
       },
       {
         "name": "SNS2",
@@ -666,7 +538,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 79
+        "priority": 63
       },
       {
         "name": "SNS3",
@@ -674,7 +546,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 80
+        "priority": 64
       },
       {
         "name": "SNS4",
@@ -682,7 +554,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 81
+        "priority": 65
       },
       {
         "name": "SNS5",
@@ -690,7 +562,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 82
+        "priority": 66
       },
       {
         "name": "SNS6",
@@ -698,7 +570,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 83
+        "priority": 67
       },
       {
         "name": "SNS7",
@@ -706,7 +578,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 84
+        "priority": 68
       },
       {
         "name": "SNS8",
@@ -714,7 +586,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 85
+        "priority": 69
       },
       {
         "name": "SNS9",
@@ -722,7 +594,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 86
+        "priority": 70
       },
       {
         "name": "STACK",
@@ -730,7 +602,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 87
+        "priority": 71
       },
       {
         "name": "STR1",
@@ -738,7 +610,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 88
+        "priority": 72
       },
       {
         "name": "STR10",
@@ -746,7 +618,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 89
+        "priority": 73
       },
       {
         "name": "STR11",
@@ -754,7 +626,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 90
+        "priority": 74
       },
       {
         "name": "STR12",
@@ -762,7 +634,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 91
+        "priority": 75
       },
       {
         "name": "STR13",
@@ -770,7 +642,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 92
+        "priority": 76
       },
       {
         "name": "STR14",
@@ -778,7 +650,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 93
+        "priority": 77
       },
       {
         "name": "STR15",
@@ -786,7 +658,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 94
+        "priority": 78
       },
       {
         "name": "STR16",
@@ -794,7 +666,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 95
+        "priority": 79
       },
       {
         "name": "STR2",
@@ -802,7 +674,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 96
+        "priority": 80
       },
       {
         "name": "STR3",
@@ -810,7 +682,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 97
+        "priority": 81
       },
       {
         "name": "STR4",
@@ -818,7 +690,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 98
+        "priority": 82
       },
       {
         "name": "STR5",
@@ -826,7 +698,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 99
+        "priority": 83
       },
       {
         "name": "STR6",
@@ -834,7 +706,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 100
+        "priority": 84
       },
       {
         "name": "STR7",
@@ -842,7 +714,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 101
+        "priority": 85
       },
       {
         "name": "STR8",
@@ -850,7 +722,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 102
+        "priority": 86
       },
       {
         "name": "STR9",
@@ -858,7 +730,263 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
+        "priority": 87
+      },
+      {
+        "name": "SW1",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 88
+      },
+      {
+        "name": "SW10",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 89
+      },
+      {
+        "name": "SW10_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 90
+      },
+      {
+        "name": "SW11",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 91
+      },
+      {
+        "name": "SW11_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 92
+      },
+      {
+        "name": "SW12",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 93
+      },
+      {
+        "name": "SW12_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 94
+      },
+      {
+        "name": "SW13",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 95
+      },
+      {
+        "name": "SW13_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 96
+      },
+      {
+        "name": "SW14",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 97
+      },
+      {
+        "name": "SW14_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 98
+      },
+      {
+        "name": "SW15",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 99
+      },
+      {
+        "name": "SW15_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 100
+      },
+      {
+        "name": "SW16",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 101
+      },
+      {
+        "name": "SW16_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 102
+      },
+      {
+        "name": "SW1_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
         "priority": 103
+      },
+      {
+        "name": "SW2",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 104
+      },
+      {
+        "name": "SW2_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 105
+      },
+      {
+        "name": "SW3",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 106
+      },
+      {
+        "name": "SW3_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 107
+      },
+      {
+        "name": "SW4",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 108
+      },
+      {
+        "name": "SW4_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 109
+      },
+      {
+        "name": "SW5",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 110
+      },
+      {
+        "name": "SW5_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 111
+      },
+      {
+        "name": "SW6",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 112
+      },
+      {
+        "name": "SW6_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 113
+      },
+      {
+        "name": "SW7",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 114
+      },
+      {
+        "name": "SW7_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 115
+      },
+      {
+        "name": "SW8",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 116
+      },
+      {
+        "name": "SW8_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 117
+      },
+      {
+        "name": "SW9",
+        "clearance": 0.6,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 118
+      },
+      {
+        "name": "SW9_5A",
+        "clearance": 0.6,
+        "track_width": 1.4,
+        "via_diameter": 1.42,
+        "via_drill": 0.56,
+        "priority": 119
       },
       {
         "name": "USER",
@@ -866,7 +994,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 104
+        "priority": 120
       }
     ],
     "meta": {
@@ -930,11 +1058,11 @@
         "pattern": "/ch1/SEC_1"
       },
       {
-        "netclass": "C1",
+        "netclass": "SW1",
         "pattern": "/ch1/SNB_1"
       },
       {
-        "netclass": "C1_5A",
+        "netclass": "SW1_5A",
         "pattern": "/ch1/SW_1"
       },
       {
@@ -954,11 +1082,11 @@
         "pattern": "/ch10/SEC_10"
       },
       {
-        "netclass": "C10",
+        "netclass": "SW10",
         "pattern": "/ch10/SNB_10"
       },
       {
-        "netclass": "C10_5A",
+        "netclass": "SW10_5A",
         "pattern": "/ch10/SW_10"
       },
       {
@@ -978,11 +1106,11 @@
         "pattern": "/ch11/SEC_11"
       },
       {
-        "netclass": "C11",
+        "netclass": "SW11",
         "pattern": "/ch11/SNB_11"
       },
       {
-        "netclass": "C11_5A",
+        "netclass": "SW11_5A",
         "pattern": "/ch11/SW_11"
       },
       {
@@ -1002,11 +1130,11 @@
         "pattern": "/ch12/SEC_12"
       },
       {
-        "netclass": "C12",
+        "netclass": "SW12",
         "pattern": "/ch12/SNB_12"
       },
       {
-        "netclass": "C12_5A",
+        "netclass": "SW12_5A",
         "pattern": "/ch12/SW_12"
       },
       {
@@ -1026,11 +1154,11 @@
         "pattern": "/ch13/SEC_13"
       },
       {
-        "netclass": "C13",
+        "netclass": "SW13",
         "pattern": "/ch13/SNB_13"
       },
       {
-        "netclass": "C13_5A",
+        "netclass": "SW13_5A",
         "pattern": "/ch13/SW_13"
       },
       {
@@ -1050,11 +1178,11 @@
         "pattern": "/ch14/SEC_14"
       },
       {
-        "netclass": "C14",
+        "netclass": "SW14",
         "pattern": "/ch14/SNB_14"
       },
       {
-        "netclass": "C14_5A",
+        "netclass": "SW14_5A",
         "pattern": "/ch14/SW_14"
       },
       {
@@ -1074,11 +1202,11 @@
         "pattern": "/ch15/SEC_15"
       },
       {
-        "netclass": "C15",
+        "netclass": "SW15",
         "pattern": "/ch15/SNB_15"
       },
       {
-        "netclass": "C15_5A",
+        "netclass": "SW15_5A",
         "pattern": "/ch15/SW_15"
       },
       {
@@ -1098,11 +1226,11 @@
         "pattern": "/ch16/SEC_16"
       },
       {
-        "netclass": "C16",
+        "netclass": "SW16",
         "pattern": "/ch16/SNB_16"
       },
       {
-        "netclass": "C16_5A",
+        "netclass": "SW16_5A",
         "pattern": "/ch16/SW_16"
       },
       {
@@ -1122,11 +1250,11 @@
         "pattern": "/ch2/SEC_2"
       },
       {
-        "netclass": "C2",
+        "netclass": "SW2",
         "pattern": "/ch2/SNB_2"
       },
       {
-        "netclass": "C2_5A",
+        "netclass": "SW2_5A",
         "pattern": "/ch2/SW_2"
       },
       {
@@ -1146,11 +1274,11 @@
         "pattern": "/ch3/SEC_3"
       },
       {
-        "netclass": "C3",
+        "netclass": "SW3",
         "pattern": "/ch3/SNB_3"
       },
       {
-        "netclass": "C3_5A",
+        "netclass": "SW3_5A",
         "pattern": "/ch3/SW_3"
       },
       {
@@ -1170,11 +1298,11 @@
         "pattern": "/ch4/SEC_4"
       },
       {
-        "netclass": "C4",
+        "netclass": "SW4",
         "pattern": "/ch4/SNB_4"
       },
       {
-        "netclass": "C4_5A",
+        "netclass": "SW4_5A",
         "pattern": "/ch4/SW_4"
       },
       {
@@ -1194,11 +1322,11 @@
         "pattern": "/ch5/SEC_5"
       },
       {
-        "netclass": "C5",
+        "netclass": "SW5",
         "pattern": "/ch5/SNB_5"
       },
       {
-        "netclass": "C5_5A",
+        "netclass": "SW5_5A",
         "pattern": "/ch5/SW_5"
       },
       {
@@ -1218,11 +1346,11 @@
         "pattern": "/ch6/SEC_6"
       },
       {
-        "netclass": "C6",
+        "netclass": "SW6",
         "pattern": "/ch6/SNB_6"
       },
       {
-        "netclass": "C6_5A",
+        "netclass": "SW6_5A",
         "pattern": "/ch6/SW_6"
       },
       {
@@ -1242,11 +1370,11 @@
         "pattern": "/ch7/SEC_7"
       },
       {
-        "netclass": "C7",
+        "netclass": "SW7",
         "pattern": "/ch7/SNB_7"
       },
       {
-        "netclass": "C7_5A",
+        "netclass": "SW7_5A",
         "pattern": "/ch7/SW_7"
       },
       {
@@ -1266,11 +1394,11 @@
         "pattern": "/ch8/SEC_8"
       },
       {
-        "netclass": "C8",
+        "netclass": "SW8",
         "pattern": "/ch8/SNB_8"
       },
       {
-        "netclass": "C8_5A",
+        "netclass": "SW8_5A",
         "pattern": "/ch8/SW_8"
       },
       {
@@ -1290,11 +1418,11 @@
         "pattern": "/ch9/SEC_9"
       },
       {
-        "netclass": "C9",
+        "netclass": "SW9",
         "pattern": "/ch9/SNB_9"
       },
       {
-        "netclass": "C9_5A",
+        "netclass": "SW9_5A",
         "pattern": "/ch9/SW_9"
       },
       {
