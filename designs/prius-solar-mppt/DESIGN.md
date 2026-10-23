@@ -357,14 +357,14 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
 
 ## 8. Parts
 
-One row per distinct part. Every placed part, with its value, is in [CONNECTIONS.md](CONNECTIONS.md). That file lists 377 placed items: 368 on the main board (MB) and 9 on the battery-end board (BE). URLs are datasheets read unless tagged.
+One row per distinct part. Every placed part, with its value, is in [CONNECTIONS.md](CONNECTIONS.md). That file lists 381 placed items: 372 on the main board (MB) and 9 on the battery-end board (BE), with 82 distinct MPNs. URLs are datasheets read unless tagged.
 
 | Role | Mfr / MPN | Key ratings | Stress (margin) | Package | KiCad symbol / footprint | Datasheet | Life | 2nd source |
 |---|---|---|---|---|---|---|---|---|
 | MPPT controller ×2 | TI LM5176QPWPRQ1 | 55 V in/out, AEC-Q100 G1 | VIN ≤ 33 V (60 %), VOUT ≤ 49.4 V (90 % in OVP fault only, 83 % normal) | HTSSOP-28 | Regulator_Switching:LM5176PWP / Package_SO:HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP3.4x9.5mm_ThermalVias | ti.com/lit/ds/symlink/lm5176-q1.pdf | active [P] | LM5175-Q1 (42 V, same family; redesign) |
-| Power FET ×11 | Infineon IAUC100N10S5L040 | 100 V, 4.0 mΩ@10 V, 5.7 mΩ@4.5 V, AEC | ≤ 49 V (49 %); 15.4 A rms | PG-TDSON-8 | Transistor_FET:BSC040N10NS5 (pin-compatible) / Package_TO_SOT_SMD:TDSON-8-1 | infineon.com …iauc100n10s5l040-datasheet-en.pdf | active & preferred [P] | Infineon BSC040N10NS5 (not AEC) |
+| Power FET ×12 | Infineon IAUC100N10S5L040 | 100 V, 4.0 mΩ@10 V, 5.7 mΩ@4.5 V, AEC | ≤ 49 V (49 %); 15.4 A rms | PG-TDSON-8 | Transistor_FET:BSC040N10NS5 (pin-compatible) / Package_TO_SOT_SMD:TDSON-8-1 | infineon.com …iauc100n10s5l040-datasheet-en.pdf | active & preferred [P] | Infineon BSC040N10NS5 (not AEC) |
 | Ideal diode ctrl ×2 | TI LM74700QDBVRQ1 | 65 V, −65 V reverse | 33 V (51 %) | SOT-23-6 | Power_Management:LM74700 / SOT-23-6 | ti.com/lit/ds/symlink/lm74700-q1.pdf | active [P] | LM74701-Q1 |
-| PV current amp ×2 | TI INA186A2QDBVRQ1 | CM −0.2…40 V, 50 V/V | CM 33 V (83 % static, 54 V TVS transient > abs max 42 V?) → see note 1 | SOT-23-5 | custom / SOT-23-5 | ti.com/lit/ds/symlink/ina186-q1.pdf | active [P] | INA186A2-Q1 SC70 |
+| PV current amp ×2 | TI INA186A2QDBVRQ1 | CM −0.2…40 V (42 V abs; higher allowed if pin current ≤ 5 mA [P]), 50 V/V | CM 25.7 V (64 %) baseline, 33 V (83 %) at 40 cells; 54 V clamp → 1.2 mA via R131/R132 (24 % of 5 mA) | SOT-23-5 | custom / SOT-23-5 | ti.com/lit/ds/symlink/ina186-q1.pdf | active [P] | INA186A2-Q1 SC70 |
 | Op-amp ×4 | TI TLV9001QDBVRQ1 | 5.5 V RRIO | 3.3 V (60 %) | SOT-23-5 | Amplifier_Operational:TLV9061xDBV / SOT-23-5 | ti.com/lit/ds/symlink/tlv9001-q1.pdf | active [P] | TLV9061-Q1 |
 | HB driver | TI UCC27282QDRCRQ1 | 120 V HB, interlock, EN | HS ≤ 49 V (41 %) | VSON-10 | custom / Package_SON:VSON-10-1EP_3x3mm_P0.5mm_EP1.65x2.4mm | ti.com/lit/ds/symlink/ucc27282-q1.pdf | active [P] | UCC27284-Q1 [unverified] |
 | Isolated amp ×2 | TI AMC3330QDWERQ1 | reinforced 6 kVpk, VIOWM 1700 V DC, CLR/CPG ≥ 8 mm, CTI ≥ 600 | 300 V (18 %) | SOIC-16W | Isolator_Analog:AMC3330 / Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm | ti.com/lit/ds/symlink/amc3330-q1.pdf | active [P] | none drop-in (AMC1350-Q1 + iso supply) |
@@ -376,7 +376,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | Aux buck ×2 | TI LM5164QDDARQ1 | 100 V, 1 A | 48 V (48 %), 0.6 A (60 %) | SO-8 PowerPAD | Regulator_Switching:LM5164DDA / HSOP-8…ThermalVias | ti.com/lit/ds/symlink/lm5164-q1.pdf | active [P] | LM5163-Q1 (0.5 A) |
 | MCU | Microchip DSPIC33CK64MP102-E/SS | 3.3 V, 100 MIPS, 12-bit ADC, 250 ps PWM; family AEC-Q100 G1/G0 [P] | — | SSOP-28 | custom / Package_SO:SSOP-28_5.3x10.2mm_P0.65mm | ww1.microchip.com …DS70005363E.pdf | active [unverified] | dsPIC33CK256MP502 (28-pin) |
 | Rectifier/OR/blocking ×8 | Vishay VS-6ESH06HM3/86A | 600 V, 6 A, 175 °C, AEC-Q101 | 262 V (44 %), 1.8 A (30 %) | SMPC TO-277A | custom 3-pin / Package_TO_SOT_SMD:TO-277A | vishay.com/docs/94985 | active [S] | Vishay VS-6EWH06FN (DPAK) |
-| PV TVS ×2 | Littelfuse TPSMB39A | VR 33.3 V, Vc 53.9 V, 600 W | 33 V standoff (100 % at −40 °C 40-cell corner) | SMB | Device:D_Zener / Diode_SMD:D_SMB | [unverified] | active [S] | Vishay SMBJ39A |
+| PV TVS ×2 | Littelfuse TPSMB39A | VR 33.3 V, Vc 53.9 V, 600 W | 25.7 V (77 % of VR) baseline; 32.2 V (97 %) at the 40-cell, −40 °C corner | SMB | Device:D_Zener / Diode_SMD:D_SMB | [unverified] | active [S] | Vishay SMBJ39A |
 | Schottky ×9 | Nexperia BAT46WJ | 100 V, 250 mA | ≤ 49 V boot (49 %) | SOD323F | Diode:BAT46 / Diode_SMD:D_SOD-323F | [unverified] | active [S] | onsemi BAT46 |
 | IG diode | onsemi SBAS21LT1G | 250 V | −150 V pulse (60 %) | SOT-23 | Diode:BAS21 / SOT-23 | [unverified] | active [S] | Nexperia BAS21 |
 | NPN ×3 | onsemi SMMBTA42LT1G | 300 V | 33 V (11 %) | SOT-23 | Transistor_BJT:MMBTA42 / SOT-23 | [unverified] | active [S] | Nexperia MMBTA42 |
@@ -384,7 +384,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | AUX12 L | Coilcraft MSS1210-104KED | 100 µH, Isat 3.1 A, AEC-Q200 85 °C | 1 A (32 %) | 12×12 mm | Device:L / L_Coilcraft_MSS1210-XXX | coilcraft.com/pdfs/mss1210.pdf | active [S] | XGL family |
 | 3V3 L | Coilcraft MSS1048-333MLB | 33 µH, Isat 1.66 A | 0.4 A (24 %) | 10×10 mm | Device:L / L_Coilcraft_MSS1048-XXX | coilcraft …MSS1048 | active [S] | — |
 | Shunts | Vishay WSK2512R0050FEA / R0100FEA | 1 W, 4-terminal | 0.27 W / 0.29 W (27–29 %) | 2512 | Device:R_Shunt / R_Shunt_Vishay_WSK2512_6332Metric_T1.19mm | vishay.com/docs/30108 | active [S] | Bourns CSS4J |
-| DC-link bulk ×6 | Panasonic EEH-ZA1J101P | 63 V 100 µF hybrid, AEC-Q200 | 49 V (78 %) | 10×10.2 | Device:C_Polarized / CP_Elec_10x10 | [unverified] | active [S] | Nichicon GYA |
+| DC-link bulk ×4 | Panasonic EEH-ZA1J101P | 63 V 100 µF hybrid, AEC-Q200 | 49 V (78 %) | 10×10.2 | Device:C_Polarized / CP_Elec_10x10 | [unverified] | active [S] | Nichicon GYA |
 | MLCC 4.7 µF | TDK CGA6P3X7S2A475K250AB | 100 V X7S | 49 V (49 %, ~−40 % C at bias [I]) | 1210 | Device:C / C_1210_3225Metric | [unverified] | [S] | Murata GCM32 |
 | Resonant C0G ×32 | TDK CGA5L1C0G2A104J160AC | 100 V C0G AEC-Q200 | 33.4 V (33 %), 0.68 A rms | 1206 | Device:C / C_1206_3216Metric | [S] | active [S] | Murata GCM31C |
 | HV out ×6 | TDK CGA6M4X7T2W224K200AE | 450 V X7T AEC-Q200 | 262 V (58 %) | 1210 | Device:C / C_1210_3225Metric | [S] | active [S] | Murata GCJ/KC |
@@ -400,7 +400,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | LEDs ×2 | AEC-Q101 0603 green/red | — | 5 mA | 0603 | Device:LED / LED_0603_1608Metric | [unverified] | — | any |
 | Bypass (array) ×8 | Vishay V10P45-M3/86A | 10 A 45 V | 7.3 A (73 %) | TO-277A | off-board | [unverified] | [S] | — |
 
-Note 1: the 54 V TVS clamp on PVx_IN reaches the INA186 inputs, rated −0.2…40 V recommended and 42 V absolute [P]. Through the 5 mΩ shunt that node only follows the string. Clamp events are surge transients with the LM74700 conducting. Action: either add a 1 kΩ series resistor on each INA186 input with a 33 V Zener, or accept the risk because the string cannot exceed 33 V (V-19). **Open item.**
+Note 1: the PV TVS clamps at 54 V, above the INA186 42 V absolute input rating. R131/R132 (10 kΩ) limit the pin current to 1.2 mA, within the datasheet's 5 mA allowance [P]. The 3 nA maximum bias current through 10 kΩ adds 30 µV, a 6 mA error. All other parts on PVx_IN/Vx_IN are rated ≥ 60 V.
 
 ## 9. Placement and mechanical constraints
 
@@ -434,17 +434,16 @@ hot_loop([C206.1, Q203.5, Q203.1, Q204.5, Q204.1, R216.1, R216.4, C206.2], "ch B
 hot_loop([C220.1, Q205.5, Q205.1, Q206.5, Q206.1, R216.1, R216.4, C220.2], "ch B boost-side")
 hot_loop([C303.1, Q301.5, Q301.1, Q302.5, Q302.1, C303.2], "half-bridge commutation loop")
 hot_loop([Q301.1, T301.1, T301.3, C317.2, C333.1, C333.2, Q302.1], "resonant loop (22 A rms)")
-hot_loop([T301.11, D301.1, D301.3, C350.1, C350.2, D303.1, D303.3, T301.20], "secondary rectifier loop")
+hot_loop([T301.11, D301.1, D301.3, C350.1, C350.2, D304.1, D304.3, T301.20], "secondary rectifier loop (and mirror via D302/D303)")
 # ---- tight placements ----
 near(U103, Q103, close) near(U103, Q106, close) near(U103.29, NT101, tight)
-near(R123.2, U103.16, close)   # n/a placeholder removed below
 near(R117, U103.16, tight) near(R118, U103.15, tight) near(C115, U103.16, tight)
 near(C116, U103.20, tight) near(C119, U103.26, tight) near(D103, U103.23, close) near(D104, U103.23, close)
 near(C117, U103.23, tight) near(C109, U103.2, tight) near(C111, U103.7, tight) near(R112, U103.6, tight)
 near(R119, Q105.4, tight) near(R120, Q106.4, tight) near(R122, Q104.4, tight) near(R123, Q103.4, tight)
 near(U102, R101, tight) near(R103, R101.2, close) near(R104, R101.3, close)
 near(U101, Q101, tight) near(C101, U101.1, tight) near(D101, J101, close)
-near(U104, Q102, close) near(C124, U104.4, close) near(R124, V_IN_tap, close)
+near(U104, Q102, close) near(R126, U104.4, tight) near(C124, R125, tight) near(R131, U102.5, tight) near(R132, U102.4, tight)
 # channel B: same relations with refdes +100
 near(U301, Q302, tight) near(C314, U301.3, tight) near(C311, U301.1, tight) near(R301, Q301.4, tight) near(R302, Q302.4, tight)
 near(C317..C332, Q301.5, close) near(C333..C348, Q302.1, close)
@@ -456,7 +455,7 @@ near(RT301, Q301, tight) near(RT302, T301, close)
 near(U502, U503, close) near(U504, U701, close) near(C703, U701.7, tight) near(C704, U701.20, tight) near(C702, U701.5, tight)
 near(U601, L601, tight) near(C602, U601.2, tight) near(C603, U601.7, tight) near(U602, L602, tight) near(C609, U602.2, tight)
 # ---- kelvin / sense routing (NEW verb) ----
-kelvin(R101.2 -> U102.5, R103) kelvin(R101.3 -> U102.4, R104)   # pads 2/3 are the sense pads
+kelvin(R101.2 -> R131, R103) kelvin(R101.3 -> R132, R104)   # pads 2/3 are the sense pads; R131/R132 route as a pair
 kelvin(R116.2 -> R117) kelvin(R116.3 -> R118)
 kelvin(R407.2 = U401.7 = U401.8, single point)                 # HGND at divider bottom
 diff_pair(HVS1_OUTP, HVS1_OUTN, matched) diff_pair(HVS2_OUTP, HVS2_OUTN, matched)
@@ -488,7 +487,6 @@ Vocabulary I needed beyond the given list:
 - `height`, `cable_entry` and `variant`.
 - Ranges such as `C317..C332`.
 
-(The placeholder line `near(R123.2 …)` is intentionally void: RSENSE is R116.)
 
 ## 10. Verification plan
 

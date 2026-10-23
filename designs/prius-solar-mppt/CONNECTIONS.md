@@ -168,9 +168,11 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `PVA_HD2_G` | LV | node + 0..7.5 V | 2 A pk | gate | R119.2, Q105.4 |  |
 | `PVA_IDG` | LV | PV + 0..14 V | gate | gate | U101.5, Q101.4 | ideal-diode gate |
 | `PVA_IN` | LV | 0..33 V (TVS clamp 54 V) | 8 A | power | J101.1, D101.1, C101.2, U101.3, U101.6, Q101.1, Q101.2, Q101.3 | string A + at connector |
+| `PVA_INA_N` | LV | 0..33 V | <5 mA fault | sense | U102.4, R132.2 | INA186 IN- behind 10k |
+| `PVA_INA_P` | LV | 0..33 V | <5 mA fault | sense | U102.5, R131.2 | INA186 IN+ behind 10k |
 | `PVA_INT_N` | LV | 0..3.3 V | <1 mA | analog | U104.4, R126.2, C125.1 |  |
-| `PVA_ISK_N` | LV | 0..33 V | <1 mA | sense | R101.3, U102.4, R104.1 | Kelvin - of shunt |
-| `PVA_ISK_P` | LV | 0..33 V | <1 mA | sense | R101.2, U102.5, R103.1 | Kelvin + of shunt |
+| `PVA_ISK_N` | LV | 0..33 V | <1 mA | sense | R101.3, R132.1, R104.1 | Kelvin - of shunt |
+| `PVA_ISK_P` | LV | 0..33 V | <1 mA | sense | R101.2, R131.1, R103.1 | Kelvin + of shunt |
 | `PVA_ISNS_N` | LV | 0..33 V | <0.1 mA | sense | R104.2, C105.2, U103.13 | LM5176 ISNS(-) |
 | `PVA_ISNS_P` | LV | 0..33 V | <0.2 mA | sense | R103.2, C105.1, Q102.3, U103.14 | LM5176 ISNS(+) after R_iso |
 | `PVA_I_ADC` | LV | 0..3.3 V | <1 mA | analog | R102.2, C104.1, U701.2 | PV current to MCU (0.25 V/A) |
@@ -216,9 +218,11 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `PVB_HD2_G` | LV | node + 0..7.5 V | 2 A pk | gate | R219.2, Q205.4 |  |
 | `PVB_IDG` | LV | PV + 0..14 V | gate | gate | U201.5, Q201.4 | ideal-diode gate |
 | `PVB_IN` | LV | 0..33 V (TVS clamp 54 V) | 8 A | power | J201.1, D201.1, C201.2, U201.3, U201.6, Q201.1, Q201.2, Q201.3 | string B + at connector |
+| `PVB_INA_N` | LV | 0..33 V | <5 mA fault | sense | U202.4, R232.2 | INA186 IN- behind 10k |
+| `PVB_INA_P` | LV | 0..33 V | <5 mA fault | sense | U202.5, R231.2 | INA186 IN+ behind 10k |
 | `PVB_INT_N` | LV | 0..3.3 V | <1 mA | analog | U204.4, R226.2, C225.1 |  |
-| `PVB_ISK_N` | LV | 0..33 V | <1 mA | sense | R201.3, U202.4, R204.1 | Kelvin - of shunt |
-| `PVB_ISK_P` | LV | 0..33 V | <1 mA | sense | R201.2, U202.5, R203.1 | Kelvin + of shunt |
+| `PVB_ISK_N` | LV | 0..33 V | <1 mA | sense | R201.3, R232.1, R204.1 | Kelvin - of shunt |
+| `PVB_ISK_P` | LV | 0..33 V | <1 mA | sense | R201.2, R231.1, R203.1 | Kelvin + of shunt |
 | `PVB_ISNS_N` | LV | 0..33 V | <0.1 mA | sense | R204.2, C205.2, U203.13 | LM5176 ISNS(-) |
 | `PVB_ISNS_P` | LV | 0..33 V | <0.2 mA | sense | R203.2, C205.1, Q202.3, U203.14 | LM5176 ISNS(+) after R_iso |
 | `PVB_I_ADC` | LV | 0..3.3 V | <1 mA | analog | R202.2, C204.1, U701.4 | PV current to MCU (0.25 V/A) |
@@ -280,6 +284,8 @@ MPPT channel A: string A input, protection, PV current/voltage sense, LM5176 4-s
 |---|---|---|---|---|---|---|
 | C101 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVA_VCAP` | 2 (2): `PVA_IN` | LM74700 charge-pump cap (VCAP-ANODE) |
 | C102 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVA_P` | 2 (2): `GND` | LM74700 CATHODE cap |
+| R131 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVA_ISK_P` | 2 (2): `PVA_INA_P` | limits INA186 input current to <5 mA during 54 V TVS clamp (DS note 3); 3 nA IB -> 30 uV |
+| R132 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVA_ISK_N` | 2 (2): `PVA_INA_N` | as above, matched |
 | C103 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `GND` | U2 VS decoupling |
 | R102 | Panasonic ERJ-3EKF1001V | 1 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVA_I_RAW` | 2 (2): `PVA_I_ADC` | ADC anti-alias |
 | C104 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `PVA_I_ADC` | 2 (2): `GND` | ADC anti-alias |
@@ -400,8 +406,8 @@ PV current amp, 50 V/V. Symbol `custom (kae:INA186_DBV)`, footprint `Package_TO_
 | 1 | GND | `GND` |
 | 2 | OUT | `PVA_I_RAW` |
 | 3 | VS | `+3V3` |
-| 4 | IN- | `PVA_ISK_N` |
-| 5 | IN+ | `PVA_ISK_P` |
+| 4 | IN- | `PVA_INA_N` |
+| 5 | IN+ | `PVA_INA_P` |
 
 ### Q102 — SMMBTA42LT1G
 
@@ -557,6 +563,8 @@ MPPT channel B: identical to channel A (refdes +100, nets PVA_->PVB_, VA_IN->VB_
 |---|---|---|---|---|---|---|
 | C201 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVB_VCAP` | 2 (2): `PVB_IN` | LM74700 charge-pump cap (VCAP-ANODE) |
 | C202 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVB_P` | 2 (2): `GND` | LM74700 CATHODE cap |
+| R231 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVB_ISK_P` | 2 (2): `PVB_INA_P` | limits INA186 input current to <5 mA during 54 V TVS clamp (DS note 3); 3 nA IB -> 30 uV |
+| R232 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVB_ISK_N` | 2 (2): `PVB_INA_N` | as above, matched |
 | C203 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `GND` | U2 VS decoupling |
 | R202 | Panasonic ERJ-3EKF1001V | 1 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVB_I_RAW` | 2 (2): `PVB_I_ADC` | ADC anti-alias |
 | C204 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `PVB_I_ADC` | 2 (2): `GND` | ADC anti-alias |
@@ -677,8 +685,8 @@ PV current amp, 50 V/V. Symbol `custom (kae:INA186_DBV)`, footprint `Package_TO_
 | 1 | GND | `GND` |
 | 2 | OUT | `PVB_I_RAW` |
 | 3 | VS | `+3V3` |
-| 4 | IN- | `PVB_ISK_N` |
-| 5 | IN+ | `PVB_ISK_P` |
+| 4 | IN- | `PVB_INA_N` |
+| 5 | IN+ | `PVB_INA_P` |
 
 ### Q202 — SMMBTA42LT1G
 
