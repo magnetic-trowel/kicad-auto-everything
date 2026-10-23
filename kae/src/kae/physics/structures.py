@@ -9,7 +9,7 @@ few parts and is cached by Terms against those parts' pose epochs, so a move rec
 only what it touches. Models (derivations and validation: docs/topics/physics/place-terms.md):
 
 * `LoopComp`: loop inductance of a chain of terminals (commutation cell; decap loop) by
-  partial inductances with images (fastloop): board hops are straight strips at the
+  partial inductances with images (_kernels.loop_core): board hops are straight strips at the
   reference-plane height, part-internal paths are strips at the body height with vertical
   terminations; a ground hop over a plane of its own net is combined in parallel with the
   via return through that plane (two-mesh formula).
@@ -30,7 +30,7 @@ import math
 import numpy as np
 
 from . import fastloop as FL
-from .kernels import EPS0, cprime_hj, gmd_rect, lprime_hj, trapezoid_envelope
+from .kernels import EPS0, cprime_hj, lprime_hj, trapezoid_envelope
 
 INF = float('inf')
 _hyp = math.hypot

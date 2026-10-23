@@ -681,7 +681,9 @@ def sec_rb_hf(quick):
     rows = []
     for f in sorted(glob.glob(str(ROOT / 'kae-work' / 'physics' / 'human-k10-mmd' / '*' / 'passports.json'))):
         d = json.load(open(f))
-        cells = [c for c in (d.get('hf') or {}).get('cells', []) if c.get('status') == 'ok']
+        # rb's own failures (a non-finite or absurd L, e.g. 1.9e11 nH on one cell) are dropped
+        cells = [c for c in (d.get('hf') or {}).get('cells', [])
+                 if c.get('status') == 'ok' and 0.0 < float(c.get('L_board_nH') or 0.0) < 1000.0]
         if not cells:
             continue
         bid = Path(f).parent.name

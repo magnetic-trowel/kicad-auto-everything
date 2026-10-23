@@ -10,7 +10,10 @@ uuid, or by reference designator as a fallback):
   structures: [{id, kind, confidence, evidence, budget: {quantity: {value, unit, class, basis}}, ...}]
     commutation_cell: loop [[uuid, pad|[pads]], ...] closed, in current order;
                       class buck|boost|bridge_driver|half_bridge; rail, sw, gnd; excite {V, I, t_sw_ns}
-    decap:            ic, power_pins [nums], ground_pins [nums], rail, ground, caps [uuids]
+    decap:            ic (an IC, module, LED, connector, diode, fuse or inductor), power_pins [nums],
+                      ground_pins [nums] (may be empty: the loop closes through the plane), rail,
+                      ground (split_supply: the V- rail), caps, hf_caps, caps_p, pin_caps, function,
+                      shared_by
     crystal:          ic, xin, xout, crystal, load_caps [uuids], f_Hz
     victim:           class feedback|sense|analog|crystal|reference; loop [[uuid, pad], ...] and/or nets
     heat_source:      ref (uuid), P_W;   thermal_victim: ref (uuid), class
@@ -205,7 +208,6 @@ def _plane_pair(ctx, rail):
 
 def build_structures(terms):
     ctx = _Ctx(terms)
-    bv = ctx.bv
     S = terms.structs
     specs = (terms.brief or {}).get('structures', []) or []
     cells = []

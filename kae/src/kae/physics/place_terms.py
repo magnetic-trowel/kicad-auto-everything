@@ -32,15 +32,12 @@ equality), so callers may mutate their pose dict freely between calls.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
-import numpy as np
 
 from . import priors as PR
 from .boardview import BoardView
-from .structures import (CmComp, CouplingComp, CrystalComp, EsdComp, FeedComp, LoopComp, LoopShape,
-                         NodeShape, PlanePairLoop, State, Term, ThermalField)
+from .structures import (State)
 
 INF = float('inf')
 

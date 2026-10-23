@@ -16,7 +16,7 @@ Each structure s returns a spend v_s in physical units, with allocation a_s and 
 J = Σ_s c_s φ(u_s),  φ(u) = u (u ≤ 1);  u + β(u−1)² (1 < u ≤ u_sat);  φ(u_sat) + φ′(u_sat)·u_sat·ln(u/u_sat) (beyond),
 
 with β = 4, u_sat = 10, and c_s = confidence × calibrated ownership; φ is C¹.
-Spend is priced in budget units; over-budget structures dominate; beyond 10× the value means "fails" (on human boards, mostly estimator outliers or misidentified structures), so the tail keeps a gradient without swamping other terms.
+Over-budget structures dominate. Beyond 10× a structure has failed (on human boards, mostly misidentified structures), and the log tail keeps a gradient without swamping other terms.
 
 | Term | Spend | Default allocation (E5) |
 |---|---|---|
@@ -42,11 +42,11 @@ A null input voltage (13 of 64 cells) takes 24 V, above 90% of the corpus's name
 - *Pairs* with |cos θ| ≥ 0.3 use the parallel-filament formula at the GMD of the linearly varying offset: ln GMD = [F(d2) − F(d1)]/(d2 − d1), F(p) = ½p·ln(p² + z²) − p + z·atan(p/z), which stays finite for crossing hops. Adjacent oblique pairs use Grover's corner formula.
 - *Ground return.* A ground hop over its own plane runs in parallel with the via return C: L = A + M_AB + (B + M_AB)(C − M_AB)/(B + C).
 
-**Guards.** Each fixes a failure seen on human boards; after them none of the 1286 human-board loops is non-positive [C].
+**Guards.** With them, none of the 1,286 human-board loops is non-positive [C].
 
-- *Separation:* conductors on one layer stay ≥ (w1 + w2)/2 + clearance apart, image included (emberone read −15.7 nH).
-- *Pin pitch:* a part's internal path is at least the nearest pin-to-pin distance (a BGA cluster centroid on a ground ball, −0.64 nH).
-- *Under-part hops:* a hop under a part's own internal path runs on the far layer or behind a plane (siderakb read 0.006 nH; now 13.9 nH, human 13.7 nH).
+- *Separation:* conductors on one layer stay ≥ (w1 + w2)/2 + clearance apart, image included.
+- *Pin pitch:* a part's internal path is at least the nearest pin-to-pin distance, so a cluster centroid cannot sit on a ground ball.
+- *Under-part hops:* a hop under a part's own internal path runs on the far layer or behind a plane, so it cannot cancel that path.
 - *Floor:* L ≥ the parts' internal loops over an ideal surface return.
 
 **Validation [C]** compares each geometry three ways: PEEC (pw_peec, filaments across the width), Theorem 1 on the A*-routed segments, and the estimator on straight hops.
@@ -60,11 +60,11 @@ A null input voltage (13 of 64 cells) takes 24 V, above 90% of the corpus's name
 | Pair rules vs all-pair quadrature, oblique | 400 | 0.5% | 1.6% | 4.0% | +0.1% | 0.999 |
 | ESD strip + via vs PEEC | 16 | 3.4% | 7.1% | 8.3% | +3.4% | 0.994 |
 
-Geometries: a 1206 (hot) or 0402 (decap) cap 1.5–7 mm from an IC pin pair; h 0.1–1.5 mm, w 0.25–2 mm, four orientations, lateral or via return; oblique loops with sides ≥ w + 0.5 mm apart (where sides nearly coincide the guards depart from the bare filament sum on purpose).
+Geometries: a 1206 (hot) or 0402 (decap) cap 1.5–7 mm from an IC pin pair; h 0.1–1.5 mm, w 0.25–2 mm, four orientations, lateral or via return; oblique loops with sides ≥ w + 0.5 mm apart.
 
 The estimator's bias is the route: a straight hop is shorter than the routed one. Ranking survives. Within each (h, w, return) set, it orders cap positions and orientations as PEEC does in 92.9% of 954 pairs (hot loops) and 94.1% of 760 (decaps), counting pairs whose PEEC values differ by more than 2%.
 
-On human boards, pad-avoiding routes are 1.14× the straight length (median, emberone decaps). Against [rb passports](real-board-passports.md)' HF loop on 15 cells, the estimate is 0.39× rb (median; p10 0.17, p90 1.11), Spearman 0.51: rb follows the human's real copper and overstates narrow strips 1.5–3×, so only ranks count.
+On human boards, pad-avoiding routes are 1.14× the straight length (median). Against [rb passports](real-board-passports.md)' HF loop on 15 cells, the estimate is 0.39× rb (median; p10 0.17, p90 1.11), Spearman 0.51: rb follows the human's real copper and overstates narrow strips 1.5–3×, so only ranks count.
 
 **Regime.** Quasi-static (loops ≪ λ/10, a few cm at 200 MHz); planes act as PEC above about 1 MHz.
 
@@ -80,7 +80,7 @@ On human boards, pad-avoiding routes are 1.14× the straight length (median, emb
 
 **Theorem 2.** At r ≫ h, a closed loop of area A at height h over a plane is a quadrupole: dipoles +Aẑ at +h and −Aẑ at −h. A path closed through the plane by vias is a horizontal dipole 2hẑ × chord. Two closed loops thus couple as M ∝ h_a·h_v·A_a·A_v/r⁵ ([lens-sy](lens-sy.md) D1).
 
-**Near field.** M = (μ0/4π)Σ∫∫ds·dt/|r| over segment pairs, with the aggressor imaged. The inner integral is closed-form, asinh((l−t0)/ρ) + asinh(t0/ρ), and the outer uses 3–6 Gauss points. ρ ≥ 0.3 mm, since distinct conductors' axes cannot meet. Point-to-point quadrature had overestimated a crossing pair 12× [C].
+**Near field.** M = (μ0/4π)Σ∫∫ds·dt/|r| over segment pairs, with the aggressor imaged. The inner integral is closed-form, asinh((l−t0)/ρ) + asinh(t0/ρ), and the outer uses 3–6 Gauss points. ρ ≥ 0.3 mm, since distinct conductors' axes cannot meet. Point-to-point quadrature overstates crossing pairs up to 12× [C].
 
 **Capacitive.** First order in potential coefficients with the image: C_m = Σ C_a C_v p_av, with p_av = (1/4πε0)(1/r − 1/√(r² + 4h²)). Patch strength comes from the air side, because a patch's external dipole is set by ε0 ([lens-sy](lens-sy.md) D1): C_x = s(2C′_air(s, h) − ε0s/h), within 4% of a moment-method solve for s/h ≥ 1.5 [C]. Victim loops with a ground return close through the plane.
 
@@ -99,7 +99,7 @@ C′(w, h, εr) × half-perimeter of the XIN/XOUT nets pulls the crystal by S: 1
 - *Own disk:* (1 − xK1(x))/(πa²h_tot), with x = a/λ.
 - *Edges:* adiabatic, as images. One ring (36 images) is computed; the rest is a continuum adding λR·K1(R/λ)/(G_s L_x L_y).
 
-**Theorem 3 (heat balance).** The board-average rise is ΣP/(h_tot·A) for every placement. Placement moves only the excess T − T̄, so budgets apply to the excess: a hot spot ≤ 20 K above the mean, and victims' rise from neighbours. Example: olimex-dcdc (5.4 W on 51 × 36 mm) read 157 K, but its mean is 149 K, which no placement changes; the local excess is 18 K (u 0.9).
+**Theorem 3 (heat balance).** The board-average rise is ΣP/(h_tot·A) for every placement. Placement moves only the excess T − T̄, so budgets apply to the excess: a hot spot ≤ 20 K above the mean, and victims' rise from neighbours. Example: olimex-dcdc (5.4 W on 51 × 36 mm) peaks 157 K above ambient, of which the mean is 149 K; the local excess is 18 K (u 0.9).
 
 **Loss split (E5).** kae.circuit charges a converter's loss to its controller; Terms splits it:
 - *rectifier:* 0.5 V·I_out·(1 − D);
@@ -114,9 +114,9 @@ On olimex this gives U1 3.3 W, D2 1.3 W, L1 0.8 W.
 
 ## 7. World node (f)
 
-- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (trapezoid envelopes, Z_cm 150 Ω), against 5 µA (Ott [S]). On human boards it runs 3–4 orders below budget.
+- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (trapezoid envelopes, Z_cm 150 Ω), against 5 µA (Ott [S]). Human boards run 3–4 orders below it.
 - *ESD surge path.* L′·ℓ(connector → protector) + L_via; distance past the protected pin counts twice; a lateral offset is free (route through the pad). Budget: an adjacent trace picks up k·L·dI/dt (k ≈ 0.2); ≤ 40 V at 37.5 A/ns (IEC 61000-4-2 level 4) gives 5.3 nH. PEEC: 3.4% median [C].
-- *Antenna feed.* 0.015 dB/mm × the minimum spanning tree of the feed terminals.
+- *Antenna feed.* 0.015 dB/mm × the feed terminals' minimum spanning tree.
 
 ## 8. Human boards: does the physics prefer the human placement? [C]
 
@@ -137,8 +137,8 @@ Share is worse/(worse + better); a move is *material* if some structure moves by
 | world CM | 32 | 63% (94) | 46% (80) | 85% (639) | 92% |
 | antenna | 6 | 84% (171) | 77% (87) | 98% (112) | 89% |
 
-Local columns count material moves on credible structures (decided count in brackets); the shuffle column counts credible structures.
-- *Shuffles.* Scattering parts beats the human only for thermal: it spreads heat. But the same shuffles are worse in 94% once every term counts. The human clusters a converter's parts for its hot loop and pays in heat.
+Brackets give decided counts: material moves (local) and credible structures (shuffle).
+- *Shuffles.* Scattering beats the human only for thermal, by spreading heat; with every term counted the same shuffles are worse in 94%. Humans cluster a converter for its hot loop and pay in heat.
 - *Local moves.* These are closer calls. Human decaps sit a median 6 mm (centre to centre) from their partners, and better moves gain a median 5% of budget.
 
 Where human boards spend their budgets:
@@ -154,7 +154,7 @@ Where human boards spend their budgets:
 | world CM | 272 | 0.004 (0.14) µA | 0.0008 | 0.4% |
 | antenna | 25 | 0.84 (3.8) dB | 1.7 | 68% |
 
-**Every material better-than-human local move is classified:** *route* (with hops routed around other nets' pads, 45° grid router, L′ per mm of detour, it is no longer better), *assignment* (the part sits > 15 mm from every partner in the human placement: doubtful pairing), *unroutable* (no single-layer route), *trade-off* (worsens other physics or the part's wirelength), *slack* (worsens nothing).
+**Better-than-human local moves, classified:** *route* (no longer better once its hops are grid-routed around other nets' pads), *assignment* (the part sits > 15 mm from every human partner: doubtful pairing), *unroutable* (no single-layer route), *trade-off* (worsens other physics or wirelength), *slack* (worsens nothing).
 
 | Term | route | assignment | unroutable | trade-off | slack |
 |---|---|---|---|---|---|
@@ -171,7 +171,7 @@ Estimator or brief: 526 of 2,191 (24%), mostly assignment (bulk caps paired as H
 
 ## 9. Performance [C]
 
-`delta` over 29,040 random single-part moves (numba, loaded 4-core host): median 23 µs, p90 159 µs, p99 1.0 ms; equal to the `total` difference to 3e-8. By the moved part's term: decap 17 µs, commutation 20, ESD 14, crystal 13, thermal 48, coupling 70, world CM 54; aggressor-loop members 200–300 µs. Cold `total`: median 0.11 ms, ≤ 2.1 ms up to 300 parts, 7–13 ms at 395–621 parts. Construction in a fresh process: 5 ms without structures (max 33 ms), split B 6 ms (max 0.25 s), split C 0.18 s (max 0.63 s); numba's disk cache loads in 0.25 s (first compile 3–5 s). The Python fallback is about 12× slower.
+`delta` over 29,040 random single-part moves (numba, loaded 4-core host): median 23 µs, p90 159 µs, p99 1.0 ms, equal to the `total` difference to 3e-8. By moved part: 13–20 µs for decap, commutation, ESD and crystal parts; 48–70 µs for thermal, coupling and world CM; 200–300 µs for aggressor-loop members. Cold `total`: ≤ 2.1 ms up to 300 parts, 7–13 ms at 395–621. Construction: 5 ms without structures, 6 ms on split B, 0.18 s on split C (max 0.63 s); numba's disk cache loads in 0.25 s, a first compile takes 3–5 s. The Python fallback is about 12× slower.
 
 ## 10. Priors that matter, and open questions
 
@@ -186,9 +186,9 @@ Within a term, rankings ignore the budget (u is linear in spend below budget). B
 | thermal | 43% | 27% | 9% | h, the brief's P_W |
 | crystal | 55% | 21% | 3% | 5 ppm; C1, C0, C_L |
 
-The priors that matter most: the hot-loop class priors (57% of human cells over budget), the victim budgets and excitations (their heavy tail comes from brief classes, e.g. an open-drain alert line classed analog), and the converter loss split and h.
+The priors that matter most are the hot-loop class priors, the victim budgets and excitations (their heavy tail comes from brief classes), and the converter loss split and h.
 
-Open questions: straight hops read about 10% low (a detour factor of 1.1–1.14 would remove the bias without changing ranks); multi-drop victims follow netlist order; CM never binds and antenna overruns come from misidentified feeds; batching an aggressor's victims in one kernel call is the next speed step.
+Open questions: straight hops read about 10% low (a 1.1–1.14 detour factor removes the bias, not the ranks); multi-drop victims follow netlist order; CM never binds and antenna overruns come from misidentified feeds; batching an aggressor's victims in one kernel call is the next speed step.
 
 ## Sources
 
