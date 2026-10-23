@@ -3,19 +3,21 @@
 """The world of the critical router: KiCad's effective constraints and the exact geometry of
 everything a critical track or via must keep clear of.
 
-Constraints are not re-derived here. They come from the bridge's port of KiCad's rule
-engine, `kae.route.constraints.plan` (over `kae.route.rules`), exactly as the bridge hands
-them to Freerouting:
+Constraints are not re-derived here. They are the numbers the bridge enforces, from
+`kae.route.effective.Rules` (over `kae.route.constraints.plan` and the port of KiCad's rule
+engine, `kae.route.rules`):
 
-- a routing class per net: width per layer (the netclass width clamped into the rule's
-  [min, max]) and the via padstack (diameter, drill), with `rules.strictest` giving the
-  [min, max] a wider critical track must stay inside;
-- per pad, a clearance class: the track and via clearance to the pad's DSN shape for every
-  routing class and layer (copper clearance, hole clearance through the annular ring,
-  solder-mask aperture, real copper beyond the DSN shape);
-- a class-to-class matrix for track-track, track-via and via-via (hole-to-hole included);
-- obstacles: NPTH holes, cut-outs and stray edges, copper graphics, rule areas, each with
-  its class; the board outline with the edge class; same-net via pitch;
+- track widths: Rules.track_width(net, layer) = (min, opt, max); a wider critical track
+  stays inside [min, max];
+- vias: Rules.via(net) (diameter, drill) and Rules.same_net_via_pitch(net);
+- copper of another net: Rules.clearance(net, other, layer) for track-track, track-via,
+  via-track and via-via (hole clearance through the ring, hole-to-hole through both drills);
+- pads: the pad's clearance class, the table behind Rules.pad_clearance (per DSN pin, so
+  pads that repeat a number keep their own class): copper clearance, hole clearance through
+  the ring, solder-mask aperture, real copper beyond the DSN shape;
+- edges: Rules.edge_clearance(net, layer), and the plan's via edge band;
+- obstacles the plan holds for the bridge: NPTH holes, cut-outs and stray edges, copper
+  graphics (with their net: copper of that net), rule areas, each with its class;
 - thermal-spoke corridors (`constraints.thermal_corridors`) as keepouts for other nets, so
   critical copper never starves a zone connection.
 
@@ -39,6 +41,7 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
 from . import constraints as CN
+from . import effective as EF
 from . import rules as R
 
 TOL = 0.002          # mm kept above every requirement
@@ -59,7 +62,7 @@ class Item:
     vias_only: a rule area that keeps out vias only
     """
     __slots__ = ('kind', 'net', 'layers', 'geom', 'r', 'cls', 'bbox', 'owner', 'hole', 'smd', 'vias_only',
-                 'local', 'fp', 'idx', 'uuid', 'width', 'drill', 'locked')
+                 'local', 'fp', 'idx', 'uuid', 'width', 'drill', 'locked', 'pos')
 
     def __init__(self, kind, net, layers, geom, r=0.0, cls=None, owner=None, hole=None, smd=False,
                  vias_only=False):
@@ -72,6 +75,7 @@ class Item:
         self.width = 0.0
         self.drill = 0.0
         self.locked = True
+        self.pos = None
         self.bbox = _bbox(geom, r)
 
     def __repr__(self):
@@ -118,17 +122,23 @@ class Terminal:
 class Space:
     """Obstacles, requirements and committed copper for one board.
 
-        sp = Space(board, info, plan)          # kicad_file.load, pcbnew_io.export_dsn, constraints.plan
+        sp = Space(board, info)                # kicad_file.load, pcbnew_io.export_dsn
         sp.need(item, net, 'track', layer)     # clearance (mm) a track of `net` keeps from item
         sp.track_violations(net, layer, w, a, b)
         sp.via_violations(net, x, y)
         sp.add_track(...), sp.add_via(...)    # commit copper (becomes an obstacle for other nets)
+
+    `plan` defaults to constraints.plan(info, board.path, {severities}) and `rules` to
+    effective.Rules(info, board.path, plan): the bridge's own numbers.
     """
 
-    def __init__(self, board, info, plan, sev=None, opts=None):
-        self.board, self.info, self.plan = board, info, plan
+    def __init__(self, board, info, plan=None, sev=None, opts=None, rules=None):
         self.opts = dict(opts or {})
         self.sev = sev or {}
+        if plan is None:
+            plan = CN.plan(info, board.path, dict(severities=self.sev))
+        self.board, self.info, self.plan = board, info, plan
+        self.eff = rules or EF.Rules(info, board.path, plan)
         self.cu = list(plan.copper)
         self.rb = plan.rule_board
         self.settings = info.get("settings") or {}
@@ -162,6 +172,7 @@ class Space:
         self.pads = []                             # pad Items (info order)
         self.pads_of = {}                          # (fp uuid, number) -> [pad Item]
         self.pads_by_fp = {}
+        self.corridors_by_fp = {}
         self.routed = []                           # committed critical copper (Items)
         self.existing = []                         # tracks and vias already in the board
         self.zones = []                            # (net, layer, polygon, rec)
@@ -198,6 +209,8 @@ class Space:
                         break
             it.idx = k
             it.uuid = pd.get("uuid") or ""
+            pos = pd.get("pos") or [geom.centroid.x, geom.centroid.y]
+            it.pos = (float(pos[0]), float(pos[1]))
             if cls is None:
                 # a pad that is no DSN pin (round keepout, no copper): kept as a hole obstacle
                 it.kind = "pad_nopin"
@@ -224,6 +237,11 @@ class Space:
             for l in layers:
                 if l in self.items:
                     self.items[l].append(it)
+        # copper graphics of a net: copper of that net (an obstacle in its class for others)
+        for net, shapes, cls, why in getattr(plan, "net_graphics", []) or []:
+            for l, g in shapes.items():
+                if l in self.items and g is not None and not g.is_empty:
+                    self.items[l].append(Item("shape", net, [l], g, 0.0, cls, owner=why))
         # thermal-spoke corridors: other nets keep out (zero clearance)
         if not self.opts.get("no_corridors"):
             try:
@@ -233,6 +251,10 @@ class Space:
             for geo, layer, pad in cors:
                 it = Item("corridor", pad.get("net") or "", [layer], geo, 0.0, None,
                           owner=f"spokes {pad.get('ref')}.{pad.get('number')}")
+                fp = self.fp_by_index.get(pad.get("fp_index"))
+                it.fp = fp.uuid if fp is not None else None
+                if it.fp is not None:
+                    self.corridors_by_fp.setdefault(it.fp, []).append(it)
                 if layer in self.items:
                     self.items[layer].append(it)
 
@@ -285,53 +307,53 @@ class Space:
         return self.plan.net_class.get(net)
 
     def width_limits(self, net, layer):
-        """(min, opt, max) track width of `net` on `layer` (KiCad's track_width constraint;
-        opt = the bridge's class width)."""
+        """(min, opt, max) track width of `net` on `layer`: effective.Rules.track_width
+        (KiCad's limits; opt = the bridge's class width)."""
         key = ("w", net, layer)
         v = self._req_cache.get(key)
         if v is None:
-            rc = self.rc(net)
-            opt = self.plan.classes[rc].widths.get(layer) if rc in self.plan.classes else None
-            ti = CN.net_item(self.info, net, "track", layer, width=opt)
-            c = R.strictest(self.rb, "track_width", ti, None, layer)
-            mn = max(c.min or 0.0, self.settings.get("min_track", 0.0) or 0.0)
-            pr = ((self.info.get("probes") or {}).get(net) or {}).get("track", {}).get(layer, {}).get("width")
-            mx = c.max
-            if pr:
-                if pr[0] is not None:
-                    mn = max(mn, pr[0])
-                if pr[2] is not None:
-                    mx = pr[2] if mx is None else min(mx, pr[2])
-            if opt is None:
-                opt = max(mn, 0.2)
-            v = (mn, max(opt, mn), mx)
+            try:
+                w = self.eff.track_width(net, layer)
+                v = (w.min or 0.0, max(w.opt or 0.0, w.min or 0.0), w.max)
+            except KeyError:
+                mn = self.settings.get("min_track", 0.0) or 0.0
+                v = (mn, max(mn, 0.2), None)
             self._req_cache[key] = v
         return v
 
     def clamp_width(self, net, layer, w):
+        """w inside [min, max] of `net` on `layer`, in whole micrometres."""
         mn, _, mx = self.width_limits(net, layer)
-        w = max(w, mn)
-        if mx is not None:
-            w = min(w, mx)
-        return CN.up(w, 0.001)
+        w = CN.up(max(w, mn), 0.001)
+        if mx is not None and w > mx + 1e-9:
+            w = mx
+        return w
 
     def via_size(self, net):
-        """(diameter, drill) of a through via of `net` (the bridge's class via)."""
-        rc = self.rc(net)
-        if rc in self.plan.classes:
-            return self.plan.classes[rc].via
-        s = self.settings
-        return (max(s.get("min_via", 0.6) or 0.6, 0.6), max(s.get("min_drill", 0.3) or 0.3, 0.3))
+        """(diameter, drill) of a through via of `net`: effective.Rules.via."""
+        try:
+            v = self.eff.via(net)
+            return (v.diameter, v.drill)
+        except KeyError:
+            s = self.settings
+            return (max(s.get("min_via", 0.6) or 0.6, 0.6), max(s.get("min_drill", 0.3) or 0.3, 0.3))
 
     def same_net_via_pitch(self, net):
-        rc = self.rc(net)
-        return (self.plan.notes.get("same_net_via_pitch") or {}).get(rc, self.via_size(net)[0])
+        key = ("pitch", net)
+        v = self._req_cache.get(key)
+        if v is None:
+            try:
+                v = self.eff.same_net_via_pitch(net)
+            except KeyError:
+                v = self.via_size(net)[0] + (self.settings.get("hole_to_hole", 0.25) or 0.25)
+            self._req_cache[key] = v
+        return v
 
     # ------------------------------------------------------------------ requirements
     def need(self, it, net, kind, layer):
         """Clearance (mm) a `kind` ('track' | 'via') of `net` on `layer` keeps from item `it`,
         measured from it.geom grown by it.r; None when it does not constrain this copper."""
-        if it.kind in ("pad", "track", "via", "corridor") and it.net and it.net == net:
+        if it.kind in ("pad", "track", "via", "corridor", "shape") and it.net and it.net == net:
             return None
         if it.kind == "corridor":
             return 0.0 if kind == "track" else None
@@ -339,28 +361,32 @@ class Space:
             if it.vias_only and kind == "track":
                 return None
             return 0.0
-        rc = self.rc(net)
         if it.kind in ("pad", "shape", "hole", "pad_nopin"):
             oc = self.plan.obstacle_classes.get(it.cls) if it.cls else None
-            if oc is None:
-                return self._generic_need(net, kind, layer)
-            v = oc.values.get((rc, layer))
+            v = oc.values.get((self.rc(net), layer)) if oc is not None else None
             if v is None:
                 return self._generic_need(net, kind, layer)
             return v[0] if kind == "track" else v[1]
         if it.kind in ("track", "via"):
-            s = it.cls
-            if rc is None or s is None:
+            c = self._pair(net, it.net, layer)
+            if c is None:
                 return self._generic_need(net, kind, layer)
-            a, b = (rc, s) if rc <= s else (s, rc)
-            m = self.plan.matrix.get((a, b, layer))
-            if m is None:
-                return self._generic_need(net, kind, layer)
-            ww, wv, vv = m
             if kind == "track":
-                return ww if it.kind == "track" else wv
-            return wv if it.kind == "track" else vv
+                return c.track_track if it.kind == "track" else c.track_via
+            return c.via_track if it.kind == "track" else c.via_via
         return self._generic_need(net, kind, layer)
+
+    def _pair(self, net, other, layer):
+        """effective.Rules.clearance(net, other, layer), cached (None for unknown nets)."""
+        key = ("c", net, other, layer)
+        if key in self._req_cache:
+            return self._req_cache[key]
+        try:
+            c = self.eff.clearance(net, other, layer) if other else None
+        except KeyError:
+            c = None
+        self._req_cache[key] = c
+        return c
 
     def _generic_need(self, net, kind, layer):
         key = ("g", net, kind, layer)
@@ -373,12 +399,17 @@ class Space:
         return v
 
     def edge_need(self, net, kind, layer):
-        rc = self.rc(net)
-        oc = self.plan.obstacle_classes.get("kae_edge")
-        v = oc.values.get((rc, layer)) if oc is not None else None
+        """effective.Rules.edge_clearance (track or via) of `net` on `layer`."""
+        key = ("e", net, layer)
+        v = self._req_cache.get(key)
         if v is None:
-            e = self.settings.get("edge_clearance", 0.0) or 0.0
-            return e
+            try:
+                e = self.eff.edge_clearance(net, layer)
+                v = (e.track, e.via)
+            except KeyError:
+                e = self.settings.get("edge_clearance", 0.0) or 0.0
+                v = (e, e)
+            self._req_cache[key] = v
         return v[0] if kind == "track" else v[1]
 
     # ------------------------------------------------------------------ queries
@@ -461,7 +492,7 @@ class Space:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
-                same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor")
+                same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
                         dc = it.geom.distance(p)
@@ -562,9 +593,8 @@ class Space:
         nets = {i.net for i in its}
         net = its[0].net if len(nets) == 1 else its[0].net
         cx, cy = (c.x, c.y)
-        if len(its) == 1 and its[0].idx >= 0:
-            pos = (self.info["pads"][its[0].idx].get("pos") or [cx, cy])
-            cx, cy = float(pos[0]), float(pos[1])
+        if len(its) == 1 and its[0].pos is not None:
+            cx, cy = its[0].pos
         return Terminal(net=net, layers=tuple(l for l in self.cu if l in lays), geom=geom, x=cx, y=cy,
                         fp=fp_uuid, pad=",".join(str(n) for n in numbers), width=w, length=ln, items=its)
 
@@ -606,7 +636,7 @@ class Space:
         from kae.board import transform as T
         if old[3] != new[3]:
             raise ValueError("set_pose cannot flip a part")
-        its = self.pads_by_fp.get(fp_uuid) or []
+        its = list(self.pads_by_fp.get(fp_uuid) or []) + list(self.corridors_by_fp.get(fp_uuid) or [])
         if not its:
             return
         inv = _inverse(T.affine(*old))
@@ -617,11 +647,15 @@ class Space:
                 hl = None
                 if it.hole is not None:
                     hl = (affinity.affine_transform(it.hole[0], inv), it.hole[1])
-                it.local = (affinity.affine_transform(it.geom, inv), hl)
-            g, hl = it.local
+                pl = affinity.affine_transform(Point(it.pos), inv) if it.pos is not None else None
+                it.local = (affinity.affine_transform(it.geom, inv), hl, pl)
+            g, hl, pl = it.local
             it.geom = affinity.affine_transform(g, fwd)
             if hl is not None:
                 it.hole = (affinity.affine_transform(hl[0], fwd), hl[1])
+            if pl is not None:
+                q = affinity.affine_transform(pl, fwd)
+                it.pos = (q.x, q.y)
             it.bbox = _bbox(it.geom, it.r)
         self.invalidate()
 

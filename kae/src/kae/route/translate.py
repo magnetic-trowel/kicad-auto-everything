@@ -15,7 +15,8 @@ fixed wiring are kept):
 - obstacles: KiCad's keepouts (outline holes, rule areas, NPTH holes) are replaced by the
   plan's, held in one virtual component placed at the origin (a component's keepouts can
   name a clearance class; board-level keepouts are read before the classes exist); copper
-  graphics that carry a net are pins of that component, listed in their net;
+  graphics that carry a net, and the fills of kae.route.critical's zones, are pins of that
+  component (centred inside their copper), listed in their net;
 - vias: one padstack per routing class at its real size, named Via[0-n]_<D>:<d>_um in
   whole micrometres (Freerouting drops decimal fractions from via names, KiCad reads the
   drill from the name); the class rule's typed clearances (wire_via, via_via) carry what
@@ -211,17 +212,18 @@ def apply(tree, plan, info):
     for i, (net, shapes, cls, _why) in enumerate(plan.net_graphics):
         if net not in dsn_nets:
             continue
-        shp = []
-        for l, geo in shapes.items():
-            polys = _polygons(geo)
-            if polys:
-                pg = max(polys, key=lambda g: g.area)
-                shp.append(["shape", ["polygon", lname(l), "0", *_ring(pg.exterior.coords)]])
-        if not shp:
+        # Freerouting joins a trace to a pin only at the pin's centre: the centre lies inside
+        # the copper, the shapes are relative to it
+        largest = {l: max(_polygons(geo), key=lambda g: g.area, default=None) for l, geo in shapes.items()}
+        largest = {l: g for l, g in largest.items() if g is not None}
+        if not largest:
             continue
+        c = max(largest.values(), key=lambda g: g.area).representative_point()
+        shp = [["shape", ["polygon", lname(l), "0", *_ring((x - c.x, y - c.y) for x, y in pg.exterior.coords)]]
+               for l, pg in largest.items()]
         ps_name, pin_id = f"kae_gfx{i}", f"g{i}"
         lib.append(["padstack", Q(ps_name), *shp, ["attach", "off"]])
-        image.append(["pin", Q(ps_name), pin_id, "0", "0"])
+        image.append(["pin", Q(ps_name), pin_id, *_xy(c.x, c.y)])
         place.append(["pin", pin_id, ["clearance_class", cls]])
         pins = find(dsn_nets[net], "pins")
         if pins is None:

@@ -90,6 +90,27 @@ def _net_roles(brief):
     return out
 
 
+def _escalate(P, st, workers, seed, log, time_s):
+    """Legality before wishes: drop the routing margin, then let bodies without courtyards
+    overlap (KiCad does not check them), legalizing again after each step. Returns the steps
+    taken with what each left illegal."""
+    steps = []
+    for step in ("margin 0", "bodies relaxed"):
+        if not grid_violations(st):
+            break
+        if step == "margin 0":
+            if P.margin <= 0:
+                continue
+            P.set_margin(0.0)
+        elif not P.relax_bodies():
+            continue
+        r = legalize(P, st, time_s=time_s, workers=workers, seed=seed, log=log, window_share=0.5)
+        steps.append(dict(step=step, end_violators=r.get("end_violators"), violations=r.get("violations")))
+        if log:
+            log(f"escalation: {step}, {r.get('end_violators')} parts still illegal")
+    return steps
+
+
 def _seed_state(P, macros, net_w, seed, log, partition=False):
     """Quadratic + spread: an initial state (macros at their best layout). `partition`
     spreads by recursive bisection of the free cells (density-feasible, for big boards)
@@ -253,7 +274,11 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
 
     # ---- seed: quadratic + spread, then CP-SAT floorplan
     t = time.monotonic()
-    st, _ = _seed_state(P, [m for m in macros if not m.anchored], net_w, seed, log)
+    free_macros = [m for m in macros if not m.anchored]
+    n_items = len(free_macros) + len(P.mov) - sum(len([i for i in m.members if P.parts[i].movable])
+                                                   for m in free_macros)
+    big = n_items > FLOORPLAN_MAX_ITEMS
+    st, _ = _seed_state(P, free_macros, net_w, seed, log, partition=big)
     for mac in macros:
         if mac.anchored:   # members start at their layout around the locked anchor
             a = P.parts[mac.anchor]
@@ -317,8 +342,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     viol = grid_violations(st)
     if viol:
         t = time.monotonic()
+        # big boards: the bisection spread is density-feasible, so the greedy fit does it
+        # (windows would spend the budget on hundreds of small overlaps)
         rep["legalize_seed"] = legalize(P, st, time_s=max(3.0, 0.15 * (deadline - time.monotonic())),
-                                        workers=workers, seed=seed, log=log)
+                                        workers=workers, seed=seed, log=log, window_share=0.0 if big else 0.6)
+        if grid_violations(st):
+            rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
         stage("legalize_seed", t)
     seed_state = st.copy()
     seed_legal = not grid_violations(seed_state)
@@ -362,6 +391,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             final = cand
     st = final
     viol = grid_violations(st)
+    if viol:
+        rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
+        viol = grid_violations(st)
     if viol and P.margin > 0:
         # the routing margin is a wish, legality is not: judge (and repair) without it
         P.set_margin(0.0)

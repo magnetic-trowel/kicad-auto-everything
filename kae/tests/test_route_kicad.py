@@ -224,3 +224,78 @@ def test_locked_preroutes_come_back_unchanged(routed, tmp_path):
     touching = [v for v in drc.errors(report)
                 if any(it.get("uuid") in keep for it in v.get("items", [])) and v["type"] in TRANSLATION]
     assert not touching, json.dumps(touching[:3], indent=1)
+
+
+CRIT_ZONE = """	(zone
+		(net "{net}")
+		(layer "{layer}")
+		(uuid "00000000-0000-4000-8000-00000000c417")
+		(name "kae-crit:test")
+		(hatch edge 0.5)
+		(connect_pads
+			(clearance 0.2)
+		)
+		(min_thickness 0.2)
+		(fill
+			(thermal_gap 0.5)
+			(thermal_bridge_width 0.5)
+			(island_removal_mode 1)
+		)
+		(polygon
+			(pts
+				(xy {x0} {y0}) (xy {x1} {y0}) (xy {x1} {y1}) (xy {x0} {y1})
+			)
+		)
+	)
+"""
+
+
+@needs_router
+def test_critical_zones_are_obstacles_for_other_nets(routed, exported, tmp_path):
+    """A zone named "kae-crit:..." (a pour kae.route.critical emitted) keeps every other net
+    out: routed again, its refilled copper is intact and no other net comes within the
+    zone's clearance of it."""
+    from shapely.geometry import LineString, Point, box
+    from shapely.ops import unary_union
+    board, out, _, _ = routed
+    _, info, _ = exported
+    pads = unary_union([g for pd in info["pads"] for g in constraints._pad_shapes(pd)[1].values() if g is not None])
+    routing = pcbnew_io.edit_routing(out, tmp_path / "listing.kicad_pcb")["routing"]
+    tracks = sorted((r for r in routing if r["kind"] == "track"),
+                    key=lambda r: -LineString([r["a"], r["b"]]).length)
+    pick = None
+    for r in tracks:   # a square on a stretch the first routing used, clear of every pad
+        m = LineString([r["a"], r["b"]]).interpolate(0.5, normalized=True)
+        sq = box(m.x - 0.8, m.y - 0.8, m.x + 0.8, m.y + 0.8)
+        if sq.distance(pads) > 0.5:
+            pick = (r, sq)
+            break
+    assert pick, "no stretch of routing clear of pads"
+    r, sq = pick
+    net = next(n for n in sorted(info["nets"]) if n and n != r["net"])
+    x0, y0, x1, y1 = sq.bounds
+    text = board.read_text()
+    end = text.rstrip().rfind(")")
+    crit = tmp_path / "crit" / "board.kicad_pcb"
+    crit.parent.mkdir()
+    crit.write_text(text[:end] + CRIT_ZONE.format(net=net, layer=r["layer"], x0=x0, y0=y0, x1=x1, y1=y1)
+                    + text[end:])
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(board.with_suffix(ext), crit.with_suffix(ext))
+
+    def fill(path):
+        z = next(z for z in pcbnew_io.zone_fills(path)["zones"] if z["name"] == "kae-crit:test")
+        return unary_union([constraints._poly(rings) for rings in z["layers"].get(r["layer"], [])])
+
+    before = fill(crit)
+    assert before.area > 1.0
+    out3 = tmp_path / "out3" / "board.kicad_pcb"
+    rep = bridge.route(crit, out3, time_s=120, workdir=tmp_path / "wd3", opts=dict(rounds=1))
+    assert rep["status"] == "routed" and rep["plan"]["net_graphics"] >= 1
+    assert fill(drc.stage_board(out3, crit, tmp_path / "staged3")).area >= before.area - 1e-3
+    for x in pcbnew_io.edit_routing(out3, tmp_path / "listing3.kicad_pcb")["routing"]:
+        if x["net"] == net or (x["kind"] != "via" and x["layer"] != r["layer"]):
+            continue
+        g = Point(x["pos"]).buffer(x["size"] / 2) if x["kind"] == "via" else \
+            LineString([x["a"], x["b"]]).buffer(x["width"] / 2)
+        assert g.distance(before) >= 0.2 - 1e-3, x

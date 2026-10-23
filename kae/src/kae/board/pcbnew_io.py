@@ -192,7 +192,8 @@ def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_
 
 def zone_fills(path, timeout=900):
     """Every zone of `path` refilled as kicad-cli's DRC does (--refill-zones). Returns {zones:
-    [{uuid, net, name, priority, teardrop, layers: {layer: [[outer ring, hole rings...]]}}]}."""
+    [{uuid, net, name, priority, clearance, teardrop, layers: {layer: [[outer ring, hole
+    rings...]]}}]}."""
     return _run("zone-fills", lambda out: [_abs(path), out], timeout)
 
 

@@ -93,6 +93,9 @@ class _Space:
                     pg = _poly(rr)
                     if pg is not None:
                         self.items.append((pg, g.get("net") or "", "graphic", l, None, None))
+        for net, shapes, cls, _ in getattr(plan, "net_graphics", []):  # copper pins of a net
+            for l, g in shapes.items():
+                self.items.append((g, net, "pad", l, cls, None))
         for ob in plan.obstacles:  # rule areas forbid tracks of every net
             if ob.kind == "keepout" and ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
                 self.items.append((ob.geom, "", "keepout", None if ob.layer == "signal" else ob.layer, None, None))
@@ -521,8 +524,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         routed = {u: r for u, r in copper.items() if not r.get("locked") and u not in fixed}
         fills = None
         if needs_fills(best_rep):
-            try:
-                fills = pcbnew_io.zone_fills(output_path)["zones"]
+            try:  # refilled with the board's rules: next to its project files
+                fills = pcbnew_io.zone_fills(drc.stage_board(output_path, input_path, rdir / "fills"))["zones"]
             except pcbnew_io.PcbnewError as e:
                 rec["fills_error"] = str(e)
         a = analyse(best_rep, routed, info, plan, fills=fills, layer_map=lmap, copper=copper)

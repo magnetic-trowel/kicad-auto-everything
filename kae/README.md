@@ -35,5 +35,26 @@ footprint as drawn, front side, 0 degrees). A pose `(x, y, rot, side)` maps a lo
 Acceptance against pcbnew on the prepared kaebench tasks:
 `kae/.venv/bin/python kae/scripts/board_acceptance.py {verify,roundtrip,place,loadtime} --tasks DIR`.
 
+`pcbnew_io` also serves `kae.route`: `export_dsn` (KiCad's Specctra export plus what it leaves
+out, and KiCad's rule engine probed per net and layer), `import_ses`, `edit_routing` (delete,
+widen, add, lock and unlock tracks and vias) and `zone_fills` (zones refilled as the DRC does).
+
+## `kae.route`
+
+The KiCad -> Freerouting -> KiCad bridge: every KiCad constraint reaches the router or is
+enforced after import ([freerouting-constraint-bridge](../docs/topics/routing/freerouting-constraint-bridge.md)).
+
+```bash
+kae/.venv/bin/python -m kae.route.cli route IN.kicad_pcb OUT.kicad_pcb --seed 0 --time 600
+kaebench run --adapter kae-fr --kinds route \
+  --command "kae/.venv/bin/python -m kae.route.cli route {input} {output} --seed {attempt} --time {timeout}"
+```
+
+Locked tracks and vias in the input are kept as they are; zones named `kae-crit:...` are
+obstacles for other nets. `kae.route.effective.load(board)` gives any other router the same
+numbers per net and layer (`track_width`, `via`, `clearance`, `pad_clearance`,
+`edge_clearance`, `same_net_via_pitch`). Needs Freerouting 2.5.x (found as kaebench finds it)
+and kicad-cli.
+
 `kae` never imports `kaebench` (or research scripts); methods plug into the harness with
 `kaebench run --command`.

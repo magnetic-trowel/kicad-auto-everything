@@ -257,7 +257,7 @@ class GridRouter:
                 if id(it) in seen:
                     continue
                 seen.add(id(it))
-                same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor")
+                same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
                         grid.within(it.geom, pitch + m, out)

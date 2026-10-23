@@ -752,8 +752,10 @@ def zone_fills(path, out):
             ps = pcbnew.SHAPE_POLY_SET(z.GetFilledPolysList(l))  # a copy: unfracture it
             ps.Unfracture()
             layers[board.GetStandardLayerName(l)] = _polyset(ps)
+        lc = z.GetLocalClearance()
         zones.append(dict(uuid=z.m_Uuid.AsString(), net=z.GetNetname(), name=z.GetZoneName(),
                           priority=z.GetAssignedPriority(), layers=layers,
+                          clearance=None if lc is None else _mm(lc),
                           teardrop=bool(z.IsTeardropArea()) if hasattr(z, "IsTeardropArea") else False))
     _write(out, dict(ok=True, zones=zones))
     _status(dict(ok=True, zones=len(zones)))

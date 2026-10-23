@@ -7,7 +7,9 @@
 1. KiCad exports the DSN and everything the DSN leaves out (pcbnew_io.export_dsn). Locked
    tracks and vias in the input (pre-routes) go in as fixed wiring: Freerouting routes around
    them and does not return them, KiCad's import keeps them as they are, the repair loop
-   never touches them. Zones are never edited (Freerouting sees them as planes).
+   never touches them. Zones are never edited: Freerouting sees them as planes, which other
+   nets may cross, except zones named "kae-crit:..." (kae.route.critical's pours), which are
+   also hard obstacles for the other nets.
 2. constraints.plan computes what KiCad's DRC will require; translate.apply writes it into
    the DSN (classes, clearance matrix, pin and obstacle classes, vias).
 3. Freerouting routes with settings that stop it narrowing tracks, inside its own deadline.
@@ -36,6 +38,10 @@ DEFAULT_OPTS = dict(
     rounds=6,                # repair rounds at most (each also bounded by the time left)
     router_share=0.6,        # share of the budget for the first routing
 )
+
+
+# zones that kae.route.critical emitted: hard obstacles for the other nets
+CRIT_PREFIX = "kae-crit:"
 
 
 def _log(msg):
@@ -72,6 +78,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         sev = severities(input_path)
         opts["severities"] = sev
         opts["seed"] = seed
+        if any((z.get("name") or "").startswith(CRIT_PREFIX) for z in info.get("zones") or []):
+            opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
+                                  if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
@@ -119,6 +128,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["drc"] = drc.summary(rep)
         return report
     finally:
+        report["opts"] = {k: v for k, v in opts.items() if k not in ("crit_zones", "fixed_uuids", "severities")}
         report["seconds"] = round(time.monotonic() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
@@ -140,6 +150,6 @@ def plan_summary(p):
     return dict(
         classes={n: dict(nets=len(rc.nets), netclass=rc.netclass, widths=rc.widths, via=rc.via)
                  for n, rc in p.classes.items()},
-        obstacle_classes=len(p.obstacle_classes), obstacles=len(p.obstacles),
+        obstacle_classes=len(p.obstacle_classes), obstacles=len(p.obstacles), net_graphics=len(p.net_graphics),
         pins=len(p.pin_class), edge_clearance=p.edge_clearance, neck_width=p.neck_width,
         notes={k: v for k, v in p.notes.items() if k != "same_net_via_pitch"})

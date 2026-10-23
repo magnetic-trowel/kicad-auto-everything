@@ -28,7 +28,11 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
   graphics and texts, rule areas and thermal-spoke corridors become keepouts, each in an
   obstacle class carrying KiCad's requirement (rule areas and corridors: zero). A copper
   graphic that carries a net becomes a pin of that net instead (net_graphics), so the
-  router connects its net to it and keeps the other nets away.
+  router connects its net to it and keeps the other nets away. So does the fill of every
+  zone named "kae-crit:..." (opts["crit_zones"], pours that kae.route.critical emitted): a
+  hard obstacle for other nets at the zone's clearance, while the zone stays a plane of
+  its own net; other zones are planes only, which other nets may cross (KiCad's refill
+  flows around them).
 
 All lengths mm. Requirements are rounded up to 0.1 um (the DSN resolution).
 """
@@ -599,6 +603,32 @@ def _obstacles(info, rb, p, sev, opts):
             continue
         for l, geo in shapes.items():
             p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
+    # ---- kae.route.critical's pours: hard obstacles for the other nets
+    for z in opts.get("crit_zones") or []:
+        net = z.get("net") or ""
+        if net not in p.net_class:
+            continue
+        nc = info["nets"].get(net, {}).get("netclass", "Default")
+        zi = dict(type="Zone", net=net, netclass=nc, constituents=nc.split(","), copper=True,
+                  connected=True, layers=list(z.get("layers") or []))
+        zc = z.get("clearance") or 0.0
+        vec = {}
+        for n, rc in p.classes.items():
+            if not rc.rep:
+                continue
+            ring = (rc.via[0] - rc.via[1]) / 2
+            for l in cu:
+                t = net_item(info, rc.rep, "track", l, rc.widths[l])
+                v = net_item(info, rc.rep, "via", l)
+                tw = max(zc, _strict_min(rb, "clearance", zi, t, l))
+                vw = max(zc, _strict_min(rb, "clearance", zi, v, l), _strict_min(rb, "hole_clearance", zi, v, l) - ring)
+                vec[(n, l)] = (up(max(tw, EPS_SHORT)), up(max(vw, EPS_SHORT)))
+        cls = _obstacle_class(p, "kae_crit", vec)
+        for l, polys in (z.get("layers") or {}).items():
+            for rings in polys:
+                g = _poly(rings)
+                for part in (_hole_free(g) if g is not None else []):
+                    p.net_graphics.append((net, {l: part}, cls, f"zone {z.get('name')} {net}"))
     # ---- rule areas: KiCad's disallow test is plain intersection
     for z in info.get("zones") or []:
         if not z.get("rule_area") or not (z.get("no_tracks") or z.get("no_vias")):
@@ -617,6 +647,28 @@ def _obstacles(info, rb, p, sev, opts):
         for geo, layer, pad in thermal_corridors(info, p, None if pads == "all" else set(pads), sev):
             p.obstacles.append(Obstacle("keepout", layer, geo, _zero_class(p),
                                         f"thermal spokes {pad['ref']}.{pad['number']}"))
+
+
+def _hole_free(g):
+    """Simple polygons that together cover polygon `g`: each hole is cut open by a vertical
+    line through it (a DSN pin shape has no holes)."""
+    from shapely.ops import split
+    out, todo = [], [g]
+    while todo:
+        q = todo.pop()
+        if not isinstance(q, Polygon) or q.is_empty or q.area < 1e-9:
+            continue
+        if not q.interiors:
+            out.append(q)
+            continue
+        x = Polygon(q.interiors[0]).representative_point().x
+        _, y0, _, y1 = q.bounds
+        pieces = [x_ for x_ in split(q, LineString([(x, y0 - 1), (x, y1 + 1)])).geoms]
+        if len(pieces) < 2:
+            out.append(Polygon(q.exterior))
+            continue
+        todo.extend(pieces)
+    return out
 
 
 def thermal_corridors(info, p, pad_uuids=None, sev=None):

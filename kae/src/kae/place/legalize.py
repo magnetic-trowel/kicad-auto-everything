@@ -82,11 +82,24 @@ def _window_solve(P, st, free, margin_cells, time_s, workers, seed, w_rot=1.0):
     return sol, model
 
 
-def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None, force=()):
+MAX_WINDOW = 40          # parts freed in one CP-SAT window
+GLOBAL_MAX = 40          # all parts in one CP-SAT model only up to this many
+
+
+def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None, force=(), window_share=0.6):
     """Repair grid violations in place (parts in `force` are re-placed in the first round even
-    when the grid finds them legal, e.g. after a KiCad violation). Returns a report dict."""
+    when the grid finds them legal, e.g. after a KiCad violation). Returns a report dict.
+
+    1. Windows: violators within 4 mm form a group; the group and its nearest movable parts
+       (k, growing x1.6 on failure, at most MAX_WINDOW) are re-placed by CP-SAT at minimum
+       displacement inside a window around them, everything else fixed; rounds repeat while
+       violations remain, for at most `window_share` of the budget.
+    2. Greedy: whatever is still illegal goes to the nearest free spot, largest first,
+       evicting smaller parts when nothing is free nearby (`greedy`).
+    3. Small boards only (<= GLOBAL_MAX parts): one CP-SAT model over every part."""
     t0 = time.monotonic()
     deadline = t0 + time_s
+    win_deadline = t0 + window_share * time_s
     rep = dict(rounds=0, windows=0, solved=0, global_used=False, start_violators=0)
     kk = {}
     force = {i for i in force if P.parts[i].movable}
@@ -96,22 +109,24 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
             rep["start_violators"] = len(viol)
             for i in force:
                 viol.setdefault(i, []).append(("kicad", None))
-        if not viol:
+        if not viol or time.monotonic() > win_deadline:
             break
         rep["rounds"] = rnd + 1
         bad = set(viol)
         for gr in _groups(st, bad, radius_mm=4.0):
             now = time.monotonic()
-            if now > deadline:
+            if now > win_deadline:
                 break
             key = tuple(gr)
-            kw = kk.get(key, k)
+            kw = min(kk.get(key, k), MAX_WINDOW)
             cx = np.mean([st.center(b)[0] for b in gr])
             cy = np.mean([st.center(b)[1] for b in gr])
             near = sorted(P.mov, key=lambda c: abs(st.center(c)[0] - cx) + abs(st.center(c)[1] - cy))
-            free = list(dict.fromkeys(gr + near[:kw]))
+            free = list(dict.fromkeys(gr[:MAX_WINDOW] + near[:kw]))[:max(MAX_WINDOW, len(gr[:MAX_WINDOW]))]
             margin = int(math.ceil((2.0 + 0.5 * (kw // k)) / P.g))
-            budget = min(max(1.0, 0.15 * time_s), deadline - now)
+            budget = min(max(1.0, 0.15 * time_s), win_deadline - now)
+            if budget <= 0.2:
+                break
             sol, model = _window_solve(P, st, free, margin, budget, workers, seed + rnd)
             rep["windows"] += 1
             if sol is not None:
@@ -123,7 +138,10 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
             if log:
                 log(f"legalize window {gr[:4]} free={len(free)} status={model.status} {model.wall:.2f}s")
     viol = grid_violations(st)
-    if viol and time.monotonic() < deadline:
+    if viol:
+        rep["greedy"] = greedy(P, st, list(viol), log=log)
+        viol = grid_violations(st)
+    if viol and time.monotonic() < deadline and len(P.mov) <= GLOBAL_MAX:
         rep["global_used"] = True
         items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
         obstacles = [(ob.side, ob.g) for ob in P.obstacles]
@@ -289,16 +307,22 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
         for side, (a, b, c, d), _ in st.grid_rects(i):
             FL.sat_add_rect(S[side], a + pad, b + pad, c + pad, d + pad, v)
 
-    def spot(i):
+    def local(i):
+        r = P.parts[i].rots[0].g_own
+        return int(max(100, 8 * max(r[1] - r[0], r[3] - r[2])))
+
+    def spot(i, reach):
         p = P.parts[i]
         own, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.nearest_spot(S[0], S[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1, int(st.X[i]),
-                                     int(st.Y[i]), int(st.K[i]), float(w_rot), own, opp, opp_n, brd, brd_n, max_d)
+                                     int(st.Y[i]), int(st.K[i]), float(w_rot), own, opp, opp_n, brd, brd_n,
+                                     int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, k)
     start = {i: (int(st.X[i]), int(st.Y[i])) for i in parts}
     placed_set, queue = set(), []
+    # first pass: a free spot near where the part wants to be
     for i in parts:
-        best = spot(i)
+        best = spot(i, local(i))
         if best is None:
             queue.append(i)
             continue
@@ -308,15 +332,11 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
     ripups = 0
     max_ripups = max_ripups if max_ripups is not None else 4 * len(queue) + 20
     unplaced = []
-    while queue and ripup and ripups < max_ripups:
-        i = queue.pop(0)
+
+    def _ripup_at(i, reach):
+        """Spot within reach where part i covers the least of smaller parts (evictable),
+        never an obstacle or a part at least as big: (cost, X, Y, k, 'ripup') or None."""
         p = P.parts[i]
-        best = spot(i)
-        if best is not None:
-            _, st.X[i], st.Y[i], st.K[i] = best
-            add(i, 1)
-            placed_set.add(i)
-            continue
         hard = [np.zeros_like(occ[0]) for _ in (0, 1)]
         soft = [np.zeros_like(occ[0]) for _ in (0, 1)]
         for ob in P.obstacles:
@@ -332,12 +352,34 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
         own, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.ripup_spot(H[0], H[1], C[0], C[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1,
                                    int(st.X[i]), int(st.Y[i]), int(st.K[i]), float(w_rot), 4.0, own, opp, opp_n,
-                                   brd, brd_n, max_d)
-        if c < 0:
+                                   brd, brd_n, int(min(reach, max_d)))
+        return None if c < 0 else (c, X, Y, k, "ripup")
+    while queue:
+        i = queue.pop(0)
+        p = P.parts[i]
+        # nearby first (the space may have changed), then evict smaller parts nearby, then
+        # anywhere on the board, then evict anywhere
+        for reach, evict_ok in ((local(i), False), (local(i), True), (max_d, False), (max_d, True)):
+            if evict_ok and not (ripup and ripups < max_ripups):
+                continue
+            if not evict_ok:
+                best = spot(i, reach)
+                if best is not None:
+                    break
+                continue
+            best = _ripup_at(i, reach)
+            if best is not None:
+                break
+        else:
             unplaced.append(i)
             continue
+        if not best[-1:] == ("ripup",):
+            _, st.X[i], st.Y[i], st.K[i] = best
+            add(i, 1)
+            placed_set.add(i)
+            continue
         ripups += 1
-        st.X[i], st.Y[i], st.K[i] = X, Y, k
+        st.X[i], st.Y[i], st.K[i] = best[1], best[2], best[3]
         mine = st.grid_rects(i)
         evict = []
         for j in list(placed_set) + [j for j in P.mov if j not in skip]:
