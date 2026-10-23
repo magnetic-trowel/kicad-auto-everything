@@ -69,7 +69,7 @@
         "priority": 4
       },
       {
-        "name": "DCXBST",
+        "name": "CHASSIS",
         "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
@@ -77,12 +77,28 @@
         "priority": 5
       },
       {
+        "name": "CHASSIS_20A",
+        "clearance": 0.2,
+        "track_width": 9.4,
+        "via_diameter": 7.82,
+        "via_drill": 3.76,
+        "priority": 6
+      },
+      {
+        "name": "DCXBST",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 7
+      },
+      {
         "name": "FANC",
         "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 6
+        "priority": 8
       },
       {
         "name": "HV",
@@ -90,7 +106,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 7
+        "priority": 9
       },
       {
         "name": "HV_1A",
@@ -98,7 +114,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 8
+        "priority": 10
       },
       {
         "name": "IDA",
@@ -106,7 +122,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 9
+        "priority": 11
       },
       {
         "name": "IDB",
@@ -114,7 +130,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 10
+        "priority": 12
       },
       {
         "name": "K1C",
@@ -122,7 +138,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 11
+        "priority": 13
       },
       {
         "name": "K2C",
@@ -130,7 +146,15 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 12
+        "priority": 14
+      },
+      {
+        "name": "KSUP_1A",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 15
       },
       {
         "name": "LV",
@@ -138,7 +162,15 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 13
+        "priority": 16
+      },
+      {
+        "name": "LV_10A",
+        "clearance": 0.4,
+        "track_width": 3.6,
+        "via_diameter": 3.18,
+        "via_drill": 1.44,
+        "priority": 17
       },
       {
         "name": "LV_1A",
@@ -146,7 +178,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 14
+        "priority": 18
       },
       {
         "name": "LV_20A",
@@ -154,7 +186,7 @@
         "track_width": 9.4,
         "via_diameter": 7.82,
         "via_drill": 3.76,
-        "priority": 15
+        "priority": 19
       },
       {
         "name": "LV_8A",
@@ -162,7 +194,7 @@
         "track_width": 2.65,
         "via_diameter": 2.42,
         "via_drill": 1.06,
-        "priority": 16
+        "priority": 20
       },
       {
         "name": "PACK_1A",
@@ -170,7 +202,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 17
+        "priority": 21
       },
       {
         "name": "V33BST",
@@ -178,7 +210,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 18
+        "priority": 22
       }
     ],
     "meta": {
@@ -286,8 +318,20 @@
         "pattern": "/BATEND/SNS_B"
       },
       {
+        "netclass": "LV",
+        "pattern": "/DCX/DCX_CSK"
+      },
+      {
         "netclass": "DCXBST",
         "pattern": "/DCX/DCX_HB"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/DCX/DCX_RS"
+      },
+      {
+        "netclass": "LV_10A",
+        "pattern": "/DCX/HB_LR"
       },
       {
         "netclass": "LV_8A",
@@ -483,6 +527,130 @@
       },
       {
         "netclass": "LV",
+        "pattern": "/IMD/H4_DA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/H4_DA_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/H4_DA_P"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/H4_DCDC"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/H4_HLDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/H4_LDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/H4_OUTN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/H4_OUTP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/IMD_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/IMD/IMD_REF"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN1"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN10"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN2"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN3"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN4"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN5"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN6"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN7"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN8"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IN9"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP1"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP2"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP3"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP4"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP5"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP6"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP7"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP8"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/IP9"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/IMD/NTAP"
+      },
+      {
+        "netclass": "CHASSIS",
+        "pattern": "/IMD/PSW"
+      },
+      {
+        "netclass": "LV",
         "pattern": "/LIMIT/CC_N"
       },
       {
@@ -492,6 +660,18 @@
       {
         "netclass": "LV",
         "pattern": "/LIMIT/CC_RZ"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV2_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV2_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV2_RZ"
       },
       {
         "netclass": "LV",
@@ -507,11 +687,19 @@
       },
       {
         "netclass": "LV",
+        "pattern": "/LIMIT/U803B_FB"
+      },
+      {
+        "netclass": "LV",
         "pattern": "/LIMIT/VREF_CC"
       },
       {
         "netclass": "LV",
         "pattern": "/LIMIT/VREF_CV"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/VREF_CV2"
       },
       {
         "netclass": "LV",
@@ -540,6 +728,14 @@
       {
         "netclass": "LV",
         "pattern": "/MCU/READY_B"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/XTAL_I"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/XTAL_O"
       },
       {
         "netclass": "LV",
@@ -927,6 +1123,10 @@
       },
       {
         "netclass": "LV",
+        "pattern": "/SAFETY/CLR_N"
+      },
+      {
+        "netclass": "LV",
         "pattern": "/SAFETY/LED_FLT_A"
       },
       {
@@ -970,12 +1170,24 @@
         "pattern": "AUX_IN"
       },
       {
+        "netclass": "LV",
+        "pattern": "AUX_PG"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "AUX_PGS"
+      },
+      {
         "netclass": "PACK_1A",
         "pattern": "BAT_TAP_N"
       },
       {
         "netclass": "PACK_1A",
         "pattern": "BAT_TAP_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "BURST_N"
       },
       {
         "netclass": "LV",
@@ -996,6 +1208,14 @@
       {
         "netclass": "LV",
         "pattern": "CAN_TX"
+      },
+      {
+        "netclass": "CHASSIS_20A",
+        "pattern": "CHASSIS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "DCX_CS"
       },
       {
         "netclass": "LV",
@@ -1034,6 +1254,10 @@
         "pattern": "GND"
       },
       {
+        "netclass": "KSUP_1A",
+        "pattern": "HVIL_A"
+      },
+      {
         "netclass": "HV_1A",
         "pattern": "HV_N"
       },
@@ -1048,6 +1272,10 @@
       {
         "netclass": "LV",
         "pattern": "HV_V2_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "HV_V2_LIM"
       },
       {
         "netclass": "LV",
@@ -1068,6 +1296,14 @@
       {
         "netclass": "LV",
         "pattern": "IGN_IN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "IMD_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "IMD_SW"
       },
       {
         "netclass": "LV",
@@ -1094,12 +1330,24 @@
         "pattern": "K_IN"
       },
       {
+        "netclass": "KSUP_1A",
+        "pattern": "K_SUP"
+      },
+      {
         "netclass": "LV",
         "pattern": "LATCH_Q"
       },
       {
         "netclass": "LV",
         "pattern": "LATCH_QN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LATCH_SNS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LATCH_VCC"
       },
       {
         "netclass": "LV",
@@ -1151,6 +1399,14 @@
       },
       {
         "netclass": "LV",
+        "pattern": "ONT_H"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "ONT_L"
+      },
+      {
+        "netclass": "LV",
         "pattern": "OVP_TRIP_N"
       },
       {
@@ -1182,6 +1438,14 @@
         "pattern": "PVA_I_ADC"
       },
       {
+        "netclass": "LV",
+        "pattern": "PVA_OVS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVA_OV_N"
+      },
+      {
         "netclass": "LV_8A",
         "pattern": "PVA_P"
       },
@@ -1196,6 +1460,14 @@
       {
         "netclass": "LV",
         "pattern": "PVB_I_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVB_OVS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVB_OV_N"
       },
       {
         "netclass": "LV_8A",
@@ -1218,10 +1490,6 @@
         "pattern": "RESET_N"
       },
       {
-        "netclass": "LV",
-        "pattern": "UART_TX"
-      },
-      {
         "netclass": "LV_8A",
         "pattern": "VINT"
       },
@@ -1239,7 +1507,23 @@
       },
       {
         "netclass": "LV",
+        "pattern": "VTH_BURST"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH_DOC"
+      },
+      {
+        "netclass": "LV",
         "pattern": "VTH_OC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH_ONT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH_OPEN"
       },
       {
         "netclass": "LV",

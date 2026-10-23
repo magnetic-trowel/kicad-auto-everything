@@ -36,7 +36,7 @@
             {
               "description": "Symbol T301 [T301-ETD39-DCX22__custom_]",
               "pos": {
-                "x": 365.76,
+                "x": 398.78,
                 "y": 35.56
               },
               "uuid": "009fd523-7c2d-50ef-b08c-854cd4bb021b"
@@ -51,7 +51,7 @@
             {
               "description": "Symbol F901 [Fuse]",
               "pos": {
-                "x": 96.52,
+                "x": 205.74,
                 "y": 71.12
               },
               "uuid": "629b54d4-e389-51a7-80c5-33f711095593"
@@ -66,7 +66,7 @@
             {
               "description": "Symbol K901 [G9KB-1A_DC12]",
               "pos": {
-                "x": 121.92,
+                "x": 231.14,
                 "y": 35.56
               },
               "uuid": "6fdefd93-b548-594f-b4d7-5a64cf708a0b"
@@ -81,7 +81,7 @@
             {
               "description": "Symbol F902 [Fuse]",
               "pos": {
-                "x": 157.48,
+                "x": 269.24,
                 "y": 71.12
               },
               "uuid": "889f66ae-0946-5944-947f-9959a9a08e87"
@@ -96,7 +96,7 @@
             {
               "description": "Symbol K902 [G9KB-1A_DC12]",
               "pos": {
-                "x": 182.88,
+                "x": 294.64,
                 "y": 35.56
               },
               "uuid": "3e1789c0-a72e-5043-b352-6a5e455087f0"
@@ -166,6 +166,27 @@
                 "y": 48.26
               },
               "uuid": "7238e226-b544-5015-931d-d82c849b336c"
+            }
+          ],
+          "severity": "warning",
+          "type": "ground_pin_not_ground"
+        }
+      ]
+    },
+    {
+      "path": "/IMD/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/02144060-5626-5143-ae27-86e1346670e0",
+      "violations": [
+        {
+          "description": "Pin HGND not connected to ground net",
+          "items": [
+            {
+              "description": "Symbol U461 Pin 8 [HGND, Power input, Line]",
+              "pos": {
+                "x": 104.14,
+                "y": 48.26
+              },
+              "uuid": "1783b570-085a-54cc-8a1e-aea9a4ce4fea"
             }
           ],
           "severity": "warning",

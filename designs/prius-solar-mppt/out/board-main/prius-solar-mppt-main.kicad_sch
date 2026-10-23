@@ -13,7 +13,7 @@
 	)
 	(lib_symbols)
 	(sheet
-		(at 25.4 55.88)
+		(at 25.4 63.5)
 		(size 129.54 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -29,14 +29,14 @@
 		)
 		(uuid "900e09f1-00a7-5705-b3de-ef3a3be80dab")
 		(property "Sheetname" "MPPT_A"
-			(at 25.4 55.18 0)
+			(at 25.4 62.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "MPPT_A.kicad_sch"
-			(at 25.4 71.72 0)
+			(at 25.4 79.34 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -52,7 +52,7 @@
 	)
 	(text "MPPT A: string A input, PV sense, LM5176 buck-boost, analog PV-voltage loop"
 		(exclude_from_sim no)
-		(at 26.67 63.5 0)
+		(at 26.67 71.12 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -60,7 +60,7 @@
 		(uuid "eda5326b-1515-54d3-8da1-8686bb8e0fd5")
 	)
 	(sheet
-		(at 167.64 55.88)
+		(at 167.64 63.5)
 		(size 129.54 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -76,14 +76,14 @@
 		)
 		(uuid "202e2eac-3f9b-5cea-8615-0c824d9a8434")
 		(property "Sheetname" "MPPT_B"
-			(at 167.64 55.18 0)
+			(at 167.64 62.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "MPPT_B.kicad_sch"
-			(at 167.64 71.72 0)
+			(at 167.64 79.34 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -99,7 +99,7 @@
 	)
 	(text "MPPT B: string B input, PV sense, LM5176 buck-boost, analog PV-voltage loop"
 		(exclude_from_sim no)
-		(at 168.91 63.5 0)
+		(at 168.91 71.12 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -107,7 +107,7 @@
 		(uuid "7567e51a-3ccd-5921-b515-9f22b22a0e2a")
 	)
 	(sheet
-		(at 25.4 83.82)
+		(at 25.4 91.44)
 		(size 119.38 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -123,14 +123,14 @@
 		)
 		(uuid "3c7db09e-22bf-5e29-a775-a444fcefa129")
 		(property "Sheetname" "DCX"
-			(at 25.4 83.12 0)
+			(at 25.4 90.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "DCX.kicad_sch"
-			(at 25.4 99.66 0)
+			(at 25.4 107.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -146,7 +146,7 @@
 	)
 	(text "VINT bus and LLC-DCX: half-bridge, T301 (1:22), rectifier, HV output"
 		(exclude_from_sim no)
-		(at 26.67 91.44 0)
+		(at 26.67 99.06 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -154,7 +154,7 @@
 		(uuid "6bc0cd59-2ae9-53b7-ada8-77a27a0eb71a")
 	)
 	(sheet
-		(at 157.48 83.82)
+		(at 157.48 91.44)
 		(size 134.62 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -170,14 +170,14 @@
 		)
 		(uuid "da371a90-61f4-5ca5-a21e-7e827e30a41d")
 		(property "Sheetname" "HVSENSE"
-			(at 157.48 83.12 0)
+			(at 157.48 90.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "HVSENSE.kicad_sch"
-			(at 157.48 99.66 0)
+			(at 157.48 107.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -193,7 +193,7 @@
 	)
 	(text "HV sensing: pack voltage (path 1), output voltage (path 2, L3), charge current"
 		(exclude_from_sim no)
-		(at 158.75 91.44 0)
+		(at 158.75 99.06 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -201,8 +201,55 @@
 		(uuid "2ca90601-c0bd-5987-a7c9-70326a30e9c8")
 	)
 	(sheet
-		(at 25.4 111.76)
-		(size 129.54 15.24)
+		(at 25.4 119.38)
+		(size 137.16 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "1502ab18-8ccf-539a-b67a-5d75bbc91747")
+		(property "Sheetname" "IMD"
+			(at 25.4 118.68 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "IMD.kicad_sch"
+			(at 25.4 135.22 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt-main"
+				(path "/16402896-f022-5f91-bcbc-821eea1e3f53"
+					(page "6")
+				)
+			)
+		)
+	)
+	(text "Insulation monitor: 110 MOhm/pole bridge to chassis, U461 reads chassis-to-HV_N"
+		(exclude_from_sim no)
+		(at 26.67 127 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "7681f09c-ed1c-5809-86b5-8686bea6aa10")
+	)
+	(sheet
+		(at 175.26 119.38)
+		(size 154.94 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -217,14 +264,14 @@
 		)
 		(uuid "8f05ad5d-01eb-5de3-9eba-75959670e1d8")
 		(property "Sheetname" "LIMIT"
-			(at 25.4 111.06 0)
+			(at 175.26 118.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "LIMIT.kicad_sch"
-			(at 25.4 127.6 0)
+			(at 175.26 135.22 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -233,14 +280,14 @@
 		(instances
 			(project "prius-solar-mppt-main"
 				(path "/16402896-f022-5f91-bcbc-821eea1e3f53"
-					(page "6")
+					(page "7")
 				)
 			)
 		)
 	)
-	(text "L2 analog limiter: CV on pack voltage, CC on charge current (firmware-free)"
+	(text "L2 analog limiter: CV on pack voltage (paths 1 and 2), CC on charge current (firmware-free)"
 		(exclude_from_sim no)
-		(at 26.67 119.38 0)
+		(at 176.53 127 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -248,7 +295,7 @@
 		(uuid "dfb93849-69f0-5b70-b402-02142bf08dd7")
 	)
 	(sheet
-		(at 167.64 111.76)
+		(at 25.4 147.32)
 		(size 142.24 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -264,14 +311,14 @@
 		)
 		(uuid "c9ee38f0-2c5b-545f-bdce-a22d949b48e7")
 		(property "Sheetname" "SAFETY"
-			(at 167.64 111.06 0)
+			(at 25.4 146.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "SAFETY.kicad_sch"
-			(at 167.64 127.6 0)
+			(at 25.4 163.16 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -280,14 +327,14 @@
 		(instances
 			(project "prius-solar-mppt-main"
 				(path "/16402896-f022-5f91-bcbc-821eea1e3f53"
-					(page "7")
+					(page "8")
 				)
 			)
 		)
 	)
 	(text "Hardware safety: references, comparators, OVP/OC latch, supervisor, PERMIT, drivers"
 		(exclude_from_sim no)
-		(at 168.91 119.38 0)
+		(at 26.67 154.94 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -295,7 +342,7 @@
 		(uuid "74ed7aab-0466-58da-908e-cc543852cc5c")
 	)
 	(sheet
-		(at 25.4 139.7)
+		(at 180.34 147.32)
 		(size 114.3 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -311,14 +358,14 @@
 		)
 		(uuid "701c6345-fdb4-58aa-8e4b-35889fa36e63")
 		(property "Sheetname" "AUX"
-			(at 25.4 139 0)
+			(at 180.34 146.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "AUX.kicad_sch"
-			(at 25.4 155.54 0)
+			(at 180.34 163.16 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -327,14 +374,14 @@
 		(instances
 			(project "prius-solar-mppt-main"
 				(path "/16402896-f022-5f91-bcbc-821eea1e3f53"
-					(page "8")
+					(page "9")
 				)
 			)
 		)
 	)
 	(text "Auxiliary supplies: PV/VINT OR -> AUX12 (LM5164) -> +3V3 (LM5164)"
 		(exclude_from_sim no)
-		(at 26.67 147.32 0)
+		(at 181.61 154.94 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -342,7 +389,7 @@
 		(uuid "6f37f365-7f12-5d45-ace2-51227e5539b0")
 	)
 	(sheet
-		(at 152.4 139.7)
+		(at 25.4 175.26)
 		(size 104.14 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -358,14 +405,14 @@
 		)
 		(uuid "7620df23-12b9-595a-a94b-7ab99a184106")
 		(property "Sheetname" "MCU"
-			(at 152.4 139 0)
+			(at 25.4 174.56 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "MCU.kicad_sch"
-			(at 152.4 155.54 0)
+			(at 25.4 191.1 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -374,21 +421,21 @@
 		(instances
 			(project "prius-solar-mppt-main"
 				(path "/16402896-f022-5f91-bcbc-821eea1e3f53"
-					(page "9")
+					(page "10")
 				)
 			)
 		)
 	)
 	(text "MCU, logging, IG sense, CAN (OBD-II, read-only), connectors"
 		(exclude_from_sim no)
-		(at 153.67 147.32 0)
+		(at 26.67 182.88 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
 		(uuid "733d61c8-3677-5016-9225-410a40d6394c")
 	)
-	(text "Prius Prime solar MPPT charger (rev B) — board 'main'\nBoards: main: MPPT_A, MPPT_B, DCX, HVSENSE, LIMIT, SAFETY, AUX, MCU; batt_end: BATEND; off: ARRAY, HARNESS\nDomains: LV (elv, 0 V = GND); HV (hv, 0 V = HV_N); PACK (battery, 0 V = BAT_TAP_N); K1C (elv, 0 V = AUX12); K2C (elv, 0 V = AUX12); FANC (elv, 0 V =\n    AUX12); IDA (elv, 0 V = PVA_IN); IDB (elv, 0 V = PVB_IN); BSTA1 (elv, 0 V = MPPT_A/SW1); BSTA2 (elv, 0 V = MPPT_A/SW2); BSTB1 (elv, 0 V =\n    MPPT_B/SW1); BSTB2 (elv, 0 V = MPPT_B/SW2); DCXBST (elv, 0 V = DCX/HB_SW); AUXBST (elv, 0 V = AUX/AUX12_SW); V33BST (elv, 0 V = AUX/V33_SW)\nBarrier LV/HV: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier LV/PACK: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier HV/PACK: functional, 399 V working, creepage 5 mm, clearance 5 mm (IPC-2221B Table 6-1 B2 (301-500 V: 2.5 mm; >500 V: +0.005 mm/V))\nNOT READY FOR FABRICATION — blocking questions: Q-3, Q-4, Q-5, Q-6, Q-10"
+	(text "Prius Prime solar MPPT charger (rev B) — board 'main'\nBoards: main: MPPT_A, MPPT_B, DCX, HVSENSE, IMD, LIMIT, SAFETY, AUX, MCU; batt_end: BATEND; off: ARRAY, HARNESS\nDomains: LV (elv, 0 V = GND); CHASSIS (elv, 0 V = GND); HV (hv, 0 V = HV_N); PACK (battery, 0 V = HV_N); KSUP (elv, 0 V = AUX12); K1C (elv, 0 V =\n    K_SUP); K2C (elv, 0 V = K_SUP); FANC (elv, 0 V = AUX12); IDA (elv, 0 V = PVA_IN); IDB (elv, 0 V = PVB_IN); BSTA1 (elv, 0 V = MPPT_A/SW1); BSTA2\n    (elv, 0 V = MPPT_A/SW2); BSTB1 (elv, 0 V = MPPT_B/SW1); BSTB2 (elv, 0 V = MPPT_B/SW2); DCXBST (elv, 0 V = DCX/HB_SW); AUXBST (elv, 0 V =\n    AUX/AUX12_SW); V33BST (elv, 0 V = AUX/V33_SW)\nBarrier LV/HV: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier LV/PACK: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier HV/CHASSIS: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier PACK/CHASSIS: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier HV/PACK: functional, 399 V working, creepage 5 mm, clearance 5 mm (IPC-2221B Table 6-1 B2 (301-500 V: 2.5 mm; >500 V: +0.005 mm/V))\nNOT READY FOR FABRICATION — blocking questions: Q-3, Q-4, Q-5, Q-6, Q-10, Q-13"
 		(exclude_from_sim no)
 		(at 25.4 25.4 0)
 		(effects

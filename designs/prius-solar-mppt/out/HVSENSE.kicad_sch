@@ -1153,7 +1153,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 558.8 48.26 0)
+		(at 27.94 281.94 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1161,82 +1161,82 @@
 		(dnp no)
 		(uuid "b9725814-44ab-5b49-9e3c-78cc36de22e3")
 		(property "Reference" "R401"
-			(at 560.832 48.26 90)
+			(at 29.972 281.94 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 558.8 48.26 90)
+			(at 27.94 281.94 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 558.8 48.26 0)
+			(at 27.94 281.94 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1258,7 +1258,7 @@
 		)
 	)
 	(wire
-		(pts (xy 558.8 44.45) (xy 558.8 41.91))
+		(pts (xy 27.94 278.13) (xy 27.94 275.59))
 		(stroke
 			(width 0)
 			(type default)
@@ -1267,7 +1267,7 @@
 	)
 	(global_label "PACK_SNS"
 		(shape passive)
-		(at 558.8 41.91 90)
+		(at 27.94 275.59 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1275,7 +1275,7 @@
 		)
 		(uuid "3d34fa68-26ea-5138-92b5-2ce05749aa6a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 558.8 41.91 0)
+			(at 27.94 275.59 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1283,7 +1283,7 @@
 		)
 	)
 	(wire
-		(pts (xy 558.8 52.07) (xy 558.8 54.61))
+		(pts (xy 27.94 285.75) (xy 27.94 288.29))
 		(stroke
 			(width 0)
 			(type default)
@@ -1291,7 +1291,7 @@
 		(uuid "639029d0-5463-5c6c-a275-8986df112cbb")
 	)
 	(label "S1A"
-		(at 558.8 54.61 270)
+		(at 27.94 288.29 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1301,7 +1301,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 558.8 88.9 0)
+		(at 27.94 320.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1309,82 +1309,82 @@
 		(dnp no)
 		(uuid "d458383b-54c2-5958-af93-085158262213")
 		(property "Reference" "R402"
-			(at 560.832 88.9 90)
+			(at 29.972 320.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 558.8 88.9 90)
+			(at 27.94 320.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 558.8 88.9 0)
+			(at 27.94 320.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1406,7 +1406,7 @@
 		)
 	)
 	(wire
-		(pts (xy 558.8 85.09) (xy 558.8 82.55))
+		(pts (xy 27.94 316.23) (xy 27.94 313.69))
 		(stroke
 			(width 0)
 			(type default)
@@ -1414,7 +1414,7 @@
 		(uuid "2b897bbd-f52e-5b71-a920-ba01e0110fe0")
 	)
 	(label "S1A"
-		(at 558.8 82.55 90)
+		(at 27.94 313.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1423,7 +1423,7 @@
 		(uuid "f5c45c44-7530-5515-a507-77dbfff92cb1")
 	)
 	(wire
-		(pts (xy 558.8 92.71) (xy 558.8 95.25))
+		(pts (xy 27.94 323.85) (xy 27.94 326.39))
 		(stroke
 			(width 0)
 			(type default)
@@ -1431,7 +1431,7 @@
 		(uuid "e721ebde-d6d1-5339-b1b4-2f4b1df1d3d4")
 	)
 	(label "S1B"
-		(at 558.8 95.25 270)
+		(at 27.94 326.39 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2316,7 +2316,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 27.94 274.32 0)
+		(at 48.26 276.86 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2324,82 +2324,82 @@
 		(dnp no)
 		(uuid "d0ec22f1-5a32-5431-ad12-7bfff086c949")
 		(property "Reference" "R421"
-			(at 29.972 274.32 90)
+			(at 50.292 276.86 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 27.94 274.32 90)
+			(at 48.26 276.86 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 27.94 274.32 0)
+			(at 48.26 276.86 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2421,7 +2421,7 @@
 		)
 	)
 	(wire
-		(pts (xy 27.94 270.51) (xy 27.94 267.97))
+		(pts (xy 48.26 273.05) (xy 48.26 270.51))
 		(stroke
 			(width 0)
 			(type default)
@@ -2430,7 +2430,7 @@
 	)
 	(global_label "HV_P"
 		(shape passive)
-		(at 27.94 267.97 90)
+		(at 48.26 270.51 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2438,7 +2438,7 @@
 		)
 		(uuid "89f17a71-1461-5b02-9844-e37722a5854b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 27.94 267.97 0)
+			(at 48.26 270.51 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2446,7 +2446,7 @@
 		)
 	)
 	(wire
-		(pts (xy 27.94 278.13) (xy 27.94 280.67))
+		(pts (xy 48.26 280.67) (xy 48.26 283.21))
 		(stroke
 			(width 0)
 			(type default)
@@ -2454,7 +2454,7 @@
 		(uuid "543958dd-5e9d-5f79-b721-76ba35d8b585")
 	)
 	(label "S2A"
-		(at 27.94 280.67 270)
+		(at 48.26 283.21 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2464,7 +2464,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 27.94 314.96 0)
+		(at 48.26 317.5 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2472,82 +2472,82 @@
 		(dnp no)
 		(uuid "37bb6e6d-e33a-5bab-906c-d5721eed0203")
 		(property "Reference" "R422"
-			(at 29.972 314.96 90)
+			(at 50.292 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 27.94 314.96 90)
+			(at 48.26 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 27.94 314.96 0)
+			(at 48.26 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2569,7 +2569,7 @@
 		)
 	)
 	(wire
-		(pts (xy 27.94 311.15) (xy 27.94 308.61))
+		(pts (xy 48.26 313.69) (xy 48.26 311.15))
 		(stroke
 			(width 0)
 			(type default)
@@ -2577,7 +2577,7 @@
 		(uuid "463e3973-2ef3-5fa8-acf8-1da5898ac05e")
 	)
 	(label "S2A"
-		(at 27.94 308.61 90)
+		(at 48.26 311.15 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2586,7 +2586,7 @@
 		(uuid "10626de1-8550-5508-b384-5a5a11920f1f")
 	)
 	(wire
-		(pts (xy 27.94 318.77) (xy 27.94 321.31))
+		(pts (xy 48.26 321.31) (xy 48.26 323.85))
 		(stroke
 			(width 0)
 			(type default)
@@ -2594,7 +2594,7 @@
 		(uuid "9679d09a-f649-5422-b4e6-2acb6eaaead6")
 	)
 	(label "S2B"
-		(at 27.94 321.31 270)
+		(at 48.26 323.85 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2604,7 +2604,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 40.64 314.96 0)
+		(at 58.42 317.5 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2612,82 +2612,82 @@
 		(dnp no)
 		(uuid "79201507-8963-50ed-b3e9-8add0ee65724")
 		(property "Reference" "R423"
-			(at 42.672 314.96 90)
+			(at 60.452 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 40.64 314.96 90)
+			(at 58.42 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 40.64 314.96 0)
+			(at 58.42 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2709,7 +2709,7 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 311.15) (xy 40.64 308.61))
+		(pts (xy 58.42 313.69) (xy 58.42 311.15))
 		(stroke
 			(width 0)
 			(type default)
@@ -2717,7 +2717,7 @@
 		(uuid "4c70f365-672d-556e-9fc7-299a9f1ca8e4")
 	)
 	(label "S2B"
-		(at 40.64 308.61 90)
+		(at 58.42 311.15 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2726,7 +2726,7 @@
 		(uuid "7ad2f06b-c978-54c9-a0a6-c0a38941dd44")
 	)
 	(wire
-		(pts (xy 40.64 318.77) (xy 40.64 321.31))
+		(pts (xy 58.42 321.31) (xy 58.42 323.85))
 		(stroke
 			(width 0)
 			(type default)
@@ -2734,7 +2734,7 @@
 		(uuid "6384c526-352b-5018-a8e7-8f7d838b335d")
 	)
 	(label "S2C"
-		(at 40.64 321.31 270)
+		(at 58.42 323.85 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2744,7 +2744,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 50.8 314.96 0)
+		(at 68.58 317.5 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2752,82 +2752,82 @@
 		(dnp no)
 		(uuid "1f5f2ff5-1900-5643-a608-adadb45a02d9")
 		(property "Reference" "R424"
-			(at 52.832 314.96 90)
+			(at 70.612 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 50.8 314.96 90)
+			(at 68.58 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 50.8 314.96 0)
+			(at 68.58 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2849,7 +2849,7 @@
 		)
 	)
 	(wire
-		(pts (xy 50.8 311.15) (xy 50.8 308.61))
+		(pts (xy 68.58 313.69) (xy 68.58 311.15))
 		(stroke
 			(width 0)
 			(type default)
@@ -2857,7 +2857,7 @@
 		(uuid "025237f4-ee9d-5bab-961e-58d823aacf4f")
 	)
 	(label "S2C"
-		(at 50.8 308.61 90)
+		(at 68.58 311.15 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2866,7 +2866,7 @@
 		(uuid "e1193e66-ef27-5d91-915c-7898fbce16ad")
 	)
 	(wire
-		(pts (xy 50.8 318.77) (xy 50.8 321.31))
+		(pts (xy 68.58 321.31) (xy 68.58 323.85))
 		(stroke
 			(width 0)
 			(type default)
@@ -2874,7 +2874,7 @@
 		(uuid "8194daa6-7279-52fc-b587-fa13575ec614")
 	)
 	(label "S2D"
-		(at 50.8 321.31 270)
+		(at 68.58 323.85 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2884,7 +2884,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 60.96 314.96 0)
+		(at 81.28 317.5 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2892,82 +2892,82 @@
 		(dnp no)
 		(uuid "b1295e9f-e82a-590e-8442-b3aa8d2adb1b")
 		(property "Reference" "R425"
-			(at 62.992 314.96 90)
+			(at 83.312 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 60.96 314.96 90)
+			(at 81.28 317.5 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 60.96 314.96 0)
+			(at 81.28 317.5 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2989,7 +2989,7 @@
 		)
 	)
 	(wire
-		(pts (xy 60.96 311.15) (xy 60.96 308.61))
+		(pts (xy 81.28 313.69) (xy 81.28 311.15))
 		(stroke
 			(width 0)
 			(type default)
@@ -2997,7 +2997,7 @@
 		(uuid "33517847-a541-5871-a395-b57f1aac7d9c")
 	)
 	(label "S2D"
-		(at 60.96 308.61 90)
+		(at 81.28 311.15 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3006,7 +3006,7 @@
 		(uuid "2fd9ead5-9156-508f-b3aa-ee881236da4c")
 	)
 	(wire
-		(pts (xy 60.96 318.77) (xy 60.96 321.31))
+		(pts (xy 81.28 321.31) (xy 81.28 323.85))
 		(stroke
 			(width 0)
 			(type default)
@@ -3014,7 +3014,7 @@
 		(uuid "02246593-d3eb-5aa9-8c79-ab4fa66f9e2f")
 	)
 	(label "S2E"
-		(at 60.96 321.31 270)
+		(at 81.28 323.85 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -9506,7 +9506,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "12.1k"
+		(property "Value" "12.7k"
 			(at 441.96 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -9526,14 +9526,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 12.1k 0.1% 0603"
+		(property "Description" "Resistor 12.7k 0.1% 0603"
 			(at 441.96 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "TNPW060312K1BEEA"
+		(property "MPN" "TNPW060312K7BEEA"
 			(at 441.96 96.52 0)
 			(hide yes)
 			(effects
@@ -9794,7 +9794,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "12.1k"
+		(property "Value" "12.7k"
 			(at 452.12 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -9814,14 +9814,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 12.1k 0.1% 0603"
+		(property "Description" "Resistor 12.7k 0.1% 0603"
 			(at 452.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "TNPW060312K1BEEA"
+		(property "MPN" "TNPW060312K7BEEA"
 			(at 452.12 96.52 0)
 			(hide yes)
 			(effects
@@ -9921,7 +9921,7 @@
 	)
 	(symbol
 		(lib_id "Amplifier_Operational:TLV9061xDBV")
-		(at 518.16 48.26 0)
+		(at 523.24 48.26 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9929,63 +9929,63 @@
 		(dnp no)
 		(uuid "58976700-1af3-5ef8-87ba-01cccfcf6f7e")
 		(property "Reference" "U442"
-			(at 516.89 41.91 0)
+			(at 521.97 41.91 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Value" "TLV9001-Q1"
-			(at 516.89 44.45 0)
+			(at 521.97 44.45 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-5"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tlv9002-q1.pdf"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Op-amp 1 MHz RRIO 1.8-5.5 V"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TLV9001QDBVRQ1"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Texas Instruments"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 518.16 48.26 0)
+			(at 523.24 48.26 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10016,7 +10016,7 @@
 		)
 	)
 	(wire
-		(pts (xy 515.62 55.88) (xy 515.62 58.42))
+		(pts (xy 520.7 55.88) (xy 520.7 58.42))
 		(stroke
 			(width 0)
 			(type default)
@@ -10025,7 +10025,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 515.62 58.42 270)
+		(at 520.7 58.42 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10033,7 +10033,7 @@
 		)
 		(uuid "4f208c57-d8d7-5f66-90e4-d8496ef6213f")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 515.62 58.42 0)
+			(at 520.7 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10041,7 +10041,7 @@
 		)
 	)
 	(wire
-		(pts (xy 515.62 40.64) (xy 515.62 38.1))
+		(pts (xy 520.7 40.64) (xy 520.7 38.1))
 		(stroke
 			(width 0)
 			(type default)
@@ -10050,7 +10050,7 @@
 	)
 	(global_label "+3V3"
 		(shape passive)
-		(at 515.62 38.1 90)
+		(at 520.7 38.1 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10058,7 +10058,7 @@
 		)
 		(uuid "32b3025d-612d-51c2-99fd-17b4ca488a39")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 515.62 38.1 0)
+			(at 520.7 38.1 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10066,7 +10066,7 @@
 		)
 	)
 	(wire
-		(pts (xy 525.78 48.26) (xy 528.32 48.26))
+		(pts (xy 530.86 48.26) (xy 533.4 48.26))
 		(stroke
 			(width 0)
 			(type default)
@@ -10074,7 +10074,7 @@
 		(uuid "bff22293-a316-5a44-8376-17e652e94bd8")
 	)
 	(label "H3_DA_OUT"
-		(at 528.32 48.26 0)
+		(at 533.4 48.26 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10083,7 +10083,7 @@
 		(uuid "edc776bc-32a2-5797-b901-40603da9de7f")
 	)
 	(wire
-		(pts (xy 510.54 45.72) (xy 508 45.72))
+		(pts (xy 515.62 45.72) (xy 513.08 45.72))
 		(stroke
 			(width 0)
 			(type default)
@@ -10091,7 +10091,7 @@
 		(uuid "a7675384-e8ea-5f4c-ad85-a2aef4032ccd")
 	)
 	(label "H3_DA_P"
-		(at 508 45.72 180)
+		(at 513.08 45.72 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10100,7 +10100,7 @@
 		(uuid "ade6916e-a128-5384-a9b2-dd089b298edc")
 	)
 	(wire
-		(pts (xy 510.54 50.8) (xy 508 50.8))
+		(pts (xy 515.62 50.8) (xy 513.08 50.8))
 		(stroke
 			(width 0)
 			(type default)
@@ -10108,7 +10108,7 @@
 		(uuid "5b59ba42-9f6b-5f21-a018-39ad9ca2b690")
 	)
 	(label "H3_DA_N"
-		(at 508 50.8 180)
+		(at 513.08 50.8 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10258,7 +10258,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 497.84 96.52 0)
+		(at 502.92 96.52 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10266,82 +10266,82 @@
 		(dnp no)
 		(uuid "f7ffbc27-2ac2-5108-b565-dcadb399159b")
 		(property "Reference" "R445"
-			(at 499.872 96.52 90)
+			(at 504.952 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 497.84 96.52 90)
+			(at 502.92 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 10k 0.1% 0603"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW060310K0BEEA"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "0603"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 497.84 96.52 0)
+			(at 502.92 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10363,7 +10363,7 @@
 		)
 	)
 	(wire
-		(pts (xy 497.84 92.71) (xy 497.84 90.17))
+		(pts (xy 502.92 92.71) (xy 502.92 90.17))
 		(stroke
 			(width 0)
 			(type default)
@@ -10371,7 +10371,7 @@
 		(uuid "1282a1aa-f91a-510a-a042-5494ce332805")
 	)
 	(label "H3_DA_P"
-		(at 497.84 90.17 90)
+		(at 502.92 90.17 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10380,7 +10380,7 @@
 		(uuid "c9dd4838-f37c-505d-880e-edd87c7977af")
 	)
 	(wire
-		(pts (xy 497.84 100.33) (xy 497.84 102.87))
+		(pts (xy 502.92 100.33) (xy 502.92 102.87))
 		(stroke
 			(width 0)
 			(type default)
@@ -10389,7 +10389,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 497.84 102.87 270)
+		(at 502.92 102.87 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10397,7 +10397,7 @@
 		)
 		(uuid "f9fb81cc-369b-5f51-962f-4b31d54cb19c")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 497.84 102.87 0)
+			(at 502.92 102.87 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10546,7 +10546,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 508 96.52 0)
+		(at 513.08 96.52 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10554,82 +10554,82 @@
 		(dnp no)
 		(uuid "19c86e87-a027-54b0-a435-1b5bb8d33a5e")
 		(property "Reference" "R447"
-			(at 510.032 96.52 90)
+			(at 515.112 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 508 96.52 90)
+			(at 513.08 96.52 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 10k 0.1% 0603"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW060310K0BEEA"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "0603"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 508 96.52 0)
+			(at 513.08 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -10651,7 +10651,7 @@
 		)
 	)
 	(wire
-		(pts (xy 508 92.71) (xy 508 90.17))
+		(pts (xy 513.08 92.71) (xy 513.08 90.17))
 		(stroke
 			(width 0)
 			(type default)
@@ -10659,7 +10659,7 @@
 		(uuid "fe77aa8b-0217-5b82-8b62-8580e4b62bf2")
 	)
 	(label "H3_DA_N"
-		(at 508 90.17 90)
+		(at 513.08 90.17 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -10668,7 +10668,7 @@
 		(uuid "c88a6c34-f508-5266-8047-404b7c0c1346")
 	)
 	(wire
-		(pts (xy 508 100.33) (xy 508 102.87))
+		(pts (xy 513.08 100.33) (xy 513.08 102.87))
 		(stroke
 			(width 0)
 			(type default)
@@ -10676,7 +10676,7 @@
 		(uuid "e627d6bd-fa1c-5972-a400-bb0f4a65e39b")
 	)
 	(label "H3_DA_OUT"
-		(at 508 102.87 270)
+		(at 513.08 102.87 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -12307,139 +12307,139 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 520.7 99.06 0)
+		(at 485.14 99.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "25a83ec7-90c2-5f88-81c9-d187b211a187")
-		(property "Reference" "R448"
-			(at 522.732 99.06 90)
+		(uuid "d23549e7-ab1e-5636-b73e-fc862e15a409")
+		(property "Reference" "R434"
+			(at 487.172 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "1k"
-			(at 520.7 99.06 90)
+		(property "Value" "10k"
+			(at 485.14 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://industrial.panasonic.com/cdbs/www-data/pdf/RDA0000/AOA0000C304.pdf"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 1k 1% 0603"
-			(at 520.7 99.06 0)
+		(property "Description" "Resistor 10k 1% 0603"
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "ERJ-3EKF1001V"
-			(at 520.7 99.06 0)
+		(property "MPN" "ERJ-3EKF1002V"
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Panasonic"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "1%"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "0603"
-			(at 520.7 99.06 0)
+			(at 485.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(pin "1"
-			(uuid "e34a9cb6-f0ba-5597-b7a3-5c1548b01c5e")
+			(uuid "1362937a-137d-5918-bf4f-3e401338c315")
 		)
 		(pin "2"
-			(uuid "3196e4d2-5072-5d7a-8dba-3c8f28a94bb9")
+			(uuid "c30fa0e3-3c1d-5773-a054-c17bf18d966e")
 		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
-					(reference "R448")
+					(reference "R434")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(wire
-		(pts (xy 520.7 95.25) (xy 520.7 92.71))
+		(pts (xy 485.14 95.25) (xy 485.14 92.71))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "a04202d2-f585-54e2-8438-55bff22b780b")
+		(uuid "7380941f-be49-5ec6-90af-182bbb35ce39")
 	)
-	(label "H3_DA_OUT"
-		(at 520.7 92.71 90)
+	(label "H2_DA_OUT"
+		(at 485.14 92.71 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "961937b6-d64f-546d-b1a4-522b2a9030b5")
+		(uuid "60cbc655-5646-5812-acb6-7474285d8dc9")
 	)
 	(wire
-		(pts (xy 520.7 102.87) (xy 520.7 105.41))
+		(pts (xy 485.14 102.87) (xy 485.14 105.41))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "82e25b95-47b1-5c86-84e5-07eef8a2bd9b")
+		(uuid "43dfe235-0b36-50f3-bc41-bef94ce4816e")
 	)
-	(global_label "I_HV_ADC"
+	(global_label "HV_V2_LIM"
 		(shape passive)
-		(at 520.7 105.41 270)
+		(at 485.14 105.41 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify right)
 		)
-		(uuid "f24dcb19-9773-5dac-ad37-4623379ce837")
+		(uuid "b94d8917-e598-51b5-8274-568ec64266ae")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 520.7 105.41 0)
+			(at 485.14 105.41 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -12454,8 +12454,8 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "5b18e543-b2d1-5db7-a614-46d357c548e6")
-		(property "Reference" "C451"
+		(uuid "c2032208-d4f7-5f99-b8c9-123e21a8be72")
+		(property "Reference" "C433"
 			(at 31.115 228.6 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -12533,15 +12533,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "685bd34e-e7c6-5238-8f9f-65ae1580e9eb")
+			(uuid "97a924d2-86e9-5296-a885-45e97312870a")
 		)
 		(pin "2"
-			(uuid "ae787e9e-0bd5-5710-ae3a-dd693c71bfde")
+			(uuid "a28e5cd3-f0e6-54be-ae73-056d336f1531")
 		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
-					(reference "C451")
+					(reference "C433")
 					(unit 1)
 				)
 			)
@@ -12553,9 +12553,9 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "83640717-c083-54ee-b437-5a6c1f3c5dbf")
+		(uuid "05cdbd98-6e9b-555a-8116-2ee5d77bba5b")
 	)
-	(global_label "I_HV_ADC"
+	(global_label "HV_V2_LIM"
 		(shape passive)
 		(at 30.48 224.79 90)
 		(fields_autoplaced yes)
@@ -12563,7 +12563,7 @@
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "c293183e-3e6e-574f-a7a1-c8daa30adf36")
+		(uuid "17b0dab8-f3ce-5b59-b098-e8e5d2572de4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 30.48 224.79 0)
 			(hide yes)
@@ -12578,7 +12578,7 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "b3e840cc-f52f-5181-900e-e1b753a9fdae")
+		(uuid "254ca435-bddb-5e21-93da-4818f1b076e1")
 	)
 	(global_label "GND"
 		(shape passive)
@@ -12588,7 +12588,7 @@
 			(font (size 1.27 1.27))
 			(justify right)
 		)
-		(uuid "02c8c7a3-2289-577d-8a2f-c680c6d531e0")
+		(uuid "23c95c71-f3db-5d55-a5d9-472a921b8421")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 30.48 237.49 0)
 			(hide yes)
@@ -12599,139 +12599,139 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 530.86 99.06 0)
+		(at 525.78 99.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "db937b7c-ea94-5a2c-8f45-affa801b4b6e")
-		(property "Reference" "R449"
-			(at 532.892 99.06 90)
+		(uuid "25a83ec7-90c2-5f88-81c9-d187b211a187")
+		(property "Reference" "R448"
+			(at 527.812 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "10k"
-			(at 530.86 99.06 90)
+		(property "Value" "1k"
+			(at 525.78 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://industrial.panasonic.com/cdbs/www-data/pdf/RDA0000/AOA0000C304.pdf"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 10k 1% 0603"
-			(at 530.86 99.06 0)
+		(property "Description" "Resistor 1k 1% 0603"
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "ERJ-3EKF1002V"
-			(at 530.86 99.06 0)
+		(property "MPN" "ERJ-3EKF1001V"
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Panasonic"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "1%"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "0603"
-			(at 530.86 99.06 0)
+			(at 525.78 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(pin "1"
-			(uuid "19da15ef-0bf5-51a2-9aac-551d4c2ce3d8")
+			(uuid "e34a9cb6-f0ba-5597-b7a3-5c1548b01c5e")
 		)
 		(pin "2"
-			(uuid "c1f18ea8-8848-5122-94d9-e3a4397bea53")
+			(uuid "3196e4d2-5072-5d7a-8dba-3c8f28a94bb9")
 		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
-					(reference "R449")
+					(reference "R448")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(wire
-		(pts (xy 530.86 95.25) (xy 530.86 92.71))
+		(pts (xy 525.78 95.25) (xy 525.78 92.71))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "0d96c0f8-3a2d-50a5-a46a-07f16f3acd90")
+		(uuid "a04202d2-f585-54e2-8438-55bff22b780b")
 	)
 	(label "H3_DA_OUT"
-		(at 530.86 92.71 90)
+		(at 525.78 92.71 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "4fe9839a-d315-5ca3-877a-c2b5f3451f21")
+		(uuid "961937b6-d64f-546d-b1a4-522b2a9030b5")
 	)
 	(wire
-		(pts (xy 530.86 102.87) (xy 530.86 105.41))
+		(pts (xy 525.78 102.87) (xy 525.78 105.41))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "22109dfc-77b2-5ed9-9baf-dd501dcc4052")
+		(uuid "82e25b95-47b1-5c86-84e5-07eef8a2bd9b")
 	)
-	(global_label "I_HV_LIM"
+	(global_label "I_HV_ADC"
 		(shape passive)
-		(at 530.86 105.41 270)
+		(at 525.78 105.41 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify right)
 		)
-		(uuid "2e380faf-7e99-5f6a-b30e-a2f7851f7f93")
+		(uuid "f24dcb19-9773-5dac-ad37-4623379ce837")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 530.86 105.41 0)
+			(at 525.78 105.41 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -12746,8 +12746,8 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "362131f4-b50a-555b-a38a-f87c2bccb9ed")
-		(property "Reference" "C452"
+		(uuid "5b18e543-b2d1-5db7-a614-46d357c548e6")
+		(property "Reference" "C451"
 			(at 43.815 228.6 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -12825,15 +12825,15 @@
 			)
 		)
 		(pin "1"
-			(uuid "8179dce5-71d7-5829-baa1-60a31d6b65ff")
+			(uuid "685bd34e-e7c6-5238-8f9f-65ae1580e9eb")
 		)
 		(pin "2"
-			(uuid "b4309f5e-0da8-57f4-aa27-d190749b4a74")
+			(uuid "ae787e9e-0bd5-5710-ae3a-dd693c71bfde")
 		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
-					(reference "C452")
+					(reference "C451")
 					(unit 1)
 				)
 			)
@@ -12845,9 +12845,9 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "c8f0f483-887a-5bd1-b16b-23923a4d63ac")
+		(uuid "83640717-c083-54ee-b437-5a6c1f3c5dbf")
 	)
-	(global_label "I_HV_LIM"
+	(global_label "I_HV_ADC"
 		(shape passive)
 		(at 43.18 224.79 90)
 		(fields_autoplaced yes)
@@ -12855,7 +12855,7 @@
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "11d362a8-a21a-57a4-90c7-e799abc8c049")
+		(uuid "c293183e-3e6e-574f-a7a1-c8daa30adf36")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 43.18 224.79 0)
 			(hide yes)
@@ -12870,7 +12870,7 @@
 			(width 0)
 			(type default)
 		)
-		(uuid "70c8ef7f-287a-5008-9125-79afc1c3a697")
+		(uuid "b3e840cc-f52f-5181-900e-e1b753a9fdae")
 	)
 	(global_label "GND"
 		(shape passive)
@@ -12880,7 +12880,7 @@
 			(font (size 1.27 1.27))
 			(justify right)
 		)
-		(uuid "53630ba6-a69d-5a41-830d-cc096250dcef")
+		(uuid "02c8c7a3-2289-577d-8a2f-c680c6d531e0")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 43.18 237.49 0)
 			(hide yes)
@@ -12891,139 +12891,139 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 541.02 99.06 0)
+		(at 535.94 99.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "fec9be9b-115e-51ac-a87a-75d12ea10b71")
-		(property "Reference" "R450"
-			(at 543.052 99.06 90)
+		(uuid "db937b7c-ea94-5a2c-8f45-affa801b4b6e")
+		(property "Reference" "R449"
+			(at 537.972 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "1k"
-			(at 541.02 99.06 90)
+		(property "Value" "10k"
+			(at 535.94 99.06 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://industrial.panasonic.com/cdbs/www-data/pdf/RDA0000/AOA0000C304.pdf"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 1k 1% 0603"
-			(at 541.02 99.06 0)
+		(property "Description" "Resistor 10k 1% 0603"
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "ERJ-3EKF1001V"
-			(at 541.02 99.06 0)
+		(property "MPN" "ERJ-3EKF1002V"
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Panasonic"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HVSENSE"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HVSENSE"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "1%"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "0603"
-			(at 541.02 99.06 0)
+			(at 535.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(pin "1"
-			(uuid "c7ce5759-81bc-54c7-877a-fde7407de260")
+			(uuid "19da15ef-0bf5-51a2-9aac-551d4c2ce3d8")
 		)
 		(pin "2"
-			(uuid "429324f1-86e0-53ae-8470-2f74f9602a9b")
+			(uuid "c1f18ea8-8848-5122-94d9-e3a4397bea53")
 		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
-					(reference "R450")
+					(reference "R449")
 					(unit 1)
 				)
 			)
 		)
 	)
 	(wire
-		(pts (xy 541.02 95.25) (xy 541.02 92.71))
+		(pts (xy 535.94 95.25) (xy 535.94 92.71))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "9b5a71ca-2c22-50cb-ace9-6f5e830b036f")
+		(uuid "0d96c0f8-3a2d-50a5-a46a-07f16f3acd90")
 	)
 	(label "H3_DA_OUT"
-		(at 541.02 92.71 90)
+		(at 535.94 92.71 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "fc0b9ca3-a05e-5a4e-bce5-0e62f4a47109")
+		(uuid "4fe9839a-d315-5ca3-877a-c2b5f3451f21")
 	)
 	(wire
-		(pts (xy 541.02 102.87) (xy 541.02 105.41))
+		(pts (xy 535.94 102.87) (xy 535.94 105.41))
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "ec9e4a57-5f7d-5112-9efb-6b5251656dd2")
+		(uuid "22109dfc-77b2-5ed9-9baf-dd501dcc4052")
 	)
-	(global_label "I_HV_OCP"
+	(global_label "I_HV_LIM"
 		(shape passive)
-		(at 541.02 105.41 270)
+		(at 535.94 105.41 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify right)
 		)
-		(uuid "a6c7c4ba-32d2-5f72-9c3b-8c180e98fcfe")
+		(uuid "2e380faf-7e99-5f6a-b30e-a2f7851f7f93")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 541.02 105.41 0)
+			(at 535.94 105.41 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -13038,15 +13038,15 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "23220347-7a81-5fcc-bd82-2d4bb8b1980d")
-		(property "Reference" "C453"
+		(uuid "362131f4-b50a-555b-a38a-f87c2bccb9ed")
+		(property "Reference" "C452"
 			(at 56.515 228.6 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
-		(property "Value" "1n"
+		(property "Value" "10n"
 			(at 56.515 233.68 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -13060,21 +13060,21 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.murata.com/en-us/products/productdetail?partno=GCM1885C1H102JA16D"
+		(property "Datasheet" "https://www.murata.com/en-us/products/productdetail?partno=GCM188R71H103KA37D"
 			(at 55.88 231.14 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Capacitor 1n 50V C0G 0603"
+		(property "Description" "Capacitor 10n 50V X7R 0603"
 			(at 55.88 231.14 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "GCM1885C1H102JA16D"
+		(property "MPN" "GCM188R71H103KA37D"
 			(at 55.88 231.14 0)
 			(hide yes)
 			(effects
@@ -13109,8 +13109,300 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Dielectric" "C0G"
+		(property "Dielectric" "X7R"
 			(at 55.88 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "8179dce5-71d7-5829-baa1-60a31d6b65ff")
+		)
+		(pin "2"
+			(uuid "b4309f5e-0da8-57f4-aa27-d190749b4a74")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
+					(reference "C452")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 55.88 227.33) (xy 55.88 224.79))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c8f0f483-887a-5bd1-b16b-23923a4d63ac")
+	)
+	(global_label "I_HV_LIM"
+		(shape passive)
+		(at 55.88 224.79 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "11d362a8-a21a-57a4-90c7-e799abc8c049")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 55.88 224.79 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 55.88 234.95) (xy 55.88 237.49))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "70c8ef7f-287a-5008-9125-79afc1c3a697")
+	)
+	(global_label "GND"
+		(shape passive)
+		(at 55.88 237.49 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "53630ba6-a69d-5a41-830d-cc096250dcef")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 55.88 237.49 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 546.1 99.06 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "fec9be9b-115e-51ac-a87a-75d12ea10b71")
+		(property "Reference" "R450"
+			(at 548.132 99.06 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "1k"
+			(at 546.1 99.06 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://industrial.panasonic.com/cdbs/www-data/pdf/RDA0000/AOA0000C304.pdf"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Resistor 1k 1% 0603"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "ERJ-3EKF1001V"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Panasonic"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HVSENSE"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HVSENSE"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Package" "0603"
+			(at 546.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "c7ce5759-81bc-54c7-877a-fde7407de260")
+		)
+		(pin "2"
+			(uuid "429324f1-86e0-53ae-8470-2f74f9602a9b")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd"
+					(reference "R450")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 546.1 95.25) (xy 546.1 92.71))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9b5a71ca-2c22-50cb-ace9-6f5e830b036f")
+	)
+	(label "H3_DA_OUT"
+		(at 546.1 92.71 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "fc0b9ca3-a05e-5a4e-bce5-0e62f4a47109")
+	)
+	(wire
+		(pts (xy 546.1 102.87) (xy 546.1 105.41))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ec9e4a57-5f7d-5112-9efb-6b5251656dd2")
+	)
+	(global_label "I_HV_OCP"
+		(shape passive)
+		(at 546.1 105.41 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "a6c7c4ba-32d2-5f72-9c3b-8c180e98fcfe")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 546.1 105.41 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 68.58 231.14 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "23220347-7a81-5fcc-bd82-2d4bb8b1980d")
+		(property "Reference" "C453"
+			(at 69.215 228.6 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Value" "1n"
+			(at 69.215 233.68 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.murata.com/en-us/products/productdetail?partno=GCM1885C1H102JA16D"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Capacitor 1n 50V C0G 0603"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "GCM1885C1H102JA16D"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Murata"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HVSENSE"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HVSENSE"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Voltage" "50V"
+			(at 68.58 231.14 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Dielectric" "C0G"
+			(at 68.58 231.14 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -13132,7 +13424,7 @@
 		)
 	)
 	(wire
-		(pts (xy 55.88 227.33) (xy 55.88 224.79))
+		(pts (xy 68.58 227.33) (xy 68.58 224.79))
 		(stroke
 			(width 0)
 			(type default)
@@ -13141,7 +13433,7 @@
 	)
 	(global_label "I_HV_OCP"
 		(shape passive)
-		(at 55.88 224.79 90)
+		(at 68.58 224.79 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -13149,7 +13441,7 @@
 		)
 		(uuid "ec163049-0257-561e-ad47-fe7e0d33f6f5")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 224.79 0)
+			(at 68.58 224.79 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -13157,7 +13449,7 @@
 		)
 	)
 	(wire
-		(pts (xy 55.88 234.95) (xy 55.88 237.49))
+		(pts (xy 68.58 234.95) (xy 68.58 237.49))
 		(stroke
 			(width 0)
 			(type default)
@@ -13166,7 +13458,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 55.88 237.49 270)
+		(at 68.58 237.49 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -13174,7 +13466,7 @@
 		)
 		(uuid "96385a1f-a9c1-51f1-8c53-c06ab92f88ac")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 237.49 0)
+			(at 68.58 237.49 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))

@@ -3,7 +3,7 @@
 	(generator "kaesynth")
 	(generator_version "0.1")
 	(uuid "26211555-7ffc-56a7-826c-825cb526a0f2")
-	(paper "A4")
+	(paper "A3")
 	(title_block
 		(title "Harness items (off-board): cables, tap fuse, pack-case NTCs")
 		(date "2026-10-23")
@@ -546,342 +546,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Connector_Generic:Conn_02x05_Odd_Even"
-			(pin_names
-				(offset 1.016)
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(in_pos_files yes)
-			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "J"
-				(at 1.27 7.62 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "Value" "Conn_02x05_Odd_Even"
-				(at 1.27 -7.62 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "Datasheet" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "Description" "Generic connector, double row, 02x05, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "ki_keywords" "connector"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(property "ki_fp_filters" "Connector*:*_2x??_*"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font (size 1.27 1.27))
-				)
-			)
-			(symbol "Conn_02x05_Odd_Even_1_1"
-				(rectangle
-					(start -1.27 6.35)
-					(end 3.81 -6.35)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type background)
-					)
-				)
-				(rectangle
-					(start -1.27 5.207)
-					(end 0 4.953)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start -1.27 2.667)
-					(end 0 2.413)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start -1.27 0.127)
-					(end 0 -0.127)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start -1.27 -2.413)
-					(end 0 -2.667)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start -1.27 -4.953)
-					(end 0 -5.207)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 3.81 5.207)
-					(end 2.54 4.953)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 3.81 2.667)
-					(end 2.54 2.413)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 3.81 0.127)
-					(end 2.54 -0.127)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 3.81 -2.413)
-					(end 2.54 -2.667)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(rectangle
-					(start 3.81 -4.953)
-					(end 2.54 -5.207)
-					(stroke
-						(width 0.1524)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(pin passive line
-					(at -5.08 5.08 0)
-					(length 3.81)
-					(name "Pin_1"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "1"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 5.08 180)
-					(length 3.81)
-					(name "Pin_2"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "2"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at -5.08 2.54 0)
-					(length 3.81)
-					(name "Pin_3"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "3"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 2.54 180)
-					(length 3.81)
-					(name "Pin_4"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "4"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at -5.08 0 0)
-					(length 3.81)
-					(name "Pin_5"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "5"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 0 180)
-					(length 3.81)
-					(name "Pin_6"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "6"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at -5.08 -2.54 0)
-					(length 3.81)
-					(name "Pin_7"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "7"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 -2.54 180)
-					(length 3.81)
-					(name "Pin_8"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "8"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at -5.08 -5.08 0)
-					(length 3.81)
-					(name "Pin_9"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "9"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-				(pin passive line
-					(at 7.62 -5.08 180)
-					(length 3.81)
-					(name "Pin_10"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-					(number "10"
-						(effects
-							(font (size 1.27 1.27))
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "Device:Fuse"
 			(pin_numbers
 				(hide yes)
@@ -1258,6 +922,134 @@
 					(at 0 -3.81 90)
 					(length 1.27)
 					(name ""
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+					(number "2"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Switch:SW_SPST"
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "SW"
+				(at 0 3.175 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Value" "SW_SPST"
+				(at 0 -2.54 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Description" "Single Pole Single Throw (SPST) switch"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "ki_keywords" "switch lever"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(symbol "SW_SPST_0_0"
+				(circle
+					(center -2.032 0)
+					(radius 0.508)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts (xy -1.524 0.254) (xy 1.524 1.778))
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 2.032 0)
+					(radius 0.508)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "SW_SPST_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+					(number "1"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "B"
 						(effects
 							(font (size 1.27 1.27))
 						)
@@ -1950,7 +1742,7 @@
 		)
 		(uuid "ae006989-0654-5e6b-aeaa-1e4edd07d5bb")
 	)
-	(global_label "AUX12"
+	(global_label "HVIL_A"
 		(shape passive)
 		(at 195.58 30.48 180)
 		(fields_autoplaced yes)
@@ -1975,7 +1767,7 @@
 		)
 		(uuid "25dd10a0-aa25-56fd-a97c-3448b4ed3892")
 	)
-	(global_label "AUX12"
+	(global_label "HVIL_A"
 		(shape passive)
 		(at 213.36 30.48 0)
 		(fields_autoplaced yes)
@@ -2093,8 +1885,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Connector_Generic:Conn_02x05_Odd_Even")
-		(at 45.72 58.42 0)
+		(lib_id "Connector_Generic:Conn_02x03_Odd_Even")
+		(at 256.54 33.02 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2102,47 +1894,47 @@
 		(dnp no)
 		(uuid "8f7ccd15-9b43-5888-b926-8f2673dbcb71")
 		(property "Reference" "W5"
-			(at 46.99 50.8 0)
+			(at 257.81 27.94 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "screened 5-core 0.35 mm2 (4 NTC + ground)"
-			(at 46.99 66.04 0)
+		(property "Value" "screened 3-core 0.35 mm2 (2 NTC + ground)"
+			(at 257.81 38.1 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 45.72 58.42 0)
+			(at 256.54 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 45.72 58.42 0)
+			(at 256.54 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "pack-case NTC harness -> main J706"
-			(at 45.72 58.42 0)
+		(property "Description" "pack-case NTC harness; hardware-OTP pair (J706) and firmware pair (J708) in separate cables"
+			(at 256.54 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 45.72 58.42 0)
+			(at 256.54 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 45.72 58.42 0)
+			(at 256.54 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2166,18 +1958,6 @@
 		(pin "6"
 			(uuid "811f1498-7d4c-5bcb-8576-28e9afccb2a6")
 		)
-		(pin "7"
-			(uuid "93d48639-3d86-516b-8255-baa93411ee6f")
-		)
-		(pin "8"
-			(uuid "1d212a95-15fd-583b-ba98-2f5b32f7a31c")
-		)
-		(pin "9"
-			(uuid "92d1456f-35b8-57b2-b01a-a7e2e83e988b")
-		)
-		(pin "10"
-			(uuid "6a573b5d-8814-56a0-bb6e-a77d475cb4d7")
-		)
 		(instances
 			(project "prius-solar-mppt"
 				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
@@ -2188,7 +1968,7 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 53.34) (xy 38.1 53.34))
+		(pts (xy 251.46 30.48) (xy 248.92 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -2197,7 +1977,7 @@
 	)
 	(global_label "NTC_P1"
 		(shape passive)
-		(at 38.1 53.34 180)
+		(at 248.92 30.48 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2205,7 +1985,7 @@
 		)
 		(uuid "a2e69d8b-3904-5fd1-b14f-8975b896e398")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 53.34 0)
+			(at 248.92 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2213,7 +1993,7 @@
 		)
 	)
 	(wire
-		(pts (xy 53.34 53.34) (xy 55.88 53.34))
+		(pts (xy 264.16 30.48) (xy 266.7 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -2222,7 +2002,7 @@
 	)
 	(global_label "NTC_P1"
 		(shape passive)
-		(at 55.88 53.34 0)
+		(at 266.7 30.48 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2230,7 +2010,7 @@
 		)
 		(uuid "594c4b20-203d-5886-8451-83d07d28cd18")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 53.34 0)
+			(at 266.7 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2238,7 +2018,7 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 55.88) (xy 38.1 55.88))
+		(pts (xy 251.46 33.02) (xy 248.92 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -2247,7 +2027,7 @@
 	)
 	(global_label "NTC_P2"
 		(shape passive)
-		(at 38.1 55.88 180)
+		(at 248.92 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2255,7 +2035,7 @@
 		)
 		(uuid "8a284a10-3827-536c-ab2d-618cfbe170ec")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 55.88 0)
+			(at 248.92 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2263,7 +2043,7 @@
 		)
 	)
 	(wire
-		(pts (xy 53.34 55.88) (xy 55.88 55.88))
+		(pts (xy 264.16 33.02) (xy 266.7 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -2272,7 +2052,7 @@
 	)
 	(global_label "NTC_P2"
 		(shape passive)
-		(at 55.88 55.88 0)
+		(at 266.7 33.02 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2280,7 +2060,7 @@
 		)
 		(uuid "fd4c272a-a853-54e3-96d4-05347afdf76c")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 55.88 0)
+			(at 266.7 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2288,16 +2068,16 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 58.42) (xy 38.1 58.42))
+		(pts (xy 251.46 35.56) (xy 248.92 35.56))
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "f2708760-1548-5aab-bb4f-d645f4d5534d")
 	)
-	(global_label "NTC_P3"
+	(global_label "GND"
 		(shape passive)
-		(at 38.1 58.42 180)
+		(at 248.92 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2305,7 +2085,7 @@
 		)
 		(uuid "6425c9f5-b806-5495-9358-e964f4c715b8")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 58.42 0)
+			(at 248.92 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2313,16 +2093,16 @@
 		)
 	)
 	(wire
-		(pts (xy 53.34 58.42) (xy 55.88 58.42))
+		(pts (xy 264.16 35.56) (xy 266.7 35.56))
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "c01e479d-94fd-5421-bcc5-a83bdfef7cb0")
 	)
-	(global_label "NTC_P3"
+	(global_label "GND"
 		(shape passive)
-		(at 55.88 58.42 0)
+		(at 266.7 35.56 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2330,107 +2110,7 @@
 		)
 		(uuid "d0a8ccc5-a22f-560b-b958-8da986ad7d38")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 58.42 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
-	)
-	(wire
-		(pts (xy 40.64 60.96) (xy 38.1 60.96))
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "ebe470c5-e394-5cec-82bb-48826bd333c2")
-	)
-	(global_label "NTC_P4"
-		(shape passive)
-		(at 38.1 60.96 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "c559efd6-3748-5064-8256-f4b438e768a1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 60.96 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
-	)
-	(wire
-		(pts (xy 53.34 60.96) (xy 55.88 60.96))
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8e20ac64-cb48-517a-bb9a-f9cbd230e7f8")
-	)
-	(global_label "NTC_P4"
-		(shape passive)
-		(at 55.88 60.96 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "acd4960a-c654-5dde-a7d2-fa1043ce2e90")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 60.96 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
-	)
-	(wire
-		(pts (xy 40.64 63.5) (xy 38.1 63.5))
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b7da5bc0-a78a-5c3c-8f71-d067f0d9d2e8")
-	)
-	(global_label "GND"
-		(shape passive)
-		(at 38.1 63.5 180)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify right)
-		)
-		(uuid "c380e571-6c6c-510c-b52f-adc2537556ff")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 63.5 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
-	)
-	(wire
-		(pts (xy 53.34 63.5) (xy 55.88 63.5))
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1c13b578-c2d6-5b68-83b1-47801ed87403")
-	)
-	(global_label "GND"
-		(shape passive)
-		(at 55.88 63.5 0)
-		(fields_autoplaced yes)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "c0020009-c3de-506e-87fd-089c0fe04dc2")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 55.88 63.5 0)
+			(at 266.7 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2439,7 +2119,836 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_02x03_Odd_Even")
-		(at 106.68 55.88 0)
+		(at 307.34 33.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "4557d314-8bd4-5a15-a7ab-06c900d6cfed")
+		(property "Reference" "W11"
+			(at 308.61 27.94 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "screened 3-core 0.35 mm2 (2 NTC + ground)"
+			(at 308.61 38.1 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" ""
+			(at 307.34 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 307.34 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "pack-case NTC harness; hardware-OTP pair (J706) and firmware pair (J708) in separate cables"
+			(at 307.34 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HARNESS"
+			(at 307.34 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HARNESS"
+			(at 307.34 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "940348a5-8ebb-54f6-a13e-8f3c633f4790")
+		)
+		(pin "2"
+			(uuid "7c7eb1c2-c43d-55a9-b186-58f3a1c049d7")
+		)
+		(pin "3"
+			(uuid "26975f45-b5aa-57bc-8af4-c83ae62e1258")
+		)
+		(pin "4"
+			(uuid "4959e0b9-b12e-5f4d-abca-4014f4edad1c")
+		)
+		(pin "5"
+			(uuid "ff2fe683-ccf4-5ea9-9510-7480884a51d3")
+		)
+		(pin "6"
+			(uuid "fcbfade0-c340-5760-9955-4c0fd73e3ef2")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
+					(reference "W11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 302.26 30.48) (xy 299.72 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "490c6be4-2daa-5f37-abac-a2a792bff327")
+	)
+	(global_label "NTC_P3"
+		(shape passive)
+		(at 299.72 30.48 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "64831e50-ac36-527d-b117-5ec68d80cf81")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 299.72 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 314.96 30.48) (xy 317.5 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b26998c2-343a-5e24-8010-0ec953397f7d")
+	)
+	(global_label "NTC_P3"
+		(shape passive)
+		(at 317.5 30.48 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "61683bf2-87af-5177-9e33-c4327501cfe4")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 317.5 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 302.26 33.02) (xy 299.72 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ed0eba22-918a-59e0-b9c6-d9c10f199ad5")
+	)
+	(global_label "NTC_P4"
+		(shape passive)
+		(at 299.72 33.02 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "1c84de89-200a-596c-826a-4e7f3deea303")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 299.72 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 314.96 33.02) (xy 317.5 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "58bb824d-b424-5ae9-9c29-9af2fcff750d")
+	)
+	(global_label "NTC_P4"
+		(shape passive)
+		(at 317.5 33.02 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "e0620bac-75f9-534e-bd5d-bd010cd0ef14")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 302.26 35.56) (xy 299.72 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a5c057fb-7838-5960-89ad-327674399f38")
+	)
+	(global_label "GND"
+		(shape passive)
+		(at 299.72 35.56 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "720a6520-176d-546d-af93-3bc7e6788ebc")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 299.72 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 314.96 35.56) (xy 317.5 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "11217468-f6a6-58b3-a59e-3a1d7fb48c60")
+	)
+	(global_label "GND"
+		(shape passive)
+		(at 317.5 35.56 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "22b7b923-4f64-5d2d-87cc-33baab6cd878")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 317.5 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_02x02_Odd_Even")
+		(at 355.6 30.48 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "ec0928f1-62ad-5030-89d0-4cb2221ffea3")
+		(property "Reference" "W9"
+			(at 356.87 27.94 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "2-core 0.5 mm2 FLRY-B, 0.3 m"
+			(at 356.87 35.56 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" ""
+			(at 355.6 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 355.6 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "lid-interlock switch leads inside a box"
+			(at 355.6 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HARNESS"
+			(at 355.6 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HARNESS"
+			(at 355.6 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "1e530633-0e5f-59bd-add9-f3cf231e5809")
+		)
+		(pin "2"
+			(uuid "5f3da115-b25d-502a-942a-80cdd54ba2e3")
+		)
+		(pin "3"
+			(uuid "a7502c53-c914-58d7-a7d7-bfbf7ee5faa2")
+		)
+		(pin "4"
+			(uuid "7d9b8abf-3b33-508e-a827-880f9fd80d97")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
+					(reference "W9")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 350.52 30.48) (xy 347.98 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "82bc5bbd-e92d-597a-8330-027f24a8e5e8")
+	)
+	(global_label "AUX12"
+		(shape passive)
+		(at 347.98 30.48 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "71862ac4-5c93-50f4-af17-f22cbb964c7f")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 347.98 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 363.22 30.48) (xy 365.76 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "662b0dd6-a861-58e8-8468-efa0c7a9ad47")
+	)
+	(global_label "AUX12"
+		(shape passive)
+		(at 365.76 30.48 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "a3bfb530-c2a8-5522-88fc-9f24abb8138b")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 365.76 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 350.52 33.02) (xy 347.98 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a30b16b7-d8d2-53ae-aaf5-b7f375766c1d")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 347.98 33.02 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "556abb9f-5a6b-5239-ab05-f5f75a67407a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 347.98 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 363.22 33.02) (xy 365.76 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "76e70953-c5a8-5eaa-b64e-5429d9652391")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 365.76 33.02 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "09df3885-691f-52c3-8940-f43b1db077d9")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 365.76 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_02x02_Odd_Even")
+		(at 45.72 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "df578874-68cb-57d4-afd4-aff5cc6adc89")
+		(property "Reference" "W10"
+			(at 46.99 93.98 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "2-core 0.5 mm2 FLRY-B, 0.3 m"
+			(at 46.99 101.6 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" ""
+			(at 45.72 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 45.72 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "lid-interlock switch leads inside a box"
+			(at 45.72 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HARNESS"
+			(at 45.72 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HARNESS"
+			(at 45.72 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "2edfb3f9-ce54-5e3d-bda3-057136d5d50a")
+		)
+		(pin "2"
+			(uuid "142599e9-1144-5401-b238-9af51352e65c")
+		)
+		(pin "3"
+			(uuid "f4fba8d8-1360-5880-9557-9e7bf55d722e")
+		)
+		(pin "4"
+			(uuid "686da626-a8ee-55cc-8968-fed432109d68")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
+					(reference "W10")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 40.64 96.52) (xy 38.1 96.52))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1f649d84-1944-505a-afa1-ccc2279c170a")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 38.1 96.52 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "3f722d90-ebbb-5172-8919-a8b0ea407241")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 38.1 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 53.34 96.52) (xy 55.88 96.52))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4f34a157-d26d-5899-bae8-9d34e9f8f28c")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 55.88 96.52 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "f034eecf-6245-5b9d-a2b7-b90229c6a5c6")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 55.88 96.52 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 40.64 99.06) (xy 38.1 99.06))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "05a22ffe-c9a5-561c-8f3e-d345e609f7ef")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 38.1 99.06 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "07dc82ad-7c95-5eab-a434-375e86ee7727")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 38.1 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 53.34 99.06) (xy 55.88 99.06))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f3c227d1-bb4d-580f-a47b-96a847fc8ab9")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 55.88 99.06 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "e48f7a87-375b-58a3-8ef5-dd1642936812")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 55.88 99.06 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Switch:SW_SPST")
+		(at 355.6 48.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "1db0ed49-8354-57c3-85b3-38f9732d53e0")
+		(property "Reference" "S701"
+			(at 355.6 45.085 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "lid interlock"
+			(at 355.6 50.8 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" ""
+			(at 355.6 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 355.6 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Sealed snap-action switch, NO, held closed by the box lid (HVIL in the relay-coil supply), >= 1 A 30 VDC, IP67 [part to be chosen with the enclosure]"
+			(at 355.6 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HARNESS"
+			(at 355.6 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HARNESS"
+			(at 355.6 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "196331ed-0840-5e4d-be4c-13d155b7a51e")
+		)
+		(pin "2"
+			(uuid "3ba5d5f5-67ef-5b00-868d-0c1050ae0827")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
+					(reference "S701")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 350.52 48.26) (xy 347.98 48.26))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "00c27d69-94cc-53d8-be69-6b4bf66306ba")
+	)
+	(global_label "AUX12"
+		(shape passive)
+		(at 347.98 48.26 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "4c6fa0aa-3c3c-576d-92c4-cc0eec7586d0")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 347.98 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 360.68 48.26) (xy 363.22 48.26))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "964c1670-3bd4-51fd-a3da-55bcdf2044eb")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 363.22 48.26 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "39d446f8-f626-5938-8570-41a3c9a4fab1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 363.22 48.26 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Switch:SW_SPST")
+		(at 45.72 114.3 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "3eb11f42-ede7-5e1c-ab4e-f455fdbb9530")
+		(property "Reference" "S901"
+			(at 45.72 111.125 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "lid interlock"
+			(at 45.72 116.84 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" ""
+			(at 45.72 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 45.72 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Sealed snap-action switch, NO, held closed by the box lid (HVIL in the relay-coil supply), >= 1 A 30 VDC, IP67 [part to be chosen with the enclosure]"
+			(at 45.72 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "HARNESS"
+			(at 45.72 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "HARNESS"
+			(at 45.72 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "81cfaca1-bf8f-5c4a-b2ea-5f79ff418624")
+		)
+		(pin "2"
+			(uuid "2212932c-d8db-5ed0-bc5e-db46af3f8e5e")
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b"
+					(reference "S901")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 40.64 114.3) (xy 38.1 114.3))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ff6902c5-e466-5e2e-8dfe-85f6e65e398e")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 38.1 114.3 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "3f9bf5b4-c0f4-53df-b659-933cbec05786")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 38.1 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 50.8 114.3) (xy 53.34 114.3))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0ce32e2a-b870-5a3f-abd6-f99b31173a4b")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 53.34 114.3 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "5e5658c4-ebcd-5fc0-8683-96f1f23d6812")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 53.34 114.3 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_02x03_Odd_Even")
+		(at 93.98 99.06 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2447,47 +2956,47 @@
 		(dnp no)
 		(uuid "5f6be979-050d-5346-8b7b-00d7d545e940")
 		(property "Reference" "W6"
-			(at 107.95 50.8 0)
+			(at 95.25 93.98 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "OBD-II Y cable, CAN-H/CAN-L twisted pair + signal ground, 0.35 mm2"
-			(at 107.95 60.96 0)
+			(at 95.25 104.14 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 106.68 55.88 0)
+			(at 93.98 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 106.68 55.88 0)
+			(at 93.98 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "OBD-II pass-through Y cable with a breakout to J707 (car's port stays usable)"
-			(at 106.68 55.88 0)
+			(at 93.98 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 106.68 55.88 0)
+			(at 93.98 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 106.68 55.88 0)
+			(at 93.98 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2521,7 +3030,7 @@
 		)
 	)
 	(wire
-		(pts (xy 101.6 53.34) (xy 99.06 53.34))
+		(pts (xy 88.9 96.52) (xy 86.36 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2530,7 +3039,7 @@
 	)
 	(global_label "CAN_H"
 		(shape passive)
-		(at 99.06 53.34 180)
+		(at 86.36 96.52 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2538,7 +3047,7 @@
 		)
 		(uuid "0c232f1c-63ec-597b-ab6d-e5134e550468")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 99.06 53.34 0)
+			(at 86.36 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2546,7 +3055,7 @@
 		)
 	)
 	(wire
-		(pts (xy 114.3 53.34) (xy 116.84 53.34))
+		(pts (xy 101.6 96.52) (xy 104.14 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2555,7 +3064,7 @@
 	)
 	(global_label "CAN_H"
 		(shape passive)
-		(at 116.84 53.34 0)
+		(at 104.14 96.52 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2563,7 +3072,7 @@
 		)
 		(uuid "9120617e-cdd3-5a45-9dbb-39f503e8b187")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 116.84 53.34 0)
+			(at 104.14 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2571,7 +3080,7 @@
 		)
 	)
 	(wire
-		(pts (xy 101.6 55.88) (xy 99.06 55.88))
+		(pts (xy 88.9 99.06) (xy 86.36 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -2580,7 +3089,7 @@
 	)
 	(global_label "CAN_L"
 		(shape passive)
-		(at 99.06 55.88 180)
+		(at 86.36 99.06 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2588,7 +3097,7 @@
 		)
 		(uuid "5f032a75-90a9-501f-ba56-9a120c964cc4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 99.06 55.88 0)
+			(at 86.36 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2596,7 +3105,7 @@
 		)
 	)
 	(wire
-		(pts (xy 114.3 55.88) (xy 116.84 55.88))
+		(pts (xy 101.6 99.06) (xy 104.14 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -2605,7 +3114,7 @@
 	)
 	(global_label "CAN_L"
 		(shape passive)
-		(at 116.84 55.88 0)
+		(at 104.14 99.06 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2613,7 +3122,7 @@
 		)
 		(uuid "a49c853d-c98e-5f08-a232-6eee547e9f8e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 116.84 55.88 0)
+			(at 104.14 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2621,7 +3130,7 @@
 		)
 	)
 	(wire
-		(pts (xy 101.6 58.42) (xy 99.06 58.42))
+		(pts (xy 88.9 101.6) (xy 86.36 101.6))
 		(stroke
 			(width 0)
 			(type default)
@@ -2630,7 +3139,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 99.06 58.42 180)
+		(at 86.36 101.6 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2638,7 +3147,7 @@
 		)
 		(uuid "9af64935-4695-56e6-b209-d5f20259f0f3")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 99.06 58.42 0)
+			(at 86.36 101.6 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2646,7 +3155,7 @@
 		)
 	)
 	(wire
-		(pts (xy 114.3 58.42) (xy 116.84 58.42))
+		(pts (xy 101.6 101.6) (xy 104.14 101.6))
 		(stroke
 			(width 0)
 			(type default)
@@ -2655,7 +3164,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 116.84 58.42 0)
+		(at 104.14 101.6 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2663,7 +3172,7 @@
 		)
 		(uuid "9dc90e86-316f-531d-aca6-4a0ed855de5b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 116.84 58.42 0)
+			(at 104.14 101.6 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2672,7 +3181,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_02x02_Odd_Even")
-		(at 157.48 53.34 0)
+		(at 144.78 96.52 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2680,47 +3189,47 @@
 		(dnp no)
 		(uuid "c903fbc4-cce0-5b60-a76f-bbba7d1a8195")
 		(property "Reference" "W7"
-			(at 158.75 50.8 0)
+			(at 146.05 93.98 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "2-core 0.5 mm2 FLRY-B"
-			(at 158.75 58.42 0)
+			(at 146.05 101.6 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 157.48 53.34 0)
+			(at 144.78 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 157.48 53.34 0)
+			(at 144.78 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "IG feed from the fuse tap and a chassis ground to J702"
-			(at 157.48 53.34 0)
+			(at 144.78 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 157.48 53.34 0)
+			(at 144.78 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 157.48 53.34 0)
+			(at 144.78 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2748,7 +3257,7 @@
 		)
 	)
 	(wire
-		(pts (xy 152.4 53.34) (xy 149.86 53.34))
+		(pts (xy 139.7 96.52) (xy 137.16 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2757,7 +3266,7 @@
 	)
 	(global_label "IGN_IN"
 		(shape passive)
-		(at 149.86 53.34 180)
+		(at 137.16 96.52 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2765,7 +3274,7 @@
 		)
 		(uuid "25106cb4-9108-5ea4-8dc5-343baf20ecaa")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 149.86 53.34 0)
+			(at 137.16 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2773,7 +3282,7 @@
 		)
 	)
 	(wire
-		(pts (xy 165.1 53.34) (xy 167.64 53.34))
+		(pts (xy 152.4 96.52) (xy 154.94 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2782,7 +3291,7 @@
 	)
 	(global_label "IGN_IN"
 		(shape passive)
-		(at 167.64 53.34 0)
+		(at 154.94 96.52 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2790,7 +3299,7 @@
 		)
 		(uuid "71fd32ee-9c2f-5cb0-aaa0-9415d6340c94")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 167.64 53.34 0)
+			(at 154.94 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2798,7 +3307,7 @@
 		)
 	)
 	(wire
-		(pts (xy 152.4 55.88) (xy 149.86 55.88))
+		(pts (xy 139.7 99.06) (xy 137.16 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -2807,7 +3316,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 149.86 55.88 180)
+		(at 137.16 99.06 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2815,7 +3324,7 @@
 		)
 		(uuid "c8544ab2-c120-57d0-a919-5bfe4ed37b37")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 149.86 55.88 0)
+			(at 137.16 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2823,7 +3332,7 @@
 		)
 	)
 	(wire
-		(pts (xy 165.1 55.88) (xy 167.64 55.88))
+		(pts (xy 152.4 99.06) (xy 154.94 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -2832,7 +3341,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 167.64 55.88 0)
+		(at 154.94 99.06 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2840,7 +3349,7 @@
 		)
 		(uuid "4cf210da-5f37-549f-a7cc-1fa62301df5f")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 167.64 55.88 0)
+			(at 154.94 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2849,7 +3358,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_02x02_Odd_Even")
-		(at 210.82 53.34 0)
+		(at 198.12 96.52 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2857,47 +3366,47 @@
 		(dnp no)
 		(uuid "5bd1f86c-513e-55f5-b893-1ff6f19dd621")
 		(property "Reference" "W8"
-			(at 212.09 50.8 0)
+			(at 199.39 93.98 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "2 x 2.5 mm2 double-insulated HV leads >= 600 V with M6 ring terminals, <= 0.3 m"
-			(at 212.09 58.42 0)
+			(at 199.39 101.6 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 210.82 53.34 0)
+			(at 198.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 210.82 53.34 0)
+			(at 198.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "pack tap leads from the cell-side SMR studs to the battery-end J902"
-			(at 210.82 53.34 0)
+			(at 198.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 210.82 53.34 0)
+			(at 198.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 210.82 53.34 0)
+			(at 198.12 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2925,7 +3434,7 @@
 		)
 	)
 	(wire
-		(pts (xy 205.74 53.34) (xy 203.2 53.34))
+		(pts (xy 193.04 96.52) (xy 190.5 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2934,7 +3443,7 @@
 	)
 	(global_label "BAT_TAP_P"
 		(shape passive)
-		(at 203.2 53.34 180)
+		(at 190.5 96.52 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2942,7 +3451,7 @@
 		)
 		(uuid "099fbc6c-5b6b-5f06-bbcf-a58c6a260010")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 203.2 53.34 0)
+			(at 190.5 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2950,7 +3459,7 @@
 		)
 	)
 	(wire
-		(pts (xy 218.44 53.34) (xy 220.98 53.34))
+		(pts (xy 205.74 96.52) (xy 208.28 96.52))
 		(stroke
 			(width 0)
 			(type default)
@@ -2959,7 +3468,7 @@
 	)
 	(global_label "BAT_TAP_P"
 		(shape passive)
-		(at 220.98 53.34 0)
+		(at 208.28 96.52 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2967,7 +3476,7 @@
 		)
 		(uuid "3b7a8749-8958-535d-9b48-8e91d526910a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 220.98 53.34 0)
+			(at 208.28 96.52 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2975,7 +3484,7 @@
 		)
 	)
 	(wire
-		(pts (xy 205.74 55.88) (xy 203.2 55.88))
+		(pts (xy 193.04 99.06) (xy 190.5 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -2984,7 +3493,7 @@
 	)
 	(global_label "BAT_TAP_N"
 		(shape passive)
-		(at 203.2 55.88 180)
+		(at 190.5 99.06 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2992,7 +3501,7 @@
 		)
 		(uuid "4e3801bf-eafd-5f62-8d25-fb1ac6c141fa")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 203.2 55.88 0)
+			(at 190.5 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3000,7 +3509,7 @@
 		)
 	)
 	(wire
-		(pts (xy 218.44 55.88) (xy 220.98 55.88))
+		(pts (xy 205.74 99.06) (xy 208.28 99.06))
 		(stroke
 			(width 0)
 			(type default)
@@ -3009,7 +3518,7 @@
 	)
 	(global_label "BAT_TAP_N"
 		(shape passive)
-		(at 220.98 55.88 0)
+		(at 208.28 99.06 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3017,7 +3526,7 @@
 		)
 		(uuid "181d962f-9b4e-5fbf-a3ed-be8ac8f9447b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 220.98 55.88 0)
+			(at 208.28 99.06 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3026,7 +3535,7 @@
 	)
 	(symbol
 		(lib_id "Device:Fuse")
-		(at 139.7 88.9 0)
+		(at 127 132.08 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3034,68 +3543,68 @@
 		(dnp no)
 		(uuid "40e866e4-2f9a-59d1-bf14-2c671d66d254")
 		(property "Reference" "F701"
-			(at 141.732 88.9 90)
+			(at 129.032 132.08 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1A"
-			(at 137.795 88.9 90)
+			(at 125.095 132.08 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.littelfuse.com/products/fuses/automotive-passenger-car/blade-fuses/287"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "ATO blade fuse 1 A 32 V in an add-a-fuse tap on an IG2-switched fuse"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "0287001.PXCN"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Littelfuse"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Rating" "1A"
-			(at 139.7 88.9 0)
+			(at 127 132.08 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3117,7 +3626,7 @@
 		)
 	)
 	(wire
-		(pts (xy 139.7 85.09) (xy 139.7 82.55))
+		(pts (xy 127 128.27) (xy 127 125.73))
 		(stroke
 			(width 0)
 			(type default)
@@ -3126,7 +3635,7 @@
 	)
 	(global_label "IGN_CAR"
 		(shape passive)
-		(at 139.7 82.55 90)
+		(at 127 125.73 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3134,7 +3643,7 @@
 		)
 		(uuid "fbe7b332-80bc-5f64-9109-e56af63eb04a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 139.7 82.55 0)
+			(at 127 125.73 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3142,7 +3651,7 @@
 		)
 	)
 	(wire
-		(pts (xy 139.7 92.71) (xy 139.7 95.25))
+		(pts (xy 127 135.89) (xy 127 138.43))
 		(stroke
 			(width 0)
 			(type default)
@@ -3151,7 +3660,7 @@
 	)
 	(global_label "IGN_IN"
 		(shape passive)
-		(at 139.7 95.25 270)
+		(at 127 138.43 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3159,7 +3668,7 @@
 		)
 		(uuid "b95311e6-1e93-5d21-89ca-110cfb11afc2")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 139.7 95.25 0)
+			(at 127 138.43 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3168,7 +3677,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x01")
-		(at 167.64 71.12 0)
+		(at 154.94 114.3 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3176,47 +3685,47 @@
 		(dnp no)
 		(uuid "ec63e7b9-0bcf-5624-bf9f-7e83a55c8a31")
 		(property "Reference" "X701"
-			(at 167.64 68.58 0)
+			(at 154.94 111.76 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "add-a-fuse (ATO)"
-			(at 167.64 73.66 0)
+			(at 154.94 116.84 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 167.64 71.12 0)
+			(at 154.94 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 167.64 71.12 0)
+			(at 154.94 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "add-a-fuse holder: plugs into an IG2-switched fuse position, carries the original fuse and F701"
-			(at 167.64 71.12 0)
+			(at 154.94 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 167.64 71.12 0)
+			(at 154.94 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 167.64 71.12 0)
+			(at 154.94 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3235,7 +3744,7 @@
 		)
 	)
 	(wire
-		(pts (xy 162.56 71.12) (xy 160.02 71.12))
+		(pts (xy 149.86 114.3) (xy 147.32 114.3))
 		(stroke
 			(width 0)
 			(type default)
@@ -3244,7 +3753,7 @@
 	)
 	(global_label "IGN_CAR"
 		(shape passive)
-		(at 160.02 71.12 180)
+		(at 147.32 114.3 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3252,7 +3761,7 @@
 		)
 		(uuid "05ff3efb-99f1-55b0-819e-b1c4e8a404ff")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 160.02 71.12 0)
+			(at 147.32 114.3 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3261,7 +3770,7 @@
 	)
 	(symbol
 		(lib_id "Device:Thermistor_NTC")
-		(at 30.48 93.98 0)
+		(at 241.3 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3269,54 +3778,54 @@
 		(dnp no)
 		(uuid "a85e4992-3055-59f7-883e-526c9a24ad81")
 		(property "Reference" "TH1"
-			(at 26.035 93.98 90)
+			(at 236.855 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 33.655 93.98 90)
+			(at 244.475 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "NTC 10 kOhm 1 %, B25/85 3435 K, M4 ring lug, epoxy, insulated leads (bonded to the HV battery case, which is chassis potential)"
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "B25/85" "3435K"
-			(at 30.48 93.98 0)
+			(at 241.3 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3338,7 +3847,7 @@
 		)
 	)
 	(wire
-		(pts (xy 30.48 90.17) (xy 30.48 87.63))
+		(pts (xy 241.3 62.23) (xy 241.3 59.69))
 		(stroke
 			(width 0)
 			(type default)
@@ -3347,7 +3856,7 @@
 	)
 	(global_label "NTC_P1"
 		(shape passive)
-		(at 30.48 87.63 90)
+		(at 241.3 59.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3355,7 +3864,7 @@
 		)
 		(uuid "26991368-20ff-595e-a1c8-2d2b7d567109")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 30.48 87.63 0)
+			(at 241.3 59.69 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3363,7 +3872,7 @@
 		)
 	)
 	(wire
-		(pts (xy 30.48 97.79) (xy 30.48 100.33))
+		(pts (xy 241.3 69.85) (xy 241.3 72.39))
 		(stroke
 			(width 0)
 			(type default)
@@ -3372,7 +3881,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 30.48 100.33 270)
+		(at 241.3 72.39 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3380,7 +3889,7 @@
 		)
 		(uuid "57560c21-22c1-5119-b37f-e4220297e5ae")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 30.48 100.33 0)
+			(at 241.3 72.39 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3389,7 +3898,7 @@
 	)
 	(symbol
 		(lib_id "Device:Thermistor_NTC")
-		(at 45.72 93.98 0)
+		(at 256.54 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3397,54 +3906,54 @@
 		(dnp no)
 		(uuid "9f8fad6e-9142-5b7f-9032-4c37b0807d36")
 		(property "Reference" "TH2"
-			(at 41.275 93.98 90)
+			(at 252.095 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 48.895 93.98 90)
+			(at 259.715 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "NTC 10 kOhm 1 %, B25/85 3435 K, M4 ring lug, epoxy, insulated leads (bonded to the HV battery case, which is chassis potential)"
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "B25/85" "3435K"
-			(at 45.72 93.98 0)
+			(at 256.54 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3466,7 +3975,7 @@
 		)
 	)
 	(wire
-		(pts (xy 45.72 90.17) (xy 45.72 87.63))
+		(pts (xy 256.54 62.23) (xy 256.54 59.69))
 		(stroke
 			(width 0)
 			(type default)
@@ -3475,7 +3984,7 @@
 	)
 	(global_label "NTC_P2"
 		(shape passive)
-		(at 45.72 87.63 90)
+		(at 256.54 59.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3483,7 +3992,7 @@
 		)
 		(uuid "6b3ede5f-4df5-5299-bcf0-6aef9cad4c35")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 45.72 87.63 0)
+			(at 256.54 59.69 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3491,7 +4000,7 @@
 		)
 	)
 	(wire
-		(pts (xy 45.72 97.79) (xy 45.72 100.33))
+		(pts (xy 256.54 69.85) (xy 256.54 72.39))
 		(stroke
 			(width 0)
 			(type default)
@@ -3500,7 +4009,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 45.72 100.33 270)
+		(at 256.54 72.39 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3508,7 +4017,7 @@
 		)
 		(uuid "f7e579ba-1eb4-5a37-9d0a-50079846dba9")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 45.72 100.33 0)
+			(at 256.54 72.39 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3517,7 +4026,7 @@
 	)
 	(symbol
 		(lib_id "Device:Thermistor_NTC")
-		(at 58.42 93.98 0)
+		(at 292.1 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3525,54 +4034,54 @@
 		(dnp no)
 		(uuid "0511d33a-d857-5e4b-9fb9-0a463a9fd90b")
 		(property "Reference" "TH3"
-			(at 53.975 93.98 90)
+			(at 287.655 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 61.595 93.98 90)
+			(at 295.275 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "NTC 10 kOhm 1 %, B25/85 3435 K, M4 ring lug, epoxy, insulated leads (bonded to the HV battery case, which is chassis potential)"
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "B25/85" "3435K"
-			(at 58.42 93.98 0)
+			(at 292.1 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3594,7 +4103,7 @@
 		)
 	)
 	(wire
-		(pts (xy 58.42 90.17) (xy 58.42 87.63))
+		(pts (xy 292.1 62.23) (xy 292.1 59.69))
 		(stroke
 			(width 0)
 			(type default)
@@ -3603,7 +4112,7 @@
 	)
 	(global_label "NTC_P3"
 		(shape passive)
-		(at 58.42 87.63 90)
+		(at 292.1 59.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3611,7 +4120,7 @@
 		)
 		(uuid "89e56304-55f3-54db-905a-e8eb81298aa6")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 58.42 87.63 0)
+			(at 292.1 59.69 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3619,7 +4128,7 @@
 		)
 	)
 	(wire
-		(pts (xy 58.42 97.79) (xy 58.42 100.33))
+		(pts (xy 292.1 69.85) (xy 292.1 72.39))
 		(stroke
 			(width 0)
 			(type default)
@@ -3628,7 +4137,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 58.42 100.33 270)
+		(at 292.1 72.39 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3636,7 +4145,7 @@
 		)
 		(uuid "3d9b1974-d17d-5c91-91ee-62c17e48bbd2")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 58.42 100.33 0)
+			(at 292.1 72.39 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3645,7 +4154,7 @@
 	)
 	(symbol
 		(lib_id "Device:Thermistor_NTC")
-		(at 73.66 93.98 0)
+		(at 304.8 66.04 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3653,54 +4162,54 @@
 		(dnp no)
 		(uuid "cec4ca93-23c3-5b40-b4cc-a9d353b5e450")
 		(property "Reference" "TH4"
-			(at 69.215 93.98 90)
+			(at 300.355 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "10k"
-			(at 76.835 93.98 90)
+			(at 307.975 66.04 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" ""
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" ""
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "NTC 10 kOhm 1 %, B25/85 3435 K, M4 ring lug, epoxy, insulated leads (bonded to the HV battery case, which is chassis potential)"
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "HARNESS"
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "HARNESS"
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "B25/85" "3435K"
-			(at 73.66 93.98 0)
+			(at 304.8 66.04 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3722,7 +4231,7 @@
 		)
 	)
 	(wire
-		(pts (xy 73.66 90.17) (xy 73.66 87.63))
+		(pts (xy 304.8 62.23) (xy 304.8 59.69))
 		(stroke
 			(width 0)
 			(type default)
@@ -3731,7 +4240,7 @@
 	)
 	(global_label "NTC_P4"
 		(shape passive)
-		(at 73.66 87.63 90)
+		(at 304.8 59.69 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3739,7 +4248,7 @@
 		)
 		(uuid "e90ca5e7-a24e-56fd-b884-262ebd63b1ef")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 73.66 87.63 0)
+			(at 304.8 59.69 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3747,7 +4256,7 @@
 		)
 	)
 	(wire
-		(pts (xy 73.66 97.79) (xy 73.66 100.33))
+		(pts (xy 304.8 69.85) (xy 304.8 72.39))
 		(stroke
 			(width 0)
 			(type default)
@@ -3756,7 +4265,7 @@
 	)
 	(global_label "GND"
 		(shape passive)
-		(at 73.66 100.33 270)
+		(at 304.8 72.39 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3764,7 +4273,7 @@
 		)
 		(uuid "fd7eda02-6cd5-5ba4-aaab-a81bb3dc6e19")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 73.66 100.33 0)
+			(at 304.8 72.39 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))

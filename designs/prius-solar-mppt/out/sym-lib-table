@@ -13,6 +13,7 @@
   (lib (name "Power_Management")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Power_Management.kicad_sym")(options "")(descr ""))
   (lib (name "Reference_Voltage")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Reference_Voltage.kicad_sym")(options "")(descr ""))
   (lib (name "Regulator_Switching")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Regulator_Switching.kicad_sym")(options "")(descr ""))
+  (lib (name "Switch")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Switch.kicad_sym")(options "")(descr ""))
   (lib (name "Transistor_Array")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Transistor_Array.kicad_sym")(options "")(descr ""))
   (lib (name "Transistor_BJT")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Transistor_BJT.kicad_sym")(options "")(descr ""))
   (lib (name "Transistor_FET")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Transistor_FET.kicad_sym")(options "")(descr ""))

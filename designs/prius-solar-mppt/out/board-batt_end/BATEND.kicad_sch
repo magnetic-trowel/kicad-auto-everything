@@ -3,7 +3,7 @@
 	(generator "kaesynth")
 	(generator_version "0.1")
 	(uuid "29015310-da51-5e54-9af2-4258c461b8f7")
-	(paper "A4")
+	(paper "A3")
 	(title_block
 		(title "Battery-end board: fuses on both poles, blocking diode, 2-pole disconnect, pack sense")
 		(date "2026-10-23")
@@ -869,41 +869,41 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "1766356"
+		(property "Value" "236-303"
 			(at 48.26 38.1 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_3-G-7,62_1x03_P7.62mm_Horizontal"
+		(property "Footprint" "TerminalBlock_WAGO:TerminalBlock_WAGO_236-303_1x03_P10.00mm_45Degree"
 			(at 48.26 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.phoenixcontact.com/en-us/products/1766356"
+		(property "Datasheet" "https://www.wago.com/global/pcb-terminal-blocks/p/236-303"
 			(at 48.26 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "GMSTBA 2,5/3-G-7,62 header [item number unverified]"
+		(property "Description" "PCB terminal block 3-pole 10 mm, CAGE CLAMP (not pluggable)"
 			(at 48.26 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "1766356"
+		(property "MPN" "236-303"
 			(at 48.26 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Phoenix Contact"
+		(property "Manufacturer" "WAGO"
 			(at 48.26 33.02 0)
 			(hide yes)
 			(effects
@@ -1032,41 +1032,41 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "1766343"
+		(property "Value" "236-302"
 			(at 48.26 111.76 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_2-G-7,62_1x02_P7.62mm_Horizontal"
+		(property "Footprint" "TerminalBlock_WAGO:TerminalBlock_WAGO_236-302_1x02_P10.00mm_45Degree"
 			(at 48.26 106.68 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.phoenixcontact.com/en-us/products/1766343"
+		(property "Datasheet" "https://www.wago.com/global/pcb-terminal-blocks/p/236-302"
 			(at 48.26 106.68 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "GMSTBA 2,5/2-G-7,62 header [item number unverified]"
+		(property "Description" "PCB terminal block 2-pole 10 mm, CAGE CLAMP: wired once, not pluggable (review M5); inside the tool-opened, lid-interlocked HV cover"
 			(at 48.26 106.68 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "1766343"
+		(property "MPN" "236-302"
 			(at 48.26 106.68 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Phoenix Contact"
+		(property "Manufacturer" "WAGO"
 			(at 48.26 106.68 0)
 			(hide yes)
 			(effects
@@ -1248,7 +1248,7 @@
 		)
 		(uuid "38fcd977-904d-5924-b95a-00a92390b198")
 	)
-	(global_label "AUX12"
+	(global_label "HVIL_A"
 		(shape passive)
 		(at 73.66 30.48 180)
 		(fields_autoplaced yes)
@@ -1316,8 +1316,473 @@
 		)
 	)
 	(symbol
+		(lib_id "Connector_Generic:Conn_01x02")
+		(at 78.74 50.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f4f14e9e-cc28-5578-8966-c04a124bb7bc")
+		(property "Reference" "J904"
+			(at 78.74 48.26 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "1757242"
+			(at 78.74 55.88 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_2-G-5,08_1x02_P5.08mm_Horizontal"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.phoenixcontact.com/en-us/products/1757242"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "MSTBA 2,5/2-G-5,08 header (plug MSTB 2,5/2-ST-5,08)"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "1757242"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Phoenix Contact"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "BATEND"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "BATEND"
+			(at 78.74 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "2cd1e559-032f-55fc-bf58-329d701264cc")
+		)
+		(pin "2"
+			(uuid "15520299-4ea1-5d10-bc80-6a2b0c01d434")
+		)
+		(instances
+			(project "prius-solar-mppt-batt_end"
+				(path "/0c2e3543-0f93-57fc-8243-f15680b4408c/89ce7fb8-ac41-5215-9ddc-42c236e782b8"
+					(reference "J904")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 73.66 50.8) (xy 71.12 50.8))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4f377ce5-4a59-57c0-bc7d-d0770049eac2")
+	)
+	(global_label "HVIL_A"
+		(shape passive)
+		(at 71.12 50.8 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "c7a5d70d-6b1c-5216-8475-ed0c532cbfcc")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 71.12 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 73.66 53.34) (xy 71.12 53.34))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a44742df-2f55-5425-b631-11f030256737")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 71.12 53.34 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "2f12e8a1-0ebb-58bd-952f-e32209170978")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 71.12 53.34 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "kaesynth:VS-6ESH06HM3_86A")
+		(at 119.38 35.56 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "99983326-618c-5114-8f2d-e99be46b5846")
+		(property "Reference" "D902"
+			(at 114.3 29.21 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Value" "VS-6ESH06HM3/86A"
+			(at 114.3 41.91 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:TO-277A"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.vishay.com/en/product/94985/"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Hyperfast rectifier 600 V 6 A, AEC-Q101, eSMP TO-277A"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "VS-6ESH06HM3/86A"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Vishay"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "BATEND"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "BATEND"
+			(at 119.38 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "b3cf9b5c-8465-5c84-a327-00ce3bde3330")
+		)
+		(pin "2"
+			(uuid "f89b6b41-4f20-5f64-b645-5e7d96af6797")
+		)
+		(pin "3"
+			(uuid "677d034f-a95e-55bb-82b8-92c1b71b59cc")
+		)
+		(instances
+			(project "prius-solar-mppt-batt_end"
+				(path "/0c2e3543-0f93-57fc-8243-f15680b4408c/89ce7fb8-ac41-5215-9ddc-42c236e782b8"
+					(reference "D902")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 111.76 33.02) (xy 109.22 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "29a1db8b-833b-508f-bab1-7206fe6687fa")
+	)
+	(global_label "K1_COIL_N"
+		(shape passive)
+		(at 109.22 33.02 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "26e1ec10-77cb-5307-80ab-fb27789e4764")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 109.22 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 111.76 35.56) (xy 109.22 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e0b61fef-f3e7-59aa-a255-51396c54d560")
+	)
+	(global_label "K1_COIL_N"
+		(shape passive)
+		(at 109.22 35.56 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "35829f9d-43a0-57f3-b62c-3e803dbcf0dd")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 109.22 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 127 33.02) (xy 129.54 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fe1c5d4e-4d42-5d7a-902b-8641f29d6df1")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 129.54 33.02 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "5f27c904-af8b-50c2-b1a9-93ab38e4a870")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 129.54 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "kaesynth:VS-6ESH06HM3_86A")
+		(at 175.26 35.56 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "5652da64-d5e9-551b-a99d-489e176e66d4")
+		(property "Reference" "D903"
+			(at 170.18 29.21 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Value" "VS-6ESH06HM3/86A"
+			(at 170.18 41.91 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(property "Footprint" "Package_TO_SOT_SMD:TO-277A"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.vishay.com/en/product/94985/"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Hyperfast rectifier 600 V 6 A, AEC-Q101, eSMP TO-277A"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "VS-6ESH06HM3/86A"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Vishay"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "BATEND"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "BATEND"
+			(at 175.26 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "4e866266-465c-5bb9-98b7-84df818273e0")
+		)
+		(pin "2"
+			(uuid "42f43ecd-5fa3-572d-a2f4-ee8e6dad2432")
+		)
+		(pin "3"
+			(uuid "0076b319-443e-5202-a60a-78ebbb1a4d49")
+		)
+		(instances
+			(project "prius-solar-mppt-batt_end"
+				(path "/0c2e3543-0f93-57fc-8243-f15680b4408c/89ce7fb8-ac41-5215-9ddc-42c236e782b8"
+					(reference "D903")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 167.64 33.02) (xy 165.1 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2ff7108b-356e-5e7d-bf78-ea50662f8423")
+	)
+	(global_label "K2_COIL_N"
+		(shape passive)
+		(at 165.1 33.02 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "c83ad1d2-398f-5d9e-9920-4adc0ad3be90")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 165.1 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 167.64 35.56) (xy 165.1 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ac920d5a-b9ee-5021-97d1-31f6a39ff0e3")
+	)
+	(global_label "K2_COIL_N"
+		(shape passive)
+		(at 165.1 35.56 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "87745a18-02af-55ea-a221-e5417d3a968a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 165.1 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 182.88 33.02) (xy 185.42 33.02))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c0fdb5e4-2ae9-527c-8eba-b0125b74a820")
+	)
+	(global_label "K_SUP"
+		(shape passive)
+		(at 185.42 33.02 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "8319c10c-e0c9-50bd-b76c-8683c5679d2d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 185.42 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:Fuse")
-		(at 96.52 71.12 0)
+		(at 205.74 71.12 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1325,82 +1790,82 @@
 		(dnp no)
 		(uuid "7cf80b96-d832-5ac4-b06d-df0dc45aaff8")
 		(property "Reference" "F901"
-			(at 98.552 71.12 90)
+			(at 207.772 71.12 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "5A"
-			(at 94.615 71.12 90)
+			(at 203.835 71.12 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "custom:Eaton_EVM10-2P"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.eaton.com/us/en-us/skuPage.EVM10-5-2P.html"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Fuse 10x38 mm 5 A 500 VDC 20 kA, 2-pin PCB terminals per cap"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "EVM10-5-2P"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Eaton Bussmann"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Rating" "5A"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Breaking" "20000A"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "I2t" "105A2s"
-			(at 96.52 71.12 0)
+			(at 205.74 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1422,7 +1887,7 @@
 		)
 	)
 	(wire
-		(pts (xy 96.52 67.31) (xy 96.52 64.77))
+		(pts (xy 205.74 67.31) (xy 205.74 64.77))
 		(stroke
 			(width 0)
 			(type default)
@@ -1431,7 +1896,7 @@
 	)
 	(global_label "BAT_TAP_P"
 		(shape passive)
-		(at 96.52 64.77 90)
+		(at 205.74 64.77 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1439,7 +1904,7 @@
 		)
 		(uuid "d077bbbb-055b-5797-85bb-1ee5267965ab")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 96.52 64.77 0)
+			(at 205.74 64.77 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1447,7 +1912,7 @@
 		)
 	)
 	(wire
-		(pts (xy 96.52 74.93) (xy 96.52 77.47))
+		(pts (xy 205.74 74.93) (xy 205.74 77.47))
 		(stroke
 			(width 0)
 			(type default)
@@ -1455,7 +1920,7 @@
 		(uuid "b79adaa4-eb49-5aca-984a-d0408d7549d5")
 	)
 	(label "BAT_F_P"
-		(at 96.52 77.47 270)
+		(at 205.74 77.47 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1465,7 +1930,7 @@
 	)
 	(symbol
 		(lib_id "Device:Fuse")
-		(at 157.48 71.12 0)
+		(at 269.24 71.12 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1473,82 +1938,82 @@
 		(dnp no)
 		(uuid "d7de5901-b93b-58c9-bf20-29791d795b88")
 		(property "Reference" "F902"
-			(at 159.512 71.12 90)
+			(at 271.272 71.12 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "5A"
-			(at 155.575 71.12 90)
+			(at 267.335 71.12 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "custom:Eaton_EVM10-2P"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.eaton.com/us/en-us/skuPage.EVM10-5-2P.html"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Fuse 10x38 mm 5 A 500 VDC 20 kA, 2-pin PCB terminals per cap"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "EVM10-5-2P"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Eaton Bussmann"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Rating" "5A"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Breaking" "20000A"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "I2t" "105A2s"
-			(at 157.48 71.12 0)
+			(at 269.24 71.12 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1570,7 +2035,7 @@
 		)
 	)
 	(wire
-		(pts (xy 157.48 67.31) (xy 157.48 64.77))
+		(pts (xy 269.24 67.31) (xy 269.24 64.77))
 		(stroke
 			(width 0)
 			(type default)
@@ -1579,7 +2044,7 @@
 	)
 	(global_label "BAT_TAP_N"
 		(shape passive)
-		(at 157.48 64.77 90)
+		(at 269.24 64.77 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1587,7 +2052,7 @@
 		)
 		(uuid "935527e5-3d2e-5cb6-9392-a975481ff32e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 157.48 64.77 0)
+			(at 269.24 64.77 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1595,7 +2060,7 @@
 		)
 	)
 	(wire
-		(pts (xy 157.48 74.93) (xy 157.48 77.47))
+		(pts (xy 269.24 74.93) (xy 269.24 77.47))
 		(stroke
 			(width 0)
 			(type default)
@@ -1603,7 +2068,7 @@
 		(uuid "e9c709d2-1497-51b6-aa0c-7e1154ea167b")
 	)
 	(label "BAT_F_N"
-		(at 157.48 77.47 270)
+		(at 269.24 77.47 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1613,7 +2078,7 @@
 	)
 	(symbol
 		(lib_id "kaesynth:G9KB-1A_DC12")
-		(at 121.92 35.56 0)
+		(at 231.14 35.56 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1621,63 +2086,63 @@
 		(dnp no)
 		(uuid "3bb697d4-ce39-5185-b937-a36d2680d122")
 		(property "Reference" "K901"
-			(at 114.3 29.21 0)
+			(at 223.52 29.21 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Value" "G9KB-1A DC12"
-			(at 114.3 41.91 0)
+			(at 223.52 41.91 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
 			)
 		)
 		(property "Footprint" "custom:Omron_G9KB-1A"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.rutronik.com/fileadmin/rutronik/Micropages/Omron/G9KB.pdf"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "PCB power relay SPST-NO 600 VDC 50 A, double break, 3.6 mm gap, 12 V coil"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "G9KB-1A DC12"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Omron"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 121.92 35.56 0)
+			(at 231.14 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1705,16 +2170,16 @@
 		)
 	)
 	(wire
-		(pts (xy 111.76 33.02) (xy 109.22 33.02))
+		(pts (xy 220.98 33.02) (xy 218.44 33.02))
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "efa2d1a4-b298-54a1-8bc3-3161aa83a4a8")
 	)
-	(global_label "AUX12"
+	(global_label "K_SUP"
 		(shape passive)
-		(at 109.22 33.02 180)
+		(at 218.44 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1722,7 +2187,7 @@
 		)
 		(uuid "69f07de2-4c0c-5031-8f32-9845255cd63d")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 109.22 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1730,7 +2195,7 @@
 		)
 	)
 	(wire
-		(pts (xy 111.76 35.56) (xy 109.22 35.56))
+		(pts (xy 220.98 35.56) (xy 218.44 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -1739,7 +2204,7 @@
 	)
 	(global_label "K1_COIL_N"
 		(shape passive)
-		(at 109.22 35.56 180)
+		(at 218.44 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1747,7 +2212,7 @@
 		)
 		(uuid "59cd288f-a5f4-5fef-953e-30c8bd53d7a7")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 109.22 35.56 0)
+			(at 218.44 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1755,7 +2220,7 @@
 		)
 	)
 	(wire
-		(pts (xy 132.08 33.02) (xy 134.62 33.02))
+		(pts (xy 241.3 33.02) (xy 243.84 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -1763,7 +2228,7 @@
 		(uuid "10251f30-d8da-5af7-b751-4093ab190b34")
 	)
 	(label "BAT_F_P"
-		(at 134.62 33.02 0)
+		(at 243.84 33.02 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1772,7 +2237,7 @@
 		(uuid "a0cfaeac-17a4-5f70-b6c4-67871647b240")
 	)
 	(wire
-		(pts (xy 132.08 35.56) (xy 134.62 35.56))
+		(pts (xy 241.3 35.56) (xy 243.84 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -1780,7 +2245,7 @@
 		(uuid "e7b7cfa3-f214-5f68-ad8f-a3d1f2e7baa4")
 	)
 	(label "BE_DK"
-		(at 134.62 35.56 0)
+		(at 243.84 35.56 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1790,7 +2255,7 @@
 	)
 	(symbol
 		(lib_id "kaesynth:G9KB-1A_DC12")
-		(at 182.88 35.56 0)
+		(at 294.64 35.56 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1798,63 +2263,63 @@
 		(dnp no)
 		(uuid "68dd4bbb-1d3f-534d-bf13-7d52d142dd5c")
 		(property "Reference" "K902"
-			(at 175.26 29.21 0)
+			(at 287.02 29.21 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Value" "G9KB-1A DC12"
-			(at 175.26 41.91 0)
+			(at 287.02 41.91 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
 			)
 		)
 		(property "Footprint" "custom:Omron_G9KB-1A"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.rutronik.com/fileadmin/rutronik/Micropages/Omron/G9KB.pdf"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "PCB power relay SPST-NO 600 VDC 50 A, double break, 3.6 mm gap, 12 V coil"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "G9KB-1A DC12"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Omron"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 182.88 35.56 0)
+			(at 294.64 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1882,16 +2347,16 @@
 		)
 	)
 	(wire
-		(pts (xy 172.72 33.02) (xy 170.18 33.02))
+		(pts (xy 284.48 33.02) (xy 281.94 33.02))
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "b94d3b96-65c7-5096-9bbb-187686cf350a")
 	)
-	(global_label "AUX12"
+	(global_label "K_SUP"
 		(shape passive)
-		(at 170.18 33.02 180)
+		(at 281.94 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1899,7 +2364,7 @@
 		)
 		(uuid "be888db0-367c-56d0-bc82-d02eefe52364")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 170.18 33.02 0)
+			(at 281.94 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1907,7 +2372,7 @@
 		)
 	)
 	(wire
-		(pts (xy 172.72 35.56) (xy 170.18 35.56))
+		(pts (xy 284.48 35.56) (xy 281.94 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -1916,7 +2381,7 @@
 	)
 	(global_label "K2_COIL_N"
 		(shape passive)
-		(at 170.18 35.56 180)
+		(at 281.94 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1924,7 +2389,7 @@
 		)
 		(uuid "751538a9-e969-53d0-a556-29123398034f")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 170.18 35.56 0)
+			(at 281.94 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1932,7 +2397,7 @@
 		)
 	)
 	(wire
-		(pts (xy 193.04 33.02) (xy 195.58 33.02))
+		(pts (xy 304.8 33.02) (xy 307.34 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -1940,7 +2405,7 @@
 		(uuid "6f0cbfe5-ce79-5cf9-964f-4b8c80d9bf6b")
 	)
 	(label "BAT_F_N"
-		(at 195.58 33.02 0)
+		(at 307.34 33.02 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1949,7 +2414,7 @@
 		(uuid "2ba8e0d8-7c5b-5ff5-8235-7e5827a01850")
 	)
 	(wire
-		(pts (xy 193.04 35.56) (xy 195.58 35.56))
+		(pts (xy 304.8 35.56) (xy 307.34 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -1958,7 +2423,7 @@
 	)
 	(global_label "HV_N"
 		(shape passive)
-		(at 195.58 35.56 0)
+		(at 307.34 35.56 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1966,7 +2431,7 @@
 		)
 		(uuid "ed762557-b247-5dfc-ba1e-61f5700b0294")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 195.58 35.56 0)
+			(at 307.34 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1975,7 +2440,7 @@
 	)
 	(symbol
 		(lib_id "kaesynth:VS-6ESH06HM3_86A")
-		(at 238.76 35.56 0)
+		(at 347.98 35.56 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1983,63 +2448,63 @@
 		(dnp no)
 		(uuid "dc11b1f6-81a5-5c10-9586-492128d2f833")
 		(property "Reference" "D901"
-			(at 233.68 29.21 0)
+			(at 342.9 29.21 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Value" "VS-6ESH06HM3/86A"
-			(at 233.68 41.91 0)
+			(at 342.9 41.91 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
 			)
 		)
 		(property "Footprint" "Package_TO_SOT_SMD:TO-277A"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/en/product/94985/"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Hyperfast rectifier 600 V 6 A, AEC-Q101, eSMP TO-277A"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "VS-6ESH06HM3/86A"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 238.76 35.56 0)
+			(at 347.98 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2064,7 +2529,7 @@
 		)
 	)
 	(wire
-		(pts (xy 231.14 33.02) (xy 228.6 33.02))
+		(pts (xy 340.36 33.02) (xy 337.82 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -2073,7 +2538,7 @@
 	)
 	(global_label "HV_P"
 		(shape passive)
-		(at 228.6 33.02 180)
+		(at 337.82 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2081,7 +2546,7 @@
 		)
 		(uuid "2ac228ab-8f96-5684-95e7-c2e1a035a596")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 228.6 33.02 0)
+			(at 337.82 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2089,7 +2554,7 @@
 		)
 	)
 	(wire
-		(pts (xy 231.14 35.56) (xy 228.6 35.56))
+		(pts (xy 340.36 35.56) (xy 337.82 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -2098,7 +2563,7 @@
 	)
 	(global_label "HV_P"
 		(shape passive)
-		(at 228.6 35.56 180)
+		(at 337.82 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2106,7 +2571,7 @@
 		)
 		(uuid "88eed14c-d53e-515e-9fcf-11055cbaaeb2")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 228.6 35.56 0)
+			(at 337.82 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2114,7 +2579,7 @@
 		)
 	)
 	(wire
-		(pts (xy 246.38 33.02) (xy 248.92 33.02))
+		(pts (xy 355.6 33.02) (xy 358.14 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -2122,7 +2587,7 @@
 		(uuid "c07aa558-4e1e-5d50-b247-8365bd166cfa")
 	)
 	(label "BE_DK"
-		(at 248.92 33.02 0)
+		(at 358.14 33.02 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2132,7 +2597,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 106.68 68.58 0)
+		(at 218.44 68.58 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2140,82 +2605,82 @@
 		(dnp no)
 		(uuid "04fdadea-9ace-5eeb-8b09-74f093b393f0")
 		(property "Reference" "R902"
-			(at 108.712 68.58 90)
+			(at 220.472 68.58 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1M"
-			(at 106.68 68.58 90)
+			(at 218.44 68.58 90)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Resistor 1M 0.1% 1206"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TNPW12061M00BEEA"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Vishay Dale"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "BATEND"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "BATEND"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Tolerance" "0.1%"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Package" "1206"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "TCR" "25ppm/K"
-			(at 106.68 68.58 0)
+			(at 218.44 68.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2237,7 +2702,7 @@
 		)
 	)
 	(wire
-		(pts (xy 106.68 64.77) (xy 106.68 62.23))
+		(pts (xy 218.44 64.77) (xy 218.44 62.23))
 		(stroke
 			(width 0)
 			(type default)
@@ -2245,7 +2710,7 @@
 		(uuid "29257fe4-d3bf-5331-bc6e-e2b9348b4e41")
 	)
 	(label "BE_DK"
-		(at 106.68 62.23 90)
+		(at 218.44 62.23 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2254,7 +2719,7 @@
 		(uuid "9fedcb8e-d79a-51fe-a5bc-8f15e568d4ac")
 	)
 	(wire
-		(pts (xy 106.68 72.39) (xy 106.68 74.93))
+		(pts (xy 218.44 72.39) (xy 218.44 74.93))
 		(stroke
 			(width 0)
 			(type default)
@@ -2262,7 +2727,7 @@
 		(uuid "c8a872b9-91fc-57e6-8e0d-ff4dbac13b42")
 	)
 	(label "SNS_A"
-		(at 106.68 74.93 270)
+		(at 218.44 74.93 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))

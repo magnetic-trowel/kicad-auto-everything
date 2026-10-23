@@ -23,44 +23,47 @@ board:
       drill_mm: 3.2
       pad_mm: 6.0
       plated: true
-      net: GND
+      net: CHASSIS
       note: H701
     - x: 5
       "y": 135
       drill_mm: 3.2
       pad_mm: 6.0
       plated: true
-      net: GND
+      net: CHASSIS
       note: H702
     - x: 120
       "y": 5
       drill_mm: 3.2
       pad_mm: 6.0
       plated: true
-      net: GND
+      net: CHASSIS
       note: H703
     - x: 120
       "y": 135
       drill_mm: 3.2
       pad_mm: 6.0
       plated: true
-      net: GND
+      net: CHASSIS
       note: H704
     - x: 195
       "y": 5
       drill_mm: 3.2
       plated: false
-      note: "H705 HV side, non-plated"
+      note: "H705 east support: non-plated, PA66 standoff, nylon screw, 13 mm HV keepout"
     - x: 195
       "y": 135
       drill_mm: 3.2
       plated: false
-      note: "H706 HV side, non-plated"
-  enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis; thermal pad under the FETs, T301 and the bridge"
+      note: "H706 east support: as H705"
+  enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis. Floor pedestal with an insulating gap pad under the LV power area only (MPPT FETs, inductors, Q301/Q302); pocket >= 10 mm deep under the HV section (x > 145 mm) lined with polypropylene sheet; T301 core to the lid via an insulating gap pad; D301-D304 on top copper only (review B1)"
   coating: "acrylic conformal coat (not credited for creepage)"
   keepouts:
     - relative: "barrier band 10 mm wide between LV and HV sections, slot >= 2 mm"
-      what: "copper and vias"
+      what: "copper and vias (IMD resistor chains excepted)"
+      layers: all
+    - relative: "10 mm from the board edge and 13 mm around H705/H706"
+      what: "HV/PACK copper"
       layers: all
   notes: "HV section along the east edge (x > 150 mm); FR-4 CTI >= 175 (IIIa)"
 boards:
@@ -78,44 +81,47 @@ boards:
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H701
       - x: 5
         "y": 135
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H702
       - x: 120
         "y": 5
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H703
       - x: 120
         "y": 135
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H704
       - x: 195
         "y": 5
         drill_mm: 3.2
         plated: false
-        note: "H705 HV side, non-plated"
+        note: "H705 east support: non-plated, PA66 standoff, nylon screw, 13 mm HV keepout"
       - x: 195
         "y": 135
         drill_mm: 3.2
         plated: false
-        note: "H706 HV side, non-plated"
-    enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis; thermal pad under the FETs, T301 and the bridge"
+        note: "H706 east support: as H705"
+    enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis. Floor pedestal with an insulating gap pad under the LV power area only (MPPT FETs, inductors, Q301/Q302); pocket >= 10 mm deep under the HV section (x > 145 mm) lined with polypropylene sheet; T301 core to the lid via an insulating gap pad; D301-D304 on top copper only (review B1)"
     coating: "acrylic conformal coat (not credited for creepage)"
     keepouts:
       - relative: "barrier band 10 mm wide between LV and HV sections, slot >= 2 mm"
-        what: "copper and vias"
+        what: "copper and vias (IMD resistor chains excepted)"
+        layers: all
+      - relative: "10 mm from the board edge and 13 mm around H705/H706"
+        what: "HV/PACK copper"
         layers: all
     notes: "HV section along the east edge (x > 150 mm); FR-4 CTI >= 175 (IIIa)"
   - name: batt_end
@@ -146,9 +152,9 @@ boards:
         drill_mm: 3.2
         plated: false
         note: H904
-    enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands"
+    enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands; board on 10 mm PA66 standoffs over a polypropylene liner (no thermal interface: D901 0.26 W on copper); inner tool-opened cover over J901/J902; lid switch S901"
     coating: "acrylic conformal coat (not credited)"
-    notes: "all copper is HV/PACK except the coil pins and J903; 10 mm band around them"
+    notes: "all copper is HV/PACK except the coil pins, J903, J904, D902/D903; 10 mm band around them; HV/PACK copper 10 mm from edges and 13 mm from H901-H904"
 magnitudes:
   tight: 3.0
   close: 8.0
@@ -159,31 +165,41 @@ domains:
     ref: GND
     earthed: true
     description: "Roof strings, VINT bus, AUX, logic, IG/CAN wires, pack-case NTCs. <= 38 V (PV inputs clamped at 54 V by TVS); ISO 7637 pulses on IGN_IN. Chassis-referenced."
+  - name: CHASSIS
+    kind: elv
+    ref: GND
+    earthed: true
+    description: "Vehicle chassis: the die-cast boxes, mounting screws, the LV-side thermal pedestal and plated holes H701-H704. Bonded to GND by NT701. Touchable."
   - name: HV
     kind: hv
     ref: HV_N
     earthed: false
-    description: "T301 secondary, rectifier, HV sense high sides, HV cable, D901/K901/K902. 0-420 V internal. Floating: under one insulation fault any HV net can be at 0..420 V to chassis."
+    description: "T301 secondary, rectifier, HV sense high sides, IMD bridge HV ends, HV cable, D901/K901/K902. 0-420 V internal. Floating: under one insulation fault any HV net can be 0..420 V to chassis."
   - name: PACK
     kind: battery
-    ref: BAT_TAP_N
+    ref: HV_N
     earthed: false
-    description: "Prius Prime Li-ion pack, 95s, 285-399 V, tapped on the cell side of the system main relays. Floats with the car's IT system: under one insulation fault a pole can be 399 V from chassis."
+    description: "Prius Prime Li-ion pack, 95s, 285-399 V, tapped on the cell side of the system main relays. Floats on HV_N: K902/F902 join BAT_TAP_N to HV_N, so the connected case is modelled (README) with a functional barrier across the open contacts. Under one insulation fault a pole can be 399 V from chassis."
+  - name: KSUP
+    kind: elv
+    ref: AUX12
+    earthed: false
+    description: "HVIL loop: AUX12 through the lid switches S701/S901; equal to AUX12 when both lids are closed, pulled toward 0 V (flyback D902/D903) when one opens"
   - name: K1C
     kind: elv
-    ref: AUX12
+    ref: K_SUP
     earthed: false
-    description: "K1_COIL_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "K1_COIL_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: K2C
     kind: elv
-    ref: AUX12
+    ref: K_SUP
     earthed: false
-    description: "K2_COIL_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "K2_COIL_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: FANC
     kind: elv
     ref: AUX12
     earthed: false
-    description: "FAN_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "FAN_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: IDA
     kind: elv
     ref: PVA_IN
@@ -236,29 +252,67 @@ barriers:
     v_work: 420.0
     creepage_mm: 10.0
     clearance_mm: 8.0
-    standard: "IEC 60664-1 Tables F.1, F.2, F.4"
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
     v_test_rms: 4250
     pollution_degree: 2
     material_group: IIIa
     ovc: II
     slot: true
-    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
-    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441, U461, extending >= 2 mm past each package end; no copper on any layer in the band; the IMD bridge strings cross it as series 10 MOhm resistors only (no other copper)"
     ac: false
+    creepage_by_group:
+      I: 5.0
+      II: 7.2
+      IIIa: 10.0
   - a: LV
     b: PACK
     grade: reinforced
     v_work: 399.0
     creepage_mm: 10.0
     clearance_mm: 8.0
-    standard: "IEC 60664-1 Tables F.1, F.2, F.4"
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
     v_test_rms: 4250
     pollution_degree: 2
     material_group: IIIa
     ovc: II
     slot: true
-    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
-    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441, U461, extending >= 2 mm past each package end; no copper on any layer in the band; the IMD bridge strings cross it as series 10 MOhm resistors only (no other copper)"
+    ac: false
+    creepage_by_group:
+      I: 5.0
+      II: 7.2
+      IIIa: 10.0
+  - a: HV
+    b: CHASSIS
+    grade: reinforced
+    v_work: 420.0
+    creepage_mm: 10.0
+    clearance_mm: 8.0
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
+    v_test_rms: 4250
+    pollution_degree: 2
+    material_group: IIIa
+    ovc: II
+    slot: false
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "HV/PACK copper to the enclosure, screws, standoffs, pedestal and board edge: 10 mm creepage / 8 mm clearance (Domain edge_clearance and placement keepouts); no thermal interface under the HV section (air >= 10 mm to the box floor, polypropylene liner as a second layer, not credited). Only the IMD protective-impedance strings join HV to CHASSIS (waiver)"
+    ac: false
+  - a: PACK
+    b: CHASSIS
+    grade: reinforced
+    v_work: 399.0
+    creepage_mm: 10.0
+    clearance_mm: 8.0
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
+    v_test_rms: 4250
+    pollution_degree: 2
+    material_group: IIIa
+    ovc: II
+    slot: false
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "HV/PACK copper to the enclosure, screws, standoffs, pedestal and board edge: 10 mm creepage / 8 mm clearance (Domain edge_clearance and placement keepouts); no thermal interface under the HV section (air >= 10 mm to the box floor, polypropylene liner as a second layer, not credited). Only the IMD protective-impedance strings join HV to CHASSIS (waiver)"
     ac: false
   - a: HV
     b: PACK
@@ -299,6 +353,16 @@ netclasses:
     clearance: 0.2
     track_width: 0.25
     nets: ["/MPPT_B/BT2", "/MPPT_B/HD2", "/MPPT_B/HD2_G"]
+  - name: CHASSIS
+    domain: CHASSIS
+    clearance: 0.2
+    track_width: 0.25
+    nets: ["/IMD/PSW"]
+  - name: CHASSIS_20A
+    domain: CHASSIS
+    clearance: 0.2
+    track_width: 9.4
+    nets: [CHASSIS]
   - name: DCXBST
     domain: DCXBST
     clearance: 0.2
@@ -336,6 +400,28 @@ netclasses:
       - "/HVSENSE/S2C"
       - "/HVSENSE/S2D"
       - "/HVSENSE/S2E"
+      - "/IMD/H4_DCDC"
+      - "/IMD/H4_HLDO"
+      - "/IMD/IN1"
+      - "/IMD/IN10"
+      - "/IMD/IN2"
+      - "/IMD/IN3"
+      - "/IMD/IN4"
+      - "/IMD/IN5"
+      - "/IMD/IN6"
+      - "/IMD/IN7"
+      - "/IMD/IN8"
+      - "/IMD/IN9"
+      - "/IMD/IP1"
+      - "/IMD/IP2"
+      - "/IMD/IP3"
+      - "/IMD/IP4"
+      - "/IMD/IP5"
+      - "/IMD/IP6"
+      - "/IMD/IP7"
+      - "/IMD/IP8"
+      - "/IMD/IP9"
+      - "/IMD/NTAP"
       - PACK_SNS
   - name: HV_1A
     domain: HV
@@ -362,6 +448,11 @@ netclasses:
     clearance: 0.2
     track_width: 0.25
     nets: [K2_COIL_N]
+  - name: KSUP_1A
+    domain: KSUP
+    clearance: 0.2
+    track_width: 0.25
+    nets: [HVIL_A, K_SUP]
   - name: LV
     domain: LV
     clearance: 0.4
@@ -377,6 +468,7 @@ netclasses:
       - "/AUX/V33_FB"
       - "/AUX/V33_RA"
       - "/AUX/V33_RON"
+      - "/DCX/DCX_CSK"
       - "/DCX/HI_F"
       - "/DCX/LI_F"
       - "/DCX/LO"
@@ -399,14 +491,27 @@ netclasses:
       - "/HVSENSE/H3_LDO"
       - "/HVSENSE/H3_OUTN"
       - "/HVSENSE/H3_OUTP"
+      - "/IMD/H4_DA_N"
+      - "/IMD/H4_DA_OUT"
+      - "/IMD/H4_DA_P"
+      - "/IMD/H4_LDO"
+      - "/IMD/H4_OUTN"
+      - "/IMD/H4_OUTP"
+      - "/IMD/IMD_G"
+      - "/IMD/IMD_REF"
       - "/LIMIT/CC_N"
       - "/LIMIT/CC_OUT"
       - "/LIMIT/CC_RZ"
+      - "/LIMIT/CV2_N"
+      - "/LIMIT/CV2_OUT"
+      - "/LIMIT/CV2_RZ"
       - "/LIMIT/CV_N"
       - "/LIMIT/CV_OUT"
       - "/LIMIT/CV_RZ"
+      - "/LIMIT/U803B_FB"
       - "/LIMIT/VREF_CC"
       - "/LIMIT/VREF_CV"
+      - "/LIMIT/VREF_CV2"
       - "/LIMIT/VREF_LIM"
       - "/MCU/CAN_EN_B"
       - "/MCU/CAN_GE"
@@ -414,6 +519,8 @@ netclasses:
       - "/MCU/IGN_D"
       - "/MCU/IG_GB"
       - "/MCU/READY_B"
+      - "/MCU/XTAL_I"
+      - "/MCU/XTAL_O"
       - "/MPPT_A/AGND"
       - "/MPPT_A/BIAS"
       - "/MPPT_A/COMP"
@@ -486,6 +593,7 @@ netclasses:
       - "/MPPT_B/VISNS"
       - "/MPPT_B/VSET"
       - "/MPPT_B/VSET1"
+      - "/SAFETY/CLR_N"
       - "/SAFETY/LED_FLT_A"
       - "/SAFETY/LED_FLT_K"
       - "/SAFETY/LED_OK_A"
@@ -495,11 +603,15 @@ netclasses:
       - "/SAFETY/VTH_OT1"
       - "/SAFETY/WDO_N"
       - AUX12_DIV
+      - AUX_PG
+      - AUX_PGS
+      - BURST_N
       - CAN_EN
       - CAN_H
       - CAN_L
       - CAN_RX
       - CAN_TX
+      - DCX_CS
       - DCX_HI
       - DCX_LI
       - EE_CS_N
@@ -508,17 +620,22 @@ netclasses:
       - EE_SO
       - FAN_PWM
       - HV_V2_ADC
+      - HV_V2_LIM
       - HV_V_ADC
       - HV_V_LIM
       - HV_V_OVP
       - IGN_CAR
       - IGN_IN
+      - IMD_ADC
+      - IMD_SW
       - I_HV_ADC
       - I_HV_LIM
       - I_HV_OCP
       - K_IN
       - LATCH_Q
       - LATCH_QN
+      - LATCH_SNS
+      - LATCH_VCC
       - LIM
       - LIM_ADC
       - MCLR_N
@@ -531,25 +648,39 @@ netclasses:
       - NTC_P3
       - NTC_P4
       - NTC_T1
+      - ONT_H
+      - ONT_L
       - OVP_TRIP_N
       - PERMIT
       - PERMIT_SNS
       - PGC
       - PGD
       - PVA_I_ADC
+      - PVA_OVS
+      - PVA_OV_N
       - PVA_VDIV
       - PVB_I_ADC
+      - PVB_OVS
+      - PVB_OV_N
       - PVB_VDIV
       - READY_N
       - RELAY_REQ
       - RESET_N
-      - UART_TX
       - VINT_DIV
       - VREF2V5
       - VTH2V0
+      - VTH_BURST
+      - VTH_DOC
       - VTH_OC
+      - VTH_ONT
+      - VTH_OPEN
       - VTH_OTP
       - WDI
+  - name: LV_10A
+    domain: LV
+    clearance: 0.4
+    track_width: 3.6
+    nets: ["/DCX/HB_LR"]
   - name: LV_1A
     domain: LV
     clearance: 0.4
@@ -571,6 +702,7 @@ netclasses:
       - "/ARRAY/PVB_C1"
       - "/ARRAY/PVB_C2"
       - "/ARRAY/PVB_C3"
+      - "/DCX/DCX_RS"
       - "/DCX/HB_SW"
       - "/DCX/MID"
       - "/MPPT_A/SRC"
@@ -645,6 +777,54 @@ components:
     category: capacitor_ceramic
     domains: [LV]
     mpn: GCM188R72A104KA64D
+  - ref: D107
+    block: MPPT_A
+    board: main
+    value: TPSMB43A
+    footprint: Diode_SMD:D_SMB
+    category: tvs
+    domains: [LV]
+    mpn: TPSMB43A
+  - ref: R133
+    block: MPPT_A
+    board: main
+    value: "160k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1603V
+  - ref: R134
+    block: MPPT_A
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C130
+    block: MPPT_A
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
+  - ref: D108
+    block: MPPT_A
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: D106
+    block: MPPT_A
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
   - ref: R101
     block: MPPT_A
     board: main
@@ -741,11 +921,11 @@ components:
   - ref: R105
     block: MPPT_A
     board: main
-    value: "20k"
+    value: "75k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF2002V
+    mpn: ERJ-3EKF7502V
   - ref: R106
     block: MPPT_A
     board: main
@@ -797,11 +977,11 @@ components:
   - ref: R108
     block: MPPT_A
     board: main
-    value: "137k"
+    value: "162k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF1373V
+    mpn: ERJ-3EKF1623V
   - ref: C129
     block: MPPT_A
     board: main
@@ -911,11 +1091,11 @@ components:
   - ref: R114
     block: MPPT_A
     board: main
-    value: "442k"
+    value: "432k"
     footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW1206442KBEEA
+    mpn: TNPW1206432KBEEA
   - ref: R115
     block: MPPT_A
     board: main
@@ -1293,6 +1473,54 @@ components:
     category: capacitor_ceramic
     domains: [LV]
     mpn: GCM188R72A104KA64D
+  - ref: D207
+    block: MPPT_B
+    board: main
+    value: TPSMB43A
+    footprint: Diode_SMD:D_SMB
+    category: tvs
+    domains: [LV]
+    mpn: TPSMB43A
+  - ref: R233
+    block: MPPT_B
+    board: main
+    value: "160k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1603V
+  - ref: R234
+    block: MPPT_B
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C230
+    block: MPPT_B
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
+  - ref: D208
+    block: MPPT_B
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: D206
+    block: MPPT_B
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
   - ref: R201
     block: MPPT_B
     board: main
@@ -1389,11 +1617,11 @@ components:
   - ref: R205
     block: MPPT_B
     board: main
-    value: "20k"
+    value: "75k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF2002V
+    mpn: ERJ-3EKF7502V
   - ref: R206
     block: MPPT_B
     board: main
@@ -1445,11 +1673,11 @@ components:
   - ref: R208
     block: MPPT_B
     board: main
-    value: "137k"
+    value: "162k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF1373V
+    mpn: ERJ-3EKF1623V
   - ref: C229
     block: MPPT_B
     board: main
@@ -1559,11 +1787,11 @@ components:
   - ref: R214
     block: MPPT_B
     board: main
-    value: "442k"
+    value: "432k"
     footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW1206442KBEEA
+    mpn: TNPW1206432KBEEA
   - ref: R215
     block: MPPT_B
     board: main
@@ -1991,6 +2219,88 @@ components:
     domains: [LV]
     mpn: IAUC100N10S5L040
     p_diss_w: 0.6
+  - ref: R311
+    block: DCX
+    board: main
+    value: "5m"
+    footprint: Resistor_SMD:R_Shunt_Vishay_WSK2512_6332Metric_T1.19mm
+    category: resistor
+    domains: [LV]
+    mpn: WSK2512R0050FEA
+    p_diss_w: 0.2
+  - ref: R312
+    block: DCX
+    board: main
+    value: "1k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1001V
+    p_diss_w: 0.001
+  - ref: C361
+    block: DCX
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H102JA16D
+  - ref: R313
+    block: DCX
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C362
+    block: DCX
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H102JA16D
+  - ref: D305
+    block: DCX
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: R314
+    block: DCX
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C363
+    block: DCX
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H102JA16D
+  - ref: D306
+    block: DCX
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: L301
+    block: DCX
+    board: main
+    value: "0.56u"
+    footprint: Inductor_SMD:L_Coilcraft_XAL7070-XXX
+    category: inductor
+    domains: [LV]
+    mpn: XAL7070-561MEB
   - ref: U301
     block: DCX
     board: main
@@ -2468,11 +2778,11 @@ components:
   - ref: J301
     block: DCX
     board: main
-    value: "1766356"
-    footprint: "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_3-G-7,62_1x03_P7.62mm_Horizontal"
+    value: "236-303"
+    footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_236-303_1x03_P10.00mm_45Degree
     category: connector
     domains: [HV]
-    mpn: "1766356"
+    mpn: "236-303"
   - ref: R307
     block: DCX
     board: main
@@ -2968,11 +3278,11 @@ components:
   - ref: R429
     block: HVSENSE
     board: main
-    value: "12.1k"
+    value: "12.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW060312K1BEEA
+    mpn: TNPW060312K7BEEA
   - ref: R430
     block: HVSENSE
     board: main
@@ -2984,11 +3294,11 @@ components:
   - ref: R431
     block: HVSENSE
     board: main
-    value: "12.1k"
+    value: "12.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW060312K1BEEA
+    mpn: TNPW060312K7BEEA
   - ref: U442
     block: HVSENSE
     board: main
@@ -3117,6 +3427,22 @@ components:
     category: capacitor_ceramic
     domains: [LV]
     mpn: GCM188R71H103KA37D
+  - ref: R434
+    block: HVSENSE
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C433
+    block: HVSENSE
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
   - ref: R448
     block: HVSENSE
     board: main
@@ -3165,6 +3491,404 @@ components:
     category: capacitor_ceramic
     domains: [LV]
     mpn: GCM1885C1H102JA16D
+  - ref: R461
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R462
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R463
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R464
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R465
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R466
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R467
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R468
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R469
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R470
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [CHASSIS, HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R471
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [CHASSIS]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: Q461
+    block: IMD
+    board: main
+    value: BSS123Q
+    footprint: Package_TO_SOT_SMD:SOT-23
+    category: mosfet
+    domains: [CHASSIS, LV]
+    mpn: BSS123Q-7
+  - ref: R494
+    block: IMD
+    board: main
+    value: "1k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1001V
+  - ref: R495
+    block: IMD
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
+  - ref: R481
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [CHASSIS, HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R482
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R483
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R484
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R485
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R486
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R487
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R488
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R489
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R490
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R491
+    block: IMD
+    board: main
+    value: "10M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [HV]
+    mpn: CRCW120610M0FKEA
+    p_diss_w: 0.0002
+  - ref: R492
+    block: IMD
+    board: main
+    value: "220k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [HV]
+    mpn: TNPW0603220KBEEA
+  - ref: C470
+    block: IMD
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM1885C1H102JA16D
+  - ref: U461
+    block: IMD
+    board: main
+    value: AMC3330QDWERQ1
+    footprint: Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm
+    category: ic
+    domains: [HV, LV]
+    mpn: AMC3330QDWERQ1
+  - ref: C461
+    block: IMD
+    board: main
+    value: "1u"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM188R71E105KA64D
+  - ref: C462
+    block: IMD
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM1885C1H102JA16D
+  - ref: C463
+    block: IMD
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM188R72A104KA64D
+  - ref: C464
+    block: IMD
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM188R72A104KA64D
+  - ref: C465
+    block: IMD
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [HV]
+    mpn: GCM1885C1H102JA16D
+  - ref: C466
+    block: IMD
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: C467
+    block: IMD
+    board: main
+    value: "1n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H102JA16D
+  - ref: C468
+    block: IMD
+    board: main
+    value: "1u"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71E105KA64D
+  - ref: U462
+    block: IMD
+    board: main
+    value: TLV9001-Q1
+    footprint: Package_TO_SOT_SMD:SOT-23-5
+    category: ic
+    domains: [LV]
+    mpn: TLV9001QDBVRQ1
+  - ref: R496
+    block: IMD
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: R497
+    block: IMD
+    board: main
+    value: "9.31k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06039K31BEEA
+  - ref: R459
+    block: IMD
+    board: main
+    value: "1k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06031K00BEEA
+  - ref: R460
+    block: IMD
+    board: main
+    value: "2k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06032K00BEEA
+  - ref: C471
+    block: IMD
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R498
+    block: IMD
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: R499
+    block: IMD
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C469
+    block: IMD
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R493
+    block: IMD
+    board: main
+    value: "1k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1001V
+  - ref: C460
+    block: IMD
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
   - ref: R801
     block: LIMIT
     board: main
@@ -3193,11 +3917,19 @@ components:
   - ref: R802
     block: LIMIT
     board: main
-    value: "1.5k"
+    value: "3.24k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW06031K50BEEA
+    mpn: TNPW06033K24BEEA
+  - ref: R818
+    block: LIMIT
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW0603100KBEEA
   - ref: R803
     block: LIMIT
     board: main
@@ -3318,6 +4050,102 @@ components:
     category: diode
     domains: [LV]
     mpn: "BAT46WJ,115"
+  - ref: R816
+    block: LIMIT
+    board: main
+    value: "2.67k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06032K67BEEA
+  - ref: R817
+    block: LIMIT
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C809
+    block: LIMIT
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: U803
+    block: LIMIT
+    board: main
+    value: TLV9062-Q1
+    footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
+    category: ic
+    domains: [LV]
+    mpn: TLV9062QDRQ1
+  - ref: R814
+    block: LIMIT
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
+  - ref: C808
+    block: LIMIT
+    board: main
+    value: "1u"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71E105KA64D
+  - ref: R815
+    block: LIMIT
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C810
+    block: LIMIT
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: D803
+    block: LIMIT
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: R812
+    block: LIMIT
+    board: main
+    value: "866"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW0603866RBEEA
+  - ref: R813
+    block: LIMIT
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C811
+    block: LIMIT
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
   - ref: R810
     block: LIMIT
     board: main
@@ -3345,12 +4173,12 @@ components:
   - ref: R501
     block: SAFETY
     board: main
-    value: "6.8k"
+    value: "2.2k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF6801V
-    p_diss_w: 0.015
+    mpn: ERJ-3EKF2201V
+    p_diss_w: 0.045
   - ref: U501
     block: SAFETY
     board: main
@@ -3375,6 +4203,14 @@ components:
     category: resistor
     domains: [LV]
     mpn: TNPW06032K49BEEA
+  - ref: R526
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW0603100KBEEA
   - ref: R503
     block: SAFETY
     board: main
@@ -3410,11 +4246,11 @@ components:
   - ref: R504
     block: SAFETY
     board: main
-    value: "180k"
+    value: "174k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: TNPW0603180KBEEA
+    mpn: TNPW0603174KBEEA
   - ref: R505
     block: SAFETY
     board: main
@@ -3519,14 +4355,70 @@ components:
     category: resistor
     domains: [LV]
     mpn: ERJ-3EKF3303V
-  - ref: R514
+  - ref: D512
     block: SAFETY
     board: main
-    value: "10k"
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: C521
+    block: SAFETY
+    board: main
+    value: "0.1F"
+    footprint: Capacitor_THT:CP_Radial_D13.0mm_P5.00mm
+    category: capacitor_electrolytic
+    domains: [LV]
+    mpn: KW-5R5C104-R
+  - ref: R530
+    block: SAFETY
+    board: main
+    value: "220k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF1002V
+    mpn: ERJ-3EKF2203V
+  - ref: C522
+    block: SAFETY
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R531
+    block: SAFETY
+    board: main
+    value: "1M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1004V
+  - ref: C523
+    block: SAFETY
+    board: main
+    value: "1u"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71E105KA64D
+  - ref: D513
+    block: SAFETY
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: R514
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
   - ref: C506
     block: SAFETY
     board: main
@@ -3543,14 +4435,14 @@ components:
     category: ic
     domains: [LV]
     mpn: SN74LVC2G74QDCURQ1
-  - ref: C507
+  - ref: R532
     block: SAFETY
     board: main
-    value: "100n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
     domains: [LV]
-    mpn: GCM188R72A104KA64D
+    mpn: ERJ-3EKF1003V
   - ref: D501
     block: SAFETY
     board: main
@@ -3610,11 +4502,11 @@ components:
   - ref: R518
     block: SAFETY
     board: main
-    value: "2.2k"
+    value: "4.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF2201V
+    mpn: ERJ-3EKF4701V
   - ref: R519
     block: SAFETY
     board: main
@@ -3640,6 +4532,22 @@ components:
     domains: [LV]
     mpn: ERJ-3EKF1003V
   - ref: D503
+    block: SAFETY
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: D510
+    block: SAFETY
+    board: main
+    value: BAT46WJ
+    footprint: Diode_SMD:D_SOD-323F
+    category: diode
+    domains: [LV]
+    mpn: "BAT46WJ,115"
+  - ref: D511
     block: SAFETY
     board: main
     value: BAT46WJ
@@ -3737,6 +4645,174 @@ components:
     category: capacitor_ceramic
     domains: [LV]
     mpn: GCM188R71H103KA37D
+  - ref: R534
+    block: SAFETY
+    board: main
+    value: "5.76k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06035K76BEEA
+  - ref: R535
+    block: SAFETY
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C514
+    block: SAFETY
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
+  - ref: U507
+    block: SAFETY
+    board: main
+    value: LM2901B-Q1
+    footprint: Package_SO:SOIC-14_3.9x8.7mm_P1.27mm
+    category: ic
+    domains: [LV]
+    mpn: LM2901BQDRQ1
+  - ref: C515
+    block: SAFETY
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R536
+    block: SAFETY
+    board: main
+    value: "274k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW0603274KBEEA
+  - ref: R537
+    block: SAFETY
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C516
+    block: SAFETY
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R544
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
+  - ref: R545
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
+  - ref: R546
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
+  - ref: U508
+    block: SAFETY
+    board: main
+    value: LM2901B-Q1
+    footprint: Package_SO:SOIC-14_3.9x8.7mm_P1.27mm
+    category: ic
+    domains: [LV]
+    mpn: LM2901BQDRQ1
+  - ref: C517
+    block: SAFETY
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R538
+    block: SAFETY
+    board: main
+    value: "1.37k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW06031K37BEEA
+  - ref: R539
+    block: SAFETY
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: TNPW060310K0BEEA
+  - ref: C518
+    block: SAFETY
+    board: main
+    value: "10n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R71H103KA37D
+  - ref: R540
+    block: SAFETY
+    board: main
+    value: "80.6k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF8062V
+  - ref: R541
+    block: SAFETY
+    board: main
+    value: "10k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1002V
+  - ref: C519
+    block: SAFETY
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM188R72A104KA64D
+  - ref: R542
+    block: SAFETY
+    board: main
+    value: "182k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1823V
+  - ref: R543
+    block: SAFETY
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [LV]
+    mpn: ERJ-3EKF1003V
   - ref: D601
     block: AUX
     board: main
@@ -4009,6 +5085,30 @@ components:
     category: ic
     domains: [LV]
     mpn: DSPIC33CK256MP505-E/PT
+  - ref: Y701
+    block: MCU
+    board: main
+    value: "20MHz"
+    footprint: Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+    category: crystal
+    domains: [LV]
+    mpn: "NX3225GA 20.000000MHz STD-CRA-1"
+  - ref: C719
+    block: MCU
+    board: main
+    value: "10p"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H100JA16D
+  - ref: C720
+    block: MCU
+    board: main
+    value: "10p"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [LV]
+    mpn: GCM1885C1H100JA16D
   - ref: R701
     block: MCU
     board: main
@@ -4149,11 +5249,19 @@ components:
   - ref: J706
     block: MCU
     board: main
-    value: "1757284"
-    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_6-G-5,08_1x06_P5.08mm_Horizontal"
+    value: "1757255"
+    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5.08mm_Horizontal"
     category: connector
     domains: [LV]
-    mpn: "1757284"
+    mpn: "1757255"
+  - ref: J708
+    block: MCU
+    board: main
+    value: "1757255"
+    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5.08mm_Horizontal"
+    category: connector
+    domains: [LV]
+    mpn: "1757255"
   - ref: J702
     block: MCU
     board: main
@@ -4314,8 +5422,16 @@ components:
     value: "1757255"
     footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5.08mm_Horizontal"
     category: connector
-    domains: [K1C, K2C, LV]
+    domains: [K1C, K2C, KSUP]
     mpn: "1757255"
+  - ref: J705
+    block: MCU
+    board: main
+    value: "1757242"
+    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_2-G-5,08_1x02_P5.08mm_Horizontal"
+    category: connector
+    domains: [KSUP, LV]
+    mpn: "1757242"
   - ref: J704
     block: MCU
     board: main
@@ -4372,28 +5488,35 @@ components:
     value: MountingHole
     footprint: MountingHole:MountingHole_3.2mm_M3_Pad_Via
     category: mechanical
-    domains: [LV]
+    domains: [CHASSIS]
   - ref: H702
     block: MCU
     board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_3.2mm_M3_Pad_Via
     category: mechanical
-    domains: [LV]
+    domains: [CHASSIS]
   - ref: H703
     block: MCU
     board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_3.2mm_M3_Pad_Via
     category: mechanical
-    domains: [LV]
+    domains: [CHASSIS]
   - ref: H704
     block: MCU
     board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_3.2mm_M3_Pad_Via
     category: mechanical
-    domains: [LV]
+    domains: [CHASSIS]
+  - ref: NT701
+    block: MCU
+    board: main
+    value: NetTie
+    footprint: NetTie:NetTie-2_SMD_Pad0.5mm
+    category: other
+    domains: [CHASSIS, LV]
   - ref: H705
     block: MCU
     board: main
@@ -4411,27 +5534,51 @@ components:
   - ref: J901
     block: BATEND
     board: batt_end
-    value: "1766356"
-    footprint: "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_3-G-7,62_1x03_P7.62mm_Horizontal"
+    value: "236-303"
+    footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_236-303_1x03_P10.00mm_45Degree
     category: connector
     domains: [HV]
-    mpn: "1766356"
+    mpn: "236-303"
   - ref: J902
     block: BATEND
     board: batt_end
-    value: "1766343"
-    footprint: "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_2-G-7,62_1x02_P7.62mm_Horizontal"
+    value: "236-302"
+    footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_236-302_1x02_P10.00mm_45Degree
     category: connector
     domains: [PACK]
-    mpn: "1766343"
+    mpn: "236-302"
   - ref: J903
     block: BATEND
     board: batt_end
     value: "1757255"
     footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5.08mm_Horizontal"
     category: connector
-    domains: [K1C, K2C, LV]
+    domains: [K1C, K2C, KSUP]
     mpn: "1757255"
+  - ref: J904
+    block: BATEND
+    board: batt_end
+    value: "1757242"
+    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_2-G-5,08_1x02_P5.08mm_Horizontal"
+    category: connector
+    domains: [KSUP]
+    mpn: "1757242"
+  - ref: D902
+    block: BATEND
+    board: batt_end
+    value: VS-6ESH06HM3/86A
+    footprint: Package_TO_SOT_SMD:TO-277A
+    category: diode
+    domains: [K1C, KSUP]
+    mpn: VS-6ESH06HM3/86A
+  - ref: D903
+    block: BATEND
+    board: batt_end
+    value: VS-6ESH06HM3/86A
+    footprint: Package_TO_SOT_SMD:TO-277A
+    category: diode
+    domains: [K2C, KSUP]
+    mpn: VS-6ESH06HM3/86A
   - ref: F901
     block: BATEND
     board: batt_end
@@ -4454,7 +5601,7 @@ components:
     value: "G9KB-1A DC12"
     footprint: custom:Omron_G9KB-1A
     category: relay
-    domains: [HV, K1C, LV, PACK]
+    domains: [HV, K1C, KSUP, PACK]
     mpn: "G9KB-1A DC12"
   - ref: K902
     block: BATEND
@@ -4462,7 +5609,7 @@ components:
     value: "G9KB-1A DC12"
     footprint: custom:Omron_G9KB-1A
     category: relay
-    domains: [HV, K2C, LV, PACK]
+    domains: [HV, K2C, KSUP, PACK]
     mpn: "G9KB-1A DC12"
   - ref: D901
     block: BATEND
@@ -4683,14 +5830,49 @@ components:
     value: "3-core 0.75 mm2 FLRY-B, 2 m"
     footprint: null
     category: connector
-    domains: [K1C, K2C, LV]
+    domains: [K1C, K2C, KSUP]
   - ref: W5
     block: HARNESS
     board: "off"
-    value: "screened 5-core 0.35 mm2 (4 NTC + ground)"
+    value: "screened 3-core 0.35 mm2 (2 NTC + ground)"
     footprint: null
     category: connector
     domains: [LV]
+  - ref: W11
+    block: HARNESS
+    board: "off"
+    value: "screened 3-core 0.35 mm2 (2 NTC + ground)"
+    footprint: null
+    category: connector
+    domains: [LV]
+  - ref: W9
+    block: HARNESS
+    board: "off"
+    value: "2-core 0.5 mm2 FLRY-B, 0.3 m"
+    footprint: null
+    category: connector
+    domains: [KSUP, LV]
+  - ref: W10
+    block: HARNESS
+    board: "off"
+    value: "2-core 0.5 mm2 FLRY-B, 0.3 m"
+    footprint: null
+    category: connector
+    domains: [KSUP]
+  - ref: S701
+    block: HARNESS
+    board: "off"
+    value: "lid interlock"
+    footprint: null
+    category: switch
+    domains: [KSUP, LV]
+  - ref: S901
+    block: HARNESS
+    board: "off"
+    value: "lid interlock"
+    footprint: null
+    category: switch
+    domains: [KSUP]
   - ref: W6
     block: HARNESS
     board: "off"
@@ -4786,6 +5968,14 @@ relations:
     source: design
   - kind: region
     block: block:HVSENSE
+    where: east
+    source: design
+  - kind: group
+    block: block:IMD
+    strength: close
+    source: design
+  - kind: region
+    block: block:IMD
     where: east
     source: design
   - kind: group
@@ -5027,8 +6217,8 @@ relations:
   - kind: thermal
     obj: T301
     watts: 1.5
-    sink: "box wall via gap pad"
-    note: "ETD39 core and winding loss"
+    sink: "lid via an insulating gap pad on the core top"
+    note: "the core is on the LV side of the TIW (reinforced) insulation; never a pad under the board"
     source: design
   - kind: thermal
     obj: Q301
@@ -5044,21 +6234,51 @@ relations:
     obj: D301
     watts: 0.3
     sink: copper
+    note: "top copper only: cathode tabs are HV; nothing under them (review B1)"
     source: design
   - kind: thermal
     obj: D302
     watts: 0.3
     sink: copper
+    note: "top copper only: cathode tabs are HV; nothing under them (review B1)"
     source: design
   - kind: thermal
     obj: D303
     watts: 0.3
     sink: copper
+    note: "top copper only: cathode tabs are HV; nothing under them (review B1)"
     source: design
   - kind: thermal
     obj: D304
     watts: 0.3
     sink: copper
+    note: "top copper only: cathode tabs are HV; nothing under them (review B1)"
+    source: design
+  - kind: hot_loop
+    members: [C303.1, Q301.5, Q301.1, Q302.5, Q302.1, R311.1, R311.4, C303.2]
+    note: "half-bridge loop including the primary shunt"
+    source: design
+  - kind: near
+    a: R312
+    b: U507
+    strength: close
+    note: "OC sense trace Kelvin from R311 S+"
+    source: design
+  - kind: near
+    a: L301
+    b: T301
+    strength: tight
+    note: "Lr in series with the primary, short loop"
+    source: design
+  - kind: near
+    a: R313
+    b: C362
+    strength: tight
+    source: design
+  - kind: near
+    a: R314
+    b: C363
+    strength: tight
     source: design
   - kind: near
     a: RT302
@@ -5168,6 +6388,53 @@ relations:
     strength: close
     note: "the two voltage paths physically apart (no common-cause damage)"
     source: design
+  - kind: x-straddle
+    obj: U461
+    barrier: LV/HV
+    note: "pins 1-8 HV (HV_N), 9-16 LV; slot past both ends"
+    source: design
+  - kind: keepout
+    obj: U461
+    what: "copper and vias under the package body"
+    layers: all
+    source: design
+  - kind: near
+    a: U462
+    b: U461
+    strength: close
+    source: design
+  - kind: x-protective_impedance
+    members:
+      - R461
+      - R462
+      - R463
+      - R464
+      - R465
+      - R466
+      - R467
+      - R468
+      - R469
+      - R470
+      - R471
+      - R481
+      - R482
+      - R483
+      - R484
+      - R485
+      - R486
+      - R487
+      - R488
+      - R489
+      - R490
+      - R491
+    note: "IMD strings: lay each as a straight chain across the barrier band with >= 4 resistors inside the 10 mm band and nothing else there; >= 2 mm between pads of adjacent resistors; P and N chains >= 10 mm apart"
+    source: design
+  - kind: near
+    a: Q461
+    b: R471
+    strength: tight
+    note: "range switch across the last P-pole resistor, CHASSIS side of the band"
+    source: design
   - kind: near
     a: U503
     b: U502
@@ -5194,6 +6461,11 @@ relations:
     note: "LV harness gland"
     source: design
   - kind: edge
+    obj: J705
+    side: south
+    note: "LV harness gland"
+    source: design
+  - kind: edge
     obj: J706
     side: south
     note: "LV harness gland"
@@ -5202,6 +6474,17 @@ relations:
     obj: J707
     side: south
     note: "LV harness gland"
+    source: design
+  - kind: edge
+    obj: J708
+    side: south
+    note: "LV harness gland"
+    source: design
+  - kind: near
+    a: Y701
+    b: U701
+    strength: tight
+    note: "crystal within 5 mm of OSCI/OSCO, ground guard"
     source: design
   - kind: x-cable_entry
     members: [J101, J201]
@@ -5214,7 +6497,7 @@ relations:
     edge: east
     source: design
   - kind: x-cable_entry
-    members: [J702, J703, J706, J707]
+    members: [J702, J703, J705, J706, J707, J708]
     gland: "M20 multi-hole, LV"
     edge: south
     source: design
@@ -5222,6 +6505,107 @@ relations:
     members: [J901, J902]
     gland: "M20 EMC (J901), M16 (J902)"
     edge: north
+    source: design
+  - kind: x-hv_cover
+    members: [J301, J901, J902]
+    note: "CAGE CLAMP blocks under a tool-opened polycarbonate inner cover (IPXXB); lid switches S701/S901 behind the outer lids (review M5)"
+    source: design
+  - kind: fixed
+    obj: H701
+    x_mm: 5
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: fixed
+    obj: H702
+    x_mm: 5
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: fixed
+    obj: H703
+    x_mm: 120
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: fixed
+    obj: H704
+    x_mm: 120
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: fixed
+    obj: H705
+    x_mm: 195
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: fixed
+    obj: H706
+    x_mm: 195
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+    source: design
+  - kind: keepout_around
+    obj: H705
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "10 mm reinforced creepage + 2.75 mm screw-head radius; PA66 standoff and nylon screw anyway (review B1)"
+    source: design
+  - kind: keepout_around
+    obj: H706
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "10 mm reinforced creepage + 2.75 mm screw-head radius; PA66 standoff and nylon screw anyway (review B1)"
+    source: design
+  - kind: keepout_around
+    obj: H901
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H902
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H903
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H904
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: x-thermal_pedestal
+    region: "LV power area only: Q103-Q106, Q203-Q206, Q301, Q302, L101, L201"
+    note: "box-floor pedestal + insulating gap pad under the LV power area; no pad or pedestal under the HV section (x > 145 mm) or T301; >= 10 mm air from HV leads/vias to the box floor; polypropylene liner (Formex GK-17 class, not credited) in the pocket"
+    source: design
+  - kind: x-bottom_side
+    what: "no HV/PACK copper on B.Cu within 10 mm of the pedestal outline; THT leads in the HV section clipped to <= 1.5 mm"
     source: design
   - kind: edge
     obj: J901
@@ -5260,6 +6644,21 @@ relations:
     barrier: "LV/HV,PACK"
     note: "coil pins toward J903, contacts toward J902/J901; slot between coil and contact pins"
     source: design
+  - kind: near
+    a: D902
+    b: K901
+    strength: close
+    note: "coil flyback on the LV side, next to J903/J904"
+    source: design
+  - kind: near
+    a: D903
+    b: K902
+    strength: close
+    source: design
+  - kind: edge
+    obj: J904
+    side: south
+    source: design
   - kind: thermal
     obj: D901
     watts: 0.3
@@ -5277,13 +6676,23 @@ relations:
     source: design
   - kind: separate
     a: domain:HV
+    b: domain:CHASSIS
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:PACK
+    b: domain:CHASSIS
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:HV
     b: domain:PACK
     slot: false
     source: design
   - kind: side
     obj: all
     side: top
-    note: "all parts on the top side; bottom flat on the thermal pad"
+    note: "all parts on the top side; only the LV power area sits on the thermal pedestal"
     source: design
   - kind: group
     block: block:ARRAY
@@ -5342,8 +6751,20 @@ relations:
     source: auto
     note: "decoupling AUX12"
   - kind: near
-    a: C806
-    b: U802.8
+    a: C521
+    b: U503.8
+    strength: tight
+    source: auto
+    note: "decoupling LATCH_VCC"
+  - kind: near
+    a: C522
+    b: U503.8
+    strength: tight
+    source: auto
+    note: "decoupling LATCH_VCC"
+  - kind: near
+    a: C508
+    b: U504.1
     strength: tight
     source: auto
     note: "decoupling +3V3"
@@ -5407,6 +6828,12 @@ constraints:
       - U101
       - Q101
       - C102
+      - D107
+      - R133
+      - R134
+      - C130
+      - D108
+      - D106
       - R101
       - U102
       - R131
@@ -5498,6 +6925,12 @@ constraints:
       - U201
       - Q201
       - C202
+      - D207
+      - R233
+      - R234
+      - C230
+      - D208
+      - D206
       - R201
       - U202
       - R231
@@ -5595,6 +7028,16 @@ constraints:
       - C310
       - Q301
       - Q302
+      - R311
+      - R312
+      - C361
+      - R313
+      - C362
+      - D305
+      - R314
+      - C363
+      - D306
+      - L301
       - U301
       - C311
       - C312
@@ -5745,6 +7188,8 @@ constraints:
       - C431
       - R433
       - C432
+      - R434
+      - C433
       - R448
       - C451
       - R449
@@ -5761,12 +7206,72 @@ constraints:
   - id: rel.9
     from: group
     kind: cluster
+    component_class: IMD
+    members:
+      - R461
+      - R462
+      - R463
+      - R464
+      - R465
+      - R466
+      - R467
+      - R468
+      - R469
+      - R470
+      - R471
+      - Q461
+      - R494
+      - R495
+      - R481
+      - R482
+      - R483
+      - R484
+      - R485
+      - R486
+      - R487
+      - R488
+      - R489
+      - R490
+      - R491
+      - R492
+      - C470
+      - U461
+      - C461
+      - C462
+      - C463
+      - C464
+      - C465
+      - C466
+      - C467
+      - C468
+      - U462
+      - R496
+      - R497
+      - R459
+      - R460
+      - C471
+      - R498
+      - R499
+      - C469
+      - R493
+      - C460
+    max_span: 32.0
+    hard: false
+  - id: rel.10
+    from: region
+    kind: region
+    block: block:IMD
+    where: east
+  - id: rel.11
+    from: group
+    kind: cluster
     component_class: LIMIT
     members:
       - R801
       - U801
       - C801
       - R802
+      - R818
       - R803
       - C802
       - R804
@@ -5782,17 +7287,29 @@ constraints:
       - C806
       - D801
       - D802
+      - R816
+      - R817
+      - C809
+      - U803
+      - R814
+      - C808
+      - R815
+      - C810
+      - D803
+      - R812
+      - R813
+      - C811
       - R810
       - R811
       - C807
     max_span: 32.0
     hard: false
-  - id: rel.10
+  - id: rel.12
     from: region
     kind: region
     block: block:LIMIT
     where: south
-  - id: rel.11
+  - id: rel.13
     from: group
     kind: cluster
     component_class: SAFETY
@@ -5801,6 +7318,7 @@ constraints:
       - U501
       - C501
       - R502
+      - R526
       - R503
       - C502
       - U502
@@ -5819,10 +7337,17 @@ constraints:
       - R513
       - C511
       - R523
+      - D512
+      - C521
+      - R530
+      - C522
+      - R531
+      - C523
+      - D513
       - R514
       - C506
       - U503
-      - C507
+      - R532
       - D501
       - U504
       - C508
@@ -5835,6 +7360,8 @@ constraints:
       - C509
       - R520
       - D503
+      - D510
+      - D511
       - U505
       - C510
       - D504
@@ -5846,14 +7373,35 @@ constraints:
       - R524
       - R525
       - C513
+      - R534
+      - R535
+      - C514
+      - U507
+      - C515
+      - R536
+      - R537
+      - C516
+      - R544
+      - R545
+      - R546
+      - U508
+      - C517
+      - R538
+      - R539
+      - C518
+      - R540
+      - R541
+      - C519
+      - R542
+      - R543
     max_span: 32.0
     hard: false
-  - id: rel.12
+  - id: rel.14
     from: region
     kind: region
     block: block:SAFETY
     where: south
-  - id: rel.13
+  - id: rel.15
     from: group
     kind: cluster
     component_class: AUX
@@ -5893,17 +7441,20 @@ constraints:
       - C614
     max_span: 32.0
     hard: false
-  - id: rel.14
+  - id: rel.16
     from: region
     kind: region
     block: block:AUX
     where: north
-  - id: rel.15
+  - id: rel.17
     from: group
     kind: cluster
     component_class: MCU
     members:
       - U701
+      - Y701
+      - C719
+      - C720
       - R701
       - C701
       - C702
@@ -5922,6 +7473,7 @@ constraints:
       - R716
       - C716
       - J706
+      - J708
       - J702
       - D701
       - R704
@@ -5942,6 +7494,7 @@ constraints:
       - C718
       - R721
       - J703
+      - J705
       - J704
       - TP701
       - TP702
@@ -5953,16 +7506,17 @@ constraints:
       - H702
       - H703
       - H704
+      - NT701
       - H705
       - H706
     max_span: 32.0
     hard: false
-  - id: rel.16
+  - id: rel.18
     from: region
     kind: region
     block: block:MCU
     where: south
-  - id: rel.17
+  - id: rel.19
     from: group
     kind: cluster
     component_class: BATEND
@@ -5970,6 +7524,9 @@ constraints:
       - J901
       - J902
       - J903
+      - J904
+      - D902
+      - D903
       - F901
       - F902
       - K901
@@ -5984,7 +7541,7 @@ constraints:
       - H904
     max_span: 32.0
     hard: false
-  - id: rel.18
+  - id: rel.20
     from: symmetric
     kind: symmetric
     pairs:
@@ -5993,50 +7550,50 @@ constraints:
       - [Q103, Q203]
       - [Q105, Q205]
     axis: h
-  - id: rel.19
+  - id: rel.21
     from: edge
     kind: edge_placement
     ref: J101
     edge: west
-  - id: rel.20
+  - id: rel.22
     from: hot_loop
     kind: loop_area
     path: [C106.1, Q103.5, Q103.1, Q104.5, Q104.1, R116.1, R116.4, C106.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.21
+  - id: rel.23
     from: hot_loop
     kind: loop_area
     path: [C120.1, Q105.5, Q105.1, Q106.5, Q106.1, R116.1, R116.4, C120.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.22
+  - id: rel.24
     from: thermal
     kind: thermal
     obj: Q103
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.23
+  - id: rel.25
     from: thermal
     kind: thermal
     obj: Q104
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.24
+  - id: rel.26
     from: thermal
     kind: thermal
     obj: Q105
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.25
+  - id: rel.27
     from: thermal
     kind: thermal
     obj: Q106
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.26
+  - id: rel.28
     from: near
     kind: proximity
     a: R123
@@ -6044,7 +7601,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.27
+  - id: rel.29
     from: near
     kind: proximity
     a: R122
@@ -6052,7 +7609,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.28
+  - id: rel.30
     from: near
     kind: proximity
     a: R119
@@ -6060,7 +7617,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.29
+  - id: rel.31
     from: near
     kind: proximity
     a: R120
@@ -6068,7 +7625,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.30
+  - id: rel.32
     from: near
     kind: proximity
     a: C119
@@ -6076,7 +7633,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.31
+  - id: rel.33
     from: near
     kind: proximity
     a: C116
@@ -6084,7 +7641,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.32
+  - id: rel.34
     from: near
     kind: proximity
     a: Q101
@@ -6092,68 +7649,68 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.33
+  - id: rel.35
     from: x-kelvin
     kind: x-kelvin
     obj: R101
     pins: [S+, S-]
     to: [U102, U103]
-  - id: rel.34
+  - id: rel.36
     from: x-kelvin
     kind: x-kelvin
     obj: R116
     pins: [S+, S-]
     to: [U103.16, U103.15]
-  - id: rel.35
+  - id: rel.37
     from: keepout
     kind: keepout
     obj: net:MPPT_A/SW1
     what: "analog traces under the switch node"
     layers: all
-  - id: rel.36
+  - id: rel.38
     from: edge
     kind: edge_placement
     ref: J201
     edge: west
-  - id: rel.37
+  - id: rel.39
     from: hot_loop
     kind: loop_area
     path: [C206.1, Q203.5, Q203.1, Q204.5, Q204.1, R216.1, R216.4, C206.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.38
+  - id: rel.40
     from: hot_loop
     kind: loop_area
     path: [C220.1, Q205.5, Q205.1, Q206.5, Q206.1, R216.1, R216.4, C220.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.39
+  - id: rel.41
     from: thermal
     kind: thermal
     obj: Q203
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.40
+  - id: rel.42
     from: thermal
     kind: thermal
     obj: Q204
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.41
+  - id: rel.43
     from: thermal
     kind: thermal
     obj: Q205
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.42
+  - id: rel.44
     from: thermal
     kind: thermal
     obj: Q206
     watts: 1.0
     sink: "box wall via thermal pad"
-  - id: rel.43
+  - id: rel.45
     from: near
     kind: proximity
     a: R223
@@ -6161,7 +7718,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.44
+  - id: rel.46
     from: near
     kind: proximity
     a: R222
@@ -6169,7 +7726,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.45
+  - id: rel.47
     from: near
     kind: proximity
     a: R219
@@ -6177,7 +7734,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.46
+  - id: rel.48
     from: near
     kind: proximity
     a: R220
@@ -6185,7 +7742,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.47
+  - id: rel.49
     from: near
     kind: proximity
     a: C219
@@ -6193,7 +7750,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.48
+  - id: rel.50
     from: near
     kind: proximity
     a: C216
@@ -6201,7 +7758,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.49
+  - id: rel.51
     from: near
     kind: proximity
     a: Q201
@@ -6209,39 +7766,39 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.50
+  - id: rel.52
     from: x-kelvin
     kind: x-kelvin
     obj: R201
     pins: [S+, S-]
     to: [U202, U203]
-  - id: rel.51
+  - id: rel.53
     from: x-kelvin
     kind: x-kelvin
     obj: R216
     pins: [S+, S-]
     to: [U203.16, U203.15]
-  - id: rel.52
+  - id: rel.54
     from: keepout
     kind: keepout
     obj: net:MPPT_B/SW1
     what: "analog traces under the switch node"
     layers: all
-  - id: rel.53
+  - id: rel.55
     from: hot_loop
     kind: loop_area
     path: [C303.1, Q301.5, Q301.1, Q302.5, Q302.1, C303.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.54
+  - id: rel.56
     from: hot_loop
     kind: loop_area
     path: [D301.3, C350.1, C350.2, D303.1]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.55
+  - id: rel.57
     from: near
     kind: proximity
     a: U301
@@ -6249,49 +7806,88 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.56
+  - id: rel.58
     from: thermal
     kind: thermal
     obj: T301
     watts: 1.5
-    sink: "box wall via gap pad"
-  - id: rel.57
+    sink: "lid via an insulating gap pad on the core top"
+  - id: rel.59
     from: thermal
     kind: thermal
     obj: Q301
     watts: 0.6
     sink: "box wall"
-  - id: rel.58
+  - id: rel.60
     from: thermal
     kind: thermal
     obj: Q302
     watts: 0.6
     sink: "box wall"
-  - id: rel.59
+  - id: rel.61
     from: thermal
     kind: thermal
     obj: D301
     watts: 0.3
     sink: copper
-  - id: rel.60
+  - id: rel.62
     from: thermal
     kind: thermal
     obj: D302
     watts: 0.3
     sink: copper
-  - id: rel.61
+  - id: rel.63
     from: thermal
     kind: thermal
     obj: D303
     watts: 0.3
     sink: copper
-  - id: rel.62
+  - id: rel.64
     from: thermal
     kind: thermal
     obj: D304
     watts: 0.3
     sink: copper
-  - id: rel.63
+  - id: rel.65
+    from: hot_loop
+    kind: loop_area
+    path: [C303.1, Q301.5, Q301.1, Q302.5, Q302.1, R311.1, R311.4, C303.2]
+    minimize: true
+    same_layer: true
+    hard: false
+  - id: rel.66
+    from: near
+    kind: proximity
+    a: R312
+    b: U507
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.67
+    from: near
+    kind: proximity
+    a: L301
+    b: T301
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.68
+    from: near
+    kind: proximity
+    a: R313
+    b: C362
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.69
+    from: near
+    kind: proximity
+    a: R314
+    b: C363
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.70
     from: near
     kind: proximity
     a: RT302
@@ -6299,7 +7895,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.64
+  - id: rel.71
     from: near
     kind: proximity
     a: RT301
@@ -6307,89 +7903,89 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.65
+  - id: rel.72
     from: edge
     kind: edge_placement
     ref: J301
     edge: east
-  - id: rel.66
+  - id: rel.73
     from: x-height
     kind: x-height
     obj: T301
     height_mm: 42
-  - id: rel.67
+  - id: rel.74
     from: x-height
     kind: x-height
     members: [C108, C208, C301, C302]
     height_mm: 11
-  - id: rel.68
+  - id: rel.75
     from: x-straddle
     kind: x-straddle
     obj: T301
     barrier: LV/HV
-  - id: rel.69
+  - id: rel.76
     from: x-straddle
     kind: x-straddle
     obj: U401
     barrier: LV/HV
-  - id: rel.70
+  - id: rel.77
     from: keepout
     kind: keepout
     obj: U401
     what: "copper and vias under the package body"
     layers: all
-  - id: rel.71
+  - id: rel.78
     from: x-straddle
     kind: x-straddle
     obj: U421
     barrier: LV/HV
-  - id: rel.72
+  - id: rel.79
     from: keepout
     kind: keepout
     obj: U421
     what: "copper and vias under the package body"
     layers: all
-  - id: rel.73
+  - id: rel.80
     from: x-straddle
     kind: x-straddle
     obj: U441
     barrier: LV/HV
-  - id: rel.74
+  - id: rel.81
     from: keepout
     kind: keepout
     obj: U441
     what: "copper and vias under the package body"
     layers: all
-  - id: rel.75
+  - id: rel.82
     from: keepout
     kind: keepout
     obj: T301
     what: "copper and vias in the barrier band under the former"
     layers: all
-  - id: rel.76
+  - id: rel.83
     from: x-kelvin
     kind: x-kelvin
     obj: R441
     pins: [S+, S-]
     to: [R442, R443]
-  - id: rel.77
+  - id: rel.84
     from: x-diff_pair
     kind: x-diff_pair
     nets: [net:HVSENSE/H1_OUTP, net:HVSENSE/H1_OUTN]
-  - id: rel.78
+  - id: rel.85
     from: x-diff_pair
     kind: x-diff_pair
     nets: [net:HVSENSE/H2_OUTP, net:HVSENSE/H2_OUTN]
-  - id: rel.79
+  - id: rel.86
     from: x-diff_pair
     kind: x-diff_pair
     nets: [net:HVSENSE/H3_OUTP, net:HVSENSE/H3_OUTN]
-  - id: rel.80
+  - id: rel.87
     from: x-diff_pair
     kind: x-diff_pair
     nets: [net:CAN_H, net:CAN_L]
     impedance_ohm: 120
-  - id: rel.81
+  - id: rel.88
     from: near
     kind: proximity
     a: U402
@@ -6397,7 +7993,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.82
+  - id: rel.89
     from: near
     kind: proximity
     a: U422
@@ -6405,7 +8001,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.83
+  - id: rel.90
     from: near
     kind: proximity
     a: U442
@@ -6413,14 +8009,67 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.84
+  - id: rel.91
     from: far
     kind: separation
     a: U401
     b: U421
     min: 16.0
     hard: false
-  - id: rel.85
+  - id: rel.92
+    from: x-straddle
+    kind: x-straddle
+    obj: U461
+    barrier: LV/HV
+  - id: rel.93
+    from: keepout
+    kind: keepout
+    obj: U461
+    what: "copper and vias under the package body"
+    layers: all
+  - id: rel.94
+    from: near
+    kind: proximity
+    a: U462
+    b: U461
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.95
+    from: x-protective_impedance
+    kind: x-protective_impedance
+    members:
+      - R461
+      - R462
+      - R463
+      - R464
+      - R465
+      - R466
+      - R467
+      - R468
+      - R469
+      - R470
+      - R471
+      - R481
+      - R482
+      - R483
+      - R484
+      - R485
+      - R486
+      - R487
+      - R488
+      - R489
+      - R490
+      - R491
+  - id: rel.96
+    from: near
+    kind: proximity
+    a: Q461
+    b: R471
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.97
     from: near
     kind: proximity
     a: U503
@@ -6428,7 +8077,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.86
+  - id: rel.98
     from: near
     kind: proximity
     a: U504
@@ -6436,71 +8085,197 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.87
+  - id: rel.99
     from: edge
     kind: edge_placement
     ref: J702
     edge: south
-  - id: rel.88
+  - id: rel.100
     from: edge
     kind: edge_placement
     ref: J703
     edge: south
-  - id: rel.89
+  - id: rel.101
     from: edge
     kind: edge_placement
     ref: J704
     edge: south
-  - id: rel.90
+  - id: rel.102
+    from: edge
+    kind: edge_placement
+    ref: J705
+    edge: south
+  - id: rel.103
     from: edge
     kind: edge_placement
     ref: J706
     edge: south
-  - id: rel.91
+  - id: rel.104
     from: edge
     kind: edge_placement
     ref: J707
     edge: south
-  - id: rel.92
+  - id: rel.105
+    from: edge
+    kind: edge_placement
+    ref: J708
+    edge: south
+  - id: rel.106
+    from: near
+    kind: proximity
+    a: Y701
+    b: U701
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.107
     from: x-cable_entry
     kind: x-cable_entry
     members: [J101, J201]
     gland: "M16 sealed, PV cable"
     edge: west
-  - id: rel.93
+  - id: rel.108
     from: x-cable_entry
     kind: x-cable_entry
     obj: J301
     gland: "M20 EMC (screen 360 deg)"
     edge: east
-  - id: rel.94
+  - id: rel.109
     from: x-cable_entry
     kind: x-cable_entry
-    members: [J702, J703, J706, J707]
+    members: [J702, J703, J705, J706, J707, J708]
     gland: "M20 multi-hole, LV"
     edge: south
-  - id: rel.95
+  - id: rel.110
     from: x-cable_entry
     kind: x-cable_entry
     members: [J901, J902]
     gland: "M20 EMC (J901), M16 (J902)"
     edge: north
-  - id: rel.96
+  - id: rel.111
+    from: x-hv_cover
+    kind: x-hv_cover
+    members: [J301, J901, J902]
+  - id: rel.112
+    from: fixed
+    kind: fixed
+    obj: H701
+    x_mm: 5
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.113
+    from: fixed
+    kind: fixed
+    obj: H702
+    x_mm: 5
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.114
+    from: fixed
+    kind: fixed
+    obj: H703
+    x_mm: 120
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.115
+    from: fixed
+    kind: fixed
+    obj: H704
+    x_mm: 120
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.116
+    from: fixed
+    kind: fixed
+    obj: H705
+    x_mm: 195
+    y_mm: 5
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.117
+    from: fixed
+    kind: fixed
+    obj: H706
+    x_mm: 195
+    y_mm: 135
+    rotation: 0
+    side: top
+    source_doc: "enclosure drawing (DESIGN.md 9): die-cast box bosses at the board corners and at x = 120 mm [I]"
+  - id: rel.118
+    from: keepout_around
+    kind: keepout_around
+    obj: H705
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.119
+    from: keepout_around
+    kind: keepout_around
+    obj: H706
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.120
+    from: keepout_around
+    kind: keepout_around
+    obj: H901
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.121
+    from: keepout_around
+    kind: keepout_around
+    obj: H902
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.122
+    from: keepout_around
+    kind: keepout_around
+    obj: H903
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.123
+    from: keepout_around
+    kind: keepout_around
+    obj: H904
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.124
+    from: x-thermal_pedestal
+    kind: x-thermal_pedestal
+    region: "LV power area only: Q103-Q106, Q203-Q206, Q301, Q302, L101, L201"
+  - id: rel.125
+    from: x-bottom_side
+    kind: x-bottom_side
+    what: "no HV/PACK copper on B.Cu within 10 mm of the pedestal outline; THT leads in the HV section clipped to <= 1.5 mm"
+  - id: rel.126
     from: edge
     kind: edge_placement
     ref: J901
     edge: north
-  - id: rel.97
+  - id: rel.127
     from: edge
     kind: edge_placement
     ref: J902
     edge: north
-  - id: rel.98
+  - id: rel.128
     from: edge
     kind: edge_placement
     ref: J903
     edge: south
-  - id: rel.99
+  - id: rel.129
     from: near
     kind: proximity
     a: F901
@@ -6508,7 +8283,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.100
+  - id: rel.130
     from: near
     kind: proximity
     a: F902
@@ -6516,28 +8291,49 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.101
+  - id: rel.131
     from: x-relay_gap
     kind: x-relay_gap
     members: [K901, K902]
     gap_mm: 20
-  - id: rel.102
+  - id: rel.132
     from: x-height
     kind: x-height
     members: [K901, K902]
     height_mm: 51
-  - id: rel.103
+  - id: rel.133
     from: x-straddle
     kind: x-straddle
     members: [K901, K902]
     barrier: "LV/HV,PACK"
-  - id: rel.104
+  - id: rel.134
+    from: near
+    kind: proximity
+    a: D902
+    b: K901
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.135
+    from: near
+    kind: proximity
+    a: D903
+    b: K902
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.136
+    from: edge
+    kind: edge_placement
+    ref: J904
+    edge: south
+  - id: rel.137
     from: thermal
     kind: thermal
     obj: D901
     watts: 0.3
     sink: copper
-  - id: rel.105
+  - id: rel.138
     from: separate
     kind: isolation
     domains: [LV, HV]
@@ -6546,7 +8342,7 @@ constraints:
     creepage_mm: 10.0
     slot: true
     kicad_dru: IR:barrier.LV.HV
-  - id: rel.106
+  - id: rel.139
     from: separate
     kind: isolation
     domains: [LV, PACK]
@@ -6555,7 +8351,25 @@ constraints:
     creepage_mm: 10.0
     slot: true
     kicad_dru: IR:barrier.LV.PACK
-  - id: rel.107
+  - id: rel.140
+    from: separate
+    kind: isolation
+    domains: [HV, CHASSIS]
+    grade: reinforced
+    clearance_mm: 8.0
+    creepage_mm: 10.0
+    slot: false
+    kicad_dru: IR:barrier.HV.CHASSIS
+  - id: rel.141
+    from: separate
+    kind: isolation
+    domains: [PACK, CHASSIS]
+    grade: reinforced
+    clearance_mm: 8.0
+    creepage_mm: 10.0
+    slot: false
+    kicad_dru: IR:barrier.PACK.CHASSIS
+  - id: rel.142
     from: separate
     kind: isolation
     domains: [HV, PACK]
@@ -6564,12 +8378,12 @@ constraints:
     creepage_mm: 5.0
     slot: false
     kicad_dru: IR:barrier.HV.PACK
-  - id: rel.108
+  - id: rel.143
     from: side
     kind: side
     obj: all
     side: top
-  - id: rel.109
+  - id: rel.144
     from: group
     kind: cluster
     component_class: ARRAY
@@ -6592,7 +8406,7 @@ constraints:
       - D264
     max_span: 32.0
     hard: false
-  - id: rel.110
+  - id: rel.145
     from: group
     kind: cluster
     component_class: HARNESS
@@ -6602,6 +8416,11 @@ constraints:
       - W3
       - W4
       - W5
+      - W11
+      - W9
+      - W10
+      - S701
+      - S901
       - W6
       - W7
       - W8
@@ -6613,7 +8432,7 @@ constraints:
       - TH4
     max_span: 32.0
     hard: false
-  - id: rel.111
+  - id: rel.146
     from: near
     kind: proximity
     a: C109
@@ -6621,7 +8440,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.112
+  - id: rel.147
     from: near
     kind: proximity
     a: C117
@@ -6629,7 +8448,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.113
+  - id: rel.148
     from: near
     kind: proximity
     a: C118
@@ -6637,7 +8456,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.114
+  - id: rel.149
     from: near
     kind: proximity
     a: C209
@@ -6645,7 +8464,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.115
+  - id: rel.150
     from: near
     kind: proximity
     a: C217
@@ -6653,7 +8472,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.116
+  - id: rel.151
     from: near
     kind: proximity
     a: C218
@@ -6661,7 +8480,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.117
+  - id: rel.152
     from: near
     kind: proximity
     a: C311
@@ -6669,7 +8488,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.118
+  - id: rel.153
     from: near
     kind: proximity
     a: C312
@@ -6677,15 +8496,31 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.119
+  - id: rel.154
     from: near
     kind: proximity
-    a: C806
-    b: U802.8
+    a: C521
+    b: U503.8
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.120
+  - id: rel.155
+    from: near
+    kind: proximity
+    a: C522
+    b: U503.8
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.156
+    from: near
+    kind: proximity
+    a: C508
+    b: U504.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.157
     from: near
     kind: proximity
     a: C601
@@ -6693,7 +8528,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.121
+  - id: rel.158
     from: near
     kind: proximity
     a: C602
@@ -6701,7 +8536,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.122
+  - id: rel.159
     from: near
     kind: proximity
     a: C604
@@ -6709,7 +8544,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.123
+  - id: rel.160
     from: near
     kind: proximity
     a: C605
@@ -6717,7 +8552,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.124
+  - id: rel.161
     from: near
     kind: proximity
     a: C608
@@ -6725,7 +8560,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.125
+  - id: rel.162
     from: near
     kind: proximity
     a: C609
@@ -6733,7 +8568,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.126
+  - id: rel.163
     from: near
     kind: proximity
     a: C701
@@ -6741,7 +8576,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.127
+  - id: rel.164
     from: near
     kind: proximity
     a: C702

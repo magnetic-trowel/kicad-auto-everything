@@ -37,9 +37,9 @@ board:
       drill_mm: 3.2
       plated: false
       note: H904
-  enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands"
+  enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands; board on 10 mm PA66 standoffs over a polypropylene liner (no thermal interface: D901 0.26 W on copper); inner tool-opened cover over J901/J902; lid switch S901"
   coating: "acrylic conformal coat (not credited)"
-  notes: "all copper is HV/PACK except the coil pins and J903; 10 mm band around them"
+  notes: "all copper is HV/PACK except the coil pins, J903, J904, D902/D903; 10 mm band around them; HV/PACK copper 10 mm from edges and 13 mm from H901-H904"
 boards:
   - name: main
     width_mm: 200
@@ -55,44 +55,47 @@ boards:
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H701
       - x: 5
         "y": 135
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H702
       - x: 120
         "y": 5
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H703
       - x: 120
         "y": 135
         drill_mm: 3.2
         pad_mm: 6.0
         plated: true
-        net: GND
+        net: CHASSIS
         note: H704
       - x: 195
         "y": 5
         drill_mm: 3.2
         plated: false
-        note: "H705 HV side, non-plated"
+        note: "H705 east support: non-plated, PA66 standoff, nylon screw, 13 mm HV keepout"
       - x: 195
         "y": 135
         drill_mm: 3.2
         plated: false
-        note: "H706 HV side, non-plated"
-    enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis; thermal pad under the FETs, T301 and the bridge"
+        note: "H706 east support: as H705"
+    enclosure: "die-cast aluminium IP67 box with external fins (>= 0.12 m2), bonded to chassis. Floor pedestal with an insulating gap pad under the LV power area only (MPPT FETs, inductors, Q301/Q302); pocket >= 10 mm deep under the HV section (x > 145 mm) lined with polypropylene sheet; T301 core to the lid via an insulating gap pad; D301-D304 on top copper only (review B1)"
     coating: "acrylic conformal coat (not credited for creepage)"
     keepouts:
       - relative: "barrier band 10 mm wide between LV and HV sections, slot >= 2 mm"
-        what: "copper and vias"
+        what: "copper and vias (IMD resistor chains excepted)"
+        layers: all
+      - relative: "10 mm from the board edge and 13 mm around H705/H706"
+        what: "HV/PACK copper"
         layers: all
     notes: "HV section along the east edge (x > 150 mm); FR-4 CTI >= 175 (IIIa)"
   - name: batt_end
@@ -123,9 +126,9 @@ boards:
         drill_mm: 3.2
         plated: false
         note: H904
-    enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands"
+    enclosure: "IP67 metal box bonded to chassis, next to the HV battery; two glands; board on 10 mm PA66 standoffs over a polypropylene liner (no thermal interface: D901 0.26 W on copper); inner tool-opened cover over J901/J902; lid switch S901"
     coating: "acrylic conformal coat (not credited)"
-    notes: "all copper is HV/PACK except the coil pins and J903; 10 mm band around them"
+    notes: "all copper is HV/PACK except the coil pins, J903, J904, D902/D903; 10 mm band around them; HV/PACK copper 10 mm from edges and 13 mm from H901-H904"
 magnitudes:
   tight: 3.0
   close: 8.0
@@ -136,31 +139,41 @@ domains:
     ref: GND
     earthed: true
     description: "Roof strings, VINT bus, AUX, logic, IG/CAN wires, pack-case NTCs. <= 38 V (PV inputs clamped at 54 V by TVS); ISO 7637 pulses on IGN_IN. Chassis-referenced."
+  - name: CHASSIS
+    kind: elv
+    ref: GND
+    earthed: true
+    description: "Vehicle chassis: the die-cast boxes, mounting screws, the LV-side thermal pedestal and plated holes H701-H704. Bonded to GND by NT701. Touchable."
   - name: HV
     kind: hv
     ref: HV_N
     earthed: false
-    description: "T301 secondary, rectifier, HV sense high sides, HV cable, D901/K901/K902. 0-420 V internal. Floating: under one insulation fault any HV net can be at 0..420 V to chassis."
+    description: "T301 secondary, rectifier, HV sense high sides, IMD bridge HV ends, HV cable, D901/K901/K902. 0-420 V internal. Floating: under one insulation fault any HV net can be 0..420 V to chassis."
   - name: PACK
     kind: battery
-    ref: BAT_TAP_N
+    ref: HV_N
     earthed: false
-    description: "Prius Prime Li-ion pack, 95s, 285-399 V, tapped on the cell side of the system main relays. Floats with the car's IT system: under one insulation fault a pole can be 399 V from chassis."
+    description: "Prius Prime Li-ion pack, 95s, 285-399 V, tapped on the cell side of the system main relays. Floats on HV_N: K902/F902 join BAT_TAP_N to HV_N, so the connected case is modelled (README) with a functional barrier across the open contacts. Under one insulation fault a pole can be 399 V from chassis."
+  - name: KSUP
+    kind: elv
+    ref: AUX12
+    earthed: false
+    description: "HVIL loop: AUX12 through the lid switches S701/S901; equal to AUX12 when both lids are closed, pulled toward 0 V (flyback D902/D903) when one opens"
   - name: K1C
     kind: elv
-    ref: AUX12
+    ref: K_SUP
     earthed: false
-    description: "K1_COIL_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "K1_COIL_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: K2C
     kind: elv
-    ref: AUX12
+    ref: K_SUP
     earthed: false
-    description: "K2_COIL_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "K2_COIL_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: FANC
     kind: elv
     ref: AUX12
     earthed: false
-    description: "FAN_N: low side of an inductive load on AUX12; clamped to AUX12 + 0.7 V by the TPL7407 COM diodes"
+    description: "FAN_N: low side of an inductive load on AUX12 (relays via the HVIL K_SUP); clamped to AUX12 + 0.7 V by the TPL7407 COM diodes and to K_SUP + 0.7 V by D902/D903"
   - name: IDA
     kind: elv
     ref: PVA_IN
@@ -213,29 +226,67 @@ barriers:
     v_work: 420.0
     creepage_mm: 10.0
     clearance_mm: 8.0
-    standard: "IEC 60664-1 Tables F.1, F.2, F.4"
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
     v_test_rms: 4250
     pollution_degree: 2
     material_group: IIIa
     ovc: II
     slot: true
-    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
-    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441, U461, extending >= 2 mm past each package end; no copper on any layer in the band; the IMD bridge strings cross it as series 10 MOhm resistors only (no other copper)"
     ac: false
+    creepage_by_group:
+      I: 5.0
+      II: 7.2
+      IIIa: 10.0
   - a: LV
     b: PACK
     grade: reinforced
     v_work: 399.0
     creepage_mm: 10.0
     clearance_mm: 8.0
-    standard: "IEC 60664-1 Tables F.1, F.2, F.4"
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
     v_test_rms: 4250
     pollution_degree: 2
     material_group: IIIa
     ovc: II
     slot: true
-    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
-    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "routed slot >= 2 mm wide under T301, U401, U421, U441, U461, extending >= 2 mm past each package end; no copper on any layer in the band; the IMD bridge strings cross it as series 10 MOhm resistors only (no other copper)"
+    ac: false
+    creepage_by_group:
+      I: 5.0
+      II: 7.2
+      IIIa: 10.0
+  - a: HV
+    b: CHASSIS
+    grade: reinforced
+    v_work: 420.0
+    creepage_mm: 10.0
+    clearance_mm: 8.0
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
+    v_test_rms: 4250
+    pollution_degree: 2
+    material_group: IIIa
+    ovc: II
+    slot: false
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "HV/PACK copper to the enclosure, screws, standoffs, pedestal and board edge: 10 mm creepage / 8 mm clearance (Domain edge_clearance and placement keepouts); no thermal interface under the HV section (air >= 10 mm to the box floor, polypropylene liner as a second layer, not credited). Only the IMD protective-impedance strings join HV to CHASSIS (waiver)"
+    ac: false
+  - a: PACK
+    b: CHASSIS
+    grade: reinforced
+    v_work: 399.0
+    creepage_mm: 10.0
+    clearance_mm: 8.0
+    standard: "IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage)"
+    v_test_rms: 4250
+    pollution_degree: 2
+    material_group: IIIa
+    ovc: II
+    slot: false
+    source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md), DC working voltage = r.m.s. value: F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V DC -> 500 V row -> 10.0 mm reinforced; group I (CTI >= 600) 500 V row 2.5 mm basic -> 5.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
+    notes: "HV/PACK copper to the enclosure, screws, standoffs, pedestal and board edge: 10 mm creepage / 8 mm clearance (Domain edge_clearance and placement keepouts); no thermal interface under the HV section (air >= 10 mm to the box floor, polypropylene liner as a second layer, not credited). Only the IMD protective-impedance strings join HV to CHASSIS (waiver)"
     ac: false
   - a: HV
     b: PACK
@@ -276,6 +327,16 @@ netclasses:
     clearance: 0.2
     track_width: 0.25
     nets: ["/MPPT_B/BT2", "/MPPT_B/HD2", "/MPPT_B/HD2_G"]
+  - name: CHASSIS
+    domain: CHASSIS
+    clearance: 0.2
+    track_width: 0.25
+    nets: ["/IMD/PSW"]
+  - name: CHASSIS_20A
+    domain: CHASSIS
+    clearance: 0.2
+    track_width: 9.4
+    nets: [CHASSIS]
   - name: DCXBST
     domain: DCXBST
     clearance: 0.2
@@ -313,6 +374,28 @@ netclasses:
       - "/HVSENSE/S2C"
       - "/HVSENSE/S2D"
       - "/HVSENSE/S2E"
+      - "/IMD/H4_DCDC"
+      - "/IMD/H4_HLDO"
+      - "/IMD/IN1"
+      - "/IMD/IN10"
+      - "/IMD/IN2"
+      - "/IMD/IN3"
+      - "/IMD/IN4"
+      - "/IMD/IN5"
+      - "/IMD/IN6"
+      - "/IMD/IN7"
+      - "/IMD/IN8"
+      - "/IMD/IN9"
+      - "/IMD/IP1"
+      - "/IMD/IP2"
+      - "/IMD/IP3"
+      - "/IMD/IP4"
+      - "/IMD/IP5"
+      - "/IMD/IP6"
+      - "/IMD/IP7"
+      - "/IMD/IP8"
+      - "/IMD/IP9"
+      - "/IMD/NTAP"
       - PACK_SNS
   - name: HV_1A
     domain: HV
@@ -339,6 +422,11 @@ netclasses:
     clearance: 0.2
     track_width: 0.25
     nets: [K2_COIL_N]
+  - name: KSUP_1A
+    domain: KSUP
+    clearance: 0.2
+    track_width: 0.25
+    nets: [HVIL_A, K_SUP]
   - name: LV
     domain: LV
     clearance: 0.4
@@ -354,6 +442,7 @@ netclasses:
       - "/AUX/V33_FB"
       - "/AUX/V33_RA"
       - "/AUX/V33_RON"
+      - "/DCX/DCX_CSK"
       - "/DCX/HI_F"
       - "/DCX/LI_F"
       - "/DCX/LO"
@@ -376,14 +465,27 @@ netclasses:
       - "/HVSENSE/H3_LDO"
       - "/HVSENSE/H3_OUTN"
       - "/HVSENSE/H3_OUTP"
+      - "/IMD/H4_DA_N"
+      - "/IMD/H4_DA_OUT"
+      - "/IMD/H4_DA_P"
+      - "/IMD/H4_LDO"
+      - "/IMD/H4_OUTN"
+      - "/IMD/H4_OUTP"
+      - "/IMD/IMD_G"
+      - "/IMD/IMD_REF"
       - "/LIMIT/CC_N"
       - "/LIMIT/CC_OUT"
       - "/LIMIT/CC_RZ"
+      - "/LIMIT/CV2_N"
+      - "/LIMIT/CV2_OUT"
+      - "/LIMIT/CV2_RZ"
       - "/LIMIT/CV_N"
       - "/LIMIT/CV_OUT"
       - "/LIMIT/CV_RZ"
+      - "/LIMIT/U803B_FB"
       - "/LIMIT/VREF_CC"
       - "/LIMIT/VREF_CV"
+      - "/LIMIT/VREF_CV2"
       - "/LIMIT/VREF_LIM"
       - "/MCU/CAN_EN_B"
       - "/MCU/CAN_GE"
@@ -391,6 +493,8 @@ netclasses:
       - "/MCU/IGN_D"
       - "/MCU/IG_GB"
       - "/MCU/READY_B"
+      - "/MCU/XTAL_I"
+      - "/MCU/XTAL_O"
       - "/MPPT_A/AGND"
       - "/MPPT_A/BIAS"
       - "/MPPT_A/COMP"
@@ -463,6 +567,7 @@ netclasses:
       - "/MPPT_B/VISNS"
       - "/MPPT_B/VSET"
       - "/MPPT_B/VSET1"
+      - "/SAFETY/CLR_N"
       - "/SAFETY/LED_FLT_A"
       - "/SAFETY/LED_FLT_K"
       - "/SAFETY/LED_OK_A"
@@ -472,11 +577,15 @@ netclasses:
       - "/SAFETY/VTH_OT1"
       - "/SAFETY/WDO_N"
       - AUX12_DIV
+      - AUX_PG
+      - AUX_PGS
+      - BURST_N
       - CAN_EN
       - CAN_H
       - CAN_L
       - CAN_RX
       - CAN_TX
+      - DCX_CS
       - DCX_HI
       - DCX_LI
       - EE_CS_N
@@ -485,17 +594,22 @@ netclasses:
       - EE_SO
       - FAN_PWM
       - HV_V2_ADC
+      - HV_V2_LIM
       - HV_V_ADC
       - HV_V_LIM
       - HV_V_OVP
       - IGN_CAR
       - IGN_IN
+      - IMD_ADC
+      - IMD_SW
       - I_HV_ADC
       - I_HV_LIM
       - I_HV_OCP
       - K_IN
       - LATCH_Q
       - LATCH_QN
+      - LATCH_SNS
+      - LATCH_VCC
       - LIM
       - LIM_ADC
       - MCLR_N
@@ -508,25 +622,39 @@ netclasses:
       - NTC_P3
       - NTC_P4
       - NTC_T1
+      - ONT_H
+      - ONT_L
       - OVP_TRIP_N
       - PERMIT
       - PERMIT_SNS
       - PGC
       - PGD
       - PVA_I_ADC
+      - PVA_OVS
+      - PVA_OV_N
       - PVA_VDIV
       - PVB_I_ADC
+      - PVB_OVS
+      - PVB_OV_N
       - PVB_VDIV
       - READY_N
       - RELAY_REQ
       - RESET_N
-      - UART_TX
       - VINT_DIV
       - VREF2V5
       - VTH2V0
+      - VTH_BURST
+      - VTH_DOC
       - VTH_OC
+      - VTH_ONT
+      - VTH_OPEN
       - VTH_OTP
       - WDI
+  - name: LV_10A
+    domain: LV
+    clearance: 0.4
+    track_width: 3.6
+    nets: ["/DCX/HB_LR"]
   - name: LV_1A
     domain: LV
     clearance: 0.4
@@ -548,6 +676,7 @@ netclasses:
       - "/ARRAY/PVB_C1"
       - "/ARRAY/PVB_C2"
       - "/ARRAY/PVB_C3"
+      - "/DCX/DCX_RS"
       - "/DCX/HB_SW"
       - "/DCX/MID"
       - "/MPPT_A/SRC"
@@ -577,27 +706,51 @@ components:
   - ref: J901
     block: BATEND
     board: batt_end
-    value: "1766356"
-    footprint: "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_3-G-7,62_1x03_P7.62mm_Horizontal"
+    value: "236-303"
+    footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_236-303_1x03_P10.00mm_45Degree
     category: connector
     domains: [HV]
-    mpn: "1766356"
+    mpn: "236-303"
   - ref: J902
     block: BATEND
     board: batt_end
-    value: "1766343"
-    footprint: "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_2-G-7,62_1x02_P7.62mm_Horizontal"
+    value: "236-302"
+    footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_236-302_1x02_P10.00mm_45Degree
     category: connector
     domains: [PACK]
-    mpn: "1766343"
+    mpn: "236-302"
   - ref: J903
     block: BATEND
     board: batt_end
     value: "1757255"
     footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5.08mm_Horizontal"
     category: connector
-    domains: [K1C, K2C, LV]
+    domains: [K1C, K2C, KSUP]
     mpn: "1757255"
+  - ref: J904
+    block: BATEND
+    board: batt_end
+    value: "1757242"
+    footprint: "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_2-G-5,08_1x02_P5.08mm_Horizontal"
+    category: connector
+    domains: [KSUP]
+    mpn: "1757242"
+  - ref: D902
+    block: BATEND
+    board: batt_end
+    value: VS-6ESH06HM3/86A
+    footprint: Package_TO_SOT_SMD:TO-277A
+    category: diode
+    domains: [K1C, KSUP]
+    mpn: VS-6ESH06HM3/86A
+  - ref: D903
+    block: BATEND
+    board: batt_end
+    value: VS-6ESH06HM3/86A
+    footprint: Package_TO_SOT_SMD:TO-277A
+    category: diode
+    domains: [K2C, KSUP]
+    mpn: VS-6ESH06HM3/86A
   - ref: F901
     block: BATEND
     board: batt_end
@@ -620,7 +773,7 @@ components:
     value: "G9KB-1A DC12"
     footprint: custom:Omron_G9KB-1A
     category: relay
-    domains: [HV, K1C, LV, PACK]
+    domains: [HV, K1C, KSUP, PACK]
     mpn: "G9KB-1A DC12"
   - ref: K902
     block: BATEND
@@ -628,7 +781,7 @@ components:
     value: "G9KB-1A DC12"
     footprint: custom:Omron_G9KB-1A
     category: relay
-    domains: [HV, K2C, LV, PACK]
+    domains: [HV, K2C, KSUP, PACK]
     mpn: "G9KB-1A DC12"
   - ref: D901
     block: BATEND
@@ -730,6 +883,41 @@ relations:
     gland: "M20 EMC (J901), M16 (J902)"
     edge: north
     source: design
+  - kind: keepout_around
+    obj: H901
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H902
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H903
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: keepout_around
+    obj: H904
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+    note: "battery-end box screws are CHASSIS"
+    source: design
+  - kind: x-thermal_pedestal
+    region: "LV power area only: Q103-Q106, Q203-Q206, Q301, Q302, L101, L201"
+    note: "box-floor pedestal + insulating gap pad under the LV power area; no pad or pedestal under the HV section (x > 145 mm) or T301; >= 10 mm air from HV leads/vias to the box floor; polypropylene liner (Formex GK-17 class, not credited) in the pocket"
+    source: design
+  - kind: x-bottom_side
+    what: "no HV/PACK copper on B.Cu within 10 mm of the pedestal outline; THT leads in the HV section clipped to <= 1.5 mm"
+    source: design
   - kind: edge
     obj: J901
     side: north
@@ -767,6 +955,21 @@ relations:
     barrier: "LV/HV,PACK"
     note: "coil pins toward J903, contacts toward J902/J901; slot between coil and contact pins"
     source: design
+  - kind: near
+    a: D902
+    b: K901
+    strength: close
+    note: "coil flyback on the LV side, next to J903/J904"
+    source: design
+  - kind: near
+    a: D903
+    b: K902
+    strength: close
+    source: design
+  - kind: edge
+    obj: J904
+    side: south
+    source: design
   - kind: thermal
     obj: D901
     watts: 0.3
@@ -784,13 +987,23 @@ relations:
     source: design
   - kind: separate
     a: domain:HV
+    b: domain:CHASSIS
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:PACK
+    b: domain:CHASSIS
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:HV
     b: domain:PACK
     slot: false
     source: design
   - kind: side
     obj: all
     side: top
-    note: "all parts on the top side; bottom flat on the thermal pad"
+    note: "all parts on the top side; only the LV power area sits on the thermal pedestal"
     source: design
 constraints:
   - id: rel.1
@@ -801,6 +1014,9 @@ constraints:
       - J901
       - J902
       - J903
+      - J904
+      - D902
+      - D903
       - F901
       - F902
       - K901
@@ -851,21 +1067,57 @@ constraints:
     gland: "M20 EMC (J901), M16 (J902)"
     edge: north
   - id: rel.9
+    from: keepout_around
+    kind: keepout_around
+    obj: H901
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.10
+    from: keepout_around
+    kind: keepout_around
+    obj: H902
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.11
+    from: keepout_around
+    kind: keepout_around
+    obj: H903
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.12
+    from: keepout_around
+    kind: keepout_around
+    obj: H904
+    radius_mm: 13.0
+    what: "HV and PACK copper and vias"
+    layers: all
+  - id: rel.13
+    from: x-thermal_pedestal
+    kind: x-thermal_pedestal
+    region: "LV power area only: Q103-Q106, Q203-Q206, Q301, Q302, L101, L201"
+  - id: rel.14
+    from: x-bottom_side
+    kind: x-bottom_side
+    what: "no HV/PACK copper on B.Cu within 10 mm of the pedestal outline; THT leads in the HV section clipped to <= 1.5 mm"
+  - id: rel.15
     from: edge
     kind: edge_placement
     ref: J901
     edge: north
-  - id: rel.10
+  - id: rel.16
     from: edge
     kind: edge_placement
     ref: J902
     edge: north
-  - id: rel.11
+  - id: rel.17
     from: edge
     kind: edge_placement
     ref: J903
     edge: south
-  - id: rel.12
+  - id: rel.18
     from: near
     kind: proximity
     a: F901
@@ -873,7 +1125,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.13
+  - id: rel.19
     from: near
     kind: proximity
     a: F902
@@ -881,28 +1133,49 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.14
+  - id: rel.20
     from: x-relay_gap
     kind: x-relay_gap
     members: [K901, K902]
     gap_mm: 20
-  - id: rel.15
+  - id: rel.21
     from: x-height
     kind: x-height
     members: [K901, K902]
     height_mm: 51
-  - id: rel.16
+  - id: rel.22
     from: x-straddle
     kind: x-straddle
     members: [K901, K902]
     barrier: "LV/HV,PACK"
-  - id: rel.17
+  - id: rel.23
+    from: near
+    kind: proximity
+    a: D902
+    b: K901
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.24
+    from: near
+    kind: proximity
+    a: D903
+    b: K902
+    max: 8.0
+    basis: pad_edge
+    hard: false
+  - id: rel.25
+    from: edge
+    kind: edge_placement
+    ref: J904
+    edge: south
+  - id: rel.26
     from: thermal
     kind: thermal
     obj: D901
     watts: 0.3
     sink: copper
-  - id: rel.18
+  - id: rel.27
     from: separate
     kind: isolation
     domains: [LV, HV]
@@ -911,7 +1184,7 @@ constraints:
     creepage_mm: 10.0
     slot: true
     kicad_dru: IR:barrier.LV.HV
-  - id: rel.19
+  - id: rel.28
     from: separate
     kind: isolation
     domains: [LV, PACK]
@@ -920,7 +1193,25 @@ constraints:
     creepage_mm: 10.0
     slot: true
     kicad_dru: IR:barrier.LV.PACK
-  - id: rel.20
+  - id: rel.29
+    from: separate
+    kind: isolation
+    domains: [HV, CHASSIS]
+    grade: reinforced
+    clearance_mm: 8.0
+    creepage_mm: 10.0
+    slot: false
+    kicad_dru: IR:barrier.HV.CHASSIS
+  - id: rel.30
+    from: separate
+    kind: isolation
+    domains: [PACK, CHASSIS]
+    grade: reinforced
+    clearance_mm: 8.0
+    creepage_mm: 10.0
+    slot: false
+    kicad_dru: IR:barrier.PACK.CHASSIS
+  - id: rel.31
     from: separate
     kind: isolation
     domains: [HV, PACK]
@@ -929,7 +1220,7 @@ constraints:
     creepage_mm: 5.0
     slot: false
     kicad_dru: IR:barrier.HV.PACK
-  - id: rel.21
+  - id: rel.32
     from: side
     kind: side
     obj: all

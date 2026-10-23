@@ -164,3 +164,95 @@ Counts: **2 BLOCKER, 7 MAJOR, 9 MINOR.**
 - **Isolators:** AMC3330/3302 are reinforced, VISO 4250 Vrms, VIOWM 1700 VDC, VIOTM 6000 Vpk, CTI ≥ 600 V.
 - **PERMIT architecture:** sourced only by MCU_RUN, a wired-AND of DIAG, latch, OTP and watchdog. The CAN transmit gate requires IG AND CAN_EN. The MPPT default is zero power without firmware (100 kΩ pull-up on the PWM pins).
 - **Vehicle:** Prime pack 95 cells, 351.5 V, 25 Ah (ANL). The "no split while off" conclusion is consistent with every source found.
+
+## Response to review
+
+Designer response, 2026-10-23, design v0.3. Build: `kaesynth build` 0 errors, 0 warnings, 9 waivers covering 17 findings (was 32), KiCad ERC 0 errors (4 waived HGND warnings), netlist round trip identical for the system and both boards. DESIGN.md §7.12–7.13 are new; §§2–10 are revised. Every item below is in design.py/parts.py, not only in prose.
+
+### BLOCKERs
+
+**B1, HV-to-chassis insulation: fixed.**
+- New `CHASSIS` domain (floats on GND; the boxes, screws, pedestal and plated holes H701–H704, bonded once by NT701).
+- Reinforced DC barriers HV↔CHASSIS (420 V) and PACK↔CHASSIS (399 V): 10 mm creepage, 8 mm clearance (IEC 60664-1 F.4 PD2 IIIa 500 V row ×2; F.2 for 6 kV). The DRU now has `IR:barrier.HV.CHASSIS`/`PACK.CHASSIS` rules.
+- `Domain(edge_clearance_mm=10)` on HV and PACK emits edge and hole-clearance rules for every mounting hole on both boards.
+- H705/H706 stay as east-edge supports, but with PA66 standoffs and nylon screws and a 13 mm `keepout_around` for HV/PACK copper. That stays compliant even if a metal screw is fitted. H901–H904 get the same keepout. Hole positions are `place.fixed` with the enclosure drawing as the source.
+- No thermal interface under HV. A box-floor pedestal with an insulating gap pad sits under the LV power area only. Under the HV section there is a ≥ 10 mm pocket lined with polypropylene (not credited). D301–D304 sit on top copper only. T301's core goes to the lid through an insulating gap pad (core on the LV side of the TIW). HV THT leads are clipped to ≤ 1.5 mm.
+- The contradictory `boards()` enclosure note and the `side()` note are rewritten.
+- The battery-end board stands on standoffs with no thermal interface.
+- PACK now floats on HV_N, per the README rule for relay-joined circuits: the connected case is modelled, with the functional barrier across the open contacts.
+
+**B2, inferred cell window: answered and made BLOCKING.**
+- No Toyota, Panasonic or teardown source for the Prime's top-of-charge was found. ANL D3 gives 95 cells (19 × 5), 351.5 V, 25 Ah only. One PriusChat log implies ~4.06 V/cell but is internally inconsistent [unverified].
+- New **Q-13 (BLOCKING)**: log the car at the end of a full plug-in charge (pack V, max cell V, displayed vs true SOC).
+- The hardware is now set below the lowest credible value, 4.00 V/cell:
+  - L3 373.1 V = 3.927 V/cell, max 3.963 V with tolerance (U422 Rf 12.1k → 12.7k);
+  - L2 364.4 V = 3.836 V/cell (R802 1.5k → 3.24k);
+  - L1 firmware 3.79 V/cell; L3b 36.8 V.
+- Ordering margins hold at the tolerance corners (`L1_below_L2min` 1.1 V, `L2max_below_L3min` 1.1 V).
+- DNP trim positions R818 (‖R802) and R526 (‖R502) are in the netlist for re-setting after Q-13.
+- HZ-4 is re-argued against 4.00 V. The cost is stated in REQ-8: the pack may stop near 55–65 % true SOC until Q-13 is answered.
+
+### MAJORs
+
+- **M1, reverse power: fixed four ways.**
+  - Sink clamp: R105/R205 20k → 75k, so I_sink ≤ 39.1 µA < VSNS(min)/1 kΩ. The CC loop never asks for < 0.79 A.
+  - Burst: LIM > 2.30 V (U801-derived VTH_BURST) → U507 ch2 → D106/D206 pull both EN low.
+  - PV-node trip: PVx_P > 34.0 V → U507 ch3/ch4 → that EN low.
+  - Clamp: TPSMB43A on PVx_P (D107/D207).
+  - The scenario the review missed is also bounded: one channel's FB tolerance makes it sink while the other holds VINT unloaded. V-26 tests it.
+- **M2, CAN clock: fixed.**
+  - 20 MHz NDK NX3225GA AEC-Q200 crystal (±200 ppm worst case [P]) on OSCI/OSCO (pins 21/22).
+  - Pin moves: NTC_HS → 26 (AN8), NTC_P3 → 35 (AN2), IMD_ADC → 36 (AN10), EE_CS_N → 37, WDI → 45, LATCH_SNS → 46, PERMIT_SNS → 47, IMD_SW → 48.
+  - ICSP moves to PGC3/PGD3 (33/34). The log UART shares PGD3 at run time (J701 pin 6 now NC).
+  - CAN FD starts in Listen-Only (REQ-19).
+- **M3, insulation monitoring while parked: fixed (§7.12).**
+  - Permanent 11 × 10 MΩ bridge per pole (≥ 108.9 MΩ, so REQ-14 still holds). U461 AMC3330 reads chassis-to-HV_N on a 220 kΩ tap, offset so negative readings survive. Q461 BSS123Q shorts one 10 MΩ of the P pole for the second point.
+  - Measured with the relays open before every close and hourly. Refuse below 500 Ω/V. The same readings detect a welded K901 or K902.
+  - Why not "switched out" as suggested: a chassis-end switch must block the full pole voltage. No small chassis-referenced switch can block the N pole's polarity, and an optocoupled PV-driver switch (ACPL-K30T, read) has only 8 mm creepage on a IIIa mould at 420 V. At 110 MΩ the permanent bridge already meets the 100 MΩ requirement and loads the car's monitor by < 0.5 %.
+  - The chains are a protective impedance (≤ 4.2 µA with one resistor shorted). The framework's `domain.crossing` on R470/R481 is waived with that reasoning.
+- **M4, open-sensor-safe OTP: fixed.**
+  - U508 ch2/ch3 pull PERMIT low when NTC_P1/P2 > 2.199 V. An open sensor reads 2.50 V; a pack below −18 °C also trips, and charging needs ≥ 0 °C anyway. A short reads hot.
+  - The hardware pair TH1/TH2 now has its own connector and cable (J706/W5); the firmware pair is on J708/W11.
+- **M5, pluggable HV: fixed.**
+  - J301/J901/J902 are WAGO 236 CAGE CLAMP blocks (tool-opened, wired once) under a tool-opened inner cover. The voltage rating is [unverified] until the WAGO sheet is read (V-5).
+  - HVIL: the coil supply passes lid switches S701 and S901 in series (J705/J904, W9/W10), with flyback D902/D903 at the relays. Opening either lid drops both relays.
+  - The service procedure is built on the car's service plug (HZ-17).
+- **M6, DCX bounds: fixed.**
+  - Discrete Lr L301 0.56 µH (XAL7070, ratings [unverified]); T301 leakage specified ≤ 0.30 µH. fr 90–115 kHz is computed at the corners.
+  - Gate on-time limit on HI and LI (10k/1 nF integrators, U506 ch3/ch4): trip after 6.5–8.0 µs, f_min 62.5 kHz, Bpk 0.144 T.
+  - Primary shunt R311 5 mΩ in the Q302 source → U507 ch1 at 17.6 A.
+  - All three latch through OVP_TRIP_N.
+- **M7, latch and dawn cycling: fixed.**
+  - U503 now runs on LATCH_VCC: a 0.1 F supercap (Eaton KW, −40…85 °C, industrial grade) with τ 6.1 h. It holds 2.74 V after a 10-min brownout and clears overnight.
+  - ~CLR comes from its own power-on RC, not RESET_N. The OVP_TRIP_N pull-up is on LATCH_VCC.
+  - The relays need AUX_IN ≥ 18.1 V (U508 ch1, 1.4 V hysteresis).
+  - Firmware keeps trips in EEPROM, requires a dawn-to-dawn gap and allows ≤ 3 relay cycles per day.
+  - Both relays now switch together; v0.2's "sequenced" claim did not match its own hardware. The IMD replaces the per-relay weld check.
+
+### MINORs
+
+1. **L2b**: removed as a layer everywhere (§7.2, §7.4, HZ-3, HZ-12, HZ-13). The FB ceiling (now 432k, ≤ 393 V unloaded) is described as an output limit only.
+2. **UVLO corners**: R108/R208 137k → 162k. At the SNVSB46B corners off is ≤ 8.51 V, below the 9.9 V shaded Vmp, and on is ≤ 11.73 V, below the 13.8 V hot Vmp. The build checks both (`uvlo_*`).
+3. **Path-1 leakage**: added a second CV integrator on path 2 (U803A, 367.8 V on HV_P), diode-ORed into LIM. The clamp acts on whichever path reads higher. Its margin to L3 is calculated.
+4. **Hysteresis shifting ADC readings**: kept. Firmware subtracts the known PERMIT-dependent shift using PERMIT_SNS (stated in R511/R523 and §7.5).
+5. **Cold margins**: R518 2.2k → 4.7k, so PERMIT latched is ≤ 0.58 V at −40 °C against 0.7 V. D510 pulls K_IN straight to Q̄ (≤ 0.55 V against 0.9 V). Both are build calcs.
+6. **Temperature compensation and "80 %"**: REQ-7/8 now say that the hardware CV is not temperature-compensated, that L2 holds 3.84 V/cell indefinitely with live-but-wrong firmware, and that "80 %" means true SOC.
+7. **LM74700 waiver**: reasoning rewritten. The stage cannot start with the string reversed, because its VIN is the blocked PV node; it is no longer claimed that there is "no back-feed path".
+8. **Vehicle facts and Q-5**: Q-5 now states that a cell-side tap means opening the sealed pack and adding a penetration. The login-only DM pages stay [P] as read earlier; ANL is added as an open source.
+9. **Roof not measured, cap discards energy**: both are stated in §7.1 (`best_day_discard_pct` 30 %), and Q-3 stays BLOCKING.
+
+### Waivers
+
+- **Removed** (the framework now expresses them):
+  - LM74700 GATE/VCAP, LM5176 SS/COMP/VCC/BOOT and LM5164 BST-SW: `VLimit(derate=False)`;
+  - dsPIC VDD: `v_rec=3.6`;
+  - AMC package creepage: `creepage_by_group={"I": 5.0}` with `material_group="I"` and `v_work_dc=1700` on the isolators.
+- **Corrected**: LM74700 CATHODE–ANODE (MINOR 7).
+- **Added**: `domain.crossing` for the IMD protective impedance.
+- **Unchanged**: entry-fuse ×2, custom footprints ×3 (still blocking for layout, now stated in the waiver text), HZ-9, HGND ERC.
+
+### Still open
+
+- BLOCKING questions: Q-3 (roof), Q-4 (junction-block pages), Q-5 (installer, pack penetration), Q-6 (array fixing), Q-10 (ECU SOC re-estimation, V-23), Q-13 (car top-of-charge).
+- Unverified part data to read before layout: WAGO 236 voltage rating, XAL7070 ratings, Eaton KW footprint pitch, G9KB pin numbering.
+- Unpowered-comparator leakage on OVP_TRIP_N at 85 °C (V-11).

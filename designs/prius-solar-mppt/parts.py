@@ -125,6 +125,7 @@ CAPS = {
     "100nC0G": ("CGA5L1C0G2A104J160AC", "TDK", "1206", "100n", 100, "C0G", None),
     "100n630V": ("CGA6L1X7T2J104K160AC", "TDK", "1210", "100n", 630, "X7T", None),
     "220p630V": ("CGA5H4C0G2J221J115AA", "TDK", "1206", "220p", 630, "C0G", None),
+    "10p50V": ("GCM1885C1H100JA16D", "Murata", "0603", "10p", 50, "C0G", None),
 }
 
 
@@ -214,10 +215,14 @@ LM5176 = IC(
     ratings=Ratings(limits=[
         VLimit(("VIN", "EN/UVLO", "VISNS", "VOSNS", "ISNS+", "ISNS-"), ("AGND",), 60, "abs max"),
         VLimit(("BIAS",), ("AGND",), 40, "abs max"),
-        VLimit(("FB", "SS", "DITH", "RT/SYNC", "SLOPE", "COMP"), ("AGND",), 3.6, "abs max"),
-        VLimit(("VCC", "MODE", "PGOOD"), ("AGND",), 8.5, "abs max"),
+        VLimit(("FB", "SS", "DITH", "RT/SYNC", "SLOPE", "COMP"), ("AGND",), 3.6,
+               "abs max; nodes the IC drives itself (SS clamp 1.21 V, COMP <= 3.0 V, RT/DITH/SLOPE internal)",
+               derate=False),
+        VLimit(("VCC",), ("AGND",), 8.5, "abs max; VCC is the IC's own 7.5 V regulator output", derate=False),
+        VLimit(("MODE", "PGOOD"), ("AGND",), 8.5, "abs max"),
         VLimit(("SW1", "SW2"), ("PGND",), 60, "abs max -1..60 V"),
-        VLimit(("BOOT1",), ("SW1",), 8.5, "BOOT-SW abs max"), VLimit(("BOOT2",), ("SW2",), 8.5, "BOOT-SW abs max")],
+        VLimit(("BOOT1",), ("SW1",), 8.5, "BOOT-SW abs max; VCC - diode, IC-driven", derate=False),
+        VLimit(("BOOT2",), ("SW2",), 8.5, "BOOT-SW abs max; VCC - diode, IC-driven", derate=False)],
         t_min=-40, t_max=150),
     lifecycle="active", second_source="LM5175-Q1 (same pinout, no average current loop) [S]",
     source={"pins": "LM5176-Q1 DS SNVSB46B p.3 Fig. 5-1 and Table 5-1 (PWP); KiCad's LM5176PWP symbol types VOSNS "
@@ -230,8 +235,9 @@ LM74700 = PartDef(
     value="LM74700-Q1", category="ic", description="Ideal-diode controller, 65 V, reverse-polarity protection",
     datasheet=DS["LM74700"],
     ratings=Ratings(limits=[VLimit(("ANODE",), ("GND",), 65, "abs max +/-65 V"),
-                            VLimit(("GATE",), ("ANODE",), 15, "GATE-ANODE abs max"),
-                            VLimit(("VCAP",), ("ANODE",), 15, "VCAP-ANODE abs max"),
+                            VLimit(("GATE",), ("ANODE",), 15, "GATE-ANODE abs max; own charge pump, turn-off "
+                                   "11.6-13.9 V (SNOSD17G 6.5)", derate=False),
+                            VLimit(("VCAP",), ("ANODE",), 15, "VCAP-ANODE abs max; own charge pump", derate=False),
                             VLimit(("CATHODE",), ("ANODE",), 75, "CATHODE-ANODE -5..75 V")]),
     lifecycle="active", second_source="LM74700D-Q1 (DDF) [S]",
     source={"pins": "LM74700-Q1 DS SNOSD17G p.3 Fig. 5-1/Table 5-1 (DBV): 1 VCAP, 2 GND, 3 EN, 4 CATHODE, 5 GATE, "
@@ -244,10 +250,12 @@ INA186 = IC(
     pins=[PinDef(1, "GND", "power_in"), PinDef(2, "OUT", "output"), PinDef(3, "VS", "power_in"),
           PinDef(4, "IN-", "input"), PinDef(5, "IN+", "input")],
     ratings=Ratings(limits=[VLimit(("VS",), ("GND",), 6, "abs max"),
-                            VLimit(("IN+", "IN-"), ("GND",), 42, "abs max; may exceed if pin current <= 5 mA (note 3)")]),
+                            VLimit(("IN+", "IN-"), ("GND",), 42, "abs max; may exceed if pin current <= 5 mA (note 3); "
+                                   "recommended VCM -0.2..40 V (6.3)", v_rec=40)]),
     lifecycle="active", second_source="INA186A2-Q1 in DCK (SC-70) [S]",
     source={"pins": "INA186-Q1 DS SBOS386B p.3 Fig. 5-2/Table 5-1 (DBV): 1 GND, 2 OUT, 3 VS, 4 IN-, 5 IN+",
-            "ratings": "INA186-Q1 DS SBOS386B p.4 6.1: VS 6 V, inputs GND-0.3..42 V, note 3 (5 mA)"})
+            "ratings": "INA186-Q1 DS SBOS386B p.4 6.1: VS 6 V, inputs GND-0.3..42 V, note 3 (5 mA); 6.3 recommended "
+                       "VCM GND-0.2..40 V"})
 
 TLV9001 = PartDef(
     mpn="TLV9001QDBVRQ1", manufacturer=TI, symbol="Amplifier_Operational:TLV9061xDBV",
@@ -308,7 +316,8 @@ def _amc(mpn, desc, ratings_src, pins_src, gain_note):
             limits=[VLimit(("VDD",), ("GND",), 6.5, "abs max")],
             isolation=[Isolation(("DCDC_OUT", "DCDC_HGND", "HLDO_IN", "HLDO_OUT", "INP", "INN", "HGND"),
                                  ("GND", "OUTN", "OUTP", "VDD", "LDO_OUT", "DIAG", "DCDC_GND", "DCDC_IN"),
-                                 v_iso_rms=4250, grade="reinforced", v_work_rms=1200, creepage_mm=8.0,
+                                 v_iso_rms=4250, grade="reinforced", v_work_rms=1200, v_work_dc=1700,
+                                 creepage_mm=8.0, material_group="I",
                                  standard="DIN VDE V 0884-11 reinforced; UL 1577 4250 Vrms; VIOWM 1200 Vrms / "
                                           "1700 VDC; CTI >= 600 V (material group I)")],
             t_min=-40, t_max=125),
@@ -393,7 +402,8 @@ LM5164 = PartDef(
     category="ic", description="100 V 1 A COT synchronous buck", datasheet=DS["LM5164"],
     ratings=Ratings(limits=[VLimit(("VIN", "EN/UVLO"), ("GND",), 100, "abs max"),
                             VLimit(("FB", "RON"), ("GND",), 5.5, "abs max"),
-                            VLimit(("BST",), ("SW",), 5.5, "BST-SW abs max"),
+                            VLimit(("BST",), ("SW",), 5.5, "BST-SW abs max; internal 5 V gate-drive regulator",
+                                   derate=False),
                             VLimit(("SW",), ("GND",), 100, "abs max -1.5..100 V"),
                             VLimit(("PGOOD",), ("GND",), 14, "abs max")]),
     lifecycle="active", second_source="LM5163-Q1 (0.5 A) [S]",
@@ -426,11 +436,11 @@ DSPIC_PINS = [
     (1, "RB14/PWM1H"), (2, "RB15/PWM1L"), (3, "RC12/PWM8H"), (4, "RC13/PWM8L"), (5, "MCLR"), (6, "RD13/RP77"),
     (7, "RC0/AN12"), (8, "RA0/AN0"), (9, "RA1/ANA1"), (10, "RA2/AN9"), (11, "RA3/AN3"), (12, "RA4/AN4"),
     (13, "AVDD"), (14, "AVSS"), (15, "RC1/AN13"), (16, "RC2/AN14"), (17, "RC6/AN17"), (18, "VDD"), (19, "VSS"),
-    (20, "RC3/AN15"), (21, "RB0/AN5"), (22, "RB1/AN6"), (23, "RD10/AN18"), (24, "RC7/AN16"), (25, "RB2/AN1"),
-    (26, "RB3/PGD2"), (27, "RB4/PGC2"), (28, "RC8/SCK2"), (29, "RC9/SDI2"), (30, "RD8/SDO2"), (31, "VSS"),
-    (32, "VDD"), (33, "RB5/PGD3"), (34, "RB6/PGC3"), (35, "RB7/TDO"), (36, "RB8/PGD1"), (37, "RB9/PGC1"),
+    (20, "RC3/AN15"), (21, "OSCI/RB0"), (22, "OSCO/RB1"), (23, "RD10/AN18"), (24, "RC7/AN16"), (25, "RB2/AN1"),
+    (26, "RB3/AN8"), (27, "RB4/PGC2"), (28, "RC8/SCK2"), (29, "RC9/SDI2"), (30, "RD8/SDO2"), (31, "VSS"),
+    (32, "VDD"), (33, "RB5/PGD3"), (34, "RB6/PGC3"), (35, "RB7/AN2"), (36, "RB8/AN10"), (37, "RB9/RP41"),
     (38, "RC4/RP52"), (39, "RC5/RP53"), (40, "RC10/PWM7H"), (41, "RC11/PWM7L"), (42, "VSS"), (43, "VDD"),
-    (44, "RD1/RP65"), (45, "RB10/TMS"), (46, "RB11/TCK"), (47, "RB12/TDI"), (48, "RB13/RP45")]
+    (44, "RD1/RP65"), (45, "RB10/RP42"), (46, "RB11/RP43"), (47, "RB12/RP44"), (48, "RB13/RP45")]
 
 
 def _dspic_pin(num, name):
@@ -449,10 +459,12 @@ DSPIC = IC(
     footprint="Package_QFP:TQFP-48_7x7mm_P0.5mm",
     description="dsPIC33CK 100 MIPS DSC, 3 ADC cores, high-resolution PWM, CAN FD, AEC-Q100",
     pins=[_dspic_pin(n, s) for n, s in DSPIC_PINS],
-    ratings=Ratings(limits=[VLimit(("VDD", "AVDD"), ("VSS",), 4.0, "abs max VDD")]),
+    ratings=Ratings(limits=[VLimit(("VDD", "AVDD"), ("VSS",), 4.0, "abs max VDD; recommended 3.0-3.6 V", v_rec=3.6)]),
     lifecycle="active", second_source="dsPIC33CK128MP505 / dsPIC33CK64MP505 (same pinout, less memory)",
     source={"pins": "dsPIC33CK256MP508 family DS70005349K p.8 Table 6 (48-pin TQFP): pin names abbreviated to the "
-                    "port and the function used; full alternate functions in that table",
+                    "port and the function used (21 OSCI/CLKI/AN5/RP32/RB0, 22 OSCO/CLKO/AN6/RP33/RB1, 26 PGD2/OA2IN-/"
+                    "AN8/RP35/RB3, 33 PGD3/RP37/SDA2/RB5, 34 PGC3/RP38/RB6, 35 TDO/AN2/RP39/RB7, 36 PGD1/AN10/RP40/RB8, "
+                    "37 PGC1/AN11/RP41/RB9, 45-48 RB10-RB13 with RP42-RP45); full alternate functions in that table",
             "ratings": "DS70005349K electrical characteristics: VDD 3.0-3.6 V, abs max 4.0 V [S: section 30 not "
                        "re-read]; JTAG pins RB7/RB10-RB12 need JTAGEN = 0 (Table 6 note 2)"})
 
@@ -540,7 +552,8 @@ T_DCX = IC(
     "T301-ETD39-DCX22 (custom)", manufacturer="magnetics vendor to specification (DESIGN.md 7.3)",
     datasheet="designs/prius-solar-mppt/DESIGN.md#73-llc-dcx-and-t301",
     footprint="custom:ETD39_20pin_DCX", category="transformer",
-    description="LLC-DCX transformer ETD39 N97, Np 4 (litz) : Ns 88 (TIW), Lm 18 uH, Lr 0.8 uH, reinforced",
+    description="LLC-DCX transformer ETD39 N97, Np 4 (litz) : Ns 88 (TIW), Lm 18 uH +/-10 %, primary-referred leakage "
+                "<= 0.30 uH (spec; the resonant inductance is the discrete L301), reinforced",
     pins=[PinDef(1, "P_START", "passive", "left"), PinDef(2, "P_START", "passive", "left"),
           PinDef(3, "P_END", "passive", "left"), PinDef(4, "P_END", "passive", "left"),
           PinDef(11, "S_START", "passive", "right"), PinDef(20, "S_END", "passive", "right")],
@@ -548,7 +561,8 @@ T_DCX = IC(
                             VLimit(("S_START",), ("S_END",), 900, "secondary winding, TIW rated")],
                     pin_i_max={"P_START": 15, "P_END": 15, "S_START": 1.5, "S_END": 1.5}, p_max=4.0,
                     isolation=[Isolation(("P_START", "P_END"), ("S_START", "S_END"), v_iso_rms=5000,
-                                         grade="reinforced", v_work_rms=600, creepage_mm=10.0,
+                                         grade="reinforced", v_work_rms=600, v_work_dc=600, creepage_mm=10.0,
+                                         material_group="IIIa",
                                          standard="specified: IEC 61558-1 style reinforced, TIW secondary, 5.0 kVrms "
                                                   "60 s type / 4.25 kVrms 1 s routine, >= 10 mm pin-to-pin creepage")]),
     lifecycle="active", second_source="any qualified magnetics vendor (Wurth custom, Pulse, Sumida)",
@@ -567,9 +581,9 @@ RELAY_HV = IC(
                 VLimit(("C3",), ("C4",), 600, "open contact: max switching voltage / rated insulation voltage 600 V")],
         pin_i_max={"C3": 50, "C4": 50},
         isolation=[Isolation(("COIL_1", "COIL_2"), ("C3", "C4"), v_iso_rms=5000, grade="reinforced", v_work_rms=600,
-                             creepage_mm=12.6, standard="IEC 61810-1 reinforced 600 V, OVC III, PD2; 5000 VAC 1 min; "
+                             v_work_dc=600, creepage_mm=12.6, material_group="IIIa", standard="IEC 61810-1 reinforced 600 V, OVC III, PD2; 5000 VAC 1 min; "
                                                         "10 kV impulse"),
-                   Isolation(("C3",), ("C4",), v_iso_rms=2500, grade="functional", v_work_rms=600,
+                   Isolation(("C3",), ("C4",), v_iso_rms=2500, grade="functional", v_work_rms=600, v_work_dc=600,
                              standard="open contact (micro disconnection), 2500 VAC 1 min, gap >= 3.6 mm")],
         t_min=-40, t_max=85),
     lifecycle="active", second_source="G9KB-1A DC24 with a 24 V coil supply; TE LEV100 (panel mount) [S]",
@@ -578,7 +592,8 @@ RELAY_HV = IC(
             "ratings": "K340-E1-06 p.1 coil (12 V, 235 mA, 51 Ohm, must operate 75 %, max 110 %, holding 45-60 %), "
                        "p.2 contacts (600 VDC 50 A, 600 VDC making 1 A/breaking 1 A), dielectric 5000 VAC coil-contact "
                        "and 2500 VAC same-polarity contacts, impulse 10 kV, -40..85 C; p.4 insulation: coil-contact "
-                       "reinforced 600 V OVC III PD2, creepage 12.6 mm, clearance 8.0 mm, IIIa"})
+                       "reinforced 600 V OVC III PD2, creepage 12.6 mm, clearance 8.0 mm, IIIa. IEC 60664-1 rated "
+                       "insulation voltages are r.m.s. or DC, so 600 V is used as v_work_dc too"})
 RELAY_HV.prefix = "K"
 
 FUSE_HV = Fuse(5, 500, "custom:Eaton_EVM10-2P", mpn="EVM10-5-2P", manufacturer="Eaton Bussmann", i2t=105,
@@ -604,20 +619,18 @@ J_3P = Conn(3, "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_3-G-5,08_1x03_P5
             v_max=320, mpn="1757255", manufacturer=MSTB, datasheet="https://www.phoenixcontact.com/en-us/products/1757255",
             lifecycle="active", second_source="Wurth 691311500103 [unverified]", source=MSTB_SRC,
             description="MSTBA 2,5/3-G-5,08 header")
-J_6P = Conn(6, "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_6-G-5,08_1x06_P5.08mm_Horizontal", i_max=12,
-            v_max=320, mpn="1757284", manufacturer=MSTB, datasheet="https://www.phoenixcontact.com/en-us/products/1757284",
-            lifecycle="active", second_source="Wurth 691311500106 [unverified]", source=MSTB_SRC,
-            description="MSTBA 2,5/6-G-5,08 header")
-GMSTB_SRC = {"ratings": "Phoenix GMSTBA 2,5 (7.62 mm) family page [S]: 12 A, 630 V (IEC, III/2); UL 300 V "
-                        "[unverified] - the IEC rating is the one used (vehicle, not UL listed)"}
-J_HV2 = Conn(2, "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_2-G-7,62_1x02_P7.62mm_Horizontal", i_max=12,
-             v_max=630, mpn="1766343", manufacturer=MSTB, datasheet="https://www.phoenixcontact.com/en-us/products/1766343",
-             lifecycle="active", second_source="none drop-in (pitch-specific)", source=GMSTB_SRC,
-             description="GMSTBA 2,5/2-G-7,62 header [item number unverified]")
-J_HV3 = Conn(3, "Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_3-G-7,62_1x03_P7.62mm_Horizontal", i_max=12,
-             v_max=630, mpn="1766356", manufacturer=MSTB, datasheet="https://www.phoenixcontact.com/en-us/products/1766356",
-             lifecycle="active", second_source="none drop-in (pitch-specific)", source=GMSTB_SRC,
-             description="GMSTBA 2,5/3-G-7,62 header [item number unverified]")
+WAGO_SRC = {"ratings": "WAGO 236 series PCB terminal block, 10/10.16 mm pitch, CAGE CLAMP (opened with an operating "
+                       "tool), 0.08-2.5 mm2, 24 A [S: Buerklin/RS listings]; rated voltage (IEC, III/2) 630 V "
+                       "[unverified: WAGO data sheet to be read before layout, V-5]"}
+J_HV2 = Conn(2, "TerminalBlock_WAGO:TerminalBlock_WAGO_236-302_1x02_P10.00mm_45Degree", i_max=24, v_max=630,
+             mpn="236-302", manufacturer="WAGO", datasheet="https://www.wago.com/global/pcb-terminal-blocks/p/236-302",
+             lifecycle="active", second_source="Phoenix PT 2,5/2-PH-10,0 style 10 mm push-in block [unverified]",
+             source=WAGO_SRC, description="PCB terminal block 2-pole 10 mm, CAGE CLAMP: wired once, not pluggable "
+                                          "(review M5); inside the tool-opened, lid-interlocked HV cover")
+J_HV3 = Conn(3, "TerminalBlock_WAGO:TerminalBlock_WAGO_236-303_1x03_P10.00mm_45Degree", i_max=24, v_max=630,
+             mpn="236-303", manufacturer="WAGO", datasheet="https://www.wago.com/global/pcb-terminal-blocks/p/236-303",
+             lifecycle="active", second_source="Phoenix PT 2,5/3-PH-10,0 style 10 mm push-in block [unverified]",
+             source=WAGO_SRC, description="PCB terminal block 3-pole 10 mm, CAGE CLAMP (not pluggable)")
 J_FAN = Conn(2, "Connector_Molex:Molex_Micro-Fit_3.0_43650-0215_1x02_P3.00mm_Vertical", i_max=5, v_max=250,
              mpn="43650-0215", manufacturer="Molex", datasheet="https://www.molex.com/en-us/products/part-detail/436500215",
              lifecycle="active", second_source="Amphenol Minitek [unverified]",
@@ -665,7 +678,9 @@ W_PV = cable(2, "2-core 2.5 mm2 FLRY-B, 4 m", 20, 60, "PV string cable roof -> m
 W_HV = cable(3, "3-core screened HV cable 2 x 2.5 mm2 + 1 x 0.75 mm2, orange, >= 600 V, 2 m", 20, 600,
              "HV cable main box J301 -> battery-end box J901 (screen to both metal glands)")
 W_LV3 = cable(3, "3-core 0.75 mm2 FLRY-B, 2 m", 8, 60, "relay coil harness main J703 -> battery-end J903")
-W_NTC = cable(5, "screened 5-core 0.35 mm2 (4 NTC + ground)", 1, 60, "pack-case NTC harness -> main J706")
+W_NTC = cable(3, "screened 3-core 0.35 mm2 (2 NTC + ground)", 1, 60,
+              "pack-case NTC harness; hardware-OTP pair (J706) and firmware pair (J708) in separate cables")
+W_LID = cable(2, "2-core 0.5 mm2 FLRY-B, 0.3 m", 2, 60, "lid-interlock switch leads inside a box")
 W_CAN = cable(3, "OBD-II Y cable, CAN-H/CAN-L twisted pair + signal ground, 0.35 mm2", 1, 60,
               "OBD-II pass-through Y cable with a breakout to J707 (car's port stays usable)")
 W_IG = cable(2, "2-core 0.5 mm2 FLRY-B", 2, 60, "IG feed from the fuse tap and a chassis ground to J702")
@@ -683,3 +698,69 @@ FUSE_IG = Fuse(1, 32, None, mpn="0287001.PXCN", manufacturer="Littelfuse", descr
                "add-a-fuse tap on an IG2-switched fuse", datasheet="https://www.littelfuse.com/products/fuses/automotive-"
                "passenger-car/blade-fuses/287", lifecycle="active", second_source="Bussmann ATM-1 [S]",
                source={"ratings": "Littelfuse ATO 287 series [S]: 1 A, 32 VDC, 1000 A interrupting"})
+
+
+# ---------------------------------------------------------------------------------------------
+# Review fixes (REVIEW.md, phase 4): crystal, IMD, Lr, latch hold-up, PV-node clamp, HVIL
+
+XTAL = PartDef(
+    mpn="NX3225GA 20.000000MHz STD-CRA-1", manufacturer="NDK", symbol="Device:Crystal_GND24",
+    footprint="Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm", value="20MHz", category="crystal", prefix="Y",
+    description="Crystal 20 MHz fundamental, +/-50 ppm, +/-150 ppm over -40..150 C, CL 8 pF, AEC-Q200 (CAN clock)",
+    datasheet="https://www.ndk.com/en/products/search/crystal/1188870_1494.html",
+    ratings=Ratings(t_min=-40, t_max=150), lifecycle="active",
+    second_source="Kyocera CX3225CA (automotive) 20 MHz [unverified]",
+    source={"ratings": "NDK NX3225GA 'For Automotive' sheet (mirror cdn.eicom.ru/media/PDF/1296309.pdf): 9.8-50 MHz, "
+                       "+/-50e-6 at 25 C, +/-150e-6 vs temperature, -40..+150 C, CL 8 pF, ESR <= 120 Ohm (12-20 MHz), "
+                       "drive 10 uW (max 200 uW), conforms to AEC-Q200; ordering per note *3",
+            "pins": "same sheet, terminal land connections (top view): #1 and #3 crystal, #2 and #4 not connected "
+                    "('better to connect with a GND'); KiCad Crystal_GND24 1/3 crystal, 2/4 G; Crystal_SMD_3225-4Pin "
+                    "pads numbered the same way round [S]"})
+
+N_SW = PartDef(
+    mpn="BSS123Q-7", manufacturer="Diodes Incorporated", symbol="Transistor_FET:BSS123",
+    footprint="Package_TO_SOT_SMD:SOT-23", value="BSS123Q", category="mosfet",
+    description="N-MOSFET 100 V 0.17 A SOT-23, VGS(th) 0.8-2.0 V, AEC-Q101 (IMD range switch)",
+    datasheet="https://www.diodes.com/assets/Datasheets/BSS123Q.pdf",
+    ratings=Ratings(limits=[VLimit(("D",), ("S",), 100, "VDSS"), VLimit(("G",), ("S",), 20, "VGSS +/-20 V")]),
+    lifecycle="active", second_source="Nexperia BSS123 (AEC-Q101) [S]",
+    source={"ratings": "Diodes BSS123Q DS43455 Rev.1-2 p.2: VDSS 100 V, VGSS +/-20 V; p.3: VGS(th) 0.8-2.0 V at 1 mA, "
+                       "IDSS 10 nA at 20 V/25 C, 30 uA at 100 V/150 C; p.1 qualified to AEC-Q101",
+            "pins": "DS43455 p.1 SOT23 top view: G 1, S 2, D 3; KiCad Transistor_FET:BSS123 G 1, S 2, D 3"})
+
+TVS43 = PartDef(
+    mpn="TPSMB43A", manufacturer="Littelfuse", symbol="Device:D_Zener", footprint="Diode_SMD:D_SMB",
+    value="TPSMB43A", category="tvs", description="TVS unidirectional 600 W, VWM 36.8 V, VC 59.3 V (PV-node clamp)",
+    datasheet="https://www.littelfuse.com/assetdocs/tvs-diodes-tpsmb-datasheet",
+    ratings=Ratings(v_max=36.8), lifecycle="active", second_source="Vishay TPSMB43A-E3 [S]",
+    source={"ratings": "Littelfuse TPSMB series [unverified: datasheet download blocked]: VR 36.8 V, VBR 40.9-45.2 V, "
+                       "VC 59.3 V at 10.1 A, AEC-Q101",
+            "pins": "D_SMB pad 1 = cathode band; Device:D_Zener K = 1"})
+
+L_RES = L("0.56u", "Inductor_SMD:L_Coilcraft_XAL7070-XXX", i_max=20, mpn="XAL7070-561MEB", manufacturer="Coilcraft",
+          i_sat=30, datasheet="https://www.coilcraft.com/getmedia/xal70xx.pdf", lifecycle="active",
+          second_source="Wurth 744373680056 style 0.56 uH flat-wire [unverified]",
+          source={"ratings": "Coilcraft XAL7070 family [unverified: values to be read from document 1074 before "
+                             "layout]: 0.56 uH +/-20 %, Isat ~30 A, Irms ~20 A, AEC-Q200 grade 1"},
+          description="Discrete LLC resonant inductor Lr 0.56 uH (review M6: leakage is not a controlled Lr)")
+
+SUPERCAP = C_pol("0.1F", 5.5, "Capacitor_THT:CP_Radial_D13.0mm_P5.00mm", mpn="KW-5R5C104-R",
+                 manufacturer="Eaton Bussmann", datasheet="https://www.eaton.com/us/en-us/skuPage.KW-5R5C104-R.html",
+                 lifecycle="active", second_source="Kemet FT0H104ZF (-25..70 C, cold derated) [unverified]",
+                 description="Supercapacitor 0.1 F 5.5 V coin-type, -40..+85 C (latch hold-up, review M7)",
+                 source={"ratings": "Eaton KW-5R5C104-R product page [S]: 0.1 F, 5.5 V, -40..+85 C, ESR 50 Ohm DC, "
+                                    "industrial grade (no AEC-Q200 found); footprint pitch [unverified: check the KW "
+                                    "drawing before layout]"})
+
+R_10M = R("10M", "1206", tol="1%", p_max=0.25, v_max=200, mpn="CRCW120610M0FKEA", manufacturer="Vishay Dale",
+          datasheet="https://www.vishay.com/docs/20035/dcrcwe3.pdf", lifecycle="active",
+          second_source="Panasonic ERJ-8GEYJ106V (5 %) [S]",
+          source={"ratings": "Vishay D/CRCW e3 doc 20035 [S]: 1206 0.25 W, limiting element voltage 200 V, range to "
+                             "10 MOhm, AEC-Q200"})
+
+LID_SW = PartDef(symbol="Switch:SW_SPST", footprint=None, value="lid interlock", category="switch", prefix="S",
+                 generic=True, in_bom=True,
+                 description="Sealed snap-action switch, NO, held closed by the box lid (HVIL in the relay-coil supply), "
+                             ">= 1 A 30 VDC, IP67 [part to be chosen with the enclosure]",
+                 ratings=Ratings(v_max=30, i_max=1.0),
+                 source={"pins": "Switch:SW_SPST A/B, no polarity", "ratings": "requirement, not a part fact"})

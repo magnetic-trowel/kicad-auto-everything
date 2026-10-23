@@ -13,7 +13,7 @@
 	)
 	(lib_symbols)
 	(sheet
-		(at 25.4 55.88)
+		(at 25.4 63.5)
 		(size 144.78 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -29,14 +29,14 @@
 		)
 		(uuid "89ce7fb8-ac41-5215-9ddc-42c236e782b8")
 		(property "Sheetname" "BATEND"
-			(at 25.4 55.18 0)
+			(at 25.4 62.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "BATEND.kicad_sch"
-			(at 25.4 71.72 0)
+			(at 25.4 79.34 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -52,14 +52,14 @@
 	)
 	(text "Battery-end board: fuses on both poles, blocking diode, 2-pole disconnect, pack sense"
 		(exclude_from_sim no)
-		(at 26.67 63.5 0)
+		(at 26.67 71.12 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
 		(uuid "df2d422c-fae2-55cb-a48f-77c826f19a05")
 	)
-	(text "Prius Prime solar MPPT charger (rev B) — board 'batt_end'\nBoards: main: MPPT_A, MPPT_B, DCX, HVSENSE, LIMIT, SAFETY, AUX, MCU; batt_end: BATEND; off: ARRAY, HARNESS\nDomains: LV (elv, 0 V = GND); HV (hv, 0 V = HV_N); PACK (battery, 0 V = BAT_TAP_N); K1C (elv, 0 V = AUX12); K2C (elv, 0 V = AUX12); FANC (elv, 0 V =\n    AUX12); IDA (elv, 0 V = PVA_IN); IDB (elv, 0 V = PVB_IN); BSTA1 (elv, 0 V = MPPT_A/SW1); BSTA2 (elv, 0 V = MPPT_A/SW2); BSTB1 (elv, 0 V =\n    MPPT_B/SW1); BSTB2 (elv, 0 V = MPPT_B/SW2); DCXBST (elv, 0 V = DCX/HB_SW); AUXBST (elv, 0 V = AUX/AUX12_SW); V33BST (elv, 0 V = AUX/V33_SW)\nBarrier LV/HV: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier LV/PACK: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier HV/PACK: functional, 399 V working, creepage 5 mm, clearance 5 mm (IPC-2221B Table 6-1 B2 (301-500 V: 2.5 mm; >500 V: +0.005 mm/V))\nNOT READY FOR FABRICATION — blocking questions: Q-3, Q-4, Q-5, Q-6, Q-10"
+	(text "Prius Prime solar MPPT charger (rev B) — board 'batt_end'\nBoards: main: MPPT_A, MPPT_B, DCX, HVSENSE, IMD, LIMIT, SAFETY, AUX, MCU; batt_end: BATEND; off: ARRAY, HARNESS\nDomains: LV (elv, 0 V = GND); CHASSIS (elv, 0 V = GND); HV (hv, 0 V = HV_N); PACK (battery, 0 V = HV_N); KSUP (elv, 0 V = AUX12); K1C (elv, 0 V =\n    K_SUP); K2C (elv, 0 V = K_SUP); FANC (elv, 0 V = AUX12); IDA (elv, 0 V = PVA_IN); IDB (elv, 0 V = PVB_IN); BSTA1 (elv, 0 V = MPPT_A/SW1); BSTA2\n    (elv, 0 V = MPPT_A/SW2); BSTB1 (elv, 0 V = MPPT_B/SW1); BSTB2 (elv, 0 V = MPPT_B/SW2); DCXBST (elv, 0 V = DCX/HB_SW); AUXBST (elv, 0 V =\n    AUX/AUX12_SW); V33BST (elv, 0 V = AUX/V33_SW)\nBarrier LV/HV: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier LV/PACK: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier HV/CHASSIS: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier PACK/CHASSIS: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4 (DC working voltage))\nBarrier HV/PACK: functional, 399 V working, creepage 5 mm, clearance 5 mm (IPC-2221B Table 6-1 B2 (301-500 V: 2.5 mm; >500 V: +0.005 mm/V))\nNOT READY FOR FABRICATION — blocking questions: Q-3, Q-4, Q-5, Q-6, Q-10, Q-13"
 		(exclude_from_sim no)
 		(at 25.4 25.4 0)
 		(effects
