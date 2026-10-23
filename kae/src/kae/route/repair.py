@@ -140,10 +140,11 @@ class _Space:
 
 
 # ----------------------------------------------------------------------------- spokes
-def spoke_tracks(pad, zone, layer, need, plan, space, taken=None):
+def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
     """Up to `need` tracks of the pad's net from inside `pad` straight into the fill of
     `zone` (a zone_fills record) on `layer`, each clear of foreign copper, shortest first,
-    in directions at least 45 degrees apart: [{net, layer, a, b, width}]."""
+    in directions at least 45 degrees apart: [{net, layer, a, b, width}]. Fill pieces whose
+    key (zone uuid, layer, index) is in `skip` are not targets."""
     import shapely
     from shapely.geometry import LineString, Point
     from shapely.ops import unary_union
@@ -153,7 +154,8 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None):
     if not net or cls is None or need <= 0:
         return []
     w = plan.classes[cls].widths.get(layer)
-    pieces = [g for g in (_poly(r) for r in (zone.get("layers") or {}).get(layer) or []) if g is not None]
+    pieces = [g for i, g in enumerate(_poly(r) for r in (zone.get("layers") or {}).get(layer) or [])
+              if g is not None and (zone.get("uuid"), layer, i) not in skip]
     if not w or not pieces:
         return []
     core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
@@ -236,15 +238,30 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
             space = _Space(copper if copper is not None else routed, info, plan)
         return space
 
-    def try_spokes(pad, zone, layers, need):
+    def try_spokes(pad, zone, layers, need, skip=()):
         if not zones or plan is None or info is None or pad is None or zone is None:
             return False
         for l in layers:
-            got = spoke_tracks(pad, zone, l, need, plan, get_space(), taken.setdefault((pad["uuid"], l), []))
+            got = spoke_tracks(pad, zone, l, need, plan, get_space(), taken.setdefault((pad["uuid"], l), []),
+                               skip=skip)
             if got:
                 spokes.extend(got)
                 return len(got) >= need
         return False
+
+    parts = {}
+
+    def own_pieces(pad):
+        """Fill pieces already joined to `pad` (its part of the net): a spoke into one of them
+        joins nothing."""
+        net = pad.get("net")
+        if net not in parts:
+            cu_ = plan.copper if plan is not None else (info or {}).get("copper", [])
+            parts[net] = net_clusters(net, info, copper if copper is not None else routed, fills, cu_)
+        for c in parts[net]:
+            if pad["uuid"] in c["pads"]:
+                return set(c["pieces"]) | set(c["teardrops"])
+        return set()
 
     for v in drc.errors(report):
         its = v.get("items") or []
@@ -290,7 +307,7 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
             pad = pads[pad_its[0]["uuid"]]
             zone = next((zones[it["uuid"]] for it in zone_its if it.get("uuid") in zones), None)
             layers = [l for l in pad.get("layers") or [] if zone and l in zone.get("layers", {})]
-            if try_spokes(pad, zone, layers, 1):
+            if zone and try_spokes(pad, zone, layers, 1, skip=own_pieces(pad)):
                 continue
             want_corridor.add(pad["uuid"])
         zl = set()

@@ -19,9 +19,10 @@ def _errors(board, tmp):
     return drc.errors(rep), rep
 
 
-def test_critical_copper_adds_no_drc_error(tmp_path):
+@pytest.mark.parametrize("back", [(), ("C3",)], ids=["one-side", "decap-on-back"])
+def test_critical_copper_adds_no_drc_error(tmp_path, back):
     from kae.route import critical
-    src = F.write_board(tmp_path / "in")
+    src = F.write_board(tmp_path / "in", back)
     base, _ = _errors(src, tmp_path)
     out = tmp_path / "out" / "board.kicad_pcb"
     out.parent.mkdir()
@@ -60,3 +61,29 @@ def test_run_without_bridge_writes_input_plus_locked_routing(tmp_path):
     assert text.count("(footprint") == src.read_text().count("(footprint")
     items = W.routing(out)
     assert len(items) == rep["critical"]["tracks"] + rep["critical"]["vias"] and all(r["locked"] for r in items)
+
+
+def test_modules_to_retweak_flags_a_cut_plane(tmp_path):
+    """The joint loop's interface on KiCad's own fills: the critical copper alone flags
+    nothing; another net's track slicing the ground plane under the hot loop flags the cell."""
+    from kae.route.critical_recheck import modules_to_retweak
+    s = F.session(tmp_path / "s")
+    s.route()
+    out = tmp_path / "crit" / "board.kicad_pcb"
+    out.parent.mkdir()
+    s.write(out)
+    assert modules_to_retweak(out, s.brief, workdir=tmp_path)["retweak"] == []
+    cell = next(m for m in s.modules if m.kind == "cell")
+    T = cell.spec["_T"]
+    x = sum(t.x for t in T) / len(T)
+    ys = [t.y for t in T]
+    cut = tmp_path / "cut" / "board.kicad_pcb"
+    cut.parent.mkdir()
+    text = out.read_text()
+    end = text.rstrip().rfind(")")
+    track = W.track_sexpr("+3V3", "B.Cu", 0.25, (x, min(ys) - 4), (x, max(ys) + 4), locked=False)
+    cut.write_text(text[:end] + track + text[end:])                  # an unlocked foreign track on the plane
+    (cut.parent / "board.kicad_pro").write_text((out.parent / "board.kicad_pro").read_text())
+    rc = modules_to_retweak(cut, s.brief, workdir=tmp_path)
+    assert cell.id in rc["retweak"], rc["modules"]
+    assert rc["modules"][cell.id]["cover_routed"] < rc["modules"][cell.id]["cover_stage"] - 0.1

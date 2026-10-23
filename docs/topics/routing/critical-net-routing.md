@@ -138,7 +138,7 @@ On human placements, 120 s per board [C]:
 | Critical stage runtime | 39 | 0.3–21 s per board, one shared core |
 | olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
 | Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
-| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 27 KiCad-free and 3 KiCad tests, one per bug fixed |
+| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 29 KiCad-free and 4 KiCad tests, with a regression test for each bug fixed |
 
 `tools/research/physics/crit_compare.py` puts the human board, the bridge alone and critical + bridge side by side per module and rail, and summarizes re-tweak rounds. `suite_physics.py --compare-to` gives the independent rb HF loop, DC R_eff and worst drop per amp.
 

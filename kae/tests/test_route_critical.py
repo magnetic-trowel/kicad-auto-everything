@@ -300,6 +300,10 @@ def test_decap_on_the_far_side_routes_through_a_via(tmp_path):
     assert m.status == "routed" and rt is not None and len(rt.vias) == 1
     assert {l for l, _, _ in rt.segs} == {"F.Cu", "B.Cu"}
     sp = s.space
+    # the IC's ground pin reaches the pour the capacitor sits in
+    gv = [it for it in m.copper if it.kind == "via" and it.net == "GND"]
+    tG = sp.terminal(next(f.uuid for f in s.board.footprints if f.ref == "U2"), ["4"])
+    assert gv and min(it.geom.distance(tG.geom) for it in gv) < 1.5
     for it in m.copper:
         others = [x for x in sp.routed if x is not it]
         if it.kind == "track":
@@ -423,3 +427,15 @@ def test_overlapping_guards_merge_into_one_layer_of_pours():
             assert p.intersection(q).area < 1e-9
     assert unary_union(bl).area == pytest.approx(16 + 16 - 1)
     assert [z[4] for z in g if z[1] == "In1.Cu"] == [3]
+
+
+def test_joint_never_moves_locked_parts(tmp_path):
+    from kae.board.kicad_file import load
+    from kae.route.critical import Session
+    from kae.route.critical_joint import optimize_modules
+    p = F.write_board(tmp_path)
+    b = load(p)
+    s = Session(p, info=F.synth_info(b), board=b, log=lambda *a: None)
+    keep = {f.uuid for f in b.footprints if f.ref in ("C1", "U1", "C3", "Y1")}
+    poses, copper, rep = optimize_modules(b, s.brief, terms=None, locked=keep, session=s, time_s=60)
+    assert not set(poses) & keep

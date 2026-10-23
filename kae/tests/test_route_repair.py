@@ -103,3 +103,22 @@ def test_spoke_tracks_land_in_fill_and_keep_clear_of_other_nets():
         assert tuple(s["a"]) == (0.0, 0.0)                           # from the pad's centre
         assert core.buffer(1e-6).contains(Point(s["b"]))           # KiCad: the end lies in the fill
         assert LineString([s["a"], s["b"]]).buffer(0.1).distance(m) >= 0.2 - 1e-6
+
+
+def test_pad_cut_off_from_its_zone_gets_a_spoke_into_the_rest_of_the_net():
+    """A pad in its own island of fill is joined to the net's other piece, not to its island
+    (a spoke into its own island joins nothing)."""
+    pad, other = _pad("p1", "N", 0, 0), _pad("q1", "N", 5, 0)
+    info = dict(pads=[pad, other], graphics=[], copper=["F.Cu", "B.Cu"])
+    island = box(-2, -2, 2, 2).difference(box(-0.9, -0.9, 0.9, 0.9)).union(box(0.4, -0.1, 0.95, 0.1))
+    main = box(3, -3, 8, 3)
+    zone = dict(uuid="z", net="N", layers={"F.Cu": [_ring(island), _ring(main)]})
+    plan = SimpleNamespace(net_class={"N": "kae_A"}, classes={"kae_A": SimpleNamespace(widths={"F.Cu": 0.2})},
+                           matrix={}, pin_class={}, obstacle_classes={}, obstacles=[], copper=["F.Cu", "B.Cu"])
+    report = dict(violations=[], unconnected_items=[dict(items=[
+        dict(description="Pad 1 [N] of U1 on F.Cu", uuid="p1", pos=dict(x=0, y=0)),
+        dict(description="Zone [N] on F.Cu, priority 0", uuid="z", pos=dict(x=3, y=-3))])])
+    a = repair.analyse(report, {}, info, plan, fills=[zone], layer_map={}, copper={})
+    assert len(a["spokes"]) == 1 and not a["thermal"]
+    end = Point(a["spokes"][0]["b"])
+    assert main.contains(end) and not island.buffer(0.05).contains(end)

@@ -104,7 +104,9 @@ def test_decap_groups_and_ownership_by_sheet():
     assert mcu['bulk_caps'] == ['C14'] and 'C14' not in mcu['hf_caps']   # >= 4.7 uF is bulk
     vdda = one(st['decaps'], ic='U2', rail='+3V3A')
     assert vdda['caps'] == ['C15']
-    assert set(mcu['pin_caps']) == {'1', '2', '3', '4'}
+    # four VDD pins on one net: no netlist evidence for which cap sits at which pin -> the placer pairs by distance
+    assert mcu['pin_caps'] == {} and mcu['pairing'] == 'nearest_pin'
+    assert flash['pin_caps'] == {'8': ['C30']} and flash['pairing'] == 'pin'
 
 
 def test_ldo_input_and_output_caps():

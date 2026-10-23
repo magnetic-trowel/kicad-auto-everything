@@ -1013,6 +1013,9 @@ def pin_sem(roles, p) -> str | None:
         return 'analog'
     if SUPPLY_PIN.match(fn):
         return 'supply'
+    if re.match(r'^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$', fn, re.I):
+        # '3V3', '5V', '+1.8V': a module's or IC's supply pin by its voltage; an output only when typed so
+        return 'supply_out' if p.ptype == 'power_out' else 'supply'
     if kind in ('ic', 'module') and (INT_OUT_PIN.search(fn) or (OUT_PIN.match(fn) and sub in SUPPLY_OUT_SUBS)):
         return 'supply_out'
     if SIGNAL_PIN.match(fn):

@@ -965,8 +965,11 @@ def _decap_groups(b: _B, cells) -> list:
             big = [x for x in b.caps_on(far) if (cap_class(b.nl.parts[x])[1] or 0) >= 9.9e-6 or b.nl.parts[x].package.polarized]
             pins = b.pads(L, far)
             if big and pins:
+                # the converter's own filter is its first one or two bulk capacitors; more of them on the rail sit
+                # at the loads (they stay its leftovers, owned but not pinned)
                 func = 'converter_output' if c['class'] == 'buck' else 'converter_input'
-                groups[(L, far, func)] = {'ref': L, 'rail': far, 'function': func, 'pins': pins, 'quota': len(big), 'cell': c['id']}
+                groups[(L, far, func)] = {'ref': L, 'rail': far, 'function': func, 'pins': pins, 'quota': min(2, len(big)),
+                                          'cell': c['id']}
     if ENTRY_BULK:
         # a rail that enters through a connector (or its series diode or fuse) keeps its polarized bulk
         # capacitors at the entry: they hold the cable's inductance up, not one load's pins
@@ -1007,7 +1010,7 @@ def allocate_caps(b: _B, cells, groups):
         lst.sort(key=lambda t: (_refkey(t[2]), t[0]))
         caps = b.caps_between(*rail) if isinstance(rail, tuple) else sorted(b.caps_on(rail), key=_refkey)
         for _, x, _ in lst:
-            x['caps'], x['caps_p'] = [], {}
+            x['caps'], x['caps_p'], x['quota_caps'] = [], {}, []
         if not caps:
             continue
         ncap, ng = len(caps), len(lst)
@@ -1040,13 +1043,19 @@ def allocate_caps(b: _B, cells, groups):
                     if f in ('regulator_output', 'regulator_input'):
                         v += 0.5 + 0.5 * big          # sources and inputs take the larger capacitors
                     elif f in ('converter_output', 'converter_input'):
-                        v += 0.5 + 0.5 * big if (far[c] or 0) >= 9.9e-6 or b.nl.parts[c].package.polarized else -3.0
+                        if not ((far[c] or 0) >= 9.9e-6 or b.nl.parts[c].package.polarized):
+                            S[(c, j)] = None      # an exclusive owner: only its eligible capacitors, never a leftover
+                            continue
+                        v += 0.5 + 0.5 * big
                     elif f == 'bypass':
                         v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
                     elif f == 'entry':
-                        v += 1.0 if _entry_cap(b, c) else -3.0
+                        if not _entry_cap(b, c):
+                            S[(c, j)] = None
+                            continue
+                        v += 1.0
                 v += _affinity(b, c, anchor)
                 if len(ranked) > 1 and j in rank_of:
                     v += RANK_W * (1.0 - abs(rc - rank_of[j]))
@@ -1064,18 +1073,32 @@ def allocate_caps(b: _B, cells, groups):
             tie = lambda t: (-t[0], corder[t[1]], jorder[t[2]])   # noqa: E731
         else:
             tie = lambda t: (-t[0], _refkey(t[1]), t[2])          # noqa: E731
-        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items()), key=tie):
+        for v, c, j in sorted(((v, c, j) for (c, j), v in S.items() if v is not None), key=tie):
             if c in owner or count[j] >= quota[j]:
                 continue
             owner[c] = j
             count[j] += 1
+            lst[j][1].setdefault('quota_caps', []).append(c)      # within quota: the ones a pin pairing may name
+        for c in caps:
+            if c in owner:
+                continue
+            ok = [j for j in range(ng) if S[(c, j)] is not None]
+            if not ok:
+                continue
+            # leftovers: among the owners that score within 0.5 of the best, the one with the fewest capacitors
+            # per pin (not always the first in reference order)
+            top = max(S[(c, j)] for j in ok)
+            near = [j for j in ok if S[(c, j)] >= top - 0.5]
+            j0 = min(near, key=lambda j: (count[j] / max(1, quota[j]), -S[(c, j)], j))
+            owner[c] = j0
+            count[j0] += 1
         for c in caps:
             if c not in owner:
-                owner[c] = max(range(ng), key=lambda j: (S[(c, j)], -j))
-        for c in caps:
-            sp = [S[(c, j)] + (math.log(quota[j]) if lst[j][0] == 'decap' else 0.0) for j in range(ng)]
-            mx = max(sp)
-            z = [math.exp(v - mx) for v in sp]
+                continue
+            sp = [S[(c, j)] + (math.log(quota[j]) if lst[j][0] == 'decap' else 0.0) if S[(c, j)] is not None else None
+                  for j in range(ng)]
+            mx = max(v for v in sp if v is not None)
+            z = [math.exp(v - mx) if v is not None else 0.0 for v in sp]
             tz = sum(z)
             j0 = owner[c]
             lst[j0][1]['caps'].append(c)
@@ -1084,7 +1107,7 @@ def allocate_caps(b: _B, cells, groups):
             x['shared_by'] = ng
             if typ == 'cell' and not x['caps']:
                 # more converters than capacitors: borrow the best-scoring one, flagged as shared
-                c = max(caps, key=lambda c: S[(c, j)])
+                c = max(caps, key=lambda c: S[(c, j)] if S[(c, j)] is not None else -99.0)
                 x['caps'] = [c]
                 x['caps_p'] = {c: 0.0}
                 x['cap_shared'] = True
@@ -1143,8 +1166,14 @@ def decaps(b: _B, groups) -> list:
             hf = [c for c in mine if cls[c] in ('hf', 'mid')]
             bulk = [c for c in mine if c not in hf]
             pins = sorted(g['pins'], key=_natkey)
-            pin_caps = {pn: [hf[i % len(hf)]] for i, pn in enumerate(pins)} if hf else {}
             cp = g['caps_p']
+            # a pin pairing only where the netlist decides it: one power pin, and capacitors this group owns with
+            # p >= 0.5. Several pins on one net: the placer pairs each capacitor with the nearest pin.
+            qc = [c for c in g.get('quota_caps') or [] if c in mine]
+            sure = [c for c in ([c for c in qc if c in hf] or qc) if cp.get(c, 0.0) >= 0.5]
+            pin_caps = {pins[0]: sure} if len(pins) == 1 and sure and g['function'] != 'entry' else {}
+            # bulk at a cable entry may sit anywhere on the rail: no pin of the connector claims it
+            pairing = 'pin' if pin_caps else ('nearest_load' if g['function'] == 'entry' else 'nearest_pin')
             if g['function'] == 'entry':
                 evs = [ev('topology', f"'{b.short(rail)}' enters through {ref}; polarized bulk capacitor(s) {', '.join(mine)}", MODERATE)]
             elif g['function'] in ('converter_output', 'converter_input'):
@@ -1175,7 +1204,8 @@ def decaps(b: _B, groups) -> list:
             out.append(_struct('decap', sid, evs,
                                conf_cap=conf_cap, prior=0.0,
                                ic=ref, power_pins=pins, ground_pins=gpins, rail=rail, ground=gnd, caps=sorted(mine, key=_refkey),
-                               caps_p=cp, hf_caps=hf, bulk_caps=bulk, pin_caps=pin_caps, function=g['function'], shared_by=ng))
+                               caps_p=cp, hf_caps=hf, bulk_caps=bulk, pin_caps=pin_caps, pairing=pairing, function=g['function'],
+                               shared_by=ng))
     return out
 
 

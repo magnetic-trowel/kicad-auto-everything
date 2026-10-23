@@ -758,6 +758,11 @@ def route_decap(ctx, m):
         if pl is not None and pn in ctx.gnd:
             gnet2 = tg.net
             _decap_vias(ctx, m, loops[-1], gnet2, lay, pl)
+        elif (tG is not None and tG.net == tg.net and lay not in tG.layers
+              and ctx.sp.zone_covers(tg.net, lay, tg.x, tg.y)):
+            # the capacitor sits in the ground pour of its own layer, across the board from
+            # the IC: the IC's ground pin gets a via down into that pour
+            _ic_ground_via(ctx, m, loops[-1], tg.net, lay)
         elif tG is not None and tG.net == tg.net:
             lays = hop_layers(ctx, tg, tG, prefer=side)
             if lays:
@@ -819,6 +824,30 @@ def _decap_vias(ctx, m, lpd, net, layer, pl):
             m.vias[kG] = []
             if best is not None:
                 _commit_vias(ctx, m, net, lay, tG, [best[1]], kG)
+
+
+def _ic_ground_via(ctx, m, lpd, net, pour_layer):
+    """A via from the IC ground pin into the ground pour on `pour_layer` (the layer of a
+    capacitor on the far side), the site chosen by the routed loop."""
+    tG = lpd["tG"]
+    kG = f"via:{tG.fp}:{tG.pad}"
+    m.vias.setdefault(kG, [])
+    if m.vias[kG] or _has_plane_link(ctx, tG, net):
+        return
+    lay = tG.layers[0]
+    cands = via_candidates(ctx, tG, lay, net, pour_layer, toward=(lpd["tr"].x, lpd["tr"].y),
+                           in_pad=_is_thermal_pad(tG))
+    best = None
+    for v in cands[:8]:
+        m.vias[kG] = [v]
+        q = _decap_loop_value(ctx, m, lpd)
+        if q is not None and (best is None or q < best[0]):
+            best = (q, v)
+    m.vias[kG] = []
+    if best is None and cands:
+        best = (None, cands[0])
+    if best is not None:
+        _commit_vias(ctx, m, net, lay, tG, [best[1]], kG)
 
 
 def _decap_loop_value(ctx, m, lpd):
