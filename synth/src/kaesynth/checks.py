@@ -337,6 +337,10 @@ class Checker:
                 self.add("rating.voltage", "error",
                          f"{p.ref} ({p.value}): {what} can reach {lo:.3g} V, below its {lim.v_min:g} V limit", [p.ref])
             worst = max(hi, 0.0)
+        if not lim.derate:
+            if worst > lim.v_max:
+                self._rate("rating.voltage", p, worst, lim.v_max, what, where)
+            return
         if lim.v_rec is not None and worst <= lim.v_rec:
             if worst > lim.v_max:
                 self._rate("rating.voltage", p, worst, lim.v_max, what, where)
@@ -389,14 +393,24 @@ class Checker:
                     self.add("barrier.withstand", "error",
                              f"{p.ref} ({p.value}) withstand {iso.withstand_rms:.4g} Vrms < required {bar.v_test_rms:g} Vrms",
                              [p.ref])
-                if iso.v_work_rms and iso.v_work_rms * math.sqrt(2) < bar.v_work * 0.999 and iso.v_work_rms < bar.v_work:
+                if bar.ac:
+                    rated = iso.v_work_rms * math.sqrt(2) if iso.v_work_rms else None
+                    unit = "V peak (from Vrms)"
+                else:
+                    # a DC barrier needs a DC working rating; an rms rating is not scaled by sqrt(2)
+                    rated = iso.v_work_dc if iso.v_work_dc else iso.v_work_rms
+                    unit = "V DC" if iso.v_work_dc else "V (rms rating applied to DC)"
+                if rated is not None and rated < bar.v_work * 0.999:
                     self.add("barrier.working_voltage", "error",
-                             f"{p.ref} ({p.value}) rated working voltage {iso.v_work_rms:g} Vrms < barrier {bar.v_work:g} V",
-                             [p.ref])
-                if iso.creepage_mm is not None and iso.creepage_mm < bar.creepage_mm:
+                             f"{p.ref} ({p.value}) rated working voltage {rated:.4g} {unit} < barrier "
+                             f"{bar.v_work:g} V {'peak' if bar.ac else 'DC'}", [p.ref])
+                need = bar.creepage_mm
+                if bar.creepage_by_group and iso.material_group in bar.creepage_by_group:
+                    need = bar.creepage_by_group[iso.material_group]
+                if iso.creepage_mm is not None and iso.creepage_mm < need:
                     self.add("barrier.package_creepage", "error",
-                             f"{p.ref} ({p.value}) package creepage {iso.creepage_mm:g} mm < required {bar.creepage_mm:g} mm",
-                             [p.ref])
+                             f"{p.ref} ({p.value}) package creepage {iso.creepage_mm:g} mm < required {need:g} mm"
+                             + (f" for material group {iso.material_group}" if iso.material_group else ""), [p.ref])
 
     def barrier_between(self, root_a, root_b):
         best = None
@@ -662,15 +676,23 @@ class Checker:
                     self.add("place.separate_without_barrier", "error",
                              f"separate({a}, {b}) has no matching Barrier giving its spacing", [a, b])
 
-    def apply_waivers(self):
+    def apply_waivers(self, final=False):
+        used = set()
         for f in self.findings:
-            for w in self.d.waivers:
+            for i, w in enumerate(self.d.waivers):
                 if w.check not in (f.check, "*"):
                     continue
                 hay = " ".join([f.message] + f.objects)
                 if re.search(w.match, hay):
                     f.waived_by = f"{w.by}: {w.reason}"
+                    used.add(i)
                     break
+        if final:
+            self.findings = [f for f in self.findings if f.check != "waiver.unused"]
+            for i, w in enumerate(self.d.waivers):
+                if i not in used:
+                    self.add("waiver.unused", "warning",
+                             f"waiver {w.check} /{w.match}/ matches no finding; remove it ({w.reason[:60]})")
 
 
 def _natkey(s):

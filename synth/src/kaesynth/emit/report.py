@@ -58,6 +58,8 @@ def report_md(design, findings, kicad, status):
     if kicad.get("ran"):
         L.append(f"| KiCad ERC (kicad-cli {kicad.get('version', '')}) | {kicad['erc_summary']} |")
         L.append(f"| Schematic ↔ IR netlist round trip | {'identical' if not kicad['netlist_problems'] else 'MISMATCH'} |")
+        for name, probs in kicad.get("boards", {}).items():
+            L.append(f"| Board '{name}' project ↔ IR netlist | {'identical' if not probs else 'MISMATCH'} |")
         if "dru" in kicad:
             L.append(f"| Custom DRC rules parse | {kicad['dru']} |")
     else:

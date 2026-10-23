@@ -70,6 +70,7 @@ class VLimit:
     note: str = ""
     v_min: float = None
     v_rec: float = None
+    derate: bool = True           # False: a node the IC drives itself (charge pump, SS, COMP); hard limit only
 
 
 @dataclass
@@ -84,6 +85,8 @@ class Isolation:
     standard: str = ""
 
     v_iso_dc: float = None        # DC withstand, if the datasheet gives DC only (counted as /sqrt(2) Vrms)
+    v_work_dc: float = None       # rated DC working voltage (VIOWM-style), checked against DC barriers
+    material_group: str = None    # package mould CTI group (I, II, IIIa, IIIb) for its own creepage
 
     def __post_init__(self):
         if self.grade not in GRADES:
@@ -371,6 +374,8 @@ class Barrier:
     slot: bool = False
     source: str = ""
     notes: str = ""
+    ac: bool = False              # v_work is an AC peak (mains); otherwise DC
+    creepage_by_group: dict = None  # {"I": 4.0, ...}: required package creepage by CTI group
 
     def __post_init__(self):
         if self.grade not in GRADES:

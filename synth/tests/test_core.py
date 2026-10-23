@@ -327,3 +327,33 @@ def test_functional_rule_not_skipped_by_netclass_clearance():
     i_inh = text.index('"IR:barrier.B1.B2.inherited"')
     fn = [ln for ln in text.splitlines() if ln.startswith('(rule "IR:functional.B1.') and "0.6mm" in ln]
     assert fn and text.index(fn[0]) > i_inh               # the 0.6 mm IPC rule comes after (wins)
+
+
+def test_dc_barrier_needs_dc_working_rating():
+    """Repro from the Prius encoding: a 600 Vrms-rated isolator passed an 820 V DC barrier."""
+    def iso_part(**kw):
+        return PartDef(mpn="ISO", category="ic", footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+                       pins=[PinDef(1, "A"), PinDef(2, "B")],
+                       ratings=Ratings(isolation=[Isolation(("A",), ("B",), 5000, grade="reinforced", **kw)]))
+    for kw, bad in (({"v_work_rms": 600}, True), ({"v_work_rms": 600, "v_work_dc": 850}, False)):
+        d = Design("dcbar")
+        d.net("HVN", domain="HV", v=0); d.net("HVP", domain="HV", v=(0, 820))
+        d.net("GND", domain="LV", v=0)
+        d.domain("HV", ref="HVN"); d.domain("LV", ref="GND")
+        d.barrier("HV", "LV", grade="reinforced", v_work=820, creepage_mm=10, clearance_mm=8)
+        u = d.block("x").add(iso_part(**kw))
+        d.nets["HVP"].connect(u["A"]); d.nets["GND"].connect(u["B"])
+        for net in ("HVP", "GND"):
+            pass
+        assert ("barrier.working_voltage" in checks(run(d))) is bad
+
+
+def test_unused_waiver_reported():
+    d = Design("uw")
+    d.domain("D", ref="GND")
+    d.net("GND", domain="D", v=0, kind="ground")
+    d.waive("rating.voltage", "NOTHING", "stale")
+    ck = Checker(d)
+    ck.run()
+    ck.apply_waivers(final=True)
+    assert any(f.check == "waiver.unused" for f in ck.findings)

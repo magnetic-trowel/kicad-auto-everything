@@ -86,9 +86,12 @@ def build():
 - Envelopes are conservative. When a part can never see the full envelope difference (a shunt,
   an LED that cannot be reverse biased), declare `blk.add(part, v_across=0.1)` and say why in a comment.
 - Anything connecting two **roots** must declare `Ratings(isolation=[Isolation(a_pins, b_pins,
-  v_iso_rms, grade, v_work_rms, creepage_mm)])`, and a `d.barrier(a, b, grade, v_work,
+  v_iso_rms | v_iso_dc, grade, v_work_rms, v_work_dc, creepage_mm, material_group)])`, and a `d.barrier(a, b, grade, v_work,
   creepage_mm, clearance_mm, standard, v_test_rms, source)` must exist. Spacing numbers come from
   the standard's tables (cite them in `source`); the framework does not invent them.
+  Set `ac=True` on mains barriers (`v_work` is then a peak and parts' Vrms ratings are scaled by
+  sqrt 2); DC barriers need `v_work_dc` (an rms rating is applied to DC unscaled).
+  `creepage_by_group={"I": 4.0}` gives the package creepage required for better-CTI moulds.
 - `Domain(edge_clearance_mm=, edge_source=)` keeps that domain's copper off the board edge
   (emitted as a `.kicad_dru` `edge_clearance` rule).
 - Spacing: a net class's clearance covers voltages inside its own domain; between domains of
@@ -114,7 +117,8 @@ def build():
   part: datasheet revision, page, table. Missing provenance is a warning a reviewer will chase.
 - Ratings: `v_max` (2-terminal), `limits=[VLimit(("D",), ("S",), 100)]` (symmetric abs max;
   `v_min=-8` makes it directional; `v_rec=3.6` gives the recommended operating maximum, inside
-  which no derating warning fires — use it for IC supply and I/O pins), `i_max` / `pin_i_max`,
+  which no derating warning fires — use it for IC supply and I/O pins; `derate=False` for nodes
+  the IC drives itself, such as charge-pump, soft-start or compensation pins: hard limit only), `i_max` / `pin_i_max`,
   `p_max`, `polarity=("1", "2")`, `isolation=[...]`. Set `p_diss=` on parts from your calculations.
 - Generic passives (`R`, `C` without MPN) are allowed; resistors default to thick-film package
   ratings, capacitors need a voltage rating. Pass an MPN and real ratings for anything stressed.
@@ -161,7 +165,12 @@ everything else then follow from the switch node's own range.
 
 `d.calc(name, value, unit, expr=, note=, limit=, op="<=")` records a calculation in the report
 and fails the build if the limit is violated. `d.waive(check, regex, reason, by)` accepts a
-finding on the record; never waive an error you have not understood.
+finding on the record; never waive an error you have not understood. A waiver that matches nothing
+is reported (`waiver.unused`), so stale ones get removed.
+
+A relay or switch whose contacts join two parts of a circuit that can be connected (e.g. a
+converter output and the pack it charges) belongs to one root: model the worst case
+(connected), with a functional barrier across the open contacts.
 
 ## Checks
 

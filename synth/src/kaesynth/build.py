@@ -218,6 +218,9 @@ def build(design_path, outdir=None, use_kicad=True, date=None):
         kicad = {"ran": False, "reason": "KiCad symbol libraries not found; schematic not written"}
     else:
         kicad = {"ran": False, "reason": "missing symbols; schematic not written"}
+    checker.findings = findings
+    checker.apply_waivers(final=True)
+    findings = checker.findings
     (outdir / "netlist.json").write_text(json.dumps(nl.ir_netlist(d), indent=1) + "\n")
     (outdir / "intent.yaml").write_text(intent_yaml(d, netclasses))
     (outdir / "bom.csv").write_text(bom_csv(d))

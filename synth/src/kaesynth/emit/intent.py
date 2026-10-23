@@ -89,9 +89,11 @@ def intent_dict(design, netclasses, board=None):
     """Whole-design intent, or with `board` only that board's parts and the relations about them."""
     d = design.finalize()
     explicit = [{k: v for k, v in r.items() if v is not None} for r in d.place.resolve()]
-    sig = {(r["kind"], r.get("a"), r.get("b"), r.get("obj"), r.get("block")) for r in explicit}
-    auto = [r for r in infer_relations(d, d.place.relations)
-            if (r["kind"], r.get("a"), r.get("b"), r.get("obj"), r.get("block")) not in sig]
+    def key(r):
+        h = lambda v: tuple(map(str, v)) if isinstance(v, list) else v
+        return tuple(h(r.get(k)) for k in ("kind", "a", "b", "obj", "block"))
+    sig = {key(r) for r in explicit}
+    auto = [r for r in infer_relations(d, d.place.relations) if key(r) not in sig]
     relations = [dict(r, source="design") for r in explicit] + auto
     parts = [p for p in d.all_parts() if board is None or p.block.board_name == board]
     if board is not None:
