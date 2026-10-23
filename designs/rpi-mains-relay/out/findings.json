@@ -319,7 +319,7 @@
   {
    "check": "intent.blocking_question",
    "severity": "info",
-   "message": "Q-17 is BLOCKING and unanswered: Receptacles in the enclosure cover: devices on a machined polycarbonate subplate (MP4) behind a 3-gang cut-out are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have the assembly built and listed as an industrial control panel by a UL 508A shop?",
+   "message": "Q-17 is BLOCKING and unanswered: Receptacles in the enclosure cover: devices on a machined polycarbonate subplate (MP4) behind a 3-gang cut-out are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have the assembly built and listed as an industrial control panel by a UL 508A shop? NEC 406.5 wants receptacles in boxes or assemblies designed for the purpose, and the field-cut opening ends the Type 4X/12/13 rating: the enclosure is then used as an indoor, dry-location (Type 1) enclosure only.",
    "objects": [
     "Q-17"
    ]

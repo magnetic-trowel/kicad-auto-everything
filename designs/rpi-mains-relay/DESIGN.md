@@ -2,7 +2,7 @@
 
 Status: engineering design, encoded in [design.py](design.py) and [parts.py](parts.py), with custom
 footprints from [footprints/make_footprints.py](footprints/make_footprints.py). Not reviewed by a
-certification body. This is revision 3: revision 2 answered the review in [REVIEW.md](REVIEW.md) and the user
+certification body. This is revision 4 (re-review fixes N1–N3, m1–m8, on the revision-3 single enclosure): revision 2 answered the review in [REVIEW.md](REVIEW.md) and the user
 decisions Q-2 to Q-5; revision 3 applies the user's Q-8 decision (one enclosure, receptacles in
 its cover).
 
@@ -27,7 +27,8 @@ sources and are tagged so. Verify them against the adopted editions before fabri
 - **Switching.** Six G5RL-1A-E-TV8 relays switch line to the six outlets. They are rated 16 A, TV-8 and 1/2 hp, with reinforced 8/8 mm coil-to-contact insulation.
 - **Supply.** A Mean Well IRM-20-5 encapsulated AC/DC module makes 5 V from the shared L/N input behind its own 1 A time-lag fuse (10 kA at 125 VAC). The module is Class II, 4.2 kVAC, certified to UL/IEC 62368-1, and its output is a limited power source (LPS).
 - **Pi.** A Raspberry Pi Zero 2 W plugs component side up onto a 2×20 socket (J5) and is back-fed through header pins 2 and 4 behind a 2 A PTC. Its PCB antenna sits on the south board edge over a copper-free zone, inside an RF-transparent enclosure.
-- **Fail-safe.** Every coil current needs two keys: its channel GPIO (Q1–Q6) and Q7, held on by a 74LVC1G123 retriggerable monostable. The monostable only stays on while the heartbeat (HB) has rising edges, so if HB stops at either level the outlets go OFF within 61 ms. Q7's drain is read back on BCM16 for a boot-time and periodic self-test.
+- **Fail-safe.** Every coil current needs two keys: its channel GPIO (Q1–Q6) and Q7, held on by a 74LVC1G123 retriggerable monostable. The monostable only stays on while the heartbeat (HB) has rising edges, so if HB stops at either level the outlets go OFF within 0.36 s, while stalls up to 150 ms ride through (simulated in [wdsim.py](wdsim.py)). Q7's drain is read back on BCM16 for a boot-time and periodic self-test.
+- **Finger safety.** With the cover off, only the SELV/Pi zone is touchable: a clear IP2X shield (MP16) covers F1, the relay contacts, the PS1 AC end and the line copper; the receptacle backs are shrouded; the field terminals are finger-safe.
 - **Separation.** Three barriers keep the field wiring away from the low-voltage side:
   - A polycarbonate partition (MP1) cuts E1 into a field-wiring/receptacle compartment (north) and a PCB/Pi compartment (south).
   - An 8 mm copper-free band on the board separates every SELV part from mains copper.
@@ -62,10 +63,10 @@ The user's decisions after the first review are recorded as answered questions i
 | REQ-10 | Mains ↔ SELV | Reinforced everywhere. PCB creepage and clearance ≥ 8.0 mm; relay coil–contact reinforced; supply module Class II, 4.2 kVAC; field conductors kept out of the PCB/Pi compartment by MP1; hi-pot 3 kVrms for 60 s | UL/IEC 62368-1, IEC 60664-1 (C-8) | T-CREEP, T-HIPOT |
 | REQ-11 | Opposite-polarity mains spacing (L or L_SWk to N; L_SWj to L_SWk) | creepage ≥ 6.4 mm, clearance ≥ 3.2 mm | UL 1059 use group C [S] | T-CREEP |
 | REQ-12 | Mains copper to a board edge or mounting hole, where a bare EGC can lie | ≥ 6.4 mm (DRU `edge_clearance`, holes included) | UL field wiring 1/4 in to dead metal [S] | DRC |
-| REQ-13 | Fail-safe OFF | All outlets OFF when the Pi is absent, unpowered, booting, rebooting, halted or hung; when its SD card fails; when the 5 V sags or fails; and ≤ 0.1 s after the last heartbeat edge, whether HB stops high or low | brief ("reliable"); review M1 | T-BOOT, T-HB, T-BROWNOUT |
+| REQ-13 | Fail-safe OFF | All outlets OFF when the Pi is absent, unpowered, booting, rebooting, halted or hung; when its SD card fails; when the 5 V sags or fails; OFF ≤ 0.5 s after the last heartbeat edge, whether HB stops high or low; ON through heartbeat stalls ≤ 150 ms | revision-1 value restored (review N1): neither the brief nor a standard asks for faster, and 150 ms covers Linux GC, SD-writeback and Wi-Fi stalls [I] | T-BOOT, T-HB, T-BROWNOUT |
 | REQ-14 | Two-key rule | No single stuck GPIO and no single shorted driver energizes an outlet while the heartbeat is absent | derived | FMEA (§4), T-HB |
 | REQ-15 | Load on the Pi | ≤ 0.7 mA per CH pin; +3V3 ≤ 1 mA; only default-pull-down GPIOs | RPi docs GPIO pad table [P] | T-PWR |
-| REQ-16 | Heartbeat | 3.3 V square wave 100 Hz–10 kHz, 20–80 % duty, toggled by the control loop | C-4 | T-HB |
+| REQ-16 | Heartbeat | 3.3 V square wave 20 Hz–10 kHz, 20–80 % duty, from a high-priority thread that the control loop must pet (so a hung app still stops it) | C-4, wdsim.py | T-HB |
 | REQ-17 | Coil voltage | ≥ 4.5 V at the relay pins in the worst case (also tested at 4.63 V) | must-operate [P]; C-3 | T-COIL |
 | REQ-18 | Leakage at an OFF outlet | ≤ 0.1 mA (no snubber or MOV across the contacts) | C-12 | T-LEAK |
 | REQ-19 | Thermal | E1 internal air ≤ 60 °C at a 40 °C room, with all coils on, 15 A through one outlet and the Pi at full load; Pi ambient ≤ 70 °C; IRM within its derating | C-6 | T-HEAT |
@@ -74,7 +75,7 @@ The user's decisions after the first review are recorded as answered questions i
 | REQ-22 | Environment | Indoor dry, PD2, OVC III (conservative, review m7), ≤ 2000 m, room 0–40 °C | ASM-2 | — |
 | REQ-23 | Parts | Active and orderable; relays, terminals, supply module, fuse, receptacles, enclosures and PCB laminate listed or recognized | brief ("reliable") | BOM review |
 | REQ-24 | Installation | Licensed electrician; approval by the authority having jurisdiction (AHJ) | NEC 110.2/110.3 [I] | Q-1 |
-| REQ-25 | Markings | Ratings, conductor size and strip length, terminal labels, "disconnect before opening", "outlets are not a disconnecting means", Pi orientation | UL practice [I] | inspection |
+| REQ-25 | Markings | Ratings, conductor size and strip length, terminal labels, "disconnect before opening", "outlets are not a disconnecting means", Pi orientation, "DO NOT CONNECT MICRO-USB POWER" at J5, and on the cover OUT1–OUT6 with "GFCI PROTECTED" and "SWITCHED OUTLET" | UL practice [I] | inspection |
 | REQ-26 | Pi | Raspberry Pi Zero 2 W only, component side up on J5, with a 2×20 header soldered to its underside. No USB or HDMI peripherals. Powered only through J5 pins 2/4, never also from its micro-USB | Q-5 | inspection, T-PWR |
 | REQ-27 | 5 V supply | Listed encapsulated AC/DC module fed from the shared L/N through its own fuse. The 5 V budget must fit its derated capacity | Q-5; C-2, C-9 | T-PWR, T-BROWNOUT |
 | REQ-28 | Watchdog self-test | ARM_FB on BCM16. Software checks disarmed → armed → disarmed, with timing, at boot and whenever all outlets are off (at least daily). On failure it never arms, keeps every outlet off and raises an alarm | review M2 | T-SELFTEST |
@@ -91,7 +92,7 @@ The user's decisions after the first review are recorded as answered questions i
 | ASM-3 | Loads are plug-in appliances, LED or tungsten lighting, small motors. None is hazardous if left on, because a welded contact is a credible failure | H7 |
 | ASM-4 | The Zero 2 W draws ≤ 0.6 A at full CPU load. Published measurements: 0.5 A (Geerling), 0.58 A (Tom's Hardware), "nearly 3 W" (Hackster) [S]. The budget allows 1.0 A | C-2 |
 | ASM-5 | PCB laminate taken as material group IIIb (CTI ≥ 100 V) so the tables apply at their most conservative; FR-4 is usually IIIa [S] | C-8 |
-| ASM-6 | Control software toggles HB at ≥ 100 Hz from its main loop while any outlet should be on | C-4 |
+| ASM-6 | A high-priority thread toggles HB at ≥ 20 Hz while the control loop pets it; whole-system stalls > 150 ms are rare enough that dropping the loads then is acceptable | C-4 |
 | ASM-7 | The hardware keeps no output state: every Pi reboot or power cut leaves all outlets OFF | REQ-13 |
 | ASM-8 | The Zero 2 W antenna is on the connector edge between the mini-HDMI and the USB socket. That is where the Zero W has it [S], and the Zero 2 W underside silkscreen ("uses antenna technology licensed from Proant AB") sits there [V, photo]. Not confirmed in a drawing | Antenna keepout (§5.2, §9) |
 
@@ -112,14 +113,14 @@ The user's decisions after the first review are recorded as answered questions i
 | Q-13 | Relay supply (Omron → Aratas, long lead time): qualify the second source. | no | G5RL-1A-E-HR, TV-5 limit |
 | Q-14 | Pi header: the user solders a 2×20 header to the Zero 2 W's underside. A Zero 2 WH (header on top) would have to sit face-down, which mirrors the pinout, so it is not supported. | no | solder on the underside |
 | Q-15 | Generic hardware (nylon standoffs, NM connectors, wallplate, EGC splice, SD card) still needs MPNs. | no | specs in the BOM |
-| Q-17 | Receptacles in the cover on a machined subplate (MP4) are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have a UL 508A shop build and list the assembly as an industrial control panel? | **BLOCKING** | field evaluation with Q-1 |
+| Q-17 | Receptacles in the cover on a machined subplate (MP4) are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have a UL 508A shop build and list the assembly as an industrial control panel? NEC 406.5 wants receptacles in boxes or assemblies designed for the purpose [S], and the field-cut opening ends the Type 4X/12/13 rating: the enclosure is then used as an indoor dry-location (Type 1) enclosure only [I] | **BLOCKING** | field evaluation with Q-1 |
 | Q-16 | Add per-channel readback, which would detect a shorted channel MOSFET? It costs 6 GPIOs and 18 parts. | no | no; the channel LED shows it |
 
 ## 4. Hazards and failure modes
 
 | ID | Hazard | Mitigation | Implemented by | Survives a single fault? |
 |---|---|---|---|---|
-| H1 | Shock with the cover open (the receptacles come off with it) | Listed enclosures with screw covers (tool needed); "disconnect before opening" label; electrician installs; MP1 keeps field conductors and receptacle leads away from the Pi and SD-card area; a 300 mm lead service loop so the cover never hangs on a terminal | MP1, MP2, MP4 | n/a (service condition): de-energize at the breaker |
+| H1 | Shock with the cover open (the user opens it to service the Pi) | Screw cover (tool needed); "disconnect before opening" label. With the cover off only SELV/Pi parts are touchable: clear IP2X shield MP16 over F1, relay contacts, PS1 AC pins and line copper; receptacle backs shrouded on MP4; WAGO lever terminals finger-safe [I]; MP1 keeps field conductors away; stranded-lead service loop | MP1, MP2, MP4, MP16 | **Yes** for touch (IP2X guards); the guards are removed only with tools for mains work (review N2) |
 | H2 | Mains reaches SELV, the Pi, or a person touching the Pi | Reinforced insulation everywhere it is needed: IRM Class II, 4.2 kVAC [P]; relays 8/8 mm, 6 kVAC, 10 kV [P]; PCB 8/8 mm band; MP1 adds supplementary insulation over the field conductors' basic insulation; no SELV wiring leaves E1 | K1–K6, PS1, layout, MP1 | **Yes** (reinforced = double) |
 | H3 | A bare EGC or receptacle yoke touches live copper | Nonmetallic enclosures, so there is no box metal; EGCs spliced in the wire compartment with a listed connector; mains copper ≥ 6.4 mm from board edges and holes (DRU edge rule); copper north of MP1 lies under a terminal body or the MP1 sheet | J1–J4, MP1, MP15 | **Yes** |
 | H4 | Overload heats conductors, PCB, terminals, relays or receptacles | One protective device, the 15 A breaker; every downstream element rated ≥ 15 A at temperature (C-7, C-9) | breaker, K1–K6, J1–J4, MP5–MP7 | **Yes**; 15–20 A overloads tested in T-OL |
@@ -134,26 +135,26 @@ The user's decisions after the first review are recorded as answered questions i
 | H13 | Surge flashover or arc tracking | OVC III spacing; relays 10 kV impulse; IRM tested to 2 kV L–N [P]; no MOV in the box; panel SPD recommended | K1–K6, PS1 | **Yes** |
 | H14 | Pi fitted wrongly (face-down Zero 2 WH, or offset a row), putting 5 V on GPIO pins | Zero 2 W only, header on its underside; J5 footprint uses the Pi's own top-view pin numbering; Pi outline, "components up" and pin-1 marks on the silkscreen; a face-down Pi does not line up with the standoffs | J5, MP9, MP10 | **No**: assembly error, caught by inspection before power-up |
 | H15 | Motor stall on an outlet | The motor's own overload protection (NEC 430); 1/2 hp relay rating; contactor for larger motors | user | n/a |
-| H16 | Supply module fails: output lost, output high, or input short | Output lost: the coils drop and the Pi stops, so all OFF. Output high: module OVP 5.75–6.75 V shuts it off [P], TVS D15 clamps, coil max 6.5 V. Input short: F1 opens. A Pi-side short: PTC F2 limits it | PS1, F1, F2, D15 | **Yes** |
-| H17 | Pi reboot, kernel hang or SD-card corruption leaves outlets in an unknown state | Any stop of HB disarms in ≤ 61 ms (C-4). A Pi that cannot boot never arms. A read-only rootfs makes corruption unlikely (REQ-29). The self-test runs before arming (REQ-28) | U1, Q7, R24, R25, D16 | **Yes** |
+| H16 | Supply module fails: output lost, output high, or input short | Output lost: the coils drop and the Pi stops, so all OFF. Output high: module OVP 5.75–6.75 V shuts it off [P], TVS D15 clamps, coil max 6.5 V. Input short: F1 opens. A Pi-side short: PTC F2 limits it | PS1, F1, F2, D15 | **Yes** for the outlets (all OFF). An OVP event (5.75–6.75 V) can exceed the Pi PMIC's 6.5 V abs max [S] and destroy the Pi: equipment damage, accepted (review m1) |
+| H17 | Pi reboot, kernel hang or SD-card corruption leaves outlets in an unknown state | Any stop of HB disarms in ≤ 0.36 s (C-4). A Pi that cannot boot never arms. A read-only rootfs makes corruption unlikely (REQ-29). The self-test runs before arming (REQ-28) | U1, Q7, R24, R25, D16 | **Yes** |
 | H18 | A watchdog part fails so the outlets arm without a heartbeat | ARM_FB readback and the self-test catch it (FMEA below) | U1, R21, C6, Q7, R22, R24–R26, D16 | **Yes** |
 | H19 | Ground fault in a plugged-in load | GFCI protection of the branch (REQ-2, Q-6); EGC to every receptacle. Module leakage 0.12 mA ≪ the 4 mA no-trip level | MP5–MP7, breaker | **Yes** (GFCI is upstream) |
 
 **Watchdog FMEA (review M2).** The self-test sequence (REQ-28), with all CH low:
 
 1. Stop HB for ≥ 100 ms. Expect ARM_FB high ("disarmed").
-2. Toggle HB at 100 Hz. Expect ARM_FB low within 20 ms ("armed").
-3. Stop HB. Expect ARM_FB high again within 25–60 ms.
+2. Toggle HB at 50 Hz. Expect ARM_FB low within 20 ms ("armed").
+3. Stop HB. Expect ARM_FB high again within 150–345 ms (tw window, C-4).
 
 | Part | Failure | Effect | Detected by | Outcome |
 |---|---|---|---|---|
 | U1 | Q stuck high | Q7 always on: one key lost | Steps 1 and 3 read "armed" | Software never drives CH; outlets OFF; alarm |
 | U1 | Q stuck low, or no VCC | Cannot arm | Step 2 fails | Safe (OFF) |
-| R21 (330 kΩ) | Open | C6 never recharges, so Q stays high | Step 3 never disarms | Refuse; safe |
+| R21 (1 MΩ) | Open | C6 never recharges, so Q stays high | Step 3 never disarms | Refuse; safe |
 | R21 | Short (Rext/Cext tied to VCC, outside the datasheet) | Undefined timing | Step 2 or 3 fails | Refuse; safe |
-| C6 (100 nF) | Open, or value collapsed | tw ≈ ns, so Q7 hardly conducts | Step 2 fails, or ARM_FB pulses | Safe (cannot hold coils) |
+| C6 (220 nF) | Open, or value collapsed | tw ≈ ns, so Q7 hardly conducts | Step 2 fails, or ARM_FB pulses | Safe (cannot hold coils) |
 | C6 | Short | Timing never ends, so Q stays high | Step 3 | Refuse; safe |
-| C6 | Value drifts high | Disarm too slow | Step 3 timing > 60 ms | Refuse |
+| C6 | Value drifts high | Disarm too slow | Step 3 timing > 345 ms | Refuse |
 | Q7 | Drain–source short | Always armed | Step 1 reads "armed" | Refuse; outlets OFF |
 | Q7 | Open, or gate–source short | Cannot arm | Step 2 | Safe |
 | R22 (100 kΩ) | Open | Q7 gate floats only while U1 is unpowered (Pi absent), and then every CH is pulled low | none (latent) | Single-fault safe: the CH key holds |
@@ -213,9 +214,10 @@ UL 508A control-panel practice: a listed enclosure, field-cut, carrying listed d
 **How the receptacles mount.**
 
 - **Cover opening.** A rectangular cut-out matching the opening of a standard 3-gang duplex wallplate, centred about 75 mm below the top wall.
-- **Subplate MP4.** A 6.4 mm polycarbonate (UL 94 V-0) plate behind the cover, held by six nylon-insulated through-bolts. It is tapped 6-32 at standard yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch). The receptacle yokes screw to it, and the nylon wallplate (MP8) clamps the cover from outside, as on a wall box.
+- **Subplate MP4.** A 6.4 mm polycarbonate (UL 94 V-0) plate behind the cover, held by six nylon-insulated through-bolts. Brass heat-set 6-32 inserts sit at standard yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch); no thread is cut in the plastic, so plug forces cannot strip it (review N3). The receptacle yokes screw to the inserts, and the nylon wallplate (MP8) clamps the cover from outside, as on a wall box. A 1.5 mm polycarbonate rear shroud closes over the receptacle backs, with the leads leaving through a strain-relief grommet, so the energized backs are finger-safe when the cover is off.
+- **Enclosure rating.** The field-cut opening ends the NS14126's Type 4X/12/13 rating [I]; it is used as an indoor dry-location (Type 1) enclosure only, which ASM-2 already assumes. NEC 406.5 wants receptacles in "boxes or assemblies designed for the purpose" [S], so the AHJ or a UL 508A shop must accept the assembly (Q-17).
 - **Grounding.** Nothing on the cover is metal except the yokes. Each yoke's green screw gets a 14 AWG green pigtail to the EGC splice (NEC 250.146 [S]; nonmetallic enclosure, so no box bonding).
-- **Wiring.** Each receptacle gets black (top outlet), red (bottom outlet) and white leads, 14 AWG THHN/THWN-2, to its 3-pole terminal (J2–J4). The nine leads plus three pigtails run in spiral wrap with a 300 mm service loop, tied to the back panel north of MP1, so the cover can be removed and laid aside without stressing a terminal.
+- **Wiring.** Each receptacle gets black (top outlet), red (bottom outlet) and white leads, 14 AWG UL 1015 600 V 105 °C fine-stranded (Class K) copper, with ferrules at the WAGO end, to its 3-pole terminal (J2–J4). Solid wire would fatigue in the flexing loop (review N3). The nine leads plus three stranded green pigtails run in spiral wrap with a 300 mm service loop, strain-relieved at the shroud grommet and tied to the back panel north of MP1, so the cover can be removed and laid aside without stressing a terminal. With the cover off, the shrouded receptacles hang on these leads; that is part of the Q-17 package.
 - **Separation.** The receptacle block (backs reach about 40 mm into the 152 mm depth) sits above the north (field-wiring) compartment. Its terminals, the leads and the field conductors all stay north of the MP1 wall, which runs from the PCB to the cover. The Pi is in the south-west corner, ≥ 150 mm from the nearest receptacle terminal.
 
 **Arrangement (front view, cover removed; receptacles shown dashed where the cover carries them):**
@@ -261,11 +263,12 @@ move the access point or add a mesh node. Do not modify the Pi.
 
 - **Input fuse F1.** Littelfuse 0326001.MXP: 1 A, 250 VAC, 3AB 6.3 × 32 mm ceramic time-lag, in two PCB clips. It interrupts 10 kA at 125 VAC [S, distributor listings; the Littelfuse datasheet could not be opened, see Q-15]. At 60 °C it runs at 67 % of rating (C-9). Its time lag rides through the module's 20 A typical cold-start inrush [P].
   - The IRM block diagram shows no internal fuse [P], so F1 is needed.
-  - A 5×20 Littelfuse 215 (1500 A at 250 VAC [P]) was rejected: 1.5 kA is not a safe margin at a 120 V branch.
+  - A 5×20 Littelfuse 215 (1500 A at 250 VAC [P]) was rejected: 1.5 kA is not a safe margin at a 120 V branch. KiCad has no enclosed 6.3 × 32 holder, so the open clips stay and the IP2X shield MP16 covers them (review N2); replacing F1 means removing the shield, which is mains work.
+  - **Rating at 132 V (review m2).** The 10 kA rating is stated at 125 VAC [S]. NEC 110.9 compares interrupting ratings at the nominal circuit voltage, 120 V [I], and the fuse's voltage rating is 250 V; the Littelfuse 326 data sheet (Q-15) must confirm this before release.
 - **Surge and EMI.** The module meets EN 55032 class B and EN 61000-4-5 level 4 (2 kV L–N) without external parts [P], so there is no MOV and no filter (C-11).
 - **Hold-up and brown-out.**
   - Hold-up is 8 ms at full load and 115 VAC [P], or about 27 ms at our 5.8 W [I], so a one-cycle dropout rides through.
-  - Below 115 VAC the output derates (80 % at 85 VAC [P]). Longer sags reset the Pi or collapse 5 V. In either case HB stops, Q7 opens within 61 ms, and every outlet goes OFF.
+  - Below 115 VAC the output derates (80 % at 85 VAC [P]). Longer sags reset the Pi or collapse 5 V. In either case HB stops, Q7 opens within 0.36 s, and every outlet goes OFF.
   - A coil whose 5 V sags below hold voltage releases by itself.
   - Restart takes the module's 1 s setup [P] plus the Pi's boot. The outlets stay OFF until the software has passed its self-test (Q-11).
 - **Output protection.**
@@ -325,13 +328,15 @@ area.
 | Pump + 100 kΩ PUMP→GND (reviewer fix 1) | 0.15 s | 0.15 s | 2.62 V | add-on | possible |
 | Pump with C3 = 100 nF (reviewer fix 2) | 0.28 s | ≈ 0.15 s | 2.61 V | add-on | possible |
 | Dedicated window watchdog (e.g. TPS3430) | set by the window | set by the window | needs an extra gate driver | add-on | out: more parts, open-drain output |
-| **74LVC1G123 retriggerable monostable** | **≤ 61 ms** | **≤ 61 ms** (edge-triggered: levels cannot hold it) | push-pull V_OH ≥ 3.0 V | Q7 drain on BCM16 | **chosen** |
+| 74LVC1G123, rev 2/3 values (330 kΩ, 100 nF, tw 25–46 ms) | ≤ 61 ms | ≤ 61 ms | push-pull | Q7 drain | out: heartbeat gaps of 30–50 ms drop every outlet, and 22–40 Hz chatters (review N1) |
+| **74LVC1G123, R21 1 MΩ, C6 220 nF (tw 150–340 ms)** | **≤ 0.36 s** | **≤ 0.36 s** (edge-triggered: levels cannot hold it) | push-pull V_OH ≥ 3.0 V | Q7 drain on BCM16 | **chosen** |
 
 **How the 74LVC1G123 is wired.**
 
 - U1 runs from the Pi's 3.3 V (J5 pins 1/17). A is tied to GND and CLR to +3V3, so only a rising edge on B (HB) triggers it [P, Table 4-1].
 - Q drives Q7's gate directly.
-- tw = K·R21·C6, with K = 1.0–1.1 at 3.3 V [P, read at 10 kΩ / 0.1 µF] and R21 = 330 kΩ, C6 = 100 nF 50 V X7R. Over tolerance and temperature tw is **25–46 ms** (C-4).
+- tw = K·R21·C6, with K = 1.0–1.1 at 3.3 V [P, read at 10 kΩ / 0.1 µF] and R21 = 1 MΩ, C6 = 220 nF 50 V X7R (Yageo CC0603KRX7R9BB224). Over tolerance, temperature and the ±0.25 µA Rext/Cext leakage (±10 % at 1 MΩ [I]), tw is **150–340 ms** (C-4).
+- HB comes from a high-priority thread (e.g. `SCHED_FIFO`) that the control loop must pet each cycle, so app hangs still stop it but scheduler noise does not.
 - The power-up reset is glitch-free [P]. When U1 is unpowered its output goes high-Z [P, Ioff], so R22 (100 kΩ) holds Q7 off.
 - Q7's drain is read back through a 47 k/68 k divider with a 10 kΩ pull-up (R26), clamped by a BAT54S to GND and +3V3.
 - The Pi's own kernel watchdog (`dtparam=watchdog=on`, systemd `RuntimeWatchdogSec`) is recommended as well: it reboots a hung kernel. It is not part of the safety case, because a hung Pi already stops HB.
@@ -378,7 +383,7 @@ driven, and 0.28 V if software enables the internal 50 kΩ pull-up by mistake.
 | arm | Watchdog, arming switch, readback | U1, R21, C6, C7, R23, Q7, R22, D13, R19, R26, R24, R25, D16, TP3–TP5 | HB in; COIL_RTN (0.55 A); ARM_FB out |
 | ch1…ch6 | Coil drive and indication | Kk, Qk, Dk, D(k+6), Rk, R(k+6), R(k+12) | CHk (0.7 mA); +5V (93 mA); COIL_RTN; L_IN in, L_SWk out (15 A) |
 | outlets | Receptacle feeds | J2, J3, J4 | L_SW1–6, N (external) |
-| mech | Holes; BOM-only items | H1–H10, MP1–MP15 | — |
+| mech | Holes; BOM-only items | H1–H10, MP1–MP16 | — |
 
 | Domain | Nets | Reference | Range | Notes |
 |---|---|---|---|---|
@@ -434,10 +439,18 @@ All numbers below are evaluated in design.py (`d.calc`) and listed in out/report
 
 **C-4 Watchdog timing (both stuck cases, review M1).**
 
-- **Pulse width.** tw_min = 1.0 × 330 k × 100 n × 0.99 × 0.90 × 0.85 = **25.0 ms**. tw_max = 1.1 × 330 k × 100 n × 1.01 × 1.10 × 1.15 = **46.4 ms**. K is extrapolated from the 10 kΩ / 0.1 µF data [I], so T-HB measures it.
-- **Heartbeat margin.** HB at ≥ 100 Hz retriggers every ≤ 10 ms: 2.5× margin against tw_min.
-- **HB stuck high.** There is no further rising edge, so Q falls at most tw_max after the last edge. The gate falls in ns (push-pull), and the relay releases in ≤ 15 ms (5 ms max without a diode [P]; 15 ms allowed with the diode [I]). Total **≤ 61.4 ms**.
-- **HB stuck low.** Identical, **≤ 61.4 ms**: B is edge-triggered, so neither level can hold Q.
+- **Pulse width.** tw_min = 1.0 × 1 M × 220 n × 0.99 × 0.90 × 0.85 × 0.90 = **150 ms**; tw_max = 1.1 × 1 M × 220 n × 1.01 × 1.10 × 1.15 × 1.10 = **340 ms**. K is extrapolated from the 10 kΩ / 0.1 µF data [I], so T-HB measures it.
+- **Event simulation ([wdsim.py](wdsim.py), review N1).** Relay operate 15 ms [P]; release 2 ms when asking whether a gap drops a load, 15 ms (with the diode [I]) when asking how late it turns off.
+
+| Case | tw_min part (150 ms) | tw_max part (340 ms) |
+|---|---|---|
+| HB stuck high, last edge to contact open | 165 ms | **356 ms** ≤ 0.5 s |
+| HB stuck low | 165 ms | **356 ms** (identical: B is edge-triggered) |
+| Largest single HB gap that does not open a contact | **152 ms** ≥ 150 ms | 342 ms |
+| HB 2 / 4 / 6 Hz (chatter band 2.9–6.7 Hz) | 6 / 12 / 18 openings in 3 s | — |
+| HB 10 Hz and 20 Hz | 0 openings | 0 openings |
+
+- **Heartbeat margin.** REQ-16's 20 Hz minimum retriggers every ≤ 50 ms: 3× inside tw_min, and 3× above the chatter band.
 - **Clean turn-off.** Q7 turns off in ns, so the coil voltage is never "decreased gradually", which the G5RL precautions forbid (the M1 note).
 - **Arm gate.** V_GS(Q7) ≥ 3.135 − 0.1 = **3.04 V** ≥ 2.5 V.
 
@@ -555,11 +568,12 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | R1–R6 | Gate series 100 Ω | Yageo RC0603FR-07100RL | 0.1 W, 75 V | 52 µW | `Device:R` / 0603 | [S] | any |
 | R7–R12 | Gate pull-down 4.7 kΩ | Yageo RC0603FR-074K7L | | 2.3 mW | | | |
 | R13–R20 | LED 1.5 kΩ | Yageo RC0603FR-071K5L | | 7.5 mW | | | |
-| R21 | Rext 330 kΩ | Yageo RC0603FR-07330KL | | µW | | | |
+| R21 | Rext 1 MΩ | Yageo RC0603FR-071ML | | µW | | | |
 | R22, R23 | Pull-downs 100 kΩ | Yageo RC0603FR-07100KL | | µW | | | |
 | R24 / R25 / R26 | Readback 47 k / 68 k / 10 k | Yageo RC0603FR-0747KL / -0768KL / -0710KL | | ≤ 2.6 mW | | | |
 | C1, C2, C4 | 10 µF 16 V X5R | Murata GRM21BR61C106KE15L | | 5.25/16 V | `Device:C` / 0805 | backordered [S] | Yageo CC0805KKX5R7BB106 |
-| C3, C5, C6, C7 | 100 nF 50 V X7R | Yageo CC0603KRX7R9BB104 | ±10 %, X7R ±15 % | ≤ 5.25/50 V | `Device:C` / 0603 | [S] | Murata GRM188R71H104KA93D |
+| C6 | 220 nF 50 V X7R (Cext) | Yageo CC0603KRX7R9BB224 | ±10 %, X7R ±15 % | 3.3/50 V | `Device:C` / 0603 | [S], 26–35 wk lead time | any 220 nF 50 V X7R |
+| C3, C5, C7 | 100 nF 50 V X7R | Yageo CC0603KRX7R9BB104 | ±10 %, X7R ±15 % | ≤ 5.25/50 V | `Device:C` / 0603 | [S] | Murata GRM188R71H104KA93D |
 | TP1–TP6 | Test pads | — | — | — | `TestPoint_Pad_D1.5mm` | — | — |
 | H1–H6 | Board holes Ø3.2 NPTH | M3 × 12 mm nylon standoffs (MP12) | | | `MountingHole_3.2mm_M3` | | |
 | H7–H10 | Pi holes Ø2.7 NPTH | M2.5 × 11 mm nylon standoffs (MP11) | | | `MountingHole_2.7mm_M2.5` | | |
@@ -571,7 +585,7 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | MP1 | Partition: wall plus flat sheet, 1.5 mm polycarbonate UL 94 V-0, die-cut to a drawing (TBD) | [I] |
 | MP2 | E1 enclosure: Carlon NS14126 | [P catalog] |
 | MP3 | Back panel: Carlon JP1412P (PVC) | [P catalog] |
-| MP4 | Receptacle subplate, 6.4 mm polycarbonate, machined to drawing (TBD) | [I], Q-17 |
+| MP4 | Receptacle subplate assembly: 6.4 mm polycarbonate, brass 6-32 inserts, rear shroud, grommet; machined to drawing (TBD) | [I], Q-17 |
 | MP5–MP7 | Receptacles: P&S TR5252 | [S] |
 | MP8 | 3-gang nylon duplex wallplate | generic |
 | MP9 | Raspberry Pi Zero 2 W | [P] |
@@ -580,9 +594,10 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | MP12 | Board standoff kit | generic |
 | MP13 | Fuse clips | [S] |
 | MP14 | Industrial microSD card | generic |
-| MP15 | Field-wiring kit: NM-B connector, EGC lever splice, 9 receptacle leads (14 AWG THHN), 3 green pigtails, spiral wrap, tie mounts | generic, Q-15 |
+| MP15 | Field-wiring kit: NM-B connector, EGC lever splice, 9 receptacle leads (14 AWG UL 1015 fine-stranded, ferrules), 3 stranded green pigtails, spiral wrap, tie mounts | generic, Q-15 |
+| MP16 | Mains-area shield: 1.0 mm clear polycarbonate UL 94 V-0 tray, 4 mm perforations (IP2X), flanges to the back panel | [I], review N2 |
 
-Counts: 71 placed electrical parts (23 distinct MPNs), 6 test pads, 10 holes, 15 BOM-only items, and
+Counts: 71 placed electrical parts (23 distinct MPNs), 6 test pads, 10 holes, 16 BOM-only items, and
 three custom footprints drawn by [footprints/make_footprints.py](footprints/make_footprints.py).
 
 ## 9. Placement and mechanical constraints
@@ -607,14 +622,15 @@ three custom footprints drawn by [footprints/make_footprints.py](footprints/make
 
 ```
 pins_toward(J1..J4, [pole 1 = wire-entry row], north)    edge(J1..J4, north)
-pins_toward(K1..K6, [COIL_1, COIL_8], south)             array(K1..K6, x)   array(J2, J3, J4, x)
+pins_toward(K1..K6, [COIL_1, COIL_8], south)             array(K1..K6, x, pitch 20 mm)   array(J2, J3, J4, x, pitch 40 mm)
 pins_toward(PS1, [AC/L, AC/N], north)                     region(PS1, east)  region(J1, corner-ne)
 region([Qk, Dk, Rk, R(k+6), D(k+6), R(k+12)], south)      for k = 1..6
 align([Kk, Qk, D(k+6)], y)   near(Dk, Kk.COIL_1/COIL_8, tight)   near(Kk.C_4_5, its terminal, close)
 hot_loop([Dk.K, Kk.COIL_1, Kk.COIL_8, Dk.A])
 region(J5, corner-sw)  edge(J5, south)  datum(J5, holes H7-H10)          [custom]
 keepout(J5, antenna zone, all layers)   keepout(J5, parts under the Pi, top)
-far(J5, K1..K6, loose)  far(J5, PS1, loose)  far(J5, F1, loose)
+far(J5, K1..K6 / PS1 / F1, loose)  min_distance(J5, K1..K6 / PS1 / F1, 30 mm)        [custom]
+frame(origin lower-left, y north)  barrier_part(MP16 IP2X shield)                          [custom]
 group(arm) region(arm, south)  near(U1 pins, R21/C6/C7/R23)  near(R22, Q7.G)  near(D16/R25, J5.36)
 separate(...) for every barrier;  Net(width_mm=7.5) on L_IN, N, L_SW1-6
 barrier_part(MP1, wall at the J1-J4 south faces + sheet)  volume_keepout(wire compartment)   [custom]
@@ -652,11 +668,11 @@ current_path(L_IN, N, L_SW1-6: crossings single-layer)  enclosure_layout  ground
 | T-FUNC | REQ-3, 21 | Each outlet alone and all together, checked with a receptacle tester; LEDs | Correct outlet; LED matches the coil |
 | T-PWR | REQ-15, 26, 27 | 5 V and J5 voltage with all coils on and the Pi under `stress-ng` with Wi-Fi traffic; GPIO currents | ≥ 4.75 V at J5; ≤ 0.7 mA per pin; no under-voltage flag |
 | T-BOOT | H9, REQ-13, 29 | 100 cold boots, reboots, halts; Pi removed; SD removed; outlets logged at 1 ms by an isolated logger | No energization |
-| T-HB | H8, H18, REQ-13, 16 | HB stopped high, stopped low, at 10, 50, 100, 1 k, 10 kHz; measure tw and disarm-to-contact-open; inject a Qk short | Arms only at ≥ 100 Hz; OFF ≤ 0.1 s after the last edge in both stuck cases; with Qk shorted, OFF while HB is absent |
+| T-HB | H8, H18, REQ-13, 16 | HB stopped high, stopped low; HB at 2, 4, 6, 10, 20, 50 Hz and 10 kHz; single gaps of 20–300 ms in 10 ms steps, with `stress-ng` and Wi-Fi traffic running; measure tw, disarm-to-contact-open and gaps ridden; inject a Qk short | Measured tw 150–340 ms; OFF ≤ 0.5 s after the last edge in both stuck cases; gaps ≤ 150 ms never open a contact; any HB period shorter than the measured tw arms (≥ 20 Hz always); with Qk shorted, OFF while HB is absent |
 | T-SELFTEST | REQ-28, H18 | Inject each FMEA fault (Q7 D–S short, R21 open, C6 short/open, R24/R25 open, D16 short) | Software refuses to arm and alarms for each |
 | T-BROWNOUT | H16, REQ-13 | Ramp mains 132 → 0 → 132 V at 1 V/s and with 0.5/1/5/30-cycle dropouts, outlets ON | Outlets either stay ON (ride-through) or go OFF cleanly; no chatter; after restore, OFF until commanded |
 | T-COIL | REQ-17 | 60 °C chamber; hot restart after 1 h ON; repeat with the 5 V rail held at 4.63 V | 100/100 pickups |
-| T-HEAT | H12, REQ-19 | E1 closed, surface-mounted, 12 A on one outlet (and 15 A for 1 h), 6 coils on, Pi stressed, 4 h at 25 °C; thermocouples on relays, PS1 case, Pi SoC, terminals, air; extrapolate to 40 °C | Air ≤ 60 °C; Pi SoC < 80 °C without throttling; PS1 within its derating; terminals ≤ 90 °C |
+| T-HEAT | H12, REQ-19 | E1 closed, surface-mounted, 12 A on one outlet (and 15 A for 1 h), 6 coils on, Pi stressed, 4 h at 25 °C; thermocouples on relays, PS1 case, Pi SoC, terminals, air; extrapolate to 40 °C | Air ≤ 60 °C; PS1 within its derating; terminals ≤ 90 °C; at the application load the Pi does not throttle; under `stress-ng` throttling is allowed but no HB gap > 150 ms (review m5) |
 | T-OL | H4 | 20 A on one outlet through the 15 A breaker until it trips | No damage |
 | T-SC | H5, REQ-20 | Bolted fault at an outlet at 1 and 2 kA (sample destroyed); PS1 input short at 2 kA | Breaker clears / F1 clears; no flame out of E1 |
 | T-LOAD | REQ-5 | 1000 cycles: 8 A tungsten, 1/2 hp motor, LED drivers at 100 A peak inrush | No weld; contact drop < 100 mV at 1 A |
@@ -665,7 +681,7 @@ current_path(L_IN, N, L_SW1-6: crossings single-layer)  enclosure_layout  ground
 | T-LEAK | H11, REQ-18 | OFF outlet into 100 kΩ | ≤ 0.1 mA |
 | T-MISWIRE | H11 | L/N swapped at J1, found with a receptacle tester (commissioning procedure) | Procedure catches it |
 | T-RF | REQ-30 | RSSI and iperf at the installed location, lid closed; compare with the lid open | RSSI ≥ −67 dBm; < 3 dB lid penalty |
-| T-FILL | REQ-8, Q-17 | Wire E1 fully, fit the cover with the receptacles, remove and refit it 20 times | Cover closes without force; no lead pulled from a terminal; no conductor south of MP1 |
+| T-FILL | REQ-8, Q-17 | Wire E1 fully, fit the cover with the receptacles, remove and refit it 20 times | Cover closes without force; 20 N pull on every lead at both ends holds; no lead pulled from a terminal; no conductor south of MP1; MP16 and the MP4 shroud in place (IP2X finger probe cannot touch a live part with the cover off) |
 
 ## 11. Sources
 

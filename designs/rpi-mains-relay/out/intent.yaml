@@ -78,6 +78,10 @@ board:
       what: "parts other than J5"
       layers: top
       note: "under the Pi"
+    - rect: [12.0, 1.0, 77.0, 31.0]
+      what: "copper pours"
+      layers: all
+      note: "no pours under the whole Pi (antenna position inferred, ASM-8; review m6)"
     - relative: "north board edge to the J1-J4 wire-entry faces, full width"
       what: "all copper"
       layers: all
@@ -165,6 +169,10 @@ boards:
         what: "parts other than J5"
         layers: top
         note: "under the Pi"
+      - rect: [12.0, 1.0, 77.0, 31.0]
+        what: "copper pours"
+        layers: all
+        note: "no pours under the whole Pi (antenna position inferred, ASM-8; review m6)"
       - relative: "north board edge to the J1-J4 wire-entry faces, full width"
         what: "all copper"
         layers: all
@@ -890,19 +898,19 @@ components:
   - ref: R21
     block: arm
     board: main
-    value: "330k"
+    value: "1M"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [SELV]
-    mpn: RC0603FR-07330KL
+    mpn: RC0603FR-071ML
   - ref: C6
     block: arm
     board: main
-    value: "100n"
+    value: "220n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
     domains: [SELV]
-    mpn: CC0603KRX7R9BB104
+    mpn: CC0603KRX7R9BB224
   - ref: C7
     block: arm
     board: main
@@ -1562,6 +1570,14 @@ components:
     footprint: null
     category: mechanical
     domains: []
+  - ref: MP16
+    block: mech
+    board: main
+    value: KAE-RPMR-MP16
+    footprint: null
+    category: mechanical
+    domains: []
+    mpn: KAE-RPMR-MP16
 relations:
   - kind: edge
     obj: J1
@@ -1610,7 +1626,7 @@ relations:
   - kind: array
     members: [J2, J3, J4]
     axis: x
-    pitch: equal
+    pitch: "40 mm (>= 38 mm: L_SW stubs 6.4 mm from N and from the next block)"
     note: "J2 over K1/K2, J3 over K3/K4, J4 over K5/K6"
     source: design
   - kind: region
@@ -1621,8 +1637,8 @@ relations:
   - kind: array
     members: [K1, K2, K3, K4, K5, K6]
     axis: x
-    pitch: equal
-    note: "20 mm pitch, K1 west"
+    pitch: "20 mm"
+    note: "K1 west"
     source: design
   - kind: pins_toward
     obj: K1
@@ -2159,6 +2175,66 @@ relations:
     b: F1
     strength: loose
     source: design
+  - kind: x-min_distance
+    a: J5
+    b: K1
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: K2
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: K3
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: K4
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: K5
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: K6
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: PS1
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-min_distance
+    a: J5
+    b: F1
+    mm: 30
+    note: "antenna zone to relays/supply/fuse >= 30 mm (REQ-30)"
+    source: design
+  - kind: x-frame
+    origin: "board lower-left corner"
+    axes: "x east, y north (y up); KiCad is y down"
+    note: "all board coordinates in this file (holes, keepout rects, the J5 datum) use this frame (review m7)"
+    source: design
+  - kind: x-barrier_part
+    part: MP16
+    covers: "board area from the MP1 wall south to the barrier band: F1, relay contact pins, PS1 AC end, L/L_SW copper"
+    height_mm: 35
+    fixing: "flanges to the back panel beyond the board ends; no board holes"
+    note: "IP2X finger-safe shield (review N2); 4 mm perforations for convection"
+    source: design
   - kind: keepout
     obj: J5
     what: "parts under the Pi (courtyard = Pi outline)"
@@ -2503,6 +2579,14 @@ relations:
     obj: board
     text: "120 VAC 60 Hz, 15 A max branch; Cu 14-12 AWG, strip 11-13 mm; DANGER disconnect before opening; outlets are not a disconnecting means"
     source: design
+  - kind: x-label
+    obj: J5
+    text: "DO NOT CONNECT MICRO-USB POWER TO THE PI (it back-feeds the 5 V supply)"
+    source: design
+  - kind: x-label
+    obj: cover
+    text: "OUT1-OUT6 at each outlet; 'GFCI PROTECTED' and 'SWITCHED OUTLET' per outlet; 120 V 15 A total"
+    source: design
   - kind: group
     block: block:mains_in
     strength: close
@@ -2593,7 +2677,7 @@ constraints:
     kind: array
     members: [J2, J3, J4]
     axis: x
-    pitch: equal
+    pitch: "40 mm (>= 38 mm: L_SW stubs 6.4 mm from N and from the next block)"
   - id: rel.10
     from: region
     kind: region
@@ -2604,7 +2688,7 @@ constraints:
     kind: array
     members: [K1, K2, K3, K4, K5, K6]
     axis: x
-    pitch: equal
+    pitch: "20 mm"
   - id: rel.12
     from: pins_toward
     kind: pins_toward
@@ -3322,12 +3406,72 @@ constraints:
     min: 40.0
     hard: false
   - id: rel.113
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K1
+    mm: 30
+  - id: rel.114
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K2
+    mm: 30
+  - id: rel.115
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K3
+    mm: 30
+  - id: rel.116
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K4
+    mm: 30
+  - id: rel.117
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K5
+    mm: 30
+  - id: rel.118
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: K6
+    mm: 30
+  - id: rel.119
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: PS1
+    mm: 30
+  - id: rel.120
+    from: x-min_distance
+    kind: x-min_distance
+    a: J5
+    b: F1
+    mm: 30
+  - id: rel.121
+    from: x-frame
+    kind: x-frame
+    origin: "board lower-left corner"
+    axes: "x east, y north (y up); KiCad is y down"
+  - id: rel.122
+    from: x-barrier_part
+    kind: x-barrier_part
+    part: MP16
+    covers: "board area from the MP1 wall south to the barrier band: F1, relay contact pins, PS1 AC end, L/L_SW copper"
+    height_mm: 35
+    fixing: "flanges to the back panel beyond the board ends; no board holes"
+  - id: rel.123
     from: keepout
     kind: keepout
     obj: J5
     what: "parts under the Pi (courtyard = Pi outline)"
     layers: top
-  - id: rel.114
+  - id: rel.124
     from: near
     kind: proximity
     a: C4
@@ -3335,7 +3479,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.115
+  - id: rel.125
     from: near
     kind: proximity
     a: C5
@@ -3343,7 +3487,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.116
+  - id: rel.126
     from: group
     kind: cluster
     component_class: arm
@@ -3366,12 +3510,12 @@ constraints:
       - TP5
     max_span: 32.0
     hard: false
-  - id: rel.117
+  - id: rel.127
     from: region
     kind: region
     block: block:arm
     where: south
-  - id: rel.118
+  - id: rel.128
     from: near
     kind: proximity
     a: U1
@@ -3379,7 +3523,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.119
+  - id: rel.129
     from: near
     kind: proximity
     a: C7
@@ -3387,7 +3531,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.120
+  - id: rel.130
     from: near
     kind: proximity
     a: R21
@@ -3395,7 +3539,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.121
+  - id: rel.131
     from: near
     kind: proximity
     a: C6
@@ -3403,7 +3547,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.122
+  - id: rel.132
     from: near
     kind: proximity
     a: R23
@@ -3411,7 +3555,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.123
+  - id: rel.133
     from: near
     kind: proximity
     a: R22
@@ -3419,7 +3563,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.124
+  - id: rel.134
     from: near
     kind: proximity
     a: Q7
@@ -3427,7 +3571,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.125
+  - id: rel.135
     from: near
     kind: proximity
     a: D16
@@ -3435,7 +3579,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.126
+  - id: rel.136
     from: near
     kind: proximity
     a: R25
@@ -3443,7 +3587,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.127
+  - id: rel.137
     from: near
     kind: proximity
     a: R24
@@ -3451,7 +3595,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.128
+  - id: rel.138
     from: near
     kind: proximity
     a: R26
@@ -3459,12 +3603,12 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.129
+  - id: rel.139
     from: side
     kind: side
     obj: all
     side: top
-  - id: rel.130
+  - id: rel.140
     from: separate
     kind: isolation
     domains: [SELV, LINE]
@@ -3473,7 +3617,7 @@ constraints:
     creepage_mm: 8.0
     slot: false
     kicad_dru: IR:barrier.SELV.LINE
-  - id: rel.131
+  - id: rel.141
     from: separate
     kind: isolation
     domains: [LINE, OUT1]
@@ -3482,7 +3626,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT1
-  - id: rel.132
+  - id: rel.142
     from: separate
     kind: isolation
     domains: [LINE, OUT2]
@@ -3491,7 +3635,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT2
-  - id: rel.133
+  - id: rel.143
     from: separate
     kind: isolation
     domains: [LINE, OUT3]
@@ -3500,7 +3644,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT3
-  - id: rel.134
+  - id: rel.144
     from: separate
     kind: isolation
     domains: [LINE, OUT4]
@@ -3509,7 +3653,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT4
-  - id: rel.135
+  - id: rel.145
     from: separate
     kind: isolation
     domains: [LINE, OUT5]
@@ -3518,7 +3662,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT5
-  - id: rel.136
+  - id: rel.146
     from: separate
     kind: isolation
     domains: [LINE, OUT6]
@@ -3527,7 +3671,7 @@ constraints:
     creepage_mm: 2.5
     slot: false
     kicad_dru: IR:barrier.LINE.OUT6
-  - id: rel.137
+  - id: rel.147
     from: separate
     kind: isolation
     domains: [LINE, NEUTRAL]
@@ -3536,7 +3680,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.LINE.NEUTRAL
-  - id: rel.138
+  - id: rel.148
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT1]
@@ -3545,7 +3689,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT1
-  - id: rel.139
+  - id: rel.149
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT2]
@@ -3554,7 +3698,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT2
-  - id: rel.140
+  - id: rel.150
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT3]
@@ -3563,7 +3707,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT3
-  - id: rel.141
+  - id: rel.151
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT4]
@@ -3572,7 +3716,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT4
-  - id: rel.142
+  - id: rel.152
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT5]
@@ -3581,7 +3725,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT5
-  - id: rel.143
+  - id: rel.153
     from: separate
     kind: isolation
     domains: [NEUTRAL, OUT6]
@@ -3590,7 +3734,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.NEUTRAL.OUT6
-  - id: rel.144
+  - id: rel.154
     from: separate
     kind: isolation
     domains: [OUT1, OUT2]
@@ -3599,7 +3743,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT1.OUT2
-  - id: rel.145
+  - id: rel.155
     from: separate
     kind: isolation
     domains: [OUT1, OUT3]
@@ -3608,7 +3752,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT1.OUT3
-  - id: rel.146
+  - id: rel.156
     from: separate
     kind: isolation
     domains: [OUT1, OUT4]
@@ -3617,7 +3761,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT1.OUT4
-  - id: rel.147
+  - id: rel.157
     from: separate
     kind: isolation
     domains: [OUT1, OUT5]
@@ -3626,7 +3770,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT1.OUT5
-  - id: rel.148
+  - id: rel.158
     from: separate
     kind: isolation
     domains: [OUT1, OUT6]
@@ -3635,7 +3779,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT1.OUT6
-  - id: rel.149
+  - id: rel.159
     from: separate
     kind: isolation
     domains: [OUT2, OUT3]
@@ -3644,7 +3788,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT2.OUT3
-  - id: rel.150
+  - id: rel.160
     from: separate
     kind: isolation
     domains: [OUT2, OUT4]
@@ -3653,7 +3797,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT2.OUT4
-  - id: rel.151
+  - id: rel.161
     from: separate
     kind: isolation
     domains: [OUT2, OUT5]
@@ -3662,7 +3806,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT2.OUT5
-  - id: rel.152
+  - id: rel.162
     from: separate
     kind: isolation
     domains: [OUT2, OUT6]
@@ -3671,7 +3815,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT2.OUT6
-  - id: rel.153
+  - id: rel.163
     from: separate
     kind: isolation
     domains: [OUT3, OUT4]
@@ -3680,7 +3824,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT3.OUT4
-  - id: rel.154
+  - id: rel.164
     from: separate
     kind: isolation
     domains: [OUT3, OUT5]
@@ -3689,7 +3833,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT3.OUT5
-  - id: rel.155
+  - id: rel.165
     from: separate
     kind: isolation
     domains: [OUT3, OUT6]
@@ -3698,7 +3842,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT3.OUT6
-  - id: rel.156
+  - id: rel.166
     from: separate
     kind: isolation
     domains: [OUT4, OUT5]
@@ -3707,7 +3851,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT4.OUT5
-  - id: rel.157
+  - id: rel.167
     from: separate
     kind: isolation
     domains: [OUT4, OUT6]
@@ -3716,7 +3860,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT4.OUT6
-  - id: rel.158
+  - id: rel.168
     from: separate
     kind: isolation
     domains: [OUT5, OUT6]
@@ -3725,7 +3869,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.OUT5.OUT6
-  - id: rel.159
+  - id: rel.169
     from: separate
     kind: isolation
     domains: [LINE, PE]
@@ -3734,7 +3878,7 @@ constraints:
     creepage_mm: 6.4
     slot: false
     kicad_dru: IR:barrier.LINE.PE
-  - id: rel.160
+  - id: rel.170
     from: x-barrier_part
     kind: x-barrier_part
     part: MP1
@@ -3742,12 +3886,12 @@ constraints:
     height_mm: "PCB to lid (~130)"
     fixing: "flat sheet under the wall, die-cut around J1-J4 bodies, held down by them; nylon screws to the back panel beyond both board ends (no board holes)"
     covers: "wall: field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it. Sheet: all PCB copper north of the wall that is not under a terminal body"
-  - id: rel.161
+  - id: rel.171
     from: x-volume_keepout
     kind: x-volume_keepout
     region: "north of MP1, above J1-J4 up to the lid"
     what: "no parts; only terminal bodies, field conductors, EGC splice"
-  - id: rel.162
+  - id: rel.172
     from: x-current_path
     kind: x-current_path
     net: net:L_IN
@@ -3755,7 +3899,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.163
+  - id: rel.173
     from: x-current_path
     kind: x-current_path
     net: net:N
@@ -3763,7 +3907,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.164
+  - id: rel.174
     from: x-current_path
     kind: x-current_path
     net: net:L_SW1
@@ -3771,7 +3915,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.165
+  - id: rel.175
     from: x-current_path
     kind: x-current_path
     net: net:L_SW2
@@ -3779,7 +3923,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.166
+  - id: rel.176
     from: x-current_path
     kind: x-current_path
     net: net:L_SW3
@@ -3787,7 +3931,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.167
+  - id: rel.177
     from: x-current_path
     kind: x-current_path
     net: net:L_SW4
@@ -3795,7 +3939,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.168
+  - id: rel.178
     from: x-current_path
     kind: x-current_path
     net: net:L_SW5
@@ -3803,7 +3947,7 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.169
+  - id: rel.179
     from: x-current_path
     kind: x-current_path
     net: net:L_SW6
@@ -3811,109 +3955,119 @@ constraints:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-  - id: rel.170
+  - id: rel.180
     from: x-enclosure_layout
     kind: x-enclosure_layout
     walls: "NS14126 inside ~353 x 302 x 152 mm; board 200 x 150 on JP1412P"
     arrangement: "board in the lower (south) half of the back panel, centred, north edge (J1-J4) toward the top wall; compartment north of MP1 ~140 mm tall holds the field wiring, the EGC splice and the receptacle block, which hangs from the cover's upper half (3-gang cut-out centred ~75 mm below the top wall; receptacle backs reach ~40 mm into the 152 mm depth); branch cable in through the top wall"
-  - id: rel.171
+  - id: rel.181
     from: x-receptacle_mount
     kind: x-receptacle_mount
     part: MP4
     where: "cover, upper half, 3-gang opening"
-  - id: rel.172
+  - id: rel.182
     from: x-ground_splice
     kind: x-ground_splice
     where: "wire compartment, middle, >= 25 mm from any terminal"
-  - id: rel.173
+  - id: rel.183
     from: x-label
     kind: x-label
     obj: J1
     text: "LINE IN: L (black) / N (white) - 120 VAC 15 A"
-  - id: rel.174
+  - id: rel.184
     from: x-label
     kind: x-label
     obj: J2
     text: "RECEPTACLE A: TOP OUT1 (black) / N (white) / BOTTOM OUT2 (red)"
-  - id: rel.175
+  - id: rel.185
     from: x-label
     kind: x-label
     obj: J3
     text: "RECEPTACLE B: TOP OUT3 (black) / N (white) / BOTTOM OUT4 (red)"
-  - id: rel.176
+  - id: rel.186
     from: x-label
     kind: x-label
     obj: J4
     text: "RECEPTACLE C: TOP OUT5 (black) / N (white) / BOTTOM OUT6 (red)"
-  - id: rel.177
+  - id: rel.187
     from: x-label
     kind: x-label
     obj: board
     text: "120 VAC 60 Hz, 15 A max branch; Cu 14-12 AWG, strip 11-13 mm; DANGER disconnect before opening; outlets are not a disconnecting means"
-  - id: rel.178
+  - id: rel.188
+    from: x-label
+    kind: x-label
+    obj: J5
+    text: "DO NOT CONNECT MICRO-USB POWER TO THE PI (it back-feeds the 5 V supply)"
+  - id: rel.189
+    from: x-label
+    kind: x-label
+    obj: cover
+    text: "OUT1-OUT6 at each outlet; 'GFCI PROTECTED' and 'SWITCHED OUTLET' per outlet; 120 V 15 A total"
+  - id: rel.190
     from: group
     kind: cluster
     component_class: mains_in
     members: [J1, F1, PS1]
     max_span: 32.0
     hard: false
-  - id: rel.179
+  - id: rel.191
     from: group
     kind: cluster
     component_class: pi
     members: [J5, C4, C5, TP6]
     max_span: 32.0
     hard: false
-  - id: rel.180
+  - id: rel.192
     from: group
     kind: cluster
     component_class: ch1
     members: [R1, R7, Q1, D1, D7, R13, K1]
     max_span: 32.0
     hard: false
-  - id: rel.181
+  - id: rel.193
     from: group
     kind: cluster
     component_class: ch2
     members: [R2, R8, Q2, D2, D8, R14, K2]
     max_span: 32.0
     hard: false
-  - id: rel.182
+  - id: rel.194
     from: group
     kind: cluster
     component_class: ch3
     members: [R3, R9, Q3, D3, D9, R15, K3]
     max_span: 32.0
     hard: false
-  - id: rel.183
+  - id: rel.195
     from: group
     kind: cluster
     component_class: ch4
     members: [R4, R10, Q4, D4, D10, R16, K4]
     max_span: 32.0
     hard: false
-  - id: rel.184
+  - id: rel.196
     from: group
     kind: cluster
     component_class: ch5
     members: [R5, R11, Q5, D5, D11, R17, K5]
     max_span: 32.0
     hard: false
-  - id: rel.185
+  - id: rel.197
     from: group
     kind: cluster
     component_class: ch6
     members: [R6, R12, Q6, D6, D12, R18, K6]
     max_span: 32.0
     hard: false
-  - id: rel.186
+  - id: rel.198
     from: group
     kind: cluster
     component_class: outlets
     members: [J2, J3, J4]
     max_span: 32.0
     hard: false
-  - id: rel.187
+  - id: rel.199
     from: group
     kind: cluster
     component_class: mech
@@ -3943,5 +4097,6 @@ constraints:
       - MP13
       - MP14
       - MP15
+      - MP16
     max_span: 32.0
     hard: false

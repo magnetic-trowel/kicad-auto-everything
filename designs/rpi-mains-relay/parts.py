@@ -241,13 +241,17 @@ R_10K = _r("10k", "RC0603FR-0710KL")
 R_47K = _r("47k", "RC0603FR-0747KL")
 R_68K = _r("68k", "RC0603FR-0768KL")
 R_100K = _r("100k", "RC0603FR-07100KL")
-R_330K = _r("330k", "RC0603FR-07330KL")
+R_1M = _r("1M", "RC0603FR-071ML")
 
 C_10U = C("10u", 16, "0805", dielectric="X5R", mpn="GRM21BR61C106KE15L", manufacturer="Murata",
           datasheet="https://www.murata.com/en-us/products/productdetail?partno=GRM21BR61C106KE15L",
           lifecycle="active", second_source="YAGEO CC0805KKX5R7BB106",
           source={"ratings": "Murata GRM21BR61C106KE15L: 10 uF 16 V X5R 0805",
                   "lifecycle": "Digi-Key Active (backordered), Oct 2026"})
+C_220N = C("220n", 50, "0603", dielectric="X7R", mpn="CC0603KRX7R9BB224", manufacturer="YAGEO",
+           datasheet=_CC_DS, lifecycle="active", second_source="any 220 nF 50 V X7R 0603",
+           source={"ratings": "[S] Buerklin/Future/RS listings: 220 nF 50 V X7R +/-10 % 0603, -55..125 C",
+                   "lifecycle": "distributors list it, 26-35 week factory lead time [S]"})
 C_100N = C("100n", 50, "0603", dielectric="X7R", mpn="CC0603KRX7R9BB104", manufacturer="YAGEO",
            datasheet=_CC_DS, lifecycle="active", second_source="Murata GRM188R71H104KA93D [unverified]",
            source={"ratings": "Yageo CC series: 100 nF 50 V X7R 0603 (+/-10 %, X7R +/-15 % over -55..125 C)",
@@ -291,12 +295,21 @@ BACK_PANEL = _mech("JP1412P", "ABB (Carlon)", "Back panel PVC 12.75 x 10.88 in f
                    "ordered separately)", _CARLON, {"ratings": "catalog p.13-14 back panel table"},
                    lifecycle="active", second_source="JP1412 steel panel (then bond it to the EGC)")
 SUBPLATE = _mech("KAE-RPMR-MP4", "custom (machined to drawing, TBD)",
-                 "Receptacle subplate: 6.4 mm (1/4 in) polycarbonate UL 94 V-0, behind the cover's 3-gang cut-out, "
-                 "fixed to the cover with 6 nylon-insulated through bolts; 6-32 tapped at standard device-yoke "
-                 "spacing (3-9/32 in screw centres, 1-13/16 in gang pitch) for three duplex receptacles; the nylon "
-                 "3-gang wallplate (MP8) clamps the cover from outside", "",
-                 {"ratings": "requirement from DESIGN.md 5.2 [I]; not a listed device-mounting method (Q-17)"},
+                 "Receptacle subplate assembly: 6.4 mm (1/4 in) polycarbonate UL 94 V-0 plate behind the cover's "
+                 "3-gang cut-out, fixed with 6 nylon-insulated through bolts; brass heat-set 6-32 inserts at standard "
+                 "yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch), never threads cut in the plastic; a "
+                 "1.5 mm polycarbonate rear shroud closes over the receptacle backs (finger-safe with the cover off), "
+                 "the leads leave through a strain-relief grommet; the nylon 3-gang wallplate (MP8) clamps the cover",
+                 "", {"ratings": "requirement from DESIGN.md 5.2 and review N3 [I]; not a listed device-mounting "
+                                 "method (Q-17)"},
                  lifecycle="active", second_source="UL 508A panel shop to its own drawing")
+SHIELD = _mech("KAE-RPMR-MP16", "custom (folded to drawing, TBD)",
+               "Mains-area shield: 1.0 mm clear polycarbonate UL 94 V-0 tray over the board from the MP1 wall to the "
+               "barrier band (F1 and its clips, relay contact pins, PS1 AC end, L/L_SW copper), 35 mm above the board, "
+               "4 mm perforations (IP2X: finger probe cannot pass), flanges screwed to the back panel beyond both "
+               "board ends; leaves only the SELV/Pi zone open when the cover is off",
+               "", {"ratings": "requirement from review N2 [I]; IP2X per IEC 60529 12.5 mm probe [I]"},
+               lifecycle="active", second_source="UL 508A shop finger-safe cover")
 RECEPTACLE = _mech("TR5252", "Legrand Pass & Seymour",
                    "Duplex receptacle NEMA 5-15R 15 A 125 V, tamper-resistant, spec grade, back and side wire, "
                    "break-off line-side tab (split circuit)",
@@ -332,8 +345,9 @@ HW_BOARD = _mech(None, "generic", "Board mounting kit: 6 x M3 x 12 mm female-fem
                  lifecycle="active")
 HW_FIELD = _mech(None, "generic", "Field-wiring kit: 1 x listed nonmetallic NM-B cable connector (1/2 in) for "
                  "the branch; 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); receptacle "
-                 "leads 14 AWG THHN/THWN-2 Cu 600 V, 9 x 0.45 m (black/red/white per receptacle) with a 300 mm "
-                 "service loop for cover removal; 3 x green 14 AWG EGC pigtails; screw-on cable-tie mounts and a "
+                 "leads 14 AWG UL 1015 600 V 105 C fine-stranded Cu (Class K), 9 x 0.45 m (black/red/white per receptacle) "
+                 "with a 300 mm service loop for cover removal, ferrules at the WAGO end; 3 x green 14 AWG stranded EGC "
+                 "pigtails; strain relief at both ends; screw-on cable-tie mounts and a "
                  "spiral wrap for the lead bundle", "", {}, generic=True, lifecycle="active")
 WALLPLATE = _mech(None, "generic", "Wallplate 3-gang duplex receptacle, nylon (unbreakable), standard size", "", {},
                   generic=True, lifecycle="active")

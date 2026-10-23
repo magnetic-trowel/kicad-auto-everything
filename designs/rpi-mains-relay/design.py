@@ -29,6 +29,9 @@ from kaesynth import Design, Hole
 _spec = importlib.util.spec_from_file_location("rpi_mains_relay_parts", Path(__file__).with_name("parts.py"))
 P = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(P)
+_wspec = importlib.util.spec_from_file_location("rpi_mains_relay_wdsim", Path(__file__).with_name("wdsim.py"))
+WD = importlib.util.module_from_spec(_wspec)
+_wspec.loader.exec_module(WD)
 
 BRIEF = ("I want you to make a breakout board for a Raspberry Pi that has the ability to switch 120 volts. "
          "Maybe 4 or 6 of them. It should use stuff that is reliable. It should have terminals that make it "
@@ -93,14 +96,18 @@ def intent(d):
       value=">= 6.4 mm (DRU edge_clearance)", source="UL field wiring 1/4 in to dead metal [S]", verify="DRC")
     R("REQ-13", "Fail-safe OFF: all outlets OFF when the Pi is absent, unpowered, booting, rebooting, halted or "
       "hung, when its SD card fails, when the 5 V supply sags or fails, and after the heartbeat stops at either "
-      "level", value="<= 0.1 s after the last heartbeat edge", source="brief ('reliable'); review M1",
+      "level; and stay ON through heartbeat stalls of up to 150 ms", value="OFF <= 0.5 s after the last heartbeat "
+      "edge; ride through gaps <= 150 ms", source="rev 1 REQ-13 (0.5 s) restored after review N1: no standard or "
+      "brief item asks for faster; 150 ms covers Linux GC/SD-writeback/Wi-Fi stalls [I]",
       verify="T-BOOT, T-HB, T-BROWNOUT")
     R("REQ-14", "Two-key rule: no single stuck GPIO or single shorted driver energizes an outlet while the "
       "heartbeat is absent", value="-", source="derived", verify="FMEA (hazards), T-HB")
     R("REQ-15", "Load on the Pi", value="<= 0.7 mA per CH pin; +3V3 <= 1 mA; only default-pull-down GPIOs",
       source="RPi docs GPIO pad table [P]", verify="T-PWR")
     R("REQ-16", "Heartbeat arms the outlets; DC (either level) or no signal disarms them",
-      value="3.3 V square wave 100 Hz-10 kHz, 20-80 % duty, toggled by the control loop", source="C-4",
+      value="3.3 V square wave 20 Hz-10 kHz, 20-80 % duty, from a high-priority thread that the control loop "
+      "must pet (stops when the app hangs)", source="C-4 (wdsim.py: arms below 1/tw_min = 6.7 Hz worst part, "
+      "chatters 2.9-6.7 Hz)",
       verify="T-HB")
     R("REQ-17", "Coil voltage at the relay pins, worst case", value=">= 4.5 V", source="must-operate [P]; C-3",
       verify="T-COIL (also at 4.63 V)")
@@ -130,7 +137,7 @@ def intent(d):
       source="Q-5; C-2, C-9", verify="T-PWR, T-BROWNOUT")
     R("REQ-28", "Watchdog readback and self-test: ARM_FB on BCM16. Software checks disarmed -> armed -> disarmed "
       "(timing) at boot and whenever all outlets are off (at least daily); on failure it never arms, keeps all "
-      "outlets off and alarms", value="disarm measured <= 0.1 s", source="review M2", verify="T-SELFTEST")
+      "outlets off and alarms", value="disarm measured 150-360 ms", source="review M2, N1", verify="T-SELFTEST")
     R("REQ-29", "Software: read-only root filesystem (overlay), power-safe logging, all outlets OFF at boot, "
       "heartbeat from the control loop, documented power-restore policy (default OFF)", value="-",
       source="review M2; H17", verify="code review, T-BOOT")
@@ -138,7 +145,10 @@ def intent(d):
       ">= 30 mm from relays, mains copper and the supply", value="RSSI >= -67 dBm at the install location",
       source="C-13", verify="T-RF")
     R("REQ-31", "E1 compartments: field-wiring compartment (north) separated from the PCB/Pi compartment by "
-      "partition MP1 (vertical wall + flat sheet die-cut around J1-J4); receptacles, their leads and terminals stay north of the wall; every PCB copper area north of the wall is "
+      "partition MP1 (vertical wall + flat sheet die-cut around J1-J4); receptacles (rear-shrouded on MP4), their "
+      "leads and terminals stay north of the wall; clear IP2X shield MP16 over the mains area south of the wall "
+      "(F1, relay contacts, PS1 AC end, L copper), so only the SELV/Pi zone is touchable with the cover off; every "
+      "PCB copper area north of the wall is "
       "under a terminal body or under the MP1 sheet; none between the board edge and the wire-entry faces; "
       "conductors tied down", value="-", source="review M3", verify="inspection")
 
@@ -153,7 +163,8 @@ def intent(d):
     A("ASM-4", "Pi Zero 2 W draws <= 0.6 A at full CPU load (published measurements); the budget allows 1.0 A")
     A("ASM-5", "PCB laminate taken as material group IIIb (CTI >= 100 V) so the tables apply at their most "
       "conservative; FR-4 is usually IIIa")
-    A("ASM-6", "Control software toggles HB at >= 100 Hz from its main loop while any outlet should be on")
+    A("ASM-6", "A high-priority thread toggles HB at >= 20 Hz while the control loop pets it and any outlet should "
+      "be on; stalls of the whole system longer than 150 ms are rare enough that dropping the loads is acceptable")
     A("ASM-7", "The hardware retains no output state: every Pi reboot or power cut leaves all outlets OFF")
     A("ASM-8", "Zero 2 W antenna lies on the connector edge between the mini-HDMI and the USB socket (as on the "
       "Zero W; inferred, verify on the board)")
@@ -200,7 +211,9 @@ def intent(d):
       default="specs in the BOM descriptions")
     Q("Q-17", "Receptacles in the enclosure cover: devices on a machined polycarbonate subplate (MP4) behind a 3-gang "
       "cut-out are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have the "
-      "assembly built and listed as an industrial control panel by a UL 508A shop?", blocking=True,
+      "assembly built and listed as an industrial control panel by a UL 508A shop? NEC 406.5 wants receptacles "
+      "in boxes or assemblies designed for the purpose, and the field-cut opening ends the Type 4X/12/13 rating: "
+      "the enclosure is then used as an indoor, dry-location (Type 1) enclosure only.", blocking=True,
       default="field evaluation with Q-1; UL 508A shop as the alternative")
     Q("Q-16", "Add per-channel readback (detects a shorted channel MOSFET)? Six more GPIOs and 18 parts.",
       default="no; the channel LED shows it")
@@ -212,10 +225,11 @@ def hazards(d):
     terms = ["J1", "J2", "J3", "J4"]
     chq = [f"Q{k}" for k in CHANNELS]
     H("H1", "Shock from live parts with the cover open (receptacles come off with it)",
-      "listed enclosures with screw covers (tool needed); 'disconnect before opening' label; electrician installs; "
-      "partition MP1 keeps field conductors and receptacle leads away from the Pi/SD-card area; 300 mm service loop "
-      "so the cover never hangs on a terminal", parts=["MP1", "MP2", "MP4"],
-      single_fault_safe=False, notes="service condition: de-energize at the breaker before opening")
+      "listed enclosure with screw cover (tool needed); 'disconnect before opening' label; with the cover off the "
+      "only touchable parts are SELV/Pi: field terminals are finger-safe, receptacle backs are shrouded (MP4), "
+      "and a clear IP2X shield (MP16) covers F1, relay contacts, PS1 AC pins and line copper; MP1 keeps field "
+      "conductors away; 300 mm stranded-lead service loop", parts=["MP1", "MP2", "MP4", "MP16"],
+      single_fault_safe=True, notes="review N2: Pi service (SD card) is a user action, so live parts are guarded")
     H("H2", "Mains reaches SELV, the Pi or a person touching the Pi",
       "reinforced insulation: IRM-20-5 Class II 4.2 kVAC; relays 8/8 mm 6 kVAC 10 kV; PCB 8/8 mm barrier band; "
       "partition MP1 adds supplementary insulation over field-conductor insulation; no SELV wiring leaves E1",
@@ -272,9 +286,10 @@ def hazards(d):
     H("H16", "Supply module failure: output lost, output high, or input short",
       "lost 5 V: coils drop and the Pi stops -> OFF; high: module OVP 5.75-6.75 V shuts it down, TVS D15, coil "
       "max 6.5 V; input short: F1 opens; PTC F2 limits a Pi-side short", parts=["PS1", "F1", "F2", "D15"],
-      single_fault_safe=True)
+      single_fault_safe=True, notes="outlets go OFF in every case; an OVP event (5.75-6.75 V) can exceed the "
+                                    "Pi PMIC's 6.5 V abs max and destroy the Pi (equipment damage, review m1)")
     H("H17", "Pi reboot, kernel hang or SD-card corruption leaves outlets in an unknown state",
-      "any stop of the heartbeat disarms within 0.1 s (C-4); a Pi that cannot boot never arms; read-only root "
+      "any stop of the heartbeat disarms within 0.36 s (C-4); a Pi that cannot boot never arms; read-only root "
       "filesystem (REQ-29) makes corruption unlikely; self-test before arming (REQ-28)",
       parts=["U1", "Q7", "R24", "R25", "D16"], single_fault_safe=True)
     H("H18", "Watchdog part failure (U1, R21, C6, Q7, R22, divider) arms without a heartbeat",
@@ -320,18 +335,25 @@ def calcs(d):
     c("must_operate_hot_pct", round(must_hot, 1), "%", expr="70 % x (234.5 + 95 C) / 257.5 (60 C air + 35 K coil rise)",
       limit=round(100 * (4.875 - drop) / 5.0, 1), note="vs coil_voltage_worst; T-COIL also at 4.63 V")
     c("coil_voltage_max_pct", round(100 * 5.25 / 5.0, 1), "%", expr="5.25 V / 5.0 V", limit=130)
-    # C-4 heartbeat watchdog: U1 74LVC1G123, R21 330 k, C6 100 nF X7R
-    tw_min = 1.0 * 330e3 * 100e-9 * 0.99 * 0.90 * 0.85
-    tw_max = 1.1 * 330e3 * 100e-9 * 1.01 * 1.10 * 1.15
-    c("wd_tw_min_ms", round(tw_min * 1e3, 1), "ms", expr="K 1.0 x 330 k x 100 nF x R -1 % x C -10 % x X7R -15 %")
-    c("wd_tw_max_ms", round(tw_max * 1e3, 1), "ms", expr="K 1.1 x 330 k x 100 nF x R +1 % x C +10 % x X7R +15 %")
-    c("wd_hb_period_margin", round(tw_min / 0.010, 2), "x", expr="tw_min / 10 ms (HB >= 100 Hz)", limit=2.0, op=">=")
-    rel = 0.015
-    c("disarm_hb_stuck_high_s", round(tw_max + 1e-6 + rel, 4), "s",
-      expr="no rising edge on B: Q falls tw_max after the last edge + gate fall (push-pull, ns) + release 15 ms",
-      limit=0.1, note="REQ-13; release 5 ms max without diode [P], 15 ms allowed with the flyback diode [I]")
-    c("disarm_hb_stuck_low_s", round(tw_max + 1e-6 + rel, 4), "s",
-      expr="identical: B is edge-triggered, so a low level cannot hold Q either", limit=0.1, note="REQ-13")
+    # C-4 heartbeat watchdog: U1 74LVC1G123, R21 1 Mohm, C6 220 nF X7R; event simulation in wdsim.py (review N1)
+    tw_min, tw_max = WD.tw_bounds(1e6, 220e-9)
+    c("wd_tw_min_ms", round(tw_min * 1e3, 1), "ms",
+      expr="K 1.0 x 1 M x 220 n x R -1 % x C -10 % x X7R -15 % x leakage -10 %")
+    c("wd_tw_max_ms", round(tw_max * 1e3, 1), "ms",
+      expr="K 1.1 x 1 M x 220 n x R +1 % x C +10 % x X7R +15 % x leakage +10 %")
+    c("wd_hb_period_margin", round(tw_min / 0.050, 2), "x", expr="tw_min / 50 ms (HB >= 20 Hz)", limit=2.0, op=">=")
+    d_lo, d_hi = WD.disarm_after_stop(tw_min), WD.disarm_after_stop(tw_max)
+    c("disarm_hb_stuck_high_s", round(d_hi, 3), "s",
+      expr="wdsim: last rising edge, Q falls after tw_max, relay releases 15 ms later (diode, [I])",
+      limit=0.5, note=f"REQ-13; tw_min part {d_lo * 1e3:.0f} ms")
+    c("disarm_hb_stuck_low_s", round(d_hi, 3), "s",
+      expr="wdsim: identical, B is edge-triggered so neither level holds Q", limit=0.5, note="REQ-13")
+    c("wd_gap_ridden_ms", round(WD.max_gap_ridden(tw_min) * 1e3, 0), "ms",
+      expr="wdsim: largest single HB gap on the tw_min part that does not open a contact (2 ms release [I])",
+      limit=150, op=">=", note="REQ-13 ride-through (review N1)")
+    lo_f, hi_f = WD.chatter_band(tw_min, tw_max)
+    c("wd_chatter_band_top_Hz", round(hi_f, 1), "Hz", expr=f"1/tw_min; chatter possible {lo_f:.1f}-{hi_f:.1f} Hz",
+      limit=20, op="<=", note="REQ-16 minimum HB 20 Hz sits 3x above the band")
     c("arm_gate_V", round(3.3 * 0.95 - 0.1, 3), "V", expr="VOH >= VCC - 0.1 V (100 uA), VCC = 3.3 V - 5 %",
       limit=2.5, op=">=", note="AO3400A Rds(on) specified at Vgs 2.5 V (review m1)")
     # C-5 gate drive and readback levels
@@ -539,10 +561,10 @@ def build():
 
     # -- block: heartbeat watchdog -------------------------------------------------------------------------
     arm = d.block("arm", title="Heartbeat watchdog U1, arming switch Q7 and readback", domain="SELV",
-                  description="Q7 closes the coil return only while HB has rising edges; OFF <= 0.1 s after they stop")
+                  description="Q7 closes the coil return only while HB has rising edges; OFF <= 0.36 s after they stop")
     u1 = arm.add(P.WATCHDOG, ref="U1", p_diss=0.001)
-    r21 = arm.add(P.R_330K, ref="R21")
-    c6 = arm.add(P.C_100N, ref="C6")
+    r21 = arm.add(P.R_1M, ref="R21")
+    c6 = arm.add(P.C_220N, ref="C6")
     c7 = arm.add(P.C_100N, ref="C7")
     r23 = arm.add(P.R_100K, ref="R23")
     q7 = arm.add(P.MOSFET, ref="Q7", p_diss=0.015)                  # 0.55^2 x 48 mOhm
@@ -627,6 +649,7 @@ def build():
     me.add(P.FUSE_CLIPS, ref="MP13")
     me.add(P.SD_CARD, ref="MP14")
     me.add(P.HW_FIELD, ref="MP15")
+    me.add(P.SHIELD, ref="MP16")
 
     hazards(d)
     calcs(d)
@@ -647,9 +670,9 @@ def placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25,
     for t in terms:
         pl.edge(t, "north", note="wire-entry face 1 mm inside the north edge; conductors enter from above")
         pl.pins_toward(t, ["1"], "north", note="odd-pole row (wire-entry face) toward the north edge")
-    pl.array([jout["J2"], jout["J3"], jout["J4"]], "x", note="J2 over K1/K2, J3 over K3/K4, J4 over K5/K6")
+    pl.array([jout["J2"], jout["J3"], jout["J4"]], "x", pitch="40 mm (>= 38 mm: L_SW stubs 6.4 mm from N and from the next block)", note="J2 over K1/K2, J3 over K3/K4, J4 over K5/K6")
     pl.region(j1, "corner-ne", note="J1 next to F1 and PS1 at the east end")
-    pl.array(relays, "x", note="20 mm pitch, K1 west")
+    pl.array(relays, "x", pitch="20 mm", note="K1 west")
     for k in CHANNELS:
         c = ch[k]
         pl.pins_toward(c["k"], ["COIL_1", "COIL_8"], "south",
@@ -694,6 +717,14 @@ def placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25,
         pl.far(j5, r, "loose", note=">= 30 mm from the antenna zone (lambda/4 at 2.4 GHz)")
     pl.far(j5, ps1, "loose", note="supply switching at 65 kHz and its magnetics away from the antenna")
     pl.far(j5, f1, "loose")
+    for obj in relays + [ps1, f1]:
+        pl.custom("min_distance", a=j5, b=obj, mm=30, note="antenna zone to relays/supply/fuse >= 30 mm (REQ-30)")
+    pl.custom("frame", origin="board lower-left corner", axes="x east, y north (y up); KiCad is y down",
+              note="all board coordinates in this file (holes, keepout rects, the J5 datum) use this frame (review m7)")
+    pl.custom("barrier_part", part="MP16", covers="board area from the MP1 wall south to the barrier band: F1, relay "
+              "contact pins, PS1 AC end, L/L_SW copper", height_mm=35, fixing="flanges to the back panel beyond the "
+              "board ends; no board holes", note="IP2X finger-safe shield (review N2); 4 mm perforations for "
+              "convection")
     pl.keepout(j5, what="parts under the Pi (courtyard = Pi outline)", layers="top")
     pl.near(c4, j5[2], "close")
     pl.near(c5, j5[4], "tight")
@@ -754,6 +785,9 @@ def placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25,
                                              f"BOTTOM OUT{b} (red)")
     pl.custom("label", obj="board", text="120 VAC 60 Hz, 15 A max branch; Cu 14-12 AWG, strip 11-13 mm; DANGER "
                                          "disconnect before opening; outlets are not a disconnecting means")
+    pl.custom("label", obj=j5, text="DO NOT CONNECT MICRO-USB POWER TO THE PI (it back-feeds the 5 V supply)")
+    pl.custom("label", obj="cover", text="OUT1-OUT6 at each outlet; 'GFCI PROTECTED' and 'SWITCHED OUTLET' per "
+                                         "outlet; 120 V 15 A total")
 
 
 def board(d):
@@ -775,6 +809,8 @@ def board(d):
                  "layers": "all", "note": "Pi Zero 2 W antenna zone (also a rule area in the J5 footprint)"},
                 {"rect": [PI_X0, PI_Y0, PI_X0 + 65, PI_Y0 + 30], "what": "parts other than J5", "layers": "top",
                  "note": "under the Pi"},
+                {"rect": [PI_X0, PI_Y0, PI_X0 + 65, PI_Y0 + 30], "what": "copper pours", "layers": "all",
+                 "note": "no pours under the whole Pi (antenna position inferred, ASM-8; review m6)"},
                 {"relative": "north board edge to the J1-J4 wire-entry faces, full width", "what": "all copper",
                  "layers": "all", "note": "wire compartment edge strip (REQ-31)"},
                 {"relative": "wire-entry faces to the south faces of J1-J4, outside the terminal bodies",

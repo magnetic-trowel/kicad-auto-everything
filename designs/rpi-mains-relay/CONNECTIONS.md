@@ -1,6 +1,6 @@
 # rpi-mains-relay: connections (netlist)
 
-Companion to [DESIGN.md](DESIGN.md) (revision 3: six outlets in the enclosure cover, on-board Pi Zero 2 W, IRM-20-5). Every
+Companion to [DESIGN.md](DESIGN.md) (revision 4: six outlets in the enclosure cover, on-board Pi Zero 2 W, IRM-20-5). Every
 pin of every placed part is listed. The off-board objects are listed too: the Pi, the receptacles in
 the cover and the field wiring.
 
@@ -158,8 +158,8 @@ has two units: unit B is the power unit. Footprint `Package_SO:SSOP-8_2.95x2.8mm
 
 | Ref | Part | Pin → net |
 |---|---|---|
-| R21 | Yageo RC0603FR-07330KL 330 kΩ (Rext) | 1 → +3V3; 2 → WD_RC |
-| C6 | Yageo CC0603KRX7R9BB104 100 nF 50 V (Cext) | 1 → WD_RC; 2 → WD_CX |
+| R21 | Yageo RC0603FR-071ML 1 MΩ (Rext) | 1 → +3V3; 2 → WD_RC |
+| C6 | Yageo CC0603KRX7R9BB224 220 nF 50 V (Cext) | 1 → WD_RC; 2 → WD_CX |
 | C7 | 100 nF 50 V (U1 decoupling) | 1 → +3V3; 2 → GND |
 | R23 | Yageo RC0603FR-07100KL 100 kΩ (HB pull-down) | 1 → HB; 2 → GND |
 | Q7 | AOS AO3400A, SOT-23 (1 G, 2 S, 3 D [P]) | 1 (G) → ARM_G; 2 (S) → GND; 3 (D) → COIL_RTN |
@@ -240,9 +240,9 @@ the SELV side.
 
 | Terminal | Pole 1 (top outlet, black) | Pole 2 (white) | Pole 3 (bottom outlet, red) | Leads to the receptacle in the cover |
 |---|---|---|---|---|
-| J2 | L_SW1 | N | L_SW2 | receptacle A: black, white, red 14 AWG THHN |
-| J3 | L_SW3 | N | L_SW4 | receptacle B: black, white, red 14 AWG THHN |
-| J4 | L_SW5 | N | L_SW6 | receptacle C: black, white, red 14 AWG THHN |
+| J2 | L_SW1 | N | L_SW2 | receptacle A: black, white, red 14 AWG UL 1015 fine-stranded |
+| J3 | L_SW3 | N | L_SW4 | receptacle B: black, white, red 14 AWG UL 1015 fine-stranded |
+| J4 | L_SW5 | N | L_SW6 | receptacle C: black, white, red 14 AWG UL 1015 fine-stranded |
 
 ## 8. Mechanical parts (no electrical pins)
 
@@ -251,7 +251,7 @@ the SELV side.
 | H1–H6 | `MountingHole:MountingHole_3.2mm_M3` NPTH at (4, 4), (196, 4), (4, 75), (196, 75), (4, 146), (196, 146) mm. M3 × 12 mm nylon standoffs to the JP108P panel |
 | H7–H10 | `MountingHole:MountingHole_2.7mm_M2.5` NPTH at (15.5, 4.5), (73.5, 4.5), (15.5, 27.5), (73.5, 27.5) mm. M2.5 × 11 mm nylon Pi standoffs |
 | MP1 | Partition, wall plus sheet (BOM only) |
-| MP2–MP15 | E1 NS14126, JP1412P, receptacle subplate MP4, 3 × TR5252, wallplate, Pi Zero 2 W, Pi header, Pi kit, board kit, fuse clips, microSD, field-wiring kit (BOM only) |
+| MP2–MP16 | E1 NS14126, JP1412P, receptacle subplate assembly MP4 (brass inserts, rear shroud), 3 × TR5252, wallplate, Pi Zero 2 W, Pi header, Pi kit, board kit, fuse clips, microSD, IP2X mains-area shield MP16, field-wiring kit (BOM only) |
 
 ## 9. Off-board objects
 
@@ -268,11 +268,11 @@ the SELV side.
 |---|---|---|
 | Branch cable (14/2 or 12/2 NM-B w/G, 15 A breaker) | J1.1 (black), J1.2 (white) | 14 or 12 AWG Cu, strip 11–13 mm |
 | Branch EGC + 3 receptacle green pigtails | one listed lever splice (e.g. WAGO 221-415) in the wire compartment | bare/green |
-| Receptacle A leads | J2.1 black, J2.2 white, J2.3 red | 14 AWG THHN, 0.45 m incl. 300 mm service loop |
+| Receptacle A leads | J2.1 black, J2.2 white, J2.3 red | 14 AWG UL 1015 600 V 105 °C fine-stranded, ferrules at the WAGO end, 0.45 m incl. 300 mm service loop |
 | Receptacle B leads | J3.1 black, J3.2 white, J3.3 red | 14 AWG |
 | Receptacle C leads | J4.1 black, J4.2 white, J4.3 red | 14 AWG |
 
-All leads run in one spiral-wrapped bundle, tied to the back panel north of MP1; nothing crosses MP1.
+All leads run in one spiral-wrapped bundle, strain-relieved at the MP4 shroud grommet and tied to the back panel north of MP1; nothing crosses MP1. Each lead must hold a 20 N pull at both ends (T-FILL).
 
 ### Receptacles in the cover (three TR5252 on subplate MP4)
 

@@ -1386,7 +1386,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Receptacle subplate: 6.4 mm (1/4 in) polycarbonate UL 94 V-0, behind the cover's 3-gang cut-out, fixed to the cover with 6 nylon-insulated through bolts; 6-32 tapped at standard device-yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch) for three duplex receptacles; the nylon 3-gang wallplate (MP8) clamps the cover from outside"
+		(property "Description" "Receptacle subplate assembly: 6.4 mm (1/4 in) polycarbonate UL 94 V-0 plate behind the cover's 3-gang cut-out, fixed with 6 nylon-insulated through bolts; brass heat-set 6-32 inserts at standard yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch), never threads cut in the plastic; a 1.5 mm polycarbonate rear shroud closes over the receptacle backs (finger-safe with the cover off), the leads leave through a strain-relief grommet; the nylon 3-gang wallplate (MP8) clamps the cover"
 			(at 251.46 33.02 0)
 			(hide yes)
 			(effects
@@ -2249,7 +2249,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Field-wiring kit: 1 x listed nonmetallic NM-B cable connector (1/2 in) for the branch; 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); receptacle leads 14 AWG THHN/THWN-2 Cu 600 V, 9 x 0.45 m (black/red/white per receptacle) with a 300 mm service loop for cover removal; 3 x green 14 AWG EGC pigtails; screw-on cable-tie mounts and a spiral wrap for the lead bundle"
+		(property "Description" "Field-wiring kit: 1 x listed nonmetallic NM-B cable connector (1/2 in) for the branch; 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); receptacle leads 14 AWG UL 1015 600 V 105 C fine-stranded Cu (Class K), 9 x 0.45 m (black/red/white per receptacle) with a 300 mm service loop for cover removal, ferrules at the WAGO end; 3 x green 14 AWG stranded EGC pigtails; strain relief at both ends; screw-on cable-tie mounts and a spiral wrap for the lead bundle"
 			(at 248.92 55.88 0)
 			(hide yes)
 			(effects
@@ -2281,6 +2281,87 @@
 			(project "rpi-mains-relay"
 				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/3d33b6f9-21ed-5bfc-a356-a4c53021f7fa"
 					(reference "MP15")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Mechanical:Housing")
+		(at 33.02 81.28 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board no)
+		(dnp no)
+		(uuid "282ca754-f46c-5e57-bbcf-7a95a4b1ce1a")
+		(property "Reference" "MP16"
+			(at 36.83 81.28 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Value" "KAE-RPMR-MP16"
+			(at 36.83 83.185 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" ""
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Mains-area shield: 1.0 mm clear polycarbonate UL 94 V-0 tray over the board from the MP1 wall to the barrier band (F1 and its clips, relay contact pins, PS1 AC end, L/L_SW copper), 35 mm above the board, 4 mm perforations (IP2X: finger probe cannot pass), flanges screwed to the back panel beyond both board ends; leaves only the SELV/Pi zone open when the cover is off"
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "KAE-RPMR-MP16"
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "custom (folded to drawing, TBD)"
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "mech"
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "mech"
+			(at 33.02 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/3d33b6f9-21ed-5bfc-a356-a4c53021f7fa"
+					(reference "MP16")
 					(unit 1)
 				)
 			)
