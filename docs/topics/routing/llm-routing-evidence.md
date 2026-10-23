@@ -55,7 +55,7 @@
 - Three layers [I]: (1) **LLM as relational planner** (classify nets, set constraints, choose per-class engine, order work, sketch corridors as relations); (2) **deterministic realizers** (Freerouting bulk; KRT-style A* or PNS DP placer for pairs/buses; PNS waypoint realization, shove repair, smoothing; KiCad tuning; optional DeepPCB for non-SI bulk); (3) **KiCad DRC + SI checks** returning per-predicate evidence.
 - Routing relation vocabulary [I]: `route_class(net_class, engine, layers, width, via_policy)`, `pair(netP, netN, gap, max_uncoupled)`, `match_group(nets, tol_ps, reserve_area=region)`, `corridor(net|bus, via=[regions], layer)`, `order(tiers)`, `keepout(region, classes)`, `lock(nets)`, `return_vias(pair|class)`, `layer_pref`, `via_limit`.
 - "Topology sketch → capacity check (RUDY / SURF cut test) → realization → DRC → per-predicate failures to LLM" ([topological](topological-routing.md)) [I].
-- Calibrate ordinal classes per component/net class from human boards (PCBWorld D3) [I].
+- Calibrate ordinal classes per component/net class from human boards (PCBWorld D3, excluding the 99 D3-A + 10 D3-B evaluation boards, which must never be mined, fitted or calibrated on) [I].
 - Track LLM tokens and time per board [I].
 
 ## Conflicts and open questions

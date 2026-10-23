@@ -4,7 +4,7 @@
 - PNS is **not a path searcher**: it is a local walkaround/shove engine that needs waypoints, layer choices and order from a planner. Its "Autoroute/Finish" is ≤5 `Move()` calls toward the nearest ratsnest anchor.
 - **KiCad has no global autorouter**: `pcbnew/autorouter/` holds only the footprint autoplacer.
 - The stock IPC API has **no route/shove RPC** (only `RunAction`, item CRUD and, from KiCad 11, Specctra DSN export / SES import).
-- **PCBWorld-Engine** (GPLv3) already exposes PNS to Python via pybind11 (~90 calls, checkpoint/restore, deterministic loops); under our GPL-3.0-or-later license it can be vendored.
+- **PCBWorld-Engine** (GPLv3) already exposes PNS to Python via pybind11 (~90 module calls; the paper's L3 wrapper exposes 58 step-level APIs; checkpoint/restore, deterministic loops); under our GPL-3.0-or-later license it can be vendored, but it is pinned to KiCad 9.0.8.
 - PNS is the right geometric realizer, repair and smoothing engine; its DP gateway placer and meander engine are reusable for pairs and tuning.
 
 ## Key facts
@@ -28,7 +28,7 @@
 
 **IPC API and CLI** [P]
 - `RunAction` by name — "TOOL_ACTIONs are specifically *not* an API", prototyping only; selection, `HitTest`, commit-scoped item CRUD; no route/shove RPC ([editor_commands.proto](https://gitlab.com/kicad/code/kicad/-/blob/master/api/proto/common/commands/editor_commands.proto)).
-- `RunBoardJobExportSpecctraDsn` + `ImportSpecctraSession` "Since: 11.0" (repositions footprints, replaces unlocked tracks/vias); master on 2026-10-14 gained CLI `pcb export specctra_dsn` and API specctra import/export; latest stable 10.0.7 ([board_commands.proto](https://gitlab.com/kicad/code/kicad/-/blob/master/api/proto/board/board_commands.proto)).
+- `RunBoardJobExportSpecctraDsn` + `ImportSpecctraSession` "Since: 11.0" (repositions footprints, replaces unlocked tracks/vias); master on 2026-10-14 gained CLI `kicad-cli pcb export specctra` (the commit title says "specctra_dsn") and API specctra import/export; latest stable 10.0.7 ([board_commands.proto](https://gitlab.com/kicad/code/kicad/-/blob/master/api/proto/board/board_commands.proto)).
 - kicad-python (MIT) main: `get_pad_shapes_as_polygons`, `refill_zones`, `hit_test`, `interactive_move`, `place_footprint_from_library`; `GetPadShapeAsPolygon` RPC.
 - Headless replay: `qa/tools/pns` (log player, debug tool, `qa_pns_regressions`).
 - Whether `RunAction("pcbnew.InteractiveRouter.Autoroute")` works headless in KiCad 10/11 is unconfirmed.
@@ -43,7 +43,7 @@
 ## Recommendations for our system
 - Use PNS (via a PCBWorld-Engine-style binding, vendored under GPL-3.0-or-later) as **realizer + repair + smoothing**: planner supplies waypoints, layer switches, order; then `optimize_all_lines` [I].
 - **Search over PNS**: beam search or MCTS over (waypoint candidate, walk/shove mode, layer switch) for the hardest residual connections, reward = ΔDRC + Δunrouted − λ·Δlength, using checkpoint/restore and deterministic loops [I].
-- DPs via the gateway placer from LLM waypoints; tuning via the meander engine after area was reserved; check chain-level fields [I].
+- DPs via the gateway placer from planner-chosen waypoints (the LLM gives corridor and side-of-obstacle relations, never coordinates); tuning via the meander engine after area was reserved; check chain-level fields [I].
 - For board I/O prefer IPC (kicad-python) and the KiCad 11 DSN/SES round trip; fall back to `RunAction` only for prototyping [I].
 
 ## Conflicts and open questions

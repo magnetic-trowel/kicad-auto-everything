@@ -1,7 +1,7 @@
 # Metaheuristics, multi-objective search and quality-diversity
 
 **TL;DR**
-- **SA with incremental cost is the strongest simple HPWL optimizer; pair it with a CP-SAT legalizer**: single-threaded Python SA + CP-SAT legalize/polish beat monolithic CP-SAT on every instance (4–46% at N=30–100), beat hierarchical CP-SAT at N=300 (2,278 vs 2,461 mm) and at N=1000 (legal 13,774 vs 22,596 mm) — penalty SA alone leaves residual overlaps (8–25 at N=1000).
+- **SA with incremental cost is the strongest simple HPWL optimizer; pair it with a CP-SAT legalizer**: single-threaded Python SA + CP-SAT legalize/polish beat monolithic CP-SAT on every instance (4–46% at N=30–100), lost to hierarchical CP-SAT + LNS at N=100 (503.5 vs 480.5 mm), and beat it at N=300 (2,278 vs 2,461 mm, with ~2× the wall time) and at N=1000 (legal 13,774 vs 22,596 mm) — single instances; penalty SA alone leaves residual overlaps (8–25 at N=1000 per the note; 16–25 in the committed runs).
 - Multi-objective and diversity libraries are mature and permissive: pymoo (Apache-2.0), pyribs (MIT), cma (BSD-3), Nevergrad (MIT), Optuna (MIT); DEAP is LGPL.
 - **Quality-diversity has a strong layout precedent**: warehouse layouts optimized for multi-robot throughput with MAP-Elites + MILP repair + a surrogate supported up to 2× more robots — directly analogous to "placement for routability".
 - LLM-native QD (ELM mutations, QDAIF judges, MarioGPT inpainting) makes portfolios of diverse, legal, routable placements practical; show them with Zachtronics-style histograms.
@@ -18,7 +18,7 @@
 | 300 | 2,316, 1 decap viol. (120 s) | legal in 6.9 s → **2,278** (+122 s) | 2,461.5 (124 s) | none |
 | 1000 | 13,552.5, 16 overlaps + 2 decap (240 s) | cluster-wise legalize 3.9 s → **13,773.5** | 22,595.5 (294 s) | none |
 - At N=1000 full-board CP-SAT legalization failed (none in 120 s); legalization must be windowed per violation cluster (`legalize_clusters.py`) [M].
-- Seeds 1–2 at N=100: SA+polish 664 / 517.5 mm vs monolithic CP-SAT 858.5 / 681.0 mm [M].
+- Seeds 1–2 at N=100 (each seed is a different instance): SA+polish 664 / 517.5 mm vs monolithic CP-SAT 858.5 / 681.0 mm [M].
 - Literature SA: SA-PCB, B*-tree Fast-SA, Trace (8 move types), Hier-RTLMP weights, TILOS tuned SA (320 workers × 12.5 h) beating Circuit Training, Make It Home (Metropolis–Hastings), map labeling SA, control-cabinet Pareto SA ([placement families](../placement/algorithm-families.md)).
 - Our SA lacks clustering and legalization-aware moves — a lower bar for what SA can do.
 

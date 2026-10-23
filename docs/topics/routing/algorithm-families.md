@@ -1,10 +1,10 @@
 # Routing algorithm families (maze, line-probe, channel, gridless, rip-up)
 
 **TL;DR**
-- Every production-grade open PCB router (Oct 2026) is a **sequential, cost-driven path search + rip-up/reroute + post-route optimizer**: Freerouting (gridless A* over convex rooms), KiCadRoutingTools/KRT (Rust octilinear grid A*), OpenROAD PcbRouter (grid A* with 45°).
+- Every production-grade open PCB router (Oct 2026) is a **sequential, cost-driven path search + rip-up/reroute + post-route optimizer**: Freerouting (gridless A* over convex rooms), KiCadRoutingTools/KRT (Rust octilinear grid A*); the archived OpenROAD PcbRouter (grid A* with 45°, reads KiCad 5.1.2) follows the same pattern.
 - The dominant PCB family is **free-space decomposition + negotiated conflict pricing** (Freerouting rooms, gEDA expanding rectangles, Specctra shapes) — see [PathFinder](pathfinder-negotiated-congestion.md).
 - Line probes and channel routers survive only as **passes/patterns** (Situs "Straighten", "Memory").
-- KiCad PNS is **not** a path searcher ([PNS](kicad-pns-router.md)); classical routers remained the strongest open baselines on real boards in every 2026 benchmark.
+- KiCad PNS is **not** a path searcher ([PNS](kicad-pns-router.md)). Classical routers led on PCBWorld D3-B and OmniRouting, but an engine-grounded PPO policy led on D3-A (0.86, 0.94 without `finish`, vs Freerouting 0.80 @5) ([PCBWorld](pcbworld.md)).
 
 ## Key facts
 

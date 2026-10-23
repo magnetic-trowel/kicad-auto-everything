@@ -1,7 +1,7 @@
 # Analytical / differentiable placement (Cypress, DREAMPlace, custom JAX/PyTorch losses)
 
 **TL;DR**
-- The proven scalable PCB approach is analytical placement; **Cypress** (NVIDIA/Cornell, ISPD'25, Apache-2.0) is DREAMPlace adapted to PCBs and demonstrated from 41 to 6,628 components.
+- The proven scalable PCB approach is analytical placement; **Cypress** (NVIDIA/Cornell, ISPD'25, Apache-2.0) is DREAMPlace adapted to PCBs and demonstrated from 41 to 6,628 components (the big designs have only 1,293–2,152 movable parts).
 - Its validated terms: orientation-aware LSE wirelength, **two-sided electrostatic density** (sides pre-assigned), **differentiable net crossing** (Bézier parameters through bell functions), **Gumbel-Softmax orientation** optimized bi-level, MOTPE tuning against Freerouting routability.
 - Domain terms (decap distance, hot-loop area, keep-out/outline SDF, thermal spreading, RUDY congestion) drop in as penalties; discrete decisions (side, final orientation, legality) still need a discrete legalizer.
 - For 20–1000 parts, a lean JAX/PyTorch reimplementation of Cypress's ideas is likely better than DREAMPlace's CUDA build (pinned to Python ≤3.9, PyTorch ≤2.0, GCC 7.5) [I].

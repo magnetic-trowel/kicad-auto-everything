@@ -4,7 +4,7 @@
 - Keep orchestration, CP-SAT models, Optuna, KiCad IPC I/O and the LLM tool layer in **Python**; put hot loops (incremental HPWL, overlap hash, RUDY, SA moves, A*/PathFinder, exact collision) in **Rust via PyO3/maturin** — KRT reports ~10× from moving A* to Rust; our Python SA manages only 9–12k moves/s (N=30–1000) and Python A*+PathFinder needs 33 s for 300 nets on a 77k-node grid.
 - Parallelism: CP-SAT's worker portfolio, embarrassingly parallel cluster solves (hierarchical scheme), parallel Optuna trials. **GPU pays off only at Cypress scale (thousands of parts)** or huge routing lattices.
 - Every published PCB placer ends its evaluation ladder at a **real router** (Freerouting) and/or KiCad DRC; we use a 5-level ladder L0 (µs) → L4 (final DRC + clean-pass).
-- **No published correlation between RUDY/net-crossing proxies and PCB router completion exists** — calibrate proxies on held-out boards before trusting them inside tuners.
+- **Published correlation between routing proxies and PCB router completion is little and weak** (one third-party unreviewed 64-board study; one Cadence patent dataset of one board; [learned scores](../data/imitation-and-learned-scores.md)) — calibrate proxies on held-out boards before trusting them inside tuners.
 
 ## Key facts
 
@@ -36,21 +36,21 @@
 | L4 | `kicad-cli pcb drc` + PCBWorld-style clean-pass (routability = 1 AND 0 DRC errors; 62 `DRCE_*` codes) | final |
 
 **Evidence**
-- Cypress: Freerouting v1.9.0, 2 layers, % routed pin pairs; MOTPE over WL/density/crossing then routes; net-crossing term cut crossings to 0.31× at 1.13× HPWL [P].
+- Cypress: Freerouting v1.9.0, 2 layers, % routed pin pairs; MOTPE with Freerouting routability + track length as objectives (VP-corrected), so a real router runs inside each tuning trial; net-crossing term cut crossings to 0.31× at 1.13× HPWL [P].
 - NS-Place: FreeRouting routed WL/vias + KiCad DRVs [P]. PCBWorld: Freerouting 2.7–9.9 s per board on D2/D3 [P].
-- DREAMPlace RUDY/RISA area adjustment (`adjust_rudy_area_flag`); SMAC multi-fidelity; Freerouting fidelity knobs `-mp`, `-mt 0`, `--router.optimizer.improvement_threshold` [P].
+- DREAMPlace RUDY/RISA area adjustment (`adjust_rudy_area_flag`); SMAC multi-fidelity; Freerouting fidelity knobs `-mp`, `-mt 0`, `--router.optimizer.improvement_threshold` [P] (final runs `-mt 1`: multi-threaded optimization is known to create clearance violations).
 - Apollo: wirelength/density placers can score ~51% routability on its domain [S].
 - Freerouting versions differ across papers, so results are not comparable ([freerouting](../routing/freerouting.md)).
 
 ## Recommendations for our system
 - Rust core: incremental HPWL (per-net min/max with counts), grid-hash overlap, RUDY bins, SA moves, A*/PathFinder, optional jagua-rs exact collision; Python: CP-SAT, Optuna, IPC I/O, LLM tools [I].
-- **Make Freerouting-on-2-layers (L3) the calibration target** for L1/L2 proxies on a held-out set (PCBWorld D3 + Cypress small suite); check rank correlation before using proxies in Optuna [I].
+- **Make Freerouting-on-2-layers (L3) the calibration target** for L1/L2 proxies on a held-out set (PCBWorld D3 boards outside the 99 D3-A + 10 D3-B evaluation boards, never calibrate on those; Cypress small suite once outlines are synthesized, since its KiCad files have none); check rank correlation before using proxies in Optuna [I].
 - Expose `evaluate(candidate, level)` to the LLM so L3/L4 are spent only on Pareto finalists [I].
 - Parallelize cluster solves and Optuna trials; skip GPU unless boards reach thousands of parts [I].
 - Never clone the full CP-SAT model per LNS/legalization step at ≥1000 parts: build small window sub-models (free parts as variables, neighbours fixed, external pins constant) [M].
 
 ## Conflicts and open questions
-- No direct Rust-vs-Python measurement for placement kernels beyond KRT's routing claim (our numbers are Python-only ceilings); proxy-to-routed correlation unmeasured for PCBs.
+- No direct Rust-vs-Python measurement for placement kernels beyond KRT's routing claim (our numbers are Python-only ceilings); proxy-to-routed correlation for PCBs rests on one unreviewed study and one patent dataset.
 
 ## Sources
 - research notes: [solver_toolbox.md § 7, § 8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)

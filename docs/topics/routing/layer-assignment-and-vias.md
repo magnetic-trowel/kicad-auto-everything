@@ -5,7 +5,7 @@
 - Modern practice treats via count as a **cost term with a user knob** (Situs Via Miser / More-Less Vias slider; Freerouting via_costs 50; SURF K_v).
 - The largest reported via reductions come from **topology-first** and **SAT** approaches (MonoSAT 4 → 3 layers; TopoR vendor 15–45% fewer vias; pin equivalence 67 → 17 vias).
 - **Negotiation-based layer assignment** removes most order dependence.
-- Humans use *more* vias than Freerouting on PCBWorld D3-A (1.18 vs 0.74) — via count alone is not quality.
+- Humans use *more* vias than Freerouting on PCBWorld (D3-A 1.18 vs 0.74 at Freerouting routability 0.91; D3-B 6.70 vs 3.48 at 1.00) — via count alone is not quality.
 
 ## Key facts
 
@@ -26,7 +26,7 @@
 
 **Cost and SI context** (Luzin & Polubasov, vendor): via inductance ~1.1 nH (0.4 × 1.5 mm); ~$1 per extra 300 vias/dm² above 250; ~1000 hits per drill; 2.5–3 min extra drilling per 1000 holes per stack [P/V]. Practitioners: early autorouters "added too many vias" (Olney); poor grouping "will definitely lead to more vias than needed" (SparkFun) ([skepticism](autorouter-skepticism.md)).
 
-**Evidence of via outcomes**: PCBWorld D3-A vias per board — reference 1.18, Freerouting 0.74, KRT 3.69, PPO 0.92, GRPO 9.39 ([PCBWorld](pcbworld.md)); DeepPCB vendor 0.50–0.59× reference [V]; ModuPlace placement cut vias 40.51% vs SA-PCB ([LLM-guided placement](../placement/llm-guided-placement.md)); DATE'23 MCTS router had worse via counts than FreeRouting/DeepPCB.
+**Evidence of via outcomes**: PCBWorld D3-A vias per board — reference 1.18, Freerouting 0.74 (routability 0.91, so some connections are missing), KRT 3.69, PPO 0.92, GRPO 9.39 ([PCBWorld](pcbworld.md)); DeepPCB vendor 0.50–0.59× reference [V]; ModuPlace placement cut vias 40.51% vs SA-PCB ([LLM-guided placement](../placement/llm-guided-placement.md)); DATE'23 MCTS router had worse via counts than FreeRouting/DeepPCB.
 
 ## Recommendations for our system
 - Expose via cost, layer directions and a via-vs-length knob (K_v) per net class; LLM sets via technology and layer budget from stackup/fab constraints [I].

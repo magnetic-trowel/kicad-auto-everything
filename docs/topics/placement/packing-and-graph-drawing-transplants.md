@@ -2,7 +2,7 @@
 
 **TL;DR**
 - **sparrow** (MIT) on **jagua-rs** (MPL-2.0) is open SOTA 2D irregular nesting: allow overlaps, eliminate them with guided local search — a ready legalizer/compactor with courtyards and keep-outs as "hazards".
-- **Sequence-pair completion** turns any set of LLM left-of/below relations into a guaranteed non-overlapping packing.
+- **Sequence-pair completion** turns any consistent (acyclic) set of LLM left-of/below relations into a guaranteed non-overlapping packing; contradictory (cyclic) relations have no completion, and outline, fixed-part and keep-out legality still needs the legalizer [I].
 - **HOLA** (graph drawing) gives human-grounded aesthetic criteria and a "core + trees outside" layout; **IPSep-CoLa** enforces hard separation constraints inside stress majorization (signal-flow order, containment).
 - **Map labeling by SA** is a quick win for silkscreen reference designators; **metro-map MIP** gives octilinear bus schematization.
 - **DEE** (protein design) prunes provably dominated rotation/side states before exact selection.
@@ -33,7 +33,7 @@
 
 ## Recommendations for our system
 - **sparrow-style legalizer** [I]: fix outline; courtyards = interior hazards; outline complement, keep-outs, hole clearances, connector-overhang zones = hazards with per-type filters (height zones under heatsinks, no-back-side zones); allow overlaps; GLS on weighted overlap proxy + displacement-from-target + HPWL; then compress block bounding boxes. Keep connectivity terms or inflate courtyards by channel margins (nesting ignores nets).
-- **Sequence-pair bridge** [I]: LLM pairwise relations = partial SP → complete by topological sort (tie-break by netlist proximity) → longest-path decode = legal packing; anneal remaining freedom with the LLM's partial order as hard precedence.
+- **Sequence-pair bridge** [I]: LLM pairwise relations = partial SP → complete by topological sort (tie-break by netlist proximity) → longest-path decode = non-overlapping packing (reject cyclic relation sets first; outline/keep-out/fixed-part legality via the legalizer); anneal remaining freedom with the LLM's partial order as hard precedence.
 - **Block floorplanning as UAFLP**: LLM supplies flow matrix (net count × criticality) and area estimates; slicing-tree GA or MIP [I].
 - **HOLA-style initial placement**: 2-core of the connectivity graph (MCU, regulators, main connectors) by constrained stress; degree-1/2 peripherals (pull-ups, LED+R, test points, ESD) placed symmetrically outside on the side of their pin; then alignment and even spacing; HOLA criteria as an aesthetic score and VLM-judge features [I].
 - **IPSep-style hard signal-flow constraints**: `x(J_in) + d ≤ x(U_filter) ≤ …`, containment and non-overlap hard, wirelength/stress as goal [I].

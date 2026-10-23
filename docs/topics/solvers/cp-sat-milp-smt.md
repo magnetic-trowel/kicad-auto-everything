@@ -1,10 +1,10 @@
 # Exact solvers for placement and escape: CP-SAT, MILP, SMT, MaxSAT
 
 **TL;DR**
-- **Every exact method breaks down at ~50–100 freely placed parts with rotation** as one monolithic model: NS-Place MILP infeasible on 10/14 boards in 4 h; HiePlace's ILP baseline infeasible at 308–404 parts; our CP-SAT found nothing at 300/1000 parts in 300 s; Z3 SMT needed up to 45,474 s.
-- Exact solvers work when **decomposed**: per-cluster placement, legalization with relative order fixed, windowed LNS. Our hierarchical CP-SAT + LNS beat monolithic CP-SAT by 25–55% HPWL at 100 parts and stayed feasible at 300 and 1000 ([benchmarks](benchmarks.md)).
+- **Monolithic exact models with free rotation scale poorly**: our monolithic CP-SAT stays feasible to ~200 parts but has competitive HPWL only to ~100 (single instance, 4 workers) and found no solution at 300/1000 parts in 300 s (UNKNOWN); NS-Place's vanilla MILP found no feasible placement in 4 h for 9–10 of its 14 boards (the note's count and per-board list disagree); HiePlace's ILP baseline gave no result at 308–404 parts; Z3 SMT needed up to 45,474 s.
+- Exact solvers work when **decomposed**: per-cluster placement, legalization with relative order fixed, windowed LNS. Our hierarchical CP-SAT + LNS beat monolithic CP-SAT by 22–55% HPWL at 100 parts and stayed feasible at 300 and 1000 ([benchmarks](benchmarks.md)).
 - **Free 4-way rotation is the main driver of difficulty**: fixing orientations upstream made N=300 feasible in 82.6 s; decap constraints were not the bottleneck.
-- **OR-Tools CP-SAT (Apache-2.0)** is the most practical exact engine (NoOverlap2D over optional intervals, hints, packing-LNS workers) — a feasibility/legalization engine, **not** an HPWL optimizer (SA beats it on HPWL at small N; lower bounds stay at 5–25% of incumbents).
+- **OR-Tools CP-SAT (Apache-2.0)** is the most practical exact engine (NoOverlap2D over optional intervals, hints, packing-LNS workers) — a feasibility/legalization engine, **not** an HPWL optimizer (SA beats it on HPWL at small N; lower bounds are 2.5–25% of incumbents with rotation, 51% with fixed orientation).
 - MILP (HiGHS MIT, SCIP Apache-2.0) suits network-flow subproblems such as escape; Gurobi, OptiMathSAT and Triangle are excluded.
 
 ## Key facts
@@ -21,7 +21,7 @@
 **PCB-scale literature**
 | Source | Finding |
 |---|---|
-| NS-Place ([arXiv 2210.14259](https://arxiv.org/abs/2210.14259) [P]) | Big-M MILP (`x_i + r_i h_i + (1−r_i) w_i ≤ x_j + W(p_ij+q_ij)`); vanilla: no feasible placement in 4 h for 10/14 designs (PCB1 8 parts 2.7 s; PCB2 18 parts 6.3 s; PCB3/8/12 hit 4 h with feasible; none from PCB4, 28 parts); with GD relative positions 4.9–6,008 s for ≤64 parts; 1,570-part board hit 14,400 s; solver unnamed |
+| NS-Place ([arXiv 2210.14259](https://arxiv.org/abs/2210.14259) [P]) | Big-M MILP (`x_i + r_i h_i + (1−r_i) w_i ≤ x_j + W(p_ij+q_ij)`); vanilla: no feasible placement in 4 h for "10/14" designs per the note, but its own per-board list gives feasible results on 5 (PCB1 8 parts 2.7 s; PCB2 18 parts 6.3 s; PCB3/8/12, 34/36/58 parts, hit 4 h with a feasible solution), which leaves 9; none for PCB4 (28 parts, 6 locked); recheck the paper; with GD relative positions 4.9–6,008 s for ≤64 parts; 1,570-part board hit 14,400 s; solver unnamed |
 | HiePlace ([PDF](https://www.cse.cuhk.edu.hk/~byu/papers/J156-TCAD2026-HiePlace.pdf) [P]) | Gurobi MP inside a hierarchy; 15 industrial boards (density 0.58–0.81, 13–404 parts, 35–2,455 pins) + 4 academic; 0.02–120 min; Floorplet ILP 30–240 min, none at 308–404 parts |
 | Z3 SMT floorplanning ([arXiv 1709.07241](https://arxiv.org/abs/1709.07241) [P]) | Without → with rotation: n30 64 → 1,220 s; n50b 569 → 45,474 s; n100 315 → 8,745 s; n300 932 → 26,777 s; MCNC 2,013–29,282 s; needed spatial clustering |
 | CDCL vs CP-SAT vs MILP ([arXiv 2512.18034](https://arxiv.org/abs/2512.18034) [P]) | 2×2–6×6 facility grids: CDCL dominates feasibility, CP-SAT proves optimality on 5×5/6×6 in 60 s, CBC MILP exponential; CDCL → CP-SAT warm start reaches optimum faster (tiny instances) |
@@ -72,7 +72,7 @@ for (cap_pin, ic_pin, dmax) in decaps:               # hard L1 ball = 4 linear c
 - Use CP-SAT for: cluster placement (≤~50 parts with hard decap/keep-out/alignment), min-displacement legalization, constraint-heavy windows; feed hints from analytical/SA placement ([legalization](../placement/legalization.md)) [M/I].
 - Monolithic CP-SAT only ≤~100 parts at 0.5 mm; otherwise cluster (IC + passives) → soft macros with ≥2 aspect-ratio variants → top-level floorplan → windowed LNS on a **window sub-model** (free parts as variables, neighbours fixed, external pins constant) [M].
 - **Fix orientations upstream** (rules, LLM, continuous placer argmax) at scale; keep one dedicated packing subsolver worker (area-energetic + energetic + timetabling, 5,000 pairs) [M].
-- Use 0.5 mm global grid (0.1 mm made first-feasible 12× slower at N=100); "opt2" rotation encoding for N ≥ 100; turn on disconnected-region splitting when keep-outs split the board; lexicographic symmetry breaking for identical decaps [M].
+- Use 0.5 mm global grid (0.1 mm made first-feasible 12× slower at N=100); "opt2" rotation encoding for N ≥ 100 (one instance; all measured hierarchical/LNS/legalization runs used "var"); turn on disconnected-region splitting when keep-outs split the board; lexicographic symmetry breaking for identical decaps [M].
 - Do not let the LLM write CP models from scratch: provide a tested template and let it add typed constraints from a vocabulary [I].
 - MILP (HiGHS/SCIP) or CP-SAT for escape flow models; MonoSAT (`-DGPL=OFF` to avoid GPLv2 code) for multi-layer escape [I].
 

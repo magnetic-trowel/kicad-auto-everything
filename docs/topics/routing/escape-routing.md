@@ -2,7 +2,7 @@
 
 **TL;DR**
 - Escape is the most mathematically closed PCB subproblem: single-layer escape = network flow (with **correct diagonal capacity** for 45°), ordered escape = multi-commodity flow or SAT, multi-layer escape with vias = SAT + flow (MonoSAT).
-- MonoSAT **proved minimal layer counts** on real BGAs/FPGAs (Xilinx XCVU440, 1755 signals: 4 → 3 layers) in minutes to ~1 h — an infeasibility proof is unique, high-value feedback for stackup/HDI decisions.
+- MonoSAT **proved minimal layer counts** on real BGAs/FPGAs (Xilinx XCVU440, 1755 signals: 4 → 3 layers) in minutes to ~72 min (1,597 s + 2,727 s) — an infeasibility proof is unique, high-value feedback for stackup/HDI decisions, but it holds only for its discretized escape model (escape signal layers, given via sites and rules), not for the whole board; reference planes come on top.
 - **Pin assignment + escape is polynomial-optimal** (80 buses, >7000 nets in <5 min); bus sequencing O(n log n) — pin/bank/bit swap should be a first-class LLM action.
 - Academic escape routers matched or beat Cadence Allegro on industrial cases (B-escape, NCER, Lin DAC'21). Almost none has public code.
 - Learned fanout (FanoutNet) helps but is slow; practitioners report tools fall back to sub-spec vias at fine pitch.

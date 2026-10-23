@@ -2,7 +2,7 @@
 
 **TL;DR**
 - Topological routers first choose each wire's **homotopy class** (which side of every obstacle, which layer) as a rubber-band sketch over a constrained Delaunay triangulation, then realize geometry.
-- **SURF's cut-capacity test** — a sketch is routable iff no cut's flow exceeds its capacity — is an exact, cheap feasibility oracle that names the bottleneck; sharper than RUDY.
+- **SURF's cut-capacity test** — a sketch is routable iff no cut's flow exceeds its capacity — is an exact, cheap feasibility oracle that names the bottleneck, **but only for a single-layer sketch with every cut checked** (SURF's wires are zero-width); checking only CDT edges, or bundles across layers, is a necessary condition, not a sufficient one. Still sharper than RUDY.
 - **For a fixed topology, octilinear costs only ~5% more length than any-angle (rectilinear 23–31%)**: gains come from topology decisions, so LLM effort belongs on topology, not angles.
 - Commercial precedent: **Altium Situs = topological map → push-and-shove realization** (diff pairs pre-routed by hand). TopoR claims 15–45% fewer vias (vendor, unaudited).
 - Persisting routes as topology makes placement–routing iteration cheap (re-tighten instead of re-route).
@@ -36,7 +36,7 @@
 **Recent / other**: Samsung SDS "Circular Frame" (substrate layer → polygonal schema, routes as non-crossing chords): 1000/1000 completions at n = 2–10 vs grid A* falling to 209–220; 0.085 s vs 22–47 s at n=10 — but baselines are naive Python A* without rip-up on toy instances ([arXiv 2105.07892](https://arxiv.org/abs/2105.07892) [P]). JITX topo-routes as homotopy classes with rubber-band fallback [S]; Topola (Rust, MIT, NLnet-funded, WIP) [S]; gEDA and Numberlink "island-in-cavity" topological solvers ([cross-domain routing](cross-domain-routing-transplants.md)).
 
 ## Recommendations for our system
-- Add a **topology tier (Tier 1.5)**: represent each LLM-proposed critical route/bus as a homotopy class (ordered CDT edges crossed per layer + via points), not a polyline; run the SURF cut test (flow = Σ(width + spacing) ≤ edge length) to reject/repair sketches and **name the exact bottleneck** before geometry [I].
+- Add a **topology tier (Tier 1.5)**: represent each LLM-proposed critical route/bus as a homotopy class (ordered CDT edges crossed per layer + via points), not a polyline; run the SURF cut test per layer (k wires through a gap need k·width + (k+1)·spacing ≤ cut length) to reject/repair sketches and **name the bottleneck** before geometry; checking only CDT edges can pass sketches that fail on other cuts, so treat a pass as necessary, not sufficient [I].
 - LLM chooses side-of-obstacle, layer per group, crossing locations, inner vs outer buses; request free-angle only on flex/single-layer boards [I].
 - Persist routes as topology + vias; after placement nudges, re-tighten and re-realize (TopoR/SURF) instead of re-routing [I].
 - Realize sketches with PNS walk/shove waypoints (Situs pattern) ([PNS](kicad-pns-router.md)); snap long buses with a metro-map MIP ([packing/graph-drawing](../placement/packing-and-graph-drawing-transplants.md)) [I].

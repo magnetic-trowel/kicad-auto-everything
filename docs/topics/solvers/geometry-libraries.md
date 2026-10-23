@@ -17,7 +17,7 @@
 | 1000 | 14.9 | 14.7 | 62.7 | 24.6 | 280.7 | 31.8 | 4.95 ms |
 | 3000 | 23.1 | 16.4 | 239.1 | 26.9 | 889.0 | 29.0 | 15.7 ms |
 
-STRtree build 0.1–0.6 ms. Clearance offset per polygon: pyclipper 12.7–14.6 µs with `arc_tolerance` = 5 µm (~100 µs with too-fine tolerance); Shapely `buffer` 8.4–22.7 µs. rtree's per-move delete+insert is the slowest dynamic option.
+STRtree build 0.1–0.6 ms. Clearance offset per polygon: pyclipper 12.7–14.6 µs with `arc_tolerance` = 5 µm (~100 µs with too-fine tolerance); Shapely `buffer` 8.4–22.7 µs (vectorized, `quad_segs=4`, so coarser than pyclipper's setting; not like-for-like). Rebuilding the STRtree per move is the slowest dynamic option at N ≥ 1000 (281–889 µs vs rtree's 63–239 µs); rtree's 153.7 µs at N=300 is non-monotonic, likely noise.
 
 **Libraries and licenses** ([P] unless noted; fit for GPL-3.0-or-later)
 | Library | License | Notes | Fit |
