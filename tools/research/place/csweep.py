@@ -18,7 +18,8 @@ any sandbox, at the snapshot's final path):
 Per board it keeps OUT/<id>.json (kae's report, the last stdout line), OUT/<id>.log (stderr),
 OUT/<id>.time (wall seconds) and OUT/<id>/board.kicad_pcb (git-ignored work area: never
 commit boards). The summary (OUT/summary.json, OUT/summary.md) counts boards whose staged
-footprints carry Edge.Cuts (outline_incomplete) separately and lists for every illegal board
+footprints carry Edge.Cuts (outline_incomplete) and boards with no movable part separately
+(any task with at least one movable part counts) and lists for every illegal board
 why: the exact check's findings by type, grid violators left after escalation, the closed
 loop's diagnosis (no room / side full / crowded), KiCad's last DRC verdict, timeouts and
 errors. Physics and order rules are compared with the human placement (reference poses) under
@@ -199,7 +200,8 @@ def cmd_summary(args):
             except Exception as e:      # the comparison is extra; never lose the sweep over it
                 row["human"] = dict(error=f"{type(e).__name__}: {e}")
         rows.append(row)
-    counted = [x for x in rows if not x.get("outline_incomplete")]
+    # a task with nothing to move is not a placement problem (all footprints locked): held out
+    counted = [x for x in rows if not x.get("outline_incomplete") and x.get("parts") != 0]
     legal = [x for x in counted if x.get("legal")]
     walls = sorted(x["wall_s"] for x in rows if x.get("wall_s") is not None)
     phys = [(x["physics"]["total_linear"], x["human"]["scorecard"]["total_linear"],
@@ -211,6 +213,7 @@ def cmd_summary(args):
               for x in counted if (x.get("order") or {}).get("rules") and isinstance(x.get("human"), dict)]
     summ = dict(
         boards=len(rows), counted=len(counted), outline_incomplete=[x["id"] for x in rows if x.get("outline_incomplete")],
+        no_movable=[x["id"] for x in rows if x.get("parts") == 0 and not x.get("outline_incomplete")],
         legal=len(legal), legal_rate=round(len(legal) / max(1, len(counted)), 4),
         illegal=[dict(id=x["id"], reason=x.get("reason")) for x in counted if not x.get("legal")],
         wall_s=dict(median=statistics.median(walls) if walls else None, max=walls[-1] if walls else None,
@@ -226,7 +229,8 @@ def cmd_summary(args):
     )
     (out / "summary.json").write_text(json.dumps(dict(summary=summ, boards=rows), indent=1, default=str))
     md = [f"# Placement sweep: {out.name}", "",
-          f"- boards {summ['boards']}, counted {summ['counted']} (outline_incomplete held out: {len(summ['outline_incomplete'])})",
+          f"- boards {summ['boards']}, counted {summ['counted']} (held out: outline_incomplete "
+          f"{len(summ['outline_incomplete'])}, no movable parts {len(summ['no_movable'])})",
           f"- **legal {summ['legal']}/{summ['counted']} = {summ['legal_rate']:.1%}**",
           f"- wall median {summ['wall_s']['median']} s, max {summ['wall_s']['max']} s, over {args.time} s: "
           f"{len(summ['wall_s']['over_budget'])}",
