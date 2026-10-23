@@ -8,6 +8,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 from importlib import resources
@@ -24,11 +25,47 @@ class ToolError(RuntimeError):
 
 
 # --- resource accounting -------------------------------------------------------------
-# Every external process (method, router, KiCad) runs through run_measured, which reaps it
-# with wait4 to read its CPU time and peak memory. Totals accumulate per thread, so the
-# runner (one attempt per thread) can split them into method, scoring and probe costs.
+# Every external process (method, router, KiCad) runs through run_measured, which reads its
+# CPU time and peak memory from wait4. Totals accumulate per thread, so the runner (one
+# attempt per thread) can split them into method, scoring and probe costs.
+#
+# The command is not spawned from the runner directly. On exec, Linux folds the high-water
+# RSS of the address space being replaced into the new process's ru_maxrss
+# (exec_mmap -> setmax_mm_hiwater_rss). Python spawns with vfork/posix_spawn, so that is
+# the runner's own address space, and every child reported at least the runner's peak RSS
+# (a 1 MB /bin/true read as GBs). _LAUNCHER, a fresh `python -I -S` process of ~10 MB,
+# forks and execs the command from its own small address space, reaps it with wait4 and
+# reports the command's rusage on a pipe. max_rss_mb is therefore the peak RSS of the
+# largest single process in the command's tree (ru_maxrss is a per-process maximum, not
+# a sum over the tree), with a floor of the launcher's ~10 MB.
 
 _usage = threading.local()
+
+_LAUNCHER = r"""
+import os, sys
+fd = int(sys.argv[1]); argv = sys.argv[2:]
+os.set_inheritable(fd, False)
+er, ew = os.pipe()
+pid = os.fork()
+if pid == 0:
+    try:
+        os.setpgid(0, 0)
+        os.execvp(argv[0], argv)
+    except OSError as e:
+        os.write(ew, str(e.errno).encode())
+    os._exit(127)
+try:
+    os.setpgid(pid, pid)
+except OSError:
+    pass
+os.close(ew)
+os.write(fd, b"pid %d\n" % pid)
+err = os.read(er, 64)
+if err:
+    os.write(fd, b"exec %s\n" % err)
+_, status, ru = os.wait4(pid, 0)
+os.write(fd, ("done %d %r %r %d\n" % (status, ru.ru_utime, ru.ru_stime, ru.ru_maxrss)).encode())
+"""
 
 
 def usage_take():
@@ -40,22 +77,51 @@ def usage_take():
                 processes=u["processes"])
 
 
-def _account(ru):
+def _account(utime, stime, maxrss_kib=None):
     u = getattr(_usage, "u", None)
     if u is None:
         u = _usage.u = dict(cpu_user_s=0.0, cpu_sys_s=0.0, max_rss_mb=0.0, processes=0)
-    u["cpu_user_s"] += ru.ru_utime
-    u["cpu_sys_s"] += ru.ru_stime
-    u["max_rss_mb"] = max(u["max_rss_mb"], ru.ru_maxrss / 1024.0)  # Linux: KiB
+    u["cpu_user_s"] += utime
+    u["cpu_sys_s"] += stime
+    if maxrss_kib is not None:
+        u["max_rss_mb"] = max(u["max_rss_mb"], maxrss_kib / 1024.0)  # Linux: KiB
     u["processes"] += 1
+
+
+def _read_fd(fd, block):
+    os.set_blocking(fd, block)
+    data = b""
+    while True:
+        try:
+            b = os.read(fd, 4096)
+        except BlockingIOError:
+            break
+        if not b:
+            break
+        data += b
+    return data
+
+
+def _parse_report(data):
+    rep = {}
+    for line in data.decode(errors="replace").splitlines():
+        k, _, v = line.partition(" ")
+        rep[k] = v.split()
+    return rep
 
 
 def run_measured(cmd, timeout=None, cwd=None, env=None):
     """subprocess.run(cmd, capture_output=True, text=True) that also accounts the process
-    tree's CPU time and peak RSS (wait4), and kills the whole tree on timeout
-    (raises subprocess.TimeoutExpired like subprocess.run)."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, env=env,
-                         errors="replace", start_new_session=True)
+    tree's CPU time and peak RSS (wait4, via _LAUNCHER), and kills the whole tree on
+    timeout (raises subprocess.TimeoutExpired like subprocess.run)."""
+    cmd = [os.fspath(c) for c in cmd]
+    rfd, wfd = os.pipe()
+    try:
+        p = subprocess.Popen([sys.executable, "-I", "-S", "-c", _LAUNCHER, str(wfd), *cmd],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, env=env,
+                             errors="replace", start_new_session=True, pass_fds=(wfd,))
+    finally:
+        os.close(wfd)
     chunks = {}
 
     def read(name, f):
@@ -67,24 +133,57 @@ def run_measured(cmd, timeout=None, cwd=None, env=None):
         t.start()
     deadline = time.monotonic() + timeout if timeout else None
     timed_out = False
-    while True:
-        pid, status, ru = os.wait4(p.pid, os.WNOHANG)
-        if pid:
-            break
-        if deadline and time.monotonic() > deadline:
-            timed_out = True
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            pid, status, ru = os.wait4(p.pid, 0)
-            break
-        time.sleep(0.05)
-    p.returncode = os.waitstatus_to_exitcode(status)
+    early = b""
+    try:
+        while True:
+            pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+            if pid:
+                break
+            if deadline and time.monotonic() > deadline:
+                timed_out = True
+                # Kill the command's group first so the launcher can still reap it and
+                # report its usage; then the launcher itself.
+                early = _read_fd(rfd, block=False)
+                rep = _parse_report(early)
+                for g in [int(rep["pid"][0])] if "pid" in rep else []:
+                    try:
+                        os.killpg(g, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                end = time.monotonic() + 10
+                while not pid and time.monotonic() < end:
+                    pid, status, ru = os.wait4(p.pid, os.WNOHANG)
+                    time.sleep(0.05)
+                if not pid:
+                    try:
+                        os.killpg(p.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    pid, status, ru = os.wait4(p.pid, 0)
+                break
+            time.sleep(0.05)
+        rest = _read_fd(rfd, block=True)
+    finally:
+        os.close(rfd)
+    rep = _parse_report(early + rest)
+    if "pid" in rep and timed_out:  # the pid may have arrived only after the first read
+        try:
+            os.killpg(int(rep["pid"][0]), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     for t in readers:
         t.join(timeout=30)
-    _account(ru)
     out, err = chunks.get("out", ""), chunks.get("err", "")
+    if "done" in rep:
+        st, ut, syt, mx = rep["done"]
+        p.returncode = os.waitstatus_to_exitcode(int(st))
+        _account(float(ut), float(syt), int(mx))
+    else:  # launcher killed before it could reap the command: CPU of what it reaped, no peak
+        p.returncode = os.waitstatus_to_exitcode(status)
+        _account(ru.ru_utime, ru.ru_stime)
+    if "exec" in rep and not timed_out:
+        e = int(rep["exec"][0])
+        raise OSError(e, os.strerror(e), cmd[0])
     if timed_out:
         raise subprocess.TimeoutExpired(cmd, timeout, output=out, stderr=err)
     return subprocess.CompletedProcess(cmd, p.returncode, out, err)

@@ -214,3 +214,33 @@ def test_work_list_interleaves_arms_per_board():
     assert work == runner.work_list(recs, arms, ("route",), 1)  # deterministic
     sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
     assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]
+
+
+def test_run_measured_peak_rss_is_the_childs_not_the_runners():
+    # The runner's own peak RSS used to leak into every child's ru_maxrss via exec.
+    big = bytearray(1 << 30)  # 1 GiB touched in this (parent) process
+    for i in range(0, len(big), 4096):
+        big[i] = 1
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "b = bytearray(200 << 20)"])
+    u = tools.usage_take()
+    assert r.returncode == 0 and u["processes"] == 1
+    assert 200 <= u["max_rss_mb"] < 400, u
+    tools.run_measured(["true"])
+    assert tools.usage_take()["max_rss_mb"] < 50
+    del big
+
+
+def test_run_measured_cpu_exit_code_and_errors():
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "import sys\nx = 0\nfor i in range(3_000_000): x += i\n"
+                            "print('out'); print('err', file=sys.stderr); sys.exit(3)"])
+    u = tools.usage_take()
+    assert (r.returncode, r.stdout, r.stderr) == (3, "out\n", "err\n")
+    assert u["cpu_s"] > 0.05
+    assert tools.run_measured(["sh", "-c", "kill -9 $$"]).returncode == -9
+    with pytest.raises(FileNotFoundError):
+        tools.run_measured(["/nonexistent/kae-command"])
+    with pytest.raises(subprocess.TimeoutExpired):
+        tools.run_measured([sys.executable, "-c", "while True: pass"], timeout=1)
+    assert tools.usage_take()["cpu_s"] > 0.5  # the killed command's CPU is still accounted
