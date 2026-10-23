@@ -1,0 +1,373 @@
+{
+ "status": {
+  "ok": true,
+  "error": 0,
+  "warning": 0,
+  "info": 5,
+  "waived": 35,
+  "blocking_questions": [
+   "Q-1",
+   "Q-2",
+   "Q-4",
+   "Q-5",
+   "Q-12"
+  ]
+ },
+ "findings": [
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U106 (TPS70950DBVR): V(EN-GND) 6.5 vs rating 7 (93%) (ch1/CH1_V5EN to TAP0) \u2014 above 80% derating",
+   "objects": [
+    "U106"
+   ],
+   "waived_by": "designer: EN is left floating with only C(k)39 to GND, which SBVS186H Table 5-1 allows ('can be left floating to enable'; must stay below 6.5 V). The self-biased level of the internal 300 nA pull-up is not published, so the net envelope is the 6.5 V recommended maximum (93 % of the 7 V absolute maximum); nothing drives EN higher."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "error",
+   "message": "RT101 (470k NTC): voltage 5.05 vs rating 5 (101%) between ch1/CH1_TH and TAP0 \u2014 exceeds rating",
+   "objects": [
+    "RT101"
+   ],
+   "waived_by": "designer: NCP15 'maximum voltage' 5.00 V is Murata's self-heating limit (spec note *4). The NTC sees 5.05 V only when cold (R_NTC >= 6 MOhm below -20 C), where it dissipates < 5 uW (< 0.002 K self-heating); at the 95 C trip it has 2.5 V and 0.25 mW."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U206 (TPS70950DBVR): V(EN-GND) 6.5 vs rating 7 (93%) (ch2/CH2_V5EN to TAP1) \u2014 above 80% derating",
+   "objects": [
+    "U206"
+   ],
+   "waived_by": "designer: EN is left floating with only C(k)39 to GND, which SBVS186H Table 5-1 allows ('can be left floating to enable'; must stay below 6.5 V). The self-biased level of the internal 300 nA pull-up is not published, so the net envelope is the 6.5 V recommended maximum (93 % of the 7 V absolute maximum); nothing drives EN higher."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "error",
+   "message": "RT201 (470k NTC): voltage 5.05 vs rating 5 (101%) between ch2/CH2_TH and TAP1 \u2014 exceeds rating",
+   "objects": [
+    "RT201"
+   ],
+   "waived_by": "designer: NCP15 'maximum voltage' 5.00 V is Murata's self-heating limit (spec note *4). The NTC sees 5.05 V only when cold (R_NTC >= 6 MOhm below -20 C), where it dissipates < 5 uW (< 0.002 K self-heating); at the 95 C trip it has 2.5 V and 0.25 mW."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U306 (TPS70950DBVR): V(EN-GND) 6.5 vs rating 7 (93%) (ch3/CH3_V5EN to TAP2) \u2014 above 80% derating",
+   "objects": [
+    "U306"
+   ],
+   "waived_by": "designer: EN is left floating with only C(k)39 to GND, which SBVS186H Table 5-1 allows ('can be left floating to enable'; must stay below 6.5 V). The self-biased level of the internal 300 nA pull-up is not published, so the net envelope is the 6.5 V recommended maximum (93 % of the 7 V absolute maximum); nothing drives EN higher."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "error",
+   "message": "RT301 (470k NTC): voltage 5.05 vs rating 5 (101%) between ch3/CH3_TH and TAP2 \u2014 exceeds rating",
+   "objects": [
+    "RT301"
+   ],
+   "waived_by": "designer: NCP15 'maximum voltage' 5.00 V is Murata's self-heating limit (spec note *4). The NTC sees 5.05 V only when cold (R_NTC >= 6 MOhm below -20 C), where it dissipates < 5 uW (< 0.002 K self-heating); at the 95 C trip it has 2.5 V and 0.25 mW."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F1 (4A): current on TAP0 through pin 2 (set i_through= if the part carries less) 4.4 vs rating 4 (110%) \u2014 exceeds rating",
+   "objects": [
+    "F1"
+   ],
+   "waived_by": "designer: End tap fuses: 4.4 A only at the abnormal window edge (110% of 4 A T, below the 1.5 x In no-blow point); normal <= 0.7 A. Same reasoning as the middle taps."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F1 (4A): current on TAP0_IN through pin 1 (set i_through= if the part carries less) 4.4 vs rating 4 (110%) \u2014 exceeds rating",
+   "objects": [
+    "F1"
+   ],
+   "waived_by": "designer: End tap fuses: 4.4 A only at the abnormal window edge (110% of 4 A T, below the 1.5 x In no-blow point); normal <= 0.7 A. Same reasoning as the middle taps."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F2 (4A): current on TAP1 through pin 2 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F2"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F2 (4A): current on TAP1_IN through pin 1 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F2"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH1 (10A): current on TAP1_IN through pin 2 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH1"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH1 (10A): current on POST1 through pin 1 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH1"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F3 (4A): current on TAP2 through pin 2 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F3"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F3 (4A): current on TAP2_IN through pin 1 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F3"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH2 (10A): current on TAP2_IN through pin 2 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH2"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH2 (10A): current on POST2 through pin 1 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH2"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F4 (4A): current on TAP3 through pin 2 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F4"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F4 (4A): current on TAP3_IN through pin 1 (set i_through= if the part carries less) 8.8 vs rating 4 (220%) \u2014 exceeds rating",
+   "objects": [
+    "F4"
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.8 A worst case (219% of 4 A T; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH3 (10A): current on TAP3_IN through pin 2 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH3"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "FH3 (10A): current on POST3 through pin 1 (set i_through= if the part carries less) 8.8 vs rating 10 (88%) \u2014 above 75% derating",
+   "objects": [
+    "FH3"
+   ],
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.8 A worst (88% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F5 (4A): current on TAP4 through pin 2 (set i_through= if the part carries less) 4.4 vs rating 4 (110%) \u2014 exceeds rating",
+   "objects": [
+    "F5"
+   ],
+   "waived_by": "designer: End tap fuses: 4.4 A only at the abnormal window edge (110% of 4 A T, below the 1.5 x In no-blow point); normal <= 0.7 A. Same reasoning as the middle taps."
+  },
+  {
+   "check": "rating.current",
+   "severity": "error",
+   "message": "F5 (4A): current on TAP4_IN through pin 1 (set i_through= if the part carries less) 4.4 vs rating 4 (110%) \u2014 exceeds rating",
+   "objects": [
+    "F5"
+   ],
+   "waived_by": "designer: End tap fuses: 4.4 A only at the abnormal window edge (110% of 4 A T, below the 1.5 x In no-blow point); normal <= 0.7 A. Same reasoning as the middle taps."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R101 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R101"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R152 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R152"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R102 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R102"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R153 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R153"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R201 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R201"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R252 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R252"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R202 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R202"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R253 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R253"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R301 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R301"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R352 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R352"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R302 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R302"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R353 (0.086): dissipation (W) 1.32 vs rating 2 (66%) \u2014 above 50% derating",
+   "objects": [
+    "R353"
+   ],
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.32 W each (66% of 2 W at 70 C; 93% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+  },
+  {
+   "check": "hazard.procedural",
+   "severity": "warning",
+   "message": "H-6: mitigated only procedurally (enclosure outside the battery box and not above vents; plug only at the board; harness fuses enclosed; no relays)",
+   "objects": [
+    "H-6"
+   ],
+   "waived_by": "designer: Hydrogen ignition is controlled by where the enclosure is installed (outside the battery box, not above vents) and by having no relays or user-operated contacts on the board; installation rule in DESIGN.md 9."
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-1 is BLOCKING and unanswered: Confirm N = 2-4. Is a > 4-battery (96 V) bank needed? A > 70 V stack is outside this safety analysis.",
+   "objects": [
+    "Q-1"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-2 is BLOCKING and unanswered: Battery model and charger set-points (float, absorb, equalize, temperature compensation)? The wake threshold is 13.23 +/- 0.09 V per battery (R120-R125); a float below ~13.3 V may never wake the balancer.",
+   "objects": [
+    "Q-2"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-4 is BLOCKING and unanswered: MLCCs and an electrolytic sit directly across each battery. If one shorts, the on-board fuse clears. Acceptable, or must they be series-redundant pairs (+16 caps per channel, +8 mm board)?",
+   "objects": [
+    "Q-4"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-5 is BLOCKING and unanswered: Littelfuse 477 DC breaking (1.5 kA at 400 VDC) and cold resistance are [S]; verify or substitute a fuse with a read DC rating >= 1 kA at >= 80 VDC.",
+   "objects": [
+    "Q-5"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-12 is BLOCKING and unanswered: Certification target (UL 1973 / IEC 62368-1)? If yes, re-derive spacing from purchased standards.",
+   "objects": [
+    "Q-12"
+   ]
+  }
+ ]
+}
