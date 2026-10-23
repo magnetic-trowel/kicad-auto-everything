@@ -586,9 +586,10 @@ class Problem:
     def _part(self, i, fp, name_to_net, rotations):
         s = transform.side_sign(fp.side)
         has_cy = bool(fp.courtyard)
-        # a footprint without pads (logo, lid, outline drawing) and without a courtyard takes
-        # no room: KiCad checks nothing of it (a mechanical lid's body covered a whole board)
-        cy = polys_lib_rect(fp.courtyard) or (polys_lib_rect(fp.body) if fp.pads else None)
+        # without a courtyard the body stands in, pads or not: a logo's copper and mask
+        # graphics bridge other parts' pads (stickhub); relax_bodies frees it when the board is
+        # too full (a mechanical lid's body covered a whole interposer)
+        cy = polys_lib_rect(fp.courtyard) or polys_lib_rect(fp.body)
         pads = fp.pads
         pad_rects = [pad_lib_rect(p) for p in pads]
         # pads inflated by the clearance they need from other copper (see module docstring)
@@ -781,7 +782,7 @@ class Problem:
         g = self.g
         fixed_relaxed = False
         for p in self.parts:
-            if p.has_courtyard or p.decor or getattr(p, "relaxed", False):
+            if p.has_courtyard or getattr(p, "relaxed", False):
                 continue
             if not p.movable:
                 fixed_relaxed = True     # a locked module's body (an Arduino under its shield)

@@ -361,8 +361,8 @@ def test_rule_areas_follow_project_severity_and_copper_layers(tmp_path):
 
 def test_padless_footprint_and_far_side_lands_take_no_room_on_the_near_side():
     """Regression (myra-sip-interposer): a mechanical lid (no pads, no courtyard) took its
-    body's room, the whole board, and was never relaxed; an LGA footprint on F whose lands
-    are all on B.Cu took room on the front. KiCad checks neither there."""
+    body's room, the whole board, and relax_bodies skipped parts without pads; an LGA
+    footprint on F whose lands are all on B.Cu took room on the front."""
     from shapely.geometry import box as sbox
     from kae.place.problem import POINT
     b = load(FIXTURE)
@@ -374,8 +374,9 @@ def test_padless_footprint_and_far_side_lands_take_no_room_on_the_near_side():
         pd.layers, pd.kind, pd.drill = ["B.Cu", "B.Mask"], "smd", 0.0
     P = Problem.build(b)
     parts = {p.ref: p for p in P.parts}
+    assert parts["S1"].rots[0].own_rects != (POINT,)    # a logo's graphics may bridge pads
+    P.relax_bodies()                                    # a crowded board frees it
     assert parts["S1"].rots[0].own_rects == (POINT,)
-    P.relax_bodies()
     u = parts["U1"]
     assert u.rots[0].own_rects == (POINT,)
     assert u.rots[0].opp                     # its lands occupy the back

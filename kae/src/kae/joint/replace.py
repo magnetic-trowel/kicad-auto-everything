@@ -63,7 +63,8 @@ def window_board(board, parts):
 
 
 def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, terms=None, physics=True,
-                   cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, log=None):
+                   cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, moves_per_part=6000,
+                   log=None):
     """See the module docstring. `board` is a kae.board.model.Board at the current poses;
     `window` a feedback.Window. `terms`: place terms built on the full board (the brief's
     structures), else built here when `physics`."""
@@ -118,7 +119,10 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
                         w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None)
     rep["history"] = apply_history(ann, history, scale=history_scale, window=window.rect)
     rep["cost_before"] = round(float(ann.cost(ann.lam1)), 5)
-    rep["anneal"] = ann.run(cpu_s=max(0.5, 0.75 * time_s), deadline=t0 + 0.8 * time_s)
+    # a fixed move count (not the engine's adaptive one): the same seed gives the same window
+    # whenever the time budget does not bind
+    rep["anneal"] = ann.run(cpu_s=max(0.5, 0.75 * time_s), deadline=t0 + 0.8 * time_s,
+                            max_moves=int(moves_per_part) * len(sub))
     ann.write_back(use_best_legal=True)
     st = ann.st
     rep["cost_after"] = round(float(ann.cost(ann.lam1)), 5)

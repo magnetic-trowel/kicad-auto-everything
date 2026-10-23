@@ -320,10 +320,16 @@ def _candidates(P, st, i, S, pad, ks, w_rot, limit):
         if len(xs) == 0:
             continue
         c = dist[xs, ys] + (w_rot if k != K0 else 0.0)
-        sel = np.argsort(c, kind="stable")[:limit]
-        out += [(float(c[q]), int(xs[q]), int(ys[q]), k) for q in sel]
+        order = np.argsort(c, kind="stable")
+        out += [(float(c[q]), int(xs[q]), int(ys[q]), k) for q in order[:limit]]
+        # and a spread over the farther ones, so a crowded neighbourhood is not all it sees
+        far = order[limit:]
+        if len(far):
+            out += [(float(c[q]), int(xs[q]), int(ys[q]), k) for q in far[::max(1, len(far) // limit)][:limit]]
     out.sort()
-    return out[:limit]
+    near = out[:limit]
+    rest = out[limit:]
+    return near + rest[::max(1, len(rest) // limit)][:limit]
 
 
 def _tables(P, st, skip):
@@ -362,10 +368,13 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True):
         if time.monotonic() > deadline:
             return False, []
         f = E.findings_at(i, X, Y, k)
-        refs = {r for v in f for r in v["refs"]} - {p.ref}
         by_ref = {P.parts[j].ref: j for j in small}
-        if any(r not in by_ref for r in refs):
+        # every finding there must name a part that moves out (one naming only part i, or a
+        # bigger or fixed part, stays)
+        if any(not any(r in by_ref for r in v["refs"] if r != p.ref) or
+               any(r not in by_ref and r != p.ref for r in v["refs"]) for v in f):
             continue
+        refs = {r for v in f for r in v["refs"]} - {p.ref}
         E.set_pose(i, X, Y, k)
         out = []
         for r in sorted(refs, key=lambda r: -P.parts[by_ref[r]].area):
