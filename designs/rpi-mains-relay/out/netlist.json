@@ -66,7 +66,7 @@
    "footprint": "Converter_ACDC:Converter_ACDC_MeanWell_IRM-20-xx_THT",
    "category": "module",
    "dnp": false,
-   "p_diss": 1.84,
+   "p_diss": null,
    "pins": {
     "1": {
      "name": "AC/L",
@@ -551,7 +551,7 @@
     "36": {
      "name": "Pin_36",
      "type": "passive",
-     "net": "/arm/ARM_FB",
+     "net": "ARM_FB",
      "nc": false
     },
     "37": {
@@ -989,7 +989,7 @@
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/arm/ARM_FB",
+     "net": "ARM_FB",
      "nc": false
     }
    }
@@ -1010,7 +1010,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/arm/ARM_FB",
+     "net": "ARM_FB",
      "nc": false
     },
     "2": {
@@ -1049,7 +1049,7 @@
     "3": {
      "name": "COM",
      "type": "passive",
-     "net": "/arm/ARM_FB",
+     "net": "ARM_FB",
      "nc": false
     }
    }
@@ -1128,7 +1128,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -1335,7 +1335,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -1542,7 +1542,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -1749,7 +1749,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -1956,7 +1956,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -2163,7 +2163,7 @@
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 0.0001,
    "pins": {
     "1": {
      "name": "",
@@ -2795,7 +2795,7 @@
    "pins": {}
   },
   {
-   "ref": "MP16",
+   "ref": "MP15",
    "block": "mech",
    "board": "main",
    "name": "MP15",
@@ -3483,6 +3483,38 @@
    ]
   },
   {
+   "name": "ARM_FB",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    -0.3,
+    3.6
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D16",
+     "3"
+    ],
+    [
+     "J5",
+     "36"
+    ],
+    [
+     "R24",
+     "2"
+    ],
+    [
+     "R25",
+     "1"
+    ]
+   ]
+  },
+  {
    "name": "CH1",
    "domain": "SELV",
    "boards": [
@@ -3633,8 +3665,8 @@
     "main"
    ],
    "v": [
-    -187.0,
-    187.0
+    0.0,
+    0.0
    ],
    "kind": "mains",
    "i_max": 0.6,
@@ -3755,38 +3787,6 @@
     [
      "U1",
      "6"
-    ]
-   ]
-  },
-  {
-   "name": "/arm/ARM_FB",
-   "domain": "SELV",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    -0.3,
-    3.6
-   ],
-   "kind": "signal",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "D16",
-     "3"
-    ],
-    [
-     "J5",
-     "36"
-    ],
-    [
-     "R24",
-     "2"
-    ],
-    [
-     "R25",
-     "1"
     ]
    ]
   },

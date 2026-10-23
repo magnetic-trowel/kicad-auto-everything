@@ -53,7 +53,7 @@
   (constraint clearance (min 3.2mm))
   (constraint creepage (min 6.4mm)))
 
-# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (reinforced = 4 kV, F.2), creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm
+# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (F.2) / 3.8 mm (62368-1 T10) for the 4 kV reinforced impulse, creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm
 (rule "IR:barrier.SELV.LINE.inherited"
   (condition "((A.hasNetclass('SELV') || A.hasNetclass('SELV_1A') || A.hasNetclass('SELV_2A')) && (B.hasNetclass('LINE_1A') || B.hasNetclass('LINE_W7p5') || B.hasNetclass('NEUTRAL_W7p5') || B.hasNetclass('OUT1_W7p5') || B.hasNetclass('OUT2_W7p5') || B.hasNetclass('OUT3_W7p5') || B.hasNetclass('OUT4_W7p5') || B.hasNetclass('OUT5_W7p5') || B.hasNetclass('OUT6_W7p5'))) || ((A.hasNetclass('LINE_1A') || A.hasNetclass('LINE_W7p5') || A.hasNetclass('NEUTRAL_W7p5') || A.hasNetclass('OUT1_W7p5') || A.hasNetclass('OUT2_W7p5') || A.hasNetclass('OUT3_W7p5') || A.hasNetclass('OUT4_W7p5') || A.hasNetclass('OUT5_W7p5') || A.hasNetclass('OUT6_W7p5')) && (B.hasNetclass('SELV') || B.hasNetclass('SELV_1A') || B.hasNetclass('SELV_2A')))")
   (constraint clearance (min 8mm))
@@ -227,7 +227,7 @@
   (constraint clearance (min 3.2mm))
   (constraint creepage (min 6.4mm)))
 
-# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (reinforced = 4 kV, F.2), creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm
+# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (F.2) / 3.8 mm (62368-1 T10) for the 4 kV reinforced impulse, creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm
 (rule "IR:barrier.SELV.LINE"
   (condition "((A.hasNetclass('SELV') || A.hasNetclass('SELV_1A') || A.hasNetclass('SELV_2A')) && (B.hasNetclass('LINE_1A') || B.hasNetclass('LINE_W7p5'))) || ((A.hasNetclass('LINE_1A') || A.hasNetclass('LINE_W7p5')) && (B.hasNetclass('SELV') || B.hasNetclass('SELV_1A') || B.hasNetclass('SELV_2A')))")
   (constraint clearance (min 8mm))

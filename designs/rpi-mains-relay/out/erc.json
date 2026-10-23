@@ -29,23 +29,7 @@
     {
       "path": "/",
       "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a",
-      "violations": [
-        {
-          "description": "Label connected to only one pin",
-          "items": [
-            {
-              "description": "Label 'ARM_FB'",
-              "pos": {
-                "x": 53.34,
-                "y": 73.66
-              },
-              "uuid": "484ad84c-6252-553b-a909-8f67bf235532"
-            }
-          ],
-          "severity": "warning",
-          "type": "isolated_pin_label"
-        }
-      ]
+      "violations": []
     },
     {
       "path": "/mains_in/",

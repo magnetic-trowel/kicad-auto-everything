@@ -5,7 +5,7 @@ schema: pcb-intent/0.2
 x-generator: "kaesynth 0.1"
 design:
   slug: rpi-mains-relay
-  title: "RPi Zero 2 W six-outlet 120 VAC relay board (polycarbonate enclosure)"
+  title: "RPi Zero 2 W 6-outlet 120 VAC relay board"
   revision: A
 units: mm
 board:
@@ -78,10 +78,14 @@ board:
       what: "parts other than J5"
       layers: top
       note: "under the Pi"
-    - relative: "north edge to the south faces of J1-J4 (~28 mm), outside the terminal bodies"
+    - relative: "north board edge to the J1-J4 wire-entry faces, full width"
       what: "all copper"
       layers: all
-      note: "wire compartment: no exposed copper (REQ-31)"
+      note: "wire compartment edge strip (REQ-31)"
+    - relative: "wire-entry faces to the south faces of J1-J4, outside the terminal bodies"
+      what: "copper allowed only under the MP1 flat sheet"
+      layers: all
+      note: "wire compartment (REQ-31, review M3)"
     - relative: "K1-K6 coil-pad north edge +1 mm to +9 mm, full width (also under PS1)"
       what: "copper and vias"
       layers: all
@@ -161,10 +165,14 @@ boards:
         what: "parts other than J5"
         layers: top
         note: "under the Pi"
-      - relative: "north edge to the south faces of J1-J4 (~28 mm), outside the terminal bodies"
+      - relative: "north board edge to the J1-J4 wire-entry faces, full width"
         what: "all copper"
         layers: all
-        note: "wire compartment: no exposed copper (REQ-31)"
+        note: "wire compartment edge strip (REQ-31)"
+      - relative: "wire-entry faces to the south faces of J1-J4, outside the terminal bodies"
+        what: "copper allowed only under the MP1 flat sheet"
+        layers: all
+        note: "wire compartment (REQ-31, review M3)"
       - relative: "K1-K6 coil-pad north edge +1 mm to +9 mm, full width (also under PS1)"
         what: "copper and vias"
         layers: all
@@ -242,8 +250,9 @@ barriers:
     material_group: IIIb
     ovc: III
     slot: false
-    source: "TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (reinforced = 4 kV, F.2), creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm"
+    source: "TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (F.2) / 3.8 mm (62368-1 T10) for the 4 kV reinforced impulse, creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm"
     notes: "covers NEUTRAL and OUT1-6 (they float on LINE). Hi-pot 3.0 kVrms 60 s type, 1 s production"
+    ac: false
   - a: LINE
     b: OUT1
     grade: functional
@@ -257,6 +266,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K1's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: OUT2
     grade: functional
@@ -270,6 +280,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K2's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: OUT3
     grade: functional
@@ -283,6 +294,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K3's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: OUT4
     grade: functional
@@ -296,6 +308,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K4's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: OUT5
     grade: functional
@@ -309,6 +322,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K5's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: OUT6
     grade: functional
@@ -322,6 +336,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K6's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
+    ac: false
   - a: LINE
     b: NEUTRAL
     grade: functional
@@ -335,6 +350,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "opposite polarity; field-wiring terminals"
+    ac: false
   - a: NEUTRAL
     b: OUT1
     grade: functional
@@ -348,6 +364,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: NEUTRAL
     b: OUT2
     grade: functional
@@ -361,6 +378,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: NEUTRAL
     b: OUT3
     grade: functional
@@ -374,6 +392,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: NEUTRAL
     b: OUT4
     grade: functional
@@ -387,6 +406,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: NEUTRAL
     b: OUT5
     grade: functional
@@ -400,6 +420,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: NEUTRAL
     b: OUT6
     grade: functional
@@ -413,6 +434,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
+    ac: false
   - a: OUT1
     b: OUT2
     grade: functional
@@ -426,6 +448,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT1
     b: OUT3
     grade: functional
@@ -439,6 +462,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT1
     b: OUT4
     grade: functional
@@ -452,6 +476,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT1
     b: OUT5
     grade: functional
@@ -465,6 +490,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT1
     b: OUT6
     grade: functional
@@ -478,6 +504,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT2
     b: OUT3
     grade: functional
@@ -491,6 +518,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT2
     b: OUT4
     grade: functional
@@ -504,6 +532,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT2
     b: OUT5
     grade: functional
@@ -517,6 +546,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT2
     b: OUT6
     grade: functional
@@ -530,6 +560,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT3
     b: OUT4
     grade: functional
@@ -543,6 +574,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT3
     b: OUT5
     grade: functional
@@ -556,6 +588,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT3
     b: OUT6
     grade: functional
@@ -569,6 +602,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT4
     b: OUT5
     grade: functional
@@ -582,6 +616,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT4
     b: OUT6
     grade: functional
@@ -595,6 +630,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: OUT5
     b: OUT6
     grade: functional
@@ -608,6 +644,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
+    ac: false
   - a: LINE
     b: PE
     grade: basic
@@ -621,15 +658,16 @@ barriers:
     slot: false
     source: "62368-1 basic: clearance 1.5 mm at 2.5 kV (SLUP419 Table 5), creepage 1.5 mm [I]; UL field wiring to grounded dead metal 1/4 in [S]"
     notes: "PE has no copper on the PCB: met by the LINE edge_clearance rule (board edges, mounting holes) and by keeping EGC splices in the wire compartment"
+    ac: false
 netclasses:
   - name: LINE_1A
     domain: LINE
-    clearance: 1.25
+    clearance: 0.2
     track_width: 0.25
     nets: ["/mains_in/L_PSU"]
   - name: LINE_W7p5
     domain: LINE
-    clearance: 1.25
+    clearance: 0.2
     track_width: 7.5
     nets: [L_IN]
   - name: NEUTRAL_W7p5
@@ -673,7 +711,6 @@ netclasses:
     track_width: 0.25
     nets:
       - "+3V3"
-      - "/arm/ARM_FB"
       - "/arm/ARM_G"
       - "/arm/LED_ARM_A"
       - "/arm/WD_CX"
@@ -697,6 +734,7 @@ netclasses:
       - "/ch6/COIL6"
       - "/ch6/LED6_A"
       - "/power5/LED_PWR_A"
+      - ARM_FB
       - CH1
       - CH2
       - CH3
@@ -739,7 +777,6 @@ components:
     category: module
     domains: [LINE, NEUTRAL, SELV]
     mpn: IRM-20-5
-    p_diss_w: 1.84
   - ref: C1
     block: power5
     board: main
@@ -976,6 +1013,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R7
     block: ch1
     board: main
@@ -1033,6 +1071,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R8
     block: ch2
     board: main
@@ -1090,6 +1129,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R9
     block: ch3
     board: main
@@ -1147,6 +1187,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R10
     block: ch4
     board: main
@@ -1204,6 +1245,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R11
     block: ch5
     board: main
@@ -1261,6 +1303,7 @@ components:
     category: resistor
     domains: [SELV]
     mpn: RC0603FR-07100RL
+    p_diss_w: 0.0001
   - ref: R12
     block: ch6
     board: main
@@ -1512,7 +1555,7 @@ components:
     footprint: null
     category: mechanical
     domains: []
-  - ref: MP16
+  - ref: MP15
     block: mech
     board: main
     value: generic
@@ -2353,9 +2396,9 @@ relations:
     part: MP1
     line: "south faces of J1-J4 (y ~ 122 mm), full enclosure width"
     height_mm: "PCB to lid (~130)"
-    fixing: "10 mm folded foot on the PCB; nylon screws to the back panel beyond both board ends (no board holes)"
-    covers: "field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it"
-    note: "supplementary insulation between field conductors (basic) and SELV/Pi (review M3, REQ-31)"
+    fixing: "flat sheet under the wall, die-cut around J1-J4 bodies, held down by them; nylon screws to the back panel beyond both board ends (no board holes)"
+    covers: "wall: field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it. Sheet: all PCB copper north of the wall that is not under a terminal body"
+    note: "supplementary insulation between field conductors (basic) and SELV/Pi, and between field conductors or bare EGCs and mask-only mains copper (review M3, REQ-31)"
     source: design
   - kind: x-volume_keepout
     region: "north of MP1, above J1-J4 up to the lid"
@@ -2368,7 +2411,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:N
@@ -2376,7 +2419,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW1
@@ -2384,7 +2427,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW2
@@ -2392,7 +2435,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW3
@@ -2400,7 +2443,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW4
@@ -2408,7 +2451,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW5
@@ -2416,7 +2459,7 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-current_path
     net: net:L_SW6
@@ -2424,15 +2467,15 @@ relations:
     layers: "F.Cu,B.Cu"
     copper_oz: 2
     stitching: "4 x 0.6 mm vias every 10 mm"
-    note: "width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, >= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies"
+    note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-enclosure_layout
     walls: "NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P"
-    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall (west); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
+    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall near J1 (east); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
     note: "E2 (3-gang PVC box, receptacles) mounted east of E1 on the same backboard"
     source: design
   - kind: x-ground_splice
-    where: "wire compartment, west end, >= 25 mm from J1"
+    where: "wire compartment, middle, >= 25 mm from any terminal"
     note: "branch EGC + 3 outgoing EGCs in one listed lever connector; tied to the back panel"
     source: design
   - kind: x-label
@@ -3692,8 +3735,8 @@ constraints:
     part: MP1
     line: "south faces of J1-J4 (y ~ 122 mm), full enclosure width"
     height_mm: "PCB to lid (~130)"
-    fixing: "10 mm folded foot on the PCB; nylon screws to the back panel beyond both board ends (no board holes)"
-    covers: "field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it"
+    fixing: "flat sheet under the wall, die-cut around J1-J4 bodies, held down by them; nylon screws to the back panel beyond both board ends (no board holes)"
+    covers: "wall: field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it. Sheet: all PCB copper north of the wall that is not under a terminal body"
   - id: rel.161
     from: x-volume_keepout
     kind: x-volume_keepout
@@ -3767,11 +3810,11 @@ constraints:
     from: x-enclosure_layout
     kind: x-enclosure_layout
     walls: "NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P"
-    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall (west); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
+    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall near J1 (east); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
   - id: rel.171
     from: x-ground_splice
     kind: x-ground_splice
-    where: "wire compartment, west end, >= 25 mm from J1"
+    where: "wire compartment, middle, >= 25 mm from any terminal"
   - id: rel.172
     from: x-label
     kind: x-label
@@ -3889,6 +3932,6 @@ constraints:
       - MP12
       - MP13
       - MP14
-      - MP16
+      - MP15
     max_span: 32.0
     hard: false

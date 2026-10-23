@@ -270,8 +270,9 @@ def _mech(mpn, manufacturer, description, datasheet, source, prefix="MP", generi
 _CARLON = "https://tnb.ca.abb.com/en/pdf-catalogues/boxes-and-covers-meter-sockets/enclosures/E-Enclosures-E.pdf"
 
 PARTITION = _mech("KAE-RPMR-MP1", "custom (die-cut and folded to drawing, TBD)",
-                  "Partition: 1.5 mm polycarbonate UL 94 V-0 (Lexan FR class), full enclosure width, from the PCB "
-                  "surface to the lid, 10 mm folded foot; separates the field-wiring compartment from the PCB/Pi",
+                  "Partition: 1.5 mm polycarbonate UL 94 V-0 (Lexan FR class): wall across the enclosure from the "
+                  "PCB to the lid at the J1-J4 south faces, plus a flat sheet die-cut around J1-J4 covering the PCB "
+                  "north of the wall; separates field wiring from the PCB/Pi",
                   "", {"ratings": "requirement from DESIGN.md H2/REQ-31 (supplementary insulation over THHN/NM "
                                   "basic insulation) [I]; material [unverified]"},
                   lifecycle="active", second_source="0.43 mm Formex GK-17 polypropylene, two layers")

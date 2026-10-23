@@ -1,481 +1,340 @@
 # rpi-mains-relay: connections (netlist)
 
-Companion to [DESIGN.md](DESIGN.md). Every pin of every placed part is listed, plus the
-off-board objects (Raspberry Pi header, Class 2 cable, field wiring).
+Companion to [DESIGN.md](DESIGN.md) (revision 2: six outlets, on-board Pi Zero 2 W, IRM-20-5). Every
+pin of every placed part is listed. The off-board objects are listed too: the Pi, the receptacles in
+E2 and the field wiring.
 
-The encoded design is [design.py](design.py) with part cards in [parts.py](parts.py). `kaesynth build`
-writes the authoritative pin list to [out/netlist.json](out/netlist.json). Section 8 below was checked
-against that file node by node: all 32 nets are identical. If the two ever disagree, netlist.json wins.
+The encoded design is [design.py](design.py), with part cards in [parts.py](parts.py). `kaesynth build`
+writes the authoritative pin list to [out/netlist.json](out/netlist.json). Section 10 below was
+generated from that file: 45 nets, all identical, plus PE, which has no PCB copper. If the two ever
+disagree, netlist.json wins.
 
 **Conventions**
 
 - Pin entries read `pin number (datasheet name) → NET`.
-- The KiCad pad name is given where it differs from the datasheet number.
-- `NC` means intentionally unconnected.
-- Evidence tags: [P] pin numbering read in the datasheet at the cited page or figure; [I] inferred; [unverified] not confirmed in the primary source.
-- Net names are global. A net with the same name in two blocks is the same net.
-- In KiCad, the per-channel nets (CHk_G, COILk, LEDk_A) and the watchdog and input-local nets (HB_R, PUMP, ARM_G, LED_ARM_A, +5V_IN, LED_PWR_A) are sheet-local. They appear with a sheet prefix, e.g. `/ch1/COIL1`, `/arm/ARM_G`, `/selv_in/+5V_IN`.
-- Domain names match design.py:
-  - LINE (root, reference L_IN), NEUTRAL, OUT1–OUT4 (these float on L_IN), SELV (root, reference GND) and PE (off-board).
-  - Taking L as the mains reference makes the voltage across an open relay contact exact (±187 V peak).
-- Refdes and net names for channels follow the rule in section 3.
+- `NC` means intentionally unconnected, with the reason given.
+- Evidence tags: [P] pinout read in the datasheet at the cited page or figure; [S] secondary source; [I] inferred.
+- Net names are global. In KiCad, the per-block nets are sheet-local and carry a sheet prefix: `/chk/CHk_G`, `/chk/COILk`, `/chk/LEDk_A`, `/arm/ARM_G`, `/arm/WD_RC`, `/arm/WD_CX`, `/arm/LED_ARM_A`, `/power5/LED_PWR_A` and `/mains_in/L_PSU`.
+- Domains match design.py: LINE (root, reference L_IN), NEUTRAL and OUT1–OUT6 (both float on L_IN), SELV (root, reference GND, floating), and PE (off-board).
 
 ## 1. Net table
 
 | Net | Domain | Voltage range | Max current | Kind |
 |---|---|---|---|---|
-| L_IN | LINE (root, 0 V) | 0–132 V rms vs N (±187 V pk); ≤ 1.5 kV pk transient (OVC II) | 15 A rms | mains, power |
-| N | NEUTRAL | ±187 V pk vs L_IN; ≈ 0–5 V rms vs PE (treat as hazardous) | 15 A rms | mains, power (return) |
-| L_SW1 … L_SW4 | OUT1 … OUT4 | equals L_IN when the relay is closed; floating or ≈ N when open (±187 V pk vs L_IN) | 15 A rms each (sum ≤ 15 A) | mains, switched power |
-| PE | PE (off-board) | 0 V (earth) | fault current | protective earth: box, ring, cover, EGCs; no PCB copper |
-| +5V_IN | SELV | 4.75–5.25 V (transient clamped ≤ 12 V after F1) | 0.39 A (F1 trips ≥ 2.2 A) | power (from the Pi) |
-| +5V | SELV | 4.5–5.25 V | 0.39 A | power (coil and LED rail) |
-| GND | SELV | 0 V (reference; may be earthed through the Pi) | 0.39 A | ground |
-| CH1_IN … CH4_IN | SELV | 0–3.3 V (clamped by U1 above ≈ 6.5 V) | 0.6 mA | signal, from the Pi GPIO |
-| CH1_G … CH4_G | SELV | 0–3.0 V | 0.6 mA | signal (MOSFET gate) |
-| COIL1 … COIL4 | SELV | 0 V (ON) to 5.25 V (OFF); ≤ 6.1 V during flyback | 93 mA | power (coil low side) |
-| LED1_A … LED4_A | SELV | 0–5.25 V | 2.3 mA | signal (LED anode) |
-| COIL_RTN | SELV | 0–0.03 V when armed; floats ≤ 3.5 V when disarmed | 0.39 A | power (common coil return) |
-| HB_IN | SELV | 0–3.3 V square wave, 100 Hz–2 kHz | 3.3 mA peak | signal (heartbeat) |
-| HB_R | SELV | 0–3.3 V | 3.3 mA peak | signal (after series R) |
-| PUMP | SELV | −0.3…+3.0 V | 3.3 mA peak | signal (pump node) |
-| ARM_G | SELV | 0–2.75 V | 3 µA (bleed through R14) | signal (Q5 gate / hold) |
-| LED_ARM_A | SELV | 0–5.25 V | 2.3 mA | signal |
-| LED_PWR_A | SELV | 0–5.25 V | 2.3 mA | signal |
+| L_IN | LINE (root, 0 V) | 0–132 V rms vs N (±187 V pk); ≤ 2.5 kV pk transient (OVC III) | 15 A rms | mains |
+| L_PSU | LINE | = L_IN while F1 conducts; between L and N when F1 is open | 0.6 A | mains (PS1 input) |
+| N | NEUTRAL | ±187 V pk vs L_IN | 15 A rms | mains (return) |
+| L_SW1 … L_SW6 | OUT1 … OUT6 | = L_IN when closed; ≈ N when open (±187 V pk) | 15 A each, sum ≤ 15 A | mains, switched |
+| PE | PE (off-board) | earth | fault current | EGCs and receptacle yokes; no PCB copper |
+| +5V | SELV | 4.875–5.125 V (module ±2.5 %); OVP ≤ 6.75 V | 1.6 A | power (coils, LEDs, Pi branch) |
+| +5V_PI | SELV | +5V minus ≤ 0.07 V | 1.0 A | power to J5 pins 2/4 |
+| +3V3 | SELV | 3.3 V ± 5 % (from the Pi) | ≤ 1 mA | power (U1) |
+| GND | SELV | 0 V reference, floating (Class II supply) | 1.6 A | ground |
+| CH1 … CH6 | SELV | 0–3.3 V (Pi GPIO) | 0.7 mA | signal |
+| CH1_G … CH6_G | SELV | 0–3.2 V | 0.7 mA | gate |
+| COIL1 … COIL6 | SELV | 0 V (ON) to 5.1 V (OFF); ≤ 6.1 V in flyback | 93 mA | coil low side |
+| LED1_A … LED6_A | SELV | 0–5.1 V | 2.3 mA | LED anode |
+| COIL_RTN | SELV | ≤ 0.03 V armed; ≈ 4.5 V disarmed (R26); ≤ 6.1 V flyback | 0.55 A | common coil return |
+| HB | SELV | 0/3.3 V square wave, ≥ 100 Hz | µA | heartbeat |
+| ARM_G | SELV | 0 or ≥ 3.0 V (U1 Q) | µA | Q7 gate |
+| WD_RC, WD_CX | SELV | 0–3.3 V | µA | U1 timing |
+| ARM_FB | SELV | 0.02 V armed, 2.65 V disarmed; clamped −0.3…3.6 V | ≤ 0.1 mA | readback |
+| LED_ARM_A, LED_PWR_A | SELV | 0–5.1 V | 2.3 mA | LED anode |
 
-PE (box, ring, cover, EGCs, ground screw) is **not** a PCB net. It appears only in section 6.
+## 2. Block mains_in: input terminal, supply fuse, AC/DC module
 
-## 2. Block B5 SELV_IN: link terminal and protection
+### J1: WAGO 2606-3102/020-000, 2-pole lever terminal, 7.5 mm, THT
 
-### J6: WAGO 2601-3108, 8-pole lever terminal, 3.5 mm pitch, THT
+The pole numbering follows the WAGO data sheet drawing ("Dimensions in mm") [P]: one solder pin
+per pole, with the pins staggered. Pole 1's pin is 5.5 mm from the body end and 7.7 mm from the
+wire-entry face; pole 2's pin is offset by (+7.5, +12.5) mm.
 
-Footprint `TerminalBlock_WAGO:TerminalBlock_WAGO_2601-3108_1x08_P3.50mm_Vertical`. Each
-position has **two** solder pins with the same pad number. Both pins carry the same net.
-The pin count and arrangement come from the WAGO data sheet, "Number of solder pins per potential 2" [P]. Positions are numbered 1–8 left to right as marked on the housing [I].
+- Symbol `Connector_Generic:Conn_01x02`. Footprint **custom** `custom:WAGO_2606-3102_020-000`, drawn by `footprints/make_footprints.py`.
+- Drill 2.1 mm, pad Ø3.5 mm. The wire-entry face is on the pole-1 side, and `pins_toward(J1, ["1"], "north")` puts it at the north edge.
 
-| Pos | Signal | Net | Pi side (via W1) |
+| Pole | Function | Net | Field conductor |
 |---|---|---|---|
-| 1 | +5 V from Pi | +5V_IN | PI1 pin 2 (5V) |
-| 2 | Ground | GND | PI1 pin 6 (GND) |
-| 3 | Channel 1 command | CH1_IN | PI1 pin 11 (BCM17) |
-| 4 | Channel 2 command | CH2_IN | PI1 pin 13 (BCM27) |
-| 5 | Channel 3 command | CH3_IN | PI1 pin 15 (BCM22) |
-| 6 | Channel 4 command | CH4_IN | PI1 pin 16 (BCM23) |
-| 7 | Heartbeat | HB_IN | PI1 pin 32 (BCM12, PWM0-capable) |
-| 8 | Ground | GND | PI1 pin 34 (GND) |
+| 1 | Line in | L_IN | branch black |
+| 2 | Neutral in | N | branch white |
 
-### F1: Bourns MF-MSMF110/16X-2, PTC 1.1 A hold, 1812
+### F1: Littelfuse 0326001.MXP, 1 A 250 VAC time-lag, 3AB, in two Littelfuse 01020071Z clips
 
-Symbol `Device:Polyfuse`; footprint `Fuse:Fuse_1812_4532Metric`. Non-polar [P].
+Symbol `Device:Fuse`. Footprint
+`Fuse:Fuseholder_Clip-6.3x32mm_Littelfuse_102071_Inline_P34.70x7.60mm_D2.00mm_Horizontal`: pads "1"
+(×2) form one clip and pads "2" (×2) the other. The fuse is non-polar.
 
-- 1 → +5V_IN
-- 2 → +5V
+- 1 → L_IN
+- 2 → L_PSU
 
-### D11: Vishay SMAJ7.0A-E3/61, unidirectional TVS, SMA (DO-214AC)
+### PS1: Mean Well IRM-20-5, AC/DC module
 
-The band marks the cathode (datasheet p.1, "Polarity") [P]. Symbol `Diode:SMAJ5.0A` (Value
-overridden to SMAJ7.0A). Its pin 1 is the cathode: the bar is drawn at pin 1 in the KiCad
-symbol [I, read from the symbol graphics]. Footprint `Diode_SMD:D_SMA`, pad 1 = cathode.
-
-- 1 (K, cathode) → +5V
-- 2 (A, anode) → GND
-
-### C1: Murata GRM21BR61C106KE15L, 10 µF 16 V X5R, 0805
-
-- 1 → +5V
-- 2 → GND
-
-### C2: Yageo CC0603KRX7R9BB104, 100 nF 50 V X7R, 0603
-
-- 1 → +5V
-- 2 → GND
-
-### U1: TI TPD6E05U06RVZR, 6-channel ESD, USON-14 (RVZ)
-
-Pin functions from Table 4-3, datasheet SLVSBO7O p.5 [P]. Symbol `Power_Protection:TPD6E05U06RVZ`.
-Footprint `Package_SON:Texas_R-PUSON-N14`, 14 pads, no exposed pad.
+The pins come from the IRM-20 SPEC p.3, "Mechanical Specification", bottom view [P]. The KiCad
+symbol is `Converter_ACDC:IRM-20-5`. The footprint
+`Converter_ACDC:Converter_ACDC_MeanWell_IRM-20-xx_THT` has pads 1 (0, 0), 2 (0, 20.8), 3 (45, 20.8)
+and 4 (45, 12.8), which matches the drawing's 20.8 mm, 45 mm and 8 mm spacings.
 
 | Pin | Name | Net |
 |---|---|---|
-| 1 | NC | NC |
-| 2 | NC | NC |
-| 3 | NC | NC |
-| 4 | NC | NC |
-| 5 | GND | GND |
-| 6 | NC | NC |
-| 7 | NC | NC |
-| 8 | D3− | NC (spare channel; unused protected I/O left open [I]) |
-| 9 | D3+ | HB_IN |
-| 10 | GND | GND |
-| 11 | D2− | CH4_IN |
-| 12 | D2+ | CH3_IN |
-| 13 | D1− | CH2_IN |
-| 14 | D1+ | CH1_IN |
+| 1 | AC/L | L_PSU |
+| 2 | AC/N | N |
+| 3 | −Vo | GND |
+| 4 | +Vo | +5V |
 
-### D10: Kingbright APT1608SGC, green LED, 0603 (5 V present)
+The module has no FG pin: it is Class II [P].
 
-The datasheet p.1 package drawing shows pin 1 as the cathode, pin 2 as the anode, and a
-polarity mark on the bottom [P]. KiCad `Device:LED` uses the same numbering (1 = K, 2 = A).
-Footprint `LED_SMD:LED_0603_1608Metric`, pad 1 = cathode. D5–D9 follow the same rule.
+## 3. Block power5: 5 V rail
 
-- 1 (K) → GND
-- 2 (A) → LED_PWR_A
+| Ref | Part | Pin → net |
+|---|---|---|
+| C1, C2 | Murata GRM21BR61C106KE15L 10 µF 16 V X5R 0805 | 1 → +5V; 2 → GND |
+| C3 | Yageo CC0603KRX7R9BB104 100 nF 50 V 0603 | 1 → +5V; 2 → GND |
+| D15 | Vishay SMAJ7.0A-E3/61 TVS, SMA. The band is the cathode [P]; on KiCad `Diode:SMAJ5.0A` pin 1 = K | 1 (K) → +5V; 2 (A) → GND |
+| D14 | Kingbright APT1608SGC, PWR LED (pin 1 cathode [P]) | 1 (K) → GND; 2 (A) → LED_PWR_A |
+| R20 | Yageo RC0603FR-071K5L 1.5 kΩ | 1 → +5V; 2 → LED_PWR_A |
+| F2 | Bourns MF-MSMF200/16X-2 PTC, 1812 (`Device:Polyfuse`), non-polar | 1 → +5V; 2 → +5V_PI |
+| TP1 / TP2 | test pads | +5V / GND |
 
-### R16: Yageo RC0603FR-071K5L, 1.5 kΩ, 0603
+## 4. Block pi: J5, the Raspberry Pi Zero 2 W socket
 
-- 1 → +5V
-- 2 → LED_PWR_A
+### J5: Sullins PPPC202LFBN-RC, 2×20 socket, 2.54 mm, 8.51 mm
 
-### TP1, TP2: test pads (`Connector:TestPoint`, `TestPoint:TestPoint_Pad_D1.5mm`)
+- Symbol `Connector_Generic:Conn_02x20_Odd_Even` (pin n = Pi header pin n). Footprint **custom** `custom:RPi_Zero2W_Socket_2x20_P2.54mm`.
+- **Pin handedness.** The Pi sits component side up, with its header soldered to its underside, so J5 uses the Pi's top-view numbering. Pin 1 is at the footprint origin, pin 2 at (0, −2.54) (north, the edge row), and pin 2k−1 at ((k−1)·2.54, 0). This is KiCad's PinHeader handedness, not the mirrored PinSocket one.
+- **Fixed position.** Board holes H7–H10 fix J5's position: pin 1 at (20.37, 26.23) mm, rotation 0.
+- **Footprint contents.** It draws the 65 × 30 mm Pi outline (courtyard) and a keepout rule area for the antenna.
+- **Pin functions.** They come from the Raspberry Pi 40-pin header pinout, confirmed on the Zero 2 W reduced schematic, connector J8 [P].
+- **Default pulls.** These come from the RPi documentation for the RP3A0 [P]: BCM 0–8 pull up, BCM 9–27 pull down.
 
-- TP1.1 → +5V
-- TP2.1 → GND
-
-## 3. Channels: B3 DRV_k and B2 SW_k
-
-### 3.1 Naming rule for channel k (k = 1, 2, 3, 4)
-
-| Item | Refdes or net for channel k | k = 1 | k = 2 | k = 3 | k = 4 |
+| Pin | Pi function | Net | Pin | Pi function | Net |
 |---|---|---|---|---|---|
-| Relay | K{k} | K1 | K2 | K3 | K4 |
-| Driver MOSFET | Q{k} | Q1 | Q2 | Q3 | Q4 |
-| Flyback diode | D{k} | D1 | D2 | D3 | D4 |
-| Channel LED | D{k+4} | D5 | D6 | D7 | D8 |
-| Gate series R (1 kΩ) | R{k} | R1 | R2 | R3 | R4 |
-| Gate pull-down R (4.7 kΩ) | R{k+4} | R5 | R6 | R7 | R8 |
-| LED R (1.5 kΩ) | R{k+8} | R9 | R10 | R11 | R12 |
-| Output terminal | J{k+1} | J2 | J3 | J4 | J5 |
-| Command net | CH{k}_IN | CH1_IN | CH2_IN | CH3_IN | CH4_IN |
-| Gate net | CH{k}_G | CH1_G | CH2_G | CH3_G | CH4_G |
-| Coil low-side net | COIL{k} | COIL1 | COIL2 | COIL3 | COIL4 |
-| LED anode net | LED{k}_A | LED1_A | LED2_A | LED3_A | LED4_A |
-| Switched line net | L_SW{k} | L_SW1 | L_SW2 | L_SW3 | L_SW4 |
-| J6 position | k + 2 | 3 | 4 | 5 | 6 |
-| U1 pin | 14, 13, 12, 11 | 14 | 13 | 12 | 11 |
-| Pi pin (BCM) | — | 11 (17) | 13 (27) | 15 (22) | 16 (23) |
+| 1 | 3V3 out | +3V3 | 2 | 5V | +5V_PI |
+| 3 | GPIO2 (SDA1) | NC | 4 | 5V | +5V_PI |
+| 5 | GPIO3 (SCL1) | NC | 6 | GND | GND |
+| 7 | GPIO4 | NC | 8 | GPIO14 (TXD) | NC |
+| 9 | GND | GND | 10 | GPIO15 (RXD) | NC |
+| 11 | GPIO17 (pull-down) | **CH1** | 12 | GPIO18 | NC |
+| 13 | GPIO27 (pull-down) | **CH2** | 14 | GND | GND |
+| 15 | GPIO22 (pull-down) | **CH3** | 16 | GPIO23 (pull-down) | **CH4** |
+| 17 | 3V3 out | +3V3 | 18 | GPIO24 (pull-down) | **CH5** |
+| 19 | GPIO10 | NC | 20 | GND | GND |
+| 21 | GPIO9 | NC | 22 | GPIO25 (pull-down) | **CH6** |
+| 23 | GPIO11 | NC | 24 | GPIO8 | NC |
+| 25 | GND | GND | 26 | GPIO7 | NC |
+| 27 | ID_SD (GPIO0) | NC (no HAT EEPROM: must stay open) | 28 | ID_SC (GPIO1) | NC (same) |
+| 29 | GPIO5 | NC | 30 | GND | GND |
+| 31 | GPIO6 | NC | 32 | GPIO12 (pull-down) | **HB** |
+| 33 | GPIO13 | NC | 34 | GND | GND |
+| 35 | GPIO19 | NC | 36 | GPIO16 (pull-down) | **ARM_FB** (input) |
+| 37 | GPIO26 | NC | 38 | GPIO20 | NC |
+| 39 | GND | GND | 40 | GPIO21 | NC |
 
-Shared by all channels: +5V, GND, COIL_RTN, L_IN, N.
+The unused GPIOs are left free with no pull and no load: `nc_pins` with a reason in design.py.
 
-### 3.2 Channel 1, complete. Channels 2–4 are identical under the rule above.
+- **Back-feed.** +5V_PI on pins 2/4 feeds the Pi's 5 V rail directly. On the Zero 2 W this rail is the PWR IN VBUS net with 47 µF and no fuse [P, reduced schematic]. Never also power the Pi from its micro-USB.
 
-**R1: Yageo RC0603FR-071KL, 1 kΩ, 0603** (`Device:R`, `Resistor_SMD:R_0603_1608Metric`)
-
-- 1 → CH1_IN
-- 2 → CH1_G
-
-**R5: Yageo RC0603FR-074K7L, 4.7 kΩ, 0603**
-
-- 1 → CH1_G
-- 2 → GND
-
-**Q1: AOS AO3400A, N-MOSFET, SOT-23**
-
-Pinout from the AO3400A datasheet rev 3.1 p.1, "SOT23 Top View": G, S, D [P]. KiCad
-`Transistor_FET:AO3400A` (extends `Q_NMOS_GSD`); footprint `Package_TO_SOT_SMD:SOT-23`.
-
-- 1 (G) → CH1_G
-- 2 (S) → COIL_RTN
-- 3 (D) → COIL1
-
-**D1: Diodes 1N4148W-7-F, SOD-123**
-
-The band is the cathode (DS30086, "Polarity: Cathode Band") [P]. KiCad `Diode:1N4148W` (pin 1 = K, pin 2 = A); `Diode_SMD:D_SOD-123`, pad 1 = cathode.
-
-- 1 (K) → +5V
-- 2 (A) → COIL1
-
-**D5: Kingbright APT1608SGC, LED, 0603**
-
-- 1 (K) → COIL1
-- 2 (A) → LED1_A
-
-**R9: Yageo RC0603FR-071K5L, 1.5 kΩ, 0603**
-
-- 1 → +5V
-- 2 → LED1_A
-
-**K1: Omron/Aratas G5RL-1A-E-TV8 DC5, SPST-NO, 16 A, THT, 6 pins**
-
-Pin numbering is the datasheet bottom view, "G5RL-1A-E-LN / -E-HR / -E-TV8, Terminal
-Arrangement/Internal Connections", p.5 [P]:
-
-- Coil pins 1 and 8. No coil polarity.
-- Pins 3 and 6 are joined internally (moving contact).
-- Pins 4 and 5 are joined internally (fixed contact).
-- Both pins of each contact must be used (p.7, "Wiring of High-capacity Models (-E)") [P].
-
-KiCad symbol `Relay:G2RL-1A-E` (pins A1, A2, 13, 14). Footprint
-`Relay_THT:Relay_SPST_Omron_G2RL-1A-E`:
-
-- Pads A1 (0,0) and A2 (7.5,0).
-- Pad "13" at (0,20) and (7.5,20).
-- Pad "14" at (0,25) and (7.5,25).
-
-This matches the G5RL hole pattern of 7.5 / 20 / 5 mm with Ø1.3 mm holes [P].
-
-| Datasheet pin | Function | KiCad pad | Net |
-|---|---|---|---|
-| 1 | coil | A1 | +5V |
-| 8 | coil | A2 | COIL1 |
-| 3 | contact (moving), joined to 6 | 13 | L_IN |
-| 6 | contact (moving), joined to 3 | 13 | L_IN |
-| 4 | contact (fixed), joined to 5 | 14 | L_SW1 |
-| 5 | contact (fixed), joined to 4 | 14 | L_SW1 |
-
-The coil is non-polar, so the assignment of datasheet pin 1 to A1 and pin 8 to A2 is arbitrary [I].
-Pins 3/6 sit 20 mm from the coil pins and 4/5 sit 25 mm away [P]. The always-live L_IN therefore
-lands on the column nearer the coil, and the L bus enters from the coil side under the relay
-body, ≥ 8 mm from the coil pads. L_SW1 leaves northwards from 4/5 (see DESIGN.md §9).
-
-**J2: WAGO 2606-3102/020-000, 2-pole lever terminal, 7.5 mm, THT**
-
-Pole numbering follows the WAGO data sheet drawing p.1, "Dimensions in mm" [P]:
-
-- One solder pin per pole.
-- Poles are staggered: pole 2's pin is offset 7.5 mm along the strip and 12.5 mm across it from pole 1's pin.
-
-KiCad symbol `Connector_Generic:Conn_01x02`. Footprint: **custom**
-`kae:WAGO_2606-3102_020-000`. Pad 1 = pole 1, pad 2 = pole 2. Geometry:
-
-- Drill Ø2.1 mm finished (datasheet: Ø2.0 +0.1); pad Ø3.5 mm.
-- Pad 2 at (+7.5, +12.5) mm from pad 1.
-- Body 17.85 × 24.0 mm. Pole 1's pin is 5.5 mm from its end face and 7.7 mm from the long face it is nearer to.
-- Lever side: [unverified] check against WAGO CAD before freezing layout.
-
-| Pole | Function | Net |
+| Ref | Part | Pin → net |
 |---|---|---|
-| 1 | Output 1, switched line | L_SW1 |
-| 2 | Output 1, neutral | N |
+| C4 | 10 µF 16 V X5R 0805 | 1 → +5V_PI; 2 → GND |
+| C5 | 100 nF 50 V 0603 | 1 → +5V_PI; 2 → GND |
+| TP6 | test pad | +3V3 |
 
-### 3.3 Channels 2–4: expanded pin lists (for checking)
+## 5. Block arm: heartbeat watchdog, arming switch, readback
 
-| Part | Pin → net (k = 2) | Pin → net (k = 3) | Pin → net (k = 4) |
+### U1: TI SN74LVC1G123DCTR, SSOP-8 (DCT)
+
+The pinout is from SCES586E Fig. 4-1 (DCT top view) and Table 4-1 [P]. KiCad `74xGxx:74LVC1G123`
+has two units: unit B is the power unit. Footprint `Package_SO:SSOP-8_2.95x2.8mm_P0.65mm`.
+
+| Pin | Name | Net | Why |
 |---|---|---|---|
-| R{k} 1 kΩ | R2: 1→CH2_IN, 2→CH2_G | R3: 1→CH3_IN, 2→CH3_G | R4: 1→CH4_IN, 2→CH4_G |
-| R{k+4} 4.7 kΩ | R6: 1→CH2_G, 2→GND | R7: 1→CH3_G, 2→GND | R8: 1→CH4_G, 2→GND |
-| Q{k} AO3400A | Q2: 1(G)→CH2_G, 2(S)→COIL_RTN, 3(D)→COIL2 | Q3: 1→CH3_G, 2→COIL_RTN, 3→COIL3 | Q4: 1→CH4_G, 2→COIL_RTN, 3→COIL4 |
-| D{k} 1N4148W | D2: 1(K)→+5V, 2(A)→COIL2 | D3: 1→+5V, 2→COIL3 | D4: 1→+5V, 2→COIL4 |
-| D{k+4} LED | D6: 1(K)→COIL2, 2(A)→LED2_A | D7: 1→COIL3, 2→LED3_A | D8: 1→COIL4, 2→LED4_A |
-| R{k+8} 1.5 kΩ | R10: 1→+5V, 2→LED2_A | R11: 1→+5V, 2→LED3_A | R12: 1→+5V, 2→LED4_A |
-| K{k} G5RL | K2: 1(A1)→+5V, 8(A2)→COIL2, 3&6(13)→L_IN, 4&5(14)→L_SW2 | K3: …→COIL3 …→L_SW3 | K4: …→COIL4 …→L_SW4 |
-| J{k+1} WAGO 2606 | J3: 1→L_SW2, 2→N | J4: 1→L_SW3, 2→N | J5: 1→L_SW4, 2→N |
+| 1 | A (falling-edge input) | GND | Held low, so B is the only trigger (Table 4-1) |
+| 2 | B (rising-edge input) | HB | The heartbeat retriggers on each rising edge |
+| 3 | CLR (active low) | +3V3 | Never cleared. B is low at power-up, so the CLR-as-trigger case cannot fire |
+| 4 | GND | GND | |
+| 5 | Q | ARM_G | Drives Q7's gate (push-pull) |
+| 6 | Cext | WD_CX | Capacitor only |
+| 7 | Rext/Cext | WD_RC | R21 to VCC, C6 positive side. Never tied directly to GND or VCC (datasheet note) |
+| 8 | VCC | +3V3 | From the Pi |
 
-## 4. Block B4 ARM: heartbeat watchdog
-
-**R13: Yageo RC0603FR-071KL, 1 kΩ, 0603**
-
-- 1 → HB_IN
-- 2 → HB_R
-
-**C3: Yageo CC0603KRX7R7BB105, 1 µF 16 V X7R, 0603** (pump capacitor)
-
-- 1 → HB_R
-- 2 → PUMP
-
-**D12: Diodes BAT54S-7-F, dual series Schottky, SOT-23**
-
-From DS11005 p.1, "BAT54S" diagram, top view [P]:
-
-- Pin 1 is the anode of diode 1.
-- Pin 2 is the cathode of diode 2.
-- Pin 3 is common (cathode of diode 1 and anode of diode 2).
-
-KiCad `Diode:BAT54S` uses 1 = A, 2 = K, 3 = COM.
-
-- 1 (A) → GND (clamps PUMP at −V_F on the low half-cycle)
-- 2 (K) → ARM_G (charges the hold capacitor on the high half-cycle)
-- 3 (COM) → PUMP
-
-**C4: Yageo CC0603KRX7R9BB104, 100 nF 50 V X7R, 0603** (hold capacitor)
-
-Changed from 1 µF during encoding, together with R14 (100 kΩ → 1 MΩ). The time constant stays at
-τ = 0.1 s, but the bleed current falls tenfold, so V_ARM at 100 Hz rises from 2.45 V to ≥ 2.56 V.
-That is above the 2.5 V at which the AO3400A's R_DS(on) is specified (calc `arm_gate_min_100Hz_V`).
-
-- 1 → ARM_G
-- 2 → GND
-
-**R14: Yageo RC0603FR-071ML, 1 MΩ, 0603** (bleed, τ = R14·C4 = 0.1 s)
-
-- 1 → ARM_G
-- 2 → GND
-
-**Q5: AOS AO3400A, SOT-23** (common low-side enable)
-
-- 1 (G) → ARM_G
-- 2 (S) → GND
-- 3 (D) → COIL_RTN
-
-**D9: Kingbright APT1608SGC, LED, 0603** (ARM indicator: lit when Q5 is on)
-
-- 1 (K) → COIL_RTN
-- 2 (A) → LED_ARM_A
-
-**R15: Yageo RC0603FR-071K5L, 1.5 kΩ, 0603**
-
-- 1 → +5V
-- 2 → LED_ARM_A
-
-**TP3, TP4: test pads**
-
-- TP3.1 → ARM_G
-- TP4.1 → COIL_RTN
-
-## 5. Block B1 MAINS_IN
-
-**J1: WAGO 2606-3102/020-000, 2-pole** (same footprint and pole rule as J2)
-
-| Pole | Function | Net |
+| Ref | Part | Pin → net |
 |---|---|---|
-| 1 | Line in (from the branch circuit, black) | L_IN |
-| 2 | Neutral in (white) | N |
+| R21 | Yageo RC0603FR-07330KL 330 kΩ (Rext) | 1 → +3V3; 2 → WD_RC |
+| C6 | Yageo CC0603KRX7R9BB104 100 nF 50 V (Cext) | 1 → WD_RC; 2 → WD_CX |
+| C7 | 100 nF 50 V (U1 decoupling) | 1 → +3V3; 2 → GND |
+| R23 | Yageo RC0603FR-07100KL 100 kΩ (HB pull-down) | 1 → HB; 2 → GND |
+| Q7 | AOS AO3400A, SOT-23 (1 G, 2 S, 3 D [P]) | 1 (G) → ARM_G; 2 (S) → GND; 3 (D) → COIL_RTN |
+| R22 | 100 kΩ (Q7 gate pull-down) | 1 → ARM_G; 2 → GND |
+| D13 | APT1608SGC, ARM LED | 1 (K) → COIL_RTN; 2 (A) → LED_ARM_A |
+| R19 | 1.5 kΩ | 1 → +5V; 2 → LED_ARM_A |
+| R26 | Yageo RC0603FR-0710KL 10 kΩ (COIL_RTN pull-up) | 1 → +5V; 2 → COIL_RTN |
+| R24 | Yageo RC0603FR-0747KL 47 kΩ | 1 → COIL_RTN; 2 → ARM_FB |
+| R25 | Yageo RC0603FR-0768KL 68 kΩ | 1 → ARM_FB; 2 → GND |
+| D16 | Diodes BAT54S-7-F, SOT-23 (pin 1 = anode D1, pin 2 = cathode D2, pin 3 = common [P]) | 1 (A) → GND; 2 (K) → +3V3; 3 (COM) → ARM_FB |
+| TP3 / TP4 / TP5 | test pads | ARM_G / COIL_RTN / HB |
 
-## 6. Mechanical parts (no electrical pins)
+## 6. Channels ch1…ch6
 
-| Ref | Part | Connection |
+### 6.1 Naming rule for channel k (k = 1…6)
+
+| Item | Refdes or net | k=1 | k=2 | k=3 | k=4 | k=5 | k=6 |
+|---|---|---|---|---|---|---|---|
+| Relay | K{k} | K1 | K2 | K3 | K4 | K5 | K6 |
+| Driver MOSFET | Q{k} | Q1 | Q2 | Q3 | Q4 | Q5 | Q6 |
+| Flyback diode | D{k} | D1 | D2 | D3 | D4 | D5 | D6 |
+| Channel LED | D{k+6} | D7 | D8 | D9 | D10 | D11 | D12 |
+| Gate series R (100 Ω) | R{k} | R1 | R2 | R3 | R4 | R5 | R6 |
+| Gate pull-down R (4.7 kΩ) | R{k+6} | R7 | R8 | R9 | R10 | R11 | R12 |
+| LED R (1.5 kΩ) | R{k+12} | R13 | R14 | R15 | R16 | R17 | R18 |
+| Command net / Pi pin (BCM) | CH{k} | 11 (17) | 13 (27) | 15 (22) | 16 (23) | 18 (24) | 22 (25) |
+| Gate, coil, LED nets | CH{k}_G, COIL{k}, LED{k}_A | | | | | | |
+| Switched line | L_SW{k} | L_SW1 | L_SW2 | L_SW3 | L_SW4 | L_SW5 | L_SW6 |
+| Terminal pole | J2.1, J2.3, J3.1, J3.3, J4.1, J4.3 | J2.1 | J2.3 | J3.1 | J3.3 | J4.1 | J4.3 |
+| Receptacle outlet | | A top | A bottom | B top | B bottom | C top | C bottom |
+
+All channels share +5V, GND, COIL_RTN, L_IN and N.
+
+### 6.2 Channel 1, complete. Channels 2–6 are identical under the rule above
+
+| Ref | Part | Pin → net |
 |---|---|---|
-| H1–H4 | `MountingHole:MountingHole_4mm` (Ø4.0 NPTH), Essentra LCBS-8-19 nylon supports | none. Insulated from the box (PE) by nylon. No copper within Ø8 mm |
-| MP1 | Insulating cover over the SELV zone (custom, UL 94 V-0) | none |
+| R1 | Yageo RC0603FR-07100RL 100 Ω | 1 → CH1; 2 → CH1_G |
+| R7 | Yageo RC0603FR-074K7L 4.7 kΩ | 1 → CH1_G; 2 → GND |
+| Q1 | AO3400A, SOT-23: 1 G, 2 S, 3 D (DS rev 3.1 p.1 [P]) | 1 (G) → CH1_G; 2 (S) → COIL_RTN; 3 (D) → COIL1 |
+| D1 | 1N4148W-7-F, SOD-123: band = cathode [P]; KiCad pin 1 = K | 1 (K) → +5V; 2 (A) → COIL1 |
+| D7 | APT1608SGC | 1 (K) → COIL1; 2 (A) → LED1_A |
+| R13 | 1.5 kΩ | 1 → +5V; 2 → LED1_A |
+| K1 | G5RL-1A-E-TV8 DC5 (see below) | A1 (pin 1, coil) → +5V; A2 (pin 8, coil) → COIL1; 13 (pins 3+6) → L_IN; 14 (pins 4+5) → L_SW1 |
 
-## 7. Off-board objects
+**K1–K6 relay pinout.** The pinout is the G5RL datasheet bottom view, "G5RL-1A-E-LN/-E-HR/-E-TV8
+Terminal Arrangement/Internal Connections", p.5 [P]:
 
-### PI1: Raspberry Pi 4 Model B or 5, 40-pin header J8 (not on our PCB)
+- Coil pins 1 and 8, no polarity.
+- Pins 3 and 6 are joined internally (moving contact), and so are pins 4 and 5 (fixed contact). Both pins of each contact must be used (p.7) [P].
 
-Pin names come from the KiCad symbol `Connector:Raspberry_Pi_2_3`, which matches the
-Raspberry Pi GPIO documentation [P]. Default pulls are from BCM2711 Table 94 [P] (Pi 4);
-on the Pi 5 (RP1) the reset pull "varies" [P]. Only the pins marked "W1" are wired. All
-others are NC as far as this design is concerned and remain free for other uses.
+The KiCad symbol `Relay:G2RL-1A-E` and footprint `Relay_THT:Relay_SPST_Omron_G2RL-1A-E` place:
 
-| Pin | Name | Default pull (BCM2711) | Connection |
-|---|---|---|---|
-| 1 | 3V3 | — | NC |
-| 2 | 5V | — | **W1 → J6.1 (+5V_IN)** |
-| 3 | GPIO2 / SDA1 | fixed 1.8 kΩ pull-up | NC |
-| 4 | 5V | — | NC |
-| 5 | GPIO3 / SCL1 | fixed 1.8 kΩ pull-up | NC |
-| 6 | GND | — | **W1 → J6.2 (GND)** |
-| 7 | GPIO4 / GPCLK0 | high | NC |
-| 8 | GPIO14 / TXD0 | low | NC (UART console at boot) |
-| 9 | GND | — | NC |
-| 10 | GPIO15 / RXD0 | low | NC |
-| 11 | GPIO17 | low | **W1 → J6.3 (CH1_IN)** |
-| 12 | GPIO18 / PCM_CLK / PWM0 | low | NC |
-| 13 | GPIO27 | low | **W1 → J6.4 (CH2_IN)** |
-| 14 | GND | — | NC |
-| 15 | GPIO22 | low | **W1 → J6.5 (CH3_IN)** |
-| 16 | GPIO23 | low | **W1 → J6.6 (CH4_IN)** |
-| 17 | 3V3 | — | NC |
-| 18 | GPIO24 | low | NC |
-| 19 | GPIO10 / MOSI0 | low | NC |
-| 20 | GND | — | NC |
-| 21 | GPIO9 / MISO0 | low | NC |
-| 22 | GPIO25 | low | NC |
-| 23 | GPIO11 / SCLK0 | low | NC |
-| 24 | GPIO8 / CE0 | high | NC |
-| 25 | GND | — | NC |
-| 26 | GPIO7 / CE1 | high | NC |
-| 27 | GPIO0 / ID_SD | high | NC (HAT EEPROM probe at boot) |
-| 28 | GPIO1 / ID_SC | high | NC |
-| 29 | GPIO5 / GPCLK1 | high | NC |
-| 30 | GND | — | NC |
-| 31 | GPIO6 / GPCLK2 | high | NC |
-| 32 | GPIO12 / PWM0 | low | **W1 → J6.7 (HB_IN)** |
-| 33 | GPIO13 / PWM1 | low | NC |
-| 34 | GND | — | **W1 → J6.8 (GND)** |
-| 35 | GPIO19 / PCM_FS | low | NC |
-| 36 | GPIO16 | low | NC |
-| 37 | GPIO26 | low | NC |
-| 38 | GPIO20 / PCM_DIN | low | NC |
-| 39 | GND | — | NC |
-| 40 | GPIO21 / PCM_DOUT | low | NC |
+- pads A1 (0, 0) and A2 (7.5, 0);
+- pad 13 at (0, 20) and (7.5, 20);
+- pad 14 at (0, 25) and (7.5, 25).
 
-Software contract (not hardware, but part of the safety case):
+This is the G5RL hole pattern [P]. `pins_toward(Kk, ["COIL_1", "COIL_8"], "south")` puts the coil on
+the SELV side.
 
-- CH pins are outputs, active high.
-- Preload them low early in boot (config.txt `gpio=17,22,23,27=op,dl` [unverified syntax on the Pi 5]).
-- The control process toggles BCM12 at 100 Hz–2 kHz only while it is healthy, and stops toggling on any fault.
+### 6.3 Channels 2–6: expanded pin lists (for checking)
 
-### W1: Class 2 link cable (8 conductors, 22 AWG, ≤ 3 m; CL2, or a permitted substitute such as CL2R, CL3 or CM)
+| k | Rk 1/2 | R(k+6) 1/2 | Qk G/S/D | Dk K/A | D(k+6) K/A | R(k+12) 1/2 | Kk A1/A2/13/14 |
+|---|---|---|---|---|---|---|---|
+| 2 | CH2 / CH2_G | CH2_G / GND | CH2_G / COIL_RTN / COIL2 | +5V / COIL2 | COIL2 / LED2_A | +5V / LED2_A | +5V / COIL2 / L_IN / L_SW2 |
+| 3 | CH3 / CH3_G | CH3_G / GND | CH3_G / COIL_RTN / COIL3 | +5V / COIL3 | COIL3 / LED3_A | +5V / LED3_A | +5V / COIL3 / L_IN / L_SW3 |
+| 4 | CH4 / CH4_G | CH4_G / GND | CH4_G / COIL_RTN / COIL4 | +5V / COIL4 | COIL4 / LED4_A | +5V / LED4_A | +5V / COIL4 / L_IN / L_SW4 |
+| 5 | CH5 / CH5_G | CH5_G / GND | CH5_G / COIL_RTN / COIL5 | +5V / COIL5 | COIL5 / LED5_A | +5V / LED5_A | +5V / COIL5 / L_IN / L_SW5 |
+| 6 | CH6 / CH6_G | CH6_G / GND | CH6_G / COIL_RTN / COIL6 | +5V / COIL6 | COIL6 / LED6_A | +5V / LED6_A | +5V / COIL6 / L_IN / L_SW6 |
 
-| Conductor (suggested colour) | J6 position | Net | PI1 pin |
-|---|---|---|---|
-| red | 1 | +5V_IN | 2 |
-| black | 2 | GND | 6 |
-| green | 3 | CH1_IN | 11 |
-| yellow | 4 | CH2_IN | 13 |
-| blue | 5 | CH3_IN | 15 |
-| orange | 6 | CH4_IN | 16 |
-| white | 7 | HB_IN | 32 |
-| brown | 8 | GND | 34 |
+## 7. Block outlets: receptacle feeds J2–J4
 
-If twisted pairs are used, pair red with black (supply) and white with brown (heartbeat).
-At the Pi end, terminate on a GPIO screw-terminal HAT or crimped 2.54 mm housings (Q-8).
+### J2, J3, J4: WAGO 2606-3103/020-000, 3-pole lever terminal, 7.5 mm, THT
 
-### Field wiring (installed by an electrician; inside the box)
+- The pole numbering is from the same series drawing [P]. Poles 1 and 3 sit on the pin row nearer the wire-entry face, 15 mm apart; pole 2 is offset (+7.5, +12.5) mm. The body is 25.35 mm long [P, 3103 data sheet].
+- Footprint **custom** `custom:WAGO_2606-3103_020-000`.
+- **Spacing.** Pole-to-pole pin distances are 14.6 mm (1–2, 2–3) and 15 mm (1–3), so every pair clears 6.4 mm edge to edge with Ø3.5 mm pads.
 
-| Cable | Conductor | Lands on |
-|---|---|---|
-| Input (NM-B 14/2 or 12/2 with ground, from a ≤ 15 A branch) | black | J1.1 (L_IN) |
-| | white | J1.2 (N) |
-| | bare/green (EGC) | EGC splice |
-| Output k (k = 1…4) | black | J{k+1}.1 (L_SW{k}) |
-| | white | J{k+1}.2 (N) |
-| | bare/green (EGC) | EGC splice |
-| EGC splice (listed, e.g. lever-nut, UL 486C) | 5 EGCs + 1 pigtail | pigtail → box #10-32 ground screw (PE). The ring and cover are bonded by their screws |
+| Terminal | Pole 1 (top outlet, black) | Pole 2 (white) | Pole 3 (bottom outlet, red) | Cable to E2 |
+|---|---|---|---|---|
+| J2 | L_SW1 | N | L_SW2 | 14/3 NM-B "A" |
+| J3 | L_SW3 | N | L_SW4 | 14/3 NM-B "B" |
+| J4 | L_SW5 | N | L_SW6 | 14/3 NM-B "C" |
 
-## 8. Net-by-net node list (cross-check)
+## 8. Mechanical parts (no electrical pins)
 
-| Net | Nodes |
+| Ref | Item |
 |---|---|
-| L_IN | J1.1, K1.13 (pins 3, 6), K2.13, K3.13, K4.13 |
-| N | J1.2, J2.2, J3.2, J4.2, J5.2 |
-| L_SW1 | K1.14 (pins 4, 5), J2.1 |
-| L_SW2 | K2.14, J3.1 |
-| L_SW3 | K3.14, J4.1 |
-| L_SW4 | K4.14, J5.1 |
-| +5V_IN | J6.1, F1.1 |
-| +5V | F1.2, D11.1, C1.1, C2.1, K1.A1, K2.A1, K3.A1, K4.A1, D1.1, D2.1, D3.1, D4.1, R9.1, R10.1, R11.1, R12.1, R15.1, R16.1, TP1.1 |
-| GND | J6.2, J6.8, D11.2, C1.2, C2.2, U1.5, U1.10, R5.2, R6.2, R7.2, R8.2, D12.1, C4.2, R14.2, Q5.2, D10.1, TP2.1 |
-| CH1_IN | J6.3, U1.14, R1.1 |
-| CH2_IN | J6.4, U1.13, R2.1 |
-| CH3_IN | J6.5, U1.12, R3.1 |
-| CH4_IN | J6.6, U1.11, R4.1 |
-| CH1_G | R1.2, R5.1, Q1.1 |
-| CH2_G | R2.2, R6.1, Q2.1 |
-| CH3_G | R3.2, R7.1, Q3.1 |
-| CH4_G | R4.2, R8.1, Q4.1 |
-| COIL1 | K1.A2, Q1.3, D1.2, D5.1 |
-| COIL2 | K2.A2, Q2.3, D2.2, D6.1 |
-| COIL3 | K3.A2, Q3.3, D3.2, D7.1 |
-| COIL4 | K4.A2, Q4.3, D4.2, D8.1 |
-| LED1_A | R9.2, D5.2 |
-| LED2_A | R10.2, D6.2 |
-| LED3_A | R11.2, D7.2 |
-| LED4_A | R12.2, D8.2 |
-| COIL_RTN | Q1.2, Q2.2, Q3.2, Q4.2, Q5.3, D9.1, TP4.1 |
-| HB_IN | J6.7, U1.9, R13.1 |
-| HB_R | R13.2, C3.1 |
-| PUMP | C3.2, D12.3 |
-| ARM_G | D12.2, C4.1, R14.1, Q5.1, TP3.1 |
-| LED_ARM_A | R15.2, D9.2 |
-| LED_PWR_A | R16.2, D10.2 |
-| (NC) | U1.1, U1.2, U1.3, U1.4, U1.6, U1.7, U1.8 |
+| H1–H6 | `MountingHole:MountingHole_3.2mm_M3` NPTH at (4, 4), (196, 4), (4, 75), (196, 75), (4, 146), (196, 146) mm. M3 × 12 mm nylon standoffs to the JP108P panel |
+| H7–H10 | `MountingHole:MountingHole_2.7mm_M2.5` NPTH at (15.5, 4.5), (73.5, 4.5), (15.5, 27.5), (73.5, 27.5) mm. M2.5 × 11 mm nylon Pi standoffs |
+| MP1 | Partition, wall plus sheet (BOM only) |
+| MP2–MP15 | E1 NS1086, JP108P, E2 BH353A, 3 × TR5252, wallplate, Pi Zero 2 W, Pi header, Pi kit, board kit, fuse clips, microSD, field-wiring kit (BOM only) |
 
-Pin count check:
+## 9. Off-board objects
 
-| Part group | Pins |
+### Raspberry Pi Zero 2 W (MP9) on J5
+
+- **Orientation.** Fit a 2×20 male header (MP10) to the Pi's **underside**, pins pointing down, and solder it on the top side. Do not use a Zero 2 WH: its header points up.
+- **Seating.** Plug the Pi component side up into J5 and fix it with 4 × M2.5 nylon screws into the 11 mm standoffs.
+- **Check before power-up.** The silkscreen outline and "COMPONENTS UP" match, and the Pi's SD card is at the west end.
+- **What the Pi uses.** It takes power only through pins 2/4 and uses only the pins in section 4. Its micro-USB and mini-HDMI stay unused.
+
+### Field wiring in E1 (electrician)
+
+| From | To | Conductor |
+|---|---|---|
+| Branch cable (14/2 or 12/2 NM-B w/G, 15 A breaker) | J1.1 (black), J1.2 (white) | 14 or 12 AWG Cu, strip 11–13 mm |
+| Branch EGC + 3 outgoing EGCs | one listed lever splice (e.g. WAGO 221-415) in the wire compartment | bare/green |
+| Cable A (14/3 NM-B w/G) | J2.1 black, J2.2 white, J2.3 red | 14 AWG |
+| Cable B | J3.1 black, J3.2 white, J3.3 red | 14 AWG |
+| Cable C | J4.1 black, J4.2 white, J4.3 red | 14 AWG |
+
+### Receptacles in E2 (BH353A, three TR5252)
+
+For each receptacle A, B and C, **break the brass-side (line) tab and keep the silver-side
+(neutral) tab**.
+
+| Cable conductor | Receptacle terminal |
 |---|---|
-| J1–J5 | 5 × 2 = 10 |
-| J6 | 8 positions |
-| K1–K4 | 4 × 6 = 24 datasheet pins (16 KiCad pads) |
-| Q1–Q5 | 15 |
-| D1–D11 | 22 |
-| D12 | 3 |
-| U1 | 14 |
-| F1 | 2 |
-| R1–R16 | 32 |
-| C1–C4 | 8 |
-| TP1–TP4 | 4 |
-| **Total** | **142 datasheet pins (134 KiCad symbol pins)** |
+| Black | top brass screw / back-wire clamp → top outlet = OUT1, OUT3, OUT5 |
+| Red | bottom brass → bottom outlet = OUT2, OUT4, OUT6 |
+| White | one silver screw |
+| Bare | green pigtail to the green screw |
 
-Every pin listed above appears exactly once in this table.
+Mark the wallplate OUT1…OUT6. At commissioning, check every outlet with a receptacle tester:
+polarity, ground, and that it switches.
+
+## 10. Net-by-net node list (generated from out/netlist.json)
+
+| Net | Domain | Count | Pins |
+|---|---|---|---|
+| L_IN | LINE | 8 | F1.1, J1.1, K1.13 (C_3_6), K2.13 (C_3_6), K3.13 (C_3_6), K4.13 (C_3_6), K5.13 (C_3_6), K6.13 (C_3_6) |
+| N | NEUTRAL | 5 | J1.2, J2.2, J3.2, J4.2, PS1.2 (AC/N) |
+| L_SW1 | OUT1 | 2 | J2.1, K1.14 (C_4_5) |
+| L_SW2 | OUT2 | 2 | J2.3, K2.14 (C_4_5) |
+| L_SW3 | OUT3 | 2 | J3.1, K3.14 (C_4_5) |
+| L_SW4 | OUT4 | 2 | J3.3, K4.14 (C_4_5) |
+| L_SW5 | OUT5 | 2 | J4.1, K5.14 (C_4_5) |
+| L_SW6 | OUT6 | 2 | J4.3, K6.14 (C_4_5) |
+| GND | SELV | 31 | C1.2, C2.2, C3.2, C4.2, C5.2, C7.2, D14.1 (K), D15.2 (A), D16.1 (A), J5.14, J5.20, J5.25, J5.30, J5.34, J5.39, J5.6, J5.9, PS1.3 (-Vo), Q7.2 (S), R10.2, R11.2, R12.2, R22.2, R23.2, R25.2, R7.2, R8.2, R9.2, TP2.1, U1.1 (~{A}), U1.4 (GND) |
+| +5V | SELV | 28 | C1.1, C2.1, C3.1, D1.1 (K), D15.1 (K), D2.1 (K), D3.1 (K), D4.1 (K), D5.1 (K), D6.1 (K), F2.1, K1.A1 (COIL_1), K2.A1 (COIL_1), K3.A1 (COIL_1), K4.A1 (COIL_1), K5.A1 (COIL_1), K6.A1 (COIL_1), PS1.4 (+Vo), R13.1, R14.1, R15.1, R16.1, R17.1, R18.1, R19.1, R20.1, R26.1, TP1.1 |
+| +5V_PI | SELV | 5 | C4.1, C5.1, F2.2, J5.2, J5.4 |
+| +3V3 | SELV | 8 | C7.1, D16.2 (K), J5.1, J5.17, R21.1, TP6.1, U1.3 (~{CLR}), U1.8 (VCC) |
+| COIL_RTN | SELV | 11 | D13.1 (K), Q1.2 (S), Q2.2 (S), Q3.2 (S), Q4.2 (S), Q5.2 (S), Q6.2 (S), Q7.3 (D), R24.1, R26.2, TP4.1 |
+| HB | SELV | 4 | J5.32, R23.1, TP5.1, U1.2 (B) |
+| ARM_FB | SELV | 4 | D16.3 (COM), J5.36, R24.2, R25.1 |
+| CH1 | SELV | 2 | J5.11, R1.1 |
+| CH2 | SELV | 2 | J5.13, R2.1 |
+| CH3 | SELV | 2 | J5.15, R3.1 |
+| CH4 | SELV | 2 | J5.16, R4.1 |
+| CH5 | SELV | 2 | J5.18, R5.1 |
+| CH6 | SELV | 2 | J5.22, R6.1 |
+| /mains_in/L_PSU | LINE | 2 | F1.2, PS1.1 (AC/L) |
+| /power5/LED_PWR_A | SELV | 2 | D14.2 (A), R20.2 |
+| /arm/ARM_G | SELV | 4 | Q7.1 (G), R22.1, TP3.1, U1.5 (Q) |
+| /arm/WD_RC | SELV | 3 | C6.1, R21.2, U1.7 (RCext) |
+| /arm/WD_CX | SELV | 2 | C6.2, U1.6 (Cext) |
+| /arm/LED_ARM_A | SELV | 2 | D13.2 (A), R19.2 |
+| /ch1/CH1_G | SELV | 3 | Q1.1 (G), R1.2, R7.1 |
+| /ch1/COIL1 | SELV | 4 | D1.2 (A), D7.1 (K), K1.A2 (COIL_8), Q1.3 (D) |
+| /ch1/LED1_A | SELV | 2 | D7.2 (A), R13.2 |
+| /ch2/CH2_G | SELV | 3 | Q2.1 (G), R2.2, R8.1 |
+| /ch2/COIL2 | SELV | 4 | D2.2 (A), D8.1 (K), K2.A2 (COIL_8), Q2.3 (D) |
+| /ch2/LED2_A | SELV | 2 | D8.2 (A), R14.2 |
+| /ch3/CH3_G | SELV | 3 | Q3.1 (G), R3.2, R9.1 |
+| /ch3/COIL3 | SELV | 4 | D3.2 (A), D9.1 (K), K3.A2 (COIL_8), Q3.3 (D) |
+| /ch3/LED3_A | SELV | 2 | D9.2 (A), R15.2 |
+| /ch4/CH4_G | SELV | 3 | Q4.1 (G), R10.1, R4.2 |
+| /ch4/COIL4 | SELV | 4 | D10.1 (K), D4.2 (A), K4.A2 (COIL_8), Q4.3 (D) |
+| /ch4/LED4_A | SELV | 2 | D10.2 (A), R16.2 |
+| /ch5/CH5_G | SELV | 3 | Q5.1 (G), R11.1, R5.2 |
+| /ch5/COIL5 | SELV | 4 | D11.1 (K), D5.2 (A), K5.A2 (COIL_8), Q5.3 (D) |
+| /ch5/LED5_A | SELV | 2 | D11.2 (A), R17.2 |
+| /ch6/CH6_G | SELV | 3 | Q6.1 (G), R12.1, R6.2 |
+| /ch6/COIL6 | SELV | 4 | D12.1 (K), D6.2 (A), K6.A2 (COIL_8), Q6.3 (D) |
+| /ch6/LED6_A | SELV | 2 | D12.2 (A), R18.2 |
+
+PE has no PCB nodes. It is the EGC splice in E1 plus the receptacle yokes and green screws in E2.

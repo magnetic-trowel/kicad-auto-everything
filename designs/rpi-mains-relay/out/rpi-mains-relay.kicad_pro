@@ -30,7 +30,7 @@
       },
       {
         "name": "LINE_1A",
-        "clearance": 1.25,
+        "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -38,7 +38,7 @@
       },
       {
         "name": "LINE_W7p5",
-        "clearance": 1.25,
+        "clearance": 0.2,
         "track_width": 7.5,
         "via_diameter": 6.3,
         "via_drill": 3.0,
@@ -143,10 +143,6 @@
       },
       {
         "netclass": "SELV",
-        "pattern": "/arm/ARM_FB"
-      },
-      {
-        "netclass": "SELV",
         "pattern": "/arm/ARM_G"
       },
       {
@@ -240,6 +236,10 @@
       {
         "netclass": "SELV",
         "pattern": "/power5/LED_PWR_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "ARM_FB"
       },
       {
         "netclass": "SELV",

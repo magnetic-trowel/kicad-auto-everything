@@ -199,3 +199,80 @@ The Bourns derating table gives about 0.81 A (0.85 A at 50 °C, 0.77 A at 60 °C
   IEC 60664-1 creepage rows (125 V MG III PD2 1.5 mm; 250 V 2.5 mm; PD3 4.0 mm).
 - **DRU.** SELV against every mains netclass gets 8/8 mm. The specific mains-pair rules follow the inherited ones, so the stricter value wins.
 - **PTC F1.** MF-MSMF110/16X: 1.1/2.2 A, 16 V, 100 A, 0.06–0.20 Ω.
+
+## Response to review (designer, revision 2)
+
+Revision 2 also folds in four user decisions: switched receptacles, the Pi inside the box, 6 channels,
+and a Pi Zero 2 W powered from the box's 120 VAC (DESIGN.md §1). Several findings were therefore
+resolved by a new architecture, not by a patch.
+
+Build: 0 errors, 0 warnings, 29 waived (6 rules); ERC 0/0; netlist identical.
+
+### Major findings
+
+**M1 (slow disarm).**
+
+- The charge pump is replaced by a TI SN74LVC1G123 retriggerable monostable (U1: R21 330 kΩ, C6 100 nF), which drives Q7.
+- B is edge-triggered, so neither level can hold it on. tw is 25–46 ms over tolerance.
+- Calcs `disarm_hb_stuck_high_s` and `disarm_hb_stuck_low_s` both give 61.4 ms against a 0.1 s limit (C-4).
+- The gate now switches in ns, which meets the G5RL "no slow coil-voltage decrease" precaution.
+
+**M2 (undetected watchdog faults).**
+
+- Q7's drain is read back on BCM16 (ARM_FB) through 47 k/68 k, with a 10 k pull-up and BAT54S clamps.
+- REQ-28 adds the boot and periodic self-test (disarmed → armed → disarmed, with timing).
+- The new FMEA table (DESIGN.md §4, H18) covers U1, R21, C6, Q7, R22–R26 and D16. Every fault that removes the second key is detected; the rest fail safe.
+- A shorted Qk remains visible only through its LED (Q-16).
+
+**M3 (field conductors on mask-only copper).**
+
+- E1 is split by partition MP1: a polycarbonate wall from the PCB to the lid at the south faces of J1–J4, plus a flat sheet die-cut around J1–J4.
+- North of the wall, copper may lie only under a terminal body or the sheet, and none between the edge and the wire-entry faces (REQ-31, board keepouts).
+- The enclosures are nonmetallic, so there is no box metal or knockout hardware.
+- LINE `edge_clearance` = 6.4 mm is emitted to `.kicad_dru` for board edges and holes H1–H10 (the PE obstacles).
+- EGC splice location and tie-down rules are in placement relations.
+
+**M4 (Class 2 not shown).** Reshaped: no Class 2 wiring leaves E1 any more. DESIGN.md §5.3 states
+the basis:
+
+- the IRM-20-5's certified Class II, 4.2 kVAC insulation and its LPS output [P];
+- reinforced relays;
+- the 8/8 mm board band;
+- MP1 as supplementary insulation.
+
+The UL file number of the module is to be confirmed under Q-1.
+
+**M5 (brief fit).** Answered by the user decisions: six individually switched TR receptacles, with
+the Pi inside on J5 (Q-2 to Q-5 recorded as answered).
+
+**M6 (placement intent).**
+
+| Item | Fix |
+|---|---|
+| (a) Orientation | `pins_toward` for K1–K6 (coil south), J1–J4 (wire entry north) and PS1 (AC north) |
+| (b) Keepouts | Structured board keepouts (antenna rect, under-Pi rect), a J5 footprint rule area, and `keepout(J5, …)` relations. The barrier band and wire compartment stay relative text, because there is no pin-relative primitive yet |
+| (c) SELV parts | `region([Qk, Dk, Rk, R(k+6), LED, R(k+12)], "south")` for every channel |
+| (d) Edge clearance | Domain `edge_clearance_mm=6.4` with `edge_source` |
+| (e) Holes | All 10 holes are in `board(holes=…)`. MP1 now uses no board holes |
+| (f) Track width | `Net(width_mm=7.5)` on L_IN, N and L_SW1–6. Netclass track width is 7.5 mm |
+
+### Minor findings
+
+| Finding | Action |
+|---|---|
+| m1 (V_OH) | The Zero 2 W (RP3A0) specifies V_OH ≥ 3.0 V at 2 mA [P]. The gates are now 100 Ω + 4.7 kΩ, giving 2.94 V. Q7 is driven by U1 at ≥ 3.04 V. Both are calcs ≥ 2.5 V |
+| m2 (ERC, footprints, WAGO) | ERC 0/0, with 0 violations in erc.json. Three custom footprints are drawn in `footprints/custom.pretty`, and all references use `custom:` consistently. The pole-2 offset (+7.5, +12.5) and UL 1059 31 A (IEC 41 A) are read from the WAGO data sheets [P] |
+| m3 (Pi protection overstated) | Obsolete: no external SELV cable, J6, ESD array or Pi-end conductors remain. H14 now covers Pi mis-fitting |
+| m4 (relay ratings) | The waiver and C-10 now quote VDE 16 A at 85 °C for 15k operations and UL at 40 °C. Contact resistance is taken as 10 mΩ [I] and measured in T-HEAT. The HR second source is limited to TV-5 (REQ-5) |
+| m5 (hot-restart margin) | Margin is 4.82 V against 4.48 V (the coil supply no longer has a cable or PTC). T-COIL includes a 4.63 V case |
+| m6 (diode plus Zener) | Not adopted. AC loads extinguish at current zero; 15 ms diode release is budgeted in C-4 and measured in T-HB (DESIGN.md §5.7) |
+| m7 (OVC basis) | OVC III adopted. Margins: clearance 8.0/3.8 mm, creepage 8.0/3.0 mm (C-8) |
+| m8 (15 A branch dependency) | Q-6 is blocking: a 15 A dual-function AFCI/GFCI breaker, and a 20 A circuit is re-breakered at 15 A. An on-board 15 A fuse was rejected: at 12 A continuous in a 52 °C box a 15 A fuse is past its continuous rating, and a 20 A fuse would not protect the 16 A relays (§5.6) |
+| m9 (labels-only schematic) | Framework limitation, unchanged. Rendered and checked sheet by sheet; CONNECTIONS.md is cross-checked against netlist.json |
+| m10 (PTC hold) | The 1.1 A PTC is gone. F2 (MF-MSMF200/16X) holds 1.43 A at 70 °C against a 1.0 A Pi allowance |
+
+### Waivers
+
+- **Removed:** `lib.footprint_custom` (footprints are now drawn) and `conn.empty_net PE` (the framework now exempts domain references).
+- **Tightened:** the overcurrent and entry-fuse regexes, from `L_IN|…` to `L_SW1–6` and `N|L_SW1–6`.
+- **Framework gap (reported):** L_IN is no longer flagged because F1 touches it, although F1 protects only the PS1 branch.

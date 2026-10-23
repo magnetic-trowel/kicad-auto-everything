@@ -1,8 +1,8 @@
 {
  "status": {
-  "ok": false,
-  "error": 7,
-  "warning": 3,
+  "ok": true,
+  "error": 0,
+  "warning": 0,
   "info": 4,
   "waived": 29,
   "blocking_questions": [
@@ -13,14 +13,6 @@
   ]
  },
  "findings": [
-  {
-   "check": "rating.voltage",
-   "severity": "warning",
-   "message": "PS1 (IRM-20-5): V(AC/L-AC/N) 374 vs rating 431 (87%) (mains_in/L_PSU to N) \u2014 above 80% derating",
-   "objects": [
-    "PS1"
-   ]
-  },
   {
    "check": "rating.current",
    "severity": "warning",
@@ -130,62 +122,6 @@
    "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
-   "check": "rating.power",
-   "severity": "warning",
-   "message": "PS1 (IRM-20-5) dissipates 1.84 W but has no power rating to check against",
-   "objects": [
-    "PS1"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R1 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R1"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R2 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R2"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R3 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R3"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R4 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R4"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R5 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R5"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R6 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
-   "objects": [
-    "R6"
-   ]
-  },
-  {
    "check": "protect.threat",
    "severity": "error",
    "message": "external net L_IN declares threat 'surge' but has no tvs/mov on it",
@@ -210,7 +146,7 @@
    "objects": [
     "L_SW1"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.threat",
@@ -219,7 +155,7 @@
    "objects": [
     "L_SW2"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.threat",
@@ -228,7 +164,7 @@
    "objects": [
     "L_SW3"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.threat",
@@ -237,7 +173,7 @@
    "objects": [
     "L_SW4"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.threat",
@@ -246,7 +182,7 @@
    "objects": [
     "L_SW5"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.threat",
@@ -255,7 +191,7 @@
    "objects": [
     "L_SW6"
    ],
-   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
   },
   {
    "check": "protect.entry_fuse",
@@ -264,7 +200,7 @@
    "objects": [
     "N"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -273,7 +209,7 @@
    "objects": [
     "L_SW1"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -282,7 +218,7 @@
    "objects": [
     "L_SW2"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -291,7 +227,7 @@
    "objects": [
     "L_SW3"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -300,7 +236,7 @@
    "objects": [
     "L_SW4"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -309,7 +245,7 @@
    "objects": [
     "L_SW5"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -318,7 +254,7 @@
    "objects": [
     "L_SW6"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "hazard.procedural",
@@ -369,20 +305,6 @@
    "objects": [
     "Q-8"
    ]
-  },
-  {
-   "check": "kicad.erc.isolated_pin_label",
-   "severity": "warning",
-   "message": "Label connected to only one pin: Label 'ARM_FB'",
-   "objects": [
-    "/"
-   ]
-  },
-  {
-   "check": "kicad.netlist_roundtrip",
-   "severity": "error",
-   "message": "net /arm/ARM_FB is split in KiCad into ['/arm/ARM_FB', '/pi/ARM_FB']",
-   "objects": []
   }
  ]
 }
