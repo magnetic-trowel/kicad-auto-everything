@@ -81,6 +81,10 @@ class NetClasses:
             if width and not n.netclass:
                 cls = f"{base}_{_bucket(n.i_max)}A"
                 width = ipc2221_width_mm(_bucket(n.i_max), oz=oz)
+            if n.width_mm:
+                width = max(width or 0, n.width_mm)
+                if not n.netclass:
+                    cls = f"{base}_W{str(n.width_mm).replace('.', 'p')}"
             clr = max(0.2, ipc2221b_spacing(worst.get(n, 0), col))
             c = self.classes.setdefault(cls, {"name": cls, "clearance": 0.2, "track_width": 0.25,
                                               "domain": dom.name if dom else None, "nets": []})
@@ -121,7 +125,8 @@ def kicad_net_name(net):
     return net.name if net.is_global else f"/{net.block.name}/{net.name}"
 
 
-def write_project(outdir, design, symtable, netclasses, slug=None, parts=None):
+def write_project(outdir, design, symtable, netclasses, slug=None, parts=None, fplibs=None):
+    import os
     slug = slug or design.slug
     parts = design.all_parts() if parts is None else parts
     template = {
@@ -144,8 +149,18 @@ def write_project(outdir, design, symtable, netclasses, slug=None, parts=None):
     (outdir / "sym-lib-table").write_text("(sym_lib_table\n  (version 7)\n" + "\n".join(sym_rows) + "\n)\n")
     fps = sorted({p.defn.footprint.split(":", 1)[0] for p in parts
                   if p.defn.footprint and ":" in p.defn.footprint and not p.defn.footprint.startswith("custom:")})
-    fp_rows = [f'  (lib (name "{lib}")(type "KiCad")(uri "${{KICAD10_FOOTPRINT_DIR}}/{lib}.pretty")(options "")(descr ""))'
-               for lib in fps]
+    fps = sorted(set(fps) | {p.defn.footprint.split(":", 1)[0] for p in parts
+                             if p.defn.footprint and p.defn.footprint.startswith("custom:")})
+    fp_rows = []
+    for lib in fps:
+        local = fplibs.local_dir(lib) if fplibs else None
+        if local is not None:
+            uri = "${KIPRJMOD}/" + os.path.relpath(local, outdir).replace(os.sep, "/")
+        elif lib == "custom":
+            uri = "${KIPRJMOD}/../footprints/custom.pretty"
+        else:
+            uri = f"${{KICAD10_FOOTPRINT_DIR}}/{lib}.pretty"
+        fp_rows.append(f'  (lib (name "{lib}")(type "KiCad")(uri "{uri}")(options "")(descr ""))')
     (outdir / "fp-lib-table").write_text("(fp_lib_table\n  (version 7)\n" + "\n".join(fp_rows) + "\n)\n")
 
 
@@ -190,6 +205,17 @@ def dru_text(design, netclasses):
         if bar.a in sb:
             return sa, sb - sa
         return sa, sb
+
+    for dom in design.domains.values():
+        if dom.edge_clearance_mm is None:
+            continue
+        c = classes(subtree(dom.name), "A")
+        if c:
+            lines.append(f"# {dom.name} copper to board edge, {dom.edge_source}".rstrip(", "))
+            lines.append(f'(rule "IR:edge.{dom.name}"')
+            lines.append(f'  (condition "{c}")')
+            lines.append(f"  (constraint edge_clearance (min {dom.edge_clearance_mm:g}mm)))")
+            lines.append("")
 
     # KiCad applies the last matching rule. Rules inherited through floating domains come
     # first, rules naming the nets' own domains last, so a direct pair always wins.

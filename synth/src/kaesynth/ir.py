@@ -255,7 +255,7 @@ class Part:
 
 class Net:
     def __init__(self, design, name, block=None, domain=None, v=None, kind="signal", i_max=None,
-                 i_peak=None, netclass=None, external=False, threats=(), notes=""):
+                 i_peak=None, netclass=None, external=False, threats=(), notes="", width_mm=None):
         if kind not in NET_KINDS:
             raise DesignError(f"net {name}: kind {kind!r} not in {NET_KINDS}")
         if not re.match(r"^[A-Za-z0-9_+\-.~]+$", name):
@@ -274,6 +274,7 @@ class Net:
         if bad:
             raise DesignError(f"net {name}: unknown threats {sorted(bad)}; use {sorted(THREATS)}")
         self.threats = tuple(threats)  # what can arrive on this wire from outside
+        self.width_mm = width_mm      # required track width (overrides the IPC-2221 width from i_max)
         self.notes = notes
         self.pins = []
 
@@ -331,6 +332,8 @@ class Domain:
     description: str = ""
     earthed: bool = False       # ref tied to protective earth / chassis
     v_range: tuple = None       # default (min, max) for nets in this domain that give no v
+    edge_clearance_mm: float = None   # copper of this domain to the board edge (and mounting holes)
+    edge_source: str = ""             # standard/table the edge clearance comes from
     notes: str = ""
 
 

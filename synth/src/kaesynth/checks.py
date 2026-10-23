@@ -425,8 +425,10 @@ class Checker:
             if not defn.footprint:
                 self.add("lib.footprint_missing", "error", f"{who}: no footprint", [p.ref])
                 continue
-            if defn.footprint.startswith("custom:"):
-                self.add("lib.footprint_custom", "warning", f"{who}: custom footprint {defn.footprint} must be drawn and reviewed",
+            if defn.footprint.startswith("custom:") and not self.fp.has(defn.footprint):
+                self.add("lib.footprint_custom", "warning",
+                         f"{who}: custom footprint {defn.footprint} is not drawn yet "
+                         f"(designs/<slug>/footprints/custom.pretty/{defn.footprint.split(':', 1)[1]}.kicad_mod)",
                          [p.ref])
                 continue
             if not self.fp.has(defn.footprint):

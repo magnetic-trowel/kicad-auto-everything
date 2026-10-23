@@ -89,6 +89,8 @@ def build():
   v_iso_rms, grade, v_work_rms, creepage_mm)])`, and a `d.barrier(a, b, grade, v_work,
   creepage_mm, clearance_mm, standard, v_test_rms, source)` must exist. Spacing numbers come from
   the standard's tables (cite them in `source`); the framework does not invent them.
+- `Domain(edge_clearance_mm=, edge_source=)` keeps that domain's copper off the board edge
+  (emitted as a `.kicad_dru` `edge_clearance` rule).
 - `d.barrier` also works between non-root domains (functional spacing, e.g. relay contacts vs
   line); `d.place.separate(a, b)` turns it into a placement relation; the `.kicad_dru` carries it.
 
@@ -116,13 +118,15 @@ def build():
 ### Nets
 
 `kind`: `signal power ground hv mains switching sense analog high_current pe clock diff`.
+`width_mm=` forces a track width (e.g. a 15 A mains path drawn at 7.5 mm on both layers).
 `external=True` for nets leaving the board; `threats=("esd", "surge", "overcurrent",
 "reverse_polarity", "load_dump", "overvoltage")` require a protector of the matching category on
 that net. `i_max` drives current checks and net-class track widths.
 
 ### Placement relations (`d.place.*`; ordinal magnitudes, never coordinates)
 
-`group(block)`, `region(block, "north")`, `near(a, b, "tight|close|loose")`, `far(a, b)`,
+`group(block)`, `region(block | part | [parts], "north")`, `pins_toward(part, ["A1", "A2"], "south")`
+(rotate so those pins face that side — use it instead of free-text orientation), `near(a, b, "tight|close|loose")`, `far(a, b)`,
 `hot_loop([pins...])`, `edge(part, "north|south|east|west|any")`, `orient(part, facing)`,
 `separate(domA, domB)`, `keepout(obj, what, layers)`, `thermal(part, watts, sink)`,
 `array(parts, axis)`, `align(parts, axis)`, `symmetric(pairs, axis)`, `side(part, "top|bottom")`,
@@ -174,7 +178,11 @@ finding on the record; never waive an error you have not understood.
   around the multi-pin part they connect to. No wire routing between symbols.
 - No distributor lookup yet: MPNs and lifecycle are what the design says, so `source=` and an
   independent review carry the weight. Part cards should move to a resolved catalog.
-- No SPICE yet. Typed interfaces (I²C pull-ups, address uniqueness) are not modelled.
+- Custom footprints: `footprint="custom:Name"`, drawn in `designs/<slug>/footprints/custom.pretty/`
+  (the project's fp-lib-table points there; pads are checked once the file exists).
+- No SPICE yet: a reviewer found a watchdog whose hand calculation missed a discharge
+  path. Time-domain behaviour needs a testbench; until then, calculations must state
+  every scenario (signal stuck high and stuck low) and reviewers re-derive them. Typed interfaces (I²C pull-ups, address uniqueness) are not modelled.
 - `kicad-cli` 10.0.7 segfaults running DRC with `creepage` rules on a board without an
   Edge.Cuts outline; the DRC smoke run adds one.
 - Output targets KiCad 10 (`20260306`); KiCad 9 cannot open it.

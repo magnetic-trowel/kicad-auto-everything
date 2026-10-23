@@ -214,13 +214,29 @@ def renumber(sym: LibSymbol, lib_id, pinmap):
 
 
 class FootprintLibs:
-    def __init__(self, root=None):
+    """KiCad footprint libraries, plus design-local ones (`<design>/footprints/<lib>.pretty`)
+    that take precedence, e.g. `custom:WAGO_2606` drawn for one design."""
+
+    def __init__(self, root=None, local=()):
         self.root = Path(root) if root else footprint_dir()
+        self.local = [Path(x) for x in local if x and Path(x).is_dir()]
+
+    def local_dir(self, lib):
+        for d in self.local:
+            if (d / f"{lib}.pretty").is_dir():
+                return d / f"{lib}.pretty"
+        return None
 
     def path(self, lib_id):
-        if not self.root or ":" not in lib_id:
+        if ":" not in lib_id:
             return None
         lib, _, name = lib_id.partition(":")
+        ld = self.local_dir(lib)
+        if ld is not None:
+            p = ld / f"{name}.kicad_mod"
+            return p if p.exists() else None
+        if not self.root:
+            return None
         p = self.root / f"{lib}.pretty" / f"{name}.kicad_mod"
         return p if p.exists() else None
 

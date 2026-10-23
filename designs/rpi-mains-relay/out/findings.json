@@ -99,7 +99,7 @@
   {
    "check": "lib.footprint_custom",
    "severity": "warning",
-   "message": "J2 (2606-3102/020-000): custom footprint custom:WAGO_2606-3102_020-000 must be drawn and reviewed",
+   "message": "J2 (2606-3102/020-000): custom footprint custom:WAGO_2606-3102_020-000 is not drawn yet (designs/<slug>/footprints/custom.pretty/WAGO_2606-3102_020-000.kicad_mod)",
    "objects": [
     "J2"
    ],

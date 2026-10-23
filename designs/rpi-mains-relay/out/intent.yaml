@@ -9,6 +9,7 @@ design:
   revision: A
 units: mm
 board:
+  name: main
   width_mm: 106
   height_mm: 80
   max_component_height_mm: 31
@@ -60,6 +61,59 @@ board:
       layers: all
       note: "SELV/mains barrier band"
   notes: "FR-4 UL 94 V-0, UL ZPMV2 laminate, CTI >= 175 V preferred (IIIb assumed). All parts top side. Solder tails <= 2.4 mm below the board, 10.3 mm above the box bottom. Pi outside the box, <= 3 m. Flush mounting in an insulated wall is excluded (thermal)."
+boards:
+  - name: main
+    width_mm: 106
+    height_mm: 80
+    max_component_height_mm: 31
+    max_bottom_height_mm: 2.4
+    layers: 2
+    thickness_mm: 1.6
+    copper_oz: 2
+    holes:
+      - x: 4
+        "y": 4
+        drill_mm: 4.0
+        plated: false
+        note: "H1, LCBS-8-19 nylon support"
+      - x: 102
+        "y": 4
+        drill_mm: 4.0
+        plated: false
+        note: "H2, LCBS-8-19"
+      - x: 4
+        "y": 76
+        drill_mm: 4.0
+        plated: false
+        note: "H3, LCBS-8-19"
+      - x: 102
+        "y": 76
+        drill_mm: 4.0
+        plated: false
+        note: "H4, LCBS-8-19"
+    enclosure: "Hubbell RACO 257 steel box 4-11/16 x 2-1/8 in (42.0 in3) + RACO 250 1-1/2 in extension ring (29.5 in3) + RACO 832 flat blank cover; board on 4 x Essentra LCBS-8-19 12.7 mm nylon supports in installer-drilled 4.75 mm holes; inner depth ~93.7 mm"
+    keepouts:
+      - rect: [0, 0, 106, 2.0]
+        what: "mains copper"
+        layers: all
+        note: "edge strip"
+      - rect: [0, 78.0, 106, 80]
+        what: "mains copper"
+        layers: all
+        note: "edge strip"
+      - rect: [0, 0, 2.0, 80]
+        what: "mains copper"
+        layers: all
+        note: "edge strip"
+      - rect: [104.0, 0, 106, 80]
+        what: "mains copper"
+        layers: all
+        note: "edge strip"
+      - relative: "K1-K4 coil-pad edge to +8.25 mm north, full width"
+        what: "copper and vias"
+        layers: all
+        note: "SELV/mains barrier band"
+    notes: "FR-4 UL 94 V-0, UL ZPMV2 laminate, CTI >= 175 V preferred (IIIb assumed). All parts top side. Solder tails <= 2.4 mm below the board, 10.3 mm above the box bottom. Pi outside the box, <= 3 m. Flush mounting in an insulated wall is excluded (thermal)."
 magnitudes:
   tight: 3.0
   close: 8.0
@@ -393,6 +447,7 @@ netclasses:
 components:
   - ref: J6
     block: selv_in
+    board: main
     value: "2601-3108"
     footprint: TerminalBlock_WAGO:TerminalBlock_WAGO_2601-3108_1x08_P3.50mm_Vertical
     category: connector
@@ -400,6 +455,7 @@ components:
     mpn: "2601-3108"
   - ref: F1
     block: selv_in
+    board: main
     value: "1.1A"
     footprint: Fuse:Fuse_1812_4532Metric
     category: ptc
@@ -407,6 +463,7 @@ components:
     mpn: MF-MSMF110/16X-2
   - ref: D11
     block: selv_in
+    board: main
     value: SMAJ7.0A
     footprint: Diode_SMD:D_SMA
     category: tvs
@@ -414,6 +471,7 @@ components:
     mpn: SMAJ7.0A-E3/61
   - ref: C1
     block: selv_in
+    board: main
     value: "10u"
     footprint: Capacitor_SMD:C_0805_2012Metric
     category: capacitor_ceramic
@@ -421,6 +479,7 @@ components:
     mpn: GRM21BR61C106KE15L
   - ref: C2
     block: selv_in
+    board: main
     value: "100n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
@@ -428,6 +487,7 @@ components:
     mpn: CC0603KRX7R9BB104
   - ref: U1
     block: selv_in
+    board: main
     value: TPD6E05U06
     footprint: Package_SON:Texas_R-PUSON-N14
     category: tvs
@@ -435,6 +495,7 @@ components:
     mpn: TPD6E05U06RVZR
   - ref: D10
     block: selv_in
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -442,6 +503,7 @@ components:
     mpn: APT1608SGC
   - ref: R16
     block: selv_in
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -449,18 +511,21 @@ components:
     mpn: RC0603FR-071K5L
   - ref: TP1
     block: selv_in
+    board: main
     value: TP
     footprint: TestPoint:TestPoint_Pad_D1.5mm
     category: testpoint
     domains: [SELV]
   - ref: TP2
     block: selv_in
+    board: main
     value: TP
     footprint: TestPoint:TestPoint_Pad_D1.5mm
     category: testpoint
     domains: [SELV]
   - ref: R13
     block: arm
+    board: main
     value: "1k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -468,6 +533,7 @@ components:
     mpn: RC0603FR-071KL
   - ref: C3
     block: arm
+    board: main
     value: "1u"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
@@ -475,6 +541,7 @@ components:
     mpn: CC0603KRX7R7BB105
   - ref: D12
     block: arm
+    board: main
     value: BAT54S
     footprint: Package_TO_SOT_SMD:SOT-23
     category: diode
@@ -482,6 +549,7 @@ components:
     mpn: BAT54S-7-F
   - ref: C4
     block: arm
+    board: main
     value: "100n"
     footprint: Capacitor_SMD:C_0603_1608Metric
     category: capacitor_ceramic
@@ -489,6 +557,7 @@ components:
     mpn: CC0603KRX7R9BB104
   - ref: R14
     block: arm
+    board: main
     value: "1M"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -496,6 +565,7 @@ components:
     mpn: RC0603FR-071ML
   - ref: Q5
     block: arm
+    board: main
     value: AO3400A
     footprint: Package_TO_SOT_SMD:SOT-23
     category: mosfet
@@ -504,6 +574,7 @@ components:
     p_diss_w: 0.011
   - ref: D9
     block: arm
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -511,6 +582,7 @@ components:
     mpn: APT1608SGC
   - ref: R15
     block: arm
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -518,18 +590,21 @@ components:
     mpn: RC0603FR-071K5L
   - ref: TP3
     block: arm
+    board: main
     value: TP
     footprint: TestPoint:TestPoint_Pad_D1.5mm
     category: testpoint
     domains: [SELV]
   - ref: TP4
     block: arm
+    board: main
     value: TP
     footprint: TestPoint:TestPoint_Pad_D1.5mm
     category: testpoint
     domains: [SELV]
   - ref: R1
     block: ch1
+    board: main
     value: "1k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -537,6 +612,7 @@ components:
     mpn: RC0603FR-071KL
   - ref: R5
     block: ch1
+    board: main
     value: "4.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -544,6 +620,7 @@ components:
     mpn: RC0603FR-074K7L
   - ref: Q1
     block: ch1
+    board: main
     value: AO3400A
     footprint: Package_TO_SOT_SMD:SOT-23
     category: mosfet
@@ -552,6 +629,7 @@ components:
     p_diss_w: 0.0005
   - ref: D1
     block: ch1
+    board: main
     value: "1N4148W"
     footprint: Diode_SMD:D_SOD-123
     category: diode
@@ -559,6 +637,7 @@ components:
     mpn: "1N4148W-7-F"
   - ref: D5
     block: ch1
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -566,6 +645,7 @@ components:
     mpn: APT1608SGC
   - ref: R9
     block: ch1
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -573,6 +653,7 @@ components:
     mpn: RC0603FR-071K5L
   - ref: K1
     block: ch1
+    board: main
     value: "G5RL-1A-E-TV8 DC5"
     footprint: Relay_THT:Relay_SPST_Omron_G2RL-1A-E
     category: relay
@@ -580,6 +661,7 @@ components:
     mpn: "G5RL-1A-E-TV8 DC5"
   - ref: J2
     block: ch1
+    board: main
     value: "2606-3102/020-000"
     footprint: custom:WAGO_2606-3102_020-000
     category: connector
@@ -587,6 +669,7 @@ components:
     mpn: "2606-3102/020-000"
   - ref: R2
     block: ch2
+    board: main
     value: "1k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -594,6 +677,7 @@ components:
     mpn: RC0603FR-071KL
   - ref: R6
     block: ch2
+    board: main
     value: "4.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -601,6 +685,7 @@ components:
     mpn: RC0603FR-074K7L
   - ref: Q2
     block: ch2
+    board: main
     value: AO3400A
     footprint: Package_TO_SOT_SMD:SOT-23
     category: mosfet
@@ -609,6 +694,7 @@ components:
     p_diss_w: 0.0005
   - ref: D2
     block: ch2
+    board: main
     value: "1N4148W"
     footprint: Diode_SMD:D_SOD-123
     category: diode
@@ -616,6 +702,7 @@ components:
     mpn: "1N4148W-7-F"
   - ref: D6
     block: ch2
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -623,6 +710,7 @@ components:
     mpn: APT1608SGC
   - ref: R10
     block: ch2
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -630,6 +718,7 @@ components:
     mpn: RC0603FR-071K5L
   - ref: K2
     block: ch2
+    board: main
     value: "G5RL-1A-E-TV8 DC5"
     footprint: Relay_THT:Relay_SPST_Omron_G2RL-1A-E
     category: relay
@@ -637,6 +726,7 @@ components:
     mpn: "G5RL-1A-E-TV8 DC5"
   - ref: J3
     block: ch2
+    board: main
     value: "2606-3102/020-000"
     footprint: custom:WAGO_2606-3102_020-000
     category: connector
@@ -644,6 +734,7 @@ components:
     mpn: "2606-3102/020-000"
   - ref: R3
     block: ch3
+    board: main
     value: "1k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -651,6 +742,7 @@ components:
     mpn: RC0603FR-071KL
   - ref: R7
     block: ch3
+    board: main
     value: "4.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -658,6 +750,7 @@ components:
     mpn: RC0603FR-074K7L
   - ref: Q3
     block: ch3
+    board: main
     value: AO3400A
     footprint: Package_TO_SOT_SMD:SOT-23
     category: mosfet
@@ -666,6 +759,7 @@ components:
     p_diss_w: 0.0005
   - ref: D3
     block: ch3
+    board: main
     value: "1N4148W"
     footprint: Diode_SMD:D_SOD-123
     category: diode
@@ -673,6 +767,7 @@ components:
     mpn: "1N4148W-7-F"
   - ref: D7
     block: ch3
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -680,6 +775,7 @@ components:
     mpn: APT1608SGC
   - ref: R11
     block: ch3
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -687,6 +783,7 @@ components:
     mpn: RC0603FR-071K5L
   - ref: K3
     block: ch3
+    board: main
     value: "G5RL-1A-E-TV8 DC5"
     footprint: Relay_THT:Relay_SPST_Omron_G2RL-1A-E
     category: relay
@@ -694,6 +791,7 @@ components:
     mpn: "G5RL-1A-E-TV8 DC5"
   - ref: J4
     block: ch3
+    board: main
     value: "2606-3102/020-000"
     footprint: custom:WAGO_2606-3102_020-000
     category: connector
@@ -701,6 +799,7 @@ components:
     mpn: "2606-3102/020-000"
   - ref: R4
     block: ch4
+    board: main
     value: "1k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -708,6 +807,7 @@ components:
     mpn: RC0603FR-071KL
   - ref: R8
     block: ch4
+    board: main
     value: "4.7k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -715,6 +815,7 @@ components:
     mpn: RC0603FR-074K7L
   - ref: Q4
     block: ch4
+    board: main
     value: AO3400A
     footprint: Package_TO_SOT_SMD:SOT-23
     category: mosfet
@@ -723,6 +824,7 @@ components:
     p_diss_w: 0.0005
   - ref: D4
     block: ch4
+    board: main
     value: "1N4148W"
     footprint: Diode_SMD:D_SOD-123
     category: diode
@@ -730,6 +832,7 @@ components:
     mpn: "1N4148W-7-F"
   - ref: D8
     block: ch4
+    board: main
     value: green
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
@@ -737,6 +840,7 @@ components:
     mpn: APT1608SGC
   - ref: R12
     block: ch4
+    board: main
     value: "1.5k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
@@ -744,6 +848,7 @@ components:
     mpn: RC0603FR-071K5L
   - ref: K4
     block: ch4
+    board: main
     value: "G5RL-1A-E-TV8 DC5"
     footprint: Relay_THT:Relay_SPST_Omron_G2RL-1A-E
     category: relay
@@ -751,6 +856,7 @@ components:
     mpn: "G5RL-1A-E-TV8 DC5"
   - ref: J5
     block: ch4
+    board: main
     value: "2606-3102/020-000"
     footprint: custom:WAGO_2606-3102_020-000
     category: connector
@@ -758,6 +864,7 @@ components:
     mpn: "2606-3102/020-000"
   - ref: J1
     block: mains_in
+    board: main
     value: "2606-3102/020-000"
     footprint: custom:WAGO_2606-3102_020-000
     category: connector
@@ -765,30 +872,35 @@ components:
     mpn: "2606-3102/020-000"
   - ref: H1
     block: mech
+    board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_4mm
     category: mechanical
     domains: []
   - ref: H2
     block: mech
+    board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_4mm
     category: mechanical
     domains: []
   - ref: H3
     block: mech
+    board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_4mm
     category: mechanical
     domains: []
   - ref: H4
     block: mech
+    board: main
     value: MountingHole
     footprint: MountingHole:MountingHole_4mm
     category: mechanical
     domains: []
   - ref: MP1
     block: mech
+    board: main
     value: KAE-RPMR-MP1
     footprint: null
     category: mechanical
@@ -796,6 +908,7 @@ components:
     mpn: KAE-RPMR-MP1
   - ref: MP2
     block: mech
+    board: main
     value: "RACO 257"
     footprint: null
     category: mechanical
@@ -803,6 +916,7 @@ components:
     mpn: "RACO 257"
   - ref: MP3
     block: mech
+    board: main
     value: "RACO 250"
     footprint: null
     category: mechanical
@@ -810,6 +924,7 @@ components:
     mpn: "RACO 250"
   - ref: MP4
     block: mech
+    board: main
     value: "RACO 832"
     footprint: null
     category: mechanical
@@ -817,6 +932,7 @@ components:
     mpn: "RACO 832"
   - ref: MP5
     block: mech
+    board: main
     value: LCBS-8-19
     footprint: null
     category: mechanical
@@ -824,6 +940,7 @@ components:
     mpn: LCBS-8-19
   - ref: MP6
     block: mech
+    board: main
     value: LCBS-8-19
     footprint: null
     category: mechanical
@@ -831,6 +948,7 @@ components:
     mpn: LCBS-8-19
   - ref: MP7
     block: mech
+    board: main
     value: LCBS-8-19
     footprint: null
     category: mechanical
@@ -838,6 +956,7 @@ components:
     mpn: LCBS-8-19
   - ref: MP8
     block: mech
+    board: main
     value: LCBS-8-19
     footprint: null
     category: mechanical

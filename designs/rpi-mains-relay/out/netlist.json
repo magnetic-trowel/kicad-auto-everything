@@ -4,6 +4,7 @@
   {
    "ref": "J6",
    "block": "selv_in",
+   "board": "main",
    "name": "J1",
    "value": "2601-3108",
    "mpn": "2601-3108",
@@ -66,6 +67,7 @@
   {
    "ref": "F1",
    "block": "selv_in",
+   "board": "main",
    "name": "F1",
    "value": "1.1A",
    "mpn": "MF-MSMF110/16X-2",
@@ -92,6 +94,7 @@
   {
    "ref": "D11",
    "block": "selv_in",
+   "board": "main",
    "name": "D1",
    "value": "SMAJ7.0A",
    "mpn": "SMAJ7.0A-E3/61",
@@ -118,6 +121,7 @@
   {
    "ref": "C1",
    "block": "selv_in",
+   "board": "main",
    "name": "C1",
    "value": "10u",
    "mpn": "GRM21BR61C106KE15L",
@@ -144,6 +148,7 @@
   {
    "ref": "C2",
    "block": "selv_in",
+   "board": "main",
    "name": "C2",
    "value": "100n",
    "mpn": "CC0603KRX7R9BB104",
@@ -170,6 +175,7 @@
   {
    "ref": "U1",
    "block": "selv_in",
+   "board": "main",
    "name": "D2",
    "value": "TPD6E05U06",
    "mpn": "TPD6E05U06RVZR",
@@ -268,6 +274,7 @@
   {
    "ref": "D10",
    "block": "selv_in",
+   "board": "main",
    "name": "D3",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -294,6 +301,7 @@
   {
    "ref": "R16",
    "block": "selv_in",
+   "board": "main",
    "name": "R1",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -320,6 +328,7 @@
   {
    "ref": "TP1",
    "block": "selv_in",
+   "board": "main",
    "name": "TP1",
    "value": "TP",
    "mpn": null,
@@ -340,6 +349,7 @@
   {
    "ref": "TP2",
    "block": "selv_in",
+   "board": "main",
    "name": "TP2",
    "value": "TP",
    "mpn": null,
@@ -360,6 +370,7 @@
   {
    "ref": "R13",
    "block": "arm",
+   "board": "main",
    "name": "R1",
    "value": "1k",
    "mpn": "RC0603FR-071KL",
@@ -386,6 +397,7 @@
   {
    "ref": "C3",
    "block": "arm",
+   "board": "main",
    "name": "C1",
    "value": "1u",
    "mpn": "CC0603KRX7R7BB105",
@@ -412,6 +424,7 @@
   {
    "ref": "D12",
    "block": "arm",
+   "board": "main",
    "name": "D1",
    "value": "BAT54S",
    "mpn": "BAT54S-7-F",
@@ -444,6 +457,7 @@
   {
    "ref": "C4",
    "block": "arm",
+   "board": "main",
    "name": "C2",
    "value": "100n",
    "mpn": "CC0603KRX7R9BB104",
@@ -470,6 +484,7 @@
   {
    "ref": "R14",
    "block": "arm",
+   "board": "main",
    "name": "R2",
    "value": "1M",
    "mpn": "RC0603FR-071ML",
@@ -496,6 +511,7 @@
   {
    "ref": "Q5",
    "block": "arm",
+   "board": "main",
    "name": "Q1",
    "value": "AO3400A",
    "mpn": "AO3400A",
@@ -528,6 +544,7 @@
   {
    "ref": "D9",
    "block": "arm",
+   "board": "main",
    "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -554,6 +571,7 @@
   {
    "ref": "R15",
    "block": "arm",
+   "board": "main",
    "name": "R3",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -580,6 +598,7 @@
   {
    "ref": "TP3",
    "block": "arm",
+   "board": "main",
    "name": "TP1",
    "value": "TP",
    "mpn": null,
@@ -600,6 +619,7 @@
   {
    "ref": "TP4",
    "block": "arm",
+   "board": "main",
    "name": "TP2",
    "value": "TP",
    "mpn": null,
@@ -620,6 +640,7 @@
   {
    "ref": "R1",
    "block": "ch1",
+   "board": "main",
    "name": "R1",
    "value": "1k",
    "mpn": "RC0603FR-071KL",
@@ -646,6 +667,7 @@
   {
    "ref": "R5",
    "block": "ch1",
+   "board": "main",
    "name": "R2",
    "value": "4.7k",
    "mpn": "RC0603FR-074K7L",
@@ -672,6 +694,7 @@
   {
    "ref": "Q1",
    "block": "ch1",
+   "board": "main",
    "name": "Q1",
    "value": "AO3400A",
    "mpn": "AO3400A",
@@ -704,6 +727,7 @@
   {
    "ref": "D1",
    "block": "ch1",
+   "board": "main",
    "name": "D1",
    "value": "1N4148W",
    "mpn": "1N4148W-7-F",
@@ -730,6 +754,7 @@
   {
    "ref": "D5",
    "block": "ch1",
+   "board": "main",
    "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -756,6 +781,7 @@
   {
    "ref": "R9",
    "block": "ch1",
+   "board": "main",
    "name": "R3",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -782,6 +808,7 @@
   {
    "ref": "K1",
    "block": "ch1",
+   "board": "main",
    "name": "K1",
    "value": "G5RL-1A-E-TV8 DC5",
    "mpn": "G5RL-1A-E-TV8 DC5",
@@ -820,6 +847,7 @@
   {
    "ref": "J2",
    "block": "ch1",
+   "board": "main",
    "name": "J1",
    "value": "2606-3102/020-000",
    "mpn": "2606-3102/020-000",
@@ -846,6 +874,7 @@
   {
    "ref": "R2",
    "block": "ch2",
+   "board": "main",
    "name": "R1",
    "value": "1k",
    "mpn": "RC0603FR-071KL",
@@ -872,6 +901,7 @@
   {
    "ref": "R6",
    "block": "ch2",
+   "board": "main",
    "name": "R2",
    "value": "4.7k",
    "mpn": "RC0603FR-074K7L",
@@ -898,6 +928,7 @@
   {
    "ref": "Q2",
    "block": "ch2",
+   "board": "main",
    "name": "Q1",
    "value": "AO3400A",
    "mpn": "AO3400A",
@@ -930,6 +961,7 @@
   {
    "ref": "D2",
    "block": "ch2",
+   "board": "main",
    "name": "D1",
    "value": "1N4148W",
    "mpn": "1N4148W-7-F",
@@ -956,6 +988,7 @@
   {
    "ref": "D6",
    "block": "ch2",
+   "board": "main",
    "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -982,6 +1015,7 @@
   {
    "ref": "R10",
    "block": "ch2",
+   "board": "main",
    "name": "R3",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -1008,6 +1042,7 @@
   {
    "ref": "K2",
    "block": "ch2",
+   "board": "main",
    "name": "K1",
    "value": "G5RL-1A-E-TV8 DC5",
    "mpn": "G5RL-1A-E-TV8 DC5",
@@ -1046,6 +1081,7 @@
   {
    "ref": "J3",
    "block": "ch2",
+   "board": "main",
    "name": "J1",
    "value": "2606-3102/020-000",
    "mpn": "2606-3102/020-000",
@@ -1072,6 +1108,7 @@
   {
    "ref": "R3",
    "block": "ch3",
+   "board": "main",
    "name": "R1",
    "value": "1k",
    "mpn": "RC0603FR-071KL",
@@ -1098,6 +1135,7 @@
   {
    "ref": "R7",
    "block": "ch3",
+   "board": "main",
    "name": "R2",
    "value": "4.7k",
    "mpn": "RC0603FR-074K7L",
@@ -1124,6 +1162,7 @@
   {
    "ref": "Q3",
    "block": "ch3",
+   "board": "main",
    "name": "Q1",
    "value": "AO3400A",
    "mpn": "AO3400A",
@@ -1156,6 +1195,7 @@
   {
    "ref": "D3",
    "block": "ch3",
+   "board": "main",
    "name": "D1",
    "value": "1N4148W",
    "mpn": "1N4148W-7-F",
@@ -1182,6 +1222,7 @@
   {
    "ref": "D7",
    "block": "ch3",
+   "board": "main",
    "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -1208,6 +1249,7 @@
   {
    "ref": "R11",
    "block": "ch3",
+   "board": "main",
    "name": "R3",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -1234,6 +1276,7 @@
   {
    "ref": "K3",
    "block": "ch3",
+   "board": "main",
    "name": "K1",
    "value": "G5RL-1A-E-TV8 DC5",
    "mpn": "G5RL-1A-E-TV8 DC5",
@@ -1272,6 +1315,7 @@
   {
    "ref": "J4",
    "block": "ch3",
+   "board": "main",
    "name": "J1",
    "value": "2606-3102/020-000",
    "mpn": "2606-3102/020-000",
@@ -1298,6 +1342,7 @@
   {
    "ref": "R4",
    "block": "ch4",
+   "board": "main",
    "name": "R1",
    "value": "1k",
    "mpn": "RC0603FR-071KL",
@@ -1324,6 +1369,7 @@
   {
    "ref": "R8",
    "block": "ch4",
+   "board": "main",
    "name": "R2",
    "value": "4.7k",
    "mpn": "RC0603FR-074K7L",
@@ -1350,6 +1396,7 @@
   {
    "ref": "Q4",
    "block": "ch4",
+   "board": "main",
    "name": "Q1",
    "value": "AO3400A",
    "mpn": "AO3400A",
@@ -1382,6 +1429,7 @@
   {
    "ref": "D4",
    "block": "ch4",
+   "board": "main",
    "name": "D1",
    "value": "1N4148W",
    "mpn": "1N4148W-7-F",
@@ -1408,6 +1456,7 @@
   {
    "ref": "D8",
    "block": "ch4",
+   "board": "main",
    "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
@@ -1434,6 +1483,7 @@
   {
    "ref": "R12",
    "block": "ch4",
+   "board": "main",
    "name": "R3",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
@@ -1460,6 +1510,7 @@
   {
    "ref": "K4",
    "block": "ch4",
+   "board": "main",
    "name": "K1",
    "value": "G5RL-1A-E-TV8 DC5",
    "mpn": "G5RL-1A-E-TV8 DC5",
@@ -1498,6 +1549,7 @@
   {
    "ref": "J5",
    "block": "ch4",
+   "board": "main",
    "name": "J1",
    "value": "2606-3102/020-000",
    "mpn": "2606-3102/020-000",
@@ -1524,6 +1576,7 @@
   {
    "ref": "J1",
    "block": "mains_in",
+   "board": "main",
    "name": "J1",
    "value": "2606-3102/020-000",
    "mpn": "2606-3102/020-000",
@@ -1550,6 +1603,7 @@
   {
    "ref": "H1",
    "block": "mech",
+   "board": "main",
    "name": "H1",
    "value": "MountingHole",
    "mpn": null,
@@ -1563,6 +1617,7 @@
   {
    "ref": "H2",
    "block": "mech",
+   "board": "main",
    "name": "H2",
    "value": "MountingHole",
    "mpn": null,
@@ -1576,6 +1631,7 @@
   {
    "ref": "H3",
    "block": "mech",
+   "board": "main",
    "name": "H3",
    "value": "MountingHole",
    "mpn": null,
@@ -1589,6 +1645,7 @@
   {
    "ref": "H4",
    "block": "mech",
+   "board": "main",
    "name": "H4",
    "value": "MountingHole",
    "mpn": null,
@@ -1602,6 +1659,7 @@
   {
    "ref": "MP1",
    "block": "mech",
+   "board": "main",
    "name": "MP1",
    "value": "KAE-RPMR-MP1",
    "mpn": "KAE-RPMR-MP1",
@@ -1615,6 +1673,7 @@
   {
    "ref": "MP2",
    "block": "mech",
+   "board": "main",
    "name": "MP2",
    "value": "RACO 257",
    "mpn": "RACO 257",
@@ -1628,6 +1687,7 @@
   {
    "ref": "MP3",
    "block": "mech",
+   "board": "main",
    "name": "MP3",
    "value": "RACO 250",
    "mpn": "RACO 250",
@@ -1641,6 +1701,7 @@
   {
    "ref": "MP4",
    "block": "mech",
+   "board": "main",
    "name": "MP4",
    "value": "RACO 832",
    "mpn": "RACO 832",
@@ -1654,6 +1715,7 @@
   {
    "ref": "MP5",
    "block": "mech",
+   "board": "main",
    "name": "MP5",
    "value": "LCBS-8-19",
    "mpn": "LCBS-8-19",
@@ -1667,6 +1729,7 @@
   {
    "ref": "MP6",
    "block": "mech",
+   "board": "main",
    "name": "MP6",
    "value": "LCBS-8-19",
    "mpn": "LCBS-8-19",
@@ -1680,6 +1743,7 @@
   {
    "ref": "MP7",
    "block": "mech",
+   "board": "main",
    "name": "MP7",
    "value": "LCBS-8-19",
    "mpn": "LCBS-8-19",
@@ -1693,6 +1757,7 @@
   {
    "ref": "MP8",
    "block": "mech",
+   "board": "main",
    "name": "MP8",
    "value": "LCBS-8-19",
    "mpn": "LCBS-8-19",
@@ -1708,6 +1773,9 @@
   {
    "name": "L_IN",
    "domain": "LINE",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     0.0
@@ -1741,6 +1809,9 @@
   {
    "name": "N",
    "domain": "NEUTRAL",
+   "boards": [
+    "main"
+   ],
    "v": [
     -187.0,
     187.0
@@ -1774,6 +1845,9 @@
   {
    "name": "L_SW1",
    "domain": "OUT1",
+   "boards": [
+    "main"
+   ],
    "v": [
     -187.0,
     187.0
@@ -1795,6 +1869,9 @@
   {
    "name": "L_SW2",
    "domain": "OUT2",
+   "boards": [
+    "main"
+   ],
    "v": [
     -187.0,
     187.0
@@ -1816,6 +1893,9 @@
   {
    "name": "L_SW3",
    "domain": "OUT3",
+   "boards": [
+    "main"
+   ],
    "v": [
     -187.0,
     187.0
@@ -1837,6 +1917,9 @@
   {
    "name": "L_SW4",
    "domain": "OUT4",
+   "boards": [
+    "main"
+   ],
    "v": [
     -187.0,
     187.0
@@ -1858,6 +1941,9 @@
   {
    "name": "GND",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     0.0
@@ -1939,6 +2025,9 @@
   {
    "name": "+5V",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2028,6 +2117,9 @@
   {
    "name": "COIL_RTN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.5
@@ -2069,6 +2161,9 @@
   {
    "name": "HB_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2094,6 +2189,9 @@
   {
    "name": "CH1_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2119,6 +2217,9 @@
   {
    "name": "CH2_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2144,6 +2245,9 @@
   {
    "name": "CH3_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2169,6 +2273,9 @@
   {
    "name": "CH4_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2194,6 +2301,9 @@
   {
    "name": "/selv_in/+5V_IN",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2215,6 +2325,9 @@
   {
    "name": "/selv_in/LED_PWR_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2236,6 +2349,9 @@
   {
    "name": "/arm/HB_R",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2257,6 +2373,9 @@
   {
    "name": "/arm/PUMP",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     -0.3,
     3.0
@@ -2278,6 +2397,9 @@
   {
    "name": "/arm/ARM_G",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     2.75
@@ -2311,6 +2433,9 @@
   {
    "name": "/arm/LED_ARM_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2332,6 +2457,9 @@
   {
    "name": "/ch1/CH1_G",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2357,6 +2485,9 @@
   {
    "name": "/ch1/COIL1",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     6.1
@@ -2386,6 +2517,9 @@
   {
    "name": "/ch1/LED1_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2407,6 +2541,9 @@
   {
    "name": "/ch2/CH2_G",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2432,6 +2569,9 @@
   {
    "name": "/ch2/COIL2",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     6.1
@@ -2461,6 +2601,9 @@
   {
    "name": "/ch2/LED2_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2482,6 +2625,9 @@
   {
    "name": "/ch3/CH3_G",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2507,6 +2653,9 @@
   {
    "name": "/ch3/COIL3",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     6.1
@@ -2536,6 +2685,9 @@
   {
    "name": "/ch3/LED3_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25
@@ -2557,6 +2709,9 @@
   {
    "name": "/ch4/CH4_G",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     3.3
@@ -2582,6 +2737,9 @@
   {
    "name": "/ch4/COIL4",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     6.1
@@ -2611,6 +2769,9 @@
   {
    "name": "/ch4/LED4_A",
    "domain": "SELV",
+   "boards": [
+    "main"
+   ],
    "v": [
     0.0,
     5.25

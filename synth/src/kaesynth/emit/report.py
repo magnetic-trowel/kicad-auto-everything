@@ -115,7 +115,9 @@ def report_md(design, findings, kicad, status):
         L += [f"| `{f.check}` | {_esc(f.message)} | {_esc(f.waived_by)} |" for f in waived]
     if kicad.get("ran") and kicad.get("erc_items"):
         L += ["", "### KiCad ERC", "", "| Severity | Type | Description | Items |", "|---|---|---|---|"]
-        L += [f"| {v['severity']} | {v['type']} | {_esc(v['description'])} | {_esc('; '.join(v['items'])[:200])} |"
+        from ..build import ENV_ERC
+        L += [f"| {v['severity']}{' (environment; not counted)' if v['type'] in ENV_ERC else ''} | {v['type']} | "
+              f"{_esc(v['description'])} | {_esc('; '.join(v['items'])[:200])} |"
               for v in kicad["erc_items"][:200]]
     if kicad.get("netlist_problems"):
         L += ["", "### Netlist round-trip problems", ""] + [f"- {x}" for x in kicad["netlist_problems"]]

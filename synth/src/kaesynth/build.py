@@ -168,7 +168,8 @@ def build(design_path, outdir=None, use_kicad=True, date=None):
     outdir.mkdir(parents=True, exist_ok=True)
     sd, fd = symbol_dir(), footprint_dir()
     symlibs = SymbolLibs([sd]) if sd else None
-    fplibs = FootprintLibs(fd) if fd else None
+    local_fp = [Path(design_path).resolve().parent / "footprints"] if not isinstance(design_path, Design) else []
+    fplibs = FootprintLibs(fd, local=local_fp) if fd else None
     d.libs = (symlibs, fplibs) if symlibs else None
     checker = Checker(d, symlibs, fplibs)
     findings = checker.run()
@@ -178,7 +179,7 @@ def build(design_path, outdir=None, use_kicad=True, date=None):
     if symlibs and not fatal:
         writer = SchematicWriter(d, symlibs, title_date=date)
         writer.write(outdir)
-        write_project(outdir, d, writer.st, netclasses)
+        write_project(outdir, d, writer.st, netclasses, fplibs=fplibs)
         (outdir / f"{d.slug}.kicad_dru").write_text(dru_text(d, netclasses))
         if use_kicad:
             kicad = run_kicad(d, outdir, netclasses)
@@ -202,7 +203,8 @@ def build(design_path, outdir=None, use_kicad=True, date=None):
                 sub, slug = outdir / f"board-{name}", f"{d.slug}-{name}"
                 w = SchematicWriter(d, symlibs, title_date=date, blocks=blocks, slug=slug, board=name)
                 w.write(sub)
-                write_project(sub, d, w.st, netclasses, slug=slug, parts=[p for b in blocks for p in b.parts])
+                write_project(sub, d, w.st, netclasses, slug=slug, parts=[p for b in blocks for p in b.parts],
+                              fplibs=fplibs)
                 (sub / f"{slug}.kicad_dru").write_text(dru_text(d, netclasses))
                 (sub / "intent.yaml").write_text(intent_yaml(d, netclasses, board=name))
                 if use_kicad and kicad.get("ran"):

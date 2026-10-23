@@ -116,12 +116,28 @@ class Placement:
         return self._rel("far", a=a, b=b, strength=self._strength(strength), note=note)
 
     def orient(self, obj, facing, note=""):
-        """Connector or part orientation, e.g. facing='out' of the nearest edge or 'north'."""
+        """Connector entry direction: facing='out' (toward the nearest board edge) or an edge
+        name. For which side of a part given pins must face, use pins_toward()."""
         return self._rel("orient", obj=obj, facing=facing, note=note)
 
-    def region(self, block, where, note=""):
-        """Coarse floorplan zone for a block: north/south/east/west/center or 'corner-ne' etc."""
-        return self._rel("region", block=block, where=where, note=note)
+    def pins_toward(self, part, pins, side, note=""):
+        """Rotate `part` so that `pins` (names/numbers or PinRefs) lie on its `side`
+        (north/south/east/west, board coordinates) of the part's body, e.g. relay coil pins
+        toward the low-voltage side. Unambiguous, unlike a free-text 'facing'."""
+        if side not in EDGES[:4]:
+            raise DesignError(f"pins_toward side {side!r} not in {EDGES[:4]}")
+        part_obj = part
+        refs = []
+        for x in pins:
+            refs.extend(x if isinstance(x, list) else ([x] if isinstance(x, PinRef) else part_obj.pin(x)))
+        return self._rel("pins_toward", obj=part, pins=refs, side=side, note=note)
+
+    def region(self, obj, where, note=""):
+        """Coarse floorplan zone for a block, a part, or a list of parts:
+        north/south/east/west/center or 'corner-ne' etc."""
+        key = "block" if isinstance(obj, Block) or (isinstance(obj, str) and obj.startswith("block:")) else "members"
+        return self._rel("region", **{key: obj if key == "block" else (obj if isinstance(obj, list) else [obj])},
+                         where=where, note=note)
 
     def custom(self, kind, note="", **kw):
         """A relation outside the vocabulary; checked by humans until a checker exists."""
