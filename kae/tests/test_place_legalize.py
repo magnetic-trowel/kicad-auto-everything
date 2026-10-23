@@ -181,3 +181,24 @@ def test_mask_openings_of_different_nets_bridge():
     P.board.rules.mask_margin = 0.0
     P.board.rules.mask_min_width = 0.5                    # web too thin
     assert bridges()
+
+
+def test_kicad_zone_error_keeps_the_part_off_the_whole_zone():
+    """Regression (latentred-pdu): KiCad reports a zone at one point; a disc there let the
+    culprit slide to another spot of the same zone for 6 rounds. A zone item now keeps the
+    part off the zone's outline."""
+    from shapely.geometry import box as sbox
+    from kae.board.model import Zone
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    i = P.parts[P.mov[0]]
+    x, y = st.xy(i.i)
+    P.board.zones.append(Zone(uuid="z", name="", net="Z", layers=["F.Cu"], outline=sbox(x - 6, y - 6, x + 6, y + 6)))
+    report = {"violations": [{"type": "solder_mask_bridge", "severity": "error", "items": [
+        {"description": f"Pad 1 [x] of {i.ref} on F.Cu", "pos": {"x": x, "y": y}},
+        {"description": "Zone [Z] on F.Cu, priority 0", "pos": {"x": x + 5, "y": y}}]}]}
+    fb = exact.kicad_feedback(P, st, report)
+    assert fb["constraints"] == 1
+    (g, why), = P.feedback["avoid"][i.i]
+    assert g.contains(sbox(x - 5.9, y - 5.9, x + 5.9, y + 5.9))

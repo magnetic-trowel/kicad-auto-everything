@@ -423,3 +423,48 @@ def test_board_mask_apertures_and_copper_graphics_are_fixed():
     assert any(v["type"] == "solder_mask_bridge" for v in exact_check(P, st, parts=[u.i]))
     st.X[u.i], st.Y[u.i] = P.grid_of(40.5 - pad.lx, 30.5 - pad.ly)
     assert any(v["type"] == "clearance" for v in exact_check(P, st, parts=[u.i]))
+
+
+def test_logo_graphics_on_several_layers_are_read(tmp_path):
+    """Regression (tuxkeychain): KiCad 9+ writes a copper logo's shapes with (layers "F.Cu"
+    "F.Mask"); kae.board read only (layer ...), so the logos had no copper, landed on pads
+    and the board edge, and KiCad found 25 clearance and 7 shorting errors."""
+    import shutil
+    src = FIXTURE.read_text()
+    anchor = '(uuid "00000000-0000-4000-8000-000000000011")'
+    poly = ('(fp_poly (pts (xy 3 -1) (xy 5 -1) (xy 5 1) (xy 3 1)) (stroke (width 0) (type solid)) (fill yes) '
+            '(layers "F.Cu" "F.Mask") (uuid "00000000-0000-4000-8000-0000000099aa"))')
+    assert src.count(anchor) == 1
+    dst = tmp_path / "board.kicad_pcb"
+    dst.write_text(src.replace(anchor, anchor + "\n\t\t" + poly))
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(FIXTURE.with_suffix(ext), dst.with_suffix(ext))
+    u1 = next(f for f in load(dst).footprints if f.ref == "U1")
+    assert set(u1.graphics) >= {"F.Cu", "F.Mask"}
+    assert abs(sum(g.area for g in u1.graphics["F.Cu"]) - 4.0) < 1e-6
+
+
+def test_mask_opening_over_another_nets_zone_bridges():
+    """Regression (latentred-pdu): a mounting hole's 0.5 mm mask expansion reached past the
+    0.25 mm gap the 12V zone's fill keeps from it, exposing both (solder_mask_bridge)."""
+    from shapely.geometry import box as sbox
+    from kae.board.model import Zone
+    from kae.place.legalize import exact_check
+    b = load(FIXTURE)
+    u1 = next(f for f in b.footprints if f.ref == "U1")
+    for pd in u1.pads:
+        pd.layers = list(pd.layers) + ["F.Mask"] if "F.Mask" not in pd.layers else pd.layers
+    b.zones.append(Zone(uuid="z", name="", net="ZNET", layers=["F.Cu"], outline=sbox(0, 0, 30, 30), clearance=0.25))
+    P = Problem.build(b)
+    st = _state_at_input(P)
+    i = next(p.i for p in P.parts if p.ref == "U1")
+
+    def bridged():
+        return [v for v in exact_check(P, st, parts=[i], max_items=500)
+                if v["type"] == "solder_mask_bridge" and "zone" in v["detail"]]
+    for pd in u1.pads:
+        pd.mask_margin = 0.05
+    assert not bridged()
+    for pd in u1.pads:
+        pd.mask_margin = 0.5
+    assert bridged()

@@ -696,7 +696,8 @@ class Problem:
             lib_cut = None
         # every pad, bare NPTH holes included, keeps the copper-to-edge clearance (conservative:
         # whether KiCad exempts bare holes is unverified, and agreement with KiCad comes first)
-        cu_rects = list(pad_rects)
+        cu_rects = list(pad_rects) + [polys_lib_rect([q]) for ly in ("F.Cu", "B.Cu") for q in gr.get(ly, ())
+                                      if not q.is_empty]
         holes = []
         copper = rect_union(cu_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:

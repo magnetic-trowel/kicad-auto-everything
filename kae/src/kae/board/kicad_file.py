@@ -45,6 +45,16 @@ GR_SHAPES = ("gr_line", "gr_arc", "gr_circle", "gr_rect", "gr_poly", "gr_curve")
 _NUM = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
 
 
+def _shape_layers(g):
+    """Layers a graphic shape is on: (layer "X"), or (layers "X" "Y") (KiCad 9+ copper logos
+    with their mask opening)."""
+    ly = value(g, "layer")
+    if ly is not None:
+        return [ly]
+    ls = first(g, "layers")
+    return [x for x in (ls or [])[1:] if type(x) is str]
+
+
 def _f(v, default=0.0):
     try:
         return float(v)
@@ -288,12 +298,12 @@ class _Reader:
         for g in node:
             if type(g) is not list or not g or g[0] not in FP_SHAPES:
                 continue
-            ly = value(g, "layer")
-            if ly is None:
-                continue
-            if s < 0:
-                ly = flip_layer(ly, self.ncu)
-            by_layer.setdefault(ly, []).append(g)
+            # one layer, or several: KiCad 9+ writes a copper logo as (layers "F.Cu" "F.Mask")
+            lys = _shape_layers(g)
+            for ly in lys:
+                if s < 0:
+                    ly = flip_layer(ly, self.ncu)
+                by_layer.setdefault(ly, []).append(g)
         if s < 0:
             def lib(u, v):
                 return (u, -v)
@@ -762,20 +772,20 @@ def _board_graphics(tree, tol, warnings):
     for g in tree:
         if type(g) is not list or not g:
             continue
-        ly = value(g, "layer")
-        if ly is None or not (ly.endswith(".Cu") or ly.endswith(".Mask")):
-            continue
-        if g[0] in GR_SHAPES:
-            try:
-                o, r = shape_pieces(g, tol)
-            except (TypeError, ValueError, IndexError):
-                warnings.append(f"unreadable {ly} {g[0]}")
+        for ly in _shape_layers(g):
+            if not (ly.endswith(".Cu") or ly.endswith(".Mask")):
                 continue
-            by.setdefault(ly, []).extend(_stroked(g, o, r))
-        elif g[0] == "gr_text":
-            b = _text_box(g)
-            if b is not None:
-                by.setdefault(ly, []).append(b)
+            if g[0] in GR_SHAPES:
+                try:
+                    o, r = shape_pieces(g, tol)
+                except (TypeError, ValueError, IndexError):
+                    warnings.append(f"unreadable {ly} {g[0]}")
+                    continue
+                by.setdefault(ly, []).extend(_stroked(g, o, r))
+            elif g[0] == "gr_text":
+                b = _text_box(g)
+                if b is not None:
+                    by.setdefault(ly, []).append(b)
     return {ly: p for ly, p in ((ly, _polys(s)) for ly, s in by.items()) if p}
 
 

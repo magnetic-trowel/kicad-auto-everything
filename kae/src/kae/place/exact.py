@@ -107,6 +107,15 @@ class ExactModel:
         rules_ = getattr(P.board, "rules", None)
         self.mask_web = float(getattr(rules_, "mask_min_width", 0.0) or 0.0) if rules_ is not None else 0.0
         self.mask_on = P.is_error("solder_mask_bridge")
+        # zones (fills are not read): a pad's mask opening reaching past the gap a fill keeps
+        # from it exposes the zone's copper with the pad (another net: a bridge)
+        self.zones = []
+        for z in getattr(P.board, "zones", None) or []:
+            if getattr(z, "footprint", "") or not z.net:
+                continue
+            sides = {0 for ly in z.layers if ly == "F.Cu"} | {1 for ly in z.layers if ly == "B.Cu"}
+            if sides and z.outline is not None and not z.outline.is_empty:
+                self.zones.append((z.net, sides, z.outline, float(z.clearance or 0.0)))
         fb = getattr(P, "feedback", None) or {}
         self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
         self.avoid = fb.get("avoid", {})      # i -> [(geometry, why)], from KiCad
@@ -195,6 +204,12 @@ class ExactModel:
                 add("copper_edge_clearance", [i], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
             elif not outline.contains(geom):
                 add("copper_edge_clearance", [i], f"{pd.number} crosses the edge")
+        for side in (0, 1):
+            for g in A["gfx"]["cu"][side]:
+                if not outline.contains(g):
+                    add("copper_edge_clearance", [i], "copper graphic crosses the edge")
+                elif e > 0 and g.distance(boundary) < e - 1e-4:
+                    add("copper_edge_clearance", [i], f"copper graphic {g.distance(boundary):.3f}<{e}")
         for side, gm, net in getattr(P, "fixed_copper", []):
             for geom, k, pd in A["pads"]:
                 if side not in self.cs[i][k] or (net and pd.net == net):
@@ -202,6 +217,17 @@ class ExactModel:
                 need = max(self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
                 if geom.distance(gm) < need - 1e-4:
                     add("clearance", [i], f"pad {pd.number} vs fixed copper {net}")
+        if self.mask_on and self.zones:
+            web = max(self.mask_web, 1e-4)
+            for geom, k, pd in A["pads"]:
+                m = self.mm[i][k]
+                for net, sides, outline_z, zc in self.zones:
+                    if net == pd.net or not (sides & self.ms[i][k] & set(self.cs[i][k])):
+                        continue
+                    gap = max(zc, self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
+                    if m + web > gap + 1e-6 and outline_z.distance(geom) < m + 1e-6:
+                        add("solder_mask_bridge", [i], f"mask opening of pad {pd.number} over zone {net}")
+                        break
         for side, gm in getattr(P, "fixed_mask", []):
             for geom, k, pd in A["pads"]:
                 if side in self.ms[i][k] and gm.distance(geom) - self.mm[i][k] < max(self.mask_web, 1e-4) - 1e-6:
@@ -690,8 +716,26 @@ def kicad_feedback(P, st, report, step=0.3):
         fb = P.feedback = {"sep": {}, "avoid": {}}
     E = ExactModel(P, st)
     out = dict(errors=len(viols), by_type={}, constraints=0, fixed_only=0)
+    import re
+    zre = re.compile(r"^Zone \[([^\]]*)\] on (\S+?),?(\s|$)")
     for v in viols:
         out["by_type"][v["type"]] = out["by_type"].get(v["type"], 0) + 1
+        # a zone item: the culprit keeps off that zone's whole outline (KiCad reports a zone at
+        # one point; a disc there let the part slide to another spot of the same zone)
+        zones = []
+        for it in v.get("items", []):
+            m = zre.match(it.get("description", ""))
+            if m:
+                zones += [z for z in getattr(P.board, "zones", None) or []
+                          if z.net == m.group(1) and m.group(2) in z.layers and z.outline is not None]
+        if zones:
+            v = dict(v, items=[it for it in v.get("items", []) if not zre.match(it.get("description", ""))])
+            g = shapely.union_all([z.outline for z in zones]).buffer(step)
+            for i in sorted(violation_parts(P, st, v)):
+                if P.parts[i].movable:
+                    fb["avoid"].setdefault(i, []).append((g, f"{v['type']} with zone {zones[0].net} (KiCad DRC)"))
+                    out["constraints"] += 1
+            continue
         ps = sorted(violation_parts(P, st, v))
         mv = [i for i in ps if P.parts[i].movable]
         if not mv:
