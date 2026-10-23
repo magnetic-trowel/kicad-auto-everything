@@ -231,7 +231,7 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     return out
 
 
-def work_list(recs, arms, kinds, k):
+def work_list(recs, arms, kinds, k, min_movable=0):
     """Attempts in execution order: board by board, and within a board every arm back to back
     in an order shuffled per board (seeded), so all arms see the same host conditions and none
     systematically runs first. Largest boards (by pads) start first, so the run does not end
@@ -244,14 +244,16 @@ def work_list(recs, arms, kinds, k):
             random.Random(f"{rec['id']}:{a}").shuffle(order)
             for adapter, probe in order:
                 for kind in kinds:
-                    if kind in adapter.kinds and INPUT_KIND[kind] in rec["tasks"]:
+                    if kind in adapter.kinds and INPUT_KIND[kind] in rec["tasks"] and (
+                            INPUT_KIND[kind] != "place"
+                            or rec["tasks"]["place"].get("movable", min_movable) >= min_movable):
                         work.append((rec, kind, a, adapter, probe))
     return work
 
 
 def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600, jobs=1, probe=None,
         only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print,
-        arms=None):
+        arms=None, min_movable=0):
     """Run one adapter (with an optional placement probe), or several interleaved arms
     [(adapter, probe)] in one run; results go to <run>/<adapter name>/<kind>/<id>/attempt-N."""
     arms = list(arms) if arms else [(adapter, probe)]
@@ -281,7 +283,7 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
                            reference_adapter=ad.needs_reference) for ad, pr in arms],
                 interleaved=len(arms) > 1, kinds=list(kinds), k=k, timeout=timeout,
                 tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only,
-                score_version=SCORE_VERSION, task_spec=TASK_SPEC,
+                score_version=SCORE_VERSION, task_spec=TASK_SPEC, min_movable=min_movable,
                 reference_adapter=first_ad.needs_reference,
                 reference_adapters={ad.name: ad.needs_reference for ad, _ in arms})
     meta_path = run_dir / "run.json"
@@ -290,7 +292,7 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
         meta["started"] = prev.get("started", meta["started"])
         meta["resumed"] = datetime.now(timezone.utc).isoformat()
     meta_path.write_text(json.dumps(meta, indent=1))
-    work = work_list(recs, arms, kinds, k)
+    work = work_list(recs, arms, kinds, k, min_movable)
     lock = threading.Lock()
     rows = []
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:

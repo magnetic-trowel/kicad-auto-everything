@@ -104,11 +104,13 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
             tools.run_ops("strip-routing", board_path(ref), board_path(kdir),
                           *(["--keep-locked"] if keep_locked else []))
         else:
-            tools.run_ops("strip-placement", board_path(ref), board_path(kdir))
+            moved = tools.run_ops("strip-placement", board_path(ref), board_path(kdir)).get("moved")
         st = tools.run_ops("stats", board_path(kdir))
         drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
                                      keep_locked=keep_locked if kind == "route" else "footprints")
+        if kind == "place":  # footprints a placer may move (all others are anchored)
+            record["tasks"][kind]["movable"] = moved
     if human_clean:
         record["roundtrip"] = _roundtrip(tdir, record)
         record["qualified"] = all(v["ok"] for v in record["roundtrip"].values())
