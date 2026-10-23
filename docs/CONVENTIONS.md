@@ -73,7 +73,8 @@ See also: related topic docs (relative links)
 
 - Corrections from `verification_*.md` notes override the original notes.
 - Keep evidence tags: `[P]` read in primary source, `[S]` snippet/secondary,
-  `[V]` vendor claim, `[I]` our inference.
+  `[V]` vendor claim, `[I]` our inference, `[M]` measured in this repo (harness or
+  `tools/research/` runs).
 - Use relative links. Encode spaces in paths as `%20`.
 - Licensing: code is GPL-3.0-or-later; GPL engines can be integrated in-process.
   Avoid GPL-2.0-only, AGPL (reference only), non-commercial, and
