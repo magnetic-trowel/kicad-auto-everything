@@ -261,6 +261,9 @@ def struct_cost(rec, v):
 def corrected(rec, anchor, cand, how):
     """Fast value of one structure at a candidate, corrected with anchor data."""
     f = cand['fast']
+    exact_kind = rec['kind'] in ('commutation', 'decap', 'esd', 'crystal', 'coupling')
+    if how in ('ratio', 'offset') and not exact_kind:
+        return f                  # no exact model for this kind: nothing to correct
     if how == 'ratio':
         if anchor.get('peec') is None or anchor['fast'] <= 0:
             return None
@@ -392,6 +395,8 @@ def aggregate(out_dir):
                 costs['fast+' + how] = [kind_cost(row, kind, None, rows[0], how) for row in rows]
             costs['total_fast'] = [kind_cost(row, kind, 'fast', only_kind=False) for row in rows]
             costs['total_peec'] = [kind_cost(row, kind, 'peec', only_kind=False) for row in rows]
+            costs['total_fast+ratio'] = [kind_cost(row, kind, None, rows[0], 'ratio', only_kind=False) for row in rows]
+            costs['total_fast+offset'] = [kind_cost(row, kind, None, rows[0], 'offset', only_kind=False) for row in rows]
             for a in range(len(rows)):
                 for b in range(a + 1, len(rows)):
                     if costs[REF][a] is None or costs[REF][b] is None:
@@ -399,7 +404,8 @@ def aggregate(out_dir):
                     mat = material(rows[a], rows[b], kind, REF)
                     grp = 'human' if a == 0 else 'other'
                     for A, B in comps_pairs + [('fast+ratio', 'peec'), ('fast+offset', 'peec'), ('fast+hops', 'peec'),
-                                               ('total_fast', 'total_peec')]:
+                                               ('total_fast', 'total_peec'), ('total_fast+ratio', 'total_peec'),
+                                               ('total_fast+offset', 'total_peec')]:
                         ca, cb = costs[A], costs[B]
                         if None in (ca[a], ca[b], cb[a], cb[b]):
                             continue
@@ -438,7 +444,9 @@ def aggregate(out_dir):
     lines.append('|---|---|---|---|---|---|')
     for kind in KINDS:
         prs = th_pairs if kind == 'thermal' else comps_pairs + [('fast+ratio', 'peec'), ('fast+offset', 'peec'),
-                                                               ('fast+hops', 'peec'), ('total_fast', 'total_peec')]
+                                                               ('fast+hops', 'peec'), ('total_fast', 'total_peec'),
+                                                               ('total_fast+ratio', 'total_peec'),
+                                                               ('total_fast+offset', 'total_peec')]
         for A, B in prs:
             h = pairs.get((kind, A, B, 'human'), Counter())
             o = pairs.get((kind, A, B, 'other'), Counter())

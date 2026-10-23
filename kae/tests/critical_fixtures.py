@@ -10,7 +10,8 @@
 - U2 (ATtiny85, SOIC-8) runs from +3V3 with decap C3; crystal Y1 on XTAL1/XTAL2 with load
   caps C4, C5.
 
-`write_board(dir)` writes board.kicad_pcb and board.kicad_pro (KiCad 10 syntax);
+`write_board(dir, back=())` writes board.kicad_pcb and board.kicad_pro (KiCad 10 syntax),
+with the parts named in `back` on the bottom side;
 `synth_info(board)` builds, without KiCad, the dict pcbnew_io.export_dsn returns, enough
 for kae.route.constraints.plan and the critical router's Space.
 """
@@ -89,7 +90,7 @@ def _f(v):
     return "0" if s in ("-0", "") else s
 
 
-def board_text():
+def board_text(back=()):
     k = [0]
 
     def u():
@@ -101,7 +102,8 @@ def board_text():
     out = [head, "\t(setup\n\t\t(pad_to_mask_clearance 0)\n\t\t(allow_soldermask_bridges_in_footprints no)\n\t)\n"]
     for ref, val, lib, x, y, rot, pads, (cw, ch) in PARTS:
         at = f"(at {_f(x)} {_f(y)}{(' ' + _f(rot)) if rot else ''})"
-        s = [f'\t(footprint "{lib}"\n\t\t(layer "F.Cu")\n\t\t(uuid "{u()}")\n\t\t{at}\n'
+        sd = "B" if ref in back else "F"
+        s = [f'\t(footprint "{lib}"\n\t\t(layer "{sd}.Cu")\n\t\t(uuid "{u()}")\n\t\t{at}\n'
              f'\t\t(property "Reference" "{ref}"\n\t\t\t(at 0 -3 0)\n\t\t\t(layer "F.Fab")\n\t\t\t(hide yes)\n'
              f'\t\t\t(uuid "{u()}")\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size 1 1)\n\t\t\t\t\t(thickness 0.15)\n'
              f'\t\t\t\t)\n\t\t\t)\n\t\t)\n'
@@ -111,7 +113,7 @@ def board_text():
              f'\t\t(attr {"through_hole" if any(p[6] == "thru_hole" for p in pads) else "smd"})\n'
              f'\t\t(fp_rect\n\t\t\t(start {_f(-cw)} {_f(-ch)})\n\t\t\t(end {_f(cw)} {_f(ch)})\n'
              f'\t\t\t(stroke\n\t\t\t\t(width 0.05)\n\t\t\t\t(type solid)\n\t\t\t)\n\t\t\t(fill no)\n'
-             f'\t\t\t(layer "F.CrtYd")\n\t\t\t(uuid "{u()}")\n\t\t)\n']
+             f'\t\t\t(layer "{sd}.CrtYd")\n\t\t\t(uuid "{u()}")\n\t\t)\n']
         for num, net, lx, ly, w, h, kind, drill, fn, pt in pads:
             pat = f"(at {_f(lx)} {_f(ly)}{(' ' + _f(rot)) if rot else ''})"
             if kind == "thru_hole":
@@ -120,7 +122,7 @@ def board_text():
                         f'\t\t\t(remove_unused_layers no)\n')
             else:
                 body = (f'\t\t(pad "{num}" smd rect\n\t\t\t{pat}\n\t\t\t(size {_f(w)} {_f(h)})\n'
-                        f'\t\t\t(layers "F.Cu" "F.Mask" "F.Paste")\n')
+                        f'\t\t\t(layers "{sd}.Cu" "{sd}.Mask" "{sd}.Paste")\n')
             if net:
                 body += f'\t\t\t(net "{net}")\n'
             if fn:
@@ -144,11 +146,11 @@ def board_text():
     return "".join(out)
 
 
-def write_board(d):
+def write_board(d, back=()):
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
     p = d / "board.kicad_pcb"
-    p.write_text(board_text())
+    p.write_text(board_text(back))
     pro = json.loads((DATA / "fixture.kicad_pro").read_text())
     pro["meta"]["filename"] = "board.kicad_pro"
     (d / "board.kicad_pro").write_text(json.dumps(pro, indent=2))
@@ -197,10 +199,10 @@ def synth_info(board):
                 tracks=0, probes={})
 
 
-def session(tmp_path, **opts):
+def session(tmp_path, back=(), **opts):
     """A critical-router Session on the synthetic board, without KiCad."""
     from kae.board.kicad_file import load
     from kae.route.critical import Session
-    p = write_board(tmp_path)
+    p = write_board(tmp_path, back)
     b = load(p)
     return Session(p, info=synth_info(b), board=b, opts=opts, log=lambda *a: None)
