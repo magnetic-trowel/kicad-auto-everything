@@ -596,13 +596,15 @@ def _hop_into(lp, ctx, rt, a, b, w_default, h, el="A"):
     lp.strip((a.x, a.y), (b.x, b.y), w_default, h, el)
 
 
-def loop_model(ctx, m, T, h, gnd_k=None, vias_by_key=None):
+def loop_model(ctx, m, T, h, gnd_k=None, vias_by_key=None, hops=None):
     """The routed loop of a chain of terminals (cells, decaps): bodies inside parts, routed
-    hops between them, and for the ground hop the surface track and the vias at its two ends
-    as parallel paths through the plane."""
+    hops between them (`hops`, default m.hops; a missing hop is straight), and for the
+    ground hop the surface track and the vias at its two ends as parallel paths through the
+    plane."""
     lp = Loop()
     n = len(T)
     vias_by_key = vias_by_key if vias_by_key is not None else m.vias
+    hops = m.hops if hops is None else hops
     for k in range(n):
         ta, tb = T[k], T[(k + 1) % n]
         if ta.fp == tb.fp:
@@ -610,7 +612,7 @@ def loop_model(ctx, m, T, h, gnd_k=None, vias_by_key=None):
             wb = 0.3 if npins > 4 else max(min(ta.width, tb.width), 0.2)
             lp.body((ta.x, ta.y), (tb.x, tb.y), h, ctx.zb(ta.fp), wb)
             continue
-        rt = m.hops.get(f"hop{k}")
+        rt = hops.get(f"hop{k}")
         wdef = max(min(ta.width, tb.width), 0.25)
         if k == gnd_k and h != INF:
             va = vias_by_key.get(f"via:{ta.fp}:{ta.pad}") or []
@@ -661,13 +663,16 @@ def quote(ctx, m, store=True):
         m.notes.append(f"quote rejected: {val}")
         return None
     if store and val is not None:
-        alloc = allocation(ctx, m)
+        alloc = m.spec.pop("_alloc", None) if m.kind == "decap" else None
+        alloc = alloc or allocation(ctx, m)
         m.physics = dict(value=round(val, 4), unit=alloc.unit, alloc=round(alloc.value, 4),
                          u=round(val / alloc.value, 4) if alloc.value > 0 else None, basis=alloc.basis, **extra)
     return val
 
 
 def _cell_value(ctx, m):
+    """The hot loop on the routed copper, in parallel with the loops through the cell's
+    other owned input capacitors (cell_variants; their hops not routed here are straight)."""
     T = m.spec.get("_T")
     if not T:
         return None, {}
@@ -675,19 +680,53 @@ def _cell_value(ctx, m):
     cy = sum(t.y for t in T) / len(T)
     side = ctx.side_layer(T[0].fp)
     h, pl, pn = ctx.plane(side, cx, cy, gnd=True)
-    lp = loop_model(ctx, m, T, h, gnd_k=_ground_hop(ctx, T))
-    return lp.value(), dict(h_mm=round(h, 3) if h != INF else None, plane=pl, plane_net=pn)
+    gk = _ground_hop(ctx, T)
+    n = len(T)
+    vals = []
+    for Tv, cap in cell_variants(m.spec, T, lambda c, net: ctx.pad_term(c, net=net)):
+        if Tv is T:
+            vals.append(loop_model(ctx, m, T, h, gnd_k=gk).value())
+            continue
+        hops = {k: v for k, v in m.hops.items() if k not in ("hop0", f"hop{n - 1}")}
+        vals.append(loop_model(ctx, m, Tv, h, gnd_k=gk, hops=hops).value())
+    vals = [v for v in vals if v is not None and math.isfinite(v) and v > 1e-9]
+    if not vals:
+        return None, {}
+    val = 1.0 / sum(1.0 / v for v in vals)
+    return val, dict(h_mm=round(h, 3) if h != INF else None, plane=pl, plane_net=pn, variants=len(vals))
 
 
 # ----------------------------------------------------------------------------- allocations
+def place_terms(board, brief, log=None):
+    """The placer's terms (kae.physics.place_terms.Terms) of a board: the module stage, the
+    recheck and the placer price every structure against these allocations (calibrated
+    decap budgets per pin cluster, careful-layout clamps, VCAP priors), so they optimize
+    one objective. None when they cannot be built."""
+    try:
+        from kae.physics.place_terms import Terms
+        return Terms(board, brief)
+    except Exception as e:  # noqa: BLE001 - priors are the fallback
+        if log:
+            log(f"place terms: {type(e).__name__}: {e}")
+        return None
+
+
+def place_structs(terms, mid):
+    """The place terms' structures of module `mid`: the structure of that id, and for a
+    decap spec its pin clusters (`mid#k`) or, with pairing nearest_pin, its capacitors
+    (`mid#<ref>`)."""
+    if terms is None:
+        return []
+    return [st for st in terms.structs if st.id == mid or st.id.startswith(mid + "#")]
+
+
 def allocation(ctx, m):
-    """The place terms' allocation for this module (Terms structure of the same id when
-    available, else the E5 prior of kae.physics.priors)."""
-    t = ctx.terms
-    if t is not None:
-        for st in t.structs:
-            if st.id == m.id or st.id.split("#")[0] == m.id:
-                return st.alloc
+    """The place terms' allocation for this module (its Terms structure; a decap's worst
+    cluster is chosen by decap_spend), else the E5 prior of kae.physics.priors as Terms
+    would compute it (per pin, never divided again)."""
+    sts = place_structs(getattr(ctx, "terms", None), m.id)
+    if sts:
+        return sts[0].alloc
     s = m.spec
     if m.kind == "cell":
         ex = s.get("excite") or {}
@@ -700,13 +739,79 @@ def allocation(ctx, m):
     if m.kind == "decap":
         v = ctx.volts(s.get("rail")) or 3.3
         pins = s.get("power_pins") or []
-        b = PR.decap_budget(v, ctx.npins(s.get("ic")), max(1, len(pins)))
-        return PR.Belief(b.value / max(1, len(pins)), "nH", b.basis + " per pin")
+        return PR.decap_budget(v, ctx.npins(s.get("ic")), max(1, len(pins)), function=s.get("function"))
     if m.kind == "crystal":
         return PR.crystal_budget(s.get("f_Hz"))[0]
     if m.kind == "chain":
         return PR.esd_budget()
     return PR.Belief(1.0, "", "none")
+
+
+def decap_spend(pairs, structs, ref_of, fallback):
+    """A decap module's spend against the place terms' structures. pairs: [(pin, cap uuid,
+    loop nH)] on routed copper. Per structure as kae.physics.build prices it: a pin cluster
+    (info pins) has its capacitors in parallel, each at its mean loop to the cluster's pins;
+    a nearest_pin structure (one capacitor) its loop to the nearest pin. Returns (value,
+    alloc, extra) of the worst-utilised structure; without structures, the worst pin
+    (paired capacitors in parallel) against `fallback` (a per-pin Belief)."""
+    pairs = [(str(p), c, v) for p, c, v in pairs if v is not None and v > 1e-9 and math.isfinite(v)]
+    if not pairs:
+        return None, fallback, {}
+    by_pin = {}
+    for p, c, v in pairs:
+        by_pin.setdefault(p, []).append(v)
+    per_pin = {p: 1.0 / sum(1.0 / x for x in vs) for p, vs in by_pin.items()}
+    rows = []
+    for st in structs:
+        info = st.info or {}
+        if info.get("pairing") == "nearest_pin":
+            ref = (st.labels or [None])[0]
+            vs = [v for p, c, v in pairs if ref_of(c) == ref]
+            val = min(vs) if vs else None
+        else:
+            pins = {str(x) for x in info.get("pins") or []}
+            caps = {}
+            for p, c, v in pairs:
+                if p in pins:
+                    caps.setdefault(c, []).append(v)
+            inv = sum(1.0 / (sum(vs) / len(vs)) for vs in caps.values())
+            val = 1.0 / inv if inv > 0 else None
+        if val is None or st.alloc.value <= 0:
+            continue
+        rows.append(dict(id=st.id, pins=sorted(info.get("pins") or [], key=str), value=round(val, 4),
+                         alloc=round(st.alloc.value, 4), u=round(val / st.alloc.value, 4), _a=st.alloc))
+    extra = dict(per_pin={p: round(v, 3) for p, v in per_pin.items()})
+    if rows:
+        worst = max(rows, key=lambda r: r["u"])
+        extra["clusters"] = [{k: v for k, v in r.items() if k != "_a"} for r in rows]
+        return worst["value"], worst["_a"], extra
+    return max(per_pin.values()), fallback, extra
+
+
+def cell_variants(spec, T0, term_of):
+    """The hot loops of a cell as the place terms price them (kae.physics.build._commutation):
+    the brief loop, and the same loop through each other input capacitor whose calibrated
+    ownership is at least half the best one's; they carry the current in parallel.
+    term_of(cap uuid, net) -> terminal of the cap's pad on net, or None. Returns
+    [(T, cap uuid or None)] with the brief loop first."""
+    if len(T0) < 3:
+        return [(T0, None)]
+    cap0 = T0[0].fp if getattr(T0[0], "fp", None) == getattr(T0[-1], "fp", None) else None
+    caps = [c for c in (spec.get("caps") or spec.get("input_caps") or []) if c != cap0]
+    if cap0 is None or not caps:
+        return [(T0, cap0)]
+    cp = spec.get("caps_p") or {}
+    w = {c: PR.ownership_calibrated(cp[c]) if cp.get(c) is not None else PR.ownership_calibrated(0.5) for c in caps}
+    w[cap0] = PR.ownership_calibrated(cp[cap0]) if cp.get(cap0) is not None else 1.0
+    pmax = max(w.values())
+    out = [(T0, cap0)] if w[cap0] >= 0.5 * pmax else []
+    for c in caps:
+        if w[c] < 0.5 * pmax:
+            continue
+        tr, tg = term_of(c, T0[0].net), term_of(c, T0[-1].net)
+        if tr is not None and tg is not None:
+            out.append(([tr] + list(T0[1:-1]) + [tg], c))
+    return out or [(T0, cap0)]
 
 
 # ----------------------------------------------------------------------------- decaps
@@ -983,19 +1088,17 @@ def _decap_loop_value(ctx, m, lpd):
 
 
 def _decap_value(ctx, m):
+    """The routed loops of the module's capacitor-pin pairs, priced per place-terms
+    structure (decap_spend); m.spec['_alloc'] is the allocation they were priced against."""
     loops = m.spec.get("_loops") or []
     if not loops:
         return None, {}
-    vals = [v for v in (_decap_loop_value(ctx, m, lpd) for lpd in loops) if v is not None]
-    if not vals:
-        return None, {}
-    # caps on one pin act in parallel; the structure's spend is the worst pin
-    by_pin = {}
-    for lpd, v in zip(loops, vals):
-        by_pin.setdefault(lpd["pin"], []).append(v)
-    per_pin = {p: 1.0 / sum(1.0 / x for x in vs if x > 1e-9) for p, vs in by_pin.items()}
-    worst = max(per_pin.values())
-    return worst, dict(per_pin={p: round(v, 3) for p, v in per_pin.items()})
+    pairs = [(lpd["pin"], lpd["cap"], _decap_loop_value(ctx, m, lpd)) for lpd in loops]
+    fp = ctx.fp
+    val, alloc, extra = decap_spend(pairs, place_structs(getattr(ctx, "terms", None), m.id),
+                                    lambda u: fp[u].ref if u in fp else None, allocation(ctx, m))
+    m.spec["_alloc"] = alloc
+    return val, extra
 
 
 # ----------------------------------------------------------------------------- crystals
@@ -1132,7 +1235,9 @@ def _crystal_value(ctx, m):
                 h, pl, _ = ctx.plane(l, it.geom.centroid.x, it.geom.centroid.y, gnd=False)
                 er = ctx.sp.er[0] if ctx.sp.er else 4.3
                 C += trace_capacitance_pf(it.geom.length, 2 * it.r, h if h != INF else ctx.sp.thickness, er)
-    return S * C, dict(c_trace_pf=round(C, 4))
+    # each net's trace C adds to one load capacitor; C_L = C1 C2 / (C1 + C2) moves by a
+    # quarter of it at C1 = C2 (place terms' CrystalComp)
+    return S * C / 4.0, dict(c_trace_pf=round(C, 4))
 
 
 # ----------------------------------------------------------------------------- protection chains

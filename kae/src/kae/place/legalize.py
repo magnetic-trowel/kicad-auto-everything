@@ -17,7 +17,6 @@ board stays the judge.
 """
 from __future__ import annotations
 
-import copy
 import math
 import os
 import re
@@ -26,12 +25,11 @@ import time
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
-from shapely.strtree import STRtree
 
 from kae.board import transform
 
 from . import cpsat
-from .problem import edge_cut_polys, geom_to_lib, is_drilled, keepout_sides
+from .problem import is_drilled
 from .state import grid_violations
 
 
@@ -704,160 +702,9 @@ def _copper_sides(p, part_side):
 
 def exact_check(P, st, parts=None, max_items=60):
     """Exact legality of the placement (movable parts against everything). Returns a list of
-    violations {type, refs, detail}."""
-    board = P.board
-    deflate = P.max_error
-    shapes = {}
-    for p in P.parts:
-        x, y, rot, side = st.pose(p.i)
-        fp = p.fp
-        own = transform.courtyard(fp, x, y, rot, side, which="own", deflate=deflate)
-        back = transform.courtyard(fp, x, y, rot, side, which="opposite", deflate=deflate)
-        pads = []
-        holes = []
-        for k, pd in enumerate(fp.pads):
-            geom = transform.place_geom(pad_shape(pd), x, y, rot, side)
-            pads.append((geom, k, pd))
-            if pd.drill:
-                holes.append((transform.place_geom(hole_shape(pd), x, y, rot, side), k))
-        si = 0 if p.s > 0 else 1
-        cy_side = {si: shapely.union_all(own) if own else None,
-                   1 - si: shapely.union_all(back) if back else None}
-        shapes[p.i] = dict(cy=cy_side, pads=pads, holes=holes, side=si, body=None)
-    check = set(parts if parts is not None else P.mov)
-    out = []
-
-    def add(kind, refs, detail=""):
-        if len(out) < max_items:
-            out.append(dict(type=kind, refs=refs, detail=detail))
-
-    # courtyards per side
-    for side in (0, 1):
-        geoms, owners = [], []
-        for i, sh in shapes.items():
-            c = sh["cy"].get(side)
-            if c is not None and not c.is_empty:
-                geoms.append(c)
-                owners.append(i)
-        if len(geoms) > 1:
-            tree = STRtree(geoms)
-            a, b = tree.query(geoms, predicate="intersects")
-            for ia, ib in zip(a.tolist(), b.tolist()):
-                if ia >= ib:
-                    continue
-                pa, pb = owners[ia], owners[ib]
-                if pa not in check and pb not in check:
-                    continue
-                if P.is_error("courtyards_overlap") and geoms[ia].intersection(geoms[ib]).area > 1e-6:
-                    add("courtyards_overlap", [P.parts[pa].ref, P.parts[pb].ref], "FB"[side])
-        # holes inside courtyards of other parts (plated or not, as the project rates them)
-        if geoms:
-            tree = STRtree(geoms)
-            for i, sh in shapes.items():
-                for hgeom, k in sh["holes"]:
-                    kind = "npth_inside_courtyard" if shapes[i]["pads"][k][2].kind == "np_thru_hole" \
-                        else "pth_inside_courtyard"
-                    if not P.is_error(kind):
-                        continue
-                    for j in tree.query(hgeom, predicate="intersects").tolist():
-                        o = owners[j]
-                        if o == i or (i not in check and o not in check):
-                            continue
-                        add(kind, [P.parts[i].ref, P.parts[o].ref], "FB"[side])
-    # pad clearance between parts, per copper side
-    clr_of = {}
-    for side in (0, 1):
-        geoms, meta = [], []
-        for i, sh in shapes.items():
-            for geom, k, pd in sh["pads"]:
-                if side in _copper_sides(pd, P.parts[i].side):
-                    geoms.append(geom)
-                    meta.append((i, k, pd))
-        if len(geoms) < 2:
-            continue
-        tree = STRtree(geoms)
-        qa, qb = tree.query(geoms, predicate="dwithin", distance=P.clr_max)
-        for ia, ib in zip(qa.tolist(), qb.tolist()):
-            if ia >= ib:
-                continue
-            (i, _k, pa), (j, _l, pb) = meta[ia], meta[ib]
-            if i == j or (i not in check and j not in check):
-                continue
-            if pa.net and pa.net == pb.net:
-                continue
-            need = max(_net_clr(P, pa.net, clr_of), _net_clr(P, pb.net, clr_of))
-            d = geoms[ia].distance(geoms[ib])
-            if d < need - 1e-4:
-                add("clearance", [P.parts[i].ref, P.parts[j].ref], f"{pa.number}-{pb.number} {d:.3f}<{need:.3f}")
-    # pads vs outline
-    outline = P.outline
-    boundary = outline.boundary
-    e = P.edge_clearance
-    for i in check:
-        for geom, k, pd in shapes[i]["pads"]:
-            c = geom.centroid
-            if not outline.contains(c):
-                add("pad_outside", [P.parts[i].ref], pd.number)
-            elif e > 0 and geom.distance(boundary) < e - 1e-4:
-                add("copper_edge_clearance", [P.parts[i].ref], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
-            elif not outline.contains(geom):
-                add("copper_edge_clearance", [P.parts[i].ref], f"{pd.number} crosses the edge")
-    # cut-outs that placed footprints carry (Edge.Cuts in the footprint)
-    for p in P.parts:
-        cuts = edge_cut_polys(p.fp)
-        if not cuts:
-            continue
-        x, y, rot, side = st.pose(p.i)
-        for c in cuts:
-            cg = transform.place_geom(c, x, y, rot, side)
-            cb = cg.boundary
-            for i in check:
-                if i == p.i:
-                    continue
-                for geom, k, pd in shapes[i]["pads"]:
-                    if geom.distance(cb) < e - 1e-4 or cg.contains(geom.centroid):
-                        add("copper_edge_clearance", [P.parts[i].ref, p.ref], f"{pd.number} near the cut-out of {p.ref}")
-                cyo = shapes[i]["cy"].get(shapes[i]["side"])
-                if cyo is not None and cyo.intersection(cg).area > 1e-6:
-                    add("over_cutout", [P.parts[i].ref, p.ref], "courtyard over a cut-out")
-    # fixed copper graphics (kept by place tasks) against pads of other nets
-    for side, gm, net in getattr(P, "fixed_copper", []):
-        for i in check:
-            for geom, k, pd in shapes[i]["pads"]:
-                if side not in _copper_sides(pd, P.parts[i].side) or (net and pd.net == net):
-                    continue
-                need = max(_net_clr(P, pd.net, clr_of), _net_clr(P, net, clr_of))
-                if geom.distance(gm) < need - 1e-4:
-                    add("clearance", [P.parts[i].ref], f"pad {pd.number} vs fixed copper {net}")
-    # rule areas (KiCad's items_not_allowed, when the project makes it an error): one owned
-    # by a footprint moves with it and does not apply to that footprint's own items
-    owner_of = {p.uuid: p.i for p in P.parts}
-    for ko in board.keepouts if P.is_error("items_not_allowed") else ():
-        if not (ko.footprints or ko.pads):
-            continue
-        sides = keepout_sides(ko)
-        oi = owner_of.get(ko.footprint) if ko.footprint else None
-        if oi is not None:
-            q = P.parts[oi]
-            x, y, rot, side = st.pose(oi)
-            if (abs(x - q.x0) > 1e-9 or abs(y - q.y0) > 1e-9 or transform.norm_deg(rot) != transform.norm_deg(q.rot0)
-                    or side != q.fp.side):
-                ko = copy.copy(ko)
-                ko.outline = transform.place_geom(geom_to_lib(ko.outline, q.x0, q.y0, q.rot0, q.fp.side),
-                                                  x, y, rot, side)
-        for i in check:
-            p = P.parts[i]
-            if i == oi or (0 if p.s > 0 else 1) not in sides:
-                continue
-            sh = shapes[i]
-            if ko.footprints:
-                c = sh["cy"].get(sh["side"])
-                if c is not None and c.intersects(ko.outline) and c.intersection(ko.outline).area > 1e-6:
-                    add("items_not_allowed", [p.ref], f"keepout {ko.name}")
-                    continue
-            if any(g.intersects(ko.outline) for g, _, _ in sh["pads"]):
-                add("items_not_allowed", [p.ref], f"keepout {ko.name} (pads)")
-    return out
+    violations {type, refs, detail} (kae.place.exact.ExactModel holds the rules)."""
+    from .exact import ExactModel
+    return ExactModel(P, st).check(parts=parts, max_items=max_items)
 
 
 def _net_clr(P, net, cache):

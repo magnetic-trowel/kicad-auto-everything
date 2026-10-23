@@ -262,16 +262,33 @@ def _rip(sess, m):
         m.spec.pop(k, None)
 
 
+def _window(window):
+    if window is None or hasattr(window, "intersects"):
+        return window
+    from shapely.geometry import box
+    return box(*window)
+
+
 def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None, opts=None, log=None,
-                     time_s=120.0, top_k=6, passes=2, rails=True, session=None):
+                     time_s=120.0, top_k=6, passes=2, rails=True, session=None, window=None, modules=None):
     """Co-optimize each module's movable parts and its critical copper (see the module
     docstring). Returns (poses, copper, report): poses {uuid: (x, y, rot, side)} of the parts
-    that moved, copper (tracks, vias) as kae.board.model objects (locked), and a report."""
+    that moved, copper (tracks, vias) as kae.board.model objects (locked but for soft
+    joins), and a report.
+
+    Scope: `modules` (module ids) and/or `window` (a shapely geometry or (x0, y0, x1, y1),
+    mm) restrict the work to the modules with a member part in the window, and the moves to
+    parts whose origin lies in it; the rails are routed only for the whole board (window
+    and modules None). terms: kae.physics.place_terms.Terms of the board (built when None)
+    screens candidates and prices every module; a move is kept when the module's
+    utilization u (value / place-terms allocation) falls by more than 1 %."""
     from .critical import Session
     t0 = time.monotonic()
     log = log or (lambda *a: None)
+    window = _window(window)
     sess = session or Session(board.path, brief=brief, info=info, opts=dict(opts or {}, rails="none"), log=log,
                               board=board, terms=terms)
+    terms = terms if terms is not None else getattr(sess, "terms", None)
     leg = Legality(sess)
     if poses:
         for u, p in poses.items():
@@ -284,17 +301,31 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
     for m in mods:
         for u in m.parts:
             owner.setdefault(u, set()).add(m.id)
+
+    def inside(u):
+        f = ctx.fp.get(u)
+        return window is None or (f is not None and window.intersects(shapely.Point(cur_poses.get(u, (f.x, f.y))[:2])))
     cur_poses = dict(leg.poses)
+    if modules is not None:
+        mods = [m for m in mods if m.id in set(modules)]
+    if window is not None:
+        mods = [m for m in mods if any(inside(u) for u in m.parts)]
     moved = {}
-    rep = dict(modules=[])
+    rep = dict(modules=[], window=list(window.bounds) if window is not None else None)
+
+    def score(mm):
+        # the shared currency: utilization against the place terms' allocation (a decap's
+        # worst cluster can change with a move); the value when no allocation is known
+        u_ = mm.physics.get("u")
+        return u_ if u_ is not None else mm.physics.get("value")
     for m in mods:
         route_module(ctx, m)
-        v0 = m.physics.get("value")
-        mrep = dict(id=m.id, kind=m.kind, value0=v0, u0=m.physics.get("u"), moves=[])
+        v0 = score(m)
+        mrep = dict(id=m.id, kind=m.kind, value0=m.physics.get("value"), u0=m.physics.get("u"), moves=[])
         movable = []
         for u in _active_parts(m):
             f = ctx.fp.get(u)
-            if f is None or u in locked or f.locked or len(owner.get(u, ())) > 1 or not f.on_board:
+            if f is None or u in locked or f.locked or len(owner.get(u, ())) > 1 or not f.on_board or not inside(u):
                 continue
             kind = (ctx.parts.get(u) or {}).get("kind")
             if kind in ("connector", "mounting_hole", "mechanical"):
@@ -324,13 +355,13 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                 for c in legal[:top_k]:
                     leg.commit(u, c)
                     route_module(ctx, m)
-                    v = m.physics.get("value")
+                    v = score(m)
                     good = m.status == "routed" or (m.status == "partial" and ok_status != "routed")
                     if (v is not None and math.isfinite(v) and v > 0 and best is not None
                             and v < best - 0.01 * abs(best) and good):
                         best = v
                         mrep["moves"].append(dict(part=f.ref, pose=[round(z, 4) if isinstance(z, float) else z for z in c],
-                                                  value=round(v, 4)))
+                                                  score=round(v, 4), value=m.physics.get("value")))
                         cur_poses[u] = c
                         moved[u] = c
                         improved = True
@@ -345,7 +376,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         log(f"{m.id}: {mrep['value0']} -> {mrep['value']} {m.physics.get('unit', '')} "
             f"({len(mrep['moves'])} moves of {mrep['movable']})")
     sess.modules = mods
-    if rails and sess.opts.get("rails_joint", "auto") != "none":
+    if rails and window is None and modules is None and sess.opts.get("rails_joint", "auto") != "none":
         from .critical_rails import route_rails
         sess.rails = route_rails(ctx, mode=sess.opts.get("rails_joint", "auto"))
         rep["rails"] = sess.rails

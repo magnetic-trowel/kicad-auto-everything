@@ -89,6 +89,12 @@ class Session:
         self.sev = severities(self.path)
         self.space = Space(self.board, info, sev=self.sev, opts=self.opts)
         self.router = GridRouter(self.space, res=self.opts["res"])
+        if terms is None and self.opts.get("place_allocs", True):
+            # the placer's terms: every module is priced against the allocations the placer
+            # optimizes (critical_modules.allocation, decap_spend)
+            from .critical_modules import place_terms
+            terms = place_terms(self.board, brief, log=log)
+        self.terms = terms
         self.ctx = Ctx(self.space, self.router, brief, self.board, dict(self.opts, log=log), terms=terms)
         self.router.gnd = set(self.ctx.gnd)
         self.modules = []

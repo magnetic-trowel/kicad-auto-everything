@@ -752,3 +752,99 @@ def test_a_light_branch_never_inherits_the_trunk_current(tmp_path, monkeypatch):
                 continue
             assert b["current_A"] <= max(loads[b["load"]], 0.05) + 1e-9, (r["net"], b)
     assert calls and checked >= 1
+
+
+# ----------------------------------------------------------------------------- one objective with the placer
+def test_modules_are_priced_against_the_place_terms(routed):
+    """Every quoted module carries the allocation of the place terms' structure of its id
+    (calibrated decap budgets, careful-layout clamps), so the module stage, the recheck and
+    the placer optimize one objective."""
+    by_id = {st.id: st for st in routed.terms.structs}
+    n = 0
+    for m in routed.modules:
+        if m.physics.get("alloc") is None:
+            continue
+        sts = [st for i, st in by_id.items() if i == m.id or i.startswith(m.id + "#")]
+        assert sts, m.id
+        assert any(abs(m.physics["alloc"] - round(st.alloc.value, 4)) < 1e-6 for st in sts), m.id
+        n += 1
+    assert n >= 4
+
+
+def test_decap_fallback_budget_is_per_pin_not_divided_again(tmp_path):
+    """Without place terms, a decap's allocation is priors.decap_budget per power pin as the
+    place terms read it; it was divided by the pin count a second time (canhw: u 13.9)."""
+    from kae.physics import priors as PR
+    from kae.route.critical_modules import allocation
+    s = F.session(tmp_path, place_allocs=False)
+    assert s.terms is None
+    from kae.route.critical_modules import modules_from_brief
+    m = next(x for x in modules_from_brief(s.brief) if x.kind == "decap")
+    m.spec = dict(m.spec, power_pins=["1", "2", "3", "4"])
+    a = allocation(s.ctx, m)
+    b = PR.decap_budget(s.ctx.volts(m.spec.get("rail")) or 3.3, s.ctx.npins(m.spec.get("ic")), 4,
+                        function=m.spec.get("function"))
+    assert abs(a.value - b.value) < 1e-9
+
+
+def test_decap_spend_prices_pin_clusters_and_nearest_pin_caps():
+    """decap_spend: a pin cluster's capacitors in parallel (each at its mean loop to the
+    cluster's pins), a nearest_pin structure its capacitor's best loop; the worst u wins."""
+    from types import SimpleNamespace as NS
+    from kae.physics import priors as PR
+    from kae.route.critical_modules import decap_spend
+    B = lambda v: PR.Belief(v, "nH", "t")                                   # noqa: E731
+    pairs = [("1", "a", 2.0), ("2", "a", 4.0), ("1", "b", 6.0), ("5", "c", 3.0)]
+    ref = {"a": "C1", "b": "C2", "c": "C3"}.get
+    cl = NS(id="d#0", alloc=B(2.0), info=dict(pins=["1", "2"]), labels=["C1", "C2"])
+    npin = NS(id="d#C3", alloc=B(6.0), info=dict(pairing="nearest_pin", pins=["5"]), labels=["C3"])
+    v, a, ex = decap_spend(pairs, [cl, npin], ref, B(1.0))
+    assert abs(v - 1.0 / (1 / 3.0 + 1 / 6.0)) < 1e-3 and a.value == 2.0        # cluster: (2+4)/2 || 6
+    assert {c["id"] for c in ex["clusters"]} == {"d#0", "d#C3"}
+    v2, a2, _ = decap_spend(pairs, [], ref, B(1.0))
+    assert v2 == 4.0 and a2.value == 1.0                                        # worst pin: 2 || 6 = 1.5 vs 4 vs 3
+
+
+def test_cell_loops_through_every_owned_input_cap_in_parallel(tmp_path):
+    """The hot loop through a second owned input capacitor counts in parallel, as in the
+    place terms (kae.physics.build._commutation); an unlikely capacitor does not."""
+    from kae.route.critical_modules import _cell_value, cell_variants
+    s = F.session(tmp_path).route()
+    m = next(x for x in s.modules if x.kind == "cell")
+    v1, _ = _cell_value(s.ctx, m)
+    T = m.spec["_T"]
+    other = next(f.uuid for f in s.board.footprints if f.ref == "C3")            # a stand-in second input cap
+
+    def term_of(c, net):                                                         # at the first cap's pads
+        return T[0] if net == T[0].net else T[-1]
+    spec = dict(m.spec, caps=[T[0].fp, other], caps_p={T[0].fp: 0.9, other: 0.9})
+    assert len(cell_variants(spec, T, term_of)) == 2
+    assert len(cell_variants(dict(spec, caps_p={T[0].fp: 0.95, other: 0.01}), T, term_of)) == 1
+    m.spec = dict(m.spec, caps=[T[0].fp, other], caps_p={T[0].fp: 0.9, other: 0.9})
+    v2, ex = _cell_value(s.ctx, m)
+    assert ex["variants"] >= 1 and v2 <= v1 + 1e-9
+
+
+def test_crystal_pulling_is_a_quarter_of_the_trace_capacitance(routed):
+    """Each crystal net's trace capacitance adds to one load capacitor; C_L moves by C / 4."""
+    from kae.physics import priors as PR
+    m = next(x for x in routed.modules if x.kind == "crystal")
+    _, S = PR.crystal_budget(m.spec.get("f_Hz"))
+    assert abs(m.physics["value"] - S * m.physics["c_trace_pf"] / 4.0) < 1e-3
+
+
+def test_surge_via_runs_to_the_plane_under_the_protector(routed, tmp_path, monkeypatch):
+    """The recheck's protector via is as long as the height of the plane under the protector
+    (place terms' EsdComp), the board thickness only without a plane."""
+    from kae.route import critical_recheck as R
+    from kae.route.critical_modules import modules_from_brief
+    dst = tmp_path / "b.kicad_pcb"
+    routed.write(dst)
+    from kae.board.kicad_file import load
+    rb = R.RoutedBoard(load(dst), fills=None, brief=routed.brief)
+    spec = next(x for x in modules_from_brief(routed.brief) if x.kind == "chain").spec
+    monkeypatch.setattr(rb, "h_at", lambda *a, **k: 0.2)
+    v_thin, _ = R.chain_value(rb, spec)
+    monkeypatch.setattr(rb, "h_at", lambda *a, **k: R.INF)
+    v_none, _ = R.chain_value(rb, spec)
+    assert v_thin < v_none

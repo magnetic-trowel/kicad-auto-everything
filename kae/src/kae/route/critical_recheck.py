@@ -469,11 +469,40 @@ def plane_cover(rb, layer, region):
     return min(1.0, den.intersection(unary_union(fill)).area / den.area)
 
 
+class _T(dict):
+    """A recheck terminal with attribute access for critical_modules.cell_variants."""
+    __getattr__ = dict.get
+
+
 def cell_value(rb, s):
-    """Hot-loop inductance (nH) of a commutation cell on the board's copper."""
+    """Hot-loop inductance (nH) of a commutation cell on the board's copper: the brief loop in
+    parallel with the loops through the cell's other owned input capacitors, as the place
+    terms price it (critical_modules.cell_variants); plane cover is the brief loop's."""
+    from .critical_modules import cell_variants
     T = [rb.terminal(m[0], m[1]) for m in s.get("loop") or []]
     if len(T) < 3 or any(t is None for t in T):
         return None, dict(note="terminals not found")
+    T = [_T(t) for t in T]
+
+    def term_of(c, net):
+        f = rb.fp.get(c)
+        num = next((p.number for p in f.pads if p.net == net), None) if f is not None else None
+        t = rb.terminal(c, [num]) if num is not None else None
+        return _T(t) if t is not None else None
+    out = None
+    vals = []
+    for Tv, _cap in cell_variants(s, T, term_of):
+        v, extra = _cell_loop(rb, Tv)
+        if out is None:
+            out = extra
+        if v is not None and math.isfinite(v) and v > 1e-9:
+            vals.append(v)
+    if not vals:
+        return None, out or {}
+    return 1.0 / sum(1.0 / v for v in vals), dict(out, variants=len(vals))
+
+
+def _cell_loop(rb, T):
     n = len(T)
     side = rb.fp[T[0]["fp"]].side
     layer = rb.cu[0] if side == "F" else rb.cu[-1]
@@ -498,8 +527,20 @@ def cell_value(rb, s):
                                plane_cover=round(cover, 4) if cover is not None else None)
 
 
-def decap_values(rb, s):
-    """Worst per-pin decoupling-loop inductance (nH) of a decap structure."""
+def decap_values(rb, s, structs=(), fallback=None):
+    """A decap structure's routed loops priced like the place terms (decap_spend: per pin
+    cluster or capacitor structure `structs`; without them the worst pin). Returns (value,
+    extra) with extra['_alloc'] the allocation of the structure that sets the value."""
+    from .critical_modules import decap_spend
+    pairs, extra = decap_pairs(rb, s)
+    if not pairs:
+        return None, extra
+    val, alloc, ex2 = decap_spend(pairs, structs, lambda u: rb.fp[u].ref if u in rb.fp else None, fallback)
+    return val, dict(extra, **ex2, _alloc=alloc)
+
+
+def decap_pairs(rb, s):
+    """[(pin, cap uuid, routed loop nH)] of a decap structure, and extra (open hops)."""
     from .critical_modules import GND_RE
     ic = s.get("ic")
     rail = s.get("rail")
@@ -515,10 +556,11 @@ def decap_values(rb, s):
             continue
         pairs.append((pins[0], c))
     vals = {}
+    out = []
     opens = 0
     fic = rb.fp.get(ic)
     if fic is None:
-        return None, dict(note="ic not found")
+        return [], dict(note="ic not found")
     for pin, cap in pairs:
         fc = rb.fp.get(cap)
         if fc is None:
@@ -555,14 +597,11 @@ def decap_values(rb, s):
         opens += lb.open
         v = lb.lp.value()
         vals.setdefault(pin, []).append(v)
-    per_pin = {}
-    for p, vs in vals.items():
-        vs = [x for x in vs if x > 1e-9 and math.isfinite(x)]
-        if vs:
-            per_pin[p] = 1.0 / sum(1.0 / x for x in vs)        # parallel capacitors
-    if not per_pin:
-        return None, dict(note="no pairs" if not vals else "degenerate loops (all copper on the plane layer)")
-    return max(per_pin.values()), dict(per_pin={p: round(v, 3) for p, v in per_pin.items()}, open_hops=opens)
+        out.append((pin, cap, v))
+    ok = [x for x in out if x[2] > 1e-9 and math.isfinite(x[2])]
+    if not ok:
+        return [], dict(note="no pairs" if not vals else "degenerate loops (all copper on the plane layer)")
+    return ok, dict(open_hops=opens)
 
 
 def crystal_value(rb, s):
@@ -575,7 +614,9 @@ def crystal_value(rb, s):
         if t.net in nets:
             h = rb.strip_h(t.layer, t.start, t.end, n=3)
             C += trace_capacitance_pf(math.dist(t.start, t.end), t.width, h if h != INF else rb.thickness, rb.er)
-    return S * C, dict(c_trace_pf=round(C, 4))
+    # each net's C adds to one load capacitor: C_L = C1 C2 / (C1 + C2) moves by C / 4 (place
+    # terms' CrystalComp)
+    return S * C / 4.0, dict(c_trace_pf=round(C, 4))
 
 
 def chain_value(rb, s):
@@ -590,6 +631,7 @@ def chain_value(rb, s):
     import kae.physics.fastloop as FL
     total = 0.0
     length = 0.0
+    tprot = None
     for k in range(len(T) - 1):
         ta, tb = T[k], T[k + 1]
         if ta["fp"] == tb["fp"]:
@@ -606,8 +648,15 @@ def chain_value(rb, s):
             total += lprime_hj(w, hh) * math.dist(a, c)
             length += math.dist(a, c)
         if tb["fp"] in prot:
+            tprot = tb
             break
+    # the protector's via runs down to the plane under it, as in the place terms' EsdComp
+    # (the board thickness only where no plane is under it)
     hh = rb.thickness
+    if tprot is not None:
+        lay = tprot["layers"][0]
+        h = rb.h_at(lay, tprot["x"], tprot["y"])
+        hh = h if h != INF else rb.thickness
     lv = FL.m_self(hh, 0.15) + FL._collinear(hh, hh, 0.0)
     return total + lv, dict(surge_path_mm=round(length, 3))
 
@@ -655,9 +704,27 @@ def rail_drops(rb, brief):
 
 
 # ----------------------------------------------------------------------------- board physics
-def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "decap", "crystal", "chain"), terms=None):
+def _in_window(rb, m, window):
+    """Whether any member part of module m has its origin inside `window` (a shapely
+    geometry, or (x0, y0, x1, y1))."""
+    if not hasattr(window, "contains"):
+        from shapely.geometry import box
+        window = box(*window)
+    from shapely.geometry import Point
+    for u in m.parts:
+        f = rb.fp.get(u)
+        if f is not None and window.intersects(Point(f.x, f.y)):
+            return True
+    return False
+
+
+def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "decap", "crystal", "chain"), terms=None,
+                  window=None, rails=True):
     """Every module's routed value, allocation and u on a finished board (see the module
-    docstring). fills: 'kicad' (refill with KiCad), None (zone outlines) or a dict."""
+    docstring), priced against the place terms' allocations (`terms`, built when None).
+    fills: 'kicad' (refill with KiCad), None (zone outlines) or a dict. window (a shapely
+    geometry or (x0, y0, x1, y1), mm): only the modules with a member part there; rails:
+    also the rail drops ('_rails')."""
     b = board if not isinstance(board, (str, Path)) else load(board)
     if brief is None:
         from kae.circuit.brief import build
@@ -668,24 +735,32 @@ def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "deca
     elif isinstance(fills, dict):
         fl = fills
     rb = RoutedBoard(b, fills=fl, brief=brief)
-    from .critical_modules import modules_from_brief
+    from .critical_modules import allocation, modules_from_brief, place_structs, place_terms
+    if terms is None:
+        terms = place_terms(b, brief)
     out = {}
     actx = _AllocCtx(rb, brief, terms)
     for m in modules_from_brief(brief, kinds):
+        if window is not None and not _in_window(rb, m, window):
+            continue
         fn = VALUES.get(m.kind)
         try:
-            v, extra = fn(rb, m.spec)
+            if m.kind == "decap":
+                v, extra = decap_values(rb, m.spec, place_structs(terms, m.id), allocation(actx, m))
+            else:
+                v, extra = fn(rb, m.spec)
         except Exception as e:  # noqa: BLE001
             out[m.id] = dict(kind=m.kind, error=f"{type(e).__name__}: {e}")
             continue
+        a = extra.pop("_alloc", None) if isinstance(extra, dict) else None
         if v is None:
             out[m.id] = dict(kind=m.kind, **extra)
             continue
-        from .critical_modules import allocation
-        a = allocation(actx, m)
+        a = a or allocation(actx, m)
         out[m.id] = dict(kind=m.kind, value=round(v, 4), unit=a.unit, alloc=round(a.value, 4),
                          u=round(v / a.value, 4) if a.value > 0 else None, **extra)
-    out["_rails"] = rail_drops(rb, brief)
+    if rails:
+        out["_rails"] = rail_drops(rb, brief)
     return out
 
 
@@ -724,12 +799,15 @@ def fills_of(board_path):
 
 
 # ----------------------------------------------------------------------------- recheck
-def recheck(board_routed, brief, stage, rise=0.15, fills="kicad", terms=None, cover_drop=0.10):
+def recheck(board_routed, brief, stage, rise=0.15, fills="kicad", terms=None, cover_drop=0.10, window=None):
     """Modules whose routed utilization rose by more than `rise` over `stage` ({id: u} or
     {id: {u, plane_cover}}), crossed the budget, or whose ground plane under the loop lost
-    more than `cover_drop` of its cover (other nets' copper perforating it). Returns
-    dict(modules={id: {u_stage, u_routed, ...}}, retweak=[ids])."""
-    phys = board_physics(board_routed, brief=brief, fills=fills, terms=terms)
+    more than `cover_drop` of its cover (other nets' copper perforating it). window (shapely
+    geometry or (x0, y0, x1, y1)): only the modules with a member part there (and no rail
+    drops). Returns dict(modules={id: {u_stage, u_routed, ...}}, retweak=[ids], rails)."""
+    phys = board_physics(board_routed, brief=brief, fills=fills, terms=terms, window=window, rails=window is None)
+    if window is not None:
+        stage = {k: v for k, v in (stage or {}).items() if k in phys}
     mods = {}
     flagged = []
     for mid, st in (stage or {}).items():
@@ -763,9 +841,9 @@ def locked_only(board_routed, dst):
     return dst
 
 
-def stage_values(board, brief, fills="kicad", terms=None):
+def stage_values(board, brief, fills="kicad", terms=None, window=None):
     """{module id: {u, plane_cover}} on a board (the module stage: its critical copper alone)."""
-    ph = board_physics(board, brief=brief, fills=fills, terms=terms)
+    ph = board_physics(board, brief=brief, fills=fills, terms=terms, window=window, rails=False)
     return {k: dict(u=v["u"], plane_cover=v.get("plane_cover")) for k, v in ph.items()
             if k != "_rails" and isinstance(v, dict) and v.get("u") is not None}
 
@@ -777,15 +855,16 @@ def routed_stage(stage, sess):
     return {k: v for k, v in stage.items() if k in mine}
 
 
-def modules_to_retweak(board_routed, brief, stage=None, rise=0.15, workdir=None, terms=None):
+def modules_to_retweak(board_routed, brief, stage=None, rise=0.15, workdir=None, terms=None, window=None):
     """The joint loop's interface: module ids whose routed physics worsened (see recheck);
-    without `stage`, the module stage is the routed board's locked (critical) copper alone."""
+    without `stage`, the module stage is the routed board's locked (critical) copper alone.
+    window: as in recheck."""
     import tempfile
     if stage is None:
         with tempfile.TemporaryDirectory(prefix="kae-recheck-", dir=workdir) as d:
             lo = locked_only(board_routed, Path(d) / "locked.kicad_pcb")
-            stage = stage_values(lo, brief, terms=terms)
-    return recheck(board_routed, brief, stage, rise=rise, terms=terms)
+            stage = stage_values(lo, brief, terms=terms, window=window)
+    return recheck(board_routed, brief, stage, rise=rise, terms=terms, window=window)
 
 
 # ----------------------------------------------------------------------------- re-tweak

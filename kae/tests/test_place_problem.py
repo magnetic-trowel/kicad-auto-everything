@@ -357,3 +357,25 @@ def test_rule_areas_follow_project_severity_and_copper_layers(tmp_path):
     b.keepouts.append(Keepout(uuid="ko-dwgs", name="dwgs", layers=["Dwgs.User"], outline=sbox(20, 20, 30, 30),
                               pads=True, footprints=True))
     assert not any(o.why == "keepout dwgs" for o in Problem.build(b).obstacles)
+
+
+def test_padless_footprint_and_far_side_lands_take_no_room_on_the_near_side():
+    """Regression (myra-sip-interposer): a mechanical lid (no pads, no courtyard) took its
+    body's room, the whole board, and was never relaxed; an LGA footprint on F whose lands
+    are all on B.Cu took room on the front. KiCad checks neither there."""
+    from shapely.geometry import box as sbox
+    from kae.place.problem import POINT
+    b = load(FIXTURE)
+    s1 = next(f for f in b.footprints if f.ref == "S1")
+    s1.pads, s1.courtyard, s1.edge_cuts, s1.body = [], [], [], [sbox(-20, -20, 20, 20)]
+    u1 = next(f for f in b.footprints if f.ref == "U1")
+    u1.courtyard = []
+    for pd in u1.pads:
+        pd.layers, pd.kind, pd.drill = ["B.Cu", "B.Mask"], "smd", 0.0
+    P = Problem.build(b)
+    parts = {p.ref: p for p in P.parts}
+    assert parts["S1"].rots[0].own_rects == (POINT,)
+    P.relax_bodies()
+    u = parts["U1"]
+    assert u.rots[0].own_rects == (POINT,)
+    assert u.rots[0].opp                     # its lands occupy the back

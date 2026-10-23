@@ -273,6 +273,18 @@ def geom_to_lib(geom, x, y, rot, side):
     return shapely.transform(geom, f)
 
 
+POINT = (-0.05, -0.05, 0.05, 0.05)    # occupancy of a part with nothing on its own side
+
+
+def _on_own_copper(p, part_side):
+    """The pad has copper on its footprint's side (no layers listed counts as yes)."""
+    own = "F.Cu" if part_side == "F" else "B.Cu"
+    lays = p.layers or []
+    if not any(ly.endswith(".Cu") for ly in lays):
+        return True
+    return any(ly == own or ly in ("*.Cu", "F&B.Cu") for ly in lays)
+
+
 def _on_far_copper(p, part_side):
     """The pad has copper on the side opposite its footprint's (B.Cu under a front part,
     F.Cu under a back part, *.Cu, F&B.Cu, inner layers count as both)."""
@@ -574,7 +586,9 @@ class Problem:
     def _part(self, i, fp, name_to_net, rotations):
         s = transform.side_sign(fp.side)
         has_cy = bool(fp.courtyard)
-        cy = polys_lib_rect(fp.courtyard) or polys_lib_rect(fp.body)
+        # a footprint without pads (logo, lid, outline drawing) and without a courtyard takes
+        # no room: KiCad checks nothing of it (a mechanical lid's body covered a whole board)
+        cy = polys_lib_rect(fp.courtyard) or (polys_lib_rect(fp.body) if fp.pads else None)
         pads = fp.pads
         pad_rects = [pad_lib_rect(p) for p in pads]
         # pads inflated by the clearance they need from other copper (see module docstring)
@@ -603,7 +617,10 @@ class Problem:
                 cy_pieces = poly_cover_rects(u, max(1e-3, (bx1 - bx0) / 4.0)) or [cy]
             else:
                 cy_pieces = [cy]
-        pad_pieces = _cluster_rects(infl, max_n=6)
+        # pads with copper on the part's own side (an LGA footprint on F whose lands are all on
+        # B.Cu, an interposer's, takes room on the back only: see lib_opp)
+        near = [k for k, q in enumerate(pads) if is_drilled(q) or _on_own_copper(q, fp.side)]
+        pad_pieces = _cluster_rects([infl[k] for k in near], max_n=6)
         own_pieces = cy_pieces + [r for r in pad_pieces if not any(_inside(r, c) for c in cy_pieces)]
         if len(own_pieces) > 8:
             own_pieces = _cluster_rects(own_pieces, max_n=8)
@@ -625,8 +642,8 @@ class Problem:
                 ko_opp += rects
         own_pieces = own_pieces + ko_own
         lib_own = rect_union(own_pieces)
-        if lib_own is None:   # no courtyard, body or pads: a point
-            lib_own = (-0.05, -0.05, 0.05, 0.05)
+        if lib_own is None:   # nothing on its own side: a point
+            lib_own = POINT
             own_pieces = [lib_own]
         drilled = [k for k, p in enumerate(pads) if is_drilled(p)]
         # SMD copper on the other side too (a back-side thermal pad under a front part, pads on
@@ -672,14 +689,15 @@ class Problem:
         part = Part(i=i, uuid=fp.uuid, ref=fp.ref, value=fp.value, lib_id=fp.lib_id, side=fp.side, s=s,
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
-        own_parts = ([cy] if (cy is not None and self.is_error("courtyards_overlap")) else []) + infl + \
+        own_parts = ([cy] if (cy is not None and self.is_error("courtyards_overlap")) else []) + \
+            [infl[k] for k in near] + \
             ([cut] if cut is not None else []) + ko_own
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
                          board_groups=lib_board_groups, crt=cy if cy is not None else lib_own,
-                         own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own,
+                         own_pads=rect_union([infl[k] for k in near] + ([cut] if cut is not None else [])) or POINT,
                          own_parts=[r for r in own_parts if r is not None] or [lib_own],
                          own_pieces=own_pieces,
-                         own_pads_pieces=(pad_pieces + ([cut] if cut is not None else []) + ko_own) or [lib_own])
+                         own_pads_pieces=(pad_pieces + ([cut] if cut is not None else []) + ko_own) or [POINT])
         rots = list(rotations) if movable else [fp.rot]
         part.n_ortho = len(rots)
         if movable and self.angle_step and not right_angles_only(fp):
