@@ -236,3 +236,47 @@ def test_footprint_copper_and_mask_graphics(tmp_path):
     assert "B.Cu" not in u1.graphics
     rt = type(u1).from_dict(u1.to_dict())
     assert abs(rt.graphics["F.Mask"][0].area - mask[0].area) < 1e-9
+
+
+def test_pad_clearance_override(tmp_path):
+    """Pad.clearance is the pad's own (clearance …), else its footprint's, else 0: DRC uses the
+    larger of it and the netclass clearance, so legality must see it."""
+    txt = FIXTURE.read_text()
+    anchor = '(uuid "00000000-0000-4000-8000-000000000011")\n\t\t(at 10 10)'
+    pad1 = '\t\t(pad "1" smd rect\n'
+    i = txt.index(anchor)
+    j = txt.index(pad1, i)
+    txt = txt[:j] + pad1 + '\t\t\t(clearance 0.5)\n' + txt[j + len(pad1):]
+    txt = txt.replace(anchor, anchor + '\n\t\t(clearance 0.3)')
+    p = tmp_path / "clr.kicad_pcb"
+    p.write_text(txt)
+    b = kicad_file.load(p, rules=False)
+    u1 = next(f for f in b.footprints if f.ref == "U1")
+    by = {q.number: q.clearance for q in u1.pads}
+    assert by["1"] == 0.5 and by["2"] == 0.3 and by["3"] == 0.3
+    others = [q.clearance for f in b.footprints if f.ref != "U1" for q in f.pads]
+    assert others and set(others) == {0.0}
+    assert type(u1).from_dict(u1.to_dict()).pads[0].clearance == 0.5
+
+
+def test_board_copper_and_mask_graphics(tmp_path):
+    """Board.graphics holds board-level copper and mask graphics (gr_* with stroke widths, gr_text
+    as its box) per layer, board frame; Edge.Cuts and silk stay out."""
+    txt = FIXTURE.read_text().rstrip()
+    assert txt.endswith(")")
+    extra = ('\t(gr_line (start 1 1) (end 4 1) (stroke (width 0.2) (type solid)) (layer "F.Cu"))\n'
+             '\t(gr_poly (pts (xy 0 0) (xy 1 0) (xy 1 1) (xy 0 1)) (stroke (width 0) (type solid)) (layer "B.Mask"))\n'
+             '\t(gr_text "AB" (at 20 20 90) (layer "B.Cu") (effects (font (size 1 0.8) (thickness 0.1)) (justify mirror)))\n'
+             '\t(gr_line (start 1 1) (end 4 1) (stroke (width 0.2) (type solid)) (layer "F.SilkS"))\n')
+    p = tmp_path / "bgfx.kicad_pcb"
+    p.write_text(txt[:-1] + extra + ")\n")
+    g = kicad_file.load(p, rules=False).graphics
+    assert set(g) == {"F.Cu", "B.Mask", "B.Cu"}
+    assert abs(g["F.Cu"][0].area - (3 * 0.2 + math.pi * 0.1 ** 2)) < 2e-3
+    assert abs(g["B.Mask"][0].area - 1.0) < 1e-9                       # gr_poly fills by default
+    x0, y0, x1, y1 = g["B.Cu"][0].bounds                               # 2 chars × 0.8 wide, rotated 90°
+    assert abs((x1 - x0) - 1.1) < 1e-6 and abs((y1 - y0) - 1.7) < 1e-6
+    assert abs((x0 + x1) / 2 - 20) < 1e-6 and abs((y0 + y1) / 2 - 20) < 1e-6
+    from kae.board.model import Board
+    b = kicad_file.load(p, rules=False)
+    assert abs(Board.from_dict(b.to_dict()).graphics["B.Cu"][0].area - g["B.Cu"][0].area) < 1e-9

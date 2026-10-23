@@ -134,6 +134,7 @@ class Pad(_Dict):
     slot: tuple | None = None        # (w, h) of an oval hole, else None
     rratio: float = 0.0              # roundrect corner radius / min(w, h)
     offset: tuple = (0.0, 0.0)       # copper shape offset from the hole, pad frame
+    clearance: float = 0.0           # local clearance override (pad's own, else the footprint's); 0 = none
 
     _from = {"size": tuple, "slot": lambda v: None if v is None else tuple(v), "offset": tuple}
 
@@ -323,8 +324,11 @@ class Board(_Dict):
     layers: dict = field(default_factory=dict)      # layer name -> KiCad type (signal, power, user, ...)
     thickness: float = 1.6
     warnings: list = field(default_factory=list)
+    graphics: dict = field(default_factory=dict)    # board-level copper/mask graphics: layer -> [Polygon]
+    #                                                 (gr_* shapes with stroke widths; gr_text as its box)
 
     _to = {"footprints": lambda v: [f.to_dict() for f in v],
+           "graphics": lambda v: {k: _polys_to(p) for k, p in v.items()},
            "nets": lambda v: {k: n.to_dict() for k, n in v.items()},
            "outline": _polys_to,
            "keepouts": lambda v: [k.to_dict() for k in v],
@@ -334,6 +338,7 @@ class Board(_Dict):
            "stackup": lambda v: v.to_dict() if v is not None else None,
            "rules": lambda v: v.to_dict() if v is not None else None}
     _from = {"footprints": lambda v: [Footprint.from_dict(f) for f in v],
+             "graphics": lambda v: {k: _polys_from(p) for k, p in v.items()},
              "nets": lambda v: {k: Net.from_dict(n) for k, n in v.items()},
              "outline": _polys_from,
              "keepouts": lambda v: [Keepout.from_dict(k) for k in v],

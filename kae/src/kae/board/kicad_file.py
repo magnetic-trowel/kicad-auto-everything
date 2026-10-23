@@ -275,9 +275,10 @@ class _Reader:
             fp.attrs.append("dnp")
         cr, sr = rotate(1.0, 0.0, frot)   # (cos, -sin)
         c, sn = cr, -sr
+        fp_clear = _f(value(node, "clearance"), 0.0)
 
         for pd in kids(node, "pad"):
-            fp.pads.append(self.pad(pd, fx, fy, frot, c, sn, s))
+            fp.pads.append(self.pad(pd, fx, fy, frot, c, sn, s, fp_clear))
 
         # graphics in the library frame: (u, v) stored -> (u, s*v), layers flipped on the back
         by_layer = {}
@@ -332,7 +333,7 @@ class _Reader:
             self.zone(z, fp.uuid)
         return fp
 
-    def pad(self, pd, fx, fy, frot, c, sn, s):
+    def pad(self, pd, fx, fy, frot, c, sn, s, fp_clear=0.0):
         number = pd[1] if len(pd) > 1 and type(pd[1]) is str else ""
         kind = pd[2] if len(pd) > 2 and type(pd[2]) is str else "smd"
         shape = pd[3] if len(pd) > 3 and type(pd[3]) is str else "rect"
@@ -363,7 +364,8 @@ class _Reader:
                    drill=drill, pinfunction=value(pd, "pinfunction", "") or "",
                    pintype=value(pd, "pintype", "") or "",
                    uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
-                   rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset)
+                   rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset,
+                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear)
 
     def _graphics(self, fp, by_layer, lib):
         """Copper and mask graphics of a footprint (logos, mask apertures, copper shapes) as
@@ -380,24 +382,10 @@ class _Reader:
                     continue
                 if lib is not None:
                     o, r = _map_pieces((o, r), lib)
-                st = first(g, "stroke")
-                w = _f(value(st, "width") if st is not None else value(g, "width"), 0.0)
-                fill = value(g, "fill")
-                filled = fill in ("solid", "yes") or (fill is None and g[0] == "fp_poly")
-                for pl in o:
-                    if len(pl) >= 2 and w > 0:
-                        shapes.append(LineString(list(pl)).buffer(w / 2))
-                for ring in r:
-                    if filled:
-                        p = Polygon(ring).buffer(0)
-                        shapes.append(p.buffer(w / 2) if w > 0 else p)
-                    elif w > 0:
-                        shapes.append(LineString(ring).buffer(w / 2))
-            u = unary_union(shapes) if shapes else None
-            if u is not None and not u.is_empty:
-                polys = [p for p in getattr(u, "geoms", [u]) if p.geom_type == "Polygon" and p.area > 0]
-                if polys:
-                    out[ly] = polys
+                shapes += _stroked(g, o, r)
+            polys = _polys(shapes)
+            if polys:
+                out[ly] = polys
         return out
 
     def _body(self, fp, pieces_on, by_layer):
@@ -707,6 +695,83 @@ def _composite(rules, name):
 
 
 # ----------------------------------------------------------------------------- load
+def _stroked(g, opens, rings):
+    """Copper/mask area of a graphic shape: lines and arcs buffered by half the stroke width,
+    closed shapes filled when KiCad fills them (polygons by default), else stroked."""
+    st = first(g, "stroke")
+    w = _f(value(st, "width") if st is not None else value(g, "width"), 0.0)
+    fill = value(g, "fill")
+    filled = fill in ("solid", "yes") or (fill is None and g[0] in ("fp_poly", "gr_poly"))
+    out = []
+    for pl in opens:
+        if len(pl) >= 2 and w > 0:
+            out.append(LineString(list(pl)).buffer(w / 2))
+    for ring in rings:
+        if filled:
+            p = Polygon(ring).buffer(0)
+            out.append(p.buffer(w / 2) if w > 0 else p)
+        elif w > 0:
+            out.append(LineString(ring).buffer(w / 2))
+    return out
+
+
+def _polys(shapes):
+    u = unary_union(shapes) if shapes else None
+    if u is None or u.is_empty:
+        return []
+    return [p for p in getattr(u, "geoms", [u]) if p.geom_type == "Polygon" and p.area > 0]
+
+
+def _text_box(node):
+    """A copper/mask text's area, approximated by its box: KiCad's stroke font advances about
+    one glyph width per character; the stroke thickness pads every side."""
+    txt = node[1] if len(node) > 1 and type(node[1]) is str else ""
+    at = first(node, "at")
+    if not txt or at is None:
+        return None
+    x, y = float(at[1]), float(at[2])
+    rot = float(at[3]) if len(at) > 3 else 0.0
+    eff = first(node, "effects")
+    font = first(eff, "font") if eff is not None else None
+    size = first(font, "size") if font is not None else None
+    h = float(size[1]) if size is not None else 1.0
+    wch = float(size[2]) if size is not None and len(size) > 2 else h
+    th = _f(value(font, "thickness") if font is not None else None, 0.15 * h)
+    lines = txt.replace("\\n", "\n").split("\n")
+    w = max(len(s) for s in lines) * wch
+    hh = len(lines) * h * 1.6 - 0.6 * h
+    just = (first(eff, "justify") or [])[1:] if eff is not None else []
+    x0 = 0.0 if "left" in just else (-w if "right" in just else -w / 2)
+    y0 = 0.0 if "top" in just else (-hh if "bottom" in just else -hh / 2)
+    from shapely import affinity
+    b = box(x0 - th / 2, y0 - th / 2, x0 + w + th / 2, y0 + hh + th / 2)
+    return affinity.translate(affinity.rotate(b, -rot, origin=(0, 0)), x, y)
+
+
+def _board_graphics(tree, tol, warnings):
+    """Board-level copper and mask graphics (gr_* shapes and gr_text) per layer, board frame."""
+    by = {}
+    for g in tree:
+        if type(g) is not list or not g:
+            continue
+        ly = value(g, "layer")
+        if ly is None or not (ly.endswith(".Cu") or ly.endswith(".Mask")):
+            continue
+        if g[0] in GR_SHAPES:
+            try:
+                o, r = shape_pieces(g, tol)
+            except (TypeError, ValueError, IndexError):
+                warnings.append(f"unreadable {ly} {g[0]}")
+                continue
+            by.setdefault(ly, []).extend(_stroked(g, o, r))
+        elif g[0] == "gr_text":
+            b = _text_box(g)
+            if b is not None:
+                by.setdefault(ly, []).append(b)
+    return {ly: p for ly, p in ((ly, _polys(s)) for ly, s in by.items()) if p}
+
+
+
 def _outline_pieces(tree, tol, warnings):
     opens, rings = [], []
     for g in tree:
@@ -827,4 +892,5 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     return Board(path=str(path), version=rd.version, footprints=fps, nets=nets, outline=outline,
                  keepouts=rd.keepouts, zones=rd.zones, tracks=tracks, vias=vias, stackup=rd.stackup,
                  rules=rules_obj, generator=f"{gen} {gv}".strip() if gv else gen,
-                 layers=dict(rd.layer_types), thickness=rd.stackup.thickness, warnings=rd.warnings)
+                 layers=dict(rd.layer_types), thickness=rd.stackup.thickness, warnings=rd.warnings,
+                 graphics=_board_graphics(tree, arc_tol, rd.warnings))
