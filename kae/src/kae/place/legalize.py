@@ -139,6 +139,144 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
     return rep
 
 
+# ----------------------------------------------------------------------------- greedy fallback
+def _occupancy(P, st, skip, pad):
+    """Per-side cell occupancy counts of obstacles and of movable parts not in `skip`, on the
+    grid padded by `pad` cells on every side (courtyards may overhang the board)."""
+    occ = [np.zeros((P.ncx + 2 * pad, P.ncy + 2 * pad), dtype=np.int32) for _ in (0, 1)]
+    for ob in P.obstacles:
+        _mark(occ[ob.side], ob.g, pad, 1)
+    for i in P.mov:
+        if i in skip:
+            continue
+        for side, r, _ in st.grid_rects(i):
+            _mark(occ[side], r, pad, 1)
+    return occ
+
+
+def _mark(a, r, pad, v):
+    i0, i1, j0, j1 = r
+    i0, i1 = max(0, i0 + pad), min(a.shape[0], i1 + pad)
+    j0, j1 = max(0, j0 + pad), min(a.shape[1], j1 + pad)
+    if i1 > i0 and j1 > j0:
+        a[i0:i1, j0:j1] += v
+
+
+def _free_origins(occ, rect, pad, xa, xb, ya, yb):
+    """Bool map over origins X in [xa, xb], Y in [ya, yb]: rect (relative to the origin) hits
+    no occupied cell. Cells beyond the padded grid count as free (nothing is placed there)."""
+    a, b, c, d = rect
+    nx, ny = xb - xa + 1, yb - ya + 1
+    if b <= a or d <= c:
+        return np.ones((nx, ny), dtype=bool)
+    # region of the padded array the rect can reach from the window, clipped
+    r0, r1 = xa + a + pad, xb + b + pad
+    s0, s1 = ya + c + pad, yb + d + pad
+    q0, q1 = max(0, r0), min(occ.shape[0], r1)
+    t0, t1 = max(0, s0), min(occ.shape[1], s1)
+    reg = np.zeros((r1 - r0, s1 - s0), dtype=np.int64)
+    if q1 > q0 and t1 > t0:
+        reg[q0 - r0:q1 - r0, t0 - s0:t1 - s0] = occ[q0:q1, t0:t1]
+    L = np.zeros((reg.shape[0] + 1, reg.shape[1] + 1), dtype=np.int64)
+    L[1:, 1:] = reg.cumsum(0).cumsum(1)
+    w, h = b - a, d - c
+    cnt = L[w:w + nx, h:h + ny] - L[0:nx, h:h + ny] - L[w:w + nx, 0:ny] + L[0:nx, 0:ny]
+    return cnt == 0
+
+
+def _inside_origins(P, rect, xa, xb, ya, yb):
+    """Bool map over origins: the board rect lies inside the outline (and the grid)."""
+    a, b, c, d = rect
+    nx, ny = xb - xa + 1, yb - ya + 1
+    ok = np.zeros((nx, ny), dtype=bool)
+    # origins keeping the rect on the grid
+    lo_x, hi_x = max(xa, -a), min(xb, P.ncx - b)
+    lo_y, hi_y = max(ya, -c), min(yb, P.ncy - d)
+    if hi_x < lo_x or hi_y < lo_y:
+        return ok
+    S = P.sat_out
+    X0, X1 = lo_x + a, hi_x + a
+    Y0, Y1 = lo_y + c, hi_y + c
+    w, h = b - a, d - c
+    cnt = (S[X0 + w:X1 + w + 1, Y0 + h:Y1 + h + 1] - S[X0:X1 + 1, Y0 + h:Y1 + h + 1]
+           - S[X0 + w:X1 + w + 1, Y0:Y1 + 1] + S[X0:X1 + 1, Y0:Y1 + 1])
+    ok[lo_x - xa:hi_x - xa + 1, lo_y - ya:hi_y - ya + 1] = cnt == 0
+    return ok
+
+
+def greedy(P, st, parts, log=None, w_rot=None):
+    """Put `parts` back one by one, largest first, at the nearest grid origin (L1, plus a
+    charge for turning) where none of their rectangles meets an obstacle or another part on
+    its side and their board rectangles lie inside the outline; every other movable part
+    stays where it is. The search window around the current origin doubles until a spot is
+    found or it covers the board. Always ends legal for the parts it places; returns
+    {placed, unplaced: [refs], moved_mm}."""
+    t0 = time.monotonic()
+    parts = sorted({i for i in parts if P.parts[i].movable}, key=lambda i: -P.parts[i].area)
+    if not parts:
+        return dict(placed=0, unplaced=[], moved_mm=0.0, seconds=0.0)
+    ext = 1
+    for i in P.mov:
+        for r in P.parts[i].rots:
+            for (a, b, c, d) in (r.g_own,) + tuple(r.g_opp):
+                ext = max(ext, -a, b, -c, d)
+    pad = ext + 1
+    skip = set(parts)
+    occ = _occupancy(P, st, skip, pad)
+    w_rot = (2.0 / P.g) if w_rot is None else w_rot          # turning costs like moving 2 mm
+    span = max(P.ncx, P.ncy) + 2 * ext
+    placed, unplaced, moved = 0, [], 0.0
+    for i in parts:
+        p = P.parts[i]
+        si = 0 if p.s > 0 else 1
+        X0, Y0, K0 = int(st.X[i]), int(st.Y[i]), int(st.K[i])
+        size = max(max(r.g_own[1] - r.g_own[0], r.g_own[3] - r.g_own[2]) for r in p.rots)
+        R = max(20, 2 * size)
+        best = None
+        while True:
+            xa, xb, ya, yb = X0 - R, X0 + R, Y0 - R, Y0 + R
+            for k, r in enumerate(p.rots):
+                ok = np.ones((xb - xa + 1, yb - ya + 1), dtype=bool)
+                for brd in (r.g_boards or (r.g_board,)):
+                    ok &= _inside_origins(P, brd, xa, xb, ya, yb)
+                    if not ok.any():
+                        break
+                if not ok.any():
+                    continue
+                ok &= _free_origins(occ[si], r.g_own, pad, xa, xb, ya, yb)
+                for o in r.g_opp:
+                    if not ok.any():
+                        break
+                    ok &= _free_origins(occ[1 - si], o, pad, xa, xb, ya, yb)
+                if not ok.any():
+                    continue
+                xs, ys = np.nonzero(ok)
+                cost = np.abs(xs + xa - X0) + np.abs(ys + ya - Y0) + (w_rot if k != K0 else 0.0)
+                j = int(np.argmin(cost))
+                if best is None or cost[j] < best[0]:
+                    best = (float(cost[j]), int(xs[j] + xa), int(ys[j] + ya), k)
+            # a spot within R of the origin can still lose to one just outside when the best
+            # cost exceeds R (L1 vs the square window): widen once more in that case
+            if (best is not None and best[0] <= R) or R >= span:
+                break
+            R = min(span, 2 * R)
+        if best is None:
+            unplaced.append(i)
+            continue
+        _, X, Y, k = best
+        moved += math.hypot((X - X0) * P.g, (Y - Y0) * P.g)
+        st.X[i], st.Y[i], st.K[i] = X, Y, k
+        for side, r, _ in st.grid_rects(i):
+            _mark(occ[side], r, pad, 1)
+        placed += 1
+    rep = dict(placed=placed, unplaced=[P.parts[i].ref for i in unplaced], moved_mm=round(moved, 2),
+               seconds=round(time.monotonic() - t0, 2))
+    if log:
+        log(f"greedy legalization: {placed} placed, {len(unplaced)} without a spot, moved {moved:.1f} mm "
+            f"({rep['seconds']}s)")
+    return rep
+
+
 # ----------------------------------------------------------------------------- KiCad feedback
 PLACEMENT_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance", "hole_to_hole",
                    "holes_co_located", "items_not_allowed", "malformed_courtyard", "npth_inside_courtyard",

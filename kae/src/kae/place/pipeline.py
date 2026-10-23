@@ -90,8 +90,10 @@ def _net_roles(brief):
     return out
 
 
-def _seed_state(P, macros, net_w, seed, log):
-    """Quadratic + spread: an initial state (macros at their best layout)."""
+def _seed_state(P, macros, net_w, seed, log, partition=False):
+    """Quadratic + spread: an initial state (macros at their best layout). `partition`
+    spreads by recursive bisection of the free cells (density-feasible, for big boards)
+    instead of pairwise repulsion."""
     objs, owner = seedmod._objects(P, macros)
     pos = seedmod.quadratic(P, objs, owner, net_w)
     # connectors are anchors: pinned inside the nearest edge, then the rest re-solved
@@ -99,7 +101,10 @@ def _seed_state(P, macros, net_w, seed, log):
     anchors = seedmod.connector_anchors(P, objs, pos, weight=5.0 * wmax)
     if anchors:
         pos = seedmod.quadratic(P, objs, owner, net_w, anchors=anchors)
-    pos = seedmod.spread(P, objs, pos, owner, net_w, seed=seed)
+    if partition:
+        pos = seedmod.partition_spread(P, objs, pos)
+    else:
+        pos = seedmod.spread(P, objs, pos, owner, net_w, seed=seed)
     st = State(P)
     lay_of = {}
     for mac in macros:
