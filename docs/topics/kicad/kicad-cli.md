@@ -37,9 +37,9 @@ Sources: [kicad/cli @10.0](https://gitlab.com/kicad/code/kicad/-/tree/10.0/kicad
 - **The POA A/B result** argues against skill text that forbids running `kicad-cli`. See [mcp-server-lessons.md](mcp-server-lessons.md).
 
 ## Recommendations for our system
-- **Make `kicad-cli pcb drc --format json --refill-zones --exit-code-violations` on a saved copy the single source of truth** for violations, unconnected items and schematic parity [I].
+- **Make `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a saved copy the single source of truth** for violations, unconnected items and schematic parity. Without `--schematic-parity` parity is not checked, and without `--severity-all` excluded items are not reported. Add `--all-track-errors` in repair loops [I].
 - **Lint every generated `.kicad_dru`** by running DRC on a scratch copy before applying it [I, from VK].
-- **Expose a restricted `kicad_cli` escape-hatch tool** (drc, erc, export, render, upgrade only; outputs to a temp dir) instead of forbidding the CLI [I, from MCP].
+- **Expose a restricted `kicad_cli` escape-hatch tool** (drc, erc, export, render, and upgrade of libraries or of a copy only, never the user's board in place, since `upgrade` re-serializes through KiCad ([file-format-and-version-hazards.md](file-format-and-version-hazards.md)); outputs to a temp dir) instead of forbidding the CLI [I, from MCP].
 - **Feature-detect `pcb export specctra`** and switch DSN export from the SWIG helper to the CLI when available [I].
 - **Use `kicad-cli` outputs (drill, Gerber, netlist) as test oracles**, never our own re-implementation [I].
 
