@@ -205,10 +205,13 @@ class Freerouting(Adapter):
                                                  artifacts=artifacts))
         own = _router_report(result)
         partial = bool(own and own.get("final_state") == "TIMED_OUT")
-        if not ses.exists():
+        # A router that crashes can still leave an empty session file behind (Freerouting
+        # 2.5.0 opens it before writing); that is no output, not a failed import.
+        ses_empty = ses.exists() and ses.stat().st_size == 0
+        if not ses.exists() or ses_empty:
             return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own,
                                                  job_timeout_s=job_s, partial=partial, **dsn_fixes,
-                                                 artifacts=artifacts))
+                                                 ses_empty=ses_empty, artifacts=artifacts))
         stripped = strip_ses_placement(ses, ses2)
         quoted = quote_ses_net_names(ses2)
         meta = dict(passes=passes, rc=r.returncode, rule_args=rule_args, **dsn_fixes,

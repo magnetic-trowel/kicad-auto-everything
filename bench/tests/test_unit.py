@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from kaebench import boardfiles, manifest, report, score, tools
+from kaebench import adapters, boardfiles, manifest, report, score, tools
 
 SHA = "0" * 40
 
@@ -78,6 +78,30 @@ def test_unblock_all_power_dsn(tmp_path):
     assert "power" not in dsn.read_text() and dsn.read_text().count("(type signal)") == 2
     dsn.write_text(head.format("signal") + "))\n")
     assert boardfiles.unblock_all_power_dsn(dsn) == 0 and "(type power)" in dsn.read_text()
+
+
+def test_freerouting_empty_ses_is_no_output(tmp_path, monkeypatch):
+    """A router that crashes and leaves a 0-byte session gets no_output, not an import error."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    def router(cmd, **kw):
+        Path(cmd[cmd.index("-do") + 1]).write_text("")
+        return subprocess.CompletedProcess(cmd, 1, "", "NullPointerException")
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    monkeypatch.setattr(tools, "run_measured", router)
+    res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / "w", 0, 100)
+    assert res.output is None and res.meta["ses_empty"] and res.meta["rc"] == 1
 
 
 def test_dsn_unset_netclass_sizes(tmp_path):
