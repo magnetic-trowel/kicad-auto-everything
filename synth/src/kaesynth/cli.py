@@ -3,6 +3,7 @@
 """kaesynth command line: build designs, inspect KiCad library symbols and footprints."""
 import argparse
 import re
+import signal
 import sys
 
 from .kicadlib import FootprintLibs, SymbolLibs
@@ -29,11 +30,15 @@ def cmd_build(a):
 
 def cmd_sym(a):
     libs = SymbolLibs()
-    if ":" in a.query and not any(c in a.query for c in "*?[]()|+\\"):
+    if ":" in a.query and libs.has(a.query):
         s = libs.get(a.query)
         print(f"{s.lib_id}: {s.units} unit(s){' power' if s.power else ''}")
         for p in sorted(s.pins, key=lambda p: (p.unit, _nat(p.number))):
-            print(f"  unit {p.unit} pin {p.number:>4} {p.name:20s} {p.type}{' HIDDEN' if p.hidden else ''}")
+            print(f"  unit {p.unit} pin {p.number:>4} {p.name:20s} {p.type:14s} at ({p.x:g}, {p.y:g})"
+                  f"{' HIDDEN' if p.hidden else ''}")
+        fp = sexpr_prop(s, "Footprint")
+        if fp:
+            print(f"  default footprint: {fp}")
         return 0
     rx = re.compile(a.query, re.I)
     n = 0
@@ -67,11 +72,21 @@ def cmd_fp(a):
     return 0
 
 
+def sexpr_prop(sym, name):
+    from . import sexpr
+    for p in sexpr.find_all(sym.node, "property"):
+        if p[1] == name:
+            return p[2]
+    return None
+
+
 def _nat(s):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(s))]
 
 
 def main(argv=None):
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)     # `kaesynth sym ... | head`
     ap = argparse.ArgumentParser(prog="kaesynth", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="check a design and write its KiCad project, intent, BOM and report")

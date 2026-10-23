@@ -110,7 +110,8 @@ class PartDef:
     def __init__(self, *, mpn=None, manufacturer=None, symbol=None, pins=None, footprint=None,
                  value=None, prefix=None, category="ic", description="", datasheet="",
                  ratings=None, pinmap=None, lifecycle="active", generic=False, fields=None,
-                 second_source=None, dnp=False, in_bom=True, on_board=True, notes="", source=None):
+                 second_source=None, dnp=False, in_bom=True, on_board=True, notes="", source=None,
+                 pin_names=None):
         if category not in CATEGORIES:
             raise DesignError(f"category {category!r} not in {CATEGORIES}")
         if symbol is None and not pins:
@@ -127,6 +128,9 @@ class PartDef:
         self.datasheet = datasheet
         self.ratings = ratings or Ratings()
         self.pinmap = {str(k): str(v) for k, v in (pinmap or {}).items()}
+        # names for library pins that have none or unhelpful ones, keyed by (final) pin number,
+        # e.g. relays: {"1": "COM", "2": "COIL_B", "3": "NC", "4": "NO", "5": "COIL_A"}
+        self.pin_names = {str(k): str(v) for k, v in (pin_names or {}).items()}
         self.lifecycle = lifecycle
         self.generic = generic
         self.fields = dict(fields or {})
@@ -611,6 +615,12 @@ class Design:
                     raise DesignError(f"{defn}: pinmap keys {sorted(unknown)} are not pins of {defn.symbol}")
                 for p in pins:
                     p.number = defn.pinmap.get(p.number, p.number)
+        if defn.pin_names:
+            unknown = set(defn.pin_names) - {p.number for p in pins}
+            if unknown:
+                raise DesignError(f"{defn}: pin_names keys {sorted(unknown)} are not pin numbers")
+            for p in pins:
+                p.name = defn.pin_names.get(p.number, p.name)
         nums = [p.number for p in pins]
         dup = {n for n in nums if nums.count(n) > 1}
         if dup:

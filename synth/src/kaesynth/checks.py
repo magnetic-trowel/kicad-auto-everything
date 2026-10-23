@@ -444,6 +444,8 @@ class Checker:
                 need.append("pins")
             if defn.pinmap:
                 need.append("pinmap")
+            if defn.pin_names:
+                need.append("pin_names")
             r = defn.ratings
             if r.limits or r.isolation or (r.v_max and defn.category not in ("resistor", "capacitor_ceramic")):
                 need.append("ratings")

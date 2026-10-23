@@ -99,6 +99,9 @@ def build():
 - **Generated symbol** (`IC(mpn, pins=[PinDef(number, name, type, side=None), ...], footprint=...)`):
   for ICs; pin numbers and names from the datasheet pin table. Types: `input output bidirectional
   tri_state passive power_in power_out open_collector open_emitter no_connect free`.
+- **Unnamed library pins** (relays, many connectors): pass `pin_names={"1": "COM", "5": "COIL_A", ...}`
+  from the datasheet and connect by name. Check the mapping against the symbol graphic: KiCad's
+  `Relay:G5LE-1` coil is pins 2/5, not 1/2.
 - **Transistors** from `lib.NMOS/PMOS/NPN` need `pinmap=` from the datasheet (KiCad's generic
   symbols use letter pins); there is no default.
 - `source={"pins": "...", "pinmap": "...", "ratings": "..."}` and `datasheet=` on every non-generic
