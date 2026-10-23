@@ -127,7 +127,7 @@ def router_settings(p, opts):
 
 def plan_summary(p):
     return dict(
-        classes={n: dict(nets=len(rc.nets), netclass=rc.netclass, widths=rc.widths, via=rc.via, delta=rc.delta)
+        classes={n: dict(nets=len(rc.nets), netclass=rc.netclass, widths=rc.widths, via=rc.via)
                  for n, rc in p.classes.items()},
         obstacle_classes=len(p.obstacle_classes), obstacles=len(p.obstacles),
         pins=len(p.pin_class), edge_clearance=p.edge_clearance, neck_width=p.neck_width,

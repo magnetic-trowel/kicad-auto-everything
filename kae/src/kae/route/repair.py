@@ -17,7 +17,7 @@ reads every error-level violation and missing connection:
 The remaining routing is locked (exported as fixed wiring), Freerouting routes only what is
 open, the session is imported on top, the routing unlocked again, and the result checked by
 the next round's DRC. A round's board replaces the output only if it is better (fewer
-missing connections, then fewer errors), so the output never gets worse. Stops when the
+violations in all, then fewer missing connections), so the output never gets worse. Stops when the
 board is clean, nothing more can be done, the round limit is reached, or time runs out.
 """
 import json
@@ -37,8 +37,9 @@ _LAYER = re.compile(r" on ([A-Za-z0-9_.]+)")
 
 
 def _key(s):
-    """Better boards sort higher: clean, then fewer missing connections, then fewer errors."""
-    return (s["errors"] == 0 and s["unconnected"] == 0, -s["unconnected"], -s["errors"])
+    """Better boards sort higher: clean, then fewer violations in all (errors plus missing
+    connections), then fewer missing connections."""
+    return (s["errors"] == 0 and s["unconnected"] == 0, -(s["errors"] + s["unconnected"]), -s["unconnected"])
 
 
 def _nets_of(item_desc):
@@ -83,15 +84,13 @@ class _Space:
         if it[2] == "routed":
             ocls = self.plan.net_class.get(other)
             a, b = sorted((cls, ocls)) if cls and ocls else (cls, ocls)
-            v = self.plan.matrix.get((a, b, layer), 0.2)
+            v = self.plan.matrix.get((a, b, layer), (0.2, 0.2, 0.2))
             r = self.routed.get(it[5])
-            if r is not None and r["kind"] == "via":
-                v += self.plan.classes[ocls].delta if ocls in self.plan.classes else 0.0
-            return v
+            return v[1] if r is not None and r["kind"] == "via" else v[0]
         if it[2] == "pad" and it[4] in self.plan.obstacle_classes:
-            return self.plan.obstacle_classes[it[4]].values.get((cls, layer), 0.2)
+            return self.plan.obstacle_classes[it[4]].values.get((cls, layer), (0.2, 0.2))[0]
         vals = [oc.values.get((cls, layer)) for n, oc in self.plan.obstacle_classes.items() if n.startswith("kae_cu")]
-        return max([v for v in vals if v is not None] or [0.2])
+        return max([v[0] for v in vals if v is not None] or [0.2])
 
     def fits(self, uuid, width):
         """Whether routed track `uuid` widened to `width` keeps every required clearance."""

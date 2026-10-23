@@ -93,7 +93,7 @@ def test_plan_and_translation(exported, tmp_path):
     if pw:
         for (a, b, l), v in p.matrix.items():
             if pw in (a, b):
-                assert v >= 0.3 - 1e-9
+                assert min(v) >= 0.3 - 1e-9
     tree = specctra.read(dsn)
     summary = translate.apply(tree, p, info)
     out = tmp_path / "board.dsn"

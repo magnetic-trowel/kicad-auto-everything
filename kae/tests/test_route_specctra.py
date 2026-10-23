@@ -76,13 +76,13 @@ SES = '''(session board
 
 
 def test_fix_session_strips_placement_quotes_nets_restores_vias():
-    rc = RoutingClass("kicad_default", ["ADD|SUB"], "Default", {"F.Cu": 0.2, "B.Cu": 0.2}, (0.45, 0.3), delta=0.125)
+    rc = RoutingClass("kae_Default", ["ADD|SUB"], "Default", {"F.Cu": 0.2, "B.Cu": 0.2}, (0.7, 0.3))
     assert via_name(rc, 2) == "Via[0-1]_700:300_um"
-    plan = SimpleNamespace(classes={"kicad_default": rc}, copper=["F.Cu", "B.Cu"])
+    plan = SimpleNamespace(classes={"kae_Default": rc}, copper=["F.Cu", "B.Cu"])
     t = S.parse(SES)
     out = translate.fix_session(t, plan)
     assert out == dict(placement_stripped=True, nets_quoted=1, vias_restored=2)
     text = S.dumps(t)
     assert "(placement" not in text
     assert '(net "ADD|SUB"' in text
-    assert "(circle F.Cu 4500 0 0)" in text  # 0.45 mm in SES units (0.1 um)
+    assert "(circle F.Cu 7000 0 0)" in text  # 0.7 mm in SES units (0.1 um)

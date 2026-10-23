@@ -12,12 +12,13 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
   a class. Width per layer = the netclass width (KiCad's "opt") clamped into [min, max] of
   the track-width constraint on that layer; via = netclass size raised to the via-diameter,
   hole-size and annular-ring minimums, in whole micrometres.
-- **Via inflation.** Freerouting has one clearance per class pair for tracks and vias
-  alike, while KiCad adds hole-to-hole and hole clearances that bind only vias. Each class's
-  via padstack is drawn `delta` larger in the DSN (and restored in the SES), so via-to-via
-  and via-to-track requirements hold with the track clearance.
-- **Clearance matrix.** clearance(R, S, layer) = max over (track, via) pairs of KiCad's
-  requirement minus the via inflation of the via partners (rules.strictest).
+- **Vias.** Freerouting holds separate clearances for a class's vias when the class rule
+  has typed clearances (wire_via, via_via): KiCad's hole-to-hole and hole clearances, which
+  bind only vias, go there, so vias are not over-constrained against tracks or tracks
+  against vias.
+- **Clearance matrix.** For every pair of classes and layer: track-track, track-via and
+  via-via clearances, each KiCad's requirement (rules.strictest) with hole clearance taken
+  through the via's annular ring and hole-to-hole through both drills.
 - **Pin classes.** Every pad gets a clearance class: its copper clearance to each routing
   class on each layer, raised by hole clearance through its annular ring, by solder-mask
   aperture clearance on outer layers (expansion + mask-to-copper), and by how far its real
@@ -95,7 +96,6 @@ class RoutingClass:
     netclass: str
     widths: dict            # layer -> mm
     via: tuple              # (diameter, drill) mm, the real via
-    delta: float = 0.0      # via inflation in the DSN
     rep: str = ""           # representative net
     rep2: str = ""          # a second net of the class (for same-class pairs), or ""
 
@@ -229,11 +229,11 @@ def plan(info, board_path, opts=None):
     groups = {}
     for net in nets:
         groups.setdefault(sig_of[net], []).append(net)
-    # name classes: the one holding KiCad's Default nets (largest such group) is kicad_default
+    # class names: kae_<netclass>[_k]; never Freerouting's default class (see translate)
     order = sorted(groups.items(), key=lambda kv: (kv[0][0] != "Default", -len(kv[1]), kv[0][0]))
     used = set()
     for i, (sig, members) in enumerate(order):
-        name = "kicad_default" if i == 0 and sig[0] == "Default" else _class_name(sig[0], used)
+        name = _class_name(sig[0], used)
         used.add(name)
         members = sorted(members)
         w = per_net[members[0]]["widths"]
@@ -242,10 +242,10 @@ def plan(info, board_path, opts=None):
         p.classes[name] = rc
         for n in members:
             p.net_class[n] = name
-    if not p.classes:  # a board with no nets still needs a default class
+    if not p.classes:  # a board with no nets still needs a class
         nc = info["netclasses"].get("Default", {})
         w = up(max(nc.get("track_width") or 0.0, s.get("min_track", 0.0)) or 0.2)
-        p.classes["kicad_default"] = RoutingClass("kicad_default", [], "Default", {l: w for l in cu},
+        p.classes["kae_Default"] = RoutingClass("kae_Default", [], "Default", {l: w for l in cu},
                                                   (max(nc.get("via_diameter") or 0.6, s.get("min_via", 0.0)),
                                                    max(nc.get("via_drill") or 0.3, s.get("min_drill", 0.0))))
     neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [0.0])
@@ -254,10 +254,6 @@ def plan(info, board_path, opts=None):
 
     # ---- class pair requirements: tracks and vias of R vs S, per layer
     names = sorted(p.classes)
-    reps = {}
-    for n in names:
-        rc = p.classes[n]
-        reps[n] = rc
     req = {}   # (R, S, layer) -> dict(ww, wv, vw, vv)
     for i, a in enumerate(names):
         for b in names[i:]:
@@ -292,21 +288,9 @@ def plan(info, board_path, opts=None):
             va = net_item(info, rc.rep, "via")
             h = _strict_min(rb, "hole_to_hole", va, dict(va), None)
             p.notes.setdefault("same_net_via_pitch", {})[n] = up(h + rc.via[1])
-    # via inflation per class: via-to-via and via-to-track needs beyond the track clearance
-    for n in names:
-        rc = p.classes[n]
-        dlt = 0.0
-        for l in cu:
-            r = req.get((n, n, l))
-            if r is None:
-                continue
-            dlt = max(dlt, (r["vv"] - r["ww"]) / 2, r["wv"] - r["ww"], r["vw"] - r["ww"])
-        rc.delta = up(max(0.0, dlt), 0.001)
     for (a, b, l), r in req.items():
-        da_, db_ = p.classes[a].delta, p.classes[b].delta
-        c = max(r["ww"], r["wv"] - db_, r["vw"] - da_, r["vv"] - da_ - db_)
-        p.matrix[(a, b, l)] = up(max(c, EPS_SHORT))
-    _dedupe_via_names(p)
+        p.matrix[(a, b, l)] = (up(max(r["ww"], EPS_SHORT)), up(max(r["wv"], r["vw"], EPS_SHORT)),
+                               up(max(r["vv"], EPS_SHORT)))
 
     # ---- pins
     pin_req = {}
@@ -326,7 +310,7 @@ def plan(info, board_path, opts=None):
     _obstacles(info, rb, p, sev, opts)
 
     # ---- the board outline (Freerouting applies one value to every class)
-    edge_vals = [v for (rcn, l), v in p.obstacle_classes.get("kae_edge", ObstacleClass("", {})).values.items()]
+    edge_vals = [v[0] for v in p.obstacle_classes.get("kae_edge", ObstacleClass("", {})).values.values()]
     p.edge_clearance = max(edge_vals) if edge_vals else s.get("edge_clearance", 0.0)
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
@@ -336,31 +320,16 @@ def plan(info, board_path, opts=None):
 def _class_name(netclass, used):
     base = "kae_" + "".join(ch if ch.isalnum() else "_" for ch in netclass)[:40]
     name, k = base, 1
-    while name in used or name == "kicad_default":
+    while name in used:
         k += 1
         name = f"{base}_{k}"
     return name
 
 
-def _dedupe_via_names(p):
-    """Each class's DSN via padstack is named by its inflated diameter and real drill
-    (Via[0-n]_<D'>:<d>_um, whole um: Freerouting drops a decimal fraction from via names and
-    KiCad reads the drill from the name); two classes with equal names but different real
-    vias get the later one's inflation raised by 1 um."""
-    seen = {}
-    for n in sorted(p.classes):
-        rc = p.classes[n]
-        while True:
-            key = (round((rc.via[0] + 2 * rc.delta) * 1000), round(rc.via[1] * 1000))
-            if key not in seen or seen[key] == rc.via:
-                seen[key] = rc.via
-                break
-            rc.delta += 0.0005
-
-
 def via_name(rc, n_layers):
-    Dp = round((rc.via[0] + 2 * rc.delta) * 1000)
-    return f"Via[0-{n_layers - 1}]_{Dp}:{round(rc.via[1] * 1000)}_um"
+    """A class's via padstack: Via[0-n]_<D>:<d>_um in whole micrometres (Freerouting drops a
+    decimal fraction from via names, KiCad reads the drill from the name)."""
+    return f"Via[0-{n_layers - 1}]_{round(rc.via[0] * 1000)}:{round(rc.via[1] * 1000)}_um"
 
 
 # ----------------------------------------------------------------------------- pads
@@ -451,7 +420,7 @@ def _pad_requirements(info, rb, p, pad, sev):
                 ec_t = _strict_min(rb, "edge_clearance", t, EDGE_ITEM, l)
                 ec_v = _strict_min(rb, "edge_clearance", v, EDGE_ITEM, l)
                 tw, vw = max(tw, ec_t + e), max(vw, ec_v + e)
-            out[(n, l)] = up(max(tw, vw - rc.delta, EPS_SHORT))
+            out[(n, l)] = (up(max(tw, EPS_SHORT)), up(max(vw, EPS_SHORT)))
     return out
 
 
@@ -468,7 +437,7 @@ def _obstacle_class(p, prefix, vec):
 def _zero_class(p):
     name = "kae_zero"
     if name not in p.obstacle_classes:
-        p.obstacle_classes[name] = ObstacleClass(name, {(n, l): 0.0 for n in p.classes for l in p.copper})
+        p.obstacle_classes[name] = ObstacleClass(name, {(n, l): (0.0, 0.0) for n in p.classes for l in p.copper})
     return name
 
 
@@ -535,22 +504,24 @@ def _obstacles(info, rb, p, sev, opts):
             v = net_item(info, rc.rep, "via", l)
             ew = _strict_min(rb, "edge_clearance", t, EDGE_ITEM, l)
             ev_ = _strict_min(rb, "edge_clearance", v, EDGE_ITEM, l)
-            vec[(n, l)] = up(max(ew, 0.0))
-            band = max(band, ev_ - rc.delta)
+            vec[(n, l)] = (up(max(ew, 0.0)), up(max(ev_, 0.0)))
+            band = max(band, ev_)
     p.obstacle_classes["kae_edge"] = ObstacleClass("kae_edge", vec)
-    track_edge = max(vec.values()) if vec else 0.0
+    track_edge = max(v[0] for v in vec.values()) if vec else 0.0
     cut, stray, board = _edge_geoms(info)
     for g in cut:
         p.obstacles.append(Obstacle("keepout", "signal", g, "kae_edge", "board cut-out"))
     for g in stray:
         p.obstacles.append(Obstacle("keepout", "signal", g, "kae_edge", "edge shape"))
     p.notes["via_edge_band"] = round(band, 4)
-    if band > track_edge + 1e-6 and board is not None:
+    if band > track_edge + 1e-6 and board is not None and not opts.get("no_band"):
+        # Freerouting's outline has one clearance for tracks and vias: a band inside the
+        # outer outline keeps vias at their own distance (cut-outs and stray edges carry
+        # both values in their class)
         w = up(band)
-        inner = board.buffer(-w, quad_segs=16)
-        ring = board.difference(inner) if not inner.is_empty else board
-        extra = [g.buffer(w, quad_segs=16) for g in cut] + [g.buffer(w, quad_segs=16) for g in stray]
-        geo = unary_union([ring, *extra])
+        shell = unary_union([Polygon(pg.exterior) for pg in getattr(board, "geoms", [board])])
+        inner = shell.buffer(-w, quad_segs=16)
+        geo = shell.difference(inner) if not inner.is_empty else shell
         if not geo.is_empty:
             p.obstacles.append(Obstacle("via_keepout", "signal", geo, _zero_class(p), "via edge band"))
     # ---- NPTH round holes (KiCad exports them as round keepouts at hole + board hole clearance)
@@ -573,7 +544,7 @@ def _obstacles(info, rb, p, sev, opts):
                 if pad.get("attr") != "npth":
                     tw = max(tw, _strict_min(rb, "clearance", pi, t, l))
                     vw = max(vw, _strict_min(rb, "clearance", pi, v, l))
-                vec[(n, l)] = up(max(tw, vw - rc.delta, EPS_SHORT))
+                vec[(n, l)] = (up(max(tw, EPS_SHORT)), up(max(vw, EPS_SHORT)))
         cls = _obstacle_class(p, "kae_hole", vec)
         p.obstacles.append(Obstacle("keepout", "signal", ("circle", h["a"][0], h["a"][1], h["width"]), cls,
                                     f"hole {pad['ref']}.{pad['number']}"))
@@ -591,7 +562,7 @@ def _obstacles(info, rb, p, sev, opts):
                 v = net_item(info, rc.rep, "via", l)
                 tw = _strict_min(rb, "clearance", gi, t, l)
                 vw = _strict_min(rb, "clearance", gi, v, l)
-                vec[(n, l)] = up(max(tw, vw - rc.delta, EPS_SHORT))
+                vec[(n, l)] = (up(max(tw, EPS_SHORT)), up(max(vw, EPS_SHORT)))
         if not vec:
             continue
         cls = _obstacle_class(p, "kae_cu", vec)

@@ -85,21 +85,25 @@ def _shape_nodes(ob):
 
 
 def _class_rule_nodes(widths, clearances, copper):
-    """(rule ...) and (layer_rule ...) nodes for per-layer widths/clearances (dict layer->mm
-    or None)."""
+    """(rule ...) and (layer_rule ...) nodes. widths: layer -> mm or None; clearances: layer ->
+    (track-track, track-via, via-via) mm or None. Typed clearances give the class's vias a
+    clearance class of their own in Freerouting."""
+    def rule(l, base=None):
+        r = ["rule"]
+        if widths and (base is None or abs(widths[l] - widths[base]) > 1e-9):
+            r.append(["width", _um(widths[l])])
+        if clearances:
+            c = clearances[l]
+            cb = clearances[base] if base is not None else None
+            for v, kind, i in ((c[0], None, 0), (c[1], "wire_via", 1), (c[2], "via_via", 2)):
+                if v is None or (cb is not None and cb[i] is not None and abs(v - cb[i]) < 1e-9):
+                    continue
+                r.append(["clearance", _um(v)] + ([["type", kind]] if kind else []))
+        return r
     base_l = copper[0]
-    rule = ["rule"]
-    if widths:
-        rule.append(["width", _um(widths[base_l])])
-    if clearances:
-        rule.append(["clearance", _um(clearances[base_l])])
-    out = [rule]
+    out = [rule(base_l)]
     for l in copper[1:]:
-        lr = ["rule"]
-        if widths and abs(widths[l] - widths[base_l]) > 1e-9:
-            lr.append(["width", _um(widths[l])])
-        if clearances and abs(clearances[l] - clearances[base_l]) > 1e-9:
-            lr.append(["clearance", _um(clearances[l])])
+        lr = rule(l, base_l)
         if len(lr) > 1:
             out.append(["layer_rule", l, lr])
     return out
@@ -136,9 +140,10 @@ def apply(tree, plan, info):
     summary["kicad_keepouts_removed"] = removed
     vias = {n: via_name(rc, len(cu)) for n, rc in plan.classes.items()}
     struct.append(["via", *[Q(v) for v in sorted(set(vias.values()))]])
-    dflt = plan.classes.get("kicad_default") or next(iter(plan.classes.values()))
-    struct.append(["rule", ["width", _um(dflt.widths[cu[0]])],
-                   ["clearance", _um(plan.matrix.get((dflt.name, dflt.name, cu[0]), 0.2))]])
+    # Freerouting's default class holds no nets (every net is in a plan class); its rule
+    # only has to be valid
+    dflt = next(iter(plan.classes.values()))
+    struct.append(["rule", ["width", _um(dflt.widths[cu[0]])], ["clearance", _um(0.1)]])
 
     # ---- library: image keepouts out, KiCad's vias out, ours in, the obstacle image in
     for img in findall(lib, "image"):
@@ -156,23 +161,19 @@ def apply(tree, plan, info):
         name = vias[n]
         if any(len(ps) > 1 and ps[1] == name for ps in findall(lib, "padstack")):
             continue
-        dia = _um(rc.via[0] + 2 * rc.delta)
+        dia = _um(rc.via[0])
         lib.append(["padstack", Q(name), *[["shape", ["circle", l, dia, "0", "0"]] for l in cu], ["attach", "off"]])
-    # fixed vias in the wiring (locked routing): drawn inflated like their class's vias, so
-    # new vias keep the hole-to-hole distance from them too
+    # fixed vias in the wiring (locked routing) keep KiCad's padstack (sizes in whole um)
     wiring = find(tree, "wiring")
     have = {str(ps[1]) for ps in findall(lib, "padstack") if len(ps) > 1}
     for wv in findall(wiring or [], "via"):
         if len(wv) < 2 or str(wv[1]) not in kicad_vias:
             continue
-        net = find(wv, "net")
-        rc = plan.classes.get(plan.net_class.get(str(net[1]) if net is not None and len(net) > 1 else "", ""))
-        dlt = rc.delta if rc is not None else 0.0
         real_um = kicad_vias[str(wv[1])]
         drill = str(wv[1]).split(":")[1].split("_")[0] if ":" in str(wv[1]) else "0"
-        name = f"Via[0-{len(cu) - 1}]_{round(real_um + 2000 * dlt)}:{drill}_um"
+        name = f"Via[0-{len(cu) - 1}]_{round(real_um)}:{round(float(drill or 0))}_um"
         if name not in have:
-            lib.append(["padstack", Q(name), *[["shape", ["circle", l, fmt(real_um + 2000 * dlt), "0", "0"]] for l in cu],
+            lib.append(["padstack", Q(name), *[["shape", ["circle", l, fmt(real_um), "0", "0"]] for l in cu],
                         ["attach", "off"]])
             have.add(name)
         wv[1] = Q(name)
@@ -212,12 +213,15 @@ def apply(tree, plan, info):
             network.remove(c)
     known = set(info["nets"])
     for n, rc in sorted(plan.classes.items()):
-        diag = {l: plan.matrix.get((n, n, l), plan.matrix.get((n, n, cu[0]), 0.2)) for l in cu}
+        # a class's own rule must hold typed clearances, so that its vias get their own
+        # clearance class before Freerouting creates the class's via infos
+        d0 = plan.matrix.get((n, n, cu[0]))
+        diag = {l: plan.matrix.get((n, n, l)) or d0 or (0.2, 0.2, 0.2) for l in cu}
         nets = [Q(x) for x in rc.nets if x in known]
         network.append(["class", n, *nets, ["circuit", ["use_via", Q(vias[n])]],
                         *_class_rule_nodes(rc.widths, diag, cu)])
     for oname, oc in sorted(plan.obstacle_classes.items()):
-        vals = [v for v in oc.values.values()]
+        vals = [max(v) for v in oc.values.values()]
         network.append(["class", oname, ["rule", ["clearance", _um(max(vals) if vals else 0.0)]]])
     names = sorted(plan.classes)
     for i, a in enumerate(names):
@@ -232,8 +236,9 @@ def apply(tree, plan, info):
             have = [v for v in vals.values() if v is not None]
             if not have:
                 continue
-            fill = max(have)
-            vals = {l: (v if v is not None else fill) for l, v in vals.items()}
+            fill = (max(v[0] for v in have), max(v[1] for v in have))
+            vals = {l: ((v if v is not None else fill)[0], (v if v is not None else fill)[1], None)
+                    for l, v in vals.items()}
             network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu)])
     summary["classes"] = len(plan.classes)
     summary["obstacle_classes"] = len(plan.obstacle_classes)
