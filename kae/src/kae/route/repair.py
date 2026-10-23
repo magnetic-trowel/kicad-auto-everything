@@ -45,28 +45,90 @@ def _nets_of(item_desc):
     return [m for m in _NET.findall(item_desc or "") if m and m != "<no net>"]
 
 
-def _routed_geom(r):
+def _routed_geom(r, grow=0.0):
     from shapely.geometry import LineString, Point
     if r["kind"] == "via":
-        return Point(r["pos"]).buffer(r["size"] / 2, quad_segs=16)
-    return LineString([r["a"], r["b"]]).buffer(r["width"] / 2, quad_segs=8)
+        return Point(r["pos"]).buffer(r["size"] / 2 + grow, quad_segs=16)
+    return LineString([r["a"], r["b"]]).buffer(r["width"] / 2 + grow, quad_segs=8)
 
 
-def analyse(report, routed, info=None, plan=None, thermal=None):
-    """What a DRC report asks for, given `routed` = {uuid: routing item}: {widen: {uuid: mm},
-    rip: {net}, open: {net: set(layers) or None}, thermal: {pad uuid}, unattributed: [type]}.
+class _Space:
+    """Foreign copper around routed items, with the clearance the plan requires, to decide
+    whether a track can be widened in place."""
 
-    A starved thermal, or a pad that misses its own zone, gets a spoke corridor (see
-    constraints.thermal_corridors) and the routed nets that cross it are ripped up."""
-    widen, rip, opened, other = {}, set(), {}, []
+    def __init__(self, routed, info, plan):
+        from shapely.strtree import STRtree
+        from .constraints import _pad_shapes, _poly
+        self.routed, self.plan = routed, plan
+        self.items = []   # (geometry, net, kind, layer or None, obstacle class or None)
+        for u, r in routed.items():
+            self.items.append((_routed_geom(r), r["net"], "routed", r.get("layer"), None, u))
+        for pd in info.get("pads") or []:
+            _, real = _pad_shapes(pd)
+            cls = plan.pin_class.get((pd.get("comp"), pd.get("pin")))
+            for l, g in real.items():
+                if g is not None and not g.is_empty:
+                    self.items.append((g, pd.get("net") or "", "pad", l, cls, None))
+        for g in info.get("graphics") or []:
+            for l, polys in (g.get("layers") or {}).items():
+                for rr in polys:
+                    pg = _poly(rr)
+                    if pg is not None:
+                        self.items.append((pg, g.get("net") or "", "graphic", l, None, None))
+        self.tree = STRtree([it[0] for it in self.items]) if self.items else None
+
+    def _need(self, net, layer, it):
+        cls = self.plan.net_class.get(net)
+        other = it[1]
+        if it[2] == "routed":
+            ocls = self.plan.net_class.get(other)
+            a, b = sorted((cls, ocls)) if cls and ocls else (cls, ocls)
+            v = self.plan.matrix.get((a, b, layer), 0.2)
+            r = self.routed.get(it[5])
+            if r is not None and r["kind"] == "via":
+                v += self.plan.classes[ocls].delta if ocls in self.plan.classes else 0.0
+            return v
+        if it[2] == "pad" and it[4] in self.plan.obstacle_classes:
+            return self.plan.obstacle_classes[it[4]].values.get((cls, layer), 0.2)
+        vals = [oc.values.get((cls, layer)) for n, oc in self.plan.obstacle_classes.items() if n.startswith("kae_cu")]
+        return max([v for v in vals if v is not None] or [0.2])
+
+    def fits(self, uuid, width):
+        """Whether routed track `uuid` widened to `width` keeps every required clearance."""
+        r = self.routed[uuid]
+        from shapely.geometry import LineString
+        seg = LineString([r["a"], r["b"]]).buffer(width / 2, quad_segs=8)
+        if self.tree is None:
+            return True
+        for i in self.tree.query(seg.buffer(1.0)):
+            it = self.items[int(i)]
+            if it[1] == r["net"] and r["net"]:
+                continue
+            if it[3] is not None and it[3] != r["layer"] and not (it[2] == "routed" and self.routed[it[5]]["kind"] == "via"):
+                continue
+            if seg.distance(it[0]) < self._need(r["net"], r["layer"], it) - 1e-6:
+                return False
+        return True
+
+
+def analyse(report, routed, info=None, plan=None):
+    """What a DRC report asks for, given `routed` = {uuid: routing item}:
+    widen {uuid: mm}, items {uuid} and nets {net} to rip up, open {net: set(layers) or None},
+    thermal {pad uuid}, unattributed [type].
+
+    A track narrower than its rule is widened in place when the plan's clearances allow it,
+    otherwise ripped up. A starved thermal, or a pad that misses its own zone, gets a spoke
+    corridor (constraints.thermal_corridors) and the routed items crossing it are ripped up."""
+    widen, items, nets, opened, other = {}, set(), set(), {}, []
     pads = {pd.get("uuid"): pd for pd in (info or {}).get("pads", []) if pd.get("uuid")}
     want_corridor = set()
+    space = None
     for v in drc.errors(report):
-        items = v.get("items") or []
+        its = v.get("items") or []
         if v.get("type") == "starved_thermal":
-            want_corridor.update(it.get("uuid") for it in items if it.get("uuid") in pads)
+            want_corridor.update(it.get("uuid") for it in its if it.get("uuid") in pads)
             continue
-        ours = [it for it in items if it.get("uuid") in routed]
+        ours = [it for it in its if it.get("uuid") in routed]
         if not ours:
             other.append(v.get("type"))
             continue
@@ -74,19 +136,24 @@ def analyse(report, routed, info=None, plan=None, thermal=None):
             m = _MIN.search(v.get("description", ""))
             for it in ours:
                 r = routed[it["uuid"]]
-                if m and r["kind"] in ("track", "arc"):
-                    widen[it["uuid"]] = float(m.group(1)) + 1e-4
-                else:
-                    rip.add(r["net"])
+                w = float(m.group(1)) + 1e-4 if m else None
+                if w and r["kind"] in ("track", "arc") and info is not None and plan is not None:
+                    space = space or _Space(routed, info, plan)
+                    if space.fits(it["uuid"], w):
+                        widen[it["uuid"]] = w
+                        continue
+                items.add(it["uuid"])
+                nets.add(r["net"])
             continue
         for it in ours:
-            rip.add(routed[it["uuid"]]["net"])
+            items.add(it["uuid"])
+            nets.add(routed[it["uuid"]]["net"])
     for u in report.get("unconnected_items") or []:
-        items = u.get("items") or []
-        nets = {n for it in items for n in _nets_of(it.get("description"))}
+        its = u.get("items") or []
+        uns = {n for it in its for n in _nets_of(it.get("description"))}
         zone_layers, has_zone = set(), False
-        pad_ids = [it.get("uuid") for it in items if it.get("uuid") in pads]
-        for it in items:
+        pad_ids = [it.get("uuid") for it in its if it.get("uuid") in pads]
+        for it in its:
             d = it.get("description") or ""
             if d.startswith("Zone") or d.startswith("Teardrop"):
                 has_zone = True
@@ -95,28 +162,28 @@ def analyse(report, routed, info=None, plan=None, thermal=None):
         if has_zone and pad_ids:
             want_corridor.update(pad_ids)  # a pad cut off from its zone
             continue
-        for n in nets:
+        for n in uns:
             if has_zone:
                 cur = opened.get(n, set())
                 opened[n] = None if cur is None else (cur | zone_layers)
             else:
                 opened[n] = None  # re-route; a plane of the net may have hidden the gap
-    new_thermal = set()
+    thermal = set()
     if want_corridor and info is not None and plan is not None:
         from shapely.strtree import STRtree
         from .constraints import thermal_corridors
-        geoms = {u: _routed_geom(r) for u, r in routed.items()}
-        keys = list(geoms)
-        tree = STRtree([geoms[k] for k in keys]) if keys else None
+        keys = list(routed)
+        tree = STRtree([_routed_geom(routed[k]) for k in keys]) if keys else None
         for geo, layer, pad in thermal_corridors(info, plan, want_corridor):
-            new_thermal.add(pad["uuid"])
+            thermal.add(pad["uuid"])
             if tree is None:
                 continue
             for i in tree.query(geo, predicate="intersects"):
                 r = routed[keys[int(i)]]
                 if r["net"] != pad["net"] and (r["kind"] == "via" or r.get("layer") == layer):
-                    rip.add(r["net"])
-    return dict(widen=widen, rip=rip, open=opened, thermal=new_thermal, unattributed=other)
+                    items.add(r["uuid"])
+                    nets.add(r["net"])
+    return dict(widen=widen, items=items, nets=nets, open=opened, thermal=thermal, unattributed=other)
 
 
 def _drop_planes(tree, nets_layers):
@@ -136,12 +203,19 @@ def _drop_planes(tree, nets_layers):
     return n
 
 
+# Escalation: rip only the offending items with the rest fixed; then their whole nets; then
+# their whole nets with the rest of the routing left to the router.
+LEVELS = ("items", "nets", "free")
+
+
 def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     """Repair `output_path` in place (see the module docstring). Returns a report."""
     wd = Path(wd)
     output_path = Path(output_path)
     rounds = []
     t_start = time.monotonic()
+    thermal = set(opts.get("thermal_pads") or []) if opts.get("thermal_pads") != "all" else set()
+    sev = opts.get("severities") or {}
 
     def left():
         return deadline - time.monotonic()
@@ -150,8 +224,6 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         staged = drc.stage_board(board, input_path, d)
         return drc.run(staged, d / "drc.json", timeout=max(10, left() - 5))
 
-    thermal = set(opts.get("thermal_pads") or [])
-    sev = opts.get("severities") or {}
     try:
         best_rep = check(output_path, wd / "repair0" / "drc")
     except drc.DrcError as e:
@@ -159,13 +231,11 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     best = drc.summary(best_rep)
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
-    modes = list(opts.get("repair_modes") or ("fixed", "free"))
-    mode_i = 0
+    level = 0
     for k in range(1, int(opts.get("rounds", 3)) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
-        mode = modes[mode_i]
-        rec = dict(round=k, mode=mode)
+        rec = dict(round=k)
         rounds.append(rec)
         if left() < 45:
             rec["stopped"] = "time"
@@ -177,23 +247,27 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         listing = pcbnew_io.edit_routing(output_path, rdir / "listing.kicad_pcb")["routing"]
         routed = {r["uuid"]: r for r in listing if not r.get("locked")}
         a = analyse(best_rep, routed, info, plan)
-        rec.update(widen=len(a["widen"]), rip=sorted(a["rip"]), open=sorted(a["open"]),
-                   thermal=len(a["thermal"] - thermal), unattributed=sorted(set(a["unattributed"])))
-        if a["thermal"] - thermal and opts.get("thermal_repair", True):
-            thermal |= a["thermal"]
+        new_thermal = a["thermal"] - thermal
+        if new_thermal and opts.get("thermal_repair", True):
+            thermal |= new_thermal
             plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
-        elif not a["widen"] and not a["rip"] and not a["open"]:
+        if not a["widen"] and not a["items"] and not a["open"] and not new_thermal:
             rec["stopped"] = "nothing attributable"
+            rec["unattributed"] = sorted(set(a["unattributed"]))
             break
-        # 1. widen and rip up; lock the rest
-        rip_uuids = [u for u, r in routed.items() if r["net"] in a["rip"]]
+        if not a["items"] and not a["widen"] and level == 0:
+            level = 2  # only open connections: the router needs room, not the same board again
+        mode = LEVELS[level]
+        rec.update(level=mode, widen=len(a["widen"]), rip_items=len(a["items"]), rip_nets=sorted(a["nets"]),
+                   open=sorted(a["open"]), thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
+        if mode == "items":
+            rip = set(a["items"])
+        else:
+            rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
         fixed = drc.stage_board(output_path, input_path, rdir / "fixed")
-        # fixed: the rest of the routing is locked (exported as fixed wiring); free: it stays
-        # routable, so Freerouting may shove or re-route it to make room
-        pcbnew_io.edit_routing(fixed, fixed, delete=rip_uuids, widths=a["widen"], lock_all=mode == "fixed")
+        pcbnew_io.edit_routing(fixed, fixed, delete=sorted(rip), widths=a["widen"], lock_all=mode != "free")
         cand = rdir / "cand.kicad_pcb"
-        if a["rip"] or a["open"]:
-            # 2. route what is open, everything else fixed
+        if rip or a["open"]:
             dsn_k = rdir / "kicad.dsn"
             pcbnew_io.export_dsn(fixed, dsn_k, probes=False)
             tree = specctra.read(dsn_k)
@@ -227,21 +301,18 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         except drc.DrcError as e:
             rec["drc_error"] = str(e)
             break
-        s = drc.summary(rep)
-        rec.update(s)
-        if _key(s) > _key(best):
-            shutil.copy2(cand, output_path)
-            best, best_rep = s, rep
-            rec["kept"] = True
-        else:
-            rec["kept"] = False
-        log(f"repair round {k} ({mode}): {s['errors']} errors {s['by_type']}, {s['unconnected']} unconnected "
+        s_ = drc.summary(rep)
+        rec.update(s_)
+        rec["kept"] = _key(s_) > _key(best)
+        log(f"repair round {k} ({mode}): {s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
             f"({'kept' if rec['kept'] else 'discarded'})")
-        if not rec["kept"]:
-            mode_i += 1
-            if mode_i >= len(modes):
+        if rec["kept"]:
+            shutil.copy2(cand, output_path)
+            best, best_rep = s_, rep
+            level = 0
+        else:
+            level += 1
+            if level >= len(LEVELS):
                 rec["stopped"] = "no improvement"
                 break
-        else:
-            mode_i = 0
-    return dict(rounds=rounds, final=best, seconds=round(time.monotonic() - t_start, 1))
+    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
