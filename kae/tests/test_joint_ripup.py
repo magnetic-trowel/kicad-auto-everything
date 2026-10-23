@@ -5,7 +5,6 @@ import dataclasses
 from pathlib import Path
 
 import numpy as np
-
 from kae.board.kicad_file import load
 from kae.joint.feedback import CongestionHistory, Window
 from kae.joint.penalty import apply_history
@@ -99,3 +98,33 @@ def test_replace_window_moves_only_window_parts_legally():
     again = replace_window(b, win, {"nets": {}, "structures": []}, history=h, seed=3, time_s=30.0, physics=False,
                            bump_refs=("U1",))
     assert again.poses == res.poses                              # seeded
+
+
+def test_stages_geometry_and_finish_without_kicad(tmp_path):
+    import shutil
+
+    from kae.joint.stages import KaeStages, Layout
+    from kae.route import critical_write as W
+    inp = tmp_path / "in.kicad_pcb"
+    shutil.copy2(FIXTURE, inp)
+    st = KaeStages(inp, tmp_path / "wd", opts=dict(writer="sexpr"))
+    b = load(inp)
+    st.locked = {fp.uuid for fp in b.footprints if fp.locked}
+    work = tmp_path / "work.kicad_pcb"
+    W.append_items(inp, work, tracks=[("GND", "F.Cu", 0.25, (1.0, 1.0), (2.0, 1.0), "11111111-2222-3333-4444-555555555555",
+                                       False)])
+    u1 = _uuid(b, "U1")
+    poses = {fp.uuid: (fp.x, fp.y, fp.rot, fp.side) for fp in b.footprints}
+    poses[u1] = (12.0, 11.0, 0.0, "F")
+    lay = Layout(board=str(work), poses=poses)
+    parts, bounds, centres, refs = st.geometry(lay)
+    assert bounds == (0.0, 0.0, 60.0, 40.0)
+    assert parts[_uuid(b, "U6")].locked and not parts[u1].locked and refs[u1] == "U1"
+    assert parts[_uuid(b, "U7")].locked                       # staged off the board: never moves
+    out = tmp_path / "out.kicad_pcb"
+    rep = st.finish(lay, out)
+    assert rep["moved"] == 1
+    o = load(out)
+    assert [t.uuid for t in o.tracks if t.net == "GND"] == ["11111111-2222-3333-4444-555555555555"]
+    fp = next(f for f in o.footprints if f.uuid == u1)
+    assert (round(fp.x, 6), round(fp.y, 6)) == (12.0, 11.0)

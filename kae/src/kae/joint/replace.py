@@ -111,7 +111,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
         try:
             from kae.place.stubs import make_terms
             terms, _ = make_terms(b2, brief, barrier=0.0, u_sat=3.0)
-        except Exception as e:  # noqa: BLE001 - the window still re-places on routability
+        except Exception as e:
             log(f"place terms failed ({type(e).__name__}: {e})")
             terms = None
     order = clusters.protection_order(P, brief) if physics else []

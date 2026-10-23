@@ -39,12 +39,14 @@ DEFAULTS = dict(
     max_attempts=2,        # tries of one window (each larger, with a higher congestion weight)
     margin=2.0,            # mm around a spot's parts (window_for_spot)
     max_parts=8,           # movable parts per window
+    max_pins=12,           # first attempt: parts with more connected pads stay fixed (None: any part)
     history_amount=1.0,    # history added per failed connection's corridor bin (utilization units)
     place_share=0.30,      # share of the budget for the placer
     route_share=0.45,      # share of what is left after placing and the module stage, for the first route
     reserve=25.0,          # seconds kept for the final write and DRC (at least 4 % of the budget)
     physics_spots=True,    # flagged modules make windows too
     min_iter_s=45.0,       # an iteration is not started with less than this left
+    iter_share=0.25,       # one window's repair gets at most this share of the budget (at least 90 s)
 )
 
 
@@ -54,7 +56,7 @@ def escalate(win, attempt, parts, bounds, o):
     if attempt <= 0:
         return win
     ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** attempt),
-                      max_parts=o["max_parts"] + 2 * attempt, merge_factor=10.0)
+                      max_parts=o["max_parts"] + 2 * attempt, merge_factor=10.0, max_pins=None)
     if not ws:
         return win
     out = ws[0]
@@ -78,7 +80,7 @@ class JointLoop:
     def _spots(self, fb, lay):
         sp = unrouted_spots(fb.get("drc") or {}) + error_spots(fb.get("drc") or {})
         if self.opts["physics_spots"]:
-            parts, _, centres, refs = self._geom
+            _, _, centres, refs = self._geom
             mp = getattr(self.stages, "module_parts", {}) or {}
             sp += physics_spots(fb.get("recheck") or {}, mp, centres, refs)
         return sp
@@ -143,7 +145,8 @@ class JointLoop:
                 break
             spots = self._spots(best_fb, best)
             parts, bounds, _, _ = self._geom
-            base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=o["max_parts"])
+            base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=o["max_parts"],
+                                            max_pins=o["max_pins"])
                     if tries.get(w.key, 0) < o["max_attempts"]]
             if not base:
                 stop = "no window left to try"
@@ -155,7 +158,8 @@ class JointLoop:
             it += 1
             t = time.monotonic()
             bump = sorted({r for s in win.spots if s.kind == "unrouted" for r in s.refs})
-            cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=left(), bump_refs=bump,
+            budget = min(left(), max(90.0, o["iter_share"] * time_s))
+            cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
                                    attempt=attempt)
             tries[base0.key] = attempt + 1
             if cand is None:

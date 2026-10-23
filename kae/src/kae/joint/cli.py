@@ -59,7 +59,7 @@ def run(a):
         loop = JointLoop(stages, opts={k: v for k, v in lopts.items() if k in _loop_keys()}, log=_log)
         rep = loop.run(out, time_s=a.time, seed=a.seed, start=a.start)
         rep["status"] = "ok" if out.exists() else "no_output"
-    except Exception as e:  # noqa: BLE001 - always leave a report
+    except Exception as e:
         import traceback
         traceback.print_exc()
         rep = dict(status="error", error=f"{type(e).__name__}: {e}")

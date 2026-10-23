@@ -101,9 +101,7 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
         g = geoms[it.uuid]
         if it.locked:
             m = owners.get(it.uuid)
-            if m in redo:
-                remove.add(it.uuid)
-            elif m not in module_parts and (g.intersects(region) or at_pads(g)):
+            if m in redo or m not in module_parts and (g.intersects(region) or at_pads(g)):
                 remove.add(it.uuid)
             continue
         if it.net in touch_nets:

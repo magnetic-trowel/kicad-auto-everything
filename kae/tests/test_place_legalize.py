@@ -72,3 +72,42 @@ def test_kicad_violations_become_constraints():
         g0, g1 = before[i], P.parts[i].rots[0].g_own
         assert g1[0] < g0[0] and g1[1] > g0[1] and g1[2] < g0[2] and g1[3] > g0[3]
     assert not grid_violations(st) and exact_check(P, st) == []
+
+
+def test_closed_loop_repair_ends_exactly_legal():
+    """The closed loop (kae.place.exact.repair): exact findings -> culprits -> moved to spots
+    the exact check passes, until none is left."""
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    parts = {p.ref: p.i for p in P.parts}
+    a, b = parts["U1"], parts["U2"]
+    st.X[b], st.Y[b], st.K[b] = st.X[a], st.Y[a], st.K[a]        # an overlap
+    st.X[parts["U3"]], st.Y[parts["U3"]] = 1, 1                 # pads off the board
+    assert exact_check(P, st)
+    rep = exact.repair(P, st, time_s=30.0)
+    assert rep["start"] > 0 and rep["end"] == 0 and not rep["stuck"]
+    assert exact_check(P, st) == []
+
+
+def test_kicad_feedback_becomes_a_constraint_the_repair_honours():
+    """KiCad sees what the model cannot (a solder-mask aperture drawn past a courtyard): its
+    error between two parts becomes a separation the exact model enforces, so the repair
+    moves the culprit and the check stays clean only once they are apart."""
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    assert exact_check(P, st) == []
+    i, j = P.parts[P.mov[0]], P.parts[P.mov[1]]
+    report = {"violations": [{"type": "solder_mask_bridge", "severity": "error", "items": [
+        {"description": f"Pad 1 [x] of {i.ref} on F.Cu", "pos": {"x": 0, "y": 0}},
+        {"description": f"Pad 2 [y] of {j.ref} on F.Cu", "pos": {"x": 0, "y": 0}}]}]}
+    fb = exact.kicad_feedback(P, st, report, step=0.5)
+    assert fb["errors"] == 1 and fb["constraints"] == 2
+    E = exact.ExactModel(P, st)
+    d0 = E.hull(E.sh[i.i]).distance(E.hull(E.sh[j.i]))
+    assert any(v["type"] == "kicad_feedback" for v in exact_check(P, st))
+    rep = exact.repair(P, st, time_s=30.0)
+    assert rep["end"] == 0
+    E = exact.ExactModel(P, st)
+    assert E.hull(E.sh[i.i]).distance(E.hull(E.sh[j.i])) >= d0 + 0.5 - 1e-6

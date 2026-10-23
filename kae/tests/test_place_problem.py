@@ -380,3 +380,26 @@ def test_padless_footprint_and_far_side_lands_take_no_room_on_the_near_side():
     u = parts["U1"]
     assert u.rots[0].own_rects == (POINT,)
     assert u.rots[0].opp                     # its lands occupy the back
+
+
+def test_mask_and_copper_graphics_take_room_and_are_checked():
+    """Regression (stickhub): logos' and LEDs' mask apertures bridged other parts' pads
+    (KiCad solder_mask_bridge) because footprint graphics were not in the model. A mask
+    graphic now takes room on its side and the exact check reports a pad under it."""
+    from shapely.geometry import box as sbox
+    from kae.place.legalize import exact_check
+    b = load(FIXTURE)
+    u1 = next(f for f in b.footprints if f.ref == "U1")       # front, 0 deg at (10, 10)
+    u1.graphics = {"F.Mask": [sbox(3.0, -1.0, 5.0, 1.0)]}      # beyond its courtyard (x < 1.9)
+    P = Problem.build(b)
+    p = next(q for q in P.parts if q.ref == "U1")
+    pieces = shapely.union_all([shapely.box(*r) for r in p.rots[0].own_rects])
+    assert pieces.contains(shapely.box(3.0, -1.0, 5.0, 1.0))
+    st = _state_at_input(P)
+    ref = {q.ref: q.i for q in P.parts}
+    u7 = P.parts[ref["U7"]]
+    pad = u7.fp.pads[2]                                        # put a U7 pad under the aperture
+    st.X[u7.i], st.Y[u7.i] = P.grid_of(14.0 - pad.lx, 10.0 - pad.ly)
+    st.K[u7.i] = 0
+    hits = [v for v in exact_check(P, st, max_items=500) if v["type"] == "solder_mask_bridge"]
+    assert hits and all(set(v["refs"]) == {"U1", "U7"} for v in hits)

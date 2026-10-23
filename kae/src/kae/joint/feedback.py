@@ -238,6 +238,7 @@ class PartGeom:
     bbox: tuple                    # (x0, y0, x1, y1) courtyard (else pads) at the current pose
     locked: bool = False
     side: str = "F"
+    pins: int = 0                  # pads with a net
 
     @property
     def center(self):
@@ -291,16 +292,20 @@ def _contains_pt(r, p):
     return r[0] <= p[0] <= r[2] and r[1] <= p[1] <= r[3]
 
 
-def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10):
+def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10, max_pins=None):
     """The window that may fix one spot: its own (unlocked) parts, then the unlocked parts
     whose centres lie in the region they and the spot's points span, grown by `margin`;
-    at most `max_parts`, nearest to the spot first (its own parts always stay). The rectangle
-    covers every movable part's current box, so the annealer starts inside it. None when no
-    part may move."""
+    at most `max_parts`, nearest to the spot first (its own parts always stay). Parts with
+    more than `max_pins` connected pads stay fixed (moving an IC rips up all its nets). The
+    rectangle covers every movable part's current box, so the annealer starts inside it.
+    None when no part may move."""
+    def movable(g):
+        return not g.locked and (max_pins is None or g.pins <= max_pins)
+
     by_ref = {}
     for g in parts.values():
         by_ref.setdefault(g.ref, []).append(g)
-    own = [g for r in spot.refs for g in by_ref.get(r, []) if not g.locked]
+    own = [g for r in spot.refs for g in by_ref.get(r, []) if movable(g)]
     region = None
     for p in spot.points:
         region = _union(region, (p[0], p[1], p[0], p[1]))
@@ -309,7 +314,7 @@ def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10):
     if region is None:
         return None
     region = _clip(_grow(region, margin), bounds)
-    cand = [g for g in parts.values() if not g.locked and _contains_pt(region, g.center)]
+    cand = [g for g in parts.values() if movable(g) and _contains_pt(region, g.center)]
     cand.sort(key=lambda g: (math.dist(g.center, (spot.x, spot.y)), g.uuid))
     keep = {g.uuid: g for g in own}
     for g in cand:
@@ -339,11 +344,18 @@ def merge(a, b):
                   spots=a.spots + b.spots)
 
 
-def plan_windows(spots, parts, bounds, margin=2.0, max_parts=10, merge_factor=1.5):
-    """Cluster spots into windows: one per spot (window_for_spot), then overlapping windows
+def plan_windows(spots, parts, bounds, margin=2.0, max_parts=10, merge_factor=1.5, max_pins=None):
+    """Cluster spots into windows: one per spot (window_for_spot; parts with more than
+    `max_pins` connected pads only when nothing smaller can move), then overlapping windows
     merged while the union holds at most merge_factor * max_parts parts. Sorted by priority
     (summed spot weights), ties by position, so the order is deterministic."""
-    wins = [w for w in (window_for_spot(s, parts, bounds, margin, max_parts) for s in spots) if w is not None]
+    wins = []
+    for s in spots:      # a spot that only big parts can fix gets them
+        w = window_for_spot(s, parts, bounds, margin, max_parts, max_pins)
+        if w is None and max_pins is not None:
+            w = window_for_spot(s, parts, bounds, margin, max_parts, None)
+        if w is not None:
+            wins.append(w)
     wins.sort(key=lambda w: (w.rect, w.parts))
     changed = True
     while changed:

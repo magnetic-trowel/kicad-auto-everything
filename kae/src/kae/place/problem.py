@@ -490,6 +490,7 @@ class Problem:
         P._grid_shapes()
         P._fixed_obstacles(board)
         P.mov = [p.i for p in P.parts if p.movable]
+        P._straddle_check()
         return P
 
     def _severities(self, board):
@@ -622,6 +623,14 @@ class Problem:
         # B.Cu, an interposer's, takes room on the back only: see lib_opp)
         near = [k for k, q in enumerate(pads) if is_drilled(q) or _on_own_copper(q, fp.side)]
         pad_pieces = _cluster_rects([infl[k] for k in near], max_n=6)
+        # copper and mask graphics (logos, mask apertures): copper keeps clearance from other
+        # copper, a mask aperture may not expose another part's pads (solder_mask_bridge)
+        gr = getattr(fp, "graphics", None) or {}
+        g_near = _cluster_rects([rect_grow(polys_lib_rect([g]), self.clr_min / 2)
+                                 for ly in ("F.Cu", "F.Mask") for g in gr.get(ly, ()) if not g.is_empty], max_n=4)
+        g_far = _cluster_rects([rect_grow(polys_lib_rect([g]), self.clr_min / 2)
+                                for ly in ("B.Cu", "B.Mask") for g in gr.get(ly, ()) if not g.is_empty], max_n=4)
+        pad_pieces = pad_pieces + [r for r in g_near if not any(_inside(r, q) for q in pad_pieces)]
         own_pieces = cy_pieces + [r for r in pad_pieces if not any(_inside(r, c) for c in cy_pieces)]
         if len(own_pieces) > 8:
             own_pieces = _cluster_rects(own_pieces, max_n=8)
@@ -654,7 +663,7 @@ class Problem:
                                   for k in drilled] + [infl[k] for k in far])
         if fp.courtyard_back and self.is_error("courtyards_overlap"):
             lib_opp.append(polys_lib_rect(fp.courtyard_back))
-        lib_opp = [r for r in lib_opp if r is not None] + ko_opp
+        lib_opp = [r for r in lib_opp if r is not None] + ko_opp + g_far
         cut = edge_cut_lib_rect(fp)
         if cut is not None:
             # the footprint cuts the board (a lens hole, a window): nothing on either side may
@@ -753,6 +762,51 @@ class Problem:
                     r.board = rr(p._lib["board_pads"], r.rot, p.s)
                     r.boards = tuple(rr(gr, r.rot, p.s) for gr in p._lib["board_groups"])
                 self.notes.append(f"{p.ref}: courtyard does not fit on the board; only its pads are kept inside")
+
+    def _straddle_check(self):
+        """A part that fits nowhere even with only its pads inside (outline, locked parts and
+        rule areas considered), whose pins have several pads each (a castellated header:
+        a hole on the board and a half hole on the edge per pin), keeps one pad per pin
+        inside: the pad row that fits; the others may hang over the edge (part.outside_ok,
+        honoured by the exact check). The human design of such a board has them outside too
+        (mitayi-pico: 20 of 40 pads of each header)."""
+        from .exact import _candidates, _tables
+        from .state import State
+        todo = [p for p in self.parts if p.movable and not getattr(p, "fits", True)]
+        if not todo:
+            return
+        st = State(self)
+        S, pad = _tables(self, st, set(self.mov))
+        for p in todo:
+            ks = list(range(len(p.rots)))
+            if _candidates(self, st, p.i, S, pad, ks, 0.0, 1):
+                continue
+            pads = p.fp.pads
+            by_num = {}
+            for k, q in enumerate(pads):
+                by_num.setdefault(q.number, []).append(k)
+            if not by_num or max(len(v) for v in by_num.values()) < 2:
+                continue
+            n_rows = max(len(v) for v in by_num.values())
+            for row in range(n_rows):
+                keep = [sorted(v, key=lambda k: (pads[k].lx, pads[k].ly))[min(row, len(v) - 1)] for v in by_num.values()]
+                lib = rect_grow(rect_union([pad_lib_rect(pads[k]) for k in keep]), self.edge_clearance + 0.002)
+                saved = [(r.board, r.boards, r.g_board, r.g_boards) for r in p.rots]
+                for r in p.rots:
+                    rr = rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any
+                    r.board = rr(lib, r.rot, p.s)
+                    r.boards = (r.board,)
+                    r.g_board = to_grid(r.board, self.g)
+                    r.g_boards = (r.g_board,)
+                    r.g_board_exact, r.g_boards_exact = r.g_board, r.g_boards
+                if _candidates(self, st, p.i, S, pad, ks, 0.0, 1):
+                    p.outside_ok = set(range(len(pads))) - set(keep)
+                    self.notes.append(f"{p.ref}: fits only straddling the edge; one pad per pin kept inside "
+                                      f"({len(p.outside_ok)} pads may hang over)")
+                    break
+                for r, sv in zip(p.rots, saved):
+                    r.board, r.boards, r.g_board, r.g_boards = sv
+                    r.g_board_exact, r.g_boards_exact = r.g_board, r.g_boards
 
     def _fits_somewhere(self, gr):
         a, b, c, d = gr

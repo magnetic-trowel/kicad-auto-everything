@@ -97,20 +97,30 @@ class ExactModel:
         cy = {si: shapely.union_all(own) if own else None, 1 - si: shapely.union_all(back) if back else None}
         cuts = [transform.place_geom(c, x, y, rot, side) for c in self.cuts[i]]
         kos = [(ko, sides, transform.place_geom(lib, x, y, rot, side)) for ko, sides, lib in self.ko_owned.get(i, ())]
-        geoms = [g for g, _, _ in pads] + [c for c in cy.values() if c is not None] + cuts + [g for _, _, g in kos]
+        # graphics: library F.* is the part's own side
+        gfx = {"cu": {0: [], 1: []}, "mask": {0: [], 1: []}}
+        for ly, polys in (getattr(fp, "graphics", None) or {}).items():
+            kind = "cu" if ly.endswith(".Cu") else "mask" if ly.endswith(".Mask") else None
+            if kind is None:
+                continue
+            bs = si if ly.startswith("F.") else 1 - si
+            gfx[kind][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
+        geoms = [g for g, _, _ in pads] + [c for c in cy.values() if c is not None] + cuts + [g for _, _, g in kos] + \
+            [g for d in gfx.values() for v in d.values() for g in v]
         if geoms:
             b = np.array([g.bounds for g in geoms])
             env = (b[:, 0].min() - self.reach, b[:, 1].min() - self.reach, b[:, 2].max() + self.reach,
                    b[:, 3].max() + self.reach)
         else:
             env = (x, y, x, y)
-        return dict(cy=cy, pads=pads, holes=holes, side=si, cuts=cuts, kos=kos, env=env)
+        return dict(cy=cy, pads=pads, holes=holes, side=si, cuts=cuts, kos=kos, gfx=gfx, env=env)
 
     @staticmethod
     def hull(A):
         """A part's pads and courtyards as one geometry (for KiCad-feedback separations)."""
         if "hull" not in A:
-            gs = [g for g, _, _ in A["pads"]] + [c for c in A["cy"].values() if c is not None]
+            gs = [g for g, _, _ in A["pads"]] + [c for c in A["cy"].values() if c is not None] + \
+                [g for d in A["gfx"].values() for v in d.values() for g in v]
             A["hull"] = shapely.union_all(gs) if gs else None
         return A["hull"]
 
@@ -137,7 +147,10 @@ class ExactModel:
         outline = P.outline
         boundary = outline.boundary
         e = P.edge_clearance
+        ok_out = getattr(P.parts[i], "outside_ok", ())
         for geom, k, pd in A["pads"]:
+            if k in ok_out:
+                continue        # a straddling part's outer pads (Problem._straddle_check)
             if not outline.contains(geom.centroid):
                 add("pad_outside", [ref], pd.number)
             elif e > 0 and geom.distance(boundary) < e - 1e-4:
@@ -204,6 +217,25 @@ class ExactModel:
                 d = ga[a].distance(gb[b])
                 if d < need - 1e-4:
                     add("clearance", [ri, rj], f"{da.number}-{db.number} {d:.3f}<{need:.3f}")
+        # graphics: a mask aperture over another part's pads bridges them (KiCad's
+        # solder_mask_bridge); copper graphics keep copper clearance
+        for (X, Y, rx, ry, cy_) in ((A, B, ri, rj, csj), (B, A, rj, ri, csi)):
+            for side in (0, 1):
+                masks, cus = X["gfx"]["mask"][side], X["gfx"]["cu"][side]
+                if not masks and not cus:
+                    continue
+                for geom, k, pd in Y["pads"]:
+                    if side not in cy_[k]:
+                        continue
+                    if masks and P.is_error("solder_mask_bridge") and any(m.intersects(geom) for m in masks):
+                        add("solder_mask_bridge", [rx, ry], f"mask graphic of {rx} over pad {pd.number} of {ry}")
+                    need = self._net_clr(pd.net)
+                    if cus and any(c.distance(geom) < need - 1e-4 for c in cus):
+                        add("clearance", [rx, ry], f"copper graphic of {rx} near pad {pd.number} of {ry}")
+                if cus and X is A:
+                    for c in cus:
+                        if any(c.distance(o) < P.clr_min - 1e-4 for o in Y["gfx"]["cu"][side]):
+                            add("clearance", [rx, ry], "copper graphics")
         e = P.edge_clearance
         for (X, Y, rx, ry) in ((A, B, ri, rj), (B, A, rj, ri)):
             for cg in Y["cuts"]:

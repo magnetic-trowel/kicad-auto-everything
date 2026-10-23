@@ -131,7 +131,7 @@ def test_loop_counts_illegal_replacements_and_moves_on():
 def test_loop_is_deterministic():
     a = _run(FakeStages(broken=("R1", "R2", "R3")))
     b = _run(FakeStages(broken=("R1", "R2", "R3")))
-    strip = lambda rows: [{k: v for k, v in r.items() if k != "seconds"} for r in rows]  # noqa: E731
+    strip = lambda rows: [{k: v for k, v in r.items() if k != "seconds"} for r in rows]
     assert strip(a["iterations"]) == strip(b["iterations"])
 
 

@@ -2,9 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """kae.joint.feedback: DRC items to spots, congestion history, windows."""
 import numpy as np
-
-from kae.joint.feedback import (CongestionHistory, PartGeom, Spot, error_spots, parse_item, physics_spots,
-                                plan_windows, unrouted_spots, window_for_spot)
+from kae.joint.feedback import (
+    CongestionHistory,
+    PartGeom,
+    Spot,
+    error_spots,
+    parse_item,
+    physics_spots,
+    plan_windows,
+    unrouted_spots,
+    window_for_spot,
+)
 
 DRC = {
     "unconnected_items": [
@@ -127,3 +135,14 @@ def test_placement_errors_count_only_part_to_part_violations():
         {"severity": "error", "type": "track_width", "items": [{"description": "Track [A] on F.Cu"}]},
     ]}
     assert placement_errors(rep) == 2
+
+
+def test_big_parts_move_only_when_nothing_smaller_can():
+    parts = _parts()
+    parts["u1"].pins = 40                      # an IC at (20, 10)
+    s = Spot(kind="unrouted", x=15, y=10, points=((10, 10), (20, 10)), refs=("R0", "R1"))
+    w = plan_windows([s], parts, (0, 0, 50, 40), margin=2.0, max_parts=3, max_pins=12)
+    assert "u1" not in w[0].parts and "u0" in w[0].parts
+    s2 = Spot(kind="unrouted", x=20, y=10, points=((20, 10),), refs=("R1",))
+    w2 = plan_windows([s2], parts, (0, 0, 50, 40), margin=0.5, max_parts=3, max_pins=12)
+    assert "u1" in w2[0].parts                # nothing small within reach: the IC moves

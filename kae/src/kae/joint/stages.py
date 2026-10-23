@@ -133,7 +133,7 @@ class KaeStages:
             try:
                 from kae.circuit.brief import build
                 self.brief = build(board)
-            except Exception as e:  # noqa: BLE001 - routing still runs without modules
+            except Exception as e:
                 self.log(f"brief failed ({type(e).__name__}: {e})")
                 self.brief = {"structures": [], "nets": {}, "parts": {}}
             from kae.route.critical_modules import modules_from_brief
@@ -141,7 +141,7 @@ class KaeStages:
             try:
                 from kae.place.stubs import make_terms
                 self.terms, _ = make_terms(board, self.brief)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self.log(f"place terms failed ({type(e).__name__}: {e})")
                 self.terms = None
         return self.brief
@@ -173,7 +173,7 @@ class KaeStages:
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
                                                   log=lambda m: self.log(f"modules: {m}"), time_s=t_mod, session=sess,
                                                   rails=only is None, modules=None if only is None else list(only))
-        except Exception as e:  # noqa: BLE001 - the bridge still routes everything
+        except Exception as e:
             import traceback
             traceback.print_exc(file=sys.stderr)
             self.log(f"module stage failed: {type(e).__name__}: {e}")
@@ -219,7 +219,7 @@ class KaeStages:
             locked_only(board_with_crit, lo)
             _project(self.input, lo)
             return stage_values(lo, self.brief, terms=self.terms)
-        except Exception as e:  # noqa: BLE001 - without stage values there is no recheck flag
+        except Exception as e:
             self.log(f"stage values failed: {type(e).__name__}: {e}")
             return {}
 
@@ -279,7 +279,7 @@ class KaeStages:
         if stage:
             try:
                 rc = recheck(lay.board, brief, stage, terms=self.terms)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self.log(f"recheck failed: {type(e).__name__}: {e}")
                 rc = {}
         card.modules = {k: (v or {}).get("u_routed") for k, v in (rc.get("modules") or {}).items()}
@@ -291,7 +291,7 @@ class KaeStages:
         if self.terms is not None:
             try:
                 card.place_terms = float(self.terms.total(dict(lay.poses)))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self.log(f"place terms total failed: {type(e).__name__}: {e}")
         lay.info["evaluate_s"] = round(time.monotonic() - t0, 1)
         return card, dict(drc=rep, recheck=rc)
@@ -308,13 +308,14 @@ class KaeStages:
                 cy = transform.courtyard(fp)
                 if cy is not None and not cy.is_empty:
                     box = cy.bounds
-            except Exception:  # noqa: BLE001 - fall back to the pads
+            except Exception:
                 box = None
             if box is None:
                 xy = [transform.pad_xy(fp, p) for p in fp.pads] or [(fp.x, fp.y)]
                 box = (min(x for x, _ in xy) - 0.5, min(y for _, y in xy) - 0.5,
                        max(x for x, _ in xy) + 0.5, max(y for _, y in xy) + 0.5)
             parts[fp.uuid] = PartGeom(uuid=fp.uuid, ref=fp.ref, bbox=tuple(box), side=fp.side,
+                                      pins=sum(1 for p in fp.pads if p.net),
                                       locked=bool(fp.locked or fp.uuid in self.locked or fp.uuid in self.edge_parts
                                                   or not fp.on_board))
         if b.outline:
