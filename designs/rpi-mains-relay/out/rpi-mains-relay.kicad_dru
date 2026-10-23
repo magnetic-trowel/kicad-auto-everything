@@ -1,0 +1,133 @@
+(version 1)
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT1.inherited"
+  (condition "((A.hasNetclass('LINE_15A') || A.hasNetclass('NEUTRAL_15A') || A.hasNetclass('OUT2_15A') || A.hasNetclass('OUT3_15A') || A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT1_15A'))) || ((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('NEUTRAL_15A') || B.hasNetclass('OUT2_15A') || B.hasNetclass('OUT3_15A') || B.hasNetclass('OUT4_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT2.inherited"
+  (condition "((A.hasNetclass('LINE_15A') || A.hasNetclass('NEUTRAL_15A') || A.hasNetclass('OUT1_15A') || A.hasNetclass('OUT3_15A') || A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT2_15A'))) || ((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('NEUTRAL_15A') || B.hasNetclass('OUT1_15A') || B.hasNetclass('OUT3_15A') || B.hasNetclass('OUT4_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT3.inherited"
+  (condition "((A.hasNetclass('LINE_15A') || A.hasNetclass('NEUTRAL_15A') || A.hasNetclass('OUT1_15A') || A.hasNetclass('OUT2_15A') || A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT3_15A'))) || ((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('NEUTRAL_15A') || B.hasNetclass('OUT1_15A') || B.hasNetclass('OUT2_15A') || B.hasNetclass('OUT4_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT4.inherited"
+  (condition "((A.hasNetclass('LINE_15A') || A.hasNetclass('NEUTRAL_15A') || A.hasNetclass('OUT1_15A') || A.hasNetclass('OUT2_15A') || A.hasNetclass('OUT3_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('NEUTRAL_15A') || B.hasNetclass('OUT1_15A') || B.hasNetclass('OUT2_15A') || B.hasNetclass('OUT3_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.LINE.NEUTRAL.inherited"
+  (condition "((A.hasNetclass('LINE_15A') || A.hasNetclass('OUT1_15A') || A.hasNetclass('OUT2_15A') || A.hasNetclass('OUT3_15A') || A.hasNetclass('OUT4_15A')) && (B.hasNetclass('NEUTRAL_15A'))) || ((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('OUT1_15A') || B.hasNetclass('OUT2_15A') || B.hasNetclass('OUT3_15A') || B.hasNetclass('OUT4_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V: creepage 3.0 (F.4 125 V MG III x2 [I]), clearance 1.5 (F.2 at 2.5 kV); at 240 V: 5.0 / 3.6. Design 8.0/8.0 matches the relay's own 8/8 mm
+(rule "IR:barrier.SELV.LINE.inherited"
+  (condition "((A.hasNetclass('SELV')) && (B.hasNetclass('LINE_15A') || B.hasNetclass('NEUTRAL_15A') || B.hasNetclass('OUT1_15A') || B.hasNetclass('OUT2_15A') || B.hasNetclass('OUT3_15A') || B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('LINE_15A') || A.hasNetclass('NEUTRAL_15A') || A.hasNetclass('OUT1_15A') || A.hasNetclass('OUT2_15A') || A.hasNetclass('OUT3_15A') || A.hasNetclass('OUT4_15A')) && (B.hasNetclass('SELV')))")
+  (constraint clearance (min 8mm))
+  (constraint creepage (min 8mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT1"
+  (condition "((A.hasNetclass('LINE_15A')) && (B.hasNetclass('OUT1_15A'))) || ((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('LINE_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT2"
+  (condition "((A.hasNetclass('LINE_15A')) && (B.hasNetclass('OUT2_15A'))) || ((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('LINE_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT3"
+  (condition "((A.hasNetclass('LINE_15A')) && (B.hasNetclass('OUT3_15A'))) || ((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('LINE_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, IPC-2221B Table 6-1 B2 IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint
+(rule "IR:barrier.LINE.OUT4"
+  (condition "((A.hasNetclass('LINE_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('LINE_15A')))")
+  (constraint clearance (min 1.5mm))
+  (constraint creepage (min 2.5mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.LINE.NEUTRAL"
+  (condition "((A.hasNetclass('LINE_15A')) && (B.hasNetclass('NEUTRAL_15A'))) || ((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('LINE_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.NEUTRAL.OUT1"
+  (condition "((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('OUT1_15A'))) || ((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('NEUTRAL_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.NEUTRAL.OUT2"
+  (condition "((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('OUT2_15A'))) || ((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('NEUTRAL_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.NEUTRAL.OUT3"
+  (condition "((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('OUT3_15A'))) || ((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('NEUTRAL_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.NEUTRAL.OUT4"
+  (condition "((A.hasNetclass('NEUTRAL_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('NEUTRAL_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT1.OUT2"
+  (condition "((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('OUT2_15A'))) || ((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('OUT1_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT1.OUT3"
+  (condition "((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('OUT3_15A'))) || ((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('OUT1_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT1.OUT4"
+  (condition "((A.hasNetclass('OUT1_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT1_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT2.OUT3"
+  (condition "((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('OUT3_15A'))) || ((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('OUT2_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT2.OUT4"
+  (condition "((A.hasNetclass('OUT2_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT2_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# functional insulation, 187 V working, UL 1059 / UL 508 practice UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]
+(rule "IR:barrier.OUT3.OUT4"
+  (condition "((A.hasNetclass('OUT3_15A')) && (B.hasNetclass('OUT4_15A'))) || ((A.hasNetclass('OUT4_15A')) && (B.hasNetclass('OUT3_15A')))")
+  (constraint clearance (min 3.2mm))
+  (constraint creepage (min 6.4mm)))
+
+# reinforced insulation, 187 V working, UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4 TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V: creepage 3.0 (F.4 125 V MG III x2 [I]), clearance 1.5 (F.2 at 2.5 kV); at 240 V: 5.0 / 3.6. Design 8.0/8.0 matches the relay's own 8/8 mm
+(rule "IR:barrier.SELV.LINE"
+  (condition "((A.hasNetclass('SELV')) && (B.hasNetclass('LINE_15A'))) || ((A.hasNetclass('LINE_15A')) && (B.hasNetclass('SELV')))")
+  (constraint clearance (min 8mm))
+  (constraint creepage (min 8mm)))

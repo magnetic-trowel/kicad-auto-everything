@@ -1,0 +1,231 @@
+{
+  "board": {
+    "design_settings": {
+      "defaults": {},
+      "diff_pair_dimensions": [],
+      "drc_exclusions": [],
+      "rules": {},
+      "track_widths": [],
+      "via_dimensions": []
+    }
+  },
+  "boards": [],
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "meta": {
+    "filename": "rpi-mains-relay.kicad_pro",
+    "version": 3
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "name": "Default",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 2147483647
+      },
+      {
+        "name": "LINE_15A",
+        "clearance": 1.25,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 0
+      },
+      {
+        "name": "NEUTRAL_15A",
+        "clearance": 2.5,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 1
+      },
+      {
+        "name": "OUT1_15A",
+        "clearance": 2.5,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 2
+      },
+      {
+        "name": "OUT2_15A",
+        "clearance": 2.5,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 3
+      },
+      {
+        "name": "OUT3_15A",
+        "clearance": 2.5,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 4
+      },
+      {
+        "name": "OUT4_15A",
+        "clearance": 2.5,
+        "track_width": 6.3,
+        "via_diameter": 5.34,
+        "via_drill": 2.52,
+        "priority": 5
+      },
+      {
+        "name": "SELV",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 6
+      }
+    ],
+    "meta": {
+      "version": 4
+    },
+    "netclass_patterns": [
+      {
+        "netclass": "SELV",
+        "pattern": "+5V"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/ARM_G"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/HB_R"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/LED_ARM_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/PUMP"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch1/CH1_G"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch1/COIL1"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch1/LED1_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch2/CH2_G"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch2/COIL2"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch2/LED2_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch3/CH3_G"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch3/COIL3"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch3/LED3_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch4/CH4_G"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch4/COIL4"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/ch4/LED4_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/selv_in/+5V_IN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/selv_in/LED_PWR_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH1_IN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH2_IN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH3_IN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH4_IN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "COIL_RTN"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "GND"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "HB_IN"
+      },
+      {
+        "netclass": "LINE_15A",
+        "pattern": "L_IN"
+      },
+      {
+        "netclass": "OUT1_15A",
+        "pattern": "L_SW1"
+      },
+      {
+        "netclass": "OUT2_15A",
+        "pattern": "L_SW2"
+      },
+      {
+        "netclass": "OUT3_15A",
+        "pattern": "L_SW3"
+      },
+      {
+        "netclass": "OUT4_15A",
+        "pattern": "L_SW4"
+      },
+      {
+        "netclass": "NEUTRAL_15A",
+        "pattern": "N"
+      }
+    ]
+  },
+  "pcbnew": {
+    "page_layout_descr_file": ""
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": []
+  },
+  "sheets": [],
+  "text_variables": {}
+}

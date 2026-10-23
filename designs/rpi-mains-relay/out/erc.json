@@ -1,0 +1,152 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a",
+      "violations": [
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol J3 [Conn_01x02]",
+              "pos": {
+                "x": 162.56,
+                "y": 83.82
+              },
+              "uuid": "84a9798d-3662-5c17-a937-8382206ac53c"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol J4 [Conn_01x02]",
+              "pos": {
+                "x": 162.56,
+                "y": 83.82
+              },
+              "uuid": "966031de-d6e6-585f-abaa-8e170393c0d9"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol J5 [Conn_01x02]",
+              "pos": {
+                "x": 162.56,
+                "y": 83.82
+              },
+              "uuid": "edeee3ea-28ee-5c65-a4d1-3984f279bf17"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol J2 [Conn_01x02]",
+              "pos": {
+                "x": 162.56,
+                "y": 83.82
+              },
+              "uuid": "94c35578-750c-50b4-b4e5-f7e50144af08"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol J1 [Conn_01x02]",
+              "pos": {
+                "x": 43.18,
+                "y": 30.48
+              },
+              "uuid": "222c415b-e59a-59cd-8494-099a47ed5dcb"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        }
+      ]
+    },
+    {
+      "path": "/selv_in/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/65b35c7b-479e-5a55-8d70-0c50f69b1b52",
+      "violations": []
+    },
+    {
+      "path": "/arm/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/c4900e25-da27-50d6-8823-620d0dc74617",
+      "violations": []
+    },
+    {
+      "path": "/ch1/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/d5d3af06-bb94-5568-b155-db1df6270ff3",
+      "violations": []
+    },
+    {
+      "path": "/ch2/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/6de384ee-328d-5456-b0b0-d4b97d794c0d",
+      "violations": []
+    },
+    {
+      "path": "/ch3/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/b1b24986-035c-58c5-a8f9-7b25c66e2a0f",
+      "violations": []
+    },
+    {
+      "path": "/ch4/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/e8e6b6c4-da9e-56eb-b53f-d1aae700ec51",
+      "violations": []
+    },
+    {
+      "path": "/mains_in/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/5a948949-00be-5f30-a335-0da22bab355f",
+      "violations": []
+    },
+    {
+      "path": "/mech/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/3d33b6f9-21ed-5bfc-a356-a4c53021f7fa",
+      "violations": []
+    }
+  ],
+  "source": "rpi-mains-relay.kicad_sch"
+}

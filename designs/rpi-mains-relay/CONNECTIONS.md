@@ -3,6 +3,10 @@
 Companion to [DESIGN.md](DESIGN.md). Every pin of every placed part is listed, plus the
 off-board objects (Raspberry Pi header, Class 2 cable, field wiring).
 
+The encoded design is [design.py](design.py) with part cards in [parts.py](parts.py). `kaesynth build`
+writes the authoritative pin list to [out/netlist.json](out/netlist.json). Section 8 below was checked
+against that file node by node: all 32 nets are identical. If the two ever disagree, netlist.json wins.
+
 **Conventions**
 
 - Pin entries read `pin number (datasheet name) → NET`.
@@ -10,15 +14,20 @@ off-board objects (Raspberry Pi header, Class 2 cable, field wiring).
 - `NC` means intentionally unconnected.
 - Evidence tags: [P] pin numbering read in the datasheet at the cited page or figure; [I] inferred; [unverified] not confirmed in the primary source.
 - Net names are global. A net with the same name in two blocks is the same net.
+- In KiCad, the per-channel nets (CHk_G, COILk, LEDk_A) and the watchdog and input-local nets (HB_R, PUMP, ARM_G, LED_ARM_A, +5V_IN, LED_PWR_A) are sheet-local. They appear with a sheet prefix, e.g. `/ch1/COIL1`, `/arm/ARM_G`, `/selv_in/+5V_IN`.
+- Domain names match design.py:
+  - LINE (root, reference L_IN), NEUTRAL, OUT1–OUT4 (these float on L_IN), SELV (root, reference GND) and PE (off-board).
+  - Taking L as the mains reference makes the voltage across an open relay contact exact (±187 V peak).
 - Refdes and net names for channels follow the rule in section 3.
 
 ## 1. Net table
 
 | Net | Domain | Voltage range | Max current | Kind |
 |---|---|---|---|---|
-| L_IN | MAINS_L | 0–132 V rms vs N; ≤ 1.5 kV pk transient (OVC II) | 15 A rms | mains, power |
-| N | MAINS_N | ≈ 0–5 V rms vs PE (treat as hazardous, ≤ 132 V if miswired) | 15 A rms | mains, power (return) |
-| L_SW1 … L_SW4 | OUT1 … OUT4 | equals L_IN when the relay is closed; floating or ≈ N when open | 15 A rms each (sum ≤ 15 A) | mains, switched power |
+| L_IN | LINE (root, 0 V) | 0–132 V rms vs N (±187 V pk); ≤ 1.5 kV pk transient (OVC II) | 15 A rms | mains, power |
+| N | NEUTRAL | ±187 V pk vs L_IN; ≈ 0–5 V rms vs PE (treat as hazardous) | 15 A rms | mains, power (return) |
+| L_SW1 … L_SW4 | OUT1 … OUT4 | equals L_IN when the relay is closed; floating or ≈ N when open (±187 V pk vs L_IN) | 15 A rms each (sum ≤ 15 A) | mains, switched power |
+| PE | PE (off-board) | 0 V (earth) | fault current | protective earth: box, ring, cover, EGCs; no PCB copper |
 | +5V_IN | SELV | 4.75–5.25 V (transient clamped ≤ 12 V after F1) | 0.39 A (F1 trips ≥ 2.2 A) | power (from the Pi) |
 | +5V | SELV | 4.5–5.25 V | 0.39 A | power (coil and LED rail) |
 | GND | SELV | 0 V (reference; may be earthed through the Pi) | 0.39 A | ground |
@@ -30,7 +39,7 @@ off-board objects (Raspberry Pi header, Class 2 cable, field wiring).
 | HB_IN | SELV | 0–3.3 V square wave, 100 Hz–2 kHz | 3.3 mA peak | signal (heartbeat) |
 | HB_R | SELV | 0–3.3 V | 3.3 mA peak | signal (after series R) |
 | PUMP | SELV | −0.3…+3.0 V | 3.3 mA peak | signal (pump node) |
-| ARM_G | SELV | 0–2.75 V | 30 µA | signal (Q5 gate / hold) |
+| ARM_G | SELV | 0–2.75 V | 3 µA (bleed through R14) | signal (Q5 gate / hold) |
 | LED_ARM_A | SELV | 0–5.25 V | 2.3 mA | signal |
 | LED_PWR_A | SELV | 0–5.25 V | 2.3 mA | signal |
 
@@ -277,12 +286,16 @@ KiCad `Diode:BAT54S` uses 1 = A, 2 = K, 3 = COM.
 - 2 (K) → ARM_G (charges the hold capacitor on the high half-cycle)
 - 3 (COM) → PUMP
 
-**C4: Yageo CC0603KRX7R7BB105, 1 µF 16 V X7R, 0603** (hold capacitor)
+**C4: Yageo CC0603KRX7R9BB104, 100 nF 50 V X7R, 0603** (hold capacitor)
+
+Changed from 1 µF during encoding, together with R14 (100 kΩ → 1 MΩ). The time constant stays at
+τ = 0.1 s, but the bleed current falls tenfold, so V_ARM at 100 Hz rises from 2.45 V to ≥ 2.56 V.
+That is above the 2.5 V at which the AO3400A's R_DS(on) is specified (calc `arm_gate_min_100Hz_V`).
 
 - 1 → ARM_G
 - 2 → GND
 
-**R14: Yageo RC0603FR-07100KL, 100 kΩ, 0603** (bleed, τ = 0.1 s)
+**R14: Yageo RC0603FR-071ML, 1 MΩ, 0603** (bleed, τ = R14·C4 = 0.1 s)
 
 - 1 → ARM_G
 - 2 → GND

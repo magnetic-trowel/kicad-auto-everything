@@ -1,6 +1,13 @@
 # rpi-mains-relay: 4-channel 120 VAC relay board for a Raspberry Pi, in a 4-11/16" box
 
-Status: engineering design, ready to encode in `kaesynth`. Not reviewed by a certification body.
+Status: engineering design, encoded in [design.py](design.py) and [parts.py](parts.py). Not reviewed by a certification body.
+
+`kaesynth build` result: 0 errors, 0 warnings, 38 waived findings (10 waiver rules, each with its reason
+in [out/report.md](out/report.md)). KiCad ERC is clean and the netlist round trip is identical. Six
+BLOCKING questions remain open, so the design is not ready for fabrication.
+
+Encoding changed one value: the watchdog hold network went from R14 100 kΩ / C4 1 µF to
+1 MΩ / 100 nF (see C-4).
 The netlist is in [CONNECTIONS.md](CONNECTIONS.md). Evidence tags: [P] read in the primary
 source, [S] secondary or snippet, [V] vendor claim, [I] our inference. Where a standard was not
 readable (NEC, UL 508, UL 1059, IEC 60664-1, IEC 62368-1), values come through cited secondary
@@ -150,7 +157,7 @@ need ≥ 145 mm, but the box interior is about 116 mm. Six channels also exceed 
 
 | Block | Function | Parts | Ports (dir, domain, V range, I max) |
 |---|---|---|---|
-| B1 MAINS_IN | Shared input, L and N buses | J1, PCB buses | L_IN (in, MAINS_L, 0–132 VAC, 1.5 kV transient, 15 A); N (bidir, MAINS_N, 15 A) |
+| B1 MAINS_IN | Shared input, L and N buses | J1, PCB buses | L_IN (in, LINE, 0–132 VAC, 1.5 kV transient, 15 A); N (bidir, NEUTRAL, 15 A) |
 | B2 SW_k (k = 1…4) | Switch one output | K_k contacts, J_(k+1) | L_IN (in, 15 A); L_SWk (out, OUTk, 0–132 VAC, 15 A); N (pass, 15 A) |
 | B3 DRV_k | Coil drive and indication | K_k coil, Q_k, D_k, D_(k+4), R_k, R_(k+4), R_(k+8) | CHk_IN (in, SELV, 0–3.3 V, 0.6 mA); +5V (in, SELV, 4.5–5.25 V, 93 mA); COIL_RTN (out, SELV, 93 mA) |
 | B4 ARM | Heartbeat charge-pump watchdog, low-side enable for all coils | R13, C3, D12, C4, R14, Q5, D9, R15, TP3, TP4 | HB_IN (in, SELV, 0–3.3 V, 3.3 mA peak); COIL_RTN (in, 0.39 A); GND |
@@ -161,9 +168,9 @@ need ≥ 145 mm, but the box interior is about 116 mm. Six channels also exceed 
 
 | Domain | Nets | Reference | Voltage range | Notes |
 |---|---|---|---|---|
-| MAINS_L | L_IN | N / PE | 0–132 V rms (187 V pk); transient ≤ 1.5 kV pk (OVC II) | hazardous live |
-| MAINS_N | N | PE | ≈ 0–5 V rms in normal use; treated as hazardous (≤ 132 V if miswired) | not switched |
-| OUT1…OUT4 | L_SW1…L_SW4 | N | equals L_IN when closed; floating, or pulled to N by the load, when open | state-dependent |
+| LINE (root) | L_IN | L_IN itself (0 V) | 0 V by definition; 0–132 V rms (187 V pk) to N; transient ≤ 1.5 kV pk (OVC II) | hazardous live. L is the mains reference so that the voltage across an open contact is exact |
+| NEUTRAL | N | L_IN | ±187 V pk; ≈ 0–5 V rms to PE in normal use; treated as hazardous | not switched |
+| OUT1…OUT4 | L_SW1…L_SW4 | L_IN | 0 V when closed; ±187 V pk when open (pulled to N by the load) | state-dependent |
 | PE | (off-board) box, ring, cover, EGC, ground screw | earth | 0 V | not on the PCB |
 | SELV | +5V_IN, +5V, GND, CHk_IN, CHk_G, COILk, LEDk_A, COIL_RTN, HB_IN, HB_R, PUMP, ARM_G, LED_ARM_A, LED_PWR_A | GND (may be earthed through the Pi) | 0–5.25 V; transients clamped to ≤ 12 V (D11) | Class 2 / ES1 |
 
@@ -172,11 +179,11 @@ Values marked [I] for IEC 60664-1 Table F.4 rows other than 63 V and 400 V are r
 
 | Pair | Grade | Uw | Governing standard | Required creepage / clearance (source) | Design creepage / clearance | Slot |
 |---|---|---|---|---|---|---|
-| SELV ↔ MAINS_L, MAINS_N, OUT1–4 | reinforced | 120 V rms (designed for 250 V) | UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 F.1/F.2/F.4 | At 120 V: creepage 2 × 1.5 = **3.0** (F.4, 125 V row, MG III [I]); impulse 1.5 kV (F.1 [P, via SLUP419]); clearance 1.5 (F.2, one step up to 2.5 kV [P]) or 2 × 0.76 ≈ 1.5 (62368-1 T10 [P/I]). At 240 V: creepage **5.0**, clearance **3.6** (62368-1 T10, 2.5 kV reinforced [P via SLUP419]) | **8.0 / 8.0**, matching the relay's own 8/8 mm [P] | no |
-| MAINS_L or OUTk ↔ MAINS_N | functional (operational) | 120 | UL 1059 use group C, 51–150 V [S]; functional under 62368-1 | 6.4 / 3.2 | 6.4 / 3.2 | no |
+| SELV ↔ LINE (covers NEUTRAL and OUT1–4, which float on LINE) | reinforced | 120 V rms (designed for 250 V) | UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 F.1/F.2/F.4 | At 120 V: creepage 2 × 1.5 = **3.0** (F.4, 125 V row, MG III [I]); impulse 1.5 kV (F.1 [P, via SLUP419]); clearance 1.5 (F.2, one step up to 2.5 kV [P]) or 2 × 0.76 ≈ 1.5 (62368-1 T10 [P/I]). At 240 V: creepage **5.0**, clearance **3.6** (62368-1 T10, 2.5 kV reinforced [P via SLUP419]) | **8.0 / 8.0**, matching the relay's own 8/8 mm [P] | no |
+| LINE or OUTk ↔ NEUTRAL | functional (operational) | 120 | UL 1059 use group C, 51–150 V [S]; functional under 62368-1 | 6.4 / 3.2 | 6.4 / 3.2 | no |
 | OUTj ↔ OUTk | functional | 120 (one on, one off) | as above | 6.4 / 3.2 | 6.4 / 3.2 | no |
-| MAINS_L ↔ OUTk (same channel, open contact) | functional | 120 | IPC-2221B B2, 151–170 V peak [S] | 1.25 / 1.25 | 2.5 / 1.5 outside the relay footprint; inside it the relay's pin pitch (5.0 mm) governs | no |
-| MAINS_* ↔ PE (box metal; bare EGC near a board edge) | basic | 120 | 62368-1 basic: clearance 0.76 [P/I], creepage 1.5 [I]; UL field wiring to dead metal 6.4 [S] | 6.4 to box metal; 1.5 / 0.76 to a board edge | 6.4 to box metal (placement, nylon supports); 2.0 / 2.0 copper-to-edge | — |
+| LINE ↔ OUTk (same channel, open contact) | functional | 120 | IPC-2221B B2, 151–170 V peak [S] | 1.25 / 1.25 | 2.5 / 1.5 outside the relay footprint; inside it the relay's pin pitch (5.0 mm) governs | no |
+| LINE (all mains) ↔ PE (box metal; bare EGC near a board edge) | basic | 120 | 62368-1 basic: clearance 0.76 [P/I], creepage 1.5 [I]; UL field wiring to dead metal 6.4 [S] | 6.4 to box metal; 1.5 / 0.76 to a board edge | 6.4 to box metal (placement, nylon supports); 2.0 / 2.0 copper-to-edge | — |
 | SELV ↔ PE | none | — | — | — | — | — |
 | SELV cable ↔ mains field conductors inside the box | Class 2 separation | — | NEC 725.136(B), (D)(1) [S] | barrier, or ≥ 6 mm | MP1 cover plus its own knockout | — |
 
@@ -224,14 +231,15 @@ and must be re-checked.
   - Hot restart with the coil at 90 °C (55 + 35 K rise [I]): 88.2 % (margin 3–6 points, measured in T-COIL).
 - **Driver choice.** A ULN2803 would drop up to 1.1 V [I], leaving 3.46 V (69 %), which fails. The maximum coil voltage is 105 % (limit 130 % [P]).
 
-**C-4 Heartbeat pump (R13 = 1 kΩ, C3 = C4 = 1 µF, R14 = 100 kΩ, BAT54S).**
+**C-4 Heartbeat pump (R13 = 1 kΩ, C3 = 1 µF, BAT54S, C4 = 100 nF, R14 = 1 MΩ).**
 
-- Steady state: V_ARM ≈ (V_OH − 2V_F)/(1 + 1/(R14·f·C3)). With V_OH = 3.2 V and V_F ≤ 0.24 V at 0.1 mA [P], V_ARM ≈ **2.45 V at 100 Hz** and 2.69 V at 2 kHz.
-- Q5 conducts 0.39 A at ≤ 48–55 mΩ (≤ 21 mV drop).
-- Arming takes about 5 cycles: ≤ 50 ms at 100 Hz.
-- Disarm: τ = R14·C4 = 0.1 s. V_GS falls below V_th(min) 0.65 V in 0.1·ln(2.45/0.65) = **0.13 s**, and the relays release in ≤ 5 ms [P]. Total ≤ 0.2 s, against 0.5 s required.
-- DC on HB, high or low: C3 blocks it, so the outputs disarm.
-- At 10–20 Hz V_ARM is 1.35–1.8 V, which is undefined. Below 100 Hz is therefore not allowed (REQ-16).
+- **Why the values changed.** The first values (C4 = 1 µF, R14 = 100 kΩ) gave V_ARM ≈ 2.45 V at 100 Hz. That is below the 2.5 V at which the AO3400A's R_DS(on) is specified, and the encoded calc limit exposed it. The fix keeps τ = 0.1 s and cuts the bleed current tenfold.
+- **Steady state.** V_pk = V_OH − 2V_F = 3.2 − 2 × 0.24 = 2.72 V, using V_F ≤ 0.24 V at 0.1 mA [P]. The bleed is I = 2.7 µA. The minimum at 100 Hz is V_pk − I/(f·C3) − I·5 ms/C4 = **2.56 V ≥ 2.5 V**.
+- **Q5 drop.** Q5 conducts 0.39 A at ≤ 48 mΩ (≤ 19 mV).
+- **Arming.** C3 ≫ C4, so V_ARM is above 2.4 V after 1–2 cycles.
+- **Disarm.** τ = R14·C4 = 0.1 s. V_GS falls below V_th(min) 0.65 V in 0.1·ln(2.72/0.65) = 0.14 s; adding the relay release (≤ 5 ms [P]) gives **0.15 s**, against 0.5 s required.
+- **DC on HB**, high or low: C3 blocks it, so the outputs disarm.
+- **Low frequencies.** Between about 5 and 20 Hz, C4 droops 20–60 % each half cycle and the outputs may chatter, so below 100 Hz is not allowed (REQ-16).
 
 **C-5 Gate drive and floating inputs.**
 
@@ -331,10 +339,10 @@ Datasheets were read for every on-board part except where marked. Lifecycle come
 | R1–R4, R13 | 1 kΩ 1 % 0.1 W 75 V | Yageo **RC0603FR-071KL** | 0.1 W; 75 V [S] | ≤ 11 mW (R13) = 11 % | 0603 | `Device:R` / `Resistor_SMD:R_0603_1608Metric` | yageogroup.com RC series | Active [S] | any 0603 1 % |
 | R5–R8 | 4.7 kΩ gate pull-down | Yageo **RC0603FR-074K7L** | as above | 2.3 mW = 2 % | 0603 | as above | as above | Active [I] | any |
 | R9–R12, R15, R16 | 1.5 kΩ LED | Yageo **RC0603FR-071K5L** | as above | 7.5 mW = 8 %; 3.4/75 V | 0603 | as above | as above | Active [S] | any |
-| R14 | 100 kΩ bleed | Yageo **RC0603FR-07100KL** | as above | 0.07 mW | 0603 | as above | as above | Active [I] | any |
+| R14 | 1 MΩ bleed | Yageo **RC0603FR-071ML** | as above | 7 µW | 0603 | as above | as above | Active [S] | any |
 | C1 | 10 µF 16 V X5R | Murata **GRM21BR61C106KE15L** | 16 V | 5.25 V = 33 % (12 V transient = 75 %) | 0805 | `Device:C` / `Capacitor_SMD:C_0805_2012Metric` | murata.com | Active, backordered [S] | Yageo CC0805KKX5R7BB106 [S] |
-| C2 | 100 nF 50 V X7R | Yageo **CC0603KRX7R9BB104** | 50 V | 11 % | 0603 | `Device:C` / `Capacitor_SMD:C_0603_1608Metric` | yageogroup.com | Active [S] | Murata GRM188R71H104KA93D [unverified] |
-| C3, C4 | 1 µF 16 V X7R | Yageo **CC0603KRX7R7BB105** | 16 V | 3.3/16 V = 21 % | 0603 | as C2 | yageogroup.com | Active [S] (replaces the obsolete Murata GRM188R71C105KA12D [S]) | Murata 1 µF 16 V X7R [unverified] |
+| C2, C4 | 100 nF 50 V X7R | Yageo **CC0603KRX7R9BB104** | 50 V | 11 % | 0603 | `Device:C` / `Capacitor_SMD:C_0603_1608Metric` | yageogroup.com | Active [S] | Murata GRM188R71H104KA93D [unverified] |
+| C3 | 1 µF 16 V X7R | Yageo **CC0603KRX7R7BB105** | 16 V | 3.6/16 V = 23 % | 0603 | as C2 | yageogroup.com | Active [S] (replaces the obsolete Murata GRM188R71C105KA12D [S]) | Murata 1 µF 16 V X7R [unverified] |
 | TP1–TP4 | Test pads | — | — | — | Ø1.5 mm pad | `Connector:TestPoint` / `TestPoint:TestPoint_Pad_D1.5mm` | — | — | — |
 | H1–H4 | Mounting holes Ø4.0 mm NPTH | — | — | — | — | `Mechanical:MountingHole` / `MountingHole:MountingHole_4mm` | — | — | — |
 | (off-board) | Box | Hubbell RACO **257** | 4-11/16" square × 2-1/8", welded steel, 42.0 in³, raised ground (#10-32), UL listed | — | — | — | hubbellcdn.com/specsheet/RACO-257-SPEC-EN.pdf | Active [P] | any listed 4-11/16 × 2-1/8 box |
@@ -390,13 +398,12 @@ near(C4, D12.2, tight) near(R14, C4, tight) near(Q5, C4, close)
 near(Q5, [Q1, Q2, Q3, Q4], close)                         short COIL_RTN
 hot_loop([Dk.1, Kk.A1, Kk.A2, Dk.2], "coil flyback loop; keep spikes off SELV wiring")
 hot_loop([C1.1, Kk.A1, Kk.A2, Qk.3, Qk.2, Q5.3, Q5.2, C1.2], "coil switching loop")
-separate(SELV, MAINS_L, 8.0, 8.0, slot: no)
-separate(SELV, MAINS_N, 8.0, 8.0, slot: no)
-separate(SELV, OUT1..OUT4, 8.0, 8.0, slot: no)
-separate(MAINS_L, MAINS_N, 6.4, 3.2, slot: no)
-separate(OUTk, MAINS_N, 6.4, 3.2, slot: no)
+separate(SELV, LINE, 8.0, 8.0, slot: no)                 LINE subtree = LINE, NEUTRAL, OUT1..4
+separate(LINE, NEUTRAL, 6.4, 3.2, slot: no)
+separate(NEUTRAL, OUTk, 6.4, 3.2, slot: no)
 separate(OUTj, OUTk, 6.4, 3.2, slot: no)                  j ≠ k
-separate(MAINS_L, OUTk, 2.5, 1.5, slot: no)               functional; exempt inside Kk footprint
+separate(LINE, OUTk, 2.5, 1.5, slot: no)                  functional; exempt inside Kk footprint
+separate(LINE, PE, 6.4, 6.4)                              PE has no copper: met by placement
 keepout(band from 1.0 to 9.25 mm north of the K1..K4 coil-pin row (coil-pad edge + 8.25 mm),
         full board width, copper and vias, all layers; only relay bodies may overhang it)
 keepout(2.0 mm strip along every board edge, mains copper, all layers)
