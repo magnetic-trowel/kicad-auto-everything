@@ -556,7 +556,9 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         new_thermal = a["thermal"] - thermal
         if new_thermal and opts.get("thermal_repair", True):
             thermal |= new_thermal
+            pol = getattr(plan, "plane_policy", None)
             plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
+            plan.plane_policy = pol
         if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
@@ -580,6 +582,9 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             dsn_k = rdir / "kicad.dsn"
             pcbnew_io.export_dsn(fixed_board, dsn_k, probes=False)
             tree = specctra.read(dsn_k)
+            from .bridge import plane_policy
+            plan.plane_policy = plane_policy(opts, free_round_with_open=mode == "free" and bool(a["open"]))
+            rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
             translate.permute(tree, round_seed(opts.get("seed"), k))
             if use_split:

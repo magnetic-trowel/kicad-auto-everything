@@ -6,7 +6,7 @@
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
-                                     [--soft complete,pad|none] [--skip ID,ID]
+                                     [--soft complete,pad|none] [--skip ID,ID] [--planes keep|strict|allow]
                                      [--rounds N]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE]
@@ -55,6 +55,8 @@ def main(argv=None):
                    help="joins written unlocked for Freerouting to keep or rip: complete,pad (or 'none')")
     r.add_argument("--skip", default="", help="comma-separated module id prefixes to leave out (diagnosis)")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
+    r.add_argument("--planes", default="keep", choices=("keep", "strict", "allow"),
+                   help="the bridge's inner plane layers (kae.route.bridge DEFAULT_OPTS planes)")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
@@ -80,7 +82,7 @@ def main(argv=None):
         if a.trim_tol is not None:
             opts["trim_tol"] = a.trim_tol
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
-                           workdir=a.workdir, bridge=not a.no_bridge)
+                           workdir=a.workdir, bridge=not a.no_bridge, bridge_opts=dict(planes=a.planes))
         text = json.dumps(rep, default=str)
         if a.report:
             with open(a.report, "w") as f:

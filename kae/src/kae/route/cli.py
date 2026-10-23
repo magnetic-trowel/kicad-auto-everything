@@ -4,7 +4,8 @@
 
     python -m kae.route.cli route INPUT OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
-                                               [--passes N] [--rounds N] [--report FILE]
+                                               [--passes N] [--rounds N] [--planes keep|strict|allow]
+                                               [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -38,12 +39,15 @@ def main(argv=None):
     r.add_argument("--thermal-all", action="store_true", help="spoke corridors for every thermal pad up front")
     r.add_argument("--passes", type=int, default=0)
     r.add_argument("--rounds", type=int, default=5, help="repair rounds at most")
+    r.add_argument("--planes", default="keep", choices=("keep", "strict", "allow"),
+                   help="inner plane layers: no traces (keep: unless a free repair round needs them; strict: never)"
+                        " or allow them (KiCad's layer types)")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
     opts = dict(repair=not a.no_repair, fanout=True if a.fanout else ("first" if a.fanout_first else False),
                 thermal_repair=not a.no_thermal,
-                passes=a.passes, rounds=a.rounds, keep=a.keep)
+                passes=a.passes, rounds=a.rounds, keep=a.keep, planes=a.planes)
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     try:

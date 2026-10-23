@@ -150,3 +150,27 @@ def test_session_points_get_kicads_coordinates_back():
     path = [p for n in S.findall(S.find(S.find(t, "routes"), "network_out"), "net") if str(n[1]) == "A"
             for w in S.findall(n, "wire") for p in S.findall(w, "path")][0]
     assert path[3:] == ["1372874.99", "-1078000", "1380000", "-1078000"]
+
+
+def test_inner_planes_become_power_layers():
+    """An inner layer that one net's zones cover (>= 30 % of the board) is a plane: with the
+    plan's plane_policy 'power' it goes to Freerouting as a power layer (no traces on it);
+    outer layers and a sparsely poured inner layer stay signal layers; 'signal' keeps
+    KiCad's types. bridge.plane_policy falls back to 'signal' only for a free repair round
+    with open connections under 'keep'."""
+    from kae.route.bridge import plane_policy
+    sq = lambda x0, y0, x1, y1: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]          # noqa: E731
+    info = dict(copper=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], outline=[sq(0, 0, 100, 50)],
+                zones=[dict(net="GND", layers=["In1.Cu"], rings=[sq(1, 1, 99, 49)]),
+                       dict(net="+3V3", layers=["In2.Cu"], rings=[sq(1, 1, 20, 20)]),
+                       dict(net="GND", layers=["B.Cu"], rings=[sq(1, 1, 99, 49)]),
+                       dict(net="", layers=["In2.Cu"], rings=[sq(0, 0, 100, 50)], rule_area=True)])
+    assert translate.plane_layers(info) == {"In1.Cu": "GND"}
+    tree = S.parse("(pcb x (structure (layer F.Cu (type signal)) (layer In1.Cu (type signal))"
+                   " (layer In2.Cu (type signal)) (layer B.Cu (type signal))))")
+    layers = S.findall(S.find(tree, "structure"), "layer")
+    assert translate.mark_plane_layers(layers, info["copper"], info) == ["In1.Cu"]
+    assert [str(S.find(l, "type")[1]) for l in layers] == ["signal", "power", "signal", "signal"]
+    assert plane_policy({}) == "power" and plane_policy(dict(planes="allow")) == "signal"
+    assert plane_policy({}, free_round_with_open=True) == "signal"
+    assert plane_policy(dict(planes="strict"), free_round_with_open=True) == "power"

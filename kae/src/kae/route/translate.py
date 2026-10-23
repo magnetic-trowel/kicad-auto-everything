@@ -22,7 +22,12 @@ fixed wiring are kept):
   drill from the name); the class rule's typed clearances (wire_via, via_via) carry what
   KiCad asks of vias only (hole clearance, hole-to-hole);
 - layers: when every copper layer is a "power" layer they become signal layers
-  (Freerouting refuses a board without one and 2.5.0 hangs).
+  (Freerouting refuses a board without one and 2.5.0 hangs). With plan.plane_policy
+  "power", an inner layer that is a plane (one net's zones cover >= PLANE_SHARE of the
+  board, as the PLANE-PERF critic reads it) is written `(type power)`: Freerouting routes no
+  trace on a power layer (vias still pass, its zones stay planes), so signals stay off the
+  return planes. KiCad marks most such layers "signal" (C6: 1,362 mm of foreign track on
+  inner planes after critical routing, 282 mm on the human boards).
 
 - wiring: KiCad writes DSN coordinates with %.6g, so at x or y >= 100 mm half a micrometre
   is lost: a locked track ending exactly on a pad centre such as 137.2875 mm is written
@@ -48,6 +53,7 @@ from . import specctra as S
 from .constraints import via_name
 from .specctra import Q, find, findall, fmt
 
+PLANE_SHARE = 0.30         # an inner layer is a plane when one net's zones cover this share of the board
 SNAP_TOL_UM = 1.5          # > the %.6g rounding (0.5 um per coordinate at >= 100 mm) on both axes
 
 OBSTACLE_IMAGE = "kae_obstacles"
@@ -260,6 +266,54 @@ def snap_wiring(tree, pads=None, tol_um=SNAP_TOL_UM):
     return summary, snaps
 
 
+def plane_layers(info, share=PLANE_SHARE):
+    """{inner copper layer: net} of the layers where one net's zones (not rule areas, not
+    teardrops) cover at least `share` of the board outline."""
+    from shapely.ops import unary_union
+    cu = list(info.get("copper") or [])
+    inner = set(cu[1:-1])
+    if not inner:
+        return {}
+
+    def polys(rings_list):
+        out = []
+        for rings in rings_list or []:
+            if rings and len(rings[0]) >= 3:
+                pg = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])
+                out.append(pg if pg.is_valid else pg.buffer(0))
+        return out
+    board = unary_union(polys(info.get("outline")))
+    area = board.area
+    if area <= 0:
+        return {}
+    by = {}
+    for z in info.get("zones") or []:
+        if z.get("rule_area") or z.get("teardrop") or not z.get("net"):
+            continue
+        for l in z.get("layers") or []:
+            if l in inner:
+                by.setdefault((l, z["net"]), []).extend(polys(z.get("rings")))
+    out = {}
+    for (l, net), ps in by.items():
+        a = unary_union(ps).intersection(board).area
+        if a >= share * area and a > out.get(l, (None, 0.0))[1]:
+            out[l] = (net, a)
+    return {l: v[0] for l, v in out.items()}
+
+
+def mark_plane_layers(layers, cu, info):
+    """Write `(type power)` on the DSN `layers` (structure layer nodes, in `cu` order) that
+    are inner planes (plane_layers). Returns the layers changed."""
+    planes = plane_layers(info)
+    made = []
+    for c, l in zip(cu, layers):
+        k = find(l, "type")
+        if c in planes and k is not None and len(k) > 1 and k[1] != "power":
+            k[1] = "power"
+            made.append(c)
+    return made
+
+
 def apply(tree, plan, info):
     """Rewrite a parsed KiCad DSN `tree` in place according to `plan`. Returns a summary."""
     cu = plan.copper
@@ -294,6 +348,10 @@ def apply(tree, plan, info):
         for k in kinds:
             k[1] = "signal"
         summary["power_layers_unblocked"] = len(kinds)
+    elif getattr(plan, "plane_policy", "signal") == "power":
+        made = mark_plane_layers(layers, cu, info)
+        if made:
+            summary["plane_layers_power"] = made
 
     # ---- structure: KiCad's keepouts, via list and global rule are replaced
     removed = 0

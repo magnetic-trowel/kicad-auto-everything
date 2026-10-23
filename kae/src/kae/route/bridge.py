@@ -39,6 +39,10 @@ DEFAULT_OPTS = dict(
     repair=True,             # post-route DRC repair loop
     rounds=5,                # repair rounds at most (each also bounded by the time left)
     router_share=0.6,        # share of the budget for the first routing
+    planes="keep",           # inner plane layers (translate.plane_layers) go to Freerouting as power
+                             # layers, no traces on them: "keep" (a repair round that re-routes open
+                             # connections freely may use them), "strict" (never), "allow" (as KiCad
+                             # exports them)
 )
 
 
@@ -84,6 +88,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
+        p.plane_policy = plane_policy(opts)
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
         report["permuted"] = translate.permute(tree, seed)
@@ -152,6 +157,16 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def plane_policy(opts, free_round_with_open=False):
+    """translate's plane_policy for a routing: 'power' (inner planes carry no traces) or
+    'signal'. With opts planes 'keep', a repair round that re-routes open connections
+    freely falls back to 'signal'."""
+    pol = opts.get("planes", "keep")
+    if pol == "allow" or (pol == "keep" and free_round_with_open):
+        return "signal"
+    return "power"
 
 
 def router_settings(p, opts, repair=False):
