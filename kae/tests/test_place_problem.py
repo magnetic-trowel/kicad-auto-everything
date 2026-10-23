@@ -323,7 +323,7 @@ def test_footprint_rule_area_moves_with_its_part():
     st.Y[ref["U2"]] += int(round(10 / P.g))
     st.X[ref["U1"]], st.Y[ref["U1"]] = P.grid_of(34.0, 20.0)
     hits = [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]
-    assert hits and all(v["refs"] == ["U1"] for v in hits)
+    assert hits and all(v["refs"] == ["U1", "U2"] for v in hits)   # the part inside, then the owner
     st.X[ref["U1"]], st.Y[ref["U1"]] = P.grid_of(24.0, 10.0)
     assert not [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]
 

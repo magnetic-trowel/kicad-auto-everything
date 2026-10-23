@@ -111,3 +111,42 @@ def test_kicad_feedback_becomes_a_constraint_the_repair_honours():
     assert rep["end"] == 0
     E = exact.ExactModel(P, st)
     assert E.hull(E.sh[i.i]).distance(E.hull(E.sh[j.i])) >= d0 + 0.5 - 1e-6
+
+
+def test_reseed_places_a_pile_and_overhang_keeps_only_pads_in():
+    """Escalation steps of the closed loop: a constructive re-seed (biggest first, each at an
+    exactly clean spot, looking ahead for the next big parts) places a pile exactly legal;
+    allow_overhang lets a courtyard hang over the edge while its pads stay in."""
+    import time
+    from kae.place import exact
+    P, st = _pile()
+    E = exact.ExactModel(P, st)
+    failed = exact.reseed(P, st, E, set(P.mov), time.monotonic() + 60)
+    assert not failed and exact_check(P, st) == []
+    i = max(P.mov, key=lambda q: P.parts[q].area)
+    before = P.parts[i].rots[0].g_board
+    assert P.allow_overhang([i]) == [P.parts[i].ref]
+    a, b = P.parts[i].rots[0].g_board, before
+    assert (a[1] - a[0]) * (a[3] - a[2]) <= (b[1] - b[0]) * (b[3] - b[2])
+
+
+def test_exact_check_reports_hole_clearance():
+    """Regression (olimex-mipi-hdmi): KiCad's hole_clearance (a hole's edge to another net's
+    copper) was not modelled, so placements the exact check passed had 13 KiCad errors."""
+    from kae.place.legalize import exact_check
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    parts = {p.ref: p.i for p in P.parts}
+    j1, u = P.parts[parts["J1"]], parts["U1"]
+    hole = next(k for k, pd in enumerate(j1.fp.pads) if pd.drill)
+    hx, hy = st.pins_xy(j1.i)[hole]
+    r = j1.fp.pads[hole].drill / 2
+    pad = P.parts[u].fp.pads[0]                       # SIG1, not J1's net
+    w = max(pad.size) / 2
+    st.X[u], st.Y[u] = P.grid_of(hx + r + 0.6 + w - pad.lx, hy - pad.ly)
+    st.K[u] = 0
+    P.board.rules.hole_clearance = 0.0
+    assert not [v for v in exact_check(P, st, parts=[u], max_items=500) if v["type"] == "hole_clearance"]
+    P.board.rules.hole_clearance = 1.5
+    hits = [v for v in exact_check(P, st, parts=[u], max_items=500) if v["type"] == "hole_clearance"]
+    assert any(set(v["refs"]) == {"J1", "U1"} for v in hits)

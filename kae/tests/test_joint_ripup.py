@@ -152,3 +152,12 @@ def test_supply_nets_are_ripped_locally():
     plan = plan_ripup(b, win, {u1}, owners={}, module_parts={}, supply_nets={"SIG1"})
     assert "SIG1" in plan.partial and "SIG1" not in plan.whole
     assert sorted(plan.remove) == ["00000000-0000-4000-8000-000000000157"]   # only the track at U1's pad
+
+
+def test_replace_window_keeps_kicad_legality_bumps():
+    b = load(FIXTURE)
+    u1, u2 = _uuid(b, "U1"), _uuid(b, "U2")
+    win = Window(rect=(4.0, 4.0, 26.0, 18.0), parts=(u1, u2), refs=("U1", "U2"))
+    res = replace_window(b, win, {"nets": {}, "structures": []}, seed=1, time_s=30.0, physics=False,
+                         legal_refs={"U2": 0.1}, legal_mm=0.1)
+    assert res.report["legal_bumped"] == ["U2"] and res.report["bumped"] == []

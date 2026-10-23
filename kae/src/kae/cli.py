@@ -4,6 +4,7 @@
 
     kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--stages seed,anneal,legalize]
                            [--workers W] [--writer auto|pcbnew|sexpr] [--edge-mate] [--report FILE]
+                           [--drc auto|on|off] [--drc-rounds N]
     kae brief INPUT [--out FILE]
 
 `kae place` reads INPUT (.kicad_pcb with its project files beside it), places every unlocked
@@ -15,8 +16,13 @@ the last line of adapter.log.) As a kaebench method:
     kaebench run --adapter kae --kinds place --probe freerouting \\
       --command "<venv>/bin/python -m kae.cli place {input} {output} --seed {attempt} --time {timeout}"
 
-Exit status: 0 when the placement passed the exact legality check, 3 when an output was
-written but violations remain (listed in the report), 2 on errors.
+Legality is closed-loop: the placer repairs against its exact check (kae.place.exact), and
+then, when kicad-cli is found (KAE_KICAD_CLI / KAE_KICAD_WRAP / PATH; --drc auto|on|off),
+KiCad's DRC on the written board feeds every placement error back as a constraint and the
+board is repaired and written again (--drc-rounds, default 3) until KiCad has no placement
+error or the time is up. Exit status: 0 when the placement passed the exact check and KiCad
+(when it ran), 3 when an output was written but violations remain (listed in the report,
+with the closed loop's diagnosis per part), 2 on errors.
 
 The place terms run numba kernels when numba is installed. A read-only NUMBA_CACHE_DIR
 (e.g. a cache pre-warmed beside a frozen snapshot, used inside the benchmark sandbox) is

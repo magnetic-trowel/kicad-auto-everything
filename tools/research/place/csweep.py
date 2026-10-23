@@ -19,7 +19,8 @@ Per board it keeps OUT/<id>.json (kae's report, the last stdout line), OUT/<id>.
 OUT/<id>.time (wall seconds) and OUT/<id>/board.kicad_pcb (git-ignored work area: never
 commit boards). The summary (OUT/summary.json, OUT/summary.md) counts boards whose staged
 footprints carry Edge.Cuts (outline_incomplete) separately and lists for every illegal board
-why: the exact check's findings by type, grid violators left after escalation, timeouts and
+why: the exact check's findings by type, grid violators left after escalation, the closed
+loop's diagnosis (no room / side full / crowded), KiCad's last DRC verdict, timeouts and
 errors. Physics and order rules are compared with the human placement (reference poses) under
 the snapshot's own brief and place terms. The tool imports kae only from the snapshot.
 """
@@ -185,6 +186,12 @@ def cmd_summary(args):
                 why.append(f"grid violators left {list((row['violations'] or {}).items())[:4]}")
             if exact:
                 why.append(f"exact {dict(exact)}")
+            diag = (r.get("closed_loop") or {}).get("diagnosis") or {}
+            if diag:
+                why.append("diagnosis " + "; ".join(d.get("detail", "") for d in list(diag.values())[:4]))
+            kd = [d for d in (r.get("kicad_drc") or []) if isinstance(d, dict) and "errors" in d]
+            if kd and kd[-1]["errors"]:
+                why.append(f"KiCad DRC {kd[-1].get('by_type')}")
             row["reason"] = "; ".join(why) or "unknown"
         if not args.no_human:
             try:

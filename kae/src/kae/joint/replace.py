@@ -12,9 +12,10 @@ The placer's own machinery does the work (kae.place: Problem, State, make_anneal
 1. The placement problem is built from the current board with every footprint outside the
    window marked locked, so those parts are fixed obstacles at their exact poses (any
    angle) and their pins fixed net terminals.
-2. The window's parts start at their current poses. Parts named by an unrouted connection
-   are bumped (Problem.bump: `bump_mm` more occupancy on every side), which makes room for
-   the corridor the router could not find.
+2. The window's parts start at their current poses. Parts KiCad named in a placement
+   error are bumped by `legal_mm` (Problem.bump: more occupancy on every side, the placer's
+   own closed-loop legality step), and parts named by an unrouted connection by `bump_mm`,
+   which makes room for the corridor the router could not find.
 3. The annealer (physics terms, routability, legality, displacement) runs on the window's
    parts inside the window rectangle, with the congestion weight raised by `cong_mult` and
    the routing history added as RUDY demand (penalty.apply_history).
@@ -64,6 +65,7 @@ def window_board(board, parts):
 
 def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, terms=None, physics=True,
                    cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, moves_per_part=6000,
+                   legal_refs=(), legal_mm=0.15,
                    phys_mult=1.0, log=None):
     """See the module docstring. `board` is a kae.board.model.Board at the current poses;
     `window` a feedback.Window. `terms`: place terms built on the full board (the brief's
@@ -90,6 +92,17 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     if not sub:
         rep["skipped"] = "no movable part in the problem"
         return Result(report=rep)
+    # KiCad's placement errors first (kept: they are constraints the model missed), then
+    # routing room for parts an unrouted connection names (dropped if they make it illegal)
+    # legal_refs: refs, or {ref: mm} with KiCad's shortfall per part (bumped by that plus legal_mm)
+    need = dict(legal_refs) if isinstance(legal_refs, dict) else {r: 0.0 for r in legal_refs}
+    legal_bumped = []
+    for i in sub:
+        r = P.parts[i].ref
+        if r in need and need[r] + legal_mm > 0:
+            P.bump(i, need[r] + legal_mm)
+            legal_bumped.append(r)
+    legal_cells = dict(getattr(P, "extra_cells", {}))
     bumped = []
     if bump_mm > 0 and bump_refs:
         for i in sub:
@@ -97,6 +110,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
                 P.bump(i, bump_mm)
                 bumped.append(P.parts[i].ref)
     rep["bumped"] = bumped
+    rep["legal_bumped"] = legal_bumped
     st = State(P)
     for i in sub:
         p = P.parts[i]
@@ -128,7 +142,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     rep["cost_after"] = round(float(ann.cost(ann.lam1)), 5)
     bad = grid_violations(st)
     if bad and (bumped or P.margin > 0):
-        P.extra_cells = {}
+        P.extra_cells = dict(legal_cells)
         P.set_margin(0.0)
         rep["relaxed"] = True
         bad = grid_violations(st)

@@ -763,6 +763,28 @@ class Problem:
                     r.boards = tuple(rr(gr, r.rot, p.s) for gr in p._lib["board_groups"])
                 self.notes.append(f"{p.ref}: courtyard does not fit on the board; only its pads are kept inside")
 
+    def allow_overhang(self, parts):
+        """Let parts' courtyards overhang the board edge (only their pads, with the copper-to-
+        edge clearance, stay inside): KiCad checks copper against the edge, not courtyards (a
+        radio module's courtyard, keepout and antenna hang over the edge on purpose). An
+        escalation step of the closed loop. Returns the refs switched."""
+        out = []
+        for i in parts:
+            p = self.parts[i]
+            if not p.movable or getattr(p, "overhang", False) or getattr(p, "outside_ok", None):
+                continue
+            p.overhang = True
+            for r in p.rots:
+                rr = rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any
+                r.board = rr(p._lib["board_pads"], r.rot, p.s)
+                r.boards = tuple(rr(gr, r.rot, p.s) for gr in p._lib["board_groups"])
+                r.g_board = r.g_board_exact = to_grid(r.board, self.g)
+                r.g_boards = r.g_boards_exact = tuple(to_grid(b, self.g) for b in r.boards)
+            out.append(p.ref)
+        if out:
+            self.notes.append(f"courtyards may overhang the edge: {', '.join(out[:10])}")
+        return out
+
     def _straddle_check(self):
         """A part that fits nowhere even with only its pads inside (outline, locked parts and
         rule areas considered), whose pins have several pads each (a castellated header:

@@ -56,6 +56,14 @@ def test_unrouted_and_error_spots():
     e = error_spots(DRC)
     assert len(e) == 1                       # warnings and library-environment checks are not errors
     assert e[0].why == "clearance" and e[0].refs == ("U2",) and e[0].uuids == ("v1",)
+    assert e[0].kind == "error"              # a via is involved: the router's
+    p = error_spots({"violations": [{"severity": "error", "type": "hole_clearance",
+                                     "description": "Hole clearance violation (pad clearance 1.8500 mm; actual 1.2170 mm)",
+                                     "items": [
+        {"description": "PTH pad 1 [A] of MH4", "pos": {"x": 1, "y": 1}},
+        {"description": "Pad 2 [B] of R5 on F.Cu", "pos": {"x": 2, "y": 1}}]}]})
+    assert p[0].kind == "placement" and p[0].weight > u[0].weight and p[0].refs == ("MH4", "R5")
+    assert abs(p[0].short_mm - 0.633) < 1e-9
 
 
 def test_physics_spots_weight_by_rise():

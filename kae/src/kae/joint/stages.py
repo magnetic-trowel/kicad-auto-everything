@@ -239,7 +239,8 @@ class KaeStages:
         raw = self._path(it, "route_raw")
         rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
                        opts=dict(keep=bool(self.opts.get("keep")),
-                                 **({"rounds": int(self.opts.get("window_rounds", 3))} if it > 0 else {})),
+                                 **({"rounds": int(self.opts.get("window_rounds", 3)),
+                                     "passes": int(self.opts.get("window_passes", 16))} if it > 0 else {})),
                        log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
         src = raw if raw.exists() else locked
@@ -351,7 +352,7 @@ class KaeStages:
         return parts, bounds, centres, refs
 
     # ------------------------------------------------------------------ local repair
-    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0):
+    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0, legal_refs=()):
         """Re-place the window, rip up what it invalidates, redo its modules, re-route.
         Returns (Layout or None, report)."""
         from kae.route import critical_write as W
@@ -367,7 +368,8 @@ class KaeStages:
                              time_s=min(float(o.get("replace_time", 25.0)), max(5.0, 0.2 * time_s)),
                              cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** attempt),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
-                             bump_refs=bump_refs, margin=float(o.get("margin", 0.3)),
+                             bump_refs=bump_refs, margin=float(o.get("margin", 0.3)), legal_refs=legal_refs,
+                             legal_mm=float(o.get("legal_mm", 0.15)) * (1 + attempt),
                              phys_mult=float(o.get("phys_mult", 2.0)) ** attempt,
                              physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}

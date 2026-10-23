@@ -10,7 +10,8 @@ router's own log is not a score):
   needs a corridor between them; its two ends name the parts (pad descriptions end in
   "of <ref>") whose poses decide whether that corridor exists.
 - **DRC errors** (`error_spots`): each error-level violation is attributed to the parts
-  its items belong to and to the routing items involved (by uuid).
+  its items belong to and to the routing items involved (by uuid). A placement-type error
+  between parts only (no routing item) is a `placement` spot, repaired first.
 - **Physics shifts** (`physics_spots`): modules the recheck flagged (routed utilization
   rose beyond the threshold, crossed the budget, or lost plane cover), placed at their
   parts.
@@ -36,16 +37,22 @@ ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
 
 _NET = re.compile(r"\[([^\]]*)\]")
 _REF = re.compile(r"\bof (\S+?)(?:\s+on\s|\s*$)")
+_SHORT = re.compile(r"(?:clearance|min[^;]*?) ([\d.]+) mm; actual (-?[\d.]+) mm")
 
-W_UNROUTED = 3.0     # spot weights: a missing connection outranks an error, which outranks physics
+W_PLACEMENT = 4.0    # spot weights: legality first, then a missing connection, an error, physics
+W_UNROUTED = 3.0
 W_ERROR = 2.0
+# KiCad DRC types that make a placement illegal (kaebench's PLACEMENT_ERROR_TYPES)
+PLACEMENT_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance", "hole_to_hole",
+                   "holes_co_located", "items_not_allowed", "malformed_courtyard", "npth_inside_courtyard",
+                   "pth_inside_courtyard", "shorting_items")
 W_PHYSICS = 1.0
 
 
 @dataclass
 class Spot:
     """One problem on the routed board."""
-    kind: str                      # unrouted | error | physics
+    kind: str                      # placement | unrouted | error | physics
     x: float
     y: float
     points: tuple = ()             # ((x, y), ...) the items' positions
@@ -55,6 +62,7 @@ class Spot:
     weight: float = 1.0
     why: str = ""
     module: str = ""               # physics spots: the module id
+    short_mm: float = 0.0          # placement spots: how far the parts are from legal (KiCad's numbers)
 
     def to_dict(self):
         return dict(kind=self.kind, x=round(self.x, 3), y=round(self.y, 3), refs=list(self.refs),
@@ -124,11 +132,15 @@ def error_spots(drc, ignore=ENV_DEPENDENT):
         if not pts:
             continue
         x, y = _centroid(pts)
-        out.append(Spot(kind="error", x=x, y=y, points=pts,
+        # a placement-type error between parts only (no routing item) is the placement's
+        placement = v.get("type") in PLACEMENT_TYPES and {it["kind"] for it in items} <= {"pad", "footprint", "other"}
+        m = _SHORT.search(v.get("description") or "")
+        short = max(0.0, float(m.group(1)) - float(m.group(2))) if m else 0.0
+        out.append(Spot(kind="placement" if placement else "error", x=x, y=y, points=pts, short_mm=short,
                         refs=tuple(dict.fromkeys(it["ref"] for it in items if it["ref"])),
                         nets=tuple(dict.fromkeys(it["net"] for it in items if it["net"])),
                         uuids=tuple(it["uuid"] for it in items if it["kind"] in ("track", "via") and it["uuid"]),
-                        weight=W_ERROR, why=v.get("type") or "error"))
+                        weight=W_PLACEMENT if placement else W_ERROR, why=v.get("type") or "error"))
     return out
 
 

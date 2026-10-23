@@ -42,6 +42,12 @@ from .problem import edge_cut_polys, geom_to_lib, keepout_sides
 AREA_EPS = 1e-6
 
 
+def _local_clr(pd):
+    """A pad's local clearance override (pad or footprint level, KiCad's 'clearance'), 0 when
+    the board model does not carry one."""
+    return float(getattr(pd, "clearance", 0.0) or 0.0)
+
+
 class ExactModel:
     def __init__(self, P, st):
         from .legalize import _copper_sides
@@ -49,7 +55,10 @@ class ExactModel:
         self.deflate = P.max_error
         self.clr_of = {}
         fbs = (getattr(P, "feedback", None) or {}).get("sep", {})
-        self.reach = max([P.clr_max, P.edge_clearance] + list(fbs.values())) + 0.05
+        rules = getattr(P.board, "rules", None)
+        holes = [float(getattr(rules, k, 0.0) or 0.0) for k in ("hole_clearance", "hole_to_hole")] if rules else []
+        loc = [max([_local_clr(pd) for pd in q.fp.pads] or [0.0]) for q in P.parts]
+        self.reach = max([P.clr_max, P.edge_clearance] + holes + loc + list(fbs.values())) + 0.05
         self._copper_sides = _copper_sides
         owner_of = {p.uuid: p.i for p in P.parts}
         self.ko_board, self.ko_owned = [], {}
@@ -152,46 +161,45 @@ class ExactModel:
             if k in ok_out:
                 continue        # a straddling part's outer pads (Problem._straddle_check)
             if not outline.contains(geom.centroid):
-                add("pad_outside", [ref], pd.number)
+                add("pad_outside", [i], pd.number)
             elif e > 0 and geom.distance(boundary) < e - 1e-4:
-                add("copper_edge_clearance", [ref], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
+                add("copper_edge_clearance", [i], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
             elif not outline.contains(geom):
-                add("copper_edge_clearance", [ref], f"{pd.number} crosses the edge")
+                add("copper_edge_clearance", [i], f"{pd.number} crosses the edge")
         for side, gm, net in getattr(P, "fixed_copper", []):
             for geom, k, pd in A["pads"]:
                 if side not in self.cs[i][k] or (net and pd.net == net):
                     continue
                 need = max(self._net_clr(pd.net), self._net_clr(net))
                 if geom.distance(gm) < need - 1e-4:
-                    add("clearance", [ref], f"pad {pd.number} vs fixed copper {net}")
+                    add("clearance", [i], f"pad {pd.number} vs fixed copper {net}")
         for ko, sides, outline_k in self.ko_board:
-            self._keepout(i, A, ko, sides, outline_k, add)
+            self._keepout(i, A, ko, sides, outline_k, add, None)
         for g, why in self.avoid.get(i, ()):
             h = self.hull(A)
             if h is not None and h.intersects(g):
-                add("kicad_feedback", [ref], why)
+                add("kicad_feedback", [i], why)
 
-    def _keepout(self, i, A, ko, sides, outline_k, add):
+    def _keepout(self, i, A, ko, sides, outline_k, add, owner):
         if A["side"] not in sides:
             return
-        ref = self.P.parts[i].ref
+        who = [i] if owner is None else [i, owner]
         if ko.footprints:
             c = A["cy"].get(A["side"])
             if c is not None and c.intersects(outline_k) and c.intersection(outline_k).area > AREA_EPS:
-                add("items_not_allowed", [ref], f"keepout {ko.name}")
+                add("items_not_allowed", who, f"keepout {ko.name}")
                 return
         if ko.pads and any(g.intersects(outline_k) for g, _, _ in A["pads"]):
-            add("items_not_allowed", [ref], f"keepout {ko.name} (pads)")
+            add("items_not_allowed", who, f"keepout {ko.name} (pads)")
 
     def _pair(self, i, A, j, B, add):
         P = self.P
-        ri, rj = P.parts[i].ref, P.parts[j].ref
         if P.is_error("courtyards_overlap"):
             for side in (0, 1):
                 ca, cb = A["cy"].get(side), B["cy"].get(side)
                 if ca is not None and cb is not None and ca.intersects(cb) and ca.intersection(cb).area > AREA_EPS:
-                    add("courtyards_overlap", [ri, rj], "FB"[side])
-        for (X, Y, rx, ry) in ((A, B, ri, rj), (B, A, rj, ri)):
+                    add("courtyards_overlap", [i, j], "FB"[side])
+        for (X, Y, rx, ry) in ((A, B, i, j), (B, A, j, i)):
             for hgeom, k in X["holes"]:
                 kind = "npth_inside_courtyard" if X["pads"][k][2].kind == "np_thru_hole" else "pth_inside_courtyard"
                 if not P.is_error(kind):
@@ -200,6 +208,25 @@ class ExactModel:
                     c = Y["cy"].get(side)
                     if c is not None and hgeom.intersects(c):
                         add(kind, [rx, ry], "FB"[side])
+        # holes against other copper (KiCad hole_clearance) and other holes (hole_to_hole)
+        rules = getattr(P.board, "rules", None)
+        hc = float(getattr(rules, "hole_clearance", 0.0) or 0.0) if rules is not None else 0.0
+        hh = float(getattr(rules, "hole_to_hole", 0.0) or 0.0) if rules is not None else 0.0
+        if hc > 0 and P.is_error("hole_clearance"):
+            for (X, Y, rx, ry) in ((A, B, i, j), (B, A, j, i)):
+                for hgeom, k in X["holes"]:
+                    hnet = X["pads"][k][2].net
+                    hloc = _local_clr(X["pads"][k][2])
+                    for geom, l, pd in Y["pads"]:
+                        if hnet and pd.net == hnet:
+                            continue
+                        if hgeom.distance(geom) < max(hc, hloc, _local_clr(pd)) - 1e-4:
+                            add("hole_clearance", [rx, ry], f"hole {X['pads'][k][2].number} - pad {pd.number}")
+        if hh > 0 and P.is_error("hole_to_hole"):
+            for ha, _ in A["holes"]:
+                for hb, _ in B["holes"]:
+                    if ha.distance(hb) < hh - 1e-4:
+                        add("hole_to_hole", [i, j], "holes")
         csi, csj = self.cs[i], self.cs[j]
         for side in (0, 1):
             pa = [(g, k, pd) for g, k, pd in A["pads"] if side in csi[k]]
@@ -208,18 +235,18 @@ class ExactModel:
                 continue
             ga = np.array([g for g, _, _ in pa], dtype=object)
             gb = np.array([g for g, _, _ in pb], dtype=object)
-            near = shapely.dwithin(ga[:, None], gb[None, :], P.clr_max)
+            near = shapely.dwithin(ga[:, None], gb[None, :], max([P.clr_max] + [_local_clr(q) for _, _, q in pa + pb]))
             for a, b in zip(*np.nonzero(near)):
                 da, db = pa[a][2], pb[b][2]
                 if da.net and da.net == db.net:
                     continue
-                need = max(self._net_clr(da.net), self._net_clr(db.net))
+                need = max(self._net_clr(da.net), self._net_clr(db.net), _local_clr(da), _local_clr(db))
                 d = ga[a].distance(gb[b])
                 if d < need - 1e-4:
-                    add("clearance", [ri, rj], f"{da.number}-{db.number} {d:.3f}<{need:.3f}")
+                    add("clearance", [i, j], f"{da.number}-{db.number} {d:.3f}<{need:.3f}")
         # graphics: a mask aperture over another part's pads bridges them (KiCad's
         # solder_mask_bridge); copper graphics keep copper clearance
-        for (X, Y, rx, ry, cy_) in ((A, B, ri, rj, csj), (B, A, rj, ri, csi)):
+        for (X, Y, rx, ry, cy_) in ((A, B, i, j, csj), (B, A, j, i, csi)):
             for side in (0, 1):
                 masks, cus = X["gfx"]["mask"][side], X["gfx"]["cu"][side]
                 if not masks and not cus:
@@ -228,32 +255,32 @@ class ExactModel:
                     if side not in cy_[k]:
                         continue
                     if masks and P.is_error("solder_mask_bridge") and any(m.intersects(geom) for m in masks):
-                        add("solder_mask_bridge", [rx, ry], f"mask graphic of {rx} over pad {pd.number} of {ry}")
+                        add("solder_mask_bridge", [rx, ry], f"mask graphic over pad {pd.number}")
                     need = self._net_clr(pd.net)
                     if cus and any(c.distance(geom) < need - 1e-4 for c in cus):
-                        add("clearance", [rx, ry], f"copper graphic of {rx} near pad {pd.number} of {ry}")
+                        add("clearance", [rx, ry], f"copper graphic near pad {pd.number}")
                 if cus and X is A:
                     for c in cus:
                         if any(c.distance(o) < P.clr_min - 1e-4 for o in Y["gfx"]["cu"][side]):
                             add("clearance", [rx, ry], "copper graphics")
         e = P.edge_clearance
-        for (X, Y, rx, ry) in ((A, B, ri, rj), (B, A, rj, ri)):
+        for (X, Y, rx, ry) in ((A, B, i, j), (B, A, j, i)):
             for cg in Y["cuts"]:
                 cb = cg.boundary
                 for geom, k, pd in X["pads"]:
                     if geom.distance(cb) < e - 1e-4 or cg.contains(geom.centroid):
-                        add("copper_edge_clearance", [rx, ry], f"{pd.number} near the cut-out of {ry}")
+                        add("copper_edge_clearance", [rx, ry], f"{pd.number} near a cut-out")
                 cyo = X["cy"].get(X["side"])
                 if cyo is not None and cyo.intersection(cg).area > AREA_EPS:
                     add("over_cutout", [rx, ry], "courtyard over a cut-out")
-        for (x, X, Y) in ((i, A, B), (j, B, A)):
+        for (x, X, Y, y) in ((i, A, B, j), (j, B, A, i)):
             for ko, sides, outline_k in Y["kos"]:
-                self._keepout(x, X, ko, sides, outline_k, add)
+                self._keepout(x, X, ko, sides, outline_k, add, y)
         d = self.sep.get((min(i, j), max(i, j)))
         if d:
             ha, hb = self.hull(A), self.hull(B)
             if ha is not None and hb is not None and ha.distance(hb) < d - 1e-6:
-                add("kicad_feedback", [ri, rj], f"keep {d:.2f} mm apart (KiCad DRC)")
+                add("kicad_feedback", [i, j], f"keep {d:.2f} mm apart (KiCad DRC)")
 
     # ------------------------------------------------------------------ queries
     def check(self, parts=None, max_items=60):
@@ -262,9 +289,9 @@ class ExactModel:
         check = set(P.mov if parts is None else parts)
         out = []
 
-        def add(kind, refs, detail=""):
+        def add(kind, idx, detail=""):
             if len(out) < max_items:
-                out.append(dict(type=kind, refs=refs, detail=detail))
+                out.append(dict(type=kind, refs=[P.parts[q].ref for q in idx], parts=list(idx), detail=detail))
         for i in sorted(check):
             A = self.sh[i]
             self._env(i, A, add)
@@ -280,6 +307,7 @@ class ExactModel:
     def findings_at(self, i, X, Y, K, max_items=1000, first=False):
         """Findings of part i (default: where it is; else at grid pose X, Y, K, not
         committed). first=True stops at the first one."""
+        P = self.P
         if X is None:
             A = self.sh[i]
         else:
@@ -295,9 +323,9 @@ class ExactModel:
         class _Stop(Exception):
             pass
 
-        def add(kind, refs, detail=""):
+        def add(kind, idx, detail=""):
             if len(out) < max_items:
-                out.append(dict(type=kind, refs=refs, detail=detail))
+                out.append(dict(type=kind, refs=[P.parts[q].ref for q in idx], parts=list(idx), detail=detail))
             if first:
                 raise _Stop
         try:
@@ -314,11 +342,9 @@ def culprits(P, findings, allowed=None):
     """Movable parts to move for a list of findings, biggest first: a finding with one
     movable part names it; with two, the smaller one (it finds room more easily) unless the
     bigger one is the one out of the board."""
-    by_ref = {p.ref: p.i for p in P.parts}
     out = {}
     for v in findings:
-        mv = [by_ref[r] for r in v["refs"] if r in by_ref and P.parts[by_ref[r]].movable
-              and (allowed is None or by_ref[r] in allowed)]
+        mv = [q for q in v["parts"] if P.parts[q].movable and (allowed is None or q in allowed)]
         if not mv:
             continue
         i = min(mv, key=lambda q: P.parts[q].area) if len(mv) > 1 else mv[0]
@@ -326,9 +352,11 @@ def culprits(P, findings, allowed=None):
     return sorted(out, key=lambda q: -P.parts[q].area)
 
 
-def _candidates(P, st, i, S, pad, ks, w_rot, limit):
+def _candidates(P, st, i, S, pad, ks, w_rot, limit, edge=False):
     """Grid-free origins for part i (rotations ks) by L1 distance (+ w_rot when turning) from
-    where it is, at most `limit`: [(cost, X, Y, k)]."""
+    where it is, at most `limit`: [(cost, X, Y, k)]. edge=True ranks them by the distance of
+    the part's own rectangle to the board's edge first (a big part hugging an edge leaves the
+    rest of the board in one piece)."""
     from .legalize import _inside_origins
     p = P.parts[i]
     si = 0 if p.s > 0 else 1
@@ -353,6 +381,15 @@ def _candidates(P, st, i, S, pad, ks, w_rot, limit):
         if len(xs) == 0:
             continue
         c = dist[xs, ys] + (w_rot if k != K0 else 0.0)
+        if edge:
+            a, b, c0, d = r.g_own
+            de = np.minimum.reduce([np.maximum(xs + a, 0), np.maximum(nx - (xs + b), 0),
+                                    np.maximum(ys + c0, 0), np.maximum(ny - (ys + d), 0)])
+            # and the board area its pieces cover (a keepout or overhang hanging off is free)
+            onb = np.zeros(len(xs))
+            for (a1, b1, c1, d1) in tuple(r.g_own_rects or (r.g_own,)) + tuple(r.g_opp):
+                onb += (np.clip(xs + b1, 0, nx) - np.clip(xs + a1, 0, nx)) * (np.clip(ys + d1, 0, ny) - np.clip(ys + c1, 0, ny))
+            c = 20.0 * de + onb + 0.05 * c
         order = np.argsort(c, kind="stable")
         out += [(float(c[q]), int(xs[q]), int(ys[q]), k) for q in order[:limit]]
         # and a spread over the farther ones, so a crowded neighbourhood is not all it sees
@@ -365,15 +402,19 @@ def _candidates(P, st, i, S, pad, ks, w_rot, limit):
     return near + rest[::max(1, len(rest) // limit)][:limit]
 
 
-def _tables(P, st, skip):
-    from .legalize import _occupancy
-    from .problem import sat
+def _pad(P):
     ext = 1
     for i in P.mov:
         for r in P.parts[i].rots:
             for (a, b, c, d) in (r.g_own,) + tuple(r.g_opp):
                 ext = max(ext, -a, b, -c, d)
-    pad = ext + 1
+    return ext + 1
+
+
+def _tables(P, st, skip):
+    from .legalize import _occupancy
+    from .problem import sat
+    pad = _pad(P)
     occ = _occupancy(P, st, skip, pad)
     return [sat(occ[0]), sat(occ[1])], pad
 
@@ -401,20 +442,101 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=
         if time.monotonic() > deadline:
             return False, []
         f = E.findings_at(i, X, Y, k)
-        by_ref = {P.parts[j].ref: j for j in small}
         # every finding there must name a part that moves out (one naming only part i, or a
         # bigger or fixed part, stays)
-        if any(not any(r in by_ref for r in v["refs"] if r != p.ref) or
-               any(r not in by_ref and r != p.ref for r in v["refs"]) for v in f):
+        if any(not (set(v["parts"]) - {i}) or not (set(v["parts"]) - {i}) <= small for v in f):
             continue
-        refs = {r for v in f for r in v["refs"]} - {p.ref}
+        out_parts = {q for v in f for q in v["parts"]} - {i}
         E.set_pose(i, X, Y, k)
         out = []
-        for r in sorted(refs, key=lambda r: -P.parts[by_ref[r]].area):
-            ok, _ = move_clean(P, st, E, by_ref[r], deadline, w_rot, limit, evict=False, allowed=allowed)
-            out.append(r)
+        for q in sorted(out_parts, key=lambda q: -P.parts[q].area):
+            move_clean(P, st, E, q, deadline, w_rot, limit, evict=False, allowed=allowed)
+            out.append(P.parts[q].ref)
         return True, out
     return False, []
+
+
+PARK = -10 ** 6
+
+
+def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600):
+    """Constructive re-placement of a crowded set: lift `parts` off the board, then put them
+    back one by one (`first`, then biggest first), each at the exactly clean spot nearest
+    where it was (edge=True: hugging the board's edge), grid-free against what is already
+    back. A part with no such spot goes back where it was. Returns the parts that did."""
+    order = [q for q in first if q in parts] + sorted([q for q in parts if q not in first],
+                                                       key=lambda q: -P.parts[q].area)
+    home = {q: (int(st.X[q]), int(st.Y[q]), int(st.K[q])) for q in order}
+    for q in order:
+        E.set_pose(q, PARK, PARK, home[q][2])
+    from .legalize import _mark, _occupancy
+    from .problem import sat
+    lifted = set(order)
+    failed = []
+    board_area = max(1.0, P.outline.area)
+    pad = _pad(P)
+    occ = _occupancy(P, st, lifted, pad)        # obstacles and the parts not lifted
+
+    def stamp(o, q):
+        for side, r, _ in st.grid_rects(q):
+            _mark(o[side], r, pad, 1)
+    for n, q in enumerate(order):
+        lifted.discard(q)
+        st.X[q], st.Y[q], st.K[q] = home[q]
+        S = [sat(occ[0]), sat(occ[1])]
+        done = False
+        # lookahead: the next big parts (each > 5% of the board) must still find a spot
+        big = [j for j in order[n + 1:] if P.parts[j].area > 0.05 * board_area][:2]
+        first_clean = None
+        tries = 0
+        if time.monotonic() < deadline:
+            for c, X, Y, k in _candidates(P, st, q, S, pad, list(range(len(P.parts[q].rots))), w_rot, limit,
+                                          edge=edge):
+                if time.monotonic() > deadline:
+                    break
+                if E.findings_at(q, X, Y, k, first=True):
+                    continue
+                E.set_pose(q, X, Y, k)
+                if first_clean is None:
+                    first_clean = (X, Y, k)
+                ok = True
+                if big:
+                    o2 = [o.copy() for o in occ]
+                    stamp(o2, q)
+                    S2 = [sat(o2[0]), sat(o2[1])]
+                    for j in big:
+                        sv = (int(st.X[j]), int(st.Y[j]), int(st.K[j]))
+                        st.X[j], st.Y[j], st.K[j] = home[j]
+                        ok = ok and bool(_candidates(P, st, j, S2, pad, list(range(len(P.parts[j].rots))), 0.0, 1))
+                        st.X[j], st.Y[j], st.K[j] = sv
+                tries += 1
+                if ok:
+                    done = True
+                    break
+                if tries > 300:
+                    break
+            if not done and first_clean is not None:
+                E.set_pose(q, *first_clean)
+                done = True
+        if done:
+            stamp(occ, q)
+        if not done:
+            E.set_pose(q, *home[q])
+            failed.append(q)
+    return failed
+
+
+def _crowd(P, E, base, scope, grow):
+    """The movable parts around `base` (their clearance envelopes grown by `grow` x their
+    size), within scope; every movable part of a small board."""
+    pool = [q for q in P.mov if scope is None or q in scope]
+    if len(pool) <= 40 or grow >= 3:
+        return set(pool)
+    env = E.env[list(base)]
+    w = max(1.0, float(np.max(np.maximum(env[:, 2] - env[:, 0], env[:, 3] - env[:, 1]))))
+    box = (env[:, 0].min() - grow * w, env[:, 1].min() - grow * w, env[:, 2].max() + grow * w,
+           env[:, 3].max() + grow * w)
+    return {q for q in E.neighbours(box) if q in set(pool)} | set(base)
 
 
 def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
@@ -428,31 +550,66 @@ def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
     scope = None if allowed is None else set(allowed)
     found = E.check(parts=scope, max_items=100000)
     rep = dict(start=len(found), rounds=0, moved=[], evicted=[], stuck=[])
-    for _ in range(rounds):
+    def local_rounds(found):
+        for _ in range(rounds):
+            if not found or time.monotonic() > deadline:
+                break
+            rep["rounds"] += 1
+            progress = False
+            for i in culprits(P, found, scope):
+                if time.monotonic() > deadline:
+                    break
+                if not E.part_findings(i, max_items=1):
+                    continue
+                ok, ev = move_clean(P, st, E, i, deadline, w_rot=w_rot, allowed=scope)
+                if ok:
+                    progress = True
+                    rep["moved"].append(P.parts[i].ref)
+                    rep["evicted"] += ev
+            found = E.check(parts=scope, max_items=100000)
+            if not progress:
+                break
+        return found
+    found = local_rounds(found)
+    # escalation: re-seed the crowded set constructively (home spots, then edge-hugging, the
+    # parts that failed first), growing the set; keep an attempt only if it ends better
+    rep["reseeds"] = []
+    failed_first = []
+    for attempt in range(6):
         if not found or time.monotonic() > deadline:
             break
-        rep["rounds"] += 1
-        progress = False
-        for i in culprits(P, found, scope):
-            if time.monotonic() > deadline:
-                break
-            if not E.part_findings(i, max_items=1):
-                continue
-            ok, ev = move_clean(P, st, E, i, deadline, w_rot=w_rot, allowed=scope)
-            if ok:
-                progress = True
-                rep["moved"].append(P.parts[i].ref)
-                rep["evicted"] += ev
-        found = E.check(parts=scope, max_items=100000)
-        if not progress:
+        base = culprits(P, found, scope)
+        if not base:
             break
+        crowd = _crowd(P, E, base, scope, grow=1 + attempt // 2)
+        if attempt >= 1:
+            # courtyards may overhang the edge (pads stay in): the culprits and the big parts
+            board_area = max(1.0, P.outline.area)
+            hung = P.allow_overhang([q for q in crowd if q in set(base) or P.parts[q].area > 0.05 * board_area])
+            if hung:
+                rep.setdefault("overhang", []).extend(hung)
+        saved = {q: (int(st.X[q]), int(st.Y[q]), int(st.K[q])) for q in crowd}
+        before = len(found)
+        failed = reseed(P, st, E, crowd, deadline, edge=attempt >= 2 and bool(attempt % 2), first=failed_first,
+                        w_rot=w_rot)
+        found2 = local_rounds(E.check(parts=scope, max_items=100000))
+        rep["reseeds"].append(dict(parts=len(crowd), edge=attempt >= 2 and bool(attempt % 2),
+                                   failed=[P.parts[q].ref for q in failed],
+                                   findings=len(found2)))
+        if len(found2) < before:
+            found = found2
+        else:
+            for q, pose in saved.items():
+                E.set_pose(q, *pose)
+            found = E.check(parts=scope, max_items=100000)
+        failed_first = failed + [q for q in failed_first if q not in failed]
     left = {}
-    by_ref = {p.ref: p.i for p in P.parts}
     for v in found:
-        for r in v["refs"]:
-            if r in by_ref and P.parts[by_ref[r]].movable:
-                left.setdefault(r, []).append(v["type"])
-    rep["stuck"] = sorted(left)
+        for q in v["parts"]:
+            if P.parts[q].movable and (scope is None or q in scope):
+                left.setdefault(q, []).append(v["type"])
+    rep["stuck_parts"] = sorted(left)
+    rep["stuck"] = [P.parts[q].ref for q in rep["stuck_parts"]]
     rep["end"] = len(found)
     rep["findings"] = found[:60]
     rep["seconds"] = round(time.monotonic() - t0, 2)
@@ -512,12 +669,12 @@ def diagnose(P, st, E, i, limit=400):
     neighbours fill it). Returns {reason, detail}."""
     p = P.parts[i]
     S, pad = _tables(P, st, set(P.mov))
-    fixed = {q.ref for q in P.parts if not q.movable} | {p.ref}
+    fixed = {q.i for q in P.parts if not q.movable} | {i}
     cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
     clean = None
     for c, X, Y, k in cands:
         f = E.findings_at(i, X, Y, k)
-        if not [v for v in f if set(v["refs"]) <= fixed]:
+        if not [v for v in f if set(v["parts"]) <= fixed]:
             clean = (X, Y, k)
             break
     if clean is None:
@@ -537,8 +694,7 @@ def close_loop(P, st, time_s, log=None):
     rep = repair(P, st, time_s=time_s, log=log)
     if rep["stuck"]:
         E = ExactModel(P, st)
-        by_ref = {q.ref: q.i for q in P.parts}
-        rep["diagnosis"] = {r: diagnose(P, st, E, by_ref[r]) for r in rep["stuck"][:12]}
+        rep["diagnosis"] = {P.parts[q].ref: diagnose(P, st, E, q) for q in rep["stuck_parts"][:12]}
         if log:
             for r, d in rep["diagnosis"].items():
                 log(f"illegal: {d['reason']}: {d['detail']}")

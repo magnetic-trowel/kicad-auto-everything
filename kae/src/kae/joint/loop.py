@@ -160,7 +160,7 @@ class JointLoop:
             cap = min(o["max_parts"], max(3, int(round(o["max_part_share"] * n_mov))))
             o_win = dict(o, max_parts=cap)
             base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=cap,
-                                            max_pins=o["max_pins"])
+                                            max_pins=o["max_pins"], merge_factor=1.0)
                     if tries.get(w.key, 0) < o["max_attempts"]]
             if not base:
                 stop = "no window left to try"
@@ -172,9 +172,14 @@ class JointLoop:
             it += 1
             t = time.monotonic()
             bump = sorted({r for s in win.spots if s.kind == "unrouted" for r in s.refs})
+            legal = {}
+            for s in win.spots:
+                if s.kind == "placement":
+                    for r in s.refs:
+                        legal[r] = max(legal.get(r, 0.0), s.short_mm)
             budget = min(left(), max(o["min_iter_s"], o["iter_share"] * time_s))
             cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
-                                   attempt=attempt)
+                                   attempt=attempt, legal_refs=legal)
             tries[base0.key] = attempt + 1
             if cand is None:
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=rrep.get("outcome"),

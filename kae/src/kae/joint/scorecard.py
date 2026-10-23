@@ -22,16 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .feedback import PLACEMENT_TYPES  # noqa: F401 - KiCad's placement-type checks (stages.placement_errors)
+
 U_CAP = 5.0          # one module far over budget must not hide every other module's change
 U_MISSING = 3.0      # a module whose routed value cannot be computed (copper missing)
-
-# KiCad DRC types that make a placement illegal (kaebench's PLACEMENT_ERROR_TYPES). Only
-# reported here: a routed board's clearance errors may be the router's, so legality is
-# judged by the placer's exact check.
-PLACEMENT_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance", "hole_to_hole",
-                   "holes_co_located", "items_not_allowed", "malformed_courtyard", "npth_inside_courtyard",
-                   "pth_inside_courtyard", "shorting_items")
-
 
 def physics_total(modules):
     """Sum of capped routed utilizations: modules {id: u or None}."""
