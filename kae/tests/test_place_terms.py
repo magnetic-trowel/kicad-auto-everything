@@ -262,3 +262,20 @@ def test_patch_strength_vs_parallel_plate_limit():
     A, h = 25.0, 0.1
     c = PY.cext(A, h)
     assert c > K.EPS0 * A / h and c < 1.2 * K.EPS0 * A / h
+
+
+def test_loop_fast_mixed_plane_heights_and_order_symmetry():
+    """loop_fast stays finite when only some strips have no plane, and does not depend on
+    segment order for open element sets (regressions reported by the critical router)."""
+    import math
+    from kae.physics.fastloop import loop_fast
+    inf = float('inf')
+    H = [(0, 0, 4, 0, 0.5, 0.2), (4, 0, 4, 2, 0.5, 0.2), (4, 2, 0, 2, 0.5, 0.2), (0, 2, 0, 0, 0.5, inf)]
+    v = loop_fast(H)
+    assert math.isfinite(v) and v > 0
+    # two strips leaving one pad: no shared end-to-start corner, so the general rule applies
+    a, b = (0, 0, 3, 0, 0.4, 0.3), (0, 0, 2, 1.5, 0.4, 0.3)
+    assert abs(loop_fast([a, b]) - loop_fast([b, a])) < 1e-12
+    # strips over no plane still use the exact corner formula (inf == inf counts as same height)
+    Hn = [(0, 0, 4, 0, 0.5, inf), (4, 0, 4, 2, 0.5, inf), (4, 2, 0, 2, 0.5, inf), (0, 2, 0, 0, 0.5, inf)]
+    assert math.isfinite(loop_fast(Hn)) and loop_fast(Hn) > 0

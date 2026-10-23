@@ -147,7 +147,7 @@ def loop_fast(H, V=()):
         ax, ay, bx, by, wj, hj = H[j]
         for k in range(j + 1, n):
             cx, cy, dx, dy, wk, hk = H[k]
-            same = abs(hj - hk) < 1e-9
+            same = hj == hk or abs(hj - hk) < 1e-9          # inf == inf: both over no plane
             adj_jk = same and abs(bx - cx) < 1e-9 and abs(by - cy) < 1e-9
             adj_kj = same and abs(dx - ax) < 1e-9 and abs(dy - ay) < 1e-9
             if adj_jk:
@@ -155,10 +155,16 @@ def loop_fast(H, V=()):
             elif adj_kj:
                 m = m_hh(cx, cy, dx, dy, ax, ay, bx, by, 0.0, True)
             else:
-                m = m_hh(ax, ay, bx, by, cx, cy, dx, dy, abs(hj - hk) if hj != INF else 0.0, False)
+                # without a plane under one of them the vertical offset is unknown: coplanar
+                dz = abs(hj - hk) if (hj != INF and hk != INF) else 0.0
+                # the parallel-filament rule projects onto the first segment's axis; averaging
+                # both orders makes M symmetric, so the result does not depend on segment order
+                m = 0.5 * (m_hh(ax, ay, bx, by, cx, cy, dx, dy, dz, False)
+                           + m_hh(cx, cy, dx, dy, ax, ay, bx, by, dz, False))
             if hj != INF and hk != INF:
-                # image of k: at -hk, reversed
-                m -= m_hh(ax, ay, bx, by, cx, cy, dx, dy, hj + hk, False)
+                # image of k: at -hk, reversed (symmetrized like the direct term)
+                m -= 0.5 * (m_hh(ax, ay, bx, by, cx, cy, dx, dy, hj + hk, False)
+                            + m_hh(cx, cy, dx, dy, ax, ay, bx, by, hj + hk, False))
             L += 2.0 * m
     if V:
         L += _vertical_terms(H, V)
