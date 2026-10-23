@@ -6,7 +6,7 @@ method (an "adapter") on each task k times, and scores every attempt by re-openi
 the saved board with `kicad-cli` under the board's own rules. Design rationale:
 [docs/topics/verification/harness.md](../docs/topics/verification/harness.md).
 
-## Setup (Ubuntu 22.04/24.04, e.g. sk-tibia)
+## Setup (Ubuntu 22.04/24.04)
 
 ```bash
 git clone -b claude/gallant-newton-lt98do https://github.com/magnetic-trowel/kicad-auto-everything
