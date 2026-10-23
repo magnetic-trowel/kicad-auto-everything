@@ -206,6 +206,8 @@ def intent(d):
       default="firmware ships with parked charging off until V-23 passes")
     Q("Q-11", "Where in the 95-cell string does the service plug sit (it splits the pack only when removed)?",
       default="unknown; firmware refuses to charge if the pack reads < 280 V or open")
+    Q("Q-12", "Which Toyota OBD-II PIDs give the Prime's SOC, min/max cell voltage and HV-battery DTC status (community "
+      "lists exist [unverified])?", default="without CAN data firmware stops at 3.90 V/cell and never uses CAN")
 
     H = d.hazard
     H("HZ-1", "Electric shock from 285-420 V on our cable or boards; up to 420 V to chassis under one insulation "
@@ -397,12 +399,14 @@ def mppt(d, X, base):
     b.C(f"C{r(3)}", "100n100V", "+3V3", "GND", note="U2 VS")
     b.R(f"R{r(2)}", 1e3, "I_RAW", f"PV{X}_I_ADC", note="ADC anti-alias")
     b.C(f"C{r(4)}", "10n50V", f"PV{X}_I_ADC", "GND")
-    b.R(f"R{r(3)}", 1e3, "ISK_P", "ISNS_P", p=0.001, va=0.2,
-        note="R_iso: Q2 sinks <= 150 uA through it (0.15 V) to offset the CC-loop sense")
-    b.R(f"R{r(4)}", 100, "ISK_N", "ISNS_N", p=0.001, va=0.01, note="CC-loop sense filter; carries only the 3 uA "
+    b.R(f"R{r(3)}", 1e3, "ISK_N", "ISNS_N", p=0.001, va=0.2,
+        note="R_iso on the ISNS(-) side: Q2 sinks <= 150 uA through it, pulling ISNS(-) down so the sensed voltage "
+             "rises and the CC loop allows I_PV = (50 mV - I_sink x 1 kOhm) / 5 mOhm (zero at 50 uA)")
+    b.R(f"R{r(4)}", 100, "ISK_P", "ISNS_P", p=0.001, va=0.01, note="CC-loop sense filter; carries only the 3 uA "
         "ISNS bias")
     b.C(f"C{r(5)}", "100n100V", "ISNS_P", "ISNS_N", note="CC-loop differential filter")
-    b.add(P.NPN_HV, f"Q{r(2)}", {"B": "SINK_B", "E": "SINK_E", "C": "ISNS_P"}, notes="MPPT current-setpoint sink")
+    b.add(P.NPN_HV, f"Q{r(2)}", {"B": "SINK_B", "E": "SINK_E", "C": "ISNS_N"},
+          notes="MPPT current-setpoint sink on ISNS(-) (sinking from ISNS(+) would raise the current: v0.1 error)")
     b.R(f"R{r(5)}", 20e3, "SINK_E", "GND", note="sink emitter")
     b.R(f"R{r(6)}", 10e3, "MPPT_OUT", "SINK_B", note="sink base")
     b.C(f"C{r(6)}", "4u7100V", "VIN", "GND", note="buck-side hot-loop input cap")
@@ -715,7 +719,7 @@ def safety(d):
     b.R("R518", 2.2e3, "MCU_RUN", "PERMIT", note="the only PERMIT source")
     b.R("R519", 1e3, "MCU_RUN", "GND", note="holds PERMIT <= 0.2 V while the MCU pins are tri-stated in reset")
     b.C("C509", "1n50V", "PERMIT", "GND")
-    b.R("R520", 10e3, "RELAY_REQ", "K_IN", note="relay drive = RELAY_REQ AND PERMIT")
+    b.R("R520", 100e3, "RELAY_REQ", "K_IN", note="relay drive = RELAY_REQ AND PERMIT; 100k: K_IN = 3.0 V against the TPL7407 1 MOhm pull-down, and <= 30 uA back-feed into a low PERMIT")
     b.add(P.BAT46, "D503", {"K": "PERMIT", "A": "K_IN"}, notes="relay AND gate: PERMIT low forces K_IN low")
     b.add(P.TPL7407, "U505", {"IN1": "K_IN", "IN2": "K_IN", "IN3": "FAN_PWM", "IN4": "PERMIT", "IN5": "LATCH_Q",
                               "IN6": "GND", "IN7": "GND", "GND": "GND", "COM": "AUX12", "OUT5": "LED_FLT_K",
@@ -1124,11 +1128,8 @@ def waivers(d):
       "string fuse is needed [S: IEC 62548 requires string fuses only for >= 3 parallel strings].")
     W("protect.entry_fuse", r"net (HV_P|HV_N|PACK_SNS) reaches",
       "These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks "
-      "pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A "
+      "pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.85 A "
       "physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA).")
-    W("protect.entry_fuse", r"net BAT_TAP_P reaches",
-      "BAT_TAP_P is the unfused stub between the pack terminal and F901 itself (<= 0.3 m, double insulated, inside "
-      "the battery cover, REQ-21); F901 on this net is the fuse.")
     W("lib.footprint_custom", r"T301|ETD39",
       "Custom magnetics: pad grid from the TDK ETD 39 20-pin coil-former drawing; only pins 1-4, 11, 20 are populated "
       "and the rest omitted for creepage. Drawn and reviewed with the vendor sample (V-5).")
@@ -1162,9 +1163,6 @@ def waivers(d):
     W("kicad.erc.ground_pin_not_ground", r"HGND",
       "HGND of U401/U421/U441 is the isolated high-side ground, tied to the HV domain reference HV_N / HV_RTN as the "
       "AMC datasheets require; KiCad's rule only recognises nets named like GND.")
-    W("rating.voltage", r"^K90[12] .*COIL",
-      "A 12 V coil on the 12.1 V AUX12 rail is the rated operating point; 110 % (13.2 V) is the datasheet maximum, "
-      "not a derating base. After 100 ms pull-in the coil is PWM-held at 45-60 % (K340-E1-06 p.1, 5).")
 
 
 def build():

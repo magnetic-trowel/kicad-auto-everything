@@ -5016,7 +5016,7 @@
 		)
 		(uuid "dc58c760-e259-5094-a5b1-73aa2362a1ed")
 	)
-	(label "ISK_P"
+	(label "ISK_N"
 		(at 180.34 85.09 90)
 		(fields_autoplaced yes)
 		(effects
@@ -5033,7 +5033,7 @@
 		)
 		(uuid "8e7f40ad-2805-50dd-8144-b63d1c057620")
 	)
-	(label "ISNS_P"
+	(label "ISNS_N"
 		(at 180.34 97.79 270)
 		(fields_autoplaced yes)
 		(effects
@@ -5149,7 +5149,7 @@
 		)
 		(uuid "bd5f33af-98bf-5e00-ac3b-29244a272d53")
 	)
-	(label "ISK_N"
+	(label "ISK_P"
 		(at 193.04 85.09 90)
 		(fields_autoplaced yes)
 		(effects
@@ -5166,7 +5166,7 @@
 		)
 		(uuid "8e436380-5c44-51b8-9947-f584cdd309a4")
 	)
-	(label "ISNS_N"
+	(label "ISNS_P"
 		(at 193.04 97.79 270)
 		(fields_autoplaced yes)
 		(effects
@@ -5442,7 +5442,7 @@
 		)
 		(uuid "282e8761-063e-54df-bf8b-31111d0be706")
 	)
-	(label "ISNS_P"
+	(label "ISNS_N"
 		(at 345.44 40.64 90)
 		(fields_autoplaced yes)
 		(effects

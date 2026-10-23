@@ -440,13 +440,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_A/ISK_P",
+     "net": "/MPPT_A/ISK_N",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_A/ISNS_P",
+     "net": "/MPPT_A/ISNS_N",
      "nc": false
     }
    }
@@ -467,13 +467,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_A/ISK_N",
+     "net": "/MPPT_A/ISK_P",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_A/ISNS_N",
+     "net": "/MPPT_A/ISNS_P",
      "nc": false
     }
    }
@@ -533,7 +533,7 @@
     "3": {
      "name": "C",
      "type": "passive",
-     "net": "/MPPT_A/ISNS_P",
+     "net": "/MPPT_A/ISNS_N",
      "nc": false
     }
    }
@@ -2915,13 +2915,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_B/ISK_P",
+     "net": "/MPPT_B/ISK_N",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_B/ISNS_P",
+     "net": "/MPPT_B/ISNS_N",
      "nc": false
     }
    }
@@ -2942,13 +2942,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_B/ISK_N",
+     "net": "/MPPT_B/ISK_P",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/MPPT_B/ISNS_N",
+     "net": "/MPPT_B/ISNS_P",
      "nc": false
     }
    }
@@ -3008,7 +3008,7 @@
     "3": {
      "name": "C",
      "type": "passive",
-     "net": "/MPPT_B/ISNS_P",
+     "net": "/MPPT_B/ISNS_N",
      "nc": false
     }
    }
@@ -11406,8 +11406,8 @@
    "block": "SAFETY",
    "board": "main",
    "name": "R21",
-   "value": "10k",
-   "mpn": "ERJ-3EKF1002V",
+   "value": "100k",
+   "mpn": "ERJ-3EKF1003V",
    "manufacturer": "Panasonic",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -20291,7 +20291,7 @@
      "2"
     ],
     [
-     "R103",
+     "R104",
      "1"
     ],
     [
@@ -20319,7 +20319,7 @@
      "3"
     ],
     [
-     "R104",
+     "R103",
      "1"
     ],
     [
@@ -20347,11 +20347,7 @@
      "1"
     ],
     [
-     "Q102",
-     "3"
-    ],
-    [
-     "R103",
+     "R104",
      "2"
     ],
     [
@@ -20379,7 +20375,11 @@
      "2"
     ],
     [
-     "R104",
+     "Q102",
+     "3"
+    ],
+    [
+     "R103",
      "2"
     ],
     [
@@ -21671,7 +21671,7 @@
      "2"
     ],
     [
-     "R203",
+     "R204",
      "1"
     ],
     [
@@ -21699,7 +21699,7 @@
      "3"
     ],
     [
-     "R204",
+     "R203",
      "1"
     ],
     [
@@ -21727,11 +21727,7 @@
      "1"
     ],
     [
-     "Q202",
-     "3"
-    ],
-    [
-     "R203",
+     "R204",
      "2"
     ],
     [
@@ -21759,7 +21755,11 @@
      "2"
     ],
     [
-     "R204",
+     "Q202",
+     "3"
+    ],
+    [
+     "R203",
      "2"
     ],
     [

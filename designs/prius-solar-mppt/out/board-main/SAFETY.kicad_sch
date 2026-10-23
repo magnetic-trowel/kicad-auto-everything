@@ -8386,7 +8386,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "100k"
 			(at 27.94 287.02 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -8406,14 +8406,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 10k 1% 0603"
+		(property "Description" "Resistor 100k 1% 0603"
 			(at 27.94 287.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "ERJ-3EKF1002V"
+		(property "MPN" "ERJ-3EKF1003V"
 			(at 27.94 287.02 0)
 			(hide yes)
 			(effects

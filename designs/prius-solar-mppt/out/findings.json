@@ -228,7 +228,7 @@
    "objects": [
     "HV_N"
    ],
-   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.85 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
   },
   {
    "check": "protect.entry_fuse",
@@ -255,7 +255,7 @@
    "objects": [
     "HV_P"
    ],
-   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.85 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
   },
   {
    "check": "protect.entry_fuse",
@@ -264,7 +264,7 @@
    "objects": [
     "PACK_SNS"
    ],
-   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.85 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
   },
   {
    "check": "hazard.procedural",

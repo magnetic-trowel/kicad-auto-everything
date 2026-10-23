@@ -3631,11 +3631,11 @@ components:
   - ref: R520
     block: SAFETY
     board: main
-    value: "10k"
+    value: "100k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [LV]
-    mpn: ERJ-3EKF1002V
+    mpn: ERJ-3EKF1003V
   - ref: D503
     block: SAFETY
     board: main
