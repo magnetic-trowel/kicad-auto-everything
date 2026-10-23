@@ -81,7 +81,7 @@ class FakeStages:
                  for u, p in lay.poses.items()}
         return parts, (-5, -5, 50, 5), {u: g.center for u, g in parts.items()}, {u: g.ref for u, g in parts.items()}
 
-    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0, legal_refs=()):
+    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0, legal_refs=(), drc=None):
         self.calls.append(("repair", it, seed, tuple(window.refs), attempt))
         assert history.total() > 0                 # failures were recorded as congestion history
         refs = set(window.refs)

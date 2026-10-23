@@ -179,7 +179,7 @@ class JointLoop:
                         legal[r] = max(legal.get(r, 0.0), s.short_mm)
             budget = min(left(), max(o["min_iter_s"], o["iter_share"] * time_s))
             cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
-                                   attempt=attempt, legal_refs=legal)
+                                   attempt=attempt, legal_refs=legal, drc=best_fb.get("drc"))
             tries[base0.key] = attempt + 1
             if cand is None:
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=rrep.get("outcome"),

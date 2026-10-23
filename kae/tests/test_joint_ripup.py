@@ -161,3 +161,18 @@ def test_replace_window_keeps_kicad_legality_bumps():
     res = replace_window(b, win, {"nets": {}, "structures": []}, seed=1, time_s=30.0, physics=False,
                          legal_refs={"U2": 0.1}, legal_mm=0.1)
     assert res.report["legal_bumped"] == ["U2"] and res.report["bumped"] == []
+
+
+def test_window_takes_kicad_feedback_and_net_weights_and_covers_moves():
+    from kae.joint.stages import _cover_moves
+    b = load(FIXTURE)
+    u1, u2 = _uuid(b, "U1"), _uuid(b, "U2")
+    win = Window(rect=(4.0, 4.0, 26.0, 18.0), parts=(u1, u2), refs=("U1", "U2"))
+    drc = {"violations": [{"severity": "error", "type": "courtyards_overlap", "items": [
+        {"description": "Footprint U1", "pos": {"x": 10.0, "y": 10.0}},
+        {"description": "Footprint U2", "pos": {"x": 20.0, "y": 10.0}}]}]}
+    res = replace_window(b, win, {"nets": {}, "structures": []}, seed=1, time_s=30.0, physics=False,
+                         drc_report=drc, net_weights={"SIG1": 3.0})
+    assert res.report["kicad_feedback"]["constraints"] >= 1
+    grown = _cover_moves(b, win, {u1: (40.0, 30.0, 0.0, "F")})
+    assert grown.rect[2] > 40.0 and grown.rect[3] > 30.0 and grown.rect[:2] == (4.0, 4.0)

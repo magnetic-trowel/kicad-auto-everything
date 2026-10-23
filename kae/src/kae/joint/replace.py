@@ -7,7 +7,7 @@
     res.report
 
 The placer's own machinery does the work (kae.place: Problem, State, make_annealer with
-`subset` and `window`, legalize.greedy, exact_check):
+`subset` and `window`; legality closes with the placer's loop, kae.place.exact):
 
 1. The placement problem is built from the current board with every footprint outside the
    window marked locked, so those parts are fixed obstacles at their exact poses (any
@@ -16,12 +16,17 @@ The placer's own machinery does the work (kae.place: Problem, State, make_anneal
    error are bumped by `legal_mm` (Problem.bump: more occupancy on every side, the placer's
    own closed-loop legality step), and parts named by an unrouted connection by `bump_mm`,
    which makes room for the corridor the router could not find.
+   KiCad's placement errors also become exact constraints (exact.kicad_feedback: the two
+   parts keep their distance plus a step), and nets of unrouted connections weigh
+   `net_mult` x more (the placer's net_weights hook in local_replace does the same).
 3. The annealer (physics terms, routability, legality, displacement) runs on the window's
    parts inside the window rectangle, with the congestion weight raised by `cong_mult` and
-   the routing history added as RUDY demand (penalty.apply_history).
-4. Legality is hard: grid legality, then the routing margin and bumps are dropped if they
-   are what is illegal, a greedy repair, then the exact polygon check. A window that ends
-   illegal returns no poses.
+   the routing history added as RUDY demand (penalty.apply_history), for a fixed number of
+   moves.
+4. Legality is hard: grid legality (routing margin and routing bumps dropped if they are
+   what is illegal, then the greedy legalizer), then the placer's exact closed loop scoped
+   to the window's parts (exact.repair(allowed=window parts)), as kae.place.pipeline
+   .local_replace ends. A window that ends illegal returns no poses.
 """
 from __future__ import annotations
 
@@ -65,12 +70,14 @@ def window_board(board, parts):
 
 def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, terms=None, physics=True,
                    cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, moves_per_part=6000,
-                   legal_refs=(), legal_mm=0.15,
+                   legal_refs=(), legal_mm=0.15, drc_report=None, net_weights=None,
                    phys_mult=1.0, log=None):
     """See the module docstring. `board` is a kae.board.model.Board at the current poses;
     `window` a feedback.Window. `terms`: place terms built on the full board (the brief's
-    structures), else built here when `physics`."""
+    structures), else built here when `physics`. `drc_report`: KiCad's report of the current
+    board (its placement errors become exact constraints); `net_weights`: {net: factor}."""
     from kae.place import clusters
+    from kae.place import exact as exactmod
     from kae.place.anneal import make_annealer
     from kae.place.legalize import exact_check, greedy
     from kae.place.problem import Problem
@@ -111,6 +118,8 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
                 bumped.append(P.parts[i].ref)
     rep["bumped"] = bumped
     rep["legal_bumped"] = legal_bumped
+    for net in P.nets:
+        net.weight *= float((net_weights or {}).get(net.name, 1.0))
     st = State(P)
     for i in sub:
         p = P.parts[i]
@@ -118,6 +127,11 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
         rots = [r.rot for r in p.rots]
         k = min(range(len(rots)), key=lambda kk: min(abs(rots[kk] - p.rot0) % 360, 360 - abs(rots[kk] - p.rot0) % 360))
         st.X[i], st.Y[i], st.K[i] = X, Y, k
+    if drc_report:
+        try:
+            rep["kicad_feedback"] = exactmod.kicad_feedback(P, st, drc_report)
+        except Exception as e:  # noqa: BLE001 - the bumps still carry KiCad's verdict
+            log(f"kicad feedback failed ({type(e).__name__}: {e})")
     x0, y0, x1, y1 = window.rect
     gwin = (int(math.floor((x0 - P.ox) / P.g)), int(math.ceil((x1 - P.ox) / P.g)),
             int(math.floor((y0 - P.oy) / P.g)), int(math.ceil((y1 - P.oy) / P.g)))
@@ -154,7 +168,13 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
         rep["rejected"] = "illegal after repair"
         rep["seconds"] = round(time.monotonic() - t0, 2)
         return Result(report=rep)
-    ex = exact_check(P, st)
+    ex = exact_check(P, st, parts=sub)
+    if ex:
+        left = max(2.0, t0 + time_s - time.monotonic())
+        cl = exactmod.repair(P, st, time_s=left, allowed=set(sub))
+        cl.pop("findings", None)
+        rep["closed_loop"] = cl
+        ex = exact_check(P, st, parts=sub) if not grid_violations(st, parts=sub) else ["grid"]
     rep["exact"] = ex
     if ex:
         rep["rejected"] = f"{len(ex)} exact violations"

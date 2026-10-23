@@ -359,7 +359,7 @@ class KaeStages:
         return parts, bounds, centres, refs
 
     # ------------------------------------------------------------------ local repair
-    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0, legal_refs=()):
+    def repair(self, lay, window, history, it, seed, time_s, bump_refs=(), attempt=0, legal_refs=(), drc=None):
         """Re-place the window, rip up what it invalidates, redo its modules, re-route.
         Returns (Layout or None, report)."""
         from kae.route import critical_write as W
@@ -376,14 +376,17 @@ class KaeStages:
                              cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** attempt),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
                              bump_refs=bump_refs, margin=float(o.get("margin", 0.3)), legal_refs=legal_refs,
-                             legal_mm=float(o.get("legal_mm", 0.15)) * (1 + attempt),
+                             legal_mm=float(o.get("legal_mm", 0.15)) * (1 + attempt), drc_report=drc,
+                             net_weights={n: float(o.get("net_mult", 2.0)) for sp in window.spots
+                                          if sp.kind == "unrouted" for n in sp.nets},
                              phys_mult=float(o.get("phys_mult", 2.0)) ** attempt,
                              physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}
         if not res.poses and (window.parts or res.report.get("rejected")):
             rep["outcome"] = res.report.get("rejected") or res.report.get("skipped") or "no part moved"
             return None, rep
-        plan = plan_ripup(board, window, set(res.poses), lay.owners, self.module_parts,
+        rip_win = _cover_moves(board, window, res.poses)
+        plan = plan_ripup(board, rip_win, set(res.poses), lay.owners, self.module_parts,
                           big_pads=int(o.get("big_pads", 20)), max_cross=int(o.get("max_cross", 4)),
                           also={u for sp in window.spots if sp.kind == "error" for u in sp.uuids},
                           supply_nets={n for n, d in ((self.brief or {}).get("nets") or {}).items()
@@ -447,6 +450,31 @@ class KaeStages:
             shutil.copy2(self.input, tmp)
         W.transplant(lay.board, tmp, output)
         return dict(moved=len(moved), output=str(output))
+
+
+def _cover_moves(board, window, poses):
+    """The window grown to cover the moved parts' new courtyards (the closed-loop legality
+    repair may move a part beyond the annealer's rectangle): copper there must go too."""
+    import dataclasses
+
+    from kae.board import transform
+    fp_of = {fp.uuid: fp for fp in board.footprints}
+    x0, y0, x1, y1 = window.rect
+    for u, (x, y, rot, side) in poses.items():
+        fp = fp_of.get(u)
+        if fp is None:
+            continue
+        try:
+            cy = transform.courtyard(fp, x, y, rot, side)
+            b = cy.bounds if cy is not None and not cy.is_empty else None
+        except Exception:  # noqa: BLE001 - fall back to the pads
+            b = None
+        if b is None:
+            xy = [transform.pad_xy(fp, p, x, y, rot, side) for p in fp.pads] or [(x, y)]
+            b = (min(a for a, _ in xy) - 0.5, min(c for _, c in xy) - 0.5,
+                 max(a for a, _ in xy) + 0.5, max(c for _, c in xy) + 0.5)
+        x0, y0, x1, y1 = min(x0, b[0]), min(y0, b[1]), max(x1, b[2]), max(y1, b[3])
+    return dataclasses.replace(window, rect=(x0, y0, x1, y1))
 
 
 def placement_errors(drc_report):
