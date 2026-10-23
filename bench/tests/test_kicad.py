@@ -130,3 +130,36 @@ def test_command_probe_routes_the_rebuilt_placement(tasks):
     p = row["probe"]
     assert p["router"] == "copy-probe" and p["status"] == "ok", p
     assert p["adapter_meta"]["sandboxed"] and p["score"]["valid"] and not p["score"]["clean"], p
+
+
+def _zone(net, uuid_):
+    return f"""	(zone
+		(net "{net}")
+		(layer "B.Cu")
+		(uuid "{uuid_}")
+		(hatch edge 0.5)
+		(connect_pads (clearance 0.25))
+		(min_thickness 0.2)
+		(fill yes (thermal_gap 0.5) (thermal_bridge_width 0.5))
+		(polygon (pts (xy 101 101) (xy 129 101) (xy 129 109) (xy 101 109)))
+	)
+"""
+
+
+@needs_kicad
+def test_convert_gives_tied_zones_unique_uuids(tmp_path):
+    """KiCad 10.0.7's zone filler deadlocks (polls forever at ~0% CPU) on overlapping zones of
+    different nets with equal priority and equal uuid, as KiCad 4 boards' `(tstamp 0)` load.
+    convert must break the tie so that DRC with --refill-zones finishes."""
+    text = FIXTURE.read_text().rstrip()
+    assert text.endswith(")")
+    nil = "00000000-0000-0000-0000-000000000000"
+    src = tmp_path / "tied.kicad_pcb"
+    src.write_text(text[:-1] + _zone("N1", nil) + _zone("N2", nil) + ")\n")
+    dst = tmp_path / "out" / "board.kicad_pcb"
+    dst.parent.mkdir()
+    conv = tools.run_ops("convert", src, dst)
+    assert conv["zone_uuids_reassigned"] == 1 and conv["footprint_uuids_reassigned"] == 0
+    assert dst.read_text().count(nil) == 1
+    report = tools.run_drc(dst, tmp_path / "drc.json", timeout=120)
+    assert "violations" in report

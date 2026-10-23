@@ -182,34 +182,49 @@ def unconnected(path):
 def convert(src, dst):
     board = _load(src)
     _save(board, dst)
-    _out(dict(ok=True, path=dst, footprint_uuids_reassigned=_dedupe_footprint_uuids(dst)))
+    n = _dedupe_uuids(dst)
+    _out(dict(ok=True, path=dst, footprint_uuids_reassigned=n["footprint"],
+              zone_uuids_reassigned=n["zone"]))
 
 
-_FP_UUID = re.compile(r'^\t\t\(uuid "([^"]+)"\)', re.M)
+_OWN_UUID = re.compile(r'^\t\t\(uuid "([^"]+)"\)', re.M)
 
 
-def _dedupe_footprint_uuids(path):
-    """Give footprints that share a uuid unique ones (old libraries left placeholders such
-    as all-zero uuids on logos and mounting holes). Everything that matches an output to its
-    task input goes by footprint uuid. The new uuids are derived from the old, so every task
-    built from the same board gets the same ones. Returns the number reassigned."""
+def _dedupe_uuids(path):
+    """Give footprints, and zones, that share a uuid unique ones. Returns the number
+    reassigned per kind. The new uuids are derived from the old, so every task built from
+    the same board gets the same ones.
+
+    Footprints: old libraries left placeholders such as all-zero uuids on logos and mounting
+    holes, and everything that matches an output to its task input goes by footprint uuid.
+
+    Zones: boards from KiCad 4 and older store `(tstamp 0)` on zones, which loads as the
+    all-zero uuid. KiCad 10.0.7's zone filler breaks priority ties by uuid
+    (ZONE::HigherPriority), so two overlapping zones on different nets with equal priority
+    and equal uuid each wait for the other to be filled first. The dependency cycle is never
+    dispatched and ZONE_FILLER::Fill polls forever at ~0% CPU: `kicad-cli pcb drc
+    --refill-zones` and pcbnew's ZONE_FILLER hang instead of failing."""
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    seen, parts, last, n = set(), [], 0, 0
+    seen = {"footprint": set(), "zone": set()}
+    n = {"footprint": 0, "zone": 0}
+    parts, last = [], 0
     for head, a, b in _top_spans(text):
-        if head != "footprint":
+        if head not in seen:
             continue
-        m = _FP_UUID.search(text, a, b)
+        m = _OWN_UUID.search(text, a, b)
         if not m:
             continue
         u = m.group(1)
-        if u in seen:
-            n += 1
-            new = str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{u}:{n}"))
+        if u in seen[head]:
+            n[head] += 1
+            # footprints keep the derivation earlier task specs used
+            key = f"kaebench:{u}:{n[head]}" if head == "footprint" else f"kaebench:{head}:{u}:{n[head]}"
+            new = str(uuid.uuid5(uuid.NAMESPACE_URL, key))
             parts += [text[last:m.start(1)], new]
             last = m.end(1)
-        seen.add(u)
-    if n:
+        seen[head].add(u)
+    if any(n.values()):
         with open(path, "w", encoding="utf-8") as f:
             f.write("".join(parts) + text[last:])
     return n
