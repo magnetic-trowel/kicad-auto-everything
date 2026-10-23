@@ -118,7 +118,7 @@ Each line links to the topic doc that holds the detail and evidence. Many lines 
 80. Comprehensive Constraint Graph edges (x̂, ŷ, θ̂, w), non-adjacent pairs allowed → [PL](../topics/llm/llm-guided-placement-systems.md) [PG](../topics/placement/llm-guided-placement.md)
 81. Hierarchical placer over weighted CCG deviation + parent overlap + HPWL; overlap-free detailed placement → [PG](../topics/placement/llm-guided-placement.md)
 82. Multimodal serialization, topology retrieval, two grouping agents, group-aware placement, MILP legalization → [PL](../topics/llm/llm-guided-placement-systems.md) [PG](../topics/placement/llm-guided-placement.md)
-83. VLM region proposals as weak quadratic anchors (λ_A = 0.01) → [PL](../topics/llm/llm-guided-placement-systems.md) [PG](../topics/placement/llm-guided-placement.md)
+83. VLM region proposals as weak quadratic anchors (weight calibrated by sweep; VeoPlace's λ_A = 0.01 is in its own units) → [PL](../topics/llm/llm-guided-placement-systems.md) [PG](../topics/placement/llm-guided-placement.md)
 84. RL-placer region masks (−∞ logits) with an unconstrained fallback → [PG](../topics/placement/llm-guided-placement.md)
 85. Proposal prompt contract: HISTORY SUMMARY → STRATEGY (one change) → REGIONS, with hypothesis and exploratory labels → [PL](../topics/llm/llm-guided-placement-systems.md)
 86. Top-Stratified context selection (K-means, rank-softmax cluster, top C) → [PL](../topics/llm/llm-guided-placement-systems.md)
