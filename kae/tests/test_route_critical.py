@@ -848,3 +848,31 @@ def test_surge_via_runs_to_the_plane_under_the_protector(routed, tmp_path, monke
     monkeypatch.setattr(rb, "h_at", lambda *a, **k: R.INF)
     v_none, _ = R.chain_value(rb, spec)
     assert v_thin < v_none
+
+
+def test_joint_and_recheck_are_window_scoped(tmp_path):
+    """optimize_modules(window=...) works only on the modules with a member part in the
+    window and moves only parts inside it (no rails); board_physics / recheck with a window
+    report only those modules (the kae.joint loop re-places and re-routes locally)."""
+    from shapely.geometry import box
+    from kae.board.kicad_file import load
+    from kae.route import critical_recheck as R
+    from kae.route.critical import Session
+    from kae.route.critical_joint import optimize_modules
+    p = F.write_board(tmp_path)
+    b = load(p)
+    s = Session(p, info=F.synth_info(b), board=b, log=lambda *a: None)
+    y1 = next(f for f in b.footprints if f.ref == "Y1")
+    win = box(y1.x - 4, y1.y - 4, y1.x + 4, y1.y + 4)
+    poses, copper, rep = optimize_modules(b, s.brief, locked=set(), session=s, time_s=60, window=win)
+    ids = {m["id"] for m in rep["modules"]}
+    assert ids and all(any(win.intersects(__import__("shapely").Point(f.x, f.y)) for f in b.footprints
+                           if f.uuid in next(x for x in s.modules if x.id == i).parts) for i in ids)
+    assert "cell:buck:U1" not in ids and "rails" not in rep
+    for u in poses:
+        f = next(f for f in b.footprints if f.uuid == u)
+        assert win.intersects(__import__("shapely").Point(f.x, f.y))
+    dst = tmp_path / "w.kicad_pcb"
+    s.write(dst)
+    ph = R.board_physics(dst, brief=s.brief, fills=None, window=win.bounds, rails=False)
+    assert set(ph) <= ids | {"_rails"} and "_rails" not in ph

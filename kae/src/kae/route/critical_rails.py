@@ -397,7 +397,7 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     # the general router is not left islands to join to the middle of a fixed track
     if m.copper:
         rep["completed"] = _complete_net(ctx, m, net, [(st.geom, st.layers)], opt,
-                                         float(ctx.opts.get("rail_complete_mm", 8.0)))
+                                         float(ctx.opts.get("rail_complete_mm", ctx.opts.get("complete_mm", 0.0))))
     # the source itself into its zone on other layers
     if has_zone and not _pads_on_zone(ctx, st, net):
         zl = _zone_layer_over(ctx, st, net)

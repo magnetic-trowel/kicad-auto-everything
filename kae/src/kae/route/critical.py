@@ -54,8 +54,9 @@ DEFAULTS = dict(
     chain_tail=False,      # also route (and lock) a chain's hops after the protector (no surge physics)
     rail_light=False,      # also route rail branches that only need the class width (no drop physics)
     trim_tol=0.05,         # loop hops narrowed to the narrowest width within this of the wide loop (0: off)
-    complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper
-    island_mm=20.0,        # and its islands of critical copper to each other within this distance
+    complete_mm=0.0,       # join a critical net's pads within this distance of its critical copper (0: the bridge
+                           # does; needed only while Freerouting cannot see joins at rounded pad centres)
+    island_mm=0.0,         # and its islands of critical copper to each other within this distance
     corner_joins=True,     # every track end at a pad/via centre or a track corner (what Freerouting sees)
     soft=(),               # joins written unlocked for Freerouting to keep or rip: "complete", "pad" (rail pads)
     guards=("cell", "path", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
@@ -134,8 +135,8 @@ class Session:
         # the pads left near critical copper are joined here (Freerouting does not join an
         # island to the middle of a fixed track)
         self.completed = {}
-        reach = float(self.opts.get("complete_mm", 8.0))
-        isl = float(self.opts.get("island_mm", 20.0))
+        reach = float(self.opts.get("complete_mm", 0.0))
+        isl = float(self.opts.get("island_mm", 0.0))
         if (reach > 0 or isl > 0) and (budget is None or time.monotonic() - t0 < budget):
             from .critical_rails import complete_module_nets
             self.completed = complete_module_nets(self.ctx, reach, isl)

@@ -83,8 +83,13 @@ def cmd_place(a):
         wrep = dict(writer="copy", moved=0)
     res.report["writer"] = wrep
     res.report["write_s"] = round(time.monotonic() - t1, 2)
+    kicad_clean = None
+    if a.drc != "off" and res.poses and res.state is not None:
+        kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
+        if wrep2 is not None:
+            res.report["writer"] = wrep2
     res.report["total_s"] = round(time.monotonic() - t0, 2)
-    legal = res.report.get("legal_grid") and not res.report.get("exact") and not res.report.get("outline_incomplete")
+    legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
     text = json.dumps(res.report, default=str)
     print(text, flush=True)          # last line of stdout: what kaebench keeps (adapter.log)
@@ -97,6 +102,55 @@ def cmd_place(a):
         Path(a.report).write_text(json.dumps(res.report, indent=1, default=str))
     _log(f"wrote {a.output} with {wrep.get('writer')} in {res.report['total_s']}s; legal={legal}")
     return 0 if legal else 3
+
+
+def _kicad_loop(a, res, t0, write):
+    """KiCad's DRC on the written placement, fed back until it is clean (kae.place.exact:
+    kicad_feedback -> repair -> write again), within the caller's time. Returns (clean or
+    None when KiCad could not run, the last writer report or None)."""
+    import tempfile
+    try:
+        from kae.route import drc as kdrc
+        kdrc.kicad_cli()
+    except Exception as e:      # noqa: BLE001 - no KiCad here: the exact check stands alone
+        if a.drc == "on":
+            _log(f"KiCad DRC unavailable: {e}")
+        res.report["kicad_drc"] = dict(skipped=str(e)[:200])
+        return None, None
+    from kae.place import exact as X
+    from kae.place.legalize import exact_check
+    P, st = res.problem, res.state
+    tmp = tempfile.mkdtemp(prefix="kae-drc-")
+    rounds, clean, wrep = [], None, None
+    for it in range(a.drc_rounds + 1):
+        left = t0 + 0.97 * float(a.time) - time.monotonic()
+        if left < 15.0:
+            rounds.append(dict(round=it, skipped="time"))
+            break
+        staged = kdrc.stage_board(a.output, a.input, tmp)
+        t = time.monotonic()
+        try:
+            report = kdrc.run(staged, Path(tmp) / "drc.json", timeout=max(10.0, min(600.0, 0.5 * left)))
+        except kdrc.DrcError as e:
+            rounds.append(dict(round=it, error=str(e)[:200]))
+            break
+        fb = X.kicad_feedback(P, st, report)
+        rounds.append(dict(round=it, errors=fb["errors"], by_type=fb["by_type"], fixed_only=fb["fixed_only"],
+                           seconds=round(time.monotonic() - t, 1)))
+        _log(f"KiCad DRC round {it}: {fb['errors']} placement errors {fb['by_type']}")
+        clean = fb["errors"] == fb["fixed_only"]
+        if clean or it == a.drc_rounds:
+            break
+        left = t0 + 0.97 * float(a.time) - time.monotonic()
+        rounds[-1]["repair"] = X.repair(P, st, time_s=max(3.0, min(120.0, 0.4 * left)), log=_log)
+        rounds[-1]["repair"].pop("findings", None)
+        poses = dict(res.poses)
+        poses.update(st.poses())
+        res.poses = poses
+        wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
+    res.report["kicad_drc"] = rounds
+    res.report["exact"] = exact_check(P, st)
+    return clean, wrep
 
 
 def cmd_brief(a):
@@ -133,6 +187,9 @@ def main(argv=None):
                     help="place staged footprints that carry Edge.Cuts where their open pieces close the "
                          "outline exactly (default: hold them and flag outline_incomplete)")
     sp.add_argument("--report", help="also write the JSON report here")
+    sp.add_argument("--drc", default="auto", choices=("auto", "on", "off"),
+                    help="KiCad DRC on the result, fed back until clean (auto: when kicad-cli is found)")
+    sp.add_argument("--drc-rounds", type=int, default=3, help="repair rounds driven by KiCad's DRC")
     sp.add_argument("--angles", type=float, default=None, metavar="STEP",
                     help="let parts turn to any multiple of STEP degrees, not only right angles "
                          "(heatsink-mount packages keep right angles; CP-SAT stays on right angles)")

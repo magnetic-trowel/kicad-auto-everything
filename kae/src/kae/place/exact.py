@@ -19,7 +19,14 @@ pose of one part without committing it, so a repair can try many spots per secon
 cause them -> each moved to the nearest spot that is free on the grid (a prefilter) AND
 exactly clean, evicting smaller parts when no free spot is, round after round until the
 placement is exactly legal or the time is up; what it could not fix is reported per part
-with the reason.
+with the reason (`diagnose`: no room for it even with every movable part gone, the board
+side too full, or a crowded region).
+
+KiCad's own DRC closes the loop where this model is blind (a footprint's solder-mask
+aperture drawn beyond its courtyard, custom rules): `kicad_feedback(P, st, report)` turns
+every placement error into a constraint kept on P (`P.feedback`: a pair of parts keeps a
+minimum separation, or a part keeps off a spot) that ExactModel reports as `kicad_feedback`
+until satisfied, so the next repair round moves the culprit and later checks keep it away.
 """
 from __future__ import annotations
 
@@ -41,7 +48,8 @@ class ExactModel:
         self.P, self.st = P, st
         self.deflate = P.max_error
         self.clr_of = {}
-        self.reach = max(P.clr_max, P.edge_clearance) + 0.05
+        fbs = (getattr(P, "feedback", None) or {}).get("sep", {})
+        self.reach = max([P.clr_max, P.edge_clearance] + list(fbs.values())) + 0.05
         self._copper_sides = _copper_sides
         owner_of = {p.uuid: p.i for p in P.parts}
         self.ko_board, self.ko_owned = [], {}
@@ -61,6 +69,9 @@ class ExactModel:
                         (ko, sides, geom_to_lib(ko.outline, q.x0, q.y0, q.rot0, q.fp.side)))
         self.cuts = {p.i: edge_cut_polys(p.fp) for p in P.parts}
         self.cs = {p.i: [self._copper_sides(pd, p.side) for pd in p.fp.pads] for p in P.parts}
+        fb = getattr(P, "feedback", None) or {}
+        self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
+        self.avoid = fb.get("avoid", {})      # i -> [(geometry, why)], from KiCad
         n = len(P.parts)
         self.env = np.zeros((n, 4))
         self.sh = [None] * n
@@ -94,6 +105,14 @@ class ExactModel:
         else:
             env = (x, y, x, y)
         return dict(cy=cy, pads=pads, holes=holes, side=si, cuts=cuts, kos=kos, env=env)
+
+    @staticmethod
+    def hull(A):
+        """A part's pads and courtyards as one geometry (for KiCad-feedback separations)."""
+        if "hull" not in A:
+            gs = [g for g, _, _ in A["pads"]] + [c for c in A["cy"].values() if c is not None]
+            A["hull"] = shapely.union_all(gs) if gs else None
+        return A["hull"]
 
     def neighbours(self, env, skip=None):
         e = self.env
@@ -134,6 +153,10 @@ class ExactModel:
                     add("clearance", [ref], f"pad {pd.number} vs fixed copper {net}")
         for ko, sides, outline_k in self.ko_board:
             self._keepout(i, A, ko, sides, outline_k, add)
+        for g, why in self.avoid.get(i, ()):
+            h = self.hull(A)
+            if h is not None and h.intersects(g):
+                add("kicad_feedback", [ref], why)
 
     def _keepout(self, i, A, ko, sides, outline_k, add):
         if A["side"] not in sides:
@@ -194,6 +217,11 @@ class ExactModel:
         for (x, X, Y) in ((i, A, B), (j, B, A)):
             for ko, sides, outline_k in Y["kos"]:
                 self._keepout(x, X, ko, sides, outline_k, add)
+        d = self.sep.get((min(i, j), max(i, j)))
+        if d:
+            ha, hb = self.hull(A), self.hull(B)
+            if ha is not None and hb is not None and ha.distance(hb) < d - 1e-6:
+                add("kicad_feedback", [ri, rj], f"keep {d:.2f} mm apart (KiCad DRC)")
 
     # ------------------------------------------------------------------ queries
     def check(self, parts=None, max_items=60):
@@ -387,4 +415,87 @@ def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0):
     if log:
         log(f"exact repair: {rep['start']} -> {rep['end']} findings in {rep['rounds']} rounds, "
             f"moved {len(rep['moved'])}, evicted {len(rep['evicted'])} ({rep['seconds']}s)")
+    return rep
+
+
+# ----------------------------------------------------------------------------- KiCad feedback
+def kicad_feedback(P, st, report, step=0.3):
+    """Turn KiCad DRC placement errors (a kicad-cli JSON report) into constraints on P
+    (P.feedback): two parts an error names keep their current distance + `step` (growing each
+    time KiCad still objects); a part an error names alone (against a zone, a graphic, a
+    track) keeps off the error's positions by `step`. Returns {errors, by_type, constraints,
+    fixed_only}: errors between fixed items only cannot be repaired by placement."""
+    from .legalize import kicad_violations, violation_parts
+    viols = kicad_violations(report)
+    fb = getattr(P, "feedback", None)
+    if fb is None:
+        fb = P.feedback = {"sep": {}, "avoid": {}}
+    E = ExactModel(P, st)
+    out = dict(errors=len(viols), by_type={}, constraints=0, fixed_only=0)
+    for v in viols:
+        out["by_type"][v["type"]] = out["by_type"].get(v["type"], 0) + 1
+        ps = sorted(violation_parts(P, st, v))
+        mv = [i for i in ps if P.parts[i].movable]
+        if not mv:
+            out["fixed_only"] += 1
+            continue
+        if len(ps) >= 2:
+            for i in mv:
+                for j in ps:
+                    if j == i:
+                        continue
+                    key = (min(i, j), max(i, j))
+                    ha, hb = E.hull(E.sh[i]), E.hull(E.sh[j])
+                    d = ha.distance(hb) if ha is not None and hb is not None else 0.0
+                    fb["sep"][key] = max(fb["sep"].get(key, 0.0), d + step)
+                    out["constraints"] += 1
+        else:
+            i = mv[0]
+            for it in v.get("items", []):
+                pos = it.get("pos") or {}
+                if "x" in pos and "y" in pos:
+                    g = shapely.Point(pos["x"], pos["y"]).buffer(step)
+                    fb["avoid"].setdefault(i, []).append((g, f"{v['type']} at ({pos['x']:.2f}, {pos['y']:.2f}) (KiCad DRC)"))
+                    out["constraints"] += 1
+    return out
+
+
+# ----------------------------------------------------------------------------- diagnosis
+def diagnose(P, st, E, i, limit=400):
+    """Why part i found no clean spot: 'no_room' (not even with every other movable part
+    gone: the outline, locked parts and rule areas leave none), 'side_full' (the movable
+    parts' own area on its side exceeds the free area), else 'crowded' (room exists, the
+    neighbours fill it). Returns {reason, detail}."""
+    p = P.parts[i]
+    S, pad = _tables(P, st, set(P.mov))
+    fixed = {q.ref for q in P.parts if not q.movable} | {p.ref}
+    cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
+    clean = None
+    for c, X, Y, k in cands:
+        f = E.findings_at(i, X, Y, k)
+        if not [v for v in f if set(v["refs"]) <= fixed]:
+            clean = (X, Y, k)
+            break
+    if clean is None:
+        return dict(reason="no_room", detail=f"{p.ref}: no spot clean of the outline, locked parts and rule areas "
+                                             f"({len(cands)} grid-free origins tried)")
+    si = 0 if p.s > 0 else 1
+    util = P.utilization()[si]
+    if util > 1.0:
+        return dict(reason="side_full", detail=f"{p.ref}: the movable parts need {100 * util:.0f}% of the free "
+                                               f"area on side {'FB'[si]}")
+    return dict(reason="crowded", detail=f"{p.ref}: room exists (e.g. grid {clean}) but its region is full")
+
+
+def close_loop(P, st, time_s, log=None):
+    """The closed legality loop at the end of a placement: exact repair, then for whatever is
+    left, why. Returns the repair report with 'diagnosis' {ref: {reason, detail}}."""
+    rep = repair(P, st, time_s=time_s, log=log)
+    if rep["stuck"]:
+        E = ExactModel(P, st)
+        by_ref = {q.ref: q.i for q in P.parts}
+        rep["diagnosis"] = {r: diagnose(P, st, E, by_ref[r]) for r in rep["stuck"][:12]}
+        if log:
+            for r, d in rep["diagnosis"].items():
+                log(f"illegal: {d['reason']}: {d['detail']}")
     return rep

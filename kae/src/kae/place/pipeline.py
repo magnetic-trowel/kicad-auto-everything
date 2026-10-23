@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 
 from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer, make_annealer
+from . import exact as exactmod
 from .legalize import exact_check, legalize
 from .problem import Problem
 from .state import State, grid_violations
@@ -419,6 +420,15 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     t = time.monotonic()
     rep["exact"] = exact_check(P, st)
     stage("exact_check", t)
+    if rep["exact"]:
+        # closed loop: legality is not a score; repair against the exact check until it is
+        # clean or the caller's time (less the writer's share) is up, then say why not
+        t = time.monotonic()
+        left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - t)
+        rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
+        rep["exact"] = exact_check(P, st)
+        rep["legal_grid"] = not grid_violations(st)
+        stage("closed_loop", t)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     if order:
