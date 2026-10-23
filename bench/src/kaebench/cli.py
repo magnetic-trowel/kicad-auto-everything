@@ -146,12 +146,22 @@ def cmd_prepare_dir(a):
     return _parallel([e for e, _ in items], one, a.jobs, "prepare-dir")
 
 
-ARM_KEYS = ("name", "adapter", "probe", "freerouting", "passes")
+ARM_KEYS = ("name", "adapter", "probe", "probe_command", "freerouting", "passes")
+
+
+BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock")
+
+
+def _probe_name(name, command):
+    if command and name in BUILTIN:
+        raise SystemExit(f"a command probe needs its own name, not the built-in {name!r}")
+    return name
 
 
 def _arms(a, sandbox):
-    """--arm name=LABEL,adapter=NAME[,probe=NAME][,freerouting=PATH][,passes=N] (repeatable):
-    built-in adapters run interleaved in one run."""
+    """--arm name=LABEL,adapter=NAME[,probe=NAME[,probe_command=TEMPLATE]][,freerouting=PATH][,passes=N]
+    (repeatable): built-in adapters run interleaved in one run. A probe_command template may not
+    contain commas."""
     arms = []
     for spec in a.arm:
         kv = dict(part.split("=", 1) for part in spec.split(",") if part)
@@ -161,7 +171,8 @@ def _arms(a, sandbox):
         passes = int(kv["passes"]) if kv.get("passes") else a.passes
         ad = adapters.make(kv["adapter"], passes=passes, sandbox=sandbox, freerouting=kv.get("freerouting"))
         ad.name = kv["name"]
-        pr = adapters.make(kv["probe"], freerouting=kv.get("freerouting")) if kv.get("probe") else None
+        pr = (adapters.make(_probe_name(kv["probe"], kv.get("probe_command")), command=kv.get("probe_command"), sandbox=sandbox,
+                            freerouting=kv.get("freerouting")) if kv.get("probe") else None)
         arms.append((ad, pr))
     return arms
 
@@ -176,7 +187,9 @@ def cmd_run(a):
         arms = None
         ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox,
                            freerouting=a.freerouting)
-        probe = adapters.make(a.probe, freerouting=a.freerouting) if a.probe else None
+        probe = (adapters.make(_probe_name(a.probe, a.probe_command), command=a.probe_command, sandbox=sandbox,
+                               freerouting=a.freerouting)
+                 if a.probe else None)
         if a.label:
             ad.name = a.label
     else:
@@ -297,7 +310,10 @@ def main(argv=None):
     sp.add_argument("-k", type=int, default=1, help="attempts per board (best-of-k)")
     sp.add_argument("--timeout", type=float, default=600, help="seconds per attempt")
     sp.add_argument("-j", "--jobs", type=int, default=1)
-    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting")
+    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting, or a name for --probe-command")
+    sp.add_argument("--probe-command", metavar="TEMPLATE",
+                    help="external router as the probe: a --command template ({input} {output} {workdir} "
+                         "{attempt} {timeout}), run as a route method in the sandbox")
     sp.add_argument("--passes", type=int, help="freerouting: fixed -mp instead of the per-attempt schedule")
     sp.add_argument("--freerouting", metavar="PATH",
                     help="Freerouting binary or JAR for the freerouting adapters and the probe "

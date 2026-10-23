@@ -51,6 +51,7 @@ def summarize(rows):
         m = dict(boards=len(boards), k=k,
                  failures=sum(1 for r in every if r["status"] != "ok"),
                  timeouts=sum(1 for r in every if (r.get("adapter_meta") or {}).get("timed_out")),
+                 capped=sum(1 for r in every if (r.get("score") or {}).get("drc_capped")),
                  partial=sum(1 for r in every if (r.get("adapter_meta") or {}).get("partial")),
                  time_s=_mean([r.get("runtime_s") for r in every]),
                  cpu_s=_mean([(r.get("method_usage") or {}).get("cpu_s") for r in every]),
@@ -85,7 +86,7 @@ def summarize(rows):
 
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
               "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
-              "timeouts", "failures")
+              "timeouts", "capped", "failures")
 PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
               "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
@@ -112,7 +113,8 @@ def to_markdown(summary):
                  "routed. invalid: best attempts that changed more than the task allows. suspect: "
                  "attempts that reproduce the human layout. wl_ratio: track length / human. cpu_s / "
                  "rss_mb_max: the method's CPU seconds (mean) and peak memory (max) over all processes it "
-                 "ran; score_cpu_s: the scorer's. Scored by "
+                 "ran; score_cpu_s: the scorer's. capped: attempts with an error type at KiCad's DRC report cap "
+                 "(199 per type), whose error count is a lower bound; unconnected counts are exact. Scored by "
                  "kicad-cli on boards rebuilt from the task input plus the method's allowed changes.")
     return "\n".join(lines)
 

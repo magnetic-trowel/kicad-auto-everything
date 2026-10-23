@@ -6,10 +6,10 @@ method (an "adapter") on each task k times, and scores every attempt by re-openi
 the saved board with `kicad-cli` under the board's own rules. Design rationale:
 [docs/topics/verification/harness.md](../docs/topics/verification/harness.md).
 
-## Setup (Ubuntu 22.04/24.04, e.g. sk-tibia)
+## Setup (Ubuntu 22.04/24.04)
 
 ```bash
-git clone -b claude/gallant-newton-lt98do https://github.com/magnetic-trowel/kicad-auto-everything
+git clone https://github.com/magnetic-trowel/kicad-auto-everything
 cd kicad-auto-everything
 bench/scripts/setup.sh          # KiCad 10 (PPA, no recommends), Freerouting 2.5.0, bench/.venv
 source bench/.venv/bin/activate
@@ -101,7 +101,7 @@ A method can't read the human layout it is scored against, download it, or touch
   - Teardrops, groups and tuning patterns are part of the routing. They are stripped from task inputs and are not transplanted or scored.
 - **Integrity (`valid`).** Anything else the method changed is still detected, by comparing KiCad re-saves of output and input with the allowed changes normalized away (`foreign` lists them). Such a result is invalid.
   - Route results must keep placement, pad nets and every other board object, and route only on the board's copper layers and nets.
-  - Place results must keep pad nets and every non-pose property, leave locked footprints where they are, and not add or remove footprints or copper.
+  - Place results must keep pad nets and every non-pose property, leave anchored footprints where they are (locked ones, and ones carrying Edge.Cuts, which are part of the board outline), and not add or remove footprints or copper.
 - **Copy check.** `copy` reports how much of the output reproduces the human layout exactly: tracks to 1 µm, or poses to 1 µm and 0.01°. `suspect_copy` flags at least 20 tracks and 60% matching, or at least 5 parts and 50%. It is report-only until calibrated on real methods. The sandbox is the enforcement.
 - **Route metrics.**
   - `clean`: valid, 0 unconnected, 0 error-level DRC violations. Severities come from the board's own project; library-environment checks are excluded.
@@ -111,10 +111,10 @@ A method can't read the human layout it is scored against, download it, or touch
 - **Place metrics.**
   - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, and no footprint with more pad centres outside the board outline than the same footprint has in the human placement. Edge connectors may overhang as far as the designer's do.
   - `hpwl_ratio` relative to the human placement.
-  - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style.
+  - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style. An external router can be the probe: `--probe NAME --probe-command TEMPLATE` (or `probe=NAME,probe_command=TEMPLATE` in an `--arm`, without commas), run sandboxed as a route method.
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
 - **Rescoring.** After a scoring fix, `kaebench rescore RUN_DIR -j N` scores a run's saved outputs (and saved probe routes) again with the current scorer, without re-running the method. Each attempt records the version it was rescored from.
-- **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 3: locked footprints stay in place, teardrops are stripped, and repeated footprint uuids are made unique. Re-run `prepare --force` on older task folders.
+- **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 5: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint uuids are made unique, and the human layout must pass the round trip. Re-run `prepare --force` on older task folders.
 - **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests

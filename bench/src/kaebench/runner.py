@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import __version__, tools
 from .boardfiles import board_path, copy_board, install_rules
-from .prepare import TASK_SPEC, load_tasks
+from .prepare import MIN_TASK_SPEC, TASK_SPEC, load_tasks
 from .score import SCORE_VERSION, score_place_task, score_route_task, score_routing
 
 
@@ -145,7 +145,9 @@ def rescore(results_run_dir, jobs=1, progress=print, force=False):
     meta = json.loads((run_dir / "run.json").read_text())
     tasks_dir = Path(meta["tasks_dir"])
     recs = {r["id"]: r for r in load_tasks(tasks_dir, qualified_only=False)}
-    stale = sorted({r["id"] for r in recs.values() if r.get("task_spec", 1) < TASK_SPEC})
+    kinds = {p.parent.parent.name for p in run_dir.glob("*/*/*/attempt-*")}  # <arm>/<kind>/<id>/attempt-N
+    stale = sorted({r["id"] for r in recs.values() for kind in kinds
+                    if kind in r.get("tasks", {}) and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)})
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec (e.g. {stale[0]}); "
                          "re-prepare and re-run instead")
@@ -253,13 +255,15 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
         raise ValueError(f"arm names must be unique (use labels): {names}")
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
-    stale = [r["id"] for r in recs if r.get("task_spec", 1) < TASK_SPEC]
+    stale = [r["id"] for r in recs for kind in kinds
+             if kind in r["tasks"] and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)]
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
-    for ad, _ in arms:
-        if hasattr(ad, "hide"):
-            ad.hide(tasks_dir, results_dir)
+    for ad, pr in arms:
+        for method in (ad, pr):  # a command probe is as untrusted as a command method
+            if method is not None and hasattr(method, "hide"):
+                method.hide(tasks_dir, results_dir)
     name = name or f"{'+'.join(names)}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -11,6 +11,7 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py strip-placement IN OUT
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
+    python pcbnew_ops.py unconnected BOARD
     python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE]
     python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
 """
@@ -66,6 +67,13 @@ def _track_length(t):
     return _mm(math.hypot(e.x - s.x, e.y - s.y))
 
 
+def _anchored(fp):
+    """A footprint that may not move in a place task: locked by the designer, or carrying
+    Edge.Cuts graphics (switch cut-outs, slots, card edges), which are part of the board
+    outline itself."""
+    return fp.IsLocked() or any(g.GetLayer() == pcbnew.Edge_Cuts for g in fp.GraphicalItems())
+
+
 def _placement(board):
     # "inside" = every pad centre lies within the board outline; "pads_outside" counts the
     # pad centres that do not (edge connectors may overhang).
@@ -79,6 +87,7 @@ def _placement(board):
                          x=round(_mm(p.x), 4), y=round(_mm(p.y), 4),
                          rot=round(fp.GetOrientationDegrees() % 360.0, 3),
                          back=bool(fp.IsFlipped()), locked=bool(fp.IsLocked()),
+                         anchored=bool(_anchored(fp)),
                          inside=None if out is None else out == 0, pads_outside=out))
     rows.sort(key=lambda r: r["uuid"])
     return rows
@@ -157,37 +166,65 @@ def stats(path):
     ))
 
 
+def unconnected(path):
+    """Unrouted connections counted by pcbnew's connectivity after filling zones, as DRC does
+    but without DRC's report cap of 499 unconnected items."""
+    board = _load(path)
+    zones = pcbnew.ZONES()
+    for i in range(board.GetAreaCount()):
+        zones.append(pcbnew.Cast_to_ZONE(board.GetArea(i)))
+    if len(zones):
+        pcbnew.ZONE_FILLER(board).Fill(zones)
+    board.BuildConnectivity()
+    _out(dict(ok=True, path=path, unconnected=board.GetConnectivity().GetUnconnectedCount(False)))
+
+
 def convert(src, dst):
     board = _load(src)
     _save(board, dst)
-    _out(dict(ok=True, path=dst, footprint_uuids_reassigned=_dedupe_footprint_uuids(dst)))
+    n = _dedupe_uuids(dst)
+    _out(dict(ok=True, path=dst, footprint_uuids_reassigned=n["footprint"],
+              zone_uuids_reassigned=n["zone"]))
 
 
-_FP_UUID = re.compile(r'^\t\t\(uuid "([^"]+)"\)', re.M)
+_OWN_UUID = re.compile(r'^\t\t\(uuid "([^"]+)"\)', re.M)
 
 
-def _dedupe_footprint_uuids(path):
-    """Give footprints that share a uuid unique ones (old libraries left placeholders such
-    as all-zero uuids on logos and mounting holes). Everything that matches an output to its
-    task input goes by footprint uuid. The new uuids are derived from the old, so every task
-    built from the same board gets the same ones. Returns the number reassigned."""
+def _dedupe_uuids(path):
+    """Give footprints, and zones, that share a uuid unique ones. Returns the number
+    reassigned per kind. The new uuids are derived from the old, so every task built from
+    the same board gets the same ones.
+
+    Footprints: old libraries left placeholders such as all-zero uuids on logos and mounting
+    holes, and everything that matches an output to its task input goes by footprint uuid.
+
+    Zones: boards from KiCad 4 and older store `(tstamp 0)` on zones, which loads as the
+    all-zero uuid. KiCad 10.0.7's zone filler breaks priority ties by uuid
+    (ZONE::HigherPriority), so two overlapping zones on different nets with equal priority
+    and equal uuid each wait for the other to be filled first. The dependency cycle is never
+    dispatched and ZONE_FILLER::Fill polls forever at ~0% CPU: `kicad-cli pcb drc
+    --refill-zones` and pcbnew's ZONE_FILLER hang instead of failing."""
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    seen, parts, last, n = set(), [], 0, 0
+    seen = {"footprint": set(), "zone": set()}
+    n = {"footprint": 0, "zone": 0}
+    parts, last = [], 0
     for head, a, b in _top_spans(text):
-        if head != "footprint":
+        if head not in seen:
             continue
-        m = _FP_UUID.search(text, a, b)
+        m = _OWN_UUID.search(text, a, b)
         if not m:
             continue
         u = m.group(1)
-        if u in seen:
-            n += 1
-            new = str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{u}:{n}"))
+        if u in seen[head]:
+            n[head] += 1
+            # footprints keep the derivation earlier task specs used
+            key = f"kaebench:{u}:{n[head]}" if head == "footprint" else f"kaebench:{head}:{u}:{n[head]}"
+            new = str(uuid.uuid5(uuid.NAMESPACE_URL, key))
             parts += [text[last:m.start(1)], new]
             last = m.end(1)
-        seen.add(u)
-    if n:
+        seen[head].add(u)
+    if any(n.values()):
         with open(path, "w", encoding="utf-8") as f:
             f.write("".join(parts) + text[last:])
     return n
@@ -224,10 +261,13 @@ def strip_routing(src, dst, keep_locked):
 
 
 def strip_placement(src, dst):
-    """Strip all routing and move every unlocked footprint to a staging grid right of the board.
+    """Strip all routing and move every footprint that is not anchored to a staging grid right
+    of the board.
 
-    Locked footprints stay where the designer put them: they are part of the task (mounting
-    holes, connectors), and the scorer requires them unmoved.
+    Anchored footprints stay where the designer put them, and the scorer requires them
+    unmoved: locked ones are part of the task (mounting holes, connectors), and ones carrying
+    Edge.Cuts are part of the board outline (staged off-board they would leave holes or open
+    edges in the outline and add outline polygons in the staging area).
     """
     board = _load(src)
     # Move footprints before removing tracks: after Remove() SWIG returns untyped objects.
@@ -237,7 +277,7 @@ def strip_placement(src, dst):
     col_h = max(bb.GetHeight(), int(50 * NM))
     x, y, col_w = x0, y0, 0
     moved = 0
-    fps = [fp for fp in board.GetFootprints() if not fp.IsLocked()]
+    fps = [fp for fp in board.GetFootprints() if not _anchored(fp)]
     fps.sort(key=lambda f: f.GetReference())
     for fp in fps:
         fp.SetOrientationDegrees(0)
@@ -572,8 +612,9 @@ def _set_pose(fp, pos, orientation, flipped):
 
 
 def transplant_placement(out_path, inp_path, dst, ref_path=None):
-    """DEST = INPUT with each unlocked footprint moved to its pose in OUTPUT (position,
-    orientation, side). Report OUTPUT's other changes, moved locked parts, and footprints
+    """DEST = INPUT with each footprint that is not anchored (_anchored) moved to its pose in
+    OUTPUT (position, orientation, side). Report OUTPUT's other changes, moved anchored parts
+    (as locked_moved), and footprints
     missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST."""
     out, err = _try_load(out_path)
     if out is None:
@@ -592,7 +633,7 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
     copy = None
     if ref is not None:
         ref_fps = {fp.m_Uuid.AsString(): fp for fp in ref.GetFootprints()}
-        free = [u for u, fp in in_fps.items() if not fp.IsLocked() and u in out_fps and u in ref_fps]
+        free = [u for u, fp in in_fps.items() if not _anchored(fp) and u in out_fps and u in ref_fps]
         copy = _copy_stats(sum(1 for u in free if _same_pose(out_fps[u], ref_fps[u])), len(free), 5, 0.5)
     ident = _identity(out)
     routing_added = len(list(out.GetTracks()))
@@ -601,7 +642,7 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
         o = out_fps.get(u)
         if o is None:
             continue
-        if fp.IsLocked():
+        if _anchored(fp):
             if not _same_pose(fp, o):
                 locked_moved.append(fp.GetReference())
             continue
@@ -641,6 +682,8 @@ def main(argv):
             export_dsn(args[0], args[1])
         elif op == "import-ses":
             import_ses(args[0], args[1], args[2])
+        elif op == "unconnected":
+            unconnected(args[0])
         elif op == "transplant-routing":
             transplant_routing(*args[:4])
         elif op == "transplant-placement":

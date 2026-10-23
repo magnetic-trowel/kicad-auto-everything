@@ -169,7 +169,7 @@ class Freerouting(Adapter):
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         if kind != "route":
             raise ValueError("freerouting only routes")
-        w = Path(workdir).resolve()  # Freerouting runs with cwd=w, so its paths must be absolute
+        w = Path(workdir)
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         dsn, ses, ses2 = w / "board.dsn", w / "board.ses", w / "board_noplace.ses"
@@ -183,14 +183,21 @@ class Freerouting(Adapter):
         # what it has routed (it overran by 20-40 s in tests), so a board that runs out of time
         # is scored on its partial routing instead of returning nothing.
         job_s = int(max(10.0, remaining - max(120.0, 0.1 * remaining)))
+        # A private settings/log directory per attempt, and no FREEROUTING__* overrides: otherwise
+        # every run shares ~/.config/freerouting/freerouting.json (rewritten by whichever version
+        # ran last) and any environment settings of the host.
+        user_data = w / "freerouting-user"
+        user_data.mkdir(exist_ok=True)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("FREEROUTING__")}
         cmd = [*self.cmd(), "-de", str(dsn), "-do", str(ses), "-mp", str(passes),
-               "-mt", "1", "--gui.enabled=false", "-da", f"--router.result_json={result}",
+               "-mt", "1", "--gui.enabled=false", "-da", f"--user_data_path={user_data}",
+               f"--router.result_json={result}",
                f"--router.job_timeout={job_s // 3600:02d}:{job_s % 3600 // 60:02d}:{job_s % 60:02d}",
                *rule_args, *self.extra_args]
         # kept with the attempt: the exchange with the router and its own report
         artifacts = [dsn, ses, result]
         try:
-            r = tools.run_measured(cmd, timeout=remaining, cwd=w)
+            r = tools.run_measured(cmd, timeout=remaining, cwd=w, env=env)
             log = r.stdout + r.stderr
         except subprocess.TimeoutExpired as e:
             log = f"freerouting timed out after {remaining:.0f}s\n{e.stdout or ''}{e.stderr or ''}"
@@ -253,8 +260,7 @@ class Command(Adapter):
         self.sandbox.hide.extend(Path(p) for p in paths)
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
-        # The command runs with cwd=w, so every path it is given must be absolute.
-        w, input_dir = Path(workdir).resolve(), Path(input_dir).resolve()
+        w = Path(workdir)
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         cmd = self.template.format(input=shlex.quote(str(board_path(input_dir))),

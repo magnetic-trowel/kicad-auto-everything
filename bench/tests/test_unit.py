@@ -214,3 +214,54 @@ def test_work_list_interleaves_arms_per_board():
     assert work == runner.work_list(recs, arms, ("route",), 1)  # deterministic
     sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
     assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]
+
+
+def test_run_measured_peak_rss_is_the_childs_not_the_runners():
+    # The runner's own peak RSS used to leak into every child's ru_maxrss via exec.
+    big = bytearray(1 << 30)  # 1 GiB touched in this (parent) process
+    for i in range(0, len(big), 4096):
+        big[i] = 1
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "b = bytearray(200 << 20)"])
+    u = tools.usage_take()
+    assert r.returncode == 0 and u["processes"] == 1
+    assert 200 <= u["max_rss_mb"] < 400, u
+    tools.run_measured(["true"])
+    assert tools.usage_take()["max_rss_mb"] < 50
+    del big
+
+
+def test_run_measured_cpu_exit_code_and_errors():
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "import sys\nx = 0\nfor i in range(3_000_000): x += i\n"
+                            "print('out'); print('err', file=sys.stderr); sys.exit(3)"])
+    u = tools.usage_take()
+    assert (r.returncode, r.stdout, r.stderr) == (3, "out\n", "err\n")
+    assert u["cpu_s"] > 0.05
+    assert tools.run_measured(["sh", "-c", "kill -9 $$"]).returncode == -9
+    with pytest.raises(FileNotFoundError):
+        tools.run_measured(["/nonexistent/kae-command"])
+    with pytest.raises(subprocess.TimeoutExpired):
+        tools.run_measured([sys.executable, "-c", "while True: pass"], timeout=1)
+    assert tools.usage_take()["cpu_s"] > 0.5  # the killed command's CPU is still accounted
+
+
+def test_run_measured_cuts_a_stalled_command_short():
+    """A process tree idling at ~0% CPU (as kicad-cli does when KiCad's zone filler
+    deadlocks) is killed after `stall` seconds; a busy one only at its timeout."""
+    import time
+    t = time.monotonic()
+    with pytest.raises(tools.Stalled):
+        tools.run_measured(["sh", "-c", "sleep 60; true"], timeout=60, stall=3)
+    assert time.monotonic() - t < 20
+    busy = [sys.executable, "-c", "while True: pass"]
+    with pytest.raises(subprocess.TimeoutExpired) as e:  # CPU of a grandchild counts as progress
+        tools.run_measured(["sh", "-c", f"{subprocess.list2cmdline(busy)}; true"], timeout=6, stall=2)
+    assert not isinstance(e.value, tools.Stalled)
+    tools.usage_take()
+
+
+def test_capped_drc_types_are_flagged():
+    drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
+    assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
+    assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count

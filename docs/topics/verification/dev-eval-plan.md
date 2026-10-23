@@ -1,4 +1,4 @@
-# Development and evaluation plan for placers and routers on sk-tibia
+# Development and evaluation plan for placers and routers on a shared benchmark host
 
 **TL;DR**
 - **Fix the harness first (weeks 1–2).** Code review found defects that would mislead every comparison:
@@ -21,7 +21,7 @@ Status 2026-10-21. Synthesized from three research passes over the docs, the har
 
 | Item | State |
 |---|---|
-| Host | sk-tibia: 128 threads, 251 GB, 2 NUMA nodes, **shared**. Budget: ≤ 50 cores, ≤ 96 GB. `$HOME` is NFS, local NVMe has 356 GB free |
+| Host | Shared benchmark host: 128 threads, 251 GB, 2 NUMA nodes, **shared**. Budget: ≤ 50 cores, ≤ 96 GB. `$HOME` is NFS, local NVMe has 356 GB free |
 | Toolchain | `kaebench doctor` passes: KiCad 10.0.7 (Apptainer image), Freerouting 2.5.0 |
 | Corpus | `~/kae-boards` (local only, never committed): 13,749 KiCad-10-loadable boards, 10,902 fully routed, 2,412 drc-clean (2-layer 2,028, 4-layer 332, 6+ 52; median 27 footprints, p90 111; 1,663 repos; 193 noncommercial, private evaluation only). The committed benchmark manifest has 297, of which 112 qualified ([harness](harness.md)) |
 | Routing baseline | Freerouting 2.5.0, k = 1, 600 s: A 0.62, B 0.35 with adapter fixes. C 0.04 with the **stock** adapter only; the fixed adapter has never run on C [M] |
@@ -208,7 +208,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
 - LLM arms: k = 3 on dev, 5 on val/test.
 - More boards beat more attempts.
 
-## Compute on sk-tibia
+## Compute on the benchmark host
 
 - **Hard caps.** Wrap every session in `systemd-run --user --scope -p AllowedCPUs=<lease> -p MemoryMax=96G -p MemoryHigh=88G` (verified to work on this host). The lease is within cores 0–49, recorded in a lease file so our concurrent sessions don't overlap.
 - **Freerouting:**
@@ -262,7 +262,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
   - the `MaximumThreads` name;
   - whether Freerouting caps edge clearance at 250 µm;
   - fanout via sizes vs board rules.
-- **Uncertain tools:** fastroute and autolayout results are self-reported on 1–20 boards. Cypress CPU feasibility is unknown, and sk-tibia has no GPU.
+- **Uncertain tools:** fastroute and autolayout results are self-reported on 1–20 boards. Cypress CPU feasibility is unknown, and the benchmark host has no GPU.
 - **Corpus bias:** 84% of drc-clean boards are 2-layer (only 52 have 6+ layers), so report results per layer class; dense-board claims need the 6+ stratum or the routed-not-clean track.
 - **Information leaks:** place tasks keep the human side assignment, zones and silkscreen, which leaks floorplan information. State this in results, or strip them in a harder task variant.
 - **Contamination:** if this repo becomes public, suite files may enter pretraining; keep `test` ids private.

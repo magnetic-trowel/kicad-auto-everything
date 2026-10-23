@@ -67,6 +67,13 @@
 		(pad "1" smd circle (at 0 0) (size 1 1) (layers "F.Cu"))
 	)
 	(gr_line (start 102 118) (end 106 118) (stroke (width 0.2) (type solid)) (layer "B.Cu") (uuid "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"))
+	(footprint "test:SLOT"
+		(layer "F.Cu")
+		(uuid "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1")
+		(at 125 114)
+		(property "Reference" "SL1" (at 0 -2 0) (layer "F.Fab") (uuid "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2") (effects (font (size 1 1) (thickness 0.15))))
+		(fp_rect (start -2 -0.5) (end 2 0.5) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") (uuid "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3"))
+	)
 	(gr_rect (start 100 100) (end 140 120) (stroke (width 0.1) (type solid)) (fill no) (layer "Edge.Cuts") (uuid "33333333-3333-3333-3333-333333333331"))
 	(zone
 		(net 0)
