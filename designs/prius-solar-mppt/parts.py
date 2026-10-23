@@ -30,13 +30,12 @@ DS = {
     "DSPIC": "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU16/ProductDocuments/DataSheets/"
              "dsPIC33CK256MP508-Family-Data-Sheet-DS70005349.pdf",
     "EE": "https://ww1.microchip.com/downloads/en/DeviceDoc/20005715A.pdf",
-    "IAUC": "https://www.infineon.com/dgdl/Infineon-IAUC100N10S5L040-DataSheet-v01_00-EN.pdf",
-    "VS6": "https://www.vishay.com/docs/94985/vs-6esh06hm3.pdf",
+    "IAUC": "https://www.infineon.com/part/IAUC100N10S5L040",
+    "VS6": "https://www.vishay.com/en/product/94985/",
     "TNPW": "https://www.vishay.com/docs/28758/tnpw_e3.pdf",
     "WSK": "https://www.vishay.com/docs/30108/wsk2512.pdf",
-    "G9KB": "https://components.omron.com/us-en/products/relays/G9KB",
-    "EVM10": "https://www.eaton.com/content/dam/eaton/products/electronic-components/resources/data-sheet/"
-             "eaton-evm10-high-breaking-capacity-dc-fuse-data-sheet-elx1304.pdf",
+    "G9KB": "https://www.rutronik.com/fileadmin/rutronik/Micropages/Omron/G9KB.pdf",
+    "EVM10": "https://www.eaton.com/us/en-us/skuPage.EVM10-5-2P.html",
     "C60": "https://us.sunpower.com/sites/default/files/media-library/data-sheets/ds-c60-solar-cells.pdf",
 }
 
@@ -462,7 +461,7 @@ DSPIC = IC(
 
 IAUC = PartDef(
     mpn="IAUC100N10S5L040", manufacturer="Infineon", symbol="Transistor_FET:BSC040N10NS5",
-    footprint="Package_TO_SOT_SMD:TDSON-8-1", value="IAUC100N10S5L040", category="mosfet",
+    footprint="Package_TO_SOT_SMD:TDSON-8-1", value="IAUC100N10", category="mosfet",
     description="N-MOSFET 100 V 4 mOhm, logic level, AEC-Q101, PG-TDSON-8", datasheet=DS["IAUC"],
     ratings=Ratings(limits=[VLimit(("D",), ("S",), 100, "VDS"), VLimit(("G",), ("S",), 20, "VGS +/-20 V")],
                     pin_i_max={"D": 100, "S": 100}, p_max=167, t_max=175),
@@ -476,11 +475,12 @@ D_HV = IC(
     "VS-6ESH06HM3/86A", manufacturer="Vishay", datasheet=DS["VS6"], footprint="Package_TO_SOT_SMD:TO-277A",
     category="diode", description="Hyperfast rectifier 600 V 6 A, AEC-Q101, eSMP TO-277A",
     pins=[PinDef(1, "A", "passive", "left"), PinDef(2, "A", "passive", "left"), PinDef(3, "K", "passive", "right")],
-    ratings=Ratings(limits=[VLimit(("K",), ("A",), 600, "VRRM")], i_max=6.0, t_max=175),
+    ratings=Ratings(limits=[VLimit(("K",), ("A",), 600, "VRRM")], i_max=6.0, p_max=1.8, t_max=175),
     lifecycle="active", second_source="VS-6EVH06-M3 [unverified]",
     source={"pins": "VS-6ESH06HM3 DS doc 94985 p.1 package drawing: two anode leads, cathode = heatsink tab; pads per "
                     "KiCad TO-277A (1, 2 leads, 3 tab)",
-            "ratings": "VS-6ESH06HM3 DS doc 94985 p.1-2: VRRM 600 V, IF(AV) 6 A, TJ max 175 C"})
+            "ratings": "VS-6ESH06HM3 DS doc 94985 p.1-2: VRRM 600 V, IF(AV) 6 A, TJ max 175 C, RthJM 3.5 K/W max; "
+                       "p_max 1.8 W is ours: (175 - 85 C) / ~50 K/W on 4 cm2 of 2 oz copper [I]"})
 D_HV.prefix = "D"
 
 TVS39 = PartDef(
@@ -546,7 +546,7 @@ T_DCX = IC(
           PinDef(11, "S_START", "passive", "right"), PinDef(20, "S_END", "passive", "right")],
     ratings=Ratings(limits=[VLimit(("P_START",), ("P_END",), 60, "primary winding (VINT/2 square wave)"),
                             VLimit(("S_START",), ("S_END",), 900, "secondary winding, TIW rated")],
-                    pin_i_max={"P_START": 15, "P_END": 15, "S_START": 1.5, "S_END": 1.5},
+                    pin_i_max={"P_START": 15, "P_END": 15, "S_START": 1.5, "S_END": 1.5}, p_max=4.0,
                     isolation=[Isolation(("P_START", "P_END"), ("S_START", "S_END"), v_iso_rms=5000,
                                          grade="reinforced", v_work_rms=600, creepage_mm=10.0,
                                          standard="specified: IEC 61558-1 style reinforced, TIW secondary, 5.0 kVrms "
@@ -630,10 +630,12 @@ J_ICSP = Conn(6, "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", i
 # ---------------------------------------------------------------------------------------------
 # Off-board (board="off"): array, harness items
 
-C60 = PartDef(
-    mpn="C60 bin H (Gen II)", manufacturer="Maxeon (SunPower)", symbol="Device:Solar_Cell", value="C60",
-    category="other", prefix="SC", description="Back-contact mono-Si cell 125 mm, Pmp 3.38-3.42 W, Vmp 0.578 V",
-    datasheet=DS["C60"], on_board=True,
+C60_COLUMN = PartDef(
+    mpn="C60 bin H (Gen II)", manufacturer="Maxeon (SunPower)", symbol="Device:Solar_Cells", value="7 x C60",
+    category="other", prefix="SC", datasheet=DS["C60"],
+    description="One array column: 7 back-contact C60 cells (125 mm) ribbon-stringed in series and laminated; "
+                "BOM quantity per column = 7 cells",
+    fields={"Cells": "7", "Pmp": "7 x 3.38-3.42 W", "Voc": "7 x 0.682-0.687 V"},
     ratings=Ratings(i_max=6.3), lifecycle="active", second_source="Maxeon Gen III back-contact cells [S]",
     source={"ratings": "SunPower C60 solar cell data sheet (bins G-J) [P]: 125 x 125 mm, Pmp 3.34-3.42 W, Vmp "
                        "0.574-0.582 V, Imp 5.83-5.93 A, Voc 0.682-0.687 V, Isc 6.24-6.28 A, -1.8 mV/K, -0.32 %/K; "
@@ -663,7 +665,15 @@ W_PV = cable(2, "2-core 2.5 mm2 FLRY-B, 4 m", 20, 60, "PV string cable roof -> m
 W_HV = cable(3, "3-core screened HV cable 2 x 2.5 mm2 + 1 x 0.75 mm2, orange, >= 600 V, 2 m", 20, 600,
              "HV cable main box J301 -> battery-end box J901 (screen to both metal glands)")
 W_LV3 = cable(3, "3-core 0.75 mm2 FLRY-B, 2 m", 8, 60, "relay coil harness main J703 -> battery-end J903")
-W_NTC = cable(3, "screened 6-core 0.35 mm2 (4 NTC + 2 ground)", 1, 60, "pack-case NTC harness -> main J706")
+W_NTC = cable(5, "screened 5-core 0.35 mm2 (4 NTC + ground)", 1, 60, "pack-case NTC harness -> main J706")
+W_CAN = cable(3, "OBD-II Y cable, CAN-H/CAN-L twisted pair + signal ground, 0.35 mm2", 1, 60,
+              "OBD-II pass-through Y cable with a breakout to J707 (car's port stays usable)")
+W_IG = cable(2, "2-core 0.5 mm2 FLRY-B", 2, 60, "IG feed from the fuse tap and a chassis ground to J702")
+W_TAP = cable(2, "2 x 2.5 mm2 double-insulated HV leads >= 600 V with M6 ring terminals, <= 0.3 m", 20, 600,
+              "pack tap leads from the cell-side SMR studs to the battery-end J902")
+FUSE_TAP = Conn(1, None, generic=True, prefix="X", value="add-a-fuse (ATO)", in_bom=True,
+                description="add-a-fuse holder: plugs into an IG2-switched fuse position, carries the original fuse "
+                            "and F701", source={"pins": "single blade contact into the car's fuse socket"})
 NTC_PACK = Thermistor("10k", footprint=None, generic=True,
                       description="NTC 10 kOhm 1 %, B25/85 3435 K, M4 ring lug, epoxy, insulated leads (bonded to the "
                                   "HV battery case, which is chassis potential)",

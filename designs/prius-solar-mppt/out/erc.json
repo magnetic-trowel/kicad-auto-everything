@@ -1,0 +1,213 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa",
+      "violations": [
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol T301 [T301-ETD39-DCX22__custom_]",
+              "pos": {
+                "x": 365.76,
+                "y": 35.56
+              },
+              "uuid": "009fd523-7c2d-50ef-b08c-854cd4bb021b"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol F901 [Fuse]",
+              "pos": {
+                "x": 96.52,
+                "y": 71.12
+              },
+              "uuid": "629b54d4-e389-51a7-80c5-33f711095593"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol K901 [G9KB-1A_DC12]",
+              "pos": {
+                "x": 121.92,
+                "y": 35.56
+              },
+              "uuid": "6fdefd93-b548-594f-b4d7-5a64cf708a0b"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol F902 [Fuse]",
+              "pos": {
+                "x": 157.48,
+                "y": 71.12
+              },
+              "uuid": "889f66ae-0946-5944-947f-9959a9a08e87"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'custom'",
+          "items": [
+            {
+              "description": "Symbol K902 [G9KB-1A_DC12]",
+              "pos": {
+                "x": 182.88,
+                "y": 35.56
+              },
+              "uuid": "3e1789c0-a72e-5043-b352-6a5e455087f0"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        }
+      ]
+    },
+    {
+      "path": "/MPPT_A/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/09296774-dc21-5469-8eb5-49b6c403d0eb",
+      "violations": []
+    },
+    {
+      "path": "/MPPT_B/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/56834329-f35f-595b-a4a5-aa8ac4407409",
+      "violations": []
+    },
+    {
+      "path": "/DCX/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/1d36629b-5653-533d-8ecc-27e8196e2fb5",
+      "violations": []
+    },
+    {
+      "path": "/HVSENSE/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd",
+      "violations": [
+        {
+          "description": "Pin HGND not connected to ground net",
+          "items": [
+            {
+              "description": "Symbol U401 Pin 8 [HGND, Power input, Line]",
+              "pos": {
+                "x": 43.18,
+                "y": 48.26
+              },
+              "uuid": "6aff6458-8026-507c-acff-3699aad15bea"
+            }
+          ],
+          "severity": "warning",
+          "type": "ground_pin_not_ground"
+        },
+        {
+          "description": "Pin HGND not connected to ground net",
+          "items": [
+            {
+              "description": "Symbol U421 Pin 8 [HGND, Power input, Line]",
+              "pos": {
+                "x": 152.4,
+                "y": 48.26
+              },
+              "uuid": "3dabf1f6-e4b5-5d20-91d0-9b5d20c2f9cd"
+            }
+          ],
+          "severity": "warning",
+          "type": "ground_pin_not_ground"
+        },
+        {
+          "description": "Pin HGND not connected to ground net",
+          "items": [
+            {
+              "description": "Symbol U441 Pin 8 [HGND, Power input, Line]",
+              "pos": {
+                "x": 287.02,
+                "y": 48.26
+              },
+              "uuid": "7238e226-b544-5015-931d-d82c849b336c"
+            }
+          ],
+          "severity": "warning",
+          "type": "ground_pin_not_ground"
+        }
+      ]
+    },
+    {
+      "path": "/LIMIT/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/326e8532-9384-5af3-b9fd-1b7217e3875f",
+      "violations": []
+    },
+    {
+      "path": "/SAFETY/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/037b7ead-fbf2-577e-86d1-7e64c048e9dd",
+      "violations": []
+    },
+    {
+      "path": "/AUX/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/6f89aee3-23eb-55e9-8123-b143af251b67",
+      "violations": []
+    },
+    {
+      "path": "/MCU/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/970a0d34-6384-5a14-8142-1dedc06f0b7a",
+      "violations": []
+    },
+    {
+      "path": "/BATEND/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/32c9e948-e1c2-57fd-aaa9-6a4ee3f4c196",
+      "violations": []
+    },
+    {
+      "path": "/ARRAY/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c3ef7159-aa75-561d-beda-8e31cb2e790f",
+      "violations": []
+    },
+    {
+      "path": "/HARNESS/",
+      "uuid_path": "/d61c0df7-7fcb-54c1-b998-8a44644725aa/c1871732-d962-584a-ad9a-0b2004a8907b",
+      "violations": []
+    }
+  ],
+  "source": "prius-solar-mppt.kicad_sch"
+}

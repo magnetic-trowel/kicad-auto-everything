@@ -1,28 +1,25 @@
 {
  "status": {
-  "ok": true,
-  "error": 0,
-  "warning": 0,
-  "info": 6,
-  "waived": 25,
+  "ok": false,
+  "error": 7,
+  "warning": 3,
+  "info": 4,
+  "waived": 29,
   "blocking_questions": [
    "Q-1",
-   "Q-2",
-   "Q-3",
-   "Q-4",
-   "Q-5",
-   "Q-6"
+   "Q-6",
+   "Q-7",
+   "Q-8"
   ]
  },
  "findings": [
   {
-   "check": "conn.empty_net",
+   "check": "rating.voltage",
    "severity": "warning",
-   "message": "net PE has no pins",
+   "message": "PS1 (IRM-20-5): V(AC/L-AC/N) 374 vs rating 431 (87%) (mains_in/L_PSU to N) \u2014 above 80% derating",
    "objects": [
-    "PE"
-   ],
-   "waived_by": "designer: PE exists only off-board (box, ring, cover, EGC splice); no PCB copper by design (REQ-4, NEC 250.148(B)). The net is declared so the LINE-PE barrier reaches intent.yaml."
+    "PS1"
+   ]
   },
   {
    "check": "rating.current",
@@ -31,7 +28,7 @@
    "objects": [
     "K1"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -40,7 +37,7 @@
    "objects": [
     "K2"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -49,7 +46,7 @@
    "objects": [
     "K3"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -58,7 +55,25 @@
    "objects": [
     "K4"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "K5 (G5RL-1A-E-TV8 DC5): current on L_IN through pin 13 (set i_through= if the part carries less) 15 vs rating 16 (94%) \u2014 above 80% derating",
+   "objects": [
+    "K5"
+   ],
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "K6 (G5RL-1A-E-TV8 DC5): current on L_IN through pin 13 (set i_through= if the part carries less) 15 vs rating 16 (94%) \u2014 above 80% derating",
+   "objects": [
+    "K6"
+   ],
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -67,7 +82,7 @@
    "objects": [
     "K1"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -76,7 +91,7 @@
    "objects": [
     "K2"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -85,7 +100,7 @@
    "objects": [
     "K3"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
    "check": "rating.current",
@@ -94,16 +109,81 @@
    "objects": [
     "K4"
    ],
-   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
   },
   {
-   "check": "lib.footprint_custom",
+   "check": "rating.current",
    "severity": "warning",
-   "message": "J2 (2606-3102/020-000): custom footprint custom:WAGO_2606-3102_020-000 is not drawn yet (designs/<slug>/footprints/custom.pretty/WAGO_2606-3102_020-000.kicad_mod)",
+   "message": "K5 (G5RL-1A-E-TV8 DC5): current on L_SW5 through pin 14 (set i_through= if the part carries less) 15 vs rating 16 (94%) \u2014 above 80% derating",
    "objects": [
-    "J2"
+    "K5"
    ],
-   "waived_by": "designer: No KiCad library footprint exists for WAGO 2606-3102/020-000. Geometry from the WAGO data sheet p.1 drawing (drill 2.0 +0.1 mm, pole 2 at +7.5/+12.5 mm, body 17.85 x 24 mm); lever side to be checked against WAGO CAD before layout freeze."
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "K6 (G5RL-1A-E-TV8 DC5): current on L_SW6 through pin 14 (set i_through= if the part carries less) 15 vs rating 16 (94%) \u2014 above 80% derating",
+   "objects": [
+    "K6"
+   ],
+   "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "PS1 (IRM-20-5) dissipates 1.84 W but has no power rating to check against",
+   "objects": [
+    "PS1"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R1 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R1"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R2 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R2"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R3 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R3"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R4 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R4"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R5 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R5"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "error",
+   "message": "R6 (100): worst case 3.47 V across it gives 0.12 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R6"
+   ]
   },
   {
    "check": "protect.threat",
@@ -112,16 +192,7 @@
    "objects": [
     "L_IN"
    ],
-   "waived_by": "designer: No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC II (1.5 kV transient; relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional). An MOV ages and is a fire source in a closed unlisted box; a listed Type 2 SPD at the panel is recommended (Q-9). Verified by T-SURGE."
-  },
-  {
-   "check": "protect.threat",
-   "severity": "error",
-   "message": "external net L_IN declares threat 'overcurrent' but has no fuse/ptc on it",
-   "objects": [
-    "L_IN"
-   ],
-   "waived_by": "designer: The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9)."
+   "waived_by": "designer: No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC III (2.5 kV transient; relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional); PS1 is tested to EN 61000-4-5 level 4 (2 kV L-N) without external parts. An MOV ages and is a fire source in a closed box; a listed Type 2 SPD at the panel is recommended (Q-12). Verified by T-SURGE."
   },
   {
    "check": "protect.threat",
@@ -130,7 +201,7 @@
    "objects": [
     "N"
    ],
-   "waived_by": "designer: No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC II (1.5 kV transient; relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional). An MOV ages and is a fire source in a closed unlisted box; a listed Type 2 SPD at the panel is recommended (Q-9). Verified by T-SURGE."
+   "waived_by": "designer: No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC III (2.5 kV transient; relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional); PS1 is tested to EN 61000-4-5 level 4 (2 kV L-N) without external parts. An MOV ages and is a fire source in a closed box; a listed Type 2 SPD at the panel is recommended (Q-12). Verified by T-SURGE."
   },
   {
    "check": "protect.threat",
@@ -139,7 +210,7 @@
    "objects": [
     "L_SW1"
    ],
-   "waived_by": "designer: The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9)."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
   },
   {
    "check": "protect.threat",
@@ -148,7 +219,7 @@
    "objects": [
     "L_SW2"
    ],
-   "waived_by": "designer: The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9)."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
   },
   {
    "check": "protect.threat",
@@ -157,7 +228,7 @@
    "objects": [
     "L_SW3"
    ],
-   "waived_by": "designer: The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9)."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
   },
   {
    "check": "protect.threat",
@@ -166,16 +237,25 @@
    "objects": [
     "L_SW4"
    ],
-   "waived_by": "designer: The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9)."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
   },
   {
-   "check": "protect.entry_fuse",
-   "severity": "warning",
-   "message": "external mains net L_IN reaches the board without a fuse/PTC on it",
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net L_SW5 declares threat 'overcurrent' but has no fuse/ptc on it",
    "objects": [
-    "L_IN"
+    "L_SW5"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net L_SW6 declares threat 'overcurrent' but has no fuse/ptc on it",
+   "objects": [
+    "L_SW6"
+   ],
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch."
   },
   {
    "check": "protect.entry_fuse",
@@ -184,7 +264,7 @@
    "objects": [
     "N"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
   },
   {
    "check": "protect.entry_fuse",
@@ -193,7 +273,7 @@
    "objects": [
     "L_SW1"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
   },
   {
    "check": "protect.entry_fuse",
@@ -202,7 +282,7 @@
    "objects": [
     "L_SW2"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
   },
   {
    "check": "protect.entry_fuse",
@@ -211,7 +291,7 @@
    "objects": [
     "L_SW3"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
   },
   {
    "check": "protect.entry_fuse",
@@ -220,16 +300,34 @@
    "objects": [
     "L_SW4"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external mains net L_SW5 reaches the board without a fuse/PTC on it",
+   "objects": [
+    "L_SW5"
+   ],
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external mains net L_SW6 reaches the board without a fuse/PTC on it",
+   "objects": [
+    "L_SW6"
+   ],
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9)."
   },
   {
    "check": "hazard.procedural",
    "severity": "warning",
-   "message": "H10: mitigated only procedurally (label: relays are not a disconnecting means; lock out at the breaker)",
+   "message": "H10: mitigated only procedurally (label: outlets are not a disconnecting means; unplug the load or lock out the breaker)",
    "objects": [
     "H10"
    ],
-   "waived_by": "designer: Relays are not a disconnecting means; locking out the branch breaker is the only correct mitigation."
+   "waived_by": "designer: Outlets are not a disconnecting means; unplugging the load or locking out the breaker is the only correct mitigation."
   },
   {
    "check": "hazard.procedural",
@@ -243,7 +341,7 @@
   {
    "check": "intent.blocking_question",
    "severity": "info",
-   "message": "Q-1 is BLOCKING and unanswered: Certification path: who evaluates (AHJ field evaluation) and who installs (licensed electrician) this unlisted assembly? If neither is acceptable, buy listed products (alternative A5).",
+   "message": "Q-1 is BLOCKING and unanswered: Certification path: who evaluates (AHJ field evaluation) and who installs (licensed electrician) this unlisted assembly? If neither is acceptable, buy listed products.",
    "objects": [
     "Q-1"
    ]
@@ -251,42 +349,40 @@
   {
    "check": "intent.blocking_question",
    "severity": "info",
-   "message": "Q-2 is BLOCKING and unanswered: Confirm 4 channels (6 do not fit a 4-11/16 in box; they need a 6 x 6 x 4 in enclosure).",
-   "objects": [
-    "Q-2"
-   ]
-  },
-  {
-   "check": "intent.blocking_question",
-   "severity": "info",
-   "message": "Q-3 is BLOCKING and unanswered: Confirm the branch circuit is <= 15 A (20 A needs per-channel fuses or 20 A relays).",
-   "objects": [
-    "Q-3"
-   ]
-  },
-  {
-   "check": "intent.blocking_question",
-   "severity": "info",
-   "message": "Q-4 is BLOCKING and unanswered: Load list: any heaters, pumps, compressors or life-safety loads that are unsafe if a contact welds? Motors cycled more than about 5 times a day should drive a contactor.",
-   "objects": [
-    "Q-4"
-   ]
-  },
-  {
-   "check": "intent.blocking_question",
-   "severity": "info",
-   "message": "Q-5 is BLOCKING and unanswered: Confirm surface mounting (flush mounting in an insulated wall overheats the box).",
-   "objects": [
-    "Q-5"
-   ]
-  },
-  {
-   "check": "intent.blocking_question",
-   "severity": "info",
-   "message": "Q-6 is BLOCKING and unanswered: Insulating SELV cover MP1: confirm material and fixing, and AHJ acceptance as the NEC 725.136(B) barrier.",
+   "message": "Q-6 is BLOCKING and unanswered: Branch protection: 15 A dual-function AFCI/GFCI breaker? (GFCI is required in kitchens, baths, garages, basements, laundry, outdoors; AFCI in most dwelling rooms.) A 20 A circuit must be re-breakered at 15 A.",
    "objects": [
     "Q-6"
    ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-7 is BLOCKING and unanswered: Load list: any heaters, pumps, compressors or life-safety loads that are unsafe if a contact welds? Motors cycled more than about 5 times a day should drive a contactor.",
+   "objects": [
+    "Q-7"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-8 is BLOCKING and unanswered: Accept a two-box assembly: E1 (10 x 8 x 6 in polycarbonate, electronics) next to E2 (3-gang PVC device box, receptacles), joined by three short 14/3 NM-B cables? No listed nonmetallic box was found that takes duplex receptacles and the electronics together.",
+   "objects": [
+    "Q-8"
+   ]
+  },
+  {
+   "check": "kicad.erc.isolated_pin_label",
+   "severity": "warning",
+   "message": "Label connected to only one pin: Label 'ARM_FB'",
+   "objects": [
+    "/"
+   ]
+  },
+  {
+   "check": "kicad.netlist_roundtrip",
+   "severity": "error",
+   "message": "net /arm/ARM_FB is split in KiCad into ['/arm/ARM_FB', '/pi/ARM_FB']",
+   "objects": []
   }
  ]
 }

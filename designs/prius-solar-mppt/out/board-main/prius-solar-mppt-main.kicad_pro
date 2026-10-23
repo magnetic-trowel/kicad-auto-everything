@@ -1,0 +1,1263 @@
+{
+  "board": {
+    "design_settings": {
+      "defaults": {},
+      "diff_pair_dimensions": [],
+      "drc_exclusions": [],
+      "rules": {},
+      "track_widths": [],
+      "via_dimensions": []
+    }
+  },
+  "boards": [],
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "meta": {
+    "filename": "prius-solar-mppt-main.kicad_pro",
+    "version": 3
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "name": "Default",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 2147483647
+      },
+      {
+        "name": "AUXBST",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 0
+      },
+      {
+        "name": "BSTA1",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 1
+      },
+      {
+        "name": "BSTA2",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 2
+      },
+      {
+        "name": "BSTB1",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 3
+      },
+      {
+        "name": "BSTB2",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 4
+      },
+      {
+        "name": "DCXBST",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 5
+      },
+      {
+        "name": "FANC",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 6
+      },
+      {
+        "name": "HV",
+        "clearance": 0.8,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 7
+      },
+      {
+        "name": "HV_1A",
+        "clearance": 0.8,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 8
+      },
+      {
+        "name": "IDA",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 9
+      },
+      {
+        "name": "IDB",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 10
+      },
+      {
+        "name": "K1C",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 11
+      },
+      {
+        "name": "K2C",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 12
+      },
+      {
+        "name": "LV",
+        "clearance": 0.4,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 13
+      },
+      {
+        "name": "LV_1A",
+        "clearance": 0.4,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 14
+      },
+      {
+        "name": "LV_20A",
+        "clearance": 0.4,
+        "track_width": 9.4,
+        "via_diameter": 7.82,
+        "via_drill": 3.76,
+        "priority": 15
+      },
+      {
+        "name": "LV_8A",
+        "clearance": 0.4,
+        "track_width": 2.65,
+        "via_diameter": 2.42,
+        "via_drill": 1.06,
+        "priority": 16
+      },
+      {
+        "name": "PACK_1A",
+        "clearance": 0.8,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 17
+      },
+      {
+        "name": "V33BST",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 18
+      }
+    ],
+    "meta": {
+      "version": 4
+    },
+    "netclass_patterns": [
+      {
+        "netclass": "LV",
+        "pattern": "+3V3"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "+3V3A"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVA_C1"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVA_C2"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVA_C3"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVB_C1"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVB_C2"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/ARRAY/PVB_C3"
+      },
+      {
+        "netclass": "AUXBST",
+        "pattern": "/AUX/AUX12_BST"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/AUX12_FB"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/AUX12_RA"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/AUX12_RON"
+      },
+      {
+        "netclass": "LV_1A",
+        "pattern": "/AUX/AUX12_SW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/AUX_EN"
+      },
+      {
+        "netclass": "V33BST",
+        "pattern": "/AUX/V33_BST"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/V33_EN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/V33_FB"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/V33_RA"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AUX/V33_RON"
+      },
+      {
+        "netclass": "LV_1A",
+        "pattern": "/AUX/V33_SW"
+      },
+      {
+        "netclass": "PACK_1A",
+        "pattern": "/BATEND/BAT_F_N"
+      },
+      {
+        "netclass": "PACK_1A",
+        "pattern": "/BATEND/BAT_F_P"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "/BATEND/BE_DK"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/BATEND/SNS_A"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/BATEND/SNS_B"
+      },
+      {
+        "netclass": "DCXBST",
+        "pattern": "/DCX/DCX_HB"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/DCX/HB_SW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/DCX/HI_F"
+      },
+      {
+        "netclass": "DCXBST",
+        "pattern": "/DCX/HO"
+      },
+      {
+        "netclass": "DCXBST",
+        "pattern": "/DCX/HO_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/DCX/LI_F"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/DCX/LO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/DCX/LO_G"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/DCX/MID"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "/DCX/T1_S1"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "/DCX/T1_S2"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/DCX/T1_SNB"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_DA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_DA_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_DA_P"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H1_DCDC"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H1_HLDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_LDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_OUTN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H1_OUTP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_DA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_DA_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_DA_P"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H2_DCDC"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H2_HLDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_LDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_OUTN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H2_OUTP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_DA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_DA_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_DA_P"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H3_DCDC"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H3_HLDO"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H3_INN"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/H3_INP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_LDO"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_OUTN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/HVSENSE/H3_OUTP"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/HVS1_INP"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/HVS2_INP"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/I_SN"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/I_SP"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S1A"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S1B"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S2A"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S2B"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S2C"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S2D"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "/HVSENSE/S2E"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CC_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CC_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CC_RZ"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/CV_RZ"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/VREF_CC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/VREF_CV"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LIMIT/VREF_LIM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/CAN_EN_B"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/CAN_GE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/CAN_RS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/IGN_D"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/IG_GB"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MCU/READY_B"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/AGND"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/BIAS"
+      },
+      {
+        "netclass": "BSTA1",
+        "pattern": "/MPPT_A/BT1"
+      },
+      {
+        "netclass": "BSTA2",
+        "pattern": "/MPPT_A/BT2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/COMP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/COMP_RC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/CS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/CSG"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/CSG_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/CS_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/DITH"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/EN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/FB"
+      },
+      {
+        "netclass": "BSTA1",
+        "pattern": "/MPPT_A/HD1"
+      },
+      {
+        "netclass": "BSTA1",
+        "pattern": "/MPPT_A/HD1_G"
+      },
+      {
+        "netclass": "BSTA2",
+        "pattern": "/MPPT_A/HD2"
+      },
+      {
+        "netclass": "BSTA2",
+        "pattern": "/MPPT_A/HD2_G"
+      },
+      {
+        "netclass": "IDA",
+        "pattern": "/MPPT_A/IDG"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/INA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/INA_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/INT_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/ISK_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/ISK_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/ISNS_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/ISNS_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/I_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/LD1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/LD1_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/LD2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/LD2_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/MODE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/MPPT_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/PI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/RT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/SINK_B"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/SINK_E"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/SLOPE"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_A/SRC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/SS"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_A/SW1"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_A/SW2"
+      },
+      {
+        "netclass": "IDA",
+        "pattern": "/MPPT_A/VCAP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/VCC"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_A/VIN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/VINF"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/VISNS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/VSET"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_A/VSET1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/AGND"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/BIAS"
+      },
+      {
+        "netclass": "BSTB1",
+        "pattern": "/MPPT_B/BT1"
+      },
+      {
+        "netclass": "BSTB2",
+        "pattern": "/MPPT_B/BT2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/COMP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/COMP_RC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/CS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/CSG"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/CSG_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/CS_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/DITH"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/EN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/FB"
+      },
+      {
+        "netclass": "BSTB1",
+        "pattern": "/MPPT_B/HD1"
+      },
+      {
+        "netclass": "BSTB1",
+        "pattern": "/MPPT_B/HD1_G"
+      },
+      {
+        "netclass": "BSTB2",
+        "pattern": "/MPPT_B/HD2"
+      },
+      {
+        "netclass": "BSTB2",
+        "pattern": "/MPPT_B/HD2_G"
+      },
+      {
+        "netclass": "IDB",
+        "pattern": "/MPPT_B/IDG"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/INA_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/INA_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/INT_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/ISK_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/ISK_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/ISNS_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/ISNS_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/I_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/LD1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/LD1_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/LD2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/LD2_G"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/MODE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/MPPT_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/PI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/RT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/SINK_B"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/SINK_E"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/SLOPE"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_B/SRC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/SS"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_B/SW1"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_B/SW2"
+      },
+      {
+        "netclass": "IDB",
+        "pattern": "/MPPT_B/VCAP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/VCC"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "/MPPT_B/VIN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/VINF"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/VISNS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/VSET"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/MPPT_B/VSET1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/LED_FLT_A"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/LED_FLT_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/LED_OK_A"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/LED_OK_K"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/TPS_CWD"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/VINT_OVP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/VTH_OT1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SAFETY/WDO_N"
+      },
+      {
+        "netclass": "LV_1A",
+        "pattern": "AUX12"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "AUX12_DIV"
+      },
+      {
+        "netclass": "LV_1A",
+        "pattern": "AUX_IN"
+      },
+      {
+        "netclass": "PACK_1A",
+        "pattern": "BAT_TAP_N"
+      },
+      {
+        "netclass": "PACK_1A",
+        "pattern": "BAT_TAP_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "CAN_EN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "CAN_H"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "CAN_L"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "CAN_RX"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "CAN_TX"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "DCX_HI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "DCX_LI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "EE_CS_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "EE_SCK"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "EE_SI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "EE_SO"
+      },
+      {
+        "netclass": "FANC",
+        "pattern": "FAN_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "FAN_PWM"
+      },
+      {
+        "netclass": "LV_20A",
+        "pattern": "GND"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "HV_N"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "HV_P"
+      },
+      {
+        "netclass": "HV_1A",
+        "pattern": "HV_RTN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "HV_V2_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "HV_V_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "HV_V_LIM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "HV_V_OVP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "IGN_CAR"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "IGN_IN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "I_HV_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "I_HV_LIM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "I_HV_OCP"
+      },
+      {
+        "netclass": "K1C",
+        "pattern": "K1_COIL_N"
+      },
+      {
+        "netclass": "K2C",
+        "pattern": "K2_COIL_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "K_IN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LATCH_Q"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LATCH_QN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LIM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "LIM_ADC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "MCLR_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "MCU_RUN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "MPPT_A_PWM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "MPPT_B_PWM"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_HS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_P1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_P2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_P3"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_P4"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "NTC_T1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "OVP_TRIP_N"
+      },
+      {
+        "netclass": "HV",
+        "pattern": "PACK_SNS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PERMIT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PERMIT_SNS"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PGC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PGD"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "PVA_IN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVA_I_ADC"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "PVA_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVA_VDIV"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "PVB_IN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVB_I_ADC"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "PVB_P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "PVB_VDIV"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "READY_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "RELAY_REQ"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "RESET_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "UART_TX"
+      },
+      {
+        "netclass": "LV_8A",
+        "pattern": "VINT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VINT_DIV"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VREF2V5"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH2V0"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH_OC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "VTH_OTP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "WDI"
+      }
+    ]
+  },
+  "pcbnew": {
+    "page_layout_descr_file": ""
+  },
+  "schematic": {
+    "legacy_lib_dir": "",
+    "legacy_lib_list": []
+  },
+  "sheets": [],
+  "text_variables": {}
+}

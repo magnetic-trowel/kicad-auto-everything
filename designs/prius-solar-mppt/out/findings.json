@@ -1,0 +1,346 @@
+{
+ "status": {
+  "ok": true,
+  "error": 0,
+  "warning": 0,
+  "info": 5,
+  "waived": 32,
+  "blocking_questions": [
+   "Q-3",
+   "Q-4",
+   "Q-5",
+   "Q-6",
+   "Q-10"
+  ]
+ },
+ "findings": [
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U101 (LM74700-Q1): V(GATE-ANODE) 13.9 vs rating 15 (93%) (MPPT_A/IDG to PVA_IN) \u2014 above 80% derating",
+   "objects": [
+    "U101"
+   ],
+   "waived_by": "designer: Set by the IC's own charge pump: turn-off at 11.6-13.9 V above ANODE (SNOSD17G 6.5); the 15 V absolute maximum is the vendor's margin over its own regulation, not a stress we choose."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U101 (LM74700-Q1): V(VCAP-ANODE) 13.9 vs rating 15 (93%) (MPPT_A/VCAP to PVA_IN) \u2014 above 80% derating",
+   "objects": [
+    "U101"
+   ],
+   "waived_by": "designer: Set by the IC's own charge pump: turn-off at 11.6-13.9 V above ANODE (SNOSD17G 6.5); the 15 V absolute maximum is the vendor's margin over its own regulation, not a stress we choose."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U101 (LM74700-Q1): V(CATHODE-ANODE) 66 vs rating 75 (88%) (PVA_P to PVA_IN) \u2014 above 80% derating",
+   "objects": [
+    "U101"
+   ],
+   "waived_by": "designer: Interval artefact: 66 V pairs +33 V on PVx_P with the string reversed at -33 V. PVx_P is fed only by its string (no back-feed path from VINT through the buck-boost body diodes or from AUX_IN through D601/D602), so with the string reversed PVx_P decays to 0 V and V(CATHODE-ANODE) <= 33 V (44 % of 75 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U103 (LM5176QPWPRQ1): V(FB/SS/DITH/RT/SYNC/SLOPE/COMP-AGND) 3.3 vs rating 3.6 (92%) (MPPT_A/DITH to MPPT_A/AGND) \u2014 above 80% derating",
+   "objects": [
+    "U103"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U103 (LM5176QPWPRQ1): V(VCC/MODE/PGOOD-AGND) 7.6 vs rating 8.5 (89%) (MPPT_A/VCC to MPPT_A/AGND) \u2014 above 80% derating",
+   "objects": [
+    "U103"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U103 (LM5176QPWPRQ1): V(BOOT1-SW1) 7.6 vs rating 8.5 (89%) (MPPT_A/BT1 to MPPT_A/SW1) \u2014 above 80% derating",
+   "objects": [
+    "U103"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U103 (LM5176QPWPRQ1): V(BOOT2-SW2) 7.6 vs rating 8.5 (89%) (MPPT_A/BT2 to MPPT_A/SW2) \u2014 above 80% derating",
+   "objects": [
+    "U103"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U201 (LM74700-Q1): V(GATE-ANODE) 13.9 vs rating 15 (93%) (MPPT_B/IDG to PVB_IN) \u2014 above 80% derating",
+   "objects": [
+    "U201"
+   ],
+   "waived_by": "designer: Set by the IC's own charge pump: turn-off at 11.6-13.9 V above ANODE (SNOSD17G 6.5); the 15 V absolute maximum is the vendor's margin over its own regulation, not a stress we choose."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U201 (LM74700-Q1): V(VCAP-ANODE) 13.9 vs rating 15 (93%) (MPPT_B/VCAP to PVB_IN) \u2014 above 80% derating",
+   "objects": [
+    "U201"
+   ],
+   "waived_by": "designer: Set by the IC's own charge pump: turn-off at 11.6-13.9 V above ANODE (SNOSD17G 6.5); the 15 V absolute maximum is the vendor's margin over its own regulation, not a stress we choose."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U201 (LM74700-Q1): V(CATHODE-ANODE) 66 vs rating 75 (88%) (PVB_P to PVB_IN) \u2014 above 80% derating",
+   "objects": [
+    "U201"
+   ],
+   "waived_by": "designer: Interval artefact: 66 V pairs +33 V on PVx_P with the string reversed at -33 V. PVx_P is fed only by its string (no back-feed path from VINT through the buck-boost body diodes or from AUX_IN through D601/D602), so with the string reversed PVx_P decays to 0 V and V(CATHODE-ANODE) <= 33 V (44 % of 75 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U203 (LM5176QPWPRQ1): V(FB/SS/DITH/RT/SYNC/SLOPE/COMP-AGND) 3.3 vs rating 3.6 (92%) (MPPT_B/DITH to MPPT_B/AGND) \u2014 above 80% derating",
+   "objects": [
+    "U203"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U203 (LM5176QPWPRQ1): V(VCC/MODE/PGOOD-AGND) 7.6 vs rating 8.5 (89%) (MPPT_B/VCC to MPPT_B/AGND) \u2014 above 80% derating",
+   "objects": [
+    "U203"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U203 (LM5176QPWPRQ1): V(BOOT1-SW1) 7.6 vs rating 8.5 (89%) (MPPT_B/BT1 to MPPT_B/SW1) \u2014 above 80% derating",
+   "objects": [
+    "U203"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U203 (LM5176QPWPRQ1): V(BOOT2-SW2) 7.6 vs rating 8.5 (89%) (MPPT_B/BT2 to MPPT_B/SW2) \u2014 above 80% derating",
+   "objects": [
+    "U203"
+   ],
+   "waived_by": "designer: Pins driven by the LM5176 itself: SS clamp 1.21 V, COMP <= 3.0 V, VCC regulator ~7.5 V, BOOT = VCC - diode (SNVSB46B 6.5). The abs max (3.6 V / 8.5 V) is the vendor's margin over its own regulation."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U601 (LM5164-Q1): V(BST-SW) 5 vs rating 5.5 (91%) (AUX/AUX12_BST to AUX/AUX12_SW) \u2014 above 80% derating",
+   "objects": [
+    "U601"
+   ],
+   "waived_by": "designer: BST-SW is the LM5164's internal 5 V gate-drive regulator (SNVSB51C); abs max 5.5 V is its own margin."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U602 (LM5164-Q1): V(BST-SW) 5 vs rating 5.5 (91%) (AUX/V33_BST to AUX/V33_SW) \u2014 above 80% derating",
+   "objects": [
+    "U602"
+   ],
+   "waived_by": "designer: BST-SW is the LM5164's internal 5 V gate-drive regulator (SNVSB51C); abs max 5.5 V is its own margin."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U701 (DSPIC33CK256MP505-E/PT): V(VDD/AVDD-VSS) 3.4 vs rating 4 (85%) (+3V3 to GND) \u2014 above 80% derating",
+   "objects": [
+    "U701"
+   ],
+   "waived_by": "designer: +3V3 is 3.29 V regulated (3.4 V envelope incl. ripple) inside the recommended 3.0-3.6 V; 4.0 V is the absolute maximum, not a derating base for a regulated logic rail."
+  },
+  {
+   "check": "barrier.package_creepage",
+   "severity": "error",
+   "message": "U401 (AMC3330QDWERQ1) package creepage 8 mm < required 10 mm",
+   "objects": [
+    "U401"
+   ],
+   "waived_by": "designer: The 10 mm barrier creepage is the PCB (material group IIIa) value. AMC3330/AMC3302 packages are CTI >= 600 V (group I) [P], for which IEC 60664-1 F.4 needs 2.5 mm basic / 5.0 mm reinforced at 500 V [S]; the packages give >= 8 mm, and a >= 2 mm routed slot under each body gives the PCB path >= 10 mm (framework compares one number; see report note)."
+  },
+  {
+   "check": "barrier.package_creepage",
+   "severity": "error",
+   "message": "U421 (AMC3330QDWERQ1) package creepage 8 mm < required 10 mm",
+   "objects": [
+    "U421"
+   ],
+   "waived_by": "designer: The 10 mm barrier creepage is the PCB (material group IIIa) value. AMC3330/AMC3302 packages are CTI >= 600 V (group I) [P], for which IEC 60664-1 F.4 needs 2.5 mm basic / 5.0 mm reinforced at 500 V [S]; the packages give >= 8 mm, and a >= 2 mm routed slot under each body gives the PCB path >= 10 mm (framework compares one number; see report note)."
+  },
+  {
+   "check": "barrier.package_creepage",
+   "severity": "error",
+   "message": "U441 (AMC3302QDWERQ1) package creepage 8 mm < required 10 mm",
+   "objects": [
+    "U441"
+   ],
+   "waived_by": "designer: The 10 mm barrier creepage is the PCB (material group IIIa) value. AMC3330/AMC3302 packages are CTI >= 600 V (group I) [P], for which IEC 60664-1 F.4 needs 2.5 mm basic / 5.0 mm reinforced at 500 V [S]; the packages give >= 8 mm, and a >= 2 mm routed slot under each body gives the PCB path >= 10 mm (framework compares one number; see report note)."
+  },
+  {
+   "check": "lib.footprint_custom",
+   "severity": "warning",
+   "message": "T301 (T301-ETD39-DCX22 (custom)): custom footprint custom:ETD39_20pin_DCX is not drawn yet (designs/<slug>/footprints/custom.pretty/ETD39_20pin_DCX.kicad_mod)",
+   "objects": [
+    "T301"
+   ],
+   "waived_by": "designer: Custom magnetics: pad grid from the TDK ETD 39 20-pin coil-former drawing; only pins 1-4, 11, 20 are populated and the rest omitted for creepage. Drawn and reviewed with the vendor sample (V-5)."
+  },
+  {
+   "check": "lib.footprint_custom",
+   "severity": "warning",
+   "message": "F901 (EVM10-5-2P): custom footprint custom:Eaton_EVM10-2P is not drawn yet (designs/<slug>/footprints/custom.pretty/Eaton_EVM10-2P.kicad_mod)",
+   "objects": [
+    "F901"
+   ],
+   "waived_by": "designer: No KiCad footprint for EVM10-2P: two PCB pins per end cap per ELX1304 p.2 'PCB layout 2P'."
+  },
+  {
+   "check": "lib.footprint_custom",
+   "severity": "warning",
+   "message": "K901 (G9KB-1A DC12): custom footprint custom:Omron_G9KB-1A is not drawn yet (designs/<slug>/footprints/custom.pretty/Omron_G9KB-1A.kicad_mod)",
+   "objects": [
+    "K901"
+   ],
+   "waived_by": "designer: No KiCad footprint for Omron G9KB: holes from K340-E1-06 p.3 'PCB Mounting Holes (bottom view)': 4 contact slots 3.8 x 3.1 mm, 2 coil slots 1.5 x 3.2 mm, +/-0.1 mm; to be drawn and checked against Omron CAD."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external hv net HV_N reaches the board without a fuse/PTC on it",
+   "objects": [
+    "HV_N"
+   ],
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external power net PVA_IN reaches the board without a fuse/PTC on it",
+   "objects": [
+    "PVA_IN"
+   ],
+   "waived_by": "designer: A PV string is a current source (Isc 6.3 A at 1 sun, 7.3 A worst case) below every rating in its path (J101 12 A, 2.5 mm2 cable, Q101 100 A); one string per input, no parallel strings to back-feed it, so no string fuse is needed [S: IEC 62548 requires string fuses only for >= 3 parallel strings]."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external power net PVB_IN reaches the board without a fuse/PTC on it",
+   "objects": [
+    "PVB_IN"
+   ],
+   "waived_by": "designer: A PV string is a current source (Isc 6.3 A at 1 sun, 7.3 A worst case) below every rating in its path (J101 12 A, 2.5 mm2 cable, Q101 100 A); one string per input, no parallel strings to back-feed it, so no string fuse is needed [S: IEC 62548 requires string fuses only for >= 3 parallel strings]."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external hv net HV_P reaches the board without a fuse/PTC on it",
+   "objects": [
+    "HV_P"
+   ],
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external hv net PACK_SNS reaches the board without a fuse/PTC on it",
+   "objects": [
+    "PACK_SNS"
+   ],
+   "waived_by": "designer: These nets are fused where the energy is: F901/F902 sit first from the pack at the battery end and D901 blocks pack current toward the cable; from our side HV_P is current-limited (0.30 A cap, 0.40 A latch, < 0.7 A physical). PACK_SNS has 3 MOhm in series at the battery end (<= 133 uA)."
+  },
+  {
+   "check": "hazard.procedural",
+   "severity": "warning",
+   "message": "HZ-9: mitigated only procedurally (mechanical design out of scope (Q-6))",
+   "objects": [
+    "HZ-9"
+   ],
+   "waived_by": "designer: Array attachment is mechanical and outside this electrical design; it is a BLOCKING question (Q-6)."
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-3 is BLOCKING and unanswered: Measure the Prime roof (template) and confirm the 8 x 7 field; any roof rack/antenna conflicts?",
+   "objects": [
+    "Q-3"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-4 is BLOCKING and unanswered: Get the 2017-2022 Prius Prime repair manual pages for the HV battery junction block: SMRB/SMRP/SMRG, CHRB/CHRG and current-sensor positions, and the cell-side tap studs. Our - tap should sit on the relay side of the car's current sensor so the battery ECU counts our current when it is awake.",
+   "objects": [
+    "Q-4"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-5 is BLOCKING and unanswered: Who installs the pack-side tap (HV-trained technician, service-plug procedure, 10-minute wait [P]), and is the modification acceptable to insurer, registration and warranty?",
+   "objects": [
+    "Q-5"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-6 is BLOCKING and unanswered: How is the array fixed to the roof (bonded flexible laminate vs rails)? Detachment at speed (HZ-9).",
+   "objects": [
+    "Q-6"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-10 is BLOCKING and unanswered: How does the Prime battery ECU re-estimate SOC after charge added while asleep, and does it set DTCs? Validate on the car (V-23) before parked charging is enabled by default.",
+   "objects": [
+    "Q-10"
+   ]
+  },
+  {
+   "check": "kicad.erc.ground_pin_not_ground",
+   "severity": "warning",
+   "message": "Pin HGND not connected to ground net: Symbol U401 Pin 8 [HGND, Power input, Line]",
+   "objects": [
+    "/HVSENSE/"
+   ],
+   "waived_by": "designer: HGND of U401/U421/U441 is the isolated high-side ground, tied to the HV domain reference HV_N / HV_RTN as the AMC datasheets require; KiCad's rule only recognises nets named like GND."
+  },
+  {
+   "check": "kicad.erc.ground_pin_not_ground",
+   "severity": "warning",
+   "message": "Pin HGND not connected to ground net: Symbol U421 Pin 8 [HGND, Power input, Line]",
+   "objects": [
+    "/HVSENSE/"
+   ],
+   "waived_by": "designer: HGND of U401/U421/U441 is the isolated high-side ground, tied to the HV domain reference HV_N / HV_RTN as the AMC datasheets require; KiCad's rule only recognises nets named like GND."
+  },
+  {
+   "check": "kicad.erc.ground_pin_not_ground",
+   "severity": "warning",
+   "message": "Pin HGND not connected to ground net: Symbol U441 Pin 8 [HGND, Power input, Line]",
+   "objects": [
+    "/HVSENSE/"
+   ],
+   "waived_by": "designer: HGND of U401/U421/U441 is the isolated high-side ground, tied to the HV domain reference HV_N / HV_RTN as the AMC datasheets require; KiCad's rule only recognises nets named like GND."
+  }
+ ]
+}

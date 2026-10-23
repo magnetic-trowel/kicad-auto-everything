@@ -31,85 +31,35 @@
       "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a",
       "violations": [
         {
-          "description": "The current configuration does not include the footprint library 'custom'",
+          "description": "Label connected to only one pin",
           "items": [
             {
-              "description": "Symbol J3 [Conn_01x02]",
+              "description": "Label 'ARM_FB'",
               "pos": {
-                "x": 162.56,
-                "y": 83.82
+                "x": 53.34,
+                "y": 73.66
               },
-              "uuid": "84a9798d-3662-5c17-a937-8382206ac53c"
+              "uuid": "484ad84c-6252-553b-a909-8f67bf235532"
             }
           ],
           "severity": "warning",
-          "type": "footprint_link_issues"
-        },
-        {
-          "description": "The current configuration does not include the footprint library 'custom'",
-          "items": [
-            {
-              "description": "Symbol J4 [Conn_01x02]",
-              "pos": {
-                "x": 162.56,
-                "y": 83.82
-              },
-              "uuid": "966031de-d6e6-585f-abaa-8e170393c0d9"
-            }
-          ],
-          "severity": "warning",
-          "type": "footprint_link_issues"
-        },
-        {
-          "description": "The current configuration does not include the footprint library 'custom'",
-          "items": [
-            {
-              "description": "Symbol J5 [Conn_01x02]",
-              "pos": {
-                "x": 162.56,
-                "y": 83.82
-              },
-              "uuid": "edeee3ea-28ee-5c65-a4d1-3984f279bf17"
-            }
-          ],
-          "severity": "warning",
-          "type": "footprint_link_issues"
-        },
-        {
-          "description": "The current configuration does not include the footprint library 'custom'",
-          "items": [
-            {
-              "description": "Symbol J2 [Conn_01x02]",
-              "pos": {
-                "x": 162.56,
-                "y": 83.82
-              },
-              "uuid": "94c35578-750c-50b4-b4e5-f7e50144af08"
-            }
-          ],
-          "severity": "warning",
-          "type": "footprint_link_issues"
-        },
-        {
-          "description": "The current configuration does not include the footprint library 'custom'",
-          "items": [
-            {
-              "description": "Symbol J1 [Conn_01x02]",
-              "pos": {
-                "x": 43.18,
-                "y": 30.48
-              },
-              "uuid": "222c415b-e59a-59cd-8494-099a47ed5dcb"
-            }
-          ],
-          "severity": "warning",
-          "type": "footprint_link_issues"
+          "type": "isolated_pin_label"
         }
       ]
     },
     {
-      "path": "/selv_in/",
-      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/65b35c7b-479e-5a55-8d70-0c50f69b1b52",
+      "path": "/mains_in/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/5a948949-00be-5f30-a335-0da22bab355f",
+      "violations": []
+    },
+    {
+      "path": "/power5/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/00bc7493-cf71-5b3e-90a5-99aa474c97d9",
+      "violations": []
+    },
+    {
+      "path": "/pi/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/004c64fb-3c5c-5d21-a81a-6480cdab26e7",
       "violations": []
     },
     {
@@ -138,8 +88,18 @@
       "violations": []
     },
     {
-      "path": "/mains_in/",
-      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/5a948949-00be-5f30-a335-0da22bab355f",
+      "path": "/ch5/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/e79e76df-5bd2-5912-8919-36d9dba5b530",
+      "violations": []
+    },
+    {
+      "path": "/ch6/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/de801235-2e58-5b45-a405-5c4ea07b03b5",
+      "violations": []
+    },
+    {
+      "path": "/outlets/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/90444293-8b95-54ac-add3-75d8c9962a0a",
       "violations": []
     },
     {

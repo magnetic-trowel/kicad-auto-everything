@@ -2,14 +2,14 @@
  "design": "rpi-mains-relay",
  "parts": [
   {
-   "ref": "J6",
-   "block": "selv_in",
+   "ref": "J1",
+   "block": "mains_in",
    "board": "main",
    "name": "J1",
-   "value": "2601-3108",
-   "mpn": "2601-3108",
+   "value": "2606-3102/020-000",
+   "mpn": "2606-3102/020-000",
    "manufacturer": "WAGO",
-   "footprint": "TerminalBlock_WAGO:TerminalBlock_WAGO_2601-3108_1x08_P3.50mm_Vertical",
+   "footprint": "custom:WAGO_2606-3102_020-000",
    "category": "connector",
    "dnp": false,
    "p_diss": null,
@@ -17,110 +17,86 @@
     "1": {
      "name": "Pin_1",
      "type": "passive",
-     "net": "/selv_in/+5V_IN",
+     "net": "L_IN",
      "nc": false
     },
     "2": {
      "name": "Pin_2",
      "type": "passive",
-     "net": "GND",
-     "nc": false
-    },
-    "3": {
-     "name": "Pin_3",
-     "type": "passive",
-     "net": "CH1_IN",
-     "nc": false
-    },
-    "4": {
-     "name": "Pin_4",
-     "type": "passive",
-     "net": "CH2_IN",
-     "nc": false
-    },
-    "5": {
-     "name": "Pin_5",
-     "type": "passive",
-     "net": "CH3_IN",
-     "nc": false
-    },
-    "6": {
-     "name": "Pin_6",
-     "type": "passive",
-     "net": "CH4_IN",
-     "nc": false
-    },
-    "7": {
-     "name": "Pin_7",
-     "type": "passive",
-     "net": "HB_IN",
-     "nc": false
-    },
-    "8": {
-     "name": "Pin_8",
-     "type": "passive",
-     "net": "GND",
+     "net": "N",
      "nc": false
     }
    }
   },
   {
    "ref": "F1",
-   "block": "selv_in",
+   "block": "mains_in",
    "board": "main",
    "name": "F1",
-   "value": "1.1A",
-   "mpn": "MF-MSMF110/16X-2",
-   "manufacturer": "Bourns",
-   "footprint": "Fuse:Fuse_1812_4532Metric",
-   "category": "ptc",
+   "value": "1A",
+   "mpn": "0326001.MXP",
+   "manufacturer": "Littelfuse",
+   "footprint": "Fuse:Fuseholder_Clip-6.3x32mm_Littelfuse_102071_Inline_P34.70x7.60mm_D2.00mm_Horizontal",
+   "category": "fuse",
    "dnp": false,
    "p_diss": null,
    "pins": {
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/selv_in/+5V_IN",
+     "net": "L_IN",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "+5V",
+     "net": "/mains_in/L_PSU",
      "nc": false
     }
    }
   },
   {
-   "ref": "D11",
-   "block": "selv_in",
+   "ref": "PS1",
+   "block": "mains_in",
    "board": "main",
-   "name": "D1",
-   "value": "SMAJ7.0A",
-   "mpn": "SMAJ7.0A-E3/61",
-   "manufacturer": "Vishay General Semiconductor",
-   "footprint": "Diode_SMD:D_SMA",
-   "category": "tvs",
+   "name": "U1",
+   "value": "IRM-20-5",
+   "mpn": "IRM-20-5",
+   "manufacturer": "Mean Well",
+   "footprint": "Converter_ACDC:Converter_ACDC_MeanWell_IRM-20-xx_THT",
+   "category": "module",
    "dnp": false,
-   "p_diss": null,
+   "p_diss": 1.84,
    "pins": {
     "1": {
-     "name": "K",
-     "type": "passive",
-     "net": "+5V",
+     "name": "AC/L",
+     "type": "power_in",
+     "net": "/mains_in/L_PSU",
      "nc": false
     },
     "2": {
-     "name": "A",
-     "type": "passive",
+     "name": "AC/N",
+     "type": "power_in",
+     "net": "N",
+     "nc": false
+    },
+    "3": {
+     "name": "-Vo",
+     "type": "power_out",
      "net": "GND",
+     "nc": false
+    },
+    "4": {
+     "name": "+Vo",
+     "type": "power_out",
+     "net": "+5V",
      "nc": false
     }
    }
   },
   {
    "ref": "C1",
-   "block": "selv_in",
+   "block": "power5",
    "board": "main",
    "name": "C1",
    "value": "10u",
@@ -147,9 +123,36 @@
   },
   {
    "ref": "C2",
-   "block": "selv_in",
+   "block": "power5",
    "board": "main",
    "name": "C2",
+   "value": "10u",
+   "mpn": "GRM21BR61C106KE15L",
+   "manufacturer": "Murata",
+   "footprint": "Capacitor_SMD:C_0805_2012Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C3",
+   "block": "power5",
+   "board": "main",
+   "name": "C3",
    "value": "100n",
    "mpn": "CC0603KRX7R9BB104",
    "manufacturer": "YAGEO",
@@ -173,109 +176,37 @@
    }
   },
   {
-   "ref": "U1",
-   "block": "selv_in",
+   "ref": "D15",
+   "block": "power5",
    "board": "main",
-   "name": "D2",
-   "value": "TPD6E05U06",
-   "mpn": "TPD6E05U06RVZR",
-   "manufacturer": "Texas Instruments",
-   "footprint": "Package_SON:Texas_R-PUSON-N14",
+   "name": "D1",
+   "value": "SMAJ7.0A",
+   "mpn": "SMAJ7.0A-E3/61",
+   "manufacturer": "Vishay General Semiconductor",
+   "footprint": "Diode_SMD:D_SMA",
    "category": "tvs",
    "dnp": false,
    "p_diss": null,
    "pins": {
     "1": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
+     "name": "K",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
     },
     "2": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
-    },
-    "3": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
-    },
-    "4": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
-    },
-    "5": {
-     "name": "GND",
-     "type": "power_in",
-     "net": "GND",
-     "nc": false
-    },
-    "6": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
-    },
-    "7": {
-     "name": "NC",
-     "type": "free",
-     "net": null,
-     "nc": true
-    },
-    "8": {
-     "name": "D3-",
-     "type": "passive",
-     "net": null,
-     "nc": true
-    },
-    "9": {
-     "name": "D3+",
-     "type": "passive",
-     "net": "HB_IN",
-     "nc": false
-    },
-    "10": {
-     "name": "GND",
+     "name": "A",
      "type": "passive",
      "net": "GND",
-     "nc": false
-    },
-    "11": {
-     "name": "D2-",
-     "type": "passive",
-     "net": "CH4_IN",
-     "nc": false
-    },
-    "12": {
-     "name": "D2+",
-     "type": "passive",
-     "net": "CH3_IN",
-     "nc": false
-    },
-    "13": {
-     "name": "D1-",
-     "type": "passive",
-     "net": "CH2_IN",
-     "nc": false
-    },
-    "14": {
-     "name": "D1+",
-     "type": "passive",
-     "net": "CH1_IN",
      "nc": false
     }
    }
   },
   {
-   "ref": "D10",
-   "block": "selv_in",
+   "ref": "D14",
+   "block": "power5",
    "board": "main",
-   "name": "D3",
+   "name": "D2",
    "value": "green",
    "mpn": "APT1608SGC",
    "manufacturer": "Kingbright",
@@ -293,14 +224,14 @@
     "2": {
      "name": "A",
      "type": "passive",
-     "net": "/selv_in/LED_PWR_A",
+     "net": "/power5/LED_PWR_A",
      "nc": false
     }
    }
   },
   {
-   "ref": "R16",
-   "block": "selv_in",
+   "ref": "R20",
+   "block": "power5",
    "board": "main",
    "name": "R1",
    "value": "1.5k",
@@ -320,14 +251,41 @@
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/selv_in/LED_PWR_A",
+     "net": "/power5/LED_PWR_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "F2",
+   "block": "power5",
+   "board": "main",
+   "name": "F1",
+   "value": "2.0A",
+   "mpn": "MF-MSMF200/16X-2",
+   "manufacturer": "Bourns",
+   "footprint": "Fuse:Fuse_1812_4532Metric",
+   "category": "ptc",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V_PI",
      "nc": false
     }
    }
   },
   {
    "ref": "TP1",
-   "block": "selv_in",
+   "block": "power5",
    "board": "main",
    "name": "TP1",
    "value": "TP",
@@ -348,7 +306,7 @@
   },
   {
    "ref": "TP2",
-   "block": "selv_in",
+   "block": "power5",
    "board": "main",
    "name": "TP2",
    "value": "TP",
@@ -368,39 +326,294 @@
    }
   },
   {
-   "ref": "R13",
-   "block": "arm",
+   "ref": "J5",
+   "block": "pi",
    "board": "main",
-   "name": "R1",
-   "value": "1k",
-   "mpn": "RC0603FR-071KL",
-   "manufacturer": "YAGEO",
-   "footprint": "Resistor_SMD:R_0603_1608Metric",
-   "category": "resistor",
+   "name": "J1",
+   "value": "PPPC202LFBN-RC",
+   "mpn": "PPPC202LFBN-RC",
+   "manufacturer": "Sullins Connector Solutions",
+   "footprint": "custom:RPi_Zero2W_Socket_2x20_P2.54mm",
+   "category": "connector",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "Pin_1",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "2": {
+     "name": "Pin_2",
+     "type": "passive",
+     "net": "+5V_PI",
+     "nc": false
+    },
+    "3": {
+     "name": "Pin_3",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "4": {
+     "name": "Pin_4",
+     "type": "passive",
+     "net": "+5V_PI",
+     "nc": false
+    },
+    "5": {
+     "name": "Pin_5",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "6": {
+     "name": "Pin_6",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "7": {
+     "name": "Pin_7",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "8": {
+     "name": "Pin_8",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "9": {
+     "name": "Pin_9",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "10": {
+     "name": "Pin_10",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "11": {
+     "name": "Pin_11",
+     "type": "passive",
+     "net": "CH1",
+     "nc": false
+    },
+    "12": {
+     "name": "Pin_12",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "13": {
+     "name": "Pin_13",
+     "type": "passive",
+     "net": "CH2",
+     "nc": false
+    },
+    "14": {
+     "name": "Pin_14",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "15": {
+     "name": "Pin_15",
+     "type": "passive",
+     "net": "CH3",
+     "nc": false
+    },
+    "16": {
+     "name": "Pin_16",
+     "type": "passive",
+     "net": "CH4",
+     "nc": false
+    },
+    "17": {
+     "name": "Pin_17",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "18": {
+     "name": "Pin_18",
+     "type": "passive",
+     "net": "CH5",
+     "nc": false
+    },
+    "19": {
+     "name": "Pin_19",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "20": {
+     "name": "Pin_20",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "21": {
+     "name": "Pin_21",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "22": {
+     "name": "Pin_22",
+     "type": "passive",
+     "net": "CH6",
+     "nc": false
+    },
+    "23": {
+     "name": "Pin_23",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "24": {
+     "name": "Pin_24",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "25": {
+     "name": "Pin_25",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "26": {
+     "name": "Pin_26",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "27": {
+     "name": "Pin_27",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "28": {
+     "name": "Pin_28",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "29": {
+     "name": "Pin_29",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "30": {
+     "name": "Pin_30",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "31": {
+     "name": "Pin_31",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "32": {
+     "name": "Pin_32",
+     "type": "passive",
+     "net": "HB",
+     "nc": false
+    },
+    "33": {
+     "name": "Pin_33",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "34": {
+     "name": "Pin_34",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "35": {
+     "name": "Pin_35",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "36": {
+     "name": "Pin_36",
+     "type": "passive",
+     "net": "/arm/ARM_FB",
+     "nc": false
+    },
+    "37": {
+     "name": "Pin_37",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "38": {
+     "name": "Pin_38",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    },
+    "39": {
+     "name": "Pin_39",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "40": {
+     "name": "Pin_40",
+     "type": "passive",
+     "net": null,
+     "nc": true
+    }
+   }
+  },
+  {
+   "ref": "C4",
+   "block": "pi",
+   "board": "main",
+   "name": "C1",
+   "value": "10u",
+   "mpn": "GRM21BR61C106KE15L",
+   "manufacturer": "Murata",
+   "footprint": "Capacitor_SMD:C_0805_2012Metric",
+   "category": "capacitor_ceramic",
    "dnp": false,
    "p_diss": null,
    "pins": {
     "1": {
      "name": "",
      "type": "passive",
-     "net": "HB_IN",
+     "net": "+5V_PI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/arm/HB_R",
+     "net": "GND",
      "nc": false
     }
    }
   },
   {
-   "ref": "C3",
-   "block": "arm",
+   "ref": "C5",
+   "block": "pi",
    "board": "main",
-   "name": "C1",
-   "value": "1u",
-   "mpn": "CC0603KRX7R7BB105",
+   "name": "C2",
+   "value": "100n",
+   "mpn": "CC0603KRX7R9BB104",
    "manufacturer": "YAGEO",
    "footprint": "Capacitor_SMD:C_0603_1608Metric",
    "category": "capacitor_ceramic",
@@ -410,52 +623,157 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/arm/HB_R",
+     "net": "+5V_PI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/arm/PUMP",
+     "net": "GND",
      "nc": false
     }
    }
   },
   {
-   "ref": "D12",
-   "block": "arm",
+   "ref": "TP6",
+   "block": "pi",
    "board": "main",
-   "name": "D1",
-   "value": "BAT54S",
-   "mpn": "BAT54S-7-F",
-   "manufacturer": "Diodes Incorporated",
-   "footprint": "Package_TO_SOT_SMD:SOT-23",
-   "category": "diode",
+   "name": "TP1",
+   "value": "TP",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "TestPoint:TestPoint_Pad_D1.5mm",
+   "category": "testpoint",
    "dnp": false,
    "p_diss": null,
    "pins": {
     "1": {
-     "name": "A",
+     "name": "1",
      "type": "passive",
-     "net": "GND",
-     "nc": false
-    },
-    "2": {
-     "name": "K",
-     "type": "passive",
-     "net": "/arm/ARM_G",
-     "nc": false
-    },
-    "3": {
-     "name": "COM",
-     "type": "passive",
-     "net": "/arm/PUMP",
+     "net": "+3V3",
      "nc": false
     }
    }
   },
   {
-   "ref": "C4",
+   "ref": "U1",
+   "block": "arm",
+   "board": "main",
+   "name": "U1",
+   "value": "74LVC1G123",
+   "mpn": "SN74LVC1G123DCTR",
+   "manufacturer": "Texas Instruments",
+   "footprint": "Package_SO:SSOP-8_2.95x2.8mm_P0.65mm",
+   "category": "ic",
+   "dnp": false,
+   "p_diss": 0.001,
+   "pins": {
+    "1": {
+     "name": "~{A}",
+     "type": "input",
+     "net": "GND",
+     "nc": false
+    },
+    "2": {
+     "name": "B",
+     "type": "input",
+     "net": "HB",
+     "nc": false
+    },
+    "3": {
+     "name": "~{CLR}",
+     "type": "input",
+     "net": "+3V3",
+     "nc": false
+    },
+    "5": {
+     "name": "Q",
+     "type": "output",
+     "net": "/arm/ARM_G",
+     "nc": false
+    },
+    "6": {
+     "name": "Cext",
+     "type": "input",
+     "net": "/arm/WD_CX",
+     "nc": false
+    },
+    "7": {
+     "name": "RCext",
+     "type": "input",
+     "net": "/arm/WD_RC",
+     "nc": false
+    },
+    "4": {
+     "name": "GND",
+     "type": "power_in",
+     "net": "GND",
+     "nc": false
+    },
+    "8": {
+     "name": "VCC",
+     "type": "power_in",
+     "net": "+3V3",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R21",
+   "block": "arm",
+   "board": "main",
+   "name": "R1",
+   "value": "330k",
+   "mpn": "RC0603FR-07330KL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/WD_RC",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C6",
+   "block": "arm",
+   "board": "main",
+   "name": "C1",
+   "value": "100n",
+   "mpn": "CC0603KRX7R9BB104",
+   "manufacturer": "YAGEO",
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/WD_RC",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/WD_CX",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C7",
    "block": "arm",
    "board": "main",
    "name": "C2",
@@ -470,7 +788,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/arm/ARM_G",
+     "net": "+3V3",
      "nc": false
     },
     "2": {
@@ -482,12 +800,12 @@
    }
   },
   {
-   "ref": "R14",
+   "ref": "R23",
    "block": "arm",
    "board": "main",
    "name": "R2",
-   "value": "1M",
-   "mpn": "RC0603FR-071ML",
+   "value": "100k",
+   "mpn": "RC0603FR-07100KL",
    "manufacturer": "YAGEO",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -497,7 +815,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/arm/ARM_G",
+     "net": "HB",
      "nc": false
     },
     "2": {
@@ -509,7 +827,7 @@
    }
   },
   {
-   "ref": "Q5",
+   "ref": "Q7",
    "block": "arm",
    "board": "main",
    "name": "Q1",
@@ -519,7 +837,7 @@
    "footprint": "Package_TO_SOT_SMD:SOT-23",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 0.011,
+   "p_diss": 0.015,
    "pins": {
     "1": {
      "name": "G",
@@ -542,10 +860,37 @@
    }
   },
   {
-   "ref": "D9",
+   "ref": "R22",
    "block": "arm",
    "board": "main",
-   "name": "D2",
+   "name": "R3",
+   "value": "100k",
+   "mpn": "RC0603FR-07100KL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/ARM_G",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D13",
+   "block": "arm",
+   "board": "main",
+   "name": "D1",
    "value": "green",
    "mpn": "APT1608SGC",
    "manufacturer": "Kingbright",
@@ -569,10 +914,10 @@
    }
   },
   {
-   "ref": "R15",
+   "ref": "R19",
    "block": "arm",
    "board": "main",
-   "name": "R3",
+   "name": "R4",
    "value": "1.5k",
    "mpn": "RC0603FR-071K5L",
    "manufacturer": "YAGEO",
@@ -591,6 +936,120 @@
      "name": "",
      "type": "passive",
      "net": "/arm/LED_ARM_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R26",
+   "block": "arm",
+   "board": "main",
+   "name": "R5",
+   "value": "10k",
+   "mpn": "RC0603FR-0710KL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "COIL_RTN",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R24",
+   "block": "arm",
+   "board": "main",
+   "name": "R6",
+   "value": "47k",
+   "mpn": "RC0603FR-0747KL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "COIL_RTN",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/ARM_FB",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R25",
+   "block": "arm",
+   "board": "main",
+   "name": "R7",
+   "value": "68k",
+   "mpn": "RC0603FR-0768KL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/arm/ARM_FB",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D16",
+   "block": "arm",
+   "board": "main",
+   "name": "D2",
+   "value": "BAT54S",
+   "mpn": "BAT54S-7-F",
+   "manufacturer": "Diodes Incorporated",
+   "footprint": "Package_TO_SOT_SMD:SOT-23",
+   "category": "diode",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "A",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    },
+    "2": {
+     "name": "K",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "3": {
+     "name": "COM",
+     "type": "passive",
+     "net": "/arm/ARM_FB",
      "nc": false
     }
    }
@@ -638,12 +1097,33 @@
    }
   },
   {
+   "ref": "TP5",
+   "block": "arm",
+   "board": "main",
+   "name": "TP3",
+   "value": "TP",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "TestPoint:TestPoint_Pad_D1.5mm",
+   "category": "testpoint",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "1",
+     "type": "passive",
+     "net": "HB",
+     "nc": false
+    }
+   }
+  },
+  {
    "ref": "R1",
    "block": "ch1",
    "board": "main",
    "name": "R1",
-   "value": "1k",
-   "mpn": "RC0603FR-071KL",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
    "manufacturer": "YAGEO",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -653,7 +1133,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "CH1_IN",
+     "net": "CH1",
      "nc": false
     },
     "2": {
@@ -665,7 +1145,7 @@
    }
   },
   {
-   "ref": "R5",
+   "ref": "R7",
    "block": "ch1",
    "board": "main",
    "name": "R2",
@@ -752,7 +1232,7 @@
    }
   },
   {
-   "ref": "D5",
+   "ref": "D7",
    "block": "ch1",
    "board": "main",
    "name": "D2",
@@ -779,7 +1259,7 @@
    }
   },
   {
-   "ref": "R9",
+   "ref": "R13",
    "block": "ch1",
    "board": "main",
    "name": "R3",
@@ -845,39 +1325,12 @@
    }
   },
   {
-   "ref": "J2",
-   "block": "ch1",
-   "board": "main",
-   "name": "J1",
-   "value": "2606-3102/020-000",
-   "mpn": "2606-3102/020-000",
-   "manufacturer": "WAGO",
-   "footprint": "custom:WAGO_2606-3102_020-000",
-   "category": "connector",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "Pin_1",
-     "type": "passive",
-     "net": "L_SW1",
-     "nc": false
-    },
-    "2": {
-     "name": "Pin_2",
-     "type": "passive",
-     "net": "N",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R2",
    "block": "ch2",
    "board": "main",
    "name": "R1",
-   "value": "1k",
-   "mpn": "RC0603FR-071KL",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
    "manufacturer": "YAGEO",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -887,7 +1340,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "CH2_IN",
+     "net": "CH2",
      "nc": false
     },
     "2": {
@@ -899,7 +1352,7 @@
    }
   },
   {
-   "ref": "R6",
+   "ref": "R8",
    "block": "ch2",
    "board": "main",
    "name": "R2",
@@ -986,7 +1439,7 @@
    }
   },
   {
-   "ref": "D6",
+   "ref": "D8",
    "block": "ch2",
    "board": "main",
    "name": "D2",
@@ -1013,7 +1466,7 @@
    }
   },
   {
-   "ref": "R10",
+   "ref": "R14",
    "block": "ch2",
    "board": "main",
    "name": "R3",
@@ -1079,39 +1532,12 @@
    }
   },
   {
-   "ref": "J3",
-   "block": "ch2",
-   "board": "main",
-   "name": "J1",
-   "value": "2606-3102/020-000",
-   "mpn": "2606-3102/020-000",
-   "manufacturer": "WAGO",
-   "footprint": "custom:WAGO_2606-3102_020-000",
-   "category": "connector",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "Pin_1",
-     "type": "passive",
-     "net": "L_SW2",
-     "nc": false
-    },
-    "2": {
-     "name": "Pin_2",
-     "type": "passive",
-     "net": "N",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R3",
    "block": "ch3",
    "board": "main",
    "name": "R1",
-   "value": "1k",
-   "mpn": "RC0603FR-071KL",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
    "manufacturer": "YAGEO",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -1121,7 +1547,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "CH3_IN",
+     "net": "CH3",
      "nc": false
     },
     "2": {
@@ -1133,7 +1559,7 @@
    }
   },
   {
-   "ref": "R7",
+   "ref": "R9",
    "block": "ch3",
    "board": "main",
    "name": "R2",
@@ -1220,7 +1646,7 @@
    }
   },
   {
-   "ref": "D7",
+   "ref": "D9",
    "block": "ch3",
    "board": "main",
    "name": "D2",
@@ -1247,7 +1673,7 @@
    }
   },
   {
-   "ref": "R11",
+   "ref": "R15",
    "block": "ch3",
    "board": "main",
    "name": "R3",
@@ -1313,39 +1739,12 @@
    }
   },
   {
-   "ref": "J4",
-   "block": "ch3",
-   "board": "main",
-   "name": "J1",
-   "value": "2606-3102/020-000",
-   "mpn": "2606-3102/020-000",
-   "manufacturer": "WAGO",
-   "footprint": "custom:WAGO_2606-3102_020-000",
-   "category": "connector",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "Pin_1",
-     "type": "passive",
-     "net": "L_SW3",
-     "nc": false
-    },
-    "2": {
-     "name": "Pin_2",
-     "type": "passive",
-     "net": "N",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R4",
    "block": "ch4",
    "board": "main",
    "name": "R1",
-   "value": "1k",
-   "mpn": "RC0603FR-071KL",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
    "manufacturer": "YAGEO",
    "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
@@ -1355,7 +1754,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "CH4_IN",
+     "net": "CH4",
      "nc": false
     },
     "2": {
@@ -1367,7 +1766,7 @@
    }
   },
   {
-   "ref": "R8",
+   "ref": "R10",
    "block": "ch4",
    "board": "main",
    "name": "R2",
@@ -1454,7 +1853,7 @@
    }
   },
   {
-   "ref": "D8",
+   "ref": "D10",
    "block": "ch4",
    "board": "main",
    "name": "D2",
@@ -1481,7 +1880,7 @@
    }
   },
   {
-   "ref": "R12",
+   "ref": "R16",
    "block": "ch4",
    "board": "main",
    "name": "R3",
@@ -1547,41 +1946,428 @@
    }
   },
   {
-   "ref": "J5",
-   "block": "ch4",
+   "ref": "R5",
+   "block": "ch5",
    "board": "main",
-   "name": "J1",
-   "value": "2606-3102/020-000",
-   "mpn": "2606-3102/020-000",
-   "manufacturer": "WAGO",
-   "footprint": "custom:WAGO_2606-3102_020-000",
-   "category": "connector",
+   "name": "R1",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
    "dnp": false,
    "p_diss": null,
    "pins": {
     "1": {
-     "name": "Pin_1",
+     "name": "",
      "type": "passive",
-     "net": "L_SW4",
+     "net": "CH5",
      "nc": false
     },
     "2": {
-     "name": "Pin_2",
+     "name": "",
      "type": "passive",
-     "net": "N",
+     "net": "/ch5/CH5_G",
      "nc": false
     }
    }
   },
   {
-   "ref": "J1",
-   "block": "mains_in",
+   "ref": "R11",
+   "block": "ch5",
+   "board": "main",
+   "name": "R2",
+   "value": "4.7k",
+   "mpn": "RC0603FR-074K7L",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch5/CH5_G",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "Q5",
+   "block": "ch5",
+   "board": "main",
+   "name": "Q1",
+   "value": "AO3400A",
+   "mpn": "AO3400A",
+   "manufacturer": "Alpha & Omega Semiconductor",
+   "footprint": "Package_TO_SOT_SMD:SOT-23",
+   "category": "mosfet",
+   "dnp": false,
+   "p_diss": 0.0005,
+   "pins": {
+    "1": {
+     "name": "G",
+     "type": "input",
+     "net": "/ch5/CH5_G",
+     "nc": false
+    },
+    "2": {
+     "name": "S",
+     "type": "passive",
+     "net": "COIL_RTN",
+     "nc": false
+    },
+    "3": {
+     "name": "D",
+     "type": "passive",
+     "net": "/ch5/COIL5",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D5",
+   "block": "ch5",
+   "board": "main",
+   "name": "D1",
+   "value": "1N4148W",
+   "mpn": "1N4148W-7-F",
+   "manufacturer": "Diodes Incorporated",
+   "footprint": "Diode_SMD:D_SOD-123",
+   "category": "diode",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "K",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "A",
+     "type": "passive",
+     "net": "/ch5/COIL5",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D11",
+   "block": "ch5",
+   "board": "main",
+   "name": "D2",
+   "value": "green",
+   "mpn": "APT1608SGC",
+   "manufacturer": "Kingbright",
+   "footprint": "LED_SMD:LED_0603_1608Metric",
+   "category": "led",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "K",
+     "type": "passive",
+     "net": "/ch5/COIL5",
+     "nc": false
+    },
+    "2": {
+     "name": "A",
+     "type": "passive",
+     "net": "/ch5/LED5_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R17",
+   "block": "ch5",
+   "board": "main",
+   "name": "R3",
+   "value": "1.5k",
+   "mpn": "RC0603FR-071K5L",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch5/LED5_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "K5",
+   "block": "ch5",
+   "board": "main",
+   "name": "K1",
+   "value": "G5RL-1A-E-TV8 DC5",
+   "mpn": "G5RL-1A-E-TV8 DC5",
+   "manufacturer": "Omron Electronic Components (Aratas)",
+   "footprint": "Relay_THT:Relay_SPST_Omron_G2RL-1A-E",
+   "category": "relay",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "13": {
+     "name": "C_3_6",
+     "type": "passive",
+     "net": "L_IN",
+     "nc": false
+    },
+    "14": {
+     "name": "C_4_5",
+     "type": "passive",
+     "net": "L_SW5",
+     "nc": false
+    },
+    "A1": {
+     "name": "COIL_1",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "A2": {
+     "name": "COIL_8",
+     "type": "passive",
+     "net": "/ch5/COIL5",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R6",
+   "block": "ch6",
+   "board": "main",
+   "name": "R1",
+   "value": "100",
+   "mpn": "RC0603FR-07100RL",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "CH6",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch6/CH6_G",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R12",
+   "block": "ch6",
+   "board": "main",
+   "name": "R2",
+   "value": "4.7k",
+   "mpn": "RC0603FR-074K7L",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch6/CH6_G",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "Q6",
+   "block": "ch6",
+   "board": "main",
+   "name": "Q1",
+   "value": "AO3400A",
+   "mpn": "AO3400A",
+   "manufacturer": "Alpha & Omega Semiconductor",
+   "footprint": "Package_TO_SOT_SMD:SOT-23",
+   "category": "mosfet",
+   "dnp": false,
+   "p_diss": 0.0005,
+   "pins": {
+    "1": {
+     "name": "G",
+     "type": "input",
+     "net": "/ch6/CH6_G",
+     "nc": false
+    },
+    "2": {
+     "name": "S",
+     "type": "passive",
+     "net": "COIL_RTN",
+     "nc": false
+    },
+    "3": {
+     "name": "D",
+     "type": "passive",
+     "net": "/ch6/COIL6",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D6",
+   "block": "ch6",
+   "board": "main",
+   "name": "D1",
+   "value": "1N4148W",
+   "mpn": "1N4148W-7-F",
+   "manufacturer": "Diodes Incorporated",
+   "footprint": "Diode_SMD:D_SOD-123",
+   "category": "diode",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "K",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "A",
+     "type": "passive",
+     "net": "/ch6/COIL6",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D12",
+   "block": "ch6",
+   "board": "main",
+   "name": "D2",
+   "value": "green",
+   "mpn": "APT1608SGC",
+   "manufacturer": "Kingbright",
+   "footprint": "LED_SMD:LED_0603_1608Metric",
+   "category": "led",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "K",
+     "type": "passive",
+     "net": "/ch6/COIL6",
+     "nc": false
+    },
+    "2": {
+     "name": "A",
+     "type": "passive",
+     "net": "/ch6/LED6_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R18",
+   "block": "ch6",
+   "board": "main",
+   "name": "R3",
+   "value": "1.5k",
+   "mpn": "RC0603FR-071K5L",
+   "manufacturer": "YAGEO",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch6/LED6_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "K6",
+   "block": "ch6",
+   "board": "main",
+   "name": "K1",
+   "value": "G5RL-1A-E-TV8 DC5",
+   "mpn": "G5RL-1A-E-TV8 DC5",
+   "manufacturer": "Omron Electronic Components (Aratas)",
+   "footprint": "Relay_THT:Relay_SPST_Omron_G2RL-1A-E",
+   "category": "relay",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "13": {
+     "name": "C_3_6",
+     "type": "passive",
+     "net": "L_IN",
+     "nc": false
+    },
+    "14": {
+     "name": "C_4_5",
+     "type": "passive",
+     "net": "L_SW6",
+     "nc": false
+    },
+    "A1": {
+     "name": "COIL_1",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "A2": {
+     "name": "COIL_8",
+     "type": "passive",
+     "net": "/ch6/COIL6",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "J2",
+   "block": "outlets",
    "board": "main",
    "name": "J1",
-   "value": "2606-3102/020-000",
-   "mpn": "2606-3102/020-000",
+   "value": "2606-3103/020-000",
+   "mpn": "2606-3103/020-000",
    "manufacturer": "WAGO",
-   "footprint": "custom:WAGO_2606-3102_020-000",
+   "footprint": "custom:WAGO_2606-3103_020-000",
    "category": "connector",
    "dnp": false,
    "p_diss": null,
@@ -1589,13 +2375,85 @@
     "1": {
      "name": "Pin_1",
      "type": "passive",
-     "net": "L_IN",
+     "net": "L_SW1",
      "nc": false
     },
     "2": {
      "name": "Pin_2",
      "type": "passive",
      "net": "N",
+     "nc": false
+    },
+    "3": {
+     "name": "Pin_3",
+     "type": "passive",
+     "net": "L_SW2",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "J3",
+   "block": "outlets",
+   "board": "main",
+   "name": "J2",
+   "value": "2606-3103/020-000",
+   "mpn": "2606-3103/020-000",
+   "manufacturer": "WAGO",
+   "footprint": "custom:WAGO_2606-3103_020-000",
+   "category": "connector",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "Pin_1",
+     "type": "passive",
+     "net": "L_SW3",
+     "nc": false
+    },
+    "2": {
+     "name": "Pin_2",
+     "type": "passive",
+     "net": "N",
+     "nc": false
+    },
+    "3": {
+     "name": "Pin_3",
+     "type": "passive",
+     "net": "L_SW4",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "J4",
+   "block": "outlets",
+   "board": "main",
+   "name": "J3",
+   "value": "2606-3103/020-000",
+   "mpn": "2606-3103/020-000",
+   "manufacturer": "WAGO",
+   "footprint": "custom:WAGO_2606-3103_020-000",
+   "category": "connector",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "Pin_1",
+     "type": "passive",
+     "net": "L_SW5",
+     "nc": false
+    },
+    "2": {
+     "name": "Pin_2",
+     "type": "passive",
+     "net": "N",
+     "nc": false
+    },
+    "3": {
+     "name": "Pin_3",
+     "type": "passive",
+     "net": "L_SW6",
      "nc": false
     }
    }
@@ -1608,7 +2466,7 @@
    "value": "MountingHole",
    "mpn": null,
    "manufacturer": null,
-   "footprint": "MountingHole:MountingHole_4mm",
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
    "category": "mechanical",
    "dnp": false,
    "p_diss": null,
@@ -1622,7 +2480,7 @@
    "value": "MountingHole",
    "mpn": null,
    "manufacturer": null,
-   "footprint": "MountingHole:MountingHole_4mm",
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
    "category": "mechanical",
    "dnp": false,
    "p_diss": null,
@@ -1636,7 +2494,7 @@
    "value": "MountingHole",
    "mpn": null,
    "manufacturer": null,
-   "footprint": "MountingHole:MountingHole_4mm",
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
    "category": "mechanical",
    "dnp": false,
    "p_diss": null,
@@ -1650,7 +2508,91 @@
    "value": "MountingHole",
    "mpn": null,
    "manufacturer": null,
-   "footprint": "MountingHole:MountingHole_4mm",
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H5",
+   "block": "mech",
+   "board": "main",
+   "name": "H5",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H6",
+   "block": "mech",
+   "board": "main",
+   "name": "H6",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_3.2mm_M3",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H7",
+   "block": "mech",
+   "board": "main",
+   "name": "H7",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_2.7mm_M2.5",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H8",
+   "block": "mech",
+   "board": "main",
+   "name": "H8",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_2.7mm_M2.5",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H9",
+   "block": "mech",
+   "board": "main",
+   "name": "H9",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_2.7mm_M2.5",
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "H10",
+   "block": "mech",
+   "board": "main",
+   "name": "H10",
+   "value": "MountingHole",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "MountingHole:MountingHole_2.7mm_M2.5",
    "category": "mechanical",
    "dnp": false,
    "p_diss": null,
@@ -1663,7 +2605,7 @@
    "name": "MP1",
    "value": "KAE-RPMR-MP1",
    "mpn": "KAE-RPMR-MP1",
-   "manufacturer": "custom (die-cut to drawing, TBD)",
+   "manufacturer": "custom (die-cut and folded to drawing, TBD)",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1675,9 +2617,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP2",
-   "value": "RACO 257",
-   "mpn": "RACO 257",
-   "manufacturer": "Hubbell RACO",
+   "value": "NS1086",
+   "mpn": "NS1086",
+   "manufacturer": "ABB (Carlon) Circuit Safe",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1689,9 +2631,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP3",
-   "value": "RACO 250",
-   "mpn": "RACO 250",
-   "manufacturer": "Hubbell RACO",
+   "value": "JP108P",
+   "mpn": "JP108P",
+   "manufacturer": "ABB (Carlon)",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1703,9 +2645,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP4",
-   "value": "RACO 832",
-   "mpn": "RACO 832",
-   "manufacturer": "Hubbell RACO",
+   "value": "BH353A",
+   "mpn": "BH353A",
+   "manufacturer": "ABB (Carlon) Superblue",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1717,9 +2659,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP5",
-   "value": "LCBS-8-19",
-   "mpn": "LCBS-8-19",
-   "manufacturer": "Essentra Components (Richco)",
+   "value": "TR5252",
+   "mpn": "TR5252",
+   "manufacturer": "Legrand Pass & Seymour",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1731,9 +2673,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP6",
-   "value": "LCBS-8-19",
-   "mpn": "LCBS-8-19",
-   "manufacturer": "Essentra Components (Richco)",
+   "value": "TR5252",
+   "mpn": "TR5252",
+   "manufacturer": "Legrand Pass & Seymour",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1745,9 +2687,9 @@
    "block": "mech",
    "board": "main",
    "name": "MP7",
-   "value": "LCBS-8-19",
-   "mpn": "LCBS-8-19",
-   "manufacturer": "Essentra Components (Richco)",
+   "value": "TR5252",
+   "mpn": "TR5252",
+   "manufacturer": "Legrand Pass & Seymour",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1759,9 +2701,107 @@
    "block": "mech",
    "board": "main",
    "name": "MP8",
-   "value": "LCBS-8-19",
-   "mpn": "LCBS-8-19",
-   "manufacturer": "Essentra Components (Richco)",
+   "value": "generic",
+   "mpn": null,
+   "manufacturer": "generic",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP9",
+   "block": "mech",
+   "board": "main",
+   "name": "MP9",
+   "value": "Raspberry Pi Zero 2 W",
+   "mpn": "Raspberry Pi Zero 2 W",
+   "manufacturer": "Raspberry Pi Ltd",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP10",
+   "block": "mech",
+   "board": "main",
+   "name": "MP10",
+   "value": "PRPC020DAAN-RC",
+   "mpn": "PRPC020DAAN-RC",
+   "manufacturer": "Sullins Connector Solutions",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP11",
+   "block": "mech",
+   "board": "main",
+   "name": "MP11",
+   "value": "generic",
+   "mpn": null,
+   "manufacturer": "generic",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP12",
+   "block": "mech",
+   "board": "main",
+   "name": "MP12",
+   "value": "generic",
+   "mpn": null,
+   "manufacturer": "generic",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP13",
+   "block": "mech",
+   "board": "main",
+   "name": "MP13",
+   "value": "01020071Z",
+   "mpn": "01020071Z",
+   "manufacturer": "Littelfuse",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP14",
+   "block": "mech",
+   "board": "main",
+   "name": "MP14",
+   "value": "generic",
+   "mpn": null,
+   "manufacturer": "generic",
+   "footprint": null,
+   "category": "mechanical",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {}
+  },
+  {
+   "ref": "MP16",
+   "block": "mech",
+   "board": "main",
+   "name": "MP15",
+   "value": "generic",
+   "mpn": null,
+   "manufacturer": "generic",
    "footprint": null,
    "category": "mechanical",
    "dnp": false,
@@ -1785,6 +2825,10 @@
    "external": true,
    "nodes": [
     [
+     "F1",
+     "1"
+    ],
+    [
      "J1",
      "1"
     ],
@@ -1802,6 +2846,14 @@
     ],
     [
      "K4",
+     "13"
+    ],
+    [
+     "K5",
+     "13"
+    ],
+    [
+     "K6",
      "13"
     ]
    ]
@@ -1837,7 +2889,7 @@
      "2"
     ],
     [
-     "J5",
+     "PS1",
      "2"
     ]
    ]
@@ -1881,8 +2933,8 @@
    "external": true,
    "nodes": [
     [
-     "J3",
-     "1"
+     "J2",
+     "3"
     ],
     [
      "K2",
@@ -1905,7 +2957,7 @@
    "external": true,
    "nodes": [
     [
-     "J4",
+     "J3",
      "1"
     ],
     [
@@ -1929,11 +2981,59 @@
    "external": true,
    "nodes": [
     [
-     "J5",
-     "1"
+     "J3",
+     "3"
     ],
     [
      "K4",
+     "14"
+    ]
+   ]
+  },
+  {
+   "name": "L_SW5",
+   "domain": "OUT5",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    -187.0,
+    187.0
+   ],
+   "kind": "mains",
+   "i_max": 15.0,
+   "external": true,
+   "nodes": [
+    [
+     "J4",
+     "1"
+    ],
+    [
+     "K5",
+     "14"
+    ]
+   ]
+  },
+  {
+   "name": "L_SW6",
+   "domain": "OUT6",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    -187.0,
+    187.0
+   ],
+   "kind": "mains",
+   "i_max": 15.0,
+   "external": true,
+   "nodes": [
+    [
+     "J4",
+     "3"
+    ],
+    [
+     "K6",
      "14"
     ]
    ]
@@ -1949,8 +3049,8 @@
     0.0
    ],
    "kind": "ground",
-   "i_max": 0.39,
-   "external": true,
+   "i_max": 1.6,
+   "external": false,
    "nodes": [
     [
      "C1",
@@ -1961,43 +3061,95 @@
      "2"
     ],
     [
+     "C3",
+     "2"
+    ],
+    [
      "C4",
      "2"
     ],
     [
-     "D10",
+     "C5",
+     "2"
+    ],
+    [
+     "C7",
+     "2"
+    ],
+    [
+     "D14",
      "1"
     ],
     [
-     "D11",
+     "D15",
      "2"
     ],
     [
-     "D12",
+     "D16",
      "1"
     ],
     [
-     "J6",
+     "J5",
+     "14"
+    ],
+    [
+     "J5",
+     "20"
+    ],
+    [
+     "J5",
+     "25"
+    ],
+    [
+     "J5",
+     "30"
+    ],
+    [
+     "J5",
+     "34"
+    ],
+    [
+     "J5",
+     "39"
+    ],
+    [
+     "J5",
+     "6"
+    ],
+    [
+     "J5",
+     "9"
+    ],
+    [
+     "PS1",
+     "3"
+    ],
+    [
+     "Q7",
      "2"
     ],
     [
-     "J6",
-     "8"
-    ],
-    [
-     "Q5",
+     "R10",
      "2"
     ],
     [
-     "R14",
+     "R11",
      "2"
     ],
     [
-     "R5",
+     "R12",
      "2"
     ],
     [
-     "R6",
+     "R22",
+     "2"
+    ],
+    [
+     "R23",
+     "2"
+    ],
+    [
+     "R25",
      "2"
     ],
     [
@@ -2009,16 +3161,20 @@
      "2"
     ],
     [
+     "R9",
+     "2"
+    ],
+    [
      "TP2",
      "1"
     ],
     [
      "U1",
-     "10"
+     "1"
     ],
     [
      "U1",
-     "5"
+     "4"
     ]
    ]
   },
@@ -2033,7 +3189,7 @@
     5.25
    ],
    "kind": "power",
-   "i_max": 0.39,
+   "i_max": 1.6,
    "external": false,
    "nodes": [
     [
@@ -2045,11 +3201,15 @@
      "1"
     ],
     [
+     "C3",
+     "1"
+    ],
+    [
      "D1",
      "1"
     ],
     [
-     "D11",
+     "D15",
      "1"
     ],
     [
@@ -2065,8 +3225,16 @@
      "1"
     ],
     [
-     "F1",
-     "2"
+     "D5",
+     "1"
+    ],
+    [
+     "D6",
+     "1"
+    ],
+    [
+     "F2",
+     "1"
     ],
     [
      "K1",
@@ -2085,15 +3253,23 @@
      "A1"
     ],
     [
-     "R10",
+     "K5",
+     "A1"
+    ],
+    [
+     "K6",
+     "A1"
+    ],
+    [
+     "PS1",
+     "4"
+    ],
+    [
+     "R13",
      "1"
     ],
     [
-     "R11",
-     "1"
-    ],
-    [
-     "R12",
+     "R14",
      "1"
     ],
     [
@@ -2105,12 +3281,112 @@
      "1"
     ],
     [
-     "R9",
+     "R17",
+     "1"
+    ],
+    [
+     "R18",
+     "1"
+    ],
+    [
+     "R19",
+     "1"
+    ],
+    [
+     "R20",
+     "1"
+    ],
+    [
+     "R26",
      "1"
     ],
     [
      "TP1",
      "1"
+    ]
+   ]
+  },
+  {
+   "name": "+5V_PI",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    5.25
+   ],
+   "kind": "power",
+   "i_max": 1.0,
+   "external": false,
+   "nodes": [
+    [
+     "C4",
+     "1"
+    ],
+    [
+     "C5",
+     "1"
+    ],
+    [
+     "F2",
+     "2"
+    ],
+    [
+     "J5",
+     "2"
+    ],
+    [
+     "J5",
+     "4"
+    ]
+   ]
+  },
+  {
+   "name": "+3V3",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "power",
+   "i_max": 0.01,
+   "external": false,
+   "nodes": [
+    [
+     "C7",
+     "1"
+    ],
+    [
+     "D16",
+     "2"
+    ],
+    [
+     "J5",
+     "1"
+    ],
+    [
+     "J5",
+     "17"
+    ],
+    [
+     "R21",
+     "1"
+    ],
+    [
+     "TP6",
+     "1"
+    ],
+    [
+     "U1",
+     "3"
+    ],
+    [
+     "U1",
+     "8"
     ]
    ]
   },
@@ -2122,14 +3398,14 @@
    ],
    "v": [
     0.0,
-    3.5
+    6.1
    ],
    "kind": "power",
-   "i_max": 0.39,
+   "i_max": 0.55,
    "external": false,
    "nodes": [
     [
-     "D9",
+     "D13",
      "1"
     ],
     [
@@ -2150,7 +3426,23 @@
     ],
     [
      "Q5",
+     "2"
+    ],
+    [
+     "Q6",
+     "2"
+    ],
+    [
+     "Q7",
      "3"
+    ],
+    [
+     "R24",
+     "1"
+    ],
+    [
+     "R26",
+     "2"
     ],
     [
      "TP4",
@@ -2159,171 +3451,207 @@
    ]
   },
   {
-   "name": "HB_IN",
+   "name": "HB",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
-   "external": true,
+   "external": false,
    "nodes": [
     [
-     "J6",
-     "7"
+     "J5",
+     "32"
     ],
     [
-     "R13",
+     "R23",
+     "1"
+    ],
+    [
+     "TP5",
      "1"
     ],
     [
      "U1",
-     "9"
+     "2"
     ]
    ]
   },
   {
-   "name": "CH1_IN",
+   "name": "CH1",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
-   "external": true,
+   "external": false,
    "nodes": [
     [
-     "J6",
-     "3"
+     "J5",
+     "11"
     ],
     [
      "R1",
      "1"
-    ],
-    [
-     "U1",
-     "14"
     ]
    ]
   },
   {
-   "name": "CH2_IN",
+   "name": "CH2",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
-   "external": true,
+   "external": false,
    "nodes": [
     [
-     "J6",
-     "4"
+     "J5",
+     "13"
     ],
     [
      "R2",
      "1"
-    ],
-    [
-     "U1",
-     "13"
     ]
    ]
   },
   {
-   "name": "CH3_IN",
+   "name": "CH3",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
-   "external": true,
+   "external": false,
    "nodes": [
     [
-     "J6",
-     "5"
+     "J5",
+     "15"
     ],
     [
      "R3",
      "1"
-    ],
-    [
-     "U1",
-     "12"
     ]
    ]
   },
   {
-   "name": "CH4_IN",
+   "name": "CH4",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
-   "external": true,
+   "external": false,
    "nodes": [
     [
-     "J6",
-     "6"
+     "J5",
+     "16"
     ],
     [
      "R4",
      "1"
-    ],
-    [
-     "U1",
-     "11"
     ]
    ]
   },
   {
-   "name": "/selv_in/+5V_IN",
+   "name": "CH5",
    "domain": "SELV",
    "boards": [
     "main"
    ],
    "v": [
     0.0,
-    5.25
+    3.47
    ],
-   "kind": "power",
-   "i_max": 0.39,
-   "external": true,
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "J5",
+     "18"
+    ],
+    [
+     "R5",
+     "1"
+    ]
+   ]
+  },
+  {
+   "name": "CH6",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "J5",
+     "22"
+    ],
+    [
+     "R6",
+     "1"
+    ]
+   ]
+  },
+  {
+   "name": "/mains_in/L_PSU",
+   "domain": "LINE",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    -187.0,
+    187.0
+   ],
+   "kind": "mains",
+   "i_max": 0.6,
+   "external": false,
    "nodes": [
     [
      "F1",
-     "1"
+     "2"
     ],
     [
-     "J6",
+     "PS1",
      "1"
     ]
    ]
   },
   {
-   "name": "/selv_in/LED_PWR_A",
+   "name": "/power5/LED_PWR_A",
    "domain": "SELV",
    "boards": [
     "main"
@@ -2337,60 +3665,12 @@
    "external": false,
    "nodes": [
     [
-     "D10",
+     "D14",
      "2"
     ],
     [
-     "R16",
+     "R20",
      "2"
-    ]
-   ]
-  },
-  {
-   "name": "/arm/HB_R",
-   "domain": "SELV",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    3.3
-   ],
-   "kind": "signal",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "C3",
-     "1"
-    ],
-    [
-     "R13",
-     "2"
-    ]
-   ]
-  },
-  {
-   "name": "/arm/PUMP",
-   "domain": "SELV",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    -0.3,
-    3.0
-   ],
-   "kind": "signal",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "C3",
-     "2"
-    ],
-    [
-     "D12",
-     "3"
     ]
    ]
   },
@@ -2402,30 +3682,110 @@
    ],
    "v": [
     0.0,
-    2.75
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
    "external": false,
    "nodes": [
     [
-     "C4",
+     "Q7",
      "1"
     ],
     [
-     "D12",
-     "2"
-    ],
-    [
-     "Q5",
-     "1"
-    ],
-    [
-     "R14",
+     "R22",
      "1"
     ],
     [
      "TP3",
+     "1"
+    ],
+    [
+     "U1",
+     "5"
+    ]
+   ]
+  },
+  {
+   "name": "/arm/WD_RC",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C6",
+     "1"
+    ],
+    [
+     "R21",
+     "2"
+    ],
+    [
+     "U1",
+     "7"
+    ]
+   ]
+  },
+  {
+   "name": "/arm/WD_CX",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C6",
+     "2"
+    ],
+    [
+     "U1",
+     "6"
+    ]
+   ]
+  },
+  {
+   "name": "/arm/ARM_FB",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    -0.3,
+    3.6
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D16",
+     "3"
+    ],
+    [
+     "J5",
+     "36"
+    ],
+    [
+     "R24",
+     "2"
+    ],
+    [
+     "R25",
      "1"
     ]
    ]
@@ -2445,11 +3805,11 @@
    "external": false,
    "nodes": [
     [
-     "D9",
+     "D13",
      "2"
     ],
     [
-     "R15",
+     "R19",
      "2"
     ]
    ]
@@ -2462,7 +3822,7 @@
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
@@ -2477,7 +3837,7 @@
      "2"
     ],
     [
-     "R5",
+     "R7",
      "1"
     ]
    ]
@@ -2501,7 +3861,7 @@
      "2"
     ],
     [
-     "D5",
+     "D7",
      "1"
     ],
     [
@@ -2529,11 +3889,11 @@
    "external": false,
    "nodes": [
     [
-     "D5",
+     "D7",
      "2"
     ],
     [
-     "R9",
+     "R13",
      "2"
     ]
    ]
@@ -2546,7 +3906,7 @@
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
@@ -2561,7 +3921,7 @@
      "2"
     ],
     [
-     "R6",
+     "R8",
      "1"
     ]
    ]
@@ -2585,7 +3945,7 @@
      "2"
     ],
     [
-     "D6",
+     "D8",
      "1"
     ],
     [
@@ -2613,11 +3973,11 @@
    "external": false,
    "nodes": [
     [
-     "D6",
+     "D8",
      "2"
     ],
     [
-     "R10",
+     "R14",
      "2"
     ]
    ]
@@ -2630,7 +3990,7 @@
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
@@ -2645,7 +4005,7 @@
      "2"
     ],
     [
-     "R7",
+     "R9",
      "1"
     ]
    ]
@@ -2669,7 +4029,7 @@
      "2"
     ],
     [
-     "D7",
+     "D9",
      "1"
     ],
     [
@@ -2697,11 +4057,11 @@
    "external": false,
    "nodes": [
     [
-     "D7",
+     "D9",
      "2"
     ],
     [
-     "R11",
+     "R15",
      "2"
     ]
    ]
@@ -2714,7 +4074,7 @@
    ],
    "v": [
     0.0,
-    3.3
+    3.47
    ],
    "kind": "signal",
    "i_max": null,
@@ -2725,12 +4085,12 @@
      "1"
     ],
     [
-     "R4",
-     "2"
+     "R10",
+     "1"
     ],
     [
-     "R8",
-     "1"
+     "R4",
+     "2"
     ]
    ]
   },
@@ -2749,12 +4109,12 @@
    "external": false,
    "nodes": [
     [
-     "D4",
-     "2"
+     "D10",
+     "1"
     ],
     [
-     "D8",
-     "1"
+     "D4",
+     "2"
     ],
     [
      "K4",
@@ -2781,11 +4141,179 @@
    "external": false,
    "nodes": [
     [
-     "D8",
+     "D10",
      "2"
     ],
     [
+     "R16",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "/ch5/CH5_G",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "Q5",
+     "1"
+    ],
+    [
+     "R11",
+     "1"
+    ],
+    [
+     "R5",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "/ch5/COIL5",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    6.1
+   ],
+   "kind": "switching",
+   "i_max": 0.093,
+   "external": false,
+   "nodes": [
+    [
+     "D11",
+     "1"
+    ],
+    [
+     "D5",
+     "2"
+    ],
+    [
+     "K5",
+     "A2"
+    ],
+    [
+     "Q5",
+     "3"
+    ]
+   ]
+  },
+  {
+   "name": "/ch5/LED5_A",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    5.25
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D11",
+     "2"
+    ],
+    [
+     "R17",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "/ch6/CH6_G",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.47
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "Q6",
+     "1"
+    ],
+    [
      "R12",
+     "1"
+    ],
+    [
+     "R6",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "/ch6/COIL6",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    6.1
+   ],
+   "kind": "switching",
+   "i_max": 0.093,
+   "external": false,
+   "nodes": [
+    [
+     "D12",
+     "1"
+    ],
+    [
+     "D6",
+     "2"
+    ],
+    [
+     "K6",
+     "A2"
+    ],
+    [
+     "Q6",
+     "3"
+    ]
+   ]
+  },
+  {
+   "name": "/ch6/LED6_A",
+   "domain": "SELV",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    5.25
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D12",
+     "2"
+    ],
+    [
+     "R18",
      "2"
     ]
    ]

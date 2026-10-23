@@ -1,21 +1,26 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""rpi-mains-relay: 4-channel 120 VAC relay board for a Raspberry Pi, in a 4-11/16 in box.
+"""rpi-mains-relay: six individually switched 120 VAC receptacles run by an on-board Raspberry Pi Zero 2 W.
 
 Encodes designs/rpi-mains-relay/DESIGN.md (engineering rationale, evidence tags, sources) and
 CONNECTIONS.md (pin rationale). Build: `kaesynth build designs/rpi-mains-relay/design.py -v`.
+Custom footprints: footprints/make_footprints.py writes footprints/custom.pretty/.
+
+Assembly: E1 = polycarbonate UL 50 enclosure (this PCB, the Pi on J5, the IRM-20-5 supply);
+E2 = 3-gang PVC device box with three split-tab TR duplex receptacles; three 14/3 NM-B cables join them.
 
 Domain model:
-  LINE   root, ref L_IN. The line conductor is the 0 V of the mains side, so the voltage across
-         an open relay contact (L_IN to L_SWk) is exact (+/-187 V peak) instead of an envelope sum.
+  LINE    root, ref L_IN. The line conductor is the 0 V of the mains side, so the voltage across an open
+          relay contact (L_IN to L_SWk) is exact (+/-187 V peak) instead of an envelope sum.
   NEUTRAL floats on L_IN (N is +/-187 V peak from L).
-  OUT1..OUT4 float on L_IN: a switched output is L when its relay is closed and is pulled to N
-         by the load when open, so +/-187 V peak from L.
-  SELV   root, ref GND: the Raspberry Pi side (Class 2 / ES1), coil drive and watchdog.
-  PE     root, ref PE: box, ring, cover and EGCs. No copper on the PCB; kept so the mains-to-PE
-         spacing reaches intent.yaml.
+  OUT1..6 float on L_IN: a switched output is L when its relay is closed and is pulled to N by the load
+          when open, so +/-187 V peak from L.
+  SELV    root, ref GND: IRM-20-5 output, Pi Zero 2 W, coil drive and watchdog. Floating (Class II supply).
+  PE      root, ref PE: EGCs and receptacle yokes. No copper on the PCB; kept so the mains-to-PE spacing
+          reaches intent.yaml and the DRU edge rule.
 """
 import importlib.util
+import math
 from pathlib import Path
 
 from kaesynth import Design, Hole
@@ -31,9 +36,23 @@ BRIEF = ("I want you to make a breakout board for a Raspberry Pi that has the ab
 
 V_MAINS_PK = 187.0          # 132 Vrms (120 V + 10 %) x sqrt(2)
 I_BRANCH = 15.0             # branch breaker ceiling, A
-CHANNELS = (1, 2, 3, 4)
-PI_PIN = {1: "11 (BCM17)", 2: "13 (BCM27)", 3: "15 (BCM22)", 4: "16 (BCM23)"}
-ESD_PIN = {1: "D1+", 2: "D1-", 3: "D2+", 4: "D2-"}     # U1 channel per CH (SLVSBO7O Table 4-3)
+W_MAINS = 7.5               # mains current-path width per layer, mm (2 oz, both layers; calc C-7)
+CHANNELS = (1, 2, 3, 4, 5, 6)
+# Pi Zero 2 W 40-pin header: channel GPIOs (all default pull-down, BCM >= 9; RPi docs 'GPIO' pad table)
+PI_PIN = {1: 11, 2: 13, 3: 15, 4: 16, 5: 18, 6: 22}
+PI_BCM = {1: 17, 2: 27, 3: 22, 4: 23, 5: 24, 6: 25}
+PIN_HB, PIN_ARM_FB = 32, 36          # BCM12, BCM16
+PINS_5V, PINS_3V3 = (2, 4), (1, 17)
+PINS_GND = (6, 9, 14, 20, 25, 30, 34, 39)
+TERM = {1: ("J2", "1"), 2: ("J2", "3"), 3: ("J3", "1"), 4: ("J3", "3"), 5: ("J4", "1"), 6: ("J4", "3")}
+# board geometry (mm, origin lower-left, y north). Pi Zero 2 W: left edge x = PI_X0, connector edge y = PI_Y0
+BOARD_W, BOARD_H = 200.0, 150.0
+PI_X0, PI_Y0 = 12.0, 1.0
+
+
+def pi_xy(xd, yd):
+    """Zero 2 W drawing coordinates (x from the SD-card end, y down from the header edge) -> board."""
+    return PI_X0 + xd, PI_Y0 + 30.0 - yd
 
 
 def intent(d):
@@ -41,365 +60,514 @@ def intent(d):
     R = d.require
     R("REQ-1", "Supply: 120 VAC nominal, 60 Hz, 1-phase, L + N + EGC; single 2-wire branch, not a MWBC",
       value="108-132 V, 60 Hz", source="brief; ASM-1", verify="inspection, T-FUNC")
-    R("REQ-2", "Branch overcurrent device (OCPD) <= 15 A; Cu conductors 14 AWG min, 12 AWG allowed",
-      value="<= 15 A", source="derived; NEC 240.4(D) [I]", verify="label, install check")
-    R("REQ-3", "Four independently controlled outputs", value="4", source="brief ('4 or 6'); box size (C-1)",
-      verify="T-FUNC")
+    R("REQ-2", "Branch: 15 A breaker with GFCI protection (NEC 210.8) and AFCI where 210.12 applies; default a "
+      "15 A dual-function AFCI/GFCI breaker; Cu 14 AWG min (12 AWG allowed)", value="15 A",
+      source="NEC 210.8, 210.12, 240.4(D) [S]; relays 16 A (C-9)", verify="label, install check (Q-6)")
+    R("REQ-3", "Six individually switched outlets: three split-tab duplex NEMA 5-15R receptacles, one relay per "
+      "outlet", value="6", source="Q-2, Q-4 (user decisions)", verify="T-FUNC")
     R("REQ-4", "Switch line only; neutral not switched; EGC never through the PCB", value="-",
       source="NEC 404.2(B) [I], 250.148(B) [S]", verify="netlist review")
-    R("REQ-5", "Per-output rating", value="<= 15 A general use, <= 12 A continuous; <= 1/2 hp at 120 V (9.8 A FLA); "
-      "tungsten <= TV-8; capacitive inrush <= 100 A peak", source="relay UL/VDE ratings [P]", verify="T-LOAD, T-OL")
-    R("REQ-6", "Total current (sum of outputs)", value="<= 15 A", source="branch OCPD", verify="T-HEAT")
-    R("REQ-7", "Enclosure: listed steel 4-11/16 in box 2-1/8 in deep + 1-1/2 in ring + flat blank cover, "
-      "surface-mounted indoors", value="RACO 257 + 250 + 832", source="brief ('outlet type box'); C-1, C-6",
-      verify="inspection")
-    R("REQ-8", "Box fill: displaced volume + NEC allowances <= box volume", value="<= 71.5 in3",
-      source="NEC 314.16 [S/I]", verify="calc box_fill_*")
-    R("REQ-9", "Field terminals: lever push-in, UL 1059 >= 300 V / >= 20 A, 14-12 AWG Cu; one (L, N) input, "
-      "four (L_SW, N) outputs, labelled", value="WAGO 2606, 600 V 31 A",
+    R("REQ-5", "Per-outlet rating", value="<= 15 A general use, <= 12 A continuous; <= 1/2 hp at 120 V (9.8 A FLA); "
+      "tungsten <= TV-8 (TV-5 with the HR second source); capacitive inrush <= 100 A peak",
+      source="relay UL/VDE ratings [P]", verify="T-LOAD, T-OL")
+    R("REQ-6", "Total current, all outlets", value="<= 15 A; <= 12 A for loads on >= 3 h",
+      source="branch OCPD; NEC 210.19/210.20 [S]", verify="T-HEAT")
+    R("REQ-7", "Enclosures: E1 listed nonmetallic UL 50 Type 4X/12 polycarbonate enclosure for the board, Pi and "
+      "supply; E2 listed nonmetallic 3-gang device box for the receptacles; joined by three 14/3 NM-B cables; both "
+      "surface-mounted indoors; no ventilation openings", value="Carlon NS1086 + JP108P; Carlon BH353A",
+      source="Q-3, Q-4, Q-8; C-1, C-6, C-13", verify="inspection")
+    R("REQ-8", "Box fill: E2 per NEC 314.16; E1 > 100 in3 (outside the 314.16(A) table) shown with free space",
+      value="E2 <= 53 in3", source="NEC 314.16 [S/I]", verify="calc box_fill_*")
+    R("REQ-9", "Field terminals in E1: lever push-in, UL 1059 >= 300 V / >= 20 A, 14-12 AWG Cu; one (L, N) input, "
+      "three (OUTa, N, OUTb) receptacle feeds", value="WAGO 2606, 600 V 31 A",
       source="brief ('really easy to access', 'shared inputs ... outputs')", verify="inspection")
-    R("REQ-10", "Mains <-> SELV: reinforced; PCB creepage and clearance; relay coil-contact reinforced",
-      value=">= 8.0 mm / >= 8.0 mm; 3 kVrms 60 s", source="UL/IEC 62368-1, IEC 60664-1 (C-8)",
+    R("REQ-10", "Mains <-> SELV reinforced everywhere: PCB creepage/clearance; relay coil-contact; AC/DC module; "
+      "field conductors kept out of the PCB/Pi compartment by partition MP1", value=">= 8.0 mm / >= 8.0 mm; module "
+      "Class II 4.2 kVAC; 3 kVrms 60 s hi-pot", source="UL/IEC 62368-1, IEC 60664-1 (C-8)",
       verify="T-CREEP, T-HIPOT")
     R("REQ-11", "Opposite-polarity mains spacing (L or L_SWk to N; L_SWj to L_SWk)",
       value="creepage >= 6.4 mm, clearance >= 3.2 mm", source="UL 1059 use group C [S]", verify="T-CREEP")
-    R("REQ-12", "Mains <-> PE: copper to box metal; copper to any board edge",
-      value=">= 6.4 mm to box metal; >= 2.0 mm to a board edge", source="UL field wiring [S]; 62368-1 basic [P/I]",
-      verify="T-CREEP, T-HIPOT")
-    R("REQ-13", "Fail-safe OFF: all outputs OFF when the Pi is unplugged, unpowered, booting, rebooting or "
-      "halted, when any CH line floats, and after the heartbeat stops", value="<= 0.5 s after heartbeat stops",
-      source="brief ('reliable'); task", verify="T-BOOT, T-FLOAT, T-HB")
-    R("REQ-14", "Two-fault rule: no single stuck GPIO or single shorted driver energizes an output while the "
+    R("REQ-12", "Mains copper to a board edge or mounting hole (where a bare EGC can lie)",
+      value=">= 6.4 mm (DRU edge_clearance)", source="UL field wiring 1/4 in to dead metal [S]", verify="DRC")
+    R("REQ-13", "Fail-safe OFF: all outlets OFF when the Pi is absent, unpowered, booting, rebooting, halted or "
+      "hung, when its SD card fails, when the 5 V supply sags or fails, and after the heartbeat stops at either "
+      "level", value="<= 0.1 s after the last heartbeat edge", source="brief ('reliable'); review M1",
+      verify="T-BOOT, T-HB, T-BROWNOUT")
+    R("REQ-14", "Two-key rule: no single stuck GPIO or single shorted driver energizes an outlet while the "
       "heartbeat is absent", value="-", source="derived", verify="FMEA (hazards), T-HB")
-    R("REQ-15", "Load on the Pi", value="GPIO <= 0.6 mA DC per CH pin, <= 3.3 mA peak on HB; 5 V <= 0.40 A; "
-      "only default-pull-down GPIOs", source="Raspberry Pi docs [P]", verify="T-PWR")
-    R("REQ-16", "Heartbeat arms the outputs; DC or no signal disarms them",
-      value="3.3 V square wave 100 Hz-2 kHz, 40-60 % duty", source="derived (C-4)", verify="T-HB")
+    R("REQ-15", "Load on the Pi", value="<= 0.7 mA per CH pin; +3V3 <= 1 mA; only default-pull-down GPIOs",
+      source="RPi docs GPIO pad table [P]", verify="T-PWR")
+    R("REQ-16", "Heartbeat arms the outlets; DC (either level) or no signal disarms them",
+      value="3.3 V square wave 100 Hz-10 kHz, 20-80 % duty, toggled by the control loop", source="C-4",
+      verify="T-HB")
     R("REQ-17", "Coil voltage at the relay pins, worst case", value=">= 4.5 V", source="must-operate [P]; C-3",
-      verify="T-COIL")
-    R("REQ-18", "Leakage at an OFF output (no snubber or MOV across the contacts)", value="<= 0.1 mA",
+      verify="T-COIL (also at 4.63 V)")
+    R("REQ-18", "Leakage at an OFF outlet (no snubber or MOV across the contacts)", value="<= 0.1 mA",
       source="derived (C-12)", verify="T-LEAK")
-    R("REQ-19", "Thermal: every part within its derated limit at 40 C room, surface-mounted box, 12 A "
-      "continuous plus all coils on", value="internal air <= 70 C", source="derived (C-6)", verify="T-HEAT")
-    R("REQ-20", "Fault withstand: mains copper survives a 15 A breaker's let-through", value="<= 2 kA prospective",
-      source="derived (C-7)", verify="T-SC")
-    R("REQ-21", "Indicators on the SELV side: LED per channel (coil energized), ARM LED, 5 V LED", value="6 LEDs",
+    R("REQ-19", "Thermal: internal air of E1 at 40 C room with all coils on, 15 A through one outlet and the Pi "
+      "at full load", value="<= 60 C (Pi <= 70 C, IRM within derating)", source="derived (C-6)", verify="T-HEAT")
+    R("REQ-20", "Fault withstand: mains copper survives the branch breaker's let-through; F1 interrupts any "
+      "fault at E1", value="available fault <= 2 kA (copper), F1 10 kA at 125 VAC", source="C-7, C-9",
+      verify="T-SC")
+    R("REQ-21", "Indicators on the SELV side: LED per channel (coil energized), ARM LED, 5 V LED", value="8 LEDs",
       source="task", verify="T-FUNC")
-    R("REQ-22", "Environment", value="indoor dry, PD2, OVC II, <= 2000 m, room 0-40 C", source="ASM-2", verify="-")
-    R("REQ-23", "Parts active and orderable; UL-recognized relays, terminals, PTC, PCB laminate", value="-",
-      source="brief ('reliable')", verify="BOM review")
+    R("REQ-22", "Environment", value="indoor dry, PD2, OVC III (conservative), <= 2000 m, room 0-40 C",
+      source="ASM-2; review m7", verify="-")
+    R("REQ-23", "Parts active and orderable; listed/recognized relays, terminals, supply module, fuse, receptacles, "
+      "enclosures, PCB laminate", value="-", source="brief ('reliable')", verify="BOM review")
     R("REQ-24", "Installation by a licensed electrician; approval by the authority having jurisdiction (AHJ)",
       value="-", source="NEC 110.2/110.3 [I]", verify="Q-1")
-    R("REQ-25", "Markings: ratings, conductor size and strip length, warnings, 'Class 2 only' at J6", value="-",
-      source="UL practice [I]", verify="inspection")
-    R("REQ-26", "SELV link: 8-conductor Class 2 cable on its own knockout, separated from mains by a barrier",
-      value="22 AWG <= 3 m (24 AWG <= 2 m)", source="NEC 725.136(B)/(D) [S]; C-3", verify="inspection")
+    R("REQ-25", "Markings: ratings, conductor size and strip length, terminal labels, 'disconnect before opening', "
+      "'outlets are not a disconnecting means', Pi orientation", value="-", source="UL practice [I]",
+      verify="inspection")
+    R("REQ-26", "Pi: Raspberry Pi Zero 2 W, component side up on J5, 2x20 header soldered on its underside; no "
+      "USB/HDMI peripherals; powered only through J5 pins 2/4, never also from its micro-USB",
+      value="Zero 2 W only", source="Q-5 (user decision)", verify="inspection, T-PWR")
+    R("REQ-27", "5 V supply: listed encapsulated AC/DC module from the shared L/N input through its own fuse; 5 V "
+      "budget within its derated capacity", value="IRM-20-5, F1 1 A T; <= 1.9 A at 70 C, 108 VAC",
+      source="Q-5; C-2, C-9", verify="T-PWR, T-BROWNOUT")
+    R("REQ-28", "Watchdog readback and self-test: ARM_FB on BCM16. Software checks disarmed -> armed -> disarmed "
+      "(timing) at boot and whenever all outlets are off (at least daily); on failure it never arms, keeps all "
+      "outlets off and alarms", value="disarm measured <= 0.1 s", source="review M2", verify="T-SELFTEST")
+    R("REQ-29", "Software: read-only root filesystem (overlay), power-safe logging, all outlets OFF at boot, "
+      "heartbeat from the control loop, documented power-restore policy (default OFF)", value="-",
+      source="review M2; H17", verify="code review, T-BOOT")
+    R("REQ-30", "Wi-Fi: Pi PCB antenna inside a nonmetallic enclosure; antenna zone free of copper on all layers; "
+      ">= 30 mm from relays, mains copper and the supply", value="RSSI >= -67 dBm at the install location",
+      source="C-13", verify="T-RF")
+    R("REQ-31", "E1 compartments: field-wiring compartment (north) separated from the PCB/Pi compartment by "
+      "partition MP1; no exposed copper outside the terminal bodies north of MP1; conductors tied down",
+      value="-", source="review M3", verify="inspection")
 
     # -- assumptions and questions (DESIGN.md section 3) -------------------------------------------
     A = d.assume
-    A("ASM-1", "North-American dwelling or light commercial; one 120 V branch from a <= 15 A breaker; "
-      "prospective fault current at the box <= 2 kA (>= 10 m of 14 AWG limits it to < 1 kA)")
-    A("ASM-2", "Indoor dry location, PD2, OVC II, altitude <= 2000 m, room 0-40 C; box surface-mounted")
+    A("ASM-1", "North-American dwelling or light commercial; one 120 V branch from a 15 A breaker; available "
+      "fault current at E1 <= 2 kA (>= 10 m of 14 AWG limits it to < 1 kA)")
+    A("ASM-2", "Indoor dry location, PD2, altitude <= 2000 m, room 0-40 C; E1 and E2 surface-mounted on a wall or "
+      "backboard, not in an insulated cavity")
     A("ASM-3", "Loads are plug-in appliances, LED or tungsten lighting, small motors; none hazardous if left "
       "on (a welded contact is a credible failure)")
-    A("ASM-4", "Raspberry Pi 4 or 5 on its official 5.1 V supply, in its own case outside the box, <= 3 m away")
+    A("ASM-4", "Pi Zero 2 W draws <= 0.6 A at full CPU load (published measurements); the budget allows 1.0 A")
     A("ASM-5", "PCB laminate taken as material group IIIb (CTI >= 100 V) so the tables apply at their most "
       "conservative; FR-4 is usually IIIa")
-    A("ASM-6", "Control software toggles HB at >= 100 Hz from its main loop while any output should be on")
-    A("ASM-7", "Outputs drop to OFF on every Pi reboot; no state is retained")
+    A("ASM-6", "Control software toggles HB at >= 100 Hz from its main loop while any outlet should be on")
+    A("ASM-7", "The hardware retains no output state: every Pi reboot or power cut leaves all outlets OFF")
+    A("ASM-8", "Zero 2 W antenna lies on the connector edge between the mini-HDMI and the USB socket (as on the "
+      "Zero W; inferred, verify on the board)")
     Q = d.question
     Q("Q-1", "Certification path: who evaluates (AHJ field evaluation) and who installs (licensed electrician) "
-      "this unlisted assembly? If neither is acceptable, buy listed products (alternative A5).", blocking=True,
-      default="designed to UL/IEC 62368-1 spacings with UL-recognized parts; installation by a licensed "
-              "electrician assumed; not certified")
-    Q("Q-2", "Confirm 4 channels (6 do not fit a 4-11/16 in box; they need a 6 x 6 x 4 in enclosure).",
-      blocking=True, default="4 channels")
-    Q("Q-3", "Confirm the branch circuit is <= 15 A (20 A needs per-channel fuses or 20 A relays).",
-      blocking=True, default="15 A branch")
-    Q("Q-4", "Load list: any heaters, pumps, compressors or life-safety loads that are unsafe if a contact "
+      "this unlisted assembly? If neither is acceptable, buy listed products.", blocking=True,
+      default="designed to UL/IEC 62368-1 spacings with listed/recognized parts; licensed electrician installs; "
+              "not certified")
+    Q("Q-2", "Outputs: terminals for field wiring, or receptacles in the box?", blocking=True,
+      answer="Switched receptacles: actual receptacles in the box that loads plug into, each outlet individually "
+             "switched (e.g. split-tab duplex receptacles, one relay per outlet).")
+    Q("Q-3", "Where does the Raspberry Pi live and how is it powered?", blocking=True,
+      answer="Inside, plugged on the board: a self-contained box; the Pi mounts on/plugs onto our board, powered "
+             "from an on-board safety-certified AC/DC module fed from the shared input.")
+    Q("Q-4", "How many channels, and in what box?", blocking=True,
+      answer="6 channels, bigger box: choose a larger listed box/enclosure that legally holds 3 duplex receptacles "
+             "(6 outlets) plus the board, the Pi and the supply.")
+    Q("Q-5", "Which Pi, and where does its power come from?", blocking=True,
+      answer="also the pi should get its power from the 120Vac in the box, so it will need some power conversion "
+             "stuff. design this for a zero 2W")
+    Q("Q-6", "Branch protection: 15 A dual-function AFCI/GFCI breaker? (GFCI is required in kitchens, baths, "
+      "garages, basements, laundry, outdoors; AFCI in most dwelling rooms.) A 20 A circuit must be re-breakered "
+      "at 15 A.", blocking=True, default="15 A dual-function AFCI/GFCI breaker")
+    Q("Q-7", "Load list: any heaters, pumps, compressors or life-safety loads that are unsafe if a contact "
       "welds? Motors cycled more than about 5 times a day should drive a contactor.", blocking=True,
       default="general plug loads, no hazard-if-on loads")
-    Q("Q-5", "Confirm surface mounting (flush mounting in an insulated wall overheats the box).", blocking=True,
-      default="surface-mounted box")
-    Q("Q-6", "Insulating SELV cover MP1: confirm material and fixing, and AHJ acceptance as the NEC 725.136(B) "
-      "barrier.", blocking=True, default="0.43 mm PP UL 94 V-0 cover, 2 snap holes")
-    Q("Q-7", "Watchdog semantics: OFF when the control app hangs (software heartbeat) or keep ON through app "
-      "hangs (hardware-PWM heartbeat)?", default="software heartbeat, outputs OFF on hang")
-    Q("Q-8", "Pi-side termination of the cable: GPIO screw-terminal HAT or crimped 2.54 mm housings.",
-      default="user's choice; pin map in CONNECTIONS.md")
-    Q("Q-9", "Surge protection: Type 2 SPD at the panel instead of an MOV in the box?", default="no MOV in box")
-    Q("Q-10", "Do the outputs feed downstream receptacle boxes ('like outlets') or loads wired directly?",
-      default="either; outputs are terminals")
-    Q("Q-11", "Relay supply (Omron -> Aratas, 26-week lead time): qualify the second source.",
-      default="G5RL-1A-E-HR DC5 as drop-in")
+    Q("Q-8", "Accept a two-box assembly: E1 (10 x 8 x 6 in polycarbonate, electronics) next to E2 (3-gang PVC "
+      "device box, receptacles), joined by three short 14/3 NM-B cables? No listed nonmetallic box was found that "
+      "takes duplex receptacles and the electronics together.", blocking=True,
+      default="two boxes side by side on one backboard")
+    Q("Q-9", "Partition MP1: confirm 1.5 mm polycarbonate UL 94 V-0, fixed to the back panel at both ends, and "
+      "AHJ acceptance as the wiring/electronics separation.", default="as specified")
+    Q("Q-10", "Watchdog semantics: OFF when the control app hangs (software heartbeat) or keep ON through app "
+      "hangs (hardware-PWM heartbeat)?", default="software heartbeat, outlets OFF on hang")
+    Q("Q-11", "Power-restore policy: outlets stay OFF after a power cut until the user switches them, or the app "
+      "restores the last state after its self-test?", default="stay OFF")
+    Q("Q-12", "Surge protection: listed Type 2 SPD at the panel instead of an MOV in the box?", default="no MOV in box")
+    Q("Q-13", "Relay supply (Omron -> Aratas): qualify the second source.",
+      default="G5RL-1A-E-HR DC5 drop-in, TV-5 limit")
+    Q("Q-14", "Pi header: the user solders a 2x20 header on the Zero 2 W underside. A Zero 2 WH (header on top) "
+      "would have to sit face-down and mirrors the pinout; it is NOT supported.", default="solder on the underside")
+    Q("Q-15", "Generic hardware (nylon standoffs, NM connectors, wallplate, splice) to be fixed to MPNs.",
+      default="specs in the BOM descriptions")
+    Q("Q-16", "Add per-channel readback (detects a shorted channel MOSFET)? Six more GPIOs and 18 parts.",
+      default="no; the channel LED shows it")
 
 
 def hazards(d):
     H = d.hazard
-    relays = ["K1", "K2", "K3", "K4"]
-    terms = ["J1", "J2", "J3", "J4", "J5"]
-    H("H1", "Shock from live parts with the cover off",
-      "listed steel box, ring and screw cover (tool needed); 'disconnect before opening' label; electrician "
-      "installs", parts=["MP2", "MP3", "MP4"], single_fault_safe=False,
-      notes="service condition: de-energize at the breaker")
-    H("H2", "Mains reaches SELV and the Pi",
-      "reinforced insulation: relay 8/8 mm, 6 kVAC, 10 kV impulse; PCB 8/8 mm barrier band; SELV cover MP1 keeps "
-      "field conductors off SELV parts; Class 2 cable on its own knockout", parts=relays + ["MP1"],
-      single_fault_safe=True)
-    H("H3", "Metal box becomes live",
-      "all EGCs spliced with a listed connector, pigtail to the box ground screw; ring and cover bonded by "
-      "their screws", parts=["MP2", "MP3", "MP4"], single_fault_safe=True,
-      notes="needs insulation failure plus loss of EGC; splice is installer work")
-    H("H4", "Overload heats conductors, PCB, terminals or relays",
-      "single protective device = branch OCPD <= 15 A; every downstream element rated >= 15 A at temperature "
-      "(calcs mains_copper_*, relay_contact_*)", parts=terms + relays, single_fault_safe=True,
-      notes="15-20 A overloads before the breaker trips are covered by T-OL")
-    H("H5", "Short circuit on an output",
-      "breaker clears; copper I2t margin 1.4x at 2 kA; steel box contains any arc", parts=terms + ["MP2"],
-      single_fault_safe=True)
+    relays = [f"K{k}" for k in CHANNELS]
+    terms = ["J1", "J2", "J3", "J4"]
+    chq = [f"Q{k}" for k in CHANNELS]
+    H("H1", "Shock from live parts with E1 or E2 open",
+      "listed enclosures with screw covers (tool needed); 'disconnect before opening' label; electrician installs; "
+      "partition MP1 keeps field conductors away from the Pi/SD-card area", parts=["MP1", "MP2", "MP4"],
+      single_fault_safe=False, notes="service condition: de-energize at the breaker before opening")
+    H("H2", "Mains reaches SELV, the Pi or a person touching the Pi",
+      "reinforced insulation: IRM-20-5 Class II 4.2 kVAC; relays 8/8 mm 6 kVAC 10 kV; PCB 8/8 mm barrier band; "
+      "partition MP1 adds supplementary insulation over field-conductor insulation; no SELV wiring leaves E1",
+      parts=relays + ["PS1", "MP1"], single_fault_safe=True)
+    H("H3", "Bare EGC or receptacle yoke contacts live copper",
+      "nonmetallic enclosures (no box metal); EGCs spliced in the wire compartment with a listed connector; "
+      "mains copper >= 6.4 mm from board edges and mounting holes (DRU edge rule); no copper outside the "
+      "terminal bodies north of MP1", parts=terms + ["MP1", "MP16"], single_fault_safe=True)
+    H("H4", "Overload heats conductors, PCB, terminals, relays or receptacles",
+      "single protective device = 15 A branch breaker; every downstream element rated >= 15 A at temperature "
+      "(calcs mains_copper_*, relay_contact_*); receptacles 15 A", parts=terms + relays + ["MP5", "MP6", "MP7"],
+      single_fault_safe=True, notes="15-20 A overloads before the breaker trips are covered by T-OL")
+    H("H5", "Short circuit on an outlet or in the supply module",
+      "breaker clears outlet faults (copper I2t margin 1.4x at 2 kA); F1 (1 A T, 10 kA at 125 VAC) clears a "
+      "module fault before the breaker; UL 50 polycarbonate enclosure contains the arc",
+      parts=terms + ["F1", "MP2"], single_fault_safe=True)
     H("H6", "Loose or partially inserted conductor heats up",
-      "spring clamps (no torque relaxation); strip length on silkscreen; pull test at commissioning",
-      parts=terms, single_fault_safe=False, notes="inspection is the barrier")
+      "spring clamps (no torque relaxation); strip length on silkscreen; pull test at commissioning; receptacles "
+      "back-wired under clamp plates, not push-in", parts=terms + ["MP5", "MP6", "MP7"], single_fault_safe=False,
+      notes="inspection is the barrier")
     H("H7", "Fail-ON: welded relay contact",
-      "inrush-rated relay (TV-8, 100 A peak); load limits REQ-5; no snubber; documented that outputs are not "
-      "for loads hazardous if left on", parts=relays, single_fault_safe=False,
-      notes="residual risk, disclosed (Q-4)")
+      "inrush-rated relay (TV-8, 100 A peak); load limits REQ-5; no snubber; documented that outlets are not "
+      "for loads hazardous if left on", parts=relays, single_fault_safe=False, notes="residual risk, disclosed (Q-7)")
     H("H8", "Fail-ON from control: software bug, hung Pi, stuck GPIO, shorted MOSFET",
-      "coil current needs both Qk (GPIO) and Q5 (heartbeat pump); 4.7 k pull-downs; coils powered from the Pi",
-      parts=["Q1", "Q2", "Q3", "Q4", "Q5", "D12", "C3", "C4", "R5", "R6", "R7", "R8"], single_fault_safe=False,
-      notes="hung software / stuck GPIO / shorted Q5: safe (the other path still blocks). Shorted Qk while the "
-            "heartbeat runs: channel k follows ARM (LED shows it); stopping the heartbeat turns it OFF")
-    H("H9", "Glitch to ON at boot or reset",
-      "default-pull-down GPIOs plus 4.7 k pull-downs; arming needs >= 100 Hz toggling",
-      parts=["R5", "R6", "R7", "R8", "Q5", "D12"], single_fault_safe=True)
+      "coil current needs both Qk (CH GPIO) and Q7 (U1 heartbeat monostable); 4.7 k pull-downs; HB edge-triggered",
+      parts=chq + ["Q7", "U1", "R21", "C6", "R22", "R7", "R8", "R9", "R10", "R11", "R12"], single_fault_safe=False,
+      notes="hung software, stuck GPIO or shorted Q7: safe (the other key still blocks; Q7 short is caught by the "
+            "self-test). Shorted Qk while the heartbeat runs: outlet k follows ARM (its LED shows it); stopping "
+            "the heartbeat turns it OFF")
+    H("H9", "Glitch to ON at boot, reset or power-up",
+      "default-pull-down GPIOs plus 4.7 k / 100 k pull-downs; U1 glitch-free power-up reset; arming needs "
+      "rising edges on B; Q7 gate pull-down holds it off while U1 is unpowered (Ioff)",
+      parts=["U1", "R22", "R23", "R7", "R8", "R9", "R10", "R11", "R12"], single_fault_safe=True)
     H("H10", "Remote energization while a load is being serviced",
-      "label: relays are not a disconnecting means; lock out at the breaker", parts=[], single_fault_safe=False,
-      notes="procedural by nature")
-    H("H11", "Shock from an 'OFF' output",
+      "label: outlets are not a disconnecting means; unplug the load or lock out the breaker", parts=[],
+      single_fault_safe=False, notes="procedural by nature")
+    H("H11", "Shock from an 'OFF' outlet",
       "no snubber or MOV across contacts; line-only switching; polarity check at commissioning", parts=relays,
       single_fault_safe=False, notes="leakage: single-fault safe; L/N miswire: procedural (T-MISWIRE)")
-    H("H12", "Overtemperature in the closed box",
-      "4 W budget; surface mounting required; 12 A continuous limit", parts=["MP2", "MP3"],
-      single_fault_safe=True)
+    H("H12", "Overtemperature in the closed enclosure",
+      "13.3 W worst case into 0.21 m2 of polycarbonate: 52 C at 40 C room (C-6); surface mounting; 12 A continuous "
+      "limit", parts=["MP2", "PS1"], single_fault_safe=True)
     H("H13", "Surge flashover or arc tracking",
-      "OVC II coordinated spacing; relay 10 kV impulse; no unprotected MOV in the box; panel SPD recommended",
-      parts=relays, single_fault_safe=True)
-    H("H14", "Pi damaged by wiring errors at J6 or a cable fault",
-      "PTC F1, TVS D11, ESD array U1, two GND conductors, no back-power path from the GPIOs (U1 has no supply "
-      "pin)", parts=["F1", "D11", "U1"], single_fault_safe=True)
-    H("H15", "Motor stall on an output",
+      "OVC III coordinated spacing; relay 10 kV impulse; IRM-20 tested to 2 kV L-N; no MOV in the box; panel SPD "
+      "recommended", parts=relays + ["PS1"], single_fault_safe=True)
+    H("H14", "Pi fitted wrongly: face-down (Zero 2 WH) or offset by a row, putting 5 V on GPIO pins",
+      "Zero 2 W only, header on its underside; socket footprint uses the Pi's own top-view numbering; Pi outline, "
+      "'components up' and pin-1 marks on silkscreen; standoffs only line up with the correct orientation",
+      parts=["J5", "MP9", "MP10"], single_fault_safe=False, notes="assembly error; inspection before power-up")
+    H("H15", "Motor stall on an outlet",
       "the motor's own overload protection (NEC 430); 1/2 hp relay rating; contactor for larger motors",
       parts=[], single_fault_safe=False, notes="load-side protection, outside this board")
+    H("H16", "Supply module failure: output lost, output high, or input short",
+      "lost 5 V: coils drop and the Pi stops -> OFF; high: module OVP 5.75-6.75 V shuts it down, TVS D15, coil "
+      "max 6.5 V; input short: F1 opens; PTC F2 limits a Pi-side short", parts=["PS1", "F1", "F2", "D15"],
+      single_fault_safe=True)
+    H("H17", "Pi reboot, kernel hang or SD-card corruption leaves outlets in an unknown state",
+      "any stop of the heartbeat disarms within 0.1 s (C-4); a Pi that cannot boot never arms; read-only root "
+      "filesystem (REQ-29) makes corruption unlikely; self-test before arming (REQ-28)",
+      parts=["U1", "Q7", "R24", "R25", "D16"], single_fault_safe=True)
+    H("H18", "Watchdog part failure (U1, R21, C6, Q7, R22, divider) arms without a heartbeat",
+      "readback ARM_FB and self-test: U1 Q stuck high, C6 or R21 open/short and Q7 D-S short all show as 'armed "
+      "while HB stopped' or 'disarm too slow' and block operation; Q7 open or U1 Q stuck low cannot arm (safe)",
+      parts=["U1", "R21", "C6", "Q7", "R22", "R24", "R25", "R26", "D16"], single_fault_safe=True,
+      notes="FMEA table in DESIGN.md section 5")
+    H("H19", "Ground fault in a plugged-in load",
+      "GFCI protection of the branch (REQ-2, Q-6); EGC to every receptacle; module leakage 0.12 mA << 4 mA trip",
+      parts=["MP5", "MP6", "MP7"], single_fault_safe=True, notes="GFCI device is upstream, not on this board")
 
 
 def calcs(d):
     c = d.calc
-    # C-1 box fill (12 AWG worst case)
-    c("box_volume_in3", 42.0 + 29.5, "in3", expr="RACO 257 42.0 + RACO 250 ring 29.5")
-    allow = 10 * 2.25 + 1.25 * 2.25 + 2.0 + 2.25
-    displaced = 259.0 / 16.387
-    c("box_fill_allowances_in3", round(allow, 1), "in3",
-      expr="10 cond x 2.25 + EGC 1.25 x 2.25 + Class 2 cable 2.0 + clamps 2.25",
-      limit=round(71.5 - displaced, 1), note="allowances <= box + ring - displaced board volume (15.8 in3)")
-    c("box_fill_available_without_ring_in3", round(42.0 - displaced, 1), "in3",
-      expr="42.0 - 15.8", note="< 29.6 in3 needed: the extension ring is required")
-    # C-2 5 V budget
-    i5 = 4 * 5.25 / 56.25 + 6 * (5.25 - 1.9) / 1485 + 0.001
-    c("i_5v_max_A", round(i5, 3), "A", expr="4 x 5.25 V / 56.25 ohm + 6 LEDs x 2.25 mA + 1 mA",
-      limit=0.55, note="Pi 4 headroom: 3.0 A PSU - 1.2 A USB - 1.25 A stress")
-    c("gpio_ch_current_mA", round(3.3 / 5.7, 3), "mA", expr="3.3 V / (1 k + 4.7 k)", limit=0.6,
-      note="REQ-15; Pi limit 16 mA per pin, 50 mA total")
+    # C-1 box fill
+    c("box_fill_E2_14awg_in3", 9 * 2.0 + 2.0 + 3 * 2 * 2.0 + 2.0, "in3",
+      expr="9 conductors (3 x 14/3) x 2.0 + EGCs 2.0 + 3 devices x 2 x 2.0 + clamps 2.0", limit=53.0,
+      note="Carlon BH353A 53 in3 (NEC 314.16(B))")
+    c("box_fill_E2_12awg_in3", 9 * 2.25 + 2.25 + 3 * 2 * 2.25 + 2.25, "in3", expr="same with 12 AWG (2.25 in3)",
+      limit=53.0)
+    e1_gross = 9.9 * 7.9 * 5.98
+    c("box_free_E1_in3", round(e1_gross - (12 * 2.25 + 200 * 150 * 45 / 16387.0), 0), "in3",
+      expr="NS1086 inside ~9.9 x 7.9 x 5.98 in - 12 conductor allowances x 2.25 - board assembly 82 in3",
+      limit=0, op=">=", note="> 100 in3 box: 314.16(A) table not applicable, free space shown")
+    # C-2 5 V budget and supply capacity
+    i_pi = 1.0
+    i_coils = 6 * 5.125 / 56.25
+    i_leds = 8 * (5.125 - 1.9) / 1500
+    i5 = i_pi + i_coils + i_leds + 0.002
+    c("i_5v_max_A", round(i5, 3), "A", expr="Pi 1.0 + 6 coils x 5.125 V / 56.25 ohm + 8 LEDs x 2.15 mA + 2 mA")
+    cap = 4.0 * 0.50 * 0.95
+    c("psu_capacity_70C_108V_A", cap, "A", expr="IRM-20-5 4 A x 50 % (70 C) x 95 % (108 VAC)")
+    c("psu_load_ratio_worst", round(i5 / cap, 3), "", expr="i_5v_max / capacity at 70 C, 108 VAC", limit=0.9)
+    c("psu_load_ratio_60C", round(i5 / (4.0 * 0.70 * 0.95), 3), "", expr="at 60 C (70 %) and 108 VAC", limit=0.8)
+    c("gpio_ch_current_mA", round(3.3 / 4.8, 3), "mA", expr="3.3 V / (100 + 4.7 k)", limit=0.7, note="REQ-15")
+    c("pi_5v_at_socket_V", round(4.875 - 1.0 * 0.070 - 0.02 - 0.01, 3), "V",
+      expr="4.875 (5 V -2.5 %) - F2 1.0 A x 0.070 - trace 0.02 - contacts 0.01", limit=4.63, op=">=",
+      note="Pi under-voltage threshold ~4.63 V [S]")
     # C-3 coil voltage
-    drop = 0.388 * (0.238 + 0.20 + 0.048) + 0.093 * 0.048
-    c("coil_supply_drop_V", round(drop, 3), "V", expr="0.388 A x (cable 0.238 + PTC 0.20 + Q5 0.048) + 0.093 x 0.048")
-    c("coil_voltage_worst_V", round(4.75 - drop, 2), "V", expr="V_hdr 4.75 V - drop", limit=4.5, op=">=",
-      note="REQ-17")
-    must_hot = 70 * (234.5 + 90) / 257.5
-    c("must_operate_hot_restart_pct", round(must_hot, 1), "%", expr="70 % x (234.5 + 90 C) / 257.5",
-      limit=round(100 * (4.75 - drop) / 5.0, 1), note="coil at 90 C (55 C box + 35 K rise [I]); verify T-COIL")
-    c("coil_voltage_max_pct", 105.0, "%", expr="5.25 V / 5.0 V", limit=130, note="G5RL max coil voltage")
-    # C-4 heartbeat pump (R13 1 k, C3 1 uF, D12 BAT54S, C4 100 nF, R14 1 M)
-    v_pk = 3.2 - 2 * 0.24
-    i_bleed = v_pk / 1e6
-    v_arm_min = v_pk - i_bleed / (100 * 1e-6) - i_bleed * 5e-3 / 100e-9
-    c("arm_gate_min_100Hz_V", round(v_arm_min, 2), "V",
-      expr="(3.2 - 2 x 0.24) - I/(f C3) - I x 5 ms / C4, I = V/1 Mohm", limit=2.5, op=">=",
-      note="AO3400A Rds(on) is specified at Vgs 2.5 V")
-    t_off = 1e6 * 100e-9 * __import__("math").log(v_pk / 0.65) + 0.005
-    c("disarm_time_s", round(t_off, 3), "s", expr="R14 C4 ln(2.72 / 0.65) + 5 ms release", limit=0.5,
-      note="REQ-13")
-    # C-5 gate drive
-    c("gate_on_V", round(3.3 * 4.7 / 5.7, 2), "V", expr="3.3 x 4.7 / 5.7", limit=2.5, op=">=")
-    c("gate_miswire_pullup_V", round(3.3 * 4.7 / (4.7 + 1 + 33), 2), "V",
-      expr="GPIO with 33 k internal pull-up: 3.3 x 4.7 / 38.7", limit=0.65, note="< AO3400A Vgs(th) min")
-    # C-6 thermal
-    c("box_dissipation_W", 4.0, "W", expr="coils 1.6 + contacts 1.13 + copper 0.79 + terminals 0.45 + LEDs 0.06")
-    c("box_internal_air_C", 40 + 3.2 / (6.5 * 0.0589) + 5, "C",
-      expr="40 C room + 3.2 W / (6.5 W/m2K x 0.0589 m2) + 5 K internal", limit=70,
-      note="surface-mounted; flush in an insulated wall gives ~80 C and is excluded (Q-5)")
+    drop = 0.55 * 0.02 + 0.093 * 0.048 + 0.55 * 0.048 + 0.55 * 0.02
+    c("coil_voltage_worst_V", round(4.875 - drop, 3), "V",
+      expr="4.875 - (0.55 A x 20 mOhm trace + Qk 0.093 x 48 mOhm + Q7 0.55 x 48 mOhm + return 0.55 x 20 mOhm)",
+      limit=4.5, op=">=", note="REQ-17")
+    must_hot = 70 * (234.5 + 95) / 257.5
+    c("must_operate_hot_pct", round(must_hot, 1), "%", expr="70 % x (234.5 + 95 C) / 257.5 (60 C air + 35 K coil rise)",
+      limit=round(100 * (4.875 - drop) / 5.0, 1), note="vs coil_voltage_worst; T-COIL also at 4.63 V")
+    c("coil_voltage_max_pct", round(100 * 5.25 / 5.0, 1), "%", expr="5.25 V / 5.0 V", limit=130)
+    # C-4 heartbeat watchdog: U1 74LVC1G123, R21 330 k, C6 100 nF X7R
+    tw_min = 1.0 * 330e3 * 100e-9 * 0.99 * 0.90 * 0.85
+    tw_max = 1.1 * 330e3 * 100e-9 * 1.01 * 1.10 * 1.15
+    c("wd_tw_min_ms", round(tw_min * 1e3, 1), "ms", expr="K 1.0 x 330 k x 100 nF x R -1 % x C -10 % x X7R -15 %")
+    c("wd_tw_max_ms", round(tw_max * 1e3, 1), "ms", expr="K 1.1 x 330 k x 100 nF x R +1 % x C +10 % x X7R +15 %")
+    c("wd_hb_period_margin", round(tw_min / 0.010, 2), "x", expr="tw_min / 10 ms (HB >= 100 Hz)", limit=2.0, op=">=")
+    rel = 0.015
+    c("disarm_hb_stuck_high_s", round(tw_max + 1e-6 + rel, 4), "s",
+      expr="no rising edge on B: Q falls tw_max after the last edge + gate fall (push-pull, ns) + release 15 ms",
+      limit=0.1, note="REQ-13; release 5 ms max without diode [P], 15 ms allowed with the flyback diode [I]")
+    c("disarm_hb_stuck_low_s", round(tw_max + 1e-6 + rel, 4), "s",
+      expr="identical: B is edge-triggered, so a low level cannot hold Q either", limit=0.1, note="REQ-13")
+    c("arm_gate_V", round(3.3 * 0.95 - 0.1, 3), "V", expr="VOH >= VCC - 0.1 V (100 uA), VCC = 3.3 V - 5 %",
+      limit=2.5, op=">=", note="AO3400A Rds(on) specified at Vgs 2.5 V (review m1)")
+    # C-5 gate drive and readback levels
+    c("gate_on_V", round(3.0 * 4.7 / 4.8, 3), "V", expr="VOH 3.0 V (RP3A0, 2 mA) x 4.7 k / 4.8 k", limit=2.5, op=">=",
+      note="review m1")
+    c("gate_pullup_misconfig_V", round(3.3 * 4.7 / (4.7 + 0.1 + 50), 3), "V",
+      expr="internal pull-up 50 k enabled by mistake: 3.3 x 4.7 / 54.8", limit=0.65, note="< AO3400A Vgs(th) min")
+    v_rtn_off = 4.875 * (47 + 68) / (10 + 47 + 68)
+    c("arm_fb_disarmed_V", round(v_rtn_off * 68 / 115, 3), "V",
+      expr="COIL_RTN = 4.875 x 115 k / 125 k (R26 pull-up); x 68 / 115", limit=1.6, op=">=", note="RP3A0 VIH 1.6 V")
+    c("arm_fb_armed_V", round(0.55 * 0.048 * 68 / 115, 4), "V", expr="0.55 A x 48 mOhm x 68/115", limit=0.9,
+      note="RP3A0 VIL 0.9 V")
+    c("arm_fb_max_steady_V", round(5.25 * 68 / 115, 3), "V", expr="COIL_RTN 5.25 V (disarmed, a CH on) x 68/115",
+      limit=3.3, note="flyback transients above this are clamped by D16 to +3V3")
+    # C-6 thermal (E1, NS1086 polycarbonate, wall-mounted: back face excluded)
+    area = (2 * 10.4 * 6.49 + 2 * 8.4 * 6.49 + 10.4 * 8.4) * 0.00064516
+    parts_w = {"coils": 6 * 5.125 ** 2 / 56.25, "contacts": 15 ** 2 * 0.010, "pcb_copper": 15 ** 2 * 0.0057,
+               "terminals": 4 * 15 ** 2 * 0.001, "conductors": 15 ** 2 * 0.0048, "psu": 5.82 * (1 / 0.76 - 1),
+               "pi": 3.0, "leds_misc": 0.14}
+    p_tot = sum(parts_w.values())
+    c("e1_dissipation_W", round(p_tot, 2), "W",
+      expr=" + ".join(f"{k} {v:.2f}" for k, v in parts_w.items()))
+    c("e1_area_m2", round(area, 4), "m2", expr="2 x 10.4 x 6.49 + 2 x 8.4 x 6.49 + 10.4 x 8.4 in2 (back excluded)")
+    t_air = 40 + p_tot / (5.0 * area)
+    c("e1_internal_air_C", round(t_air, 1), "C", expr="40 C room + P / (5.0 W/m2K x area)", limit=60,
+      note="h = 5.0 for a sealed polycarbonate box (5.5 convection+radiation, 3.5 mm PC wall) [I]")
+    c("pi_ambient_margin_K", round(70 - (t_air + 7), 1), "K", expr="Pi max 70 C - (air + 7 K local)", limit=0,
+      op=">=")
     # C-7 mains copper
-    c("mains_copper_width_per_layer_mm", 7.5, "mm", limit=6.3, op=">=",
-      note="IPC-2221 single-layer width for 15 A, 10 K, 2 oz = 6.3 mm; we use 7.5 mm on both layers")
+    c("mains_copper_width_per_layer_mm", W_MAINS, "mm", limit=6.3, op=">=",
+      note="IPC-2221 single-layer width for 15 A, 10 K, 2 oz = 6.3 mm; 7.5 mm on both layers (Net width_mm)")
     c("mains_copper_dT_K", 1.6, "K", expr="IPC-2221 external, 7.5 A per layer in 813 mil2", limit=10)
     c("mains_fault_i2t_margin", round(92 / 67, 2), "x",
       expr="Onderdonk melt 92 kA2s / breaker let-through 67 kA2s at 2 kA in 1 cycle", limit=1.0, op=">=")
-    # C-8 creepage and clearance
+    # C-8 creepage and clearance at OVC III (review m7)
+    c("barrier_clearance_margin_ovc3", round(8.0 / 3.0, 2), "x",
+      expr="8.0 / 3.0 mm (reinforced = 4 kV impulse, IEC 60664-1 F.2 PD2)", limit=1.0, op=">=")
     c("barrier_creepage_margin_120V", round(8.0 / 3.0, 2), "x", expr="8.0 / (2 x 1.5 mm, F.4 125 V MG III)",
       limit=1.0, op=">=")
-    c("barrier_creepage_margin_240V", 8.0 / 5.0, "x", expr="8.0 / 5.0 mm", limit=1.0, op=">=")
-    c("barrier_clearance_margin_240V", round(8.0 / 3.6, 2), "x", expr="8.0 / 3.6 mm (62368-1 T10 2.5 kV reinforced)",
-      limit=1.0, op=">=")
+    c("functional_clearance_margin_ovc3", round(3.2 / 1.5, 2), "x", expr="3.2 / 1.5 mm (2.5 kV, F.2)", limit=1.0,
+      op=">=")
     # C-9 protection coordination
     c("relay_contact_current_ratio", round(15 / 16, 3), "", expr="15 A breaker ceiling / 16 A UL general use",
       limit=1.0)
     c("relay_contact_continuous_ratio", 12 / 16, "", expr="12 A continuous / 16 A", limit=0.8)
-    c("ptc_hold_at_55C_A", 0.85, "A", expr="1.1 A x ~0.77 [I]", limit=0.39, op=">=")
+    c("f1_load_ratio_60C", round(0.6 / (1.0 * 0.9), 3), "", expr="0.6 A (module full load) / (1 A x 0.9 at 60 C)",
+      limit=0.75)
+    c("f1_breaking_margin", round(10000 / 2000, 1), "x", expr="10 kA at 125 VAC / 2 kA available (ASM-1)", limit=1.0,
+      op=">=")
+    c("ptc_hold_at_70C_A", 1.43, "A", expr="MF-MSMF200/16X derating table", limit=1.0, op=">=",
+      note="Pi branch allowance 1.0 A (review m10)")
     c("tvs_standoff_ratio", round(5.25 / 7.0, 2), "", expr="5.25 V / VWM 7.0 V", limit=0.8)
-    # C-10..C-12
-    c("relay_life_motor_days", 6000 / 20, "days", expr="1/2 hp UL rating 6000 ops / 20 ops a day",
-      note="frequently cycled motors should drive a contactor (A300 pilot duty)")
-    c("mov_energy_catB_J", 30, "J", expr="450 V x 3 kA x 22 us", note="~55 % of a 14 mm MOV rating; no MOV in box")
-    c("snubber_leakage_if_fitted_mA", round(2 * 3.1416 * 60 * 0.1e-6 * 120 * 1000, 2), "mA",
-      expr="2 pi 60 Hz x 0.1 uF x 120 V", note="why there is no snubber across the contacts")
+    # C-10..C-13
+    c("relay_life_years_10ops_day", round(15000 / 10 / 365, 1), "years",
+      expr="VDE 16 A / 85 C rating 15k ops (worst) / 10 ops a day", limit=3, op=">=",
+      note="UL general use 50k ops at 40 C; frequently cycled motors should drive a contactor")
     c("off_state_leakage_mA", 0.0002, "mA", expr="187 V / 1000 Mohm open-contact insulation", limit=0.1)
+    c("selv_touch_current_mA", round(0.25 * 132 / 277, 3), "mA",
+      expr="IRM leakage < 0.25 mA at 277 VAC scaled to 132 VAC", limit=0.5, note="62368-1 ES1 touch current [I]")
+    c("gfci_leakage_ratio", round(0.25 * 132 / 277 / 4.0, 3), "", expr="module leakage / 4 mA GFCI no-trip",
+      limit=0.5)
+    c("hold_up_ms_est", round(8 * 20 / (5 * (0.6 + i_coils + i_leds)), 1), "ms",
+      expr="8 ms at 20 W (115 VAC) x 20 W / 5.8 W actual [I]",
+      note="rides through a 1-cycle dropout; longer cuts reset the Pi -> OFF")
+    c("wifi_enclosure_loss_dB", 1.0, "dB", expr="3.5 mm polycarbonate at 2.4 GHz, < 1 dB [I]",
+      note="steel box: > 30 dB (rejected)")
 
 
 def build():
-    d = Design("rpi-mains-relay", title="RPi 4-channel 120 VAC relay board (4-11/16 in box)",
-               description="4 x 16 A relays switch line; Pi drives them over a Class 2 cable via a heartbeat watchdog",
-               brief=BRIEF, ambient_c=(0, 55))
+    d = Design("rpi-mains-relay", title="RPi Zero 2 W six-outlet 120 VAC relay board (polycarbonate enclosure)",
+               description="6 x 16 A relays switch line to 3 split-tab TR duplex receptacles; on-board Pi Zero 2 W "
+                           "fed by a Mean Well IRM-20-5; heartbeat watchdog",
+               brief=BRIEF, ambient_c=(0, 60))
     intent(d)
 
     # -- domains and global nets -------------------------------------------------------------------
+    edge_src = ("UL 1059/508 field wiring: 1/4 in (6.4 mm) through air and over surface from live parts to dead "
+                "or grounded metal; a bare EGC may lie against a board edge or a mounting-hole standoff (H3)")
     d.net("L_IN", domain="LINE", v=0, kind="mains", i_max=I_BRANCH, external=True, threats=("surge", "overcurrent"),
-          notes="line from the branch circuit; reference of the mains side")
-    d.domain("LINE", ref="L_IN", kind="mains", description="mains line conductor (root; 120 VAC 60 Hz, OVC II)")
+          width_mm=W_MAINS, notes="line from the branch circuit; reference of the mains side")
+    d.domain("LINE", ref="L_IN", kind="mains", description="mains line conductor (root; 120 VAC 60 Hz, OVC III)",
+             edge_clearance_mm=6.4, edge_source=edge_src)
     d.net("N", domain="NEUTRAL", v=(-V_MAINS_PK, V_MAINS_PK), kind="mains", i_max=I_BRANCH, external=True,
-          threats=("surge",), notes="neutral; not switched")
+          threats=("surge",), width_mm=W_MAINS, notes="neutral; not switched")
     d.domain("NEUTRAL", ref="L_IN", kind="mains", description="neutral, +/-187 V peak from line")
     for k in CHANNELS:
         d.net(f"L_SW{k}", domain=f"OUT{k}", v=(-V_MAINS_PK, V_MAINS_PK), kind="mains", i_max=I_BRANCH,
-              external=True, threats=("overcurrent",),
-              notes=f"switched line, output {k}: equals L_IN when K{k} is closed, pulled to N by the load when open")
-        d.domain(f"OUT{k}", ref="L_IN", kind="mains", description=f"switched output {k}, floats on line")
+              external=True, threats=("overcurrent",), width_mm=W_MAINS,
+              notes=f"switched line, outlet {k}: equals L_IN when K{k} is closed, pulled to N by the load when open")
+        d.domain(f"OUT{k}", ref="L_IN", kind="mains", description=f"switched outlet {k}, floats on line")
     d.net("PE", domain="PE", v=0, kind="pe", external=True,
-          notes="protective earth: box, ring, cover, EGCs; no copper on this PCB")
-    d.domain("PE", ref="PE", kind="other", earthed=True, description="protective earth (box metal), off-board")
+          notes="protective earth: EGCs spliced in E1, receptacle yokes in E2; no copper on this PCB")
+    d.domain("PE", ref="PE", kind="other", earthed=True, description="protective earth, off-board")
 
-    gnd = d.net("GND", domain="SELV", v=0, kind="ground", i_max=0.39, external=True,
-                notes="Pi ground via W1 (two conductors)")
-    d.domain("SELV", ref="GND", kind="selv", description="Raspberry Pi side, Class 2 / ES1; may be earthed via the Pi")
-    v5 = d.net("+5V", domain="SELV", v=(0, 5.25), kind="power", i_max=0.39, notes="coil and LED rail after F1")
-    coil_rtn = d.net("COIL_RTN", domain="SELV", v=(0, 3.5), kind="power", i_max=0.39,
-                     notes="common low side of all coils; floats <= 3.5 V when disarmed")
-    hb_in = d.net("HB_IN", domain="SELV", v=(0, 3.3), kind="signal", external=True, threats=("esd",),
-                  notes="heartbeat from BCM12 (Pi pin 32)")
-    ch_in = {k: d.net(f"CH{k}_IN", domain="SELV", v=(0, 3.3), kind="signal", external=True, threats=("esd",),
-                      notes=f"channel {k} command from Pi pin {PI_PIN[k]}") for k in CHANNELS}
+    gnd = d.net("GND", domain="SELV", v=0, kind="ground", i_max=1.6,
+                notes="IRM-20-5 -Vo; Pi ground; floating (Class II supply)")
+    d.domain("SELV", ref="GND", kind="selv",
+             description="IRM-20-5 output, Pi Zero 2 W, coil drive and watchdog (ES1, LPS); not earthed")
+    v5 = d.net("+5V", domain="SELV", v=(0, 5.25), kind="power", i_max=1.6,
+               notes="IRM-20-5 +Vo: coils, LEDs, Pi branch")
+    v5pi = d.net("+5V_PI", domain="SELV", v=(0, 5.25), kind="power", i_max=1.0,
+                 notes="after PTC F2 to Pi header pins 2/4 (back-feeds the Pi 5 V rail)")
+    v33 = d.net("+3V3", domain="SELV", v=(0, 3.47), kind="power", i_max=0.01,
+                notes="Pi 3.3 V from header pins 1/17; powers U1 only")
+    coil_rtn = d.net("COIL_RTN", domain="SELV", v=(0, 6.1), kind="power", i_max=0.55,
+                     notes="common low side of all coils via Q7; up to 5.25 + 0.86 V flyback when disarmed")
+    hb = d.net("HB", domain="SELV", v=(0, 3.47), kind="signal", notes=f"heartbeat, Pi pin {PIN_HB} (BCM12)")
+    ch_in = {k: d.net(f"CH{k}", domain="SELV", v=(0, 3.47), kind="signal",
+                      notes=f"outlet {k} command, Pi pin {PI_PIN[k]} (BCM{PI_BCM[k]})") for k in CHANNELS}
 
     # -- barriers (DESIGN.md section 6) --------------------------------------------------------------
     sp = "TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10)"
     d.barrier("SELV", "LINE", grade="reinforced", v_work=V_MAINS_PK, creepage_mm=8.0, clearance_mm=8.0,
               standard="UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4", v_test_rms=3000,
-              pollution_degree=2, material_group="IIIb", ovc="II", slot=False,
-              source=f"{sp}. Required at 120 V: creepage 3.0 (F.4 125 V MG III x2 [I]), clearance 1.5 (F.2 at 2.5 kV); "
-                     "at 240 V: 5.0 / 3.6. Design 8.0/8.0 matches the relay's own 8/8 mm",
-              notes="covers NEUTRAL and OUT1-4 (they float on LINE). Hi-pot 3.0 kVrms 60 s type, 1 s production")
+              pollution_degree=2, material_group="IIIb", ovc="III", slot=False,
+              source=f"{sp}. Required at 120 V OVC III: clearance 3.0 mm (reinforced = 4 kV, F.2), creepage 3.0 mm "
+                     "(2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm",
+              notes="covers NEUTRAL and OUT1-6 (they float on LINE). Hi-pot 3.0 kVrms 60 s type, 1 s production")
     ul = "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     for k in CHANNELS:      # declared first: the narrower NEUTRAL/OUT rules below override overlaps
         d.barrier("LINE", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=2.5, clearance_mm=1.5,
-                  standard="IPC-2221B Table 6-1 B2", pollution_degree=2, ovc="II",
-                  source="IPC-2221B B2 151-170 V: 1.25 mm [S]; design 2.5/1.5 outside the relay footprint",
+                  standard="IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV", pollution_degree=2, ovc="III",
+                  source="IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside "
+                         "the relay footprint",
                   notes=f"across K{k}'s open contact; inside the relay footprint the 5.0 mm pin pitch governs")
     d.barrier("LINE", "NEUTRAL", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
-              standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="II", source=ul,
+              standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III", source=ul,
               notes="opposite polarity; field-wiring terminals")
     for k in CHANNELS:
         d.barrier("NEUTRAL", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
-                  standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="II", source=ul,
+                  standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III", source=ul,
                   notes="switched line vs neutral, opposite polarity")
     for j in CHANNELS:
         for k in CHANNELS:
             if j < k:
                 d.barrier(f"OUT{j}", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4,
-                          clearance_mm=3.2, standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="II",
-                          source=ul, notes="one output on, the other off: 120 V between them")
+                          clearance_mm=3.2, standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III",
+                          source=ul, notes="one outlet on, the other off: 120 V between them")
     d.barrier("LINE", "PE", grade="basic", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=6.4,
-              standard="IEC 62368-1 basic; UL field wiring to dead metal", pollution_degree=2, ovc="II",
-              source="62368-1 basic: clearance 0.76 mm at 1.5 kV (SLUP419 Table 5), creepage 1.5 mm [I]; UL field "
-                     "wiring to grounded dead metal 1/4 in [S]. Applies to box walls, bottom and ground screw; "
-                     ">= 2.0 mm copper-to-board-edge covers a stray bare EGC (basic)",
-              notes="PE has no copper on the PCB: met by placement (board 4.95 mm from E/W walls + 2.0 mm edge "
-                    "keepout; 12.7 mm nylon supports)")
+              standard="IEC 62368-1 basic; UL field wiring to dead metal", pollution_degree=2, ovc="III",
+              source="62368-1 basic: clearance 1.5 mm at 2.5 kV (SLUP419 Table 5), creepage 1.5 mm [I]; UL field "
+                     "wiring to grounded dead metal 1/4 in [S]",
+              notes="PE has no copper on the PCB: met by the LINE edge_clearance rule (board edges, mounting holes) "
+                    "and by keeping EGC splices in the wire compartment")
 
-    # -- block: SELV link input -----------------------------------------------------------------------
-    sel = d.block("selv_in", title="Class 2 link from the Pi: terminal, PTC, TVS, ESD", domain="SELV",
-                  description="J6 = Class 2 cable from Pi pins 2,6,11,13,15,16,32,34; D11 behind F1 trips it on faults")
-    j6 = sel.add(P.TERM_SELV, ref="J6")
-    f1 = sel.add(P.PTC_5V, ref="F1")
-    d11 = sel.add(P.TVS_5V, ref="D11")
-    c1 = sel.add(P.C_10U, ref="C1")
-    c2 = sel.add(P.C_100N, ref="C2")
-    u1 = sel.add(P.ESD6, ref="U1")
-    # forward only, never reverse biased; carries (5.25 - 1.9) V / 1.485 k = 2.3 mA (calc i_5v_max_A)
-    d10 = sel.add(P.LED_GREEN, ref="D10", v_across=2.5, i_through=0.0023)
-    r16 = sel.add(P.R_1K5, ref="R16")
-    tp1 = sel.add(P.TP, ref="TP1")
-    tp2 = sel.add(P.TP, ref="TP2")
-    v5_in = sel.net("+5V_IN", v=(0, 5.25), kind="power", i_max=0.39, external=True,
-                    threats=("overcurrent", "overvoltage", "reverse_polarity"),
-                    notes="Pi 5 V (header pin 2) before the PTC")
-    led_pwr = sel.net("LED_PWR_A", v=(0, 5.25))
-    v5_in.connect(j6[1], f1[1])
-    gnd.connect(j6[2], j6[8], d11["A"], c1[2], c2[2], u1[5], u1[10], d10["K"], tp2[1])
+    # -- block: mains input and supply ---------------------------------------------------------------
+    mi = d.block("mains_in", title="Mains input J1, supply fuse F1 and IRM-20-5", domain="LINE",
+                 description="J1 = branch L/N; F1 1 A T feeds PS1; PS1 makes the floating 5 V (Class II, LPS)")
+    j1 = mi.add(P.TERM_IN, ref="J1")
+    f1 = mi.add(P.FUSE_PSU, ref="F1", i_through=0.6)        # module full-load input current at 115 VAC (C-9)
+    ps1 = mi.add(P.PSU, ref="PS1", p_diss=1.84)
+    l_psu = mi.net("L_PSU", v=(-V_MAINS_PK, V_MAINS_PK), kind="mains", i_max=0.6,
+                   notes="L after F1; equals L_IN, or is pulled toward N through PS1 when F1 is open")
+    d.nets["L_IN"].connect(j1[1], f1[1])
+    d.nets["N"].connect(j1[2], ps1["AC/N"])
+    l_psu.connect(f1[2], ps1["AC/L"])
+
+    # -- block: 5 V distribution (SELV) ----------------------------------------------------------------
+    pw = d.block("power5", title="5 V rail: bulk caps, TVS, PWR LED, Pi branch PTC", domain="SELV",
+                 description="+5V from PS1; F2 2 A PTC feeds the Pi; D15 clamps transients")
+    c1 = pw.add(P.C_10U, ref="C1")
+    c2 = pw.add(P.C_10U, ref="C2")
+    c3 = pw.add(P.C_100N, ref="C3")
+    d15 = pw.add(P.TVS_5V, ref="D15")
+    d14 = pw.add(P.LED_GREEN, ref="D14", v_across=2.5, i_through=0.0023)   # forward only, (5.25-1.9)/1.5 k
+    r20 = pw.add(P.R_1K5, ref="R20")
+    f2 = pw.add(P.PTC_PI, ref="F2", i_through=1.0)                        # Pi branch allowance (C-2)
+    tp1 = pw.add(P.TP, ref="TP1")
+    tp2 = pw.add(P.TP, ref="TP2")
+    led_pwr = pw.net("LED_PWR_A", v=(0, 5.25))
+    gnd.connect(ps1["-Vo"], c1[2], c2[2], c3[2], d15["A"], d14["K"], tp2[1])
+    v5.connect(ps1["+Vo"], c1[1], c2[1], c3[1], d15["K"], r20[1], f2[1], tp1[1])
+    led_pwr.connect(r20[2], d14["A"])
+    v5pi.connect(f2[2])
+
+    # -- block: Pi Zero 2 W socket -------------------------------------------------------------------------
+    pi = d.block("pi", title="Raspberry Pi Zero 2 W socket J5 (Pi component side up)", domain="SELV",
+                 description="J5 back-feeds 5 V on pins 2/4; 3V3 from pins 1/17 powers U1; antenna zone keepout")
+    j5 = pi.add(P.SOCKET_PI, ref="J5")
+    c4 = pi.add(P.C_10U, ref="C4")
+    c5 = pi.add(P.C_100N, ref="C5")
+    tp6 = pi.add(P.TP, ref="TP6")
+    v5pi.connect(*[j5[p] for p in PINS_5V], c4[1], c5[1])
+    gnd.connect(*[j5[p] for p in PINS_GND], c4[2], c5[2])
+    v33.connect(*[j5[p] for p in PINS_3V3], tp6[1])
     for k in CHANNELS:
-        ch_in[k].connect(j6[k + 2], u1[ESD_PIN[k]])
-    hb_in.connect(j6[7], u1["D3+"])
-    v5.connect(f1[2], d11["K"], c1[1], c2[1], r16[1], tp1[1])
-    led_pwr.connect(r16[2], d10["A"])
-    u1.nc_pins("1", "2", "3", "4", "6", "7", reason="NC: not connected internally (SLVSBO7O Table 4-3)")
-    u1.nc_pins("8", reason="D3- spare protected channel, left open (unused I/O may float, SLVSBO7O Table 4-3) [I]")
+        ch_in[k].connect(j5[PI_PIN[k]])
+    hb.connect(j5[PIN_HB])
+    used = set(PINS_5V) | set(PINS_3V3) | set(PINS_GND) | set(PI_PIN.values()) | {PIN_HB, PIN_ARM_FB}
+    j5.nc_pins(*[str(p) for p in range(1, 41) if p not in used and p not in (27, 28)],
+               reason="Pi GPIO not used by this board, left free (no pull, no load)")
+    j5.nc_pins("27", "28", reason="ID_SD/ID_SC: leave unconnected when no HAT ID EEPROM is fitted (Zero 2 W "
+                                  "schematic note)")
 
-    # -- block: heartbeat watchdog ----------------------------------------------------------------------
-    arm = d.block("arm", title="Heartbeat watchdog (charge pump) and common coil enable", domain="SELV",
-                  description="Q5 closes the coil return only while HB toggles 100 Hz-2 kHz; OFF <= 0.15 s after it stops")
-    r13 = arm.add(P.R_1K, ref="R13")
-    c3 = arm.add(P.C_1U, ref="C3")
-    d12 = arm.add(P.DIODE_PUMP, ref="D12", i_through=0.0033)   # pump current, bounded by 3.3 V / R13 1 k
-    c4 = arm.add(P.C_100N, ref="C4")
-    r14 = arm.add(P.R_1M, ref="R14")
-    q5 = arm.add(P.MOSFET, ref="Q5", p_diss=0.011)
-    d9 = arm.add(P.LED_GREEN, ref="D9", v_across=2.5, i_through=0.0023)   # forward only; 2.3 mA
-    r15 = arm.add(P.R_1K5, ref="R15")
+    # -- block: heartbeat watchdog -------------------------------------------------------------------------
+    arm = d.block("arm", title="Heartbeat watchdog U1, arming switch Q7 and readback", domain="SELV",
+                  description="Q7 closes the coil return only while HB has rising edges; OFF <= 0.1 s after they stop")
+    u1 = arm.add(P.WATCHDOG, ref="U1", p_diss=0.001)
+    r21 = arm.add(P.R_330K, ref="R21")
+    c6 = arm.add(P.C_100N, ref="C6")
+    c7 = arm.add(P.C_100N, ref="C7")
+    r23 = arm.add(P.R_100K, ref="R23")
+    q7 = arm.add(P.MOSFET, ref="Q7", p_diss=0.015)                  # 0.55^2 x 48 mOhm
+    r22 = arm.add(P.R_100K, ref="R22")
+    d13 = arm.add(P.LED_GREEN, ref="D13", v_across=2.5, i_through=0.0023)   # forward only; 2.3 mA when armed
+    r19 = arm.add(P.R_1K5, ref="R19")
+    r26 = arm.add(P.R_10K, ref="R26")
+    r24 = arm.add(P.R_47K, ref="R24")
+    r25 = arm.add(P.R_68K, ref="R25")
+    d16 = arm.add(P.DIODE_CLAMP, ref="D16", i_through=0.001)         # clamp current <= 0.1 mA (C-5)
     tp3 = arm.add(P.TP, ref="TP3")
     tp4 = arm.add(P.TP, ref="TP4")
-    hb_r = arm.net("HB_R", v=(0, 3.3))
-    pump = arm.net("PUMP", v=(-0.3, 3.0))
-    arm_g = arm.net("ARM_G", v=(0, 2.75))
+    tp5 = arm.add(P.TP, ref="TP5")
+    arm_g = arm.net("ARM_G", v=(0, 3.47), notes="U1 Q -> Q7 gate")
+    wd_rc = arm.net("WD_RC", v=(0, 3.47), notes="U1 Rext/Cext: R21 to +3V3, C6 positive side")
+    wd_cx = arm.net("WD_CX", v=(0, 3.47), notes="U1 Cext: C6 other side only")
+    arm_fb = arm.net("ARM_FB", v=(-0.3, 3.6), notes=f"readback to Pi pin {PIN_ARM_FB} (BCM16), clamped by D16")
     led_arm = arm.net("LED_ARM_A", v=(0, 5.25))
-    hb_in.connect(r13[1])
-    hb_r.connect(r13[2], c3[1])
-    pump.connect(c3[2], d12["COM"])
-    gnd.connect(d12["A"], c4[2], r14[2], q5["S"])
-    arm_g.connect(d12["K"], c4[1], r14[1], q5["G"], tp3[1])
-    coil_rtn.connect(q5["D"], d9["K"], tp4[1])
-    v5.connect(r15[1])
-    led_arm.connect(r15[2], d9["A"])
+    v33.connect(u1["VCC"], u1["~{CLR}"], r21[1], c7[1], d16["K"])
+    gnd.connect(u1["GND"], u1["~{A}"], c7[2], r23[2], q7["S"], r22[2], r25[2], d16["A"])
+    hb.connect(u1["B"], r23[1], tp5[1])
+    wd_rc.connect(u1["RCext"], r21[2], c6[1])
+    wd_cx.connect(u1["Cext"], c6[2])
+    arm_g.connect(u1["Q"], q7["G"], r22[1], tp3[1])
+    coil_rtn.connect(q7["D"], d13["K"], r26[2], r24[1], tp4[1])
+    v5.connect(r19[1], r26[1])
+    led_arm.connect(r19[2], d13["A"])
+    arm_fb.connect(r24[2], r25[1], d16["COM"], j5[PIN_ARM_FB])
 
-    # -- blocks: four identical channels ---------------------------------------------------------------
+    # -- blocks: six identical channels ---------------------------------------------------------------
     ch = {}
     for k in CHANNELS:
-        b = d.block(f"ch{k}", title=f"Channel {k}: relay K{k}, driver Q{k}, output J{k + 1}", domain="SELV",
-                    description=f"CH{k}_IN = Pi pin {PI_PIN[k]}; K{k} switches L_IN to L_SW{k}; J{k + 1} = OUT{k} L/N")
-        rk = b.add(P.R_1K, ref=f"R{k}")
-        rpd = b.add(P.R_4K7, ref=f"R{k + 4}")
+        jref, jpin = TERM[k]
+        b = d.block(f"ch{k}", title=f"Outlet {k}: relay K{k}, driver Q{k}", domain="SELV",
+                    description=f"CH{k} = Pi pin {PI_PIN[k]} (BCM{PI_BCM[k]}); K{k} switches L_IN to L_SW{k} "
+                                f"-> {jref}.{jpin}")
+        rk = b.add(P.R_100, ref=f"R{k}")
+        rpd = b.add(P.R_4K7, ref=f"R{k + 6}")
         q = b.add(P.MOSFET, ref=f"Q{k}", p_diss=0.0005)
-        dk = b.add(P.DIODE_FLYBACK, ref=f"D{k}", i_through=0.093)   # coil current at release only (5.25 V / 56.25 ohm)
-        led = b.add(P.LED_GREEN, ref=f"D{k + 4}", v_across=2.5, i_through=0.0023)   # 2.3 mA; reverse <= 0.9 V
-        rled = b.add(P.R_1K5, ref=f"R{k + 8}")
+        dk = b.add(P.DIODE_FLYBACK, ref=f"D{k}", i_through=0.093)   # coil current at release only (5.25 V / 56.25)
+        led = b.add(P.LED_GREEN, ref=f"D{k + 6}", v_across=2.5, i_through=0.0023)   # 2.3 mA; reverse <= 0.9 V
+        rled = b.add(P.R_1K5, ref=f"R{k + 12}")
         rel = b.add(P.RELAY, ref=f"K{k}")
-        jk = b.add(P.TERM_MAINS, ref=f"J{k + 1}")
-        g = b.net(f"CH{k}_G", v=(0, 3.3))
+        g = b.net(f"CH{k}_G", v=(0, 3.47))
         coil = b.net(f"COIL{k}", v=(0, 6.1), kind="switching", i_max=0.093,
                      notes="coil low side; 5.25 V + 0.86 V flyback")
         la = b.net(f"LED{k}_A", v=(0, 5.25))
@@ -411,172 +579,204 @@ def build():
         v5.connect(dk["K"], rel["COIL_1"], rled[1])
         la.connect(rled[2], led["A"])
         d.nets["L_IN"].connect(rel["C_3_6"])
-        d.nets[f"L_SW{k}"].connect(rel["C_4_5"], jk[1])
-        d.nets["N"].connect(jk[2])
-        ch[k] = dict(r=rk, rpd=rpd, q=q, d=dk, led=led, rled=rled, k=rel, j=jk)
+        ch[k] = dict(r=rk, rpd=rpd, q=q, d=dk, led=led, rled=rled, k=rel, block=b)
 
-    # -- block: mains input ----------------------------------------------------------------------------
-    mi = d.block("mains_in", title="Mains input terminal (shared L, N)", domain="LINE",
-                 description="J1 = branch line and neutral; EGCs are spliced in the box, never on this board")
-    j1 = mi.add(P.TERM_MAINS, ref="J1")
-    d.nets["L_IN"].connect(j1[1])
-    d.nets["N"].connect(j1[2])
+    # -- block: receptacle feed terminals --------------------------------------------------------------
+    mo = d.block("outlets", title="Receptacle feeds J2-J4 (one 14/3 NM-B cable per duplex receptacle)",
+                 domain="LINE", description="Jx.1 = top outlet (black), Jx.2 = N (white), Jx.3 = bottom outlet (red)")
+    jout = {n: mo.add(P.TERM_OUT, ref=n) for n in ("J2", "J3", "J4")}
+    for k in CHANNELS:
+        jref, jpin = TERM[k]
+        d.nets[f"L_SW{k}"].connect(ch[k]["k"]["C_4_5"], jout[jref][jpin])
+    d.nets["N"].connect(*[jout[n][2] for n in jout])
 
-    # -- block: mechanical -------------------------------------------------------------------------------
-    me = d.block("mech", title="Mounting holes, SELV cover and box parts (BOM only)",
-                 description="H1-H4 + LCBS-8-19 supports MP5-MP8; MP1 SELV cover; MP2-MP4 box, ring, cover")
-    holes = [me.add(P.HOLE_4MM, ref=f"H{i}") for i in (1, 2, 3, 4)]
-    mp1 = me.add(P.SELV_COVER, ref="MP1")
-    me.add(P.BOX, ref="MP2")
-    me.add(P.RING, ref="MP3")
-    me.add(P.COVER, ref="MP4")
-    for i in (5, 6, 7, 8):
-        me.add(P.SUPPORT, ref=f"MP{i}")
+    # -- block: mechanical ---------------------------------------------------------------------------------
+    me = d.block("mech", title="Holes; partition; enclosures, receptacles, Pi and hardware (BOM only)",
+                 description="H1-H6 board standoffs, H7-H10 Pi standoffs; MP1 partition; MP2-MP18 off-board items")
+    holes = [me.add(P.HOLE_M3, ref=f"H{i}") for i in range(1, 7)]
+    pi_holes = [me.add(P.HOLE_M25, ref=f"H{i}") for i in range(7, 11)]
+    mp1 = me.add(P.PARTITION, ref="MP1")
+    me.add(P.ENCLOSURE, ref="MP2")
+    me.add(P.BACK_PANEL, ref="MP3")
+    me.add(P.BOX_RECEPT, ref="MP4")
+    for i in (5, 6, 7):
+        me.add(P.RECEPTACLE, ref=f"MP{i}")
+    me.add(P.WALLPLATE, ref="MP8")
+    me.add(P.PI, ref="MP9")
+    me.add(P.PI_HEADER, ref="MP10")
+    me.add(P.HW_PI, ref="MP11")
+    me.add(P.HW_BOARD, ref="MP12")
+    me.add(P.FUSE_CLIPS, ref="MP13")
+    me.add(P.SD_CARD, ref="MP14")
+    me.add(P.HW_FIELD, ref="MP16")
 
     hazards(d)
     calcs(d)
-    placement(d, j1, j6, u1, f1, d11, c1, c2, r13, c3, d12, c4, r14, q5, ch, holes, mp1, sel, arm, mi, me)
+    placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25, r26, d16, c1, c2, c3, d15, f2,
+              c4, c5, ch, holes, pi_holes, mp1, pw, arm)
     board(d)
     waivers(d)
     return d
 
 
-def placement(d, j1, j6, u1, f1, d11, c1, c2, r13, c3, d12, c4, r14, q5, ch, holes, mp1, sel, arm, mi, me):
+def placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25, r26, d16, c1, c2, c3, d15, f2,
+              c4, c5, ch, holes, pi_holes, mp1, pw, arm):
     pl = d.place
-    # floorplan, south to north: SELV band | coil pins | 8 mm barrier band | L bus, contacts | terminals | N bus
-    pl.region(sel, "south", note="SELV band; J6 in the south-west corner next to the Class 2 knockout")
-    pl.region(arm, "south")
-    pl.region(mi, "north", note="J1 at the west end of the terminal row")
-    pl.group(sel, "close")
-    pl.group(arm, "close")
-    terms = [j1] + [ch[k]["j"] for k in CHANNELS]
     relays = [ch[k]["k"] for k in CHANNELS]
+    terms = [j1] + list(jout.values())
+    # floorplan, north to south: wire compartment | J1-J4 | MP1 partition | L/N buses, F1, relay contacts |
+    # 8 mm barrier band | coil pins, drivers, U1/Q7 | Pi Zero 2 W (south-west, antenna on the south edge)
     for t in terms:
-        pl.edge(t, "north", note="wire entry from above; free band along the north wall holds slack and the EGC splice")
-        pl.orient(t, "north", note="pole-2 (N) pin row toward the north edge, pole-1 row toward the relays")
-    pl.edge(j6, "south")
-    pl.custom("corner", obj=j6, corner="southwest", note="next to the west-wall knockout used by the Class 2 cable")
-    pl.array(terms, "x", note="butted 2-pole blocks, 17.85 mm pitch")
-    pl.array(relays, "x")
+        pl.edge(t, "north", note="wire-entry face 1 mm inside the north edge; conductors enter from above")
+        pl.pins_toward(t, ["1"], "north", note="odd-pole row (wire-entry face) toward the north edge")
+    pl.array([jout["J2"], jout["J3"], jout["J4"]], "x", note="J2 over K1/K2, J3 over K3/K4, J4 over K5/K6")
+    pl.region(j1, "corner-ne", note="J1 next to F1 and PS1 at the east end")
+    pl.array(relays, "x", note="20 mm pitch, K1 west")
     for k in CHANNELS:
         c = ch[k]
-        pl.group(next(b for b in d.blocks if b.name == f"ch{k}"), "close")
-        pl.align([c["k"], c["j"]], "x", note=f"channel {k} column: relay under its terminal")
-        pl.align([c["q"], c["k"]], "x")
-        pl.align([c["led"], c["k"]], "x")
-        pl.orient(c["k"], "south", note="coil pins A1/A2 toward the SELV band (south), contacts toward the terminals")
+        pl.pins_toward(c["k"], ["COIL_1", "COIL_8"], "south",
+                       note="coil pins (y=0 in the footprint) toward the SELV band, contacts (y=+20/+25) north")
+        pl.region([c["q"], c["d"], c["r"], c["rpd"], c["led"], c["rled"]], "south",
+                  note=f"channel {k} SELV parts south of the barrier band, in K{k}'s column")
+        pl.align([c["k"], c["q"], c["led"]], "y", note=f"channel {k} column")
         pl.near(c["d"], c["k"]["COIL_1"], "tight")
         pl.near(c["d"], c["k"]["COIL_8"], "tight")
         pl.near(c["q"], c["k"]["COIL_8"], "close")
         pl.near(c["rpd"], c["q"]["G"], "tight")
         pl.near(c["r"], c["rpd"], "tight")
-        pl.near(c["led"], c["k"], "close", note="LED visible next to its relay; silkscreen channel number")
         pl.near(c["rled"], c["led"], "tight")
         pl.hot_loop([c["d"]["K"], c["k"]["COIL_1"], c["k"]["COIL_8"], c["d"]["A"]],
                     note="coil flyback loop; keep spikes off SELV wiring")
-        pl.hot_loop([c1[1], c["k"]["COIL_1"], c["k"]["COIL_8"], c["q"]["D"], c["q"]["S"], q5["D"], q5["S"], c1[2]],
-                    note="coil switching loop")
-        pl.thermal(c["k"], 1.5, "copper", note="coil 0.4 W + contacts ~1.1 W at 15 A; L/L_SW pours both layers, "
-                                                "no airflow (closed box)")
-        pl.near(q5, c["q"], "close", note="short COIL_RTN")
-    pl.near(u1, j6, "tight")
-    pl.near(f1, j6[1], "close")
-    pl.near(d11, f1[2], "tight")
-    pl.near(c1, d11, "close")
+        pl.thermal(c["k"], 1.5, "copper", note="coil 0.47 W + contact up to 2.25 W at 15 A; L/L_SW pours both layers")
+        pl.near(q7, c["q"], "close", note="short COIL_RTN")
+        jref, _ = TERM[k]
+        pl.near(c["k"]["C_4_5"], jout[jref], "close", note=f"L_SW{k} short and straight north to {jref}")
+    # supply: AC end north (mains), DC end south (SELV); the barrier band runs under the potted body
+    pl.region(ps1, "east", note="east end, away from the Pi antenna and its relays")
+    pl.pins_toward(ps1, ["AC/L", "AC/N"], "north", note="AC pins north of the barrier band, +Vo/-Vo south")
+    pl.near(f1, j1, "close", note="F1 between J1.1 and PS1 AC/L, both clips in the mains region")
+    pl.near(f1, ps1["AC/L"], "close")
+    pl.thermal(ps1, 1.84, "air", note="potted module; 10 mm to other parts where possible (Mean Well manual)")
+    pl.near(c1, ps1["+Vo"], "tight")
     pl.near(c2, c1, "tight")
-    pl.near(r13, u1["D3+"], "close")
-    pl.near(c3, r13, "tight")
-    pl.near(d12, c3, "tight")
-    pl.near(c4, d12["K"], "tight")
-    pl.near(r14, c4, "tight")
-    pl.near(q5, c4, "close")
-    pl.thermal(j1, 0.3, "copper")
-    pl.far(j6, j1, "loose")
+    pl.near(c3, ps1["+Vo"], "tight")
+    pl.near(d15, ps1["+Vo"], "close")
+    pl.group(pw, "close")
+    pl.near(f2, j5[2], "loose", note="Pi branch PTC between the rail and J5")
+    # Pi socket: position fixed by the board holes H7-H10 (Zero 2 W drawing)
+    pl.region(j5, "corner-sw", note="Pi over the south-west corner, connector/antenna edge on the south edge")
+    pl.edge(j5, "south", note="Pi connector edge 1 mm inside the south edge: antenna faces free space")
+    pl.custom("datum", obj=j5, holes="H7 H8 H9 H10",
+              at=f"J5 pin 1 at ({pi_xy(8.37, 4.77)[0]:.2f}, {pi_xy(8.37, 4.77)[1]:.2f}) mm, 0 deg (pin 2 north)",
+              note="from the Zero 2 W drawing: header centred 32.5 mm from the SD-card end, rows 3.5 -/+ 1.27 mm "
+                   "from the header edge; holes 3.5 mm from each edge")
+    pl.keepout(j5, what="Wi-Fi antenna zone (rule area in the J5 footprint): no copper, vias, pours or parts",
+               layers="all", note="board x 24-57 mm, y 0-13 mm, plus 10 mm beyond the south edge")
+    for r in relays:
+        pl.far(j5, r, "loose", note=">= 30 mm from the antenna zone (lambda/4 at 2.4 GHz)")
+    pl.far(j5, ps1, "loose", note="supply switching at 65 kHz and its magnetics away from the antenna")
+    pl.far(j5, f1, "loose")
+    pl.keepout(j5, what="parts under the Pi (courtyard = Pi outline)", layers="top")
+    pl.near(c4, j5[2], "close")
+    pl.near(c5, j5[4], "tight")
+    # watchdog cluster between the Pi header and the driver row
+    pl.group(arm, "close")
+    pl.region(arm, "south")
+    pl.near(u1, j5[PIN_HB], "close")
+    pl.near(c7, u1["VCC"], "tight")
+    pl.near(r21, u1["RCext"], "tight")
+    pl.near(c6, u1["Cext"], "tight")
+    pl.near(r23, u1["B"], "tight")
+    pl.near(r22, q7["G"], "tight")
+    pl.near(q7, u1["Q"], "close")
+    pl.near(d16, j5[PIN_ARM_FB], "close")
+    pl.near(r25, d16, "tight")
+    pl.near(r24, q7["D"], "close")
+    pl.near(r26, q7["D"], "close")
     pl.side("all", "top", note="all parts on the top side")
     # isolation: every barrier becomes a separate() relation and a .kicad_dru rule
     for bar in d.barriers:
-        # Domain objects, not names: placement treats bare strings like "OUT1" as refdes (framework issue)
         pl.separate(d.domains[bar.a], d.domains[bar.b], slot=bar.slot)
-    pl.keepout("barrier band: from the K1-K4 coil-pad north edge (+1.0 mm from the pin row) to +9.25 mm, "
-               "full board width", what="copper and vias", layers="all",
-               note="only relay bodies may overhang it; mains copper starts >= 8.25 mm from the coil pads")
-    pl.keepout("2.0 mm strip along every board edge", what="mains copper", layers="all",
-               note="E/W walls: 4.95 mm + 2.0 mm = 6.95 mm >= 6.4 mm; basic insulation to a stray bare EGC")
-    for h in holes:
-        pl.keepout(h, what="copper and parts, Ø8 mm", layers="all")
-    pl.custom("volume_keepout", region="above J1-J5 up to 45 mm", what="parts and MP1",
-              note="wire-bending volume for 14-12 AWG solid conductors entering the terminals from above")
-    pl.custom("volume_keepout", region="SELV band under MP1", what="parts taller than 18 mm")
+    pl.custom("barrier_part", part=mp1, line="south faces of J1-J4 (y ~ 122 mm), full enclosure width",
+              height_mm="PCB to lid (~130)", fixing="10 mm folded foot on the PCB; nylon screws to the back panel "
+                                                     "beyond both board ends (no board holes)",
+              covers="field-wiring compartment north of it; PCB, relays, PS1 and the Pi south of it",
+              note="supplementary insulation between field conductors (basic) and SELV/Pi (review M3, REQ-31)")
+    pl.custom("volume_keepout", region="north of MP1, above J1-J4 up to the lid",
+              what="no parts; only terminal bodies, field conductors, EGC splice",
+              note="wire-bending space for 14-12 AWG solid conductors entering the terminals from above")
     for net in ["L_IN", "N"] + [f"L_SW{k}" for k in CHANNELS]:
-        pl.custom("current_path", net=f"net:{net}", amps=15, width_mm=7.5, layers="F.Cu,B.Cu", copper_oz=2,
+        pl.custom("current_path", net=f"net:{net}", amps=15, layers="F.Cu,B.Cu", copper_oz=2,
                   stitching="4 x 0.6 mm vias every 10 mm",
-                  note="L comes down the west side from J1.1 then E-W under the relay bodies into pads 13; L_SWk "
-                       "goes north from pads 14 to J(k+1).1; N follows the north edge through every J.2, >= 6.4 mm "
-                       "from the L_SW pads (place J1-J5 ~2 mm in from the north edge)")
-    pl.custom("barrier_part", part=mp1, covers="SELV band except the J6 wire entry", height_mm=20,
-              fixing="2 NPTH snap holes in the SELV band",
-              note="keeps field mains conductors off SELV parts (reinforced insulation, NEC 725.136(B))")
-    pl.custom("box_walls", walls="RACO 257: inner ~115.9 mm square, inner depth 54 mm + 39.7 mm ring",
-              board_position="south edge against the south wall; ~36 mm free band along the north wall",
-              note="box metal is PE: mains copper >= 6.4 mm from walls, bottom and ground screw")
-    pl.custom("ground_screw", where="free band; RACO 257 #10-32 tap 30.2 mm from the north outer edge",
-              note="orient the box so the screw falls in the free band, or use a listed ground clip")
-    pl.custom("cable_entry", mains="north/east/west walls and ring knockouts, above the terminals",
-              selv="west-wall knockout next to J6 with a listed bushing", note="Class 2 cable kept away from mains")
-    pl.custom("label", obj="J1", text="LINE IN / NEUTRAL IN")
-    for k in CHANNELS:
-        pl.custom("label", obj=ch[k]["j"], text=f"OUT{k} L / N")
-    pl.custom("label", obj=j6, text="+5V GND CH1 CH2 CH3 CH4 HB GND - CLASS 2 ONLY")
+                  note="width from Net(width_mm=7.5). L runs from J1.1 west under the relay bodies into pads 13; "
+                       "L_SWk goes north from pads 14 to its terminal; N runs along the J1-J4 even-pole row, "
+                       ">= 6.4 mm from every L/L_SW pad, under or south of the terminal bodies")
+    pl.custom("enclosure_layout", walls="NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P",
+              arrangement="board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in "
+                          "through the top wall (west); 3 x 14/3 NM-B out through the east wall above MP1 to E2",
+              note="E2 (3-gang PVC box, receptacles) mounted east of E1 on the same backboard")
+    pl.custom("ground_splice", where="wire compartment, west end, >= 25 mm from J1",
+              note="branch EGC + 3 outgoing EGCs in one listed lever connector; tied to the back panel")
+    pl.custom("label", obj=j1, text="LINE IN: L (black) / N (white) - 120 VAC 15 A")
+    for n, (a, b) in zip(("J2", "J3", "J4"), ((1, 2), (3, 4), (5, 6))):
+        pl.custom("label", obj=jout[n], text=f"RECEPTACLE {'ABC'[(a - 1) // 2]}: TOP OUT{a} (black) / N (white) / "
+                                             f"BOTTOM OUT{b} (red)")
     pl.custom("label", obj="board", text="120 VAC 60 Hz, 15 A max branch; Cu 14-12 AWG, strip 11-13 mm; DANGER "
-                                         "disconnect before opening; outputs are not a disconnecting means")
+                                         "disconnect before opening; outlets are not a disconnecting means")
 
 
 def board(d):
-    holes = [Hole(4, 4, 4.0, note="H1, LCBS-8-19 nylon support"), Hole(102, 4, 4.0, note="H2, LCBS-8-19"),
-             Hole(4, 76, 4.0, note="H3, LCBS-8-19"), Hole(102, 76, 4.0, note="H4, LCBS-8-19")]
-    d.board(width_mm=106, height_mm=80, layers=2, thickness_mm=1.6, copper_oz=2, holes=holes,
+    pi = [pi_xy(3.5, 3.5), pi_xy(61.5, 3.5), pi_xy(3.5, 26.5), pi_xy(61.5, 26.5)]
+    holes = [Hole(4, 4, 3.2, note="H1, M3 nylon standoff"), Hole(196, 4, 3.2, note="H2"),
+             Hole(4, 75, 3.2, note="H3"), Hole(196, 75, 3.2, note="H4"),
+             Hole(4, 146, 3.2, note="H5"), Hole(196, 146, 3.2, note="H6")]
+    holes += [Hole(x, y, 2.7, note=f"H{7 + i}, Pi Zero 2 W standoff M2.5 x 11 mm nylon") for i, (x, y) in enumerate(pi)]
+    d.board(width_mm=BOARD_W, height_mm=BOARD_H, layers=2, thickness_mm=1.6, copper_oz=2, holes=holes,
             max_component_height_mm=31, max_bottom_height_mm=2.4,
-            enclosure="Hubbell RACO 257 steel box 4-11/16 x 2-1/8 in (42.0 in3) + RACO 250 1-1/2 in extension "
-                      "ring (29.5 in3) + RACO 832 flat blank cover; board on 4 x Essentra LCBS-8-19 12.7 mm nylon "
-                      "supports in installer-drilled 4.75 mm holes; inner depth ~93.7 mm",
+            enclosure="ABB/Carlon NS1086 polycarbonate 10 x 8 x 6 in (UL 50 Type 4X/12), JP108P PVC back panel; "
+                      "board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces "
+                      "of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon "
+                      "standoffs; receptacles in a separate Carlon BH353A 3-gang box (E2)",
             coating="",
             keepouts=[
-                {"rect": [0, 0, 106, 2.0], "what": "mains copper", "layers": "all", "note": "edge strip"},
-                {"rect": [0, 78.0, 106, 80], "what": "mains copper", "layers": "all", "note": "edge strip"},
-                {"rect": [0, 0, 2.0, 80], "what": "mains copper", "layers": "all", "note": "edge strip"},
-                {"rect": [104.0, 0, 106, 80], "what": "mains copper", "layers": "all", "note": "edge strip"},
-                {"relative": "K1-K4 coil-pad edge to +8.25 mm north, full width", "what": "copper and vias",
-                 "layers": "all", "note": "SELV/mains barrier band"},
+                {"rect": [PI_X0 + 12, 0, PI_X0 + 45, PI_Y0 + 12], "what": "copper, vias, pours, parts",
+                 "layers": "all", "note": "Pi Zero 2 W antenna zone (also a rule area in the J5 footprint)"},
+                {"rect": [PI_X0, PI_Y0, PI_X0 + 65, PI_Y0 + 30], "what": "parts other than J5", "layers": "top",
+                 "note": "under the Pi"},
+                {"relative": "north edge to the south faces of J1-J4 (~28 mm), outside the terminal bodies",
+                 "what": "all copper", "layers": "all", "note": "wire compartment: no exposed copper (REQ-31)"},
+                {"relative": "K1-K6 coil-pad north edge +1 mm to +9 mm, full width (also under PS1)",
+                 "what": "copper and vias", "layers": "all", "note": "SELV/mains 8 mm barrier band"},
+                {"relative": "3 mm either side of the MP1 line (south faces of J1-J4)",
+                 "what": "parts taller than 1 mm", "layers": "top", "note": "partition foot"},
             ],
             notes="FR-4 UL 94 V-0, UL ZPMV2 laminate, CTI >= 175 V preferred (IIIb assumed). All parts top side. "
-                  "Solder tails <= 2.4 mm below the board, 10.3 mm above the box bottom. Pi outside the box, <= 3 m. "
-                  "Flush mounting in an insulated wall is excluded (thermal).")
+                  "Solder tails <= 2.4 mm below the board. Mains copper >= 6.4 mm from edges and holes (DRU "
+                  "edge_clearance). Pi standoff holes H7-H10 fix J5's position (see placement datum).")
 
 
 def waivers(d):
     W = d.waive
-    W("rating.current", r"^K[1-4] \(G5RL",
+    W("rating.current", r"^K[1-6] \(G5RL",
       "Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists "
-      "16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to "
-      "12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT.")
+      "16 A at 85 C (15k ops). 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited "
+      "to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT.")
     W("protect.threat", r"threat 'surge'",
-      "No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC II (1.5 kV transient; "
-      "relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional). An MOV ages and is a fire source "
-      "in a closed unlisted box; a listed Type 2 SPD at the panel is recommended (Q-9). Verified by T-SURGE.")
-    W("protect.threat", r"net (L_IN|L_SW[1-4]) declares threat 'overcurrent'",
-      "The upstream branch breaker (<= 15 A, REQ-2) is the single overcurrent device; every element on these nets "
-      "is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x "
-      "I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9).")
-    W("protect.entry_fuse", r"net (L_IN|N|L_SW[1-4]) reaches",
-      "Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9).")
-    W("lib.footprint_custom", r"WAGO_2606",
-      "No KiCad library footprint exists for WAGO 2606-3102/020-000. Geometry from the WAGO data sheet p.1 drawing "
-      "(drill 2.0 +0.1 mm, pole 2 at +7.5/+12.5 mm, body 17.85 x 24 mm); lever side to be checked against WAGO "
-      "CAD before layout freeze.")
+      "No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC III (2.5 kV transient; "
+      "relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional); PS1 is tested to EN 61000-4-5 "
+      "level 4 (2 kV L-N) without external parts. An MOV ages and is a fire source in a closed box; a listed Type 2 "
+      "SPD at the panel is recommended (Q-12). Verified by T-SURGE.")
+    W("protect.threat", r"net (L_IN|L_SW[1-6]) declares threat 'overcurrent'",
+      "The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element "
+      "on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, copper 7.5 mm x 2 layers x 2 oz "
+      "with 1.4x I2t margin at 2 kA; calcs mains_*). F1 protects only the PS1 branch.")
+    W("protect.entry_fuse", r"net (L_IN|N|L_SW[1-6]) reaches",
+      "Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9).")
     W("conn.empty_net", r"net PE",
-      "PE exists only off-board (box, ring, cover, EGC splice); no PCB copper by design (REQ-4, NEC 250.148(B)). "
-      "The net is declared so the LINE-PE barrier reaches intent.yaml.")
+      "PE exists only off-board (EGC splice in E1, receptacle yokes in E2); no PCB copper by design (REQ-4, NEC "
+      "250.148(B)). The net is declared so the LINE-PE barrier reaches intent.yaml and the DRU.")
     W("hazard.procedural", r"^H10:",
-      "Relays are not a disconnecting means; locking out the branch breaker is the only correct mitigation.")
+      "Outlets are not a disconnecting means; unplugging the load or locking out the breaker is the only correct "
+      "mitigation.")
     W("hazard.procedural", r"^H15:",
       "Motor overload protection belongs to the load (NEC 430), outside this board; REQ-5 limits motors to 1/2 hp.")

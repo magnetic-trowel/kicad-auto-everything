@@ -1,0 +1,547 @@
+(kicad_sch
+	(version 20260306)
+	(generator "kaesynth")
+	(generator_version "0.1")
+	(uuid "d61c0df7-7fcb-54c1-b998-8a44644725aa")
+	(paper "A3")
+	(title_block
+		(title "Prius Prime solar MPPT charger")
+		(date "2026-10-23")
+		(rev "B")
+		(company "kaesynth design agent")
+		(comment 1 "Roof C60 array (2 x 28 cells) -> 2 analog MPPT buck-boost -> reinforced LLC-DCX 1:22 -> battery-end board with fuses, blocking diode and 2-pole disconnect on the Prime Li-ion pack; own SOC/voltage/tem")
+	)
+	(lib_symbols)
+	(sheet
+		(at 25.4 55.88)
+		(size 129.54 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "09296774-dc21-5469-8eb5-49b6c403d0eb")
+		(property "Sheetname" "MPPT_A"
+			(at 25.4 55.18 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MPPT_A.kicad_sch"
+			(at 25.4 71.72 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "2")
+				)
+			)
+		)
+	)
+	(text "MPPT A: string A input, PV sense, LM5176 buck-boost, analog PV-voltage loop"
+		(exclude_from_sim no)
+		(at 26.67 63.5 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "dad8c8da-9d4b-5eba-899f-5b8a3b886c1b")
+	)
+	(sheet
+		(at 167.64 55.88)
+		(size 129.54 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "56834329-f35f-595b-a4a5-aa8ac4407409")
+		(property "Sheetname" "MPPT_B"
+			(at 167.64 55.18 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MPPT_B.kicad_sch"
+			(at 167.64 71.72 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "3")
+				)
+			)
+		)
+	)
+	(text "MPPT B: string B input, PV sense, LM5176 buck-boost, analog PV-voltage loop"
+		(exclude_from_sim no)
+		(at 168.91 63.5 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "0bea9beb-d35a-5387-86e7-f7808f22f359")
+	)
+	(sheet
+		(at 25.4 83.82)
+		(size 119.38 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "1d36629b-5653-533d-8ecc-27e8196e2fb5")
+		(property "Sheetname" "DCX"
+			(at 25.4 83.12 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "DCX.kicad_sch"
+			(at 25.4 99.66 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "4")
+				)
+			)
+		)
+	)
+	(text "VINT bus and LLC-DCX: half-bridge, T301 (1:22), rectifier, HV output"
+		(exclude_from_sim no)
+		(at 26.67 91.44 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "6f482b32-d41b-59bf-a24e-4b50f00bb5e7")
+	)
+	(sheet
+		(at 157.48 83.82)
+		(size 134.62 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "f2bf7e4f-29ac-515d-ae0b-b558fe97b6cd")
+		(property "Sheetname" "HVSENSE"
+			(at 157.48 83.12 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "HVSENSE.kicad_sch"
+			(at 157.48 99.66 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "5")
+				)
+			)
+		)
+	)
+	(text "HV sensing: pack voltage (path 1), output voltage (path 2, L3), charge current"
+		(exclude_from_sim no)
+		(at 158.75 91.44 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "aa0106f7-f53a-54c3-91f4-f9029ccdc34d")
+	)
+	(sheet
+		(at 25.4 111.76)
+		(size 129.54 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "326e8532-9384-5af3-b9fd-1b7217e3875f")
+		(property "Sheetname" "LIMIT"
+			(at 25.4 111.06 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "LIMIT.kicad_sch"
+			(at 25.4 127.6 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "6")
+				)
+			)
+		)
+	)
+	(text "L2 analog limiter: CV on pack voltage, CC on charge current (firmware-free)"
+		(exclude_from_sim no)
+		(at 26.67 119.38 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "ceded705-b799-5513-8a3d-32c2560a0f8a")
+	)
+	(sheet
+		(at 167.64 111.76)
+		(size 142.24 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "037b7ead-fbf2-577e-86d1-7e64c048e9dd")
+		(property "Sheetname" "SAFETY"
+			(at 167.64 111.06 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "SAFETY.kicad_sch"
+			(at 167.64 127.6 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "7")
+				)
+			)
+		)
+	)
+	(text "Hardware safety: references, comparators, OVP/OC latch, supervisor, PERMIT, drivers"
+		(exclude_from_sim no)
+		(at 168.91 119.38 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "b39ede32-e91d-5075-b955-395ae870c0f1")
+	)
+	(sheet
+		(at 25.4 139.7)
+		(size 114.3 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "6f89aee3-23eb-55e9-8123-b143af251b67")
+		(property "Sheetname" "AUX"
+			(at 25.4 139 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "AUX.kicad_sch"
+			(at 25.4 155.54 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "8")
+				)
+			)
+		)
+	)
+	(text "Auxiliary supplies: PV/VINT OR -> AUX12 (LM5164) -> +3V3 (LM5164)"
+		(exclude_from_sim no)
+		(at 26.67 147.32 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "f979fca0-23a0-5899-adaf-00f955aa3c69")
+	)
+	(sheet
+		(at 152.4 139.7)
+		(size 104.14 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "970a0d34-6384-5a14-8142-1dedc06f0b7a")
+		(property "Sheetname" "MCU"
+			(at 152.4 139 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MCU.kicad_sch"
+			(at 152.4 155.54 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "9")
+				)
+			)
+		)
+	)
+	(text "MCU, logging, IG sense, CAN (OBD-II, read-only), connectors"
+		(exclude_from_sim no)
+		(at 153.67 147.32 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "e265c580-38b9-508e-b0b4-67a9bd5f0079")
+	)
+	(sheet
+		(at 25.4 167.64)
+		(size 144.78 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "32c9e948-e1c2-57fd-aaa9-6a4ee3f4c196")
+		(property "Sheetname" "BATEND"
+			(at 25.4 166.94 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "BATEND.kicad_sch"
+			(at 25.4 183.48 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "10")
+				)
+			)
+		)
+	)
+	(text "Battery-end board: fuses on both poles, blocking diode, 2-pole disconnect, pack sense"
+		(exclude_from_sim no)
+		(at 26.67 175.26 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "4a213c36-aec1-5633-a076-8bcc3d966fe2")
+	)
+	(sheet
+		(at 182.88 167.64)
+		(size 144.78 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "c3ef7159-aa75-561d-beda-8e31cb2e790f")
+		(property "Sheetname" "ARRAY"
+			(at 182.88 166.94 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ARRAY.kicad_sch"
+			(at 182.88 183.48 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "11")
+				)
+			)
+		)
+	)
+	(text "Roof array (off-board): 2 strings x 4 columns x 7 C60 cells, bypass diode per column"
+		(exclude_from_sim no)
+		(at 184.15 175.26 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "ab2b1733-7837-5fe0-85a6-9c102daa96ea")
+	)
+	(sheet
+		(at 25.4 195.58)
+		(size 104.14 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "c1871732-d962-584a-ad9a-0b2004a8907b")
+		(property "Sheetname" "HARNESS"
+			(at 25.4 194.88 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "HARNESS.kicad_sch"
+			(at 25.4 211.42 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "prius-solar-mppt"
+				(path "/d61c0df7-7fcb-54c1-b998-8a44644725aa"
+					(page "12")
+				)
+			)
+		)
+	)
+	(text "Harness items (off-board): cables, tap fuse, pack-case NTCs"
+		(exclude_from_sim no)
+		(at 26.67 203.2 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "7ed4160f-09a0-5170-8630-a5654d88b5f4")
+	)
+	(text "Prius Prime solar MPPT charger (rev B)\nBoards: main: MPPT_A, MPPT_B, DCX, HVSENSE, LIMIT, SAFETY, AUX, MCU; batt_end: BATEND; off: ARRAY, HARNESS\nDomains: LV (elv, 0 V = GND); HV (hv, 0 V = HV_N); PACK (battery, 0 V = BAT_TAP_N); K1C (elv, 0 V = AUX12); K2C (elv, 0 V = AUX12); FANC (elv, 0 V =\n    AUX12); IDA (elv, 0 V = PVA_IN); IDB (elv, 0 V = PVB_IN); BSTA1 (elv, 0 V = MPPT_A/SW1); BSTA2 (elv, 0 V = MPPT_A/SW2); BSTB1 (elv, 0 V =\n    MPPT_B/SW1); BSTB2 (elv, 0 V = MPPT_B/SW2); DCXBST (elv, 0 V = DCX/HB_SW); AUXBST (elv, 0 V = AUX/AUX12_SW); V33BST (elv, 0 V = AUX/V33_SW)\nBarrier LV/HV: reinforced, 420 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier LV/PACK: reinforced, 399 V working, creepage 10 mm, clearance 8 mm (IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier HV/PACK: functional, 399 V working, creepage 5 mm, clearance 5 mm (IPC-2221B Table 6-1 B2 (301-500 V: 2.5 mm; >500 V: +0.005 mm/V))\nNOT READY FOR FABRICATION — blocking questions: Q-3, Q-4, Q-5, Q-6, Q-10"
+		(exclude_from_sim no)
+		(at 25.4 25.4 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left top)
+		)
+		(uuid "df28a6ec-8709-5758-bc09-cff3e487ee5b")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

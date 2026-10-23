@@ -5,298 +5,16 @@
 	(uuid "a30cabb5-b934-5e97-9aeb-aaefec3ba07a")
 	(paper "A3")
 	(title_block
-		(title "RPi 4-channel 120 VAC relay board (4-11/16 in box)")
+		(title "RPi Zero 2 W six-outlet 120 VAC relay board (polycarbonate enclosure)")
 		(date "2026-10-23")
 		(rev "A")
 		(company "kaesynth")
-		(comment 1 "4 x 16 A relays switch line; Pi drives them over a Class 2 cable via a heartbeat watchdog")
+		(comment 1 "6 x 16 A relays switch line to 3 split-tab TR duplex receptacles; on-board Pi Zero 2 W fed by a Mean Well IRM-20-5; heartbeat watchdog")
 	)
 	(lib_symbols)
 	(sheet
-		(at 25.4 86.36)
-		(size 88.9 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "65b35c7b-479e-5a55-8d70-0c50f69b1b52")
-		(property "Sheetname" "selv_in"
-			(at 25.4 85.66 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "selv_in.kicad_sch"
-			(at 25.4 102.2 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "2")
-				)
-			)
-		)
-	)
-	(text "Class 2 link from the Pi: terminal, PTC, TVS, ESD"
-		(exclude_from_sim no)
-		(at 26.67 93.98 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "65e487f7-2409-5bb0-b4f0-e8d89f9c27d2")
-	)
-	(sheet
-		(at 127 86.36)
-		(size 99.06 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "c4900e25-da27-50d6-8823-620d0dc74617")
-		(property "Sheetname" "arm"
-			(at 127 85.66 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "arm.kicad_sch"
-			(at 127 102.2 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "3")
-				)
-			)
-		)
-	)
-	(text "Heartbeat watchdog (charge pump) and common coil enable"
-		(exclude_from_sim no)
-		(at 128.27 93.98 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "32aee8c7-905c-54c0-b409-21e5c2830066")
-	)
-	(sheet
-		(at 238.76 86.36)
-		(size 76.2 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "d5d3af06-bb94-5568-b155-db1df6270ff3")
-		(property "Sheetname" "ch1"
-			(at 238.76 85.66 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "ch1.kicad_sch"
-			(at 238.76 102.2 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "4")
-				)
-			)
-		)
-	)
-	(text "Channel 1: relay K1, driver Q1, output J2"
-		(exclude_from_sim no)
-		(at 240.03 93.98 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "4d561718-655f-5ea0-bc60-7f554661a88d")
-	)
-	(sheet
-		(at 25.4 114.3)
-		(size 76.2 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "6de384ee-328d-5456-b0b0-d4b97d794c0d")
-		(property "Sheetname" "ch2"
-			(at 25.4 113.6 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "ch2.kicad_sch"
-			(at 25.4 130.14 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "5")
-				)
-			)
-		)
-	)
-	(text "Channel 2: relay K2, driver Q2, output J3"
-		(exclude_from_sim no)
-		(at 26.67 121.92 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "fa153786-13ee-5a3e-849a-9f6cd208ca17")
-	)
-	(sheet
-		(at 114.3 114.3)
-		(size 76.2 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "b1b24986-035c-58c5-a8f9-7b25c66e2a0f")
-		(property "Sheetname" "ch3"
-			(at 114.3 113.6 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "ch3.kicad_sch"
-			(at 114.3 130.14 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "6")
-				)
-			)
-		)
-	)
-	(text "Channel 3: relay K3, driver Q3, output J4"
-		(exclude_from_sim no)
-		(at 115.57 121.92 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "b0441d7f-3f29-5d0d-aaf1-af88e72cb70a")
-	)
-	(sheet
-		(at 203.2 114.3)
-		(size 76.2 15.24)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0)
-		)
-		(uuid "e8e6b6c4-da9e-56eb-b53f-d1aae700ec51")
-		(property "Sheetname" "ch4"
-			(at 203.2 113.6 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "ch4.kicad_sch"
-			(at 203.2 130.14 0)
-			(effects
-				(font (size 1.27 1.27))
-				(justify left top)
-			)
-		)
-		(instances
-			(project "rpi-mains-relay"
-				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "7")
-				)
-			)
-		)
-	)
-	(text "Channel 4: relay K4, driver Q4, output J5"
-		(exclude_from_sim no)
-		(at 204.47 121.92 0)
-		(effects
-			(font (size 1.27 1.27))
-			(justify left)
-		)
-		(uuid "75edf3f7-a814-5d48-bac7-667092636910")
-	)
-	(sheet
-		(at 292.1 114.3)
-		(size 63.5 15.24)
+		(at 25.4 119.38)
+		(size 78.74 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -311,14 +29,296 @@
 		)
 		(uuid "5a948949-00be-5f30-a335-0da22bab355f")
 		(property "Sheetname" "mains_in"
-			(at 292.1 113.6 0)
+			(at 25.4 118.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "mains_in.kicad_sch"
-			(at 292.1 130.14 0)
+			(at 25.4 135.22 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "2")
+				)
+			)
+		)
+	)
+	(text "Mains input J1, supply fuse F1 and IRM-20-5"
+		(exclude_from_sim no)
+		(at 26.67 127 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "784a8378-ac44-557b-8147-07a2a6484000")
+	)
+	(sheet
+		(at 116.84 119.38)
+		(size 86.36 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "00bc7493-cf71-5b3e-90a5-99aa474c97d9")
+		(property "Sheetname" "power5"
+			(at 116.84 118.68 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power5.kicad_sch"
+			(at 116.84 135.22 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "3")
+				)
+			)
+		)
+	)
+	(text "5 V rail: bulk caps, TVS, PWR LED, Pi branch PTC"
+		(exclude_from_sim no)
+		(at 118.11 127 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "fa6f2a79-f7b1-554a-820a-76b8c3435a79")
+	)
+	(sheet
+		(at 215.9 119.38)
+		(size 96.52 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "004c64fb-3c5c-5d21-a81a-6480cdab26e7")
+		(property "Sheetname" "pi"
+			(at 215.9 118.68 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "pi.kicad_sch"
+			(at 215.9 135.22 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "4")
+				)
+			)
+		)
+	)
+	(text "Raspberry Pi Zero 2 W socket J5 (Pi component side up)"
+		(exclude_from_sim no)
+		(at 217.17 127 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "6ab3bbbb-5ae9-57cb-a3f2-3f7d895a1591")
+	)
+	(sheet
+		(at 25.4 147.32)
+		(size 93.98 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "c4900e25-da27-50d6-8823-620d0dc74617")
+		(property "Sheetname" "arm"
+			(at 25.4 146.62 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "arm.kicad_sch"
+			(at 25.4 163.16 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "5")
+				)
+			)
+		)
+	)
+	(text "Heartbeat watchdog U1, arming switch Q7 and readback"
+		(exclude_from_sim no)
+		(at 26.67 154.94 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "32aee8c7-905c-54c0-b409-21e5c2830066")
+	)
+	(sheet
+		(at 132.08 147.32)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "d5d3af06-bb94-5568-b155-db1df6270ff3")
+		(property "Sheetname" "ch1"
+			(at 132.08 146.62 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch1.kicad_sch"
+			(at 132.08 163.16 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "6")
+				)
+			)
+		)
+	)
+	(text "Outlet 1: relay K1, driver Q1"
+		(exclude_from_sim no)
+		(at 133.35 154.94 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "4d561718-655f-5ea0-bc60-7f554661a88d")
+	)
+	(sheet
+		(at 200.66 147.32)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "6de384ee-328d-5456-b0b0-d4b97d794c0d")
+		(property "Sheetname" "ch2"
+			(at 200.66 146.62 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch2.kicad_sch"
+			(at 200.66 163.16 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "7")
+				)
+			)
+		)
+	)
+	(text "Outlet 2: relay K2, driver Q2"
+		(exclude_from_sim no)
+		(at 201.93 154.94 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "fa153786-13ee-5a3e-849a-9f6cd208ca17")
+	)
+	(sheet
+		(at 269.24 147.32)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "b1b24986-035c-58c5-a8f9-7b25c66e2a0f")
+		(property "Sheetname" "ch3"
+			(at 269.24 146.62 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch3.kicad_sch"
+			(at 269.24 163.16 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -332,18 +332,206 @@
 			)
 		)
 	)
-	(text "Mains input terminal (shared L, N)"
+	(text "Outlet 3: relay K3, driver Q3"
 		(exclude_from_sim no)
-		(at 293.37 121.92 0)
+		(at 270.51 154.94 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "784a8378-ac44-557b-8147-07a2a6484000")
+		(uuid "b0441d7f-3f29-5d0d-aaf1-af88e72cb70a")
 	)
 	(sheet
-		(at 25.4 142.24)
-		(size 91.44 15.24)
+		(at 337.82 147.32)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "e8e6b6c4-da9e-56eb-b53f-d1aae700ec51")
+		(property "Sheetname" "ch4"
+			(at 337.82 146.62 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch4.kicad_sch"
+			(at 337.82 163.16 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "9")
+				)
+			)
+		)
+	)
+	(text "Outlet 4: relay K4, driver Q4"
+		(exclude_from_sim no)
+		(at 339.09 154.94 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "75edf3f7-a814-5d48-bac7-667092636910")
+	)
+	(sheet
+		(at 25.4 175.26)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "e79e76df-5bd2-5912-8919-36d9dba5b530")
+		(property "Sheetname" "ch5"
+			(at 25.4 174.56 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch5.kicad_sch"
+			(at 25.4 191.1 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "10")
+				)
+			)
+		)
+	)
+	(text "Outlet 5: relay K5, driver Q5"
+		(exclude_from_sim no)
+		(at 26.67 182.88 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "dc537019-1409-5e6b-8816-4b6519e027cb")
+	)
+	(sheet
+		(at 93.98 175.26)
+		(size 55.88 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "de801235-2e58-5b45-a405-5c4ea07b03b5")
+		(property "Sheetname" "ch6"
+			(at 93.98 174.56 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ch6.kicad_sch"
+			(at 93.98 191.1 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "11")
+				)
+			)
+		)
+	)
+	(text "Outlet 6: relay K6, driver Q6"
+		(exclude_from_sim no)
+		(at 95.25 182.88 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "10191725-625c-5f22-903e-ea82195d45e3")
+	)
+	(sheet
+		(at 162.56 175.26)
+		(size 116.84 15.24)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "90444293-8b95-54ac-add3-75d8c9962a0a")
+		(property "Sheetname" "outlets"
+			(at 162.56 174.56 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "outlets.kicad_sch"
+			(at 162.56 191.1 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left top)
+			)
+		)
+		(instances
+			(project "rpi-mains-relay"
+				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
+					(page "12")
+				)
+			)
+		)
+	)
+	(text "Receptacle feeds J2-J4 (one 14/3 NM-B cable per duplex receptacle)"
+		(exclude_from_sim no)
+		(at 163.83 182.88 0)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "e830e18f-6bed-5e77-b24d-5f41f1c215ff")
+	)
+	(sheet
+		(at 25.4 203.2)
+		(size 119.38 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -358,14 +546,14 @@
 		)
 		(uuid "3d33b6f9-21ed-5bfc-a356-a4c53021f7fa")
 		(property "Sheetname" "mech"
-			(at 25.4 141.54 0)
+			(at 25.4 202.5 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "mech.kicad_sch"
-			(at 25.4 158.08 0)
+			(at 25.4 219.04 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -374,21 +562,21 @@
 		(instances
 			(project "rpi-mains-relay"
 				(path "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a"
-					(page "9")
+					(page "13")
 				)
 			)
 		)
 	)
-	(text "Mounting holes, SELV cover and box parts (BOM only)"
+	(text "Holes; partition; enclosures, receptacles, Pi and hardware (BOM only)"
 		(exclude_from_sim no)
-		(at 26.67 149.86 0)
+		(at 26.67 210.82 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
 		(uuid "cb7e48eb-786b-59b8-b733-27048d297dce")
 	)
-	(text "RPi 4-channel 120 VAC relay board (4-11/16 in box) (rev A)\nDomains: LINE (mains, 0 V = L_IN); NEUTRAL (mains, 0 V = L_IN); OUT1 (mains, 0 V = L_IN); OUT2 (mains, 0 V = L_IN); OUT3 (mains, 0 V = L_IN); OUT4\n    (mains, 0 V = L_IN); PE (other, 0 V = PE); SELV (selv, 0 V = GND)\nBarrier SELV/LINE: reinforced, 187 V working, creepage 8 mm, clearance 8 mm (UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier LINE/OUT1: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2)\nBarrier LINE/OUT2: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2)\nBarrier LINE/OUT3: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2)\nBarrier LINE/OUT4: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2)\nBarrier LINE/NEUTRAL: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT1: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT2: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT2: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT3/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier LINE/PE: basic, 187 V working, creepage 6.4 mm, clearance 6.4 mm (IEC 62368-1 basic; UL field wiring to dead metal)\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-2, Q-3, Q-4, Q-5, Q-6"
+	(text "RPi Zero 2 W six-outlet 120 VAC relay board (polycarbonate enclosure) (rev A)\nDomains: LINE (mains, 0 V = L_IN); NEUTRAL (mains, 0 V = L_IN); OUT1 (mains, 0 V = L_IN); OUT2 (mains, 0 V = L_IN); OUT3 (mains, 0 V = L_IN); OUT4\n    (mains, 0 V = L_IN); OUT5 (mains, 0 V = L_IN); OUT6 (mains, 0 V = L_IN); PE (other, 0 V = PE); SELV (selv, 0 V = GND)\nBarrier SELV/LINE: reinforced, 187 V working, creepage 8 mm, clearance 8 mm (UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4)\nBarrier LINE/OUT1: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/OUT2: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/OUT3: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/OUT4: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/OUT5: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/OUT6: functional, 187 V working, creepage 2.5 mm, clearance 1.5 mm (IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV)\nBarrier LINE/NEUTRAL: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT1: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT2: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT5: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier NEUTRAL/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT2: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT5: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT1/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT3: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT5: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT2/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT3/OUT4: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT3/OUT5: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT3/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT4/OUT5: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT4/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier OUT5/OUT6: functional, 187 V working, creepage 6.4 mm, clearance 3.2 mm (UL 1059 / UL 508 practice)\nBarrier LINE/PE: basic, 187 V working, creepage 6.4 mm, clearance 6.4 mm (IEC 62368-1 basic; UL field wiring to dead metal)\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-6, Q-7, Q-8"
 		(exclude_from_sim no)
 		(at 25.4 25.4 0)
 		(effects

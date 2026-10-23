@@ -29,52 +29,76 @@
         "priority": 2147483647
       },
       {
-        "name": "LINE_15A",
+        "name": "LINE_1A",
         "clearance": 1.25,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
         "priority": 0
       },
       {
-        "name": "NEUTRAL_15A",
-        "clearance": 2.5,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "name": "LINE_W7p5",
+        "clearance": 1.25,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
         "priority": 1
       },
       {
-        "name": "OUT1_15A",
-        "clearance": 2.5,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "name": "NEUTRAL_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
         "priority": 2
       },
       {
-        "name": "OUT2_15A",
-        "clearance": 2.5,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "name": "OUT1_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
         "priority": 3
       },
       {
-        "name": "OUT3_15A",
-        "clearance": 2.5,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "name": "OUT2_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
         "priority": 4
       },
       {
-        "name": "OUT4_15A",
-        "clearance": 2.5,
-        "track_width": 6.3,
-        "via_diameter": 5.34,
-        "via_drill": 2.52,
+        "name": "OUT3_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
         "priority": 5
+      },
+      {
+        "name": "OUT4_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
+        "priority": 6
+      },
+      {
+        "name": "OUT5_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
+        "priority": 7
+      },
+      {
+        "name": "OUT6_W7p5",
+        "clearance": 0.2,
+        "track_width": 7.5,
+        "via_diameter": 6.3,
+        "via_drill": 3.0,
+        "priority": 8
       },
       {
         "name": "SELV",
@@ -82,7 +106,23 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 6
+        "priority": 9
+      },
+      {
+        "name": "SELV_1A",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 10
+      },
+      {
+        "name": "SELV_2A",
+        "clearance": 0.2,
+        "track_width": 0.4,
+        "via_diameter": 0.62,
+        "via_drill": 0.3,
+        "priority": 11
       }
     ],
     "meta": {
@@ -91,7 +131,19 @@
     "netclass_patterns": [
       {
         "netclass": "SELV",
+        "pattern": "+3V3"
+      },
+      {
+        "netclass": "SELV_2A",
         "pattern": "+5V"
+      },
+      {
+        "netclass": "SELV_1A",
+        "pattern": "+5V_PI"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/ARM_FB"
       },
       {
         "netclass": "SELV",
@@ -99,15 +151,15 @@
       },
       {
         "netclass": "SELV",
-        "pattern": "/arm/HB_R"
-      },
-      {
-        "netclass": "SELV",
         "pattern": "/arm/LED_ARM_A"
       },
       {
         "netclass": "SELV",
-        "pattern": "/arm/PUMP"
+        "pattern": "/arm/WD_CX"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "/arm/WD_RC"
       },
       {
         "netclass": "SELV",
@@ -159,62 +211,102 @@
       },
       {
         "netclass": "SELV",
-        "pattern": "/selv_in/+5V_IN"
+        "pattern": "/ch5/CH5_G"
       },
       {
         "netclass": "SELV",
-        "pattern": "/selv_in/LED_PWR_A"
+        "pattern": "/ch5/COIL5"
       },
       {
         "netclass": "SELV",
-        "pattern": "CH1_IN"
+        "pattern": "/ch5/LED5_A"
       },
       {
         "netclass": "SELV",
-        "pattern": "CH2_IN"
+        "pattern": "/ch6/CH6_G"
       },
       {
         "netclass": "SELV",
-        "pattern": "CH3_IN"
+        "pattern": "/ch6/COIL6"
       },
       {
         "netclass": "SELV",
-        "pattern": "CH4_IN"
+        "pattern": "/ch6/LED6_A"
+      },
+      {
+        "netclass": "LINE_1A",
+        "pattern": "/mains_in/L_PSU"
       },
       {
         "netclass": "SELV",
+        "pattern": "/power5/LED_PWR_A"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH1"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH2"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH3"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH4"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH5"
+      },
+      {
+        "netclass": "SELV",
+        "pattern": "CH6"
+      },
+      {
+        "netclass": "SELV_1A",
         "pattern": "COIL_RTN"
       },
       {
-        "netclass": "SELV",
+        "netclass": "SELV_2A",
         "pattern": "GND"
       },
       {
         "netclass": "SELV",
-        "pattern": "HB_IN"
+        "pattern": "HB"
       },
       {
-        "netclass": "LINE_15A",
+        "netclass": "LINE_W7p5",
         "pattern": "L_IN"
       },
       {
-        "netclass": "OUT1_15A",
+        "netclass": "OUT1_W7p5",
         "pattern": "L_SW1"
       },
       {
-        "netclass": "OUT2_15A",
+        "netclass": "OUT2_W7p5",
         "pattern": "L_SW2"
       },
       {
-        "netclass": "OUT3_15A",
+        "netclass": "OUT3_W7p5",
         "pattern": "L_SW3"
       },
       {
-        "netclass": "OUT4_15A",
+        "netclass": "OUT4_W7p5",
         "pattern": "L_SW4"
       },
       {
-        "netclass": "NEUTRAL_15A",
+        "netclass": "OUT5_W7p5",
+        "pattern": "L_SW5"
+      },
+      {
+        "netclass": "OUT6_W7p5",
+        "pattern": "L_SW6"
+      },
+      {
+        "netclass": "NEUTRAL_W7p5",
         "pattern": "N"
       }
     ]
