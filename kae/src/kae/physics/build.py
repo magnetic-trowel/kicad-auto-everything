@@ -135,7 +135,7 @@ def _hop_width(ctx, a0, a1, power):
     return float(min(max(w, tmin), 3.0 if power else 1.0))
 
 
-def _loop_comp(ctx, terms, power, gnd_hop=None):
+def _loop_comp(ctx, terms, power, kind, gnd_hop=None):
     bv = ctx.bv
     n = len(terms)
     kinds, widths, zb = [], [], []
@@ -158,7 +158,8 @@ def _loop_comp(ctx, terms, power, gnd_hop=None):
             if g is None and a.net in ctx.gnd and b.net in ctx.gnd:
                 g = k
     return LoopComp(bv, terms, kinds, widths, zb, gnd_hop=g if gnd_hop is None else gnd_hop,
-                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs, kern=ctx.t.kern, body_min=body_min)
+                    gnd_nets=ctx.gnd, knobs=ctx.t.knobs, kern=ctx.t.kern, body_min=body_min,
+                    detour=ctx.t.knobs.detour(kind))
 
 
 def _cluster(points, dmax=3.0):
@@ -302,7 +303,7 @@ def _commutation(ctx, s, Struct):
             variants.append((Tc, pmap.get(c, 1.0 if c == cap_i else PR.ownership_calibrated(0.5)), cp.ref))
     pmax = max(w for _, w, _ in variants)
     variants = [v for v in variants if v[1] >= 0.5 * pmax]          # the caps this cell most likely owns
-    comps = [_loop_comp(ctx, Tc, power=True) for Tc, _, _ in variants]
+    comps = [_loop_comp(ctx, Tc, True, 'commutation') for Tc, _, _ in variants]
     labels = [lab for _, _, lab in variants]
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
@@ -415,7 +416,7 @@ def _decap(ctx, s, Struct):
             if pair is not None:
                 comps.append(_plane_pair_comp(ctx, tp, tr, tc, pair[0], bv.parts[i]))
             else:
-                comps.append(_loop_comp(ctx, [tp, tr, tc, tg], power=False))
+                comps.append(_loop_comp(ctx, [tp, tr, tc, tg], False, 'decap'))
             labels.append(bv.parts[i].ref)
             weights.append(pmap.get(i, 1.0))
         if not comps:
@@ -468,7 +469,7 @@ def _decap_nearest(ctx, specs, Struct):
                 if ic == i:
                     continue
                 tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
-                loops.append(_loop_comp(ctx, [tp, tr, tc, tg], power=False))
+                loops.append(_loop_comp(ctx, [tp, tr, tc, tg], False, 'decap'))
             if not loops:
                 continue
             out.append(Struct(id=f'decap:{rail}:{bv.parts[i].ref}:nearest', kind='decap', conf=float(np.median(confs)),
@@ -522,7 +523,7 @@ def _crystal(ctx, s, Struct):
     ti, to = side_terms(ni, ki), side_terms(no, ko)
     alloc, sens = PR.crystal_budget(s.get('f_Hz'))
     alloc = ctx.budget(s, 'ppm') or alloc
-    comp = CrystalComp(bv, ti, to, sens)
+    comp = CrystalComp(bv, ti, to, sens, detour=ctx.t.knobs.detour('crystal'))
     return Struct(id=s.get('id') or f'xtal:{bv.parts[y].ref}', kind='crystal', conf=ctx.conf(s), alloc=alloc,
                   comps=[comp], labels=['pulling'], info=dict(nets=[ni, no], S_ppm_per_pF=sens))
 
@@ -614,7 +615,7 @@ def _esd(ctx, s, Struct):
     ti = ctx.member_term(ch[-1]) if len(ch) > 2 else None
     if ti is not None and ti.i in (tc.i, tp.i):
         ti = None
-    comp = EsdComp(ctx.bv, tc, tp, ti, None)
+    comp = EsdComp(ctx.bv, tc, tp, ti, None, detour=ctx.t.knobs.detour('esd'))
     alloc = ctx.budget(s, 'L_nH') or PR.esd_budget()
     return Struct(id=s.get('id') or f'esd:{ctx.bv.parts[tc.i].ref}', kind='esd', conf=ctx.conf(s), alloc=alloc,
                   comps=[comp], labels=['surge path'], info=dict(protector=ctx.bv.parts[tp.i].ref,

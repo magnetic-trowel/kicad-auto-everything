@@ -29,15 +29,41 @@ class Belief:
 
 
 # ----------------------------------------------------------------------------- knobs
+# Expected routed copper length over the straight pad-to-pad distance of a board hop, by the
+# structure kind the hop belongs to: the geometric mean over the hops of the human boards'
+# routed copper (least-L' path on each net, kae.route.critical_recheck), measured by
+# tools/research/physics/pt_routed_calib.py (docs/topics/physics/place-terms.md, "Routed
+# copper"). A pad-avoiding single-layer route alone gives 1.14 (pt_grid_route); layer
+# changes, fan-out and competing nets add the rest. Hot-loop hops are routed tight (pours);
+# decap rail hops and surge paths detour more (E5: measured on the corpus, one number per
+# kind).
+HOP_DETOUR = {
+    'commutation': 1.1,
+    'decap': 1.3,
+    'esd': 1.35,
+    'crystal': 1.0,
+}
+
+
 @dataclass
 class Knobs:
     """The few explicit knobs of the objective (everything else is a budget)."""
     barrier: float = 4.0          # phi(u) = u + barrier * max(0, u - 1)^2 ...
     u_sat: float = 10.0           # ... and a logarithmic tail beyond u_sat (estimates 10x over budget are model error)
     use_confidence: bool = True   # weight each structure by the brief's confidence
-    hop_detour: float = 1.0       # expected route length / octilinear pad distance (E5, measured on human boards)
+    hop_detour: object = None     # None: HOP_DETOUR; a number: that factor for every kind (1.0: straight
+    #                               hops); a dict: per-kind overrides of HOP_DETOUR
     pair_cos_min: float = 0.3     # loop pairs with |cos| below this are dropped in the fast path
     jit: str = 'auto'             # 'auto' (numba when installed), 'on', 'off' (pure Python)
+
+    def detour(self, kind):
+        """Hop detour factor of a structure kind (see HOP_DETOUR)."""
+        d = self.hop_detour
+        if d is None:
+            return HOP_DETOUR.get(kind, 1.0)
+        if isinstance(d, dict):
+            return float(d.get(kind, HOP_DETOUR.get(kind, 1.0)))
+        return float(d)
 
 
 def phi(u, barrier=4.0, u_sat=10.0):

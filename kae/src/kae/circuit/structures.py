@@ -2188,8 +2188,9 @@ def power_paths(b: _B, cells) -> tuple[list, list]:
     bank_nets = {k: tuple(sorted(k)) for k in banks}
     adj = defaultdict(list)
     for k, (a, c) in bank_nets.items():
-        adj[a].append(k)
-        adj[c].append(k)
+        if _power_net(b, a, fet_nets) and _power_net(b, c, fet_nets):   # a pre-charge FET into a resistor is no stage
+            adj[a].append(k)
+            adj[c].append(k)
     used = set()
     for k in sorted(banks, key=lambda k: sorted(banks[k])):
         if k in used:

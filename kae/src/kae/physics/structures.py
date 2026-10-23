@@ -114,7 +114,7 @@ class LoopComp:
     on the return (ground) net, or None; gnd_nets: set of ground net names."""
 
     def __init__(self, bv, terms, kinds, widths, zb, gnd_hop=None, gnd_nets=(), knobs=None, rvia=0.15, kern=None,
-                 body_min=None):
+                 body_min=None, detour=1.0):
         self.bv = bv
         self.T = terms
         self.kinds = kinds
@@ -124,7 +124,7 @@ class LoopComp:
         self.gnd_nets = set(gnd_nets)
         self.parts = tuple(sorted({t.i for t in terms}))
         self.cos_min = knobs.pair_cos_min if knobs else 0.3
-        self.detour = knobs.hop_detour if knobs else 1.0
+        self.detour = float(detour)          # expected route length / straight hop (priors.HOP_DETOUR)
         self.rvia = rvia
         n = len(terms)
         self.n = n
@@ -393,8 +393,9 @@ class CouplingComp:
 class CrystalComp:
     """Load pulling (ppm) of a Pierce oscillator from the expected trace capacitance."""
 
-    def __init__(self, bv, xin_terms, xout_terms, s_ppm_per_pf, w=0.2):
+    def __init__(self, bv, xin_terms, xout_terms, s_ppm_per_pf, w=0.2, detour=1.0):
         self.bv = bv
+        self.detour = float(detour)
         self.ti = xin_terms
         self.to = xout_terms
         self.s = s_ppm_per_pf
@@ -421,7 +422,7 @@ class CrystalComp:
         x0, y0 = txy(st, self.ti[0])
         h = self.bv.h_ref(st.G[self.ti[0].i], x0, y0)
         cp = self._cprime(h)
-        dcl = cp * (self.length(st, self.ti) + self.length(st, self.to)) / 4.0
+        dcl = cp * self.detour * (self.length(st, self.ti) + self.length(st, self.to)) / 4.0
         return self.s * dcl
 
 
@@ -570,8 +571,9 @@ class EsdComp:
     nothing). A protector farther from the connector than the protected pin (projected on
     the conn -> IC line) lets the pin see the surge first: the excess is charged twice."""
 
-    def __init__(self, bv, t_conn, t_prot, t_ic, t_prot_gnd, w=0.25):
+    def __init__(self, bv, t_conn, t_prot, t_ic, t_prot_gnd, w=0.25, detour=1.0):
         self.bv = bv
+        self.detour = float(detour)
         self.tc, self.tp, self.ti, self.tg = t_conn, t_prot, t_ic, t_prot_gnd
         self.w = w
         self._hc = {}
@@ -596,7 +598,7 @@ class EsdComp:
             lab = _hyp(ux, uy)
             if lab > 1e-9:
                 beyond = max(0.0, ((px - ax) * ux + (py - ay) * uy) / lab - lab)
-        return lp * (ln + 2.0 * beyond) + lv
+        return lp * self.detour * (ln + 2.0 * beyond) + lv
 
 
 class FeedComp:

@@ -34,7 +34,7 @@ Differential pairs and high-speed buses are left to the bridge, which carries th
 1. **Raster.** One grid per allowed layer at 0.05 mm (coarsened in 1.25× steps above 1.5 M cells), in a window around the anchors. A cell is blocked when a track centred there would come closer to an obstacle than R = w/2 + KiCad's requirement for that pair, plus a margin m = √(R² + res²/2) − R. A point at R + m or more from both ends of a move of length L = res·√2 is at least √((R+m)² − L²/4) = R from all of it, so every move between free neighbours is legal. For R = 0.3 mm, m is 2 µm. A flat 0.71-cell margin (35 µm) closes the 0.2 mm gaps between 0.5 mm-pitch pins; it left an LQFP-100's VCAP and VDDA hops unroutable [C].
 2. **Costs.** Crossing another net's pour adds 0.4 per cell (the cut costs that pour); a 0.4 mm halo around other nets' pads adds 0.6 (their escape space); a via costs 1.5 cells, 3–5 for rails and fallbacks.
 3. **Search.** A* (8-connected, octile heuristic, numba-compiled with a Python fallback) from source to target cells, through vias where one fits on every layer ([critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)). A diagonal move needs both orthogonal neighbours free.
-4. **Geometry.** The cell path becomes one polyline per layer, its ends move onto the pad centres where legal, and it is string-pulled, keeping a shortcut only if the exact check passes. Every segment and via is checked once more with shapely distances, 2 µm above each requirement; a route that fails is refused, never committed.
+4. **Geometry.** The cell path becomes one polyline per layer, its ends move onto the pad centres where legal, and it is string-pulled, keeping a shortcut only if the exact check passes. Every segment and via is checked once more with shapely distances, 2 µm above each requirement; a route that fails is refused, never committed. Terminals keep each layer's own copper. A castellated pad (a through-hole pad and an SMD twin under one number) can be reached on the back only at its hole; ending inside the twin there would leave a dangling track.
 
 **Rules** come from the bridge's rule engine, never re-derived ([critical_space.py](../../../kae/src/kae/route/critical_space.py)):
 - track width min/opt/max per net and layer; via size, drill and same-net via pitch;
@@ -136,7 +136,7 @@ On 12 human placements (120 s each; KiCad DRC 0 errors on every written board) [
 | Critical stage runtime | 39 | 0.3–21 s per board, one shared core |
 | olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
 | Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
-| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 30 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
+| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 31 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
 
 `tools/research/physics/crit_compare.py` puts the human board, the bridge alone and critical + bridge side by side per module and rail, and summarizes re-tweak rounds. `suite_physics.py --compare-to` gives the independent rb HF loop, DC R_eff and worst drop per amp.
 
