@@ -76,8 +76,15 @@ def bridge_script():
     return str(resources.files("kae.board") / "kicad_scripts" / "pcbnew_bridge.py")
 
 
+def _tmpdir():
+    """KAE_TMPDIR when it names an existing directory, else the default temporary directory
+    (a sandbox can hide the configured path, e.g. bwrap mounts a tmpfs over /var/tmp)."""
+    d = os.environ.get("KAE_TMPDIR")
+    return d if d and os.path.isdir(d) else None
+
+
 def _run(op, args, timeout):
-    with tempfile.TemporaryDirectory(prefix="kae-pcbnew-", dir=os.environ.get("KAE_TMPDIR")) as d:
+    with tempfile.TemporaryDirectory(prefix="kae-pcbnew-", dir=_tmpdir()) as d:
         out = os.path.join(d, "out.json")
         cmd = [*kicad_python(), bridge_script(), op, *args(out)]
         try:
@@ -147,7 +154,7 @@ def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
         if p["side"] not in ("F", "B"):
             raise ValueError(f"side must be 'F' or 'B': {p}")
         p["x"], p["y"], p["rot"] = float(p["x"]), float(p["y"]), transform.norm_deg(p["rot"])
-    with tempfile.TemporaryDirectory(prefix="kae-poses-", dir=os.environ.get("KAE_TMPDIR")) as d:
+    with tempfile.TemporaryDirectory(prefix="kae-poses-", dir=_tmpdir()) as d:
         pj = os.path.join(d, "poses.json")
         with open(pj, "w") as f:
             json.dump(items, f)
@@ -182,7 +189,7 @@ def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_
     ([{net, layer, a: [x, y], b: [x, y], width}], mm, canonical layer names), lock or unlock
     all routing (unlock_all leaves the uuids in `keep_locked` locked); written to `dst_path`
     with the plain writer. Returns {removed, widened, added, routing}."""
-    with tempfile.TemporaryDirectory(prefix="kae-edit-", dir=os.environ.get("KAE_TMPDIR")) as d:
+    with tempfile.TemporaryDirectory(prefix="kae-edit-", dir=_tmpdir()) as d:
         ej = os.path.join(d, "edits.json")
         with open(ej, "w") as f:
             json.dump(dict(delete=list(delete), width=dict(widths or {}), lock_all=lock_all,

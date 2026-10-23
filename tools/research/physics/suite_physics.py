@@ -64,6 +64,16 @@ def rss_mb(pid):
     return 0.0
 
 
+
+def kicad_cli_argv(cmd=None):
+    """kicad-cli as an argv list: an explicit command (shell-split, so it may carry a wrapper
+    prefix), else KAE_KICAD_WRAP (e.g. an Apptainer exec prefix) + kicad-cli, else kicad-cli."""
+    import shlex
+    if cmd:
+        return shlex.split(cmd)
+    wrap = os.environ.get('KAE_KICAD_WRAP')
+    return [*shlex.split(wrap), 'kicad-cli'] if wrap else ['kicad-cli']
+
 def run_child(cmd, log_path, timeout, mem_gb, cwd=None, env=None):
     """Run cmd with a wall-clock timeout and a resident-memory cap; returns a record with rc, wall time,
     peak RSS (MB, from wait4) and status (ok, error, timeout, memory).
@@ -212,7 +222,7 @@ def process_board(it, args):
         before = board.stat().st_mtime_ns
         keep = work / 'board.saved_fills.kicad_pcb'
         shutil.copy2(board, keep)
-        r = run_child([args.kicad_cli, 'pcb', 'drc', '--format', 'json', '--refill-zones', '--save-board', '--severity-all',
+        r = run_child([*kicad_cli_argv(args.kicad_cli), 'pcb', 'drc', '--format', 'json', '--refill-zones', '--save-board', '--severity-all',
                        '--units', 'mm', '-o', str((out / 'drc.json').resolve()), str(board.resolve())],
                       log, args.refill_timeout or args.timeout, None, cwd=str(work))
         saved = board.exists() and board.stat().st_mtime_ns != before and r['status'] == 'ok'
@@ -634,7 +644,9 @@ def main(argv=None):
     ap.add_argument('--refill-timeout', type=float, default=None, help='seconds for the KiCad refill (default --timeout)')
     ap.add_argument('--mem-gb', type=float, default=4.0, help='resident-memory cap per tool process (GB; address space capped at 2.5x)')
     ap.add_argument('--python', default=sys.executable)
-    ap.add_argument('--kicad-cli', default=os.environ.get('KAE_KICAD_CLI', 'kicad-cli'))
+    ap.add_argument('--kicad-cli', default=os.environ.get('KAE_KICAD_CLI'),
+                    help='kicad-cli command (may carry a wrapper prefix); default: KAE_KICAD_CLI, else '
+                         'KAE_KICAD_WRAP + kicad-cli, else kicad-cli')
     ap.add_argument('--passport-args', default='', help='extra arguments for suite_passports.py (quoted)')
     ap.add_argument('--force', action='store_true', help='redo boards that already have meta.json')
     ap.add_argument('--keep-work', action='store_true', help='keep the refilled board copies')

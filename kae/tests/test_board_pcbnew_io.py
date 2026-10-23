@@ -123,3 +123,12 @@ def test_kicad8_dialect_through_pcbnew(tmp_path):
     rep = pcbnew_io.verify(p)
     assert rep["pad_err"] < 1e-6 and rep["net_mismatch"] == 0 and not rep["missing_fp"]
     assert rep["locked_mismatch"] == [] and rep["netclass_diff"] == {}
+
+
+def test_missing_kae_tmpdir_falls_back_to_the_default(monkeypatch):
+    """A KAE_TMPDIR the process cannot see (e.g. hidden by a sandbox tmpfs) must not break
+    pcbnew calls: the default temporary directory is used instead."""
+    monkeypatch.setenv("KAE_TMPDIR", "/nonexistent/kae-tmp")
+    assert pcbnew_io._tmpdir() is None
+    monkeypatch.setenv("KAE_TMPDIR", "/tmp")
+    assert pcbnew_io._tmpdir() == "/tmp"
