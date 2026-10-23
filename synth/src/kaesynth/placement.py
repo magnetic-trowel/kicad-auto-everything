@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Placement intent: board/mechanical spec and relations over named objects.
+
+Relations follow docs/topics/llm/interfaces-relations-vs-coordinates.md: the design names
+objects and ordinal magnitudes (tight/close/loose); metric values live on the solver side
+(MAGNITUDES_MM is only the default the emitter writes next to them).
+"""
+from dataclasses import dataclass, field
+
+from .ir import Block, DesignError, Domain, Part, PinRef
+
+STRENGTHS = ("tight", "close", "loose")
+EDGES = ("north", "south", "east", "west", "any")
+MAGNITUDES_MM = {"tight": 3.0, "close": 8.0, "loose": 20.0}
+
+
+@dataclass
+class Hole:
+    x: float
+    y: float
+    drill_mm: float
+    pad_mm: float = None
+    plated: bool = False
+    net: str = None
+    note: str = ""
+
+
+@dataclass
+class BoardSpec:
+    """Mechanical envelope. Coordinates in mm, origin at the outline's lower-left corner."""
+    width_mm: float = None
+    height_mm: float = None
+    outline: list = None              # polygon [(x, y), ...]; overrides width/height
+    max_component_height_mm: float = None
+    max_bottom_height_mm: float = None
+    layers: int = 2
+    thickness_mm: float = 1.6
+    copper_oz: float = 1.0
+    holes: list = field(default_factory=list)
+    enclosure: str = ""
+    coating: str = ""                  # e.g. "acrylic conformal coat, IPC-CC-830"
+    keepouts: list = field(default_factory=list)   # [{"rect": [x0,y0,x1,y1], "what": ..., "layers": ...}]
+    notes: str = ""
+
+    def as_dict(self):
+        d = {k: v for k, v in self.__dict__.items() if v not in (None, [], "")}
+        if self.holes:
+            d["holes"] = [{k: v for k, v in h.__dict__.items() if v not in (None, "")} for h in self.holes]
+        return d
+
+
+class Placement:
+    """Collects relations. Objects may be Parts, PinRefs, Blocks, Domains or refdes strings."""
+
+    def __init__(self, design):
+        self.design = design
+        self.relations = []
+
+    def _rel(self, kind, note="", **kw):
+        r = {"kind": kind, **kw}
+        if note:
+            r["note"] = note
+        self.relations.append(r)
+        return r
+
+    @staticmethod
+    def _strength(s):
+        if s not in STRENGTHS:
+            raise DesignError(f"strength {s!r} not in {STRENGTHS}")
+        return s
+
+    def group(self, block, strength="close", note=""):
+        return self._rel("group", block=block, strength=self._strength(strength), note=note)
+
+    def near(self, a, b, strength="close", note=""):
+        return self._rel("near", a=a, b=b, strength=self._strength(strength), note=note)
+
+    def hot_loop(self, pins, note=""):
+        if len(pins) < 2:
+            raise DesignError("hot_loop needs at least two pins/parts")
+        return self._rel("hot_loop", members=list(pins), note=note)
+
+    def edge(self, obj, side="any", note="", overhang_mm=None):
+        if side not in EDGES:
+            raise DesignError(f"edge side {side!r} not in {EDGES}")
+        return self._rel("edge", obj=obj, side=side, overhang_mm=overhang_mm, note=note)
+
+    def separate(self, a, b, note="", slot=None):
+        """Keep two domains apart; spacing comes from the matching Barrier."""
+        return self._rel("separate", a=a, b=b, slot=slot, note=note)
+
+    def keepout(self, obj, what="all", layers="all", note=""):
+        return self._rel("keepout", obj=obj, what=what, layers=layers, note=note)
+
+    def thermal(self, obj, watts, sink="copper", note=""):
+        return self._rel("thermal", obj=obj, watts=watts, sink=sink, note=note)
+
+    def array(self, objs, axis="x", pitch="equal", note=""):
+        return self._rel("array", members=list(objs), axis=axis, pitch=pitch, note=note)
+
+    def align(self, objs, axis="x", note=""):
+        return self._rel("align", members=list(objs), axis=axis, note=note)
+
+    def symmetric(self, pairs, axis="v", note=""):
+        return self._rel("symmetric", pairs=[list(p) for p in pairs], axis=axis, note=note)
+
+    def side(self, obj, side="top", note=""):
+        if side not in ("top", "bottom"):
+            raise DesignError("side must be top or bottom")
+        return self._rel("side", obj=obj, side=side, note=note)
+
+    def far(self, a, b, strength="close", note=""):
+        return self._rel("far", a=a, b=b, strength=self._strength(strength), note=note)
+
+    def orient(self, obj, facing, note=""):
+        """Connector or part orientation, e.g. facing='out' of the nearest edge or 'north'."""
+        return self._rel("orient", obj=obj, facing=facing, note=note)
+
+    def region(self, block, where, note=""):
+        """Coarse floorplan zone for a block: north/south/east/west/center or 'corner-ne' etc."""
+        return self._rel("region", block=block, where=where, note=note)
+
+    def custom(self, kind, note="", **kw):
+        """A relation outside the vocabulary; checked by humans until a checker exists."""
+        return self._rel(f"x-{kind}", note=note, **kw)
+
+    # -- resolution ---------------------------------------------------------------------------
+    def resolve(self):
+        """Relations with every object reference turned into a name; raises on unknown refs."""
+        d = self.design
+        out = []
+        for r in self.relations:
+            out.append({k: self._name(v) for k, v in r.items()})
+        return out
+
+    def _name(self, v):
+        d = self.design
+        if isinstance(v, list):
+            return [self._name(x) for x in v]
+        if isinstance(v, PinRef):
+            return f"{v.part.ref}.{v.pin.number}"
+        if isinstance(v, Part):
+            return v.ref
+        if isinstance(v, Block):
+            return f"block:{v.name}"
+        if isinstance(v, Domain):
+            return f"domain:{v.name}"
+        if isinstance(v, str) and v and not v.startswith(("block:", "domain:")) and \
+                (v[0].isupper() and any(c.isdigit() for c in v)) and "." not in v and " " not in v:
+            # refdes string: validate it exists
+            d.find_part(v)
+        return v

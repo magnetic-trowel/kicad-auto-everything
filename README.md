@@ -9,6 +9,14 @@ helper systems for LLMing KiCad
 - [`research_notes/LLM driven PCB placement and routing/`](research_notes/LLM%20driven%20PCB%20placement%20and%20routing/):
   the raw survey notes the docs cite as evidence.
 
+## Design synthesis
+
+- [`synth/`](synth/README.md) (`kaesynth`): an LLM writes a typed circuit description
+  (`designs/<slug>/design.py`); `kaesynth build` checks it (ratings vs worst-case net voltage,
+  isolation domains, protection, provenance), writes a KiCad 10 schematic and project, proves the
+  schematic's netlist matches, and emits placement intent for the placer/router.
+- [`designs/`](designs/): worked examples from plain-language briefs.
+
 ## License
 
 Code is [GPL-3.0-or-later](LICENSE); documentation and research notes are

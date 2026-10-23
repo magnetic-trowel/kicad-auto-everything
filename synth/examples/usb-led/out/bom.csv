@@ -1,0 +1,10 @@
+Refs,Qty,Value,MPN,Manufacturer,Footprint,Category,Description,Lifecycle,Second source,Datasheet,DNP
+C101 C102,2,1u,generic,,Capacitor_SMD:C_0603_1608Metric,capacitor_ceramic,Capacitor 1u 16V X7R 0603,active,,,
+D201,1,green,generic,,LED_SMD:LED_0603_1608Metric,led,LED green 0603,active,,,
+F101,1,0.5A,0805L050SLWR,Littelfuse,Fuse:Fuse_0805_2012Metric,ptc,PTC 0.5A 6V,active,,,
+J201,1,1x1,,,Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical,connector,Connector 1 pins,active,,,
+J1,1,1x2,,,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,connector,Connector 2 pins,active,,,
+Q201,1,2N7002,2N7002,onsemi,Package_TO_SOT_SMD:SOT-23,mosfet,N-MOSFET 60V 0.3A,active,,https://www.onsemi.com/pdf/datasheet/nds7002a-d.pdf,
+R202,1,10k,generic,,Resistor_SMD:R_0603_1608Metric,resistor,Resistor 10k 1% 0603,active,,,
+R201,1,150,generic,,Resistor_SMD:R_0603_1608Metric,resistor,Resistor 150 1% 0603,active,,,
+U101,1,AP2112K-3.3TRG1,AP2112K-3.3TRG1,Diodes Inc.,Package_TO_SOT_SMD:SOT-23-5,ic,,active,,https://www.diodes.com/assets/Datasheets/AP2112.pdf,

@@ -49,3 +49,21 @@ kaebench report kae-work/results/<run> kae-work/results/<baseline-run>
 - A router's own log is not a score; only `kicad-cli` on the re-opened board counts.
 - `kae-work/` is git-ignored. Commit code, manifests, suites and summarized results,
   never boards (third-party licences).
+
+## Design synthesis (`synth/`, package `kaesynth`; designs in `designs/<slug>/`)
+
+Turns an LLM-written `designs/<slug>/design.py` (typed circuit IR) into a checked KiCad 10
+schematic, `.kicad_dru` and `intent.yaml` placement relations. Guide: `synth/README.md`.
+
+```bash
+cd synth && uv venv .venv && . .venv/bin/activate && uv pip install -e '.[test]'   # needs KiCad 10 + kicad-symbols/kicad-footprints
+kaesynth build ../designs/<slug>/design.py -v    # writes designs/<slug>/out/; exit 1 while errors remain
+pytest tests
+```
+
+- Never relax a check, rating or derating to make a design pass. Fix the design, or
+  `d.waive(check, regex, reason, by)` with a reason a reviewer can audit. Change a check in
+  `synth/src/kaesynth/checks.py` only in a separate commit that says why.
+- Part facts (pins, pin maps, ratings, isolation) come from datasheets with `source=` provenance,
+  never from memory. Spacing numbers for barriers cite the standard's table.
+- `designs/<slug>/out/` is generated and committed; rebuild instead of editing it.

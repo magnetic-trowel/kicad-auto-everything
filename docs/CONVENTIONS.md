@@ -39,6 +39,7 @@ checked at the end).
 | `workflow/` | expert workflow state machine, practitioner views, trust requirements | practice |
 | `verification/` | review checklist, evaluation stack, metrics, benchmarks | practice |
 | `architecture/` | constraint/intent IR | practice |
+| `synthesis/` | brief-to-schematic generation, part selection, schematic-level verification, intent handoff | synthesis |
 
 ## Size limits
 

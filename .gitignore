@@ -6,3 +6,8 @@ bench/.venv/
 kae-work/
 CLAUDE.local.md
 .claude/settings.local.json
+synth/.venv/
+*.kicad_prl
+*.lck
+fp-info-cache
+.pytest_cache/

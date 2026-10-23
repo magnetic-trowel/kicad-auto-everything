@@ -37,6 +37,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | Writing a checker | [rules/checkers-si-emi](topics/rules/checkers-si-emi.md), [rules/checkers-power](topics/rules/checkers-power.md), [verification/critic-stack](topics/verification/critic-stack.md) |
 | Evaluating results | [verification/evaluation-stack](topics/verification/evaluation-stack.md), [verification/benchmarks](topics/verification/benchmarks.md), [verification/benchmark-plan](topics/verification/benchmark-plan.md) |
 | Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md) |
+| Turning a product brief into a schematic and placement intent | [synth/README](../synth/README.md), [synthesis/schematic-generation-landscape](topics/synthesis/schematic-generation-landscape.md), [synthesis/part-selection-and-verification](topics/synthesis/part-selection-and-verification.md), worked designs in [designs/](../designs/) |
 | Planning the agent's workflow | [workflow/expert-state-machine](topics/workflow/expert-state-machine.md), [workflow/trust-requirements](topics/workflow/trust-requirements.md) |
 | Reusing third-party code or data | [licensing/reuse-matrix](topics/licensing/reuse-matrix.md), [data/licensing-tiers-and-contamination](topics/data/licensing-tiers-and-contamination.md) |
 
@@ -47,7 +48,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 [routing](topics/routing/), [solvers](topics/solvers/), [llm](topics/llm/),
 [data](topics/data/), [ux](topics/ux/), [kicad](topics/kicad/),
 [landscape](topics/landscape/), [licensing](topics/licensing/),
-[rules](topics/rules/) (with `interfaces/` and `power/`),
+[rules](topics/rules/) (with `interfaces/` and `power/`), [synthesis](topics/synthesis/),
 [workflow](topics/workflow/), [verification](topics/verification/).
 
 Canonical docs where two areas overlap: PCBWorld →

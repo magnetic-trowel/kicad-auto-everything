@@ -1,0 +1,464 @@
+{
+ "design": "usb-led",
+ "parts": [
+  {
+   "ref": "J1",
+   "block": "power",
+   "name": "J1",
+   "value": "1x2",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+   "category": "connector",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "Pin_1",
+     "type": "passive",
+     "net": "VBUS",
+     "nc": false
+    },
+    "2": {
+     "name": "Pin_2",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "F101",
+   "block": "power",
+   "name": "F1",
+   "value": "0.5A",
+   "mpn": "0805L050SLWR",
+   "manufacturer": "Littelfuse",
+   "footprint": "Fuse:Fuse_0805_2012Metric",
+   "category": "ptc",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "VBUS",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "U101",
+   "block": "power",
+   "name": "U1",
+   "value": "AP2112K-3.3TRG1",
+   "mpn": "AP2112K-3.3TRG1",
+   "manufacturer": "Diodes Inc.",
+   "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+   "category": "ic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "VIN",
+     "type": "power_in",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "GND",
+     "type": "power_in",
+     "net": "GND",
+     "nc": false
+    },
+    "3": {
+     "name": "EN",
+     "type": "input",
+     "net": "+5V",
+     "nc": false
+    },
+    "4": {
+     "name": "NC",
+     "type": "no_connect",
+     "net": null,
+     "nc": true
+    },
+    "5": {
+     "name": "VOUT",
+     "type": "power_out",
+     "net": "+3V3",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C101",
+   "block": "power",
+   "name": "C1",
+   "value": "1u",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+5V",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C102",
+   "block": "power",
+   "name": "C2",
+   "value": "1u",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "Q201",
+   "block": "led",
+   "name": "Q1",
+   "value": "2N7002",
+   "mpn": "2N7002",
+   "manufacturer": "onsemi",
+   "footprint": "Package_TO_SOT_SMD:SOT-23",
+   "category": "mosfet",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "3": {
+     "name": "D",
+     "type": "passive",
+     "net": "/led/LED_K",
+     "nc": false
+    },
+    "1": {
+     "name": "G",
+     "type": "input",
+     "net": "/led/CTL",
+     "nc": false
+    },
+    "2": {
+     "name": "S",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R201",
+   "block": "led",
+   "name": "R1",
+   "value": "150",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "+3V3",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/led/LED_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R202",
+   "block": "led",
+   "name": "R2",
+   "value": "10k",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/led/CTL",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "GND",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "D201",
+   "block": "led",
+   "name": "D1",
+   "value": "green",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "LED_SMD:LED_0603_1608Metric",
+   "category": "led",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "K",
+     "type": "passive",
+     "net": "/led/LED_K",
+     "nc": false
+    },
+    "2": {
+     "name": "A",
+     "type": "passive",
+     "net": "/led/LED_A",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "J201",
+   "block": "led",
+   "name": "J1",
+   "value": "1x1",
+   "mpn": null,
+   "manufacturer": null,
+   "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical",
+   "category": "connector",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "Pin_1",
+     "type": "passive",
+     "net": "/led/CTL",
+     "nc": false
+    }
+   }
+  }
+ ],
+ "nets": [
+  {
+   "name": "GND",
+   "domain": "USB",
+   "v": [
+    0.0,
+    0.0
+   ],
+   "kind": "ground",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C101",
+     "2"
+    ],
+    [
+     "C102",
+     "2"
+    ],
+    [
+     "J1",
+     "2"
+    ],
+    [
+     "Q201",
+     "2"
+    ],
+    [
+     "R202",
+     "2"
+    ],
+    [
+     "U101",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "VBUS",
+   "domain": "USB",
+   "v": [
+    0.0,
+    5.5
+   ],
+   "kind": "power",
+   "i_max": 0.3,
+   "external": true,
+   "nodes": [
+    [
+     "F101",
+     "1"
+    ],
+    [
+     "J1",
+     "1"
+    ]
+   ]
+  },
+  {
+   "name": "+5V",
+   "domain": "USB",
+   "v": [
+    0.0,
+    5.5
+   ],
+   "kind": "power",
+   "i_max": 0.3,
+   "external": false,
+   "nodes": [
+    [
+     "C101",
+     "1"
+    ],
+    [
+     "F101",
+     "2"
+    ],
+    [
+     "U101",
+     "1"
+    ],
+    [
+     "U101",
+     "3"
+    ]
+   ]
+  },
+  {
+   "name": "+3V3",
+   "domain": "USB",
+   "v": [
+    0.0,
+    3.4
+   ],
+   "kind": "power",
+   "i_max": 0.1,
+   "external": false,
+   "nodes": [
+    [
+     "C102",
+     "1"
+    ],
+    [
+     "R201",
+     "1"
+    ],
+    [
+     "U101",
+     "5"
+    ]
+   ]
+  },
+  {
+   "name": "/led/LED_A",
+   "domain": "USB",
+   "v": [
+    0.0,
+    3.4
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D201",
+     "2"
+    ],
+    [
+     "R201",
+     "2"
+    ]
+   ]
+  },
+  {
+   "name": "/led/LED_K",
+   "domain": "USB",
+   "v": [
+    0.0,
+    3.4
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "D201",
+     "1"
+    ],
+    [
+     "Q201",
+     "3"
+    ]
+   ]
+  },
+  {
+   "name": "/led/CTL",
+   "domain": "USB",
+   "v": [
+    0.0,
+    3.4
+   ],
+   "kind": "signal",
+   "i_max": null,
+   "external": true,
+   "nodes": [
+    [
+     "J201",
+     "1"
+    ],
+    [
+     "Q201",
+     "1"
+    ],
+    [
+     "R202",
+     "1"
+    ]
+   ]
+  }
+ ]
+}
