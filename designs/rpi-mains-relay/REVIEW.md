@@ -276,3 +276,4 @@ the Pi inside on J5 (Q-2 to Q-5 recorded as answered).
 - **Removed:** `lib.footprint_custom` (footprints are now drawn) and `conn.empty_net PE` (the framework now exempts domain references).
 - **Tightened:** the overcurrent and entry-fuse regexes, from `L_IN|…` to `L_SW1–6` and `N|L_SW1–6`.
 - **Framework gap (reported):** L_IN is no longer flagged because F1 touches it, although F1 protects only the PS1 branch.
+- **Framework update (123504b) applied:** all mains barriers are now `ac=True`; U1 limits carry the abs max (6.5 V) with `v_rec=5.5`; the relay isolation declares MG IIIa. The build reports no `waiver.unused`, so all six rules still match real findings.

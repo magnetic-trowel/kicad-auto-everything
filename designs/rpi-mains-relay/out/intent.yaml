@@ -252,7 +252,7 @@ barriers:
     slot: false
     source: "TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10). Required at 120 V OVC III: clearance 3.0 mm (F.2) / 3.8 mm (62368-1 T10) for the 4 kV reinforced impulse, creepage 3.0 mm (2 x F.4 125 V MG III); design 8.0/8.0 matches the relay's own 8/8 mm"
     notes: "covers NEUTRAL and OUT1-6 (they float on LINE). Hi-pot 3.0 kVrms 60 s type, 1 s production"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT1
     grade: functional
@@ -266,7 +266,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K1's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT2
     grade: functional
@@ -280,7 +280,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K2's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT3
     grade: functional
@@ -294,7 +294,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K3's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT4
     grade: functional
@@ -308,7 +308,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K4's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT5
     grade: functional
@@ -322,7 +322,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K5's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: OUT6
     grade: functional
@@ -336,7 +336,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside the relay footprint"
     notes: "across K6's open contact; inside the relay footprint the 5.0 mm pin pitch governs"
-    ac: false
+    ac: true
   - a: LINE
     b: NEUTRAL
     grade: functional
@@ -350,7 +350,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "opposite polarity; field-wiring terminals"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT1
     grade: functional
@@ -364,7 +364,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT2
     grade: functional
@@ -378,7 +378,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT3
     grade: functional
@@ -392,7 +392,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT4
     grade: functional
@@ -406,7 +406,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT5
     grade: functional
@@ -420,7 +420,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: NEUTRAL
     b: OUT6
     grade: functional
@@ -434,7 +434,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "switched line vs neutral, opposite polarity"
-    ac: false
+    ac: true
   - a: OUT1
     b: OUT2
     grade: functional
@@ -448,7 +448,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT1
     b: OUT3
     grade: functional
@@ -462,7 +462,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT1
     b: OUT4
     grade: functional
@@ -476,7 +476,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT1
     b: OUT5
     grade: functional
@@ -490,7 +490,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT1
     b: OUT6
     grade: functional
@@ -504,7 +504,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT2
     b: OUT3
     grade: functional
@@ -518,7 +518,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT2
     b: OUT4
     grade: functional
@@ -532,7 +532,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT2
     b: OUT5
     grade: functional
@@ -546,7 +546,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT2
     b: OUT6
     grade: functional
@@ -560,7 +560,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT3
     b: OUT4
     grade: functional
@@ -574,7 +574,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT3
     b: OUT5
     grade: functional
@@ -588,7 +588,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT3
     b: OUT6
     grade: functional
@@ -602,7 +602,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT4
     b: OUT5
     grade: functional
@@ -616,7 +616,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT4
     b: OUT6
     grade: functional
@@ -630,7 +630,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: OUT5
     b: OUT6
     grade: functional
@@ -644,7 +644,7 @@ barriers:
     slot: false
     source: "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     notes: "one outlet on, the other off: 120 V between them"
-    ac: false
+    ac: true
   - a: LINE
     b: PE
     grade: basic
@@ -658,7 +658,7 @@ barriers:
     slot: false
     source: "62368-1 basic: clearance 1.5 mm at 2.5 kV (SLUP419 Table 5), creepage 1.5 mm [I]; UL field wiring to grounded dead metal 1/4 in [S]"
     notes: "PE has no copper on the PCB: met by the LINE edge_clearance rule (board edges, mounting holes) and by keeping EGC splices in the wire compartment"
-    ac: false
+    ac: true
 netclasses:
   - name: LINE_1A
     domain: LINE

@@ -370,7 +370,9 @@ L_PSU (after F1) equals L_IN while F1 conducts. With F1 open, PS1 pulls it somew
 It is modelled at L_IN's potential, so PS1 is checked against the true L–N voltage, and the open-fuse
 voltage across F1 is a calc (`f1_open_voltage_ratio`).
 
-Barrier table (PD2, MG IIIb, OVC III).
+Barrier table (PD2, MG IIIb, OVC III). Every barrier is declared `ac=True`: Uw is a 187 V peak, and the
+checker scales the parts' Vrms working ratings by √2 before comparing (relays 250 Vrms, PS1 305 Vrms). The
+relay's own mould is MG IIIa (PTI 250 [P]); the board is still taken as IIIb.
 
 | Pair | Grade | Uw | Required creepage / clearance (source) | Design | Slot |
 |---|---|---|---|---|---|
@@ -527,7 +529,7 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | J1 | Line input, 2-pole | WAGO **2606-3102/020-000** | UL 1059 600 V 31 A; IEC 41 A [P] | 15/31 A = 48 % | `Conn_01x02` / **custom** `custom:WAGO_2606-3102_020-000` | Active [S] | — |
 | J2–J4 | Receptacle feeds, 3-pole | WAGO **2606-3103/020-000** | as J1; L 25.35 mm [P] | 15/31 A | `Conn_01x03` / **custom** `custom:WAGO_2606-3103_020-000` | data sheet 22.10.2026 [P] | — |
 | J5 | Pi socket 2×20 | Sullins **PPPC202LFBN-RC** | 8.51 mm, 3 A, 250 VDC, gold, V-0 [S] | 0.5 A per 5 V pin | `Conn_02x20_Odd_Even` / **custom** `custom:RPi_Zero2W_Socket_2x20_P2.54mm` | [S] | Samtec SSW-120-01-G-D [unverified] |
-| U1 | Retriggerable monostable | TI **SN74LVC1G123DCTR** | 1.65–5.5 V; glitch-free power-up reset; Ioff; tw 1.0–1.1 ms at 10 k/0.1 µF [P] | VCC 3.47/5.5 V | `74xGxx:74LVC1G123` / `Package_SO:SSOP-8_2.95x2.8mm_P0.65mm` | production data [P] | Nexperia 74LVC1G123 [unverified] |
+| U1 | Retriggerable monostable | TI **SN74LVC1G123DCTR** | 1.65–5.5 V; glitch-free power-up reset; Ioff; tw 1.0–1.1 ms at 10 k/0.1 µF [P] | VCC 3.47 V vs 5.5 V recommended (6.5 V abs max) | `74xGxx:74LVC1G123` / `Package_SO:SSOP-8_2.95x2.8mm_P0.65mm` | production data [P] | Nexperia 74LVC1G123 [unverified] |
 | Q1–Q7 | N-MOSFET | AOS **AO3400A** | 30 V; R_DS ≤ 48 mΩ at 2.5 V; V_th 0.65–1.45 V [P] | V_DS 6.1/30 V; I_D 0.55/4.7 A (Q7) | `Transistor_FET:AO3400A` / SOT-23 | [I] | DMN2041L [unverified] |
 | D1–D6 | Coil flyback | Diodes **1N4148W-7-F** | 100 V, 300 mA [P] | 93 mA | `Diode:1N4148W` / SOD-123 | [S] | Vishay 1N4148W |
 | D7–D14 | LEDs (6 channel, ARM, PWR) | Kingbright **APT1608SGC** | 25 mA [P] | 2.3 mA | `Device:LED` / 0603 | [S] | Würth 150060VS75000 |

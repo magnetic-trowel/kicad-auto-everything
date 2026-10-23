@@ -278,23 +278,25 @@ PARTITION = _mech("KAE-RPMR-MP1", "custom (die-cut and folded to drawing, TBD)",
                   "", {"ratings": "requirement from DESIGN.md H2/REQ-31 (supplementary insulation over THHN/NM "
                                   "basic insulation) [I]; material [unverified]"},
                   lifecycle="active", second_source="0.43 mm Formex GK-17 polypropylene, two layers")
-ENCLOSURE = _mech("NS1086", "ABB (Carlon) Circuit Safe",
-                  "Enclosure 10 x 8 x 6 in, polycarbonate, opaque screw cover, captive screws, nonmetallic "
-                  "hinges/rails; UL 50 / CSA C22.2 No.94.1 Types 4X, 12, 13 (file E88685); RF-transparent",
-                  _CARLON, {"ratings": "ABB/Carlon catalog 'E Enclosures' p.12-14: NS1086 10 x 8 x 6 in, kit with "
-                                       "body, lid and mounting-rail kit; outside 10.40 x 8.40 x 6.49 in; back panel "
-                                       "JP108 (steel) / JP108P (PVC) 8.75 x 6.88 in; 'applications where the "
+ENCLOSURE = _mech("NS14126", "ABB (Carlon) Circuit Safe",
+                  "Enclosure 14 x 12 x 6 in, polycarbonate, opaque screw cover, captive screws, nonmetallic "
+                  "hinges/rails; UL 50 / CSA C22.2 No.94.1 Types 4X, 12, 13 (file E88685); RF-transparent. The "
+                  "receptacle opening is cut in the cover (see MP4)",
+                  _CARLON, {"ratings": "ABB/Carlon catalog 'E Enclosures' p.12-14: NS14126 14 x 12 x 6 in, kit with "
+                                       "body, lid and mounting-rail kit; outside 14.40 x 12.40 x 6.49 in; back panel "
+                                       "JP1412 (steel) / JP1412P (PVC) 12.75 x 10.88 in; 'applications where the "
                                        "ability to pass wireless signals is needed'"},
-                  lifecycle="active", second_source="NS1084 (4 in deep: tighter wire bending, hotter); Hammond "
-                                                    "PC series [unverified]")
-BACK_PANEL = _mech("JP108P", "ABB (Carlon)", "Back panel PVC 8.75 x 6.88 in for NS108x (10-32 x 3/8 screws "
+                  lifecycle="active", second_source="NS16146 (16 x 14 x 6 in); Hammond PC series [unverified]")
+BACK_PANEL = _mech("JP1412P", "ABB (Carlon)", "Back panel PVC 12.75 x 10.88 in for NS1412x (10-32 x 3/8 screws "
                    "ordered separately)", _CARLON, {"ratings": "catalog p.13-14 back panel table"},
-                   lifecycle="active", second_source="JP108 steel panel (then bond it to the EGC)")
-BOX_RECEPT = _mech("BH353A", "ABB (Carlon) Superblue",
-                   "3-gang nonmetallic (PVC) device box, 53 in3, nail/screw mount, UL listed E11461",
-                   "https://www.elliottelectric.com/P/Item/TAB/BH353A/",
-                   {"ratings": "[S] distributor listings: three-gang new-work outlet box, 53 cu in, PVC, UL E11461"},
-                   lifecycle="active", second_source="Carlon B355R (3-gang old work, 55 in3)")
+                   lifecycle="active", second_source="JP1412 steel panel (then bond it to the EGC)")
+SUBPLATE = _mech("KAE-RPMR-MP4", "custom (machined to drawing, TBD)",
+                 "Receptacle subplate: 6.4 mm (1/4 in) polycarbonate UL 94 V-0, behind the cover's 3-gang cut-out, "
+                 "fixed to the cover with 6 nylon-insulated through bolts; 6-32 tapped at standard device-yoke "
+                 "spacing (3-9/32 in screw centres, 1-13/16 in gang pitch) for three duplex receptacles; the nylon "
+                 "3-gang wallplate (MP8) clamps the cover from outside", "",
+                 {"ratings": "requirement from DESIGN.md 5.2 [I]; not a listed device-mounting method (Q-17)"},
+                 lifecycle="active", second_source="UL 508A panel shop to its own drawing")
 RECEPTACLE = _mech("TR5252", "Legrand Pass & Seymour",
                    "Duplex receptacle NEMA 5-15R 15 A 125 V, tamper-resistant, spec grade, back and side wire, "
                    "break-off line-side tab (split circuit)",
@@ -328,10 +330,11 @@ HW_PI = _mech(None, "generic", "Pi mounting kit: 4 x M2.5 x 11 mm female-female 
 HW_BOARD = _mech(None, "generic", "Board mounting kit: 6 x M3 x 12 mm female-female hex standoff + 12 x M3 x 6 mm "
                  "screws, nylon 6/6; back panel drilled 3.2 mm to the board hole pattern", "", {}, generic=True,
                  lifecycle="active")
-HW_FIELD = _mech(None, "generic", "Field-wiring kit: 4 x listed nonmetallic NM-B cable connectors (1/2 in); "
-                 "1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); 3 x 14/3 NM-B "
-                 "with ground, ~0.5 m (E1 to E2); 3 x 6 in green EGC pigtails; 4 adhesive-free screw-on cable-tie "
-                 "mounts", "", {}, generic=True, lifecycle="active")
+HW_FIELD = _mech(None, "generic", "Field-wiring kit: 1 x listed nonmetallic NM-B cable connector (1/2 in) for "
+                 "the branch; 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); receptacle "
+                 "leads 14 AWG THHN/THWN-2 Cu 600 V, 9 x 0.45 m (black/red/white per receptacle) with a 300 mm "
+                 "service loop for cover removal; 3 x green 14 AWG EGC pigtails; screw-on cable-tie mounts and a "
+                 "spiral wrap for the lead bundle", "", {}, generic=True, lifecycle="active")
 WALLPLATE = _mech(None, "generic", "Wallplate 3-gang duplex receptacle, nylon (unbreakable), standard size", "", {},
                   generic=True, lifecycle="active")
 SD_CARD = _mech(None, "generic", "microSD 16-32 GB industrial grade (pSLC or high-endurance), for a read-only "
