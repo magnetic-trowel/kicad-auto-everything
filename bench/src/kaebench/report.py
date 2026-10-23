@@ -120,7 +120,23 @@ def to_markdown(summary):
 
 
 def report(run_dirs):
+    """Summarize one or more runs. An adapter name used by more than one run is labelled
+    `adapter@run`, so a method and its baseline are never pooled into one row."""
+    runs = [(Path(d), load_rows(d)) for d in run_dirs]
+    names = [p.name for p, _ in runs]
+    labels = [n if names.count(n) == 1 else str(p) for (p, _), n in zip(runs, names)]
+    adapter_runs = defaultdict(set)
+    for label, (_, rs) in zip(labels, runs):
+        for r in rs:
+            adapter_runs[r["adapter"]].add(label)
     rows = []
-    for d in run_dirs:
-        rows.extend(load_rows(d))
+    for label, (_, rs) in zip(labels, runs):
+        for r in rs:
+            shared = len(adapter_runs[r["adapter"]]) > 1
+            rows.append(dict(r, run=label, adapter=f"{r['adapter']}@{label}" if shared else r["adapter"]))
     return summarize(rows), rows
+
+
+def score_versions(rows):
+    """Distinct score versions among attempts; more than one means the runs aren't comparable."""
+    return sorted({r.get("score_version") for r in rows}, key=str)

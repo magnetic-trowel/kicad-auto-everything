@@ -254,6 +254,10 @@ def cmd_tasks(a):
 def cmd_report(a):
     summary, rows = report.report(a.run_dirs)
     md = report.to_markdown(summary)
+    versions = report.score_versions(rows)
+    if len(versions) > 1:
+        md += (f"\n\n**Mixed score versions** ({', '.join(map(str, versions))}): these attempts were "
+               "scored by different scorers; `kaebench rescore` the older runs before comparing.")
     print(md)
     if a.out:
         Path(a.out).write_text(md + "\n")

@@ -127,6 +127,28 @@ def test_report_best_of_k(tmp_path):
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
 
 
+def test_report_keeps_runs_of_one_adapter_apart(tmp_path):
+    """A method and its baseline run with the same adapter name must not be pooled."""
+    def write(run, adapter, bid, clean, version):
+        d = tmp_path / run / adapter / "route" / bid / "attempt-0"
+        d.mkdir(parents=True)
+        (d / "attempt.json").write_text(json.dumps(dict(
+            adapter=adapter, kind="route", id=bid, split="A", attempt=0, status="ok", runtime_s=1.0,
+            score_version=version, score=dict(valid=True, clean=clean, completion=1.0, errors=0, track_length_mm=10))))
+    for bid in ("b1", "b2"):
+        write("baseline", "freerouting", bid, False, 5)
+        write("new", "freerouting", bid, True, 6)
+        write("new", "reference", bid, True, 6)
+    summary, rows = report.report([tmp_path / "new", tmp_path / "baseline"])
+    assert summary[("freerouting@baseline", "route", "all")]["cp1"] == 0.0
+    assert summary[("freerouting@new", "route", "all")]["cp1"] == 1.0
+    assert summary[("freerouting@new", "route", "all")]["k"] == 1
+    assert ("reference", "route", "all") in summary  # unshared names keep their plain label
+    assert report.score_versions(rows) == [5, 6]
+    single, _ = report.report([tmp_path / "new"])
+    assert ("freerouting", "route", "all") in single
+
+
 def test_id_list_from_file(tmp_path):
     from kaebench.cli import _split
     f = tmp_path / "suite.txt"
