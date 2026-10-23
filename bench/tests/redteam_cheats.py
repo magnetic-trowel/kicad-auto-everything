@@ -113,6 +113,9 @@ PLACE = {
     "place_honest": placed,
     "move_locked": lambda t: placed(set_pose(t, H1, 130, 112)),
     "move_edge_cut": lambda t: placed(set_pose(t, SLOT, 130, 104)),
+    # joint: place and route in one output
+    "joint_honest": lambda t: routed(placed(t)),
+    "joint_move_locked": lambda t: routed(placed(set_pose(t, H1, 130, 112))),
     "delete_footprint": lambda t: set_pose(remove_block(t, "footprint", R2),
                                            "11111111-1111-1111-1111-111111111111", 110, 105),
     "shrink_courtyard": lambda t: placed(first(t, "(start -1.5 -1)", "(start -0.1 -0.1)")),

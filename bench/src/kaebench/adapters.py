@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import tools
-from .boardfiles import (board_path, clamp_dsn_widths, fix_dsn_unsized_vias, quote_ses_net_names,
+from .boardfiles import (board_path, clamp_dsn_widths, copy_board, fix_dsn_unsized_vias, quote_ses_net_names,
                          strip_ses_placement, unblock_all_power_dsn)
 
 
@@ -82,7 +82,7 @@ class AdapterResult:
 
 class Adapter:
     name = "base"
-    kinds = ("route", "place")
+    kinds = ("route", "place", "joint")
     needs_reference = False
 
     def describe(self):
@@ -223,6 +223,18 @@ class Freerouting(Adapter):
         return AdapterResult(board_path(out), log, meta)
 
 
+class HumanFreerouting(Freerouting):
+    """Joint baseline: the human placement routed by Freerouting (its kinds: joint only)."""
+    name = "human-freerouting"
+    kinds = ("joint",)
+    needs_reference = True
+
+    def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
+        human = Path(workdir) / "human-placement"
+        copy_board(Path(reference["joint_placement"]).parent, human)
+        return super().run("route", human, workdir, attempt, timeout)
+
+
 def _router_report(path):
     """Freerouting's own view of its result (--router.result_json): kept as a diagnostic next
     to the score, never as the score (only kicad-cli on the rebuilt board counts)."""
@@ -244,7 +256,7 @@ class Command(Adapter):
     """
     name = "command"
 
-    def __init__(self, template, name=None, kinds=("route", "place"), sandbox=None):
+    def __init__(self, template, name=None, kinds=("route", "place", "joint"), sandbox=None):
         self.template = template
         if name:
             self.name = name
@@ -285,6 +297,8 @@ def make(name, command=None, passes=None, sandbox=None, freerouting=None):
         return Noop()
     if name == "freerouting":
         return Freerouting(passes=passes, binary=freerouting)
+    if name == "human-freerouting":
+        return HumanFreerouting(passes=passes, binary=freerouting)
     if name == "freerouting-stock":
         return Freerouting(passes=passes, stock=True, binary=freerouting)
     if command:

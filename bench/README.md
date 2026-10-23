@@ -112,6 +112,12 @@ A method can't read the human layout it is scored against, download it, or touch
   - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, and no footprint with more pad centres outside the board outline than the same footprint has in the human placement. Edge connectors may overhang as far as the designer's do.
   - `hpwl_ratio` relative to the human placement.
   - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style. An external router can be the probe: `--probe NAME --probe-command TEMPLATE` (or `probe=NAME,probe_command=TEMPLATE` in an `--arm`, without commas), run sandboxed as a route method.
+- **Joint metrics** (`--kinds joint`: place and route in one output, from the place task's input).
+  - The output's footprint poses are rebuilt into the place input. Placement integrity and `legal` are judged on that placement alone.
+  - Its tracks and vias are then rebuilt onto that placement and scored like a route result.
+  - Valid only if both parts are; `clean` also requires `legal`.
+  - Baselines: `reference` (the human layout) and `human-freerouting` (Freerouting on the human placement).
+- **Degenerate place tasks.** Each place task records `movable`, the number of footprints a placer may move. A board whose parts are nearly all locked is trivially legal. `run --min-movable N` skips place and joint tasks with fewer than N movable footprints (default 0: none are skipped).
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
 - **Rescoring.** After a scoring fix, `kaebench rescore RUN_DIR -j N` scores a run's saved outputs (and saved probe routes) again with the current scorer, without re-running the method. Each attempt records the version it was rescored from.
 - **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 5: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint uuids are made unique, and the human layout must pass the round trip. Re-run `prepare --force` on older task folders.

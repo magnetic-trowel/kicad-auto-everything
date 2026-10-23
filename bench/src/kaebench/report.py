@@ -59,7 +59,7 @@ def summarize(rows):
                  score_cpu_s=_mean([(r.get("scoring_usage") or {}).get("cpu_s") for r in every]),
                  suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")),
                  unsandboxed=sum(1 for r in every if (r.get("adapter_meta") or {}).get("sandboxed") is False))
-        if kind == "route":
+        if kind in ("route", "joint"):
             best = [_route_best(b) for b in boards]
             sc1 = [r.get("score") or {} for r in first]
             sck = [r.get("score") or {} for r in best]
@@ -70,6 +70,9 @@ def summarize(rows):
                      invalid=sum(1 for s in sck if s and not s.get("valid")),
                      wl_ratio=_median([s.get("wl_ratio") for s in sck]),
                      via_delta=_mean([s.get("via_delta") for s in sck]))
+            if kind == "joint":
+                m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                         hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]))
         else:
             best = [_place_best(b) for b in boards]
             sck = [r.get("score") or {} for r in best]
@@ -87,13 +90,16 @@ def summarize(rows):
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
               "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
               "timeouts", "capped", "failures")
+JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "legal", "completion", "errors", "invalid",
+              "suspect", "hpwl_ratio", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "timeouts",
+              "failures")
 PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
               "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
 
 def to_markdown(summary):
     lines = []
-    for kind, cols in (("route", ROUTE_COLS), ("place", PLACE_COLS)):
+    for kind, cols in (("route", ROUTE_COLS), ("place", PLACE_COLS), ("joint", JOINT_COLS)):
         rows = [(key, m) for key, m in summary.items() if key[1] == kind]
         if not rows:
             continue

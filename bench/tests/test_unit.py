@@ -215,6 +215,13 @@ def test_work_list_interleaves_arms_per_board():
     sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
     assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]
 
+    class P:
+        kinds = ("place",)
+        name = "p"
+    placeable = [dict(id=f"m{n}", tasks={"place": {"movable": n}}) for n in (0, 1, 5)]
+    assert [w[0]["id"] for w in runner.work_list(placeable, [(P(), None)], ("place",), 1, min_movable=2)] == ["m5"]
+    assert len(runner.work_list(placeable, [(P(), None)], ("place",), 1)) == 3  # default keeps all
+
 
 def test_run_measured_peak_rss_is_the_childs_not_the_runners():
     # The runner's own peak RSS used to leak into every child's ru_maxrss via exec.

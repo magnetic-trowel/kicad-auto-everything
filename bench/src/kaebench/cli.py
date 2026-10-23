@@ -149,7 +149,7 @@ def cmd_prepare_dir(a):
 ARM_KEYS = ("name", "adapter", "probe", "probe_command", "freerouting", "passes")
 
 
-BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock")
+BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock", "human-freerouting")
 
 
 def _probe_name(name, command):
@@ -197,7 +197,7 @@ def cmd_run(a):
     run_dir = runner.run(tasks, results, ad, arms=arms, kinds=_split(a.kinds) or ["route"], k=a.k,
                          timeout=a.timeout, jobs=a.jobs, probe=probe, only=_split(a.only),
                          splits=_split(a.splits), qualified_only=not a.all, name=a.name,
-                         keep_work=a.keep_work)
+                         keep_work=a.keep_work, min_movable=a.min_movable)
     summary, _ = report.report([run_dir])
     md = report.to_markdown(summary)
     (run_dir / "report.md").write_text(md + "\n")
@@ -324,6 +324,9 @@ def main(argv=None):
     sp.add_argument("--all", action="store_true", help="include boards whose human layout is not clean")
     sp.add_argument("--name", help="run name (reuse to resume)")
     sp.add_argument("--keep-work", action="store_true")
+    sp.add_argument("--min-movable", type=int, default=0, metavar="N",
+                    help="skip place and joint tasks with fewer than N movable footprints (tasks "
+                         "prepared before this field existed are kept)")
     sp.add_argument("--no-sandbox", action="store_true",
                     help="run --command methods unsandboxed (they can then read reference layouts; "
                          "results are marked unsandboxed)")

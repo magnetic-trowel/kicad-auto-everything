@@ -16,8 +16,8 @@ from pathlib import Path
 
 from . import __version__, tools
 from .boardfiles import board_path, copy_board, install_rules
-from .prepare import MIN_TASK_SPEC, TASK_SPEC, load_tasks
-from .score import SCORE_VERSION, score_place_task, score_route_task, score_routing
+from .prepare import INPUT_KIND, MIN_TASK_SPEC, TASK_SPEC, load_tasks
+from .score import SCORE_VERSION, score_joint_task, score_place_task, score_route_task, score_routing
 
 
 def _git_rev():
@@ -38,10 +38,11 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         shutil.rmtree(adir)
     work = adir / "work"
     inp = work / "input"
-    copy_board(task_dir / kind / "input", inp)
+    copy_board(task_dir / INPUT_KIND[kind] / "input", inp)
     reference = None
     if adapter.needs_reference:
-        reference = {"route": board_path(task_dir / "reference"),
+        reference = {"route": board_path(task_dir / "reference"), "joint": board_path(task_dir / "reference"),
+                     "joint_placement": board_path(task_dir / "route" / "input"),
                      "place": board_path(task_dir / "route" / "input")}
     row = dict(adapter=adapter.name, kind=kind, id=rec["id"], split=rec["split"], attempt=attempt,
                tags=rec.get("tags", []), score_version=SCORE_VERSION, load_avg_start=os.getloadavg())
@@ -106,6 +107,9 @@ def _score(row, task_dir, rec, kind, adir, allow_copy, probe=None, probe_args=No
         if kind == "route":
             row["score"] = score_route_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
             return
+        if kind == "joint":
+            row["score"] = score_joint_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
+            return
         pscore, placed_stats = score_place_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
         row["score"] = pscore
         row["scoring_usage"] = tools.usage_take()  # before the probe starts its own accounting
@@ -147,7 +151,8 @@ def rescore(results_run_dir, jobs=1, progress=print, force=False):
     recs = {r["id"]: r for r in load_tasks(tasks_dir, qualified_only=False)}
     kinds = {p.parent.parent.name for p in run_dir.glob("*/*/*/attempt-*")}  # <arm>/<kind>/<id>/attempt-N
     stale = sorted({r["id"] for r in recs.values() for kind in kinds
-                    if kind in r.get("tasks", {}) and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)})
+                    if INPUT_KIND.get(kind, kind) in r.get("tasks", {})
+                    and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)})
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec (e.g. {stale[0]}); "
                          "re-prepare and re-run instead")
@@ -226,7 +231,7 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     return out
 
 
-def work_list(recs, arms, kinds, k):
+def work_list(recs, arms, kinds, k, min_movable=0):
     """Attempts in execution order: board by board, and within a board every arm back to back
     in an order shuffled per board (seeded), so all arms see the same host conditions and none
     systematically runs first. Largest boards (by pads) start first, so the run does not end
@@ -239,14 +244,16 @@ def work_list(recs, arms, kinds, k):
             random.Random(f"{rec['id']}:{a}").shuffle(order)
             for adapter, probe in order:
                 for kind in kinds:
-                    if kind in adapter.kinds and kind in rec["tasks"]:
+                    if kind in adapter.kinds and INPUT_KIND[kind] in rec["tasks"] and (
+                            INPUT_KIND[kind] != "place"
+                            or rec["tasks"]["place"].get("movable", min_movable) >= min_movable):
                         work.append((rec, kind, a, adapter, probe))
     return work
 
 
 def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600, jobs=1, probe=None,
         only=None, splits=None, qualified_only=True, name=None, keep_work=False, progress=print,
-        arms=None):
+        arms=None, min_movable=0):
     """Run one adapter (with an optional placement probe), or several interleaved arms
     [(adapter, probe)] in one run; results go to <run>/<adapter name>/<kind>/<id>/attempt-N."""
     arms = list(arms) if arms else [(adapter, probe)]
@@ -256,7 +263,7 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
     stale = [r["id"] for r in recs for kind in kinds
-             if kind in r["tasks"] and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)]
+             if INPUT_KIND[kind] in r["tasks"] and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)]
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
@@ -276,7 +283,7 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
                            reference_adapter=ad.needs_reference) for ad, pr in arms],
                 interleaved=len(arms) > 1, kinds=list(kinds), k=k, timeout=timeout,
                 tasks_dir=str(tasks_dir), boards=len(recs), qualified_only=qualified_only,
-                score_version=SCORE_VERSION, task_spec=TASK_SPEC,
+                score_version=SCORE_VERSION, task_spec=TASK_SPEC, min_movable=min_movable,
                 reference_adapter=first_ad.needs_reference,
                 reference_adapters={ad.name: ad.needs_reference for ad, _ in arms})
     meta_path = run_dir / "run.json"
@@ -285,7 +292,7 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
         meta["started"] = prev.get("started", meta["started"])
         meta["resumed"] = datetime.now(timezone.utc).isoformat()
     meta_path.write_text(json.dumps(meta, indent=1))
-    work = work_list(recs, arms, kinds, k)
+    work = work_list(recs, arms, kinds, k, min_movable)
     lock = threading.Lock()
     rows = []
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
