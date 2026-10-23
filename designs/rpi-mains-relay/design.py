@@ -6,8 +6,9 @@ Encodes designs/rpi-mains-relay/DESIGN.md (engineering rationale, evidence tags,
 CONNECTIONS.md (pin rationale). Build: `kaesynth build designs/rpi-mains-relay/design.py -v`.
 Custom footprints: footprints/make_footprints.py writes footprints/custom.pretty/.
 
-Assembly: E1 = polycarbonate UL 50 enclosure (this PCB, the Pi on J5, the IRM-20-5 supply);
-E2 = 3-gang PVC device box with three split-tab TR duplex receptacles; three 14/3 NM-B cables join them.
+Assembly (Q-8 answered "One enclosure"): one polycarbonate UL 50 enclosure (Carlon NS14126) holds this PCB,
+the Pi on J5 and the IRM-20-5; three split-tab TR duplex receptacles mount in a 3-gang opening in its cover
+on a polycarbonate subplate (MP4) and are wired to J2-J4 with 14 AWG leads.
 
 Domain model:
   LINE    root, ref L_IN. The line conductor is the 0 V of the mains side, so the voltage across an open
@@ -72,12 +73,13 @@ def intent(d):
       source="relay UL/VDE ratings [P]", verify="T-LOAD, T-OL")
     R("REQ-6", "Total current, all outlets", value="<= 15 A; <= 12 A for loads on >= 3 h",
       source="branch OCPD; NEC 210.19/210.20 [S]", verify="T-HEAT")
-    R("REQ-7", "Enclosures: E1 listed nonmetallic UL 50 Type 4X/12 polycarbonate enclosure for the board, Pi and "
-      "supply; E2 listed nonmetallic 3-gang device box for the receptacles; joined by three 14/3 NM-B cables; both "
-      "surface-mounted indoors; no ventilation openings", value="Carlon NS1086 + JP108P; Carlon BH353A",
-      source="Q-3, Q-4, Q-8; C-1, C-6, C-13", verify="inspection")
-    R("REQ-8", "Box fill: E2 per NEC 314.16; E1 > 100 in3 (outside the 314.16(A) table) shown with free space",
-      value="E2 <= 53 in3", source="NEC 314.16 [S/I]", verify="calc box_fill_*")
+    R("REQ-7", "Enclosure: one listed nonmetallic UL 50 Type 4X/12 polycarbonate enclosure for the board, Pi, supply "
+      "and the three receptacles (in a 3-gang opening of its cover, on subplate MP4, nylon wallplate outside); "
+      "surface-mounted indoors, cover facing the room; no ventilation openings",
+      value="Carlon NS14126 + JP1412P", source="Q-3, Q-4, Q-8 (user decisions); C-1, C-6, C-13", verify="inspection")
+    R("REQ-8", "Box fill: the enclosure is > 100 in3, outside the NEC 314.16(A) table; conductor and device "
+      "allowances are shown against its free volume", value=">= 0 in3 free", source="NEC 314.16 [S/I]",
+      verify="calc box_free_in3")
     R("REQ-9", "Field terminals in E1: lever push-in, UL 1059 >= 300 V / >= 20 A, 14-12 AWG Cu; one (L, N) input, "
       "three (OUTa, N, OUTb) receptacle feeds", value="WAGO 2606, 600 V 31 A",
       source="brief ('really easy to access', 'shared inputs ... outputs')", verify="inspection")
@@ -136,7 +138,7 @@ def intent(d):
       ">= 30 mm from relays, mains copper and the supply", value="RSSI >= -67 dBm at the install location",
       source="C-13", verify="T-RF")
     R("REQ-31", "E1 compartments: field-wiring compartment (north) separated from the PCB/Pi compartment by "
-      "partition MP1 (vertical wall + flat sheet die-cut around J1-J4); every PCB copper area north of the wall is "
+      "partition MP1 (vertical wall + flat sheet die-cut around J1-J4); receptacles, their leads and terminals stay north of the wall; every PCB copper area north of the wall is "
       "under a terminal body or under the MP1 sheet; none between the board edge and the wire-entry faces; "
       "conductors tied down", value="-", source="review M3", verify="inspection")
 
@@ -144,7 +146,7 @@ def intent(d):
     A = d.assume
     A("ASM-1", "North-American dwelling or light commercial; one 120 V branch from a 15 A breaker; available "
       "fault current at E1 <= 2 kA (>= 10 m of 14 AWG limits it to < 1 kA)")
-    A("ASM-2", "Indoor dry location, PD2, altitude <= 2000 m, room 0-40 C; E1 and E2 surface-mounted on a wall or "
+    A("ASM-2", "Indoor dry location, PD2, altitude <= 2000 m, room 0-40 C; the enclosure surface-mounted on a wall or "
       "backboard, not in an insulated cavity")
     A("ASM-3", "Loads are plug-in appliances, LED or tungsten lighting, small motors; none hazardous if left "
       "on (a welded contact is a credible failure)")
@@ -178,10 +180,11 @@ def intent(d):
     Q("Q-7", "Load list: any heaters, pumps, compressors or life-safety loads that are unsafe if a contact "
       "welds? Motors cycled more than about 5 times a day should drive a contactor.", blocking=True,
       default="general plug loads, no hazard-if-on loads")
-    Q("Q-8", "Accept a two-box assembly: E1 (10 x 8 x 6 in polycarbonate, electronics) next to E2 (3-gang PVC "
-      "device box, receptacles), joined by three short 14/3 NM-B cables? No listed nonmetallic box was found that "
-      "takes duplex receptacles and the electronics together.", blocking=True,
-      default="two boxes side by side on one backboard")
+    Q("Q-8", "One enclosure, or a two-box assembly (electronics enclosure next to a 3-gang receptacle box)? No listed "
+      "nonmetallic box was found that takes duplex receptacles and the electronics together "
+      "(rev 2 used two).", blocking=True,
+      answer="One enclosure: a single larger listed non-metallic enclosure with the six switched receptacles "
+             "(3 split-tab TR duplex) mounted in its lid/face and the relay board, Pi Zero 2 W and IRM-20-5 inside.")
     Q("Q-9", "Partition MP1: confirm 1.5 mm polycarbonate UL 94 V-0, fixed to the back panel at both ends, and "
       "AHJ acceptance as the wiring/electronics separation.", default="as specified")
     Q("Q-10", "Watchdog semantics: OFF when the control app hangs (software heartbeat) or keep ON through app "
@@ -195,6 +198,10 @@ def intent(d):
       "would have to sit face-down and mirrors the pinout; it is NOT supported.", default="solder on the underside")
     Q("Q-15", "Generic hardware (nylon standoffs, NM connectors, wallplate, splice) to be fixed to MPNs.",
       default="specs in the BOM descriptions")
+    Q("Q-17", "Receptacles in the enclosure cover: devices on a machined polycarbonate subplate (MP4) behind a 3-gang "
+      "cut-out are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have the "
+      "assembly built and listed as an industrial control panel by a UL 508A shop?", blocking=True,
+      default="field evaluation with Q-1; UL 508A shop as the alternative")
     Q("Q-16", "Add per-channel readback (detects a shorted channel MOSFET)? Six more GPIOs and 18 parts.",
       default="no; the channel LED shows it")
 
@@ -204,9 +211,10 @@ def hazards(d):
     relays = [f"K{k}" for k in CHANNELS]
     terms = ["J1", "J2", "J3", "J4"]
     chq = [f"Q{k}" for k in CHANNELS]
-    H("H1", "Shock from live parts with E1 or E2 open",
+    H("H1", "Shock from live parts with the cover open (receptacles come off with it)",
       "listed enclosures with screw covers (tool needed); 'disconnect before opening' label; electrician installs; "
-      "partition MP1 keeps field conductors away from the Pi/SD-card area", parts=["MP1", "MP2", "MP4"],
+      "partition MP1 keeps field conductors and receptacle leads away from the Pi/SD-card area; 300 mm service loop "
+      "so the cover never hangs on a terminal", parts=["MP1", "MP2", "MP4"],
       single_fault_safe=False, notes="service condition: de-energize at the breaker before opening")
     H("H2", "Mains reaches SELV, the Pi or a person touching the Pi",
       "reinforced insulation: IRM-20-5 Class II 4.2 kVAC; relays 8/8 mm 6 kVAC 10 kV; PCB 8/8 mm barrier band; "
@@ -249,7 +257,7 @@ def hazards(d):
       "no snubber or MOV across contacts; line-only switching; polarity check at commissioning", parts=relays,
       single_fault_safe=False, notes="leakage: single-fault safe; L/N miswire: procedural (T-MISWIRE)")
     H("H12", "Overtemperature in the closed enclosure",
-      "13.3 W worst case into 0.21 m2 of polycarbonate: 52 C at 40 C room (C-6); surface mounting; 12 A continuous "
+      "15.6 W worst case into 0.34 m2 of polycarbonate: 49 C at 40 C room (C-6); surface mounting; 12 A continuous "
       "limit", parts=["MP2", "PS1"], single_fault_safe=True)
     H("H13", "Surge flashover or arc tracking",
       "OVC III coordinated spacing; relay 10 kV impulse; IRM-20 tested to 2 kV L-N; no MOV in the box; panel SPD "
@@ -282,15 +290,13 @@ def hazards(d):
 def calcs(d):
     c = d.calc
     # C-1 box fill
-    c("box_fill_E2_14awg_in3", 9 * 2.0 + 2.0 + 3 * 2 * 2.0 + 2.0, "in3",
-      expr="9 conductors (3 x 14/3) x 2.0 + EGCs 2.0 + 3 devices x 2 x 2.0 + clamps 2.0", limit=53.0,
-      note="Carlon BH353A 53 in3 (NEC 314.16(B))")
-    c("box_fill_E2_12awg_in3", 9 * 2.25 + 2.25 + 3 * 2 * 2.25 + 2.25, "in3", expr="same with 12 AWG (2.25 in3)",
-      limit=53.0)
-    e1_gross = 9.9 * 7.9 * 5.98
-    c("box_free_E1_in3", round(e1_gross - (12 * 2.25 + 200 * 150 * 45 / 16387.0), 0), "in3",
-      expr="NS1086 inside ~9.9 x 7.9 x 5.98 in - 12 conductor allowances x 2.25 - board assembly 82 in3",
-      limit=0, op=">=", note="> 100 in3 box: 314.16(A) table not applicable, free space shown")
+    gross = 13.9 * 11.9 * 5.98
+    allow = (2 + 9 + 3 * 2 + 1) * 2.25
+    c("box_allowances_in3", allow, "in3",
+      expr="(branch L,N 2 + receptacle leads 9 + 3 devices x 2 + EGCs 1) x 2.25 (12 AWG worst)")
+    c("box_free_in3", round(gross - allow - 82 - 42, 0), "in3",
+      expr="NS14126 inside ~13.9 x 11.9 x 5.98 in (989) - allowances - board assembly 82 - receptacle block 42",
+      limit=0, op=">=", note="> 100 in3: 314.16(A) table not applicable, free space shown")
     # C-2 5 V budget and supply capacity
     i_pi = 1.0
     i_coils = 6 * 5.125 / 56.25
@@ -340,15 +346,17 @@ def calcs(d):
       note="RP3A0 VIL 0.9 V")
     c("arm_fb_max_steady_V", round(5.25 * 68 / 115, 3), "V", expr="COIL_RTN 5.25 V (disarmed, a CH on) x 68/115",
       limit=3.3, note="flyback transients above this are clamped by D16 to +3V3")
-    # C-6 thermal (E1, NS1086 polycarbonate, wall-mounted: back face excluded)
-    area = (2 * 10.4 * 6.49 + 2 * 8.4 * 6.49 + 10.4 * 8.4) * 0.00064516
+    # C-6 thermal (NS14126 polycarbonate, wall-mounted: back face excluded)
+    area = (2 * 14.4 * 6.49 + 2 * 12.4 * 6.49 + 14.4 * 12.4) * 0.00064516
     parts_w = {"coils": 6 * 5.125 ** 2 / 56.25, "contacts": 15 ** 2 * 0.010, "pcb_copper": 15 ** 2 * 0.0057,
-               "terminals": 4 * 15 ** 2 * 0.001, "conductors": 15 ** 2 * 0.0048, "psu": 5.82 * (1 / 0.76 - 1),
-               "pi": 3.0, "leds_misc": 0.14}
+               "terminals": 4 * 15 ** 2 * 0.001, "conductors": 15 ** 2 * 0.0108, "receptacle": 15 ** 2 * 0.004,
+               "psu": 5.82 * (1 / 0.76 - 1), "pi": 3.0, "leds_misc": 0.14}
     p_tot = sum(parts_w.values())
     c("e1_dissipation_W", round(p_tot, 2), "W",
-      expr=" + ".join(f"{k} {v:.2f}" for k, v in parts_w.items()))
-    c("e1_area_m2", round(area, 4), "m2", expr="2 x 10.4 x 6.49 + 2 x 8.4 x 6.49 + 10.4 x 8.4 in2 (back excluded)")
+      expr=" + ".join(f"{k} {v:.2f}" for k, v in parts_w.items()),
+      note="15 A through one outlet; conductors = 1.3 m of 14 AWG (branch 0.4 m + receptacle leads 0.9 m) at "
+           "8.3 mOhm/m [I]; receptacle = 2 contacts x 2 mOhm [I]")
+    c("e1_area_m2", round(area, 4), "m2", expr="2 x 14.4 x 6.49 + 2 x 12.4 x 6.49 + 14.4 x 12.4 in2 (back excluded)")
     t_air = 40 + p_tot / (5.0 * area)
     c("e1_internal_air_C", round(t_air, 1), "C", expr="40 C room + P / (5.0 W/m2K x area)", limit=60,
       note="h = 5.0 for a sealed polycarbonate box (5.5 convection+radiation, 3.5 mm PC wall) [I]")
@@ -419,7 +427,7 @@ def build():
               notes=f"switched line, outlet {k}: equals L_IN when K{k} is closed, pulled to N by the load when open")
         d.domain(f"OUT{k}", ref="L_IN", kind="mains", description=f"switched outlet {k}, floats on line")
     d.net("PE", domain="PE", v=0, kind="pe", external=True,
-          notes="protective earth: EGCs spliced in E1, receptacle yokes in E2; no copper on this PCB")
+          notes="protective earth: EGC splice and receptacle yokes (green pigtails); no copper on this PCB")
     d.domain("PE", ref="PE", kind="other", earthed=True, description="protective earth, off-board")
 
     gnd = d.net("GND", domain="SELV", v=0, kind="ground", i_max=1.6,
@@ -592,7 +600,7 @@ def build():
         ch[k] = dict(r=rk, rpd=rpd, q=q, d=dk, led=led, rled=rled, k=rel, block=b)
 
     # -- block: receptacle feed terminals --------------------------------------------------------------
-    mo = d.block("outlets", title="Receptacle feeds J2-J4 (one 14/3 NM-B cable per duplex receptacle)",
+    mo = d.block("outlets", title="Receptacle feeds J2-J4 (three 14 AWG leads per duplex receptacle in the cover)",
                  domain="LINE", description="Jx.1 = top outlet (black), Jx.2 = N (white), Jx.3 = bottom outlet (red)")
     jout = {n: mo.add(P.TERM_OUT, ref=n) for n in ("J2", "J3", "J4")}
     for k in CHANNELS:
@@ -608,7 +616,7 @@ def build():
     mp1 = me.add(P.PARTITION, ref="MP1")
     me.add(P.ENCLOSURE, ref="MP2")
     me.add(P.BACK_PANEL, ref="MP3")
-    me.add(P.BOX_RECEPT, ref="MP4")
+    me.add(P.SUBPLATE, ref="MP4")
     for i in (5, 6, 7):
         me.add(P.RECEPTACLE, ref=f"MP{i}")
     me.add(P.WALLPLATE, ref="MP8")
@@ -727,13 +735,19 @@ def placement(d, j1, f1, ps1, jout, j5, u1, q7, r21, c6, c7, r22, r23, r24, r25,
                        "on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses "
                        "an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at "
                        "10 K on one layer, C-7) with the 1.6 mm laminate between them")
-    pl.custom("enclosure_layout", walls="NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P",
-              arrangement="board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in "
-                          "through the top wall near J1 (east); 3 x 14/3 NM-B out through the east wall above MP1 "
-                          "to E2",
-              note="E2 (3-gang PVC box, receptacles) mounted east of E1 on the same backboard")
+    pl.custom("enclosure_layout", walls="NS14126 inside ~353 x 302 x 152 mm; board 200 x 150 on JP1412P",
+              arrangement="board in the lower (south) half of the back panel, centred, north edge (J1-J4) toward the "
+                          "top wall; compartment north of MP1 ~140 mm tall holds the field wiring, the EGC splice and "
+                          "the receptacle block, which hangs from the cover's upper half (3-gang cut-out centred "
+                          "~75 mm below the top wall; receptacle backs reach ~40 mm into the 152 mm depth); branch "
+                          "cable in through the top wall",
+              note="receptacle terminals and leads stay north of MP1; the Pi sits >= 150 mm away at the south-west")
+    pl.custom("receptacle_mount", part="MP4", where="cover, upper half, 3-gang opening",
+              note="subplate MP4 bolted to the cover with nylon-insulated bolts; yokes bonded by green pigtails to "
+                   "the EGC splice; leads bundled in spiral wrap with a 300 mm service loop and tied to the back "
+                   "panel north of MP1")
     pl.custom("ground_splice", where="wire compartment, middle, >= 25 mm from any terminal",
-              note="branch EGC + 3 outgoing EGCs in one listed lever connector; tied to the back panel")
+              note="branch EGC + 3 receptacle green pigtails in one listed lever connector; tied to the back panel")
     pl.custom("label", obj=j1, text="LINE IN: L (black) / N (white) - 120 VAC 15 A")
     for n, (a, b) in zip(("J2", "J3", "J4"), ((1, 2), (3, 4), (5, 6))):
         pl.custom("label", obj=jout[n], text=f"RECEPTACLE {'ABC'[(a - 1) // 2]}: TOP OUT{a} (black) / N (white) / "
@@ -750,10 +764,11 @@ def board(d):
     holes += [Hole(x, y, 2.7, note=f"H{7 + i}, Pi Zero 2 W standoff M2.5 x 11 mm nylon") for i, (x, y) in enumerate(pi)]
     d.board(width_mm=BOARD_W, height_mm=BOARD_H, layers=2, thickness_mm=1.6, copper_oz=2, holes=holes,
             max_component_height_mm=31, max_bottom_height_mm=2.4,
-            enclosure="ABB/Carlon NS1086 polycarbonate 10 x 8 x 6 in (UL 50 Type 4X/12), JP108P PVC back panel; "
+            enclosure="ABB/Carlon NS14126 polycarbonate 14 x 12 x 6 in (UL 50 Type 4X/12), JP1412P PVC back panel; "
                       "board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces "
                       "of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon "
-                      "standoffs; receptacles in a separate Carlon BH353A 3-gang box (E2)",
+                      "standoffs; three TR5252 receptacles in a 3-gang opening of the cover (subplate MP4), above the "
+                      "wire compartment",
             coating="",
             keepouts=[
                 {"rect": [PI_X0 + 12, 0, PI_X0 + 45, PI_Y0 + 12], "what": "copper, vias, pours, parts",
@@ -786,15 +801,16 @@ def waivers(d):
       "relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional); PS1 is tested to EN 61000-4-5 "
       "level 4 (2 kV L-N) without external parts. An MOV ages and is a fire source in a closed box; a listed Type 2 "
       "SPD at the panel is recommended (Q-12). Verified by T-SURGE.")
-    # L_IN is not flagged because F1 touches it, although F1 protects only the PS1 branch: the outlet paths on
-    # L_IN rely on the branch breaker exactly as L_SW1-6 do (DESIGN.md C-9; reported as a framework gap).
-    W("protect.threat", r"net L_SW[1-6] declares threat 'overcurrent'",
+    # F1 protects only the PS1 branch; the relays on L_IN sit on the wire side of it (the framework now says so),
+    # and the outlet paths rely on the branch breaker exactly as L_SW1-6 do (DESIGN.md C-9).
+    W("protect.threat", r"net (L_IN|L_SW[1-6]) declares threat 'overcurrent'",
       "The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element "
       "on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x "
       "2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an "
       "unserviceable failure point without protecting anything the breaker does not (C-9).")
-    W("protect.entry_fuse", r"net (N|L_SW[1-6]) reaches",
-      "Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is "
+    W("protect.entry_fuse", r"net (N|L_SW[1-6]) reaches|net L_IN has a fuse, but K1, K2, K3, K4, K5, K6",
+      "Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 "
+      "protects only PS1; N is "
       "never fused in North America (NEC 240.22).")
     W("hazard.procedural", r"^H10:",
       "Outlets are not a disconnecting means; unplugging the load or locking out the breaker is the only correct "

@@ -1203,7 +1203,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "NS1086"
+		(property "Value" "NS14126"
 			(at 212.09 34.925 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -1224,14 +1224,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Enclosure 10 x 8 x 6 in, polycarbonate, opaque screw cover, captive screws, nonmetallic hinges/rails; UL 50 / CSA C22.2 No.94.1 Types 4X, 12, 13 (file E88685); RF-transparent"
+		(property "Description" "Enclosure 14 x 12 x 6 in, polycarbonate, opaque screw cover, captive screws, nonmetallic hinges/rails; UL 50 / CSA C22.2 No.94.1 Types 4X, 12, 13 (file E88685); RF-transparent. The receptacle opening is cut in the cover (see MP4)"
 			(at 208.28 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "NS1086"
+		(property "MPN" "NS14126"
 			(at 208.28 33.02 0)
 			(hide yes)
 			(effects
@@ -1284,7 +1284,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "JP108P"
+		(property "Value" "JP1412P"
 			(at 232.41 34.925 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -1305,14 +1305,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Back panel PVC 8.75 x 6.88 in for NS108x (10-32 x 3/8 screws ordered separately)"
+		(property "Description" "Back panel PVC 12.75 x 10.88 in for NS1412x (10-32 x 3/8 screws ordered separately)"
 			(at 228.6 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "JP108P"
+		(property "MPN" "JP1412P"
 			(at 228.6 33.02 0)
 			(hide yes)
 			(effects
@@ -1365,7 +1365,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "BH353A"
+		(property "Value" "KAE-RPMR-MP4"
 			(at 255.27 34.925 0)
 			(effects
 				(font (size 1.27 1.27))
@@ -1379,28 +1379,28 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.elliottelectric.com/P/Item/TAB/BH353A/"
+		(property "Datasheet" ""
 			(at 251.46 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "3-gang nonmetallic (PVC) device box, 53 in3, nail/screw mount, UL listed E11461"
+		(property "Description" "Receptacle subplate: 6.4 mm (1/4 in) polycarbonate UL 94 V-0, behind the cover's 3-gang cut-out, fixed to the cover with 6 nylon-insulated through bolts; 6-32 tapped at standard device-yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch) for three duplex receptacles; the nylon 3-gang wallplate (MP8) clamps the cover from outside"
 			(at 251.46 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "BH353A"
+		(property "MPN" "KAE-RPMR-MP4"
 			(at 251.46 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "ABB (Carlon) Superblue"
+		(property "Manufacturer" "custom (machined to drawing, TBD)"
 			(at 251.46 33.02 0)
 			(hide yes)
 			(effects
@@ -2249,7 +2249,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Field-wiring kit: 4 x listed nonmetallic NM-B cable connectors (1/2 in); 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); 3 x 14/3 NM-B with ground, ~0.5 m (E1 to E2); 3 x 6 in green EGC pigtails; 4 adhesive-free screw-on cable-tie mounts"
+		(property "Description" "Field-wiring kit: 1 x listed nonmetallic NM-B cable connector (1/2 in) for the branch; 1 x listed 5-port lever splicing connector for the EGCs (e.g. WAGO 221-415); receptacle leads 14 AWG THHN/THWN-2 Cu 600 V, 9 x 0.45 m (black/red/white per receptacle) with a 300 mm service loop for cover removal; 3 x green 14 AWG EGC pigtails; screw-on cable-tie mounts and a spiral wrap for the lead bundle"
 			(at 248.92 55.88 0)
 			(hide yes)
 			(effects

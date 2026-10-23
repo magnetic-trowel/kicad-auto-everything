@@ -5,7 +5,7 @@
 	(uuid "d5ee9ec4-f521-5ebf-9868-c091641e8e24")
 	(paper "A4")
 	(title_block
-		(title "Receptacle feeds J2-J4 (one 14/3 NM-B cable per duplex receptacle)")
+		(title "Receptacle feeds J2-J4 (three 14 AWG leads per duplex receptacle in the cover)")
 		(date "2026-10-23")
 		(rev "A")
 		(company "kaesynth")

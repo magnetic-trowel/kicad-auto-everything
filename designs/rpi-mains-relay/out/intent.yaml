@@ -68,7 +68,7 @@ board:
       drill_mm: 2.7
       plated: false
       note: "H10, Pi Zero 2 W standoff M2.5 x 11 mm nylon"
-  enclosure: "ABB/Carlon NS1086 polycarbonate 10 x 8 x 6 in (UL 50 Type 4X/12), JP108P PVC back panel; board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon standoffs; receptacles in a separate Carlon BH353A 3-gang box (E2)"
+  enclosure: "ABB/Carlon NS14126 polycarbonate 14 x 12 x 6 in (UL 50 Type 4X/12), JP1412P PVC back panel; board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon standoffs; three TR5252 receptacles in a 3-gang opening of the cover (subplate MP4), above the wire compartment"
   keepouts:
     - rect: [24.0, 0, 57.0, 13.0]
       what: "copper, vias, pours, parts"
@@ -155,7 +155,7 @@ boards:
         drill_mm: 2.7
         plated: false
         note: "H10, Pi Zero 2 W standoff M2.5 x 11 mm nylon"
-    enclosure: "ABB/Carlon NS1086 polycarbonate 10 x 8 x 6 in (UL 50 Type 4X/12), JP108P PVC back panel; board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon standoffs; receptacles in a separate Carlon BH353A 3-gang box (E2)"
+    enclosure: "ABB/Carlon NS14126 polycarbonate 14 x 12 x 6 in (UL 50 Type 4X/12), JP1412P PVC back panel; board on 6 x M3 x 12 mm nylon standoffs; partition MP1 across the board at the south faces of J1-J4; Pi Zero 2 W on J5 at 11 mm (socket 8.51 + header 2.54) on 4 x M2.5 x 11 mm nylon standoffs; three TR5252 receptacles in a 3-gang opening of the cover (subplate MP4), above the wire compartment"
     keepouts:
       - rect: [24.0, 0, 57.0, 13.0]
         what: "copper, vias, pours, parts"
@@ -1458,27 +1458,27 @@ components:
   - ref: MP2
     block: mech
     board: main
-    value: NS1086
+    value: NS14126
     footprint: null
     category: mechanical
     domains: []
-    mpn: NS1086
+    mpn: NS14126
   - ref: MP3
     block: mech
     board: main
-    value: JP108P
+    value: JP1412P
     footprint: null
     category: mechanical
     domains: []
-    mpn: JP108P
+    mpn: JP1412P
   - ref: MP4
     block: mech
     board: main
-    value: BH353A
+    value: KAE-RPMR-MP4
     footprint: null
     category: mechanical
     domains: []
-    mpn: BH353A
+    mpn: KAE-RPMR-MP4
   - ref: MP5
     block: mech
     board: main
@@ -2470,13 +2470,18 @@ relations:
     note: "width from Net(width_mm=7.5). L runs from J1.1 south, then west under the relay bodies into pads 13; L_SWk leaves pads 14 north and enters its terminal pole from the side away from the N pole (pole 1 from the west, pole 3 from the east) so it stays >= 6.4 mm from N; N runs on B.Cu along the south faces of J1-J4 through every pole 2 and PS1 AC/N; where N crosses an L or L_SW path each is single-layer for that crossing (7.5 mm, 2 oz carries 15 A at 10 K on one layer, C-7) with the 1.6 mm laminate between them"
     source: design
   - kind: x-enclosure_layout
-    walls: "NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P"
-    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall near J1 (east); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
-    note: "E2 (3-gang PVC box, receptacles) mounted east of E1 on the same backboard"
+    walls: "NS14126 inside ~353 x 302 x 152 mm; board 200 x 150 on JP1412P"
+    arrangement: "board in the lower (south) half of the back panel, centred, north edge (J1-J4) toward the top wall; compartment north of MP1 ~140 mm tall holds the field wiring, the EGC splice and the receptacle block, which hangs from the cover's upper half (3-gang cut-out centred ~75 mm below the top wall; receptacle backs reach ~40 mm into the 152 mm depth); branch cable in through the top wall"
+    note: "receptacle terminals and leads stay north of MP1; the Pi sits >= 150 mm away at the south-west"
+    source: design
+  - kind: x-receptacle_mount
+    part: MP4
+    where: "cover, upper half, 3-gang opening"
+    note: "subplate MP4 bolted to the cover with nylon-insulated bolts; yokes bonded by green pigtails to the EGC splice; leads bundled in spiral wrap with a 300 mm service loop and tied to the back panel north of MP1"
     source: design
   - kind: x-ground_splice
     where: "wire compartment, middle, >= 25 mm from any terminal"
-    note: "branch EGC + 3 outgoing EGCs in one listed lever connector; tied to the back panel"
+    note: "branch EGC + 3 receptacle green pigtails in one listed lever connector; tied to the back panel"
     source: design
   - kind: x-label
     obj: J1
@@ -3809,101 +3814,106 @@ constraints:
   - id: rel.170
     from: x-enclosure_layout
     kind: x-enclosure_layout
-    walls: "NS1086 inside ~251 x 200 x 152 mm; board 200 x 150 on JP108P"
-    arrangement: "board north edge toward the top wall; wire compartment = top ~60 mm; branch cable in through the top wall near J1 (east); 3 x 14/3 NM-B out through the east wall above MP1 to E2"
+    walls: "NS14126 inside ~353 x 302 x 152 mm; board 200 x 150 on JP1412P"
+    arrangement: "board in the lower (south) half of the back panel, centred, north edge (J1-J4) toward the top wall; compartment north of MP1 ~140 mm tall holds the field wiring, the EGC splice and the receptacle block, which hangs from the cover's upper half (3-gang cut-out centred ~75 mm below the top wall; receptacle backs reach ~40 mm into the 152 mm depth); branch cable in through the top wall"
   - id: rel.171
+    from: x-receptacle_mount
+    kind: x-receptacle_mount
+    part: MP4
+    where: "cover, upper half, 3-gang opening"
+  - id: rel.172
     from: x-ground_splice
     kind: x-ground_splice
     where: "wire compartment, middle, >= 25 mm from any terminal"
-  - id: rel.172
+  - id: rel.173
     from: x-label
     kind: x-label
     obj: J1
     text: "LINE IN: L (black) / N (white) - 120 VAC 15 A"
-  - id: rel.173
+  - id: rel.174
     from: x-label
     kind: x-label
     obj: J2
     text: "RECEPTACLE A: TOP OUT1 (black) / N (white) / BOTTOM OUT2 (red)"
-  - id: rel.174
+  - id: rel.175
     from: x-label
     kind: x-label
     obj: J3
     text: "RECEPTACLE B: TOP OUT3 (black) / N (white) / BOTTOM OUT4 (red)"
-  - id: rel.175
+  - id: rel.176
     from: x-label
     kind: x-label
     obj: J4
     text: "RECEPTACLE C: TOP OUT5 (black) / N (white) / BOTTOM OUT6 (red)"
-  - id: rel.176
+  - id: rel.177
     from: x-label
     kind: x-label
     obj: board
     text: "120 VAC 60 Hz, 15 A max branch; Cu 14-12 AWG, strip 11-13 mm; DANGER disconnect before opening; outlets are not a disconnecting means"
-  - id: rel.177
+  - id: rel.178
     from: group
     kind: cluster
     component_class: mains_in
     members: [J1, F1, PS1]
     max_span: 32.0
     hard: false
-  - id: rel.178
+  - id: rel.179
     from: group
     kind: cluster
     component_class: pi
     members: [J5, C4, C5, TP6]
     max_span: 32.0
     hard: false
-  - id: rel.179
+  - id: rel.180
     from: group
     kind: cluster
     component_class: ch1
     members: [R1, R7, Q1, D1, D7, R13, K1]
     max_span: 32.0
     hard: false
-  - id: rel.180
+  - id: rel.181
     from: group
     kind: cluster
     component_class: ch2
     members: [R2, R8, Q2, D2, D8, R14, K2]
     max_span: 32.0
     hard: false
-  - id: rel.181
+  - id: rel.182
     from: group
     kind: cluster
     component_class: ch3
     members: [R3, R9, Q3, D3, D9, R15, K3]
     max_span: 32.0
     hard: false
-  - id: rel.182
+  - id: rel.183
     from: group
     kind: cluster
     component_class: ch4
     members: [R4, R10, Q4, D4, D10, R16, K4]
     max_span: 32.0
     hard: false
-  - id: rel.183
+  - id: rel.184
     from: group
     kind: cluster
     component_class: ch5
     members: [R5, R11, Q5, D5, D11, R17, K5]
     max_span: 32.0
     hard: false
-  - id: rel.184
+  - id: rel.185
     from: group
     kind: cluster
     component_class: ch6
     members: [R6, R12, Q6, D6, D12, R18, K6]
     max_span: 32.0
     hard: false
-  - id: rel.185
+  - id: rel.186
     from: group
     kind: cluster
     component_class: outlets
     members: [J2, J3, J4]
     max_span: 32.0
     hard: false
-  - id: rel.186
+  - id: rel.187
     from: group
     kind: cluster
     component_class: mech

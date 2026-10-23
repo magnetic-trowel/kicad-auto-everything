@@ -206,7 +206,7 @@ Revision 2 also folds in four user decisions: switched receptacles, the Pi insid
 and a Pi Zero 2 W powered from the box's 120 VAC (DESIGN.md §1). Several findings were therefore
 resolved by a new architecture, not by a patch.
 
-Build: 0 errors, 0 warnings, 29 waived (6 rules); ERC 0/0; netlist identical.
+Build (revision 3): 0 errors, 0 warnings, 31 waived (6 rules); ERC 0/0; netlist identical.
 
 ### Major findings
 
@@ -245,6 +245,12 @@ The UL file number of the module is to be confirmed under Q-1.
 **M5 (brief fit).** Answered by the user decisions: six individually switched TR receptacles, with
 the Pi inside on J5 (Q-2 to Q-5 recorded as answered).
 
+**Revision 3 (user decision Q-8, "One enclosure").** The two-box assembly is replaced by one Carlon
+NS14126 polycarbonate UL 50 enclosure (14 × 12 × 6 in). The receptacles sit in a 3-gang opening in its
+cover on a polycarbonate subplate; their leads, terminals and the field wiring stay north of MP1; the
+board is unchanged. Cover-mounted devices are not a listed method, so Q-17 (AHJ or UL 508A) is a new
+BLOCKING question. Heat: 15.5 W, 49 °C air.
+
 **M6 (placement intent).**
 
 | Item | Fix |
@@ -275,5 +281,6 @@ the Pi inside on J5 (Q-2 to Q-5 recorded as answered).
 
 - **Removed:** `lib.footprint_custom` (footprints are now drawn) and `conn.empty_net PE` (the framework now exempts domain references).
 - **Tightened:** the overcurrent and entry-fuse regexes, from `L_IN|…` to `L_SW1–6` and `N|L_SW1–6`.
-- **Framework gap (reported):** L_IN is no longer flagged because F1 touches it, although F1 protects only the PS1 branch.
+- **Framework gap, since fixed:** L_IN was not flagged while F1 touched it. The framework now reports that the
+  relays sit on the wire side of F1, so the overcurrent and entry-fuse waivers cover L_IN again (31 waived).
 - **Framework update (123504b) applied:** all mains barriers are now `ac=True`; U1 limits carry the abs max (6.5 V) with `v_rec=5.5`; the relay isolation declares MG IIIa. The build reports no `waiver.unused`, so all six rules still match real findings.

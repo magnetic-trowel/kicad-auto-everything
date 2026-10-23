@@ -4,12 +4,12 @@
   "error": 0,
   "warning": 0,
   "info": 4,
-  "waived": 29,
+  "waived": 31,
   "blocking_questions": [
    "Q-1",
    "Q-6",
    "Q-7",
-   "Q-8"
+   "Q-17"
   ]
  },
  "findings": [
@@ -133,6 +133,15 @@
   {
    "check": "protect.threat",
    "severity": "error",
+   "message": "external net L_IN declares threat 'overcurrent' but K1, K2, K3, K4, K5, K6 sit on the wire side of its fuse",
+   "objects": [
+    "L_IN"
+   ],
+   "waived_by": "designer: The upstream 15 A branch breaker (REQ-2) is the single overcurrent device for the outlet paths; every element on these nets is rated >= 15 A at temperature (terminals 31 A, relays 16 A, receptacles 15 A, copper 7.5 mm x 2 layers x 2 oz with 1.4x I2t margin at 2 kA; calcs mains_*). Per-outlet fuses would add heat and an unserviceable failure point without protecting anything the breaker does not (C-9)."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
    "message": "external net N declares threat 'surge' but has no tvs/mov on it",
    "objects": [
     "N"
@@ -196,11 +205,20 @@
   {
    "check": "protect.entry_fuse",
    "severity": "warning",
+   "message": "external mains net L_IN has a fuse, but K1, K2, K3, K4, K5, K6 connect on the wire side of it (the fuse protects only its own branch)",
+   "objects": [
+    "L_IN"
+   ],
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
    "message": "external mains net N reaches the board without a fuse/PTC on it",
    "objects": [
     "N"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -209,7 +227,7 @@
    "objects": [
     "L_SW1"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -218,7 +236,7 @@
    "objects": [
     "L_SW2"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -227,7 +245,7 @@
    "objects": [
     "L_SW3"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -236,7 +254,7 @@
    "objects": [
     "L_SW4"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -245,7 +263,7 @@
    "objects": [
     "L_SW5"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "protect.entry_fuse",
@@ -254,7 +272,7 @@
    "objects": [
     "L_SW6"
    ],
-   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); N is never fused in North America (NEC 240.22)."
+   "waived_by": "designer: Same as the overcurrent waiver: the 15 A branch breaker protects every outlet element downstream (C-9); F1 protects only PS1; N is never fused in North America (NEC 240.22)."
   },
   {
    "check": "hazard.procedural",
@@ -301,9 +319,9 @@
   {
    "check": "intent.blocking_question",
    "severity": "info",
-   "message": "Q-8 is BLOCKING and unanswered: Accept a two-box assembly: E1 (10 x 8 x 6 in polycarbonate, electronics) next to E2 (3-gang PVC device box, receptacles), joined by three short 14/3 NM-B cables? No listed nonmetallic box was found that takes duplex receptacles and the electronics together.",
+   "message": "Q-17 is BLOCKING and unanswered: Receptacles in the enclosure cover: devices on a machined polycarbonate subplate (MP4) behind a 3-gang cut-out are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have the assembly built and listed as an industrial control panel by a UL 508A shop?",
    "objects": [
-    "Q-8"
+    "Q-17"
    ]
   }
  ]

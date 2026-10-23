@@ -1,8 +1,8 @@
 # rpi-mains-relay: connections (netlist)
 
-Companion to [DESIGN.md](DESIGN.md) (revision 2: six outlets, on-board Pi Zero 2 W, IRM-20-5). Every
+Companion to [DESIGN.md](DESIGN.md) (revision 3: six outlets in the enclosure cover, on-board Pi Zero 2 W, IRM-20-5). Every
 pin of every placed part is listed. The off-board objects are listed too: the Pi, the receptacles in
-E2 and the field wiring.
+the cover and the field wiring.
 
 The encoded design is [design.py](design.py), with part cards in [parts.py](parts.py). `kaesynth build`
 writes the authoritative pin list to [out/netlist.json](out/netlist.json). Section 10 below was
@@ -238,11 +238,11 @@ the SELV side.
 - Footprint **custom** `custom:WAGO_2606-3103_020-000`.
 - **Spacing.** Pole-to-pole pin distances are 14.6 mm (1–2, 2–3) and 15 mm (1–3), so every pair clears 6.4 mm edge to edge with Ø3.5 mm pads.
 
-| Terminal | Pole 1 (top outlet, black) | Pole 2 (white) | Pole 3 (bottom outlet, red) | Cable to E2 |
+| Terminal | Pole 1 (top outlet, black) | Pole 2 (white) | Pole 3 (bottom outlet, red) | Leads to the receptacle in the cover |
 |---|---|---|---|---|
-| J2 | L_SW1 | N | L_SW2 | 14/3 NM-B "A" |
-| J3 | L_SW3 | N | L_SW4 | 14/3 NM-B "B" |
-| J4 | L_SW5 | N | L_SW6 | 14/3 NM-B "C" |
+| J2 | L_SW1 | N | L_SW2 | receptacle A: black, white, red 14 AWG THHN |
+| J3 | L_SW3 | N | L_SW4 | receptacle B: black, white, red 14 AWG THHN |
+| J4 | L_SW5 | N | L_SW6 | receptacle C: black, white, red 14 AWG THHN |
 
 ## 8. Mechanical parts (no electrical pins)
 
@@ -251,7 +251,7 @@ the SELV side.
 | H1–H6 | `MountingHole:MountingHole_3.2mm_M3` NPTH at (4, 4), (196, 4), (4, 75), (196, 75), (4, 146), (196, 146) mm. M3 × 12 mm nylon standoffs to the JP108P panel |
 | H7–H10 | `MountingHole:MountingHole_2.7mm_M2.5` NPTH at (15.5, 4.5), (73.5, 4.5), (15.5, 27.5), (73.5, 27.5) mm. M2.5 × 11 mm nylon Pi standoffs |
 | MP1 | Partition, wall plus sheet (BOM only) |
-| MP2–MP15 | E1 NS1086, JP108P, E2 BH353A, 3 × TR5252, wallplate, Pi Zero 2 W, Pi header, Pi kit, board kit, fuse clips, microSD, field-wiring kit (BOM only) |
+| MP2–MP15 | E1 NS14126, JP1412P, receptacle subplate MP4, 3 × TR5252, wallplate, Pi Zero 2 W, Pi header, Pi kit, board kit, fuse clips, microSD, field-wiring kit (BOM only) |
 
 ## 9. Off-board objects
 
@@ -267,22 +267,24 @@ the SELV side.
 | From | To | Conductor |
 |---|---|---|
 | Branch cable (14/2 or 12/2 NM-B w/G, 15 A breaker) | J1.1 (black), J1.2 (white) | 14 or 12 AWG Cu, strip 11–13 mm |
-| Branch EGC + 3 outgoing EGCs | one listed lever splice (e.g. WAGO 221-415) in the wire compartment | bare/green |
-| Cable A (14/3 NM-B w/G) | J2.1 black, J2.2 white, J2.3 red | 14 AWG |
-| Cable B | J3.1 black, J3.2 white, J3.3 red | 14 AWG |
-| Cable C | J4.1 black, J4.2 white, J4.3 red | 14 AWG |
+| Branch EGC + 3 receptacle green pigtails | one listed lever splice (e.g. WAGO 221-415) in the wire compartment | bare/green |
+| Receptacle A leads | J2.1 black, J2.2 white, J2.3 red | 14 AWG THHN, 0.45 m incl. 300 mm service loop |
+| Receptacle B leads | J3.1 black, J3.2 white, J3.3 red | 14 AWG |
+| Receptacle C leads | J4.1 black, J4.2 white, J4.3 red | 14 AWG |
 
-### Receptacles in E2 (BH353A, three TR5252)
+All leads run in one spiral-wrapped bundle, tied to the back panel north of MP1; nothing crosses MP1.
+
+### Receptacles in the cover (three TR5252 on subplate MP4)
 
 For each receptacle A, B and C, **break the brass-side (line) tab and keep the silver-side
 (neutral) tab**.
 
-| Cable conductor | Receptacle terminal |
+| Lead | Receptacle terminal |
 |---|---|
 | Black | top brass screw / back-wire clamp → top outlet = OUT1, OUT3, OUT5 |
 | Red | bottom brass → bottom outlet = OUT2, OUT4, OUT6 |
 | White | one silver screw |
-| Bare | green pigtail to the green screw |
+| Green pigtail | green screw, other end to the EGC splice |
 
 Mark the wallplate OUT1…OUT6. At commissioning, check every outlet with a receptacle tester:
 polarity, ground, and that it switches.
@@ -337,4 +339,4 @@ polarity, ground, and that it switches.
 | /ch6/COIL6 | SELV | 4 | D12.1 (K), D6.2 (A), K6.A2 (COIL_8), Q6.3 (D) |
 | /ch6/LED6_A | SELV | 2 | D12.2 (A), R18.2 |
 
-PE has no PCB nodes. It is the EGC splice in E1 plus the receptacle yokes and green screws in E2.
+PE has no PCB nodes. It is the EGC splice in E1 plus the receptacle yokes and green screws (pigtails).

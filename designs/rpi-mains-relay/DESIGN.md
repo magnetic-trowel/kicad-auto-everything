@@ -2,12 +2,13 @@
 
 Status: engineering design, encoded in [design.py](design.py) and [parts.py](parts.py), with custom
 footprints from [footprints/make_footprints.py](footprints/make_footprints.py). Not reviewed by a
-certification body. This is revision 2: it answers the review in [REVIEW.md](REVIEW.md) and the user
-decisions recorded as Q-2 to Q-5.
+certification body. This is revision 3: revision 2 answered the review in [REVIEW.md](REVIEW.md) and the user
+decisions Q-2 to Q-5; revision 3 applies the user's Q-8 decision (one enclosure, receptacles in
+its cover).
 
-`kaesynth build` result: 0 errors, 0 warnings, 29 waived findings (6 waiver rules, each with its reason
+`kaesynth build` result: 0 errors, 0 warnings, 31 waived findings (6 waiver rules, each with its reason
 in [out/report.md](out/report.md)). KiCad ERC is clean and the netlist round trip is identical. Four
-BLOCKING questions remain open (Q-1, Q-6, Q-7, Q-8), so the design is not ready for fabrication.
+BLOCKING questions remain open (Q-1, Q-6, Q-7, Q-17), so the design is not ready for fabrication.
 
 The netlist is in [CONNECTIONS.md](CONNECTIONS.md). Evidence tags: [P] read in the primary source,
 [S] secondary source or distributor listing, [V] vendor claim, [I] our inference. Where a standard was
@@ -16,16 +17,19 @@ sources and are tagged so. Verify them against the adopted editions before fabri
 
 **Design summary.**
 
-- **Assembly (two listed nonmetallic boxes on one backboard).**
-  - **E1** is an ABB/Carlon Circuit Safe NS1086 polycarbonate enclosure, 10 × 8 × 6 in, UL 50 Type 4X/12. It holds the 200 × 150 mm board with the relays, the supply and the Pi.
-  - **E2** is a Carlon BH353A 3-gang PVC device box (53 in³). It holds three Pass & Seymour TR5252 tamper-resistant 15 A duplex receptacles with their line tabs broken off, giving six individually switched outlets.
-  - One 14/3 NM-B cable per receptacle joins E1 to E2.
+- **Assembly (one listed nonmetallic enclosure, Q-8).** E1 is an ABB/Carlon Circuit Safe NS14126
+  polycarbonate enclosure, 14 × 12 × 6 in, UL 50 Type 4X/12/13. It holds the unchanged 200 × 150 mm
+  board (relays, supply, Pi) on its PVC back panel. Three Pass & Seymour TR5252 tamper-resistant 15 A
+  duplex receptacles, line tabs broken off, sit in a 3-gang opening in the upper half of its cover on a
+  polycarbonate subplate (MP4), giving six individually switched outlets. 14 AWG leads with a service
+  loop join each receptacle to its terminal block (J2–J4). Mounting devices in a cut cover is not a
+  listed method, so Q-17 asks how the AHJ will accept it.
 - **Switching.** Six G5RL-1A-E-TV8 relays switch line to the six outlets. They are rated 16 A, TV-8 and 1/2 hp, with reinforced 8/8 mm coil-to-contact insulation.
 - **Supply.** A Mean Well IRM-20-5 encapsulated AC/DC module makes 5 V from the shared L/N input behind its own 1 A time-lag fuse (10 kA at 125 VAC). The module is Class II, 4.2 kVAC, certified to UL/IEC 62368-1, and its output is a limited power source (LPS).
 - **Pi.** A Raspberry Pi Zero 2 W plugs component side up onto a 2×20 socket (J5) and is back-fed through header pins 2 and 4 behind a 2 A PTC. Its PCB antenna sits on the south board edge over a copper-free zone, inside an RF-transparent enclosure.
 - **Fail-safe.** Every coil current needs two keys: its channel GPIO (Q1–Q6) and Q7, held on by a 74LVC1G123 retriggerable monostable. The monostable only stays on while the heartbeat (HB) has rising edges, so if HB stops at either level the outlets go OFF within 61 ms. Q7's drain is read back on BCM16 for a boot-time and periodic self-test.
 - **Separation.** Three barriers keep the field wiring away from the low-voltage side:
-  - A polycarbonate partition (MP1) cuts E1 into a field-wiring compartment and a PCB/Pi compartment.
+  - A polycarbonate partition (MP1) cuts E1 into a field-wiring/receptacle compartment (north) and a PCB/Pi compartment (south).
   - An 8 mm copper-free band on the board separates every SELV part from mains copper.
   - The only parts that cross the barrier are certified ones: the six relays and the supply module.
 
@@ -52,8 +56,8 @@ The user's decisions after the first review are recorded as answered questions i
 | REQ-4 | What is switched | Line only. Neutral is not switched. The EGC never passes through the PCB | NEC 404.2(B) [I], 250.148(B) [S] | netlist review |
 | REQ-5 | Rating per outlet | ≤ 15 A general use, ≤ 12 A continuous; motor ≤ 1/2 hp (9.8 A FLA); tungsten ≤ TV-8 (TV-5 with the HR second source); capacitive inrush ≤ 100 A peak | relay UL/VDE ratings [P] | T-LOAD, T-OL |
 | REQ-6 | Total current, all outlets | ≤ 15 A, and ≤ 12 A for loads running ≥ 3 h | breaker; NEC 210.19/210.20 [S] | T-HEAT |
-| REQ-7 | Enclosures | E1: listed nonmetallic UL 50 Type 4X/12 enclosure for board, Pi and supply. E2: listed nonmetallic 3-gang device box for the receptacles. Joined by three 14/3 NM-B cables; both surface-mounted indoors; no ventilation openings | Q-3, Q-4, Q-8; C-1, C-6, C-13 | inspection |
-| REQ-8 | Box fill | E2 per NEC 314.16. E1 is over 100 in³ (outside the 314.16(A) table), so its free space is shown instead | NEC 314.16 [S/I] | C-1 |
+| REQ-7 | Enclosure | One listed nonmetallic UL 50 Type 4X/12 polycarbonate enclosure (E1) for board, Pi, supply and the three receptacles, which sit in a 3-gang opening in its cover on subplate MP4 with a nylon wallplate outside. Surface-mounted indoors, cover facing the room; no ventilation openings | Q-3, Q-4, Q-8; C-1, C-6, C-13 | inspection |
+| REQ-8 | Box fill | E1 is over 100 in³, outside the NEC 314.16(A) table; conductor and device allowances are shown against its free volume | NEC 314.16 [S/I] | C-1 |
 | REQ-9 | Field terminals in E1 | Lever push-in, UL 1059 ≥ 300 V / ≥ 20 A, 14–12 AWG Cu; one (L, N) input and three (OUTa, N, OUTb) receptacle feeds, all labelled | brief ("really easy to access", "shared inputs … outputs") | inspection |
 | REQ-10 | Mains ↔ SELV | Reinforced everywhere. PCB creepage and clearance ≥ 8.0 mm; relay coil–contact reinforced; supply module Class II, 4.2 kVAC; field conductors kept out of the PCB/Pi compartment by MP1; hi-pot 3 kVrms for 60 s | UL/IEC 62368-1, IEC 60664-1 (C-8) | T-CREEP, T-HIPOT |
 | REQ-11 | Opposite-polarity mains spacing (L or L_SWk to N; L_SWj to L_SWk) | creepage ≥ 6.4 mm, clearance ≥ 3.2 mm | UL 1059 use group C [S] | T-CREEP |
@@ -76,14 +80,14 @@ The user's decisions after the first review are recorded as answered questions i
 | REQ-28 | Watchdog self-test | ARM_FB on BCM16. Software checks disarmed → armed → disarmed, with timing, at boot and whenever all outlets are off (at least daily). On failure it never arms, keeps every outlet off and raises an alarm | review M2 | T-SELFTEST |
 | REQ-29 | Software | Read-only root filesystem (overlay); power-safe logging; all outlets OFF at boot; heartbeat from the control loop; documented power-restore policy (default OFF) | review M2; H17 | code review, T-BOOT |
 | REQ-30 | Wi-Fi | PCB antenna inside a nonmetallic enclosure; antenna zone copper-free on all layers; ≥ 30 mm from relays, mains copper and the supply | C-13 | T-RF (RSSI ≥ −67 dBm at the install location) |
-| REQ-31 | Compartments in E1 | Field wiring (north) is separated from the PCB/Pi by MP1, a vertical wall plus a flat sheet die-cut around J1–J4. North of the wall, PCB copper is allowed only under a terminal body or the MP1 sheet, and never between the board edge and the wire-entry faces. Conductors are tied down | review M3 | inspection |
+| REQ-31 | Compartments in E1 | Field wiring, receptacle leads and the receptacles themselves (north) are separated from the PCB/Pi by MP1, a vertical wall plus a flat sheet die-cut around J1–J4. North of the wall, PCB copper is allowed only under a terminal body or the MP1 sheet, and never between the board edge and the wire-entry faces. Conductors are tied down | review M3 | inspection |
 
 ## 3. Assumptions and open questions
 
 | ID | Assumption | Why |
 |---|---|---|
 | ASM-1 | North-American dwelling or light commercial. One 120 V branch from a 15 A breaker. Available fault current at E1 ≤ 2 kA; ≥ 10 m of 14 AWG limits it to < 1 kA | Copper I²t (C-7); F1 has a 5× margin regardless (C-9) |
-| ASM-2 | Indoor dry location, PD2, ≤ 2000 m, room 0–40 °C. E1 and E2 surface-mounted on a wall or backboard, not in an insulated cavity | Spacing tables and the heat budget |
+| ASM-2 | Indoor dry location, PD2, ≤ 2000 m, room 0–40 °C. E1 surface-mounted on a wall or backboard, not in an insulated cavity | Spacing tables and the heat budget |
 | ASM-3 | Loads are plug-in appliances, LED or tungsten lighting, small motors. None is hazardous if left on, because a welded contact is a credible failure | H7 |
 | ASM-4 | The Zero 2 W draws ≤ 0.6 A at full CPU load. Published measurements: 0.5 A (Geerling), 0.58 A (Tom's Hardware), "nearly 3 W" (Hackster) [S]. The budget allows 1.0 A | C-2 |
 | ASM-5 | PCB laminate taken as material group IIIb (CTI ≥ 100 V) so the tables apply at their most conservative; FR-4 is usually IIIa [S] | C-8 |
@@ -100,7 +104,7 @@ The user's decisions after the first review are recorded as answered questions i
 | Q-5 | Which Pi, and what powers it? | answered | user decision, section 1 |
 | Q-6 | Branch protection. Is a 15 A dual-function AFCI/GFCI breaker acceptable? GFCI is required in kitchens, baths, garages, basements, laundry and outdoors; AFCI in most dwelling rooms. A 20 A circuit must be re-breakered at 15 A (12 AWG is fine on 15 A). | **BLOCKING** | 15 A dual-function breaker |
 | Q-7 | Load list. Are any loads heaters, pumps, compressors or life-safety equipment, i.e. unsafe if a contact welds? Motors cycled more than about 5 times a day should drive a contactor (C-10). | **BLOCKING** | general plug loads |
-| Q-8 | Will you accept a two-box assembly, E1 (electronics) next to E2 (receptacles) on one backboard? No listed nonmetallic box was found that takes duplex receptacles and the electronics together (§5.2). | **BLOCKING** | two boxes |
+| Q-8 | One enclosure, or two boxes (electronics enclosure next to a receptacle box)? | answered | "One enclosure": a single larger listed non-metallic enclosure with the six switched receptacles (3 split-tab TR duplex) mounted in its lid/face and the relay board, Pi Zero 2 W and IRM-20-5 inside |
 | Q-9 | Partition MP1: confirm 1.5 mm polycarbonate UL 94 V-0, the fixing, and AHJ acceptance. | no | as specified |
 | Q-10 | Watchdog semantics: OFF when the control app hangs (software heartbeat), or ON through app hangs (hardware-PWM heartbeat)? | no | software heartbeat |
 | Q-11 | Power-restore policy: outlets stay OFF after a power cut, or the app restores the last state after its self-test? | no | stay OFF |
@@ -108,13 +112,14 @@ The user's decisions after the first review are recorded as answered questions i
 | Q-13 | Relay supply (Omron → Aratas, long lead time): qualify the second source. | no | G5RL-1A-E-HR, TV-5 limit |
 | Q-14 | Pi header: the user solders a 2×20 header to the Zero 2 W's underside. A Zero 2 WH (header on top) would have to sit face-down, which mirrors the pinout, so it is not supported. | no | solder on the underside |
 | Q-15 | Generic hardware (nylon standoffs, NM connectors, wallplate, EGC splice, SD card) still needs MPNs. | no | specs in the BOM |
+| Q-17 | Receptacles in the cover on a machined subplate (MP4) are not a listed device-mounting method. Accept through the AHJ field evaluation (Q-1), or have a UL 508A shop build and list the assembly as an industrial control panel? | **BLOCKING** | field evaluation with Q-1 |
 | Q-16 | Add per-channel readback, which would detect a shorted channel MOSFET? It costs 6 GPIOs and 18 parts. | no | no; the channel LED shows it |
 
 ## 4. Hazards and failure modes
 
 | ID | Hazard | Mitigation | Implemented by | Survives a single fault? |
 |---|---|---|---|---|
-| H1 | Shock with E1 or E2 open | Listed enclosures with screw covers (tool needed); "disconnect before opening" label; electrician installs; MP1 keeps field conductors away from the Pi and SD-card area | MP1, MP2, MP4 | n/a (service condition): de-energize at the breaker |
+| H1 | Shock with the cover open (the receptacles come off with it) | Listed enclosures with screw covers (tool needed); "disconnect before opening" label; electrician installs; MP1 keeps field conductors and receptacle leads away from the Pi and SD-card area; a 300 mm lead service loop so the cover never hangs on a terminal | MP1, MP2, MP4 | n/a (service condition): de-energize at the breaker |
 | H2 | Mains reaches SELV, the Pi, or a person touching the Pi | Reinforced insulation everywhere it is needed: IRM Class II, 4.2 kVAC [P]; relays 8/8 mm, 6 kVAC, 10 kV [P]; PCB 8/8 mm band; MP1 adds supplementary insulation over the field conductors' basic insulation; no SELV wiring leaves E1 | K1–K6, PS1, layout, MP1 | **Yes** (reinforced = double) |
 | H3 | A bare EGC or receptacle yoke touches live copper | Nonmetallic enclosures, so there is no box metal; EGCs spliced in the wire compartment with a listed connector; mains copper ≥ 6.4 mm from board edges and holes (DRU edge rule); copper north of MP1 lies under a terminal body or the MP1 sheet | J1–J4, MP1, MP15 | **Yes** |
 | H4 | Overload heats conductors, PCB, terminals, relays or receptacles | One protective device, the 15 A breaker; every downstream element rated ≥ 15 A at temperature (C-7, C-9) | breaker, K1–K6, J1–J4, MP5–MP7 | **Yes**; 15–20 A overloads tested in T-OL |
@@ -125,7 +130,7 @@ The user's decisions after the first review are recorded as answered questions i
 | H9 | Glitch to ON at boot, reset or power-up | Default-pull-down GPIOs plus 4.7 kΩ / 100 kΩ pull-downs; U1 has a glitch-free power-up reset [P]; arming needs rising edges on B; R22 holds Q7 off while U1 is unpowered (its output is high-Z under Ioff [P]) | U1, R22, R23, R7–R12 | **Yes** |
 | H10 | Remote energization while a load is serviced | Label: outlets are not a disconnecting means; unplug the load or lock out the breaker | labels | **No** (procedural) |
 | H11 | Shock from an "OFF" outlet | No snubber or MOV across the contacts (C-12); line-only switching; polarity check with a receptacle tester at commissioning | K1–K6, T-MISWIRE | Leakage: yes. L/N swapped: **no** (procedural) |
-| H12 | Overtemperature in the closed enclosure | 13.3 W worst case into 0.21 m² of polycarbonate gives 52 °C air at a 40 °C room (C-6); surface mounting; 12 A continuous limit | MP2, PS1 | **Yes** with margin |
+| H12 | Overtemperature in the closed enclosure | 15.5 W worst case into 0.34 m² of polycarbonate gives 49 °C air at a 40 °C room (C-6); surface mounting; 12 A continuous limit | MP2, PS1 | **Yes** with margin |
 | H13 | Surge flashover or arc tracking | OVC III spacing; relays 10 kV impulse; IRM tested to 2 kV L–N [P]; no MOV in the box; panel SPD recommended | K1–K6, PS1 | **Yes** |
 | H14 | Pi fitted wrongly (face-down Zero 2 WH, or offset a row), putting 5 V on GPIO pins | Zero 2 W only, header on its underside; J5 footprint uses the Pi's own top-view pin numbering; Pi outline, "components up" and pin-1 marks on the silkscreen; a face-down Pi does not line up with the standoffs | J5, MP9, MP10 | **No**: assembly error, caught by inspection before power-up |
 | H15 | Motor stall on an outlet | The motor's own overload protection (NEC 430); 1/2 hp relay rating; contactor for larger motors | user | n/a |
@@ -192,33 +197,50 @@ and an external antenna would mean cutting a trace on the Pi and fitting a U.FL 
 (a board modification outside its FCC grant 2ABCB-RPIZ2 [V, board silkscreen]). So the
 electronics enclosure must be nonmetallic.
 
-| Option | Holds 3 duplexes + board + Pi + supply? | Listed for this use | Wi-Fi | Heat (13.3 W) | Verdict |
+| Option | Holds 3 duplexes + board + Pi + supply? | Listed for this use | Wi-Fi | Heat | Verdict |
 |---|---|---|---|---|---|
 | Steel 4-11/16" box (revision 1) | No | yes | blocked | 4 W limit | out (Q-4) |
-| 4-gang PVC device box (Carlon B468R, 71 in³ [S]) | No: the board (≥ 145 × 120 mm) does not fit beside three devices, and 314.16 fill is exceeded | for devices and NM cable | good | small area | out |
-| One large PVC junction box (Carlon E989N-CAR 8 × 8 × 4 in, NEMA 6P [S]) | Electronics yes; it has no listed means to mount duplex receptacles | junction box | good | ok | out for the receptacles |
-| Receptacles in a cut-out in the enclosure lid | Not a listed method: wiring-device receptacles are meant for device boxes | no | good | ok | out |
-| **E1 Carlon NS1086 (10 × 8 × 6 in, polycarbonate, UL 50 Type 4X/12/13, back panel JP108P [P catalog]) + E2 Carlon BH353A (3-gang PVC device box, 53 in³ [S])** | Yes, each used as listed | yes | E1 polycarbonate, < 1 dB [I] | 52 °C (C-6) | **chosen**; user to accept (Q-8) |
-| One single-gang FS box per receptacle, chained by nipples | Yes | yes | good | ok | out: pass-through conductors overfill 18 in³ boxes |
+| 4-gang PVC device box (Carlon B468R, 71 in³ [S]) | No: the board does not fit beside three devices, and 314.16 fill is exceeded | for devices and NM cable | good | small area | out |
+| Large PVC junction box (Carlon E989N-CAR 8 × 8 × 4 in, NEMA 6P [S]) | Only 8 × 8 in: the 3-gang block plus the board and the partition do not fit; screw cover too small for the opening | junction box | good | ok | out |
+| Revision 2: NS1086 + separate 3-gang BH353A box | Yes, each box used as listed | yes | good | 52 °C | superseded by the user's Q-8 decision |
+| Listed polycarbonate kits with duplex outlets on the inner plate (e.g. Transtector TEPC181610-100-UL [S]) | Receptacles are inside, reachable only with the lid open | yes | good | ok | out: loads must plug in with the box closed |
+| **NS14126 (14 × 12 × 6 in, UL 50 Type 4X/12/13, back panel JP1412P 12.75 × 10.88 in [P catalog]); receptacles in a 3-gang opening of its cover** | Yes | enclosure yes; receptacle mounting in the cover **no** (Q-17) | < 1 dB [I] | 49 °C (C-6) | **chosen** |
 
-**Arrangement on the backboard (front view):**
+No listed nonmetallic enclosure with device openings in its cover was found (searches of Carlon,
+Fibox, Hammond, Allied Moulded and NEMA-kit makers [S]). The chosen construction is the usual
+UL 508A control-panel practice: a listed enclosure, field-cut, carrying listed devices.
+
+**How the receptacles mount.**
+
+- **Cover opening.** A rectangular cut-out matching the opening of a standard 3-gang duplex wallplate, centred about 75 mm below the top wall.
+- **Subplate MP4.** A 6.4 mm polycarbonate (UL 94 V-0) plate behind the cover, held by six nylon-insulated through-bolts. It is tapped 6-32 at standard yoke spacing (3-9/32 in screw centres, 1-13/16 in gang pitch). The receptacle yokes screw to it, and the nylon wallplate (MP8) clamps the cover from outside, as on a wall box.
+- **Grounding.** Nothing on the cover is metal except the yokes. Each yoke's green screw gets a 14 AWG green pigtail to the EGC splice (NEC 250.146 [S]; nonmetallic enclosure, so no box bonding).
+- **Wiring.** Each receptacle gets black (top outlet), red (bottom outlet) and white leads, 14 AWG THHN/THWN-2, to its 3-pole terminal (J2–J4). The nine leads plus three pigtails run in spiral wrap with a 300 mm service loop, tied to the back panel north of MP1, so the cover can be removed and laid aside without stressing a terminal.
+- **Separation.** The receptacle block (backs reach about 40 mm into the 152 mm depth) sits above the north (field-wiring) compartment. Its terminals, the leads and the field conductors all stay north of the MP1 wall, which runs from the PCB to the cover. The Pi is in the south-west corner, ≥ 150 mm from the nearest receptacle terminal.
+
+**Arrangement (front view, cover removed; receptacles shown dashed where the cover carries them):**
 
 ```
-   branch cable (14/2 or 12/2 NM-B) in through the E1 top wall, east end
-   +------------------------------------------- E1 NS1086 (10.4 x 8.4 x 6.5 in) -----+      +-- E2 BH353A --+
-   | wire compartment: J1 entry, J2-J4 entries, EGC splice (listed lever connector)   |====> | [TR5252 A]    |
-   |  [J2 OUT1|N|OUT2]  [J3 OUT3|N|OUT4]  [J4 OUT5|N|OUT6]            [J1 L|N]        |====> | [TR5252 B]    |
-   |==================== MP1 partition wall + sheet (1.5 mm PC, PCB to lid) =========|====> | [TR5252 C]    |
-   |  L bus, F1 in clips                                                             |  3 x 14/3 NM-B   +---------------+
-   |  K1  K2  K3  K4  K5  K6   (contacts north, coils south)       PS1 IRM-20-5      |  (east wall,
-   |  - - - - - - - - - - 8 mm copper-free barrier band (under relays and PS1) - - - |   above MP1)
-   |  Q/D/LED per channel        U1 Q7 readback            C1-C3 D15 F2              |
-   |  [ Pi Zero 2 W on J5, SD card west ]  antenna zone at the south board edge       |
-   +---------------------------------------------------------------------------------+
+   branch cable (14/2 or 12/2 NM-B) in through the top wall                     E1 NS14126, 14.4 x 12.4 x 6.5 in
+   +------------------------------------------------------------------------------------------+
+   |  EGC splice   lead bundle (spiral wrap, 300 mm loop)                                      |
+   |              .- - - - - - - - - - - - - - - - - - .                                       |
+   |              ' [TR5252 A]  [TR5252 B]  [TR5252 C] '  <- in the cover, 3-gang opening       |
+   |              '  OUT1/OUT2   OUT3/OUT4   OUT5/OUT6 '     (subplate MP4, nylon wallplate)   |
+   |              '- - - - - - - - - - - - - - - - - - '                                       |
+   |        +---------------------------- board 200 x 150 ---------------------------+         |
+   |        | [J2 OUT1|N|OUT2] [J3 OUT3|N|OUT4] [J4 OUT5|N|OUT6]      [J1 L|N]        |         |
+   |   =====|======== MP1 partition wall + sheet (1.5 mm PC, PCB to cover) ===========|=====    |
+   |        | L bus, F1          K1 K2 K3 K4 K5 K6               PS1 IRM-20-5          |         |
+   |        | - - - - - 8 mm copper-free barrier band (under relays and PS1) - - - - - |         |
+   |        | Q/D/LED per channel     U1 Q7 readback        C1-C3 D15 F2               |         |
+   |        | [ Pi Zero 2 W on J5 ]  antenna zone at the south board edge             |         |
+   |        +--------------------------------------------------------------------------+         |
+   +------------------------------------------------------------------------------------------+
 ```
 
 The board sits on 6 × M3 × 12 mm nylon standoffs on the PVC back panel. The Pi is 11 mm above the
-board on nylon standoffs, so the lid faces its component side and antenna. Wi-Fi
+board on nylon standoffs, so the cover faces its component side and antenna. Wi-Fi
 range indoors is that of a bare Zero 2 W less about 1–3 dB [I]: typically 10–20 m through one or two
 interior walls. REQ-30 sets the acceptance test (RSSI ≥ −67 dBm where it is installed). If that fails,
 move the access point or add a mesh node. Do not modify the Pi.
@@ -321,7 +343,7 @@ driven, and 0.28 V if software enables the internal 50 kΩ pull-up by mistake.
 ### 5.6 Receptacles
 
 - **Tamper-resistant (NEC 406.12).** The Pass & Seymour TR5252 is a TR, spec-grade NEMA 5-15R duplex with back and side wiring. Its line-side tab breaks off for split-circuit wiring [S].
-  - Breaking the brass-side tab gives two individually switched outlets that share one neutral, and each receptacle is fed by one 14/3 NM-B cable.
+  - Breaking the brass-side tab gives two individually switched outlets that share one neutral; each receptacle gets black, red and white 14 AWG leads from its terminal block.
   - Back-wire clamps are used, never push-in backstabs (H6).
 - **GFCI (NEC 210.8).** No split-tab GFCI receptacle exists: a GFCI device protects both of its outlets as one, and its load terminals would sit downstream of the relays. GFCI protection is therefore upstream (REQ-2, Q-6).
   - The default is a 15 A dual-function AFCI/GFCI breaker. It also covers AFCI (210.12) for outlets in dwelling rooms.
@@ -331,7 +353,7 @@ driven, and 0.28 V if software enables the internal 50 kΩ pull-up by mistake.
 - **Per-outlet fusing.** Not used. Every element downstream of the breaker is rated ≥ 15 A at temperature: 15 A receptacles, 16 A relays, 31 A terminals, and copper with a 1.4× I²t margin.
   - Six fuses would add about 1 W each at 12 A and would be unserviceable failure points behind a cover.
   - The sum of all six outlets is limited by the same 15 A breaker (REQ-6). The software can also cap concurrent loads, but that is not part of the safety case.
-- **Grounding.** EGC pigtails go to each receptacle's green screw. E2 is nonmetallic, so there is no box bonding. The receptacle yokes are PE.
+- **Grounding.** EGC pigtails go to each receptacle's green screw. The enclosure is nonmetallic, so there is no box bonding. The receptacle yokes are PE.
 
 ### 5.7 Options decided
 
@@ -389,16 +411,10 @@ All numbers below are evaluated in design.py (`d.calc`) and listed in out/report
 
 **C-1 Box fill.**
 
-- **E2 (BH353A, 53 in³ [S])**, NEC 314.16(B) [S/I]:
-  - 9 insulated conductors (three 14/3 cables) × 2.0 in³ = 18.0 in³.
-  - All EGCs count as one allowance: 2.0 in³.
-  - 3 devices × 2 × 2.0 = 12.0 in³.
-  - Internal clamps: 2.0 in³.
-  - Total **34.0 in³** (64 %); with 12 AWG, 38.25 in³ (72 %).
-- **E1 (NS1086)**: inside ≈ 9.9 × 7.9 × 5.98 in = 468 in³ gross [I from the catalog dimensions]. It is over 100 in³, so the 314.16(A) table does not apply. As a check:
-  - 12 conductor allowances at 12 AWG: 27 in³.
-  - Board assembly envelope (200 × 150 × 45 mm): 82 in³.
-  - That leaves **358 in³ free**.
+- **E1 (NS14126)**: inside ≈ 13.9 × 11.9 × 5.98 in = 989 in³ gross [I from the catalog dimensions]. It is over 100 in³, so the 314.16(A) table does not apply. As a check, at 12 AWG (2.25 in³):
+  - branch L and N 2, receptacle leads 9, devices 3 × 2, EGCs 1: 18 allowances = 40.5 in³;
+  - board assembly envelope (200 × 150 × 45 mm): 82 in³; receptacle block with subplate: 42 in³;
+  - that leaves **825 in³ free**. Wire-bending space for 14–10 AWG is "not specified" in NEC 312.6(A) [S]; the terminals have ~140 mm above them.
 
 **C-2 5 V budget.**
 
@@ -437,7 +453,7 @@ Flyback transients up to 6.1 V on COIL_RTN are clamped by D16 to +3V3 + 0.24 V t
 (≤ 0.1 mA). With the Pi absent, the same clamp can back-feed U1 with a few µA. That is harmless: U1
 cannot arm without edges.
 
-**C-6 Heat budget (E1, closed, wall-mounted).**
+**C-6 Heat budget (E1, closed, wall-mounted, receptacles included).**
 
 | Source | W | Basis |
 |---|---|---|
@@ -445,21 +461,21 @@ cannot arm without edges.
 | Relay contacts, 15 A through one relay at 10 mΩ | 2.25 | [I]: twice the rev 1 assumption (m4); measured in T-HEAT |
 | PCB copper, ~300 mm of 7.5 mm × 2 layers × 2 oz (5.7 mΩ) | 1.28 | C-7 |
 | Terminals, 4 clamping points × 1 mΩ | 0.90 | [I] |
-| Field conductors inside E1, 0.5 m of 14 AWG | 1.08 | 8.3 mΩ/m [I] |
+| Conductors inside E1: branch 0.4 m + receptacle leads 0.9 m of 14 AWG (10.8 mΩ) | 2.43 | 8.3 mΩ/m [I] |
+| Receptacle contacts, 2 × 2 mΩ at 15 A | 0.90 | [I] |
 | PS1 loss at 5.8 W out, η 76 % | 1.84 | [P] efficiency ≈ 79 % at full load; derated [I] |
 | Pi Zero 2 W at full CPU | 3.00 | [S] measurements |
 | LEDs, PTC, FETs, U1 | 0.14 | |
-| **Total** | **13.3** | |
+| **Total** | **15.5** | |
 
-- **Enclosure.** The NS1086 has 0.214 m² of exposed area (back excluded) and h ≈ 5.0 W/m²K for a sealed polycarbonate box [I]. ΔT = 13.3/(5.0 × 0.214) = 12.4 K, so the internal air reaches **52.4 °C** at a 40 °C room.
-- **Ratings at 52 °C air (+7 K local):**
-  - Pi: 70 °C max, **10.6 K margin**.
+- **Enclosure.** The NS14126 has 0.340 m² of exposed area (back excluded) and h ≈ 5.0 W/m²K for a sealed polycarbonate box [I]. ΔT = 15.5/(5.0 × 0.340) = 9.2 K, so the internal air reaches **49.2 °C** at a 40 °C room. One volume holds every source, so the Pi's 13.8 K margin already includes the receptacle and lead heat.
+- **Ratings at 49 °C air (+7 K local):**
+  - Pi: 70 °C max, **13.8 K margin**.
   - IRM-20-5: 70 % available at 60 °C.
   - Relays: 85 °C max. VDE rates 16 A at 85 °C [P].
-  - Terminals: 105 °C [P].
+  - Terminals: 105 °C [P]. Receptacles: rated for building use at normal wall-box temperatures [I]; measured in T-HEAT.
 - **The budget closes** with no venting and no duty limit beyond REQ-6 (≤ 12 A continuous).
-- **What would change it:** if T-HEAT finds more than 60 °C, the steps in order are (1) the 10 × 10 × 6 in NS10106 (+25 % area), (2) limiting the sum of continuous outlet loads to 10 A in the label and software, and (3) moving PS1 to the top of the board.
-- **E2 heat.** The receptacles carry the same current as any receptacle box, so E2 needs no budget of its own.
+- **What would change it:** if T-HEAT finds more than 60 °C, the steps in order are (1) the 16 × 14 × 6 in NS16146, (2) limiting the sum of continuous outlet loads to 10 A in the label and software, and (3) moving PS1 to the top of the board.
 
 **C-7 Mains copper (unchanged).**
 
@@ -487,8 +503,8 @@ cannot arm without edges.
 | D15 standoff ratio | 5.25/7.0 = 0.75 | |
 
 The outlet paths on L_IN and L_SW1–6 have no fuse on the board; the 15 A breaker protects them.
-F1 protects only the PS1 branch. kaesynth stops flagging L_IN as soon as F1 touches it, which is a
-framework limitation reported in the response to review.
+F1 protects only the PS1 branch. kaesynth now reports exactly that (the relays sit on the wire side of F1),
+and the overcurrent and entry-fuse waivers cover L_IN as well as L_SW1–6.
 
 **C-10 Relay life.**
 
@@ -499,7 +515,7 @@ framework limitation reported in the response to review.
 | TV-8 | 25,000 | [P] |
 | 1/2 hp | 6,000 | [P] |
 
-- At 10 operations a day at full current and 85 °C, the VDE figure gives **4.1 years**. Lighter loads and the 52 °C internal air last longer [I].
+- At 10 operations a day at full current and 85 °C, the VDE figure gives **4.1 years**. Lighter loads and the 49 °C internal air last longer [I].
 - Frequently cycled motors should drive a contactor.
 - If the HR second source is used, tungsten loads drop to TV-5.
 
@@ -553,9 +569,9 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | Ref | Item | Source |
 |---|---|---|
 | MP1 | Partition: wall plus flat sheet, 1.5 mm polycarbonate UL 94 V-0, die-cut to a drawing (TBD) | [I] |
-| MP2 | E1 enclosure: Carlon NS1086 | [P catalog] |
-| MP3 | Back panel: Carlon JP108P (PVC) | [P catalog] |
-| MP4 | E2 box: Carlon BH353A | [S] |
+| MP2 | E1 enclosure: Carlon NS14126 | [P catalog] |
+| MP3 | Back panel: Carlon JP1412P (PVC) | [P catalog] |
+| MP4 | Receptacle subplate, 6.4 mm polycarbonate, machined to drawing (TBD) | [I], Q-17 |
 | MP5–MP7 | Receptacles: P&S TR5252 | [S] |
 | MP8 | 3-gang nylon duplex wallplate | generic |
 | MP9 | Raspberry Pi Zero 2 W | [P] |
@@ -564,7 +580,7 @@ Datasheets were read for every on-board part except where marked. "Stress" is th
 | MP12 | Board standoff kit | generic |
 | MP13 | Fuse clips | [S] |
 | MP14 | Industrial microSD card | generic |
-| MP15 | Field-wiring kit: NM-B connectors, EGC lever splice, 3 × 14/3 NM-B, green pigtails, tie mounts | generic, Q-15 |
+| MP15 | Field-wiring kit: NM-B connector, EGC lever splice, 9 receptacle leads (14 AWG THHN), 3 green pigtails, spiral wrap, tie mounts | generic, Q-15 |
 
 Counts: 71 placed electrical parts (23 distinct MPNs), 6 test pads, 10 holes, 15 BOM-only items, and
 three custom footprints drawn by [footprints/make_footprints.py](footprints/make_footprints.py).
@@ -616,8 +632,8 @@ current_path(L_IN, N, L_SW1-6: crossings single-layer)  enclosure_layout  ground
 
 **Field wiring (installer).**
 
-- **Entries.** The branch cable enters the E1 top wall near J1. The three 14/3 NM-B cables leave through the east wall above MP1 and run to E2.
-- **Grounding.** All EGCs are spliced in one listed lever connector in the middle of the wire compartment, ≥ 25 mm from any terminal. In E2, pigtails go to each receptacle.
+- **Entries.** The branch cable enters the E1 top wall. The receptacle leads stay inside E1, north of MP1.
+- **Grounding.** All EGCs are spliced in one listed lever connector in the middle of the wire compartment, ≥ 25 mm from any terminal. Green pigtails go to each receptacle.
 - **Dressing.** Conductors are tied to the back panel within 50 mm of the terminals. The stripped length is 11–13 mm (WAGO).
 
 **Vocabulary still missing from kaesynth:**
@@ -642,14 +658,14 @@ current_path(L_IN, N, L_SW1-6: crossings single-layer)  enclosure_layout  ground
 | T-COIL | REQ-17 | 60 °C chamber; hot restart after 1 h ON; repeat with the 5 V rail held at 4.63 V | 100/100 pickups |
 | T-HEAT | H12, REQ-19 | E1 closed, surface-mounted, 12 A on one outlet (and 15 A for 1 h), 6 coils on, Pi stressed, 4 h at 25 °C; thermocouples on relays, PS1 case, Pi SoC, terminals, air; extrapolate to 40 °C | Air ≤ 60 °C; Pi SoC < 80 °C without throttling; PS1 within its derating; terminals ≤ 90 °C |
 | T-OL | H4 | 20 A on one outlet through the 15 A breaker until it trips | No damage |
-| T-SC | H5, REQ-20 | Bolted fault at an outlet at 1 and 2 kA (sample destroyed); PS1 input short at 2 kA | Breaker clears / F1 clears; no flame out of E1 or E2 |
+| T-SC | H5, REQ-20 | Bolted fault at an outlet at 1 and 2 kA (sample destroyed); PS1 input short at 2 kA | Breaker clears / F1 clears; no flame out of E1 |
 | T-LOAD | REQ-5 | 1000 cycles: 8 A tungsten, 1/2 hp motor, LED drivers at 100 A peak inrush | No weld; contact drop < 100 mV at 1 A |
 | T-SURGE | H13 | IEC 61000-4-5, 2 kV L–N and 4 kV L–PE | No flashover; no reset or uncommanded change |
 | T-EFT | H8 | IEC 61000-4-4, ±2 kV on mains | No uncommanded change |
 | T-LEAK | H11, REQ-18 | OFF outlet into 100 kΩ | ≤ 0.1 mA |
 | T-MISWIRE | H11 | L/N swapped at J1, found with a receptacle tester (commissioning procedure) | Procedure catches it |
 | T-RF | REQ-30 | RSSI and iperf at the installed location, lid closed; compare with the lid open | RSSI ≥ −67 dBm; < 3 dB lid penalty |
-| T-FILL | REQ-8 | Wire E2 fully with 14/3 NM-B and pigtails | Plate closes without force |
+| T-FILL | REQ-8, Q-17 | Wire E1 fully, fit the cover with the receptacles, remove and refit it 20 times | Cover closes without force; no lead pulled from a terminal; no conductor south of MP1 |
 
 ## 11. Sources
 
@@ -667,7 +683,7 @@ current_path(L_IN, N, L_SW1-6: crossings single-layer)  enclosure_layout  ground
   - 326 series 1 A, from distributor listings [S].
   - Fuse clip 102071, via the KiCad footprint description [S].
 - Sullins PPPC202LFBN-RC [S] (Digi-Key, Future Electronics, Zenode listings).
-- ABB/Carlon "E Enclosures" catalog: Circuit Safe NS1086, JP108P, nonmetallic junction boxes [P]. https://tnb.ca.abb.com/en/pdf-catalogues/boxes-and-covers-meter-sockets/enclosures/E-Enclosures-E.pdf. BH353A, B468R, E989N-CAR [S] (distributor listings).
+- ABB/Carlon "E Enclosures" catalog: Circuit Safe NS14126, NS1086, JP1412P, JP108P, nonmetallic junction boxes [P]. https://tnb.ca.abb.com/en/pdf-catalogues/boxes-and-covers-meter-sockets/enclosures/E-Enclosures-E.pdf. BH353A, B468R, E989N-CAR [S] (distributor listings). Transtector/L-com UL-listed polycarbonate kits [S].
 - Pass & Seymour TR5252 [S] (Crescent Electric, North Coast, Electrozad listings).
 - Bourns MF-MSMF [P]. AOS AO3400A rev 3.1 [P]. Diodes BAT54S DS11005, 1N4148W DS30086 [P]. Vishay SMAJ [P]. Kingbright APT1608SGC [P].
 - TI SLUP419 "Demystifying clearance and creepage distance" (Mar 2024) [P]: IEC 60664-1 F.1/F.2/F.4 subsets and IEC 62368-1 Table 10 values.
