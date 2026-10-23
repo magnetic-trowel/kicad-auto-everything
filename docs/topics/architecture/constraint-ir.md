@@ -140,20 +140,24 @@ findings_schema:               # IPC-2581 DFX-like; mirrors KiCad DRC JSON items
 
 | Rule | Reason | Tag |
 |---|---|---|
-| Emit `(version 1)`; one `condition` per rule, with all predicates combined in explicit parentheses | A second `condition` silently overwrites the first; operators have equal precedence, left to right | [P] |
+| Emit `(version 1)`; one `condition` per rule, with all predicates combined in explicit parentheses | A second `condition` silently overwrites the first. Operator precedence, lowest to highest: `&&`, `\|\|`, `^`, comparisons (non-associative), `!`, `+ -`, `* /`. So `&&` binds looser than `\|\|`, the reverse of C: always parenthesise ([grammar.lemon @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/libeval_compiler/grammar.lemon)) | [P] |
 | At most one constraint of each type per rule | Parser error "Rule already has a '%s' constraint" | [P] |
-| Order rules general → specific | Rules are evaluated in reverse, so the last matching rule wins | [P] |
+| Order rules general → specific | Rules are evaluated in reverse, so the last matching rule wins. For clearance, a net tie forces 0, pad/footprint clearance overrides beat every custom rule, and the result is floored at the Board Setup minimum (violation source "board minimum"); diff-pair gap is floored the same way ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)) | [P] |
 | Units only `mm`, `deg`, `ps` (also accepted: `mil`, `in`, `fs`) | `th`, `"` and `rad` are documented but rejected. Time units are only valid in `length`/`skew`, and they force time-domain tuning | [P] |
 | Prefix rule names `IR:<id>`; keep a sidecar map rule name → IR ID; parse JSON `description` (regex `\((rule '|)?([^ ]+)'? .*?; actual .*?\)`) | DRC JSON has no rule-name field; `physical_clearance` violations report as `clearance`/`hole_clearance` | [P] |
 | Use `intersectsArea`/`enclosedByArea`, `intersectsCourtyard*`, `memberOfFootprint` | `insideArea`, `insideCourtyard*` and `memberOf` are deprecated | [P] |
 | Don't use `microvia_*` on 10.x | Master-only; the master keyword is `hole_aspect_ratio` | [P] |
 | Don't rely on `ignore` severity to steer routing | `ignore` rules are evaluated and can override, but the interactive router ignores them | [P] |
+| Compile fab and safety minimums into Board Setup → Constraints (`.kicad_pro`), not only into `.kicad_dru` rules. They are floors applied after resolution, effective_min = max(resolved_min, fab_min, safety_min); a [rule pack](../rules/rule-pack-format.md) that asks for less raises a conflict ("needs a different fab class") instead of winning | KiCad clamps every resolved clearance and diff-pair gap to the board minimum ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)) | [P/I] |
 | Lint by running `kicad-cli pcb drc` on a scratch copy | "Any errors in the custom rules will prevent the design rule checker from running" | [P] |
 | High-speed classes: write a tuning profile per net class (width, gap, unit delay per layer, via delays) via `SetNetClasses`; emit `length`/`skew` in `ps`, with `(within_diff_pairs)` for intra-pair skew | `tuning_profile` is available on net classes since 10.0.0 over IPC | [P] |
 | Use component classes as role carriers (decap-of, hot-loop, crystal) queried by `hasComponentClass()` | KiCad 9+ | [P] |
 | Track KiCad 11: the structured `CustomRule` protobuf (a second compile target); `return_path (layer, net)`, `net_chain_length`, `stub_length` | First native reference-plane check, which could replace part of a custom via-to-plane checker | [P] |
 
-**Correction to the sketch:** since `skew` accepts `ps`, the `ddr.byte0` fallback can be emitted directly in time units. The "0.8mm … ~6.3 ps/mm illustrative" conversion is unnecessary [P, per VK].
+**Corrections to the sketch:**
+- Since `skew` accepts `ps`, the `ddr.byte0` fallback can be emitted directly in time units. The "0.8mm … ~6.3 ps/mm illustrative" conversion is unnecessary [P, per VK].
+- `ddr.byte0` selects the whole `DDR_DQ` class, i.e. every byte lane, and its fallback `skew` without `(within_diff_pairs)` constrains skew across all matching nets and drops the `dqs0_p` target ([../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)). Scope the tag to one lane (its DQ/DM plus its DQS) before compiling [I].
+- The `dec.U1.7.len` proxy measures routed length on a `fromTo` path, not the pad-edge gap, and KiCad creates a `fromTo` path only when it is uniquely determinable (VK). A decap that reaches the pin only through vias and a plane then gets no path and the rule never fires, so treat this compile as advisory; the Python checker is authoritative [P/I].
 
 **What KiCad 10 can and cannot enforce from the IR:**
 - **Native**: courtyard spacing; side and orientation (`assertion` on `Layer`/`Orientation`); containment in named rule areas (`intersectsArea`/`enclosedByArea`); edge and keepout distances; length/skew on `fromTo` paths; diff-pair gap and uncoupled length; via count.

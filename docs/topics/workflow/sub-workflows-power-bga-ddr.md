@@ -3,7 +3,7 @@
 **TL;DR**
 - Three nested micro-workflows recur in expert sources and make natural agent sub-plans: power stage (TI), BGA fanout-with-placement (Feranec), and a routing-priority ladder (TI SZZA009 / Olney).
 - **Power stage**: copy the EVM layout if possible. Otherwise place *and route* the input cap first, then inductor/diode, output cap, small-signal parts and a single-point ground. Shorten loops before widening traces.
-- **BGA**: do a trial placement under the CPU, clear it, fan out from the centre, then stage decaps nF → µF → bulk.
+- **BGA**: do a trial placement under the CPU, clear it, fan out from the centre, then stage decaps. Feranec stages them by value (nF → µF → bulk); value order is CONTESTED, so our default is lowest mounting inductance closest ([../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)).
 - **Routing ladder**: power/ground and susceptible nets by hand → clocked data → the rest. Only nets switching below 50 kHz were deemed autorouter-safe (TI, 1999).
 - **DDR**: don't fully route pin groups one at a time. Reserve escape channels for the whole group first (escape-and-reserve).
 
@@ -57,7 +57,7 @@ All quotes are from the [FEDEVEL "Placement" thread](https://designhelp.fedevel.
 
 - Ship each micro-workflow as a named sub-plan the state machine invokes at S6/S7/S11 ([expert-state-machine.md](expert-state-machine.md)) [I].
 - In the power-stage sub-plan, place and route the input loop before anything else may use that area. Gate it on a hot-loop area check [I].
-- In the BGA sub-plan, alternate trial placement and fanout until escape is feasible, then place decaps in value order with their own vias [I].
+- In the BGA sub-plan, alternate trial placement and fanout until escape is feasible, then place decaps lowest mounting inductance first (package, via count, via-to-pad distance) with their own vias; use value order only behind the contested-rule selector [I].
 - For buses, reserve channels for the whole group before completing any member, using a congestion-negotiating router [I].
 - Treat datasheet layout-order lists (bq25886-style) as ordered constraints in the intent file ([../architecture/constraint-ir.md](../architecture/constraint-ir.md)) [I].
 

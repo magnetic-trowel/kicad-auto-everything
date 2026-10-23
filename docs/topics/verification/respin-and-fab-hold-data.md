@@ -4,7 +4,7 @@
 - No rigorous, public root-cause breakdown of PCB respins exists; all quantitative data comes via vendors or surveys.
 - Even experienced designers respin routinely: about 2.8–2.9 respins per project (Lifecycle Insights, via vendors), and nearly 60% of designers produce 1–5 respins a year.
 - Only "less than 2–20%" of designs reach manufacturing without technical queries (Dana Korf).
-- Vendor hold data puts stackup, impedance and fab-note ambiguity at the top, ahead of geometry violations.
+- One vendor's self-reported hold data (AtlasPCB [V]) puts stackup, impedance and fab-note ambiguity at the top, ahead of geometry violations. The other vendor dataset (dev.to [V]) ranks geometry first, and holds measure order delays, not respins.
 - So critics should be ordered: documentation/spec completeness → geometry rules → physics.
 
 ## Key facts
@@ -55,6 +55,7 @@ Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] infer
 ## Conflicts and open questions
 
 - Secondary citations of Lifecycle Insights conflict on per-respin cost ($28.5k / $44k / $46k) and count (2.8 vs 2.9). The original report was not found, and every citation is from a vendor marketing context.
+- The per-respin and per-project figures are mutually inconsistent: 2.9 × 8.5 days ≈ 24.7 days (not 16), and 2.9 × $44k ≈ $128k (not $82k). iCD's $28,482 equals $82,598 / 2.9, so it is derived, not an independent figure [I, arithmetic].
 - The two vendor DFM rankings disagree, as expected from different populations. Neither publishes methodology.
 - "Up to 60% of prototype failures from footprints" appears only in uncited snippets and is not used here [S].
 

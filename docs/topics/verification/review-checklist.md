@@ -2,7 +2,7 @@
 
 **TL;DR**
 - About 30 checklists and guides merge into **299 distinct layout-review items in 24 categories**: 41 Critical, 151 Major, 107 minor.
-- By automation class, about 37% are pure geometry/DRC checks, about 41% need net and part semantics, and about 22% need judgment, external data or simulation. Of the 41 Critical items, 83% are at least semi-automatable.
+- By automation class, about 37% are pure geometry/DRC checks, about 41% need net and part semantics, and about 22% need judgment, external data or simulation. Of the 41 Critical items, 80–83% are at least semi-automatable, depending on how the mixed tags count.
 - The biggest automation enabler is a **semantic annotation layer**: part roles, net roles, currents, voltages, frequencies and datasheet thresholds.
 - Thresholds conflict between sources, so they must load from fab and assembler profiles, never from hard-coded values.
 - The full item list is split across five `checklist-full-*.md` files (see See also). Source keys are defined in [checklist-sources.md](checklist-sources.md).
@@ -32,6 +32,8 @@ Tags: [P] primary; [I] inference. Severity and automation tags are the source no
 | S/J | 4 | 1 |
 | J | 66 | 7 |
 
+The S/J row includes the one J/S item, PLC-27, which is also its only Critical item. Counted under its primary tag J, the semi-automatable Critical share is 33/41 = 80% instead of 34/41 = 83%. PRC-04 (A + J) and PWR-01 (S + J/sim) are counted under their first tag.
+
 Class meanings:
 - **A**: geometry or DRC only.
 - **S**: semi-automatic; needs roles or datasheet parameters.
@@ -60,16 +62,16 @@ DRC keys are the KiCad 10 `type` keys verified in the KiCad-tools verification n
 | DFM-21 | DFM | No overlapping or co-located drills; PTH and NPTH separated | Broken bits, voids | A (`holes_co_located`) |
 | STK-01 | Stackup | Stackup (materials, dielectrics, copper, finished thickness) verified with the fab | Impedance, manufacturability | J |
 | STK-09 | Stackup | Every controlled-impedance net matches a net-class pattern; nets matching none silently get Default (e.g. USB D+/D−) | Silent impedance miss | A (class-coverage report) |
-| STK-12 | Stackup | Stackup drawing in fab docs; impedance written as "Layer N: Z ±tol, referenced to Layer M" | Top hold cause in vendor data | J |
+| STK-12 | Stackup | Stackup drawing in fab docs; impedance written as "Layer N: Z ±tol, referenced to Layer M" | Top hold cause in one vendor's data | J |
 | MEC-01 | Mechanical | Outline, dimensions and holes match the enclosure (3D, accurate models) | Board doesn't fit | S (MCAD) |
 | MEC-04 | Mechanical | Off-board connectors match the mating standard (orientation, keying, pin 1, FPC contact side); pinout reversed if connectors face each other | Mis-mating | J |
 | MEC-08 | Mechanical | No collisions or courtyard overlaps | Unassemblable | A (`courtyards_overlap`) |
 | MEC-15 | Mechanical | Board thickness (and at card-edge connectors) specified and matching | "you'd be surprised how often this is overlooked" | J |
 | MEC-17 | Mechanical | Board-to-board connectors spaced and located for mating | Mating | S (3D) |
-| PLC-27 | Placement | Power stage: IC → input cap (placed and routed immediately, no vias) → inductor/diode → output cap → small-signal → single-point ground | Hot loop dominates | J/S |
+| PLC-27 | Placement | Power stage: IC → input cap (placed and routed immediately, on the IC's layer for integrated converters; vias and plane coverage are scored through the loop-inductance estimate, and vertical loops to the first inner plane are allowed, [../rules/power/hot-loops.md](../rules/power/hot-loops.md)) → inductor/diode → output cap → small-signal → single-point ground | Hot loop dominates | J/S |
 | PDN-05 | PI | Every IC power/ground pin connected; ground pins have vias to the plane | Floating supplies | A (parity + connectivity) |
 | PDN-06 | PI | Trace/plane widths sized for current and temperature rise | Burn-out, IR drop | S (per-net current) |
-| PDN-13 | PI | Width computed for every track >100 mA; internal-layer values if airflow is poor (Flux: ~10 mil/A on 1 oz external at 10 °C rise; internal ~2×) | Overheating | S |
+| PDN-13 | PI | Width computed for every track >100 mA from IPC-2221/2152; internal-layer values if airflow is poor. Flux's "~10 mil/A on 1 oz external at 10 °C rise" holds only near 1 A: IPC-2221 is non-linear (≈12 / 31 / 54 / 109 mil at 1 / 2 / 3 / 5 A), and inner layers need ≈2.6× the external width, not 2× (our arithmetic on the IPC-2221 formula in verification_rules.md, catalog row PDN-07) [I] | Overheating | S |
 | PWR-01 | Power conv. | Switching hot loop of minimal area | High di/dt loop radiates | S + J/sim |
 | PWR-07 | Power conv. | Connectors and regulators current-rated in the chosen package | Overheating | J |
 | GND-02 | Ground | HS nets don't cross splits/slots/voids; else stitching caps (TI: ≤1 µF at the crossing) or vias | Return detour acts as an antenna | S |
@@ -82,7 +84,7 @@ DRC keys are the KiCad 10 `type` keys verified in the KiCad-tools verification n
 | ZON-01 | Zones | Zones refilled after the last edit and before CAM | Stale fills | A |
 | PST-01 | Paste/mask | No untented/unfilled vias in pads (except low-power QFNs) | Solder wicking | A |
 | ASM-13 | Assembly | IC/diode orientation checked in the assembler's preview; option/DNP parts not auto-matched | Common PCBA mistake | J |
-| HV-01 | HV | Creepage and clearance by voltage, including between layers (IPC-2221C) | Arcing | A (`creepage`, `clearance` by class) |
+| HV-01 | HV | Creepage and clearance by voltage, including between layers, per the governing safety standard (IEC 60664-1 / 62368-1 / 61010-1: pollution degree, material group, overvoltage category, insulation grade, altitude), with IPC-2221C as a functional floor only ([../rules/isolation-creepage.md](../rules/isolation-creepage.md)) | Arcing | A (`creepage`, `clearance` by class) |
 | HV-02 | HV | Isolation barriers adequately sized | Safety | S |
 | CAM-01 | Outputs | DRC and zone fill re-run immediately before export | Stale outputs | A |
 | CAM-03 | Outputs | Uploaded files are the latest and complete ("Yes, this does happen") | Wrong build | S |
@@ -113,9 +115,9 @@ Major items prioritized by the semantic-critic list ([critic-stack.md](critic-st
 
 | ID | Check |
 |---|---|
-| GND-10 | HS traces ≥1.5×W from reference voids and ≥90 mil from plane edges (TI) |
+| GND-10 | HS differential traces ≥1.5×W from reference voids, except at intentionally voided SMD pads (VR RP-2), and ≥90 mil from plane edges (TI, HS diff pairs) |
 | GND-03 | Return/stitching vias next to signal vias at reference changes |
-| PDN-02/11/15 | Smallest cap closest; every GND/VCC pin and decap on its own via; BGA decap staging nF → µF → bulk |
+| PDN-02/11/15 | Lowest mounting inductance closest (value order, "smallest closest", is CONTESTED and only behind the contested-rule selector, [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)); every GND/VCC pin and decap on its own via; BGA decap staging nF → µF → bulk (Feranec's value order, same caveat) |
 | PWR-02 | Switch-node copper area minimal |
 | EMC-06/07 | Filter at the exit point; ESD pads in series with the track |
 | PLC-07/24 | Crystal next to its IC; no unrelated parts within 1 inch (TI: "Most EMI-related crosstalk problems center around the crystal") |
@@ -142,5 +144,6 @@ Major items prioritized by the semantic-critic list ([critic-stack.md](critic-st
 
 - research notes: [expert_workflow_and_checklists.md § Q4–Q5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
 - corrections: [verification_kicad_and_tools.md § 1 (#14), § 2.9 DRC keys](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
+- corrections (VR): [verification_rules.md § 1 (RP-2, PDN-07, "smallest closest"), § 3 (classification)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 
 See also: [checklist-full-process-dfm-stackup.md](checklist-full-process-dfm-stackup.md), [checklist-full-mechanical-placement-footprints.md](checklist-full-mechanical-placement-footprints.md), [checklist-full-power-ground-hs-rf-emc.md](checklist-full-power-ground-hs-rf-emc.md), [checklist-full-thermal-routing-assembly-test.md](checklist-full-thermal-routing-assembly-test.md), [checklist-full-silk-hv-outputs-panel-flex.md](checklist-full-silk-hv-outputs-panel-flex.md), [critic-stack.md](critic-stack.md), [respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)
