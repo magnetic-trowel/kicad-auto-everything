@@ -255,9 +255,11 @@ def test_occupancy_pieces_follow_an_l_shaped_courtyard():
     p = next(q for q in P.parts if q.ref == "U1")
     pieces = p.rots[0].own_rects
     assert len(pieces) >= 2
-    assert sum((r[2] - r[0]) * (r[3] - r[1]) for r in pieces) < 0.9 * w * h
     union = shapely.union_all([shapely.box(*r) for r in pieces])
-    assert union.buffer(1e-6).contains(L)
+    assert union.buffer(1e-6).contains(L)                       # the courtyard stays covered
+    assert all(union.contains(shapely.Point(q.lx, q.ly)) for q in fp.pads)   # and the copper
+    assert union.area < 0.9 * w * h                              # but not the whole box:
+    assert not union.contains(shapely.Point(x1 - 0.05, y1 - 0.05))   # the notch corner is free
     st_rects = [k for _, _, k in __import__("kae.place.state", fromlist=["State"]).State(P).grid_rects(p.i)]
     assert st_rects.count("own") == len(pieces)
 
@@ -276,3 +278,82 @@ def test_relaxing_bodies_frees_a_locked_module_too():
     assert P.relax_bodies()
     small = sum((o.g[1] - o.g[0]) * (o.g[3] - o.g[2]) for o in P.obstacles if "U6" in o.why)
     assert 0 < small < 0.5 * big
+
+
+def _state_at_input(P):
+    from kae.place.state import State
+    st = State(P)
+    for p in P.parts:
+        if p.movable:
+            st.X[p.i], st.Y[p.i] = P.grid_of(p.x0, p.y0)
+            st.K[p.i] = min(range(len(p.rots)), key=lambda k: abs(((p.rots[k].rot - p.rot0) + 180) % 360 - 180))
+    return st
+
+
+def _with_owned_keepouts(b, layers=("F.Cu",)):
+    """U2 (front, 90 deg at (20, 10)) owns a pads/footprints keepout to its right and one
+    over itself (its own pads inside: KiCad does not apply it to them)."""
+    from shapely.geometry import box as sbox
+    from kae.board.model import Keepout
+    u2 = next(f for f in b.footprints if f.ref == "U2")
+    for n, r in (("right", (22.5, 8.0, 25.5, 12.0)), ("self", (18.0, 8.0, 22.0, 12.0))):
+        b.keepouts.append(Keepout(uuid=f"ko-{n}", name=n, layers=list(layers), outline=sbox(*r), pads=True,
+                                  footprints=True, footprint=u2.uuid))
+    return b
+
+
+def test_footprint_rule_area_moves_with_its_part():
+    """Regression (obsidian): a rule area owned by a footprint (keepout under a module or
+    beside a sensor) was a fixed obstacle where the input board had the footprint, and the
+    exact check looked for it there too; KiCad moves it with the part and does not apply it
+    to the part's own items. It is now part of the owner's occupancy (pieces) and moves."""
+    from kae.place.legalize import exact_check
+    b = _with_owned_keepouts(load(FIXTURE))
+    P = Problem.build(b)
+    assert not any(o.why in ("keepout right", "keepout self") for o in P.obstacles)
+    u2 = next(p for p in P.parts if p.ref == "U2")
+    k90 = next(k for k, r in enumerate(u2.rots) if r.rot == 90.0)
+    pieces = shapely.union_all([shapely.box(*(np.add(r, (u2.x0, u2.y0, u2.x0, u2.y0)))) for r in u2.rots[k90].own_rects])
+    assert pieces.buffer(1e-6).contains(shapely.box(22.5, 8.0, 25.5, 12.0))
+    st = _state_at_input(P)
+    ref = {p.ref: p.i for p in P.parts}
+    assert not [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]   # own pads exempt
+    # move U2 by (+10, +10): its keepout follows, the old place is free
+    st.X[ref["U2"]] += int(round(10 / P.g))
+    st.Y[ref["U2"]] += int(round(10 / P.g))
+    st.X[ref["U1"]], st.Y[ref["U1"]] = P.grid_of(34.0, 20.0)
+    hits = [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]
+    assert hits and all(v["refs"] == ["U1"] for v in hits)
+    st.X[ref["U1"]], st.Y[ref["U1"]] = P.grid_of(24.0, 10.0)
+    assert not [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]
+
+
+def test_rule_areas_follow_project_severity_and_copper_layers(tmp_path):
+    """items_not_allowed rated warning (obsidian's project) makes rule areas no obstacle and
+    no finding; a rule area only on non-copper layers (a library keepout on Dwgs.User) applies
+    to no side (it used to block both)."""
+    import json
+    import shutil
+    from shapely.geometry import box as sbox
+    from kae.board.model import Keepout
+    from kae.place.legalize import exact_check
+    dst = tmp_path / "board.kicad_pcb"
+    shutil.copy(FIXTURE, dst)
+    shutil.copy(FIXTURE.with_suffix(".kicad_dru"), dst.with_suffix(".kicad_dru"))
+    pro = json.loads(FIXTURE.with_suffix(".kicad_pro").read_text())
+    pro.setdefault("board", {}).setdefault("design_settings", {})["rule_severities"] = {"items_not_allowed": "warning"}
+    dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    P = Problem.build(_with_owned_keepouts(load(dst)))
+    assert not P.is_error("items_not_allowed")
+    u2 = next(p for p in P.parts if p.ref == "U2")
+    bare = next(p for p in Problem.build(load(dst)).parts if p.ref == "U2")
+    assert u2.rots[0].own_rects == bare.rots[0].own_rects
+    assert not any("keepout" in o.why for o in P.obstacles)
+    st = _state_at_input(P)
+    ref = {p.ref: p.i for p in P.parts}
+    st.X[ref["U1"]], st.Y[ref["U1"]] = P.grid_of(24.0, 10.0)
+    assert not [v for v in exact_check(P, st) if v["type"] == "items_not_allowed"]
+    b = load(FIXTURE)
+    b.keepouts.append(Keepout(uuid="ko-dwgs", name="dwgs", layers=["Dwgs.User"], outline=sbox(20, 20, 30, 30),
+                              pads=True, footprints=True))
+    assert not any(o.why == "keepout dwgs" for o in Problem.build(b).obstacles)

@@ -33,6 +33,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+
 from kae.board import pcbnew_io
 from kae.board.kicad_file import load
 from kae.board.model import Track, Via
@@ -43,16 +45,20 @@ from .critical_modules import Ctx, modules_from_brief, route_module
 from .critical_space import Space
 
 DEFAULTS = dict(
-    kinds=("cell", "decap", "crystal", "chain"),
+    kinds=("cell", "path", "decap", "rgroup", "crystal", "chain"),
     rails="auto",          # auto: rails whose E5 current needs more than the class width; all; none
     res=0.05,              # grid resolution (mm)
     via_in_pad=False,      # vias inside small SMD pads (thermal pads always allow them)
     decap_max_mm=10.0,     # a capacitor farther than this from its pin: no local decoupling, left to the bridge
     chain_power_a=1.0,     # E5 current of a protected power pin without a rail estimate
-    chain_tail=True,       # also route (and lock) a chain's hops after the protector, for the order
+    chain_tail=False,      # also route (and lock) a chain's hops after the protector (no surge physics)
+    rail_light=False,      # also route rail branches that only need the class width (no drop physics)
+    trim_tol=0.05,         # loop hops narrowed to the narrowest width within this of the wide loop (0: off)
     complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper
     island_mm=20.0,        # and its islands of critical copper to each other within this distance
-    guards=("cell", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
+    corner_joins=True,     # every track end at a pad/via centre or a track corner (what Freerouting sees)
+    soft=(),               # joins written unlocked for Freerouting to keep or rip: "complete", "pad" (rail pads)
+    guards=("cell", "path", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
     guard_margin=0.5,      # mm around the module's copper and pads
 )
 
@@ -84,6 +90,7 @@ class Session:
         self.space = Space(self.board, info, sev=self.sev, opts=self.opts)
         self.router = GridRouter(self.space, res=self.opts["res"])
         self.ctx = Ctx(self.space, self.router, brief, self.board, dict(self.opts, log=log), terms=terms)
+        self.router.gnd = set(self.ctx.gnd)
         self.modules = []
         self.rails = []
         self.t_setup = time.monotonic() - t0
@@ -101,6 +108,8 @@ class Session:
             self.log(f"rail currents: {type(e).__name__}: {e}")
             self.ctx.rail_I = {}
         mods = modules_from_brief(self.brief, self.opts["kinds"])
+        skip = tuple(self.opts.get("skip") or ())
+        mods = [m for m in mods if not m.id.startswith(skip)] if skip else mods
         for m in mods:
             t1 = time.monotonic()
             if budget is not None and t1 - t0 > budget:
@@ -124,23 +133,135 @@ class Session:
         if (reach > 0 or isl > 0) and (budget is None or time.monotonic() - t0 < budget):
             from .critical_rails import complete_module_nets
             self.completed = complete_module_nets(self.ctx, reach, isl)
+        if self.opts.get("corner_joins", True):
+            self.joins = self.join_at_corners()
         self.t_route = time.monotonic() - t0
         return self
 
+    def join_at_corners(self, max_rounds=4):
+        """Make every join of the committed copper one Freerouting can see. Freerouting joins
+        a wire to a pin or a via only at its centre and to another wire only at a corner;
+        KiCad joins anything that overlaps, so a track that ends inside a pad off its centre,
+        or on another track's body, is connected for the DRC but an open connection for the
+        bridge, which then spends its passes on it.
+        A track end inside a same-net pad or via gets a neck to the centre (the widest of its
+        width, 3/4, 1/2, the class minimum that is exactly legal); a track end on the body of
+        another committed track splits that track there (and necks onto the split point when
+        it lies off the centre line). Input routing is never touched. Returns {necks, splits,
+        left}."""
+        from shapely.geometry import Point as _Pt
+        sp = self.space
+        mods = {m.id: m for m in list(self.modules) + list(getattr(self.ctx, "rail_modules", []) or [])}
+        out = dict(necks=0, splits=0, left=0)
+        tol = 1e-4
+
+        def add_piece(net, layer, w0, a, b, owner):
+            mn = sp.width_limits(net, layer)[0] or 0.0
+            for w in sorted({w0, 0.75 * w0, 0.5 * w0, max(mn, 0.1)}, reverse=True):
+                w = sp.clamp_width(net, layer, w)
+                if not sp.track_violations(net, layer, w, a, b, first=True):
+                    it = sp.add_track(net, layer, w, a, b, owner=owner)
+                    m = mods.get((owner or ("",))[0])
+                    if m is not None:
+                        m.copper.append(it)
+                    return it
+            return None
+
+        def at_centre(e, x):
+            if x.kind == "track":
+                return min(math.dist(e, x.geom.coords[0]), math.dist(e, x.geom.coords[-1])) < tol
+            if x.kind == "via":
+                return math.dist(e, (x.geom.x, x.geom.y)) < tol
+            return x.kind == "pad" and x.pos is not None and math.dist(e, x.pos) < tol
+
+        done = set()
+        for _ in range(max_rounds):
+            changed = False
+            for t in [it for it in sp.routed if it.kind == "track"]:
+                if t not in sp.routed:
+                    continue
+                layer = next(iter(t.layers))
+                for e in (tuple(t.geom.coords[0]), tuple(t.geom.coords[-1])):
+                    if (id(t), e) in done:
+                        continue
+                    done.add((id(t), e))
+                    pe = _Pt(e)
+                    same = [x for x in sp.items[layer] if x.net == t.net and x is not t]
+                    if any(at_centre(e, x) for x in same):
+                        continue
+                    centre = body = None
+                    for x in same:
+                        if x.kind == "pad" and x.pos is not None and x.geom.distance(pe) < 1e-6:
+                            centre = tuple(x.pos)
+                            break
+                        if x.kind == "via" and math.dist(e, (x.geom.x, x.geom.y)) < x.r:
+                            centre = (x.geom.x, x.geom.y)
+                            break
+                    if centre is None:
+                        body = next((x for x in same if x.kind == "track" and x.geom.distance(pe) < x.r + 1e-9), None)
+                    if centre is not None:
+                        if add_piece(t.net, layer, t.width, e, centre, t.owner) is not None:
+                            out["necks"] += 1
+                            changed = True
+                        else:
+                            out["left"] += 1
+                        continue
+                    if body is None:
+                        continue
+                    a, b = tuple(body.geom.coords[0]), tuple(body.geom.coords[-1])
+                    q = body.geom.interpolate(body.geom.project(pe))
+                    P = (q.x, q.y)
+                    if min(math.dist(P, a), math.dist(P, b)) < tol:
+                        P = a if math.dist(P, a) <= math.dist(P, b) else b
+                    elif body in sp.existing or body not in sp.routed:
+                        out["left"] += 1
+                        continue
+                    else:
+                        sp.remove([body])
+                        parts = [sp.add_track(body.net, layer, body.width, a, P, owner=body.owner),
+                                 sp.add_track(body.net, layer, body.width, P, b, owner=body.owner)]
+                        m = mods.get((body.owner or ("",))[0])
+                        if m is not None:
+                            m.copper = [c for c in m.copper if c is not body] + parts
+                        out["splits"] += 1
+                        changed = True
+                    if math.dist(e, P) >= tol:
+                        if add_piece(t.net, layer, t.width, e, P, t.owner) is not None:
+                            out["necks"] += 1
+                            changed = True
+                        else:
+                            out["left"] += 1
+            if not changed:
+                break
+        return out
+
     # ------------------------------------------------------------------ output
+    def soft(self, it):
+        """Whether a committed item is a join without physics (a critical net's nearby pads
+        and islands, joined at the class width; opts soft): written unlocked, so the bridge
+        hands it to Freerouting as ordinary wiring it may keep, shove or rip up, instead of
+        a wall it must route around."""
+        kinds = self.opts.get("soft") or ()
+        o = it.owner or ("", "")
+        if "complete" in kinds and o[0] == "complete":
+            return True
+        return "pad" in kinds and str(o[0]).startswith("rail:") and str(o[1]).startswith("pad:")
+
     def copper(self):
-        """The committed critical copper as kae.board.model Track and Via objects (locked)."""
+        """The committed critical copper as kae.board.model Track and Via objects (locked,
+        but for the soft joins)."""
         out_t, out_v = [], []
         for it in self.space.routed:
             if not it.uuid:
                 it.uuid = W.new_uuid()
+            lk = not self.soft(it)
             if it.kind == "track":
                 (x0, y0), (x1, y1) = it.geom.coords[0], it.geom.coords[-1]
                 out_t.append(Track(uuid=it.uuid, net=it.net, layer=next(iter(it.layers)), width=it.width,
-                                   start=(x0, y0), end=(x1, y1), locked=True))
+                                   start=(x0, y0), end=(x1, y1), locked=lk))
             elif it.kind == "via":
                 out_v.append(Via(uuid=it.uuid, net=it.net, x=it.geom.x, y=it.geom.y, size=it.width, drill=it.drill,
-                                 layers=[self.space.cu[0], self.space.cu[-1]], locked=True))
+                                 layers=[self.space.cu[0], self.space.cu[-1]], locked=lk))
         return out_t, out_v
 
     def guards(self, kinds=None, margin=None):
@@ -171,6 +292,74 @@ class Session:
                 out += guard_zones(self.board, region, pn, pl, f"{W.GUARD_PREFIX}{m.id}")
         return merge_guards(out)
 
+    def stitch_ground(self, fills, min_area=0.3, want=3, pitch=2.0):
+        """Stitching vias for weakly tied ground islands: per ground net and layer, every
+        piece of the refilled pour (`fills`: {net: {layer: [Polygon]}}, KiCad's fill of the
+        board with the critical copper) other than the layer's largest, at least `min_area`
+        mm2, holding ground pads and tied by fewer than `want` barrels (vias, plated holes),
+        gets vias inside it that land in the same net's fill on another layer, `pitch` mm
+        apart, each exactly legal. Returns the vias added."""
+        from shapely.geometry import Point as _Pt
+        from shapely.ops import unary_union
+        sp = self.space
+        D, _d = 0.0, 0.0
+        added = 0
+        m = next((x for x in self.modules if x.id == "stitch"), None)
+        if m is None:
+            from .critical_modules import Module
+            m = Module(id="stitch", kind="stitch", spec={}, parts=[])
+        for net in sorted(self.ctx.gnd):
+            byl = fills.get(net) or {}
+            unions = {l: unary_union(v) for l, v in byl.items() if v}
+            D, _d = sp.via_size(net)
+            for l, u in unions.items():
+                pieces = [g for g in getattr(u, "geoms", [u]) if g.area >= min_area]
+                if len(pieces) < 2:
+                    continue
+                big = max(pieces, key=lambda g: g.area)
+                for g in pieces:
+                    if g is big:
+                        continue
+                    pads = [it for it in sp.pads if it.net == net and l in it.layers and it.geom.intersects(g)]
+                    if not pads:
+                        continue
+                    bar = sum(1 for it in sp.pads if it.net == net and it.hole is not None and it.geom.intersects(g))
+                    bar += sum(1 for it in sp.routed + sp.existing if it.kind == "via" and it.net == net
+                               and g.contains(it.geom))
+                    if bar >= want:
+                        continue
+                    inner = g.buffer(-(D / 2 + 0.1))
+                    if inner.is_empty:
+                        continue
+                    others = [unions[k] for k in unions if k != l]
+                    if not others:
+                        continue
+                    placed = []
+                    # candidates: near the island's pads first, then over the island
+                    x0, y0, x1, y1 = inner.bounds
+                    step = max(0.25, D / 2)
+                    xs = np.arange(x0, x1 + 1e-9, step)
+                    ys = np.arange(y0, y1 + 1e-9, step)
+                    cands = [(x, y) for x in xs for y in ys]
+                    pc = [p.geom.centroid for p in pads]
+                    cands.sort(key=lambda q: min(c.distance(_Pt(q)) for c in pc))
+                    for x, y in cands:
+                        if bar + len(placed) >= want:
+                            break
+                        pt = _Pt(x, y)
+                        if not inner.contains(pt) or not any(o.contains(pt) for o in others):
+                            continue
+                        if any(math.dist((x, y), q) < pitch for q in placed):
+                            continue
+                        if sp.via_violations(net, x, y, first=True):
+                            continue
+                        m.copper.append(sp.add_via(net, x, y, owner=("stitch", f"{l}:{len(placed)}")))
+                        placed.append((x, y))
+                    added += len(placed)
+        if m.copper and m not in self.modules:
+            self.modules.append(m)
+        return added
+
     def _guard_region(self, m, margin):
         """Where a module's loop lives: its copper, plus for a cell the hot-loop terminals,
         for other modules the pads of its small parts and the large parts' pads on its nets."""
@@ -191,8 +380,8 @@ class Session:
     def write(self, dst, guards=()):
         tracks, vias = self.copper()
         W.append_items(self.path, dst,
-                       tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid) for t in tracks],
-                       vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid) for v in vias],
+                       tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked) for t in tracks],
+                       vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid, v.locked) for v in vias],
                        zones=list(guards))
         for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
             s = self.path.with_suffix(ext)
@@ -211,6 +400,8 @@ class Session:
             track_mm=round(sum(math.dist(t.start, t.end) for t in tracks), 2),
             router=dict(self.router.stats),
             completed=dict(getattr(self, "completed", {}) or {}),
+            joins=dict(getattr(self, "joins", {}) or {}),
+            stitched=int(getattr(self, "n_stitched", 0) or 0),
             space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
                           notes=m.notes[:6]) for m in self.modules],
@@ -254,6 +445,14 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         try:
             crit_budget = min(180.0, 0.2 * time_s)
             s = Session(input_path, opts=opts, log=log).route(budget_s=crit_budget)
+            if (opts or {}).get("stitch", True):
+                # ground pour pieces the critical copper leaves weakly tied get stitching vias
+                try:
+                    from .critical_recheck import fills_of
+                    s.write(w0)
+                    s.n_stitched = s.stitch_ground(fills_of(w0))
+                except Exception as e:  # noqa: BLE001 - stitching is a refinement
+                    log(f"stitching: {type(e).__name__}: {e}")
             rep["critical"] = s.report()
             guards = s.guards() if bridge else []
             rep["critical"]["guards"] = len(guards)
@@ -304,7 +503,8 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
 
 def write_joint(src, dst, poses, copper):
     """dst = src with parts moved to `poses` (pcbnew_io.write_poses: KiCad's own writer, any
-    angle) and the critical copper added (locked). Project files are copied beside dst."""
+    angle) and the critical copper added (locked but for soft joins). Project files are
+    copied beside dst."""
     import shutil
     src, dst = Path(src), Path(dst)
     if poses:
@@ -313,8 +513,8 @@ def write_joint(src, dst, poses, copper):
         shutil.copy2(src, dst)
     tracks = [c for c in copper if isinstance(c, Track)]
     vias = [c for c in copper if isinstance(c, Via)]
-    W.append_items(dst, dst, tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid) for t in tracks],
-                   vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid) for v in vias])
+    W.append_items(dst, dst, tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked) for t in tracks],
+                   vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid, v.locked) for v in vias])
     for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
         s = src.with_suffix(ext)
         t = dst.with_suffix(ext)

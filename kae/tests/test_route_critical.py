@@ -472,8 +472,8 @@ def test_castellated_pad_anchors_keep_each_layers_copper(tmp_path):
     assert xs and all(not twin.buffer(0.3).contains(Point(p)) for p in xs)
 
 
-def test_chain_tail_can_be_left_to_the_bridge(tmp_path):
-    s = F.session(tmp_path, chain_tail=False)
+def test_chain_tail_is_left_to_the_bridge(tmp_path):
+    s = F.session(tmp_path)                            # default: no locked copper after the protector
     s.route()
     ch = next(m for m in s.modules if m.kind == "chain")
     T = ch.spec["_T"]
@@ -565,3 +565,190 @@ def test_islands_of_a_critical_net_are_joined(tmp_path):
     s1 = F.session(tmp_path / "b", island_mm=20.0, complete_mm=0.0, rails="none")
     s1.route()
     assert len(_islands(s1.ctx, "+3V3")) == 1
+
+
+# ----------------------------------------------------------------------------- brief fields
+def _uuid_of(s, ref):
+    return next(f.uuid for f in s.board.footprints if f.ref == ref)
+
+
+def test_unowned_capacitors_are_not_paired(tmp_path):
+    """caps_p < 0.5: the capacitor is not this IC's; the decap routes no pair to it."""
+    s = F.session(tmp_path)
+    d = next(x for x in s.brief["structures"] if x["kind"] == "decap" and x.get("ic") == _uuid_of(s, "U2"))
+    c3 = _uuid_of(s, "C3")
+    d["caps_p"] = {c3: 0.3}
+    d["pin_caps"] = {}
+    s.route()
+    m = next(x for x in s.modules if x.id == d["id"])
+    assert m.status == "skipped" and not m.copper
+
+
+def test_power_path_routes_as_a_loop_sized_by_the_interval_bound(tmp_path):
+    """A power_path module routes its loop like a cell, its widths from the upper bound of
+    the excitation interval (capped by the terminals), and quotes it against the power-path
+    budget."""
+    s = F.session(tmp_path, kinds=("path",), rails="none")
+    cell = next(x for x in s.brief["structures"] if x["kind"] == "commutation_cell")
+    pp = dict(cell, id="path:test", kind="power_path", sw=None,
+              excite={"V": 12.0, "I": 0.5, "I_belief": {"value": 0.5, "unit": "A", "interval": [0.2, 3.0]}})
+    s.brief["structures"] = [pp]
+    s.route()
+    m = next(x for x in s.modules if x.id == "path:test")
+    assert m.kind == "path" and m.status in ("routed", "partial") and m.copper
+    assert m.physics.get("unit") == "nH" and m.physics.get("value", 0) > 0
+    assert "load step" in m.physics.get("basis", "")
+    vin = next(rt for rt in m.hops.values() if rt is not None and rt.net == "VIN")
+    from kae.route.critical_physics import ipc2221_width
+    assert vin.width >= min(ipc2221_width(3.0), 1.0) - 1e-6     # sized for 3 A, not the 0.5 A point value
+
+
+def test_rail_group_capacitors_stub_to_their_nearest_load(tmp_path):
+    s = F.session(tmp_path, kinds=("rgroup",), rails="none")
+    s.brief["structures"] = [dict(id="rg:+3V3", kind="rail_group", rail="+3V3", ground="GND",
+                                  loads=[_uuid_of(s, "U2")], caps=[_uuid_of(s, "C3")], pairing="nearest_load",
+                                  members_ref={}, priority=48.0, confidence=0.9)]
+    s.route()
+    m = next(x for x in s.modules if x.id == "rg:+3V3")
+    assert m.kind == "rgroup" and m.status == "routed"
+    sp = s.space
+    tp = sp.terminal(_uuid_of(s, "U2"), ["8"])
+    tr = sp.terminal(_uuid_of(s, "C3"), ["1"])
+    assert s.ctx.connected("+3V3", tr, tp)
+
+
+def test_weak_ground_islands_get_stitching_vias(tmp_path):
+    """A ground pour piece holding pads, cut off on its layer and tied by no via, gets vias
+    into the ground fill of another layer (exactly legal); the layer's largest piece and a
+    piece already tied are left alone."""
+    from shapely.geometry import box
+    s = F.session(tmp_path)
+    s.route()
+    sp = s.space
+    c2 = next(f for f in s.board.footprints if f.ref == "C2")
+    g = sp.terminal(c2.uuid, ["2"]).geom.buffer(1.6)                 # an F.Cu island around C2's ground pad
+    fills = {"GND": {"F.Cu": [g, box(101, 125, 112, 129)], "B.Cu": [box(100.5, 100.5, 139.5, 129.5)]}}
+    before = [it for it in sp.routed if it.kind == "via"]
+    n = s.stitch_ground(fills)
+    new = [it for it in sp.routed if it.kind == "via" and it not in before]
+    assert n == len(new) >= 1 and all(g.contains(v.geom) for v in new)
+    for v in new:
+        assert not sp.via_violations("GND", v.geom.x, v.geom.y, ignore=[v])
+    assert s.stitch_ground(fills) == 0 or len(new) < 3              # tied now: no more than `want` barrels
+
+
+
+def test_wide_loop_hops_are_trimmed_within_the_tolerance(tmp_path):
+    """Hops wider than the loop needs are narrowed to the narrowest width whose loop stays
+    within trim_tol of the wide one, never below the class width or the current's floor, and
+    the narrowed copper stays exactly legal."""
+    wide = F.session(tmp_path / "a", trim_tol=0.0).route()
+    trim = F.session(tmp_path / "b", trim_tol=0.25).route()
+    v0 = {m.id: m.physics.get("value") for m in wide.modules if m.kind in ("cell", "decap")}
+    w0 = {(m.id, k): r.width for m in wide.modules for k, r in m.hops.items() if r is not None}
+    narrowed = 0
+    sp = trim.space
+    for m in trim.modules:
+        if m.kind not in ("cell", "decap") or v0.get(m.id) is None:
+            continue
+        assert m.physics["value"] <= v0[m.id] * 1.25 + 1e-9
+        for k, rt in m.hops.items():
+            if rt is None or not rt.segs:
+                continue
+            lay = rt.segs[0][0]
+            mn, opt, mx = sp.width_limits(rt.net, lay)
+            assert rt.width >= min(opt, w0[(m.id, k)]) - 1e-9
+            assert rt.width >= (m.spec.get("_floor") or {}).get(k, 0.0) - 1e-9 or rt.width == w0[(m.id, k)]
+            narrowed += rt.width < w0[(m.id, k)] - 1e-6
+            tracks = [it for it in m.copper if it.kind == "track" and it.owner == (m.id, k)]
+            assert tracks and all(abs(it.width - rt.width) < 1e-9 for it in tracks)
+    assert narrowed >= 1
+    for it in sp.routed:
+        if it.kind == "track":
+            others = [x for x in sp.routed if x is not it]
+            a, b = it.geom.coords[0], it.geom.coords[-1]
+            assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=others), it.owner
+
+
+def test_rail_branches_that_fit_only_the_class_width_are_left_to_the_bridge(tmp_path):
+    """A rail branch routed at the class width has no drop physics over the general router's
+    track and is a locked wall (suzyqboard: a 17 mm VBUS track between the USB connectors cut
+    D- and CC): it is ripped up; a wider one stays; rails="all" keeps both."""
+    from kae.route.critical_modules import Module, anchor, route_hop
+    from kae.route.critical_rails import _class_only
+    for mode, keep_narrow in (("auto", False), ("all", True)):
+        s = F.session(tmp_path / mode, rails=mode)
+        ctx, sp = s.ctx, s.space
+        a = sp.terminal(_uuid(s, "C3"), ["1"])
+        b = sp.terminal(_uuid(s, "U2"), ["8"])
+        mn, opt, mx = sp.width_limits("+3V3", "F.Cu")
+        for w, kept in ((opt, keep_narrow), (1.6 * opt, True)):
+            m = Module(id=f"rail:test{w}", kind="rail", spec={}, parts=[])
+            rt = route_hop(ctx, m, "br:x", "+3V3", [anchor(a)], [anchor(b)], [w], ["F.Cu"])
+            assert rt is not None and m.copper
+            n0 = len(sp.routed)
+            ripped = _class_only(ctx, m, "br:x", rt, opt)
+            assert ripped == (not kept)
+            assert bool(m.copper) == kept and (len(sp.routed) == n0) == kept
+            sp.remove(list(m.copper))
+
+
+def test_every_join_is_at_a_centre_or_a_corner(tmp_path):
+    """Freerouting joins a wire to a pad or via only at its centre and to another wire only
+    at a corner (lambdakb: a decap stub KiCad saw connected was an open connection for the
+    bridge). A track ending on another track's body splits that body there; one ending off a
+    pad's centre gets a neck to it; both exactly legal; the owners' copper lists follow."""
+    s = F.session(tmp_path, corner_joins=False).route()
+    sp = s.space
+    body = max((it for it in sp.routed if it.kind == "track" and it.net != "GND"), key=lambda it: it.geom.length)
+    layer = next(iter(body.layers))
+    mid = body.geom.interpolate(0.5, normalized=True)
+    t1 = sp.add_track(body.net, layer, body.width, (mid.x, mid.y), (mid.x, mid.y), owner=body.owner)
+    pad = next(p for p in sp.pads if p.net == body.net and layer in p.layers and p.pos is not None)
+    x0, y0, x1, y1 = pad.geom.bounds
+    off = (pad.pos[0] + 0.25 * (x1 - x0) * 0.5, pad.pos[1])
+    t2 = sp.add_track(body.net, layer, 0.1, off, off, owner=body.owner)
+    m = next(x for x in s.modules + list(getattr(s.ctx, "rail_modules", [])) if x.id == body.owner[0])
+    m.copper += [t1, t2]
+    rep = s.join_at_corners()
+    assert rep["splits"] >= 1 and rep["necks"] >= 1 and rep["left"] == 0
+    assert body not in sp.routed and body not in m.copper
+    corners = {tuple(round(c, 6) for c in pt) for it in sp.routed if it.kind == "track" and it.net == body.net
+               for pt in (it.geom.coords[0], it.geom.coords[-1])}
+    assert (round(mid.x, 6), round(mid.y, 6)) in corners
+    assert tuple(round(c, 6) for c in pad.pos) in corners
+    for it in m.copper:
+        assert it in sp.routed
+    for it in sp.routed:
+        if it.kind == "track" and it not in (t1, t2):
+            others = [x for x in sp.routed if x is not it]
+            a, b = it.geom.coords[0], it.geom.coords[-1]
+            assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=others), it.owner
+
+
+def test_a_light_branch_never_inherits_the_trunk_current(tmp_path, monkeypatch):
+    """When the trunk (to the farthest load) is left to the router, the other branches carry
+    their own loads' current, not the rail's design current (suzyqboard: a 0 A pull-up got a
+    10 mm, 3 A-wide track after the VBUS trunk was ripped)."""
+    from kae.route import critical_rails as CR
+    calls = []
+    real = CR._class_only
+
+    def first_ripped(ctx, m, tag, rt, opt):
+        calls.append(tag)
+        if len(calls) == 1:
+            return real(ctx, m, tag, rt, rt.width * 2.0)      # as if only the class width fitted
+        return real(ctx, m, tag, rt, opt)
+    monkeypatch.setattr(CR, "_class_only", first_ripped)
+    s = F.session(tmp_path, rails="auto", extra=[F.PULLUP]).route()       # VIN: the buck and a pull-up
+    checked = 0
+    for r in s.rails:
+        if not r.get("branches") or "design_A" not in r:
+            continue
+        loads = r["loads"]
+        checked += len(r["branches"]) - 1
+        for k, b in enumerate(r["branches"]):
+            if k == 0 or "current_A" not in b:
+                continue
+            assert b["current_A"] <= max(loads[b["load"]], 0.05) + 1e-9, (r["net"], b)
+    assert calls and checked >= 1

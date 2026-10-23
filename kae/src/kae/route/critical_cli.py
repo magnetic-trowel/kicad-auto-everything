@@ -4,7 +4,10 @@
 
     python -m kae.route.critical_cli route INPUT OUTPUT [--seed N] [--time S] [--no-bridge]
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
-                                     [--guards cell,crystal|none] [--no-chain-tail] [--rounds N]
+                                     [--guards cell,crystal|none] [--chain-tail] [--rail-light]
+                                     [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
+                                     [--soft complete,pad|none] [--skip ID,ID]
+                                     [--rounds N]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE]
 
@@ -34,11 +37,23 @@ def main(argv=None):
     r.add_argument("--time", type=float, default=900.0)
     r.add_argument("--no-bridge", action="store_true", help="critical copper only")
     r.add_argument("--rails", default="auto", choices=("auto", "all", "none"))
-    r.add_argument("--kinds", default="cell,decap,crystal,chain")
-    r.add_argument("--guards", default="cell,crystal",
+    r.add_argument("--kinds", default="cell,path,decap,rgroup,crystal,chain")
+    r.add_argument("--guards", default="cell,path,crystal",
                    help="modules whose ground plane the bridge must keep other nets off (or 'none')")
-    r.add_argument("--no-chain-tail", action="store_true",
-                   help="leave a protection chain's hops after the protector to the bridge")
+    r.add_argument("--chain-tail", action="store_true",
+                   help="also route a protection chain's hops after the protector (default: the bridge does)")
+    r.add_argument("--rail-light", action="store_true",
+                   help="also route rail branches that need only the class width (default: the bridge does)")
+    r.add_argument("--complete-mm", type=float, default=None,
+                   help="join a rail's own pads within this reach of its critical copper (0: off)")
+    r.add_argument("--island-mm", type=float, default=None,
+                   help="join a rail's critical-copper islands within this reach (0: off)")
+    r.add_argument("--no-stitch", action="store_true", help="no stitching vias for isolated ground-pour pieces")
+    r.add_argument("--trim-tol", type=float, default=None,
+                   help="narrow loop hops while the loop stays within this fraction of the wide loop (0: off)")
+    r.add_argument("--soft", default=None,
+                   help="joins written unlocked for Freerouting to keep or rip: complete,pad (or 'none')")
+    r.add_argument("--skip", default="", help="comma-separated module id prefixes to leave out (diagnosis)")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
@@ -53,7 +68,17 @@ def main(argv=None):
         from kae.route import critical
         opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep,
                     guards=tuple(k for k in a.guards.split(",") if k and k != "none"),
-                    chain_tail=not a.no_chain_tail)
+                    chain_tail=a.chain_tail, rail_light=a.rail_light, stitch=not a.no_stitch)
+        if a.complete_mm is not None:
+            opts["complete_mm"] = a.complete_mm
+        if a.island_mm is not None:
+            opts["island_mm"] = a.island_mm
+        if a.soft is not None:
+            opts["soft"] = tuple(x for x in a.soft.split(",") if x and x != "none")
+        if a.skip:
+            opts["skip"] = tuple(x for x in a.skip.split(",") if x)
+        if a.trim_tol is not None:
+            opts["trim_tol"] = a.trim_tol
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge)
         text = json.dumps(rep, default=str)

@@ -7,6 +7,7 @@ import random
 
 import numpy as np
 import pytest
+from place_terms_fixtures import NETS, buck_board, cap0402, decap_board, fp
 from shapely.geometry import Polygon, box
 
 from kae.board.model import Zone
@@ -16,7 +17,6 @@ from kae.physics.build import _pour_pairs
 from kae.physics.place_terms import Terms
 from kae.physics.priors import Knobs
 from kae.physics.structures import CmComp, DecapLoop, LoopComp
-from place_terms_fixtures import NETS, buck_board, cap0402, decap_board, fp
 
 
 def _terms(b, brief, **kn):
@@ -228,3 +228,109 @@ def test_board_with_a_notch_keeps_the_loop_referenced():
         T = _terms(b, brief, hop_detour=0.0)
         vals.append(T.breakdown(T.bv.pose0())[0]['value'])
     assert vals[1] == pytest.approx(vals[0], rel=0.02)
+
+
+# ----------------------------------------------------------------------------- kae.brief/1 schema
+def _two_pin_ic_board(pairing, caps_p):
+    """U1 with two 3V3 pins 8 mm apart and two caps, one beside each pin."""
+    u1 = fp('U1', 'Package_QFP:LQFP-32', [('1', '3V3', -4.0, 0.0, 0.8, 0.3), ('2', 'GND', -4.0, -0.8, 0.8, 0.3),
+                                           ('3', '3V3', 4.0, 0.0, 0.8, 0.3), ('4', 'GND', 4.0, -0.8, 0.8, 0.3),
+                                           ('5', 'S', 0.0, 4.0, 0.3, 0.8)], 30.0, 20.0, court=box(-4.6, -4.6, 4.6, 4.6))
+    c1 = cap0402('C1', '3V3', 'GND', 24.5, 20.0)
+    c2 = cap0402('C2', '3V3', 'GND', 35.5, 20.0)
+    from place_terms_fixtures import board
+    b = board([u1, c1, c2])
+    brief = dict(nets=NETS, parts={f'uuid-{r}': {'ref': r, 'kind': k} for r, k in
+                                   (('U1', 'ic'), ('C1', 'capacitor'), ('C2', 'capacitor'))},
+                 structures=[dict(id='decap:U1:3V3', kind='decap', confidence=0.9, ic='uuid-U1', power_pins=['1', '3'],
+                                  ground_pins=['2', '4'], rail='3V3', ground='GND', caps=['uuid-C1', 'uuid-C2'],
+                                  hf_caps=['uuid-C1', 'uuid-C2'], caps_p=caps_p, pin_caps={}, pairing=pairing,
+                                  function='load')])
+    return b, brief
+
+
+def test_nearest_pin_charges_each_cap_to_its_nearest_pin():
+    b, brief = _two_pin_ic_board('nearest_pin', {'uuid-C1': 0.9, 'uuid-C2': 0.9})
+    T = _terms(b, brief)
+    ds = [s for s in T.structs if s.kind == 'decap']
+    assert sorted(s.id for s in ds) == ['decap:U1:3V3#C1', 'decap:U1:3V3#C2']
+    v = {s.id: T.breakdown(T.bv.pose0())[k]['value'] for k, s in enumerate(T.structs) if s.kind == 'decap'}
+    # both caps sit beside a pin: their loops are short and alike
+    assert abs(v['decap:U1:3V3#C1'] - v['decap:U1:3V3#C2']) < 0.2 * max(v.values())
+    # moving C2 beside pin 1 keeps it cheap: it then serves pin 1
+    u = 'uuid-C2'
+    p = T.bv.pose0()
+    d = T.delta(p, [u], [(24.5, 22.0, 0.0, 'F')])
+    assert abs(d) < 0.2
+
+
+def test_unowned_caps_and_rail_groups_go_to_the_nearest_load():
+    b, brief = _two_pin_ic_board('pin', {'uuid-C1': 0.9, 'uuid-C2': 0.3})
+    brief['structures'][0]['pin_caps'] = {'1': ['uuid-C1']}
+    T = _terms(b, brief)
+    ids = sorted(s.id for s in T.structs if s.kind == 'decap')
+    assert 'decap:3V3:C2:nearest' in ids
+    near = next(s for s in T.structs if s.id == 'decap:3V3:C2:nearest')
+    assert near.info['pairing'] == 'nearest_load'
+    # a rail group limits the candidates to its loads
+    brief['structures'].append(dict(id='rg:3V3', kind='rail_group', rail='3V3', ground='GND', loads=['uuid-U1'],
+                                    caps=['uuid-C2'], pairing='nearest_load'))
+    T = _terms(b, brief)
+    near = next(s for s in T.structs if s.id == 'decap:3V3:C2:nearest')
+    assert near.info['rail_group'] == 'rg:3V3'
+
+
+def test_nearest_load_cache_keeps_delta_exact():
+    """NearestLoopComp caches each candidate's loop against its parts' pose ids: random
+    moves with accepts must still give delta == the total difference of a fresh Terms."""
+    b, brief = _two_pin_ic_board('pin', {'uuid-C1': 0.9, 'uuid-C2': 0.3})
+    brief['structures'][0]['pin_caps'] = {'1': ['uuid-C1']}
+    T = _terms(b, brief)
+    near = next(s for s in T.structs if s.id == 'decap:3V3:C2:nearest')
+    assert len(near.comps[0].loops) == 2
+    poses = dict(T.bv.pose0())
+    T.total(poses)
+    rng = random.Random(5)
+    uu = ['uuid-U1', 'uuid-C1', 'uuid-C2']
+    for _ in range(40):
+        u = rng.choice(uu)
+        x, y, r, sd = poses[u]
+        q = (x + rng.uniform(-6, 6), y + rng.uniform(-3, 3), (r + rng.choice([0, 90, 180])) % 360, sd)
+        d = T.delta(poses, [u], [q])
+        p2 = dict(poses)
+        p2[u] = q
+        T2 = _terms(b, brief)
+        assert d == pytest.approx(T2.total(p2) - T2.total(poses), rel=1e-7, abs=1e-9)
+        if rng.random() < 0.5:
+            poses = p2
+
+
+def test_power_path_loop_and_budget():
+    b, brief = buck_board()
+    brief['structures'].append(dict(id='path:D2', kind='power_path', confidence=0.8, **{'class': 'ideal_diode'},
+                                    switches=['uuid-D2'], stages=[['uuid-D2']], rail_in='VIN', rail_out='SW',
+                                    gnd='GND', loop=[['uuid-C2', '1'], ['uuid-D2', '2'], ['uuid-D2', '1'],
+                                                     ['uuid-C2', '2']], excite={'V': 12.0, 'I': 2.0}))
+    T = _terms(b, brief)
+    pp = next(s for s in T.structs if s.kind == 'power_path')
+    assert pp.alloc.value == pytest.approx(PR.power_path_budget(12.0, 2.0).value)
+    assert PR.power_path_budget(12.0, 2.0).value == pytest.approx(0.05 * 12.0 * 100.0 / 2.0)
+    assert T.breakdown(T.bv.pose0())[T.structs.index(pp)]['value'] > 0.0
+
+
+def test_decap_budget_held_to_careful_layout():
+    """The budget lies between the loop of the capacitor beside the pin (L_c) and 2 L_c, so
+    a careful layout is within budget and a far capacitor is over it."""
+    assert PR.decap_careful(0.3, 1.5) == 1.5            # unattainable target: floor at L_c
+    assert PR.decap_careful(40.0, 1.5) == 3.0           # loose target: 2 L_c
+    assert PR.decap_careful(2.0, 1.5) == 2.0
+    assert PR.decap_careful(10.0, 12.0, hf=False) == 12.0
+    us = []
+    for x in (16.8, 4.0):
+        b, brief = decap_board(cap_xy=(x, 20.5), cap_rot=180.0)
+        T = _terms(b, brief)
+        r = T.breakdown(T.bv.pose0())[0]
+        lc = r['info']['L_careful']
+        assert lc <= r['alloc']['value'] <= 2.0 * lc + 1e-9
+        us.append(r['util'])
+    assert us[0] <= 1.0 < us[1]

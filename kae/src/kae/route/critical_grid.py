@@ -308,11 +308,16 @@ class GridRouter:
         c = np.full((grid.ny, grid.nx), float(layer_factor))
         sp = self.sp
         if self.pour_cost > 0:
-            pm = np.zeros_like(blk)
-            for g in sp.foreign_zone_polys(net, layer):
-                if g.intersects(_box(grid)):
-                    grid.within(g, 0.0, pm)
-            c[pm] += self.pour_cost * layer_factor
+            # crossing another net's pour cuts it; a ground pour (the return plane, and the
+            # pour a cut leaves as a weakly tied island) costs three times as much
+            gnd = getattr(self, "gnd", set())
+            for weight, polys in ((1.0, [g for n, l, g, _ in sp.zones if l == layer and n != net and n not in gnd]),
+                                  (3.0, [g for n, l, g, _ in sp.zones if l == layer and n != net and n in gnd])):
+                pm = np.zeros_like(blk)
+                for g in polys:
+                    if g.intersects(_box(grid)):
+                        grid.within(g, 0.0, pm)
+                c[pm] += weight * self.pour_cost * layer_factor
         if self.halo > 0 and self.halo_cost > 0:
             hm = np.zeros_like(blk)
             bounds = (grid.x0, grid.y0, grid.x1, grid.y1)

@@ -109,11 +109,12 @@ def _insert(text, chunks):
 
 
 def append_items(src, dst, tracks=(), vias=(), zones=()):
-    """dst = src plus tracks [(net, layer, width, a, b, uuid)], vias [(net, x, y, size,
-    drill, uuid)] (locked) and zones [(net, layer, rings, name[, priority])]."""
+    """dst = src plus tracks [(net, layer, width, a, b, uuid[, locked])], vias [(net, x, y,
+    size, drill, uuid[, locked])] (locked unless the 7th field says otherwise) and zones
+    [(net, layer, rings, name[, priority])]."""
     text = Path(src).read_text(encoding="utf-8")
-    chunks = [track_sexpr(n, l, w, a, b, u) for (n, l, w, a, b, u) in tracks]
-    chunks += [via_sexpr(n, x, y, D, d, uid=u) for (n, x, y, D, d, u) in vias]
+    chunks = [track_sexpr(*t[:6], locked=t[6] if len(t) > 6 else True) for t in tracks]
+    chunks += [via_sexpr(*v[:5], uid=v[5], locked=v[6] if len(v) > 6 else True) for v in vias]
     chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0) for z in zones]
     Path(dst).write_text(_insert(text, chunks), encoding="utf-8")
 

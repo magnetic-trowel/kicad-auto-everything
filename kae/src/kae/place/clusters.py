@@ -29,7 +29,15 @@ from ortools.sat.python import cp_model
 
 from .cpsat import disjoint_union
 
-KIND_WEIGHT = {"commutation_cell": 3.0, "decap": 2.0, "crystal": 2.0, "oscillator": 1.5, "connector_chain": 1.0}
+KIND_WEIGHT = {"commutation_cell": 3.0, "power_path": 2.0, "decap": 2.0, "crystal": 2.0, "oscillator": 1.5,
+               "connector_chain": 1.0}
+# power pins closer than this act as one pin (kae.physics.build clusters them the same way);
+# a cap paired with "the nearest" of several clusters gets a choice among them in CP-SAT
+PIN_CLUSTER_MM = 1.6
+# weights of a commutation cell's extra members (kae.brief/1), relative to the loop's: a
+# snubber carries the switching edge, the others only gate drive or a parallel shunt
+CELL_EXTRA = {"snubbers": 1.0, "series_shunt": 0.5, "bootstrap_cap": 0.5, "bootstrap_r": 0.5,
+              "charge_pump_caps": 0.5}
 MAX_MACRO = 24
 # kae.circuit's cap ownership (caps_p) ranks well but is underconfident (p 0.24 right 52% of
 # the time, 0.96 right 91%): it weights the micro-placement softly, and only a cap owned with
@@ -47,6 +55,8 @@ class Struct:
     members: set
     segs: list            # [((part, [pad idx]), (part, [pad idx]), weight)]
     src: dict = field(default_factory=dict)
+    choices: dict = field(default_factory=dict)   # seg index -> [[pad idx], ...]: the segment
+    #                                               ends at the nearest of these pad groups
 
 
 @dataclass
@@ -96,16 +106,27 @@ def _nums(v):
 def structures(P, brief):
     """The brief's placement-relevant structures as Structs over part indices.
 
-    Policies: a decoupling cap claimed by several loads goes to the structure with the highest
-    ownership probability (`caps_p`), so two loads never merge through a shared cap, and joins
-    it only at p >= BIND_P; segment weights scale with p; rails of many interchangeable loads
-    are left to the place terms (LOW_OWNERSHIP). A decap's `ic` is whatever the caps serve:
-    an IC, a module, an LED, or (functions entry, converter_input/output, split_supply) a
-    connector, diode, fuse or inductor, whose ground may be another rail (V-); nothing here
-    assumes it is an IC. `pin_caps` pairs caps with power pins, other caps get a weaker pull
-    to the rail pins; connector chains count only when protected, with the connector and its
-    protection parts (the part at the far end of the chain stays out; `protection_order`
-    keeps it behind the protection)."""
+    Policies (kae.brief/1, docs/topics/physics/comprehension.md 1 and 3.3-3.5):
+    - Decaps. A cap claimed by several loads goes to the structure with the highest
+      ownership probability (`caps_p`), so two loads never merge through a shared cap, and
+      joins it only at p >= BIND_P (below it the cap is unowned); segment weights scale
+      with p. `pairing` 'pin': `pin_caps` (may be {}) pairs caps with a pin, the spec's other
+      owned caps get a weaker pull to the power pins; 'nearest_pin': each cap goes to the
+      nearest cluster of `power_pins` (a CP-SAT choice); 'nearest_load' or a `rail_group`:
+      no macro, the place terms charge each cap to its nearest load. Briefs without a
+      pairing fall back to LOW_OWNERSHIP. A decap's `ic` is whatever the caps serve: an IC,
+      a module, an LED, or (entry, converter_input/output, split_supply) a connector,
+      diode, fuse or inductor, whose ground may be another rail (V-).
+    - Rail groups make no macro (their caps' decaps say nearest_load).
+    - Commutation cells: consecutive loop members (closed), plus `series_shunt`,
+      `bootstrap_cap`, `bootstrap_r`, `charge_pump_caps` and `snubbers`, each tied to the
+      members it shares nets with.
+    - Power paths: switches (every stage's parallel elements), `caps_in` and `caps_out`;
+      segments follow `loop` between those (a connector or load in the loop stays out), the
+      members off the loop tie in by shared nets. Their heat reaches the terms on its own.
+    - Connector chains count only when protected, with the connector and its protection
+      parts (the part at the far end of the chain stays out; `protection_order` keeps it
+      behind the protection)."""
     by_uuid = {p.uuid: p.i for p in P.parts}
 
     def pads(i, nums):
@@ -115,9 +136,15 @@ def structures(P, brief):
     def pads_on(i, net):
         return [k for k, pd in enumerate(P.parts[i].fp.pads) if pd.net == net]
 
+    def clusters_of(i, ks):
+        return _pad_clusters(P.parts[i].fp, ks)
+
     structs_in = list((brief or {}).get("structures", []))
 
     def low_ownership(s):
+        """Caps that serve whichever load they sit next to: no macro."""
+        if s.get("pairing") or s.get("rail_group"):
+            return s.get("pairing") == "nearest_load" or bool(s.get("rail_group"))
         ps = [float(v) for v in (s.get("caps_p") or {}).values() if v is not None]
         return bool(ps) and max(ps) <= LOW_OWNERSHIP and int(s.get("shared_by") or 1) >= 3
     # owner of each shared decoupling cap
@@ -138,6 +165,12 @@ def structures(P, brief):
         if w is None:
             continue
         segs = []
+        choices = {}
+
+        def seg(a, b, wt, alts=None):
+            if alts is not None and len(alts) > 1:
+                choices[len(segs)] = alts
+            segs.append((a, b, wt))
         if kind == "decap":
             ic = by_uuid.get(s.get("ic"))
             if ic is None or low_ownership(s):
@@ -155,19 +188,20 @@ def structures(P, brief):
                         if c in mine:
                             paired[c] = [str(pin)]
             hf = set(_ids(s.get("hf_caps")))
+            nearest = s.get("pairing") == "nearest_pin"
             members = {ic}
+            ig = pads(ic, gpins) if gpins else pads_on(ic, gnd)
             for c in mine:
                 ci = by_uuid[c]
                 members.add(ci)
                 ca = pads_on(ci, rail) or [0]
                 ia = pads(ic, paired[c]) if c in paired else pads(ic, pins) if pins else pads_on(ic, rail)
-                wc = (w if (c in paired or c in hf) else 0.3 * w) * owner[c][0]
+                wc = (w if (c in paired or c in hf or nearest) else 0.3 * w) * owner[c][0]
                 if ia:
-                    segs.append(((ci, ca), (ic, ia), wc))
+                    seg((ci, ca), (ic, ia), wc, clusters_of(ic, ia))
                 cg = pads_on(ci, gnd)
-                ig = pads(ic, gpins) if gpins else pads_on(ic, gnd)
                 if cg and ig:
-                    segs.append(((ci, cg), (ic, ig), 0.5 * wc))
+                    seg((ci, cg), (ic, ig), 0.5 * wc, clusters_of(ic, ig))
         elif kind in ("crystal", "oscillator"):
             xt = by_uuid.get(s.get("crystal") or s.get("part") or s.get("oscillator"))
             if xt is None:
@@ -208,6 +242,34 @@ def structures(P, brief):
                 pa, pb = loop[a_], loop[(a_ + 1) % len(loop)]
                 if pa[0] != pb[0]:
                     segs.append((pa, pb, w))
+            extra = []
+            for key, f in CELL_EXTRA.items():
+                v = s.get(key)
+                if key == "snubbers":                         # [[r, c], ...]: both parts
+                    v = [x for pair in (v or []) if isinstance(pair, (list, tuple)) for x in pair]
+                extra += [(x, f * w) for x in _ids(v)]
+            _tie_in(P, by_uuid, members, extra, seg, pads_on, clusters_of, [i for i, _ in loop])
+        elif kind == "power_path":
+            keep = set(_ids(s.get("switches"))) | set(_ids(s.get("caps_in"))) | set(_ids(s.get("caps_out")))
+            for stg in s.get("stages") or []:
+                keep |= set(_ids(stg))
+            loop = []
+            for m in s.get("loop", []):
+                if isinstance(m, (list, tuple)) and m and m[0] in by_uuid:
+                    i = by_uuid[m[0]]
+                    loop.append((m[0], i, pads(i, _nums(m[1] if len(m) > 1 else None))))
+            members = {i for u, i, _ in loop if u in keep}
+            for a_ in range(len(loop)):
+                (ua, ia_, pa), (ub, ib_, pb) = loop[a_], loop[(a_ + 1) % len(loop)]
+                if ia_ != ib_ and ua in keep and ub in keep:
+                    segs.append(((ia_, pa), (ib_, pb), w))
+            if not members:
+                continue
+            # parallel elements of a stage, and caps off the loop, in brief order
+            rest = list(_ids(s.get("switches"))) + [u for stg in s.get("stages") or [] for u in _ids(stg)] + \
+                list(_ids(s.get("caps_in"))) + list(_ids(s.get("caps_out")))
+            _tie_in(P, by_uuid, members, [(u, 0.5 * w) for u in dict.fromkeys(rest)], seg, pads_on, clusters_of,
+                    [i for u, i, _ in loop if u in keep])
         elif kind == "connector_chain":
             prot = set(_ids(s.get("protection")))
             if not prot or s.get("protected") is False:
@@ -226,10 +288,61 @@ def structures(P, brief):
         else:
             continue
         members = {i for i in members if not P.parts[i].decor}
-        segs = [sg for sg in segs if sg[0][1] and sg[1][1] and sg[0][0] in members and sg[1][0] in members]
+        ok = [q for q, sg in enumerate(segs) if sg[0][1] and sg[1][1] and sg[0][0] in members and sg[1][0] in members]
+        choices = {n: choices[q] for n, q in enumerate(ok) if q in choices}
+        segs = [segs[q] for q in ok]
         if segs and len(members) >= 2:
-            out.append(Struct(kind=kind, members=members, segs=segs, src=s))
+            out.append(Struct(kind=kind, members=members, segs=segs, src=s, choices=choices))
     return out
+
+
+def _pad_clusters(fp, ks, dmax=PIN_CLUSTER_MM):
+    """Single-linkage clusters (library frame) of a footprint's pads `ks`, as pad lists."""
+    ks = list(ks)
+    lab = list(range(len(ks)))
+
+    def f(a):
+        while lab[a] != a:
+            lab[a] = lab[lab[a]]
+            a = lab[a]
+        return a
+    pts = [(fp.pads[k].lx, fp.pads[k].ly) for k in ks]
+    for a in range(len(ks)):
+        for b in range(a + 1, len(ks)):
+            if (pts[a][0] - pts[b][0]) ** 2 + (pts[a][1] - pts[b][1]) ** 2 <= dmax * dmax:
+                ra, rb = f(a), f(b)
+                if ra != rb:
+                    lab[rb] = ra
+    out = {}
+    for a in range(len(ks)):
+        out.setdefault(f(a), []).append(ks[a])
+    return list(out.values())
+
+
+def _tie_in(P, by_uuid, members, extra, seg, pads_on, clusters_of, order=()):
+    """Add the parts `extra` [(uuid, weight)] not yet in `members`, each tied by one segment
+    per net to one other member on that net: the first of `order` (the loop, in current
+    order) that has pads there, else an extra added before it (a star around the loop, not
+    all pairs: a bank of parallel FETs sharing a drain tab would make O(n^2) segments)."""
+    add = []
+    for u, wt in extra:
+        i = by_uuid.get(u)
+        if i is None or P.parts[i].decor or i in members:      # loop members are tied already
+            continue
+        members.add(i)
+        add.append((i, wt))
+    seen = []
+    prefer = [j for j in dict.fromkeys(order) if j in members]
+    done = set()
+    for i, wt in add:
+        for net in sorted({pd.net for pd in P.parts[i].fp.pads if pd.net}):
+            j = next((j for j in prefer + seen + [a for a, _ in add] if j != i and pads_on(j, net)), None)
+            if j is None or (min(i, j), max(i, j), net) in done:
+                continue
+            done.add((min(i, j), max(i, j), net))
+            bj = pads_on(j, net)
+            seg((i, pads_on(i, net)), (j, bj), wt, clusters_of(j, bj))
+        seen.append(i)
 
 
 def protection_order(P, brief):
@@ -372,13 +485,26 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
 
     obj = []
     for s in structs:
-        for (ia, pa), (ib, pb), w in s.segs:
+        alts_of = getattr(s, "choices", None) or {}
+        for q, ((ia, pa), (ib, pb), w) in enumerate(s.segs):
             ax, ay = pin_expr(ia, pa)
-            bx, by = pin_expr(ib, pb)
             dx = m.new_int_var(0, 4 * R, "")
             dy = m.new_int_var(0, 4 * R, "")
-            m.add_abs_equality(dx, ax - bx)
-            m.add_abs_equality(dy, ay - by)
+            alts = alts_of.get(q)
+            if alts and len(alts) > 1:
+                # the nearest of several pin clusters: one is chosen, its distance bounds dx, dy
+                pick = [m.new_bool_var("") for _ in alts]
+                m.add_exactly_one(pick)
+                for lit, pads_ in zip(pick, alts):
+                    bx, by = pin_expr(ib, pads_)
+                    m.add(dx >= ax - bx).only_enforce_if(lit)
+                    m.add(dx >= bx - ax).only_enforce_if(lit)
+                    m.add(dy >= ay - by).only_enforce_if(lit)
+                    m.add(dy >= by - ay).only_enforce_if(lit)
+            else:
+                bx, by = pin_expr(ib, pb)
+                m.add_abs_equality(dx, ax - bx)
+                m.add_abs_equality(dy, ay - by)
             wi = max(1, int(round(10 * w)))
             obj += [wi * dx, wi * dy]
     # compactness: half-perimeter of the members' origins

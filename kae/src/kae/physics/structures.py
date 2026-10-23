@@ -74,6 +74,10 @@ class State:
         self.Ca = np.ones(n)
         self.Sa = np.zeros(n)
         self.Ga = np.ones(n)
+        # pose ids: every `set` draws a fresh id, so a value cached against its parts' ids
+        # is exact; a caller restoring a saved pose may restore its id (see Terms._delta)
+        self.V = [0] * n
+        self._vid = 0
 
     def set(self, i, x, y, rot, side):
         x = float(x)
@@ -105,6 +109,8 @@ class State:
         self.Ca[i] = c
         self.Sa[i] = s
         self.Ga[i] = g
+        self._vid += 1
+        self.V[i] = self._vid
 
     def get(self, i):
         return (self.X[i], self.Y[i], self.R[i], 'F' if self.G[i] > 0 else 'B')
@@ -182,12 +188,20 @@ class NearestLoopComp:
     """Loop inductance (nH) to the nearest of several candidate load pins: a capacitor on a
     rail with many interchangeable loads serves whichever load it sits next to. Each
     candidate is a LoopComp [load power pin, cap rail pad, cap ground pad, load return]; the
-    nearest by power-pin to rail-pad distance at the current poses is evaluated."""
+    nearest by power-pin to rail-pad distance at the current poses is evaluated.
+
+    A rail with n loads and n caps gives n such components over the same n loads, so moving
+    one load touches all of them; each candidate's value is therefore cached against its
+    parts' pose ids (State.V), and a move that leaves a cap's nearest load unchanged costs
+    only the nearest-pin search."""
 
     def __init__(self, loops):
         self.loops = loops
         self.tr = loops[0].T[1]
         self.parts = tuple(sorted({i for c in loops for i in c.parts}))
+        self.mode = None              # the evaluated candidate's mode ('pour', 'hops', None)
+        self._cand = [(c.T[0].i, c.T[0].lx, c.T[0].ly) for c in loops]
+        self._memo = [None] * len(loops)
 
     @property
     def kern(self):
@@ -197,18 +211,34 @@ class NearestLoopComp:
     def kern(self, k):
         for c in self.loops:
             c.kern = k
+        self._memo = [None] * len(self.loops)
 
     def value(self, st):
         x, y = txy(st, self.tr)
-        best = None
+        X, Y, C, S, G = st.X, st.Y, st.C, st.S, st.G
+        b = 0
         bd = INF
-        for c in self.loops:
-            px, py = txy(st, c.T[0])
-            d = (px - x) * (px - x) + (py - y) * (py - y)
+        for k, (i, lx, ly) in enumerate(self._cand):
+            c = C[i]
+            s = S[i]
+            gy = ly * G[i]
+            dx = X[i] + lx * c + gy * s - x
+            dy = Y[i] - lx * s + gy * c - y
+            d = dx * dx + dy * dy
             if d < bd:
                 bd = d
-                best = c
-        return best.value(st)
+                b = k
+        best = self.loops[b]
+        V = st.V
+        key = tuple([V[i] for i in best.parts])
+        m = self._memo[b]
+        if m is not None and m[0] == key:
+            self.mode = m[2]
+            return m[1]
+        v = best.value(st)
+        self.mode = getattr(best, 'mode', None)
+        self._memo[b] = (key, v, self.mode)
+        return v
 
 
 class PlanePairLoop:

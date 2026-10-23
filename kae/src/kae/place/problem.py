@@ -246,6 +246,33 @@ def _turn_tables(angles):
     return turn, ring
 
 
+def keepout_sides(ko):
+    """Board sides (0 front, 1 back) a rule area applies to: its copper or courtyard layers
+    of a side, *.Cu, F&B.Cu and inner copper for both, no layers at all for both; a rule
+    area only on other layers (a library's keepout on Dwgs.User) applies to neither."""
+    lays = ko.layers or []
+    if not lays:
+        return {0, 1}
+    out = set()
+    for ly in lays:
+        if ly in ("*.Cu", "F&B.Cu") or (ly.startswith("In") and ly.endswith(".Cu")):
+            out |= {0, 1}
+        elif ly in ("F.Cu", "F.CrtYd", "F.Courtyard"):
+            out.add(0)
+        elif ly in ("B.Cu", "B.CrtYd", "B.Courtyard"):
+            out.add(1)
+    return out
+
+
+def geom_to_lib(geom, x, y, rot, side):
+    """A board-frame shapely geometry in the library frame of a footprint at (x, y, rot,
+    side) (the inverse of transform.place_geom)."""
+    def f(xy):
+        u, v = transform.to_local(xy[:, 0], xy[:, 1], x, y, rot, side)
+        return np.column_stack([u, v])
+    return shapely.transform(geom, f)
+
+
 def _on_far_copper(p, part_side):
     """The pad has copper on the side opposite its footprint's (B.Cu under a front part,
     F.Cu under a back part, *.Cu, F&B.Cu, inner layers count as both)."""
@@ -436,6 +463,13 @@ class Problem:
         P.angle_step = angle_step
         P._rules(board)
         P._severities(board)
+        # rule areas a footprint owns move with it (occupancy pieces of the part, see _part);
+        # only board-level ones are fixed obstacles
+        P._owned_keepouts = {}
+        if P.is_error("items_not_allowed"):
+            for ko in board.keepouts:
+                if ko.footprint and (ko.pads or ko.footprints):
+                    P._owned_keepouts.setdefault(ko.footprint, []).append(ko)
         P._domain(board, grid)
         name_to_net = P._nets(board, net_kinds)
         for i, fp in enumerate(board.footprints):
@@ -573,6 +607,23 @@ class Problem:
         own_pieces = cy_pieces + [r for r in pad_pieces if not any(_inside(r, c) for c in cy_pieces)]
         if len(own_pieces) > 8:
             own_pieces = _cluster_rects(own_pieces, max_n=8)
+        # rule areas the footprint owns (an antenna or sensor keepout): no other part's pads
+        # or courtyard inside, on the sides of their layers; KiCad moves them with the part
+        # and does not apply them to its own items
+        si = 0 if s > 0 else 1
+        ko_own, ko_opp = [], []
+        for ko in getattr(self, "_owned_keepouts", {}).get(fp.uuid, ()):
+            sides = keepout_sides(ko)
+            if not sides:
+                continue
+            lib = geom_to_lib(ko.outline, fp.x, fp.y, fp.rot, fp.side)
+            bx0, by0, bx1, by1 = lib.bounds
+            rects = poly_cover_rects(lib, max(1e-3, (bx1 - bx0) / 4.0))
+            if si in sides:
+                ko_own += rects
+            if 1 - si in sides:
+                ko_opp += rects
+        own_pieces = own_pieces + ko_own
         lib_own = rect_union(own_pieces)
         if lib_own is None:   # no courtyard, body or pads: a point
             lib_own = (-0.05, -0.05, 0.05, 0.05)
@@ -585,7 +636,7 @@ class Problem:
                                   for k in drilled] + [infl[k] for k in far])
         if fp.courtyard_back and self.is_error("courtyards_overlap"):
             lib_opp.append(polys_lib_rect(fp.courtyard_back))
-        lib_opp = [r for r in lib_opp if r is not None]
+        lib_opp = [r for r in lib_opp if r is not None] + ko_opp
         cut = edge_cut_lib_rect(fp)
         if cut is not None:
             # the footprint cuts the board (a lens hole, a window): nothing on either side may
@@ -622,13 +673,13 @@ class Problem:
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
         own_parts = ([cy] if (cy is not None and self.is_error("courtyards_overlap")) else []) + infl + \
-            ([cut] if cut is not None else [])
+            ([cut] if cut is not None else []) + ko_own
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
                          board_groups=lib_board_groups, crt=cy if cy is not None else lib_own,
                          own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own,
                          own_parts=[r for r in own_parts if r is not None] or [lib_own],
                          own_pieces=own_pieces,
-                         own_pads_pieces=(pad_pieces + ([cut] if cut is not None else [])) or [lib_own])
+                         own_pads_pieces=(pad_pieces + ([cut] if cut is not None else []) + ko_own) or [lib_own])
         rots = list(rotations) if movable else [fp.rot]
         part.n_ortho = len(rots)
         if movable and self.angle_step and not right_angles_only(fp):
@@ -804,19 +855,11 @@ class Problem:
         for side, gm, net in self.fixed_copper:
             for r in geom_cover_rects(gm.buffer(self.clr_max / 2), g):
                 self._add_obstacle(side, r, f"fixed copper {net or '(no net)'}")
-        for ko in board.keepouts:
-            if not (ko.footprints or ko.pads):
-                continue
-            sides = set()
-            for ly in ko.layers or []:
-                if ly in ("F.Cu", "F.Courtyard", "F.CrtYd") or ly.startswith("F."):
-                    sides.add(0)
-                elif ly in ("B.Cu",) or ly.startswith("B."):
-                    sides.add(1)
-                elif ly in ("*.Cu", "F&B.Cu") or ly.startswith("In"):
-                    sides.update((0, 1))
-            if not sides:
-                sides = {0, 1}
+        owners = {p.uuid for p in self.parts}
+        for ko in board.keepouts if self.is_error("items_not_allowed") else ():
+            if not (ko.footprints or ko.pads) or (ko.footprint and ko.footprint in owners):
+                continue      # a footprint's own rule area moves with it (its occupancy pieces)
+            sides = keepout_sides(ko)
             for r in poly_cover_rects(ko.outline, g * 2):
                 for si in sides:
                     self._add_obstacle(si, r, f"keepout {ko.name or ko.uuid[:8]}")

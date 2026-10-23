@@ -504,10 +504,12 @@ def decap_values(rb, s):
     ic = s.get("ic")
     rail = s.get("rail")
     gnet = s.get("ground")
-    caps = s.get("hf_caps") or s.get("caps") or []
+    cp = s.get("caps_p") or {}
+    owned = [c for c in (s.get("caps") or []) if cp.get(c, 1.0) >= 0.5]      # p < 0.5: not this IC's
+    caps = [c for c in (s.get("hf_caps") or s.get("caps") or []) if c in owned]
     pins = [str(p) for p in s.get("power_pins") or []]
     pc = s.get("pin_caps") or {}
-    pairs = [(str(p), c) for p, cs in pc.items() for c in cs if c in caps or c in (s.get("caps") or [])]
+    pairs = [(str(p), c) for p, cs in pc.items() for c in cs if c in caps or c in owned]
     for c in caps:
         if any(c == x for _, x in pairs) or not pins:
             continue
@@ -610,7 +612,7 @@ def chain_value(rb, s):
     return total + lv, dict(surge_path_mm=round(length, 3))
 
 
-VALUES = {"cell": cell_value, "decap": decap_values, "crystal": crystal_value, "chain": chain_value}
+VALUES = {"cell": cell_value, "path": cell_value, "decap": decap_values, "crystal": crystal_value, "chain": chain_value}
 
 
 # ----------------------------------------------------------------------------- rails (DC)
@@ -653,7 +655,7 @@ def rail_drops(rb, brief):
 
 
 # ----------------------------------------------------------------------------- board physics
-def board_physics(board, brief=None, fills="kicad", kinds=("cell", "decap", "crystal", "chain"), terms=None):
+def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "decap", "crystal", "chain"), terms=None):
     """Every module's routed value, allocation and u on a finished board (see the module
     docstring). fills: 'kicad' (refill with KiCad), None (zone outlines) or a dict."""
     b = board if not isinstance(board, (str, Path)) else load(board)
@@ -892,9 +894,12 @@ def _plane_layers(sess, mid, region):
     return out
 
 
-def conflicts(board_routed, sess, mid, region):
+def conflicts(board_routed, sess, mid, region, whole_nets=True, max_nets=4):
     """Unlocked routing of other nets that cuts the module's planes inside its region, or
-    crowds its own layer there: [uuid]."""
+    crowds its own layer there: [uuid]. With `whole_nets`, all the unlocked routing of the
+    (at most `max_nets`, shortest first) nets that do: a net ripped whole is re-routed from
+    its pins, while a fragment left behind is fixed copper the general router must join
+    in its middle, which Freerouting does not do (every partial rip-up lost connections)."""
     from kae.board.kicad_file import load as _load
     b = _load(board_routed)
     m = next((x for x in sess.modules if x.id == mid), None)
@@ -915,6 +920,11 @@ def conflicts(board_routed, sess, mid, region):
             continue
         if Point(v.x, v.y).buffer(v.size / 2).intersects(region):
             out.append(v.uuid)
+    if whole_nets and out:
+        hit = {x.net for x in list(b.tracks) + list(b.vias) if x.uuid in set(out)}
+        length = {n: sum(math.dist(t.start, t.end) for t in b.tracks if t.net == n and not t.locked) for n in hit}
+        keep = sorted(hit, key=lambda n: length[n])[:max_nets]
+        out = [x.uuid for x in list(b.tracks) + list(b.vias) if x.net in keep and not x.locked]
     return out, planes
 
 
@@ -996,8 +1006,8 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
             return sum((r["modules"].get(m, {}).get("u_routed") or 0.0)
                        - (r["modules"].get(m, {}).get("cover_routed") or 0.0) for m in ms)
         better_phys = badness(rc, cur_rc["retweak"]) < badness(cur_rc, cur_rc["retweak"]) - 1e-6
-        keep = (s_["errors"] + s_["unconnected"], s_["unconnected"]) <= (cur_s["errors"] + cur_s["unconnected"],
-                                                                        cur_s["unconnected"]) and better_phys
+        # kept only when neither completion nor legality gets worse and the physics improves
+        keep = s_["unconnected"] <= cur_s["unconnected"] and s_["errors"] <= cur_s["errors"] and better_phys
         hist.append(dict(round=k, ripped=len(rip), guards=len(guards), errors=s_["errors"], unconnected=s_["unconnected"],
                          u={m: (v.get("u_stage"), v.get("u_routed")) for m, v in rc["modules"].items()},
                          cover={m: (v.get("cover_stage"), v.get("cover_routed")) for m, v in rc["modules"].items()

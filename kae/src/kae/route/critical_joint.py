@@ -349,6 +349,8 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         from .critical_rails import route_rails
         sess.rails = route_rails(ctx, mode=sess.opts.get("rails_joint", "auto"))
         rep["rails"] = sess.rails
+    if sess.opts.get("corner_joins", True):
+        rep["joins"] = sess.join_at_corners()
     tracks, vias = sess.copper()
     rep["seconds"] = round(time.monotonic() - t0, 2)
     rep["moved"] = {ctx.fp[u].ref: p for u, p in moved.items()}

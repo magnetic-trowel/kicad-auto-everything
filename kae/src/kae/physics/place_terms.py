@@ -36,13 +36,14 @@ call (structures.CouplingEngine).
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from . import priors as PR
 from .boardview import BoardView
-from .structures import (State)
+from .structures import State
 
 INF = float('inf')
 _NONE = np.zeros(0, np.int64)
@@ -112,6 +113,7 @@ class Terms:
                     self.engine.kern = self.kern
                 if self.thermal is not None:
                     self.thermal.kern = self.kern
+        self._careful_allocs()
         # incidence
         self.inc = {}
         for k, s in enumerate(self.structs):
@@ -266,7 +268,7 @@ class Terms:
             if sdirty[k]:
                 self._value(k)
         # 2. trial values of the sub-terms the moved parts touch
-        saved = [(i, st.get(i)) for i in moved]
+        saved = [(i, st.get(i), st.V[i]) for i in moved]
         for i, p in mv:
             st.set(i, *p)
         new = {}
@@ -298,8 +300,9 @@ class Terms:
                     k, ci, si = key
                     c = structs[k].comps[ci]
                     new[key] = c.value_sub(st, si) if nsub[k][ci] > 1 else c.value(st)
-        for i, p in saved:
+        for i, p, vid in saved:
             st.set(i, *p)
+            st.V[i] = vid             # the same pose: its cached values stay valid
         # 3. changed structures only
         sub = self._sub
         chg = {}
@@ -362,6 +365,44 @@ class Terms:
         return out
 
     # ------------------------------------------------------------------ internals
+    def _careful_allocs(self):
+        """Decap budgets between a careful layout's loop and twice it (priors.decap_careful):
+        each capacitor of the structure is put beside the power pin it serves (outward from
+        the IC, on the IC's side, four rotations) and the lowest loop is L_c."""
+        from .structures import NearestLoopComp, txy
+        st = self.st
+        bv = self.bv
+        for s in self.structs:
+            hf = s.info.pop('_careful', None)
+            if hf is None:
+                continue
+            best = INF
+            for c in s.comps:
+                for lp in (c.loops if isinstance(c, NearestLoopComp) else [c]):
+                    tp, tr = lp.T[0], lp.T[1]
+                    i, j = tr.i, tp.i
+                    if i == j:
+                        continue
+                    px, py = txy(st, tp)
+                    ux, uy = px - st.X[j], py - st.Y[j]
+                    n = math.hypot(ux, uy)
+                    ux, uy = (ux / n, uy / n) if n > 0.1 else (1.0, 0.0)
+                    b = bv.parts[i].cy_bbox
+                    d = tp.a / 2 + 0.3 + 0.5 * max(b[2] - b[0], b[3] - b[1])
+                    saved = st.get(i)
+                    side = 'F' if st.G[j] > 0 else 'B'
+                    for rot in (0.0, 90.0, 180.0, 270.0):
+                        st.set(i, px + ux * d, py + uy * d, rot, side)
+                        best = min(best, c.value(st))
+                    st.set(i, *saved)
+            if best < INF:
+                a = PR.decap_careful(s.alloc.value, best, hf=bool(hf))
+                if a != s.alloc.value:
+                    s.alloc = PR.Belief(a, 'nH', s.alloc.basis + f'; held to [{best:.2f}, '
+                                        f'{PR.DECAP_CAREFUL_SPAN * best if hf else float("inf"):.2f}] nH by the loop of '
+                                        f'a careful layout', s.alloc.cls)
+                s.info['L_careful'] = best
+
     def _cost(self, s, v):
         u = v / s.alloc.value if s.alloc.value > 0 else 0.0
         c = s.conf if self.knobs.use_confidence else 1.0

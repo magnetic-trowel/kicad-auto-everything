@@ -65,8 +65,8 @@ import shapely  # noqa: E402
 from shapely.geometry import box  # noqa: E402
 from shapely.ops import unary_union  # noqa: E402
 
-KINDS = ('commutation', 'decap', 'coupling', 'crystal', 'thermal', 'esd', 'world_cm', 'antenna')
-LOOP_KINDS = ('decap', 'commutation', 'esd')
+KINDS = ('commutation', 'power_path', 'decap', 'coupling', 'crystal', 'thermal', 'esd', 'world_cm', 'antenna')
+LOOP_KINDS = ('decap', 'commutation', 'power_path', 'esd')
 EPS = 1e-9
 MATERIAL = 0.01          # |du| of some structure of the kind, fraction of its allocation
 FAR_MM = 15.0

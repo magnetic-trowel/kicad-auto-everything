@@ -42,6 +42,7 @@ class Belief:
 # docs/topics/physics/place-terms.md, "Routed copper").
 HOP_DETOUR = {
     'commutation': 0.09,
+    'power_path': 0.09,          # routed like hot loops (pours); not measured apart
     'decap': 0.125,
     'esd': 0.11,
     'crystal': 0.05,
@@ -142,6 +143,23 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     return Belief(min(lmax, 50.0), 'nH', basis)
 
 
+# Power paths (load switches, eFuses, ideal diodes, reverse-polarity and discrete FET
+# switches) do not commutate at a converter's rate: their loop C_in -> pass elements -> C_out
+# sees the load's current steps. While the output capacitor carries a full-load step of rise
+# time t_step, the path's loop inductance takes L dI/dt between the two capacitors; keeping
+# that within a droop fraction of the rail gives L <= droop V t_step / I (E5: digital and
+# radio loads step in tens to hundreds of ns; 5 % droop).
+POWER_PATH = dict(droop=0.05, t_step_ns=100.0)
+
+
+def power_path_budget(v=5.0, i=1.0):
+    """Loop-inductance budget (nH) of a power path carrying I (A) on a V (V) rail."""
+    d, t = POWER_PATH['droop'], POWER_PATH['t_step_ns']
+    lmax = d * max(v, 0.5) * t / max(i, 1e-3)
+    return Belief(min(lmax, 50.0), 'nH', f'load step: L dI/dt <= {d:.0%} of {v:g} V for {i:g} A in {t:g} ns'
+                  + (' (capped at 50 nH)' if lmax > 50.0 else ''))
+
+
 # Input voltage of a converter whose input rail the brief cannot name (excite.V null, about
 # 20 % of cells). A high prior, so these loops still count rather than vanish: 24 V lies above
 # 90 % of the 51 named converter inputs of the 112-board corpus (median 12 V, p80 15 V), and a
@@ -188,6 +206,25 @@ def ic_current_prior(n_pins):
     if n_pins <= 144:
         return 0.3
     return 1.0
+
+
+# A decap budget is held between what a careful layout achieves and twice that (E5): the
+# loop of the same capacitor placed beside the pin (L_c, Terms evaluates it on the board)
+# bounds it from below, so a target no discrete capacitor can meet (a sub-nH core-rail
+# target) cannot make the term dominate; 2 L_c bounds it from above, so u = 1 marks the edge
+# of careful practice even where the supply target is loose (the decap loop also carries
+# the IC's HF current, which radiates and couples by its area).
+DECAP_CAREFUL_SPAN = 2.0
+
+
+def decap_careful(target, l_careful, hf=True):
+    """Budget (nH) from the supply target and the careful-layout loop L_c: clamp(target,
+    L_c, 2 L_c) for HF decoupling; max(target, L_c) for stability and module capacitors."""
+    if not (l_careful > 0.0) or l_careful == float('inf'):
+        return target
+    if hf:
+        return min(max(target, l_careful), DECAP_CAREFUL_SPAN * l_careful)
+    return max(target, l_careful)
 
 
 # Decap functions whose capacitor sets a regulator's stability rather than an IC's HF supply

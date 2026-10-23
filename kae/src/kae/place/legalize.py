@@ -17,6 +17,7 @@ board stays the judge.
 """
 from __future__ import annotations
 
+import copy
 import math
 import os
 import re
@@ -30,7 +31,7 @@ from shapely.strtree import STRtree
 from kae.board import transform
 
 from . import cpsat
-from .problem import edge_cut_polys, is_drilled
+from .problem import edge_cut_polys, geom_to_lib, is_drilled, keepout_sides
 from .state import grid_violations
 
 
@@ -828,13 +829,25 @@ def exact_check(P, st, parts=None, max_items=60):
                 need = max(_net_clr(P, pd.net, clr_of), _net_clr(P, net, clr_of))
                 if geom.distance(gm) < need - 1e-4:
                     add("clearance", [P.parts[i].ref], f"pad {pd.number} vs fixed copper {net}")
-    # rule areas
-    for ko in board.keepouts:
+    # rule areas (KiCad's items_not_allowed, when the project makes it an error): one owned
+    # by a footprint moves with it and does not apply to that footprint's own items
+    owner_of = {p.uuid: p.i for p in P.parts}
+    for ko in board.keepouts if P.is_error("items_not_allowed") else ():
         if not (ko.footprints or ko.pads):
             continue
+        sides = keepout_sides(ko)
+        oi = owner_of.get(ko.footprint) if ko.footprint else None
+        if oi is not None:
+            q = P.parts[oi]
+            x, y, rot, side = st.pose(oi)
+            if (abs(x - q.x0) > 1e-9 or abs(y - q.y0) > 1e-9 or transform.norm_deg(rot) != transform.norm_deg(q.rot0)
+                    or side != q.fp.side):
+                ko = copy.copy(ko)
+                ko.outline = transform.place_geom(geom_to_lib(ko.outline, q.x0, q.y0, q.rot0, q.fp.side),
+                                                  x, y, rot, side)
         for i in check:
             p = P.parts[i]
-            if not _keepout_on_side(ko, p.side):
+            if i == oi or (0 if p.s > 0 else 1) not in sides:
                 continue
             sh = shapes[i]
             if ko.footprints:
@@ -845,16 +858,6 @@ def exact_check(P, st, parts=None, max_items=60):
             if any(g.intersects(ko.outline) for g, _, _ in sh["pads"]):
                 add("items_not_allowed", [p.ref], f"keepout {ko.name} (pads)")
     return out
-
-
-def _keepout_on_side(ko, side):
-    lays = ko.layers or []
-    if not lays:
-        return True
-    for ly in lays:
-        if ly.startswith(side + ".") or ly in ("*.Cu", "F&B.Cu") or ly.startswith("In"):
-            return True
-    return False
 
 
 def _net_clr(P, net, cache):

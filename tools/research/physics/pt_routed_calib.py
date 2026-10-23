@@ -261,6 +261,7 @@ def terms_board(tid, routed_rows, variants):
             out.append(dict(id=tid, module=mod, kind=rr['kind'], variant=name, routed=rr['routed'],
                             value=r['value'], util=r['util'], alloc=r['alloc']['value'], modes=modes.get(r['id']),
                             loop_cap_value=first.get(r['id']), n_comps=len(r.get('components') or []),
+                            pt_id=r['id'], pairing=(r.get('info') or {}).get('pairing'),
                             via=vias.get(r['id']),
                             function=(r.get('info') or {}).get('function')))
     return out
@@ -307,6 +308,9 @@ def summarize(routed, terms):
             if r.get('loop_cap_value'):
                 # like for like: the routed reference charges the brief loop's capacitor alone
                 byv[(r['variant'], 'cell_loop_cap')].append(r['routed'] / r['loop_cap_value'])
+            if r['kind'] == 'decap' and r.get('pairing') == 'pin' and '#' not in r.get('pt_id', '#'):
+                # like for like: one pin cluster with its caps in parallel, as the reference
+                byv[(r['variant'], 'decap_pin')].append(r['routed'] / r['value'])
             if r.get('via'):
                 # like for like: with the reference's whole-board via
                 mine, full = r['via']

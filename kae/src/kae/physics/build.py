@@ -34,8 +34,22 @@ import numpy as np
 
 from . import priors as PR
 from .kernels import fin_params
-from .structures import (CmComp, CouplingComp, CouplingEngine, CrystalComp, DecapLoop, EsdComp, FeedComp, LoopComp,
-                         LoopShape, NearestLoopComp, NodeShape, Term, ThermalField, _Coupled)
+from .structures import (
+    CmComp,
+    CouplingComp,
+    CouplingEngine,
+    CrystalComp,
+    DecapLoop,
+    EsdComp,
+    FeedComp,
+    LoopComp,
+    LoopShape,
+    NearestLoopComp,
+    NodeShape,
+    Term,
+    ThermalField,
+    _Coupled,
+)
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
 
@@ -244,11 +258,15 @@ def build_structures(terms):
                 if st:
                     S.append(st)
                     cells.append((st, s))
+            elif kind == 'power_path':
+                st = _power_path(ctx, s, Struct)
+                if st:
+                    S.append(st)
             elif kind == 'decap':
                 if _low_ownership(s):
                     low.append(s)
                 else:
-                    S.extend(_decap(ctx, s, Struct))
+                    S.extend(_decap(ctx, s, Struct, low))
             elif kind == 'crystal':
                 st = _crystal(ctx, s, Struct)
                 if st:
@@ -264,7 +282,8 @@ def build_structures(terms):
         except Exception as e:      # noqa: BLE001 - a bad structure must not kill the others
             terms.warnings.append(f"{s.get('id', kind)}: {type(e).__name__}: {e}")
     try:
-        S.extend(_decap_nearest(ctx, low, Struct))
+        groups = [s for s in specs if s.get('kind') == 'rail_group']
+        S.extend(_decap_nearest(ctx, low, Struct, [s for s in specs if s.get('kind') == 'decap'], groups))
     except Exception as e:      # noqa: BLE001
         terms.warnings.append(f'nearest-load decaps: {type(e).__name__}: {e}')
     # aggressors: hot loops (inductive) with their switch-node copper (capacitive), and clocks
@@ -341,6 +360,42 @@ def _commutation(ctx, s, Struct):
                             sw_nets=s.get('sw_nets') or ([s.get('sw')] if s.get('sw') else [])))
 
 
+def _power_path(ctx, s, Struct):
+    """Loop of a power path (load switch, eFuse, ideal diode, reverse-polarity or discrete
+    FET switch): C_in+ -> pass elements -> C_out+ -> C_out- -> C_in-, priced like a cell
+    against PR.power_path_budget. The parallel elements of a stage carry the current side
+    by side: each one's variant of the loop counts in parallel."""
+    bv = ctx.bv
+    T = [ctx.member_term(m) for m in s.get('loop') or []]
+    if len(T) < 3 or any(t is None for t in T):
+        return None
+    variants = [(T, bv.parts[T[1].i].ref)]
+    for stage in s.get('stages') or []:
+        el = [i for i in (ctx.part(u) for u in stage) if i is not None]
+        at = [k for k, t in enumerate(T) if t.i in el]
+        if len(el) < 2 or not at or len({T[k].i for k in at}) != 1:
+            continue
+        i0 = T[at[0]].i
+        for j in el:
+            if j == i0 or len(variants) >= 4:
+                continue
+            Tj = list(T)
+            for k in at:
+                ks = ctx.pads(j, [bv.parts[i0].pad_num[q] for q in T[k].ks])
+                Tj[k] = ctx.term(j, ks) if ks else None
+            if all(t is not None for t in Tj):
+                variants.append((Tj, bv.parts[j].ref))
+        break
+    comps = [_loop_comp(ctx, Tv, True, 'power_path') for Tv, _ in variants]
+    ex = s.get('excite') or {}
+    v = ex.get('V') or ctx.net_volts(s.get('rail_in')) or ctx.net_volts(s.get('rail_out')) or 5.0
+    i = ex.get('I') or 1.0
+    alloc = ctx.budget(s, 'L_nH') or PR.power_path_budget(v, i)
+    return Struct(id=s.get('id') or f'path:{bv.parts[T[1].i].ref}', kind='power_path', conf=ctx.conf(s), alloc=alloc,
+                  comps=comps, reduce='parallel', labels=[lab for _, lab in variants],
+                  info=dict(cls=s.get('class'), V=v, I=i, rail_in=s.get('rail_in'), rail_out=s.get('rail_out')))
+
+
 # ----------------------------------------------------------------------------- (b)
 def _decap_side(ctx, s):
     """(ic index, rail, power pads, ground pads, ground net) of a decap spec. The 'ic' is the
@@ -406,14 +461,31 @@ def _low_ownership(s):
     return bool(ps) and max(ps) <= PR.OWNERSHIP_NEAREST and (s.get('shared_by') or 1) >= 3
 
 
-def _decap(ctx, s, Struct):
+def _unowned(s):
+    """Caps of a kae.brief/1 decap spec (one with a pairing) that it does not own (caps_p <
+    0.5): they serve whichever load they sit next to."""
+    if not s.get('pairing'):
+        return set()
+    return {u for u, p in (s.get('caps_p') or {}).items() if p is not None and float(p) < 0.5}
+
+
+def _decap(ctx, s, Struct, pool):
+    """A decap spec's structures. pairing 'pin' (and briefs without a pairing): one
+    structure per power-pin cluster, its paired capacitors and the spec's other owned ones
+    in parallel; 'nearest_pin': one structure per owned capacitor, charged its loop to the
+    nearest of the IC's pin clusters at the current poses. Unowned capacitors (caps_p <
+    0.5) go to `pool`, the nearest-load decaps."""
     side = _decap_side(ctx, s)
     if side is None:
         return []
     ic, rail, pp, gp, gnd = side
     bv = ctx.bv
     P = bv.parts[ic]
-    caps = _decap_caps(ctx, s, rail, gnd)
+    unowned = {ctx.part(u) for u in _unowned(s)}
+    if unowned:
+        pool.append(dict(s, caps=[u for u in (s.get('caps') or []) if ctx.part(u) in unowned],
+                         hf_caps=[u for u in (s.get('hf_caps') or []) if ctx.part(u) in unowned]))
+    caps = [c for c in _decap_caps(ctx, s, rail, gnd) if c[0] not in unowned]
     pmap = {ctx.part(k): PR.ownership_calibrated(v) for k, v in (s.get('caps_p') or {}).items()
             if ctx.part(k) is not None and v is not None}
     pin_caps = {str(k): {ctx.part(u) for u in v} for k, v in (s.get('pin_caps') or {}).items()}
@@ -423,7 +495,31 @@ def _decap(ctx, s, Struct):
     vr = ctx.net_volts(rail) or 3.3
     alloc_pin, per_pin = ctx.decap_alloc(s, ic, vr, pp)
     pairs = _pour_pairs(ctx, rail)
+    sid = s.get('id') or f'decap:{P.ref}:{rail}'
+
+    def cluster_alloc(ks):
+        if not per_pin:
+            return alloc_pin
+        return PR.Belief(alloc_pin.value / max(1, len(ks)), 'nH',
+                         alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls)
     out = []
+    if s.get('pairing') == 'nearest_pin':
+        clusters = []
+        for grp in groups:
+            ks = [pp[j] for j in grp]
+            clusters.append((ks, *_ic_terms(ctx, ic, ks, rail, gp, gnd)))
+        a = cluster_alloc(min((c[0] for c in clusters), key=len))
+        for i, kr, kgc in caps:
+            tr = ctx.term(i, kr)
+            tc = ctx.term(i, kgc)
+            loops = [_decap_loop(ctx, tp, tr, tc, tg, rail, pairs) for _, tp, tg in clusters]
+            w = pmap.get(i, 1.0)
+            out.append(Struct(id=f'{sid}#{bv.parts[i].ref}', kind='decap', conf=ctx.conf(s) * w, alloc=a,
+                              comps=[NearestLoopComp(loops)], reduce='single', labels=[bv.parts[i].ref],
+                              info=dict(rail=rail, pins=[P.pad_num[k] for k in pp], pairing='nearest_pin',
+                                        pour_pairs=[f'{x}/{y}' for x, y, _ in pairs], ownership=w,
+                                        function=s.get('function'), _careful=per_pin)))
+        return out
     for gi, grp in enumerate(groups):
         ks = [pp[j] for j in grp]
         tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
@@ -432,9 +528,9 @@ def _decap(ctx, s, Struct):
         for k in ks:
             paired |= pin_caps.get(P.pad_num[k], set())
         all_paired = set().union(*pin_caps.values()) if pin_caps else set()
-        # the cluster's own paired capacitors and every unpaired one of the spec, in parallel
-        # (current takes the lowest-inductance path: a near capacitor serves the pin whoever
-        # the brief says owns it; the ownership filter below drops the unlikely ones)
+        # the cluster's own paired capacitors and every unpaired owned one of the spec, in
+        # parallel (current takes the lowest-inductance path, so the nearest dominates);
+        # briefs without caps_p calibration drop the unlikely ones by ownership
         use = [c for c in caps if c[0] in paired or c[0] not in all_paired] or caps
         if use:
             pm = max(pmap.get(c[0], 1.0) for c in use)
@@ -447,62 +543,78 @@ def _decap(ctx, s, Struct):
             weights.append(pmap.get(i, 1.0))
         if not comps:
             continue
-        a = PR.Belief(alloc_pin.value / max(1, len(ks)), 'nH',
-                      alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls) if per_pin else alloc_pin
-        out.append(Struct(id=(s.get('id') or f'decap:{P.ref}:{rail}') + (f'#{gi}' if len(groups) > 1 else ''),
-                          kind='decap', conf=ctx.conf(s) * max(weights), alloc=a, comps=comps, reduce='parallel',
-                          labels=labels, info=dict(rail=rail, pins=[P.pad_num[k] for k in ks],
-                                                   pour_pairs=[f'{a}/{b}' for a, b, _ in pairs],
-                                                   ownership=max(weights), function=s.get('function'))))
+        out.append(Struct(id=sid + (f'#{gi}' if len(groups) > 1 else ''),
+                          kind='decap', conf=ctx.conf(s) * max(weights), alloc=cluster_alloc(ks), comps=comps,
+                          reduce='parallel', labels=labels,
+                          info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], pairing=s.get('pairing') or 'pin',
+                                    pour_pairs=[f'{x}/{y}' for x, y, _ in pairs],
+                                    ownership=max(weights), function=s.get('function'), _careful=per_pin)))
     return out
 
 
-def _decap_nearest(ctx, specs, Struct):
-    """Decaps on rails with many interchangeable loads (raw ownership <= OWNERSHIP_NEAREST):
-    one structure per capacitor, charged its loop to the nearest load power pin on the rail
-    at the current poses (NearestLoopComp), with the rail's median per-pin budget."""
+def _decap_nearest(ctx, pool, Struct, decaps=(), groups=()):
+    """Capacitors that serve whichever load they sit next to (pairing 'nearest_load', caps a
+    spec does not own, legacy low-ownership specs): one structure per capacitor, charged its
+    loop to the nearest load power-pin cluster on its rail at the current poses
+    (NearestLoopComp), with the median per-pin budget of those clusters. A capacitor of a
+    rail group chooses among the group's loads only."""
     bv = ctx.bv
-    by_rail = {}
-    for s in specs:
+    # load pin clusters per rail, from every decap spec on it whose 'ic' is a load (not an
+    # entry connector or a converter's inductor)
+    cands = {}
+    src = ('entry', 'converter_output', 'converter_input')
+    for s in list(decaps) + list(pool):
+        if s.get('function') in src:
+            continue
         side = _decap_side(ctx, s)
         if side is None:
             continue
-        by_rail.setdefault(side[1], []).append((s, side))
-    out = []
-    for rail, items in by_rail.items():
-        cands, caps, budgets, confs = [], {}, [], []
-        for s, (ic, _, pp, gp, gnd) in items:
-            P = bv.parts[ic]
-            if not pp:
-                continue
-            vr = ctx.net_volts(rail) or 3.3
-            b, per_pin = ctx.decap_alloc(s, ic, vr, pp)
-            for grp in _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6):
-                ks = [pp[j] for j in grp]
-                cands.append((ic, ks, gp, gnd))
-                budgets.append(b.value / max(1, len(ks)) if per_pin else b.value)
-            for i, kr, kg in _decap_caps(ctx, s, rail, gnd):
-                caps.setdefault(i, (kr, kg))
-            confs.append(ctx.conf(s))
-        if not cands or not caps:
+        ic, rail, pp, gp, gnd = side
+        if not pp:
             continue
-        alloc = PR.Belief(float(np.median(budgets)), 'nH', f'median per-pin budget of the {len(cands)} load pin '
-                          f'cluster(s) on {rail} (nearest-load decap: ownership unresolved)')
-        for i, (kr, kg) in caps.items():
-            tr = ctx.term(i, kr)
-            tc = ctx.term(i, kg)
-            loops = []
-            pairs = _pour_pairs(ctx, rail)
-            for ic, ks, gp, gnd in cands:
-                if ic == i:
-                    continue
-                tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
-                loops.append(_decap_loop(ctx, tp, tr, tc, tg, rail, pairs))
-            if not loops:
-                continue
-            out.append(Struct(id=f'decap:{rail}:{bv.parts[i].ref}:nearest', kind='decap', conf=float(np.median(confs)),
-                              alloc=alloc, comps=[NearestLoopComp(loops)], reduce='single', labels=[bv.parts[i].ref],
-                              info=dict(rail=rail, nearest=True, candidates=len(loops), function='load')))
+        P = bv.parts[ic]
+        vr = ctx.net_volts(rail) or 3.3
+        b, per_pin = ctx.decap_alloc(s, ic, vr, pp)
+        seen = cands.setdefault(rail, {})
+        for grp in _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6):
+            ks = tuple(sorted(pp[j] for j in grp))
+            seen.setdefault((ic, ks), (gp, gnd, b.value / max(1, len(ks)) if per_pin else b.value))
+    in_group = {}
+    for g in groups:
+        loads = {ctx.part(u) for u in g.get('loads') or []} - {None}
+        for c in g.get('caps') or []:
+            i = ctx.part(c)
+            if i is not None and loads:
+                in_group[(g.get('rail'), i)] = (g.get('id'), loads)
+    caps = {}
+    for s in pool:
+        side = _decap_side(ctx, s)
+        if side is None:
+            continue
+        rail, gnd = side[1], side[4]
+        for i, kr, kg in _decap_caps(ctx, s, rail, gnd):
+            caps.setdefault((rail, i), (kr, kg, ctx.conf(s)))
+    out = []
+    for (rail, i), (kr, kg, conf) in caps.items():
+        grp = in_group.get((rail, i))
+        cl = [(ic, ks, v) for (ic, ks), v in (cands.get(rail) or {}).items()
+              if ic != i and (grp is None or ic in grp[1])]
+        if not cl:
+            continue
+        tr = ctx.term(i, kr)
+        tc = ctx.term(i, kg)
+        pairs = _pour_pairs(ctx, rail)
+        loops = []
+        for ic, ks, (gp, gnd, _) in cl:
+            tp, tg = _ic_terms(ctx, ic, list(ks), rail, gp, gnd)
+            loops.append(_decap_loop(ctx, tp, tr, tc, tg, rail, pairs))
+        budget = float(np.median([v[2] for _, _, v in cl]))
+        alloc = PR.Belief(budget, 'nH', f'median per-pin budget of the {len(cl)} load pin cluster(s) on {rail}'
+                          + (f' in {grp[0]}' if grp else '') + ' (nearest-load decap)')
+        out.append(Struct(id=f'decap:{rail}:{bv.parts[i].ref}:nearest', kind='decap', conf=conf, alloc=alloc,
+                          comps=[NearestLoopComp(loops)], reduce='single', labels=[bv.parts[i].ref],
+                          info=dict(rail=rail, nearest=True, candidates=len(loops), function='load',
+                                    pairing='nearest_load', rail_group=grp[0] if grp else None, _careful=True)))
     return out
 
 

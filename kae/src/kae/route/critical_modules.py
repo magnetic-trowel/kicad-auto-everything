@@ -53,15 +53,19 @@ class Module:
     notes: list = field(default_factory=list)
 
 
-def modules_from_brief(brief, kinds=("cell", "decap", "crystal", "chain")):
-    """Modules in the brief's placement order (physically decisive first)."""
-    kmap = {"commutation_cell": "cell", "decap": "decap", "crystal": "crystal", "connector_chain": "chain"}
+def modules_from_brief(brief, kinds=("cell", "path", "decap", "rgroup", "crystal", "chain")):
+    """Modules in the brief's placement order (physically decisive first). A decap of a rail
+    group is the group's (its capacitors pair with the nearest group load)."""
+    kmap = {"commutation_cell": "cell", "power_path": "path", "decap": "decap", "rail_group": "rgroup",
+            "crystal": "crystal", "connector_chain": "chain"}
     out = []
     for s in brief.get("structures") or []:
         k = kmap.get(s.get("kind"))
         if k is None or k not in kinds:
             continue
         if k == "chain" and not s.get("protection"):
+            continue
+        if k == "decap" and s.get("rail_group") and "rgroup" in kinds:
             continue
         parts = list((s.get("members_ref") or {}).keys())
         out.append(Module(id=s.get("id") or f"{k}:{len(out)}", kind=k, spec=s, parts=parts,
@@ -394,6 +398,16 @@ def _hop_net(ta, tb):
     return ta.net if ta.net == tb.net else None
 
 
+def _excite_current(s):
+    """The current a loop's copper is sized for: the upper bound of the brief's excitation
+    interval when it states one (a power path's I_belief), else its value, else 1 A."""
+    ex = s.get("excite") or {}
+    iv = ((ex.get("I_belief") or {}).get("interval") or [])
+    if len(iv) == 2 and iv[1]:
+        return float(iv[1])
+    return float(ex.get("I") or 1.0)
+
+
 def route_cell(ctx, m):
     s = m.spec
     loop = s.get("loop") or []
@@ -403,8 +417,7 @@ def route_cell(ctx, m):
         m.notes.append("loop terminals not found")
         return m
     n = len(T)
-    ex = s.get("excite") or {}
-    I = float(ex.get("I") or 1.0)
+    I = _excite_current(s)
     sw = s.get("sw")
     m.spec["_T"] = T
     side = ctx.side_layer(T[0].fp)
@@ -434,6 +447,7 @@ def route_cell(ctx, m):
         w_cur = ipc2221_width(I, t_mm=ctx.sp.tcu.get(L0, 0.035))
         mn, opt, mx = ctx.sp.width_limits(net, L0)
         floor = max(mn, min(w_cur, a), 0.0)
+        w_cur = min(w_cur, max(a, float(ctx.opts.get("rail_max_mm", 3.0))))   # 100 A of FETs: pours, not tracks
         if net == sw:
             hi = max(w_cur, opt)            # the switch node: as narrow as the current allows
         else:
@@ -447,6 +461,7 @@ def route_cell(ctx, m):
             h_, pl_, pn_ = ctx.plane(L0, (ta.x + tb.x) / 2, (ta.y + tb.y) / 2, gnd=True)
             if pl_ is not None and pn_ == net:
                 max_len = 1.5 * d + 1.0
+        m.spec.setdefault("_floor", {})[f"hop{k}"] = max(mn, w_cur)    # what the current needs: trim_widths' floor
         rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths, [L0], via=False, max_len=max_len,
                        optional=max_len is not None)
         if rt is None and max_len is not None:
@@ -629,7 +644,7 @@ def quote(ctx, m, store=True):
     """The module's routed physics value (nH for loops, ppm for crystals); with store, also
     m.physics with the allocation and utilization."""
     try:
-        if m.kind == "cell":
+        if m.kind in ("cell", "path"):
             val, extra = _cell_value(ctx, m)
         elif m.kind == "decap":
             val, extra = _decap_value(ctx, m)
@@ -678,6 +693,10 @@ def allocation(ctx, m):
         ex = s.get("excite") or {}
         vin = ex.get("V") or ctx.volts(s.get("rail")) or PR.V_IN_UNKNOWN.value
         return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"))
+    if m.kind == "path":
+        ex = s.get("excite") or {}
+        v = ex.get("V") or ctx.volts(s.get("rail_in")) or ctx.volts(s.get("rail_out")) or 5.0
+        return PR.power_path_budget(v, ex.get("I") or 1.0)
     if m.kind == "decap":
         v = ctx.volts(s.get("rail")) or 3.3
         pins = s.get("power_pins") or []
@@ -692,17 +711,21 @@ def allocation(ctx, m):
 
 # ----------------------------------------------------------------------------- decaps
 def _decap_pairs(ctx, s):
-    """[(power pin number, cap uuid)] of a decap structure: the brief's pin pairing, else
-    each HF cap with the nearest power pin."""
+    """[(power pin number, cap uuid)] of a decap structure: the brief's pin pairs ('pin'),
+    else each owned HF cap with the nearest power pin ('nearest_pin', and 'nearest_load' for
+    an entry capacitor at its connector). A capacitor the IC owns with p < 0.5 (`caps_p`) is
+    not its own: it is left out."""
     ic = s.get("ic")
-    caps = s.get("hf_caps") or s.get("caps") or []
+    cp = s.get("caps_p") or {}
+    owned = [c for c in (s.get("caps") or []) if cp.get(c, 1.0) >= 0.5]
+    caps = [c for c in (s.get("hf_caps") or s.get("caps") or []) if c in owned]
     pins = [str(p) for p in s.get("power_pins") or []]
     pairs = []
     pc = s.get("pin_caps") or {}
     paired = set()
     for pin, cs in pc.items():
         for c in cs:
-            if c in caps or c in (s.get("caps") or []):
+            if c in caps or c in owned:
                 pairs.append((str(pin), c))
                 paired.add(c)
     for c in caps:
@@ -1221,7 +1244,116 @@ def _chain_value(ctx, m):
     return lprime_hj(w, hh) * length + lv, dict(surge_path_mm=round(length, 3))
 
 
-ROUTERS = {"cell": route_cell, "decap": route_decap, "crystal": route_crystal, "chain": route_chain}
+def route_rail_group(ctx, m):
+    """A rail feeding many identical loads: each capacitor is joined to the rail pin of its
+    nearest group load (a short stub, when within decap_max_mm), and its ground pad into the
+    plane. No loop is quoted: which cap serves which load is the layout's choice."""
+    s = m.spec
+    rail = s.get("rail")
+    loads = s.get("loads") or []
+    max_d = float(ctx.opts.get("decap_max_mm", 10.0))
+    lt = []
+    for u in loads:
+        f = ctx.fp.get(u)
+        if f is None:
+            continue
+        nums = [p.number for p in f.pads if p.net == rail]
+        for nm in dict.fromkeys(nums):
+            t = ctx.sp.terminal(u, [nm])
+            if t is not None:
+                lt.append(t)
+    done = tried = 0
+    for c in s.get("caps") or []:
+        tr = ctx.pad_term(c, net=rail)
+        if tr is None or not lt:
+            continue
+        tp = min(lt, key=lambda t: math.hypot(t.x - tr.x, t.y - tr.y))
+        if math.hypot(tp.x - tr.x, tp.y - tr.y) > max_d:
+            continue
+        tried += 1
+        if ctx.connected(rail, tr, tp):
+            done += 1
+            continue
+        layers = hop_layers(ctx, tr, tp, prefer=ctx.side_layer(c))
+        if not layers:
+            continue
+        mn, opt, mx = ctx.sp.width_limits(rail, layers[0])
+        rt = route_hop(ctx, m, f"stub:{c}", rail, [anchor(tr)], [anchor(tp)],
+                       [max(opt, min(tr.width, tp.width, 0.6)), opt], [layers[0]], via=False, optional=True)
+        done += rt is not None
+        f = ctx.fp.get(c)
+        g = next((p for p in (f.pads if f else []) if p.net and p.net != rail and p.net in ctx.gnd), None)
+        if g is not None:
+            tg = ctx.sp.terminal(c, [g.number])
+            lay = ctx.side_layer(c)
+            lay = lay if tg is not None and lay in tg.layers else (tg.layers[0] if tg is not None else lay)
+            if tg is not None and not _has_plane_link(ctx, tg, g.net):
+                h, pl, pn = ctx.plane(lay, tg.x, tg.y, gnd=True)
+                if pl is not None and pn == g.net:
+                    cands = via_candidates(ctx, tg, lay, g.net, pl, toward=(tp.x, tp.y))
+                    if cands:
+                        _commit_vias(ctx, m, g.net, lay, tg, [cands[0]], f"via:{c}")
+    if not tried:
+        m.status = "skipped"
+        return m
+    m.status = "routed" if done == tried else ("partial" if done else "failed")
+    return m
+
+
+ROUTERS = {"cell": route_cell, "path": route_cell, "decap": route_decap, "rgroup": route_rail_group,
+           "crystal": route_crystal, "chain": route_chain}
+
+
+def _rewidth(ctx, m, tag, rt, w):
+    """Re-commit hop `tag` of module m (its tracks, not its vias) at width w."""
+    old = [it for it in m.copper if it.kind == "track" and it.owner == (m.id, tag)]
+    ctx.sp.remove(old)
+    gone = {id(it) for it in old}
+    m.copper = [it for it in m.copper if id(it) not in gone]
+    rt.width = w
+    for l, a, b in rt.segs:
+        m.copper.append(ctx.sp.add_track(rt.net, l, w, a, b, owner=(m.id, tag)))
+
+
+def trim_widths(ctx, m, tol=None):
+    """Narrow the wide hops of a routed loop module (cell, power path, decap) to the
+    narrowest width whose loop stays within `tol` (opts trim_tol, default 5 %) of the loop
+    as routed: copper wider than that buys little inductance and walls off the general
+    router. Never below what the hop's current needs (route_cell's floor) or the class
+    width. The same centre line, narrower, keeps every clearance. Returns the hops narrowed."""
+    tol = float(ctx.opts.get("trim_tol", 0.05)) if tol is None else tol
+    if tol <= 0 or m.kind not in ("cell", "path", "decap") or m.status not in ("routed", "partial"):
+        return 0
+    v0 = quote(ctx, m, store=False)
+    if v0 is None:
+        return 0
+    floors = m.spec.get("_floor") or {}
+    n = 0
+    for tag, rt in sorted(((t, r) for t, r in m.hops.items() if r is not None and r.segs),
+                          key=lambda h: -h[1].length):
+        lay = rt.segs[0][0]
+        mn, opt, mx = ctx.sp.width_limits(rt.net, lay)
+        lo = ctx.sp.clamp_width(rt.net, lay, max(mn, min(floors.get(tag, opt), rt.width), min(opt, rt.width)))
+        w0 = rt.width
+        if w0 <= 1.05 * lo:
+            continue
+        best = w0
+        for w in sorted({round(max(lo, w0 * f), 4) for f in (0.0, 0.35, 0.5, 0.7)}):
+            if w >= w0 - 1e-6:
+                break
+            rt.width = w
+            v = quote(ctx, m, store=False)
+            if v is not None and v <= v0 * (1.0 + tol):
+                best = w
+                break
+        rt.width = w0
+        if best < w0 - 1e-6:
+            _rewidth(ctx, m, tag, rt, best)
+            n += 1
+    if n:
+        quote(ctx, m)
+        m.notes.append(f"{n} hop(s) narrowed within {tol:.0%} of the wide loop")
+    return n
 
 
 def route_module(ctx, m):
@@ -1230,7 +1362,9 @@ def route_module(ctx, m):
         m.status = "skipped"
         return m
     try:
-        return fn(ctx, m)
+        fn(ctx, m)
+        trim_widths(ctx, m)
+        return m
     except Exception as e:  # noqa: BLE001 - one module must not stop the others
         import traceback
         m.status = "error"

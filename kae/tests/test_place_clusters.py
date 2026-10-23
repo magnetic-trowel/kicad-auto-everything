@@ -99,3 +99,99 @@ def test_seed_keeps_macro_layouts_in_millimetres():
     for partition in (False, True):
         st, _ = pipeline._seed_state(P, [mac], net_w, 0, None, partition=partition)
         assert abs(int(st.X[b] - st.X[a]) - 30) <= 1 and abs(int(st.Y[b] - st.Y[a])) <= 1
+
+
+def _brief_problem(edit=None):
+    b = load(FIXTURE)
+    if edit:
+        edit(b)
+    P = Problem.build(b)
+    ref = {p.ref: p for p in P.parts}
+    return P, ref, {r: p.uuid for r, p in ref.items()}
+
+
+def _refs(P, s):
+    return sorted(P.parts[i].ref for i in s.members)
+
+
+def test_nearest_load_and_rail_group_decaps_make_no_macro():
+    """kae.brief/1: caps paired 'nearest_load' (entry bulk, rail groups) serve whichever
+    load they sit next to; the place terms charge them, no macro binds them."""
+    P, ref, u = _brief_problem()
+    dec = dict(kind="decap", rail="VCC", ground="GND", power_pins=["3"], pin_caps={}, function="load")
+    brief = {"structures": [
+        dict(dec, ic=u["J1"], power_pins=["1"], caps=[u["U7"]], caps_p={u["U7"]: 0.97}, pairing="nearest_load",
+             function="entry"),
+        dict(dec, ic=u["U1"], caps=[u["U4"]], caps_p={u["U4"]: 0.9}, pairing="nearest_load", rail_group="rg:VCC"),
+        dict(kind="rail_group", id="rg:VCC", rail="VCC", ground="GND", loads=[u["U1"], u["U3"]],
+             caps=[u["U4"], u["U5"]], pairing="nearest_load"),
+        dict(dec, ic=u["U3"], caps=[u["U5"]], caps_p={u["U5"]: 0.9}, pairing="pin", pin_caps={})]}
+    ss = clusters.structures(P, brief)
+    assert [_refs(P, s) for s in ss] == [["U3", "U5"]]
+
+
+def test_nearest_pin_pairing_lets_cpsat_choose_the_pin():
+    """kae.brief/1 pairing 'nearest_pin': a cap goes to the nearest of the IC's power-pin
+    clusters, not to their centroid (inside the IC); full weight, unlike an unpaired cap."""
+    def two_vcc_pins(b):
+        next(f for f in b.footprints if f.ref == "U1").pads[0].net = "VCC"
+    P, ref, u = _brief_problem(two_vcc_pins)
+    s0 = dict(kind="decap", ic=u["U1"], rail="VCC", ground="GND", power_pins=["1", "3"], caps=[u["U4"]],
+              caps_p={u["U4"]: 0.9}, pin_caps={}, function="load")
+    near = clusters.structures(P, {"structures": [dict(s0, pairing="nearest_pin")]})[0]
+    loose = clusters.structures(P, {"structures": [dict(s0, pairing="pin")]})[0]
+    assert len(near.choices[0]) == 2
+    assert near.segs[0][2] == clusters.KIND_WEIGHT["decap"] * 0.9 > loose.segs[0][2]
+    mem = sorted(near.members)
+    a = ref["U1"].i
+    with_choice = clusters.micro_place(P, mem, [near], a, time_s=2.0, top_k=1, workers=1)[0]
+    near.choices = {}
+    centroid = clusters.micro_place(P, mem, [near], a, time_s=2.0, top_k=1, workers=1)[0]
+    assert with_choice.cost < centroid.cost
+
+
+def test_power_path_macro_follows_the_loop_and_ties_in_parallel_elements():
+    """kae.brief/1 power_path: switches (every stage's parallel elements) plus caps_in and
+    caps_out; segments follow the loop between them and a connector closing the loop stays
+    out; members off the loop tie in by shared nets, once per net (a star, not all pairs)."""
+    P, ref, u = _brief_problem()
+    brief = {"structures": [dict(
+        kind="power_path", id="path:U1", **{"class": "fet_bank"}, switches=[u["U1"], u["U3"]],
+        stages=[[u["U1"], u["U3"]]], controller=None, rail_in="VCC", rail_out="SIG1", gnd="GND",
+        caps_in=[u["U4"]], caps_out=[u["U5"]],
+        loop=[[u["U4"], "3"], [u["U1"], "3"], [u["U1"], "1"], [u["J1"], "1"], [u["J1"], "2"], [u["U4"], "2"]])]}
+    ss = clusters.structures(P, brief)
+    assert len(ss) == 1 and ss[0].kind == "power_path"
+    s = ss[0]
+    assert _refs(P, s) == ["U1", "U3", "U4", "U5"]
+    touched = {i for (ia, _), (ib, _), _ in s.segs for i in (ia, ib)}
+    assert ref["J1"].i not in touched
+    assert {ref["U3"].i, ref["U5"].i} <= touched
+    per_net = {}
+    for (ia, pa), (ib, pb), _ in s.segs:
+        if ia == ref["U3"].i:
+            net = P.parts[ia].fp.pads[pa[0]].net
+            per_net[net] = per_net.get(net, 0) + 1
+    assert per_net and max(per_net.values()) == 1
+    macros = clusters.build_macros(P, ss, time_s=2.0, workers=1)
+    assert len(macros) == 1 and sorted(macros[0].members) == sorted(s.members)
+
+
+def test_commutation_cell_takes_its_snubber_and_bootstrap_parts():
+    """kae.brief/1 commutation_cell optional members (snubbers [[r, c]], bootstrap_cap,
+    bootstrap_r, charge_pump_caps, series_shunt) join the cell macro, tied by their nets."""
+    P, ref, u = _brief_problem()
+    brief = {"structures": [dict(
+        kind="commutation_cell", id="cell:buck:U1", **{"class": "buck"}, rail="VCC", sw="SIG1", gnd="GND",
+        loop=[[u["U4"], "3"], [u["U1"], "3"], [u["U1"], "2"], [u["U4"], "2"]],
+        snubbers=[[u["R1"], u["U7"]]], bootstrap_cap=u["U5"], bootstrap_r=None, charge_pump_caps=[],
+        series_shunt=[])]}
+    ss = clusters.structures(P, brief)
+    assert len(ss) == 1
+    s = ss[0]
+    assert _refs(P, s) == ["R1", "U1", "U4", "U5", "U7"]
+    touched = {i for (ia, _), (ib, _), _ in s.segs for i in (ia, ib)}
+    assert {ref["R1"].i, ref["U7"].i, ref["U5"].i} <= touched
+    w_snub = max(w for (ia, _), _, w in s.segs if ia == ref["R1"].i)
+    w_boot = max(w for (ia, _), _, w in s.segs if ia == ref["U5"].i)
+    assert w_snub > w_boot

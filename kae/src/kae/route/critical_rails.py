@@ -292,6 +292,21 @@ def route_rails(ctx, mode="auto"):
     return report
 
 
+def _class_only(ctx, m, tag, rt, opt):
+    """A rail or return branch that fits only at (about) the class width has no drop physics
+    over the general router's track, and as locked copper it is a wall the router must go
+    around: ripped up (unless opts rail_light or rails="all") and left to the router. True
+    when ripped."""
+    if rt.width > 1.05 * opt or ctx.opts.get("rail_light", False) or ctx.opts.get("rails") == "all":
+        return False
+    gone = [it for it in m.copper if it.owner == (m.id, tag)]
+    ctx.sp.remove(gone)
+    ids = {id(it) for it in gone}
+    m.copper = [it for it in m.copper if id(it) not in ids]
+    m.hops[tag] = None
+    return True
+
+
 def _route_rail(ctx, rl, mode, gnd_pour):
     net, src = rl["net"], rl["src"]
     v = ctx.volts(net) or 3.3
@@ -319,9 +334,11 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     rep["routed"] = True
     has_zone = bool(ctx.sp.zones_of(net))
     order = sorted(rl["loads"], key=lambda u: -_dist_part(ctx, u, rl["parts"][u], (st.x, st.y)))
-    first = True
     for u in order:
         a = rl["loads"][u]
+        # the trunk (to the farthest load) carries the design current, every other branch its
+        # own load: when the trunk is left to the router, a light load is not a trunk
+        first = u == order[0]
         cur = design if first else min(design, max(a, 0.05))
         lt = _best_term(ctx, u, _load_pins(ctx, u, net, rl["parts"][u]), (st.x, st.y))
         if lt is None:
@@ -354,20 +371,27 @@ def _route_rail(ctx, rl, mode, gnd_pour):
         if cur >= 0.25:
             w_t = max(w_t, min(st.width, lt.width))
         w_t = min(w_t, float(ctx.opts.get("rail_max_mm", 3.0)))
+        if w_t <= 1.05 * opt and not first and not ctx.opts.get("rail_light", False):
+            # the class width carries this branch: no drop physics in drawing it, and locked
+            # copper the bridge must route around; its pads near the rail are joined later
+            b["note"] = "class width: left to the general router"
+            rep["branches"].append(b)
+            continue
         widths = sorted({round(w, 4) for w in width_ladder(w_t, opt, 4)}, reverse=True)
         srcs = [anchor(st)] + ctx.net_copper_anchors(net, connected_to=st)
         layers = [l for l in (lay, ctx.sp.cu[0], ctx.sp.cu[-1]) if l in ctx.sp.cu]
         layers = list(dict.fromkeys(layers))
         rt = route_hop(ctx, m, f"br:{u}", net, [anchor(lt)], srcs, widths, layers, via=len(layers) > 1,
                        via_cost=5.0, layer_factor={l: (1.0 if l == lay else 1.6) for l in layers})
-        if rt is None:
+        if rt is not None and _class_only(ctx, m, f"br:{u}", rt, opt):
+            b["note"] = "only the class width fits: left to the general router"
+        elif rt is None:
             b["note"] = "not routed"
         else:
             R = sum(r_track(math.dist(a_, b_), rt.width, ctx.sp.tcu.get(l_, 0.035)) for l_, a_, b_ in rt.segs)
             R += len(rt.vias) * r_via(ctx.sp.thickness, ctx.sp.via_size(net)[1])
             b.update(width_mm=rt.width, length_mm=round(rt.length, 2), r_mohm=round(1e3 * R, 3),
                      drop_mV=round(1e3 * R * cur, 2))
-            first = False
         rep["branches"].append(b)
     # the rest of the net's pads near the rail copper: joined here, at the class width, so
     # the general router is not left islands to join to the middle of a fixed track
@@ -382,9 +406,10 @@ def _route_rail(ctx, rl, mode, gnd_pour):
             c = via_candidates(ctx, st, lay, net, zl)
             if c:
                 _commit_vias(ctx, m, net, lay, st, c[:max(1, math.ceil(design))], f"zone:{src}")
-    if not gnd_pour and ctx.gnd:
+    if not gnd_pour and ctx.gnd and m.copper:
         rep["ground"] = _ground_return(ctx, m, rl, dv_rail)
     rep["items"] = len(m.copper)
+    rep["routed"] = bool(m.copper)          # no rail copper: no ground vias for it either
     ctx.rail_modules = getattr(ctx, "rail_modules", []) + [m]
     return rep
 
@@ -455,7 +480,10 @@ def complete_module_nets(ctx, reach=8.0, island_reach=20.0):
     sp = ctx.sp
     m = Module(id="complete", kind="complete", spec={}, parts=[])
     out = {}
-    for net in sorted({it.net for it in sp.routed if it.net and it.net not in ctx.gnd}):
+    # power nets only: a signal (a protected CAN or USB line, a crystal net) is the general
+    # router's, with its pair and length rules; a switch node stays as small as it is
+    rails = {n for n, r in (ctx.nets or {}).items() if (r or {}).get("role") == "rail"}
+    for net in sorted({it.net for it in sp.routed if it.net and it.net not in ctx.gnd and it.net in rails}):
         done = set()
         n = 0
         for it in [x for x in sp.routed if x.net == net]:
@@ -529,14 +557,13 @@ def _ground_return(ctx, m, rl, dv):
     st = _best_term(ctx, src, ns, None)
     out = []
     order = sorted(rl["loads"], key=lambda u: -_dist_part(ctx, u, rl["parts"][u], (st.x, st.y)))
-    first = True
     for u in order:
         f = ctx.fp.get(u)
         nu = [p.number for p in f.pads if p.net == g] if f else []
         if not nu:
             continue
         lt = _best_term(ctx, u, nu, (st.x, st.y))
-        cur = rl["design"] if first else min(rl["design"], max(rl["loads"][u], 0.05))
+        cur = rl["design"] if u == order[0] else min(rl["design"], max(rl["loads"][u], 0.05))
         if ctx.connected(g, st, lt):
             out.append(dict(load=f.ref, note="already connected"))
             continue
@@ -554,10 +581,12 @@ def _ground_return(ctx, m, rl, dv):
         rt = route_hop(ctx, m, f"gr:{u}", g, [anchor(lt)], srcs, widths, layers, via=len(layers) > 1,
                        via_cost=5.0, layer_factor={l: (1.0 if l == lay else 1.6) for l in layers})
         b = dict(load=f.ref, current_A=round(cur, 3))
-        if rt is not None:
+        if rt is not None and _class_only(ctx, m, f"gr:{u}", rt, opt):
+            b["note"] = "only the class width fits: left to the general router"
+            rt = None
+        elif rt is not None:
             R = sum(r_track(math.dist(a_, b_), rt.width, ctx.sp.tcu.get(l_, 0.035)) for l_, a_, b_ in rt.segs)
             b.update(width_mm=rt.width, length_mm=round(rt.length, 2), r_mohm=round(1e3 * R, 3))
-            first = False
         else:
             b["note"] = "not routed"
         out.append(b)
