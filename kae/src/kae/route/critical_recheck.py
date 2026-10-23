@@ -828,6 +828,32 @@ def guard_zones(board, region, net, layer, name, min_area=0.5):
     return out
 
 
+def merge_guards(guards, min_area=0.5):
+    """Guards of one net and layer united into non-overlapping hole-free pieces, so two
+    modules' guards never overlap each other at one priority (zones_intersect); each piece
+    keeps the highest priority and the first name of what it merges."""
+    from shapely.geometry import Polygon as _Poly
+    groups = {}
+    for g in guards:
+        net, layer, rings, name = g[:4]
+        prio = g[4] if len(g) > 4 else 0
+        e = groups.setdefault((net, layer), dict(polys=[], prio=prio, names=[]))
+        e["polys"].append(_Poly(rings[0]))
+        e["prio"] = max(e["prio"], prio)
+        e["names"].append(name)
+    out = []
+    for (net, layer), e in groups.items():
+        u = unary_union(e["polys"])
+        names = list(dict.fromkeys(e["names"]))
+        name = names[0] + (f"+{len(names) - 1}" if len(names) > 1 else "")
+        for part in getattr(u, "geoms", [u]):
+            if isinstance(part, _Poly) and part.area > min_area:
+                for piece in _hole_free(part):
+                    if piece.area > min_area:
+                        out.append((net, layer, [list(piece.exterior.coords)], name, e["prio"]))
+    return out
+
+
 def _hole_free(poly):
     """Pieces of a polygon without holes: cut through each hole's centroid until none is left."""
     from shapely.geometry import Polygon as _Poly
@@ -934,6 +960,7 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
         work = wd / f"rt{k}.kicad_pcb"
         W.stage(cur, wd, f"rt{k}")
         rip, guards = [], []
+        bcur = load(cur)        # its zones include the first pass's guards: new ones go above them
         for mid in cur_rc["retweak"]:
             region = module_region(sess, mid)
             if region is None:
@@ -942,7 +969,8 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
             rip += uu
             for (pl, pn) in planes:
                 if pn and region.area > 0:
-                    guards += guard_zones(sess.board, region, pn, pl, f"{W.GUARD_PREFIX}{mid}")
+                    guards += guard_zones(bcur, region, pn, pl, f"{W.GUARD_PREFIX}{mid}")
+        guards = merge_guards(guards)
         if not rip:
             hist.append(dict(round=k, note="nothing to rip up"))
             break

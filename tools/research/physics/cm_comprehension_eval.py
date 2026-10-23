@@ -23,6 +23,9 @@ Weak labels:
                     bounding box, 400 draws): the percentile of the human loop.
   crystal distance  crystal to its IC's oscillator pins, and load caps to the crystal; with the
                     same random baseline.
+  pin pairing       for every pin -> capacitor pairing a decap structure states (`pin_caps`), the human
+                    distance from the pin to the capacitor: the share over 10 mm is the share a router
+                    or placer would follow into a wrong place.
   member spread     for every structure kind, the mean member distance to the members'
                     centroid against random placement (percentile).
 
@@ -49,7 +52,9 @@ from multiprocessing import Pool  # noqa: E402
 import numpy as np  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..', '..', '..', 'kae', 'src'))
+# --kae-src DIR evaluates another copy of kae/src (comparing code versions); read before kae is imported
+_src = sys.argv[sys.argv.index('--kae-src') + 1] if '--kae-src' in sys.argv else os.path.join(HERE, '..', '..', '..', 'kae', 'src')
+sys.path.insert(0, os.path.abspath(_src))
 from kae.board.kicad_file import load  # noqa: E402
 from kae.circuit.brief import build  # noqa: E402
 
@@ -214,6 +219,22 @@ def eval_board(args):
                     knn_rail[k].append(c in rc[:k])
                     knn_base[k].append(min(k, nr) / nr if nr else 0.0)
     row['own_all'] = _own_all(br, by_uuid)
+    pair_d = []
+    for s in S:
+        if s['kind'] != 'decap' or not isinstance(s.get('rail'), str):
+            continue
+        fp_ic = by_uuid.get(s['ic'])
+        if fp_ic is None:
+            continue
+        for pn, cl in (s.get('pin_caps') or {}).items():
+            pxy = _pad_xy(fp_ic, pn)
+            for c in cl:
+                fc = by_uuid.get(c)
+                if fc is None:
+                    continue
+                pads = [pd for pd in fc.pads if pd.net == s['rail']] or fc.pads
+                pair_d.append(round(min(math.hypot(pd.x - pxy[0], pd.y - pxy[1]) for pd in pads), 2))
+    row['pairing_mm'] = pair_d
     row['decap'] = {'groups': len(dec), 'own_n': len(own), 'own_acc': _mean([o[0] for o in own]),
                     'own_base': _mean([o[1] for o in own]), 'group_knn3': _mean(group_knn), 'group_knn_n': len(group_knn),
                     'pin_n': len(knn[1]), **{f'knn{k}': _mean(knn[k]) for k in (1, 2, 3)},
@@ -376,6 +397,9 @@ def pool_rows(rows):
                                                 'mean_p': _mean([o[2] for o in oa if o[2] is not None and lo <= o[2] < hi])}
     P['cap_ownership_all'] = {'n': len(oa), 'acc': _mean([o[0] for o in oa]), 'baseline': _mean([o[1] for o in oa]),
                               'boards': len(per), 'per_board_mean': _mean(per), 'by_ownership_p': bins}
+    pd = [x for r in rows for x in r.get('pairing_mm', [])]
+    P['pin_pairing'] = {'n': len(pd), 'share_gt_10mm': _mean([x > 10 for x in pd]), 'median_mm': _median(pd),
+                        'boards_with_gt_10mm': sum(1 for r in rows if any(x > 10 for x in r.get('pairing_mm', [])))}
     gk = [x for r in rows if 'decap' in r for x in r['decap']['_group_knn']]
     P['decap_group_knn3'] = {'n': len(gk), 'acc': _mean(gk)}
     for k in (1, 2, 3):
@@ -446,6 +470,7 @@ def main(argv=None):
     ap.add_argument('--no-sheets', action='store_true')
     ap.add_argument('--rank-w', type=float, default=None, help='override kae.circuit.structures.RANK_W (ablation)')
     ap.add_argument('--tie', choices=('schematic', 'random'), default=None, help='capacitor tie-break order (ablation)')
+    ap.add_argument('--kae-src', default=None, help='another copy of kae/src to evaluate (read at import time)')
     a = ap.parse_args(argv)
     import kae.circuit.structures as _st
     if a.rank_w is not None:

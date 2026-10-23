@@ -51,12 +51,11 @@ Committed copper is written locked. The bridge sends it to Freerouting as `(type
 
 Where the current has alternatives (the surface ground track, the vias at each end of the return), the loop is a network of elements with currents x_e. The series part carries 1; the alternatives obey Kirchhoff's current law. The split minimizes the stored energy xᵀPx, a small KKT system. For one pair of alternatives it reduces to L(x) = P_AA + 2x·P_AB + 2(1−x)·P_AC + x²P_BB + (1−x)²P_CC + 2x(1−x)·P_BC. A second via pair 0.7 mm from the first lowers a test loop from 1.080 to 1.064 nH and takes 21 % of the current [C: `test_route_critical.py`].
 
-Three safeguards keep the network physical:
-- Mutual terms average both concatenation orders, since fastloop's corner formula joins consecutive pieces.
+Two safeguards keep the network physical:
 - P is clipped to positive definite. Closed forms overstate the mutual of wide strips leaving one pad side by side, which once gave −36.7 nH.
 - An active set keeps alternatives from carrying reverse current.
 
-A strip with no plane under it, in a loop that has one, is taken at 2× the loop's highest strip (at least 3.2 mm), so a missing plane costs inductance.
+A strip with no plane under it is free-space copper, coplanar with the rest of the loop and without an image (fastloop's rule), so a missing plane costs inductance: 3.24 instead of 2.86 nH when one side of a 4 × 2 mm loop loses its plane [C].
 
 **Allocations** are the place terms' ([place-terms § 1](../physics/place-terms.md)): hot loop L_max = σ²/(2C_oss·ln(1/a′)); decap n·Z_t/(2π·100 MHz) with Z_t = 5 % of V over the pin-count current; crystal 5 ppm; surge path 5.3 nH. Each module reports u = value/allocation.
 
@@ -137,7 +136,7 @@ On human placements, 120 s per board [C]:
 | DRC errors on a locked critical item, critical copper alone, KiCad 10.0.7 | 33 (A+B) | 0; 292 tracks, 46 vias; 25 modules routed, 12 skipped (decap pairs > 10 mm) |
 | Same | 6 C boards with cells (BLDC, BMS, doorman, CAN processor, Oasis, Aftonsparv) | 0; 45 modules routed, 9 skipped |
 | Critical stage runtime | 39 | 0.3–21 s per board, one shared core |
-| olimex DC-DC, routed-copper estimator: hot loop (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
+| olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
 | Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
 | Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 27 KiCad-free and 3 KiCad tests, one per bug fixed |
 
@@ -153,7 +152,6 @@ On human placements, 120 s per board [C]:
 
 - **Routability.** Locked copper and guards take space the bridge would have used. Only the A/B run (same snapshot, k = 1, 600 s) can show whether completion or clean passes fall. Early local runs: noisecard became clean; a trackball board kept 2 unconnected items, where the bridge alone left 1 plus 1 error.
 - **Estimator vs passport.** The routed-copper estimator ranks layouts; its absolute values differ from the rb HF passport (olimex human: 10.97 vs 6.4 nH). A loop closed by pours reads the same on every board sharing them (noisecard: 1.98 nH on human and critical boards). The passports decide.
-- **fastloop** (`kae.physics`) returns NaN when only the second of two strips has h = ∞ (`abs(hj − hk)`), and its pairwise sums depend on segment order. `critical_physics.Loop` works around both.
 - **Decap pairing** in the brief maps some caps to pins 11–70 mm away. The router skips them; the brief needs a distance check.
 - **Re-tweak statistics** (how often round 2 triggers, recovery, convergence) need the big-host `--rounds 3` run.
 

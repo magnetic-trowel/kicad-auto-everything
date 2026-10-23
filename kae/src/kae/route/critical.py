@@ -135,10 +135,12 @@ class Session:
     def guards(self, kinds=None, margin=None):
         """Guard pours over the ground plane under each routed module of `kinds`: zones
         named `kae-crit:<module>` on the plane layer, the module's hull (copper and pads,
-        plus `margin`) clipped to the plane's own zone outline and clear of other nets' zones. The bridge keeps other nets
-        out of them, so the plane under a hot loop or a crystal stays whole; the output
-        never carries them (the transplant keeps routing only). [(net, layer, rings, name)]"""
-        from .critical_recheck import guard_zones
+        plus `margin`) clipped to the plane's own zone outline and clear of other nets'
+        zones, overlapping guards merged (critical_recheck.guard_zones, merge_guards). The
+        bridge keeps other nets out of them, so the plane under a hot loop or a crystal
+        stays whole; the output never carries them (the transplant keeps routing only).
+        [(net, layer, rings, name, priority)]"""
+        from .critical_recheck import guard_zones, merge_guards
         kinds = self.opts.get("guards") or () if kinds is None else kinds
         margin = self.opts.get("guard_margin", 0.5) if margin is None else margin
         out = []
@@ -156,7 +158,7 @@ class Session:
                     continue
                 seen.add((pl, pn))
                 out += guard_zones(self.board, region, pn, pl, f"{W.GUARD_PREFIX}{m.id}")
-        return out
+        return merge_guards(out)
 
     def _guard_region(self, m, margin):
         """Where a module's loop lives: its copper, plus for a cell the hot-loop terminals,

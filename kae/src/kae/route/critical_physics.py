@@ -112,9 +112,13 @@ class Loop:
         self.cons.append((dict(coeffs), float(rhs)))
 
     def _elements(self):
-        """Elements with a finite stand-in height for strips without a plane in a loop that
-        has one (fastloop takes a loop either over a plane or in free space): twice the
-        loop's highest strip, at least 3.2 mm, so a missing plane costs inductance."""
+        """Elements as fastloop takes them. A fastloop that takes a loop either over a plane
+        or in free space (NaN for a mix) gets a finite stand-in height for strips without a
+        plane in a loop that has one: twice the loop's highest strip, at least 3.2 mm, so a
+        missing plane costs inductance. A fastloop that handles the mix (coplanar, no image)
+        gets the elements as they are."""
+        if _MIXED_OK:
+            return self.el
         fin = [h[5] for H, _ in self.el.values() for h in H if h[5] != INF]
         if not fin or all(h[5] != INF for H, _ in self.el.values() for h in H):
             return self.el
@@ -195,6 +199,19 @@ class Loop:
         if shares:
             return val, {k: float(v) for k, v in zip(names, x)}
         return val
+
+
+def _mixed_ok():
+    """Whether fastloop evaluates a loop mixing strips over a plane and over none."""
+    try:
+        H = [(0, 0, 4, 0, 0.5, 0.2), (4, 0, 4, 2, 0.5, 0.2), (4, 2, 0, 2, 0.5, 0.2), (0, 2, 0, 0, 0.5, INF)]
+        v = FL.loop_fast(H, [])
+        return math.isfinite(v) and v > 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_MIXED_OK = _mixed_ok()
 
 
 def _P(H, V):

@@ -323,3 +323,62 @@ def test_critical_zones_are_obstacles_for_other_nets(routed, exported, tmp_path)
         g = Point(x["pos"]).buffer(x["size"] / 2) if x["kind"] == "via" else \
             LineString([x["a"], x["b"]]).buffer(x["width"] / 2)
         assert g.distance(before) >= 0.2 - 1e-3, x
+
+
+FAKE_ROUTER = """#!/usr/bin/env python3
+# A Freerouting that ignores its job timeout (the caller must kill it), except that a
+# one-pass run (-mp 1) writes the canned session CANNED, if it exists.
+import os, shutil, sys, time
+a = sys.argv[1:]
+if "-mp" in a and os.path.exists({canned!r}):
+    shutil.copy({canned!r}, a[a.index("-do") + 1])
+    sys.exit(0)
+time.sleep(3600)
+"""
+
+
+@needs_router
+def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, monkeypatch):
+    """Freerouting killed before writing a session: one quick pass gives a partial board; if
+    that writes nothing either, the output is the unrouted input. A board in every case."""
+    _, info, _ = exported
+    board = _unrouted_copy(tmp_path)
+    by_net = {}
+    for pd in info["pads"]:
+        if pd.get("net") and "F.Cu" in pd["layers"] and pd["attr"] == "smd":
+            by_net.setdefault(pd["net"], []).append(pd)
+    net, (a, b) = next((n, ps[:2]) for n, ps in sorted(by_net.items()) if len(ps) >= 2)
+    xy = lambda p_: f"{round(p_['pos'][0] * 10000)} {round(-p_['pos'][1] * 10000)}"
+    canned = tmp_path / "canned.ses"
+    canned.write_text(f"""(session board
+  (base_design board)
+  (routes
+    (resolution um 10)
+    (parser (host_cad "KiCad's Pcbnew") (host_version "10"))
+    (library_out)
+    (network_out
+      (net "{net}"
+        (wire (path F.Cu 2000 {xy(a)} {xy(b)}))
+      )
+    )
+  )
+)
+""")
+    fake = tmp_path / "fake-freerouting"
+    fake.write_text(FAKE_ROUTER.format(canned=str(canned)))
+    fake.chmod(0o755)
+    monkeypatch.setenv("KAE_FREEROUTING", str(fake))
+    fast = dict(repair=False, router_share_alone=0.25, router_grace=2)
+
+    out = tmp_path / "out" / "board.kicad_pcb"
+    rep = bridge.route(board, out, time_s=50, workdir=tmp_path / "wd", opts=fast)
+    assert rep["router"]["timed_out"] and rep["router_quick"]["rc"] == 0
+    assert rep["status"] == "routed" and out.exists()
+    routing = pcbnew_io.edit_routing(out, tmp_path / "l.kicad_pcb")["routing"]
+    assert [r["net"] for r in routing] == [net]
+
+    canned.unlink()   # now the quick pass writes nothing either
+    out2 = tmp_path / "out2" / "board.kicad_pcb"
+    rep2 = bridge.route(board, out2, time_s=30, workdir=tmp_path / "wd2", opts=fast)
+    assert rep2["status"] == "no_session" and rep2["router"]["timed_out"]
+    assert out2.read_bytes() == board.read_bytes()

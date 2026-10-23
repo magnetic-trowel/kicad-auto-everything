@@ -243,7 +243,7 @@ def test_guards_cover_the_ground_plane_under_the_cell(routed):
     from shapely.geometry import Point, Polygon
     g = routed.guards()
     cell = next(m for m in routed.modules if m.kind == "cell")
-    mine = [x for x in g if x[3] == W.GUARD_PREFIX + cell.id]
+    mine = [x for x in g if x[3].startswith(W.GUARD_PREFIX + cell.id)]     # merged guards keep the first name
     assert mine and all(x[0] == "GND" and x[1] == "B.Cu" for x in mine)
     poly = Polygon(mine[0][2][0])
     for t in cell.spec["_T"]:                            # the hot loop's terminals are under it
@@ -407,3 +407,19 @@ def test_run_retries_the_bridge_when_it_returns_nothing(tmp_path, monkeypatch):
     rep = critical.run(src, out, time_s=300, log=lambda *a: None)
     assert len(calls) == 2 and calls[1] > 0.5 * calls[0] and rep["bridge"]["status"] == "routed"
     assert W.GUARD_PREFIX not in out.read_text() and len(W.routing(out)) == rep["critical"]["tracks"] + rep["critical"]["vias"]
+
+
+def test_overlapping_guards_merge_into_one_layer_of_pours():
+    from shapely.geometry import Polygon, box
+    from shapely.ops import unary_union
+    from kae.route.critical_recheck import merge_guards
+    a = ("GND", "B.Cu", [list(box(0, 0, 4, 4).exterior.coords)], "kae-crit:cell:a", 1)
+    b = ("GND", "B.Cu", [list(box(3, 3, 7, 7).exterior.coords)], "kae-crit:crystal:b", 1)
+    c = ("GND", "In1.Cu", [list(box(0, 0, 2, 2).exterior.coords)], "kae-crit:cell:a", 3)
+    g = merge_guards([a, b, c])
+    bl = [Polygon(z[2][0]) for z in g if z[1] == "B.Cu"]
+    for i, p in enumerate(bl):                       # no two pieces on one layer overlap
+        for q in bl[i + 1:]:
+            assert p.intersection(q).area < 1e-9
+    assert unary_union(bl).area == pytest.approx(16 + 16 - 1)
+    assert [z[4] for z in g if z[1] == "In1.Cu"] == [3]
