@@ -80,3 +80,21 @@ def test_read_only_numba_cache_is_copied(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "access", real)          # a writable directory is used as it is
     monkeypatch.setenv("NUMBA_CACHE_DIR", str(src))
     assert cli._numba_cache() is None and os.environ["NUMBA_CACHE_DIR"] == str(src)
+
+
+def test_escalation_drops_the_margin_then_relaxes_bodies():
+    """Regression: relaxation existed only on the floorplan path (<= 40 items); every path
+    now escalates (margin 0, then bodies without courtyards) when legalization leaves parts
+    illegal."""
+    from kae.place.pipeline import _escalate
+    from kae.place.problem import Problem
+    from kae.place.state import State, grid_violations
+    P = Problem.build(kicad_file.load(FIXTURE))
+    P.set_margin(30.0)                      # a margin no placement can honour
+    st = State(P)
+    for i in P.mov:
+        st.X[i], st.Y[i] = P.ncx // 2, P.ncy // 2
+    assert grid_violations(st)
+    steps = _escalate(P, st, workers=2, seed=0, log=None, time_s=20.0)
+    assert steps and steps[0]["step"] == "margin 0"
+    assert P.margin == 0.0 and not grid_violations(st)

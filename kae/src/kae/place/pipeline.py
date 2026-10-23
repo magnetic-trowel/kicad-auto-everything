@@ -349,6 +349,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         if grid_violations(st):
             rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
         stage("legalize_seed", t)
+    if big and not grid_violations(st) and time.monotonic() < deadline - 0.5 * budget:
+        # big boards: CP-SAT floorplans region by region (the global one stops at
+        # FLOORPLAN_MAX_ITEMS); legal in, legal out
+        t = time.monotonic()
+        rep["regional_floorplan"] = seedmod.regional_refine(
+            P, st, free_macros, net_w, time_s=min(60.0, 0.15 * (deadline - time.monotonic())), workers=workers,
+            seed=seed, log=log)
+        stage("regional_floorplan", t)
     seed_state = st.copy()
     seed_legal = not grid_violations(seed_state)
     rep["seed"] = dict(legal=seed_legal, hpwl=round(st.hpwl(), 2))
@@ -368,7 +376,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         seed_cost = ann.cost(ann.lam1) if seed_legal else None
         seed_terms = ann.terms_report()
         cpu = max(1.0, 0.6 * (deadline - time.monotonic() - 3.0))
-        arep = ann.run(cpu_s=cpu)
+        # wall clock too: on a loaded host CPU seconds lag behind the caller's timeout
+        arep = ann.run(cpu_s=cpu, deadline=deadline - 0.1 * budget)
         ann.write_back()
         rep["anneal"] = arep
         stage("anneal", t)

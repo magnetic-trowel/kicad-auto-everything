@@ -11,35 +11,43 @@ ex_decision_flips.py can count where they rank candidate placements differently.
 
 Loops (commutation cells, decap loops, ESD surge paths). Every board hop is routed around
 other nets' pads (pads inflated by half the minimum track width plus the clearance, as
-pt_grid_route.HopRouter) on a 0.1 mm grid, in one of two styles:
+pt_grid_route.HopRouter) and around the loop's copper already routed for other nets (two nets
+cannot cross on one layer), on a 0.1 mm grid, in one of two styles:
   any        8-connected Dijkstra, then string-pulled on the obstacle raster (any angle, as
              the critical router's A* plus string pulling);
   manhattan  4-connected Dijkstra with a turn penalty (axis-aligned, so pw_peec can mesh it).
 Hops leave from the terminal pad nearest the next terminal; a part's internal path runs from
 the pad the current arrives at to the pad it leaves from (body strip at the body height with
 vertical ties, as kae.physics.structures.LoopComp); a ground hop over a plane of its own net is
-the routed surface track in parallel with two vias through the plane. Three evaluators:
-  cf         closed forms on the routed pieces (kae.route.critical_physics.Loop: partial
-             inductances with images, Hammerstad-Jensen strip self terms, energy-minimizing
-             split between parallel return paths), i.e. the module stage's model;
+the routed surface track in parallel with two vias through the plane. Evaluators (mode):
+  cf         closed forms on the any-angle routed pieces (kae.route.critical_physics.Loop:
+             partial inductances with images, Hammerstad-Jensen strip self terms, energy-
+             minimizing split between parallel return paths), i.e. the module stage's model;
+  cfm        the same closed forms on the Manhattan route;
   peec       multi-filament PEEC (pw_peec filaments, PEC image plane) on the Manhattan route,
              solved in the inductive limit (real arithmetic: L_port = [(A L^-1 A')^-1]_pp);
   detour     the estimator plus L'(w, h) x (routed - straight length) per board hop
              (pt_human_perturb.hop_detour_nH): the cheapest route-aware correction.
+A loop whose terminals sit on both board sides, or a hop with no single-layer route (BGA
+escapes, enclosed pins), has no value here (None with a reason): it needs vias and a
+multi-plane model. Plane-pair decap loops keep the estimator's closed form, which matches a
+sheet solve to 0.4 %.
 
 Crystal: Pierce pulling with the per-length capacitance from fe_field2d (cached per height)
 times the routed length of the XIN/XOUT connections.
 
 Thermal: steady 2.5-D finite volume (tm_board_thermal_fv's operator) over the board's
 bounding box with every copper layer, the zones' coverage per layer as placed, FR-4 and
-h = 10 W/m^2 K per side; one factorization per board, one solve per source position
-(superposition), cached by source pose.
+h = 10 W/m^2 K per side; heat enters the part's courtyard box on its outer layer
+(inject='surface') or every layer under it (inject='stack': a perfectly stitched footprint).
+One factorization per board, one solve per source position (superposition), cached by
+source pose, so a victim's move costs a lookup.
 
 Coupling (inductive part): the aggressor loop's filament currents from PEEC on its Manhattan
 route, and the EMF they induce along the victim's Manhattan-routed probe path
 (pw_peec.Net.induced); the capacitive part is left to the estimator.
 
-Not a script: imported by ex_cost_table.py and ex_decision_flips.py. Needs kae (kae/.venv).
+Not a script: imported by the other ex_*.py scripts. Needs kae (kae/.venv).
 """
 from __future__ import annotations
 
@@ -723,7 +731,8 @@ def eval_esd(T, comp, router, mode):
         return lp * g.routed + beyond_term, dict(note='no plane: L x length')
     try:
         net, p0, pe = peec_net(g)
-        # plane-ended chain: the source sits between the two via feet (both on the plane node)
+        # plane-ended chain: the source sits between the first via's foot (N0, kept off the
+        # plane node) and the plane
         L, I, nfil = peec_solve(net, 'N0', 'NE')
     except (np.linalg.LinAlgError, ValueError) as e:
         return None, dict(note=f'peec: {type(e).__name__}')

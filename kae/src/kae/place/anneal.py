@@ -536,7 +536,9 @@ class Annealer:
                        order_violations=self.order_violations())
         return out
 
-    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25):
+    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, deadline=None):
+        """Anneal for at most cpu_s CPU seconds (and, with `deadline`, until that
+        time.monotonic(): under CPU contention wall time runs ahead of CPU time)."""
         n = len(self.active)
         if n == 0:
             return self.report(0.0)
@@ -582,7 +584,7 @@ class Annealer:
                 if best is None or c < best[0]:
                     best = (c, list(self.X), list(self.Y), list(self.K))
             el = time.process_time() - t0
-            if el > cpu_s:
+            if el > cpu_s or (deadline is not None and time.monotonic() > deadline):
                 break
             if done / N >= next_log:
                 next_log += log_every

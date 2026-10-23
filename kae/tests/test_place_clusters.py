@@ -82,3 +82,20 @@ def test_annealer_order_term_penalizes_and_stays_exact():
     fresh = Annealer(P, ann.st.copy(), terms=None, w_cong=0.0, order=rules)
     assert abs(fresh.order_total - ann.order_total) < 1e-9
     assert ann.order_violations() == 0
+
+
+def test_seed_keeps_macro_layouts_in_millimetres():
+    """Regression: layout offsets are grid cells and the layout centre is in mm; the seed
+    mixed them, spreading big-board macros 1/g times apart (10x at 0.1 mm)."""
+    from kae.place import pipeline, seed as seedmod
+    P, ref = _problem()
+    a, b = ref["U1"].i, ref["U2"].i
+    lay = clusters._layout(P, {a: (0, 0, 0), b: (30, 0, 0)}, 0.0)
+    mac = clusters.Macro(members=[a, b], anchor=a, layouts=[lay], structs=[])
+    objs, owner = seedmod._objects(P, [mac])
+    rel = objs[owner[a]][3]
+    assert abs((rel[b][0] - rel[a][0]) - 30 * P.g) < 1e-9
+    net_w = {net.i: net.weight for net in P.nets}
+    for partition in (False, True):
+        st, _ = pipeline._seed_state(P, [mac], net_w, 0, None, partition=partition)
+        assert abs(int(st.X[b] - st.X[a]) - 30) <= 1 and abs(int(st.Y[b] - st.Y[a])) <= 1

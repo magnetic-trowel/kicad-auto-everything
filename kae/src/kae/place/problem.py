@@ -371,6 +371,7 @@ class Problem:
         P.board = board
         P.held = set(held)
         P._rules(board)
+        P._severities(board)
         P._domain(board, grid)
         name_to_net = P._nets(board, net_kinds)
         for i, fp in enumerate(board.footprints):
@@ -380,6 +381,26 @@ class Problem:
         P._fixed_obstacles(board)
         P.mov = [p.i for p in P.parts if p.movable]
         return P
+
+    def _severities(self, board):
+        """DRC rule severities of the board's project (.kicad_pro beside the board): a check
+        the project sets to 'warning' or 'ignore' is no error, so legality does not need it
+        (e.g. courtyards_overlap: ignore lets courtyards overlap and only copper counts)."""
+        self.severity = {}
+        path = getattr(board, "path", "") or ""
+        if path:
+            from pathlib import Path
+            import json
+            pro = Path(path).with_suffix(".kicad_pro")
+            try:
+                d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+                self.severity = dict(((d.get("board") or {}).get("design_settings") or {}).get("rule_severities") or {})
+            except (OSError, ValueError):
+                self.severity = {}
+
+    def is_error(self, check):
+        """The project reports `check` as an error (KiCad's default when the project is silent)."""
+        return (getattr(self, "severity", {}) or {}).get(check, "error") == "error"
 
     def _rules(self, board):
         r = board.rules
@@ -478,7 +499,8 @@ class Problem:
                 cn = self.netclass_clr.get(nc, self.netclass_clr.get(nc.split(",")[0], self.clr_min))
                 c = max(self.clr_min / 2, cn - self.clr_min / 2)
             infl.append(rect_grow(r, max(c, excess)))
-        lib_own = rect_union([cy] + infl)
+        # courtyards occupy space only when the project checks their overlap as an error
+        lib_own = rect_union(([cy] if self.is_error("courtyards_overlap") else []) + infl)
         if lib_own is None:   # no courtyard, body or pads: a point
             lib_own = (-0.05, -0.05, 0.05, 0.05)
         drilled = [k for k, p in enumerate(pads) if is_drilled(p)]
@@ -487,7 +509,7 @@ class Problem:
         far = [k for k, p in enumerate(pads) if not is_drilled(p) and _on_far_copper(p, fp.side)]
         lib_opp = _cluster_rects([rect_union([infl[k], rect_grow(hole_lib_rect(pads[k]), self.clr_min / 2)])
                                   for k in drilled] + [infl[k] for k in far])
-        if fp.courtyard_back:
+        if fp.courtyard_back and self.is_error("courtyards_overlap"):
             lib_opp.append(polys_lib_rect(fp.courtyard_back))
         lib_opp = [r for r in lib_opp if r is not None]
         cut = edge_cut_lib_rect(fp)

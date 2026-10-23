@@ -446,9 +446,13 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
     if not groups:
         return []
     n_try = max(top_k, candidates) if terms is not None else top_k
-    per = max(0.3, time_s / len(groups) / max(1, n_try))
+    # the budget: half to the CP-SAT proposals, half to annealing them on the terms (whose
+    # deltas cost milliseconds on big boards); a macro never takes more than its share
+    t_start = time.monotonic()
+    deadline = t_start + time_s
+    per = max(0.3, 0.5 * time_s / len(groups) / max(1, n_try))
     out = []
-    for mem, sts in groups:
+    for gi, (mem, sts) in enumerate(groups):
         fixed = [i for i in mem if not P.parts[i].movable]
         anchor = fixed[0] if fixed else max(mem, key=lambda i: P.parts[i].area)
         lay = micro_place(P, mem, sts, anchor, time_s=per, top_k=n_try, workers=workers, seed=seed)
@@ -460,9 +464,12 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
         if terms is not None:
             try:
                 rerank(P, mac, terms)
-                # anneal the best few layouts on the place terms themselves
+                # anneal the best few layouts on the place terms themselves, within this
+                # macro's share of what is left of the budget
+                share = max(0.0, deadline - time.monotonic()) / max(1, len(groups) - gi)
                 for lay0 in list(mac.layouts[:top_k]):
-                    better = refine(P, mac, lay0, terms, seed=seed)
+                    better = refine(P, mac, lay0, terms, seed=seed,
+                                    deadline=time.monotonic() + max(0.05, share / top_k))
                     if better is not None:
                         mac.layouts.append(better)
                 rerank(P, mac, terms)
@@ -485,7 +492,7 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
     return out
 
 
-def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02):
+def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02, deadline=None):
     """Anneal one macro layout on the place terms themselves (the CP-SAT proxy only proposes):
     members shift and turn around the fixed anchor; cost = Terms total (the macro's
     structures change, everything else is fixed) + overlap of the members' rectangles (per
@@ -555,8 +562,15 @@ def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02
     r0 = max(2, int(2.0 / g))
     T0 = 0.05 * max(1e-3, abs(phys))
     best = None
+    t_start = time.monotonic()
+    tfrac = 0.0
     for it in range(moves):
-        frac = it / moves
+        if deadline is not None and (it & 31) == 0:
+            now = time.monotonic()
+            if now > deadline:
+                break
+            tfrac = (now - t_start) / max(1e-6, deadline - t_start)
+        frac = max(it / moves, tfrac)          # cool on whichever runs out first: moves or time
         T = T0 * (1e-3 ** frac)
         r = max(1, int(r0 * (1 - frac)))
         i = mem[rng.randrange(len(mem))]

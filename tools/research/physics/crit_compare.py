@@ -112,7 +112,9 @@ def _q(xs):
 
 
 def aggregate(out):
-    recs = [json.loads(p.read_text()) for p in sorted(Path(out).glob("*.json")) if p.name != "summary.json"]
+    recs = [json.loads(p.read_text()) for p in sorted(Path(out).glob("*.json"))
+            if p.name not in ("summary.json", "retweak.json")]
+    recs = [r for r in recs if "boards" in r]
     names = []
     for r in recs:                     # arms in --arm order
         names += [n for n in r.get("boards", {}) if n != "human" and n not in names]
@@ -203,7 +205,10 @@ def retweak_summary(arm_dir, attempt=0):
     rec = [m["recovered"] for r in ran for m in r["modules"] if m["recovered"] is not None]
     return dict(boards=len(rows), with_report=len(ran), flagged_boards=sum(r["flagged"] > 0 for r in ran),
                 round1_ran=sum(r["rounds"] >= 1 for r in ran), round2_ran=sum(r["rounds"] >= 2 for r in ran),
-                kept_any=sum(r["kept"] > 0 for r in ran), recovered=_q(rec), rows=rows)
+                kept_any=sum(r["kept"] > 0 for r in ran),
+                recovered=dict(n=len(rec), median=round(statistics.median(rec), 3) if rec else None,
+                               full=sum(x >= 0.9 for x in rec), none=sum(x <= 0.0 for x in rec)),
+                rows=rows)
 
 
 def main(argv=None):

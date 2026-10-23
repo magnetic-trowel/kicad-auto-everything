@@ -41,8 +41,10 @@ from .structures import EXTERNAL, find_structures
 SCHEMA = 'kae.brief/1'
 REF_FIELDS = {'controller', 'inductor', 'ic', 'crystal', 'connector', 'part', 'shunt', 'amp', 'bootstrap_cap', 'series_r',
               'feedback_r', 'caps', 'hf_caps', 'bulk_caps', 'load_caps', 'protection', 'series', 'match', 'output_caps',
-              'input_caps', 'filter', 'phase_shunts', 'top', 'bottom', 'feedforward_cap', 'high', 'low', 'rectifier', 'bond'}
+              'input_caps', 'filter', 'phase_shunts', 'top', 'bottom', 'feedforward_cap', 'high', 'low', 'rectifier', 'bond',
+              'series_shunt', 'bootstrap_r', 'charge_pump_caps', 'caps_in', 'caps_out'}
 PAIR_FIELDS = {'loop', 'chain', 'feed', 'loads', 'ic_pins'}
+GROUP_FIELDS = {'snubbers'}          # lists of reference groups: [[r, c], ...]
 KEYED_FIELDS = {'caps_p', 'caps_p_all'}
 NESTED = {'switches', 'divider', 'pin_caps'}
 STRUCT_ORDER = ('commutation_cells', 'antennas', 'crystals', 'oscillators', 'decaps', 'victims', 'chains', 'heat_sources',
@@ -68,9 +70,14 @@ def _rewrite(d: dict, ids: _Ids) -> dict:
         elif k in REF_FIELDS:
             out[k] = [ids(x) for x in v] if isinstance(v, list) else ids(v) if isinstance(v, str) else v
         elif k in PAIR_FIELDS:
-            out[k] = [[ids(x[0])] + list(x[1:]) for x in v] if v else v
+            # [[ref, pin], ...]; a flat list of references (rail_group loads) is rewritten as such
+            out[k] = [ids(x) if isinstance(x, str) else [ids(x[0])] + list(x[1:]) for x in v] if v else v
+        elif k in GROUP_FIELDS:
+            out[k] = [[ids(x) for x in grp] for grp in v] if v else v
         elif k in KEYED_FIELDS:
             out[k] = {ids(r): p for r, p in v.items()}
+        elif k in NESTED and isinstance(v, list):          # power_path switches: a list of references
+            out[k] = [ids(x) for x in v]
         elif k in NESTED and isinstance(v, dict):
             if k == 'pin_caps':
                 out[k] = {pin: [ids(x) for x in refs] for pin, refs in v.items()}
@@ -105,6 +112,14 @@ def _structure_roles(st: dict) -> dict:
         if sw.get('rectifier'):
             put(sw['rectifier'], 'freewheel_diode' if c['class'] == 'buck' else 'boost_rectifier', sid)
         put(c.get('bootstrap_cap'), 'bootstrap_cap', sid)
+        put(c.get('bootstrap_r'), 'bootstrap_resistor', sid)
+        for x in c.get('series_shunt') or []:
+            put(x, 'shunt', sid)
+        for x in c.get('charge_pump_caps') or []:
+            put(x, 'charge_pump_cap', sid)
+        for r_, c_ in c.get('snubbers') or []:
+            put(r_, 'snubber_r', sid)
+            put(c_, 'snubber_c', sid)
         for x in c.get('output_caps') or []:
             put(x, 'output_cap', sid)
         put(c.get('controller'), 'switching_regulator' if c['class'] in ('buck', 'boost') else 'bridge', sid)
@@ -322,7 +337,14 @@ def _refs_in(s: dict) -> list:
                 add(x)
         elif k in PAIR_FIELDS and v:
             for x in v:
-                add(x[0])
+                add(x if isinstance(x, str) else x[0])
+        elif k in NESTED and isinstance(v, list):
+            for x in v:
+                add(x)
+        elif k in GROUP_FIELDS and v:
+            for grp in v:
+                for x in grp:
+                    add(x)
         elif k in NESTED and isinstance(v, dict):
             if k == 'pin_caps':
                 for refs in v.values():

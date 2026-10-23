@@ -1244,7 +1244,8 @@ class FastAnnealer:
         return acc, d
 
     # ------------------------------------------------------------------ schedule
-    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, batch=2000, max_per_part=20000):
+    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, batch=2000, max_per_part=20000,
+            deadline=None):
         """The reference schedule over N = moves_per_part x parts planned moves; when the
         compiled engine is fast enough to do more within cpu_s (measured on the first
         batches), N grows up to max_per_part x parts (a slower cooling at no extra time)."""
@@ -1302,7 +1303,7 @@ class FastAnnealer:
                 c = self.cost(lam)
                 if best is None or c < best[0]:
                     best = (c, self.E.X.copy(), self.E.Y.copy(), self.E.K.copy())
-            if time.process_time() - t0 > cpu_s:
+            if time.process_time() - t0 > cpu_s or (deadline is not None and time.monotonic() > deadline):
                 break
             if done / N >= next_log:
                 next_log += log_every

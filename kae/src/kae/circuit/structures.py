@@ -35,7 +35,7 @@ from collections import defaultdict
 from . import values as V
 from .evidence import MODERATE, STRONG, WEAK, confidence, ev
 from .netlist import Netlist, Part
-from .roles import (ANALOG_NET, ANALOG_PIN, BOOT_PIN, EN_PIN, FB_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, Roles, belief,
+from .roles import (ANALOG_NET, ANALOG_PIN, BOOT_PIN, CP_PIN, EN_PIN, FB_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, Roles, belief,
                     cap_class)
 
 CTRL_PIN = re.compile(r'^(N?PG|PGOOD|POK|MODE\w*|SYNC\w*|SS\w*|TR|TRK|RT\w*|ILIM\w*|COMP|SEL\w*|CFG\w*|PS|FSW|FREQ|CTRL|'
@@ -281,7 +281,120 @@ def commutation_cells(b: _B) -> list:
             c = _module_cell(b, ref)
             if c:
                 cells.append(c)
+    for c in cells:
+        _cell_members(b, c)
     return cells
+
+
+def _cell_members(b: _B, c):
+    """Second-step members of a cell: the bootstrap capacitor (directly or through a resistor), charge-pump
+    capacitors of a bridge or gate driver, and RC snubbers on the switch node."""
+    sws = c.get('sw_nets') or ([c['sw']] if c.get('sw') else [])
+    ctrl = c.get('controller')
+    boot, boot_r = None, None
+    for swn in sws:
+        boot, boot_r = _bootstrap(b, ctrl, swn)
+        if boot:
+            break
+    c['bootstrap_cap'], c['bootstrap_r'] = boot, boot_r
+    c['charge_pump_caps'] = _charge_pump_caps(b, ctrl, c.get('rail')) if ctrl else []
+    sn = []
+    for swn in sws:
+        sn += [x for x in _snubbers(b, swn, c.get('gnd'), c.get('rail')) if x not in sn]
+    c['snubbers'] = sn
+    c.setdefault('series_shunt', [])
+
+
+def _series_shunt(b: _B, ctrl, rail, avoid):
+    """Low-ohm resistors from `rail` to a net that only the controller, the shunts and filter parts touch:
+    the switch current enters the controller through them. -> (shunts, net, controller pins on it)."""
+    found = defaultdict(list)
+    for p in b.nl.pins(rail):
+        if b.k(p.ref) != 'resistor' or len(b.nl.parts[p.ref].nets) != 2:
+            continue
+        part = b.nl.parts[p.ref]
+        o = b.nl.other_net(part, rail)
+        ohm = V.resistance(part.value)
+        if o is None or o in avoid or o in b.g or o == rail:
+            continue
+        if (ohm is not None and 0 < ohm <= 0.2) or b.r.parts[p.ref].subtype == 'shunt':
+            found[o].append(p.ref)
+    for n, shunts in sorted(found.items()):
+        cp = sorted({q.number for q in b.nl.pins(n) if q.ref == ctrl}, key=_natkey)
+        others = {q.ref for q in b.nl.pins(n)} - set(shunts) - {ctrl}
+        if cp and all(b.k(x) in ('capacitor', 'resistor', 'test_point') for x in others):
+            return sorted(shunts, key=_refkey), n, cp
+    return [], None, []
+
+
+def _bootstrap(b: _B, ctrl, swn):
+    """(capacitor, resistor) from the switch node to the controller's bootstrap pin (BST/BOOT/CB/HB/VB, or an
+    unnamed pin), directly or through a resistor of 100 ohm or less (slowed turn-on)."""
+    if not ctrl or swn not in b.nl.nets:
+        return None, None
+    pins = {}
+    for p in b.nl.parts[ctrl].active_pins():
+        pins.setdefault(p.net, []).append(p)
+
+    def boot_pin(net):
+        ps = pins.get(net) or []
+        return any(BOOT_PIN.match(p.fn) or not p.fn or p.fn == p.number for p in ps) and \
+            not any(PWR_PIN.match(p.fn) or FB_PIN.match(p.fn) for p in ps)
+    for q in sorted(b.nl.pins(swn), key=lambda x: _refkey(x.ref)):
+        if b.k(q.ref) != 'capacitor' or len(b.nl.parts[q.ref].nets) != 2:
+            continue
+        x = b.nl.other_net(b.nl.parts[q.ref], swn)
+        if x is None or x in b.g or x in b.r.rails:
+            continue
+        if boot_pin(x):
+            return q.ref, None
+        for r in b.nl.pins(x):
+            if b.k(r.ref) != 'resistor' or len(b.nl.parts[r.ref].nets) != 2:
+                continue
+            y = b.nl.other_net(b.nl.parts[r.ref], x)
+            ohm = V.resistance(b.nl.parts[r.ref].value)
+            if y and boot_pin(y) and ohm is not None and ohm <= 100:
+                return q.ref, r.ref
+    return None, None
+
+
+def _charge_pump_caps(b: _B, ic, rail):
+    """Capacitors on a driver's charge-pump pins: flying (pin to pin) and storage (VCP to the supply or ground)."""
+    part = b.nl.parts[ic]
+    cp_nets = {p.net for p in part.active_pins() if CP_PIN.match(p.fn)}
+    ic_supply = {p.net for p in part.active_pins() if p.net in b.r.rails}
+    out = []
+    for n in sorted(cp_nets):
+        for q in b.nl.pins(n):
+            if b.k(q.ref) != 'capacitor' or q.ref in out or len(b.nl.parts[q.ref].nets) != 2:
+                continue
+            o = b.nl.other_net(b.nl.parts[q.ref], n)
+            if o in cp_nets or o == rail or o in b.g or o in ic_supply:
+                out.append(q.ref)
+    return sorted(out, key=_refkey)
+
+
+def _snubbers(b: _B, swn, gnd, rail):
+    """RC snubbers from the switch node to ground or to the input rail: [resistor, capacitor] pairs whose
+    middle net carries nothing else."""
+    out = []
+    for q in b.nl.pins(swn):
+        k = b.k(q.ref)
+        if k not in ('resistor', 'capacitor') or len(b.nl.parts[q.ref].nets) != 2:
+            continue
+        m = b.nl.other_net(b.nl.parts[q.ref], swn)
+        if m is None or m in b.g or m in b.r.rails or m == swn:
+            continue
+        others = {x.ref for x in b.nl.pins(m)} - {q.ref}
+        if len(others) != 1:
+            continue
+        x = next(iter(others))
+        if {k, b.k(x)} != {'resistor', 'capacitor'} or len(b.nl.parts[x].nets) != 2:
+            continue
+        o = b.nl.other_net(b.nl.parts[x], m)
+        if o in b.g or (rail and o == rail):
+            out.append([q.ref, x] if k == 'resistor' else [x, q.ref])
+    return out
 
 
 def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = '', token: str = ''):
@@ -567,11 +680,20 @@ def _converter(b: _B, L, lpart, swn, other):
     loop = []
     if hf:
         loop.append([hf, b.cap_pad(hf, rail)])
+    series_shunt = []
     if kind == 'buck':
         if hs and hs_rail != other:
             loop += [[hs, b.pad_sel(hs, rail)], [hs, b.pad_sel(hs, swn)]]
         elif ctrl:
-            loop.append([ctrl, [p.number for p in vin_pins if p.net == rail] or b.supply_pads(ctrl, rail)])
+            series_shunt, sn, sn_pins = _series_shunt(b, ctrl, rail, {swn, other})
+            if series_shunt:
+                # the switch current enters the controller through an input shunt (TX4138 ILIM, MC34063 Rsc)
+                sh = series_shunt[0]
+                loop += [[sh, b.pad_sel(sh, rail)], [sh, b.pad_sel(sh, sn)], [ctrl, sn_pins]]
+                evs.append(ev('topology', f"input shunt {', '.join(series_shunt)} from '{b.short(rail)}' into {ctrl} "
+                                          f"(pins {', '.join(sn_pins)}): inside the switch current path", MODERATE))
+            else:
+                loop.append([ctrl, [p.number for p in vin_pins if p.net == rail] or b.supply_pads(ctrl, rail)])
             if d_catch or ls:
                 loop.append([ctrl, b.pads(ctrl, swn)])
         if ls:
@@ -602,12 +724,6 @@ def _converter(b: _B, L, lpart, swn, other):
     vin_net = rail if kind == 'buck' else other
     V_ = b.volts(rail)
     exc = _excite(b, ctrl, L, V_, kind)
-    boot = None
-    if ctrl:
-        for p in b.pins_named(ctrl, BOOT_PIN):
-            for c in b.nl.pins(p.net):
-                if b.k(c.ref) == 'capacitor' and swn in b.nl.parts[c.ref].nets:
-                    boot = c.ref
     out_caps = _hf_order(b.nl, b.caps_on(out if kind == 'buck' else other))
     conf_cap = min(b.r.nets[swn].confidence, b.r.parts[L].kind_confidence + 0.2)
     cid = f"cell:{kind}:{ctrl or L}" + (f":{suffix}" if suffix else '')
@@ -617,7 +733,7 @@ def _converter(b: _B, L, lpart, swn, other):
                       'switches': {'high': hs or (ctrl if kind == 'buck' else None), 'low': ls or d_catch or (ctrl if not d_boost else None),
                                    'rectifier': (d_boost[0] if d_boost else d_catch)},
                       'vin': vin_net, 'vout': out if kind == 'buck' else rail, 'output_caps': out_caps[:6] if kind == 'buck' else [],
-                      'input_caps': out_caps[:6] if kind == 'boost' else [], 'bootstrap_cap': boot,
+                      'input_caps': out_caps[:6] if kind == 'boost' else [], 'series_shunt': series_shunt,
                       'integrated_switches': bool(ctrl and not hs and not ls),
                       'loop_core': core, 'cap_rail': rail, 'cap_gnd': gnd, 'anchor': ctrl or hs or L})
 

@@ -140,3 +140,44 @@ def test_disjoint_union_is_exact():
             return {(i, j) for r in R for i in range(r[0], r[1]) for j in range(r[2], r[3])}
         assert cells(rs) == cells(d)
         assert sum((r[1] - r[0]) * (r[3] - r[2]) for r in d) == len(cells(d))
+
+
+def test_far_side_smd_copper_blocks_the_other_side():
+    """Regression (emberone): an SMD pad with copper on the far side of its footprint (a
+    back thermal pad under a front part, *.Cu) must take room there, or a back part lands on
+    it with zero clearance while the grid calls the placement legal."""
+    b = load(FIXTURE)
+    fp = next(f for f in b.footprints if f.ref == "U1")
+    pd = next(p for p in fp.pads if not p.drill)
+    pd.layers = ["B.Cu", "B.Mask"] if fp.side == "F" else ["F.Cu", "F.Mask"]
+    P = Problem.build(b)
+    p = next(q for q in P.parts if q.ref == "U1")
+    k = fp.pads.index(pd)
+    for r in p.rots:
+        x, y = r.pins[k]
+        assert any(o[0] <= x <= o[2] and o[1] <= y <= o[3] for o in r.opp), r.rot
+
+
+def test_project_severity_relaxes_courtyards(tmp_path):
+    """Regression (stickhub): a project that rates courtyards_overlap 'ignore' lets courtyards
+    overlap (KiCad reports no error), so only copper takes room."""
+    import json
+    import shutil
+    src = FIXTURE
+    dst = tmp_path / "board.kicad_pcb"
+    shutil.copy(src, dst)
+    shutil.copy(src.with_suffix(".kicad_dru"), dst.with_suffix(".kicad_dru"))
+    pro = json.loads(src.with_suffix(".kicad_pro").read_text())
+    pro.setdefault("board", {}).setdefault("design_settings", {})["rule_severities"] = {"courtyards_overlap": "ignore"}
+    dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    strict = {p.ref: p for p in Problem.build(load(FIXTURE)).parts}
+    relaxed_P = Problem.build(load(dst))
+    assert not relaxed_P.is_error("courtyards_overlap") and relaxed_P.is_error("clearance")
+    relaxed = {p.ref: p for p in relaxed_P.parts}
+    shrunk = 0
+    for ref, p in strict.items():
+        a, r = p.rots[0].own, relaxed[ref].rots[0].own
+        assert (r[2] - r[0]) * (r[3] - r[1]) <= (a[2] - a[0]) * (a[3] - a[1]) + 1e-9
+        if p.has_courtyard and (r[2] - r[0]) * (r[3] - r[1]) < (a[2] - a[0]) * (a[3] - a[1]) - 1e-6:
+            shrunk += 1
+    assert shrunk > 0

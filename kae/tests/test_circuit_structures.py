@@ -283,3 +283,38 @@ def test_logic_strap_divider_is_no_victim_but_an_adc_divider_is():
     nl, r, st = structures(parts)
     ids = {v['id'] for v in st['victims']}
     assert 'victim:divider:ADC_VBAT' in ids and 'victim:divider:TOUCH_EN' not in ids
+
+
+# ------------------------------------------------------------------------------- second-step cell members
+def test_cell_members_input_shunt_bootstrap_resistor_and_snubber():
+    """TX4138-style buck: input shunts in the switch path, a bootstrap cap through 4.7 ohm, an RC snubber on SW."""
+    u = IC('U1', 'TX4138', 'Package_SO:SOIC-8', [('1', '', 'SW', 'passive'), ('2', '', 'ILIM', 'passive'), ('9', '', 'ILIM', 'passive'),
+                                                 ('3', '', 'VIN', 'passive'), ('4', '', 'GND', 'passive'), ('5', '', 'Vfb', 'passive'),
+                                                 ('8', '', 'BSR', 'passive')])
+    parts = [u, R('R1', '0.03', 'ILIM', 'VIN', lib='Resistor_SMD:R_1206_3216Metric'), R('R2', '0.03', 'ILIM', 'VIN', lib='Resistor_SMD:R_1206_3216Metric'),
+             C('C1', '100uF', 'VIN', 'GND', lib='Capacitor_THT:CP_Radial_D10.0mm_P5.00mm'), C('C2', '100nF', 'VIN', 'GND'),
+             D('D1', 'SS510', 'SW', 'GND', lib='Diode_SMD:D_SMC'), L('L1', '33uH', 'SW', 'VOUT'),
+             C('C6', '470uF', 'VOUT', 'GND', lib='Capacitor_THT:CP_Radial_D8.0mm_P3.50mm'),
+             R('R3', '4.7', 'BSR', 'BSC'), C('C4', '100nF', 'SW', 'BSC'),
+             R('R4', '22', 'SNB', 'SW'), C('C3', '220pF', 'SNB', 'GND'),
+             R('R7', '56.2k', 'VOUT', 'Vfb'), R('R5', '10k', 'Vfb', 'GND')]
+    nl, r, st = structures(parts)
+    c = one(st['commutation_cells'], controller='U1')
+    assert c['series_shunt'] == ['R1', 'R2']
+    assert [t[0] for t in c['loop']] == ['C2', 'R1', 'R1', 'U1', 'U1', 'D1', 'D1', 'C2']
+    assert c['loop'][3] == ['U1', ['2', '9']]                 # the switch current enters at ILIM/EP, not the VIN pin
+    assert (c['bootstrap_cap'], c['bootstrap_r']) == ('C4', 'R3')
+    assert c['snubbers'] == [['R4', 'C3']]
+
+
+def test_bridge_charge_pump_caps_are_cell_members():
+    drv = IC('U3', 'TMC6300-LA', 'Package_DFN_QFN:QFN-20', [('18', 'VS', 'VIN', 'power_in'), ('2', 'VCP', 'VCP', 'passive'),
+                                                           ('1', 'W', 'PH_W', 'output'), ('19', 'U', 'PH_U', 'output'),
+                                                           ('20', 'V', 'PH_V', 'output'), ('8', 'GND', 'GND', 'power_in')])
+    parts = [drv, C('C10', '100nF', 'VIN', 'GND'), C('C9', '10uF', 'VIN', 'GND', lib='Capacitor_SMD:C_0805_2012Metric'),
+             C('C2', '100nF', 'VCP', 'VIN'),
+             fp('J2', 'Motor', 'Connector_JST:JST_PH_B3B-PH-K', [('1', 'PH_U', '', ''), ('2', 'PH_V', '', ''), ('3', 'PH_W', '', '')]),
+             fp('J3', 'Power', 'Connector_JST:JST_PH_B2B-PH-K', [('1', 'VIN', '', ''), ('2', 'GND', '', '')])]
+    nl, r, st = structures(parts)
+    c = one(st['commutation_cells'], controller='U3')
+    assert c['charge_pump_caps'] == ['C2']

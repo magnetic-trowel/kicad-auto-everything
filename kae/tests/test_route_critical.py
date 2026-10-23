@@ -5,6 +5,7 @@ bridge's effective rules), the grid router's exact legality, module routing, the
 the recheck's copper graph and the joint optimizer, on a synthetic board
 (critical_fixtures). KiCad's own verdict is in test_route_critical_kicad.py."""
 import math
+from pathlib import Path
 
 import pytest
 from shapely.geometry import LineString
@@ -214,6 +215,7 @@ def test_joint_moves_are_legal_and_improve_the_routed_loop(tmp_path):
     poses, copper, rep = optimize_modules(b, s.brief, terms=None, locked=set(), session=s, time_s=120)
     cell = next(m for m in rep["modules"] if m["kind"] == "cell")
     assert cell["value"] <= cell["value0"]
+    assert all(m["value"] is None or m["value"] > 0 for m in rep["modules"])   # never chases a negative L
     leg = Legality(s)        # the session's space now holds the final poses
     for u, pose in poses.items():
         assert pose[3] == next(f.side for f in b.footprints if f.uuid == u)
@@ -287,3 +289,121 @@ def test_overlapping_alternatives_stay_physical():
     val, sh = lp.value(shares=True)
     assert 0 < val < 50 and all(x > -1e-9 for x in sh.values())
     assert sh["va"] + sh["lat"] == pytest.approx(1.0) and sh["vb"] + sh["lat"] == pytest.approx(1.0)
+
+
+# ----------------------------------------------------------------------------- regressions
+def test_decap_on_the_far_side_routes_through_a_via(tmp_path):
+    s = F.session(tmp_path, back=("C3",))           # IC on top, its decap on the bottom
+    s.route()
+    m = next(x for x in s.modules if x.id == "decap:U2:+3V3")
+    rt = next(v for k, v in m.hops.items() if k.startswith("rail:"))
+    assert m.status == "routed" and rt is not None and len(rt.vias) == 1
+    assert {l for l, _, _ in rt.segs} == {"F.Cu", "B.Cu"}
+    sp = s.space
+    for it in m.copper:
+        others = [x for x in sp.routed if x is not it]
+        if it.kind == "track":
+            l = next(iter(it.layers))
+            assert not sp.track_violations(it.net, l, it.width, it.geom.coords[0], it.geom.coords[-1], ignore=others)
+        else:
+            assert not sp.via_violations(it.net, it.geom.x, it.geom.y, ignore=others + [it])
+
+
+def test_move_margin_keeps_grid_moves_legal_and_small():
+    import random
+    from kae.route.critical_grid import _margin
+    rnd = random.Random(1)
+    res = 0.05
+    for _ in range(4000):
+        R = rnd.uniform(0.05, 1.0)
+        m = _margin(R, res)
+        a = (rnd.uniform(-1, 1), rnd.uniform(-1, 1))
+        dx, dy = rnd.choice([(1, 0), (0, 1), (1, 1), (1, -1)])
+        b = (a[0] + dx * res, a[1] + dy * res)
+        p = (rnd.uniform(-1.5, 1.5), rnd.uniform(-1.5, 1.5))
+        if math.dist(a, p) >= R + m and math.dist(b, p) >= R + m:      # both cells free
+            assert LineString([a, b]).distance(__import__("shapely").geometry.Point(p)) >= R - 1e-12
+    assert _margin(0.3, res) < 0.005            # a flat 0.71 cell (35 um) closes 0.5 mm-pitch gaps
+
+
+def test_far_decaps_are_skipped_not_failed(tmp_path):
+    s = F.session(tmp_path, decap_max_mm=0.5)
+    s.route()
+    for m in s.modules:
+        if m.kind == "decap":
+            assert m.status == "skipped" and not m.copper
+
+
+def test_mixed_plane_heights_give_a_finite_loop():
+    def loop(h_last):
+        lp = Loop()
+        for (a, b), h in zip((((0, 0), (4, 0)), ((4, 0), (4, 2)), ((4, 2), (0, 2)), ((0, 2), (0, 0))),
+                             (0.2, 0.2, 0.2, h_last)):
+            lp.strip(a, b, 0.5, h)
+        return lp.value()
+    v = loop(math.inf)                        # one strip over no plane
+    assert math.isfinite(v) and v > loop(0.2)
+
+
+def test_recheck_survives_degenerate_decap_loops(routed, tmp_path, monkeypatch):
+    from kae.route import critical_recheck as RC
+    out = tmp_path / "out.kicad_pcb"
+    routed.write(out)
+    monkeypatch.setattr(RC.Loop, "value", lambda self, shares=False: 0.0)
+    ph = RC.board_physics(out, brief=routed.brief, fills=None)
+    for k, v in ph.items():
+        if k.startswith("decap:"):
+            assert "error" not in v and v.get("value") is None
+
+
+def test_quote_rejects_nonphysical_values(routed, monkeypatch):
+    from kae.route import critical_modules as CM
+    cell = next(m for m in routed.modules if m.kind == "cell")
+    monkeypatch.setattr(CM, "_cell_value", lambda ctx, m: (-1.0, {}))
+    assert CM.quote(routed.ctx, cell, store=False) is None
+    assert any("rejected" in n for n in cell.notes)
+
+
+def test_guard_zones_avoid_other_nets_and_outrank_planes():
+    from types import SimpleNamespace as NS
+    from shapely.geometry import Polygon, box
+    from kae.route.critical_recheck import guard_zones
+    gnd = NS(net="GND", layers=["B.Cu"], outline=box(0, 0, 20, 20), name="", priority=0)
+    vcc = NS(net="+3V3", layers=["B.Cu"], outline=box(8, 8, 12, 12), name="", priority=1)
+    top = NS(net="VIN", layers=["F.Cu"], outline=box(0, 0, 20, 20), name="", priority=3)
+    g = guard_zones(NS(zones=[gnd, vcc, top]), box(5, 5, 15, 15), "GND", "B.Cu", "kae-crit:x")
+    assert g and all(z[0] == "GND" and z[1] == "B.Cu" and z[4] == 2 for z in g)   # above both B.Cu zones
+    for z in g:
+        poly = Polygon(z[2][0])
+        assert poly.intersection(vcc.outline).area == 0 and poly.within(gnd.outline.buffer(1e-9))
+
+
+def test_retweak_watches_only_routed_modules():
+    from types import SimpleNamespace as NS
+    from kae.route.critical_recheck import routed_stage
+    sess = NS(modules=[NS(id="a", status="routed"), NS(id="b", status="skipped"), NS(id="c", status="partial")])
+    assert set(routed_stage({"a": 1.0, "b": 2.0, "c": 0.5, "d": 0.1}, sess)) == {"a", "c"}
+
+
+def test_run_retries_the_bridge_when_it_returns_nothing(tmp_path, monkeypatch):
+    import shutil
+    from kae.board import pcbnew_io
+    from kae.board.kicad_file import load
+    from kae.route import bridge as BR
+    from kae.route import critical
+    src = F.write_board(tmp_path / "in")
+    monkeypatch.setattr(pcbnew_io, "export_dsn", lambda path, dsn, *a, **k: F.synth_info(load(path)))
+    calls = []
+
+    def fake_route(inp, out, seed=0, time_s=0.0, workdir=None, opts=None, log=None):
+        calls.append(time_s)
+        if len(calls) == 1:
+            return dict(status="no_session")      # Freerouting killed at its deadline
+        assert W.GUARD_PREFIX in Path(inp).read_text()      # the bridge sees the guards
+        shutil.copy(inp, out)
+        return dict(status="routed")
+    monkeypatch.setattr(BR, "route", fake_route)
+    out = tmp_path / "out" / "board.kicad_pcb"
+    rep = critical.run(src, out, time_s=300, log=lambda *a: None)
+    assert len(calls) == 2 and calls[1] > 0.5 * calls[0] and rep["bridge"]["status"] == "routed"
+    assert W.GUARD_PREFIX not in out.read_text() and len(W.routing(out)) == rep["critical"]["tracks"] + rep["critical"]["vias"]

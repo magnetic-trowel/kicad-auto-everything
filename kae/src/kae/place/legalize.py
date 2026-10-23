@@ -737,18 +737,22 @@ def exact_check(P, st, parts=None, max_items=60):
                 pa, pb = owners[ia], owners[ib]
                 if pa not in check and pb not in check:
                     continue
-                if geoms[ia].intersection(geoms[ib]).area > 1e-6:
+                if P.is_error("courtyards_overlap") and geoms[ia].intersection(geoms[ib]).area > 1e-6:
                     add("courtyards_overlap", [P.parts[pa].ref, P.parts[pb].ref], "FB"[side])
-        # holes inside courtyards of other parts
+        # holes inside courtyards of other parts (plated or not, as the project rates them)
         if geoms:
             tree = STRtree(geoms)
             for i, sh in shapes.items():
                 for hgeom, k in sh["holes"]:
+                    kind = "npth_inside_courtyard" if shapes[i]["pads"][k][2].kind == "np_thru_hole" \
+                        else "pth_inside_courtyard"
+                    if not P.is_error(kind):
+                        continue
                     for j in tree.query(hgeom, predicate="intersects").tolist():
                         o = owners[j]
                         if o == i or (i not in check and o not in check):
                             continue
-                        add("pth_inside_courtyard", [P.parts[i].ref, P.parts[o].ref], "FB"[side])
+                        add(kind, [P.parts[i].ref, P.parts[o].ref], "FB"[side])
     # pad clearance between parts, per copper side
     clr_of = {}
     for side in (0, 1):

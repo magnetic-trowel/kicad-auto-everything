@@ -312,7 +312,9 @@ IN_PIN = rx(r'^(P?VIN\d?|VI|VCC|VDD|IN|VS|VBAT|PVDD|AVIN|VSUP|VSYS|V\+|INPUT|VIN
 FB_PIN = rx(r'^(V?FB\d?|FB[+-]?|ADJ|ADJ/GND|VSENSE|VOS|FBK|FB_?\w*|SENSE)$')
 SUPPLY_PIN = rx(r'^(P?VIN\d*|AVIN|VBAT\w*|VDD\w*|VCC\w*|AVDD\w*|DVDD\w*|IOVDD|PVDD\w*|VBUS|VSYS|VDDIO\w*|VDDA\w*|VCCIO\w*|VREG_?IN|REGIN|'
                  r'VSUP\w*|VMOT\w*|VM|VBB|VCORE|VCCINT|VCCAUX\w*)$')
-BOOT_PIN = rx(r'^(BST\d?|BOOT\d?|CB|BS|CBOOT|VBST|BOOTSTRAP|HB|BTST|C_?BOOT)$')
+BOOT_PIN = rx(r'^(BST\d?|BOOT\d?|CB|BS|CBOOT|VBST|BOOTSTRAP|HB|BTST|C_?BOOT|VB|VBS|VBOOT|BST_?[A-D12])$')
+# charge-pump pins of bridge drivers and gate drivers: flying caps (CPH/CPL, CP1/CP2) and storage (VCP)
+CP_PIN = rx(r'^(CP[HL]\d?|CP\d?[+-]?|CP[OI]|CP_?OUT|CP_?IN|C[12][PNHL+-]|CPP|CPN|VCP\w*|CFLY\w*|FLY\w*|VGH)$')
 EN_PIN = rx(r'^(EN\w*|SHDN\w*|ON|ON/OFF|CE|RUN|INH|STBY|SLEEP|nSLEEP|CTRL)$')
 XTAL_PIN = rx(r'(XTAL|XIN|XOUT|X_?IN|X_?OUT|^XI$|^XO$|^X[12]$|OSC_?IN|OSC_?OUT|OSC\d?_?(IN|OUT)|OSCI|OSCO|OSC32|HSE|LSE|CLKIN|CLK_?IN|'
              r'XTAL[12PN]|XC[12]$|^XT[12]$|EXTAL|^XA$|^XB$|RTC_?X|32K_?X)')

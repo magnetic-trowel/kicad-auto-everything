@@ -768,6 +768,13 @@ def stage_values(board, brief, fills="kicad", terms=None):
             if k != "_rails" and isinstance(v, dict) and v.get("u") is not None}
 
 
+def routed_stage(stage, sess):
+    """The stage values of the modules the critical stage routed: the rest (doubtful
+    pairings, skipped kinds) never had critical copper to protect."""
+    mine = {m.id for m in sess.modules if m.status in ("routed", "partial")}
+    return {k: v for k, v in stage.items() if k in mine}
+
+
 def modules_to_retweak(board_routed, brief, stage=None, rise=0.15, workdir=None, terms=None):
     """The joint loop's interface: module ids whose routed physics worsened (see recheck);
     without `stage`, the module stage is the routed board's locked (critical) copper alone."""
@@ -815,7 +822,29 @@ def guard_zones(board, region, net, layer, name, min_area=0.5):
     out = []
     for part in getattr(g, "geoms", [g]):
         if isinstance(part, _Poly) and part.area > min_area:
-            out.append((net, layer, [list(part.exterior.coords)], name, prio))
+            for piece in _hole_free(part):          # a zone is written as one outline
+                if piece.area > min_area:
+                    out.append((net, layer, [list(piece.exterior.coords)], name, prio))
+    return out
+
+
+def _hole_free(poly):
+    """Pieces of a polygon without holes: cut through each hole's centroid until none is left."""
+    from shapely.geometry import Polygon as _Poly
+    from shapely.ops import split
+    out, todo = [], [poly]
+    while todo:
+        p = todo.pop()
+        if not p.interiors:
+            out.append(p)
+            continue
+        c = _Poly(p.interiors[0]).centroid
+        x0, y0, x1, y1 = p.bounds
+        parts = [q for q in split(p, LineString([(c.x, y0 - 1.0), (c.x, y1 + 1.0)])).geoms
+                 if isinstance(q, _Poly) and q.area > 1e-9]
+        if len(parts) < 2:
+            continue                                # cannot be cut: leave it out (never over-cover)
+        todo += parts
     return out
 
 
@@ -889,10 +918,7 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
         stage = stage_values(w0, brief)
     except Exception as e:  # noqa: BLE001
         return dict(error=f"stage values: {type(e).__name__}: {e}")
-    # only modules the critical stage routed: the rest (doubtful pairings, skipped kinds)
-    # never had critical copper to protect
-    mine = {m.id for m in sess.modules if m.status in ("routed", "partial")}
-    stage = {k: v for k, v in stage.items() if k in mine}
+    stage = routed_stage(stage, sess)
     cur = Path(routed)
     cur_s = score(cur)
     cur_rc = recheck(cur, brief, stage, rise=rise)
