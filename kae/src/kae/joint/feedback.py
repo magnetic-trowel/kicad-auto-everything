@@ -197,6 +197,33 @@ class CongestionHistory:
         w = min(max_width, max(min_width, 0.2 * math.dist(a, b)))
         return self.add_corridor(a, b, w, amount)
 
+    def add_overflow(self, x0, y0, b, util, target=0.5, scale=0.5, reach_mm=3.0):
+        """RUDY overflow (the placer's routing-utilization map: bins of size b from (x0, y0))
+        added as history where routing already failed nearby: scale * max(0, u - target) in
+        every history bin within `reach_mm` of a bin that has history. Freerouting's failures
+        mark the region; RUDY says how crowded it is around them. Returns the amount added."""
+        if not self.h.any():
+            return 0.0
+        util = np.asarray(util, float)
+        ix = np.clip(((self.cx - x0) / b).astype(int), 0, util.shape[0] - 1)
+        iy = np.clip(((self.cy - y0) / b).astype(int), 0, util.shape[1] - 1)
+        over = np.clip(util[ix, iy] - target, 0.0, None)
+        k = max(1, int(math.ceil(reach_mm / self.b)))
+        hit = self.h > 0
+        near = np.zeros_like(hit)
+        for dx in range(-k, k + 1):
+            for dy in range(-k, k + 1):
+                if dx * dx + dy * dy > k * k:
+                    continue
+                sx = slice(max(0, dx), self.nx + min(0, dx))
+                sy = slice(max(0, dy), self.ny + min(0, dy))
+                tx = slice(max(0, -dx), self.nx + min(0, -dx))
+                ty = slice(max(0, -dy), self.ny + min(0, -dy))
+                near[tx, ty] |= hit[sx, sy]
+        add = scale * over * near
+        self.h += add
+        return float(add.sum())
+
     def sample(self, x0, y0, b, nbx, nby):
         """History resampled onto another grid (bins of size b from (x0, y0)): the mean of
         the history bins whose centres fall in each target bin, else the nearest one."""

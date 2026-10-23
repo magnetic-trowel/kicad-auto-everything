@@ -118,3 +118,21 @@ def test_local_replace_moves_only_the_subset_inside_its_window(tmp_path):
     assert set(out.report["parts"]) == set(sub)
     assert out.report["legal_grid"] and not out.report["exact"]
     assert {b.by_uuid()[u].ref for u in out.poses} == set(sub)
+
+
+def test_local_replace_takes_net_weights_from_routing_feedback():
+    """kae.joint's call: net_weights scale wirelength weights (an unrouted net pulls its pins
+    together); the result is exactly legal for the moved parts and nothing else moves."""
+    from kae.place.pipeline import local_replace, place
+    b = kicad_file.load(FIXTURE)
+    res = place(b, seed=0, time_s=30.0, physics=False)
+    for fp in b.footprints:
+        if fp.uuid in res.poses:
+            fp.x, fp.y, fp.rot, _ = res.poses[fp.uuid]
+    sub = [fp.ref for fp in b.footprints if not fp.locked and fp.uuid in res.poses][:4]
+    out = local_replace(b, sub, time_s=15.0, seed=0, physics=False, net_weights={"SIG1": 10.0})
+    assert not out.report["exact"]
+    w = {n.name: n.weight for n in out.problem.nets}
+    base = {n.name: n.weight for n in local_replace(b, sub, time_s=5.0, physics=False).problem.nets}
+    assert abs(w["SIG1"] - 10.0 * base["SIG1"]) < 1e-9
+    assert {b.by_uuid()[u].ref for u in out.poses} == set(sub)

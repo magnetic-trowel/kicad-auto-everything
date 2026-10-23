@@ -10,12 +10,14 @@
 Rules (only nets touching the window lose copper):
 - **Nets on moved parts.** Every unlocked item of such a net is ripped, whole: a fragment
   left behind would be fixed wiring the bridge must join in its middle, which Freerouting
-  does not do. Nets that are poured (a zone of the net) or large (`big_pads` pads or more)
-  lose only the items inside the window or touching the moved parts' old pads; the rest
+  does not do. Nets that are poured (a zone of the net), ground or rails, or large
+  (`big_pads` pads or more) lose only the items inside the window or touching the moved parts' old pads; the rest
   stays connected through the pour.
 - **Nets crossing the window.** Unlocked items of other nets inside the window are ripped
   (a moved part may land on them); the `max_cross` shortest such nets are ripped whole, so
   the bridge can re-route them around the new placement.
+- **Copper DRC blamed** (the window's error spots name routing uuids): ripped like a
+  crossing net's items; a module whose copper is blamed is redone.
 - **Critical copper** (locked): modules with a moved part or with copper inside the window
   are redone, their copper removed. Locked items no module owns (rails, joins, stitching)
   are removed when they lie inside the window or touch a moved part's old pads.
@@ -55,10 +57,13 @@ def _pad_xy(fp, pad):
     return transform.pad_xy(fp, pad)
 
 
-def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cross=4, pad_reach=0.3):
+def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cross=4, pad_reach=0.3, also=(),
+               supply_nets=()):
     """See the module docstring. board: kae.board.model.Board before the move (old poses);
     window: feedback.Window; moved: uuids of the parts that moved; owners: {routing uuid:
-    module id} for critical copper; module_parts: {module id: [part uuid]}."""
+    module id} for critical copper; module_parts: {module id: [part uuid]}; also: routing
+    uuids DRC blamed (error spots), ripped with their nets like a crossing net's items;
+    supply_nets: ground and rail nets (the brief's roles), always ripped only locally."""
     moved = set(moved)
     fp_of = {fp.uuid: fp for fp in board.footprints}
     region = box(*window.rect).buffer(0.25)
@@ -69,8 +74,10 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
                 pad_count[p.net] = pad_count.get(p.net, 0) + 1
     poured = {z.net for z in board.zones if z.net and not (z.name or "").startswith("kae-crit:")}
 
+    supply = set(supply_nets or ())
+
     def big(net):
-        return net in poured or pad_count.get(net, 0) >= big_pads
+        return net in poured or net in supply or pad_count.get(net, 0) >= big_pads
 
     touch_nets = set()
     old_pads = []
@@ -94,8 +101,10 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
     crossing = {}
     # modules to redo: a moved part, or copper inside the window
     redo = {m for m, parts in module_parts.items() if moved & set(parts)}
+    also = set(also or ())
     for it in items:
-        if it.locked and owners.get(it.uuid) in module_parts and geoms[it.uuid].intersects(region):
+        if it.locked and owners.get(it.uuid) in module_parts and (geoms[it.uuid].intersects(region)
+                                                                  or it.uuid in also):
             redo.add(owners[it.uuid])
     for it in items:
         g = geoms[it.uuid]
@@ -112,7 +121,7 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
             else:
                 remove.add(it.uuid)
                 whole.add(it.net)
-        elif g.intersects(region):
+        elif g.intersects(region) or it.uuid in also:
             remove.add(it.uuid)
             crossing.setdefault(it.net, 0.0)
     if crossing:

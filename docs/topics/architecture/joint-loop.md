@@ -3,7 +3,7 @@
 **TL;DR**
 - Placement and routing depend on each other: the placer cannot see where the router will fail, and the router cannot move a part. `kae.joint` closes the loop at the granularity that scales on PCBs: place and route the whole board once, then repair **windows** (a few parts and the nets touching them) where routing failed, DRC complained or a module's routed physics shifted.
 - One iteration = re-anneal the window's parts with everything else fixed (the placer's `subset`/`window` API) under a congestion penalty built from where routing failed, rip up only the nets touching the window, redo the window's modules (critical copper), re-route with everything else locked, judge with KiCad DRC and the routed-physics recheck.
-- An iteration is kept only if legality, completion and DRC errors do not get worse, routed physics does not get worse, and something gets better (lexicographic). Otherwise it is reverted. The output is never worse than the staged pipeline.
+- An iteration is kept only if it is lexicographically better: legality, then completion and DRC, then routed physics. Legality, unconnected items and DRC errors may never get worse. A completion gain may cost at most 10 % of routed physics, and with equal completion physics must improve. Otherwise it is reverted, so the output is never worse than the staged pipeline.
 - Results: see [Measured](#measured) (kaebench `joint` kind, splits A/B).
 
 ## Key facts
@@ -41,11 +41,11 @@ Steps 1–6 repeat until the board is clean with no module flagged, no window is
 
 Spot weights are 3 (unrouted), 2 (error) and 1 + rise + cover loss (physics), so completion is repaired first, which matches the acceptance order.
 
-**Windows.** A spot's window holds its own unlocked parts plus the unlocked parts whose centres lie within a 2 mm margin of the region they and the spot's points span, nearest first, at most 8. Locked parts, parts that carry Edge.Cuts and staged parts never move. The rectangle covers every movable part's current courtyard box, so the annealer starts inside it. Overlapping windows merge while the union stays within 1.5× the part cap. A rejected window is retried once with the margin ×1.5, two more parts and the congestion weight ×1.5, then it is exhausted.
+**Windows.** A spot's window holds its own unlocked parts plus the unlocked parts whose centres lie within a 2 mm margin of the region they and the spot's points span, nearest first, at most 8 and at most 35 % of the board's movable parts (at least 3). On a 15-part board a 12-part window was a global re-place, and it lost completion (17 → 28 unconnected). Locked parts, parts that carry Edge.Cuts and staged parts never move. On a first attempt, parts with more than 12 connected pads stay fixed too, unless nothing smaller can move: moving an MCU rips up every net it has. In the first smoke run, a window that moved the MCU ripped 15 nets (132 items) and cost one bridge run of 270 s. The rectangle covers every movable part's current courtyard box, so the annealer starts inside it. Overlapping windows merge while the union stays within 1.5× the part cap. A rejected window is retried once with the margin ×1.5, two more parts, ICs allowed, the congestion weight ×1.5 and the physics weight ×2, then it is exhausted. On that retry the window's modules are not redone: their nets go to the bridge, since their locked copper and guard pours may be what blocks the corridor. The acceptance rule prices the physics this costs.
 
 ### Congestion penalty
 
-`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, is added to the static demand array:
+`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. RUDY marks how crowded the failed region is: the placer's own RUDY map of the routed placement adds 0.5·max(0, u − 0.5) to history bins within 3 mm of a failure. Alone, RUDY ranks PCB routability near chance ([joint-place-route](../physics/joint-place-route.md)), so it never opens a window by itself. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, is added to the static demand array:
 
 u_b = (D_nets + D_escape + h_b·S_b) / S_b.
 
@@ -70,16 +70,16 @@ The window's modules are re-optimized with `optimize_modules(modules=…)`, with
 | Order | Criterion | Rule |
 |---|---|---|
 | 1 | legality: KiCad placement-type errors whose items are only pads and footprints | must not rise |
-| 2 | completion: unconnected items | must not rise |
-| 2 | DRC errors | must not rise |
-| 3 | routed physics: Σ_modules min(u, 5), a module without a value counted as 3 | must not rise beyond 0.5 % |
-| — | improvement | the key (legality, unconnected + errors, unconnected, physics) must fall |
+| 2 | completion and DRC: unconnected + errors, then unconnected | neither may rise; a strict gain is kept if physics rises by at most 10 % |
+| 3 | routed physics: Σ_modules min(u, 5), a module without a value counted as 3 | with equal completion and DRC, must fall by more than 0.5 % |
+
+The 10 % slack interprets "lexicographic" in the request. The strict reading (physics never worse, `--set phys_slack=0`) reverted the first smoke run's only window, which had halved the unconnected items (15 → 7) at +33 % physics. The MCU moved there and lengthened its decoupling loop.
 
 A rejected candidate is dropped, and the incumbent board, its bookkeeping and its feedback stay. Its failures still enter the congestion history.
 
 ### Determinism and budgets
 
-Every stage seed derives from the run's seed and the iteration number (`derive_seed`). Windows are ordered by priority, then by position. Freerouting is deterministic for a given item order. The window anneal uses a fixed move count. So the same seed gives the same result whenever no time budget binds. On a loaded host the placer's, the bridge's and the loop's clocks can bind and change the result. The budget is wall seconds: 30 % for the placer, 45 % of what is left after it for the first route, the rest for iterations, and a reserve for the final write.
+Every stage seed derives from the run's seed and the iteration number (`derive_seed`). Windows are ordered by priority, then by position. Freerouting is deterministic for a given item order. The window anneal uses a fixed move count. So the same seed gives the same result whenever no time budget binds. On a loaded host the placer's, the bridge's and the loop's clocks can bind and change the result. The budget is wall seconds: 30 % for the placer, 60 % of what is left after it and the module stage for the first route, the rest for iterations, and a reserve for the final write.
 
 ### Measured
 

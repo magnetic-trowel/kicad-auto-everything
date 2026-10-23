@@ -310,14 +310,15 @@ class ExactModel:
 
 
 # ----------------------------------------------------------------------------- repair
-def culprits(P, findings):
+def culprits(P, findings, allowed=None):
     """Movable parts to move for a list of findings, biggest first: a finding with one
     movable part names it; with two, the smaller one (it finds room more easily) unless the
     bigger one is the one out of the board."""
     by_ref = {p.ref: p.i for p in P.parts}
     out = {}
     for v in findings:
-        mv = [by_ref[r] for r in v["refs"] if r in by_ref and P.parts[by_ref[r]].movable]
+        mv = [by_ref[r] for r in v["refs"] if r in by_ref and P.parts[by_ref[r]].movable
+              and (allowed is None or by_ref[r] in allowed)]
         if not mv:
             continue
         i = min(mv, key=lambda q: P.parts[q].area) if len(mv) > 1 else mv[0]
@@ -377,7 +378,7 @@ def _tables(P, st, skip):
     return [sat(occ[0]), sat(occ[1])], pad
 
 
-def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True):
+def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=None):
     """Move part i to the nearest spot that is grid-free (others where they are) and exactly
     clean; with evict, else to the nearest exactly clean spot where it only covers smaller
     movable parts, which are then re-placed the same way. Returns (moved, evicted refs)."""
@@ -394,7 +395,7 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True):
         return False, []
     # evict: grid tables without the smaller movable parts; the spot must be exactly clean
     # against everything but them, and they move out after
-    small = {j for j in P.mov if j != i and P.parts[j].area < p.area}
+    small = {j for j in P.mov if j != i and P.parts[j].area < p.area and (allowed is None or j in allowed)}
     S2, pad2 = _tables(P, st, small | {i})
     for c, X, Y, k in _candidates(P, st, i, S2, pad2, ks, w_rot, limit):
         if time.monotonic() > deadline:
@@ -410,37 +411,39 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True):
         E.set_pose(i, X, Y, k)
         out = []
         for r in sorted(refs, key=lambda r: -P.parts[by_ref[r]].area):
-            ok, _ = move_clean(P, st, E, by_ref[r], deadline, w_rot, limit, evict=False)
+            ok, _ = move_clean(P, st, E, by_ref[r], deadline, w_rot, limit, evict=False, allowed=allowed)
             out.append(r)
         return True, out
     return False, []
 
 
-def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0):
+def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
     """Closed loop on the exact check: findings -> culprits -> moved to exactly clean spots,
-    until no finding is left or the time is up. Returns a report (start/end findings,
-    parts moved, evicted, parts left with their findings)."""
+    until no finding is left or the time is up. `allowed`: part indices it may move (default
+    every movable part). Returns a report (start/end findings, parts moved, evicted, parts
+    left with their findings)."""
     t0 = time.monotonic()
     deadline = t0 + time_s
     E = ExactModel(P, st)
-    found = E.check(max_items=100000)
+    scope = None if allowed is None else set(allowed)
+    found = E.check(parts=scope, max_items=100000)
     rep = dict(start=len(found), rounds=0, moved=[], evicted=[], stuck=[])
     for _ in range(rounds):
         if not found or time.monotonic() > deadline:
             break
         rep["rounds"] += 1
         progress = False
-        for i in culprits(P, found):
+        for i in culprits(P, found, scope):
             if time.monotonic() > deadline:
                 break
             if not E.part_findings(i, max_items=1):
                 continue
-            ok, ev = move_clean(P, st, E, i, deadline, w_rot=w_rot)
+            ok, ev = move_clean(P, st, E, i, deadline, w_rot=w_rot, allowed=scope)
             if ok:
                 progress = True
                 rep["moved"].append(P.parts[i].ref)
                 rep["evicted"] += ev
-        found = E.check(max_items=100000)
+        found = E.check(parts=scope, max_items=100000)
         if not progress:
             break
     left = {}

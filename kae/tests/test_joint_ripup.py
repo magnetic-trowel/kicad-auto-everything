@@ -128,3 +128,27 @@ def test_stages_geometry_and_finish_without_kicad(tmp_path):
     assert [t.uuid for t in o.tracks if t.net == "GND"] == ["11111111-2222-3333-4444-555555555555"]
     fp = next(f for f in o.footprints if f.uuid == u1)
     assert (round(fp.x, 6), round(fp.y, 6)) == (12.0, 11.0)
+
+
+def test_stages_rudy_map_without_kicad(tmp_path):
+    from kae.joint.stages import KaeStages, Layout
+    st = KaeStages(FIXTURE, tmp_path / "wd")
+    x0, y0, b, util = st.rudy(Layout(board=str(FIXTURE)))
+    assert b > 0 and util.ndim == 2 and util.max() > 0 and (x0, y0) == (0.0, 0.0)
+
+
+def test_copper_blamed_by_drc_is_ripped():
+    b = load(FIXTURE)
+    gnd_via = next(v for v in b.vias if v.net == "GND")
+    far = Window(rect=(52.0, 2.0, 58.0, 8.0), parts=())
+    plan = plan_ripup(b, far, set(), owners={}, module_parts={}, also={gnd_via.uuid})
+    assert plan.remove == [gnd_via.uuid]
+
+
+def test_supply_nets_are_ripped_locally():
+    b = load(FIXTURE)
+    u1 = _uuid(b, "U1")
+    win = Window(rect=(7.0, 7.0, 13.0, 13.0), parts=(u1,))
+    plan = plan_ripup(b, win, {u1}, owners={}, module_parts={}, supply_nets={"SIG1"})
+    assert "SIG1" in plan.partial and "SIG1" not in plan.whole
+    assert sorted(plan.remove) == ["00000000-0000-4000-8000-000000000157"]   # only the track at U1's pad

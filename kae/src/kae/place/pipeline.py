@@ -448,11 +448,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
 
 
 def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=True, brief=None, log=None,
-                  angle_step=None, workers=1):
+                  angle_step=None, workers=1, net_weights=None):
     """Re-place only `parts` (footprint uuids or references) of an already placed board,
     inside `window_mm` = (x0, y0, x1, y1) when given, with every other footprint where it is
-    (fixed geometry and fixed pins): the module loop's local re-placement after routing.
-    Returns Result(poses of the re-placed parts, report)."""
+    (fixed geometry and fixed pins): the module and joint loops' local re-placement after
+    routing. `net_weights` {net name: factor} scales nets' wirelength weights (routing
+    feedback: an unrouted or detoured net pulls its pins together harder). Ends exactly
+    legal for the moved parts when it can (kae.place.exact.repair, only `parts` move).
+    Returns Result(poses of the re-placed parts, report, state, problem)."""
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     if brief is None:
@@ -484,6 +487,8 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
         except Exception as e:
             log(f"place terms failed ({type(e).__name__}: {e})")
     order = clusters.protection_order(P, brief) if physics else []
+    for net in P.nets:
+        net.weight *= float((net_weights or {}).get(net.name, 1.0))
     rep = dict(parts=[P.parts[i].ref for i in sub], window=window)
     if sub:
         ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=1.0 if terms is not None else 0.0,
@@ -494,8 +499,13 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
         bad = [i for i in grid_violations(st) if i in set(sub)]
         if bad:
             rep["greedy"] = greedy_subset(P, st, bad, log)
-        rep["legal_grid"] = not [i for i in grid_violations(st) if i in set(sub)]
         rep["exact"] = exact_check(P, st, parts=sub)
+        if rep["exact"]:
+            left = max(2.0, t0 + time_s - time.monotonic())
+            rep["closed_loop"] = exactmod.repair(P, st, time_s=left, log=log, allowed=set(sub))
+            rep["closed_loop"].pop("findings", None)
+            rep["exact"] = exact_check(P, st, parts=sub)
+        rep["legal_grid"] = not [i for i in grid_violations(st) if i in set(sub)]
     rep["seconds"] = round(time.monotonic() - t0, 2)
     poses = {P.parts[i].uuid: st.pose(i) for i in sub}
     return Result(poses=poses, report=rep, state=st, problem=P)

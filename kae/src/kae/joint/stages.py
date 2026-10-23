@@ -238,7 +238,9 @@ class KaeStages:
         _project(self.input, locked)
         raw = self._path(it, "route_raw")
         rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
-                       opts=dict(keep=bool(self.opts.get("keep"))), log=lambda m: self.log(f"bridge: {m}"))
+                       opts=dict(keep=bool(self.opts.get("keep")),
+                                 **({"rounds": int(self.opts.get("window_rounds", 3))} if it > 0 else {})),
+                       log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
         src = raw if raw.exists() else locked
         allr = W.routing(src)
@@ -296,6 +298,26 @@ class KaeStages:
         lay.info["evaluate_s"] = round(time.monotonic() - t0, 1)
         return card, dict(drc=rep, recheck=rc)
 
+    # ------------------------------------------------------------------ RUDY
+    def rudy(self, lay):
+        """The placer's routing-utilization map of a layout: (x0, y0, bin, util array)."""
+        from kae.place.anneal import Annealer
+        from kae.place.problem import Problem
+        from kae.place.state import State
+
+        from .replace import net_kinds
+        b = self._load(lay.board)
+        P = Problem.build(b, net_kinds=net_kinds(self.brief or {}))
+        st = State(P)
+        for i in P.mov:
+            p = P.parts[i]
+            X, Y = P.grid_of(p.x0, p.y0)
+            rots = [r.rot for r in p.rots]
+            k = min(range(len(rots)), key=lambda kk: min(abs(rots[kk] - p.rot0) % 360, 360 - abs(rots[kk] - p.rot0) % 360))
+            st.X[i], st.Y[i], st.K[i] = X, Y, k
+        c = Annealer(P, st, terms=None, w_cong=1.0).cong
+        return c.x0, c.y0, c.b, c.utilization()
+
     # ------------------------------------------------------------------ geometry for windows
     def geometry(self, lay):
         """(parts {uuid: PartGeom}, board bounds, part centres, refs) of a layout."""
@@ -346,13 +368,17 @@ class KaeStages:
                              cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** attempt),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
                              bump_refs=bump_refs, margin=float(o.get("margin", 0.3)),
+                             phys_mult=float(o.get("phys_mult", 2.0)) ** attempt,
                              physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}
         if not res.poses:
             rep["outcome"] = res.report.get("rejected") or res.report.get("skipped") or "no part moved"
             return None, rep
         plan = plan_ripup(board, window, set(res.poses), lay.owners, self.module_parts,
-                          big_pads=int(o.get("big_pads", 20)), max_cross=int(o.get("max_cross", 4)))
+                          big_pads=int(o.get("big_pads", 20)), max_cross=int(o.get("max_cross", 4)),
+                          also={u for sp in window.spots if sp.kind == "error" for u in sp.uuids},
+                          supply_nets={n for n, d in ((self.brief or {}).get("nets") or {}).items()
+                                       if isinstance(d, dict) and d.get("role") in ("ground", "rail", "power")})
         rep["ripup"] = plan.to_dict()
         ripped = self._path(it, "ripped")
         W.edit(lay.board, ripped, remove=plan.remove)
@@ -366,12 +392,20 @@ class KaeStages:
                      status=dict(lay.status), stage=dict(lay.stage), info={})
         mid.poses.update({u: tuple(p) for u, p in res.poses.items()})
         left = time_s - (time.monotonic() - t0)
-        redo = [] if o.get("no_modules") else plan.redo
+        # the last attempt at a window leaves its modules' nets to the bridge: their critical
+        # copper and guards may be what blocks the corridor (acceptance prices the physics)
+        drop = attempt >= int(o.get("drop_modules_attempt", 1))
+        redo = [] if (o.get("no_modules") or drop) else plan.redo
+        rep["modules_dropped"] = sorted(plan.redo) if drop and not o.get("no_modules") else []
         mod = self.modules(mid, it, only=redo, window_parts=window.parts,
                            time_s=min(float(o.get("module_time", 90.0)), max(5.0, 0.15 * left)))
         rep["modules"] = mod.info.get("modules")
         left = time_s - (time.monotonic() - t0)
-        routed = self.route(mod, it, seed=seed, time_s=max(30.0, left))
+        if left < float(o.get("min_route_s", 75.0)):
+            # Freerouting killed before it writes a session leaves the window unrouted
+            rep["outcome"] = f"no time left to route ({left:.0f}s)"
+            return None, rep
+        routed = self.route(mod, it, seed=seed, time_s=left)
         rep["route"] = routed.info.get("route")
         rep["seconds"] = round(time.monotonic() - t0, 1)
         return routed, rep

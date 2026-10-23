@@ -20,8 +20,11 @@ def test_accept_is_lexicographic_with_hard_guards():
     assert not accept(base, card(unc=3, mods={"a": 0.5}))[0]             # completion must not drop
     assert not accept(base, card(unc=1, err=1, mods={"a": 1.0}))[0]      # DRC errors must not rise
     assert not accept(base, card(unc=0, pe=1, mods={"a": 1.0}))[0]       # legality first
-    assert not accept(base, card(unc=1, mods={"a": 1.2}))[0]             # physics must not worsen
-    assert accept(base, card(unc=1, mods={"a": 1.002}))[0]               # within float tolerance
+    assert accept(base, card(unc=1, mods={"a": 1.08}))[0]                # a completion gain within the slack
+    assert not accept(base, card(unc=1, mods={"a": 1.2}))[0]             # beyond the slack
+    assert not accept(base, card(unc=1, mods={"a": 1.08}), phys_slack=0.0)[0]   # strict reading
+    assert not accept(base, card(unc=2, mods={"a": 1.002}))[0]           # equal completion: float noise
+    assert not accept(base, card(unc=2, mods={"a": 1.05}))[0]            # equal completion: physics worse
     # a module losing its value counts as missing, capped utilizations
     assert physics_total({"a": None, "b": 99.0, "c": 0.5}) == 3.0 + 5.0 + 0.5
     assert not accept(base, card(unc=1, mods={"a": None}))[0]

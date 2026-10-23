@@ -10,10 +10,13 @@ A Scorecard holds what KiCad and the routed-physics recheck say about a board:
   their sum, each capped at U_CAP, a module without a value counted at U_MISSING; the place
   terms' straight-line total is reported beside it.
 
-`accept(old, new)` keeps an iteration only when it is no worse in legality, completion and
-DRC errors, no worse in routed physics (beyond `phys_tol`, for float noise), and better in
-at least one of them, compared lexicographically: legality, then unconnected + errors, then
-physics. Anything else is reverted.
+`accept(old, new)` compares lexicographically: legality, then completion and DRC
+(unconnected + errors, then unconnected), then routed physics. Legality, unconnected items
+and DRC errors must never get worse. A strict gain in completion or DRC is kept when routed
+physics worsens by at most `phys_slack` (10 % of the incumbent's total); with equal
+completion and DRC, physics must improve beyond `phys_tol` (float noise). Anything else is
+reverted. (A strict reading, physics never worse, is phys_slack=0: on the noisecard smoke
+run it reverted a window that halved the unconnected items, 15 -> 7, at +33 % physics.)
 """
 from __future__ import annotations
 
@@ -74,8 +77,10 @@ def _phys_on(card, ids):
     return physics_total({k: card.modules.get(k) for k in ids})
 
 
-def accept(old, new, phys_tol=0.005):
-    """(keep, why). See the module docstring."""
+def accept(old, new, phys_tol=0.005, phys_slack=0.10):
+    """(keep, why). See the module docstring. `phys_slack`: how much routed physics (share
+    of the incumbent's total) a strict completion/DRC gain may cost; 0 makes physics a hard
+    guard even then."""
     if new.placement_errors > old.placement_errors:
         return False, f"legality worse ({old.placement_errors} -> {new.placement_errors} placement errors)"
     if new.unconnected > old.unconnected:
@@ -85,10 +90,15 @@ def accept(old, new, phys_tol=0.005):
     # physics on the modules both boards know (the module set comes from one brief)
     ids = sorted(set(old.modules) | set(new.modules))
     p0, p1 = _phys_on(old, ids), _phys_on(new, ids)
-    if p1 > p0 + phys_tol * max(1.0, abs(p0)):
+    k0 = (old.placement_errors, old.unconnected + old.errors, old.unconnected)
+    k1 = (new.placement_errors, new.unconnected + new.errors, new.unconnected)
+    scale = max(1.0, abs(p0))
+    if k1 < k0:
+        if p1 > p0 + max(phys_tol, phys_slack) * scale:
+            return False, f"physics worse beyond the slack ({p0:.4f} -> {p1:.4f}) for {k0} -> {k1}"
+        return True, f"better {k0} -> {k1}, physics {p0:.4f} -> {p1:.4f}"
+    if p1 > p0 + phys_tol * scale:
         return False, f"physics worse ({p0:.4f} -> {p1:.4f})"
-    k0 = (old.placement_errors, old.unconnected + old.errors, old.unconnected, round(p0, 6))
-    k1 = (new.placement_errors, new.unconnected + new.errors, new.unconnected, round(p1, 6))
-    if k1 < k0 and (k1[:3] < k0[:3] or p1 < p0 - phys_tol * max(1.0, abs(p0))):
-        return True, f"better {k0} -> {k1}"
+    if p1 < p0 - phys_tol * scale:
+        return True, f"physics better ({p0:.4f} -> {p1:.4f})"
     return False, "no improvement"

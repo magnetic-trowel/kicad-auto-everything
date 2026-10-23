@@ -64,7 +64,7 @@ def window_board(board, parts):
 
 def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, terms=None, physics=True,
                    cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, moves_per_part=6000,
-                   log=None):
+                   phys_mult=1.0, log=None):
     """See the module docstring. `board` is a kae.board.model.Board at the current poses;
     `window` a feedback.Window. `terms`: place terms built on the full board (the brief's
     structures), else built here when `physics`."""
@@ -115,7 +115,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
             log(f"place terms failed ({type(e).__name__}: {e})")
             terms = None
     order = clusters.protection_order(P, brief) if physics else []
-    ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=1.0 if terms is not None else 0.0,
+    ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=float(phys_mult) if terms is not None else 0.0,
                         w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None)
     rep["history"] = apply_history(ann, history, scale=history_scale, window=window.rect)
     rep["cost_before"] = round(float(ann.cost(ann.lam1)), 5)

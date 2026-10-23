@@ -146,3 +146,14 @@ def test_big_parts_move_only_when_nothing_smaller_can():
     s2 = Spot(kind="unrouted", x=20, y=10, points=((20, 10),), refs=("R1",))
     w2 = plan_windows([s2], parts, (0, 0, 50, 40), margin=0.5, max_parts=3, max_pins=12)
     assert "u1" in w2[0].parts                # nothing small within reach: the IC moves
+
+
+def test_rudy_overflow_adds_history_only_near_failures():
+    h = CongestionHistory((0, 0, 20, 10), bin_mm=1.0)
+    util = np.full((10, 5), 0.9)                 # a 2 mm RUDY grid, crowded everywhere
+    assert h.add_overflow(0, 0, 2.0, util) == 0.0     # no failure yet: RUDY alone marks nothing
+    h.add_corridor((2, 5), (4, 5), width=1.0, amount=1.0)
+    before = h.h.copy()
+    added = h.add_overflow(0, 0, 2.0, util, target=0.5, scale=0.5, reach_mm=2.0)
+    assert added > 0
+    assert h.h[3, 5] > before[3, 5] and h.h[15, 5] == 0.0

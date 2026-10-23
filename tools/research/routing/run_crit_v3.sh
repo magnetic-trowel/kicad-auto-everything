@@ -4,7 +4,8 @@
 #
 # Critical-net routing A/B, third round: bridge alone vs critical copper + bridge at one commit,
 # k=3 on the main arms (a one-board difference at k=1 is within Freerouting's noise), on splits
-# A+B and on six split-C boards with switching cells; a k=1 arm with re-tweak rounds; then
+# A+B and on six split-C boards with switching cells; k=1 arms with re-tweak rounds and (A+B)
+# with the pad and island joins of the critical nets turned back on; then
 # kaebench reports, per-module physics (crit_compare) and DC/HF passports against the human
 # boards (suite_physics).
 #
@@ -57,6 +58,7 @@ CR=kae-crit-$V
 run $FR-ab   kae-fr   kae.route.cli          600 "$K" ""           --only @"$W/suite-ab.txt"
 run $CR-ab   kae-crit kae.route.critical_cli 600 "$K" ""           --only @"$W/suite-ab.txt"
 run ${CR}r3-ab kae-crit kae.route.critical_cli 600 1   "--rounds 3" --only @"$W/suite-ab.txt"
+run ${CR}c-ab  kae-crit kae.route.critical_cli 600 1   "--complete-mm 8 --island-mm 20" --only @"$W/suite-ab.txt"
 run $FR-c6   kae-fr   kae.route.cli          900 "$K" ""           --only @"$W/suite-c6.txt"
 run $CR-c6   kae-crit kae.route.critical_cli 900 "$K" ""           --only @"$W/suite-c6.txt"
 run ${CR}r3-c6 kae-crit kae.route.critical_cli 900 1   "--rounds 3" --only @"$W/suite-c6.txt"
@@ -64,6 +66,7 @@ for s in ab c6; do
   kaebench report "$W/results/$CR-$s"   "$W/results/$FR-$s" > "$W/report-crit-$V-$s.md"
   kaebench report "$W/results/${CR}r3-$s" "$W/results/$FR-$s" > "$W/report-crit-${V}r3-$s.md"
 done
+kaebench report "$W/results/${CR}c-ab" "$W/results/$FR-ab" > "$W/report-crit-${V}c-ab.md"
 for s in ab c6; do
   "$PY" tools/research/physics/crit_compare.py --tasks "$W/tasks" --out "$W/physics/crit-$V-$s" -j "$J" \
     --arm bridge="$W/results/$FR-$s/kae-fr" --arm crit="$W/results/$CR-$s/kae-crit" \
