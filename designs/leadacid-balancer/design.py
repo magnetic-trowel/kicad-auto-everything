@@ -47,7 +47,7 @@ V12 = 12.5                  # 12 V gate rails: 1.193 V x (1 + 909/100) = 12.04 V
 V5MAX = 5.05                # TPS70950 5.0 V +/-1 %
 R_SC_MIN, R_SC_NOM, R_SC_MAX = 0.476, 0.514, 0.567      # calc r_sc_* (Ohm)
 K_FLY, K_FET = 2.13, 1.51                               # rms flying / FET current per A of balancing current
-R_HI_WORST = (0.925 / 4.925) / (0.79 / 8.79) * (1 + 0.015) - 1   # upper lockout trip, worst (REQ-11): 1.121
+R_HI_WORST = 1.1153                                     # upper lockout trip, worst (REQ-11; calc ratio_hi_worst)
 I_EDGE = (R_HI_WORST - 1) * 17.55 / R_SC_MIN            # 4.38 A: window edge, worst tolerances, 17.55 V, -20 C
 I_FLY = K_FLY * I_EDGE                                  # 9.3 A rms in the flying path at that edge
 
@@ -56,21 +56,31 @@ def _ratio(top, bot):
     return bot / (top + bot)
 
 
-# Supervisor divider strings (review M-1): 0.1 % TNPW1206 thin film throughout (<= 2 MOhm per segment), node
-# voltages raised to ~2.5 V so comparator offset + hysteresis are a small fraction. Each top is a series chain,
-# each bottom two equal resistors in parallel (one open or shorted part at most doubles the node voltage).
-#            name   from   top segments (Ohm)           bottom pair (each, Ohm)
-STRINGS = {"PON": ("TH", (2.00e6,) * 4, 1.67e6),       # wake: V_pair x 0.0945 against VREF 2.5 V
-           "PLO": ("TH", (2.00e6,) * 4, 1.58e6),       # ratio lockout, top battery high
-           "PHI": ("TH", (2.00e6,) * 4, 1.74e6),       # ratio lockout, top battery low
-           "PWH": ("TH", (2.00e6,) * 4, 1.62e6),       # imbalance warning, top high (review M-3)
-           "PWL": ("TH", (2.00e6,) * 4, 1.70e6),       # imbalance warning, top low
-           "N": ("TM", (2.00e6,) * 2, 1.85e6)}         # bottom battery, compared with the pair strings
+# Supervisor divider strings (review M-1, M-3): 0.1 % TNPW1206 thin film (<= 2 MOhm per segment), node
+# voltages raised to ~2.5 V so comparator offset + hysteresis stay small. Each top is a series chain; each lower
+# element is two equal resistors in parallel, so one open or shorted part at most doubles a node voltage. The
+# PLO and PHI strings carry a second tap ~2 % away (a small parallel pair) for the imbalance warning.
+#            name   from  top segments (Ohm)             [(output node, lower pair, each Ohm), ...]
+STRINGS = {"PON": ("TH", (2.00e6,) * 4, [("PON", 1.67e6)]),
+           "PLO": ("TH", (2.00e6,) * 3 + (1.96e6,), [("PWH", 30.9e3), ("PLO", 1.58e6)]),
+           "PHI": ("TH", (2.00e6,) * 4, [("PHI", 36.5e3), ("PWL", 1.70e6)]),
+           "N": ("TM", (2.00e6,) * 2, [("N", 1.85e6)])}
 
 
-def k_of(name):
-    _, tops, bot = STRINGS[name]
-    return _ratio(sum(tops), bot / 2)
+def string_total(sname):
+    _, tops, lows = STRINGS[sname]
+    return sum(tops) + sum(r / 2 for _, r in lows)
+
+
+def k_of(node):
+    """Division ratio of an output node (V_node / V_source)."""
+    for sname, (_, tops, lows) in STRINGS.items():
+        below = 0.0
+        for name, r in reversed(lows):
+            below += r / 2
+            if name == node:
+                return below / string_total(sname)
+    raise KeyError(node)
 
 
 WIN_TOL = 0.015     # on V_pair/V_bot: offset + V_HYS/2 (linear, 0.88 %) + 0.1 % resistors and TCR (RSS, 0.58 %)
@@ -137,145 +147,7 @@ def intent(d):
     R("REQ-25", "Battery-count configuration: shunts on JP101..JP(N-1)01 (channel enable); for each unused "
       "channel a shunt on JPk02 (bridges its alarm opto); every unused tap-plug position bridged to the highest used "
       "position inside the plug", value=f"design default N = {N_BATT} (N_BATT)", source="REQ-1; H-12",
-      verify="V-1; label next to J1")# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
-"""leadacid-balancer: MCU-free 2:1 switched-capacitor equalizer for 2-4 series 12 V lead-acid batteries.
-
-Encodes designs/leadacid-balancer/DESIGN.md (engineering rationale, evidence tags, sources) and
-CONNECTIONS.md (net naming, pin rationale). Build: `kaesynth build designs/leadacid-balancer/design.py -v`.
-
-Domain model (exact stack, no interval blow-up):
-  B1     root, ref TAP0 (system negative). Holds TAP0, TAP1 and every net referenced to TAP0.
-  Bk     (k = 2..4) floats on TAP(k-1): battery k's domain. Holds TAPk (v = one battery, 0-20 V) and
-         every net referenced to TAP(k-1). Bk is the "band" of DESIGN.md section 6 plus its top tap.
-  CHk_HSU floats on CHk_X (upper switch node): bootstrap BSTU, OUTA/GA of the upper driver, C_FLY +.
-  CHk_HSL floats on CHk_Y (lower switch node): BSTL, OUTA/GC of the lower driver, C_FLY -.
-  CHk_LS  floats on T_H: the base of level-shift PNP Q(k)07, within one V_BE of T_H.
-  CHk_QFB floats on CHk_V5: the base of fault-driver PNP Q(k)05, within one V_BE of V5.
-  CHk_SPAN floats on T_L: nets that swing across both batteries of the pair (PON_A, LSD, LSM), kept out
-         of the band domains so each band stays within 30 V inside.
-  ISO    root, ref ALM_E: the opto-isolated alarm contact.
-Channel k uses T_L = TAP(k-1), T_M = TAPk, T_H = TAP(k+1); its L side lives in Bk, its U side in B(k+1).
-"""
-import importlib.util
-import math
-from pathlib import Path
-
-from kaesynth import Design, Hole
-
-_spec = importlib.util.spec_from_file_location("leadacid_balancer_parts", Path(__file__).with_name("parts.py"))
-P = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(P)
-
-BRIEF = ("I want a battery balancer that can balance a string, series string of 12 volt lead acid batteries. "
-         "I want another one that can balance a series string of lithium ion batteries. This would be in the "
-         "10 kilowatt hour range, so home packs. It should make sure that there's no pathways for voltage to jump "
-         "from places. I don't know if you want to do a flying capacitor or inductor or some other elegant "
-         "approach, but it needs to keep the charge balanced without bleed resistors. Ideally, it would be as "
-         "efficient as possible, as robust as possible, and allow us to have little wires that go to the system "
-         "ground and then all of the individual positive terminals.")
-
-# -- configuration ----------------------------------------------------------------------------------
-N_BATT = 4                  # batteries in the string: 2, 3 or 4 (REQ-25, Q-1, Q-13)
-CHANNELS = (1, 2, 3)        # the board always carries three channels; channel k needs batteries k and k+1
-
-# -- voltage and current envelopes (DESIGN.md sections 2 and 7) ---------------------------------------
-VB = 20.0                   # survive maximum per battery incl. charger transients (REQ-3), V
-VB_OP = 17.6                # operating maximum: 16.20 V equalize + 30 mV/K x 45 K (REQ-3)
-V12 = 12.5                  # 12 V gate rails: 1.193 V x (1 + 909/100) = 12.04 V nominal, +4 % worst [I]
-V5MAX = 5.05                # TPS70950 5.0 V +/-1 %
-R_SC_MIN, R_SC_NOM, R_SC_MAX = 0.476, 0.514, 0.567      # calc r_sc_* (Ohm)
-K_FLY, K_FET = 2.13, 1.51                               # rms flying / FET current per A of balancing current
-R_HI_WORST = (0.925 / 4.925) / (0.79 / 8.79) * (1 + 0.015) - 1   # upper lockout trip, worst (REQ-11): 1.121
-I_EDGE = (R_HI_WORST - 1) * 17.55 / R_SC_MIN            # 4.38 A: window edge, worst tolerances, 17.55 V, -20 C
-I_FLY = K_FLY * I_EDGE                                  # 9.3 A rms in the flying path at that edge
-
-
-def _ratio(top, bot):
-    return bot / (top + bot)
-
-
-# Supervisor divider strings (review M-1): 0.1 % TNPW1206 thin film throughout (<= 2 MOhm per segment), node
-# voltages raised to ~2.5 V so comparator offset + hysteresis are a small fraction. Each top is a series chain,
-# each bottom two equal resistors in parallel (one open or shorted part at most doubles the node voltage).
-#            name   from   top segments (Ohm)           bottom pair (each, Ohm)
-STRINGS = {"PON": ("TH", (2.00e6,) * 4, 1.67e6),       # wake: V_pair x 0.0945 against VREF 2.5 V
-           "PLO": ("TH", (2.00e6,) * 4, 1.58e6),       # ratio lockout, top battery high
-           "PHI": ("TH", (2.00e6,) * 4, 1.74e6),       # ratio lockout, top battery low
-           "PWH": ("TH", (2.00e6,) * 4, 1.62e6),       # imbalance warning, top high (review M-3)
-           "PWL": ("TH", (2.00e6,) * 4, 1.70e6),       # imbalance warning, top low
-           "N": ("TM", (2.00e6,) * 2, 1.85e6)}         # bottom battery, compared with the pair strings
-
-
-def k_of(name):
-    _, tops, bot = STRINGS[name]
-    return _ratio(sum(tops), bot / 2)
-
-
-WIN_TOL = 0.015     # on V_pair/V_bot: offset + V_HYS/2 (linear, 0.88 %) + 0.1 % resistors and TCR (RSS, 0.58 %)
-
-
-def intent(d):
-    # -- requirements (DESIGN.md section 2) -----------------------------------------------------------
-    R = d.require
-    R("REQ-1", "Balance a series string of N 12 V lead-acid batteries", value="N = 2, 3 or 4 (24/36/48 V)",
-      source="brief + derived (ASM-1, Q-1)", verify="V-1")
-    R("REQ-2", "Battery types", value="flooded, AGM, gel; 100-400 Ah per 12 V battery", source="brief ('10 kWh')",
-      verify="analysis 7.1")
-    R("REQ-3", "Per-battery voltage: operate / survive", value="10.5-17.6 V / 0-20 V",
-      source="Trojan 16.20 V equalize + 30 mV/K at -20 C [P]", verify="analysis 7.1, V-2")
-    R("REQ-4", "Maximum stack voltage", value="70.2 V (4 x 17.55 V)", source="derived", verify="analysis")
-    R("REQ-5", "No dissipative balancing", value="no bleed resistor or linear shunt in the balancing path",
-      source="brief", verify="inspection")
-    R("REQ-6", "Balancing current with the harness of REQ-22, worst case incl. finite tap capacitance and the "
-      "1.5 s tap-check pauses", value=">= 0.09 A at 0.1 V; >= 0.26 A at 0.3 V",
-      source="derived 7.2 (relaxed from 0.10/0.30 A after the review's periodic-steady-state model; a 0.1 A float "
-             "mismatch still settles at <= 0.11 V per pair)", verify="V-3; calcs i_bal_*")
-    R("REQ-7", "Charge-transfer efficiency", value=">= 97 % for dV <= 0.3 V", source="brief", verify="V-4")
-    R("REQ-8", "Active overhead per channel", value="<= 0.30 W, only while a charger is present",
-      source="derived (0.25 W before the fail-safe alarm LED, review M-4)", verify="V-4")
-    R("REQ-9", "Sleep current per battery / mismatch between batteries", value="<= 50 uA / <= 40 uA",
-      source="derived from the brief's 'as efficient as possible' (no stored-energy drain at rest)", verify="V-5")
-    R("REQ-10", "Wake threshold on the pair voltage", value="rising 26.25-26.8 V (13.23 V per battery nominal, "
-      "offset and centred hysteresis included); falling >= 26.0 V worst case", source="derived 7.7 (Q-2)",
-      verify="V-6")
-    R("REQ-11", "Ratio lockout (stop, red LED, alarm open) and imbalance warning (alarm open, keeps running)",
-      value="lockout 0.915 / 1.090 nominal; warning 0.956 / 1.043; +/-1.5 % on V_pair/V_bot",
-      source="derived: a shorted cell gives r = 0.833 or 1.20 (review M-1, M-3)", verify="V-7; calcs ratio_*, warn_*")
-    R("REQ-12", "Window-edge dissipation per channel (failing battery, worst tolerances) / thermal cut-out",
-      value="<= 7.2 W at 50 C ambient, <= 9.5 W at -20 C (17.55 V) / cut-out 90-102 C",
-      source="derived 7.6", verify="V-8")
-    R("REQ-13", "Fault containment: no single fault causes a sustained short or connects >= 2 batteries through "
-      "< 100 kOhm; every board fault current is interrupted by an on-board fuse", value="-",
-      source="brief ('no pathways')", verify="FMEA (hazards), V-9..V-15")
-    R("REQ-14", "Tap fusing", value="battery end (<= 150 mm from post): >= 80 VDC, >= 10 kA DC; on board: >= 80 VDC, "
-      ">= 1 kA DC", source="brief + derived 7.10", verify="inspection, V-9")
-    R("REQ-15", "Spacing", value="adjacent battery domains 0.6/0.6 mm; non-adjacent 1.5/1.0 mm; ISO 4.0/4.0 mm "
-      "(creepage/clearance)", source="IPC-2221B B2; IEC 60664-1 F.4 [S]", verify="KiCad DRC (.kicad_dru), inspection")
-    R("REQ-16", "Hot-plug: any mating order of the tap plug, any missing tap, any broken tap wire", value="no damage",
-      source="derived", verify="V-12")
-    R("REQ-17", "Mis-wiring (swapped taps, reversed battery)", value="no fire; fuses clear; FETs and the logic LDOs "
-      "of the affected channel may need replacement (review MINOR-8)", source="derived", verify="V-13")
-    R("REQ-18", "Environment", value="-20..+50 C, indoor, pollution degree 2, <= 2000 m", source="Trojan [P]",
-      verify="analysis")
-    R("REQ-19", "Control", value="no MCU, no firmware", source="decision (DESIGN.md 5)", verify="inspection")
-    R("REQ-20", "Indication per channel", value="green ACTIVE, red FAULT (lockout or over-temperature)",
-      source="brief", verify="V-6, V-7")
-    R("REQ-21", "Telemetry: one isolated fail-safe contact, closed only while every channel charges without fault "
-      "or imbalance warning; open at rest, on any fault, warning, open tap (within one pause) or lost supply",
-      value="<= 30 V, <= 1 mA; reverse-protected", source="derived; review M-4", verify="V-14; calcs opto_*")
-    R("REQ-22", "Harness: N + 1 wires (system negative and every battery positive), ring terminals, fused at the "
-      "battery, pluggable at the board", value="14 AWG <= 3 m (16 AWG allowed <= 1.5 m)",
-      source="brief; REQ-6 (calc i_bal_*): R_ext must stay small against R_SC, so the wires cannot be thinner",
-      verify="inspection")
-    R("REQ-23", "Service: the board unplugs in one action to replace a battery", value="-", source="derived",
-      verify="inspection")
-    R("REQ-24", "Component derating in normal operation: semis <= 80 % V, caps <= 80 % V (DC bias counted), "
-      "resistors <= 50 % P, fuses <= 75 % I. At the abnormal window edge (failing battery): <= 100 % of the "
-      "temperature-derated rating", value="-", source="task default", verify="kaesynth rating.* checks; calcs")
-    R("REQ-25", "Battery-count configuration: fit shunts on JP101..JP(N-1)01 only, and bridge every unused tap-plug "
-      "position to the highest used position inside the plug", value=f"design default N = {N_BATT} (N_BATT)",
-      source="REQ-1; H-12", verify="V-1; label next to J1")
+      verify="V-1; label next to J1")
 
     # -- assumptions and questions (DESIGN.md section 3) -----------------------------------------------
     A = d.assume
@@ -355,7 +227,7 @@ def hazards(d, ch, inp, har):
     H("H-6", "Hydrogen ignition (LEL 4 %)",
       "enclosure outside the battery box and not above vents; plug only at the board; harness fuses enclosed; "
       "no relays", parts=[], single_fault_safe=True, notes="installation rule (DESIGN.md 9)")
-    H("H-7", "Board overheating at the ratio-window edge (failing battery: up to 7.2 W per channel at 50 C) or "
+    H("H-7", "Board overheating at the ratio-window edge (failing battery: up to 6.4 W per channel at 50 C) or "
       "blocked vents", "thermal cut-out 90-102 C (NTC RTk01 + U(k)08 D); power bounded by the window (calc edge_*); "
       "R_CF doubled so it stays within its rating at the cut-out temperature",
       parts=every("RT01") + every("U08"), single_fault_safe=True, notes="window and cut-out are independent")
@@ -378,8 +250,8 @@ def hazards(d, ch, inp, har):
     H("H-13", "A failing battery (soft short, high self-discharge) absorbs amps from the balancer during charge: "
       "internal heating, dry-out (review M-3)",
       "imbalance warning at ~+/-4 % (U(k)11 B/C) opens the alarm contact while the channel keeps running; above "
-      "~9 % the lockout stops it; the current before the warning is <= 1.9 A (calc silent_current_max_A)",
-      parts=every("U11") + every("R60") + every("R66"), single_fault_safe=False,
+      "~9 % the lockout stops it; the current before the warning is <= 2.4 A (calc silent_current_max_A)",
+      parts=every("U11") + every("R60") + every("R62"), single_fault_safe=False,
       notes="needs someone to act on the alarm; a time-delayed warning is Q-14")
     H("H-14", "Broken tap wire goes unnoticed (T0 or a middle tap while charging: the SC cell holds the floating "
       "node at a plausible voltage, review M-4)",
@@ -428,8 +300,8 @@ def numbers():
     n["ldo_l_W"] = (VB_OP - 12.04) * i_l
     # sleep (7.9), uA at 12.8 V per battery
     pair, vb = 2 * 12.8, 12.8
-    s_pair = sum(pair / (sum(STRINGS[x][1]) + STRINGS[x][2] / 2) * 1e6 for x in ("PON", "PLO", "PHI", "PWH", "PWL"))
-    s_n = vb / (sum(STRINGS["N"][1]) + STRINGS["N"][2] / 2) * 1e6
+    s_pair = sum(pair / string_total(x) * 1e6 for x in ("PON", "PLO", "PHI"))
+    s_n = vb / string_total("N") * 1e6
     s_ntc = 5.0 / (24.9e3 + 470e3) * 1e6
     s_osc = 5.0 / (2 * 4.99e6) * 1e6
     n["sleep_bot_uA"] = 1.4 + 0.65 + 2 * 4 * 0.335 + 0.1 + s_ntc + s_n + s_osc + 0.59 + s_pair + 1.0
@@ -452,8 +324,14 @@ def numbers():
     for tag, sname in (("hi", "PLO"), ("lo", "PHI"), ("wh", "PWH"), ("wl", "PWL")):
         q = k_n / k_of(sname)
         n[f"r_{tag}"], n[f"r_{tag}_up"], n[f"r_{tag}_dn"] = q - 1, q * (1 + WIN_TOL) - 1, q * (1 - WIN_TOL) - 1
-    n["node_fault_max"] = max(35.2 * _ratio(sum(STRINGS[x][1]), STRINGS[x][2]) for x in ("PLO", "PHI", "PWH", "PWL"))
-    n["node_fault_max"] = max(n["node_fault_max"], 17.6 * _ratio(sum(STRINGS["N"][1]), STRINGS["N"][2]))
+    # one lower resistor open: that lower pair doubles; worst node at 17.6 V per battery
+    worst = 0.0
+    for sname, (src, tops, lows) in STRINGS.items():
+        v = 35.2 if src == "TH" else 17.6
+        for j in range(len(lows)):
+            dbl = [r * (2 if i == j else 1) for i, (_, r) in enumerate(lows)]
+            worst = max(worst, v * (sum(dbl) / 2) / (sum(tops) + sum(dbl) / 2))
+    n["node_fault_max"] = worst
     # NTC trip (7.6)
     trips = []
     for v5 in (4.95, 5.05):
@@ -468,7 +346,7 @@ def numbers():
     # window edge (7.6): lockout upper trip at its worst, hot (board at cut-out, equalize at 45 C) and cold
     n["r_sc_hot"] = r_sc(50e-6, 2 * 8.1e-3 * 1.45 + 2 * r_cf + 5e-3)
     for tag, vbot, rsc in (("hot", 15.6, n["r_sc_hot"]), ("cold", 17.55, n["r_sc_min"])):
-        dv = n["r_hi_up"] * vbot
+        dv = (n["r_hi_up"] - 1) * vbot
         i = dv / rsc
         n[f"edge_dv_{tag}"], n[f"edge_I_{tag}"], n[f"edge_P_{tag}"] = dv, i, dv * i
         n[f"edge_rcf_each_{tag}"] = (K_FLY * i) ** 2 * r_cf / 2
@@ -476,7 +354,7 @@ def numbers():
     n["rcf_rating_99C"] = 2.0 * (170 - 99) / (170 - 70)
     n["fet_tj_edge"] = 99 + n["edge_fet_hot"] * (1.9 + 10)
     # current a failing battery can absorb without a lockout, and the warning bound (review M-3)
-    n["silent_I"] = n["r_wh_up"] * 15.6 / n["r_sc_min"]
+    n["silent_I"] = (n["r_wh_up"] - 1) * 15.6 / n["r_sc_min"]
     # fuses and faults (7.10)
     n["board_fault_max_A"] = 70.2 / (2 * r_tap(0.3, awg14) + 4 * 4e-3)
     n["board_fault_min_A"] = 17.6 / (2 * r_tap(3, awg14) + 4e-3)
@@ -533,10 +411,10 @@ def calcs(d):
       note="no lockout at 0.5 V imbalance at 13.5 V")
     c("ratio_lo_max", round(n["r_lo_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=0.964,
       note="no lockout at 0.5 V imbalance at 13.5 V")
-    c("warn_hi_worst", round(n["r_wh_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=round(n["r_hi_dn"], 4),
-      note="the warning always opens before (or with) the lockout")
-    c("warn_lo_worst", round(n["r_wl_dn"], 4), "", expr="(r + 1) x 0.985 - 1", limit=round(n["r_lo_up"], 4),
-      op=">=", note="same, low side")
+    c("warn_hi_early", round(n["r_wh_dn"], 4), "", expr="(r + 1) x 0.985 - 1", limit=1.01, op=">=",
+      note="no warning in a balanced string (the lockout also opens the alarm, so overlap is harmless)")
+    c("warn_lo_early", round(n["r_wl_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=0.99,
+      note="no warning in a balanced string")
     c("comparator_input_fault_V", round(n["node_fault_max"], 2), "V",
       expr="one bottom resistor open at 17.6 V per battery", limit=7.0, note="TLV7044 input abs max")
     c("silent_current_max_A", round(n["silent_I"], 2), "A",
@@ -546,9 +424,9 @@ def calcs(d):
     c("ntc_trip_max_C", round(n["ntc_trip_hi"], 1), "C", expr="corners incl. offset + hysteresis/2", limit=110,
       note="REQ-12")
     c("ntc_trip_min_C", round(n["ntc_trip_lo"], 1), "C", expr="same corners", limit=85, op=">=")
-    c("edge_power_hot_W", round(n["edge_P_hot"], 2), "W", expr="dV = 0.121 x 15.6 V, I = dV / 0.505 Ohm",
+    c("edge_power_hot_W", round(n["edge_P_hot"], 2), "W", expr="dV = (r_hi worst - 1) x 15.6 V, I = dV / 0.505 Ohm",
       limit=7.2, note="REQ-12, 50 C ambient")
-    c("edge_power_cold_W", round(n["edge_P_cold"], 2), "W", expr="dV = 0.121 x 17.55 V, R_SC 0.476 Ohm", limit=9.5,
+    c("edge_power_cold_W", round(n["edge_P_cold"], 2), "W", expr="dV = (r_hi worst - 1) x 17.55 V, R_SC 0.476 Ohm", limit=9.5,
       note="REQ-12, -20 C")
     c("edge_rcf_each_hot_W", round(n["edge_rcf_each_hot"], 2), "W", expr="(2.13 I)^2 x 0.043 / 2",
       limit=round(n["rcf_rating_99C"], 2), note="WSL2816 rating at the 99 C cut-out; REQ-24 abnormal")
@@ -640,18 +518,20 @@ def channel(d, k):
                notes="TPS709 EN left floating (allowed, SBVS186H Table 5-1): internal 300 nA pull-up, stays < 6.5 V")
     vref = net("VREF", v=(0, 2.5), kind="analog")
     vpair = 2 * VB
-    snet = {}           # divider nets by string: [mid nodes from the top ..., output node]
-    for sname, (src, tops, bot) in STRINGS.items():
+    snet = {}           # divider nets by string: top mid nodes, then the output nodes
+    for sname, (src, tops, lows) in STRINGS.items():
         span_v = vpair if src == "TH" else VB
-        total = sum(tops) + bot / 2
+        total = string_total(sname)
         nodes = []
         for i in range(1, len(tops)):
             vmax = round(span_v * (total - sum(tops[:i])) / total, 1)
             nodes.append(net(f"{sname}_M{i}", domain=span if vmax > 30 else bL, v=(0, vmax), kind="sense"))
-        nodes.append(net(sname, v=(0, round(span_v * k_of(sname), 2)), kind="sense",
-                         notes=f"divider output, {k_of(sname):.5f} x {'V_pair' if src == 'TH' else 'V_bot'}"))
+        for oname, _ in lows:
+            nodes.append(net(oname, v=(0, round(span_v * k_of(oname), 2)), kind="sense",
+                             notes=f"divider output, {k_of(oname):.5f} x {'V_pair' if src == 'TH' else 'V_bot'}"))
         snet[sname] = nodes
-    pon, plo, phi, pwh, pwl, n_ = (snet[x][-1] for x in ("PON", "PLO", "PHI", "PWH", "PWL", "N"))
+    named = {x.name.split("_", 1)[1]: x for v in snet.values() for x in v}
+    pon, plo, phi, pwh, pwl, n_ = (named[x] for x in ("PON", "PLO", "PHI", "PWH", "PWL", "N"))
     th = net("TH", v=(0, V5MAX), kind="sense", notes="NTC node: 4.75 V at 25 C, 2.5 V at 95 C")
     nchg = net("NCHG", v=(0, V5MAX), kind="signal", notes="high = not charging")
     flt_n = net("FLT_N", v=(0, V5MAX), kind="signal", notes="wired-AND open drain, low = fault")
@@ -887,25 +767,28 @@ def channel(d, k):
     phi.connect(u08["INC+"])
     TL.connect(u08["VEE"])
     th.connect(u08["IND+"])
-    # divider strings: tops in series from T_H (T_M for N), bottoms as a parallel pair, filter cap to T_L
-    rnum = iter([20, 21, 22, 23, 24, 25, 26, 27, 54, 55, 28, 29, 30, 31, 56, 57, 32, 33, 60, 61, 62, 63, 64, 65,
-                 66, 67, 68, 69, 70, 71, 34, 35, 36, 37])
+    # divider strings: tops in series from T_H (T_M for N), lower elements as parallel pairs, filter caps to T_L
+    rnum = {"PON": [20, 21, 22, 23, 24, 25], "PLO": [26, 27, 54, 55, 60, 61, 28, 29],
+            "PHI": [30, 31, 56, 57, 62, 63, 32, 33], "N": [34, 35, 36, 37]}
     filt = {"PON": "C43", "PLO": "C44", "PHI": "C45", "PWH": "C53", "PWL": "C54", "N": "C46"}
-    tnpw = {2.00e6: P.R_2M00, 1.67e6: P.R_1M67, 1.58e6: P.R_1M58, 1.74e6: P.R_1M74, 1.62e6: P.R_1M62,
-            1.70e6: P.R_1M70, 1.85e6: P.R_1M85}
-    for sname, (src, tops, bot) in STRINGS.items():
+    rdef = {2.00e6: P.R_2M00, 1.96e6: P.R_1M96, 1.67e6: P.R_1M67, 1.58e6: P.R_1M58, 1.70e6: P.R_1M70,
+            1.85e6: P.R_1M85, 30.9e3: P.R_30K9, 36.5e3: P.R_36K5}
+    for sname, (src, tops, lows) in STRINGS.items():
+        refs = iter(rnum[sname])
         nodes = [TH if src == "TH" else TM] + snet[sname]
         for i, rv in enumerate(tops):
-            x = add(tnpw[rv], f"R{next(rnum)}")
+            x = add(rdef[rv], f"R{next(refs)}")
             nodes[i].connect(x[1])
             nodes[i + 1].connect(x[2])
-        for _ in range(2):
-            x = add(tnpw[bot], f"R{next(rnum)}")
-            nodes[-1].connect(x[1])
+        outs = nodes[len(tops):] + [TL]
+        for j, (oname, rv) in enumerate(lows):
+            for _ in range(2):
+                x = add(rdef[rv], f"R{next(refs)}")
+                outs[j].connect(x[1])
+                outs[j + 1].connect(x[2])
+            x = add(P.C_470N, filt[oname])
+            outs[j].connect(x[1])
             TL.connect(x[2])
-        x = add(P.C_470N, filt[sname])
-        nodes[-1].connect(x[1])
-        TL.connect(x[2])
     c42 = add(P.C_100N, "C42")
     v5.connect(c42[1])
     TL.connect(c42[2])
@@ -938,7 +821,7 @@ def channel(d, k):
     qfb.connect(q05["B"])
     v5.connect(q05["E"])
     ledq.connect(q05["C"])
-    d03 = add(P.LED_RED, "D03")
+    d03 = add(P.LED_RED, "D03", i_through=0.0041)     # cathode on T_L; <= 4.1 mA through R(k)45
     TL.connect(d03["K"])
     ledr.connect(d03["A"])
     # Alarm opto (review M-4): fail-safe contact, LED on while RUN is high and no imbalance warning; the three
@@ -1007,8 +890,8 @@ def build():
         kind = "ground" if j == 0 else "power"
         what = "system negative (T0)" if j == 0 else f"positive of battery B{j}" + ("" if live else " (bridged: unused)")
         d.net(f"TAP{j}", domain=dom, v=v, kind=kind, i_max=imax, notes=f"fused tap bus, {what}; {edge_note}")
-        d.net(f"TAP{j}_IN", domain=dom, v=v, kind=kind, i_max=imax, external=True,
-              threats=("overcurrent", "reverse_polarity"),
+        d.net(f"TAP{j}_IN", domain=dom, v=v, kind=kind, i_max=imax, external=live,
+              threats=("overcurrent", "reverse_polarity") if live else (),
               notes=f"J1 pin {j + 1} to F{j + 1}: harness wire from the battery-end fuse")
         if live:
             d.net(f"POST{j}", domain=dom, v=v, kind=kind, i_max=imax, external=True, threats=("overcurrent",),
@@ -1168,12 +1051,14 @@ def channel_placement(d, c, k):
                                                   *[f"C{i:02d}" for i in range(1, 19)], "R03", "R04"))
     pl.custom("cluster", name=f"ch{k}.drv", members=g("U01", "U02", "R05", "R06", "R07", "R08", "R09", "R10", "R11",
                                                   "R12", "R13", "R14", "C19", "C20", *[f"C{i}" for i in range(21, 31)],
-                                                  "D01", "D02"))
+                                                  "D01", "D02", "R58", "R59"))
     pl.custom("cluster", name=f"ch{k}.osc", members=g("U03", "R15", "C31", "C32"))
     pl.custom("cluster", name=f"ch{k}.sup", members=g("U04", "U05", "U06", "R16", "R17", "R18", "R19",
                                                   *[f"C{i}" for i in range(33, 40)], "JP01", "Q06", "Q07", "R47",
                                                   "R48", "R49", "R50", "R51", "C50"))
-    pl.custom("cluster", name=f"ch{k}.supv", members=g("U07", "U08", "U09", "U10", "Q05", "RT01", "D03", "D04",
+    pl.custom("cluster", name=f"ch{k}.supv", members=g("U07", "U08", "U09", "U10", "U11", "Q05", "RT01", "D03", "D04",
+                                                   "D05", "JP02", *[f"R{i}" for i in (54, 55, 56, 57, 60, 61, 62, 63)],
+                                                   *[f"R{i}" for i in range(72, 80)], "C51", "C52", "C53", "C54",
                                                    *[f"R{i}" for i in range(20, 47)], *[f"C{i}" for i in range(40, 50)]))
     pl.custom("floorplan", block=c["block"],
               note=f"L side (B{k}: logic, lower half-bridge, Y) west; U side (B{k + 1}: upper driver, X) east")
@@ -1301,15 +1186,12 @@ def waivers(d):
     n = numbers()
     i_end, i_mid = n["edge_I_cold"], 2 * n["edge_I_cold"]
     W = d.waive
-    W("rating.current", r"^F[234] \(4A\)",
-      f"Middle tap fuses at the abnormal ratio-window edge: {i_mid:.1f} A worst case ({i_mid / 4:.0%} of 4 A T; "
-      "failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) "
-      "is <= 2.0 A (50 %). At the edge the fuse opening within minutes is a safe end state (the tap opens and the "
-      "ratio window lights FAULT); the thermal cut-out often acts first. A larger fuse would lose selectivity "
+    W("rating.current", r"^F[234] \(6A\)",
+      f"Middle tap fuses at the abnormal ratio-window edge: {i_mid:.1f} A worst case ({i_mid / 6:.0%} of the 6 A "
+      "KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation "
+      "(dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next "
+      "tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity "
       "against the KLKD010 (calc fuse_selectivity_ratio).")
-    W("rating.current", r"^F[15] \(4A\)",
-      f"End tap fuses: {i_end:.1f} A only at the abnormal window edge ({i_end / 4:.0%} of 4 A T, below the 1.5 x In "
-      "no-blow point); normal <= 0.7 A. Same reasoning as the middle taps.")
     W("rating.current", r"^FH[0-4] \(10A\)",
       f"KLKD010 at the abnormal window edge: {i_mid:.1f} A worst ({i_mid / 10:.0%} of 10 A; a fuse carries 100 % "
       "of its rating continuously); normal <= 2.0 A (20 %).")
@@ -1328,6 +1210,11 @@ def waivers(d):
       "enable'; must stay below 6.5 V). The self-biased level of the internal 300 nA pull-up is not published, so "
       "the net envelope is the 6.5 V recommended maximum (93 % of the 7 V absolute maximum); nothing drives EN "
       "higher.")
+    if N_BATT < 4:
+        W("protect.threat", r"BR[1-4] sit on the wire side",
+          "The plug bridge BRj is a link inside P1 from an unused position to TAP(N)_IN, downstream of the harness "
+          "fuse FH(N) at the battery; it carries only divider/sleep current (uA). Its wire side is protected by FH(N).")
+        W("protect.entry_fuse", r"BR[1-4] connect on the wire side", "Same as the plug-bridge threat waiver.")
     W("hazard.procedural", r"^H-6:",
       "Hydrogen ignition is controlled by where the enclosure is installed (outside the battery box, not above "
       "vents) and by having no relays or user-operated contacts on the board; installation rule in DESIGN.md 9.")

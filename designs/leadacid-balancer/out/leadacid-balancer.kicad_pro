@@ -506,32 +506,8 @@
         "pattern": "/ch1/CH1_PWH"
       },
       {
-        "netclass": "CH1_SPAN",
-        "pattern": "/ch1/CH1_PWH_M1"
-      },
-      {
-        "netclass": "B1",
-        "pattern": "/ch1/CH1_PWH_M2"
-      },
-      {
-        "netclass": "B1",
-        "pattern": "/ch1/CH1_PWH_M3"
-      },
-      {
         "netclass": "B1",
         "pattern": "/ch1/CH1_PWL"
-      },
-      {
-        "netclass": "CH1_SPAN",
-        "pattern": "/ch1/CH1_PWL_M1"
-      },
-      {
-        "netclass": "B1",
-        "pattern": "/ch1/CH1_PWL_M2"
-      },
-      {
-        "netclass": "B1",
-        "pattern": "/ch1/CH1_PWL_M3"
       },
       {
         "netclass": "CH1_QFB",
@@ -798,32 +774,8 @@
         "pattern": "/ch2/CH2_PWH"
       },
       {
-        "netclass": "CH2_SPAN",
-        "pattern": "/ch2/CH2_PWH_M1"
-      },
-      {
-        "netclass": "B2",
-        "pattern": "/ch2/CH2_PWH_M2"
-      },
-      {
-        "netclass": "B2",
-        "pattern": "/ch2/CH2_PWH_M3"
-      },
-      {
         "netclass": "B2",
         "pattern": "/ch2/CH2_PWL"
-      },
-      {
-        "netclass": "CH2_SPAN",
-        "pattern": "/ch2/CH2_PWL_M1"
-      },
-      {
-        "netclass": "B2",
-        "pattern": "/ch2/CH2_PWL_M2"
-      },
-      {
-        "netclass": "B2",
-        "pattern": "/ch2/CH2_PWL_M3"
       },
       {
         "netclass": "CH2_QFB",
@@ -1090,32 +1042,8 @@
         "pattern": "/ch3/CH3_PWH"
       },
       {
-        "netclass": "CH3_SPAN",
-        "pattern": "/ch3/CH3_PWH_M1"
-      },
-      {
-        "netclass": "B3",
-        "pattern": "/ch3/CH3_PWH_M2"
-      },
-      {
-        "netclass": "B3",
-        "pattern": "/ch3/CH3_PWH_M3"
-      },
-      {
         "netclass": "B3",
         "pattern": "/ch3/CH3_PWL"
-      },
-      {
-        "netclass": "CH3_SPAN",
-        "pattern": "/ch3/CH3_PWL_M1"
-      },
-      {
-        "netclass": "B3",
-        "pattern": "/ch3/CH3_PWL_M2"
-      },
-      {
-        "netclass": "B3",
-        "pattern": "/ch3/CH3_PWL_M3"
       },
       {
         "netclass": "CH3_QFB",

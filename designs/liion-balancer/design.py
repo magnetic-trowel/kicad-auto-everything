@@ -87,10 +87,13 @@ def intent(d):
       "replaceable", value="0324007 + 0154005", source="brief; C-7", verify="F-1..F-6")
     R("REQ-9", "No voltage jumps: no single part fault creates a path between non-adjacent taps able to carry "
       "> 0.5 A; a one-cell short clears in <= 10 ms. Exception: T1kk interwinding insulation (1500 Vrms vs "
-      "<= 67 V, 22x) is a safeguard; its residual is cleared by the battery-end fuses",
+      "<= 67 V, 22x) is a safeguard; its residual is cleared by the battery-end fuses. Monitor S lines carry "
+      "10 k series resistors (<= 6.7 mA)",
       value="<= 0.5 A; <= 10 ms", source="brief", verify="FMEA (hazards H-1, H-2); F-1..F-4; calc t_clear_*")
-    R("REQ-10", "Bounded fault energy: every fault path has a fuse rated for its voltage and prospective current",
-      value="-", source="derived", verify="calc fuse_*")
+    R("REQ-10", "Bounded fault energy: every single-fault path has a fuse rated for its voltage and prospective "
+      "current. Multi-cell paths (two independent faults, or a T1kk insulation safeguard failure) are interrupted "
+      "by the inline 3AB (10 kA at 125 VDC) with the board Nano2 as series back-up, verified by test F-16 (Q-14)",
+      value="-", source="derived; review M-4", verify="calc i_fault_*, F-16")
     R("REQ-11", "Spacing per DESIGN.md 6.3: functional per IPC-2221B inside the battery; reinforced to the "
       "user port and fault contact", value="B-1..B-6", source="IPC-2221B, IEC 60664-1, IEC 62368-1 [S]",
       verify="DRC (.kicad_dru), T-HIPOT")
@@ -101,10 +104,16 @@ def intent(d):
       verify="T-IQ; calc iq_stack_max_uA")
     R("REQ-14", "Mis-wiring (swapped, reversed, offset or out-of-order taps) causes no fire and no cell damage; "
       "fuses open and the self-test locks out", value="-", source="brief ('robust')", verify="F-6, F-7")
-    R("REQ-15", "Open tap detected before each session and within 1 s while balancing", value="<= 1 s",
-      source="C-11", verify="F-5")
-    R("REQ-16", "Stuck-on channel: two independent enables per channel plus a hardware watchdog",
-      value="watchdog <= 2.2 s", source="H-4", verify="F-8; calc adbms_watchdog_max_s")
+    R("REQ-15", "Open tap detected before each session; while balancing, an open TAP0 or TAP16 wire (the only "
+      "taps that carry the return current) stops every channel in hardware", value="<= 1 ms (hardware trip)",
+      source="C-11; review M-1", verify="F-5; calc trip_*")
+    R("REQ-16", "Stuck-on channel: two enables per channel plus a hardware watchdog, and an enable independent "
+      "of the MCU: the pack BMS's OK signal (U8) in series with BAL_EN", value="watchdog <= 2.2 s",
+      source="H-4; review M-5", verify="F-8, F-17; calc adbms_watchdog_max_s")
+    R("REQ-24", "Hardware inhibit independent of firmware: balancing stops when the BMS-OK input drops (the BMS's "
+      "own cell OV/UV and fault detection), when FLYBUS - TAP15 > about 6 V (open TAP16 or open return), or when "
+      "TAP1 - TAP0 > about 5.3 V (open TAP0)", value="-", source="review M-1, M-2, M-5",
+      verify="F-5, F-10, F-17")
     R("REQ-17", "No overcharge: a cell at >= V_full - 20 mV is never net-charged by balancing", value="-",
       source="H-5", verify="F-9 (REQ-F2)")
     R("REQ-18", "Coexist with the pack BMS: never switch the pack or replace protection; measure every cell; "
@@ -128,9 +137,10 @@ def intent(d):
       value="-", source="C-12, H-11", verify="firmware test F-13 and T-THERM")
     R("REQ-F4", "Measure only with balancing muted (MUTE or DCP = 0), then unmute; plausibility: sum of cells "
       "vs SC within 50 mV", value="-", source="H-6", verify="firmware test F-12")
-    R("REQ-F5", "FLYBUS supervision: ADC analog watchdog on PA0 (FLY_SNS), threshold = last stack + 4 V; on "
-      "trip drop BAL_EN and clear DCC within 1 ms", value="<= 1 ms", source="C-11, C-15 (D2 clamp energy)",
-      verify="firmware test F-10: lift D1 while balancing")
+    R("REQ-F5", "FLYBUS supervision (second layer behind the U9 hardware trip): ADC analog watchdog window on "
+      "PA0, high = last stack + 4 V, low = last stack - 5 V while balancing (cracked C6kk / shorted D1kk); on "
+      "trip drop BAL_EN and clear DCC", value="<= 20 ms", source="C-11, C-15; review minor 1",
+      verify="firmware test F-10, F-4")
     R("REQ-F6", "Before each session: pulse test every tap (open wire, harness resistance) and prove both "
       "enable paths (BAL_EN off -> no step; DCC off -> no step)", value="5 ms pulse", source="C-11",
       verify="firmware test F-5 and F-8")
@@ -139,6 +149,13 @@ def intent(d):
       verify="firmware test F-6, F-14")
     R("REQ-F8", "Discharge floor 3.0 V (LFP) / 3.4 V (NMC); deep sleep below 2.8 V per cell", value="-",
       source="H-4, H-13", verify="firmware test F-8, T-IQ")
+    R("REQ-F9", "While PB0 has U5 side 1 unpowered, PA2 (TX) is driven low or set high-Z (no back-powering of INB)",
+      value="-", source="review minor 4", verify="firmware test, T-FUNC")
+    R("REQ-F10", "While balancing, convert cells 1 and 16 unmuted every <= 50 ms; stop above 4.4 V; latch off after "
+      "a hardware trip (Q1_B low with BAL_EN high, inferred from the cell readings)", value="<= 50 ms",
+      source="review M-1", verify="firmware test F-5")
+    R("REQ-F11", "Log time per day in the balancing window (V_max >= 3.45 V for LFP) and report it over UART",
+      value="-", source="review minor 2; Q-13", verify="T-FUNC")
 
     A = d.assume
     A("ASM-1", "Reference pack 16S LFP 3.2 V 200 Ah = 51.2 V, 10.24 kWh; 15S LFP and 13-14S NMC also occur, so "
@@ -171,6 +188,15 @@ def intent(d):
     Q("Q-9", "Wiring an add-on to a listed UL 1973/9540 battery may void the listing: acceptable to owner and AHJ?",
       default="owner's decision; documented")
     Q("Q-10", "Bidirectional version (LTC3300-1) wanted? Weaker fault containment.", default="no")
+    Q("Q-12", "Which pack-BMS signal drives the BMS-OK input (J5)? It must drop on any cell OV/UV or BMS fault.",
+      blocking=True, default="BMS charge-enable dry contact switching the user's 12 V; balancing is impossible "
+                             "without it (no jumper option)")
+    Q("Q-13", "Charge profile: does the charger/inverter reach >= 3.45 V/cell (LFP) often enough? Many float at "
+      "3.35-3.375 V or stop at 90 %.", default="assume >= 2 h/day above 3.45 V; firmware logs time-in-window")
+    Q("Q-14", "Multi-cell faults (T1kk insulation failure, reversed harness, ring 0 on B+) drive 320-560 A through "
+      "two board Nano2 fuses rated 50 A at 125 V; the inline 3AB (10 kA at 125 VDC) is the rated interrupter. "
+      "Accept series back-up qualified by test F-16, or fund a board fuse with a verified >= 80 VDC / >= 600 A rating?",
+      blocking=True, default="series back-up, test F-16 before release")
     Q("Q-11", "ADBMS1818 lead time 52 weeks: qualify the pin-identical LTC6813-1 as second source?",
       default="yes, same footprint")
 
@@ -220,7 +246,7 @@ def domains_and_nets(d):
     d.domain("RET", ref="TAP0", kind="battery",
              description="flyback return bus, secondaries, buck switch node, LED-string bottom (0-68 V on TAP0)")
     n["FLYBUS"] = d.net("FLYBUS", domain="RET", v=(0, V_FLY), kind="power", i_max=I_FLY,
-                        notes="flyback outputs -> D1 -> TAP16. Normal = stack + 0.5 V; an open return lets D2 "
+                        notes="flyback outputs -> D1 -> TAP16. Normal = stack + 0.5 V; an open return trips U9 at TAP15 + 6 V "
                               "clamp it at <= 94 V for <= 1 ms (calc flybus_clamp_*)")
     n["STR_Q"] = d.net("STR_Q", domain="RET", v=(0, V_STACK), kind="signal",
                        notes="bottom of the 16-LED opto string, Q1 collector: 2.4-40 V on, floats up when off")
@@ -240,7 +266,10 @@ def domains_and_nets(d):
                           ("FLY_SNS", (0, 3.3), "sense"), ("BAL_EN", V33, "signal"), ("MCU_TX", V33, "signal"),
                           ("MCU_RX", V33, "signal"), ("ISO_VCC1", V33, "power"), ("FLT_DRV", V33, "signal")):
         n[name] = d.net(name, domain="CTRL", v=v, kind=kind)
-    n["FLY_SNS"].notes = "FLYBUS x 100k/2.1M: 3.22 V at 67.7 V; MCU clamp takes <= 7 uA in a clamp fault"
+    n["FLY_SNS"].notes = "FLYBUS x 470k/10.47M: 3.04 V at 67.7 V; 10 Mohm limits MCU clamp current in faults"
+    n["Q1_B"] = d.net("Q1_B", domain="CTRL", v=(0, 0.8), notes="string sink base: needs BAL_EN (MCU) AND BMS OK "
+                      "(U8); pulled low by either trip detector (U9 top, U10 bottom)")
+    n["EN_MCU"] = d.net("EN_MCU", domain="CTRL", v=V33, notes="BAL_EN through R21, before the BMS-OK PhotoMOS")
     n["ISO_VCC1"].notes = "U5 side-1 supply from PB0 (<= 4 mA); off when no host is present"
     # -- user side ------------------------------------------------------------------------------
     n["GND_ISO"] = d.net("GND_ISO", domain="USER", v=0, kind="ground", external=True, threats=("esd",),
@@ -251,6 +280,10 @@ def domains_and_nets(d):
     n["FLT_B"] = d.net("FLT_B", domain="FAULT", v=0, kind="signal", external=True, threats=("esd",),
                        i_max=0.05, notes="fault contact, terminal B (J4.2)")
     d.domain("FAULT", ref="FLT_B", kind="other", description="PhotoMOS dry contact, user circuit <= 30 V, 50 mA")
+    n["BMS_N"] = d.net("BMS_N", domain="BMS", v=0, kind="signal", external=True, threats=("esd",),
+                       notes="BMS OK input return (J5.2)")
+    d.domain("BMS", ref="BMS_N", kind="other",
+             description="isolated BMS-OK input: the pack BMS's charge-enable / no-fault signal, 9-30 V")
     n["CHASSIS"] = d.net("CHASSIS", domain="CHASSIS", v=0, kind="pe",
                          notes="mounting screws and enclosure metal; no copper on the PCB (barrier B-5)")
     d.domain("CHASSIS", ref="CHASSIS", kind="other", earthed=True, description="chassis / PE (off-board)")
@@ -292,7 +325,7 @@ def barriers(d):
               standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
               source="DESIGN.md 6.3 B-6: <= 30 V + 5.5 V; separate connectors J2 and J4")
     # B-5: battery side vs chassis screws (basic)
-    d.barrier("BAT0", "CHASSIS", grade="basic", v_work=354, creepage_mm=3.0, clearance_mm=3.0,
+    d.barrier("BAT0", "CHASSIS", grade="basic", v_work=354, ac=True, creepage_mm=3.0, clearance_mm=3.0,
               standard="IEC 60664-1 Tables F.2/F.4, IEC 62368-1 [S]", pollution_degree=2, material_group="IIIa",
               ovc="II", v_test_rms=1500,
               source="DESIGN.md 6.3 B-5: 250 Vrms worst case (ASM-5): 2.5 mm creepage, 1.5 mm clearance at "
@@ -300,15 +333,22 @@ def barriers(d):
     # B-4: battery side vs the user port (reinforced)
     sl = "IEC 60664-1 F.4 (250 V, PD2, MG III: 2.5 mm basic -> 5.0 reinforced) and F.2 / IEC 62368-1 Table 10 " \
          "(3.8 mm at 4 kV) via TI SLUP419 [S]"
-    d.barrier("BAT0", "USER", grade="reinforced", v_work=354, creepage_mm=8.0, clearance_mm=8.0,
+    d.barrier("BAT0", "USER", grade="reinforced", v_work=354, ac=True, creepage_mm=8.0, clearance_mm=8.0,
               standard="IEC 62368-1, IEC 60664-1", v_test_rms=3000, pollution_degree=2, material_group="IIIa",
               ovc="II", slot=False,
               source=f"{sl}. Required 5.0 / 3.8 mm; design 8.0 / 8.0 mm (ISO7721DWV 8.5 mm package, pad gap 8.85 mm)")
-    d.barrier("BAT0", "FAULT", grade="reinforced", v_work=354, creepage_mm=5.0, clearance_mm=3.8,
+    d.barrier("BAT0", "FAULT", grade="reinforced", v_work=354, ac=True, creepage_mm=5.0, clearance_mm=3.8,
               standard="IEC 62368-1, IEC 60664-1", v_test_rms=3000, pollution_degree=2, material_group="IIIa",
               ovc="II", slot=False,
               source=f"{sl}. The AQY210EH SMDIP-4 pads leave 5.6 mm, so the fault-contact barrier is held at "
                      "the required 5.0 / 3.8 mm, not the 8 mm used for the UART")
+    d.barrier("BAT0", "BMS", grade="reinforced", v_work=354, ac=True, creepage_mm=5.0, clearance_mm=3.8,
+              standard="IEC 62368-1, IEC 60664-1", v_test_rms=3000, pollution_degree=2, material_group="IIIa",
+              ovc="II", slot=False, source=f"{sl}. BMS-OK input through AQY210EH U8 (pad gap 5.6 mm)")
+    for other in ("USER", "FAULT"):
+        d.barrier("BMS", other, grade="functional", v_work=36, creepage_mm=0.6, clearance_mm=0.6,
+                  standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
+                  source="separate user circuits on adjacent connectors (<= 30 V each)")
 
 
 # =================================================================================================
@@ -364,6 +404,9 @@ def channel_block(d, n, k):
     r1 = b.add(P.R_4K99_2010, ref=f"R1{x}", p_diss=0.23)   # RCD clamp loss (C-6)
     r2 = b.add(P.R_33K, ref=f"R2{x}")
     r4 = b.add(P.R_10K, ref=f"R4{x}")
+    # S-line current limit (review M-3): a monitor fault that joins S_k to a distant tap is limited to
+    # 67.2 V / 10 k = 6.7 mA; DIN's 1-6 uA pull-up drops <= 60 mV across it. Placed at the U1 S pin.
+    r5 = b.add(P.R_10K, ref=f"R5{x}")
     opto = b.add(P.TLP293, ref=f"U2{x}")
     sw = b.net(f"SW_{k}", domain=f"SW{k}", v=V_SW, kind="switching", i_max=3.2, i_peak=6.8,
                notes="primary switch node: 21.4 V flat top, 38.5 V clamped spike (C-5)")
@@ -379,7 +422,9 @@ def channel_block(d, n, k):
     top.connect(u["VIN"], u["VCELL"], u["VSNS"], t["PRI_A"], t["PRI_B"], d3["K"], c1[1], c2[1], c3[1], c5[2],
                 r1[2], r4[1], opto["C"])
     mode.connect(u["MODE"], r4[2])
-    n[f"S_{k}"].connect(u["DIN"])
+    n[f"S_{k}"].connect(r5[1])
+    b.net(f"DIN_{k}", v=V_CELL, kind="signal", notes="LT8584 DIN behind the 10 k S-line resistor").connect(
+        r5[2], u["DIN"])
     out.connect(u["OUT"], c4[1])
     dch.connect(u["DCHRG"], r2[1], opto["E"])
     sw.connect(u["SW"], t["PRI_A_END"], t["PRI_B_END"], d2["A"])
@@ -392,31 +437,30 @@ def channel_block(d, n, k):
     t.nc_pins("NC6", "NC7", reason="no winding (Coilcraft Doc 1075 schematic shows windings 1-3, 2-4, 5-8 "
                                    "only); pads soldered, no copper to other nets")
     return dict(blk=b, u=u, t=t, d1=d1, d2=d2, d3=d3, c1=c1, c2=c2, c3=c3, c4=c4, c5=c5, c6=c6, r1=r1, r2=r2,
-                r4=r4, opto=opto, sw=sw, sec=sec)
+                r4=r4, r5=r5, opto=opto, sw=sw, sec=sec)
 
 
 def ret_block(d, n):
-    b = d.block("ret", title="Stack return: D1 blocking diode, D2 clamp, FLYBUS sense", domain="RET",
+    b = d.block("ret", title="Stack return: D1 blocking diode and FLYBUS sense", domain="RET",
                 description="FLYBUS -> D1 (V8P10) -> TAP16. Two diodes (D1kk, D1) in series on every return "
-                            "path; D2 clamps FLYBUS if the return opens; R19/R20 feed PA0")
+                            "path; R19/R20 feed PA0. No FLYBUS clamp: an open return trips U9 (hardware) and, "
+                            "as a last resort, each LT8584's own open-output latch (review M-2)")
     d1 = b.add(P.V8P10, ref="D1", i_through=I_FLY)   # 0.7 W: see calc d1_tj_C
-    d2 = b.add(P.SMBJ70A, ref="D2")
-    r19 = b.add(P.R_2M_1206, ref="R19")
-    r20 = b.add(P.R_100K, ref="R20")
+    r19 = b.add(P.R_10M_1206, ref="R19")
+    r20 = b.add(P.R_470K, ref="R20")
     c19 = b.add(P.C_10N, ref="C19")
     tp1 = b.add(P.TP, ref="TP1")
-    n["FLYBUS"].connect(d1["A"], d2["K"], r19[1], tp1[1])
+    n["FLYBUS"].connect(d1["A"], r19[1], tp1[1])
     n["TAP16"].connect(d1["K"])
-    n["TAP0"].connect(d2["A"])
     n["FLY_SNS"].connect(r19[2], r20[1], c19[1])
     n["GND_B"].connect(r20[2], c19[2])
-    return dict(blk=b, d1=d1, d2=d2, r19=r19)
+    return dict(blk=b, d1=d1, r19=r19)
 
 
 def afe_block(d, n):
     b = d.block("afe", title="ADBMS1818 cell monitor and temperature sensing", domain="CTRL",
                 description="SPI mode (ISOMD = V-), DTEN = V- (2 s watchdog clears DCC), VREG from the 5 V buck, "
-                            "C17/C18 tied to C16 (16 cells), TH1-TH3 on GPIO1-3")
+                            "C17/C18 tied to C16 (16 cells), TH1-TH4 on GPIO1-4 (one per 4 channels)")
     u = b.add(P.ADBMS1818, ref="U1")
     r1 = b.add(P.R_100_0805, ref="R1")
     c1 = b.add(P.C_100N_100V, ref="C1")
@@ -429,9 +473,9 @@ def afe_block(d, n):
     r3 = b.add(P.R_100, ref="R3", p_diss=0.0006)
     r4 = b.add(P.R_4K99, ref="R4")
     r5 = b.add(P.R_1M, ref="R5")
-    rn = [b.add(P.R_10K_01, ref=f"R{6 + i}") for i in range(3)]
-    th = [b.add(P.NTC_10K, ref=f"TH{1 + i}") for i in range(3)]
-    cn = [b.add(P.C_100N, ref=f"C{5 + i}") for i in range(3)]
+    rn = [b.add(P.R_10K_01, ref=r) for r in ("R6", "R7", "R8", "R29")]
+    th = [b.add(P.NTC_10K, ref=f"TH{1 + i}") for i in range(4)]
+    cn = [b.add(P.C_100N, ref=c) for c in ("C5", "C6", "C7", "C22")]
     vplus = b.net("VPLUS", domain="STACK", v=(-0.3, 0), kind="power", i_max=0.0014,
                   notes="V+ through R1 100 ohm: 1.35 mA x 100 = 0.14 V")
     vref1 = b.net("VREF1", v=(0, 3.3), kind="analog")
@@ -439,7 +483,7 @@ def afe_block(d, n):
     ibias = b.net("IBIAS", v=(0, 2.1), kind="analog")
     ipb = b.net("IPB", v=(0, 5.15), kind="signal", notes="isoSPI port B, terminated, no device above")
     imb = b.net("IMB", v=(0, 5.15), kind="signal")
-    ntc = [b.net(f"NTC{1 + i}", v=(0, 3.1), kind="sense") for i in range(3)]
+    ntc = [b.net(f"NTC{1 + i}", v=(0, 3.1), kind="sense") for i in range(4)]
     n["STK_F"].connect(r1[1])
     vplus.connect(r1[2], c1[1], u["V+"])
     for t in range(0, N + 1):
@@ -449,11 +493,11 @@ def afe_block(d, n):
         n[f"S_{k}"].connect(u[f"S{k}"])
     u.nc_pins("S17", "S18", reason="unused balance outputs are left open (LTC6813-1 Rev B p.85 / ADBMS1818 "
                                    "'using fewer than 18 cells')")
-    for i in range(3):
+    for i in range(4):
         ntc[i].connect(u[f"GPIO{1 + i}"], rn[i][2], th[i][1], cn[i][1])
         vref2.connect(rn[i][1])
         n["GND_B"].connect(th[i][2], cn[i][2])
-    n["GND_B"].connect(*[u[f"GPIO{g}"] for g in range(4, 10)])   # unused GPIOs held low [I]
+    n["GND_B"].connect(*[u[f"GPIO{g}"] for g in range(5, 10)])   # unused GPIOs held low [I]
     n["5V_SYS"].connect(u["VREG"], c2[1])
     u.nc_pins("DRIVE", reason="VREG is supplied by the buck, no NPN pass transistor: DRIVE output left open "
                               "(ADBMS1818 Rev A p.68 'Providing DC Power') [I]")
@@ -482,8 +526,8 @@ def psu_block(d, n):
     u3 = b.add(P.LM5164, ref="U3")
     c8 = b.add(P.C_2U2_100V, ref="C8")
     c9 = b.add(P.C_100N_100V, ref="C9")
-    r10 = b.add(P.R_4M7_1206, ref="R10")
-    r11 = b.add(P.R_300K, ref="R11")
+    r10 = b.add(P.R_10M_1206, ref="R10")   # 10 M / 620 k: UVLO on at 25.7 V, 6.3 uA at 67 V (C-9)
+    r11 = b.add(P.R_620K, ref="R11")
     r12 = b.add(P.R_49K9, ref="R12")
     c10 = b.add(P.C_2N2, ref="C10")
     l1 = b.add(P.L_47U, ref="L1")
@@ -501,7 +545,7 @@ def psu_block(d, n):
     pre = b.net("BUCK_PRE", domain="STACK", v=(-1.3, 0), kind="power", i_max=0.012)
     vin = b.net("BUCK_IN", domain="STACK", v=(-2.5, 0), kind="power", i_max=0.012,
                 notes="R9 limits inrush and a U3 short to 0.66 A until F1 opens")
-    en = b.net("BUCK_EN", v=(0, 4.1), kind="analog", notes="UVLO divider: 0.06 x BUCK_IN, on at 25.0 V")
+    en = b.net("BUCK_EN", v=(0, 4.1), kind="analog", notes="UVLO divider: 0.0584 x BUCK_IN, on at 25.7 V")
     ron = b.net("BUCK_RON", v=(0, 5.0), kind="analog", notes="R_RON only; pin voltage internal [I]")
     fb = b.net("BUCK_FB", v=(0, 1.3), kind="analog", notes="1.2 V reference")
     ramp = b.net("BUCK_RAMP", v=(0, 5.2), kind="analog", notes="Type-3 ripple injection, 5 V +/- 40 mV")
@@ -576,9 +620,10 @@ def mcu_block(d, n):
 
 
 def en_block(d, n):
-    b = d.block("en", title="Global balance enable: Q1 current sink and the 16-LED opto string", domain="CTRL",
+    b = d.block("en", title="Balance enable: Q1 sink, opto string, hardware trips", domain="CTRL",
                 description="STK_F -> D4 -> R24 -> LEDA_16 -> U216 ... U201 -> STR_Q -> Q1 -> R23 -> GND_B. "
-                            "BAL_EN high sinks 1.5 mA: every opto pulls its DCHRG high (second enable)")
+                            "Q1 conducts only with BAL_EN (MCU) AND BMS OK (U8, iso sheet); U9 (open TAP16 / open "
+                            "return) and U10 (open TAP0) pull Q1_B low in hardware")
     q1 = b.add(P.MMBT5551, ref="Q1", p_diss=0.045)          # 1.5 mA x 30 V (C-14)
     d4 = b.add(P.ES1G, ref="D4")
     r21 = b.add(P.R_10K, ref="R21")
@@ -586,18 +631,61 @@ def en_block(d, n):
     r23 = b.add(P.R_1K6_0805, ref="R23")
     r24 = b.add(P.R_4K7_2010, ref="R24", p_diss=0.18)      # Q1 C-E short: 6.2 mA (C-14)
     tp5 = b.add(P.TP, ref="TP5")
-    qb = b.net("Q1_B", v=(0, 0.8))
     qe = b.net("Q1_E", v=(0, 2.6))
     strd = b.net("STR_D", domain="STACK", v=(-1.3, 0), kind="signal", notes="string top, STK_F - D4")
     n["BAL_EN"].connect(r21[1])
-    qb.connect(r21[2], r22[1], q1["B"])
+    n["EN_MCU"].connect(r21[2])
+    n["Q1_B"].connect(r22[1], q1["B"])
     qe.connect(q1["E"], r23[1])
     n["STR_Q"].connect(q1["C"], tp5[1])
     n["GND_B"].connect(r22[2], r23[2])
     n["STK_F"].connect(d4["A"])
     strd.connect(d4["K"], r24[1])
     n["LEDA_16"].connect(r24[2])
-    return dict(blk=b, q1=q1, r24=r24)
+
+    # Top trip (review M-1, M-2): FLYBUS - TAP15 is cell 16 + D1 drop (<= 4.75 V) in normal operation and
+    # >= 6.8 V when wire 16 opens (D316 in breakdown) or the return opens. Chain: D8 + 3.9 V Zener + 220 ohm
+    # + opto LED (10 k shunt rejects Zener leakage): onset about 5.9 V. U9 pulls Q1_B low within ~50 us.
+    d8 = b.add(P.ES1G, ref="D8", i_through=0.025)    # chain current only (<= 25 mA during trip latency)
+    d9 = b.add(P.ZENER_3V9, ref="D9")
+    r30 = b.add(P.R_220, ref="R30", p_diss=0.02)      # 3 mA steady in a trip, 25 mA for < 100 us
+    r36 = b.add(P.R_10K, ref="R36")
+    u9 = b.add(P.TLP293, ref="U9")
+    t1 = b.net("TRT1", domain="SNS15", v=(0, 12), notes="top trip chain, Zener cathode")
+    t2 = b.net("TRT2", domain="SNS15", v=(0, 7), notes="top trip chain, Zener anode")
+    t3 = b.net("TRT3", domain="SNS15", v=(0, 1.4), notes="U9 LED anode, LED-clamped above TAP15")
+    n["FLYBUS"].connect(d8["A"])
+    t1.connect(d8["K"], d9["K"])
+    t2.connect(d9["A"], r30[1])
+    t3.connect(r30[2], u9["A"], r36[1])
+    n["TAP15"].connect(u9["K"], r36[2])
+    n["Q1_B"].connect(u9["C"])
+    n["GND_B"].connect(u9["E"])
+
+    # Bottom trip (review M-1): TAP1 - TAP0 is <= 4.4 V normally and >= 6.4 V when wire 0 opens (D301 in
+    # breakdown carries the return). Chain gated by Q2 (on only with BAL_EN) so it loads cell 1 only
+    # while balancing.
+    d10 = b.add(P.ZENER_3V9, ref="D10", i_through=0.02)   # chain current only, not TAP1's 2.6 A
+    r31 = b.add(P.R_220, ref="R31", p_diss=0.02)
+    r37 = b.add(P.R_10K, ref="R37")
+    u10 = b.add(P.TLP293, ref="U10")
+    q2 = b.add(P.MMBT5551, ref="Q2")
+    r32 = b.add(P.R_10K, ref="R32")
+    r33 = b.add(P.R_100K, ref="R33")
+    b1 = b.net("TRB1", v=(0, 4.4), notes="bottom trip chain, Zener anode")
+    b3 = b.net("TRB3", v=(0, 4.4), notes="U10 LED cathode, switched to GND_B by Q2")
+    d.domain("TRB", ref="en/TRB3", kind="battery", description="U10 LED anode, LED-clamped above TRB3")
+    b2 = b.net("TRB2", domain="TRB", v=(0, 1.4))
+    q2b = b.net("Q2_B", v=(0, 0.8))
+    n["TAP1"].connect(d10["K"])
+    b1.connect(d10["A"], r31[1])
+    b2.connect(r31[2], u10["A"], r37[1])
+    b3.connect(u10["K"], r37[2], q2["C"])
+    n["BAL_EN"].connect(r32[1])
+    q2b.connect(r32[2], r33[1], q2["B"])
+    n["GND_B"].connect(q2["E"], r33[2], u10["E"])
+    n["Q1_B"].connect(u10["C"])
+    return dict(blk=b, q1=q1, r24=r24, u9=u9, u10=u10, d9=d9)
 
 
 def iso_block(d, n):
@@ -641,7 +729,26 @@ def iso_block(d, n):
     fled.connect(r28[2], u6["LED_A"])
     flta.connect(u6["OUT1"], d7["A1"], j4[1])
     n["FLT_B"].connect(u6["OUT2"], d7["A2"], j4[2])
-    return dict(blk=b, u5=u5, u6=u6, u7=u7, d7=d7, j2=j2, j4=j4)
+    # BMS-OK input (review M-5): the pack BMS's own charge-enable / no-fault signal energises U8, whose
+    # output is in series with the MCU's BAL_EN drive to Q1. Balancing needs both; the BMS's independent
+    # cell over/under-voltage protection therefore stops it without any MCU involvement.
+    u8 = b.add(P.AQY210EH, ref="U8")
+    j5 = b.add(P.J_BMS, ref="J5")
+    d12 = b.add(P.SMBJ40CA, ref="D12")
+    r34 = b.add(P.R_1K8_2512, ref="R34", p_diss=0.43)   # 30 V input: (30 - 0.9 - 1.14)^2 / 1.8 k (C-17)
+    d11 = b.add(P.ES1G, ref="D11")
+    r35 = b.add(P.R_10K, ref="R35")
+    bin_ = b.net("BMS_IN", domain="BMS", v=(-30, 30), external=True, threats=("esd", "reverse_polarity"),
+                 notes="BMS OK +, 9-30 V; reversed input blocked by D11")
+    bm1 = b.net("BMS1", domain="BMS", v=(-30, 30))
+    bm2 = b.net("BMS2", domain="BMS", v=(0, 1.5), notes="U8 LED anode, LED-clamped")
+    bin_.connect(j5[1], d12["A1"], r34[1])
+    bm1.connect(r34[2], d11["A"])
+    bm2.connect(d11["K"], u8["LED_A"], r35[1])
+    n["BMS_N"].connect(j5[2], d12["A2"], u8["LED_K"], r35[2])
+    n["EN_MCU"].connect(u8["OUT1"])
+    n["Q1_B"].connect(u8["OUT2"])
+    return dict(blk=b, u5=u5, u6=u6, u7=u7, d7=d7, j2=j2, j4=j4, u8=u8, j5=j5)
 
 
 def harness_block(d, n):
@@ -685,27 +792,33 @@ def hazards(d):
       parts=F + HF + [f"R4{kk(k)}" for k in CH], single_fault_safe=True)
     H("H-2", "Multi-cell short ('voltage jump'), kA: a part spanning non-adjacent taps fails short",
       "by construction: every return path has D1kk and D1 in series (D1kk short -> D1 blocks; D1 short -> each "
-      "D1kk blocks; C6kk or D2 short -> D1 blocks); supplies through F1 125 mA + R9 100 ohm; LED string through "
-      "R24 and a current sink; sense divider 2 M; an ADBMS1818 pin-to-pin short passes <= 0.3 A through two "
-      "100 ohm filters (fusible)",
-      parts=[f"D1{kk(k)}" for k in CH] + ["D1", "F1", "R9", "R1", "R24", "Q1", "R19"] + [f"R3{kk(t)}" for t in TAPS],
+      "D1kk blocks; C6kk short -> D1 blocks); supplies through F1 125 mA + R9 100 ohm; LED string through "
+      "R24 and a current sink; sense divider 10 M; an ADBMS1818 internal short passes <= 0.3 A through two "
+      "100 ohm C filters, or <= 6.7 mA through the 10 k S-line resistors R5kk",
+      parts=[f"D1{kk(k)}" for k in CH] + ["D1", "F1", "R9", "R1", "R24", "Q1", "R19"] + [f"R3{kk(t)}" for t in TAPS]
+      + [f"R5{kk(k)}" for k in CH],
       single_fault_safe=True,
       notes="Residual: T1kk interwinding insulation (1500 Vrms [P], 22x the working voltage) joins TAPk to TAP0 "
             "if it breaks down; treated as a safeguard (incoming hipot T-XFMR), cleared by the 10 kA inline "
-            "fuses (calc i_fault_stack_A). Double fault D1 + D1kk: cleared by F116/F100 and the inline fuses")
+            "fuses (calc i_fault_stack_A). Double fault D1 + D1kk: cleared by F116/F100 and the inline fuses. "
+            "In both, the board Nano2 melts first and is used as series back-up above its rating (Q-14, F-16)")
     H("H-3", "Harness short near the battery: up to 2.5 kA, arc", "3AB 7 A fuse at the ring (10 kA at 125 VDC); "
       "UL 1015 wire; bundled in tap order; strain relief", parts=HF + [f"HT{t}" for t in TAPS],
       single_fault_safe=True)
     H("H-4", "Over-discharge by a stuck balancer: the BMS cannot disconnect this load; copper dissolution -> "
       "internal short -> runaway on recharge",
-      "two independent enables (S_k -> DIN and BAL_EN -> opto -> DCHRG); ADBMS1818 watchdog clears DCC in "
-      "<= 2.2 s (REQ-F1); firmware floor (REQ-F8); LT8584 UVLO 2.1-2.45 V; both paths proof-tested each "
-      "session (REQ-F6); fault contact",
-      parts=["U1", "U2", "Q1", "R21", "R22"] + [f"U2{kk(k)}" for k in CH] + [f"R2{kk(k)}" for k in CH],
-      single_fault_safe=True, notes="Residual: an LT8584 internal logic fault that ignores both enables")
+      "two enables (S_k -> DIN and BAL_EN -> opto -> DCHRG), independent of hardware faults; ADBMS1818 watchdog "
+      "clears DCC in <= 2.2 s (REQ-F1); firmware floor (REQ-F8); an enable independent of the MCU: the pack "
+      "BMS's OK signal through U8 in series with BAL_EN, so the BMS's own cell UV detection stops balancing; "
+      "LT8584 UVLO 2.1-2.45 V; both paths proof-tested each session (REQ-F6); fault contact",
+      parts=["U1", "U2", "Q1", "R21", "R22", "U8"] + [f"U2{kk(k)}" for k in CH] + [f"R2{kk(k)}" for k in CH],
+      single_fault_safe=True, notes="A firmware defect that keeps talking SPI defeats both MCU-driven enables and "
+                                    "the watchdog; U8 (BMS OK) remains. Residual: an LT8584 internal logic fault")
     H("H-5", "Overcharge of a full cell by the returned energy (0.12-0.2 A per active channel into every cell)",
-      "firmware active-set rule REQ-F2: net current of a full cell -2.5 + n x 0.15 A < 0 for n <= 8",
-      parts=["U1", "U2"], single_fault_safe=False, notes="firmware-only barrier; reviewed and tested (F-9)")
+      "firmware active-set rule REQ-F2: net current of a full cell -2.5 + n x 0.15 A < 0 for n <= 8; hardware "
+      "backstop: the pack BMS's OV trip drops BMS OK (U8) and stops all channels",
+      parts=["U1", "U2", "U8"], single_fault_safe=True,
+      notes="between V_full and the BMS OV threshold the protection is firmware only (F-9); above it, U8")
     H("H-6", "Wrong decisions from IR drop on the single-wire taps", "MUTE/DCP = 0 during conversions, sum-of-"
       "cells plausibility (REQ-F4)", parts=["U1", "U2"], single_fault_safe=True)
     H("H-7", "Hot-plug overvoltage from random mating order", "TVS D3kk per cell; 100 ohm / 10 nF C-pin filters "
@@ -715,15 +828,25 @@ def hazards(d):
     H("H-8", "Swapped, reversed or offset taps (installer error)", "pre-plug DMM check; TVS crowbars open the "
       "board fuses; replaceable OMNI-BLOK fuses; boot lockout (REQ-F7)",
       parts=[f"D3{kk(k)}" for k in CH] + F, single_fault_safe=True, notes="no fire; the board may need repair")
-    H("H-9", "Open tap (including TAP0 or TAP16)", "pulse test before each session (REQ-F6); FLY_SNS analog "
-      "watchdog stops balancing in <= 1 ms (REQ-F5); D2 clamps FLYBUS; D316 clamps an open TAP16 node to "
-      "TAP15 + 7.1 V; the BAL_EN string spans TAP16..TAP0, so losing either end disables every channel",
-      parts=["D2", "R19", "R20", "C19", "D316", "U2"], single_fault_safe=True)
+    H("H-9", "Open tap while balancing. Intermediate taps are benign (the channel reaches LT8584 UVLO first); "
+      "an open TAP16 or TAP0 wire leaves the returned 1.6 A in D316 / D301 (in breakdown) and lifts that cell's "
+      "reading to 6.4-7.1 V",
+      "pulse test before each session (REQ-F6); hardware trips U9 (FLYBUS - TAP15 > ~5.9 V) and U10 (TAP1 - "
+      "TAP0 > ~5.3 V) pull Q1_B low in < 100 us, all DCHRG drop; restart is a hiccup of < 1 ms on per >= 20 ms "
+      "off until firmware (REQ-F10) latches off or the ADBMS1818 watchdog (2.2 s) stops a hung MCU",
+      parts=["U9", "U10", "D8", "D9", "D10", "Q2", "D301", "D316", "U2"], single_fault_safe=True,
+      notes="the on-board TAP16/TAP0 nodes stay alive through the TVS, so the BAL_EN string alone does not stop "
+            "the channels (review M-1)")
     H("H-10", "Shock through the user port with the battery at mains potential (ASM-5)",
       "ISO7721DWV and AQY210EH, both reinforced 5 kVrms; 8 mm (UART) / 5 mm (contact) board barrier; separate "
       "connectors", parts=["U5", "U6", "J2", "J4"], single_fault_safe=True)
-    H("H-11", "Overtemperature (8 x 1.5 W)", "TH1-TH3; derating REQ-F3; NTCs at U103, U106, U112",
-      parts=["TH1", "TH2", "TH3"], single_fault_safe=True)
+    H("H-11", "Overtemperature (8 x 1.5 W)", "TH1-TH4 (one per 4 channels, at U103, U107, U110, U114); "
+      "derating REQ-F3", parts=["TH1", "TH2", "TH3", "TH4"], single_fault_safe=True)
+    H("H-15", "Open stack return (D1 lifted) with the MCU hung: the LT8584s keep delivering into FLYBUS",
+      "U9 trips at FLYBUS - TAP15 > ~5.9 V in hardware; no FLYBUS clamp to absorb energy (D2 removed), so the "
+      "LT8584's own open-output latch (SW clamp 45-50 V, FLYBUS ~183 V) remains as the last layer; C6kk 100 V "
+      "parts have 2.5x surge", parts=["U9", "D8", "D9", "R30", "Q1"], single_fault_safe=True,
+      notes="replaces the SMBJ70A clamp, which hid the LT8584 latch and could take ~300 J (review M-2)")
     H("H-12", "The balancer itself causes imbalance through unequal standing loads",
       "all controller loads hang on the whole stack (F1 from TAP16); per-cell loads <= 30 uA (calc iq_cell_*)",
       parts=["F1", "U3"], single_fault_safe=False, notes="not a fault scenario; design property")
@@ -803,9 +926,14 @@ def calcs(d):
       limit=30, note="REQ-12")
     c("iq_cell_drift_pct_yr", round(iq * 1e-6 * 8760 / 200 * 100, 3), "%/yr", expr="I x 8760 h / 200 Ah",
       limit=0.15, note="REQ-12")
-    iqs = 25 + V_STACK / 5.0 + 9 + 1.4
-    c("iq_stack_max_uA", round(iqs, 1), "uA", expr="LM5164 25 + UVLO 67.2 V / 5.0 M + V+ 9 + reflected 1.4",
-      limit=50, note="REQ-13")
+    iqs = 25 + V_STACK / 10.62 + 9 + 1.4 + V_STACK / 10.47
+    c("iq_stack_max_uA", round(iqs, 1), "uA",
+      expr="LM5164 25 + UVLO 67.2 V / 10.62 M + V+ 9 + reflected 1.4 + D1 leakage into the FLYBUS divider "
+           "(bounded by 67.2 V / 10.47 M)", limit=50,
+      note="REQ-13. V8P10 IR is 14.5 uA typ / 70 uA max at 100 V (doc 89005): the old 2.1 M divider let it reach "
+           "32 uA, so both dividers were raised to ~10 M")
+    c("iq_cell16_extra_uA", 1.0, "uA", expr="U9 chain leakage, fed only by D1 reverse leakage at < 5 V [I]",
+      limit=4.67, note="keeps cell 16 <= 30 uA worst case (REQ-12); the U10 chain is switched off with BAL_EN")
     # C-10 hot plug (C1kk + C2kk X6S 6.3 V at 4.2 V: about 80 uF total [I])
     zeta = 0.06 * math.sqrt(80e-6 / 2e-6)
     ov = math.exp(-math.pi * zeta / math.sqrt(1 - zeta ** 2))
@@ -814,18 +942,44 @@ def calcs(d):
       note="C1kk/C2kk 6.3 V rating (LT8584 VIN abs max 9 V)")
     c("open_tap16_vin_V", round(7.07 + (9.1 - 7.07) * 1.6 / 68, 2), "V",
       expr="D316 VBR max 7.07 V + (VC 9.1 - 7.07) x 1.6 A / 68 A", limit=9,
-      note="open TAP16 wire while balancing: returned current flows in D316; LT8584 VIN abs max 9 V. C116/C216 "
-           "see 1.13 x rating for <= 1 ms (MLCC surge 2.5x)")
+      note="open TAP16 (or TAP0) wire while balancing: the returned current flows in D316 (D301) until U9 (U10) "
+           "trips; LT8584 VIN abs max 9 V; C1kk/C2kk see 1.13 x rating for < 1 ms per hiccup (MLCC surge 2.5x)")
+    # Hardware trips (review M-1, M-2): chain onset = diode + Zener + R x I + LED at the 1.1 mA the opto needs
+    # (CTR(sat) 30 % sinks R21's 0.33 mA) plus the 0.1 mA taken by the 10 k LED shunt
+    top_lo, top_hi = 0.55 + 3.55 + 1.0 + 0.26, 0.80 + 3.85 + 1.3 + 0.44
+    c("trip_top_onset_min_V", round(top_lo, 2), "V", expr="ES1G 0.55 + BZX84-B3V9 3.55 (1.2 mA) + LED 1.0 + 0.26",
+      limit=4.75 + 0.3, op=">=", note="normal max FLYBUS - TAP15 = 4.2 + D1 0.45 + wire IR 0.1 = 4.75 V")
+    c("trip_top_onset_max_V", round(top_hi, 2), "V", expr="ES1G 0.8 + Zener 3.85 + LED 1.3 + 220 x 2 mA",
+      limit=6.8 - 0.2, note="fault min: D316 VBR 6.46 at 1.6 A + D1 0.35 = 6.8 V")
+    bot_lo, bot_hi = 3.55 + 1.0 + 0.26 + 0.05, 3.85 + 1.3 + 0.44 + 0.2
+    c("trip_bottom_onset_min_V", round(bot_lo, 2), "V", expr="Zener 3.55 + LED 1.0 + 0.26 + Q2 0.05",
+      limit=4.4 + 0.3, op=">=", note="normal max TAP1 - TAP0 = 4.2 + TAP0 wire IR 0.1 + margin")
+    c("trip_bottom_onset_max_V", round(bot_hi, 2), "V", expr="Zener 3.85 + LED 1.3 + 220 x 2 mA + Q2 0.2",
+      limit=6.46 - 0.2, note="fault min: D301 VBR 6.46 V at 1.6 A")
+    c("trip_latency_us", 100, "us", expr="TLP293 turn-on ~10 us + Q1/string turn-off + DCHRG fall + one LT8584 "
+      "cycle (10 us) [I]", limit=1000, note="REQ-15")
+    c("open_return_flybus_peak_V", round(63 + 5.9 + 0.1 * 100, 1), "V",
+      expr="TAP15 63 V + trip 5.9 V + 1.6 A / 16 uF x 100 us", limit=100, note="C6kk, D1 are 100 V parts")
+    c("lt8584_latch_flybus_V", round(4 * (50 - 4.2), 0), "V", expr="4 x (SW clamp 50 V - VIN 4.2 V)", limit=250,
+      note="last layer if U9 fails: C6kk 100 V X7R surge 2.5x (LT8584 p.21); R19 1206 200 V")
+    c("s_line_fault_current_mA", round(V_STACK / 10e3 * 1e3, 1), "mA", expr="67.2 V / R5kk 10 k", limit=500,
+      note="REQ-9 (review M-3); R5kk fails open if the fault persists")
+    c("din_drop_mV", round(6e-6 * 10e3 * 1e3, 0), "mV", expr="DIN pull-up 6 uA max x 10 k", limit=200,
+      note="DIN data threshold margin (LT8584 p.3)")
+    c("bms_led_current_min_mA", round((9 - 0.9 - 1.5) / 1.8 - 1.5 / 10, 2), "mA",
+      expr="(9 V - D11 0.9 - VF 1.5) / 1.8 k - 1.5 V / 10 k", limit=3.0, op=">=", note="AQY210EH IFon max 3.0 mA")
+    c("bms_led_current_max_mA", round((30 - 0.9 - 1.14) / 1.8, 1), "mA", expr="(30 - 0.9 - 1.14) / 1.8 k",
+      limit=50, note="AQY210EH IF max 50 mA; R34 0.43 W of 1 W")
+    c("i_fault_reversed_harness_A", round((51.2 - 2) / (0.12 + 0.5 / 16), 0), "A",
+      expr="(51.2 - 2 V) / (0.12 + 16 secondaries 0.5 / 16 ohm), through D1kk and D1",
+      limit=10000, note="two installer errors (landing + skipped pre-plug check); 3AB back-up, Nano2 above "
+                        "rating (Q-14, F-16)")
     # C-11 timing
     c("adbms_watchdog_max_s", 2.2, "s", expr="DTEN = V-: 1.8-2.2 s (ADBMS1818 Rev A p.7)", limit=2.2,
       note="REQ-16")
     c("wdt_kick_period_s", 0.5, "s", limit=0.9, note="half the minimum watchdog time")
-    c("flybus_fault_stop_ms", 1.0, "ms", expr="ADC analog watchdog + BAL_EN drop (REQ-F5)", limit=1.0)
-    c("flybus_clamp_V", round(86 + (113 - 86) * I_FLY / 5.3, 1), "V",
-      expr="SMBJ70A VBR max 86 V + (VC 113 - 86) x 1.6 A / 5.3 A", limit=100,
-      note="C6kk and D1 are 100 V parts")
-    c("flybus_clamp_energy_J", round(I_FLY * 94.2 * 1e-3, 3), "J", expr="1.6 A x 94.2 V x 1 ms",
-      limit=0.87, note="SMBJ70A 600 W 10/1000 us = about 0.87 J; a 10 ms software loop (1.5 J) would not hold")
+    c("d316_hiccup_energy_J", round(7.0 * 0.05 * 2.2, 2), "J", expr="7 W x duty 5 % x 2.2 s watchdog (MCU hung)",
+      limit=2.0, note="open TAP16 with a hung MCU; SMA6T6V7AY 600 W class [I]")
     c("open_wire_step_V", round(2.5 * 0.12, 2), "V", expr="2.5 A pulse x R_loop 0.12 ohm (healthy tap)")
     # C-12 thermal
     c("d1_tj_C", round(70 + I_FLY * 0.45 * 60, 1), "C", expr="70 C local + 1.6 A x VF 0.45 V x RthJA 60 C/W (doc 89005)",
@@ -847,7 +1001,7 @@ def calcs(d):
     di = (V_STACK - 5) * (5 / V_STACK) / (47e-6 * 250e3)
     c("l1_ipk_A", round(0.06 + di / 2, 3), "A", expr="60 mA + ripple/2", limit=1.44, note="L1 Isat 10 %")
     c("buck_vout_V", round(1.2 * (1 + 316 / 100), 3), "V", expr="1.2 x (1 + 316k/100k)")
-    c("buck_uvlo_on_V", round(1.5 * 5000 / 300, 1), "V", expr="1.5 V x (4.7 M + 300 k) / 300 k", limit=32.5,
+    c("buck_uvlo_on_V", round(1.5 * 10620 / 620, 1), "V", expr="1.5 V x (10 M + 620 k) / 620 k", limit=32.5,
       op="<=", note="must start below the 13S LFP minimum")
     c("vplus_drop_V", round(100 * 1.35e-3, 3), "V", expr="R1 100 ohm x 1.35 mA", limit=0.3,
       note="V+ >= C18 - 0.3 V")
@@ -865,7 +1019,7 @@ def calcs(d):
     # C-15 FLYBUS
     c("flybus_cap_uF", 16 * 1.0, "uF", expr="16 x C6kk about 1.0 uF at 60 V", limit=1.5, op=">=",
       note="needed 400 x L / V^2 = 1.5 uF at 32.5 V (LT8584 Rev B p.21)")
-    c("fly_sns_max_V", round(V_FLY * 100 / 2100 * 1.02, 2), "V", expr="67.7 V x 100k / 2.1M + 2 % tolerance",
+    c("fly_sns_max_V", round(V_FLY * 470 / 10470 * 1.02, 2), "V", expr="67.7 V x 470k / 10.47M + 2 % tolerance",
       limit=3.3, note="PA0 within VDD")
     # C-16 NTC
     c("ntc_v25_V", 1.5, "V", expr="3.000 V x 10k / (10k + 10k)")
@@ -937,6 +1091,7 @@ def placement(d, n, tp, chs, ret, afe, psu, mcu, en, iso, holes):
         pl.near(c["r2"], u["DCHRG"], "tight")
         pl.near(c["r4"], u["MODE"], "tight")
         pl.near(c["opto"], u["DCHRG"], "close")
+        pl.near(c["r5"], afe["u"][f"S{k}"], "tight", note="S-line resistor at the monitor pin (review M-3)")
         pl.near(c["c6"], c["d1"]["K"], "tight")
         pl.far(afe["u"], t, "close", note="keep the monitor cool and away from switching fields")
         pl.thermal(u, 0.6, "copper", note=f"EP to >= 650 mm2 TAP{k - 1} copper on L1+L2+L4, >= 9 vias "
@@ -958,9 +1113,8 @@ def placement(d, n, tp, chs, ret, afe, psu, mcu, en, iso, holes):
               what="1210 MLCC within 5 mm of a board edge or hole", note="flex cracking shorts a cell (H-1)")
     # return and thermal sensing
     pl.near(ret["d1"], tp["F16"], "close")
-    pl.near(ret["d2"], ret["d1"], "close")
     pl.thermal(ret["d1"], 0.7, "copper", note=">= 400 mm2 on the TAP16 tab")
-    for th, k in zip(afe["th"], (3, 6, 12)):
+    for th, k in zip(afe["th"], (3, 7, 10, 14)):
         pl.near(th, chs[k]["u"], "close", note="board temperature at a hot channel; keep 0.6 mm to its copper")
     # monitor and supply
     for cap, pin in ((afe["c1"], "V+"), (afe["c2"], "VREG"), (afe["c3"], "VREF1"), (afe["c4"], "VREF2")):
@@ -983,6 +1137,15 @@ def placement(d, n, tp, chs, ret, afe, psu, mcu, en, iso, holes):
               note="body across the 5 mm reinforced gap")
     pl.keepout(iso["u5"], what="copper and vias in the pad-row gap", layers="all")
     pl.keepout(iso["u6"], what="copper and vias in the pad-row gap", layers="all")
+    pl.custom("straddle", part=iso["u8"], a=d.domains["CTRL"], b=d.domains["BMS"],
+              note="BMS-OK PhotoMOS across the 5 mm reinforced gap")
+    pl.keepout(iso["u8"], what="copper and vias in the pad-row gap", layers="all")
+    pl.edge(iso["j5"], "east")
+    pl.orient(iso["j5"], "out")
+    # hardware trips: sense at the tap they watch, short traces to Q1_B
+    pl.near(en["u9"], chs[16]["u"], "close", note="U9 LED side at TAP15/FLYBUS near channel 16")
+    pl.near(en["u10"], tp["F1"], "close", note="U10 chain at TAP1 near the bottom of the stack")
+    pl.custom("label", obj=iso["j5"], text="BMS OK 9-30 V (balancing needs it)")
     for bar in d.barriers:
         pl.separate(d.domains[bar.a], d.domains[bar.b], slot=bar.slot)
     for h in holes:
@@ -1025,7 +1188,7 @@ def waivers(d):
       "it. A fuse would not open at these currents.")
     W("kicad.erc.pin_to_pin", r"Bidirectional and Power output.*#FLG",
       "The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B "
-      "(U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so "
+      "(U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so "
       "the MCU can remove isolator power when no host is present). Neither is a driver conflict.")
 
 

@@ -1787,22 +1787,14 @@
 		)
 		(uuid "caed5c63-e273-5bad-877d-8405c0b41710")
 	)
-	(global_label "S_1"
-		(shape passive)
+	(label "DIN_1"
 		(at 63.5 45.72 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "4626c34e-bb95-53be-a73d-ecd18fc193b1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 63.5 45.72 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
+		(uuid "2d45bcb5-5407-57cc-af47-e861db81504f")
 	)
 	(wire
 		(pts (xy 60.96 48.26) (xy 63.5 48.26))
@@ -3788,6 +3780,147 @@
 			(justify right)
 		)
 		(uuid "409de006-2927-5407-bc1b-02edb8e475c7")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 114.3 127 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "1b352902-0e86-5338-adf0-2d54dc793731")
+		(property "Reference" "R501"
+			(at 116.332 127 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "10k"
+			(at 114.3 127 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Resistor 10k 1% 0603"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "RC0603FR-0710KL"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "ch1"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "ch1"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Package" "0603"
+			(at 114.3 127 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "3dc20af3-a56f-5442-80e0-a7733ee13c12")
+		)
+		(pin "2"
+			(uuid "407c91e3-a548-5ea5-b921-46c55ec7872a")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/a13eab5e-6137-59c0-ad86-0d74389113db"
+					(reference "R501")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 114.3 123.19) (xy 114.3 120.65))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0cde9fdb-65d1-5598-bf3a-02785fc29109")
+	)
+	(global_label "S_1"
+		(shape passive)
+		(at 114.3 120.65 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "58b185ac-34c0-5fd4-bdf9-ca8dee57be7d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 114.3 120.65 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 114.3 130.81) (xy 114.3 133.35))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8ebe3881-3cb6-5a66-a790-88085b43047b")
+	)
+	(label "DIN_1"
+		(at 114.3 133.35 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "5001291b-6a91-523f-b972-da92c748bdc2")
 	)
 	(symbol
 		(lib_id "Isolator:TLP293")

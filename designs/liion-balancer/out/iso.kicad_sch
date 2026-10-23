@@ -3,7 +3,7 @@
 	(generator "kaesynth")
 	(generator_version "0.1")
 	(uuid "1a5938ef-9b39-5396-aab7-34a726acd884")
-	(paper "A4")
+	(paper "A3")
 	(title_block
 		(title "Isolated UART port and fault contact (reinforced barrier)")
 		(date "2026-10-23")
@@ -451,6 +451,167 @@
 					(at 0 -3.81 90)
 					(length 2.794)
 					(name ""
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+					(number "2"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Device:D"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "D"
+				(at 0 2.54 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Value" "D"
+				(at 0 -2.54 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Description" "Diode"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Sim.Device" "D"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "Sim.Pins" "1=K 2=A"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "ki_keywords" "diode"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(property "ki_fp_filters" "TO-???* *_Diode_* *SingleDiode* D_*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font (size 1.27 1.27))
+				)
+			)
+			(symbol "D_0_1"
+				(polyline
+					(pts (xy -1.27 1.27) (xy -1.27 -1.27))
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 1.27)
+						(xy 1.27 -1.27)
+						(xy -1.27 0)
+						(xy 1.27 1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts (xy 1.27 0) (xy -1.27 0))
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "D_1_1"
+				(pin passive line
+					(at -3.81 0 0)
+					(length 2.54)
+					(name "K"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+					(number "1"
+						(effects
+							(font (size 1.27 1.27))
+						)
+					)
+				)
+				(pin passive line
+					(at 3.81 0 180)
+					(length 2.54)
+					(name "A"
 						(effects
 							(font (size 1.27 1.27))
 						)
@@ -4027,7 +4188,7 @@
 	)
 	(symbol
 		(lib_id "Connector_Generic:Conn_01x04")
-		(at 45.72 111.76 0)
+		(at 284.48 33.02 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4035,61 +4196,61 @@
 		(dnp no)
 		(uuid "d32ce825-890c-5105-9172-8cccfa32637d")
 		(property "Reference" "J2"
-			(at 45.72 106.68 0)
+			(at 284.48 27.94 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "1803293"
-			(at 45.72 119.38 0)
+			(at 284.48 40.64 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Connector_Phoenix_MC:PhoenixContact_MC_1,5_4-G-3.81_1x04_P3.81mm_Horizontal"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.phoenixcontact.com/en-us/products/pcb-header-mc-15-4-g-381-1803293"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "User UART port: header MC 1,5/4-G-3,81, plug MC 1,5/4-ST-3,81"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "1803293"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Phoenix Contact"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "iso"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "iso"
-			(at 45.72 111.76 0)
+			(at 284.48 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -4117,7 +4278,7 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 109.22) (xy 38.1 109.22))
+		(pts (xy 279.4 30.48) (xy 276.86 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -4126,7 +4287,7 @@
 	)
 	(global_label "GND_ISO"
 		(shape passive)
-		(at 38.1 109.22 180)
+		(at 276.86 30.48 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4134,7 +4295,7 @@
 		)
 		(uuid "aad3dab2-735d-55ac-a3d4-5c6a588582ce")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 38.1 109.22 0)
+			(at 276.86 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -4142,7 +4303,7 @@
 		)
 	)
 	(wire
-		(pts (xy 40.64 111.76) (xy 38.1 111.76))
+		(pts (xy 279.4 33.02) (xy 276.86 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -4150,7 +4311,7 @@
 		(uuid "aa477883-3aba-52e2-8ab7-1773bba7764e")
 	)
 	(label "VIO_ISO"
-		(at 38.1 111.76 180)
+		(at 276.86 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4159,7 +4320,7 @@
 		(uuid "b3f1d026-0d3c-5b13-85af-92fdd9cf2ab4")
 	)
 	(wire
-		(pts (xy 40.64 114.3) (xy 38.1 114.3))
+		(pts (xy 279.4 35.56) (xy 276.86 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -4167,7 +4328,7 @@
 		(uuid "fcd54d9b-3de5-5284-bf6f-9d34e516327b")
 	)
 	(label "TXD_ISO"
-		(at 38.1 114.3 180)
+		(at 276.86 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4176,7 +4337,7 @@
 		(uuid "a49964a5-fe6c-5056-8fe4-9e67ef71581a")
 	)
 	(wire
-		(pts (xy 40.64 116.84) (xy 38.1 116.84))
+		(pts (xy 279.4 38.1) (xy 276.86 38.1))
 		(stroke
 			(width 0)
 			(type default)
@@ -4184,7 +4345,7 @@
 		(uuid "6c2ff6df-1b68-564f-b982-21fe5ac24e43")
 	)
 	(label "RXD_ISO"
-		(at 38.1 116.84 180)
+		(at 276.86 38.1 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -4313,6 +4474,838 @@
 		(uuid "7ddcfbb0-3c9d-539d-b79b-a4e88e47fdc2")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 175.26 53.34 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Relay_SolidState:AQY280EH")
+		(at 317.5 33.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "357205c5-f535-5d5a-80c5-f9025ed36688")
+		(property "Reference" "U8"
+			(at 312.42 27.94 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Value" "AQY210EHAX"
+			(at 317.5 27.94 0)
+			(effects
+				(font (size 1.27 1.27))
+				(justify left)
+			)
+		)
+		(property "Footprint" "Package_DIP:SMDIP-4_W7.62mm"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www3.panasonic.biz/ac/e_download/control/relay/photomos/catalog/semi_eng_ge2a_aqy21_eh.pdf"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "PhotoMOS 1 Form A, 350 V 130 mA, reinforced 5000 Vrms, SMD 4-pin (fault contact)"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "AQY210EHAX"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Panasonic"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 317.5 33.02 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "6459f88b-18bc-5fd2-ad8a-6f20613f1a87")
+		)
+		(pin "2"
+			(uuid "fe86b7cd-e37c-5e54-8a2d-29d99d181f30")
+		)
+		(pin "3"
+			(uuid "ba08acf9-6838-5a88-b97c-9c40fa17c785")
+		)
+		(pin "4"
+			(uuid "93d23008-41fe-54e5-943d-fc08f7978482")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "U8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 309.88 30.48) (xy 307.34 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b2589938-a4a1-5d2e-bbe5-4e8ba40c88b1")
+	)
+	(label "BMS2"
+		(at 307.34 30.48 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "25ba351d-ff2d-5fdf-b669-1cf2abfeaba3")
+	)
+	(wire
+		(pts (xy 309.88 35.56) (xy 307.34 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a7e2734c-abbd-5148-8106-24884f99b084")
+	)
+	(global_label "BMS_N"
+		(shape passive)
+		(at 307.34 35.56 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "7bc3a98c-1607-54e5-bccd-302293bc4db1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 307.34 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 325.12 35.56) (xy 327.66 35.56))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bc4d2ee9-35eb-5ae9-9170-6a5ecf0b91b7")
+	)
+	(global_label "EN_MCU"
+		(shape passive)
+		(at 327.66 35.56 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "f8631783-0f44-5774-b9e9-351c524e658d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 327.66 35.56 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 325.12 30.48) (xy 327.66 30.48))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cfae197e-bba4-52e8-bf4b-e3964304ee2a")
+	)
+	(global_label "Q1_B"
+		(shape passive)
+		(at 327.66 30.48 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "36a470dd-46af-5d2d-81bf-692e093c2f09")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 327.66 30.48 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x02")
+		(at 314.96 50.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b33311ff-f6ca-5133-bd32-db038e3492ef")
+		(property "Reference" "J5"
+			(at 314.96 48.26 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "1803277"
+			(at 314.96 55.88 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Connector_Phoenix_MC:PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.81mm_Horizontal"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.phoenixcontact.com/en-us/products/pcb-header-mc-15-2-g-381-1803277"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "BMS OK input (9-30 V DC or the BMS's dry contact switching the user's 12/24 V): header MC 1,5/2-G-3,81, plug MC 1,5/2-ST-3,81"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "1803277"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Phoenix Contact"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 314.96 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "a9f00a08-f423-5172-a4db-c5bbc574b40c")
+		)
+		(pin "2"
+			(uuid "1508b7dc-efd2-51d2-a957-f91c8ccd85ef")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "J5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 309.88 50.8) (xy 307.34 50.8))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3b556301-0157-561a-a690-d57c98f0e645")
+	)
+	(label "BMS_IN"
+		(at 307.34 50.8 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "c5c9649d-7f4e-5bc6-ae03-9a849a8782fb")
+	)
+	(wire
+		(pts (xy 309.88 53.34) (xy 307.34 53.34))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "44629423-9c4e-54dc-b1e7-758797ebdb49")
+	)
+	(global_label "BMS_N"
+		(shape passive)
+		(at 307.34 53.34 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "8384b87f-0365-5594-b035-87cb92db07eb")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 307.34 53.34 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:D_TVS")
+		(at 340.36 50.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "520cc5ef-8344-5055-8797-bfff4060f532")
+		(property "Reference" "D12"
+			(at 340.36 48.26 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "SMBJ40CA"
+			(at 340.36 53.34 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SMB"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.littelfuse.com/assetdocs/littelfuse-tvs-diode-smbj-datasheet"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "TVS bidirectional 600 W, VR 40 V, VC 64.5 V (fault-contact surge/ESD clamp)"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "SMBJ40CA"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Littelfuse"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 340.36 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "2d1f757b-1eef-5b75-9cfb-77a13fea93d2")
+		)
+		(pin "2"
+			(uuid "c7f957f6-b79c-534c-b375-1bba29d5e92e")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "D12")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 336.55 50.8) (xy 334.01 50.8))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ec077fde-40e0-5ae2-9ce0-77bfddce4511")
+	)
+	(label "BMS_IN"
+		(at 334.01 50.8 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "89ab16a0-51f2-553d-baec-4f383624b9a5")
+	)
+	(wire
+		(pts (xy 344.17 50.8) (xy 346.71 50.8))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7a93b59c-2401-5a3a-a59e-3cb6673b6b30")
+	)
+	(global_label "BMS_N"
+		(shape passive)
+		(at 346.71 50.8 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "da28c29b-4a52-5b8b-8aac-be9d234e6ee6")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 346.71 50.8 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 345.44 83.82 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "54a41ed4-5347-520c-94f5-5d1b1a0d5000")
+		(property "Reference" "R34"
+			(at 347.472 83.82 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "1.8k"
+			(at 345.44 83.82 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_2512_6332Metric"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Resistor 1.8k 1% 2512"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "RC2512FK-071K8L"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Package" "2512"
+			(at 345.44 83.82 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "e8d8ff3d-7fbc-5d20-bc55-ac1b83866153")
+		)
+		(pin "2"
+			(uuid "85e3b9e3-0cf6-57a4-ab1c-c9665e351ae3")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "R34")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 345.44 80.01) (xy 345.44 77.47))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a763d801-5e82-513f-965e-f4a5d7930652")
+	)
+	(label "BMS_IN"
+		(at 345.44 77.47 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "25924003-a083-52f6-acd9-c27d01fc9e9e")
+	)
+	(wire
+		(pts (xy 345.44 87.63) (xy 345.44 90.17))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f33a888b-b49d-576f-9116-fbca3d0bd177")
+	)
+	(label "BMS1"
+		(at 345.44 90.17 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "a409ec1f-0517-5ca9-b7d4-7c5950af1271")
+	)
+	(symbol
+		(lib_id "Device:D")
+		(at 312.42 66.04 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "717506f1-4c9e-5b4d-9845-2d24d43db4fd")
+		(property "Reference" "D11"
+			(at 312.42 63.5 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "ES1G-13-F"
+			(at 312.42 68.58 0)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Diode_SMD:D_SMA"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.diodes.com/assets/Datasheets/ds14001.pdf"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Super-fast rectifier 400 V 1 A, 25 ns, SMA"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "ES1G-13-F"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Diodes Incorporated"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 312.42 66.04 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "54014663-39d8-505e-9910-61d2b3a7e8b5")
+		)
+		(pin "2"
+			(uuid "792d7e7a-61d2-5912-98a9-e7d71067f083")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "D11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 308.61 66.04) (xy 306.07 66.04))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5cb3ba4a-19fc-5227-86a1-6388ef14b688")
+	)
+	(label "BMS2"
+		(at 306.07 66.04 180)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "6050e1e9-f878-52fe-8711-9629263c3522")
+	)
+	(wire
+		(pts (xy 316.23 66.04) (xy 318.77 66.04))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ed62fc63-4335-5741-808f-a0ca7a5c2454")
+	)
+	(label "BMS1"
+		(at 318.77 66.04 0)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "f3291477-57b1-53e1-b160-236b67d14595")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 335.28 81.28 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f979578d-7c6f-5ba1-8ac9-c46eef7ed06c")
+		(property "Reference" "R35"
+			(at 337.312 81.28 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "10k"
+			(at 335.28 81.28 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Resistor 10k 1% 0603"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "RC0603FR-0710KL"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "iso"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "iso"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Package" "0603"
+			(at 335.28 81.28 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "e19fd773-3cfd-5bc2-ab9f-f1feb5ddf0e4")
+		)
+		(pin "2"
+			(uuid "3227c8c9-cb7d-5fa3-b5e6-2c4f6b928868")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85"
+					(reference "R35")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 335.28 77.47) (xy 335.28 74.93))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8c815dd1-8fe3-579d-a9e9-0d94b7912856")
+	)
+	(label "BMS2"
+		(at 335.28 74.93 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "967a9538-8f23-5dfc-9bff-f006db2ae377")
+	)
+	(wire
+		(pts (xy 335.28 85.09) (xy 335.28 87.63))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e2092159-6765-500b-ac63-5ed9dad1f73a")
+	)
+	(global_label "BMS_N"
+		(shape passive)
+		(at 335.28 87.63 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "447a1b14-ced1-5b40-aec2-b52f3dcd428e")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 335.28 87.63 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))

@@ -401,11 +401,7 @@ netclasses:
       - "/ch1/CH1_PON_M2"
       - "/ch1/CH1_PON_M3"
       - "/ch1/CH1_PWH"
-      - "/ch1/CH1_PWH_M2"
-      - "/ch1/CH1_PWH_M3"
       - "/ch1/CH1_PWL"
-      - "/ch1/CH1_PWL_M2"
-      - "/ch1/CH1_PWL_M3"
       - "/ch1/CH1_RUN"
       - "/ch1/CH1_TCT"
       - "/ch1/CH1_TH"
@@ -470,11 +466,7 @@ netclasses:
       - "/ch2/CH2_PON_M2"
       - "/ch2/CH2_PON_M3"
       - "/ch2/CH2_PWH"
-      - "/ch2/CH2_PWH_M2"
-      - "/ch2/CH2_PWH_M3"
       - "/ch2/CH2_PWL"
-      - "/ch2/CH2_PWL_M2"
-      - "/ch2/CH2_PWL_M3"
       - "/ch2/CH2_RUN"
       - "/ch2/CH2_TCT"
       - "/ch2/CH2_TH"
@@ -534,11 +526,7 @@ netclasses:
       - "/ch3/CH3_PON_M2"
       - "/ch3/CH3_PON_M3"
       - "/ch3/CH3_PWH"
-      - "/ch3/CH3_PWH_M2"
-      - "/ch3/CH3_PWH_M3"
       - "/ch3/CH3_PWL"
-      - "/ch3/CH3_PWL_M2"
-      - "/ch3/CH3_PWL_M3"
       - "/ch3/CH3_RUN"
       - "/ch3/CH3_TCT"
       - "/ch3/CH3_TH"
@@ -602,7 +590,7 @@ netclasses:
     domain: CH1_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch1/CH1_LSD", "/ch1/CH1_LSM", "/ch1/CH1_PHI_M1", "/ch1/CH1_PLO_M1", "/ch1/CH1_PON_M1", "/ch1/CH1_PWH_M1", "/ch1/CH1_PWL_M1"]
+    nets: ["/ch1/CH1_LSD", "/ch1/CH1_LSM", "/ch1/CH1_PHI_M1", "/ch1/CH1_PLO_M1", "/ch1/CH1_PON_M1"]
   - name: CH2_HSL
     domain: CH2_HSL
     clearance: 0.2
@@ -637,7 +625,7 @@ netclasses:
     domain: CH2_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch2/CH2_LSD", "/ch2/CH2_LSM", "/ch2/CH2_PHI_M1", "/ch2/CH2_PLO_M1", "/ch2/CH2_PON_M1", "/ch2/CH2_PWH_M1", "/ch2/CH2_PWL_M1"]
+    nets: ["/ch2/CH2_LSD", "/ch2/CH2_LSM", "/ch2/CH2_PHI_M1", "/ch2/CH2_PLO_M1", "/ch2/CH2_PON_M1"]
   - name: CH3_HSL
     domain: CH3_HSL
     clearance: 0.2
@@ -672,7 +660,7 @@ netclasses:
     domain: CH3_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch3/CH3_LSD", "/ch3/CH3_LSM", "/ch3/CH3_PHI_M1", "/ch3/CH3_PLO_M1", "/ch3/CH3_PON_M1", "/ch3/CH3_PWH_M1", "/ch3/CH3_PWL_M1"]
+    nets: ["/ch3/CH3_LSD", "/ch3/CH3_LSM", "/ch3/CH3_PHI_M1", "/ch3/CH3_PLO_M1", "/ch3/CH3_PON_M1"]
   - name: ISO
     domain: ISO
     clearance: 0.2
@@ -775,7 +763,7 @@ components:
     category: mosfet
     domains: [B2, CH1_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q102
     block: ch1
     board: main
@@ -784,7 +772,7 @@ components:
     category: mosfet
     domains: [B1, B2]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q103
     block: ch1
     board: main
@@ -793,7 +781,7 @@ components:
     category: mosfet
     domains: [B1, CH1_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q104
     block: ch1
     board: main
@@ -802,7 +790,7 @@ components:
     category: mosfet
     domains: [B1]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: R101
     block: ch1
     board: main
@@ -811,7 +799,7 @@ components:
     category: resistor
     domains: [B2, CH1_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R152
     block: ch1
     board: main
@@ -820,7 +808,7 @@ components:
     category: resistor
     domains: [B2, CH1_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R102
     block: ch1
     board: main
@@ -829,7 +817,7 @@ components:
     category: resistor
     domains: [B1, CH1_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R153
     block: ch1
     board: main
@@ -838,7 +826,7 @@ components:
     category: resistor
     domains: [B1, CH1_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: C101
     block: ch1
     board: main
@@ -1572,11 +1560,35 @@ components:
   - ref: R155
     block: ch1
     board: main
-    value: "2M"
+    value: "1.96M"
     footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: TNPW12062M00BEEA
+    mpn: TNPW12061M96BEEA
+  - ref: R160
+    block: ch1
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW060330K9FKEA
+  - ref: R161
+    block: ch1
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW060330K9FKEA
+  - ref: C153
+    block: ch1
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM188R71E474KA12D
   - ref: R128
     block: ch1
     board: main
@@ -1633,22 +1645,22 @@ components:
     category: resistor
     domains: [B1]
     mpn: TNPW12062M00BEEA
-  - ref: R132
+  - ref: R162
     block: ch1
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B1]
-    mpn: TNPW12061M74BEEA
-  - ref: R133
+    mpn: CRCW060336K5FKEA
+  - ref: R163
     block: ch1
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B1]
-    mpn: TNPW12061M74BEEA
+    mpn: CRCW060336K5FKEA
   - ref: C145
     block: ch1
     board: main
@@ -1657,95 +1669,7 @@ components:
     category: capacitor_ceramic
     domains: [B1]
     mpn: GRM188R71E474KA12D
-  - ref: R160
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, CH1_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R161
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1, CH1_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R162
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12062M00BEEA
-  - ref: R163
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12062M00BEEA
-  - ref: R164
-    block: ch1
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12061M62BEEA
-  - ref: R165
-    block: ch1
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12061M62BEEA
-  - ref: C153
-    block: ch1
-    board: main
-    value: "470n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B1]
-    mpn: GRM188R71E474KA12D
-  - ref: R166
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, CH1_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R167
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1, CH1_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R168
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12062M00BEEA
-  - ref: R169
-    block: ch1
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1]
-    mpn: TNPW12062M00BEEA
-  - ref: R170
+  - ref: R132
     block: ch1
     board: main
     value: "1.7M"
@@ -1753,7 +1677,7 @@ components:
     category: resistor
     domains: [B1]
     mpn: TNPW12061M70BEEA
-  - ref: R171
+  - ref: R133
     block: ch1
     board: main
     value: "1.7M"
@@ -2083,7 +2007,7 @@ components:
     category: mosfet
     domains: [B3, CH2_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q202
     block: ch2
     board: main
@@ -2092,7 +2016,7 @@ components:
     category: mosfet
     domains: [B2, B3]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q203
     block: ch2
     board: main
@@ -2101,7 +2025,7 @@ components:
     category: mosfet
     domains: [B2, CH2_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q204
     block: ch2
     board: main
@@ -2110,7 +2034,7 @@ components:
     category: mosfet
     domains: [B1, B2]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: R201
     block: ch2
     board: main
@@ -2119,7 +2043,7 @@ components:
     category: resistor
     domains: [B3, CH2_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R252
     block: ch2
     board: main
@@ -2128,7 +2052,7 @@ components:
     category: resistor
     domains: [B3, CH2_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R202
     block: ch2
     board: main
@@ -2137,7 +2061,7 @@ components:
     category: resistor
     domains: [B2, CH2_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R253
     block: ch2
     board: main
@@ -2146,7 +2070,7 @@ components:
     category: resistor
     domains: [B2, CH2_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: C201
     block: ch2
     board: main
@@ -2880,11 +2804,35 @@ components:
   - ref: R255
     block: ch2
     board: main
-    value: "2M"
+    value: "1.96M"
     footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: TNPW12062M00BEEA
+    mpn: TNPW12061M96BEEA
+  - ref: R260
+    block: ch2
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW060330K9FKEA
+  - ref: R261
+    block: ch2
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW060330K9FKEA
+  - ref: C253
+    block: ch2
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM188R71E474KA12D
   - ref: R228
     block: ch2
     board: main
@@ -2941,22 +2889,22 @@ components:
     category: resistor
     domains: [B2]
     mpn: TNPW12062M00BEEA
-  - ref: R232
+  - ref: R262
     block: ch2
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
-    domains: [B1, B2]
-    mpn: TNPW12061M74BEEA
-  - ref: R233
+    domains: [B2]
+    mpn: CRCW060336K5FKEA
+  - ref: R263
     block: ch2
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
-    domains: [B1, B2]
-    mpn: TNPW12061M74BEEA
+    domains: [B2]
+    mpn: CRCW060336K5FKEA
   - ref: C245
     block: ch2
     board: main
@@ -2965,95 +2913,7 @@ components:
     category: capacitor_ceramic
     domains: [B1, B2]
     mpn: GRM188R71E474KA12D
-  - ref: R260
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3, CH2_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R261
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, CH2_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R262
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2]
-    mpn: TNPW12062M00BEEA
-  - ref: R263
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2]
-    mpn: TNPW12062M00BEEA
-  - ref: R264
-    block: ch2
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1, B2]
-    mpn: TNPW12061M62BEEA
-  - ref: R265
-    block: ch2
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B1, B2]
-    mpn: TNPW12061M62BEEA
-  - ref: C253
-    block: ch2
-    board: main
-    value: "470n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B1, B2]
-    mpn: GRM188R71E474KA12D
-  - ref: R266
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3, CH2_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R267
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, CH2_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R268
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2]
-    mpn: TNPW12062M00BEEA
-  - ref: R269
-    block: ch2
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2]
-    mpn: TNPW12062M00BEEA
-  - ref: R270
+  - ref: R232
     block: ch2
     board: main
     value: "1.7M"
@@ -3061,7 +2921,7 @@ components:
     category: resistor
     domains: [B1, B2]
     mpn: TNPW12061M70BEEA
-  - ref: R271
+  - ref: R233
     block: ch2
     board: main
     value: "1.7M"
@@ -3391,7 +3251,7 @@ components:
     category: mosfet
     domains: [B4, CH3_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q302
     block: ch3
     board: main
@@ -3400,7 +3260,7 @@ components:
     category: mosfet
     domains: [B3, B4]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q303
     block: ch3
     board: main
@@ -3409,7 +3269,7 @@ components:
     category: mosfet
     domains: [B3, CH3_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: Q304
     block: ch3
     board: main
@@ -3418,7 +3278,7 @@ components:
     category: mosfet
     domains: [B2, B3]
     mpn: CSD18543Q3A
-    p_diss_w: 38.06
+    p_diss_w: 0.4
   - ref: R301
     block: ch3
     board: main
@@ -3427,7 +3287,7 @@ components:
     category: resistor
     domains: [B4, CH3_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R352
     block: ch3
     board: main
@@ -3436,7 +3296,7 @@ components:
     category: resistor
     domains: [B4, CH3_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R302
     block: ch3
     board: main
@@ -3445,7 +3305,7 @@ components:
     category: resistor
     domains: [B3, CH3_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: R353
     block: ch3
     board: main
@@ -3454,7 +3314,7 @@ components:
     category: resistor
     domains: [B3, CH3_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 117.15
+    p_diss_w: 1.24
   - ref: C301
     block: ch3
     board: main
@@ -4188,11 +4048,35 @@ components:
   - ref: R355
     block: ch3
     board: main
-    value: "2M"
+    value: "1.96M"
     footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: TNPW12062M00BEEA
+    mpn: TNPW12061M96BEEA
+  - ref: R360
+    block: ch3
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW060330K9FKEA
+  - ref: R361
+    block: ch3
+    board: main
+    value: "30.9k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW060330K9FKEA
+  - ref: C353
+    block: ch3
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM188R71E474KA12D
   - ref: R328
     block: ch3
     board: main
@@ -4249,22 +4133,22 @@ components:
     category: resistor
     domains: [B3]
     mpn: TNPW12062M00BEEA
-  - ref: R332
+  - ref: R362
     block: ch3
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
-    domains: [B2, B3]
-    mpn: TNPW12061M74BEEA
-  - ref: R333
+    domains: [B3]
+    mpn: CRCW060336K5FKEA
+  - ref: R363
     block: ch3
     board: main
-    value: "1.74M"
-    footprint: Resistor_SMD:R_1206_3216Metric
+    value: "36.5k"
+    footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
-    domains: [B2, B3]
-    mpn: TNPW12061M74BEEA
+    domains: [B3]
+    mpn: CRCW060336K5FKEA
   - ref: C345
     block: ch3
     board: main
@@ -4273,95 +4157,7 @@ components:
     category: capacitor_ceramic
     domains: [B2, B3]
     mpn: GRM188R71E474KA12D
-  - ref: R360
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B4, CH3_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R361
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3, CH3_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R362
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3]
-    mpn: TNPW12062M00BEEA
-  - ref: R363
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3]
-    mpn: TNPW12062M00BEEA
-  - ref: R364
-    block: ch3
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, B3]
-    mpn: TNPW12061M62BEEA
-  - ref: R365
-    block: ch3
-    board: main
-    value: "1.62M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B2, B3]
-    mpn: TNPW12061M62BEEA
-  - ref: C353
-    block: ch3
-    board: main
-    value: "470n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B2, B3]
-    mpn: GRM188R71E474KA12D
-  - ref: R366
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B4, CH3_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R367
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3, CH3_SPAN]
-    mpn: TNPW12062M00BEEA
-  - ref: R368
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3]
-    mpn: TNPW12062M00BEEA
-  - ref: R369
-    block: ch3
-    board: main
-    value: "2M"
-    footprint: Resistor_SMD:R_1206_3216Metric
-    category: resistor
-    domains: [B3]
-    mpn: TNPW12062M00BEEA
-  - ref: R370
+  - ref: R332
     block: ch3
     board: main
     value: "1.7M"
@@ -4369,7 +4165,7 @@ components:
     category: resistor
     domains: [B2, B3]
     mpn: TNPW12061M70BEEA
-  - ref: R371
+  - ref: R333
     block: ch3
     board: main
     value: "1.7M"
@@ -5169,6 +4965,8 @@ relations:
       - C130
       - D101
       - D102
+      - R158
+      - R159
     source: design
   - kind: x-cluster
     name: ch1.osc
@@ -5208,10 +5006,33 @@ relations:
       - U108
       - U109
       - U110
+      - U111
       - Q105
       - RT101
       - D103
       - D104
+      - D105
+      - JP102
+      - R154
+      - R155
+      - R156
+      - R157
+      - R160
+      - R161
+      - R162
+      - R163
+      - R172
+      - R173
+      - R174
+      - R175
+      - R176
+      - R177
+      - R178
+      - R179
+      - C151
+      - C152
+      - C153
+      - C154
       - R120
       - R121
       - R122
@@ -5435,46 +5256,46 @@ relations:
     source: design
   - kind: thermal
     obj: R101
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R152
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R102
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R153
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q101
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q102
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q103
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q104
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -5846,6 +5667,8 @@ relations:
       - C230
       - D201
       - D202
+      - R258
+      - R259
     source: design
   - kind: x-cluster
     name: ch2.osc
@@ -5885,10 +5708,33 @@ relations:
       - U208
       - U209
       - U210
+      - U211
       - Q205
       - RT201
       - D203
       - D204
+      - D205
+      - JP202
+      - R254
+      - R255
+      - R256
+      - R257
+      - R260
+      - R261
+      - R262
+      - R263
+      - R272
+      - R273
+      - R274
+      - R275
+      - R276
+      - R277
+      - R278
+      - R279
+      - C251
+      - C252
+      - C253
+      - C254
       - R220
       - R221
       - R222
@@ -6112,46 +5958,46 @@ relations:
     source: design
   - kind: thermal
     obj: R201
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R252
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R202
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R253
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q201
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q202
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q203
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q204
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -6523,6 +6369,8 @@ relations:
       - C330
       - D301
       - D302
+      - R358
+      - R359
     source: design
   - kind: x-cluster
     name: ch3.osc
@@ -6562,10 +6410,33 @@ relations:
       - U308
       - U309
       - U310
+      - U311
       - Q305
       - RT301
       - D303
       - D304
+      - D305
+      - JP302
+      - R354
+      - R355
+      - R356
+      - R357
+      - R360
+      - R361
+      - R362
+      - R363
+      - R372
+      - R373
+      - R374
+      - R375
+      - R376
+      - R377
+      - R378
+      - R379
+      - C351
+      - C352
+      - C353
+      - C354
       - R320
       - R321
       - R322
@@ -6789,46 +6660,46 @@ relations:
     source: design
   - kind: thermal
     obj: R301
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R352
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R302
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R353
-    watts: 117.15
+    watts: 1.24
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q301
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q302
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q303
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q304
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -7460,6 +7331,8 @@ constraints:
       - C130
       - D101
       - D102
+      - R158
+      - R159
   - id: rel.34
     from: x-cluster
     kind: x-cluster
@@ -7502,10 +7375,33 @@ constraints:
       - U108
       - U109
       - U110
+      - U111
       - Q105
       - RT101
       - D103
       - D104
+      - D105
+      - JP102
+      - R154
+      - R155
+      - R156
+      - R157
+      - R160
+      - R161
+      - R162
+      - R163
+      - R172
+      - R173
+      - R174
+      - R175
+      - R176
+      - R177
+      - R178
+      - R179
+      - C151
+      - C152
+      - C153
+      - C154
       - R120
       - R121
       - R122
@@ -7824,49 +7720,49 @@ constraints:
     from: thermal
     kind: thermal
     obj: R101
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.75
     from: thermal
     kind: thermal
     obj: R152
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.76
     from: thermal
     kind: thermal
     obj: R102
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.77
     from: thermal
     kind: thermal
     obj: R153
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.78
     from: thermal
     kind: thermal
     obj: Q101
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.79
     from: thermal
     kind: thermal
     obj: Q102
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.80
     from: thermal
     kind: thermal
     obj: Q103
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.81
     from: thermal
     kind: thermal
     obj: Q104
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.82
     from: far
@@ -8378,6 +8274,8 @@ constraints:
       - C230
       - D201
       - D202
+      - R258
+      - R259
   - id: rel.145
     from: x-cluster
     kind: x-cluster
@@ -8420,10 +8318,33 @@ constraints:
       - U208
       - U209
       - U210
+      - U211
       - Q205
       - RT201
       - D203
       - D204
+      - D205
+      - JP202
+      - R254
+      - R255
+      - R256
+      - R257
+      - R260
+      - R261
+      - R262
+      - R263
+      - R272
+      - R273
+      - R274
+      - R275
+      - R276
+      - R277
+      - R278
+      - R279
+      - C251
+      - C252
+      - C253
+      - C254
       - R220
       - R221
       - R222
@@ -8742,49 +8663,49 @@ constraints:
     from: thermal
     kind: thermal
     obj: R201
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.186
     from: thermal
     kind: thermal
     obj: R252
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.187
     from: thermal
     kind: thermal
     obj: R202
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.188
     from: thermal
     kind: thermal
     obj: R253
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.189
     from: thermal
     kind: thermal
     obj: Q201
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.190
     from: thermal
     kind: thermal
     obj: Q202
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.191
     from: thermal
     kind: thermal
     obj: Q203
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.192
     from: thermal
     kind: thermal
     obj: Q204
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.193
     from: far
@@ -9296,6 +9217,8 @@ constraints:
       - C330
       - D301
       - D302
+      - R358
+      - R359
   - id: rel.256
     from: x-cluster
     kind: x-cluster
@@ -9338,10 +9261,33 @@ constraints:
       - U308
       - U309
       - U310
+      - U311
       - Q305
       - RT301
       - D303
       - D304
+      - D305
+      - JP302
+      - R354
+      - R355
+      - R356
+      - R357
+      - R360
+      - R361
+      - R362
+      - R363
+      - R372
+      - R373
+      - R374
+      - R375
+      - R376
+      - R377
+      - R378
+      - R379
+      - C351
+      - C352
+      - C353
+      - C354
       - R320
       - R321
       - R322
@@ -9660,49 +9606,49 @@ constraints:
     from: thermal
     kind: thermal
     obj: R301
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.297
     from: thermal
     kind: thermal
     obj: R352
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.298
     from: thermal
     kind: thermal
     obj: R302
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.299
     from: thermal
     kind: thermal
     obj: R353
-    watts: 117.15
+    watts: 1.24
     sink: copper
   - id: rel.300
     from: thermal
     kind: thermal
     obj: Q301
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.301
     from: thermal
     kind: thermal
     obj: Q302
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.302
     from: thermal
     kind: thermal
     obj: Q303
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.303
     from: thermal
     kind: thermal
     obj: Q304
-    watts: 38.06
+    watts: 0.4
     sink: "copper + thermal vias"
   - id: rel.304
     from: far
@@ -10254,6 +10200,9 @@ constraints:
       - R127
       - R154
       - R155
+      - R160
+      - R161
+      - C153
       - R128
       - R129
       - C144
@@ -10261,22 +10210,11 @@ constraints:
       - R131
       - R156
       - R157
-      - R132
-      - R133
-      - C145
-      - R160
-      - R161
       - R162
       - R163
-      - R164
-      - R165
-      - C153
-      - R166
-      - R167
-      - R168
-      - R169
-      - R170
-      - R171
+      - C145
+      - R132
+      - R133
       - C154
       - R134
       - R135
@@ -10422,6 +10360,9 @@ constraints:
       - R227
       - R254
       - R255
+      - R260
+      - R261
+      - C253
       - R228
       - R229
       - C244
@@ -10429,22 +10370,11 @@ constraints:
       - R231
       - R256
       - R257
-      - R232
-      - R233
-      - C245
-      - R260
-      - R261
       - R262
       - R263
-      - R264
-      - R265
-      - C253
-      - R266
-      - R267
-      - R268
-      - R269
-      - R270
-      - R271
+      - C245
+      - R232
+      - R233
       - C254
       - R234
       - R235
@@ -10590,6 +10520,9 @@ constraints:
       - R327
       - R354
       - R355
+      - R360
+      - R361
+      - C353
       - R328
       - R329
       - C344
@@ -10597,22 +10530,11 @@ constraints:
       - R331
       - R356
       - R357
-      - R332
-      - R333
-      - C345
-      - R360
-      - R361
       - R362
       - R363
-      - R364
-      - R365
-      - C353
-      - R366
-      - R367
-      - R368
-      - R369
-      - R370
-      - R371
+      - C345
+      - R332
+      - R333
       - C354
       - R334
       - R335

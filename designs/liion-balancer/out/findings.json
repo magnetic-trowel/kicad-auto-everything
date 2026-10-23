@@ -3,13 +3,15 @@
   "ok": true,
   "error": 0,
   "warning": 0,
-  "info": 4,
-  "waived": 25,
+  "info": 6,
+  "waived": 24,
   "blocking_questions": [
    "Q-1",
    "Q-2",
    "Q-3",
-   "Q-4"
+   "Q-4",
+   "Q-12",
+   "Q-14"
   ]
  },
  "findings": [
@@ -208,13 +210,20 @@
    ]
   },
   {
-   "check": "kicad.erc.pin_to_pin",
-   "severity": "warning",
-   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 42 [GPIO4, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-12 is BLOCKING and unanswered: Which pack-BMS signal drives the BMS-OK input (J5)? It must drop on any cell OV/UV or BMS fault.",
    "objects": [
-    "/afe/"
-   ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+    "Q-12"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-14 is BLOCKING and unanswered: Multi-cell faults (T1kk insulation failure, reversed harness, ring 0 on B+) drive 320-560 A through two board Nano2 fuses rated 50 A at 125 V; the inline 3AB (10 kA at 125 VDC) is the rated interrupter. Accept series back-up qualified by test F-16, or fund a board fuse with a verified >= 80 VDC / >= 600 A rating?",
+   "objects": [
+    "Q-14"
+   ]
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -223,7 +232,7 @@
    "objects": [
     "/afe/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -232,7 +241,7 @@
    "objects": [
     "/afe/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -241,7 +250,7 @@
    "objects": [
     "/afe/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -250,7 +259,7 @@
    "objects": [
     "/afe/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -259,7 +268,7 @@
    "objects": [
     "/afe/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   },
   {
    "check": "kicad.erc.pin_to_pin",
@@ -268,7 +277,7 @@
    "objects": [
     "/mcu/"
    ],
-   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO5-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
   }
  ]
 }

@@ -53,15 +53,15 @@
         "priority": 2
       },
       {
-        "name": "BOOT",
-        "clearance": 0.2,
+        "name": "BMS",
+        "clearance": 0.6,
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "priority": 3
       },
       {
-        "name": "C1",
+        "name": "BOOT",
         "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
@@ -69,7 +69,7 @@
         "priority": 4
       },
       {
-        "name": "C10",
+        "name": "C1",
         "clearance": 0.2,
         "track_width": 0.25,
         "via_diameter": 0.6,
@@ -77,12 +77,20 @@
         "priority": 5
       },
       {
+        "name": "C10",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 6
+      },
+      {
         "name": "C10_3A",
         "clearance": 0.2,
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 6
+        "priority": 7
       },
       {
         "name": "C10_W1p5",
@@ -90,7 +98,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 7
+        "priority": 8
       },
       {
         "name": "C11",
@@ -98,7 +106,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 8
+        "priority": 9
       },
       {
         "name": "C11_3A",
@@ -106,7 +114,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 9
+        "priority": 10
       },
       {
         "name": "C11_W1p5",
@@ -114,7 +122,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 10
+        "priority": 11
       },
       {
         "name": "C12",
@@ -122,7 +130,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 11
+        "priority": 12
       },
       {
         "name": "C12_3A",
@@ -130,7 +138,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 12
+        "priority": 13
       },
       {
         "name": "C12_W1p5",
@@ -138,7 +146,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 13
+        "priority": 14
       },
       {
         "name": "C13",
@@ -146,7 +154,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 14
+        "priority": 15
       },
       {
         "name": "C13_3A",
@@ -154,7 +162,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 15
+        "priority": 16
       },
       {
         "name": "C13_W1p5",
@@ -162,7 +170,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 16
+        "priority": 17
       },
       {
         "name": "C14",
@@ -170,7 +178,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 17
+        "priority": 18
       },
       {
         "name": "C14_3A",
@@ -178,7 +186,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 18
+        "priority": 19
       },
       {
         "name": "C14_W1p5",
@@ -186,7 +194,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 19
+        "priority": 20
       },
       {
         "name": "C15",
@@ -194,7 +202,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 20
+        "priority": 21
       },
       {
         "name": "C15_3A",
@@ -202,7 +210,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 21
+        "priority": 22
       },
       {
         "name": "C15_W1p5",
@@ -210,7 +218,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 22
+        "priority": 23
       },
       {
         "name": "C16",
@@ -218,7 +226,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 23
+        "priority": 24
       },
       {
         "name": "C16_3A",
@@ -226,7 +234,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 24
+        "priority": 25
       },
       {
         "name": "C16_W1p5",
@@ -234,7 +242,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 25
+        "priority": 26
       },
       {
         "name": "C1_3A",
@@ -242,7 +250,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 26
+        "priority": 27
       },
       {
         "name": "C1_W1p5",
@@ -250,7 +258,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 27
+        "priority": 28
       },
       {
         "name": "C2",
@@ -258,7 +266,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 28
+        "priority": 29
       },
       {
         "name": "C2_3A",
@@ -266,7 +274,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 29
+        "priority": 30
       },
       {
         "name": "C2_W1p5",
@@ -274,7 +282,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 30
+        "priority": 31
       },
       {
         "name": "C3",
@@ -282,7 +290,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 31
+        "priority": 32
       },
       {
         "name": "C3_3A",
@@ -290,7 +298,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 32
+        "priority": 33
       },
       {
         "name": "C3_W1p5",
@@ -298,7 +306,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 33
+        "priority": 34
       },
       {
         "name": "C4",
@@ -306,7 +314,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 34
+        "priority": 35
       },
       {
         "name": "C4_3A",
@@ -314,7 +322,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 35
+        "priority": 36
       },
       {
         "name": "C4_W1p5",
@@ -322,7 +330,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 36
+        "priority": 37
       },
       {
         "name": "C5",
@@ -330,7 +338,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 37
+        "priority": 38
       },
       {
         "name": "C5_3A",
@@ -338,7 +346,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 38
+        "priority": 39
       },
       {
         "name": "C5_W1p5",
@@ -346,7 +354,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 39
+        "priority": 40
       },
       {
         "name": "C6",
@@ -354,7 +362,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 40
+        "priority": 41
       },
       {
         "name": "C6_3A",
@@ -362,7 +370,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 41
+        "priority": 42
       },
       {
         "name": "C6_W1p5",
@@ -370,7 +378,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 42
+        "priority": 43
       },
       {
         "name": "C7",
@@ -378,7 +386,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 43
+        "priority": 44
       },
       {
         "name": "C7_3A",
@@ -386,7 +394,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 44
+        "priority": 45
       },
       {
         "name": "C7_W1p5",
@@ -394,7 +402,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 45
+        "priority": 46
       },
       {
         "name": "C8",
@@ -402,7 +410,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 46
+        "priority": 47
       },
       {
         "name": "C8_3A",
@@ -410,7 +418,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 47
+        "priority": 48
       },
       {
         "name": "C8_W1p5",
@@ -418,7 +426,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 48
+        "priority": 49
       },
       {
         "name": "C9",
@@ -426,7 +434,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 49
+        "priority": 50
       },
       {
         "name": "C9_3A",
@@ -434,7 +442,7 @@
         "track_width": 0.7,
         "via_diameter": 0.86,
         "via_drill": 0.3,
-        "priority": 50
+        "priority": 51
       },
       {
         "name": "C9_W1p5",
@@ -442,7 +450,7 @@
         "track_width": 1.5,
         "via_diameter": 1.5,
         "via_drill": 0.6,
-        "priority": 51
+        "priority": 52
       },
       {
         "name": "CTRL",
@@ -450,7 +458,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 52
+        "priority": 53
       },
       {
         "name": "FAULT",
@@ -458,7 +466,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 53
+        "priority": 54
       },
       {
         "name": "RET",
@@ -466,7 +474,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 54
+        "priority": 55
       },
       {
         "name": "RET_2A",
@@ -474,7 +482,7 @@
         "track_width": 0.4,
         "via_diameter": 0.62,
         "via_drill": 0.3,
-        "priority": 55
+        "priority": 56
       },
       {
         "name": "SNS1",
@@ -482,7 +490,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 56
+        "priority": 57
       },
       {
         "name": "SNS10",
@@ -490,7 +498,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 57
+        "priority": 58
       },
       {
         "name": "SNS11",
@@ -498,7 +506,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 58
+        "priority": 59
       },
       {
         "name": "SNS12",
@@ -506,7 +514,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 59
+        "priority": 60
       },
       {
         "name": "SNS13",
@@ -514,7 +522,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 60
+        "priority": 61
       },
       {
         "name": "SNS14",
@@ -522,7 +530,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 61
+        "priority": 62
       },
       {
         "name": "SNS15",
@@ -530,7 +538,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 62
+        "priority": 63
       },
       {
         "name": "SNS2",
@@ -538,7 +546,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 63
+        "priority": 64
       },
       {
         "name": "SNS3",
@@ -546,7 +554,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 64
+        "priority": 65
       },
       {
         "name": "SNS4",
@@ -554,7 +562,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 65
+        "priority": 66
       },
       {
         "name": "SNS5",
@@ -562,7 +570,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 66
+        "priority": 67
       },
       {
         "name": "SNS6",
@@ -570,7 +578,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 67
+        "priority": 68
       },
       {
         "name": "SNS7",
@@ -578,7 +586,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 68
+        "priority": 69
       },
       {
         "name": "SNS8",
@@ -586,7 +594,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 69
+        "priority": 70
       },
       {
         "name": "SNS9",
@@ -594,7 +602,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 70
+        "priority": 71
       },
       {
         "name": "STACK",
@@ -602,7 +610,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 71
+        "priority": 72
       },
       {
         "name": "STR1",
@@ -610,7 +618,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 72
+        "priority": 73
       },
       {
         "name": "STR10",
@@ -618,7 +626,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 73
+        "priority": 74
       },
       {
         "name": "STR11",
@@ -626,7 +634,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 74
+        "priority": 75
       },
       {
         "name": "STR12",
@@ -634,7 +642,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 75
+        "priority": 76
       },
       {
         "name": "STR13",
@@ -642,7 +650,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 76
+        "priority": 77
       },
       {
         "name": "STR14",
@@ -650,7 +658,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 77
+        "priority": 78
       },
       {
         "name": "STR15",
@@ -658,7 +666,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 78
+        "priority": 79
       },
       {
         "name": "STR16",
@@ -666,7 +674,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 79
+        "priority": 80
       },
       {
         "name": "STR2",
@@ -674,7 +682,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 80
+        "priority": 81
       },
       {
         "name": "STR3",
@@ -682,7 +690,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 81
+        "priority": 82
       },
       {
         "name": "STR4",
@@ -690,7 +698,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 82
+        "priority": 83
       },
       {
         "name": "STR5",
@@ -698,7 +706,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 83
+        "priority": 84
       },
       {
         "name": "STR6",
@@ -706,7 +714,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 84
+        "priority": 85
       },
       {
         "name": "STR7",
@@ -714,7 +722,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 85
+        "priority": 86
       },
       {
         "name": "STR8",
@@ -722,7 +730,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 86
+        "priority": 87
       },
       {
         "name": "STR9",
@@ -730,7 +738,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 87
+        "priority": 88
       },
       {
         "name": "SW1",
@@ -738,7 +746,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 88
+        "priority": 89
       },
       {
         "name": "SW10",
@@ -746,7 +754,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 89
+        "priority": 90
       },
       {
         "name": "SW10_5A",
@@ -754,7 +762,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 90
+        "priority": 91
       },
       {
         "name": "SW11",
@@ -762,7 +770,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 91
+        "priority": 92
       },
       {
         "name": "SW11_5A",
@@ -770,7 +778,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 92
+        "priority": 93
       },
       {
         "name": "SW12",
@@ -778,7 +786,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 93
+        "priority": 94
       },
       {
         "name": "SW12_5A",
@@ -786,7 +794,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 94
+        "priority": 95
       },
       {
         "name": "SW13",
@@ -794,7 +802,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 95
+        "priority": 96
       },
       {
         "name": "SW13_5A",
@@ -802,7 +810,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 96
+        "priority": 97
       },
       {
         "name": "SW14",
@@ -810,7 +818,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 97
+        "priority": 98
       },
       {
         "name": "SW14_5A",
@@ -818,7 +826,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 98
+        "priority": 99
       },
       {
         "name": "SW15",
@@ -826,7 +834,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 99
+        "priority": 100
       },
       {
         "name": "SW15_5A",
@@ -834,7 +842,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 100
+        "priority": 101
       },
       {
         "name": "SW16",
@@ -842,7 +850,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 101
+        "priority": 102
       },
       {
         "name": "SW16_5A",
@@ -850,7 +858,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 102
+        "priority": 103
       },
       {
         "name": "SW1_5A",
@@ -858,7 +866,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 103
+        "priority": 104
       },
       {
         "name": "SW2",
@@ -866,7 +874,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 104
+        "priority": 105
       },
       {
         "name": "SW2_5A",
@@ -874,7 +882,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 105
+        "priority": 106
       },
       {
         "name": "SW3",
@@ -882,7 +890,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 106
+        "priority": 107
       },
       {
         "name": "SW3_5A",
@@ -890,7 +898,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 107
+        "priority": 108
       },
       {
         "name": "SW4",
@@ -898,7 +906,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 108
+        "priority": 109
       },
       {
         "name": "SW4_5A",
@@ -906,7 +914,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 109
+        "priority": 110
       },
       {
         "name": "SW5",
@@ -914,7 +922,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 110
+        "priority": 111
       },
       {
         "name": "SW5_5A",
@@ -922,7 +930,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 111
+        "priority": 112
       },
       {
         "name": "SW6",
@@ -930,7 +938,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 112
+        "priority": 113
       },
       {
         "name": "SW6_5A",
@@ -938,7 +946,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 113
+        "priority": 114
       },
       {
         "name": "SW7",
@@ -946,7 +954,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 114
+        "priority": 115
       },
       {
         "name": "SW7_5A",
@@ -954,7 +962,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 115
+        "priority": 116
       },
       {
         "name": "SW8",
@@ -962,7 +970,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 116
+        "priority": 117
       },
       {
         "name": "SW8_5A",
@@ -970,7 +978,7 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 117
+        "priority": 118
       },
       {
         "name": "SW9",
@@ -978,7 +986,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 118
+        "priority": 119
       },
       {
         "name": "SW9_5A",
@@ -986,7 +994,15 @@
         "track_width": 1.4,
         "via_diameter": 1.42,
         "via_drill": 0.56,
-        "priority": 119
+        "priority": 120
+      },
+      {
+        "name": "TRB",
+        "clearance": 0.2,
+        "track_width": 0.25,
+        "via_diameter": 0.6,
+        "via_drill": 0.3,
+        "priority": 121
       },
       {
         "name": "USER",
@@ -994,7 +1010,7 @@
         "track_width": 0.25,
         "via_diameter": 0.6,
         "via_drill": 0.3,
-        "priority": 120
+        "priority": 122
       }
     ],
     "meta": {
@@ -1030,6 +1046,10 @@
         "pattern": "/afe/NTC3"
       },
       {
+        "netclass": "CTRL",
+        "pattern": "/afe/NTC4"
+      },
+      {
         "netclass": "STACK",
         "pattern": "/afe/VPLUS"
       },
@@ -1044,6 +1064,10 @@
       {
         "netclass": "C1",
         "pattern": "/ch1/DCH_1"
+      },
+      {
+        "netclass": "C1",
+        "pattern": "/ch1/DIN_1"
       },
       {
         "netclass": "SNS1",
@@ -1070,6 +1094,10 @@
         "pattern": "/ch10/DCH_10"
       },
       {
+        "netclass": "C10",
+        "pattern": "/ch10/DIN_10"
+      },
+      {
         "netclass": "SNS10",
         "pattern": "/ch10/MODE_10"
       },
@@ -1092,6 +1120,10 @@
       {
         "netclass": "C11",
         "pattern": "/ch11/DCH_11"
+      },
+      {
+        "netclass": "C11",
+        "pattern": "/ch11/DIN_11"
       },
       {
         "netclass": "SNS11",
@@ -1118,6 +1150,10 @@
         "pattern": "/ch12/DCH_12"
       },
       {
+        "netclass": "C12",
+        "pattern": "/ch12/DIN_12"
+      },
+      {
         "netclass": "SNS12",
         "pattern": "/ch12/MODE_12"
       },
@@ -1140,6 +1176,10 @@
       {
         "netclass": "C13",
         "pattern": "/ch13/DCH_13"
+      },
+      {
+        "netclass": "C13",
+        "pattern": "/ch13/DIN_13"
       },
       {
         "netclass": "SNS13",
@@ -1166,6 +1206,10 @@
         "pattern": "/ch14/DCH_14"
       },
       {
+        "netclass": "C14",
+        "pattern": "/ch14/DIN_14"
+      },
+      {
         "netclass": "SNS14",
         "pattern": "/ch14/MODE_14"
       },
@@ -1188,6 +1232,10 @@
       {
         "netclass": "C15",
         "pattern": "/ch15/DCH_15"
+      },
+      {
+        "netclass": "C15",
+        "pattern": "/ch15/DIN_15"
       },
       {
         "netclass": "SNS15",
@@ -1214,6 +1262,10 @@
         "pattern": "/ch16/DCH_16"
       },
       {
+        "netclass": "C16",
+        "pattern": "/ch16/DIN_16"
+      },
+      {
         "netclass": "STACK",
         "pattern": "/ch16/MODE_16"
       },
@@ -1236,6 +1288,10 @@
       {
         "netclass": "C2",
         "pattern": "/ch2/DCH_2"
+      },
+      {
+        "netclass": "C2",
+        "pattern": "/ch2/DIN_2"
       },
       {
         "netclass": "SNS2",
@@ -1262,6 +1318,10 @@
         "pattern": "/ch3/DCH_3"
       },
       {
+        "netclass": "C3",
+        "pattern": "/ch3/DIN_3"
+      },
+      {
         "netclass": "SNS3",
         "pattern": "/ch3/MODE_3"
       },
@@ -1284,6 +1344,10 @@
       {
         "netclass": "C4",
         "pattern": "/ch4/DCH_4"
+      },
+      {
+        "netclass": "C4",
+        "pattern": "/ch4/DIN_4"
       },
       {
         "netclass": "SNS4",
@@ -1310,6 +1374,10 @@
         "pattern": "/ch5/DCH_5"
       },
       {
+        "netclass": "C5",
+        "pattern": "/ch5/DIN_5"
+      },
+      {
         "netclass": "SNS5",
         "pattern": "/ch5/MODE_5"
       },
@@ -1332,6 +1400,10 @@
       {
         "netclass": "C6",
         "pattern": "/ch6/DCH_6"
+      },
+      {
+        "netclass": "C6",
+        "pattern": "/ch6/DIN_6"
       },
       {
         "netclass": "SNS6",
@@ -1358,6 +1430,10 @@
         "pattern": "/ch7/DCH_7"
       },
       {
+        "netclass": "C7",
+        "pattern": "/ch7/DIN_7"
+      },
+      {
         "netclass": "SNS7",
         "pattern": "/ch7/MODE_7"
       },
@@ -1380,6 +1456,10 @@
       {
         "netclass": "C8",
         "pattern": "/ch8/DCH_8"
+      },
+      {
+        "netclass": "C8",
+        "pattern": "/ch8/DIN_8"
       },
       {
         "netclass": "SNS8",
@@ -1406,6 +1486,10 @@
         "pattern": "/ch9/DCH_9"
       },
       {
+        "netclass": "C9",
+        "pattern": "/ch9/DIN_9"
+      },
+      {
         "netclass": "SNS9",
         "pattern": "/ch9/MODE_9"
       },
@@ -1427,15 +1511,39 @@
       },
       {
         "netclass": "CTRL",
-        "pattern": "/en/Q1_B"
+        "pattern": "/en/Q1_E"
       },
       {
         "netclass": "CTRL",
-        "pattern": "/en/Q1_E"
+        "pattern": "/en/Q2_B"
       },
       {
         "netclass": "STACK",
         "pattern": "/en/STR_D"
+      },
+      {
+        "netclass": "CTRL",
+        "pattern": "/en/TRB1"
+      },
+      {
+        "netclass": "TRB",
+        "pattern": "/en/TRB2"
+      },
+      {
+        "netclass": "CTRL",
+        "pattern": "/en/TRB3"
+      },
+      {
+        "netclass": "SNS15",
+        "pattern": "/en/TRT1"
+      },
+      {
+        "netclass": "SNS15",
+        "pattern": "/en/TRT2"
+      },
+      {
+        "netclass": "SNS15",
+        "pattern": "/en/TRT3"
       },
       {
         "netclass": "BAT0_3A",
@@ -1504,6 +1612,18 @@
       {
         "netclass": "C9_3A",
         "pattern": "/harness/CELLTERM9"
+      },
+      {
+        "netclass": "BMS",
+        "pattern": "/iso/BMS1"
+      },
+      {
+        "netclass": "BMS",
+        "pattern": "/iso/BMS2"
+      },
+      {
+        "netclass": "BMS",
+        "pattern": "/iso/BMS_IN"
       },
       {
         "netclass": "FAULT",
@@ -1606,6 +1726,10 @@
         "pattern": "BAL_EN"
       },
       {
+        "netclass": "BMS",
+        "pattern": "BMS_N"
+      },
+      {
         "netclass": "BAT0",
         "pattern": "CS_0"
       },
@@ -1672,6 +1796,10 @@
       {
         "netclass": "SNS9",
         "pattern": "CS_9"
+      },
+      {
+        "netclass": "CTRL",
+        "pattern": "EN_MCU"
       },
       {
         "netclass": "FAULT",
@@ -1776,6 +1904,10 @@
       {
         "netclass": "CTRL",
         "pattern": "PGOOD"
+      },
+      {
+        "netclass": "CTRL",
+        "pattern": "Q1_B"
       },
       {
         "netclass": "CTRL",

@@ -13,7 +13,7 @@
 	)
 	(lib_symbols)
 	(sheet
-		(at 25.4 180.34)
+		(at 25.4 187.96)
 		(size 81.28 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -29,14 +29,14 @@
 		)
 		(uuid "31a1743b-056c-5359-8764-5b0f13fed45e")
 		(property "Sheetname" "tapin"
-			(at 25.4 179.64 0)
+			(at 25.4 187.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tapin.kicad_sch"
-			(at 25.4 196.18 0)
+			(at 25.4 203.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -52,7 +52,7 @@
 	)
 	(text "Harness header J1 and the TAP0/GND_B net tie"
 		(exclude_from_sim no)
-		(at 26.67 187.96 0)
+		(at 26.67 195.58 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -60,7 +60,7 @@
 		(uuid "5b8874ef-0bf1-594b-b966-1bfd5089bbf3")
 	)
 	(sheet
-		(at 119.38 180.34)
+		(at 119.38 187.96)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -76,14 +76,14 @@
 		)
 		(uuid "072016e3-1aa3-5632-a75c-817c344ec5e0")
 		(property "Sheetname" "tap0"
-			(at 119.38 179.64 0)
+			(at 119.38 187.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap0.kicad_sch"
-			(at 119.38 196.18 0)
+			(at 119.38 203.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -99,7 +99,7 @@
 	)
 	(text "Tap 0: board fuse, ADBMS1818 C0 filter"
 		(exclude_from_sim no)
-		(at 120.65 187.96 0)
+		(at 120.65 195.58 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -107,7 +107,7 @@
 		(uuid "2fe9e4ea-8d48-5614-9bef-a4305b7a9ec7")
 	)
 	(sheet
-		(at 203.2 180.34)
+		(at 203.2 187.96)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -123,14 +123,14 @@
 		)
 		(uuid "eea88b7c-b519-5150-af9a-72443a5f1640")
 		(property "Sheetname" "tap1"
-			(at 203.2 179.64 0)
+			(at 203.2 187.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap1.kicad_sch"
-			(at 203.2 196.18 0)
+			(at 203.2 203.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -146,7 +146,7 @@
 	)
 	(text "Tap 1: board fuse, ADBMS1818 C1 filter"
 		(exclude_from_sim no)
-		(at 204.47 187.96 0)
+		(at 204.47 195.58 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -154,7 +154,7 @@
 		(uuid "35fabf8c-1b0c-5e98-a248-696a6203ff9c")
 	)
 	(sheet
-		(at 287.02 180.34)
+		(at 287.02 187.96)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -170,14 +170,14 @@
 		)
 		(uuid "74b346f1-3ac8-517e-be1b-527851303a3b")
 		(property "Sheetname" "tap2"
-			(at 287.02 179.64 0)
+			(at 287.02 187.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap2.kicad_sch"
-			(at 287.02 196.18 0)
+			(at 287.02 203.8 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -193,7 +193,7 @@
 	)
 	(text "Tap 2: board fuse, ADBMS1818 C2 filter"
 		(exclude_from_sim no)
-		(at 288.29 187.96 0)
+		(at 288.29 195.58 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -201,7 +201,7 @@
 		(uuid "fc2689d3-8b82-5c6b-bdf0-a418b719b798")
 	)
 	(sheet
-		(at 25.4 208.28)
+		(at 25.4 215.9)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -217,14 +217,14 @@
 		)
 		(uuid "1a98c94f-418c-5d04-b6e7-86026e8e9bc9")
 		(property "Sheetname" "tap3"
-			(at 25.4 207.58 0)
+			(at 25.4 215.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap3.kicad_sch"
-			(at 25.4 224.12 0)
+			(at 25.4 231.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -240,7 +240,7 @@
 	)
 	(text "Tap 3: board fuse, ADBMS1818 C3 filter"
 		(exclude_from_sim no)
-		(at 26.67 215.9 0)
+		(at 26.67 223.52 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -248,7 +248,7 @@
 		(uuid "12e88276-d70b-5226-b44f-75a64ffca6a7")
 	)
 	(sheet
-		(at 109.22 208.28)
+		(at 109.22 215.9)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -264,14 +264,14 @@
 		)
 		(uuid "859a2ca6-10d3-5a44-87b2-48e85f73fe29")
 		(property "Sheetname" "tap4"
-			(at 109.22 207.58 0)
+			(at 109.22 215.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap4.kicad_sch"
-			(at 109.22 224.12 0)
+			(at 109.22 231.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -287,7 +287,7 @@
 	)
 	(text "Tap 4: board fuse, ADBMS1818 C4 filter"
 		(exclude_from_sim no)
-		(at 110.49 215.9 0)
+		(at 110.49 223.52 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -295,7 +295,7 @@
 		(uuid "1e9f79a9-b45c-53eb-aa1a-469eb99b26df")
 	)
 	(sheet
-		(at 193.04 208.28)
+		(at 193.04 215.9)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -311,14 +311,14 @@
 		)
 		(uuid "4ca271e5-30d9-5746-8d7b-2c987a170a0c")
 		(property "Sheetname" "tap5"
-			(at 193.04 207.58 0)
+			(at 193.04 215.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap5.kicad_sch"
-			(at 193.04 224.12 0)
+			(at 193.04 231.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -334,7 +334,7 @@
 	)
 	(text "Tap 5: board fuse, ADBMS1818 C5 filter"
 		(exclude_from_sim no)
-		(at 194.31 215.9 0)
+		(at 194.31 223.52 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -342,7 +342,7 @@
 		(uuid "0ca43bc8-b4f7-54d2-b71c-8e46fcea73d5")
 	)
 	(sheet
-		(at 276.86 208.28)
+		(at 276.86 215.9)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -358,14 +358,14 @@
 		)
 		(uuid "c386d680-3cd1-5508-a5c5-781cc89676cc")
 		(property "Sheetname" "tap6"
-			(at 276.86 207.58 0)
+			(at 276.86 215.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap6.kicad_sch"
-			(at 276.86 224.12 0)
+			(at 276.86 231.74 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -381,7 +381,7 @@
 	)
 	(text "Tap 6: board fuse, ADBMS1818 C6 filter"
 		(exclude_from_sim no)
-		(at 278.13 215.9 0)
+		(at 278.13 223.52 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -389,7 +389,7 @@
 		(uuid "a190e4e6-680c-5452-b58e-6ade4bc3eff3")
 	)
 	(sheet
-		(at 25.4 236.22)
+		(at 25.4 243.84)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -405,14 +405,14 @@
 		)
 		(uuid "31061ce2-73f5-52d5-95b9-6f125e96ac11")
 		(property "Sheetname" "tap7"
-			(at 25.4 235.52 0)
+			(at 25.4 243.14 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap7.kicad_sch"
-			(at 25.4 252.06 0)
+			(at 25.4 259.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -428,7 +428,7 @@
 	)
 	(text "Tap 7: board fuse, ADBMS1818 C7 filter"
 		(exclude_from_sim no)
-		(at 26.67 243.84 0)
+		(at 26.67 251.46 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -436,7 +436,7 @@
 		(uuid "9695e360-60e2-5317-8b6c-5b1643d2adf3")
 	)
 	(sheet
-		(at 109.22 236.22)
+		(at 109.22 243.84)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -452,14 +452,14 @@
 		)
 		(uuid "6c2b3053-d873-5f86-b68f-35a5fbcf2d40")
 		(property "Sheetname" "tap8"
-			(at 109.22 235.52 0)
+			(at 109.22 243.14 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap8.kicad_sch"
-			(at 109.22 252.06 0)
+			(at 109.22 259.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -475,7 +475,7 @@
 	)
 	(text "Tap 8: board fuse, ADBMS1818 C8 filter"
 		(exclude_from_sim no)
-		(at 110.49 243.84 0)
+		(at 110.49 251.46 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -483,7 +483,7 @@
 		(uuid "6923ea01-522f-5057-b9c2-5651c464d00a")
 	)
 	(sheet
-		(at 193.04 236.22)
+		(at 193.04 243.84)
 		(size 71.12 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -499,14 +499,14 @@
 		)
 		(uuid "b9f3aa6f-6f99-5642-943f-a2f313f7f65d")
 		(property "Sheetname" "tap9"
-			(at 193.04 235.52 0)
+			(at 193.04 243.14 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap9.kicad_sch"
-			(at 193.04 252.06 0)
+			(at 193.04 259.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -522,7 +522,7 @@
 	)
 	(text "Tap 9: board fuse, ADBMS1818 C9 filter"
 		(exclude_from_sim no)
-		(at 194.31 243.84 0)
+		(at 194.31 251.46 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -530,7 +530,7 @@
 		(uuid "a3199f04-7c29-50c1-a185-20eae8e8b279")
 	)
 	(sheet
-		(at 276.86 236.22)
+		(at 276.86 243.84)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -546,14 +546,14 @@
 		)
 		(uuid "a115443f-8e44-562f-b0dc-faee283a78ad")
 		(property "Sheetname" "tap10"
-			(at 276.86 235.52 0)
+			(at 276.86 243.14 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap10.kicad_sch"
-			(at 276.86 252.06 0)
+			(at 276.86 259.68 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -569,7 +569,7 @@
 	)
 	(text "Tap 10: board fuse, ADBMS1818 C10 filter"
 		(exclude_from_sim no)
-		(at 278.13 243.84 0)
+		(at 278.13 251.46 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -577,7 +577,7 @@
 		(uuid "7e0a8742-ca38-54b5-b123-9289634a135b")
 	)
 	(sheet
-		(at 25.4 264.16)
+		(at 25.4 271.78)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -593,14 +593,14 @@
 		)
 		(uuid "a1edd6e3-bb94-574e-b1bf-20c1593553f4")
 		(property "Sheetname" "tap11"
-			(at 25.4 263.46 0)
+			(at 25.4 271.08 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap11.kicad_sch"
-			(at 25.4 280 0)
+			(at 25.4 287.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -616,7 +616,7 @@
 	)
 	(text "Tap 11: board fuse, ADBMS1818 C11 filter"
 		(exclude_from_sim no)
-		(at 26.67 271.78 0)
+		(at 26.67 279.4 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -624,7 +624,7 @@
 		(uuid "bafee47e-3678-5294-84f5-8c914e13dff6")
 	)
 	(sheet
-		(at 111.76 264.16)
+		(at 111.76 271.78)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -640,14 +640,14 @@
 		)
 		(uuid "cf25aa57-6c07-592c-9482-588241ce4da1")
 		(property "Sheetname" "tap12"
-			(at 111.76 263.46 0)
+			(at 111.76 271.08 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap12.kicad_sch"
-			(at 111.76 280 0)
+			(at 111.76 287.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -663,7 +663,7 @@
 	)
 	(text "Tap 12: board fuse, ADBMS1818 C12 filter"
 		(exclude_from_sim no)
-		(at 113.03 271.78 0)
+		(at 113.03 279.4 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -671,7 +671,7 @@
 		(uuid "a7d995fa-2742-589f-8b92-7eb16c714147")
 	)
 	(sheet
-		(at 198.12 264.16)
+		(at 198.12 271.78)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -687,14 +687,14 @@
 		)
 		(uuid "8438d9a3-d4db-523d-bcc2-29d8751f7faf")
 		(property "Sheetname" "tap13"
-			(at 198.12 263.46 0)
+			(at 198.12 271.08 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap13.kicad_sch"
-			(at 198.12 280 0)
+			(at 198.12 287.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -710,7 +710,7 @@
 	)
 	(text "Tap 13: board fuse, ADBMS1818 C13 filter"
 		(exclude_from_sim no)
-		(at 199.39 271.78 0)
+		(at 199.39 279.4 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -718,7 +718,7 @@
 		(uuid "8166348d-adbb-5c10-992c-5e264ab937f7")
 	)
 	(sheet
-		(at 284.48 264.16)
+		(at 284.48 271.78)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -734,14 +734,14 @@
 		)
 		(uuid "13b0ccd4-ed8a-591d-bef8-472be3f89628")
 		(property "Sheetname" "tap14"
-			(at 284.48 263.46 0)
+			(at 284.48 271.08 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap14.kicad_sch"
-			(at 284.48 280 0)
+			(at 284.48 287.62 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -757,7 +757,7 @@
 	)
 	(text "Tap 14: board fuse, ADBMS1818 C14 filter"
 		(exclude_from_sim no)
-		(at 285.75 271.78 0)
+		(at 285.75 279.4 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -765,7 +765,7 @@
 		(uuid "2d324665-c5aa-5461-8472-a7c67acc3bad")
 	)
 	(sheet
-		(at 25.4 292.1)
+		(at 25.4 299.72)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -781,14 +781,14 @@
 		)
 		(uuid "6690f465-5343-5048-af1f-8e5fae012202")
 		(property "Sheetname" "tap15"
-			(at 25.4 291.4 0)
+			(at 25.4 299.02 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap15.kicad_sch"
-			(at 25.4 307.94 0)
+			(at 25.4 315.56 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -804,7 +804,7 @@
 	)
 	(text "Tap 15: board fuse, ADBMS1818 C15 filter"
 		(exclude_from_sim no)
-		(at 26.67 299.72 0)
+		(at 26.67 307.34 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -812,7 +812,7 @@
 		(uuid "08efcc10-ad2f-5140-bd17-2c90a3ea5d41")
 	)
 	(sheet
-		(at 111.76 292.1)
+		(at 111.76 299.72)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -828,14 +828,14 @@
 		)
 		(uuid "a278c03e-d942-5e57-9a24-a4e32c35c3a5")
 		(property "Sheetname" "tap16"
-			(at 111.76 291.4 0)
+			(at 111.76 299.02 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "tap16.kicad_sch"
-			(at 111.76 307.94 0)
+			(at 111.76 315.56 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -851,7 +851,7 @@
 	)
 	(text "Tap 16: board fuse, ADBMS1818 C16 filter"
 		(exclude_from_sim no)
-		(at 113.03 299.72 0)
+		(at 113.03 307.34 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -859,7 +859,7 @@
 		(uuid "f56e6ab7-322a-5718-9f03-108821b17f76")
 	)
 	(sheet
-		(at 198.12 292.1)
+		(at 198.12 299.72)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -875,14 +875,14 @@
 		)
 		(uuid "a13eab5e-6137-59c0-ad86-0d74389113db")
 		(property "Sheetname" "ch1"
-			(at 198.12 291.4 0)
+			(at 198.12 299.02 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch1.kicad_sch"
-			(at 198.12 307.94 0)
+			(at 198.12 315.56 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -898,7 +898,7 @@
 	)
 	(text "Channel 1: LT8584 balancer for cell 1"
 		(exclude_from_sim no)
-		(at 199.39 299.72 0)
+		(at 199.39 307.34 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -906,7 +906,7 @@
 		(uuid "7b99d902-4083-5904-afcd-d242e74f01ca")
 	)
 	(sheet
-		(at 279.4 292.1)
+		(at 279.4 299.72)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -922,14 +922,14 @@
 		)
 		(uuid "2a69d5c8-cd48-5d41-a602-797c2aaf38d4")
 		(property "Sheetname" "ch2"
-			(at 279.4 291.4 0)
+			(at 279.4 299.02 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch2.kicad_sch"
-			(at 279.4 307.94 0)
+			(at 279.4 315.56 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -945,7 +945,7 @@
 	)
 	(text "Channel 2: LT8584 balancer for cell 2"
 		(exclude_from_sim no)
-		(at 280.67 299.72 0)
+		(at 280.67 307.34 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -953,7 +953,7 @@
 		(uuid "4d22a368-d571-517c-b83b-2cc996872a20")
 	)
 	(sheet
-		(at 25.4 320.04)
+		(at 25.4 327.66)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -969,14 +969,14 @@
 		)
 		(uuid "ca41bbf3-0006-593e-a8ae-d8b746564239")
 		(property "Sheetname" "ch3"
-			(at 25.4 319.34 0)
+			(at 25.4 326.96 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch3.kicad_sch"
-			(at 25.4 335.88 0)
+			(at 25.4 343.5 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -992,7 +992,7 @@
 	)
 	(text "Channel 3: LT8584 balancer for cell 3"
 		(exclude_from_sim no)
-		(at 26.67 327.66 0)
+		(at 26.67 335.28 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1000,7 +1000,7 @@
 		(uuid "3a7e49c1-4643-5da3-b97e-433aea9dfaff")
 	)
 	(sheet
-		(at 106.68 320.04)
+		(at 106.68 327.66)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1016,14 +1016,14 @@
 		)
 		(uuid "72bda991-4ec8-5b8b-8a2f-c82da9a60278")
 		(property "Sheetname" "ch4"
-			(at 106.68 319.34 0)
+			(at 106.68 326.96 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch4.kicad_sch"
-			(at 106.68 335.88 0)
+			(at 106.68 343.5 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1039,7 +1039,7 @@
 	)
 	(text "Channel 4: LT8584 balancer for cell 4"
 		(exclude_from_sim no)
-		(at 107.95 327.66 0)
+		(at 107.95 335.28 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1047,7 +1047,7 @@
 		(uuid "0a72ee7b-d2e2-5caa-b3bb-0f79f8c36a23")
 	)
 	(sheet
-		(at 187.96 320.04)
+		(at 187.96 327.66)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1063,14 +1063,14 @@
 		)
 		(uuid "7c0e0214-6ce2-5906-b7da-9b0626955fc1")
 		(property "Sheetname" "ch5"
-			(at 187.96 319.34 0)
+			(at 187.96 326.96 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch5.kicad_sch"
-			(at 187.96 335.88 0)
+			(at 187.96 343.5 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1086,7 +1086,7 @@
 	)
 	(text "Channel 5: LT8584 balancer for cell 5"
 		(exclude_from_sim no)
-		(at 189.23 327.66 0)
+		(at 189.23 335.28 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1094,7 +1094,7 @@
 		(uuid "84458931-99b0-586f-ace1-8aa878d5fad2")
 	)
 	(sheet
-		(at 269.24 320.04)
+		(at 269.24 327.66)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1110,14 +1110,14 @@
 		)
 		(uuid "dd907d85-db27-54b1-898f-bc56218add52")
 		(property "Sheetname" "ch6"
-			(at 269.24 319.34 0)
+			(at 269.24 326.96 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch6.kicad_sch"
-			(at 269.24 335.88 0)
+			(at 269.24 343.5 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1133,7 +1133,7 @@
 	)
 	(text "Channel 6: LT8584 balancer for cell 6"
 		(exclude_from_sim no)
-		(at 270.51 327.66 0)
+		(at 270.51 335.28 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1141,7 +1141,7 @@
 		(uuid "6f46c43c-6218-5d21-ba48-cace89a6c907")
 	)
 	(sheet
-		(at 25.4 347.98)
+		(at 25.4 355.6)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1157,14 +1157,14 @@
 		)
 		(uuid "5fab4117-9ca8-5d22-8732-21bfde759abd")
 		(property "Sheetname" "ch7"
-			(at 25.4 347.28 0)
+			(at 25.4 354.9 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch7.kicad_sch"
-			(at 25.4 363.82 0)
+			(at 25.4 371.44 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1180,7 +1180,7 @@
 	)
 	(text "Channel 7: LT8584 balancer for cell 7"
 		(exclude_from_sim no)
-		(at 26.67 355.6 0)
+		(at 26.67 363.22 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1188,7 +1188,7 @@
 		(uuid "f0efee90-9ad1-558e-b43c-09ef95239b69")
 	)
 	(sheet
-		(at 106.68 347.98)
+		(at 106.68 355.6)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1204,14 +1204,14 @@
 		)
 		(uuid "2ba9ebcf-d7bd-5a81-b007-91d2538850a0")
 		(property "Sheetname" "ch8"
-			(at 106.68 347.28 0)
+			(at 106.68 354.9 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch8.kicad_sch"
-			(at 106.68 363.82 0)
+			(at 106.68 371.44 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1227,7 +1227,7 @@
 	)
 	(text "Channel 8: LT8584 balancer for cell 8"
 		(exclude_from_sim no)
-		(at 107.95 355.6 0)
+		(at 107.95 363.22 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1235,7 +1235,7 @@
 		(uuid "d48db11a-a20c-51df-a2f8-c97db6d399f7")
 	)
 	(sheet
-		(at 187.96 347.98)
+		(at 187.96 355.6)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1251,14 +1251,14 @@
 		)
 		(uuid "e415f6ad-4ef1-5f4c-96e4-8af5dd450129")
 		(property "Sheetname" "ch9"
-			(at 187.96 347.28 0)
+			(at 187.96 354.9 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch9.kicad_sch"
-			(at 187.96 363.82 0)
+			(at 187.96 371.44 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1274,7 +1274,7 @@
 	)
 	(text "Channel 9: LT8584 balancer for cell 9"
 		(exclude_from_sim no)
-		(at 189.23 355.6 0)
+		(at 189.23 363.22 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1282,7 +1282,7 @@
 		(uuid "b94db1d9-d978-55ae-8dbb-26dfa88786d6")
 	)
 	(sheet
-		(at 269.24 347.98)
+		(at 269.24 355.6)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1298,14 +1298,14 @@
 		)
 		(uuid "15d7b0bf-80f3-510e-a40d-419af8a80fe5")
 		(property "Sheetname" "ch10"
-			(at 269.24 347.28 0)
+			(at 269.24 354.9 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch10.kicad_sch"
-			(at 269.24 363.82 0)
+			(at 269.24 371.44 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1321,7 +1321,7 @@
 	)
 	(text "Channel 10: LT8584 balancer for cell 10"
 		(exclude_from_sim no)
-		(at 270.51 355.6 0)
+		(at 270.51 363.22 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1329,7 +1329,7 @@
 		(uuid "2a4094ca-8b4a-546f-9699-0b24888b2e86")
 	)
 	(sheet
-		(at 25.4 375.92)
+		(at 25.4 383.54)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1345,14 +1345,14 @@
 		)
 		(uuid "55629b30-62ca-5b19-8cbb-c4547e463344")
 		(property "Sheetname" "ch11"
-			(at 25.4 375.22 0)
+			(at 25.4 382.84 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch11.kicad_sch"
-			(at 25.4 391.76 0)
+			(at 25.4 399.38 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1368,7 +1368,7 @@
 	)
 	(text "Channel 11: LT8584 balancer for cell 11"
 		(exclude_from_sim no)
-		(at 26.67 383.54 0)
+		(at 26.67 391.16 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1376,7 +1376,7 @@
 		(uuid "1b0426dd-2260-59cc-8aca-5a8cc4fb1f7b")
 	)
 	(sheet
-		(at 111.76 375.92)
+		(at 111.76 383.54)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1392,14 +1392,14 @@
 		)
 		(uuid "ea97fb37-5370-5fc8-8bcb-bb7a07aaf225")
 		(property "Sheetname" "ch12"
-			(at 111.76 375.22 0)
+			(at 111.76 382.84 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch12.kicad_sch"
-			(at 111.76 391.76 0)
+			(at 111.76 399.38 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1415,7 +1415,7 @@
 	)
 	(text "Channel 12: LT8584 balancer for cell 12"
 		(exclude_from_sim no)
-		(at 113.03 383.54 0)
+		(at 113.03 391.16 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1423,7 +1423,7 @@
 		(uuid "a05a31c0-c9d0-5e9f-a248-cffc9746799f")
 	)
 	(sheet
-		(at 198.12 375.92)
+		(at 198.12 383.54)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1439,14 +1439,14 @@
 		)
 		(uuid "cc01fc9c-612f-56c1-979d-f1ea7f8103fc")
 		(property "Sheetname" "ch13"
-			(at 198.12 375.22 0)
+			(at 198.12 382.84 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch13.kicad_sch"
-			(at 198.12 391.76 0)
+			(at 198.12 399.38 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1462,7 +1462,7 @@
 	)
 	(text "Channel 13: LT8584 balancer for cell 13"
 		(exclude_from_sim no)
-		(at 199.39 383.54 0)
+		(at 199.39 391.16 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1470,7 +1470,7 @@
 		(uuid "330e59cd-284f-510d-82d7-3224d8a2c9a3")
 	)
 	(sheet
-		(at 284.48 375.92)
+		(at 284.48 383.54)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1486,14 +1486,14 @@
 		)
 		(uuid "fc619d2a-42ac-5f2e-84ab-1d17bb0faf92")
 		(property "Sheetname" "ch14"
-			(at 284.48 375.22 0)
+			(at 284.48 382.84 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch14.kicad_sch"
-			(at 284.48 391.76 0)
+			(at 284.48 399.38 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1509,7 +1509,7 @@
 	)
 	(text "Channel 14: LT8584 balancer for cell 14"
 		(exclude_from_sim no)
-		(at 285.75 383.54 0)
+		(at 285.75 391.16 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1517,7 +1517,7 @@
 		(uuid "643e4aad-dd4c-5abc-9040-754279a09261")
 	)
 	(sheet
-		(at 25.4 403.86)
+		(at 25.4 411.48)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1533,14 +1533,14 @@
 		)
 		(uuid "896d443f-e011-5041-997b-8841f25fad65")
 		(property "Sheetname" "ch15"
-			(at 25.4 403.16 0)
+			(at 25.4 410.78 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch15.kicad_sch"
-			(at 25.4 419.7 0)
+			(at 25.4 427.32 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1556,7 +1556,7 @@
 	)
 	(text "Channel 15: LT8584 balancer for cell 15"
 		(exclude_from_sim no)
-		(at 26.67 411.48 0)
+		(at 26.67 419.1 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1564,7 +1564,7 @@
 		(uuid "0fb55e3e-6483-559a-b727-50829bead883")
 	)
 	(sheet
-		(at 111.76 403.86)
+		(at 111.76 411.48)
 		(size 73.66 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1580,14 +1580,14 @@
 		)
 		(uuid "493da4dc-1441-5947-8c91-fb84f6a395e9")
 		(property "Sheetname" "ch16"
-			(at 111.76 403.16 0)
+			(at 111.76 410.78 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch16.kicad_sch"
-			(at 111.76 419.7 0)
+			(at 111.76 427.32 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1603,7 +1603,7 @@
 	)
 	(text "Channel 16: LT8584 balancer for cell 16"
 		(exclude_from_sim no)
-		(at 113.03 411.48 0)
+		(at 113.03 419.1 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1611,8 +1611,8 @@
 		(uuid "32c058bb-5882-5e16-b438-381fb1c9ae0b")
 	)
 	(sheet
-		(at 198.12 403.86)
-		(size 99.06 15.24)
+		(at 198.12 411.48)
+		(size 86.36 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -1627,14 +1627,14 @@
 		)
 		(uuid "3f26a488-223e-51ee-94f8-190af58d5889")
 		(property "Sheetname" "ret"
-			(at 198.12 403.16 0)
+			(at 198.12 410.78 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ret.kicad_sch"
-			(at 198.12 419.7 0)
+			(at 198.12 427.32 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1648,9 +1648,9 @@
 			)
 		)
 	)
-	(text "Stack return: D1 blocking diode, D2 clamp, FLYBUS sense"
+	(text "Stack return: D1 blocking diode and FLYBUS sense"
 		(exclude_from_sim no)
-		(at 199.39 411.48 0)
+		(at 199.39 419.1 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1658,7 +1658,7 @@
 		(uuid "e49d75e4-1c0a-5d9c-9bcb-579e8b307908")
 	)
 	(sheet
-		(at 309.88 403.86)
+		(at 297.18 411.48)
 		(size 83.82 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1674,14 +1674,14 @@
 		)
 		(uuid "eefa9007-412c-53b5-9828-b522fb682ffe")
 		(property "Sheetname" "afe"
-			(at 309.88 403.16 0)
+			(at 297.18 410.78 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "afe.kicad_sch"
-			(at 309.88 419.7 0)
+			(at 297.18 427.32 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1697,7 +1697,7 @@
 	)
 	(text "ADBMS1818 cell monitor and temperature sensing"
 		(exclude_from_sim no)
-		(at 311.15 411.48 0)
+		(at 298.45 419.1 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1705,7 +1705,7 @@
 		(uuid "01bfbfa8-6ea4-58b0-b78c-aedd971f357d")
 	)
 	(sheet
-		(at 25.4 431.8)
+		(at 25.4 439.42)
 		(size 93.98 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1721,14 +1721,14 @@
 		)
 		(uuid "47162457-9afd-52c0-9d3b-1b5caafe0789")
 		(property "Sheetname" "psu"
-			(at 25.4 431.1 0)
+			(at 25.4 438.72 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "psu.kicad_sch"
-			(at 25.4 447.64 0)
+			(at 25.4 455.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1744,7 +1744,7 @@
 	)
 	(text "Stack-fed supply: F1, LM5164 5 V buck, MCP1700 3.3 V"
 		(exclude_from_sim no)
-		(at 26.67 439.42 0)
+		(at 26.67 447.04 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1752,7 +1752,7 @@
 		(uuid "bb5832e7-4969-5e7c-8f65-f82285817973")
 	)
 	(sheet
-		(at 132.08 431.8)
+		(at 132.08 439.42)
 		(size 78.74 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1768,14 +1768,14 @@
 		)
 		(uuid "38f070e5-3b9c-5311-aab5-bcb46ccabb58")
 		(property "Sheetname" "mcu"
-			(at 132.08 431.1 0)
+			(at 132.08 438.72 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "mcu.kicad_sch"
-			(at 132.08 447.64 0)
+			(at 132.08 455.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1791,7 +1791,7 @@
 	)
 	(text "STM32G031 controller, SWD pads, status LEDs"
 		(exclude_from_sim no)
-		(at 133.35 439.42 0)
+		(at 133.35 447.04 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1799,8 +1799,8 @@
 		(uuid "22b86e21-7a16-50e1-9c22-cefc459754a0")
 	)
 	(sheet
-		(at 223.52 431.8)
-		(size 114.3 15.24)
+		(at 223.52 439.42)
+		(size 93.98 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
@@ -1815,14 +1815,14 @@
 		)
 		(uuid "a15e1e63-fe7c-57ce-a650-c6feafb5efee")
 		(property "Sheetname" "en"
-			(at 223.52 431.1 0)
+			(at 223.52 438.72 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "en.kicad_sch"
-			(at 223.52 447.64 0)
+			(at 223.52 455.26 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1836,9 +1836,9 @@
 			)
 		)
 	)
-	(text "Global balance enable: Q1 current sink and the 16-LED opto string"
+	(text "Balance enable: Q1 sink, opto string, hardware trips"
 		(exclude_from_sim no)
-		(at 224.79 439.42 0)
+		(at 224.79 447.04 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1846,7 +1846,7 @@
 		(uuid "e39a3247-91d8-5cf4-9499-a962884e224a")
 	)
 	(sheet
-		(at 25.4 459.74)
+		(at 25.4 467.36)
 		(size 101.6 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1862,14 +1862,14 @@
 		)
 		(uuid "8cd2676d-95e8-5674-b92a-21dbc7c62d85")
 		(property "Sheetname" "iso"
-			(at 25.4 459.04 0)
+			(at 25.4 466.66 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "iso.kicad_sch"
-			(at 25.4 475.58 0)
+			(at 25.4 483.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1885,7 +1885,7 @@
 	)
 	(text "Isolated UART port and fault contact (reinforced barrier)"
 		(exclude_from_sim no)
-		(at 26.67 467.36 0)
+		(at 26.67 474.98 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1893,7 +1893,7 @@
 		(uuid "e80fe5eb-f753-547f-84d5-71db3c0ff380")
 	)
 	(sheet
-		(at 139.7 459.74)
+		(at 139.7 467.36)
 		(size 96.52 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1909,14 +1909,14 @@
 		)
 		(uuid "3bd30566-b724-5055-8c49-93f94eb7cac3")
 		(property "Sheetname" "harness"
-			(at 139.7 459.04 0)
+			(at 139.7 466.66 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "harness.kicad_sch"
-			(at 139.7 475.58 0)
+			(at 139.7 483.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1932,7 +1932,7 @@
 	)
 	(text "Tap harness (off-board): rings, inline 7 A fuses, plug"
 		(exclude_from_sim no)
-		(at 140.97 467.36 0)
+		(at 140.97 474.98 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -1940,7 +1940,7 @@
 		(uuid "25622b89-62fb-591b-9c73-d4902f657f5b")
 	)
 	(sheet
-		(at 248.92 459.74)
+		(at 248.92 467.36)
 		(size 40.64 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1956,14 +1956,14 @@
 		)
 		(uuid "9499149c-3cf6-5600-be07-e603cd04b785")
 		(property "Sheetname" "mech"
-			(at 248.92 459.04 0)
+			(at 248.92 466.66 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "mech.kicad_sch"
-			(at 248.92 475.58 0)
+			(at 248.92 483.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -1979,14 +1979,14 @@
 	)
 	(text "Mounting holes"
 		(exclude_from_sim no)
-		(at 250.19 467.36 0)
+		(at 250.19 474.98 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
 		(uuid "9ed9b7f9-a18e-58ee-96ad-46da0b9c2b37")
 	)
-	(text "Li-ion active cell balancer, 13-16S (LT8584 x 16 + ADBMS1818) (rev A)\nBoards: main: tapin, tap0, tap1, tap2, tap3, tap4, tap5, tap6, tap7, tap8, tap9, tap10, tap11, tap12, tap13, tap14, tap15, tap16, ch1, ch2, ch3, ch4,\n    ch5, ch6, ch7, ch8, ch9, ch10, ch11, ch12, ch13, ch14, ch15, ch16, ret, afe, psu, mcu, en, iso, mech; off: harness\nDomains: BAT0 (battery, 0 V = TAP0); C1 (battery, 0 V = TAP0); SW1 (battery, 0 V = TAP0); C2 (battery, 0 V = TAP1); SW2 (battery, 0 V = TAP1); C3\n    (battery, 0 V = TAP2); SW3 (battery, 0 V = TAP2); C4 (battery, 0 V = TAP3); SW4 (battery, 0 V = TAP3); C5 (battery, 0 V = TAP4); SW5 (battery, 0 V\n    = TAP4); C6 (battery, 0 V = TAP5); SW6 (battery, 0 V = TAP5); C7 (battery, 0 V = TAP6); SW7 (battery, 0 V = TAP6); C8 (battery, 0 V = TAP7); SW8\n    (battery, 0 V = TAP7); C9 (battery, 0 V = TAP8); SW9 (battery, 0 V = TAP8); C10 (battery, 0 V = TAP9); SW10 (battery, 0 V = TAP9); C11 (battery, 0\n    V = TAP10); SW11 (battery, 0 V = TAP10); C12 (battery, 0 V = TAP11); SW12 (battery, 0 V = TAP11); C13 (battery, 0 V = TAP12); SW13 (battery, 0 V =\n    TAP12); C14 (battery, 0 V = TAP13); SW14 (battery, 0 V = TAP13); C15 (battery, 0 V = TAP14); SW15 (battery, 0 V = TAP14); C16 (battery, 0 V =\n    TAP15); SW16 (battery, 0 V = TAP15); SNS1 (battery, 0 V = TAP1); SNS2 (battery, 0 V = TAP2); SNS3 (battery, 0 V = TAP3); SNS4 (battery, 0 V =\n    TAP4); SNS5 (battery, 0 V = TAP5); SNS6 (battery, 0 V = TAP6); SNS7 (battery, 0 V = TAP7); SNS8 (battery, 0 V = TAP8); SNS9 (battery, 0 V = TAP9);\n    SNS10 (battery, 0 V = TAP10); SNS11 (battery, 0 V = TAP11); SNS12 (battery, 0 V = TAP12); SNS13 (battery, 0 V = TAP13); SNS14 (battery, 0 V =\n    TAP14); SNS15 (battery, 0 V = TAP15); STACK (battery, 0 V = TAP16); RET (battery, 0 V = TAP0); STR1 (battery, 0 V = STR_Q); STR2 (battery, 0 V =\n    LEDA_1); STR3 (battery, 0 V = LEDA_2); STR4 (battery, 0 V = LEDA_3); STR5 (battery, 0 V = LEDA_4); STR6 (battery, 0 V = LEDA_5); STR7 (battery, 0\n    V = LEDA_6); STR8 (battery, 0 V = LEDA_7); STR9 (battery, 0 V = LEDA_8); STR10 (battery, 0 V = LEDA_9); STR11 (battery, 0 V = LEDA_10); STR12\n    (battery, 0 V = LEDA_11); STR13 (battery, 0 V = LEDA_12); STR14 (battery, 0 V = LEDA_13); STR15 (battery, 0 V = LEDA_14); STR16 (battery, 0 V =\n    LEDA_15); CTRL (selv, 0 V = GND_B); USER (selv, 0 V = GND_ISO); FAULT (other, 0 V = FLT_B); CHASSIS (other, 0 V = CHASSIS); BOOT (battery, 0 V =\n    psu/BUCK_SW)\nBarrier BAT0/C1: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C1/C2: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C2/C3: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C3/C4: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C4/C5: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C5/C6: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C6/C7: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C7/C8: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C8/C9: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C9/C10: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C10/C11: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C11/C12: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C12/C13: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C13/C14: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C14/C15: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C15/C16: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C16/STACK: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier BAT0/SW1: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW2: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW3: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW4: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW5: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW6: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW7: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW8: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW9: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW10: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW11: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW12: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW13: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW14: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW15: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW16: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier RET/C1: functional, 105.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-150 V [S])\nBarrier BAT0/RET: functional, 67.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-150 V [S])\nBarrier USER/FAULT: functional, 36 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/CHASSIS: basic, 354 V working, creepage 3 mm, clearance 3 mm (IEC 60664-1 Tables F.2/F.4, IEC 62368-1 [S])\nBarrier BAT0/USER: reinforced, 354 V working, creepage 8 mm, clearance 8 mm (IEC 62368-1, IEC 60664-1)\nBarrier BAT0/FAULT: reinforced, 354 V working, creepage 5 mm, clearance 3.8 mm (IEC 62368-1, IEC 60664-1)\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-2, Q-3, Q-4"
+	(text "Li-ion active cell balancer, 13-16S (LT8584 x 16 + ADBMS1818) (rev A)\nBoards: main: tapin, tap0, tap1, tap2, tap3, tap4, tap5, tap6, tap7, tap8, tap9, tap10, tap11, tap12, tap13, tap14, tap15, tap16, ch1, ch2, ch3, ch4,\n    ch5, ch6, ch7, ch8, ch9, ch10, ch11, ch12, ch13, ch14, ch15, ch16, ret, afe, psu, mcu, en, iso, mech; off: harness\nDomains: BAT0 (battery, 0 V = TAP0); C1 (battery, 0 V = TAP0); SW1 (battery, 0 V = TAP0); C2 (battery, 0 V = TAP1); SW2 (battery, 0 V = TAP1); C3\n    (battery, 0 V = TAP2); SW3 (battery, 0 V = TAP2); C4 (battery, 0 V = TAP3); SW4 (battery, 0 V = TAP3); C5 (battery, 0 V = TAP4); SW5 (battery, 0 V\n    = TAP4); C6 (battery, 0 V = TAP5); SW6 (battery, 0 V = TAP5); C7 (battery, 0 V = TAP6); SW7 (battery, 0 V = TAP6); C8 (battery, 0 V = TAP7); SW8\n    (battery, 0 V = TAP7); C9 (battery, 0 V = TAP8); SW9 (battery, 0 V = TAP8); C10 (battery, 0 V = TAP9); SW10 (battery, 0 V = TAP9); C11 (battery, 0\n    V = TAP10); SW11 (battery, 0 V = TAP10); C12 (battery, 0 V = TAP11); SW12 (battery, 0 V = TAP11); C13 (battery, 0 V = TAP12); SW13 (battery, 0 V =\n    TAP12); C14 (battery, 0 V = TAP13); SW14 (battery, 0 V = TAP13); C15 (battery, 0 V = TAP14); SW15 (battery, 0 V = TAP14); C16 (battery, 0 V =\n    TAP15); SW16 (battery, 0 V = TAP15); SNS1 (battery, 0 V = TAP1); SNS2 (battery, 0 V = TAP2); SNS3 (battery, 0 V = TAP3); SNS4 (battery, 0 V =\n    TAP4); SNS5 (battery, 0 V = TAP5); SNS6 (battery, 0 V = TAP6); SNS7 (battery, 0 V = TAP7); SNS8 (battery, 0 V = TAP8); SNS9 (battery, 0 V = TAP9);\n    SNS10 (battery, 0 V = TAP10); SNS11 (battery, 0 V = TAP11); SNS12 (battery, 0 V = TAP12); SNS13 (battery, 0 V = TAP13); SNS14 (battery, 0 V =\n    TAP14); SNS15 (battery, 0 V = TAP15); STACK (battery, 0 V = TAP16); RET (battery, 0 V = TAP0); STR1 (battery, 0 V = STR_Q); STR2 (battery, 0 V =\n    LEDA_1); STR3 (battery, 0 V = LEDA_2); STR4 (battery, 0 V = LEDA_3); STR5 (battery, 0 V = LEDA_4); STR6 (battery, 0 V = LEDA_5); STR7 (battery, 0\n    V = LEDA_6); STR8 (battery, 0 V = LEDA_7); STR9 (battery, 0 V = LEDA_8); STR10 (battery, 0 V = LEDA_9); STR11 (battery, 0 V = LEDA_10); STR12\n    (battery, 0 V = LEDA_11); STR13 (battery, 0 V = LEDA_12); STR14 (battery, 0 V = LEDA_13); STR15 (battery, 0 V = LEDA_14); STR16 (battery, 0 V =\n    LEDA_15); CTRL (selv, 0 V = GND_B); USER (selv, 0 V = GND_ISO); FAULT (other, 0 V = FLT_B); BMS (other, 0 V = BMS_N); CHASSIS (other, 0 V =\n    CHASSIS); BOOT (battery, 0 V = psu/BUCK_SW); TRB (battery, 0 V = en/TRB3)\nBarrier BAT0/C1: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C1/C2: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C2/C3: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C3/C4: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C4/C5: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C5/C6: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C6/C7: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C7/C8: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C8/C9: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C9/C10: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C10/C11: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C11/C12: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C12/C13: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C13/C14: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C14/C15: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C15/C16: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier C16/STACK: functional, 8.4 V working, creepage 0.2 mm, clearance 0.2 mm (IPC-2221B Table 6-1 B2 0-15 V: 0.1 mm [S])\nBarrier BAT0/SW1: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW2: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW3: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW4: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW5: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW6: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW7: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW8: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW9: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW10: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW11: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW12: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW13: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW14: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW15: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/SW16: functional, 38.5 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier RET/C1: functional, 105.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-150 V [S])\nBarrier BAT0/RET: functional, 67.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-150 V [S])\nBarrier USER/FAULT: functional, 36 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BAT0/CHASSIS: basic, 354 V working, creepage 3 mm, clearance 3 mm (IEC 60664-1 Tables F.2/F.4, IEC 62368-1 [S])\nBarrier BAT0/USER: reinforced, 354 V working, creepage 8 mm, clearance 8 mm (IEC 62368-1, IEC 60664-1)\nBarrier BAT0/FAULT: reinforced, 354 V working, creepage 5 mm, clearance 3.8 mm (IEC 62368-1, IEC 60664-1)\nBarrier BAT0/BMS: reinforced, 354 V working, creepage 5 mm, clearance 3.8 mm (IEC 62368-1, IEC 60664-1)\nBarrier BMS/USER: functional, 36 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nBarrier BMS/FAULT: functional, 36 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S])\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-2, Q-3, Q-4, Q-12, Q-14"
 		(exclude_from_sim no)
 		(at 25.4 25.4 0)
 		(effects

@@ -214,32 +214,9 @@
           "description": "Pins of type Bidirectional and Power output are connected",
           "items": [
             {
-              "description": "Symbol U1 Pin 42 [GPIO4, Bidirectional, Line]",
-              "pos": {
-                "x": 167.64,
-                "y": 40.64
-              },
-              "uuid": "23c3d2fa-5b3d-5857-8e2b-aa663ea2d988"
-            },
-            {
-              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
-              "pos": {
-                "x": 101.6,
-                "y": 30.48
-              },
-              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
-            }
-          ],
-          "severity": "warning",
-          "type": "pin_to_pin"
-        },
-        {
-          "description": "Pins of type Bidirectional and Power output are connected",
-          "items": [
-            {
               "description": "Symbol U1 Pin 43 [GPIO5, Bidirectional, Line]",
               "pos": {
-                "x": 167.64,
+                "x": 165.1,
                 "y": 43.18
               },
               "uuid": "141a7918-7834-59da-ae54-9f2308036575"
@@ -262,7 +239,7 @@
             {
               "description": "Symbol U1 Pin 44 [GPIO6, Bidirectional, Line]",
               "pos": {
-                "x": 167.64,
+                "x": 165.1,
                 "y": 45.72
               },
               "uuid": "fa953a00-f000-5129-81ed-1cbec7cdf510"
@@ -285,7 +262,7 @@
             {
               "description": "Symbol U1 Pin 45 [GPIO7, Bidirectional, Line]",
               "pos": {
-                "x": 167.64,
+                "x": 165.1,
                 "y": 48.26
               },
               "uuid": "acd060dc-d813-55eb-8179-9a98c26f982f"
@@ -308,7 +285,7 @@
             {
               "description": "Symbol U1 Pin 46 [GPIO8, Bidirectional, Line]",
               "pos": {
-                "x": 167.64,
+                "x": 165.1,
                 "y": 50.8
               },
               "uuid": "6c8ff645-de07-5bda-b6a4-18982fc21a81"
@@ -331,7 +308,7 @@
             {
               "description": "Symbol U1 Pin 47 [GPIO9, Bidirectional, Line]",
               "pos": {
-                "x": 167.64,
+                "x": 165.1,
                 "y": 53.34
               },
               "uuid": "d634e224-3632-5be7-baa7-efe741049fab"

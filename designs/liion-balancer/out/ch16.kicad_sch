@@ -1787,22 +1787,14 @@
 		)
 		(uuid "5361bc3e-0632-591e-8bac-e057e5ffcbf2")
 	)
-	(global_label "S_16"
-		(shape passive)
+	(label "DIN_16"
 		(at 63.5 45.72 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
-		(uuid "5a3ae1ed-b1fd-5aad-a16c-0e223bfd8e9c")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 63.5 45.72 0)
-			(hide yes)
-			(effects
-				(font (size 1.27 1.27))
-			)
-		)
+		(uuid "5142b9a6-0e56-5854-9e0c-53028d7c2242")
 	)
 	(wire
 		(pts (xy 60.96 48.26) (xy 63.5 48.26))
@@ -1823,7 +1815,7 @@
 	)
 	(symbol
 		(lib_id "kaesynth:NA5743-ALD")
-		(at 154.94 35.56 0)
+		(at 157.48 35.56 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1831,63 +1823,63 @@
 		(dnp no)
 		(uuid "3d51df97-51c6-55bf-ad8c-0a937ffda03a")
 		(property "Reference" "T116"
-			(at 142.24 26.67 0)
+			(at 144.78 26.67 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Value" "NA5743-ALD"
-			(at 142.24 44.45 0)
+			(at 144.78 44.45 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
 			)
 		)
 		(property "Footprint" "custom:Coilcraft_NA5743_2x4_P2.50mm"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.coilcraft.com/pdfs/na5743.pdf"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Flyback transformer for LT8584, 4 uH primary (2 windings in parallel), 1:4, Ipk 7 A, 1500 Vrms"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "NA5743-ALD"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Coilcraft"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "ch16"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "ch16"
-			(at 154.94 35.56 0)
+			(at 157.48 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1927,7 +1919,7 @@
 		)
 	)
 	(wire
-		(pts (xy 139.7 30.48) (xy 137.16 30.48))
+		(pts (xy 142.24 30.48) (xy 139.7 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -1936,7 +1928,7 @@
 	)
 	(global_label "TAP16"
 		(shape passive)
-		(at 137.16 30.48 180)
+		(at 139.7 30.48 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1944,7 +1936,7 @@
 		)
 		(uuid "efcb34ea-6ac3-5cfd-a691-d787199448dd")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 137.16 30.48 0)
+			(at 139.7 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1952,7 +1944,7 @@
 		)
 	)
 	(wire
-		(pts (xy 139.7 33.02) (xy 137.16 33.02))
+		(pts (xy 142.24 33.02) (xy 139.7 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -1961,7 +1953,7 @@
 	)
 	(global_label "TAP16"
 		(shape passive)
-		(at 137.16 33.02 180)
+		(at 139.7 33.02 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1969,7 +1961,7 @@
 		)
 		(uuid "b9d7e53a-17ea-5ff8-b049-e279124acd5e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 137.16 33.02 0)
+			(at 139.7 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -1977,7 +1969,7 @@
 		)
 	)
 	(wire
-		(pts (xy 139.7 35.56) (xy 137.16 35.56))
+		(pts (xy 142.24 35.56) (xy 139.7 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -1985,7 +1977,7 @@
 		(uuid "c7205cb6-913a-57ae-a1d1-0858bd54f417")
 	)
 	(label "SW_16"
-		(at 137.16 35.56 180)
+		(at 139.7 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -1994,7 +1986,7 @@
 		(uuid "f0c0b304-d89d-5fac-8782-d4a7cf0b76a6")
 	)
 	(wire
-		(pts (xy 139.7 38.1) (xy 137.16 38.1))
+		(pts (xy 142.24 38.1) (xy 139.7 38.1))
 		(stroke
 			(width 0)
 			(type default)
@@ -2002,7 +1994,7 @@
 		(uuid "25041bca-d97e-5119-b80f-2cd020e54317")
 	)
 	(label "SW_16"
-		(at 137.16 38.1 180)
+		(at 139.7 38.1 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2011,7 +2003,7 @@
 		(uuid "95eef634-57aa-5039-b346-bf5bd351cae5")
 	)
 	(wire
-		(pts (xy 170.18 30.48) (xy 172.72 30.48))
+		(pts (xy 172.72 30.48) (xy 175.26 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -2020,7 +2012,7 @@
 	)
 	(global_label "TAP0"
 		(shape passive)
-		(at 172.72 30.48 0)
+		(at 175.26 30.48 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2028,7 +2020,7 @@
 		)
 		(uuid "37325393-c55a-519f-9880-10ee159eb38a")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 172.72 30.48 0)
+			(at 175.26 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2036,7 +2028,7 @@
 		)
 	)
 	(wire
-		(pts (xy 170.18 33.02) (xy 172.72 33.02))
+		(pts (xy 172.72 33.02) (xy 175.26 33.02))
 		(stroke
 			(width 0)
 			(type default)
@@ -2044,7 +2036,7 @@
 		(uuid "fb661f8e-1487-5735-a13d-a91b239b33ae")
 	)
 	(label "SEC_16"
-		(at 172.72 33.02 0)
+		(at 175.26 33.02 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2053,16 +2045,16 @@
 		(uuid "0196bc1f-8297-5608-a4ed-1451638bacd3")
 	)
 	(no_connect
-		(at 170.18 35.56)
+		(at 172.72 35.56)
 		(uuid "0a9042f9-876b-58e7-a44a-53a4edb256d6")
 	)
 	(no_connect
-		(at 170.18 38.1)
+		(at 172.72 38.1)
 		(uuid "be77819b-ef28-59d9-b001-2aec3e3dfec9")
 	)
 	(symbol
 		(lib_id "Device:D")
-		(at 144.78 58.42 0)
+		(at 147.32 58.42 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -2070,61 +2062,61 @@
 		(dnp no)
 		(uuid "8e870881-e726-5692-8bd0-07e7e252805e")
 		(property "Reference" "D116"
-			(at 144.78 55.88 0)
+			(at 147.32 55.88 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Value" "ES1G-13-F"
-			(at 144.78 60.96 0)
+			(at 147.32 60.96 0)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Footprint" "Diode_SMD:D_SMA"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://www.diodes.com/assets/Datasheets/ds14001.pdf"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Super-fast rectifier 400 V 1 A, 25 ns, SMA"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "ES1G-13-F"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Diodes Incorporated"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "ch16"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "ch16"
-			(at 144.78 58.42 0)
+			(at 147.32 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2146,7 +2138,7 @@
 		)
 	)
 	(wire
-		(pts (xy 140.97 58.42) (xy 138.43 58.42))
+		(pts (xy 143.51 58.42) (xy 140.97 58.42))
 		(stroke
 			(width 0)
 			(type default)
@@ -2155,7 +2147,7 @@
 	)
 	(global_label "FLYBUS"
 		(shape passive)
-		(at 138.43 58.42 180)
+		(at 140.97 58.42 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -2163,7 +2155,7 @@
 		)
 		(uuid "163add1a-f229-59da-92b4-f64463433e2e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 138.43 58.42 0)
+			(at 140.97 58.42 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -2171,7 +2163,7 @@
 		)
 	)
 	(wire
-		(pts (xy 148.59 58.42) (xy 151.13 58.42))
+		(pts (xy 151.13 58.42) (xy 153.67 58.42))
 		(stroke
 			(width 0)
 			(type default)
@@ -2179,7 +2171,7 @@
 		(uuid "6eb5c93c-2841-55bf-ad44-0cb1741b5f17")
 	)
 	(label "SEC_16"
-		(at 151.13 58.42 0)
+		(at 153.67 58.42 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3210,7 +3202,7 @@
 	)
 	(symbol
 		(lib_id "Device:C")
-		(at 170.18 73.66 0)
+		(at 175.26 73.66 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3218,84 +3210,84 @@
 		(dnp no)
 		(uuid "45b4bbb4-b44a-5bba-b311-bb49c6b9e512")
 		(property "Reference" "C616"
-			(at 170.815 71.12 0)
+			(at 175.895 71.12 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Value" "2.2u"
-			(at 170.815 76.2 0)
+			(at 175.895 76.2 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_1210_3225Metric"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://search.kemet.com/component-documentation/download/specsheet/C1210C225K1RACTU"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Capacitor 2.2u 100V X7R 1210"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "C1210C225K1RACTU"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "KEMET"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "ch16"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "ch16"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Voltage" "100V"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Dielectric" "X7R"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Ceff" "about 1.0 uF at 60-68 V [I] (X7R 100 V 1210); C-15 needs >= 1.5 uF total on FLYBUS (16 in parallel); C8 needs >= 1 uF for 19 mV ripple"
-			(at 170.18 73.66 0)
+			(at 175.26 73.66 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3317,7 +3309,7 @@
 		)
 	)
 	(wire
-		(pts (xy 170.18 69.85) (xy 170.18 67.31))
+		(pts (xy 175.26 69.85) (xy 175.26 67.31))
 		(stroke
 			(width 0)
 			(type default)
@@ -3326,7 +3318,7 @@
 	)
 	(global_label "FLYBUS"
 		(shape passive)
-		(at 170.18 67.31 90)
+		(at 175.26 67.31 90)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3334,7 +3326,7 @@
 		)
 		(uuid "3425d365-2d57-592e-a44d-8f4a67d970d4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 170.18 67.31 0)
+			(at 175.26 67.31 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3342,7 +3334,7 @@
 		)
 	)
 	(wire
-		(pts (xy 170.18 77.47) (xy 170.18 80.01))
+		(pts (xy 175.26 77.47) (xy 175.26 80.01))
 		(stroke
 			(width 0)
 			(type default)
@@ -3351,7 +3343,7 @@
 	)
 	(global_label "TAP0"
 		(shape passive)
-		(at 170.18 80.01 270)
+		(at 175.26 80.01 270)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3359,7 +3351,7 @@
 		)
 		(uuid "13ee3831-7976-50f7-a1e9-c598d8a81e0b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 170.18 80.01 0)
+			(at 175.26 80.01 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3790,8 +3782,149 @@
 		(uuid "cfd04ef4-6bcb-58d3-b977-cd729f0123a0")
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 114.3 132.08 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "0d75f9f5-d9fe-5506-8d7f-2cdee475f4b5")
+		(property "Reference" "R516"
+			(at 116.332 132.08 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Value" "10k"
+			(at 114.3 132.08 90)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Description" "Resistor 10k 1% 0603"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "MPN" "RC0603FR-0710KL"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Block" "ch16"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Component Class" "ch16"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Tolerance" "1%"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "Package" "0603"
+			(at 114.3 132.08 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(pin "1"
+			(uuid "f662fa04-63fb-57f0-855d-086614537bc2")
+		)
+		(pin "2"
+			(uuid "8b44b795-7af7-538d-bd1f-c27429f01430")
+		)
+		(instances
+			(project "liion-balancer"
+				(path "/33401eb0-491f-5dda-903e-cf935510cefd/493da4dc-1441-5947-8c91-fb84f6a395e9"
+					(reference "R516")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts (xy 114.3 128.27) (xy 114.3 125.73))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "df2e5932-b91b-51b0-b743-8b0e20dd8e8f")
+	)
+	(global_label "S_16"
+		(shape passive)
+		(at 114.3 125.73 90)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify left)
+		)
+		(uuid "060822bf-52da-5e4c-8627-918cfb44007d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 114.3 125.73 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+	)
+	(wire
+		(pts (xy 114.3 135.89) (xy 114.3 138.43))
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dfff734f-c515-5480-88f5-e8eb37e5c0c4")
+	)
+	(label "DIN_16"
+		(at 114.3 138.43 270)
+		(fields_autoplaced yes)
+		(effects
+			(font (size 1.27 1.27))
+			(justify right)
+		)
+		(uuid "8def1354-2d31-5b5f-95ea-bf24cbfd0bf5")
+	)
+	(symbol
 		(lib_id "Isolator:TLP293")
-		(at 215.9 33.02 0)
+		(at 218.44 33.02 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3799,63 +3932,63 @@
 		(dnp no)
 		(uuid "3fac788c-58cf-5607-97c1-eaf71624d94e")
 		(property "Reference" "U216"
-			(at 210.82 27.94 0)
+			(at 213.36 27.94 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Value" "TLP293(GB)"
-			(at 215.9 27.94 0)
+			(at 218.44 27.94 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left)
 			)
 		)
 		(property "Footprint" "Package_SO:SOIC-4_4.55x2.6mm_P1.27mm"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Datasheet" "https://toshiba.semicon-storage.com/info/TLP293_datasheet_en_20191129.pdf"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Description" "Phototransistor optocoupler, CTR 100-600 % (GB), 80 V, 3750 Vrms, SO4"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "MPN" "TLP293(GB-TPL,E"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Manufacturer" "Toshiba"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Block" "ch16"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
 		(property "Component Class" "ch16"
-			(at 215.9 33.02 0)
+			(at 218.44 33.02 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3883,7 +4016,7 @@
 		)
 	)
 	(wire
-		(pts (xy 208.28 30.48) (xy 205.74 30.48))
+		(pts (xy 210.82 30.48) (xy 208.28 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -3892,7 +4025,7 @@
 	)
 	(global_label "LEDA_16"
 		(shape passive)
-		(at 205.74 30.48 180)
+		(at 208.28 30.48 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3900,7 +4033,7 @@
 		)
 		(uuid "65056110-221b-5e34-84c6-52727ab33a54")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 205.74 30.48 0)
+			(at 208.28 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3908,7 +4041,7 @@
 		)
 	)
 	(wire
-		(pts (xy 208.28 35.56) (xy 205.74 35.56))
+		(pts (xy 210.82 35.56) (xy 208.28 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -3917,7 +4050,7 @@
 	)
 	(global_label "LEDA_15"
 		(shape passive)
-		(at 205.74 35.56 180)
+		(at 208.28 35.56 180)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3925,7 +4058,7 @@
 		)
 		(uuid "dda31f6b-4d7c-5dfd-846f-9b27bed2387f")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 205.74 35.56 0)
+			(at 208.28 35.56 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
@@ -3933,7 +4066,7 @@
 		)
 	)
 	(wire
-		(pts (xy 223.52 35.56) (xy 226.06 35.56))
+		(pts (xy 226.06 35.56) (xy 228.6 35.56))
 		(stroke
 			(width 0)
 			(type default)
@@ -3941,7 +4074,7 @@
 		(uuid "56d1856f-34a2-550e-8462-29e37f56053f")
 	)
 	(label "DCH_16"
-		(at 226.06 35.56 0)
+		(at 228.6 35.56 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3950,7 +4083,7 @@
 		(uuid "4fbd6416-421f-5541-a4ea-d560e90165ff")
 	)
 	(wire
-		(pts (xy 223.52 30.48) (xy 226.06 30.48))
+		(pts (xy 226.06 30.48) (xy 228.6 30.48))
 		(stroke
 			(width 0)
 			(type default)
@@ -3959,7 +4092,7 @@
 	)
 	(global_label "TAP16"
 		(shape passive)
-		(at 226.06 30.48 0)
+		(at 228.6 30.48 0)
 		(fields_autoplaced yes)
 		(effects
 			(font (size 1.27 1.27))
@@ -3967,7 +4100,7 @@
 		)
 		(uuid "16c9f29b-e569-5c43-a011-7a687faaa44e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 226.06 30.48 0)
+			(at 228.6 30.48 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))

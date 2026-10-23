@@ -3,6 +3,7 @@
   (lib (name "Connector")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Connector.kicad_sym")(options "")(descr ""))
   (lib (name "Connector_Generic")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Connector_Generic.kicad_sym")(options "")(descr ""))
   (lib (name "Device")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Device.kicad_sym")(options "")(descr ""))
+  (lib (name "Diode")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Diode.kicad_sym")(options "")(descr ""))
   (lib (name "Isolator")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Isolator.kicad_sym")(options "")(descr ""))
   (lib (name "MCU_ST_STM32G0")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/MCU_ST_STM32G0.kicad_sym")(options "")(descr ""))
   (lib (name "Mechanical")(type "KiCad")(uri "${KICAD10_SYMBOL_DIR}/Mechanical.kicad_sym")(options "")(descr ""))

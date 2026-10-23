@@ -1,10 +1,10 @@
 {
  "status": {
-  "ok": false,
-  "error": 29,
-  "warning": 2,
+  "ok": true,
+  "error": 0,
+  "warning": 0,
   "info": 4,
-  "waived": 25,
+  "waived": 31,
   "blocking_questions": [
    "Q-1",
    "Q-2",
@@ -70,396 +70,218 @@
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "D103 (red): current on TAP0 through pin 1 (set i_through= if the part carries less) 4.5 vs rating 0.02 (22500%) \u2014 exceeds rating",
-   "objects": [
-    "D103"
-   ]
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "F2 (6A): current on TAP1 through pin 2 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F2 (6A): current on TAP1 through pin 2 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F2"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "D203 (red): current on TAP1 through pin 1 (set i_through= if the part carries less) 8.9 vs rating 0.02 (44500%) \u2014 exceeds rating",
-   "objects": [
-    "D203"
-   ]
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "F2 (6A): current on TAP1_IN through pin 1 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F2 (6A): current on TAP1_IN through pin 1 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F2"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH1 (10A): current on TAP1_IN through pin 2 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH1 (10A): current on TAP1_IN through pin 2 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH1"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH1 (10A): current on POST1 through pin 1 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH1 (10A): current on POST1 through pin 1 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH1"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "F3 (6A): current on TAP2 through pin 2 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F3 (6A): current on TAP2 through pin 2 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F3"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "D303 (red): current on TAP2 through pin 1 (set i_through= if the part carries less) 8.9 vs rating 0.02 (44500%) \u2014 exceeds rating",
-   "objects": [
-    "D303"
-   ]
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "F3 (6A): current on TAP2_IN through pin 1 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F3 (6A): current on TAP2_IN through pin 1 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F3"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH2 (10A): current on TAP2_IN through pin 2 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH2 (10A): current on TAP2_IN through pin 2 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH2"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH2 (10A): current on POST2 through pin 1 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH2 (10A): current on POST2 through pin 1 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH2"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "F4 (6A): current on TAP3 through pin 2 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F4 (6A): current on TAP3 through pin 2 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F4"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "error",
-   "message": "F4 (6A): current on TAP3_IN through pin 1 (set i_through= if the part carries less) 8.9 vs rating 6 (148%) \u2014 exceeds rating",
+   "message": "F4 (6A): current on TAP3_IN through pin 1 (set i_through= if the part carries less) 8.5 vs rating 6 (142%) \u2014 exceeds rating",
    "objects": [
     "F4"
-   ]
+   ],
+   "waived_by": "designer: Middle tap fuses at the abnormal ratio-window edge: 8.5 A worst case (142% of the 6 A KLKD006; failing battery, worst tolerances, 17.55 V, -20 C; calc edge_middle_tap_A). Normal operation (dV <= 0.5 V) is <= 2.0 A (33 %). At the edge the fuse opening is a safe end state: the tap opens, the next tap-check pause trips the window and the fail-safe alarm opens. A larger fuse would weaken selectivity against the KLKD010 (calc fuse_selectivity_ratio)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH3 (10A): current on TAP3_IN through pin 2 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH3 (10A): current on TAP3_IN through pin 2 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH3"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.current",
    "severity": "warning",
-   "message": "FH3 (10A): current on POST3 through pin 1 (set i_through= if the part carries less) 8.9 vs rating 10 (89%) \u2014 above 75% derating",
+   "message": "FH3 (10A): current on POST3 through pin 1 (set i_through= if the part carries less) 8.5 vs rating 10 (85%) \u2014 above 75% derating",
    "objects": [
     "FH3"
    ],
-   "waived_by": "designer: KLKD010 at the abnormal window edge: 82.6 A worst (826% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
+   "waived_by": "designer: KLKD010 at the abnormal window edge: 8.5 A worst (85% of 10 A; a fuse carries 100 % of its rating continuously); normal <= 2.0 A (20 %)."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "Q101 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q101"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q102 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q102"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q103 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q103"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q104 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q104"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R101 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R101 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R101"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R152 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R152 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R152"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R102 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R102 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R102"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R153 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R153 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R153"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "Q201 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q201"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q202 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q202"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q203 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q203"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q204 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q204"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R201 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R201 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R201"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R252 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R252 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R252"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R202 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R202 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R202"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R253 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R253 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R253"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "Q301 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q301"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q302 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q302"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q303 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q303"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "Q304 (CSD18543Q3A): dissipation (W) 38.1 vs rating 2.8 (1359%) \u2014 exceeds rating",
-   "objects": [
-    "Q304"
-   ]
-  },
-  {
-   "check": "rating.power",
-   "severity": "error",
-   "message": "R301 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R301 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R301"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R352 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R352 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R352"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R302 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R302 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R302"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "rating.power",
-   "severity": "error",
-   "message": "R353 (0.086): dissipation (W) 117 vs rating 2 (5858%) \u2014 exceeds rating",
+   "severity": "warning",
+   "message": "R353 (0.086): dissipation (W) 1.24 vs rating 2 (62%) \u2014 above 50% derating",
    "objects": [
     "R353"
    ],
-   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 117.15 W each (5857% of 2 W at 70 C; 8250% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "sleep_batt_max_uA = 50.2 uA violates <= 50 uA (REQ-9)",
-   "objects": [
-    "sleep_batt_max_uA"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "warn_hi_worst = 1.073  violates <= 1.0584  (the warning always opens before (or with) the lockout)",
-   "objects": [
-    "warn_hi_worst"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "warn_lo_worst = 0.9262  violates >= 0.9436  (same, low side)",
-   "objects": [
-    "warn_lo_worst"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "edge_power_hot_W = 606.1 W violates <= 7.2 W (REQ-12, 50 C ambient)",
-   "objects": [
-    "edge_power_hot_W"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "edge_power_cold_W = 813.1 W violates <= 9.5 W (REQ-12, -20 C)",
-   "objects": [
-    "edge_power_cold_W"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "edge_rcf_each_hot_W = 117.2 W violates <= 1.42 W (WSL2816 rating at the 99 C cut-out; REQ-24 abnormal)",
-   "objects": [
-    "edge_rcf_each_hot_W"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "edge_rcf_each_cold_W = 166.6 W violates <= 2 W",
-   "objects": [
-    "edge_rcf_each_cold_W"
-   ]
-  },
-  {
-   "check": "calc.limit",
-   "severity": "error",
-   "message": "edge_fet_tj_C = 551.9 C violates <= 125 C",
-   "objects": [
-    "edge_fet_tj_C"
-   ]
+   "waived_by": "designer: R_CF at the abnormal window edge, 50 C ambient: 1.24 W each (62% of 2 W at 70 C; 87% of the 1.42 W rating at the 99 C cut-out; calc edge_rcf_each_hot_W). REQ-24: <= 100 % of the temperature-derated rating when abnormal. Normal operation (dV <= 0.5 V) <= 0.05 W each. This is why each position has two 0.086 Ohm parts in parallel instead of one 0.043 Ohm part."
   },
   {
    "check": "hazard.procedural",
@@ -501,18 +323,6 @@
    "objects": [
     "Q-12"
    ]
-  },
-  {
-   "check": "waiver.unused",
-   "severity": "warning",
-   "message": "waiver rating.current /^F[234] \\(4A\\)/ matches no finding; remove it (Middle tap fuses at the abnormal ratio-window edge: 82.6 A w)",
-   "objects": []
-  },
-  {
-   "check": "waiver.unused",
-   "severity": "warning",
-   "message": "waiver rating.current /^F[15] \\(4A\\)/ matches no finding; remove it (End tap fuses: 41.3 A only at the abnormal window edge (1033)",
-   "objects": []
   }
  ]
 }

@@ -2253,7 +2253,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "4.7M"
+		(property "Value" "10M"
 			(at 66.04 93.98 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -2273,14 +2273,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 4.7M 1% 1206"
+		(property "Description" "Resistor 10M 1% 1206"
 			(at 66.04 93.98 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "RC1206FR-074M7L"
+		(property "MPN" "RC1206FR-0710ML"
 			(at 66.04 93.98 0)
 			(hide yes)
 			(effects
@@ -2386,7 +2386,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "300k"
+		(property "Value" "620k"
 			(at 76.2 93.98 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -2406,14 +2406,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 300k 1% 0603"
+		(property "Description" "Resistor 620k 1% 0603"
 			(at 76.2 93.98 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "RC0603FR-07300KL"
+		(property "MPN" "RC0603FR-07620KL"
 			(at 76.2 93.98 0)
 			(hide yes)
 			(effects

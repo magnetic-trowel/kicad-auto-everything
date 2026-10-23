@@ -262,7 +262,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -307,7 +307,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -352,7 +352,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -397,7 +397,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -442,7 +442,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -469,7 +469,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -496,7 +496,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -523,7 +523,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -3423,8 +3423,8 @@
    "block": "ch1",
    "board": "main",
    "name": "R38",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
+   "value": "1.96M",
+   "mpn": "TNPW12061M96BEEA",
    "manufacturer": "Vishay Draloric",
    "footprint": "Resistor_SMD:R_1206_3216Metric",
    "category": "resistor",
@@ -3440,7 +3440,88 @@
     "2": {
      "name": "",
      "type": "passive",
+     "net": "/ch1/CH1_PWH",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R160",
+   "block": "ch1",
+   "board": "main",
+   "name": "R39",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch1/CH1_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
      "net": "/ch1/CH1_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R161",
+   "block": "ch1",
+   "board": "main",
+   "name": "R40",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch1/CH1_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch1/CH1_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C153",
+   "block": "ch1",
+   "board": "main",
+   "name": "C44",
+   "value": "470n",
+   "mpn": "GRM188R71E474KA12D",
+   "manufacturer": "Murata",
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch1/CH1_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "TAP0",
      "nc": false
     }
    }
@@ -3449,7 +3530,7 @@
    "ref": "R128",
    "block": "ch1",
    "board": "main",
-   "name": "R39",
+   "name": "R41",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3476,7 +3557,7 @@
    "ref": "R129",
    "block": "ch1",
    "board": "main",
-   "name": "R40",
+   "name": "R42",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3503,7 +3584,7 @@
    "ref": "C144",
    "block": "ch1",
    "board": "main",
-   "name": "C44",
+   "name": "C45",
    "value": "470n",
    "mpn": "GRM188R71E474KA12D",
    "manufacturer": "Murata",
@@ -3530,7 +3611,7 @@
    "ref": "R130",
    "block": "ch1",
    "board": "main",
-   "name": "R41",
+   "name": "R43",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3557,7 +3638,7 @@
    "ref": "R131",
    "block": "ch1",
    "board": "main",
-   "name": "R42",
+   "name": "R44",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3584,7 +3665,7 @@
    "ref": "R156",
    "block": "ch1",
    "board": "main",
-   "name": "R43",
+   "name": "R45",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3611,7 +3692,7 @@
    "ref": "R157",
    "block": "ch1",
    "board": "main",
-   "name": "R44",
+   "name": "R46",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -3635,149 +3716,14 @@
    }
   },
   {
-   "ref": "R132",
-   "block": "ch1",
-   "board": "main",
-   "name": "R45",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP0",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R133",
-   "block": "ch1",
-   "board": "main",
-   "name": "R46",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP0",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C145",
-   "block": "ch1",
-   "board": "main",
-   "name": "C45",
-   "value": "470n",
-   "mpn": "GRM188R71E474KA12D",
-   "manufacturer": "Murata",
-   "footprint": "Capacitor_SMD:C_0603_1608Metric",
-   "category": "capacitor_ceramic",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP0",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R160",
-   "block": "ch1",
-   "board": "main",
-   "name": "R47",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWH_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R161",
-   "block": "ch1",
-   "board": "main",
-   "name": "R48",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWH_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWH_M2",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R162",
    "block": "ch1",
    "board": "main",
-   "name": "R49",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R47",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -3785,13 +3731,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch1/CH1_PWH_M2",
+     "net": "/ch1/CH1_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch1/CH1_PWH_M3",
+     "net": "/ch1/CH1_PWL",
      "nc": false
     }
    }
@@ -3800,11 +3746,11 @@
    "ref": "R163",
    "block": "ch1",
    "board": "main",
-   "name": "R50",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R48",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -3812,73 +3758,19 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch1/CH1_PWH_M3",
+     "net": "/ch1/CH1_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch1/CH1_PWH",
+     "net": "/ch1/CH1_PWL",
      "nc": false
     }
    }
   },
   {
-   "ref": "R164",
-   "block": "ch1",
-   "board": "main",
-   "name": "R51",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP0",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R165",
-   "block": "ch1",
-   "board": "main",
-   "name": "R52",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP0",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C153",
+   "ref": "C145",
    "block": "ch1",
    "board": "main",
    "name": "C46",
@@ -3893,7 +3785,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch1/CH1_PWH",
+     "net": "/ch1/CH1_PHI",
      "nc": false
     },
     "2": {
@@ -3905,118 +3797,10 @@
    }
   },
   {
-   "ref": "R166",
+   "ref": "R132",
    "block": "ch1",
    "board": "main",
-   "name": "R53",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R167",
-   "block": "ch1",
-   "board": "main",
-   "name": "R54",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R168",
-   "block": "ch1",
-   "board": "main",
-   "name": "R55",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M2",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M3",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R169",
-   "block": "ch1",
-   "board": "main",
-   "name": "R56",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL_M3",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch1/CH1_PWL",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R170",
-   "block": "ch1",
-   "board": "main",
-   "name": "R57",
+   "name": "R49",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4040,10 +3824,10 @@
    }
   },
   {
-   "ref": "R171",
+   "ref": "R133",
    "block": "ch1",
    "board": "main",
-   "name": "R58",
+   "name": "R50",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4097,7 +3881,7 @@
    "ref": "R134",
    "block": "ch1",
    "board": "main",
-   "name": "R59",
+   "name": "R51",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4124,7 +3908,7 @@
    "ref": "R135",
    "block": "ch1",
    "board": "main",
-   "name": "R60",
+   "name": "R52",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4151,7 +3935,7 @@
    "ref": "R136",
    "block": "ch1",
    "board": "main",
-   "name": "R61",
+   "name": "R53",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4178,7 +3962,7 @@
    "ref": "R137",
    "block": "ch1",
    "board": "main",
-   "name": "R62",
+   "name": "R54",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -4259,7 +4043,7 @@
    "ref": "R138",
    "block": "ch1",
    "board": "main",
-   "name": "R63",
+   "name": "R55",
    "value": "24.9k",
    "mpn": "CRCW060324K9FKEA",
    "manufacturer": "Vishay Dale",
@@ -4313,7 +4097,7 @@
    "ref": "R139",
    "block": "ch1",
    "board": "main",
-   "name": "R64",
+   "name": "R56",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -4340,7 +4124,7 @@
    "ref": "R140",
    "block": "ch1",
    "board": "main",
-   "name": "R65",
+   "name": "R57",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -4394,7 +4178,7 @@
    "ref": "R141",
    "block": "ch1",
    "board": "main",
-   "name": "R66",
+   "name": "R58",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -4448,7 +4232,7 @@
    "ref": "R142",
    "block": "ch1",
    "board": "main",
-   "name": "R67",
+   "name": "R59",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -4475,7 +4259,7 @@
    "ref": "R143",
    "block": "ch1",
    "board": "main",
-   "name": "R68",
+   "name": "R60",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -4502,7 +4286,7 @@
    "ref": "R144",
    "block": "ch1",
    "board": "main",
-   "name": "R69",
+   "name": "R61",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -4529,7 +4313,7 @@
    "ref": "R146",
    "block": "ch1",
    "board": "main",
-   "name": "R70",
+   "name": "R62",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -4556,7 +4340,7 @@
    "ref": "R145",
    "block": "ch1",
    "board": "main",
-   "name": "R71",
+   "name": "R63",
    "value": "750",
    "mpn": "CRCW0603750RFKEA",
    "manufacturer": "Vishay Dale",
@@ -4733,7 +4517,7 @@
    "ref": "R172",
    "block": "ch1",
    "board": "main",
-   "name": "R72",
+   "name": "R64",
    "value": "825",
    "mpn": "CRCW0603825RFKEA",
    "manufacturer": "Vishay Dale",
@@ -4993,7 +4777,7 @@
    "ref": "R173",
    "block": "ch1",
    "board": "main",
-   "name": "R73",
+   "name": "R65",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -5020,7 +4804,7 @@
    "ref": "R174",
    "block": "ch1",
    "board": "main",
-   "name": "R74",
+   "name": "R66",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -5047,7 +4831,7 @@
    "ref": "R175",
    "block": "ch1",
    "board": "main",
-   "name": "R75",
+   "name": "R67",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -5074,7 +4858,7 @@
    "ref": "R176",
    "block": "ch1",
    "board": "main",
-   "name": "R76",
+   "name": "R68",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -5101,7 +4885,7 @@
    "ref": "R177",
    "block": "ch1",
    "board": "main",
-   "name": "R77",
+   "name": "R69",
    "value": "249k",
    "mpn": "CRCW0603249KFKEA",
    "manufacturer": "Vishay Dale",
@@ -5128,7 +4912,7 @@
    "ref": "R178",
    "block": "ch1",
    "board": "main",
-   "name": "R78",
+   "name": "R70",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -5155,7 +4939,7 @@
    "ref": "R179",
    "block": "ch1",
    "board": "main",
-   "name": "R79",
+   "name": "R71",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -5249,7 +5033,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -5294,7 +5078,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -5339,7 +5123,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -5384,7 +5168,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -5429,7 +5213,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -5456,7 +5240,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -5483,7 +5267,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -5510,7 +5294,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -8410,8 +8194,8 @@
    "block": "ch2",
    "board": "main",
    "name": "R38",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
+   "value": "1.96M",
+   "mpn": "TNPW12061M96BEEA",
    "manufacturer": "Vishay Draloric",
    "footprint": "Resistor_SMD:R_1206_3216Metric",
    "category": "resistor",
@@ -8427,7 +8211,88 @@
     "2": {
      "name": "",
      "type": "passive",
+     "net": "/ch2/CH2_PWH",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R260",
+   "block": "ch2",
+   "board": "main",
+   "name": "R39",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch2/CH2_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
      "net": "/ch2/CH2_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R261",
+   "block": "ch2",
+   "board": "main",
+   "name": "R40",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch2/CH2_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch2/CH2_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C253",
+   "block": "ch2",
+   "board": "main",
+   "name": "C44",
+   "value": "470n",
+   "mpn": "GRM188R71E474KA12D",
+   "manufacturer": "Murata",
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch2/CH2_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "TAP1",
      "nc": false
     }
    }
@@ -8436,7 +8301,7 @@
    "ref": "R228",
    "block": "ch2",
    "board": "main",
-   "name": "R39",
+   "name": "R41",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8463,7 +8328,7 @@
    "ref": "R229",
    "block": "ch2",
    "board": "main",
-   "name": "R40",
+   "name": "R42",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8490,7 +8355,7 @@
    "ref": "C244",
    "block": "ch2",
    "board": "main",
-   "name": "C44",
+   "name": "C45",
    "value": "470n",
    "mpn": "GRM188R71E474KA12D",
    "manufacturer": "Murata",
@@ -8517,7 +8382,7 @@
    "ref": "R230",
    "block": "ch2",
    "board": "main",
-   "name": "R41",
+   "name": "R43",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8544,7 +8409,7 @@
    "ref": "R231",
    "block": "ch2",
    "board": "main",
-   "name": "R42",
+   "name": "R44",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8571,7 +8436,7 @@
    "ref": "R256",
    "block": "ch2",
    "board": "main",
-   "name": "R43",
+   "name": "R45",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8598,7 +8463,7 @@
    "ref": "R257",
    "block": "ch2",
    "board": "main",
-   "name": "R44",
+   "name": "R46",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -8622,149 +8487,14 @@
    }
   },
   {
-   "ref": "R232",
-   "block": "ch2",
-   "board": "main",
-   "name": "R45",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R233",
-   "block": "ch2",
-   "board": "main",
-   "name": "R46",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C245",
-   "block": "ch2",
-   "board": "main",
-   "name": "C45",
-   "value": "470n",
-   "mpn": "GRM188R71E474KA12D",
-   "manufacturer": "Murata",
-   "footprint": "Capacitor_SMD:C_0603_1608Metric",
-   "category": "capacitor_ceramic",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R260",
-   "block": "ch2",
-   "board": "main",
-   "name": "R47",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP3",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWH_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R261",
-   "block": "ch2",
-   "board": "main",
-   "name": "R48",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWH_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWH_M2",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R262",
    "block": "ch2",
    "board": "main",
-   "name": "R49",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R47",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -8772,13 +8502,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch2/CH2_PWH_M2",
+     "net": "/ch2/CH2_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch2/CH2_PWH_M3",
+     "net": "/ch2/CH2_PWL",
      "nc": false
     }
    }
@@ -8787,11 +8517,11 @@
    "ref": "R263",
    "block": "ch2",
    "board": "main",
-   "name": "R50",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R48",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -8799,73 +8529,19 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch2/CH2_PWH_M3",
+     "net": "/ch2/CH2_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch2/CH2_PWH",
+     "net": "/ch2/CH2_PWL",
      "nc": false
     }
    }
   },
   {
-   "ref": "R264",
-   "block": "ch2",
-   "board": "main",
-   "name": "R51",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R265",
-   "block": "ch2",
-   "board": "main",
-   "name": "R52",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C253",
+   "ref": "C245",
    "block": "ch2",
    "board": "main",
    "name": "C46",
@@ -8880,7 +8556,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch2/CH2_PWH",
+     "net": "/ch2/CH2_PHI",
      "nc": false
     },
     "2": {
@@ -8892,118 +8568,10 @@
    }
   },
   {
-   "ref": "R266",
+   "ref": "R232",
    "block": "ch2",
    "board": "main",
-   "name": "R53",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP3",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R267",
-   "block": "ch2",
-   "board": "main",
-   "name": "R54",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R268",
-   "block": "ch2",
-   "board": "main",
-   "name": "R55",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M2",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M3",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R269",
-   "block": "ch2",
-   "board": "main",
-   "name": "R56",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL_M3",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch2/CH2_PWL",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R270",
-   "block": "ch2",
-   "board": "main",
-   "name": "R57",
+   "name": "R49",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9027,10 +8595,10 @@
    }
   },
   {
-   "ref": "R271",
+   "ref": "R233",
    "block": "ch2",
    "board": "main",
-   "name": "R58",
+   "name": "R50",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9084,7 +8652,7 @@
    "ref": "R234",
    "block": "ch2",
    "board": "main",
-   "name": "R59",
+   "name": "R51",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9111,7 +8679,7 @@
    "ref": "R235",
    "block": "ch2",
    "board": "main",
-   "name": "R60",
+   "name": "R52",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9138,7 +8706,7 @@
    "ref": "R236",
    "block": "ch2",
    "board": "main",
-   "name": "R61",
+   "name": "R53",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9165,7 +8733,7 @@
    "ref": "R237",
    "block": "ch2",
    "board": "main",
-   "name": "R62",
+   "name": "R54",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -9246,7 +8814,7 @@
    "ref": "R238",
    "block": "ch2",
    "board": "main",
-   "name": "R63",
+   "name": "R55",
    "value": "24.9k",
    "mpn": "CRCW060324K9FKEA",
    "manufacturer": "Vishay Dale",
@@ -9300,7 +8868,7 @@
    "ref": "R239",
    "block": "ch2",
    "board": "main",
-   "name": "R64",
+   "name": "R56",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -9327,7 +8895,7 @@
    "ref": "R240",
    "block": "ch2",
    "board": "main",
-   "name": "R65",
+   "name": "R57",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -9381,7 +8949,7 @@
    "ref": "R241",
    "block": "ch2",
    "board": "main",
-   "name": "R66",
+   "name": "R58",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -9435,7 +9003,7 @@
    "ref": "R242",
    "block": "ch2",
    "board": "main",
-   "name": "R67",
+   "name": "R59",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -9462,7 +9030,7 @@
    "ref": "R243",
    "block": "ch2",
    "board": "main",
-   "name": "R68",
+   "name": "R60",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -9489,7 +9057,7 @@
    "ref": "R244",
    "block": "ch2",
    "board": "main",
-   "name": "R69",
+   "name": "R61",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -9516,7 +9084,7 @@
    "ref": "R246",
    "block": "ch2",
    "board": "main",
-   "name": "R70",
+   "name": "R62",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -9543,7 +9111,7 @@
    "ref": "R245",
    "block": "ch2",
    "board": "main",
-   "name": "R71",
+   "name": "R63",
    "value": "750",
    "mpn": "CRCW0603750RFKEA",
    "manufacturer": "Vishay Dale",
@@ -9720,7 +9288,7 @@
    "ref": "R272",
    "block": "ch2",
    "board": "main",
-   "name": "R72",
+   "name": "R64",
    "value": "825",
    "mpn": "CRCW0603825RFKEA",
    "manufacturer": "Vishay Dale",
@@ -9980,7 +9548,7 @@
    "ref": "R273",
    "block": "ch2",
    "board": "main",
-   "name": "R73",
+   "name": "R65",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -10007,7 +9575,7 @@
    "ref": "R274",
    "block": "ch2",
    "board": "main",
-   "name": "R74",
+   "name": "R66",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -10034,7 +9602,7 @@
    "ref": "R275",
    "block": "ch2",
    "board": "main",
-   "name": "R75",
+   "name": "R67",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -10061,7 +9629,7 @@
    "ref": "R276",
    "block": "ch2",
    "board": "main",
-   "name": "R76",
+   "name": "R68",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -10088,7 +9656,7 @@
    "ref": "R277",
    "block": "ch2",
    "board": "main",
-   "name": "R77",
+   "name": "R69",
    "value": "249k",
    "mpn": "CRCW0603249KFKEA",
    "manufacturer": "Vishay Dale",
@@ -10115,7 +9683,7 @@
    "ref": "R278",
    "block": "ch2",
    "board": "main",
-   "name": "R78",
+   "name": "R70",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -10142,7 +9710,7 @@
    "ref": "R279",
    "block": "ch2",
    "board": "main",
-   "name": "R79",
+   "name": "R71",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -10236,7 +9804,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -10281,7 +9849,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -10326,7 +9894,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -10371,7 +9939,7 @@
    "footprint": "Package_SON:VSON-8_3.3x3.3mm_P0.65mm_NexFET",
    "category": "mosfet",
    "dnp": false,
-   "p_diss": 38.06,
+   "p_diss": 0.4,
    "pins": {
     "1": {
      "name": "S",
@@ -10416,7 +9984,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -10443,7 +10011,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -10470,7 +10038,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -10497,7 +10065,7 @@
    "footprint": "Resistor_SMD:R_2816_7142Metric",
    "category": "resistor",
    "dnp": false,
-   "p_diss": 117.15,
+   "p_diss": 1.24,
    "pins": {
     "1": {
      "name": "",
@@ -13397,8 +12965,8 @@
    "block": "ch3",
    "board": "main",
    "name": "R38",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
+   "value": "1.96M",
+   "mpn": "TNPW12061M96BEEA",
    "manufacturer": "Vishay Draloric",
    "footprint": "Resistor_SMD:R_1206_3216Metric",
    "category": "resistor",
@@ -13414,7 +12982,88 @@
     "2": {
      "name": "",
      "type": "passive",
+     "net": "/ch3/CH3_PWH",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R360",
+   "block": "ch3",
+   "board": "main",
+   "name": "R39",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch3/CH3_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
      "net": "/ch3/CH3_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "R361",
+   "block": "ch3",
+   "board": "main",
+   "name": "R40",
+   "value": "30.9k",
+   "mpn": "CRCW060330K9FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
+   "category": "resistor",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch3/CH3_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch3/CH3_PLO",
+     "nc": false
+    }
+   }
+  },
+  {
+   "ref": "C353",
+   "block": "ch3",
+   "board": "main",
+   "name": "C44",
+   "value": "470n",
+   "mpn": "GRM188R71E474KA12D",
+   "manufacturer": "Murata",
+   "footprint": "Capacitor_SMD:C_0603_1608Metric",
+   "category": "capacitor_ceramic",
+   "dnp": false,
+   "p_diss": null,
+   "pins": {
+    "1": {
+     "name": "",
+     "type": "passive",
+     "net": "/ch3/CH3_PWH",
+     "nc": false
+    },
+    "2": {
+     "name": "",
+     "type": "passive",
+     "net": "TAP2",
      "nc": false
     }
    }
@@ -13423,7 +13072,7 @@
    "ref": "R328",
    "block": "ch3",
    "board": "main",
-   "name": "R39",
+   "name": "R41",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13450,7 +13099,7 @@
    "ref": "R329",
    "block": "ch3",
    "board": "main",
-   "name": "R40",
+   "name": "R42",
    "value": "1.58M",
    "mpn": "TNPW12061M58BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13477,7 +13126,7 @@
    "ref": "C344",
    "block": "ch3",
    "board": "main",
-   "name": "C44",
+   "name": "C45",
    "value": "470n",
    "mpn": "GRM188R71E474KA12D",
    "manufacturer": "Murata",
@@ -13504,7 +13153,7 @@
    "ref": "R330",
    "block": "ch3",
    "board": "main",
-   "name": "R41",
+   "name": "R43",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13531,7 +13180,7 @@
    "ref": "R331",
    "block": "ch3",
    "board": "main",
-   "name": "R42",
+   "name": "R44",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13558,7 +13207,7 @@
    "ref": "R356",
    "block": "ch3",
    "board": "main",
-   "name": "R43",
+   "name": "R45",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13585,7 +13234,7 @@
    "ref": "R357",
    "block": "ch3",
    "board": "main",
-   "name": "R44",
+   "name": "R46",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -13609,149 +13258,14 @@
    }
   },
   {
-   "ref": "R332",
-   "block": "ch3",
-   "board": "main",
-   "name": "R45",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R333",
-   "block": "ch3",
-   "board": "main",
-   "name": "R46",
-   "value": "1.74M",
-   "mpn": "TNPW12061M74BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C345",
-   "block": "ch3",
-   "board": "main",
-   "name": "C45",
-   "value": "470n",
-   "mpn": "GRM188R71E474KA12D",
-   "manufacturer": "Murata",
-   "footprint": "Capacitor_SMD:C_0603_1608Metric",
-   "category": "capacitor_ceramic",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PHI",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R360",
-   "block": "ch3",
-   "board": "main",
-   "name": "R47",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP4",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWH_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R361",
-   "block": "ch3",
-   "board": "main",
-   "name": "R48",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWH_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWH_M2",
-     "nc": false
-    }
-   }
-  },
-  {
    "ref": "R362",
    "block": "ch3",
    "board": "main",
-   "name": "R49",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R47",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -13759,13 +13273,13 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch3/CH3_PWH_M2",
+     "net": "/ch3/CH3_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch3/CH3_PWH_M3",
+     "net": "/ch3/CH3_PWL",
      "nc": false
     }
    }
@@ -13774,11 +13288,11 @@
    "ref": "R363",
    "block": "ch3",
    "board": "main",
-   "name": "R50",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
+   "name": "R48",
+   "value": "36.5k",
+   "mpn": "CRCW060336K5FKEA",
+   "manufacturer": "Vishay Dale",
+   "footprint": "Resistor_SMD:R_0603_1608Metric",
    "category": "resistor",
    "dnp": false,
    "p_diss": null,
@@ -13786,73 +13300,19 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch3/CH3_PWH_M3",
+     "net": "/ch3/CH3_PHI",
      "nc": false
     },
     "2": {
      "name": "",
      "type": "passive",
-     "net": "/ch3/CH3_PWH",
+     "net": "/ch3/CH3_PWL",
      "nc": false
     }
    }
   },
   {
-   "ref": "R364",
-   "block": "ch3",
-   "board": "main",
-   "name": "R51",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R365",
-   "block": "ch3",
-   "board": "main",
-   "name": "R52",
-   "value": "1.62M",
-   "mpn": "TNPW12061M62BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWH",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "C353",
+   "ref": "C345",
    "block": "ch3",
    "board": "main",
    "name": "C46",
@@ -13867,7 +13327,7 @@
     "1": {
      "name": "",
      "type": "passive",
-     "net": "/ch3/CH3_PWH",
+     "net": "/ch3/CH3_PHI",
      "nc": false
     },
     "2": {
@@ -13879,118 +13339,10 @@
    }
   },
   {
-   "ref": "R366",
+   "ref": "R332",
    "block": "ch3",
    "board": "main",
-   "name": "R53",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "TAP4",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M1",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R367",
-   "block": "ch3",
-   "board": "main",
-   "name": "R54",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M1",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M2",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R368",
-   "block": "ch3",
-   "board": "main",
-   "name": "R55",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M2",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M3",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R369",
-   "block": "ch3",
-   "board": "main",
-   "name": "R56",
-   "value": "2M",
-   "mpn": "TNPW12062M00BEEA",
-   "manufacturer": "Vishay Draloric",
-   "footprint": "Resistor_SMD:R_1206_3216Metric",
-   "category": "resistor",
-   "dnp": false,
-   "p_diss": null,
-   "pins": {
-    "1": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL_M3",
-     "nc": false
-    },
-    "2": {
-     "name": "",
-     "type": "passive",
-     "net": "/ch3/CH3_PWL",
-     "nc": false
-    }
-   }
-  },
-  {
-   "ref": "R370",
-   "block": "ch3",
-   "board": "main",
-   "name": "R57",
+   "name": "R49",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14014,10 +13366,10 @@
    }
   },
   {
-   "ref": "R371",
+   "ref": "R333",
    "block": "ch3",
    "board": "main",
-   "name": "R58",
+   "name": "R50",
    "value": "1.7M",
    "mpn": "TNPW12061M70BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14071,7 +13423,7 @@
    "ref": "R334",
    "block": "ch3",
    "board": "main",
-   "name": "R59",
+   "name": "R51",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14098,7 +13450,7 @@
    "ref": "R335",
    "block": "ch3",
    "board": "main",
-   "name": "R60",
+   "name": "R52",
    "value": "2M",
    "mpn": "TNPW12062M00BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14125,7 +13477,7 @@
    "ref": "R336",
    "block": "ch3",
    "board": "main",
-   "name": "R61",
+   "name": "R53",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14152,7 +13504,7 @@
    "ref": "R337",
    "block": "ch3",
    "board": "main",
-   "name": "R62",
+   "name": "R54",
    "value": "1.85M",
    "mpn": "TNPW12061M85BEEA",
    "manufacturer": "Vishay Draloric",
@@ -14233,7 +13585,7 @@
    "ref": "R338",
    "block": "ch3",
    "board": "main",
-   "name": "R63",
+   "name": "R55",
    "value": "24.9k",
    "mpn": "CRCW060324K9FKEA",
    "manufacturer": "Vishay Dale",
@@ -14287,7 +13639,7 @@
    "ref": "R339",
    "block": "ch3",
    "board": "main",
-   "name": "R64",
+   "name": "R56",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -14314,7 +13666,7 @@
    "ref": "R340",
    "block": "ch3",
    "board": "main",
-   "name": "R65",
+   "name": "R57",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -14368,7 +13720,7 @@
    "ref": "R341",
    "block": "ch3",
    "board": "main",
-   "name": "R66",
+   "name": "R58",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -14422,7 +13774,7 @@
    "ref": "R342",
    "block": "ch3",
    "board": "main",
-   "name": "R67",
+   "name": "R59",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -14449,7 +13801,7 @@
    "ref": "R343",
    "block": "ch3",
    "board": "main",
-   "name": "R68",
+   "name": "R60",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -14476,7 +13828,7 @@
    "ref": "R344",
    "block": "ch3",
    "board": "main",
-   "name": "R69",
+   "name": "R61",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -14503,7 +13855,7 @@
    "ref": "R346",
    "block": "ch3",
    "board": "main",
-   "name": "R70",
+   "name": "R62",
    "value": "10k",
    "mpn": "CRCW060310K0FKEA",
    "manufacturer": "Vishay Dale",
@@ -14530,7 +13882,7 @@
    "ref": "R345",
    "block": "ch3",
    "board": "main",
-   "name": "R71",
+   "name": "R63",
    "value": "750",
    "mpn": "CRCW0603750RFKEA",
    "manufacturer": "Vishay Dale",
@@ -14707,7 +14059,7 @@
    "ref": "R372",
    "block": "ch3",
    "board": "main",
-   "name": "R72",
+   "name": "R64",
    "value": "825",
    "mpn": "CRCW0603825RFKEA",
    "manufacturer": "Vishay Dale",
@@ -14967,7 +14319,7 @@
    "ref": "R373",
    "block": "ch3",
    "board": "main",
-   "name": "R73",
+   "name": "R65",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -14994,7 +14346,7 @@
    "ref": "R374",
    "block": "ch3",
    "board": "main",
-   "name": "R74",
+   "name": "R66",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -15021,7 +14373,7 @@
    "ref": "R375",
    "block": "ch3",
    "board": "main",
-   "name": "R75",
+   "name": "R67",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -15048,7 +14400,7 @@
    "ref": "R376",
    "block": "ch3",
    "board": "main",
-   "name": "R76",
+   "name": "R68",
    "value": "100k",
    "mpn": "CRCW0603100KFKEA",
    "manufacturer": "Vishay Dale",
@@ -15075,7 +14427,7 @@
    "ref": "R377",
    "block": "ch3",
    "board": "main",
-   "name": "R77",
+   "name": "R69",
    "value": "249k",
    "mpn": "CRCW0603249KFKEA",
    "manufacturer": "Vishay Dale",
@@ -15102,7 +14454,7 @@
    "ref": "R378",
    "block": "ch3",
    "board": "main",
-   "name": "R78",
+   "name": "R70",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -15129,7 +14481,7 @@
    "ref": "R379",
    "block": "ch3",
    "board": "main",
-   "name": "R79",
+   "name": "R71",
    "value": "4.99M",
    "mpn": "CRCW06034M99FKEA",
    "manufacturer": "Vishay Dale",
@@ -15863,7 +15215,7 @@
     0.0
    ],
    "kind": "ground",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": false,
    "nodes": [
     [
@@ -16083,22 +15435,6 @@
      "2"
     ],
     [
-     "R164",
-     "2"
-    ],
-    [
-     "R165",
-     "2"
-    ],
-    [
-     "R170",
-     "2"
-    ],
-    [
-     "R171",
-     "2"
-    ],
-    [
      "R174",
      "2"
     ],
@@ -16188,7 +15524,7 @@
     0.0
    ],
    "kind": "ground",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": true,
    "nodes": [
     [
@@ -16220,7 +15556,7 @@
     0.0
    ],
    "kind": "ground",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": true,
    "nodes": [
     [
@@ -16244,7 +15580,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": false,
    "nodes": [
     [
@@ -16568,22 +15904,6 @@
      "2"
     ],
     [
-     "R264",
-     "2"
-    ],
-    [
-     "R265",
-     "2"
-    ],
-    [
-     "R270",
-     "2"
-    ],
-    [
-     "R271",
-     "2"
-    ],
-    [
      "R274",
      "2"
     ],
@@ -16689,7 +16009,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -16721,7 +16041,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -16745,7 +16065,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": false,
    "nodes": [
     [
@@ -17045,14 +16365,6 @@
      "2"
     ],
     [
-     "R160",
-     "1"
-    ],
-    [
-     "R166",
-     "1"
-    ],
-    [
      "R204",
      "2"
     ],
@@ -17126,22 +16438,6 @@
     ],
     [
      "R344",
-     "2"
-    ],
-    [
-     "R364",
-     "2"
-    ],
-    [
-     "R365",
-     "2"
-    ],
-    [
-     "R370",
-     "2"
-    ],
-    [
-     "R371",
      "2"
     ],
     [
@@ -17254,7 +16550,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -17286,7 +16582,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -17310,7 +16606,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": false,
    "nodes": [
     [
@@ -17454,14 +16750,6 @@
      "2"
     ],
     [
-     "R260",
-     "1"
-    ],
-    [
-     "R266",
-     "1"
-    ],
-    [
      "R304",
      "2"
     ],
@@ -17515,7 +16803,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -17547,7 +16835,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 8.9,
+   "i_max": 8.5,
    "external": true,
    "nodes": [
     [
@@ -17571,7 +16859,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": false,
    "nodes": [
     [
@@ -17631,14 +16919,6 @@
      "2"
     ],
     [
-     "R360",
-     "1"
-    ],
-    [
-     "R366",
-     "1"
-    ],
-    [
      "U305",
      "8"
     ]
@@ -17656,7 +16936,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": true,
    "nodes": [
     [
@@ -17688,7 +16968,7 @@
     20.0
    ],
    "kind": "power",
-   "i_max": 4.5,
+   "i_max": 4.3,
    "external": true,
    "nodes": [
     [
@@ -17866,7 +17146,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -17922,7 +17202,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -17978,7 +17258,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -18034,7 +17314,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -18855,7 +18135,7 @@
    ],
    "v": [
     0.0,
-    21.8
+    21.7
    ],
    "kind": "sense",
    "i_max": null,
@@ -18879,7 +18159,7 @@
    ],
    "v": [
     0.0,
-    12.7
+    12.6
    ],
    "kind": "sense",
    "i_max": null,
@@ -18896,6 +18176,42 @@
    ]
   },
   {
+   "name": "/ch1/CH1_PWH",
+   "domain": "B1",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.68
+   ],
+   "kind": "sense",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C153",
+     "1"
+    ],
+    [
+     "R155",
+     "2"
+    ],
+    [
+     "R160",
+     "1"
+    ],
+    [
+     "R161",
+     "1"
+    ],
+    [
+     "U111",
+     "6"
+    ]
+   ]
+  },
+  {
    "name": "/ch1/CH1_PLO",
    "domain": "B1",
    "boards": [
@@ -18903,7 +18219,7 @@
    ],
    "v": [
     0.0,
-    3.59
+    3.61
    ],
    "kind": "sense",
    "i_max": null,
@@ -18922,7 +18238,11 @@
      "1"
     ],
     [
-     "R155",
+     "R160",
+     "2"
+    ],
+    [
+     "R161",
      "2"
     ],
     [
@@ -19022,200 +18342,20 @@
      "1"
     ],
     [
-     "R132",
-     "1"
-    ],
-    [
-     "R133",
-     "1"
-    ],
-    [
      "R157",
      "2"
     ],
     [
+     "R162",
+     "1"
+    ],
+    [
+     "R163",
+     "1"
+    ],
+    [
      "U108",
      "10"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWH_M1",
-   "domain": "CH1_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    30.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R160",
-     "2"
-    ],
-    [
-     "R161",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWH_M2",
-   "domain": "B1",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R161",
-     "2"
-    ],
-    [
-     "R162",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWH_M3",
-   "domain": "B1",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R162",
-     "2"
-    ],
-    [
-     "R163",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWH",
-   "domain": "B1",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    3.68
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "C153",
-     "1"
-    ],
-    [
-     "R163",
-     "2"
-    ],
-    [
-     "R164",
-     "1"
-    ],
-    [
-     "R165",
-     "1"
-    ],
-    [
-     "U111",
-     "6"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWL_M1",
-   "domain": "CH1_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    31.0
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R166",
-     "2"
-    ],
-    [
-     "R167",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWL_M2",
-   "domain": "B1",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R167",
-     "2"
-    ],
-    [
-     "R168",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch1/CH1_PWL_M3",
-   "domain": "B1",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R168",
-     "2"
-    ],
-    [
-     "R169",
-     "1"
     ]
    ]
   },
@@ -19227,7 +18367,7 @@
    ],
    "v": [
     0.0,
-    3.84
+    3.83
    ],
    "kind": "sense",
    "i_max": null,
@@ -19238,16 +18378,20 @@
      "1"
     ],
     [
-     "R169",
+     "R132",
+     "1"
+    ],
+    [
+     "R133",
+     "1"
+    ],
+    [
+     "R162",
      "2"
     ],
     [
-     "R170",
-     "1"
-    ],
-    [
-     "R171",
-     "1"
+     "R163",
+     "2"
     ],
     [
      "U111",
@@ -20170,7 +19314,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -20226,7 +19370,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -20282,7 +19426,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -20338,7 +19482,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -21159,7 +20303,7 @@
    ],
    "v": [
     0.0,
-    21.8
+    21.7
    ],
    "kind": "sense",
    "i_max": null,
@@ -21183,7 +20327,7 @@
    ],
    "v": [
     0.0,
-    12.7
+    12.6
    ],
    "kind": "sense",
    "i_max": null,
@@ -21200,6 +20344,42 @@
    ]
   },
   {
+   "name": "/ch2/CH2_PWH",
+   "domain": "B2",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.68
+   ],
+   "kind": "sense",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C253",
+     "1"
+    ],
+    [
+     "R255",
+     "2"
+    ],
+    [
+     "R260",
+     "1"
+    ],
+    [
+     "R261",
+     "1"
+    ],
+    [
+     "U211",
+     "6"
+    ]
+   ]
+  },
+  {
    "name": "/ch2/CH2_PLO",
    "domain": "B2",
    "boards": [
@@ -21207,7 +20387,7 @@
    ],
    "v": [
     0.0,
-    3.59
+    3.61
    ],
    "kind": "sense",
    "i_max": null,
@@ -21226,7 +20406,11 @@
      "1"
     ],
     [
-     "R255",
+     "R260",
+     "2"
+    ],
+    [
+     "R261",
      "2"
     ],
     [
@@ -21326,200 +20510,20 @@
      "1"
     ],
     [
-     "R232",
-     "1"
-    ],
-    [
-     "R233",
-     "1"
-    ],
-    [
      "R257",
      "2"
     ],
     [
+     "R262",
+     "1"
+    ],
+    [
+     "R263",
+     "1"
+    ],
+    [
      "U208",
      "10"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWH_M1",
-   "domain": "CH2_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    30.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R260",
-     "2"
-    ],
-    [
-     "R261",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWH_M2",
-   "domain": "B2",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R261",
-     "2"
-    ],
-    [
-     "R262",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWH_M3",
-   "domain": "B2",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R262",
-     "2"
-    ],
-    [
-     "R263",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWH",
-   "domain": "B2",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    3.68
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "C253",
-     "1"
-    ],
-    [
-     "R263",
-     "2"
-    ],
-    [
-     "R264",
-     "1"
-    ],
-    [
-     "R265",
-     "1"
-    ],
-    [
-     "U211",
-     "6"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWL_M1",
-   "domain": "CH2_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    31.0
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R266",
-     "2"
-    ],
-    [
-     "R267",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWL_M2",
-   "domain": "B2",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R267",
-     "2"
-    ],
-    [
-     "R268",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch2/CH2_PWL_M3",
-   "domain": "B2",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R268",
-     "2"
-    ],
-    [
-     "R269",
-     "1"
     ]
    ]
   },
@@ -21531,7 +20535,7 @@
    ],
    "v": [
     0.0,
-    3.84
+    3.83
    ],
    "kind": "sense",
    "i_max": null,
@@ -21542,16 +20546,20 @@
      "1"
     ],
     [
-     "R269",
+     "R232",
+     "1"
+    ],
+    [
+     "R233",
+     "1"
+    ],
+    [
+     "R262",
      "2"
     ],
     [
-     "R270",
-     "1"
-    ],
-    [
-     "R271",
-     "1"
+     "R263",
+     "2"
     ],
     [
      "U211",
@@ -22474,7 +21482,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -22530,7 +21538,7 @@
     21.0
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -22586,7 +21594,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -22642,7 +21650,7 @@
     0.4
    ],
    "kind": "switching",
-   "i_max": 9.5,
+   "i_max": 9.1,
    "external": false,
    "nodes": [
     [
@@ -23463,7 +22471,7 @@
    ],
    "v": [
     0.0,
-    21.8
+    21.7
    ],
    "kind": "sense",
    "i_max": null,
@@ -23487,7 +22495,7 @@
    ],
    "v": [
     0.0,
-    12.7
+    12.6
    ],
    "kind": "sense",
    "i_max": null,
@@ -23504,6 +22512,42 @@
    ]
   },
   {
+   "name": "/ch3/CH3_PWH",
+   "domain": "B3",
+   "boards": [
+    "main"
+   ],
+   "v": [
+    0.0,
+    3.68
+   ],
+   "kind": "sense",
+   "i_max": null,
+   "external": false,
+   "nodes": [
+    [
+     "C353",
+     "1"
+    ],
+    [
+     "R355",
+     "2"
+    ],
+    [
+     "R360",
+     "1"
+    ],
+    [
+     "R361",
+     "1"
+    ],
+    [
+     "U311",
+     "6"
+    ]
+   ]
+  },
+  {
    "name": "/ch3/CH3_PLO",
    "domain": "B3",
    "boards": [
@@ -23511,7 +22555,7 @@
    ],
    "v": [
     0.0,
-    3.59
+    3.61
    ],
    "kind": "sense",
    "i_max": null,
@@ -23530,7 +22574,11 @@
      "1"
     ],
     [
-     "R355",
+     "R360",
+     "2"
+    ],
+    [
+     "R361",
      "2"
     ],
     [
@@ -23630,200 +22678,20 @@
      "1"
     ],
     [
-     "R332",
-     "1"
-    ],
-    [
-     "R333",
-     "1"
-    ],
-    [
      "R357",
      "2"
     ],
     [
+     "R362",
+     "1"
+    ],
+    [
+     "R363",
+     "1"
+    ],
+    [
      "U308",
      "10"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWH_M1",
-   "domain": "CH3_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    30.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R360",
-     "2"
-    ],
-    [
-     "R361",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWH_M2",
-   "domain": "B3",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R361",
-     "2"
-    ],
-    [
-     "R362",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWH_M3",
-   "domain": "B3",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.8
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R362",
-     "2"
-    ],
-    [
-     "R363",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWH",
-   "domain": "B3",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    3.68
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "C353",
-     "1"
-    ],
-    [
-     "R363",
-     "2"
-    ],
-    [
-     "R364",
-     "1"
-    ],
-    [
-     "R365",
-     "1"
-    ],
-    [
-     "U311",
-     "6"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWL_M1",
-   "domain": "CH3_SPAN",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    31.0
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R366",
-     "2"
-    ],
-    [
-     "R367",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWL_M2",
-   "domain": "B3",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    21.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R367",
-     "2"
-    ],
-    [
-     "R368",
-     "1"
-    ]
-   ]
-  },
-  {
-   "name": "/ch3/CH3_PWL_M3",
-   "domain": "B3",
-   "boards": [
-    "main"
-   ],
-   "v": [
-    0.0,
-    12.9
-   ],
-   "kind": "sense",
-   "i_max": null,
-   "external": false,
-   "nodes": [
-    [
-     "R368",
-     "2"
-    ],
-    [
-     "R369",
-     "1"
     ]
    ]
   },
@@ -23835,7 +22703,7 @@
    ],
    "v": [
     0.0,
-    3.84
+    3.83
    ],
    "kind": "sense",
    "i_max": null,
@@ -23846,16 +22714,20 @@
      "1"
     ],
     [
-     "R369",
+     "R332",
+     "1"
+    ],
+    [
+     "R333",
+     "1"
+    ],
+    [
+     "R362",
      "2"
     ],
     [
-     "R370",
-     "1"
-    ],
-    [
-     "R371",
-     "1"
+     "R363",
+     "2"
     ],
     [
      "U311",
