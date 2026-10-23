@@ -78,11 +78,20 @@ def _env():
     return env
 
 
-def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, log_path=None):
+# Freerouting's job clock starts after the JVM has started and the DSN is loaded; at its
+# job_timeout it asks the router to stop and waits up to 30 s for it to stop between items
+# (RoutingJobSchedulerActionThread.GRACE_PERIOD), then writes the session. A process is
+# killed only after that grace and the write: earlier, under load, there is no session.
+GRACE_S = 45.0
+
+
+def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
+          log_path=None):
     """Route `dsn` into `ses`. `passes` caps the autorouter passes (0 = until it stops
-    improving). Freerouting gets its own deadline inside `budget_s` (job_timeout), so on a
-    timeout it stops between items and still writes what it routed; the process is killed
-    only if it overruns by the margin. Returns a Run (ses None when nothing was written)."""
+    improving). Freerouting's own deadline (job_timeout) is `budget_s` less its start-up
+    (`margin_s`, default min(15 s, 10%)): it then stops between items and writes what it has
+    routed. The process is killed only at `hard_s` (default budget_s + GRACE_S). Returns a
+    Run (ses None when nothing was written)."""
     workdir = Path(workdir).resolve()
     dsn, ses = Path(dsn).resolve(), Path(ses).resolve()
     user = workdir / "fr-user"
@@ -90,8 +99,9 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     result = workdir / f"{ses.stem}.result.json"
     if ses.exists():
         ses.unlink()
-    margin = margin_s if margin_s is not None else max(15.0, min(120.0, 0.1 * budget_s))
+    margin = margin_s if margin_s is not None else min(15.0, 0.1 * budget_s)
     job_s = max(5.0, budget_s - margin)
+    hard = max(job_s + 5.0, hard_s if hard_s is not None else budget_s + GRACE_S)
     argv = [*command(), "-de", str(dsn), "-do", str(ses), "-mt", "1", "--gui.enabled=false", "-da",
             f"--user_data_path={user}", f"--router.result_json={result}",
             f"--router.job_timeout={_hms(job_s)}"]
@@ -104,7 +114,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
                          errors="replace", env=_env(), start_new_session=True)
     timed_out = False
     try:
-        out, _ = p.communicate(timeout=budget_s)
+        out, _ = p.communicate(timeout=hard)
     except subprocess.TimeoutExpired:
         timed_out = True
         try:

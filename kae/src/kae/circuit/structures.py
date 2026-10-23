@@ -415,8 +415,8 @@ def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = '', token: str = ''):
         # no named input: the controller's power_in pins on decoupled rails it does not itself feed
         pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and p.net in b.r.rails
                 and b.r.caps_to.get(p.net) and not FB_PIN.match(p.fn) and not EN_PIN.match(p.fn) and not _downstream_of(b, p.net, ic)]
-        if any(p.ptype == 'power_in' for p in pins):
-            pins = [p for p in pins if p.ptype == 'power_in']
+        if any(b.r.sem(p) == 'supply' for p in pins):
+            pins = [p for p in pins if b.r.sem(p) == 'supply']
     # rank: named PVIN/VIN first, then nets with capacitors
     pins.sort(key=lambda p: (not re.match(r'^P?VIN', p.fn), -len(b.r.caps_to.get(p.net, ())), _natkey(p.number)))
     return pins
@@ -545,7 +545,7 @@ def _consumers(b: _B, rail, exclude=()):
     for p in b.nl.pins(rail):
         if p.ref in exclude or p.ref in out:
             continue
-        if b.k(p.ref) in LOAD_KINDS and (p.ptype in ('power_in', 'power_out') or PWR_PIN.match(p.fn) or IN_PIN.match(p.fn)):
+        if b.k(p.ref) in LOAD_KINDS and b.r.sem(p) in ('supply', 'supply_out'):
             out.append(p.ref)
     return out
 
@@ -616,7 +616,7 @@ def _converter(b: _B, L, lpart, swn, other):
             d_boost = (d, o)
     vin_pins = _vin_pins(b, ctrl, {swn, other}, suffix, token) if ctrl else []
     out_pins = [p for p in b.nl.parts[ctrl].active_pins() if OUT_PIN.match(p.fn) and p.net not in (swn,) and p.net not in b.g] if ctrl else []
-    ctrl_in_on_other = ctrl and any(p.net == other and (IN_PIN.match(p.fn) or p.ptype == 'power_in') for p in b.nl.parts[ctrl].active_pins())
+    ctrl_in_on_other = ctrl and any(p.net == other and b.r.sem(p) == 'supply' and not SW_PIN.match(p.fn) for p in b.nl.parts[ctrl].active_pins())
     sb, eb, sbo, ebo = 0.0, [], 0.0, []
     if vin_pins:
         sb += 2.0
@@ -894,17 +894,17 @@ def _power_pins(b: _B, ref):
         on_rail = n in b.r.rails or bool(b.r.caps_to.get(n))
         if not on_rail:
             continue
-        if p.ptype == 'power_in' or PWR_PIN.match(p.fn) or IN_PIN.match(p.fn):
+        sem = b.r.sem(p)
+        if sem == 'supply':
             func = 'load'
             if sub in REGULATOR_SUBS and (IN_PIN.match(p.fn) or re.match(r'^P?VIN', p.fn)):
                 func = 'regulator_input'
                 if {q.ref for q in b.nl.pins(n) if b.k(q.ref) != 'capacitor'} == {ref} and not re.match(r'^P?VIN', p.fn):
                     func = 'bypass'      # a converter's VCC/VDD bias pin on its own capacitor-only node (internal LDO)
             out.append((p, func))
-        elif p.ptype == 'power_out' or OUT_PIN.match(p.fn) or INT_OUT_PIN.search(p.fn) or \
-                re.match(r'^(VREFOUT|REFOUT|VREF)$', p.fn):
+        elif sem == 'supply_out' or re.match(r'^(VREFOUT|REFOUT|VREF)$', p.fn):
             if sub in REGULATOR_SUBS or b.k(ref) in ('ic', 'module'):
-                src = sub in REGULATOR_SUBS + ('load_switch',) and (OUT_PIN.match(p.fn) or p.ptype == 'power_out')
+                src = sub in REGULATOR_SUBS + ('load_switch',) and (OUT_PIN.match(p.fn) or p.ptype == 'power_out' or sem == 'supply_out')
                 func = 'regulator_output' if src else 'bypass'
                 out.append((p, func))
     return out
@@ -1778,7 +1778,7 @@ def heat(b: _B, cells) -> tuple[list, dict]:
             for p in part.active_pins():
                 if IN_PIN.match(p.fn) and b.volts(p.net):
                     vin = b.volts(p.net)
-                if (OUT_PIN.match(p.fn) or p.ptype == 'power_out') and b.volts(p.net):
+                if (OUT_PIN.match(p.fn) or b.r.sem(p) == 'supply_out') and b.volts(p.net):
                     vout = b.volts(p.net)
             vo = pr.attrs.get('vout', {}).get('value') if pr.attrs.get('vout') else None
             vout = vout or vo

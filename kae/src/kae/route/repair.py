@@ -570,8 +570,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             specctra.write(tree, dsn)
             budget = max(15.0, min(left() * 0.5, left() - 30))
             from .bridge import router_settings
+            grace = opts.get("router_grace", freerouting.GRACE_S)
             run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("passes") or 0,
                                     settings=router_settings(plan, opts, repair=True), budget_s=budget,
+                                    hard_s=max(budget, min(budget + grace, left() - 15)),
                                     log_path=rdir / "freerouting.log")
             rec["router"] = dict(seconds=run.seconds, state=run.report.get("final_state"),
                                  score=run.report.get("router_score"))

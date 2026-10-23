@@ -93,16 +93,32 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         log(f"plan: {len(p.classes)} classes, {len(p.obstacle_classes)} obstacle classes, "
             f"{report['translate'].get('obstacles')} obstacles ({time.monotonic() - t0:.1f}s)")
 
-        # 3: route
+        # 3: route. Freerouting stops itself at its job timeout and writes what it has; it is
+        # killed only past its grace period, inside our deadline. If it still writes nothing,
+        # one quick pass gives a partial board, and the output is never missing.
         settings = router_settings(p, opts)
-        budget = max(20.0, left() * (opts["router_share"] if opts.get("repair") else 0.9))
-        run = freerouting.route(dsn, wd / "board.ses", wd, passes=opts.get("passes") or 0,
-                                settings=settings, budget_s=budget, log_path=wd / "freerouting.log")
+        reserve = 20.0 if opts.get("repair") else 10.0
+        grace = opts.get("router_grace", freerouting.GRACE_S)
+        share = opts.get("router_share") if opts.get("repair") else opts.get("router_share_alone", 0.9)
+        budget = max(20.0, left() * share)
+        run = freerouting.route(dsn, wd / "board.ses", wd, passes=opts.get("passes") or 0, settings=settings,
+                                budget_s=budget, hard_s=max(budget, min(budget + grace, left() - reserve)),
+                                log_path=wd / "freerouting.log")
         report["router"] = dict(seconds=run.seconds, rc=run.rc, timed_out=run.timed_out, report=run.report,
                                 settings=settings)
         log(f"freerouting: rc={run.rc} {run.seconds:.1f}s state={run.report.get('final_state')} "
             f"score={run.report.get('router_score')}")
+        if run.ses is None and left() > 25:
+            quick = max(10.0, min(60.0, (left() - 15) * 0.5))
+            log(f"freerouting wrote no session ({'killed' if run.timed_out else 'rc=' + str(run.rc)}): "
+                f"one quick pass ({quick:.0f}s)")
+            run = freerouting.route(dsn, wd / "board_quick.ses", wd, passes=1, settings=settings, budget_s=quick,
+                                    hard_s=max(quick, min(quick + grace, left() - 10)),
+                                    log_path=wd / "freerouting_quick.log")
+            report["router_quick"] = dict(seconds=run.seconds, rc=run.rc, timed_out=run.timed_out,
+                                          report=run.report)
         if run.ses is None:
+            shutil.copy2(input_path, output_path)   # the input, unrouted: a board in every case
             report["status"] = "no_session"
             return report
 
