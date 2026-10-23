@@ -403,9 +403,9 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
             break
         i = queue.pop(0)
         p = P.parts[i]
-        # nearby first (the space may have changed), then evict smaller parts nearby, then
-        # anywhere on the board, then evict anywhere
-        for reach, evict_ok in ((local(i), False), (local(i), True), (max_d, False), (max_d, True)):
+        # nearby first (the space may have changed), then anywhere on the board (the global
+        # search is cheap), then evict smaller parts nearby, then anywhere
+        for reach, evict_ok in ((local(i), False), (max_d, False), (local(i), True), (max_d, True)):
             if evict_ok and not (ripup and ripups < max_ripups):
                 continue
             if not evict_ok:

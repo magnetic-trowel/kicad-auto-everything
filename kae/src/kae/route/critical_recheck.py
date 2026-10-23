@@ -798,9 +798,10 @@ def module_region(sess, mid, margin=1.0):
 
 
 def guard_zones(board, region, net, layer, name, min_area=0.5):
-    """Guard pours [(net, layer, rings, name)] over `region` on `layer`: inside the zones of
-    `net` there (the plane they guard) and outside every other net's zone on the layer, so
-    a guard never overlaps foreign copper pours (KiCad: zones_intersect)."""
+    """Guard pours [(net, layer, rings, name, priority)] over `region` on `layer`: inside the
+    zones of `net` there (the plane they guard), outside every other net's zone on the
+    layer, one priority above every zone on it (KiCad reports overlapping zones of equal
+    priority as zones_intersect, even of one net)."""
     from shapely.geometry import Polygon as _Poly
     own = [z.outline for z in board.zones if z.net == net and layer in z.layers and z.outline is not None
            and not (z.name or "").startswith("kae-crit:")]
@@ -810,10 +811,11 @@ def guard_zones(board, region, net, layer, name, min_area=0.5):
     other = [z.outline for z in board.zones if z.net and z.net != net and layer in z.layers and z.outline is not None]
     if other:
         g = g.difference(unary_union(other).buffer(0.05))
+    prio = 1 + max([int(z.priority or 0) for z in board.zones if layer in z.layers] or [0])
     out = []
     for part in getattr(g, "geoms", [g]):
         if isinstance(part, _Poly) and part.area > min_area:
-            out.append((net, layer, [list(part.exterior.coords)], name))
+            out.append((net, layer, [list(part.exterior.coords)], name, prio))
     return out
 
 
