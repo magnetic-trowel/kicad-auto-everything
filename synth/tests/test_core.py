@@ -290,3 +290,21 @@ def test_notes_are_not_object_names():
     d = mains_with_outputs()
     d.place.custom("label", obj="board", text="see B-5", note="B-5")
     assert "place.unknown_object" not in checks(run(d), "warning")
+
+
+def test_inherited_barriers_strictest_wins():
+    """Repro from the lead-acid encoding: barriers (B1,B4,1.5 mm) then (B1,B2,0.6 mm); a domain
+    floating on B1 is covered by both inherited rules and must keep 1.5 mm to B4."""
+    from kaesynth.emit.project import NetClasses, dru_text
+    d = stack(n=4)
+    d.domain("X", ref="T1")
+    d.net("XN", domain="X", v=(0, 5))
+    d.barrier("B1", "B4", grade="functional", v_work=60, creepage_mm=1.5, clearance_mm=1.5)
+    d.barrier("B1", "B2", grade="functional", v_work=15, creepage_mm=0.6, clearance_mm=0.6)
+    b = d.block("x")
+    for net in ("GND", "T1", "T2", "T3", "T4", "XN"):
+        r = b.add(two_pin("R", v_max=100))
+        d.nets[net].connect(r[1], r[2])
+    d.finalize()
+    text = dru_text(d, NetClasses(d).build())
+    assert text.index('"IR:barrier.B1.B2.inherited"') < text.index('"IR:barrier.B1.B4.inherited"')

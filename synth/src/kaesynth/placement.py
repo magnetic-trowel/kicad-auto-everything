@@ -190,7 +190,9 @@ class Placement:
         try:
             return f"net:{d.net_by_name(v).full_name}"
         except DesignError:
-            pass
+            local = [b.nets[v] for b in d.blocks if v in b.nets]
+            if len(local) == 1:
+                return f"net:{local[0].full_name}"
         if unknown is not None and v[0].isupper() and any(c.isdigit() for c in v) and v.upper() == v:
             unknown.append(v)
         return v

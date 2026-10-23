@@ -225,10 +225,11 @@ def dru_text(design, netclasses):
         return n
 
     # KiCad applies the last matching rule, so emit general before specific:
-    # 1. functional spacing between domain pairs of one root (IPC-2221B from their worst voltage),
-    # 2. barriers inherited through floating domains, shallow before deep,
-    # 3. barriers naming the nets' own domains,
-    # 4. exemptions for pads of one part that bridges domains (its package sets that spacing).
+    # 1. general rules — functional spacing between domain pairs of one root (IPC-2221B from their
+    #    worst voltage) and barriers inherited through floating domains — sorted by spacing so the
+    #    strictest of several covering one pair wins,
+    # 2. barriers naming the nets' own domains (the designer's explicit pair),
+    # 3. exemptions for pads of one part that bridges domains (its package sets that spacing).
     from ..checks import Checker
     ck = Checker(design)
     coated = bool(design.board_spec and design.board_spec.coating)
@@ -251,19 +252,24 @@ def dru_text(design, netclasses):
                 continue
             grouped.setdefault((da.name, mm), []).append((db.name, v))
             spaced.add(frozenset((da.name, db.name)))
-    for (a, mm), others in sorted(grouped.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+    general = []      # (clearance, creepage, lines): functional and inherited rules
+    for (a, mm), others in grouped.items():
         names = {o for o, _ in others}
         ca, cb = classes({a}, "A"), classes(names, "B")
         ca2, cb2 = classes(names, "A"), classes({a}, "B")
         worst = max(v for _, v in others)
-        lines.append(f"# functional spacing {a} to {', '.join(sorted(names))}: worst {worst:.4g} V, IPC-2221B {col}")
-        lines.append(f'(rule "IR:functional.{a}.{mm:g}mm"')
-        lines.append(f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")')
-        lines.append(f"  (constraint clearance (min {mm:g}mm)))")
-        lines.append("")
+        general.append((mm, 0.0, [
+            f"# functional spacing {a} to {', '.join(sorted(names))}: worst {worst:.4g} V, IPC-2221B {col}",
+            f'(rule "IR:functional.{a}.{mm:g}mm"',
+            f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")',
+            f"  (constraint clearance (min {mm:g}mm)))", ""]))
     emitted = []
     for direct in (False, True):
-        order = sorted(design.barriers, key=lambda b: (0 if direct else depth(b.a) + depth(b.b), GRADES[b.grade]))
+        order = sorted(design.barriers, key=lambda b: (GRADES[b.grade], b.clearance_mm, b.creepage_mm))
+        if direct:
+            # general rules sorted so that where several cover one pair the strictest comes last
+            for _, _, block in sorted(general, key=lambda g: (g[0], g[1])):
+                lines.extend(block)
         for bar in order:
             sa, sb = ({bar.a}, {bar.b}) if direct else sides(bar)
             if not direct and (sa, sb) == ({bar.a}, {bar.b}):
@@ -273,12 +279,15 @@ def dru_text(design, netclasses):
                 continue
             rid = f"IR:barrier.{bar.a}.{bar.b}" + ("" if direct else ".inherited")
             emitted.append(rid)
-            lines.append(f"# {bar.grade} insulation, {bar.v_work:g} V working, {bar.standard} {bar.source}".rstrip())
-            lines.append(f'(rule "{rid}"')
-            lines.append(f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")')
-            lines.append(f"  (constraint clearance (min {bar.clearance_mm:g}mm))")
-            lines.append(f"  (constraint creepage (min {bar.creepage_mm:g}mm)))")
-            lines.append("")
+            block = [f"# {bar.grade} insulation, {bar.v_work:g} V working, {bar.standard} {bar.source}".rstrip(),
+                     f'(rule "{rid}"',
+                     f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")',
+                     f"  (constraint clearance (min {bar.clearance_mm:g}mm))",
+                     f"  (constraint creepage (min {bar.creepage_mm:g}mm)))", ""]
+            if direct:
+                lines.extend(block)
+            else:
+                general.append((bar.clearance_mm, bar.creepage_mm, block))
     def inherited_pairs():
         out = set()
         for bar in design.barriers:

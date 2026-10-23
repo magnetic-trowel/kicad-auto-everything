@@ -6216,41 +6216,6 @@ relations:
     strength: tight
     source: auto
     note: "decoupling CH1_VREF"
-  - kind: edge
-    obj: P1
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: LG0
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: LG1
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: LG2
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: LG3
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: LG4
-    side: any
-    source: auto
-    note: "carries external nets"
-  - kind: edge
-    obj: P2
-    side: any
-    source: auto
-    note: "carries external nets"
 constraints:
   - id: rel.1
     from: region
@@ -9635,38 +9600,3 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.366
-    from: edge
-    kind: edge_placement
-    ref: P1
-    edge: any
-  - id: rel.367
-    from: edge
-    kind: edge_placement
-    ref: LG0
-    edge: any
-  - id: rel.368
-    from: edge
-    kind: edge_placement
-    ref: LG1
-    edge: any
-  - id: rel.369
-    from: edge
-    kind: edge_placement
-    ref: LG2
-    edge: any
-  - id: rel.370
-    from: edge
-    kind: edge_placement
-    ref: LG3
-    edge: any
-  - id: rel.371
-    from: edge
-    kind: edge_placement
-    ref: LG4
-    edge: any
-  - id: rel.372
-    from: edge
-    kind: edge_placement
-    ref: P2
-    edge: any

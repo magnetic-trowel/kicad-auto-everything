@@ -385,9 +385,9 @@ class Checker:
                     self.add("barrier.grade", "error",
                              f"{p.ref} ({p.value}) isolation is {iso.grade}; barrier {bar.a}/{bar.b} needs {bar.grade}",
                              [p.ref])
-                if bar.v_test_rms and iso.v_iso_rms < bar.v_test_rms:
+                if bar.v_test_rms and iso.withstand_rms < bar.v_test_rms:
                     self.add("barrier.withstand", "error",
-                             f"{p.ref} ({p.value}) withstand {iso.v_iso_rms:g} Vrms < required {bar.v_test_rms:g} Vrms",
+                             f"{p.ref} ({p.value}) withstand {iso.withstand_rms:.4g} Vrms < required {bar.v_test_rms:g} Vrms",
                              [p.ref])
                 if iso.v_work_rms and iso.v_work_rms * math.sqrt(2) < bar.v_work * 0.999 and iso.v_work_rms < bar.v_work:
                     self.add("barrier.working_voltage", "error",
@@ -577,11 +577,14 @@ class Checker:
             vr = defn.ratings.v_max
             if not farads or farads < 1e-6 or not vr:
                 continue
-            a, b = list(p.conn.values())
-            rng = self.vdiff(a, b)
-            if rng is None:
-                continue
-            v = max(abs(rng[0]), abs(rng[1]))
+            if p.v_across is not None:
+                v = p.v_across
+            else:
+                a, b = list(p.conn.values())
+                rng = self.vdiff(a, b)
+                if rng is None:
+                    continue
+                v = max(abs(rng[0]), abs(rng[1]))
             if v / vr > 0.5:
                 self.add("rating.dc_bias", "warning",
                          f"{p.ref} ({p.value} {diel} {vr:g} V) runs at {v:.3g} V ({v / vr:.0%} of rating): "

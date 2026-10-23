@@ -77,15 +77,24 @@ class Isolation:
     """Rated galvanic isolation between two pin groups (an approved barrier component)."""
     a: tuple
     b: tuple
-    v_iso_rms: float              # withstand/test voltage, Vrms, 60 s
+    v_iso_rms: float = None       # withstand/test voltage, Vrms, 60 s
     grade: str = "basic"          # basic | reinforced | functional
     v_work_rms: float = None      # rated working voltage across the barrier
     creepage_mm: float = None     # package creepage, for the layout to respect
     standard: str = ""
 
+    v_iso_dc: float = None        # DC withstand, if the datasheet gives DC only (counted as /sqrt(2) Vrms)
+
     def __post_init__(self):
         if self.grade not in GRADES:
             raise DesignError(f"isolation grade {self.grade!r} not in {list(GRADES)}")
+        if self.v_iso_rms is None and self.v_iso_dc is None:
+            raise DesignError("Isolation needs v_iso_rms or v_iso_dc")
+
+    @property
+    def withstand_rms(self):
+        dc = self.v_iso_dc / 2 ** 0.5 if self.v_iso_dc else 0.0
+        return max(self.v_iso_rms or 0.0, dc)
 
 
 @dataclass

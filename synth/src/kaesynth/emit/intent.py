@@ -36,7 +36,7 @@ def infer_relations(design, explicit):
                 out.append({"kind": "near", "a": c.ref, "b": f"{r.part.ref}.{r.pin.number}", "strength": "tight",
                             "source": "auto", "note": f"decoupling {rail.name}"})
     for p in d.all_parts():
-        if p.defn.category == "connector" and any(n.external for n in p.conn.values()):
+        if p.defn.category == "connector" and p.on_board and any(n.external for n in p.conn.values()):
             if not any(r["kind"] == "edge" and r.get("obj") in (p, p.ref) for r in explicit):
                 out.append({"kind": "edge", "obj": p.ref, "side": "any", "source": "auto",
                             "note": "carries external nets"})
