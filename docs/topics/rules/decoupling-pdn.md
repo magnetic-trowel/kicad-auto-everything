@@ -68,7 +68,7 @@
 - **MLCC DC bias** [S], not re-verified:
   - 0402/0603 X7R at 50–60% of rated V loses 30–50%; 1206/1210 lose 10–20%.
   - A 10 µF 6.3 V 0402 X5R ≈ 1.5 µF at 5 V.
-  - Derate to 50% of rated voltage as a start. Delivered C can be 30–70% below nominal ([Octopart](https://octopart.com/pulse/p/breaking-down-mlcc-surprises); [Ultra Librarian](https://www.ultralibrarian.com/2026/03/05/mlcc-capacitor-selection-ulc)).
+  - Use the part's vendor DC-bias curve (SimSurfing, K-SIM); 50% voltage derating is only a starting point. Delivered C can be 30–70% below nominal ([Octopart](https://octopart.com/pulse/p/breaking-down-mlcc-surprises); [Ultra Librarian](https://www.ultralibrarian.com/2026/03/05/mlcc-capacitor-selection-ulc)).
 - **Ferrite beads** (ADI, [Analog Dialogue 50-02](https://www.analog.com/media/en/analog-dialogue/volume-50/number-1/articles/ferrite-beads-demystified.pdf)) [P], VERIFIED:
   - Use at ~20% of rated DC current (the rating is a temperature limit). At 50%, L drops by up to 90% (TDK MPZ1608S101A: 100 Ω → 10 Ω at 100 MHz).
   - Bead + 10 nF resonated at ~2.5 MHz: **+10 dB** at a 2.4 MHz ripple.
@@ -87,7 +87,7 @@
    - MLCCs with bias-derated C, ESR and ESL;
    - mounting L from geometry (tables above);
    - plane C = εA/d plus spreading L.
-3. **Check:** |Z| ≤ Z_t across the band; each peak ≤1.57 × Z_t (hard, "robust") or ≤3 × (soft); report Q per peak; warn if ≥2 peaks have Q > ~2.
+3. **Check:** |Z| ≤ Z_t across the band; each peak ≤1.57 × Z_t ("robust") or ≤3 × (tolerated), reported as an S2 warning with the margin to both (PDN-09), not a reject; report Q per peak; warn if ≥2 peaks have Q > ~2.
 4. **Fix:** same-value caps (lower ESL), ESR-chosen values, or a controlled-ESR bulk cap (C ≈ L/R²). Never pile on decade values.
 5. **Cavity modes:** compute f₁₀/f₀₁ from the outline; flag clock harmonics or edges within ±10% of a mode; stitch and decouple at mode maxima (edges, corners).
 
@@ -96,11 +96,11 @@
 | ID | Rule | Numeric | Check | Sev |
 |---|---|---|---|---|
 | PDN-01 | Local HF cap per power pin, vias at the pads on the IC side | ≤2–3 mm; via-to-pad ≤0.5 mm; ≥1 via per pad (heuristic) | Nearest same-net-pair cap distance; via count and distance | S2 |
-| PDN-02 | Order by mounting L; bulk anywhere local | Bulk within ~10–20 mm | Smallest package closest | S3 |
+| PDN-02 | Order by mounting L; bulk anywhere local | Bulk within ~10–20 mm | Lowest estimated mounting L closest (package, pad-to-via distance, via depth) | S3 |
 | PDN-03 | Tight power/ground plane pair | ~38 pF/cm² at 0.1 mm | Stack-up adjacency and thickness | S3 |
 | PDN-04 | Cap count/values from the Z_t profile, not "0.1 µF per pin" | Z_t = ΔV/ΔI | Derated admittance sum vs Z_t | S3 |
-| PDN-05 | Derate MLCCs at DC bias | 50% start | BOM V_rail/V_rated + package | S2 |
-| PDN-06 | Bead only where needed; I_DC ≤20% rated; f_res = 1/(2π√(L·C)) not within ±50% of f_sw | — | BOM + datasheet L | S2 |
+| PDN-05 | Derate MLCCs at DC bias | Vendor bias curve; 50% voltage derating as a start | BOM: derated C from the part's bias curve (fallback V_rail/V_rated + package) | S2 |
+| PDN-06 | Bead only where needed; I_DC ≤20% rated; f_res = 1/(2π√(L·C)) well below f_sw. An undamped LC has gain ≥1 at every f_sw < √2·f_res, so RPA's "not within ±50%" window passes amplifying filters (f_res = 1.6·f_sw gives +4 dB) [I] | — | BOM + datasheet L; computed attenuation at f_sw and its harmonics; Q or damping | S2 |
 | PDN-08 | No plane cuts under referenced signals; stitch at layer changes | ≥1–2 GND vias near each reference-changing via | Nearest-GND-via distance; zone-void crossings | S2 |
 | PDN-09 | Peak ≤1.57 × Z_t (robust) / ≤3 × (risk) | — | RLC sweep | S2 |
 | PDN-10 | Flat profile, controlled-ESR damping | Q ≲ 1–2 | Q per peak | S3 |

@@ -41,7 +41,7 @@
 
 | ID | Rule | Check | Sev |
 |---|---|---|---|
-| AUD-01 | Decoupling loop-L budget per supply pin; smallest cap ≤1 mm | Loop-inductance estimator vs budget (reusable for any IC that publishes one) | S2 |
+| AUD-01 | Decoupling loop-L budget per supply pin; smallest cap ≤1 mm (TAS2xxx, SLAA896) | Loop-inductance estimator vs budget (reusable for any IC that publishes one) | S2 |
 | AUD-02 | OUT±, SW, BST never adjacent-layer to other signals without GND between | Layer-overlap scan, L±1 | S2 |
 | AUD-03 | Output filter at the IC; connector at the cap pads; snubbers at the IC | Distances IC → filter caps, connector → cap pads | S2 |
 | AUD-04 | Inputs on the quiet side, with floods; AGND to the EP centre | Region partition distance | S2 |

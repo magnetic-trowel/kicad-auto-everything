@@ -13,13 +13,13 @@
 - **VR corrections:**
   - The "output caps within ~2 mm" attribution is CORRECTED. MPS AN065's <2 mm applies to the **input** cap and the VCC cap ([AN065](https://media.monolithicpower.com/document/PCB_Layout_Design_Guidelines_for_NB67xSeries.pdf)).
   - "About 2 cm² per W to stay below 85 °C" is NOT FOUND in any primary source (PCBWay/Aivon blogs only) [V].
-- **Primary thermal rules instead** ([TI SNVA419](https://www.ti.com/lit/pdf/snva419)) [P]: ≥15.3 cm²/W of two-sided copper for a 40 °C rise in still air; EP vias at 1 mm pitch.
+- **Primary thermal rules instead** ([TI SNVA419](https://www.ti.com/lit/pdf/snva419)) [P]: a board-size rule of ≥15.3 cm² of two-sided solid copper per W of total dissipation for a 40 °C rise in still air; EP vias at 1 mm pitch.
 - **Rule PWR-16** (RPA §1): CIN/COUT at the pins, output through COUT before branching, copper sized for P. Severity S2.
 
 ## Recommendations for our system
 - **Role detector:** an LDO is an IC with IN/OUT/GND(/EN/FB) and no SW pin. Assign CIN/COUT by net.
 - **Pad-distance checks:** CIN to LDOIN/PGND; output trace must pass through the COUT pad before any branch or via (topology check).
-- **Feed (V_IN − V_OUT)·I_max into the thermal screener**, and flag when connected copper is below the SNVA419 requirement.
+- **Feed (V_IN − V_OUT)·I_max into the thermal screener** (per-part network) and into the board-level SNVA419 Rule 1 check (board area vs total dissipation). Rule 1 is not a per-part copper check.
 
 ## Conflicts and open questions
 - **No primary copper-area-vs-θ_JA curves** for specific LDO packages were extracted.

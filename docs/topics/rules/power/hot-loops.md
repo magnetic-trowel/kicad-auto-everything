@@ -1,9 +1,9 @@
 # Switching-converter hot loops: membership, measured loop inductance, plane proximity
 
 **TL;DR**
-- **Every source ranks the hot loop first.** The hot loop is the set of branches whose current steps from 0 to I at each switching edge. Make it as small as possible, place it first, keep it on one layer, and put a solid plane on the next layer.
+- **Every source ranks the hot loop first.** The hot loop is the set of branches whose current steps from 0 to I at each switching edge. Make it as small as possible, place it first, keep CIN on the IC's layer, and put a solid plane on the next layer (a vertical loop closes through it).
 - **Membership follows from the topology** (table below). Code can derive it from the netlist; the LLM only confirms the topology from the datasheet.
-- **Score loop inductance, not millimetres.** Measured anchors (AN-139, TI SNVA803, EPC) let us estimate nH from area and plane distance, then derive overshoot and efficiency loss.
+- **Score loop inductance, not millimetres.** Measured anchors let us estimate nH from area and plane distance, then derive overshoot and efficiency loss. TI SNVA803 and EPC measured real hot loops (2–20 mm²); AN-139's 187 vs 13 nH come from a 10 × 10 cm test loop at 27 MHz and give only the plane-distance trend.
 - **No primary source gives a pass/fail loop area.** Area tiers are our inference and should be soft scores.
 - **Exceptions:** supplies of 100 W or more may need an isolated return (Hubing). Vertical loops beat lateral loops on multilayer boards.
 
@@ -39,7 +39,7 @@
 | Thin plane | 0.27 mm | 21 nH | 1.61× |
 | Paper-thin insulation (text says 0.13 mm) | 0.12 mm | 13 nH | 1.0× |
 
-- A next-layer plane on a ≥4-layer board has ">3× less" inductance than a 1.5 mm 2-layer board and ">14× less" than a single-layer board. The mechanism is mirror eddy currents in the plane.
+- On the same test loop, a next-layer plane on a ≥4-layer board has ">3× less" inductance than a 1.5 mm 2-layer board and ">14× less" than a single-layer board. The mechanism is mirror eddy currents in the plane.
 - [Kueck Pt 2](https://www.analog.com/media/en/technical-documentation/technical-articles/Kueck_Layout_power_supply_part_2.pdf) recommends ≥4 layers, because a 2-layer board's shield sits more than 1 mm away.
 
 **Second hot loop.** The INTVCC/driver decoupling loop carries about 20 dB less RF energy than the input-cap loop. Make it small and shield it with a solid next-layer plane (AN-139 p.6; [Kueck Pt 1](https://www.analog.com/media/en/technical-documentation/technical-articles/kueck_layout_power_supply_part_1.pdf)) [P].
@@ -65,7 +65,7 @@
 | Threshold | Value | Evidence |
 |---|---|---|
 | Anchors | 20 mm² lateral → >1 nH; 2 mm² vertical → <0.5 nH | SNVA803 [P] |
-| Tiers (IRP §8) | ≤2 mm² excellent, ≤10 mm² acceptable, >20 mm² fail | [I] |
+| Tiers (IRP §8) | ≤2 mm² excellent, ≤10 mm² acceptable, >20 mm² poor (IRP calls it `fail`; a soft score, not a reject) | [I] |
 | Blog target | <10 mm² | [embeddedhardwaredesign](https://embeddedhardwaredesign.com/dc-dc-buck-converter-pcb-layout-design-guidelines/) [V] |
 | Boost target | <1 cm² | [Firgelli calculator](https://www.firgelliauto.com/blogs/engineering-calculators/boost-converter-calculator) [V] |
 | `max_mm2: 15` | YAML example in RPA | Unsourced |
@@ -76,9 +76,9 @@
 - **Hot-loop detector:** topology classifier (see [../checkers-power.md](../checkers-power.md)) → the member list from the table → an ordered pad polygon.
 - **Loop-inductance estimator:**
   - Inputs: area, L1→L2 dielectric, via count.
-  - Calibrate on the AN-139, SNVA803 and EPC data.
+  - Calibrate absolute nH on the SNVA803 and EPC data (2–20 mm² loops). Use AN-139 only for the trend with plane distance: its values are for a 10 × 10 cm test loop at 27 MHz.
   - Report nH, overshoot = L_est × di/dt (warn if >0.2 × V_DS,max, IRP §11), and EPC-style efficiency impact.
-- **Hard constraints:** same layer, 0 vias in the loop, a solid GND zone under the loop hull + 1 mm on the next layer.
+- **Hard constraint:** CIN on the IC's layer for integrated converters. Via count and next-layer GND coverage (loop hull + 1 mm) are scored through the loop-inductance estimate, not gated, so vertical loops (vias to the first inner plane, as in SNVA803 and EPC) stay legal.
 - **Soft constraints:** area tiers. Never treat a millimetre number as DRC.
 - **Rank priorities:** the INTVCC/driver loop second.
 - **Stack-up advice:** ≥4 layers with an L1–L2 dielectric ≤0.127 mm under power stages (soft, strong); prefer vertical loops when there is room.

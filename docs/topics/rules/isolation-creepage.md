@@ -92,7 +92,7 @@
 |---|---|---|---|---|
 | ISO-01 | Every net gets a voltage class; every net pair an insulation grade (functional/basic/reinforced): mains, primary bulk, secondary SELV, earthed chassis | Store V_RMS, V_peak, OVC, PD, MG, altitude | Missing classification = error | S1 |
 | ISO-02 | Creepage per pair = table(V_RMS, PD, MG) × (2 if reinforced) | e.g. 400 V, PD2, MG III: 4.0 basic / 8.0 reinforced. RPA's "250 V ≈ 2.5 mm MG III" is from memory, so verify it | Surface-path distance, routed around slots narrower than the PD minimum | S1 |
-| ISO-03 | Clearance = F.2 / 62368 Table 10 at the impulse voltage (one step up if reinforced) × altitude | 230 V OVC II → 2.5 kV → 1.5 mm (1.8); reinforced 4 kV → 3.0 (3.8) | 3-D straight-line, including across slots and bodies | S1 |
+| ISO-03 | Clearance = F.2 / 62368 Table 10 at the impulse voltage × altitude. Reinforced: one impulse step up under 60664-1; the Table 10 reinforced column under 62368-1 | 230 V OVC II → 2.5 kV → 1.5 mm (1.8); reinforced: 4 kV → 3.0 mm (60664-1), 3.6 mm (62368-1, worked example above; not the 4 kV basic 3.8) | 3-D straight-line, including across slots and bodies | S1 |
 | ISO-04 | Barrier keep-out: no copper, vias or pads on any layer under isolators, optos, transformer primary–secondary span; slot centreline under the barrier | Width ≥ required creepage | All-layer rule area per isolating footprint | S1 |
 | ISO-05 | Slots valid only above the PD minimum | ≥1.0 mm at PD2 | Edge.Cuts slot width | S1 |
 | ISO-06 | Spark gaps as copper features: secondary output → AC after the fuse, and across the CM choke | ~5.4–6.4 mm (PI, device-specific) | Footprint present + gap measured | S2 |
@@ -102,7 +102,7 @@
 
 ## Recommendations for our system
 - **Safety-spacing engine:** deterministic lookup (V_RMS, V_impulse from OVC, PD, MG/CTI, altitude, grade) → (creepage, clearance).
-- **Checkers:** a 2-D surface-geodesic creepage checker that respects only slots ≥ the PD minimum, and a 3-D clearance checker. See [checkers-power.md](checkers-power.md).
+- **Checkers:** KiCad 10.0's native `creepage` constraint for the surface path where it suffices, a custom 2-D surface-geodesic check that counts only slots ≥ the PD minimum where it does not, and a 3-D clearance checker. See [checkers-power.md](checkers-power.md).
 - **Classification workflow:** the LLM proposes voltage classes and grades from the schematic and product context, and **a human must confirm** (safety-critical). BMS stacks derive classes from cell index × cell voltage ([power/chargers-bms.md](power/chargers-bms.md)).
 - **Trap detector:** package CTI group vs PCB material group; suggest a slot.
 - **Escalation rule:** suggest hi-pot substitution only for functional isolation.
@@ -110,7 +110,7 @@
 ## Conflicts and open questions
 - **Paywalled standards:** IEC 60664-1, 62368-1 and 61010-1 were not read. Other Table 17 voltages, Table G.13 coated values and ES1/ES2/ES3 boundaries need the standard.
 - **Not researched:** mains input-filter layout (X/Y caps, CM choke, input/output separation) and MOV/fuse placement.
-- **KiCad 9+ reportedly has a creepage DRC constraint.** Unverified; check the installed version.
+- **KiCad 10.0 parses a native `creepage` constraint** (minimum surface path between nets; DRC key `creepage`) [P] ([drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)). Still to test: how it treats slots and the PD minimum slot width.
 
 ## Sources
 - research notes: [rules_power_rf_analog_dfm.md § 6, § 9, § 10, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B (DFM-10)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)

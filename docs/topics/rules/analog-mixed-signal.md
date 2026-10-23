@@ -63,7 +63,7 @@
 | ID | Rule | Numeric | Check | Class |
 |---|---|---|---|---|
 | AMS-01 | One continuous plane; analog/digital regions; ADC straddles with analog pins facing analog | No slots under signals | Region polygons from schematic blocks; cross-region tracks; void crossings | S2 |
-| AMS-02 | AGND+DGND to the analog plane at the package | Via at the pad | Net or net-tie at the package | Hard (S1); escape only for scheme-specified multi-converter parts |
+| AMS-02 | AGND+DGND to the analog plane at the package, for low-digital-current converters (MT-031) | Via at the pad | Net or net-tie at the package | Hard (S1); escape only for scheme-specified multi-converter parts |
 | AMS-03 | If split (datasheet-mandated): one bridge at the converter, crossings over it | Exactly one tie | Net-tie count; crossing tracks inside the bridge polygon | Hard (S1) |
 | AMS-04 | Converter decoupling to analog ground at the pins; digital interface buffered/series-terminated near the converter | — | PDN-01 with an AGND reference | S2 |
 | AMS-05 | Guard ring around ≥GΩ, electrometer or photodiode-TIA inputs | Ring encloses the input pin and the R_F high-Z end | Ring net = guard net | S1 for those circuits |
