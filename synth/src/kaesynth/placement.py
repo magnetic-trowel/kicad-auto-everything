@@ -14,7 +14,7 @@ STRENGTHS = ("tight", "close", "loose")
 EDGES = ("north", "south", "east", "west", "any")
 MAGNITUDES_MM = {"tight": 3.0, "close": 8.0, "loose": 20.0}
 # relation fields that hold free text, never object references
-TEXT_KEYS = {"kind", "note", "text", "what", "where", "why", "source", "layers", "side", "axis", "facing",
+TEXT_KEYS = {"kind", "note", "text", "what", "where", "why", "source", "source_doc", "layers", "side", "axis", "facing",
              "strength", "sink", "pitch", "relative", "covers", "walls", "region", "basis", "label"}
 
 
@@ -141,6 +141,18 @@ class Placement:
         key = "block" if isinstance(obj, Block) or (isinstance(obj, str) and obj.startswith("block:")) else "members"
         return self._rel("region", **{key: obj if key == "block" else (obj if isinstance(obj, list) else [obj])},
                          where=where, note=note)
+
+    def fixed(self, obj, x_mm, y_mm, rotation=0, side="top", source="", note=""):
+        """A position set by the mechanics (enclosure holes, mating connector, panel cut-out):
+        the only place a coordinate belongs in the intent. `source` must name the drawing."""
+        if not source:
+            raise DesignError("fixed(): give source= (the mechanical drawing or calculation the position comes from)")
+        return self._rel("fixed", obj=obj, x_mm=x_mm, y_mm=y_mm, rotation=rotation, side=side,
+                         source_doc=source, note=note)
+
+    def keepout_around(self, obj, radius_mm, what="all", layers="all", note=""):
+        """Keep `what` at least `radius_mm` from a part or pin (e.g. an antenna end, a terminal screw)."""
+        return self._rel("keepout_around", obj=obj, radius_mm=radius_mm, what=what, layers=layers, note=note)
 
     def custom(self, kind, note="", **kw):
         """A relation outside the vocabulary; checked by humans until a checker exists."""

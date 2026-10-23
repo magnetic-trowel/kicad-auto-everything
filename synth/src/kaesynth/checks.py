@@ -619,6 +619,10 @@ class Checker:
                     self.add("protect.threat", "error",
                              f"external net {n.full_name} declares threat '{t}' but has no {'/'.join(cats)} on it",
                              [n.full_name])
+                elif t == "overcurrent" and self._ahead_of_fuse(n):
+                    self.add("protect.threat", "error",
+                             f"external net {n.full_name} declares threat 'overcurrent' but "
+                             f"{', '.join(self._ahead_of_fuse(n))} sit on the wire side of its fuse", [n.full_name])
         for n in self.d.all_nets():
             if not n.external or n.kind not in ("power", "hv", "mains", "high_current"):
                 continue
@@ -626,6 +630,19 @@ class Checker:
                 self.add("protect.entry_fuse", "warning",
                          f"external {n.kind} net {n.full_name} reaches the board without a fuse/PTC on it",
                          [n.full_name])
+            elif self._ahead_of_fuse(n):
+                self.add("protect.entry_fuse", "warning",
+                         f"external {n.kind} net {n.full_name} has a fuse, but {', '.join(self._ahead_of_fuse(n))} "
+                         f"connect on the wire side of it (the fuse protects only its own branch)", [n.full_name])
+
+    # parts that may sit between the wire and its fuse without needing its protection
+    ENTRY_SIDE_OK = ("connector", "fuse", "ptc", "tvs", "mov", "testpoint", "mechanical")
+
+    def _ahead_of_fuse(self, net):
+        """Parts on an external net, other than connectors, protectors and fuses, i.e. loads
+        a fuse on that net does not protect."""
+        return sorted({r.part.ref for r in net.pins if r.part.defn.category not in self.ENTRY_SIDE_OK},
+                      key=_natkey)
 
     def _one_series_hop(self, net):
         out = []

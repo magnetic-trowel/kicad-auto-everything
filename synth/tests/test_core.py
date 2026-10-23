@@ -357,3 +357,26 @@ def test_unused_waiver_reported():
     ck.run()
     ck.apply_waivers(final=True)
     assert any(f.check == "waiver.unused" for f in ck.findings)
+
+
+def test_fuse_does_not_protect_loads_ahead_of_it():
+    """Repro from the relay board: a supply fuse on the line input made the whole input look fused."""
+    from kaesynth.lib import Fuse
+    d = Design("ahead")
+    d.domain("M", ref="N")
+    d.net("N", domain="M", v=0, kind="mains")
+    lin = d.net("L_IN", domain="M", v=(-170, 170), kind="mains", i_max=10, external=True, threats=("overcurrent",))
+    lps = d.net("L_PSU", domain="M", v=(-170, 170), kind="mains", i_max=0.2)
+    b = d.block("x")
+    f = b.add(Fuse(1, 250, "Fuse:Fuse_1206_3216Metric", mpn="F1A"))
+    k = b.add(two_pin("CONTACT", v_max=400, cat="relay"))
+    load = b.add(two_pin("PSU", v_max=400))
+    lin.connect(f[1], k[1]); lps.connect(f[2], load[1]); d.nets["N"].connect(k[2], load[2])
+    errs = [x for x in run(d) if x.check == "protect.threat" and x.severity == "error"]
+    assert errs and k.ref in errs[0].message
+
+
+def test_fixed_position_needs_source():
+    d = Design("fx")
+    with pytest.raises(DesignError):
+        d.place.fixed("J1", 10, 10)
