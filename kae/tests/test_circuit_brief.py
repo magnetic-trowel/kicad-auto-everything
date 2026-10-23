@@ -62,9 +62,12 @@ def test_brief_never_reads_positions():
 
 
 def _reference_board():
+    # KAE_TASKS points at a tasks directory, as in test_board_corpus.py
+    roots = ([os.environ['KAE_TASKS']] if os.environ.get('KAE_TASKS') else []) + \
+        [os.path.join(REPO, r, 'tasks') for r in ('kae-work-v2', 'kae-work')]
     for bid in ('pcbcorpus-brenocq-bldc-motor-bldcm-power', 'pcbcorpus-azoninc-doorman-doorman'):
-        for root in ('kae-work-v2', 'kae-work'):
-            p = os.path.join(REPO, root, 'tasks', bid, 'reference', 'board.kicad_pcb')
+        for root in roots:
+            p = os.path.join(root, bid, 'reference', 'board.kicad_pcb')
             if os.path.exists(p):
                 return p
     return None
