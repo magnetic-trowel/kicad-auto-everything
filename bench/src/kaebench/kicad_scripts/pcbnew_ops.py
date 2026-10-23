@@ -11,6 +11,7 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py strip-placement IN OUT
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
+    python pcbnew_ops.py unconnected BOARD
     python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE]
     python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
 """
@@ -163,6 +164,19 @@ def stats(path):
         padnet_hash=_hash(pad_nets),
         placement=placement,
     ))
+
+
+def unconnected(path):
+    """Unrouted connections counted by pcbnew's connectivity after filling zones, as DRC does
+    but without DRC's report cap of 499 unconnected items."""
+    board = _load(path)
+    zones = pcbnew.ZONES()
+    for i in range(board.GetAreaCount()):
+        zones.append(pcbnew.Cast_to_ZONE(board.GetArea(i)))
+    if len(zones):
+        pcbnew.ZONE_FILLER(board).Fill(zones)
+    board.BuildConnectivity()
+    _out(dict(ok=True, path=path, unconnected=board.GetConnectivity().GetUnconnectedCount(False)))
 
 
 def convert(src, dst):
@@ -653,6 +667,8 @@ def main(argv):
             export_dsn(args[0], args[1])
         elif op == "import-ses":
             import_ses(args[0], args[1], args[2])
+        elif op == "unconnected":
+            unconnected(args[0])
         elif op == "transplant-routing":
             transplant_routing(*args[:4])
         elif op == "transplant-placement":

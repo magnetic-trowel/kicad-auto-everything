@@ -20,13 +20,19 @@ severities; library-environment checks excluded). Each score also reports how mu
 output matches the human layout exactly (`copy`), a check for leaked reference answers.
 """
 import json
+import os
 import shutil
+import threading
 from pathlib import Path
 
 from . import tools
 from .boardfiles import board_path, install_rules
 
-SCORE_VERSION = 5
+SCORE_VERSION = 6
+# KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
+# per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
+DRC_UNCONNECTED_CAP = 499
+DRC_TYPE_CAPS = (199, 499)
 
 # KiCad 10 DRC type keys that make a placement illegal (as named in its JSON report).
 PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
@@ -64,6 +70,27 @@ def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_bo
     return staged, tr
 
 
+def _uncapped(board, drc_unconnected, cache=None):
+    """Unconnected count without DRC's cap: DRC's own count below the cap, else pcbnew's
+    connectivity count after a zone fill (identical to DRC's where both are below the cap).
+    Returns (count, was_capped)."""
+    if drc_unconnected < DRC_UNCONNECTED_CAP:
+        return drc_unconnected, False
+    if cache is not None and Path(cache).exists():
+        return json.loads(Path(cache).read_text())["unconnected"], True
+    n = tools.run_ops("unconnected", board)["unconnected"]
+    if cache is not None:
+        tmp = Path(f"{cache}.{os.getpid()}.{threading.get_ident()}")
+        tmp.write_text(json.dumps(dict(unconnected=n)))
+        os.replace(tmp, cache)  # atomic: arms scoring the same board at once
+    return n, True
+
+
+def _capped_types(drc):
+    """Error types whose count sits exactly at a DRC report cap: their count is a lower bound."""
+    return sorted(t for t, n in drc["errors_by_type"].items() if n in DRC_TYPE_CAPS)
+
+
 def _measure(staged, scoring_dir):
     st = tools.run_ops("stats", staged)
     drc = tools.summarize_drc(tools.run_drc(staged, Path(scoring_dir) / "drc.json"))
@@ -89,6 +116,9 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
     if not tr.get("loadable"):
         return _unloadable(tr, clean=False, completion=0.0)
     st, drc = _measure(staged, scoring_dir)
+    unconnected, out_capped = _uncapped(staged, drc["unconnected"])
+    start, start_capped = _uncapped(input_board, start_unconnected,
+                                    cache=Path(input_board).parent / "unconnected.json")
     out, foreign = tr["output"], tr["foreign"]
     integrity = dict(
         placement=out["placement_hash"] == input_stats["placement_hash"],
@@ -97,15 +127,17 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
         untouched=foreign["count"] == 0,
     )
     valid = all(integrity.values())
-    completion = max(0.0, min(1.0, 1.0 - drc["unconnected"] / max(1, start_unconnected)))
+    completion = max(0.0, min(1.0, 1.0 - unconnected / max(1, start)))
     ref_wl = ref_stats.get("track_length_mm") or 0
     return dict(
         valid=valid, integrity=integrity, foreign=foreign, **_copy_fields(tr, allow_copy),
         new_net_items=tr["new_net_items"],
-        clean=valid and drc["unconnected"] == 0 and drc["errors"] == 0,
+        clean=valid and unconnected == 0 and drc["errors"] == 0,
         completion=round(completion, 4) if valid else 0.0,
-        start_unconnected=start_unconnected,
-        unconnected=drc["unconnected"], errors=drc["errors"], warnings=drc["warnings"],
+        start_unconnected=start, unconnected=unconnected,
+        drc_unconnected=drc["unconnected"], start_unconnected_drc=start_unconnected,
+        unconnected_capped=out_capped or start_capped, drc_capped=_capped_types(drc),
+        errors=drc["errors"], warnings=drc["warnings"],
         errors_by_type=drc["errors_by_type"],
         track_length_mm=st["track_length_mm"], vias=st["vias"],
         wl_ratio=round(st["track_length_mm"] / ref_wl, 4) if ref_wl else None,
@@ -151,7 +183,8 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
         locked_moved=tr["locked_moved"], legal=valid and outside == 0 and not place_errors,
         outside=outside, placement_errors=place_errors, hpwl_mm=st["hpwl_mm"],
         hpwl_ratio=round(st["hpwl_mm"] / ref["hpwl_mm"], 4) if ref["hpwl_mm"] else None,
-        unconnected=drc["unconnected"], score_version=SCORE_VERSION,
+        unconnected=_uncapped(staged, drc["unconnected"])[0], drc_unconnected=drc["unconnected"],
+        drc_capped=_capped_types(drc), score_version=SCORE_VERSION,
     )
     return score, st
 
