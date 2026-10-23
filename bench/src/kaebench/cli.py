@@ -11,6 +11,8 @@
 """
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,6 +45,15 @@ def cmd_doctor(a):
         except tools.ToolError as e:
             ok = False
             print(f"FAIL {name}: {e}")
+    # Only --command methods need the sandbox, so a missing bwrap is a warning, not a failure.
+    bwrap = shutil.which("bwrap")
+    works = bwrap and subprocess.run([bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-net", "true"],
+                                     capture_output=True, timeout=30).returncode == 0
+    if works:
+        print(f"ok   sandbox (bwrap): {bwrap}")
+    else:
+        print("WARN sandbox (bwrap): " + ("cannot create namespaces here" if bwrap else "not installed")
+              + "; --command methods need it, or --no-sandbox (results then marked unsandboxed)")
     print(json.dumps(tools.versions(), indent=1))
     return 0 if ok else 1
 
