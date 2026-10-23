@@ -13,7 +13,7 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 
 ## Benchmark harness (`bench/`, package `kaebench`)
 
-Setup on an Ubuntu host (no sudo needed: installs Apptainer rootless and runs KiCad from its official image): `bench/scripts/setup.sh`, then `source bench/.venv/bin/activate`
+Setup on an Ubuntu host (no sudo needed where unprivileged user namespaces are allowed: installs Apptainer rootless and runs KiCad from its official image; `--command` methods also need bubblewrap, see `bench/README.md`): `bench/scripts/setup.sh`, then `source bench/.venv/bin/activate`
 and `kaebench doctor`. Tests: `pytest bench/tests` (KiCad tests skip without KiCad).
 
 Closed loop:
@@ -41,7 +41,9 @@ kaebench report kae-work/results/<run> kae-work/results/<baseline-run>
 ## Rules for closed-loop work
 
 - Never change scoring to improve a score. Scoring and integrity checks
-  (`score.py`, `tools.summarize_drc`, `prepare.py`) define the benchmark. If one is
+  (`score.py`, `tools.summarize_drc`, `prepare.py`, the task and scoring ops in
+  `kicad_scripts/pcbnew_ops.py`: `strip-*`, `stats`, `unconnected`, `transplant-*`,
+  and the `--command` sandbox in `adapters.py`) define the benchmark. If one is
   wrong, fix it in a separate commit that says why, and re-run the baselines.
 - Compare against a baseline run made with the same KiCad version, manifest and suite.
   Report both `cp1` and `cpk`, plus completion and error counts. Read the per-type
