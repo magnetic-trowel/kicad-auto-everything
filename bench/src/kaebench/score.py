@@ -189,6 +189,50 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
     return score, st
 
 
+def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=False):
+    """Place and route together, from the place task's input. The output's footprint poses
+    are transplanted into the place input (placement integrity and legality, judged on the
+    placement alone), then its tracks and vias into that placement (route integrity and
+    route metrics). Valid only if both are; clean = valid, legal, fully routed, no errors."""
+    task_dir, scoring_dir = Path(task_dir), Path(scoring_dir)
+    ref_board = board_path(task_dir / "reference")
+    placed_dir = scoring_dir / "placement"
+    staged_p, tp = _rebuild("transplant-placement", output_board, board_path(task_dir / "place" / "input"),
+                            task_dir / "reference", placed_dir, ref_board)
+    if not tp.get("loadable"):
+        return _unloadable(tp, clean=False, legal=False, completion=0.0)
+    pst, pdrc = _measure(staged_p, placed_dir)
+    start, _ = _uncapped(staged_p, pdrc["unconnected"])
+    tin = record["tasks"]["place"]["input_stats"]
+    place_integrity = dict(
+        pad_nets=tp["output"]["padnet_hash"] == tin["padnet_hash"],
+        locked=tp["n_locked_moved"] == 0,
+        footprints=tp["n_missing"] == 0 and tp["n_extra"] == 0,
+        untouched=tp["foreign"]["count"] == 0,
+    )
+    s = score_routing(output_board, staged_p, pst, start, record["reference"]["stats"], task_dir / "reference",
+                      scoring_dir / "routing", reference_board=ref_board, allow_copy=allow_copy)
+    if not s.get("valid") and s.get("integrity", {}).get("loadable") is False:
+        return s
+    outside = outside_count(pst["placement"], record["reference"].get("pads_outside", {}))
+    place_errors = {k: v for k, v in pdrc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
+    valid = all(place_integrity.values()) and s["valid"]
+    legal = valid and outside == 0 and not place_errors
+    ref = record["reference"]["stats"]
+    s.update(
+        integrity={**{f"place_{k}": v for k, v in place_integrity.items()},
+                   **{f"route_{k}": v for k, v in s["integrity"].items()}},
+        place_foreign=tp["foreign"], place_copy=tp.get("copy"),
+        suspect_copy=s["suspect_copy"] or (bool((tp.get("copy") or {}).get("suspect")) and not allow_copy),
+        locked_moved=tp["locked_moved"], valid=valid, legal=legal, outside=outside,
+        placement_errors=place_errors, hpwl_mm=pst["hpwl_mm"],
+        hpwl_ratio=round(pst["hpwl_mm"] / ref["hpwl_mm"], 4) if ref["hpwl_mm"] else None,
+        clean=legal and s["unconnected"] == 0 and s["errors"] == 0,
+        completion=s["completion"] if valid else 0.0,
+    )
+    return s
+
+
 def outside_count(placement, allowed):
     """Footprints with more pad centres outside the board outline than the same footprint
     has in the human placement (edge connectors may overhang as far as the designer's do)."""

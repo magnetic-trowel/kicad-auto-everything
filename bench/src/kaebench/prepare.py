@@ -39,7 +39,9 @@ TASK_KINDS = ("route", "place")
 #    of earlier specs stay valid
 TASK_SPEC = 6
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
-MIN_TASK_SPEC = {"route": 4, "place": 5}
+MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5}
+# The task input each kind starts from (joint = place and route, from the place task's input).
+INPUT_KIND = {"route": "route", "place": "place", "joint": "place"}
 
 
 def split_of(pads):

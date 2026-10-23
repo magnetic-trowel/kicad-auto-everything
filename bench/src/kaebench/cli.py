@@ -149,7 +149,7 @@ def cmd_prepare_dir(a):
 ARM_KEYS = ("name", "adapter", "probe", "probe_command", "freerouting", "passes")
 
 
-BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock")
+BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock", "human-freerouting")
 
 
 def _probe_name(name, command):

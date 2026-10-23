@@ -171,6 +171,14 @@ def test_place_tampering_is_invalid(rt, mode, broken):
     assert not s["valid"] and not s["legal"] and s["integrity"][broken] is False, s
 
 
+def test_joint_tasks_score_placement_and_routing_together(rt):
+    root, _ = rt
+    s = cheat(root, "joint_honest", kind="joint")[0]["score"]
+    assert s["valid"] and s["legal"] and s["clean"], s
+    s = cheat(root, "joint_move_locked", kind="joint")[0]["score"]
+    assert not s["valid"] and not s["clean"] and s["integrity"]["place_locked"] is False, s
+
+
 def test_own_rules_are_ignored(rt):
     """Rules shipped next to the output never reach the scorer."""
     root, _ = rt
