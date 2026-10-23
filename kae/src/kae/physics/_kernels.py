@@ -241,23 +241,28 @@ def hop_h(H, x0, y0, res, ax, ay, bx, by):
 
 @jit
 def hop_on_ground(N, gmask, x0, y0, res, ax, ay, bx, by):
-    """True when most of five samples along a hop lie over a plane of a ground net."""
-    cnt = 0
+    """(samples over a ground-net plane, samples over any plane) of five along a hop."""
+    cg = 0
+    ca = 0
     for q in range(5):
         t = 0.1 + 0.2 * q
         gi = lookup(N, x0, y0, res, ax + t * (bx - ax), ay + t * (by - ay))
         if gi >= 0:
             net = N.flat[gi]
-            if net >= 0 and gmask[net]:
-                cnt += 1
-    return cnt >= 3
+            if net >= 0:
+                ca += 1
+                if gmask[net]:
+                    cg += 1
+    return cg, ca
 
 
 @jit
 def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, clr, detour, thick, rvia,
-              Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs):
-    """Loop inductance (nH). clr: copper clearance (mm); px, py, hs: scratch arrays of
-    length >= n."""
+              Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs, fs):
+    """Loop inductance (nH). clr: copper clearance (mm); detour: c of the expected route
+    length l (1 + c sqrt(l / 1 mm)) of a straight board hop of length l: each board hop is
+    stretched about its midpoint by that factor (priors.HOP_DETOUR). px, py, hs, fs:
+    scratch arrays of length >= n (points, plane heights, stretch factors)."""
     for k in range(n):
         i = ti[k]
         c = C[i]
@@ -285,16 +290,47 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
             if h_at(Hb, rx0, ry0, rres, mx, my) != INF:
                 cb += 1
         shield = 2 * cf > n and 2 * cb > n
+    # a loop is referenced consistently: on each side, when the hops over a plane make at
+    # least half of that side's length, a hop over a hole or a notch of the outline (an
+    # artifact of the straight hop: the route goes round it, over the plane) takes the plane
+    # height of the side's longest referenced hop; otherwise all of the side's hops are
+    # unreferenced (a loop mixing the two would charge free-space mutuals against
+    # image-reduced selfs)
+    for k in range(n):
+        k1 = k + 1 if k + 1 < n else 0
+        if GS[ti[k]] > 0:
+            hs[k] = hop_h(Hf, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        else:
+            hs[k] = hop_h(Hb, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        fs[k] = math.hypot(px[k1] - px[k], py[k1] - py[k])
+    for sd_ in (1.0, -1.0):
+        lr = 0.0
+        lu = 0.0
+        hb = INF
+        lb = -1.0
+        for k in range(n):
+            if GS[ti[k]] != sd_:
+                continue
+            if hs[k] != INF:
+                lr += fs[k]
+                if fs[k] > lb:
+                    lb = fs[k]
+                    hb = hs[k]
+            else:
+                lu += fs[k]
+        if lu > 0.0:
+            for k in range(n):
+                if GS[ti[k]] == sd_:
+                    if lr >= lu:
+                        if hs[k] == INF:
+                            hs[k] = hb
+                    else:
+                        hs[k] = INF
     A = 0.0
     B = 0.0
     Af = 0.0
     for k in range(n):
-        sk = GS[ti[k]]
-        k1 = k + 1 if k + 1 < n else 0
-        if sk > 0:
-            hk = hop_h(Hf, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
-        else:
-            hk = hop_h(Hb, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        hk = hs[k]
         if isbody[k]:
             z = zb[k]
             r = 0.2235 * (w[k] + TCU)
@@ -306,13 +342,15 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
             Af += ties(z, r, bodyd[k], 0.0) + strip_self(bodyd[k], w[k], z)
         else:
             hs[k] = hk
-    # board hops (optionally stretched about their midpoints)
+    # board hops, each stretched about its midpoint by its expected detour
     for k in range(n):
+        fs[k] = 1.0
         if isbody[k]:
             continue
         k1 = k + 1 if k + 1 < n else 0
-        ln = math.hypot(px[k1] - px[k], py[k1] - py[k]) * detour
-        sk = strip_self(ln, w[k], hs[k])
+        ln = math.hypot(px[k1] - px[k], py[k1] - py[k])
+        fs[k] = 1.0 + detour * math.sqrt(ln)
+        sk = strip_self(ln * fs[k], w[k], hs[k])
         if k == gnd:
             B = sk
         else:
@@ -324,26 +362,28 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
         ay = py[j]
         bx = px[j1]
         by = py[j1]
-        if detour != 1.0 and not isbody[j]:
+        f = fs[j]
+        if f != 1.0:
             mx = 0.5 * (ax + bx)
             my = 0.5 * (ay + by)
-            ax = mx + (ax - mx) * detour
-            ay = my + (ay - my) * detour
-            bx = mx + (bx - mx) * detour
-            by = my + (by - my) * detour
+            ax = mx + (ax - mx) * f
+            ay = my + (ay - my) * f
+            bx = mx + (bx - mx) * f
+            by = my + (by - my) * f
         for k in range(j + 1, n):
             k1 = k + 1 if k + 1 < n else 0
             cx = px[k]
             cy = py[k]
             dx = px[k1]
             dy = py[k1]
-            if detour != 1.0 and not isbody[k]:
+            f = fs[k]
+            if f != 1.0:
                 mx = 0.5 * (cx + dx)
                 my = 0.5 * (cy + dy)
-                cx = mx + (cx - mx) * detour
-                cy = my + (cy - my) * detour
-                dx = mx + (dx - mx) * detour
-                dy = my + (dy - my) * detour
+                cx = mx + (cx - mx) * f
+                cy = my + (cy - my) * f
+                dx = mx + (dx - mx) * f
+                dy = my + (dy - my) * f
             sj = GS[ti[j]]
             sk = GS[ti[k]]
             if shield and sj != sk:
@@ -401,9 +441,19 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
         return lateral
     g1 = gnd + 1 if gnd + 1 < n else 0
     N = Nf if GS[ti[gnd]] > 0 else Nb
-    if not hop_on_ground(N, gmask, rx0, ry0, rres, px[gnd], py[gnd], px[g1], py[g1]):
+    # the plane the ground hop returns through: by the samples along it that lie over a
+    # plane, else (all over a hole or notch) by those at the loop's terminals
+    cg, ca = hop_on_ground(N, gmask, rx0, ry0, rres, px[gnd], py[gnd], px[g1], py[g1])
+    if ca == 0:
+        for k in range(n):
+            gi = lookup(N, rx0, ry0, rres, px[k], py[k])
+            if gi >= 0 and N.flat[gi] >= 0:
+                ca += 1
+                if gmask[N.flat[gi]]:
+                    cg += 1
+    if ca == 0 or 2 * cg < ca:
         return lateral
-    Cv = via_return(h, math.hypot(px[g1] - px[gnd], py[g1] - py[gnd]) * detour, rvia)
+    Cv = via_return(h, math.hypot(px[g1] - px[gnd], py[g1] - py[gnd]) * fs[gnd], rvia)
     if B + Cv <= 1e-12:
         return lateral
     return max(A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv), Af)
@@ -420,16 +470,6 @@ def cext(A, h):
     cpa = 1e3 / (C0 * z0_air(s, h))
     return s * (2.0 * cpa - EPS0 * s / h)
 
-
-@jit
-def patches_near(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
-    CA = np.empty(XA.shape[0])
-    for a in range(XA.shape[0]):
-        CA[a] = cext(AA[a], h)
-    CV = np.empty(XV.shape[0])
-    for v in range(XV.shape[0]):
-        CV[v] = cext(AV[v], h)
-    return patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
 
 
 @jit
@@ -798,21 +838,6 @@ def ind_one(PA, ca, za, PV, cv, zv, h, kind, k1, r0, r1, gt3, gw3, gt6, gw6, sp,
 
 
 @jit
-def ind_batch(PA, ca, za, h, P, off, closed, zx, kind, k1, r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd, out):
-    """ind_one for many targets: loop t is P[off[t]:off[t + 1]] (closed[t]) at height
-    (plane height or 1.6) + zx[t]."""
-    zb = 1.6 if h == INF else h
-    for t in range(off.shape[0] - 1):
-        lo = off[t]
-        hi = off[t + 1]
-        if hi - lo < 2:
-            out[t] = 0.0
-        else:
-            out[t] = ind_one(PA, ca, za, P[lo:hi], closed[t], zb + zx[t], h, kind[t], k1[t], r0, r1,
-                             gt3, gw3, gt6, gw6, sp, sd, vp, vd)
-
-
-@jit
 def cap_one(XA, YA, AA, CA, XV, YV, AV, CV, hh, er, kind, k1, k2, r0, r1):
     """Capacitive coupling of one target (patch strengths precomputed at hh):
     kind 0, a victim: 1e3 k1 Cm / (Cm + C_self(victim copper) + 5 pF + k2), the charge
@@ -837,34 +862,210 @@ def cap_one(XA, YA, AA, CA, XV, YV, AV, CV, hh, er, kind, k1, k2, r0, r1):
     return k1 * w * cm
 
 
+# ----------------------------------------------------------------------------- coupling engine
 @jit
-def cap_batch(XA, YA, AA, CA, hh, er, X, Y, A, CV, off, kind, k1, k2, r0, r1, out):
-    """cap_one for many targets: target t's patches are rows off[t]:off[t + 1]."""
-    for t in range(off.shape[0] - 1):
-        lo = off[t]
-        hi = off[t + 1]
-        if hi <= lo:
-            out[t] = 0.0
+def eng_loop(X, Y, C, S, G, LT_i, LT_xy, off, n, GP):
+    """Points of a loop shape (its terminals at the current poses) into GP[off:off + n];
+    returns the centroid."""
+    cx = 0.0
+    cy = 0.0
+    for k in range(n):
+        q = off + k
+        i = LT_i[q]
+        c = C[i]
+        s = S[i]
+        ly = LT_xy[q, 1] * G[i]
+        x = X[i] + LT_xy[q, 0] * c + ly * s
+        y = Y[i] - LT_xy[q, 0] * s + ly * c
+        GP[q, 0] = x
+        GP[q, 1] = y
+        cx += x
+        cy += y
+    return cx / n, cy / n
+
+
+@jit
+def eng_node(X, Y, C, S, G, NT_i, NT_xya, toff, n, w, poff, PX, PY, PA):
+    """Patches of a node shape: its pads (their areas), then the hops between consecutive
+    pads as strips of width w (area length * w at the midpoint; none when w = 0); returns
+    the number of patches and the area-weighted centroid."""
+    for k in range(n):
+        q = toff + k
+        i = NT_i[q]
+        c = C[i]
+        s = S[i]
+        ly = NT_xya[q, 1] * G[i]
+        PX[poff + k] = X[i] + NT_xya[q, 0] * c + ly * s
+        PY[poff + k] = Y[i] - NT_xya[q, 0] * s + ly * c
+        PA[poff + k] = NT_xya[q, 2]
+    m = n
+    if w > 0.0:
+        for k in range(n - 1):
+            a = poff + k
+            ln = math.hypot(PX[a + 1] - PX[a], PY[a + 1] - PY[a])
+            PX[poff + m] = 0.5 * (PX[a] + PX[a + 1])
+            PY[poff + m] = 0.5 * (PY[a] + PY[a + 1])
+            PA[poff + m] = ln * w if ln > 1e-6 else 0.0
+            m += 1
+    at = 0.0
+    cx = 0.0
+    cy = 0.0
+    for k in range(m):
+        a = PA[poff + k]
+        at += a
+        cx += PX[poff + k] * a
+        cy += PY[poff + k] * a
+    if at <= 0.0:
+        at = 1e-6
+    return m, cx / at, cy / at
+
+
+@jit
+def eng_eval(X, Y, C, S, G, LT_i, LT_xy, L_meta, L_f, NT_i, NT_xya, N_meta, N_w, Hf, Hb, rx0, ry0, rres, er,
+             Lp, Lk, Cp, Ck, sel_l, sel_c, r0, r1, GP, Lc, Ls, PX, PY, PA, PC, Nc, Ns, stamp,
+             gt3, gw3, gt6, gw6, sp, sd, vp, vd, out_l, out_c):
+    """Coupling sub-terms of the selected pairs at the current poses (one call per delta):
+    inductive pairs Lp[p] = (aggressor loop, target loop, kind) with coefficient Lk[p]
+    (ind_one), capacitive pairs Cp[p] = (aggressor node, target node, kind) with Ck[p] =
+    (k1, k2) (cap_one). Shapes are laid out once (L_meta: offset, count; L_f: closed, z
+    extra; N_meta: terminal offset, count, patch offset; N_w: hop width) and evaluated from
+    the pose arrays at most once per call (stamp): loop centroid and plane height in Lc,
+    node centroid, plane height and the height its strengths PC were computed at in Nc."""
+    zero = 0.0
+    for q in range(sel_l.shape[0]):
+        p = sel_l[q]
+        a = Lp[p, 0]
+        t = Lp[p, 1]
+        for sh in (a, t):
+            if Ls[sh] != stamp:
+                cx, cy = eng_loop(X, Y, C, S, G, LT_i, LT_xy, L_meta[sh, 0], L_meta[sh, 1], GP)
+                side = G[LT_i[L_meta[sh, 0]]]
+                Lc[sh, 0] = cx
+                Lc[sh, 1] = cy
+                Lc[sh, 2] = h_at(Hf, rx0, ry0, rres, cx, cy) if side > 0 else h_at(Hb, rx0, ry0, rres, cx, cy)
+                Ls[sh] = stamp
+        h = Lc[a, 2]
+        zb = 1.6 if h == INF else h
+        PA_ = GP[L_meta[a, 0]:L_meta[a, 0] + L_meta[a, 1]]
+        PV_ = GP[L_meta[t, 0]:L_meta[t, 0] + L_meta[t, 1]]
+        if PV_.shape[0] < 2 or PA_.shape[0] < 2:
+            out_l[q] = zero
+            continue
+        out_l[q] = ind_one(PA_, L_f[a, 0] > 0.5, zb + L_f[a, 1], PV_, L_f[t, 0] > 0.5, zb + L_f[t, 1], h, Lp[p, 2],
+                           Lk[p], r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd)
+    for q in range(sel_c.shape[0]):
+        p = sel_c[q]
+        a = Cp[p, 0]
+        t = Cp[p, 1]
+        for sh in (a, t):
+            if Ns[sh] != stamp:
+                m, cx, cy = eng_node(X, Y, C, S, G, NT_i, NT_xya, N_meta[sh, 0], N_meta[sh, 1], N_w[sh],
+                                     N_meta[sh, 2], PX, PY, PA)
+                side = G[NT_i[N_meta[sh, 0]]]
+                hn = h_at(Hf, rx0, ry0, rres, cx, cy) if side > 0 else h_at(Hb, rx0, ry0, rres, cx, cy)
+                Nc[sh, 0] = cx
+                Nc[sh, 1] = cy
+                Nc[sh, 2] = 1.6 if hn == INF else max(hn, 0.05)
+                Nc[sh, 3] = -1.0               # strengths not computed at any height yet
+                Ns[sh] = stamp
+        hh = Nc[a, 2]
+        for sh in (a, t):
+            if Nc[sh, 3] != hh:
+                o = N_meta[sh, 2]
+                np_ = N_meta[sh, 3]
+                for k in range(np_):
+                    PC[o + k] = cext(PA[o + k], hh)
+                Nc[sh, 3] = hh
+        oa = N_meta[a, 2]
+        na_ = N_meta[a, 3]
+        ot = N_meta[t, 2]
+        nt_ = N_meta[t, 3]
+        out_c[q] = cap_one(PX[oa:oa + na_], PY[oa:oa + na_], PA[oa:oa + na_], PC[oa:oa + na_],
+                           PX[ot:ot + nt_], PY[ot:ot + nt_], PA[ot:ot + nt_], PC[ot:ot + nt_], hh, er, Cp[p, 2],
+                           Ck[p, 0], Ck[p, 1], r0, r1)
+
+
+@jit
+def phi_sum(T, m, A, Cf, barrier, usat):
+    """sum_t Cf[t] phi(max(T[t] - m, 0) / A[t]) with priors.phi (linear to 1, quadratic
+    barrier to usat, logarithmic beyond)."""
+    ps = usat + barrier * (usat - 1.0) ** 2
+    dps = 1.0 + 2.0 * barrier * (usat - 1.0)
+    tot = 0.0
+    for t in range(T.shape[0]):
+        u = max(T[t] - m, 0.0) / A[t]
+        if u <= 1.0:
+            f = u
+        elif u <= usat:
+            f = u + barrier * (u - 1.0) ** 2
         else:
-            out[t] = cap_one(XA, YA, AA, CA, X[lo:hi], Y[lo:hi], A[lo:hi], CV[lo:hi], hh, er, kind[t], k1[t], k2[t],
-                             r0, r1)
+            f = ps + dps * usat * math.log(u / usat)
+        tot += Cf[t] * f
+    return tot
 
 
 @jit
-def cext_arr(A, h, out):
-    for i in range(A.shape[0]):
-        out[i] = cext(A[i], h)
+def img_axis(c, c0, L, ms, out):
+    """Image coordinates of c along one axis of the box [c0, c0 + L] (adiabatic edges)."""
+    u = c - c0
+    n = ms.shape[0]
+    for p in range(n):
+        out[p] = c0 + 2.0 * ms[p] * L + u
+        out[n + p] = c0 + 2.0 * ms[p] * L - u
 
 
 @jit
-def fin_column(TX, TY, IX, IY, a, lam, out):
-    """out[t] = sum over the image lattice of one source of K0(max(r, a)/lam), each target t."""
-    for t in range(TX.shape[0]):
-        out[t] = fin_sum(TX[t], TY[t], IX, IY, a, lam)
+def fin_col_xy(X, Y, idx, sx, sy, box, ms, a, lam, out):
+    """fin_column for targets at (X[idx[t]], Y[idx[t]]) of a source at (sx, sy), its image
+    lattice built here."""
+    n = 2 * ms.shape[0]
+    IX = np.empty(n)
+    IY = np.empty(n)
+    img_axis(sx, box[0], box[2], ms, IX)
+    img_axis(sy, box[1], box[3], ms, IY)
+    for t in range(idx.shape[0]):
+        out[t] = fin_sum(X[idx[t]], Y[idx[t]], IX, IY, a, lam)
 
 
 @jit
-def fin_row(tx, ty, SX, SY, A, lam, out):
-    """out[s] = sum over source s's image lattice (rows of SX, SY) of K0(max(r, a_s)/lam)."""
-    for k in range(SX.shape[0]):
-        out[k] = fin_sum(tx, ty, SX[k], SY[k], A[k], lam)
+def fin_row_xy(X, Y, sidx, tx, ty, box, ms, A, lam, out):
+    """fin_row at (tx, ty) for sources at (X[sidx[k]], Y[sidx[k]]), lattices built here."""
+    n = 2 * ms.shape[0]
+    IX = np.empty(n)
+    IY = np.empty(n)
+    for k in range(sidx.shape[0]):
+        img_axis(X[sidx[k]], box[0], box[2], ms, IX)
+        img_axis(Y[sidx[k]], box[1], box[3], ms, IY)
+        out[k] = fin_sum(tx, ty, IX, IY, A[k], lam)
+
+
+@jit
+def mst_len(X, Y, C, S, G, ti, lx, ly, px, py, best, used):
+    """Length (mm) of the Euclidean minimum spanning tree of terminals (part ti[k], library
+    point lx[k], ly[k]) at the poses X, Y, C, S, G (Prim, O(n^2)); px, py, best, used are
+    scratch arrays of length n."""
+    n = ti.shape[0]
+    if n < 2:
+        return 0.0
+    for k in range(n):
+        i = ti[k]
+        q = ly[k] * G[i]
+        px[k] = X[i] + lx[k] * C[i] + q * S[i]
+        py[k] = Y[i] - lx[k] * S[i] + q * C[i]
+        best[k] = INF
+        used[k] = False
+    best[0] = 0.0
+    ln = 0.0
+    for _ in range(n):
+        k = -1
+        for j in range(n):
+            if not used[j] and (k < 0 or best[j] < best[k]):
+                k = j
+        used[k] = True
+        ln += best[k]
+        for j in range(n):
+            if not used[j]:
+                d = math.hypot(px[j] - px[k], py[j] - py[k])
+                if d < best[j]:
+                    best[j] = d
+    return ln

@@ -235,9 +235,17 @@ def hop_detour_nH(T, R, pads, comp):
     hop returned through its own plane is not routed). 0 for components without board hops;
     None when a hop has no single-layer route."""
     from kae.physics.kernels import lprime_hj
-    from kae.physics.structures import EsdComp, LoopComp, txy
+    from kae.physics.structures import DecapLoop, EsdComp, LoopComp, NearestLoopComp, txy
     st, bv = T.st, T.bv
     hops = []
+    if isinstance(comp, NearestLoopComp):
+        x, y = txy(st, comp.tr)
+        comp = min(comp.loops, key=lambda L: math.dist(txy(st, L.T[0]), (x, y)))
+    if isinstance(comp, DecapLoop):
+        comp.value(st)
+        if comp.mode == 'pour':
+            return 0.0           # through the pours: nothing to route
+        comp = comp.loop
     if isinstance(comp, LoopComp):
         n = comp.n
         P = [txy(st, t) for t in comp.T]
@@ -271,15 +279,31 @@ def hop_detour_nH(T, R, pads, comp):
     return extra
 
 
+def _straight(T, ks):
+    """The structures' components with the expected-detour stretch switched off (their
+    straight-hop values), for adding routed detours instead: [(component, saved detour)]."""
+    from kae.physics.structures import CrystalComp, DecapLoop, EsdComp, LoopComp, NearestLoopComp
+    out = []
+    for k in ks:
+        for c in T.structs[k].comps:
+            for x in (c.loops if isinstance(c, NearestLoopComp) else [c]):
+                x = x.loop if isinstance(x, DecapLoop) else x
+                if isinstance(x, (LoopComp, EsdComp, CrystalComp)):
+                    out.append((x, x.detour))
+                    x.detour = 0.0
+    return out
+
+
 def routed_cost(T, R, ks, i=None, q=None):
-    """Cost of structures ks with route detours added to every loop component (part i at
-    pose q when given), or None when some hop is unroutable."""
+    """Cost of structures ks with route detours added to every loop component's straight
+    hops (part i at pose q when given), or None when some hop is unroutable."""
     from kae.physics.place_terms import _red
     st = T.st
     saved = None
     if i is not None:
         saved = st.get(i)
         st.set(i, *q)
+    restore = _straight(T, ks)
     try:
         pads = R.pads_board(st)
         tot = 0.0
@@ -294,6 +318,8 @@ def routed_cost(T, R, ks, i=None, q=None):
             tot += T._cost(s, _red(s.reduce, vals, s.info.get('weights')))
         return tot
     finally:
+        for x, d in restore:
+            x.detour = d
         if saved is not None:
             st.set(i, *saved)
 
@@ -314,12 +340,14 @@ def credible(T, s):
     hops (straight, pad to pad) within FAR_MM. A loop the human spread over the board is
     more likely a misidentified structure (wrong cap, wrong owner) than a placement the
     physics should rank."""
-    from kae.physics.structures import EsdComp, LoopComp, NearestLoopComp, PlanePairLoop, txy
+    from kae.physics.structures import DecapLoop, EsdComp, LoopComp, NearestLoopComp, PlanePairLoop, txy
     st = T.st
     for c in s.comps:
         if isinstance(c, NearestLoopComp):
             x, y = txy(st, c.tr)
             c = min(c.loops, key=lambda L: math.dist(txy(st, L.T[0]), (x, y)))
+        if isinstance(c, DecapLoop):
+            c = c.loop
         if isinstance(c, LoopComp):
             P = [txy(st, t) for t in c.T]
             if max((math.dist(P[k], P[(k + 1) % c.n]) for k in range(c.n) if c.kinds[k] == 'board'),

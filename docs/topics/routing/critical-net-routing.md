@@ -7,7 +7,7 @@
   - the copper resistance against a drop budget;
   - the trace capacitance under a crystal.
 - Guard pours (`kae-crit:` zones) keep other nets off the ground plane under hot loops and crystals while the bridge runs. A recheck recomputes every module on the finished board, including how much of its plane survived. Modules that lost more than 15 % of budget or 10 % of plane cover are re-tweaked, for up to three rounds.
-- On the 33 boards of splits A and B and on 6 C boards with converters, the critical copper adds **0 KiCad DRC errors** and takes 0.4–18 s per board [C]. The A/B run against the bridge alone (completion, cp1, cpk, physics) is set up; four local boards were mixed (2 better, 2 worse).
+- On the 33 boards of splits A and B and on 6 C boards with converters, the critical copper adds **0 KiCad DRC errors** and takes 0.4–18 s per board [C]. The A/B run against the bridge alone (completion, cp1, cpk, physics) is set up. On four local boards the critical stage helped two, matched one and hurt one.
 - `optimize_modules` moves a module's parts (any angle; right angles for heatsink tabs) while routing its copper. On 12 human placements it lowered converter hot loops by a median 4 % (up to 26 %) and decoupling loops by a median 9 % (up to 61 %), with 0 DRC errors [C].
 
 ## Key facts
@@ -31,7 +31,7 @@ Differential pairs and high-speed buses are left to the bridge, which carries th
 
 `GridRouter.connect(net, sources, targets, width, layers)` ([critical_grid.py](../../../kae/src/kae/route/critical_grid.py)):
 
-1. **Raster.** One grid per allowed layer at 0.05 mm (coarsened in 1.25× steps above 1.5 M cells), in a window around the anchors. A cell is blocked when a track centred there would come closer to an obstacle than R = w/2 + KiCad's requirement for that pair, plus a margin m = √(R² + res²/2) − R. A point at R + m or more from both ends of a move of length L = res·√2 is at least √((R+m)² − L²/4) = R from all of it, so every move between free neighbours is legal. For R = 0.3 mm, m is 2 µm. A flat 0.71-cell margin (35 µm) closes the 0.2 mm gaps between 0.5 mm-pitch pins; it left an LQFP-100's VCAP and VDDA hops unroutable [C].
+1. **Raster.** One grid per allowed layer at 0.05 mm (coarsened in 1.25× steps above 1.5 M cells), in a window around the anchors. A cell is blocked when a track centred there would come closer to an obstacle than R = w/2 + KiCad's requirement for that pair, plus a margin m = √(R² + res²/2) − R. A point at R + m or more from both ends of a move of length L = res·√2 is at least √((R+m)² − L²/4) = R from all of it, so every move between free neighbours is legal. For R = 0.3 mm, m is 2 µm. A flat 0.71-cell margin (35 µm) closes 0.5 mm-pitch escapes (an LQFP-100's VCAP hops) [C].
 2. **Costs.** Crossing another net's pour adds 0.4 per cell (the cut costs that pour); a 0.4 mm halo around other nets' pads adds 0.6 (their escape space); a via costs 1.5 cells, 3–5 for rails and fallbacks.
 3. **Search.** A* (8-connected, octile heuristic, numba-compiled with a Python fallback) from source to target cells, through vias where one fits on every layer ([critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)). A diagonal move needs both orthogonal neighbours free.
 4. **Geometry.** The cell path becomes one polyline per layer, its ends move onto the pad centres where legal, and it is string-pulled, keeping a shortcut only if the exact check passes. Every segment and via is checked once more with shapely distances, 2 µm above each requirement; a route that fails is refused, never committed. Terminals keep each layer's own copper. A castellated pad (a through-hole pad and an SMD twin under one number) can be reached on the back only at its hole; ending inside the twin there would leave a dangling track.
@@ -43,7 +43,9 @@ Differential pairs and high-speed buses are left to the bridge, which carries th
 - edge clearance, the via edge band, hole-to-hole, thermal-spoke corridors, rule areas;
 - via-in-pad only on thermal pads (> 4 mm², > 1.5 mm wide) or when the option allows it.
 
-Committed copper is written locked. The bridge sends it to Freerouting as `(type fix)`, and its repair loop never touches it ([freerouting-constraint-bridge](freerouting-constraint-bridge.md)).
+Committed copper is written locked. The bridge sends it to Freerouting as `(type fix)`, and its repair loop never touches it ([freerouting-constraint-bridge](freerouting-constraint-bridge.md)). Two consequences shape the stage:
+- **Other nets' pins keep an escape.** Before a hop is committed, every unrouted single-layer pin of another net within 1.5 mm is checked. The test is whether a class-width track of its net can still reach the edge of a 3.5 mm window or a via site, keeping at least a quarter of the room it had. If not, the hop is retried with a keep-out around that pin. An optional hop (a ground hop over its own plane, a net join) is dropped instead; on the olimex DC-DC that freed the FB pin.
+- **Critical nets leave no islands.** Freerouting does not join an island to the middle of a fixed track. So every pad of a critical net within 8 mm of its critical copper is joined at class width (bipolar supply: 1 unconnected → clean).
 
 ### Physics on routed copper
 
@@ -103,7 +105,7 @@ The bridge treats its fill as a hard obstacle for other nets. The output never c
 3. Let the bridge re-route what was ripped.
 4. Run KiCad DRC.
 
-A round is kept only if errors + unconnected items do not rise and the flagged modules improve (u down or cover up). The module's own copper stays, since what worsened it is its neighbours. Each round logs u and cover before and after, errors and unconnected items.
+A round is kept only if errors + unconnected items do not rise and the flagged modules improve. The module's own copper stays: its neighbours worsened it. Each round logs u, cover, errors and unconnected items.
 
 ### Joint module optimization
 
@@ -135,21 +137,21 @@ On 12 human placements (120 s each; KiCad DRC 0 errors on every written board) [
 | Same | 6 C boards with cells (BLDC, BMS, doorman, CAN processor, Oasis, Aftonsparv) | 0; 316 tracks, 107 vias; 46 modules routed, 7 skipped |
 | Critical stage runtime | 39 | 0.4–18 s per board, one shared core |
 | olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
-| Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
-| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 31 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
+| Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged); round 1 restored it but left 4 unconnected items (99 s of Freerouting) and was discarded |
+| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 33 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
 
-`tools/research/physics/crit_compare.py` puts the human board, the bridge alone and critical + bridge side by side per module and rail, and summarizes re-tweak rounds. `suite_physics.py --compare-to` gives the independent rb HF loop, DC R_eff and worst drop per amp.
+`tools/research/physics/crit_compare.py` compares human, bridge-alone and critical + bridge boards per module and rail and summarizes re-tweak rounds; `suite_physics.py --compare-to` gives the independent rb HF loop and DC passports.
 
 ## Recommendations for our system
 
-1. **Route physics first; let one engine judge legality.** It costs seconds, and exact verification against the shared rule port means the critical copper is never why a board fails.
+1. **Route physics first; let one engine judge legality.** It costs seconds, and exact verification against the shared rule port keeps critical copper DRC-clean.
 2. **Judge moves on routed copper.** Straight hops miss the detours and vias that decide a loop; a routed quote costs milliseconds per hop.
 3. **Protect planes, don't just measure them.** Guards during general routing are cheaper than rip-up afterwards; plane cover catches what still gets through.
 
 ## Conflicts and open questions
 
-- **Routability.** Locked copper and guards take space the bridge would have used. Only the A/B run (same snapshot, k = 1, 600 s) can show whether completion or clean passes fall. Four local boards (k = 1, 600 s, loaded VM, against an older bridge-alone run): unconnected items fell from 5 to 1 on noisecard and from 4 to 0 on the XIAO board. They rose from 0 to 2 (+1 starved thermal) on the olimex DC-DC and from 0 to 1 on the bipolar supply, where long locked protection-chain and rail tracks sit in the bridge's way.
-- **Estimator vs passport.** The routed-copper estimator ranks layouts; its absolute values differ from the rb HF passport (olimex human: 10.97 vs 6.4 nH). A loop closed by pours reads the same on every board sharing them (noisecard: 1.98 nH on human and critical boards). The passports decide.
+- **Routability.** Locked copper and guards take space the bridge would have used. Only the A/B run (same snapshot, k = 1, 600 s) can show whether completion or clean passes fall. Four local boards (k = 1, 600 s, loaded VM, against an older bridge-alone run): unconnected items fell from 5 to 1 on noisecard and from 4 to 0 on the XIAO board. The bipolar supply is clean once rails join their nearby pads. The olimex DC-DC kept 2–3 unconnected items even without chain tails or rails, where the bridge alone was clean.
+- **Estimator vs passport.** The routed-copper estimator ranks layouts; its absolute values differ from the rb HF passport (olimex human: 10.97 vs 6.4 nH), and a loop closed by pours reads the same on every board sharing them. The passports decide.
 - **Decap pairing** in the brief maps some caps to pins 11–70 mm away. The router skips them; the brief needs a distance check.
 - **Re-tweak statistics** (how often round 2 triggers, recovery, convergence) need the big-host `--rounds 3` run.
 

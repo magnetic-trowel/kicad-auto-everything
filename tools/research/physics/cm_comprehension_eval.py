@@ -28,6 +28,11 @@ Weak labels:
                     or placer would follow into a wrong place.
   member spread     for every structure kind, the mean member distance to the members'
                     centroid against random placement (percentile).
+  rail groups       capacitors in a rail group are paired with their nearest group load by the placer:
+                    'effective' ownership counts them right when the nearest owner on the human board is
+                    one of the group's loads (the allocation's own guess is reported beside it).
+  power paths       the path loop (input cap, pass element(s), output cap, closed) against the same parts
+                    dropped at random, as for cells.
 
 Usage:
   python -I cm_comprehension_eval.py --tasks kae-work/tasks --out DIR [-j 2] [--only id,id] [--no-sheets] [--rank-w W] [--tie random]
@@ -266,6 +271,30 @@ def eval_board(args):
         cells.append({'id': s['id'], 'class': s['class'], 'confidence': s['confidence'], 'loop_mm': round(L, 2),
                       'pct_random': pct, 'members': [ref_of.get(u, u) for u in dict.fromkeys(tparts)]})
     row['cells'] = cells
+    paths = []
+    for s in S:
+        if s['kind'] != 'power_path' or len(s.get('loop') or []) < 3:
+            continue
+        pts, tparts, offs = [], [], []
+        for term in s['loop']:
+            u, pads = term[0], term[1]
+            fp = by_uuid.get(u)
+            if fp is None:
+                continue
+            pl = pads if isinstance(pads, list) else [pads]
+            xy = [_pad_xy(fp, pn) for pn in pl] or [(fp.x, fp.y)]
+            x = sum(a for a, _ in xy) / len(xy)
+            y = sum(b for _, b in xy) / len(xy)
+            pts.append((x, y))
+            tparts.append(u)
+            offs.append((x - fp.x, y - fp.y))
+        if len(set(tparts)) < 2:
+            continue
+        L = _loop_len(pts)
+        paths.append({'id': s['id'], 'class': s['class'], 'loop_mm': round(L, 2), 'pct_random': _pct_random_loop(tparts, offs, L, bbox, rng),
+                      'closed': bool(s.get('caps_in')) and (bool(s.get('caps_out')) or s.get('rail_out') == s.get('gnd'))})
+    row['paths'] = paths
+    row['rail_groups'] = [{'id': s['id'], 'loads': len(s['loads']), 'caps': len(s['caps'])} for s in S if s['kind'] == 'rail_group']
     # ------------------------------------------------------------ crystals
     xt = []
     for s in S:
@@ -325,6 +354,7 @@ def eval_board(args):
 def _own_all(br, F):
     """[(correct, baseline)] per capacitor on rails with two or more candidate owners (all owner kinds)."""
     cons = defaultdict(list)            # rail -> [(owner id, [pin xy], [caps])]
+    groups = defaultdict(set)           # rail -> owner ids in its rail group (pairing 'nearest_load')
     for s in br['structures']:
         if s['kind'] == 'decap':
             fp = F.get(s['ic'])
@@ -333,6 +363,8 @@ def _own_all(br, F):
             f = s.get('function')
             cid = ('entry', s['rail']) if f == 'entry' else ('conv', s['rail']) if f in ('converter_output', 'converter_input') else s['id']
             cons[s['rail']].append((cid, [_pad_xy(fp, pn) for pn in s['power_pins']], list(s['caps']), s.get('caps_p') or {}))
+            if s.get('rail_group'):
+                groups[s['rail']].add(cid)
         elif s['kind'] == 'commutation_cell' and len(s['loop']) >= 3:
             fc = F.get(s['loop'][0][0])
             u, pads = s['loop'][1][0], s['loop'][1][1]
@@ -374,7 +406,11 @@ def _own_all(br, F):
                     continue
                 cxy = _pad_xy(fc, next((pd.number for pd in fc.pads if pd.net == rail), '1'))
                 near = min(pins, key=lambda t: math.hypot(t[1][0] - cxy[0], t[1][1] - cxy[1]))[0]
-                out.append([int(near == cid), round(npin[cid] / len(pins), 4), cp.get(c)])
+                in_rg = cid in groups.get(rail, ())
+                # in a rail group the placer pairs the cap with the nearest group load: right when the nearest
+                # owner is one of them
+                eff = int(near in groups[rail]) if in_rg else int(near == cid)
+                out.append([int(near == cid), round(npin[cid] / len(pins), 4), cp.get(c), int(in_rg), eff])
     return out
 
 
@@ -397,6 +433,18 @@ def pool_rows(rows):
                                                 'mean_p': _mean([o[2] for o in oa if o[2] is not None and lo <= o[2] < hi])}
     P['cap_ownership_all'] = {'n': len(oa), 'acc': _mean([o[0] for o in oa]), 'baseline': _mean([o[1] for o in oa]),
                               'boards': len(per), 'per_board_mean': _mean(per), 'by_ownership_p': bins}
+    rg = [o for o in oa if len(o) > 3 and o[3]]
+    P['cap_ownership_effective'] = {'n': len(oa), 'acc': _mean([o[4] if len(o) > 4 else o[0] for o in oa]),
+                                    'rail_group_caps': len(rg), 'rail_group_alloc_acc': _mean([o[0] for o in rg]),
+                                    'rail_group_nearest_load_acc': _mean([o[4] for o in rg]),
+                                    'outside_groups_acc': _mean([o[0] for o in oa if not (len(o) > 3 and o[3])])}
+    pp = [x for r in rows for x in r.get('paths', [])]
+    P['power_paths'] = {'n': len(pp), 'closed': sum(x['closed'] for x in pp), 'median_pct_random': _median([x['pct_random'] for x in pp]),
+                        'share_pct_lt_0.05': _mean([x['pct_random'] < 0.05 for x in pp]), 'median_loop_mm': _median([x['loop_mm'] for x in pp]),
+                        'by_class': {k: {'n': len(v), 'median_pct': _median(v)} for k, v in _group([(x['class'], x['pct_random']) for x in pp]).items()}}
+    rgs = [x for r in rows for x in r.get('rail_groups', [])]
+    P['rail_groups'] = {'n': len(rgs), 'boards': sum(1 for r in rows if r.get('rail_groups')), 'loads': sum(x['loads'] for x in rgs),
+                        'caps': sum(x['caps'] for x in rgs)}
     pd = [x for r in rows for x in r.get('pairing_mm', [])]
     P['pin_pairing'] = {'n': len(pd), 'share_gt_10mm': _mean([x > 10 for x in pd]), 'median_mm': _median(pd),
                         'boards_with_gt_10mm': sum(1 for r in rows if any(x > 10 for x in r.get('pairing_mm', [])))}
@@ -448,14 +496,16 @@ def _median(v):
 
 
 def suite_md(rows):
-    lines = ['| board | parts | cells | decap | xtal | chains | victims | ant | heat | unknown | low-conf parts | low-conf structs | brief s |',
-             '|---|---|---|---|---|---|---|---|---|---|---|---|---|']
+    lines = ['| board | parts | cells | paths | decap | rail groups | xtal | chains | victims | ant | heat | unknown | low-conf parts | '
+             'low-conf structs | brief s |',
+             '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for r in sorted(rows, key=lambda r: r['id']):
         if 'error' in r:
             lines.append(f"| {r['id']} | error: {r['error'][:60]} |")
             continue
         s = r['structures']
-        lines.append(f"| {r['id'][:48]} | {r['parts']} | {s.get('commutation_cell', 0)} | {s.get('decap', 0)} | {s.get('crystal', 0)} | "
+        lines.append(f"| {r['id'][:48]} | {r['parts']} | {s.get('commutation_cell', 0)} | {s.get('power_path', 0)} | {s.get('decap', 0)} | "
+                     f"{s.get('rail_group', 0)} | {s.get('crystal', 0)} | "
                      f"{s.get('connector_chain', 0)} | {s.get('victim', 0)} | {s.get('antenna', 0)} | {s.get('heat_source', 0)} | "
                      f"{r['unknown']} | {r['low_conf_parts']} | {r['low_conf_structures']} | {r['t_brief']} |")
     return '\n'.join(lines)

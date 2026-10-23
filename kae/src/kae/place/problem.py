@@ -142,36 +142,62 @@ def polys_lib_rect(polys):
 def _cluster_rects(rects, max_n=64):
     """Merge rectangles that touch or overlap into their bounding boxes (rows and columns of
     pads become one rectangle each, the gaps between them stay open), repeated until stable;
-    beyond max_n groups, the nearest groups merge."""
+    beyond max_n groups, the pair whose union adds the least area merges, repeatedly (many
+    groups are first pooled on a coarse grid). Vectorized: a 676-ball BGA takes milliseconds
+    (the pairwise Python loop took minutes, 461 s of Problem.build on one board)."""
     rs = [tuple(r) for r in rects if r is not None]
-    changed = True
-    while changed and len(rs) > 1:
-        changed = False
-        out = []
-        while rs:
-            a = rs.pop()
-            merged = True
-            while merged:
-                merged = False
-                for k in range(len(rs) - 1, -1, -1):
-                    b = rs[k]
-                    if a[0] <= b[2] + 1e-9 and b[0] <= a[2] + 1e-9 and a[1] <= b[3] + 1e-9 and b[1] <= a[3] + 1e-9:
-                        a = rect_union([a, b])
-                        rs.pop(k)
-                        merged = changed = True
-            out.append(a)
-        rs = out
-    while len(rs) > max_n:
-        best = None
-        for i in range(len(rs)):
-            for j in range(i + 1, len(rs)):
-                u = rect_union([rs[i], rs[j]])
-                cost = rect_area(u) - rect_area(rs[i]) - rect_area(rs[j])
-                if best is None or cost < best[0]:
-                    best = (cost, i, j, u)
-        _, i, j, u = best
-        rs = [r for k, r in enumerate(rs) if k not in (i, j)] + [u]
-    return rs
+    if len(rs) <= 1:
+        return rs
+    R = np.array(rs, dtype=float)
+    R = _merge_touching(R)
+    if len(R) > 4 * max_n:
+        # pool on a coarse grid first: k x k cells over the extent
+        k = int(math.ceil(math.sqrt(4 * max_n)))
+        x0, y0 = R[:, 0].min(), R[:, 1].min()
+        w = max(1e-9, R[:, 2].max() - x0)
+        h = max(1e-9, R[:, 3].max() - y0)
+        cx = np.minimum(k - 1, ((R[:, 0] + R[:, 2]) / 2 - x0) / w * k).astype(int)
+        cy = np.minimum(k - 1, ((R[:, 1] + R[:, 3]) / 2 - y0) / h * k).astype(int)
+        cell = cx * k + cy
+        R = np.array([[R[cell == c, 0].min(), R[cell == c, 1].min(), R[cell == c, 2].max(), R[cell == c, 3].max()]
+                      for c in np.unique(cell)])
+        R = _merge_touching(R)
+    while len(R) > max_n:
+        area = (R[:, 2] - R[:, 0]) * (R[:, 3] - R[:, 1])
+        ux0 = np.minimum(R[:, None, 0], R[None, :, 0])
+        uy0 = np.minimum(R[:, None, 1], R[None, :, 1])
+        ux1 = np.maximum(R[:, None, 2], R[None, :, 2])
+        uy1 = np.maximum(R[:, None, 3], R[None, :, 3])
+        cost = (ux1 - ux0) * (uy1 - uy0) - area[:, None] - area[None, :]
+        np.fill_diagonal(cost, np.inf)
+        i, j = np.unravel_index(int(np.argmin(cost)), cost.shape)
+        u = [ux0[i, j], uy0[i, j], ux1[i, j], uy1[i, j]]
+        keep = np.ones(len(R), dtype=bool)
+        keep[[i, j]] = False
+        R = _merge_touching(np.vstack([R[keep], [u]]))
+    return [tuple(float(v) for v in r) for r in R]
+
+
+def _inside(r, c):
+    return c[0] - 1e-9 <= r[0] and c[1] - 1e-9 <= r[1] and r[2] <= c[2] + 1e-9 and r[3] <= c[3] + 1e-9
+
+
+def _merge_touching(R):
+    """Rectangles (n, 4) merged into the bounding boxes of their touching groups, until no two
+    groups touch."""
+    from scipy.sparse.csgraph import connected_components
+    while len(R) > 1:
+        t = ((R[:, None, 0] <= R[None, :, 2] + 1e-9) & (R[None, :, 0] <= R[:, None, 2] + 1e-9)
+             & (R[:, None, 1] <= R[None, :, 3] + 1e-9) & (R[None, :, 1] <= R[:, None, 3] + 1e-9))
+        n, lab = connected_components(t, directed=False)
+        if n == len(R):
+            break
+        out = np.empty((n, 4))
+        for c in range(n):
+            m = lab == c
+            out[c] = (R[m, 0].min(), R[m, 1].min(), R[m, 2].max(), R[m, 3].max())
+        R = out
+    return R
 
 
 def edge_cut_polys(fp):
@@ -320,6 +346,9 @@ class Rot:
     g_own: tuple = None
     g_opp: tuple = ()
     g_board: tuple = None
+    own_rects: tuple = ()        # occupancy on the part's side: courtyard cover, pad groups (own = their box)
+    g_own_rects: tuple = ()
+    g_own_rects_exact: tuple = ()
     g_own_exact: tuple = None   # g_own without the routing margin
     g_board_exact: tuple = None  # g_board without the routing margin
     boards: tuple = ()           # rectangles that must each lie inside (one, or pad groups)
@@ -526,10 +555,28 @@ class Problem:
                 cn = self.netclass_clr.get(nc, self.netclass_clr.get(nc.split(",")[0], self.clr_min))
                 c = max(self.clr_min / 2, cn - self.clr_min / 2)
             infl.append(rect_grow(r, max(c, excess)))
-        # courtyards occupy space only when the project checks their overlap as an error
-        lib_own = rect_union(([cy] if self.is_error("courtyards_overlap") else []) + infl)
+        # occupancy pieces: the courtyard (only when the project checks courtyard overlap as an
+        # error; a cover of its polygon when it is not a rectangle) or the body of a part that
+        # has none, and the pad groups outside it (+ clearance). One box around everything would
+        # swallow the space a module leaves between its pin rows (an Arduino footprint on a
+        # shield covered 37% of the board) or inside an L-shaped courtyard.
+        cy_pieces = []
+        if cy is not None and self.is_error("courtyards_overlap"):
+            if has_cy:
+                u = shapely.union_all(fp.courtyard)
+                bx0, by0, bx1, by1 = u.bounds
+                # at most 4 strips (they touch, so they are not clustered back into one box)
+                cy_pieces = poly_cover_rects(u, max(1e-3, (bx1 - bx0) / 4.0)) or [cy]
+            else:
+                cy_pieces = [cy]
+        pad_pieces = _cluster_rects(infl, max_n=6)
+        own_pieces = cy_pieces + [r for r in pad_pieces if not any(_inside(r, c) for c in cy_pieces)]
+        if len(own_pieces) > 8:
+            own_pieces = _cluster_rects(own_pieces, max_n=8)
+        lib_own = rect_union(own_pieces)
         if lib_own is None:   # no courtyard, body or pads: a point
             lib_own = (-0.05, -0.05, 0.05, 0.05)
+            own_pieces = [lib_own]
         drilled = [k for k, p in enumerate(pads) if is_drilled(p)]
         # SMD copper on the other side too (a back-side thermal pad under a front part, pads on
         # *.Cu): other parts' copper on that side keeps clear of it
@@ -547,6 +594,7 @@ class Problem:
             lib_cut = cut
             cut = rect_grow(cut, self.edge_clearance + 0.002)
             lib_own = rect_union([lib_own, cut])
+            own_pieces = own_pieces + [cut]
             lib_opp.append(cut)
         else:
             lib_cut = None
@@ -578,7 +626,9 @@ class Problem:
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
                          board_groups=lib_board_groups, crt=cy if cy is not None else lib_own,
                          own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own,
-                         own_parts=[r for r in own_parts if r is not None] or [lib_own])
+                         own_parts=[r for r in own_parts if r is not None] or [lib_own],
+                         own_pieces=own_pieces,
+                         own_pads_pieces=(pad_pieces + ([cut] if cut is not None else [])) or [lib_own])
         rots = list(rotations) if movable else [fp.rot]
         part.n_ortho = len(rots)
         if movable and self.angle_step and not right_angles_only(fp):
@@ -596,6 +646,7 @@ class Problem:
         L = part._lib
         if rot % 90.0 == 0.0:
             rr = lambda r: rot_rect(r, rot, s)  # noqa: E731
+            own_rects = tuple(rr(r) for r in L.get("own_pieces") or [L["own"]])
             own = rr(L["own"])
         else:
             # an odd angle: bounding boxes of each rotated piece (courtyard, every pad), so the
@@ -603,6 +654,8 @@ class Problem:
             # boxing the box of the whole footprint
             rr = lambda r: rot_rect_any(r, rot, s)  # noqa: E731
             own = rect_union([rr(r) for r in L.get("own_parts") or [L["own"]]])
+            own_rects = tuple(rr(r) for r in L.get("own_pieces") or [L["own"]])
+            own = rect_union([own] + list(own_rects))
         if len(local):
             px, py = transform.pads_xy(local[:, 0], local[:, 1], 0.0, 0.0, rot, s)
             pins = np.column_stack([px, py])
@@ -610,7 +663,7 @@ class Problem:
             pins = np.zeros((0, 2))
         board = rr(lib_board)
         return Rot(rot=float(rot), own=own, opp=tuple(rr(r) for r in L["opp"]), board=board,
-                   crt=rr(L["crt"]), pins=pins, boards=(board,))
+                   crt=rr(L["crt"]), pins=pins, boards=(board,), own_rects=own_rects)
 
     def _fit_check(self):
         """A part whose courtyard cannot fit inside the outline in any rotation only keeps
@@ -641,6 +694,8 @@ class Problem:
         for p in self.parts:
             for r in p.rots:
                 r.g_own = to_grid(r.own, g)
+                r.g_own_rects = tuple(to_grid(o, g) for o in (r.own_rects or (r.own,)))
+                r.g_own_rects_exact = r.g_own_rects
                 r.g_opp = tuple(to_grid(o, g) for o in r.opp)
                 r.g_board = to_grid(r.board, g)
                 r.g_boards = tuple(to_grid(b, g) for b in r.boards)
@@ -655,15 +710,24 @@ class Problem:
         others (a display on headers) must be allowed to. Returns the parts relaxed."""
         out = []
         g = self.g
+        fixed_relaxed = False
         for p in self.parts:
-            if not p.movable or p.has_courtyard or p.decor or getattr(p, "relaxed", False):
+            if p.has_courtyard or p.decor or getattr(p, "relaxed", False):
                 continue
+            if not p.movable:
+                fixed_relaxed = True     # a locked module's body (an Arduino under its shield)
             p.relaxed = True
             for r in p.rots:
-                r.own = (rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any)(p._lib["own_pads"], r.rot, p.s)
+                rr = rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any
+                r.own_rects = tuple(rr(x, r.rot, p.s) for x in p._lib["own_pads_pieces"])
+                r.own = rect_union(list(r.own_rects))
                 r.g_own_exact = to_grid(r.own, g)
+                r.g_own_rects_exact = tuple(to_grid(x, g) for x in r.own_rects)
             out.append(p.ref)
         if out:
+            if fixed_relaxed:
+                self.obstacles = []
+                self._fixed_obstacles(self.board)
             self.set_margin(self.margin)
             self.notes.append(f"bodies relaxed to pads: {', '.join(out[:10])}")
         return out
@@ -684,7 +748,7 @@ class Problem:
         for p in self.parts:
             r = p.rots[0]
             si = 0 if p.s > 0 else 1
-            u[si] += rect_area(r.own)
+            u[si] += sum(rect_area(x) for x in (r.own_rects or (r.own,)))
             for o in r.opp:
                 u[1 - si] += rect_area(o)
         return [x / area for x in u]
@@ -719,6 +783,7 @@ class Problem:
             for r in p.rots:
                 a, b, c, d = r.g_own_exact
                 r.g_own = (a - k, b + k, c - k, d + k)
+                r.g_own_rects = tuple((a - k, b + k, c - k, d + k) for (a, b, c, d) in r.g_own_rects_exact)
                 a, b, c, d = r.g_board_exact          # room to route between parts and the edge
                 r.g_board = (a - kb, b + kb, c - kb, d + kb)
                 r.g_boards = tuple((a - kb, b + kb, c - kb, d + kb) for (a, b, c, d) in r.g_boards_exact)
@@ -731,7 +796,8 @@ class Problem:
                 continue
             r = p.rots[0]
             si = 0 if p.s > 0 else 1
-            self._add_obstacle(si, shift(r.own, p.x0, p.y0), f"locked {p.ref}")
+            for piece in (r.own_rects or (r.own,)):
+                self._add_obstacle(si, shift(piece, p.x0, p.y0), f"locked {p.ref}")
             for o in r.opp:
                 self._add_obstacle(1 - si, shift(o, p.x0, p.y0), f"locked {p.ref} (through)")
         self.fixed_copper = fixed_copper(board)

@@ -214,8 +214,9 @@ def routed_board(tid):
 
 # ----------------------------------------------------------------------------- phase 2
 VARIANTS = {
-    'base': dict(detour=None),            # straight hops (detour 1 for every kind)
-    'cal': dict(detour='calibrated'),     # priors.HOP_DETOUR
+    'base': dict(knobs=dict(hop_detour=0.0)),                       # straight hops
+    'cal': dict(knobs=dict()),                                       # priors.HOP_DETOUR, pour-aware decaps
+    'nopour': dict(knobs=dict(pour_decaps=False)),                   # calibrated, decaps by straight hops only
 }
 
 
@@ -227,12 +228,26 @@ def terms_board(tid, routed_rows, variants):
     by_mod = {r['module']: r for r in routed_rows}
     for name in variants:
         v = VARIANTS[name]
-        if v['detour'] is None:
-            knobs = PR.Knobs(hop_detour={k: 1.0 for k in PR.HOP_DETOUR})
-        else:
-            knobs = PR.Knobs()
+        knobs = PR.Knobs(**v['knobs'])
         t = Terms(b, brief, knobs=knobs)
         rows = t.breakdown(t.bv.pose0())
+        modes = {}
+        first = {}
+        vias = {}
+        import kae.physics.fastloop as FL
+        th = t.bv.thickness
+        lv_full = FL.m_self(th, 0.15) + FL._collinear(th, th, 0.0)
+        for k, s in enumerate(t.structs):
+            modes[s.id] = [getattr(c, 'mode', None) for c in s.comps]
+            if s.kind == 'esd' and s.comps:
+                # the routed reference's via runs through the whole board; ours to the plane
+                vias[s.id] = (s.comps[0].via(t.st), lv_full)
+            if s.kind == 'commutation' and s.comps:
+                # the loop through the brief loop's own capacitor (the routed reference's loop),
+                # when the ownership filter kept it: it is the first variant
+                lc = s.comps[0].T[0]
+                if t.bv.parts[lc.i].ref == s.labels[0]:
+                    first[s.id] = t._cv[k][0]
         pt = {}
         for r in rows:
             base = r['id'].split('#')[0]
@@ -244,9 +259,10 @@ def terms_board(tid, routed_rows, variants):
             # a decap split into pin clusters: the worst cluster, as the routed worst per-pin value
             r = max(mine, key=lambda x: x['value'])
             out.append(dict(id=tid, module=mod, kind=rr['kind'], variant=name, routed=rr['routed'],
-                            value=r['value'], util=r['util'], info={k: r['info'].get(k) for k in
-                                                                     ('plane_pair', 'pair', 'pour')
-                                                                     if isinstance(r.get('info'), dict)}))
+                            value=r['value'], util=r['util'], alloc=r['alloc']['value'], modes=modes.get(r['id']),
+                            loop_cap_value=first.get(r['id']), n_comps=len(r.get('components') or []),
+                            via=vias.get(r['id']),
+                            function=(r.get('info') or {}).get('function')))
     return out
 
 
@@ -286,8 +302,15 @@ def summarize(routed, terms):
         out['hops'][k]['sum_ratio'] = round(sum(b for _, b in v) / sum(a for a, _ in v), 3)
     byv = defaultdict(list)
     for r in terms:
-        if r['value'] > 0:
+        if r['value'] > 0 and r['routed'] > 0:
             byv[(r['variant'], r['kind'])].append(r['routed'] / r['value'])
+            if r.get('loop_cap_value'):
+                # like for like: the routed reference charges the brief loop's capacitor alone
+                byv[(r['variant'], 'cell_loop_cap')].append(r['routed'] / r['loop_cap_value'])
+            if r.get('via'):
+                # like for like: with the reference's whole-board via
+                mine, full = r['via']
+                byv[(r['variant'], 'chain_full_via')].append(r['routed'] / (r['value'] - mine + full))
     for (var, kind), v in sorted(byv.items()):
         out['values'][f'{var}:{kind}'] = _stats(v)
     return out
@@ -299,7 +322,7 @@ def main():
     ap.add_argument('--routed', action='store_true')
     ap.add_argument('--only', default=DEFAULT_IDS)
     ap.add_argument('-j', type=int, default=2)
-    ap.add_argument('--variants', default='base,cal')
+    ap.add_argument('--variants', default='base,cal,nopour')
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

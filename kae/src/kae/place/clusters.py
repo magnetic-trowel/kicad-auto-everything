@@ -341,7 +341,7 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
         si = 0 if p.s > 0 else 1
         for k in range(nk):
             r = p.rots[k]
-            rects = [(si, q) for q in disjoint_union([r.g_own])] + \
+            rects = [(si, q) for q in disjoint_union(list(r.g_own_rects or (r.g_own,)))] + \
                 [(1 - si, q) for q in disjoint_union(list(r.g_opp))]
             for side, (a, b, c, d) in rects:
                 if b <= a or d <= c:
@@ -527,7 +527,7 @@ def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02
         p = P.parts[i]
         r = p.rots[k]
         si = 0 if p.s > 0 else 1
-        out = [(si, (dx + r.g_own[0], dx + r.g_own[1], dy + r.g_own[2], dy + r.g_own[3]))]
+        out = [(si, (dx + o[0], dx + o[1], dy + o[2], dy + o[3])) for o in (r.g_own_rects or (r.g_own,))]
         out += [(1 - si, (dx + q[0], dx + q[1], dy + q[2], dy + q[3])) for q in r.g_opp]
         return out
 

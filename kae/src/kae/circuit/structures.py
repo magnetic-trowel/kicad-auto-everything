@@ -35,7 +35,7 @@ from collections import defaultdict
 from . import values as V
 from .evidence import MODERATE, STRONG, WEAK, confidence, ev
 from .netlist import Netlist, Part
-from .roles import (ANALOG_NET, ANALOG_PIN, BOOT_PIN, CP_PIN, EN_PIN, FB_PIN, IN_PIN, INT_OUT_PIN, OUT_PIN, PWR_PIN, SW_PIN, Roles, belief,
+from .roles import (ANALOG_NET, ANALOG_PIN, BOOT_PIN, CP_PIN, EN_PIN, FB_PIN, IN_PIN, OUT_PIN, PWR_PIN, SW_PIN, Roles, belief,
                     cap_class)
 
 CTRL_PIN = re.compile(r'^(N?PG|PGOOD|POK|MODE\w*|SYNC\w*|SS\w*|TR|TRK|RT\w*|ILIM\w*|COMP|SEL\w*|CFG\w*|PS|FSW|FREQ|CTRL|'
@@ -405,6 +405,7 @@ def _vin_pins(b: _B, ic: str, exclude: set, suffix: str = '', token: str = ''):
     named = re.compile(r'^P?VIN\w*|^VIN\d?$|^PVIN\w*|^VS$|^VCC$|^VM$|^VBAT$|^VSYS$|^AVIN$|^VDD_?SMPS|^VREG_?(VIN|IN)|^VIN_?SMPS|'
                        r'^VDD_?(DCDC|BUCK|REG)|^(DCDC|BUCK|SMPS)_?(VIN|IN|VDD)')
     pins = [p for p in part.active_pins() if p.net not in b.g and p.net not in exclude and (IN_PIN.match(p.fn) or named.match(p.fn))]
+    pins = [p for p in pins if b.r.sem(p) != 'supply_out'] or pins       # a PMIC's VSYS output on the same net
     if suffix:
         same = [p for p in pins if p.fn.endswith(suffix)]
         pins = same or pins
@@ -920,6 +921,7 @@ CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only whe
 CONVERTER_OUT = True   # a buck's output (a boost's input) bulk capacitors (>= 10 uF) belong at its inductor
 CELL_HF_SCARCE = -3.0  # a cell's score offset for a small ceramic when the loads need them all ('count' mode)
 ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
+CELL_DONATE = True     # a cell left without a capacitor takes the second capacitor of another cell on its rail
 
 
 def _decap_groups(b: _B, cells) -> list:
@@ -1067,7 +1069,7 @@ def allocate_caps(b: _B, cells, groups):
         if TIE_ORDER == 'random':
             import random
             import zlib
-            rnd = random.Random(zlib.crc32(rail.encode()))
+            rnd = random.Random(zlib.crc32(str(rail).encode()))
             corder = {c: rnd.random() for c in caps}
             jorder = {j: rnd.random() for j in range(ng)}
             tie = lambda t: (-t[0], corder[t[1]], jorder[t[2]])   # noqa: E731
@@ -1105,6 +1107,19 @@ def allocate_caps(b: _B, cells, groups):
             lst[j0][1]['caps_p'][c] = round(z[j0] / tz, 3)
         for j, (typ, x, _) in enumerate(lst):
             x['shared_by'] = ng
+            if typ == 'cell' and not x['caps'] and CELL_DONATE:
+                # a converter left without a capacitor while another converter on the rail holds two or more:
+                # the other keeps the one that closes its loop and gives up the next (trellis-core: the first
+                # of two bucks took both input capacitors and the second borrowed one of them)
+                donors = [(k, y) for k, (t2, y, _) in enumerate(lst) if t2 == 'cell' and k != j and len(y['caps']) >= 2]
+                spare = [(c, k, y) for k, y in donors for c in _hf_order(b.nl, y['caps'])[1:] if S[(c, j)] is not None]
+                if spare:
+                    c, k, y = max(spare, key=lambda t: (S[(t[0], j)], -_refkey(t[0])[1]))
+                    y['caps'].remove(c)
+                    y['caps_p'].pop(c, None)
+                    if c in (y.get('quota_caps') or []):
+                        y['quota_caps'].remove(c)
+                    x['caps'], x['caps_p'], x['quota_caps'] = [c], {c: 0.5}, [c]
             if typ == 'cell' and not x['caps']:
                 # more converters than capacitors: borrow the best-scoring one, flagged as shared
                 c = max(caps, key=lambda c: S[(c, j)] if S[(c, j)] is not None else -99.0)
@@ -1132,7 +1147,7 @@ def _finish_cells(b: _B, cells):
             c['evidence'].append(ev('topology', f"no capacitor from '{b.short(rail)}' to ground: the loop is open", -2.0))
         c['confidence'] = round(min(c['confidence'], confidence(c['evidence'], prior=-0.5) + 0.0), 3) if not caps or c.get('cap_shared') \
             else c['confidence']
-        for k in ('loop_core', 'cap_rail', 'cap_gnd', 'anchor', 'shared_by'):
+        for k in ('loop_core', 'cap_rail', 'cap_gnd', 'anchor', 'shared_by', 'quota_caps'):
             c.pop(k, None)
 
 
@@ -2188,11 +2203,44 @@ def _low_side_load(b: _B, n, fets):
         if o in b.r.rails and b.k(p.ref) in ('resistor', 'inductor', 'led', 'relay', 'heater', 'motor', 'buzzer', 'speaker') and \
                 not (b.k(p.ref) == 'resistor' and (V.resistance(part.value) or 0) >= 1e3):
             return o, [[p.ref, b.pad_sel(p.ref, o)], [p.ref, p.number]]
+    top = None
     for p in others:
         part = b.nl.parts[p.ref]
         if b.k(p.ref) == 'diode' and diode_side(part, n) == 'A' and b.nl.other_net(part, n) in b.r.rails:
-            return b.nl.other_net(part, n), []
-    return None
+            top = b.nl.other_net(part, n)
+            break
+    # a load wired to two single-pad terminals: the pad on `n` and its twin (same footprint) on a rail
+    pads = [p for p in others if b.k(p.ref) == 'connector' and len(b.nl.parts[p.ref].active_pins()) == 1]
+    for p in pads:
+        lib = b.nl.parts[p.ref].lib_id
+        rails = [top] if top else sorted(b.r.rails)
+        for rn in rails:
+            twin = next((q for q in b.nl.pins(rn) if q.ref != p.ref and b.k(q.ref) == 'connector' and
+                         len(b.nl.parts[q.ref].active_pins()) == 1 and b.nl.parts[q.ref].lib_id == lib), None)
+            if twin:
+                return rn, [[twin.ref, twin.number], [p.ref, p.number]]
+    return (top, []) if top else None
+
+
+def _supply_caps(b: _B, rail, owned) -> list:
+    """_path_caps of `rail`, or of the rail joined to it by a fuse, bead or 0 ohm link when it has none."""
+    caps = _path_caps(b, rail, None, owned)
+    if caps:
+        return caps
+    near = []
+    for n, nr in sorted(b.r.rails.items()):
+        src = nr.attrs.get('source') or {}
+        if src.get('kind') == 'derived' and src.get('via') in ('fuse', 'ferrite', 'resistor', 'jumper', 'net_tie', 'shunt') and \
+                src.get('upstream') == rail:
+            near.append(n)
+    src = b.r.rails[rail].attrs.get('source') or {} if rail in b.r.rails else {}
+    if src.get('kind') == 'derived' and src.get('via') in ('fuse', 'ferrite', 'resistor', 'jumper', 'net_tie', 'shunt'):
+        near.append(src.get('upstream'))
+    for n in near:
+        caps = _path_caps(b, n, None, owned) if n else []
+        if caps:
+            return caps
+    return []
 
 
 def _sw_pads(b: _B, ref, net, rx_=None):
@@ -2217,9 +2265,9 @@ def _cap_owners(cells, groups) -> dict:
 
 
 def _path_caps(b: _B, net, ic, owned) -> list:
-    """A power path's capacitors on `net`: the path IC's own, entry bulk, converter filters and capacitors no
-    consumer holds, up to 4; failing those, up to 2 of a regulator pin's, or the one best capacitor a load or a
-    cell holds, only to close the loop. Capacitors to a chassis ground (Y-capacitors) carry no path current."""
+    """A power path's capacitors on `net`: the path IC's own, entry bulk and capacitors no consumer holds, up
+    to 4; failing those, up to 2 of a regulator pin's or a converter filter's, or the one best capacitor a load or
+    a cell holds, only to close the loop. Capacitors to a chassis ground (Y-capacitors) carry no path current."""
     chassis = {n for n in b.g if b.r.nets[n].subrole == 'chassis'}
     caps = [c for c, g_ in b.r.caps_to.get(net, []) if g_ not in chassis]
     hf = {c: i for i, c in enumerate(_hf_order(b.nl, caps))}
@@ -2228,9 +2276,9 @@ def _path_caps(b: _B, net, ic, owned) -> list:
         ref, func, _ = owned.get(c, (None, None, 0.0))
         if ic and ref == ic:
             return 0
-        if func is None or func in ('entry', 'converter_output', 'converter_input'):
+        if func is None or func == 'entry':
             return 1
-        if func in ('regulator_input', 'regulator_output'):
+        if func in ('regulator_input', 'regulator_output', 'converter_output', 'converter_input'):
             return 2
         return 3
     srt = sorted(caps, key=lambda c: (rank(c), hf[c]))
@@ -2430,16 +2478,17 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
             ld = _low_side_load(b, rin, set(p['switches']))
             if ld:
                 top, load_terms = ld
-                caps_in = _path_caps(b, top, None, owned)
+                caps_in = _supply_caps(b, top, owned)
         if caps_in:
-            loop.append([caps_in[0], b.cap_pad(caps_in[0], top)])
+            cnet = top if top in b.nl.parts[caps_in[0]].nets else next(iter(b.nl.parts[caps_in[0]].nets - b.g), top)
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], cnet)])
         loop += load_terms
         loop += [[sw0, _sw_pads(b, sw0, rin, IN_SW_PIN if p['ic'] else None)],
                  [last, _sw_pads(b, last, rout, OUT_SW_PIN if p['ic'] else None)]]
         if caps_out:
             loop += [[caps_out[0], b.cap_pad(caps_out[0], rout)], [caps_out[0], b.cap_pad(caps_out[0], next(iter(b.nl.parts[caps_out[0]].nets - {rout})))]]
         if caps_in:
-            loop.append([caps_in[0], b.cap_pad(caps_in[0], next(iter(b.nl.parts[caps_in[0]].nets - {top})))])
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], next(iter(b.nl.parts[caps_in[0]].nets - {cnet})))])
         I_, ibasis = _path_current(b, p['switches'], rin, rout, series, p['ic'], p['stages'])
         cap = _dissipation_cap(b, p)
         if cap is not None and cap < I_:
@@ -2462,7 +2511,9 @@ def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
                                 'rail_in': rin, 'rail_out': rout, 'gnd': gnd, 'series': series, 'caps_in': caps_in,
                                 'caps_out': caps_out, 'loop': loop, 'group': p['group'],
                                 'excite': {'V': V_, 'I': I_, 'basis': [ibasis], 'I_belief': belief(I_, 'A', ibasis, round(I_ / 3, 3), I_)},
-                                'R_on_ohm': {'value': round(p['ron'], 6), 'unit': 'ohm', 'class': 'E5', 'basis': p['ron_basis']},
+                                'R_on_ohm': belief(round(p['ron'], 6), 'ohm', p['ron_basis'],
+                                                   *((round(p['ron'] * 0.8, 6), round(p['ron'] * 1.5, 6)) if 'table' in p['ron_basis']
+                                                     else (round(p['ron'] * 0.5, 6), round(p['ron'] * 2.0, 6)))),
                                 'P_W': P_}))
         for st_ in p['stages']:
             for q in st_:

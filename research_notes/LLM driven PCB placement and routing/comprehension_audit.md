@@ -1,4 +1,4 @@
-# Comprehension stage audit: weak labels, manual audit and suite table (kae.circuit, 2026-10-22)
+# Comprehension stage audit: weak labels, manual audit and suite table (kae.circuit, 2026-10-22; follow-up 2026-10-23)
 
 > **Method note.** `kae.circuit` reads a `.kicad_pcb` (names, values, footprints, lib ids, pin functions and types,
 > fields, net classes, zone nets, sheet names) and writes the physics brief; positions are never read. This note is
@@ -12,6 +12,8 @@
 > - Tags: [C] computed by the scripts named; [I] our reading of the board.
 
 ## 1. Weak labels on 112 boards [C]
+
+First report (2026-10-22). The numbers after the follow-up fixes are in §7.2.
 
 | Metric | Final | No sheet names | Random tie order | Baseline |
 |---|---|---|---|---|
@@ -233,124 +235,260 @@ Structure-level: a structure is correct when its class, rail(s) and core members
 | Differential pairs | 19 / 15 / 0 (4 LED-drive lines on one board) | 79% | 100% | 7 / 7 / 0 | 100% | |
 | Part kinds | 945 parts: 1 unknown, 1 debatable (RM2 module as IC) | 99.8% | | 431 parts: 1 wrong (display FPC as oscillator), 4 subtypes missing | 99.8% | |
 
-## 6. Suite table (final run, 112 boards) [C]
+## 6. Suite table (final run of 2026-10-23, 112 boards) [C]
 
 Structures per board, unknown parts, low-confidence parts (< 0.6) and structures (< 0.5), brief runtime (two
-processes). Totals: 9,227 parts; 64 commutation cells on 32 boards; 790 decap structures on 81 boards; 32 crystals and
-8 oscillators; 42 antennas; 597 victims; 127 heat sources; 4 unknown parts on 4 boards; 172 low-confidence parts;
-66 low-confidence structures. Brief median 0.06 s, p90 0.25 s, max 1.6 s; the largest board (621 parts) takes 0.6 s.
+processes, shared host). Totals: 9,227 parts; 64 commutation cells on 32 boards; 26 power paths on 16 boards; 777
+decap structures on 81 boards; 8 rail groups on 5 boards; 32 crystals and 8 oscillators; 42 antennas; 595 victims; 156
+heat sources; 4 unknown parts on 4 boards; 172 low-confidence parts; 70 low-confidence structures. Brief median
+0.08-0.10 s, max 1.5-3.6 s depending on host load (part classification dominates).
 
-| board | parts | cells | decap | xtal | chains | victims | ant | heat | unknown | low-conf parts | low-conf structs | brief s |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 256foundation-emberone00-pcb-emberone | 395 | 2 | 90 | 1 | 12 | 8 | 1 | 26 | 0 | 0 | 0 | 0.497 |
-| antmicro-ddr5-testbed-ddr5-testbed | 65 | 1 | 5 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0.192 |
-| antmicro-myra-sip-interposer-myra-sip-interposer | 32 | 0 | 10 | 1 | 0 | 2 | 0 | 1 | 0 | 1 | 0 | 0.072 |
-| azonenberg-dumptruck-emmc-interposer | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.006 |
-| azonenberg-latentred-dual-sfp28 | 50 | 0 | 1 | 0 | 23 | 2 | 0 | 0 | 0 | 0 | 0 | 0.033 |
-| azonenberg-latentred-linecard | 621 | 4 | 33 | 0 | 337 | 27 | 17 | 6 | 0 | 2 | 1 | 0.641 |
-| azonenberg-latentred-pdu | 46 | 0 | 8 | 0 | 16 | 3 | 0 | 0 | 0 | 0 | 0 | 0.054 |
-| berkeleylab-obsidian-obsidian | 521 | 7 | 43 | 2 | 146 | 19 | 1 | 8 | 0 | 0 | 5 | 1.157 |
-| bluerobotics-ping-dev-kit-pingdevkit | 452 | 8 | 38 | 1 | 77 | 44 | 0 | 8 | 0 | 4 | 1 | 0.517 |
-| chipsalliance-rocket-pcb-fmc-sdram | 73 | 0 | 20 | 0 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0.066 |
-| chipsalliance-rocket-pcb-fmc-usb-gpio-spi-jtag | 146 | 1 | 25 | 0 | 59 | 2 | 0 | 1 | 0 | 0 | 1 | 0.103 |
-| d3a-c-biscuit-crowbar | 13 | 0 | 0 | 0 | 2 | 1 | 0 | 0 | 0 | 1 | 0 | 0.006 |
-| d3a-kitspace-12v5a-breakout | 18 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0.01 |
-| d3a-kitspace-gas-sensor | 15 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0.008 |
-| d3a-kitspace-hum-temp-sensor | 12 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0.007 |
-| d3a-kitspace-temp-breakout | 14 | 0 | 0 | 0 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0.01 |
-| d3a-marlin-neopixel-bridge-attiny85-marneo | 8 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.006 |
-| d3a-pcb-serie-led-strip | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.006 |
-| d3a-starsynctrackers-reset-switch | 9 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0.006 |
-| d3a-z2amiller-sensorboard-programmer | 8 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0.005 |
-| dangerousprototypes-buspirate5-hardware-6-rev2b | 227 | 0 | 58 | 1 | 26 | 38 | 0 | 2 | 0 | 1 | 1 | 0.158 |
-| electron271-tuxkeychain-tuxkeychain | 56 | 0 | 9 | 1 | 33 | 8 | 0 | 3 | 0 | 0 | 0 | 0.052 |
-| git4dcc-rtb-c11-c11 | 163 | 2 | 15 | 0 | 57 | 15 | 0 | 2 | 0 | 7 | 0 | 0.248 |
-| hackclub-reflow-badge | 68 | 1 | 10 | 1 | 10 | 1 | 0 | 1 | 0 | 0 | 2 | 0.057 |
-| kicad-demos-complex-hierarchy-complex-hierarchy | 68 | 0 | 4 | 0 | 6 | 10 | 0 | 1 | 0 | 0 | 0 | 0.04 |
-| kicad-demos-ecc83-ecc83-pp-v2 | 15 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0.008 |
-| kicad-demos-kit-dev-coldfire-xilinx-5213-kit-dev | 160 | 0 | 19 | 1 | 173 | 11 | 0 | 1 | 0 | 7 | 0 | 0.104 |
-| kicad-demos-pic-programmer-pic-programmer | 63 | 1 | 4 | 0 | 14 | 1 | 0 | 1 | 0 | 1 | 0 | 0.036 |
-| kicad-demos-sonde-xilinx-sonde-xilinx | 25 | 0 | 1 | 0 | 17 | 4 | 0 | 0 | 0 | 0 | 0 | 0.018 |
-| kicad-demos-stickhub-stickhub | 94 | 0 | 7 | 1 | 31 | 2 | 0 | 0 | 0 | 1 | 0 | 0.079 |
-| kicad-demos-video-video | 189 | 0 | 12 | 3 | 19 | 14 | 4 | 6 | 0 | 6 | 1 | 0.229 |
-| libresolar-bms-c1-bms-c1 | 210 | 1 | 5 | 0 | 44 | 27 | 1 | 1 | 0 | 0 | 0 | 0.1 |
-| olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1 | 46 | 1 | 1 | 0 | 4 | 3 | 0 | 1 | 0 | 0 | 0 | 0.028 |
-| olimex-mipi-hdmi-mipi-hdmi-rev-b | 70 | 1 | 6 | 1 | 12 | 1 | 0 | 2 | 0 | 0 | 0 | 0.05 |
-| pcbcorpus-0rax-esphome-xiao-base-pcb | 10 | 0 | 0 | 0 | 13 | 1 | 1 | 0 | 0 | 0 | 0 | 0.012 |
-| pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapte | 11 | 0 | 0 | 0 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0.015 |
-| pcbcorpus-angelnu-esphome-siedle-bus | 37 | 0 | 3 | 0 | 4 | 1 | 1 | 0 | 0 | 0 | 0 | 0.025 |
-| pcbcorpus-atoomnetmarc-iot12-iot12-control-board | 73 | 0 | 6 | 0 | 21 | 13 | 0 | 0 | 0 | 0 | 0 | 0.077 |
-| pcbcorpus-azoninc-doorman-doorman | 44 | 1 | 2 | 0 | 14 | 2 | 1 | 1 | 0 | 0 | 0 | 0.072 |
-| pcbcorpus-badjeff-paw3222-pcb-paw3222 | 7 | 0 | 2 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.01 |
-| pcbcorpus-badjeff-paw3395-pcb-paw3395 | 18 | 0 | 5 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0.014 |
-| pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb | 15 | 0 | 6 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.012 |
-| pcbcorpus-bentwire-usb-c-fusb302-pi-usb-c-fusb30 | 64 | 1 | 8 | 1 | 43 | 6 | 0 | 1 | 0 | 0 | 0 | 0.062 |
-| pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev | 9 | 0 | 2 | 0 | 18 | 1 | 0 | 0 | 0 | 0 | 0 | 0.009 |
-| pcbcorpus-brenocq-bldc-motor-bldcm-power | 60 | 1 | 10 | 0 | 35 | 10 | 0 | 2 | 0 | 0 | 0 | 0.066 |
-| pcbcorpus-brown-studios-minuet-minuet | 103 | 3 | 8 | 0 | 51 | 1 | 1 | 3 | 0 | 0 | 0 | 0.105 |
-| pcbcorpus-brown-studios-minuet-minuet-086b34 | 88 | 3 | 6 | 0 | 46 | 3 | 1 | 3 | 0 | 0 | 0 | 0.085 |
-| pcbcorpus-caffeinated-labs-caffeinated-aftonspar | 37 | 1 | 2 | 0 | 10 | 3 | 1 | 1 | 0 | 0 | 0 | 0.031 |
-| pcbcorpus-circuitstate-mitayi-pico-d1-mitayi-pic | 75 | 0 | 5 | 1 | 57 | 1 | 0 | 1 | 0 | 0 | 1 | 0.056 |
-| pcbcorpus-diysynthmnl-eurorack-multi-saturation- | 83 | 0 | 6 | 0 | 6 | 21 | 0 | 0 | 0 | 9 | 0 | 0.07 |
-| pcbcorpus-electron271-tuxkeychain-expansion | 5 | 0 | 0 | 0 | 2 | 3 | 0 | 0 | 0 | 0 | 0 | 0.012 |
-| pcbcorpus-envious-data-envopenpico-envopenpico-r | 58 | 0 | 7 | 1 | 43 | 8 | 0 | 0 | 0 | 0 | 1 | 0.042 |
-| pcbcorpus-flypie-ace-2019-ace3nokb | 148 | 0 | 13 | 1 | 128 | 4 | 0 | 1 | 1 | 7 | 10 | 0.209 |
-| pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-aud | 34 | 0 | 0 | 0 | 10 | 1 | 0 | 0 | 0 | 0 | 0 | 0.024 |
-| pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-sc1 | 96 | 0 | 6 | 0 | 52 | 5 | 1 | 2 | 0 | 0 | 0 | 0.065 |
-| pcbcorpus-fyralabs-suzyqboard-suzyqboard | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.007 |
-| pcbcorpus-goga64-ulk-ulk | 124 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.047 |
-| pcbcorpus-goga64-ulk-ulk-4ead33 | 124 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.048 |
-| pcbcorpus-ikajdan-reflow-hot-plate-control-board | 125 | 1 | 8 | 1 | 35 | 8 | 0 | 2 | 0 | 0 | 0 | 0.109 |
-| pcbcorpus-jana-marie-analog-toolkit-analog-toolk | 85 | 0 | 5 | 0 | 37 | 10 | 0 | 1 | 0 | 1 | 0 | 0.052 |
-| pcbcorpus-jangtrinh-design-os-3d-blender-desktop | 24 | 0 | 0 | 0 | 15 | 2 | 1 | 0 | 0 | 0 | 0 | 0.013 |
-| pcbcorpus-jkramarz-thetick-tick | 37 | 1 | 2 | 0 | 7 | 6 | 1 | 1 | 0 | 0 | 0 | 0.042 |
-| pcbcorpus-justbuchanan-oasis-ledboard | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0.013 |
-| pcbcorpus-justbuchanan-oasis-pcb | 45 | 1 | 4 | 0 | 10 | 1 | 1 | 1 | 0 | 6 | 2 | 0.036 |
-| pcbcorpus-jvedder-biploar-power-supply-kicad-bip | 37 | 0 | 2 | 0 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0.027 |
-| pcbcorpus-kabukiflux-duplicanator-scart-duplicat | 42 | 0 | 0 | 0 | 7 | 2 | 0 | 1 | 0 | 0 | 0 | 0.046 |
-| pcbcorpus-kabukiflux-midi4mister-midi-4-mister | 40 | 0 | 3 | 0 | 14 | 0 | 0 | 1 | 0 | 0 | 0 | 0.032 |
-| pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgb | 9 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0.015 |
-| pcbcorpus-kampi-beelight-beelight | 25 | 0 | 3 | 0 | 4 | 0 | 1 | 0 | 0 | 0 | 0 | 0.024 |
-| pcbcorpus-kkckrnz-treble-treble | 141 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 43 | 0 | 0.054 |
-| pcbcorpus-koron-yuiop-yuiop29re | 123 | 0 | 5 | 0 | 21 | 0 | 0 | 0 | 0 | 0 | 5 | 0.125 |
-| pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb | 19 | 0 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0.022 |
-| pcbcorpus-leomanangka-esp32-4-channel-relays-esp | 63 | 0 | 4 | 0 | 7 | 0 | 1 | 1 | 0 | 0 | 0 | 0.068 |
-| pcbcorpus-m1geo-pi5-pcie-pi5-pcie | 54 | 0 | 3 | 0 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0.049 |
-| pcbcorpus-mecparts-retrowifimodem-retrowifimodem | 35 | 0 | 4 | 0 | 9 | 0 | 0 | 1 | 0 | 1 | 0 | 0.025 |
-| pcbcorpus-mohamedboubaker-battery-powered-stm32- | 53 | 2 | 4 | 1 | 17 | 3 | 0 | 1 | 1 | 0 | 0 | 0.044 |
-| pcbcorpus-murexrobotics-electrical-esc-carrier | 49 | 0 | 0 | 0 | 111 | 0 | 0 | 0 | 0 | 1 | 0 | 0.04 |
-| pcbcorpus-ojg-thatmicpre-thatmicpre-v2 | 89 | 0 | 1 | 0 | 14 | 3 | 0 | 0 | 0 | 0 | 0 | 0.084 |
-| pcbcorpus-pcbcupid-kicad-7-series-schematics | 14 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0.012 |
-| pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e | 14 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0.011 |
-| pcbcorpus-protolux-electronics-trellis-core-trel | 89 | 2 | 10 | 2 | 9 | 4 | 0 | 2 | 0 | 0 | 0 | 0.119 |
-| pcbcorpus-ravinrabbid-doncon2040-donconio | 106 | 0 | 16 | 0 | 8 | 16 | 0 | 0 | 0 | 0 | 0 | 0.094 |
-| pcbcorpus-ravinrabbid-doncon2040-donconiomini | 96 | 1 | 11 | 0 | 3 | 16 | 0 | 1 | 0 | 0 | 0 | 0.092 |
-| pcbcorpus-rniwase-sdtv2csi-sdtv2csi | 67 | 0 | 6 | 1 | 9 | 11 | 0 | 2 | 0 | 0 | 0 | 0.095 |
-| pcbcorpus-rniwase-tsuraragb-tgb-main | 70 | 0 | 12 | 0 | 9 | 1 | 0 | 3 | 0 | 0 | 0 | 0.083 |
-| pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst | 20 | 0 | 3 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0.02 |
-| pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb | 24 | 0 | 6 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0.038 |
-| pcbcorpus-stack-chan-stack-chan-m5-pantilt | 39 | 0 | 1 | 0 | 21 | 1 | 0 | 0 | 0 | 0 | 0 | 0.042 |
-| pcbcorpus-sufst-pcb-16ch-sensor-hub | 173 | 0 | 7 | 1 | 42 | 49 | 0 | 0 | 0 | 0 | 0 | 0.247 |
-| pcbcorpus-sufst-pcb-8ch-sensor-hub | 114 | 0 | 7 | 1 | 26 | 33 | 0 | 0 | 0 | 0 | 0 | 0.122 |
-| pcbcorpus-tcsullivan-noisecard-noisecard | 32 | 1 | 3 | 0 | 3 | 2 | 0 | 0 | 1 | 0 | 0 | 0.03 |
-| pcbcorpus-tjko-brickpico-brickpico | 124 | 1 | 3 | 0 | 41 | 1 | 1 | 1 | 0 | 1 | 1 | 0.197 |
-| pcbcorpus-tjko-fanpico-fanpico-31b08e | 216 | 0 | 9 | 0 | 50 | 8 | 1 | 0 | 0 | 1 | 1 | 0.349 |
-| pcbcorpus-tmarhguy-alu-gate-xnor-2in | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.016 |
-| pcbcorpus-tmarhguy-alu-gate-xor-2in | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.016 |
-| pcbcorpus-tomtor-stm32-rfm95-pcb-avr-lora | 39 | 0 | 4 | 2 | 28 | 3 | 1 | 0 | 0 | 0 | 0 | 0.038 |
-| pcbcorpus-tomtor-stm32-rfm95-pcb-avr-lora-805 | 39 | 0 | 4 | 2 | 28 | 3 | 1 | 0 | 0 | 0 | 0 | 0.033 |
-| pcbcorpus-tzarc-keyboards-kobold | 104 | 0 | 20 | 0 | 16 | 3 | 0 | 1 | 0 | 0 | 16 | 0.105 |
-| pcbcorpus-uzixls-pc-ega-composite-daughterboard- | 51 | 0 | 3 | 0 | 12 | 2 | 0 | 3 | 0 | 0 | 0 | 0.048 |
-| pcbcorpus-uzixls-pc-ega-composite-daughterboard- | 48 | 0 | 3 | 0 | 11 | 2 | 0 | 3 | 0 | 0 | 0 | 0.043 |
-| pcbcorpus-vaaarad07-pcb-designs-mvcu-f407 | 114 | 0 | 14 | 1 | 36 | 7 | 1 | 1 | 0 | 0 | 2 | 0.078 |
-| pcbcorpus-waterloo-rocketry-canhw-processor | 80 | 1 | 9 | 0 | 21 | 4 | 0 | 1 | 0 | 3 | 1 | 0.069 |
-| pcbcorpus-wibblyghost-southerly-split-keeb-south | 87 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 28 | 0 | 0.039 |
-| pcbcorpus-zhiayang-mikoto-mikoto-flashbed | 48 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 21 | 0 | 0.028 |
-| pcbcorpus-zswatch-watch-devkit-hw-zswatch-watch- | 132 | 3 | 19 | 0 | 81 | 4 | 1 | 0 | 0 | 0 | 0 | 0.138 |
-| piotr-binkowski-kintex-pcie-board-kintex-pcie | 166 | 2 | 14 | 0 | 18 | 9 | 0 | 3 | 0 | 0 | 4 | 0.106 |
-| rapidanalysis-xerxes-xerxes | 58 | 1 | 3 | 1 | 47 | 4 | 0 | 1 | 0 | 2 | 0 | 0.095 |
-| reform-reform-reform2-protected-batterypack-pcb | 38 | 0 | 0 | 0 | 5 | 12 | 0 | 0 | 0 | 4 | 0 | 0.024 |
-| sparkfun-sparkfun-xrp-controller-sparkfun-xrp-co | 387 | 4 | 10 | 1 | 110 | 11 | 0 | 4 | 0 | 1 | 0 | 0.233 |
-| system76-launch-launch-heavy | 73 | 0 | 10 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 10 | 0.04 |
-| wntrblm-helium-board | 67 | 0 | 8 | 0 | 19 | 22 | 0 | 0 | 0 | 0 | 0 | 0.087 |
-| wntrblm-micronova-board | 55 | 3 | 3 | 0 | 21 | 1 | 0 | 3 | 0 | 5 | 0 | 0.025 |
+| board | parts | cells | paths | decap | rail groups | xtal | chains | victims | ant | heat | unknown | low-conf parts | low-conf structs | brief s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 256foundation-emberone00-pcb-emberone | 395 | 2 | 0 | 90 | 0 | 1 | 12 | 8 | 1 | 26 | 0 | 0 | 0 | 0.676 |
+| antmicro-ddr5-testbed-ddr5-testbed | 65 | 1 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0.31 |
+| antmicro-myra-sip-interposer-myra-sip-interposer | 32 | 0 | 0 | 10 | 0 | 1 | 0 | 2 | 0 | 1 | 0 | 1 | 2 | 0.154 |
+| azonenberg-dumptruck-emmc-interposer | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.02 |
+| azonenberg-latentred-dual-sfp28 | 50 | 0 | 0 | 1 | 0 | 0 | 23 | 2 | 0 | 0 | 0 | 0 | 0 | 0.093 |
+| azonenberg-latentred-linecard | 621 | 4 | 0 | 29 | 0 | 0 | 337 | 27 | 17 | 6 | 0 | 2 | 1 | 1.388 |
+| azonenberg-latentred-pdu | 46 | 0 | 3 | 8 | 0 | 0 | 16 | 3 | 0 | 3 | 0 | 0 | 0 | 0.075 |
+| berkeleylab-obsidian-obsidian | 521 | 7 | 1 | 42 | 0 | 2 | 146 | 19 | 1 | 9 | 0 | 0 | 5 | 3.579 |
+| bluerobotics-ping-dev-kit-pingdevkit | 452 | 8 | 1 | 39 | 0 | 1 | 77 | 44 | 0 | 9 | 0 | 4 | 3 | 1.965 |
+| chipsalliance-rocket-pcb-fmc-sdram | 73 | 0 | 0 | 20 | 0 | 0 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0.336 |
+| chipsalliance-rocket-pcb-fmc-usb-gpio-spi-jtag | 146 | 1 | 0 | 25 | 2 | 0 | 59 | 2 | 0 | 1 | 0 | 0 | 1 | 0.315 |
+| d3a-c-biscuit-crowbar | 13 | 0 | 0 | 0 | 0 | 0 | 2 | 1 | 0 | 0 | 0 | 1 | 0 | 0.008 |
+| d3a-kitspace-12v5a-breakout | 18 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0.04 |
+| d3a-kitspace-gas-sensor | 15 | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0.019 |
+| d3a-kitspace-hum-temp-sensor | 12 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0.016 |
+| d3a-kitspace-temp-breakout | 14 | 0 | 0 | 0 | 0 | 0 | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 0.088 |
+| d3a-marlin-neopixel-bridge-attiny85-marneo | 8 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.022 |
+| d3a-pcb-serie-led-strip | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.007 |
+| d3a-starsynctrackers-reset-switch | 9 | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 1 | 0 | 0.012 |
+| d3a-z2amiller-sensorboard-programmer | 8 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0.012 |
+| dangerousprototypes-buspirate5-hardware-6-rev2b | 227 | 0 | 1 | 58 | 3 | 1 | 26 | 38 | 0 | 3 | 0 | 1 | 1 | 0.408 |
+| electron271-tuxkeychain-tuxkeychain | 56 | 0 | 0 | 9 | 0 | 1 | 33 | 8 | 0 | 3 | 0 | 0 | 0 | 0.121 |
+| git4dcc-rtb-c11-c11 | 163 | 2 | 2 | 15 | 0 | 0 | 57 | 15 | 0 | 4 | 0 | 7 | 0 | 0.517 |
+| hackclub-reflow-badge | 68 | 1 | 0 | 9 | 0 | 1 | 10 | 1 | 0 | 1 | 0 | 0 | 2 | 0.162 |
+| kicad-demos-complex-hierarchy-complex-hierarchy | 68 | 0 | 0 | 4 | 0 | 0 | 6 | 10 | 0 | 1 | 0 | 0 | 0 | 0.09 |
+| kicad-demos-ecc83-ecc83-pp-v2 | 15 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0.041 |
+| kicad-demos-kit-dev-coldfire-xilinx-5213-kit-dev | 160 | 0 | 0 | 11 | 0 | 1 | 173 | 11 | 0 | 1 | 0 | 7 | 0 | 0.301 |
+| kicad-demos-pic-programmer-pic-programmer | 63 | 1 | 0 | 3 | 0 | 0 | 14 | 1 | 0 | 1 | 0 | 1 | 0 | 0.11 |
+| kicad-demos-sonde-xilinx-sonde-xilinx | 25 | 0 | 0 | 1 | 0 | 0 | 17 | 4 | 0 | 0 | 0 | 0 | 0 | 0.093 |
+| kicad-demos-stickhub-stickhub | 94 | 0 | 0 | 7 | 0 | 1 | 31 | 2 | 0 | 0 | 0 | 1 | 0 | 0.143 |
+| kicad-demos-video-video | 189 | 0 | 0 | 12 | 0 | 3 | 19 | 14 | 4 | 6 | 0 | 6 | 2 | 0.577 |
+| libresolar-bms-c1-bms-c1 | 210 | 1 | 1 | 6 | 0 | 0 | 42 | 27 | 1 | 9 | 0 | 0 | 0 | 0.173 |
+| olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1 | 46 | 1 | 0 | 1 | 0 | 0 | 4 | 3 | 0 | 1 | 0 | 0 | 0 | 0.061 |
+| olimex-mipi-hdmi-mipi-hdmi-rev-b | 70 | 1 | 0 | 6 | 0 | 1 | 12 | 1 | 0 | 2 | 0 | 0 | 0 | 0.094 |
+| pcbcorpus-0rax-esphome-xiao-base-pcb | 10 | 0 | 0 | 0 | 0 | 0 | 13 | 1 | 1 | 0 | 0 | 0 | 0 | 0.014 |
+| pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapte | 11 | 0 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0.027 |
+| pcbcorpus-angelnu-esphome-siedle-bus | 37 | 0 | 0 | 2 | 0 | 0 | 4 | 1 | 1 | 0 | 0 | 0 | 0 | 0.03 |
+| pcbcorpus-atoomnetmarc-iot12-iot12-control-board | 73 | 0 | 0 | 6 | 0 | 0 | 21 | 13 | 0 | 0 | 0 | 0 | 0 | 0.175 |
+| pcbcorpus-azoninc-doorman-doorman | 44 | 1 | 0 | 2 | 0 | 0 | 14 | 2 | 1 | 1 | 0 | 0 | 0 | 0.158 |
+| pcbcorpus-badjeff-paw3222-pcb-paw3222 | 7 | 0 | 0 | 2 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.012 |
+| pcbcorpus-badjeff-paw3395-pcb-paw3395 | 18 | 0 | 0 | 5 | 0 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0.029 |
+| pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb | 15 | 0 | 0 | 6 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0.017 |
+| pcbcorpus-bentwire-usb-c-fusb302-pi-usb-c-fusb30 | 64 | 1 | 0 | 8 | 0 | 1 | 43 | 6 | 0 | 1 | 0 | 0 | 0 | 0.089 |
+| pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev | 9 | 0 | 0 | 2 | 0 | 0 | 18 | 1 | 0 | 0 | 0 | 0 | 0 | 0.018 |
+| pcbcorpus-brenocq-bldc-motor-bldcm-power | 60 | 1 | 2 | 10 | 0 | 0 | 35 | 10 | 0 | 3 | 0 | 0 | 0 | 0.056 |
+| pcbcorpus-brown-studios-minuet-minuet | 103 | 3 | 0 | 8 | 0 | 0 | 51 | 1 | 1 | 3 | 0 | 0 | 0 | 0.234 |
+| pcbcorpus-brown-studios-minuet-minuet-086b34 | 88 | 3 | 0 | 6 | 0 | 0 | 46 | 3 | 1 | 3 | 0 | 0 | 0 | 0.144 |
+| pcbcorpus-caffeinated-labs-caffeinated-aftonspar | 37 | 1 | 3 | 2 | 0 | 0 | 10 | 3 | 1 | 4 | 0 | 0 | 0 | 0.062 |
+| pcbcorpus-circuitstate-mitayi-pico-d1-mitayi-pic | 75 | 0 | 0 | 5 | 0 | 1 | 57 | 1 | 0 | 1 | 0 | 0 | 1 | 0.112 |
+| pcbcorpus-diysynthmnl-eurorack-multi-saturation- | 83 | 0 | 0 | 6 | 0 | 0 | 6 | 21 | 0 | 0 | 0 | 9 | 0 | 0.17 |
+| pcbcorpus-electron271-tuxkeychain-expansion | 5 | 0 | 0 | 0 | 0 | 0 | 2 | 3 | 0 | 0 | 0 | 0 | 0 | 0.026 |
+| pcbcorpus-envious-data-envopenpico-envopenpico-r | 58 | 0 | 0 | 7 | 0 | 1 | 43 | 8 | 0 | 0 | 0 | 0 | 1 | 0.085 |
+| pcbcorpus-flypie-ace-2019-ace3nokb | 148 | 0 | 0 | 13 | 0 | 1 | 128 | 4 | 0 | 1 | 1 | 7 | 10 | 0.476 |
+| pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-aud | 34 | 0 | 0 | 0 | 0 | 0 | 10 | 1 | 0 | 0 | 0 | 0 | 0 | 0.048 |
+| pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-sc1 | 96 | 0 | 0 | 6 | 0 | 0 | 52 | 5 | 1 | 2 | 0 | 0 | 0 | 0.09 |
+| pcbcorpus-fyralabs-suzyqboard-suzyqboard | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.045 |
+| pcbcorpus-goga64-ulk-ulk | 124 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.155 |
+| pcbcorpus-goga64-ulk-ulk-4ead33 | 124 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.1 |
+| pcbcorpus-ikajdan-reflow-hot-plate-control-board | 125 | 1 | 1 | 8 | 0 | 1 | 35 | 8 | 0 | 3 | 0 | 0 | 0 | 0.306 |
+| pcbcorpus-jana-marie-analog-toolkit-analog-toolk | 85 | 0 | 0 | 5 | 0 | 0 | 37 | 10 | 0 | 1 | 0 | 1 | 0 | 0.105 |
+| pcbcorpus-jangtrinh-design-os-3d-blender-desktop | 24 | 0 | 0 | 0 | 0 | 0 | 15 | 2 | 1 | 0 | 0 | 0 | 0 | 0.026 |
+| pcbcorpus-jkramarz-thetick-tick | 37 | 1 | 0 | 2 | 0 | 0 | 7 | 6 | 1 | 1 | 0 | 0 | 0 | 0.757 |
+| pcbcorpus-justbuchanan-oasis-ledboard | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5 | 0 | 0.013 |
+| pcbcorpus-justbuchanan-oasis-pcb | 45 | 1 | 1 | 4 | 0 | 0 | 10 | 1 | 1 | 2 | 0 | 6 | 2 | 0.074 |
+| pcbcorpus-jvedder-biploar-power-supply-kicad-bip | 37 | 0 | 0 | 2 | 0 | 0 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0.07 |
+| pcbcorpus-kabukiflux-duplicanator-scart-duplicat | 42 | 0 | 0 | 0 | 0 | 0 | 7 | 2 | 0 | 1 | 0 | 0 | 0 | 0.044 |
+| pcbcorpus-kabukiflux-midi4mister-midi-4-mister | 40 | 0 | 0 | 3 | 0 | 0 | 14 | 0 | 0 | 1 | 0 | 0 | 0 | 0.136 |
+| pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgb | 9 | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0.027 |
+| pcbcorpus-kampi-beelight-beelight | 25 | 0 | 0 | 3 | 0 | 0 | 4 | 0 | 1 | 0 | 0 | 0 | 0 | 0.053 |
+| pcbcorpus-kkckrnz-treble-treble | 141 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 43 | 0 | 0.128 |
+| pcbcorpus-koron-yuiop-yuiop29re | 123 | 0 | 0 | 5 | 1 | 0 | 21 | 0 | 0 | 0 | 0 | 0 | 5 | 0.402 |
+| pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb | 19 | 0 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0.058 |
+| pcbcorpus-leomanangka-esp32-4-channel-relays-esp | 63 | 0 | 0 | 4 | 0 | 0 | 7 | 0 | 1 | 1 | 0 | 0 | 0 | 0.217 |
+| pcbcorpus-m1geo-pi5-pcie-pi5-pcie | 54 | 0 | 0 | 3 | 0 | 0 | 17 | 0 | 0 | 0 | 0 | 0 | 0 | 0.152 |
+| pcbcorpus-mecparts-retrowifimodem-retrowifimodem | 35 | 0 | 0 | 5 | 0 | 0 | 9 | 0 | 0 | 1 | 0 | 1 | 0 | 0.098 |
+| pcbcorpus-mohamedboubaker-battery-powered-stm32- | 53 | 2 | 0 | 4 | 0 | 1 | 17 | 3 | 0 | 1 | 1 | 0 | 0 | 0.097 |
+| pcbcorpus-murexrobotics-electrical-esc-carrier | 49 | 0 | 0 | 0 | 0 | 0 | 111 | 0 | 0 | 0 | 0 | 1 | 0 | 0.124 |
+| pcbcorpus-ojg-thatmicpre-thatmicpre-v2 | 89 | 0 | 0 | 1 | 0 | 0 | 14 | 3 | 0 | 0 | 0 | 0 | 0 | 0.127 |
+| pcbcorpus-pcbcupid-kicad-7-series-schematics | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0.025 |
+| pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e | 14 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0.024 |
+| pcbcorpus-protolux-electronics-trellis-core-trel | 89 | 2 | 0 | 10 | 0 | 2 | 9 | 4 | 0 | 2 | 0 | 0 | 0 | 0.262 |
+| pcbcorpus-ravinrabbid-doncon2040-donconio | 106 | 0 | 0 | 16 | 0 | 0 | 8 | 16 | 0 | 0 | 0 | 0 | 0 | 0.278 |
+| pcbcorpus-ravinrabbid-doncon2040-donconiomini | 96 | 1 | 0 | 11 | 0 | 0 | 3 | 16 | 0 | 1 | 0 | 0 | 0 | 0.194 |
+| pcbcorpus-rniwase-sdtv2csi-sdtv2csi | 67 | 0 | 0 | 7 | 0 | 1 | 9 | 11 | 0 | 2 | 0 | 0 | 0 | 0.098 |
+| pcbcorpus-rniwase-tsuraragb-tgb-main | 70 | 0 | 1 | 12 | 0 | 0 | 9 | 1 | 0 | 3 | 0 | 0 | 0 | 0.203 |
+| pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst | 20 | 0 | 0 | 3 | 0 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0.061 |
+| pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb | 24 | 0 | 0 | 6 | 0 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0.048 |
+| pcbcorpus-stack-chan-stack-chan-m5-pantilt | 39 | 0 | 0 | 1 | 0 | 0 | 21 | 1 | 0 | 0 | 0 | 0 | 0 | 0.127 |
+| pcbcorpus-sufst-pcb-16ch-sensor-hub | 173 | 0 | 1 | 7 | 0 | 1 | 42 | 49 | 0 | 1 | 0 | 0 | 0 | 0.497 |
+| pcbcorpus-sufst-pcb-8ch-sensor-hub | 114 | 0 | 1 | 7 | 0 | 1 | 26 | 33 | 0 | 1 | 0 | 0 | 0 | 0.341 |
+| pcbcorpus-tcsullivan-noisecard-noisecard | 32 | 1 | 0 | 3 | 0 | 0 | 3 | 2 | 0 | 0 | 1 | 0 | 0 | 0.066 |
+| pcbcorpus-tjko-brickpico-brickpico | 124 | 1 | 0 | 3 | 0 | 0 | 41 | 1 | 1 | 1 | 0 | 1 | 1 | 0.358 |
+| pcbcorpus-tjko-fanpico-fanpico-31b08e | 216 | 0 | 0 | 9 | 0 | 0 | 50 | 8 | 1 | 0 | 0 | 1 | 1 | 0.42 |
+| pcbcorpus-tmarhguy-alu-gate-xnor-2in | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.018 |
+| pcbcorpus-tmarhguy-alu-gate-xor-2in | 19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.021 |
+| pcbcorpus-tomtor-stm32-rfm95-pcb-avr-lora | 39 | 0 | 0 | 4 | 0 | 2 | 28 | 3 | 1 | 0 | 0 | 0 | 0 | 0.035 |
+| pcbcorpus-tomtor-stm32-rfm95-pcb-avr-lora-805 | 39 | 0 | 0 | 4 | 0 | 2 | 28 | 3 | 1 | 0 | 0 | 0 | 0 | 0.038 |
+| pcbcorpus-tzarc-keyboards-kobold | 104 | 0 | 1 | 20 | 1 | 0 | 16 | 3 | 0 | 2 | 0 | 0 | 16 | 0.189 |
+| pcbcorpus-uzixls-pc-ega-composite-daughterboard- | 51 | 0 | 0 | 3 | 0 | 0 | 12 | 2 | 0 | 3 | 0 | 0 | 0 | 0.066 |
+| pcbcorpus-uzixls-pc-ega-composite-daughterboard- | 48 | 0 | 0 | 4 | 0 | 0 | 11 | 2 | 0 | 3 | 0 | 0 | 0 | 0.092 |
+| pcbcorpus-vaaarad07-pcb-designs-mvcu-f407 | 114 | 0 | 0 | 14 | 0 | 1 | 36 | 7 | 1 | 1 | 0 | 0 | 2 | 0.115 |
+| pcbcorpus-waterloo-rocketry-canhw-processor | 80 | 1 | 0 | 8 | 0 | 0 | 21 | 4 | 0 | 1 | 0 | 3 | 0 | 0.127 |
+| pcbcorpus-wibblyghost-southerly-split-keeb-south | 87 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 28 | 0 | 0.068 |
+| pcbcorpus-zhiayang-mikoto-mikoto-flashbed | 48 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 21 | 0 | 0.052 |
+| pcbcorpus-zswatch-watch-devkit-hw-zswatch-watch- | 132 | 3 | 0 | 19 | 0 | 0 | 81 | 4 | 1 | 0 | 0 | 0 | 0 | 0.951 |
+| piotr-binkowski-kintex-pcie-board-kintex-pcie | 166 | 2 | 0 | 14 | 0 | 0 | 18 | 9 | 0 | 3 | 0 | 0 | 4 | 0.278 |
+| rapidanalysis-xerxes-xerxes | 58 | 1 | 1 | 3 | 0 | 1 | 47 | 4 | 0 | 2 | 0 | 2 | 0 | 0.198 |
+| reform-reform-reform2-protected-batterypack-pcb | 38 | 0 | 0 | 0 | 0 | 0 | 5 | 12 | 0 | 0 | 0 | 4 | 0 | 0.063 |
+| sparkfun-sparkfun-xrp-controller-sparkfun-xrp-co | 387 | 4 | 5 | 10 | 0 | 1 | 110 | 9 | 0 | 7 | 0 | 1 | 0 | 0.601 |
+| system76-launch-launch-heavy | 73 | 0 | 0 | 10 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 10 | 0.146 |
+| wntrblm-helium-board | 67 | 0 | 0 | 8 | 0 | 0 | 19 | 22 | 0 | 0 | 0 | 0 | 0 | 0.207 |
+| wntrblm-micronova-board | 55 | 3 | 0 | 2 | 0 | 0 | 21 | 1 | 0 | 3 | 0 | 5 | 0 | 0.077 |
+
+## 7. Follow-up, 2026-10-23: pin pairing, power paths, rail groups, pin types [C][I]
+
+Same 112 boards, same eval script (extended with rail-group and power-path measures). Baselines are the runs made
+with the code just before each change; "first report" is §1.
+
+### 7.1 Decap pin pairing (cases reported by the critical router)
+
+The human distance was used only as the label; each case was traced to the rule that produced it.
+
+| Case (human distance) | Rule error | Fix, fixture |
+|---|---|---|
+| canhw-processor U4: six VDD pins -> C5/C6/C7/C8/C11 at 11.4-21.9 mm | a group with several pins on one net paired its capacitors with pins round-robin in reference order; the netlist cannot say which of six VDD pins a capacitor serves | multi-pin groups name no pin (`pairing: 'nearest_pin'`); `test_multi_pin_group_pairs_by_distance_not_by_reference_order` |
+| bms-c1 U1 pin 3 -> C19 (69.6 mm), U5 pin 3 -> C36 (57.6 mm) | the ESP32 module's `3V3` pin read as a regulator output (a 'bypass' group); the buck's output filter, an exclusive owner, took a 100 nF cap because its quota had room | a `3V3` pin is a load supply unless typed power_out; exclusive owners never take ineligible caps; `test_module_3v3_pin_is_a_load_and_exclusive_owners_take_only_eligible_caps` |
+| bms-c1 U2 pin 8 -> C21 (11.2 mm); noisecard MK1 pin 5 -> C8/C9 (19-21 mm) | leftover capacitors all went to the first consumer in reference order | leftovers go to the near-best owner with the fewest capacitors per pin; a pin is named only for small ceramics within quota with p >= 0.5; `test_leftover_caps_spread_by_caps_per_pin` |
+
+| Measure | Before | After | Final (all changes) |
+|---|---|---|---|
+| Pin pairs stated (`pin_caps`) | 1,457 | 285 | 284 |
+| Share with human distance > 10 mm | 33.2% | 11.6% | 11.6% (33 pairs on 20 boards) |
+| Median pin-to-cap distance | 5.83 mm | 2.69 mm | 2.69 mm |
+| Boards with any pairing > 10 mm | 55 | 20 | 20 |
+| Ownership, all owners (n caps) | 73.2% (1,386) | 74.3% (1,369) | 74.7% (1,373) |
+| Per-board mean | 68.8% | 69.4% | 70.5% |
+
+The remaining far pairs are single-pin parts whose one capacitor the designer put elsewhere; three mouse-sensor
+boards (PMW3610, PAW3395) hold 9 of the 33, the rest are one or two per board.
+
+### 7.2 Final run against the first report
+
+| Measure | First report | Final | No sheet names | Random tie order |
+|---|---|---|---|---|
+| Ownership, all owners | 73.1% (1,381) | **74.7%** (1,373; per board 70.5%) | 62.9% | 61.3% |
+| Effective ownership (rail-group caps paired with the nearest group load) | | **76.0%** | 64.3% | 64.0% |
+| Decap groups only | 74.7% (1,160) | 75.8% (1,155) | | |
+| Pin pairs > 10 mm | 33.2% of 1,457 | 11.6% of 284 | 14.5% of 249 | 12.1% of 281 |
+| Hot loops below the 5th percentile of random | 76.6% of 64 | **81.3%** (below 1st: 40.6%) | 73.4% | 71.9% |
+| Power-path loops below the 5th percentile | | 52% of 21 (median percentile 0.035) | | |
+| Crystal to IC | 4.71 mm | 4.71 mm | | |
+| TVS nearer the connector | 60.2% of 266 | 59.5% of 269 | | |
+| Brief runtime (2 processes, shared host) | median 0.06 s, max 1.6 s | median 0.08-0.10 s, max 1.5-3.6 s | | |
+
+Calibration (final): p < 0.5 right 54.8% (n 529, mean p 0.24); 0.5-0.7 76.6% (239); 0.7-0.9 89.9% (197);
+>= 0.9 91.8% (403). Cells: boosts 6/6, half-bridges 10/11, bucks 36/47 below the 5th percentile. The cell gain is
+the capacitor donation rule (§7.6): trellis-core U2 (percentile 0.39 -> 0.03) and obsidian U10 (0.29 -> 0.03); one
+regression, obsidian U11 (0.11 -> 0.53), where five bucks share six caps and nothing in the netlist says which.
+Runtime is dominated by part classification (regex tables, about 70% of the slowest board); host load varied.
+
+### 7.3 Power paths (no switching): 26 on 16 boards
+
+| Board | Path | Class | Rails | I (basis) | P_W |
+|---|---|---|---|---|---|
+| latentred-pdu | U4, U5, U7 | load_switch | 12V0 -> shunt -> channel | 24 A (NCP45560 table) | 1.90 each |
+| git4dcc rtb-c11 | IC6, IC8 | load_switch | Vsrc -> Vbst.0/.1 | 3 A (MAX17613 table) | 2.34 each |
+| kobold | U3 (+ 50 mOhm shunt R3) | load_switch | VBUS -> RGB_PWR | 2.5 A (AP2552 table) | 0.44 |
+| xerxes | U1 | load_switch | CM5_3V3 -> SD_PWR | 1.5 A (RT9742 table) | 0.16 |
+| brenocq bldcm-power | U9:VIN_5V, U9:VBUS | power_mux, group U9 | -> 5V | 1.25 A (TPS2115A table) | 0.13 |
+| libresolar bms-c1 | Q2-Q5 + Q6-Q9 | fet_bank, 2 stages x 4 | BAT+ -> PACK+ (gnd BAT-) | 120 A (HSOF class x 4) | 8.64 (1.08 per FET) |
+| ping dev kit | Q101 | reverse_polarity | VIN -> VIN_PROTECTED | 5 A (SO-8 class) | 0.70 |
+| sufst sensor hubs (2) | Q2 | reverse_polarity | +GLV -> +GLV_PROT | 0.27 A (500 mA fuse, capped by a 5 Ohm SOT-23) | 0.35 |
+| sparkfun XRP | Q2, Q4 / Q6, Q8 | ideal_diode, groups or:VRAW / or:VSYS | VBATT, VUSB -> VRAW; VUSB, 5V -> VSYS | 2.5 / 0.75 / 0.75 / 2 A (fuses, connector) | 0.03-0.33 |
+| sparkfun XRP | Q9 | fet_switch | VRAW -> VIN | 1 A | 0.05 |
+| buspirate5 | Q402 | ideal_diode | VREG_OUT -> VREF_VOUT | 1 A | 0.05 |
+| tsuraragb | Q1 | ideal_diode | VCC0 -> +5V | 1 A | 0.04 |
+| obsidian | Q5 | fet_switch (U12) | VUSB -> VCC_USB | 5 A (SON class) | 0.33 |
+| ikajdan reflow plate | Q2 (IRF1018E) | fet_switch, low side | heater pads J8/J9 -> GND | 24 A (TO-263, capped by 5 W) | 5.0 |
+| caffeinated aftonsparv | Q1-Q3 | fet_switch, low side | LED-strip pins -> GND | 3 A (connector) | 0.27 each |
+| justbuchanan oasis | Q1 | fet_switch, low side | -> GND | 2.1 A (capped) | 0.35 |
+
+By reading, all 26 are real power paths; the class is uncertain for buspirate Q402 and tsuraragb Q1. Loop
+percentiles by class (21 loops with three or more terminals): load switch 0.01, power mux 0.00, reverse polarity
+0.01, FET bank 0.02, low-side and ideal-diode paths 0.14-0.15. The poor ones close on a rail capacitor the designer
+placed at the rail's source (XRP Q8, kobold U3) or run through a cable connector (the LED-strip switches).
+Currents are upper bounds: the belief interval is [I/3, I].
+
+### 7.4 Rail groups: 8 on 5 boards (108 loads, 62 capacitors)
+
+| Board | Group | Loads / caps | Allocation right | Nearest group load right |
+|---|---|---|---|---|
+| chipsalliance fmc-usb-gpio | rg:3P3V, rg:VADJ (TXS02612 x 8 each) | 16 / 16 | 9 | 16 |
+| buspirate5 | rg:+3V3, rg:VREF_VOUT (74LVC1T45 x 8), rg:+VUSB (SK6812 x 10) | 26 / 26 | 26 | 26 |
+| yuiop29re | rg:5V0 (WS2812C x 29) | 29 / 5 | 1 | 3 |
+| kobold | rg:RGB_PWR (16 RGB LEDs, two footprint variants) | 16 / 5 | 2 | 4 |
+| system76 launch heavy | rg:+3V6 (SK6805 x 21) | 21 / 10 | 0 | 7 |
+
+Over the 62 capacitors: allocation 61.3%, nearest-load pairing 90.3%. Where the allocation was already right
+(buspirate) the group costs nothing.
+
+### 7.5 Pin types that contradict names
+
+Perturbation test, [`cm_pin_type_robustness.py`](../../tools/research/physics/cm_pin_type_robustness.py) (agreement with
+the unperturbed brief; 112 boards):
+
+| Perturbation | Version | Net roles | Rails (Jaccard) | Cells | Decap groups |
+|---|---|---|---|---|---|
+| blank: every pin type removed | before the name-first rules | 0.993 | 0.918 | 1.0 | 0.899 |
+| | final | 0.9945 | 0.927 | 1.0 | 0.931 |
+| flip: supply names typed input, logic names and VIN+/IN- typed power_in | before | 0.9946 | 0.955 | 1.0 | 0.946 |
+| | final | 0.9998 | 0.998 | 1.0 | 0.997 |
+
+Flip is partly circular (it perturbs the pins whose names the rules trust); blank is the honest one. What blank
+still loses: internal-regulator nodes recognized only by `power_out` (BQ76952 REG1 without a capacitor), names the
+rules do not parse (`VBUS-In`), and charger pins whose direction only the type gives (VBAT, VSYS).
+
+Held-out audit 2: three boards never opened before (selected by contradicting IC pin types, then part count), code
+frozen, errors recorded before fixes.
+
+| Board | Errors found | Pin-type related |
+|---|---|---|
+| sc14cvmdect devboard (DECT module breakout) | module VDDPA and VDDE wired straight to header pins were 'signal' (a 2-pin-net penalty); minor: audio outputs plain signal | VDDE is typed bidirectional, but VDDPA (typed correctly) failed the same way: topology, not type |
+| sdtv2csi (ADV7280A-M, every pin typed passive) | MVDD not a supply name, so MVDD_1V8's three caps had no group; XTALP/XTALN as a diff pair; MIPI lanes without interface | MVDD: a missing type plus an unparsed name |
+| trellis-core (T113-S3, two bucks) | the first buck took both VBUS caps, the second borrowed one; crystal xin/xout swapped | none (AGND typed input handled) |
+
+Contradicting IC/module pin types on all six held-out boards (thatmicpre, bms-c1, zswatch, and the three above):
+4 pins (bms-c1 SRP/SRN typed input, trellis AGND typed input, sc14 VDDE typed bidirectional); 3 handled before the
+name-first rules and after; VDDE handled after the connector-fed rule. Untyped supply pins on sdtv2csi: 4 of 5
+handled before, 5 of 5 after. Contradicting types are rare on held-out boards; missing types and unparsed names
+(`MVDD`, `V_{DD}` markup) are the commoner failure.
+
+### 7.6 Other bugs found and fixed (each with a regression test)
+
+| Bug (board) | Fix |
+|---|---|
+| A pre-charge FET on the common-drain node split the BMS bank into two paths into that node (bms-c1) | banks whose ends are not both power nets are no chain stage |
+| BAT- joined to GND by a net tie was a 'signal' net; the pack's 47 uF had no ground (bms-c1) | a negative power pole net-tied to a ground is a ground; Kelvin lines tied the same way are not |
+| A flyback diode made +24 V 'derived' from the switched heater node; +24 V and VIN then named each other upstream through a fuse (ikajdan) | a diode from a low-side drain is a clamp, not a supply path; two-rail source cycles break at the connector side |
+| A TO-263 low-side heater switch was dropped as a crowbar (ikajdan) | low-side switches on a connector or flyback load return are paths; the loop closes through the load's terminals and the supply cap |
+| `500mA` fuse ratings unparsed; a grounded gate named the LDO on GND as controller (sufst) | mA ratings; no controller through a ground or rail gate |
+| A load switch's QOD and a mux's D0 control pin tied to VIN/VOUT entered the path loop | IC paths use VIN/VOUT-named pins |
+| A power mux emitted one heat source per input path (duplicate ids) | one heat source per pass element (the larger) |
+| Two converters on one rail: the second borrowed the first's capacitor (trellis-core) | a converter left without a capacitor takes another converter's second one |
+| `V_{DD}`, `VBUS_{OUT}` markup hid pin names (zswatch, 8 boards, 35 pins) | sub/superscript markup removed from pin functions |
+| A PMIC's VSYS typed power_out became a buck input once its name was readable (nPM1300) | power_out pins on regulators, PMICs and chargers are outputs unless named VIN/IN |
+| BQ76952 REG18/REG1 (internal LDO outputs) known only by type | `REGn`, `LDO`, `V*_OUT` names |
+| Random tie-break ablation crashed on split-supply rails (tuple key) | fixed |

@@ -31,6 +31,7 @@ seconds with `workers` threads.
 """
 from __future__ import annotations
 
+import math
 import os
 import time
 from dataclasses import dataclass, field
@@ -434,3 +435,62 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
     return Result(poses=poses, report=rep, state=st, problem=P)
+
+
+def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=True, brief=None, log=None,
+                  angle_step=None, workers=1):
+    """Re-place only `parts` (footprint uuids or references) of an already placed board,
+    inside `window_mm` = (x0, y0, x1, y1) when given, with every other footprint where it is
+    (fixed geometry and fixed pins): the module loop's local re-placement after routing.
+    Returns Result(poses of the re-placed parts, report)."""
+    t0 = time.monotonic()
+    log = log or (lambda *a, **k: None)
+    if brief is None:
+        try:
+            brief, _ = make_brief(board)
+        except Exception:
+            brief = {}
+    P = Problem.build(board, net_kinds=_net_kinds(brief), angle_step=angle_step)
+    P.set_margin(0.0)
+    want = set(parts)
+    sub = [p.i for p in P.parts if p.movable and (p.uuid in want or p.ref in want)]
+    st = State(P)
+    for p in P.parts:
+        if not p.movable:
+            continue
+        X, Y = P.grid_of(p.x0, p.y0)
+        rots = [r.rot for r in p.rots]
+        k = min(range(len(rots)), key=lambda kk: min(abs(rots[kk] - p.rot0) % 360, 360 - abs(rots[kk] - p.rot0) % 360))
+        st.X[p.i], st.Y[p.i], st.K[p.i] = X, Y, k
+    window = None
+    if window_mm is not None:
+        x0, y0, x1, y1 = window_mm
+        window = (int(math.floor((x0 - P.ox) / P.g)), int(math.ceil((x1 - P.ox) / P.g)),
+                  int(math.floor((y0 - P.oy) / P.g)), int(math.ceil((y1 - P.oy) / P.g)))
+    terms = None
+    if physics and (brief or {}).get("structures"):
+        try:
+            terms, _ = make_terms(board, brief, barrier=0.0, u_sat=SA_U_SAT)
+        except Exception as e:
+            log(f"place terms failed ({type(e).__name__}: {e})")
+    order = clusters.protection_order(P, brief) if physics else []
+    rep = dict(parts=[P.parts[i].ref for i in sub], window=window)
+    if sub:
+        ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=1.0 if terms is not None else 0.0,
+                            order=order, subset=sub, window=window, log=log)
+        rep["anneal"] = ann.run(cpu_s=max(0.5, 0.8 * time_s), deadline=t0 + 0.85 * time_s)
+        ann.write_back()
+        st = ann.st
+        bad = [i for i in grid_violations(st) if i in set(sub)]
+        if bad:
+            rep["greedy"] = greedy_subset(P, st, bad, log)
+        rep["legal_grid"] = not [i for i in grid_violations(st) if i in set(sub)]
+        rep["exact"] = exact_check(P, st, parts=sub)
+    rep["seconds"] = round(time.monotonic() - t0, 2)
+    poses = {P.parts[i].uuid: st.pose(i) for i in sub}
+    return Result(poses=poses, report=rep, state=st, problem=P)
+
+
+def greedy_subset(P, st, parts, log=None):
+    from .legalize import greedy
+    return greedy(P, st, parts, log=log)

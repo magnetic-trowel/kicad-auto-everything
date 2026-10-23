@@ -482,3 +482,86 @@ def test_chain_tail_can_be_left_to_the_bridge(tmp_path):
     assert ch.hops.get("hop0") is not None                         # connector -> protector, routed
     assert all(f"hop{j}" not in ch.hops for j in range(k, len(T) - 1))   # nothing after the protector
     assert any("after the protector" in n for n in ch.notes)
+
+
+def _rail_islands(tmp_path, reach):
+    from shapely.ops import unary_union
+    s = F.session(tmp_path, rails="all", rail_complete_mm=reach)
+    s.route()
+    sp = s.space
+    out = []
+    for r in s.rails:
+        if not (r.get("routed") and r.get("items")):
+            continue
+        net = r["net"]
+        f = next(f for f in s.board.footprints if f.ref == r["source"])
+        st = sp.terminal(f.uuid, [p.number for p in f.pads if p.net == net])
+        comp = sp.component(net, [(st.geom, st.layers)])
+        ids = {id(x) for x in comp}
+        geo = unary_union([x.geom.buffer(x.r) if x.r > 0 else x.geom for x in comp])
+        out += [it.owner for it in sp.pads if it.net == net and it.kind == "pad" and id(it) not in ids
+                and geo.distance(it.geom) <= 20.0]
+    return out, s
+
+
+def test_routed_rails_leave_no_nearby_islands(tmp_path):
+    """A routed rail joins the rest of its net's pads within reach itself: Freerouting left
+    such islands unrouted rather than join the middle of a fixed track (bipolar supply)."""
+    left, _ = _rail_islands(tmp_path / "a", 0.0)
+    assert left                                          # without it, the FB pin's island stays
+    left, s = _rail_islands(tmp_path / "b", 20.0)
+    assert not left
+    sp = s.space
+    for it in sp.routed:                                 # and the joins are exactly legal
+        others = [x for x in sp.routed if x is not it]
+        if it.kind == "track":
+            l = next(iter(it.layers))
+            assert not sp.track_violations(it.net, l, it.width, it.geom.coords[0], it.geom.coords[-1], ignore=others)
+
+
+def test_critical_nets_join_their_nearby_pads(tmp_path):
+    """A pad of a critical net next to its critical copper (a VIN pull-up beside the buck's
+    input capacitor) is joined by the critical stage, not left as an island beside a fixed
+    track."""
+    def joined(reach, d):
+        s = F.session(d, extra=[F.PULLUP], complete_mm=reach, rails="none")
+        s.route()
+        sp = s.space
+        u1 = next(f.uuid for f in s.board.footprints if f.ref == "U1")
+        vin = sp.terminal(u1, ["3"])
+        r9 = sp.terminal(next(f.uuid for f in s.board.footprints if f.ref == "R9"), ["1"])
+        comp = {id(x) for x in sp.component("VIN", [(vin.geom, vin.layers)])}
+        return any(id(x) in comp for x in r9.items), s
+    assert not joined(0.0, tmp_path / "a")[0]
+    ok, s = joined(8.0, tmp_path / "b")
+    assert ok and s.report()["completed"].get("VIN", 0) >= 1
+
+
+def test_routes_that_wall_off_another_nets_pin_are_detected(tmp_path):
+    """GridRouter.boxes_in: a route that encloses another net's unrouted pin is reported (the
+    olimex converter's FB pin, walled in by a ground hop, was left unrouted by the bridge);
+    one that passes at a distance is not."""
+    from kae.route.critical_grid import Route
+    s = F.session(tmp_path)                      # nothing routed: the XTAL2 pin is free
+    sp, gr = s.space, s.router
+    u2 = next(f.uuid for f in s.board.footprints if f.ref == "U2")
+    pin = next(it for it in sp.pads_by_fp[u2] if it.owner[1] == "3")
+    x0, y0, x1, y1 = pin.geom.bounds
+    m = 0.45
+    ring = [(x0 - m, y0 - m), (x1 + m, y0 - m), (x1 + m, y1 + m), (x0 - m, y1 + m), (x0 - m, y0 - m)]
+    rt = Route(net="GND", width=0.2, segs=[("F.Cu", a, b) for a, b in zip(ring[:-1], ring[1:])], vias=[], length=0.0)
+    assert any(it is pin for it, _ in gr.boxes_in(rt))
+    far = Route(net="GND", width=0.2, segs=[("F.Cu", (x0 - 1.4, y0 - 3.0), (x0 - 1.4, y1 + 3.0))], vias=[], length=6.0)
+    assert not any(it is pin for it, _ in gr.boxes_in(far))
+
+
+def test_islands_of_a_critical_net_are_joined(tmp_path):
+    """Two decaps of one rail are two islands of fixed copper; the bridge left such a pair
+    unjoined (noisecard +1V8), so the critical stage joins islands within island_mm."""
+    from kae.route.critical_rails import _islands
+    s0 = F.session(tmp_path / "a", island_mm=0.0, complete_mm=0.0, rails="none")
+    s0.route()
+    assert len(_islands(s0.ctx, "+3V3")) >= 2
+    s1 = F.session(tmp_path / "b", island_mm=20.0, complete_mm=0.0, rails="none")
+    s1.route()
+    assert len(_islands(s1.ctx, "+3V3")) == 1

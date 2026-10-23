@@ -84,7 +84,8 @@ class Annealer:
         self.Xs = list(self.X)          # seed positions (displacement term)
         self.Ys = list(self.Y)
         # ---- static geometry per part and rotation
-        self.own = [[r.g_own for r in p.rots] for p in P.parts]
+        self.own = [[r.g_own for r in p.rots] for p in P.parts]          # box: centres, clamps
+        self.own_rects = [[tuple(r.g_own_rects or (r.g_own,)) for r in p.rots] for p in P.parts]
         self.opp = [[r.g_opp for r in p.rots] for p in P.parts]
         self.brd = [[r.g_board for r in p.rots] for p in P.parts]
         self.brds = [[r.g_boards for r in p.rots] for p in P.parts]
@@ -105,8 +106,9 @@ class Annealer:
         self.part_rects = [[] for _ in range(n)]
         for i in self.mov:
             k = self.K[i]
-            rid = self._new_rect(i, self.side[i])
-            self.part_rects[i].append(rid)
+            for _ in self.own_rects[i][k]:
+                rid = self._new_rect(i, self.side[i])
+                self.part_rects[i].append(rid)
             for _ in self.opp[i][k]:
                 rid = self._new_rect(i, 1 - self.side[i])
                 self.part_rects[i].append(rid)
@@ -224,7 +226,7 @@ class Annealer:
         """(Re)register part i's rectangles at its current X, Y, K."""
         X, Y, k = self.X[i], self.Y[i], self.K[i]
         rids = self.part_rects[i]
-        boxes = [self.own[i][k]] + list(self.opp[i][k])
+        boxes = list(self.own_rects[i][k]) + list(self.opp[i][k])
         for rid, (a, b, c, d) in zip(rids, boxes):
             box = (X + a, X + b, Y + c, Y + d)
             if box == self.r_box[rid] and self.r_span[rid] is not None:
@@ -596,6 +598,7 @@ class Annealer:
         best = None
         w0 = time.monotonic()
         wall = (deadline - w0) if deadline is not None else None
+        self.ended = "moves"
         while done < N:
             # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
             # run cut short by its budget still ends cold (not at a random hot state)
@@ -606,6 +609,7 @@ class Annealer:
                 tf = max(tf, (time.monotonic() - w0) / wall)
             if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
                 frac = tf
+                self.ended = "budget"
             if frac >= 1.0:
                 break
             T = T0 * (T1 / T0) ** frac
@@ -645,7 +649,7 @@ class Annealer:
                     accept=round(self.stats["accepted"] / max(1, self.stats["moves"]), 3),
                     by_move={k: dict(tried=v[0], accepted=v[1]) for k, v in self.stats["by_move"].items()},
                     hpwl=round(self.wl, 2), physics=round(self.phys, 4), leg_cells=self.leg_total,
-                    T0=getattr(self, "T0", None))
+                    T0=getattr(self, "T0", None), schedule=getattr(self, "ended", None))
 
     def write_back(self, use_best_legal=False):
         X, Y, K = self.X, self.Y, self.K

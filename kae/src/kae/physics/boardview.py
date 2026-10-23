@@ -132,8 +132,11 @@ class BoardView:
         self.zones = []          # (net, layer, polygon)
         self.keepouts = []
         self.path = ''
-        self._hraster = {}       # side -> (x0, y0, res, H (ny, nx), NETIDX (ny, nx))
-        self._plane_nets: list[str] = []
+        self._hr = None          # side -> (x0, y0, res, H (ny, nx), NETIDX (ny, nx)); built on first use
+        self._cov = None
+        self._cgrid = None
+        self._pnets: list[str] = []
+        self._raster_res = None
 
     # ------------------------------------------------------------------ build
     @classmethod
@@ -259,10 +262,71 @@ class BoardView:
                 if ly in bv.zcu:
                     bv.zones.append((net, ly, g))
         bv.keepouts = list(_get(board, 'keepouts', []) or [])
-        bv._build_rasters(raster_res)
+        bv._raster_res = raster_res      # the plane rasters are built on first use
         return bv
 
     # ------------------------------------------------------------------ planes
+    def _ensure(self):
+        if self._hr is None:
+            self._build_rasters(self._raster_res)
+
+    @property
+    def _hraster(self):
+        self._ensure()
+        return self._hr
+
+    @property
+    def cover(self):
+        self._ensure()
+        return self._cov
+
+    @property
+    def cover_grid(self):
+        self._ensure()
+        return self._cgrid
+
+    @property
+    def _plane_nets(self):
+        self._ensure()
+        return self._pnets
+
+    @staticmethod
+    def _nearest_inside(inside, passes=80):
+        """Flat index of an on-board cell near each cell (itself on the board), spreading
+        outward one 4-neighbour step per pass; -1 beyond `passes` cells."""
+        ny, nx = inside.shape
+        idx = np.where(inside, np.arange(ny * nx).reshape(ny, nx), -1)
+        for _ in range(passes):
+            if (idx >= 0).all():
+                break
+            new = idx.copy()
+            for dst, src in (((slice(1, None), slice(None)), (slice(None, -1), slice(None))),
+                             ((slice(None, -1), slice(None)), (slice(1, None), slice(None))),
+                             ((slice(None), slice(1, None)), (slice(None), slice(None, -1))),
+                             ((slice(None), slice(None, -1)), (slice(None), slice(1, None)))):
+                d = new[dst]
+                sv = idx[src]
+                m = (d < 0) & (sv >= 0)
+                d[m] = sv[m]
+            if (new == idx).all():
+                break
+            idx = new
+        return idx
+
+    @staticmethod
+    def _mask(g, X, Y, x0, y0, res):
+        """Raster cells inside polygon g, testing only its bounding box's cells."""
+        ny, nx = X.shape
+        m = np.zeros((ny, nx), bool)
+        bx0, by0, bx1, by1 = g.bounds
+        i0 = max(0, int((bx0 - x0) / res))
+        i1 = min(nx, int((bx1 - x0) / res) + 2)
+        j0 = max(0, int((by0 - y0) / res))
+        j1 = min(ny, int((by1 - y0) / res) + 2)
+        if i1 > i0 and j1 > j0:
+            m[j0:j1, i0:i1] = shapely.contains_xy(g, X[j0:j1, i0:i1], Y[j0:j1, i0:i1])
+        return m
+
     def _build_rasters(self, res=None):
         x0, y0, x1, y1 = self.bbox
         if res is None:
@@ -277,16 +341,22 @@ class BoardView:
             by_layer.setdefault(ly, []).append((net, g))
         cover = {}
         nets = sorted({n for n, _, _ in self.zones})
-        self._plane_nets = nets
+        self._pnets = nets
         nid = {n: k for k, n in enumerate(nets)}
         for ly, items in by_layer.items():
             C = -np.ones((ny, nx), np.int32)
             for net, g in items:
-                m = shapely.contains_xy(g, X, Y)
+                m = self._mask(g, X, Y, x0, y0, res)
                 C[m & (C < 0)] = nid[net]
             cover[ly] = C
-        self.cover = cover
-        self.cover_grid = (x0, y0, res, nx, ny)
+        self._cov = cover
+        self._cgrid = (x0, y0, res, nx, ny)
+        self._grid = (X, Y)
+        # outside the outline (notches, cut-outs of the board) a hop is routed round, over
+        # the board: those cells take the plane of a nearby cell on the board
+        inside = shapely.contains_xy(self.outline, X, Y) if self.outline is not None else np.ones((ny, nx), bool)
+        near = self._nearest_inside(inside) if inside.any() and not inside.all() else None
+        hr = {}
         for side, layer in ((1, self.copper[0]), (-1, self.copper[-1])):
             H = np.full((ny, nx), INF)
             N = -np.ones((ny, nx), np.int32)
@@ -298,11 +368,18 @@ class BoardView:
                 m = (C >= 0) & (d < H)
                 H[m] = d
                 N[m] = C[m]
-            self._hraster[side] = (x0, y0, res, H, N)
+            if near is not None:
+                ok = near >= 0
+                q = np.where(ok, near, 0)
+                H = np.where(ok, H.flat[q], INF)
+                N = np.where(ok, N.flat[q], -1).astype(np.int32)
+            hr[side] = (x0, y0, res, H, N)
+        self._hr = hr
 
     def h_ref(self, side, x, y):
         """Height (mm) of the nearest reference plane below (front) or above (back) the
-        outer copper of `side` at (x, y); inf when no zone covers the point."""
+        outer copper of `side` at (x, y); inf when no zone covers the point (off the board,
+        in a notch of the outline, the nearest on-board cell's)."""
         x0, y0, res, H, _ = self._hraster[1 if side > 0 else -1]
         i = int((x - x0) / res + 0.5)
         j = int((y - y0) / res + 0.5)
@@ -337,6 +414,52 @@ class BoardView:
             if n == net:
                 out[ly] = out.get(ly, 0.0) + g.area / max(self.area, 1e-9)
         return out
+
+    def zone_labels(self, layer):
+        """Connected pieces (4-neighbour) of each net's zones on a copper layer, from the
+        zone raster: (int32 raster of piece ids, -1 for none; net name of each piece id).
+        Cached per layer; (None, None) when the layer has no zone."""
+        cache = self.__dict__.setdefault('_zlab', {})
+        r = cache.get(layer)
+        if r is None:
+            C = self.cover.get(layer)
+            if C is None:
+                r = (None, None)
+            else:
+                # a piece is a connected polygon of the union of the net's zones on the layer
+                X, Y = self._grid
+                L = -np.ones(C.shape, np.int32)
+                names = []
+                by_net = {}
+                for net, ly, g in self.zones:
+                    if ly == layer:
+                        by_net.setdefault(net, []).append(g)
+                for net, gs in sorted(by_net.items()):
+                    k = self._pnets.index(net)
+                    u = unary_union(gs)
+                    for pc in getattr(u, 'geoms', [u]):
+                        if pc.is_empty or pc.geom_type not in ('Polygon', 'MultiPolygon'):
+                            continue
+                        x0, y0, res, _, _ = self._cgrid
+                        m = self._mask(pc, X, Y, x0, y0, res) & (C == k) & (L < 0)
+                        if m.any():
+                            L[m] = len(names)
+                            names.append(net)
+                r = (L, names)
+            cache[layer] = r
+        return r
+
+    def zone_piece(self, layer, x, y):
+        """Id of the zone piece covering (x, y) on a layer (zone_labels), -1 when none."""
+        L, _ = self.zone_labels(layer)
+        if L is None:
+            return -1
+        x0, y0, res, nx, ny = self.cover_grid
+        i = int((x - x0) / res + 0.5)
+        j = int((y - y0) / res + 0.5)
+        if i < 0 or j < 0 or i >= nx or j >= ny:
+            return -1
+        return int(L[j, i])
 
     def covers(self, net, layer, x, y):
         C = self.cover.get(layer)

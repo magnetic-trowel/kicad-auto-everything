@@ -61,8 +61,8 @@ def _rects_of(P, item, v):
         p = P.parts[i]
         r = p.rots[k]
         si = 0 if p.s > 0 else 1
-        a, b, c, d = r.g_own
-        out[si].append((dx + a, dx + b, dy + c, dy + d))
+        for (a, b, c, d) in (r.g_own_rects or (r.g_own,)):
+            out[si].append((dx + a, dx + b, dy + c, dy + d))
         for (a, b, c, d) in r.g_opp:
             out[1 - si].append((dx + a, dx + b, dy + c, dy + d))
         for (a, b, c, d) in (r.g_boards or (r.g_board,)):

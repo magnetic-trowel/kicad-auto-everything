@@ -29,19 +29,22 @@ class Belief:
 
 
 # ----------------------------------------------------------------------------- knobs
-# Expected routed copper length over the straight pad-to-pad distance of a board hop, by the
-# structure kind the hop belongs to: the geometric mean over the hops of the human boards'
-# routed copper (least-L' path on each net, kae.route.critical_recheck), measured by
-# tools/research/physics/pt_routed_calib.py (docs/topics/physics/place-terms.md, "Routed
-# copper"). A pad-avoiding single-layer route alone gives 1.14 (pt_grid_route); layer
-# changes, fan-out and competing nets add the rest. Hot-loop hops are routed tight (pours);
-# decap rail hops and surge paths detour more (E5: measured on the corpus, one number per
-# kind).
+# Expected routed copper length of a straight pad-to-pad hop of length l (mm), by the kind
+# of structure the hop belongs to: l (1 + c sqrt(l / 1 mm)). Routes detour around pads,
+# vias and other nets, more the farther they go (a random obstacle field makes the excess
+# grow about as sqrt(l)). c is the least-squares fit (log ratio) over the hops of 69 human
+# boards' routed copper (least-L' path per net, kae.route.critical_recheck), measured by
+# tools/research/physics/pt_routed_calib.py: decap rail hops 0.127 (614 hops, 90 % board
+# bootstrap 0.100-0.145), surge paths 0.110 (297, 0.065-0.130), hot-loop hops 0.087 (32,
+# 0.035-0.155), crystal nets 0.048 (41, 0.010-0.100). At 1, 4 and 16 mm a decap hop
+# stretches by 1.13, 1.25 and 1.5; a pad-avoiding single-layer route alone gives 1.14 at
+# the corpus' typical 2-5 mm (pt_grid_route) (E5: measured on the corpus;
+# docs/topics/physics/place-terms.md, "Routed copper").
 HOP_DETOUR = {
-    'commutation': 1.1,
-    'decap': 1.3,
-    'esd': 1.35,
-    'crystal': 1.0,
+    'commutation': 0.09,
+    'decap': 0.125,
+    'esd': 0.11,
+    'crystal': 0.05,
 }
 
 
@@ -51,18 +54,19 @@ class Knobs:
     barrier: float = 4.0          # phi(u) = u + barrier * max(0, u - 1)^2 ...
     u_sat: float = 10.0           # ... and a logarithmic tail beyond u_sat (estimates 10x over budget are model error)
     use_confidence: bool = True   # weight each structure by the brief's confidence
-    hop_detour: object = None     # None: HOP_DETOUR; a number: that factor for every kind (1.0: straight
-    #                               hops); a dict: per-kind overrides of HOP_DETOUR
+    hop_detour: object = None     # None: HOP_DETOUR; a number: that c for every kind (0: straight hops);
+    #                               a dict: per-kind overrides of HOP_DETOUR
     pair_cos_min: float = 0.3     # loop pairs with |cos| below this are dropped in the fast path
+    pour_decaps: bool = True      # decap loops through rail and ground pours when both join the ends
     jit: str = 'auto'             # 'auto' (numba when installed), 'on', 'off' (pure Python)
 
     def detour(self, kind):
-        """Hop detour factor of a structure kind (see HOP_DETOUR)."""
+        """c of a structure kind's expected hop detour 1 + c sqrt(l) (see HOP_DETOUR)."""
         d = self.hop_detour
         if d is None:
-            return HOP_DETOUR.get(kind, 1.0)
+            return HOP_DETOUR.get(kind, 0.0)
         if isinstance(d, dict):
-            return float(d.get(kind, HOP_DETOUR.get(kind, 1.0)))
+            return float(d.get(kind, HOP_DETOUR.get(kind, 0.0)))
         return float(d)
 
 
@@ -186,18 +190,44 @@ def ic_current_prior(n_pins):
     return 1.0
 
 
-def decap_budget(v_rail=3.3, n_ic_pins=32, n_power_pins=1, ripple=0.05, f_handover_ghz=0.1, i_ic=None):
-    """Decoupling-loop inductance budget per IC power pin from a target impedance.
+# Decap functions whose capacitor sets a regulator's stability rather than an IC's HF supply
+# impedance: a core LDO's VCAP (bypass) and a linear regulator's output capacitor.
+STABILITY_FUNCTIONS = ('bypass', 'regulator_output')
+# Loop-inductance budget of a regulator-stability capacitor and of the bulk capacitor of a
+# module that decouples itself (E5). The regulator needs the capacitor's C and ESR at its
+# loop crossover (100 kHz-1 MHz): 10 nH adds 2 pi f L = 63 mOhm at 1 MHz, below the
+# 0.1-1 ohm ESR windows LDO and VCAP datasheets give; the load's HF current comes from its
+# own decoupling and die capacitance, not through this loop. Human boards: the median such
+# loop is 3-4 nH, the 90th percentile 11-19 nH.
+L_STABILITY_NH = 10.0
 
-    Z_t = ripple V / I_transient for the whole IC (decoupling-pdn.md); with the transient
-    shared by its n power pins, each pin's loop may present n Z_t up to the frequency
-    where the package and die capacitance take over (f_h, E5 100 MHz):
-        L_pin = n Z_t / (2 pi f_h)."""
+
+def decap_budget(v_rail=3.3, n_ic_pins=32, n_power_pins=1, ripple=0.05, f_handover_ghz=0.1, i_ic=None,
+                 function=None, n_ic_power_pins=None, module=False):
+    """Decoupling-loop inductance budget per IC power pin (nH).
+
+    HF decoupling (functions load, entry, converter_*, regulator_input): from a target
+    impedance Z_t = ripple V / I_transient of the whole IC (decoupling-pdn.md). The transient
+    splits over all the IC's power pins (n, every rail: a 100-pin MCU's VDDA pin carries
+    its share, not the whole 300 mA), so each pin's loop may present n Z_t up to the
+    frequency where the package and die capacitance take over (f_h, E5 100 MHz: leaded and
+    QFN packages' 2-5 nH against 1-10 nF of die capacitance resonate at 30-100 MHz):
+        L_pin = n Z_t / (2 pi f_h).
+    A 100 nF 0402 (ESL ~0.5 nH) resonates near 16 MHz at 1 nH of loop; above that its
+    impedance is 2 pi f (ESL + L_loop), which meets n Z_t to f_h when L_loop <= L_pin - ESL:
+    3-8 nH per pin for MCUs, which careful layouts meet. Regulator-stability capacitors
+    (STABILITY_FUNCTIONS) and a module's bulk capacitor get L_STABILITY_NH instead."""
+    if function in STABILITY_FUNCTIONS:
+        return Belief(L_STABILITY_NH, 'nH', f'{function} capacitor: regulator stability (C and ESR at the loop '
+                                            f'crossover <= 1 MHz), not an HF target impedance')
+    if module:
+        return Belief(L_STABILITY_NH, 'nH', 'bulk capacitor of a module that decouples itself')
     i = i_ic or ic_current_prior(n_ic_pins)
     zt = ripple * max(v_rail, 0.5) / i
-    lpin = max(1, n_power_pins) * zt / (2.0 * math.pi * f_handover_ghz)
+    n = max(1, n_power_pins, n_ic_power_pins or 0)
+    lpin = n * zt / (2.0 * math.pi * f_handover_ghz)
     return Belief(lpin, 'nH', f'target impedance {zt * 1e3:.0f} mOhm ({ripple:.0%} of {v_rail:g} V at {i * 1e3:.0f} mA)'
-                              f' x {max(1, n_power_pins)} power pins up to {f_handover_ghz * 1e3:.0f} MHz')
+                              f' x {n} power pins of the IC up to {f_handover_ghz * 1e3:.0f} MHz')
 
 
 # ----------------------------------------------------------------------------- (c) victims

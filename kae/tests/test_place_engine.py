@@ -98,3 +98,23 @@ def test_a_run_cut_short_by_its_budget_still_ends_cold(cls):
     ann = engine.FastAnnealer(P, st.copy(), **kw) if cls == "engine" else Annealer(P, st.copy(), **kw)
     ann.run(cpu_s=1.0, max_moves=10 ** 9)
     assert ann.T_last <= ann.T0 * 1e-3
+
+
+def test_engine_macro_moves_stay_exact():
+    """Macro members without physics move singly in the compiled loop and as a macro from
+    Python; the totals stay exact either way."""
+    from kae.place import clusters
+    b, P, st = _legal_state(seed=6)
+    ref = {p.ref: p.i for p in P.parts}
+    a, c = ref["U1"], ref["U2"]
+    lay = clusters._layout(P, {a: (0, 0, 0), c: (40, 0, 0)}, 0.0)
+    mac = clusters.Macro(members=[a, c], anchor=a, layouts=[lay], structs=[])
+    fa = engine.FastAnnealer(P, st.copy(), terms=None, macros=[mac], seed=3, w_phys=0.0)
+    assert a in fa.mac_np and c in fa.mac_np and a in set(fa.fast.tolist())
+    rep = fa.run(cpu_s=60.0, max_moves=20000)
+    assert any(k.startswith("macro") for k in rep["by_move"])
+    fa.write_back()
+    fresh = Annealer(P, fa.st.copy(), terms=None, seed=0, w_phys=0.0)
+    live = [j for j in range(len(P.nets)) if j not in fresh.frozen]
+    assert abs(sum(fa.E.nc[j] for j in live) - sum(fresh.ncost[j] for j in live)) < 1e-6
+    assert int(fa.E.tot[engine.T_LEG]) == fresh.total_leg()

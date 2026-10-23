@@ -50,6 +50,8 @@ DEFAULTS = dict(
     decap_max_mm=10.0,     # a capacitor farther than this from its pin: no local decoupling, left to the bridge
     chain_power_a=1.0,     # E5 current of a protected power pin without a rail estimate
     chain_tail=True,       # also route (and lock) a chain's hops after the protector, for the order
+    complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper
+    island_mm=20.0,        # and its islands of critical copper to each other within this distance
     guards=("cell", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
     guard_margin=0.5,      # mm around the module's copper and pads
 )
@@ -114,6 +116,14 @@ class Session:
         if self.opts.get("rails", "auto") != "none" and (budget is None or time.monotonic() - t0 < budget):
             from .critical_rails import route_rails
             self.rails = route_rails(self.ctx, mode=self.opts.get("rails", "auto"))
+        # the pads left near critical copper are joined here (Freerouting does not join an
+        # island to the middle of a fixed track)
+        self.completed = {}
+        reach = float(self.opts.get("complete_mm", 8.0))
+        isl = float(self.opts.get("island_mm", 20.0))
+        if (reach > 0 or isl > 0) and (budget is None or time.monotonic() - t0 < budget):
+            from .critical_rails import complete_module_nets
+            self.completed = complete_module_nets(self.ctx, reach, isl)
         self.t_route = time.monotonic() - t0
         return self
 
@@ -200,6 +210,7 @@ class Session:
             tracks=len(tracks), vias=len(vias),
             track_mm=round(sum(math.dist(t.start, t.end) for t in tracks), 2),
             router=dict(self.router.stats),
+            completed=dict(getattr(self, "completed", {}) or {}),
             space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
                           notes=m.notes[:6]) for m in self.modules],

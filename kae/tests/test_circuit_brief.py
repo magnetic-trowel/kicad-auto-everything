@@ -7,11 +7,12 @@ import os
 import random
 
 import pytest
-from circuit_fixtures import board, buck_board, mcu_parts
+from circuit_fixtures import C, IC, board, buck_board, fp, mcu_parts
 
 from kae.circuit.brief import build
 
-KINDS = {'commutation_cell', 'decap', 'crystal', 'oscillator', 'connector_chain', 'victim', 'heat_source', 'thermal_victim', 'antenna'}
+KINDS = {'commutation_cell', 'decap', 'crystal', 'oscillator', 'connector_chain', 'victim', 'heat_source', 'thermal_victim', 'antenna',
+         'power_path', 'rail_group'}
 NET_ROLES = {'ground', 'rail', 'switch_node', 'clock', 'high_speed', 'analog', 'rf', 'reset', 'boot', 'signal', 'no_connect'}
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -85,3 +86,41 @@ def test_real_board_brief_is_position_free():
         for p in f.pads:
             p.x, p.y = rnd.uniform(0, 300), rnd.uniform(0, 300)
     assert _strip_runtime(build(brd)) == a
+
+
+def test_power_path_and_rail_group_members_are_uuids():
+    ls = IC('U5', 'TPS22918DBVR', 'Package_TO_SOT_SMD:SOT-23-6', [('1', 'VIN', '+3V3', 'power_in'), ('6', 'VOUT', 'LED_PWR', 'power_out'),
+                                                                   ('3', 'ON', 'LED_EN', 'input'), ('2', 'GND', 'GND', 'power_in')])
+    leds = [fp(f'D{i}', 'SK6812MINI', 'LED_SMD:LED_SK6812MINI_PLCC4_3.5x3.5mm_P1.75mm',
+               [('1', 'LED_PWR', 'VDD', 'power_in'), ('2', f'DO{i}', 'DOUT', 'output'), ('3', 'GND', 'VSS', 'power_in'),
+                ('4', f'DO{i - 1}', 'DIN', 'input')]) for i in range(1, 7)]
+    parts = buck_board() + mcu_parts() + [ls, C('C40', '1uF', '+3V3', 'GND'), C('C41', '10uF', 'LED_PWR', 'GND', lib='Capacitor_SMD:C_0805_2012Metric')] + \
+        leds + [C(f'C{50 + i}', '100nF', 'LED_PWR', 'GND') for i in range(3)]
+    b = build(board(parts))
+    json.dumps(b)
+    uuids = set(b['parts'])
+    pp = next(s for s in b['structures'] if s['kind'] == 'power_path')
+    assert pp['id'] == 'path:U5' and pp['switches'] == ['uuid-U5'] and pp['stages'] == [['uuid-U5']]
+    assert pp['caps_in'] == ['uuid-C40'] and pp['caps_out'] == ['uuid-C41'] and pp['controller'] == 'uuid-U5'
+    assert all(t[0] in uuids for t in pp['loop']) and pp['loop'][0][0] == pp['loop'][-1][0] == 'uuid-C40'
+    assert {'class', 'rail_in', 'rail_out', 'gnd', 'series', 'group', 'excite', 'R_on_ohm', 'P_W'} <= set(pp)
+    import math
+    assert pp['priority'] == round(60.0 + 10 * math.log10(1 + pp['P_W']), 2)
+    assert b['parts']['uuid-U5']['role'] == 'power_switch' and b['parts']['uuid-U5']['P_W'] >= pp['P_W']
+    rg = next(s for s in b['structures'] if s['kind'] == 'rail_group')
+    assert rg['id'] == 'rg:LED_PWR' and rg['loads'] == [f'uuid-D{i}' for i in range(1, 7)] and rg['pairing'] == 'nearest_load'
+    assert rg['caps'] and all(c in uuids for c in rg['caps']) and set(rg['members_ref'].values()) >= {'D1', 'D6'}
+    grouped = [s for s in b['structures'] if s['kind'] == 'decap' and s.get('rail_group') == 'rg:LED_PWR']
+    assert grouped and all(s['pairing'] == 'nearest_load' and s['pin_caps'] == {} for s in grouped)
+    assert all(s.get('pairing') in ('pin', 'nearest_pin', 'nearest_load') for s in b['structures'] if s['kind'] == 'decap')
+
+
+def test_power_mux_group_is_the_controller_uuid_and_or_groups_name_the_rail():
+    mux = IC('U1', 'TPS2115A', 'Package_SO:TSSOP-8', [('8', 'IN1', 'VUSB', 'power_in'), ('6', 'IN2', 'VBAT', 'power_in'),
+                                                     ('7', 'OUT', 'VSYS', 'power_out'), ('5', 'GND', 'GND', 'power_in')])
+    parts = [mux, C('C1', '1uF', 'VUSB', 'GND'), C('C2', '1uF', 'VBAT', 'GND'), C('C3', '10uF', 'VSYS', 'GND'),
+             fp('J1', 'USB_C', 'Connector_USB:USB_C_Receptacle_GCT_USB4105', [('A4', 'VUSB', 'VBUS', 'passive'), ('A1', 'GND', 'GND', 'passive')])]
+    b = build(board(parts))
+    ps = [s for s in b['structures'] if s['kind'] == 'power_path']
+    assert len(ps) == 2 and all(s['group'] == 'uuid-U1' == s['controller'] for s in ps)
+    assert 'uuid-U1' not in {u for s in ps for u in s['members_ref'] if u not in s['switches']}

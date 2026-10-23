@@ -85,16 +85,18 @@ def _outside(SO, ncx, ncy, i0, i1, j0, j1):
 
 
 @_jit
-def _fits(T0, T1, SO, ncx, ncy, pad, si, X, Y, k, own, opp, opp_n, brd, brd_n):
-    """Part at origin (X, Y), rotation k: board rectangles inside the outline, own rectangle
+def _fits(T0, T1, SO, ncx, ncy, pad, si, X, Y, k, own, own_n, opp, opp_n, brd, brd_n):
+    """Part at origin (X, Y), rotation k: board rectangles inside the outline, own pieces
     free in its side's table and far rectangles free in the other side's (T0 front, T1 back)."""
     for m in range(brd_n[k]):
         if _outside(SO, ncx, ncy, X + brd[k, m, 0], X + brd[k, m, 1], Y + brd[k, m, 2], Y + brd[k, m, 3]) > 0:
             return False
     A = T0 if si == 0 else T1
     B = T1 if si == 0 else T0
-    if _q(A, X + own[k, 0] + pad, X + own[k, 1] + pad, Y + own[k, 2] + pad, Y + own[k, 3] + pad) > 0:
-        return False
+    for m in range(own_n[k]):
+        if _q(A, X + own[k, m, 0] + pad, X + own[k, m, 1] + pad, Y + own[k, m, 2] + pad,
+              Y + own[k, m, 3] + pad) > 0:
+            return False
     for m in range(opp_n[k]):
         if _q(B, X + opp[k, m, 0] + pad, X + opp[k, m, 1] + pad, Y + opp[k, m, 2] + pad, Y + opp[k, m, 3] + pad) > 0:
             return False
@@ -102,7 +104,7 @@ def _fits(T0, T1, SO, ncx, ncy, pad, si, X, Y, k, own, opp, opp_n, brd, brd_n):
 
 
 @_jit
-def nearest_spot(S0, S1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, own, opp, opp_n, brd, brd_n, max_d):
+def nearest_spot(S0, S1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, own, own_n, opp, opp_n, brd, brd_n, max_d):
     """Nearest origin (L1 + w_rot when turning) where the part fits: (cost, X, Y, k), cost
     -1 when none within max_d."""
     nk = own.shape[0]
@@ -123,7 +125,7 @@ def nearest_spot(S0, S1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, own, opp, opp
                     c = d + (w_rot if k != K0 else 0.0)
                     if best_c >= 0 and c >= best_c:
                         continue
-                    if _fits(S0, S1, SO, ncx, ncy, pad, si, X, Y, k, own, opp, opp_n, brd, brd_n):
+                    if _fits(S0, S1, SO, ncx, ncy, pad, si, X, Y, k, own, own_n, opp, opp_n, brd, brd_n):
                         best_c = c
                         bx = X
                         by = Y
@@ -132,8 +134,8 @@ def nearest_spot(S0, S1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, own, opp, opp
 
 
 @_jit
-def ripup_spot(H0, H1, C0, C1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, w_cost, own, opp, opp_n, brd, brd_n,
-               max_d):
+def ripup_spot(H0, H1, C0, C1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, w_cost, own, own_n, opp, opp_n, brd,
+               brd_n, max_d):
     """Origin minimizing L1 + turning + w_cost x cells of evictable parts (tables C) the
     own rectangle covers, among origins free in the hard tables H: (cost, X, Y, k), -1 when
     none within max_d."""
@@ -155,10 +157,13 @@ def ripup_spot(H0, H1, C0, C1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, w_cost,
                     c0 = d + (w_rot if k != K0 else 0.0)
                     if best_c >= 0 and c0 >= best_c:
                         continue
-                    if not _fits(H0, H1, SO, ncx, ncy, pad, si, X, Y, k, own, opp, opp_n, brd, brd_n):
+                    if not _fits(H0, H1, SO, ncx, ncy, pad, si, X, Y, k, own, own_n, opp, opp_n, brd, brd_n):
                         continue
                     C = C0 if si == 0 else C1
-                    cov = _q(C, X + own[k, 0] + pad, X + own[k, 1] + pad, Y + own[k, 2] + pad, Y + own[k, 3] + pad)
+                    cov = 0
+                    for m in range(own_n[k]):
+                        cov += _q(C, X + own[k, m, 0] + pad, X + own[k, m, 1] + pad, Y + own[k, m, 2] + pad,
+                                  Y + own[k, m, 3] + pad)
                     c = c0 + w_cost * cov
                     if best_c < 0 or c < best_c:
                         best_c = c
@@ -178,20 +183,25 @@ def rotations_for_fit(p, k_now):
 
 
 def part_arrays(p, ks=None):
-    """(own (nk, 4), opp (nk, m, 4), opp_n (nk,), brd (nk, m, 4), brd_n (nk,)) int64 arrays
+    """(own (nk, m, 4), own_n (nk,), opp (nk, m, 4), opp_n (nk,), brd (nk, m, 4), brd_n (nk,)) int64 arrays
     of a Problem part's grid rectangles for the rotation indices ks (default: all)."""
     ks = list(range(len(p.rots))) if ks is None else list(ks)
     rots = [p.rots[k] for k in ks]
     nk = len(rots)
     mo = max(1, max(len(r.g_opp) for r in rots))
     mb = max(1, max(len(r.g_boards or (r.g_board,)) for r in rots))
-    own = np.zeros((nk, 4), np.int64)
+    mp = max(1, max(len(r.g_own_rects or (r.g_own,)) for r in rots))
+    own = np.zeros((nk, mp, 4), np.int64)
+    own_n = np.zeros(nk, np.int64)
     opp = np.zeros((nk, mo, 4), np.int64)
     opp_n = np.zeros(nk, np.int64)
     brd = np.zeros((nk, mb, 4), np.int64)
     brd_n = np.zeros(nk, np.int64)
     for k, r in enumerate(rots):
-        own[k] = r.g_own
+        pieces = r.g_own_rects or (r.g_own,)
+        for m, o in enumerate(pieces):
+            own[k, m] = o
+        own_n[k] = len(pieces)
         for m, o in enumerate(r.g_opp):
             opp[k, m] = o
         opp_n[k] = len(r.g_opp)
@@ -199,4 +209,4 @@ def part_arrays(p, ks=None):
         for m, b in enumerate(bs):
             brd[k, m] = b
         brd_n[k] = len(bs)
-    return own, opp, opp_n, brd, brd_n
+    return own, own_n, opp, opp_n, brd, brd_n

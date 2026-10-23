@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from .values import NetName, clean_net, package
 
@@ -76,11 +77,16 @@ class Pin:
     nc: bool           # typed no_connect
     pad_kind: str      # smd, thru_hole, np_thru_hole, connect
 
-    @property
+    @cached_property
     def fn(self) -> str:
-        """Pin function, upper case, KiCad overbar markup removed, and a trailing copy of the pad number
-        dropped ('SW_6' on pad 6 -> 'SW': some libraries name pins function_number)."""
+        """Pin function, upper case, KiCad overbar, subscript and superscript markup removed (V_{DD} -> VDD,
+        IO_{1} -> IO1, VBUS_{OUT} -> VBUS_OUT), and a trailing copy of the pad number dropped ('SW_6' on
+        pad 6 -> 'SW': some libraries name pins function_number)."""
         f = re.sub(r'~\{([^}]*)\}', r'\1', self.function or '')
+        f = re.sub(r'(?<![A-Za-z0-9])([A-Za-z])_\{([^}]*)\}', r'\1\2', f)
+        f = re.sub(r'_\{(\d+)\}', r'\1', f)
+        f = re.sub(r'_\{([^}]*)\}', r'_\1', f)
+        f = re.sub(r'\^\{([^}]*)\}', r'\1', f)
         f = f.replace('{slash}', '/').strip().upper()
         num = (self.number or '').upper()
         if num and f.endswith('_' + num) and len(f) > len(num) + 1:

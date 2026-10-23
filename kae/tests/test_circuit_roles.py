@@ -344,3 +344,100 @@ def test_xtal_named_gpio_driving_an_led_is_not_a_clock_and_driver_enable_is_not_
     assert r.nets['LED_RED'].role != 'clock'
     assert r.nets['VIB_EN'].role != 'reset'
     assert kind('X608', 'Display', 'zswatch:ER-CON0.4-24P', [(str(i), f'N{i}', 'VDD' if i == 3 else f'P{i}', 'passive') for i in range(1, 25)])[0] == 'connector'
+
+
+def test_battery_minus_net_tied_to_ground_is_a_power_ground_but_kelvin_lines_are_not():
+    """bms-c1: BAT- joins GND through a net tie (the star point); the pack's 47 uF sat on a 'signal' net."""
+    parts = [fp('NT1', 'NetTie', 'NetTie:NetTie-2_SMD_Pad0.5mm', [('1', 'BAT-', '1', 'passive'), ('2', 'GND', '2', 'passive')]),
+             fp('NT2', 'NetTie', 'NetTie:NetTie-2_SMD_Pad0.5mm', [('1', 'SENSE_N', '1', 'passive'), ('2', 'GND', '2', 'passive')]),
+             C('C1', '47uF', 'BAT+', 'BAT-', lib='Capacitor_SMD:C_1210_3225Metric'), C('C2', '100nF', '+3V3', 'GND'),
+             C('C3', '100nF', '+3V3', 'GND'), C('C4', '100nF', '+3V3', 'GND'),
+             IC('U1', 'INA180A1', 'Package_TO_SOT_SMD:SOT-23-5', [('3', 'IN+', 'SENSE_P', 'input'), ('4', 'IN-', 'SENSE_N', 'input'),
+                                                                 ('5', 'VS', '+3V3', 'power_in'), ('2', 'GND', 'GND', 'power_in')]),
+             fp('P1', 'BAT+', 'Connector:Wuerth_PowerOne', [('1', 'BAT+', '', 'passive')]),
+             fp('P2', 'BAT-', 'Connector:Wuerth_PowerOne', [('1', 'BAT-', '', 'passive')])]
+    nl, r = roles_of(parts)
+    assert r.nets['BAT-'].role == 'ground' and 'BAT-' in r.grounds and r.gnd == 'GND'
+    assert r.nets['SENSE_N'].role != 'ground'
+    assert ('C1', 'BAT-') in r.caps_to['BAT+']
+
+
+def test_pin_names_outvote_contradicting_library_types():
+    """Library types that contradict the pin name: EN and TXD typed as power pins, VIN typed input, an
+    instrumentation amplifier's VIN+ typed power_in."""
+    parts = [IC('U1', 'TPS62160', 'Package_SON:WSON-8', [('2', 'VIN', '+5V', 'input'), ('3', 'EN', 'BUCK_EN', 'power_in'),
+                                                        ('1', 'GND', 'GND', 'power_in'), ('6', 'VOS', '+3V3', 'input')]),
+             IC('U2', 'CH340C', 'Package_SO:SOIC-16', [('2', 'TXD', 'UART_TX', 'power_out'), ('3', 'RXD', 'UART_RX', 'power_in'),
+                                                      ('16', 'VCC', '+5V', 'power_in'), ('1', 'GND', 'GND', 'power_in')]),
+             IC('U3', 'INA226', 'Package_SO:VSSOP-10', [('10', 'VIN+', 'SHUNT_HI', 'power_in'), ('9', 'VIN-', 'SHUNT_LO', 'power_in'),
+                                                       ('6', 'VS', '+3V3', 'power_in'), ('7', 'GND', 'GND', 'power_in')]),
+             R('R1', '0.01', 'SHUNT_HI', 'SHUNT_LO', lib='Resistor_SMD:R_2512_6332Metric'),
+             R('R2', '100k', 'BUCK_EN', '+5V'), C('C1', '10uF', '+5V', 'GND', lib='Capacitor_SMD:C_0805_2012Metric'),
+             C('C2', '100nF', '+5V', 'GND'), C('C3', '100nF', '+3V3', 'GND'),
+             fp('J1', 'USB_B_Micro', 'Connector_USB:USB_Micro-B_Molex-105017-0001', [('1', '+5V', 'VBUS', 'power_out'), ('5', 'GND', 'GND', 'power_out')])]
+    nl, r = roles_of(parts)
+    sem = {(p.ref, p.fn): r.sem(p) for p in (x for part in nl.parts.values() for x in part.pins)}
+    assert sem[('U1', 'VIN')] == 'supply' and sem[('U1', 'EN')] == 'signal'
+    assert sem[('U2', 'TXD')] == 'signal' and sem[('U2', 'RXD')] == 'signal'
+    assert sem[('U3', 'VIN+')] == 'analog' and sem[('U3', 'VIN-')] == 'analog'
+    assert r.nets['BUCK_EN'].role != 'rail' and r.nets['UART_TX'].role != 'rail' and r.nets['UART_RX'].role != 'rail'
+    assert r.nets['SHUNT_HI'].role == 'analog'
+    assert r.nets['+5V'].role == 'rail' and r.nets['+5V'].attrs['source']['kind'] == 'connector'
+
+
+def test_module_supply_pins_on_a_breakout_header_and_prefixed_vdd_names():
+    """Held-out boards: sc14cvmdect's VDDPA/VDDE go straight to header pins (2-pin nets, no capacitor);
+    sdtv2csi's ADV7280 has every pin typed passive and an 'MVDD' supply."""
+    parts = [IC('U2', 'SC14CVMDECT', 'custom:SC14CVMDECT', [('25', 'VDDPA', 'Net-(J6-Pin_3)', 'power_in'), ('33', 'VDDE', 'Net-(J1-Pin_3)', 'bidirectional'),
+                                                          ('34', 'TDOD', 'Net-(J1-Pin_4)', 'bidirectional'), ('1', 'GND', 'GND', 'power_in')]),
+             fp('J6', 'Conn_01x18', 'Connector_PinHeader_2.54mm:PinHeader_1x18_P2.54mm_Vertical',
+                [('2', 'GND', 'Pin_2', 'passive'), ('3', 'Net-(J6-Pin_3)', 'Pin_3', 'passive')]),
+             fp('J1', 'Conn_01x08', 'Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical',
+                [('3', 'Net-(J1-Pin_3)', 'Pin_3', 'passive'), ('4', 'Net-(J1-Pin_4)', 'Pin_4', 'passive')]),
+             IC('U1', 'ADV7280A-M', 'Package_CSP:LFCSP-32-1EP_5x5mm_P0.5mm', [('13', 'MVDD', 'MVDD_1V8', 'passive'), ('21', 'AVDD', 'AVDD_1V8', 'passive'),
+                                                                           ('1', 'DGND', 'GND', 'passive'), ('33', 'EPAD', 'GND', 'passive')]),
+             C('C19', '10uF', 'MVDD_1V8', 'GND'), C('C24', '100nF', 'MVDD_1V8', 'GND'), C('C18', '10uF', 'AVDD_1V8', 'GND'),
+             C('C23', '100nF', 'AVDD_1V8', 'GND')]
+    nl, r = roles_of(parts)
+    for n in ('Net-(J6-Pin_3)', 'Net-(J1-Pin_3)'):
+        assert r.nets[n].role == 'rail' and r.rails[n].attrs['source']['kind'] == 'connector', n
+    assert r.nets['Net-(J1-Pin_4)'].role != 'rail'
+    mvdd = next(p for p in nl.parts['U1'].pins if p.fn == 'MVDD')
+    assert r.sem(mvdd) == 'supply'
+    from kae.circuit.structures import find_structures
+    st = find_structures(nl, r)
+    assert {('U1', 'MVDD_1V8'), ('U1', 'AVDD_1V8')} <= {(d['ic'], d['rail']) for d in st['decaps']}
+
+
+def test_camera_fpc_pairs_are_mipi_and_crystal_terminals_are_no_pair():
+    """sdtv2csi: D0P/D0N to an RPi CSI FPC had no interface; XTALP/XTALN read as a differential pair."""
+    parts = [IC('U1', 'ADV7280A-M', 'Package_CSP:LFCSP-32-1EP_5x5mm_P0.5mm', [('9', 'D0P', 'D0P', 'passive'), ('10', 'D0N', 'D0N', 'passive'),
+                                                                           ('14', 'XTALP', 'XTALP', 'passive'), ('15', 'XTALN', 'XTALN', 'passive'),
+                                                                           ('2', 'DVDDIO', '+3V3', 'passive'), ('1', 'DGND', 'GND', 'passive')]),
+             fp('J2', 'RPI_CSI_TOP', 'Connector_FFC-FPC:TE_1-84953-5_1x15-1MP_P1.0mm_Horizontal',
+                [('13', 'D0P', 'D0P', 'passive'), ('14', 'D0N', 'D0N', 'passive'), ('1', '+3V3', '3V3', 'passive'), ('6', 'GND', 'GND', 'passive')]),
+             fp('Y1', '28.63636MHz', 'Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm', [('1', 'XTALP', '1', 'passive'), ('2', 'GND', '2', 'passive'),
+                                                                                ('3', 'XTALN', '3', 'passive'), ('4', 'GND', '4', 'passive')]),
+             C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND')]
+    nl, r = roles_of(parts)
+    pairs = {(dp.p, dp.n): dp for dp in r.pairs}
+    assert pairs[('D0P', 'D0N')].interface == 'mipi'
+    assert not any('XTAL' in a for a, _ in pairs)
+
+
+def test_kicad_markup_in_pin_names_and_untyped_internal_regulator_pins():
+    """zswatch: 'V_{DD}', 'V_{SYS}', 'VBUS_{OUT}' hid the names from every rule once types were missing;
+    bms-c1: BQ76952 REG18 is an internal LDO output by name."""
+    from kae.circuit.netlist import Pin
+    assert [Pin('U1', '1', 'N', f, '', False, 'smd').fn for f in ('V_{DD}', 'DO/IO_{1}', 'VBUS_{OUT}', '~{RESET}')] == \
+        ['VDD', 'DO/IO1', 'VBUS_OUT', 'RESET']
+    parts = [IC('U1', 'nPM1300-QEXX', 'Package_DFN_QFN:QFN-32', [('4', 'V_{DD}', 'VSYS', ''), ('20', 'V_{SYS}', 'VSYS', 'power_out'),
+                                                                ('9', 'VBUS_{OUT}', 'VBUSOUT', ''), ('33', 'GND', 'GND', '')]),
+             C('C1', '10uF', 'VSYS', 'GND'), C('C2', '1uF', 'VBUSOUT', 'GND'),
+             IC('U4', 'BQ76952', 'Package_QFP:TQFP-48_7x7mm_P0.5mm', [('24', 'REG18', 'REG18', ''), ('17', 'VSS', 'GND', '')]),
+             C('C20', '2.2uF', 'REG18', 'GND')]
+    nl, r = roles_of(parts)
+    sem = {(p.ref, p.number): r.sem(p) for part in nl.parts.values() for p in part.pins}
+    assert sem[('U1', '4')] == 'supply' and sem[('U1', '20')] == 'supply_out' and sem[('U1', '9')] == 'supply_out'
+    assert sem[('U4', '24')] == 'supply_out'
+    assert r.nets['REG18'].role == 'rail' and r.nets['VBUSOUT'].role == 'rail'

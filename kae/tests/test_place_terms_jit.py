@@ -30,8 +30,9 @@ def _loop_args(rng, n):
     N = np.zeros((41, 41), np.int32)
     gmask = np.array([bool(rng.integers(0, 2))])
     gnd = int(rng.integers(-1, n))
-    return (X, Y, C, S, G, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, 0.3, 0.15, 1.0, 1.6, 0.15, H, Hb, N, N, gmask,
-            -20.0, -20.0, 1.0)
+    detour = float(rng.choice([0.0, 0.125]))
+    return (X, Y, C, S, G, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, 0.3, 0.15, detour, 1.6, 0.15, H, Hb, N, N,
+            gmask, -20.0, -20.0, 1.0)
 
 
 def test_loop_core_numba_matches_python():
@@ -40,9 +41,8 @@ def test_loop_core_numba_matches_python():
     for _ in range(300):
         n = int(rng.integers(3, 8))
         args = _loop_args(rng, n)
-        scr = (np.zeros(n), np.zeros(n), np.zeros(n))
-        a = jit.PY.loop_core(*args, *scr)
-        b = nb.loop_core(*args, *(np.zeros(n), np.zeros(n), np.zeros(n)))
+        a = jit.PY.loop_core(*args, *(np.zeros(n) for _ in range(4)))
+        b = nb.loop_core(*args, *(np.zeros(n) for _ in range(4)))
         assert math.isfinite(a) and a >= 0.0
         assert b == pytest.approx(a, rel=1e-12, abs=1e-12)
 

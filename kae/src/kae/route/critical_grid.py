@@ -357,9 +357,10 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None):
+                via_cost=None, skip=(), max_len=None, avoid=()):
         """Route one track of `width` from any source anchor to any target anchor on the
-        given layers (vias between them when `via`). Returns a Route or None."""
+        given layers (vias between them when `via`), keeping the track centre `r` away from
+        each (geometry, r, layer) in `avoid`. Returns a Route or None."""
         sp = self.sp
         self.stats["calls"] += 1
         grid = window or self.window(list(sources) + list(targets))
@@ -372,6 +373,11 @@ class GridRouter:
         for li, l in enumerate(layers):
             f = (layer_factor or {}).get(l, 1.0)
             cost[li] = self.cost_layer(grid, net, l, width, f, skip)
+            for g, r, al in avoid:
+                if al == l:
+                    m_ = np.zeros((grid.ny, grid.nx), bool)
+                    grid.within(g, r, m_)
+                    cost[li][m_] = INF
         flat = cost.reshape(-1)
         if via and nl > 1:
             vmask = self.via_allowed(grid, net, sp.cu).reshape(-1)
@@ -458,6 +464,68 @@ class GridRouter:
                 return None
         length = sum(math.dist(a, b) for _, a, b in segs)
         return Route(net=net, width=width, segs=segs, vias=vias, length=length)
+
+    def boxes_in(self, rt, reach=1.5, radius=3.5):
+        """Other nets' single-layer pads that a route `rt` walls off: pads within `reach` of
+        its segments (edge to edge) whose copper could reach the edge of a `radius` window,
+        or a via site, before the route and cannot after it (a track of the pad net's class
+        width, as the general router draws it, at KiCad's clearances). [(pad Item, layer)]"""
+        from scipy import ndimage
+        sp = self.sp
+        out = []
+        if rt is None or not rt.segs:
+            return out
+        for layer in {l for l, _, _ in rt.segs}:
+            segs = [LineString([a, b]) for l, a, b in rt.segs if l == layer]
+            line = shapely.union_all(segs)
+            bb = line.bounds
+            for it in sp.query(layer, bb, rt.width / 2 + reach):
+                if it.kind != "pad" or not it.net or it.net == rt.net or len(it.layers) > 1:
+                    continue
+                if line.distance(it.geom) - rt.width / 2 > reach:
+                    continue
+                if self._connected_pad(it):
+                    continue
+                x0, y0, x1, y1 = it.geom.bounds
+                grid = Grid(x0 - radius, y0 - radius, x1 + radius, y1 + radius, self.res)
+                w_p = sp.width_limits(it.net, layer)[1]
+                blk = self.blocked(grid, it.net, layer, w_p, "track")
+                own = np.zeros_like(blk)
+                grid.within(it.geom, 0.0, own)
+                if not own.any():
+                    continue
+                vias = self.via_allowed(grid, it.net, sp.cu)
+
+                def reach_of(free):
+                    """(cells reachable from the pad, whether that reaches the window edge or a
+                    via site)."""
+                    lab, _ = ndimage.label(free | own, structure=np.ones((3, 3), bool))
+                    ids = set(np.unique(lab[own])) - {0}
+                    if not ids:
+                        return 0, False
+                    mine = np.isin(lab, list(ids))
+                    border = mine[0, :].any() or mine[-1, :].any() or mine[:, 0].any() or mine[:, -1].any()
+                    return int(mine.sum()), bool(border or (mine & vias).any())
+                n0, ok0 = reach_of(~blk)
+                if not ok0:
+                    continue                      # boxed in already: not this route's doing
+                c = sp._pair(rt.net, it.net, layer)
+                gap = (c.track_track if c is not None else sp.max_need) + rt.width / 2 + w_p / 2
+                after = blk.copy()
+                grid.within(line, gap, after)
+                n1, ok1 = reach_of(~after)
+                # walled off: no way out, or only a sliver of the room it had (a corridor
+                # between the route and the part's other pins)
+                if not ok1 or n1 < 0.25 * n0:
+                    out.append((it, layer))
+        return out
+
+    def _connected_pad(self, it):
+        """Whether committed copper of the pad's net already touches it (it has escaped)."""
+        for x in self.sp.routed:
+            if x.net == it.net and x.geom.distance(it.geom) <= (x.r or 0.0) + 1e-6:
+                return True
+        return False
 
     def _snap_end(self, net, layer, w, pts, anchors, first):
         """Move the path end onto the anchor centre (pad centre) when that piece is legal."""

@@ -10,8 +10,9 @@
 - U2 (ATtiny85, SOIC-8) runs from +3V3 with decap C3; crystal Y1 on XTAL1/XTAL2 with load
   caps C4, C5.
 
-`write_board(dir, back=())` writes board.kicad_pcb and board.kicad_pro (KiCad 10 syntax),
-with the parts named in `back` on the bottom side;
+`write_board(dir, back=(), twin=False, extra=())` writes board.kicad_pcb and board.kicad_pro
+(KiCad 10 syntax), with the parts named in `back` on the bottom side and `extra` parts (PARTS
+rows) added;
 `synth_info(board)` builds, without KiCad, the dict pcbnew_io.export_dsn returns, enough
 for kae.route.constraints.plan and the critical router's Space.
 """
@@ -90,7 +91,7 @@ def _f(v):
     return "0" if s in ("-0", "") else s
 
 
-def board_text(back=(), twin=False):
+def board_text(back=(), twin=False, extra=()):
     """The board's text; `twin` gives J1 pad 1 an SMD twin on F.Cu (a castellated pad: one
     number, a through-hole pad plus surface copper on one side only)."""
     k = [0]
@@ -102,7 +103,7 @@ def board_text(back=(), twin=False):
     # two copper layers only
     head = head.replace('\t\t(4 "In1.Cu" signal "GND")\n', "").replace('\t\t(6 "In2.Cu" power)\n', "")
     out = [head, "\t(setup\n\t\t(pad_to_mask_clearance 0)\n\t\t(allow_soldermask_bridges_in_footprints no)\n\t)\n"]
-    for ref, val, lib, x, y, rot, pads, (cw, ch) in PARTS:
+    for ref, val, lib, x, y, rot, pads, (cw, ch) in list(PARTS) + list(extra):
         at = f"(at {_f(x)} {_f(y)}{(' ' + _f(rot)) if rot else ''})"
         sd = "B" if ref in back else "F"
         if twin and ref == "J1":
@@ -150,11 +151,11 @@ def board_text(back=(), twin=False):
     return "".join(out)
 
 
-def write_board(d, back=(), twin=False):
+def write_board(d, back=(), twin=False, extra=()):
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
     p = d / "board.kicad_pcb"
-    p.write_text(board_text(back, twin))
+    p.write_text(board_text(back, twin, extra))
     pro = json.loads((DATA / "fixture.kicad_pro").read_text())
     pro["meta"]["filename"] = "board.kicad_pro"
     (d / "board.kicad_pro").write_text(json.dumps(pro, indent=2))
@@ -203,10 +204,16 @@ def synth_info(board):
                 tracks=0, probes={})
 
 
-def session(tmp_path, back=(), twin=False, **opts):
+def session(tmp_path, back=(), twin=False, extra=(), **opts):
     """A critical-router Session on the synthetic board, without KiCad."""
     from kae.board.kicad_file import load
     from kae.route.critical import Session
-    p = write_board(tmp_path, back, twin)
+    p = write_board(tmp_path, back, twin, extra)
     b = load(p)
     return Session(p, info=synth_info(b), board=b, opts=opts, log=lambda *a: None)
+
+
+# a VIN pull-up a few mm from the input path: a pad of a critical net that no module routes
+PULLUP = ("R9", "100k", "Resistor_SMD:R_0402_1005Metric", 112.0, 113.5, 0.0,
+          [("1", "VIN", -0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive"),
+           ("2", "Net-(R9-Pad2)", 0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive")], (0.95, 0.5))

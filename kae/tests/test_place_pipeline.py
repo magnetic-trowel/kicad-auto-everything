@@ -98,3 +98,23 @@ def test_escalation_drops_the_margin_then_relaxes_bodies():
     steps = _escalate(P, st, workers=2, seed=0, log=None, time_s=20.0)
     assert steps and steps[0]["step"] == "margin 0"
     assert P.margin == 0.0 and not grid_violations(st)
+
+
+def test_local_replace_moves_only_the_subset_inside_its_window(tmp_path):
+    """The module loop's local re-placement: only the named parts move, inside the window,
+    and come back legal; everything else stays where the board has it."""
+    from kae.place.pipeline import local_replace, place
+    b = kicad_file.load(FIXTURE)
+    res = place(b, seed=0, time_s=30.0, physics=False)
+    for fp in b.footprints:                       # the placed board
+        if fp.uuid in res.poses:
+            fp.x, fp.y, fp.rot, _ = res.poses[fp.uuid]
+    movable = [fp for fp in b.footprints if not fp.locked and fp.uuid in res.poses]
+    sub = [fp.ref for fp in movable[:3]]
+    xs = [fp.x for fp in movable[:3]]
+    ys = [fp.y for fp in movable[:3]]
+    win = (min(xs) - 4, min(ys) - 4, max(xs) + 4, max(ys) + 4)
+    out = local_replace(b, sub, window_mm=win, time_s=20.0, seed=1, physics=False)
+    assert set(out.report["parts"]) == set(sub)
+    assert out.report["legal_grid"] and not out.report["exact"]
+    assert {b.by_uuid()[u].ref for u in out.poses} == set(sub)

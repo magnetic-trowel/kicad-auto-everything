@@ -171,7 +171,8 @@ def cmd_summary(args):
                    outline_incomplete=r.get("outline_incomplete"), parts=(r.get("problem") or {}).get("movable"),
                    seconds=r.get("seconds"), budget_s=r.get("budget_s"), stages=r.get("stages"),
                    moves=a.get("moves"), planned=a.get("planned_moves"), moves_per_s=a.get("moves_per_s"),
-                   engine=a.get("engine"), hpwl=r.get("hpwl"), hpwl_seed=(r.get("seed") or {}).get("hpwl"),
+                   engine=a.get("engine"), schedule=a.get("schedule"), hpwl=r.get("hpwl"),
+                   hpwl_seed=(r.get("seed") or {}).get("hpwl"),
                    physics=dict(total_linear=sc.get("total_linear"), over_budget=sc.get("over_budget"),
                                 structures=sc.get("structures")),
                    order=r.get("protection_order"), escalation=[(e.get("step"), e.get("end_violators")) for e in esc],
@@ -208,6 +209,7 @@ def cmd_summary(args):
         wall_s=dict(median=statistics.median(walls) if walls else None, max=walls[-1] if walls else None,
                     over_budget=[x["id"] for x in rows if x.get("wall_s") and x["wall_s"] > args.time]),
         anneal_full_schedule=sum(1 for x in rows if x.get("moves") and x.get("planned") and x["moves"] >= x["planned"]),
+        anneal_cooled_on_budget=sum(1 for x in rows if x.get("schedule") == "budget"),
         physics=dict(boards=len(phys), ours_linear=round(sum(p[0] for p in phys), 2),
                      human_linear=round(sum(p[1] for p in phys), 2), ours_over=sum(p[2] for p in phys),
                      human_over=sum(p[3] for p in phys), ours_better=sum(1 for p in phys if p[0] < p[1] - 1e-9),
@@ -221,7 +223,8 @@ def cmd_summary(args):
           f"- **legal {summ['legal']}/{summ['counted']} = {summ['legal_rate']:.1%}**",
           f"- wall median {summ['wall_s']['median']} s, max {summ['wall_s']['max']} s, over {args.time} s: "
           f"{len(summ['wall_s']['over_budget'])}",
-          f"- annealer finished its schedule on {summ['anneal_full_schedule']} boards",
+          f"- annealer: all planned moves on {summ['anneal_full_schedule']} boards, cooled on its time budget on "
+          f"{summ['anneal_cooled_on_budget']} (planned moves grow when the engine is fast)",
           f"- physics (linear sum, {summ['physics']['boards']} boards with place terms): ours {summ['physics']['ours_linear']} "
           f"vs human {summ['physics']['human_linear']}; over budget {summ['physics']['ours_over']} vs "
           f"{summ['physics']['human_over']}; ours better on {summ['physics']['ours_better']}, human on "

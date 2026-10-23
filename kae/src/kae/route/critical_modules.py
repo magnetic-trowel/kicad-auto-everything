@@ -276,19 +276,51 @@ def hop_layers(ctx, ta, tb, prefer=None):
     return sorted(outer, key=key)
 
 
+def _escape_gap(ctx, net, w, pad, layer):
+    """How far a track of `net` (width w) keeps its centre from `pad` so that one track of
+    the pad's net still passes between them: half its width, the escape track at its
+    minimum width, and the clearance on both sides of it."""
+    sp = ctx.sp
+    w_p = sp.width_limits(pad.net, layer)[1]
+    c = sp._pair(net, pad.net, layer)
+    cc = c.track_track if c is not None else sp.max_need
+    return w / 2.0 + w_p + 2.0 * cc + 0.05
+
+
 def route_hop(ctx, m, tag, net, sources, targets, widths, layers, via=False, via_cost=None, layer_factor=None,
-              max_len=None):
+              max_len=None, optional=False):
     """Try each width (widest first) on the given layers; commit and return the first route
-    (none longer than `max_len`)."""
+    (none longer than `max_len`) that walls off no other net's pin (GridRouter.boxes_in). A
+    route that does is retried with a keep-out around those pins; when no width avoids it,
+    the first such route is kept, unless the hop is `optional` (the plane or the general
+    router can carry it): then nothing is."""
+    fallback = None
     for w in widths:
         w = ctx.sp.clamp_width(net, layers[0], w)
-        rt = ctx.gr.connect(net, sources, targets, w, layers, via=via, via_cost=via_cost, layer_factor=layer_factor,
-                            max_len=max_len)
-        if rt is not None:
-            if rt.segs or rt.vias:
-                ctx.commit(m, rt, tag)
-            m.hops[tag] = rt
-            return rt
+        avoid = []
+        for _ in range(3):
+            rt = ctx.gr.connect(net, sources, targets, w, layers, via=via, via_cost=via_cost,
+                                layer_factor=layer_factor, max_len=max_len, avoid=avoid)
+            if rt is None:
+                break
+            boxed = ctx.gr.boxes_in(rt) if ctx.opts.get("keep_escapes", True) else []
+            if not boxed:
+                if rt.segs or rt.vias:
+                    ctx.commit(m, rt, tag)
+                m.hops[tag] = rt
+                return rt
+            fallback = fallback or rt
+            avoid = avoid + [(it.geom, _escape_gap(ctx, net, w, it, l), l) for it, l in boxed]
+    if fallback is not None and optional:
+        m.notes.append(f"{tag}: every route walls off a pin of another net; left out")
+        m.hops[tag] = None
+        return None
+    if fallback is not None:
+        m.notes.append(f"{tag}: walls off a pin of another net (no alternative)")
+        if fallback.segs or fallback.vias:
+            ctx.commit(m, fallback, tag)
+        m.hops[tag] = fallback
+        return fallback
     m.hops[tag] = None
     return None
 
@@ -415,7 +447,8 @@ def route_cell(ctx, m):
             h_, pl_, pn_ = ctx.plane(L0, (ta.x + tb.x) / 2, (ta.y + tb.y) / 2, gnd=True)
             if pl_ is not None and pn_ == net:
                 max_len = 1.5 * d + 1.0
-        rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths, [L0], via=False, max_len=max_len)
+        rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths, [L0], via=False, max_len=max_len,
+                       optional=max_len is not None)
         if rt is None and max_len is not None:
             m.notes.append(f"hop {k} ({net}): returns through the plane")
             continue

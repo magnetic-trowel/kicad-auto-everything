@@ -62,7 +62,7 @@ Eng = namedtuple("Eng", [
     "rule_rp", "rule_pins", "open", "part_rule_ptr", "part_rules", "rule_seen",
     "in_s", "sc_pins_x", "sc_pins_y", "sc_nets", "sc_nb", "sc_nc", "sc_box", "sc_has", "sc_dens",
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
-    "turn", "ring", "snap", "n_ortho",
+    "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
 ])
 
 
@@ -123,15 +123,17 @@ def _place_rects(E, i):
     k = E.K[i]
     r0 = E.part_r0[i]
     nr = E.part_rn[i]
+    no = E.n_ownp[i]
     for m in range(nr):
         rid = r0 + m
-        if m == 0:
-            a = E.own[i, k, 0]
-            b = E.own[i, k, 1]
-            c = E.own[i, k, 2]
-            d = E.own[i, k, 3]
+        if m < no:
+            q = E.ownp_ptr[i] + m
+            a = E.ownp_r[q, k, 0]
+            b = E.ownp_r[q, k, 1]
+            c = E.ownp_r[q, k, 2]
+            d = E.ownp_r[q, k, 3]
         else:
-            q = E.opp_ptr[i] + m - 1
+            q = E.opp_ptr[i] + m - no
             a = E.opp_r[q, k, 0]
             b = E.opp_r[q, k, 1]
             c = E.opp_r[q, k, 2]
@@ -786,7 +788,8 @@ def build(ann, hash_cap=None):
             snap[p.i, k] = snap_index(p, k)
     opp_ptr = np.zeros(n + 1, np.int64)
     brd_ptr = np.zeros(n + 1, np.int64)
-    opp_list, brd_list = [], []
+    ownp_ptr = np.zeros(n + 1, np.int64)
+    opp_list, brd_list, ownp_list = [], [], []
     for p in P.parts:
         nk = len(p.rots)
         for k in range(NR):
@@ -795,6 +798,11 @@ def build(ann, hash_cap=None):
             gbrd[p.i, k] = r.g_board
         no = len(p.rots[0].g_opp)
         nb_ = len(p.rots[0].g_boards or (p.rots[0].g_board,))
+        npc = len(p.rots[0].g_own_rects or (p.rots[0].g_own,))
+        for m in range(npc):
+            ownp_list.append([(p.rots[min(k, nk - 1)].g_own_rects or (p.rots[min(k, nk - 1)].g_own,))[m]
+                              for k in range(NR)])
+        ownp_ptr[p.i + 1] = ownp_ptr[p.i] + npc
         for m in range(no):
             opp_list.append([p.rots[min(k, nk - 1)].g_opp[m] for k in range(NR)])
         for m in range(nb_):
@@ -803,6 +811,8 @@ def build(ann, hash_cap=None):
         opp_ptr[p.i + 1] = opp_ptr[p.i] + no
         brd_ptr[p.i + 1] = brd_ptr[p.i] + nb_
     opp_r = np.array(opp_list, np.int64).reshape(-1, NR, 4) if opp_list else np.zeros((0, NR, 4), np.int64)
+    ownp_r = np.array(ownp_list, np.int64).reshape(-1, NR, 4)
+    n_ownp = np.diff(ownp_ptr).astype(np.int64)
     brd_r = np.array(brd_list, np.int64).reshape(-1, NR, 4) if brd_list else np.zeros((0, NR, 4), np.int64)
     # rectangles: movable parts' own + far rects, then obstacles (fixed parts are obstacles)
     movable = np.array([p.movable for p in P.parts], bool)
@@ -812,7 +822,7 @@ def build(ann, hash_cap=None):
     for p in P.parts:
         if p.movable:
             part_r0[p.i] = R
-            part_rn[p.i] = 1 + (opp_ptr[p.i + 1] - opp_ptr[p.i])
+            part_rn[p.i] = n_ownp[p.i] + (opp_ptr[p.i + 1] - opp_ptr[p.i])
             R += part_rn[p.i]
     nob = len(P.obstacles)
     r_box = np.zeros((R + nob, 4), np.int64)
@@ -822,10 +832,8 @@ def build(ann, hash_cap=None):
     for p in P.parts:
         if not p.movable:
             continue
-        r_side[part_r0[p.i]] = side[p.i]
-        r_owner[part_r0[p.i]] = p.i
-        for m in range(1, part_rn[p.i]):
-            r_side[part_r0[p.i] + m] = 1 - side[p.i]
+        for m in range(part_rn[p.i]):
+            r_side[part_r0[p.i] + m] = side[p.i] if m < n_ownp[p.i] else 1 - side[p.i]
             r_owner[part_r0[p.i] + m] = p.i
     for t, ob in enumerate(P.obstacles):
         r_box[R + t] = ob.g
@@ -957,7 +965,7 @@ def build(ann, hash_cap=None):
         sc_rules=np.zeros(max(1, len(rules)) + 2, np.int64), sc_open=np.zeros(max(1, len(rules)) + 2),
         sc_pbx=np.zeros(NP + 2, np.int64), sc_pby=np.zeros(NP + 2, np.int64),
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
-        turn=turn, ring=ring, snap=snap, n_ortho=n_ortho,
+        turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
@@ -998,12 +1006,13 @@ def build(ann, hash_cap=None):
 def _place_rects_py(E, i):
     """First registration of part i's rectangles (its boxes start far away)."""
     X, Y, k = E.X[i], E.Y[i], E.K[i]
+    no = E.n_ownp[i]
     for m in range(E.part_rn[i]):
         rid = E.part_r0[i] + m
-        if m == 0:
-            a, b, c, d = E.own[i, k]
+        if m < no:
+            a, b, c, d = E.ownp_r[E.ownp_ptr[i] + m, k]
         else:
-            a, b, c, d = E.opp_r[E.opp_ptr[i] + m - 1, k]
+            a, b, c, d = E.opp_r[E.opp_ptr[i] + m - no, k]
         E.r_box[rid] = (X + a, X + b, Y + c, Y + d)
         _hash_add(E, rid)
 
@@ -1071,8 +1080,11 @@ class FastAnnealer:
         if terms is not None:
             tp = {i for i in self.mov if a.uuid[i] in a.tparts}
         in_mac = set(a.macro_of)
-        self.fast = np.array([i for i in self.mov if i not in tp and i not in in_mac], np.int64)
-        self.slow = [i for i in self.mov if i in tp or i in in_mac]
+        # compiled moves for every part no physics term touches (macro members included: their
+        # single-part moves); Python moves for physics parts and for whole-macro moves
+        self.fast = np.array([i for i in self.mov if i not in tp], np.int64)
+        self.slow = [i for i in self.mov if i in tp]
+        self.mac_np = [i for i in self.mov if i in in_mac and i not in tp]
         # equal-footprint swap classes among the fast parts
         fs = set(self.fast.tolist())
         n = len(P.parts)
@@ -1169,13 +1181,25 @@ class FastAnnealer:
                 return i
         return i
 
-    def _propose_slow(self, r):
+    def _propose_python(self, r):
+        """A Python-side move: a whole-macro move for a macro member no physics touches (they
+        take a quarter of their moves as macro moves, as in the reference annealer), else a
+        move of a physics part."""
+        w_mac = 0.25 * len(self.mac_np)
+        if w_mac and (not self.slow or self.rng.random() < w_mac / (w_mac + len(self.slow))):
+            return self._propose_slow(r, i=self.mac_np[self.rng.randrange(len(self.mac_np))], macro=True)
+        if not self.slow:
+            return None
+        return self._propose_slow(r)
+
+    def _propose_slow(self, r, i=None, macro=False):
         a = self.ann
         rng = self.rng
-        i = self._pick_slow()
+        if i is None:
+            i = self._pick_slow()
         E = self.E
         mi = a.macro_of.get(i)
-        u = rng.random()
+        u = 0.0 if macro else rng.random()
         if mi is not None and u < 0.25:
             m = a.macros[mi]
             mem = [j for j in m.members if j in a.movset]
@@ -1297,12 +1321,15 @@ class FastAnnealer:
         self.T0 = T0
         self.stats = dict(moves=0, accepted=0, by_move={})
         fstats = np.zeros(6, np.int64)
-        share_fast = len(self.fast) / n
+        share_py = (len(self.slow) + 0.25 * len(self.mac_np)) / n
+        share_fast = 1.0 - share_py if len(self.fast) else 0.0
+        py_moves = bool(self.slow or self.mac_np)
         done = 0
         next_log = log_every
         best = None
         w0 = time.monotonic()
         wall = (deadline - w0) if deadline is not None else None
+        self.ended = "moves"
         while done < N:
             # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
             # run cut short by its budget still ends cold (not at a random hot state)
@@ -1313,6 +1340,7 @@ class FastAnnealer:
                 tf = max(tf, (time.monotonic() - w0) / wall)
             if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
                 frac = tf
+                self.ended = "budget"
             if frac >= 1.0:
                 break
             T = T0 * (T1 / T0) ** frac
@@ -1324,8 +1352,8 @@ class FastAnnealer:
                 run_batch(self.E, self.fast, self.swap_ptr, self.swap_ids, nf, T, lam, r, fstats)
                 if self.E.ip[I_OVERFLOW]:
                     self._rebuild()
-            for _ in range(batch - nf if self.slow else 0):
-                mv = self._propose_slow(r)
+            for _ in range(batch - nf if py_moves else 0):
+                mv = self._propose_python(r)
                 if mv is None:
                     continue
                 self._try_python(mv[0], mv[1], T, lam, mv[2])
@@ -1349,8 +1377,8 @@ class FastAnnealer:
                 nf = int(round(batch * share_fast))
                 if nf and len(self.fast):
                     run_batch(self.E, self.fast, self.swap_ptr, self.swap_ids, nf, T1, self.lam1, 1, fstats)
-                for _ in range(min(200, batch - nf) if self.slow else 0):
-                    mv = self._propose_slow(1)
+                for _ in range(min(200, batch - nf) if py_moves else 0):
+                    mv = self._propose_python(1)
                     if mv is not None:
                         self._try_python(mv[0], mv[1], T1, self.lam1, mv[2])
                 done += batch
@@ -1383,7 +1411,7 @@ class FastAnnealer:
                     accept=round(self.stats["accepted"] / max(1, self.stats["moves"]), 3),
                     by_move={k: dict(tried=v[0], accepted=v[1]) for k, v in self.stats["by_move"].items()},
                     hpwl=round(self.wl, 2), physics=round(self.phys, 4), leg_cells=self.leg_total,
-                    T0=getattr(self, "T0", None), engine="compiled",
+                    T0=getattr(self, "T0", None), engine="compiled", schedule=getattr(self, "ended", None),
                     fast_parts=int(len(self.fast)), python_parts=len(self.slow))
 
     def write_back(self, use_best_legal=False):

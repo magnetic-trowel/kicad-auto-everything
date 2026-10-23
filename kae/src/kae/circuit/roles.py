@@ -302,15 +302,15 @@ IC_RULES = [  # specific families first: the first match wins
 PWR_PIN = rx(r'^(P?VIN\d*[A-Z]?|VIN_?\w*|VCC\w*|VDD\w*|AVDD\w*|DVDD\w*|IOVDD|PVDD\w*|VCCIO\w*|VCCINT|VCCAUX\w*|VCCA\w*|VCCB\w*|VBAT\w*|'
              r'VSYS|VBUS|VUSB|VS|VS\d|V\+|\+VS|VM|VMOT\w*|VBB|VPP|VDDQ\w*|VDDIO\w*|VDDA\w*|VREG_?IN|VSUP\w*|VCORE|VIO|V_?IO|'
              r'3V3|5V|1V8|1V2|VLED|VDRV|VAUX|VHV|VPWR|PWR|V_?IN|V_?CC|V_?DD|VLOGIC|VL|VCP)$')
-GND_PIN = rx(r'^(P?GND\w*|AGND\w*|DGND\w*|SGND|VSS\w*|AVSS\w*|DVSS\w*|EP|EPAD|E?PAD|THERMAL\w*|TAB|GNDA|GNDD|0V|COM|V-|-VS|PAD\d?|'
+GND_PIN = rx(r'^(P?GND\w*|AGND\w*|DGND\w*|SGND|VSS\w*|[A-Z]{1,2}VSS\w*|EP|EPAD|E?PAD|THERMAL\w*|TAB|GNDA|GNDD|0V|COM|V-|-VS|PAD\d?|'
              r'GND_?EP|EXP|SLUG|PGND\d*|GROUND|SUB)$')
 SW_PIN = rx(r'^(SW\d?[A-Z]?|LX\d?|PH|PHASE\d?|SW_?\d|LX_?\d|L\d|SWA|SWB|SW[12]|L[12]|LXA|LXB|DRAIN|SH[ABC]?|VSW\d?|'
             r'V?LX_?SMPS|VLX\w*|\w*_LX\d?|LX_\w+|SW_(BUCK|BOOST|REG|DCDC)\w*|(BUCK|BOOST|DCDC|SMPS|REG)\d?_?(SW|LX)\d?|SMPS_?(SW|LX))$')
-OUT_PIN = rx(r'^(V?OUT\d?|VO|OUTPUT|VREG(_?OUT)?|V_?OUT|LDO_?OUT|VOUT_?\w*|VREG_VOUT|OUT[12]?|[+-]V?O(UT)?\d?|V?O(UT)?[+-]|'
+OUT_PIN = rx(r'^(V?OUT\d?|VO|OUTPUT|VREG(_?OUT)?|V_?OUT|LDO_?OUT|VOUT_?\w*|VREG_VOUT|OUT[12]?|V[A-Z0-9]+_OUT|[+-]V?O(UT)?\d?|V?O(UT)?[+-]|'
              r'[+-]VOUT\w*|VOUT[+-]\w*|V[+-]OUT)$')
 IN_PIN = rx(r'^(P?VIN\d?|VI|VCC|VDD|IN|VS|VBAT|PVDD|AVIN|VSUP|VSYS|V\+|INPUT|VIN_\w+|[+-]VIN|VIN[+-]|[+-]?V_?IN)$')
 FB_PIN = rx(r'^(V?FB\d?|FB[+-]?|ADJ|ADJ/GND|VSENSE|VOS|FBK|FB_?\w*|SENSE)$')
-SUPPLY_PIN = rx(r'^(P?VIN\d*|AVIN|VBAT\w*|VDD\w*|VCC\w*|AVDD\w*|DVDD\w*|IOVDD|PVDD\w*|VBUS|VSYS|VDDIO\w*|VDDA\w*|VCCIO\w*|VREG_?IN|REGIN|'
+SUPPLY_PIN = rx(r'^(P?VIN\d*|AVIN|VBAT\w*|VDD\w*|VCC\w*|[A-Z]{1,2}VDD\w*|[A-Z]{1,2}VCC\w*|AVDD\w*|DVDD\w*|IOVDD|PVDD\w*|VBUS|VSYS|VDDIO\w*|VDDA\w*|VCCIO\w*|VREG_?IN|REGIN|'
                  r'VSUP\w*|VMOT\w*|VM|VBB|VCORE|VCCINT|VCCAUX\w*)$')
 BOOT_PIN = rx(r'^(BST\d?|BOOT\d?|CB|BS|CBOOT|VBST|BOOTSTRAP|HB|BTST|C_?BOOT|VB|VBS|VBOOT|BST_?[A-D12])$')
 # charge-pump pins of bridge drivers and gate drivers: flying caps (CPH/CPL, CP1/CP2) and storage (VCP)
@@ -990,7 +990,7 @@ def _switch_nodes(nl: Netlist, roles: Roles):
 
 
 # ------------------------------------------------------------------------------- rails
-INT_OUT_PIN = rx(r'^\d+(\.\d+)?V\d*_?OUT$|^\d+V\d+$|^VREG(_?OUT)?$|^VCAP\w*|^LDO_?OUT\w*|^REG_?OUT\w*|^VDD_?CORE$|^VCORE$|^DCPL\w*|^VCP$|'
+INT_OUT_PIN = rx(r'^\d+(\.\d+)?V\d*_?OUT$|^\d+V\d+$|^VREG(_?OUT)?$|^REG\d+$|^V?LDO\d?$|^VCAP\w*|^LDO_?OUT\w*|^REG_?OUT\w*|^VDD_?CORE$|^VCORE$|^DCPL\w*|^VCP$|'
                   r'^CP_?OUT$|^VDD_?OUT$|^V_?REG$|^VREG_VOUT$|^VDD_?(1V\d|1V|2V5|1P\d)\w*_?OUT$|^AVDD_?OUT$|^VINT\w*|^VDD_?INT\w*|^BYP\w*$|^VL$')
 # a differential input (VIN+, IN-, SENSE+, CS-) is a measurement pin even where a library types it power_in
 DIFF_IN_PIN = rx(r'^(V?IN[+-]|[+-]V?IN|V?IN[PN]|SENSE[+-PN]|[+-]SENSE|CS[+-PN]|RS[+-]|ISENSE[+-PN]?|SNS[+-PN]|I?SNS[PN])$')
@@ -1014,12 +1014,14 @@ def pin_sem(roles, p) -> str | None:
     pr = roles.parts.get(p.ref)
     kind, sub = (pr.kind, pr.subtype) if pr else ('unknown', None)
     if GND_PIN.match(fn) and fn not in ('COM', 'SUB', 'PAD', 'EP', 'TAB'):
-        if p.net not in roles.grounds and re.match(r'^(V-|-VS|VEE|V_?NEG|VSS\w*|AVSS\w*|DVSS\w*)$', fn, re.I) and \
+        if p.net not in roles.grounds and re.match(r'^(V-|-VS|VEE|V_?NEG|[A-Z]{0,2}VSS\w*)$', fn, re.I) and \
                 p.ptype in ('power_in', 'passive', ''):
             return 'supply'      # a negative supply pin on a rail (an op-amp's V- on -12 V), not a ground
         return 'ground'
     if DIFF_IN_PIN.match(fn) and kind == 'ic' and sub not in POWER_SUBS:
         return 'analog'
+    if p.ptype == 'power_out' and kind in ('ic', 'module') and sub in SUPPLY_OUT_SUBS and not re.match(r'^(P?VIN\w*|AVIN|VI|IN\d?)$', fn):
+        return 'supply_out'      # a PMIC's or charger's VSYS / VBAT typed power_out is its output, whatever the name says
     if SUPPLY_PIN.match(fn):
         return 'supply'
     if re.match(r'^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$', fn, re.I):
@@ -1129,8 +1131,13 @@ def _rails(nl: Netlist, roles: Roles):
                    and not CTRL_SUFFIX.search(p.fn)]
         if con_sup:
             evs.append(ev('pinfunction', f"connector supply pin {con_sup[0].label}", MODERATE))
+        # a supply pin wired straight to a connector pin: the supply enters there (a module's VDDPA or VDDE on a
+        # breakout board's header)
+        con_fed = bool(conns) and bool(p_in or name_pin_in) and not (p_out or reg_out) and not CTRL_NET.search(s)
+        if con_fed:
+            evs.append(ev('topology', f"supply pin {(p_in or name_pin_in)[0].label} fed from connector {conns[0].ref}", MODERATE))
         if len(pins) <= 2 and not nl.zone_layers.get(net) and not (p_out or reg_out) and not ((powered_pins(pins) or name or con_sup) and caps) \
-                and not (feed and (name or weak)):
+                and not (feed and (name or weak)) and not con_fed:
             evs.append(ev('count', f"only {len(pins)} pin(s)", -1.5))
         if SENSE_NAME.search(s) and not (p_out or reg_out or ind_out):
             evs.append(ev('name', f"sense/monitor name '{s}' (a Kelvin or measurement line, not a supply)", -4.0))
@@ -1186,6 +1193,15 @@ def _rail_sources(nl: Netlist, roles: Roles):
             o = nl.other_net(nl.parts[L], net)
             if o:
                 ind_out[o] = (L, net)
+    # the drains (collectors) of low-side switches: a diode from one of them to a rail is a flyback clamp across
+    # an inductive load, not a supply path into that rail
+    low_drains = set()
+    for ref, part in nl.parts.items():
+        if roles.parts[ref].kind == 'transistor':
+            by = {(p.fn or '')[:1].upper(): p.net for p in part.active_pins() if p.fn}
+            for hi, lo in (('D', 'S'), ('C', 'E')):
+                if by.get(lo) in g and by.get(hi) and by[hi] not in g:
+                    low_drains.add(by[hi])
     series = defaultdict(list)          # rail -> [(part, upstream net, kind)]
     for ref, part in nl.parts.items():
         pr = roles.parts[ref]
@@ -1219,7 +1235,7 @@ def _rail_sources(nl: Netlist, roles: Roles):
                     if p.fn in ('K', 'CATHODE') or (p.number == '1' and not p.fn.isalpha()) or p.fn == '1':
                         if neg:
                             series[y].append((ref, x, 'diode'))
-                        else:
+                        elif y not in low_drains:
                             series[x].append((ref, y, 'diode'))
     for net, nr in roles.rails.items():
         pins = nl.nets[net].pins
@@ -1293,6 +1309,20 @@ def _rail_sources(nl: Netlist, roles: Roles):
             if src is None:
                 src = {'kind': 'unknown'}
         nr.attrs['source'] = src
+    # two rails joined by a fuse or a bead each name the other upstream: the one with a connector pin (else the
+    # one whose name states its voltage) is where the supply enters
+    def root_key(n):
+        return (any(roles.parts[p.ref].kind in ('connector', 'battery') for p in nl.nets[n].pins), V.net_voltage(nl.nets[n].short) is not None)
+    for net, nr in sorted(roles.rails.items()):
+        src = nr.attrs.get('source') or {}
+        up = src.get('upstream')
+        usrc = (roles.rails[up].attrs.get('source') or {}) if up in roles.rails else {}
+        if src.get('kind') == 'derived' and usrc.get('kind') == 'derived' and usrc.get('upstream') == net:
+            root = up if root_key(up) > root_key(net) else net if root_key(net) > root_key(up) else min(net, up)
+            con = sorted((p for p in nl.nets[root].pins if roles.parts[p.ref].kind in ('connector', 'battery')),
+                         key=lambda p: (roles.parts[p.ref].subtype not in ('power', 'usb'), p.ref))
+            roles.rails[root].attrs['source'] = ({'kind': 'connector', 'ref': con[0].ref, 'note': 'source or export, undecided'} if con
+                                                 else {'kind': 'unknown'})
     # voltage through series parts
     for _ in range(3):
         for net, nr in roles.rails.items():
@@ -1525,6 +1555,8 @@ def _pairs(nl: Netlist, roles: Roles):
                 ok_pol = False
             if o == 'M' and not re.search(r'D\*|USB', base):
                 ok_pol = False
+            if re.search(r'XTAL|XIN|XOUT|OSC_?(IN|OUT)|^X[12]?\*', base):
+                ok_pol = False          # a crystal's two terminals (XTALP/XTALN) are a resonator loop, not a pair
             if c == 'P':
                 # the polarity letter must be a token of its own (_P, P$, DP, TXP), not inside a word
                 left = pre[-1:] if pre else ''
@@ -1566,6 +1598,9 @@ def _pairs(nl: Netlist, roles: Roles):
                     iface, speed = 'can', 'ls'
             if iface in ('i2c', 'uart', 'debug', 'spi', 'mdio'):
                 continue
+            if iface == 'unknown' and any(roles.parts[r].kind == 'connector' and
+                                          re.search(r'CSI|DSI|MIPI|CAMERA|CAM\b', nl.parts[r].text(), re.I) for r in common):
+                iface, speed = 'mipi', 'hs'      # D0P/D0N, CLKP/CLKN on a camera or display FPC (RPI_CSI)
             if iface == 'unknown':
                 if re.search(r'CLK|CK', base):
                     iface, speed = 'clock', 'hs'

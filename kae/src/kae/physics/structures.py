@@ -9,19 +9,22 @@ few parts and is cached by Terms against those parts' pose epochs, so a move rec
 only what it touches. Models (derivations and validation: docs/topics/physics/place-terms.md):
 
 * `LoopComp`: loop inductance of a chain of terminals (commutation cell; decap loop) by
-  partial inductances with images (_kernels.loop_core): board hops are straight strips at the
-  reference-plane height, part-internal paths are strips at the body height with vertical
-  terminations; a ground hop over a plane of its own net is combined in parallel with the
-  via return through that plane (two-mesh formula).
-* `PlanePairLoop`: decap loop when the rail and ground are an adjacent plane pair:
-  mounting (cap body, vias) + plane-pair spreading (mu0 d / 2 pi) ln(D^2 / (r_c r_i)).
+  partial inductances with images (_kernels.loop_core): board hops are strips at the
+  reference-plane height under them, stretched by their expected detour 1 + c sqrt(l);
+  part-internal paths are strips at the body height with vertical terminations; a ground
+  hop over a plane of its own net is combined in parallel with the via return through
+  that plane (two-mesh formula).
+* `DecapLoop`: a decap loop through the rail and ground pours when both join its ends
+  (mounting + plane-pair spreading (mu0 d / 2 pi) ln(D^2 / r^2)), else its LoopComp.
+  `PlanePairLoop` is the earlier adjacent-plane-pair form, kept for tools.
 * `CouplingComp`: aggressor-victim coupling: Neumann mutual of the two loops with images
-  (inductive, M di/dt) and patch mutual capacitance (C dv/dt into the victim impedance).
+  (inductive, M di/dt) and patch mutual capacitance (C dv/dt into the victim impedance),
+  as two sub-terms that `CouplingEngine` evaluates in batches.
 * `CrystalComp`: Pierce load pulling from the trace capacitance of the XIN/XOUT nets.
 * `ThermalField`: fin kernel with adiabatic-edge images; victims' rise from all sources
   and each source's own rise, incremental by rows and columns.
-* `CmComp`, `EsdComp`, `FeedComp`: world node (cable common-mode current), protection
-  order (ESD loop inductance), antenna feed loss.
+* `CmComp`, `EsdComp`, `FeedComp`: world node (cable common-mode current, windowed by the
+  copper gap), protection order (ESD loop inductance), antenna feed loss.
 """
 from __future__ import annotations
 
@@ -126,7 +129,7 @@ class LoopComp:
         self.gnd_nets = set(gnd_nets)
         self.parts = tuple(sorted({t.i for t in terms}))
         self.cos_min = knobs.pair_cos_min if knobs else 0.3
-        self.detour = float(detour)          # expected route length / straight hop (priors.HOP_DETOUR)
+        self.detour = float(detour)          # c of the expected detour 1 + c sqrt(l) (priors.HOP_DETOUR)
         self.rvia = rvia
         n = len(terms)
         self.n = n
@@ -154,8 +157,8 @@ class LoopComp:
         self.a_zb = np.array(self.l_zb)
         self.a_bd = np.array(bodyd)
         self.g = -1 if gnd_hop is None else int(gnd_hop)
-        self.l_scr = ([0.0] * n, [0.0] * n, [0.0] * n)
-        self.a_scr = (np.zeros(n), np.zeros(n), np.zeros(n))
+        self.l_scr = ([0.0] * n, [0.0] * n, [0.0] * n, [0.0] * n)
+        self.a_scr = (np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n))
         self.kern = kern
 
     def value(self, st):
@@ -231,6 +234,68 @@ class PlanePairLoop:
             0.2 * self.d * math.log(D * D / (self.r * self.r))
 
 
+class DecapLoop:
+    """Decoupling loop IC power pin -> capacitor -> IC return, pour-aware. When a zone of
+    the rail on layer Lr joins the IC power pin and the capacitor's rail pad and a ground
+    zone on Lg joins the capacitor's ground pad and the IC return (at the current poses;
+    pairs tried in the order given), the current spreads in those pours: the loop is the
+    capacitor's mounting and the IC's mounting down to the nearer of the two layers plus the
+    spreading between them, (mu0 d / 2 pi) ln(D^2 / r^2) with d = |z(Lr) - z(Lg)|, D the
+    IC pin to capacitor distance (r = 0.3 mm). Otherwise it is the straight-hop loop
+    (LoopComp, with its expected detours)."""
+
+    def __init__(self, bv, loop, pairs, rail, gnd_nets, mount_cap, mount_ic, r_eff=0.3):
+        self.bv = bv
+        self.loop = loop
+        self.T = loop.T
+        self.tp, self.tr, self.tc, self.tg = loop.T
+        self.pairs = pairs            # [(Lr, Lg, d)]
+        self.rail = rail
+        self.gnd = set(gnd_nets)
+        self.mc = mount_cap           # function(h) -> nH
+        self.mi = mount_ic
+        self.r = r_eff
+        self.parts = loop.parts
+        self.mode = None              # 'pour' or 'hops' at the last evaluation
+
+    @property
+    def kern(self):
+        return self.loop.kern
+
+    @kern.setter
+    def kern(self, k):
+        self.loop.kern = k
+
+    def _depth(self, side, ly):
+        bv = self.bv
+        z = bv.zcu[ly]
+        return z if side > 0 else bv.zcu[bv.copper[-1]] - z
+
+    def value(self, st):
+        if self.pairs:
+            bv = self.bv
+            pi = txy(st, self.tp)
+            pr = txy(st, self.tr)
+            pc = txy(st, self.tc)
+            pg = txy(st, self.tg)
+            for lr, lg, d in self.pairs:
+                a = bv.zone_piece(lr, pi[0], pi[1])
+                if a < 0 or a != bv.zone_piece(lr, pr[0], pr[1]) or bv.zone_labels(lr)[1][a] != self.rail:
+                    continue
+                b = bv.zone_piece(lg, pc[0], pc[1])
+                if b < 0 or b != bv.zone_piece(lg, pg[0], pg[1]) or bv.zone_labels(lg)[1][b] not in self.gnd:
+                    continue
+                sc = st.G[self.tr.i]
+                si = st.G[self.tp.i]
+                hc = min(self._depth(sc, lr), self._depth(sc, lg))
+                hi = min(self._depth(si, lr), self._depth(si, lg))
+                D = max(_hyp(pi[0] - pr[0], pi[1] - pr[1]), self.r)
+                self.mode = 'pour'
+                return self.mc(hc) + self.mi(hi) + 0.2 * d * math.log(D * D / (self.r * self.r))
+        self.mode = 'hops'
+        return self.loop.value(st)
+
+
 # ============================================================================ coupling
 def _loop_points(st, terms, closed):
     return [txy(st, t) for t in terms] + ([txy(st, terms[0])] if closed else [])
@@ -289,7 +354,6 @@ class NodeShape:
         self.parts = tuple(sorted({t.i for t in terms}))
         self._key = None
         self._pat = None
-        self._cx = None
 
     def patches(self, st):
         key = tuple((st.X[i], st.Y[i], st.R[i], st.G[i]) for i in self.parts)
@@ -313,18 +377,6 @@ class NodeShape:
     def arrs(self, st):
         self.patches(st)
         return self._arrs
-
-    def cext(self, st, hh, kern):
-        """Air-side strengths (pF) of the patches at plane height hh (jit.cext), cached."""
-        self.patches(st)
-        c = self._cx
-        if c is None or c[0] is not self._pat or c[1] != hh:
-            a = self._arrs[2]
-            out = np.empty(a.shape[0])
-            kern.cext_arr(a, hh, out)
-            c = (self._pat, hh, out)
-            self._cx = c
-        return c[2]
 
 
 _SCR = None
@@ -372,26 +424,16 @@ def _sub_parts(a, b):
     return tuple(sorted(set(a.parts) | set(b.parts)))
 
 
-def _h_loop(bv, st, shape):
-    ga = shape.geo(st)
-    return bv.h_ref(st.G[shape.T[0].i], ga[1][0], ga[1][1])
-
-
-def _h_node(bv, st, shape):
-    na = shape.patches(st)
-    h = bv.h_ref(st.G[shape.T[0].i], na[1], na[2])
-    return 1.6 if h == INF else max(h, 0.05)
-
-
 class _Coupled:
     """An aggressor (loop al, node an) against one target (loop tl, node tn), as two
     additive sub-terms: inductive k_l |M(al, tl)| over the parts of the two loops, and
-    capacitive over the parts of the two nodes (kernels jit.ind_one, jit.cap_one; target
-    kind 0 a victim, 1 a cable connector). `subparts` lets Terms cache and invalidate the two
-    separately; an AggGroup evaluates one sub-term for all of an aggressor's targets in one
-    kernel call (Terms.delta)."""
+    capacitive over the parts of the two nodes (jit.ind_one, jit.cap_one; target kind 0 a
+    victim, 1 a cable connector). `subparts` lets Terms cache and invalidate the two
+    separately; the board's CouplingEngine evaluates any set of sub-terms in one kernel call
+    (`pid`: this component's pair index per sub-term, -1 when inactive)."""
     kern = None
     kind_code = 0
+    engine = None
 
     def _setup(self, al, an, tl, tn, k_l, k_c, k_c2):
         self.tl, self.tn = tl, tn
@@ -404,31 +446,18 @@ class _Coupled:
             if o is not None:
                 ps |= set(o.parts)
         self.parts = tuple(sorted(ps))
-        self.group = None
-        self.tidx = -1
+        self.pid = [-1, -1]
 
     def value_sub(self, st, si):
-        from .jit import GAUSS, PY
-        kern = self.kern or PY
-        bv = self.bv
-        if si == 0:
-            if not self.k_l:
-                return 0.0
-            al, tl = self.al, self.tl
-            h = _h_loop(bv, st, al)
-            zb = 1.6 if h == INF else h
-            r0, r1 = WIN_R
-            return kern.ind_one(al.arr(st), al.closed, zb + al.z, tl.arr(st), tl.closed, zb + tl.z, h, self.kind_code,
-                                self.k_l, r0, r1, *GAUSS, *_scratch())
-        if not self.k_c:
+        if self.engine is None:
+            CouplingEngine(self.bv, [self])
+        p = self.pid[si]
+        if p < 0:
             return 0.0
-        an, tn = self.an, self.tn
-        hh = _h_node(bv, st, an)
-        xa, ya, aa = an.arrs(st)
-        xv, yv, av = tn.arrs(st)
-        r0, r1 = WIN_R
-        return kern.cap_one(xa, ya, aa, an.cext(st, hh, kern), xv, yv, av, tn.cext(st, hh, kern), hh, bv.er,
-                            self.kind_code, self.k_c, self.k_c2, r0, r1)
+        one = np.array([p], np.int64)
+        none = np.zeros(0, np.int64)
+        ol, oc = self.engine.eval(st, one if si == 0 else none, none if si == 0 else one)
+        return float(ol[0] if si == 0 else oc[0])
 
     def value(self, st):
         return self.value_sub(st, 0) + self.value_sub(st, 1)
@@ -481,7 +510,10 @@ class CrystalComp:
         x0, y0 = txy(st, self.ti[0])
         h = self.bv.h_ref(st.G[self.ti[0].i], x0, y0)
         cp = self._cprime(h)
-        dcl = cp * self.detour * (self.length(st, self.ti) + self.length(st, self.to)) / 4.0
+        li = self.length(st, self.ti)
+        lo = self.length(st, self.to)
+        c = self.detour
+        dcl = cp * (li * (1.0 + c * math.sqrt(li)) + lo * (1.0 + c * math.sqrt(lo))) / 4.0
         return self.s * dcl
 
 
@@ -534,6 +566,9 @@ class ThermalField:
         self.T_mean = float(self.P.sum()) * lam * lam / (gs * Lx * Ly)
         self._colbuf = np.zeros(len(self.targets))
         self._rowbuf = np.zeros(ns)
+        self._tidx = np.array(self.targets, np.int64)
+        self._sidx = np.array(self.src, np.int64)
+        self._boxa = np.array(self.box, float)
 
     def _imgs(self, xs, ys):
         x0, y0, Lx, Ly = self.box
@@ -550,30 +585,18 @@ class ThermalField:
 
     def column(self, st, k):
         i = self.src[k]
-        ix, iy = self._imgs(st.X[i], st.Y[i])
-        tx = np.array([st.X[t] for t in self.targets])
-        ty = np.array([st.Y[t] for t in self.targets])
         out = self._colbuf
-        if self.kern is not None:
-            self.kern.fin_column(tx, ty, ix, iy, self.a[k], self.lam, out)
-        else:
-            for t in range(len(tx)):
-                out[t] = self.py.fin_sum(tx[t], ty[t], ix, iy, self.a[k], self.lam)
+        (self.kern or self.py).fin_col_xy(st.Xa, st.Ya, self._tidx, st.X[i], st.Y[i], self._boxa, self.ms, self.a[k],
+                                          self.lam, out)
         g = out * self.norm + self.tail
         g[k] += self.selfcorr[k]
         return g
 
     def row(self, st, t):
         i = self.targets[t]
-        xs = np.array([st.X[s] for s in self.src])
-        ys = np.array([st.Y[s] for s in self.src])
-        ix, iy = self._imgs(xs, ys)
         out = self._rowbuf
-        if self.kern is not None:
-            self.kern.fin_row(st.X[i], st.Y[i], ix, iy, self.a, self.lam, out)
-        else:
-            for k in range(len(xs)):
-                out[k] = self.py.fin_sum(st.X[i], st.Y[i], ix[k], iy[k], self.a[k], self.lam)
+        (self.kern or self.py).fin_row_xy(st.Xa, st.Ya, self._sidx, st.X[i], st.Y[i], self._boxa, self.ms, self.a,
+                                          self.lam, out)
         g = out * self.norm + self.tail
         if t < len(self.src):
             g[t] += self.selfcorr[t]
@@ -606,109 +629,96 @@ class CmComp(_Coupled):
         self._setup(agg_loop, agg_node, conn_loop, conn_node, w * self.Iamp / self.zcm * 1e6, w * self.Vamp * 1e3, 0.0)
 
 
-class AggGroup:
-    """The coupling targets (victims, cable connectors) of one aggressor. When an aggressor
-    part moves, Terms.delta evaluates the affected sub-term of all targets in one kernel
-    call (jit.ind_batch, jit.cap_batch) on the targets' geometry as last ensured (a target
-    whose own parts move is evaluated alone)."""
+class CouplingEngine:
+    """Every coupling sub-term of a board (victims, cable connectors) for one kernel call
+    over any selection of them (jit.eng_eval): shapes are laid out once as terminal arrays
+    and evaluated from the pose arrays, at most once per call."""
 
-    def __init__(self, bv, al, an):
+    def __init__(self, bv, comps):
         self.bv = bv
-        self.al, self.an = al, an
-        self.comps = []
         self.kern = None
-        self.stale = [True, True]       # Terms: an aggressor part moved since the last refresh
-        self.tparts = [[], []]          # Terms: per target, its own parts per sub-term
-        self._ok = [False, False]
-        self._d = [None, None]
-        self._cv = {}
+        self.stamp = 0
+        lid, nid = {}, {}
+        LT_i, LT_xy, L_meta, L_f = [], [], [], []
+        NT_i, NT_xya, N_meta, N_w = [], [], [], []
+        npts = [0]
 
-    def add(self, c):
-        c.group = self
-        c.tidx = len(self.comps)
-        self.comps.append(c)
+        def loop(o):
+            k = lid.get(id(o))
+            if k is None:
+                k = lid[id(o)] = len(L_meta)
+                L_meta.append((len(LT_i), len(o.T)))
+                L_f.append((1.0 if o.closed else 0.0, o.z))
+                for t in o.T:
+                    LT_i.append(t.i)
+                    LT_xy.append((t.lx, t.ly))
+            return k
 
-    def agg_parts(self, si):
-        o = self.al if si == 0 else self.an
-        return set(o.parts) if o is not None else set()
+        def node(o):
+            k = nid.get(id(o))
+            if k is None:
+                k = nid[id(o)] = len(N_meta)
+                n = len(o.T)
+                m = n + (n - 1 if o.w > 0 else 0)
+                N_meta.append((len(NT_i), n, npts[0], m))
+                npts[0] += m
+                N_w.append(float(o.w))
+                for t, a in zip(o.T, o.A):
+                    NT_i.append(t.i)
+                    NT_xya.append((t.lx, t.ly, float(a)))
+            return k
+        Lp, Lk, Cp, Ck = [], [], [], []
+        for c in comps:
+            c.engine = self
+            c.pid = [-1, -1]
+            if c.k_l:
+                c.pid[0] = len(Lp)
+                Lp.append((loop(c.al), loop(c.tl), c.kind_code))
+                Lk.append(c.k_l)
+            if c.k_c:
+                c.pid[1] = len(Cp)
+                Cp.append((node(c.an), node(c.tn), c.kind_code))
+                Ck.append((c.k_c, c.k_c2))
+        i64 = np.int64
+        self.LT_i = np.array(LT_i or [0], i64)
+        self.LT_xy = np.array(LT_xy or [(0.0, 0.0)], float).reshape(-1, 2)
+        self.L_meta = np.array(L_meta or [(0, 0)], i64).reshape(-1, 2)
+        self.L_f = np.array(L_f or [(0.0, 0.0)], float).reshape(-1, 2)
+        self.NT_i = np.array(NT_i or [0], i64)
+        self.NT_xya = np.array(NT_xya or [(0.0, 0.0, 0.0)], float).reshape(-1, 3)
+        self.N_meta = np.array(N_meta or [(0, 0, 0, 0)], i64).reshape(-1, 4)
+        self.N_w = np.array(N_w or [0.0], float)
+        self.Lp = np.array(Lp or [(0, 0, 0)], i64).reshape(-1, 3)
+        self.Lk = np.array(Lk or [0.0], float)
+        self.Cp = np.array(Cp or [(0, 0, 0)], i64).reshape(-1, 3)
+        self.Ck = np.array(Ck or [(0.0, 0.0)], float).reshape(-1, 2)
+        nL = self.L_meta.shape[0]
+        nN = self.N_meta.shape[0]
+        self.GP = np.zeros((max(1, len(LT_i)), 2))
+        self.Lc = np.zeros((nL, 3))
+        self.Ls = np.full(nL, -1, i64)
+        m = max(1, npts[0])
+        self.PX, self.PY, self.PA, self.PC = np.zeros(m), np.zeros(m), np.zeros(m), np.zeros(m)
+        self.Nc = np.zeros((nN, 4))
+        self.Ns = np.full(nN, -1, i64)
+        self.n_l = len(Lp)
+        self.n_c = len(Cp)
 
-    def target_parts(self, si):
-        out = set()
-        for c in self.comps:
-            o = c.tl if si == 0 else c.tn
-            if o is not None and (c.k_l if si == 0 else c.k_c):
-                out |= set(o.parts)
-        return out
-
-    def invalidate(self, si):
-        self._ok[si] = False
-
-    def ensure(self, si, st):
-        """Concatenate the targets' current geometry for sub-term si (st: synced poses)."""
-        if self._ok[si]:
-            return
-        cs = self.comps
-        n = len(cs)
-        off = np.zeros(n + 1, np.int64)
-        kind = np.array([c.kind_code for c in cs], np.int64)
-        if si == 0:
-            pts, closed, zx, k1 = [], np.zeros(n, np.bool_), np.zeros(n), np.zeros(n)
-            for t, c in enumerate(cs):
-                if c.k_l:
-                    a = c.tl.arr(st)
-                    pts.append(a)
-                    off[t + 1] = off[t] + a.shape[0]
-                    closed[t] = c.tl.closed
-                    zx[t] = c.tl.z
-                    k1[t] = c.k_l
-                else:
-                    off[t + 1] = off[t]
-            P = np.ascontiguousarray(np.concatenate(pts)) if pts else np.zeros((0, 2))
-            self._d[0] = (P, off, closed, zx, kind, k1)
-        else:
-            xs, ys, As, k1, k2 = [], [], [], np.zeros(n), np.zeros(n)
-            for t, c in enumerate(cs):
-                if c.k_c:
-                    x, y, a = c.tn.arrs(st)
-                    xs.append(x)
-                    ys.append(y)
-                    As.append(a)
-                    off[t + 1] = off[t] + x.shape[0]
-                    k1[t] = c.k_c
-                    k2[t] = c.k_c2
-                else:
-                    off[t + 1] = off[t]
-            cat = (lambda v: np.ascontiguousarray(np.concatenate(v)) if v else np.zeros(0))
-            self._d[1] = (cat(xs), cat(ys), cat(As), off, kind, k1, k2)
-            self._cv = {}
-        self._ok[si] = True
-
-    def batch(self, si, st):
-        """Sub-term si of every target with the aggressor at its poses in st (array)."""
+    def eval(self, st, sel_l, sel_c):
+        """(inductive values, capacitive values) of the selected pair indices at st's poses."""
         from .jit import GAUSS, PY
         kern = self.kern or PY
-        bv = self.bv
-        out = np.zeros(len(self.comps))
+        self.stamp += 1
+        out_l = np.empty(sel_l.shape[0])
+        out_c = np.empty(sel_c.shape[0])
+        x0, y0, res, Hf, _ = self.bv._hraster[1]
+        Hb = self.bv._hraster[-1][3]
         r0, r1 = WIN_R
-        if si == 0:
-            al = self.al
-            P, off, closed, zx, kind, k1 = self._d[0]
-            h = _h_loop(bv, st, al)
-            zb = 1.6 if h == INF else h
-            kern.ind_batch(al.arr(st), al.closed, zb + al.z, h, P, off, closed, zx, kind, k1, r0, r1, *GAUSS,
-                           *_scratch(), out)
-        else:
-            an = self.an
-            X, Y, A, off, kind, k1, k2 = self._d[1]
-            hh = _h_node(bv, st, an)
-            cv = self._cv.get(hh)
-            if cv is None:
-                cv = np.empty(A.shape[0])
-                kern.cext_arr(A, hh, cv)
-                self._cv[hh] = cv
-            xa, ya, aa = an.arrs(st)
-            kern.cap_batch(xa, ya, aa, an.cext(st, hh, kern), hh, bv.er, X, Y, A, cv, off, kind, k1, k2, r0, r1, out)
-        return out
+        kern.eng_eval(st.Xa, st.Ya, st.Ca, st.Sa, st.Ga, self.LT_i, self.LT_xy, self.L_meta, self.L_f, self.NT_i,
+                      self.NT_xya, self.N_meta, self.N_w, Hf, Hb, x0, y0, res, self.bv.er, self.Lp, self.Lk, self.Cp,
+                      self.Ck, sel_l, sel_c, r0, r1, self.GP, self.Lc, self.Ls, self.PX, self.PY, self.PA, self.PC,
+                      self.Nc, self.Ns, self.stamp, *GAUSS, *_scratch(), out_l, out_c)
+        return out_l, out_c
 
 
 class EsdComp:
@@ -728,17 +738,25 @@ class EsdComp:
         self._hc = {}
         self.parts = tuple(sorted({t.i for t in (t_conn, t_prot, t_ic) if t is not None}))
 
-    def value(self, st):
-        ax, ay = txy(st, self.tc)
-        px, py = txy(st, self.tp)
-        side = st.G[self.tp.i]
-        h = self.bv.h_ref(side, px, py)
+    def _lp_lv(self, st, px, py):
+        """(L' of the surge trace, L of the protector's via down to the plane under it)."""
+        h = self.bv.h_ref(st.G[self.tp.i], px, py)
         hh = self.bv.thickness if h == INF else h
         cc = self._hc.get(hh)
         if cc is None:
             cc = (lprime_hj(self.w, hh), FL.m_self(hh, 0.15) + FL._collinear(hh, hh, 0.0))
             self._hc[hh] = cc
-        lp, lv = cc
+        return cc
+
+    def via(self, st):
+        """The via part of the value (nH)."""
+        px, py = txy(st, self.tp)
+        return self._lp_lv(st, px, py)[1]
+
+    def value(self, st):
+        ax, ay = txy(st, self.tc)
+        px, py = txy(st, self.tp)
+        lp, lv = self._lp_lv(st, px, py)
         ln = _hyp(px - ax, py - ay)
         beyond = 0.0
         if self.ti is not None:
@@ -747,7 +765,7 @@ class EsdComp:
             lab = _hyp(ux, uy)
             if lab > 1e-9:
                 beyond = max(0.0, ((px - ax) * ux + (py - ay) * uy) / lab - lab)
-        return lp * self.detour * (ln + 2.0 * beyond) + lv
+        return lp * (1.0 + self.detour * math.sqrt(ln)) * (ln + 2.0 * beyond) + lv
 
 
 class FeedComp:
@@ -756,30 +774,19 @@ class FeedComp:
     the terminals: series parts along the line add nothing, shunt parts add their stubs, and
     the result does not depend on the order the brief lists them in."""
 
+    kern = None
+
     def __init__(self, terms, alpha):
         self.T = terms
         self.alpha = alpha
         self.parts = tuple(sorted({t.i for t in terms}))
+        n = len(terms)
+        self._ti = np.array([t.i for t in terms], np.int64)
+        self._lx = np.array([t.lx for t in terms], float)
+        self._ly = np.array([t.ly for t in terms], float)
+        self._scr = (np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n, np.bool_))
 
     def value(self, st):
-        P = [txy(st, t) for t in self.T]
-        n = len(P)
-        if n < 2:
-            return 0.0
-        best = [INF] * n          # Prim's algorithm (n is small)
-        used = [False] * n
-        best[0] = 0.0
-        ln = 0.0
-        for _ in range(n):
-            k = -1
-            for j in range(n):
-                if not used[j] and (k < 0 or best[j] < best[k]):
-                    k = j
-            used[k] = True
-            ln += best[k]
-            for j in range(n):
-                if not used[j]:
-                    d = _hyp(P[j][0] - P[k][0], P[j][1] - P[k][1])
-                    if d < best[j]:
-                        best[j] = d
-        return self.alpha * ln
+        from .jit import PY
+        return self.alpha * (self.kern or PY).mst_len(st.Xa, st.Ya, st.Ca, st.Sa, st.Ga, self._ti, self._lx, self._ly,
+                                                      *self._scr)

@@ -67,6 +67,8 @@ def _rewrite(d: dict, ids: _Ids) -> dict:
     for k, v in d.items():
         if k == 'evidence':
             out[k] = evidence_json(v)
+        elif k == 'group' and isinstance(v, str):
+            out[k] = ids.u.get(v, v)                 # a power path's mux IC by uuid; 'or:<rail>' stays as it is
         elif k in REF_FIELDS:
             out[k] = [ids(x) for x in v] if isinstance(v, list) else ids(v) if isinstance(v, str) else v
         elif k in PAIR_FIELDS:
@@ -254,12 +256,12 @@ def build(board, *, use_sheets: bool = True) -> dict:
             sw = {}
             refs = []
             for k, v in nr.attrs.items():
-                if k in ('inductors', 'high', 'low', 'ic'):
+                if k in ('inductors', 'high', 'low', 'ic') or (k == 'via' and isinstance(v, str) and v in nl.parts):
                     xs = v if isinstance(v, list) else [v]
                     refs += [x for x in xs if isinstance(x, str) and x in nl.parts]
                     sw[k] = [ids(x) for x in v] if isinstance(v, list) else ids(v) if isinstance(v, str) else v
                 elif k in ('kind', 'via', 'of'):
-                    sw[k] = v
+                    sw[k] = v      # 'via' names a part (a phase shunt) by uuid above; 'of' is a net
             if refs:
                 sw['members_ref'] = {ids(r): nl.parts[r].refdes for r in refs}
             d['switch'] = sw

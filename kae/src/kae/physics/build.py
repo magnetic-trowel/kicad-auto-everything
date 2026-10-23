@@ -12,8 +12,11 @@ uuid, or by reference designator as a fallback):
                       class buck|boost|bridge_driver|half_bridge; rail, sw, gnd; excite {V, I, t_sw_ns}
     decap:            ic (an IC, module, LED, connector, diode, fuse or inductor), power_pins [nums],
                       ground_pins [nums] (may be empty: the loop closes through the plane), rail,
-                      ground (split_supply: the V- rail), caps, hf_caps, caps_p, pin_caps, function,
-                      shared_by
+                      ground (split_supply: the V- rail), caps, hf_caps, caps_p, pin_caps, function
+                      (load, bypass, regulator_input/output, converter_input/output, entry,
+                      split_supply), pairing (pin | nearest_pin: the IC's pin clusters, each with
+                      its paired and all unpaired caps in parallel; nearest_load: each cap to the
+                      nearest load pin on the rail), shared_by
     crystal:          ic, xin, xout, crystal, load_caps [uuids], f_Hz
     victim:           class feedback|sense|analog|crystal|reference; loop [[uuid, pad], ...] and/or nets
     heat_source:      ref (uuid), P_W;   thermal_victim: ref (uuid), class
@@ -31,8 +34,8 @@ import numpy as np
 
 from . import priors as PR
 from .kernels import fin_params
-from .structures import (AggGroup, CmComp, CouplingComp, CrystalComp, EsdComp, FeedComp, LoopComp, LoopShape,
-                         NearestLoopComp, NodeShape, PlanePairLoop, Term, ThermalField, _Coupled)
+from .structures import (CmComp, CouplingComp, CouplingEngine, CrystalComp, DecapLoop, EsdComp, FeedComp, LoopComp,
+                         LoopShape, NearestLoopComp, NodeShape, Term, ThermalField, _Coupled)
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
 
@@ -119,6 +122,27 @@ class _Ctx:
             return PR.Belief(float(b['value']), b.get('unit', ''), b.get('basis', 'brief'), b.get('class', 'brief'))
         return None
 
+    def ic_power_pins(self, i):
+        """Number of a part's pads on supply rails (brief role 'rail'), every rail."""
+        P = self.bv.parts[i]
+        rails = self.__dict__.get('_rails')
+        if rails is None:
+            rails = self._rails = {n for n, r in self.nets.items() if (r or {}).get('role') == 'rail'}
+        return sum(1 for n in P.pad_net if n in rails)
+
+    def is_module(self, i):
+        p = self.parts.get(self.bv.parts[i].uuid) or {}
+        return (p.get('kind') or p.get('role')) == 'module'
+
+    def decap_alloc(self, s, ic, vr, pp):
+        """(budget per pin cluster as a function of its pin count, per-pin flag) of a decap spec."""
+        b = self.budget(s, 'L_nH')
+        per_pin = s.get('function') not in PR.STABILITY_FUNCTIONS and not self.is_module(ic)
+        if b is None:
+            b = PR.decap_budget(vr, len(self.bv.parts[ic].pad_num), len(pp), function=s.get('function'),
+                                n_ic_power_pins=self.ic_power_pins(ic), module=self.is_module(ic))
+        return b, per_pin
+
     def net_volts(self, net):
         r = self.nets.get(net) or {}
         v = r.get('volts')
@@ -184,27 +208,25 @@ def _cluster(points, dmax=3.0):
     return list(out.values())
 
 
-def _plane_pair(ctx, rail):
-    """(d, rail layer, ground layer) when the rail and a ground net form an adjacent plane pair
-    over most of the board."""
+def _pour_pairs(ctx, rail):
+    """Layer pairs (Lr, Lg, d) on which the rail and a ground net both have zones, in the
+    order a decap loop tries them: inner layers before outer ones (an outer pour under the
+    parts is perforated by their pads), then the thinner dielectric d."""
     bv = ctx.bv
-    rl = {ly: f for ly, f in bv.net_plane_layers(rail).items() if f >= 0.3}
+    rl = set(bv.net_plane_layers(rail)) if rail else set()
     if not rl:
-        return None
-    gl = {}
+        return []
+    gl = set()
     for g in ctx.gnd:
-        for ly, f in bv.net_plane_layers(g).items():
-            if f >= 0.3:
-                gl[ly] = f
-    best = None
+        gl |= set(bv.net_plane_layers(g))
+    outer = {bv.copper[0], bv.copper[-1]}
+    out = []
     for a in rl:
         for b in gl:
-            if a == b:
-                continue
-            d = abs(bv.zcu[a] - bv.zcu[b])
-            if d <= 0.6 and (best is None or d < best[0]):
-                best = (d, a, b)
-    return best
+            if a != b:
+                out.append(((a in outer) + (b in outer), abs(bv.zcu[a] - bv.zcu[b]), a, b))
+    out.sort()
+    return [(a, b, d) for _, d, a, b in out]
 
 
 def build_structures(terms):
@@ -270,17 +292,9 @@ def build_structures(terms):
             except Exception as e:  # noqa: BLE001
                 terms.warnings.append(f"{s.get('id')}: {type(e).__name__}: {e}")
     S.extend(_world_cm(ctx, specs, aggs, Struct))
-    # each aggressor's coupling targets, for batched evaluation (Terms.delta)
-    groups = {}
-    for s in S:
-        for c in s.comps:
-            if isinstance(c, _Coupled):
-                key = (id(c.al), id(c.an))
-                g = groups.get(key)
-                if g is None:
-                    g = groups[key] = AggGroup(ctx.bv, c.al, c.an)
-                g.add(c)
-    terms.groups = list(groups.values())
+    # every coupling sub-term in one engine, for batched evaluation (Terms.delta)
+    coupled = [c for s in S for c in s.comps if isinstance(c, _Coupled)]
+    terms.engine = CouplingEngine(ctx.bv, coupled) if coupled else None
     _thermal(ctx, specs)
 
 
@@ -383,6 +397,11 @@ def _ic_terms(ctx, ic, ks, rail, gp, gnd):
 
 
 def _low_ownership(s):
+    """A decap whose capacitors serve whichever load on the rail they sit next to: the
+    brief's pairing 'nearest_load' (rail groups, entry bulk); briefs without a pairing:
+    raw ownership <= OWNERSHIP_NEAREST on a rail shared by >= 3 loads."""
+    if s.get('pairing'):
+        return s['pairing'] == 'nearest_load'
     ps = [float(v) for v in (s.get('caps_p') or {}).values() if v is not None]
     return bool(ps) and max(ps) <= PR.OWNERSHIP_NEAREST and (s.get('shared_by') or 1) >= 3
 
@@ -402,9 +421,8 @@ def _decap(ctx, s, Struct):
         return []
     groups = _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6)
     vr = ctx.net_volts(rail) or 3.3
-    npins = len(P.pad_num)
-    alloc_pin = ctx.budget(s, 'L_nH') or PR.decap_budget(vr, npins, len(pp))
-    pair = _plane_pair(ctx, rail)
+    alloc_pin, per_pin = ctx.decap_alloc(s, ic, vr, pp)
+    pairs = _pour_pairs(ctx, rail)
     out = []
     for gi, grp in enumerate(groups):
         ks = [pp[j] for j in grp]
@@ -414,29 +432,27 @@ def _decap(ctx, s, Struct):
         for k in ks:
             paired |= pin_caps.get(P.pad_num[k], set())
         all_paired = set().union(*pin_caps.values()) if pin_caps else set()
-        if paired:
-            use = [c for c in caps if c[0] in paired]
-        else:
-            use = [c for c in caps if c[0] not in all_paired] or caps
+        # the cluster's own paired capacitors and every unpaired one of the spec, in parallel
+        # (current takes the lowest-inductance path: a near capacitor serves the pin whoever
+        # the brief says owns it; the ownership filter below drops the unlikely ones)
+        use = [c for c in caps if c[0] in paired or c[0] not in all_paired] or caps
         if use:
             pm = max(pmap.get(c[0], 1.0) for c in use)
             use = [c for c in use if pmap.get(c[0], 1.0) >= 0.5 * pm]
         for i, kr, kgc in use:
             tr = ctx.term(i, kr)
             tc = ctx.term(i, kgc)
-            if pair is not None:
-                comps.append(_plane_pair_comp(ctx, tp, tr, tc, pair[0], bv.parts[i]))
-            else:
-                comps.append(_loop_comp(ctx, [tp, tr, tc, tg], False, 'decap'))
+            comps.append(_decap_loop(ctx, tp, tr, tc, tg, rail, pairs))
             labels.append(bv.parts[i].ref)
             weights.append(pmap.get(i, 1.0))
         if not comps:
             continue
         a = PR.Belief(alloc_pin.value / max(1, len(ks)), 'nH',
-                      alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls)
+                      alloc_pin.basis + f'; {len(ks)} pin(s) in this cluster', alloc_pin.cls) if per_pin else alloc_pin
         out.append(Struct(id=(s.get('id') or f'decap:{P.ref}:{rail}') + (f'#{gi}' if len(groups) > 1 else ''),
                           kind='decap', conf=ctx.conf(s) * max(weights), alloc=a, comps=comps, reduce='parallel',
-                          labels=labels, info=dict(rail=rail, pins=[P.pad_num[k] for k in ks], plane_pair=pair is not None,
+                          labels=labels, info=dict(rail=rail, pins=[P.pad_num[k] for k in ks],
+                                                   pour_pairs=[f'{a}/{b}' for a, b, _ in pairs],
                                                    ownership=max(weights), function=s.get('function'))))
     return out
 
@@ -460,11 +476,11 @@ def _decap_nearest(ctx, specs, Struct):
             if not pp:
                 continue
             vr = ctx.net_volts(rail) or 3.3
-            b = ctx.budget(s, 'L_nH') or PR.decap_budget(vr, len(P.pad_num), len(pp))
+            b, per_pin = ctx.decap_alloc(s, ic, vr, pp)
             for grp in _cluster([(P.pad_lx[k], P.pad_ly[k]) for k in pp], 1.6):
                 ks = [pp[j] for j in grp]
                 cands.append((ic, ks, gp, gnd))
-                budgets.append(b.value / max(1, len(ks)))
+                budgets.append(b.value / max(1, len(ks)) if per_pin else b.value)
             for i, kr, kg in _decap_caps(ctx, s, rail, gnd):
                 caps.setdefault(i, (kr, kg))
             confs.append(ctx.conf(s))
@@ -476,11 +492,12 @@ def _decap_nearest(ctx, specs, Struct):
             tr = ctx.term(i, kr)
             tc = ctx.term(i, kg)
             loops = []
+            pairs = _pour_pairs(ctx, rail)
             for ic, ks, gp, gnd in cands:
                 if ic == i:
                     continue
                 tp, tg = _ic_terms(ctx, ic, ks, rail, gp, gnd)
-                loops.append(_loop_comp(ctx, [tp, tr, tc, tg], False, 'decap'))
+                loops.append(_decap_loop(ctx, tp, tr, tc, tg, rail, pairs))
             if not loops:
                 continue
             out.append(Struct(id=f'decap:{rail}:{bv.parts[i].ref}:nearest', kind='decap', conf=float(np.median(confs)),
@@ -489,24 +506,40 @@ def _decap_nearest(ctx, specs, Struct):
     return out
 
 
-def _plane_pair_comp(ctx, tp, tr, tc, d, cap_part):
-    """Mounting of the cap (body + two vias at its pads down to the pair) plus spreading."""
+def _mount(ctx, pitch, w, z, cache):
+    """Mounting inductance (nH) of a two-terminal part on the board: its body (width w,
+    height z above the surface) and two vias at its terminals (pitch apart) down to a plane
+    at depth h, as a function of h (cached)."""
     from . import fastloop as FL
-    zc = cap_part.zbody
-    pitch = math.hypot(tr.lx - tc.lx, tr.ly - tc.ly)
-    wb = max(min(tr.a, tc.a), 0.2)
-    cache = {}
 
-    def mount(h):
+    def f(h):
         key = round(h, 3)
         v = cache.get(key)
         if v is None:
-            H = [(0.0, 0.0, pitch, 0.0, wb, h + zc)]
-            V = [(0.0, 0.0, 0.0, h + zc, 0.15), (pitch, 0.0, h + zc, 0.0, 0.15)]
+            H = [(0.0, 0.0, pitch, 0.0, w, h + z)]
+            V = [(0.0, 0.0, 0.0, h + z, 0.15), (pitch, 0.0, h + z, 0.0, 0.15)]
             v = FL.loop_fast(H, V)
             cache[key] = v
         return v
-    return PlanePairLoop(ctx.bv, tp, (tr, tc), d, mount, 0.3)
+    return f
+
+
+def _decap_loop(ctx, tp, tr, tc, tg, rail, pairs):
+    """A decap loop [IC power pin, cap rail pad, cap ground pad, IC return]: through the
+    rail and ground pours when both join its ends, else straight hops (DecapLoop)."""
+    bv = ctx.bv
+    loop = _loop_comp(ctx, [tp, tr, tc, tg], False, 'decap')
+    if not pairs or not ctx.t.knobs.pour_decaps:
+        return loop
+    for a, b, _ in pairs:              # label the pours now, not on the first move
+        bv.zone_labels(a)
+        bv.zone_labels(b)
+    cp = bv.parts[tr.i]
+    ip = bv.parts[tp.i]
+    mc = _mount(ctx, max(math.hypot(tr.lx - tc.lx, tr.ly - tc.ly), 0.3), max(min(tr.a, tc.a), 0.2), cp.zbody, {})
+    pitch_ic = math.hypot(tp.lx - tg.lx, tp.ly - tg.ly) if tp.i == tg.i else 0.0
+    mi = _mount(ctx, max(pitch_ic, 0.3), 0.3 if _is_ic(ip) else max(tp.a, 0.2), ip.zbody, {})
+    return DecapLoop(bv, loop, pairs, rail, ctx.gnd, mc, mi)
 
 
 # ----------------------------------------------------------------------------- (d)

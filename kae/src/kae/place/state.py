@@ -68,8 +68,7 @@ class State:
         r = p.rots[self.K[i]]
         X, Y = int(self.X[i]), int(self.Y[i])
         si = 0 if p.s > 0 else 1
-        a, b, c, d = r.g_own
-        out = [(si, (X + a, X + b, Y + c, Y + d), "own")]
+        out = [(si, (X + a, X + b, Y + c, Y + d), "own") for (a, b, c, d) in (r.g_own_rects or (r.g_own,))]
         for (a, b, c, d) in r.g_opp:
             out.append((1 - si, (X + a, X + b, Y + c, Y + d), "opp"))
         return out

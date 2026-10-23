@@ -369,6 +369,11 @@ def _route_rail(ctx, rl, mode, gnd_pour):
                      drop_mV=round(1e3 * R * cur, 2))
             first = False
         rep["branches"].append(b)
+    # the rest of the net's pads near the rail copper: joined here, at the class width, so
+    # the general router is not left islands to join to the middle of a fixed track
+    if m.copper:
+        rep["completed"] = _complete_net(ctx, m, net, [(st.geom, st.layers)], opt,
+                                         float(ctx.opts.get("rail_complete_mm", 8.0)))
     # the source itself into its zone on other layers
     if has_zone and not _pads_on_zone(ctx, st, net):
         zl = _zone_layer_over(ctx, st, net)
@@ -382,6 +387,134 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     rep["items"] = len(m.copper)
     ctx.rail_modules = getattr(ctx, "rail_modules", []) + [m]
     return rep
+
+
+def _comp_anchors(ctx, comp):
+    """Routing anchors for a set of copper items of one net (pads, tracks, vias)."""
+    out = []
+    for it in comp:
+        if it.kind == "track":
+            out.append(Anchor(it.geom, tuple(it.layers), None, grow=it.r * 0.8, kind="track"))
+        elif it.kind == "via":
+            out.append(Anchor(it.geom, tuple(ctx.sp.cu), (it.geom.x, it.geom.y), grow=it.r * 0.8, kind="via"))
+        elif it.kind == "pad":
+            out.append(Anchor(it.geom, tuple(it.layers), it.pos, kind="pad"))
+    return out
+
+
+def _complete_net(ctx, m, net, seeds, w, reach):
+    """Join each pad of `net` within `reach` mm of the copper connected to `seeds`
+    ([(geometry, layers)]), and not already on it nor in a zone of the net, with a track of
+    width w (at least the class width); nearest first. Returns the number joined.
+    Freerouting does not join an island to the middle of a fixed track, so pads left near
+    critical copper would stay unrouted."""
+    from shapely.ops import unary_union
+    sp = ctx.sp
+    seen, todo = set(), []
+    for it in sp.pads:
+        if it.net != net or it.kind != "pad" or not it.owner:
+            continue
+        key = (it.fp, it.owner[1])
+        if key in seen or it.fp is None:
+            continue
+        seen.add(key)
+        t = sp.terminal(it.fp, [it.owner[1]])
+        if t is None or _pads_on_zone(ctx, t, net):
+            continue
+        todo.append(t)
+    n = 0
+    for _ in range(len(todo)):
+        comp = sp.component(net, seeds)
+        if not comp:
+            break
+        ids = {id(x) for x in comp}
+        geo = unary_union([x.geom.buffer(x.r) if x.r > 0 else x.geom for x in comp])
+        rest = [t for t in todo if not any(id(x) in ids for x in t.items)]
+        if not rest:
+            break
+        t = min(rest, key=lambda t: geo.distance(t.geom))
+        d = geo.distance(t.geom)
+        if d > reach:
+            break
+        todo.remove(t)
+        lay = t.layers[0] if ctx.side_layer(t.fp) not in t.layers else ctx.side_layer(t.fp)
+        layers = list(dict.fromkeys([lay] + [l for l in (sp.cu[0], sp.cu[-1]) if l in sp.cu]))
+        ww = max(w, sp.width_limits(net, lay)[1])
+        rt = route_hop(ctx, m, f"pad:{t.fp}:{t.pad}", net, [anchor(t)], _comp_anchors(ctx, comp), [ww], layers,
+                       via=len(layers) > 1, via_cost=5.0, layer_factor={l: (1.0 if l == lay else 1.6) for l in layers},
+                       max_len=2.0 * d + 3.0, optional=True)
+        n += rt is not None
+    return n
+
+
+def complete_module_nets(ctx, reach=8.0, island_reach=20.0):
+    """For every net (but ground) that carries critical copper: join the net's pads within
+    `reach` of each island of that copper (`_complete_net`), then join the islands to each
+    other, nearest pair first, when they lie within `island_reach` (two decaps of one rail,
+    say). Returns {net: joins}."""
+    sp = ctx.sp
+    m = Module(id="complete", kind="complete", spec={}, parts=[])
+    out = {}
+    for net in sorted({it.net for it in sp.routed if it.net and it.net not in ctx.gnd}):
+        done = set()
+        n = 0
+        for it in [x for x in sp.routed if x.net == net]:
+            if id(it) in done:
+                continue
+            seed = [(it.geom.buffer(it.r) if it.r > 0 else it.geom, tuple(it.layers))]
+            done |= {id(x) for x in sp.component(net, seed)}
+            if reach > 0:
+                n += _complete_net(ctx, m, net, seed, 0.0, reach)
+            done |= {id(x) for x in sp.component(net, seed)}
+        if island_reach > 0:
+            n += _join_islands(ctx, m, net, island_reach)
+        if n:
+            out[net] = n
+    if m.copper:
+        ctx.rail_modules = getattr(ctx, "rail_modules", []) + [m]
+    return out
+
+
+def _islands(ctx, net):
+    """The connected sets of a net's critical copper (with the pads they touch)."""
+    sp = ctx.sp
+    seen, out = set(), []
+    for it in [x for x in sp.routed if x.net == net]:
+        if id(it) in seen:
+            continue
+        comp = sp.component(net, [(it.geom.buffer(it.r) if it.r > 0 else it.geom, tuple(it.layers))])
+        seen |= {id(x) for x in comp}
+        out.append(comp)
+    return out
+
+
+def _join_islands(ctx, m, net, reach):
+    """Join the islands of a net's critical copper, nearest pair first, while a pair lies
+    within `reach`: one class-width track each (optional: never walls in a pin)."""
+    from shapely.ops import unary_union
+    sp = ctx.sp
+    n = 0
+    tried = set()
+    while True:
+        isl = _islands(ctx, net)
+        if len(isl) < 2:
+            return n
+        geos = [unary_union([x.geom.buffer(x.r) if x.r > 0 else x.geom for x in c]) for c in isl]
+        pairs = sorted(((geos[i].distance(geos[j]), i, j) for i in range(len(isl)) for j in range(i + 1, len(isl))),
+                       key=lambda t: t[0])
+        pick = next(((d, i, j) for d, i, j in pairs if d <= reach
+                     and (frozenset(id(x) for x in isl[i]), frozenset(id(x) for x in isl[j])) not in tried), None)
+        if pick is None:
+            return n
+        d, i, j = pick
+        tried.add((frozenset(id(x) for x in isl[i]), frozenset(id(x) for x in isl[j])))
+        a, b = _comp_anchors(ctx, isl[i]), _comp_anchors(ctx, isl[j])
+        lay = sp.cu[0]
+        layers = list(dict.fromkeys([l for l in (sp.cu[0], sp.cu[-1]) if l in sp.cu]))
+        w = sp.width_limits(net, lay)[1]
+        rt = route_hop(ctx, m, f"island:{net}:{n}", net, a, b, [w], layers, via=len(layers) > 1, via_cost=5.0,
+                       max_len=1.6 * d + 3.0, optional=True)
+        n += rt is not None
 
 
 def _ground_return(ctx, m, rl, dv):

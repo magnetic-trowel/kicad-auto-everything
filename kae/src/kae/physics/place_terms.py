@@ -31,18 +31,21 @@ capacitive over the two nodes' parts). Each sub-term's cached value is marked di
 one of its parts changes pose; `delta` re-reads the poses of the touched structures'
 members from `poses` (identity, then equality), so callers may mutate their pose dict
 freely between calls. A moved aggressor part re-evaluates the affected sub-term of all of
-that aggressor's victims and cable connectors in one kernel call (structures.AggGroup).
+the coupling sub-terms a move touches (both its aggressors' and its victims') in one kernel
+call (structures.CouplingEngine).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 
 from . import priors as PR
 from .boardview import BoardView
 from .structures import (State)
 
 INF = float('inf')
+_NONE = np.zeros(0, np.int64)
 
 
 @dataclass
@@ -89,7 +92,7 @@ class Terms:
         for p in bv.parts:
             self.st.set(p.i, p.x0, p.y0, p.rot0, p.side0)
         self.structs: list[Struct] = []
-        self.groups = []                  # structures.AggGroup: an aggressor's coupling targets
+        self.engine = None                # structures.CouplingEngine: all coupling sub-terms
         self.thermal = None
         self.warnings = []
         self.kern = None
@@ -105,8 +108,8 @@ class Terms:
                     for c in s.comps:
                         if hasattr(c, 'kern'):
                             c.kern = self.kern
-                for g in self.groups:
-                    g.kern = self.kern
+                if self.engine is not None:
+                    self.engine.kern = self.kern
                 if self.thermal is not None:
                     self.thermal.kern = self.kern
         # incidence
@@ -147,20 +150,23 @@ class Terms:
         self._sval = [0.0] * len(self.structs)
         self._scost = [0.0] * len(self.structs)
         self._sdirty = [True] * len(self.structs)
-        # aggressor groups: their (k, ci) per target, aggressor and target parts per sub-term
-        self._gkc = {}
-        self._gagg = {}
-        self._gtgt = {}
-        for g in self.groups:
-            self._gkc[id(g)] = [where[id(c)] for c in g.comps]
-            g.stale = [True, True]
-            g.tparts = [[set((c.tl if si == 0 else c.tn).parts) if c.subparts[si] else set() for c in g.comps]
-                        for si in (0, 1)]
-            for si in (0, 1):
-                for i in g.agg_parts(si):
-                    self._gagg.setdefault(i, []).append((g, si))
-                for i in g.target_parts(si):
-                    self._gtgt.setdefault(i, []).append((g, si))
+        # coupling sub-terms go through the engine: per part, the engine pair indices it
+        # touches (inductive, capacitive) with their (k, ci), and its other sub-terms
+        self._cd = [{(ci, si) for ci, m in enumerate(ns) if m > 1 for si in range(m)}
+                    for ns in self._nsub]                 # dirty coupling sub-terms (ci, si)
+        self._eng_l, self._eng_c, self._own = {}, {}, {}
+        for i, keys in self._psub.items():
+            el, ec, ow = [], [], []
+            for k, ci, si in keys:
+                c = self.structs[k].comps[ci]
+                pid = c.pid[si] if hasattr(c, 'pid') else None
+                if pid is None:
+                    ow.append((k, ci, si))
+                elif pid >= 0:
+                    (el if si == 0 else ec).append((pid, k, ci))
+            self._eng_l[i] = (np.array([e[0] for e in el], np.int64), [(e[1], e[2]) for e in el])
+            self._eng_c[i] = (np.array([e[0] for e in ec], np.int64), [(e[1], e[2]) for e in ec])
+            self._own[i] = ow
         self._nbr = {i: tuple(sorted(set().union(*(self.structs[k].members for k in ks)))) for i, ks in self.inc.items()}
         self._last = [None] * n
         self._epoch = [0] * n
@@ -184,6 +190,9 @@ class Terms:
 
     def total(self, poses):
         self._sync_all(poses)
+        ks = [k for k in range(len(self.structs)) if self._cd[k]]
+        if ks:
+            self._refresh_coupled(ks)
         tot = 0.0
         for k in range(len(self.structs)):
             self._value(k)
@@ -195,6 +204,9 @@ class Terms:
     def total_by_kind(self, poses):
         """{kind: cost} at these poses."""
         self._sync_all(poses)
+        ks = [k for k in range(len(self.structs)) if self._cd[k]]
+        if ks:
+            self._refresh_coupled(ks)
         out = {}
         for k, s in enumerate(self.structs):
             self._value(k)
@@ -245,35 +257,43 @@ class Terms:
             p = poses.get(uids[j])
             if p is not None and p is not last[j]:
                 self._sync(j, poses)
+        cd = self._cd
+        ks = [k for k in touched if cd[k]]
+        if ks:
+            self._refresh_coupled(ks)
         sdirty = self._sdirty
         for k in touched:
             if sdirty[k]:
                 self._value(k)
-        batches = []
-        if self._gagg:
-            seen = set()
-            for i in moved:
-                for g, si in self._gagg.get(i, ()):
-                    if (id(g), si) not in seen:
-                        seen.add((id(g), si))
-                        g.ensure(si, st)
-                        batches.append((g, si))
         # 2. trial values of the sub-terms the moved parts touch
         saved = [(i, st.get(i)) for i in moved]
         for i, p in mv:
             st.set(i, *p)
         new = {}
-        for g, si in batches:
-            out = g.batch(si, st)
-            kc = self._gkc[id(g)]
-            tp = g.tparts[si]
-            for t, c in enumerate(g.comps):
-                if c.subparts[si] and not any(i in tp[t] for i in moved):
-                    k, ci = kc[t]
-                    new[(k, ci, si)] = float(out[t])
+        if self.engine is not None:
+            if len(moved) == 1:
+                sl, bl = self._eng_l.get(moved[0], (None, ()))
+                sc, bc = self._eng_c.get(moved[0], (None, ()))
+            else:
+                ml, mc = {}, {}
+                for i in moved:
+                    a, b = self._eng_l.get(i, (None, ()))
+                    for pid, kc in zip(a if a is not None else (), b):
+                        ml[int(pid)] = kc
+                    a, b = self._eng_c.get(i, (None, ()))
+                    for pid, kc in zip(a if a is not None else (), b):
+                        mc[int(pid)] = kc
+                sl, bl = np.array(list(ml), np.int64), list(ml.values())
+                sc, bc = np.array(list(mc), np.int64), list(mc.values())
+            if bl or bc:
+                ol, oc = self.engine.eval(st, sl if bl else _NONE, sc if bc else _NONE)
+                for (k, ci), v in zip(bl, ol):
+                    new[(k, ci, 0)] = float(v)
+                for (k, ci), v in zip(bc, oc):
+                    new[(k, ci, 1)] = float(v)
         nsub = self._nsub
         for i in moved:
-            for key in self._psub.get(i, ()):
+            for key in self._own.get(i, ()):
                 if key not in new:
                     k, ci, si = key
                     c = structs[k].comps[ci]
@@ -312,11 +332,15 @@ class Terms:
 
     def breakdown(self, poses):
         self._sync_all(poses)
+        ks = [k for k in range(len(self.structs)) if self._cd[k]]
+        if ks:
+            self._refresh_coupled(ks)
         out = []
         for k, s in enumerate(self.structs):
             v = self._value(k)
             u = v / s.alloc.value if s.alloc.value > 0 else 0.0
-            comps = [dict(label=lab, value=round(c, 6)) for lab, c in zip(s.labels, self._cv[k])]
+            comps = [dict(label=lab, value=round(c, 6), **({'mode': cc.mode} if getattr(cc, 'mode', None) else {}))
+                     for lab, c, cc in zip(s.labels, self._cv[k], s.comps)]
             out.append(dict(id=s.id, kind=s.kind, confidence=s.conf,
                             members=[self.bv.parts[i].ref for i in s.members],
                             uuids=[self.uids[i] for i in s.members],
@@ -356,31 +380,45 @@ class Terms:
         self._epoch[j] += 1
         sd = self._sd
         sdirty = self._sdirty
+        nsub = self._nsub
+        cd = self._cd
         for k, ci, si in self._psub.get(j, ()):
             sd[k][ci][si] = True
             sdirty[k] = True
-        for g, si in self._gagg.get(j, ()):
-            g.stale[si] = True
-        for g, si in self._gtgt.get(j, ()):
-            g.invalidate(si)
+            if nsub[k][ci] > 1:
+                cd[k].add((ci, si))
 
     def _sync_all(self, poses):
         for j in set(self.inc) | self.th_parts:
             self._sync(j, poses)
 
-    def _refresh_group(self, g, si):
-        """Sub-term si of all of g's targets at the synced poses, in one kernel call."""
-        g.ensure(si, self.st)
-        out = g.batch(si, self.st)
-        sub = self._sub
-        sd = self._sd
-        for (k, ci), c, v in zip(self._gkc[id(g)], g.comps, out):
-            if c.subparts[si] and sd[k][ci][si]:
+    def _refresh_coupled(self, ks):
+        """The dirty coupling sub-terms of structures ks at the synced poses, in one engine call."""
+        structs = self.structs
+        sl, bl, sc, bc = [], [], [], []
+        for k in ks:
+            comps = structs[k].comps
+            for ci, si in self._cd[k]:
+                p = comps[ci].pid[si]
+                if p < 0:
+                    continue
+                if si == 0:
+                    sl.append(p)
+                    bl.append((k, ci))
+                else:
+                    sc.append(p)
+                    bc.append((k, ci))
+            self._cd[k].clear()
+        if not (sl or sc):
+            return
+        ol, oc = self.engine.eval(self.st, np.array(sl, np.int64), np.array(sc, np.int64))
+        sub, sd, cv = self._sub, self._sd, self._cv
+        for si, b, o in ((0, bl, ol), (1, bc, oc)):
+            for (k, ci), v in zip(b, o):
                 sub[k][ci][si] = float(v)
                 sd[k][ci][si] = False
+                cv[k][ci] = sub[k][ci][0] + sub[k][ci][1]
                 self._sdirty[k] = True
-                self._cv[k][ci] = sub[k][ci][0] + sub[k][ci][1]
-        g.stale[si] = False
 
     def _value(self, k):
         if not self._sdirty[k]:
@@ -400,14 +438,12 @@ class Terms:
                     d[0] = False
                 continue
             if d[0] or d[1]:
+                if self._cd[k]:
+                    self._refresh_coupled([k])
                 for si in (0, 1):
                     if d[si]:
-                        g = c.group
-                        if g is not None and g.stale[si]:
-                            self._refresh_group(g, si)
-                        if d[si]:
-                            subk[ci][si] = c.value_sub(st, si)
-                            d[si] = False
+                        subk[ci][si] = c.value_sub(st, si)
+                        d[si] = False
                 cv[ci] = subk[ci][0] + subk[ci][1]
         v = _red(s.reduce, cv, s.info.get('weights'))
         self._sval[k] = v
@@ -424,7 +460,9 @@ class Terms:
 
     def _th_current(self):
         th = self.thermal
-        ep = tuple(self._epoch[i] for i in th.targets)
+        ep = tuple([self._epoch[i] for i in th.targets])
+        if ep == self._th_epochs:
+            return self._th_T
         if self._th_epochs is None:
             th.full(self.st)
         else:
@@ -438,34 +476,42 @@ class Terms:
                 th.G[t, :] = th.row(self.st, t)
         self._th_epochs = ep
         self._th_T = th.G @ th.P
+        self._th_c = self._th_cost(self._th_T)
         return self._th_T
 
     def _th_cost(self, T):
-        b = self.knobs.barrier
-        m = self.thermal.T_mean
-        return float(sum(c * PR.phi(max(T[t] - m, 0.0) / a.value, b, self.knobs.u_sat)
-                         for t, (a, c) in enumerate(zip(self._th_alloc, self._th_conf))))
+        from .jit import PY
+        th = self.thermal
+        if getattr(self, '_th_a', None) is None:
+            self._th_a = np.array([a.value for a in self._th_alloc], float)
+            self._th_cf = np.array(self._th_conf, float)
+            self._th_ti = {i: t for t, i in enumerate(th.targets)}
+        return float((self.kern or PY).phi_sum(np.ascontiguousarray(T, float), th.T_mean, self._th_a, self._th_cf,
+                                               self.knobs.barrier, self.knobs.u_sat))
 
     def _th_delta(self, poses, mv):
         th = self.thermal
         for j in th.parts:
             self._sync(j, poses)
         T0 = self._th_current()
+        c0 = self._th_c
         G = th.G
         saved = [(i, self.st.get(i)) for i, _ in mv]
         for i, p in mv:
             self.st.set(i, *p)
-        Gn = G.copy()
-        tindex = {i: t for t, i in enumerate(th.targets)}
+        tindex = self._th_ti
         ns = len(th.src)
+        T1 = T0.copy()
+        rows = []
         for i, _ in mv:
             t = tindex.get(i)
             if t is None:
                 continue
             if t < ns:
-                Gn[:, t] = th.column(self.st, t)
-            Gn[t, :] = th.row(self.st, t)
+                T1 += (th.column(self.st, t) - G[:, t]) * th.P[t]
+            rows.append(t)
+        for t in rows:
+            T1[t] = float(th.row(self.st, t) @ th.P)
         for i, p in saved:
             self.st.set(i, *p)
-        T1 = Gn @ th.P
-        return self._th_cost(T1) - self._th_cost(T0)
+        return self._th_cost(T1) - c0

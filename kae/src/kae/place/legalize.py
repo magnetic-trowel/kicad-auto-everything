@@ -246,7 +246,8 @@ def _nearest_spot(P, p, X0, Y0, K0, occ, pad, w_rot, span, cost_occ=None, w_cost
                     break
             if not ok.any():
                 continue
-            ok &= _free_origins(occ[si], r.g_own, pad, xa, xb, ya, yb)
+            for o in (r.g_own_rects or (r.g_own,)):
+                ok &= _free_origins(occ[si], o, pad, xa, xb, ya, yb)
             for o in r.g_opp:
                 if not ok.any():
                     break
@@ -256,7 +257,8 @@ def _nearest_spot(P, p, X0, Y0, K0, occ, pad, w_rot, span, cost_occ=None, w_cost
             xs, ys = np.nonzero(ok)
             cost = (np.abs(xs + xa - X0) + np.abs(ys + ya - Y0) + (w_rot if k != K0 else 0.0)).astype(float)
             if cost_occ is not None:
-                cost += w_cost * _covered(cost_occ[si], r.g_own, pad, xa, xb, ya, yb)[xs, ys]
+                for o in (r.g_own_rects or (r.g_own,)):
+                    cost += w_cost * _covered(cost_occ[si], o, pad, xa, xb, ya, yb)[xs, ys]
             j = int(np.argmin(cost))
             if best is None or cost[j] < best[0]:
                 best = (float(cost[j]), int(xs[j] + xa), int(ys[j] + ya), k)
@@ -324,10 +326,10 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
         p = P.parts[i]
         if reach >= max_d:
             return _global_spot(i)
-        ks, own, opp, opp_n, brd, brd_n = arrays(i)
+        ks, own, own_n, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.nearest_spot(S[0], S[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1, int(st.X[i]),
-                                     int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), own, opp, opp_n, brd,
-                                     brd_n, int(min(reach, max_d)))
+                                     int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), own, own_n, opp, opp_n,
+                                     brd, brd_n, int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, ks[k])
 
     def _global_spot(i):
@@ -348,7 +350,7 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
                 ok &= _inside_origins(P, brd, 0, nx - 1, 0, ny - 1)
             if not ok.any():
                 continue
-            for side, rect in [(si, r.g_own)] + [(1 - si, o) for o in r.g_opp]:
+            for side, rect in [(si, o) for o in (r.g_own_rects or (r.g_own,))] + [(1 - si, o) for o in r.g_opp]:
                 a, b, c, d = rect
                 T = S[side]
                 cnt = (T[b + pad:b + pad + nx, d + pad:d + pad + ny] - T[a + pad:a + pad + nx, d + pad:d + pad + ny]
@@ -400,10 +402,10 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
                 _mark(tgt[side], r, pad, 1)
         H = [sat(hard[0]), sat(hard[1])]
         C = [sat(soft[0]), sat(soft[1])]
-        ks, own, opp, opp_n, brd, brd_n = arrays(i)
+        ks, own, own_n, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.ripup_spot(H[0], H[1], C[0], C[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1,
-                                   int(st.X[i]), int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), 4.0, own, opp,
-                                   opp_n, brd, brd_n, int(min(reach, max_d)))
+                                   int(st.X[i]), int(st.Y[i]), ks.index(int(st.K[i])), float(w_rot), 4.0, own, own_n,
+                                   opp, opp_n, brd, brd_n, int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, ks[k], "ripup")
     while queue:
         if out_of_time or (time_s is not None and time.monotonic() - t0 > time_s):

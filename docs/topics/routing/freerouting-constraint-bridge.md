@@ -4,7 +4,7 @@
 - KiCad's Specctra export carries net class widths and clearances, the outline, pads and zones. It drops the custom rules, local overrides, hole, edge and solder-mask clearances, thermal reliefs and net-carrying copper graphics. Freerouting 2.5.0 also narrows tracks on its own. With the built-in adapter, **all 88** error-level DRC violations on splits A+B were translation losses [C].
 - `kae.route` resolves KiCad's DRC rules itself: a port of KiCad's rule engine that agrees with KiCad on **90,633 of 90,633** checks on the 17 corpus boards with a `.kicad_dru` [C]. It writes the result into the DSN as Freerouting's own constructs: net classes, a class-to-class clearance matrix, typed via clearances, pin and keepout clearance classes, and pins.
 - What Freerouting cannot hold is enforced after import. KiCad's DRC runs on the result, and a deterministic repair loop widens narrow tracks, draws thermal spokes as tracks, splits planes and rips up and re-routes. A board replaces the output only when it is better.
-- On A+B (k=1, 600 s) errors fell from **88 to {V2_ERR}** and clean passes rose from **0.455 to {V2_CP1}**. Completion went from 0.896 to {V2_COMPL}. The price is wall time: {V2_TIME} s against 13.5 s per board [C].
+- On A+B (k=1, 600 s) errors fell from **88 to 0** and clean passes rose from **0.455 to 0.606**. Completion went from 0.896 to 0.955. The price is wall time: 125 s against 13.5 s per board [C].
 - The same rules are exposed per net and layer (`kae.route.effective`), so routers that draw copper themselves (`kae.route.critical`) enforce identical numbers.
 
 ## Key facts
@@ -83,16 +83,16 @@ All [P] in KiCad 10.0:
 - **Refill.** The refill depends on the project's rules, so fills are always computed next to `.kicad_pro`/`.kicad_dru`. Without them, KiCad's defaults apply.
 
 ### Measured effect
-Splits A+B (33 boards), k=1, 600 s, `-j 2` on one shared 4-core host, KiCad 10.0.7, Freerouting 2.5.0. Each run is scored by `kaebench` [C: `kaebench report`, `tools/research/routing/drc_rule_census.py`].
+Splits A+B (33 boards), k=1, 600 s per board, on one shared 4-core host with two boards routed at a time, KiCad 10.0.7, Freerouting 2.5.0. Each run is scored by `kaebench` [C: `kaebench report`, `tools/research/routing/drc_rule_census.py`].
 
-| | built-in adapter | bridge, fanout off | bridge, fanout on |
+| | built-in adapter | bridge, fanout off | bridge, fanout on the first route |
 |---|---|---|---|
-| clean pass (cp1) | 0.455 | {V2_CP1} | {V2F_CP1} |
-| completion | 0.896 | {V2_COMPL} | {V2F_COMPL} |
-| DRC errors (all boards) | 88 | {V2_ERR} | {V2F_ERR} |
-| missing connections | 88 | {V2_UNC} | {V2F_UNC} |
-| wire length / human | 0.898 | {V2_WL} | {V2F_WL} |
-| wall time per board (mean) | 13.5 s | {V2_TIME} s | {V2F_TIME} s |
+| clean pass (cp1) | 0.455 | 0.606 | 0.576 |
+| completion | 0.896 | 0.955 | 0.956 |
+| DRC errors (all boards) | 88 | 0 | 7 (one board) |
+| missing connections | 87 | 39 | 35 |
+| wire length / human | 0.898 | 0.929 | 0.908 |
+| wall time per board (mean) | 13.5 s | 125 s | 118 s |
 
 The built-in adapter's 88 errors break down as:
 - `track_width` 46: Freerouting's narrowing, and widths below the board minimum.
@@ -100,12 +100,18 @@ The built-in adapter's 88 errors break down as:
 - `copper_edge_clearance` 14: footprint Edge.Cuts, custom edge rules.
 - `starved_thermal` 5.
 
-{V2_ERRTYPES}
+With the bridge, no error is left. The 39 missing connections it leaves are of two kinds:
+- 26 connections Freerouting found no path for: pad to pad 14, pad to track 6, between track pieces 4, to net-carrying copper arcs 2;
+- 13 zone islands it could not join: 11 between zone parts, 1 pad to zone, 1 teardrop.
+
+Fanout on the first route leaves 7 errors, all on one board: a repair round there ran out of router time before it could re-route the narrowed tracks.
+
+Wall time goes mostly to the first route and to repair rounds, each of which runs Freerouting and KiCad's DRC. Rounds that do not improve the board stop after two in a row.
 
 ## Recommendations for our system
 - **Route through the bridge.** Use `kae.route.cli route` as the general router and as the placement probe (`--probe-command`). Keep the CLI stable. Give attempts seeds 0..k−1, since a seed is a different item order.
 - **Share the rules.** Any router that draws copper itself takes its numbers from `kae.route.effective`: `track_width`, `via`, `clearance`, `pad_clearance`, `edge_clearance` and `same_net_via_pitch` per net and layer. Pre-routes enter the bridge as locked tracks and vias. Pours that must stay intact are zones named `kae-crit:…`.
-- **Keep fanout off.** Stock 2.5.0 narrows below the minimum with it on; the neck-width retry recovers the cases it was needed for ({FANOUT_NOTE}).
+- **Keep fanout off.** Stock 2.5.0 narrows below the minimum with it on. The neck-width retry recovers the cases it was needed for: completion is 0.955 with fanout off against 0.956 with fanout on the first route only. `--fanout-first` stays available; repair rounds then re-route the narrowed tracks without fanout.
 - **Score only with KiCad.** Judge a router change only by KiCad DRC on the imported board ([drc-report-and-repair-loop](../kicad/drc-report-and-repair-loop.md)); Freerouting's own score counts a split plane as connected.
 
 ## Conflicts and open questions

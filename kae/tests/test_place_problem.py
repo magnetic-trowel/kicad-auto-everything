@@ -181,3 +181,98 @@ def test_project_severity_relaxes_courtyards(tmp_path):
         if p.has_courtyard and (r[2] - r[0]) * (r[3] - r[1]) < (a[2] - a[0]) * (a[3] - a[1]) - 1e-6:
             shrunk += 1
     assert shrunk > 0
+
+
+def test_free_angles_keep_right_angles_first_and_rects_conservative():
+    """--angles: parts that may turn freely get every multiple of the step after the four
+    right angles; quarter-turn and ring tables stay consistent; odd-angle rectangles contain
+    the turned courtyard and pads (grid-legal stays legal at the actual angle)."""
+    P = Problem.build(load(FIXTURE), angle_step=45.0)
+    for p in P.parts:
+        if not p.movable:
+            assert len(p.rots) == 1
+            continue
+        angles = [r.rot % 360.0 for r in p.rots]
+        assert angles[:4] == [0.0, 90.0, 180.0, 270.0] and p.n_ortho == 4
+        assert sorted(angles) == [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0]
+        for k, a in enumerate(angles):
+            for q in range(4):
+                assert abs((angles[p.turn[k][q]] - a - 90.0 * q) % 360.0) < 1e-9
+            prv, nxt = p.ring[k]
+            assert abs((angles[nxt] - a) % 360.0 - 45.0) < 1e-9 and abs((a - angles[prv]) % 360.0 - 45.0) < 1e-9
+        for r in p.rots[4:]:
+            poly = transform.courtyard(p.fp, 0.0, 0.0, r.rot, p.side, which="own")
+            if poly:
+                gx0, gy0, gx1, gy1 = shapely.union_all(poly).bounds
+                o = r.own
+                assert o[0] <= gx0 + 1e-6 and o[1] <= gy0 + 1e-6 and gx1 <= o[2] + 1e-6 and gy1 <= o[3] + 1e-6
+            for x, y in r.pins:
+                assert r.own[0] - 1e-6 <= x <= r.own[2] + 1e-6 and r.own[1] - 1e-6 <= y <= r.own[3] + 1e-6
+
+
+def test_heatsink_mount_packages_keep_right_angles():
+    from kae.place.problem import right_angles_only
+    b = load(FIXTURE)
+    fp = next(f for f in b.footprints if f.ref == "U1")
+    assert not right_angles_only(fp)
+    fp.lib_id = "Package_TO_SOT_THT:TO-220-3_Vertical"
+    pd = fp.pads[0]
+    pd.drill, pd.kind, pd.size = 3.2, "np_thru_hole", (3.5, 3.5)
+    assert right_angles_only(fp)
+    P = Problem.build(b, angle_step=15.0)
+    assert len(next(p for p in P.parts if p.ref == "U1").rots) == 4
+
+
+def test_cluster_rects_is_fast_and_keeps_rows():
+    """Regression (latentred-linecard): clustering a 676-ball BGA's pads to 4 groups took the
+    O(n^3) pairwise loop minutes (461 s of Problem.build); it is vectorized now."""
+    import time as _time
+    from kae.place.problem import _cluster_rects
+    pads = [(x * 1.0, y * 1.0, x * 1.0 + 0.4, y * 1.0 + 0.4) for x in range(26) for y in range(26)]
+    t0 = _time.monotonic()
+    out = _cluster_rects(pads, max_n=4)
+    assert len(out) == 4 and _time.monotonic() - t0 < 5.0
+    for (x0, y0, x1, y1) in pads:                     # every pad stays covered
+        assert any(a <= x0 and b <= y0 and x1 <= c and y1 <= d for (a, b, c, d) in out)
+    rows = [(x * 2.54, 0, x * 2.54 + 1.7, 1.7) for x in range(10)] + \
+        [(x * 2.54, 2.54, x * 2.54 + 1.7, 4.24) for x in range(10)]
+    assert sorted(_cluster_rects(rows, 2)) == [(0.0, 0.0, 24.56, 1.7), (0.0, 2.54, 24.56, 4.24)]
+    assert sorted(_cluster_rects([(0, 0, 1, 1), (1, 0, 2, 1), (5, 5, 6, 6)])) == [(0, 0, 2, 1), (5, 5, 6, 6)]
+
+
+def test_occupancy_pieces_follow_an_l_shaped_courtyard():
+    """Regression (obsidian): one box per footprint swallowed the space inside L-shaped
+    courtyards and between a module's pin rows; occupancy is now pieces (a cover of the
+    courtyard, pad groups outside it) and the box only frames them."""
+    from shapely.geometry import Polygon
+    b = load(FIXTURE)
+    fp = next(f for f in b.footprints if f.ref == "U1")
+    x0, y0, x1, y1 = shapely.union_all(fp.courtyard).bounds
+    w, h = x1 - x0, y1 - y0
+    L = Polygon([(x0, y0), (x1, y0), (x1, y0 + h / 3), (x0 + w / 3, y0 + h / 3), (x0 + w / 3, y1), (x0, y1)])
+    fp.courtyard = [L]
+    P = Problem.build(b)
+    p = next(q for q in P.parts if q.ref == "U1")
+    pieces = p.rots[0].own_rects
+    assert len(pieces) >= 2
+    assert sum((r[2] - r[0]) * (r[3] - r[1]) for r in pieces) < 0.9 * w * h
+    union = shapely.union_all([shapely.box(*r) for r in pieces])
+    assert union.buffer(1e-6).contains(L)
+    st_rects = [k for _, _, k in __import__("kae.place.state", fromlist=["State"]).State(P).grid_rects(p.i)]
+    assert st_rects.count("own") == len(pieces)
+
+
+def test_relaxing_bodies_frees_a_locked_module_too():
+    """Regression (obsidian): a locked courtyard-less module (an Arduino under its shield)
+    kept its whole body as an obstacle when the board was too full; relax_bodies now frees
+    locked bodies too, keeping their pads."""
+    from shapely.geometry import box as sbox
+    b = load(FIXTURE)
+    fp = next(f for f in b.footprints if f.ref == "U6")          # locked in the fixture
+    fp.courtyard = []
+    fp.body = [sbox(-8, -8, 8, 8)]
+    P = Problem.build(b)
+    big = sum((o.g[1] - o.g[0]) * (o.g[3] - o.g[2]) for o in P.obstacles if "U6" in o.why)
+    assert P.relax_bodies()
+    small = sum((o.g[1] - o.g[0]) * (o.g[3] - o.g[2]) for o in P.obstacles if "U6" in o.why)
+    assert 0 < small < 0.5 * big
