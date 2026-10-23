@@ -473,7 +473,7 @@ def _pads(board, cu, max_error, comp_ids):
                     key = json.dumps(rings)
                     polys[board.GetStandardLayerName(l)] = rings
                     shapes.add(key)
-            rec = dict(fp_rec, number=pad.GetNumber(), pin=pin, net=pad.GetNetname(),
+            rec = dict(fp_rec, number=pad.GetNumber(), pin=pin, net=pad.GetNetname(), uuid=pad.m_Uuid.AsString(),
                        attr={pcbnew.PAD_ATTRIB_PTH: "pth", pcbnew.PAD_ATTRIB_SMD: "smd",
                              pcbnew.PAD_ATTRIB_CONN: "conn", pcbnew.PAD_ATTRIB_NPTH: "npth"}.get(pad.GetAttribute(), "?"),
                        pos=_xy(pad.GetPosition()), layers=layers, hole=_hole(pad),
@@ -561,6 +561,13 @@ def _probes(board, cu):
     via (each net): what the DRC will require of routing that has no partner item."""
     out = {}
     lnames = [board.GetStandardLayerName(l) for l in cu]
+    # Probes stay alive until the end: BOARD::m_ItemNetclassCache (hasExactNetclass) is keyed
+    # by item address, so a freed probe's address reused by the next one would inherit its
+    # net class. Probes are also placed far off the board so area conditions do not match.
+    keep = []
+    flag = getattr(pcbnew, "ROUTER_TRANSIENT", 0)
+    far = board.GetBoardEdgesBoundingBox()
+    x0, y0 = far.GetRight() + int(1000 * NM), far.GetBottom() + int(1000 * NM)
     for code, net in board.GetNetInfo().NetsByNetcode().items():
         name = net.GetNetname()
         if code <= 0 or not name:
@@ -568,13 +575,20 @@ def _probes(board, cu):
         rec = dict(netclass=net.GetNetClassName(), track={}, via={})
         for l, ln in zip(cu, lnames):
             t = pcbnew.PCB_TRACK(board)
+            keep.append(t)
+            if flag:
+                t.SetFlags(flag)
             t.SetLayer(l)
             t.SetNet(net)
             t.SetWidth(100000)
-            t.SetStart(pcbnew.VECTOR2I(0, 0))
-            t.SetEnd(pcbnew.VECTOR2I(100000, 0))
+            t.SetStart(pcbnew.VECTOR2I(x0, y0))
+            t.SetEnd(pcbnew.VECTOR2I(x0 + 100000, y0))
             rec["track"][ln] = dict(width=_mom(t.GetWidthConstraint()), clearance=_mm(t.GetOwnClearance(l)))
         v = pcbnew.PCB_VIA(board)
+        keep.append(v)
+        if flag:
+            v.SetFlags(flag)
+        v.SetPosition(pcbnew.VECTOR2I(x0, y0))
         v.SetNet(net)
         v.SetLayerPair(cu[0], cu[-1])
         v.SetWidth(400000)
@@ -646,15 +660,31 @@ def export_dsn(path, dsn, out, probes=True):
     _status(dict(ok=True, pads=len(info["pads"])))
 
 
+def _routing(board):
+    """Every track, arc and via: uuid, kind, net, layer(s), width or size, lock state."""
+    out = []
+    for t in board.GetTracks():
+        cls = t.GetClass()
+        rec = dict(uuid=t.m_Uuid.AsString(), net=t.GetNetname(), locked=bool(t.IsLocked()))
+        if cls == "PCB_VIA":
+            rec.update(kind="via", pos=_xy(t.GetPosition()), size=_mm(t.GetWidth(pcbnew.F_Cu)),
+                       drill=_mm(t.GetDrillValue()))
+        else:
+            rec.update(kind="arc" if cls == "PCB_ARC" else "track", layer=board.GetStandardLayerName(t.GetLayer()),
+                       width=_mm(t.GetWidth()), a=_xy(t.GetStart()), b=_xy(t.GetEnd()))
+        out.append(rec)
+    return out
+
+
 def import_ses(path, ses, out, dest):
     board = _load(path)
     ok = pcbnew.ImportSpecctraSES(board, ses)
     if ok is not True:
         raise RuntimeError("ImportSpecctraSES failed")
-    n = sum(1 for _ in board.GetTracks())
+    routing = _routing(board)
     _save(board, dest)
-    _write(out, dict(ok=True, path=dest, routing=n))
-    _status(dict(ok=True, routing=n))
+    _write(out, dict(ok=True, path=dest, routing=routing))
+    _status(dict(ok=True, routing=len(routing)))
 
 
 def edit_routing(path, edits_path, out, dest):
@@ -680,8 +710,9 @@ def edit_routing(path, edits_path, out, dest):
     for t in keep:  # remove after iterating: Remove() untypes SWIG objects
         board.Remove(t)
         removed += 1
+    routing = _routing(board)
     _save(board, dest)
-    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened))
+    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened, routing=routing))
     _status(dict(ok=True, removed=removed, widened=widened))
 
 

@@ -20,7 +20,7 @@ the E5 priors in kae.physics.priors. Terms:
   decap        (b) decoupling-loop inductance per IC power-pin cluster (nH) vs target impedance
   coupling     (c) aggressor-victim noise (mV), inductive M di/dt + capacitive C dv/dt
   crystal      (d) Pierce load pulling from trace capacitance (ppm)
-  thermal      (e) temperature rise at temperature-sensitive parts and at sources (K)
+  thermal      (e) local temperature rise above the board mean at sensitive parts and sources (K)
   world        (f) cable common-mode current (uA), ESD path inductance (nH), antenna feed (dB)
 
 Routability (wirelength, congestion, escape) is not here: it lives in kae.place.cost.
@@ -255,11 +255,14 @@ class Terms:
             th = self.thermal
             for t, i in enumerate(th.targets):
                 a = self._th_alloc[t]
+                loc = max(float(T[t]) - th.T_mean, 0.0)
                 out.append(dict(id=f'thermal:{self.bv.parts[i].ref}', kind='thermal', confidence=self._th_conf[t],
-                                members=[self.bv.parts[i].ref], uuids=[self.uids[i]], value=float(T[t]), unit='K',
-                                alloc=a.to_json(), util=float(T[t]) / a.value,
-                                cost=self._th_conf[t] * PR.phi(float(T[t]) / a.value, self.knobs.barrier, self.knobs.u_sat),
-                                components=[], info=dict(role='source' if t < len(th.src) else 'victim')))
+                                members=[self.bv.parts[i].ref], uuids=[self.uids[i]], value=loc, unit='K',
+                                alloc=a.to_json(), util=loc / a.value,
+                                cost=self._th_conf[t] * PR.phi(loc / a.value, self.knobs.barrier, self.knobs.u_sat),
+                                components=[], info=dict(role='source' if t < len(th.src) else 'victim',
+                                                         rise_K=float(T[t]), board_mean_K=th.T_mean,
+                                                         P_W=float(th.P[t]) if t < len(th.src) else None)))
         return out
 
     # ------------------------------------------------------------------ internals
@@ -331,7 +334,9 @@ class Terms:
 
     def _th_cost(self, T):
         b = self.knobs.barrier
-        return float(sum(c * PR.phi(T[t] / a.value, b, self.knobs.u_sat) for t, (a, c) in enumerate(zip(self._th_alloc, self._th_conf))))
+        m = self.thermal.T_mean
+        return float(sum(c * PR.phi(max(T[t] - m, 0.0) / a.value, b, self.knobs.u_sat)
+                         for t, (a, c) in enumerate(zip(self._th_alloc, self._th_conf))))
 
     def _th_delta(self, poses, mv):
         th = self.thermal

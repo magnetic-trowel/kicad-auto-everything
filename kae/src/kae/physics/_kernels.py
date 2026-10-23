@@ -112,14 +112,19 @@ def gmd_lin(d1, d2, z):
 
 
 @jit
-def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, dsep):
+def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, dsep, wov, ovdz):
     """2 [M(j, k) - M(j, image k)] for horizontal segments j = A->B and k = C->D, k lying
     dz above or below j, with the plane image of k at vertical distance zi from j
     (inf: no plane). Pairs closer to perpendicular than cos_min give 0; adjacent pairs
     (sharing a corner) with |cos| < 0.7 use the corner formula. Otherwise the parallel-
     filament formula over the projected overlap with the geometric mean distance of the
     linearly varying offset, floored at dsep (antiparallel or non-adjacent pairs: two
-    conductors on one layer cannot overlap) or dmin (the conductor's own GMD)."""
+    conductors on one layer cannot overlap) or dmin (the conductor's own GMD).
+    wov > 0 marks a board hop against a part's internal path. A trace cannot pass under a
+    part's pads on its own layer, so if the hop runs under the part (lateral offset < wov
+    over more than a quarter of the shorter length) it is taken on the far layer, ovdz
+    below (two-layer board, ovdz = the board thickness), or, with ovdz < 0, behind a plane
+    that shields it from the part (the pair is dropped)."""
     ux = bx - ax
     uy = by - ay
     l1 = math.sqrt(ux * ux + uy * uy)
@@ -149,6 +154,13 @@ def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, ds
         e1 = s0
     e2 = e1 - l1
     e3 = lo - l1
+    if wov > 0.0:
+        ov = min(e1, l1) - max(lo, 0.0)
+        if ov > 0.25 * min(l1, l2) and gmd_lin(d1, d2, 0.0) < wov:
+            if ovdz < 0.0:
+                return 0.0
+            if dz < ovdz:
+                dz = ovdz
     di = INF
     if adjacent and -0.7 < c < 0.7:
         R = math.hypot(dx - ax, dy - ay)
@@ -218,6 +230,7 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
     shield = hF != INF and hB != INF
     A = 0.0
     B = 0.0
+    Af = 0.0
     for k in range(n):
         sk = GS[ti[k]]
         hk = hF if sk > 0 else hB
@@ -227,6 +240,9 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
             A += ties(z, r, bodyd[k], hk)
             hs[k] = INF if hk == INF else hk + z
             A += strip_self(bodyd[k], w[k], hs[k])
+            # floor: the part's internal path with its return directly under it at the
+            # board surface, a loop no external routing can make smaller
+            Af += ties(z, r, bodyd[k], 0.0) + strip_self(bodyd[k], w[k], z)
         else:
             hs[k] = hk
     # board hops (optionally stretched about their midpoints)
@@ -284,10 +300,18 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
             if dz == 0.0 and not isbody[j] and not isbody[k]:
                 dsep = 0.5 * (w[j] + w[k]) + clr
             adj = (k == j + 1 or (j == 0 and k == n - 1)) and hj == hk
+            wov = 0.0
+            ovdz = 0.0
+            if isbody[j] != isbody[k] and sj == sk:
+                wov = 0.5 * (w[j] + w[k])
+                hb = hj if not isbody[j] else hk          # the board hop's plane distance
+                # reference plane on the far side (two-layer board) or none: the under-part
+                # route runs on the far layer; a nearer plane shields it
+                ovdz = thick if (hb == INF or hb >= 0.5 * thick) else -1.0
             if k == j + 1 or not adj:
-                m = pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adj, cos_min, dmin, dsep)
+                m = pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adj, cos_min, dmin, dsep, wov, ovdz)
             else:
-                m = pair_mut(cx, cy, dx, dy, ax, ay, bx, by, dz, zi, adj, cos_min, dmin, dsep)
+                m = pair_mut(cx, cy, dx, dy, ax, ay, bx, by, dz, zi, adj, cos_min, dmin, dsep, wov, ovdz)
             if j == gnd or k == gnd:
                 MAB += 0.5 * m
             else:
@@ -309,8 +333,8 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
                     A -= 2.0 * m_par(thick, thick, 0.0, max(d, rvia))
             nth += 1
     if gnd < 0:
-        return A
-    lateral = A + B + 2.0 * MAB
+        return max(A, Af)
+    lateral = max(A + B + 2.0 * MAB, Af)
     h = hs[gnd]
     if h == INF:
         return lateral
@@ -327,7 +351,7 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
     Cv = via_return(h, math.hypot(px[g1] - px[gnd], py[g1] - py[gnd]) * detour, rvia)
     if B + Cv <= 1e-12:
         return lateral
-    return A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv)
+    return max(A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv), Af)
 
 
 @jit

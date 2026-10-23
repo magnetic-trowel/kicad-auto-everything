@@ -61,6 +61,8 @@ MM = 1e-3
 def stats(est, ref):
     est = np.asarray(est, float)
     ref = np.asarray(ref, float)
+    if len(est) == 0:
+        return dict(n=0, median_abs=float('nan'), p90_abs=float('nan'), max_abs=float('nan'), bias=float('nan'))
     e = est / ref - 1.0
     a = np.abs(e)
     out = dict(n=int(len(e)), median_abs=float(np.median(a)), p90_abs=float(np.percentile(a, 90)),
@@ -188,7 +190,7 @@ def cell_segments(cfg):
     if cfg['ret'] == 'via':
         segs.append(dict(p0=(Cm[0], Cm[1], 0.0), p1=(Cm[0], Cm[1], h), r=rv))
     body(Cm, Cp, h, h + bz, bw)
-    clr, res = 0.2, 0.05
+    clr, res = cfg.get('clr', 0.2), cfg.get('res', 0.05)
     xs = [Cp[0], Cm[0], VIN[0], GND[0]]
     ys = [Cp[1], Cm[1], VIN[1], GND[1]]
     m = 4.0 + w
@@ -199,13 +201,14 @@ def cell_segments(cfg):
     def padrect(p, s=0.45):
         return (p[0] - s - half, p[1] - s - half, p[0] + s + half, p[1] + s + half)
     sp = cfg.get('pad', 0.45)
-    vin = route(Cp, VIN, _blocked([padrect(Cm, sp), padrect(GND, 0.25)], x0, y0, res, nx, ny), x0, y0, res)
+    ip = cfg.get('icpad', 0.25)
+    vin = route(Cp, VIN, _blocked([padrect(Cm, sp), padrect(GND, ip)], x0, y0, res, nx, ny), x0, y0, res)
     if vin is None:
         return None
     strip(vin, h)
     body(VIN, GND, h, h + iz, iw)
     if cfg['ret'] == 'lateral':
-        obst = [padrect(Cp, sp), padrect(VIN, 0.25)] + [(min(p[0], q[0]) - w - clr, min(p[1], q[1]) - w - clr,
+        obst = [padrect(Cp, sp), padrect(VIN, ip)] + [(min(p[0], q[0]) - w - clr, min(p[1], q[1]) - w - clr,
                                                          max(p[0], q[0]) + w + clr, max(p[1], q[1]) + w + clr)
                                                         for p, q in zip(vin[:-1], vin[1:])]
         gnd = route(GND, Cm, _blocked(obst, x0, y0, res, nx, ny), x0, y0, res)
@@ -297,7 +300,7 @@ def estimator_L(cfg, clr=0.15):
                         H, H, N, N, gmask, -20.0, -20.0, 0.5, *scr)
 
 
-def loop_section(name, cap, ic, hs, ws, ds, rets, yc=0.3, quick=False):
+def loop_section(name, cap, ic, hs, ws, ds, rets, yc=0.3, quick=False, extra=None):
     rows = []
     t0 = time.time()
     for h in hs:
@@ -305,7 +308,7 @@ def loop_section(name, cap, ic, hs, ws, ds, rets, yc=0.3, quick=False):
             for d in ds:
                 for rot in (0, 90, 180, 270):
                     for ret in rets:
-                        cfg = dict(h=h, w=w, cap=cap, ic=ic, cap_center=(-d, yc), cap_rot=rot, ret=ret)
+                        cfg = dict(h=h, w=w, cap=cap, ic=ic, cap_center=(-d, yc), cap_rot=rot, ret=ret, **(extra or {}))
                         segs = cell_segments(cfg)
                         if segs is None:
                             continue
@@ -356,7 +359,8 @@ def sec_loop_peec(quick):
 def sec_decap_peec(quick):
     hs = (0.1, 0.4) if quick else (0.1, 0.2, 0.4, 1.0)
     return loop_section('decap_peec', cap=(1.0, 0.5, 0.25), ic=(0.5, 0.25, 0.2), hs=hs, ws=(0.25, 0.5),
-                        ds=(1.5, 3.0, 5.0), rets=('lateral', 'via'), yc=0.0)
+                        ds=(1.5, 3.0, 5.0), rets=('lateral', 'via'), yc=0.0,
+                        extra=dict(pad=0.25, icpad=0.1, clr=0.1, res=0.025, via_r=0.1))
 
 
 # ============================================================================ oblique pruning
@@ -370,10 +374,10 @@ def sec_oblique(quick):
     t0 = time.time()
     while len(est) < n:
         h = float(np.exp(rng.uniform(math.log(0.1), math.log(1.5))))
-        w = float(rng.uniform(0.25, 1.5))
-        pc, pi_ = float(rng.uniform(0.8, 2.5)), float(rng.uniform(0.5, 1.5))
-        cx, cy = float(rng.uniform(-8, 8)), float(rng.uniform(-8, 8))
-        if math.hypot(cx, cy) < 2.5:
+        w = float(rng.uniform(0.25, 1.0))
+        pc, pi_ = float(rng.uniform(w + 0.7, 4.0)), float(rng.uniform(w + 0.7, 4.0))
+        cx, cy = float(rng.uniform(-10, 10)), float(rng.uniform(-10, 10))
+        if math.hypot(cx, cy) < 3.0 + 0.5 * (pc + pi_):
             continue
         rc = float(rng.uniform(0, 360))
         ri = float(rng.uniform(0, 360))
@@ -388,7 +392,12 @@ def sec_oblique(quick):
         tly = np.array([pc / 2, pi_ / 2, -pi_ / 2, -pc / 2])
         P = [(X[i] + tlx[k] * C[i] + tly[k] * S[i], Y[i] - tlx[k] * S[i] + tly[k] * C[i]) for k, i in enumerate(ti)]
         # skip self-crossing quadrilaterals (the straight model of a loop that must be routed)
+        # and near-coincident sides, where the estimator's guards (separation floor, under-part
+        # hops) deliberately depart from the filament sum: this section measures the pruning
+        # and the projected-parallel approximation alone
         if _segs_cross(P[0], P[1], P[2], P[3]):
+            continue
+        if min(_seg_dist2(P[0], P[1], P[2], P[3]), _seg_dist2(P[1], P[2], P[3], P[0])) < 1.5 + w:
             continue
         widths = np.array([w, 0.3, w, 1.0])
         zb = np.array([0.0, 0.25, 0.0, 0.4])
@@ -412,8 +421,17 @@ def sec_oblique(quick):
         est.append(L)
         ref.append(K.loop_L(segs))
     s = stats(est, ref)
-    print(f"[oblique] loop_core vs loop_L (all pairs, quadrature) on {n} random oblique loops ({time.time() - t0:.1f} s): {fmt(s)}")
+    print(f"[oblique] loop_core vs loop_L (all pairs, quadrature) on {n} random oblique loops, opposite sides >= w + 0.5 mm "
+          f"apart ({time.time() - t0:.1f} s): {fmt(s)}")
     return s
+
+
+def _seg_dist2(a, b, c, d, n=24):
+    """Minimum distance between 2-D segments a-b and c-d (sampled)."""
+    t = np.linspace(0.0, 1.0, n)
+    P = np.array(a)[None, :] + t[:, None] * (np.array(b) - np.array(a))[None, :]
+    Q = np.array(c)[None, :] + t[:, None] * (np.array(d) - np.array(c))[None, :]
+    return float(np.sqrt(((P[:, None, :] - Q[None, :, :]) ** 2).sum(-1)).min())
 
 
 def _segs_cross(p0, p1, p2, p3):

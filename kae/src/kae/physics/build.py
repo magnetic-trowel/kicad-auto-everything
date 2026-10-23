@@ -670,11 +670,50 @@ def _world_cm(ctx, specs, aggs, Struct):
 
 
 # ----------------------------------------------------------------------------- (e)
+def _cell_losses(ctx, specs):
+    """{controller part index: [(part index, W, basis)]} for converters whose loss the brief
+    puts on the controller: split between controller (or discrete switches), rectifier
+    diode and inductor by PR.converter_loss_split."""
+    out = {}
+    for s in specs:
+        if s.get('kind') != 'commutation_cell':
+            continue
+        ctrl = ctx.part(s.get('controller'))
+        if ctrl is None:
+            continue
+        sw = s.get('switches') or {}
+        hi, lo, rect = ctx.part(sw.get('high')), ctx.part(sw.get('low')), ctx.part(sw.get('rectifier'))
+        ind = ctx.part(s.get('inductor'))
+        ex = s.get('excite') or {}
+        diode = rect is not None and rect != ctrl and \
+            (ctx.parts.get(sw.get('rectifier')) or {}).get('kind') == 'diode'
+        ext = hi is not None and hi != ctrl and not diode
+        out[ctrl] = dict(v_in=ex.get('V') or ctx.net_volts(s.get('vin') or s.get('rail')),
+                         v_out=ctx.net_volts(s.get('vout')), i_out=ex.get('I'), boost=s.get('class') == 'boost',
+                         diode=rect if diode else None, inductor=ind, high=hi if ext else None,
+                         low=lo if ext and lo != hi else None)
+    return out
+
+
 def _thermal(ctx, specs):
     bv = ctx.bv
     t = ctx.t
     src, vic, conf_s, conf_v, alloc_v = [], [], [], [], []
     seen = set()
+    cells = _cell_losses(ctx, specs)
+    split_notes = []
+
+    def add_src(i, pw, conf):
+        p = bv.parts[i]
+        a0, b0, a1, b1 = p.cy_bbox
+        rad = max(0.5, 0.5 * math.sqrt(max((a1 - a0) * (b1 - b0), 0.25)))
+        for k, (j, w0, r0) in enumerate(src):
+            if j == i:
+                src[k] = (j, w0 + float(pw), r0)
+                return
+        src.append((i, float(pw), rad))
+        conf_s.append(conf)
+
     for s in specs:
         if s.get('kind') == 'heat_source':
             i = ctx.part(s.get('part') or s.get('ref'))
@@ -687,15 +726,25 @@ def _thermal(ctx, specs):
                 kind = 'ldo' if 'ldo' in role else 'buck' if ('buck' in role or 'regulator' in role) else \
                     'fet' if ('fet' in role or 'transistor' in role) else 'mcu' if role in ('mcu', 'fpga', 'soc', 'processor') else 'generic'
                 pw = PR.source_power_prior(kind, n_pins=len(bv.parts[i].pad_num), pkg=bv.parts[i].lib_id)[0]
-            p = bv.parts[i]
-            a0, b0, a1, b1 = p.cy_bbox
-            rad = max(0.5, 0.5 * math.sqrt(max((a1 - a0) * (b1 - b0), 0.25)))
-            src.append((i, float(pw), rad))
-            conf_s.append(ctx.conf(s))
+            c = cells.get(i)
+            if c is not None and (c['diode'] is not None or c['inductor'] is not None or c['high'] is not None):
+                sp = PR.converter_loss_split(float(pw), c['v_in'], c['v_out'], c['i_out'], c['boost'],
+                                             c['diode'] is not None, c['high'] is not None)
+                for key, part in (('ic', i), ('diode', c['diode']), ('inductor', c['inductor']),
+                                  ('high', c['high']), ('low', c['low'])):
+                    if key in sp and part is not None:
+                        add_src(part, sp[key], ctx.conf(s))
+                    elif key in sp:
+                        add_src(i, sp[key], ctx.conf(s))
+                split_notes.append(f'{bv.parts[i].ref} {float(pw):.2g} W -> ' +
+                                   ', '.join(f'{k} {v:.2g}' for k, v in sp.items()))
+            else:
+                add_src(i, pw, ctx.conf(s))
+    srcset = {x[0] for x in src}
     for s in specs:
         if s.get('kind') == 'thermal_victim':
             i = ctx.part(s.get('part') or s.get('ref'))
-            if i is None or any(i == x[0] for x in src) or i in vic:
+            if i is None or i in srcset or i in vic:
                 continue
             cls = s.get('class') or 'precision'
             if cls == 'crystal':
@@ -722,10 +771,10 @@ def _thermal(ctx, specs):
     gs, lam = fin_params(tc, fill, fr4, PR.THERMAL['k_cu'], PR.THERMAL['k_fr4'], PR.THERMAL['h_top'], PR.THERMAL['h_bot'])
     th = ThermalField(bv, src, vic, gs, lam, rings=1, kern=t.kern)
     t.thermal = th
-    rise = PR.THERMAL['source_rise_K']
-    t._th_alloc = [PR.Belief(rise, 'K', 'board-level rise at a heat source (40 K design target)')] * len(src) + alloc_v
+    loc = PR.THERMAL['source_local_K']
+    t._th_alloc = [PR.Belief(loc, 'K', 'hot spot above the board mean rise (design rule of thumb)')] * len(src) + alloc_v
     t._th_conf = conf_s + conf_v
-    t._th_info = dict(gs_W_per_K=gs, lambda_mm=lam)
+    t._th_info = dict(gs_W_per_K=gs, lambda_mm=lam, mean_rise_K=th.T_mean, split=split_notes)
 
 
 def _layer_cov(bv, ly):

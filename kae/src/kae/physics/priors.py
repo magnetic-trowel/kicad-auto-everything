@@ -219,8 +219,42 @@ THERMAL_VICTIM = {
     'precision': 5.0,
 }
 
+# Board fin (W/mK, W/m^2K) and budgets (K). Placement cannot change the board's mean rise
+# sum P / (h_tot A) (heat balance over its area), only the local excess above it, so the
+# thermal budgets apply to that excess: a source's hot spot above the board mean (a design
+# rule of thumb: <= 20 K) and a victim's rise from its neighbours (THERMAL_VICTIM).
 THERMAL = dict(k_cu=390.0, k_fr4=0.8, h_top=10.0, h_bot=10.0, plane_fill=1.0, signal_fill=0.2,
-               source_rise_K=40.0)
+               source_local_K=20.0)
+
+
+def converter_loss_split(p_total, v_in=None, v_out=None, i_out=None, boost=False, has_diode=False,
+                         external_switches=False):
+    """Split a converter's total loss (W) between its parts (E5): a Schottky rectifier
+    conducts I_out for the off fraction, P_D = V_F I_out (1 - D) with V_F = 0.5 V and
+    D = V_out / V_in (boost: 1 - V_in / V_out; 0.3 when unknown); the inductor (DCR + core)
+    takes 15 %; the switches the rest (at least 20 %), split 60/40 high/low when they are
+    discrete. Returns {'ic' | 'diode' | 'inductor' | 'high' | 'low': W}."""
+    if v_in and v_out and v_in > 0 and v_out > 0:
+        d = (1.0 - v_in / v_out) if boost else (v_out / v_in)
+        d = min(max(d, 0.05), 0.95)
+    else:
+        d = 0.3
+    out = {}
+    p_l = 0.15 * p_total
+    p_d = 0.0
+    if has_diode and i_out:
+        p_d = min(0.5 * i_out * (1.0 - d), 0.6 * p_total)
+    p_sw = max(p_total - p_l - p_d, 0.2 * p_total)
+    scale = p_total / (p_sw + p_l + p_d)
+    if external_switches:
+        out['high'] = 0.6 * p_sw * scale
+        out['low'] = 0.4 * p_sw * scale
+    else:
+        out['ic'] = p_sw * scale
+    out['inductor'] = p_l * scale
+    if p_d > 0:
+        out['diode'] = p_d * scale
+    return out
 
 
 def source_power_prior(kind, v_in=None, v_out=None, n_pins=8, pkg=''):

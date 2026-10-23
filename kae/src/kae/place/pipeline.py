@@ -15,7 +15,11 @@ Stages:
    join the annealer's cost.
 3. Seed (kae.place.seed): quadratic placement of macros and parts, spreading, then a
    CP-SAT floorplan (macros as rigid items with their top-K layouts x 4 rotations).
-4. Anneal (kae.place.anneal): physics + routability + legality ramp + displacement.
+4. Anneal (kae.place.anneal): physics + routability + legality ramp + displacement, plus
+   the protection-order rules of protected connector chains (physics arm). The physics is
+   the place terms with utilization priced linearly and saturated beyond 3x budget
+   (SA_U_SAT); the report's scorecard is the terms' own (linear sum and the official total
+   with the over-budget barrier).
 5. Legalize (kae.place.legalize): windowed CP-SAT, then the exact polygon check. The
    annealed result is kept only if it is grid-legal after legalization and does not cost
    more than the legal seed; otherwise the seed is returned.
@@ -49,6 +53,9 @@ class Result:
     report: dict = field(default_factory=dict)
     state: object = None
     problem: object = None
+
+
+SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
 
 
 def _default_workers():
@@ -202,7 +209,15 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["scorecard_seed"] = dict(rep["scorecard"])
     else:
         try:
-            report_terms, tsrc = make_terms(board, brief, barrier=0.0, **terms_knobs)   # linear utilization in the annealer
+            # the annealer prices utilization linearly (no over-budget barrier) and saturates
+            # it beyond 3x budget (log tail), so a structure the estimator puts an order of
+            # magnitude over budget for any placement (olimex's thermal terms at u 4-11, the
+            # human's included) keeps a gradient without outbidding the hot loop: on four
+            # split-B boards x 3 seeds the linear scorecard is unchanged (40.3 vs 40.2) and
+            # olimex's buck loop drops from 8.0 to 6.1 nH (human 5.7)
+            knobs = dict(u_sat=SA_U_SAT)
+            knobs.update(terms_knobs)
+            report_terms, tsrc = make_terms(board, brief, barrier=0.0, **knobs)
         except Exception as e:
             log(f"place terms failed ({type(e).__name__}: {e})")
             report_terms, tsrc = None, "none"

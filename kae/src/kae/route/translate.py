@@ -1,0 +1,271 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Write a routing plan (kae.route.constraints) into KiCad's Specctra DSN, and prepare
+Freerouting's session for KiCad's import.
+
+DSN changes (KiCad's export is the starting point; its pads, placement, nets, planes and
+fixed wiring are kept):
+
+- net classes: KiCad's (netclass width and clearance only) are replaced by the plan's
+  routing classes, each with its width per layer (layer_rule), its via padstack and its
+  clearance per layer; every pair of classes gets an explicit class_class rule;
+- obstacle classes: one net-less class per distinct requirement vector (pins, holes, edges,
+  copper graphics, zero), with class_class rules against every routing class;
+- pins: each component placement names a clearance class for each of its pins;
+- obstacles: KiCad's keepouts (outline holes, rule areas, NPTH holes) are replaced by the
+  plan's, held in one virtual component placed at the origin (a component's keepouts can
+  name a clearance class; board-level keepouts are read before the classes exist);
+- vias: one padstack per routing class, drawn with its inflation (see constraints), named
+  Via[0-n]_<D'>:<d>_um in whole micrometres (Freerouting drops decimal fractions from via
+  names, KiCad reads the drill from the name);
+- layers: when every copper layer is a "power" layer they become signal layers
+  (Freerouting refuses a board without one and 2.5.0 hangs).
+
+Session changes before KiCad imports it: the placement block is removed (KiCad would move
+footprints and fails on renamed references), bare net names are quoted (`ADD|SUB` fails
+the whole import), and via shapes get their real diameters back.
+"""
+import math
+
+from shapely.geometry import MultiPolygon, Polygon
+
+from . import specctra as S
+from .constraints import via_name
+from .specctra import Q, find, findall, fmt
+
+OBSTACLE_IMAGE = "kae_obstacles"
+OBSTACLE_REF = "KAE_OBSTACLES"
+
+
+def _um(mm):
+    return fmt(mm * 1000.0)
+
+
+def _xy(x, y):
+    """Board mm (y down) -> DSN um (y up), as KiCad's exporter maps points."""
+    return [fmt(x * 1000.0), fmt(-y * 1000.0)]
+
+
+def _ring(coords):
+    pts = list(coords)
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    out = []
+    for x, y in pts:
+        out += _xy(x, y)
+    if pts:
+        out += _xy(*pts[0])
+    return out
+
+
+def _polygons(geom, tol=0.0005):
+    """Simple polygons (with holes) of a shapely geometry, grown by `tol` and simplified by
+    it, so the result never lies inside the original."""
+    if geom.is_empty:
+        return []
+    g = geom.buffer(tol, quad_segs=4, join_style="mitre", mitre_limit=2.0).simplify(tol, preserve_topology=True)
+    if isinstance(g, Polygon):
+        return [g] if not g.is_empty else []
+    if isinstance(g, MultiPolygon):
+        return [x for x in g.geoms if not x.is_empty]
+    return [x for x in getattr(g, "geoms", []) if isinstance(x, Polygon) and not x.is_empty]
+
+
+def _shape_nodes(ob):
+    """DSN shapes of one obstacle: [(main shape node, [window nodes])]."""
+    if isinstance(ob.geom, tuple) and ob.geom[0] == "circle":
+        _, x, y, d = ob.geom
+        return [(["circle", ob.layer, _um(d), *_xy(x, y)], [])]
+    out = []
+    for pg in _polygons(ob.geom):
+        main = ["polygon", ob.layer, "0", *_ring(pg.exterior.coords)]
+        windows = [["window", ["polygon", ob.layer, "0", *_ring(h.coords)]] for h in pg.interiors]
+        out.append((main, windows))
+    return out
+
+
+def _class_rule_nodes(widths, clearances, copper):
+    """(rule ...) and (layer_rule ...) nodes for per-layer widths/clearances (dict layer->mm
+    or None)."""
+    base_l = copper[0]
+    rule = ["rule"]
+    if widths:
+        rule.append(["width", _um(widths[base_l])])
+    if clearances:
+        rule.append(["clearance", _um(clearances[base_l])])
+    out = [rule]
+    for l in copper[1:]:
+        lr = ["rule"]
+        if widths and abs(widths[l] - widths[base_l]) > 1e-9:
+            lr.append(["width", _um(widths[l])])
+        if clearances and abs(clearances[l] - clearances[base_l]) > 1e-9:
+            lr.append(["clearance", _um(clearances[l])])
+        if len(lr) > 1:
+            out.append(["layer_rule", l, lr])
+    return out
+
+
+def apply(tree, plan, info):
+    """Rewrite a parsed KiCad DSN `tree` in place according to `plan`. Returns a summary."""
+    cu = plan.copper
+    struct = find(tree, "structure")
+    lib = find(tree, "library")
+    placement = find(tree, "placement")
+    network = find(tree, "network")
+    if struct is None or lib is None or network is None:
+        raise ValueError("not a KiCad DSN (structure, library or network missing)")
+    if placement is None:
+        placement = ["placement"]
+        tree.insert(tree.index(lib), placement)
+    summary = {}
+
+    # ---- layers: all-power boards get signal layers
+    layers = findall(struct, "layer")
+    kinds = [find(l, "type") for l in layers]
+    if kinds and all(k is not None and len(k) > 1 and k[1] == "power" for k in kinds):
+        for k in kinds:
+            k[1] = "signal"
+        summary["power_layers_unblocked"] = len(kinds)
+
+    # ---- structure: KiCad's keepouts, via list and global rule are replaced
+    removed = 0
+    for c in list(struct):
+        if isinstance(c, list) and c and c[0] in ("keepout", "via_keepout", "wire_keepout", "via", "rule"):
+            struct.remove(c)
+            removed += c[0] != "via" and c[0] != "rule"
+    summary["kicad_keepouts_removed"] = removed
+    vias = {n: via_name(rc, len(cu)) for n, rc in plan.classes.items()}
+    struct.append(["via", *[Q(v) for v in sorted(set(vias.values()))]])
+    dflt = plan.classes.get("kicad_default") or next(iter(plan.classes.values()))
+    struct.append(["rule", ["width", _um(dflt.widths[cu[0]])],
+                   ["clearance", _um(plan.matrix.get((dflt.name, dflt.name, cu[0]), 0.2))]])
+
+    # ---- library: image keepouts out, KiCad's vias out, ours in, the obstacle image in
+    for img in findall(lib, "image"):
+        for c in list(img):
+            if isinstance(c, list) and c and c[0] in ("keepout", "via_keepout", "wire_keepout"):
+                img.remove(c)
+    kicad_vias = {}   # KiCad's via padstacks: name -> copper diameter (DSN units)
+    for ps in findall(lib, "padstack"):
+        if len(ps) > 1 and str(ps[1]).startswith("Via["):
+            circ = next((c for sh in findall(ps, "shape") for c in findall(sh, "circle")), None)
+            if circ is not None and len(circ) > 2:
+                kicad_vias[str(ps[1])] = float(circ[2])
+            lib.remove(ps)
+    for n, rc in sorted(plan.classes.items()):
+        name = vias[n]
+        if any(len(ps) > 1 and ps[1] == name for ps in findall(lib, "padstack")):
+            continue
+        dia = _um(rc.via[0] + 2 * rc.delta)
+        lib.append(["padstack", Q(name), *[["shape", ["circle", l, dia, "0", "0"]] for l in cu], ["attach", "off"]])
+    # fixed vias in the wiring (locked routing): drawn inflated like their class's vias, so
+    # new vias keep the hole-to-hole distance from them too
+    wiring = find(tree, "wiring")
+    have = {str(ps[1]) for ps in findall(lib, "padstack") if len(ps) > 1}
+    for wv in findall(wiring or [], "via"):
+        if len(wv) < 2 or str(wv[1]) not in kicad_vias:
+            continue
+        net = find(wv, "net")
+        rc = plan.classes.get(plan.net_class.get(str(net[1]) if net is not None and len(net) > 1 else "", ""))
+        dlt = rc.delta if rc is not None else 0.0
+        real_um = kicad_vias[str(wv[1])]
+        drill = str(wv[1]).split(":")[1].split("_")[0] if ":" in str(wv[1]) else "0"
+        name = f"Via[0-{len(cu) - 1}]_{round(real_um + 2000 * dlt)}:{drill}_um"
+        if name not in have:
+            lib.append(["padstack", Q(name), *[["shape", ["circle", l, fmt(real_um + 2000 * dlt), "0", "0"]] for l in cu],
+                        ["attach", "off"]])
+            have.add(name)
+        wv[1] = Q(name)
+    image = ["image", OBSTACLE_IMAGE]
+    place = ["place", OBSTACLE_REF, "0", "0", "front", "0"]
+    n_ko = 0
+    for ob in plan.obstacles:
+        for main, windows in _shape_nodes(ob):
+            name = f"ko{n_ko}"
+            n_ko += 1
+            image.append([ob.kind, name, main, *windows])
+            place.append([ob.kind, name, ["clearance_class", ob.cls]])
+    if n_ko:
+        lib.append(image)
+        placement.append(["component", OBSTACLE_IMAGE, place])
+    summary["obstacles"] = n_ko
+
+    # ---- placement: a clearance class per pin
+    pins_set = 0
+    for comp in findall(placement, "component"):
+        for pl in findall(comp, "place"):
+            if len(pl) < 2 or pl[1] == OBSTACLE_REF:
+                continue
+            ref = str(pl[1])
+            for c in list(pl):
+                if isinstance(c, list) and c and c[0] == "pin":
+                    pl.remove(c)
+            for (cref, pin), cls in plan.pin_class.items():
+                if cref == ref:
+                    pl.append(["pin", Q(pin), ["clearance_class", cls]])
+                    pins_set += 1
+    summary["pins_classed"] = pins_set
+
+    # ---- network: classes and the clearance matrix
+    for c in list(network):
+        if isinstance(c, list) and c and c[0] in ("class", "class_class"):
+            network.remove(c)
+    known = set(info["nets"])
+    for n, rc in sorted(plan.classes.items()):
+        diag = {l: plan.matrix.get((n, n, l), plan.matrix.get((n, n, cu[0]), 0.2)) for l in cu}
+        nets = [Q(x) for x in rc.nets if x in known]
+        network.append(["class", n, *nets, ["circuit", ["use_via", Q(vias[n])]],
+                        *_class_rule_nodes(rc.widths, diag, cu)])
+    for oname, oc in sorted(plan.obstacle_classes.items()):
+        vals = [v for v in oc.values.values()]
+        network.append(["class", oname, ["rule", ["clearance", _um(max(vals) if vals else 0.0)]]])
+    names = sorted(plan.classes)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            vals = {l: plan.matrix.get((a, b, l)) for l in cu}
+            if any(v is None for v in vals.values()):
+                continue
+            network.append(["class_class", ["classes", a, b], *_class_rule_nodes(None, vals, cu)])
+    for oname, oc in sorted(plan.obstacle_classes.items()):
+        for n in names:
+            vals = {l: oc.values.get((n, l)) for l in cu}
+            have = [v for v in vals.values() if v is not None]
+            if not have:
+                continue
+            fill = max(have)
+            vals = {l: (v if v is not None else fill) for l, v in vals.items()}
+            network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu)])
+    summary["classes"] = len(plan.classes)
+    summary["obstacle_classes"] = len(plan.obstacle_classes)
+    return summary
+
+
+# ----------------------------------------------------------------------------- session
+def fix_session(ses_tree, plan):
+    """Prepare Freerouting's session for KiCad: drop the placement, quote net names, restore
+    real via diameters. Returns a summary."""
+    out = dict(placement_stripped=False, nets_quoted=0, vias_restored=0)
+    pl = find(ses_tree, "placement")
+    if pl is not None:
+        S.remove(ses_tree, pl)
+        out["placement_stripped"] = True
+    routes = find(ses_tree, "routes")
+    if routes is None:
+        return out
+    scale = S.unit_scale(routes)  # units per mm
+    real = {via_name(rc, len(plan.copper)): rc.via[0] for rc in plan.classes.values()}
+    lib = find(routes, "library_out")
+    for ps in findall(lib or [], "padstack"):
+        name = str(ps[1]) if len(ps) > 1 else ""
+        if name in real:
+            for shp in findall(ps, "shape"):
+                for circ in findall(shp, "circle"):
+                    if len(circ) > 2:
+                        circ[2] = fmt(real[name] * scale)
+                        out["vias_restored"] += 1
+    net_out = find(routes, "network_out")
+    for net in findall(net_out or [], "net"):
+        if len(net) > 1 and not isinstance(net[1], Q):
+            net[1] = Q(net[1])
+            out["nets_quoted"] += 1
+    return out

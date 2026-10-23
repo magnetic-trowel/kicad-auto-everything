@@ -469,6 +469,9 @@ class ThermalField:
         Lx, Ly = self.box[2], self.box[3]
         R = (2 * r + 1) * 2.0 * math.sqrt(Lx * Ly / math.pi)
         self.tail = lam * R * PY.k1(R / lam) / (gs * Lx * Ly)
+        # the board's mean rise (heat balance): placement-invariant, subtracted before the
+        # budgets apply (only the local excess above it can be changed by placement)
+        self.T_mean = float(self.P.sum()) * lam * lam / (gs * Lx * Ly)
         self._colbuf = np.zeros(len(self.targets))
         self._rowbuf = np.zeros(ns)
 
@@ -597,7 +600,10 @@ class EsdComp:
 
 
 class FeedComp:
-    """Antenna feed loss (dB) from the expected route length between RF pin and antenna."""
+    """Antenna feed loss (dB): alpha (dB/mm) times the expected route length of the feed net
+    group (antenna, matching parts, RF pin), taken as the Euclidean minimum spanning tree of
+    the terminals: series parts along the line add nothing, shunt parts add their stubs, and
+    the result does not depend on the order the brief lists them in."""
 
     def __init__(self, terms, alpha):
         self.T = terms
@@ -606,5 +612,23 @@ class FeedComp:
 
     def value(self, st):
         P = [txy(st, t) for t in self.T]
-        ln = sum(_hyp(b[0] - a[0], b[1] - a[1]) for a, b in zip(P[:-1], P[1:]))
+        n = len(P)
+        if n < 2:
+            return 0.0
+        best = [INF] * n          # Prim's algorithm (n is small)
+        used = [False] * n
+        best[0] = 0.0
+        ln = 0.0
+        for _ in range(n):
+            k = -1
+            for j in range(n):
+                if not used[j] and (k < 0 or best[j] < best[k]):
+                    k = j
+            used[k] = True
+            ln += best[k]
+            for j in range(n):
+                if not used[j]:
+                    d = _hyp(P[j][0] - P[k][0], P[j][1] - P[k][1])
+                    if d < best[j]:
+                        best[j] = d
         return self.alpha * ln

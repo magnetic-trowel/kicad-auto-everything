@@ -368,8 +368,12 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
     # ---- census
     census = []
     for r in T.breakdown(poses):
-        census.append(dict(id=r['id'], kind=r['kind'], value=r['value'], unit=r['unit'], alloc=r['alloc']['value'],
-                           util=r['util'], conf=r['confidence']))
+        c = dict(id=r['id'], kind=r['kind'], value=r['value'], unit=r['unit'], alloc=r['alloc']['value'],
+                 util=r['util'], conf=r['confidence'])
+        if r['kind'] == 'thermal':
+            c.update(rise=r['info']['rise_K'], mean=r['info']['board_mean_K'], role=r['info']['role'],
+                     P_W=r['info'].get('P_W'))
+        census.append(c)
     T.total(poses)
     cred = {s.id for s in T.structs if credible(T, s)}
     for c in census:
@@ -383,6 +387,7 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
         return sum(r['cost'] for r in T.breakdown(p) if r['kind'] == kind and r['id'] in cred)
     locked = {p.i for p in bv.parts if p.locked}
     base_c = {k: kind_cost(poses, k, True) for k in base}
+    base_tot = sum(base.values())
     results = defaultdict(lambda: defaultdict(Counter))
     better = []
     for kind in KINDS:
@@ -440,9 +445,12 @@ def run_board(path, out_dir, seed, n_local, n_shuffle):
                     q = poses[u]
                 p2[u] = q
                 placed.append((i, legal.at(i, q), -1 if s == 'B' else 1))
-            new = T.total_by_kind(p2).get(kind, 0.0)
+            allk = T.total_by_kind(p2)
+            new = allk.get(kind, 0.0)
+            dtot = sum(allk.values()) - base_tot
             newc = kind_cost(p2, kind, True)
             T.total_by_kind(poses)
+            results[kind]['shuffle_total']['worse' if dtot > EPS else 'better' if dtot < -EPS else 'tie'] += 1
             res = 'worse' if new - base[kind] > EPS else 'better' if new - base[kind] < -EPS else 'tie'
             results[kind]['shuffle'][res] += 1
             dc = newc - base_c[kind]
@@ -526,8 +534,9 @@ def aggregate(out_dir):
              'worse = worse / (worse + better) over decided perturbations; material = some structure moves by '
              f'>= {MATERIAL:.0%} of its allocation (the rest count as ties)', '',
              '| term | boards | translate worse (n) | material (n, ties) | material, credible | rotate worse (n) '
-             '| material (n, ties) | material, credible | shuffle worse (n) | shuffle, credible | all terms, local |',
-             '|---|---|---|---|---|---|---|---|---|---|---|']
+             '| material (n, ties) | material, credible | shuffle worse (n) | shuffle, credible | shuffle, all terms '
+             '| all terms, local |',
+             '|---|---|---|---|---|---|---|---|---|---|---|---|']
     summ = {}
 
     def f(x):
@@ -539,13 +548,13 @@ def aggregate(out_dir):
         a = agg[k]
         sh = {m: _share(a[m]) for m in ('translate', 'translate_material', 'translate_credible', 'rotate',
                                        'rotate_material', 'rotate_credible', 'shuffle', 'shuffle_credible',
-                                       'total_local')}
+                                       'shuffle_total', 'total_local')}
         summ[k] = dict(boards=boards_with[k], **sh, better=dict(cats[k]))
         if boards_with[k]:
             lines.append(f"| {k} | {boards_with[k]} | {f(sh['translate'])} | {fm(sh['translate_material'])} | "
                          f"{fm(sh['translate_credible'])} | {f(sh['rotate'])} | {fm(sh['rotate_material'])} | "
                          f"{fm(sh['rotate_credible'])} | {f(sh['shuffle'])} | {f(sh['shuffle_credible'])} | "
-                         f"{f(sh['total_local'])} |")
+                         f"{f(sh['shuffle_total'])} | {f(sh['total_local'])} |")
     lines += ['', '| term | structures (credible) | value median (p90) | utilisation median | p90 | share over budget |',
               '|---|---|---|---|---|---|']
     for k in KINDS:
@@ -561,6 +570,31 @@ def aggregate(out_dir):
         summ[k]['census'] = dict(n=len(cs), value_median=float(np.median(v)), value_p90=float(np.percentile(v, 90)),
                                  unit=unit, util_median=float(np.median(u)), util_p90=float(np.percentile(u, 90)),
                                  over=float((u > 1).mean()))
+    th = census.get('thermal', [])
+    if th:
+        means = {}
+        for r in ok:
+            for c in r.get('census', []):
+                if c['kind'] == 'thermal' and c.get('mean') is not None:
+                    means[r['id']] = c['mean']
+        src = [c for c in th if c.get('role') == 'source']
+        vic = [c for c in th if c.get('role') == 'victim']
+        mv = np.array(list(means.values()))
+
+        def q(v):
+            v = np.array(v, float)
+            return f"median {np.median(v):.3g}, p90 {np.percentile(v, 90):.3g}, max {v.max():.3g}" if len(v) else '-'
+        lines += ['', 'predicted temperature rise on the human boards (K; fin kernel, h = 10 W/m^2K per side):',
+                  f"  board mean rise (placement-invariant), {len(mv)} boards: {q(mv)}",
+                  f"  sources, absolute rise ({len(src)}): {q([c['rise'] for c in src])}; local excess: "
+                  f"{q([c['value'] for c in src])}",
+                  f"  victims, absolute rise ({len(vic)}): {q([c['rise'] for c in vic])}; local excess: "
+                  f"{q([c['value'] for c in vic])}"]
+        summ.setdefault('thermal', {})['rise'] = dict(board_mean=list(map(float, mv)),
+                                                      source_abs=[c['rise'] for c in src],
+                                                      source_local=[c['value'] for c in src],
+                                                      victim_abs=[c['rise'] for c in vic],
+                                                      victim_local=[c['value'] for c in vic])
     lines += ['', 'material better-than-human local perturbations by explanation (credible structures in brackets):']
     for k in KINDS:
         if cats[k]:
