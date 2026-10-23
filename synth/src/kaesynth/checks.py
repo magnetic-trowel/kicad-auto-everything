@@ -327,12 +327,20 @@ class Checker:
         return rt.name if rt else None
 
     def check_current(self):
+        declared = set()
+        for p in self.d.all_parts():
+            if p.i_through is None or p.defn.category not in SERIES_CATEGORIES:
+                continue
+            declared.add(id(p))
+            rat = p.defn.ratings
+            lim = rat.i_max if rat.i_max is not None else (min(rat.pin_i_max.values()) if rat.pin_i_max else None)
+            self._rate("rating.current", p, p.i_through, lim, "declared current (i_through)")
         for n in self.d.all_nets():
             if not n.i_max:
                 continue
             for r in n.pins:
                 p = r.part
-                if p.defn.category not in SERIES_CATEGORIES:
+                if p.defn.category not in SERIES_CATEGORIES or id(p) in declared:
                     continue
                 rat = p.defn.ratings
                 lim = None
@@ -341,7 +349,8 @@ class Checker:
                         lim = rat.pin_i_max[k]
                 if lim is None:
                     lim = rat.i_max
-                self._rate("rating.current", p, n.i_max, lim, f"current on {n.full_name} through pin {r.pin.number}")
+                self._rate("rating.current", p, n.i_max, lim,
+                           f"current on {n.full_name} through pin {r.pin.number} (set i_through= if the part carries less)")
 
     def check_power(self):
         for p in self.d.all_parts():
@@ -483,7 +492,10 @@ class Checker:
         for n in self.d.all_nets():
             for t in n.threats:
                 cats = THREATS[t]
-                if not any(r.part.defn.category in cats for r in n.pins):
+                # overcurrent protection must be in series on the wire's own net; other
+                # protectors may sit one series element in (e.g. a TVS behind a PTC or ferrite)
+                reach = [n] if t == "overcurrent" else [n] + self._one_series_hop(n)
+                if not any(r.part.defn.category in cats for m in reach for r in m.pins):
                     self.add("protect.threat", "error",
                              f"external net {n.full_name} declares threat '{t}' but has no {'/'.join(cats)} on it",
                              [n.full_name])
@@ -494,6 +506,14 @@ class Checker:
                 self.add("protect.entry_fuse", "warning",
                          f"external {n.kind} net {n.full_name} reaches the board without a fuse/PTC on it",
                          [n.full_name])
+
+    def _one_series_hop(self, net):
+        out = []
+        for r in net.pins:
+            p = r.part
+            if p.defn.category in ("fuse", "ptc", "inductor", "resistor") and len(p.conn) == 2:
+                out.extend(m for m in p.conn.values() if m is not net)
+        return out
 
     def check_calcs(self):
         ops = {"<=": lambda a, b: a <= b, "<": lambda a, b: a < b, ">=": lambda a, b: a >= b,
@@ -521,14 +541,17 @@ class Checker:
             if q.blocking and not q.answer:
                 self.add("intent.blocking_question", "info",
                          f"{q.id} is BLOCKING and unanswered: {q.text}", [q.id])
-        try:
-            d.place.resolve()
-        except DesignError as e:
-            self.add("place.unknown_object", "error", str(e))
+        unknown = []
+        d.place.resolve(unknown)
+        for u in sorted(set(unknown)):
+            self.add("place.unknown_object", "warning",
+                     f"placement relation names {u!r}, which is not a part, domain, block or net", [u])
         for rel in d.place.relations:
             if rel["kind"] == "separate":
-                a = rel["a"].name if hasattr(rel["a"], "name") else rel["a"]
-                b = rel["b"].name if hasattr(rel["b"], "name") else rel["b"]
+                a, b = rel["a"].removeprefix("domain:"), rel["b"].removeprefix("domain:")
+                for x in (a, b):
+                    if x not in d.domains:
+                        self.add("place.unknown_object", "error", f"separate(): {x!r} is not a domain", [x])
                 if not any({bar.a, bar.b} == {a, b} for bar in d.barriers):
                     self.add("place.separate_without_barrier", "error",
                              f"separate({a}, {b}) has no matching Barrier giving its spacing", [a, b])

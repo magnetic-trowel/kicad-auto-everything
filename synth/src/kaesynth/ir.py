@@ -187,7 +187,7 @@ class PinRef:
 
 class Part:
     def __init__(self, block, defn, name, ref=None, value=None, p_diss=None, fields=None,
-                 dnp=None, notes="", v_across=None):
+                 dnp=None, notes="", v_across=None, i_through=None):
         self.block = block
         self.defn = defn
         self.name = name             # local name used in the design file, e.g. "Q1"
@@ -196,6 +196,7 @@ class Part:
         self.value = value if value is not None else (defn.value or defn.mpn)
         self.p_diss = p_diss         # expected dissipation (W) from the design's calcs
         self.v_across = v_across     # declared max voltage across a 2-terminal part (overrides net envelopes)
+        self.i_through = i_through   # declared max current through the part (overrides net i_max), e.g. shunt diodes
         self.fields = dict(fields or {})
         self.dnp = defn.dnp if dnp is None else dnp
         self.notes = notes

@@ -163,32 +163,49 @@ def dru_text(design, netclasses):
 
     def subtree(dom):
         """A domain and every domain floating on top of it."""
-        out = []
+        out = set()
         for name in design.domains:
             x = name
             while x is not None:
                 if x == dom:
-                    out.append(name)
+                    out.add(name)
                     break
                 x = parent.get(x)
         return out
 
-    def cond(dom, side):
-        names = sorted(n for d in subtree(dom) for n in by_domain.get(d, []))
+    def classes(doms, side):
+        names = sorted(n for d in doms for n in by_domain.get(d, []))
         if not names:
             return None
         return "(" + " || ".join(f"{side}.hasNetclass('{n}')" for n in names) + ")"
 
-    for bar in sorted(design.barriers, key=lambda b: GRADES[b.grade]):
-        ca, cb = cond(bar.a, "A"), cond(bar.b, "B")
-        ca2, cb2 = cond(bar.b, "A"), cond(bar.a, "B")
-        if not (ca and cb):
-            continue
-        rid = f"IR:barrier.{bar.a}.{bar.b}"
-        lines.append(f"# {bar.grade} insulation, {bar.v_work:g} V working, {bar.standard} {bar.source}".rstrip())
-        lines.append(f'(rule "{rid}"')
-        lines.append(f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")')
-        lines.append(f"  (constraint clearance (min {bar.clearance_mm:g}mm))")
-        lines.append(f"  (constraint creepage (min {bar.creepage_mm:g}mm)))")
-        lines.append("")
+    def sides(bar):
+        """Domains on each side. A barrier covers the domains floating on each side too,
+        except those on the other side (a parent/child barrier must not apply inside the child)."""
+        sa, sb = subtree(bar.a), subtree(bar.b)
+        if bar.b in sa:
+            return sa - sb, sb
+        if bar.a in sb:
+            return sa, sb - sa
+        return sa, sb
+
+    # KiCad applies the last matching rule. Rules inherited through floating domains come
+    # first, rules naming the nets' own domains last, so a direct pair always wins.
+    emitted = []
+    for direct in (False, True):
+        for bar in sorted(design.barriers, key=lambda b: GRADES[b.grade]):
+            sa, sb = ({bar.a}, {bar.b}) if direct else sides(bar)
+            if not direct and (sa, sb) == ({bar.a}, {bar.b}):
+                continue          # nothing inherited: the direct rule covers it
+            ca, cb, ca2, cb2 = classes(sa, "A"), classes(sb, "B"), classes(sb, "A"), classes(sa, "B")
+            if not (ca and cb):
+                continue
+            rid = f"IR:barrier.{bar.a}.{bar.b}" + ("" if direct else ".inherited")
+            emitted.append(rid)
+            lines.append(f"# {bar.grade} insulation, {bar.v_work:g} V working, {bar.standard} {bar.source}".rstrip())
+            lines.append(f'(rule "{rid}"')
+            lines.append(f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")')
+            lines.append(f"  (constraint clearance (min {bar.clearance_mm:g}mm))")
+            lines.append(f"  (constraint creepage (min {bar.creepage_mm:g}mm)))")
+            lines.append("")
     return "\n".join(lines)

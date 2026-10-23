@@ -392,7 +392,8 @@ class SchematicWriter:
     def _root(self):
         d = self.d
         body = []
-        x, y, row_h = MARGIN, MARGIN + 30, 0.0
+        notes = self._root_notes()
+        x, y, row_h = MARGIN, snap(MARGIN + (notes.count("\n") + 2) * 2.54 + 5.08), 0.0
         width_limit = 420 - 2 * MARGIN
         for i, b in enumerate(d.blocks):
             w = snap(max(40.64, len(b.title) * 1.6 + 10))
@@ -415,13 +416,20 @@ class SchematicWriter:
                           S("uuid", self.u("sheettext", b.name))))
             x += w + 12.7
             row_h = max(row_h, h)
-        notes = self._root_notes()
         body.append(S("text", notes, S("exclude_from_sim", Sym("no")), S("at", MARGIN, MARGIN, 0),
                       S("effects", S("font", S("size", 1.27, 1.27)), S("justify", Sym("left"), Sym("top"))),
                       S("uuid", self.u("rootnotes"))))
-        return self._file(d.title, "A3", self.root_uuid, [], body, comment=d.description[:200], root=True)
+        paper = next((p for p, pw, ph in PAPERS[1:] if y + row_h + MARGIN + TITLE_BLOCK_H <= ph), "A0")
+        return self._file(d.title, paper, self.root_uuid, [], body, comment=d.description[:200], root=True)
 
     def _root_notes(self):
+        import textwrap
+        lines = []
+        for ln in self._root_note_lines():
+            lines.extend(textwrap.wrap(ln, 150, subsequent_indent="    ") or [""])
+        return "\n".join(lines)
+
+    def _root_note_lines(self):
         d = self.d
         lines = [f"{d.title} (rev {d.revision})"]
         if d.domains:
@@ -433,4 +441,4 @@ class SchematicWriter:
         open_q = [q for q in d.questions if q.blocking and not q.answer]
         if open_q:
             lines.append("NOT READY FOR FABRICATION — blocking questions: " + ", ".join(q.id for q in open_q))
-        return "\n".join(lines)
+        return lines

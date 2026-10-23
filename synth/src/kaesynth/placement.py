@@ -8,7 +8,7 @@ objects and ordinal magnitudes (tight/close/loose); metric values live on the so
 """
 from dataclasses import dataclass, field
 
-from .ir import Block, DesignError, Domain, Part, PinRef
+from .ir import Block, DesignError, Domain, Net, Part, PinRef
 
 STRENGTHS = ("tight", "close", "loose")
 EDGES = ("north", "south", "east", "west", "any")
@@ -88,7 +88,8 @@ class Placement:
 
     def separate(self, a, b, note="", slot=None):
         """Keep two domains apart; spacing comes from the matching Barrier."""
-        return self._rel("separate", a=a, b=b, slot=slot, note=note)
+        name = lambda x: x.name if isinstance(x, Domain) else str(x).removeprefix("domain:")
+        return self._rel("separate", a=f"domain:{name(a)}", b=f"domain:{name(b)}", slot=slot, note=note)
 
     def keepout(self, obj, what="all", layers="all", note=""):
         return self._rel("keepout", obj=obj, what=what, layers=layers, note=note)
@@ -126,18 +127,19 @@ class Placement:
         return self._rel(f"x-{kind}", note=note, **kw)
 
     # -- resolution ---------------------------------------------------------------------------
-    def resolve(self):
-        """Relations with every object reference turned into a name; raises on unknown refs."""
-        d = self.design
-        out = []
-        for r in self.relations:
-            out.append({k: self._name(v) for k, v in r.items()})
-        return out
+    def resolve(self, unknown=None):
+        """Relations with every object reference turned into a name.
 
-    def _name(self, v):
+        Strings are looked up as refdes, domain, block or net name (in that order) and
+        prefixed `domain:`, `block:` or `net:`; anything else (free text, 'board') is kept.
+        Refdes-like strings that match nothing are appended to `unknown` if given.
+        """
+        return [{k: self._name(v, unknown) for k, v in r.items()} for r in self.relations]
+
+    def _name(self, v, unknown=None):
         d = self.design
         if isinstance(v, list):
-            return [self._name(x) for x in v]
+            return [self._name(x, unknown) for x in v]
         if isinstance(v, PinRef):
             return f"{v.part.ref}.{v.pin.number}"
         if isinstance(v, Part):
@@ -146,8 +148,28 @@ class Placement:
             return f"block:{v.name}"
         if isinstance(v, Domain):
             return f"domain:{v.name}"
-        if isinstance(v, str) and v and not v.startswith(("block:", "domain:")) and \
-                (v[0].isupper() and any(c.isdigit() for c in v)) and "." not in v and " " not in v:
-            # refdes string: validate it exists
-            d.find_part(v)
+        if isinstance(v, Net):
+            return f"net:{v.full_name}"
+        if not isinstance(v, str) or not v or " " in v or v.startswith(("block:", "domain:", "net:")):
+            return v
+        if any(p.ref == v for p in d.all_parts()):
+            return v
+        if "." in v:
+            ref, _, pin = v.partition(".")
+            part = next((p for p in d.all_parts() if p.ref == ref), None)
+            if part is not None:
+                try:
+                    return f"{ref}.{part.pin(pin)[0].pin.number}"
+                except DesignError:
+                    pass
+        if v in d.domains:
+            return f"domain:{v}"
+        if any(b.name == v for b in d.blocks):
+            return f"block:{v}"
+        try:
+            return f"net:{d.net_by_name(v).full_name}"
+        except DesignError:
+            pass
+        if unknown is not None and v[0].isupper() and any(c.isdigit() for c in v) and v.upper() == v:
+            unknown.append(v)
         return v
