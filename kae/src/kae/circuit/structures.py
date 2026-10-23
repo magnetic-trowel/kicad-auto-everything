@@ -1936,7 +1936,7 @@ def find_structures(nl: Netlist, roles: Roles) -> dict:
     st['victims'] = fb + se + xv + analog_victims(b, taken)
     st['antennas'] = antennas(b)
     hs, pw = heat(b, cells)
-    pp, ph = power_paths(b, cells)
+    pp, ph = power_paths(b, cells, groups)
     st['power_paths'] = pp
     have = {h['part']: i for i, h in enumerate(hs)}
     for h in ph:                       # a pass element's I^2 R joins the heat sources (the larger estimate wins)
@@ -2121,10 +2121,43 @@ def _path_series(b: _B, net):
     return sorted(set(out), key=_refkey)
 
 
-def power_paths(b: _B, cells) -> tuple[list, list]:
+def _cap_owners(cells, groups) -> dict:
+    """cap -> (owner reference, function, ownership probability) after the allocation."""
+    owned = {}
+    for g in groups or []:
+        for c in g.get('caps') or []:
+            owned[c] = (g['ref'], g['function'], (g.get('caps_p') or {}).get(c, 0.0))
+    for c in cells:
+        for x in c.get('caps') or []:
+            owned[x] = (c.get('controller') or c['id'], 'cell', (c.get('caps_p') or {}).get(x, 0.0))
+    return owned
+
+
+def _path_caps(b: _B, net, ic, owned) -> list:
+    """A power path's capacitors on `net` (at most 4), the ones it can claim first: the path IC's own, then
+    entry bulk, converter filters and capacitors nobody holds firmly, then regulator pins', then those a load's
+    pin or a cell owns (p >= 0.5). Capacitors to a chassis ground (Y-capacitors) carry no path current."""
+    chassis = {n for n in b.g if b.r.nets[n].subrole == 'chassis'}
+    caps = [c for c, g_ in b.r.caps_to.get(net, []) if g_ not in chassis]
+    hf = {c: i for i, c in enumerate(_hf_order(b.nl, caps))}
+
+    def rank(c):
+        ref, func, pr = owned.get(c, (None, None, 0.0))
+        if ic and ref == ic:
+            return 0
+        if func is None or pr < 0.5 or func in ('entry', 'converter_output', 'converter_input'):
+            return 1
+        if func in ('regulator_input', 'regulator_output'):
+            return 2
+        return 3
+    return sorted(caps, key=lambda c: (rank(c), hf[c]))[:4]
+
+
+def power_paths(b: _B, cells, groups=None) -> tuple[list, list]:
     """Non-switching power paths (load switches, power muxes, ideal-diode OR, reverse-polarity FETs, FET banks):
     -> (power_path structures, heat_source structures)."""
     cell_parts = getattr(b, 'cell_parts', set()) | {c.get('controller') for c in cells}
+    owned = _cap_owners(cells, groups)
     paths = []
     # ---- integrated load switches, eFuses, power muxes
     for ref, pr in sorted(b.r.parts.items(), key=lambda t: _refkey(t[0])):
@@ -2287,8 +2320,11 @@ def power_paths(b: _B, cells) -> tuple[list, list]:
         rin, rout = p['rail_in'], p['rail_out']
         gnd = b.r.gnd if rout not in b.g else rout
         series = _path_series(b, rout) + [x for x in _path_series(b, rin) if x not in _path_series(b, rout)]
-        caps_in = _hf_order(b.nl, b.caps_on(rin, gnd)) if rin not in b.g else []
-        caps_out = _hf_order(b.nl, b.caps_on(rout, gnd)) if rout not in b.g else []
+        caps_in = _path_caps(b, rin, p['ic'], owned) if rin not in b.g else []
+        caps_out = _path_caps(b, rout, p['ic'], owned) if rout not in b.g else []
+        if rout not in b.g and (caps_in or caps_out):   # the ground the path's capacitors return to (a BMS's BAT-)
+            c0, n0 = (caps_in[0], rin) if caps_in else (caps_out[0], rout)
+            gnd = next(iter(b.nl.parts[c0].nets - {n0}), gnd)
         sw0 = p['switches'][0]
         last = p['stages'][-1][0]
         loop = []
@@ -2316,8 +2352,8 @@ def power_paths(b: _B, cells) -> tuple[list, list]:
         pid = f"path:{'+'.join(p['switches'][:3])}" + (f":{b.short(rin)}" if p['ic'] and p['group'] else '')
         out_s.append(_struct('power_path', pid, evs, conf_cap=0.9, prior=0.5,
                              **{'class': p['class'], 'switches': p['switches'], 'stages': p['stages'], 'controller': p['controller'],
-                                'rail_in': rin, 'rail_out': rout, 'gnd': gnd, 'series': series, 'caps_in': caps_in[:4],
-                                'caps_out': caps_out[:4], 'loop': loop, 'group': p['group'],
+                                'rail_in': rin, 'rail_out': rout, 'gnd': gnd, 'series': series, 'caps_in': caps_in,
+                                'caps_out': caps_out, 'loop': loop, 'group': p['group'],
                                 'excite': {'V': V_, 'I': I_, 'basis': [ibasis], 'I_belief': belief(I_, 'A', ibasis, round(I_ / 3, 3), I_)},
                                 'R_on_ohm': {'value': round(p['ron'], 6), 'unit': 'ohm', 'class': 'E5', 'basis': p['ron_basis']},
                                 'P_W': P_}))

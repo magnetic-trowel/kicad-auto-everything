@@ -329,6 +329,7 @@ OPAMP_IN_PIN = rx(r'^([+-]|IN[+-]|[+-]IN|[+-]IN[A-D]?|IN[A-D]?[+-]|IN[A-D]?_?[PN
 
 GND_NET = rx(r'(^|[^A-Z])(A|D|P|S|C|E)?GND|^VSS|^0V$|^GND|GND$|GROUND')
 GND_ANY = rx(r'GND|VSS|EARTH|CHASSIS|GROUND')
+NEG_PWR_NET = rx(r'(^|[^A-Z])(BAT\w?|BATT\w*|PACK|CELL|PWR|POWER|DC|MAINS|CHG|SUPPLY|LOAD|B|P)\s*_?\s*(-|NEG|MINUS)$|^-$')
 CHASSIS_NET = rx(r'EARTH|CHASSIS|SHIELD|^PE$|^FG$|^CGND|^SGND$|CASE|^SH$|SHLD|FRAME|^GNDCHASSIS|CHASSIS_?GND|^EGND')
 PWR_NET = rx(r'^(\+?\d+(\.\d+)?V\d*\w*|\+[A-Z0-9_.]+|V(CC|DD|BUS|IN|SYS|BAT|MOT|M|PP|REG|CORE|CAP|S|IO|LOGIC|AUX|LED|DRV|SUP)\w*|'
              r'[AD]V(DD|CC)\w*|P\d+V\d*\w*|\d+V\d+\w*|[0-9]+V[0-9]*_?\w*|-\d+(\.\d+)?V\w*|V_?\d+V\d*|VDD_?\w+|VCC_?\w+|'
@@ -771,6 +772,14 @@ def _grounds(nl: Netlist, roles: Roles):
         if best and two_pin_other[best] >= 3:
             evs = [ev('topology', f"no ground name; most capacitor connections ({two_pin_other[best]})", 1.0)]
             cands[best] = (0.6, evs)
+    # the negative pole of a battery or power input joined to a ground by a net tie (the star point of a BMS or
+    # a supply) is a power ground; Kelvin sense lines tied the same way (SENSE_N, RSENSE-) keep their role
+    for part in nl.parts.values():
+        t = nl.two_nets(part) if roles.parts[part.ref].kind == 'net_tie' else None
+        for a, c in ((t, t[::-1]) if t else ()):
+            if a in cands and c not in cands and NEG_PWR_NET.search(nl.nets[c].short):
+                cands[c] = (0.85, [ev('topology', f"joined to ground '{nl.nets[a].short}' by net tie {part.refdes}", STRONG),
+                                   ev('name', f"name '{nl.nets[c].short}' is the negative pole of a power input", MODERATE)])
     order = sorted(cands, key=lambda n: (-len(nl.nets[n].pins) * (0.3 if CHASSIS_NET.search(nl.nets[n].short) else 1.0), n))
     roles.grounds = order
     roles.gnd = order[0] if order else None

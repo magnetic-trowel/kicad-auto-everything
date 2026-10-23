@@ -79,6 +79,8 @@ def _window_solve(P, st, free, margin_cells, time_s, workers, seed, w_rot=1.0):
     model = cpsat.Model(P, items, obstacles, w_disp=1.0, w_rot=w_rot)
     sol = model.solve(time_s, workers=workers, seed=seed)
     _ = g
+    if sol is not None:      # variant index -> rotation index
+        sol = [(X, Y, it.variants[v][i][2]) for it, i, (X, Y, v) in zip(items, free, sol)]
     return sol, model
 
 
@@ -149,8 +151,8 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
         sol = model.solve(max(1.0, deadline - time.monotonic()), workers=workers, seed=seed)
         rep["global_status"] = model.status
         if sol is not None:
-            for i, (X, Y, v) in zip(P.mov, sol):
-                st.X[i], st.Y[i], st.K[i] = X, Y, v
+            for it, i, (X, Y, v) in zip(items, P.mov, sol):
+                st.X[i], st.Y[i], st.K[i] = X, Y, it.variants[v][i][2]
         viol = grid_violations(st)
     rep["end_violators"] = len(viol)
     rep["violations"] = {P.parts[i].ref: [str(r) for r in rs[:3]] for i, rs in list(viol.items())[:20]}

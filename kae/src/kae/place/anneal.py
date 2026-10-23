@@ -33,6 +33,33 @@ from .cost import Congestion
 BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
 
 
+def turn_move(p, k0, rng):
+    """A rotation move of part p from rotation k0: a quarter turn (the right angles; an odd
+    angle stays odd), or, for parts that may turn freely (Problem angle_step), a step to the
+    next angle either way or a snap back to the nearest right angle. Returns (k1, kind)."""
+    n_ortho = getattr(p, "n_ortho", len(p.rots))
+    if len(p.rots) > n_ortho:
+        v = rng.random()
+        if v < 0.3:
+            return p.ring[k0][rng.randrange(2)], "rotate_step"
+        if k0 >= n_ortho and v < 0.55:
+            return snap_index(p, k0), "rotate_snap"
+    return p.turn[k0][rng.choice((1, 2, 3))], "rotate"
+
+
+def snap_index(p, k):
+    """The right-angle rotation nearest to rotation k."""
+    a = p.rots[k].rot
+    n_ortho = getattr(p, "n_ortho", len(p.rots))
+    return min(range(n_ortho), key=lambda j: min(abs(p.rots[j].rot - a) % 360.0, 360.0 - abs(p.rots[j].rot - a) % 360.0))
+
+
+def quarter_turns(p, k, k_ref):
+    """Quarter turns from rotation k_ref to rotation k of part p (nearest)."""
+    d = (p.rots[k].rot - p.rots[k_ref].rot) % 360.0
+    return int(round(d / 90.0)) % 4
+
+
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
@@ -430,13 +457,13 @@ class Annealer:
             return (i,), [(X, Y, self.K[i])], "shift"
         if u < 0.80 and self.nrot[i] > 1:
             k0 = self.K[i]
-            k1 = (k0 + rng.choice((1, 2, 3))) % self.nrot[i]
+            k1, kind = turn_move(self.P.parts[i], k0, rng)
             cx0, cy0 = self._center2(i, k0)
             cx1, cy1 = self._center2(i, k1)
             X = self.X[i] + (cx0 - cx1) // 2
             Y = self.Y[i] + (cy0 - cy1) // 2
             X, Y = self._clamp(i, X, Y, k1)
-            return (i,), [(X, Y, k1)], "rotate"
+            return (i,), [(X, Y, k1)], kind
         # swap: an equal footprint if there is one, else any part on the same side
         cls = self.swap_class.get(i)
         if cls and rng.random() < 0.7:
@@ -481,11 +508,11 @@ class Annealer:
                 dx, dy = self.X[i] - AX, self.Y[i] - AY
                 for _ in range(q):
                     dx, dy = dy, -dx      # KiCad +90 degrees, y down
-                out.append((AX + dx, AY + dy, (self.K[i] + q) % self.nrot[i]))
+                out.append((AX + dx, AY + dy, self.P.parts[i].turn[self.K[i]][q]))
             return tuple(mem), out, "macro_rotate"
         lay = m.layouts[rng.randrange(len(m.layouts))]
         # the macro's current turn: the anchor's rotation relative to the layout's
-        q = (self.K[a] - lay.offsets[a][2]) % 4
+        q = quarter_turns(self.P.parts[a], self.K[a], lay.offsets[a][2])
         out = []
         for i in mem:
             dx, dy, k = lay.offsets[i]
@@ -493,7 +520,7 @@ class Annealer:
             dy -= lay.offsets[a][1]
             for _ in range(q):
                 dx, dy = dy, -dx
-            out.append((AX + dx, AY + dy, (k + q) % self.nrot[i]))
+            out.append((AX + dx, AY + dy, self.P.parts[i].turn[k][q]))
         return tuple(mem), out, "macro_relayout"
 
     # ------------------------------------------------------------------ schedule

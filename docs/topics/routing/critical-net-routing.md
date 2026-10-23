@@ -7,7 +7,7 @@
   - the copper resistance against a drop budget;
   - the trace capacitance under a crystal.
 - Guard pours (`kae-crit:` zones) keep other nets off the ground plane under hot loops and crystals while the bridge runs. A recheck recomputes every module on the finished board, including how much of its plane survived. Modules that lost more than 15 % of budget or 10 % of plane cover are re-tweaked, for up to three rounds.
-- On the 33 boards of splits A and B and on 6 C boards with converters, the critical copper adds **0 KiCad DRC errors** and takes 0.3–21 s per board [C]. The A/B run against the bridge alone (completion, cp1, cpk, physics) is set up but not yet run.
+- On the 33 boards of splits A and B and on 6 C boards with converters, the critical copper adds **0 KiCad DRC errors** and takes 0.4–18 s per board [C]. The A/B run against the bridge alone (completion, cp1, cpk, physics) is set up; four local boards were mixed (2 better, 2 worse).
 - `optimize_modules` moves a module's parts (any angle; right angles for heatsink tabs) while routing its copper. On 12 human placements it lowered converter hot loops by a median 4 % (up to 26 %) and decoupling loops by a median 9 % (up to 61 %), with 0 DRC errors [C].
 
 ## Key facts
@@ -131,9 +131,9 @@ On 12 human placements (120 s each; KiCad DRC 0 errors on every written board) [
 
 | Check | Boards | Result [C] |
 |---|---|---|
-| DRC errors on a locked critical item, critical copper alone, KiCad 10.0.7 | 33 (A+B) | 0; 292 tracks, 46 vias; 25 modules routed, 12 skipped (decap pairs > 10 mm) |
-| Same | 6 C boards with cells (BLDC, BMS, doorman, CAN processor, Oasis, Aftonsparv) | 0; 45 modules routed, 9 skipped |
-| Critical stage runtime | 39 | 0.3–21 s per board, one shared core |
+| DRC errors on a locked critical item, critical copper alone, KiCad 10.0.7 | 33 (A+B) | 0; 298 tracks, 48 vias; 26 modules routed, 11 skipped (decap pairs > 10 mm) |
+| Same | 6 C boards with cells (BLDC, BMS, doorman, CAN processor, Oasis, Aftonsparv) | 0; 316 tracks, 107 vias; 46 modules routed, 7 skipped |
+| Critical stage runtime | 39 | 0.4–18 s per board, one shared core |
 | olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
 | Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
 | Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 31 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
@@ -148,7 +148,7 @@ On 12 human placements (120 s each; KiCad DRC 0 errors on every written board) [
 
 ## Conflicts and open questions
 
-- **Routability.** Locked copper and guards take space the bridge would have used. Only the A/B run (same snapshot, k = 1, 600 s) can show whether completion or clean passes fall. Early local runs: noisecard became clean; a trackball board kept 2 unconnected items, where the bridge alone left 1 plus 1 error.
+- **Routability.** Locked copper and guards take space the bridge would have used. Only the A/B run (same snapshot, k = 1, 600 s) can show whether completion or clean passes fall. Four local boards (k = 1, 600 s, loaded VM, against an older bridge-alone run): unconnected items fell from 5 to 1 on noisecard and from 4 to 0 on the XIAO board. They rose from 0 to 2 (+1 starved thermal) on the olimex DC-DC and from 0 to 1 on the bipolar supply, where long locked protection-chain and rail tracks sit in the bridge's way.
 - **Estimator vs passport.** The routed-copper estimator ranks layouts; its absolute values differ from the rb HF passport (olimex human: 10.97 vs 6.4 nH). A loop closed by pours reads the same on every board sharing them (noisecard: 1.98 nH on human and critical boards). The passports decide.
 - **Decap pairing** in the brief maps some caps to pins 11–70 mm away. The router skips them; the brief needs a distance check.
 - **Re-tweak statistics** (how often round 2 triggers, recovery, convergence) need the big-host `--rounds 3` run.

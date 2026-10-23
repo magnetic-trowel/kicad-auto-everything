@@ -188,6 +188,38 @@ def edge_cut_lib_rect(fp):
     return polys_lib_rect(list(fp.edge_cuts))
 
 
+_HEATSINK_MOUNT = re.compile(r"TO-?(220|247|3P|218|264|126|3)\b|Heatsink|heatsink|HeatSink", re.I)
+
+
+def right_angles_only(fp):
+    """Footprints that keep right angles when every other part may turn freely: heatsink-
+    mount packages with a tab hole (TO-220, TO-247, TO-3P, ...) and heatsinks themselves."""
+    name = f"{fp.lib_id} {getattr(fp, 'value', '')}"
+    if not _HEATSINK_MOUNT.search(name):
+        return False
+    if "heatsink" in name.lower():
+        return True
+    return any(p.drill and (p.kind == "np_thru_hole" or max(p.size) >= 3.0) for p in fp.pads)
+
+
+def _turn_tables(angles):
+    """turn[k][q]: the rotation q quarter turns from rotation k (k itself when the set has no
+    such angle); ring[k]: (previous, next) rotation in angle order."""
+    key = {round(a % 360.0, 6): k for k, a in enumerate(angles)}
+    turn = []
+    for a in angles:
+        turn.append([key.get(round((a + 90.0 * q) % 360.0, 6), None) for q in range(4)])
+    for k, row in enumerate(turn):
+        for q in range(4):
+            if row[q] is None:
+                row[q] = k
+    order = sorted(range(len(angles)), key=lambda k: angles[k] % 360.0)
+    ring = [None] * len(angles)
+    for t, k in enumerate(order):
+        ring[k] = (order[t - 1], order[(t + 1) % len(order)])
+    return turn, ring
+
+
 def _on_far_copper(p, part_side):
     """The pad has copper on the side opposite its footprint's (B.Cu under a front part,
     F.Cu under a back part, *.Cu, F&B.Cu, inner layers count as both)."""
@@ -363,13 +395,16 @@ class Problem:
 
     # ------------------------------------------------------------------ construction
     @classmethod
-    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS, held=()):
+    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS, held=(), angle_step=None):
         """net_kinds: optional {net name: 'ground'|'power'|'signal'|role} (from the brief).
         held: footprint uuids kept where they are and left out of the nets (e.g. staged parts
-        that carry Edge.Cuts, whose place on the board the task does not tell)."""
+        that carry Edge.Cuts, whose place on the board the task does not tell).
+        angle_step: also offer every multiple of this many degrees to parts that may turn
+        freely (not heatsink-mount packages); the right angles stay the first rotations."""
         P = cls()
         P.board = board
         P.held = set(held)
+        P.angle_step = angle_step
         P._rules(board)
         P._severities(board)
         P._domain(board, grid)
@@ -383,20 +418,12 @@ class Problem:
         return P
 
     def _severities(self, board):
-        """DRC rule severities of the board's project (.kicad_pro beside the board): a check
-        the project sets to 'warning' or 'ignore' is no error, so legality does not need it
-        (e.g. courtyards_overlap: ignore lets courtyards overlap and only copper counts)."""
-        self.severity = {}
-        path = getattr(board, "path", "") or ""
-        if path:
-            from pathlib import Path
-            import json
-            pro = Path(path).with_suffix(".kicad_pro")
-            try:
-                d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
-                self.severity = dict(((d.get("board") or {}).get("design_settings") or {}).get("rule_severities") or {})
-            except (OSError, ValueError):
-                self.severity = {}
+        """DRC rule severities of the board's project (kae.board Rules.severities, from the
+        .kicad_pro): a check the project sets to 'warning' or 'ignore' is no error, so legality
+        does not need it (e.g. courtyards_overlap: ignore lets courtyards overlap and only
+        copper counts)."""
+        r = getattr(board, "rules", None)
+        self.severity = dict(getattr(r, "severities", None) or {}) if r is not None else {}
 
     def is_error(self, check):
         """The project reports `check` as an error (KiCad's default when the project is silent)."""
@@ -546,30 +573,43 @@ class Problem:
         part = Part(i=i, uuid=fp.uuid, ref=fp.ref, value=fp.value, lib_id=fp.lib_id, side=fp.side, s=s,
                     movable=movable, fp=fp, x0=fp.x, y0=fp.y, rot0=fp.rot, tht=bool(drilled),
                     decor=not pads, has_courtyard=has_cy, pad_net=pad_net)
+        own_parts = ([cy] if (cy is not None and self.is_error("courtyards_overlap")) else []) + infl + \
+            ([cut] if cut is not None else [])
         part._lib = dict(own=lib_own, opp=lib_opp, board_full=lib_board_full, board_pads=lib_board_pads,
                          board_groups=lib_board_groups, crt=cy if cy is not None else lib_own,
-                         own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own)
+                         own_pads=rect_union(infl + ([cut] if cut is not None else [])) or lib_own,
+                         own_parts=[r for r in own_parts if r is not None] or [lib_own])
         rots = list(rotations) if movable else [fp.rot]
+        part.n_ortho = len(rots)
+        if movable and self.angle_step and not right_angles_only(fp):
+            step = float(self.angle_step)
+            rots += [a for a in np.arange(0.0, 360.0, step).tolist() if a % 90.0 > 1e-9]
         for rot in rots:
             part.rots.append(self._rot(part, rot, local, lib_board_full))
+        part.turn, part.ring = _turn_tables([r.rot for r in part.rots])
         part.shape_key = (fp.lib_id, fp.side, tuple(np.round(local.ravel(), 4)),
                           tuple(round(v, 4) for v in lib_own))
         return part
 
     def _rot(self, part, rot, local, lib_board):
         s = part.s
+        L = part._lib
         if rot % 90.0 == 0.0:
             rr = lambda r: rot_rect(r, rot, s)  # noqa: E731
-        else:  # a fixed part at an odd angle: bounding box of the rotated rectangle
+            own = rr(L["own"])
+        else:
+            # an odd angle: bounding boxes of each rotated piece (courtyard, every pad), so the
+            # grid stays conservative (grid-legal implies legal at the actual angle) without
+            # boxing the box of the whole footprint
             rr = lambda r: rot_rect_any(r, rot, s)  # noqa: E731
-        L = part._lib
+            own = rect_union([rr(r) for r in L.get("own_parts") or [L["own"]]])
         if len(local):
             px, py = transform.pads_xy(local[:, 0], local[:, 1], 0.0, 0.0, rot, s)
             pins = np.column_stack([px, py])
         else:
             pins = np.zeros((0, 2))
         board = rr(lib_board)
-        return Rot(rot=float(rot), own=rr(L["own"]), opp=tuple(rr(r) for r in L["opp"]), board=board,
+        return Rot(rot=float(rot), own=own, opp=tuple(rr(r) for r in L["opp"]), board=board,
                    crt=rr(L["crt"]), pins=pins, boards=(board,))
 
     def _fit_check(self):
@@ -586,8 +626,9 @@ class Problem:
             if not ok:
                 p.fits = False
                 for r in p.rots:
-                    r.board = rot_rect(p._lib["board_pads"], r.rot, p.s)
-                    r.boards = tuple(rot_rect(gr, r.rot, p.s) for gr in p._lib["board_groups"])
+                    rr = rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any
+                    r.board = rr(p._lib["board_pads"], r.rot, p.s)
+                    r.boards = tuple(rr(gr, r.rot, p.s) for gr in p._lib["board_groups"])
                 self.notes.append(f"{p.ref}: courtyard does not fit on the board; only its pads are kept inside")
 
     def _fits_somewhere(self, gr):
@@ -619,7 +660,7 @@ class Problem:
                 continue
             p.relaxed = True
             for r in p.rots:
-                r.own = rot_rect(p._lib["own_pads"], r.rot, p.s)
+                r.own = (rot_rect if r.rot % 90.0 == 0.0 else rot_rect_any)(p._lib["own_pads"], r.rot, p.s)
                 r.g_own_exact = to_grid(r.own, g)
             out.append(p.ref)
         if out:

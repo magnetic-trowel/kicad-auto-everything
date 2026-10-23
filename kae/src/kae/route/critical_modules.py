@@ -1099,10 +1099,16 @@ def route_chain(ctx, m):
         if tp is not None:
             T.insert(1, tp)
     power = s.get("pin_kind") == "power" or (ctx.nets.get(T[0].net) or {}).get("role") == "rail"
+    # hops after the first protector carry no surge-path physics; chain_tail=False leaves
+    # them to the general router (less locked copper in its way, the order not enforced)
+    first_prot = next((k for k, t in enumerate(T) if k > 0 and t.fp in prot), len(T) - 1)
     ok = need = 0
     for k in range(len(T) - 1):
         ta, tb = T[k], T[k + 1]
         if ta.fp == tb.fp or ta.net != tb.net:
+            continue
+        if k >= first_prot and not ctx.opts.get("chain_tail", True):
+            m.notes.append(f"hop {k} after the protector left to the general router")
             continue
         need += 1
         if ctx.connected(ta.net, ta, tb):

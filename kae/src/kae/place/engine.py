@@ -62,6 +62,7 @@ Eng = namedtuple("Eng", [
     "rule_rp", "rule_pins", "open", "part_rule_ptr", "part_rules", "rule_seen",
     "in_s", "sc_pins_x", "sc_pins_y", "sc_nets", "sc_nb", "sc_nc", "sc_box", "sc_has", "sc_dens",
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
+    "turn", "ring", "snap", "n_ortho",
 ])
 
 
@@ -692,7 +693,13 @@ def run_batch(E, parts, swap_ptr, swap_ids, nmoves, T, lam, r, stats):
         elif u < 0.80 and E.nrot[i] > 1:
             kind = 1
             k0 = E.K[i]
-            k1 = (k0 + 1 + np.random.randint(3)) % E.nrot[i]
+            k1 = E.turn[i, k0, 1 + np.random.randint(3)]
+            if E.nrot[i] > E.n_ortho[i]:
+                v = np.random.random()
+                if v < 0.3:
+                    k1 = E.ring[i, k0, np.random.randint(2)]
+                elif k0 >= E.n_ortho[i] and v < 0.55:
+                    k1 = E.snap[i, k0]
             cx0 = E.own[i, k0, 0] + E.own[i, k0, 1]
             cy0 = E.own[i, k0, 2] + E.own[i, k0, 3]
             cx1 = E.own[i, k1, 0] + E.own[i, k1, 1]
@@ -764,28 +771,39 @@ def build(ann, hash_cap=None):
     n = len(P.parts)
     g = P.g
     nrot = np.array([len(p.rots) for p in P.parts], np.int64)
-    own = np.zeros((n, 4, 4), np.int64)
-    gbrd = np.zeros((n, 4, 4), np.int64)
+    NR = max(4, int(nrot.max()) if n else 4)
+    own = np.zeros((n, NR, 4), np.int64)
+    gbrd = np.zeros((n, NR, 4), np.int64)
+    turn = np.zeros((n, NR, 4), np.int64)
+    ring = np.zeros((n, NR, 2), np.int64)
+    snap = np.zeros((n, NR), np.int64)
+    n_ortho = np.array([getattr(p, "n_ortho", len(p.rots)) for p in P.parts], np.int64)
+    from .anneal import snap_index
+    for p in P.parts:
+        for k in range(len(p.rots)):
+            turn[p.i, k] = p.turn[k]
+            ring[p.i, k] = p.ring[k]
+            snap[p.i, k] = snap_index(p, k)
     opp_ptr = np.zeros(n + 1, np.int64)
     brd_ptr = np.zeros(n + 1, np.int64)
     opp_list, brd_list = [], []
     for p in P.parts:
         nk = len(p.rots)
-        for k in range(4):
+        for k in range(NR):
             r = p.rots[min(k, nk - 1)]
             own[p.i, k] = r.g_own
             gbrd[p.i, k] = r.g_board
         no = len(p.rots[0].g_opp)
         nb_ = len(p.rots[0].g_boards or (p.rots[0].g_board,))
         for m in range(no):
-            opp_list.append([p.rots[min(k, nk - 1)].g_opp[m] for k in range(4)])
+            opp_list.append([p.rots[min(k, nk - 1)].g_opp[m] for k in range(NR)])
         for m in range(nb_):
             brd_list.append([(p.rots[min(k, nk - 1)].g_boards or (p.rots[min(k, nk - 1)].g_board,))[m]
-                             for k in range(4)])
+                             for k in range(NR)])
         opp_ptr[p.i + 1] = opp_ptr[p.i] + no
         brd_ptr[p.i + 1] = brd_ptr[p.i] + nb_
-    opp_r = np.array(opp_list, np.int64).reshape(-1, 4, 4) if opp_list else np.zeros((0, 4, 4), np.int64)
-    brd_r = np.array(brd_list, np.int64).reshape(-1, 4, 4) if brd_list else np.zeros((0, 4, 4), np.int64)
+    opp_r = np.array(opp_list, np.int64).reshape(-1, NR, 4) if opp_list else np.zeros((0, NR, 4), np.int64)
+    brd_r = np.array(brd_list, np.int64).reshape(-1, NR, 4) if brd_list else np.zeros((0, NR, 4), np.int64)
     # rectangles: movable parts' own + far rects, then obstacles (fixed parts are obstacles)
     movable = np.array([p.movable for p in P.parts], bool)
     part_r0 = np.zeros(n, np.int64)
@@ -814,7 +832,7 @@ def build(ann, hash_cap=None):
         r_side[R + t] = ob.side
     ext = 1
     for i in P.mov:
-        for k in range(4):
+        for k in range(NR):
             a, b, c, d = own[i, k]
             ext = max(ext, -a, b, -c, d)
     HB = max(4, int(round(math.sqrt(ann.A0) * 1.5)))
@@ -831,13 +849,13 @@ def build(ann, hash_cap=None):
         part_pin_ptr[p.i + 1] = part_pin_ptr[p.i] + len(p.fp.pads)
         pin_part += [p.i] * len(p.fp.pads)
     NP = int(part_pin_ptr[-1])
-    pin_off = np.zeros((4, NP, 2))
+    pin_off = np.zeros((NR, NP, 2))
     px = np.zeros(NP)
     py = np.zeros(NP)
     for p in P.parts:
         a0 = part_pin_ptr[p.i]
         nk = len(p.rots)
-        for k in range(4):
+        for k in range(NR):
             pins = p.rots[min(k, nk - 1)].pins
             if len(pins):
                 pin_off[k, a0:a0 + len(pins)] = pins
@@ -939,6 +957,7 @@ def build(ann, hash_cap=None):
         sc_rules=np.zeros(max(1, len(rules)) + 2, np.int64), sc_open=np.zeros(max(1, len(rules)) + 2),
         sc_pbx=np.zeros(NP + 2, np.int64), sc_pby=np.zeros(NP + 2, np.int64),
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
+        turn=turn, ring=ring, snap=snap, n_ortho=n_ortho,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
@@ -1018,6 +1037,9 @@ def sample_uphill(E, parts, swap_ptr, swap_ids, n, lam, r, out):
 
 
 DELTA_BUDGET = 2e-4     # seconds of Terms.delta a physics part may cost per pick at the uniform rate
+
+
+from .anneal import quarter_turns, turn_move  # noqa: E402  (anneal imports engine lazily)
 
 
 class FastAnnealer:
@@ -1172,10 +1194,10 @@ class FastAnnealer:
                     dx, dy = int(E.X[j]) - AX, int(E.Y[j]) - AY
                     for _ in range(q):
                         dx, dy = dy, -dx
-                    out.append((AX + dx, AY + dy, (int(E.K[j]) + q) % a.nrot[j]))
+                    out.append((AX + dx, AY + dy, self.P.parts[j].turn[int(E.K[j])][q]))
                 return mem, out, "macro_rotate"
             lay = m.layouts[rng.randrange(len(m.layouts))]
-            q = (int(E.K[A]) - lay.offsets[A][2]) % 4
+            q = quarter_turns(self.P.parts[A], int(E.K[A]), lay.offsets[A][2])
             out = []
             for j in mem:
                 dx, dy, k = lay.offsets[j]
@@ -1183,7 +1205,7 @@ class FastAnnealer:
                 dy -= lay.offsets[A][1]
                 for _ in range(q):
                     dx, dy = dy, -dx
-                out.append((AX + dx, AY + dy, (k + q) % a.nrot[j]))
+                out.append((AX + dx, AY + dy, self.P.parts[j].turn[k][q]))
             return mem, out, "macro_relayout"
         if u < 0.62 or (u < 0.80 and a.nrot[i] <= 1):
             X = int(E.X[i]) + rng.randint(-r, r)
@@ -1192,11 +1214,11 @@ class FastAnnealer:
             return [i], [(int(X), int(Y), int(E.K[i]))], "shift"
         if u < 0.80:
             k0 = int(E.K[i])
-            k1 = (k0 + rng.choice((1, 2, 3))) % a.nrot[i]
+            k1, kind = turn_move(self.P.parts[i], k0, rng)
             cx0, cy0 = a._center2(i, k0)
             cx1, cy1 = a._center2(i, k1)
             X, Y = _clamp(E, i, int(E.X[i]) + (cx0 - cx1) // 2, int(E.Y[i]) + (cy0 - cy1) // 2, k1)
-            return [i], [(int(X), int(Y), k1)], "rotate"
+            return [i], [(int(X), int(Y), k1)], kind
         j = self.mov[rng.randrange(len(self.mov))]
         if j == i or a.side[j] != a.side[i]:
             X = int(E.X[i]) + rng.randint(-r, r)

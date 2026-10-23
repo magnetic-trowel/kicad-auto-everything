@@ -40,9 +40,15 @@ class Item:
 
 
 def single(P, i, X0, Y0, k0=0, weight=1.0):
+    """One part: its right-angle rotations, plus its current rotation when that is an odd
+    angle (CP-SAT stays on the right angles; a part turned freely is repaired at its angle)."""
     p = P.parts[i]
-    vs = [{i: (0, 0, k)} for k in range(len(p.rots))]
-    return Item(members=[i], variants=vs, X0=X0, Y0=Y0, v0=k0, weight=weight, name=p.ref)
+    ks = list(range(getattr(p, "n_ortho", len(p.rots))))
+    if k0 not in ks and 0 <= k0 < len(p.rots):
+        ks.append(k0)
+    vs = [{i: (0, 0, k)} for k in ks]
+    return Item(members=[i], variants=vs, X0=X0, Y0=Y0, v0=ks.index(k0) if k0 in ks else 0, weight=weight,
+                name=p.ref)
 
 
 def _rects_of(P, item, v):

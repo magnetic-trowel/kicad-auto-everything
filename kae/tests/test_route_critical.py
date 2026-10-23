@@ -470,3 +470,15 @@ def test_castellated_pad_anchors_keep_each_layers_copper(tmp_path):
     ks = gr._cells(grid, a, 0, cost, grid.nx * grid.ny, "B.Cu")
     xs = [grid.xy(int(k % grid.nx), int(k // grid.nx)) for k in ks]
     assert xs and all(not twin.buffer(0.3).contains(Point(p)) for p in xs)
+
+
+def test_chain_tail_can_be_left_to_the_bridge(tmp_path):
+    s = F.session(tmp_path, chain_tail=False)
+    s.route()
+    ch = next(m for m in s.modules if m.kind == "chain")
+    T = ch.spec["_T"]
+    refs = [s.ctx.fp[t.fp].ref for t in T]
+    k = refs.index("D1")
+    assert ch.hops.get("hop0") is not None                         # connector -> protector, routed
+    assert all(f"hop{j}" not in ch.hops for j in range(k, len(T) - 1))   # nothing after the protector
+    assert any("after the protector" in n for n in ch.notes)

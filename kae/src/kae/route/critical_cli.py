@@ -37,6 +37,8 @@ def main(argv=None):
     r.add_argument("--kinds", default="cell,decap,crystal,chain")
     r.add_argument("--guards", default="cell,crystal",
                    help="modules whose ground plane the bridge must keep other nets off (or 'none')")
+    r.add_argument("--no-chain-tail", action="store_true",
+                   help="leave a protection chain's hops after the protector to the bridge")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
@@ -50,7 +52,8 @@ def main(argv=None):
     if a.cmd == "route":
         from kae.route import critical
         opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep,
-                    guards=tuple(k for k in a.guards.split(",") if k and k != "none"))
+                    guards=tuple(k for k in a.guards.split(",") if k and k != "none"),
+                    chain_tail=not a.no_chain_tail)
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge)
         text = json.dumps(rep, default=str)

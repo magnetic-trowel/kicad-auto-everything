@@ -327,7 +327,7 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
     yi = {0: [], 1: []}
     for i in members:
         p = P.parts[i]
-        nk = len(p.rots)
+        nk = getattr(p, "n_ortho", len(p.rots))      # macros are laid out at right angles
         if i == anchor:
             X = m.new_constant(0)
             Y = m.new_constant(0)
@@ -362,7 +362,7 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
         X, Y, lits = V[i]
         p = P.parts[i]
         cx, cy = [], []
-        for k in range(len(p.rots)):
+        for k in range(len(lits)):
             pts = p.rots[k].pins[pads]
             cx.append(int(round(float(pts[:, 0].mean()) / g)))
             cy.append(int(round(float(pts[:, 1].mean()) / g)))
@@ -581,7 +581,7 @@ def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02
             off[i][1] += rng.randint(-r, r)
         else:
             k0 = off[i][2]
-            k1 = (k0 + rng.choice((1, 2, 3))) % len(P.parts[i].rots)
+            k1 = P.parts[i].turn[k0][rng.choice((1, 2, 3))]
             o0, o1 = P.parts[i].rots[k0].g_own, P.parts[i].rots[k1].g_own
             off[i][0] += ((o0[0] + o0[1]) - (o1[0] + o1[1])) // 2
             off[i][1] += ((o0[2] + o0[3]) - (o1[2] + o1[3])) // 2
@@ -652,7 +652,7 @@ def macro_item(P, mac, X0=0, Y0=0, v0=0):
                 ddx, ddy = dx, dy
                 for _ in range(q):
                     ddx, ddy = ddy, -ddx
-                v[i] = (ddx, ddy, (k + q) % len(P.parts[i].rots))
+                v[i] = (ddx, ddy, P.parts[i].turn[k][q])
             variants.append(v)
         _ = ka
     return Item(members=list(mac.members), variants=variants, X0=X0, Y0=Y0, v0=v0,
