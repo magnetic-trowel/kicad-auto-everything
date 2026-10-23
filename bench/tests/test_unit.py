@@ -244,3 +244,9 @@ def test_run_measured_cpu_exit_code_and_errors():
     with pytest.raises(subprocess.TimeoutExpired):
         tools.run_measured([sys.executable, "-c", "while True: pass"], timeout=1)
     assert tools.usage_take()["cpu_s"] > 0.5  # the killed command's CPU is still accounted
+
+
+def test_capped_drc_types_are_flagged():
+    drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
+    assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
+    assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
