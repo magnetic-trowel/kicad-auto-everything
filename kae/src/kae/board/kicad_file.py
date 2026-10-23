@@ -536,6 +536,8 @@ def read_rules(pcb_path, tree=None):
         for f, key in _RULE_FIELDS.items():
             if rr.get(key) is not None:
                 setattr(r, f, float(rr[key]))
+        r.severities = {str(k): str(v) for k, v in (ds.get("rule_severities") or {}).items()
+                        if v in ("error", "warning", "ignore")}
         r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]
         r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
                        for v in ds.get("via_dimensions") or [] if v.get("diameter")]

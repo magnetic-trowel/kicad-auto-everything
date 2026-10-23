@@ -191,3 +191,22 @@ def test_staging_detection_uses_outline(board):
     minx = min(c[0] for p in transform.courtyard(u7) for c in p.exterior.coords)
     assert minx > max(p.bounds[2] for p in board.outline)
     assert not u7.on_board
+
+
+def test_rule_severities_come_from_the_project(tmp_path):
+    """Rules.severities holds the .kicad_pro DRC severities, so consumers (placement legality,
+    the router) judge a check the way the project's own DRC does."""
+    p = tmp_path / "sev.kicad_pcb"
+    shutil.copy(FIXTURE, p)
+    pro = json.loads(FIXTURE.with_suffix(".kicad_pro").read_text())
+    ds = pro.setdefault("board", {}).setdefault("design_settings", {})
+    ds["rule_severities"] = {"courtyards_overlap": "warning", "pth_inside_courtyard": "ignore",
+                             "solder_mask_bridge": "error", "bogus_check": "fatal"}
+    p.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    r = kicad_file.load(p).rules
+    assert r.severity("courtyards_overlap") == "warning"
+    assert r.severity("pth_inside_courtyard") == "ignore"
+    assert r.severity("solder_mask_bridge") == "error"
+    assert "bogus_check" not in r.severities              # only KiCad's three levels are kept
+    assert r.severity("missing_in_project", default="warning") == "warning"
+    assert type(r).from_dict(r.to_dict()).severities == r.severities

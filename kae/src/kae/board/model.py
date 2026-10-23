@@ -288,11 +288,17 @@ class Rules(_Dict):
     via_sizes: list = field(default_factory=list)      # user presets [(diameter, drill)]
     netclass_patterns: list = field(default_factory=list)  # [(pattern, netclass)]
     custom: list = field(default_factory=list)  # .kicad_dru rules: {'name', 'condition', 'layer', 'constraints'}
+    severities: dict = field(default_factory=dict)  # DRC check -> 'error' | 'warning' | 'ignore' (.kicad_pro)
     source: str = ""                 # where the numbers came from
 
     _to = {"netclasses": lambda v: {k: c.to_dict() for k, c in v.items()}}
     _from = {"netclasses": lambda v: {k: NetClass.from_dict(c) for k, c in v.items()},
              "via_sizes": lambda v: [tuple(x) for x in v], "netclass_patterns": lambda v: [tuple(x) for x in v]}
+
+    def severity(self, check, default="error"):
+        """The project's DRC severity for a check key (e.g. 'courtyards_overlap'); `default`
+        when the project does not set it."""
+        return self.severities.get(check, default)
 
 
 @dataclass
