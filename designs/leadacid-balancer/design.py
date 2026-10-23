@@ -47,13 +47,33 @@ V12 = 12.5                  # 12 V gate rails: 1.193 V x (1 + 909/100) = 12.04 V
 V5MAX = 5.05                # TPS70950 5.0 V +/-1 %
 R_SC_MIN, R_SC_NOM, R_SC_MAX = 0.476, 0.514, 0.567      # calc r_sc_* (Ohm)
 K_FLY, K_FET = 2.13, 1.51                               # rms flying / FET current per A of balancing current
-R_HI_WORST = (0.5 / 5.02) / (0.5 / 10.48) * 1.015 - 1  # upper trip, +1.5 % on V_pair/V_bot (REQ-11): 1.119
+R_HI_WORST = (0.925 / 4.925) / (0.79 / 8.79) * (1 + 0.015) - 1   # upper lockout trip, worst (REQ-11): 1.121
 I_EDGE = (R_HI_WORST - 1) * 17.55 / R_SC_MIN            # 4.38 A: window edge, worst tolerances, 17.55 V, -20 C
 I_FLY = K_FLY * I_EDGE                                  # 9.3 A rms in the flying path at that edge
 
 
 def _ratio(top, bot):
     return bot / (top + bot)
+
+
+# Supervisor divider strings (review M-1): 0.1 % TNPW1206 thin film throughout (<= 2 MOhm per segment), node
+# voltages raised to ~2.5 V so comparator offset + hysteresis are a small fraction. Each top is a series chain,
+# each bottom two equal resistors in parallel (one open or shorted part at most doubles the node voltage).
+#            name   from   top segments (Ohm)           bottom pair (each, Ohm)
+STRINGS = {"PON": ("TH", (2.00e6,) * 4, 1.67e6),       # wake: V_pair x 0.0945 against VREF 2.5 V
+           "PLO": ("TH", (2.00e6,) * 4, 1.58e6),       # ratio lockout, top battery high
+           "PHI": ("TH", (2.00e6,) * 4, 1.74e6),       # ratio lockout, top battery low
+           "PWH": ("TH", (2.00e6,) * 4, 1.62e6),       # imbalance warning, top high (review M-3)
+           "PWL": ("TH", (2.00e6,) * 4, 1.70e6),       # imbalance warning, top low
+           "N": ("TM", (2.00e6,) * 2, 1.85e6)}         # bottom battery, compared with the pair strings
+
+
+def k_of(name):
+    _, tops, bot = STRINGS[name]
+    return _ratio(sum(tops), bot / 2)
+
+
+WIN_TOL = 0.015     # on V_pair/V_bot: offset + V_HYS/2 (linear, 0.88 %) + 0.1 % resistors and TCR (RSS, 0.58 %)
 
 
 def intent(d):
@@ -68,20 +88,23 @@ def intent(d):
     R("REQ-4", "Maximum stack voltage", value="70.2 V (4 x 17.55 V)", source="derived", verify="analysis")
     R("REQ-5", "No dissipative balancing", value="no bleed resistor or linear shunt in the balancing path",
       source="brief", verify="inspection")
-    R("REQ-6", "Balancing current with the harness of REQ-22", value=">= 0.10 A at 0.1 V; >= 0.30 A at 0.3 V",
-      source="derived 7.2", verify="V-3; calcs i_bal_*")
+    R("REQ-6", "Balancing current with the harness of REQ-22, worst case incl. finite tap capacitance and the "
+      "1.5 s tap-check pauses", value=">= 0.09 A at 0.1 V; >= 0.26 A at 0.3 V",
+      source="derived 7.2 (relaxed from 0.10/0.30 A after the review's periodic-steady-state model; a 0.1 A float "
+             "mismatch still settles at <= 0.11 V per pair)", verify="V-3; calcs i_bal_*")
     R("REQ-7", "Charge-transfer efficiency", value=">= 97 % for dV <= 0.3 V", source="brief", verify="V-4")
-    R("REQ-8", "Active overhead per channel", value="<= 0.25 W, only while a charger is present", source="derived",
-      verify="V-4")
+    R("REQ-8", "Active overhead per channel", value="<= 0.30 W, only while a charger is present",
+      source="derived (0.25 W before the fail-safe alarm LED, review M-4)", verify="V-4")
     R("REQ-9", "Sleep current per battery / mismatch between batteries", value="<= 50 uA / <= 40 uA",
-      source="brief ('tiny and equal')", verify="V-5")
-    R("REQ-10", "Wake threshold on the pair voltage", value="rising 26.45 V +/- 0.65 % (+/- 0.17 V); falling >= 26.0 V worst case, "
-      "0.03-0.27 V below rising (comparator hysteresis)", source="derived 7.7 (Q-2)", verify="V-6")
-    R("REQ-11", "Ratio lockout: stop, red LED and alarm when V_top/V_bot leaves the window",
-      value="0.907-1.088 nominal; +/-1.5 % on V_pair/V_bot: upper trip 1.056-1.119, lower 0.878-0.936",
-      source="derived: a shorted cell gives r = 0.833 or 1.20", verify="V-7; calcs ratio_trip_*")
+      source="derived from the brief's 'as efficient as possible' (no stored-energy drain at rest)", verify="V-5")
+    R("REQ-10", "Wake threshold on the pair voltage", value="rising 26.25-26.8 V (13.23 V per battery nominal, "
+      "offset and centred hysteresis included); falling >= 26.0 V worst case", source="derived 7.7 (Q-2)",
+      verify="V-6")
+    R("REQ-11", "Ratio lockout (stop, red LED, alarm open) and imbalance warning (alarm open, keeps running)",
+      value="lockout 0.915 / 1.090 nominal; warning 0.956 / 1.043; +/-1.5 % on V_pair/V_bot",
+      source="derived: a shorted cell gives r = 0.833 or 1.20 (review M-1, M-3)", verify="V-7; calcs ratio_*, warn_*")
     R("REQ-12", "Window-edge dissipation per channel (failing battery, worst tolerances) / thermal cut-out",
-      value="<= 7.0 W at 50 C ambient, <= 9.2 W at -20 C (17.55 V) / cut-out 91-101 C",
+      value="<= 7.2 W at 50 C ambient, <= 9.5 W at -20 C (17.55 V) / cut-out 90-102 C",
       source="derived 7.6", verify="V-8")
     R("REQ-13", "Fault containment: no single fault causes a sustained short or connects >= 2 batteries through "
       "< 100 kOhm; every board fault current is interrupted by an on-board fuse", value="-",
@@ -92,17 +115,159 @@ def intent(d):
       "(creepage/clearance)", source="IPC-2221B B2; IEC 60664-1 F.4 [S]", verify="KiCad DRC (.kicad_dru), inspection")
     R("REQ-16", "Hot-plug: any mating order of the tap plug, any missing tap, any broken tap wire", value="no damage",
       source="derived", verify="V-12")
-    R("REQ-17", "Mis-wiring (swapped taps, reversed battery)", value="no fire; fuses clear; FETs may need replacement",
-      source="derived", verify="V-13")
+    R("REQ-17", "Mis-wiring (swapped taps, reversed battery)", value="no fire; fuses clear; FETs and the logic LDOs "
+      "of the affected channel may need replacement (review MINOR-8)", source="derived", verify="V-13")
     R("REQ-18", "Environment", value="-20..+50 C, indoor, pollution degree 2, <= 2000 m", source="Trojan [P]",
       verify="analysis")
     R("REQ-19", "Control", value="no MCU, no firmware", source="decision (DESIGN.md 5)", verify="inspection")
-    R("REQ-20", "Indication per channel", value="green ACTIVE, red FAULT", source="brief", verify="V-6, V-7")
-    R("REQ-21", "Telemetry: one isolated alarm contact, closed on any fault", value="<= 30 V, <= 1 mA",
-      source="derived", verify="V-14; calc opto_sink_min_mA")
+    R("REQ-20", "Indication per channel", value="green ACTIVE, red FAULT (lockout or over-temperature)",
+      source="brief", verify="V-6, V-7")
+    R("REQ-21", "Telemetry: one isolated fail-safe contact, closed only while every channel charges without fault "
+      "or imbalance warning; open at rest, on any fault, warning, open tap (within one pause) or lost supply",
+      value="<= 30 V, <= 1 mA; reverse-protected", source="derived; review M-4", verify="V-14; calcs opto_*")
     R("REQ-22", "Harness: N + 1 wires (system negative and every battery positive), ring terminals, fused at the "
-      "battery, pluggable at the board", value="14 AWG <= 3 m (16 AWG allowed <= 2 m)",
-      source="brief; REQ-6 (calc i_bal_*)", verify="inspection")
+      "battery, pluggable at the board", value="14 AWG <= 3 m (16 AWG allowed <= 1.5 m)",
+      source="brief; REQ-6 (calc i_bal_*): R_ext must stay small against R_SC, so the wires cannot be thinner",
+      verify="inspection")
+    R("REQ-23", "Service: the board unplugs in one action to replace a battery", value="-", source="derived",
+      verify="inspection")
+    R("REQ-24", "Component derating in normal operation: semis <= 80 % V, caps <= 80 % V (DC bias counted), "
+      "resistors <= 50 % P, fuses <= 75 % I. At the abnormal window edge (failing battery): <= 100 % of the "
+      "temperature-derated rating", value="-", source="task default", verify="kaesynth rating.* checks; calcs")
+    R("REQ-25", "Battery-count configuration: shunts on JP101..JP(N-1)01 (channel enable); for each unused "
+      "channel a shunt on JPk02 (bridges its alarm opto); every unused tap-plug position bridged to the highest used "
+      "position inside the plug", value=f"design default N = {N_BATT} (N_BATT)", source="REQ-1; H-12",
+      verify="V-1; label next to J1")# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""leadacid-balancer: MCU-free 2:1 switched-capacitor equalizer for 2-4 series 12 V lead-acid batteries.
+
+Encodes designs/leadacid-balancer/DESIGN.md (engineering rationale, evidence tags, sources) and
+CONNECTIONS.md (net naming, pin rationale). Build: `kaesynth build designs/leadacid-balancer/design.py -v`.
+
+Domain model (exact stack, no interval blow-up):
+  B1     root, ref TAP0 (system negative). Holds TAP0, TAP1 and every net referenced to TAP0.
+  Bk     (k = 2..4) floats on TAP(k-1): battery k's domain. Holds TAPk (v = one battery, 0-20 V) and
+         every net referenced to TAP(k-1). Bk is the "band" of DESIGN.md section 6 plus its top tap.
+  CHk_HSU floats on CHk_X (upper switch node): bootstrap BSTU, OUTA/GA of the upper driver, C_FLY +.
+  CHk_HSL floats on CHk_Y (lower switch node): BSTL, OUTA/GC of the lower driver, C_FLY -.
+  CHk_LS  floats on T_H: the base of level-shift PNP Q(k)07, within one V_BE of T_H.
+  CHk_QFB floats on CHk_V5: the base of fault-driver PNP Q(k)05, within one V_BE of V5.
+  CHk_SPAN floats on T_L: nets that swing across both batteries of the pair (PON_A, LSD, LSM), kept out
+         of the band domains so each band stays within 30 V inside.
+  ISO    root, ref ALM_E: the opto-isolated alarm contact.
+Channel k uses T_L = TAP(k-1), T_M = TAPk, T_H = TAP(k+1); its L side lives in Bk, its U side in B(k+1).
+"""
+import importlib.util
+import math
+from pathlib import Path
+
+from kaesynth import Design, Hole
+
+_spec = importlib.util.spec_from_file_location("leadacid_balancer_parts", Path(__file__).with_name("parts.py"))
+P = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(P)
+
+BRIEF = ("I want a battery balancer that can balance a string, series string of 12 volt lead acid batteries. "
+         "I want another one that can balance a series string of lithium ion batteries. This would be in the "
+         "10 kilowatt hour range, so home packs. It should make sure that there's no pathways for voltage to jump "
+         "from places. I don't know if you want to do a flying capacitor or inductor or some other elegant "
+         "approach, but it needs to keep the charge balanced without bleed resistors. Ideally, it would be as "
+         "efficient as possible, as robust as possible, and allow us to have little wires that go to the system "
+         "ground and then all of the individual positive terminals.")
+
+# -- configuration ----------------------------------------------------------------------------------
+N_BATT = 4                  # batteries in the string: 2, 3 or 4 (REQ-25, Q-1, Q-13)
+CHANNELS = (1, 2, 3)        # the board always carries three channels; channel k needs batteries k and k+1
+
+# -- voltage and current envelopes (DESIGN.md sections 2 and 7) ---------------------------------------
+VB = 20.0                   # survive maximum per battery incl. charger transients (REQ-3), V
+VB_OP = 17.6                # operating maximum: 16.20 V equalize + 30 mV/K x 45 K (REQ-3)
+V12 = 12.5                  # 12 V gate rails: 1.193 V x (1 + 909/100) = 12.04 V nominal, +4 % worst [I]
+V5MAX = 5.05                # TPS70950 5.0 V +/-1 %
+R_SC_MIN, R_SC_NOM, R_SC_MAX = 0.476, 0.514, 0.567      # calc r_sc_* (Ohm)
+K_FLY, K_FET = 2.13, 1.51                               # rms flying / FET current per A of balancing current
+R_HI_WORST = (0.925 / 4.925) / (0.79 / 8.79) * (1 + 0.015) - 1   # upper lockout trip, worst (REQ-11): 1.121
+I_EDGE = (R_HI_WORST - 1) * 17.55 / R_SC_MIN            # 4.38 A: window edge, worst tolerances, 17.55 V, -20 C
+I_FLY = K_FLY * I_EDGE                                  # 9.3 A rms in the flying path at that edge
+
+
+def _ratio(top, bot):
+    return bot / (top + bot)
+
+
+# Supervisor divider strings (review M-1): 0.1 % TNPW1206 thin film throughout (<= 2 MOhm per segment), node
+# voltages raised to ~2.5 V so comparator offset + hysteresis are a small fraction. Each top is a series chain,
+# each bottom two equal resistors in parallel (one open or shorted part at most doubles the node voltage).
+#            name   from   top segments (Ohm)           bottom pair (each, Ohm)
+STRINGS = {"PON": ("TH", (2.00e6,) * 4, 1.67e6),       # wake: V_pair x 0.0945 against VREF 2.5 V
+           "PLO": ("TH", (2.00e6,) * 4, 1.58e6),       # ratio lockout, top battery high
+           "PHI": ("TH", (2.00e6,) * 4, 1.74e6),       # ratio lockout, top battery low
+           "PWH": ("TH", (2.00e6,) * 4, 1.62e6),       # imbalance warning, top high (review M-3)
+           "PWL": ("TH", (2.00e6,) * 4, 1.70e6),       # imbalance warning, top low
+           "N": ("TM", (2.00e6,) * 2, 1.85e6)}         # bottom battery, compared with the pair strings
+
+
+def k_of(name):
+    _, tops, bot = STRINGS[name]
+    return _ratio(sum(tops), bot / 2)
+
+
+WIN_TOL = 0.015     # on V_pair/V_bot: offset + V_HYS/2 (linear, 0.88 %) + 0.1 % resistors and TCR (RSS, 0.58 %)
+
+
+def intent(d):
+    # -- requirements (DESIGN.md section 2) -----------------------------------------------------------
+    R = d.require
+    R("REQ-1", "Balance a series string of N 12 V lead-acid batteries", value="N = 2, 3 or 4 (24/36/48 V)",
+      source="brief + derived (ASM-1, Q-1)", verify="V-1")
+    R("REQ-2", "Battery types", value="flooded, AGM, gel; 100-400 Ah per 12 V battery", source="brief ('10 kWh')",
+      verify="analysis 7.1")
+    R("REQ-3", "Per-battery voltage: operate / survive", value="10.5-17.6 V / 0-20 V",
+      source="Trojan 16.20 V equalize + 30 mV/K at -20 C [P]", verify="analysis 7.1, V-2")
+    R("REQ-4", "Maximum stack voltage", value="70.2 V (4 x 17.55 V)", source="derived", verify="analysis")
+    R("REQ-5", "No dissipative balancing", value="no bleed resistor or linear shunt in the balancing path",
+      source="brief", verify="inspection")
+    R("REQ-6", "Balancing current with the harness of REQ-22, worst case incl. finite tap capacitance and the "
+      "1.5 s tap-check pauses", value=">= 0.09 A at 0.1 V; >= 0.26 A at 0.3 V",
+      source="derived 7.2 (relaxed from 0.10/0.30 A after the review's periodic-steady-state model; a 0.1 A float "
+             "mismatch still settles at <= 0.11 V per pair)", verify="V-3; calcs i_bal_*")
+    R("REQ-7", "Charge-transfer efficiency", value=">= 97 % for dV <= 0.3 V", source="brief", verify="V-4")
+    R("REQ-8", "Active overhead per channel", value="<= 0.30 W, only while a charger is present",
+      source="derived (0.25 W before the fail-safe alarm LED, review M-4)", verify="V-4")
+    R("REQ-9", "Sleep current per battery / mismatch between batteries", value="<= 50 uA / <= 40 uA",
+      source="derived from the brief's 'as efficient as possible' (no stored-energy drain at rest)", verify="V-5")
+    R("REQ-10", "Wake threshold on the pair voltage", value="rising 26.25-26.8 V (13.23 V per battery nominal, "
+      "offset and centred hysteresis included); falling >= 26.0 V worst case", source="derived 7.7 (Q-2)",
+      verify="V-6")
+    R("REQ-11", "Ratio lockout (stop, red LED, alarm open) and imbalance warning (alarm open, keeps running)",
+      value="lockout 0.915 / 1.090 nominal; warning 0.956 / 1.043; +/-1.5 % on V_pair/V_bot",
+      source="derived: a shorted cell gives r = 0.833 or 1.20 (review M-1, M-3)", verify="V-7; calcs ratio_*, warn_*")
+    R("REQ-12", "Window-edge dissipation per channel (failing battery, worst tolerances) / thermal cut-out",
+      value="<= 7.2 W at 50 C ambient, <= 9.5 W at -20 C (17.55 V) / cut-out 90-102 C",
+      source="derived 7.6", verify="V-8")
+    R("REQ-13", "Fault containment: no single fault causes a sustained short or connects >= 2 batteries through "
+      "< 100 kOhm; every board fault current is interrupted by an on-board fuse", value="-",
+      source="brief ('no pathways')", verify="FMEA (hazards), V-9..V-15")
+    R("REQ-14", "Tap fusing", value="battery end (<= 150 mm from post): >= 80 VDC, >= 10 kA DC; on board: >= 80 VDC, "
+      ">= 1 kA DC", source="brief + derived 7.10", verify="inspection, V-9")
+    R("REQ-15", "Spacing", value="adjacent battery domains 0.6/0.6 mm; non-adjacent 1.5/1.0 mm; ISO 4.0/4.0 mm "
+      "(creepage/clearance)", source="IPC-2221B B2; IEC 60664-1 F.4 [S]", verify="KiCad DRC (.kicad_dru), inspection")
+    R("REQ-16", "Hot-plug: any mating order of the tap plug, any missing tap, any broken tap wire", value="no damage",
+      source="derived", verify="V-12")
+    R("REQ-17", "Mis-wiring (swapped taps, reversed battery)", value="no fire; fuses clear; FETs and the logic LDOs "
+      "of the affected channel may need replacement (review MINOR-8)", source="derived", verify="V-13")
+    R("REQ-18", "Environment", value="-20..+50 C, indoor, pollution degree 2, <= 2000 m", source="Trojan [P]",
+      verify="analysis")
+    R("REQ-19", "Control", value="no MCU, no firmware", source="decision (DESIGN.md 5)", verify="inspection")
+    R("REQ-20", "Indication per channel", value="green ACTIVE, red FAULT (lockout or over-temperature)",
+      source="brief", verify="V-6, V-7")
+    R("REQ-21", "Telemetry: one isolated fail-safe contact, closed only while every channel charges without fault "
+      "or imbalance warning; open at rest, on any fault, warning, open tap (within one pause) or lost supply",
+      value="<= 30 V, <= 1 mA; reverse-protected", source="derived; review M-4", verify="V-14; calcs opto_*")
+    R("REQ-22", "Harness: N + 1 wires (system negative and every battery positive), ring terminals, fused at the "
+      "battery, pluggable at the board", value="14 AWG <= 3 m (16 AWG allowed <= 1.5 m)",
+      source="brief; REQ-6 (calc i_bal_*): R_ext must stay small against R_SC, so the wires cannot be thinner",
+      verify="inspection")
     R("REQ-23", "Service: the board unplugs in one action to replace a battery", value="-", source="derived",
       verify="inspection")
     R("REQ-24", "Component derating in normal operation: semis <= 80 % V, caps <= 80 % V (DC bias counted), "
@@ -136,14 +301,19 @@ def intent(d):
     Q("Q-4", "MLCCs and an electrolytic sit directly across each battery. If one shorts, the on-board fuse clears. "
       "Acceptable, or must they be series-redundant pairs (+16 caps per channel, +8 mm board)?", blocking=True,
       default="single parts, fused")
-    Q("Q-5", "Littelfuse 477 DC breaking (1.5 kA at 400 VDC) and cold resistance are [S]; verify or substitute a fuse "
-      "with a read DC rating >= 1 kA at >= 80 VDC.", blocking=True, default="0477004.MXP")
+    Q("Q-5", "Board fuse DC breaking capacity.", blocking=False,
+      answer="Closed by review B-1: 0477004 breaks only 500 A at 400 VDC; replaced by Littelfuse KLKD006.T "
+             "(600 VDC, 10 kA DC UL 248-19, read in the KLKD datasheet Rev 061217) in Keystone 3576 holders",
+      default="KLKD006.T")
     Q("Q-6", "Phoenix MSTB/MSTBA, Eaton HEB and Nichicon UCZ ratings are [S]; verify.",
       default="as listed in parts.py")
     Q("Q-7", "Is the isolated alarm wanted, and what does it drive (voltage, polarity)?",
-      default="<= 30 V, <= 1 mA, collector to the + side")
-    Q("Q-8", "Should balancing also run during discharge/rest ('always on', 0.66 W continuous)?",
-      default="no: runs only while a charger holds >= 13.23 V per battery")
+      default="fail-safe contact, <= 30 V, <= 1 mA, + to J2.1")
+    Q("Q-8", "Should balancing also run during discharge/rest ('always on', 0.66 W continuous)? A burst mode "
+      "(switch only while |dV| > ~30 mV) would cut float overhead (review MINOR-10).",
+      default="no: runs only while a charger holds >= 13.23 V per battery; no burst mode")
+    Q("Q-14", "Should the imbalance warning (+/-4 %) be delayed (e.g. sustained > 1 h) before it opens the alarm "
+      "contact? Today it opens at once, also after replacing a battery.", default="no delay")
     Q("Q-9", "Conformal coating (acrylic, IPC-CC-830) for battery-room humidity and acid mist?",
       default="not coated; spacing uses IPC-2221B B2 (uncoated)")
     Q("Q-10", "Re-evaluate the ADI LTC7820 integrated SC controller once its datasheet can be read.",
@@ -165,7 +335,8 @@ def hazards(d, ch, inp, har):
       parts=har["fuses"] + har["holders"], single_fault_safe=False,
       notes="the <= 150 mm pigtail before the fuse is unprotected: double-insulate and clamp it")
     H("H-2", "Fire on the board (shorted FET, flying cap or bulk cap; contamination)",
-      "on-board 4 A T 400 VDC fuse per tap (F1-F5); prospective current 130-684 A (calc board_fault_*)",
+      "on-board KLKD006.T 6 A 600 VDC fuse per tap, 10 kA DC (F1-F5); prospective current 128-670 A "
+      "(calc board_fault_*)",
       parts=inp["fuses"], single_fault_safe=True, notes="the harness fuse backs up the board fuse")
     H("H-3", "Two or more batteries bridged ('voltage jumping')",
       "potential-ordered layout (bands west to east); spacing rules (barriers); no part spans >= 2 batteries except "
@@ -174,22 +345,23 @@ def hazards(d, ch, inp, har):
       parts=every("R47") + every("R51") + every("R20") + every("R26") + every("R30") + every("U01") + every("U02")
       + every("U10"), single_fault_safe=True)
     H("H-4", "Balancer drains good batteries into a failed one (shorted cell)",
-      "ratio lockout +/-8.7 % (U108 B/C) stops the channel and raises the alarm", parts=flt, single_fault_safe=True,
+      "ratio lockout ~+/-9 % (U(k)08 B/C, 0.1 % strings) stops the channel and opens the alarm", parts=flt,
+      single_fault_safe=True,
       notes="lockout and thermal cut-out are independent comparators")
     H("H-5", "Mis-wiring: swapped taps or a reversed battery",
-      "keyed single plug, numbered/coloured wires, pre-plug voltage check (V-13); body diodes conduct and the 4 A T "
-      "fuse clears in ~10 ms", parts=inp["fuses"] + [inp["J1"]], single_fault_safe=False,
-      notes="no fire; a FET may fail short and the fuse still clears (Q-11)")
+      "keyed single plug, numbered/coloured wires, pre-plug voltage check (V-13); body diodes conduct and the 6 A "
+      "fast fuse clears in ms", parts=inp["fuses"] + [inp["J1"]], single_fault_safe=False,
+      notes="no fire; FETs and the logic LDOs of the affected channel may fail (review MINOR-8, Q-11)")
     H("H-6", "Hydrogen ignition (LEL 4 %)",
       "enclosure outside the battery box and not above vents; plug only at the board; harness fuses enclosed; "
       "no relays", parts=[], single_fault_safe=True, notes="installation rule (DESIGN.md 9)")
-    H("H-7", "Board overheating at the ratio-window edge (failing battery: up to 6.8 W per channel at 50 C) or "
-      "blocked vents", "thermal cut-out 91-101 C (NTC RTk01 + U(k)08 D); power bounded by the window (calc edge_*); "
+    H("H-7", "Board overheating at the ratio-window edge (failing battery: up to 7.2 W per channel at 50 C) or "
+      "blocked vents", "thermal cut-out 90-102 C (NTC RTk01 + U(k)08 D); power bounded by the window (calc edge_*); "
       "R_CF doubled so it stays within its rating at the cut-out temperature",
       parts=every("RT01") + every("U08"), single_fault_safe=True, notes="window and cut-out are independent")
     H("H-8", "Shock: stack up to 70.2 VDC (ES2 during cold equalize)",
-      "enclosure; insulated pluggable connector; alarm opto with reinforced package, 4 mm board spacing",
-      parts=every("U10") + [inp["J1"]], single_fault_safe=True)
+      "enclosure; insulated pluggable connector; alarm opto with reinforced package, 4 mm board spacing, reverse "
+      "diode D1 in the alarm loop", parts=every("U10") + [inp["J1"]], single_fault_safe=True)
     H("H-9", "Bank drained in storage (balancer awake at rest)",
       "wakes only at >= 13.2 V per battery; sleep <= 36 uA; a stuck-awake fault shows on the green LED",
       parts=every("R20") + every("R24") + every("U08") + every("D04"), single_fault_safe=False,
@@ -203,10 +375,22 @@ def hazards(d, ch, inp, har):
       "reverse-biasing that channel's upper LDO and bulk cap",
       "plug bridges for N < 4 (REQ-25); the ratio window lights FAULT on a broken wire",
       parts=har["bridges"] + every("U08"), single_fault_safe=False, notes="no fire; LDO stress at uA only")
+    H("H-13", "A failing battery (soft short, high self-discharge) absorbs amps from the balancer during charge: "
+      "internal heating, dry-out (review M-3)",
+      "imbalance warning at ~+/-4 % (U(k)11 B/C) opens the alarm contact while the channel keeps running; above "
+      "~9 % the lockout stops it; the current before the warning is <= 1.9 A (calc silent_current_max_A)",
+      parts=every("U11") + every("R60") + every("R66"), single_fault_safe=False,
+      notes="needs someone to act on the alarm; a time-delayed warning is Q-14")
+    H("H-14", "Broken tap wire goes unnoticed (T0 or a middle tap while charging: the SC cell holds the floating "
+      "node at a plausible voltage, review M-4)",
+      "U(k)11 D stops both drivers for 1.5 s every ~33 s; the LDO loads then slew a floating middle tap out of "
+      "the window, and a floating T0 collapses CH1's V5; the fail-safe series alarm contact opens in both cases",
+      parts=every("U11") + every("C51") + every("U10"), single_fault_safe=False,
+      notes="at rest the contact is open by design, so a tap that breaks at rest shows at the next charge; V-12")
 
 
 def numbers():
-    """Every calculated value, from DESIGN.md section 7, with its inputs in one place."""
+    """Every calculated value (DESIGN.md section 7), with its inputs in one place."""
     n = {}
     f, t_dt = 100e3, 0.2e-6
     t_p = 1 / (2 * f) - t_dt
@@ -221,79 +405,88 @@ def numbers():
     n["r_sc_nom"] = r_sc(40e-6, (r_lo + r_hi) / 2)
 
     def r_tap(length, ohm_per_m):
-        return 12.8e-3 + ohm_per_m * length + 3e-3 + 25e-3      # KLKD010 + wire + lugs/plug + 477 fuse
+        return 12.8e-3 + ohm_per_m * length + 3e-3 + 26.1e-3    # KLKD010 + wire + lugs/plug + KLKD006 [P]
     awg14, awg16 = 8.28e-3, 13.2e-3
     n["r_ext_3m_14awg"] = 6 * r_tap(3, awg14) + 2 * 4e-3
-    n["r_ext_2m_16awg"] = 6 * r_tap(2, awg16) + 2 * 4e-3
-    n["r_ext_3m_16awg"] = 6 * r_tap(3, awg16) + 2 * 4e-3
+    n["r_ext_1m5_16awg"] = 6 * r_tap(1.5, awg16) + 2 * 4e-3
     n["r_ext_0m3"] = 6 * r_tap(0.3, awg14) + 2 * 4e-3
-    rx = max(n["r_ext_3m_14awg"], n["r_ext_2m_16awg"])
-    n["i_bal_0v1"] = 0.1 / (n["r_sc_max"] + rx)
-    n["i_bal_0v3"] = 0.3 / (n["r_sc_max"] + rx)
-    n["i_bal_0v1_16awg_3m"] = 0.1 / (n["r_sc_max"] + n["r_ext_3m_16awg"])
-    n["r_sc_limit"] = 0.1 / 0.10 - rx
+    rx = max(n["r_ext_3m_14awg"], n["r_ext_1m5_16awg"])
+    # pause oscillator (U(k)11 D): thresholds 1/3 and 2/3 V5, pause = charge through R76 + R77 + D05
+    c_t, r_fast, r_slow = 4.7e-6, 100e3 + 249e3, 2 * 4.99e6
+    n["t_pause"] = r_fast * c_t * math.log((4.4 - 5 / 3) / (4.4 - 10 / 3))
+    n["t_run"] = r_slow * c_t * math.log(2)
+    n["duty"] = n["t_run"] / (n["t_run"] + n["t_pause"])
+    sim = 0.92          # review MINOR-1: periodic-steady-state model with the real C_TOP/C_BOT gave 0.095 vs 0.103 A
+    n["i_bal_0v1"] = 0.1 / (n["r_sc_max"] + rx) * sim * n["duty"]
+    n["i_bal_0v3"] = 0.3 / (n["r_sc_max"] + rx) * sim * n["duty"]
     n["eff_0v3"] = 1 - 0.3 / 13.2                   # lowest running voltage is the wake threshold
-    # overhead (7.5)
+    # overhead (7.5) + fail-safe alarm opto LED (<= 5.0 mA from V5, fed from the battery through the LDO)
     qg = 13e-9
     i_l = 2 * 1.4e-3 + 2 * 1.0e-3 + 2 * qg * f + 0.3e-3 + 1.0e-3
     i_u = 2 * 1.0e-3 + 2 * qg * f
-    n["i_12vl"], n["i_12vu"] = i_l, i_u
-    n["overhead_W"] = 13.5 * (i_l + i_u) + 4 * 0.5 * 15e-9 * 13.5 * f
+    n["overhead_W"] = 13.5 * (i_l + i_u + 4.5e-3) + 4 * 0.5 * 15e-9 * 13.5 * f
     n["ldo_l_W"] = (VB_OP - 12.04) * i_l
-    # sleep (7.9), uA, 12.8 V per battery
-    pair = 2 * 12.8
-    s_on = pair / (8.0e6 + 0.835e6) * 1e6
-    s_lo = pair / (9.98e6 + 0.5e6) * 1e6
-    s_hi = pair / (9.98e6 + 0.55e6) * 1e6
-    s_n = 12.8 / (4.52e6 + 0.5e6) * 1e6
+    # sleep (7.9), uA at 12.8 V per battery
+    pair, vb = 2 * 12.8, 12.8
+    s_pair = sum(pair / (sum(STRINGS[x][1]) + STRINGS[x][2] / 2) * 1e6 for x in ("PON", "PLO", "PHI", "PWH", "PWL"))
+    s_n = vb / (sum(STRINGS["N"][1]) + STRINGS["N"][2] / 2) * 1e6
     s_ntc = 5.0 / (24.9e3 + 470e3) * 1e6
-    n["sleep_bot_uA"] = 1.4 + 0.65 + 4 * 0.335 + 0.1 + s_ntc + s_n + 0.59 + s_on + s_lo + s_hi + 1.0
-    n["sleep_top_uA"] = s_on + s_lo + s_hi + 0.59 + 1.0
+    s_osc = 5.0 / (2 * 4.99e6) * 1e6
+    n["sleep_bot_uA"] = 1.4 + 0.65 + 2 * 4 * 0.335 + 0.1 + s_ntc + s_n + s_osc + 0.59 + s_pair + 1.0
+    n["sleep_top_uA"] = s_pair + 0.59 + 1.0
     n["sleep_batt_max_uA"] = n["sleep_bot_uA"] + n["sleep_top_uA"]      # a middle battery serves two channels
     n["sleep_mismatch_uA"] = n["sleep_batt_max_uA"] - n["sleep_top_uA"]
-    # wake (7.7)
-    k_on = _ratio(8.0e6, 1.67e6 / 2)
-    tol = 0.0005 + 0.0007 + 0.0032 + 2 * 0.001
+    # wake (7.7): offset 8 mV and half of the 3-25 mV hysteresis, centred (SLVSE13J 6.4.2), on 2.5 V
+    k_on = k_of("PON")
+    res, ref = 2 * 0.001, 0.0005 + 0.0007
     n["wake_rise"] = 2.5 / k_on
-    n["wake_rise_hi"], n["wake_rise_lo"] = n["wake_rise"] * (1 + tol), n["wake_rise"] * (1 - tol)
-    n["wake_fall_lo"] = (2.5 - 0.025) / k_on * (1 - tol)
-    n["wake_hyst_hi"] = 0.025 / k_on
-    # ratio window (7.7)
-    k_n, k_plo, k_phi = _ratio(4.52e6, 0.5e6), _ratio(9.98e6, 0.5e6), _ratio(9.98e6, 0.55e6)
-    n["r_hi"], n["r_lo"] = k_n / k_plo - 1, k_n / k_phi - 1
-    # tolerance +/-1.5 % applies to the measured ratio V_pair/V_bot = r + 1 (1 % strings, RSS, + offset)
-    n["r_hi_worst"], n["r_hi_min"] = k_n / k_plo * 1.015 - 1, k_n / k_plo * 0.985 - 1
-    n["r_lo_worst"], n["r_lo_max"] = k_n / k_phi * 0.985 - 1, k_n / k_phi * 1.015 - 1
-    # NTC trip (7.6): trip where V(TH) = VREF; corners over V5, R138, R25, B, offset
+    n["wake_rise_hi"] = (2.5 + 0.008 + 0.0125) / k_on * (1 + res + ref)
+    n["wake_rise_lo"] = (2.5 - 0.008 + 0.0015) / k_on * (1 - res - ref)
+    n["wake_fall_lo"] = (2.5 - 0.008 - 0.0125) / k_on * (1 - res - ref)
+    # ratio windows (7.7), tolerance on V_pair/V_bot = r + 1
+    k_n = k_of("N")
+    n_low = k_n * 26.0 / (1 + 1.088)                 # N node at the lowest running pair voltage
+    n["tol_offset"] = (0.008 + 0.0125) / n_low
+    n["tol_res"] = math.hypot(2 * 2 * 0.001, 2 * 25e-6 * 45)
+    n["tol"] = n["tol_offset"] + n["tol_res"]
+    for tag, sname in (("hi", "PLO"), ("lo", "PHI"), ("wh", "PWH"), ("wl", "PWL")):
+        q = k_n / k_of(sname)
+        n[f"r_{tag}"], n[f"r_{tag}_up"], n[f"r_{tag}_dn"] = q - 1, q * (1 + WIN_TOL) - 1, q * (1 - WIN_TOL) - 1
+    n["node_fault_max"] = max(35.2 * _ratio(sum(STRINGS[x][1]), STRINGS[x][2]) for x in ("PLO", "PHI", "PWH", "PWL"))
+    n["node_fault_max"] = max(n["node_fault_max"], 17.6 * _ratio(sum(STRINGS["N"][1]), STRINGS["N"][2]))
+    # NTC trip (7.6)
     trips = []
     for v5 in (4.95, 5.05):
         for r138 in (24.9e3 * 0.99, 24.9e3 * 1.01):
             for r25 in (470e3 * 0.97, 470e3 * 1.03):
                 for b in (4582 * 0.97, 4582 * 1.03):
-                    for vref in (2.5 - 0.008, 2.5 + 0.008):
+                    for vref in (2.5 - 0.0205, 2.5 + 0.0205):
                         r_t = r138 * vref / (v5 - vref)
                         trips.append(1 / (1 / 298.15 + math.log(r_t / r25) / b) - 273.15)
     n["ntc_trip_nom"] = 1 / (1 / 298.15 + math.log(24.9e3 / 470e3) / 4582) - 273.15
     n["ntc_trip_lo"], n["ntc_trip_hi"] = min(trips), max(trips)
-    # window edge (7.6), worst: window +1.5 %. Hot: board at the cut-out, so Ron is hot (typ x 1.45) and the
-    # battery is at most 45 C (equalize 16.2 V - 30 mV/K x 20 K = 15.6 V). Cold: -20 C, 17.55 V, Ron typ cold.
+    # window edge (7.6): lockout upper trip at its worst, hot (board at cut-out, equalize at 45 C) and cold
     n["r_sc_hot"] = r_sc(50e-6, 2 * 8.1e-3 * 1.45 + 2 * r_cf + 5e-3)
     for tag, vbot, rsc in (("hot", 15.6, n["r_sc_hot"]), ("cold", 17.55, n["r_sc_min"])):
-        dv = (n["r_hi_worst"] - 1) * vbot
+        dv = n["r_hi_up"] * vbot
         i = dv / rsc
         n[f"edge_dv_{tag}"], n[f"edge_I_{tag}"], n[f"edge_P_{tag}"] = dv, i, dv * i
-        n[f"edge_rcf_each_{tag}"] = (K_FLY * i) ** 2 * r_cf / 2           # two resistors per position
+        n[f"edge_rcf_each_{tag}"] = (K_FLY * i) ** 2 * r_cf / 2
         n[f"edge_fet_{tag}"] = (K_FET * i) ** 2 * 13.9e-3
-    n["rcf_rating_99C"] = 2.0 * (170 - 99) / (170 - 70)                    # WSL linear derating to 170 C
-    n["fet_tj_edge"] = 99 + n["edge_fet_hot"] * (1.9 + 10)                 # board at cut-out + RthJC + pad [I]
+    n["rcf_rating_99C"] = 2.0 * (170 - 99) / (170 - 70)
+    n["fet_tj_edge"] = 99 + n["edge_fet_hot"] * (1.9 + 10)
+    # current a failing battery can absorb without a lockout, and the warning bound (review M-3)
+    n["silent_I"] = n["r_wh_up"] * 15.6 / n["r_sc_min"]
     # fuses and faults (7.10)
     n["board_fault_max_A"] = 70.2 / (2 * r_tap(0.3, awg14) + 4 * 4e-3)
     n["board_fault_min_A"] = 17.6 / (2 * r_tap(3, awg14) + 4e-3)
-    # opto sink (alarm): fault LED string current, worst low
-    i_f_min = (4.95 - 0.1 - 2.4 - 1.4) / (249 * 1.01)
+    # alarm opto: RUN (VOH >= V5 min - 0.3 V at 5 mA) through R72 825 Ohm
+    i_f_min = (4.95 - 0.3 - 1.4) / (825 * 1.01)
     n["opto_if_min_mA"] = i_f_min * 1e3
-    n["opto_sink_min_mA"] = i_f_min * 0.34 * 0.8 * 1e3                    # CTR >= 34 % at 1 mA, x0.8 ageing [I]
-    n["opto_if_max_mA"] = (V5MAX - 1.8 - 1.0) / (249 * 0.99) * 1e3
+    n["opto_sink_min_mA"] = i_f_min * 0.34 * 0.8 * 1e3
+    n["opto_if_max_mA"] = (V5MAX - 1.0) / (825 * 0.99) * 1e3
+    # open-tap detection in a pause (review M-4): net LDO current into the floating tap node
+    n["open_tap_slew"] = 4.1e-3 / 240e-6                  # V/s: |I_12VL - I_12VU| into C_TOP + C_BOT [I]
     return n
 
 
@@ -301,87 +494,89 @@ def calcs(d):
     n = numbers()
     c = d.calc
     c("r_sc_min_ohm", round(n["r_sc_min"], 3), "Ohm", expr="1/(C f tanh(t_p/2RC)), C 30-50 uF, R_loop 107-119 mOhm")
-    c("r_sc_max_ohm", round(n["r_sc_max"], 3), "Ohm", expr="same corners", limit=round(n["r_sc_limit"], 3),
-      note="REQ-6: 0.1 V / 0.10 A - R_ext(3 m 14 AWG or 2 m 16 AWG)")
+    c("r_sc_max_ohm", round(n["r_sc_max"], 3), "Ohm", expr="same corners")
     c("r_ext_3m_14awg_ohm", round(n["r_ext_3m_14awg"], 3), "Ohm",
-      expr="6 x (KLKD 12.8 + 8.28/m x 3 m + 3 + 477 fuse 25 mOhm) + 2 x 4 mOhm")
-    c("i_bal_0v1_worst_A", round(n["i_bal_0v1"], 4), "A", expr="0.1 V / (R_SC max + R_ext max)", limit=0.10, op=">=",
+      expr="6 x (KLKD010 12.8 + 8.28/m x 3 m + 3 + KLKD006 26.1 mOhm) + 2 x 4 mOhm")
+    c("pause_s", round(n["t_pause"], 2), "s", expr="(R76 + R77) C51 ln(2.73/1.07)", limit=1.2, op=">=",
+      note="> 3 x the 0.35 s divider filters, so the ratio is read at rest")
+    c("pause_period_run_s", round(n["t_run"], 1), "s", expr="(R78 + R79) C51 ln 2", limit=60,
+      note="an open tap is found within one period")
+    c("i_bal_0v1_worst_A", round(n["i_bal_0v1"], 4), "A",
+      expr="0.1 V / (R_SC max + R_ext max) x 0.92 (finite C_TOP/C_BOT, review sim) x run duty", limit=0.09, op=">=",
       note="REQ-6")
-    c("i_bal_0v3_worst_A", round(n["i_bal_0v3"], 4), "A", expr="0.3 V / (R_SC max + R_ext max)", limit=0.30, op=">=",
-      note="REQ-6")
-    c("i_bal_0v1_16awg_3m_A", round(n["i_bal_0v1_16awg_3m"], 4), "A", expr="0.1 V / (0.567 + 0.490)",
-      note="why REQ-22 moved to 14 AWG: 16 AWG at 3 m misses REQ-6")
-    c("transfer_eff_0v3", round(n["eff_0v3"], 4), "", expr="1 - 0.3 V / 13.2 V (lowest running voltage)", limit=0.97,
-      op=">=", note="REQ-7")
+    c("i_bal_0v3_worst_A", round(n["i_bal_0v3"], 4), "A", expr="same at 0.3 V", limit=0.26, op=">=", note="REQ-6")
+    c("transfer_eff_0v3", round(n["eff_0v3"], 4), "", expr="1 - 0.3 V / 13.2 V", limit=0.97, op=">=", note="REQ-7")
     c("overhead_per_channel_W", round(n["overhead_W"], 3), "W",
-      expr="13.5 V x (12V_L 8.7 mA + 12V_U 4.6 mA) + Coss 4 x 0.5 x 15 nC x 13.5 V x 100 kHz", limit=0.25,
-      note="REQ-8")
-    c("ldo_12vl_W", round(n["ldo_l_W"], 3), "W", expr="(17.6 - 12.04) V x 8.7 mA", limit=0.2,
-      note="HVSSOP-8 PowerPAD, Tj rise < 10 K")
-    c("sleep_batt_max_uA", round(n["sleep_batt_max_uA"], 1), "uA", expr="middle battery: B_bot + B_top of two channels",
+      expr="13.5 V x (12V_L 8.7 + 12V_U 4.6 + alarm opto 4.5 mA) + Coss 41 mW", limit=0.30, note="REQ-8")
+    c("ldo_12vl_W", round(n["ldo_l_W"], 3), "W", expr="(17.6 - 12.04) V x 8.7 mA", limit=0.2)
+    c("sleep_batt_max_uA", round(n["sleep_batt_max_uA"], 1), "uA", expr="middle battery: B_bot + B_top",
       limit=50, note="REQ-9")
     c("sleep_mismatch_uA", round(n["sleep_mismatch_uA"], 1), "uA", expr="max - min per battery (N = 4)", limit=40,
-      note="REQ-9; 0.11 Ah in 6 months")
-    c("wake_rise_V", round(n["wake_rise"], 3), "V", expr="2.5 V x 8.835/0.835")
-    c("wake_rise_max_V", round(n["wake_rise_hi"], 3), "V", expr="x (1 + 0.64 %)", limit=round(26.45 * 1.0065, 3),
-      note="REQ-10: 26.45 V + 0.65 %")
-    c("wake_rise_min_V", round(n["wake_rise_lo"], 3), "V", expr="x (1 - 0.64 %)", limit=round(26.45 * 0.9935, 3),
-      op=">=", note="REQ-10: 26.45 V - 0.65 %")
-    c("wake_fall_min_V", round(n["wake_fall_lo"], 3), "V", expr="(2.5 - 0.025) x 8.835/0.835 x (1 - 0.64 %)",
+      note="REQ-9")
+    c("wake_rise_V", round(n["wake_rise"], 3), "V", expr="2.5 V / 0.09451")
+    c("wake_rise_max_V", round(n["wake_rise_hi"], 3), "V", expr="(2.5 + 8 mV + 25 mV/2) / k x (1 + 0.32 %)",
+      limit=26.8, note="REQ-10 (review MINOR-2)")
+    c("wake_rise_min_V", round(n["wake_rise_lo"], 3), "V", expr="(2.5 - 8 mV + 3 mV/2) / k x (1 - 0.32 %)",
+      limit=26.25, op=">=", note="REQ-10")
+    c("wake_fall_min_V", round(n["wake_fall_lo"], 3), "V", expr="(2.5 - 8 mV - 25 mV/2) / k x (1 - 0.32 %)",
       limit=26.0, op=">=", note="REQ-10: resting AGM 12.8-12.95 V per battery is below it")
-    c("wake_hysteresis_max_V", round(n["wake_hyst_hi"], 3), "V", expr="25 mV x 8.835/0.835", limit=0.27)
-    c("ratio_trip_high", round(n["r_hi"], 4), "", expr="N/P_LO - 1 = 0.09960/0.04771 - 1")
-    c("ratio_trip_low", round(n["r_lo"], 4), "", expr="N/P_HI - 1 = 0.09960/0.05223 - 1")
-    c("ratio_trip_high_worst", round(n["r_hi_worst"], 4), "", expr="2.0876 x 1.015 - 1", limit=1.20,
-      note="must trip on a shorted cell in the bottom battery (r = 1.20)")
-    c("ratio_trip_low_worst", round(n["r_lo_worst"], 4), "", expr="1.9069 x 0.985 - 1", limit=0.833, op=">=",
-      note="must trip on a shorted cell in the top battery (r = 0.833)")
-    c("ratio_trip_high_min", round(n["r_hi_min"], 4), "", expr="2.0876 x 0.985 - 1", limit=1.04, op=">=",
+    c("window_tol", round(n["tol"], 4), "", expr="(8 mV + 12.5 mV)/N(26 V pair) + RSS(0.4 % ratio, 0.45 % TCR)",
+      limit=WIN_TOL, note="REQ-11 (review M-1)")
+    for tag, what in (("hi", "lockout, top high"), ("lo", "lockout, top low"), ("wh", "warning, top high"),
+                      ("wl", "warning, top low")):
+        c(f"ratio_{tag}_nom", round(n[f"r_{tag}"], 4), "", expr=f"k_N / k - 1 ({what})")
+    c("ratio_hi_worst", round(n["r_hi_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=1.20,
+      note="trips on a shorted cell in the bottom battery (r = 1.20)")
+    c("ratio_lo_worst", round(n["r_lo_dn"], 4), "", expr="(r + 1) x 0.985 - 1", limit=0.833, op=">=",
+      note="trips on a shorted cell in the top battery (r = 0.833)")
+    c("ratio_hi_min", round(n["r_hi_dn"], 4), "", expr="(r + 1) x 0.985 - 1", limit=1.037, op=">=",
       note="no lockout at 0.5 V imbalance at 13.5 V")
-    c("ratio_trip_low_max", round(n["r_lo_max"], 4), "", expr="1.9069 x 1.015 - 1", limit=0.963,
+    c("ratio_lo_max", round(n["r_lo_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=0.964,
       note="no lockout at 0.5 V imbalance at 13.5 V")
+    c("warn_hi_worst", round(n["r_wh_up"], 4), "", expr="(r + 1) x 1.015 - 1", limit=round(n["r_hi_dn"], 4),
+      note="the warning always opens before (or with) the lockout")
+    c("warn_lo_worst", round(n["r_wl_dn"], 4), "", expr="(r + 1) x 0.985 - 1", limit=round(n["r_lo_up"], 4),
+      op=">=", note="same, low side")
+    c("comparator_input_fault_V", round(n["node_fault_max"], 2), "V",
+      expr="one bottom resistor open at 17.6 V per battery", limit=7.0, note="TLV7044 input abs max")
+    c("silent_current_max_A", round(n["silent_I"], 2), "A",
+      expr="warning upper trip at its worst x 15.6 V / R_SC min",
+      note="largest current into a failing battery before the alarm opens (review M-3; was 4.4 A)")
     c("ntc_trip_nom_C", round(n["ntc_trip_nom"], 1), "C", expr="R_NTC = R138 x VREF/(V5 - VREF); B 4582 K")
-    c("ntc_trip_max_C", round(n["ntc_trip_hi"], 1), "C", expr="corners: V5 +/-1 %, R138 1 %, R25 3 %, B 3 %, 8 mV",
-      limit=110, note="REQ-12; >= 15 K below the 125 C rating of the hot-zone parts (UCZ, GCJ X7S, NTC), which the "
-           "NTC lags by a few K")
-    c("ntc_trip_min_C", round(n["ntc_trip_lo"], 1), "C", expr="same corners", limit=85, op=">=",
-      note="above the 50 C ambient + normal 0.3 W rise")
-    c("edge_current_hot_A", round(n["edge_I_hot"], 2), "A",
-      expr="dV = 0.119 x 15.6 V (r + 1 at +1.5 %, equalize at 45 C), I = dV / R_SC hot (0.505 Ohm)")
-    c("edge_power_hot_W", round(n["edge_P_hot"], 2), "W", expr="dV x I", limit=7.0, note="REQ-12, 50 C ambient")
-    c("edge_power_cold_W", round(n["edge_P_cold"], 2), "W", expr="dV = 0.119 x 17.55 V, R_SC min 0.476 Ohm",
-      limit=9.2, note="REQ-12, -20 C ambient")
-    c("edge_rcf_each_hot_W", round(n["edge_rcf_each_hot"], 2), "W",
-      expr="(2.13 I)^2 x 0.043 Ohm / 2 parallel resistors", limit=round(n["rcf_rating_99C"], 2),
-      note="<= WSL2816 rating at the 99 C cut-out (2 W x 71/100); REQ-24 abnormal")
-    c("edge_rcf_each_cold_W", round(n["edge_rcf_each_cold"], 2), "W", expr="same at 17.55 V, -20 C", limit=2.0,
-      note="WSL2816 2 W up to 70 C board")
+    c("ntc_trip_max_C", round(n["ntc_trip_hi"], 1), "C", expr="corners incl. offset + hysteresis/2", limit=110,
+      note="REQ-12")
+    c("ntc_trip_min_C", round(n["ntc_trip_lo"], 1), "C", expr="same corners", limit=85, op=">=")
+    c("edge_power_hot_W", round(n["edge_P_hot"], 2), "W", expr="dV = 0.121 x 15.6 V, I = dV / 0.505 Ohm",
+      limit=7.2, note="REQ-12, 50 C ambient")
+    c("edge_power_cold_W", round(n["edge_P_cold"], 2), "W", expr="dV = 0.121 x 17.55 V, R_SC 0.476 Ohm", limit=9.5,
+      note="REQ-12, -20 C")
+    c("edge_rcf_each_hot_W", round(n["edge_rcf_each_hot"], 2), "W", expr="(2.13 I)^2 x 0.043 / 2",
+      limit=round(n["rcf_rating_99C"], 2), note="WSL2816 rating at the 99 C cut-out; REQ-24 abnormal")
+    c("edge_rcf_each_cold_W", round(n["edge_rcf_each_cold"], 2), "W", expr="same at 17.55 V", limit=2.0)
     c("edge_middle_tap_A", round(2 * n["edge_I_cold"], 1), "A", expr="2 x I_edge (cold)",
-      note="4 A T board fuse opens within minutes: safe end of a failing-battery condition")
-    c("edge_fet_tj_C", round(n["fet_tj_edge"], 1), "C", expr="99 C + (1.51 I)^2 x 13.9 mOhm x (1.9 + 10) K/W",
-      limit=125)
+      note="KLKD006 opens: safe end state of a failing-battery condition")
+    c("edge_fet_tj_C", round(n["fet_tj_edge"], 1), "C", expr="99 C + (1.51 I)^2 x 13.9 mOhm x 11.9 K/W", limit=125)
     c("gate_vgs_ratio", round(V12 / 20, 3), "", expr="12.5 V / 20 V", limit=0.8)
-    c("bootstrap_ratio", round(1e-6 / (13e-9 / 12), 0), "x", expr="C_boot 1 uF / (Qg 13 nC / 12 V)", limit=10,
-      op=">=", note="~370x after DC bias; droop 13 mV per cycle")
-    c("deadtime_margin_ns", 160 - (19 + 20), "ns", expr="DT min 160 ns - (driver skew 19 + gate fall 20)", limit=0,
-      op=">", note="break-before-make across both half-bridges")
-    c("comparator_input_fault_V", 6.1, "V", expr="one divider resistor open or shorted: node at most doubles",
-      limit=7.0, note="TLV7044 input abs max")
+    c("bootstrap_ratio", round(1e-6 / (13e-9 / 12), 0), "x", expr="1 uF / (13 nC / 12 V)", limit=10, op=">=")
+    c("bootstrap_inrush_A", round(12.5 / (4.7 + 0.3), 2), "A", expr="12.5 V / (R_BOOT 4.7 + ESR ~0.3 Ohm)",
+      limit=3.0, note="BAS16W I_FSM 2 A at 1 us, decays with tau = 5 us (review MINOR-4)")
+    c("deadtime_margin_ns", 160 - (19 + 20), "ns", expr="DT min 160 ns - (skew 19 + fall 20)", limit=0, op=">")
     c("board_fault_max_A", round(n["board_fault_max_A"]), "A", expr="70.2 V / (2 R_tap(0.3 m) + 4 R_int)",
-      limit=1500, note="477 DC breaking 1.5 kA [S] (Q-5)")
-    c("board_fault_min_A", round(n["board_fault_min_A"]), "A", expr="17.6 V / (2 R_tap(3 m) + R_int)",
-      limit=40, op=">=", note="10 x In: the 4 A T fuse clears in < 0.1 s")
+      limit=10000, note="KLKD006 DC 10 kA (UL 248-19) [P] (review B-1)")
+    c("board_fault_min_A", round(n["board_fault_min_A"]), "A", expr="17.6 V / (2 R_tap(3 m) + R_int)", limit=60,
+      op=">=", note=">= 10 x In: the 6 A fast fuse clears in milliseconds")
     c("harness_fault_max_A", 3300, "A", expr="AGM 200 Ah I_sc [P]", limit=10000, note="KLKD010 DC 10 kA [P]")
-    c("fuse_selectivity_ratio", round(120 / 278, 2), "",
-      expr="477 4 A T clearing I2t <= 120 A2s [I] / KLKD010 melting I2t 278 A2s [P]", limit=1.0,
+    c("fuse_selectivity_ratio", round(96.8 / 278, 2), "",
+      expr="KLKD006 clearing I2t 96.8 A2s / KLKD010 melting I2t 278 A2s (both at 20 kA) [P]", limit=1.0,
       note="board faults clear on the board fuse")
-    c("hotplug_i2t_A2s", 0.3, "A2s", expr="140 uF per leg, 200 A peak, tau 14 us", limit=3.0,
-      note="<= 1/10 of the 477 4 A T melting I2t (~30 A2s [I])")
+    c("hotplug_i2t_A2s", 0.3, "A2s", expr="140 uF per leg, 200 A peak, tau 14 us", limit=6.3,
+      note="<= 1/10 of the KLKD006 melting I2t 63 A2s [P]")
     c("opto_sink_min_mA", round(n["opto_sink_min_mA"], 2), "mA",
-      expr="I_F min (4.85 - 2.4 - 1.4 V)/251 Ohm x CTR 34 % x 0.8 ageing", limit=1.0, op=">=",
-      note="REQ-21: guaranteed closed contact at 1 mA")
-    c("opto_if_max_mA", round(n["opto_if_max_mA"], 1), "mA", expr="(5.05 - 1.8 - 1.0 V)/246.5 Ohm", limit=0.8 * 20,
-      note="red LED 20 mA, opto 60 mA")
+      expr="I_F min (4.65 - 1.4 V)/833 Ohm x CTR 34 % x 0.8 ageing", limit=1.0, op=">=", note="REQ-21")
+    c("opto_if_max_mA", round(n["opto_if_max_mA"], 1), "mA", expr="(5.05 - 1.0 V)/817 Ohm", limit=16)
+    c("open_tap_detect_s", round(1.5 / n["open_tap_slew"] + 3 * 0.35, 2), "s",
+      expr="1.5 V of window / (4.1 mA / 240 uF) + 3 filter tau", limit=round(n["t_pause"], 2),
+      note="an open middle tap leaves the window within one pause (review M-4) [I], verify V-12")
     c("wire_drop_3m_V", round(4 * 8.28e-3 * 3, 3), "V", expr="4 A x 8.28 mOhm/m x 3 m")
 
 
@@ -445,22 +640,34 @@ def channel(d, k):
                notes="TPS709 EN left floating (allowed, SBVS186H Table 5-1): internal 300 nA pull-up, stays < 6.5 V")
     vref = net("VREF", v=(0, 2.5), kind="analog")
     vpair = 2 * VB
-    pon_a = net("PON_A", domain=span, v=(0, round(vpair * 6.835 / 8.835, 1)), kind="sense")
-    pon_b = net("PON_B", v=(0, round(vpair * 4.835 / 8.835, 1)), kind="sense")
-    pon_c = net("PON_C", v=(0, round(vpair * 2.835 / 8.835, 1)), kind="sense")
-    pon = net("PON", v=(0, round(vpair * _ratio(8.0e6, 0.835e6), 2)), kind="sense",
-              notes="wake divider, 0.0945 x V_pair; <= 6.1 V single fault")
-    plo_m = net("PLO_M", v=(0, round(vpair * 5.49 / 10.48, 1)), kind="sense")
-    plo = net("PLO", v=(0, round(vpair * _ratio(9.98e6, 0.5e6), 2)), kind="sense")
-    phi_m = net("PHI_M", v=(0, round(vpair * 5.54 / 10.53, 1)), kind="sense")
-    phi = net("PHI", v=(0, round(vpair * _ratio(9.98e6, 0.55e6), 2)), kind="sense")
-    n_m = net("N_M", v=(0, round(VB * 2.76 / 5.02, 1)), kind="sense")
-    n_ = net("N", v=(0, round(VB * _ratio(4.52e6, 0.5e6), 2)), kind="sense")
+    snet = {}           # divider nets by string: [mid nodes from the top ..., output node]
+    for sname, (src, tops, bot) in STRINGS.items():
+        span_v = vpair if src == "TH" else VB
+        total = sum(tops) + bot / 2
+        nodes = []
+        for i in range(1, len(tops)):
+            vmax = round(span_v * (total - sum(tops[:i])) / total, 1)
+            nodes.append(net(f"{sname}_M{i}", domain=span if vmax > 30 else bL, v=(0, vmax), kind="sense"))
+        nodes.append(net(sname, v=(0, round(span_v * k_of(sname), 2)), kind="sense",
+                         notes=f"divider output, {k_of(sname):.5f} x {'V_pair' if src == 'TH' else 'V_bot'}"))
+        snet[sname] = nodes
+    pon, plo, phi, pwh, pwl, n_ = (snet[x][-1] for x in ("PON", "PLO", "PHI", "PWH", "PWL", "N"))
     th = net("TH", v=(0, V5MAX), kind="sense", notes="NTC node: 4.75 V at 25 C, 2.5 V at 95 C")
     nchg = net("NCHG", v=(0, V5MAX), kind="signal", notes="high = not charging")
     flt_n = net("FLT_N", v=(0, V5MAX), kind="signal", notes="wired-AND open drain, low = fault")
     qfb = net("QFB", domain=qfb_dom, v=(-0.8, 0), kind="signal")
-    flt = net("FLT", v=(0, V5MAX), kind="signal", i_max=0.0095)
+    flt = net("FLT", v=(0, V5MAX), kind="signal", notes="NOT FLT_N, push-pull from U(k)09 gate 1")
+    ledq = net("LEDQ", v=(0, V5MAX), kind="signal", i_max=0.0045, notes="Q(k)05 collector: red FAULT LED drive")
+    oka = net("OKA", v=(0, 1.65), kind="signal", i_max=0.0047,
+              notes="alarm-opto LED anode: RUN through R(k)72; pulled low by the warning comparators")
+    pause = net("PAUSE", v=(0, V5MAX), kind="signal",
+                notes="U(k)11 D relaxation oscillator: high 1.5 s every ~33 s disables both drivers (tap check)")
+    tpn = net("TPN", v=(0, V5MAX), kind="analog", notes="oscillator threshold, 1/3 or 2/3 of V5")
+    tct = net("TCT", v=(0, V5MAX), kind="analog", notes="oscillator timing capacitor")
+    tsm = net("TSM", v=(0, V5MAX), kind="analog")
+    pda = net("PDA", v=(0, V5MAX), kind="analog")
+    bsu_a = net("BSU_A", domain=bU, v=(0, V12), kind="power", i_max=0.0013, i_peak=1.0)
+    bsl_a = net("BSL_A", v=(0, V12), kind="power", i_max=0.0013, i_peak=1.0)
     run = net("RUN", v=(0, V5MAX), kind="signal", notes="high = run")
     lsd = net("LSD", domain=span, v=(0, vpair), kind="signal", i_max=0.0004,
               notes="level shift: 0 V (on) .. V_pair - 0.6 V (off)")
@@ -476,10 +683,10 @@ def channel(d, k):
     oscc = net("OSCC", v=(-0.5, V12 + 0.5), kind="analog")
     oscr = net("OSCR", v=(-0.5, V12 + 0.5), kind="analog")
     oscrc = net("OSCRC", v=(-0.5, V12 + 0.5), kind="analog")
-    ledr = net("LEDR_A", v=(0, 4.3), kind="signal", i_max=0.0095)
-    opto_a = net("OPTO_A", v=(0, 1.65), kind="signal", i_max=0.0095, notes="clamped by the opto LED V_F")
+    ledr = net("LEDR_A", v=(0, 2.6), kind="signal", i_max=0.0045, notes="clamped by the red LED V_F")
     ledg = net("LEDG_A", v=(0, 2.6), kind="signal", i_max=0.0011)
-    alm_c, alm_e = d.nets["ALM_C"], d.nets["ALM_E"]
+    alm_in = d.nets[f"ALM_S{k}"]                          # series alarm chain (review M-4: closed = healthy)
+    alm_out = d.nets["ALM_E"] if k == 3 else d.nets[f"ALM_S{k + 1}"]
 
     # -- 3.1 PWR: switched-capacitor cell --------------------------------------------------------------
     edge = numbers()
@@ -543,7 +750,8 @@ def channel(d, k):
         ph1.connect(u["INA"])
         ph2.connect(u["INB"])
         v12l.connect(u["VCCI"])
-        TL.connect(u["GND"], u["DIS"])
+        TL.connect(u["GND"])
+        pause.connect(u["DIS"])            # periodic 1.5 s stop: an open tap then slews out of the window
         dt.connect(u["DT"])
         vssb.connect(u["VSSB"])
         outb.connect(u["OUTB"])
@@ -573,12 +781,15 @@ def channel(d, k):
         cc = add(defn, key)
         rail.connect(cc[1])
         gnd.connect(cc[2])
-    d01 = add(P.DIODE_BOOT, "D01")
-    v12u.connect(d01["A"])
-    bstu.connect(d01["K"])
-    d02 = add(P.DIODE_BOOT, "D02")
-    v12l.connect(d02["A"])
-    bstl.connect(d02["K"])
+    # R_BOOT 4.7 Ohm in series with each bootstrap diode (review MINOR-4, SLUSCJ9F 9.2.2.2): limits the first
+    # charge of C_boot at every wake to < 2.7 A (BAS16W I_FSM 2 A at 1 us is reached only for < 1 us)
+    for rk, dk, rail, mid, bst in (("R58", "D01", v12u, bsu_a, bstu), ("R59", "D02", v12l, bsl_a, bstl)):
+        r = add(P.R_4R7, rk, p_diss=0.001)
+        rail.connect(r[1])
+        mid.connect(r[2])
+        dd = add(P.DIODE_BOOT, dk)
+        mid.connect(dd["A"])
+        bst.connect(dd["K"])
 
     # -- 3.3 OSC: 100 kHz complementary clock -----------------------------------------------------------
     u03 = add(P.OSC, "U03")
@@ -629,7 +840,7 @@ def channel(d, k):
     v5en.connect(u06["EN"])
     v5.connect(u06["OUT"])
     u06.nc_pins("NC", reason="NC (SBVS186H Table 5-1)")
-    for key, defn, a, b in (("C37", P.C_1U50, v5in, TL), ("C38", P.C_2U2, v5, TL), ("C39", P.C_10N, v5en, TL)):
+    for key, defn, a, b in (("C37", P.C_1U50, v5in, TL), ("C38", P.C_4U7, v5, TL), ("C39", P.C_10N, v5en, TL)):
         x = add(defn, key)
         a.connect(x[1])
         b.connect(x[2])
@@ -676,56 +887,100 @@ def channel(d, k):
     phi.connect(u08["INC+"])
     TL.connect(u08["VEE"])
     th.connect(u08["IND+"])
+    # divider strings: tops in series from T_H (T_M for N), bottoms as a parallel pair, filter cap to T_L
+    rnum = iter([20, 21, 22, 23, 24, 25, 26, 27, 54, 55, 28, 29, 30, 31, 56, 57, 32, 33, 60, 61, 62, 63, 64, 65,
+                 66, 67, 68, 69, 70, 71, 34, 35, 36, 37])
+    filt = {"PON": "C43", "PLO": "C44", "PHI": "C45", "PWH": "C53", "PWL": "C54", "N": "C46"}
+    tnpw = {2.00e6: P.R_2M00, 1.67e6: P.R_1M67, 1.58e6: P.R_1M58, 1.74e6: P.R_1M74, 1.62e6: P.R_1M62,
+            1.70e6: P.R_1M70, 1.85e6: P.R_1M85}
+    for sname, (src, tops, bot) in STRINGS.items():
+        nodes = [TH if src == "TH" else TM] + snet[sname]
+        for i, rv in enumerate(tops):
+            x = add(tnpw[rv], f"R{next(rnum)}")
+            nodes[i].connect(x[1])
+            nodes[i + 1].connect(x[2])
+        for _ in range(2):
+            x = add(tnpw[bot], f"R{next(rnum)}")
+            nodes[-1].connect(x[1])
+            TL.connect(x[2])
+        x = add(P.C_470N, filt[sname])
+        nodes[-1].connect(x[1])
+        TL.connect(x[2])
     c42 = add(P.C_100N, "C42")
     v5.connect(c42[1])
     TL.connect(c42[2])
-    chain = (("R20", P.R_2M00, TH, pon_a), ("R21", P.R_2M00, pon_a, pon_b), ("R22", P.R_2M00, pon_b, pon_c),
-             ("R23", P.R_2M00, pon_c, pon), ("R24", P.R_1M67, pon, TL), ("R25", P.R_1M67, pon, TL),
-             ("C43", P.C_470N, pon, TL),
-             ("R26", P.R_4M99, TH, plo_m), ("R27", P.R_4M99, plo_m, plo), ("R28", P.R_1M, plo, TL),
-             ("R29", P.R_1M, plo, TL), ("C44", P.C_470N, plo, TL),
-             ("R30", P.R_4M99, TH, phi_m), ("R31", P.R_4M99, phi_m, phi), ("R32", P.R_1M1, phi, TL),
-             ("R33", P.R_1M1, phi, TL), ("C45", P.C_470N, phi, TL),
-             ("R34", P.R_2M26, TM, n_m), ("R35", P.R_2M26, n_m, n_), ("R36", P.R_1M, n_, TL),
-             ("R37", P.R_1M, n_, TL), ("C46", P.C_470N, n_, TL),
-             ("R38", P.R_24K9, v5, th), ("C47", P.C_1U25, th, TL),
+    chain = (("R38", P.R_24K9, v5, th), ("C47", P.C_1U25, th, TL),
              ("R39", P.R_100K, v5, flt_n), ("R40", P.R_100K, v5, nchg),
              ("C48", P.C_100N, v5, TL), ("R41", P.R_100K, run, TL), ("C49", P.C_10N, run, TL),
-             ("R42", P.R_100K, flt_n, qfb), ("R43", P.R_100K, qfb, v5), ("R44", P.R_100K, flt, TL),
+             # Q(k)05 base: forced beta ~ 20 at 4.5 mA (review M-2); drives the red LED only
+             ("R42", P.R_10K, flt_n, qfb), ("R43", P.R_100K, qfb, v5), ("R44", P.R_100K, ledq, TL),
              ("R46", P.R_10K, v12l, ledg))
     for key, defn, a, b in chain:
         x = add(defn, key)
         a.connect(x[1])
         b.connect(x[2])
-    r45 = add(P.R_249, "R45", p_diss=0.02)       # fault LED string, <= 9.0 mA (calc opto_if_max_mA): 20 mW
-    flt.connect(r45[1])
+    r45 = add(P.R_750, "R45", p_diss=0.01)       # red LED (4.85 - 1.8) / 750 <= 4.1 mA: 13 mW
+    ledq.connect(r45[1])
     ledr.connect(r45[2])
     rt = add(P.NTC, "RT01", prefix="RT")
     th.connect(rt[1])
     TL.connect(rt[2])
-    u09 = add(P.NOR, "U09")
-    nchg.connect(u09["A"])
-    flt.connect(u09["B"])
+    # U(k)09 dual NOR (review M-2): gate 1 FLT = NOT FLT_N (clean push-pull level), gate 2 RUN = NOR(NCHG, FLT).
+    # Inputs come only from open-drain outputs with 100 k pull-ups or a gate output, never from an LED node.
+    u09 = add(P.NOR2, "U09")
+    flt_n.connect(u09["1A"], u09["1B"])
+    flt.connect(u09["1Y"], u09["2B"])
+    nchg.connect(u09["2A"])
+    run.connect(u09["2Y"])
     TL.connect(u09["GND"])
-    run.connect(u09["Y"])
     v5.connect(u09["VCC"])
     q05 = add(P.PNP, "Q05")
     qfb.connect(q05["B"])
     v5.connect(q05["E"])
-    flt.connect(q05["C"])
-    # D(k)03 is only ever forward biased: anode fed from FLT through R(k)45, cathode into the opto LED whose
-    # cathode is T_L, so LEDR_A >= OPTO_A always; the envelope difference (+/-4.3 V) includes an impossible reverse.
-    d03 = add(P.LED_RED, "D03", v_across=2.6)
-    opto_a.connect(d03["K"])
+    ledq.connect(q05["C"])
+    d03 = add(P.LED_RED, "D03")
+    TL.connect(d03["K"])
     ledr.connect(d03["A"])
+    # Alarm opto (review M-4): fail-safe contact, LED on while RUN is high and no imbalance warning; the three
+    # opto outputs are in series, so the contact is closed only while every channel charges healthily.
+    r72 = add(P.R_825, "R72", p_diss=0.02)      # (4.65 - 1.4) / 833 >= 3.9 mA, <= 5.0 mA (calc opto_*)
+    run.connect(r72[1])
+    oka.connect(r72[2])
     u10 = add(P.OPTO, "U10")
-    opto_a.connect(u10["A"])
+    oka.connect(u10["A"])
     TL.connect(u10["K"])
-    alm_e.connect(u10["E"])
-    alm_c.connect(u10["C"])
+    alm_in.connect(u10["C"])
+    alm_out.connect(u10["E"])
+    jp2 = add(P.JUMPER, "JP02", prefix="JP")     # bridges this opto when the channel is unused (REQ-25)
+    alm_in.connect(jp2[1])
+    alm_out.connect(jp2[2])
+    add(P.SHUNT, "JS02", prefix="JS", dnp=used)
     d04 = add(P.LED_GRN, "D04", i_through=0.0011)     # cathode on T_L; (12 - 2.0) V / 10 k
     TL.connect(d04["K"])
     ledg.connect(d04["A"])
+    # U(k)11: second quad comparator. B/C = imbalance warning (review M-3), D = pause oscillator (review M-4).
+    u11 = add(P.COMP, "U11")
+    v5.connect(u11["VCC"])
+    TL.connect(u11["VEE"], u11["INA+"])
+    vref.connect(u11["INA-"])
+    u11.nc_pins("OUTA", reason="spare comparator A: inputs tied (+IN to VEE, -IN to VREF), output held low, unused")
+    n_.connect(u11["INB+"], u11["INC-"])
+    pwh.connect(u11["INB-"])
+    pwl.connect(u11["INC+"])
+    oka.connect(u11["OUTB"], u11["OUTC"])        # open drain: shunts the opto LED on imbalance > ~4 %
+    tpn.connect(u11["IND+"])
+    tct.connect(u11["IND-"])
+    pause.connect(u11["OUTD"])
+    for key, defn, a, b in (("C52", P.C_100N, v5, TL), ("R73", P.R_4M99, v5, tpn), ("R74", P.R_4M99, tpn, TL),
+                            ("R75", P.R_4M99, pause, tpn), ("R76", P.R_100K, run, pause),
+                            ("R77", P.R_249K, pda, tct), ("R78", P.R_4M99, pause, tsm), ("R79", P.R_4M99, tsm, tct),
+                            ("C51", P.C_4U7, tct, TL)):
+        x = add(defn, key)
+        a.connect(x[1])
+        b.connect(x[2])
+    d05 = add(P.DIODE_BOOT, "D05")               # fast charge path: pause phase short, run phase long
+    pause.connect(d05["A"])
+    pda.connect(d05["K"])
     p.update(block=blk, X=X, Y=Y, PH1=ph1, PH2=ph2, PON=pon, PLO=plo, PHI=phi, N=n_, TL=TL, TM=TM, TH=TH)
     return p
 
@@ -770,11 +1025,15 @@ def build():
     d.domain("ISO", ref="ALM_E", kind="selv", edge_clearance_mm=1.5, edge_source="as B1",
              description="opto-isolated alarm contact; external circuit within +/-100 V of TAP0 (ASM-11)")
     d.net("ALM_C", domain="ISO", v=(0, 30), kind="signal", i_max=0.001, external=True,
-          notes="alarm contact collector side (external pull-up <= 30 V, <= 1 mA); 3 optos in parallel")
+          notes="alarm contact + side (external pull-up <= 30 V, <= 1 mA); closed = all channels charging and healthy")
+    for i in (1, 2, 3):
+        d.net(f"ALM_S{i}", domain="ISO", v=(0, 30), kind="signal", i_max=0.001,
+              notes="series alarm chain: reverse diode D1, then U110, U210, U310 collector-emitter in series")
 
     # -- board-level blocks ----------------------------------------------------------------------------------
     blk_in = d.block("input", title="Tap input: header J1 and fuses F1-F5", domain="B1",
-                     description="J1 = MSTBA 5-pos (TAP0..TAP4); F1-F5 0477004.MXP 4 A T in 01000056Z clips")
+                     description="J1 = MSTBA 5-pos (TAP0..TAP4); F1-F5 KLKD006.T 6 A 600 VDC 10 kA DC in Keystone "
+                                 "3576 holders (review B-1)")
     j1 = blk_in.add(P.J_TAP, ref="J1")
     fuses = []
     for j in range(5):
@@ -783,16 +1042,20 @@ def build():
         d.nets[f"TAP{j}_IN"].connect(f[1])
         d.nets[f"TAP{j}"].connect(f[2])
         fuses.append(f)
-    for i in range(1, 11):
-        blk_in.add(P.FUSE_CLIP, ref=f"XC{i}")
+    for i in range(1, 6):
+        blk_in.add(P.FUSE_HOLDER_PCB, ref=f"XH{i}")
 
     ch = {k: channel(d, k) for k in CHANNELS}
 
     blk_al = d.block("alarm", title="Isolated alarm output J2", domain="ISO",
-                     description="J2 = MSTBA 2-pos: 1 ALM_C, 2 ALM_E; U110/U210/U310 collectors in parallel")
+                     description="J2 = MSTBA 2-pos: 1 ALM_C, 2 ALM_E; D1 blocks a reversed loop (review MINOR-9); "
+                                 "U110, U210, U310 outputs in series: closed = healthy (fail-safe)")
     j2 = blk_al.add(P.J_ALM, ref="J2")
     d.nets["ALM_C"].connect(j2[1])
     d.nets["ALM_E"].connect(j2[2])
+    d1 = blk_al.add(P.DIODE_BOOT, ref="D1", i_through=0.001)   # alarm loop <= 1 mA; VR 75 V vs 30 V reversed
+    d.nets["ALM_C"].connect(d1["A"])
+    d.nets["ALM_S1"].connect(d1["K"])
 
     blk_me = d.block("mech", title="Mounting holes (M3, nylon standoffs)")
     holes = [blk_me.add(P.HOLE_M3, ref=f"H{i}") for i in (1, 2, 3, 4)]
@@ -849,6 +1112,12 @@ def barriers(d):
                   source="B2 31-50 V: 0.6 mm [S]. A battery domain holds its top tap, so adjacent domains reach "
                          "2 Vb + 12.5 V + 2 V (49.7 V operating)",
                   notes="adjacent battery domains (and their HSU/HSL/LS/QFB children)")
+    for k in CHANNELS:      # review MINOR-7: bootstrap children reach Vb + 13.5 V above their parent's reference
+        for child, parent in ((f"CH{k}_HSU", f"B{k + 1}"), (f"CH{k}_HSL", f"B{k}")):
+            d.barrier(parent, child, grade="functional", v_work=round(VB_OP + V12 + 1, 1), creepage_mm=0.6,
+                      clearance_mm=0.6, standard=ipc, pollution_degree=2, material_group="IIIa",
+                      source="B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band "
+                             "reference", notes="bootstrap domain against its own band")
     for a, b, m in (("B1", "B3", 3), ("B2", "B4", 3), ("B1", "B4", 4)):
         d.barrier(a, b, grade="functional", v_work=round(m * VB_OP + V12 + 2, 1), creepage_mm=1.5, clearance_mm=1.0,
                   standard=f"{ipc}; {f4}", pollution_degree=2, material_group="IIIa",
@@ -1010,18 +1279,21 @@ def channel_placement(d, c, k):
 
 
 def board(d):
-    holes = [Hole(5, 5, 3.2, note="H1, M3 on nylon standoff"), Hole(155, 5, 3.2, note="H2"),
-             Hole(5, 105, 3.2, note="H3"), Hole(155, 105, 3.2, note="H4")]
-    d.board(width_mm=160, height_mm=110, layers=4, thickness_mm=1.6, copper_oz=2, holes=holes,
+    holes = [Hole(5, 5, 3.2, note="H1, M3 on nylon standoff"), Hole(175, 5, 3.2, note="H2"),
+             Hole(5, 125, 3.2, note="H3"), Hole(175, 125, 3.2, note="H4")]
+    d.board(width_mm=180, height_mm=130, layers=4, thickness_mm=1.6, copper_oz=2, holes=holes,
             max_component_height_mm=25,
-            enclosure="IP54 polycarbonate wall box ~200 x 150 x 75 mm, M20 gland for the harness (bottom), M12 for "
+            enclosure="IP54 polycarbonate wall box ~250 x 200 x 90 mm, M20 gland for the harness (bottom), M12 for "
                       "the alarm; LEDs behind a clear lid; mounted beside the rack, outside any battery box, not "
                       "above vents",
             coating="",
-            keepouts=[{"rect": [0, 102, 160, 110], "what": "copper of any domain except ISO", "layers": "all",
-                       "note": "8 mm ISO strip along the north edge"},
+            keepouts=[{"rect": [0, 122, 180, 130], "what": "copper of any domain except ISO", "layers": "all",
+                       "note": "8 mm ISO strip along the north edge (BoardSpec origin is the lower-left corner, "
+                               "y up, so y 122-130 is north)"},
                       {"relative": "4.0 mm ring around each mounting hole", "what": "copper", "layers": "all"}],
-            notes="FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper "
+            notes="Coordinates: origin at the lower-left corner, x east, y north (kaesynth BoardSpec). Board grew "
+                  "from 160 x 110 mm for the five 43 x 18 mm 10x38 fuse holders. "
+                  "FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper "
                   "poured on L1/L4 per net with thermal vias under Q_A-Q_D and R_CF. Uncoated (Q-9).")
 
 

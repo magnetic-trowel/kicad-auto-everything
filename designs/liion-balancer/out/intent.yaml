@@ -475,6 +475,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C1
     b: C2
     grade: functional
@@ -487,6 +488,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C2
     b: C3
     grade: functional
@@ -499,6 +501,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C3
     b: C4
     grade: functional
@@ -511,6 +514,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C4
     b: C5
     grade: functional
@@ -523,6 +527,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C5
     b: C6
     grade: functional
@@ -535,6 +540,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C6
     b: C7
     grade: functional
@@ -547,6 +553,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C7
     b: C8
     grade: functional
@@ -559,6 +566,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C8
     b: C9
     grade: functional
@@ -571,6 +579,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C9
     b: C10
     grade: functional
@@ -583,6 +592,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C10
     b: C11
     grade: functional
@@ -595,6 +605,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C11
     b: C12
     grade: functional
@@ -607,6 +618,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C12
     b: C13
     grade: functional
@@ -619,6 +631,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C13
     b: C14
     grade: functional
@@ -631,6 +644,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C14
     b: C15
     grade: functional
@@ -643,6 +657,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C15
     b: C16
     grade: functional
@@ -655,6 +670,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: C16
     b: STACK
     grade: functional
@@ -667,6 +683,7 @@ barriers:
     slot: false
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
+    ac: false
   - a: BAT0
     b: SW1
     grade: functional
@@ -678,6 +695,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW2
     grade: functional
@@ -689,6 +707,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW3
     grade: functional
@@ -700,6 +719,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW4
     grade: functional
@@ -711,6 +731,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW5
     grade: functional
@@ -722,6 +743,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW6
     grade: functional
@@ -733,6 +755,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW7
     grade: functional
@@ -744,6 +767,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW8
     grade: functional
@@ -755,6 +779,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW9
     grade: functional
@@ -766,6 +791,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW10
     grade: functional
@@ -777,6 +803,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW11
     grade: functional
@@ -788,6 +815,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW12
     grade: functional
@@ -799,6 +827,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW13
     grade: functional
@@ -810,6 +839,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW14
     grade: functional
@@ -821,6 +851,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW15
     grade: functional
@@ -832,6 +863,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: BAT0
     b: SW16
     grade: functional
@@ -843,6 +875,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
+    ac: false
   - a: RET
     b: C1
     grade: functional
@@ -854,6 +887,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-3: T1kk primary (cell k) to secondary (FLYBUS/TAP0), <= 106 V peak; the footprint gives 11.7 mm between pad rows"
+    ac: false
   - a: BAT0
     b: RET
     grade: functional
@@ -865,6 +899,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "FLYBUS/SEC_k/BUCK_SW (<= 68 V) vs TAP0, GND_B and the logic"
+    ac: false
   - a: USER
     b: FAULT
     grade: functional
@@ -876,6 +911,7 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-6: <= 30 V + 5.5 V; separate connectors J2 and J4"
+    ac: false
   - a: BAT0
     b: CHASSIS
     grade: basic
@@ -889,6 +925,7 @@ barriers:
     ovc: II
     slot: false
     source: "DESIGN.md 6.3 B-5: 250 Vrms worst case (ASM-5): 2.5 mm creepage, 1.5 mm clearance at 2.5 kV; 3.0 mm copper-free ring around each M4 screw (TI SLUP419 tables [S])"
+    ac: false
   - a: BAT0
     b: USER
     grade: reinforced
@@ -902,6 +939,7 @@ barriers:
     ovc: II
     slot: false
     source: "IEC 60664-1 F.4 (250 V, PD2, MG III: 2.5 mm basic -> 5.0 reinforced) and F.2 / IEC 62368-1 Table 10 (3.8 mm at 4 kV) via TI SLUP419 [S]. Required 5.0 / 3.8 mm; design 8.0 / 8.0 mm (ISO7721DWV 8.5 mm package, pad gap 8.85 mm)"
+    ac: false
   - a: BAT0
     b: FAULT
     grade: reinforced
@@ -915,6 +953,7 @@ barriers:
     ovc: II
     slot: false
     source: "IEC 60664-1 F.4 (250 V, PD2, MG III: 2.5 mm basic -> 5.0 reinforced) and F.2 / IEC 62368-1 Table 10 (3.8 mm at 4 kV) via TI SLUP419 [S]. The AQY210EH SMDIP-4 pads leave 5.6 mm, so the fault-contact barrier is held at the required 5.0 / 3.8 mm, not the 8 mm used for the UART"
+    ac: false
 netclasses:
   - name: BAT0
     domain: BAT0

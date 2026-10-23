@@ -200,19 +200,21 @@ COMP = IC(
                        "<= 10 mA), TLV704x outputs VEE - 0.3..7 V; hysteresis 3-25 mV, offset +/-8 mV [P]",
             "lifecycle": "TI orderable addendum, Active [P]"})
 
-NOR = PartDef(
-    mpn="SN74LVC1G02DBVR", manufacturer="Texas Instruments", symbol="74xGxx:74LVC1G02",
-    footprint="Package_TO_SOT_SMD:SOT-23-5", value="74LVC1G02", category="ic",
-    description="Single 2-input NOR gate, 1.65-5.5 V, SOT-23-5",
-    datasheet="https://www.ti.com/lit/ds/symlink/sn74lvc1g02.pdf",
-    pin_names={"1": "A", "2": "B", "4": "Y"},
-    ratings=Ratings(limits=[VLimit(("VCC",), ("GND",), 6.5), VLimit(("A", "B"), ("GND",), 6.5),
-                            VLimit(("Y",), ("GND",), 6.5, "<= VCC + 0.5 V")], t_min=-40, t_max=125),
-    lifecycle="active", second_source="Nexperia 74LVC1G02GV [I]",
-    source={"pins": "TI SCES213Y (Aug 2026) section 4, DBV: 1 A, 2 B, 3 GND, 4 Y, 5 VCC [P]",
-            "pin_names": "KiCad 74xGxx:74LVC1G02 leaves pins 1, 2, 4 unnamed; names from SCES213Y section 4 [P]",
-            "ratings": "SCES213Y 5.1 abs max: VCC -0.5..6.5 V, VI -0.5..6.5 V, VO -0.5..VCC + 0.5 V [P]",
-            "lifecycle": "TI orderable addendum, Active [P]"})
+NOR2 = PartDef(
+    mpn="SN74LVC2G02DCTR", manufacturer="Texas Instruments", symbol="74xGxx:74LVC2G02",
+    footprint="Package_SO:SSOP-8_2.95x2.8mm_P0.65mm", value="74LVC2G02", category="ic",
+    description="Dual 2-input NOR gate, 1.65-5.5 V, SSOP-8 (DCT). Gate 1 inverts FLT_N, gate 2 makes RUN",
+    datasheet="https://www.ti.com/lit/ds/symlink/sn74lvc2g02.pdf",
+    pin_names={"1": "1A", "2": "1B", "7": "1Y", "5": "2A", "6": "2B", "3": "2Y"},
+    ratings=Ratings(limits=[VLimit(("VCC",), ("GND",), 6.5), VLimit(("1A", "1B", "2A", "2B"), ("GND",), 6.5),
+                            VLimit(("1Y", "2Y"), ("GND",), 6.5, "<= VCC + 0.5 V")], t_min=-40, t_max=125),
+    lifecycle="active", second_source="Nexperia 74LVC2G02DP [I]",
+    source={"pins": "TI SCES194N (May 2019) section 5 Pin Functions, DCT: 1 1A, 2 1B, 3 2Y, 4 GND, 5 2A, 6 2B, "
+                    "7 1Y, 8 VCC [P]",
+            "pin_names": "KiCad 74xGxx:74LVC2G02 leaves signal pins unnamed; names from SCES194N section 5 [P]",
+            "ratings": "SCES194N 6.1 abs max: VCC -0.5..6.5 V, VI -0.5..6.5 V, VO -0.5..VCC + 0.5 V; 6.3 VIH 0.7 x VCC "
+                       "at 4.5-5.5 V [P]",
+            "lifecycle": "TI orderable addendum in SCES194N: SN74LVC2G02DCTR Active [P]"})
 
 OPTO = PartDef(
     mpn="SFH617A-3X017T", manufacturer="Vishay Semiconductors", symbol="Isolator:SFH617A-3X017T",
@@ -307,7 +309,7 @@ def _mlcc(value, volts, pkg, diel, mpn, second):
 C_1U50 = _mlcc("1u", 50, "0805", "X7R", "GRM21BR71H105KA12L", "Samsung CL21B105KBFNNNE [S]")
 C_1U25 = _mlcc("1u", 25, "0603", "X7R", "GRM188R71E105KA12D", "Samsung CL10B105KA8NNNC [S]")
 C_10U25 = _mlcc("10u", 25, "1206", "X7R", "GRM31CR71E106KA12L", "Samsung CL31B106KAHNNNE [S]")
-C_2U2 = _mlcc("2.2u", 16, "0603", "X7R", "GRM188R71C225KE11D", "Samsung CL10B225KO8NNNC [S]")
+C_4U7 = _mlcc("4.7u", 25, "0805", "X7R", "GRM21BR71E475KA73L", "Samsung CL21B475KAFNNNE [S]")
 C_100N = _mlcc("100n", 50, "0603", "X7R", "GRM188R71H104KA93D", "Samsung CL10B104KB8NNNC [S]")
 C_470N = _mlcc("470n", 25, "0603", "X7R", "GRM188R71E474KA12D", "Samsung CL10B474KA8NNNC [S]")
 C_10N = _mlcc("10n", 50, "0603", "X7R", "GRM188R71H103KA01D", "Samsung CL10B103KB8NNNC [S]")
@@ -326,7 +328,9 @@ def _crcw(value, code):
 
 
 R_4R7 = _crcw("4.7", "4R70")
-R_249 = _crcw("249", "249R")
+R_750 = _crcw("750", "750R")
+R_825 = _crcw("825", "825R")
+R_249K = _crcw("249k", "249K")
 R_10K = _crcw("10k", "10K0")
 R_20K = _crcw("20k", "20K0")
 R_22K1 = _crcw("22.1k", "22K1")
@@ -353,25 +357,33 @@ def _tnpw(value, code):
 
 R_2M00 = _tnpw("2M", "2M00")
 R_1M67 = _tnpw("1.67M", "1M67")
+R_1M85 = _tnpw("1.85M", "1M85")
+R_1M58 = _tnpw("1.58M", "1M58")
+R_1M74 = _tnpw("1.74M", "1M74")
+R_1M62 = _tnpw("1.62M", "1M62")
+R_1M70 = _tnpw("1.7M", "1M70")
 
 # ---------------------------------------------------------------------------------------------
 # Board I/O, fuses, jumper, mechanical
 
-FUSE_BOARD = Fuse(4, 400, "Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal",
-                  mpn="0477004.MXP", manufacturer="Littelfuse", breaking_a=1500,
-                  datasheet="https://www.littelfuse.com/products/fuses-overcurrent-protection/cartridge-fuses/5x20mm-fuses/477",
-                  lifecycle="active", second_source="Schurter SPT 5x20 4 A T (verify DC rating) [S]",
-                  source={"ratings": "Littelfuse 477 series (secondary listing): 4 A time-lag, 500 VAC / 400 VDC, "
-                                     "1.5 kA DC breaking [S] (Q-5: verify before ordering)",
-                          "lifecycle": "distributor listing [S]"}).with_(
-    description="Fuse 5x20 mm 4 A time-lag high-breaking, 400 VDC, in 2 x 01000056Z clips")
+FUSE_BOARD = Fuse(6, 600, "custom:Fuseholder_Keystone_3576_10x38mm", mpn="KLKD006.T", manufacturer="Littelfuse",
+                  breaking_a=10000, i2t=63,
+                  datasheet="https://www.farnell.com/datasheets/2603270.pdf", lifecycle="active",
+                  second_source="other UL 248-19 DC-rated 10x38 midget fuse, 6 A, >= 1 kA DC [I]",
+                  source={"ratings": "Littelfuse KLKD datasheet Rev 061217 p.1: 600 VAC/VDC, fast acting, DC 10 kA "
+                                     "(UL 248-19) / 50 kA (UL 248-14) for 1/10-30 A; p.2 KLKD 6: cold R 26.1 mOhm, "
+                                     "average melting I2t 63 A2s, clearing I2t 96.8 A2s at 20 kA [P]",
+                          "lifecycle": "Littelfuse catalog listing KLKD006.T [P]"}).with_(
+    description="Fuse 10x38 mm midget 6 A fast, 600 VDC, 10 kA DC (board tap fuse), in a Keystone 3576 holder")
 
-FUSE_CLIP = PartDef(mpn="01000056Z", manufacturer="Littelfuse", symbol="Mechanical:Housing", footprint=None,
-                    value="01000056Z", category="mechanical", prefix="XC",
-                    description="Fuse clip for 5x20 mm fuses, PCB THT, 10 A 250 V (2 per fuse; pads in the F footprint)",
-                    datasheet="https://www.littelfuse.com", on_board=False, lifecycle="active",
-                    second_source="Keystone 3517 [S]",
-                    source={"ratings": "Littelfuse 100-series clip listing: 10 A 250 V [S]"})
+FUSE_HOLDER_PCB = PartDef(mpn="3576", manufacturer="Keystone Electronics", symbol="Mechanical:Housing", footprint=None,
+                          value="3576", category="mechanical", prefix="XH",
+                          description="PCB fuse holder for 10x38 mm (midget/SPF), THM, UL 30 A 500 VAC; pads are in "
+                                      "the F footprint (custom:Fuseholder_Keystone_3576_10x38mm)",
+                          datasheet="https://www.keyelco.com/userAssets/file/M65p45.pdf", on_board=False,
+                          lifecycle="active", second_source="Littelfuse 01020078Z-style 10x38 PCB clips [I]",
+                          source={"ratings": "Keystone catalog M65 p.45: Nylon 46 UL 94V-0, UL 30 A @ 500 VAC, 38.1 mm "
+                                             "terminal pitch [P]"})
 
 J_TAP = Conn(5, "Connector_Phoenix_MSTB:PhoenixContact_MSTBA_2,5_5-G-5,08_1x05_P5.08mm_Horizontal", i_max=12,
              v_max=320, mpn="1757271", manufacturer="Phoenix Contact",

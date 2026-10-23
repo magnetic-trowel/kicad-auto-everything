@@ -13,7 +13,7 @@
 	)
 	(lib_symbols)
 	(sheet
-		(at 25.4 78.74)
+		(at 25.4 93.98)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -29,14 +29,14 @@
 		)
 		(uuid "86708fdd-ea15-5c0f-b209-021a16ff9031")
 		(property "Sheetname" "input"
-			(at 25.4 78.04 0)
+			(at 25.4 93.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "input.kicad_sch"
-			(at 25.4 94.58 0)
+			(at 25.4 109.82 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -52,7 +52,7 @@
 	)
 	(text "Tap input: header J1 and fuses F1-F5"
 		(exclude_from_sim no)
-		(at 26.67 86.36 0)
+		(at 26.67 101.6 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -60,7 +60,7 @@
 		(uuid "5fde1cd2-dd72-5956-a9af-9e91101d70fb")
 	)
 	(sheet
-		(at 106.68 78.74)
+		(at 106.68 93.98)
 		(size 55.88 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -76,14 +76,14 @@
 		)
 		(uuid "26cc7d35-9b2d-5fbf-9640-02adc2d4b150")
 		(property "Sheetname" "ch1"
-			(at 106.68 78.04 0)
+			(at 106.68 93.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch1.kicad_sch"
-			(at 106.68 94.58 0)
+			(at 106.68 109.82 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -99,7 +99,7 @@
 	)
 	(text "Channel 1: SC cell B1 <-> B2"
 		(exclude_from_sim no)
-		(at 107.95 86.36 0)
+		(at 107.95 101.6 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -107,7 +107,7 @@
 		(uuid "79b52f7a-7e5e-528e-93a1-cd11a17c8862")
 	)
 	(sheet
-		(at 175.26 78.74)
+		(at 175.26 93.98)
 		(size 55.88 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -123,14 +123,14 @@
 		)
 		(uuid "cb98b94a-f199-5a7d-aa25-432d54d2b160")
 		(property "Sheetname" "ch2"
-			(at 175.26 78.04 0)
+			(at 175.26 93.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch2.kicad_sch"
-			(at 175.26 94.58 0)
+			(at 175.26 109.82 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -146,7 +146,7 @@
 	)
 	(text "Channel 2: SC cell B2 <-> B3"
 		(exclude_from_sim no)
-		(at 176.53 86.36 0)
+		(at 176.53 101.6 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -154,7 +154,7 @@
 		(uuid "0078058e-ea57-54a0-afde-36c81fb96cc1")
 	)
 	(sheet
-		(at 243.84 78.74)
+		(at 243.84 93.98)
 		(size 55.88 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -170,14 +170,14 @@
 		)
 		(uuid "f143e59e-fc15-542e-9309-dca9a1b08193")
 		(property "Sheetname" "ch3"
-			(at 243.84 78.04 0)
+			(at 243.84 93.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "ch3.kicad_sch"
-			(at 243.84 94.58 0)
+			(at 243.84 109.82 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -193,7 +193,7 @@
 	)
 	(text "Channel 3: SC cell B3 <-> B4"
 		(exclude_from_sim no)
-		(at 245.11 86.36 0)
+		(at 245.11 101.6 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -201,7 +201,7 @@
 		(uuid "f0a44891-d3f3-5d52-9f90-dd2e41fce511")
 	)
 	(sheet
-		(at 312.42 78.74)
+		(at 312.42 93.98)
 		(size 48.26 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -217,14 +217,14 @@
 		)
 		(uuid "cf1d326d-1904-5168-b9da-d8ce55ede38b")
 		(property "Sheetname" "alarm"
-			(at 312.42 78.04 0)
+			(at 312.42 93.28 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "alarm.kicad_sch"
-			(at 312.42 94.58 0)
+			(at 312.42 109.82 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -240,7 +240,7 @@
 	)
 	(text "Isolated alarm output J2"
 		(exclude_from_sim no)
-		(at 313.69 86.36 0)
+		(at 313.69 101.6 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -248,7 +248,7 @@
 		(uuid "770da68b-2135-5c8f-8fc5-647c54783da1")
 	)
 	(sheet
-		(at 25.4 106.68)
+		(at 25.4 121.92)
 		(size 68.58 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -264,14 +264,14 @@
 		)
 		(uuid "9050d52b-f05a-5ff5-bfbf-d8a9b27d3e52")
 		(property "Sheetname" "mech"
-			(at 25.4 105.98 0)
+			(at 25.4 121.22 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "mech.kicad_sch"
-			(at 25.4 122.52 0)
+			(at 25.4 137.76 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -287,7 +287,7 @@
 	)
 	(text "Mounting holes (M3, nylon standoffs)"
 		(exclude_from_sim no)
-		(at 26.67 114.3 0)
+		(at 26.67 129.54 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
@@ -295,7 +295,7 @@
 		(uuid "adbd81ce-e787-5305-aa6b-aad1f7e661b6")
 	)
 	(sheet
-		(at 106.68 106.68)
+		(at 106.68 121.92)
 		(size 50.8 15.24)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -311,14 +311,14 @@
 		)
 		(uuid "06546ba7-c8e3-5a36-b011-943edfcffc44")
 		(property "Sheetname" "harness"
-			(at 106.68 105.98 0)
+			(at 106.68 121.22 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left bottom)
 			)
 		)
 		(property "Sheetfile" "harness.kicad_sch"
-			(at 106.68 122.52 0)
+			(at 106.68 137.76 0)
 			(effects
 				(font (size 1.27 1.27))
 				(justify left top)
@@ -334,14 +334,14 @@
 	)
 	(text "Off-board harness (N = 4)"
 		(exclude_from_sim no)
-		(at 107.95 114.3 0)
+		(at 107.95 129.54 0)
 		(effects
 			(font (size 1.27 1.27))
 			(justify left)
 		)
 		(uuid "fab2c20e-53d3-529c-b998-2598be4a61be")
 	)
-	(text "Lead-acid string balancer, 2:1 switched capacitor, 2-4 x 12 V (rev A)\nBoards: main: input, ch1, ch2, ch3, alarm, mech; off: harness\nDomains: B1 (battery, 0 V = TAP0); B2 (battery, 0 V = TAP1); B3 (battery, 0 V = TAP2); B4 (battery, 0 V = TAP3); ISO (selv, 0 V = ALM_E); CH1_SPAN\n    (battery, 0 V = TAP0); CH1_HSU (battery, 0 V = ch1/CH1_X); CH1_HSL (battery, 0 V = ch1/CH1_Y); CH1_QFB (battery, 0 V = ch1/CH1_V5); CH1_LS\n    (battery, 0 V = TAP2); CH2_SPAN (battery, 0 V = TAP1); CH2_HSU (battery, 0 V = ch2/CH2_X); CH2_HSL (battery, 0 V = ch2/CH2_Y); CH2_QFB (battery, 0\n    V = ch2/CH2_V5); CH2_LS (battery, 0 V = TAP3); CH3_SPAN (battery, 0 V = TAP2); CH3_HSU (battery, 0 V = ch3/CH3_X); CH3_HSL (battery, 0 V =\n    ch3/CH3_Y); CH3_QFB (battery, 0 V = ch3/CH3_V5); CH3_LS (battery, 0 V = TAP4)\nBarrier B1/B2: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B2/B3: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B3/B4: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B1/B3: functional, 67.3 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier B2/B4: functional, 67.3 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier B1/B4: functional, 84.9 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier ISO/B1: basic, 185 V working, creepage 4 mm, clearance 4 mm (IEC 62368-1 ES2 to ES1 basic; IEC 60664-1 F.4 / F.2)\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-2, Q-4, Q-5, Q-12"
+	(text "Lead-acid string balancer, 2:1 switched capacitor, 2-4 x 12 V (rev A)\nBoards: main: input, ch1, ch2, ch3, alarm, mech; off: harness\nDomains: B1 (battery, 0 V = TAP0); B2 (battery, 0 V = TAP1); B3 (battery, 0 V = TAP2); B4 (battery, 0 V = TAP3); ISO (selv, 0 V = ALM_E); CH1_SPAN\n    (battery, 0 V = TAP0); CH1_HSU (battery, 0 V = ch1/CH1_X); CH1_HSL (battery, 0 V = ch1/CH1_Y); CH1_QFB (battery, 0 V = ch1/CH1_V5); CH1_LS\n    (battery, 0 V = TAP2); CH2_SPAN (battery, 0 V = TAP1); CH2_HSU (battery, 0 V = ch2/CH2_X); CH2_HSL (battery, 0 V = ch2/CH2_Y); CH2_QFB (battery, 0\n    V = ch2/CH2_V5); CH2_LS (battery, 0 V = TAP3); CH3_SPAN (battery, 0 V = TAP2); CH3_HSU (battery, 0 V = ch3/CH3_X); CH3_HSL (battery, 0 V =\n    ch3/CH3_Y); CH3_QFB (battery, 0 V = ch3/CH3_V5); CH3_LS (battery, 0 V = TAP4)\nBarrier B1/B2: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B2/B3: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B3/B4: functional, 49.7 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B2/CH1_HSU: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B1/CH1_HSL: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B3/CH2_HSU: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B2/CH2_HSL: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B4/CH3_HSU: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B3/CH3_HSL: functional, 31.1 V working, creepage 0.6 mm, clearance 0.6 mm (IPC-2221B Table 6-1 B2 (external, uncoated))\nBarrier B1/B3: functional, 67.3 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier B2/B4: functional, 67.3 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier B1/B4: functional, 84.9 V working, creepage 1.5 mm, clearance 1 mm (IPC-2221B Table 6-1 B2 (external, uncoated); IEC 60664-1 Table F.4 PD2 MG\n    IIIa (SLUP419 in repo for 63 V: 1.25 mm [P]; 80-100 V 1.3-1.4 mm [S]))\nBarrier ISO/B1: basic, 185 V working, creepage 4 mm, clearance 4 mm (IEC 62368-1 ES2 to ES1 basic; IEC 60664-1 F.4 / F.2)\nNOT READY FOR FABRICATION — blocking questions: Q-1, Q-2, Q-4, Q-12"
 		(exclude_from_sim no)
 		(at 25.4 25.4 0)
 		(effects

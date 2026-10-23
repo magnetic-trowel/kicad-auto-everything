@@ -10,8 +10,8 @@ design:
 units: mm
 board:
   name: main
-  width_mm: 160
-  height_mm: 110
+  width_mm: 180
+  height_mm: 130
   max_component_height_mm: 25
   layers: 4
   thickness_mm: 1.6
@@ -22,35 +22,35 @@ board:
       drill_mm: 3.2
       plated: false
       note: "H1, M3 on nylon standoff"
-    - x: 155
+    - x: 175
       "y": 5
       drill_mm: 3.2
       plated: false
       note: H2
     - x: 5
-      "y": 105
+      "y": 125
       drill_mm: 3.2
       plated: false
       note: H3
-    - x: 155
-      "y": 105
+    - x: 175
+      "y": 125
       drill_mm: 3.2
       plated: false
       note: H4
-  enclosure: "IP54 polycarbonate wall box ~200 x 150 x 75 mm, M20 gland for the harness (bottom), M12 for the alarm; LEDs behind a clear lid; mounted beside the rack, outside any battery box, not above vents"
+  enclosure: "IP54 polycarbonate wall box ~250 x 200 x 90 mm, M20 gland for the harness (bottom), M12 for the alarm; LEDs behind a clear lid; mounted beside the rack, outside any battery box, not above vents"
   keepouts:
-    - rect: [0, 102, 160, 110]
+    - rect: [0, 122, 180, 130]
       what: "copper of any domain except ISO"
       layers: all
-      note: "8 mm ISO strip along the north edge"
+      note: "8 mm ISO strip along the north edge (BoardSpec origin is the lower-left corner, y up, so y 122-130 is north)"
     - relative: "4.0 mm ring around each mounting hole"
       what: copper
       layers: all
-  notes: "FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper poured on L1/L4 per net with thermal vias under Q_A-Q_D and R_CF. Uncoated (Q-9)."
+  notes: "Coordinates: origin at the lower-left corner, x east, y north (kaesynth BoardSpec). Board grew from 160 x 110 mm for the five 43 x 18 mm 10x38 fuse holders. FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper poured on L1/L4 per net with thermal vias under Q_A-Q_D and R_CF. Uncoated (Q-9)."
 boards:
   - name: main
-    width_mm: 160
-    height_mm: 110
+    width_mm: 180
+    height_mm: 130
     max_component_height_mm: 25
     layers: 4
     thickness_mm: 1.6
@@ -61,31 +61,31 @@ boards:
         drill_mm: 3.2
         plated: false
         note: "H1, M3 on nylon standoff"
-      - x: 155
+      - x: 175
         "y": 5
         drill_mm: 3.2
         plated: false
         note: H2
       - x: 5
-        "y": 105
+        "y": 125
         drill_mm: 3.2
         plated: false
         note: H3
-      - x: 155
-        "y": 105
+      - x: 175
+        "y": 125
         drill_mm: 3.2
         plated: false
         note: H4
-    enclosure: "IP54 polycarbonate wall box ~200 x 150 x 75 mm, M20 gland for the harness (bottom), M12 for the alarm; LEDs behind a clear lid; mounted beside the rack, outside any battery box, not above vents"
+    enclosure: "IP54 polycarbonate wall box ~250 x 200 x 90 mm, M20 gland for the harness (bottom), M12 for the alarm; LEDs behind a clear lid; mounted beside the rack, outside any battery box, not above vents"
     keepouts:
-      - rect: [0, 102, 160, 110]
+      - rect: [0, 122, 180, 130]
         what: "copper of any domain except ISO"
         layers: all
-        note: "8 mm ISO strip along the north edge"
+        note: "8 mm ISO strip along the north edge (BoardSpec origin is the lower-left corner, y up, so y 122-130 is north)"
       - relative: "4.0 mm ring around each mounting hole"
         what: copper
         layers: all
-    notes: "FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper poured on L1/L4 per net with thermal vias under Q_A-Q_D and R_CF. Uncoated (Q-9)."
+    notes: "Coordinates: origin at the lower-left corner, x east, y north (kaesynth BoardSpec). Board grew from 160 x 110 mm for the five 43 x 18 mm 10x38 fuse holders. FR-4 CTI >= 175 (IIIa), 2 oz outer / 1 oz inner; all parts top side; no heatsink, power copper poured on L1/L4 per net with thermal vias under Q_A-Q_D and R_CF. Uncoated (Q-9)."
 magnitudes:
   tight: 3.0
   close: 8.0
@@ -204,6 +204,7 @@ barriers:
     slot: false
     source: "B2 31-50 V: 0.6 mm [S]. A battery domain holds its top tap, so adjacent domains reach 2 Vb + 12.5 V + 2 V (49.7 V operating)"
     notes: "adjacent battery domains (and their HSU/HSL/LS/QFB children)"
+    ac: false
   - a: B2
     b: B3
     grade: functional
@@ -216,6 +217,7 @@ barriers:
     slot: false
     source: "B2 31-50 V: 0.6 mm [S]. A battery domain holds its top tap, so adjacent domains reach 2 Vb + 12.5 V + 2 V (49.7 V operating)"
     notes: "adjacent battery domains (and their HSU/HSL/LS/QFB children)"
+    ac: false
   - a: B3
     b: B4
     grade: functional
@@ -228,6 +230,85 @@ barriers:
     slot: false
     source: "B2 31-50 V: 0.6 mm [S]. A battery domain holds its top tap, so adjacent domains reach 2 Vb + 12.5 V + 2 V (49.7 V operating)"
     notes: "adjacent battery domains (and their HSU/HSL/LS/QFB children)"
+    ac: false
+  - a: B2
+    b: CH1_HSU
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
+  - a: B1
+    b: CH1_HSL
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
+  - a: B3
+    b: CH2_HSU
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
+  - a: B2
+    b: CH2_HSL
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
+  - a: B4
+    b: CH3_HSU
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
+  - a: B3
+    b: CH3_HSL
+    grade: functional
+    v_work: 31.1
+    creepage_mm: 0.6
+    clearance_mm: 0.6
+    standard: "IPC-2221B Table 6-1 B2 (external, uncoated)"
+    pollution_degree: 2
+    material_group: IIIa
+    slot: false
+    source: "B2 31-50 V: 0.6 mm [S]; BSTx/Gx reach Vb + 13.5 V (31 V operating) above the band reference"
+    notes: "bootstrap domain against its own band"
+    ac: false
   - a: B1
     b: B3
     grade: functional
@@ -240,6 +321,7 @@ barriers:
     slot: false
     source: "B2 51-100 V: 0.6 mm [S]; F.4 at <= 100 V: 1.4 mm [S]; design 1.5/1.0 mm margin (fails to a fuse, not to shock); worst 3 Vb + 14.5 V"
     notes: "non-adjacent battery domains"
+    ac: false
   - a: B2
     b: B4
     grade: functional
@@ -252,6 +334,7 @@ barriers:
     slot: false
     source: "B2 51-100 V: 0.6 mm [S]; F.4 at <= 100 V: 1.4 mm [S]; design 1.5/1.0 mm margin (fails to a fuse, not to shock); worst 3 Vb + 14.5 V"
     notes: "non-adjacent battery domains"
+    ac: false
   - a: B1
     b: B4
     grade: functional
@@ -264,6 +347,7 @@ barriers:
     slot: false
     source: "B2 51-100 V: 0.6 mm [S]; F.4 at <= 100 V: 1.4 mm [S]; design 1.5/1.0 mm margin (fails to a fuse, not to shock); worst 4 Vb + 14.5 V"
     notes: "non-adjacent battery domains"
+    ac: false
   - a: ISO
     b: B1
     grade: basic
@@ -277,6 +361,7 @@ barriers:
     slot: false
     source: "F.4 PD2 MG IIIa at 200 V: 2.0 mm creepage [S]; F.2 1.5 kV impulse: 0.5 mm clearance [S]; design 4.0/4.0 mm and no copper under U(k)10 (package >= 7 mm, CTI 175 [P]). v_work = stack 84 V + ALM_E +/-100 V (ASM-11); v_test 1.5 kV DC hi-pot (V-14) = 1.06 kVrms"
     notes: "covers every stack domain (they all float on B1)"
+    ac: false
 netclasses:
   - name: B1
     domain: B1
@@ -284,6 +369,7 @@ netclasses:
     track_width: 0.25
     nets:
       - "/ch1/CH1_12VL"
+      - "/ch1/CH1_BSL_A"
       - "/ch1/CH1_DTL"
       - "/ch1/CH1_DTU"
       - "/ch1/CH1_FBL"
@@ -291,26 +377,40 @@ netclasses:
       - "/ch1/CH1_FLT_N"
       - "/ch1/CH1_GD"
       - "/ch1/CH1_LEDG_A"
+      - "/ch1/CH1_LEDQ"
       - "/ch1/CH1_LEDR_A"
       - "/ch1/CH1_N"
       - "/ch1/CH1_NCHG"
-      - "/ch1/CH1_N_M"
+      - "/ch1/CH1_N_M1"
       - "/ch1/CH1_OB_L"
-      - "/ch1/CH1_OPTO_A"
+      - "/ch1/CH1_OKA"
       - "/ch1/CH1_OSCC"
       - "/ch1/CH1_OSCR"
       - "/ch1/CH1_OSCRC"
+      - "/ch1/CH1_PAUSE"
+      - "/ch1/CH1_PDA"
       - "/ch1/CH1_PH1"
       - "/ch1/CH1_PH2"
       - "/ch1/CH1_PHI"
-      - "/ch1/CH1_PHI_M"
+      - "/ch1/CH1_PHI_M2"
+      - "/ch1/CH1_PHI_M3"
       - "/ch1/CH1_PLO"
-      - "/ch1/CH1_PLO_M"
+      - "/ch1/CH1_PLO_M2"
+      - "/ch1/CH1_PLO_M3"
       - "/ch1/CH1_PON"
-      - "/ch1/CH1_PON_B"
-      - "/ch1/CH1_PON_C"
+      - "/ch1/CH1_PON_M2"
+      - "/ch1/CH1_PON_M3"
+      - "/ch1/CH1_PWH"
+      - "/ch1/CH1_PWH_M2"
+      - "/ch1/CH1_PWH_M3"
+      - "/ch1/CH1_PWL"
+      - "/ch1/CH1_PWL_M2"
+      - "/ch1/CH1_PWL_M3"
       - "/ch1/CH1_RUN"
+      - "/ch1/CH1_TCT"
       - "/ch1/CH1_TH"
+      - "/ch1/CH1_TPN"
+      - "/ch1/CH1_TSM"
       - "/ch1/CH1_V5"
       - "/ch1/CH1_V5EN"
       - "/ch1/CH1_V5IN"
@@ -331,12 +431,14 @@ netclasses:
     track_width: 0.25
     nets:
       - "/ch1/CH1_12VU"
+      - "/ch1/CH1_BSU_A"
       - "/ch1/CH1_ENU"
       - "/ch1/CH1_FBU"
       - "/ch1/CH1_GB"
       - "/ch1/CH1_LSC"
       - "/ch1/CH1_OB_U"
       - "/ch2/CH2_12VL"
+      - "/ch2/CH2_BSL_A"
       - "/ch2/CH2_DTL"
       - "/ch2/CH2_DTU"
       - "/ch2/CH2_FBL"
@@ -344,26 +446,40 @@ netclasses:
       - "/ch2/CH2_FLT_N"
       - "/ch2/CH2_GD"
       - "/ch2/CH2_LEDG_A"
+      - "/ch2/CH2_LEDQ"
       - "/ch2/CH2_LEDR_A"
       - "/ch2/CH2_N"
       - "/ch2/CH2_NCHG"
-      - "/ch2/CH2_N_M"
+      - "/ch2/CH2_N_M1"
       - "/ch2/CH2_OB_L"
-      - "/ch2/CH2_OPTO_A"
+      - "/ch2/CH2_OKA"
       - "/ch2/CH2_OSCC"
       - "/ch2/CH2_OSCR"
       - "/ch2/CH2_OSCRC"
+      - "/ch2/CH2_PAUSE"
+      - "/ch2/CH2_PDA"
       - "/ch2/CH2_PH1"
       - "/ch2/CH2_PH2"
       - "/ch2/CH2_PHI"
-      - "/ch2/CH2_PHI_M"
+      - "/ch2/CH2_PHI_M2"
+      - "/ch2/CH2_PHI_M3"
       - "/ch2/CH2_PLO"
-      - "/ch2/CH2_PLO_M"
+      - "/ch2/CH2_PLO_M2"
+      - "/ch2/CH2_PLO_M3"
       - "/ch2/CH2_PON"
-      - "/ch2/CH2_PON_B"
-      - "/ch2/CH2_PON_C"
+      - "/ch2/CH2_PON_M2"
+      - "/ch2/CH2_PON_M3"
+      - "/ch2/CH2_PWH"
+      - "/ch2/CH2_PWH_M2"
+      - "/ch2/CH2_PWH_M3"
+      - "/ch2/CH2_PWL"
+      - "/ch2/CH2_PWL_M2"
+      - "/ch2/CH2_PWL_M3"
       - "/ch2/CH2_RUN"
+      - "/ch2/CH2_TCT"
       - "/ch2/CH2_TH"
+      - "/ch2/CH2_TPN"
+      - "/ch2/CH2_TSM"
       - "/ch2/CH2_V5"
       - "/ch2/CH2_V5EN"
       - "/ch2/CH2_V5IN"
@@ -379,12 +495,14 @@ netclasses:
     track_width: 0.25
     nets:
       - "/ch2/CH2_12VU"
+      - "/ch2/CH2_BSU_A"
       - "/ch2/CH2_ENU"
       - "/ch2/CH2_FBU"
       - "/ch2/CH2_GB"
       - "/ch2/CH2_LSC"
       - "/ch2/CH2_OB_U"
       - "/ch3/CH3_12VL"
+      - "/ch3/CH3_BSL_A"
       - "/ch3/CH3_DTL"
       - "/ch3/CH3_DTU"
       - "/ch3/CH3_FBL"
@@ -392,26 +510,40 @@ netclasses:
       - "/ch3/CH3_FLT_N"
       - "/ch3/CH3_GD"
       - "/ch3/CH3_LEDG_A"
+      - "/ch3/CH3_LEDQ"
       - "/ch3/CH3_LEDR_A"
       - "/ch3/CH3_N"
       - "/ch3/CH3_NCHG"
-      - "/ch3/CH3_N_M"
+      - "/ch3/CH3_N_M1"
       - "/ch3/CH3_OB_L"
-      - "/ch3/CH3_OPTO_A"
+      - "/ch3/CH3_OKA"
       - "/ch3/CH3_OSCC"
       - "/ch3/CH3_OSCR"
       - "/ch3/CH3_OSCRC"
+      - "/ch3/CH3_PAUSE"
+      - "/ch3/CH3_PDA"
       - "/ch3/CH3_PH1"
       - "/ch3/CH3_PH2"
       - "/ch3/CH3_PHI"
-      - "/ch3/CH3_PHI_M"
+      - "/ch3/CH3_PHI_M2"
+      - "/ch3/CH3_PHI_M3"
       - "/ch3/CH3_PLO"
-      - "/ch3/CH3_PLO_M"
+      - "/ch3/CH3_PLO_M2"
+      - "/ch3/CH3_PLO_M3"
       - "/ch3/CH3_PON"
-      - "/ch3/CH3_PON_B"
-      - "/ch3/CH3_PON_C"
+      - "/ch3/CH3_PON_M2"
+      - "/ch3/CH3_PON_M3"
+      - "/ch3/CH3_PWH"
+      - "/ch3/CH3_PWH_M2"
+      - "/ch3/CH3_PWH_M3"
+      - "/ch3/CH3_PWL"
+      - "/ch3/CH3_PWL_M2"
+      - "/ch3/CH3_PWL_M3"
       - "/ch3/CH3_RUN"
+      - "/ch3/CH3_TCT"
       - "/ch3/CH3_TH"
+      - "/ch3/CH3_TPN"
+      - "/ch3/CH3_TSM"
       - "/ch3/CH3_V5"
       - "/ch3/CH3_V5EN"
       - "/ch3/CH3_V5IN"
@@ -425,7 +557,7 @@ netclasses:
     domain: B4
     clearance: 0.2
     track_width: 0.25
-    nets: ["/ch3/CH3_12VU", "/ch3/CH3_ENU", "/ch3/CH3_FBU", "/ch3/CH3_GB", "/ch3/CH3_LSC", "/ch3/CH3_OB_U"]
+    nets: ["/ch3/CH3_12VU", "/ch3/CH3_BSU_A", "/ch3/CH3_ENU", "/ch3/CH3_FBU", "/ch3/CH3_GB", "/ch3/CH3_LSC", "/ch3/CH3_OB_U"]
   - name: B4_10A
     domain: B4
     clearance: 0.2
@@ -470,7 +602,7 @@ netclasses:
     domain: CH1_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch1/CH1_LSD", "/ch1/CH1_LSM", "/ch1/CH1_PON_A"]
+    nets: ["/ch1/CH1_LSD", "/ch1/CH1_LSM", "/ch1/CH1_PHI_M1", "/ch1/CH1_PLO_M1", "/ch1/CH1_PON_M1", "/ch1/CH1_PWH_M1", "/ch1/CH1_PWL_M1"]
   - name: CH2_HSL
     domain: CH2_HSL
     clearance: 0.2
@@ -505,7 +637,7 @@ netclasses:
     domain: CH2_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch2/CH2_LSD", "/ch2/CH2_LSM", "/ch2/CH2_PON_A"]
+    nets: ["/ch2/CH2_LSD", "/ch2/CH2_LSM", "/ch2/CH2_PHI_M1", "/ch2/CH2_PLO_M1", "/ch2/CH2_PON_M1", "/ch2/CH2_PWH_M1", "/ch2/CH2_PWL_M1"]
   - name: CH3_HSL
     domain: CH3_HSL
     clearance: 0.2
@@ -540,12 +672,12 @@ netclasses:
     domain: CH3_SPAN
     clearance: 0.6
     track_width: 0.25
-    nets: ["/ch3/CH3_LSD", "/ch3/CH3_LSM", "/ch3/CH3_PON_A"]
+    nets: ["/ch3/CH3_LSD", "/ch3/CH3_LSM", "/ch3/CH3_PHI_M1", "/ch3/CH3_PLO_M1", "/ch3/CH3_PON_M1", "/ch3/CH3_PWH_M1", "/ch3/CH3_PWL_M1"]
   - name: ISO
     domain: ISO
     clearance: 0.2
     track_width: 0.25
-    nets: [ALM_C, ALM_E]
+    nets: [ALM_C, ALM_E, ALM_S1, ALM_S2, ALM_S3]
 components:
   - ref: J1
     block: input
@@ -558,123 +690,83 @@ components:
   - ref: F1
     block: input
     board: main
-    value: "4A"
-    footprint: Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal
+    value: "6A"
+    footprint: custom:Fuseholder_Keystone_3576_10x38mm
     category: fuse
     domains: [B1]
-    mpn: "0477004.MXP"
+    mpn: KLKD006.T
   - ref: F2
     block: input
     board: main
-    value: "4A"
-    footprint: Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal
+    value: "6A"
+    footprint: custom:Fuseholder_Keystone_3576_10x38mm
     category: fuse
     domains: [B1]
-    mpn: "0477004.MXP"
+    mpn: KLKD006.T
   - ref: F3
     block: input
     board: main
-    value: "4A"
-    footprint: Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal
+    value: "6A"
+    footprint: custom:Fuseholder_Keystone_3576_10x38mm
     category: fuse
     domains: [B2]
-    mpn: "0477004.MXP"
+    mpn: KLKD006.T
   - ref: F4
     block: input
     board: main
-    value: "4A"
-    footprint: Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal
+    value: "6A"
+    footprint: custom:Fuseholder_Keystone_3576_10x38mm
     category: fuse
     domains: [B3]
-    mpn: "0477004.MXP"
+    mpn: KLKD006.T
   - ref: F5
     block: input
     board: main
-    value: "4A"
-    footprint: Fuse:Fuseholder_Clip-5x20mm_Littelfuse_100_Inline_P20.50x4.60mm_D1.30mm_Horizontal
+    value: "6A"
+    footprint: custom:Fuseholder_Keystone_3576_10x38mm
     category: fuse
     domains: [B4]
-    mpn: "0477004.MXP"
-  - ref: XC1
+    mpn: KLKD006.T
+  - ref: XH1
     block: input
     board: main
-    value: "01000056Z"
+    value: "3576"
     footprint: null
     category: mechanical
     domains: []
-    mpn: "01000056Z"
-  - ref: XC2
+    mpn: "3576"
+  - ref: XH2
     block: input
     board: main
-    value: "01000056Z"
+    value: "3576"
     footprint: null
     category: mechanical
     domains: []
-    mpn: "01000056Z"
-  - ref: XC3
+    mpn: "3576"
+  - ref: XH3
     block: input
     board: main
-    value: "01000056Z"
+    value: "3576"
     footprint: null
     category: mechanical
     domains: []
-    mpn: "01000056Z"
-  - ref: XC4
+    mpn: "3576"
+  - ref: XH4
     block: input
     board: main
-    value: "01000056Z"
+    value: "3576"
     footprint: null
     category: mechanical
     domains: []
-    mpn: "01000056Z"
-  - ref: XC5
+    mpn: "3576"
+  - ref: XH5
     block: input
     board: main
-    value: "01000056Z"
+    value: "3576"
     footprint: null
     category: mechanical
     domains: []
-    mpn: "01000056Z"
-  - ref: XC6
-    block: input
-    board: main
-    value: "01000056Z"
-    footprint: null
-    category: mechanical
-    domains: []
-    mpn: "01000056Z"
-  - ref: XC7
-    block: input
-    board: main
-    value: "01000056Z"
-    footprint: null
-    category: mechanical
-    domains: []
-    mpn: "01000056Z"
-  - ref: XC8
-    block: input
-    board: main
-    value: "01000056Z"
-    footprint: null
-    category: mechanical
-    domains: []
-    mpn: "01000056Z"
-  - ref: XC9
-    block: input
-    board: main
-    value: "01000056Z"
-    footprint: null
-    category: mechanical
-    domains: []
-    mpn: "01000056Z"
-  - ref: XC10
-    block: input
-    board: main
-    value: "01000056Z"
-    footprint: null
-    category: mechanical
-    domains: []
-    mpn: "01000056Z"
+    mpn: "3576"
   - ref: Q101
     block: ch1
     board: main
@@ -683,7 +775,7 @@ components:
     category: mosfet
     domains: [B2, CH1_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q102
     block: ch1
     board: main
@@ -692,7 +784,7 @@ components:
     category: mosfet
     domains: [B1, B2]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q103
     block: ch1
     board: main
@@ -701,7 +793,7 @@ components:
     category: mosfet
     domains: [B1, CH1_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q104
     block: ch1
     board: main
@@ -710,7 +802,7 @@ components:
     category: mosfet
     domains: [B1]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: R101
     block: ch1
     board: main
@@ -719,7 +811,7 @@ components:
     category: resistor
     domains: [B2, CH1_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R152
     block: ch1
     board: main
@@ -728,7 +820,7 @@ components:
     category: resistor
     domains: [B2, CH1_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R102
     block: ch1
     board: main
@@ -737,7 +829,7 @@ components:
     category: resistor
     domains: [B1, CH1_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R153
     block: ch1
     board: main
@@ -746,7 +838,7 @@ components:
     category: resistor
     domains: [B1, CH1_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: C101
     block: ch1
     board: main
@@ -1105,6 +1197,15 @@ components:
     category: capacitor_ceramic
     domains: [B1, CH1_HSL]
     mpn: GRM188R71E105KA12D
+  - ref: R158
+    block: ch1
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D101
     block: ch1
     board: main
@@ -1113,6 +1214,15 @@ components:
     category: diode
     domains: [B2, CH1_HSU]
     mpn: BAS16W-7-F
+  - ref: R159
+    block: ch1
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D102
     block: ch1
     board: main
@@ -1254,11 +1364,11 @@ components:
   - ref: C138
     block: ch1
     board: main
-    value: "2.2u"
-    footprint: Capacitor_SMD:C_0603_1608Metric
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
     category: capacitor_ceramic
     domains: [B1]
-    mpn: GRM188R71C225KE11D
+    mpn: GRM21BR71E475KA73L
   - ref: C139
     block: ch1
     board: main
@@ -1379,14 +1489,6 @@ components:
     category: ic
     domains: [B1]
     mpn: TLV7044PWR
-  - ref: C142
-    block: ch1
-    board: main
-    value: "100n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B1]
-    mpn: GRM188R71H104KA93D
   - ref: R120
     block: ch1
     board: main
@@ -1446,35 +1548,51 @@ components:
   - ref: R126
     block: ch1
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B1, B2]
-    mpn: CRCW06034M99FKEA
+    domains: [B2, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R127
     block: ch1
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R154
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R155
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
   - ref: R128
     block: ch1
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: R129
     block: ch1
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: C144
     block: ch1
     board: main
@@ -1486,36 +1604,164 @@ components:
   - ref: R130
     block: ch1
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B1, B2]
-    mpn: CRCW06034M99FKEA
+    domains: [B2, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R131
     block: ch1
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R156
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R157
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
   - ref: R132
     block: ch1
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: R133
     block: ch1
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: C145
+    block: ch1
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM188R71E474KA12D
+  - ref: R160
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R161
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R162
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
+  - ref: R163
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
+  - ref: R164
+    block: ch1
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12061M62BEEA
+  - ref: R165
+    block: ch1
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12061M62BEEA
+  - ref: C153
+    block: ch1
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM188R71E474KA12D
+  - ref: R166
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R167
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, CH1_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R168
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
+  - ref: R169
+    block: ch1
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12062M00BEEA
+  - ref: R170
+    block: ch1
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12061M70BEEA
+  - ref: R171
+    block: ch1
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1]
+    mpn: TNPW12061M70BEEA
+  - ref: C154
     block: ch1
     board: main
     value: "470n"
@@ -1526,35 +1772,35 @@ components:
   - ref: R134
     block: ch1
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R135
     block: ch1
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R136
     block: ch1
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: R137
     block: ch1
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: C146
     block: ch1
     board: main
@@ -1563,6 +1809,14 @@ components:
     category: capacitor_ceramic
     domains: [B1]
     mpn: GRM188R71E474KA12D
+  - ref: C142
+    block: ch1
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM188R71H104KA93D
   - ref: R138
     block: ch1
     board: main
@@ -1622,11 +1876,11 @@ components:
   - ref: R142
     block: ch1
     board: main
-    value: "100k"
+    value: "10k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B1, CH1_QFB]
-    mpn: CRCW0603100KFKEA
+    mpn: CRCW060310K0FKEA
   - ref: R143
     block: ch1
     board: main
@@ -1654,12 +1908,12 @@ components:
   - ref: R145
     block: ch1
     board: main
-    value: "249"
+    value: "750"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW0603249RFKEA
-    p_diss_w: 0.02
+    mpn: CRCW0603750RFKEA
+    p_diss_w: 0.01
   - ref: RT101
     block: ch1
     board: main
@@ -1671,11 +1925,11 @@ components:
   - ref: U109
     block: ch1
     board: main
-    value: "74LVC1G02"
-    footprint: Package_TO_SOT_SMD:SOT-23-5
+    value: "74LVC2G02"
+    footprint: Package_SO:SSOP-8_2.95x2.8mm_P0.65mm
     category: ic
     domains: [B1]
-    mpn: SN74LVC1G02DBVR
+    mpn: SN74LVC2G02DCTR
   - ref: Q105
     block: ch1
     board: main
@@ -1692,6 +1946,15 @@ components:
     category: led
     domains: [B1]
     mpn: SML-D12V1WT86
+  - ref: R172
+    block: ch1
+    board: main
+    value: "825"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW0603825RFKEA
+    p_diss_w: 0.02
   - ref: U110
     block: ch1
     board: main
@@ -1700,6 +1963,22 @@ components:
     category: opto
     domains: [B1, ISO]
     mpn: SFH617A-3X017T
+  - ref: JP102
+    block: ch1
+    board: main
+    value: EN
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+    category: switch
+    domains: [ISO]
+    mpn: "61300211121"
+  - ref: JS102
+    block: ch1
+    board: main
+    value: "60900213421"
+    footprint: null
+    category: mechanical
+    domains: []
+    mpn: "60900213421"
   - ref: D104
     block: ch1
     board: main
@@ -1708,6 +1987,94 @@ components:
     category: led
     domains: [B1]
     mpn: SML-D12M1WT86
+  - ref: U111
+    block: ch1
+    board: main
+    value: TLV7044PWR
+    footprint: Package_SO:TSSOP-14_4.4x5mm_P0.65mm
+    category: ic
+    domains: [B1]
+    mpn: TLV7044PWR
+  - ref: C152
+    block: ch1
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM188R71H104KA93D
+  - ref: R173
+    block: ch1
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034M99FKEA
+  - ref: R174
+    block: ch1
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034M99FKEA
+  - ref: R175
+    block: ch1
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034M99FKEA
+  - ref: R176
+    block: ch1
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW0603100KFKEA
+  - ref: R177
+    block: ch1
+    board: main
+    value: "249k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW0603249KFKEA
+  - ref: R178
+    block: ch1
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034M99FKEA
+  - ref: R179
+    block: ch1
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1]
+    mpn: CRCW06034M99FKEA
+  - ref: C151
+    block: ch1
+    board: main
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
+    category: capacitor_ceramic
+    domains: [B1]
+    mpn: GRM21BR71E475KA73L
+  - ref: D105
+    block: ch1
+    board: main
+    value: BAS16W
+    footprint: Package_TO_SOT_SMD:SOT-323_SC-70
+    category: diode
+    domains: [B1]
+    mpn: BAS16W-7-F
   - ref: Q201
     block: ch2
     board: main
@@ -1716,7 +2083,7 @@ components:
     category: mosfet
     domains: [B3, CH2_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q202
     block: ch2
     board: main
@@ -1725,7 +2092,7 @@ components:
     category: mosfet
     domains: [B2, B3]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q203
     block: ch2
     board: main
@@ -1734,7 +2101,7 @@ components:
     category: mosfet
     domains: [B2, CH2_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q204
     block: ch2
     board: main
@@ -1743,7 +2110,7 @@ components:
     category: mosfet
     domains: [B1, B2]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: R201
     block: ch2
     board: main
@@ -1752,7 +2119,7 @@ components:
     category: resistor
     domains: [B3, CH2_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R252
     block: ch2
     board: main
@@ -1761,7 +2128,7 @@ components:
     category: resistor
     domains: [B3, CH2_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R202
     block: ch2
     board: main
@@ -1770,7 +2137,7 @@ components:
     category: resistor
     domains: [B2, CH2_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R253
     block: ch2
     board: main
@@ -1779,7 +2146,7 @@ components:
     category: resistor
     domains: [B2, CH2_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: C201
     block: ch2
     board: main
@@ -2138,6 +2505,15 @@ components:
     category: capacitor_ceramic
     domains: [B2, CH2_HSL]
     mpn: GRM188R71E105KA12D
+  - ref: R258
+    block: ch2
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D201
     block: ch2
     board: main
@@ -2146,6 +2522,15 @@ components:
     category: diode
     domains: [B3, CH2_HSU]
     mpn: BAS16W-7-F
+  - ref: R259
+    block: ch2
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D202
     block: ch2
     board: main
@@ -2287,11 +2672,11 @@ components:
   - ref: C238
     block: ch2
     board: main
-    value: "2.2u"
-    footprint: Capacitor_SMD:C_0603_1608Metric
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
     category: capacitor_ceramic
     domains: [B1, B2]
-    mpn: GRM188R71C225KE11D
+    mpn: GRM21BR71E475KA73L
   - ref: C239
     block: ch2
     board: main
@@ -2412,14 +2797,6 @@ components:
     category: ic
     domains: [B1, B2]
     mpn: TLV7044PWR
-  - ref: C242
-    block: ch2
-    board: main
-    value: "100n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B1, B2]
-    mpn: GRM188R71H104KA93D
   - ref: R220
     block: ch2
     board: main
@@ -2479,35 +2856,51 @@ components:
   - ref: R226
     block: ch2
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B2, B3]
-    mpn: CRCW06034M99FKEA
+    domains: [B3, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R227
     block: ch2
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R254
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R255
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
   - ref: R228
     block: ch2
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: R229
     block: ch2
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: C244
     block: ch2
     board: main
@@ -2519,36 +2912,164 @@ components:
   - ref: R230
     block: ch2
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B2, B3]
-    mpn: CRCW06034M99FKEA
+    domains: [B3, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R231
     block: ch2
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R256
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R257
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
   - ref: R232
     block: ch2
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: R233
     block: ch2
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: C245
+    block: ch2
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM188R71E474KA12D
+  - ref: R260
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R261
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R262
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
+  - ref: R263
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
+  - ref: R264
+    block: ch2
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, B2]
+    mpn: TNPW12061M62BEEA
+  - ref: R265
+    block: ch2
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, B2]
+    mpn: TNPW12061M62BEEA
+  - ref: C253
+    block: ch2
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM188R71E474KA12D
+  - ref: R266
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R267
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, CH2_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R268
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
+  - ref: R269
+    block: ch2
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2]
+    mpn: TNPW12062M00BEEA
+  - ref: R270
+    block: ch2
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, B2]
+    mpn: TNPW12061M70BEEA
+  - ref: R271
+    block: ch2
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B1, B2]
+    mpn: TNPW12061M70BEEA
+  - ref: C254
     block: ch2
     board: main
     value: "470n"
@@ -2559,35 +3080,35 @@ components:
   - ref: R234
     block: ch2
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R235
     block: ch2
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R236
     block: ch2
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: R237
     block: ch2
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1, B2]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: C246
     block: ch2
     board: main
@@ -2596,6 +3117,14 @@ components:
     category: capacitor_ceramic
     domains: [B1, B2]
     mpn: GRM188R71E474KA12D
+  - ref: C242
+    block: ch2
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM188R71H104KA93D
   - ref: R238
     block: ch2
     board: main
@@ -2655,11 +3184,11 @@ components:
   - ref: R242
     block: ch2
     board: main
-    value: "100k"
+    value: "10k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B2, CH2_QFB]
-    mpn: CRCW0603100KFKEA
+    mpn: CRCW060310K0FKEA
   - ref: R243
     block: ch2
     board: main
@@ -2687,12 +3216,12 @@ components:
   - ref: R245
     block: ch2
     board: main
-    value: "249"
+    value: "750"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW0603249RFKEA
-    p_diss_w: 0.02
+    mpn: CRCW0603750RFKEA
+    p_diss_w: 0.01
   - ref: RT201
     block: ch2
     board: main
@@ -2704,11 +3233,11 @@ components:
   - ref: U209
     block: ch2
     board: main
-    value: "74LVC1G02"
-    footprint: Package_TO_SOT_SMD:SOT-23-5
+    value: "74LVC2G02"
+    footprint: Package_SO:SSOP-8_2.95x2.8mm_P0.65mm
     category: ic
     domains: [B1, B2]
-    mpn: SN74LVC1G02DBVR
+    mpn: SN74LVC2G02DCTR
   - ref: Q205
     block: ch2
     board: main
@@ -2723,8 +3252,17 @@ components:
     value: red
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
-    domains: [B2]
+    domains: [B1, B2]
     mpn: SML-D12V1WT86
+  - ref: R272
+    block: ch2
+    board: main
+    value: "825"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW0603825RFKEA
+    p_diss_w: 0.02
   - ref: U210
     block: ch2
     board: main
@@ -2733,6 +3271,22 @@ components:
     category: opto
     domains: [B1, B2, ISO]
     mpn: SFH617A-3X017T
+  - ref: JP202
+    block: ch2
+    board: main
+    value: EN
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+    category: switch
+    domains: [ISO]
+    mpn: "61300211121"
+  - ref: JS202
+    block: ch2
+    board: main
+    value: "60900213421"
+    footprint: null
+    category: mechanical
+    domains: []
+    mpn: "60900213421"
   - ref: D204
     block: ch2
     board: main
@@ -2741,6 +3295,94 @@ components:
     category: led
     domains: [B1, B2]
     mpn: SML-D12M1WT86
+  - ref: U211
+    block: ch2
+    board: main
+    value: TLV7044PWR
+    footprint: Package_SO:TSSOP-14_4.4x5mm_P0.65mm
+    category: ic
+    domains: [B1, B2]
+    mpn: TLV7044PWR
+  - ref: C252
+    block: ch2
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM188R71H104KA93D
+  - ref: R273
+    block: ch2
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034M99FKEA
+  - ref: R274
+    block: ch2
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B1, B2]
+    mpn: CRCW06034M99FKEA
+  - ref: R275
+    block: ch2
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034M99FKEA
+  - ref: R276
+    block: ch2
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW0603100KFKEA
+  - ref: R277
+    block: ch2
+    board: main
+    value: "249k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW0603249KFKEA
+  - ref: R278
+    block: ch2
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034M99FKEA
+  - ref: R279
+    block: ch2
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2]
+    mpn: CRCW06034M99FKEA
+  - ref: C251
+    block: ch2
+    board: main
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
+    category: capacitor_ceramic
+    domains: [B1, B2]
+    mpn: GRM21BR71E475KA73L
+  - ref: D205
+    block: ch2
+    board: main
+    value: BAS16W
+    footprint: Package_TO_SOT_SMD:SOT-323_SC-70
+    category: diode
+    domains: [B2]
+    mpn: BAS16W-7-F
   - ref: Q301
     block: ch3
     board: main
@@ -2749,7 +3391,7 @@ components:
     category: mosfet
     domains: [B4, CH3_HSU]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q302
     block: ch3
     board: main
@@ -2758,7 +3400,7 @@ components:
     category: mosfet
     domains: [B3, B4]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q303
     block: ch3
     board: main
@@ -2767,7 +3409,7 @@ components:
     category: mosfet
     domains: [B3, CH3_HSL]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: Q304
     block: ch3
     board: main
@@ -2776,7 +3418,7 @@ components:
     category: mosfet
     domains: [B2, B3]
     mpn: CSD18543Q3A
-    p_diss_w: 0.43
+    p_diss_w: 38.06
   - ref: R301
     block: ch3
     board: main
@@ -2785,7 +3427,7 @@ components:
     category: resistor
     domains: [B4, CH3_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R352
     block: ch3
     board: main
@@ -2794,7 +3436,7 @@ components:
     category: resistor
     domains: [B4, CH3_HSU]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R302
     block: ch3
     board: main
@@ -2803,7 +3445,7 @@ components:
     category: resistor
     domains: [B3, CH3_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: R353
     block: ch3
     board: main
@@ -2812,7 +3454,7 @@ components:
     category: resistor
     domains: [B3, CH3_HSL]
     mpn: WSL2816R0860FEH
-    p_diss_w: 1.32
+    p_diss_w: 117.15
   - ref: C301
     block: ch3
     board: main
@@ -3171,6 +3813,15 @@ components:
     category: capacitor_ceramic
     domains: [B3, CH3_HSL]
     mpn: GRM188R71E105KA12D
+  - ref: R358
+    block: ch3
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B4]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D301
     block: ch3
     board: main
@@ -3179,6 +3830,15 @@ components:
     category: diode
     domains: [B4, CH3_HSU]
     mpn: BAS16W-7-F
+  - ref: R359
+    block: ch3
+    board: main
+    value: "4.7"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034R70FKEA
+    p_diss_w: 0.001
   - ref: D302
     block: ch3
     board: main
@@ -3320,11 +3980,11 @@ components:
   - ref: C338
     block: ch3
     board: main
-    value: "2.2u"
-    footprint: Capacitor_SMD:C_0603_1608Metric
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
     category: capacitor_ceramic
     domains: [B2, B3]
-    mpn: GRM188R71C225KE11D
+    mpn: GRM21BR71E475KA73L
   - ref: C339
     block: ch3
     board: main
@@ -3445,14 +4105,6 @@ components:
     category: ic
     domains: [B2, B3]
     mpn: TLV7044PWR
-  - ref: C342
-    block: ch3
-    board: main
-    value: "100n"
-    footprint: Capacitor_SMD:C_0603_1608Metric
-    category: capacitor_ceramic
-    domains: [B2, B3]
-    mpn: GRM188R71H104KA93D
   - ref: R320
     block: ch3
     board: main
@@ -3512,35 +4164,51 @@ components:
   - ref: R326
     block: ch3
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B3, B4]
-    mpn: CRCW06034M99FKEA
+    domains: [B4, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R327
     block: ch3
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R354
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R355
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
   - ref: R328
     block: ch3
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: R329
     block: ch3
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.58M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M58BEEA
   - ref: C344
     block: ch3
     board: main
@@ -3552,36 +4220,164 @@ components:
   - ref: R330
     block: ch3
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
-    domains: [B3, B4]
-    mpn: CRCW06034M99FKEA
+    domains: [B4, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
   - ref: R331
     block: ch3
     board: main
-    value: "4.99M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R356
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06034M99FKEA
+    mpn: TNPW12062M00BEEA
+  - ref: R357
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
   - ref: R332
     block: ch3
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: R333
     block: ch3
     board: main
-    value: "1.1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.74M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M10FKEA
+    mpn: TNPW12061M74BEEA
   - ref: C345
+    block: ch3
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM188R71E474KA12D
+  - ref: R360
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B4, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R361
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R362
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
+  - ref: R363
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
+  - ref: R364
+    block: ch3
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, B3]
+    mpn: TNPW12061M62BEEA
+  - ref: R365
+    block: ch3
+    board: main
+    value: "1.62M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, B3]
+    mpn: TNPW12061M62BEEA
+  - ref: C353
+    block: ch3
+    board: main
+    value: "470n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM188R71E474KA12D
+  - ref: R366
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B4, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R367
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3, CH3_SPAN]
+    mpn: TNPW12062M00BEEA
+  - ref: R368
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
+  - ref: R369
+    block: ch3
+    board: main
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B3]
+    mpn: TNPW12062M00BEEA
+  - ref: R370
+    block: ch3
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, B3]
+    mpn: TNPW12061M70BEEA
+  - ref: R371
+    block: ch3
+    board: main
+    value: "1.7M"
+    footprint: Resistor_SMD:R_1206_3216Metric
+    category: resistor
+    domains: [B2, B3]
+    mpn: TNPW12061M70BEEA
+  - ref: C354
     block: ch3
     board: main
     value: "470n"
@@ -3592,35 +4388,35 @@ components:
   - ref: R334
     block: ch3
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R335
     block: ch3
     board: main
-    value: "2.26M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "2M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06032M26FKEA
+    mpn: TNPW12062M00BEEA
   - ref: R336
     block: ch3
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: R337
     block: ch3
     board: main
-    value: "1M"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    value: "1.85M"
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2, B3]
-    mpn: CRCW06031M00FKEA
+    mpn: TNPW12061M85BEEA
   - ref: C346
     block: ch3
     board: main
@@ -3629,6 +4425,14 @@ components:
     category: capacitor_ceramic
     domains: [B2, B3]
     mpn: GRM188R71E474KA12D
+  - ref: C342
+    block: ch3
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM188R71H104KA93D
   - ref: R338
     block: ch3
     board: main
@@ -3688,11 +4492,11 @@ components:
   - ref: R342
     block: ch3
     board: main
-    value: "100k"
+    value: "10k"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B3, CH3_QFB]
-    mpn: CRCW0603100KFKEA
+    mpn: CRCW060310K0FKEA
   - ref: R343
     block: ch3
     board: main
@@ -3720,12 +4524,12 @@ components:
   - ref: R345
     block: ch3
     board: main
-    value: "249"
+    value: "750"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW0603249RFKEA
-    p_diss_w: 0.02
+    mpn: CRCW0603750RFKEA
+    p_diss_w: 0.01
   - ref: RT301
     block: ch3
     board: main
@@ -3737,11 +4541,11 @@ components:
   - ref: U309
     block: ch3
     board: main
-    value: "74LVC1G02"
-    footprint: Package_TO_SOT_SMD:SOT-23-5
+    value: "74LVC2G02"
+    footprint: Package_SO:SSOP-8_2.95x2.8mm_P0.65mm
     category: ic
     domains: [B2, B3]
-    mpn: SN74LVC1G02DBVR
+    mpn: SN74LVC2G02DCTR
   - ref: Q305
     block: ch3
     board: main
@@ -3756,8 +4560,17 @@ components:
     value: red
     footprint: LED_SMD:LED_0603_1608Metric
     category: led
-    domains: [B3]
+    domains: [B2, B3]
     mpn: SML-D12V1WT86
+  - ref: R372
+    block: ch3
+    board: main
+    value: "825"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW0603825RFKEA
+    p_diss_w: 0.02
   - ref: U310
     block: ch3
     board: main
@@ -3766,6 +4579,22 @@ components:
     category: opto
     domains: [B2, B3, ISO]
     mpn: SFH617A-3X017T
+  - ref: JP302
+    block: ch3
+    board: main
+    value: EN
+    footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+    category: switch
+    domains: [ISO]
+    mpn: "61300211121"
+  - ref: JS302
+    block: ch3
+    board: main
+    value: "60900213421"
+    footprint: null
+    category: mechanical
+    domains: []
+    mpn: "60900213421"
   - ref: D304
     block: ch3
     board: main
@@ -3774,6 +4603,94 @@ components:
     category: led
     domains: [B2, B3]
     mpn: SML-D12M1WT86
+  - ref: U311
+    block: ch3
+    board: main
+    value: TLV7044PWR
+    footprint: Package_SO:TSSOP-14_4.4x5mm_P0.65mm
+    category: ic
+    domains: [B2, B3]
+    mpn: TLV7044PWR
+  - ref: C352
+    block: ch3
+    board: main
+    value: "100n"
+    footprint: Capacitor_SMD:C_0603_1608Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM188R71H104KA93D
+  - ref: R373
+    block: ch3
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034M99FKEA
+  - ref: R374
+    block: ch3
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B2, B3]
+    mpn: CRCW06034M99FKEA
+  - ref: R375
+    block: ch3
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034M99FKEA
+  - ref: R376
+    block: ch3
+    board: main
+    value: "100k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW0603100KFKEA
+  - ref: R377
+    block: ch3
+    board: main
+    value: "249k"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW0603249KFKEA
+  - ref: R378
+    block: ch3
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034M99FKEA
+  - ref: R379
+    block: ch3
+    board: main
+    value: "4.99M"
+    footprint: Resistor_SMD:R_0603_1608Metric
+    category: resistor
+    domains: [B3]
+    mpn: CRCW06034M99FKEA
+  - ref: C351
+    block: ch3
+    board: main
+    value: "4.7u"
+    footprint: Capacitor_SMD:C_0805_2012Metric
+    category: capacitor_ceramic
+    domains: [B2, B3]
+    mpn: GRM21BR71E475KA73L
+  - ref: D305
+    block: ch3
+    board: main
+    value: BAS16W
+    footprint: Package_TO_SOT_SMD:SOT-323_SC-70
+    category: diode
+    domains: [B3]
+    mpn: BAS16W-7-F
   - ref: J2
     block: alarm
     board: main
@@ -3782,6 +4699,14 @@ components:
     category: connector
     domains: [ISO]
     mpn: "1757242"
+  - ref: D1
+    block: alarm
+    board: main
+    value: BAS16W
+    footprint: Package_TO_SOT_SMD:SOT-323_SC-70
+    category: diode
+    domains: [ISO]
+    mpn: BAS16W-7-F
   - ref: H1
     block: mech
     board: main
@@ -4106,6 +5031,36 @@ relations:
   - kind: separate
     a: domain:B3
     b: domain:B4
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B2
+    b: domain:CH1_HSU
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B1
+    b: domain:CH1_HSL
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B3
+    b: domain:CH2_HSU
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B2
+    b: domain:CH2_HSL
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B4
+    b: domain:CH3_HSU
+    slot: false
+    source: design
+  - kind: separate
+    a: domain:B3
+    b: domain:CH3_HSL
     slot: false
     source: design
   - kind: separate
@@ -4480,46 +5435,46 @@ relations:
     source: design
   - kind: thermal
     obj: R101
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R152
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R102
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R153
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q101
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q102
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q103
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q104
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -5157,46 +6112,46 @@ relations:
     source: design
   - kind: thermal
     obj: R201
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R252
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R202
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R253
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q201
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q202
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q203
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q204
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -5834,46 +6789,46 @@ relations:
     source: design
   - kind: thermal
     obj: R301
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R352
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R302
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: R353
-    watts: 1.32
+    watts: 117.15
     sink: copper
     note: "window edge only; normal <= 0.04 W"
     source: design
   - kind: thermal
     obj: Q301
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q302
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q303
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: thermal
     obj: Q304
-    watts: 0.43
+    watts: 38.06
     sink: "copper + thermal vias"
     source: design
   - kind: far
@@ -6325,13 +7280,67 @@ constraints:
   - id: rel.17
     from: separate
     kind: isolation
+    domains: [B2, CH1_HSU]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B2.CH1_HSU
+  - id: rel.18
+    from: separate
+    kind: isolation
+    domains: [B1, CH1_HSL]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B1.CH1_HSL
+  - id: rel.19
+    from: separate
+    kind: isolation
+    domains: [B3, CH2_HSU]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B3.CH2_HSU
+  - id: rel.20
+    from: separate
+    kind: isolation
+    domains: [B2, CH2_HSL]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B2.CH2_HSL
+  - id: rel.21
+    from: separate
+    kind: isolation
+    domains: [B4, CH3_HSU]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B4.CH3_HSU
+  - id: rel.22
+    from: separate
+    kind: isolation
+    domains: [B3, CH3_HSL]
+    grade: functional
+    clearance_mm: 0.6
+    creepage_mm: 0.6
+    slot: false
+    kicad_dru: IR:barrier.B3.CH3_HSL
+  - id: rel.23
+    from: separate
+    kind: isolation
     domains: [B1, B3]
     grade: functional
     clearance_mm: 1.0
     creepage_mm: 1.5
     slot: false
     kicad_dru: IR:barrier.B1.B3
-  - id: rel.18
+  - id: rel.24
     from: separate
     kind: isolation
     domains: [B2, B4]
@@ -6340,7 +7349,7 @@ constraints:
     creepage_mm: 1.5
     slot: false
     kicad_dru: IR:barrier.B2.B4
-  - id: rel.19
+  - id: rel.25
     from: separate
     kind: isolation
     domains: [B1, B4]
@@ -6349,7 +7358,7 @@ constraints:
     creepage_mm: 1.5
     slot: false
     kicad_dru: IR:barrier.B1.B4
-  - id: rel.20
+  - id: rel.26
     from: separate
     kind: isolation
     domains: [ISO, B1]
@@ -6358,36 +7367,36 @@ constraints:
     creepage_mm: 4.0
     slot: false
     kicad_dru: IR:barrier.ISO.B1
-  - id: rel.21
+  - id: rel.27
     from: keepout
     kind: keepout
     obj: H1
     what: "copper, 4.0 mm ring around the M3 hole"
     layers: all
-  - id: rel.22
+  - id: rel.28
     from: keepout
     kind: keepout
     obj: H2
     what: "copper, 4.0 mm ring around the M3 hole"
     layers: all
-  - id: rel.23
+  - id: rel.29
     from: keepout
     kind: keepout
     obj: H3
     what: "copper, 4.0 mm ring around the M3 hole"
     layers: all
-  - id: rel.24
+  - id: rel.30
     from: keepout
     kind: keepout
     obj: H4
     what: "copper, 4.0 mm ring around the M3 hole"
     layers: all
-  - id: rel.25
+  - id: rel.31
     from: side
     kind: side
     obj: all
     side: top
-  - id: rel.26
+  - id: rel.32
     from: x-cluster
     kind: x-cluster
     name: ch1.pwr
@@ -6420,7 +7429,7 @@ constraints:
       - C118
       - R103
       - R104
-  - id: rel.27
+  - id: rel.33
     from: x-cluster
     kind: x-cluster
     name: ch1.drv
@@ -6451,12 +7460,12 @@ constraints:
       - C130
       - D101
       - D102
-  - id: rel.28
+  - id: rel.34
     from: x-cluster
     kind: x-cluster
     name: ch1.osc
     members: [U103, R115, C131, C132]
-  - id: rel.29
+  - id: rel.35
     from: x-cluster
     kind: x-cluster
     name: ch1.sup
@@ -6484,7 +7493,7 @@ constraints:
       - R150
       - R151
       - C150
-  - id: rel.30
+  - id: rel.36
     from: x-cluster
     kind: x-cluster
     name: ch1.supv
@@ -6534,161 +7543,113 @@ constraints:
       - C147
       - C148
       - C149
-  - id: rel.31
+  - id: rel.37
     from: x-floorplan
     kind: x-floorplan
     block: block:ch1
-  - id: rel.32
+  - id: rel.38
     from: array
     kind: array
     members: [Q103, Q101]
     axis: x
     pitch: equal
-  - id: rel.33
+  - id: rel.39
     from: array
     kind: array
     members: [Q104, Q102]
     axis: x
     pitch: equal
-  - id: rel.34
+  - id: rel.40
     from: align
     kind: align
     members: [Q103, Q104]
     axis: x
-  - id: rel.35
+  - id: rel.41
     from: align
     kind: align
     members: [Q101, Q102]
     axis: x
-  - id: rel.36
+  - id: rel.42
     from: array
     kind: array
     members: [C101, C102, C103, C104, C105, C106, C107, C108]
     axis: "y"
     pitch: equal
-  - id: rel.37
+  - id: rel.43
     from: symmetric
     kind: symmetric
     pairs:
       - [Q103, Q101]
       - [Q104, Q102]
     axis: v
-  - id: rel.38
-    from: near
-    kind: proximity
-    a: R101
-    b: Q101.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.39
-    from: near
-    kind: proximity
-    a: R101
-    b: C101
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.40
-    from: near
-    kind: proximity
-    a: R152
-    b: Q101.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.41
-    from: near
-    kind: proximity
-    a: R152
-    b: C101
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.42
-    from: near
-    kind: proximity
-    a: R102
-    b: Q103.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.43
-    from: near
-    kind: proximity
-    a: R102
-    b: C108
-    max: 3.0
-    basis: pad_edge
-    hard: true
   - id: rel.44
     from: near
     kind: proximity
-    a: R153
-    b: Q103.1
+    a: R101
+    b: Q101.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.45
     from: near
     kind: proximity
-    a: R153
-    b: C108
+    a: R101
+    b: C101
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.46
     from: near
     kind: proximity
-    a: C109
-    b: Q101.5
+    a: R152
+    b: Q101.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.47
     from: near
     kind: proximity
-    a: C109
-    b: Q103.5
+    a: R152
+    b: C101
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.48
     from: near
     kind: proximity
-    a: C110
-    b: Q101.5
+    a: R102
+    b: Q103.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.49
     from: near
     kind: proximity
-    a: C110
-    b: Q103.5
+    a: R102
+    b: C108
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.50
     from: near
     kind: proximity
-    a: C111
-    b: Q101.5
+    a: R153
+    b: Q103.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.51
     from: near
     kind: proximity
-    a: C111
-    b: Q103.5
+    a: R153
+    b: C108
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.52
     from: near
     kind: proximity
-    a: C112
+    a: C109
     b: Q101.5
     max: 3.0
     basis: pad_edge
@@ -6696,7 +7657,7 @@ constraints:
   - id: rel.53
     from: near
     kind: proximity
-    a: C112
+    a: C109
     b: Q103.5
     max: 3.0
     basis: pad_edge
@@ -6704,55 +7665,55 @@ constraints:
   - id: rel.54
     from: near
     kind: proximity
-    a: C113
-    b: Q102.1
+    a: C110
+    b: Q101.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.55
     from: near
     kind: proximity
-    a: C113
-    b: Q104.1
+    a: C110
+    b: Q103.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.56
     from: near
     kind: proximity
-    a: C114
-    b: Q102.1
+    a: C111
+    b: Q101.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.57
     from: near
     kind: proximity
-    a: C114
-    b: Q104.1
+    a: C111
+    b: Q103.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.58
     from: near
     kind: proximity
-    a: C115
-    b: Q102.1
+    a: C112
+    b: Q101.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.59
     from: near
     kind: proximity
-    a: C115
-    b: Q104.1
+    a: C112
+    b: Q103.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.60
     from: near
     kind: proximity
-    a: C116
+    a: C113
     b: Q102.1
     max: 3.0
     basis: pad_edge
@@ -6760,26 +7721,74 @@ constraints:
   - id: rel.61
     from: near
     kind: proximity
-    a: C116
+    a: C113
     b: Q104.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.62
+    from: near
+    kind: proximity
+    a: C114
+    b: Q102.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.63
+    from: near
+    kind: proximity
+    a: C114
+    b: Q104.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.64
+    from: near
+    kind: proximity
+    a: C115
+    b: Q102.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.65
+    from: near
+    kind: proximity
+    a: C115
+    b: Q104.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.66
+    from: near
+    kind: proximity
+    a: C116
+    b: Q102.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.67
+    from: near
+    kind: proximity
+    a: C116
+    b: Q104.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.68
     from: hot_loop
     kind: loop_area
     path: [C109.1, Q101.5, Q101.1, R101.1, R101.2, C101.1, C101.2, R102.1, R102.2, Q103.1, Q103.5, C109.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.63
+  - id: rel.69
     from: hot_loop
     kind: loop_area
     path: [C113.1, Q102.1, Q102.5, R101.1, R101.2, C101.1, C101.2, R102.1, R102.2, Q104.5, Q104.1, C113.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.64
+  - id: rel.70
     from: near
     kind: proximity
     a: C117
@@ -6787,7 +7796,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.65
+  - id: rel.71
     from: near
     kind: proximity
     a: C118
@@ -6795,7 +7804,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.66
+  - id: rel.72
     from: near
     kind: proximity
     a: R103
@@ -6803,7 +7812,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.67
+  - id: rel.73
     from: near
     kind: proximity
     a: R104
@@ -6811,69 +7820,69 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.68
-    from: thermal
-    kind: thermal
-    obj: R101
-    watts: 1.32
-    sink: copper
-  - id: rel.69
-    from: thermal
-    kind: thermal
-    obj: R152
-    watts: 1.32
-    sink: copper
-  - id: rel.70
-    from: thermal
-    kind: thermal
-    obj: R102
-    watts: 1.32
-    sink: copper
-  - id: rel.71
-    from: thermal
-    kind: thermal
-    obj: R153
-    watts: 1.32
-    sink: copper
-  - id: rel.72
-    from: thermal
-    kind: thermal
-    obj: Q101
-    watts: 0.43
-    sink: "copper + thermal vias"
-  - id: rel.73
-    from: thermal
-    kind: thermal
-    obj: Q102
-    watts: 0.43
-    sink: "copper + thermal vias"
   - id: rel.74
     from: thermal
     kind: thermal
-    obj: Q103
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R101
+    watts: 117.15
+    sink: copper
   - id: rel.75
     from: thermal
     kind: thermal
-    obj: Q104
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R152
+    watts: 117.15
+    sink: copper
   - id: rel.76
+    from: thermal
+    kind: thermal
+    obj: R102
+    watts: 117.15
+    sink: copper
+  - id: rel.77
+    from: thermal
+    kind: thermal
+    obj: R153
+    watts: 117.15
+    sink: copper
+  - id: rel.78
+    from: thermal
+    kind: thermal
+    obj: Q101
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.79
+    from: thermal
+    kind: thermal
+    obj: Q102
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.80
+    from: thermal
+    kind: thermal
+    obj: Q103
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.81
+    from: thermal
+    kind: thermal
+    obj: Q104
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.82
     from: far
     kind: separation
     a: RT101
     b: C117
     min: 16.0
     hard: false
-  - id: rel.77
+  - id: rel.83
     from: far
     kind: separation
     a: RT101
     b: C118
     min: 16.0
     hard: false
-  - id: rel.78
+  - id: rel.84
     from: near
     kind: proximity
     a: RT101
@@ -6881,7 +7890,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.79
+  - id: rel.85
     from: near
     kind: proximity
     a: RT101
@@ -6889,13 +7898,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.80
+  - id: rel.86
     from: x-pour
     kind: x-pour
     nets: [net:TAP0, net:TAP1, net:TAP2, net:ch1/CH1_X, net:ch1/CH1_Y]
     layers: "F.Cu,B.Cu"
     min_width_mm: 3
-  - id: rel.81
+  - id: rel.87
     from: near
     kind: proximity
     a: U101
@@ -6903,7 +7912,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.82
+  - id: rel.88
     from: near
     kind: proximity
     a: U101
@@ -6911,7 +7920,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.83
+  - id: rel.89
     from: near
     kind: proximity
     a: U102
@@ -6919,7 +7928,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.84
+  - id: rel.90
     from: near
     kind: proximity
     a: U102
@@ -6927,7 +7936,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.85
+  - id: rel.91
     from: near
     kind: proximity
     a: R105
@@ -6935,7 +7944,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.86
+  - id: rel.92
     from: near
     kind: proximity
     a: R106
@@ -6943,7 +7952,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.87
+  - id: rel.93
     from: near
     kind: proximity
     a: R107
@@ -6951,7 +7960,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.88
+  - id: rel.94
     from: near
     kind: proximity
     a: R108
@@ -6959,35 +7968,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.89
+  - id: rel.95
     from: hot_loop
     kind: loop_area
     path: [U101.15, R105.1, R105.2, Q101.4, Q101.1, U101.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.90
+  - id: rel.96
     from: hot_loop
     kind: loop_area
     path: [U101.10, R106.1, R106.2, Q102.4, Q102.1, U101.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.91
+  - id: rel.97
     from: hot_loop
     kind: loop_area
     path: [U102.15, R107.1, R107.2, Q103.4, Q103.1, U102.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.92
+  - id: rel.98
     from: hot_loop
     kind: loop_area
     path: [U102.10, R108.1, R108.2, Q104.4, Q104.1, U102.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.93
+  - id: rel.99
     from: near
     kind: proximity
     a: C129
@@ -6995,7 +8004,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.94
+  - id: rel.100
     from: near
     kind: proximity
     a: D101
@@ -7003,7 +8012,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.95
+  - id: rel.101
     from: near
     kind: proximity
     a: C130
@@ -7011,7 +8020,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.96
+  - id: rel.102
     from: near
     kind: proximity
     a: D102
@@ -7019,7 +8028,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.97
+  - id: rel.103
     from: near
     kind: proximity
     a: C121
@@ -7027,7 +8036,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.98
+  - id: rel.104
     from: near
     kind: proximity
     a: C122
@@ -7035,7 +8044,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.99
+  - id: rel.105
     from: near
     kind: proximity
     a: C123
@@ -7043,7 +8052,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.100
+  - id: rel.106
     from: near
     kind: proximity
     a: C124
@@ -7051,7 +8060,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.101
+  - id: rel.107
     from: near
     kind: proximity
     a: C125
@@ -7059,7 +8068,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.102
+  - id: rel.108
     from: near
     kind: proximity
     a: C127
@@ -7067,7 +8076,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.103
+  - id: rel.109
     from: near
     kind: proximity
     a: R113
@@ -7075,7 +8084,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.104
+  - id: rel.110
     from: near
     kind: proximity
     a: R114
@@ -7083,31 +8092,31 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.105
+  - id: rel.111
     from: keepout
     kind: keepout
     obj: U101
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.106
+  - id: rel.112
     from: pins_toward
     kind: pins_toward
     obj: U101
     pins: [U101.1, U101.2, U101.4, U101.6]
     side: west
-  - id: rel.107
+  - id: rel.113
     from: keepout
     kind: keepout
     obj: U102
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.108
+  - id: rel.114
     from: pins_toward
     kind: pins_toward
     obj: U102
     pins: [U102.1, U102.2, U102.4, U102.6]
     side: west
-  - id: rel.109
+  - id: rel.115
     from: near
     kind: proximity
     a: U103
@@ -7115,7 +8124,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.110
+  - id: rel.116
     from: near
     kind: proximity
     a: U103
@@ -7123,13 +8132,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.111
+  - id: rel.117
     from: x-matched
     kind: x-matched
     nets: [net:ch1/CH1_PH1, net:ch1/CH1_PH2]
     to: [U101, U102]
     tolerance: loose
-  - id: rel.112
+  - id: rel.118
     from: near
     kind: proximity
     a: R115
@@ -7137,7 +8146,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.113
+  - id: rel.119
     from: near
     kind: proximity
     a: C131
@@ -7145,35 +8154,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.114
+  - id: rel.120
     from: far
     kind: separation
     a: U103
     b: net:ch1/CH1_X
     min: 16.0
     hard: false
-  - id: rel.115
+  - id: rel.121
     from: far
     kind: separation
     a: U103
     b: net:ch1/CH1_Y
     min: 16.0
     hard: false
-  - id: rel.116
+  - id: rel.122
     from: far
     kind: separation
     a: U108
     b: Q101
     min: 40.0
     hard: false
-  - id: rel.117
+  - id: rel.123
     from: far
     kind: separation
     a: U108
     b: Q103
     min: 40.0
     hard: false
-  - id: rel.118
+  - id: rel.124
     from: near
     kind: proximity
     a: U104
@@ -7181,7 +8190,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.119
+  - id: rel.125
     from: near
     kind: proximity
     a: U105
@@ -7189,7 +8198,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.120
+  - id: rel.126
     from: near
     kind: proximity
     a: U108
@@ -7197,7 +8206,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.121
+  - id: rel.127
     from: near
     kind: proximity
     a: C143
@@ -7205,7 +8214,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.122
+  - id: rel.128
     from: near
     kind: proximity
     a: C144
@@ -7213,7 +8222,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.123
+  - id: rel.129
     from: near
     kind: proximity
     a: C145
@@ -7221,7 +8230,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.124
+  - id: rel.130
     from: near
     kind: proximity
     a: C146
@@ -7229,7 +8238,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.125
+  - id: rel.131
     from: near
     kind: proximity
     a: C147
@@ -7237,30 +8246,30 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.126
+  - id: rel.132
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP2
     pins: [R120.1, R126.1, R130.1]
     at: C109.1
-  - id: rel.127
+  - id: rel.133
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP1
     pins: [R134.1]
     at: C113.1
-  - id: rel.128
+  - id: rel.134
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP0
     pins: [R124.2, R125.2, R128.2, R129.2, R132.2, R133.2, R136.2, R137.2]
     at: C113.2
-  - id: rel.129
+  - id: rel.135
     from: x-guard
     kind: x-guard
     nets: [net:ch1/CH1_PON, net:ch1/CH1_PLO, net:ch1/CH1_PHI, net:ch1/CH1_N]
     ring: net:TAP0
-  - id: rel.130
+  - id: rel.136
     from: near
     kind: proximity
     a: Q106
@@ -7268,7 +8277,7 @@ constraints:
     max: 20.0
     basis: pad_edge
     hard: false
-  - id: rel.131
+  - id: rel.137
     from: near
     kind: proximity
     a: Q107
@@ -7276,17 +8285,17 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.132
+  - id: rel.138
     from: x-row
     kind: x-row
     members: [D103, D104, JP101]
     where: "just south of the ISO strip"
-  - id: rel.133
+  - id: rel.139
     from: align
     kind: align
     members: [D103, D104, JP101]
     axis: "y"
-  - id: rel.134
+  - id: rel.140
     from: near
     kind: proximity
     a: U110
@@ -7294,18 +8303,18 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.135
+  - id: rel.141
     from: x-straddle
     kind: x-straddle
     part: U110
     domains: [domain:B1, domain:ISO]
-  - id: rel.136
+  - id: rel.142
     from: pins_toward
     kind: pins_toward
     obj: U110
     pins: [U110.4, U110.3]
     side: north
-  - id: rel.137
+  - id: rel.143
     from: x-cluster
     kind: x-cluster
     name: ch2.pwr
@@ -7338,7 +8347,7 @@ constraints:
       - C218
       - R203
       - R204
-  - id: rel.138
+  - id: rel.144
     from: x-cluster
     kind: x-cluster
     name: ch2.drv
@@ -7369,12 +8378,12 @@ constraints:
       - C230
       - D201
       - D202
-  - id: rel.139
+  - id: rel.145
     from: x-cluster
     kind: x-cluster
     name: ch2.osc
     members: [U203, R215, C231, C232]
-  - id: rel.140
+  - id: rel.146
     from: x-cluster
     kind: x-cluster
     name: ch2.sup
@@ -7402,7 +8411,7 @@ constraints:
       - R250
       - R251
       - C250
-  - id: rel.141
+  - id: rel.147
     from: x-cluster
     kind: x-cluster
     name: ch2.supv
@@ -7452,161 +8461,113 @@ constraints:
       - C247
       - C248
       - C249
-  - id: rel.142
+  - id: rel.148
     from: x-floorplan
     kind: x-floorplan
     block: block:ch2
-  - id: rel.143
+  - id: rel.149
     from: array
     kind: array
     members: [Q203, Q201]
     axis: x
     pitch: equal
-  - id: rel.144
+  - id: rel.150
     from: array
     kind: array
     members: [Q204, Q202]
     axis: x
     pitch: equal
-  - id: rel.145
+  - id: rel.151
     from: align
     kind: align
     members: [Q203, Q204]
     axis: x
-  - id: rel.146
+  - id: rel.152
     from: align
     kind: align
     members: [Q201, Q202]
     axis: x
-  - id: rel.147
+  - id: rel.153
     from: array
     kind: array
     members: [C201, C202, C203, C204, C205, C206, C207, C208]
     axis: "y"
     pitch: equal
-  - id: rel.148
+  - id: rel.154
     from: symmetric
     kind: symmetric
     pairs:
       - [Q203, Q201]
       - [Q204, Q202]
     axis: v
-  - id: rel.149
-    from: near
-    kind: proximity
-    a: R201
-    b: Q201.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.150
-    from: near
-    kind: proximity
-    a: R201
-    b: C201
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.151
-    from: near
-    kind: proximity
-    a: R252
-    b: Q201.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.152
-    from: near
-    kind: proximity
-    a: R252
-    b: C201
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.153
-    from: near
-    kind: proximity
-    a: R202
-    b: Q203.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.154
-    from: near
-    kind: proximity
-    a: R202
-    b: C208
-    max: 3.0
-    basis: pad_edge
-    hard: true
   - id: rel.155
     from: near
     kind: proximity
-    a: R253
-    b: Q203.1
+    a: R201
+    b: Q201.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.156
     from: near
     kind: proximity
-    a: R253
-    b: C208
+    a: R201
+    b: C201
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.157
     from: near
     kind: proximity
-    a: C209
-    b: Q201.5
+    a: R252
+    b: Q201.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.158
     from: near
     kind: proximity
-    a: C209
-    b: Q203.5
+    a: R252
+    b: C201
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.159
     from: near
     kind: proximity
-    a: C210
-    b: Q201.5
+    a: R202
+    b: Q203.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.160
     from: near
     kind: proximity
-    a: C210
-    b: Q203.5
+    a: R202
+    b: C208
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.161
     from: near
     kind: proximity
-    a: C211
-    b: Q201.5
+    a: R253
+    b: Q203.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.162
     from: near
     kind: proximity
-    a: C211
-    b: Q203.5
+    a: R253
+    b: C208
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.163
     from: near
     kind: proximity
-    a: C212
+    a: C209
     b: Q201.5
     max: 3.0
     basis: pad_edge
@@ -7614,7 +8575,7 @@ constraints:
   - id: rel.164
     from: near
     kind: proximity
-    a: C212
+    a: C209
     b: Q203.5
     max: 3.0
     basis: pad_edge
@@ -7622,55 +8583,55 @@ constraints:
   - id: rel.165
     from: near
     kind: proximity
-    a: C213
-    b: Q202.1
+    a: C210
+    b: Q201.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.166
     from: near
     kind: proximity
-    a: C213
-    b: Q204.1
+    a: C210
+    b: Q203.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.167
     from: near
     kind: proximity
-    a: C214
-    b: Q202.1
+    a: C211
+    b: Q201.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.168
     from: near
     kind: proximity
-    a: C214
-    b: Q204.1
+    a: C211
+    b: Q203.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.169
     from: near
     kind: proximity
-    a: C215
-    b: Q202.1
+    a: C212
+    b: Q201.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.170
     from: near
     kind: proximity
-    a: C215
-    b: Q204.1
+    a: C212
+    b: Q203.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.171
     from: near
     kind: proximity
-    a: C216
+    a: C213
     b: Q202.1
     max: 3.0
     basis: pad_edge
@@ -7678,26 +8639,74 @@ constraints:
   - id: rel.172
     from: near
     kind: proximity
-    a: C216
+    a: C213
     b: Q204.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.173
+    from: near
+    kind: proximity
+    a: C214
+    b: Q202.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.174
+    from: near
+    kind: proximity
+    a: C214
+    b: Q204.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.175
+    from: near
+    kind: proximity
+    a: C215
+    b: Q202.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.176
+    from: near
+    kind: proximity
+    a: C215
+    b: Q204.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.177
+    from: near
+    kind: proximity
+    a: C216
+    b: Q202.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.178
+    from: near
+    kind: proximity
+    a: C216
+    b: Q204.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.179
     from: hot_loop
     kind: loop_area
     path: [C209.1, Q201.5, Q201.1, R201.1, R201.2, C201.1, C201.2, R202.1, R202.2, Q203.1, Q203.5, C209.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.174
+  - id: rel.180
     from: hot_loop
     kind: loop_area
     path: [C213.1, Q202.1, Q202.5, R201.1, R201.2, C201.1, C201.2, R202.1, R202.2, Q204.5, Q204.1, C213.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.175
+  - id: rel.181
     from: near
     kind: proximity
     a: C217
@@ -7705,7 +8714,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.176
+  - id: rel.182
     from: near
     kind: proximity
     a: C218
@@ -7713,7 +8722,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.177
+  - id: rel.183
     from: near
     kind: proximity
     a: R203
@@ -7721,7 +8730,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.178
+  - id: rel.184
     from: near
     kind: proximity
     a: R204
@@ -7729,69 +8738,69 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.179
-    from: thermal
-    kind: thermal
-    obj: R201
-    watts: 1.32
-    sink: copper
-  - id: rel.180
-    from: thermal
-    kind: thermal
-    obj: R252
-    watts: 1.32
-    sink: copper
-  - id: rel.181
-    from: thermal
-    kind: thermal
-    obj: R202
-    watts: 1.32
-    sink: copper
-  - id: rel.182
-    from: thermal
-    kind: thermal
-    obj: R253
-    watts: 1.32
-    sink: copper
-  - id: rel.183
-    from: thermal
-    kind: thermal
-    obj: Q201
-    watts: 0.43
-    sink: "copper + thermal vias"
-  - id: rel.184
-    from: thermal
-    kind: thermal
-    obj: Q202
-    watts: 0.43
-    sink: "copper + thermal vias"
   - id: rel.185
     from: thermal
     kind: thermal
-    obj: Q203
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R201
+    watts: 117.15
+    sink: copper
   - id: rel.186
     from: thermal
     kind: thermal
-    obj: Q204
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R252
+    watts: 117.15
+    sink: copper
   - id: rel.187
+    from: thermal
+    kind: thermal
+    obj: R202
+    watts: 117.15
+    sink: copper
+  - id: rel.188
+    from: thermal
+    kind: thermal
+    obj: R253
+    watts: 117.15
+    sink: copper
+  - id: rel.189
+    from: thermal
+    kind: thermal
+    obj: Q201
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.190
+    from: thermal
+    kind: thermal
+    obj: Q202
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.191
+    from: thermal
+    kind: thermal
+    obj: Q203
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.192
+    from: thermal
+    kind: thermal
+    obj: Q204
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.193
     from: far
     kind: separation
     a: RT201
     b: C217
     min: 16.0
     hard: false
-  - id: rel.188
+  - id: rel.194
     from: far
     kind: separation
     a: RT201
     b: C218
     min: 16.0
     hard: false
-  - id: rel.189
+  - id: rel.195
     from: near
     kind: proximity
     a: RT201
@@ -7799,7 +8808,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.190
+  - id: rel.196
     from: near
     kind: proximity
     a: RT201
@@ -7807,13 +8816,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.191
+  - id: rel.197
     from: x-pour
     kind: x-pour
     nets: [net:TAP1, net:TAP2, net:TAP3, net:ch2/CH2_X, net:ch2/CH2_Y]
     layers: "F.Cu,B.Cu"
     min_width_mm: 3
-  - id: rel.192
+  - id: rel.198
     from: near
     kind: proximity
     a: U201
@@ -7821,7 +8830,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.193
+  - id: rel.199
     from: near
     kind: proximity
     a: U201
@@ -7829,7 +8838,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.194
+  - id: rel.200
     from: near
     kind: proximity
     a: U202
@@ -7837,7 +8846,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.195
+  - id: rel.201
     from: near
     kind: proximity
     a: U202
@@ -7845,7 +8854,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.196
+  - id: rel.202
     from: near
     kind: proximity
     a: R205
@@ -7853,7 +8862,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.197
+  - id: rel.203
     from: near
     kind: proximity
     a: R206
@@ -7861,7 +8870,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.198
+  - id: rel.204
     from: near
     kind: proximity
     a: R207
@@ -7869,7 +8878,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.199
+  - id: rel.205
     from: near
     kind: proximity
     a: R208
@@ -7877,35 +8886,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.200
+  - id: rel.206
     from: hot_loop
     kind: loop_area
     path: [U201.15, R205.1, R205.2, Q201.4, Q201.1, U201.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.201
+  - id: rel.207
     from: hot_loop
     kind: loop_area
     path: [U201.10, R206.1, R206.2, Q202.4, Q202.1, U201.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.202
+  - id: rel.208
     from: hot_loop
     kind: loop_area
     path: [U202.15, R207.1, R207.2, Q203.4, Q203.1, U202.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.203
+  - id: rel.209
     from: hot_loop
     kind: loop_area
     path: [U202.10, R208.1, R208.2, Q204.4, Q204.1, U202.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.204
+  - id: rel.210
     from: near
     kind: proximity
     a: C229
@@ -7913,7 +8922,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.205
+  - id: rel.211
     from: near
     kind: proximity
     a: D201
@@ -7921,7 +8930,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.206
+  - id: rel.212
     from: near
     kind: proximity
     a: C230
@@ -7929,7 +8938,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.207
+  - id: rel.213
     from: near
     kind: proximity
     a: D202
@@ -7937,7 +8946,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.208
+  - id: rel.214
     from: near
     kind: proximity
     a: C221
@@ -7945,7 +8954,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.209
+  - id: rel.215
     from: near
     kind: proximity
     a: C222
@@ -7953,7 +8962,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.210
+  - id: rel.216
     from: near
     kind: proximity
     a: C223
@@ -7961,7 +8970,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.211
+  - id: rel.217
     from: near
     kind: proximity
     a: C224
@@ -7969,7 +8978,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.212
+  - id: rel.218
     from: near
     kind: proximity
     a: C225
@@ -7977,7 +8986,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.213
+  - id: rel.219
     from: near
     kind: proximity
     a: C227
@@ -7985,7 +8994,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.214
+  - id: rel.220
     from: near
     kind: proximity
     a: R213
@@ -7993,7 +9002,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.215
+  - id: rel.221
     from: near
     kind: proximity
     a: R214
@@ -8001,31 +9010,31 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.216
+  - id: rel.222
     from: keepout
     kind: keepout
     obj: U201
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.217
+  - id: rel.223
     from: pins_toward
     kind: pins_toward
     obj: U201
     pins: [U201.1, U201.2, U201.4, U201.6]
     side: west
-  - id: rel.218
+  - id: rel.224
     from: keepout
     kind: keepout
     obj: U202
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.219
+  - id: rel.225
     from: pins_toward
     kind: pins_toward
     obj: U202
     pins: [U202.1, U202.2, U202.4, U202.6]
     side: west
-  - id: rel.220
+  - id: rel.226
     from: near
     kind: proximity
     a: U203
@@ -8033,7 +9042,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.221
+  - id: rel.227
     from: near
     kind: proximity
     a: U203
@@ -8041,13 +9050,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.222
+  - id: rel.228
     from: x-matched
     kind: x-matched
     nets: [net:ch2/CH2_PH1, net:ch2/CH2_PH2]
     to: [U201, U202]
     tolerance: loose
-  - id: rel.223
+  - id: rel.229
     from: near
     kind: proximity
     a: R215
@@ -8055,7 +9064,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.224
+  - id: rel.230
     from: near
     kind: proximity
     a: C231
@@ -8063,35 +9072,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.225
+  - id: rel.231
     from: far
     kind: separation
     a: U203
     b: net:ch2/CH2_X
     min: 16.0
     hard: false
-  - id: rel.226
+  - id: rel.232
     from: far
     kind: separation
     a: U203
     b: net:ch2/CH2_Y
     min: 16.0
     hard: false
-  - id: rel.227
+  - id: rel.233
     from: far
     kind: separation
     a: U208
     b: Q201
     min: 40.0
     hard: false
-  - id: rel.228
+  - id: rel.234
     from: far
     kind: separation
     a: U208
     b: Q203
     min: 40.0
     hard: false
-  - id: rel.229
+  - id: rel.235
     from: near
     kind: proximity
     a: U204
@@ -8099,7 +9108,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.230
+  - id: rel.236
     from: near
     kind: proximity
     a: U205
@@ -8107,7 +9116,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.231
+  - id: rel.237
     from: near
     kind: proximity
     a: U208
@@ -8115,7 +9124,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.232
+  - id: rel.238
     from: near
     kind: proximity
     a: C243
@@ -8123,7 +9132,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.233
+  - id: rel.239
     from: near
     kind: proximity
     a: C244
@@ -8131,7 +9140,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.234
+  - id: rel.240
     from: near
     kind: proximity
     a: C245
@@ -8139,7 +9148,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.235
+  - id: rel.241
     from: near
     kind: proximity
     a: C246
@@ -8147,7 +9156,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.236
+  - id: rel.242
     from: near
     kind: proximity
     a: C247
@@ -8155,30 +9164,30 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.237
+  - id: rel.243
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP3
     pins: [R220.1, R226.1, R230.1]
     at: C209.1
-  - id: rel.238
+  - id: rel.244
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP2
     pins: [R234.1]
     at: C213.1
-  - id: rel.239
+  - id: rel.245
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP1
     pins: [R224.2, R225.2, R228.2, R229.2, R232.2, R233.2, R236.2, R237.2]
     at: C213.2
-  - id: rel.240
+  - id: rel.246
     from: x-guard
     kind: x-guard
     nets: [net:ch2/CH2_PON, net:ch2/CH2_PLO, net:ch2/CH2_PHI, net:ch2/CH2_N]
     ring: net:TAP1
-  - id: rel.241
+  - id: rel.247
     from: near
     kind: proximity
     a: Q206
@@ -8186,7 +9195,7 @@ constraints:
     max: 20.0
     basis: pad_edge
     hard: false
-  - id: rel.242
+  - id: rel.248
     from: near
     kind: proximity
     a: Q207
@@ -8194,17 +9203,17 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.243
+  - id: rel.249
     from: x-row
     kind: x-row
     members: [D203, D204, JP201]
     where: "just south of the ISO strip"
-  - id: rel.244
+  - id: rel.250
     from: align
     kind: align
     members: [D203, D204, JP201]
     axis: "y"
-  - id: rel.245
+  - id: rel.251
     from: near
     kind: proximity
     a: U210
@@ -8212,18 +9221,18 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.246
+  - id: rel.252
     from: x-straddle
     kind: x-straddle
     part: U210
     domains: [domain:B2, domain:ISO]
-  - id: rel.247
+  - id: rel.253
     from: pins_toward
     kind: pins_toward
     obj: U210
     pins: [U210.4, U210.3]
     side: north
-  - id: rel.248
+  - id: rel.254
     from: x-cluster
     kind: x-cluster
     name: ch3.pwr
@@ -8256,7 +9265,7 @@ constraints:
       - C318
       - R303
       - R304
-  - id: rel.249
+  - id: rel.255
     from: x-cluster
     kind: x-cluster
     name: ch3.drv
@@ -8287,12 +9296,12 @@ constraints:
       - C330
       - D301
       - D302
-  - id: rel.250
+  - id: rel.256
     from: x-cluster
     kind: x-cluster
     name: ch3.osc
     members: [U303, R315, C331, C332]
-  - id: rel.251
+  - id: rel.257
     from: x-cluster
     kind: x-cluster
     name: ch3.sup
@@ -8320,7 +9329,7 @@ constraints:
       - R350
       - R351
       - C350
-  - id: rel.252
+  - id: rel.258
     from: x-cluster
     kind: x-cluster
     name: ch3.supv
@@ -8370,161 +9379,113 @@ constraints:
       - C347
       - C348
       - C349
-  - id: rel.253
+  - id: rel.259
     from: x-floorplan
     kind: x-floorplan
     block: block:ch3
-  - id: rel.254
+  - id: rel.260
     from: array
     kind: array
     members: [Q303, Q301]
     axis: x
     pitch: equal
-  - id: rel.255
+  - id: rel.261
     from: array
     kind: array
     members: [Q304, Q302]
     axis: x
     pitch: equal
-  - id: rel.256
+  - id: rel.262
     from: align
     kind: align
     members: [Q303, Q304]
     axis: x
-  - id: rel.257
+  - id: rel.263
     from: align
     kind: align
     members: [Q301, Q302]
     axis: x
-  - id: rel.258
+  - id: rel.264
     from: array
     kind: array
     members: [C301, C302, C303, C304, C305, C306, C307, C308]
     axis: "y"
     pitch: equal
-  - id: rel.259
+  - id: rel.265
     from: symmetric
     kind: symmetric
     pairs:
       - [Q303, Q301]
       - [Q304, Q302]
     axis: v
-  - id: rel.260
-    from: near
-    kind: proximity
-    a: R301
-    b: Q301.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.261
-    from: near
-    kind: proximity
-    a: R301
-    b: C301
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.262
-    from: near
-    kind: proximity
-    a: R352
-    b: Q301.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.263
-    from: near
-    kind: proximity
-    a: R352
-    b: C301
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.264
-    from: near
-    kind: proximity
-    a: R302
-    b: Q303.1
-    max: 3.0
-    basis: pad_edge
-    hard: true
-  - id: rel.265
-    from: near
-    kind: proximity
-    a: R302
-    b: C308
-    max: 3.0
-    basis: pad_edge
-    hard: true
   - id: rel.266
     from: near
     kind: proximity
-    a: R353
-    b: Q303.1
+    a: R301
+    b: Q301.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.267
     from: near
     kind: proximity
-    a: R353
-    b: C308
+    a: R301
+    b: C301
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.268
     from: near
     kind: proximity
-    a: C309
-    b: Q301.5
+    a: R352
+    b: Q301.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.269
     from: near
     kind: proximity
-    a: C309
-    b: Q303.5
+    a: R352
+    b: C301
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.270
     from: near
     kind: proximity
-    a: C310
-    b: Q301.5
+    a: R302
+    b: Q303.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.271
     from: near
     kind: proximity
-    a: C310
-    b: Q303.5
+    a: R302
+    b: C308
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.272
     from: near
     kind: proximity
-    a: C311
-    b: Q301.5
+    a: R353
+    b: Q303.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.273
     from: near
     kind: proximity
-    a: C311
-    b: Q303.5
+    a: R353
+    b: C308
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.274
     from: near
     kind: proximity
-    a: C312
+    a: C309
     b: Q301.5
     max: 3.0
     basis: pad_edge
@@ -8532,7 +9493,7 @@ constraints:
   - id: rel.275
     from: near
     kind: proximity
-    a: C312
+    a: C309
     b: Q303.5
     max: 3.0
     basis: pad_edge
@@ -8540,55 +9501,55 @@ constraints:
   - id: rel.276
     from: near
     kind: proximity
-    a: C313
-    b: Q302.1
+    a: C310
+    b: Q301.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.277
     from: near
     kind: proximity
-    a: C313
-    b: Q304.1
+    a: C310
+    b: Q303.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.278
     from: near
     kind: proximity
-    a: C314
-    b: Q302.1
+    a: C311
+    b: Q301.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.279
     from: near
     kind: proximity
-    a: C314
-    b: Q304.1
+    a: C311
+    b: Q303.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.280
     from: near
     kind: proximity
-    a: C315
-    b: Q302.1
+    a: C312
+    b: Q301.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.281
     from: near
     kind: proximity
-    a: C315
-    b: Q304.1
+    a: C312
+    b: Q303.5
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.282
     from: near
     kind: proximity
-    a: C316
+    a: C313
     b: Q302.1
     max: 3.0
     basis: pad_edge
@@ -8596,26 +9557,74 @@ constraints:
   - id: rel.283
     from: near
     kind: proximity
-    a: C316
+    a: C313
     b: Q304.1
     max: 3.0
     basis: pad_edge
     hard: true
   - id: rel.284
+    from: near
+    kind: proximity
+    a: C314
+    b: Q302.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.285
+    from: near
+    kind: proximity
+    a: C314
+    b: Q304.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.286
+    from: near
+    kind: proximity
+    a: C315
+    b: Q302.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.287
+    from: near
+    kind: proximity
+    a: C315
+    b: Q304.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.288
+    from: near
+    kind: proximity
+    a: C316
+    b: Q302.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.289
+    from: near
+    kind: proximity
+    a: C316
+    b: Q304.1
+    max: 3.0
+    basis: pad_edge
+    hard: true
+  - id: rel.290
     from: hot_loop
     kind: loop_area
     path: [C309.1, Q301.5, Q301.1, R301.1, R301.2, C301.1, C301.2, R302.1, R302.2, Q303.1, Q303.5, C309.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.285
+  - id: rel.291
     from: hot_loop
     kind: loop_area
     path: [C313.1, Q302.1, Q302.5, R301.1, R301.2, C301.1, C301.2, R302.1, R302.2, Q304.5, Q304.1, C313.2]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.286
+  - id: rel.292
     from: near
     kind: proximity
     a: C317
@@ -8623,7 +9632,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.287
+  - id: rel.293
     from: near
     kind: proximity
     a: C318
@@ -8631,7 +9640,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.288
+  - id: rel.294
     from: near
     kind: proximity
     a: R303
@@ -8639,7 +9648,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.289
+  - id: rel.295
     from: near
     kind: proximity
     a: R304
@@ -8647,69 +9656,69 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.290
-    from: thermal
-    kind: thermal
-    obj: R301
-    watts: 1.32
-    sink: copper
-  - id: rel.291
-    from: thermal
-    kind: thermal
-    obj: R352
-    watts: 1.32
-    sink: copper
-  - id: rel.292
-    from: thermal
-    kind: thermal
-    obj: R302
-    watts: 1.32
-    sink: copper
-  - id: rel.293
-    from: thermal
-    kind: thermal
-    obj: R353
-    watts: 1.32
-    sink: copper
-  - id: rel.294
-    from: thermal
-    kind: thermal
-    obj: Q301
-    watts: 0.43
-    sink: "copper + thermal vias"
-  - id: rel.295
-    from: thermal
-    kind: thermal
-    obj: Q302
-    watts: 0.43
-    sink: "copper + thermal vias"
   - id: rel.296
     from: thermal
     kind: thermal
-    obj: Q303
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R301
+    watts: 117.15
+    sink: copper
   - id: rel.297
     from: thermal
     kind: thermal
-    obj: Q304
-    watts: 0.43
-    sink: "copper + thermal vias"
+    obj: R352
+    watts: 117.15
+    sink: copper
   - id: rel.298
+    from: thermal
+    kind: thermal
+    obj: R302
+    watts: 117.15
+    sink: copper
+  - id: rel.299
+    from: thermal
+    kind: thermal
+    obj: R353
+    watts: 117.15
+    sink: copper
+  - id: rel.300
+    from: thermal
+    kind: thermal
+    obj: Q301
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.301
+    from: thermal
+    kind: thermal
+    obj: Q302
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.302
+    from: thermal
+    kind: thermal
+    obj: Q303
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.303
+    from: thermal
+    kind: thermal
+    obj: Q304
+    watts: 38.06
+    sink: "copper + thermal vias"
+  - id: rel.304
     from: far
     kind: separation
     a: RT301
     b: C317
     min: 16.0
     hard: false
-  - id: rel.299
+  - id: rel.305
     from: far
     kind: separation
     a: RT301
     b: C318
     min: 16.0
     hard: false
-  - id: rel.300
+  - id: rel.306
     from: near
     kind: proximity
     a: RT301
@@ -8717,7 +9726,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.301
+  - id: rel.307
     from: near
     kind: proximity
     a: RT301
@@ -8725,13 +9734,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.302
+  - id: rel.308
     from: x-pour
     kind: x-pour
     nets: [net:TAP2, net:TAP3, net:TAP4, net:ch3/CH3_X, net:ch3/CH3_Y]
     layers: "F.Cu,B.Cu"
     min_width_mm: 3
-  - id: rel.303
+  - id: rel.309
     from: near
     kind: proximity
     a: U301
@@ -8739,7 +9748,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.304
+  - id: rel.310
     from: near
     kind: proximity
     a: U301
@@ -8747,7 +9756,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.305
+  - id: rel.311
     from: near
     kind: proximity
     a: U302
@@ -8755,7 +9764,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.306
+  - id: rel.312
     from: near
     kind: proximity
     a: U302
@@ -8763,7 +9772,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.307
+  - id: rel.313
     from: near
     kind: proximity
     a: R305
@@ -8771,7 +9780,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.308
+  - id: rel.314
     from: near
     kind: proximity
     a: R306
@@ -8779,7 +9788,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.309
+  - id: rel.315
     from: near
     kind: proximity
     a: R307
@@ -8787,7 +9796,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.310
+  - id: rel.316
     from: near
     kind: proximity
     a: R308
@@ -8795,35 +9804,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.311
+  - id: rel.317
     from: hot_loop
     kind: loop_area
     path: [U301.15, R305.1, R305.2, Q301.4, Q301.1, U301.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.312
+  - id: rel.318
     from: hot_loop
     kind: loop_area
     path: [U301.10, R306.1, R306.2, Q302.4, Q302.1, U301.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.313
+  - id: rel.319
     from: hot_loop
     kind: loop_area
     path: [U302.15, R307.1, R307.2, Q303.4, Q303.1, U302.14]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.314
+  - id: rel.320
     from: hot_loop
     kind: loop_area
     path: [U302.10, R308.1, R308.2, Q304.4, Q304.1, U302.9]
     minimize: true
     same_layer: true
     hard: false
-  - id: rel.315
+  - id: rel.321
     from: near
     kind: proximity
     a: C329
@@ -8831,7 +9840,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.316
+  - id: rel.322
     from: near
     kind: proximity
     a: D301
@@ -8839,7 +9848,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.317
+  - id: rel.323
     from: near
     kind: proximity
     a: C330
@@ -8847,7 +9856,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.318
+  - id: rel.324
     from: near
     kind: proximity
     a: D302
@@ -8855,7 +9864,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.319
+  - id: rel.325
     from: near
     kind: proximity
     a: C321
@@ -8863,7 +9872,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.320
+  - id: rel.326
     from: near
     kind: proximity
     a: C322
@@ -8871,7 +9880,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.321
+  - id: rel.327
     from: near
     kind: proximity
     a: C323
@@ -8879,7 +9888,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.322
+  - id: rel.328
     from: near
     kind: proximity
     a: C324
@@ -8887,7 +9896,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.323
+  - id: rel.329
     from: near
     kind: proximity
     a: C325
@@ -8895,7 +9904,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.324
+  - id: rel.330
     from: near
     kind: proximity
     a: C327
@@ -8903,7 +9912,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.325
+  - id: rel.331
     from: near
     kind: proximity
     a: R313
@@ -8911,7 +9920,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.326
+  - id: rel.332
     from: near
     kind: proximity
     a: R314
@@ -8919,31 +9928,31 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.327
+  - id: rel.333
     from: keepout
     kind: keepout
     obj: U301
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.328
+  - id: rel.334
     from: pins_toward
     kind: pins_toward
     obj: U301
     pins: [U301.1, U301.2, U301.4, U301.6]
     side: west
-  - id: rel.329
+  - id: rel.335
     from: keepout
     kind: keepout
     obj: U302
     what: "copper under the package between pin rows 1-8 and 9-16 (isolation barrier)"
     layers: all
-  - id: rel.330
+  - id: rel.336
     from: pins_toward
     kind: pins_toward
     obj: U302
     pins: [U302.1, U302.2, U302.4, U302.6]
     side: west
-  - id: rel.331
+  - id: rel.337
     from: near
     kind: proximity
     a: U303
@@ -8951,7 +9960,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.332
+  - id: rel.338
     from: near
     kind: proximity
     a: U303
@@ -8959,13 +9968,13 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.333
+  - id: rel.339
     from: x-matched
     kind: x-matched
     nets: [net:ch3/CH3_PH1, net:ch3/CH3_PH2]
     to: [U301, U302]
     tolerance: loose
-  - id: rel.334
+  - id: rel.340
     from: near
     kind: proximity
     a: R315
@@ -8973,7 +9982,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.335
+  - id: rel.341
     from: near
     kind: proximity
     a: C331
@@ -8981,35 +9990,35 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.336
+  - id: rel.342
     from: far
     kind: separation
     a: U303
     b: net:ch3/CH3_X
     min: 16.0
     hard: false
-  - id: rel.337
+  - id: rel.343
     from: far
     kind: separation
     a: U303
     b: net:ch3/CH3_Y
     min: 16.0
     hard: false
-  - id: rel.338
+  - id: rel.344
     from: far
     kind: separation
     a: U308
     b: Q301
     min: 40.0
     hard: false
-  - id: rel.339
+  - id: rel.345
     from: far
     kind: separation
     a: U308
     b: Q303
     min: 40.0
     hard: false
-  - id: rel.340
+  - id: rel.346
     from: near
     kind: proximity
     a: U304
@@ -9017,7 +10026,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.341
+  - id: rel.347
     from: near
     kind: proximity
     a: U305
@@ -9025,7 +10034,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.342
+  - id: rel.348
     from: near
     kind: proximity
     a: U308
@@ -9033,7 +10042,7 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.343
+  - id: rel.349
     from: near
     kind: proximity
     a: C343
@@ -9041,7 +10050,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.344
+  - id: rel.350
     from: near
     kind: proximity
     a: C344
@@ -9049,7 +10058,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.345
+  - id: rel.351
     from: near
     kind: proximity
     a: C345
@@ -9057,7 +10066,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.346
+  - id: rel.352
     from: near
     kind: proximity
     a: C346
@@ -9065,7 +10074,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.347
+  - id: rel.353
     from: near
     kind: proximity
     a: C347
@@ -9073,30 +10082,30 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.348
+  - id: rel.354
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP4
     pins: [R320.1, R326.1, R330.1]
     at: C309.1
-  - id: rel.349
+  - id: rel.355
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP3
     pins: [R334.1]
     at: C313.1
-  - id: rel.350
+  - id: rel.356
     from: x-connect_at
     kind: x-connect_at
     net: net:TAP2
     pins: [R324.2, R325.2, R328.2, R329.2, R332.2, R333.2, R336.2, R337.2]
     at: C313.2
-  - id: rel.351
+  - id: rel.357
     from: x-guard
     kind: x-guard
     nets: [net:ch3/CH3_PON, net:ch3/CH3_PLO, net:ch3/CH3_PHI, net:ch3/CH3_N]
     ring: net:TAP2
-  - id: rel.352
+  - id: rel.358
     from: near
     kind: proximity
     a: Q306
@@ -9104,7 +10113,7 @@ constraints:
     max: 20.0
     basis: pad_edge
     hard: false
-  - id: rel.353
+  - id: rel.359
     from: near
     kind: proximity
     a: Q307
@@ -9112,17 +10121,17 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.354
+  - id: rel.360
     from: x-row
     kind: x-row
     members: [D303, D304, JP301]
     where: "just south of the ISO strip"
-  - id: rel.355
+  - id: rel.361
     from: align
     kind: align
     members: [D303, D304, JP301]
     axis: "y"
-  - id: rel.356
+  - id: rel.362
     from: near
     kind: proximity
     a: U310
@@ -9130,18 +10139,18 @@ constraints:
     max: 8.0
     basis: pad_edge
     hard: false
-  - id: rel.357
+  - id: rel.363
     from: x-straddle
     kind: x-straddle
     part: U310
     domains: [domain:B3, domain:ISO]
-  - id: rel.358
+  - id: rel.364
     from: pins_toward
     kind: pins_toward
     obj: U310
     pins: [U310.4, U310.3]
     side: north
-  - id: rel.359
+  - id: rel.365
     from: group
     kind: cluster
     component_class: ch1
@@ -9198,7 +10207,9 @@ constraints:
       - C128
       - C129
       - C130
+      - R158
       - D101
+      - R159
       - D102
       - U103
       - R115
@@ -9232,7 +10243,6 @@ constraints:
       - C140
       - C141
       - U108
-      - C142
       - R120
       - R121
       - R122
@@ -9242,19 +10252,38 @@ constraints:
       - C143
       - R126
       - R127
+      - R154
+      - R155
       - R128
       - R129
       - C144
       - R130
       - R131
+      - R156
+      - R157
       - R132
       - R133
       - C145
+      - R160
+      - R161
+      - R162
+      - R163
+      - R164
+      - R165
+      - C153
+      - R166
+      - R167
+      - R168
+      - R169
+      - R170
+      - R171
+      - C154
       - R134
       - R135
       - R136
       - R137
       - C146
+      - C142
       - R138
       - C147
       - R139
@@ -9271,11 +10300,25 @@ constraints:
       - U109
       - Q105
       - D103
+      - R172
       - U110
+      - JP102
+      - JS102
       - D104
+      - U111
+      - C152
+      - R173
+      - R174
+      - R175
+      - R176
+      - R177
+      - R178
+      - R179
+      - C151
+      - D105
     max_span: 32.0
     hard: false
-  - id: rel.360
+  - id: rel.366
     from: group
     kind: cluster
     component_class: ch2
@@ -9332,7 +10375,9 @@ constraints:
       - C228
       - C229
       - C230
+      - R258
       - D201
+      - R259
       - D202
       - U203
       - R215
@@ -9366,7 +10411,6 @@ constraints:
       - C240
       - C241
       - U208
-      - C242
       - R220
       - R221
       - R222
@@ -9376,19 +10420,38 @@ constraints:
       - C243
       - R226
       - R227
+      - R254
+      - R255
       - R228
       - R229
       - C244
       - R230
       - R231
+      - R256
+      - R257
       - R232
       - R233
       - C245
+      - R260
+      - R261
+      - R262
+      - R263
+      - R264
+      - R265
+      - C253
+      - R266
+      - R267
+      - R268
+      - R269
+      - R270
+      - R271
+      - C254
       - R234
       - R235
       - R236
       - R237
       - C246
+      - C242
       - R238
       - C247
       - R239
@@ -9405,11 +10468,25 @@ constraints:
       - U209
       - Q205
       - D203
+      - R272
       - U210
+      - JP202
+      - JS202
       - D204
+      - U211
+      - C252
+      - R273
+      - R274
+      - R275
+      - R276
+      - R277
+      - R278
+      - R279
+      - C251
+      - D205
     max_span: 32.0
     hard: false
-  - id: rel.361
+  - id: rel.367
     from: group
     kind: cluster
     component_class: ch3
@@ -9466,7 +10543,9 @@ constraints:
       - C328
       - C329
       - C330
+      - R358
       - D301
+      - R359
       - D302
       - U303
       - R315
@@ -9500,7 +10579,6 @@ constraints:
       - C340
       - C341
       - U308
-      - C342
       - R320
       - R321
       - R322
@@ -9510,19 +10588,38 @@ constraints:
       - C343
       - R326
       - R327
+      - R354
+      - R355
       - R328
       - R329
       - C344
       - R330
       - R331
+      - R356
+      - R357
       - R332
       - R333
       - C345
+      - R360
+      - R361
+      - R362
+      - R363
+      - R364
+      - R365
+      - C353
+      - R366
+      - R367
+      - R368
+      - R369
+      - R370
+      - R371
+      - C354
       - R334
       - R335
       - R336
       - R337
       - C346
+      - C342
       - R338
       - C347
       - R339
@@ -9539,18 +10636,32 @@ constraints:
       - U309
       - Q305
       - D303
+      - R372
       - U310
+      - JP302
+      - JS302
       - D304
+      - U311
+      - C352
+      - R373
+      - R374
+      - R375
+      - R376
+      - R377
+      - R378
+      - R379
+      - C351
+      - D305
     max_span: 32.0
     hard: false
-  - id: rel.362
+  - id: rel.368
     from: group
     kind: cluster
     component_class: mech
     members: [H1, H2, H3, H4]
     max_span: 32.0
     hard: false
-  - id: rel.363
+  - id: rel.369
     from: group
     kind: cluster
     component_class: harness
@@ -9584,7 +10695,7 @@ constraints:
       - P2
     max_span: 32.0
     hard: false
-  - id: rel.364
+  - id: rel.370
     from: near
     kind: proximity
     a: C137
@@ -9592,7 +10703,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.365
+  - id: rel.371
     from: near
     kind: proximity
     a: C141
