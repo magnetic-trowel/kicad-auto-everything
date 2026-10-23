@@ -3,7 +3,7 @@
 **Scope:** this doc covers the *LLM-role* view and the systems the placement-area doc does not. PCBAgent, ModuPlace, Li et al. DAC'26, VeoPlace and MAGE are covered in full in [../placement/llm-guided-placement.md](../placement/llm-guided-placement.md), and non-LLM PCB placers in [../placement/pcb-placers-2022-2026.md](../placement/pcb-placers-2022-2026.md).
 
 **TL;DR**
-- **Every PCB result in which an LLM-involved system beats classical or commercial tools keeps geometry in a solver** [I]:
+- **Every PCB result in which an LLM-involved system beats classical or commercial tools with a legal or DRC-clean output keeps geometry in a solver** [I]:
   - Li et al. DAC'26: LLM grouping plus MILP legalization; −55%/−73% WL/vias vs a commercial placer, −15%/−13% vs Quilter [S, via survey];
   - ModuPlace: LLM constraint graph plus hierarchical placer [P];
   - PCBAgent: RL with legality masks; the LLM only reweights [P].

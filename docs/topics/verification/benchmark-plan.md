@@ -5,7 +5,7 @@
 - **Placement**: Cypress small benchmarks under the Cypress protocol, plus placement-stripped PCBWorld boards routed by a fixed router and compared with the human placement routed the same way.
 - **Extra tracks** beyond routing/placement: intent conformance, physics checks, human-relative diagnostics, synthetic unit suites, and a checklist track seeded with known-bad boards.
 - **Hygiene**: pinned KiCad version, per-board licence manifest, private recent held-out split, and no method ever scoring itself (re-open saved files, re-run DRC).
-- **Build the harness first.** It doubles as the agent's verification loop, which practitioners say LLM tools lack.
+- **Build the harness first.** It now exists ([harness](harness.md); development plan in [dev-eval-plan](dev-eval-plan.md)) and doubles as the agent's verification loop, which practitioners say LLM tools lack.
 
 ## Key facts
 
