@@ -668,183 +668,7 @@ barriers:
     source: "DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used"
     notes: "SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)"
   - a: BAT0
-    b: C2
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C1
-    b: C3
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C2
-    b: C4
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C3
-    b: C5
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C4
-    b: C6
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C5
-    b: C7
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C6
-    b: C8
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C7
-    b: C9
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C8
-    b: C10
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C9
-    b: C11
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C10
-    b: C12
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C11
-    b: C13
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C12
-    b: C14
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C13
-    b: C15
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C14
-    b: C16
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: C15
-    b: STACK
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. 1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins"
-  - a: SW1
-    b: BAT0
+    b: SW1
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -854,8 +678,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW1
-    b: C1
+  - a: BAT0
+    b: SW2
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -865,8 +689,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW2
-    b: C1
+  - a: BAT0
+    b: SW3
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -876,8 +700,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW2
-    b: C2
+  - a: BAT0
+    b: SW4
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -887,8 +711,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW3
-    b: C2
+  - a: BAT0
+    b: SW5
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -898,8 +722,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW3
-    b: C3
+  - a: BAT0
+    b: SW6
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -909,8 +733,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW4
-    b: C3
+  - a: BAT0
+    b: SW7
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -920,8 +744,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW4
-    b: C4
+  - a: BAT0
+    b: SW8
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -931,8 +755,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW5
-    b: C4
+  - a: BAT0
+    b: SW9
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -942,8 +766,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW5
-    b: C5
+  - a: BAT0
+    b: SW10
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -953,8 +777,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW6
-    b: C5
+  - a: BAT0
+    b: SW11
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -964,8 +788,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW6
-    b: C6
+  - a: BAT0
+    b: SW12
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -975,8 +799,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW7
-    b: C6
+  - a: BAT0
+    b: SW13
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -986,8 +810,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW7
-    b: C7
+  - a: BAT0
+    b: SW14
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -997,8 +821,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW8
-    b: C7
+  - a: BAT0
+    b: SW15
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -1008,184 +832,8 @@ barriers:
     material_group: IIIb
     slot: false
     source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW8
-    b: C8
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW9
-    b: C8
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW9
-    b: C9
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW10
-    b: C9
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW10
-    b: C10
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW11
-    b: C10
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW11
-    b: C11
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW12
-    b: C11
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW12
-    b: C12
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW13
-    b: C12
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW13
-    b: C13
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW14
-    b: C13
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW14
-    b: C14
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW15
-    b: C14
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW15
-    b: C15
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW16
-    b: C15
-    grade: functional
-    v_work: 38.5
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)"
-  - a: SW16
-    b: C16
+  - a: BAT0
+    b: SW16
     grade: functional
     v_work: 38.5
     creepage_mm: 0.6
@@ -1205,18 +853,7 @@ barriers:
     pollution_degree: 2
     material_group: IIIb
     slot: false
-    source: "DESIGN.md 6.3 B-3: T1kk primary (cell k) to secondary (FLYBUS/TAP0), <= 106 V peak; the footprint gives about 10 mm between pad rows"
-  - a: CTRL
-    b: C1
-    grade: functional
-    v_work: 67.2
-    creepage_mm: 0.6
-    clearance_mm: 0.6
-    standard: "IPC-2221B Table 6-1 B2 31-150 V [S]"
-    pollution_degree: 2
-    material_group: IIIb
-    slot: false
-    source: "DESIGN.md 6.3 B-2"
+    source: "DESIGN.md 6.3 B-3: T1kk primary (cell k) to secondary (FLYBUS/TAP0), <= 106 V peak; the footprint gives 11.7 mm between pad rows"
   - a: BAT0
     b: RET
     grade: functional
@@ -1232,8 +869,8 @@ barriers:
     b: FAULT
     grade: functional
     v_work: 36
-    creepage_mm: 0.5
-    clearance_mm: 0.5
+    creepage_mm: 0.6
+    clearance_mm: 0.6
     standard: "IPC-2221B Table 6-1 B2 31-50 V: 0.6 mm [S]"
     pollution_degree: 2
     material_group: IIIb
@@ -8232,251 +7869,86 @@ relations:
     source: design
   - kind: separate
     a: domain:BAT0
-    b: domain:C2
+    b: domain:SW1
     slot: false
     source: design
   - kind: separate
-    a: domain:C1
-    b: domain:C3
+    a: domain:BAT0
+    b: domain:SW2
     slot: false
     source: design
   - kind: separate
-    a: domain:C2
-    b: domain:C4
+    a: domain:BAT0
+    b: domain:SW3
     slot: false
     source: design
   - kind: separate
-    a: domain:C3
-    b: domain:C5
+    a: domain:BAT0
+    b: domain:SW4
     slot: false
     source: design
   - kind: separate
-    a: domain:C4
-    b: domain:C6
+    a: domain:BAT0
+    b: domain:SW5
     slot: false
     source: design
   - kind: separate
-    a: domain:C5
-    b: domain:C7
+    a: domain:BAT0
+    b: domain:SW6
     slot: false
     source: design
   - kind: separate
-    a: domain:C6
-    b: domain:C8
+    a: domain:BAT0
+    b: domain:SW7
     slot: false
     source: design
   - kind: separate
-    a: domain:C7
-    b: domain:C9
+    a: domain:BAT0
+    b: domain:SW8
     slot: false
     source: design
   - kind: separate
-    a: domain:C8
-    b: domain:C10
+    a: domain:BAT0
+    b: domain:SW9
     slot: false
     source: design
   - kind: separate
-    a: domain:C9
-    b: domain:C11
+    a: domain:BAT0
+    b: domain:SW10
     slot: false
     source: design
   - kind: separate
-    a: domain:C10
-    b: domain:C12
+    a: domain:BAT0
+    b: domain:SW11
     slot: false
     source: design
   - kind: separate
-    a: domain:C11
-    b: domain:C13
+    a: domain:BAT0
+    b: domain:SW12
     slot: false
     source: design
   - kind: separate
-    a: domain:C12
-    b: domain:C14
+    a: domain:BAT0
+    b: domain:SW13
     slot: false
     source: design
   - kind: separate
-    a: domain:C13
-    b: domain:C15
+    a: domain:BAT0
+    b: domain:SW14
     slot: false
     source: design
   - kind: separate
-    a: domain:C14
-    b: domain:C16
+    a: domain:BAT0
+    b: domain:SW15
     slot: false
     source: design
   - kind: separate
-    a: domain:C15
-    b: domain:STACK
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW1
-    b: domain:BAT0
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW1
-    b: domain:C1
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW2
-    b: domain:C1
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW2
-    b: domain:C2
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW3
-    b: domain:C2
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW3
-    b: domain:C3
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW4
-    b: domain:C3
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW4
-    b: domain:C4
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW5
-    b: domain:C4
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW5
-    b: domain:C5
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW6
-    b: domain:C5
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW6
-    b: domain:C6
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW7
-    b: domain:C6
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW7
-    b: domain:C7
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW8
-    b: domain:C7
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW8
-    b: domain:C8
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW9
-    b: domain:C8
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW9
-    b: domain:C9
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW10
-    b: domain:C9
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW10
-    b: domain:C10
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW11
-    b: domain:C10
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW11
-    b: domain:C11
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW12
-    b: domain:C11
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW12
-    b: domain:C12
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW13
-    b: domain:C12
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW13
-    b: domain:C13
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW14
-    b: domain:C13
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW14
-    b: domain:C14
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW15
-    b: domain:C14
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW15
-    b: domain:C15
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW16
-    b: domain:C15
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:SW16
-    b: domain:C16
+    a: domain:BAT0
+    b: domain:SW16
     slot: false
     source: design
   - kind: separate
     a: domain:RET
-    b: domain:C1
-    slot: false
-    source: design
-  - kind: separate
-    a: domain:CTRL
     b: domain:C1
     slot: false
     source: design
@@ -12803,436 +12275,148 @@ constraints:
   - id: rel.511
     from: separate
     kind: isolation
-    domains: [BAT0, C2]
+    domains: [BAT0, SW1]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.BAT0.C2
+    kicad_dru: IR:barrier.BAT0.SW1
   - id: rel.512
     from: separate
     kind: isolation
-    domains: [C1, C3]
+    domains: [BAT0, SW2]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C1.C3
+    kicad_dru: IR:barrier.BAT0.SW2
   - id: rel.513
     from: separate
     kind: isolation
-    domains: [C2, C4]
+    domains: [BAT0, SW3]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C2.C4
+    kicad_dru: IR:barrier.BAT0.SW3
   - id: rel.514
     from: separate
     kind: isolation
-    domains: [C3, C5]
+    domains: [BAT0, SW4]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C3.C5
+    kicad_dru: IR:barrier.BAT0.SW4
   - id: rel.515
     from: separate
     kind: isolation
-    domains: [C4, C6]
+    domains: [BAT0, SW5]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C4.C6
+    kicad_dru: IR:barrier.BAT0.SW5
   - id: rel.516
     from: separate
     kind: isolation
-    domains: [C5, C7]
+    domains: [BAT0, SW6]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C5.C7
+    kicad_dru: IR:barrier.BAT0.SW6
   - id: rel.517
     from: separate
     kind: isolation
-    domains: [C6, C8]
+    domains: [BAT0, SW7]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C6.C8
+    kicad_dru: IR:barrier.BAT0.SW7
   - id: rel.518
     from: separate
     kind: isolation
-    domains: [C7, C9]
+    domains: [BAT0, SW8]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C7.C9
+    kicad_dru: IR:barrier.BAT0.SW8
   - id: rel.519
     from: separate
     kind: isolation
-    domains: [C8, C10]
+    domains: [BAT0, SW9]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C8.C10
+    kicad_dru: IR:barrier.BAT0.SW9
   - id: rel.520
     from: separate
     kind: isolation
-    domains: [C9, C11]
+    domains: [BAT0, SW10]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C9.C11
+    kicad_dru: IR:barrier.BAT0.SW10
   - id: rel.521
     from: separate
     kind: isolation
-    domains: [C10, C12]
+    domains: [BAT0, SW11]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C10.C12
+    kicad_dru: IR:barrier.BAT0.SW11
   - id: rel.522
     from: separate
     kind: isolation
-    domains: [C11, C13]
+    domains: [BAT0, SW12]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C11.C13
+    kicad_dru: IR:barrier.BAT0.SW12
   - id: rel.523
     from: separate
     kind: isolation
-    domains: [C12, C14]
+    domains: [BAT0, SW13]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C12.C14
+    kicad_dru: IR:barrier.BAT0.SW13
   - id: rel.524
     from: separate
     kind: isolation
-    domains: [C13, C15]
+    domains: [BAT0, SW14]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C13.C15
+    kicad_dru: IR:barrier.BAT0.SW14
   - id: rel.525
     from: separate
     kind: isolation
-    domains: [C14, C16]
+    domains: [BAT0, SW15]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C14.C16
+    kicad_dru: IR:barrier.BAT0.SW15
   - id: rel.526
     from: separate
     kind: isolation
-    domains: [C15, STACK]
+    domains: [BAT0, SW16]
     grade: functional
     clearance_mm: 0.6
     creepage_mm: 0.6
     slot: false
-    kicad_dru: IR:barrier.C15.STACK
+    kicad_dru: IR:barrier.BAT0.SW16
   - id: rel.527
-    from: separate
-    kind: isolation
-    domains: [SW1, BAT0]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW1.BAT0
-  - id: rel.528
-    from: separate
-    kind: isolation
-    domains: [SW1, C1]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW1.C1
-  - id: rel.529
-    from: separate
-    kind: isolation
-    domains: [SW2, C1]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW2.C1
-  - id: rel.530
-    from: separate
-    kind: isolation
-    domains: [SW2, C2]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW2.C2
-  - id: rel.531
-    from: separate
-    kind: isolation
-    domains: [SW3, C2]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW3.C2
-  - id: rel.532
-    from: separate
-    kind: isolation
-    domains: [SW3, C3]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW3.C3
-  - id: rel.533
-    from: separate
-    kind: isolation
-    domains: [SW4, C3]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW4.C3
-  - id: rel.534
-    from: separate
-    kind: isolation
-    domains: [SW4, C4]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW4.C4
-  - id: rel.535
-    from: separate
-    kind: isolation
-    domains: [SW5, C4]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW5.C4
-  - id: rel.536
-    from: separate
-    kind: isolation
-    domains: [SW5, C5]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW5.C5
-  - id: rel.537
-    from: separate
-    kind: isolation
-    domains: [SW6, C5]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW6.C5
-  - id: rel.538
-    from: separate
-    kind: isolation
-    domains: [SW6, C6]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW6.C6
-  - id: rel.539
-    from: separate
-    kind: isolation
-    domains: [SW7, C6]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW7.C6
-  - id: rel.540
-    from: separate
-    kind: isolation
-    domains: [SW7, C7]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW7.C7
-  - id: rel.541
-    from: separate
-    kind: isolation
-    domains: [SW8, C7]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW8.C7
-  - id: rel.542
-    from: separate
-    kind: isolation
-    domains: [SW8, C8]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW8.C8
-  - id: rel.543
-    from: separate
-    kind: isolation
-    domains: [SW9, C8]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW9.C8
-  - id: rel.544
-    from: separate
-    kind: isolation
-    domains: [SW9, C9]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW9.C9
-  - id: rel.545
-    from: separate
-    kind: isolation
-    domains: [SW10, C9]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW10.C9
-  - id: rel.546
-    from: separate
-    kind: isolation
-    domains: [SW10, C10]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW10.C10
-  - id: rel.547
-    from: separate
-    kind: isolation
-    domains: [SW11, C10]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW11.C10
-  - id: rel.548
-    from: separate
-    kind: isolation
-    domains: [SW11, C11]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW11.C11
-  - id: rel.549
-    from: separate
-    kind: isolation
-    domains: [SW12, C11]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW12.C11
-  - id: rel.550
-    from: separate
-    kind: isolation
-    domains: [SW12, C12]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW12.C12
-  - id: rel.551
-    from: separate
-    kind: isolation
-    domains: [SW13, C12]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW13.C12
-  - id: rel.552
-    from: separate
-    kind: isolation
-    domains: [SW13, C13]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW13.C13
-  - id: rel.553
-    from: separate
-    kind: isolation
-    domains: [SW14, C13]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW14.C13
-  - id: rel.554
-    from: separate
-    kind: isolation
-    domains: [SW14, C14]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW14.C14
-  - id: rel.555
-    from: separate
-    kind: isolation
-    domains: [SW15, C14]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW15.C14
-  - id: rel.556
-    from: separate
-    kind: isolation
-    domains: [SW15, C15]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW15.C15
-  - id: rel.557
-    from: separate
-    kind: isolation
-    domains: [SW16, C15]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW16.C15
-  - id: rel.558
-    from: separate
-    kind: isolation
-    domains: [SW16, C16]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.SW16.C16
-  - id: rel.559
     from: separate
     kind: isolation
     domains: [RET, C1]
@@ -13241,16 +12425,7 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.RET.C1
-  - id: rel.560
-    from: separate
-    kind: isolation
-    domains: [CTRL, C1]
-    grade: functional
-    clearance_mm: 0.6
-    creepage_mm: 0.6
-    slot: false
-    kicad_dru: IR:barrier.CTRL.C1
-  - id: rel.561
+  - id: rel.528
     from: separate
     kind: isolation
     domains: [BAT0, RET]
@@ -13259,16 +12434,16 @@ constraints:
     creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.BAT0.RET
-  - id: rel.562
+  - id: rel.529
     from: separate
     kind: isolation
     domains: [USER, FAULT]
     grade: functional
-    clearance_mm: 0.5
-    creepage_mm: 0.5
+    clearance_mm: 0.6
+    creepage_mm: 0.6
     slot: false
     kicad_dru: IR:barrier.USER.FAULT
-  - id: rel.563
+  - id: rel.530
     from: separate
     kind: isolation
     domains: [BAT0, CHASSIS]
@@ -13277,7 +12452,7 @@ constraints:
     creepage_mm: 3.0
     slot: false
     kicad_dru: IR:barrier.BAT0.CHASSIS
-  - id: rel.564
+  - id: rel.531
     from: separate
     kind: isolation
     domains: [BAT0, USER]
@@ -13286,7 +12461,7 @@ constraints:
     creepage_mm: 8.0
     slot: false
     kicad_dru: IR:barrier.BAT0.USER
-  - id: rel.565
+  - id: rel.532
     from: separate
     kind: isolation
     domains: [BAT0, FAULT]
@@ -13295,65 +12470,65 @@ constraints:
     creepage_mm: 5.0
     slot: false
     kicad_dru: IR:barrier.BAT0.FAULT
-  - id: rel.566
+  - id: rel.533
     from: keepout
     kind: keepout
     obj: H1
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.567
+  - id: rel.534
     from: keepout
     kind: keepout
     obj: H2
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.568
+  - id: rel.535
     from: keepout
     kind: keepout
     obj: H3
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.569
+  - id: rel.536
     from: keepout
     kind: keepout
     obj: H4
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.570
+  - id: rel.537
     from: keepout
     kind: keepout
     obj: H5
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.571
+  - id: rel.538
     from: keepout
     kind: keepout
     obj: H6
     what: "copper, 3.0 mm ring around the screw head"
     layers: all
-  - id: rel.572
+  - id: rel.539
     from: x-label
     kind: x-label
     obj: J1
     text: "TAP 0 (B- CELL, NOT P-) ... 16 (B+); bridge N+1..16 for N < 16"
-  - id: rel.573
+  - id: rel.540
     from: x-label
     kind: x-label
     obj: J2
     text: "UART: GND VIO TX RX (isolated)"
-  - id: rel.574
+  - id: rel.541
     from: x-label
     kind: x-label
     obj: J4
     text: "FAULT contact, <= 30 V 50 mA"
-  - id: rel.575
+  - id: rel.542
     from: group
     kind: cluster
     component_class: tapin
     members: [J1, NT1]
     max_span: 32.0
     hard: false
-  - id: rel.576
+  - id: rel.543
     from: group
     kind: cluster
     component_class: harness
@@ -13395,14 +12570,14 @@ constraints:
       - HF16
     max_span: 32.0
     hard: false
-  - id: rel.577
+  - id: rel.544
     from: group
     kind: cluster
     component_class: mech
     members: [H1, H2, H3, H4, H5, H6]
     max_span: 32.0
     hard: false
-  - id: rel.578
+  - id: rel.545
     from: near
     kind: proximity
     a: C9
@@ -13410,7 +12585,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.579
+  - id: rel.546
     from: near
     kind: proximity
     a: C11
@@ -13418,7 +12593,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.580
+  - id: rel.547
     from: near
     kind: proximity
     a: C14
@@ -13426,7 +12601,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.581
+  - id: rel.548
     from: near
     kind: proximity
     a: C15
@@ -13434,7 +12609,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.582
+  - id: rel.549
     from: near
     kind: proximity
     a: C17
@@ -13442,7 +12617,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.583
+  - id: rel.550
     from: near
     kind: proximity
     a: C20
@@ -13450,7 +12625,7 @@ constraints:
     max: 3.0
     basis: pad_edge
     hard: true
-  - id: rel.584
+  - id: rel.551
     from: near
     kind: proximity
     a: C21

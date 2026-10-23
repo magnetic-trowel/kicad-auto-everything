@@ -308,3 +308,22 @@ def test_inherited_barriers_strictest_wins():
     d.finalize()
     text = dru_text(d, NetClasses(d).build())
     assert text.index('"IR:barrier.B1.B2.inherited"') < text.index('"IR:barrier.B1.B4.inherited"')
+
+
+def test_functional_rule_not_skipped_by_netclass_clearance():
+    """Repro from the Li-ion encoding: a looser inherited barrier must not beat IPC spacing
+    just because a net class already had the IPC clearance."""
+    from kaesynth.emit.project import NetClasses, dru_text
+    d = stack(n=4)                       # T4 - GND up to 60 V
+    d.domain("SW", ref="T2")
+    d.net("SWN", domain="SW", v=(-30, 30))
+    d.barrier("B1", "B2", grade="functional", v_work=15, creepage_mm=0.2, clearance_mm=0.2)
+    b = d.block("x")
+    for net in ("GND", "T1", "T2", "T3", "T4", "SWN"):
+        r = b.add(two_pin("R", v_max=100))
+        d.nets[net].connect(r[1], r[2])
+    d.finalize()
+    text = dru_text(d, NetClasses(d).build())
+    i_inh = text.index('"IR:barrier.B1.B2.inherited"')
+    fn = [ln for ln in text.splitlines() if ln.startswith('(rule "IR:functional.B1.') and "0.6mm" in ln]
+    assert fn and text.index(fn[0]) > i_inh               # the 0.6 mm IPC rule comes after (wins)

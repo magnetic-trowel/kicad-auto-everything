@@ -1,7 +1,7 @@
 # liion-balancer: active cell balancer for a 13–16S home Li-ion pack (≈ 10 kWh)
 
 Status: engineering design, encoded in [`design.py`](design.py) / [`parts.py`](parts.py) and built
-with `kaesynth` (0 errors, 0 unwaived warnings, 66 waivers; KiCad ERC 0 errors; netlist round trip
+with `kaesynth` (0 errors, 0 unwaived warnings, 25 waivers; KiCad ERC 0 errors; netlist round trip
 identical). Not reviewed or certified. Net table and naming rules: [CONNECTIONS.md](CONNECTIONS.md);
 full pin list: `out/netlist.json`; checks, calculations and waivers: `out/report.md`.
 
@@ -175,7 +175,8 @@ the stack is exact rather than interval-blown.
 | Domain | Reference | Nets | Range |
 |---|---|---|---|
 | BAT0 (root) | TAP0 = B− | TAP0, TAP0_IN, GND_B (joined at NT1), CS_0 | 0 |
-| C1…C16 | TAP(k−1) | TAPk, TAPk_IN, S_k, OUT_k, DCH_k, SW_k, SNB_k | 0–4.2 V (0 for bridged positions); SW −0.7…38.5 V |
+| C1…C16 | TAP(k−1) | TAPk, TAPk_IN, S_k, OUT_k, DCH_k | 0–4.2 V (0 for bridged positions) |
+| SW1…SW16 | TAP(k−1) | SW_k, SNB_k (LT8584 switch and clamp nodes) | −0.7…38.5 V |
 | SNS1…SNS15 | TAPk | CS_k, MODE_k (tap potential through ≥ 100 Ω) | ±10 mV |
 | STACK | TAP16 | STK_F, VPLUS, BUCK_PRE/IN, STR_D, CS_16, MODE_16 | −2.5…0 V |
 | RET | TAP0 | FLYBUS, SEC_k, BUCK_SW, STR_Q | FLYBUS 0–67.7 V; SEC −18…68.7 V |
@@ -196,13 +197,18 @@ FR-4 CTI ≥ 175 (material group IIIa), PD2. Creepage / clearance in mm.
 | # | Pair | Grade | Working V | Spacing | Source |
 |---|---|---|---|---|---|
 | B-1 | adjacent positions (BAT0–C1 … C16–STACK) | functional | 4.2 (8.4 swap) | 0.2 / 0.2 | IPC-2221B B2 0–15 V: 0.1 [S] |
-| B-1a | SW_k, SNB_k to every other net | functional | 38.5 | 0.6 | B2 31–50 V: 0.6 [S]; except at the U1kk/T1kk/D2kk pads |
-| B-2 | positions ≥ 2 apart; cells ↔ CTRL; RET ↔ BAT0 | functional | ≤ 67.7 | **0.6 required, 1.0 preferred** | B2 31–150 V: 0.6 [S]. 1.0 cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) |
-| B-3 | T1kk primary ↔ secondary (RET ↔ cells) | functional; part 1500 Vrms [P] | ≤ 106 pk | 0.6 (footprint gives 11.7) | as B-2 |
+| B-1a | SW_k, SNB_k (domains SWk) to every other net | functional | 38.5 | 0.6 | B2 31–50 V: 0.6 [S] (barrier BAT0–SWk, inherited by all) |
+| B-2 | every other pair inside the battery (positions ≥ 2 apart, CTRL, STACK) | functional | exact pair voltage | 0.2 up to 30 V, **0.6 above**; 1.0 preferred on open board | B2 [S]; emitted by kaesynth from the exact worst voltage of each domain pair |
+| B-3 | T1kk primary ↔ secondary (RET ↔ cells); FLYBUS/SEC/BUCK_SW ↔ BAT0 | functional; part 1500 Vrms [P] | ≤ 106 pk | 0.6 (footprint gives 11.7) | B2 31–150 V [S] |
 | B-4u | battery ↔ USER | **reinforced** | 250 Vrms | required 5.0 / 3.8; **design 8.0 / 8.0** | IEC 60664-1 F.4/F.2, IEC 62368-1 Table 10 via TI SLUP419 [S]; ISO7721DWV pads 8.85 apart |
 | B-4f | battery ↔ FAULT | **reinforced** | 250 Vrms | **5.0 / 3.8** (required) | as B-4u; the AQY210EH SMDIP-4 pads are only 5.6 mm apart |
-| B-5 | battery ↔ CHASSIS screws | basic | 250 Vrms | 3.0 ring, also as an edge-clearance rule | 2.5 / 1.5 [S] |
-| B-6 | USER ↔ FAULT | functional | ≤ 36 | 0.5 | separate connectors J2, J4 |
+| B-5 | battery ↔ CHASSIS screws | basic | 250 Vrms | 3.0 ring (placement keepout); 3.0 to the board edge (DRC rule) | 2.5 / 1.5 [S] |
+| B-6 | USER ↔ FAULT | functional | ≤ 36 | 0.6 | B2 31–50 V [S]; separate connectors J2, J4 |
+
+Pads of one part that bridges two of these domains (LT8584, ADBMS1818, filters) are exempt from
+each other in the DRC rules: the package sets that spacing, and package creepage is checked against
+the barrier (ISO7721DWV 8.5 mm, AQY210EH pad gap 5.6 mm [I]). The rules were audited net pair by net
+pair against IPC-2221B B2 for the exact worst voltage: none is below it.
 
 ## 7. Calculations
 
@@ -293,7 +299,7 @@ Stress is the worst case in this design; ratings, sources and lifecycle are in `
 | Balancer U101–U116 | ADI LT8584EFE#PBF | V_IN 9 V abs; SW 50 V (40 VDC) | 47 %; 77 % | generated symbol; TSSOP-16 EP; single source |
 | Transformer T101–T116 | Coilcraft NA5743-ALD | 1:4, I_pk 7 A, 1500 Vrms | 97 % (waived, ADI pairing) | footprint drawn from Doc 1075 (`footprints/custom.pretty`) |
 | Diodes D1kk, D2kk, D3, D4 | Diodes ES1G-13-F | 400 V, 1 A | ≤ 22 % | |
-| Cell TVS D301–D316 | ST SMA6T6V7AY | V_RM 5 V | 84 % (waived: TVS stand-off) | ADI Table 5 [P] |
+| Cell TVS D301–D316 | ST SMA6T6V7AY | V_RM 5 V | 84 % (stand-off is a working rating) | ADI Table 5 [P] |
 | CVCELL/CTRAN C1kk, C2kk | **Murata GRM32EC80J107ME20L**, 100 µF 6.3 V **X6S** | 105 °C | 67 % | was 10 V X5R (85 °C): failed the REQ-21 margin |
 | C3kk / C4kk / C5kk | 1 µF 10 V / 47 nF 50 V / 22 nF 100 V X7R | | ≤ 42 % | |
 | C6kk, C8 | KEMET C1210C225K1RACTU 2.2 µF 100 V | | 68 % | GRM32ER72A225KA35L is NRND |
@@ -303,14 +309,14 @@ Stress is the worst case in this design; ratings, sources and lifecycle are in `
 | Inline fuse HF0–HF16 | Littelfuse 0324007.HXP 3AB 7 A | 10 kA at 125 VDC | 50 % | off-board, in heat-shrink |
 | Supply fuse F1 | Littelfuse 0451.125MRL | 125 mA | 8 % | |
 | Monitor U1 | ADI ADBMS1818ASWZ | V+ 112.5 V abs; Cn−Cn−1 8 V | 60 %; 53 % | 2-unit generated symbol; LTC6813-1 second source |
-| MCU U2 | ST STM32G031K8T6 | VDD 4.0 V abs | 84 % (waived: own rail) | |
+| MCU U2 | ST STM32G031K8T6 | VDD 4.0 V abs, 3.6 V operating | 3.37 V, within operating | |
 | Buck U3 / L1 | TI LM5164DDAR / Coilcraft MSS1048-473 | 100 V / I_sat 1.44 A | 67 % / 18 % | |
 | LDO U4 | Microchip MCP1700T-3302E/TT | 6.5 V abs | 79 % | |
 | Isolator U5 | TI ISO7721DWVR | reinforced 5 kVrms, 8.5 mm, V_IOWM 1500 Vrms | logic | |
-| ESD U7 (new) | TI TPD4E05U06DQAR | ±12 kV contact, V_RWM 5.5 V | 100 % (waived: TVS) | on VIO/TXD/RXD at J2 |
+| ESD U7 (new) | TI TPD4E05U06DQAR | ±12 kV contact, V_RWM 5.5 V | 5.5 V = V_RWM | on VIO/TXD/RXD at J2 |
 | Fault contact U6 | Panasonic AQY210EHAX | reinforced 5 kVrms; 350 V; LED VR 3 V | 9 %; 50 % | |
 | Contact TVS D7 (new) | Littelfuse SMBJ40CA | V_R 40 V | 75 % | across J4 |
-| Return D1 / clamp D2 | Vishay V8P10 / Littelfuse SMBJ70A | 100 V 8 A / V_R 70 V | 68 % / 97 % (waived) | |
+| Return D1 / clamp D2 | Vishay V8P10 / Littelfuse SMBJ70A | 100 V 8 A / V_R 70 V | 68 % / 97 % of stand-off | |
 | Q1 | onsemi MMBT5551LT1G | 160 V | 42 % | |
 | R25, R26 | **1 kΩ** (was 100 Ω) | 0.1 W | 30 % | a host driving TXD back put 0.3 W in 100 Ω |
 | C2, C14 | **1 µF 16 V** GRM188R71C105KA12D (was 10 V) | | 32 % | 5 V rail, DC bias |
@@ -331,7 +337,7 @@ central spine that carries FLYBUS, TAP0, the LED string, D1/D2 (at F116) and the
 neighbouring channels one cell apart; CH08/CH09 meet on TAP8 in the east. East: PSU, MCU and ISO
 (J2, J4 on the east edge), kept away from channels 8/9 for the 85 °C parts.
 
-All 558 relations are in `placement()` of `design.py` (and `out/intent.yaml`): groups and regions per
+All 541 relations are in `placement()` of `design.py` (and `out/intent.yaml`): groups and regions per
 block; arrays and mirror symmetry of the channels; `pins_toward` for each transformer (primary to the
 cell's own copper, secondary to the spine); three hot loops per channel (primary, secondary, RCD) and
 the buck loop; tight decoupling; thermal relations for U1kk (≥ 650 mm² TAP(k−1), ≥ 9 vias) and D1
@@ -343,7 +349,6 @@ Relations outside the vocabulary are `custom`:
 - `net_tie(NT1, TAP0–GND_B at F100.2)`: the only battery-return/controller-ground joint.
 - `island(TAP(k−1), In1, under ch k)`: a reference plane per channel at its own potential.
 - `corridor([TAP0…8, S_1…8], south, In2, by index)` and the north equivalent: neighbours differ by one cell.
-- `spacing(SW_k, SNB_k, 0.6 mm)`: B-1a.
 - `current(TAPt 2.6 A, FLYBUS 1.6 A)`; `straddle(U5 CTRL|USER)`, `straddle(U6 CTRL|FAULT)`;
   `keepout_mlcc` (1210s ≥ 5 mm from edges and holes); labels.
 
@@ -355,10 +360,10 @@ upward, check every adjacent pair at the plug (2.5–4.2 V, rising) and the sum,
 
 **Build checks** (`kaesynth build`): voltage/current/power ratings at the 67.2 V envelope, isolation
 and barrier grades, provenance, protection, calculations, KiCad ERC, netlist round trip, DRU lint.
-Waived findings, each with its reason in `design.py`: transformer peak current (16), TVS stand-off
-(18), IC pins at their own rail (7), tap reverse polarity handled by crowbar not blocking (16), the
-host-powered VIO_ISO without a fuse (1), the copper-less CHASSIS net (1), and ERC pin-to-pin on
-emitter PWR_FLAGs (7).
+IC rail pins carry their datasheet recommended operating maximum (`v_rec`). Waived findings, each
+with its reason in `design.py`: transformer peak current 6.8 of 7.0 A (16), LM5164 BST–SW set by its
+internal 5 V regulator (1), the host-powered VIO_ISO without a fuse (1), and ERC pin-to-pin on the
+PWR_FLAGs the emitter adds to GND_B and ISO_VCC1 (7).
 
 **Simulation.** S-1 DRC with the generated rules. S-2 LTspice LT8584 channel: V_IN 2.5–4.2 V,
 FLYBUS 32.5–67.7 V with harness R/L; faults open FLYBUS, shorted D1kk, shorted C6kk. S-3 buck

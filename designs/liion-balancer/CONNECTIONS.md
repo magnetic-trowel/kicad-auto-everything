@@ -29,8 +29,8 @@ Voltages are worst-case normal operation relative to TAP0 unless noted (domain m
 | CS_t | BAT0 / SNSt / STACK | TAPt ± 10 mV | ≤ 1 µA (100 µA open-wire test) | sense, ADBMS1818 C inputs |
 | S_k | Ck | TAP(k−1)…TAPk | 3 µA | balance enable, active low |
 | MODE_k | SNSk / STACK | TAPk − 10 mV…TAPk | < 1 µA | LT8584 MODE via 10 kΩ |
-| SW_k | Ck | TAP(k−1) − 0.7 V…+38.5 V; 21.4 V flat top | 3.2 A rms, 6.8 A pk | switching (0.6 mm spacing) |
-| SNB_k | Ck | TAPk + 15…34 V | 0.05 A avg, 6.8 A pk | RCD clamp node |
+| SW_k | SWk | TAP(k−1) − 0.7 V…+38.5 V; 21.4 V flat top | 3.2 A rms, 6.8 A pk | switching (0.6 mm to every other net) |
+| SNB_k | SWk | TAPk + 15…34 V | 0.05 A avg, 6.8 A pk | RCD clamp node |
 | OUT_k, DCH_k | Ck | within cell k | < 1 mA | LT8584 OUT; DCHRG (high = enable) |
 | SEC_k | RET | −18…68.7 V | 0.4 A rms, 1.7 A pk | secondary switching node |
 | FLYBUS | RET | stack + 0.5 V (≤ 67.7 V); ≤ 94 V for ≤ 1 ms if the return opens | 1.6 A | flyback return bus |

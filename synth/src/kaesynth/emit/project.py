@@ -217,6 +217,17 @@ def dru_text(design, netclasses):
             lines.append(f'  (condition "{c}")')
             lines.append(f"  (constraint edge_clearance (min {dom.edge_clearance_mm:g}mm)))")
             lines.append("")
+            # edge_clearance covers Edge.Cuts and oval holes only; round mounting holes need
+            # hole_clearance (and clearance for their pads) against this domain's copper
+            holes = [p.ref for p in design.all_parts() if p.defn.category == "mechanical" and p.on_board]
+            if holes:
+                hb = " || ".join(f"B.memberOfFootprint('{r}')" for r in holes)
+                lines.append(f"# {dom.name} copper to mounting holes {', '.join(holes)}")
+                lines.append(f'(rule "IR:edge.{dom.name}.holes"')
+                lines.append(f'  (condition "{c} && ({hb})")')
+                lines.append(f"  (constraint hole_clearance (min {dom.edge_clearance_mm:g}mm))")
+                lines.append(f"  (constraint clearance (min {dom.edge_clearance_mm:g}mm)))")
+                lines.append("")
 
     def depth(name):
         n, x = 0, parent.get(name)
@@ -246,9 +257,9 @@ def dru_text(design, netclasses):
             if v is None:
                 continue
             mm = ipc2221b_spacing(v, col)
-            base = max(c["clearance"] for c in netclasses.classes.values()
-                       if c["domain"] in (da.name, db.name))
-            if mm <= base:
+            # emit even when a net class already has this clearance: a matching custom rule
+            # (e.g. a looser inherited barrier) overrides net-class clearance in KiCad
+            if mm <= 0.2:
                 continue
             grouped.setdefault((da.name, mm), []).append((db.name, v))
             spaced.add(frozenset((da.name, db.name)))

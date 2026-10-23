@@ -260,41 +260,35 @@ def domains_and_nets(d):
 def barriers(d):
     ipc = "IPC-2221B Table 6-1"
     seq = ["BAT0"] + [f"C{k}" for k in CH] + ["STACK"]   # potential order along the stack
-    # B-1: adjacent positions (one cell apart). Declared first so the B-2 rules inherited through
-    # floating domains (declared later) override them for every non-adjacent pair.
+    # B-1: adjacent positions (one cell apart).
     for a, b in zip(seq, seq[1:]):
         d.barrier(a, b, grade="functional", v_work=8.4, creepage_mm=0.2, clearance_mm=0.2,
                   standard=f"{ipc} B2 0-15 V: 0.1 mm [S]", pollution_degree=2,
                   source="DESIGN.md 6.3 B-1: <= 4.2 V, 8.4 V in a swap fault; 0.2 mm used",
                   notes="SW_k/SNB_k are in their own domains SWk with 0.6 mm barriers (B-1a)")
-    # B-2: two or more positions apart (up to 67 V). Each barrier covers seq[i] vs everything that
-    # floats on seq[i+2] (inherited), so this chain covers every non-adjacent pair.
-    for a, b in zip(seq, seq[2:]):
-        d.barrier(a, b, grade="functional", v_work=V_STACK, creepage_mm=0.6, clearance_mm=0.6,
-                  standard=f"{ipc} B2 31-150 V: 0.6 mm external; B1 internal 0.1-0.2 mm [S]",
-                  pollution_degree=2,
-                  source="DESIGN.md 6.3 B-2. 0.6 mm is the IPC requirement; 1.0 mm preferred on open board. "
-                         "1.0 mm cannot be held at the LM5164 HSOP-8 (EP to SW 0.75 mm) or ADBMS1818 pins")
+    # B-2: positions two or more apart are not declared as barriers: the framework emits IPC-2221B
+    # functional rules from the exact worst voltage of each domain pair (<= 30 V: 0.1 mm, so the
+    # 0.2 mm floor; 31-150 V: 0.6 mm). A declared B-2 barrier would also be inherited by the sense
+    # domains SNSk, which sit at TAPk (one cell from C(k+1)), and force 0.6 mm at the AFE fan-out.
     # B-1a: the LT8584 switch and clamp nodes reach 38.5 V above their own cell's bottom, so they
     # keep the 31-50 V class to the taps on both sides (their own pads are exempt as a bridging part).
+    # Declared against BAT0 so the rule is inherited by every other battery-side domain: SW_k is
+    # >= 34 V from every other net at some point of the cycle.
     for k in CH:
-        for other in (seq[k - 1], f"C{k}"):
-            d.barrier(f"SW{k}", other, grade="functional", v_work=38.5, creepage_mm=0.6, clearance_mm=0.6,
-                      standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
-                      source="DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)")
-    # B-2 / B-3: return bus and controller vs every cell. RET carries the T1kk secondaries: the
+        d.barrier("BAT0", f"SW{k}", grade="functional", v_work=38.5, creepage_mm=0.6, clearance_mm=0.6,
+                  standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
+                  source="DESIGN.md 6.3 B-1a: SW_k/SNB_k up to 38.5 V above TAP(k-1) (C-5, C-6)")
+    # B-3: return bus vs every cell. RET carries the T1kk secondaries: the
     # transformer primary/secondary interface is this functional barrier (T1kk Isolation 1500 Vrms).
     d.barrier("RET", "C1", grade="functional", v_work=V_STACK + 38.5, creepage_mm=0.6, clearance_mm=0.6,
               standard=f"{ipc} B2 31-150 V [S]", pollution_degree=2,
               source="DESIGN.md 6.3 B-3: T1kk primary (cell k) to secondary (FLYBUS/TAP0), <= 106 V peak; "
-                     "the footprint gives about 10 mm between pad rows")
-    d.barrier("CTRL", "C1", grade="functional", v_work=V_STACK, creepage_mm=0.6, clearance_mm=0.6,
-              standard=f"{ipc} B2 31-150 V [S]", pollution_degree=2, source="DESIGN.md 6.3 B-2")
+                     "the footprint gives 11.7 mm between pad rows")
     d.barrier("BAT0", "RET", grade="functional", v_work=V_FLY, creepage_mm=0.6, clearance_mm=0.6,
               standard=f"{ipc} B2 31-150 V [S]", pollution_degree=2,
               source="FLYBUS/SEC_k/BUCK_SW (<= 68 V) vs TAP0, GND_B and the logic")
     # B-6: user port vs fault contact
-    d.barrier("USER", "FAULT", grade="functional", v_work=36, creepage_mm=0.5, clearance_mm=0.5,
+    d.barrier("USER", "FAULT", grade="functional", v_work=36, creepage_mm=0.6, clearance_mm=0.6,
               standard=f"{ipc} B2 31-50 V: 0.6 mm [S]", pollution_degree=2,
               source="DESIGN.md 6.3 B-6: <= 30 V + 5.5 V; separate connectors J2 and J4")
     # B-5: battery side vs chassis screws (basic)
