@@ -16,8 +16,8 @@ what an exact quote costs as k grows, on a real board operator:
      inverse G_W = K_W^-1;
   4. a two-terminal impedance z = (e_p - e_q)' G_W (e_p - e_q) between the capacitor's pads
      (an effective resistance here; a loop inductance on the HF operator);
-  5. a "move": k branches inside W change conductance (half removed, half added between other
-     window node pairs). Exact quote by Woodbury, O(k^2) gathers from G_W and one k x k solve:
+  5. a "move": k branches inside W change conductance (half lose 90% of it, as copper leaving a
+     cell; half are added between other window node pairs, as copper arriving). Exact quote by Woodbury, O(k^2) gathers from G_W and one k x k solve:
      dz = -v' (C^-1 + A' G_W A)^-1 v, v = A' G_W (e_p - e_q); checked against a brute-force
      refactorization of the edited whole board;
   6. the commit: a rank-k update of G_W (O(|W|^2 k)), against a dense refactorization of K_W.
@@ -147,7 +147,7 @@ def main(argv=None):
                 addB.append(int(rng.choice(cand)))
             a_idx = np.r_[ea[rem], addA]
             b_idx = np.r_[eb[rem], np.array(addB)]
-            dg = np.r_[-gv[rem], np.full(len(addA), np.median(gv[brW]))]
+            dg = np.r_[-0.9 * gv[rem], np.full(len(addA), np.median(gv[brW]))]
             la, lb = loc[a_idx], loc[b_idx]
             reps = 5 if k <= 128 else 2
             t0 = cpu()

@@ -4,10 +4,11 @@
 
 For every rail of the brief (net role 'rail') with a source and at least one load:
 
-1. **Currents (E5).** Each load gets a supply current by part class (`load_current`); the
-   source a rating by class (`source_rating`). The design current of the rail is the
-   source's rating when known (the most it can deliver bounds every load estimate),
-   else the sum of the loads; each branch carries its load's current.
+1. **Currents (E5).** Each load gets a supply current by part class (`load_current`; an IC
+   or module only through its supply pins, never through FB, EN or sense pins); the
+   source a rating by class (`source_rating`). The design current of the rail is the sum
+   of the loads with a 3x margin for the E5 uncertainty, capped by the source's rating
+   (the most it can deliver); each branch carries its load's current.
 2. **Budget and width.** A DC drop budget of 2 % of the rail voltage at the design current,
    rail plus ground: 1 % each, or 1.6 % for the rail when the ground return is a pour. A
    branch of length l then needs w >= rho l I / (t dV) (`drop_width`), never less than
@@ -93,10 +94,30 @@ def ldo_rating(ctx, u):
     return 0.3
 
 
+SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
+                        r"AVCC|DVCC|VIN\d*|PWR|POWER|\+V\w*|V\+|VREG_IN|IN)$", re.I)
+
+
+def _supply_pins(ctx, u, net):
+    """Whether part u takes supply current from `net`: an IC or module only through a
+    supply pin (power_in, or a supply name); FB, EN, sense and logic pins draw none."""
+    f = ctx.fp.get(u)
+    if f is None:
+        return False
+    for p in f.pads:
+        if p.net != net:
+            continue
+        if p.pintype in ("power_in",) or SUPPLY_PIN.match((p.pinfunction or "").split("/")[0].strip()):
+            return True
+    return False
+
+
 def load_current(ctx, u, net, cells):
     """E5 supply current (A) a part draws from rail `net` (see the module docstring)."""
     p = ctx.parts.get(u) or {}
     kind, sub, role = p.get("kind"), p.get("subtype"), p.get("role")
+    if kind in ("ic", "module") and not (u in cells and cells[u].get("rail") == net) and not _supply_pins(ctx, u, net):
+        return 0.0
     v = ctx.volts(net) or 3.3
     if u in cells:                            # a converter's input: its output power / (eta V_in)
         c = cells[u]
@@ -207,13 +228,19 @@ def _best_term(ctx, u, numbers, toward):
     return best[1] if best else None
 
 
-def route_rails(ctx, mode="auto"):
-    """Route the rails (and ground returns) of the brief; returns a report per rail."""
-    nets = ctx.nets
+def _cells(ctx):
     cells = {}
     for s in ctx.brief.get("structures") or []:
         if s.get("kind") == "commutation_cell" and s.get("controller"):
             cells[s["controller"]] = s
+    return cells
+
+
+def rail_plan(ctx):
+    """[{net, src, loads {uuid: A}, rating, design, parts}] for every rail of the brief with a
+    source and at least one load (the E5 currents of the module docstring)."""
+    nets = ctx.nets
+    cells = _cells(ctx)
     rails = []
     for net, r in nets.items():
         if (r or {}).get("role") != "rail" or net not in ctx.board.nets:
@@ -233,9 +260,22 @@ def route_rails(ctx, mode="auto"):
             continue
         rating = source_rating(ctx, src, net, cells)
         total = sum(loads.values())
-        design = rating if rating else total
+        # the source's rating bounds the loads; the loads' E5 sum, with a 3x margin for
+        # its uncertainty, bounds what the rail must carry
+        design = min(rating, max(3.0 * total, total + 0.1)) if rating else total
         rails.append(dict(net=net, src=src, loads=loads, rating=rating, design=design, parts=parts))
     rails.sort(key=lambda x: -x["design"])
+    return rails
+
+
+def rail_currents(ctx):
+    """{rail net: design current (A)}."""
+    return {r["net"]: r["design"] for r in rail_plan(ctx)}
+
+
+def route_rails(ctx, mode="auto"):
+    """Route the rails (and ground returns) of the brief; returns a report per rail."""
+    rails = rail_plan(ctx)
     report = []
     ground_load = {}
     gnd_pour = any(ctx.sp.zones_of(g) for g in ctx.gnd)
@@ -283,7 +323,7 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     for u in order:
         a = rl["loads"][u]
         cur = design if first else min(design, max(a, 0.05))
-        lt = _best_term(ctx, u, rl["parts"][u], (st.x, st.y))
+        lt = _best_term(ctx, u, _load_pins(ctx, u, net, rl["parts"][u]), (st.x, st.y))
         if lt is None:
             continue
         b = dict(load=ctx.fp[u].ref, current_A=round(cur, 3))
@@ -302,6 +342,10 @@ def _route_rail(ctx, rl, mode, gnd_pour):
                 b["via"] = f"{min(n_v, len(c))} via(s) into the {zl} zone"
                 rep["branches"].append(b)
                 continue
+        if ctx.connected(net, st, lt):
+            b["via"] = "already connected"
+            rep["branches"].append(b)
+            continue
         # tracks: trunk at the design current, branches at their own
         dist = math.hypot(lt.x - st.x, lt.y - st.y)
         lay = ctx.side_layer(u)
@@ -311,7 +355,7 @@ def _route_rail(ctx, rl, mode, gnd_pour):
             w_t = max(w_t, min(st.width, lt.width))
         w_t = min(w_t, float(ctx.opts.get("rail_max_mm", 3.0)))
         widths = sorted({round(w, 4) for w in width_ladder(w_t, opt, 4)}, reverse=True)
-        srcs = [anchor(st)] + [x for x in ctx.net_copper_anchors(net)]
+        srcs = [anchor(st)] + ctx.net_copper_anchors(net, connected_to=st)
         layers = [l for l in (lay, ctx.sp.cu[0], ctx.sp.cu[-1]) if l in ctx.sp.cu]
         layers = list(dict.fromkeys(layers))
         rt = route_hop(ctx, m, f"br:{u}", net, [anchor(lt)], srcs, widths, layers, via=len(layers) > 1,
@@ -360,6 +404,9 @@ def _ground_return(ctx, m, rl, dv):
             continue
         lt = _best_term(ctx, u, nu, (st.x, st.y))
         cur = rl["design"] if first else min(rl["design"], max(rl["loads"][u], 0.05))
+        if ctx.connected(g, st, lt):
+            out.append(dict(load=f.ref, note="already connected"))
+            continue
         lay = ctx.side_layer(u)
         t_cu = ctx.sp.tcu.get(lay, 0.035)
         mn, opt, mx = ctx.sp.width_limits(g, lay)
@@ -369,7 +416,7 @@ def _ground_return(ctx, m, rl, dv):
             w_t = max(w_t, min(st.width, lt.width))
         w_t = min(w_t, float(ctx.opts.get("rail_max_mm", 3.0)))
         widths = sorted({round(w, 4) for w in width_ladder(w_t, opt, 4)}, reverse=True)
-        srcs = [anchor(st)] + ctx.net_copper_anchors(g)
+        srcs = [anchor(st)] + ctx.net_copper_anchors(g, connected_to=st)
         layers = list(dict.fromkeys([lay, ctx.sp.cu[0], ctx.sp.cu[-1]]))
         rt = route_hop(ctx, m, f"gr:{u}", g, [anchor(lt)], srcs, widths, layers, via=len(layers) > 1,
                        via_cost=5.0, layer_factor={l: (1.0 if l == lay else 1.6) for l in layers})
@@ -382,6 +429,17 @@ def _ground_return(ctx, m, rl, dv):
             b["note"] = "not routed"
         out.append(b)
     return dict(net=g, branches=out)
+
+
+def _load_pins(ctx, u, net, numbers):
+    """A load's pins on the rail where its current enters: supply pins for ICs and modules."""
+    p = ctx.parts.get(u) or {}
+    if p.get("kind") not in ("ic", "module"):
+        return numbers
+    f = ctx.fp.get(u)
+    sup = [q.number for q in f.pads if q.net == net and (q.pintype == "power_in" or
+                                                          SUPPLY_PIN.match((q.pinfunction or "").split("/")[0].strip()))]
+    return sup or numbers
 
 
 def _dist_part(ctx, u, numbers, p):

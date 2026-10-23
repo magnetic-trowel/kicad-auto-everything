@@ -175,7 +175,7 @@ def transplant(work, inp, dst):
         blk = wt[a:b]
         if _uuid_of(blk) in have:
             continue
-        chunks.append("\t" + blk + "\n")
+        chunks.append(blk + "\n")              # blk starts at its own leading tab
     Path(dst).write_text(_insert(it, chunks), encoding="utf-8")
     return len(chunks)
 

@@ -469,9 +469,10 @@ def layer_names(dsn_tree, copper):
 # Escalation: rip only the offending items with the rest fixed; then their whole nets; then
 # their whole nets with the rest of the routing left to the router. Every round routes in a
 # new order (translate.permute), so a round that repeats a level is a new attempt; the loop
-# stops after FAILS rounds in a row that were not better.
+# stops after FAILS rounds in a row that were not better (on A+B no fourth round in a row
+# ever improved a board).
 LEVELS = ("items", "nets", "free")
-FAILS = 3
+FAILS = 2
 
 
 def round_seed(seed, k):
@@ -507,7 +508,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
     level, fails, split_failed = 0, 0, False
-    for k in range(1, int(opts.get("rounds", 6)) + 1):
+    for k in range(1, int(opts.get("rounds", 5)) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
         rec = dict(round=k)
@@ -570,7 +571,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             budget = max(15.0, min(left() * 0.5, left() - 30))
             from .bridge import router_settings
             run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("passes") or 0,
-                                    settings=router_settings(plan, opts), budget_s=budget,
+                                    settings=router_settings(plan, opts, repair=True), budget_s=budget,
                                     log_path=rdir / "freerouting.log")
             rec["router"] = dict(seconds=run.seconds, state=run.report.get("final_state"),
                                  score=run.report.get("router_score"))

@@ -15,8 +15,8 @@ and prints one status line ({"ok": ...}) on stdout.
 export-dsn: KiCad's Specctra export of BOARD (loaded with its project, so net classes and
 the .kicad_dru rules are active), plus what the DSN leaves out, as JSON (see route_info):
 design settings, net classes, every pad with its DSN pin id, copper polygons, hole, local
-clearances, mask expansion and zone connection; copper graphics and texts, Edge.Cuts and
-Margin shapes, zones and rule areas; and KiCad's own rule engine evaluated on probe tracks
+clearances, mask expansion and zone connection; copper graphics and texts, solder-mask
+openings drawn as graphics, Edge.Cuts and Margin shapes, zones and rule areas; and KiCad's own rule engine evaluated on probe tracks
 and vias of every net on every copper layer (width, via diameter and drill as min/opt/max,
 own clearance, annular ring).
 
@@ -619,9 +619,22 @@ def route_info(board, probes=True):
             nets[net.GetNetname()] = dict(code=code, netclass=net.GetNetClassName())
     info["nets"] = nets
     info["pads"] = _pads(board, cu, max_error, comp_ids)
-    graphics, edges = [], []
+    graphics, edges, masks = [], [], []
     edge_layers = (pcbnew.Edge_Cuts, pcbnew.Margin)
+    mask_layers = {pcbnew.F_Mask: "F.Mask", pcbnew.B_Mask: "B.Mask"}
+
+    def mask_recs(item, owner):  # solder-mask openings drawn as graphics
+        for l, name in mask_layers.items():
+            if item.IsOnLayer(l):
+                try:
+                    polys = _item_poly(item, l, max_error)
+                except Exception:  # odd items (images, tables)
+                    continue
+                if polys:
+                    masks.append(dict(layer=name, owner=owner, cls=item.GetClass(), polys=polys))
+
     for d in board.GetDrawings():
+        mask_recs(d, "")
         if d.GetClass() == "PCB_SHAPE" and d.GetLayer() in edge_layers:
             r = _edge_rec(board, d, "")
             if r:
@@ -636,6 +649,8 @@ def route_info(board, probes=True):
         items = list(fp.GraphicalItems())
         if hasattr(fp, "GetFields"):
             items += [f for f in fp.GetFields() if f.IsVisible() and any(f.IsOnLayer(l) for l in cu)]
+        for g in fp.GraphicalItems():
+            mask_recs(g, owner)
         for g in items:
             if g.GetClass() == "PCB_SHAPE" and g.GetLayer() in edge_layers:
                 r = _edge_rec(board, g, owner)
@@ -647,7 +662,7 @@ def route_info(board, probes=True):
                     graphics.append(r)
         for z in fp.Zones():
             zones.append(_zone_rec(board, z, owner, cu, max_error))
-    info["graphics"], info["edges"], info["zones"] = graphics, edges, zones
+    info["graphics"], info["edges"], info["zones"], info["mask_openings"] = graphics, edges, zones, masks
     ps = pcbnew.SHAPE_POLY_SET()
     info["outline_ok"] = bool(board.GetBoardPolygonOutlines(ps, True))
     info["outline"] = _polyset(ps)

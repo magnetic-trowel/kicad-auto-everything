@@ -36,7 +36,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import clusters, cpsat, edges, seed as seedmod
-from .anneal import Annealer
+from .anneal import Annealer, make_annealer
 from .legalize import exact_check, legalize
 from .problem import Problem
 from .state import State, grid_violations
@@ -361,8 +361,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
-        ann = Annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
-                       log=log, **kw)
+        ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
+                            log=log, **kw)
         if anneal_args:
             rep["anneal_args"] = dict(anneal_args)
         seed_cost = ann.cost(ann.lam1) if seed_legal else None

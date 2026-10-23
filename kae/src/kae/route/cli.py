@@ -3,7 +3,7 @@
 """Command line of the KiCad -> Freerouting -> KiCad bridge.
 
     python -m kae.route.cli route INPUT OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
-                                               [--no-repair] [--fanout] [--no-thermal]
+                                               [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
@@ -31,15 +31,18 @@ def main(argv=None):
     r.add_argument("--workdir", help="keep intermediate files here (DSN, SES, DRC reports)")
     r.add_argument("--keep", action="store_true", help="keep the temporary work directory")
     r.add_argument("--no-repair", action="store_true")
-    r.add_argument("--fanout", action="store_true", help="enable Freerouting's fanout pre-pass")
+    r.add_argument("--fanout", action="store_true", help="enable Freerouting's fanout pre-pass (narrows tracks)")
+    r.add_argument("--fanout-first", action="store_true",
+                   help="fanout for the first route only; repair rounds re-route without it")
     r.add_argument("--no-thermal", action="store_true", help="no thermal-spoke corridors in the repair loop")
     r.add_argument("--thermal-all", action="store_true", help="spoke corridors for every thermal pad up front")
     r.add_argument("--passes", type=int, default=0)
-    r.add_argument("--rounds", type=int, default=6, help="repair rounds at most")
+    r.add_argument("--rounds", type=int, default=5, help="repair rounds at most")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
-    opts = dict(repair=not a.no_repair, fanout=a.fanout, thermal_repair=not a.no_thermal,
+    opts = dict(repair=not a.no_repair, fanout=True if a.fanout else ("first" if a.fanout_first else False),
+                thermal_repair=not a.no_thermal,
                 passes=a.passes, rounds=a.rounds, keep=a.keep)
     if a.thermal_all:
         opts["thermal_pads"] = "all"

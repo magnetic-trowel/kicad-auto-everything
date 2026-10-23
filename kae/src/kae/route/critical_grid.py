@@ -7,10 +7,12 @@ between two sets of same-net copper (pads, committed tracks and vias) inside a w
 
 1. **Raster.** One cost grid per allowed copper layer (default resolution 0.05 mm, coarser
    for large windows). A cell is blocked when a track centre there would come closer to an
-   obstacle than half the width plus KiCad's requirement for that pair (`Space.need`) plus
-   a margin of 0.71 cell, so that the straight piece between two free neighbouring cell
-   centres is legal too. Board edges, rule areas and thermal-spoke corridors block the same
-   way. Free cells get cost multipliers: other nets' pours on the layer (crossing a pour
+   obstacle than R = half the width plus KiCad's requirement for that pair (`Space.need`),
+   plus a margin m = sqrt(R^2 + res^2/2) - R: a point at R + m or more from both ends of a
+   move of length L = res*sqrt(2) is at least sqrt((R+m)^2 - L^2/4) = R from every point of
+   it, so the straight piece between two free neighbouring cell centres is legal too (about
+   2 um for R = 0.3 mm; a flat 0.71 cell would close the 0.2 mm gaps between 0.5 mm-pitch
+   pins). Board edges, rule areas and thermal-spoke corridors block the same way. Free cells get cost multipliers: other nets' pours on the layer (crossing a pour
    cuts it), a halo around other nets' pads (their escape space), and per-layer factors.
    Vias are allowed where a via of the net fits (`Space.via_violations`, rasterized).
 2. **Search.** A* (kae.route.critical_kernels; numba when installed) from the source cells
@@ -143,6 +145,12 @@ def _seg_dist(X, Y, ax, ay, bx, by):
 
 
 # ----------------------------------------------------------------------------- results
+
+def _margin(R, res):
+    """Inflation beyond a requirement R that keeps the straight move between two free
+    neighbouring cell centres (at most res*sqrt(2) long) at R or more from the obstacle."""
+    return math.sqrt(R * R + 0.5 * res * res) - R + 1e-4
+
 @dataclass
 class Route:
     net: str
@@ -215,9 +223,9 @@ class GridRouter:
     # ------------------------------------------------------------------ rasters
     def blocked(self, grid, net, layer, w, kind="track", skip=()):
         """Cells where a `kind` of `net` (track of width w, or via) centred there breaks a
-        requirement on `layer` (with the 0.71-cell margin)."""
+        requirement on `layer` (with the move margin, `_margin`)."""
         sp = self.sp
-        m = 0.71 * grid.res
+        m = 0.71 * grid.res                       # only to size the query
         half = w / 2.0
         out = np.zeros((grid.ny, grid.nx), bool)
         bounds = (grid.x0, grid.y0, grid.x1, grid.y1)
@@ -227,15 +235,16 @@ class GridRouter:
             nd = sp.need(it, net, kind, layer)
             if nd is None:
                 continue
-            r = half + nd + it.r + m + TOL
+            R = half + nd + it.r + TOL
             if it.kind in ("keepout", "corridor"):
-                r = half + it.r + m * 0.5
-            grid.within(it.geom, r, out)
+                R = half + it.r
+            grid.within(it.geom, R + _margin(R, grid.res), out)
         if sp.outline is not None:
             e = sp.edge_need(net, kind, layer)
             if kind == "via":
                 e = max(e, sp.plan.notes.get("via_edge_band") or 0.0)
-            inner = sp.outline.buffer(-(half + e + m + TOL), quad_segs=4)
+            R = half + e + TOL
+            inner = sp.outline.buffer(-(R + _margin(R, grid.res)), quad_segs=4)
             X, Y = grid.coords(0, grid.nx - 1, 0, grid.ny - 1)
             ok = shapely.contains_xy(inner, X, Y) if not inner.is_empty else np.zeros_like(out)
             out |= ~ok
@@ -246,7 +255,7 @@ class GridRouter:
         sp = self.sp
         D, d = sp.via_size(net)
         rv = D / 2.0
-        m = 0.71 * grid.res
+        m = 0.0            # a via sits on a cell centre and is checked there exactly
         out = np.zeros((grid.ny, grid.nx), bool)
         h2h = sp.settings.get("hole_to_hole", 0.0) or 0.0
         pitch = sp.same_net_via_pitch(net)

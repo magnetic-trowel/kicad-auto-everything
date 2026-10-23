@@ -36,7 +36,7 @@ BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
-                 cong_args=None, order=(), w_order=1.0, order_margin=0.5):
+                 cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -44,6 +44,11 @@ class Annealer:
         self.g = g = P.g
         self.mov = list(P.mov)
         self.movset = set(self.mov)
+        # a local re-placement moves only `subset` (everything else is fixed geometry), and
+        # with `window` = grid rect (i0, i1, j0, j1) keeps their own rectangles inside it
+        self.active = [i for i in self.mov if subset is None or i in set(subset)]
+        self.activeset = set(self.active)
+        self.window = window
         n = len(P.parts)
         X, Y, K = st.X, st.Y, st.K
         self.X = [int(v) for v in X]
@@ -124,7 +129,8 @@ class Annealer:
         # ---- congestion (RUDY) and escape halos
         self.cong = Congestion(P, self, **(cong_args or {})) if w_cong > 0 else None
         # ---- macros
-        self.macros = [m for m in macros if len(m.members) >= 2]
+        self.macros = [m for m in macros if len(m.members) >= 2
+                       and all(i in self.activeset or i not in self.movset for i in m.members)]
         self.macro_of = {}
         for mi, m in enumerate(self.macros):
             for i in m.members:
@@ -132,7 +138,7 @@ class Annealer:
                     self.macro_of[i] = mi
         # ---- equal-footprint swap classes
         cls = {}
-        for i in self.mov:
+        for i in self.active:
             cls.setdefault(P.parts[i].shape_key, []).append(i)
         self.swap_class = {i: c for c in cls.values() if len(c) > 1 for i in c}
         # ---- protection order rules ((conn, pads), (prot, pads), (target, pads))
@@ -390,9 +396,21 @@ class Annealer:
         a, b, c, d = self.brd[i][K]
         lo_x, hi_x = -a, self.P.ncx - b
         lo_y, hi_y = -c, self.P.ncy - d
+        if self.window is not None:
+            wi0, wi1, wj0, wj1 = self.window
+            oa, ob, oc, od = self.own[i][K]
+            lo_x, hi_x = max(lo_x, wi0 - oa), min(hi_x, wi1 - ob)
+            lo_y, hi_y = max(lo_y, wj0 - oc), min(hi_y, wj1 - od)
         X = min(max(X, lo_x), max(lo_x, hi_x))
         Y = min(max(Y, lo_y), max(lo_y, hi_y))
         return X, Y
+
+    def _span(self):
+        """Cells the moves range over: the window, else the board."""
+        if self.window is not None:
+            wi0, wi1, wj0, wj1 = self.window
+            return max(wi1 - wi0, wj1 - wj0)
+        return max(self.P.ncx, self.P.ncy)
 
     def _center2(self, i, k):
         a, b, c, d = self.own[i][k]
@@ -400,7 +418,7 @@ class Annealer:
 
     def propose(self, r):
         rng = self.rng
-        i = self.mov[rng.randrange(len(self.mov))]
+        i = self.active[rng.randrange(len(self.active))]
         u = rng.random()
         mi = self.macro_of.get(i)
         if mi is not None and u < 0.25:
@@ -425,7 +443,7 @@ class Annealer:
             j = cls[rng.randrange(len(cls))]
             if j != i:
                 return (i, j), [(self.X[j], self.Y[j], self.K[j]), (self.X[i], self.Y[i], self.K[i])], "swap_equal"
-        j = self.mov[rng.randrange(len(self.mov))]
+        j = self.active[rng.randrange(len(self.active))]
         if j == i or self.side[j] != self.side[i]:
             X = self.X[i] + rng.randint(-r, r)
             Y = self.Y[i] + rng.randint(-r, r)
@@ -519,13 +537,13 @@ class Annealer:
         return out
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25):
-        n = len(self.mov)
+        n = len(self.active)
         if n == 0:
             return self.report(0.0)
         N = max_moves or moves_per_part * n
         self.leg_total = self.total_leg()
         t0 = time.process_time()
-        r0 = max(2, int(0.25 * max(self.P.ncx, self.P.ncy)))
+        r0 = max(2, int(0.25 * self._span()))
         # initial temperature from uphill deltas of sampled moves (not applied)
         ups = []
         for _ in range(min(200, 20 * n)):
@@ -588,3 +606,18 @@ class Annealer:
             _, X, Y, K = self.best_legal
         for i in self.mov:
             self.st.X[i], self.st.Y[i], self.st.K[i] = X[i], Y[i], K[i]
+
+
+def make_annealer(P, st, **kw):
+    """The compiled engine (kae.place.engine.FastAnnealer) when numba is installed and
+    KAE_NO_NUMBA is unset, else this module's Annealer; both take the same arguments and
+    price the same cost."""
+    import os
+    if not os.environ.get("KAE_NO_NUMBA"):
+        try:
+            from .engine import HAVE_NUMBA, FastAnnealer
+            if HAVE_NUMBA:
+                return FastAnnealer(P, st, **kw)
+        except ImportError:
+            pass
+    return Annealer(P, st, **kw)

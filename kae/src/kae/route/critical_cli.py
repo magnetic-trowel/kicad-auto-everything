@@ -4,7 +4,8 @@
 
     python -m kae.route.critical_cli route INPUT OUTPUT [--seed N] [--time S] [--no-bridge]
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
-                                     [--rounds N] [--workdir DIR] [--keep] [--report FILE]
+                                     [--guards cell,crystal|none] [--rounds N] [--workdir DIR]
+                                     [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE]
 
 `route` routes the critical copper of INPUT (a placed .kicad_pcb with its project files
@@ -34,6 +35,8 @@ def main(argv=None):
     r.add_argument("--no-bridge", action="store_true", help="critical copper only")
     r.add_argument("--rails", default="auto", choices=("auto", "all", "none"))
     r.add_argument("--kinds", default="cell,decap,crystal,chain")
+    r.add_argument("--guards", default="cell,crystal",
+                   help="modules whose ground plane the bridge must keep other nets off (or 'none')")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
@@ -46,7 +49,8 @@ def main(argv=None):
     _numba_cache()
     if a.cmd == "route":
         from kae.route import critical
-        opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep)
+        opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep,
+                    guards=tuple(k for k in a.guards.split(",") if k and k != "none"))
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge)
         text = json.dumps(rep, default=str)

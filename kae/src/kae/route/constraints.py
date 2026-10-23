@@ -25,7 +25,8 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
   copper on a layer extends beyond the shape the DSN carries (per-layer padstacks, custom
   pads with several outlines).
 - **Obstacles.** NPTH holes, board cut-outs and stray Edge.Cuts/Margin shapes, copper
-  graphics and texts, rule areas and thermal-spoke corridors become keepouts, each in an
+  graphics and texts, solder-mask openings drawn as graphics (on their outer copper layer,
+  unless they cover a pad), rule areas and thermal-spoke corridors become keepouts, each in an
   obstacle class carrying KiCad's requirement (rule areas and corridors: zero). A copper
   graphic that carries a net becomes a pin of that net instead (net_graphics), so the
   router connects its net to it and keeps the other nets away. So does the fill of every
@@ -256,11 +257,13 @@ def plan(info, board_path, opts=None):
                                                   (max(nc.get("via_diameter") or 0.6, s.get("min_via", 0.0)),
                                                    max(nc.get("via_drill") or 0.3, s.get("min_drill", 0.0))))
     # Freerouting retries a connection it failed at min(class width, neck width) along its
-    # whole length (one value for every class): the neck must be legal for every class (at
-    # least the largest minimum) and is no narrower than the narrowest class width, so a class
-    # wider than its pads (a 0.64 mm USB class into a 0.5 mm pitch connector) still connects
+    # whole length (one value for every class): the neck is the largest minimum (legal for
+    # every class); with no minimum at all, the narrowest class width, so that a class wider
+    # than its pads (a 0.64 mm USB class into a 0.5 mm pitch connector) still connects
     widths_all = [w for rc in p.classes.values() for w in rc.widths.values() if w]
-    neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [min(widths_all or [0.0])])
+    neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [0.0])
+    if neck <= 0:
+        neck = min(widths_all or [0.0])
     if neck > 0 and any(w > neck + 1e-9 for w in widths_all):
         p.neck_width = up(neck)
 
@@ -603,6 +606,25 @@ def _obstacles(info, rb, p, sev, opts):
             continue
         for l, geo in shapes.items():
             p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
+    # ---- solder-mask openings drawn as graphics expose the copper under them: another net's
+    # track or via inside one would share an aperture with it (solder_mask_bridge). Openings
+    # over a pad belong to that pad and are left to its pin class.
+    if not _severity_ignored(sev, "solder_mask_bridge"):
+        m2c = info["settings"].get("mask_to_copper", 0.0)
+        side_layer = {"F.Mask": cu[0], "B.Mask": cu[-1]}
+        pad_cu = {}
+        for pad in info["pads"]:
+            for l, g in _pad_shapes(pad)[1].items():
+                if g is not None and not g.is_empty:
+                    pad_cu.setdefault(l, []).append(g)
+        for m in info.get("mask_openings") or []:
+            l = side_layer.get(m.get("layer"))
+            geo = unary_union([x for x in (_poly(r) for r in m.get("polys") or []) if x is not None])
+            if l is None or geo.is_empty or any(g.intersects(geo) for g in pad_cu.get(l, [])):
+                continue
+            vec = {(n, l2): (up(max(m2c, EPS_SHORT)), up(max(m2c, EPS_SHORT))) for n in p.classes for l2 in cu}
+            p.obstacles.append(Obstacle("keepout", l, geo, _obstacle_class(p, "kae_mask", vec),
+                                        f"mask opening {m.get('cls')} {m.get('owner') or 'board'}"))
     # ---- kae.route.critical's pours: hard obstacles for the other nets
     for z in opts.get("crit_zones") or []:
         net = z.get("net") or ""

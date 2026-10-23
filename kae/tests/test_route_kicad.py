@@ -104,6 +104,30 @@ def test_plan_and_translation(exported, tmp_path):
     assert summary["pins_classed"] == len(p.pin_class)
 
 
+def test_mask_openings_keep_other_copper_out(exported):
+    """A solder-mask opening drawn as a graphic exposes the copper under it: unless it covers
+    a pad, it is a keepout on its outer copper layer (another net there would bridge)."""
+    import copy
+    from shapely.geometry import box
+    board, info, _ = exported
+    info = copy.deepcopy(info)
+    pad = next(pd for pd in info["pads"] if "F.Cu" in pd["layers"])
+    x, y = pad["pos"]
+    free = next(b for b in (box(x + dx, y + dy, x + dx + 1, y + dy + 1) for dx in range(-30, 31, 3)
+                            for dy in range(-30, 31, 3))
+                if all(g.distance(b) > 0.5 for pd in info["pads"]
+                       for g in constraints._pad_shapes(pd)[1].values() if g is not None))
+    ring = lambda g: [[list(c) for c in g.exterior.coords]]
+    info["mask_openings"] = [dict(layer="B.Mask", owner="", cls="PCB_SHAPE", polys=[ring(free)]),
+                             dict(layer="F.Mask", owner="", cls="PCB_SHAPE", polys=[ring(box(x - .1, y - .1, x + .1, y + .1))])]
+    p = constraints.plan(info, board)
+    ko = [o for o in p.obstacles if o.why.startswith("mask opening")]
+    assert len(ko) == 1 and ko[0].kind == "keepout" and ko[0].layer == info["copper"][-1]
+    assert ko[0].geom.equals(free)
+    p2 = constraints.plan(info, board, dict(severities={"solder_mask_bridge": "ignore"}))
+    assert not [o for o in p2.obstacles if o.why.startswith("mask opening")]
+
+
 def test_effective_rules_are_the_plans(exported):
     board, info, _ = exported
     p = constraints.plan(info, board)

@@ -598,6 +598,32 @@ class Space:
         return Terminal(net=net, layers=tuple(l for l in self.cu if l in lays), geom=geom, x=cx, y=cy,
                         fp=fp_uuid, pad=",".join(str(n) for n in numbers), width=w, length=ln, items=its)
 
+    def component(self, net, seeds):
+        """Copper of `net` electrically connected to the seed geometries (pads, committed
+        tracks and vias that touch, transitively; zones are not counted): [Item]."""
+        items = [it for it in self.pads if it.net == net and it.kind == "pad"]
+        items += [it for it in self.routed + self.existing if it.net == net]
+        if not items:
+            return []
+        geo = [it.geom.buffer(it.r) if it.r > 0 else it.geom for it in items]
+        lay = [set(it.layers) for it in items]
+        done = set()
+        front = []
+        for g, ls in seeds:
+            for k, (gg, ll) in enumerate(zip(geo, lay)):
+                if k not in done and ll & set(ls) and gg.distance(g) <= 1e-6:
+                    done.add(k)
+                    front.append(k)
+        while front:
+            k = front.pop()
+            for j, (gg, ll) in enumerate(zip(geo, lay)):
+                if j in done or not (ll & lay[k]):
+                    continue
+                if gg.distance(geo[k]) <= 1e-6:
+                    done.add(j)
+                    front.append(j)
+        return [items[k] for k in sorted(done)]
+
     def zones_of(self, net, layer=None):
         return [(l, g) for n, l, g, _ in self.zones if n == net and (layer is None or l == layer)]
 

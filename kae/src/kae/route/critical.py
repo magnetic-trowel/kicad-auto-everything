@@ -49,6 +49,8 @@ DEFAULTS = dict(
     via_in_pad=False,      # vias inside small SMD pads (thermal pads always allow them)
     decap_max_mm=10.0,     # a capacitor farther than this from its pin: no local decoupling, left to the bridge
     chain_power_a=1.0,     # E5 current of a protected power pin without a rail estimate
+    guards=("cell", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
+    guard_margin=0.5,      # mm around the module's copper and pads
 )
 
 
@@ -84,18 +86,31 @@ class Session:
         self.t_setup = time.monotonic() - t0
 
     # ------------------------------------------------------------------ routing
-    def route(self):
+    def route(self, budget_s=None):
+        """Route every module, then the rails; stops starting new modules once `budget_s`
+        seconds are spent (the rest is left to the general router)."""
         t0 = time.monotonic()
+        budget = budget_s if budget_s is not None else self.opts.get("budget_s")
+        from .critical_rails import rail_currents
+        try:
+            self.ctx.rail_I = rail_currents(self.ctx)
+        except Exception as e:  # noqa: BLE001 - currents only refine widths
+            self.log(f"rail currents: {type(e).__name__}: {e}")
+            self.ctx.rail_I = {}
         mods = modules_from_brief(self.brief, self.opts["kinds"])
         for m in mods:
             t1 = time.monotonic()
+            if budget is not None and t1 - t0 > budget:
+                m.status = "skipped"
+                m.notes.append("time budget spent")
+                continue
             route_module(self.ctx, m)
             m.physics["seconds"] = round(time.monotonic() - t1, 3)
             self.log(f"{m.id}: {m.status}, {len(m.copper)} items, "
                      f"{m.physics.get('value')} {m.physics.get('unit', '')} (u {m.physics.get('u')})"
                      + (f" [{'; '.join(m.notes[:3])}]" if m.notes else ""))
         self.modules = mods
-        if self.opts.get("rails", "auto") != "none":
+        if self.opts.get("rails", "auto") != "none" and (budget is None or time.monotonic() - t0 < budget):
             from .critical_rails import route_rails
             self.rails = route_rails(self.ctx, mode=self.opts.get("rails", "auto"))
         self.t_route = time.monotonic() - t0
@@ -116,6 +131,49 @@ class Session:
                 out_v.append(Via(uuid=it.uuid, net=it.net, x=it.geom.x, y=it.geom.y, size=it.width, drill=it.drill,
                                  layers=[self.space.cu[0], self.space.cu[-1]], locked=True))
         return out_t, out_v
+
+    def guards(self, kinds=None, margin=None):
+        """Guard pours over the ground plane under each routed module of `kinds`: zones
+        named `kae-crit:<module>` on the plane layer, the module's hull (copper and pads,
+        plus `margin`) clipped to the plane's own zone outline and clear of other nets' zones. The bridge keeps other nets
+        out of them, so the plane under a hot loop or a crystal stays whole; the output
+        never carries them (the transplant keeps routing only). [(net, layer, rings, name)]"""
+        from .critical_recheck import guard_zones
+        kinds = self.opts.get("guards") or () if kinds is None else kinds
+        margin = self.opts.get("guard_margin", 0.5) if margin is None else margin
+        out = []
+        for m in self.modules:
+            if m.kind not in kinds or m.status not in ("routed", "partial"):
+                continue
+            region = self._guard_region(m, margin)
+            if region is None or region.is_empty:
+                continue
+            c = region.centroid
+            seen = set()
+            for u in m.parts:
+                h, pl, pn = self.ctx.plane(self.ctx.side_layer(u), c.x, c.y, gnd=True)
+                if pl is None or (pl, pn) in seen:
+                    continue
+                seen.add((pl, pn))
+                out += guard_zones(self.board, region, pn, pl, f"{W.GUARD_PREFIX}{m.id}")
+        return out
+
+    def _guard_region(self, m, margin):
+        """Where a module's loop lives: its copper, plus for a cell the hot-loop terminals,
+        for other modules the pads of its small parts and the large parts' pads on its nets."""
+        from shapely.ops import unary_union
+        own = [it for it in self.space.routed if it.owner and it.owner[0] == m.id]
+        geoms = [it.geom.buffer(it.r) for it in own]
+        if m.kind == "cell":
+            geoms += [t.geom for t in m.spec.get("_T") or []]
+        else:
+            nets = {it.net for it in own} - set(self.ctx.gnd)
+            for u in m.parts:
+                pads = self.space.pads_by_fp.get(u, [])
+                geoms += [it.geom for it in pads if len(pads) <= 4 or it.net in nets]
+        if not geoms:
+            return None
+        return unary_union(geoms).convex_hull.buffer(margin)
 
     def write(self, dst, guards=()):
         tracks, vias = self.copper()
@@ -176,23 +234,40 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
     def left():
         return time_s - (time.monotonic() - t0)
     try:
-        s = Session(input_path, opts=opts, log=log).route()
-        rep["critical"] = s.report()
         w0 = wd / "crit.kicad_pcb"
-        s.write(w0)
+        s = None
+        try:
+            crit_budget = min(180.0, 0.2 * time_s)
+            s = Session(input_path, opts=opts, log=log).route(budget_s=crit_budget)
+            rep["critical"] = s.report()
+            guards = s.guards() if bridge else []
+            rep["critical"]["guards"] = len(guards)
+            s.write(w0, guards=guards)
+        except Exception as e:  # noqa: BLE001 - the general router still runs
+            import traceback
+            traceback.print_exc()
+            rep["critical_error"] = f"{type(e).__name__}: {e}"
+            W.stage(input_path, wd, "crit")
         W.transplant(w0, input_path, output_path)        # a valid output from the start
         best = w0
         if bridge and left() > 30:
             from . import bridge as BR
             r0 = wd / "routed0.kicad_pcb"
-            budget = left() - 15.0 if rounds <= 0 else 0.6 * (left() - 15.0)
-            b = BR.route(w0, r0, seed=seed, time_s=max(20.0, budget), workdir=wd / "bridge0",
+            # the re-tweak rounds keep a reserve: up to 30 % of what is left, at most 180 s
+            reserve = min(180.0, 0.3 * left()) if rounds > 0 else 0.0
+            b = BR.route(w0, r0, seed=seed, time_s=max(20.0, left() - 15.0 - reserve), workdir=wd / "bridge0",
                          opts=dict(bridge_opts or {}, keep=True), log=log)
+            if not r0.exists() and left() > 60:
+                # no routed board in that share (Freerouting killed at its deadline): once
+                # more with all the time left
+                log(f"bridge: {b.get('status')}; again with {left() - 15.0:.0f} s")
+                b = BR.route(w0, r0, seed=seed + 1, time_s=left() - 15.0, workdir=wd / "bridge0b",
+                             opts=dict(bridge_opts or {}, keep=True), log=log)
             rep["bridge"] = {k: v for k, v in b.items() if k in ("status", "seconds", "router", "repair", "drc")}
             if r0.exists():
                 best = r0
                 W.transplant(r0, input_path, output_path)
-            if rounds > 0 and r0.exists() and left() > 60:
+            if rounds > 0 and s is not None and r0.exists() and left() > 60:
                 from .critical_recheck import retweak_loop
                 rep["retweak"] = retweak_loop(s, r0, input_path, output_path, wd, rounds=rounds, seed=seed,
                                               deadline=t0 + time_s - 10.0, bridge_opts=bridge_opts, log=log)

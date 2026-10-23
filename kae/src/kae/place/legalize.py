@@ -139,7 +139,7 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
                 log(f"legalize window {gr[:4]} free={len(free)} status={model.status} {model.wall:.2f}s")
     viol = grid_violations(st)
     if viol:
-        rep["greedy"] = greedy(P, st, list(viol), log=log)
+        rep["greedy"] = greedy(P, st, list(viol), log=log, time_s=max(1.0, deadline - time.monotonic()))
         viol = grid_violations(st)
     if viol and time.monotonic() < deadline and len(P.mov) <= GLOBAL_MAX:
         rep["global_used"] = True
@@ -281,7 +281,7 @@ def _covered(occ, rect, pad, xa, xb, ya, yb):
     return (L[w:w + nx, h:h + ny] - L[0:nx, h:h + ny] - L[w:w + nx, 0:ny] + L[0:nx, 0:ny]).astype(float)
 
 
-def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
+def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
     """greedy() on the compiled kernels (summed-area tables updated in place)."""
     from . import _fastlegal as FL
     from .problem import sat
@@ -308,20 +308,63 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
             FL.sat_add_rect(S[side], a + pad, b + pad, c + pad, d + pad, v)
 
     def local(i):
+        # the ring walk is cheap only nearby (its cost grows with the square of the reach);
+        # farther spots come from the global search
         r = P.parts[i].rots[0].g_own
-        return int(max(100, 8 * max(r[1] - r[0], r[3] - r[2])))
+        return int(min(150, max(60, 4 * max(r[1] - r[0], r[3] - r[2]))))
 
     def spot(i, reach):
         p = P.parts[i]
+        if reach >= max_d:
+            return _global_spot(i)
         own, opp, opp_n, brd, brd_n = arrays(i)
         c, X, Y, k = FL.nearest_spot(S[0], S[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1, int(st.X[i]),
                                      int(st.Y[i]), int(st.K[i]), float(w_rot), own, opp, opp_n, brd, brd_n,
                                      int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, k)
+
+    def _global_spot(i):
+        """Nearest free origin anywhere: every origin at once from the summed-area tables
+        (numpy slices), so a far spot costs a few array passes instead of a ring walk."""
+        p = P.parts[i]
+        si = 0 if p.s > 0 else 1
+        X0, Y0, K0 = int(st.X[i]), int(st.Y[i]), int(st.K[i])
+        nx, ny = P.ncx, P.ncy
+        xs = np.arange(nx)[:, None]
+        ys = np.arange(ny)[None, :]
+        dist = np.abs(xs - X0) + np.abs(ys - Y0)
+        best = None
+        for k, r in enumerate(p.rots):
+            ok = np.ones((nx, ny), dtype=bool)
+            for brd in (r.g_boards or (r.g_board,)):
+                ok &= _inside_origins(P, brd, 0, nx - 1, 0, ny - 1)
+            if not ok.any():
+                continue
+            for side, rect in [(si, r.g_own)] + [(1 - si, o) for o in r.g_opp]:
+                a, b, c, d = rect
+                T = S[side]
+                cnt = (T[b + pad:b + pad + nx, d + pad:d + pad + ny] - T[a + pad:a + pad + nx, d + pad:d + pad + ny]
+                       - T[b + pad:b + pad + nx, c + pad:c + pad + ny] + T[a + pad:a + pad + nx, c + pad:c + pad + ny])
+                ok &= cnt == 0
+                if not ok.any():
+                    break
+            if not ok.any():
+                continue
+            cost = np.where(ok, dist + (w_rot if k != K0 else 0.0), np.inf)
+            j = int(np.argmin(cost))
+            c = float(cost.flat[j])
+            if best is None or c < best[0]:
+                best = (c, j // ny, j % ny, k)
+        return best
     start = {i: (int(st.X[i]), int(st.Y[i])) for i in parts}
     placed_set, queue = set(), []
     # first pass: a free spot near where the part wants to be
+    out_of_time = False
     for i in parts:
+        if time_s is not None and time.monotonic() - t0 > time_s:
+            out_of_time = True
+            queue.append(i)
+            continue
         best = spot(i, local(i))
         if best is None:
             queue.append(i)
@@ -355,6 +398,9 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
                                    brd, brd_n, int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, k, "ripup")
     while queue:
+        if out_of_time or (time_s is not None and time.monotonic() - t0 > time_s):
+            out_of_time = True
+            break
         i = queue.pop(0)
         p = P.parts[i]
         # nearby first (the space may have changed), then evict smaller parts nearby, then
@@ -400,14 +446,14 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
     unplaced += queue
     moved = sum(math.hypot((st.X[i] - x) * P.g, (st.Y[i] - y) * P.g) for i, (x, y) in start.items())
     rep = dict(placed=len(placed_set), unplaced=[P.parts[i].ref for i in unplaced], moved_mm=round(moved, 2),
-               ripups=ripups, seconds=round(time.monotonic() - t0, 2), compiled=True)
+               ripups=ripups, seconds=round(time.monotonic() - t0, 2), compiled=True, out_of_time=out_of_time)
     if log:
         log(f"greedy legalization: {len(placed_set)} placed, {len(unplaced)} without a spot, {ripups} rip-ups, "
             f"moved {moved:.1f} mm ({rep['seconds']}s)")
     return rep
 
 
-def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, compiled=None):
+def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, compiled=None, time_s=None):
     """Put `parts` back one by one, largest first, at the nearest grid origin (L1, plus a
     charge for turning) where none of their rectangles meets an obstacle or another part on
     its side and their board rectangles lie inside the outline; every other movable part
@@ -425,7 +471,8 @@ def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, comp
         from ._fastlegal import HAVE_NUMBA
         compiled = HAVE_NUMBA and not os.environ.get("KAE_NO_NUMBA")
     if compiled:
-        return _greedy_fast(P, st, parts, log, (2.0 / P.g) if w_rot is None else w_rot, ripup, max_ripups, t0)
+        return _greedy_fast(P, st, parts, log, (2.0 / P.g) if w_rot is None else w_rot, ripup, max_ripups, t0,
+                            time_s=time_s)
     ext = 1
     for i in P.mov:
         for r in P.parts[i].rots:

@@ -73,6 +73,11 @@ INF = float('inf')
 MM = 1e-3
 RVIA = 0.15
 T_CU = 0.035
+# Overlapping filaments (a route jogging by less than its own width) make the partial-
+# inductance matrix indefinite. False: such a geometry has no PEEC value (excluded);
+# True: clip the negative eigenvalues (counted in PEEC_CLIPPED).
+PEEC_CLIP = False
+PEEC_CLIPPED = [0]
 
 
 # ============================================================================ routing
@@ -582,8 +587,16 @@ def peec_solve(net, port_p, port_n):
             A[nodes[b], i] -= s
     keep = [k for nd, k in nodes.items() if nd != pn]
     Ar = A[keep]
-    cho = sla.cho_factor(L)
-    X = sla.cho_solve(cho, Ar.T)
+    try:
+        cho = sla.cho_factor(L)
+        X = sla.cho_solve(cho, Ar.T)
+    except np.linalg.LinAlgError:
+        if not PEEC_CLIP:
+            raise
+        PEEC_CLIPPED[0] += 1
+        ev, V = np.linalg.eigh(L)
+        ev = np.maximum(ev, 1e-6 * ev.max())
+        X = V @ ((V.T @ Ar.T) / ev[:, None])
     Y = Ar @ X
     src = np.zeros(len(keep))
     kp = keep.index(nodes[pp])

@@ -165,17 +165,31 @@ class Ctx:
         m.copper += items
         return items
 
-    def net_copper_anchors(self, net, exclude_owner=None):
-        """Anchors for the committed copper of `net` (tracks, vias)."""
+    def net_copper_anchors(self, net, exclude_owner=None, connected_to=None):
+        """Anchors for the committed copper of `net` (tracks, vias); with `connected_to` (a
+        Terminal), only the copper connected to it (pads included)."""
         out = []
-        for it in self.sp.routed + self.sp.existing:
-            if it.net != net or (exclude_owner is not None and it.owner and it.owner[0] == exclude_owner):
+        if connected_to is not None:
+            comp = self.sp.component(net, [(connected_to.geom, connected_to.layers)])
+            pool = [it for it in comp if it.kind in ("track", "via", "pad")]
+        else:
+            pool = [it for it in self.sp.routed + self.sp.existing if it.net == net]
+        for it in pool:
+            if exclude_owner is not None and it.owner and it.owner[0] == exclude_owner:
                 continue
             if it.kind == "track":
                 out.append(Anchor(it.geom, tuple(it.layers), None, grow=it.r * 0.8, kind="track"))
             elif it.kind == "via":
                 out.append(Anchor(it.geom, tuple(self.sp.cu), (it.geom.x, it.geom.y), grow=it.r * 0.8, kind="via"))
+            elif it.kind == "pad" and connected_to is not None:
+                out.append(Anchor(it.geom, tuple(it.layers), it.pos, kind="pad"))
         return out
+
+    def connected(self, net, ta, tb):
+        """Whether terminals ta and tb are already joined by committed copper."""
+        comp = self.sp.component(net, [(ta.geom, ta.layers)])
+        ids = {id(it) for it in comp}
+        return any(id(it) in ids for it in tb.items)
 
 
 # ----------------------------------------------------------------------------- geometry helpers
@@ -510,7 +524,8 @@ def _hop_into(lp, ctx, rt, a, b, w_default, h, el="A"):
             pts = [(a.x, a.y)] + pts + [(b.x, b.y)]
             lp.path(pts, rt.width, h, el)
             return
-        # multi-layer hop: strips at each layer's height plus the vias between
+        # multi-layer hop: its strips at the starting layer's plane height (an approximation;
+        # critical_recheck measures each layer at its own height)
         for l, p0, p1 in rt.segs:
             lp.strip(p0, p1, rt.width, h, el)
         return
@@ -577,6 +592,9 @@ def quote(ctx, m, store=True):
             return None
     except Exception as e:  # noqa: BLE001 - a quote must never kill routing
         m.notes.append(f"quote failed: {type(e).__name__}: {e}")
+        return None
+    if val is not None and not (math.isfinite(val) and val > 0):
+        m.notes.append(f"quote rejected: {val}")
         return None
     if store and val is not None:
         alloc = allocation(ctx, m)
@@ -690,7 +708,7 @@ def route_decap(ctx, m):
         return m
     max_d = float(ctx.opts.get("decap_max_mm", 15.0))
     loops = []
-    done = 0
+    done = tried = 0
     for pin, cap in pairs:
         tp = ctx.sp.terminal(s.get("ic"), [pin])
         tr = ctx.pad_term(cap, net=rail)
@@ -708,6 +726,7 @@ def route_decap(ctx, m):
             m.notes.append(f"pin {pin}: capacitor {ctx.fp[cap].ref} {math.hypot(tp.x - tr.x, tp.y - tr.y):.1f} mm away, "
                            "pairing doubtful: left to the general router")
             continue
+        tried += 1
         tG = _ic_ground(ctx, s, tp)
         key = f"{pin}:{cap}"
         side = ctx.side_layer(cap)
@@ -722,9 +741,12 @@ def route_decap(ctx, m):
             widths = sorted({round(w, 4) for w in width_ladder(max(a, opt), max(mn, min(a, opt)), 4) + [opt, mn]},
                             reverse=True)
             rt = route_hop(ctx, m, f"rail:{key}", rail, [anchor(tr)], [anchor(tp)], widths, [layers[0]], via=False)
-            if rt is None and len(ctx.sp.cu) > 1:
-                rt = route_hop(ctx, m, f"rail:{key}", rail, [anchor(tr)], [anchor(tp)], [opt, mn],
-                               [ctx.sp.cu[0], ctx.sp.cu[-1]], via=True, via_cost=3.0)
+        if rt is None and len(ctx.sp.cu) > 1:
+            # no common layer (capacitor on the far side of the IC) or no room on it: one
+            # through via between the pads
+            mn, opt, mx = ctx.sp.width_limits(rail, side)
+            rt = route_hop(ctx, m, f"rail:{key}", rail, [anchor(tr)], [anchor(tp)], [opt, mn],
+                           [ctx.sp.cu[0], ctx.sp.cu[-1]], via=True, via_cost=3.0)
         if rt is None:
             m.notes.append(f"pin {pin}: rail hop not routed")
         else:
@@ -743,7 +765,10 @@ def route_decap(ctx, m):
                 route_hop(ctx, m, f"gnd:{key}", tg.net, [anchor(tg)], [anchor(tG)],
                           sorted({max(opt, min(tg.width, tG.width)), opt, mn}, reverse=True), [lays[0]], via=False)
     m.spec["_loops"] = loops
-    m.status = "routed" if done == len(pairs) else ("partial" if done else "failed")
+    if not tried:
+        m.status = "skipped"
+        return m
+    m.status = "routed" if done == tried else ("partial" if done else "failed")
     quote(ctx, m)
     return m
 
@@ -893,23 +918,32 @@ def route_crystal(ctx, m):
         for p in f.pads:
             if p.net and p.net not in ctx.gnd and p.net not in nets and _net_in_struct(ctx, p.net, [ic] + members):
                 nets.append(p.net)
-    ok = tot = 0
+    # each net: IC pin first, then the crystal's (or series resistor's) pad, then the rest;
+    # both IC -> crystal hops are routed before any load-capacitor stub
+    per = []
     for net in nets:
         terms = []
-        for u in [ic] + members:
+        for u in [ic, y] + members[1:]:
             f = ctx.fp.get(u)
             if f is None:
                 continue
             for p in f.pads:
                 if p.net == net:
                     t = ctx.sp.terminal(u, [p.number])
-                    if t is not None:
+                    if t is not None and not any(t.fp == x.fp and t.pad == x.pad for x in terms):
                         terms.append(t)
-        if len(terms) < 2:
-            continue
-        a, b = _tree(ctx, m, net, terms, f"xt:{net}")
+        if len(terms) >= 2:
+            per.append((net, terms))
+    ok = tot = 0
+    for net, terms in per:
+        a, b = _tree(ctx, m, net, terms[:2], f"xt:{net}:0")
         ok += a
         tot += b
+    for net, terms in per:
+        if len(terms) > 2:
+            a, b = _tree(ctx, m, net, terms, f"xt:{net}:1")
+            ok += a
+            tot += b
     # load capacitors' ground pads into the plane
     for c in s.get("load_caps") or []:
         f = ctx.fp.get(c)
@@ -966,7 +1000,14 @@ def _tree(ctx, m, net, terms, tag, widths=None):
             layers = [ctx.sp.cu[0]]
         mn, opt, mx = ctx.sp.width_limits(net, layers[0])
         ws = widths or sorted({opt, mn}, reverse=True)
-        srcs = [anchor(x) for x in done] + ctx.net_copper_anchors(net)
+        if any(ctx.connected(net, d, t) for d in done):
+            ok += 1
+            k += 1
+            done.append(t)
+            continue
+        srcs = [anchor(x) for x in done]
+        for d in done:
+            srcs += ctx.net_copper_anchors(net, connected_to=d)
         rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws, [layers[0]], via=False)
         if rt is None and len(ctx.sp.cu) > 1:
             rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws[-1:], [ctx.sp.cu[0], ctx.sp.cu[-1]],
@@ -1012,26 +1053,36 @@ def route_chain(ctx, m):
         tp = ctx.pad_term(u, net=T[0].net)
         if tp is not None:
             T.insert(1, tp)
-    power = s.get("pin_kind") == "power"
+    power = s.get("pin_kind") == "power" or (ctx.nets.get(T[0].net) or {}).get("role") == "rail"
     ok = need = 0
     for k in range(len(T) - 1):
         ta, tb = T[k], T[k + 1]
         if ta.fp == tb.fp or ta.net != tb.net:
             continue
         need += 1
-        layers = hop_layers(ctx, ta, tb, prefer=ctx.side_layer(tb.fp))
-        if not layers:
+        if ctx.connected(ta.net, ta, tb):
+            ok += 1
             continue
-        mn, opt, mx = ctx.sp.width_limits(ta.net, layers[0])
+        layers = hop_layers(ctx, ta, tb, prefer=ctx.side_layer(tb.fp))
+        l0 = layers[0] if layers else ctx.side_layer(tb.fp)
+        mn, opt, mx = ctx.sp.width_limits(ta.net, l0)
         ws = [opt, mn]
         if power:
-            I = float(ctx.opts.get("chain_power_a", 1.0))
-            w = max(ipc2221_width(I, t_mm=ctx.sp.tcu.get(layers[0], 0.035)), opt)
+            I = float((getattr(ctx, "rail_I", None) or {}).get(ta.net) or ctx.opts.get("chain_power_a", 1.0))
+            w = max(ipc2221_width(I, t_mm=ctx.sp.tcu.get(l0, 0.035)), opt)
             ws = sorted({w, max(opt, min(w, min(ta.width, tb.width))), opt, mn}, reverse=True)
-        tgt = [anchor(tb)] + ([a for a in ctx.net_copper_anchors(ta.net) if a.kind == "track"] if k == len(T) - 2 else [])
-        rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [layers[0]], via=False)
+        tgt = [anchor(tb)] + (ctx.net_copper_anchors(ta.net, connected_to=tb) if k == len(T) - 2 else [])
+        rt = None
+        if layers:
+            rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [layers[0]], via=False)
+        if rt is None and len(ctx.sp.cu) > 1:
+            # parts on opposite sides, or no room on the shared layer: through one via
+            rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [ctx.sp.cu[0], ctx.sp.cu[-1]],
+                           via=True, via_cost=3.0)
         if rt is not None:
             ok += 1
+        else:
+            m.notes.append(f"hop {k} ({ta.net}, {ctx.fp[ta.fp].ref} -> {ctx.fp[tb.fp].ref}) not routed")
     # the protector's ground into the plane (or to the connector's ground pin)
     for u in prot:
         f = ctx.fp.get(u)

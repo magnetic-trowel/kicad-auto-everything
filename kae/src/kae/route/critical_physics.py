@@ -111,25 +111,45 @@ class Loop:
     def kcl(self, coeffs, rhs=1.0):
         self.cons.append((dict(coeffs), float(rhs)))
 
+    def _elements(self):
+        """Elements with a finite stand-in height for strips without a plane in a loop that
+        has one (fastloop takes a loop either over a plane or in free space): twice the
+        loop's highest strip, at least 3.2 mm, so a missing plane costs inductance."""
+        fin = [h[5] for H, _ in self.el.values() for h in H if h[5] != INF]
+        if not fin or all(h[5] != INF for H, _ in self.el.values() for h in H):
+            return self.el
+        hf = max(3.2, 2.0 * max(fin))
+        return {k: ([h if h[5] != INF else h[:5] + (hf,) for h in H], V) for k, (H, V) in self.el.items()}
+
     def value(self, shares=False):
         """Loop inductance (nH); with shares=True also {element: current share}."""
-        names = [n for n, (H, V) in self.el.items() if H or V]
+        el = self._elements()
+        names = [n for n, (H, V) in el.items() if H or V]
         if not self.cons or names == ["A"]:
-            H = [h for n in names for h in self.el[n][0]]
-            V = [v for n in names for v in self.el[n][1]]
+            H = [h for n in names for h in el[n][0]]
+            V = [v for n in names for v in el[n][1]]
             val = _P(H, V)
             return (val, {n: 1.0 for n in names}) if shares else val
         import numpy as np
         n = len(names)
         P = np.zeros((n, n))
-        single = [_P(*self.el[k]) for k in names]
+        single = [_P(*el[k]) for k in names]
         for i in range(n):
             P[i, i] = single[i]
             for j in range(i + 1, n):
-                Hi, Vi = self.el[names[i]]
-                Hj, Vj = self.el[names[j]]
-                m = 0.5 * (_P(Hi + Hj, Vi + Vj) - single[i] - single[j])
+                Hi, Vi = el[names[i]]
+                Hj, Vj = el[names[j]]
+                # both concatenation orders: fastloop's corner formula joins consecutive
+                # pieces that share an end, so one order alone is not symmetric
+                m = 0.25 * (_P(Hi + Hj, Vi + Vj) + _P(Hj + Hi, Vj + Vi)) - 0.5 * (single[i] + single[j])
                 P[i, j] = P[j, i] = m
+        # Closed forms are not exactly a partial-inductance matrix where two elements overlap
+        # (wide strips leaving one pad side by side): clip P to positive definite, so the
+        # minimum energy is bounded.
+        ev, U = np.linalg.eigh(P)
+        floor = 1e-3 * max(float(ev.max()), 1e-9)
+        if ev.min() < floor:
+            P = (U * np.maximum(ev, floor)) @ U.T
         rows, rhs = [], []
         if "A" in names:
             r = np.zeros(n)
@@ -146,19 +166,31 @@ class Loop:
             if ok:
                 rows.append(r)
                 rhs.append(v)
-        C = np.array(rows)
-        m = C.shape[0]
-        K = np.zeros((n + m, n + m))
-        K[:n, :n] = 2.0 * P
-        K[:n, n:] = C.T
-        K[n:, :n] = C
-        b = np.zeros(n + m)
-        b[n:] = rhs
-        try:
-            sol = np.linalg.lstsq(K, b, rcond=None)[0]
-        except np.linalg.LinAlgError:
-            sol = np.zeros(n + m)
-        x = sol[:n]
+        # Minimum of x'Px under the KCL rows, with an active set keeping the alternatives'
+        # currents non-negative (a reverse current in a parallel path is a model artefact
+        # here); never pins the last free element of a constraint.
+        pinned = []
+        x = np.zeros(n)
+        for _ in range(n + 1):
+            R = rows + [np.eye(n)[k] for k in pinned]
+            C = np.array(R)
+            m = C.shape[0]
+            K = np.zeros((n + m, n + m))
+            K[:n, :n] = 2.0 * P
+            K[:n, n:] = C.T
+            K[n:, :n] = C
+            b = np.zeros(n + m)
+            b[n:] = rhs + [0.0] * len(pinned)
+            try:
+                x = np.linalg.lstsq(K, b, rcond=None)[0][:n]
+            except np.linalg.LinAlgError:
+                break
+            neg = [k for k in np.argsort(x) if x[k] < -1e-9 and names[k] != "A" and k not in pinned
+                   and all(sum(1 for q in np.nonzero(r)[0] if q != k and q not in pinned) > 0
+                           for r in rows if r[k] != 0)]
+            if not neg:
+                break
+            pinned.append(int(neg[0]))
         val = float(x @ P @ x)
         if shares:
             return val, {k: float(v) for k, v in zip(names, x)}

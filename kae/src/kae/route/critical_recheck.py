@@ -23,8 +23,9 @@ module stage (`stage`: {module id: u}); a module whose u grew by more than `rise
 `retweak_loop(...)` runs the second tweak on a board routed by the bridge: the flagged
 module's surroundings are cleared of other nets' copper on its reference plane and around
 its own copper, a guard pour (`kae-crit:`, a hard obstacle for other nets in the bridge)
-covers the plane under the module, the module is re-routed in place, and the bridge routes
-what was ripped up; rounds repeat until nothing is flagged or `rounds` is reached, each
+covers the plane under the module, the module keeps its own copper (optimal at the module
+stage; what worsened it is its neighbours' copper), and the bridge routes what was ripped
+up; rounds repeat until nothing is flagged or `rounds` is reached, each
 round judged by KiCad's DRC and kept only if it is no worse.
 """
 from __future__ import annotations
@@ -428,16 +429,18 @@ class LoopBuilder:
         self.lp.body((ta["x"], ta["y"]), (tb["x"], tb["y"]), h, zb, w)
 
 
-def _gnd_layer(rb, layer, x, y):
-    """The nearest layer below `layer` with ground fill under (x, y)."""
+def _gnd_layer(rb, layer, x, y, outlines=False):
+    """The nearest layer below `layer` with ground fill under (x, y) (with outlines: with a
+    ground zone outline there, filled or not)."""
     best = None
     p = Point(x, y)
     for g in rb.gnd:
-        if rb.fills is not None:
+        if rb.fills is not None and not outlines:
             byl = rb.fills.get(g) or {}
             items = [(l, unary_union(v)) for l, v in byl.items() if v]
         else:
-            items = [(l, z.outline) for z in rb.board.zones if z.net == g for l in z.layers]
+            items = [(l, z.outline) for z in rb.board.zones if z.net == g and not (z.name or "").startswith("kae-crit:")
+                     for l in z.layers]
         for l, geom in items:
             if l == layer or geom is None:
                 continue
@@ -445,6 +448,25 @@ def _gnd_layer(rb, layer, x, y):
             if geom.contains(p) and (best is None or d < best[0]):
                 best = (d, l)
     return best[1] if best else None
+
+
+def plane_cover(rb, layer, region):
+    """Share of `region` covered by ground fill on `layer`, out of the part of it inside the
+    ground zones' outlines there (so a planned cut-out does not count): 1.0 for a whole
+    plane, less where other nets' tracks, vias and their clearances perforate it."""
+    if layer is None or region is None or region.is_empty or rb.fills is None:
+        return None
+    outl = [z.outline for z in rb.board.zones if z.net in rb.gnd and layer in z.layers and z.outline is not None
+            and not (z.name or "").startswith("kae-crit:")]
+    if not outl:
+        return None
+    den = region.intersection(unary_union(outl))
+    if den.area < 1e-6:
+        return None
+    fill = [g for n in rb.gnd for g in (rb.fills.get(n) or {}).get(layer, [])]
+    if not fill:
+        return 0.0
+    return min(1.0, den.intersection(unary_union(fill)).area / den.area)
 
 
 def cell_value(rb, s):
@@ -457,7 +479,9 @@ def cell_value(rb, s):
     layer = rb.cu[0] if side == "F" else rb.cu[-1]
     cx = sum(t["x"] for t in T) / n
     cy = sum(t["y"] for t in T) / n
-    gl = _gnd_layer(rb, layer, cx, cy)
+    # the ground plane layer: filled under the loop, else the one whose zone should be there
+    # (a cut plane is still the loop's reference, and its cover shows the cut)
+    gl = _gnd_layer(rb, layer, cx, cy) or _gnd_layer(rb, layer, cx, cy, outlines=True)
     lb = LoopBuilder(rb, layer, gl)
     for k in range(n):
         ta, tb = T[k], T[(k + 1) % n]
@@ -467,7 +491,11 @@ def cell_value(rb, s):
             lb.body(ta, tb, body_z(f.lib_id, f.value), w)
             continue
         lb.hop(hop_pieces(rb, ta["net"], ta, tb), ta, tb)
-    return lb.lp.value(), dict(open_hops=lb.open, gnd_layer=gl)
+    pts = [(t["x"], t["y"]) for t in T] + [p for H, _ in lb.lp.el.values() for h in H for p in (h[:2], h[2:4])]
+    region = shapely.MultiPoint(pts).convex_hull.buffer(0.5)
+    cover = plane_cover(rb, gl, region)
+    return lb.lp.value(), dict(open_hops=lb.open, gnd_layer=gl,
+                               plane_cover=round(cover, 4) if cover is not None else None)
 
 
 def decap_values(rb, s):
@@ -525,9 +553,13 @@ def decap_values(rb, s):
         opens += lb.open
         v = lb.lp.value()
         vals.setdefault(pin, []).append(v)
-    if not vals:
-        return None, dict(note="no pairs")
-    per_pin = {p: 1.0 / sum(1.0 / x for x in vs if x > 1e-9) for p, vs in vals.items()}
+    per_pin = {}
+    for p, vs in vals.items():
+        vs = [x for x in vs if x > 1e-9 and math.isfinite(x)]
+        if vs:
+            per_pin[p] = 1.0 / sum(1.0 / x for x in vs)        # parallel capacitors
+    if not per_pin:
+        return None, dict(note="no pairs" if not vals else "degenerate loops (all copper on the plane layer)")
     return max(per_pin.values()), dict(per_pin={p: round(v, 3) for p, v in per_pin.items()}, open_hops=opens)
 
 
@@ -677,8 +709,8 @@ def fills_of(board_path):
     d = pcbnew_io.zone_fills(board_path)
     out = {}
     for z in d.get("zones") or []:
-        if z.get("teardrop") or not z.get("net"):
-            continue
+        if z.get("teardrop") or not z.get("net") or (z.get("name") or "").startswith("kae-crit:"):
+            continue                    # guard pours are the bridge's hint, not copper
         for l, rings_list in (z.get("layers") or {}).items():
             for rings in rings_list:
                 if rings and len(rings[0]) >= 3:
@@ -690,21 +722,27 @@ def fills_of(board_path):
 
 
 # ----------------------------------------------------------------------------- recheck
-def recheck(board_routed, brief, stage, rise=0.15, fills="kicad", terms=None):
-    """Modules whose routed utilization rose by more than `rise` over `stage` ({id: u}) or
-    crossed the budget. Returns dict(modules={id: {u_stage, u_routed, ...}}, retweak=[ids])."""
+def recheck(board_routed, brief, stage, rise=0.15, fills="kicad", terms=None, cover_drop=0.10):
+    """Modules whose routed utilization rose by more than `rise` over `stage` ({id: u} or
+    {id: {u, plane_cover}}), crossed the budget, or whose ground plane under the loop lost
+    more than `cover_drop` of its cover (other nets' copper perforating it). Returns
+    dict(modules={id: {u_stage, u_routed, ...}}, retweak=[ids])."""
     phys = board_physics(board_routed, brief=brief, fills=fills, terms=terms)
     mods = {}
     flagged = []
-    for mid, u0 in (stage or {}).items():
+    for mid, st in (stage or {}).items():
+        st = st if isinstance(st, dict) else dict(u=st)
+        u0, c0 = st.get("u"), st.get("plane_cover")
         r = phys.get(mid) or {}
-        u1 = r.get("u")
-        rec = dict(u_stage=u0, u_routed=u1, value=r.get("value"), unit=r.get("unit"))
-        if u0 is not None and u1 is not None:
-            worse = u1 > u0 * (1.0 + rise) or (u0 <= 1.0 < u1)
-            rec["flag"] = bool(worse)
-            if worse:
-                flagged.append(mid)
+        u1, c1 = r.get("u"), r.get("plane_cover")
+        rec = dict(u_stage=u0, u_routed=u1, value=r.get("value"), unit=r.get("unit"), cover_stage=c0, cover_routed=c1)
+        worse = u0 is not None and u1 is not None and (u1 > u0 * (1.0 + rise) or (u0 <= 1.0 < u1))
+        cut = c0 is not None and c1 is not None and c1 < c0 - cover_drop
+        rec["flag"] = bool(worse or cut)
+        if cut:
+            rec["why"] = "plane perforated"
+        if worse or cut:
+            flagged.append(mid)
         mods[mid] = rec
     return dict(modules=mods, retweak=flagged, rails=phys.get("_rails"))
 
@@ -724,9 +762,10 @@ def locked_only(board_routed, dst):
 
 
 def stage_values(board, brief, fills="kicad", terms=None):
-    """{module id: u} on a board (the module stage: its critical copper alone)."""
+    """{module id: {u, plane_cover}} on a board (the module stage: its critical copper alone)."""
     ph = board_physics(board, brief=brief, fills=fills, terms=terms)
-    return {k: v["u"] for k, v in ph.items() if k != "_rails" and isinstance(v, dict) and v.get("u") is not None}
+    return {k: dict(u=v["u"], plane_cover=v.get("plane_cover")) for k, v in ph.items()
+            if k != "_rails" and isinstance(v, dict) and v.get("u") is not None}
 
 
 def modules_to_retweak(board_routed, brief, stage=None, rise=0.15, workdir=None, terms=None):
@@ -756,6 +795,26 @@ def module_region(sess, mid, margin=1.0):
     if not geoms:
         return None
     return unary_union(geoms).convex_hull.buffer(margin)
+
+
+def guard_zones(board, region, net, layer, name, min_area=0.5):
+    """Guard pours [(net, layer, rings, name)] over `region` on `layer`: inside the zones of
+    `net` there (the plane they guard) and outside every other net's zone on the layer, so
+    a guard never overlaps foreign copper pours (KiCad: zones_intersect)."""
+    from shapely.geometry import Polygon as _Poly
+    own = [z.outline for z in board.zones if z.net == net and layer in z.layers and z.outline is not None
+           and not (z.name or "").startswith("kae-crit:")]
+    if not own or region is None or region.is_empty:
+        return []
+    g = region.intersection(unary_union(own))
+    other = [z.outline for z in board.zones if z.net and z.net != net and layer in z.layers and z.outline is not None]
+    if other:
+        g = g.difference(unary_union(other).buffer(0.05))
+    out = []
+    for part in getattr(g, "geoms", [g]):
+        if isinstance(part, _Poly) and part.area > min_area:
+            out.append((net, layer, [list(part.exterior.coords)], name))
+    return out
 
 
 def _plane_layers(sess, mid, region):
@@ -828,11 +887,17 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
         stage = stage_values(w0, brief)
     except Exception as e:  # noqa: BLE001
         return dict(error=f"stage values: {type(e).__name__}: {e}")
+    # only modules the critical stage routed: the rest (doubtful pairings, skipped kinds)
+    # never had critical copper to protect
+    mine = {m.id for m in sess.modules if m.status in ("routed", "partial")}
+    stage = {k: v for k, v in stage.items() if k in mine}
     cur = Path(routed)
     cur_s = score(cur)
     cur_rc = recheck(cur, brief, stage, rise=rise)
     hist.append(dict(round=0, errors=cur_s["errors"], unconnected=cur_s["unconnected"],
                      u={k: (v.get("u_stage"), v.get("u_routed")) for k, v in cur_rc["modules"].items()},
+                     cover={k: (v.get("cover_stage"), v.get("cover_routed")) for k, v in cur_rc["modules"].items()
+                            if v.get("cover_stage") is not None},
                      flagged=cur_rc["retweak"]))
     log(f"recheck 0: flagged {cur_rc['retweak']}; {cur_s['errors']} errors, {cur_s['unconnected']} unconnected")
     for k in range(1, rounds + 1):
@@ -849,8 +914,7 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
             rip += uu
             for (pl, pn) in planes:
                 if pn and region.area > 0:
-                    rings = [list(region.exterior.coords)]
-                    guards.append((pn, pl, rings, f"{W.GUARD_PREFIX}{mid}"))
+                    guards += guard_zones(sess.board, region, pn, pl, f"{W.GUARD_PREFIX}{mid}")
         if not rip:
             hist.append(dict(round=k, note="nothing to rip up"))
             break
@@ -872,12 +936,16 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
         W.stage(clean, wd, f"rt{k}_clean")
         s_ = score(clean)
         rc = recheck(clean, brief, stage, rise=rise)
-        better_phys = sum((rc["modules"][m].get("u_routed") or 0) for m in cur_rc["retweak"] if m in rc["modules"]) < \
-            sum((cur_rc["modules"][m].get("u_routed") or 0) for m in cur_rc["retweak"])
+        def badness(r, ms):
+            return sum((r["modules"].get(m, {}).get("u_routed") or 0.0)
+                       - (r["modules"].get(m, {}).get("cover_routed") or 0.0) for m in ms)
+        better_phys = badness(rc, cur_rc["retweak"]) < badness(cur_rc, cur_rc["retweak"]) - 1e-6
         keep = (s_["errors"] + s_["unconnected"], s_["unconnected"]) <= (cur_s["errors"] + cur_s["unconnected"],
                                                                         cur_s["unconnected"]) and better_phys
         hist.append(dict(round=k, ripped=len(rip), guards=len(guards), errors=s_["errors"], unconnected=s_["unconnected"],
                          u={m: (v.get("u_stage"), v.get("u_routed")) for m, v in rc["modules"].items()},
+                         cover={m: (v.get("cover_stage"), v.get("cover_routed")) for m, v in rc["modules"].items()
+                                if v.get("cover_stage") is not None},
                          flagged=rc["retweak"], kept=keep))
         log(f"retweak {k}: ripped {len(rip)}, {s_['errors']} errors, {s_['unconnected']} unconnected, "
             f"flagged {rc['retweak']} ({'kept' if keep else 'discarded'})")

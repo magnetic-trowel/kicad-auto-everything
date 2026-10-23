@@ -12,7 +12,7 @@
 ### Pipeline
 `python -m kae.route.cli route IN OUT --seed N --time S` ([bridge.py](../../../kae/src/kae/route/bridge.py)):
 
-1. **Export.** KiCad (SWIG, [pcbnew_bridge.py](../../../kae/src/kae/board/kicad_scripts/pcbnew_bridge.py)) writes the DSN plus what it leaves out: pads with real copper per layer, holes, local clearances, mask expansion, zone connection, graphics, edges and rule areas. KiCad's engine is also probed on a track and a via of every net on every layer.
+1. **Export.** KiCad (SWIG, [pcbnew_bridge.py](../../../kae/src/kae/board/kicad_scripts/pcbnew_bridge.py)) writes the DSN plus what it leaves out: pads with real copper per layer, holes, local clearances, mask expansion, zone connection, copper graphics, mask openings, edges and rule areas. KiCad's engine is also probed on a track and a via of every net on every layer.
 2. **Plan.** [constraints.py](../../../kae/src/kae/route/constraints.py) computes each requirement with the rule port ([rules.py](../../../kae/src/kae/route/rules.py)); [translate.py](../../../kae/src/kae/route/translate.py) writes it into the DSN.
 3. **Route.** Freerouting runs isolated, with every setting the bridge depends on passed explicitly and a deadline inside the budget ([freerouting.py](../../../kae/src/kae/route/freerouting.py)).
 4. **Import.** The session is fixed up (placement stripped, net names quoted, via sizes restored) and imported by KiCad.
@@ -43,6 +43,7 @@ All functions and properties the corpus rule files use are supported [C].
 | Hole-to-hole (net-independent) | via-via ≥ h2h + (d₁+d₂)/2 − (D₁+D₂)/2; pad holes in pin classes | same-net via pairs: rip-up |
 | Copper-to-edge (board, custom rules by item type; Edge.Cuts, Margin, footprint edges, slotted NPTH) | outline: `copper_to_edge_clearance_um` (track value); a via-only band where vias need more; cut-outs and stray edges as keepouts in class `kae_edge` | — |
 | Solder-mask aperture (expansion + mask-to-copper; tented vias) | pin classes on outer layers, unless `solder_mask_bridge` is ignored or the pad allows bridges | — |
+| Solder-mask openings drawn as graphics (exposed copper) | keepouts on their outer copper layer at the mask-to-copper clearance, unless they cover a pad | — |
 | Rule areas (no tracks / no vias) | `keepout` / `via_keepout` on their layers | — |
 | Copper graphics and texts, no net | keepouts in their clearance class | — |
 | Copper graphics with a net | pins of that net, centred inside the copper | — |

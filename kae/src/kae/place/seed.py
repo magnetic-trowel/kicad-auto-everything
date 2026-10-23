@@ -35,7 +35,8 @@ def _objects(P, macros):
     for mac in macros or []:
         lay = mac.layouts[0]
         w, h = lay.size
-        rel = {i: (dx - lay.cx, dy - lay.cy) for i, (dx, dy, k) in lay.offsets.items()}
+        # layout offsets are grid cells, its centre is in mm
+        rel = {i: (dx * P.g - lay.cx, dy * P.g - lay.cy) for i, (dx, dy, k) in lay.offsets.items()}
         objs.append((list(lay.offsets), w, h, rel))
         for i in lay.offsets:
             in_macro[i] = len(objs) - 1
@@ -313,3 +314,120 @@ def floorplan(P, items, time_s, workers=2, seed=0, w_wl=1.0, w_disp=0.2, net_w=N
         log(f"floorplan items={len(items)} nets={len(nets)} status={model.status} {model.wall:.1f}s"
             + (f" infeasible={model.infeasible_items}" if model.infeasible_items else ""))
     return sol, model
+
+
+def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, max_items=30, margin_mm=2.0):
+    """Floorplan a big board region by region (the global CP-SAT floorplan handles at most
+    FLOORPLAN_MAX_ITEMS items): the items (unanchored macros as rigid layouts x 4 rotations,
+    single parts) are cut by recursive bisection of their centres into regions of at most
+    `max_items`; each region is re-placed by CP-SAT inside its window (plus margin_mm),
+    minimizing weighted HPWL with a little displacement, with every part outside it fixed (an
+    obstacle, and a fixed pin of the nets it shares). Legal in, legal out: a region keeps its
+    placement unless CP-SAT returns one. Returns a report."""
+    import time as _time
+    from . import clusters
+    from .state import grid_violations
+    t0 = _time.monotonic()
+    g = P.g
+    items, anchors, owner = [], [], {}
+    for mac in macros or []:
+        if mac.anchored or not all(P.parts[i].movable for i in mac.members):
+            continue
+        a = mac.anchor
+        it = clusters.macro_item(P, mac, int(st.X[a]), int(st.Y[a]), 0)
+        items.append(it)
+        anchors.append(a)
+        for i in mac.members:
+            owner[i] = len(items) - 1
+    for i in P.mov:
+        if i not in owner:
+            items.append(cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])))
+            anchors.append(i)
+            owner[i] = len(items) - 1
+    if not items:
+        return dict(regions=0)
+
+    def centre(it):
+        xs = [st.center(i)[0] for i in it.members]
+        ys = [st.center(i)[1] for i in it.members]
+        return sum(xs) / len(xs), sum(ys) / len(ys)
+    cen = [centre(it) for it in items]
+    # regions: recursive bisection of the item centres
+    regions = []
+    stack = [list(range(len(items)))]
+    while stack:
+        ids = stack.pop()
+        if len(ids) <= max_items:
+            regions.append(ids)
+            continue
+        xs = [cen[o][0] for o in ids]
+        ys = [cen[o][1] for o in ids]
+        ax = 0 if (max(xs) - min(xs)) >= (max(ys) - min(ys)) else 1
+        ids = sorted(ids, key=lambda o: cen[o][ax])
+        h = len(ids) // 2
+        stack += [ids[:h], ids[h:]]
+    per = max(1.0, time_s / max(1, len(regions)))
+    m = int(math.ceil(margin_mm / g))
+    rep = dict(regions=len(regions), solved=0, hpwl_before=round(st.hpwl(), 2))
+    for ids in regions:
+        if _time.monotonic() - t0 > time_s:
+            break
+        mem = {i for o in ids for i in items[o].members}
+        rects = [r for i in mem for (_, r, _) in st.grid_rects(i)]
+        wi0 = min(r[0] for r in rects) - m
+        wi1 = max(r[1] for r in rects) + m
+        wj0 = min(r[2] for r in rects) - m
+        wj1 = max(r[3] for r in rects) + m
+        ext = max(max(r[1] - r[0], r[3] - r[2]) for r in rects) + 2
+        obstacles = []
+        for i in P.mov:
+            if i in mem:
+                continue
+            for side, r, _ in st.grid_rects(i):
+                if r[1] > wi0 - ext and r[0] < wi1 + ext and r[3] > wj0 - ext and r[2] < wj1 + ext:
+                    obstacles.append((side, r))
+        for ob in P.obstacles:
+            r = ob.g
+            if r[1] > wi0 - ext and r[0] < wi1 + ext and r[3] > wj0 - ext and r[2] < wj1 + ext:
+                obstacles.append((ob.side, r))
+        its = []
+        for o in ids:
+            it = items[o]
+            it.X0, it.Y0 = int(st.X[anchors[o]]), int(st.Y[anchors[o]])
+            it.bounds = (wi0, wi1, wj0, wj1)
+            its.append(it)
+        nets = []
+        for net in P.nets:
+            w = net_w.get(net.i, net.weight)
+            if w <= 0:
+                continue
+            pins = [(i, k) for (i, k) in net.pins if i in mem]
+            if not pins:
+                continue
+            fixed = []
+            for (i, k) in net.pins:
+                if i in mem:
+                    continue
+                x, y = st.pins_xy(i)[k]
+                fixed.append((int(round((x - P.ox) / g)), int(round((y - P.oy) / g))))
+            if len(pins) + len(fixed) >= 2:
+                nets.append((w, pins, fixed))
+        model = cpsat.Model(P, its, obstacles, hpwl_nets=nets, w_disp=0.05, w_rot=0.0, w_wl=1.0)
+        sol = model.solve(min(per, max(0.5, time_s - (_time.monotonic() - t0))), workers=workers, seed=seed)
+        if sol is None:
+            continue
+        before = st.copy()
+        for it, (X, Y, v) in zip(its, sol):
+            for i, (dx, dy, k) in it.variants[v].items():
+                if P.parts[i].movable:
+                    st.X[i], st.Y[i], st.K[i] = X + dx, Y + dy, k
+        if set(grid_violations(st)) & mem:
+            st.X[:], st.Y[:], st.K[:] = before.X, before.Y, before.K
+            continue
+        rep["solved"] += 1
+    rep["hpwl_after"] = round(st.hpwl(), 2)
+    rep["seconds"] = round(_time.monotonic() - t0, 2)
+    if log:
+        log(f"regional floorplan: {rep['solved']}/{rep['regions']} regions, HPWL {rep['hpwl_before']} -> "
+            f"{rep['hpwl_after']} ({rep['seconds']}s)")
+    return rep

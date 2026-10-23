@@ -326,7 +326,8 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                     route_module(ctx, m)
                     v = m.physics.get("value")
                     good = m.status == "routed" or (m.status == "partial" and ok_status != "routed")
-                    if v is not None and best is not None and v < best * 0.99 and good:
+                    if (v is not None and math.isfinite(v) and v > 0 and best is not None
+                            and v < best - 0.01 * abs(best) and good):
                         best = v
                         mrep["moves"].append(dict(part=f.ref, pose=[round(z, 4) if isinstance(z, float) else z for z in c],
                                                   value=round(v, 4)))

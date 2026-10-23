@@ -43,7 +43,8 @@ def _jit(f):
 
 
 # iparams indices
-I_NCX, I_NCY, I_HX, I_HY, I_HB, I_CAP, I_HOFF, I_CX, I_CY, I_STAMP, I_NSTAMP, I_OVERFLOW, I_CONG = range(13)
+I_NCX, I_NCY, I_HX, I_HY, I_HB, I_CAP, I_HOFF, I_CX, I_CY, I_STAMP, I_NSTAMP, I_OVERFLOW, I_CONG, \
+    I_WIN, I_WX0, I_WX1, I_WY0, I_WY1 = range(18)
 # fparams indices
 F_G, F_OX, F_OY, F_CB, F_CX0, F_CY0, F_SUP, F_TGT, F_NORM, F_A0, F_S0, F_W0, F_SLACK, F_BAR, F_WWL, F_WDISP, \
     F_WCONG, F_WORD, F_OMARGIN, F_NMOV = range(20)
@@ -153,11 +154,11 @@ def _overlap_part(E, i, stamp_s):
     """Overlap area (cells^2) of part i's rectangles with rectangles of owners not in the
     move set (in_s == stamp_s marks the set; obstacles have owner -1)."""
     tot = 0
-    E.ip[I_STAMP] += 1
-    st = E.ip[I_STAMP]
     r0 = E.part_r0[i]
     for m in range(E.part_rn[i]):
         rid = r0 + m
+        E.ip[I_STAMP] += 1          # each rectangle counts its overlaps once (as anneal does)
+        st = E.ip[I_STAMP]
         s = E.r_side[rid]
         i0 = E.r_box[rid, 0]
         i1 = E.r_box[rid, 1]
@@ -646,6 +647,11 @@ def _clamp(E, i, X, Y, k):
     hi_x = E.ip[I_NCX] - b
     lo_y = -c
     hi_y = E.ip[I_NCY] - d
+    if E.ip[I_WIN] == 1:
+        lo_x = max(lo_x, E.ip[I_WX0] - E.own[i, k, 0])
+        hi_x = min(hi_x, E.ip[I_WX1] - E.own[i, k, 1])
+        lo_y = max(lo_y, E.ip[I_WY0] - E.own[i, k, 2])
+        hi_y = min(hi_y, E.ip[I_WY1] - E.own[i, k, 3])
     if hi_x < lo_x:
         hi_x = lo_x
     if hi_y < lo_y:
@@ -894,7 +900,10 @@ def build(ann, hash_cap=None):
         part_rules += lst
     maxpins = max(1, int(np.max(np.diff(part_pin_ptr))) if n else 1) * 2 + 2
     maxnets = max(1, len(nets)) + 2
-    ip = np.zeros(13, np.int64)
+    ip = np.zeros(18, np.int64)
+    if getattr(ann, "window", None) is not None:
+        ip[I_WIN] = 1
+        ip[I_WX0], ip[I_WX1], ip[I_WY0], ip[I_WY1] = ann.window
     ip[I_NCX], ip[I_NCY], ip[I_HX], ip[I_HY], ip[I_HB], ip[I_CAP], ip[I_HOFF] = P.ncx, P.ncy, HX, HY, HB, hash_cap, hoff
     ip[I_CX], ip[I_CY], ip[I_CONG] = cx, cy, 1 if use_cong else 0
     fp = np.zeros(20)
@@ -1008,6 +1017,9 @@ def sample_uphill(E, parts, swap_ptr, swap_ids, n, lam, r, out):
     return m
 
 
+DELTA_BUDGET = 2e-4     # seconds of Terms.delta a physics part may cost per pick at the uniform rate
+
+
 class FastAnnealer:
     """anneal.Annealer's schedule and cost on the compiled engine.
 
@@ -1020,7 +1032,7 @@ class FastAnnealer:
 
     def __init__(self, P, st, terms=None, macros=(), seed=0, subset=None, window=None, **kw):
         from .anneal import Annealer
-        self.ann = Annealer(P, st, terms=terms, macros=macros, seed=seed, **kw)
+        self.ann = Annealer(P, st, terms=terms, macros=macros, seed=seed, subset=subset, window=window, **kw)
         a = self.ann
         self.P, self.st, self.terms = P, st, terms
         self.rng = random.Random(seed)
@@ -1031,7 +1043,7 @@ class FastAnnealer:
             self.E = build(a, hash_cap=1024)
         seed_rng(int(seed) & 0x7fffffff)
         # who may move: all movable parts, or a subset (a window re-placement)
-        self.mov = [i for i in a.mov if subset is None or i in set(subset)]
+        self.mov = list(a.active)
         self.window = window
         tp = set()
         if terms is not None:
@@ -1039,16 +1051,6 @@ class FastAnnealer:
         in_mac = set(a.macro_of)
         self.fast = np.array([i for i in self.mov if i not in tp and i not in in_mac], np.int64)
         self.slow = [i for i in self.mov if i in tp or i in in_mac]
-        # aggressor-loop members: their Terms.delta is the costliest, sample them at half rate
-        self.aggressor = set()
-        if terms is not None and hasattr(terms, "structs"):
-            u2i = {u: i for i, u in enumerate(a.uuid)}
-            for s in terms.structs:
-                if getattr(s, "kind", "") == "commutation":
-                    for m in getattr(s, "members", ()):
-                        u = terms.uids[m] if hasattr(terms, "uids") else None
-                        if u in u2i:
-                            self.aggressor.add(u2i[u])
         # equal-footprint swap classes among the fast parts
         fs = set(self.fast.tolist())
         n = len(P.parts)
@@ -1061,6 +1063,8 @@ class FastAnnealer:
         self.swap_ptr, self.swap_ids = ptr, np.array(ids or [0], np.int64)
         self.phys = a.phys
         self.poses = a.poses
+        self.dt = {}                  # measured Terms.delta seconds per part (EMA)
+        self.delta_budget = DELTA_BUDGET
         self.w = a.w
         self.stats = dict(moves=0, accepted=0, by_move={})
         self.best_legal = None
@@ -1130,12 +1134,23 @@ class FastAnnealer:
         return a.evaluate(st)
 
     # ------------------------------------------------------------------ Python-side moves
+    def _pick_slow(self):
+        """A part for a Python-side move. Parts whose Terms.delta is costly (aggressor loops,
+        coupling and cable common-mode terms on big boards cost milliseconds) are sampled at
+        min(1, DELTA_BUDGET / their measured delta time) of the uniform rate, so the physics
+        parts share the time instead of a few of them taking it all."""
+        rng = self.rng
+        for _ in range(8):
+            i = self.slow[rng.randrange(len(self.slow))]
+            t = self.dt.get(i)
+            if t is None or t <= self.delta_budget or rng.random() < self.delta_budget / t:
+                return i
+        return i
+
     def _propose_slow(self, r):
         a = self.ann
         rng = self.rng
-        i = self.slow[rng.randrange(len(self.slow))]
-        if i in self.aggressor and rng.random() < 0.5:
-            i = self.slow[rng.randrange(len(self.slow))]
+        i = self._pick_slow()
         E = self.E
         mi = a.macro_of.get(i)
         u = rng.random()
@@ -1204,7 +1219,12 @@ class FastAnnealer:
             for i, (X, Y, K) in zip(S, newpos):
                 p = self.P.parts[i]
                 newp[a.uuid[i]] = (self.P.ox + X * g, self.P.oy + Y * g, p.rots[K].rot, p.side)
+            t0 = time.perf_counter()
             d_phys = self.terms.delta(self.poses, moved_u, {u: newp[u] for u in moved_u})
+            dt = time.perf_counter() - t0
+            if len(S) == 1:
+                i = S[0]
+                self.dt[i] = dt if i not in self.dt else 0.8 * self.dt[i] + 0.2 * dt
         Sa = np.array(S, np.int64)
         nX = np.array([q[0] for q in newpos], np.int64)
         nY = np.array([q[1] for q in newpos], np.int64)
@@ -1224,14 +1244,17 @@ class FastAnnealer:
         return acc, d
 
     # ------------------------------------------------------------------ schedule
-    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, batch=2000):
+    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, batch=2000, max_per_part=20000):
+        """The reference schedule over N = moves_per_part x parts planned moves; when the
+        compiled engine is fast enough to do more within cpu_s (measured on the first
+        batches), N grows up to max_per_part x parts (a slower cooling at no extra time)."""
         n = len(self.mov)
         if n == 0:
             return self.report(0.0)
         N = max_moves or moves_per_part * n
+        adaptive = max_moves is None
         t0 = time.process_time()
-        P = self.P
-        r0 = max(2, int(0.25 * max(P.ncx, P.ncy)))
+        r0 = max(2, int(0.25 * self.ann._span()))
         ups = np.zeros(400)
         m = 0
         if len(self.fast):
@@ -1271,6 +1294,10 @@ class FastAnnealer:
                     continue
                 self._try_python(mv[0], mv[1], T, lam, mv[2])
             done += batch
+            if adaptive and done == 4 * batch:
+                el = time.process_time() - t0
+                if el > 0:
+                    N = int(max(N, min(max_per_part * n, 0.85 * (done / el) * cpu_s)))
             if self.leg_total == 0:
                 c = self.cost(lam)
                 if best is None or c < best[0]:

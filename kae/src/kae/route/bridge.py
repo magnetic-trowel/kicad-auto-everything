@@ -31,11 +31,13 @@ from kae.board import pcbnew_io
 from . import constraints, drc, freerouting, specctra, translate
 
 DEFAULT_OPTS = dict(
-    fanout=False,            # Freerouting's fanout pre-pass narrows tracks (see freerouting.py)
+    fanout=False,            # Freerouting's fanout pre-pass narrows tracks (see freerouting.py):
+                             # True everywhere, "first" for the first route only (repair rounds
+                             # re-route what was narrowed without it)
     thermal_repair=True,     # starved thermals get spoke corridors in the repair loop
     passes=0,                # 0: autorouter runs until it stops improving
     repair=True,             # post-route DRC repair loop
-    rounds=6,                # repair rounds at most (each also bounded by the time left)
+    rounds=5,                # repair rounds at most (each also bounded by the time left)
     router_share=0.6,        # share of the budget for the first routing
 )
 
@@ -136,9 +138,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def router_settings(p, opts):
+def router_settings(p, opts, repair=False):
     s = {"automatic_neckdown": "false"}
-    if not opts.get("fanout"):
+    fan = opts.get("fanout")
+    if not fan or (repair and fan == "first"):
         s["fanout.enabled"] = "false"
     s["copper_to_edge_clearance_um"] = specctra.fmt(p.edge_clearance * 1000)
     if p.neck_width:
