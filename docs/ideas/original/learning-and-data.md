@@ -9,7 +9,7 @@ Part of the [original-ideas catalog](README.md). Shorthands as in [intent-and-wh
 
 ## L1. Planted-solution synthetic boards — *new*
 
-**Pitch.** Generate training and benchmark boards whose known-good layout is planted by construction. That gives an exact optimality gap for rewards, curricula and regression tests.
+**Pitch.** Generate training and benchmark boards whose known-good layout is planted by construction. That gives a gap to a planted reference (a known feasible layout, not a proven optimum) for rewards, curricula and regression tests.
 
 **Mechanism.**
 1. Compose boards from recipe blocks with verified sub-layouts (outputs of N7, N9 and R6) in a floorplan.
@@ -27,7 +27,7 @@ The planted solution bounds the achievable score but is not claimed unique. When
 
 **Builds on.** llm#292, llm#297; eco#232; prac#336; xd#10.
 
-**How to test.** Evaluate on D3 with a time split. Compare planners or heuristics trained/evolved on planted boards with ones trained on D3 alone.
+**How to test.** Evaluate on D3 with a time split. Compare planners or heuristics trained/evolved on planted boards with ones trained on D3 alone. Never train on PCBWorld's 99 D3-A + 10 D3-B evaluation boards.
 
 **Effort/risk.** M. There is a synthetic-to-real gap; mix in real boards.
 
@@ -40,7 +40,7 @@ The planted solution bounds the achievable score but is not claimed unique. When
 **Mechanism.**
 - **DSL:** stages with guards and budgets (`if cut_overflow > 0: P2.rebalance(budget=30s)`), engine choices, and LLM call points.
 - **Mutation:** an LLM proposes changes within a restricted grammar, checked at the AST level.
-- **Evaluation cascade:** synthetic L1 boards → D3-A → D3-B, with a time split.
+- **Evaluation cascade:** synthetic L1 boards → D3 boards of increasing size, with a time split, excluding PCBWorld's 99 + 10 evaluation boards.
 - **Search bookkeeping:** negative memory of failed variants, MAP-Elites over (speed, quality), and generalization tests from the first run.
 
 **Why it should work.**
@@ -147,7 +147,7 @@ Uses:
 - Everything stays local.
 
 **Why it should work.**
-- Fab holds are dominated by stackup (28%), impedance (22%), drill-to-copper (18%) and notes (15%).
+- At one fab (AtlasPCB, vendor-reported), holds are dominated by stackup (28%), impedance (22%), drill-to-copper (18%) and notes (15%).
 - Only 2–20% of designs pass with no technical queries ([respin-and-fab-hold-data](../../topics/verification/respin-and-fab-hold-data.md)).
 - Documentation should be checked first ([critic-stack](../../topics/verification/critic-stack.md)).
 

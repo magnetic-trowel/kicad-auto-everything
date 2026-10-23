@@ -50,7 +50,7 @@ Part of the [original-ideas catalog](README.md). Shorthands as in [intent-and-wh
 
 **How to test.** Seed 30 regressions into long agent sessions. Measure bisect accuracy and the number of replays it needs. Compare the cost of branching with a full re-run.
 
-**Effort/risk.** M. Nondeterministic engines break replay, so force Freerouting `-mt 1` and fixed seeds.
+**Effort/risk.** M. Nondeterministic engines break replay, so force Freerouting `-mt 1`. Freerouting has no seed flag (it seeds `Random(0)` internally), and whether `-mt 1` makes it deterministic is untested: check board hashes over repeated runs before relying on recomputation, and replay from the cache.
 
 ---
 

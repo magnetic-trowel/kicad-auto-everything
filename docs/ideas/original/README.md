@@ -1,6 +1,6 @@
 # Original ideas catalog
 
-58 ideas beyond the ~2,000 in the [inventories](../cross-domain-transplants.md). Tags: **new** (not in the corpus), **combo** (novel combination), **sharp** (existing idea made buildable). Theme files give pitch, mechanism, evidence, builds-on, test and effort/risk; assemblies are in [hybrid-architecture-options](../../topics/architecture/hybrid-architecture-options.md). All [I] until tested.
+58 ideas beyond the ~1,700 in the [inventories](../../INDEX.md#idea-inventories). Tags: **new** (not in the corpus), **combo** (novel combination), **sharp** (existing idea made buildable). Theme files give pitch, mechanism, evidence, builds-on, test and effort/risk; assemblies are in [hybrid-architecture-options](../../topics/architecture/hybrid-architecture-options.md). All [I] until tested.
 
 ## Intent and the "why" — [intent-and-why.md](intent-and-why.md)
 - **I1 Physics budget ledger** (combo): dB/ps/nH/mV budgets the LLM allocates and objects spend.
@@ -60,7 +60,7 @@
 - **V5 Counterexample-guided rules** (new): sim/bench failures yield validated fast checks.
 
 ## Learning and data — [learning-and-data.md](learning-and-data.md)
-- **L1 Planted-solution boards** (new): synthetic boards with a known-good layout give an exact gap.
+- **L1 Planted-solution boards** (new): synthetic boards with a known-good layout give a gap to a planted reference (not a proven optimum).
 - **L2 Evolve the conductor** (combo): evolve the orchestration policy DSL, not low-level heuristics.
 - **L3 Inverse optimization from edits** (sharp): infer house-style weights from designer corrections.
 - **L4 EVM as extraction oracle** (combo): check extracted rules against vendor eval layouts.
@@ -77,15 +77,15 @@
 - **U7 Intent-level merge** (new): concurrent human/agent edits merged on intents.
 
 ## Top 10 to try first (impact vs effort)
-1. **P6 Slot assignment** (S): designer 0.56 vs 0.31–0.39 after swaps; days of work.
+1. **P6 Slot assignment** (S): designer 0.56 vs 0.31–0.39 after swaps (one unreviewed study); days of work.
 2. **N8 Decap assignment** (S): a contested slogan becomes an exact optimization.
 3. **N7 Hot-loop micro-placer** (S–M): top rule in every source; no open tool.
 4. **V2 Red-team gate** (S): required before RL or evolution; cheap.
-5. **V1 Mutation-tested tests** (S–M): makes LLM-written checks trustworthy.
+5. **V1 Mutation-tested tests** (S–M): makes LLM-written checks sensitive to near-miss faults (not proof that their limits are right).
 6. **I4 Constraint price tags** (S–M): numbers for explanation and negotiation.
 7. **I1+I2 Budget ledger, typed units** (M): the shared "why" vocabulary.
 8. **R2 Shadow return nets** (M): closes the route→physics-check gap.
-9. **P1 Router-probe pseudo-gradients** (M): fast routers (~0.65 s) replace RUDY.
+9. **P1 Router-probe pseudo-gradients** (M): probe forces augment RUDY (KRT ~0.65 s on ≤31-pad boards; slower on larger ones).
 10. **R1 Homotopy menus** (M): LLM on topology via a bounded menu.
 
 Cheap runners-up: S4 predict-before-check, P4 side cut, U3 expected-loss brief.
