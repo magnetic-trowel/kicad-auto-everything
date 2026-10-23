@@ -298,7 +298,7 @@ class Window:
 
     @property
     def key(self):
-        return self.parts
+        return self.parts or ("reroute",) + tuple(round(v, 1) for v in self.rect)
 
     def to_dict(self):
         x0, y0, x1, y1 = self.rect
@@ -331,13 +331,14 @@ def _contains_pt(r, p):
     return r[0] <= p[0] <= r[2] and r[1] <= p[1] <= r[3]
 
 
-def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10, max_pins=None):
+def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10, max_pins=None, reroute_only=False):
     """The window that may fix one spot: its own (unlocked) parts, then the unlocked parts
     whose centres lie in the region they and the spot's points span, grown by `margin`;
     at most `max_parts`, nearest to the spot first (its own parts always stay). Parts with
     more than `max_pins` connected pads stay fixed (moving an IC rips up all its nets). The
     rectangle covers every movable part's current box, so the annealer starts inside it.
-    None when no part may move."""
+    None when no part may move, unless `reroute_only`: then a window without parts (its nets
+    are ripped up and routed again in a new order, e.g. two track ends that never met)."""
     def movable(g):
         return not g.locked and (max_pins is None or g.pins <= max_pins)
 
@@ -361,7 +362,11 @@ def window_for_spot(spot, parts, bounds, margin=2.0, max_parts=10, max_pins=None
             break
         keep.setdefault(g.uuid, g)
     if not keep:
-        return None
+        if not reroute_only:
+            return None
+        return Window(rect=region, parts=(), refs=(), reasons=(f"{spot.kind} (re-route): {spot.why}",),
+                      nets=spot.nets, modules=(spot.module,) if spot.module else (), priority=spot.weight,
+                      spots=[spot])
     rect = region
     for g in keep.values():
         rect = _union(rect, g.bbox)
@@ -393,6 +398,8 @@ def plan_windows(spots, parts, bounds, margin=2.0, max_parts=10, merge_factor=1.
         w = window_for_spot(s, parts, bounds, margin, max_parts, max_pins)
         if w is None and max_pins is not None:
             w = window_for_spot(s, parts, bounds, margin, max_parts, None)
+        if w is None:            # nothing may move there: re-route only
+            w = window_for_spot(s, parts, bounds, margin, max_parts, None, reroute_only=True)
         if w is not None:
             wins.append(w)
     wins.sort(key=lambda w: (w.rect, w.parts))

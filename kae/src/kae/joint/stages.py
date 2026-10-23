@@ -279,13 +279,20 @@ class KaeStages:
         if brief is None:
             brief = self._ensure_brief(self._load(lay.board))
         stage = {k: v for k, v in lay.stage.items() if lay.status.get(k) in ("routed", "partial")}
-        if stage:
-            try:
+        try:
+            if stage:
                 rc = recheck(lay.board, brief, stage, terms=self.terms)
-            except Exception as e:
-                self.log(f"recheck failed: {type(e).__name__}: {e}")
-                rc = {}
-        card.modules = {k: (v or {}).get("u_routed") for k, v in (rc.get("modules") or {}).items()}
+                card.modules = {k: (v or {}).get("u_routed") for k, v in (rc.get("modules") or {}).items()}
+            elif (brief or {}).get("structures"):
+                # no module stage (or nothing it routed): the routed physics of every module,
+                # whoever drew its copper, still guards the acceptance
+                from kae.route.critical_recheck import board_physics
+                ph = board_physics(lay.board, brief=brief, terms=self.terms)
+                rc = dict(modules={}, retweak=[], rails=ph.get("_rails"))
+                card.modules = {k: v.get("u") for k, v in ph.items() if not k.startswith("_") and isinstance(v, dict)}
+        except Exception as e:  # noqa: BLE001 - routing results stand without physics
+            self.log(f"recheck failed: {type(e).__name__}: {e}")
+            rc = {}
         card.flagged = sorted(rc.get("retweak") or [])
         rails = rc.get("rails") or {}
         worst = [v for res in rails.values() if isinstance(res, dict) for v in res.values()
@@ -373,7 +380,7 @@ class KaeStages:
                              phys_mult=float(o.get("phys_mult", 2.0)) ** attempt,
                              physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}
-        if not res.poses:
+        if not res.poses and (window.parts or res.report.get("rejected")):
             rep["outcome"] = res.report.get("rejected") or res.report.get("skipped") or "no part moved"
             return None, rep
         plan = plan_ripup(board, window, set(res.poses), lay.owners, self.module_parts,
@@ -382,11 +389,18 @@ class KaeStages:
                           supply_nets={n for n, d in ((self.brief or {}).get("nets") or {}).items()
                                        if isinstance(d, dict) and d.get("role") in ("ground", "rail", "power")})
         rep["ripup"] = plan.to_dict()
+        if not plan.remove and not res.poses:
+            rep["outcome"] = "re-route window: no routing to rip up"
+            return None, rep
         ripped = self._path(it, "ripped")
         W.edit(lay.board, ripped, remove=plan.remove)
         _project(self.input, ripped)
         placed = self._path(it, "replaced")
-        self._write_poses(ripped, placed, res.poses)
+        if res.poses:
+            self._write_poses(ripped, placed, res.poses)
+        else:                       # a re-route window: the same placement, a new routing order
+            shutil.copy2(ripped, placed)
+            _project(self.input, placed)
         removed = set(plan.remove)
         mid = Layout(board=str(placed), poses=dict(lay.poses), crit=set(lay.crit) - removed,
                      owners={u: m for u, m in lay.owners.items() if u not in removed},

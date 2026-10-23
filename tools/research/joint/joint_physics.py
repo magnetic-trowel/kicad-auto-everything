@@ -28,7 +28,18 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 
 def _arm(arm_dir, tid, attempt):
+    """An arm's scored board: a joint run's rebuilt routing, else a route run's (e.g. the
+    human placement routed by the bridge)."""
     a = Path(arm_dir) / "joint" / tid / f"attempt-{attempt}"
+    if not a.exists():
+        r = Path(arm_dir) / "route" / tid / f"attempt-{attempt}"
+        aj = json.loads((r / "attempt.json").read_text()) if (r / "attempt.json").exists() else {}
+        s = aj.get("score") or {}
+        sc = dict(clean=s.get("clean"), legal=True, valid=s.get("valid"), completion=s.get("completion"),
+                  unconnected=s.get("unconnected"), errors=s.get("errors"), errors_by_type=s.get("errors_by_type"),
+                  runtime_s=aj.get("runtime_s"), wl_ratio=s.get("wl_ratio"))
+        p = r / "score" / "board.kicad_pcb"
+        return (str(p) if p.exists() else None), sc
     aj = json.loads((a / "attempt.json").read_text()) if (a / "attempt.json").exists() else {}
     s = aj.get("score") or {}
     sc = dict(clean=s.get("clean"), legal=s.get("legal"), valid=s.get("valid"), completion=s.get("completion"),
@@ -138,7 +149,8 @@ def main(argv=None):
     arms = dict(x.split("=", 1) for x in a.arm)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    ids = a.only.split(",") if a.only else sorted({p.name for d in arms.values() for p in (Path(d) / "joint").iterdir()})
+    ids = a.only.split(",") if a.only else sorted({p.name for d in arms.values() for k in ("joint", "route")
+                                                   if (Path(d) / k).exists() for p in (Path(d) / k).iterdir()})
     recs = [one(t, a.tasks, arms, a.attempt, out) for t in ids]
     md = summary(recs, ["human"] + list(arms))
     (out / "summary.md").write_text(md)

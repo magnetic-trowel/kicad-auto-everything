@@ -12,10 +12,11 @@ A Scorecard holds what KiCad and the routed-physics recheck say about a board:
 
 `accept(old, new)` compares lexicographically: legality, then completion and DRC
 (unconnected + errors, then unconnected), then routed physics. Legality, unconnected items
-and DRC errors must never get worse. A strict gain in completion or DRC is kept when routed
-physics worsens by at most `phys_slack` (10 % of the incumbent's total); with equal
-completion and DRC, physics must improve beyond `phys_tol` (float noise). Anything else is
-reverted. (A strict reading, physics never worse, is phys_slack=0: on the noisecard smoke
+and DRC errors must never get worse. A board that becomes clean (legal, fully routed, no
+DRC error) is always kept. Another strict gain in completion or DRC is kept when routed
+physics worsens by at most `phys_slack` (10 % of the incumbent's total) per item gained;
+with equal completion and DRC, physics must improve beyond `phys_tol` (float noise).
+Anything else is reverted. (A strict reading, physics never worse, is phys_slack=0: on the noisecard smoke
 run it reverted a window that halved the unconnected items, 15 -> 7, at +33 % physics.)
 """
 from __future__ import annotations
@@ -73,8 +74,8 @@ def _phys_on(card, ids):
 
 def accept(old, new, phys_tol=0.005, phys_slack=0.10):
     """(keep, why). See the module docstring. `phys_slack`: how much routed physics (share
-    of the incumbent's total) a strict completion/DRC gain may cost; 0 makes physics a hard
-    guard even then."""
+    of the incumbent's total) each item of completion/DRC gain may cost; 0 makes physics a
+    hard guard except for a board that becomes clean."""
     if new.placement_errors > old.placement_errors:
         return False, f"legality worse ({old.placement_errors} -> {new.placement_errors} placement errors)"
     if new.unconnected > old.unconnected:
@@ -88,7 +89,11 @@ def accept(old, new, phys_tol=0.005, phys_slack=0.10):
     k1 = (new.placement_errors, new.unconnected + new.errors, new.unconnected)
     scale = max(1.0, abs(p0))
     if k1 < k0:
-        if p1 > p0 + max(phys_tol, phys_slack) * scale:
+        if k1 == (0, 0, 0):
+            # a finished board outranks any unfinished one (lexicographic: completion first)
+            return True, f"clean {k0} -> {k1}, physics {p0:.4f} -> {p1:.4f}"
+        slack = max(phys_tol, phys_slack * (k0[1] - k1[1]))
+        if p1 > p0 + slack * scale:
             return False, f"physics worse beyond the slack ({p0:.4f} -> {p1:.4f}) for {k0} -> {k1}"
         return True, f"better {k0} -> {k1}, physics {p0:.4f} -> {p1:.4f}"
     if p1 > p0 + phys_tol * scale:

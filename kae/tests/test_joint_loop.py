@@ -22,6 +22,9 @@ def test_accept_is_lexicographic_with_hard_guards():
     assert not accept(base, card(unc=0, pe=1, mods={"a": 1.0}))[0]       # legality first
     assert accept(base, card(unc=1, mods={"a": 1.08}))[0]                # a completion gain within the slack
     assert not accept(base, card(unc=1, mods={"a": 1.2}))[0]             # beyond the slack
+    assert accept(base, card(unc=0, mods={"a": 1.15}))[0]                # two items gained: twice the slack
+    assert accept(card(unc=1, mods={"a": 1.0}), card(unc=0, mods={"a": 2.5}))[0]   # clean outranks physics
+    assert not accept(base, card(unc=0, err=1, mods={"a": 1.5}))[0]      # DRC must not rise
     assert not accept(base, card(unc=1, mods={"a": 1.08}), phys_slack=0.0)[0]   # strict reading
     assert not accept(base, card(unc=2, mods={"a": 1.002}))[0]           # equal completion: float noise
     assert not accept(base, card(unc=2, mods={"a": 1.05}))[0]            # equal completion: physics worse

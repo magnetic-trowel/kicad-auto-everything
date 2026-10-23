@@ -165,3 +165,11 @@ def test_rudy_overflow_adds_history_only_near_failures():
     added = h.add_overflow(0, 0, 2.0, util, target=0.5, scale=0.5, reach_mm=2.0)
     assert added > 0
     assert h.h[3, 5] > before[3, 5] and h.h[15, 5] == 0.0
+
+
+def test_spot_without_movable_parts_becomes_a_reroute_window():
+    parts = _parts()
+    s = Spot(kind="unrouted", x=30, y=30, points=((29, 30), (31, 30)), nets=("VNEG",))   # two track ends
+    w = plan_windows([s], parts, (0, 0, 50, 40), margin=1.0, max_parts=4)
+    assert len(w) == 1 and w[0].parts == () and w[0].key[0] == "reroute"
+    assert "re-route" in w[0].reasons[0]

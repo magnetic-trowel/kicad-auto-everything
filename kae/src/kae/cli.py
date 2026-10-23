@@ -19,7 +19,7 @@ the last line of adapter.log.) As a kaebench method:
 Legality is closed-loop: the placer repairs against its exact check (kae.place.exact), and
 then, when kicad-cli is found (KAE_KICAD_CLI / KAE_KICAD_WRAP / PATH; --drc auto|on|off),
 KiCad's DRC on the written board feeds every placement error back as a constraint and the
-board is repaired and written again (--drc-rounds, default 3) until KiCad has no placement
+board is repaired and written again (--drc-rounds, default 6) until KiCad has no placement
 error or the time is up. Exit status: 0 when the placement passed the exact check and KiCad
 (when it ran), 3 when an output was written but violations remain (listed in the report,
 with the closed loop's diagnosis per part), 2 on errors.
@@ -195,7 +195,7 @@ def main(argv=None):
     sp.add_argument("--report", help="also write the JSON report here")
     sp.add_argument("--drc", default="auto", choices=("auto", "on", "off"),
                     help="KiCad DRC on the result, fed back until clean (auto: when kicad-cli is found)")
-    sp.add_argument("--drc-rounds", type=int, default=3, help="repair rounds driven by KiCad's DRC")
+    sp.add_argument("--drc-rounds", type=int, default=6, help="repair rounds driven by KiCad's DRC")
     sp.add_argument("--angles", type=float, default=None, metavar="STEP",
                     help="let parts turn to any multiple of STEP degrees, not only right angles "
                          "(heatsink-mount packages keep right angles; CP-SAT stays on right angles)")
