@@ -19,11 +19,13 @@
   - PMIC ground cuts.
   
   Never emit any of these by default. Store both variants plus a selector, ask the user, and log the choice.
-- **90° corners do not matter for SI below multi-GHz, but they do on ESD paths (≤45°) and RF lines (arcs or 135°).** So the corner rule applies only to the `ESD_UNPROTECTED` and `RF50` net classes.
+- **90° corners are a myth for single-ended nets below about 2 Gb/s, but they matter on ESD paths (≤45°), RF lines (arcs or 135°), differential pairs (each corner adds skew) and nets at ≥10 Gb/s.** So the corner rule applies to the `ESD_UNPROTECTED` and `RF50` net classes, every differential pair, and nets at ≥10 Gb/s ([diff-pairs.md](diff-pairs.md) bends >135°).
 
 ## Key facts
 
-### Myth table
+### Myths and context-dependent rules
+Split grounds (VERIFIED+CTX), 20-H and guard traces (both in the selector table below) are not myths: each holds in a stated context.
+
 | Slogan | Verdict | Status / source |
 |---|---|---|
 | 90° corners are bad | Negligible up to about 2 Gb/s. For an 8 mil 50 Ω microstrip corner: ≈1 ps, 0.012 pF, ≈0.3% reflection at 100 ps. Rounding removes 21% of the corner copper, but 70–90% would be needed to cancel the excess capacitance. Corners start to matter around 10 Gb/s and for pair skew. The myth traces to the MECL handbook (1971). Other figures: 3 Ω at about 80 GHz; a 5 mil corner is 8.5 fF, with no impact below about 70 GHz | VERIFIED+CTX ([Johnson](https://www.sigcon.com/Pubs/edn/bigbadbend.htm); [Altium](https://resources.altium.com/p/slaying-900-right-angle-bend-dragon); LearnEMC "urban legend"). **Exceptions:** ESD paths ≤45° (arcs below 2.6 mm radius; [SLVA680A](https://www.ti.com/lit/pdf/slva680)); RF uses arcs or 135° (Espressif, u-blox) |
@@ -32,7 +34,7 @@
 | I/O ground island with a single-point tie | "One of the worst possible ways." Use an overlapping chassis layer with capacitors instead | LearnEMC; Ott red flag |
 | Group by type, HS farthest from the connector | "Responsible for more crazy board layouts than any other." Place each connector's talkers next to it | LearnEMC |
 | 3W rule | A proxy for D/H. Use K = 1/(1+(D/H)²) | Johnson; Ott |
-| Guard traces | **CORRECTED** (Bogatin & Simonovich, not "Simonovich, −60 dB"): "−50 dB … perfectly adequate … never a need for a guard trace". Never use one in microstrip. In stripline, short both ends with the lowest-L via and match the coupled length, which gives −70 dB vs −50 dB. λ/10 stitching was *tested* and showed no benefit in some cases. Only 3-D simulation quantifies it | [DesignCon 2013](https://www.signalintegrityjournal.com/ext/resources/article-images-2019/Guard-Traces---Love-Them-or-Leave-Them/4567Guard_Trace_DesignCon-2013-rev14_Final.pdf) [P]; Johnson: guards help only on 2-layer analog boards, grounded at both ends |
+| Guard traces (crosstalk guards between signal traces; not crystal guard rings or driven analog guards) | **CORRECTED** (Bogatin & Simonovich, not "Simonovich, −60 dB"): "−50 dB … perfectly adequate … never a need for a guard trace". Never use one in microstrip. In stripline, short both ends with the lowest-L via and match the coupled length, which gives −70 dB vs −50 dB. λ/10 stitching was *tested* and showed no benefit in some cases. Only 3-D simulation quantifies it | [DesignCon 2013](https://www.signalintegrityjournal.com/ext/resources/article-images-2019/Guard-Traces---Love-Them-or-Leave-Them/4567Guard_Trace_DesignCon-2013-rev14_Final.pdf) [P]; Johnson: guards help only on 2-layer analog boards, grounded at both ends |
 | Ground fill on multilayer boards | No function; it perturbs Z0. Floating fill is an Ott red flag | Johnson; Ott |
 | Perimeter vias every 2 cm as a Faraday cage | Usually unnecessary, and a perimeter-only ring can form a cavity, so distribute the vias | CONTESTED (Ott stitches the periphery of G/S/S/G) |
 | Two ground planes above 25 MHz | Outdated; many GHz boards use one | VERIFIED |
@@ -67,8 +69,9 @@
 
 ## Recommendations for our system
 - Store each myth as a knowledge-base record with `source_type = myth`, the slogan's text patterns (to block it), and a `replacement_check` (for example, 3W → the K-budget clearance).
+  - Each record also carries its `source_scope`, so a blocked slogan never strips a rule another doc requires: crystal guard rings ([crystals-clocks.md](crystals-clocks.md)), driven analog guards ([analog-mixed-signal.md](analog-mixed-signal.md)) or isolation barriers ([isolation-creepage.md](isolation-creepage.md)).
 - Contested rules carry `contested_by[]` and a `selector`. The system asks the user, or follows the datasheet, and logs the decision with its rationale (see [rule-pack-format.md](rule-pack-format.md)).
-- Scope corner-angle rules to the `ESD_UNPROTECTED` and `RF50` net classes only.
+- Scope corner-angle rules to the `ESD_UNPROTECTED` and `RF50` net classes, every differential pair, and nets at ≥10 Gb/s.
 - When explaining "why not", the LLM should quote the primary verdict (Johnson, LearnEMC). This addresses the user's need to understand why each choice was made.
 
 ## Conflicts and open questions

@@ -8,11 +8,11 @@
 - **Topology rules everyone agrees on:**
   - XIN cap first; C0G caps;
   - a short symmetric loop, with the cap grounds together;
-  - a guard pour or ring tied once to MCU ground;
+  - a guard pour or ring around the circuit (how it ties to ground is a vendor switch, below);
   - no foreign nets inside or under the guard;
   - no test points;
   - no magnetics or high-speed traces nearby.
-- **Vendor conflicts need a switch:** whether to ground a metal can (ST: no; TI/AVR: yes), and copper under the crystal (most: solid ground; TI CDCE925: cut).
+- **Vendor conflicts need a switch:** whether to ground a metal can (ST: no; TI/AVR: yes), copper under the crystal (most: solid ground; TI CDCE925: cut), and how the guard ties to ground (a local oscillator ground with a single tie to MCU GND/AVSS, as in ST AN2867 and TI SLAA322D, vs stitched into the main ground with dense GND vias, as in Espressif).
 - **Clock routing:**
   - put the clock driver next to its oscillator;
   - use a C-shaped GND-via ring at clock transitions;
@@ -61,10 +61,10 @@
 - **Keep-out and guard.**
   - A keep-out rule area (`disallow track via` for foreign nets) on F.Cu and the adjacent layer.
   - A heuristic radius for HS traces and magnetics: 3 mm [I], uncalibrated. Tag it [I] and keep it a warning.
-  - A GND guard ring with dense stitching, tied once to MCU GND/AVSS.
-  - XIN/XOUT separation ≥3W [I].
+  - A GND guard ring, tied by the vendor profile's scheme: single tie to MCU GND/AVSS, or stitched into the main ground.
+  - XIN/XOUT separation from the crosstalk budget, D ≥ H·√(1/K − 1) ([si-fundamentals.md](si-fundamentals.md)) [I], not a bare "3W".
   - Zero test points on the oscillator nets.
-- **Vendor switches.** Can grounding and copper-under are switched by the MCU vendor profile.
+- **Vendor switches.** Can grounding, copper-under and the guard tie scheme are switched by the MCU vendor profile.
 
 ## Conflicts and open questions
 - **No primary numeric distance** from crystal nets to switch nodes, inductors or HS traces. The 3 mm and 5 mm figures are heuristics.
