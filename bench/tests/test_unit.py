@@ -246,6 +246,21 @@ def test_run_measured_cpu_exit_code_and_errors():
     assert tools.usage_take()["cpu_s"] > 0.5  # the killed command's CPU is still accounted
 
 
+def test_run_measured_cuts_a_stalled_command_short():
+    """A process tree idling at ~0% CPU (as kicad-cli does when KiCad's zone filler
+    deadlocks) is killed after `stall` seconds; a busy one only at its timeout."""
+    import time
+    t = time.monotonic()
+    with pytest.raises(tools.Stalled):
+        tools.run_measured(["sh", "-c", "sleep 60; true"], timeout=60, stall=3)
+    assert time.monotonic() - t < 20
+    busy = [sys.executable, "-c", "while True: pass"]
+    with pytest.raises(subprocess.TimeoutExpired) as e:  # CPU of a grandchild counts as progress
+        tools.run_measured(["sh", "-c", f"{subprocess.list2cmdline(busy)}; true"], timeout=6, stall=2)
+    assert not isinstance(e.value, tools.Stalled)
+    tools.usage_take()
+
+
 def test_capped_drc_types_are_flagged():
     drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
     assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
