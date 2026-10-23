@@ -150,3 +150,34 @@ def test_exact_check_reports_hole_clearance():
     P.board.rules.hole_clearance = 1.5
     hits = [v for v in exact_check(P, st, parts=[u], max_items=500) if v["type"] == "hole_clearance"]
     assert any(set(v["refs"]) == {"J1", "U1"} for v in hits)
+
+
+def test_mask_openings_of_different_nets_bridge():
+    """Regression (latentred-pdu, envopenpico): KiCad flags solder-mask openings (pad + mask
+    expansion) of different nets closer than the board's minimum mask web; the exact model
+    did not check them, so KiCad's DRC found bridges on 'legal' placements."""
+    from kae.place.legalize import exact_check
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    parts = {p.ref: p.i for p in P.parts}
+    a, b = P.parts[parts["U1"]], P.parts[parts["U2"]]      # both on the front
+    pa, pb = a.fp.pads[0], b.fp.pads[0]
+    for pd in (pa, pb):
+        pd.layers = ["F.Cu", "F.Mask"]
+    ax, ay = st.pins_xy(a.i)[0]
+    gap = 0.3                                             # copper clearance is met
+    P.board.rules.clearance = 0.1
+    st.X[b.i], st.Y[b.i] = P.grid_of(ax + max(pa.size) / 2 + gap + max(pb.size) / 2 - pb.lx, ay - pb.ly)
+    st.K[b.i] = 0
+    P.board.rules.mask_margin = 0.0
+    P.board.rules.mask_min_width = 0.0
+
+    def bridges():
+        return [v for v in exact_check(P, st, parts=[b.i], max_items=500)
+                if v["type"] == "solder_mask_bridge" and set(v["refs"]) == {"U1", "U2"}]
+    assert not bridges()
+    P.board.rules.mask_margin = 0.2                       # 0.4 of expansion > 0.3 gap
+    assert bridges()
+    P.board.rules.mask_margin = 0.0
+    P.board.rules.mask_min_width = 0.5                    # web too thin
+    assert bridges()

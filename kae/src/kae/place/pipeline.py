@@ -427,8 +427,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - t)
         rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
         rep["exact"] = exact_check(P, st)
-        rep["legal_grid"] = not grid_violations(st)
         stage("closed_loop", t)
+    rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     if order:
@@ -445,6 +445,24 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
     return Result(poses=poses, report=rep, state=st, problem=P)
+
+
+def grid_verdict(P, st, exact):
+    """The grid model is a conservative prefilter (bodies stand in for missing courtyards,
+    rectangles round outward to cells, pads carry clearance and mask room, courtyards stay
+    inside the outline); KiCad judges copper, holes and courtyards. legal_grid: no grid
+    violator the exact check confirms; grid_conservative: violators only the grid sees, by
+    class (no courtyard, relaxed, other)."""
+    gv = set(grid_violations(st))
+    confirmed = {q for v in exact or [] for q in v.get("parts", [])}
+    only = sorted(gv - confirmed)
+    cls = {}
+    for i in only:
+        p = P.parts[i]
+        k = "no_courtyard" if not p.has_courtyard else "relaxed" if getattr(p, "relaxed", False) else "rounding"
+        cls.setdefault(k, []).append(p.ref)
+    return dict(legal_grid=not (gv & confirmed),
+                grid_conservative=dict(count=len(only), by_class={k: v[:10] for k, v in cls.items()}))
 
 
 def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=True, brief=None, log=None,
@@ -505,7 +523,9 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
             rep["closed_loop"] = exactmod.repair(P, st, time_s=left, log=log, allowed=set(sub))
             rep["closed_loop"].pop("findings", None)
             rep["exact"] = exact_check(P, st, parts=sub)
-        rep["legal_grid"] = not [i for i in grid_violations(st) if i in set(sub)]
+        gv = grid_verdict(P, st, rep["exact"])
+        rep["legal_grid"] = gv["legal_grid"]
+        rep["grid_conservative"] = gv["grid_conservative"]
     rep["seconds"] = round(time.monotonic() - t0, 2)
     poses = {P.parts[i].uuid: st.pose(i) for i in sub}
     return Result(poses=poses, report=rep, state=st, problem=P)

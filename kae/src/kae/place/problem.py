@@ -617,6 +617,11 @@ class Problem:
                 nc = self.board.nets[p.net].netclass or "Default"
                 cn = self.netclass_clr.get(nc, self.netclass_clr.get(nc.split(",")[0], self.clr_min))
                 c = max(self.clr_min / 2, cn - self.clr_min / 2)
+            # a mask opening (pad + expansion) keeps half the minimum mask web from others
+            if self.is_error("solder_mask_bridge") and any(ly.endswith(".Mask") for ly in p.layers or []):
+                from .exact import mask_margin
+                rr = self.board.rules
+                c = max(c, mask_margin(self, p) + float(getattr(rr, "mask_min_width", 0.0) or 0.0) / 2 + 0.001)
             infl.append(rect_grow(r, max(c, excess)))
         # occupancy pieces: the courtyard (only when the project checks courtyard overlap as an
         # error; a cover of its polygon when it is not a rectangle) or the body of a part that

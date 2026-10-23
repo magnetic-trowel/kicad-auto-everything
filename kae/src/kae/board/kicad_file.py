@@ -276,9 +276,12 @@ class _Reader:
         cr, sr = rotate(1.0, 0.0, frot)   # (cos, -sin)
         c, sn = cr, -sr
         fp_clear = _f(value(node, "clearance"), 0.0)
+        fp_mask = _f(value(node, "solder_mask_margin"), None)
 
         for pd in kids(node, "pad"):
             fp.pads.append(self.pad(pd, fx, fy, frot, c, sn, s, fp_clear))
+            pm = _f(value(pd, "solder_mask_margin"), None)
+            fp.pads[-1].mask_margin = pm if pm is not None else fp_mask
 
         # graphics in the library frame: (u, v) stored -> (u, s*v), layers flipped on the back
         by_layer = {}
@@ -584,6 +587,11 @@ def read_rules(pcb_path, tree=None):
         r.source = pro.name
     elif tree is not None:
         _legacy_rules(r, tree)
+    if tree is not None:
+        st = first(tree, "setup") or []
+        r.mask_margin = _f(value(st, "pad_to_mask_clearance"), 0.0) or 0.0
+        r.mask_min_width = _f(value(st, "solder_mask_min_width"), 0.0) or 0.0
+        r.mask_bridges_in_footprints = value(st, "allow_soldermask_bridges_in_footprints") == "yes"
     if "Default" not in r.netclasses:
         r.netclasses["Default"] = NetClass(name="Default", clearance=0.2, track_width=0.2, via_diameter=0.6,
                                            via_drill=0.3, microvia_diameter=0.3, microvia_drill=0.1,

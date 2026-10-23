@@ -135,6 +135,8 @@ class Pad(_Dict):
     rratio: float = 0.0              # roundrect corner radius / min(w, h)
     offset: tuple = (0.0, 0.0)       # copper shape offset from the hole, pad frame
     clearance: float = 0.0           # local clearance override (pad's own, else the footprint's); 0 = none
+    mask_margin: float | None = None  # solder-mask expansion override (pad's own, else the footprint's);
+    #                                   None = the board's pad_to_mask_clearance (Rules.mask_margin)
 
     _from = {"size": tuple, "slot": lambda v: None if v is None else tuple(v), "offset": tuple}
 
@@ -294,6 +296,9 @@ class Rules(_Dict):
     netclass_patterns: list = field(default_factory=list)  # [(pattern, netclass)]
     custom: list = field(default_factory=list)  # .kicad_dru rules: {'name', 'condition', 'layer', 'constraints'}
     severities: dict = field(default_factory=dict)  # DRC check -> 'error' | 'warning' | 'ignore' (.kicad_pro)
+    mask_margin: float = 0.0         # board (setup) pad_to_mask_clearance: pads' default mask expansion
+    mask_min_width: float = 0.0      # board (setup) solder_mask_min_width: thinner webs bridge
+    mask_bridges_in_footprints: bool = False  # board (setup) allow_soldermask_bridges_in_footprints
     source: str = ""                 # where the numbers came from
 
     _to = {"netclasses": lambda v: {k: c.to_dict() for k, c in v.items()}}

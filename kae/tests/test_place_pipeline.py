@@ -136,3 +136,21 @@ def test_local_replace_takes_net_weights_from_routing_feedback():
     base = {n.name: n.weight for n in local_replace(b, sub, time_s=5.0, physics=False).problem.nets}
     assert abs(w["SIG1"] - 10.0 * base["SIG1"]) < 1e-9
     assert {b.by_uuid()[u].ref for u in out.poses} == set(sub)
+
+
+def test_legal_grid_follows_the_exact_check():
+    """The grid is a conservative prefilter (bodies for missing courtyards, outward rounding):
+    a grid violator the exact check does not confirm does not make the result illegal; it is
+    reported under grid_conservative by class."""
+    from kae.place.pipeline import grid_verdict
+    from kae.place.problem import Problem
+    from kae.place.state import State
+    P = Problem.build(kicad_file.load(FIXTURE))
+    st = State(P)
+    for i in P.mov:
+        st.X[i], st.Y[i] = P.ncx // 2, P.ncy // 2
+    i, j = P.mov[0], P.mov[1]
+    v = grid_verdict(P, st, [dict(type="courtyards_overlap", refs=[P.parts[i].ref, P.parts[j].ref], parts=[i, j])])
+    assert v["legal_grid"] is False
+    v = grid_verdict(P, st, [])
+    assert v["legal_grid"] is True and v["grid_conservative"]["count"] > 0
