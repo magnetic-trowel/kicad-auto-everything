@@ -7,16 +7,16 @@
   - only **17% within 2 mm**;
   - p90 is **7.7 mm on 4-layer** vs **26.0 mm on 2-layer** boards [P, measured].
 - **Routing style:** 89% of boards have a GND zone; signal width 0.25 mm, power 0.40 mm, power/signal ratio **1.88** [P, measured].
-- **Corpus priors are looser than datasheet guidance.** Use them as *soft* targets conditioned on package and layer count, and datasheet distances as *hard or tight* targets [I].
+- **Corpus priors are looser than datasheet guidance.** Use them as *soft* targets conditioned on package and layer count, and datasheet distances as *tight* targets scoped to that part (single-vendor millimetre numbers are soft objectives, not DRC) [I].
 - The measurement is heuristic: net-name rules and a nearest-same-net-IC-pad proxy, not human-annotated [P].
 
 ## Key facts
 
 ### Method (note author's measurement)
-- **Boards:** all **128 permissively licensed** boards (MIT, Apache-2.0, BSD-3, CC0, CERN-OHL-P, CC-BY) in the circuit-skills manifest, fetched at pinned commits; 110 have ICs.
+- **Boards:** all **128 permissively licensed** boards (MIT, Apache-2.0, BSD-3, CC0, CERN-OHL-P, CC-BY) in the circuit-skills manifest, fetched at pinned commits; 110 have ICs. The licences are GitHub-detected and unaudited; `minuet`, recorded as MIT, has CERN-OHL-W hardware ([open-board-sources.md](open-board-sources.md)).
 - **Parser:** a minimal S-expression parser computes absolute pad positions (footprint `at` plus rotated pad offset). The rotation convention was validated: pads land on track ends 66.9% of the time with the chosen sign vs 30.5% with the opposite sign.
 - **Decap definition:** a 2-pad `C*` part with one pad on a GND-like net and one on a power-like net (name heuristics).
-- **Distance:** cap power-pad centre to the nearest pad of any `U*`/`IC*` on the same net. Script: [`tools/research/layout-data/decap_stats.py`](../../../tools/research/layout-data/decap_stats.py).
+- **Distance:** Euclidean, from the cap power-pad centre to the centre of the nearest pad of any `U*`/`IC*` on the same net. The 1 nF–1 µF value filter is applied after the script. Script: [`tools/research/layout-data/decap_stats.py`](../../../tools/research/layout-data/decap_stats.py).
 
 ### Decoupling-distance priors
 
@@ -50,13 +50,13 @@
   - kicad-happy decap check: caps within 10 mm;
   - TI: "as close as possible".
 
-  See [../llm/function-to-recipe-mapping.md](../llm/function-to-recipe-mapping.md).
+  These measure other things (Microchip: trace length; Quilter: closest pin edges), so convert our centre-to-centre distances before comparing. See [../llm/function-to-recipe-mapping.md](../llm/function-to-recipe-mapping.md).
 - **Ranker evidence:** decap distance carries weight in circuit-skills' learned route-cleanliness ranker (+1.24 per log unit) ([score_study.md](https://github.com/punkfab/circuit-skills/blob/main/evals/corpus/score_study.md)) [P, third-party].
 
 ## Recommendations for our system
 
 1. **Ship prior tables now** as soft constraints, keyed by (anchor package, pin function, satellite package, layer count, tier): Δx, Δy, Δθ, side, pad-to-pad distance percentiles [I].
-2. **Calibrate relation magnitudes** from these tables: e.g. "tight" for a 0402 decap on 4-layer ≈ p25–p50 (about 2.2–2.5 mm). The datasheet bound, if any, overrides it. See [../llm/interfaces-relations-vs-coordinates.md](../llm/interfaces-relations-vs-coordinates.md).
+2. **Calibrate relation magnitudes** from these tables: e.g. "tight" for a 0402 decap ≈ p25–p50 of its slice. No 0402 × 4-layer slice has been measured yet; the all-package p25 is 2.21 mm and the 0402 median (all layer counts) is 2.51 mm, both centre-to-centre. The datasheet bound, if any, overrides it. See [../llm/interfaces-relations-vs-coordinates.md](../llm/interfaces-relations-vs-coordinates.md).
 3. **Never learn priors from "all boards"** unconditioned; that encodes the 2-layer hobby tail (p90 26 mm).
 4. **Width defaults:** power ≈ 1.9× signal as a soft prior; ampacity calculators override it.
 5. **Publish the tables** as CDLA-Permissive-2.0 data products, computed only from tier-A boards (facts, not geometry).

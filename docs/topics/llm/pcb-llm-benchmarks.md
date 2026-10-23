@@ -2,7 +2,7 @@
 
 **TL;DR**
 - **Routing by LLM is far from usable.** OmniRouting's best zero-shot model connects 12.6% of nets DRC-clean (agentic best 28.0%), against 56.2% for an open-source router and 93.6% for humans [P].
-- **LLM placement is connectivity-aware but geometrically illegal.** On FreeRouting routability, frontier LMMs (GPT-5.5: 0.90 zero-shot, 0.95 few-shot) beat the academic placers (0.23–0.62), but about 80% of outputs have pad overlaps (corrected per the verification note) [P].
+- **LLM placement is connectivity-aware but geometrically illegal.** On FreeRouting routability, frontier LMMs (GPT-5.5: 0.90 zero-shot, 0.95 few-shot) beat the academic placers (0.23–0.62), but about 80% of outputs have pad overlaps (corrected per the verification note) [P]. Our notes don't say whether RR was gated on legality, and the overlap rates are pooled across models, so this is not like-for-like with legal-by-construction placers [I].
 - **Understanding benchmarks** (PCB-Bench, PCB-QA, HWE-Bench, NetlistBench) reward the netlist and documents, not layout quality. No independent multi-board benchmark of LLM placement quality on real boards exists [P].
 - **Cross-paper numbers are rarely comparable.** Router versions and settings, @k, seeds, harness and potential functions all differ. Report them [P].
 
@@ -22,8 +22,8 @@
 | Human | 93.58% | 95.91% |
 
 Further results:
-- Agentic tools brought DRC totals from 48.06 to 9.35 and shorts from 39.5% to 9.1%.
-- More steps helped GPT-5.5 (16.97 → 20.78 steps; NRR 21.71% → 27.98%) but hurt GPT-5-mini (18.38 → 23.65 steps; NRR 9.86% → 6.82%).
+- For GPT-5.5 with all tools, DRC totals fell from 48.06 to 9.35 and shorts from 39.5% to 9.1%.
+- "More steps do not guarantee improvement": GPT-5.5 went 16.97 → 20.78 steps with NRR 21.71% → 27.98%, GPT-5-mini 18.38 → 23.65 steps with NRR 9.86% → 6.82%. For GPT-5.5 this compares the no-tool agentic baseline with all tools, so tools and step counts changed together; it is not a clean test of step budget [I].
 - Few-shot examples "can reduce violations by routing less".
 - **(Verification #29):** the "<13% vs ~94%" figure had been wrongly sourced to the OmniLayout paper.
 
@@ -45,7 +45,7 @@ FreeRouting routability (RR):
 | Human | 1.00 |
 
 Legality and other findings:
-- 79.82% of outputs had at least one pad overlap; 72.89% had a part out of bounds; 80% of parts were placed on top.
+- 79.82% of outputs had at least one pad overlap; 72.89% had a part out of bounds; 80% of parts were placed on top. These rates are pooled; per-model legality is not in our notes, nor whether RR was computed on legal outputs only.
 - Reference similarity was below 60%; the best end-to-end pass rate was 62.6% (GPT-5.5 few-shot).
 - Schematic context raised grouping AUC in all 15 comparisons (+0.079 to +0.091); few-shot examples −0.006.
 - **Licence conflict:** the ethics statement says code and data are CC-BY-4.0; third-party recon (2026-08-15) found no licence and only 5 boards public. The EMNLP venue was not confirmed.
@@ -92,6 +92,7 @@ Legality and other findings:
   - PCBWorld ran 2.1.0 with `-mp 10` and a 4 GiB heap; OrthoRoute ran without board design rules.
   - So cross-paper numbers are not comparable [P].
 - **Potential function:** PCBWorld's repository default potential differs from the paper's [P].
+- **Relaxed D3 rules:** PCBWorld's rebuild chain set some DRC severities to ignore and some rule floors to 0 in `.kicad_pro`, and D3 is the 679 boards that then passed DRC. Every D3 clean-pass number is measured under that relaxed rule set; state the rule set when comparing ([open_board_sources.md § Q1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/open_board_sources.md); verification #7) [P].
 - **Strong baselines:** TILOS found SA beat AlphaChip-style CT on proxy cost 17/17 and on HPWL 16/17. "Using weak or outdated baselines may lead to misleading conclusions" ([2302.11014](https://arxiv.org/abs/2302.11014)) [P].
 - **Harness effects:**
   - ARC-AGI-3 scored 62.7% vs 99.9% depending on two undisclosed API settings ([zerowithdot](https://zerowithdot.com/blog/gpt-6-astra-impact-on-cad/)) [S].

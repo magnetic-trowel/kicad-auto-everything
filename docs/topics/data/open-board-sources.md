@@ -135,10 +135,12 @@ Sources and URLs: [research notes § Q1](../../../research_notes/LLM%20driven%20
    - MNT's other boards.
 
    Keep at most 2 boards per repo in scored suites to limit repo dominance (Antmicro is 13 of 56 6+ rows) [I].
-7. **Contamination:** popular boards (HackRF, Glasgow, Corne, Antmicro carriers) are almost surely in LLM pretraining data. Keep a time-split subset: pin commits after the model cutoff [I].
+7. **Contamination:** popular boards (HackRF, Glasgow, Corne, Antmicro carriers) are almost surely in LLM pretraining data. Keep a time-split subset of boards whose *first* public commit (blob lineage, forks and re-uploads deduplicated) is after the model cutoff. Pinning a post-cutoff commit of an older board does not decontaminate it [I].
 
 ## Conflicts and open questions
 - **PCBench size:** README 164 vs metadata 1,194 vs 1,183 folders vs PCBWorld's 1,182 converted. D3 is 679 boards, of which 677 are in the splits.
+- **PCBench unlicensed share depends on the file counted:** 743 empty licences (plus 91 NOASSERTION) of the 1,142 parseable Freerouting fixture metadata files here, vs 735 none-or-unclear of 1,183 per-board `metadata.json` files in [corpora-and-yield.md](corpora-and-yield.md). Not reconciled.
+- **Freerouting fixtures and D3 are both drawn from PCBench,** so Freerouting's own benchmark likely shares boards with D3 (overlap not measured) [I].
 - **pcb-corpus licences:** GitHub-detected; we found 1 wrong label among 89 audited boards (minuet: MIT → CERN-OHL-W hardware) and 3 KiCad-demo copies labelled GPL-3.0. The rest are unaudited.
 - **Crkbd** ships both `LICENSE_MIT` and `LICENSE_CC` (CC-BY-4.0) without saying which covers the PCBs. We record "MIT AND CC-BY-4.0".
 - **No upstream commit is known for any PCBench board.** Blob-hash matching against upstream history is feasible but was not done.

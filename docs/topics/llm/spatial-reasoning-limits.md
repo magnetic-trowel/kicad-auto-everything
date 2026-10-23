@@ -27,7 +27,7 @@
 | Evidence | Numbers | Source |
 |---|---|---|
 | OmniRouting, LMM traces | Best zero-shot NRR 12.60% (humans 93.58%). 69.8–431.3 DRC violations, 20.5–78.3% nets shorted. Fails multi-net path planning, layer and via assignment, congestion. GND routed as traces, not pours | [2608.04434](https://arxiv.org/abs/2608.04434) [P] |
-| OmniLayout, LMM placement | 79.82% of outputs had at least one pad overlap; 72.89% had a part out of bounds; 80% of parts on top; reference similarity below 60%. Routability is good, though (see [pcb-llm-benchmarks.md](pcb-llm-benchmarks.md)) | [2607.03261](https://arxiv.org/pdf/2607.03261) [P] |
+| OmniLayout, LMM placement | 79.82% of outputs had at least one pad overlap; 72.89% had a part out of bounds; 80% of parts on top; reference similarity below 60%. Routability scores are high, though our notes don't say whether they were gated on legality (see [pcb-llm-benchmarks.md](pcb-llm-benchmarks.md)) | [2607.03261](https://arxiv.org/pdf/2607.03261) [P] |
 | RAC, coordinate interface | 23.2%; with Python 21.0% | [2610.20935](https://arxiv.org/pdf/2610.20935) [P] |
 | Holodeck | GPT-4 absolute coordinates MRR 0.364, about equal to random (0.369) | [2312.09067](https://arxiv.org/abs/2312.09067) [P] |
 | PCB-Bench (ICLR 2026) | Models "struggle significantly with the spatial logic and strict constraints" | [Lacuna summary](https://lacuna.tiptreesystems.com/work/pcb-bench-benchmarking-llms-for-printed-circuit-board-placement-and-routing/wrk_3aa259abb5e3e453177ad0f77da09471) [S] |

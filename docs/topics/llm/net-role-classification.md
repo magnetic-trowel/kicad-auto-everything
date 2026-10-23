@@ -19,7 +19,7 @@
   - the suffix must be the last character;
   - symbol pin names like `Pin_P` don't create pairable nets;
   - `XTAL_P`/`XTAL_N` names apply diff-pair rules to single-ended traces.
-- **Pin electrical types:** Input, Output, Bidirectional, Tri-state, Passive, Unspecified, Power input, Power output, Open collector, Open emitter, Not connected [P, possibly stale mirror].
+- **Pin electrical types (12):** Input, Output, Bidirectional, Tri-state, Passive, Free (not internally connected), Unspecified, Power input, Power output, Open collector, Open emitter, Unconnected ([pin_type.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/eeschema/pin_type.cpp)) [P]. The doc mirror cited in the notes omits Free and calls the last type "Not connected".
 
 ### Commercial detectors
 - **Quilter diff pairs** [V] ([docs](https://docs.quilter.ai/physics-constraints/differential-pairs)):
@@ -70,7 +70,7 @@
    3. topology: SW pin + L → switch node; FB + divider → feedback; XIN/XOUT + crystal → crystal net;
    4. names: suffix and keyword rules;
    5. LLM adjudication for leftovers, citing pins.
-2. **"Is this net fast?" is a computation:** t_r(20–80%) × propagation velocity → critical length, compared with the estimated route length. Protocol data-rate and impedance tables stay deterministic and come from the interface rule packs (rules area, owned by the rules_hs_emi cluster).
+2. **"Is this net fast?" is a computation:** compare the estimated route delay (length / propagation velocity) with the edge's rise time: above t_r/6, flag for SI review; above t_r/2, it must be terminated (the threshold is CONTESTED; see [../rules/si-fundamentals.md](../rules/si-fundamentals.md)). IBIS `[Ramp]` gives a 20–80% time, about 0.75× the 10–90% time for a linear edge. Protocol data-rate and impedance tables stay deterministic and come from the interface rule packs (rules area, owned by the rules_hs_emi cluster).
 3. **Propose renames** to `+`/`-` or `_P`/`_N` whenever a detected pair uses A/B, t/c or P/M; never silently rely on non-KiCad conventions.
 4. **Resolve MCU pin-mux** from vendor pin-config exports or an explicit schematic table, not by LLM inference.
 5. **Show defaults** (Quilter-style 200/500 mA) as needing confirmation; undetected nets are stated as "generic low-speed".

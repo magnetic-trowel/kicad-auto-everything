@@ -18,7 +18,7 @@
 ### PCBench (source pool of PCBWorld D3) [P, measured by note author]
 
 Census of all 1,183 `PCBs/*/metadata.json` files ([repo](https://github.com/PCBench/PCBench)):
-- **Size history:** 164 boards retrieved in 2023-04 plus 1,018 in 2023-08, from 842 repos and 561 authors. This **resolves the "164 vs 679" discrepancy**: the README's 164 is the first batch, and PCBWorld kept 679 of about 1,182 after conversion.
+- **Size history:** 164 boards retrieved in 2023-04 plus 1,018 in 2023-08 (these dates, and the CAD-version and layer counts below, each sum to 1,182, one short of the 1,183 files), from 842 repos and 561 authors. This **resolves the "164 vs 679" discrepancy**: the README's 164 is the first batch, and PCBWorld kept 679 of about 1,182 after conversion.
 - **Licences:**
   - none or unclear: **735 (62.1%)**;
   - permissive: 221 (18.7%), of which MIT 128, Apache 28, CC-BY 11;
@@ -28,6 +28,7 @@ Census of all 1,183 `PCBs/*/metadata.json` files ([repo](https://github.com/PCBe
 - **Layers:** 2-layer 1,052 (89%), 4-layer 126, 6-layer 3, 8-layer 1.
 - The boards are "KiCad 5 files with no project file, so their rules are KiCad's defaults" ([circuit-skills collect.py](https://github.com/punkfab/circuit-skills/blob/main/evals/corpus/collect.py); that repo has no licence, so facts only) [P].
 - **Minor conflict:** 1,183 in this census vs PCBWorld's "1,182".
+- **Unlicensed share differs by source file:** 735 of 1,183 (62.1%) in this per-board `metadata.json` census; 648 of 1,194 (54.3%) in a tally of `master_metadata.json` ([licensing.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/licensing.md), used in [../licensing/data-rulepacks-weights.md](../licensing/data-rulepacks-weights.md)); 743 empty plus 91 NOASSERTION of 1,142 in Freerouting's fixture metadata ([open-board-sources.md](open-board-sources.md)). Not reconciled.
 
 ### circuit-skills licensed corpus (most rigorous public collector) [P, third-party, unreviewed]
 
@@ -94,7 +95,7 @@ Census of all 1,183 `PCBs/*/metadata.json` files ([repo](https://github.com/PCBe
 ### Expected yield funnel [I]
 1. Discovery: about 10⁴ repos.
 2. Licence-clean: about 40–60% (PCBench 38% clear; kicad-happy 59% with a licence file).
-3. Parseable and modern: legacy formats are 41% of one open-schematics sample and 97% of PCBench.
+3. Parseable and modern: legacy formats are 41% of one open-schematics sample and 98% of PCBench.
 4. Fully routed: 235 boards from 423 candidate repos in circuit-skills.
 5. DRC-clean under the board's own rules: about 33%.
 
