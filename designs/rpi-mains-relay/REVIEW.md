@@ -284,3 +284,168 @@ BLOCKING question. Heat: 15.5 W, 49 °C air.
 - **Framework gap, since fixed:** L_IN was not flagged while F1 touched it. The framework now reports that the
   relays sit on the wire side of F1, so the overcurrent and entry-fuse waivers cover L_IN again (31 waived).
 - **Framework update (123504b) applied:** all mains barriers are now `ac=True`; U1 limits carry the abs max (6.5 V) with `v_rec=5.5`; the relay isolation declares MG IIIa. The build reports no `waiver.unused`, so all six rules still match real findings.
+
+## Re-review (revision 3)
+
+Independent reviewer, 2026-10-23, against commit 1c49da0.
+
+**Method.**
+
+- **Datasheets read:** Mean Well IRM-20 SPEC (2025-11-21), TI SN74LVC1G123 SCES586E, Raspberry Pi Zero 2 W
+  mechanical drawing, product brief and reduced schematic, and the Bourns MF-MSMF table.
+- **Pads checked:** from the generated footprints (`footprints/custom.pretty`) and the KiCad libraries.
+- **Watchdog:** an event simulation of the monostable, Q7 and relay timing.
+
+### Verdict
+
+**Not ready, and no wiring blocker found.** Revision 3 fixes the first-review defects it set out to fix.
+Every new pinout checks out, including the J5 handedness. Three MAJOR issues remain:
+
+- the watchdog window is so short that heartbeat jitter drops every outlet;
+- live mains parts sit in the compartment the user opens to service the Pi;
+- the cover-mounted receptacles. Q-17 is correctly BLOCKING, but its construction details are also unsafe as drawn.
+
+**BLOCKER 0, MAJOR 3, MINOR 8.**
+
+### Status of the first-review findings
+
+| Finding | Status |
+|---|---|
+| M1 slow disarm | **Fixed.** U1 (74LVC1G123) is wired A = GND, CLR = +3V3, B = HB (Table 4-1, Function Table 7-1: Q is triggered only by B↑). Both stuck levels disarm ≤ tw + release: simulated 40–61 ms. Q7 switches in ns |
+| M2 latent watchdog faults | **Fixed** for the ARM path. ARM_FB (Q7 drain, 47 k/68 k, R26 pull-up, D16 clamps) plus the REQ-28 self-test detect Q7 D–S short, U1 Q stuck, R21 open, and C6 open or short. Levels recomputed: disarmed 2.65 V, armed ≈ 0 V, RP3A0 V_IH 1.6 V. A shorted Qk is still only visible on its LED (Q-16); accepted and disclosed |
+| M3 field conductors on mask-only copper | **Fixed** for field conductors: the MP1 wall plus sheet, DRU `edge_clearance` 6.4 mm, and `hole_clearance` 6.4 mm for H1–H10. The partition created a new problem: see N2 |
+| M4 Class 2 | **Resolved by architecture.** No SELV wiring leaves E1. IRM-20: Class II, I/P–O/P 4.2 kVAC, LPS, UL/IEC 62368-1 [P, SPEC p.1–2]. Its UL file is still under Q-1 |
+| M5 brief fit | **Resolved** by the user decisions (six switched TR outlets, Pi inside) |
+| M6 placement intent | **Mostly fixed:** `pins_toward` on K/J/PS1, SELV regions per channel, edge and hole rules, all holes, 7.5 mm nets. Residuals in m6–m8 below |
+| m1–m10 | m1, m4, m5, m7, m8 and m10 fixed. F2 is 1.48/1.43 A at 60/70 °C [Bourns derating table]. m2 fixed: ERC 0/0 and the footprints are drawn. m3 obsolete. m6 and m9 declined with reasons, which I accept |
+
+### MAJOR
+
+#### N1. Heartbeat gaps over ~35–50 ms drop every energized outlet, and 22–40 Hz makes them chatter
+
+- **What.**
+  - tw is 25–46 ms (C-4), and the HB is toggled by the userspace control loop (ASM-6).
+  - Any gap between rising edges longer than tw turns Q7 off.
+  - Simulation, assuming a 10 ms release with the diode and 15 ms operate:
+    - tw_min part: a 40 ms gap opens the contacts for 20 ms, 50 ms for 30 ms, 80 ms for 60 ms. A 30 ms gap gives a 5 ms coil interruption that is shorter than the release time.
+    - tw_max part: stalls up to 50 ms ride through.
+  - HB periods between 1/tw_max and 1/tw_min (≈ 22–40 Hz) give repeated coil pulses.
+- **Why it matters.** Stalls of tens of ms are routine for a Python or Linux loop on a Zero 2 W: GC, SD writeback, Wi-Fi driver, `stress`-level CPU load (T-HEAT runs `stress-ng`). The result is:
+  - nuisance power-cycling of all loads, with repeated tungsten and motor inrush;
+  - coil "pulse drive", against the G5RL precaution (p.7);
+  - a contradiction of "reliable".
+- **Test plan error.** T-HB's pass criterion "arms only at ≥ 100 Hz" is wrong: a 50 Hz HB (20 ms < tw_min) arms.
+- **Cause.** REQ-13 was tightened from 0.5 s (revision 1) to 0.1 s without a source; nothing in the brief needs 0.1 s.
+- **Fix.**
+  - Restore a ≥ 0.25–0.5 s disarm requirement and set tw ≈ 150–250 ms. For example R21 1 MΩ with C6 220 nF; recompute K and leakage.
+  - Generate HB from a high-priority thread, or a kernel timer that the app must pet.
+  - Add stall and jitter cases to T-HB: 20–200 ms gaps under `stress-ng` with Wi-Fi traffic, plus the 22–40 Hz band.
+  - If 0.1 s really is required, at least use tw ≈ 55–70 ms (R21 ≈ 470 kΩ: 36–66 ms, 81 ms with release) and a real-time HB.
+
+#### N2. Bare live mains parts share the compartment the user opens to service the Pi
+
+- **What.**
+  - MP1 puts the field wiring north. South of the wall, in the "PCB/Pi compartment", it leaves:
+    - F1 (3AB fuse in open clips, 01020071Z: bare metal at line potential);
+    - the PS1 AC pins;
+    - the relay contact pins;
+    - the 7.5 mm L/L_SW pours on F.Cu (mask only).
+  - The Pi's SD card and USB are in that same compartment (§5.4: "SD at the west end, reachable"), and the receptacles come off with the cover (H1).
+- **Consequence.**
+  - The one routine service action, re-imaging or swapping the SD card or debugging the Pi, puts fingers 20–100 mm from exposed 120 V.
+  - "Disconnect before opening" is the only barrier, and a hobbyist debugging a Pi will often work live.
+  - H1 rates this "n/a (service condition)". That does not hold, because the design itself makes the Pi a user-serviced part.
+- **Fix.**
+  - Use an enclosed or finger-safe fuse holder (covered 3AB holder, or a 5×20 or TR5 holder with cap; keep a ≥ 10 kA fuse), or move F1 north of MP1 under the sheet.
+  - Add a clear PC shield over the whole mains area south of MP1 (IP2X), so only the SELV and Pi zone is exposed when the cover is off.
+  - Put the shield in REQ-31 and in T-FILL.
+
+#### N3. The cover-mounted receptacles (Q-17) also need construction fixes, not only AHJ acceptance
+
+- **What.**
+  - NEC 406.5 requires receptacles to be mounted in "boxes or assemblies designed for the purpose" [S].
+  - A field-cut 3-gang opening also voids the NS14126's Type 4X/12/13 rating and possibly its listing marking [I].
+  - Q-17 is correctly BLOCKING. As drawn:
+    - The 6-32 device screws thread into tapped polycarbonate (MP4). Plug and unplug forces will strip them over time. Use brass inserts or captive nuts.
+    - The nine leads plus three pigtails flex at every cover removal. The design does not say whether they are solid or stranded. Solid 14 AWG in a flexing 300 mm loop fatigues. Specify stranded THHN/MTW (both the TR5252 back-wire clamps and the WAGO 2606 accept it) and strain-relieve both ends.
+    - With the cover off, the energized receptacle backs hang on those leads. That is inherent; it belongs in the AHJ package.
+- **Fix.** Keep Q-17 blocking. Add the inserts and stranded leads to MP4 and MP15. Add a pull test (e.g. 20 N on each lead at the terminal) to T-FILL.
+
+### MINOR
+
+#### m1. PS1 OVP can exceed the Pi's PMIC rating
+
+- IRM-20-5 OVP trips at 5.75–6.75 V ("shut off o/p voltage, clamping by zener diode") [SPEC p.2].
+- The Zero 2 W's PAM2306 is rated −0.3 to 6.5 V abs max [S, Diodes DS36392].
+- D15 (V_BR 7.78 V) does not conduct below that.
+- H16 calls this single-fault safe. Outlets do go OFF, but the Pi can be destroyed.
+- **Fix.** Add a ≤ 6.2 V clamp after F2 (Zener or TVS sized so F2 trips), or an eFuse with OVP on +5V_PI.
+
+#### m2. F1 interrupting rating is stated only at 125 VAC
+
+- F1's 10 kA rating is given at 125 VAC; at 250 VAC it is 100–400 A [S, distributor].
+- REQ-1 allows 132 V.
+- **Fix.** Confirm the 125 V rating covers the installation (ANSI C84.1 Range B tops out at 127 V), or choose a fuse rated 10 kA at ≥ 250 V. The 326-series datasheet is still unread (Q-15).
+
+#### m3. TR5252 data is distributor-only
+
+- The TR5252 TR, split-tab and back-wire features are [S] only. Get the P&S spec sheet.
+- **Fix.** Add "GFCI Protected" and "Switched outlet N" labels to the cover.
+
+#### m4. Pi supply below the published rating
+
+- The product brief specifies 5 V DC, 2.5 A [P]. The design budgets 1.0 A from measurements [S], and F2 trips at 3.5 A. That is fine with REQ-26 (no peripherals).
+- If the user also plugs in the Pi's micro-USB, the charger back-feeds the IRM through the Pi's 5 V rail; the Zero 2 W has no isolation diode [P, reduced schematic].
+- **Fix.** Put "Do not connect micro-USB power" on the silkscreen and label, or add an ideal diode on +5V_PI.
+
+#### m5. The T-HEAT pass criterion is likely to fail
+
+- T-HEAT requires "SoC < 80 °C without throttling" under `stress-ng` at 56 °C local air with no heatsink.
+- It is not a safety issue, but it will fail, and stress raises HB jitter (N1).
+- **Fix.** Test at the application load, or add a heatsink.
+
+#### m6. The antenna location is assumed, and the Wi-Fi distance is not machine-readable
+
+- The antenna location is assumed (ASM-8 [V]), and the keepout covers only Pi x = 12–45 mm. Copper pours are still allowed elsewhere under the Pi.
+- **Fix.** Make the whole Pi footprint pour-free, or confirm the antenna position.
+- `far(J5, Kk, loose)` uses the 20 mm default, while REQ-30 needs ≥ 30 mm.
+- **Fix.** Give the distance numerically.
+
+#### m7. intent.yaml never declares its coordinate frame
+
+- kaesynth's `BoardSpec` is y-up with the origin at the lower left (placement.py), while KiCad is y-down.
+- The Pi holes H7–H10 (y 4.5/27.5), the antenna rect (y 0–13) and the J5 datum are only consistent in y-up.
+- A placer that copies them into KiCad coordinates would put the Pi holes and the antenna keepout on the north edge, in the wire compartment.
+- **Fix.** Emit `frame: {origin: lower-left, y: up}`.
+
+#### m8. The array pitches are notes only
+
+- The terminal pitch is `pitch: equal`, with "20 mm" and "J2 over K1/K2" in notes.
+- L_SWk must pass the even (N) pole at 6.4 mm and stay 6.4 mm from the next terminal's L_SW. That needs a terminal pitch of ≥ 38 mm (the layout implies 40 mm).
+- A packer that butts the terminals at 25.35 mm cannot be routed.
+- The wire-entry stub into each odd pole is limited to ≤ 4.6 mm wide by the 6.4 mm edge rule (pad 6.95 mm from the edge). That is fine for 15 A over a few mm.
+- **Fix.** Give both pitches numerically.
+
+### Verified correct in revision 3
+
+- **J5 Pi socket footprint.**
+  - Pin 1 is the square pad on the inner row; pin 2 is at (0, −2.54) on the edge row, north. Pins run +x from the SD-card end.
+  - This matches the Zero 2 W drawing (top view, square pin-1 pad on the inner row at the SD end) for a Pi fitted component side up.
+  - It is the mirror of KiCad's `Raspberry_Pi_Zero_Socketed_THT_FaceDown` (pin 2 on the opposite side of the pin axis), as it should be.
+  - The Pi holes sit 4.87 mm beyond pins 1 and 39 and 23 mm apart, matching both the drawing and KiCad's reference.
+  - The board datum (pin 1 at 20.37, 26.23; H7–H10 at x 15.5/73.5, y 4.5/27.5) is consistent in y-up.
+  - The Pi pin map checks: 1/17 = 3V3; 2/4 = 5V; GND on 6, 9, 14, 20, 25, 30, 34, 39; BCM17/27/22/23/24/25 on 11/13/15/16/18/22; BCM12 on 32; BCM16 on 36. All are default pull-down GPIOs.
+- **PS1 IRM-20-5.** KiCad pad 1 AC/L (0,0), 2 AC/N (0,20.8), 3 −Vo (45,20.8), 4 +Vo (45,12.8). That is the SPEC p.3 bottom view mirrored into top view.
+  - Derating: 5 V at 70 °C is 50 %, and 108 VAC gives 95.3 %, so 1.9 A against the 1.57 A budget.
+  - Also confirmed: leakage < 0.25 mA at 277 V, inrush 20 A at 115 V, hold-up 8 ms, OVC III (61558) and OVC II (62368).
+- **U1 SN74LVC1G123.** Pins 1 A, 2 B, 3 CLR, 4 GND, 5 Q, 6 Cext, 7 Rext/Cext, 8 VCC (Table 4-1, DCT). R21 runs to VCC and C6 sits between pins 7 and 6, as the datasheet requires. Rext ≥ 1 kΩ is met.
+  - K = 1.0–1.1 is specified only at 10 kΩ / 0.1 µF.
+  - The ±0.25 µA Rext/Cext leakage adds about 5 % at 330 kΩ (tw_max ≈ 48 ms). That is still ≤ 0.1 s; T-HB measures it.
+  - With CLR tied to VCC, CLR↑ could trigger at power-up only if B were high. B is held low by R23 and the Pi's default pull.
+- **Fail-safe states.** Power-up (PS1 1 s setup, R22, glitch-free reset), Pi reboot (GPIO12 reverts to pulled-down input), Pi absent, and 3V3 loss all leave Q7 off. Back-feed through D16 to +3V3 with the Pi absent is µA and cannot arm U1 without B edges.
+- **Readback.** D16 BAT54S: A = GND, K = +3V3, COM = ARM_FB clamp. R26 pull-up gives no sneak path through Qk; Qk has V_GS < 0 while disarmed.
+- **Protection parts.** D15 has its cathode on +5V, and its V_BR (7.78 V) sits above the IRM OVP, so they do not fight. F2 is MF-MSMF200/16X: 2.0/3.5 A, 0.07 Ω.
+- **Receptacle feeds.** J2–J4 are wired pole 1 L_SW(2k−1), pole 2 N, pole 3 L_SW(2k), on a 14.6 mm stagger. One branch circuit with split line tabs is not a NEC 210.7 multi-circuit yoke.
+- **Branch protection.** An upstream dual-function AFCI/GFCI breaker is the right answer, since no split-tab GFCI exists. Module leakage (≈ 0.12 mA) cannot trip a GFCI.
+- **DRU.** The SELV↔mains 8/8 mm rules cover L_PSU (LINE_1A) and all W7p5 classes. The mains edge and hole rules are 6.4 mm. The same-footprint bridging rule (0 mm) affects only fixed package geometry.
+- **Heat.** The area of 0.340 m² is checked; 15.5 W / (5 × 0.34) = 9.1 K.
