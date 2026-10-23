@@ -240,3 +240,48 @@ Counts: **1 BLOCKER, 4 MAJOR, 10 MINOR.**
 - **Approach.** Voltage equalization during charge and float is the right target for lead-acid,
   because float limits are per-cell voltage limits. It is how commercial midpoint balancers work, and
   no bleed path is used for balancing.
+
+## Response to review
+
+Designer's response, 2026-10-23. Every finding is listed with what changed. Calc names refer to
+`calcs()` in design.py and appear in `out/report.md`. Rebuilt with the updated framework (fuse
+branch rule, `waiver.unused`): 0 errors, ERC clean, netlist identical, no unused waivers.
+
+### BLOCKER
+
+| Finding | Action |
+|---|---|
+| B-1 board fuse 500 A DC | Replaced 0477004.MXP with **Littelfuse KLKD006.T**: 6 A, 600 VDC, **10 kA DC**, 26.1 mΩ, melting I²t 63 A²s (KLKD datasheet Rev 061217, Farnell 2603270 [P]). It sits in a Keystone 3576 PCB holder (catalog M65 p. 45: UL 30 A, 38.1 mm pitch), new footprint `custom:Fuseholder_Keystone_3576_10x38mm`, BOM items XH1–XH5; the 5×20 clips are gone. `breaking_a=10000`. Calc `board_fault_max_A` = 670 A against the 10 kA limit (`board_fault_min_A` 128 A). Selectivity: 63 / 278 A²s → ratio 0.35 (calc). The board is 180 × 130 mm to fit the holders. Q-5 closed. |
+
+### MAJOR
+
+| Finding | Action |
+|---|---|
+| M-1 window tolerance | All supervisor strings are TNPW1206 0.1 %, 25 ppm/K, ≤ 2 MΩ per segment (`STRINGS`). The lockout and warning thresholds share one tapped string per direction (PLO/PWH and PHI/PWL), so their errors are ratiometric. Nodes were raised to ~2.4 V, so V_OS + V_HYS/2 = 20.5 mV is 0.88 %. With resistors and TCR (RSS) the total is ±1.34 %, budgeted at `WIN_TOL` = ±1.5 % (calc `window_tol`). Worst-case trip points, both directions, are now in calcs: lockout high 1.053–1.115, lockout low 0.890–0.947, warning high 1.013–1.075, warning low 0.930–0.989. The lockout still catches 1.20 / 0.833 and never trips at 0.5 V imbalance. A Monte-Carlo with TCR stays in V-plan S-2. DESIGN.md §7.7. |
+| M-2 Q105 base drive / LED-dependent lockout | U109 is now an SN74LVC2G02 dual NOR (SCES194N): gate 1 makes FLT = NOT FLT_N, gate 2 makes RUN = NOR(NCHG, FLT). Both inputs are clean open-drain or gate levels. Q105 (base 10 kΩ, forced β ≈ 20) drives only the red LED through R145 750 Ω. A shorted or open LED can no longer hold RUN high. NOR was kept (rather than AND) so NCHG idles low at rest with no pull-up current. DESIGN.md §7.7a. |
+| M-3 silent current into a failing battery | Added an imbalance **warning** (U111 B/C) at nominal 1.044 / 0.960 (worst 1.013–1.075 / 0.930–0.989), tapped off the lockout strings. It opens the alarm while the channel keeps balancing. Calc `silent_current_max_A` = 2.44 A, down from 4.4 A. New hazard H-13 (battery-side heating). The current is reported, not limited. A warning delay is open as Q-14 (non-blocking). |
+| M-4 T0 / middle-tap detection while charging | (1) The alarm is fail-safe: each opto LED is fed from RUN (R172 825 Ω, 3.9–5.0 mA), and the three outputs are in series, so the contact is closed only while every channel runs without fault or warning. Loss of V5 opens it. (2) Tap check: U111 D is a relaxation oscillator that pauses both drivers (DIS = PAUSE) for 1.54 s every 32.5 s. A floating middle tap leaves the window in 1.14 s (calc `open_tap_detect_s`). A floating T0 collapses CH1's V5. Either way the alarm opens. Claims are corrected, new hazard H-14 added, V-12 updated, and REQ-21 is the fail-safe contact. Cost: 4.5 % of balancing time (REQ-6 calc includes the duty). Unused channels need a JPk02 shunt (REQ-25). |
+
+### MINOR
+
+| # | Action |
+|---|---|
+| 1 | REQ-6 relaxed to ≥ 0.09 A at 0.1 V / ≥ 0.26 A at 0.3 V. The calc applies your simulation factor (0.92) and the pause duty: 0.090 / 0.27 A. Adding C_TOP/C_BOT ≥ C_FLY was rejected for board area. |
+| 2 | The wake worst case uses centred hysteresis: rising 26.30–26.75 V (13.38 V per battery), falling ≥ 26.15 V. Lowering it to 12.9–13.0 V would wake on resting OCV after a charge and cost sleep current. It stays a user decision under Q-2, and DESIGN.md states the float consequence. |
+| 3 | C138 is now 4.7 µF 25 V 0805 X7R (GRM21BR71E475KA73L). |
+| 4 | Added R158/R159, 10 Ω (TI range 1–20 Ω) in series with the bootstrap diodes. Calc `bootstrap_inrush_A` = 1.21 A against the 2 A I_FSM limit. τ = 10 µs: the first charge takes ~5 refresh phases (50 µs, upper side in UVLO meanwhile), and steady refresh is unaffected. A first try at 4.7 Ω gave 2.4 A and was rejected rather than given a relaxed limit. |
+| 5 | Answered rather than changed. The first commutation after plug-in is ≤ ~120 A for a few µs, below the CSD18543 I_DM of 156 A [P], with ½CV² ≈ 3.4 mJ. The worst case is one cycle of upper-driver UVLO. A 10 kΩ precharge would cost ~25 mW per channel continuously, against the REQ-8 overhead budget. S-1's criterion is now "first-commutation peak ≤ 140 A". |
+| 6 | Axis convention: kaesynth `BoardSpec` uses a lower-left origin with y up, so y 122–130 is the north edge. The keepout is now `[0, 122, 180, 130]` for the 180 × 130 board, and DESIGN.md §9 says so. The custom relations (`order`, `strip`, `guard`, …) are unchecked by any placer. That is a framework gap, not a design change: H-3 relies on the DRU spacing as the enforced barrier, and floor-plan order is checked at layout review (V-plan). |
+| 7 | Added barriers B{k+1}/CHk_HSU and B{k}/CHk_HSL at 0.6 mm (IPC-2221B B2, > 30 V). |
+| 8 | REQ-17 and H-5 now state that a T1/T2 swap can also destroy the next channel's TPS7A16/TPS709. A per-channel reverse diode stays open under Q-11. |
+| 9 | Added D1 (BAS16W) in series with the alarm chain, so a reversed loop blocks at the diode (75 V) instead of breaking down the optos (V_ECO 7 V). |
+| 10 | REQ-9 now cites "balanced" and the brief response explains that 14/16 AWG and the holders are forced by R_ext ≈ R_SC (REQ-22: 16 AWG ≤ 1.5 m). Overhead is now 0.28 W. A burst/hysteretic mode is noted under Q-8 as a later option. |
+
+### Waivers
+
+- The F2–F4 / F1, F5 edge waivers now justify selectivity with the KLKD006/KLKD010 I²t (63 / 278 A²s), not the 477 rating.
+- The fuse-branch rule now also flags the parallel BR bridge resistors in the N < 4 variants. Unused TAPj_IN nets are no longer marked external. In those variants the bridges carry conditional, reasoned waivers.
+- A stale F1/F5 waiver that matched nothing (`waiver.unused`) was removed.
+- R_CF is now 1.24 W at the hot edge (limit 1.42 W).
+- The NTC, EN and H-6 waivers are unchanged.
+- 31 waivers in total.

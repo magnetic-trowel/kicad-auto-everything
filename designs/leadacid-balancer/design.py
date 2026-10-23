@@ -436,8 +436,8 @@ def calcs(d):
     c("edge_fet_tj_C", round(n["fet_tj_edge"], 1), "C", expr="99 C + (1.51 I)^2 x 13.9 mOhm x 11.9 K/W", limit=125)
     c("gate_vgs_ratio", round(V12 / 20, 3), "", expr="12.5 V / 20 V", limit=0.8)
     c("bootstrap_ratio", round(1e-6 / (13e-9 / 12), 0), "x", expr="1 uF / (13 nC / 12 V)", limit=10, op=">=")
-    c("bootstrap_inrush_A", round(12.5 / (4.7 + 0.3), 2), "A", expr="12.5 V / (R_BOOT 4.7 + ESR ~0.3 Ohm)",
-      limit=3.0, note="BAS16W I_FSM 2 A at 1 us, decays with tau = 5 us (review MINOR-4)")
+    c("bootstrap_inrush_A", round(12.5 / (10 + 0.3), 2), "A", expr="12.5 V / (R_BOOT 10 + ESR ~0.3 Ohm)",
+      limit=2.0, note="BAS16W I_FSM 2 A at 1 us (DS30094) [P] (review MINOR-4)")
     c("deadtime_margin_ns", 160 - (19 + 20), "ns", expr="DT min 160 ns - (skew 19 + fall 20)", limit=0, op=">")
     c("board_fault_max_A", round(n["board_fault_max_A"]), "A", expr="70.2 V / (2 R_tap(0.3 m) + 4 R_int)",
       limit=10000, note="KLKD006 DC 10 kA (UL 248-19) [P] (review B-1)")
@@ -661,10 +661,11 @@ def channel(d, k):
         cc = add(defn, key)
         rail.connect(cc[1])
         gnd.connect(cc[2])
-    # R_BOOT 4.7 Ohm in series with each bootstrap diode (review MINOR-4, SLUSCJ9F 9.2.2.2): limits the first
-    # charge of C_boot at every wake to < 2.7 A (BAS16W I_FSM 2 A at 1 us is reached only for < 1 us)
+    # R_BOOT 10 Ohm in series with each bootstrap diode (review MINOR-4, SLUSCJ9F 9.2.2.2, 1-20 Ohm): limits the
+    # first charge of C_boot at every wake to 1.2 A, under the BAS16W I_FSM of 2 A at 1 us. tau = 10 us, so the
+    # first full charge takes ~5 refresh phases (50 us) and steady droop recovery leaves < 40 mV deficit.
     for rk, dk, rail, mid, bst in (("R58", "D01", v12u, bsu_a, bstu), ("R59", "D02", v12l, bsl_a, bstl)):
-        r = add(P.R_4R7, rk, p_diss=0.001)
+        r = add(P.R_10R, rk, p_diss=0.001)
         rail.connect(r[1])
         mid.connect(r[2])
         dd = add(P.DIODE_BOOT, dk)

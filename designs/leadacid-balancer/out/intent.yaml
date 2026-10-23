@@ -1188,11 +1188,11 @@ components:
   - ref: R158
     block: ch1
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D101
     block: ch1
@@ -1205,11 +1205,11 @@ components:
   - ref: R159
     block: ch1
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D102
     block: ch1
@@ -1569,18 +1569,18 @@ components:
     block: ch1
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: R161
     block: ch1
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: C153
     block: ch1
     board: main
@@ -1649,18 +1649,18 @@ components:
     block: ch1
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: R163
     block: ch1
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B1]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: C145
     block: ch1
     board: main
@@ -2432,11 +2432,11 @@ components:
   - ref: R258
     block: ch2
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D201
     block: ch2
@@ -2449,11 +2449,11 @@ components:
   - ref: R259
     block: ch2
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D202
     block: ch2
@@ -2813,18 +2813,18 @@ components:
     block: ch2
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: R261
     block: ch2
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: C253
     block: ch2
     board: main
@@ -2893,18 +2893,18 @@ components:
     block: ch2
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: R263
     block: ch2
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B2]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: C245
     block: ch2
     board: main
@@ -3676,11 +3676,11 @@ components:
   - ref: R358
     block: ch3
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B4]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D301
     block: ch3
@@ -3693,11 +3693,11 @@ components:
   - ref: R359
     block: ch3
     board: main
-    value: "4.7"
+    value: "10"
     footprint: Resistor_SMD:R_0603_1608Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW06034R70FKEA
+    mpn: CRCW060310R0FKEA
     p_diss_w: 0.001
   - ref: D302
     block: ch3
@@ -4057,18 +4057,18 @@ components:
     block: ch3
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: R361
     block: ch3
     board: main
     value: "30.9k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW060330K9FKEA
+    mpn: TNPW120630K9BEEA
   - ref: C353
     block: ch3
     board: main
@@ -4137,18 +4137,18 @@ components:
     block: ch3
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: R363
     block: ch3
     board: main
     value: "36.5k"
-    footprint: Resistor_SMD:R_0603_1608Metric
+    footprint: Resistor_SMD:R_1206_3216Metric
     category: resistor
     domains: [B3]
-    mpn: CRCW060336K5FKEA
+    mpn: TNPW120636K5BEEA
   - ref: C345
     block: ch3
     board: main

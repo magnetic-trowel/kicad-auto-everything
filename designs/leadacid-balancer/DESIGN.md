@@ -129,7 +129,7 @@ Verbatim:
 | H-6 | Hydrogen ignition (LEL 4 %) | Flooded or overcharged cells vent H₂; plug spark (22 mJ per battery leg); fuse operation | Enclosure outside the battery box and not above vents. Plug only at the board, away from the batteries. Harness fuses are enclosed. No relays. | Yes |
 | H-7 | Board overheating | Failing battery holding r at the window edge: up to 6.4 W per channel at 50 °C, 8.6 W at −20 °C (§7.6); blocked vents | Thermal cut-out at 91–101 °C (NTC + U108 D). R_CF doubled to stay within rating at the cut-out temperature. | Yes: the window and the cut-out are independent. |
 | H-8 | Shock | Stack up to 70.2 VDC (ES2 during cold equalize) | Enclosure; pluggable insulated connector; alarm opto with basic insulation (§6) | Yes |
-| H-9 | Bank drained in storage | Balancer awake at rest | Wakes only at ≥ 13.2 V per battery. Sleep ≤ 39 µA. A stuck-awake fault costs 0.22 W per channel, and the green LED shows it. | Partial: needs a human to see the LED |
+| H-9 | Bank drained in storage | Balancer awake at rest | Wakes only at ≥ 13.2 V per battery. Sleep ≤ 39 µA. A stuck-awake fault costs 0.28 W per channel, and the green LED shows it. | Partial: needs a human to see the LED |
 | H-10 | Battery opens internally under load | Broken strap | That position reverses. Body diodes carry string current until the tap fuses clear (ms). | Yes (fuses) |
 | H-11 | Corrosion or leakage across divider nodes | Acid mist, humidity | Strings ≤ 10 MΩ. Conformal coat (Q-9). IP54 box. | Yes |
 | H-12 | Unused or broken top tap floats | N < 4 without plug bridges, or a broken T_H wire | The divider strings pull the floating tap ≈ 0.8 V below T_M through body diodes, at µA, which reverse-biases that channel's upper LDO and bulk cap. Mitigation: plug bridges (§9), and the ratio window lights FAULT on a broken wire. | No fire; LDO stress at µA only |
@@ -366,7 +366,7 @@ stops when the charger stops (Q-8).
   VREF. Trip is 95.5 °C nominal, 91–101 °C over V5, R138, R25, B and comparator offset (calcs
   `ntc_trip_*`; 91–101 °C with offset and V_HYS/2), ≥ 15 K under the 125 °C rating of the hot-zone parts. Hysteresis 0.1–0.6 °C; the
   thermal mass makes the on/off cycle seconds to minutes. It also lights FAULT.
-- **Board heat.** Overhead 0.22 W plus I²·R_SC: ≤ 0.3 W per channel normally. About 45 cm² of
+- **Board heat.** Overhead 0.28 W plus I²·R_SC: ≤ 0.35 W per channel normally. About 45 cm² of
   2 oz copper per channel spreads it [I], using ≥ 15.3 cm²/W from
   [thermal.md](../../docs/topics/rules/thermal.md); at the edge the cut-out governs.
 
@@ -424,8 +424,9 @@ stops when the charger stops (Q-8).
 - **Bootstrap.** C_boot = 1 µF ≈ 900 × the gate charge ratio 13 nC/12 V (≈ 370× after DC bias), above the ≥ 10×
   rule in [gate-drive-bootstrap.md](../../docs/topics/rules/power/gate-drive-bootstrap.md). Droop
   is 13 mV per cycle. BAS16W reverse voltage ≤ 17.6 V against 75 V. Refresh every low-side phase.
-  R158/R159 (4.7 Ω, review MINOR-4, SLUSCJ9F §9.2.2.2) limit the first charge at every wake to
-  ≤ 2.5 A for a few µs (calc `bootstrap_inrush_A`).
+  R158/R159 (10 Ω, review MINOR-4, SLUSCJ9F §9.2.2.2: 1–20 Ω) limit the first charge at every wake
+  to 1.2 A, under the BAS16W I_FSM of 2 A at 1 µs (calc `bootstrap_inrush_A`). τ = 10 µs, so a full
+  first charge takes ~5 refresh phases; steady-state droop recovery leaves < 40 mV deficit [I].
 - **Dead time against skew.** DT = 160–240 ns [P]. Skew between the two drivers is ≤ 19 ns (t_PD
   26–45 ns [P]) plus ~20 ns gate fall, so DT_min 160 ns > 39 ns. An SC needs break-before-make
   across *both* half-bridges: any overlap shorts the flying cap or puts two batteries across it.
@@ -490,7 +491,7 @@ Diodes orderable addenda read on 2026-10-23 unless tagged.
 | Alarm opto (series chain) | Vishay SFH617A-3X017T | V_CEO 70 V; I_F 60 mA; 4470 Vrms 1 min; creepage ≥ 7 mm; CTR ≥ 34 % at 1 mA | I_F 3.9–5.0 mA (8 %); V_CE ≤ 30 V (43 %); reverse loop blocked by D1 |
 | Level-shift N-FET | Diodes 2N7002-7-F | 60 V; 115 mA | V_DS ≤ 35.2 V (59 %); 0.35 mA |
 | PNP (fault driver, enable shifter) | Diodes MMBT3906-7-F | 40 V; 200 mA; hFE ≥ 100 | V_CE ≤ 17.6 V (44 %); ≤ 2.7 mA |
-| Bootstrap, pause and alarm diode | Diodes BAS16W-7-F | 75 V; 150 mA; I_FSM 2 A at 1 µs | V_R ≤ 30 V (40 %); bootstrap inrush ≤ 2.5 A for µs through 4.7 Ω |
+| Bootstrap, pause and alarm diode | Diodes BAS16W-7-F | 75 V; 150 mA; I_FSM 2 A at 1 µs | V_R ≤ 30 V (40 %); bootstrap inrush ≤ 1.2 A through 10 Ω (60 %) |
 | Red LED | Rohm SML-D12V1WT86 | I_F 20 mA; V_F 2.2 V; Topr −40…85 °C | ≤ 4.1 mA (21 %) |
 | Green LED | Rohm SML-D12M1WT86 | as above, 572 nm | 1.0 mA (5 %) |
 | NTC | Murata NCP15WM474E03RC | 470 kΩ ±3 %, B25/85 4582 K, −40…125 °C | 10 µA (self-heating ≪ 0.1 K) |
@@ -498,8 +499,8 @@ Diodes orderable addenda read on 2026-10-23 unless tagged.
 | C_FLY, C_TOP, C_BOT | Murata GCJ32EC71H106KA01L | 10 µF 50 V X7S, soft termination | ≤ 17.6 V (35 %); effective ~5–6 µF [I]; ≤ 1.2 A rms per cap at the edge |
 | Bulk damping cap | Nichicon UCZ1V101MCL1GS | 100 µF 35 V, 125 °C 3000 h, ESR 0.2 Ω, 270 mA at 100 kHz | 17.6 V (50 %); ripple ≤ 0.13 A normal (48 %), > 1 A at the edge (exceeds rating, transient) |
 | Small MLCCs, X7R/C0G (one MPN per value) | Murata 1 µF 50 V 0805 GRM21BR71H105KA12L (LDO inputs); 1 µF 25 V 0603 GRM188R71E105KA12D (driver VCCI/VDD, bootstrap, REF out, TH filter); 10 µF 25 V 1206 GRM31CR71E106KA12L (LDO outputs); 4.7 µF 25 V 0805 GRM21BR71E475KA73L (V5 out, ≥ 1.5 µF effective at 5 V per SBVS186H §8.1.1); 100 nF 50 V 0603 GRM188R71H104KA93D; 470 nF 25 V 0603 GRM188R71E474KA12D (divider filters); 10 nF 50 V 0603 GRM188R71H103KA01D; 470 pF 50 V C0G GRM1885C1H471JA01D (DT); 100 pF 50 V C0G ±5 % GRM1885C1H101JA01D (timing) | rated 16–50 V | ≤ 17.6 V on 50 V parts (35 %); ≤ 12 V on 25 V parts (48 %); 5 V on 25 V (20 %) |
-| Supervisor strings, 0.1 % thin film: 2.00, 1.96, 1.85, 1.70, 1.67, 1.58 MΩ | Vishay TNPW1206…BEEA | 1206, 0.1 %, 25 ppm/K, ≤ 2 MΩ, 200 V, 0.52 W | ≤ 9 V per segment; µW |
-| Thick-film 1 % 0603: 4.7 Ω, 750 Ω, 825 Ω, 10.0 k, 20.0 k, 22.1 k, 24.9 k, 30.9 k, 36.5 k, 49.9 k, 100 k, 249 k, 909 k, 4.99 M (one MPN per value, CRCW0603xxxxFKEA) | Vishay CRCW0603…FKEA | 0.1 W, 75 V, 1 %, ±100 ppm/K | Worst: R147/R151 49.9 k at ≤ 35 V after a single short: 25 mW (25 %) |
+| Supervisor strings, 0.1 % thin film: 2.00, 1.96, 1.85, 1.70, 1.67, 1.58 MΩ; 36.5, 30.9 kΩ | Vishay TNPW1206…BEEA | 1206, 0.1 %, 25 ppm/K, ≤ 2 MΩ, 200 V, 0.52 W | ≤ 9 V per segment; µW |
+| Thick-film 1 % 0603: 4.7 Ω, 10 Ω, 750 Ω, 825 Ω, 10.0 k, 20.0 k, 22.1 k, 24.9 k, 49.9 k, 100 k, 249 k, 909 k, 4.99 M (one MPN per value, CRCW0603xxxxFKEA) | Vishay CRCW0603…FKEA | 0.1 W, 75 V, 1 %, ±100 ppm/K | Worst: R147/R151 49.9 k at ≤ 35 V after a single short: 25 mW (25 %) |
 | Board tap fuse | Littelfuse KLKD006.T | 6 A fast, 600 VAC/VDC, DC 10 kA (UL 248-19), 26.1 mΩ, melting I²t 63 A²s [P] | ≤ 2.0 A normal (33 %); 8.5 A edge (opens: safe end state); fault ≤ 670 A ≪ 10 kA |
 | Board fuse holder | Keystone 3576 | 10×38 (midget/SPF), UL 30 A 500 VAC, 38.1 mm pitch [P] | ≤ 2.0 A normal |
 | Tap header, 5-pin | Phoenix MSTBA 2,5/5-G-5,08 (1757271) | 12 A, 320 V (III/2) [S] | 8.8 A edge (73 %), 70 V |

@@ -13099,7 +13099,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "4.7"
+		(property "Value" "10"
 			(at 370.84 180.34 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -13119,14 +13119,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 4.7 1% 0603"
+		(property "Description" "Resistor 10 1% 0603"
 			(at 370.84 180.34 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW06034R70FKEA"
+		(property "MPN" "CRCW060310R0FKEA"
 			(at 370.84 180.34 0)
 			(hide yes)
 			(effects
@@ -13358,7 +13358,7 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Value" "4.7"
+		(property "Value" "10"
 			(at 381 180.34 90)
 			(effects
 				(font (size 1.27 1.27))
@@ -13378,14 +13378,14 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 4.7 1% 0603"
+		(property "Description" "Resistor 10 1% 0603"
 			(at 381 180.34 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW06034R70FKEA"
+		(property "MPN" "CRCW060310R0FKEA"
 			(at 381 180.34 0)
 			(hide yes)
 			(effects
@@ -20407,35 +20407,35 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.vishay.com/docs/20035/dcrcwe3.pdf"
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 30.9k 1% 0603"
+		(property "Description" "Resistor 30.9k 0.1% 1206"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW060330K9FKEA"
+		(property "MPN" "TNPW120630K9BEEA"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "Vishay Draloric"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
@@ -20456,14 +20456,21 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Tolerance" "1%"
+		(property "Tolerance" "0.1%"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Package" "0603"
+		(property "Package" "1206"
+			(at 73.66 322.58 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "TCR" "25 ppm/K"
 			(at 73.66 322.58 0)
 			(hide yes)
 			(effects
@@ -20540,35 +20547,35 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.vishay.com/docs/20035/dcrcwe3.pdf"
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 30.9k 1% 0603"
+		(property "Description" "Resistor 30.9k 0.1% 1206"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW060330K9FKEA"
+		(property "MPN" "TNPW120630K9BEEA"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "Vishay Draloric"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
@@ -20589,14 +20596,21 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Tolerance" "1%"
+		(property "Tolerance" "0.1%"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Package" "0603"
+		(property "Package" "1206"
+			(at 86.36 322.58 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "TCR" "25 ppm/K"
 			(at 86.36 322.58 0)
 			(hide yes)
 			(effects
@@ -21823,35 +21837,35 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.vishay.com/docs/20035/dcrcwe3.pdf"
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 36.5k 1% 0603"
+		(property "Description" "Resistor 36.5k 0.1% 1206"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW060336K5FKEA"
+		(property "MPN" "TNPW120636K5BEEA"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "Vishay Draloric"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
@@ -21872,14 +21886,21 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Tolerance" "1%"
+		(property "Tolerance" "0.1%"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Package" "0603"
+		(property "Package" "1206"
+			(at 40.64 375.92 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "TCR" "25 ppm/K"
 			(at 40.64 375.92 0)
 			(hide yes)
 			(effects
@@ -21956,35 +21977,35 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Datasheet" "https://www.vishay.com/docs/20035/dcrcwe3.pdf"
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Description" "Resistor 36.5k 1% 0603"
+		(property "Description" "Resistor 36.5k 0.1% 1206"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "MPN" "CRCW060336K5FKEA"
+		(property "MPN" "TNPW120636K5BEEA"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "Vishay Draloric"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
@@ -22005,14 +22026,21 @@
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Tolerance" "1%"
+		(property "Tolerance" "0.1%"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
 				(font (size 1.27 1.27))
 			)
 		)
-		(property "Package" "0603"
+		(property "Package" "1206"
+			(at 50.8 375.92 0)
+			(hide yes)
+			(effects
+				(font (size 1.27 1.27))
+			)
+		)
+		(property "TCR" "25 ppm/K"
 			(at 50.8 375.92 0)
 			(hide yes)
 			(effects
