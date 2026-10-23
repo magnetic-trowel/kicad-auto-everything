@@ -210,11 +210,11 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     else:
         try:
             # the annealer prices utilization linearly (no over-budget barrier) and saturates
-            # it beyond 3x budget (log tail), so a structure the estimator puts an order of
-            # magnitude over budget for any placement (olimex's thermal terms at u 4-11, the
-            # human's included) keeps a gradient without outbidding the hot loop: on four
-            # split-B boards x 3 seeds the linear scorecard is unchanged (40.3 vs 40.2) and
-            # olimex's buck loop drops from 8.0 to 6.1 nH (human 5.7)
+            # it beyond 3x budget (log tail), so a structure far over budget for any
+            # placement keeps a gradient without outbidding the rest. On the 7 split-B
+            # boards with place terms x 2 seeds: linear scorecard 23.2 vs 23.6 with the
+            # terms' own u_sat 10, same HPWL, buck hot loops 6.7 vs 8.0 nH (olimex, human
+            # 5.9) and 1.70 vs 1.78 nH (noisecard)
             knobs = dict(u_sat=SA_U_SAT)
             knobs.update(terms_knobs)
             report_terms, tsrc = make_terms(board, brief, barrier=0.0, **knobs)
