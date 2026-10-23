@@ -4,7 +4,7 @@
   "error": 0,
   "warning": 0,
   "info": 6,
-  "waived": 36,
+  "waived": 25,
   "blocking_questions": [
    "Q-1",
    "Q-2",
@@ -95,105 +95,6 @@
     "K4"
    ],
    "waived_by": "designer: Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists 16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to 12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D10 (green): current on GND through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.025 (1560%) \u2014 exceeds rating",
-   "objects": [
-    "D10"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D12 (BAT54S): current on GND through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.2 (195%) \u2014 exceeds rating",
-   "objects": [
-    "D12"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D1 (1N4148W): current on +5V through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.3 (130%) \u2014 exceeds rating",
-   "objects": [
-    "D1"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D2 (1N4148W): current on +5V through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.3 (130%) \u2014 exceeds rating",
-   "objects": [
-    "D2"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D3 (1N4148W): current on +5V through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.3 (130%) \u2014 exceeds rating",
-   "objects": [
-    "D3"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D4 (1N4148W): current on +5V through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.3 (130%) \u2014 exceeds rating",
-   "objects": [
-    "D4"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D9 (green): current on COIL_RTN through pin 1 (set i_through= if the part carries less) 0.39 vs rating 0.025 (1560%) \u2014 exceeds rating",
-   "objects": [
-    "D9"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D5 (green): current on ch1/COIL1 through pin 1 (set i_through= if the part carries less) 0.093 vs rating 0.025 (372%) \u2014 exceeds rating",
-   "objects": [
-    "D5"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D6 (green): current on ch2/COIL2 through pin 1 (set i_through= if the part carries less) 0.093 vs rating 0.025 (372%) \u2014 exceeds rating",
-   "objects": [
-    "D6"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D7 (green): current on ch3/COIL3 through pin 1 (set i_through= if the part carries less) 0.093 vs rating 0.025 (372%) \u2014 exceeds rating",
-   "objects": [
-    "D7"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
-  },
-  {
-   "check": "rating.current",
-   "severity": "error",
-   "message": "D8 (green): current on ch4/COIL4 through pin 1 (set i_through= if the part carries less) 0.093 vs rating 0.025 (372%) \u2014 exceeds rating",
-   "objects": [
-    "D8"
-   ],
-   "waived_by": "designer: Checker applies the whole net current to every series-category pin on the net, but these parts are in shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating)."
   },
   {
    "check": "lib.footprint_custom",

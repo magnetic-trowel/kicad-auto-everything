@@ -2,7 +2,7 @@
 
 Status: engineering design, encoded in [design.py](design.py) and [parts.py](parts.py). Not reviewed by a certification body.
 
-`kaesynth build` result: 0 errors, 0 warnings, 38 waived findings (10 waiver rules, each with its reason
+`kaesynth build` result: 0 errors, 0 warnings, 25 waived findings (8 waiver rules, each with its reason
 in [out/report.md](out/report.md)). KiCad ERC is clean and the netlist round trip is identical. Six
 BLOCKING questions remain open, so the design is not ready for fabrication.
 

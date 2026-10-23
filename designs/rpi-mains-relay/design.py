@@ -341,7 +341,8 @@ def build():
     c1 = sel.add(P.C_10U, ref="C1")
     c2 = sel.add(P.C_100N, ref="C2")
     u1 = sel.add(P.ESD6, ref="U1")
-    d10 = sel.add(P.LED_GREEN, ref="D10", v_across=2.5)    # forward only; can never be reverse biased
+    # forward only, never reverse biased; carries (5.25 - 1.9) V / 1.485 k = 2.3 mA (calc i_5v_max_A)
+    d10 = sel.add(P.LED_GREEN, ref="D10", v_across=2.5, i_through=0.0023)
     r16 = sel.add(P.R_1K5, ref="R16")
     tp1 = sel.add(P.TP, ref="TP1")
     tp2 = sel.add(P.TP, ref="TP2")
@@ -364,11 +365,11 @@ def build():
                   description="Q5 closes the coil return only while HB toggles 100 Hz-2 kHz; OFF <= 0.15 s after it stops")
     r13 = arm.add(P.R_1K, ref="R13")
     c3 = arm.add(P.C_1U, ref="C3")
-    d12 = arm.add(P.DIODE_PUMP, ref="D12")
+    d12 = arm.add(P.DIODE_PUMP, ref="D12", i_through=0.0033)   # pump current, bounded by 3.3 V / R13 1 k
     c4 = arm.add(P.C_100N, ref="C4")
     r14 = arm.add(P.R_1M, ref="R14")
     q5 = arm.add(P.MOSFET, ref="Q5", p_diss=0.011)
-    d9 = arm.add(P.LED_GREEN, ref="D9", v_across=2.5)      # forward only; never reverse biased
+    d9 = arm.add(P.LED_GREEN, ref="D9", v_across=2.5, i_through=0.0023)   # forward only; 2.3 mA
     r15 = arm.add(P.R_1K5, ref="R15")
     tp3 = arm.add(P.TP, ref="TP3")
     tp4 = arm.add(P.TP, ref="TP4")
@@ -393,8 +394,8 @@ def build():
         rk = b.add(P.R_1K, ref=f"R{k}")
         rpd = b.add(P.R_4K7, ref=f"R{k + 4}")
         q = b.add(P.MOSFET, ref=f"Q{k}", p_diss=0.0005)
-        dk = b.add(P.DIODE_FLYBACK, ref=f"D{k}")
-        led = b.add(P.LED_GREEN, ref=f"D{k + 4}", v_across=2.5)   # forward 2.5 V max; reverse <= 0.9 V (flyback)
+        dk = b.add(P.DIODE_FLYBACK, ref=f"D{k}", i_through=0.093)   # coil current at release only (5.25 V / 56.25 ohm)
+        led = b.add(P.LED_GREEN, ref=f"D{k + 4}", v_across=2.5, i_through=0.0023)   # 2.3 mA; reverse <= 0.9 V
         rled = b.add(P.R_1K5, ref=f"R{k + 8}")
         rel = b.add(P.RELAY, ref=f"K{k}")
         jk = b.add(P.TERM_MAINS, ref=f"J{k + 1}")
@@ -558,10 +559,6 @@ def waivers(d):
       "Relay contacts at 15 A vs 16 A (94 %): UL E41643 lists 16 A general use at 40 C (50k ops) and VDE lists "
       "16 A at 85 C. 15 A is the branch-breaker ceiling, not a continuous load; continuous loads are limited to "
       "12 A = 75 % (REQ-5, calc relay_contact_continuous_ratio). Verified by T-OL and T-HEAT.")
-    W("rating.current", r"^D(1|2|3|4|5|6|7|8|9|10|12) \(",
-      "Checker applies the whole net current to every series-category pin on the net, but these parts are in "
-      "shunt: flyback diodes D1-D4 carry only the 93 mA coil current for a few ms at release (I_FM 300 mA); "
-      "LEDs D5-D10 carry 2.3 mA (25 mA rating); D12 carries the < 0.1 mA pump current (200 mA rating).")
     W("protect.threat", r"threat 'surge'",
       "No MOV/TVS on mains by design (DESIGN.md C-11): insulation is coordinated for OVC II (1.5 kV transient; "
       "relay 10 kV impulse coil-contact, PCB 8 mm reinforced, 6.4 mm functional). An MOV ages and is a fire source "
@@ -572,10 +569,6 @@ def waivers(d):
       "I2t margin at 2 kA; calcs mains_*). A fuse inside a closed box is not serviceable (C-9).")
     W("protect.entry_fuse", r"net (L_IN|N|L_SW[1-4]) reaches",
       "Same as the overcurrent waiver: the branch breaker (<= 15 A) protects every element downstream (C-9).")
-    W("protect.threat", r"\+5V_IN declares threat '(overvoltage|reverse_polarity)'",
-      "D11 (SMAJ7.0A) sits on +5V directly behind F1 (PolyZen arrangement): transients are clamped through F1's "
-      "0.06-0.2 ohm; a sustained overvoltage or a reversed supply makes D11 conduct and F1 trips (2.2 A). A TVS "
-      "ahead of F1 would burn instead. The check only looks for protectors on the same net.")
     W("lib.footprint_custom", r"WAGO_2606",
       "No KiCad library footprint exists for WAGO 2606-3102/020-000. Geometry from the WAGO data sheet p.1 drawing "
       "(drill 2.0 +0.1 mm, pole 2 at +7.5/+12.5 mm, body 17.85 x 24 mm); lever side to be checked against WAGO "
