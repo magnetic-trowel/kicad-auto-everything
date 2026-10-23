@@ -53,6 +53,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
     t0 = time.monotonic()
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     own_wd = workdir is None
     wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-route-", dir=output_path.parent))
     wd.mkdir(parents=True, exist_ok=True)

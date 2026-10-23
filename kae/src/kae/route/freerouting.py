@@ -4,8 +4,8 @@
 
 Freerouting merges settings from defaults, `freerouting.json` in its user-data folder,
 the DSN, environment variables named FREEROUTING__* and the command line (in that order of
-precedence). A host's leftover freerouting.json (one written by 2.5.1 sits on sk-tibia) or
-environment would silently change results, so every run gets a private, empty user-data
+precedence). A host's leftover freerouting.json or environment could silently change
+results, so every run gets a private, empty user-data
 folder (`--user_data_path`) and an environment without FREEROUTING__* variables, and every
 setting the bridge depends on is passed on the command line.
 

@@ -15,9 +15,10 @@ fixed wiring are kept):
 - obstacles: KiCad's keepouts (outline holes, rule areas, NPTH holes) are replaced by the
   plan's, held in one virtual component placed at the origin (a component's keepouts can
   name a clearance class; board-level keepouts are read before the classes exist);
-- vias: one padstack per routing class, drawn with its inflation (see constraints), named
-  Via[0-n]_<D'>:<d>_um in whole micrometres (Freerouting drops decimal fractions from via
-  names, KiCad reads the drill from the name);
+- vias: one padstack per routing class at its real size, named Via[0-n]_<D>:<d>_um in
+  whole micrometres (Freerouting drops decimal fractions from via names, KiCad reads the
+  drill from the name); the class rule's typed clearances (wire_via, via_via) carry what
+  KiCad asks of vias only (hole clearance, hole-to-hole);
 - layers: when every copper layer is a "power" layer they become signal layers
   (Freerouting refuses a board without one and 2.5.0 hangs).
 
@@ -71,20 +72,25 @@ def _polygons(geom, tol=0.0005):
     return [x for x in getattr(g, "geoms", []) if isinstance(x, Polygon) and not x.is_empty]
 
 
-def _shape_nodes(ob):
-    """DSN shapes of one obstacle: [(main shape node, [window nodes])]."""
+def _shape_nodes(ob, lname, copper):
+    """DSN shapes of one obstacle: [(main shape node, [window nodes])], one per copper layer
+    it covers (Freerouting applies a "signal" shape to signal layers only, and treats a power
+    layer without a plane as a routing layer)."""
+    layers = copper if ob.layer == "signal" else [ob.layer]
+    out = []
     if isinstance(ob.geom, tuple) and ob.geom[0] == "circle":
         _, x, y, d = ob.geom
-        return [(["circle", ob.layer, _um(d), *_xy(x, y)], [])]
-    out = []
-    for pg in _polygons(ob.geom):
-        main = ["polygon", ob.layer, "0", *_ring(pg.exterior.coords)]
-        windows = [["window", ["polygon", ob.layer, "0", *_ring(h.coords)]] for h in pg.interiors]
-        out.append((main, windows))
+        return [(["circle", lname(l), _um(d), *_xy(x, y)], []) for l in layers]
+    polys = _polygons(ob.geom)
+    for l in layers:
+        for pg in polys:
+            main = ["polygon", lname(l), "0", *_ring(pg.exterior.coords)]
+            windows = [["window", ["polygon", lname(l), "0", *_ring(h.coords)]] for h in pg.interiors]
+            out.append((main, windows))
     return out
 
 
-def _class_rule_nodes(widths, clearances, copper):
+def _class_rule_nodes(widths, clearances, copper, lname=lambda l: l):
     """(rule ...) and (layer_rule ...) nodes. widths: layer -> mm or None; clearances: layer ->
     (track-track, track-via, via-via) mm or None. Typed clearances give the class's vias a
     clearance class of their own in Freerouting."""
@@ -105,7 +111,7 @@ def _class_rule_nodes(widths, clearances, copper):
     for l in copper[1:]:
         lr = rule(l, base_l)
         if len(lr) > 1:
-            out.append(["layer_rule", l, lr])
+            out.append(["layer_rule", lname(l), lr])
     return out
 
 
@@ -123,8 +129,18 @@ def apply(tree, plan, info):
         tree.insert(tree.index(lib), placement)
     summary = {}
 
-    # ---- layers: all-power boards get signal layers
+    # ---- layers: KiCad names DSN layers by their user names (In1.Cu may be "GND"), in
+    # stack order; the plan uses canonical names
     layers = findall(struct, "layer")
+    dsn_names = [str(l[1]) for l in layers]
+    if len(dsn_names) != len(cu):
+        raise ValueError(f"DSN has {len(dsn_names)} copper layers, the board {len(cu)}")
+    names_of = dict(zip(cu, dsn_names))
+
+    def lname(l):
+        return names_of.get(l, l)
+    summary["layer_names"] = {c: d for c, d in names_of.items() if c != d}
+    # all-power boards get signal layers
     kinds = [find(l, "type") for l in layers]
     if kinds and all(k is not None and len(k) > 1 and k[1] == "power" for k in kinds):
         for k in kinds:
@@ -162,7 +178,8 @@ def apply(tree, plan, info):
         if any(len(ps) > 1 and ps[1] == name for ps in findall(lib, "padstack")):
             continue
         dia = _um(rc.via[0])
-        lib.append(["padstack", Q(name), *[["shape", ["circle", l, dia, "0", "0"]] for l in cu], ["attach", "off"]])
+        lib.append(["padstack", Q(name), *[["shape", ["circle", lname(l), dia, "0", "0"]] for l in cu],
+                    ["attach", "off"]])
     # fixed vias in the wiring (locked routing) keep KiCad's padstack (sizes in whole um)
     wiring = find(tree, "wiring")
     have = {str(ps[1]) for ps in findall(lib, "padstack") if len(ps) > 1}
@@ -173,7 +190,7 @@ def apply(tree, plan, info):
         drill = str(wv[1]).split(":")[1].split("_")[0] if ":" in str(wv[1]) else "0"
         name = f"Via[0-{len(cu) - 1}]_{round(real_um)}:{round(float(drill or 0))}_um"
         if name not in have:
-            lib.append(["padstack", Q(name), *[["shape", ["circle", l, fmt(real_um), "0", "0"]] for l in cu],
+            lib.append(["padstack", Q(name), *[["shape", ["circle", lname(l), fmt(real_um), "0", "0"]] for l in cu],
                         ["attach", "off"]])
             have.add(name)
         wv[1] = Q(name)
@@ -181,7 +198,7 @@ def apply(tree, plan, info):
     place = ["place", OBSTACLE_REF, "0", "0", "front", "0"]
     n_ko = 0
     for ob in plan.obstacles:
-        for main, windows in _shape_nodes(ob):
+        for main, windows in _shape_nodes(ob, lname, cu):
             name = f"ko{n_ko}"
             n_ko += 1
             image.append([ob.kind, name, main, *windows])
@@ -219,7 +236,7 @@ def apply(tree, plan, info):
         diag = {l: plan.matrix.get((n, n, l)) or d0 or (0.2, 0.2, 0.2) for l in cu}
         nets = [Q(x) for x in rc.nets if x in known]
         network.append(["class", n, *nets, ["circuit", ["use_via", Q(vias[n])]],
-                        *_class_rule_nodes(rc.widths, diag, cu)])
+                        *_class_rule_nodes(rc.widths, diag, cu, lname)])
     for oname, oc in sorted(plan.obstacle_classes.items()):
         vals = [max(v) for v in oc.values.values()]
         network.append(["class", oname, ["rule", ["clearance", _um(max(vals) if vals else 0.0)]]])
@@ -229,7 +246,7 @@ def apply(tree, plan, info):
             vals = {l: plan.matrix.get((a, b, l)) for l in cu}
             if any(v is None for v in vals.values()):
                 continue
-            network.append(["class_class", ["classes", a, b], *_class_rule_nodes(None, vals, cu)])
+            network.append(["class_class", ["classes", a, b], *_class_rule_nodes(None, vals, cu, lname)])
     for oname, oc in sorted(plan.obstacle_classes.items()):
         for n in names:
             vals = {l: oc.values.get((n, l)) for l in cu}
@@ -239,7 +256,7 @@ def apply(tree, plan, info):
             fill = (max(v[0] for v in have), max(v[1] for v in have))
             vals = {l: ((v if v is not None else fill)[0], (v if v is not None else fill)[1], None)
                     for l, v in vals.items()}
-            network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu)])
+            network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu, lname)])
     summary["classes"] = len(plan.classes)
     summary["obstacle_classes"] = len(plan.obstacle_classes)
     return summary
