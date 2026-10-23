@@ -91,6 +91,10 @@ def build():
   the standard's tables (cite them in `source`); the framework does not invent them.
 - `Domain(edge_clearance_mm=, edge_source=)` keeps that domain's copper off the board edge
   (emitted as a `.kicad_dru` `edge_clearance` rule).
+- Spacing: a net class's clearance covers voltages inside its own domain; between domains of
+  one root the `.kicad_dru` gets IPC-2221B functional rules from the exact worst voltage of each
+  domain pair, then barrier rules (inherited before direct, so the most specific wins), then an
+  exemption for the pads of parts that bridge spaced domains (their package sets that spacing).
 - `d.barrier` also works between non-root domains (functional spacing, e.g. relay contacts vs
   line); `d.place.separate(a, b)` turns it into a placement relation; the `.kicad_dru` carries it.
 
@@ -108,7 +112,9 @@ def build():
   symbols use letter pins); there is no default.
 - `source={"pins": "...", "pinmap": "...", "ratings": "..."}` and `datasheet=` on every non-generic
   part: datasheet revision, page, table. Missing provenance is a warning a reviewer will chase.
-- Ratings: `v_max` (2-terminal), `limits=[VLimit(("D",), ("S",), 100)]`, `i_max` / `pin_i_max`,
+- Ratings: `v_max` (2-terminal), `limits=[VLimit(("D",), ("S",), 100)]` (symmetric abs max;
+  `v_min=-8` makes it directional; `v_rec=3.6` gives the recommended operating maximum, inside
+  which no derating warning fires — use it for IC supply and I/O pins), `i_max` / `pin_i_max`,
   `p_max`, `polarity=("1", "2")`, `isolation=[...]`. Set `p_diss=` on parts from your calculations.
 - Generic passives (`R`, `C` without MPN) are allowed; resistors default to thick-film package
   ratings, capacitors need a voltage rating. Pass an MPN and real ratings for anything stressed.
@@ -121,7 +127,8 @@ def build():
 `width_mm=` forces a track width (e.g. a 15 A mains path drawn at 7.5 mm on both layers).
 `external=True` for nets leaving the board; `threats=("esd", "surge", "overcurrent",
 "reverse_polarity", "load_dump", "overvoltage")` require a protector of the matching category on
-that net. `i_max` drives current checks and net-class track widths.
+that net. `i_max` drives current checks and net-class track widths. A part that carries less than its net's current
+declares `i_through=` (amps, or `{pin: amps}` per winding/pin).
 
 ### Placement relations (`d.place.*`; ordinal magnitudes, never coordinates)
 

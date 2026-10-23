@@ -243,3 +243,50 @@ def test_i_through_and_one_hop_protector():
     fl = run(d)
     assert "protect.threat" not in checks(fl)                      # TVS one PTC in, PTC on the wire
     assert not any(x.check == "rating.current" and tvs.ref in x.objects for x in fl)
+
+
+def test_stack_spacing_is_per_domain_pair():
+    from kaesynth.emit.project import NetClasses, dru_text
+    d = stack(n=16, v=(2.5, 4.2))
+    b = d.block("mon")
+    # a monitor IC touching every tap: adjacent pins are one cell apart
+    afe = b.add(PartDef(mpn="AFE", category="ic", footprint="Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
+                        pins=[PinDef(k, f"C{k}") for k in range(17)]))
+    d.nets["GND"].connect(afe[0])
+    for k in range(1, 17):
+        d.nets[f"T{k}"].connect(afe[k])
+    for k in range(1, 17):          # a second pin per tap so no net is single-pin
+        r = b.add(two_pin("R", v_max=100))
+        d.nets[f"T{k}"].connect(r[1]); (d.nets["GND"] if k == 1 else d.nets[f"T{k - 1}"]).connect(r[2])
+    d.finalize()
+    nc = NetClasses(d).build()
+    assert max(c["clearance"] for c in nc.classes.values()) == 0.2      # no 0.6 mm on the AFE pins
+    text = dru_text(d, nc)
+    assert "IR:functional.B1.0.6mm" in text                          # far ends of the stack: 60+ V
+    assert "memberOfFootprint('U101')" in text                       # its own pads are exempt
+
+
+def test_vlimit_recommended_and_directional():
+    d = Design("vl")
+    d.domain("D", ref="GND")
+    d.net("GND", domain="D", v=0, kind="ground")
+    vdd = d.net("VDD", domain="D", v=(3.2, 3.4), kind="power")
+    g = d.net("G", domain="D", v=(-10, 12))
+    b = d.block("x")
+    ic = b.add(PartDef(mpn="MCU", category="ic", footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+                       pins=[PinDef(1, "VDD", "power_in"), PinDef(2, "VSS", "power_in")],
+                       ratings=Ratings(limits=[VLimit(("VDD",), ("VSS",), 4.0, v_rec=3.6)])))
+    q = b.add(PartDef(mpn="FET", category="mosfet", footprint="Package_TO_SOT_SMD:SOT-23",
+                      pins=[PinDef(1, "G"), PinDef(2, "S"), PinDef(3, "D")],
+                      ratings=Ratings(limits=[VLimit(("G",), ("S",), 20, v_min=-8)])))
+    vdd.connect(ic["VDD"]); d.nets["GND"].connect(ic["VSS"], q["S"], q["D"]); g.connect(q["G"])
+    f = run(d)
+    msgs = [x.message for x in f if x.check == "rating.voltage"]
+    assert not any("MCU" in m for m in msgs)                       # 3.4 V within recommended 3.6 V
+    assert any("FET" in m and "below its -8 V" in m for m in msgs)  # -10 V gate violates v_min
+
+
+def test_notes_are_not_object_names():
+    d = mains_with_outputs()
+    d.place.custom("label", obj="board", text="see B-5", note="B-5")
+    assert "place.unknown_object" not in checks(run(d), "warning")

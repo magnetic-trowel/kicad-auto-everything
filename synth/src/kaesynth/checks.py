@@ -90,6 +90,44 @@ class Checker:
         self._expand_cache[key] = (terms, dom)
         return terms, dom
 
+    def chain(self, dom):
+        """(terms, root) for a domain's 0 V relative to its root: {net: coefficient}."""
+        terms, d, seen = {}, dom, set()
+        while True:
+            if d.name in seen:
+                raise DesignError(f"domain reference cycle at {d.name}")
+            seen.add(d.name)
+            ref = self.d.net_by_name(d.ref)
+            rd = self.d.domain_of(ref)
+            if rd is d or rd is None:
+                return terms, d
+            terms[ref] = terms.get(ref, 0) + 1
+            d = rd
+
+    def domain_pair_vmax(self, da, db):
+        """Worst |V| between any net of domain da and any net of domain db (None if separate roots)."""
+        ta, ra = self.chain(da)
+        tb, rb = self.chain(db)
+        if ra is not rb:
+            return None
+        rng_a = [self.vrange(n) for n in self.d.all_nets() if self.d.domain_of(n) is da and n.pins]
+        rng_b = [self.vrange(n) for n in self.d.all_nets() if self.d.domain_of(n) is db and n.pins]
+        rng_a, rng_b = [r for r in rng_a if r], [r for r in rng_b if r]
+        if not rng_a or not rng_b:
+            return None
+        terms = dict(ta)
+        for n, c in tb.items():
+            terms[n] = terms.get(n, 0) - c
+        lo = min(r[0] for r in rng_a) - max(r[1] for r in rng_b)
+        hi = max(r[1] for r in rng_a) - min(r[0] for r in rng_b)
+        for n, c in terms.items():
+            v = self.vrange(n)
+            if c == 0 or v is None:
+                continue
+            lo += min(c * v[0], c * v[1])
+            hi += max(c * v[0], c * v[1])
+        return max(abs(lo), abs(hi))
+
     def root(self, net):
         return self.expand(net)[1]
 
@@ -203,6 +241,8 @@ class Checker:
                              f"(nc_pins(..., reason='datasheet says ...'))", [f"{p.ref}.{num}"])
         for n in self.d.all_nets():
             if not n.pins:
+                if any(dom.ref == n.full_name or dom.ref == n.name for dom in self.d.domains.values()):
+                    continue          # 0 V of a domain with no copper here (chassis, PE)
                 self.add("conn.empty_net", "warning", f"net {n.full_name} has no pins", [n.full_name])
             elif len(n.pins) == 1:
                 self.add("conn.single_pin_net", "error", f"net {n.full_name} connects only {n.pins[0].part.ref}.{n.pins[0].pin.number}",
@@ -264,12 +304,7 @@ class Checker:
                     self._rate("rating.voltage", p, worst, r.v_max, "voltage",
                                f" between {pair[0].full_name} and {pair[1].full_name}")
             for lim in r.limits:
-                na, nb = self._pins_nets(p, lim.a), self._pins_nets(p, lim.b)
-                worst, pair = self.vmax_between(na, nb)
-                if pair:
-                    self._rate("rating.voltage", p, worst, lim.v_max,
-                               f"V({'/'.join(lim.a)}-{'/'.join(lim.b)})",
-                               f" ({pair[0].full_name} to {pair[1].full_name})")
+                self._check_vlimit(p, lim)
             if r.polarity:
                 pos, neg = self._pins_nets(p, [r.polarity[0]]), self._pins_nets(p, [r.polarity[1]])
                 if pos and neg:
@@ -278,6 +313,40 @@ class Checker:
                         self.add("rating.polarity", "error",
                                  f"{p.ref} ({p.value}): polarized part can see {rng[0]:.3g} V reverse "
                                  f"({pos[0].full_name} below {neg[0].full_name})", [p.ref])
+
+    def _check_vlimit(self, p, lim):
+        na, nb = self._pins_nets(p, lim.a), self._pins_nets(p, lim.b)
+        what = f"V({'/'.join(map(str, lim.a))}-{'/'.join(map(str, lim.b))})"
+        if lim.v_min is None:
+            worst, pair = self.vmax_between(na, nb)
+            if not pair:
+                return
+            where = f" ({pair[0].full_name} to {pair[1].full_name})"
+        else:
+            lo, hi, where = None, None, ""
+            for a in na:
+                for b in nb:
+                    rng = self.vdiff(a, b)
+                    if rng is None:
+                        continue
+                    lo = rng[0] if lo is None else min(lo, rng[0])
+                    hi = rng[1] if hi is None else max(hi, rng[1])
+            if lo is None:
+                return
+            if lo < lim.v_min:
+                self.add("rating.voltage", "error",
+                         f"{p.ref} ({p.value}): {what} can reach {lo:.3g} V, below its {lim.v_min:g} V limit", [p.ref])
+            worst = max(hi, 0.0)
+        if lim.v_rec is not None and worst <= lim.v_rec:
+            if worst > lim.v_max:
+                self._rate("rating.voltage", p, worst, lim.v_max, what, where)
+            return
+        if lim.v_rec is not None and worst <= lim.v_max:
+            self.add("rating.voltage", "warning",
+                     f"{p.ref} ({p.value}): {what} {worst:.3g} V is above the recommended {lim.v_rec:g} V "
+                     f"(abs max {lim.v_max:g} V){where}", [p.ref])
+            return
+        self._rate("rating.voltage", p, worst, lim.v_max, what, where)
 
     def check_isolation(self):
         d = self.d
@@ -356,6 +425,12 @@ class Checker:
                 continue
             declared.add(id(p))
             rat = p.defn.ratings
+            if isinstance(p.i_through, dict):          # per pin/winding: {"1": 2.5, "SEC": 0.4}
+                for key, amps in p.i_through.items():
+                    for r in p.pin(key):
+                        lim = rat.pin_i_max.get(r.pin.number, rat.pin_i_max.get(r.pin.name, rat.i_max))
+                        self._rate("rating.current", p, amps, lim, f"declared current through pin {r.pin.number}")
+                continue
             lim = rat.i_max if rat.i_max is not None else (min(rat.pin_i_max.values()) if rat.pin_i_max else None)
             self._rate("rating.current", p, p.i_through, lim, "declared current (i_through)")
         for n in self.d.all_nets():
@@ -520,6 +595,9 @@ class Checker:
                 # overcurrent protection must be in series on the wire's own net; other
                 # protectors may sit one series element in (e.g. a TVS behind a PTC or ferrite)
                 reach = [n] if t == "overcurrent" else [n] + self._one_series_hop(n)
+                if t == "reverse_polarity" and any(r.part.defn.category in ("fuse", "ptc") for r in n.pins) \
+                        and any(r.part.defn.category == "tvs" for m in reach for r in m.pins):
+                    continue          # crowbar: the TVS conducts on reversal and the fuse opens
                 if not any(r.part.defn.category in cats for m in reach for r in m.pins):
                     self.add("protect.threat", "error",
                              f"external net {n.full_name} declares threat '{t}' but has no {'/'.join(cats)} on it",

@@ -849,22 +849,22 @@ barriers:
 netclasses:
   - name: BAT0
     domain: BAT0
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [CS_0, GND_B]
   - name: BAT0_3A
     domain: BAT0
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.7
     nets: ["/harness/CELLTERM0", TAP0_IN]
   - name: BAT0_W1p5
     domain: BAT0
-    clearance: 0.6
+    clearance: 0.2
     track_width: 1.5
     nets: [TAP0]
   - name: BOOT
     domain: BOOT
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/psu/BUCK_BST"]
   - name: C1
@@ -1189,7 +1189,7 @@ netclasses:
     nets: [TAP9]
   - name: CTRL
     domain: CTRL
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets:
       - "+3V3"
@@ -1263,162 +1263,162 @@ netclasses:
     nets: [FLYBUS]
   - name: SNS1
     domain: SNS1
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch1/MODE_1", CS_1]
   - name: SNS10
     domain: SNS10
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch10/MODE_10", CS_10]
   - name: SNS11
     domain: SNS11
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch11/MODE_11", CS_11]
   - name: SNS12
     domain: SNS12
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch12/MODE_12", CS_12]
   - name: SNS13
     domain: SNS13
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch13/MODE_13", CS_13]
   - name: SNS14
     domain: SNS14
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch14/MODE_14", CS_14]
   - name: SNS15
     domain: SNS15
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch15/MODE_15", CS_15]
   - name: SNS2
     domain: SNS2
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch2/MODE_2", CS_2]
   - name: SNS3
     domain: SNS3
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch3/MODE_3", CS_3]
   - name: SNS4
     domain: SNS4
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch4/MODE_4", CS_4]
   - name: SNS5
     domain: SNS5
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch5/MODE_5", CS_5]
   - name: SNS6
     domain: SNS6
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch6/MODE_6", CS_6]
   - name: SNS7
     domain: SNS7
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch7/MODE_7", CS_7]
   - name: SNS8
     domain: SNS8
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch8/MODE_8", CS_8]
   - name: SNS9
     domain: SNS9
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/ch9/MODE_9", CS_9]
   - name: STACK
     domain: STACK
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: ["/afe/VPLUS", "/ch16/MODE_16", "/en/STR_D", "/psu/BUCK_IN", "/psu/BUCK_PRE", CS_16, STK_F]
   - name: STR1
     domain: STR1
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_1]
   - name: STR10
     domain: STR10
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_10]
   - name: STR11
     domain: STR11
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_11]
   - name: STR12
     domain: STR12
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_12]
   - name: STR13
     domain: STR13
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_13]
   - name: STR14
     domain: STR14
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_14]
   - name: STR15
     domain: STR15
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_15]
   - name: STR16
     domain: STR16
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_16]
   - name: STR2
     domain: STR2
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_2]
   - name: STR3
     domain: STR3
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_3]
   - name: STR4
     domain: STR4
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_4]
   - name: STR5
     domain: STR5
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_5]
   - name: STR6
     domain: STR6
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_6]
   - name: STR7
     domain: STR7
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_7]
   - name: STR8
     domain: STR8
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_8]
   - name: STR9
     domain: STR9
-    clearance: 0.6
+    clearance: 0.2
     track_width: 0.25
     nets: [LEDA_9]
   - name: USER

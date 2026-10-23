@@ -55,13 +55,14 @@ class NetClasses:
     def build(self):
         d = self.d
         nets = [n for n in d.all_nets() if n.pins]
-        # worst voltage from each net to any other net in the same root domain
+        # worst voltage from each net to any other net of its own domain; spacing between
+        # domains comes from dru_text (barriers and per-domain-pair functional rules)
         worst = {}
-        by_root = {}
+        by_dom = {}
         for n in nets:
-            rt = self.ck.root(n)
-            by_root.setdefault(rt.name if rt else None, []).append(n)
-        for root, group in by_root.items():
+            dom = d.domain_of(n)
+            by_dom.setdefault(dom.name if dom else None, []).append(n)
+        for root, group in by_dom.items():
             for i, a in enumerate(group):
                 for b in group[i + 1:]:
                     r = self.ck.vdiff(a, b)
@@ -217,11 +218,53 @@ def dru_text(design, netclasses):
             lines.append(f"  (constraint edge_clearance (min {dom.edge_clearance_mm:g}mm)))")
             lines.append("")
 
-    # KiCad applies the last matching rule. Rules inherited through floating domains come
-    # first, rules naming the nets' own domains last, so a direct pair always wins.
+    def depth(name):
+        n, x = 0, parent.get(name)
+        while x is not None:
+            n, x = n + 1, parent.get(x)
+        return n
+
+    # KiCad applies the last matching rule, so emit general before specific:
+    # 1. functional spacing between domain pairs of one root (IPC-2221B from their worst voltage),
+    # 2. barriers inherited through floating domains, shallow before deep,
+    # 3. barriers naming the nets' own domains,
+    # 4. exemptions for pads of one part that bridges domains (its package sets that spacing).
+    from ..checks import Checker
+    ck = Checker(design)
+    coated = bool(design.board_spec and design.board_spec.coating)
+    col = "B4" if coated else "B2"
+    declared = {frozenset((b.a, b.b)) for b in design.barriers}
+    spaced = set(declared)              # domain pairs some rule spaces apart
+    doms = [x for x in design.domains.values() if by_domain.get(x.name)]
+    grouped = {}                        # (domain, mm) -> [(other domain, worst V)]
+    for i, da in enumerate(doms):
+        for db in doms[i + 1:]:
+            if frozenset((da.name, db.name)) in declared:
+                continue
+            v = ck.domain_pair_vmax(da, db)
+            if v is None:
+                continue
+            mm = ipc2221b_spacing(v, col)
+            base = max(c["clearance"] for c in netclasses.classes.values()
+                       if c["domain"] in (da.name, db.name))
+            if mm <= base:
+                continue
+            grouped.setdefault((da.name, mm), []).append((db.name, v))
+            spaced.add(frozenset((da.name, db.name)))
+    for (a, mm), others in sorted(grouped.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        names = {o for o, _ in others}
+        ca, cb = classes({a}, "A"), classes(names, "B")
+        ca2, cb2 = classes(names, "A"), classes({a}, "B")
+        worst = max(v for _, v in others)
+        lines.append(f"# functional spacing {a} to {', '.join(sorted(names))}: worst {worst:.4g} V, IPC-2221B {col}")
+        lines.append(f'(rule "IR:functional.{a}.{mm:g}mm"')
+        lines.append(f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")')
+        lines.append(f"  (constraint clearance (min {mm:g}mm)))")
+        lines.append("")
     emitted = []
     for direct in (False, True):
-        for bar in sorted(design.barriers, key=lambda b: GRADES[b.grade]):
+        order = sorted(design.barriers, key=lambda b: (0 if direct else depth(b.a) + depth(b.b), GRADES[b.grade]))
+        for bar in order:
             sa, sb = ({bar.a}, {bar.b}) if direct else sides(bar)
             if not direct and (sa, sb) == ({bar.a}, {bar.b}):
                 continue          # nothing inherited: the direct rule covers it
@@ -236,4 +279,27 @@ def dru_text(design, netclasses):
             lines.append(f"  (constraint clearance (min {bar.clearance_mm:g}mm))")
             lines.append(f"  (constraint creepage (min {bar.creepage_mm:g}mm)))")
             lines.append("")
+    def inherited_pairs():
+        out = set()
+        for bar in design.barriers:
+            sa, sb = sides(bar)
+            out |= {frozenset((x, y)) for x in sa for y in sb if x != y}
+        return out
+
+    spaced |= inherited_pairs()
+    bridging = []
+    for p in design.all_parts():
+        pd = sorted({design.domain_of(n).name for n in p.conn.values() if design.domain_of(n)})
+        if p.on_board and any(frozenset((x, y)) in spaced for i, x in enumerate(pd) for y in pd[i + 1:]):
+            bridging.append(p.ref)
+    for i in range(0, len(bridging), 40):
+        chunk = bridging[i:i + 40]
+        cond = " || ".join(f"(A.memberOfFootprint('{r}') && B.memberOfFootprint('{r}'))" for r in chunk)
+        lines.append(f"# pads of one part that bridges spaced domains: {', '.join(chunk)}")
+        lines.append("# (its package sets that spacing; package creepage is checked against the barrier)")
+        lines.append(f'(rule "IR:bridging_parts.{i // 40 + 1}"')
+        lines.append(f'  (condition "{cond}")')
+        lines.append("  (constraint clearance (min 0mm))")
+        lines.append("  (constraint creepage (min 0mm)))")
+        lines.append("")
     return "\n".join(lines)

@@ -84,9 +84,13 @@ def generate_symbol(lib_id, pins, ref_prefix, value):
         nt, nb = len(sides["top"]), len(sides["bottom"])
         rows = max(nl, nr, 1)
         name_w = lambda ps: max([len(p.name or "") for p in ps] + [0]) * CHAR_W
+        # top/bottom pin names read vertically inside the body: keep side pins clear of them
+        top_room = GRID * -(-(name_w(sides["top"]) + 1.27) // GRID) if nt else 0.0
+        bot_room = GRID * -(-(name_w(sides["bottom"]) + 1.27) // GRID) if nb else 0.0
         w = max(name_w(sides["left"]) + name_w(sides["right"]) + 4.0, (max(nt, nb) + 1) * GRID, 10.16)
         half_w = GRID * max(2, -(-w / 2 // GRID))
-        half_h = GRID * max(1, -(-(rows + 1) * GRID / 2 // GRID))
+        side_h = (rows + 1) * GRID + top_room + bot_room
+        half_h = GRID * max(1, -(-side_h / 2 // GRID))
         if nt or nb:
             half_h = max(half_h, GRID * 2)
         max_h = max(max_h, half_h)
@@ -96,7 +100,7 @@ def generate_symbol(lib_id, pins, ref_prefix, value):
             return S("pin", Sym(p.type), Sym("line"), S("at", round(x, 3), round(y, 3), ang),
                      S("length", GRID), S("name", p.name or "~", font()), S("number", p.number, font()))
 
-        top_y = half_h - GRID
+        top_y = half_h - GRID - top_room
         for i, p in enumerate(sides["left"]):
             pin_nodes.append(pin_node(p, -half_w - GRID, top_y - i * GRID, 0))
         for i, p in enumerate(sides["right"]):

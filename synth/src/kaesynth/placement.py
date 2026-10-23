@@ -13,6 +13,9 @@ from .ir import Block, DesignError, Domain, Net, Part, PinRef
 STRENGTHS = ("tight", "close", "loose")
 EDGES = ("north", "south", "east", "west", "any")
 MAGNITUDES_MM = {"tight": 3.0, "close": 8.0, "loose": 20.0}
+# relation fields that hold free text, never object references
+TEXT_KEYS = {"kind", "note", "text", "what", "where", "why", "source", "layers", "side", "axis", "facing",
+             "strength", "sink", "pitch", "relative", "covers", "walls", "region", "basis", "label"}
 
 
 @dataclass
@@ -151,7 +154,8 @@ class Placement:
         prefixed `domain:`, `block:` or `net:`; anything else (free text, 'board') is kept.
         Refdes-like strings that match nothing are appended to `unknown` if given.
         """
-        return [{k: self._name(v, unknown) for k, v in r.items()} for r in self.relations]
+        return [{k: (v if k in TEXT_KEYS else self._name(v, unknown)) for k, v in r.items()}
+                for r in self.relations]
 
     def _name(self, v, unknown=None):
         d = self.design

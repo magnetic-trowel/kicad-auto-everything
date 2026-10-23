@@ -57,11 +57,19 @@ class PinDef:
 
 @dataclass
 class VLimit:
-    """Absolute max |V(a) - V(b)| between two pin groups (pin names or numbers)."""
+    """Voltage limit between two pin groups (pin names or numbers).
+
+    By default |V(a) - V(b)| <= v_max (absolute maximum). Give `v_min` to make it directional:
+    v_min <= V(a) - V(b) <= v_max (e.g. a gate rated -8..+20 V). Give `v_rec` (recommended
+    operating maximum) to accept stress up to it without the derating warning: a rail inside
+    the datasheet's operating range is the datasheet's own derating.
+    """
     a: tuple
     b: tuple
     v_max: float
     note: str = ""
+    v_min: float = None
+    v_rec: float = None
 
 
 @dataclass
@@ -709,7 +717,7 @@ class Design:
 
 DEFAULT_DERATING = {
     # fraction of the rating allowed before a warning (stress / rating)
-    "voltage": {"default": 0.8, "resistor": 1.0, "fuse": 1.0, "ptc": 1.0, "connector": 0.8, "relay": 1.0,
+    "voltage": {"default": 0.8, "resistor": 1.0, "fuse": 1.0, "ptc": 1.0, "tvs": 1.0, "mov": 1.0, "connector": 0.8, "relay": 1.0,
                 "capacitor_ceramic": 0.8, "capacitor_electrolytic": 0.8, "capacitor_film": 0.8},
     "current": {"default": 0.8, "fuse": 0.75, "ptc": 1.0, "connector": 0.8, "relay": 0.8},
     "power": {"default": 0.5, "ic": 0.8, "mosfet": 0.8, "diode": 0.8, "module": 0.8},
