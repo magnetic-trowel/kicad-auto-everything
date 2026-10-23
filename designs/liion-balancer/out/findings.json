@@ -1,0 +1,643 @@
+{
+ "status": {
+  "ok": true,
+  "error": 0,
+  "warning": 0,
+  "info": 4,
+  "waived": 66,
+  "blocking_questions": [
+   "Q-1",
+   "Q-2",
+   "Q-3",
+   "Q-4"
+  ]
+ },
+ "findings": [
+  {
+   "check": "conn.empty_net",
+   "severity": "warning",
+   "message": "net CHASSIS has no pins",
+   "objects": [
+    "CHASSIS"
+   ],
+   "waived_by": "designer: Chassis has no copper on the board by design; the net exists so the BAT0-CHASSIS barrier (B-5) reaches intent.yaml and the .kicad_dru."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D301 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP0 and TAP1 \u2014 above 80% derating",
+   "objects": [
+    "D301"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D302 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP1 and TAP2 \u2014 above 80% derating",
+   "objects": [
+    "D302"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D303 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP2 and TAP3 \u2014 above 80% derating",
+   "objects": [
+    "D303"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D304 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP3 and TAP4 \u2014 above 80% derating",
+   "objects": [
+    "D304"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D305 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP4 and TAP5 \u2014 above 80% derating",
+   "objects": [
+    "D305"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D306 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP5 and TAP6 \u2014 above 80% derating",
+   "objects": [
+    "D306"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D307 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP6 and TAP7 \u2014 above 80% derating",
+   "objects": [
+    "D307"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D308 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP7 and TAP8 \u2014 above 80% derating",
+   "objects": [
+    "D308"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D309 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP8 and TAP9 \u2014 above 80% derating",
+   "objects": [
+    "D309"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D310 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP9 and TAP10 \u2014 above 80% derating",
+   "objects": [
+    "D310"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D311 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP10 and TAP11 \u2014 above 80% derating",
+   "objects": [
+    "D311"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D312 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP11 and TAP12 \u2014 above 80% derating",
+   "objects": [
+    "D312"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D313 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP12 and TAP13 \u2014 above 80% derating",
+   "objects": [
+    "D313"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D314 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP13 and TAP14 \u2014 above 80% derating",
+   "objects": [
+    "D314"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D315 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP14 and TAP15 \u2014 above 80% derating",
+   "objects": [
+    "D315"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D316 (SMA6T6V7AY): voltage 4.2 vs rating 5 (84%) between TAP15 and TAP16 \u2014 above 80% derating",
+   "objects": [
+    "D316"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "D2 (SMBJ70A): voltage 67.7 vs rating 70 (97%) between FLYBUS and TAP0 \u2014 above 80% derating",
+   "objects": [
+    "D2"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U1 (ADBMS1818ASWZ): V(IPB/IMB-V-) 5.15 vs rating 6 (86%) (afe/IPB to GND_B) \u2014 above 80% derating",
+   "objects": [
+    "U1"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U1 (ADBMS1818ASWZ): V(VREG-V-) 5.15 vs rating 6 (86%) (5V_SYS to GND_B) \u2014 above 80% derating",
+   "objects": [
+    "U1"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U3 (LM5164): V(BST-SW) 5 vs rating 5.5 (91%) (psu/BUCK_BST to psu/BUCK_SW) \u2014 above 80% derating",
+   "objects": [
+    "U3"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U2 (STM32G031K8T6): V(VDD-VSS) 3.37 vs rating 4 (84%) (+3V3 to GND_B) \u2014 above 80% derating",
+   "objects": [
+    "U2"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U2 (STM32G031K8T6): V(PA0/PA1/PA2/PA3/PA4/PA5/PA6/PA7/PA8/PA13/PA14/PB0/PB1/PB2/PB8/PB9/PF2-VSS) 3.37 vs rating 4 (84%) (BAL_EN to GND_B) \u2014 above 80% derating",
+   "objects": [
+    "U2"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U5 (ISO7721DWV): V(VCC2-GND2) 5.5 vs rating 6 (92%) (iso/VIO_ISO to GND_ISO) \u2014 above 80% derating",
+   "objects": [
+    "U5"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U5 (ISO7721DWV): V(OUTB/INA-GND2) 5.5 vs rating 6 (92%) (iso/ISO_OUTB to GND_ISO) \u2014 above 80% derating",
+   "objects": [
+    "U5"
+   ],
+   "waived_by": "designer: IC supply or I/O pin at its own rail inside the recommended operating range (STM32 VDD 3.37 V of 1.7-3.6 V; ISO7721 VCC2 = host 2.25-5.5 V; ADBMS1818 VREG/IPB/IMB = 5 V regulator; LM5164 BST-SW = its internal 5 V VCC). The stress is set by the rail, not the design; derating a CMOS abs max on its own rail does not apply."
+  },
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U7 (TPD4E05U06): V(D1+/D1-/D2+/D2--GND) 5.5 vs rating 5.5 (100%) (iso/VIO_ISO to GND_ISO) \u2014 above 80% derating",
+   "objects": [
+    "U7"
+   ],
+   "waived_by": "designer: TVS stand-off by design sits just above the working voltage: VRWM is itself the working-voltage rating (leakage specified at VRWM: 20 uA, 1 uA, 10 nA). An 80 % derating would push the clamp above what it protects (LT8584 VIN 9 V, C6kk/D1 100 V, ISO7721 6 V)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T101 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T101"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T102 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T102"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T103 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T103"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T104 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T104"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T105 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T105"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T106 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T106"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T107 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T107"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T108 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T108"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T109 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T109"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T110 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T110"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T111 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T111"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T112 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T112"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T113 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T113"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T114 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T114"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T115 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T115"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "rating.current",
+   "severity": "warning",
+   "message": "T116 (NA5743-ALD): declared current (i_through) 6.8 vs rating 7 (97%) \u2014 above 80% derating",
+   "objects": [
+    "T116"
+   ],
+   "waived_by": "designer: Transformer peak 6.8 A vs 7.0 A rating (97 %): the LT8584 sets the peak (6.0-6.8 A, Rev B p.3) and ADI pairs it with this transformer (Rev B Table 3). There is no rms rating to derate against; saturation is checked in T-EFF (calc xfmr_ipk_ratio <= 1.0)."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP0_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP0_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP1_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP1_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP2_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP2_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP3_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP3_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP4_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP4_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP5_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP5_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP6_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP6_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP7_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP7_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP8_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP8_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP9_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP9_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP10_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP10_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP11_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP11_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP12_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP12_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP13_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP13_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP14_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP14_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.threat",
+   "severity": "error",
+   "message": "external net TAP15_IN declares threat 'reverse_polarity' but has no diode/mosfet on it",
+   "objects": [
+    "TAP15_IN"
+   ],
+   "waived_by": "designer: Reversed or swapped taps are handled by crowbar, not blocking: the unidirectional TVS D3kk conducts forward on reversal and the board fuse F1tt opens (H-8, F-6). A series diode would add 0.5 V x 2.5 A per tap and halve the efficiency budget. The framework counts only diode/MOSFET categories."
+  },
+  {
+   "check": "protect.entry_fuse",
+   "severity": "warning",
+   "message": "external power net iso/VIO_ISO reaches the board without a fuse/PTC on it",
+   "objects": [
+    "iso/VIO_ISO"
+   ],
+   "waived_by": "designer: VIO_ISO is the host's logic supply into U5 side 2 only (<= 4 mA, ISO7721 SLLSEP3G); the host port limits it. A fuse would not open at these currents."
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-1 is BLOCKING and unanswered: Pack range: confirm 13-16S at <= 60 V. Above 60 V leaves ES1/SELV; below 13S the transformer's 30 V output minimum is not met (NA6252-AL would be needed).",
+   "objects": [
+    "Q-1"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-2 is BLOCKING and unanswered: BMS interaction: disable the pack BMS's bleed balancing? Is a CAN/RS-485 link required?",
+   "objects": [
+    "Q-2"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-3 is BLOCKING and unanswered: Is the battery isolated from mains by the inverter? If so the user barrier can be functional.",
+   "objects": [
+    "Q-3"
+   ]
+  },
+  {
+   "check": "intent.blocking_question",
+   "severity": "info",
+   "message": "Q-4 is BLOCKING and unanswered: Harness: accept 18 AWG <= 1 m, M6 rings and an axial fuse sealed in heat-shrink? Who builds it?",
+   "objects": [
+    "Q-4"
+   ]
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 42 [GPIO4, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 43 [GPIO5, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 44 [GPIO6, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 45 [GPIO7, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 46 [GPIO8, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U1 Pin 47 [GPIO9, Bidirectional, Line]; Symbol #FLG02 Pin 1 [Power output, Line]",
+   "objects": [
+    "/afe/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  },
+  {
+   "check": "kicad.erc.pin_to_pin",
+   "severity": "warning",
+   "message": "Pins of type Bidirectional and Power output are connected: Symbol U2 Pin 15 [PB0, Bidirectional, Line]; Symbol #FLG22 Pin 1 [Power output, Line]",
+   "objects": [
+    "/mcu/"
+   ],
+   "waived_by": "designer: The power output is a PWR_FLAG the emitter adds to nets with power inputs and no regulator output: GND_B (U1 GPIO4-9 tied to V- as unused inputs) and ISO_VCC1 (U5 side 1 is powered from MCU pin PB0, <= 4 mA, so the MCU can remove isolator power when no host is present). Neither is a driver conflict."
+  }
+ ]
+}

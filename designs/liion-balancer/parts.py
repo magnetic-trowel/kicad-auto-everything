@@ -21,16 +21,17 @@ SRC_R = {"lifecycle": "Yageo RC_L series, Active (Digi-Key, Oct 2026) [S]"}
 LT8584 = IC(
     "LT8584EFE#PBF",
     pins=[
-        PinDef(1, "GND", "power_in", "bottom"), PinDef(2, "GND", "power_in", "bottom"),
-        PinDef(3, "GND", "power_in", "bottom"), PinDef(4, "GND", "power_in", "bottom"),
-        PinDef(17, "GND", "power_in", "bottom"),
+        # all pins on the left/right sides: the generator draws top/bottom pin names over side pins
         PinDef(9, "VIN", "power_in", "left"), PinDef(10, "VCELL", "input", "left"),
         PinDef(11, "VSNS", "input", "left"), PinDef(5, "MODE", "input", "left"),
-        PinDef(6, "RTMR", "passive", "left"), PinDef(7, "DIN", "input", "left"),
-        PinDef(12, "DCHRG", "input", "left"),
+        PinDef(6, "RTMR", "passive", "left"),
+        PinDef(1, "GND", "power_in", "left"), PinDef(2, "GND", "power_in", "left"),
+        PinDef(3, "GND", "power_in", "left"), PinDef(4, "GND", "power_in", "left"),
+        PinDef(17, "GND", "power_in", "left"),
         PinDef(13, "SW", "passive", "right"), PinDef(14, "SW", "passive", "right"),
         PinDef(15, "SW", "passive", "right"), PinDef(16, "SW", "passive", "right"),
-        PinDef(8, "OUT", "output", "right"),
+        PinDef(8, "OUT", "output", "right"), PinDef(7, "DIN", "input", "right"),
+        PinDef(12, "DCHRG", "input", "right"),
     ],
     footprint="Package_SO:TSSOP-16-1EP_4.4x5mm_P0.65mm", manufacturer="Analog Devices",
     description="Monolithic isolated-flyback active cell balancer, 2.5 A discharge, simple mode",
@@ -189,35 +190,36 @@ NETTIE = PartDef(
 # =============================================================================================
 # Cell monitor (block afe)
 
-_ADBMS_PINS = [PinDef(1, "V+", "power_in", "top", unit=2)]
+_ADBMS_PINS = [PinDef(1, "V+", "power_in", "left", unit=2)]
 # unit 1: cell inputs (C) on the left, balance outputs (S) on the right, top cell first
 for n in range(18, -1, -1):
     _ADBMS_PINS.append(PinDef(38 - 2 * n, f"C{n}", "input", "left", unit=1))
 for n in range(18, 0, -1):
     _ADBMS_PINS.append(PinDef(39 - 2 * n, f"S{n}", "output", "right", unit=1))
 _ADBMS_PINS += [
-    PinDef(39, "GPIO1", "bidirectional", "left", unit=2), PinDef(40, "GPIO2", "bidirectional", "left", unit=2),
-    PinDef(41, "GPIO3", "bidirectional", "left", unit=2), PinDef(42, "GPIO4", "bidirectional", "left", unit=2),
-    PinDef(43, "GPIO5", "bidirectional", "left", unit=2), PinDef(44, "GPIO6", "bidirectional", "left", unit=2),
-    PinDef(45, "GPIO7", "bidirectional", "left", unit=2), PinDef(46, "GPIO8", "bidirectional", "left", unit=2),
-    PinDef(47, "GPIO9", "bidirectional", "left", unit=2),
-    PinDef(48, "VREG", "power_in", "top", unit=2), PinDef(49, "DRIVE", "output", "top", unit=2),
+    PinDef(39, "GPIO1", "bidirectional", "right", unit=2), PinDef(40, "GPIO2", "bidirectional", "right", unit=2),
+    PinDef(41, "GPIO3", "bidirectional", "right", unit=2), PinDef(42, "GPIO4", "bidirectional", "right", unit=2),
+    PinDef(43, "GPIO5", "bidirectional", "right", unit=2), PinDef(44, "GPIO6", "bidirectional", "right", unit=2),
+    PinDef(45, "GPIO7", "bidirectional", "right", unit=2), PinDef(46, "GPIO8", "bidirectional", "right", unit=2),
+    PinDef(47, "GPIO9", "bidirectional", "right", unit=2),
+    PinDef(48, "VREG", "power_in", "left", unit=2), PinDef(49, "DRIVE", "output", "left", unit=2),
     PinDef(50, "VREF2", "power_out", "left", unit=2), PinDef(51, "VREF1", "power_out", "left", unit=2),
     PinDef(52, "DTEN", "input", "left", unit=2),
     PinDef(53, "SDI", "input", "right", unit=2), PinDef(54, "SDO", "open_collector", "right", unit=2),
     PinDef(55, "ISOMD", "input", "left", unit=2), PinDef(56, "WDT", "open_collector", "right", unit=2),
     PinDef(57, "IBIAS", "passive", "right", unit=2), PinDef(58, "ICMP", "input", "right", unit=2),
-    PinDef(59, "V-", "power_in", "bottom", unit=2), PinDef(60, "V-", "power_in", "bottom", unit=2),
+    PinDef(59, "V-", "power_in", "left", unit=2), PinDef(60, "V-", "power_in", "left", unit=2),
     PinDef(61, "CSB", "input", "right", unit=2), PinDef(62, "SCK", "input", "right", unit=2),
     PinDef(63, "IMB", "bidirectional", "right", unit=2), PinDef(64, "IPB", "bidirectional", "right", unit=2),
-    PinDef(65, "V-", "power_in", "bottom", unit=2),
+    PinDef(65, "V-", "power_in", "left", unit=2),
 ]
 _adbms_limits = [VLimit(("V+",), ("V-",), 112.5, "V+ to V- 112.5 V"),
                  VLimit(("V+",), ("C12",), 50, "V+ to C12 50 V"),
                  VLimit(("C0",), ("V-",), 6, "C0 -0.3..6 V"),
                  VLimit(("IPB", "IMB"), ("V-",), 6, "-0.3 V..VREG + 0.3 V, <= 6 V"),
                  VLimit(("DRIVE",), ("V-",), 7, "DRIVE -0.3..7 V"),
-                 VLimit(("VREG", "VREF1", "VREF2", "GPIO1", "GPIO2", "GPIO3", "GPIO4", "GPIO5", "GPIO6", "GPIO7",
+                 VLimit(("VREG",), ("V-",), 6, "VREG -0.3..6 V (all other pins)"),
+                 VLimit(("VREF1", "VREF2", "GPIO1", "GPIO2", "GPIO3", "GPIO4", "GPIO5", "GPIO6", "GPIO7",
                          "GPIO8", "GPIO9", "DTEN", "SDI", "SDO", "ISOMD", "WDT", "IBIAS", "ICMP", "CSB", "SCK"),
                         ("V-",), 6, "all other pins -0.3..6 V")]
 for n in range(1, 19):
@@ -526,6 +528,32 @@ J_FAULT = Conn(2, "Connector_Phoenix_MC:PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.8
                datasheet="https://www.phoenixcontact.com/en-us/products/pcb-header-mc-15-2-g-381-1803277",
                lifecycle="active", second_source="Wurth 3.81 mm pluggable header", source=_MC).with_(
     description="Fault contact: header MC 1,5/2-G-3,81, plug MC 1,5/2-ST-3,81")
+
+# =============================================================================================
+# Off-board harness (block harness, board="off")
+
+F_INLINE = Fuse(
+    7, 125, None, mpn="0324007.HXP", manufacturer="Littelfuse", i2t=71.0, breaking_a=10000,
+    datasheet="https://www.littelfuse.com/assetdocs/littelfuse-fuse-314-324-datasheet",
+    lifecycle="active", second_source="0314007.MXP (ceramic 3AB, same rating) in a 6.3 x 32 mm in-line holder",
+    fields={"R_cold": "18.7 mOhm", "Format": "3AB axial, butt-spliced, sealed in adhesive heat-shrink"},
+    source={"ratings": "Littelfuse 314/324 series (revised 07/31/15) p.1 table: 324 007. 7 A, 250 V, interrupting "
+                       "750 A at 250 VAC / 10 kA at 125 VAC and 125 VDC (004-008 rows), cold R 0.0187 ohm, "
+                       "melting I2t 71.0 A2s; UL 248-14",
+            "lifecycle": "Digi-Key listing, $3.03 (Oct 2026) [P]"}).with_(
+    description="Inline tap fuse at the ring terminal: 3AB 7 A fast, 10 kA at 125 VDC")
+RING = Conn(1, None, mpn="PV18-14R-MY", manufacturer="Panduit",
+            datasheet="https://www.panduit.com/content/dam/panduit/en/products/media/7/31/831/PV18-14R-MY.pdf",
+            lifecycle="active", second_source="TE PIDG 1/4 in ring for 22-18 AWG",
+            source={"ratings": "Panduit PV18-14R-MY: vinyl-insulated ring, 22-18 AWG, 1/4 in (M6) stud [S, Digi-Key]",
+                    "lifecycle": "Digi-Key Active [S]"}).with_(
+    description="Ring terminal 22-18 AWG, 1/4 in (M6) stud, at each cell terminal")
+PLUG_TAPS = Conn(17, None, i_max=12, v_max=320, mpn="1757161", manufacturer="Phoenix Contact",
+                 datasheet="https://www.phoenixcontact.com/en-us/products/pcb-plug-mstb-25-17-st-508-1757161",
+                 lifecycle="active", second_source="none drop-in",
+                 source={"ratings": "Phoenix MSTB 2,5/17-ST-5,08 (1757161) screw plug: 12 A, 320 V [S]",
+                         "lifecycle": "distributor listings Active [S]"}).with_(
+    description="Harness plug MSTB 2,5/17-ST-5,08 mating J1; EBP 2-5 (1733169) bridges join positions N+1..17")
 
 # =============================================================================================
 # Mechanical
