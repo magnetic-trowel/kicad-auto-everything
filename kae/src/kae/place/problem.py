@@ -188,6 +188,16 @@ def edge_cut_lib_rect(fp):
     return polys_lib_rect(list(fp.edge_cuts))
 
 
+def _on_far_copper(p, part_side):
+    """The pad has copper on the side opposite its footprint's (B.Cu under a front part,
+    F.Cu under a back part, *.Cu, F&B.Cu, inner layers count as both)."""
+    far = "B.Cu" if part_side == "F" else "F.Cu"
+    for ly in p.layers or []:
+        if ly == far or ly in ("*.Cu", "F&B.Cu") or (ly.startswith("In") and ly.endswith(".Cu")):
+            return True
+    return False
+
+
 def is_drilled(p):
     return p.kind in ("thru_hole", "np_thru_hole") or bool(p.drill)
 
@@ -472,8 +482,11 @@ class Problem:
         if lib_own is None:   # no courtyard, body or pads: a point
             lib_own = (-0.05, -0.05, 0.05, 0.05)
         drilled = [k for k, p in enumerate(pads) if is_drilled(p)]
+        # SMD copper on the other side too (a back-side thermal pad under a front part, pads on
+        # *.Cu): other parts' copper on that side keeps clear of it
+        far = [k for k, p in enumerate(pads) if not is_drilled(p) and _on_far_copper(p, fp.side)]
         lib_opp = _cluster_rects([rect_union([infl[k], rect_grow(hole_lib_rect(pads[k]), self.clr_min / 2)])
-                                  for k in drilled])
+                                  for k in drilled] + [infl[k] for k in far])
         if fp.courtyard_back:
             lib_opp.append(polys_lib_rect(fp.courtyard_back))
         lib_opp = [r for r in lib_opp if r is not None]

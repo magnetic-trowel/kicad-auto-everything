@@ -4,7 +4,10 @@
 
     route(input, output, seed=0, time_s=600)
 
-1. KiCad exports the DSN and everything the DSN leaves out (pcbnew_io.export_dsn).
+1. KiCad exports the DSN and everything the DSN leaves out (pcbnew_io.export_dsn). Locked
+   tracks and vias in the input (pre-routes) go in as fixed wiring: Freerouting routes around
+   them and does not return them, KiCad's import keeps them as they are, the repair loop
+   never touches them. Zones are never edited (Freerouting sees them as planes).
 2. constraints.plan computes what KiCad's DRC will require; translate.apply writes it into
    the DSN (classes, clearance matrix, pin and obstacle classes, vias).
 3. Freerouting routes with settings that stop it narrowing tracks, inside its own deadline.
@@ -30,7 +33,7 @@ DEFAULT_OPTS = dict(
     thermal_repair=True,     # starved thermals get spoke corridors in the repair loop
     passes=0,                # 0: autorouter runs until it stops improving
     repair=True,             # post-route DRC repair loop
-    rounds=3,                # repair rounds at most
+    rounds=6,                # repair rounds at most (each also bounded by the time left)
     router_share=0.6,        # share of the budget for the first routing
 )
 
@@ -68,9 +71,11 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         info = pcbnew_io.export_dsn(input_path, kdsn)
         sev = severities(input_path)
         opts["severities"] = sev
+        opts["seed"] = seed
         p = constraints.plan(info, input_path, opts)
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
+        report["permuted"] = translate.permute(tree, seed)
         report["plan"] = plan_summary(p)
         dsn = wd / "board.dsn"
         specctra.write(tree, dsn)
@@ -95,7 +100,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         report["session"] = translate.fix_session(ses, p)
         ses_k = wd / "board_kicad.ses"
         specctra.write(ses, ses_k)
-        pcbnew_io.import_ses(input_path, ses_k, output_path)
+        imported = pcbnew_io.import_ses(input_path, ses_k, output_path)
+        # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
+        # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
+        # rips, widens or unlocks them
+        opts["fixed_uuids"] = sorted(r["uuid"] for r in imported.get("routing") or [] if r.get("locked"))
+        report["fixed_items"] = len(opts["fixed_uuids"])
         report["status"] = "routed"
 
         # 5: DRC and repair

@@ -10,6 +10,7 @@ and prints one status line ({"ok": ...}) on stdout.
     python pcbnew_bridge.py export-dsn BOARD DSN OUT_JSON [--no-probes]
     python pcbnew_bridge.py import-ses BOARD SES OUT_JSON DEST
     python pcbnew_bridge.py edit-routing BOARD EDITS OUT_JSON DEST
+    python pcbnew_bridge.py zone-fills BOARD OUT_JSON
 
 export-dsn: KiCad's Specctra export of BOARD (loaded with its project, so net classes and
 the .kicad_dru rules are active), plus what the DSN leaves out, as JSON (see route_info):
@@ -22,8 +23,13 @@ own clearance, annular ring).
 import-ses: KiCad's Specctra session import into BOARD (unlocked routing is replaced,
 locked routing kept), written to DEST with the plain writer.
 
-edit-routing: EDITS is JSON {delete: [uuid], width: {uuid: mm}, lock_all: bool,
-unlock_all: bool}; applied to BOARD's tracks and vias, written to DEST with the plain writer.
+edit-routing: EDITS is JSON {delete: [uuid], width: {uuid: mm}, add: [{net, layer, a, b,
+width}], lock_all: bool, unlock_all: bool, keep_locked: [uuid]}; applied to BOARD's tracks
+and vias (added tracks are locked with lock_all; unlock_all leaves keep_locked locked),
+written to DEST with the plain writer.
+
+zone-fills: every zone of BOARD (loaded with its project) refilled as kicad-cli's DRC does
+with --refill-zones, and its filled copper per copper layer as polygons with holes.
 
 extract: pcbnew's own footprint poses, pads (absolute and footprint-relative), courtyards
 (F/B.CrtYd caches), the board outline (GetBoardPolygonOutlines), design rules, net classes
@@ -693,6 +699,7 @@ def edit_routing(path, edits_path, out, dest):
     board = _load_plain(path)
     delete = set(edits.get("delete") or [])
     widths = edits.get("width") or {}
+    keep_locked = set(edits.get("keep_locked") or [])
     removed = widened = 0
     keep = []
     for t in list(board.GetTracks()):
@@ -705,15 +712,51 @@ def edit_routing(path, edits_path, out, dest):
             widened += 1
         if edits.get("lock_all"):
             t.SetLocked(True)
-        elif edits.get("unlock_all"):
+        elif edits.get("unlock_all") and u not in keep_locked:
             t.SetLocked(False)
     for t in keep:  # remove after iterating: Remove() untypes SWIG objects
         board.Remove(t)
         removed += 1
+    added = 0
+    for a in edits.get("add") or []:
+        t = pcbnew.PCB_TRACK(board)
+        t.SetStart(pcbnew.VECTOR2I(int(round(a["a"][0] * NM)), int(round(a["a"][1] * NM))))
+        t.SetEnd(pcbnew.VECTOR2I(int(round(a["b"][0] * NM)), int(round(a["b"][1] * NM))))
+        t.SetWidth(int(round(float(a["width"]) * NM)))
+        t.SetLayer(board.GetLayerID(a["layer"]))
+        net = board.FindNet(a["net"])
+        if net is not None:
+            t.SetNet(net)
+        if edits.get("lock_all"):
+            t.SetLocked(True)
+        board.Add(t)
+        added += 1
     routing = _routing(board)
     _save(board, dest)
-    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened, routing=routing))
-    _status(dict(ok=True, removed=removed, widened=widened))
+    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened, added=added, routing=routing))
+    _status(dict(ok=True, removed=removed, widened=widened, added=added))
+
+
+def zone_fills(path, out):
+    board = _load(path)
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+    cu = list(board.GetEnabledLayers().CuStack())
+    zones = []
+    for z in board.Zones():
+        if z.GetIsRuleArea():
+            continue
+        layers = {}
+        for l in cu:
+            if not z.IsOnLayer(l):
+                continue
+            ps = pcbnew.SHAPE_POLY_SET(z.GetFilledPolysList(l))  # a copy: unfracture it
+            ps.Unfracture()
+            layers[board.GetStandardLayerName(l)] = _polyset(ps)
+        zones.append(dict(uuid=z.m_Uuid.AsString(), net=z.GetNetname(), name=z.GetZoneName(),
+                          priority=z.GetAssignedPriority(), layers=layers,
+                          teardrop=bool(z.IsTeardropArea()) if hasattr(z, "IsTeardropArea") else False))
+    _write(out, dict(ok=True, zones=zones))
+    _status(dict(ok=True, zones=len(zones)))
 
 
 def main(argv):
@@ -735,6 +778,8 @@ def main(argv):
             import_ses(args[0], args[1], args[2], args[3])
         elif op == "edit-routing":
             edit_routing(args[0], args[1], args[2], args[3])
+        elif op == "zone-fills":
+            zone_fills(args[0], args[1])
         else:
             raise SystemExit(f"unknown op {op}")
     except Exception as e:  # report failures as JSON

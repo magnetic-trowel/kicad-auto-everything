@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from kae.board import pcbnew_io, sexpr
-from kae.route import bridge, constraints, drc, freerouting, specctra, translate
+from kae.route import bridge, constraints, drc, effective, freerouting, specctra, translate
 
 DATA = Path(__file__).parent / "data" / "board"
 FIXTURE = DATA / "fixture.kicad_pcb"
@@ -104,6 +104,36 @@ def test_plan_and_translation(exported, tmp_path):
     assert summary["pins_classed"] == len(p.pin_class)
 
 
+def test_effective_rules_are_the_plans(exported):
+    board, info, _ = exported
+    p = constraints.plan(info, board)
+    r = effective.Rules(info, board, plan=p)
+    assert r.layers == info["copper"] and set(r.nets) == {n for n in info["nets"] if n}
+    for net in r.nets:
+        rc = p.classes[p.net_class[net]]
+        assert r.via(net) == effective.Via(*rc.via)
+        for l in r.layers:
+            w = r.track_width(net, l)
+            lim = info["probes"][net]["track"][l]["width"]
+            assert w.min >= (lim[0] or 0.0) - 1e-9
+            assert w.opt == rc.widths[l] and w.min <= w.opt and (w.max is None or w.opt <= w.max)
+            e = r.edge_clearance(net, l)
+            assert (e.track, e.via) == p.obstacle_classes["kae_edge"].values[(rc.name, l)]
+    vcc = "VCC" if "VCC" in r.nets else None
+    if vcc:  # the fixture's Power class keeps its 0.3 mm custom clearance against everything
+        c = r.clearance(vcc, None, "F.Cu")
+        assert min(c.track_track, c.track_via, c.via_track, c.via_via) >= 0.3 - 1e-9
+    a, b = r.nets[0], r.nets[1]
+    ab, ba = r.clearance(a, b, "F.Cu"), r.clearance(b, a, "F.Cu")
+    assert (ab.track_track, ab.track_via, ab.via_track, ab.via_via) == \
+        (ba.track_track, ba.via_track, ba.track_via, ba.via_via)
+    pad = next(pd for pd in info["pads"] if pd.get("net") and pd["net"] != a and "F.Cu" in pd["layers"])
+    pc = r.pad_clearance(a, "F.Cu", pad["ref"], pad["number"])
+    assert pc.track > 0 and pc.via > 0
+    with pytest.raises(KeyError):
+        r.track_width("no such net", "F.Cu")
+
+
 def _have_freerouting():
     try:
         freerouting.command()
@@ -113,12 +143,36 @@ def _have_freerouting():
         return False
 
 
-@pytest.mark.skipif(not _have_freerouting(), reason="no Freerouting or kicad-cli")
-def test_route_end_to_end_has_no_translation_errors(tmp_path):
-    board = _unrouted_copy(tmp_path)
-    out = tmp_path / "out" / "board.kicad_pcb"
-    out.parent.mkdir()
-    rep = bridge.route(board, out, time_s=150, workdir=tmp_path / "wd", opts=dict(rounds=1))
+needs_router = pytest.mark.skipif(not _have_freerouting(), reason="no Freerouting or kicad-cli")
+
+
+@pytest.fixture(scope="module")
+def routed(tmp_path_factory):
+    d = tmp_path_factory.mktemp("routed")
+    board = _unrouted_copy(d)
+    out = d / "out" / "board.kicad_pcb"
+    rep = bridge.route(board, out, time_s=150, workdir=d / "wd", opts=dict(rounds=1))
+    return board, out, rep, d
+
+
+def _blocks(text):
+    """{uuid: s-expression text} of every track, arc and via of a .kicad_pcb."""
+    out, i = {}, 0
+    while True:
+        cands = [c for c in (text.find(h, i) for h in ("\n\t(segment", "\n\t(via", "\n\t(arc")) if c >= 0]
+        if not cands:
+            return out
+        a = min(cands) + 1
+        b = sexpr.block_end(text, a)
+        block = text[a:b]
+        u = block.split('(uuid "', 1)[1].split('"', 1)[0]
+        out[u] = block
+        i = b
+
+
+@needs_router
+def test_route_end_to_end_has_no_translation_errors(routed, tmp_path):
+    board, out, rep, _ = routed
     assert rep["status"] == "routed" and out.exists()
     staged = drc.stage_board(out, board, tmp_path / "drc")
     report = drc.run(staged, tmp_path / "drc" / "drc.json")
@@ -129,3 +183,44 @@ def test_route_end_to_end_has_no_translation_errors(tmp_path):
     bad = [v for v in drc.errors(report) if v["type"] in TRANSLATION and
            not any(f"[{n}]" in it.get("description", "") for n in off for it in v.get("items", []))]
     assert not bad, json.dumps(bad[:5], indent=1)
+
+
+@needs_router
+def test_locked_preroutes_come_back_unchanged(routed, tmp_path):
+    """Locked tracks and vias in the input (what kae.route.critical emits) are fixed wiring:
+    byte-identical in the output, with the rest of the board routed around them."""
+    board, out, _, _ = routed
+    routing = pcbnew_io.edit_routing(out, tmp_path / "listing.kicad_pcb")["routing"]
+    # lock a net whose first routing is clean (the fixture's U7 sits off the board)
+    report = drc.run(drc.stage_board(out, board, tmp_path / "drc1"), tmp_path / "drc1" / "drc.json")
+    dirty = {n for v in drc.errors(report) for it in v.get("items", [])
+             for n in [it.get("description", "").partition("[")[2].partition("]")[0]] if n}
+    by_net = {}
+    for r in routing:
+        if r["net"] not in dirty:
+            by_net.setdefault(r["net"], []).append(r)
+    assert by_net, "no net routed cleanly to lock"
+    net = max(by_net, key=lambda n: (any(r["kind"] == "via" for r in by_net[n]), len(by_net[n])))
+    keep = {r["uuid"] for r in by_net[net]}
+    pre = tmp_path / "pre" / "board.kicad_pcb"
+    pre.parent.mkdir()
+    pcbnew_io.edit_routing(out, pre, delete=[r["uuid"] for r in routing if r["uuid"] not in keep], lock_all=True)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(board.with_suffix(ext), pre.with_suffix(ext))
+    before = {u: b for u, b in _blocks(pre.read_text()).items()}
+    assert set(before) == keep and all("(locked yes)" in b for b in before.values())
+
+    out2 = tmp_path / "out2" / "board.kicad_pcb"
+    rep = bridge.route(pre, out2, time_s=120, workdir=tmp_path / "wd2", opts=dict(rounds=1))
+    assert rep["status"] == "routed" and rep["fixed_items"] == len(keep)
+    after = _blocks(out2.read_text())
+    for u, b in before.items():
+        assert after.get(u) == b, f"pre-route {u} changed"
+    assert len(after) > len(before)                       # the rest was routed
+    others = [b for u, b in after.items() if u not in before]
+    assert all("(locked yes)" not in b for b in others)
+    staged = drc.stage_board(out2, pre, tmp_path / "drc2")
+    report = drc.run(staged, tmp_path / "drc2" / "drc.json")
+    touching = [v for v in drc.errors(report)
+                if any(it.get("uuid") in keep for it in v.get("items", [])) and v["type"] in TRANSLATION]
+    assert not touching, json.dumps(touching[:3], indent=1)

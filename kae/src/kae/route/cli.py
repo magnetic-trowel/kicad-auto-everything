@@ -26,7 +26,7 @@ def main(argv=None):
     r = sub.add_parser("route", help="route a board through Freerouting with KiCad's rules")
     r.add_argument("input")
     r.add_argument("output")
-    r.add_argument("--seed", type=int, default=0)
+    r.add_argument("--seed", type=int, default=0, help="0: KiCad's item order; others: a permuted order")
     r.add_argument("--time", type=float, default=600.0, help="total budget in seconds")
     r.add_argument("--workdir", help="keep intermediate files here (DSN, SES, DRC reports)")
     r.add_argument("--keep", action="store_true", help="keep the temporary work directory")
@@ -35,7 +35,7 @@ def main(argv=None):
     r.add_argument("--no-thermal", action="store_true", help="no thermal-spoke corridors in the repair loop")
     r.add_argument("--thermal-all", action="store_true", help="spoke corridors for every thermal pad up front")
     r.add_argument("--passes", type=int, default=0)
-    r.add_argument("--rounds", type=int, default=3)
+    r.add_argument("--rounds", type=int, default=6, help="repair rounds at most")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge

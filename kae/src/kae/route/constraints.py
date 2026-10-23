@@ -26,7 +26,9 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
   pads with several outlines).
 - **Obstacles.** NPTH holes, board cut-outs and stray Edge.Cuts/Margin shapes, copper
   graphics and texts, rule areas and thermal-spoke corridors become keepouts, each in an
-  obstacle class carrying KiCad's requirement (rule areas and corridors: zero).
+  obstacle class carrying KiCad's requirement (rule areas and corridors: zero). A copper
+  graphic that carries a net becomes a pin of that net instead (net_graphics), so the
+  router connects its net to it and keeps the other nets away.
 
 All lengths mm. Requirements are rounded up to 0.1 um (the DSN resolution).
 """
@@ -124,6 +126,7 @@ class Plan:
     pin_class: dict = field(default_factory=dict)      # (comp, pin) -> obstacle class name
     obstacle_classes: dict = field(default_factory=dict)
     obstacles: list = field(default_factory=list)
+    net_graphics: list = field(default_factory=list)   # (net, {layer: polygon}, obstacle class, why)
     edge_clearance: float = 0.0                        # for Freerouting's board outline
     neck_width: float | None = None
     notes: dict = field(default_factory=dict)
@@ -248,8 +251,13 @@ def plan(info, board_path, opts=None):
         p.classes["kae_Default"] = RoutingClass("kae_Default", [], "Default", {l: w for l in cu},
                                                   (max(nc.get("via_diameter") or 0.6, s.get("min_via", 0.0)),
                                                    max(nc.get("via_drill") or 0.3, s.get("min_drill", 0.0))))
-    neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [0.0])
-    if neck > 0 and any(w > neck + 1e-9 for rc in p.classes.values() for w in rc.widths.values()):
+    # Freerouting retries a connection it failed at min(class width, neck width) along its
+    # whole length (one value for every class): the neck must be legal for every class (at
+    # least the largest minimum) and is no narrower than the narrowest class width, so a class
+    # wider than its pads (a 0.64 mm USB class into a 0.5 mm pitch connector) still connects
+    widths_all = [w for rc in p.classes.values() for w in rc.widths.values() if w]
+    neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [min(widths_all or [0.0])])
+    if neck > 0 and any(w > neck + 1e-9 for w in widths_all):
         p.neck_width = up(neck)
 
     # ---- class pair requirements: tracks and vias of R vs S, per layer
@@ -262,24 +270,8 @@ def plan(info, board_path, opts=None):
             nb = rbc.rep if a != b else ra.rep2
             if not na or not nb:
                 continue
-            Da, da = ra.via
-            Db, db = rbc.via
-            ringa, ringb = (Da - da) / 2, (Db - db) / 2
             for l in cu:
-                ta = net_item(info, na, "track", l, ra.widths[l])
-                tb = net_item(info, nb, "track", l, rbc.widths[l])
-                va, vb = net_item(info, na, "via", l), net_item(info, nb, "via", l)
-                ww = _strict_min(rb, "clearance", ta, tb, l)
-                wv = max(_strict_min(rb, "clearance", ta, vb, l), _strict_min(rb, "hole_clearance", ta, vb, l) - ringb)
-                vw = max(_strict_min(rb, "clearance", va, tb, l), _strict_min(rb, "hole_clearance", tb, va, l) - ringa)
-                vv = max(_strict_min(rb, "clearance", va, vb, l),
-                         _strict_min(rb, "hole_to_hole", va, vb, None) + (da + db) / 2 - (Da + Db) / 2,
-                         _strict_min(rb, "hole_clearance", va, vb, l) - ringb,
-                         _strict_min(rb, "hole_clearance", vb, va, l) - ringa)
-                if R.diff_base(na) is not None and R.complement_net(na) == nb:
-                    gap = R.strictest(rb, "diff_pair_gap", ta, tb, l).min or 0.0
-                    ww = max(ww, gap)
-                req[(a, b, l)] = dict(ww=ww, wv=wv, vw=vw, vv=vv)
+                req[(a, b, l)] = pair_clearances(info, rb, na, nb, l, ra.widths[l], rbc.widths[l], ra.via, rbc.via)
     # same-net via pairs: hole-to-hole between two vias of one net (Freerouting has no
     # clearance within a net; recorded so the repair loop knows what to look for)
     for n in names:
@@ -315,6 +307,32 @@ def plan(info, board_path, opts=None):
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
     return p
+
+
+def pair_clearances(info, rb, na, nb, layer, wa=None, wb=None, via_a=None, via_b=None):
+    """KiCad's requirements between copper of nets `na` and `nb` on `layer`, in mm:
+    dict(ww, wv, vw, vv) for track-track, track of a - via of b, via of a - track of b and
+    via-via, with hole clearance taken through each via's annular ring and hole-to-hole
+    through both drills; a diff pair's own gap raises track-track. `wa`, `wb` are the track
+    widths (rules may test Width) and `via_a`, `via_b` the vias as (diameter, drill)."""
+    l = layer
+    Da, da = via_a or (0.0, 0.0)
+    Db, db = via_b or (0.0, 0.0)
+    ringa, ringb = (Da - da) / 2, (Db - db) / 2
+    ta = net_item(info, na, "track", l, wa)
+    tb = net_item(info, nb, "track", l, wb)
+    va, vb = net_item(info, na, "via", l), net_item(info, nb, "via", l)
+    ww = _strict_min(rb, "clearance", ta, tb, l)
+    wv = max(_strict_min(rb, "clearance", ta, vb, l), _strict_min(rb, "hole_clearance", ta, vb, l) - ringb)
+    vw = max(_strict_min(rb, "clearance", va, tb, l), _strict_min(rb, "hole_clearance", tb, va, l) - ringa)
+    vv = max(_strict_min(rb, "clearance", va, vb, l),
+             _strict_min(rb, "hole_to_hole", va, vb, None) + (da + db) / 2 - (Da + Db) / 2,
+             _strict_min(rb, "hole_clearance", va, vb, l) - ringb,
+             _strict_min(rb, "hole_clearance", vb, va, l) - ringa)
+    if R.diff_base(na) is not None and R.complement_net(na) == nb:
+        gap = R.strictest(rb, "diff_pair_gap", ta, tb, l).min or 0.0
+        ww = max(ww, gap)
+    return dict(ww=ww, wv=wv, vw=vw, vv=vv)
 
 
 def _class_name(netclass, used):
@@ -566,11 +584,21 @@ def _obstacles(info, rb, p, sev, opts):
         if not vec:
             continue
         cls = _obstacle_class(p, "kae_cu", vec)
+        why = f"copper {g.get('cls')} {g.get('owner') or 'board'} {g.get('net') or 'no net'}"
+        shapes = {}
         for l, polys in g["layers"].items():
             geo = unary_union([x for x in (_poly(r) for r in polys) if x is not None])
             if not geo.is_empty:
-                p.obstacles.append(Obstacle("keepout", l, geo, cls,
-                                            f"copper {g.get('cls')} {g.get('owner') or 'board'} {g.get('net') or 'no net'}"))
+                shapes[l] = geo
+        net = g.get("net") or ""
+        if net in p.net_class and shapes and all(isinstance(s, Polygon) and len(s.interiors) == 0
+                                                 for s in shapes.values()):
+            # copper of a net: a pin of that net in the DSN (a connection target for its
+            # own net, an obstacle in class `cls` for the others)
+            p.net_graphics.append((net, shapes, cls, why))
+            continue
+        for l, geo in shapes.items():
+            p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
     # ---- rule areas: KiCad's disallow test is plain intersection
     for z in info.get("zones") or []:
         if not z.get("rule_area") or not (z.get("no_tracks") or z.get("no_vias")):

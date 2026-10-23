@@ -6,21 +6,32 @@ Each round runs kicad-cli DRC (zones refilled, as the scorer does) on the curren
 reads every error-level violation and missing connection:
 
 - a track narrower than its rule (track_width on a routed track) is widened to the
-  required minimum, in place;
+  required minimum in place when the plan's clearances leave room, else ripped up;
 - any other violation that involves routed copper (a track or via the router drew) rips up
-  every routed item of the nets involved;
-- a missing connection marks its net for routing again; when the connection runs through a
-  zone (Freerouting counts every pin inside a plane as connected, KiCad's fill does not when
-  other nets cut it into islands or starve its spokes), the net's planes on those layers are
-  left out of the next DSN, so the router has to connect those pins with copper.
+  the routed items involved (escalating to their whole nets, then to a free re-route);
+- a pad with too few thermal spokes (starved_thermal), or cut off from its zone, gets
+  spokes drawn as tracks from inside the pad into the zone's fill: KiCad counts a track
+  connected to the pad, with one end inside the pad's relief outline and the other in the
+  zone's fill, as a spoke. Where no such track fits, the pad's spoke corridors are kept
+  clear of other nets (constraints.thermal_corridors) and the routed copper in them is
+  ripped up;
+- a missing connection between parts of a net that other nets' copper cut apart inside a
+  zone (Freerouting counts every pin inside a plane as connected; KiCad's fill does not):
+  the net's planes are replaced in the next DSN by the fill pieces KiCad's filler actually
+  produced, holes as windows, so the router sees the parts KiCad sees and joins them;
+- any other missing connection marks its net for routing again, with its planes left out
+  of the DSN.
 
-The remaining routing is locked (exported as fixed wiring), Freerouting routes only what is
-open, the session is imported on top, the routing unlocked again, and the result checked by
-the next round's DRC. A round's board replaces the output only if it is better (fewer
-violations in all, then fewer missing connections), so the output never gets worse. Stops when the
-board is clean, nothing more can be done, the round limit is reached, or time runs out.
+Locked routing in the input (pre-routes, e.g. from kae.route.critical) is never ripped,
+widened or unlocked. The remaining routing is locked (exported as fixed wiring), Freerouting
+routes only what is open, in a new item order every round (translate.permute), the session is imported on top,
+the routing unlocked again, and the result checked by the next round's DRC. A round's board
+replaces the output only if it is better (clean; then fewer violations in all; then fewer
+missing connections), so the output never gets worse. Stops when the board is clean, nothing
+more can be done, FAILS rounds in a row were not better, the round limit is reached, or time
+runs out.
 """
-import json
+import math
 import re
 import shutil
 import time
@@ -29,11 +40,13 @@ from pathlib import Path
 from kae.board import pcbnew_io
 
 from . import constraints, drc, freerouting, specctra, translate
-from .specctra import find, findall
+from .specctra import Q, find, findall
 
 _NET = re.compile(r"\[([^\]]*)\]")
 _MIN = re.compile(r"min (?:width )?([\d.]+) mm")
-_LAYER = re.compile(r" on ([A-Za-z0-9_.]+)")
+_SPOKES = re.compile(r"min spoke count (\d+); actual (\d+)")
+_DRC_LAYER = re.compile(r"\(layer ([^;)]+)")
+_ON_LAYERS = re.compile(r" on (.+?)(?:, priority|, length|$)")
 
 
 def _key(s):
@@ -46,6 +59,10 @@ def _nets_of(item_desc):
     return [m for m in _NET.findall(item_desc or "") if m and m != "<no net>"]
 
 
+def _is_zone(desc):
+    return (desc or "").startswith(("Zone", "Teardrop"))
+
+
 def _routed_geom(r, grow=0.0):
     from shapely.geometry import LineString, Point
     if r["kind"] == "via":
@@ -55,13 +72,13 @@ def _routed_geom(r, grow=0.0):
 
 class _Space:
     """Foreign copper around routed items, with the clearance the plan requires, to decide
-    whether a track can be widened in place."""
+    whether a track can be widened in place or a spoke track drawn."""
 
     def __init__(self, routed, info, plan):
         from shapely.strtree import STRtree
         from .constraints import _pad_shapes, _poly
         self.routed, self.plan = routed, plan
-        self.items = []   # (geometry, net, kind, layer or None, obstacle class or None)
+        self.items = []   # (geometry, net, kind, layer or None, obstacle class or None, uuid)
         for u, r in routed.items():
             self.items.append((_routed_geom(r), r["net"], "routed", r.get("layer"), None, u))
         for pd in info.get("pads") or []:
@@ -76,9 +93,14 @@ class _Space:
                     pg = _poly(rr)
                     if pg is not None:
                         self.items.append((pg, g.get("net") or "", "graphic", l, None, None))
+        for ob in plan.obstacles:  # rule areas forbid tracks of every net
+            if ob.kind == "keepout" and ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
+                self.items.append((ob.geom, "", "keepout", None if ob.layer == "signal" else ob.layer, None, None))
         self.tree = STRtree([it[0] for it in self.items]) if self.items else None
 
     def _need(self, net, layer, it):
+        if it[2] == "keepout":
+            return 1e-6
         cls = self.plan.net_class.get(net)
         other = it[1]
         if it[2] == "routed":
@@ -92,40 +114,146 @@ class _Space:
         vals = [oc.values.get((cls, layer)) for n, oc in self.plan.obstacle_classes.items() if n.startswith("kae_cu")]
         return max([v[0] for v in vals if v is not None] or [0.2])
 
-    def fits(self, uuid, width):
-        """Whether routed track `uuid` widened to `width` keeps every required clearance."""
-        r = self.routed[uuid]
-        from shapely.geometry import LineString
-        seg = LineString([r["a"], r["b"]]).buffer(width / 2, quad_segs=8)
+    def fits_geom(self, net, layer, geom):
+        """Whether copper `geom` of `net` on `layer` keeps every required clearance."""
         if self.tree is None:
             return True
-        for i in self.tree.query(seg.buffer(1.0)):
+        for i in self.tree.query(geom.buffer(1.0)):
             it = self.items[int(i)]
-            if it[1] == r["net"] and r["net"]:
+            if it[1] == net and net:
                 continue
-            if it[3] is not None and it[3] != r["layer"] and not (it[2] == "routed" and self.routed[it[5]]["kind"] == "via"):
+            if it[3] is not None and it[3] != layer:
                 continue
-            if seg.distance(it[0]) < self._need(r["net"], r["layer"], it) - 1e-6:
+            if geom.distance(it[0]) < self._need(net, layer, it) - 1e-6:
                 return False
         return True
 
+    def fits(self, uuid, width):
+        """Whether routed track `uuid` widened to `width` keeps every required clearance."""
+        from shapely.geometry import LineString
+        r = self.routed[uuid]
+        seg = LineString([r["a"], r["b"]]).buffer(width / 2, quad_segs=8)
+        return self.fits_geom(r["net"], r["layer"], seg)
 
-def analyse(report, routed, info=None, plan=None):
-    """What a DRC report asks for, given `routed` = {uuid: routing item}:
-    widen {uuid: mm}, items {uuid} and nets {net} to rip up, open {net: set(layers) or None},
-    thermal {pad uuid}, unattributed [type].
 
-    A track narrower than its rule is widened in place when the plan's clearances allow it,
-    otherwise ripped up. A starved thermal, or a pad that misses its own zone, gets a spoke
-    corridor (constraints.thermal_corridors) and the routed items crossing it are ripped up."""
+# ----------------------------------------------------------------------------- spokes
+def spoke_tracks(pad, zone, layer, need, plan, space, taken=None):
+    """Up to `need` tracks of the pad's net from inside `pad` straight into the fill of
+    `zone` (a zone_fills record) on `layer`, each clear of foreign copper, shortest first,
+    in directions at least 45 degrees apart: [{net, layer, a, b, width}]."""
+    import shapely
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    from .constraints import _pad_shapes, _poly
+    net = pad.get("net")
+    cls = plan.net_class.get(net)
+    if not net or cls is None or need <= 0:
+        return []
+    w = plan.classes[cls].widths.get(layer)
+    pieces = [g for g in (_poly(r) for r in (zone.get("layers") or {}).get(layer) or []) if g is not None]
+    if not w or not pieces:
+        return []
+    core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
+    _, real = _pad_shapes(pad)
+    cop = real.get(layer)
+    if core.is_empty or cop is None or cop.is_empty:
+        return []
+    start = Point(pad["pos"])
+    if not cop.contains(start):
+        start = cop.representative_point()
+    reach = math.sqrt(cop.area) + (pad.get("thermal_gap") or 0.5) + 2.0
+    base = pad.get("spoke_angle") or 0.0
+    cands, seen = [], set()
+    for ang in [base + 90 * k for k in range(4)] + [base + 15 * k for k in range(24)]:
+        a = round(ang % 360, 3)
+        if a in seen:
+            continue
+        seen.add(a)
+        r = math.radians(a)
+        ray = LineString([(start.x, start.y), (start.x + reach * math.cos(r), start.y + reach * math.sin(r))])
+        inter = ray.intersection(core)
+        if inter.is_empty:
+            continue
+        pts = shapely.get_coordinates(inter)
+        d0 = min(ray.project(Point(x, y)) for x, y in pts)
+        end = None
+        for step in (0.05, 0.02, 0.005):
+            p = ray.interpolate(d0 + step)
+            if core.contains(p):
+                end = p
+                break
+        if end is None:
+            continue
+        seg = LineString([(start.x, start.y), (end.x, end.y)])
+        if space.fits_geom(net, layer, seg.buffer(w / 2, quad_segs=8)):
+            cands.append((seg.length, a, seg))
+    taken = [] if taken is None else taken
+    out = []
+    for _, a, seg in sorted(cands):
+        if any(abs((a - b + 180) % 360 - 180) < 45 for b in taken):
+            continue
+        taken.append(a)
+        (ax, ay), (bx, by) = seg.coords
+        out.append(dict(net=net, layer=layer, a=[round(ax, 6), round(ay, 6)], b=[round(bx, 6), round(by, 6)],
+                        width=w))
+        if len(out) >= need:
+            break
+    return out
+
+
+# ----------------------------------------------------------------------------- analysis
+def needs_fills(report):
+    """Whether a DRC report has zone trouble the fill geometry helps with."""
+    if any(v.get("type") == "starved_thermal" for v in drc.errors(report)):
+        return True
+    return any(_is_zone(it.get("description")) for u in report.get("unconnected_items") or []
+               for it in u.get("items") or [])
+
+
+def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, copper=None):
+    """What a DRC report asks for, given `routed` = {uuid: routing item} and, optionally,
+    KiCad's zone fills (pcbnew_io.zone_fills), user -> canonical layer names and all routing
+    on the board (`copper`, default `routed`; locked pre-routes count as copper, are never
+    ripped or widened):
+    widen {uuid: mm}, items {uuid} and nets {net} to rip up, spokes [track], connect {net}
+    (planes to replace by fill pieces), open {net: set(layers) or None}, thermal {pad uuid}
+    (spoke corridors), unattributed [type]."""
     widen, items, nets, opened, other = {}, set(), set(), {}, []
+    spokes, connect = [], set()
     pads = {pd.get("uuid"): pd for pd in (info or {}).get("pads", []) if pd.get("uuid")}
+    zones = {z["uuid"]: z for z in fills or []}
+    lmap = layer_map or {}
     want_corridor = set()
     space = None
+    taken = {}
+
+    def get_space():
+        nonlocal space
+        if space is None:
+            space = _Space(copper if copper is not None else routed, info, plan)
+        return space
+
+    def try_spokes(pad, zone, layers, need):
+        if not zones or plan is None or info is None or pad is None or zone is None:
+            return False
+        for l in layers:
+            got = spoke_tracks(pad, zone, l, need, plan, get_space(), taken.setdefault((pad["uuid"], l), []))
+            if got:
+                spokes.extend(got)
+                return len(got) >= need
+        return False
+
     for v in drc.errors(report):
         its = v.get("items") or []
         if v.get("type") == "starved_thermal":
-            want_corridor.update(it.get("uuid") for it in its if it.get("uuid") in pads)
+            pad = next((pads[it["uuid"]] for it in its if it.get("uuid") in pads), None)
+            zone = next((zones[it["uuid"]] for it in its if it.get("uuid") in zones), None)
+            m = _DRC_LAYER.search(v.get("description") or "")
+            layer = lmap.get(m.group(1).strip(), m.group(1).strip()) if m else None
+            s = _SPOKES.search(v.get("description") or "")
+            need = max(1, int(s.group(1)) - int(s.group(2))) if s else 2
+            if pad is not None and not (layer and try_spokes(pad, zone, [layer], need)):
+                want_corridor.add(pad["uuid"])
             continue
         ours = [it for it in its if it.get("uuid") in routed]
         if not ours:
@@ -137,8 +265,7 @@ def analyse(report, routed, info=None, plan=None):
                 r = routed[it["uuid"]]
                 w = float(m.group(1)) + 1e-4 if m else None
                 if w and r["kind"] in ("track", "arc") and info is not None and plan is not None:
-                    space = space or _Space(routed, info, plan)
-                    if space.fits(it["uuid"], w):
+                    if get_space().fits(it["uuid"], w):
                         widen[it["uuid"]] = w
                         continue
                 items.add(it["uuid"])
@@ -150,23 +277,29 @@ def analyse(report, routed, info=None, plan=None):
     for u in report.get("unconnected_items") or []:
         its = u.get("items") or []
         uns = {n for it in its for n in _nets_of(it.get("description"))}
-        zone_layers, has_zone = set(), False
-        pad_ids = [it.get("uuid") for it in its if it.get("uuid") in pads]
-        for it in its:
-            d = it.get("description") or ""
-            if d.startswith("Zone") or d.startswith("Teardrop"):
-                has_zone = True
-                for lm in re.finditer(r"on ([A-Za-z0-9_.]+(?: and [A-Za-z0-9_.]+)*)", d):
-                    zone_layers.update(x.strip() for x in lm.group(1).split(" and "))
-        if has_zone and pad_ids:
-            want_corridor.update(pad_ids)  # a pad cut off from its zone
-            continue
-        for n in uns:
-            if has_zone:
-                cur = opened.get(n, set())
-                opened[n] = None if cur is None else (cur | zone_layers)
-            else:
+        zone_its = [it for it in its if _is_zone(it.get("description"))]
+        if not zone_its:
+            for n in uns:
                 opened[n] = None  # re-route; a plane of the net may have hidden the gap
+            continue
+        pad_its = [it for it in its if it.get("uuid") in pads]
+        if pad_its:  # a pad cut off from its zone: a spoke track joins them
+            pad = pads[pad_its[0]["uuid"]]
+            zone = next((zones[it["uuid"]] for it in zone_its if it.get("uuid") in zones), None)
+            layers = [l for l in pad.get("layers") or [] if zone and l in zone.get("layers", {})]
+            if try_spokes(pad, zone, layers, 1):
+                continue
+            want_corridor.add(pad["uuid"])
+        zl = set()
+        for it in zone_its:
+            m = _ON_LAYERS.search(it.get("description") or "")
+            if m:
+                zl.update(lmap.get(x.strip(), x.strip()) for x in m.group(1).split(" and "))
+        for n in uns:
+            if zones:
+                connect.add(n)
+            cur = opened.get(n, set())
+            opened[n] = None if cur is None else (cur | zl)
     thermal = set()
     if want_corridor and info is not None and plan is not None:
         from shapely.strtree import STRtree
@@ -182,9 +315,11 @@ def analyse(report, routed, info=None, plan=None):
                 if r["net"] != pad["net"] and (r["kind"] == "via" or r.get("layer") == layer):
                     items.add(r["uuid"])
                     nets.add(r["net"])
-    return dict(widen=widen, items=items, nets=nets, open=opened, thermal=thermal, unattributed=other)
+    return dict(widen=widen, items=items, nets=nets, spokes=spokes, connect=connect, open=opened,
+                thermal=thermal, unattributed=other)
 
 
+# ----------------------------------------------------------------------------- DSN edits
 def _drop_planes(tree, nets_layers):
     """Remove the planes of nets (on the given layers; all layers when None) from a DSN."""
     struct = find(tree, "structure")
@@ -202,9 +337,143 @@ def _drop_planes(tree, nets_layers):
     return n
 
 
+def net_clusters(net, info, copper, fills, cu):
+    """The parts of `net` that KiCad's connectivity sees as connected: items of the net touch
+    where their copper overlaps on a layer (fill pieces, pads with their copper on that
+    layer, tracks, vias), and pads and vias join their layers. Returns [dict(pads={uuid},
+    routed={uuid}, pieces={(zone uuid, layer, index): polygon}, pad_area=float)], the part
+    with the most pads first."""
+    from shapely.strtree import STRtree
+    from .constraints import _pad_shapes, _poly
+    nodes = []   # (node id, layer, geometry); pads and vias keep one id on every layer
+    for pd in info.get("pads") or []:
+        if pd.get("net") != net or not pd.get("uuid"):
+            continue
+        _, real = _pad_shapes(pd)
+        for l, g in real.items():
+            if g is not None and not g.is_empty:
+                nodes.append((("pad", pd["uuid"]), l, g))
+    for u, r in (copper or {}).items():
+        if r.get("net") != net:
+            continue
+        if r["kind"] == "via":
+            g = _routed_geom(r)
+            for l in cu:
+                nodes.append((("routed", u), l, g))
+        elif r.get("layer"):
+            nodes.append((("routed", u), r["layer"], _routed_geom(r)))
+    for z in fills or []:
+        if z.get("net") != net:
+            continue
+        for l, polys in (z.get("layers") or {}).items():
+            for i, rings in enumerate(polys):
+                g = _poly(rings)
+                if g is not None and not g.is_empty:
+                    nodes.append((("piece", (z["uuid"], l, i), bool(z.get("teardrop"))), l, g))
+    parent = {}
+
+    def root(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for nid, _, _ in nodes:
+        root(nid)
+    by_layer = {}
+    for nid, l, g in nodes:
+        by_layer.setdefault(l, []).append((nid, g))
+    for items in by_layer.values():
+        tree = STRtree([g for _, g in items])
+        for nid, g in items:
+            for j in tree.query(g, predicate="intersects"):
+                other = items[int(j)][0]
+                if other != nid:
+                    ra, rb = root(nid), root(other)
+                    if ra != rb:
+                        parent[ra] = rb
+    groups = {}
+    for nid, l, g in nodes:
+        c = groups.setdefault(root(nid), dict(pads=set(), routed=set(), pieces={}, teardrops=set(), pad_area=0.0))
+        if nid[0] == "pad":
+            if nid[1] not in c["pads"]:
+                c["pad_area"] += g.area
+            c["pads"].add(nid[1])
+        elif nid[0] == "routed":
+            c["routed"].add(nid[1])
+        elif nid[2]:
+            c["teardrops"].add(nid[1])
+        else:
+            c["pieces"][nid[1]] = g
+    return sorted(groups.values(), key=lambda c: (-len(c["pads"]), -sum(g.area for g in c["pieces"].values())))
+
+
+def _fill_planes(tree, fills, nets, lname, info, copper, cu):
+    """Replace the planes of `nets` in a DSN by the fill pieces of their main part (see
+    net_clusters): Freerouting connects a pin to a plane that holds the pin's centre, KiCad
+    through the fill's spokes, so each piece is joined with the copper of the pads it
+    touches; the remaining holes are windows. Pieces of the other parts are left out, so
+    Freerouting sees their pads and routing as not connected to any plane and joins them to
+    the net (for a net with a plane over 30% of the board it routes only items that touch no
+    plane). Pieces are shrunk by 15 um and simplified within 10 um, inside real copper."""
+    from shapely.ops import unary_union
+    from .constraints import _pad_shapes
+    struct = find(tree, "structure")
+    out = dict(removed=0, added=0, parts=0, left_out=0)
+    for pl in findall(struct, "plane"):
+        if len(pl) > 1 and str(pl[1]) in nets:
+            struct.remove(pl)
+            out["removed"] += 1
+    pads = {pd["uuid"]: pd for pd in info.get("pads") or [] if pd.get("uuid")}
+    for net in sorted(nets):
+        parts = net_clusters(net, info, copper, fills, cu)
+        if not parts:
+            continue
+        main = parts[0]
+        out["parts"] += len(parts)
+        out["left_out"] += sum(len(c["pieces"]) for c in parts[1:])
+        pad_cu = {}
+        for u in main["pads"]:
+            for l, g in _pad_shapes(pads[u])[1].items():
+                if g is not None and not g.is_empty:
+                    pad_cu.setdefault(l, []).append(g)
+        for (zu, layer, i), g in sorted(main["pieces"].items(), key=lambda kv: (kv[0][1], kv[0][2], kv[0][0])):
+            touching = [x for x in pad_cu.get(layer, []) if x.intersects(g)]
+            if touching:
+                g = unary_union([g, *touching])
+            g = g.buffer(-0.015, join_style="mitre").simplify(0.01, preserve_topology=True)
+            for pg in getattr(g, "geoms", [g]):
+                if pg.is_empty or pg.area < 1e-4 or pg.geom_type != "Polygon":
+                    continue
+                node = ["plane", Q(net), ["polygon", lname(layer), "0", *translate._ring(pg.exterior.coords)]]
+                node += [["window", ["polygon", lname(layer), "0", *translate._ring(h.coords)]]
+                         for h in pg.interiors if len(h.coords) >= 4]
+                struct.append(node)
+                out["added"] += 1
+    return out
+
+
+def layer_names(dsn_tree, copper):
+    """{DSN (user) layer name: canonical name} and its inverse, from a KiCad DSN."""
+    names = [str(l[1]) for l in findall(find(dsn_tree, "structure"), "layer")]
+    to_canon = dict(zip(names, copper))
+    to_canon.update({c: c for c in copper})
+    return to_canon, dict(zip(copper, names))
+
+
+# ----------------------------------------------------------------------------- loop
 # Escalation: rip only the offending items with the rest fixed; then their whole nets; then
-# their whole nets with the rest of the routing left to the router.
+# their whole nets with the rest of the routing left to the router. Every round routes in a
+# new order (translate.permute), so a round that repeats a level is a new attempt; the loop
+# stops after FAILS rounds in a row that were not better.
 LEVELS = ("items", "nets", "free")
+FAILS = 3
+
+
+def round_seed(seed, k):
+    """The DSN order of repair round k (never 0, which is KiCad's order)."""
+    return (seed or 0) * 7919 + k
 
 
 def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
@@ -215,6 +484,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     t_start = time.monotonic()
     thermal = set(opts.get("thermal_pads") or []) if opts.get("thermal_pads") != "all" else set()
     sev = opts.get("severities") or {}
+    fixed = set(opts.get("fixed_uuids") or [])   # the input's locked routing
+    lmap, lname_map = {}, {}
+    if (wd / "kicad.dsn").exists():
+        lmap, lname_map = layer_names(specctra.read(wd / "kicad.dsn"), plan.copper)
 
     def left():
         return deadline - time.monotonic()
@@ -230,8 +503,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     best = drc.summary(best_rep)
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
-    level = 0
-    for k in range(1, int(opts.get("rounds", 3)) + 1):
+    level, fails, split_failed = 0, 0, False
+    for k in range(1, int(opts.get("rounds", 6)) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
         rec = dict(round=k)
@@ -244,34 +517,51 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             shutil.rmtree(rdir)
         rdir.mkdir(parents=True)
         listing = pcbnew_io.edit_routing(output_path, rdir / "listing.kicad_pcb")["routing"]
-        routed = {r["uuid"]: r for r in listing if not r.get("locked")}
-        a = analyse(best_rep, routed, info, plan)
+        copper = {r["uuid"]: r for r in listing}
+        routed = {u: r for u, r in copper.items() if not r.get("locked") and u not in fixed}
+        fills = None
+        if needs_fills(best_rep):
+            try:
+                fills = pcbnew_io.zone_fills(output_path)["zones"]
+            except pcbnew_io.PcbnewError as e:
+                rec["fills_error"] = str(e)
+        a = analyse(best_rep, routed, info, plan, fills=fills, layer_map=lmap, copper=copper)
         new_thermal = a["thermal"] - thermal
         if new_thermal and opts.get("thermal_repair", True):
             thermal |= new_thermal
             plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
-        if not a["widen"] and not a["items"] and not a["open"] and not new_thermal:
+        if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
             break
-        if not a["items"] and not a["widen"] and level == 0:
+        use_split = bool(a["connect"] and fills and not split_failed)
+        if not a["items"] and not a["widen"] and not use_split and level == 0 and a["open"]:
             level = 2  # only open connections: the router needs room, not the same board again
         mode = LEVELS[level]
-        rec.update(level=mode, widen=len(a["widen"]), rip_items=len(a["items"]), rip_nets=sorted(a["nets"]),
-                   open=sorted(a["open"]), thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
+        rec.update(level=mode, widen=len(a["widen"]), spokes=len(a["spokes"]), rip_items=len(a["items"]),
+                   rip_nets=sorted(a["nets"]), connect=sorted(a["connect"]), open=sorted(a["open"]),
+                   thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
         if mode == "items":
             rip = set(a["items"])
         else:
             rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
-        fixed = drc.stage_board(output_path, input_path, rdir / "fixed")
-        pcbnew_io.edit_routing(fixed, fixed, delete=sorted(rip), widths=a["widen"], lock_all=mode != "free")
+        fixed_board = drc.stage_board(output_path, input_path, rdir / "fixed")
+        pcbnew_io.edit_routing(fixed_board, fixed_board, delete=sorted(rip), widths=a["widen"], add=a["spokes"],
+                               lock_all=mode != "free")
         cand = rdir / "cand.kicad_pcb"
         if rip or a["open"]:
             dsn_k = rdir / "kicad.dsn"
-            pcbnew_io.export_dsn(fixed, dsn_k, probes=False)
+            pcbnew_io.export_dsn(fixed_board, dsn_k, probes=False)
             tree = specctra.read(dsn_k)
             translate.apply(tree, plan, info)
-            rec["planes_dropped"] = _drop_planes(tree, a["open"])
+            translate.permute(tree, round_seed(opts.get("seed"), k))
+            if use_split:
+                now = {u: r for u, r in copper.items() if u not in rip}   # the board as exported
+                now.update({f"spoke{i}": dict(kind="track", **s) for i, s in enumerate(a["spokes"])})
+                rec["planes_split"] = _fill_planes(tree, fills, a["connect"], lambda l: lname_map.get(l, l),
+                                                   info, now, plan.copper)
+            rec["planes_dropped"] = _drop_planes(tree, {n: v for n, v in a["open"].items()
+                                                        if not use_split or n not in a["connect"]})
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
             budget = max(15.0, min(left() * 0.5, left() - 30))
@@ -288,10 +578,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             translate.fix_session(ses, plan)
             ses_k = rdir / "board_kicad.ses"
             specctra.write(ses, ses_k)
-            pcbnew_io.import_ses(fixed, ses_k, cand)
-            pcbnew_io.edit_routing(cand, cand, unlock_all=True)
+            pcbnew_io.import_ses(fixed_board, ses_k, cand)
+            pcbnew_io.edit_routing(cand, cand, unlock_all=True, keep_locked=fixed)
         else:
-            pcbnew_io.edit_routing(fixed, cand, unlock_all=True)
+            pcbnew_io.edit_routing(fixed_board, cand, unlock_all=True, keep_locked=fixed)
         if left() < 10:
             rec["stopped"] = "time"
             break
@@ -303,15 +593,24 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         s_ = drc.summary(rep)
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best)
-        log(f"repair round {k} ({mode}): {s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
+        log(f"repair round {k} ({mode}{', spokes ' + str(len(a['spokes'])) if a['spokes'] else ''}"
+            f"{', split planes ' + str(len(a['connect'])) if use_split else ''}): "
+            f"{s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
             f"({'kept' if rec['kept'] else 'discarded'})")
         if rec["kept"]:
             shutil.copy2(cand, output_path)
             best, best_rep = s_, rep
-            level = 0
+            level, fails = 0, 0
         else:
-            level += 1
-            if level >= len(LEVELS):
+            fails += 1
+            if use_split:
+                # the router could not join the parts with everything else in place: from now
+                # on the net's planes are left out and the rest of the routing may move
+                split_failed = True
+                level = len(LEVELS) - 1 if not (a["items"] or a["widen"]) else min(level + 1, len(LEVELS) - 1)
+            else:
+                level = min(level + 1, len(LEVELS) - 1)
+            if fails >= FAILS:
                 rec["stopped"] = "no improvement"
                 break
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))

@@ -14,7 +14,8 @@ fixed wiring are kept):
 - pins: each component placement names a clearance class for each of its pins;
 - obstacles: KiCad's keepouts (outline holes, rule areas, NPTH holes) are replaced by the
   plan's, held in one virtual component placed at the origin (a component's keepouts can
-  name a clearance class; board-level keepouts are read before the classes exist);
+  name a clearance class; board-level keepouts are read before the classes exist); copper
+  graphics that carry a net are pins of that component, listed in their net;
 - vias: one padstack per routing class at its real size, named Via[0-n]_<D>:<d>_um in
   whole micrometres (Freerouting drops decimal fractions from via names, KiCad reads the
   drill from the name); the class rule's typed clearances (wire_via, via_via) carry what
@@ -27,6 +28,7 @@ footprints and fails on renamed references), bare net names are quoted (`ADD|SUB
 the whole import), and via shapes get their real diameters back.
 """
 import math
+import random
 
 from shapely.geometry import MultiPolygon, Polygon
 
@@ -203,10 +205,35 @@ def apply(tree, plan, info):
             n_ko += 1
             image.append([ob.kind, name, main, *windows])
             place.append([ob.kind, name, ["clearance_class", ob.cls]])
-    if n_ko:
+    # copper graphics of a net: pins of the obstacle component in that net
+    dsn_nets = {str(n[1]): n for n in findall(network, "net") if len(n) > 1}
+    n_gp = 0
+    for i, (net, shapes, cls, _why) in enumerate(plan.net_graphics):
+        if net not in dsn_nets:
+            continue
+        shp = []
+        for l, geo in shapes.items():
+            polys = _polygons(geo)
+            if polys:
+                pg = max(polys, key=lambda g: g.area)
+                shp.append(["shape", ["polygon", lname(l), "0", *_ring(pg.exterior.coords)]])
+        if not shp:
+            continue
+        ps_name, pin_id = f"kae_gfx{i}", f"g{i}"
+        lib.append(["padstack", Q(ps_name), *shp, ["attach", "off"]])
+        image.append(["pin", Q(ps_name), pin_id, "0", "0"])
+        place.append(["pin", pin_id, ["clearance_class", cls]])
+        pins = find(dsn_nets[net], "pins")
+        if pins is None:
+            pins = ["pins"]
+            dsn_nets[net].append(pins)
+        pins.append(f"{OBSTACLE_REF}-{pin_id}")
+        n_gp += 1
+    if n_ko or n_gp:
         lib.append(image)
         placement.append(["component", OBSTACLE_IMAGE, place])
     summary["obstacles"] = n_ko
+    summary["net_graphics"] = n_gp
 
     # ---- placement: a clearance class per pin
     pins_set = 0
@@ -260,6 +287,35 @@ def apply(tree, plan, info):
     summary["classes"] = len(plan.classes)
     summary["obstacle_classes"] = len(plan.obstacle_classes)
     return summary
+
+
+def permute(tree, seed):
+    """Shuffle the order of components, of their placements and of nets in a DSN `tree`
+    (in place, reproducibly from `seed`; 0 leaves it as it is). Returns whether it changed.
+
+    Freerouting 2.5.0 is deterministic and routes the open items in the order the DSN
+    created them (pins in placement order; net numbers in network order break ties), so an
+    attempt with another order is another, equally valid attempt."""
+    if not seed:
+        return False
+    rnd = random.Random(seed)
+
+    def shuffle_children(node, head):
+        idx = [i for i, c in enumerate(node) if isinstance(c, list) and c and c[0] == head]
+        kids = [node[i] for i in idx]
+        rnd.shuffle(kids)
+        for i, c in zip(idx, kids):
+            node[i] = c
+        return kids
+
+    placement = find(tree, "placement")
+    if placement is not None:
+        for comp in shuffle_children(placement, "component"):
+            shuffle_children(comp, "place")
+    network = find(tree, "network")
+    if network is not None:
+        shuffle_children(network, "net")
+    return True
 
 
 # ----------------------------------------------------------------------------- session

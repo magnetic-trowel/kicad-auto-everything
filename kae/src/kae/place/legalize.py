@@ -18,6 +18,7 @@ board stays the judge.
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 
@@ -262,7 +263,109 @@ def _covered(occ, rect, pad, xa, xb, ya, yb):
     return (L[w:w + nx, h:h + ny] - L[0:nx, h:h + ny] - L[w:w + nx, 0:ny] + L[0:nx, 0:ny]).astype(float)
 
 
-def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None):
+def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0):
+    """greedy() on the compiled kernels (summed-area tables updated in place)."""
+    from . import _fastlegal as FL
+    from .problem import sat
+    ext = 1
+    for i in P.mov:
+        for r in P.parts[i].rots:
+            for (a, b, c, d) in (r.g_own,) + tuple(r.g_opp):
+                ext = max(ext, -a, b, -c, d)
+    pad = ext + 1
+    skip = set(parts)
+    occ = _occupancy(P, st, skip, pad)
+    S = [sat(occ[0]), sat(occ[1])]
+    SO = P.sat_out
+    max_d = P.ncx + P.ncy + 4 * pad
+    arrs = {}
+
+    def arrays(i):
+        if i not in arrs:
+            arrs[i] = FL.part_arrays(P.parts[i])
+        return arrs[i]
+
+    def add(i, v):
+        for side, (a, b, c, d), _ in st.grid_rects(i):
+            FL.sat_add_rect(S[side], a + pad, b + pad, c + pad, d + pad, v)
+
+    def spot(i):
+        p = P.parts[i]
+        own, opp, opp_n, brd, brd_n = arrays(i)
+        c, X, Y, k = FL.nearest_spot(S[0], S[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1, int(st.X[i]),
+                                     int(st.Y[i]), int(st.K[i]), float(w_rot), own, opp, opp_n, brd, brd_n, max_d)
+        return None if c < 0 else (c, X, Y, k)
+    start = {i: (int(st.X[i]), int(st.Y[i])) for i in parts}
+    placed_set, queue = set(), []
+    for i in parts:
+        best = spot(i)
+        if best is None:
+            queue.append(i)
+            continue
+        _, st.X[i], st.Y[i], st.K[i] = best
+        add(i, 1)
+        placed_set.add(i)
+    ripups = 0
+    max_ripups = max_ripups if max_ripups is not None else 4 * len(queue) + 20
+    unplaced = []
+    while queue and ripup and ripups < max_ripups:
+        i = queue.pop(0)
+        p = P.parts[i]
+        best = spot(i)
+        if best is not None:
+            _, st.X[i], st.Y[i], st.K[i] = best
+            add(i, 1)
+            placed_set.add(i)
+            continue
+        hard = [np.zeros_like(occ[0]) for _ in (0, 1)]
+        soft = [np.zeros_like(occ[0]) for _ in (0, 1)]
+        for ob in P.obstacles:
+            _mark(hard[ob.side], ob.g, pad, 1)
+        for j in P.mov:
+            if j == i or (j in skip and j not in placed_set):
+                continue
+            tgt = soft if P.parts[j].area < p.area else hard
+            for side, r, _ in st.grid_rects(j):
+                _mark(tgt[side], r, pad, 1)
+        H = [sat(hard[0]), sat(hard[1])]
+        C = [sat(soft[0]), sat(soft[1])]
+        own, opp, opp_n, brd, brd_n = arrays(i)
+        c, X, Y, k = FL.ripup_spot(H[0], H[1], C[0], C[1], SO, P.ncx, P.ncy, pad, 0 if p.s > 0 else 1,
+                                   int(st.X[i]), int(st.Y[i]), int(st.K[i]), float(w_rot), 4.0, own, opp, opp_n,
+                                   brd, brd_n, max_d)
+        if c < 0:
+            unplaced.append(i)
+            continue
+        ripups += 1
+        st.X[i], st.Y[i], st.K[i] = X, Y, k
+        mine = st.grid_rects(i)
+        evict = []
+        for j in list(placed_set) + [j for j in P.mov if j not in skip]:
+            if j == i or P.parts[j].area >= p.area:
+                continue
+            if any(sa == sb and ra[1] > rb[0] and rb[1] > ra[0] and ra[3] > rb[2] and rb[3] > ra[2]
+                   for sa, ra, _ in mine for sb, rb, _ in st.grid_rects(j)):
+                evict.append(j)
+        for j in evict:
+            if j in placed_set or j not in skip:
+                add(j, -1)
+            placed_set.discard(j)
+            skip.add(j)
+            start.setdefault(j, (int(st.X[j]), int(st.Y[j])))
+        queue.extend(sorted(evict, key=lambda j: -P.parts[j].area))
+        add(i, 1)
+        placed_set.add(i)
+    unplaced += queue
+    moved = sum(math.hypot((st.X[i] - x) * P.g, (st.Y[i] - y) * P.g) for i, (x, y) in start.items())
+    rep = dict(placed=len(placed_set), unplaced=[P.parts[i].ref for i in unplaced], moved_mm=round(moved, 2),
+               ripups=ripups, seconds=round(time.monotonic() - t0, 2), compiled=True)
+    if log:
+        log(f"greedy legalization: {len(placed_set)} placed, {len(unplaced)} without a spot, {ripups} rip-ups, "
+            f"moved {moved:.1f} mm ({rep['seconds']}s)")
+    return rep
+
+
+def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, compiled=None):
     """Put `parts` back one by one, largest first, at the nearest grid origin (L1, plus a
     charge for turning) where none of their rectangles meets an obstacle or another part on
     its side and their board rectangles lie inside the outline; every other movable part
@@ -276,6 +379,11 @@ def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None):
     parts = sorted({i for i in parts if P.parts[i].movable}, key=lambda i: -P.parts[i].area)
     if not parts:
         return dict(placed=0, unplaced=[], moved_mm=0.0, ripups=0, seconds=0.0)
+    if compiled is None:
+        from ._fastlegal import HAVE_NUMBA
+        compiled = HAVE_NUMBA and not os.environ.get("KAE_NO_NUMBA")
+    if compiled:
+        return _greedy_fast(P, st, parts, log, (2.0 / P.g) if w_rot is None else w_rot, ripup, max_ripups, t0)
     ext = 1
     for i in P.mov:
         for r in P.parts[i].rots:

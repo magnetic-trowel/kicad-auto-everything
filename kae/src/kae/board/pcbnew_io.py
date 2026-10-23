@@ -176,15 +176,24 @@ def import_ses(path, ses_path, dst_path, timeout=900):
     return _run("import-ses", lambda out: [_abs(path), _abs(ses_path), out, _abs(dst_path)], timeout)
 
 
-def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_all=False, timeout=900):
-    """Delete tracks and vias by uuid, set track widths ({uuid: mm}), lock or unlock all
-    routing; written to `dst_path` with the plain writer. Returns {removed, widened}."""
+def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_all=False, add=(),
+                 keep_locked=(), timeout=900):
+    """Delete tracks and vias by uuid, set track widths ({uuid: mm}), add tracks
+    ([{net, layer, a: [x, y], b: [x, y], width}], mm, canonical layer names), lock or unlock
+    all routing (unlock_all leaves the uuids in `keep_locked` locked); written to `dst_path`
+    with the plain writer. Returns {removed, widened, added, routing}."""
     with tempfile.TemporaryDirectory(prefix="kae-edit-", dir=os.environ.get("KAE_TMPDIR")) as d:
         ej = os.path.join(d, "edits.json")
         with open(ej, "w") as f:
             json.dump(dict(delete=list(delete), width=dict(widths or {}), lock_all=lock_all,
-                           unlock_all=unlock_all), f)
+                           unlock_all=unlock_all, add=list(add), keep_locked=list(keep_locked)), f)
         return _run("edit-routing", lambda out: [_abs(path), ej, out, _abs(dst_path)], timeout)
+
+
+def zone_fills(path, timeout=900):
+    """Every zone of `path` refilled as kicad-cli's DRC does (--refill-zones). Returns {zones:
+    [{uuid, net, name, priority, teardrop, layers: {layer: [[outer ring, hole rings...]]}}]}."""
+    return _run("zone-fills", lambda out: [_abs(path), out], timeout)
 
 
 # ----------------------------------------------------------------------------- verify
