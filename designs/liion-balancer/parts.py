@@ -536,6 +536,34 @@ J_FAULT = Conn(2, "Connector_Phoenix_MC:PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.8
     description="Fault contact: header MC 1,5/2-G-3,81, plug MC 1,5/2-ST-3,81")
 
 # =============================================================================================
+# Hardware interlock and open-tap / open-return trip (review M-1, M-2, M-5)
+
+ZENER_3V9 = PartDef(
+    mpn="BZX84-B3V9,215", manufacturer="Nexperia", symbol="Diode:BZX84Cxx",
+    footprint="Package_TO_SOT_SMD:SOT-23", value="BZX84-B3V9", category="diode",
+    description="Zener 3.9 V +/-2 %, 250 mW, SOT-23 (trip threshold of the open-tap detectors)",
+    datasheet="https://assets.nexperia.com/documents/data-sheet/BZX84_SER.pdf",
+    ratings=Ratings(i_max=0.2, p_max=0.25, t_min=-55, t_max=150),
+    lifecycle="active", second_source="onsemi BZX84B3V9LT1G [unverified]",
+    source={"pins": "Nexperia BZX84 series Rev. 7 (1 Jan 2023) p.2 Table 2: 1 anode, 2 n.c., 3 cathode = KiCad "
+                    "Diode:BZX84Cxx",
+            "ratings": "BZX84 Rev. 7 p.3 limiting values: IF 200 mA, Ptot 250 mW; p.5 Table 8: B3V9 VZ 3.82-3.98 V "
+                       "at 5 mA, rdif <= 600 ohm at 1 mA, IR <= 3 uA at 1 V; Tj -55..150 C (via LCSC C550954)",
+            "lifecycle": "LCSC / distributor listings Active, Oct 2026 [S]"})
+R_220 = R("220", mpn="RC0603FR-07220RL", manufacturer="Yageo", datasheet=YAGEO_RC, lifecycle="active",
+          second_source="any 1 % 0603", source=SRC_R)
+R_10M_1206 = R("10M", "1206", mpn="RC1206FR-0710ML", manufacturer="Yageo", datasheet=YAGEO_RC, lifecycle="active",
+               second_source="any 1 % 1206 200 V", source=SRC_R)
+R_470K = R("470k", mpn="RC0603FR-07470KL", manufacturer="Yageo", datasheet=YAGEO_RC, lifecycle="active",
+           second_source="any 1 % 0603", source=SRC_R)
+R_620K = R("620k", mpn="RC0603FR-07620KL", manufacturer="Yageo", datasheet=YAGEO_RC, lifecycle="active",
+           second_source="any 1 % 0603", source=SRC_R)
+R_1K8_2512 = R("1.8k", "2512", mpn="RC2512FK-071K8L", manufacturer="Yageo", datasheet=YAGEO_RC, lifecycle="active",
+               second_source="Vishay CRCW25121K80FKEG", source=SRC_R)
+J_BMS = J_FAULT.with_(description="BMS OK input (9-30 V DC or the BMS's dry contact switching the user's 12/24 V): "
+                                  "header MC 1,5/2-G-3,81, plug MC 1,5/2-ST-3,81")
+
+# =============================================================================================
 # Off-board harness (block harness, board="off")
 
 F_INLINE = Fuse(
