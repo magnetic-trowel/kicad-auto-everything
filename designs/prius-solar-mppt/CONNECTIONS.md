@@ -22,7 +22,7 @@ Companion to [DESIGN.md](DESIGN.md). Every part instance, every pin by number an
 | Q101, Q103, Q104, Q105, Q106, Q201, Q203, Q204, Q205, Q206, Q301, Q302 (12) | IAUC100N10S5L040 | Infineon | `Transistor_FET:BSC040N10NS5 (same PG-TDSON-8 pinout)` | `Package_TO_SOT_SMD:TDSON-8-1` | IAUC100N10S5L040 DS rev1.0 p1 (PG-TDSON-8); pin numbers per KiCad TDSON-8-1 pads [S] |
 | R101, R201 (2) | WSK2512R0050FEA | Vishay | `Device:R_Shunt` | `Resistor_SMD:R_Shunt_Vishay_WSK2512_6332Metric_T1.19mm` | Vishay WSK2512 DS doc 30108 (1 W, 5-200 mOhm, 4-terminal) [S]; pads per KiCad footprint |
 | U102, U202 (2) | INA186A2QDBVRQ1 | TI | `custom (kae:INA186_DBV)` | `Package_TO_SOT_SMD:SOT-23-5` | INA186-Q1 DS SBOS386B, Fig. 5-2 / Table 5-1 (DBV) [P] |
-| Q102, Q202, Q701 (3) | SMMBTA42LT1G | onsemi | `Transistor_BJT:MMBTA42` | `Package_TO_SOT_SMD:SOT-23` | onsemi MMBTA42 DS (300 V NPN, S-prefix AEC-Q101) [unverified]; KiCad Q_NPN_BEC |
+| Q102, Q202, Q701, Q702 (4) | SMMBTA42LT1G | onsemi | `Transistor_BJT:MMBTA42` | `Package_TO_SOT_SMD:SOT-23` | onsemi MMBTA42 DS (300 V NPN, S-prefix AEC-Q101) [unverified]; KiCad Q_NPN_BEC |
 | U103, U203 (2) | LM5176QPWPRQ1 | TI | `Regulator_Switching:LM5176PWP` | `Package_SO:HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP3.4x9.5mm_ThermalVias` | LM5176-Q1 DS SNVSB46B, Fig. 5-1 / Table 5-1 [P] |
 | D102, D103, D104, D202, D203, D204, D501, D502, D503 (9) | BAT46WJ,115 | Nexperia | `Diode:BAT46` | `Diode_SMD:D_SOD-323F` | Nexperia BAT46WJ DS (SOD323F, 100 V, AEC-Q101) [unverified] |
 | R116, R216 (2) | WSK2512R0100FEA | Vishay | `Device:R_Shunt` | `Resistor_SMD:R_Shunt_Vishay_WSK2512_6332Metric_T1.19mm` | Vishay WSK2512 DS doc 30108 [S] |
@@ -66,7 +66,8 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `BAT_F_P` | HV | 150..262 V | 2 A | hv power | F901.3, F901.4, K901.4 | after F901 |
 | `BAT_TAP_N` | HV | pack - | as above | hv power | J902.2, F902.1, F902.2 | traction battery - tap |
 | `BAT_TAP_P` | HV | 150..262 V to BAT_TAP_N; pack short-circuit source | pack Isc (~0.5..2 kA) until F901 clears; 2 A normal | hv power | J902.1, F901.1, F901.2 | traction battery + tap |
-| `BE_DK` | HV | 0..262 V | 2 A | hv power | K901.3, D901.3 | D901 cathode to K901 |
+| `BE_DK` | HV | 0..262 V | 2 A | hv power | K901.3, D901.3, R902.1 | D901 cathode to K901 |
+| `BE_RB` | HV | 0..262 V | <30 uA | hv sense | R902.2, R903.1 | midpoint of D901 bypass string |
 | `HVS1_D1` | HV | 219 V max to HV_N | <50 uA | hv sense | R401.2, R402.1 | divider string tap |
 | `HVS1_D2` | HV | 176 V max to HV_N | <50 uA | hv sense | R402.2, R403.1 | divider string tap |
 | `HVS1_D3` | HV | 132 V max to HV_N | <50 uA | hv sense | R403.2, R404.1 | divider string tap |
@@ -84,7 +85,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `HVS2_HLDO` | HV | ~3.3 V to HV_N | <10 mA | bias, hv | U421.5, C425.1, C426.1 | high-side LDO |
 | `HVS2_INP` | HV | 0..0.9 V to HV_N | <50 uA | hv sense | R426.2, R427.1, C421.1, U421.6 | AMC3330 input |
 | `HV_N` | HV | reference of HV domain | 2 A | hv power / hv ground | D303.1, D303.2, D304.1, D304.2, C350.2, C351.2, C352.2, C353.2, C354.2, C355.2, J301.2, R407.2, C401.2, U401.2, U401.7, U401.8, C402.2, C403.2, C404.2, C405.2, C406.2, R427.2, C421.2, U421.2, U421.7, U421.8, C422.2, C423.2, C424.2, C425.2, C426.2, J901.2, K902.4 | converter output -, via cable to K902 |
-| `HV_P` | HV | 0..262 V to HV_N; floating to chassis (|V| <= 262 V single fault) | 2 A | hv power | D301.3, D302.3, C350.1, C351.1, C352.1, C353.1, C354.1, C355.1, J301.1, R401.1, R421.1, J901.1, D901.1, D901.2 | converter output +, via cable to battery-end D901 |
+| `HV_P` | HV | 0..262 V to HV_N; floating to chassis (|V| <= 262 V single fault) | 2 A | hv power | D301.3, D302.3, C350.1, C351.1, C352.1, C353.1, C354.1, C355.1, J301.1, R401.1, R421.1, J901.1, D901.1, D901.2, R903.2 | converter output +, via cable to battery-end D901 |
 | `T1_S1` | HV | +-262 V square (to HV_N: 0..262 V) | 2 A rms | switching node, hv | T301.11, D301.1, D301.2, D303.3, R305.1 | T1 secondary |
 | `T1_S2` | HV | +-262 V square | 2 A rms | switching node, hv | T301.20, D302.1, D302.2, D304.3, C349.2 | T1 secondary |
 | `T1_SNB` | HV | 0..262 V | <0.1 A | hv | R305.2, C349.1 | snubber (DNP) |
@@ -112,7 +113,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `DCX_MID` | LV | -2..50 V | 22 A rms | switching node | C317.2, C318.2, C319.2, C320.2, C321.2, C322.2, C323.2, C324.2, C325.2, C326.2, C327.2, C328.2, C329.2, C330.2, C331.2, C332.2, C333.1, C334.1, C335.1, C336.1, C337.1, C338.1, C339.1, C340.1, C341.1, C342.1, C343.1, C344.1, C345.1, C346.1, C347.1, C348.1, T301.3, T301.4 | split/resonant midpoint, -2..34 V |
 | `FAN_N` | LV | 0..12 V | 0.3 A | power (inductive) | U505.14, J704.2 | fan low side |
 | `FAN_PWM` | LV | 0/3.3 V | <1 mA | digital | U505.3, U701.23 |  |
-| `GND` | LV | 0 V (reference; bonded to chassis at H701-H704) | 8 A per string return | ground | J101.2, D101.2, U101.2, C102.2, U102.1, C103.2, C104.2, R105.2, C106.2, C107.2, C108.2, U103.22, R116.4, C117.2, C118.2, C120.2, C121.2, C122.2, C123.2, NT101.2, R125.2, C124.2, U104.2, C126.2, C127.2, C128.2, J201.2, D201.2, U201.2, C202.2, U202.1, C203.2, C204.2, R205.2, C206.2, C207.2, C208.2, U203.22, R216.4, C217.2, C218.2, C220.2, C221.2, C222.2, C223.2, NT201.2, R225.2, C224.2, U204.2, C226.2, C227.2, C228.2, C301.2, C302.2, C303.2, C304.2, C305.2, C306.2, C307.2, C308.2, C309.2, C310.2, Q302.1, Q302.2, Q302.3, U301.9, U301.11, C311.2, C312.2, C313.2, C315.2, C316.2, C333.2, C334.2, C335.2, C336.2, C337.2, C338.2, C339.2, C340.2, C341.2, C342.2, C343.2, C344.2, C345.2, C346.2, C347.2, C348.2, R308.2, C356.2, RT301.2, C357.2, RT302.2, C358.2, U401.9, U401.15, C407.2, C408.2, C409.2, U402.2, R409.2, C410.2, C411.2, U421.9, U421.15, C427.2, C428.2, C429.2, U422.2, R429.2, C430.2, C431.2, U501.2, C501.2, R503.2, C502.2, U502.12, C503.2, R505.2, C504.2, R507.2, R510.2, C505.2, C506.2, U503.1, U503.2, U503.4, C507.2, U504.3, U504.5, U504.6, U504.11, C508.2, R519.2, C509.2, U505.6, U505.7, U505.8, C510.2, C601.2, C602.2, U601.1, U601.9, R602.2, R603.2, C604.2, C605.2, R605.2, C608.2, C609.2, U602.1, U602.9, R608.2, R609.2, C611.2, C612.2, R611.2, U701.6, U701.8, U701.19, C701.2, C702.2, C703.2, C704.2, C705.2, J701.3, J702.2, R705.2, Q701.2, C707.2, J703.5, J703.6, TP705.1, H701.1, H702.1, H703.1, H704.1, J903.5, J903.6, J904.2 | PV-, PGND, signal ground |
+| `GND` | LV | 0 V (reference; bonded to chassis at H701-H704) | 8 A per string return | ground | J101.2, D101.2, U101.2, C102.2, U102.1, C103.2, C104.2, R105.2, C106.2, C107.2, C108.2, U103.22, R116.4, C117.2, C118.2, C120.2, C121.2, C122.2, C123.2, NT101.2, R125.2, C124.2, U104.2, C126.2, C127.2, C128.2, J201.2, D201.2, U201.2, C202.2, U202.1, C203.2, C204.2, R205.2, C206.2, C207.2, C208.2, U203.22, R216.4, C217.2, C218.2, C220.2, C221.2, C222.2, C223.2, NT201.2, R225.2, C224.2, U204.2, C226.2, C227.2, C228.2, C301.2, C302.2, C303.2, C304.2, C305.2, C306.2, C307.2, C308.2, C309.2, C310.2, Q302.1, Q302.2, Q302.3, U301.9, U301.11, C311.2, C312.2, C313.2, C315.2, C316.2, C333.2, C334.2, C335.2, C336.2, C337.2, C338.2, C339.2, C340.2, C341.2, C342.2, C343.2, C344.2, C345.2, C346.2, C347.2, C348.2, R308.2, C356.2, RT301.2, C357.2, RT302.2, C358.2, U401.9, U401.15, C407.2, C408.2, C409.2, U402.2, R409.2, C410.2, C411.2, U421.9, U421.15, C427.2, C428.2, C429.2, U422.2, R429.2, C430.2, C431.2, U501.2, C501.2, R503.2, C502.2, U502.12, C503.2, R505.2, C504.2, R507.2, R510.2, C505.2, C506.2, U503.1, U503.2, U503.4, C507.2, U504.3, U504.5, U504.6, U504.11, C508.2, R519.2, C509.2, U505.6, U505.7, U505.8, C510.2, C601.2, C602.2, U601.1, U601.9, R602.2, R603.2, C604.2, C605.2, R605.2, C608.2, C609.2, U602.1, U602.9, R608.2, R609.2, C611.2, C612.2, R611.2, U701.6, U701.8, U701.19, C701.2, C702.2, C703.2, C704.2, C705.2, J701.3, J702.2, R705.2, Q701.2, Q702.2, C707.2, J703.5, J703.6, TP705.1, H701.1, H702.1, H703.1, H704.1, J903.5, J903.6, J904.2 | PV-, PGND, signal ground |
 | `HB_SW` | LV | -2..50 V | 22 A rms | switching node | Q301.1, Q301.2, Q301.3, Q302.5, U301.5, C314.2, T301.1, T301.2 | half-bridge switch node 0..VINT |
 | `HVS1_DA_N` | LV | 0..3.3 V | <1 mA | analog | U402.4, R410.2, R411.1 |  |
 | `HVS1_DA_OUT` | LV | 0..3.3 V | <1 mA | analog | U402.1, R411.2, R412.1 |  |
@@ -147,7 +148,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `NTC_PACK` | LV | 0..2.5 V | <1 mA | analog | U502.11, R511.2, R512.2, C505.1, U701.11, J703.4, J903.4, J904.1 | pack NTC (off-board via harness) to MCU and comparator ch4 |
 | `NTC_T1` | LV | 0..2.5 V | <1 mA | analog | RT302.1, R310.2, C358.1, U502.9, R508.2 | T1 NTC to comparator ch3 |
 | `OVP_TRIP_N` | LV | 0/3.3 V | <4 mA | digital, safety | U502.1, U502.2, R514.2, C506.1, U503.7 | open-collector OR of comparator ch1/ch2 -> latch ~PRE |
-| `PERMIT` | LV | 0..3.3 V (wired-AND) | <1 mA | digital, safety | D102.1, D202.1, U301.6, C313.1, U401.14, U421.14, U502.13, U502.14, R508.1, R511.1, D501.2, R518.2, C509.1, D503.1, U505.4, TP704.1 | run permission: sourced by MCU_RUN via 10k; pulled low by WDT reset, DIAG1/2, OVP latch, OTP comparators |
+| `PERMIT` | LV | 0..3.3 V (wired-AND) | <1 mA | digital, safety | D102.1, D202.1, U301.6, C313.1, U401.14, U421.14, U502.13, U502.14, R508.1, R511.1, D501.2, R518.2, C509.1, D503.1, U505.4, R709.2, TP704.1 | run permission: sourced by MCU_RUN via 10k; pulled low by WDT reset, DIAG1/2, OVP latch, OTP comparators |
 | `PGC` | LV | 0/3.3 V | <5 mA | digital | U701.18, J701.5 |  |
 | `PGD` | LV | 0/3.3 V | <5 mA | digital | U701.17, J701.4 |  |
 | `PVA_BIAS` | LV | 0..12 V | <40 mA | bias | U103.24, R121.2, C118.1 |  |
@@ -251,7 +252,9 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `PVB_VSET` | LV | 0..3.3 V | <1 mA | analog | U204.3, R229.2, C228.1 |  |
 | `PVB_VSET1` | LV | 0..3.3 V | <1 mA | analog | R228.2, C227.1, R229.1 |  |
 | `READY_B` | LV | 0..0.8 V | <1 mA | signal | R704.2, R705.1, Q701.1 |  |
-| `READY_N` | LV | 0/3.3 V | <1 mA | digital | U701.13, Q701.3, R706.2, C707.1 | low = car IG/READY on |
+| `READY_GATE` | LV | 0..3.3 V | <1 mA | digital, safety | Q702.3, R709.1 | Q702 collector -> R709 -> PERMIT (Mode R) |
+| `READY_GB` | LV | 0..0.8 V | <0.1 mA | signal | R707.2, Q702.1 |  |
+| `READY_N` | LV | 0/3.3 V | <1 mA | digital | U701.13, Q701.3, R706.2, R707.1, C707.1 | low = car IG/READY on |
 | `RELAY_REQ` | LV | 0/3.3 V (PWM economiser after pull-in) | <1 mA | digital | R520.1, U701.16 |  |
 | `RESET_N` | LV | 0/3.3 V | <1 mA | digital, safety | U503.6, U504.9, R516.2, D502.1 | supervisor reset; clears OVP latch only at power-up/brown-out |
 | `TPS_CWD` | LV | 3.3 V | <1 mA | bias | U504.2, R515.2 |  |
@@ -1427,7 +1430,9 @@ dsPIC33CK MCU, ICSP/log header, car IG/READY input, harness and fan connectors, 
 | R702 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `MCLR_N` | MCLR pull-up |
 | R704 | Panasonic ERJ-8ENF2212V | 22.1 kOhm 1% 1206 (0.25 W, 200 V) | `R_1206_3216Metric` | 1 (1): `IGN_D` | 2 (2): `READY_B` | pulse-rated series R |
 | R705 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `READY_B` | 2 (2): `GND` | base pull-down; threshold ~2.2 V on IGN |
-| R706 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `READY_N` | pull-up |
+| R706 | Panasonic ERJ-3EKF4701V | 4.7 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `READY_N` | pull-up (stiff enough to also drive Q702) |
+| R707 | Panasonic ERJ-3EKF4702V | 47 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `READY_N` | 2 (2): `READY_GB` | Q702 base: READY_N high (IG off) -> Q702 on |
+| R709 | Panasonic ERJ-3GEY0R00V | 0 Ohm link: FIT for Mode R, DNP for Mode P (VARIANT) | `R_0603_1608Metric` | 1 (1): `READY_GATE` | 2 (2): `PERMIT` | mode link |
 | C707 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `READY_N` | 2 (2): `GND` | filter |
 
 ### U701 — DSPIC33CK64MP102-E/SS
@@ -1506,6 +1511,16 @@ level shifter, READY_N low = ignition on. Symbol `Transistor_BJT:MMBTA42`, footp
 | 1 | B | `READY_B` |
 | 2 | E | `GND` |
 | 3 | C | `READY_N` |
+
+### Q702 — SMMBTA42LT1G
+
+hardware IG interlock: IG off pulls PERMIT low. Symbol `Transistor_BJT:MMBTA42`, footprint `Package_TO_SOT_SMD:SOT-23`. Pins: onsemi MMBTA42 DS (300 V NPN, S-prefix AEC-Q101) [unverified]; KiCad Q_NPN_BEC.
+
+| Pin | Name | Net |
+|---|---|---|
+| 1 | B | `READY_GB` |
+| 2 | E | `GND` |
+| 3 | C | `READY_GATE` |
 
 ### J703 — Phoenix 1757284 (MSTBA 2,5/6-G-5,08) + plug MSTB 2,5/6-ST-5,08
 
@@ -1616,6 +1631,13 @@ No electrical pins.
 ## Block BATEND (board BE)
 
 Battery-end unit (separate PCB at the battery tap): fuses, blocking diode, double-pole disconnect
+
+### Two-terminal parts
+
+| Ref | MPN | Value / rating | Footprint | Pin 1 | Pin 2 | Note |
+|---|---|---|---|---|---|---|
+| R902 | Panasonic ERJ-8ENF4994V | 4.99 MOhm 1% 1206 (0.25 W, 200 V) | `R_1206_3216Metric` | 1 (1): `BE_DK` | 2 (2): `BE_RB` | bus-sense bypass of D901 (10 MOhm total): lets the main board see pack/bus voltage before starting; limits fault current to 26 uA |
+| R903 | Panasonic ERJ-8ENF4994V | 4.99 MOhm 1% 1206 (0.25 W, 200 V) | `R_1206_3216Metric` | 1 (1): `BE_RB` | 2 (2): `HV_P` | second half of the 10 MOhm string (131 V each) |
 
 ### J901 — Phoenix GMSTBA 2,5/2-G-7,62 + plug GMSTB 2,5/2-ST-7,62 (item nos. [unverified])
 
