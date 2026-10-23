@@ -32,7 +32,12 @@ TASK_KINDS = ("route", "place")
 #    carry a connection or DRC rules keyed to the human copper's groups
 # 5: footprints carrying Edge.Cuts graphics stay in place in place tasks and may not be moved,
 #    like locked ones (staged off-board they broke the board outline)
-TASK_SPEC = 5
+# 6: zones sharing a uuid get unique ones: KiCad 10.0.7's zone filler deadlocks when two
+#    zones on different nets share a layer, overlap, and tie on priority and uuid (KiCad 4
+#    boards store `(tstamp 0)`), so such boards never got through prepare. Otherwise the uuid
+#    only orders overlapping same-net zones, whose copper is the same either way, so tasks
+#    of earlier specs stay valid
+TASK_SPEC = 6
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
 MIN_TASK_SPEC = {"route": 4, "place": 5}
 
@@ -82,6 +87,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
         split=split_of(ref_stats["pads"]), qualified=human_clean, human_clean=human_clean, task_spec=TASK_SPEC,
         footprint_uuids_reassigned=conv.get("footprint_uuids_reassigned", 0),
+        zone_uuids_reassigned=conv.get("zone_uuids_reassigned", 0),
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),
         reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc,
                        pads_outside={r["uuid"]: r["pads_outside"] for r in ref_stats["placement"]
