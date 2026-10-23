@@ -24,9 +24,20 @@ fixed wiring are kept):
 - layers: when every copper layer is a "power" layer they become signal layers
   (Freerouting refuses a board without one and 2.5.0 hangs).
 
+- wiring: KiCad writes DSN coordinates with %.6g, so at x or y >= 100 mm half a micrometre
+  is lost: a locked track ending exactly on a pad centre such as 137.2875 mm is written
+  137288 um while the pin centre (placement 136250 + pin offset 1037.5) stays 137287.5.
+  Freerouting joins a wire to a pin or a via only at its centre and to another wire only at
+  a corner, so it read such pre-routes as floating, spent its passes on them and left other
+  connections open (kae.route.critical's decap stubs, human pre-routes). Every wiring point
+  within SNAP_TOL_UM of a same-net pin centre is moved onto that centre, and a point within
+  it of another same-net wiring corner onto that corner (snap_wiring).
+
 Session changes before KiCad imports it: the placement block is removed (KiCad would move
 footprints and fails on renamed references), bare net names are quoted (`ADD|SUB` fails
-the whole import), and via shapes get their real diameters back.
+the whole import), via shapes get their real diameters back, and wiring points the DSN
+snap moved (Freerouting returns the unfixed ones it keeps) get their KiCad coordinates back.
+Fixed wiring is never returned: KiCad's import keeps locked copper byte for byte.
 """
 import math
 import random
@@ -36,6 +47,8 @@ from shapely.geometry import MultiPolygon, Polygon
 from . import specctra as S
 from .constraints import via_name
 from .specctra import Q, find, findall, fmt
+
+SNAP_TOL_UM = 1.5          # > the %.6g rounding (0.5 um per coordinate at >= 100 mm) on both axes
 
 OBSTACLE_IMAGE = "kae_obstacles"
 OBSTACLE_REF = "KAE_OBSTACLES"
@@ -118,9 +131,141 @@ def _class_rule_nodes(widths, clearances, copper, lname=lambda l: l):
     return out
 
 
+def dsn_pin_centres(tree):
+    """{net: [(x, y)]}: every component pin's centre as Freerouting reads it from the DSN
+    (DSN units): the placement plus the image's pin offset, a back-side image mirrored in x
+    before the rotation (checked against KiCad's pad positions to 0.002 um)."""
+    lib = find(tree, "library")
+    placement = find(tree, "placement")
+    network = find(tree, "network")
+    if lib is None or placement is None or network is None:
+        return {}
+    imgs = {}
+    for im in findall(lib, "image"):
+        pins = []
+        for p in findall(im, "pin"):
+            rest = [c for c in p[2:] if not isinstance(c, list)]
+            if len(rest) >= 3:
+                pins.append((str(rest[0]), float(rest[1]), float(rest[2])))
+        imgs[str(im[1])] = pins
+    where = {}
+    for comp in findall(placement, "component"):
+        pins = imgs.get(str(comp[1])) or []
+        for pl in findall(comp, "place"):
+            if len(pl) < 6:
+                continue
+            ref, x, y, side, rot = str(pl[1]), float(pl[2]), float(pl[3]), str(pl[4]), float(pl[5])
+            a = math.radians(rot)
+            ca, sa = math.cos(a), math.sin(a)
+            for num, px, py in pins:
+                if side == "back":
+                    px = -px
+                where[f"{ref}-{num}"] = (x + px * ca - py * sa, y + px * sa + py * ca)
+    out = {}
+    for net in findall(network, "net"):
+        if len(net) < 2:
+            continue
+        pts = [where[str(t)] for pn in findall(net, "pins") for t in pn[1:] if str(t) in where]
+        if pts:
+            out[str(net[1])] = pts
+    return out
+
+
+def snap_wiring(tree, pads=None, tol_um=SNAP_TOL_UM):
+    """Move the DSN wiring's points (wire path points, via centres) that lie within `tol_um`
+    of a same-net pin centre exactly onto it, and the rest within `tol_um` of another
+    same-net wiring point onto that point (see the module docstring). pads: KiCad's pad
+    records (pcbnew_io.export_dsn info) for the map back. Returns (summary, snaps) with
+    snaps {net: [(x, y snapped, x, y of the KiCad pad), mm in the DSN frame]} for
+    fix_session."""
+    wiring = find(tree, "wiring")
+    summary = dict(points=0, to_pins=0, to_corners=0)
+    snaps = {}
+    if wiring is None:
+        return summary, snaps
+    scale = S.unit_scale(tree)                      # DSN units per mm
+    tol = tol_um * 1e-3 * scale
+    eps = 1e-6 * scale
+    centres = dsn_pin_centres(tree)
+    exact = {}
+    for pd in pads or []:
+        if pd.get("net") and pd.get("pos"):
+            exact.setdefault(pd["net"], []).append((pd["pos"][0] * scale, -pd["pos"][1] * scale))
+    refs = []                                       # (net, node, index of x)
+    for w in findall(wiring, "wire"):
+        path, net = find(w, "path"), find(w, "net")
+        if path is None or net is None:
+            continue
+        for i in range(3, len(path) - 1, 2):
+            refs.append((str(net[1]), path, i))
+    for v in findall(wiring, "via"):
+        net = find(v, "net")
+        if net is not None and len(v) > 3:
+            refs.append((str(net[1]), v, 2))
+    cgrid = {}
+    for net, pts in centres.items():
+        for c in pts:
+            cgrid.setdefault((net, math.floor(c[0] / tol), math.floor(c[1] / tol)), []).append(c)
+
+    def near(grid, net, x, y):
+        gx, gy = math.floor(x / tol), math.floor(y / tol)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                yield from grid.get((net, gx + dx, gy + dy), ())
+    rest = []                                       # (net, x, y, node, i, is_via)
+    for netname, node, i in refs:
+        try:
+            x, y = float(node[i]), float(node[i + 1])
+        except (TypeError, ValueError):
+            continue
+        summary["points"] += 1
+        tgt, best = None, tol
+        for c in near(cgrid, netname, x, y):
+            d = math.dist(c, (x, y))
+            if d <= best:
+                best, tgt = d, c
+        if tgt is None:
+            rest.append((netname, x, y, node, i, node[0] == "via"))
+            continue
+        if best > eps:
+            sx, sy = round(tgt[0], 4), round(tgt[1], 4)
+            node[i], node[i + 1] = fmt(sx), fmt(sy)
+            summary["to_pins"] += 1
+            true = min(exact.get(netname, ()), key=lambda c: math.dist(c, tgt), default=None)
+            if true is not None and math.dist(true, tgt) <= tol:
+                snaps.setdefault(netname, []).append((sx / scale, sy / scale, true[0] / scale, true[1] / scale))
+    # near-coincident corners: each cluster onto its most frequent point (a via centre first)
+    pgrid = {}
+    for k, r in enumerate(rest):
+        pgrid.setdefault((r[0], math.floor(r[1] / tol), math.floor(r[2] / tol)), []).append(k)
+    done = set()
+    for k, (netname, x0, y0, _, _, _) in enumerate(rest):
+        if k in done:
+            continue
+        grp = [j for j in near(pgrid, netname, x0, y0)
+               if j not in done and math.dist(rest[j][1:3], (x0, y0)) <= tol]
+        done.update(grp)
+        if len({rest[j][1:3] for j in grp}) < 2:
+            continue
+        count = {}
+        for j in grp:
+            q = rest[j][1:3]
+            count[q] = count.get(q, 0) + 1 + (10 if rest[j][5] else 0)
+        rx, ry = max(count, key=count.get)
+        for j in grp:
+            _, x, y, node, i, _ = rest[j]
+            if (x, y) != (rx, ry):
+                node[i], node[i + 1] = fmt(rx), fmt(ry)
+                summary["to_corners"] += 1
+    return summary, snaps
+
+
 def apply(tree, plan, info):
     """Rewrite a parsed KiCad DSN `tree` in place according to `plan`. Returns a summary."""
     cu = plan.copper
+    # wiring onto the pin centres first, while the placement holds only KiCad's parts
+    snap_sum, snaps = snap_wiring(tree, (info or {}).get("pads"))
+    plan.wire_snaps = snaps
     struct = find(tree, "structure")
     lib = find(tree, "library")
     placement = find(tree, "placement")
@@ -130,7 +275,7 @@ def apply(tree, plan, info):
     if placement is None:
         placement = ["placement"]
         tree.insert(tree.index(lib), placement)
-    summary = {}
+    summary = {"wiring_snapped": snap_sum}
 
     # ---- layers: KiCad names DSN layers by their user names (In1.Cu may be "GND"), in
     # stack order; the plan uses canonical names
@@ -348,4 +493,35 @@ def fix_session(ses_tree, plan):
         if len(net) > 1 and not isinstance(net[1], Q):
             net[1] = Q(net[1])
             out["nets_quoted"] += 1
+    snaps = getattr(plan, "wire_snaps", None) or {}
+    if snaps:
+        out["points_restored"] = _unsnap(net_out, snaps, scale)
     return out
+
+
+def _unsnap(net_out, snaps, scale):
+    """Wiring points of the session that sit where snap_wiring moved a DSN point (a pre-route
+    Freerouting kept, or a new wire ending on that pin centre) get the KiCad coordinates
+    back. snaps in mm (DSN frame); the session in its own `scale` (units per mm)."""
+    if not snaps or net_out is None:
+        return 0
+    k = scale
+    tol = 0.05 * 1e-3 * scale                       # 0.05 um
+    n = 0
+    for net in findall(net_out, "net"):
+        pts = snaps.get(str(net[1])) if len(net) > 1 else None
+        if not pts:
+            continue
+        nodes = [(p, i) for w in findall(net, "wire") for p in findall(w, "path") for i in range(3, len(p) - 1, 2)]
+        nodes += [(v, 2) for v in findall(net, "via") if len(v) > 3]
+        for node, i in nodes:
+            try:
+                x, y = float(node[i]), float(node[i + 1])
+            except (TypeError, ValueError):
+                continue
+            for sx, sy, tx, ty in pts:
+                if abs(x - sx * k) <= tol and abs(y - sy * k) <= tol:
+                    node[i], node[i + 1] = fmt(tx * k), fmt(ty * k)
+                    n += 1
+                    break
+    return n

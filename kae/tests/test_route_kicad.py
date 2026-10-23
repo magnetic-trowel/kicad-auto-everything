@@ -410,3 +410,45 @@ def test_repair_round_without_a_session_is_a_failed_round(routed, exported, tmp_
     assert len(calls) == repair.FAILS and rounds[-1].get("stopped") == "no improvement"
     assert all(r.get("kept") is False for r in rounds)
     assert cur.read_bytes() == before
+
+
+@needs_router
+def test_a_locked_stub_on_a_rounded_pad_centre_routes_connected(tmp_path):
+    """At x >= 100 mm KiCad's DSN export rounds a pad centre such as 133.2125 mm to whole
+    micrometres, and Freerouting joins wiring to a pin only at its exact centre: a locked
+    stub R10.1 -> R11.1 read as floating, and the net's other pin was left open. With the
+    wiring snapped onto the pin centres (translate.snap_wiring) Freerouting sees the stub
+    joined: R12.1 routes to it, no SIG connection is open, and the stub comes back
+    byte-identical."""
+    import critical_fixtures as F
+    from kae.route import critical_write as W
+    r = "Resistor_SMD:R_0805_2012Metric"
+    pads = lambda: [("1", "SIG", -1.0375, 0.0, 1.0, 1.4, "smd", 0.0, "", "passive"),     # noqa: E731
+                    ("2", "SIG2", 1.0375, 0.0, 1.0, 1.4, "smd", 0.0, "", "passive")]
+    extra = [("R10", "1k", r, 134.25, 126.0, 0.0, pads(), (1.8, 1.0)),
+             ("R11", "1k", r, 134.25, 128.5, 0.0, pads(), (1.8, 1.0)),
+             ("R12", "1k", r, 104.25, 127.0, 0.0, pads(), (1.8, 1.0))]
+    src = F.write_board(tmp_path / "in", extra=extra)
+    shutil.copy(FIXTURE.with_suffix(".kicad_dru"), src.with_suffix(".kicad_dru"))
+    board = tmp_path / "in" / "stub.kicad_pcb"
+    uid = "5e0b5e0b-0000-4000-8000-000000000001"
+    W.append_items(src, board, tracks=[("SIG", "F.Cu", 0.25, (133.2125, 126.0), (133.2125, 128.5), uid)])
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(src.with_suffix(ext), board.with_suffix(ext))
+    before = _blocks(board.read_text())[uid]
+    out = tmp_path / "out" / "board.kicad_pcb"
+    rep = bridge.route(board, out, time_s=150, workdir=tmp_path / "wd", opts=dict(rounds=1))
+    assert rep["status"] == "routed" and rep["translate"]["wiring_snapped"]["to_pins"] == 2
+    assert "133212.5" in (tmp_path / "wd" / "board.dsn").read_text()
+    assert _blocks(out.read_text())[uid] == before
+    report = drc.run(drc.stage_board(out, board, tmp_path / "drc"), tmp_path / "drc" / "drc.json")
+    open_sig = [u for u in report.get("unconnected_items") or []
+                if any("[SIG" in it.get("description", "") for it in u.get("items", []))]
+    assert not open_sig, json.dumps(open_sig[:3], indent=1)
+    log = (tmp_path / "wd" / "freerouting.log").read_text()
+    assert "R10-1" not in log and "R11-1" not in log          # never an "unrouted connection"
+    # unsnapped, Freerouting joined the "floating" stub to the pins with 0.5 um slivers
+    from kae.board import kicad_file
+    import math
+    slivers = [t for t in kicad_file.load(out).tracks if not t.locked and math.dist(t.start, t.end) < 0.002]
+    assert not slivers, slivers
