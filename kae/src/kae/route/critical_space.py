@@ -116,6 +116,23 @@ class Terminal:
     width: float = 0.0       # smaller copper dimension of the pad (mm)
     length: float = 0.0      # larger dimension
     items: list = field(default_factory=list)
+    by_layer: dict = field(default_factory=dict)   # layer -> the copper on that layer only
+
+    def geom_on(self, layer):
+        """The terminal's copper on `layer` (a pad with an SMD twin has less on one side)."""
+        return self.by_layer.get(layer, self.geom) if self.by_layer else self.geom
+
+    def centre_on(self, layer):
+        """A point of the terminal's copper on `layer`: the centre when it lies there."""
+        g = self.geom_on(layer)
+        from shapely.geometry import Point as _Pt
+        if g.distance(_Pt(self.x, self.y)) <= 1e-9:
+            return (self.x, self.y)
+        c = g.centroid
+        if g.distance(c) <= 1e-9:
+            return (c.x, c.y)
+        r = g.representative_point()
+        return (r.x, r.y)
 
 
 # ----------------------------------------------------------------------------- the space
@@ -135,6 +152,7 @@ class Space:
     def __init__(self, board, info, plan=None, sev=None, opts=None, rules=None):
         self.opts = dict(opts or {})
         self.sev = sev or {}
+        self.notes = []          # what the space could not model (reported by Session.report)
         if plan is None:
             plan = CN.plan(info, board.path, dict(severities=self.sev))
         self.board, self.info, self.plan = board, info, plan
@@ -246,7 +264,8 @@ class Space:
         if not self.opts.get("no_corridors"):
             try:
                 cors = CN.thermal_corridors(self.info, plan, None, self.sev)
-            except Exception:   # noqa: BLE001 - corridors are a refinement, never fatal
+            except Exception as e:   # noqa: BLE001 - not fatal, but reported (Session.report)
+                self.notes.append(f"thermal corridors unavailable: {type(e).__name__}: {e}")
                 cors = []
             for geo, layer, pad in cors:
                 it = Item("corridor", pad.get("net") or "", [layer], geo, 0.0, None,
@@ -595,8 +614,10 @@ class Space:
         cx, cy = (c.x, c.y)
         if len(its) == 1 and its[0].pos is not None:
             cx, cy = its[0].pos
+        by_layer = {l: unary_union([i.geom for i in its if l in i.layers]) for l in self.cu if l in lays}
         return Terminal(net=net, layers=tuple(l for l in self.cu if l in lays), geom=geom, x=cx, y=cy,
-                        fp=fp_uuid, pad=",".join(str(n) for n in numbers), width=w, length=ln, items=its)
+                        fp=fp_uuid, pad=",".join(str(n) for n in numbers), width=w, length=ln, items=its,
+                        by_layer=by_layer)
 
     def component(self, net, seeds):
         """Copper of `net` electrically connected to the seed geometries (pads, committed

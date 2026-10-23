@@ -44,10 +44,10 @@ REF_FIELDS = {'controller', 'inductor', 'ic', 'crystal', 'connector', 'part', 's
               'input_caps', 'filter', 'phase_shunts', 'top', 'bottom', 'feedforward_cap', 'high', 'low', 'rectifier', 'bond',
               'series_shunt', 'bootstrap_r', 'charge_pump_caps', 'caps_in', 'caps_out'}
 PAIR_FIELDS = {'loop', 'chain', 'feed', 'loads', 'ic_pins'}
-GROUP_FIELDS = {'snubbers'}          # lists of reference groups: [[r, c], ...]
+GROUP_FIELDS = {'snubbers', 'stages'}   # lists of reference groups: [[r, c], ...], [[q1, q2], [q3, q4]]
 KEYED_FIELDS = {'caps_p', 'caps_p_all'}
 NESTED = {'switches', 'divider', 'pin_caps'}
-STRUCT_ORDER = ('commutation_cells', 'antennas', 'crystals', 'oscillators', 'decaps', 'victims', 'chains', 'heat_sources',
+STRUCT_ORDER = ('commutation_cells', 'power_paths', 'antennas', 'crystals', 'oscillators', 'decaps', 'victims', 'chains', 'heat_sources',
                 'thermal_victims')
 
 
@@ -124,6 +124,13 @@ def _structure_roles(st: dict) -> dict:
             put(x, 'output_cap', sid)
         put(c.get('controller'), 'switching_regulator' if c['class'] in ('buck', 'boost') else 'bridge', sid)
         put(c.get('shunt'), 'shunt', sid)
+    for pp in st.get('power_paths', []):
+        for q in pp.get('switches') or []:
+            put(q, 'power_switch', pp['id'])
+        for x in pp.get('caps_in') or []:
+            put(x, 'path_input_cap', pp['id'])
+        for x in pp.get('caps_out') or []:
+            put(x, 'path_output_cap', pp['id'])
     for x in st['crystals']:
         for cpr in x.get('load_caps') or []:
             put(cpr, 'crystal_load_cap', x['id'])
@@ -163,6 +170,9 @@ def _priority(s: dict) -> tuple[float, str]:
         ex = s.get('excite') or {}
         p = abs(ex.get('V') or 5.0) * (ex.get('I') or 1.0)
         return 100 + 10 * math.log10(1 + p), f"{s['class']} hot loop, ~{p:.1f} W switched"
+    if k == 'power_path':
+        p = s.get('P_W') or 0.0
+        return 60.0 + 10 * math.log10(1 + p), f"{s['class']} power path, ~{p:.2f} W in the pass element(s)"
     if k == 'antenna':
         return 85.0, 'antenna feed and keep-out'
     if k == 'crystal':

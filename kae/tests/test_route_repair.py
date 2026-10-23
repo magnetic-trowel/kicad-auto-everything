@@ -122,3 +122,25 @@ def test_pad_cut_off_from_its_zone_gets_a_spoke_into_the_rest_of_the_net():
     assert len(a["spokes"]) == 1 and not a["thermal"]
     end = Point(a["spokes"][0]["b"])
     assert main.contains(end) and not island.buffer(0.05).contains(end)
+
+
+def test_split_planes_keep_the_windows_that_matter():
+    """The main part's fill becomes a plane: the hole around a cut-off pad of the net stays a
+    window (else the router counts the pad as connected), a large hole stays, a small hole
+    around foreign copper goes (it only slows the router)."""
+    p1, p2 = _pad("p1", "N", 2, 2, h=0.3), _pad("p2", "N", 4.4, 4.4, h=0.1)
+    info = dict(pads=[p1, p2], graphics=[])
+    piece = (box(0, 0, 20, 20).difference(box(12, 12, 16, 16)).difference(box(4, 4, 4.8, 4.8))
+             .difference(box(8, 8, 8.7, 8.7)))
+    fills = [dict(uuid="z", net="N", layers={"F.Cu": [_ring(piece)]})]
+    tree = S.parse('(pcb x (structure (layer F.Cu (type signal)) (plane N (polygon F.Cu 0 0 0 1 0 1 -1 0 -1))))')
+    out = repair._fill_planes(tree, fills, {"N"}, lambda l: l, info, {}, ["F.Cu"])
+    assert out["removed"] == 1 and out["added"] == 1 and out["parts"] == 2
+    plane = S.findall(S.find(tree, "structure"), "plane")[0]
+    windows = []
+    for w in S.findall(plane, "window"):
+        xs = [float(v) / 1000 for v in w[1][3::2]]
+        windows.append((min(xs), max(xs)))
+    assert len(windows) == 2
+    assert any(lo < 4.1 and hi > 4.7 for lo, hi in windows)     # the cut-off pad's hole
+    assert any(lo < 12.1 and hi > 15.9 for lo, hi in windows)   # the large hole

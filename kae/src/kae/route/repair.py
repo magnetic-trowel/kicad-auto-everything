@@ -436,7 +436,9 @@ def _fill_planes(tree, fills, nets, lname, info, copper, cu):
     touches; the remaining holes are windows. Pieces of the other parts are left out, so
     Freerouting sees their pads and routing as not connected to any plane and joins them to
     the net (for a net with a plane over 30% of the board it routes only items that touch no
-    plane). Pieces are shrunk by 15 um and simplified within 10 um, inside real copper."""
+    plane). Pieces are shrunk by 60 um and simplified within 50 um, inside real copper;
+    windows below 1 mm2 are dropped unless they hold a pad of the net (Freerouting splits a
+    plane into convex pieces, and many small windows make that slow)."""
     from shapely.ops import unary_union
     from .constraints import _pad_shapes
     struct = find(tree, "structure")
@@ -446,7 +448,9 @@ def _fill_planes(tree, fills, nets, lname, info, copper, cu):
             struct.remove(pl)
             out["removed"] += 1
     pads = {pd["uuid"]: pd for pd in info.get("pads") or [] if pd.get("uuid")}
+    from shapely.geometry import Point, Polygon as _Polygon
     for net in sorted(nets):
+        centres = [Point(pd["pos"]) for pd in pads.values() if pd.get("net") == net]
         parts = net_clusters(net, info, copper, fills, cu)
         if not parts:
             continue
@@ -462,13 +466,15 @@ def _fill_planes(tree, fills, nets, lname, info, copper, cu):
             touching = [x for x in pad_cu.get(layer, []) if x.intersects(g)]
             if touching:
                 g = unary_union([g, *touching])
-            g = g.buffer(-0.015, join_style="mitre").simplify(0.01, preserve_topology=True)
+            g = g.buffer(-0.06, join_style="mitre").simplify(0.05, preserve_topology=True)
             for pg in getattr(g, "geoms", [g]):
                 if pg.is_empty or pg.area < 1e-4 or pg.geom_type != "Polygon":
                     continue
                 node = ["plane", Q(net), ["polygon", lname(layer), "0", *translate._ring(pg.exterior.coords)]]
-                node += [["window", ["polygon", lname(layer), "0", *translate._ring(h.coords)]]
-                         for h in pg.interiors if len(h.coords) >= 4]
+                for h in pg.interiors:
+                    hp = _Polygon(h)
+                    if len(h.coords) >= 4 and (hp.area >= 1.0 or any(hp.contains(c) for c in centres)):
+                        node.append(["window", ["polygon", lname(layer), "0", *translate._ring(h.coords)]])
                 struct.append(node)
                 out["added"] += 1
     return out

@@ -90,7 +90,9 @@ def _f(v):
     return "0" if s in ("-0", "") else s
 
 
-def board_text(back=()):
+def board_text(back=(), twin=False):
+    """The board's text; `twin` gives J1 pad 1 an SMD twin on F.Cu (a castellated pad: one
+    number, a through-hole pad plus surface copper on one side only)."""
     k = [0]
 
     def u():
@@ -103,6 +105,8 @@ def board_text(back=()):
     for ref, val, lib, x, y, rot, pads, (cw, ch) in PARTS:
         at = f"(at {_f(x)} {_f(y)}{(' ' + _f(rot)) if rot else ''})"
         sd = "B" if ref in back else "F"
+        if twin and ref == "J1":
+            pads = pads + [("1", "VIN", 1.4, -1.0, 1.6, 0.9, "smd", 0.0, "Pin_1", "passive")]
         s = [f'\t(footprint "{lib}"\n\t\t(layer "{sd}.Cu")\n\t\t(uuid "{u()}")\n\t\t{at}\n'
              f'\t\t(property "Reference" "{ref}"\n\t\t\t(at 0 -3 0)\n\t\t\t(layer "F.Fab")\n\t\t\t(hide yes)\n'
              f'\t\t\t(uuid "{u()}")\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size 1 1)\n\t\t\t\t\t(thickness 0.15)\n'
@@ -146,11 +150,11 @@ def board_text(back=()):
     return "".join(out)
 
 
-def write_board(d, back=()):
+def write_board(d, back=(), twin=False):
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
     p = d / "board.kicad_pcb"
-    p.write_text(board_text(back))
+    p.write_text(board_text(back, twin))
     pro = json.loads((DATA / "fixture.kicad_pro").read_text())
     pro["meta"]["filename"] = "board.kicad_pro"
     (d / "board.kicad_pro").write_text(json.dumps(pro, indent=2))
@@ -199,10 +203,10 @@ def synth_info(board):
                 tracks=0, probes={})
 
 
-def session(tmp_path, back=(), **opts):
+def session(tmp_path, back=(), twin=False, **opts):
     """A critical-router Session on the synthetic board, without KiCad."""
     from kae.board.kicad_file import load
     from kae.route.critical import Session
-    p = write_board(tmp_path, back)
+    p = write_board(tmp_path, back, twin)
     b = load(p)
     return Session(p, info=synth_info(b), board=b, opts=opts, log=lambda *a: None)

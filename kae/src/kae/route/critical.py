@@ -199,6 +199,7 @@ class Session:
             tracks=len(tracks), vias=len(vias),
             track_mm=round(sum(math.dist(t.start, t.end) for t in tracks), 2),
             router=dict(self.router.stats),
+            space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
                           notes=m.notes[:6]) for m in self.modules],
             rails=self.rails,

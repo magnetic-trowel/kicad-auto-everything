@@ -176,6 +176,15 @@ class Anchor:
     centre: tuple | None = None
     grow: float = 0.0
     kind: str = "pad"
+    by_layer: dict | None = None      # layer -> copper on that layer (pads with an SMD twin)
+    centres: dict | None = None       # layer -> a point of that copper (where a track may end)
+
+    def geom_on(self, layer):
+        g = (self.by_layer or {}).get(layer, self.geom)
+        return g if self.grow <= 0 else g.buffer(self.grow, quad_segs=4)
+
+    def centre_on(self, layer):
+        return (self.centres or {}).get(layer, self.centre)
 
 
 # ----------------------------------------------------------------------------- router
@@ -317,9 +326,10 @@ class GridRouter:
         return c
 
     # ------------------------------------------------------------------ anchors -> cells
-    def _cells(self, grid, a, li, cost, plane):
-        """Flat indices of free cells inside anchor `a` on layer index li."""
-        g = a.geom if a.grow <= 0 else a.geom.buffer(a.grow, quad_segs=4)
+    def _cells(self, grid, a, li, cost, plane, layer=None):
+        """Flat indices of free cells inside anchor `a` (its copper on `layer`) on layer index li."""
+        g = a.geom_on(layer) if layer is not None else (a.geom if a.grow <= 0 else a.geom.buffer(a.grow, quad_segs=4))
+        centre = a.centre_on(layer) if layer is not None else a.centre
         i0, i1, j0, j1 = grid._span(g.bounds, 0.0)
         if i0 > i1 or j0 > j1:
             return np.zeros(0, np.int64)
@@ -328,9 +338,9 @@ class GridRouter:
         jj, ii = np.nonzero(m)
         k = li * plane + (jj + j0) * grid.nx + (ii + i0)
         k = k[np.isfinite(cost.reshape(-1)[k])]
-        if k.size == 0 and a.centre is not None:
+        if k.size == 0 and centre is not None:
             # a pad smaller than a cell: the nearest free cell to its centre within half a cell
-            ci, cj = grid.ij(*a.centre)
+            ci, cj = grid.ij(*centre)
             best = None
             for dj in (-1, 0, 1):
                 for di in (-1, 0, 1):
@@ -338,7 +348,7 @@ class GridRouter:
                     if grid.inside(i, j):
                         kk = li * plane + j * grid.nx + i
                         if np.isfinite(cost.reshape(-1)[kk]):
-                            dd = math.hypot(*(np.subtract(grid.xy(i, j), a.centre)))
+                            dd = math.hypot(*(np.subtract(grid.xy(i, j), centre)))
                             if g.buffer(0.5 * grid.res).contains(Point(grid.xy(i, j))) and (best is None or dd < best[0]):
                                 best = (dd, kk)
             if best is not None:
@@ -371,14 +381,14 @@ class GridRouter:
         for a in sources:
             for li, l in enumerate(layers):
                 if l in a.layers:
-                    src.append(self._cells(grid, a, li, cost, plane))
+                    src.append(self._cells(grid, a, li, cost, plane, l))
         src = np.unique(np.concatenate(src)) if src else np.zeros(0, np.int64)
         dst = np.zeros(nl * plane, bool)
         tb = []
         for a in targets:
             for li, l in enumerate(layers):
                 if l in a.layers:
-                    k = self._cells(grid, a, li, cost, plane)
+                    k = self._cells(grid, a, li, cost, plane, l)
                     dst[k] = True
                     if k.size:
                         r = k % plane
@@ -454,14 +464,15 @@ class GridRouter:
         end = pts[0] if first else pts[-1]
         best = None
         for a in anchors:
-            if a.centre is None or layer not in a.layers:
+            ac = a.centre_on(layer)
+            if ac is None or layer not in a.layers:
                 continue
-            g = a.geom if a.grow <= 0 else a.geom.buffer(a.grow)
+            g = a.geom_on(layer)
             if g.distance(Point(end)) > 1e-6 + 0.75 * self.res:
                 continue
-            d = math.dist(end, a.centre)
+            d = math.dist(end, ac)
             if best is None or d < best[0]:
-                best = (d, a.centre)
+                best = (d, ac)
         if best is None or best[0] < 1e-9:
             return pts
         c = tuple(best[1])

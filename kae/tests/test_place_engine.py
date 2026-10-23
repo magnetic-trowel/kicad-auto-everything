@@ -87,3 +87,14 @@ def test_subset_moves_inside_its_window_only(cls):
         for side, (a, bb, c, d), kind in ann.st.grid_rects(i):
             if kind == "own":
                 assert window[0] <= a and bb <= window[1] and window[2] <= c and d <= window[3]
+
+
+@pytest.mark.parametrize("cls", ["engine", "reference"])
+def test_a_run_cut_short_by_its_budget_still_ends_cold(cls):
+    """Regression (koron, bms-c1 at v7c): a run whose budget ran out at half its planned moves
+    stopped hot and returned a near-random state; the schedule now cools on time as well."""
+    b, P, st = _legal_state(seed=5)
+    kw = dict(terms=None, seed=2, w_phys=0.0)
+    ann = engine.FastAnnealer(P, st.copy(), **kw) if cls == "engine" else Annealer(P, st.copy(), **kw)
+    ann.run(cpu_s=1.0, max_moves=10 ** 9)
+    assert ann.T_last <= ann.T0 * 1e-3

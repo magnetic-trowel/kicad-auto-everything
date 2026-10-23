@@ -1170,7 +1170,9 @@ def decaps(b: _B, groups) -> list:
             # a pin pairing only where the netlist decides it: one power pin, and capacitors this group owns with
             # p >= 0.5. Several pins on one net: the placer pairs each capacitor with the nearest pin.
             qc = [c for c in g.get('quota_caps') or [] if c in mine]
-            sure = [c for c in ([c for c in qc if c in hf] or qc) if cp.get(c, 0.0) >= 0.5]
+            # a load pins only its small ceramics (their place is at the pin); its bulk capacitors serve the rail
+            pool = [c for c in qc if c in hf] if g['function'] in ('load', 'split_supply') else ([c for c in qc if c in hf] or qc)
+            sure = [c for c in pool if cp.get(c, 0.0) >= 0.5]
             pin_caps = {pins[0]: sure} if len(pins) == 1 and sure and g['function'] != 'entry' else {}
             # bulk at a cable entry may sit anywhere on the rail: no pin of the connector claims it
             pairing = 'pin' if pin_caps else ('nearest_load' if g['function'] == 'entry' else 'nearest_pin')
@@ -1934,7 +1936,397 @@ def find_structures(nl: Netlist, roles: Roles) -> dict:
     st['victims'] = fb + se + xv + analog_victims(b, taken)
     st['antennas'] = antennas(b)
     hs, pw = heat(b, cells)
+    pp, ph = power_paths(b, cells)
+    st['power_paths'] = pp
+    have = {h['part']: i for i, h in enumerate(hs)}
+    for h in ph:                       # a pass element's I^2 R joins the heat sources (the larger estimate wins)
+        i = have.get(h['part'])
+        if i is None:
+            hs.append(h)
+        elif h['P_W'] > hs[i]['P_W']:
+            hs[i] = h
+        if h['P_W'] > (pw.get(h['part']) or (0.0,))[0]:
+            pw[h['part']] = (h['P_W'], h['P_W_belief']['basis'])
     st['heat_sources'] = hs
     st['P_W'] = pw
     st['thermal_victims'] = thermal_victims(b)
     return st
+
+
+# =============================================================================== power paths (no switching)
+# R_ds(on) of pass elements by part number (datasheet typical at Vgs = 10 V / 4.5 V for logic-level parts), E5
+FET_RON_TABLE = [(r'IPT012N08N5', 1.2e-3), (r'IRF1018E', 8.4e-3), (r'DMG2305U', 52e-3), (r'DMG3415U', 39e-3), (r'DMP3013SFV', 13e-3),
+                 (r'DMP6023LSS', 28e-3), (r'DMP510DL', 5.0), (r'AO3401', 50e-3), (r'AO3400', 30e-3), (r'SI2301', 110e-3),
+                 (r'SI2302', 60e-3), (r'IRLML6402', 65e-3), (r'IRLML2502', 45e-3), (r'IRF9540', 0.2), (r'IRF540', 44e-3), (r'IRLZ44', 22e-3),
+                 (r'BSC0\d\dN', 3e-3), (r'CSD1\d{4}', 5e-3), (r'PSMN\d', 5e-3), (r'NVMFS|NTMFS', 3e-3), (r'IPB\d|IPD\d', 5e-3)]
+# rated current and on-resistance of load-switch, eFuse, power-mux and ideal-diode ICs (datasheet), E5
+LOAD_SWITCH_TABLE = [(r'NCP4556\d', 24.0, 3.3e-3), (r'TPS2211\d|TPS22918', 2.0, 52e-3), (r'TPS22919', 1.5, 90e-3), (r'TPS2115', 1.25, 84e-3),
+                     (r'TPS2121', 4.5, 56e-3), (r'TPS2116', 2.5, 40e-3), (r'TPS259\d', 4.0, 30e-3), (r'AP2280\d|AP22802', 2.0, 70e-3),
+                     (r'AP2171|AP2191', 1.0, 100e-3), (r'AP2553|AP255\d', 2.5, 70e-3), (r'TPS205\d', 0.5, 70e-3), (r'SY6280', 2.0, 110e-3),
+                     (r'LM66100', 1.5, 79e-3), (r'MIC20\d\d', 0.5, 90e-3), (r'RT9742', 1.5, 70e-3), (r'MAX17613', 3.0, 260e-3),
+                     (r'SLG5NT', 4.0, 15e-3)]
+FET_CLASS = [(r'TOLL|HSOF|LFPAK|D2PAK|TO-?263|TO-?247', 30.0, 2e-3), (r'TO-?220|DPAK|TO-?252', 10.0, 10e-3),
+             (r'PowerPAK|PowerDI|SON|DFN|SO-?8|SOIC-?8|PG-|TDSON|SuperSO', 5.0, 10e-3), (r'SOT-?223|SOT-?89', 2.0, 50e-3),
+             (r'SOT-?23|SOT-?323|SC-?70|SOT-?563|SOT-?723|DFN1006', 1.0, 80e-3)]
+SMALL_FET = re.compile(r'BSS\d|2N7002|BS170|BS250|MMBF|NTR4003|DMG1012|FDV30\d|SI1\d{3}|PMV\d{2}X|NX\d{4}|DMN6\d|DMN2\d{3}U?W', re.I)
+IN_SW_PIN = re.compile(r'^(P?VIN\d*|IN\d?|VIN_?[A-Z0-9]*|IN_?[12AB]|VBUS|VBAT|PVIN)$', re.I)
+OUT_SW_PIN = re.compile(r'^(V?OUT\d*|OUT_?[A-Z0-9]*|VOUT_?[A-Z0-9]*|PVOUT)$', re.I)
+CONN_CURRENT = {'usb': 3.0, 'power': 2.0, 'battery': 2.0, 'header': 1.0, 'wire_to_board': 1.0, 'board_to_board': 1.0}
+
+
+def _gds(b: _B, ref):
+    """{'G': net, 'D': net, 'S': net} of a MOSFET from its pin functions, or None."""
+    by = {}
+    for p in b.nl.parts[ref].active_pins():
+        f = (p.fn or '')[:1].upper()
+        if f in 'GDS' and (len(p.fn) == 1 or p.fn[1:].isdigit() or p.fn[1:2] in '_ '):
+            by.setdefault(f, set()).add(p.net)
+    if not all(len(by.get(k, ())) == 1 for k in 'GDS'):
+        return None
+    return {k: next(iter(v)) for k, v in by.items()}
+
+
+def _fet_ron(b: _B, ref):
+    part = b.nl.parts[ref]
+    t = part.text()
+    for rx_, r in FET_RON_TABLE:
+        if re.search(rx_, t, re.I):
+            return r, f"R_ds(on) {r * 1e3:g} mOhm for {re.search(rx_, t, re.I).group(0)} (table)"
+    for rx_, _, r in FET_CLASS:
+        if re.search(rx_, part.lib_id, re.I):
+            return r, f"R_ds(on) {r * 1e3:g} mOhm, package class {re.search(rx_, part.lib_id, re.I).group(0)}"
+    return 50e-3, 'R_ds(on) 50 mOhm, default class'
+
+
+def _power_net(b: _B, n, fet_nets=None) -> bool:
+    """A net that carries supply current: a rail, a ground, or a net with IC supply pins, decoupling, or the
+    main terminals of two or more power FETs (an OR node)."""
+    if n in b.r.rails or n in b.g:
+        return True
+    if fet_nets and fet_nets.get(n, 0) >= 2:
+        return True
+    if b.r.caps_to.get(n):
+        return True
+    for p in b.nl.pins(n):
+        if b.k(p.ref) in ('ic', 'module') and b.r.sem(p) in ('supply', 'supply_out'):
+            return True
+    return False
+
+
+def _up_score(b: _B, n) -> float:
+    """How much `n` looks like the supply side of a path (sources, input names) rather than the load side."""
+    nr = b.r.rails.get(n)
+    src = (nr.attrs.get('source') if nr else None) or {}
+    sc = {'battery': 3.0, 'connector': 2.5, 'rectifier': 2.0, 'regulator': 2.0, 'converter': 2.0, 'module': 1.5, 'internal': 1.0,
+          'derived': 1.0}.get(src.get('kind'), 0.0)
+    s = b.short(n)
+    if re.search(r'BAT|VIN|_IN\b|IN$|RAW|VBUS|USB|INPUT|SUPPLY|SRC', s):
+        sc += 1.0
+    if re.search(r'OUT|PROT|LOAD|SYS|_SW\b|SWITCHED|PACK', s):
+        sc -= 0.75
+    sc -= 0.1 * sum(1 for p in b.nl.pins(n) if b.k(p.ref) in ('ic', 'module') and b.r.sem(p) == 'supply')
+    return sc
+
+
+def _gate_drive(b: _B, q, g, d, s):
+    """'ground' (gate held at ground: reverse-polarity protection), 'mirror' (a bipolar pair or an ideal-diode
+    controller drives it), 'switch' (a GPIO, transistor, switch or driver turns it on and off) or None."""
+    if g in b.g:
+        return 'ground'
+    parts = [p for p in b.nl.pins(g) if p.ref != q]
+    kinds = {b.k(p.ref) for p in parts}
+    for p in parts:
+        pr = b.r.parts[p.ref]
+        if pr.kind == 'ic' and re.search(r'ideal diode|LTC4412|LM5050|LTC435\d|LM7480|TPS2113|MAX40200', b.nl.parts[p.ref].text(), re.I):
+            return 'mirror'
+        if pr.kind == 'transistor' and pr.subtype in ('pnp', 'bjt') and len(set(b.nl.parts[p.ref].nets) & {d, s}) >= 1:
+            return 'mirror'
+    if 'ic' in kinds or 'module' in kinds or 'switch' in kinds or 'transistor' in kinds:
+        return 'switch'
+    res = [p for p in parts if b.k(p.ref) == 'resistor']
+    for p in res:                      # a driver one resistor away: GPIO, switch, transistor, connector control pin
+        o = b.nl.other_net(b.nl.parts[p.ref], g)
+        if o and o not in b.g and o not in b.r.rails and o not in (d, s) and \
+                any(b.k(x.ref) in ('ic', 'module', 'switch', 'transistor', 'connector') and x.ref != q for x in b.nl.pins(o)):
+            return 'switch'
+    if res and all(b.nl.other_net(b.nl.parts[p.ref], g) in b.g or b.nl.other_net(b.nl.parts[p.ref], g) in (s,) for p in res) and \
+            any(b.nl.other_net(b.nl.parts[p.ref], g) in b.g for p in res):
+        return 'ground'
+    return None
+
+
+def _path_current(b: _B, sws, rail_in, rail_out, series, ic=None, stages=None):
+    """(I, basis) for a power path: fuse rating > load-switch table > shunt full scale > connector or FET class."""
+    for f in series + [p.ref for n in (rail_in, rail_out) for p in b.nl.pins(n) if b.k(p.ref) == 'fuse']:
+        v = b.nl.parts[f].value
+        m = re.search(r'(\d+(?:\.\d+)?)\s*A\b', v) or re.search(r'(?<![\d.])(\d+(?:\.\d+)?)A(?![a-z])', v)
+        if m:
+            return float(m.group(1)), f"fuse {f} rated {m.group(1)} A ('{v}')"
+        m = re.search(r'MF-\w*?(\d{3})|0ZC[A-Z](\d{4})', v)
+        if m:
+            amps = int(m.group(1)) / 100 if m.group(1) else int(m.group(2)) / 100
+            return amps, f"fuse {f} hold current {amps:g} A from its part number"
+    if ic:
+        for rx_, amps, _ in LOAD_SWITCH_TABLE:
+            if re.search(rx_, b.nl.parts[ic].text(), re.I):
+                return amps, f"{ic} rated {amps:g} A (table)"
+    for sh in series:
+        if b.r.parts[sh].subtype == 'shunt':
+            ohm = b.r.parts[sh].attrs.get('ohms') or V.resistance(b.nl.parts[sh].value)
+            if ohm:
+                return round(0.05 / ohm, 2), f"shunt {sh} ({ohm * 1e3:g} mOhm) at an assumed 50 mV full scale"
+    best = (1.0, 'default 1 A')
+    conns = [b.r.parts[p.ref].subtype for n in (rail_in, rail_out) for p in b.nl.pins(n) if b.k(p.ref) == 'connector']
+    if conns:
+        amps = max(CONN_CURRENT.get(c or 'header', 1.0) for c in conns)
+        best = (amps, f"connector class ({', '.join(sorted({c or 'header' for c in conns}))}) {amps:g} A")
+    n_par = min(len(st_) for st_ in stages) if stages else 1
+    for q in sws[:1]:
+        for rx_, amps, _ in FET_CLASS:
+            if re.search(rx_, b.nl.parts[q].lib_id, re.I) and amps * n_par > best[0]:
+                best = (amps * n_par, f"package class of {q} ({re.search(rx_, b.nl.parts[q].lib_id, re.I).group(0)}) "
+                                      f"{amps:g} A x {n_par} in parallel")
+                break
+    return best
+
+
+PKG_WATTS = [(r'TOLL|HSOF|LFPAK|D2PAK|TO-?263|TO-?247', 5.0), (r'TO-?220|DPAK|TO-?252', 3.0),
+             (r'PowerPAK|PowerDI|SON|DFN|SO-?8|SOIC-?8|PG-|TDSON|SuperSO', 2.0), (r'SOT-?223|SOT-?89', 1.0),
+             (r'SOT-?23|SOT-?323|SC-?70|SOT-?563|SOT-?723|DFN1006', 0.35)]
+
+
+def _dissipation_cap(b: _B, p):
+    """The largest current the path's pass elements can carry at their package's dissipation (a designer who
+    picked a SOT-23 FET with 5 ohm on-resistance did not plan amperes through it), or None."""
+    if p.get('ic') or not p['ron']:
+        return None
+    worst = None
+    for st_ in p['stages']:
+        w = next((w for rx_, w in PKG_WATTS if re.search(rx_, b.nl.parts[st_[0]].lib_id, re.I)), None)
+        if w is None:
+            return None
+        r1, _ = _fet_ron(b, st_[0])
+        i_max = len(st_) * math.sqrt(w / r1)
+        worst = i_max if worst is None else min(worst, i_max)
+    return worst
+
+
+def _path_series(b: _B, net):
+    """Shunts and fuses continuing the path from `net` (an output into a connector through a shunt)."""
+    out = []
+    for p in b.nl.pins(net):
+        k, sub = b.k(p.ref), b.r.parts[p.ref].subtype
+        if (k == 'resistor' and sub == 'shunt') or k == 'fuse':
+            out.append(p.ref)
+    return sorted(set(out), key=_refkey)
+
+
+def power_paths(b: _B, cells) -> tuple[list, list]:
+    """Non-switching power paths (load switches, power muxes, ideal-diode OR, reverse-polarity FETs, FET banks):
+    -> (power_path structures, heat_source structures)."""
+    cell_parts = getattr(b, 'cell_parts', set()) | {c.get('controller') for c in cells}
+    paths = []
+    # ---- integrated load switches, eFuses, power muxes
+    for ref, pr in sorted(b.r.parts.items(), key=lambda t: _refkey(t[0])):
+        if pr.kind != 'ic' or pr.subtype != 'load_switch' or ref in cell_parts:
+            continue
+        part = b.nl.parts[ref]
+        ins = sorted({p.net for p in part.active_pins() if IN_SW_PIN.match(p.fn) and p.net not in b.g and _power_net(b, p.net)})
+        outs = sorted({p.net for p in part.active_pins() if OUT_SW_PIN.match(p.fn) and p.net not in b.g} - set(ins))
+        if not ins or not outs:
+            continue
+        cls = 'power_mux' if len(ins) >= 2 else ('ideal_diode' if re.search(r'ideal diode|LM66100|LTC4412|TPS2113', part.text(), re.I)
+                                                 else 'load_switch')
+        _, _, ron = next(((a, i, r) for a, i, r in LOAD_SWITCH_TABLE if re.search(a, part.text(), re.I)), (None, None, 0.1))
+        rbasis = (f"R_on {ron * 1e3:g} mOhm for {ref} (table)" if any(re.search(a, part.text(), re.I) for a, _, _ in LOAD_SWITCH_TABLE)
+                  else 'R_on 100 mOhm, load-switch class')
+        for rin in ins:
+            paths.append({'class': cls, 'switches': [ref], 'stages': [[ref]], 'controller': ref, 'rail_in': rin, 'rail_out': outs[0],
+                          'ron': ron, 'ron_basis': rbasis, 'ic': ref, 'group': ref if len(ins) >= 2 else None})
+    # ---- discrete MOSFETs: banks (same drain and source) chained through middle nets
+    fets = {}
+    for ref, pr in b.r.parts.items():
+        if pr.kind != 'transistor' or pr.subtype not in ('nmos', 'pmos', 'mosfet') or ref in cell_parts:
+            continue
+        t = _gds(b, ref)
+        if not t or t['D'] == t['S'] or t['D'] in b.r.switch_nodes or t['S'] in b.r.switch_nodes:
+            continue
+        both = (t['D'] in b.r.rails or t['D'] in b.g) and (t['S'] in b.r.rails or t['S'] in b.g)
+        if SMALL_FET.search(b.nl.parts[ref].text()) and not both:
+            continue
+        fets[ref] = t
+    # FET groups joined through middle nets that reach both a rail and a ground are totem poles (CMOS logic,
+    # half-bridges), not power paths
+    term = lambda n: n in b.g or n in b.r.rails   # noqa: E731
+    comp = {}
+    for ref in sorted(fets):
+        if ref in comp:
+            continue
+        stack, seen = [ref], {ref}
+        while stack:
+            x = stack.pop()
+            for n in (fets[x]['D'], fets[x]['S']):
+                if term(n):
+                    continue
+                for y, t in fets.items():
+                    if y not in seen and n in (t['D'], t['S']):
+                        seen.add(y)
+                        stack.append(y)
+        for x in seen:
+            comp[x] = frozenset(seen)
+    for grp in set(comp.values()):
+        ends = {n for x in grp for n in (fets[x]['D'], fets[x]['S']) if term(n)}
+        if len(grp) >= 2 and any(n in b.g for n in ends) and any(n not in b.g for n in ends):
+            for x in grp:
+                fets.pop(x, None)
+    banks = defaultdict(list)
+    fet_nets = defaultdict(int)
+    for ref, t in fets.items():
+        banks[frozenset((t['D'], t['S']))].append(ref)
+        fet_nets[t['D']] += 1
+        fet_nets[t['S']] += 1
+    bank_nets = {k: tuple(sorted(k)) for k in banks}
+    adj = defaultdict(list)
+    for k, (a, c) in bank_nets.items():
+        adj[a].append(k)
+        adj[c].append(k)
+    used = set()
+    for k in sorted(banks, key=lambda k: sorted(banks[k])):
+        if k in used:
+            continue
+        a, c = bank_nets[k]
+        chain, ends = [k], [a, c]
+        # extend through a middle net that only FET main terminals (and gate/bias parts) touch: back-to-back banks
+        def middle(n):
+            if n in b.g or len(adj[n]) != 2:
+                return False
+            other = {p.ref for p in b.nl.pins(n)} - {q for kk in adj[n] for q in banks[kk]}
+            return n not in b.r.rails or all(b.k(x) in ('resistor', 'capacitor', 'diode', 'test_point') for x in other)
+        for i in (0, 1):
+            n = ends[i]
+            while middle(n):
+                k2 = next(x for x in adj[n] if x not in chain)
+                if k2 in used:
+                    break
+                chain.append(k2)
+                a2, c2 = bank_nets[k2]
+                n = c2 if a2 == n else a2
+                ends[i] = n
+        e0, e1 = ends
+        if not (_power_net(b, e0, fet_nets) and _power_net(b, e1, fet_nets)) or e0 == e1:
+            continue
+        if e0 in b.g and e1 in b.g:
+            continue
+        if (e0 in b.g or e1 in b.g) and len(chain) >= 2:
+            continue           # a totem pole from a rail to ground through a middle node: a logic gate or a half-bridge
+        if (e0 in b.g or e1 in b.g) and len(chain) == 1:
+            other = e1 if e0 in b.g else e0
+            src = (b.r.rails.get(other).attrs.get('source') if other in b.r.rails else None) or {}
+            if src.get('kind') in ('regulator', 'converter', 'battery', 'internal', 'module', 'rectifier') or \
+                    (src.get('kind') == 'connector' and 'input connector' in (src.get('note') or '')):
+                continue       # a FET straight across a supply rail is a crowbar or a clamp, not a load path
+        used |= set(chain)
+        sws = sorted({q for kk in chain for q in banks[kk]}, key=_refkey)
+        q0 = banks[chain[0]][0]
+        t0, sub = fets[q0], b.sub(q0)
+        drive = _gate_drive(b, q0, t0['G'], t0['D'], t0['S'])
+        if e0 in b.g or e1 in b.g:                       # low side: the load's return through the FET to ground
+            rin, rout = (e1, e0) if e0 in b.g else (e0, e1)
+        elif sub == 'pmos' and drive in ('mirror', 'ground') and len(chain) == 1:
+            rin, rout = t0['D'], t0['S']                 # body diode forward: ideal diode or reverse-polarity PMOS
+        elif sub == 'pmos' and drive == 'switch' and len(chain) == 1:
+            rin, rout = t0['S'], t0['D']                 # high-side load switch
+        else:
+            rin, rout = (e0, e1) if _up_score(b, e0) >= _up_score(b, e1) else (e1, e0)
+        if len(sws) >= 2 or len(chain) >= 2:
+            cls = 'fet_bank'
+        elif rout in b.g or (sub == 'nmos' and t0['S'] in b.g and t0['D'] not in b.g and drive == 'switch'):
+            cls = 'fet_switch'
+        elif drive == 'ground' or (sub == 'nmos' and t0['S'] in b.g):
+            cls = 'reverse_polarity'
+        elif drive == 'mirror':
+            cls = 'ideal_diode'
+        else:
+            cls = 'fet_switch'
+        stages = [sorted(banks[kk], key=_refkey) for kk in chain]
+        ron, rb = 0.0, []
+        for st_ in stages:
+            r1, basis = _fet_ron(b, st_[0])
+            ron += r1 / len(st_)
+            rb.append(basis + (f", {len(st_)} in parallel" if len(st_) > 1 else ''))
+        ctrl = None
+        for p in b.nl.pins(t0['G']):
+            if b.k(p.ref) in ('ic', 'module'):
+                ctrl = p.ref
+        if ctrl is None:
+            for p in b.nl.pins(t0['G']):
+                if b.k(p.ref) == 'resistor':
+                    o = b.nl.other_net(b.nl.parts[p.ref], t0['G'])
+                    if not o or o in b.g or o in b.r.rails:
+                        continue             # a gate pull to ground or a rail names no controller
+                    ctrl = next((x.ref for x in b.nl.pins(o) if b.k(x.ref) in ('ic', 'module')), None)
+                    if ctrl:
+                        break
+        paths.append({'class': cls, 'switches': sws, 'stages': stages, 'controller': ctrl, 'rail_in': rin, 'rail_out': rout,
+                      'ron': ron, 'ron_basis': '; '.join(rb), 'ic': None, 'group': None, 'drive': drive})
+    # ---- OR groups: several paths into one output
+    by_out = defaultdict(list)
+    for p in paths:
+        by_out[p['rail_out']].append(p)
+    for out, ps in by_out.items():
+        if len(ps) >= 2 and all(p['class'] in ('ideal_diode', 'reverse_polarity', 'power_mux', 'load_switch', 'fet_switch') for p in ps) \
+                and out not in b.g:
+            for p in ps:
+                p['group'] = p['group'] or f"or:{b.short(out)}"
+                if p['class'] in ('reverse_polarity',) and p.get('drive') != 'ground':
+                    p['class'] = 'ideal_diode'
+    # ---- structures
+    out_s, heat_s = [], []
+    for p in paths:
+        rin, rout = p['rail_in'], p['rail_out']
+        gnd = b.r.gnd if rout not in b.g else rout
+        series = _path_series(b, rout) + [x for x in _path_series(b, rin) if x not in _path_series(b, rout)]
+        caps_in = _hf_order(b.nl, b.caps_on(rin, gnd)) if rin not in b.g else []
+        caps_out = _hf_order(b.nl, b.caps_on(rout, gnd)) if rout not in b.g else []
+        sw0 = p['switches'][0]
+        last = p['stages'][-1][0]
+        loop = []
+        if caps_in:
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], rin)])
+        loop += [[sw0, b.pad_sel(sw0, rin)], [last, b.pad_sel(last, rout)]]
+        if caps_out:
+            loop += [[caps_out[0], b.cap_pad(caps_out[0], rout)], [caps_out[0], b.cap_pad(caps_out[0], next(iter(b.nl.parts[caps_out[0]].nets - {rout})))]]
+        if caps_in:
+            loop.append([caps_in[0], b.cap_pad(caps_in[0], next(iter(b.nl.parts[caps_in[0]].nets - {rin})))])
+        I_, ibasis = _path_current(b, p['switches'], rin, rout, series, p['ic'], p['stages'])
+        cap = _dissipation_cap(b, p)
+        if cap is not None and cap < I_:
+            ibasis = f"{ibasis}, capped at {cap:.2g} A by what the pass element(s) can dissipate"
+            I_ = round(cap, 3)
+        V_ = b.volts(rin) if rin not in b.g else b.volts(rout)
+        P_ = round(I_ ** 2 * p['ron'], 4)
+        evs = [ev('topology', f"{p['class'].replace('_', ' ')}: {', '.join(p['switches'])} from '{b.short(rin)}' to '{b.short(rout)}'", STRONG)]
+        if p.get('drive'):
+            evs.append(ev('topology', f"gate drive: {p['drive']}", WEAK))
+        if not caps_in or not caps_out:
+            evs.append(ev('topology', 'no capacitor on one side: the loop closes off the board', -1.0))
+        if p['group']:
+            evs.append(ev('topology', f"one of several paths into '{b.short(rout)}' (group {p['group']})", 0.0))
+        pid = f"path:{'+'.join(p['switches'][:3])}" + (f":{b.short(rin)}" if p['ic'] and p['group'] else '')
+        out_s.append(_struct('power_path', pid, evs, conf_cap=0.9, prior=0.5,
+                             **{'class': p['class'], 'switches': p['switches'], 'stages': p['stages'], 'controller': p['controller'],
+                                'rail_in': rin, 'rail_out': rout, 'gnd': gnd, 'series': series, 'caps_in': caps_in[:4],
+                                'caps_out': caps_out[:4], 'loop': loop, 'group': p['group'],
+                                'excite': {'V': V_, 'I': I_, 'basis': [ibasis], 'I_belief': belief(I_, 'A', ibasis, round(I_ / 3, 3), I_)},
+                                'R_on_ohm': {'value': round(p['ron'], 6), 'unit': 'ohm', 'class': 'E5', 'basis': p['ron_basis']},
+                                'P_W': P_}))
+        for st_ in p['stages']:
+            for q in st_:
+                r1, rbasis = (p['ron'], p['ron_basis']) if p['ic'] else _fet_ron(b, q)
+                Pq = round((I_ / len(st_)) ** 2 * r1, 4)
+                if Pq >= 0.05:
+                    basis = f"(I/n)^2 x R_on: I {I_:g} A ({ibasis}) over {len(st_)} parallel, {rbasis}"
+                    heat_s.append(_struct('heat_source', f"heat:{q}", [ev('derived', basis, MODERATE)], conf_cap=0.6, prior=0.0,
+                                          part=q, P_W=Pq, P_W_belief={'value': Pq, 'unit': 'W', 'class': 'E5', 'basis': basis,
+                                                                      'interval': [round(Pq / 9, 4), round(Pq, 4)]}))
+    return out_s, heat_s

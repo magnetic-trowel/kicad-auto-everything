@@ -8,7 +8,7 @@
   - the trace capacitance under a crystal.
 - Guard pours (`kae-crit:` zones) keep other nets off the ground plane under hot loops and crystals while the bridge runs. A recheck recomputes every module on the finished board, including how much of its plane survived. Modules that lost more than 15 % of budget or 10 % of plane cover are re-tweaked, for up to three rounds.
 - On the 33 boards of splits A and B and on 6 C boards with converters, the critical copper adds **0 KiCad DRC errors** and takes 0.3–21 s per board [C]. The A/B run against the bridge alone (completion, cp1, cpk, physics) is set up but not yet run.
-- `optimize_modules` moves a module's parts (any angle; right angles for heatsink tabs) while routing its copper. On human placements it lowered three converters' hot loops by 2–8 % and decoupling loops by a median 9 % (up to 53 %), with 0 DRC errors [C].
+- `optimize_modules` moves a module's parts (any angle; right angles for heatsink tabs) while routing its copper. On 12 human placements it lowered converter hot loops by a median 4 % (up to 26 %) and decoupling loops by a median 9 % (up to 61 %), with 0 DRC errors [C].
 
 ## Key facts
 
@@ -20,7 +20,7 @@ Modules come from the physics brief (`kae.circuit.brief`) and are routed in brie
 |---|---|---|
 | Commutation cell (buck, boost, half bridge) | Every board hop of the hot loop (input cap → switch → return), forward hops first; return vias | Loop L. Each hop is as wide as its terminals allow (the pad's extent across the hop), never below IPC-2221 for the cell current, on the layer next to the reference plane. The switch-node hop stays at class width. A ground hop longer than 1.5× the straight distance + 1 mm is not drawn; the plane carries it. |
 | Return and stitching vias | Up to 4 vias (more for ≥ 2 A) at the cap's and the switch's ground pads | Candidate sites: 24 directions × 4 gaps. The best pair comes from a 6 × 6 search on the routed loop L; vias are added while each lowers L by ≥ 2 %. |
-| Decoupling | Cap rail pad → IC power pin; cap ground and IC ground into the plane | Loop L per power pin, parallel caps combined. A through via joins a cap on the far side of the IC. A cap more than 10 mm from its pin is not local decoupling; the bridge routes it. |
+| Decoupling | Cap rail pad → IC power pin; cap ground and IC ground into the plane | Loop L per power pin, parallel caps combined. A cap on the far side of the IC is joined through a via, and the IC ground pin gets a via into the pour the cap sits in. A cap more than 10 mm from its pin is not local decoupling; the bridge routes it. |
 | Crystal | IC pin → crystal → load caps on both nets; load-cap ground vias | Pulling = S·C′·ℓ (ppm). Both nets' IC-to-crystal hops go first, so neither detours around the other. |
 | Protection chain | Connector → protector → protected part, in that order; the protector's ground via | Surge path ahead of the protector: L′(w, h)·ℓ plus the via. A protector hanging off the line is inserted after the connector. Power lines get their E5 current width. |
 | Power rail | Trunk to the farthest load, a branch per load; vias into rail and ground zones | DC drop, zones first. Tracks only where the E5 current needs more than the class width (`rails="auto"`). |
@@ -120,14 +120,12 @@ A round is kept only if errors + unconnected items do not rise and the flagged m
   - the outline, rule areas.
 - **Judging:** `terms.delta` screens when given. The best 6 are routed and quoted. A move is kept when the routed value falls by more than 1 %, and only positive, finite values count.
 
-On human placements, 120 s per board [C]:
+On 12 human placements (120 s each; KiCad DRC 0 errors on every written board) [C]:
 
-| Board | Hot loop (nH) | Decoupling loops moved | DRC errors |
+| Structure | Changed | Median | Largest |
 |---|---|---|---|
-| noisecard | 2.41 → 2.22 | microphone 5.42 → 5.06 | 0 |
-| olimex DC-DC | 8.00 → 7.82 | — | 0 |
-| doorman | 2.70 → 2.57 | — | 0 |
-| BLDC power stage | 5.98 (no legal gain) | 8 loops: median −9 %, up to −53 % (0.93 → 0.44) | 0 |
+| Hot loop | 7 of 8 converters | −4 % | −26 % (CAN processor, 3.76 → 2.77 nH) |
+| Decoupling loop | 19 | −9 % | −61 % (mouse sensor regulator output, 4.23 → 1.64 nH) |
 
 ### Validation so far
 
@@ -138,7 +136,7 @@ On human placements, 120 s per board [C]:
 | Critical stage runtime | 39 | 0.3–21 s per board, one shared core |
 | olimex DC-DC, routed-copper estimator: hot loop C2 → U1 → D2 (u), plane cover, worst V_out drop path | 1 | human 10.97 nH (1.19), 0.85, 17.9 mΩ; bridge alone 9.10 nH (0.98), 0.99, 149 mΩ; critical + bridge (240 s, incomplete) 6.68 nH (0.72), 1.00, 42.6 mΩ |
 | Re-tweak, noisecard, guards off | 1 | the bridge cut the cell's plane cover from 1.00 to 0.74 (flagged). Round 1 restored it but left 4 unconnected items (Freerouting got 99 s), so it was discarded. Final: 0 errors, 1 unconnected; the bridge alone leaves 5 |
-| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 29 KiCad-free and 4 KiCad tests, with a regression test for each bug fixed |
+| Unit tests | synthetic 2-layer converter, MCU, crystal, TVS | 30 KiCad-free and 5 KiCad tests, with a regression test for each bug fixed |
 
 `tools/research/physics/crit_compare.py` puts the human board, the bridge alone and critical + bridge side by side per module and rail, and summarizes re-tweak rounds. `suite_physics.py --compare-to` gives the independent rb HF loop, DC R_eff and worst drop per amp.
 

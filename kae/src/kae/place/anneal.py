@@ -567,9 +567,22 @@ class Annealer:
         batch = 200
         next_log = log_every
         best = None
+        w0 = time.monotonic()
+        wall = (deadline - w0) if deadline is not None else None
         while done < N:
+            # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
+            # run cut short by its budget still ends cold (not at a random hot state)
             frac = done / N
+            el = time.process_time() - t0
+            tf = el / cpu_s if cpu_s > 0 else 0.0
+            if wall:
+                tf = max(tf, (time.monotonic() - w0) / wall)
+            if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
+                frac = tf
+            if frac >= 1.0:
+                break
             T = T0 * (T1 / T0) ** frac
+            self.T_last = T
             lam = self.lam0 * (self.lam1 / self.lam0) ** frac
             r = max(1, int(r0 * (T / T0) ** 0.5))
             for _ in range(batch):
@@ -583,13 +596,18 @@ class Annealer:
                 c = self.cost(lam)
                 if best is None or c < best[0]:
                     best = (c, list(self.X), list(self.Y), list(self.K))
-            el = time.process_time() - t0
-            if el > cpu_s or (deadline is not None and time.monotonic() > deadline):
-                break
             if done / N >= next_log:
                 next_log += log_every
                 self.log(f"anneal {100 * done / N:.0f}% T={T:.2e} lam={lam:.1f} r={r} wl={self.wl:.1f} "
                          f"phys={self.phys:.3f} leg={self.leg_total} acc={self.stats['accepted'] / max(1, self.stats['moves']):.2f}")
+        # a run whose budget went to overheads before it could cool ends with a short quench
+        if getattr(self, "T_last", T0) > 10 * T1:
+            self.T_last = T1
+            for _ in range(5 * batch):
+                mv = self.propose(1)
+                if mv is not None:
+                    self.try_move(mv[0], mv[1], T1, self.lam1, mv[2])
+            done += 5 * batch
         self.final_lam = self.lam0 * (self.lam1 / self.lam0) ** min(1.0, done / N)
         self.best_legal = best
         return self.report(time.process_time() - t0, planned=N, done=done)

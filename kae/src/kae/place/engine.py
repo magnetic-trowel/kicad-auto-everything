@@ -1279,9 +1279,22 @@ class FastAnnealer:
         done = 0
         next_log = log_every
         best = None
+        w0 = time.monotonic()
+        wall = (deadline - w0) if deadline is not None else None
         while done < N:
+            # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
+            # run cut short by its budget still ends cold (not at a random hot state)
             frac = done / N
+            el = time.process_time() - t0
+            tf = el / cpu_s if cpu_s > 0 else 0.0
+            if wall:
+                tf = max(tf, (time.monotonic() - w0) / wall)
+            if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
+                frac = tf
+            if frac >= 1.0:
+                break
             T = T0 * (T1 / T0) ** frac
+            self.T_last = T
             lam = self.lam0 * (self.lam1 / self.lam0) ** frac
             r = max(1, int(r0 * (T / T0) ** 0.5))
             nf = int(round(batch * share_fast))
@@ -1303,12 +1316,22 @@ class FastAnnealer:
                 c = self.cost(lam)
                 if best is None or c < best[0]:
                     best = (c, self.E.X.copy(), self.E.Y.copy(), self.E.K.copy())
-            if time.process_time() - t0 > cpu_s or (deadline is not None and time.monotonic() > deadline):
-                break
             if done / N >= next_log:
                 next_log += log_every
                 self.log(f"anneal {100 * done / N:.0f}% T={T:.2e} lam={lam:.1f} r={r} wl={self.wl:.1f} "
                          f"phys={self.phys:.3f} leg={self.leg_total}")
+        # a run whose budget went to overheads before it could cool ends with a short quench
+        if getattr(self, "T_last", T0) > 10 * T1:
+            self.T_last = T1
+            for _ in range(5):
+                nf = int(round(batch * share_fast))
+                if nf and len(self.fast):
+                    run_batch(self.E, self.fast, self.swap_ptr, self.swap_ids, nf, T1, self.lam1, 1, fstats)
+                for _ in range(min(200, batch - nf) if self.slow else 0):
+                    mv = self._propose_slow(1)
+                    if mv is not None:
+                        self._try_python(mv[0], mv[1], T1, self.lam1, mv[2])
+                done += batch
         for k, name in enumerate(("shift", "rotate", "swap")):
             bm = self.stats["by_move"].setdefault(name, [0, 0])
             bm[0] += int(fstats[2 * k])

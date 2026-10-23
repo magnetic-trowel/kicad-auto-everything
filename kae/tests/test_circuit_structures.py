@@ -320,3 +320,55 @@ def test_bridge_charge_pump_caps_are_cell_members():
     nl, r, st = structures(parts)
     c = one(st['commutation_cells'], controller='U3')
     assert c['charge_pump_caps'] == ['C2']
+
+
+# ------------------------------------------------------------------------------- decap pairing cases (critical-router reports)
+def test_multi_pin_group_pairs_by_distance_not_by_reference_order():
+    """canhw-processor U4: six VDD pins on one net; a reference-order pin pairing put caps 11-22 mm from 'their' pins."""
+    pins = [(n, 'VDD', '+3V3', 'power_in') for n in ('6', '11', '27', '50', '75', '100')] + [('10', 'VSS', 'GND', 'power_in')]
+    parts = [IC('U4', 'STM32F407VGT6', 'Package_QFP:LQFP-100_14x14mm_P0.5mm', pins)] + \
+        [C(f'C{i}', '0.1uF', '+3V3', 'GND') for i in (5, 6, 7, 8, 11, 12)]
+    nl, r, st = structures(parts)
+    d = one(st['decaps'], ic='U4', rail='+3V3')
+    assert d['pairing'] == 'nearest_pin' and d['pin_caps'] == {} and len(d['caps']) == 6
+
+
+def _bms_3v3(module_pin_type='power_in'):
+    buck = IC('U3', 'LMR38010', 'Package_SO:SOIC-8', [('3', 'VIN', 'VIN', 'power_in'), ('8', 'SW', 'SW', 'power_out'),
+                                                      ('1', 'GND', 'GND', 'power_in'), ('5', 'FB', 'FB', 'input')])
+    return [buck, C('C40', '10uF', 'VIN', 'GND'), L('L2', '22uH', 'SW', '+3V3'), D('D9', 'SS14', 'SW', 'GND'),
+            C('C17', '47uF', '+3V3', 'GND', lib='Capacitor_SMD:C_1210_3225Metric'), C('C18', '47uF', '+3V3', 'GND', lib='Capacitor_SMD:C_1210_3225Metric'),
+            R('R28', '82k', '+3V3', 'FB'), R('R31', '35.7k', 'FB', 'GND'),
+            IC('U1', 'SN65HVD230', 'Package_SO:SOIC-8', [('3', 'VCC', '+3V3', 'power_in'), ('2', 'GND', 'GND', 'power_in')], sheet='/MCU/'),
+            IC('U2', 'SN65HVD75', 'Package_SO:SOIC-8', [('8', 'VCC', '+3V3', 'power_in'), ('5', 'GND', 'GND', 'power_in')], sheet='/MCU/'),
+            fp('U5', 'ESP32-C3-MINI-1', 'RF_Module:ESP32-C3-MINI-1', [('3', '+3V3', '3V3', module_pin_type), ('1', 'GND', 'GND', 'power_in')],
+               sheet='/MCU/'),
+            C('C19', '100nF', '+3V3', 'GND', sheet='/MCU/'), C('C21', '100nF', '+3V3', 'GND', sheet='/MCU/'),
+            C('C36', '100nF', '+3V3', 'GND', sheet='/MCU/'), C('C46', '10uF', '+3V3', 'GND', sheet='/MCU/')]
+
+
+def test_module_3v3_pin_is_a_load_and_exclusive_owners_take_only_eligible_caps():
+    """bms-c1: the ESP32 module's '3V3' pin read as a regulator output (a 'bypass' group), and the buck's output
+    filter took a 100 nF cap because its quota had room."""
+    nl, r, st = structures(_bms_3v3())
+    mod = one(st['decaps'], ic='U5', rail='+3V3')
+    assert mod['function'] == 'load'
+    conv = one(st['decaps'], function='converter_output')
+    assert set(conv['caps']) <= {'C17', 'C18', 'C46'} and 'C36' not in conv['caps']
+    owners = {c: d['ic'] for d in st['decaps'] for c in d['caps']}
+    assert all(owners.get(c) in ('U1', 'U2', 'U5') for c in ('C19', 'C21', 'C36'))
+    for d in st['decaps']:                         # nothing below p = 0.5 is ever pinned
+        assert all(d['caps_p'][c] >= 0.5 for cl in d['pin_caps'].values() for c in cl)
+
+
+def test_leftover_caps_spread_by_caps_per_pin():
+    """noisecard: caps left over after the quotas all went to the first consumer (the microphone)."""
+    parts = [fp('MK1', 'ICS-43434', 'Sensor_Audio:InvenSense_ICS-43434', [('5', '+1V8', 'VDD', 'power_in'), ('3', 'GND', 'GND', 'power_in')]),
+             IC('U1', 'STM32L011', 'Package_SO:TSSOP-20', [('4', 'VDD', '+1V8', 'power_in'), ('15', 'VSS', 'GND', 'power_in')]),
+             C('C6', '0.1U', '+1V8', 'GND'), C('C7', '0.1U', '+1V8', 'GND'), C('C8', '2U2', '+1V8', 'GND', lib='Capacitor_SMD:C_0805_2012Metric'),
+             C('C9', '0.1U', '+1V8', 'GND'),
+             fp('J1', 'Power', 'Connector_PinHeader_2.54mm:PinHeader_1x02', [('1', '+1V8', 'VCC', 'power_in'), ('2', 'GND', 'GND', 'passive')])]
+    nl, r, st = structures(parts)
+    mic = one(st['decaps'], ic='MK1')
+    mcu = one(st['decaps'], ic='U1')
+    assert len(mic['caps']) == 2 and len(mcu['caps']) == 2

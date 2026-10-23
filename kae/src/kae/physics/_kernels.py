@@ -203,37 +203,96 @@ def lookup(H, x0, y0, res, x, y):
 
 
 @jit
+def med5(a, b, c, d, e):
+    """Median of five values (inf allowed), six comparisons, no allocation."""
+    if a > b:
+        a, b = b, a
+    if c > d:
+        c, d = d, c
+    if a > c:
+        a, b, c, d = c, d, a, b
+    a = e                       # the smallest of a..d is below the median: drop it
+    if a > b:
+        a, b = b, a
+    if a > c:
+        a, b, c, d = c, d, a, b
+    return min(b, c)            # the smallest of the four left is dropped too
+
+
+@jit
+def h_at(H, x0, y0, res, x, y):
+    idx = lookup(H, x0, y0, res, x, y)
+    return INF if idx < 0 else H.flat[idx]
+
+
+@jit
+def hop_h(H, x0, y0, res, ax, ay, bx, by):
+    """Reference-plane height under a hop: the median of five samples along it, so a notch
+    in the outline or a hole in the plane under part of a long hop does not unreference it,
+    while a hop mostly over no plane is unreferenced."""
+    dx = bx - ax
+    dy = by - ay
+    return med5(h_at(H, x0, y0, res, ax + 0.1 * dx, ay + 0.1 * dy), h_at(H, x0, y0, res, ax + 0.3 * dx, ay + 0.3 * dy),
+                h_at(H, x0, y0, res, ax + 0.5 * dx, ay + 0.5 * dy), h_at(H, x0, y0, res, ax + 0.7 * dx, ay + 0.7 * dy),
+                h_at(H, x0, y0, res, ax + 0.9 * dx, ay + 0.9 * dy))
+
+
+@jit
+def hop_on_ground(N, gmask, x0, y0, res, ax, ay, bx, by):
+    """True when most of five samples along a hop lie over a plane of a ground net."""
+    cnt = 0
+    for q in range(5):
+        t = 0.1 + 0.2 * q
+        gi = lookup(N, x0, y0, res, ax + t * (bx - ax), ay + t * (by - ay))
+        if gi >= 0:
+            net = N.flat[gi]
+            if net >= 0 and gmask[net]:
+                cnt += 1
+    return cnt >= 3
+
+
+@jit
 def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, clr, detour, thick, rvia,
               Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs):
     """Loop inductance (nH). clr: copper clearance (mm); px, py, hs: scratch arrays of
     length >= n."""
-    sx = 0.0
-    sy = 0.0
     for k in range(n):
         i = ti[k]
         c = C[i]
         s = S[i]
         ly = tly[k] * GS[i]
-        x = X[i] + tlx[k] * c + ly * s
-        y = Y[i] - tlx[k] * s + ly * c
-        px[k] = x
-        py[k] = y
-        sx += x
-        sy += y
-    # reference-plane height per board side at the loop centroid; segments on opposite
-    # sides of a stack with planes seen from both sides are shielded from each other
-    side = GS[ti[0]]
-    idx = lookup(Hf, rx0, ry0, rres, sx / n, sy / n)
-    hF = INF if idx < 0 else Hf.flat[idx]
-    hB = INF if idx < 0 else Hb.flat[idx]
-    h = hF if side > 0 else hB
-    shield = hF != INF and hB != INF
+        px[k] = X[i] + tlx[k] * c + ly * s
+        py[k] = Y[i] - tlx[k] * s + ly * c
+    # reference-plane height under each hop (median of samples along it, on the hop's own
+    # side); segments on opposite sides of a stack with planes seen from both sides are
+    # shielded from each other
+    mixed = False
+    for k in range(1, n):
+        if GS[ti[k]] != GS[ti[0]]:
+            mixed = True
+    shield = False
+    if mixed:
+        cf = 0
+        cb = 0
+        for k in range(n):
+            k1 = k + 1 if k + 1 < n else 0
+            mx = 0.5 * (px[k] + px[k1])
+            my = 0.5 * (py[k] + py[k1])
+            if h_at(Hf, rx0, ry0, rres, mx, my) != INF:
+                cf += 1
+            if h_at(Hb, rx0, ry0, rres, mx, my) != INF:
+                cb += 1
+        shield = 2 * cf > n and 2 * cb > n
     A = 0.0
     B = 0.0
     Af = 0.0
     for k in range(n):
         sk = GS[ti[k]]
-        hk = hF if sk > 0 else hB
+        k1 = k + 1 if k + 1 < n else 0
+        if sk > 0:
+            hk = hop_h(Hf, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        else:
+            hk = hop_h(Hb, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
         if isbody[k]:
             z = zb[k]
             r = 0.2235 * (w[k] + TCU)
@@ -340,13 +399,7 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
         return lateral
     g1 = gnd + 1 if gnd + 1 < n else 0
     N = Nf if GS[ti[gnd]] > 0 else Nb
-    gx = 0.5 * (px[gnd] + px[g1])
-    gy = 0.5 * (py[gnd] + py[g1])
-    gi = lookup(N, rx0, ry0, rres, gx, gy)
-    if gi < 0:
-        return lateral
-    net = N.flat[gi]
-    if net < 0 or not gmask[net]:
+    if not hop_on_ground(N, gmask, rx0, ry0, rres, px[gnd], py[gnd], px[g1], py[g1]):
         return lateral
     Cv = via_return(h, math.hypot(px[g1] - px[gnd], py[g1] - py[gnd]) * detour, rvia)
     if B + Cv <= 1e-12:

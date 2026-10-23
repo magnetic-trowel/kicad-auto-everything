@@ -439,3 +439,34 @@ def test_joint_never_moves_locked_parts(tmp_path):
     keep = {f.uuid for f in b.footprints if f.ref in ("C1", "U1", "C3", "Y1")}
     poses, copper, rep = optimize_modules(b, s.brief, terms=None, locked=keep, session=s, time_s=60)
     assert not set(poses) & keep
+
+
+def test_corridor_failure_is_reported_not_hidden(tmp_path, monkeypatch):
+    from kae.route import constraints as CN
+    def boom(*a, **k):
+        raise RuntimeError("no spokes today")
+    monkeypatch.setattr(CN, "thermal_corridors", boom)
+    s = F.session(tmp_path)
+    assert any("thermal corridors unavailable" in n for n in s.report()["space_notes"])
+
+
+def test_castellated_pad_anchors_keep_each_layers_copper(tmp_path):
+    """A pad number with a through-hole pad and an SMD twin on F.Cu: a route may end on the
+    twin only on F.Cu (a B.Cu end there was a dangling track in KiCad's DRC)."""
+    from shapely.geometry import Point
+    from kae.route.critical_modules import anchor
+    s = F.session(tmp_path, twin=True)
+    j1 = next(f for f in s.board.footprints if f.ref == "J1")
+    t = s.space.terminal(j1.uuid, ["1"])
+    assert set(t.layers) == {"F.Cu", "B.Cu"} and len(t.items) == 2
+    twin = Point(j1.x + 1.9, j1.y - 1.0)                  # inside the SMD twin only
+    a = anchor(t)
+    assert a.geom_on("F.Cu").contains(twin) and not a.geom_on("B.Cu").contains(twin)
+    for l in t.layers:                                     # a stub start lies on that layer's copper
+        assert a.geom_on(l).distance(Point(a.centre_on(l))) < 1e-9
+    gr = s.router
+    grid = gr.window([a])
+    cost = gr.cost_layer(grid, "VIN", "B.Cu", 0.25)[None]
+    ks = gr._cells(grid, a, 0, cost, grid.nx * grid.ny, "B.Cu")
+    xs = [grid.xy(int(k % grid.nx), int(k // grid.nx)) for k in ks]
+    assert xs and all(not twin.buffer(0.3).contains(Point(p)) for p in xs)

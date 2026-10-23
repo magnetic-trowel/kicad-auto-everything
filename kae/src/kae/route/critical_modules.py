@@ -215,8 +215,23 @@ def _coords(g):
     return np.asarray(g.coords)
 
 
+def _on(t, layer):
+    """A terminal's copper on `layer` (all of it for objects without per-layer copper)."""
+    return t.geom_on(layer) if hasattr(t, "geom_on") else t.geom
+
+
+def _centre_on(t, layer):
+    """Where a stub of `layer` starts on terminal t: its centre when its copper on that
+    layer holds it."""
+    return t.centre_on(layer) if hasattr(t, "centre_on") else (t.x, t.y)
+
+
 def anchor(t):
-    return Anchor(t.geom, t.layers, (t.x, t.y))
+    """A terminal as a routing anchor: its copper per layer, and a point of it on each layer
+    where a track may end (a castellated pad's SMD twin is not on the back)."""
+    by = getattr(t, "by_layer", None) or None
+    centres = {l: t.centre_on(l) for l in t.layers} if by else None
+    return Anchor(t.geom, t.layers, (t.x, t.y), by_layer=by, centres=centres)
 
 
 def width_ladder(w_hi, w_lo, n=5):
@@ -286,13 +301,14 @@ def via_candidates(ctx, t, layer, net, plane_layer, toward=None, n_dirs=24, gaps
     sp = ctx.sp
     D, d = sp.via_size(net)
     rv = D / 2.0
-    c = (t.x, t.y)
+    tg = _on(t, layer)                       # the pad's copper on the stub's layer
+    c = _centre_on(t, layer)
     out = []
     zone_margin = rv + 0.15
     for k in range(n_dirs):
         th = 2 * math.pi * k / n_dirs
         ux, uy = math.cos(th), math.sin(th)
-        s = support(t.geom, c[0], c[1], ux, uy)
+        s = support(tg, c[0], c[1], ux, uy)
         for g in gaps:
             r = s + rv + g
             v = (c[0] + r * ux, c[1] + r * uy)
@@ -300,7 +316,7 @@ def via_candidates(ctx, t, layer, net, plane_layer, toward=None, n_dirs=24, gaps
                 continue
             if sp.via_violations(net, v[0], v[1], first=True):
                 continue
-            ws = sp.clamp_width(net, layer, min(D, max(extent_across(t.geom, ux, uy), 0.1)))
+            ws = sp.clamp_width(net, layer, min(D, max(extent_across(tg, ux, uy), 0.1)))
             if sp.track_violations(net, layer, ws, c, v, first=True):
                 ws2 = sp.clamp_width(net, layer, sp.width_limits(net, layer)[1])
                 if ws2 >= ws or sp.track_violations(net, layer, ws2, c, v, first=True):
@@ -311,7 +327,7 @@ def via_candidates(ctx, t, layer, net, plane_layer, toward=None, n_dirs=24, gaps
             break
     if in_pad:
         # vias inside a large pad (exposed thermal pads): a grid over the pad shrunk by the via radius
-        inner = t.geom.buffer(-rv - 0.05)
+        inner = tg.buffer(-rv - 0.05)
         if not inner.is_empty:
             x0, y0, x1, y1 = inner.bounds
             step = max(D + (sp.settings.get("hole_to_hole") or 0.25), 1.0)
@@ -499,10 +515,10 @@ def _commit_vias(ctx, m, net, layer, t, vias, key):
             sp.via_in_pad = saved
         if bad:
             continue
-        if ws > 0 and math.dist((t.x, t.y), (x, y)) > 1e-6 and sp.track_violations(net, layer, w, (t.x, t.y), (x, y),
-                                                                                   first=True):
+        c = _centre_on(t, layer)
+        if ws > 0 and math.dist(c, (x, y)) > 1e-6 and sp.track_violations(net, layer, w, c, (x, y), first=True):
             continue
-        ctx.commit_via(m, net, layer, (t.x, t.y), (x, y), w, key) if ws > 0 else \
+        ctx.commit_via(m, net, layer, c, (x, y), w, key) if ws > 0 else \
             ctx.commit_via(m, net, layer, (x, y), (x, y), w, key)
         m.vias.setdefault(key, []).append((x, y, ws, 0.0))
         n += 1
