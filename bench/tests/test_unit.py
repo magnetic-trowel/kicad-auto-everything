@@ -104,6 +104,40 @@ def test_freerouting_empty_ses_is_no_output(tmp_path, monkeypatch):
     assert res.output is None and res.meta["ses_empty"] and res.meta["rc"] == 1
 
 
+def test_freerouting_hung_after_writing_ses_keeps_it(tmp_path, monkeypatch):
+    """A router killed at our deadline after writing a complete session is scored on it;
+    a session cut off mid-write is no output."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+    imported = []
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        if op == "import-ses":
+            imported.append(args[1])
+            Path(args[2]).write_text("(kicad_pcb)")
+            return {"ok": True}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    for text, kept in (('(session s (routes (network_out (net "a)" (wire (path F.Cu 1 0 0 1 1))))))\n', True),
+                       ('(session s (routes (network_out (net "a" (wire', False)):
+        def router(cmd, **kw):
+            Path(cmd[cmd.index("-do") + 1]).write_text(text)
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+        monkeypatch.setattr(tools, "run_ops", ops)
+        monkeypatch.setattr(tools, "run_measured", router)
+        res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / f"w{kept}", 0, 100)
+        assert res.meta["timed_out"] and res.meta["partial"]
+        assert (res.output is not None) == kept and res.meta.get("ses_cut", False) == (not kept), res.meta
+    assert len(imported) == 1
+
+
 def test_dsn_unset_netclass_sizes(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
