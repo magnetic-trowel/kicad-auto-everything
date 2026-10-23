@@ -50,11 +50,11 @@ def _account(ru):
     u["processes"] += 1
 
 
-def run_measured(cmd, timeout=None, cwd=None):
+def run_measured(cmd, timeout=None, cwd=None, env=None):
     """subprocess.run(cmd, capture_output=True, text=True) that also accounts the process
     tree's CPU time and peak RSS (wait4), and kills the whole tree on timeout
     (raises subprocess.TimeoutExpired like subprocess.run)."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd,
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=cwd, env=env,
                          errors="replace", start_new_session=True)
     chunks = {}
 
