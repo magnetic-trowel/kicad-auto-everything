@@ -244,6 +244,7 @@ barriers:
     slot: true
     source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
     notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    ac: false
   - a: LV
     b: PACK
     grade: reinforced
@@ -258,6 +259,7 @@ barriers:
     slot: true
     source: "IEC 60664-1 via TI SLUP419 Tables (docs/topics/rules/isolation-creepage.md): F.4 PD2 material group III 400 V row = 4.0 mm basic [P]; 500 V row = 5.0 mm basic [S]; working voltage 420 V -> 500 V row -> 10.0 mm reinforced. F.1 <= 600 V OVC II = 4 kV basic, reinforced one step up = 6 kV -> F.2 5.5 mm; design 8.0 mm (matches the G9KB coil-contact clearance). AC test = 6 kV peak / sqrt 2 = 4.24 kVrms"
     notes: "routed slot >= 2 mm wide under T301, U401, U421, U441; no copper on any layer in the band; isolator packages are material group I (5.0 mm needed, 8 mm provided) with the slot giving the PCB path"
+    ac: false
   - a: HV
     b: PACK
     grade: functional
@@ -270,6 +272,7 @@ barriers:
     slot: false
     source: "IPC-2221B B2 via docs/topics/rules/isolation-creepage.md [S]; 5.0 mm also covers the 820 V transient case (4.1 mm) when the converter runs with the relays open (fault)"
     notes: "normal: relays open only with the converter stopped, so our side is unpowered and <= 400 V appears across an open contact; G9KB open contact 600 V / 2500 VAC"
+    ac: false
 netclasses:
   - name: AUXBST
     domain: AUXBST
