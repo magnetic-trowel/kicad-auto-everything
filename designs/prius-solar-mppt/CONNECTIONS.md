@@ -9,7 +9,7 @@ Companion to [DESIGN.md](DESIGN.md). Every part instance, every pin by number an
 - **Pin numbers** are the datasheet numbers (cited per part type below) and equal the KiCad footprint pad numbers, except where a note says the footprint merges pins (PG-TDSON-8 drain pins 5-8 + tab = pad 5; TO-277A anodes = pads 1, 2, cathode tab = pad 3).
 - **NC** = no connection (pad present, no copper attached). Exposed pads are listed as their own pin.
 - **Domains.** `LV` = all circuits referenced to GND, which is bonded to the vehicle chassis at H701-H704 (PV string, VINT, AUX, logic; <= 60 V DC, ISO 6469-3 class A). `HV` = floating traction-battery domain referenced to HV_N (class B). The only LV<->HV crossings are T301, U401, U421 (reinforced) and the relay coils of K901/K902.
-- **Variants.** `-N` (NiMH pack, Prius Two) and `-L` (Li-ion pack, other 2017 trims) differ only in R114, R214, R429, R431, R504 (marked VARIANT). Default values below are `-N`.
+- **Variants.** `-N` (NiMH pack, Prius Two) and `-L` (Li-ion pack, other 2017 trims) differ only in R114, R214, R429, R431, R504 (marked VARIANT). Default values below are `-N`. Operating mode R (default, charge only with ignition on, tap on the car side of the SMRs) fits the 0 Ohm link R709 (hardware IG interlock); Mode P leaves R709 unfitted (only after DESIGN.md Q-1 is approved).
 - **Evidence tags**: [P] read in the primary datasheet, [S] distributor/secondary or vendor page, [unverified] not read; [I] our inference.
 
 ## Part types and pin-number sources
@@ -91,8 +91,8 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `T1_SNB` | HV | 0..262 V | <0.1 A | hv | R305.2, C349.1 | snubber (DNP) |
 | `+3V3` | LV | 3.29 V | 0.25 A | power | U102.3, C103.1, U104.5, C126.1, R130.1, U202.3, C203.1, U204.5, C226.1, R230.1, R309.1, U401.12, C408.1, C409.1, U402.5, C410.1, U421.12, C428.1, C429.1, U422.5, C430.1, R514.1, U503.8, C507.1, U504.1, U504.10, C508.1, R515.1, R516.1, L602.2, C611.1, C612.1, R610.1, C613.2, U701.7, U701.20, R701.1, C703.1, C704.1, C705.1, R702.1, J701.2, R706.1, TP703.1 | logic, AMC3330 low sides, op-amps |
 | `+3V3A` | LV | 3.29 V | <20 mA | power | U701.5, R701.2, C701.1, C702.1 | MCU AVDD (ADC reference) |
-| `AGND_A` | LV | 0 V | <10 mA | ground | U103.10, U103.29, R108.2, C109.2, R111.2, C110.2, R112.2, C111.2, C112.2, C113.2, C114.2, R115.2, NT101.1 | LM5176 A analog ground, tied to GND only at NT101 |
-| `AGND_B` | LV | 0 V | <10 mA | ground | U203.10, U203.29, R208.2, C209.2, R211.2, C210.2, R212.2, C211.2, C212.2, C213.2, C214.2, R215.2, NT201.1 | LM5176 B analog ground, tied to GND only at NT201 |
+| `AGND_A` | LV | 0 V | <10 mA | ground | U103.10, U103.29, R108.2, C129.2, C109.2, R111.2, C110.2, R112.2, C111.2, C112.2, C113.2, C114.2, R115.2, NT101.1 | LM5176 A analog ground, tied to GND only at NT101 |
+| `AGND_B` | LV | 0 V | <10 mA | ground | U203.10, U203.29, R208.2, C229.2, C209.2, R211.2, C210.2, R212.2, C211.2, C212.2, C213.2, C214.2, R215.2, NT201.1 | LM5176 B analog ground, tied to GND only at NT201 |
 | `AUX12` | LV | 12.1 V | 0.6 A | power | R121.1, R221.1, U301.1, C311.1, C312.1, R501.1, U502.3, C503.1, U505.9, C510.1, R521.1, R522.1, L601.2, C604.1, C605.1, R604.1, C606.2, C608.1, C609.1, U602.2, R607.1, J703.1, J704.1, TP702.1, J903.1, K901.1, K902.1 | gate drive, relays, fan, comparators, reference |
 | `AUX12_BST` | LV | SW + 5 V | <0.1 A | bias | U601.7, C603.1 |  |
 | `AUX12_FB` | LV | 0..5 V | <1 mA | analog | U601.5, R604.2, R605.1, C607.2 |  |
@@ -148,7 +148,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `NTC_PACK` | LV | 0..2.5 V | <1 mA | analog | U502.11, R511.2, R512.2, C505.1, U701.11, J703.4, J903.4, J904.1 | pack NTC (off-board via harness) to MCU and comparator ch4 |
 | `NTC_T1` | LV | 0..2.5 V | <1 mA | analog | RT302.1, R310.2, C358.1, U502.9, R508.2 | T1 NTC to comparator ch3 |
 | `OVP_TRIP_N` | LV | 0/3.3 V | <4 mA | digital, safety | U502.1, U502.2, R514.2, C506.1, U503.7 | open-collector OR of comparator ch1/ch2 -> latch ~PRE |
-| `PERMIT` | LV | 0..3.3 V (wired-AND) | <1 mA | digital, safety | D102.1, D202.1, U301.6, C313.1, U401.14, U421.14, U502.13, U502.14, R508.1, R511.1, D501.2, R518.2, C509.1, D503.1, U505.4, R709.2, TP704.1 | run permission: sourced by MCU_RUN via 10k; pulled low by WDT reset, DIAG1/2, OVP latch, OTP comparators |
+| `PERMIT` | LV | 0..3.3 V (wired-AND); low < 0.45 V | 1.5 mA sink | digital, safety | D102.1, D202.1, U301.6, C313.1, U401.14, U421.14, U502.13, U502.14, R508.1, R511.1, D501.2, R518.2, C509.1, D503.1, U505.4, R709.2, TP704.1 | run permission: sourced by MCU_RUN via 10k; pulled low by WDT reset, DIAG1/2, OVP latch, OTP comparators, IG-off interlock (Mode R) |
 | `PGC` | LV | 0/3.3 V | <5 mA | digital | U701.18, J701.5 |  |
 | `PGD` | LV | 0/3.3 V | <5 mA | digital | U701.17, J701.4 |  |
 | `PVA_BIAS` | LV | 0..12 V | <40 mA | bias | U103.24, R121.2, C118.1 |  |
@@ -161,7 +161,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `PVA_CSG_K` | LV | 0..3.3 V | <1 mA | sense | R116.3, R118.1 |  |
 | `PVA_CS_K` | LV | 0..3.3 V | <1 mA | sense | R116.2, R117.1 |  |
 | `PVA_DITH` | LV | 0..3.3 V | <1 mA | analog | U103.5, C110.1 |  |
-| `PVA_EN` | LV | 0..3.2 V | <0.2 mA | signal | U103.1, R107.2, R108.1, D102.2 | LM5176 EN/UVLO |
+| `PVA_EN` | LV | 0..3.2 V | <0.2 mA | signal | U103.1, R107.2, R108.1, C129.1, D102.2 | LM5176 EN/UVLO |
 | `PVA_FB` | LV | 0..3.3 V | <1 mA | analog | U103.11, R114.2, R115.1 |  |
 | `PVA_HD1` | LV | node + 0..7.5 V | 2 A pk | gate | U103.27, R123.1 |  |
 | `PVA_HD1_G` | LV | node + 0..7.5 V | 2 A pk | gate | R123.2, Q103.4 |  |
@@ -211,7 +211,7 @@ Resistors: Panasonic ERJ-3EKF (0603, 1 %, 0.1 W, 75 V), ERJ-3RQF (0603 < 10 Ohm)
 | `PVB_CSG_K` | LV | 0..3.3 V | <1 mA | sense | R216.3, R218.1 |  |
 | `PVB_CS_K` | LV | 0..3.3 V | <1 mA | sense | R216.2, R217.1 |  |
 | `PVB_DITH` | LV | 0..3.3 V | <1 mA | analog | U203.5, C210.1 |  |
-| `PVB_EN` | LV | 0..3.2 V | <0.2 mA | signal | U203.1, R207.2, R208.1, D202.2 | LM5176 EN/UVLO |
+| `PVB_EN` | LV | 0..3.2 V | <0.2 mA | signal | U203.1, R207.2, R208.1, C229.1, D202.2 | LM5176 EN/UVLO |
 | `PVB_FB` | LV | 0..3.3 V | <1 mA | analog | U203.11, R214.2, R215.1 |  |
 | `PVB_HD1` | LV | node + 0..7.5 V | 2 A pk | gate | U203.27, R223.1 |  |
 | `PVB_HD1_G` | LV | node + 0..7.5 V | 2 A pk | gate | R223.2, Q203.4 |  |
@@ -300,8 +300,9 @@ MPPT channel A: string A input, protection, PV current/voltage sense, LM5176 4-s
 | C106 | TDK CGA6P3X7S2A475K250AB | 4.7 uF 100 V X7S | `C_1210_3225Metric` | 1 (1): `VA_IN` | 2 (2): `GND` | buck-side hot-loop input cap (next to QH1/QL1) |
 | C107 | TDK CGA6P3X7S2A475K250AB | 4.7 uF 100 V X7S | `C_1210_3225Metric` | 1 (1): `VA_IN` | 2 (2): `GND` | buck-side hot-loop input cap |
 | C108 | Panasonic EEH-ZA1J101P | 100 uF 63 V polymer-hybrid Al | `CP_Elec_10x10` | 1 (+): `VA_IN` | 2 (-): `GND` | input bulk |
-| R107 | Panasonic ERJ-3EKF2003V | 200 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VA_IN` | 2 (2): `PVA_EN` | UVLO top: on 10.5 V, hyst 0.63 V |
-| R108 | Panasonic ERJ-3EKF2742V | 27.4 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVA_EN` | 2 (2): `AGND_A` | UVLO bottom |
+| R107 | Panasonic ERJ-3EKF2004V | 2 MOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VA_IN` | 2 (2): `PVA_EN` | UVLO top: on 14.1 V, off 7.8 V; high value so EN cannot back-feed PERMIT (<=15 uA) |
+| R108 | Panasonic ERJ-3EKF2743V | 274 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVA_EN` | 2 (2): `AGND_A` | UVLO bottom |
+| C129 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `PVA_EN` | 2 (2): `AGND_A` | EN noise filter (high-impedance divider) |
 | R109 | Panasonic ERJ-3EKF10R0V | 10 Ohm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VA_IN` | 2 (2): `PVA_VINF` | VIN filter |
 | C109 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVA_VINF` | 2 (2): `AGND_A` | VIN filter |
 | R110 | Panasonic ERJ-3EKF2001V | 2 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VA_IN` | 2 (2): `PVA_VISNS` | VISNS series R (TI: required >40 V) |
@@ -579,8 +580,9 @@ MPPT channel B: identical to channel A (refdes +100, nets PVA_->PVB_, VA_IN->VB_
 | C206 | TDK CGA6P3X7S2A475K250AB | 4.7 uF 100 V X7S | `C_1210_3225Metric` | 1 (1): `VB_IN` | 2 (2): `GND` | buck-side hot-loop input cap (next to QH1/QL1) |
 | C207 | TDK CGA6P3X7S2A475K250AB | 4.7 uF 100 V X7S | `C_1210_3225Metric` | 1 (1): `VB_IN` | 2 (2): `GND` | buck-side hot-loop input cap |
 | C208 | Panasonic EEH-ZA1J101P | 100 uF 63 V polymer-hybrid Al | `CP_Elec_10x10` | 1 (+): `VB_IN` | 2 (-): `GND` | input bulk |
-| R207 | Panasonic ERJ-3EKF2003V | 200 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VB_IN` | 2 (2): `PVB_EN` | UVLO top: on 10.5 V, hyst 0.63 V |
-| R208 | Panasonic ERJ-3EKF2742V | 27.4 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVB_EN` | 2 (2): `AGND_B` | UVLO bottom |
+| R207 | Panasonic ERJ-3EKF2004V | 2 MOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VB_IN` | 2 (2): `PVB_EN` | UVLO top: on 14.1 V, off 7.8 V; high value so EN cannot back-feed PERMIT (<=15 uA) |
+| R208 | Panasonic ERJ-3EKF2743V | 274 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `PVB_EN` | 2 (2): `AGND_B` | UVLO bottom |
+| C229 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `PVB_EN` | 2 (2): `AGND_B` | EN noise filter (high-impedance divider) |
 | R209 | Panasonic ERJ-3EKF10R0V | 10 Ohm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VB_IN` | 2 (2): `PVB_VINF` | VIN filter |
 | C209 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `PVB_VINF` | 2 (2): `AGND_B` | VIN filter |
 | R210 | Panasonic ERJ-3EKF2001V | 2 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `VB_IN` | 2 (2): `PVB_VISNS` | VISNS series R (TI: required >40 V) |
@@ -1174,13 +1176,13 @@ Threshold reference, comparators (OVP/OTP), OVP latch, supervisor/watchdog, PERM
 | R515 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `TPS_CWD` | CWD = 10k to VDD (window 9/109 ms with SET1=SET0=0) |
 | R516 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `RESET_N` | RESET pull-up |
 | R517 | Panasonic ERJ-3EKF1001V | 1 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `WDO_N` | 2 (2): `MCLR_N` | watchdog resets MCU; 1k lets ICSP override |
-| R518 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `MCU_RUN` | 2 (2): `PERMIT` | PERMIT is sourced only by MCU_RUN |
-| R519 | Panasonic ERJ-3EKF1003V | 100 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `MCU_RUN` | 2 (2): `GND` | MCU in reset -> MCU_RUN low -> PERMIT low |
+| R518 | Panasonic ERJ-3EKF2201V | 2.2 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `MCU_RUN` | 2 (2): `PERMIT` | PERMIT is sourced only by MCU_RUN; 2.2k keeps PERMIT < 0.2 V when MCU_RUN is low despite ~60 uA back-feed |
+| R519 | Panasonic ERJ-3EKF1001V | 1 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `MCU_RUN` | 2 (2): `GND` | strong pull-down: MCU pins tri-stated in reset -> PERMIT <= 0.2 V despite ~60 uA back-feed (MCU sources 3.3 mA when running) |
 | C509 | Murata GCM1885C1H102JA16D | 1 nF 50 V C0G | `C_0603_1608Metric` | 1 (1): `PERMIT` | 2 (2): `GND` | PERMIT noise filter |
 | R520 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `RELAY_REQ` | 2 (2): `K_IN` | relay drive = RELAY_REQ AND PERMIT |
 | C510 | Murata GCM188R72A104KA64D | 100 nF 100 V X7R | `C_0603_1608Metric` | 1 (1): `AUX12` | 2 (2): `GND` | COM decoupling |
-| R521 | Panasonic ERJ-3EKF2001V | 2 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `AUX12` | 2 (2): `LED_OK_A` | LED current ~5 mA |
-| R522 | Panasonic ERJ-3EKF2001V | 2 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `AUX12` | 2 (2): `LED_FLT_A` | LED current ~5 mA |
+| R521 | Panasonic ERJ-3EKF4701V | 4.7 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `AUX12` | 2 (2): `LED_OK_A` | LED current ~2 mA, 21 mW (21 %) |
+| R522 | Panasonic ERJ-3EKF4701V | 4.7 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `AUX12` | 2 (2): `LED_FLT_A` | LED current ~2 mA, 21 mW (21 %) |
 
 ### U501 — LM4040QBIM3X2.5/NOPB — 2.500 V 0.2%
 
@@ -1431,13 +1433,13 @@ dsPIC33CK MCU, ICSP/log header, car IG/READY input, harness and fan connectors, 
 | R704 | Panasonic ERJ-8ENF2212V | 22.1 kOhm 1% 1206 (0.25 W, 200 V) | `R_1206_3216Metric` | 1 (1): `IGN_D` | 2 (2): `READY_B` | pulse-rated series R |
 | R705 | Panasonic ERJ-3EKF1002V | 10 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `READY_B` | 2 (2): `GND` | base pull-down; threshold ~2.2 V on IGN |
 | R706 | Panasonic ERJ-3EKF4701V | 4.7 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `+3V3` | 2 (2): `READY_N` | pull-up (stiff enough to also drive Q702) |
-| R707 | Panasonic ERJ-3EKF4702V | 47 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `READY_N` | 2 (2): `READY_GB` | Q702 base: READY_N high (IG off) -> Q702 on |
+| R707 | Panasonic ERJ-3EKF2212V | 22.1 kOhm 1% 0603 (0.1 W, 75 V) | `R_0603_1608Metric` | 1 (1): `READY_N` | 2 (2): `READY_GB` | Q702 base ~97 uA: READY_N high (IG off) -> Q702 sinks the 1.5 mA PERMIT pull-up |
 | R709 | Panasonic ERJ-3GEY0R00V | 0 Ohm link: FIT for Mode R, DNP for Mode P (VARIANT) | `R_0603_1608Metric` | 1 (1): `READY_GATE` | 2 (2): `PERMIT` | mode link |
 | C707 | Murata GCM188R71H103KA37D | 10 nF 50 V X7R | `C_0603_1608Metric` | 1 (1): `READY_N` | 2 (2): `GND` | filter |
 
 ### U701 — DSPIC33CK64MP102-E/SS
 
-pin functions: AN on 1-4,9-11,28; PPS/SCCP outputs on 21-23; PWM1H/L on 25/26; PGD1/PGC1 on 17/18. Symbol `custom (kae:dsPIC33CK64MP102_SSOP28)`, footprint `Package_SO:SSOP-28_5.3x10.2mm_P0.65mm`. Pins: dsPIC33CK64MP105 family DS DS70005363E, Table 2 (28-pin SSOP) p4 [P].
+pin functions: AN on 1-4,9-11,28; PPS/SCCP outputs on 21-23; PWM1H/L on 25/26; PGD1/PGC1 on 17/18. Config bits: JTAGEN = 0 (pins 16, 21-23 are JTAG by default); the DS pull-up on RB10 during programming makes MPPT_A setpoint high = safe; ICSP on PGEC1/PGED1. Symbol `custom (kae:dsPIC33CK64MP102_SSOP28)`, footprint `Package_SO:SSOP-28_5.3x10.2mm_P0.65mm`. Pins: dsPIC33CK64MP105 family DS DS70005363E, Table 2 (28-pin SSOP) p4 [P].
 
 | Pin | Name | Net |
 |---|---|---|

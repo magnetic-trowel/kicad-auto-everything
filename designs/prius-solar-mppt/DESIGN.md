@@ -9,7 +9,7 @@ Evidence tags: [P] read in the primary source, [S] secondary, snippet or distrib
 
 > "I want to put solar panels on my Prius. It should take a bunch of C60s in strings and mppt them. They should fit on the top roof so you can measure the size of the roof of a 2017 Prius and shrink it a little bit for margins. It should take that raw voltage, step it up, and dump it into the battery. It should make sure that the battery can't go over voltage. It should make sure that if the wires outside of the battery are shorted, that the battery can't dump, you know, the 200 or whatever volts into it. It should make sure it doesn't overheat, so it might need a fan depending on how much current it's pushing. Or maybe it just has a bit of an aluminum heatsink."
 
-**Summary of the answer.** Two 32-cell C60 strings, each held at or below 33 V, go to two analog-controlled 4-switch buck-boost MPPT stages. These feed a 30–48 V bus. A fixed-ratio isolated LLC "DC transformer" (1:11, reinforced) lifts that bus to the traction battery. A separate battery-end board holds a fuse on each pole, a blocking diode and a 2-pole disconnect. The default mode charges only while the car is READY, through a tap on the car side of the system main relays, so the car's own battery ECU stays in charge of SOC. Parked charging straight into the pack is possible with the same hardware, but it is a BLOCKING decision (Q-1) because no cell-level monitoring is awake while the car is parked.
+**Summary.** Two 32-cell C60 strings (≤ 33 V) feed two analog 4-switch buck-boost MPPT stages. These drive a 30–48 V bus, which a fixed-ratio, reinforced LLC "DC transformer" (1:11) lifts to pack voltage. A battery-end board holds a fuse on each pole, a blocking diode and a 2-pole disconnect. By default the charger runs only while the car is READY and taps the car side of the system main relays, so the car's battery ECU keeps control of SOC. Parked charging uses the same hardware but is a BLOCKING decision (Q-1).
 
 ## 2. Requirements
 
@@ -57,7 +57,7 @@ Evidence tags: [P] read in the primary source, [S] secondary, snippet or distrib
 
 | ID | Question for a human | BLOCKING? |
 |---|---|---|
-| Q-1 | **Mode R or Mode P?** Mode R taps the car side of the SMRs. It charges only while the car is READY, the car's current sensor and battery ECU see every amp, and harvest is about 0.15 kWh/day. Mode P taps the pack side and charges while parked, about 0.5–1 kWh/day in sun. In Mode P the car's SOC estimate drifts and no cell monitoring or insulation monitoring is awake, so NiMH overcharge or Li cell imbalance is detected only by our pack-level voltage, Ah budget and one NTC. That is **not single-fault tolerant** (HZ-4/5). Safer options: Mode R, a 12 V-only charger (A4), or a Toyota-style buffer battery (A5). | **BLOCKING** |
+| Q-1 | **Mode R or Mode P?** Mode R taps the car side of the SMRs and charges only while READY. The car's current sensor and ECU see every amp; harvest is ~0.15 kWh/day. Mode P taps the pack side and charges while parked, ~0.5–1 kWh/day in sun. In Mode P, SOC drifts and no cell or insulation monitoring is awake, so only our pack voltage, Ah budget and one NTC guard against overcharge. That is **not single-fault tolerant** (HZ-4/5). Safer options: Mode R, 12 V-only (A4), or a buffer battery (A5). | **BLOCKING** |
 | Q-2 | Which pack does the car have (VIN/model code: ZVW50 NiMH vs ZVW51 Li [S])? This selects the -N or -L resistor variant. | **BLOCKING** |
 | Q-3 | Measure the roof (template), and check for the moonroof (Advanced Technology Package on Three/Four [P]). This sets the cell count, 24–40 per string. | **BLOCKING** |
 | Q-4 | Get the 2016–2018 ZVW5x repair-manual pages for the battery junction block: where are the current sensor and the SMRs, and where are the tap terminals? Mode R needs our current to pass through the car's current sensor. | **BLOCKING** |
@@ -73,7 +73,7 @@ Evidence tags: [P] read in the primary source, [S] secondary, snippet or distrib
 | ID | Hazard | Mitigation | Implemented by | Single fault? |
 |---|---|---|---|---|
 | HZ-1 | Electric shock from 150–262 V on our cable or boards | Reinforced LV/HV barrier (T301, U401, U421, 8 mm). Orange screened cable in glands. IP67 metal boxes bonded to chassis. K901/K902 open when idle (both poles). Bleeders < 60 V in 10 s. HV labels | DCX, HVSENSE, BATEND | yes: reinforced = two layers; two poles switched |
-| HZ-2 | Short in our HV cable or main board lets the pack dump kA (fire) | D901 blocks reverse current at the battery end. F901/F902 (20 kA) are the first elements from each pole. K901/K902 open the circuit when not charging | BATEND | yes: D901 shorted → F901 clears; relay welded → D901 still blocks |
+| HZ-2 | Short in our HV cable or main board lets the pack dump kA (fire) | D901 blocks reverse current at the battery end; its 10 MΩ sense bypass (R902/R903) passes ≤ 26 µA. F901/F902 (20 kA) are the first elements from each pole. K901/K902 open the circuit when not charging | BATEND | yes: D901 shorted → F901 clears; relay welded → D901 still blocks |
 | HZ-3 | Battery overvoltage | L1 firmware termination; L2 analog CV ceiling (LM5176 FB on VINT, no firmware); L3 independent AMC3330 → comparator → latch → PERMIT; L4 car ECU (Mode R) | MPPT_x, HVSENSE, SAFETY | yes: three independent layers (§7.4) |
 | HZ-4 | NiMH overcharge/thermal runaway when parked (CV charging of NiMH runs away as it heats) | Mode R by default. Mode P: Ah budget, 240 V limit, pack NTC firmware cut-off + comparator ch4 | SAFETY, MCU | **no in Mode P** (one NTC, pack-level only) → Q-1 |
 | HZ-5 | Li cell overvoltage from imbalance while the BMS sleeps | Mode R by default. Mode P limits the pack average to 3.90 V/cell | MCU | **no in Mode P** → Q-1 |
@@ -82,7 +82,7 @@ Evidence tags: [P] read in the primary source, [S] secondary, snippet or distrib
 | HZ-8 | Roof array arc, hot-spot or fire | ≤ 33 V class A; bypass diode per 8 cells; one string per input (no backfeed, no string fuse needed); ideal diode at the input; 2.5 mm² wire | ARRAY, MPPT_x | yes |
 | HZ-9 | Array detaches at speed | Mechanical design out of scope → Q-6 | — | open |
 | HZ-10 | Converter overheats inside the cabin | Firmware derating (RT301). Comparator ch3 OTP on its own NTC (RT302). LM5176 internal TSD. Metal box | DCX, SAFETY | yes |
-| HZ-11 | Firmware hang or wild PWM | TPS3850 window watchdog resets the MCU. MCU_RUN has a pull-down, so PERMIT drops. Analog CC/CV hold their limits. DCX is open loop and bounded | SAFETY | yes |
+| HZ-11 | Firmware hang or wild PWM | TPS3850 window watchdog resets the MCU. MCU_RUN has a 1 kΩ pull-down, so PERMIT drops. Analog CC/CV hold their limits. DCX is open loop and bounded | SAFETY | yes |
 | HZ-12 | Sensor failure masks overvoltage | Both AMC3330 DIAG pins pull PERMIT low. Two separate dividers, AMC3330s and amplifiers. CV ceiling needs neither | HVSENSE | yes |
 | HZ-13 | Battery disconnects under load (fuse, relay) | DCX output ≤ n·VINT/2 ≤ CV ceiling; OVP latch; output caps only 0.6 J | DCX | yes |
 | HZ-14 | String reversed | LM74700 + FET block reverse current | MPPT_x | yes |
@@ -90,6 +90,7 @@ Evidence tags: [P] read in the primary source, [S] secondary, snippet or distrib
 | HZ-16 | Vehicle transients on the IG wire | BAS21 (250 V), 22.1 kΩ 1206, NPN shifter | MCU | yes |
 | HZ-17 | Servicing: our tap stays live after the service plug is pulled | Mode R tap is dead when the SMRs are open; labels; procedure in the install guide | install | procedural |
 | HZ-18 | Crash crushes the HV cable | Route along the floor tunnel away from crush zones; D901 and fuses at the battery end | install, BATEND | yes |
+| HZ-19 | We energise the car's HV bus while its SMRs are open (Mode R, ignition on but not READY, or after READY-off). The car may flag a welded SMR or fail its discharge check, and a technician meets an unexpectedly live bus | Hardware IG interlock (Q702 + R709 pull PERMIT low when IG is off; relays drop via D503). Firmware starts only when the bus reads ≥ 150 V through R902/R903 before any power flows | MCU, SAFETY, BATEND | yes (hardware + firmware) |
 
 ## 5. Architecture trade study
 
@@ -105,11 +106,11 @@ Gates (must-meet): G1 = charges the traction battery (the brief). G2 = no HV on 
 
 **Decision: A3.** By default it runs in Mode R; the same hardware can run Mode P.
 
-- **A1 loses** on G2. A string long enough to reach 200 V needs about 350 cells, which will not fit, so a non-isolated boost of 10:1 or more would put the roof, its wiring and any laminate leakage inside the floating HV system. The car would see that leakage as an insulation fault (P0AA6 blocks READY [P]), and an exposed surface could carry pack voltage.
-- **A2 loses** on containment. A flyback's open-circuit output is unbounded, so CV needs an isolated feedback path (opto or isolated amplifier) in the loop. The MCU sits in the inner loop. Peak currents are 25–30 A at 20 V in a custom coupled inductor that stores all the energy. It is credible (microinverters do it), but it fails harder.
-- **A3 wins** because the HV output is bounded by physics: the DCX gain is fixed, so Vout ≈ n·VINT/2. VINT is capped by an analog FB divider with no firmware involved. MPPT and current limiting are analog loops that firmware only nudges.
-- **A5 loses** only on complexity: a second battery with its own BMS and charger in the cabin. It is the best answer to the parked-energy problem and is listed as an upgrade path.
-- **A4 fails G1** (the brief), but it is the safest and cheapest option. It is the honest alternative offered in Q-1.
+- **A1 loses** on G2. A 200 V string needs ~350 cells, which will not fit, so a non-isolated boost of 10:1 or more would put the roof, its wiring and any laminate leakage inside the floating HV system. The car reads that leakage as an insulation fault (P0AA6 blocks READY [P]), and an exposed surface could carry pack voltage.
+- **A2 loses** on containment. Flyback open-circuit output is unbounded, so CV needs isolated feedback in the loop, and the MCU sits in the inner loop. Peaks reach 25–30 A at 20 V in a custom coupled inductor. Credible (microinverters do it), but it fails harder.
+- **A3 wins** because physics bounds the HV output: fixed DCX gain gives Vout ≈ n·VINT/2, and an analog FB divider caps VINT without firmware. MPPT and current limiting are analog loops that firmware only nudges.
+- **A5 loses** only on complexity (a second battery, BMS and charger in the cabin). It best solves the parked-energy problem; listed as an upgrade path.
+- **A4 fails G1** (the brief) but is the safest and cheapest; offered in Q-1.
 
 ## 6. Blocks and domains
 
@@ -121,8 +122,8 @@ Gates (must-meet): G1 = charges the traction battery (the brief). G2 = no HV on 
 | HVSENSE | two reinforced isolated voltage-sense paths | HV_P/HV_N in HV; HV_V_ADC, HV_V_OVP out LV 0–2.3 V; DIAG → PERMIT |
 | SAFETY | 2.5 V reference, 4 comparators, OVP latch, supervisor/WDT, PERMIT, low-side drivers | HV_V_OVP, VINT, NTC_T1, NTC_PACK in; PERMIT, K1/K2_COIL_N, FAN_N, RESET_N out |
 | AUX | PV-OR → AUX12 (12.1 V, 0.6 A) → +3V3 (0.25 A) | AUX_IN in LV 15–48 V; AUX12, +3V3 out |
-| MCU | dsPIC33CK64MP102, ICSP/UART, IG input, harness | 8 analog in, PWM out, IGN_IN in (vehicle 12 V class) |
-| BATEND | F901/F902, D901, K901/K902 | HV_P/HV_N in; BAT_TAP_P/N to the pack; AUX12, K1/K2_COIL_N, NTC_PACK, GND via harness |
+| MCU | dsPIC33CK64MP102, ICSP/UART, IG input + hardware IG interlock, harness | 8 analog in, PWM out, IGN_IN in (vehicle 12 V class) |
+| BATEND | F901/F902, D901 with 10 MΩ sense bypass, K901/K902 | HV_P/HV_N in; BAT_TAP_P/N to the pack; AUX12, K1/K2_COIL_N, NTC_PACK, GND via harness |
 
 | Domain | Reference | Range to reference | Range to chassis |
 |---|---|---|---|
@@ -165,7 +166,7 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
 | Vmp = 32·(0.574 − 0.0018·(T−25)) | 22.1 V | 18.4 V | 15.8 V |
 | Pmp = 32·3.42·(1 − 0.0032·(T−25)) | 132 W | 109 W | 94 W |
 
-- Partial shade, one row bypassed, hot: Vmp = 24·0.493 − 0.45 = 11.4 V. This sets the 10.5 V UVLO.
+- Partial shade, one row bypassed, hot: Vmp = 24·0.493 − 0.45 = 11.4 V. The UVLO turn-off (7.8 V) must stay below this.
 - Worst current at 1.2 suns, cold: Imp = 5.93·1.2·1.02 = 7.3 A. Worst power = 109·1.2·1.144 = 150 W per string.
 - Electronics limit: a 40-cell string reaches Voc(−40 °C) = 32.2 V ≤ 33 V. That is REQ-4.
 - Array totals: 216 W at STC. Typical noon on the roof ≈ 216·(1 − 0.0032·40)·0.95·0.95 = 170 W.
@@ -196,7 +197,8 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
 
 **UVLO and soft start**
 
-- UVLO: 1.22·(1 + 200k/27.4k) + 200k·2 µA = 10.5 V on, with 3.15 µA·200k = 0.63 V hysteresis.
+- UVLO: 1.22·(1 + 2 M/274k) + 2 M·2 µA = 14.1 V on; hysteresis 3.15 µA·2 M = 6.3 V, so it turns off at 7.8 V and rides through the 11.4 V shaded-row case.
+- The divider is high impedance on purpose: at most 15 µA can back-feed PERMIT through D102.
 - Soft start: 0.1 µF·0.8 V/5 µA = 16 ms.
 
 **PV current loop (the CC loop on the input)**
@@ -241,7 +243,7 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
 
 - C0G stress: ≤ 33.4 V on 100 V parts (33 %); 0.68 A rms per capacitor.
 - Output: rectifier diodes see ≤ 262 V against 600 V (44 %).
-- Output capacitors: 6 × 220 nF 450 V X7T. Bias is 58 % of rating; about 0.9 µF remains under DC bias [I]. Ripple ≈ 0.7 A/(2π·190 kHz·0.9 µF) ≈ 0.65 V.
+- Output capacitors: 6 × 220 nF 450 V X7T at 58 % bias, ~0.9 µF effective [I]; ripple ≈ 0.7 A/(2π·190 kHz·0.9 µF) ≈ 0.65 V.
 
 **T301 specification (custom)**
 
@@ -290,6 +292,7 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
   - Reverse 262/600 V = 44 %. Current 1.8 A avg/6 A = 30 %.
   - Loss ≈ 0.85 V·1.8 A = 1.5 W worst case (1.1 W at the 216 W STC array). θJA ≈ 50 K/W on 4 cm² of 2 oz copper [I].
   - At 70 °C ambient: Tj = 125 °C at STC (71 % of 175 °C), 145 °C at the 300 W corner (83 %, accepted: the array cannot deliver 300 W when hot).
+- D901 bypass R902/R903: 2 × 4.99 MΩ 1206. Each sees 131 V (66 % of 200 V) and 3.4 mW. Fault current into a shorted cable ≤ 262 V/10 MΩ = 26 µA.
 - PV wiring: 2.5 mm² FLRY-B, 4 m. Drop = 7.3 A·8 m·7.6 mΩ/m = 0.44 V (2.4 %). MSTB 2,5 connectors rated 12 A [S]: 61 %.
 
 ### 7.7 Insulation and leakage (REQ-7)
@@ -345,24 +348,29 @@ C60 [P]: 125 × 125 mm (160 mm diameter, pseudo-square), bins G–J give Pmp 3.3
 - Linear derating to 50 % at 85 °C: case 93 °C, T301 ≈ 105 °C.
 - Firmware limit at RT301 > 95 °C. Firmware-free OTP when RT302 reaches 105 °C (comparator ch3, ~3 K hysteresis).
 
-**Fan or heatsink?** About 17 W of loss at a power the array cannot reach on a hot day does not need a fan. The finned aluminium box is enough. The fan connector and driver are fitted, but the fan itself is optional (Q-8). With a fan, θsa drops to about 0.5 K/W, which allows full power to 80 °C.
+**Fan or heatsink?** A heatsink. 17 W of loss, at a power the array cannot reach on a hot day, needs no fan; the finned aluminium box suffices. The fan connector and driver are fitted, the fan is optional (Q-8). A fan would cut θsa to ~0.5 K/W, allowing full power to 80 °C.
 
 ### 7.10 Timing and control
 
+- Bus sense before start: the relays close with PERMIT high but the converter idle (DCX PWM off, VSET at maximum, so the PV current setpoint is zero). R902/R903 (10 MΩ) and the two 6.02 MΩ HV dividers (3.01 MΩ together) form a divider of ratio 0.232. A live bus at 200 V reads 46 V on HV_V_ADC, without the converter injecting any power.
 - Start: PERMIT goes high (MCU_RUN). The DCX starts PWM at 95 kHz with VINT ≈ 0. Then the LM5176 soft-starts over 16 ms. Current flows only once n·VINT/2 > Vbat + Vf, so there is no inrush. D901 also blocks inrush from the pack into our capacitors, so no precharge circuit is needed.
 - MPPT: perturb-and-observe on VSET every 100 ms in 0.1 V steps, plus a global sweep every 10 min to escape partial-shade local maxima.
+- PERMIT electrical budget:
+  - High: MCU_RUN sources through R518 (2.2 kΩ), and every fault output sinks ≤ 1.5 mA (comparator, AMC3330 DIAG VOL ≤ 0.25 V at 4 mA [P], Q702 with ~97 µA base drive).
+  - Low: ≈ 60 µA leaks back in (EN dividers via D102/D202, hysteresis resistors). R519 (1 kΩ) pulls MCU_RUN down even while the MCU is in reset with its pins tri-stated, so PERMIT stays ≤ 0.2 V (worst case: latch through D501 gives ≈ 0.35 V).
+  - Every consumer then reads off: UCC27282 disable threshold ≥ 0.7 V [P]; LM5176 EN ≤ 0.5 V against 1.17 V; TPL7407 VIL 0.9 V [P].
 - Watchdog: TPS3850 window 9–109 ms [P], kicked every 50 ms. A timeout resets the MCU through R517; MCU_RUN then drops, and PERMIT drops within < 1 ms.
-- Mode R start condition: READY_N low, HV_V_ADC rises with current flowing, and PV ≥ 12 V.
+- Mode R start condition (hardware IG interlock through R709, plus firmware): READY_N low, sensed bus ≥ 150 V (that is, the SMRs are closed), and PV ≥ 12 V. Firmware stops within 100 ms if the battery current reads zero while Vout is within 5 V of the ceiling.
 - Mode P (if approved): also requires pack NTC < 45 °C, Vbat < L1, Ah since IG-off < budget (default 0.3·capacity), and relay ambient < 60 °C.
 
 ## 8. Parts
 
-One row per distinct part. Every placed part, with its value, is in [CONNECTIONS.md](CONNECTIONS.md). That file lists 381 placed items: 372 on the main board (MB) and 9 on the battery-end board (BE), with 82 distinct MPNs. URLs are datasheets read unless tagged.
+One row per distinct part. Every placed part, with its value, is in [CONNECTIONS.md](CONNECTIONS.md). That file lists 388 placed items: 377 on the main board (MB) and 11 on the battery-end board (BE), with 88 distinct MPNs. URLs are datasheets read unless tagged.
 
 | Role | Mfr / MPN | Key ratings | Stress (margin) | Package | KiCad symbol / footprint | Datasheet | Life | 2nd source |
 |---|---|---|---|---|---|---|---|---|
-| MPPT controller ×2 | TI LM5176QPWPRQ1 | 55 V in/out, AEC-Q100 G1 | VIN ≤ 33 V (60 %), VOUT ≤ 49.4 V (90 % in OVP fault only, 83 % normal) | HTSSOP-28 | Regulator_Switching:LM5176PWP / Package_SO:HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP3.4x9.5mm_ThermalVias | ti.com/lit/ds/symlink/lm5176-q1.pdf | active [P] | LM5175-Q1 (42 V, same family; redesign) |
-| Power FET ×12 | Infineon IAUC100N10S5L040 | 100 V, 4.0 mΩ@10 V, 5.7 mΩ@4.5 V, AEC | ≤ 49 V (49 %); 15.4 A rms | PG-TDSON-8 | Transistor_FET:BSC040N10NS5 (pin-compatible) / Package_TO_SOT_SMD:TDSON-8-1 | infineon.com …iauc100n10s5l040-datasheet-en.pdf | active & preferred [P] | Infineon BSC040N10NS5 (not AEC) |
+| MPPT controller ×2 | TI LM5176QPWPRQ1 | 55 V in/out, AEC-Q100 G1 | vs 60 V abs max: VIN ≤ 33 V (55 %), VOSNS 45.8 V normal (76 %), 49.4 V at the OVP trip (82 %, fault only) | HTSSOP-28 | Regulator_Switching:LM5176PWP / Package_SO:HTSSOP-28-1EP_4.4x9.7mm_P0.65mm_EP3.4x9.5mm_ThermalVias | ti.com/lit/ds/symlink/lm5176-q1.pdf | active [P] | none pin-compatible; ADI LT8390A class (60 V) needs a new layout [unverified] |
+| Power FET ×12 | Infineon IAUC100N10S5L040 | 100 V, 4.0 mΩ@10 V, 5.7 mΩ@4.5 V, AEC | ≤ 49 V + ringing ≈ 60 V (60 %); 15.4 A rms (Q301/Q302) | PG-TDSON-8 | Transistor_FET:BSC040N10NS5 (pin-compatible) / Package_TO_SOT_SMD:TDSON-8-1 | infineon.com …iauc100n10s5l040-datasheet-en.pdf | active & preferred [P] | Infineon BSC040N10NS5 (not AEC) |
 | Ideal diode ctrl ×2 | TI LM74700QDBVRQ1 | 65 V, −65 V reverse | 33 V (51 %) | SOT-23-6 | Power_Management:LM74700 / SOT-23-6 | ti.com/lit/ds/symlink/lm74700-q1.pdf | active [P] | LM74701-Q1 |
 | PV current amp ×2 | TI INA186A2QDBVRQ1 | CM −0.2…40 V (42 V abs; higher allowed if pin current ≤ 5 mA [P]), 50 V/V | CM 25.7 V (64 %) baseline, 33 V (83 %) at 40 cells; 54 V clamp → 1.2 mA via R131/R132 (24 % of 5 mA) | SOT-23-5 | custom / SOT-23-5 | ti.com/lit/ds/symlink/ina186-q1.pdf | active [P] | INA186A2-Q1 SC70 |
 | Op-amp ×4 | TI TLV9001QDBVRQ1 | 5.5 V RRIO | 3.3 V (60 %) | SOT-23-5 | Amplifier_Operational:TLV9061xDBV / SOT-23-5 | ti.com/lit/ds/symlink/tlv9001-q1.pdf | active [P] | TLV9061-Q1 |
@@ -379,7 +387,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | PV TVS ×2 | Littelfuse TPSMB39A | VR 33.3 V, Vc 53.9 V, 600 W | 25.7 V (77 % of VR) baseline; 32.2 V (97 %) at the 40-cell, −40 °C corner | SMB | Device:D_Zener / Diode_SMD:D_SMB | [unverified] | active [S] | Vishay SMBJ39A |
 | Schottky ×9 | Nexperia BAT46WJ | 100 V, 250 mA | ≤ 49 V boot (49 %) | SOD323F | Diode:BAT46 / Diode_SMD:D_SOD-323F | [unverified] | active [S] | onsemi BAT46 |
 | IG diode | onsemi SBAS21LT1G | 250 V | −150 V pulse (60 %) | SOT-23 | Diode:BAS21 / SOT-23 | [unverified] | active [S] | Nexperia BAS21 |
-| NPN ×3 | onsemi SMMBTA42LT1G | 300 V | 33 V (11 %) | SOT-23 | Transistor_BJT:MMBTA42 / SOT-23 | [unverified] | active [S] | Nexperia MMBTA42 |
+| NPN ×4 | onsemi SMMBTA42LT1G | 300 V | 33 V (11 %) | SOT-23 | Transistor_BJT:MMBTA42 / SOT-23 | [unverified] | active [S] | Nexperia MMBTA42 |
 | Buck-boost L ×2 | Coilcraft XAL1510-223MEB | 22 µH, Isat 18.7 A, Irms 10.5 A, AEC-Q200 | 8.8 A pk (47 %), 7.3 A rms (70 %) | 15×15 mm | Device:L / Inductor_SMD:L_Coilcraft_XAL1510-223 | coilcraft.com/…/xal1510 | active [S] | Würth WE-XHMA |
 | AUX12 L | Coilcraft MSS1210-104KED | 100 µH, Isat 3.1 A, AEC-Q200 85 °C | 1 A (32 %) | 12×12 mm | Device:L / L_Coilcraft_MSS1210-XXX | coilcraft.com/pdfs/mss1210.pdf | active [S] | XGL family |
 | 3V3 L | Coilcraft MSS1048-333MLB | 33 µH, Isat 1.66 A | 0.4 A (24 %) | 10×10 mm | Device:L / L_Coilcraft_MSS1048-XXX | coilcraft …MSS1048 | active [S] | — |
@@ -389,7 +397,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | Resonant C0G ×32 | TDK CGA5L1C0G2A104J160AC | 100 V C0G AEC-Q200 | 33.4 V (33 %), 0.68 A rms | 1206 | Device:C / C_1206_3216Metric | [S] | active [S] | Murata GCM31C |
 | HV out ×6 | TDK CGA6M4X7T2W224K200AE | 450 V X7T AEC-Q200 | 262 V (58 %) | 1210 | Device:C / C_1210_3225Metric | [S] | active [S] | Murata GCJ/KC |
 | Small MLCC (10 values) | Murata GCM188/GCM32 series | AEC-Q200 | ≤ 50 % V | 0603/1210 | Device:C | MPNs in CONNECTIONS [S] | active [S] | TDK CGA |
-| Resistors | Panasonic ERJ-3EKF/ERJ-3RQF/ERJ-8ENF/ERA-3AEB | 1 %/0.1 %, AEC-Q200 | ≤ 50 % P (max 28 % in R704 pulse-rated 1206) | 0603/1206 | Device:R | [S] | active [S] | Vishay CRCW-HP |
+| Resistors | Panasonic ERJ-3EKF/ERJ-3RQF/ERJ-8ENF/ERA-3AEB | 1 %/0.1 %, AEC-Q200 | ≤ 50 % P (max 35 % in gate resistors R301/R302; LED resistors 21 %); R704 1206 for ISO 7637 pulse energy | 0603/1206 | Device:R | [S] | active [S] | Vishay CRCW-HP |
 | NTC ×2 | TDK NTCG163JF103FTDS | 10 kΩ, B 3435 K | <1 mW | 0603 | Device:Thermistor_NTC / R_0603 | [unverified] | [S] | Murata NCU18 (B 3380: re-compute) |
 | Transformer | custom (ETD 39 N97) | §7.3 | §7.3 | ETD39 20-pin | custom / custom | — | build-to-spec | 2 vendors (Q-9) |
 | Fuse ×2 (BE) | Eaton Bussmann EVM10-5-2P | 5 A 500 V DC 20 kA, ISO 8820-8 design | 1.8 A (36 %), 262 V (52 %) | 10×38 PCB | custom / custom (ELX1304) | farnell.com/datasheets/4810345.pdf | active (2026 DS) [P] | Mersen/Littelfuse EV 10×38 [unverified] |
@@ -397,7 +405,7 @@ One row per distinct part. Every placed part, with its value, is in [CONNECTIONS
 | Conn. PV/IG/harness | Phoenix MSTBA 2,5/x-G-5,08 | 12 A, 320 V [S] | 8 A (67 %) | THT | Connector_Generic / Connector_Phoenix_MSTB:… | [unverified] | active [S] | Würth 691 series |
 | Conn. HV ×3 | Phoenix GMSTBA 2,5/2-G-7,62 | 12 A, ≥ 630 V [S] | 2 A, 262 V | THT | Connector_Phoenix_GMSTB:PhoenixContact_GMSTBA_2,5_2-G-7,62… | [unverified] | active [S] | Würth 691 HV |
 | Fan conn. | Molex 43650-0215 | 5 A | 0.3 A | THT | Connector_Molex:Molex_Micro-Fit_3.0_43650-0215… | [S] | active [S] | — |
-| LEDs ×2 | AEC-Q101 0603 green/red | — | 5 mA | 0603 | Device:LED / LED_0603_1608Metric | [unverified] | — | any |
+| LEDs ×2 | AEC-Q101 0603 green/red | — | 2 mA | 0603 | Device:LED / LED_0603_1608Metric | [unverified] | — | any |
 | Bypass (array) ×8 | Vishay V10P45-M3/86A | 10 A 45 V | 7.3 A (73 %) | TO-277A | off-board | [unverified] | [S] | — |
 
 Note 1: the PV TVS clamps at 54 V, above the INA186 42 V absolute input rating. R131/R132 (10 kΩ) limit the pin current to 1.2 mA, within the datasheet's 5 mA allowance [P]. The 3 nA maximum bias current through 10 kΩ adds 30 µV, a 6 mA error. All other parts on PVx_IN/Vx_IN are rated ≥ 60 V.
@@ -410,7 +418,7 @@ Note 1: the PV TVS clamps at 54 V, above the INA186 42 V absolute input rating. 
 - West edge: J101, J201, J702, J703, J704 (LV field wiring, M20 glands). East edge: J301 (HV, EMC gland with 360° screen clamp to the box).
 - The board splits north–south into LV (x < 125 mm) and HV (x > 133 mm). The LV/HV barrier is a ≥ 8 mm void on all layers with a 2 mm routed slot under T301, U401 and U421.
 - Mounting: H701–H704 (plated, bonded to the box) in LV; H705–H706 (non-plated) in HV, ≥ 8 mm from copper.
-- Heat path: Q101–Q106, Q201–Q206, Q301, Q302 and the LM5176 pads sit over via arrays to a bottom copper pad. That pad is pressed onto a 0.25 mm insulating TIM on a box boss.
+- Heat path: Q101, Q103–Q106, Q201, Q203–Q206, Q301, Q302 and the LM5176 pads sit over via arrays to a bottom copper pad. That pad is pressed onto a 0.25 mm insulating TIM on a box boss.
 - Height: T301 is 40 mm max. Components above 15 mm are allowed only in LV-centre and over the T301 zone.
 
 **Battery-end board (BE).** 100 × 80 mm, 2-layer 2 oz, in a small IP67 box. J901 and J903 are on the west edge; J902 and J904 on the east edge. LV (J903/J904, coil pins) is separated from HV by 8 mm.
@@ -450,8 +458,8 @@ near(C317..C332, Q301.5, close) near(C333..C348, Q302.1, close)
 near(D301..D304, T301.11, close) near(C350..C355, D301.3, close)
 near(R407, U401.6, tight) near(C401, U401.6, tight) near(C402, U401.1, tight) near(C403, U401.1, tight) near(C405, U401.5, tight)
 near(C406, U401.5, tight) near(C407, U401.16, tight) near(C408, U401.12, tight) near(U402, U401.11, close)
-near(R427, U421.6, tight) …same pattern for U421/U422
-near(RT301, Q301, tight) near(RT302, T301, close)
+near(R427, U421.6, tight)   # and every other U401/U402 rule repeated for U421/U422 (refdes +20)
+near(RT301, Q301, tight) near(RT302, T301, close) near(Q702, Q701, close) near(R709, Q702, tight) near(R902, D901, close) near(R903, D901, close)
 near(U502, U503, close) near(U504, U701, close) near(C703, U701.7, tight) near(C704, U701.20, tight) near(C702, U701.5, tight)
 near(U601, L601, tight) near(C602, U601.2, tight) near(C603, U601.7, tight) near(U602, L602, tight) near(C609, U602.2, tight)
 # ---- kelvin / sense routing (NEW verb) ----
@@ -473,10 +481,11 @@ array([C350..C355], y, pitch: equal) array([R401..R406], x, pitch: equal) array(
 far(MPPT_A.SW1/SW2, U701, loose) far(HB_SW, HVSENSE.analog, close) far(L101, L201, close)
 far(DCX_MID, U402/U422, close) far(T301, RT301, loose)
 # ---- sides ----
-side(all, top) except side(C407, C408, bottom-allowed)
+side(all, top)   # single-sided assembly; bottom copper is the heat-spreader pad
 # ---- mechanical (NEW) ----
 height(T301, 40) height(C301, C302, C108, C208, 11) cable_entry(J301, gland: EMC, edge: east)
 variant(R114, R214: 562k|499k; R429, R431: 11.5k|13.0k; R504: 237k|210k)   # NiMH|Li
+variant(R709: fit|DNP)                                                       # Mode R|Mode P
 ```
 
 Vocabulary I needed beyond the given list:
@@ -527,4 +536,4 @@ Vocabulary I needed beyond the given list:
 - Prius gen-4 battery under rear seat [S]: https://priuschat.com/wiki/zvw50-zvw51-2016-2022-gen-4/
 - Isolation method and tables (IEC 60664-1 via TI SLUP419; IPC-2221B) [P via repo]: [docs/topics/rules/isolation-creepage.md](../../docs/topics/rules/isolation-creepage.md)
 - Datasheets read [P]: TI LM5176-Q1 (SNVSB46B), LM74700-Q1 (SNOSD17G), INA186-Q1 (SBOS386B), TLV900x-Q1 (SBOS980G), UCC27282-Q1 (SLUSDN5D), AMC3330-Q1 (SBASA35B), LM2901B-Q1 (SLCS142H), SN74LVC2G74-Q1 (SCES563C), TPS3850-Q1 (SBVS264B), LM4040-N-Q1 (SNOS633N), TPL7407LA-Q1 (SLRS074), LM5164-Q1 (SNVSB51C) at https://www.ti.com/lit/ds/symlink/<part>.pdf ; Microchip DS70005363E; Infineon IAUC100N10S5L040 rev 1.0; Vishay VS-6ESH06HM3 (doc 94985); Omron G9EJ-1-E (2016) and G9EJ (2014); Eaton ELX1304 EVM10 (Jan 2026).
-- Secondary [S]: Coilcraft XAL1510/MSS1210/MSS1048 data via search snippets; Panasonic AEV110122 NRND (Panasonic product page); Eaton PV-4A10F; TDK/Murata MLCC listings.
+- Secondary [S]: Coilcraft, Panasonic (AEV110122 NRND), TDK and Murata product listings.
