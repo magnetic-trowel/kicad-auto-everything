@@ -26,9 +26,9 @@ RELAY = PartDef(
                 VLimit(("C_3_6",), ("C_4_5",), 354, "max switching voltage 250 VAC = 354 V peak")],
         pin_i_max={"C_3_6": 16, "C_4_5": 16},
         isolation=[Isolation(("COIL_1", "COIL_8"), ("C_3_6", "C_4_5"), v_iso_rms=6000, grade="reinforced",
-                             v_work_rms=250, creepage_mm=8.0,
+                             v_work_rms=250, creepage_mm=8.0, material_group="IIIa",
                              standard="EN 61810-1 (VDE 40007172): reinforced coil-contact, rated insulation "
-                                      "voltage 250 V, PD3, OVC III; 10 kV 1.2/50 impulse")],
+                                      "voltage 250 V, PD3, OVC III; 10 kV 1.2/50 impulse; MG IIIa (PTI 250)")],
         t_min=-40, t_max=85),
     lifecycle="active",
     second_source="G5RL-1A-E-HR DC5 (same footprint; TV-5, not TV-8); G2RL-1A-E DC5 (same footprint, general "
@@ -150,13 +150,15 @@ WATCHDOG = PartDef(
     footprint="Package_SO:SSOP-8_2.95x2.8mm_P0.65mm", value="74LVC1G123", category="ic",
     description="Retriggerable monostable, Schmitt inputs, glitch-free power-up reset (heartbeat watchdog)",
     datasheet="https://www.ti.com/lit/ds/symlink/sn74lvc1g123.pdf",
-    ratings=Ratings(limits=[VLimit(("VCC",), ("GND",), 5.5, "recommended VCC 1.65-5.5 V"),
-                            VLimit(("~{A}", "B", "~{CLR}"), ("GND",), 5.5, "inputs accept up to 5.5 V")],
+    ratings=Ratings(limits=[VLimit(("VCC",), ("GND",), 6.5, "abs max 6.5 V; recommended 1.65-5.5 V", v_min=-0.5,
+                                   v_rec=5.5),
+                            VLimit(("~{A}", "B", "~{CLR}"), ("GND",), 6.5, "abs max 6.5 V; inputs accept 5.5 V",
+                                   v_min=-0.5, v_rec=5.5)],
                     t_min=-40, t_max=125),
     lifecycle="active", second_source="Nexperia 74LVC1G123DP (different package) [unverified]",
     source={"pins": "TI SCES586E (Mar 2024) Fig. 4-1 DCT SSOP-8 top view and Table 4-1: 1 A, 2 B, 3 CLR, 4 GND, "
                     "5 Q, 6 Cext, 7 Rext/Cext, 8 VCC; KiCad 74xGxx:74LVC1G123 uses the same numbers",
-            "ratings": "SCES586E 5.3: VCC 1.65-5.5 V, Rext >= 1 kohm at VCC >= 3 V, Rext/Cext never directly to "
+            "ratings": "SCES586E 5.1 abs max: VCC and VI -0.5..6.5 V, IO +/-50 mA; 5.3: VCC 1.65-5.5 V, Rext >= 1 kohm at VCC >= 3 V, Rext/Cext never directly to "
                        "GND/VCC, -40..125 C; 5.5 VOH >= VCC - 0.1 V at -100 uA, II +/-1 uA, Rext/Cext leakage "
                        "+/-0.25 uA; 5.8/5.9 twOUT 1.0-1.1 ms at Rext 10 kohm, Cext 0.1 uF, 3.3 V; features: "
                        "retriggerable, glitch-free power-up reset, Ioff partial power-down; Table 4-1: A falling-edge "

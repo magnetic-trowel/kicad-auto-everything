@@ -440,9 +440,10 @@ def build():
     ch_in = {k: d.net(f"CH{k}", domain="SELV", v=(0, 3.47), kind="signal",
                       notes=f"outlet {k} command, Pi pin {PI_PIN[k]} (BCM{PI_BCM[k]})") for k in CHANNELS}
 
-    # -- barriers (DESIGN.md section 6) --------------------------------------------------------------
+    # -- barriers (DESIGN.md section 6). All are 60 Hz mains: ac=True makes v_work a peak and scales parts'
+    # Vrms working ratings by sqrt(2) before comparing (framework 123504b).
     sp = "TI SLUP419 (Mar 2024) Tables 3-5 and worked example (IEC 60664-1 F.1/F.2/F.4 subsets, IEC 62368-1 Table 10)"
-    d.barrier("SELV", "LINE", grade="reinforced", v_work=V_MAINS_PK, creepage_mm=8.0, clearance_mm=8.0,
+    d.barrier("SELV", "LINE", ac=True, grade="reinforced", v_work=V_MAINS_PK, creepage_mm=8.0, clearance_mm=8.0,
               standard="UL/IEC 62368-1 Tables 10 and 17; IEC 60664-1 Tables F.1, F.2, F.4", v_test_rms=3000,
               pollution_degree=2, material_group="IIIb", ovc="III", slot=False,
               source=f"{sp}. Required at 120 V OVC III: clearance 3.0 mm (F.2) / 3.8 mm (62368-1 T10) for the 4 kV "
@@ -451,25 +452,25 @@ def build():
               notes="covers NEUTRAL and OUT1-6 (they float on LINE). Hi-pot 3.0 kVrms 60 s type, 1 s production")
     ul = "UL 1059 use group C, 51-150 V: 1/8 in air, 1/4 in surface [S, secondary table]"
     for k in CHANNELS:      # declared first: the narrower NEUTRAL/OUT rules below override overlaps
-        d.barrier("LINE", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=2.5, clearance_mm=1.5,
+        d.barrier("LINE", f"OUT{k}", ac=True, grade="functional", v_work=V_MAINS_PK, creepage_mm=2.5, clearance_mm=1.5,
                   standard="IPC-2221B Table 6-1 B2; IEC 60664-1 F.2 2.5 kV", pollution_degree=2, ovc="III",
                   source="IPC-2221B B2 151-170 V: 1.25 mm [S]; OVC III functional 1.5 mm; design 2.5/1.5 outside "
                          "the relay footprint",
                   notes=f"across K{k}'s open contact; inside the relay footprint the 5.0 mm pin pitch governs")
-    d.barrier("LINE", "NEUTRAL", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
+    d.barrier("LINE", "NEUTRAL", ac=True, grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
               standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III", source=ul,
               notes="opposite polarity; field-wiring terminals")
     for k in CHANNELS:
-        d.barrier("NEUTRAL", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
+        d.barrier("NEUTRAL", f"OUT{k}", ac=True, grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=3.2,
                   standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III", source=ul,
                   notes="switched line vs neutral, opposite polarity")
     for j in CHANNELS:
         for k in CHANNELS:
             if j < k:
-                d.barrier(f"OUT{j}", f"OUT{k}", grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4,
+                d.barrier(f"OUT{j}", f"OUT{k}", ac=True, grade="functional", v_work=V_MAINS_PK, creepage_mm=6.4,
                           clearance_mm=3.2, standard="UL 1059 / UL 508 practice", pollution_degree=2, ovc="III",
                           source=ul, notes="one outlet on, the other off: 120 V between them")
-    d.barrier("LINE", "PE", grade="basic", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=6.4,
+    d.barrier("LINE", "PE", ac=True, grade="basic", v_work=V_MAINS_PK, creepage_mm=6.4, clearance_mm=6.4,
               standard="IEC 62368-1 basic; UL field wiring to dead metal", pollution_degree=2, ovc="III",
               source="62368-1 basic: clearance 1.5 mm at 2.5 kV (SLUP419 Table 5), creepage 1.5 mm [I]; UL field "
                      "wiring to grounded dead metal 1/4 in [S]",
