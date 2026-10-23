@@ -162,6 +162,9 @@ def router_settings(p, opts, repair=False):
     s["copper_to_edge_clearance_um"] = specctra.fmt(p.edge_clearance * 1000)
     if p.neck_width:
         s["neck_width_um"] = specctra.fmt(p.neck_width * 1000)
+    if p.min_width:
+        # the fork's floor for every neck-down (pads, fanout, retries); older builds ignore it
+        s["min_trace_width_um"] = specctra.fmt(p.min_width * 1000)
     return s
 
 
@@ -170,5 +173,5 @@ def plan_summary(p):
         classes={n: dict(nets=len(rc.nets), netclass=rc.netclass, widths=rc.widths, via=rc.via)
                  for n, rc in p.classes.items()},
         obstacle_classes=len(p.obstacle_classes), obstacles=len(p.obstacles), net_graphics=len(p.net_graphics),
-        pins=len(p.pin_class), edge_clearance=p.edge_clearance, neck_width=p.neck_width,
+        pins=len(p.pin_class), edge_clearance=p.edge_clearance, neck_width=p.neck_width, min_width=p.min_width,
         notes={k: v for k, v in p.notes.items() if k != "same_net_via_pitch"})

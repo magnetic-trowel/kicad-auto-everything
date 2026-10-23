@@ -367,7 +367,7 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
     fake = tmp_path / "fake-freerouting"
     fake.write_text(FAKE_ROUTER.format(canned=str(canned)))
     fake.chmod(0o755)
-    monkeypatch.setenv("KAE_FREEROUTING", str(fake))
+    monkeypatch.setenv("KAE_BRIDGE_FREEROUTING", str(fake))
     fast = dict(repair=False, router_share_alone=0.25, router_grace=2)
 
     out = tmp_path / "out" / "board.kicad_pcb"

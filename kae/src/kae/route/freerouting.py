@@ -9,8 +9,12 @@ results, so every run gets a private, empty user-data
 folder (`--user_data_path`) and an environment without FREEROUTING__* variables, and every
 setting the bridge depends on is passed on the command line.
 
-Freerouting is found as in kaebench: KAE_FREEROUTING (a binary or a .jar), the native bundle
-in KAE_HOME (default ~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME.
+The bridge prefers the magnetic-trowel fork (it honours `min_trace_width_um`; see
+tools/research/routing/install_freerouting_fork.sh): KAE_BRIDGE_FREEROUTING, else the newest
+KAE_HOME/kae-freerouting-fork-*/bin/freerouting. Without one it falls back as kaebench does:
+KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
+~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
+know are logged as unknown and ignored.
 """
 import json
 import os
@@ -36,6 +40,12 @@ class FreeroutingError(RuntimeError):
 
 def command():
     """Command prefix for Freerouting."""
+    env = os.environ.get("KAE_BRIDGE_FREEROUTING")
+    if env:
+        return ["java", "-jar", env] if env.endswith(".jar") else [env]
+    fork = sorted(KAE_HOME.glob("kae-freerouting-fork-*/bin/freerouting"), key=lambda q: q.stat().st_mtime)
+    if fork:
+        return [str(fork[-1])]
     env = os.environ.get("KAE_FREEROUTING")
     if env:
         return ["java", "-jar", env] if env.endswith(".jar") else [env]

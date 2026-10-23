@@ -134,6 +134,7 @@ class Plan:
     net_graphics: list = field(default_factory=list)   # (net, {layer: polygon}, obstacle class, why)
     edge_clearance: float = 0.0                        # for Freerouting's board outline
     neck_width: float | None = None
+    min_width: float = 0.0                             # narrowest legal track for every net
     notes: dict = field(default_factory=dict)
     rule_board: object = None
 
@@ -262,6 +263,7 @@ def plan(info, board_path, opts=None):
     # than its pads (a 0.64 mm USB class into a 0.5 mm pitch connector) still connects
     widths_all = [w for rc in p.classes.values() for w in rc.widths.values() if w]
     neck = max([v for pn in per_net.values() for v in pn["wmin"].values()] + [0.0])
+    p.min_width = up(neck) if neck > 0 else 0.0
     if neck <= 0:
         neck = min(widths_all or [0.0])
     if neck > 0 and any(w > neck + 1e-9 for w in widths_all):

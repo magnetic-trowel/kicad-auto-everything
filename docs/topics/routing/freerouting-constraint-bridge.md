@@ -35,7 +35,7 @@ All functions and properties the corpus rule files use are supported [C].
 
 | KiCad constraint | Into Freerouting as | After import |
 |---|---|---|
-| Track width min/opt/max (board, net class, custom rules per layer) | class width per layer = opt clamped into [min, max]; `automatic_neckdown=false`, `fanout.enabled=false`; `neck_width_um` = max(largest min, narrowest class width) | narrower tracks widened in place when clearances allow, else ripped |
+| Track width min/opt/max (board, net class, custom rules per layer) | class width per layer = opt clamped into [min, max]; `automatic_neckdown=false`, `fanout.enabled=false`; `neck_width_um` = max(largest min, narrowest class width); `min_trace_width_um` = largest min (the fork's floor for every neck-down) | narrower tracks widened in place when clearances allow, else ripped |
 | Copper clearance (board, net class, custom rules on both items, pad/footprint overrides) | `class_class` matrix per layer for every class pair | rip-up and re-route |
 | Pad clearance and pad shape | a clearance class per pin, per class and layer, including the excess of real copper beyond the one shape the DSN carries | as above |
 | Via diameter, hole size, annular width | one via padstack per class, D ≥ d + 2·annulus, named in whole µm | — |
@@ -59,6 +59,9 @@ Plumbing [P]:
 - A board whose copper layers are all "power" exports none as signal; the bridge makes them signal layers, since Freerouting refuses such a board and 2.5.0 hangs.
 - Bare net names with `|` fail the whole SES import, so the bridge quotes them.
 - See [specctra-freerouting-integration](../kicad/specctra-freerouting-integration.md).
+
+### Freerouting build
+The bridge runs the magnetic-trowel fork when installed (`tools/research/routing/install_freerouting_fork.sh`, or `KAE_BRIDGE_FREEROUTING`); kaebench's `freerouting` adapter keeps the upstream 2.5.0 release, so the human-placement baseline is unchanged. The fork adds `router.min_trace_width_um`, a floor under every neck-down (pad necks, the fanout micro-neckdown, neck-width retries) [P: magnetic-trowel/freerouting#2]. Older builds log it as unknown and ignore it.
 
 ### Freerouting 2.5.0 behaviour the translation relies on
 All [P] in the v2.5.0 source:
