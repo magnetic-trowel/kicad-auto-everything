@@ -31,10 +31,19 @@ if [ -x "$DEST/bin/freerouting" ]; then
   echo "already installed: $DEST/bin/freerouting"
   exit 0
 fi
+# Gradle's wrapper needs a java to start: JAVA_HOME, else java on PATH, else a JDK in KAE_HOME
+if [ -z "${JAVA_HOME:-}" ] && ! command -v java > /dev/null; then
+  for d in "$KAE_HOME"/jdk-25*; do [ -x "$d/bin/java" ] && export JAVA_HOME=$d && break; done
+fi
 (cd "$SRC" && ./gradlew -q executableJar)
 JAR=$(ls "$SRC"/build/libs/*-executable.jar)
-JDK=$(ls -d "$HOME"/.gradle/jdks/*25*/ 2>/dev/null | grep -v '\.tar' | head -1)
-[ -x "$JDK/bin/jlink" ] || { echo "no JDK 25 under ~/.gradle/jdks (gradle toolchain)"; exit 1; }
+# jlink from a JDK 25: the toolchain gradle provisioned, else JAVA_HOME (gradle uses it when it is 25)
+JDK=$( (ls -d "$HOME"/.gradle/jdks/*25*/ 2>/dev/null || true) | grep -v '\.tar' | head -1 || true)
+if [ ! -x "${JDK:-/nonexistent}/bin/jlink" ] && [ -n "${JAVA_HOME:-}" ] \
+   && "$JAVA_HOME/bin/java" -version 2>&1 | grep -q 'version "25'; then
+  JDK=$JAVA_HOME
+fi
+[ -x "${JDK:-/nonexistent}/bin/jlink" ] || { echo "no JDK 25 for jlink (gradle toolchain or JAVA_HOME)"; exit 1; }
 TMP=$DEST.tmp
 rm -rf "$TMP" && mkdir -p "$TMP/bin" "$TMP/lib"
 "$JDK/bin/jlink" --add-modules "$MODULES" --strip-debug --no-header-files --no-man-pages \
