@@ -69,7 +69,7 @@ Doc correction: Freerouting's "92.4% of 979 boards" (2.6.0-RC4) covers tiers A+B
 
 **Exit gate:**
 - Reference is clean and legal on every qualified board; `noop` scores 0.
-- 12/12 cheats are caught.
+- Every red-team case passes (22 at present, item 0.9).
 - Scorer repeats are identical.
 - A/A flip rate ≤ 3% of boards.
 
@@ -105,7 +105,7 @@ Commit the cause table as summarized results.
 - The reference must reach CP 1.00.
 - Add a `pcbworld` scoring profile that promotes dangling items.
 - Check score parity on 50 outputs.
-- Reproduce Freerouting 2.1.0 `-mp 10`, target within ±0.08 of 0.80 on D3-A [P]. D3-B (10 boards, about ±0.26 CI) is for reporting only.
+- Reproduce Freerouting 2.1.0 `-mp 10`, target within ±0.08 of 0.80 on D3-A [P]. PCBWorld's @1 was 0.75, inside that band, so match @1 and @5 separately; with a fixed `-mp` our attempts may be identical (H4). D3-B (10 boards, about ±0.26 CI) is for reporting only.
 - **Kill:** an unexplained gap > 0.15 after one extra week stops strategy work.
 
 **Second engine:** a KRT adapter (MIT; reads `.kicad_pcb` directly, so no DSN loss). PCBWorld measured 0.74 on D3-A and 0.20 on D3-B [P]. Weak single baselines mislead.
@@ -173,7 +173,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
 - **Gate:** `valid` under whitelist integrity.
 - **Primary:** `cp1_mean`, the clean rate averaged over all attempts. Always report `cp1` and `cpk` too.
 - **Secondary:**
-  - unbiased cp@5;
+  - unbiased cp@5 for sampled methods (it assumes n ≥ 5 exchangeable attempts; for a deterministic engine's config portfolio it is just best-of-5 configs);
   - completion (uncapped);
   - per-net clean rate (sensitive on C);
   - errors by type;

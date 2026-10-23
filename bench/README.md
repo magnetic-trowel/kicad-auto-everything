@@ -6,10 +6,10 @@ method (an "adapter") on each task k times, and scores every attempt by re-openi
 the saved board with `kicad-cli` under the board's own rules. Design rationale:
 [docs/topics/verification/harness.md](../docs/topics/verification/harness.md).
 
-## Setup (Ubuntu 22.04/24.04, e.g. sk-tibia)
+## Setup (Ubuntu 22.04/24.04)
 
 ```bash
-git clone -b claude/gallant-newton-lt98do https://github.com/magnetic-trowel/kicad-auto-everything
+git clone https://github.com/magnetic-trowel/kicad-auto-everything
 cd kicad-auto-everything
 bench/scripts/setup.sh          # KiCad 10 (PPA, no recommends), Freerouting 2.5.0, bench/.venv
 source bench/.venv/bin/activate
@@ -24,6 +24,7 @@ kaebench doctor
 - Freerouting, the venv and `env.sh` all live in your home directory. Set `KAE_HOME` to put the large files on another disk.
 - `source bench/.venv/bin/activate` picks up the KiCad wrapper. Force this route with `--kicad container`.
 - The container sees `$HOME`, `/tmp` and the current directory. For a `--workdir` elsewhere, export `APPTAINER_BIND=/that/path`.
+- `--command` methods run sandboxed under bubblewrap, which the script does not install (`apt-get install bubblewrap`; it also needs unprivileged user namespaces). `kaebench doctor` reports whether it works; built-in adapters don't need it.
 
 Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The Python must be able to `import pcbnew`. Set `KAE_FREEROUTING` to a Freerouting binary or JAR; the JAR needs Java 25. Run `pytest bench/tests` to check the install.
 
@@ -38,6 +39,8 @@ kaebench run --adapter freerouting -k 5 --timeout 900 -j 8 --name fr-2.5.0
 kaebench report kae-work/results/human kae-work/results/fr-2.5.0
 ```
 
+`report` keeps runs apart: when two runs use the same adapter name, their rows are labelled `adapter@run`, and it warns when the runs were scored by different score versions.
+
 Everything lives under `--workdir` (default `./kae-work`): `cache/` (fetched files),
 `tasks/<id>/{reference,route,place}/` and `results/<run>/<adapter>/<kind>/<id>/attempt-N/`.
 Runs resume: re-running with the same `--name` skips finished attempts.
@@ -50,8 +53,8 @@ boards whose human layout is not clean.
 
 `bench/suites/*.txt` are board-id lists for `--only @FILE`:
 - `kaebench tasks --write-suite FILE` writes the boards that qualified on your KiCad version.
-- `qualified-kicad-10.0.7.txt`: the 112 manifest boards that qualified on KiCad 10.0.7.
-- `pcbworld-d3{a,b,c}-test.txt` are PCBWorld's D3 eval splits (99 / 10 / 10).
+- `qualified-kicad-10.0.7.txt`: the 112 manifest boards that qualified on KiCad 10.0.7 under task spec 1, before the round-trip (spec 4) and zone-uuid (spec 6) rules. Regenerate it with `prepare --force` and `tasks --write-suite` before relying on it.
+- `pcbworld-d3{a,b,c}-test.txt` are the D3 test splits from PCBWorld's `d3.json` (99 / 10 / 10 boards). The paper reports results on the first two; D3-B itself has 287 boards.
 
 ### Reproducing PCBWorld's routing baseline
 
@@ -67,7 +70,9 @@ kaebench --workdir kae-d3 prepare-dir --dir $PCBWORLD_DATA_ROOT/pcbench/exacad_s
 kaebench --workdir kae-d3 run --adapter freerouting --passes 10 -k 5 -j 16 --name fr-2.5.0-mp10
 ```
 
-PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) clean-pass @5. Our scoring re-saves boards with KiCad 10 and uses each board's own severities. Expect close but not identical numbers; report both.
+PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) clean-pass @5, and 0.75 / 0.64 @1 (4-seed means). Its @5 is the clean status of the best-potential (Φ) rollout of five, not "any clean attempt" (see Scoring). Our scoring re-saves boards with KiCad 10 and uses each board's own severities. Expect close but not identical numbers; report both.
+
+With `--passes` fixed, every attempt runs the same command. If Freerouting's single-threaded runs are deterministic (it seeds its random choices with a constant; [dev-eval-plan](../docs/topics/verification/dev-eval-plan.md) H4), the five attempts are identical and `cpk` equals `cp1`, so compare with PCBWorld's @1 until that is checked (plan item 0.12).
 
 ## Adapters
 
@@ -89,7 +94,7 @@ The tool reads `{input}` (a `.kicad_pcb` with its project files beside it) and w
 - the workdir's tasks and results hidden, plus anything in `KAE_SANDBOX_HIDE` (colon-separated);
 - only the attempt's own work directory writable.
 
-A method can't read the human layout it is scored against, download it, or touch other attempts. On timeout the whole sandbox is killed. `--sandbox-net` allows network access, for LLM methods. `--no-sandbox` turns the sandbox off; the report then marks those attempts as unsandboxed.
+A method can't read the reference layout it is scored against, download it, or touch other attempts. The task input itself still carries some human decisions: route tasks keep the full human placement, and place tasks keep the human side assignment, zones and silkscreen. On timeout the whole sandbox is killed. `--sandbox-net` allows network access, for LLM methods. `--no-sandbox` turns the sandbox off; the report then marks those attempts as unsandboxed.
 
 ## Scoring
 
@@ -112,9 +117,9 @@ A method can't read the human layout it is scored against, download it, or touch
   - `legal`: valid, no courtyard, clearance, edge-clearance, hole or keepout errors, and no footprint with more pad centres outside the board outline than the same footprint has in the human placement. Edge connectors may overhang as far as the designer's do.
   - `hpwl_ratio` relative to the human placement.
   - With `--probe freerouting`, the rebuilt placement is routed by a fixed router and scored like a route result, Cypress-style. An external router can be the probe: `--probe NAME --probe-command TEMPLATE` (or `probe=NAME,probe_command=TEMPLATE` in an `--arm`, without commas), run sandboxed as a route method.
-- **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
+- **Best-of-k** picks the attempt by clean, then completion, errors, track length, so `cpk` is any-clean@k: a board counts if any attempt is clean. PCBWorld's @k instead takes the best-potential (Φ) rollout and asks whether it is clean, so `cpk` can only be higher. The report shows `cp1` (attempt 0) and `cpk`.
 - **Rescoring.** After a scoring fix, `kaebench rescore RUN_DIR -j N` scores a run's saved outputs (and saved probe routes) again with the current scorer, without re-running the method. Each attempt records the version it was rescored from.
-- **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 5: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint uuids are made unique, and the human layout must pass the round trip. Re-run `prepare --force` on older task folders.
+- **Versions.** Every attempt records `score_version` (now 6). Tasks are at spec 6: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint and zone uuids are made unique, and the human layout must pass the round trip. Route tasks need spec 4 or later and place tasks spec 5 or later; re-run `prepare --force` on older task folders.
 - **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests
@@ -128,5 +133,5 @@ A method can't read the human layout it is scored against, download it, or touch
 
 - KiCad 10 SES import deletes unlocked copper and applies placement. The adapter strips the SES placement block, and route tasks start without copper.
 - Freerouting necks tracks down below the board's minimum width near fine-pitch pads and shrinks some to 75% to meet edge clearance; the `freerouting` adapter disables neck-down, but edge-driven shrinking remains (KiCad flags it as `track_width`).
-- Freerouting has no seed flag, so best-of-k varies the pass count (`-mp` 10, 20, 30, ...).
+- Freerouting has no seed flag, so best-of-k varies the pass count (`-mp` 10, 20, 30, 15, 25, 40, 50, 60). The attempts are nested runs of one seeded search, not independent samples ([dev-eval-plan](../docs/topics/verification/dev-eval-plan.md) H4).
 - `inside` uses pad centres against the board outline. Courtyard-vs-edge overhang is not checked.
