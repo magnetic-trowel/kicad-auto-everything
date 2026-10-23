@@ -76,6 +76,16 @@ A JSON document per board: net roles (ground, rails with voltage, switch nodes, 
 | 3 | critical nets routed by our physics-aware router (cells, decaps, crystals); Freerouting for the rest with them locked; router failures and congestion feed back into placement; `joint` task kind (separate harness commit) | joint runs on the suite | clean ≥ human + Freerouting on A+B |
 | 4 | copper in the loop (pours, stitching, decap vias) priced by exact quotes; split C; corpus dev set; report | full suite plus corpus dev set | the three numbers of the TL;DR |
 
+### The joint loop: modules, routed physics, re-tweak
+
+A **module** is a physics structure from the brief (commutation cell, decap group, crystal circuit, protection chain) together with its parts and its critical copper. Routing it is joint with placing it:
+
+1. **Module stage.** The module's parts move and rotate freely (any angle) while its critical copper is routed; physics is evaluated on the routed segments, not straight hops. Parts are fixed only when the task locks them or a described heatsink holds them; parts that mount to a heatsink keep right-angle orientations aligned to it.
+2. **General routing.** The bridge routes every other net around the module's locked copper.
+3. **Routed physics check.** Each module's physics is recomputed on the finished copper: other nets' tracks, vias perforating planes, and nearby aggressors.
+4. **Second tweak.** A module whose budget utilization changed beyond a threshold is unlocked and re-optimized in place (parts, its copper, and the conflicting neighbouring nets), and only that region is re-routed.
+5. **Iterate** until no module changes beyond the threshold or an iteration cap is reached; every pass is judged by KiCad DRC.
+
 ### How results are judged
 
 - kaebench scoring is never changed to improve a score; the `joint` kind and any fixes go in separate commits with baselines re-run (CLAUDE.md).
