@@ -788,7 +788,9 @@ def hazards(d):
       "about 34 A limited by the harness",
       "board fuse F1tt clears in about 5 ms (calc t_clear_1cell_ms), inline 7 A fuse is the backup; 1210 "
       "MLCCs >= 5 mm from edges and holes; LT8584 MODE (pin 5, between GND pins 4 and 6) tied to VIN through "
-      "R4kk 10 k so a solder bridge draws 0.4 mA; 100 % AOI",
+      "R4kk 10 k so a solder bridge draws 0.4 mA; 100 % AOI. A cracked C6kk or shorted D1kk collapses FLYBUS "
+      "(~5 W from the other channels): REQ-F5 low window and the BMS-OK inhibit stop it; a hung MCU at the same "
+      "time is a double fault",
       parts=F + HF + [f"R4{kk(k)}" for k in CH], single_fault_safe=True)
     H("H-2", "Multi-cell short ('voltage jump'), kA: a part spanning non-adjacent taps fails short",
       "by construction: every return path has D1kk and D1 in series (D1kk short -> D1 blocks; D1 short -> each "

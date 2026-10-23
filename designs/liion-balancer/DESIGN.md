@@ -1,8 +1,9 @@
 # liion-balancer: active cell balancer for a 13–16S home Li-ion pack (≈ 10 kWh)
 
 Status: engineering design, encoded in [`design.py`](design.py) / [`parts.py`](parts.py) and built
-with `kaesynth` (0 errors, 0 unwaived warnings, 25 waivers; KiCad ERC 0 errors; netlist round trip
-identical). Not reviewed or certified. Net table and naming rules: [CONNECTIONS.md](CONNECTIONS.md);
+with `kaesynth` (0 errors, 0 unwaived warnings, 24 waivers; KiCad ERC 0 errors; netlist round trip
+identical). Independently reviewed (REVIEW.md: 0 blocker, 5 major, 8 minor — all addressed, see its
+"Response to review"); not certified. Net table and naming rules: [CONNECTIONS.md](CONNECTIONS.md);
 full pin list: `out/netlist.json`; checks, calculations and waivers: `out/report.md`.
 
 Evidence tags: [P] primary source read, [S] secondary source, [V] vendor claim, [I] our inference.
@@ -17,12 +18,13 @@ IEC 60664-1, IEC 62368-1, IPC-2221B and UL 1973/9540 were not readable here; the
   shorts one cell is cleared by that tap's board fuse in ≈ 5 ms.
 - **Control.** ADBMS1818 measures every cell (≤ ±4 mV) and drives the LT8584 enables; an STM32G031
   runs the algorithm; a 2 s hardware watchdog and a second, independent enable path (opto string)
-  stop a stuck channel.
+  stop a stuck channel. The pack BMS's OK signal is a third, MCU-independent enable, and two hardware
+  trips stop every channel if an end tap (TAP0/TAP16) or the stack return opens.
 - **Wiring.** N+1 = 17 wires, 18 AWG, ≤ 1 m: a 7 A 10 kA fuse at each ring, a pluggable 17-pole
   header, a replaceable 5 A fuse per tap on the board. 13–15S packs bridge the unused plug positions.
 - **Coexistence.** Never switches the pack; ≤ 30 µA per cell worst case; isolated UART and a
   PhotoMOS fault contact for the BMS/host.
-- **Size.** 371 electrical parts + 6 holes on one 270 × 130 mm 4-layer board; 35 harness items
+- **Size.** 407 electrical parts + 6 holes on one 270 × 130 mm 4-layer board; 35 harness items
   (17 rings, 17 inline fuses, 1 plug) modelled off-board.
 
 ## 1. Brief
@@ -50,13 +52,14 @@ This document designs the **lithium-ion** balancer; the lead-acid one is a separ
 | REQ-7 | Wiring: B− cell terminal ("system ground") plus every cell positive | N+1 wires | inspection |
 | REQ-8 | Tap fusing: battery end 7 A, ≥ 125 VDC, ≥ 10 kA; board 5 A very fast, 300 A at ≤ 32 VDC, replaceable | — | F-1…F-6 |
 | REQ-9 | No single part fault joins non-adjacent taps with > 0.5 A; a one-cell short clears in ≤ 10 ms. T1kk interwinding insulation (1500 Vrms vs ≤ 67 V) is a safeguard; its residual is cleared by the inline fuses | ≤ 10 ms | FMEA §4, F-1…F-4 |
-| REQ-10 | Every fault path has a fuse rated for its voltage and prospective current | — | C-7 |
+| REQ-10 | Every single-fault path has a fuse rated for its voltage and prospective current; multi-cell paths (double faults, T1kk insulation) are interrupted by the inline 3AB with the board fuse as series back-up | — | C-7, F-16 |
 | REQ-11 | Spacing per §6.3 | B-1…B-6 | DRC, T-HIPOT |
 | REQ-12 | Per-cell standing current, equal across cells | ≤ 30 µA worst case (sum of maxima), typ ≤ 3 µA; drift ≤ 0.15 %/yr | T-IQ |
 | REQ-13 | Stack standing current | ≤ 50 µA sleep, ≤ 5 mA monitoring | T-IQ |
 | REQ-14 | Swapped, reversed, offset or out-of-order taps: no fire, no cell damage; fuses open, self-test locks out | — | F-6, F-7 |
-| REQ-15 | Open tap detected before each session and within 1 s while balancing | ≤ 1 s | F-5 |
-| REQ-16 | Stuck-on channel: two independent enables plus a hardware watchdog | ≤ 2.2 s | F-8 |
+| REQ-15 | Open tap detected before each session; an open TAP0/TAP16 wire while balancing stops every channel in hardware | ≤ 1 ms | F-5 |
+| REQ-16 | Stuck-on channel: two enables plus a hardware watchdog, plus the BMS-OK enable independent of the MCU | ≤ 2.2 s | F-8, F-17 |
+| REQ-24 | Hardware inhibit without firmware: BMS OK dropped (BMS cell OV/UV), FLYBUS − TAP15 > ≈ 6 V, or TAP1 − TAP0 > ≈ 5.3 V | — | F-5, F-10, F-17 |
 | REQ-17 | A cell at ≥ V_full − 20 mV is never net-charged by balancing | — | F-9 |
 | REQ-18 | Coexist with the BMS: never switch the pack; expose data and a fault contact | — | review |
 | REQ-19 | Isolated UART 115 200 8N1, host logic 2.25–5.5 V | — | T-FUNC |
@@ -68,11 +71,13 @@ This document designs the **lithium-ion** balancer; the lead-acid one is a separ
 **Firmware-enforced** (the hardware relies on them; each has a firmware test in §10):
 REQ-F1 kick the ADBMS1818 watchdog every ≤ 0.5 s; REQ-F2 active-set rule (H-5); REQ-F3 thermal
 derating (8 channels < 60 °C, 4 < 70 °C, 0 ≥ 80 °C); REQ-F4 measure only with balancing muted, plus a
-sum-of-cells plausibility check; **REQ-F5 FLYBUS supervision by the ADC analog watchdog on PA0, BAL_EN
-low and DCC cleared ≤ 1 ms after FLYBUS exceeds the last stack reading + 4 V**; REQ-F6 pulse test and
+sum-of-cells plausibility check; REQ-F5 FLYBUS supervision by an ADC analog-watchdog window on PA0
+(last stack + 4 V / − 5 V), a second layer behind the hardware trip; REQ-F6 pulse test and
 proof of both enable paths before each session; REQ-F7 series count N checked at boot (cells N+1…16
 < 50 mV, cells 1…N 2.5–4.2 V, else lock out); REQ-F8 discharge floor 3.0 V LFP / 3.4 V NMC, deep
-sleep below 2.8 V.
+sleep below 2.8 V; REQ-F9 PA2 low or high-Z while U5 side 1 is unpowered; REQ-F10 convert cells 1
+and 16 unmuted every ≤ 50 ms while balancing and latch off after a hardware trip; REQ-F11 log time in
+the balancing window.
 
 ## 3. Assumptions and open questions
 
@@ -96,6 +101,13 @@ ASM-8 pack-bus transients are absorbed by the cells [I]. ASM-9 firmware implemen
   standing current). Q-7 UART enough? Q-8 enclosure/coating owner. Q-9 add-on may affect a UL listing
   (owner/AHJ). Q-10 bidirectional LTC3300-1 version? (no). Q-11 qualify the pin-identical LTC6813-1
   against the ADBMS1818's 52-week lead time (yes).
+- **Q-12 (BLOCKING)** Which pack-BMS signal drives the BMS-OK input J5? It must drop on any cell OV/UV
+  or BMS fault. Default: the BMS's charge-enable dry contact switching the user's 12 V.
+- Q-13 Does the charger reach ≥ 3.45 V/cell often enough? (many LFP floats sit at 3.35–3.375 V).
+- **Q-14 (BLOCKING)** Multi-cell faults put 320–560 A through two board Nano2 fuses (50 A at 125 V);
+  the inline 3AB (10 kA at 125 VDC) is the rated interrupter. Accept series back-up qualified by F-16,
+  or fund a board fuse with a verified ≥ 80 VDC / ≥ 600 A rating? (Littelfuse 415 lists 1500 A at
+  125 VDC but is time-lag and its datasheet could not be read.)
 
 ## 4. Hazards
 
@@ -103,17 +115,18 @@ ASM-8 pack-bus transients are absorbed by the cells [I]. ASM-9 firmware implemen
 
 | ID | Hazard | Mitigation | 1F |
 |---|---|---|---|
-| H-1 | A part shorts one cell (LT8584 switch, cracked 1210 MLCC, TVS): ≈ 34 A | F1tt clears in 4.9 ms; inline fuse backs it up; 1210s ≥ 5 mm from edges/holes; MODE (pin 5, between GND pins 4 and 6) tied to VIN through R4kk 10 kΩ so a bridge draws 0.4 mA; 100 % AOI | yes |
-| H-2 | Multi-cell short ("voltage jump") | By construction: D1kk short → D1 blocks; D1 short → every D1kk blocks; C6kk or D2 short → D1 blocks. Supplies via F1 125 mA + 100 Ω; LED string via R24 and a current sink; sense divider 2 MΩ; an ADBMS1818 pin short passes ≤ 0.3 A through two 100 Ω filters. **Residual:** T1kk interwinding breakdown joins TAPk to TAP0 (safeguard, sample hipot T-XFMR; up to 560 A, cleared by 10 kA inline fuses) | yes; D1 + D1kk double fault cleared by F116/F100 and inline fuses |
+| H-1 | A part shorts one cell (LT8584 switch, cracked 1210 MLCC, TVS): ≈ 34 A | F1tt clears in 4.9 ms; inline fuse backs it up; 1210s ≥ 5 mm from edges/holes; MODE (pin 5, between GND pins 4 and 6) tied to VIN through R4kk 10 kΩ so a bridge draws 0.4 mA; 100 % AOI. A cracked C6kk or shorted D1kk collapses FLYBUS (≈ 5 W from the other channels); the REQ-F5 low window and the BMS-OK inhibit stop it, and a hung MCU at the same time is a double fault | yes |
+| H-2 | Multi-cell short ("voltage jump") | By construction: D1kk short → D1 blocks; D1 short → every D1kk blocks; C6kk short → D1 blocks. Supplies via F1 125 mA + 100 Ω; LED string via R24 and a current sink; sense divider 10 MΩ; an ADBMS1818 internal short passes ≤ 0.3 A through two 100 Ω C filters or ≤ 6.7 mA through the 10 kΩ S-line resistors R5kk. **Residual:** T1kk interwinding breakdown joins TAPk to TAP0 (safeguard, sample hipot T-XFMR; up to 560 A, cleared by 10 kA inline fuses) | yes; double faults: inline 3AB with the board Nano2 as series back-up (Q-14) |
 | H-3 | Harness short near the battery, ≤ 2.5 kA | 3AB 7 A fuse at the ring (10 kA at 125 VDC [P]); UL 1015 wire; bundled in tap order | yes |
-| H-4 | Over-discharge by a stuck balancer (BMS cannot disconnect it) | Two enables (S_k → DIN; BAL_EN → opto → DCHRG); watchdog clears DCC in ≤ 2.2 s; floors REQ-F8; LT8584 UVLO; both paths proof-tested each session; fault contact | yes; LT8584 internal logic fault is residual |
-| H-5 | Returned energy overcharges a full cell (0.12–0.2 A per active channel into every cell) | REQ-F2: every cell ≥ V_full − 20 mV is discharged, so its net current −2.5 + n·0.15 A < 0 for n ≤ 8 | partial (firmware) |
+| H-4 | Over-discharge by a stuck balancer (BMS cannot disconnect it) | Two enables (S_k → DIN; BAL_EN → opto → DCHRG), independent of hardware faults but not of firmware; watchdog clears DCC in ≤ 2.2 s; floors REQ-F8; **BMS OK (U8) in series with BAL_EN, so the BMS's own UV detection stops balancing**; LT8584 UVLO; proof tests each session; fault contact | yes; LT8584 internal logic fault is residual |
+| H-5 | Returned energy overcharges a full cell (0.12–0.2 A per active channel into every cell) | REQ-F2: every cell ≥ V_full − 20 mV is discharged, so its net current −2.5 + n·0.15 A < 0 for n ≤ 8; the BMS's OV trip drops BMS OK and stops all channels in hardware | yes above the BMS OV threshold; firmware between V_full and it |
 | H-6 | Wrong decisions from IR drop on single-wire taps | Muted measurement and plausibility (REQ-F4) | yes |
 | H-7 | Hot-plug overvoltage | TVS D3kk per cell; 100 Ω / 10 nF filters and internal clamps; 2 × 100 µF per cell (C-10) | yes |
 | H-8 | Swapped, reversed or offset taps | Pre-plug DMM check; TVS crowbar opens the board fuse; replaceable fuses; boot lockout | yes (no fire; repair) |
-| H-9 | Open tap, including TAP0/TAP16 | Pulse test (REQ-F6); FLYBUS analog watchdog ≤ 1 ms (REQ-F5); D2 clamps FLYBUS at ≤ 94 V; an open TAP16 node is clamped by D316 to TAP15 + 7.1 V; the BAL_EN string spans TAP16…TAP0 | yes |
+| H-9 | Open tap while balancing. Intermediate taps reach LT8584 UVLO first; an open TAP16/TAP0 wire leaves the 1.6 A return in D316/D301 (breakdown), lifting that cell to 6.4–7.1 V. The board nodes stay alive through the TVS, so the string alone does not stop anything | Pulse test (REQ-F6); hardware trips U9 (FLYBUS − TAP15 > ≈ 5.9 V) and U10 (TAP1 − TAP0 > ≈ 5.3 V) pull Q1_B low in < 100 µs; hiccup < 1 ms on / ≥ 20 ms off until firmware (REQ-F10) latches off or the 2.2 s watchdog stops a hung MCU (≤ 0.8 J in the TVS) | yes |
+| H-15 | Open return (D1 lifted) with the MCU hung | U9 trips in hardware; D2 removed so nothing hides the LT8584's own open-output latch (≈ 183 V on FLYBUS, inside C6kk's 2.5× surge) as last layer | yes |
 | H-10 | Shock through the user port (battery at mains potential) | ISO7721DWV and AQY210EH, reinforced 5 kVrms [P]; 8 mm (UART) / 5 mm (contact) board barrier; separate connectors | yes |
-| H-11 | Overtemperature (8 × 1.5 W) | TH1–TH3 and REQ-F3 | yes |
+| H-11 | Overtemperature (8 × 1.5 W) | TH1–TH4, one per 4 channels (at U103, U107, U110, U114), and REQ-F3 | yes |
 | H-12 | The balancer itself unbalances the pack | Controller loads hang on the whole stack; per-cell loads ≤ 30 µA | n/a |
 | H-13 | Drains a pack the BMS has shut off | ≤ 50 µA sleep, buck UVLO 25 V, deep sleep < 2.8 V/cell | yes |
 | H-14 | TAP0 landed on P− instead of B− | Label and procedure; cell 1 reads out of range → lockout; CH1 TVS and fuse limit damage | partial |
@@ -185,6 +198,7 @@ the stack is exact rather than interval-blown.
 | CTRL | GND_B | 5 V / 3.3 V logic | 0–5.15 V |
 | USER (root) | GND_ISO | UART port | 0–5.5 V; floating, ≤ 250 Vrms to battery |
 | FAULT (root) | FLT_B | fault contact | ±30 V |
+| BMS (root) | BMS_N | BMS-OK input (J5) | ±30 V |
 | CHASSIS (root) | — | screws, enclosure (no copper) | earth |
 
 Net ranges are normal-operation worst cases at the 67.2 V hardware envelope (each position 0–4.2 V).
@@ -203,7 +217,8 @@ FR-4 CTI ≥ 175 (material group IIIa), PD2. Creepage / clearance in mm.
 | B-4u | battery ↔ USER | **reinforced** | 250 Vrms | required 5.0 / 3.8; **design 8.0 / 8.0** | IEC 60664-1 F.4/F.2, IEC 62368-1 Table 10 via TI SLUP419 [S]; ISO7721DWV pads 8.85 apart |
 | B-4f | battery ↔ FAULT | **reinforced** | 250 Vrms | **5.0 / 3.8** (required) | as B-4u; the AQY210EH SMDIP-4 pads are only 5.6 mm apart |
 | B-5 | battery ↔ CHASSIS screws | basic | 250 Vrms | 3.0 ring (placement keepout); 3.0 to the board edge (DRC rule) | 2.5 / 1.5 [S] |
-| B-6 | USER ↔ FAULT | functional | ≤ 36 | 0.6 | B2 31–50 V [S]; separate connectors J2, J4 |
+| B-4b | battery ↔ BMS | **reinforced** | 250 Vrms | 5.0 / 3.8 (required) | as B-4f; U8 AQY210EH pads 5.6 mm apart |
+| B-6 | USER ↔ FAULT ↔ BMS | functional | ≤ 36 | 0.6 | B2 31–50 V [S]; separate connectors J2, J4, J5 |
 
 Pads of one part that bridges two of these domains (LT8584, ADBMS1818, filters) are exempt from
 each other in the DRC rules: the package sets that spacing, and package creepage is checked against
@@ -241,7 +256,8 @@ rule [P]); leakage spike clamped at 38.5 V vs 50 V abs max (77 %). I_pk 6.8 A vs
 |---|---|---|---|
 | One cell on board | 4.2 / 0.125 = 34 A | F1tt I²t 5.566 → 4.9 ms; inline 71 A²s, so selective (12.8×) | Nano2 300 A at 32 VDC [P] |
 | Two cells (swap) | 67 A | 1.2 ms | ok |
-| Stack (two faults) | 67.2 / 0.12 = 560 A | inline 3AB in < 1 ms | 10 kA at 125 VDC [P] |
+| Stack (two faults or T1kk insulation) | 67.2 / 0.12 = 560 A | Nano2 melts first (5.6 vs 71 A²s), 3AB interrupts | 3AB 10 kA at 125 VDC [P]; Nano2 only 50 A at 125 V: **series back-up, F-16, Q-14** |
+| Reversed harness / ring 0 on B+ (two installer errors: landing + skipped pre-plug check) | ≈ 320–390 A (via secondaries + D1kk + D1, or D301) | as above | as above |
 | Wire to wire / chassis at the battery | 1.35–2.5 kA | inline | ok |
 
 Tap current ≤ 2.6 A: board fuse 2.6 / (5 × 0.75 × 0.9) = 77 %; inline 50 %. F1 (125 mA) sees a buck or
@@ -252,18 +268,29 @@ V+ short at 0.66 A (5.3×) and opens in milliseconds; R9 absorbs ≈ 0.3 J.
 
 **C-9 Standing currents.** Per cell: LT8584 1 + SW leakage 4 + C pin 0.25 + TVS 20 (rated at 5 V)
 + opto 0.08 = **25.3 µA worst case** (typ ≈ 2 µA): 0.11 %/yr of 200 Ah. Stack in sleep: LM5164 25 +
-UVLO 13.4 + V+ 9 + reflected 1.4 = 48.8 µA max (≈ 27 µA typ).
+UVLO 6.3 + V+ 9 + reflected 1.4 + D1 reverse leakage into the FLYBUS divider (≤ 67.2 V/10.47 MΩ =
+6.4 µA) = 48.1 µA max (≈ 27 µA typ). The V8P10's leakage (14.5 µA typ, 70 µA max at 100 V) through the
+old 2.1 MΩ divider could have reached 32 µA, so both dividers were raised to ≈ 10 MΩ. The bottom trip
+chain is switched off with BAL_EN; the top one adds ≤ 1 µA [I] to cell 16.
 
 **C-10 Hot plug.** L ≈ 2 µH, R 0.12 Ω, ≈ 80 µF effective (X6S 6.3 V at 4.2 V [I]): ζ = 0.38,
 peak 5.4 V — below the 6.3 V capacitor rating and the 9 V LT8584 limit; D3kk clamps above ≈ 7 V.
-An open TAP16 wire while balancing pushes the returned current through D316: TAP16 − TAP15 ≤ 7.1 V
-(VBR max 7.07 V at 1 mA, 9.1 V at 68 A [P]) for ≤ 1 ms.
+An open TAP16 (TAP0) wire while balancing pushes the returned current through D316 (D301): the cell
+reads ≤ 7.1 V (VBR max 7.07 V at 1 mA, 9.1 V at 68 A [P]) until U9 (U10) trips, < 100 µs per hiccup.
+
+**C-10a Hardware trips.** Top chain FLYBUS → ES1G → BZX84-B3V9 → 220 Ω → TLP293 LED (10 kΩ shunt) →
+TAP15; onset 5.4–6.4 V with tolerances, against 4.75 V normal maximum (cell 4.2 + D1 0.45 + wire 0.1)
+and ≥ 6.8 V in the fault (D316 6.46 V at 1.6 A + D1 0.35). Bottom chain TAP1 → BZX84-B3V9 → 220 Ω →
+LED → Q2 (on only with BAL_EN) → GND_B; onset 4.9–5.8 V against 4.4 V normal and ≥ 6.46 V fault. Each
+opto sinks ≥ 0.33 mA (R21) at 1.1 mA LED current (CTR(sat) 30 %), pulling Q1_B low. Open return: FLYBUS
+peaks ≤ TAP15 + 16 V (≤ 79 V) before the channels stop; if U9 failed, each LT8584 latches off at
+FLYBUS ≈ 4 × (50 − 4.2) = 183 V, inside C6kk's 2.5× surge.
 
 **C-11 Timing.** DTEN = V−: the watchdog clears DCC after 1.8–2.2 s [P]; the MCU talks every ≤ 0.5 s.
 Measurement: MUTE → ADCV → UNMUTE every 5 s. Open wire: ADOW's 100 µA sources only work up to
 10 nF [P] and each node carries ≈ 200 µF, so each session starts with a 5 ms pulse per channel (healthy
-tap drops 0.3 V; an open one collapses at 6 V/ms), which also proves both enables. **FLYBUS
-supervision is an ADC analog watchdog, ≤ 1 ms** (C-15).
+tap drops 0.3 V; an open one collapses at 6 V/ms), which also proves both enables. Open end taps and
+an open return are stopped in hardware (C-10a); REQ-F5/F10 are the firmware layer.
 
 **C-12 Thermal.** Per channel ≈ 1.5 W (LT8584 0.55, transformer 0.5, D1kk 0.13, fuses 0.08) plus
 D1 0.7 W. LT8584 T_J = 70 + 0.55 × 38 = 91 °C (650 mm² copper [P]). D1 T_J = 70 + 0.72 × 60 = 113 °C
@@ -273,7 +300,7 @@ AQY210EH and STM32 (85 °C) ≤ 60 °C = 25 °C (east zone, away from channels 8
 
 **C-13 Buck (LM5164).** R12 49.9 kΩ → 250 kHz; t_on at 67.2 V = 298 ns (> 50 ns). L1 47 µH: ripple
 0.39 A, peak 0.26 A vs I_sat 1.44 A. C11 22 µF (≈ 14 µF at 5 V [I]). R13/R14 316 k/100 k → 4.99 V.
-Type-3 ripple injection R15 470 kΩ, C12 1 nF, C13 220 pF. UVLO R10/R11 4.7 M/300 k → on at 25.0 V.
+Type-3 ripple injection R15 470 kΩ, C12 1 nF, C13 220 pF. UVLO R10/R11 10 M/620 k → on at 25.7 V.
 BST cap 2.2 nF 50 V X7R as required [P]. VPLUS drop 0.14 V (≥ −0.3 V limit [P]). MCP1700 43 mW.
 
 **C-14 BAL_EN string.** Q1 sink (3.3 − 0.65 − 0.2)/1.6 kΩ = 1.5 mA; compliance at 32.5 V stack:
@@ -282,10 +309,17 @@ BST cap 2.2 nF 50 V X7R as required [P]. VPLUS drop 0.14 V (≥ −0.3 V limit [
 0.18 W (36 %).
 
 **C-15 FLYBUS.** C6kk 2.2 µF 100 V (≈ 1 µF each at 60 V [I]) × 16 ≥ 1.5 µF needed [P]. Normal 68 % of
-rating. D1kk sees 67.7 + 16.8 + 1 = 85 V of 400 V; D1 67 V of 100 V. If the return opens, D2 clamps at
+rating. D1kk sees 67.7 + 16.8 + 1 = 85 V of 400 V; D1 67 V of 100 V. The former SMBJ70A clamp (D2) is
+removed: it clamped FLYBUS at
 86 + 27 × 1.6/5.3 = **94 V** (C6kk and D1 still < 100 V). At 1.6 A that is 150 W: **a 10 ms software
 loop would put 1.5 J into an SMBJ rated ≈ 0.87 J (600 W, 10/1000 µs)**, so REQ-F5 uses the analog
-watchdog (≤ 1 ms, 0.15 J). FLY_SNS = 67.7 V × 100 k/2.1 M = 3.29 V worst case (≤ VDD).
+watchdog — and it hid the LT8584's own latch, so a hung MCU left ≈ 300 J for D2 (review M-2). FLY_SNS =
+67.7 V × 470 k/10.47 MΩ = 3.10 V worst case (≤ VDD).
+
+**C-17 New interfaces.** S-line resistors R5kk 10 kΩ: a monitor fault is limited to 67.2 V/10 kΩ =
+6.7 mA; DIN's ≤ 6 µA pull-up drops ≤ 60 mV. BMS-OK input: (9 − 0.9 − 1.5)/1.8 kΩ − 0.15 mA = 3.5 mA ≥
+AQY210EH IFon max 3.0 mA at 9 V; 15.5 mA and 0.43 W in R34 (2512, 1 W) at 30 V; reversed input blocked
+by D11, transients by D12 (SMBJ40CA).
 
 **C-16 NTCs.** 10 kΩ B 3434 K [P] with 10.0 kΩ 0.1 % from VREF2 = 3.000 V: 1.50 V at 25 °C, 0.54 V
 at 70 °C, 0.38 V at 85 °C.
@@ -316,7 +350,11 @@ Stress is the worst case in this design; ratings, sources and lifecycle are in `
 | ESD U7 (new) | TI TPD4E05U06DQAR | ±12 kV contact, V_RWM 5.5 V | 5.5 V = V_RWM | on VIO/TXD/RXD at J2 |
 | Fault contact U6 | Panasonic AQY210EHAX | reinforced 5 kVrms; 350 V; LED VR 3 V | 9 %; 50 % | |
 | Contact TVS D7 (new) | Littelfuse SMBJ40CA | V_R 40 V | 75 % | across J4 |
-| Return D1 / clamp D2 | Vishay V8P10 / Littelfuse SMBJ70A | 100 V 8 A / V_R 70 V | 68 % / 97 % of stand-off | |
+| Return D1 | Vishay V8P10 | 100 V 8 A | 68 % | D2 (SMBJ70A clamp) removed (review M-2) |
+| S-line resistors R501–R516 (new) | 10 kΩ 0603 | | < 1 % | at the U1 S pins (review M-3) |
+| BMS-OK U8, J5, R34, D11, D12, R35 (new) | AQY210EHAX, MC 1,5/2, 1.8 kΩ 2512, ES1G, SMBJ40CA, 10 kΩ | reinforced 5 kVrms | 43 % (R34) | enable independent of the MCU (review M-5) |
+| Trips U9, U10, D8, D9, D10, Q2, R30–R33, R36, R37 (new) | TLP293, ES1G, Nexperia BZX84-B3V9, MMBT5551 | | ≤ 60 % | hardware open-tap / open-return stop (review M-1/M-2) |
+| TH4, R29, C22 (new) | as TH1–TH3 | | | fourth NTC (review minor 6) |
 | Q1 | onsemi MMBT5551LT1G | 160 V | 42 % | |
 | R25, R26 | **1 kΩ** (was 100 Ω) | 0.1 W | 30 % | a host driving TXD back put 0.3 W in 100 Ω |
 | C2, C14 | **1 µF 16 V** GRM188R71C105KA12D (was 10 V) | | 32 % | 5 V rail, DC bias |
@@ -333,7 +371,7 @@ NPTH on nylon standoffs with a 3.0 mm copper keepout (B-5). V-0 enclosure next t
 
 **Floorplan.** West: J1 on the edge, the fuse column in tap order, C-pin filters, U1 (kept away from
 the transformers). South row CH01→CH08 and north row CH16→CH09, both west to east, mirrored about a
-central spine that carries FLYBUS, TAP0, the LED string, D1/D2 (at F116) and the NTCs. The U-shape keeps
+central spine that carries FLYBUS, TAP0, the LED string, D1 (at F116) and the NTCs. The U-shape keeps
 neighbouring channels one cell apart; CH08/CH09 meet on TAP8 in the east. East: PSU, MCU and ISO
 (J2, J4 on the east edge), kept away from channels 8/9 for the 85 °C parts.
 
@@ -363,7 +401,7 @@ and barrier grades, provenance, protection, calculations, KiCad ERC, netlist rou
 IC rail pins carry their datasheet recommended operating maximum (`v_rec`). Waived findings, each
 with its reason in `design.py`: transformer peak current 6.8 of 7.0 A (16), LM5164 BST–SW set by its
 internal 5 V regulator (1), the host-powered VIO_ISO without a fuse (1), and ERC pin-to-pin on the
-PWR_FLAGs the emitter adds to GND_B and ISO_VCC1 (7).
+PWR_FLAGs the emitter adds to GND_B and ISO_VCC1 (6).
 
 **Simulation.** S-1 DRC with the generated rules. S-2 LTspice LT8584 channel: V_IN 2.5–4.2 V,
 FLYBUS 32.5–67.7 V with harness R/L; faults open FLYBUS, shorted D1kk, shorted C6kk. S-3 buck
@@ -384,14 +422,20 @@ stability 25–67 V input, 0–60 mA steps.
 
 **Fault injection** (fire-safe box, Rogowski probe): F-1 short C1kk / U1kk SW–GND / D3kk (k = 1, 8,
 16): fuse ≤ 10 ms, no flame. F-2 short D1kk: switch-error latch, no TAP16→TAP0 current. F-3 short
-D1, then D1 + D1kk: none / fuses clear. F-4 short C6kk, D2: D1 blocks. F-5 open TAP0/1/8/15/16 idle and
-balancing: detected before start, stop ≤ 1 s. F-6 swap k/k+1, k/k+2, reversed harness, plug offset
+D1, then D1 + D1kk: none / fuses clear. F-4 short C6kk: D1 blocks; low-side window trips. F-5 open
+TAP0/1/8/15/16 idle and balancing: detected before start; U9/U10 stop TAP0/TAP16 in < 1 ms; TVS energy
+≤ 1 J with the MCU halted. F-6 swap k/k+1, k/k+2, reversed harness, plug offset
 one pin: no fire, lockout. F-7 200 rocked plug cycles: ≤ 9 V per LT8584, ≤ 8 V per C pair. F-8 S_k low
 with BAL_EN off; Q1 shorted with DCC off; MCU halted; string open; DIN bridged to pin 6: no discharge
-or stop ≤ 2.2 s. F-9 a full cell during balancing: net current < 0. **F-10 lift D1 while balancing:
-FLYBUS ≤ 94 V, stop ≤ 1 ms, D2 undamaged.** F-11 short U3 V_IN and ADBMS1818 V+: F1 clears. F-12
+or stop ≤ 2.2 s. F-9 a full cell during balancing: net current < 0. **F-10 lift D1 while balancing, with the MCU halted:
+U9 stops all channels, FLYBUS ≤ 80 V.** F-11 short U3 V_IN and ADBMS1818 V+: F1 clears. F-12
 muting quantified. F-13 NTC open/short, blocked airflow. F-14 TAP0 on P− then BMS opens: lockout.
 F-15 30 days idle on 16S: no drift beyond C-9.
+**F-16 series back-up:** 560 A at 67 V through a Nano2 0451005 in OMNI-BLOK in series with a 0324007,
+then the reversed-harness and ring-0-on-B+ cases: no rupture or sustained arc (Q-14). **F-17** BMS-OK
+input dropped while balancing with the MCU still commanding: all channels stop. F-7 also mates pin 1
+last (buck inrush returns through D301, ≈ −0.9 V on U101 VIN for 0.2 ms; review minor 3). T-EFF is
+repeated with the transformer core at ≥ 100 °C (minor 7).
 
 ## 11. Sources
 

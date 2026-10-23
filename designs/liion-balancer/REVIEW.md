@@ -260,3 +260,102 @@ forward-bias D2 and D1 together.
   - The 1210 MLCC edge keepout, the U5/U6 straddle and the hot loops are declared.
   - I found nothing in `intent.yaml` that would let a placer join non-adjacent channel copper
     without violating a rule.
+
+## Response to review
+
+Designer's response, 2026-10-23. Rebuilt: 0 errors, 0 warnings, 24 waivers; ERC has 0 errors and 6
+warnings (the PWR_FLAG waivers); the netlist round trip is identical; 448 parts. Fault scenarios
+are now calcs in `out/report.md` and tests F-4, F-5, F-10, F-16 and F-17 in `DESIGN.md`.
+
+### MAJOR
+
+- **M-1 (fixed).** Two hardware trips, each an opto that pulls Q1_B low. Q1_B switches off the
+  opto string, so every DCHRG goes low.
+  - **Top trip, U9.** FLYBUS → D8 ES1G → D9 BZX84-B3V9 → R30 220 Ω → U9 LED → TAP15.
+    - It trips at 5.36–6.39 V. Normal operation reaches at most 4.75 V; an open TAP16 drives the
+      chain to ≥ 6.8 V.
+  - **Bottom trip, U10.** TAP1 → D10 → R31 → U10 LED → Q2 → GND_B. Q2 is gated by BAL_EN, so the
+    chain draws nothing in sleep.
+    - It trips at 4.86–5.79 V. Normal operation reaches at most 4.4 V; an open TAP0 drives the
+      chain to ≥ 6.46 V.
+  - **Corrected claims.** REQ-15 and C-11 now say the trip latency is ≈ 100 µs [I], and that only
+    the TAP0 and TAP16 wires carry the return current. An open middle tap is caught by the
+    pre-session open-wire check plus REQ-F10, not by these trips.
+  - **Hung-MCU case.** If the MCU hangs, D316 sees hiccup energy of 0.77 J (calc
+    `d316_hiccup_energy_J`).
+- **M-2 (fixed).** D2 is removed. U9 is the hardware trip on FLYBUS against the top of the stack,
+  and the REQ-F5 watchdog backs it up.
+  - **Peak voltage.** With the return path open, FLYBUS peaks at 78.9 V before the trip acts, so the
+    100 V parts hold.
+  - **Last layer.** If U9 also fails, the LT8584's own open-output latch is the last layer: FLYBUS
+    reaches ≈ 183 V for one pulse. That is within the 2.5× surge rating of the C6kk 100 V X7R
+    capacitors (LT8584 p.21) and the 200 V rating of the 1206 resistor R19.
+  - **No clamp to soak energy.** No clamp now absorbs the ~300 J scenario.
+- **M-3 (fixed).** A 10 kΩ resistor R5kk now sits in each S line, so the path is S_k → R5kk →
+  DIN_k.
+  - **Fault current.** A distant-tap fault now passes 6.7 mA.
+  - **DIN drop.** The DIN pull-up of 6 µA max drops 60 mV across 10 kΩ. That is negligible against
+    the DIN threshold, and the DIN timing is level-based.
+  - **H-2 corrected.** H-2 no longer claims the 0.3 A limit.
+- **M-4 (partly fixed: blocking).** I could not find a verified DC breaking capacity for a fuse that
+  fits the board footprint. The datasheet downloads from Littelfuse and Bel returned 403, and I will
+  not quote ratings from memory.
+  - **Current reasoning.** A single fault cannot produce the multi-cell current. The reversed
+    harness gives 325 A, but only after two installer errors (calc `i_fault_reversed_harness_A`).
+    The inline 3AB fuse (10 kA at 125 VDC) is the interrupting element, and the board Nano2 is
+    series back-up only.
+  - **What is still open.** Test F-16 must qualify the 3AB plus Nano2 pair. If it cannot, change the
+    fuse (blocking Q-14).
+  - **Wording corrected.** REQ-10 now states this split.
+- **M-5 (fixed for a single fault).** A BMS-OK input on J5 now drives U8, an AQY210EH photo-MOS
+  whose output is in series in the enable path: BAL_EN → R21 → EN_MCU → U8 → Q1_B.
+  - **Input stage.** The input is 9–30 V into a 3.5–15.5 mA LED current, through R34 1.8 kΩ
+    (2512), D11 for reverse protection and D12 SMBJ40CA for ESD.
+  - **What it protects.** Balancing needs both the MCU and the pack BMS to agree. Over-charge and
+    over-discharge are therefore inhibited by the BMS's own OV/UV, independent of firmware.
+  - **Barrier.** BAT0 to BMS is a reinforced barrier (5.0 mm creepage, 3.8 mm clearance; U8 is
+    rated 5.6 mm).
+  - **Charger interaction.** REQ-F10 additionally stops at 4.4 V on cells 1 and 16. Q-13 (charge
+    profile) covers how this interacts with the charger.
+  - **What is still open.** Which BMS signal drives J5 is blocking Q-12.
+
+### MINOR
+
+1. **Low-side FLYBUS supervision.** Answered in firmware only: REQ-F5 is now a window that trips
+   below stack − 5 V. No low-side hardware trip was added.
+   - **Why firmware is enough here.** A collapse needs a part that has already failed, either a
+     cracked C6kk or a shorted D1kk. The ≈ 5 W lasts only until the next ADC window, and the BMS-OK
+     path (U8) also stops balancing on a BMS fault.
+   - **Residual risk.** If the MCU hangs at the same moment as this part failure, that is a double
+     fault. It is now listed under H-1.
+2. **LFP charge profile.** Added Q-13 for the charge profile and REQ-F11, which logs the time per
+   day spent in the balancing window.
+3. **Pin 1 mating last.** The inrush is limited to 0.67 A for about 0.2 ms, and the LT8584 VIN
+   −0.3 V abs max is the binding limit.
+   - Pin order cannot be guaranteed with the MSTBA plug, so the case is added to F-7.
+   - If F-7 shows any reverse-bias stress, a Schottky goes across cell 1 at layout.
+4. **ISO7721 back-powering.** REQ-F9 drives PA2 low or sets it high-Z while PB0 is off. VCC1 stays
+   switched, to save quiescent current.
+5. **User-port working voltage.** This stays tied to Q-3. The fault-contact barrier now carries
+   ac=True, and the DC case will be re-derived with `Isolation(v_work_dc=)` once Q-3 is answered.
+6. **Thermal sensing.** There are now 4 NTCs, at U103, U107, U110 and U114, with no channel more
+   than 2 channels from a sensor.
+7. **Transformer waiver.** T-EFF now includes a ≥ 100 °C core saturation check; the waiver text
+   cites that test.
+8. **Footprints.**
+   - The FE16 thermal vias are added at layout; the footprint has no via variant.
+   - I re-checked the ADBMS1818 EP. It stays as is until I verify the land against the current ADI
+     package drawing.
+   - The J2/J4 MPNs stay [I] and are flagged to confirm before ordering.
+
+### New finding during the fix
+
+The V8P10 reverse leakage is up to 70 µA max at 100 V (doc 89005). Through the old 2.1 MΩ FLYBUS
+divider this broke REQ-13. R19/R20 are now 10 MΩ / 470 kΩ, and the UVLO divider R10/R11 is now
+10 MΩ / 620 kΩ (turn-on 25.7 V). The stack standing current is 48.1 µA against the 50 µA limit.
+
+### Framework changes
+
+- The fuse-branch rule, the stale-waiver check and `Barrier(ac=)` raised nothing new after the
+  rebuild.
+- The mains-referred barriers (CHASSIS, USER, FAULT, BAT0–BMS) are marked ac=True.
