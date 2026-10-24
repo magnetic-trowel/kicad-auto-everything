@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # A/B of the joint placement-routing loop as kaebench `joint` runs, on the benchmark host:
-#   arms  staged     kae place, then the bridge (python -m kae.joint.cli run --max-iters 0 --no-modules)
-#         joint      the joint loop (module stage, windows, finishing stage)
+#   arms  staged     kae place, then the bridge with its default last mile (since c9c49d6)
+#                    (python -m kae.joint.cli run --max-iters 0 --no-modules)
+#         joint      the joint loop (module stage, windows + last mile, finishing bridge + last mile)
 #         human-fr   the human placement routed by Freerouting (kaebench's human-freerouting)
 #         joint-multi  (optional, ARMS=...) the loop with --physics-fidelity multi (PEEC on decisions)
 # Defaults: splits A,B (33 boards), k = 2 (seeds 0 and 1), 9000 s per attempt (TIMEOUT; 10x
