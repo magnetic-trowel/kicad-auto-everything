@@ -286,8 +286,8 @@ def jc_value(world, model_dir=None, margin=None, **kw):
 
 
 def jc_value_lv(world, **kw):
+    """phys_w = 0 (length + vias), with the polish like jc_lv."""
     kw["phys_w"] = 0.0
-    kw.setdefault("polish", 0.0)
     return jc_value(world, **kw)
 
 
@@ -298,6 +298,6 @@ def jc_heur(world, margin=None, **kw):
 
 
 def jc_heur_lv(world, **kw):
+    """phys_w = 0 (length + vias), with the polish like jc_lv."""
     kw["phys_w"] = 0.0
-    kw.setdefault("polish", 0.0)
     return jc_heur(world, **kw)
