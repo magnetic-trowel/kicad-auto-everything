@@ -259,10 +259,12 @@ def qd(world, seed=0, budget=300, log=print, desc="spread,vias", n_init=2, polis
     while True:
         t0 = budget - clock.left()
         fresh = k < n_init or (p_fresh > 0 and rng.random() < p_fresh)
+        if fresh and k > 0 and (t_init is None or run_end - t0 < 1.1 * t_init):
+            if k < n_init:
+                break
+            fresh = False  # no room for a restart: a (shorter) mutation may still fit
         if fresh:
             if k > 0:
-                if t_init is None or run_end - t0 < 1.1 * t_init:
-                    break
                 _reset(C)
             C.rng = random.Random(seed * 1000 + k)
             it, beta = collapse_once(C, min(run_end - t0, budget * first) * 0.85,
