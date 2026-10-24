@@ -44,7 +44,7 @@ Spot weights are 4 (placement), 3 (unrouted), 2 (other errors) and 1 + rise + co
 
 ### Congestion penalty
 
-`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. RUDY marks how crowded the failed region is: the placer's own RUDY map of the routed placement adds 0.5·max(0, u − 0.5) to history bins within 3 mm of a failure. Alone, RUDY ranks PCB routability near chance ([joint-place-route](../physics/joint-place-route.md)), so it never opens a window by itself. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, enters through the placer's `cong_history` hook (`make_annealer`, `local_replace`). It is added to the static demand array:
+`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. RUDY marks how crowded the failed region is: the placer's own RUDY map of the routed placement adds 0.5·max(0, u − 0.5) to history bins within 3 mm of a failure. RUDY alone never opens a window: on PCBs it ranks routability near chance. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, enters through the placer's `cong_history` hook (`make_annealer`, `local_replace`). It is added to the static demand array:
 
 u_b = (D_nets + D_escape + h_b·S_b) / S_b.
 
@@ -88,7 +88,7 @@ Stage seeds derive from the run's seed and the iteration (`derive_seed`), window
 
 ### Measured
 
-kaebench `joint` (score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1, 900 s, `-j 1` on a shared 4-core host, Freerouting heap 3 GB (attempts hit by host OOM kills re-run). Σu and module values come from `critical_recheck.board_physics` on the scored board (brief from the human placement); they are unreliable where hops are open [C: `tools/research/joint/joint_physics.py`, `joint_stops.py`].
+kaebench `joint` (score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1, 900 s, `-j 1`, shared 4-core host, 3 GB Freerouting heap (OOM-hit attempts re-run). Σu and module values come from `critical_recheck.board_physics` on the scored board (brief from the human placement); they are unreliable where hops are open [C: `tools/research/joint/joint_physics.py`, `joint_stops.py`].
 
 | Arm (seed 0 / seed 1) | clean | unconnected | DRC errors | module value / human (median) | worst rail mΩ (median) | Σu | time s |
 |---|---|---|---|---|---|---|---|
@@ -98,12 +98,12 @@ kaebench `joint` (score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noise
 | joint loop | 3 / 3 | 11 / 8 | 0 / 0 | 0.81 / 0.96 | 43 / 58 | 2.56 / 3.38 | 394 / 331 |
 | joint loop, `--physics-fidelity multi` | 3 / 3 | 14 / 10 | 0 / 0 | 0.96 / 0.84 | 54 / 72 | 3.45 / 2.64 | 371 / 392 |
 
-Window cost: routing a window took a median 107–124 s with the full bridge, and takes 10–12 s with `route_open` (5–69 s). A whole window takes ~19 s, so a 900 s run gets 20–30 windows where it got 1–4. Over 24 joint runs, 107 windows were routed and 8 kept; 21 finishing tries were made and 6 kept. The loop's own runs cut unconnected + errors from 56 to 43.
+Window cost: routing a window took a median 107–124 s with the full bridge, and takes 10–12 s with `route_open` (5–69 s). A whole window takes ~19 s, so a 900 s run gets 20–30 windows where it got 1–4. Over 24 runs, 8 of 107 windows and 6 of 21 finishing tries were kept, and unconnected + errors fell from 56 to 43.
 
 What the numbers say:
-- **Physics holds.** The loop's boards have module values 0.81–0.96× the human's and half the rail resistance of every other arm. Staged boards are 1.2–1.4× the human's.
-- **Completion does not, yet.** The gap is one board: PMW3610 keeps 5–8 open connections where staged keeps 1–2. There the finishing bridge reached 5 at +120 % Σu, and the user's acceptance rule refused it (10 % per item), so the loop kept the physics. On the other five boards the loop matches or beats staged.
-- **Stops.** Loop: clean 6, no improvement 3, time 3 of 12. The window router's Freerouting ended COMPLETED 54 of 57 times. The finishing bridge stopped on STAGNATION, with its repair rounds at no improvement. Runs used 40 % of their budget on average, up to 93 %.
+- **Physics holds.** Its boards have module values 0.81–0.96× the human's and half the rail resistance of every other arm. Staged boards are 1.2–1.4× the human's.
+- **Completion does not, yet.** The gap is one board: PMW3610 keeps 5–8 open connections where staged keeps 1–2. There the finishing bridge reached 5 at +120 % Σu, and the user's acceptance rule refused it (10 % per item), so the loop kept the physics. Elsewhere it is within two connections of staged (noisecard 1 / 3 vs 1 / 1, olimex 2 / 0 vs 1 / 0).
+- **Stops.** Loop: clean 6, no improvement 3, time 3 of 12. The window router's Freerouting ended COMPLETED 54 of 57 times. The finishing bridge stopped on STAGNATION, with its repair rounds at no improvement. Runs used 40 % of their budget (up to 93 %).
 - **A harness false positive** made both joint olimex attempts invalid. A part the module stage turned to 45° or −135° is rotated back by the scorer's normalization, and KiCad's nm rounding leaves its texts 1 nm off ("4.5" → "4.500001"), which `_foreign` counts as a change.
 ## Recommendations for our system
 
@@ -115,6 +115,5 @@ What the numbers say:
 
 - **What a window cannot fix in one pass.** One Freerouting pass leaves the hardest 1–2 connections of a window open. More passes or our own grid router (the critical router's exactly verified A*) for the last connections are the next step.
 - **Freerouting's cost per open connection** is 1–2 CPU s (noisecard: 28 open, 17–19 CPU s, ~15 GB allocated; heap and GC settings change nothing). So a window stays cheap only while its rip-up stays local.
-- **Window choice** is greedy (least-tried, highest priority). An LNS over several disjoint windows per bridge run, or a bandit over window kinds, may pay on larger boards.
 
 See also: [month-plan](month-plan.md) · [joint-place-route](../physics/joint-place-route.md) · [critical-net-routing](../routing/critical-net-routing.md) · [freerouting-constraint-bridge](../routing/freerouting-constraint-bridge.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md)
