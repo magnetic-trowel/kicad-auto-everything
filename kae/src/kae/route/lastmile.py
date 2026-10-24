@@ -54,6 +54,7 @@ VIA_COSTS = (None, 12.0)        # the grid router's via cost, then a dear one (c
 MAX_JOINS = 40                  # joins per close() at most (the negotiated re-routes included)
 HIST_WEIGHT = 2.0               # a net's copper costs (1 + HIST_WEIGHT * times ripped) x RIP_COST
 HIST_MAX = 3                    # a net ripped this often is not ripped again
+SOFT_FACTOR = 3.0               # critical copper (close's `soft`) costs this many times more to rip
 RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (crossing a
                                 # 0.25 mm track at 0.2 mm clearance costs as much as an 18 mm detour)
 
@@ -260,10 +261,12 @@ def _conflicts(sp, it, new):
     return True
 
 
-def _join(gr, sp, net, src, others, widths, fixed, hist=None):
+def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
     """One route from `src` to the other parts: (route, new items, ripped items) or None.
     `hist` {net: times ripped} prices a net's copper RIP_COST * (1 + HIST_WEIGHT * times)
-    per cell (PathFinder's history cost) and leaves it alone after HIST_MAX rip-ups."""
+    per cell (PathFinder's history cost) and leaves it alone after HIST_MAX rip-ups. `soft`:
+    uuids of locked copper (critical copper) that a last rip-up tier may take out too, at
+    SOFT_FACTOR times the price, when nothing else lets the join through."""
     hist = hist if hist is not None else {}
     x0, y0, x1, y1 = _bounds(src)
     wide = box(x0 - WIDE, y0 - WIDE, x1 + WIDE, y1 + WIDE)    # every direction, not only the nearest part's
@@ -271,17 +274,23 @@ def _join(gr, sp, net, src, others, widths, fixed, hist=None):
         got = _try(gr, sp, net, src, others, win, widths)
         if got is not None:
             return got[0], got[1], []
-    for m in RIP_MARGINS:
+    tiers = [(m, False) for m in RIP_MARGINS] + ([(m, True) for m in RIP_MARGINS] if soft else [])
+    for m, with_soft in tiers:
         win = _window(src, others, m)
+
+        def rippable(it):
+            if it.uuid in soft:
+                return with_soft
+            return not it.locked and it.uuid not in fixed
         cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
                 if it.kind in ("track", "via") and it.net != net and it.owner == "existing"
-                and not it.locked and it.uuid not in fixed and it.geom.intersects(win)
-                and hist.get(it.net, 0) < HIST_MAX}
+                and rippable(it) and it.geom.intersects(win) and hist.get(it.net, 0) < HIST_MAX}
         cand = list(cand.values())
-        if not cand:
+        if not cand or (with_soft and not any(it.uuid in soft for it in cand)):
             continue
         sp.remove(cand)
-        gr.soft = [(it, RIP_COST * (1.0 + HIST_WEIGHT * hist.get(it.net, 0))) for it in cand]
+        gr.soft = [(it, RIP_COST * (1.0 + HIST_WEIGHT * hist.get(it.net, 0)) * (SOFT_FACTOR if it.uuid in soft else 1.0))
+                   for it in cand]
         try:
             got = _try(gr, sp, net, src, others, win, widths)
         finally:
@@ -312,12 +321,15 @@ def open_nets(report):
     return sorted(out)
 
 
-def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8):
+def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=()):
     """Join the parts of the open nets of `board` (`nets`, default every net with more
     than one part; see the module docstring) and write the result to `out`, the new copper
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
-    ["zones"] (refilled with those rules); `fixed`: uuids never ripped (pre-routes).
-    Returns {joined, failed, ripped: [uuid], added: [uuid], nets: {net: status}}."""
+    ["zones"] (refilled with those rules); `fixed`: uuids never ripped (pre-routes); `soft`:
+    locked uuids a last rip-up tier may take out (critical copper; the caller judges the
+    physics). Returns {joined, failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net],
+    added: [uuid], nets: {net: status}}."""
+    soft = set(soft or ())
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
     gr = _SoftRouter(sp)
@@ -348,13 +360,13 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             if not src:
                 status.append("no anchors")
                 break
-            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist)
+            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft)
             if got is None and not sp.via_in_pad:
                 # a pad walled in by its own footprint (a microphone's centre pad inside its
                 # ring) is left only through a via in the pad, as the human boards do it
                 sp.via_in_pad = True
                 try:
-                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist)
+                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft)
                 finally:
                     sp.via_in_pad = False
                 if got is not None:
@@ -374,6 +386,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
         log(f"last mile {net}: {'; '.join(status) or 'nothing to join'}")
     rep["ripped"] = sorted(ripped_ids)
+    rep["ripped_soft"] = sorted(u for u in ripped_ids if u in soft)
     rep["rerouted"] = sorted(n for n in set(ripped_ids.values())
                              if len([p for p in parts(sp, fp, n) if _relevant(p)]) < 2)
     rep["added"] = [it.uuid for it in sp.routed]

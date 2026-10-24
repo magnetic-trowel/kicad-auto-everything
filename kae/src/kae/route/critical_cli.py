@@ -7,7 +7,7 @@
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
                                      [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
-                                     [--pad-shapes kicad|outside] [--bridge-opt KEY=VALUE]
+                                     [--pad-shapes kicad|outside] [--last-mile-soft] [--bridge-opt KEY=VALUE]
                                      [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
@@ -82,6 +82,9 @@ def main(argv=None):
                    help="the bridge's inner plane layers (kae.route.bridge DEFAULT_OPTS planes)")
     r.add_argument("--pad-shapes", default="kicad", choices=("kicad", "outside"),
                    help="the bridge's pin polygons (kae.route.bridge DEFAULT_OPTS pad_shapes)")
+    r.add_argument("--last-mile-soft", action="store_true",
+                   help="the bridge's last mile may re-lay critical copper when only it blocks a join, kept "
+                        "when routed physics holds (the joint loop's rule; critical.soft_critical)")
     r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
                    help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
     r.add_argument("--workdir")
@@ -108,6 +111,8 @@ def main(argv=None):
             opts["island_mm"] = a.island_mm
         if a.soft is not None:
             opts["soft"] = tuple(x for x in a.soft.split(",") if x and x != "none")
+        if a.last_mile_soft:
+            opts["lm_soft"] = True
         if a.escape_mm is not None:
             opts["escape_mm"] = a.escape_mm
         if a.dense_ic_pins is not None:

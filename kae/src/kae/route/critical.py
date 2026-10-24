@@ -65,6 +65,8 @@ DEFAULTS = dict(
     soft=(),               # joins written unlocked for Freerouting to keep or rip: "complete", "pad" (rail pads)
     guards=("cell", "path", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
     guard_margin=0.5,      # mm around the module's copper and pads
+    lm_soft=False,         # the bridge's last mile may re-lay critical copper, kept by the joint loop's
+                           # physics rule (soft_critical)
 )
 
 
@@ -522,6 +524,8 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         if bridge and left() > 30:
             from . import bridge as BR
             r0 = wd / "routed0.kicad_pcb"
+            if s is not None and (opts or {}).get("lm_soft", DEFAULTS["lm_soft"]):
+                bridge_opts = dict(bridge_opts or {}, **soft_critical(s))
             # the re-tweak rounds keep a reserve: up to 30 % of what is left, at most 180 s
             reserve = min(180.0, 0.3 * left()) if rounds > 0 else 0.0
             b = BR.route(w0, r0, seed=seed, time_s=max(20.0, left() - 15.0 - reserve), workdir=wd / "bridge0",
@@ -554,6 +558,29 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         else:
             rep["workdir"] = str(wd)
     return rep
+
+
+def soft_critical(s, slack=0.10):
+    """Bridge options that let the last mile re-lay critical copper (repair._last_mile):
+    `soft_fixed`, the uuids of the session's critical tracks and vias, and `physics_guard`,
+    which keeps a re-laid board only by the joint loop's rule (kae.joint.scorecard.accept:
+    completion and DRC never worse, routed physics (critical_recheck.board_physics, the
+    modules' u) at most `slack` of the incumbent's total worse per connection gained)."""
+    tracks, vias = s.copper()
+    uuids = sorted({t.uuid for t in tracks} | {v.uuid for v in vias})
+
+    def card(board, summary):
+        from kae.joint.scorecard import Scorecard
+        from .critical_recheck import board_physics
+        ph = board_physics(board, brief=s.brief, terms=s.terms)
+        c = Scorecard(unconnected=summary["unconnected"], errors=summary["errors"])
+        c.modules = {k: v.get("u") for k, v in ph.items() if not k.startswith("_") and isinstance(v, dict)}
+        return c
+
+    def guard(before, before_summary, after, after_summary):
+        from kae.joint.scorecard import accept
+        return accept(card(before, before_summary), card(after, after_summary), phys_slack=slack)
+    return dict(soft_fixed=uuids, physics_guard=guard)
 
 
 def write_joint(src, dst, poses, copper):

@@ -27,7 +27,10 @@ def _have_tools():
 pytestmark = [pytest.mark.kicad, pytest.mark.skipif(not _have_tools(), reason="no pcbnew, Freerouting or kicad-cli")]
 
 
-def test_route_open_keeps_fixed_routing_and_routes_the_rest(tmp_path):
+def test_route_open_keeps_fixed_routing_and_routes_the_rest(tmp_path, monkeypatch):
+    # its own Freerouting slots: a wait for a host slot held by other routers (one slot at the
+    # default 6 GB heap on a 16 GB host) would spend the budget and break the time bound below
+    monkeypatch.setenv("KAE_FR_LOCKDIR", str(tmp_path / "fr-slots"))
     board = tmp_path / "board.kicad_pcb"
     W.edit(FIXTURE, board, lock="all")                      # the fixture's routing, all fixed
     for ext in (".kicad_pro", ".kicad_dru"):

@@ -697,6 +697,10 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         return deadline - time.monotonic()
     sev = opts.get("severities") or {}
     fixed = set(fixed)
+    # critical copper the last mile may rip as a last resort (kae.route.critical passes it with
+    # a physics guard; without a guard it stays fixed)
+    guard = opts.get("physics_guard")
+    soft = set(opts.get("soft_fixed") or ()) if guard is not None else set()
     cur, cur_rep, cur_sum = output_path, best_rep, best
     for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
         if cur_sum["errors"] or not cur_sum["unconnected"] or cur_sum["unconnected"] > LAST_MILE_MAX or left() < 60:
@@ -712,11 +716,13 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             fills = pcbnew_io.zone_fills(staged)["zones"]
             cand = ldir / "cand.kicad_pcb"
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
-                               fixed=fixed, log=log)
+                               fixed=fixed, log=log, soft=soft)
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break
-        rec.update(joined=r["joined"], failed=r["failed"], added=len(r["added"]), ripped=len(r["ripped"]))
+        rec.update(joined=r["joined"], failed=r["failed"], added=len(r["added"]), ripped=len(r["ripped"]),
+                   ripped_soft=len(r.get("ripped_soft") or ()))
+        soft -= set(r["ripped"])
         if not r["joined"]:
             rec["stopped"] = "nothing joined"
             break
@@ -741,6 +747,17 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         s_ = drc.summary(rep)
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best) and s_["errors"] <= best["errors"]
+        if r.get("ripped_soft") and guard is not None:
+            # critical copper was re-laid: the routed physics must hold (the joint loop's rule)
+            try:
+                ok, why = guard(staged, cur_sum, ldir / "drc" / "board.kicad_pcb", s_)
+            except Exception as e:  # noqa: BLE001 - no physics verdict, no critical copper change
+                ok, why = False, f"physics guard failed: {type(e).__name__}: {e}"
+            rec["physics"] = why
+            log(f"last mile {j}: critical copper re-laid, {why}")
+            if not ok:
+                rec["kept"] = False
+                break
         log(f"last mile {j}: joined {r['joined']}, ripped {len(r['ripped'])}: {s_['errors']} errors {s_['by_type']}, "
             f"{s_['unconnected']} unconnected ({'kept' if rec['kept'] else 'not better'})")
         if rec["kept"]:

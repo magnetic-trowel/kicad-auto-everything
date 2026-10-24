@@ -167,7 +167,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["drc"] = drc.summary(rep)
         return report
     finally:
-        report["opts"] = {k: v for k, v in opts.items() if k not in ("crit_zones", "fixed_uuids", "severities")}
+        report["opts"] = {k: v for k, v in opts.items()
+                          if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard")}
         report["seconds"] = round(time.monotonic() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)

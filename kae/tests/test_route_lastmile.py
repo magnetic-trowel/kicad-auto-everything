@@ -80,3 +80,21 @@ def test_open_nets_reads_kicads_report():
     rep = {"unconnected_items": [{"items": [{"description": "PTH pad 4 [MOSI] of J2"},
                                             {"description": "Zone [/GND] on B.Cu, priority 0"}]}]}
     assert LM.open_nets(rep) == ["/GND", "MOSI"]
+
+
+def test_critical_copper_is_ripped_only_as_the_soft_last_tier(tmp_path):
+    """A locked (critical) wall blocks the join: without `soft` nothing is ripped; with the
+    wall's uuids soft, the last tier rips what the join crosses and reports it as ripped_soft
+    (the caller then judges the physics)."""
+    p = F.write_board(tmp_path)
+    info = F.synth_info(load(p))
+    x = 114.7
+    wall = [("+3V3", l, 0.25, (x, 100.6), (x, 129.4), W.new_uuid(), True) for l in ("F.Cu", "B.Cu")]
+    W.append_items(p, p, tracks=wall)
+    sp = _space(p, info)
+    rep = LM.close(p, info, sp.plan, [], tmp_path / "a.kicad_pcb", nets=[NET], log=lambda *a: None)
+    assert not rep["ripped"] and rep["failed"] == 1
+    rep = LM.close(p, info, sp.plan, [], tmp_path / "b.kicad_pcb", nets=[NET], log=lambda *a: None,
+                   soft=[w[5] for w in wall])
+    assert rep["ripped_soft"] and set(rep["ripped_soft"]) == set(rep["ripped"]) <= {w[5] for w in wall}
+    assert len(LM.parts(_space(tmp_path / "b.kicad_pcb", info), {}, NET)) == 1
