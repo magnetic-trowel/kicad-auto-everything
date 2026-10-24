@@ -267,6 +267,7 @@ class Router:
             self.routes[net] = []
             return 0
         terms = [np.array(w.terminals(pi, k), np.int32).reshape(-1, 3) for pi, k in pins]
+        terms += getattr(w, "shape_terms", {}).get(net, [])  # the net's board copper drawings
         terms = [t[(t[:, 1] >= 0) & (t[:, 2] >= 0) & (t[:, 1] < w.H) & (t[:, 2] < w.W)] for t in terms]
         # start from the pin closest to the pins' centroid
         cents = np.array([t[:, 1:].mean(0) if len(t) else (0, 0) for t in terms])
@@ -373,7 +374,7 @@ class Router:
                 if self.net_conflicts(n):
                     self.rip(n)
                     self.routes[n] = []
-                    self.unrouted[n] = len(self.w.net_pins[n]) - 1
+                    self.unrouted[n] = len(self.w.net_pins[n]) - 1 + len(getattr(self.w, "shape_terms", {}).get(n, []))
 
     # ------------------------------------------------------------ metrics
     def stats(self):
@@ -386,7 +387,9 @@ class Router:
                 same = d[:, 0] == 0
                 length += float(np.sum(np.where((d[same, 1] + d[same, 2]) == 2, SQ2, 1.0))) * w.g
                 vias += int((~same).sum())
-        total_conn = sum(len([1 for pi, k in pins if pi in w.pose]) - 1 for pins in w.net_pins.values())
+        st = getattr(w, "shape_terms", {})
+        total_conn = sum(len([1 for pi, k in pins if pi in w.pose]) - 1 + len(st.get(n, []))
+                         for n, pins in w.net_pins.items())
         unr = sum(self.unrouted.values())
         return dict(length_mm=round(length, 2), vias=vias, unrouted=unr, connections=total_conn)
 

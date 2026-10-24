@@ -102,6 +102,35 @@ def _cutout_cells(part, deg, fx, fy, g):
     return np.ascontiguousarray(np.unique(cells, axis=0), np.int32)
 
 
+def _layer_index(lid, nl):
+    """KiCad 9+ copper layer id -> grid layer index (0 = F.Cu, nl - 1 = B.Cu)."""
+    return 0 if lid == 0 else (nl - 1 if lid == 2 else (lid - 4) // 2 + 1)
+
+
+def region_cells(poly, holes, r, x0, y0, g):
+    """Cells whose centre lies within r of the region `poly` minus `holes` (an unfilled
+    circle or rectangle drawn on copper is a ring: its inside is not copper)."""
+    cells = raster_poly(poly, r, x0, y0, g)
+    for h in holes:
+        if len(h) < 3 or not len(cells):
+            continue
+        h = np.ascontiguousarray(h, float)
+        px = x0 + cells[:, 0] * g
+        py = y0 + cells[:, 1] * g
+        d = np.full(len(cells), 1e9)
+        ins = np.zeros(len(cells), bool)
+        edge_dist(px, py, h, d, ins)
+        cells = cells[~(ins & (d > r))]
+    return np.ascontiguousarray(cells, np.int32)
+
+
+def _shape_rings(s):
+    """(outline, holes) pairs of a copper drawing as float arrays."""
+    holes = s.get("holes") or [[] for _ in s["poly"]]
+    return [(np.array(p, float), [np.array(h, float) for h in hs if len(h) >= 3])
+            for p, hs in zip(s["poly"], holes) if len(p) >= 3]
+
+
 def _poly_area(p):
     x, y = p[:, 0], p[:, 1]
     return 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
@@ -193,34 +222,55 @@ class World:
         self.ok_court = self.inside & (self.d_edge >= 0)
         self.blockT = np.repeat(~ok_T[None], self.nl, 0)
         self.blockV = np.repeat(~ok_V[None], self.nl, 0)
+        # board rule areas: no track / via may touch them, so block centrelines within half
+        # a track width / via diameter (+ the sampling margin), as for footprint rule areas
         for ko in self.data["keepouts"]:
             for poly in ko["poly"]:
-                cells = raster_poly(np.array(poly, float), R.m, self.x0, self.y0, g)
-                for l in range(self.nl):
-                    lid = 0 if l == 0 else (2 if l == self.nl - 1 else 4 + 2 * (l - 1))  # KiCad 9+ ids
-                    if lid not in ko["layers"]:
-                        continue
-                    for (x, y) in cells:
-                        if 0 <= x < self.W and 0 <= y < self.H:
-                            if ko["tracks"]:
-                                self.blockT[l, y, x] = True
-                            if ko["vias"]:
-                                self.blockV[l, y, x] = True
-
-    def _static_copper(self):
-        """Board-level copper drawings are fixed copper of their net (or of no net). Wires
-        avoid them; parts are not checked against them (one board in A/B has such copper)."""
-        R, g = self.R, self.g
-        for s in self.data.get("cu_shapes", []):
-            lid = s["layer"]
-            l = 0 if lid == 0 else (self.nl - 1 if lid == 2 else (lid - 4) // 2 + 1)
-            net = self.net_id.get(s["net"], 0) if s["net"] else 0
-            for poly in s["poly"]:
                 if len(poly) < 3:
                     continue
                 pl = np.array(poly, float)
-                stamp(self.occT, self.DT, net, l, raster_poly(pl, R.pad_T, self.x0, self.y0, g), 0, 0, 1)
-                stamp(self.occV, self.DV, net, l, raster_poly(pl, R.pad_V, self.x0, self.y0, g), 0, 0, 1)
+                for flag, r, block in (("tracks", R.w / 2 + R.m, self.blockT), ("vias", R.via_d / 2 + R.m, self.blockV)):
+                    if not ko[flag]:
+                        continue
+                    cells = raster_poly(pl, r, self.x0, self.y0, g)
+                    ok = (cells[:, 0] >= 0) & (cells[:, 1] >= 0) & (cells[:, 0] < self.W) & (cells[:, 1] < self.H)
+                    cells = cells[ok]
+                    for l in range(self.nl):
+                        lid = 0 if l == 0 else (2 if l == self.nl - 1 else 4 + 2 * (l - 1))  # KiCad 9+ ids
+                        if lid in ko["layers"]:
+                            block[l, cells[:, 1], cells[:, 0]] = True
+
+    def _static_copper(self):
+        """Board-level copper drawings (lines, arcs, circles, rectangles, polygons on a copper
+        layer, with or without a net) are fixed copper:
+        - wires and vias of other nets keep clear of them (halos in occT / occV);
+        - pads of every part keep clear of them: they are stamped once into the pad keep-out
+          planes (court[2 + l]), so legal_map / part_violation see them like another part's
+          pads. Same-net pads are kept off too (the planes carry no nets);
+        - drawings of a routed net are extra terminals of that net (`shape_terms`): the
+          router connects them like pads, since KiCad counts them as connectable items."""
+        R, g = self.R, self.g
+        self.shape_terms = {}
+        # a pad keeps pad_gap / 2 + 0.71 g; this side adds the rest of the copper clearance
+        # (or of the pad's solder-mask aperture, which must not expose the drawing)
+        rs = max(R.c / 2, max(R.c, R.mask_exp + 0.02) - R.pad_gap / 2) + 0.71 * g
+        keep = {}
+        for s in self.data.get("cu_shapes", []):
+            l = _layer_index(s["layer"], self.nl)
+            net = self.net_id.get(s["net"], 0) if s["net"] else 0
+            for pl, hs in _shape_rings(s):
+                stamp(self.occT, self.DT, net, l, region_cells(pl, hs, R.pad_T, self.x0, self.y0, g), 0, 0, 1)
+                stamp(self.occV, self.DV, net, l, region_cells(pl, hs, R.pad_V, self.x0, self.y0, g), 0, 0, 1)
+                keep.setdefault(l, []).append(region_cells(pl, hs, rs, self.x0, self.y0, g))
+                cu = region_cells(pl, hs, 0.0, self.x0, self.y0, g)
+                if net and len(cu):
+                    t = np.stack([np.full(len(cu), l), cu[:, 1], cu[:, 0]], 1).astype(np.int32)
+                    ok = (t[:, 1] >= 0) & (t[:, 2] >= 0) & (t[:, 1] < self.H) & (t[:, 2] < self.W)
+                    if ok.any():
+                        self.shape_terms.setdefault(net, []).append(np.ascontiguousarray(t[ok]))
+        for l, cs in keep.items():  # one count per cell, however many drawings cover it
+            cells = np.ascontiguousarray(np.unique(np.concatenate(cs), axis=0), np.int32)
+            count_add(self.court, 2 + l, cells, 0, 0, 1)
 
     # ---------------------------------------------------------------- coords
     def cell(self, x, y):
@@ -303,6 +353,22 @@ class World:
             else:
                 ent["layers_halo"] = ent["layers"]
             pads.append(ent)
+        # the footprint's copper drawings (pad extensions, solder-jumper bridges): copper of
+        # their net (usually none) that moves with the part. Not terminals; wires of other
+        # nets keep clear of them, and so do other parts' pads (keep-out below).
+        fcu_keep, fcu_edge = [], []
+        for s in part.data.get("cu_shapes", []):
+            l = _layer_index(s["layer"], self.nl)
+            net = self.net_id.get(s["net"], 0) if s["net"] else 0
+            for pl, hs in _shape_rings(s):
+                pl = rot_pts(pl, deg)
+                hs = [rot_pts(h, deg) for h in hs]
+                pads.append(dict(net=net, layers=[l], npth=False, center=pl.mean(0) + np.array([fx, fy]),
+                                 cu=region_cells(pl, hs, 0.0, -fx, -fy, g), layers_halo=[l],
+                                 hT=region_cells(pl, hs, R.pad_T, -fx, -fy, g),
+                                 hV=region_cells(pl, hs, R.pad_V, -fx, -fy, g)))
+                fcu_keep.append((2 + l, region_cells(pl, hs, R.pad_gap / 2 + 0.71 * g, -fx, -fy, g)))
+                fcu_edge.append(region_cells(pl, hs, 0.75 * g, -fx, -fy, g))
         for e in part.data.get("edges", []):
             if len(e) < 3:
                 continue
@@ -332,6 +398,8 @@ class World:
         # keep-out = courtyard, the part's own board cutouts, and its pads grown by half the
         # clearance (some library courtyards do not cover their pads)
         keep = {}
+        for plane, cells in fcu_keep:
+            keep.setdefault(plane, []).append(cells)
         for ko, lay, pl in kos:  # other parts' pads / footprints may not enter its rule areas
             cells = raster_poly(pl, 0.75 * g, -fx, -fy, g)
             if ko["pads"]:
@@ -397,7 +465,15 @@ class World:
         keep = [(pl, np.ascontiguousarray(np.unique(np.concatenate(cs), axis=0), np.int32))
                 for pl, cs in sorted(keep.items())]
         court = np.unique(np.concatenate([c for _, c in keep]), axis=0).astype(np.int32)
-        allcu = [p["cu"] for p in pads if len(p["cu"])]
+        # board-edge check: every point of the pad copper must keep the edge clearance.
+        # Sampling only the cells whose centre is inside a pad misses up to a cell of copper
+        # beyond them (a pad edge between cell centres), so test the cells within 0.75 g of
+        # the copper instead: every copper point is within g / sqrt(2) of such a cell, and
+        # ok_cu demands ec + 0.75 g at that cell.
+        allcu = [raster_poly(rot_pts(np.array(p_, float), deg), 0.75 * g, -fx, -fy, g)
+                 for pad in part.pads for p_ in pad["poly"] if len(p_) >= 3]
+        allcu += [p["cu"] for p in pads if len(p["cu"])]
+        allcu += fcu_edge
         # a part's own board cutouts must lie inside the board, like copper
         allcu += [raster_poly(rot_pts(np.array(e, float), deg), 0.75 * g, -fx, -fy, g)
                   for e in part.data.get("edges", []) if len(e) >= 3]
