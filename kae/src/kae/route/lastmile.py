@@ -310,6 +310,19 @@ def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
     return None
 
 
+# KiCad escapes these characters in net names in the board file and shows them unescaped in
+# its DRC report (EscapeString / UnescapeString)
+_ESCAPES = {"{slash}": "/", "{backslash}": "\\", "{lt}": "<", "{gt}": ">", "{colon}": ":", "{dblquote}": '"',
+            "{quote}": "'", "{space}": " ", "{tab}": "\t", "{return}": "\n", "{brace}": "{", "{comma}": ","}
+
+
+def unescape(name):
+    """A board net name as KiCad's DRC report writes it."""
+    for k, v in _ESCAPES.items():
+        name = name.replace(k, v)
+    return name
+
+
 def open_nets(report):
     """Nets of the unconnected items of a KiCad DRC report (the name in brackets)."""
     out = set()
@@ -336,8 +349,13 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     fp = _fill_polys(fills)
     fixed = set(fixed)
     rep = dict(joined=0, failed=0, ripped=[], added=[], nets={})
+    known = sorted({it.net for it in sp.pads if it.net and it.kind == "pad"})
     if nets is None:
-        nets = sorted({it.net for it in sp.pads if it.net and it.kind == "pad"})
+        nets = known
+    else:
+        # the DRC report names nets unescaped ("A/B" for the board's "A{slash}B")
+        by_shown = {unescape(n): n for n in known}
+        nets = [n if n in known else by_shown.get(n, n) for n in nets]
     queue = [net for net in nets if len([p for p in parts(sp, fp, net) if _relevant(p)]) > 1]
     # negotiated rip-up and re-route (PathFinder-like, within each join's corridor): a net
     # whose copper a join rips goes back on the queue and is joined again by the same search,

@@ -98,3 +98,10 @@ def test_critical_copper_is_ripped_only_as_the_soft_last_tier(tmp_path):
                    soft=[w[5] for w in wall])
     assert rep["ripped_soft"] and set(rep["ripped_soft"]) == set(rep["ripped"]) <= {w[5] for w in wall}
     assert len(LM.parts(_space(tmp_path / "b.kicad_pcb", info), {}, NET)) == 1
+
+
+def test_report_names_map_back_to_escaped_board_names():
+    """KiCad's DRC report shows "Net-(U1-PA12/PA10)" for the board's "Net-(U1-PA12{slash}PA10)"
+    (noisecard: the last mile found nothing to join until the names were mapped back)."""
+    assert LM.unescape("Net-(U1-PA12{slash}PA10)") == "Net-(U1-PA12/PA10)"
+    assert LM.unescape("/mcu/TMS") == "/mcu/TMS"
