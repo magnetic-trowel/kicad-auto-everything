@@ -23,7 +23,6 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")  # sklearn/OpenMP: one thread (CPU
 import importlib.util
 import json
 import math
-import os
 import random
 import sys
 import time
@@ -31,13 +30,25 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path("/home/user/kicad-auto-everything")
-sys.path.insert(0, str(ROOT / "tools/research/pnr"))
+# Everything resolves inside the checkout holding this file, so a frozen git worktree runs
+# frozen code (the shared checkout changes under long runs). jc hard-codes the main
+# checkout's pnr path: the engine modules are imported from this checkout first, so jc's
+# imports hit the module cache, and the foreign path is dropped afterwards.
+ROOT = Path(__file__).resolve().parents[3]
+PNR = str(ROOT / "tools/research/pnr")
+sys.path.insert(0, PNR)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+for _m in ("world", "raster", "router", "placekit", "physics", "methods", "methods_phys"):
+    importlib.import_module(_m)
+for _m in ("world", "methods", "physics"):
+    assert sys.modules[_m].__file__.startswith(PNR), (_m, sys.modules[_m].__file__)
 
-_spec = importlib.util.spec_from_file_location("jc_v3", ROOT / "kae-work/jc-snap/jc_v3.py")
+# jc as frozen for the jc results (kae-work/jc-snap/jc_v3.py == collapse_joint/jc.py at 0d4b7e9)
+_jc = ROOT / "tools/research/collapse_joint/jc.py"
+_spec = importlib.util.spec_from_file_location("jc_v3", _jc)
 J = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(J)
+sys.path[:] = [p for p in sys.path if not (p.endswith("tools/research/pnr") and p != PNR)]
 
 import methods_phys as MP  # noqa: E402
 
@@ -301,3 +312,15 @@ def jc_heur_lv(world, **kw):
     """phys_w = 0 (length + vias), with the polish like jc_lv."""
     kw["phys_w"] = 0.0
     return jc_heur(world, **kw)
+
+
+def jc_ctrl(world, **kw):
+    """Paired control: the same driver, probes and code as jc_value, no policy (= jc)."""
+    kw.setdefault("run_cap", RUN_CAP_S * kw.get("budget", 120) / 120)
+    return jc_driver(world, **kw)
+
+
+def jc_ctrl_lv(world, **kw):
+    """Paired control, phys_w = 0, with the polish like jc_lv."""
+    kw["phys_w"] = 0.0
+    return jc_ctrl(world, **kw)
