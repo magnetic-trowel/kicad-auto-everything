@@ -56,6 +56,10 @@ class Scorecard:
     def legal(self):
         return self.placement_errors == 0
 
+    @property
+    def clean(self):
+        return self.placement_errors == 0 and self.unconnected == 0 and self.errors == 0
+
     def key(self):
         """Lower is better, lexicographically."""
         return (self.placement_errors, self.unconnected + self.errors, self.unconnected, round(self.physics, 6))

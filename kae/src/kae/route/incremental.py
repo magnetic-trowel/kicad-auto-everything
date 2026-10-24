@@ -10,7 +10,10 @@ translate.apply, the bridge's router settings); what differs is how hard Freerou
 
 - every routing item of the input is locked: Freerouting sees it as fixed wiring and routes
   only the open connections (the bridge's own export does this; nothing to change);
-- `passes` autorouter passes (default 1; the fork's `autorouter.max_passes`), the post-route optimizer off
+- up to `passes` autorouter passes (default 3; the fork's `autorouter.max_passes`) in one
+  run: pass 1, then more only while connections are open (Freerouting ends when nothing is
+  left; a pass that routes nothing new costs ~0.3 s on a window, less than a second JVM
+  start), with the post-route optimizer off
   (`--router.optimizer.enabled=false`), so Freerouting stops when its pass ends, or
   earlier when nothing is left to route;
 - the fork's `autorouter.item_order_seed` gives the item order of `seed` (the bridge's DSN
@@ -35,7 +38,7 @@ from . import constraints, freerouting, specctra, translate
 
 # job_timeout is router_share of the budget; the process is killed only `grace` later (a
 # pass stops between items and the session must still be written)
-DEFAULTS = dict(passes=1, optimizer=False, router_share=0.75, grace=35.0)
+DEFAULTS = dict(passes=3, optimizer=False, router_share=0.75, grace=35.0)
 
 
 def _log(msg):
@@ -94,7 +97,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
             settings["optimizer.enabled"] = "false"
         settings["autorouter.item_order_seed"] = str(int(seed) % 2_147_483_647)
         budget = max(8.0, left() * float(o["router_share"]))
-        settings["autorouter.max_passes"] = str(int(o.get("passes") or 1))
+        settings["autorouter.max_passes"] = str(int(o.get("passes") or 3))
         run = freerouting.route(dsn, wd / "board.ses", wd, passes=0, settings=settings, budget_s=budget,
                                 margin_s=min(3.0, 0.1 * budget), hard_s=budget + float(o["grace"]),
                                 log_path=wd / "freerouting.log")

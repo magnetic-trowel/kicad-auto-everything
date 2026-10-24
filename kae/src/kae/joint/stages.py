@@ -224,33 +224,76 @@ class KaeStages:
             return {}
 
     # ------------------------------------------------------------------ route
-    def route(self, lay, it, seed, time_s):
-        """The bridge around everything already on lay.board (locked) and the guards."""
+    def release_near(self, lay, spots, reach=1.0):
+        """Module ids whose critical copper lies on an unrouted connection's corridor (its
+        items' segment grown by `reach` mm) or that a spot names by its parts: the copper
+        that may be what blocks the last connections."""
+        from shapely.geometry import LineString, Point
+
+        from .ripup import _geom
+        b = self._load(lay.board)
+        corr = []
+        for sp in spots:
+            pts = list(sp.points)
+            g = LineString(pts) if len(pts) >= 2 else Point(pts[0])
+            corr.append(g.buffer(reach))
+        out = set()
+        for it in list(b.tracks) + list(b.vias):
+            m = lay.owners.get(it.uuid)
+            if m and it.uuid in lay.crit and any(_geom(it).intersects(c) for c in corr):
+                out.add(m)
+        refs = {r for sp in spots for r in sp.refs}
+        ref_of = {fp.uuid: fp.ref for fp in b.footprints}
+        for m, parts in self.module_parts.items():
+            if any(ref_of.get(u) in refs for u in parts) and any(o == m for o in lay.owners.values()):
+                out.add(m)
+        return sorted(out)
+
+    def release(self, lay, modules):
+        """A layout whose `modules` give up their critical copper (unlocked: ordinary wiring
+        the bridge may keep or rip) and their guard pours."""
+        from kae.route import critical_write as W
+        mods = set(modules)
+        uu = {u for u, m in lay.owners.items() if m in mods}
+        out = Path(lay.board).with_name(Path(lay.board).stem + "_released.kicad_pcb")
+        W.edit(lay.board, out, unlock=sorted(uu))
+        _project(self.input, out)
+        return Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit) - uu,
+                      owners={u: m for u, m in lay.owners.items() if u not in uu},
+                      guards={m: g for m, g in lay.guards.items() if m not in mods},
+                      status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
+
+    def route(self, lay, it, seed, time_s, finish=False):
+        """The bridge around everything already on lay.board (locked) and the guards. A
+        window (it > 0) goes to the incremental router; `finish`: the full bridge with its
+        repair rounds over the whole board, only the critical copper locked (the rest is
+        ordinary wiring it may keep, shove or rip)."""
         from kae.route import bridge as BR
         from kae.route import critical_write as W
         from kae.route.critical_recheck import merge_guards
         t0 = time.monotonic()
         locked = self._path(it, "route_in")
-        W.edit(lay.board, locked, lock="all", drop_guards=True)
+        W.edit(lay.board, locked, lock=sorted(lay.crit) if finish else "all", drop_guards=True)
         guards = merge_guards([g for _, gs in sorted(lay.guards.items()) for g in gs])
         if guards:
             W.append_items(locked, locked, zones=guards)
         _project(self.input, locked)
         raw = self._path(it, "route_raw")
-        if it > 0 and self.opts.get("window_router", "incremental") == "incremental":
+        if it > 0 and not finish and self.opts.get("window_router", "incremental") == "incremental":
             # a window: only its open connections, one fast pass (kae.route.incremental); the
             # loop's evaluate is the one DRC
             from kae.route.incremental import route_open
             rep = route_open(locked, raw, seed=seed, time_s=min(time_s, float(self.opts.get("window_route_s", 60.0))),
                              workdir=self.wd / f"it{it:02d}" / "incremental",
                              opts=dict(keep=bool(self.opts.get("keep")),
-                                       passes=int(self.opts.get("window_passes", 1))),
+                                       passes=int(self.opts.get("window_passes", 3))),
                              log=lambda m: self.log(f"incremental: {m}"))
         else:
             rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
                            opts=dict(keep=bool(self.opts.get("keep")),
                                      **({"rounds": int(self.opts.get("window_rounds", 3)),
-                                         "passes": int(self.opts.get("window_passes", 16))} if it > 0 else {})),
+                                         "passes": int(self.opts.get("window_passes", 16))}
+                                        if it > 0 and not finish else {})),
                            log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
         src = raw if raw.exists() else locked
@@ -262,6 +305,7 @@ class KaeStages:
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
         new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status=rep.get("status"), guards=len(guards),
+                                 finish=finish,
                                  router_s=(rep.get("router") or {}).get("seconds"),
                                  errors=fin.get("errors"), unconnected=fin.get("unconnected"))
         return new

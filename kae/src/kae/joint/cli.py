@@ -52,7 +52,9 @@ def run(a):
         k, _, v = kv.partition("=")
         opts[k.strip()] = _value(v)
     sopts = dict(opts, keep=a.keep, no_physics=a.no_physics, no_modules=a.no_modules)
+    # the finishing stage belongs to the loop: the staged baseline (--max-iters 0) has none
     lopts = dict(opts, max_iters=a.max_iters, modules=not a.no_modules)
+    lopts.setdefault("finish", a.max_iters > 0 and not a.no_finish)
     rep = dict(status="error")
     try:
         stages = KaeStages(a.input, wd, opts=sopts, log=_log)
@@ -91,6 +93,8 @@ def main(argv=None):
     r.add_argument("--max-iters", type=int, default=30, help="repair iterations at most (0: staged pipeline only)")
     r.add_argument("--no-modules", action="store_true", help="no module stage (kae place, then the bridge)")
     r.add_argument("--no-physics", action="store_true", help="placer without physics terms (ablation)")
+    r.add_argument("--no-finish", action="store_true",
+                   help="no finishing stage (the full bridge over the whole board in a reserved share of the time)")
     r.add_argument("--start", help="a placed board to start from instead of running the placer")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true", help="keep the work directory")

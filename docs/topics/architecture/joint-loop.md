@@ -10,9 +10,7 @@
 
 ### Why a loop, and why windows
 
-The [joint place-route](../physics/joint-place-route.md) survey names three reasons staged place-then-route gets stuck: placement proxies do not rank near-equal placements (RUDY at chance on PCBs), the router cannot move parts, and the physics that decides quality exists only once copper exists. Fully joint search pays a route per move (PROXI: 6–11× CPU); what scaled in VLSI is partial: global routing inside placement (IPR, SimPLR) or cell moves with partial reroute (Starfish). The loop here is the Starfish pattern at PCB scale. The unit of work is a window, the cost of a move is one bridge run with almost everything locked, and the judge is the same KiCad DRC the benchmark uses.
-
-It is also the month plan's module loop ([month-plan § joint loop](month-plan.md)) generalized. The re-tweak of [critical-net routing](../routing/critical-net-routing.md) rips up neighbours around a flagged module but cannot move parts, and on the A/B suite its rounds never paid (unconnected rose each time). Here a flagged module's window re-places its parts too.
+Staged place-then-route gets stuck because placement proxies cannot see routing, the router cannot move parts, and the physics exists only once copper does ([joint-place-route](../physics/joint-place-route.md)). Fully joint search pays a route per move. What scaled in VLSI is cell moves with partial reroute (Starfish), and this loop is that pattern at PCB scale, judged by the benchmark's KiCad DRC. It generalizes the month plan's module loop ([month-plan](month-plan.md)): the critical router's re-tweak cannot move parts, and its rounds never paid.
 
 ### The loop
 
@@ -30,8 +28,9 @@ It is also the month plan's module loop ([month-plan § joint loop](month-plan.m
 | 4. Rip up | only nets touching the window; modules in the window redone | [ripup.py](../../../kae/src/kae/joint/ripup.py) |
 | 5. Re-route | open connections only, everything else locked | [incremental.py](../../../kae/src/kae/route/incremental.py) |
 | 6. Judge | DRC + recheck; accept or revert | [scorecard.py](../../../kae/src/kae/joint/scorecard.py) |
+| 7. Finish | the full bridge (repair rounds) over the whole board, critical copper locked; judged the same way | stages.route(finish=True) |
 
-Steps 1–6 repeat until the board is clean with no module flagged, no window is left, the iteration cap is reached (12), or the time left (minus a reserve of max(25 s, 4 %) for the final write) is below what an iteration has been taking.
+Steps 1–6 repeat until the board is clean with no module flagged, no window is left, the iteration cap is reached (30), or the time left for windows is below what a window has been taking. The time left for windows excludes the finishing stage's reserve, max(120 s, 20 %), which is set aside up front, and the final write's reserve, max(25 s, 4 %). Step 7 then runs once in its reserve. That is where the staged pipeline gets its completion (Freerouting's many passes and the bridge's repair rounds), and the loop now gets it too without giving up its module copper. The staged baseline (`--max-iters 0`) has no finishing stage.
 
 ### Feedback: from KiCad's report to parts
 
@@ -65,7 +64,7 @@ The re-anneal also carries the placer's physics terms (`kae.physics.place_terms`
 
 The window's modules are re-optimized with `optimize_modules(modules=…)`, with every part outside the window locked. Their guard pours are recomputed, and the other modules' guards stay. Every remaining item is then locked (fixed wiring for Freerouting) and the guards go in place. The window is re-routed by **`kae.route.incremental.route_open`**. It uses the bridge's constraint translation (`constraints.plan`, `translate.apply`, its router settings), but the run is made cheap:
 - only the open connections are routed;
-- one autorouter pass (the fork's `autorouter.max_passes`), with the optimizer off (`optimizer.enabled=false`);
+- up to 3 autorouter passes in one run (the fork's `autorouter.max_passes`), more than one only while connections are open, with the optimizer off (`optimizer.enabled=false`). A pass that routes nothing new costs ~0.3 s, less than a second JVM start;
 - the item order comes from the seed (`autorouter.item_order_seed`);
 - there are no repair rounds, and the loop's evaluation is the single DRC.
 
@@ -85,7 +84,7 @@ A rejected candidate is dropped, and the incumbent board, its bookkeeping and it
 
 ### Determinism and budgets
 
-Every stage seed derives from the run's seed and the iteration number (`derive_seed`). Windows are ordered by priority, then by position. Freerouting is deterministic for a given item order. The window anneal uses a fixed move count. So the same seed gives the same result whenever no time budget binds. On a loaded host the placer's, the bridge's and the loop's clocks can bind and change the result. The budget is wall seconds: 30 % for the placer, 60 % of what is left after it and the module stage for the first route, the rest for iterations, and a reserve for the final write.
+Stage seeds derive from the run's seed and the iteration (`derive_seed`), windows are ordered by priority then position, Freerouting is deterministic for an item order, and the window anneal uses a fixed move count. So a seed repeats whenever no time budget binds; on a loaded host the clocks can bind. The budget is wall seconds: 30 % for the placer, 60 % of the rest for the first route, then windows, the finishing reserve and the write reserve.
 
 ### Measured
 

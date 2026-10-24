@@ -46,7 +46,9 @@ class FakeStages:
     Re-placing part 'BAD' makes a new error (rejected). Physics: each move adds 0.01 to
     module 'm' unless the part is 'GOOD'."""
 
-    def __init__(self, broken=("R1", "R2"), bad=(), fail_replace=()):
+    def __init__(self, broken=("R1", "R2"), bad=(), fail_replace=(), finisher=False):
+        self.finisher = finisher
+        self.releasable = False
         self.module_parts = {"m": ["u1"]}
         self.broken0 = broken
         self.bad = set(bad)
@@ -64,8 +66,13 @@ class FakeStages:
         self.calls.append(("modules", it))
         return lay
 
-    def route(self, lay, it, seed, time_s):
-        self.calls.append(("route", it, seed))
+    def route(self, lay, it, seed, time_s, finish=False):
+        self.calls.append(("route", it, seed, finish))
+        if finish and (self.finisher or getattr(lay, "released", False)):
+            new = copy.deepcopy(lay)
+            new.broken = set()
+            new.tag = "finished"
+            return new
         return lay
 
     def evaluate(self, lay, it):
@@ -92,6 +99,14 @@ class FakeStages:
         if refs & self.bad:
             new.errors = ("e",)
         return new, dict(seconds=1.0)
+
+    def release_near(self, lay, spots):
+        return ["m"] if self.releasable else []
+
+    def release(self, lay, modules):
+        new = copy.deepcopy(lay)
+        new.released = True
+        return new
 
     def finish(self, lay, out):
         self.final = lay
@@ -150,7 +165,7 @@ def test_loop_respects_the_time_budget():
 
 def test_staged_baseline_has_no_iterations_and_no_modules():
     st = FakeStages()
-    rep = _run(st, max_iters=0, modules=False)
+    rep = _run(st, max_iters=0, modules=False, finish=False)
     assert rep["stop"] == "iteration cap" and len(rep["iterations"]) == 1
     assert not [c for c in st.calls if c[0] == "modules"]
 
@@ -163,3 +178,26 @@ def test_a_failing_window_does_not_lose_the_incumbent():
     rep = _run(st, max_attempts=1)
     assert rep["final"]["unconnected"] == 1 and st.final.tag == "placed"
     assert any("error" in (r.get("why") or "") for r in rep["iterations"][1:])
+
+
+def test_finishing_stage_runs_in_its_reserve_and_is_judged_like_a_window():
+    st = FakeStages(broken=("R2",), bad=("R2",), finisher=True)
+    rep = _run(st, max_attempts=1, finish_min_s=0.0)
+    last = rep["iterations"][-1]
+    assert last.get("finish") and last["accepted"] and rep["final"]["unconnected"] == 0
+    assert st.final.tag == "finished"
+    assert [c for c in st.calls if c[0] == "route" and c[3]]          # one finishing route
+    # without a finisher that helps, the incumbent stands
+    st2 = FakeStages(broken=("R2",), bad=("R2",), finisher=False)
+    rep2 = _run(st2, max_attempts=1, finish_min_s=0.0)
+    assert rep2["iterations"][-1].get("finish") and not rep2["iterations"][-1]["accepted"]
+
+
+def test_second_finish_releases_module_copper_on_open_corridors():
+    st = FakeStages(broken=("R2",), bad=("R2",), finisher=False)
+    st.releasable = True
+    rep = _run(st, max_attempts=1, finish_min_s=0.0)
+    fin = [r for r in rep["iterations"] if r.get("finish")]
+    assert [r["finish"] for r in fin] == [True, "release"]
+    assert fin[0]["accepted"] is False and fin[1]["accepted"] and fin[1]["released"] == ["m"]
+    assert rep["final"]["unconnected"] == 0

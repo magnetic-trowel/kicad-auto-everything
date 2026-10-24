@@ -49,7 +49,11 @@ DEFAULTS = dict(
     min_iter_s=60.0,       # an iteration is not started with less than this left
     iter_share=0.25,
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
-    rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)       # one window's repair gets at most this share of the budget (at least 90 s)
+    rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)
+    finish=True,           # a finishing stage: the full bridge over the whole board, critical copper locked
+    finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
+    finish_min_s=120.0,
+    finish_release=True,   # a second finishing try releases the module copper on open corridors       # one window's repair gets at most this share of the budget (at least 90 s)
 )
 
 
@@ -115,6 +119,11 @@ class JointLoop:
         def left():
             return deadline - time.monotonic() - reserve
 
+        fin_res = max(float(o["finish_min_s"]), float(o["finish_share"]) * time_s) if o["finish"] else 0.0
+
+        def left_win():           # what the windows may use: the finishing stage keeps its reserve
+            return left() - fin_res
+
         st = self.stages
         rows = []
         rep = dict(seed=seed, time_s=time_s, opts={k: v for k, v in o.items()}, iterations=rows)
@@ -140,7 +149,9 @@ class JointLoop:
         self._history(hist, lay, fb)
         best, best_card, best_fb = lay, card, fb
         tries = {}
-        est = max(float(o["min_iter_s"]), 0.5 * (t_iter0 - t_place))
+        # a window costs far less than iteration 0 (local re-place, local rip-up, incremental
+        # route): start from the minimum and learn from the windows themselves
+        est = float(o["min_iter_s"])
         stop = None
         it = 0
         while True:
@@ -151,8 +162,8 @@ class JointLoop:
             if it >= o["max_iters"]:
                 stop = "iteration cap"
                 break
-            if left() < est:
-                stop = f"time ({left():.0f}s left, an iteration takes ~{est:.0f}s)"
+            if left_win() < est:
+                stop = f"time ({left_win():.0f}s left for windows, an iteration takes ~{est:.0f}s)"
                 break
             spots = self._spots(best_fb, best)
             parts, bounds, _, _ = self._geom
@@ -177,7 +188,7 @@ class JointLoop:
                 if s.kind == "placement":
                     for r in s.refs:
                         legal[r] = max(legal.get(r, 0.0), s.short_mm)
-            budget = min(left(), max(o["min_iter_s"], o["iter_share"] * time_s))
+            budget = min(left_win(), max(o["min_iter_s"], o["iter_share"] * time_s))
             try:
                 cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
                                        attempt=attempt, legal_refs=legal, drc=best_fb.get("drc"))
@@ -211,6 +222,47 @@ class JointLoop:
                 best, best_card, best_fb = cand, card, fb
                 self._geom = st.geometry(best)
         rep["stop"] = stop
+        # ---- finishing: the full bridge (repair rounds) over the whole board with the
+        # critical copper locked, in the time reserved for it; judged by the same rule. If
+        # connections stay open, a second try releases the critical copper of the modules on
+        # their corridors (the acceptance rule prices the physics that costs)
+        tries_fin = [None, "release"] if o.get("finish_release", True) else [None]
+        for mode in tries_fin if o["finish"] else []:
+            if best_card.clean or left() <= 60.0:
+                break
+            base, released = best, []
+            if mode == "release":
+                try:
+                    spots = unrouted_spots(best_fb.get("drc") or {})
+                    released = st.release_near(best, spots) if spots and hasattr(st, "release_near") else []
+                    base = st.release(best, released) if released else best
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"release failed: {type(e).__name__}: {e}")
+                    released = []
+                if not released:
+                    break
+            it += 1
+            t = time.monotonic()
+            try:
+                # the first try leaves time for the second one
+                share = 0.6 if (mode is None and len(tries_fin) > 1) else 1.0
+                cand = st.route(base, it, seed=derive_seed(seed, it), time_s=max(60.0, share * left()), finish=True)
+                card, fb = st.evaluate(cand, it)
+                keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+            except Exception as e:  # noqa: BLE001 - the incumbent stands
+                cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
+            dt = time.monotonic() - t
+            row = dict(iter=it, finish=mode or True, released=released, accepted=keep, why=why, seconds=round(dt, 1))
+            if card is not None:
+                row = self._row(it, card, finish=mode or True, released=released, accepted=keep, why=why,
+                                seconds=round(dt, 1), route=(cand.info or {}).get("route"))
+            rows.append(row)
+            self.log(f"finish{' (release ' + ', '.join(released) + ')' if released else ''}: "
+                     f"{getattr(card, 'unconnected', '?')} unconnected, {getattr(card, 'errors', '?')} errors, "
+                     f"physics {getattr(card, 'physics', float('nan')):.3f} -> {'kept' if keep else 'reverted'} "
+                     f"({why}, {dt:.0f}s)")
+            if keep:
+                best, best_card, best_fb = cand, card, fb
         rep["final"] = best_card.to_dict()
         rep["initial"] = rows[0] if rows else None
         rep["accepted"] = sum(1 for r in rows[1:] if r.get("accepted"))
