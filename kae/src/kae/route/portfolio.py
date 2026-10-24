@@ -41,7 +41,10 @@ MARGIN_S = 15.0      # left at the end of the run to copy the winner
 
 
 def _rank(rep):
-    fin = ((rep or {}).get("repair") or {}).get("final") or {}
+    """(errors, unconnected) from an attempt's report: kae.route.cli has them at
+    repair.final, kae.route.critical_cli at bridge.repair.final."""
+    rep = rep or {}
+    fin = (rep.get("repair") or {}).get("final") or ((rep.get("bridge") or {}).get("repair") or {}).get("final") or {}
     if "errors" not in fin or "unconnected" not in fin:
         return (float("inf"), float("inf"))
     return (int(fin["errors"]), int(fin["unconnected"]))

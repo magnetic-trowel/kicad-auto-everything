@@ -93,3 +93,9 @@ def test_a_clean_board_of_the_first_router_is_preferred(tmp_path, monkeypatch):
     rep = portfolio.run("in.kicad_pcb", out, time_s=300, parallel=2, first_s=60,
                         router=["slow_a", "fast_b"], workdir=tmp_path / "wd", log=lambda m: None)
     assert rep["stop"] == "clean" and rep["best"]["router"] == "slow_a" and out.read_text() == "slow_a"
+
+
+def test_rank_reads_both_routers_reports():
+    assert portfolio._rank(dict(repair=dict(final=dict(errors=0, unconnected=2)))) == (0, 2)
+    assert portfolio._rank(dict(critical={}, bridge=dict(repair=dict(final=dict(errors=1, unconnected=0))))) == (1, 0)
+    assert portfolio._rank(dict(status="error")) == (float("inf"), float("inf"))
