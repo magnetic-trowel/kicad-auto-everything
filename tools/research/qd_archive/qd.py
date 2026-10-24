@@ -230,7 +230,7 @@ def _load(C, state):
 
 def qd(world, seed=0, budget=300, log=print, desc="spread,vias", n_init=2, polish=0.15,
        gamma=1.35, beta0=0.05, beta_end=60.0, beta_max=500.0, first=0.35, mut_cap=0.15,
-       beta_m=(0.3, 6.0), illegal_pen=0.0, select="uniform", qd_dir=None, **kw):
+       beta_m=(0.3, 6.0), illegal_pen=0.0, select="uniform", p_fresh=0.0, qd_dir=None, **kw):
     """MAP-Elites over joint-collapse end states; see the module docstring."""
     C = Collapse(world, seed, budget, log, **kw)
     w, r, kit, ph = world, C.r, C.kit, C.ph
@@ -258,7 +258,8 @@ def qd(world, seed=0, budget=300, log=print, desc="spread,vias", n_init=2, polis
 
     while True:
         t0 = budget - clock.left()
-        if k < n_init:
+        fresh = k < n_init or (p_fresh > 0 and rng.random() < p_fresh)
+        if fresh:
             if k > 0:
                 if t_init is None or run_end - t0 < 1.1 * t_init:
                     break
@@ -269,7 +270,7 @@ def qd(world, seed=0, budget=300, log=print, desc="spread,vias", n_init=2, polis
                                      lambda *a: None)
             t_c = budget - clock.left() - t0
             t_init = t_c if t_init is None else max(t_init, t_c)
-            evaluate("init", None, t_c, it, beta)
+            evaluate("init" if k < n_init else "fresh", None, t_c, it, beta)
         else:
             est = t_mut if t_mut is not None else 0.5 * t_init
             if run_end - t0 < 1.1 * est:
@@ -323,6 +324,18 @@ def qd1(world, **kw):
     """Single-cell archive: elitist mutation + short continuation (iterated local search)."""
     kw.setdefault("desc", "none")
     return qd(world, **kw)
+
+
+def qdh(world, **kw):
+    """Hybrid: half the candidates are fresh jc continuations from the lift (as jc's
+    restarts), half mutate an elite; all enter the archive."""
+    kw.setdefault("p_fresh", 0.5)
+    return qd(world, **kw)
+
+
+def qdh_lv(world, **kw):
+    kw["phys_w"] = 0.0
+    return qdh(world, **kw)
 
 
 def qd_lv(world, **kw):

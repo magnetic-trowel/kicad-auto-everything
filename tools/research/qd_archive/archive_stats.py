@@ -36,7 +36,7 @@ def main():
     if a.suite:
         keep = {l.strip() for l in open(a.suite) if l.strip()}
         files = [f for f in files if f.stem in keep]
-    n = cells = 0
+    n = cells = nm = 0
     newc = imp = gb = 0
     pick = Counter()
     ops = defaultdict(lambda: [0, 0, 0])
@@ -45,15 +45,16 @@ def main():
         A = json.loads(f.read_text())
         H = A["hist"]
         n += len(H)
+        nm += sum(h["op"] not in ("init", "fresh") for h in H)
         cells += len(A["cells"])
-        newc += sum(h["new_cell"] for h in H if h["op"] != "init")
-        imp += sum(h["improved"] for h in H if h["op"] != "init")
-        gb += sum(h["gbest"] for h in H if h["op"] != "init")
+        newc += sum(h["new_cell"] for h in H if h["op"] not in ("init", "fresh"))
+        imp += sum(h["improved"] for h in H if h["op"] not in ("init", "fresh"))
+        gb += sum(h["gbest"] for h in H if h["op"] not in ("init", "fresh"))
         by = {tuple(c["key"]): c for c in A["cells"]}
         best = by[tuple(A["best"])]
-        pick["init" if best["meta"]["op"] == "init" else "mutation"] += 1
+        pick["restart" if best["meta"]["op"] in ("init", "fresh") else "mutation"] += 1
         for h in H:
-            if h["op"] == "init":
+            if h["op"] in ("init", "fresh"):
                 continue
             o = "".join(ch for ch in h["op"].split("@")[0] if ch.isalpha())
             ops[o][0] += 1
@@ -80,7 +81,7 @@ def main():
                 if jb["phys"] > 0:
                     jp = min(R, key=lambda r: (r["unrouted"], r["phys"]))
                     jph_gain.append(max(jp["phys"], 1e-3) / jb["phys"])
-    m = max(1, n - 2 * len(files))
+    m = max(1, nm)
     print(f"boards {len(files)}; candidates/board {n / max(1, len(files)):.1f}; cells/board "
           f"{cells / max(1, len(files)):.1f}")
     print(f"mutations: new cell {newc / m:.2f}, improved a cell {imp / m:.2f}, new global best {gb / m:.3f}")

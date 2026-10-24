@@ -138,10 +138,11 @@ class Harm:
 
 class HCollapse(JC.Collapse):
     def __init__(self, world, seed, budget, log, mode="bias", press_w=0.5, coarse=0.4, lam=0.5,
-                 corr_r=1, via_sigma=0.2, all_layers=True, **kw):
+                 corr_r=1, via_sigma=0.2, all_layers=True, press_cap=2.0, **kw):
         super().__init__(world, seed, budget, log, **kw)
         self.mode = mode
         self.press_w = press_w
+        self.press_cap = press_cap
         self.H = Harm(world, coarse=coarse, via_sigma=via_sigma, lam=lam, corr_r=corr_r,
                       all_layers=all_layers)
         self.n_routes = 0
@@ -179,7 +180,9 @@ class HCollapse(JC.Collapse):
         # expected occupancy per fine cell: coarse occupancy per coarse cell spread over s*s
         # fine cells, times s (a wire crossing a coarse cell covers about s fine cells)
         extra = upsample(np.maximum(tot - own, 0) / F.s, F.s, w.H, w.W)
-        CT2 = CT + self.press_w * extra
+        # CT is priced at beta * pad_wire by jc; the pressure is a prior, so its price stops
+        # growing at press_cap (otherwise parts accept courtyard overlap to escape it)
+        CT2 = CT + (self.press_w * min(1.0, self.press_cap / beta)) * extra
         return super().best_response(pi, beta, CT2, CV, per)
 
     def route_maps(self):
@@ -193,7 +196,7 @@ def _run(world, defaults, **kw):
     for k, v in defaults.items():
         kw.setdefault(k, v)
     hk = {k: kw.pop(k) for k in list(kw) if k in ("mode", "press_w", "coarse", "lam", "corr_r", "via_sigma",
-                                                "all_layers")}
+                                                "all_layers", "press_cap")}
     orig = JC.Collapse
     log = kw.get("log", print)
     holder = {}
