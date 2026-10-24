@@ -24,6 +24,7 @@ Stage by stage:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import shutil
@@ -297,6 +298,86 @@ class KaeStages:
         return dict(joined=r.get("joined"), failed=r.get("failed"), ripped=len(r.get("ripped") or []),
                     seconds=round(time.monotonic() - t0, 1))
 
+    @property
+    def finish_restarts(self):
+        """True when the finishing stage is a restart portfolio (--route-parallel P > 1): it
+        has its own restarts, so the loop's second (release) finishing try is not needed."""
+        return int(self.opts.get("route_parallel", 1) or 1) > 1
+
+    def _route_window(self, locked, raw, it, seed, time_s):
+        """kae.route.incremental.route_open on a window; with --route-parallel P > 1 and
+        connections left open, two more differently seeded runs at once, the one leaving the
+        fewest open kept (ties: the earliest)."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from kae.route.incremental import route_open
+        P = int(self.opts.get("route_parallel", 1) or 1)
+        wd = self.wd / f"it{it:02d}" / "incremental"
+        ropts = dict(keep=bool(self.opts.get("keep")), passes=int(self.opts.get("window_passes", 3)))
+
+        def one(k, out, budget):
+            return route_open(locked, out, seed=seed + 7919 * k, time_s=budget, workdir=wd / f"r{k}" if k else wd,
+                              opts=ropts, log=lambda m: self.log(f"incremental{'' if not k else ' #' + str(k)}: {m}"))
+        t0 = time.monotonic()
+        rep = one(0, raw, time_s)
+        left = time_s - (time.monotonic() - t0)
+        open0 = (rep.get("router") or {}).get("incomplete")
+        if P < 2 or rep.get("status") != "routed" or not open0 or left < 8.0:
+            return rep
+        outs = [raw.with_name(f"{raw.stem}.r{k}{raw.suffix}") for k in (1, 2)]
+        with ThreadPoolExecutor(2) as ex:
+            reps = list(ex.map(lambda ko: one(ko[0], ko[1], left), zip((1, 2), outs)))
+        best, best_open = None, open0
+        for k, (r, o) in enumerate(zip(reps, outs), 1):
+            n = (r.get("router") or {}).get("incomplete")
+            if r.get("status") == "routed" and n is not None and n < best_open and o.exists():
+                best, best_open = (k, r, o), n
+        self.log(f"incremental restarts: open {open0} -> "
+                 f"{[(r.get('router') or {}).get('incomplete') for r in reps]}, kept #{best[0] if best else 0}")
+        if best is None:
+            return dict(rep, restarts=[(r.get("router") or {}).get("incomplete") for r in reps])
+        shutil.copy2(best[2], raw)
+        return dict(best[1], restarts=[open0] + [(r.get("router") or {}).get("incomplete") for r in reps], restart_kept=best[0])
+
+    def _route_portfolio(self, lay, it, seed, time_s, t0):
+        """The finishing stage as kae.route.portfolio: the current placement with the loop's
+        routing removed (the input's own copper kept) routed by parallel, growing, differently
+        seeded restarts of critical_cli --last-mile-soft (first: its clean board is preferred,
+        it redoes the module copper) and the bridge. The module ids stay, so the recheck judges
+        the same modules as for the incumbent."""
+        from kae.route import critical_write as W
+        from kae.route import portfolio
+        d = self.wd / f"it{it:02d}" / "portfolio"
+        d.mkdir(parents=True, exist_ok=True)
+        keep = {r["uuid"] for r in W.routing(self.input)}
+        inp = d / "placed.kicad_pcb"
+        W.edit(lay.board, inp, remove=[r["uuid"] for r in W.routing(lay.board) if r["uuid"] not in keep],
+               unlock="all", drop_guards=True)
+        _project(self.input, inp)
+        routers = self.opts.get("portfolio_routers") or [["kae.route.critical_cli", ["--last-mile-soft"]],
+                                                          ["kae.route.cli", []]]
+        P = int(self.opts.get("route_parallel", 1))
+        raw = self._path(it, "route_raw")
+        with _portfolio_rank(portfolio):
+            rep = portfolio.run(inp, raw, seed=seed % 1_000_000, time_s=time_s, parallel=P,
+                                first_s=float(self.opts.get("portfolio_first_s", min(120.0, time_s / 1.5))),
+                                growth=float(self.opts.get("portfolio_growth", 2.0)),
+                                router=[(m, list(a)) for m, a in routers], workdir=d / "runs",
+                                log=lambda m: self.log(m))
+        if not raw.exists():
+            raise RuntimeError(f"portfolio: no board ({rep.get('stop')})")
+        _project(self.input, raw)
+        out = self._path(it, "routed")
+        W.edit(raw, out, drop_guards=True)
+        _project(self.input, out)
+        best = rep.get("best") or {}
+        new = Layout(board=str(out), poses=dict(lay.poses), crit=set(), owners={}, guards={},
+                     status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
+        new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status="routed", finish=True,
+                                 stops=dict(portfolio=rep.get("stop")), router=best.get("router"),
+                                 attempts=len(rep.get("attempts") or []), rank=best.get("rank"))
+        return new
+
     def route(self, lay, it, seed, time_s, finish=False, nets=None):
         """The bridge around everything already on lay.board (locked) and the guards. A
         window (it > 0) goes to the incremental router; `finish`: the full bridge with its
@@ -316,12 +397,9 @@ class KaeStages:
         if it > 0 and not finish and self.opts.get("window_router", "incremental") == "incremental":
             # a window: only its open connections, one fast pass (kae.route.incremental); the
             # loop's evaluate is the one DRC
-            from kae.route.incremental import route_open
-            rep = route_open(locked, raw, seed=seed, time_s=min(time_s, float(self.opts.get("window_route_s", 60.0))),
-                             workdir=self.wd / f"it{it:02d}" / "incremental",
-                             opts=dict(keep=bool(self.opts.get("keep")),
-                                       passes=int(self.opts.get("window_passes", 3))),
-                             log=lambda m: self.log(f"incremental: {m}"))
+            rep = self._route_window(locked, raw, it, seed, min(time_s, float(self.opts.get("window_route_s", 60.0))))
+        elif finish and self.finish_restarts:
+            return self._route_portfolio(lay, it, seed, time_s, t0)
         else:
             bopts = dict(keep=bool(self.opts.get("keep")))
             if it > 0 and not finish:
@@ -620,6 +698,30 @@ def place_stops(rep):
         out["closed_loop"] = "legal" if not cl.get("end") else ("round cap" if cl.get("rounds", 0) >= 8 else "clock")
     out["legal"] = bool(rep.get("legal_grid") and not rep.get("exact"))
     return out
+
+
+def route_rank(rep):
+    """(errors, unconnected) of a router's report wherever it keeps them: kae.route.cli
+    rep.repair.final (rep.drc when its budget left no repair rounds), kae.route.critical_cli
+    the same under rep.bridge; (inf, inf) when none."""
+    for r in (rep or {}, (rep or {}).get("bridge") or {}):
+        fin = (r.get("repair") or {}).get("final") or r.get("drc") or {}
+        if "errors" in fin and "unconnected" in fin:
+            return (int(fin["errors"]), int(fin["unconnected"]))
+    return (float("inf"), float("inf"))
+
+
+@contextlib.contextmanager
+def _portfolio_rank(portfolio):
+    """Workaround, reported: portfolio._rank reads only rep.repair.final, so every
+    critical_cli attempt (rep.bridge.repair.final) and every attempt too short for repair
+    rounds ranks (inf, inf) and is never kept. Ranks them with route_rank for this call."""
+    old = portfolio._rank
+    portfolio._rank = route_rank
+    try:
+        yield
+    finally:
+        portfolio._rank = old
 
 
 def last_mile_line(lm):

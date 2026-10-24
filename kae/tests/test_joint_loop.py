@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """kae.joint.scorecard and kae.joint.loop with stand-in stages (no KiCad, no router)."""
 import copy
+from pathlib import Path
 
 from kae.joint.feedback import PartGeom
 from kae.joint.loop import JointLoop, derive_seed
@@ -276,3 +277,39 @@ def test_cli_first_route_skips_the_last_mile_only_when_the_loop_finishes(tmp_pat
     assert "first_last_mile" not in seen["sopts"]          # staged: the bridge's default
     cli.main(base + ["--set", "first_last_mile=1"])
     assert seen["sopts"]["first_last_mile"] == 1
+
+
+def test_a_restart_portfolio_finish_has_no_release_try():
+    st = FakeStages(broken=("R2",), bad=("R2",), finisher=False)
+    st.releasable = True
+    st.finish_restarts = True
+    rep = _run(st, max_attempts=1, finish_min_s=0.0)
+    assert [r["finish"] for r in rep["iterations"] if r.get("finish")] == [True]
+
+
+def test_window_restarts_keep_the_fewest_open(tmp_path, monkeypatch):
+    import kae.route.incremental as I
+    from kae.joint.stages import KaeStages
+    opened = {0: 3, 7919: 1, 2 * 7919: 2}           # by seed offset: the second restart wins
+
+    def fake(inp, out, seed=0, time_s=0, workdir=None, opts=None, log=None):
+        Path(out).write_text(f"seed {seed}")
+        return dict(status="routed", router=dict(incomplete=opened[seed - 5]))
+    monkeypatch.setattr(I, "route_open", fake)
+    st = KaeStages.__new__(KaeStages)
+    st.opts, st.wd, st.log = dict(route_parallel=2), tmp_path, lambda m: None
+    raw = tmp_path / "raw.kicad_pcb"
+    rep = st._route_window(tmp_path / "in.kicad_pcb", raw, 1, 5, 60.0)
+    assert rep["restart_kept"] == 1 and raw.read_text() == f"seed {5 + 7919}"
+    st.opts = dict(route_parallel=1)                 # default: one run, as before
+    rep = st._route_window(tmp_path / "in.kicad_pcb", raw, 2, 5, 60.0)
+    assert "restarts" not in rep and raw.read_text() == "seed 5"
+
+
+def test_route_rank_reads_both_routers_reports():
+    from kae.joint.stages import route_rank
+    assert route_rank(dict(repair=dict(final=dict(errors=0, unconnected=3)))) == (0, 3)
+    assert route_rank(dict(drc=dict(errors=1, unconnected=2))) == (1, 2)                 # no repair rounds
+    assert route_rank(dict(bridge=dict(repair=dict(final=dict(errors=0, unconnected=0))))) == (0, 0)  # critical_cli
+    assert route_rank(dict(bridge=dict(drc=dict(errors=0, unconnected=9)))) == (0, 9)
+    assert route_rank(None) == (float("inf"), float("inf"))

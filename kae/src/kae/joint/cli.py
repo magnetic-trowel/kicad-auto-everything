@@ -6,6 +6,7 @@
                                 [--no-modules] [--no-physics] [--start PLACED]
                                 [--workdir DIR] [--keep] [--report FILE] [--set KEY=VALUE ...]
                                 [--physics-fidelity fast|exact|multi] [--physics-k K]
+                                [--route-parallel P]
 
 INPUT is a place task's board (.kicad_pcb with its project files beside it); OUTPUT is the
 input with every unlocked footprint placed and the board routed. The JSON report (per
@@ -56,6 +57,7 @@ def run(a):
         k, _, v = kv.partition("=")
         opts[k.strip()] = _value(v)
     sopts = dict(opts, keep=a.keep, no_physics=a.no_physics, no_modules=a.no_modules, budget_s=a.time)
+    sopts.setdefault("route_parallel", a.route_parallel)
     # the finishing stage belongs to the loop: the staged baseline (--max-iters 0) has none
     lopts = dict(opts, max_iters=a.max_iters, modules=not a.no_modules)
     lopts.setdefault("finish", (a.max_iters is None or a.max_iters > 0) and not a.no_finish)
@@ -105,6 +107,10 @@ def main(argv=None):
                    help="repair iterations at most (default: as many as the time allows; 0: staged pipeline only)")
     r.add_argument("--no-modules", action="store_true", help="no module stage (kae place, then the bridge)")
     r.add_argument("--no-physics", action="store_true", help="placer without physics terms (ablation)")
+    r.add_argument("--route-parallel", type=int, default=1, metavar="P",
+                   help="P > 1: the finishing stage is kae.route.portfolio with P parallel restarts "
+                        "(critical_cli --last-mile-soft, then the bridge), and a window left open gets "
+                        "2 more differently seeded route_open runs at once (default 1: neither)")
     r.add_argument("--no-finish", action="store_true",
                    help="no finishing stage (the full bridge over the whole board in a reserved share of the time)")
     r.add_argument("--start", help="a placed board to start from instead of running the placer")

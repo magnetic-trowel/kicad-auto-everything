@@ -264,7 +264,9 @@ class JointLoop:
         # critical copper locked, in the time reserved for it; judged by the same rule. If
         # connections stay open, a second try releases the critical copper of the modules on
         # their corridors (the acceptance rule prices the physics that costs)
-        tries_fin = [None, "release"] if o.get("finish_release", True) else [None]
+        # (a restart portfolio as the finishing stage has its own restarts: one try)
+        release = o.get("finish_release", True) and not getattr(st, "finish_restarts", False)
+        tries_fin = [None, "release"] if release else [None]
         for mode in tries_fin if o["finish"] else []:
             if best_card.clean or left() <= 60.0:
                 break

@@ -45,6 +45,16 @@ def _log(msg):
     print(f"[kae.route.incremental {time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def _incomplete(result_json):
+    """Connections Freerouting left open (its result file's board_statistics), else None."""
+    import json
+    try:
+        d = json.loads(Path(result_json).read_text())
+    except (OSError, ValueError):
+        return None
+    return ((d.get("board_statistics") or {}).get("connections") or {}).get("incomplete_count")
+
+
 def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=None, log=_log):
     """Route the open connections of INPUT (all its routing fixed) into OUTPUT. Returns a
     JSON-able report (status routed | no_session | error, router seconds and state,
@@ -105,7 +115,8 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
         rep["router"] = dict(seconds=round(run.seconds, 2), rc=run.rc, timed_out=run.timed_out,
                              state=(run.report or {}).get("final_state"), settings=settings,
                              autorouter_stop=(run.report or {}).get("autorouter_stop"),
-                             optimizer_stop=(run.report or {}).get("optimizer_stop"))
+                             optimizer_stop=(run.report or {}).get("optimizer_stop"),
+                             incomplete=_incomplete(wd / "board.result.json"))
         log(f"freerouting: rc={run.rc} {run.seconds:.1f}s state={(run.report or {}).get('final_state')}")
         if run.ses is None:
             shutil.copy2(input_path, output_path)
