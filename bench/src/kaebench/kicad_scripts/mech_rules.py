@@ -22,7 +22,8 @@ tests call it directly. Each footprint gets a class and the rule that matched:
 
 Rules, in order; the first that matches decides:
 
-  1. exclude   test points (TestPoint* library, TestPoint/TP in the name, reference TP),
+  1. exclude   test points (TestPoint* library, TestPoint, TP, Test-TH/pad/pin in the name; reference TP
+               only after rule 5),
                jumpers and solder bridges (Jumper* library, SolderJumper/Jumper/Bridge in
                the name, reference JP/SJ), net ties, heatsinks (they move with their part),
                batteries and battery holders (Battery* library, battery (not battery
@@ -37,31 +38,42 @@ Rules, in order; the first that matches decides:
                "connector", "mountinghole", "fiducial", "switch" or "oled", and connector
                makers' libraries (Molex, JST, Hirose, Samtec, Amphenol)
   3. npth      every pad is NPTH (a hole with no copper) -> mounting
-     THT LED   a through-hole LED footprint (LED_D5.0mm, LED-3MM) with >= 2 plated pads
-               -> user (panel indicator); SMD LEDs are not fixed
+     THT LED   a through-hole LED footprint (LED_D5.0mm, LED-3MM) with >= 2 plated pads,
+               an LED (library, name, or LED/D reference with an LED value) with 2-4 pads,
+               all plated through-hole, a light pipe or LED bar -> user (panel indicator);
+               SMD LEDs are not fixed
   4. conflict  a library or footprint name that says the part is a passive, diode, LED,
-               crystal, fuse, transistor or IC package (CONFLICT_LIBS, CONFLICT_NAME), or
+               crystal, fuse, transistor or IC package, or a plug-in module (CONFLICT_LIBS,
+               CONFLICT_NAME), or
                a passive/diode/transistor reference (R, C, L, D, Q, FB, Y, F, VR...),
                stops rules 5-7: a resistor called "USB" is still a resistor, and an SMA
                diode package is not an SMA connector
   5. name      patterns on the footprint name (NAME_RULES): USB, PinHeader/PinSocket,
                JST, Molex, FPC/FFC, Jack, SMA/U.FL, microSD/SIM, card edge, terminal
-               block, RJ45, D-Sub, CON/CONN; MountingHole, standoff, fiducial, hole;
+               block, RJ45, D-Sub, CON/CONN; MountingHole, standoff, fiducial, hole (with
+               at most one net: TSOP39238_Standoff is a part, not a standoff);
                switch, button, encoder, pot, OLED/LCD/display, buzzer, key switches
                (MX, Choc, Kailh)
   6. value     KiCad symbol names used as values (VALUE_RULES): Conn_01x04,
                USB_C_Receptacle, Barrel_Jack, Micro_SD_Card, RJ45/MagJack, SW_Push,
-               Rotary_Encoder, R_POT, Buzzer, MountingHole, Fiducial
+               Rotary_Encoder, R_POT, Buzzer, MountingHole, Fiducial; display names
+               (OLED, LCD, TFT, e-paper, SSD13xx, HD44780...) in the value
   7. ref       reference prefixes, only with a footprint that fits (REF_RULES): J, CN,
                CON, P, USB -> connector; H, MH, HOLE, MTG with a drilled pad -> mounting;
                FID with at most 3 SMD pads -> mounting; SW*, S, KSW, BTN, KEY, ENC, LS,
-               BZ, SPK with at least 2 pads, RV/POT with at least 3 -> user. Not X
+               BZ, SPK, RST, BOOT with at least 2 pads, RV/POT with at least 3 -> user. Not X
                (crystals), VR (regulators), DS (often diodes), K (relays).
 
-  Then programming and debug headers are freed: a part classed connector whose footprint
-  name, value or reference says JTAG, SWD, ISP/ICSP, UPDI, BDM, Tag-Connect (TC2030/TC2050/
-  TC2070), debug or prog (DEBUG_HEADERS) is not fixed: they face a programmer, not the
-  enclosure. A button named PROG stays fixed (the rule only frees connectors).
+  Then jumpers (a connector whose value says JUMP...) and programming and debug headers are
+  freed: a part classed connector whose footprint
+  name, value, library description or reference says JTAG, SWD, ISP/ICSP, PDI/UPDI, SWIM,
+  BDM, Tag-Connect (TC2030/TC2050/TC2070), Cortex/ARM debug, ESP-Prog, PICkit, ICD, debug or
+  prog (DEBUG_HEADERS; not when it says "charg": a charger's PROG pin), or a connector of at
+  most 20 pads, not a panel/cable interface, whose signal nets are one programming interface
+  (SWDIO+SWCLK; 3 of TCK/TMS/TDI/TDO; MISO+MOSI+SCK+reset; UPDI; PDI) plus at most two others
+  (PROG_NETS) is not fixed: they face a programmer, not the enclosure. A button named PROG
+  stays fixed (the rule only frees connectors). These follow the placement research
+  classifier (kae.place.fixed) so both fix the same parts.
 
 Overrides per board (prepare --fixed-overrides) can fix or free parts by reference.
 """
@@ -70,15 +82,19 @@ import re
 CLASSES = ("connector", "mounting", "user")
 # 2: the user's choices on borderline parts: key switches fixed; debug headers, batteries,
 #    trimmers and IC sockets free; light pipes and LED bars fixed
-RULES_VERSION = 2
+# 3: aligned with the placement session's classifier (kae.place.fixed): debug headers also by
+#    their nets and a longer keyword list, displays by value, any THT LED with 2-4 pads,
+#    switches by value/reference (RST, BOOT), a trimmer's panel hole stays a hole
+RULES_VERSION = 3
 
 _I = re.IGNORECASE
 
 # 1. never fixed: (what, library, footprint name, reference prefix)
 NEVER = re.compile(r"(?!)")
 EXCLUDE = (
-    ("test point", re.compile(r"^test_?points?", _I), re.compile(r"test_?point|(?<![a-z])tp(?![a-z])", _I),
-     re.compile(r"^TP$")),
+    ("test point", re.compile(r"^test_?points?", _I),
+     re.compile(r"test_?point|(?<![a-z])tp(?![a-z])|^test(?![a-z])|test[-_](th|pad|pin)", _I),
+     None),
     ("jumper", re.compile(r"^jumper", _I), re.compile(r"solder_?jumper|jumper|(?<![a-z])bridge", _I),
      re.compile(r"^(JP|SJ)$")),
     ("net tie", re.compile(r"^nettie", _I), re.compile(r"net_?tie", _I), re.compile(r"^NT$")),
@@ -93,12 +109,66 @@ EXCLUDE = (
      re.compile(r"(dip|plcc|soic|sop|qfp|pga|sip)[-_\w]*socket|zif|textool|(?<![a-z])\d+tex(?![a-z])", _I),
      None),
 )
+# a pin header used as a jumper (value JUMPER, Jumper_2_Open, ..._JUMP): freed like a
+# debug header
+JUMPER_VALUE = re.compile(r"jump", _I)
+
+
+def _one_net(fp):
+    """A mounting hole connects to at most one net (GND); a part named ..._Standoff with
+    several nets is a component on a standoff (TSOP39238_Standoff), not a hole."""
+    return len(fp.get("nets") or ()) <= 1
+
+
 IC_SOCKET_VALUE = re.compile(r"^supp\d", _I)  # KiCad 4's IC socket symbol
 
 # programming and debug headers: freed when classed connector
+# (the placement research classifier's list, kae.place.fixed, plus BDM, PGM and UDPI)
 DEBUG_HEADERS = re.compile(
-    r"jtag|swd|swclk|icsp|(?<![a-z])isp(?![a-z])|updi|udpi|(?<![a-z])bdm|tag-?connect|"
-    r"(?<![a-z])tc20[357]0|debug|(?<![a-z])prog(?![a-z])|(?<![a-z])pgm(?![a-z])", _I)
+    r"jtag|swd|swclk|icsp|avr.?isp|(?<![a-z])isp(?![a-z])|updi|udpi|(?<![a-z])pdi(?![a-z])|(?<![a-z])swim(?![a-z])|"
+    r"(?<![a-z])bdm|tag.?connect|(?<![a-z])tc20[357]0|debug|cortex.?m|conn_arm|esp.?prog|pickit|(?<![a-z])icd(?![a-z])|"
+    r"clip.?prog|(?<![a-z0-9])prog(ram(ming)?)?(_?port)?(?![a-z])|(?<![a-z])pgm(?![a-z])", _I)
+NOT_DEBUG = re.compile(r"charg", _I)  # a charger's PROG (current-set) pin is not programming
+# Debug headers by their nets: a small connector (not a panel/cable interface) whose signal
+# nets are one programming interface plus at most PROG_OTHER_NETS others. (interface, groups
+# of net-name tokens (any one names that signal), groups needed, tokens that also belong)
+PROG_NETS = (("SWD", (("SWDIO", "SWD", "SWDAT", "SWDATA"), ("SWCLK", "SWDCLK", "SWC", "SWCK")), 2,
+              ("SWO", "TRACESWO")),
+             ("JTAG", (("TCK",), ("TMS",), ("TDI",), ("TDO",)), 3, ("TRST", "NTRST", "RTCK")),
+             ("ISP", (("MISO",), ("MOSI",), ("SCK",), ("RESET",)), 4, ()),
+             ("UPDI", (("UPDI", "UDPI"),), 1, ()),
+             ("PDI", (("PDIDATA", "PDI"),), 1, ("PDICLK", "CLK")))
+PROG_MAX_PADS = 20
+PROG_OTHER_NETS = 2
+PANEL_INTERFACE = re.compile(r"dsub|d-sub|(?<![a-z])db-?\d|(?<![a-z])de-?9|usb|rj\d\d|modular|card|barrel|audio|jack",
+                             _I)
+POWER_NET = re.compile(r"gnd|vss|vcc|vdd|vbus|vref|vbat|vin|^\+|[0-9]v[0-9]?$|^/?[0-9.]+v", _I)
+
+
+def _net_header(fp):
+    """The programming interface whose nets a small connector carries, or None."""
+    if fp["pads"] > PROG_MAX_PADS or PANEL_INTERFACE.search(f"{fp.get('name')} {fp.get('value')}"):
+        return None
+    sig = {}
+    for net in fp.get("nets") or ():
+        if not net or POWER_NET.search(net) or net.lower().startswith("unconnected"):
+            continue
+        leaf = net.replace("{slash}", "|").split("/")[-1]
+        if "|" in leaf:  # a net named for two functions is not a dedicated one
+            sig[net] = {"MUXED"}
+            continue
+        t = {x for x in re.split(r"[^A-Z0-9]+", leaf.upper()) if x}
+        if t & {"RST", "NRST", "NRESET", "RESETN", "MCLR"}:
+            t |= {"RESET"}
+        sig[net] = t
+    for name, groups, need, extra in PROG_NETS:
+        hit = [g[0] for g in groups if any(set(g) & t for t in sig.values())]
+        if len(hit) < need:
+            continue
+        own = {x for g in groups for x in g} | set(extra) | {"RESET"}
+        if sum(1 for t in sig.values() if not t & own) <= PROG_OTHER_NETS:
+            return f"{name} nets {'+'.join(hit)}"
+    return None
 
 # 2. library nickname -> class (case-insensitive; first match wins)
 LIB_RULES = (
@@ -109,7 +179,7 @@ LIB_RULES = (
                         r"buzzer|buzzers_beepers|led_tht)", _I)),
     ("connector", re.compile(r"connector|^(molex|jst|hirose|samtec|amphenol)(?![a-z])", _I)),
     ("mounting", re.compile(r"mounting_?hole|fiducial", _I)),
-    ("user", re.compile(r"switch(?!ing)|oled", _I)),
+    ("user", re.compile(r"switch(?!ing|science|craft)|oled", _I)),
 )
 
 # 4. libraries and names that say "not a mechanical part"
@@ -120,11 +190,18 @@ CONFLICT_LIBS = re.compile(
 CONFLICT_NAME = re.compile(
     r"^(R|C|CP|L|D|F|FB)_(\d{4}|axial|radial|do-?\d|sod|melf|array)|^led[-_]|"
     r"^(sot|soic|sop|ssop|tssop|msop|vssop|qfn|vqfn|uqfn|hvqfn|dfn|wson|son|qfp|lqfp|tqfp|bga|lga|"
-    r"dip|sod|to-|plcc|sc-|wlcsp|csp|hc-?49|crystal|oscillator)", _I)
+    r"dip|sod|to-|plcc|sc-|wlcsp|csp|hc-?49|crystal|oscillator)|"
+    # an IC package anywhere in the name (ST_STUSB03EQR_QFN-16 is a USB switch, not a USB port),
+    # and plug-in modules (a dev board on headers is placed like a part)
+    r"(?<![a-z])(qfn|vqfn|dfn|soic|ssop|tssop|msop|qfp|lqfp|tqfp|bga|lga|wson)-?\d|wemos|devkit|"
+    r"(?<![a-z])module", _I)
 
 # 4. reference prefixes of passives, diodes and transistors (an SMA diode package is not an
 # SMA connector)
 CONFLICT_REFS = {"R", "C", "L", "D", "Q", "FB", "Y", "F", "TVS", "ZD", "VR"}
+
+DISPLAY = re.compile(r"oled|(?<![a-z])(lcd|tft|vfd)(?![a-z])|display|7_?seg|7-segment|seven.?seg|dot.?matrix|"
+                     r"e.?paper|eink|nixie|ssd13\d\d|st77\d\d|hd44780|ili9\d\d\d", _I)
 
 # 5. footprint name patterns -> class (case-insensitive). (?<![a-z]) / (?![a-z]) keep short
 # tokens from matching inside longer words.
@@ -134,7 +211,7 @@ NAME_RULES = (
         r"pin_?header|pinhd|pin_?socket|socket_strip|(?<![a-z])hdr|idc[-_]?header|box_?header", _I)),
     ("connector", "JST/Molex", re.compile(r"(?<![a-z])jst|molex|micro-?fit|pico-?blade|(?<![a-z])jwt", _I)),
     ("connector", "FPC/FFC", re.compile(r"(?<![a-z])(fpc|ffc)(?![a-z])", _I)),
-    ("connector", "jack", re.compile(r"jack|(?<![a-z])(trs|trrs|xlr)(?![a-z])", _I)),
+    ("connector", "jack", re.compile(r"jack|switchcraft|(?<![a-z])(trs|trrs|xlr)(?![a-z])", _I)),
     ("connector", "RF", re.compile(r"(?<![a-z])(sma|smb|bnc|mmcx|mcx|u\.?fl|ipex|coax|subclick)(?![a-z])", _I)),
     ("connector", "card slot", re.compile(
         r"micro_?sd|(?<![a-z])(sd|tf)_?card|(?<![a-z])sim(?![a-z])|sim_?card|card_?edge|edge_?conn|"
@@ -153,11 +230,12 @@ NAME_RULES = (
         r"cherry|(?<![a-z])mx(?![a-z])|kailh|(?<![a-z])choc|gateron|keyswitch|key_?switch", _I)),
     ("user", "encoder/pot", re.compile(
         r"encoder|(?<![a-z])ec1[12]|potentiometer|(?<![a-z])pot(?![a-z])|trim_?pot", _I)),
-    ("user", "display", re.compile(r"oled|(?<![a-z])lcd|display|7_?seg|7-segment", _I)),
+    ("user", "display", DISPLAY),
     ("user", "buzzer", re.compile(r"buzzer|beeper|speaker", _I)),
 )
 # a through-hole LED (panel indicator): LED_D3.0mm, LED_D5.0mm_BigPads, LED-5MM
 THT_LED_NAME = re.compile(r"led[-_]?(d?\d(\.\d)?_?mm|tht)", _I)
+LED_WORD = re.compile(r"(?<![a-z])led", _I)  # not OLED
 # light pipes and LED bars (bar graphs), SMD or not
 LED_INDICATOR_NAME = re.compile(r"light_?pipe|lightpipe|led[-_]?bar|bar_?graph", _I)
 
@@ -165,18 +243,20 @@ LED_INDICATOR_NAME = re.compile(r"light_?pipe|lightpipe|led[-_]?bar|bar_?graph",
 VALUE_RULES = (
     ("connector", re.compile(r"^conn_|_receptacle|^usb_|barrel_jack|audiojack|micro_sd|^sd_card|"
                              r"^sim_card|screw_terminal|rj45|magjack", _I)),
-    ("user", re.compile(r"^sw_|^rotary_encoder|^r_pot|^buzzer|^speaker", _I)),
+    ("user", re.compile(r"^sw_|(?<![a-z])sw(?![a-z])|^rotary_encoder|^r_pot|^buzzer|^speaker", _I)),
+    ("user", DISPLAY),
     ("mounting", re.compile(r"^mountinghole|^fiducial", _I)),
 )
 
 # 7. reference prefix -> (class, check of the footprint, what the check means)
 REF_RULES = {
     "connector": ({"J", "CN", "CON", "CONN", "P", "USB"}, lambda f: f["pads"] >= 1, ">=1 pad"),
-    "mounting-hole": ({"H", "MH", "HOLE", "MTG"}, lambda f: f["pth"] + f["npth"] >= 1, "a drilled pad"),
+    "mounting-hole": ({"H", "MH", "HOLE", "MTG"}, lambda f: f["pth"] + f["npth"] >= 1 and _one_net(f),
+                      "a drilled pad, at most one net"),
     "mounting-fid": ({"FID", "FD"}, lambda f: 1 <= f["pads"] <= 3 and f["smd"] == f["pads"],
                      "1-3 SMD pads"),
-    "user": ({"SW", "S", "KSW", "BTN", "KEY", "ENC", "LS", "BZ", "BUZ", "SPK"}, lambda f: f["pads"] >= 2,
-             ">=2 pads"),
+    "user": ({"SW", "S", "KSW", "BTN", "KEY", "ENC", "LS", "BZ", "BUZ", "SPK", "RST", "RESET", "BOOT"},
+             lambda f: f["pads"] >= 2, ">=2 pads"),
     "user-pot": ({"RV", "POT"}, lambda f: f["pads"] >= 3, ">=3 pads"),
 }
 
@@ -190,11 +270,18 @@ def classify(fp):
     """fp: dict with ref, lib, name, value, pads (count), pth, npth, smd (pad counts).
     Returns (class or None, evidence)."""
     cls, evidence = _classify(fp)
+    if cls == "connector" and JUMPER_VALUE.search(fp.get("value") or ""):
+        return None, f"exclude: jumper (value {fp['value']}; was {evidence})"
     if cls == "connector":
-        for field in ("name", "value", "ref"):
-            m = DEBUG_HEADERS.search(fp.get(field) or "")
-            if m:
-                return None, f"exclude: programming/debug header ({field} {m.group(0)}; was {evidence})"
+        text = " ".join(fp.get(k) or "" for k in ("name", "value", "desc"))
+        if not NOT_DEBUG.search(text):
+            for field in ("name", "value", "desc", "ref"):
+                m = DEBUG_HEADERS.search(fp.get(field) or "")
+                if m:
+                    return None, f"exclude: programming/debug header ({field} {m.group(0)}; was {evidence})"
+        how = _net_header(fp)
+        if how:
+            return None, f"exclude: programming/debug header ({how}; was {evidence})"
     return cls, evidence
 
 
@@ -204,6 +291,8 @@ def _classify(fp):
     if not fp["pads"]:
         return None, "exclude: no pads"
     for what, lib_re, name_re, ref_re in EXCLUDE:
+        if what == "trimmer" and fp["npth"] == fp["pads"]:
+            continue  # a panel hole for a trimmer is a hole (npth rule)
         if lib_re.search(lib) or name_re.search(name) or (ref_re and ref_re.match(prefix)):
             return None, f"exclude: {what}"
     if IC_SOCKET_VALUE.search(value):
@@ -216,6 +305,9 @@ def _classify(fp):
         return "mounting", "npth: all pads NPTH"
     if THT_LED_NAME.search(name) and fp["pth"] >= 2:
         return "user", "name: THT LED"
+    led = LED_WORD.search(f"{lib} {name}") or prefix in ("LED", "D") and LED_WORD.search(value)
+    if led and 2 <= fp["pads"] <= 4 and fp["pth"] == fp["pads"]:
+        return "user", "THT LED: an LED with 2-4 plated through-hole pads"
     m = LED_INDICATOR_NAME.search(name)
     if m:
         return "user", f"name: LED indicator ({m.group(0)})"
@@ -225,8 +317,10 @@ def _classify(fp):
         return None, f"conflict: reference {prefix}"
     for cls, what, rx in NAME_RULES:
         m = rx.search(name)
-        if m:
+        if m and (cls != "mounting" or _one_net(fp)):
             return cls, f"name: {what} ({m.group(0)})"
+    if prefix == "TP":  # after the name rules: a U.FL used as an RF test port is still a connector
+        return None, "exclude: test point (reference TP)"
     for cls, rx in VALUE_RULES:
         m = rx.search(value)
         if m:

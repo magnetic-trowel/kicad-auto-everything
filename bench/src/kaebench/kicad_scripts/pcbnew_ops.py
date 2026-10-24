@@ -311,7 +311,8 @@ def _mech_row(fp):
     attrs = [p.GetAttribute() for p in pads]
     fpid = fp.GetFPID()
     return dict(uuid=fp.m_Uuid.AsString(), ref=fp.GetReference(), lib=str(fpid.GetLibNickname()),
-                name=str(fpid.GetLibItemName()), value=fp.GetValue(), pads=len(pads),
+                name=str(fpid.GetLibItemName()), value=fp.GetValue(), desc=fp.GetLibDescription(),
+                nets=sorted({p.GetNetname() for p in pads} - {""}), pads=len(pads),
                 pth=sum(a == pcbnew.PAD_ATTRIB_PTH for a in attrs),
                 npth=sum(a == pcbnew.PAD_ATTRIB_NPTH for a in attrs),
                 smd=sum(a in (pcbnew.PAD_ATTRIB_SMD, pcbnew.PAD_ATTRIB_CONN) for a in attrs),
@@ -330,6 +331,7 @@ def classify_mech(path):
         r = _mech_row(fp)
         r["class"], r["evidence"] = mech_rules.classify(r)
         r["fpid"] = f"{r['lib']}:{r['name']}" if r["lib"] else r["name"]
+        del r["nets"]  # used by the rules; too bulky for the record
         rows.append(r)
     rows.sort(key=lambda r: r["uuid"])
     _out(dict(ok=True, path=path, rules_version=mech_rules.RULES_VERSION, footprints=rows))

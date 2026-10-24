@@ -501,3 +501,30 @@ def test_work_list_skips_place_fixed_whose_round_trip_failed():
     rec["roundtrip"]["place-fixed"] = ok
     assert [w[1] for w in runner.work_list([rec], [(Ad(), None)], kinds, 1)] == list(kinds)
     assert [w[1] for w in runner.work_list([rec], [(Ad(), None)], kinds, 1, min_movable=3)] == ["place"]
+
+
+@pytest.mark.parametrize("fp,cls", [
+    # aligned with the placement research classifier
+    (dict(_fp("J5", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", "Conn_01x05", pads=5, pth=5),
+          nets=["GND", "+3V3", "/SWDIO", "/SWCLK", "/NRST"]), None),        # SWD by its nets
+    (dict(_fp("J6", "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical", "Conn_01x05", pads=5, pth=5),
+          nets=["GND", "/TX", "/RX", "/SDA", "/SCL"]), "connector"),         # UART/I2C stays
+    (_fp("J7", "x:CHRG_PROG_HDR", "charger PROG", pads=2, pth=2), "connector"),  # not programming
+    (_fp("JP9", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "Jumper_2_Open", pads=2), None),
+    (_fp("CT1", "kit:PinHeader_1x02_P2.54mm_Vertical", "JUMPER", pads=2, pth=2), None),
+    (_fp("TP8", "x:CONN_U.FL_TE_1909763-1", "U.FL", pads=3), "connector"),  # an RF test port is a connector
+    (_fp("TP9", "BR_Connectors:TEST-TH_BD2.54-P1.4_RED", "GND", pads=1, pth=1), None),
+    (dict(_fp("U1", "x:TSOP39238_Standoff", "TSOP39238", pads=3, pth=3), nets=["GND", "VCC", "/IR"]), None),
+    (_fp("U2", "x:ST_STUSB03EQR_QFN-16-1EP_3x3mm", "STUSB03EQR", pads=17), None),
+    (_fp("U5", "modules:wemos-d1-mini-with-pin-header-and-connector", "WeMos_mini", pads=16, pth=16), None),
+    (_fp("U1", "SwitchScience:RP2040_Breakout-PTH", "RP2040_breakout", pads=40, pth=40), None),
+    (_fp("COMP1", "x:SWITCHCRAFT_PJRAN1X1U04X_CIRCULAR", "PJRAN1X1U04X", pads=3, pth=3), "connector"),
+    (_fp("U3", "x:24pin0.5mm", "e-paper", pads=26), "user"),
+    (_fp("RST1", "x:TS026660BK100SCRD", "TS02-66-60", pads=4, pth=4), "user"),
+    (_fp("D4", "x:LED_custom", "RED", pads=2, pth=2), "user"),
+    (_fp("REF1", "DIYSynthMNL:PanelHole_Bourns_3296W_TrimPot", pads=1, npth=1), "mounting"),  # a hole
+])
+def test_mech_classifier_matches_the_research_rules(fp, cls):
+    from kaebench.kicad_scripts import mech_rules
+    got, evidence = mech_rules.classify(fp)
+    assert got == cls, (got, evidence)
