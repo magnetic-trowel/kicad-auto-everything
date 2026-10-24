@@ -32,6 +32,13 @@ _JSON_OUT = os.fdopen(os.dup(1), "w")
 os.dup2(2, 1)
 import pcbnew  # noqa: E402
 
+try:  # A wx debug assert (e.g. GetRectangleWidth on a polygon) can SIGTRAP the process when it
+    import wx  # fires off the main thread; with asserts off KiCad takes its normal release path.
+
+    wx.DisableAsserts()
+except Exception:  # noqa: BLE001 - KiCad builds without wxPython
+    pass
+
 NM = 1e6  # internal units per mm
 
 
