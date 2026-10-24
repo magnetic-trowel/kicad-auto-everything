@@ -139,3 +139,23 @@ def test_engine_rebuild_keeps_totals_exact():
     assert int(E.tot[engine.T_LEG]) == ref.total_leg()
     assert np.allclose(E.Dp, ref.cong.Dp)
     assert abs(fa.wl - ref.wl) < 1e-6 * max(1.0, ref.wl)
+
+
+def test_congestion_history_hook_is_exact_in_both_engines():
+    """cong_history (kae.joint's routing feedback) is static congestion demand: the compiled
+    engine and the reference annealer price it the same, before and after a run."""
+    b, P, st = _legal_state()
+
+    def hist(x0, y0, bsz, nbx, nby):
+        a = np.zeros((nbx, nby))
+        a[: nbx // 2, :] = 3.0
+        return a
+    fa = engine.FastAnnealer(P, st.copy(), terms=None, seed=1, w_phys=0.0, cong_history=hist)
+    ref0 = Annealer(P, st.copy(), terms=None, seed=1, w_phys=0.0, cong_history=hist)
+    assert np.allclose(fa.E.Dp, ref0.cong.Dp) and ref0.cong_history["bins"] > 0
+    assert abs(fa.cost(fa.lam1) - ref0.cost(ref0.lam1)) < 1e-9
+    fa.run(cpu_s=60.0, max_moves=4000)
+    fa.write_back()
+    ref = Annealer(P, fa.st.copy(), terms=None, seed=0, w_phys=0.0, cong_history=hist)
+    assert np.allclose(fa.E.Dp, ref.cong.Dp)
+    assert abs(fa.E.tot[engine.T_CONG] - ref.cong.total()) < 1e-6 * max(1.0, ref.cong.total())

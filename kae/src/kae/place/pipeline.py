@@ -468,12 +468,16 @@ def grid_verdict(P, st, exact):
 
 
 def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=True, brief=None, log=None,
-                  angle_step=None, workers=1, net_weights=None):
+                  angle_step=None, workers=1, net_weights=None, cong_history=None, moves_per_part=None):
     """Re-place only `parts` (footprint uuids or references) of an already placed board,
     inside `window_mm` = (x0, y0, x1, y1) when given, with every other footprint where it is
     (fixed geometry and fixed pins): the module and joint loops' local re-placement after
     routing. `net_weights` {net name: factor} scales nets' wirelength weights (routing
-    feedback: an unrouted or detoured net pulls its pins together harder). Ends exactly
+    feedback: an unrouted or detoured net pulls its pins together harder). `cong_history`:
+    callable (x0, y0, b, nbx, nby) -> (nbx, nby) array added to the congestion bins' static
+    demand (Congestion.Dp; track mm per bin, Congestion.S0 a bin's empty-board supply).
+    `moves_per_part`: a fixed move budget (moves_per_part x len(parts)) instead of the
+    clock, so a windowed re-place is deterministic under load. Ends exactly
     legal for the moved parts when it can (kae.place.exact.repair, only `parts` move).
     Returns Result(poses of the re-placed parts, report, state, problem)."""
     t0 = time.monotonic()
@@ -512,8 +516,12 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
     rep = dict(parts=[P.parts[i].ref for i in sub], window=window)
     if sub:
         ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=1.0 if terms is not None else 0.0,
-                            order=order, subset=sub, window=window, log=log)
-        rep["anneal"] = ann.run(cpu_s=max(0.5, 0.8 * time_s), deadline=t0 + 0.85 * time_s)
+                            order=order, subset=sub, window=window, log=log, cong_history=cong_history)
+        if moves_per_part:
+            rep["anneal"] = ann.run(cpu_s=1e9, max_moves=int(moves_per_part) * len(sub), deadline=None)
+        else:
+            rep["anneal"] = ann.run(cpu_s=max(0.5, 0.8 * time_s), deadline=t0 + 0.85 * time_s)
+        rep["anneal"]["cong_history"] = getattr(getattr(ann, "ann", ann), "cong_history", None)
         ann.write_back()
         st = ann.st
         bad = [i for i in grid_violations(st) if i in set(sub)]

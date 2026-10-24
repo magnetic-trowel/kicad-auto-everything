@@ -154,3 +154,28 @@ def test_legal_grid_follows_the_exact_check():
     assert v["legal_grid"] is False
     v = grid_verdict(P, st, [])
     assert v["legal_grid"] is True and v["grid_conservative"]["count"] > 0
+
+
+def test_local_replace_takes_congestion_history_and_a_fixed_move_budget():
+    """kae.joint's hooks: cong_history adds static demand to the congestion bins (both
+    engines, totals exact); moves_per_part replaces the clock, so a re-place repeats."""
+    import numpy as np
+    from kae.place.pipeline import local_replace, place
+    b = kicad_file.load(FIXTURE)
+    res = place(b, seed=0, time_s=30.0, physics=False)
+    for fp in b.footprints:
+        if fp.uuid in res.poses:
+            fp.x, fp.y, fp.rot, _ = res.poses[fp.uuid]
+    sub = [fp.ref for fp in b.footprints if not fp.locked and fp.uuid in res.poses][:4]
+    seen = {}
+
+    def hist(x0, y0, bsz, nbx, nby):
+        seen["shape"] = (nbx, nby)
+        a = np.zeros((nbx, nby))
+        a[nbx // 2, nby // 2] = 5.0
+        return a
+    out1 = local_replace(b, sub, time_s=30.0, physics=False, cong_history=hist, moves_per_part=300)
+    out2 = local_replace(b, sub, time_s=30.0, physics=False, cong_history=hist, moves_per_part=300)
+    assert seen["shape"] and out1.report["anneal"]["cong_history"]["bins"] == 1
+    assert out1.report["anneal"]["moves"] == out2.report["anneal"]["moves"]
+    assert out1.poses == out2.poses

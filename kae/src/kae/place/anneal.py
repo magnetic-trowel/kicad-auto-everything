@@ -28,6 +28,8 @@ import math
 import random
 import time
 
+import numpy as np
+
 from .cost import Congestion
 
 BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
@@ -63,7 +65,8 @@ def quarter_turns(p, k, k_ref):
 class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
-                 cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None):
+                 cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
+                 cong_history=None):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -157,6 +160,17 @@ class Annealer:
             self.phys = 0.0
         # ---- congestion (RUDY) and escape halos
         self.cong = Congestion(P, self, **(cong_args or {})) if w_cong > 0 else None
+        # routing feedback (kae.joint): static demand added to the congestion bins, e.g. a
+        # routed board's congestion history; callable (x0, y0, b, nbx, nby) -> (nbx, nby)
+        # array in Dp's units (track mm per bin; Congestion.S0 is a bin's empty-board supply)
+        self.cong_history = None
+        if cong_history is not None and self.cong is not None:
+            c = self.cong
+            extra = np.asarray(cong_history(c.x0, c.y0, c.b, c.nbx, c.nby), dtype=float)
+            if extra.shape != c.Dp.shape:
+                raise ValueError(f"cong_history returned {extra.shape}, the bins are {c.Dp.shape}")
+            c.Dp += extra
+            self.cong_history = dict(bins=int((extra != 0).sum()), added=round(float(extra.sum()), 6))
         # ---- macros
         self.macros = [m for m in macros if len(m.members) >= 2
                        and all(i in self.activeset or i not in self.movset for i in m.members)]
