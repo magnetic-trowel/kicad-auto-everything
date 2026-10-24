@@ -82,6 +82,12 @@
 place-one-route-it and physics place terms in the objective have merit; soft routing
 gradients, Physarum flow and LLM move proposals did not beat simple controls.
 
+## Layer collapse — [layer-collapse.md](layer-collapse.md)
+Every net on its own layer, collapsed into the board's L layers: pours maximize copper,
+sensitive nets minimize it. Maps the pieces to problems with exact answers (graph
+thickness, planar max-cut via minimization, minimal partitions and Wulff shapes, power
+diagrams, capacity isoperimetry). Under test.
+
 ## Top 10 to try first (impact vs effort)
 1. **P6 Slot assignment** (S): designer 0.56 vs 0.31–0.39 after swaps; days of work.
 2. **N8 Decap assignment** (S): a contested slogan becomes an exact optimization.
