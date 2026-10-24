@@ -897,3 +897,24 @@ def test_decap_over_its_rail_plane_goes_into_the_plane(tmp_path, monkeypatch):
     assert vias and min(v.geom.distance(c3.geom) for v in vias) < 1.5
     for v in vias:
         assert not sp.via_violations("+3V3", v.geom.x, v.geom.y, ignore=[v])
+
+
+def test_pad_requirement_reads_net_conditions_against_another_net(tmp_path):
+    """A pad's clearance from a routing class is read against a track of another net of the
+    class: with the class representative on the pad's own net, a custom rule "A.Net != B.Net"
+    never matched and the pad got the net class clearance (oasis: C2's +18V pad 0.15 instead
+    of 0.2 mm, Freerouting routed 30 um inside it)."""
+    from kae.board.kicad_file import load
+    from kae.route import constraints as CN
+    p = F.write_board(tmp_path)
+    p.with_suffix(".kicad_dru").write_text(
+        '(version 1)\n(rule "track to pad"\n  (condition "A.Type == \'pad\' && B.Type == \'track\' && A.Net != B.Net")\n'
+        '  (constraint clearance (min 0.33mm))\n)\n')
+    b = load(p)
+    info = F.synth_info(b)
+    plan = CN.plan(info, p, {})
+    rc = next(rc for rc in plan.classes.values() if rc.rep)
+    pad = next(pd for pd in info["pads"] if pd["net"] == rc.rep and "F.Cu" in pd["layers"])
+    cls = plan.pin_class[(pad["comp"], pad["pin"])]
+    tw, vw = plan.obstacle_classes[cls].values[(rc.name, "F.Cu")]
+    assert tw >= 0.33 - 1e-9

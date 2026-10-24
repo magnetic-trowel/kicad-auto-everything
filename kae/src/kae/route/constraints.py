@@ -415,17 +415,23 @@ def _pad_requirements(info, rb, p, pad, sev):
     ring = _ring(pad, dsn)
     mask_on = not _severity_ignored(sev, "solder_mask_bridge") and not pad.get("allow_bridges")
     out = {}
+    own = pad.get("net") or ""
     for n, rc in p.classes.items():
         if not rc.rep:
             continue
+        # the class's tracks that need the clearance are other nets': a representative on the
+        # pad's own net reads net-conditional rules wrongly ("A.Net != B.Net" never holds; on
+        # oasis C2's +18V pad got the class's 0.15 mm instead of the custom rule's 0.2 mm,
+        # and Freerouting routed 30 um inside it)
+        rep = rc.rep if rc.rep != own else next((x for x in rc.nets if x and x != own), rc.rep)
         D, d = rc.via
         rv = (D - d) / 2
         for l in cu:
             if l not in pad["layers"]:
                 continue
             e = _excess(real.get(l), dsn)
-            t = net_item(info, rc.rep, "track", l, rc.widths[l])
-            v = net_item(info, rc.rep, "via", l)
+            t = net_item(info, rep, "track", l, rc.widths[l])
+            v = net_item(info, rep, "via", l)
             tw = _strict_min(rb, "clearance", pi, t, l) + e
             vw = _strict_min(rb, "clearance", pi, v, l) + e
             if pad.get("hole"):
