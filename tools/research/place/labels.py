@@ -16,9 +16,9 @@ Inference (kae.place.labels.infer):
            component (SDA, GND, 3V3, ~{RST}); a net on several such pads names them all.
   keyword  a token in the net names of an LED or a switch (PWR, ACT, STATUS, RESET, BOOT),
            and ON/OFF for the only switches.
-  row      k labels in a row or column (same y or x, near-equal pitch) and a family of k
-           unlabelled parts of one kind with consecutive reference numbers: matched in order
-           (both directions are candidates; the human decides which held).
+  row      k labels in a row or column carrying distinct numbers and the one family of k
+           unlabelled LEDs, switches or connectors with consecutive reference numbers:
+           matched in numeric order.
 
     python tools/research/place/labels.py --tasks kae-work-v3/tasks [--split A] [--ids a,b] [--out FILE]
 
@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -46,30 +47,27 @@ def check_task(tdir):
     assoc = labels.infer(inp, labs)
     by_uuid = {f.uuid: f for f in ref.footprints}
     rows = []
+    others_by_label = {}
     for a in assoc:
         lab = labs[a["label"]]
         f = by_uuid.get(a["part"])
         if f is None or not f.pads:
             continue
         d = labels.distance(lab["geom"], f, a.get("pads"))
-        others = sorted(labels.distance(lab["geom"], g, None) for g in ref.footprints if g.pads)
+        if a["label"] not in others_by_label:
+            others_by_label[a["label"]] = sorted(labels.distance(lab["geom"], g, None) for g in ref.footprints if g.pads)
+        others = others_by_label[a["label"]]
         rank = 1 + sum(1 for o in others if o < d - 1e-9)
-        rows.append(dict(label=lab["text"][:24], how=a["how"], ref=f.ref, d=round(d, 2), rank=rank,
-                         alt=a.get("alt", 0)))
-    # rows matched in both directions: keep the direction the human held (the smaller sum)
-    keep = [r for r in rows if not r["how"].startswith("row")]
-    groups = collections.defaultdict(lambda: collections.defaultdict(list))
+        rows.append(dict(li=a["label"], label=lab["text"][:24], how=a["how"], ref=f.ref, d=round(d, 2), rank=rank))
+    # a label naming several candidates (a "GND" beside one of the connectors with a GND
+    # pin) names one of them: the nearest counts
+    best = {}
     for r in rows:
-        if r["how"].startswith("row"):
-            g, direction = r["how"].rsplit(":", 1)
-            groups[g][direction].append(r)
-    row_dirs = {}
-    for g, dirs in groups.items():
-        dname, rs = min(dirs.items(), key=lambda kv: sum(x["d"] for x in kv[1]))
-        keep += rs
-        row_dirs[g] = dname
-    return dict(id=t["id"], split=t.get("split"), labels=len(labs),
-                inferred=len({(r["label"], r["how"].split(":")[0]) for r in keep}), rows=keep, row_dirs=row_dirs)
+        k = (r["li"], r["how"])
+        if k not in best or r["d"] < best[k]["d"]:
+            best[k] = dict(r, candidates=sum(1 for x in rows if (x["li"], x["how"]) == k))
+    keep = list(best.values())
+    return dict(id=t["id"], split=t.get("split"), labels=len(labs), inferred=len({r["li"] for r in keep}), rows=keep)
 
 
 def summarize(results):
@@ -79,7 +77,9 @@ def summarize(results):
         assoc = [x for r in rs for x in r["rows"]]
         by_how = collections.defaultdict(list)
         for x in assoc:
-            by_how[x["how"].split(":")[0]].append(x)
+            kind = re.sub(r"\d+$", "", x["how"])
+            by_how[kind].append(x)
+            by_how[f"{kind}/{'one' if x.get('candidates', 1) == 1 else 'several'} candidate(s)"].append(x)
 
         def stats(xs):
             if not xs:
@@ -92,6 +92,7 @@ def summarize(results):
                         rank_le3=round(sum(1 for x in xs if x["rank"] <= 3) / len(xs), 3))
         out[split] = dict(boards=len(rs), boards_with_labels=sum(1 for r in rs if r["labels"]),
                           labels=sum(r["labels"] for r in rs),
+                          labels_inferred=sum(r.get("inferred", 0) for r in rs),
                           boards_with_inferred=sum(1 for r in rs if r["rows"]),
                           associations=stats(assoc), by_how={k: stats(v) for k, v in sorted(by_how.items())})
     return out

@@ -323,6 +323,13 @@ def make_terms(board, brief, barrier=None, **knobs):
 def make_brief(board):
     try:
         from kae.circuit.brief import build
-        return build(board), "kae.circuit.brief"
+        b, src = build(board), "kae.circuit.brief"
     except ImportError:
-        return stub_brief(board), "kae.place.stubs.stub_brief"
+        b, src = stub_brief(board), "kae.place.stubs.stub_brief"
+    # board silk labels and the parts they name, with the evidence (kae.place.labels)
+    try:
+        from . import labels
+        b["labels"] = labels.associations(board)
+    except Exception as e:      # noqa: BLE001 - comprehension extra; never lose the brief
+        b["labels_error"] = f"{type(e).__name__}: {e}"
+    return b, src

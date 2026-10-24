@@ -186,7 +186,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         except Exception as e:  # comprehension must not stop placement
             log(f"brief failed ({type(e).__name__}: {e}); placing without it")
             brief, src = {}, "none"
-    rep["brief"] = dict(source=src, structures=len((brief or {}).get("structures") or []))
+    rep["brief"] = dict(source=src, structures=len((brief or {}).get("structures") or []),
+                        labels=len((brief or {}).get("labels") or []))
     stage("brief", t)
 
     t = time.monotonic()
@@ -376,6 +377,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
+        if float(kw.get("w_label", 0.0) or 0.0) > 0:
+            # parts named by board silk labels beside their label (off by default: w_label 0)
+            from . import labels as labelsmod
+            assoc = (brief or {}).get("labels")
+            if assoc is None:
+                assoc = labelsmod.associations(board)
+            kw["labels"] = labelsmod.anchors(P, assoc)
+            rep["labels"] = dict(associations=len(assoc), anchored=len(kw["labels"]))
         ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
                             log=log, **kw)
         if anneal_args:

@@ -47,9 +47,9 @@ I_NCX, I_NCY, I_HX, I_HY, I_HB, I_CAP, I_HOFF, I_CX, I_CY, I_STAMP, I_NSTAMP, I_
     I_WIN, I_WX0, I_WX1, I_WY0, I_WY1 = range(18)
 # fparams indices
 F_G, F_OX, F_OY, F_CB, F_CX0, F_CY0, F_SUP, F_TGT, F_NORM, F_A0, F_S0, F_W0, F_SLACK, F_BAR, F_WWL, F_WDISP, \
-    F_WCONG, F_WORD, F_OMARGIN, F_NMOV = range(20)
+    F_WCONG, F_WORD, F_OMARGIN, F_NMOV, F_WLAB = range(21)
 # totals
-T_WL, T_LEG, T_CONG, T_ORDER, T_DISP = range(5)
+T_WL, T_LEG, T_CONG, T_ORDER, T_DISP, T_LAB = range(6)
 
 Eng = namedtuple("Eng", [
     "ip", "fp", "tot",
@@ -63,6 +63,7 @@ Eng = namedtuple("Eng", [
     "in_s", "sc_pins_x", "sc_pins_y", "sc_nets", "sc_nb", "sc_nc", "sc_box", "sc_has", "sc_dens",
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
     "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
+    "La", "Lr", "Lw",
 ])
 
 
@@ -397,6 +398,17 @@ def _wl_cost(E, wl):
 
 
 @_jit
+def _lab_part(E, i):
+    """Label term of part i (anneal.Annealer._lab): weight x L1 cells beyond the dead zone."""
+    w = E.Lw[i]
+    if w == 0.0:
+        return 0.0
+    k = E.K[i]
+    d = abs(E.X[i] - E.La[i, k, 0]) + abs(E.Y[i] - E.La[i, k, 1]) - E.Lr[i]
+    return w * d if d > 0 else 0.0
+
+
+@_jit
 def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
     """Evaluate moving parts S[:ns] to (nX, nY, nK); accept (Metropolis with uniform u, or
     always when commit_always) or revert. `extra` is a cost change priced elsewhere (physics).
@@ -408,9 +420,11 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
     # ---- before
     leg_old = _leg(E, S, ns, ss)
     disp_old = 0
+    lab_old = 0.0
     for a in range(ns):
         i = S[a]
         disp_old += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
+        lab_old += _lab_part(E, i)
     # touched nets and rules
     nn = 0
     nr = 0
@@ -475,9 +489,11 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         _update_pins(E, i)
     leg_new = _leg(E, S, ns, ss)
     disp_new = 0
+    lab_new = 0.0
     for a in range(ns):
         i = S[a]
         disp_new += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
+        lab_new += _lab_part(E, i)
     wl_new_nets = 0.0
     for t in range(nn):
         j = E.sc_nets[t]
@@ -576,6 +592,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
     delta = (E.fp[F_WWL] * (_wl_cost(E, wl + d_wl) - _wl_cost(E, wl))
              + lam * (leg_new - leg_old) / E.fp[F_A0]
              + E.fp[F_WDISP] * (disp_new - disp_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
+             + E.fp[F_WLAB] * (lab_new - lab_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
              + E.fp[F_WCONG] * d_cong
              + E.fp[F_WORD] * (ord_new - ord_old)
              + extra)
@@ -585,6 +602,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         E.tot[T_CONG] += d_cong
         E.tot[T_ORDER] += ord_new - ord_old
         E.tot[T_DISP] += disp_new - disp_old
+        E.tot[T_LAB] += lab_new - lab_old
         return True, delta
     # ---- revert
     if E.ip[I_CONG] == 1:
@@ -932,7 +950,7 @@ def build(ann, hash_cap=None):
         ip[I_WX0], ip[I_WX1], ip[I_WY0], ip[I_WY1] = ann.window
     ip[I_NCX], ip[I_NCY], ip[I_HX], ip[I_HY], ip[I_HB], ip[I_CAP], ip[I_HOFF] = P.ncx, P.ncy, HX, HY, HB, hash_cap, hoff
     ip[I_CX], ip[I_CY], ip[I_CONG] = cx, cy, 1 if use_cong else 0
-    fp = np.zeros(20)
+    fp = np.zeros(21)
     fp[F_G], fp[F_OX], fp[F_OY] = g, P.ox, P.oy
     fp[F_CB], fp[F_CX0], fp[F_CY0], fp[F_SUP], fp[F_TGT], fp[F_NORM] = cb, cx0, cy0, sup, tgt, norm
     fp[F_A0], fp[F_S0], fp[F_W0] = ann.A0, ann.S0, ann.W0
@@ -940,8 +958,17 @@ def build(ann, hash_cap=None):
     fp[F_WWL], fp[F_WDISP], fp[F_WCONG], fp[F_WORD] = (ann.w["wl"], ann.w["disp"], ann.w["cong"] if use_cong else 0.0,
                                                        ann.w["order"])
     fp[F_OMARGIN], fp[F_NMOV] = ann.order_margin, max(1, len(ann.mov))
+    fp[F_WLAB] = ann.w.get("label", 0.0)
+    kmax = max([1] + [len(p.rots) for p in P.parts])
+    La = np.zeros((n, kmax, 2), np.int64)
+    Lr = np.zeros(n, np.int64)
+    Lw = np.zeros(n)
+    for i, (tg, r, wt) in (getattr(ann, "labels", None) or {}).items():
+        for k, (tx, ty) in enumerate(tg[:kmax]):
+            La[i, k, 0], La[i, k, 1] = tx, ty
+        Lr[i], Lw[i] = int(r), float(wt)
     E = Eng(
-        ip=ip, fp=fp, tot=np.zeros(5),
+        ip=ip, fp=fp, tot=np.zeros(6),
         X=np.array(ann.X, np.int64), Y=np.array(ann.Y, np.int64), K=np.array(ann.K, np.int64),
         Xs=np.array(ann.Xs, np.int64), Ys=np.array(ann.Ys, np.int64), movable=movable, side=side, nrot=nrot,
         own=own, gbrd=gbrd, opp_ptr=opp_ptr, opp_r=opp_r, brd_ptr=brd_ptr, brd_r=brd_r,
@@ -966,6 +993,7 @@ def build(ann, hash_cap=None):
         sc_pbx=np.zeros(NP + 2, np.int64), sc_pby=np.zeros(NP + 2, np.int64),
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
         turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
+        La=La, Lr=Lr, Lw=Lw,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
@@ -1000,6 +1028,7 @@ def build(ann, hash_cap=None):
     E.tot[T_CONG] = cong.total() if use_cong else 0.0
     E.tot[T_ORDER] = float(E.open[:len(rules)].sum()) if rules else 0.0
     E.tot[T_DISP] = float(sum(abs(ann.X[i] - ann.Xs[i]) + abs(ann.Y[i] - ann.Ys[i]) for i in ann.mov))
+    E.tot[T_LAB] = float(sum(_lab_part(E, i) for i in ann.mov))
     return E
 
 
@@ -1136,8 +1165,10 @@ class FastAnnealer:
         E = self.E
         w = self.w
         disp = E.tot[T_DISP] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
+        lab = E.tot[T_LAB] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
         return (w["wl"] * float(_wl_cost(E, E.tot[T_WL])) + lam * E.tot[T_LEG] / self.A0 + w["disp"] * disp
-                + w["phys"] * self.phys / self.nstruct + E.fp[F_WCONG] * E.tot[T_CONG] + w["order"] * E.tot[T_ORDER])
+                + w["phys"] * self.phys / self.nstruct + E.fp[F_WCONG] * E.tot[T_CONG] + w["order"] * E.tot[T_ORDER]
+                + w.get("label", 0.0) * lab)
 
     def terms_report(self):
         E = self.E
@@ -1148,6 +1179,10 @@ class FastAnnealer:
         if self.ann.order:
             out.update(order=round(float(E.tot[T_ORDER]), 5), order_rules=len(self.ann.order),
                        order_violations=self.order_violations())
+        if self.ann.labels:
+            lab = E.tot[T_LAB] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
+            out.update(label=round(float(lab), 5), labelled_parts=len(self.ann.labels),
+                       labels_off=sum(1 for i in self.ann.labels if _lab_part(E, i) > 0))
         return out
 
     def order_violations(self):

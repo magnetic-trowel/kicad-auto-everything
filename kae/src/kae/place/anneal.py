@@ -10,6 +10,8 @@ tools/research/solver-bench/sa_place.py):
                                      obstacles) + area outside the outline, / mean part area;
                                      lam ramps up geometrically
          + w_disp * displacement     L1 distance from the seed / (parts * mean part size)
+         + w_label * labels          parts named by board silk labels, L1 beyond a dead zone
+                                     from their label (kae.place.labels; off by default)
          + w_order * order           protection order of protected connector chains (a rule:
                                      the TVS nearer the connector than the protected part),
                                      violation distance / mean part size
@@ -66,7 +68,7 @@ class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
                  cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
-                 cong_history=None):
+                 cong_history=None, labels=None, w_label=0.0):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -193,7 +195,10 @@ class Annealer:
                 self.order_of.setdefault(i, []).append(j)
         self.open = [self._order_pen(j) for j in range(len(self.order))]
         self.order_total = sum(self.open)
-        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order)
+        # ---- labels (kae.place.labels.anchors): {i: (per-rotation target origins [(X, Y)], dead
+        # zone in cells, weight)}: the part's labelled pads beside their board silk label
+        self.labels = {i: a for i, a in (labels or {}).items() if i in self.movset} if w_label > 0 else {}
+        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label)
         self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
@@ -372,6 +377,22 @@ class Annealer:
     def _disp(self, S):
         return sum(abs(self.X[i] - self.Xs[i]) + abs(self.Y[i] - self.Ys[i]) for i in S)
 
+    def _lab(self, S):
+        """Label term of parts S: weight x L1 cells beyond the dead zone from the target origin
+        that puts the labelled pads at their label (for the part's rotation)."""
+        if not self.labels:
+            return 0.0
+        tot = 0.0
+        for i in S:
+            a = self.labels.get(i)
+            if a is None:
+                continue
+            tx, ty = a[0][self.K[i]]
+            d = abs(self.X[i] - tx) + abs(self.Y[i] - ty) - a[1]
+            if d > 0:
+                tot += a[2] * d
+        return tot
+
     def _pose_of(self, i):
         p = self.P.parts[i]
         return (self.P.ox + self.X[i] * self.g, self.P.oy + self.Y[i] * self.g, p.rots[self.K[i]].rot, p.side)
@@ -384,12 +405,14 @@ class Annealer:
         wl_old = sum(self.ncost[j] for j in nets)
         leg_old = self._leg(S)
         disp_old = self._disp(S)
+        lab_old = self._lab(S)
         cong_old = self.cong.local_cost(nets) if self.cong is not None else 0.0
         old = self._apply(S, newpos)
         newc = {j: self._net_cost(j) for j in nets}
         wl_new = sum(newc.values())
         leg_new = self._leg(S)
         disp_new = self._disp(S)
+        lab_new = self._lab(S)
         d_cong = 0.0
         if self.cong is not None:
             d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
@@ -406,6 +429,7 @@ class Annealer:
         delta = (w["wl"] * (self._wl_cost(self.wl + wl_new - wl_old) - self._wl_cost(self.wl))
                  + lam * (leg_new - leg_old) * g2 / self.A0
                  + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
+                 + w["label"] * (lab_new - lab_old) * self.g / (len(self.mov) * self.S0)
                  + w["phys"] * d_phys / self.nstruct
                  + w["cong"] * d_cong
                  + w["order"] * d_order)
@@ -555,8 +579,10 @@ class Annealer:
         w = self.w
         disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0)
         c = self.cong.total() if self.cong is not None else 0.0
+        lab = self._lab(self.mov) * self.g / (len(self.mov) * self.S0)
         return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
-                + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total)
+                + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total
+                + w["label"] * lab)
 
     def evaluate(self, st):
         """Full cost of another state with this annealer's weights and normalization (seed
@@ -564,7 +590,8 @@ class Annealer:
         o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
                      w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
                      wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
-                     order=self.order, w_order=self.w["order"], order_margin=self.order_margin)
+                     order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
+                     labels=self.labels, w_label=self.w["label"])
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
@@ -577,7 +604,14 @@ class Annealer:
         if self.order:
             out.update(order=round(self.order_total, 5), order_rules=len(self.order),
                        order_violations=self.order_violations())
+        if self.labels:
+            out.update(label=round(self._lab(self.mov) * self.g / (len(self.mov) * self.S0), 5),
+                       labelled_parts=len(self.labels), labels_off=self.labels_off())
         return out
+
+    def labels_off(self):
+        """Labelled parts beyond their label's dead zone."""
+        return sum(1 for i in self.labels if self._lab([i]) > 0)
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, deadline=None):
         """Anneal for at most cpu_s CPU seconds (and, with `deadline`, until that
