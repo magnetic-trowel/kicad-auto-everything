@@ -428,3 +428,30 @@ def test_kicad_edge_error_grows_the_named_parts_edge_clearance():
     assert rep["end"] == 0 and P.parts[i].ref in rep["moved"]
     E = exact.ExactModel(P, st)
     assert min(g.distance(boundary) for g, k, pd in E.sh[i]["pads"]) > dist[i]
+
+
+def test_fix_order_moves_the_protection_part_back_within_the_physics_bound():
+    """stickhub at 150 s: an annealer cut short leaves a protection-order rule broken, which the
+    guarded repair keeps but does not fix. The final pass moves the protection part to the
+    nearest clean spot that keeps the rule, unless the physics total would rise past its bound."""
+    from kae.place import exact
+    P, st, E, guard, ref = _held_chain()
+    i7 = ref["U7"].i
+    cands = [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i7, *exact._tables(P, st, {i7}), list(range(4)),
+                                                           0.0, 4000) if not E.findings_at(i7, X, Y, k)]
+    bad = next(t for t in reversed(cands) if guard.count_at(i7, *t) > 0)
+    E.set_pose(i7, *bad)
+    assert guard.total() == 1 and not exact_check(P, st)
+    # every move costs more physics than the bound allows: nothing moves
+    calls = []
+
+    def phys():
+        calls.append(1)
+        return 1.0 if len(calls) == 1 else 2.0
+    rep = exact.fix_order(P, st, time_s=30.0, phys=phys)
+    assert rep["end"] == 1 and not rep["moved"] and rep["refused_physics"] >= 1
+    assert (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == tuple(bad)
+    # within the bound: U7 moves and the rule holds, exactly clean
+    rep = exact.fix_order(P, st, time_s=30.0, phys=lambda: 1.0)
+    assert rep["start"] == 1 and rep["end"] == 0 and rep["moved"] == ["U7"]
+    assert not exact_check(P, st) and not grid_violations(st)

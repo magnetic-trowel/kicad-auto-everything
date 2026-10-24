@@ -433,6 +433,25 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)
+    if order:
+        # protection-order rules an annealer cut short left broken: the protection part to the
+        # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)
+        t = time.monotonic()
+        reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
+        # a few seconds even when the stages ran over (a loaded host is when it is needed)
+        left = max(5.0, min(0.05 * budget + 5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
+        phys = None
+        if report_terms is not None:
+            def phys():
+                return physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts},
+                                       breakdown=False)["total_linear"]
+        try:
+            rep["order_fix"] = exactmod.fix_order(P, st, time_s=left, phys=phys, log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["order_fix"] = dict(error=f"{type(e).__name__}: {e}")
+        if rep["order_fix"].get("moved"):
+            rep["exact"] = exact_check(P, st)
+        stage("order_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)

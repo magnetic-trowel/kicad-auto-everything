@@ -956,6 +956,65 @@ def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
     return rep
 
 
+def fix_order(P, st, time_s=10.0, phys=None, max_rise=0.03, w_rot=4.0, limit=600, max_evals=8, log=None):
+    """A final pass on the protection-order rules still broken (an annealer cut short on a
+    loaded host leaves some; the repair's guard only keeps it from adding any): per broken rule,
+    the protection part (else the protected part) moves to the nearest grid-free, exactly clean
+    spot where fewer of its rules are broken. `phys()` (the physics total for where st stands,
+    optional) bounds it: the moves together may raise it by `max_rise` of its value at the
+    start (at least 0.05); a move past that is not taken, at most `max_evals` priced per part.
+    Returns a report."""
+    t0 = time.monotonic()
+    deadline = t0 + time_s
+    guard = OrderGuard(P, st)
+    rep = dict(start=guard.total(), moved=[], refused_physics=0, no_spot=0)
+    if not rep["start"]:
+        rep.update(end=0, seconds=0.0)
+        return rep
+    E = ExactModel(P, st)
+    phys0 = base_phys = phys() if phys is not None else None
+    cap = None if phys0 is None else phys0 + max(0.05, max_rise * abs(phys0))
+    for j in range(len(guard.rules)):
+        if time.monotonic() > deadline:
+            break
+        if not guard.broken(j):
+            continue
+        (ci, _), (ti, _), (ii, _) = guard.rules[j]
+        for i in [q for q in (ti, ii) if P.parts[q].movable]:
+            if not guard.broken(j) or time.monotonic() > deadline:
+                break
+            base = guard.count(i)
+            S, pad = _tables(P, st, {i})
+            home = (int(st.X[i]), int(st.Y[i]), int(st.K[i]))
+            evals, done = 0, False
+            for c, X, Y, k in _candidates(P, st, i, S, pad, list(range(len(P.parts[i].rots))), w_rot, limit):
+                if time.monotonic() > deadline or evals >= max_evals:
+                    break
+                if guard.count_at(i, X, Y, k) >= base or E.findings_at(i, X, Y, k, first=True):
+                    continue
+                E.set_pose(i, X, Y, k)
+                if base_phys is not None:
+                    evals += 1
+                    p1 = phys()
+                    if p1 > cap:
+                        rep["refused_physics"] += 1
+                        E.set_pose(i, *home)
+                        continue
+                    base_phys = p1
+                rep["moved"].append(P.parts[i].ref)
+                done = True
+                break
+            if not done:
+                rep["no_spot"] += 1
+    rep["end"] = guard.total()
+    if base_phys is not None:
+        rep["physics"] = [round(phys0, 4), round(base_phys, 4)]
+    rep["seconds"] = round(time.monotonic() - t0, 2)
+    if log:
+        log(f"order fix: {rep['start']} -> {rep['end']} rules broken, moved {rep['moved']} ({rep['seconds']}s)")
+    return rep
+
+
 # ----------------------------------------------------------------------------- KiCad feedback
 def kicad_feedback(P, st, report, step=0.3):
     """Turn KiCad DRC placement errors (a kicad-cli JSON report) into constraints on P
