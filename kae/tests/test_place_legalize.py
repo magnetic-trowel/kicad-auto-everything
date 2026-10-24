@@ -233,11 +233,9 @@ def test_exact_rules_follow_kicad_on_copperless_pads_roundrects_and_custom_rules
     assert E._rule_clr(i, E.sh[i], j, E.sh[j]) in (0.05, None)
 
 
-def test_repair_keeps_protection_order():
-    """Regression (stickhub at fe68468): the closed loop's repair cleared a mask bridge by
-    moving a protection part to the far side of what it protects (4 of 7 rules broken).
-    A repair move or eviction may not break an order rule that holds."""
-    from shapely.geometry import Point
+def _held_chain():
+    """The fixture legalized, with a J1 -> U7 -> U1 protection chain that holds: U1 at a clean
+    spot far from J1, U7 at the clean spot nearest J1. Returns (P, st, E, guard, ref)."""
     from kae.place import clusters, exact
     P, st = _pile()
     legalize(P, st, time_s=30.0, workers=2, seed=0)
@@ -248,7 +246,6 @@ def test_repair_keeps_protection_order():
          "protection": [u["U7"]], "chain": [[u["J1"], "1"], [u["U7"], "3"], [u["U1"], "3"]]}]}
     P.order_rules = clusters.protection_order(P, brief)
     E = exact.ExactModel(P, st)
-    # a chain that holds: U1 at a clean spot far from J1, U7 at the clean spot nearest J1
     cx, cy = st.xy(ref["J1"].i)
     guard = exact.OrderGuard(P, st)
 
@@ -267,6 +264,16 @@ def test_repair_keeps_protection_order():
             E.set_pose(i7, X, Y, k)
             break
     assert guard.total() == 0 and not exact_check(P, st)
+    return P, st, E, guard, ref
+
+
+def test_repair_keeps_protection_order():
+    """Regression (stickhub at fe68468): the closed loop's repair cleared a mask bridge by
+    moving a protection part to the far side of what it protects (3 of its 24 rules broken
+    locally, annealed 0). A repair move or eviction may not break an order rule that holds."""
+    from shapely.geometry import Point
+    from kae.place import exact
+    P, st, E, guard, ref = _held_chain()
     # KiCad objects to U7 where it is: the repair must move it and keep the chain
     x7, y7 = st.xy(ref["U7"].i)
     P.feedback = {"sep": {}, "avoid": {ref["U7"].i: [(Point(x7, y7).buffer(1.0), "test")]}}
@@ -279,24 +286,14 @@ def test_move_clean_skips_a_spot_that_breaks_protection_order(monkeypatch):
     """The guard itself: of two exactly clean spots, the nearer one puts the protection part
     farther from the connector than the protected part; the repair takes the other."""
     import time
-    from kae.place import clusters, exact
-    P, st = _pile()
-    legalize(P, st, time_s=30.0, workers=2, seed=0)
-    ref = {p.ref: p for p in P.parts}
-    u = {r: p.uuid for r, p in ref.items()}
-    brief = {"structures": [
-        {"kind": "connector_chain", "connector": u["J1"], "pin": "1", "net": "VCC", "protected": True,
-         "protection": [u["U7"]], "chain": [[u["J1"], "1"], [u["U7"], "3"], [u["U1"], "3"]]}]}
-    P.order_rules = clusters.protection_order(P, brief)
-    E = exact.ExactModel(P, st)
-    guard = exact.OrderGuard(P, st)
+    from kae.place import exact
+    P, st, E, guard, ref = _held_chain()
     i7 = ref["U7"].i
     cands = [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i7, *exact._tables(P, st, {i7}), list(range(4)),
                                                            0.0, 4000) if not E.findings_at(i7, X, Y, k)]
     bad = next(t for t in cands if guard.count_at(i7, *t) > 0)
     good = next(t for t in cands if guard.count_at(i7, *t) == 0)
-    st.X[i7], st.Y[i7], st.K[i7] = good                 # where it stands, the rule holds
-    E.set_pose(i7, *good)
+    E.set_pose(i7, *good)                                # where it stands, the rule holds
     monkeypatch.setattr(exact, "_candidates", lambda *a, **k: [(0.0, *bad), (1.0, *good)])
     E.findings_at = lambda i, X, Y, K, **kw: []          # both spots clean
     ok, _ = exact.move_clean(P, st, E, i7, time.monotonic() + 30)

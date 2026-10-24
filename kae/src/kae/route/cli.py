@@ -5,7 +5,7 @@
     python -m kae.route.cli route INPUT OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N] [--planes cost|keep|strict|allow]
-                                               [--report FILE]
+                                               [--pad-shapes kicad|outside] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -42,12 +42,14 @@ def main(argv=None):
     r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
                    help="inner plane layers: traces there cost plane_cost x (cost), none (strict), none unless a repair"
                         " round has open connections (keep), or KiCad's layer types (allow)")
+    r.add_argument("--pad-shapes", default="kicad", choices=("kicad", "outside"),
+                   help="pin polygons in the DSN: KiCad's (arc chords inside the pad) or ones that contain the pad")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
     opts = dict(repair=not a.no_repair, fanout=True if a.fanout else ("first" if a.fanout_first else False),
                 thermal_repair=not a.no_thermal,
-                passes=a.passes, rounds=a.rounds, keep=a.keep, planes=a.planes)
+                passes=a.passes, rounds=a.rounds, keep=a.keep, planes=a.planes, pad_shapes=a.pad_shapes)
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     try:

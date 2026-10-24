@@ -191,3 +191,80 @@ def test_plane_costs_go_beside_the_dsn(tmp_path):
     assert (tmp_path / "board.rules").read_text() == "(rules PCB board)\n"
     translate.write_rules(SimpleNamespace(layer_rules=None), dsn)
     assert not (tmp_path / "board.rules").exists()
+
+
+RR_DSN = '''(pcb "/tmp/x.dsn"
+  (resolution um 10)
+  (unit um)
+  (structure (layer F.Cu (type signal)) (layer B.Cu (type signal)))
+  (placement
+    (component C0805 (place C2 94000 -115050 back 90) (place C3 120000 -100000 front 30))
+  )
+  (library
+    (image C0805
+      (pin RR 1 -950 0)
+      (pin RR (rotate 90) 2 950 0)
+      (pin Round 3 0 1500)
+    )
+    (padstack RR
+      (shape (polygon F.Cu 0  -500.951 475  -481.848 571.035  -427.449 652.449  -346.035 706.848
+            -249.999 725.95  250 725.951  346.035 706.848  427.449 652.449
+            481.848 571.035  500.95 474.999  500.951 -475  481.848 -571.035
+            427.449 -652.449  346.035 -706.848  249.999 -725.95  -250 -725.951
+            -346.035 -706.848  -427.449 -652.449  -481.848 -571.035  -500.95 -474.999
+            -500.951 475))
+      (attach off))
+    (padstack Round (shape (circle F.Cu 600)) (attach off))
+  )
+  (network (net A (pins C2-1 C3-1)) (net B (pins C2-2 C3-2)))
+)
+'''
+
+
+def test_rounded_pin_polygons_are_circumscribed():
+    """KiCad's DSN writes a roundrect pad as a polygon whose corner chords lie up to 3.9 um
+    inside the true outline (oasis C2: 1.0 x 1.45 mm, r 0.25 mm), so Freerouting kept its
+    clearance from a smaller pad than KiCad checks. circumscribe_pins replaces it by a
+    polygon that contains the pad (back side, placement and pin rotations included) and
+    reaches at most max_error beyond it; exact shapes (circles) stay."""
+    import math
+    from shapely import affinity
+    from shapely.geometry import Point, box
+    t = S.parse(RR_DSN)
+
+    def outline(cx, cy, rot, w=1.0, h=1.45, r=0.25):             # the true pad, board mm (y down)
+        g = box(-w / 2 + r, -h / 2 + r, w / 2 - r, h / 2 - r).buffer(r, quad_segs=256)
+        return affinity.translate(affinity.rotate(g, rot, origin=(0, 0)), cx, cy)
+
+    def pad(comp, pin, g, layer):
+        out = g.buffer(0.005 / math.cos(math.pi / 64), quad_segs=16, join_style="mitre")   # ERROR_OUTSIDE-like
+        return dict(comp=comp, pin=pin, net="A", layers=[layer], poly=[[list(out.exterior.coords)]])
+
+    # C2 back, 90 deg: pin 1 at (94.0, 114.1), pin 2 (pin rotated 90 more) at (94.0, 116.0); C3 front, 30 deg
+    truth = {("C2", "1"): (outline(94.0, 114.1, -90), "B.Cu"), ("C2", "2"): (outline(94.0, 116.0, 0), "B.Cu")}
+    a = math.radians(30)
+    for pin, (px, py), rot in (("1", (-0.95, 0.0), 0), ("2", (0.95, 0.0), 90)):
+        x, y = 120.0 + px * math.cos(a) - py * math.sin(a), 100.0 - (px * math.sin(a) + py * math.cos(a))
+        truth[("C3", pin)] = (outline(x, y, -(30 + rot)), "F.Cu")
+    info = dict(copper=["F.Cu", "B.Cu"], pads=[pad(c, p, g, l) for (c, p), (g, l) in truth.items()])
+    before = translate.circumscribe_pins(S.parse(RR_DSN), info)
+    assert before["pin_shapes_circumscribed"] == 1 and before["pin_deficit_um_max"] > 3
+    pins = {(r, n): m for r, n, ps, side, m in translate.dsn_pins(t) if ps == "RR"}
+
+    def pin_shape(tree, key):
+        ps = next(p for p in S.findall(S.find(tree, "library"), "padstack") if p[1] == "RR")
+        v = [float(x) for x in S.find(ps, "shape")[1][3:]]
+        from shapely.geometry import Polygon
+        return translate._apply_affine(Polygon(list(zip(v[0::2], v[1::2]))), pins[key])
+    for key, (g, _) in truth.items():
+        assert not pin_shape(t, key).contains(g)                  # KiCad's chords cut the corners
+    translate.circumscribe_pins(t, info)
+    for key, (g, _) in truth.items():
+        s = pin_shape(t, key)
+        assert s.contains(g)
+        assert s.hausdorff_distance(g) <= 0.005 + 0.001           # max_error plus the 0.2 um growth
+    assert translate.circumscribe_pins(t, info)["pin_shapes_circumscribed"] == 0
+    rnd = next(p for p in S.findall(S.find(t, "library"), "padstack") if p[1] == "Round")
+    assert S.find(rnd, "shape")[1] == ["circle", "F.Cu", "600"]
+    c = pin_shape(t, ("C2", "1")).centroid                          # the transform matches dsn_pin_centres
+    assert Point(c.x, c.y).distance(Point(94.0, 114.1)) < 1e-4

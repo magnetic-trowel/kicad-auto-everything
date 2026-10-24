@@ -6,7 +6,7 @@
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
-                                     [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
+                                     [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
                                      [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
@@ -64,6 +64,8 @@ def main(argv=None):
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
     r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
                    help="the bridge's inner plane layers (kae.route.bridge DEFAULT_OPTS planes)")
+    r.add_argument("--pad-shapes", default="kicad", choices=("kicad", "outside"),
+                   help="the bridge's pin polygons (kae.route.bridge DEFAULT_OPTS pad_shapes)")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
@@ -97,7 +99,7 @@ def main(argv=None):
         if a.trim_tol is not None:
             opts["trim_tol"] = a.trim_tol
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
-                           workdir=a.workdir, bridge=not a.no_bridge, bridge_opts=dict(planes=a.planes))
+                           workdir=a.workdir, bridge=not a.no_bridge, bridge_opts=dict(planes=a.planes, pad_shapes=a.pad_shapes))
         if a.physics_fidelity != "fast":
             rep["physics_fidelity"] = EX.summary()
         text = json.dumps(rep, default=str)

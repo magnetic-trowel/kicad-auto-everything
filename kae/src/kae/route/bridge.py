@@ -44,6 +44,9 @@ DEFAULT_OPTS = dict(
                              # (Freerouting power layers, no traces; a repair round with open connections
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
+    pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
+                             # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
+                             # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
 )
 
 
@@ -91,6 +94,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         p = constraints.plan(info, input_path, opts)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
+        p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
         report["permuted"] = translate.permute(tree, seed)

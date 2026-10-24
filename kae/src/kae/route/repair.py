@@ -585,6 +585,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             from .bridge import plane_policy
             plan.plane_policy = plane_policy(opts, free_round_with_open=bool(a["open"]))
             plan.plane_cost = opts.get("plane_cost")
+            plan.pad_shapes = opts.get("pad_shapes") or "kicad"
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
             translate.permute(tree, round_seed(opts.get("seed"), k))

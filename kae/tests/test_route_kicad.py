@@ -104,6 +104,42 @@ def test_plan_and_translation(exported, tmp_path):
     assert summary["pins_classed"] == len(p.pin_class)
 
 
+
+def test_pin_shapes_outside_contain_kicads_pad_copper(exported, tmp_path):
+    """With pad_shapes "outside", every polygon pin of KiCad's DSN contains its pad's copper
+    on its layer (KiCad's own roundrect chords lie inside it), at most max_error + 1 um
+    beyond it; with the default, the DSN keeps KiCad's shapes."""
+    from shapely.geometry import Polygon
+    board, info, dsn = exported
+    p = constraints.plan(info, board)
+    tree = specctra.read(dsn)
+    assert "pin_shapes" not in translate.apply(tree, p, info)
+    p.pad_shapes = "outside"
+    tree = specctra.read(dsn)
+    summary = translate.apply(tree, p, info)["pin_shapes"]
+    assert summary["pin_shapes_circumscribed"] >= 1 and summary["pin_shapes_kept"] == 0
+    lib = specctra.find(tree, "library")
+    stacks = {str(ps[1]): ps for ps in specctra.findall(lib, "padstack")}
+    dsn_l = [str(l[1]) for l in specctra.findall(specctra.find(tree, "structure"), "layer")]
+    pads = {(pd["comp"], pd["pin"]): pd for pd in info["pads"]}
+    checked = 0
+    for ref, num, psn, side, m in translate.dsn_pins(tree):
+        if (ref, num) not in pads or psn not in stacks:
+            continue
+        for sh in specctra.findall(stacks[psn], "shape"):
+            node = sh[1]
+            if node[0] != "polygon":
+                continue
+            v = [float(x) for x in node[3:]]
+            g = translate._apply_affine(Polygon(list(zip(v[0::2], v[1::2]))), m)
+            i = dsn_l.index(str(node[1]))
+            layer = info["copper"][len(dsn_l) - 1 - i if side == "back" else i]
+            real = translate._pad_copper(pads[(ref, num)], layer)
+            assert g.buffer(1e-6).contains(real), (ref, num, psn)
+            assert g.hausdorff_distance(real) <= info["settings"]["max_error"] + 0.001
+            checked += 1
+    assert checked >= 9
+
 def test_mask_openings_keep_other_copper_out(exported):
     """A solder-mask opening drawn as a graphic exposes the copper under it: unless it covers
     a pad, it is a keepout on its outer copper layer (another net there would bridge)."""

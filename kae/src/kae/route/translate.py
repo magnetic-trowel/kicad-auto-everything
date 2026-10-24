@@ -181,6 +181,158 @@ def dsn_pin_centres(tree):
     return out
 
 
+def _affine(*ms):
+    """Compose 2x3 affine matrices (a, b, c, d, e, f: x' = ax + by + c, y' = dx + ey + f),
+    the last one applied first."""
+    out = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+    for m in ms:
+        a, b, c, d, e, f = out
+        A, B, C, D, E, F = m
+        out = (a * A + b * D, a * B + b * E, a * C + b * F + c, d * A + e * D, d * B + e * E, d * C + e * F + f)
+    return out
+
+
+def _rot(deg):
+    r = math.radians(deg)
+    return (math.cos(r), -math.sin(r), 0.0, math.sin(r), math.cos(r), 0.0)
+
+
+def _inverse(m):
+    a, b, c, d, e, f = m
+    det = a * e - b * d
+    return (e / det, -b / det, (b * f - c * e) / det, -d / det, a / det, (c * d - a * f) / det)
+
+
+def _apply_affine(geom, m):
+    from shapely import affinity
+    a, b, c, d, e, f = m
+    return affinity.affine_transform(geom, [a, b, d, e, c, f])
+
+
+def dsn_pins(tree):
+    """[(ref, pin id, padstack name, side, matrix)] for every component pin of a DSN, the
+    matrix taking padstack coordinates (DSN units) to board mm (y down): the pin's rotation
+    and offset, a back-side image mirrored in x, the placement's rotation and position
+    (Freerouting's order, as dsn_pin_centres)."""
+    lib = find(tree, "library")
+    placement = find(tree, "placement")
+    if lib is None or placement is None:
+        return []
+    scale = S.unit_scale(tree)
+    imgs = {}
+    for im in findall(lib, "image"):
+        pins = []
+        for p in findall(im, "pin"):
+            rest = [c for c in p[2:] if not isinstance(c, list)]
+            rot = next((float(c[1]) for c in p[2:] if isinstance(c, list) and c and c[0] == "rotate"
+                        and len(c) > 1), 0.0)
+            if len(rest) >= 3:
+                pins.append((str(p[1]), str(rest[0]), float(rest[1]), float(rest[2]), rot))
+        imgs[str(im[1])] = pins
+    out = []
+    to_mm = (1.0 / scale, 0.0, 0.0, 0.0, -1.0 / scale, 0.0)
+    for comp in findall(placement, "component"):
+        for pl in findall(comp, "place"):
+            if len(pl) < 6:
+                continue
+            ref, x, y, side, rot = str(pl[1]), float(pl[2]), float(pl[3]), str(pl[4]), float(pl[5])
+            mirror = (-1.0, 0.0, 0.0, 0.0, 1.0, 0.0) if side == "back" else (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+            for ps, num, px, py, prot in imgs.get(str(comp[1])) or []:
+                m = _affine(to_mm, (1.0, 0.0, x, 0.0, 1.0, y), _rot(rot), mirror, (1.0, 0.0, px, 0.0, 1.0, py),
+                            _rot(prot))
+                out.append((ref, num, ps, side, m))
+    return out
+
+
+def _pad_copper(pad, layer):
+    from shapely.ops import unary_union
+    rings = pad.get("poly") if "poly" in pad else (pad.get("poly_by_layer") or {}).get(layer)
+    gs = []
+    for r in rings or []:
+        if r and len(r[0]) >= 3:
+            g = Polygon(r[0], [h for h in r[1:] if len(h) >= 3])
+            gs.append(g if g.is_valid else g.buffer(0))
+    return unary_union(gs) if gs else None
+
+
+def circumscribe_pins(tree, info, tol_mm=0.0005):
+    """Make every pin's polygon contain the pad's copper (in place). KiCad's DSN export
+    writes roundrect, chamfered and custom pads as polygons whose arc chords lie inside the
+    true outline (oasis: 3.9 um at a 0.25 mm corner radius, 10 um on its custom pads), so
+    Freerouting's clearance from them falls short of KiCad's by that much. Each such
+    padstack polygon (its copper reaching more than `tol_mm` beyond it) is replaced by the
+    pad's copper as KiCad's export gives it (ERROR_OUTSIDE: contains the true outline, at
+    most max_error beyond it), taken back into the padstack's frame and grown by 0.2 um
+    against coordinate rounding. A replacement is kept only when it contains the copper of
+    every pin that uses the padstack. Circles, paths (ovals) and rectangles are exact and
+    stay. Returns a summary."""
+    from .constraints import _excess
+    lib = find(tree, "library")
+    struct = find(tree, "structure")
+    if lib is None or struct is None or not info:
+        return {}
+    dsn_l = [str(l[1]) for l in findall(struct, "layer")]
+    cu = list(info.get("copper") or [])
+    if len(cu) != len(dsn_l):
+        return {}
+    pads = {(p.get("comp"), p.get("pin")): p for p in info.get("pads") or []}
+    stacks = {str(ps[1]): ps for ps in findall(lib, "padstack") if len(ps) > 1}
+    scale = S.unit_scale(tree)
+    uses = {}      # (padstack, shape index) -> [(deficit mm, copper in padstack frame, copper on board, matrix)]
+    for ref, num, psn, side, m in dsn_pins(tree):
+        pad, ps = pads.get((ref, num)), stacks.get(psn)
+        if pad is None or ps is None:
+            continue
+        for k, sh in enumerate(findall(ps, "shape")):
+            node = sh[1] if len(sh) > 1 and isinstance(sh[1], list) else None
+            if node is None or node[0] != "polygon" or len(node) < 9 or str(node[1]) not in dsn_l:
+                continue
+            try:
+                if float(node[2]) != 0.0:
+                    continue
+                v = [float(t) for t in node[3:] if not isinstance(t, list)]
+            except ValueError:
+                continue
+            g = Polygon(list(zip(v[0::2], v[1::2])))
+            if not g.is_valid:
+                g = g.buffer(0)
+            i = dsn_l.index(str(node[1]))
+            if side == "back":
+                i = len(cu) - 1 - i
+            real = _pad_copper(pad, cu[i])
+            if real is None or real.is_empty:
+                continue
+            e = _excess(real, _apply_affine(g, m))
+            uses.setdefault((psn, k), []).append((e, _apply_affine(real, _inverse(m)), real, m))
+    out = dict(pin_shapes_circumscribed=0, pin_shapes_kept=0, pin_deficit_um_max=0.0)
+    grow = 0.0002 * scale
+    for (psn, k), us in uses.items():
+        worst = max(u[0] for u in us)
+        out["pin_deficit_um_max"] = max(out["pin_deficit_um_max"], round(worst * 1000.0, 2))
+        if worst <= tol_mm:
+            continue
+        cand = us[0][1]
+        if not isinstance(cand, Polygon) or cand.is_empty:
+            out["pin_shapes_kept"] += 1
+            continue
+        cand = Polygon(cand.exterior).buffer(grow, quad_segs=2, join_style="mitre", mitre_limit=2.0)
+        cand = cand.simplify(grow, preserve_topology=True)
+        if not all(_apply_affine(cand, u[3]).buffer(1e-6).contains(u[2]) for u in us):
+            out["pin_shapes_kept"] += 1
+            continue
+        shapes = findall(stacks[psn], "shape")
+        node = shapes[k][1]
+        pts = list(cand.exterior.coords)
+        if not Polygon(pts).exterior.is_ccw:
+            pts = pts[::-1]
+        flat = []
+        for x, y in pts[:-1] + [pts[0]]:
+            flat += [fmt(x), fmt(y)]
+        shapes[k][1] = ["polygon", node[1], "0", *flat]
+        out["pin_shapes_circumscribed"] += 1
+    return out
+
+
 def snap_wiring(tree, pads=None, tol_um=SNAP_TOL_UM):
     """Move the DSN wiring's points (wire path points, via centres) that lie within `tol_um`
     of a same-net pin centre exactly onto it, and the rest within `tol_um` of another
@@ -398,6 +550,10 @@ def apply(tree, plan, info):
                                        getattr(plan, "plane_cost", None) or PLANE_COST)
         if plan.layer_rules:
             summary["plane_layers_costed"] = [c for c in cu if c in plane_layers(info)]
+
+    # ---- pins: polygons that contain the pad's copper (plan.pad_shapes "outside")
+    if getattr(plan, "pad_shapes", "kicad") == "outside":
+        summary["pin_shapes"] = circumscribe_pins(tree, info)
 
     # ---- structure: KiCad's keepouts, via list and global rule are replaced
     removed = 0
