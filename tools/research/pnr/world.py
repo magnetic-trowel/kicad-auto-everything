@@ -47,7 +47,12 @@ class Rules:
         self.R_TT = w + c + m
         self.R_TV = max(w / 2 + c + dv / 2, w / 2 + self.hc + dr / 2) + m
         self.R_VV = max(dv + c, dr + self.h2h, dv / 2 + self.hc + dr / 2) + m
-        self.pad_T = c + w / 2 + m
+        # solder mask: a pad's aperture (pad + expansion) must not expose other nets' tracks,
+        # and two pads' apertures (plus the minimum web) must not merge
+        self.mask_exp = r.get("mask_exp", 0.0)
+        self.mask_web = r.get("mask_web", 0.0)
+        self.pad_T = max(c, self.mask_exp + 0.02) + w / 2 + m
+        self.pad_gap = max(c, 2 * self.mask_exp + self.mask_web)
         self.pad_V = max(c + dv / 2, self.hc + dr / 2) + m
 
     def __repr__(self):
@@ -77,6 +82,24 @@ class Part:
 
     def nets(self):
         return {p["net"] for p in self.pads if p["net"]}
+
+
+def _cutout_cells(part, deg, fx, fy, g):
+    """Cells inside the closed regions bounded by a footprint's own Edge.Cuts strokes."""
+    edges = [np.array(e, float) for e in part.data.get("edges", []) if len(e) >= 3]
+    if not edges:
+        return np.zeros((0, 2), np.int32)
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    u = unary_union([Polygon(rot_pts(e, deg)).buffer(0) for e in edges])
+    holes = []
+    for geom in getattr(u, "geoms", [u]):
+        for ring in getattr(geom, "interiors", []):
+            holes.append(np.array(ring.coords)[:-1])
+    if not holes:
+        return np.zeros((0, 2), np.int32)
+    cells = np.concatenate([raster_poly(h, 0.75 * g, -fx, -fy, g) for h in holes])
+    return np.ascontiguousarray(np.unique(cells, axis=0), np.int32)
 
 
 def _poly_area(p):
@@ -294,7 +317,7 @@ class World:
         for pad in part.pads:
             drilled = bool(pad["drill"]) and max(pad["drill"]) > 0
             ex = max(0.0, (pad.get("clear") or 0.0) - R.c)  # local clearance beyond the board's
-            rk = (max(R.c, R.hc) if drilled else R.c) / 2 + ex + 0.71 * g
+            rk = (max(R.pad_gap, R.hc) if drilled else R.pad_gap) / 2 + ex + 0.71 * g
             lay = range(self.nl) if (pad["npth"] or pad["cu"] == "both") else self.pad_layers(part, pad)
             for p_ in pad["poly"]:
                 if len(p_) < 3:
@@ -326,6 +349,17 @@ class World:
                 hole = disc(rh, g) + np.round(c0 / g).astype(np.int32)
                 for l in range(self.nl):
                     keep.setdefault(2 + l, []).append(hole.astype(np.int32))
+                # a hole may not sit under another part's courtyard on either side
+                # (KiCad pth_inside_courtyard / npth_inside_courtyard)
+                bare = disc(max(pad["drill"]) / 2 + 0.71 * g, g) + np.round(c0 / g).astype(np.int32)
+                for side in (0, 1):
+                    keep.setdefault(side, []).append(bare.astype(np.int32))
+        # the board cutout a footprint draws (sensor window, slot) is a hole in the board:
+        # nothing of another part may sit inside it, on any plane
+        cut = _cutout_cells(part, deg, fx, fy, g)
+        if len(cut):
+            for plane in range(2 + self.nl):
+                keep.setdefault(plane, []).append(cut)
         side_cells = [raster_poly(rot_pts(c, deg), 0.75 * g, -fx, -fy, g) for c in part.court] + \
                      [raster_poly(rot_pts(np.array(e, float), deg), R.ec + 0.75 * g, -fx, -fy, g)
                       for e in part.data.get("edges", []) if len(e) >= 3]

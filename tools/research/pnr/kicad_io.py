@@ -68,7 +68,8 @@ def extract(path, out):
     rules = dict(min_clearance=mm(ds.m_MinClearance), min_track=mm(ds.m_TrackMinWidth),
                  min_via=mm(ds.m_ViasMinSize), hole_clearance=mm(ds.m_HoleClearance),
                  edge_clearance=mm(ds.m_CopperEdgeClearance), min_drill=mm(ds.m_MinThroughDrill),
-                 hole_to_hole=mm(ds.m_HoleToHoleMin), min_annular=mm(ds.m_ViasMinAnnularWidth))
+                 hole_to_hole=mm(ds.m_HoleToHoleMin), min_annular=mm(ds.m_ViasMinAnnularWidth),
+                 mask_exp=mm(ds.m_SolderMaskExpansion), mask_web=mm(ds.m_SolderMaskMinWidth))
     fps = []
     worst = 0.0
     moved_edges = []
