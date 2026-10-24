@@ -55,10 +55,13 @@ def _union(gs):
     return shapely.union_all(gs) if gs else None
 
 
-def fragmentation(board, nets=None, pads=None, spoke=0.05):
+def fragmentation(board, nets=None, pads=None, spoke=0.05, join_vias=True, wires=None):
     """{net: dict(layers, pads, poured_pads, components, stranded, unreached, needed,
     main_area, areas)} for each net with a board-level copper zone (or only `nets`).
-    `needed` = (components - 1) + unreached: the connections the pour leaves to the router."""
+    `needed` = (components - 1) + unreached: the connections the pour leaves to the router.
+    join_vias=False leaves the net's own vias out (on a routed board: the stitching the
+    router added, so the count is what the router had to connect). `wires`: extra copper of
+    other nets, {layer: [(net, geometry)]} (an estimate of the routing to come)."""
     pads = _pads(board) if pads is None else pads
     edge = float(board.rules.edge_clearance or 0.0) if board.rules is not None else 0.0
     inside = _union([p.buffer(-edge) if edge > 0 else p for p in (board.outline or [])])
@@ -104,7 +107,7 @@ def fragmentation(board, nets=None, pads=None, spoke=0.05):
             for ref, num, pn, lays, g, lc in pads:
                 if ly in lays and pn != net:
                     obst.append(g.buffer(max(zclr, _clr(board, pn), _clr(board, net), lc)))
-            for tn, g in tracks.get(ly, ()):
+            for tn, g in list(tracks.get(ly, ())) + list((wires or {}).get(ly, ())):
                 if tn != net:
                     obst.append(g.buffer(max(zclr, _clr(board, tn))))
             for vn, lays, g in vias:
@@ -130,7 +133,9 @@ def fragmentation(board, nets=None, pads=None, spoke=0.05):
         layers_poured = {ly for ly, _ in pieces} | {ly for z in mine for ly in z.layers if ly.endswith(CU_SUFFIX)}
         pad_hits = []
         for ref, num, pn, lays, g, lc in pads:
-            if pn != net or not (lays & layers_poured):
+            # the pads the pour is drawn over: a pad outside every outline of the net's zones
+            # on its layers is the router's to connect, placement or not
+            if pn != net or not any(ly in lays and z.outline.intersects(g) for z in mine for ly in z.layers):
                 continue
             hit = []
             if tree is not None:
@@ -142,7 +147,7 @@ def fragmentation(board, nets=None, pads=None, spoke=0.05):
                 parent[find(k)] = find(hit[0])
             pad_hits.append(((ref, num), hit))
         for vn, lays, g in vias:
-            if vn == net and tree is not None:
+            if join_vias and vn == net and tree is not None:
                 hit = [int(k) for k in tree.query(g) if pieces[k][0] in lays and pieces[k][1].intersects(g)]
                 for k in hit[1:]:
                     parent[find(k)] = find(hit[0])
@@ -166,3 +171,51 @@ def fragmentation(board, nets=None, pads=None, spoke=0.05):
                         stranded_pads=[f"{r}.{n}" for c in comps[1:] for r, n in comp_pads[c]],
                         unreached_pads=[f"{r}.{n}" for r, n in unreached])
     return out
+
+
+def mst_wires(board, pads=None, skip=(), width=None):
+    """A crude estimate of the routing to come: each net's minimum spanning tree over its
+    pads as straight tracks of the net's width, on the layer the two pads share when one of
+    them is SMD (SMD-to-SMD on one side; through-hole to SMD on the SMD's side); edges
+    between two through-hole pads are left out (the router picks their layer).
+    {layer: [(net, LineString buffered to the track)]}."""
+    import numpy as np
+    pads = _pads(board) if pads is None else pads
+    by = defaultdict(list)
+    for ref, num, net, lays, g, lc in pads:
+        if net and net not in skip:
+            c = g.centroid
+            by[net].append((c.x, c.y, lays))
+    r = board.rules
+    out = defaultdict(list)
+    for net, pts in by.items():
+        if len(pts) < 2:
+            continue
+        w = width
+        if w is None:
+            n = board.nets.get(net)
+            nc = r.netclasses.get(n.netclass) if (r is not None and n is not None and n.netclass) else None
+            w = float(getattr(nc, "track_width", 0.0) or 0.0) or (float(r.track_min or 0.0) if r else 0.0) or 0.2
+        xy = np.array([(x, y) for x, y, _ in pts])
+        n = len(pts)
+        inn = np.zeros(n, bool)
+        inn[0] = True
+        d = np.hypot(*(xy - xy[0]).T)
+        par = np.zeros(n, int)
+        for _ in range(n - 1):
+            d2 = np.where(inn, np.inf, d)
+            k = int(np.argmin(d2))
+            inn[k] = True
+            a, b = pts[par[k]], pts[k]
+            la, lb = a[2], b[2]
+            if len(la) == 1 or len(lb) == 1:
+                common = (la & lb) if len(la) == 1 and len(lb) == 1 else (la if len(la) == 1 else lb) & (la | lb)
+                if common:
+                    ly = sorted(common)[0]
+                    seg = shapely.LineString([(a[0], a[1]), (b[0], b[1])]).buffer(w / 2, quad_segs=2)
+                    out[ly].append((net, seg))
+            nd = np.hypot(*(xy - xy[k]).T)
+            upd = nd < d
+            par[upd] = k
+            d = np.minimum(d, nd)
+    return dict(out)
