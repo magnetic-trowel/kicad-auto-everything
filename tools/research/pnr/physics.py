@@ -20,9 +20,20 @@ import numpy as np
 
 from world import ROTS
 
-KAE_SRC = os.environ.get(
-    "KAE_SRC", "/tmp/claude-0/-home-user-kicad-auto-everything/1f01ab67-8a71-51cc-ad90-95d7df3bea54/"
-               "scratchpad/kae-phys/kae/src")
+def _kae_src():
+    """KAE_SRC, else the first existing default. The kaebench sandbox hides /tmp, so the
+    copy in the kaebench tool cache (readable inside the sandbox) comes first."""
+    if os.environ.get("KAE_SRC"):
+        return os.environ["KAE_SRC"]
+    for cand in (os.path.expanduser("~/.cache/kaebench/kae-phys/src"),
+                 "/tmp/claude-0/-home-user-kicad-auto-everything/1f01ab67-8a71-51cc-ad90-95d7df3bea54/"
+                 "scratchpad/kae-phys/kae/src"):
+        if os.path.isdir(os.path.join(cand, "kae")):
+            return cand
+    return ""
+
+
+KAE_SRC = _kae_src()
 
 
 class Phys:
