@@ -88,31 +88,23 @@ Stage seeds derive from the run's seed and the iteration (`derive_seed`), window
 
 ### Measured
 
-kaebench `joint` (score v6, in-tree harness), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1 (k = 2), 900 s, `-j 1` on a shared 4-core host. Σu is the routed-physics total of the scored board (`critical_recheck.board_physics`, brief from the human placement, Σ min(u, 5)). It is unreliable where hops are open [C: `tools/research/joint/joint_physics.py`].
+kaebench `joint` (score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1, 900 s, `-j 1` on a shared 4-core host, Freerouting heap 3 GB (attempts hit by host OOM kills re-run). Σu and module values come from `critical_recheck.board_physics` on the scored board (brief from the human placement); they are unreliable where hops are open [C: `tools/research/joint/joint_physics.py`, `joint_stops.py`].
 
-| Arm (seed 0 / seed 1) | clean boards | legal | unconnected | DRC errors | Σu (mean) | module value / human (median) | worst rail mΩ (median) | time s |
-|---|---|---|---|---|---|---|---|---|
-| human layout | 6 / 6 | 6 / 6 | 0 / 0 | 0 / 0 | 3.45 | 1.00 | 42 | — |
-| human placement + Freerouting | 2 / 2 | 6 / 6 | 23 / 23 | 7 / 7 | 3.16 | 0.99 | 101 | 24 / 29 |
-| kae place + bridge (staged) | 3 / 3 | 6 / 5 | 3 / 5 | 0 / 5 | 4.48 / 4.01 | 1.33 / 1.08 | 102 / 107 | 118 / 104 |
-| loop, no module stage | 3 / 4 | 5 / 6 | 5 / 3 | 1 / 0 | 5.16 / 5.03 | 1.37 / 1.35 | 127 / 97 | 130 / 127 |
-| joint loop | 3 / 3 | 6 / 6 | 13 / 10 | 0 / 0 | 2.22 / 3.51 | 0.65 / 0.88 | 55 / 59 | 241 / 300 |
+| Arm (seed 0 / seed 1) | clean | unconnected | DRC errors | module value / human (median) | worst rail mΩ (median) | Σu | time s |
+|---|---|---|---|---|---|---|---|
+| human layout | 6 / 6 | 0 / 0 | 0 / 0 | 1.00 | 42 | 3.45 | — |
+| human placement + Freerouting | 2 / 2 | 23 / 23 | 7 / 7 | 0.99 | 101 | 3.16 | 24 / 29 |
+| kae place + bridge (staged) | 3 / 4 | 3 / 3 | 0 / 0 | 1.18 / 1.39 | 108 / 87 | 4.23 / 4.46 | 160 / 112 |
+| joint loop | 3 / 3 | 11 / 8 | 0 / 0 | 0.81 / 0.96 | 43 / 58 | 2.56 / 3.38 | 394 / 331 |
+| joint loop, `--physics-fidelity multi` | 3 / 3 | 14 / 10 | 0 / 0 | 0.96 / 0.84 | 54 / 72 | 3.45 / 2.64 | 371 / 392 |
 
-**Window cost, before and after `kae.route.incremental`** (all windows of all runs):
-
-| Window router | windows routed | iteration s (median, range) | of which routing s | kept |
-|---|---|---|---|---|
-| full bridge, 16 passes, repair rounds (joint v5 + v6, k = 1) | 21 | 113–131 (13–201) | 107–124 (11–192) | 10 |
-| incremental, 1 pass, no optimizer (joint, k = 2) | 30 | 19 (8–158) | 7.4 (5.1–58) | 4 |
-| incremental (loop without modules, k = 2) | 9 | 12 (8–21) | 6.5 (5.6–7.6) | 0 |
-
-A window's routing now costs a JVM start, the DSN load and one pass of 1–2 s over 8–13 open connections. The rest of a window is the re-anneal (~8 s) and, when its modules are redone, their stage (capped at 20 s). A 900 s run now gets 5–7 windows on the boards that need them, where it got 1–4.
+Window cost: routing a window took a median 107–124 s with the full bridge, and takes 10–12 s with `route_open` (5–69 s). A whole window takes ~19 s, so a 900 s run gets 20–30 windows where it got 1–4. Over 24 joint runs, 107 windows were routed and 8 kept; 21 finishing tries were made and 6 kept. The loop's own runs cut unconnected + errors from 56 to 43.
 
 What the numbers say:
-- **Cheap windows, few wins.** The loop with modules cut unconnected + errors from 38 to 23 inside its 12 runs (5 → 6 clean). Noisecard went 11 → 6 in one 21 s window. Without the module stage, the staged result is nearly finished (3–5 unconnected on 6 boards), and 0 of 9 windows beat it. One Freerouting pass leaves 1–2 connections of a window open, and the acceptance rule then reverts it.
-- **The module stage still costs completion and buys physics.** It gives the lowest routed physics (module values 0.65–0.88× the human's, worst rail 55–59 mΩ against ~100 for every other arm) and the most unconnected items (10–13 against 3–5).
-- **Noise.** Freerouting itself repeats (the human-placement arm is identical across seeds and runs). The kae arms vary with their seeds and with where time budgets bind: staged gave 3 and 5 unconnected, the loop 13 and 10. On 6 boards the differences in clean count (3 for every kae arm but one seed) are within that.
-
+- **Physics holds.** The loop's boards have module values 0.81–0.96× the human's and half the rail resistance of every other arm. Staged boards are 1.2–1.4× the human's.
+- **Completion does not, yet.** The gap is one board: PMW3610 keeps 5–8 open connections where staged keeps 1–2. There the finishing bridge reached 5 at +120 % Σu, and the user's acceptance rule refused it (10 % per item), so the loop kept the physics. On the other five boards the loop matches or beats staged.
+- **Stops.** Loop: clean 6, no improvement 3, time 3 of 12. The window router's Freerouting ended COMPLETED 54 of 57 times. The finishing bridge stopped on STAGNATION, with its repair rounds at no improvement. Runs used 40 % of their budget on average, up to 93 %.
+- **A harness false positive** made both joint olimex attempts invalid. A part the module stage turned to 45° or −135° is rotated back by the scorer's normalization, and KiCad's nm rounding leaves its texts 1 nm off ("4.5" → "4.500001"), which `_foreign` counts as a change.
 ## Recommendations for our system
 
 1. **Judge every iteration by KiCad, accept lexicographically.** The loop can then only help: its worst case is the staged pipeline.

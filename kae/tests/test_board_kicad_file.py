@@ -260,8 +260,9 @@ def test_pad_clearance_override(tmp_path):
 
 
 def test_board_copper_and_mask_graphics(tmp_path):
-    """Board.graphics holds board-level copper and mask graphics (gr_* with stroke widths, gr_text
-    as its box) per layer, board frame; Edge.Cuts and silk stay out."""
+    """Board.graphics holds board-level copper, mask and silkscreen graphics (gr_* with stroke
+    widths, gr_text as its box; silk text apart as '<layer>:text') per layer, board frame;
+    Edge.Cuts stays out."""
     txt = FIXTURE.read_text().rstrip()
     assert txt.endswith(")")
     extra = ('\t(gr_line (start 1 1) (end 4 1) (stroke (width 0.2) (type solid)) (layer "F.Cu"))\n'
@@ -271,7 +272,8 @@ def test_board_copper_and_mask_graphics(tmp_path):
     p = tmp_path / "bgfx.kicad_pcb"
     p.write_text(txt[:-1] + extra + ")\n")
     g = kicad_file.load(p, rules=False).graphics
-    assert set(g) == {"F.Cu", "B.Mask", "B.Cu"}
+    assert set(g) == {"F.Cu", "B.Mask", "B.Cu", "F.SilkS"}
+    assert abs(g["F.SilkS"][0].area - g["F.Cu"][0].area) < 1e-9          # the same line on silk
     assert abs(g["F.Cu"][0].area - (3 * 0.2 + math.pi * 0.1 ** 2)) < 2e-3
     assert abs(g["B.Mask"][0].area - 1.0) < 1e-9                       # gr_poly fills by default
     x0, y0, x1, y1 = g["B.Cu"][0].bounds                               # 2 chars × 0.8 wide, rotated 90°
