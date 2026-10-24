@@ -352,6 +352,8 @@ def via_candidates(ctx, t, layer, net, plane_layer, toward=None, n_dirs=24, gaps
                 continue
             if sp.via_violations(net, v[0], v[1], first=True):
                 continue
+            if ctx.gr.escapes and ctx.gr.escape_hit(net, Point(v), rv):
+                continue
             ws = sp.clamp_width(net, layer, min(D, max(extent_across(tg, ux, uy), 0.1)))
             if sp.track_violations(net, layer, ws, c, v, first=True):
                 ws2 = sp.clamp_width(net, layer, sp.width_limits(net, layer)[1])

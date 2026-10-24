@@ -203,6 +203,10 @@ class GridRouter:
         self.max_exp = max_exp
         self.K = kernels()
         self.stats = dict(calls=0, found=0, expansions=0, cells=0)
+        # escape corridors of dense ICs' signal pins [(geometry, layer, net)]: other nets'
+        # tracks pay escape_cost per cell inside them, their vias are not placed there
+        self.escapes = []
+        self.escape_cost = 0.0
 
     # ------------------------------------------------------------------ window
     def window(self, anchors, margin=None, extra=()):
@@ -232,6 +236,10 @@ class GridRouter:
         return Grid(x0, y0, x1, y1, res)
 
     # ------------------------------------------------------------------ rasters
+    def escape_hit(self, net, geom, r=0.0):
+        """Whether `geom` (grown by r) enters another net's escape corridor."""
+        return any(n != net and g.distance(geom) < r for g, l, n in self.escapes)
+
     def blocked(self, grid, net, layer, w, kind="track", skip=()):
         """Cells where a `kind` of `net` (track of width w, or via) centred there breaks a
         requirement on `layer` (with the move margin, `_margin`)."""
@@ -299,6 +307,10 @@ class GridRouter:
                 if it.hole is not None and it.kind in ("pad", "via"):
                     hg, hr = it.hole
                     grid.within(hg, hr + d / 2.0 + h2h + m + TOL, out)
+        box = _box(grid)
+        for g, l, n in self.escapes:
+            if n != net and g.intersects(box):
+                grid.within(g, rv, out)
         if sp.outline is not None:
             e = max(sp.edge_need(net, "via", l) for l in sp.cu)
             e = max(e, sp.plan.notes.get("via_edge_band") or 0.0)
@@ -323,6 +335,13 @@ class GridRouter:
                 hit = [g for g in polys if g.intersects(box)]
                 if hit:
                     c[_pour_mask(grid, hit, box)] += weight * self.pour_cost * layer_factor
+        if self.escapes and self.escape_cost > 0:
+            box = _box(grid)
+            em = np.zeros_like(blk)
+            for g, l, n in self.escapes:
+                if l == layer and n != net and g.intersects(box):
+                    grid.within(g, w / 2.0, em)
+            c[em] += self.escape_cost * layer_factor
         if self.halo > 0 and self.halo_cost > 0:
             hm = np.zeros_like(blk)
             bounds = (grid.x0, grid.y0, grid.x1, grid.y1)

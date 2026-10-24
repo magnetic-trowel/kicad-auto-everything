@@ -58,6 +58,9 @@ DEFAULTS = dict(
     complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper (sk-tibia
                            # crit-v3: A+B cp1 0.636 with joins vs 0.515 without; oasis 9 -> 1 unconnected)
     island_mm=20.0,        # and its islands of critical copper to each other within this distance
+    escape_mm=0.0,         # escape corridors this long out of dense ICs' signal pins (0: off; see escape_corridors)
+    escape_pins=32,        # an IC with at least this many pads is dense
+    escape_cost=3.0,       # per-cell cost of a critical track of another net inside a corridor
     corner_joins=True,     # every track end at a pad/via centre or a track corner (what Freerouting sees)
     soft=(),               # joins written unlocked for Freerouting to keep or rip: "complete", "pad" (rail pads)
     guards=("cell", "path", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
@@ -97,6 +100,10 @@ class Session:
             from .critical_modules import place_terms
             terms = place_terms(self.board, brief, log=log)
         self.terms = terms
+        if float(self.opts.get("escape_mm", 0.0) or 0.0) > 0:
+            self.router.escapes = self.escape_corridors(float(self.opts["escape_mm"]),
+                                                        int(self.opts.get("escape_pins", 32)), brief)
+            self.router.escape_cost = float(self.opts.get("escape_cost", 3.0))
         self.ctx = Ctx(self.space, self.router, brief, self.board, dict(self.opts, log=log), terms=terms)
         self.router.gnd = set(self.ctx.gnd)
         self.modules = []
@@ -145,6 +152,46 @@ class Session:
             self.joins = self.join_at_corners()
         self.t_route = time.monotonic() - t0
         return self
+
+    def escape_corridors(self, length, min_pads, brief):
+        """Escape corridors out of dense ICs (at least `min_pads` pads): for each SMD signal
+        pad (not a ground or rail net, aspect >= 1.3), the strip as wide as the pad from its
+        outer end `length` mm outward along its long axis, on its layer. Critical tracks of
+        other nets pay to cross them and their vias stay out (GridRouter.escapes), so the
+        IC's signals keep their way out (canhw: decap stubs and vias round an LQFP-100).
+        [(geometry, layer, net)]"""
+        from shapely.geometry import LineString
+        sp = self.space
+        nets = (brief or {}).get("nets") or {}
+        out = []
+        for fu, pads in sp.pads_by_fp.items():
+            if len(pads) < min_pads:
+                continue
+            f = next((x for x in self.board.footprints if x.uuid == fu), None)
+            if f is None:
+                continue
+            for it in pads:
+                if not it.smd or not it.net or it.pos is None:
+                    continue
+                if (nets.get(it.net) or {}).get("role") in ("ground", "rail"):
+                    continue
+                r = it.geom.minimum_rotated_rectangle
+                cs = list(r.exterior.coords)[:4]
+                e1 = (cs[1][0] - cs[0][0], cs[1][1] - cs[0][1])
+                e2 = (cs[2][0] - cs[1][0], cs[2][1] - cs[1][1])
+                l1, l2 = math.hypot(*e1), math.hypot(*e2)
+                if min(l1, l2) <= 0 or max(l1, l2) / min(l1, l2) < 1.3:
+                    continue
+                (ux, uy), L, W = ((e1[0] / l1, e1[1] / l1), l1, l2) if l1 >= l2 else ((e2[0] / l2, e2[1] / l2), l2, l1)
+                if ux * (it.pos[0] - f.x) + uy * (it.pos[1] - f.y) < 0:
+                    ux, uy = -ux, -uy
+                a = (it.pos[0] + ux * L / 2, it.pos[1] + uy * L / 2)
+                b = (a[0] + ux * length, a[1] + uy * length)
+                g = LineString([a, b]).buffer(W / 2, cap_style=2)
+                for l in it.layers:
+                    if l in sp.cu:
+                        out.append((g, l, it.net))
+        return out
 
     def join_at_corners(self, max_rounds=4):
         """Make every join of the committed copper one Freerouting can see. Freerouting joins
