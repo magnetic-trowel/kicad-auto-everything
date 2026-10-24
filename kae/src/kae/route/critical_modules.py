@@ -1008,7 +1008,10 @@ def _decap_vias(ctx, m, lpd, net, layer, pl):
         m.vias[kc] = []
         if best is not None:
             _commit_vias(ctx, m, net, layer, tg, [best[1]], kc)
-    if tG is not None and tG.net == net:
+    dense = ctx.npins(tG.fp) >= int(ctx.opts.get("dense_ic_pins", 10 ** 6)) if tG is not None else False
+    if tG is not None and tG.net == net and (not dense or _is_thermal_pad(tG)):
+        # (a dense IC's ground pins are left to the general router, which places their vias
+        # among its signal escapes; a thermal pad keeps its in-pad vias)
         kG = f"via:{tG.fp}:{tG.pad}"
         m.vias.setdefault(kG, [])
         if not m.vias[kG] and not _has_plane_link(ctx, tG, net):

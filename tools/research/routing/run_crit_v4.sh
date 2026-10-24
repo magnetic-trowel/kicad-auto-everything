@@ -6,11 +6,11 @@
 # switching cells, at one commit and one Freerouting build:
 #   kae-fr       the bridge alone, inner plane layers open to traces (--planes allow, as KiCad
 #                exports its layer types)
-#   kae-frp      the bridge alone, inner planes kept free of traces (--planes keep: Freerouting
-#                power layers, a free repair round with open connections may use them)
+#   kae-frp      the bridge alone, inner planes priced at 4x a routing layer (--planes cost: a
+#                board.rules file beside the DSN gives Freerouting per-layer trace costs)
 #   kae-critc    critical copper + bridge with the pad and island joins (the defaults since
 #                crit-v3's c arm), --planes allow
-#   kae-critcp   the same with --planes keep
+#   kae-critcp   the same with --planes cost (the default)
 # then kaebench reports against kae-fr, per-module physics (crit_compare) and DC/HF passports
 # and critics (RET-COV, PLANE-PERF) against the human boards (suite_physics).
 #
@@ -61,9 +61,9 @@ FR=kae-fr-$V; FRP=kae-frp-$V; CC=kae-critc-$V; CCP=kae-critcp-$V
 for s in ab c6; do
   t=600; [ $s = c6 ] && t=900
   run $FR-$s  kae-fr   kae.route.cli          $t "$K" "--planes allow" --only @"$W/suite-$s.txt"
-  run $FRP-$s kae-fr   kae.route.cli          $t "$K" "--planes keep"  --only @"$W/suite-$s.txt"
+  run $FRP-$s kae-fr   kae.route.cli          $t "$K" "--planes cost"  --only @"$W/suite-$s.txt"
   run $CC-$s  kae-crit kae.route.critical_cli $t "$K" "--planes allow" --only @"$W/suite-$s.txt"
-  run $CCP-$s kae-crit kae.route.critical_cli $t "$K" "--planes keep"  --only @"$W/suite-$s.txt"
+  run $CCP-$s kae-crit kae.route.critical_cli $t "$K" "--planes cost"  --only @"$W/suite-$s.txt"
 done
 for s in ab c6; do
   for n in $FRP $CC $CCP; do

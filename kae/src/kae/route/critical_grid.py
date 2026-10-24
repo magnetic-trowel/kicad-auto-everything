@@ -128,6 +128,8 @@ class Grid:
             g = geom.buffer(r / math.cos(math.pi / (4 * q)), quad_segs=q) if r > 0 else geom
             if g.is_empty:
                 return out
+            if X.size > 64:
+                shapely.prepare(g)      # many points against one polygon: index it once
             m = shapely.contains_xy(g, X, Y)
             if r <= 0:
                 m |= shapely.intersects_xy(g, X, Y)
@@ -255,6 +257,8 @@ class GridRouter:
             R = half + e + TOL
             inner = sp.outline.buffer(-(R + _margin(R, grid.res)), quad_segs=4)
             X, Y = grid.coords(0, grid.nx - 1, 0, grid.ny - 1)
+            if not inner.is_empty:
+                shapely.prepare(inner)
             ok = shapely.contains_xy(inner, X, Y) if not inner.is_empty else np.zeros_like(out)
             out |= ~ok
         return out
@@ -300,6 +304,8 @@ class GridRouter:
             e = max(e, sp.plan.notes.get("via_edge_band") or 0.0)
             inner = sp.outline.buffer(-(rv + e + m + TOL), quad_segs=4)
             X, Y = grid.coords(0, grid.nx - 1, 0, grid.ny - 1)
+            if not inner.is_empty:
+                shapely.prepare(inner)
             out |= ~shapely.contains_xy(inner, X, Y) if not inner.is_empty else np.ones_like(out)
         return ~out
 
@@ -313,11 +319,10 @@ class GridRouter:
             gnd = getattr(self, "gnd", set())
             for weight, polys in ((1.0, [g for n, l, g, _ in sp.zones if l == layer and n != net and n not in gnd]),
                                   (3.0, [g for n, l, g, _ in sp.zones if l == layer and n != net and n in gnd])):
-                pm = np.zeros_like(blk)
-                for g in polys:
-                    if g.intersects(_box(grid)):
-                        grid.within(g, 0.0, pm)
-                c[pm] += weight * self.pour_cost * layer_factor
+                box = _box(grid)
+                hit = [g for g in polys if g.intersects(box)]
+                if hit:
+                    c[_pour_mask(grid, hit, box)] += weight * self.pour_cost * layer_factor
         if self.halo > 0 and self.halo_cost > 0:
             hm = np.zeros_like(blk)
             bounds = (grid.x0, grid.y0, grid.x1, grid.y1)
@@ -575,6 +580,23 @@ class GridRouter:
             out.append(pts[cand])
             i = cand
         return out
+
+
+def _pour_mask(grid, polys, box, step=4):
+    """Cells inside any of `polys` (pours), sampled every `step` cells and spread to the
+    block: a soft cost needs no cell-exact edge, and a pour with its holes is the slowest
+    polygon to test point by point."""
+    from shapely.ops import unary_union
+    g = unary_union([p.intersection(box) for p in polys])
+    if g.is_empty:
+        return np.zeros((grid.ny, grid.nx), bool)
+    shapely.prepare(g)
+    xs = grid.x0 + (np.arange(0, grid.nx, step) + (step - 1) / 2.0) * grid.res
+    ys = grid.y0 + (np.arange(0, grid.ny, step) + (step - 1) / 2.0) * grid.res
+    X, Y = np.meshgrid(xs, ys)
+    m = shapely.contains_xy(g, X, Y)
+    full = np.repeat(np.repeat(m, step, axis=0), step, axis=1)
+    return full[:grid.ny, :grid.nx]
 
 
 def _merge_collinear(pts):

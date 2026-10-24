@@ -876,3 +876,24 @@ def test_joint_and_recheck_are_window_scoped(tmp_path):
     s.write(dst)
     ph = R.board_physics(dst, brief=s.brief, fills=None, window=win.bounds, rails=False)
     assert set(ph) <= ids | {"_rails"} and "_rails" not in ph
+
+
+def test_decap_over_its_rail_plane_goes_into_the_plane(tmp_path, monkeypatch):
+    """A decap whose rail is a plane under both the capacitor and the IC pin, more than
+    decap_plane_mm away, gets a via into that plane instead of a surface track around the
+    IC (canhw: 30+ locked stubs around an LQFP-100 took its signal escapes)."""
+    from shapely.geometry import box
+    from kae.route import critical_modules as CM
+    s = F.session(tmp_path)
+    sp = s.space
+    sp.zones.append(("+3V3", "B.Cu", box(100.5, 100.5, 139.5, 129.5), 0))
+    monkeypatch.setattr(CM, "_rail_plane", lambda ctx, rail, a, b: "B.Cu" if rail == "+3V3" else None)
+    s.route()
+    m = next(x for x in s.modules if x.id == "decap:U2:+3V3")
+    assert any("into the B.Cu +3V3 plane" in n for n in m.notes)
+    assert not any(k.startswith("rail:") and v is not None for k, v in m.hops.items())
+    vias = [it for it in m.copper if it.kind == "via" and it.net == "+3V3"]
+    c3 = sp.terminal(_uuid(s, "C3"), ["1"])
+    assert vias and min(v.geom.distance(c3.geom) for v in vias) < 1.5
+    for v in vias:
+        assert not sp.via_violations("+3V3", v.geom.x, v.geom.y, ignore=[v])

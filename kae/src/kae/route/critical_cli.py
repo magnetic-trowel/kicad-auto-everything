@@ -53,6 +53,8 @@ def main(argv=None):
                    help="narrow loop hops while the loop stays within this fraction of the wide loop (0: off)")
     r.add_argument("--soft", default=None,
                    help="joins written unlocked for Freerouting to keep or rip: complete,pad (or 'none')")
+    r.add_argument("--dense-ic-pins", type=int, default=None,
+                   help="ICs with at least this many pads get no ground-pin vias from the critical stage")
     r.add_argument("--skip", default="", help="comma-separated module id prefixes to leave out (diagnosis)")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
     r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
@@ -77,6 +79,8 @@ def main(argv=None):
             opts["island_mm"] = a.island_mm
         if a.soft is not None:
             opts["soft"] = tuple(x for x in a.soft.split(",") if x and x != "none")
+        if a.dense_ic_pins is not None:
+            opts["dense_ic_pins"] = a.dense_ic_pins
         if a.skip:
             opts["skip"] = tuple(x for x in a.skip.split(",") if x)
         if a.trim_tol is not None:
