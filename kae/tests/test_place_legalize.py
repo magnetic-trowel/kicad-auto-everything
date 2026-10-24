@@ -273,3 +273,32 @@ def test_repair_keeps_protection_order():
     rep = exact.repair(P, st, time_s=30.0)
     assert rep["end"] == 0 and "U7" in rep["moved"]
     assert rep["order_broken"] == [0, 0]
+
+
+def test_move_clean_skips_a_spot_that_breaks_protection_order(monkeypatch):
+    """The guard itself: of two exactly clean spots, the nearer one puts the protection part
+    farther from the connector than the protected part; the repair takes the other."""
+    import time
+    from kae.place import clusters, exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    ref = {p.ref: p for p in P.parts}
+    u = {r: p.uuid for r, p in ref.items()}
+    brief = {"structures": [
+        {"kind": "connector_chain", "connector": u["J1"], "pin": "1", "net": "VCC", "protected": True,
+         "protection": [u["U7"]], "chain": [[u["J1"], "1"], [u["U7"], "3"], [u["U1"], "3"]]}]}
+    P.order_rules = clusters.protection_order(P, brief)
+    E = exact.ExactModel(P, st)
+    guard = exact.OrderGuard(P, st)
+    i7 = ref["U7"].i
+    cands = [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i7, *exact._tables(P, st, {i7}), list(range(4)),
+                                                           0.0, 4000) if not E.findings_at(i7, X, Y, k)]
+    bad = next(t for t in cands if guard.count_at(i7, *t) > 0)
+    good = next(t for t in cands if guard.count_at(i7, *t) == 0)
+    st.X[i7], st.Y[i7], st.K[i7] = good                 # where it stands, the rule holds
+    E.set_pose(i7, *good)
+    monkeypatch.setattr(exact, "_candidates", lambda *a, **k: [(0.0, *bad), (1.0, *good)])
+    E.findings_at = lambda i, X, Y, K, **kw: []          # both spots clean
+    ok, _ = exact.move_clean(P, st, E, i7, time.monotonic() + 30)
+    assert ok and (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == tuple(good)
+    assert guard.total() == 0
