@@ -21,9 +21,14 @@ HONEST_ROUTES = [
 # TP1 and TP2 share an all-zero uuid in the fixture (as some old-library footprints do);
 # prepare gives the second a uuid derived from it.
 ZERO = "00000000-0000-0000-0000-000000000000"
+# The mechanical interface (connector J1, button SW1, mounting hole H2) is free in place tasks
+# and fixed at these poses in place-fixed tasks.
+J1 = "cccccccc-cccc-cccc-cccc-ccccccccccc1"
 HUMAN_POSES = {"11111111-1111-1111-1111-111111111111": (110, 105),
                "22222222-2222-2222-2222-222222222221": (120, 105),
-               ZERO: (105, 115), str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{ZERO}:1")): (110, 115)}
+               ZERO: (105, 115), str(uuid.uuid5(uuid.NAMESPACE_URL, f"kaebench:{ZERO}:1")): (110, 115),
+               J1: (130, 103), "dddddddd-dddd-dddd-dddd-ddddddddddd1": (103.5, 108),
+               "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1": (135, 105)}
 R2 = "22222222-2222-2222-2222-222222222221"
 H1 = "55555555-5555-5555-5555-555555555551"
 SLOT = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1"  # unlocked, but its Edge.Cuts slot is part of the outline
@@ -85,6 +90,13 @@ def placed(text):
     return text
 
 
+def unlock(text, uuid):
+    new, n = re.subn(r'\(locked yes\)(\s*\(layer "[^"]+"\)\s*\(uuid "' + uuid + '")', r"\1", text, count=1)
+    if not n:
+        raise SystemExit(f"footprint {uuid} is not locked")
+    return new
+
+
 def first(text, old, new):
     if old not in text:
         raise SystemExit(f"{old!r} not in board")
@@ -113,6 +125,9 @@ PLACE = {
     "place_honest": placed,
     "move_locked": lambda t: placed(set_pose(t, H1, 130, 112)),
     "move_edge_cut": lambda t: placed(set_pose(t, SLOT, 130, 104)),
+    # place-fixed: the connector moved to a free spot (legal in a place task); and unlocked too
+    "move_connector": lambda t: set_pose(placed(t), J1, 125, 108),
+    "unlock_connector": lambda t: unlock(set_pose(placed(t), J1, 125, 108), J1),
     # joint: place and route in one output
     "joint_honest": lambda t: routed(placed(t)),
     "joint_move_locked": lambda t: routed(placed(set_pose(t, H1, 130, 112))),

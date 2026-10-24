@@ -3,8 +3,9 @@
 """Red-team tests: cheating methods must come out invalid, be blocked, or gain nothing.
 
 Every cheat runs as an ordinary `--command` method (bench/tests/redteam_cheats.py) on the
-tasks built from fixtures/redteam.kicad_pcb: two resistors, a locked mounting hole and a
-keepout that the human routing respects. Add a case here for every new way to cheat.
+tasks built from fixtures/redteam.kicad_pcb: two resistors, a locked mounting hole, a
+keepout that the human routing respects, and a mechanical interface (connector J1, button SW1,
+mounting hole H2) that place-fixed tasks keep at the human pose. Add a case here for every new way to cheat.
 """
 import hashlib
 import shutil
@@ -53,7 +54,8 @@ def rt(tmp_path_factory):
                                         "kicad_pro": str(src / "redteam.kicad_pro")}, root / "tasks")
     assert rec["qualified"], rec["reference"]["drc"]
     assert rec["footprint_uuids_reassigned"] == 1
-    assert rec["roundtrip"]["route"]["ok"] and rec["roundtrip"]["place"]["ok"], rec["roundtrip"]
+    assert all(v["ok"] for v in rec["roundtrip"].values()), rec["roundtrip"]
+    assert set(rec["roundtrip"]) == {"route", "place", "place-fixed"}
     return root, rec
 
 
@@ -92,11 +94,31 @@ def test_tasks_carry_no_routing_leftovers(rt):
 
 def test_reference_is_valid(rt):
     root, _ = rt
-    for kind in ("route", "place"):
+    for kind in ("route", "place", "place-fixed", "joint-fixed"):
         row, _ = _run(root, adapters.Reference(), kind, f"ref-{kind}")
         s = row["score"]
         assert s["valid"] and s["foreign"]["count"] == 0, s
-        assert s["clean"] if kind == "route" else s["legal"], s
+        assert s["legal"] if kind.startswith("place") else s["clean"], s
+
+
+def test_place_fixed_keeps_the_mechanical_interface(rt):
+    """The classifier fixes the connector, the button and the unlocked mounting hole (the locked
+    one is fixed anyway); the test points and resistors stay movable."""
+    root, rec = rt
+    t = rec["tasks"]["place-fixed"]
+    fixed = {r["ref"]: r["class"] for r in t["fixed_mech"]}
+    assert fixed == {"J1": "connector", "SW1": "user", "H1": "mounting", "H2": "mounting"}, t["fixed_mech"]
+    assert rec["tasks"]["place"]["movable"] == 7 and t["movable"] == 4
+    locked = {r["uuid"] for r in t["input_stats"]["locked_placement"]}
+    assert {r["uuid"] for r in t["fixed_mech"]} <= locked
+    text = board_path(root / "tasks" / "redteam" / "place-fixed" / "input").read_text()
+    assert '(uuid "cccccccc-cccc-cccc-cccc-ccccccccccc1")\n\t\t(at 130 103)' in text
+
+
+def test_noop_place_fixed_is_valid_but_not_legal(rt):
+    root, _ = rt
+    s = _run(root, adapters.Noop(), "place-fixed", "noop-place-fixed")[0]["score"]
+    assert s["valid"] and not s["legal"] and s["outside"] > 0, s
 
 
 def test_honest_methods_pass(rt):
@@ -105,6 +127,25 @@ def test_honest_methods_pass(rt):
     assert s["valid"] and s["clean"], s
     s = cheat(root, "place_honest", kind="place")[0]["score"]
     assert s["valid"] and s["legal"], s
+    s = cheat(root, "place_honest", kind="place-fixed")[0]["score"]
+    assert s["valid"] and s["legal"], s
+    s = cheat(root, "joint_honest", kind="joint-fixed")[0]["score"]
+    assert s["valid"] and s["legal"] and s["clean"], s
+
+
+def test_moving_a_fixed_connector(rt):
+    """Moving the connector is fine in a place task and caught in a place-fixed task, also when
+    the method unlocks it first."""
+    root, _ = rt
+    s = cheat(root, "move_connector", kind="place")[0]["score"]
+    assert s["valid"] and s["legal"], s
+    s = cheat(root, "move_connector", kind="place-fixed")[0]["score"]
+    assert not s["valid"] and not s["legal"] and s["integrity"]["locked"] is False, s
+    assert s["locked_moved"] == ["J1"], s
+    s = cheat(root, "unlock_connector", kind="place-fixed")[0]["score"]
+    assert not s["valid"] and s["locked_moved"] == ["J1"] and s["integrity"]["untouched"] is False, s
+    s = cheat(root, "move_connector", kind="joint-fixed")[0]["score"]
+    assert not s["valid"] and not s["clean"] and s["integrity"]["place_locked"] is False, s
 
 
 # --- tampering with anything but the allowed changes makes the result invalid ---

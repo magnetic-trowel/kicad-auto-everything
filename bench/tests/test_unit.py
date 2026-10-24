@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from kaebench import adapters, boardfiles, manifest, report, score, tools
+from kaebench import adapters, boardfiles, manifest, report, runner, score, tools
 
 SHA = "0" * 40
 
@@ -391,3 +391,81 @@ def test_kicad_killed_by_a_signal_is_retried_once(tmp_path, monkeypatch):
     with pytest.raises(tools.ToolError):
         tools.run_ops("stats", "b")
     assert len(calls) == 1
+
+
+def _fp(ref, fpid, value="", pads=2, pth=0, npth=0):
+    lib, _, name = fpid.rpartition(":")
+    return dict(ref=ref, lib=lib, name=name, value=value, pads=pads, pth=pth, npth=npth,
+                smd=pads - pth - npth)
+
+
+@pytest.mark.parametrize("fp,cls,rule", [
+    # library names first
+    (_fp("J1", "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal", pads=20), "connector", "lib"),
+    (_fp("P3", "MountingHole:MountingHole_4.3mm_M4", "CONN_1", pads=1, pth=1), "mounting", "lib"),
+    (_fp("FID1", "Fiducial:Fiducial_1mm_Mask2mm", pads=1), "mounting", "lib"),
+    (_fp("SW1", "Button_Switch_SMD:SW_SPST_TL3342", pads=4), "user", "lib"),
+    (_fp("D3", "LED_THT:LED_D5.0mm", pads=2, pth=2), "user", "lib"),
+    (_fp("X1", "Molex:78171-0002", "Battery", pads=4), "connector", "lib"),
+    # holes without copper
+    (_fp("REF**", "panel:PanelHole_AudioJack_3.5mm", pads=1, npth=1), "mounting", "npth"),
+    # names of custom footprints
+    (_fp("U12", "footprints:sim72", "SIM4X32", pads=72, pth=72), "connector", "name"),
+    (_fp("J3", "x:CONN_FFC_0.5MM_1x20", pads=20), "connector", "name"),
+    (_fp("KSW1", "yuiop:Cherry_MX_Hotswap_1.0u_v4", pads=2), "user", "name"),
+    (_fp("D1", "DIYSynthMNL:LED_D5.0mm_BigPads", pads=2, pth=2), "user", "name"),
+    (_fp("H1", "x:MECHANICAL_CLEARANCEHOLE_4_40", pads=1, pth=1), "mounting", "name"),
+    # symbol names as values, then reference prefixes
+    (_fp("P1", "x:SMD_4PAD", "CONN_01X04", pads=4), "connector", "value"),
+    (_fp("J9", "x:1P-1.5x1.5", "EXTGND", pads=1), "connector", "ref"),
+    (_fp("RV1", "x:TRIM_3362P", "5K", pads=3, pth=3), "user", "ref"),
+])
+def test_mech_classifier_fixes(fp, cls, rule):
+    from kaebench.kicad_scripts import mech_rules
+    got, evidence = mech_rules.classify(fp)
+    assert got == cls and evidence.startswith(rule), (got, evidence)
+
+
+@pytest.mark.parametrize("fp,rule", [
+    (_fp("TP1", "TestPoint:TestPoint_Pad_D1.0mm", pads=1), "exclude"),
+    (_fp("J1", "TestPoint:TestPoint_THTPad_D2.0mm_Drill1.0mm", "Conn_01x01", pads=1, pth=1), "exclude"),
+    (_fp("JP1", "Jumper:SolderJumper-2_P1.3mm_Open_Pad1.0x1.5mm", pads=2), "exclude"),
+    (_fp("JP2", "x:Header_1x02", pads=2, pth=2), "exclude"),
+    (_fp("M12", "x:HEATSINK_WAKEFIELD_960", pads=2, npth=2), "exclude"),
+    (_fp("G1", "Symbol:OSHW-Logo2_7.3x6mm_SilkScreen", pads=0), "exclude"),
+    (_fp("USB1", "LEDs:LED-0805", "USB", pads=2), "conflict"),  # an LED named after what it shows
+    (_fp("D1201", "BR_Discretes:SMA_L4.4-W2.6-LS5.0-RD", "60V 3A", pads=2), "conflict"),  # SMA diode
+    (_fp("P1", "Package_DIP:DIP-28_W7.62mm_Socket_LongPads", "SUPP28", pads=28, pth=28), "conflict"),
+    (_fp("LED1", "Kobold:LED_choc_6028R", "RGB", pads=4), "conflict"),  # a per-key LED, not a switch
+    (_fp("X1", "Crystal:Crystal_HC49-U_Vertical", pads=2, pth=2), "conflict"),
+    (_fp("VR1", "x:SOT223", "LD1117", pads=4), "conflict"),
+    (_fp("LED1", "dp-LED:SK6812-mini-e", pads=4), ""),
+    (_fp("U1", "kbd:ProMicro_v3", "ProMicro", pads=24, pth=24), ""),
+])
+def test_mech_classifier_leaves_free(fp, rule):
+    from kaebench.kicad_scripts import mech_rules
+    got, evidence = mech_rules.classify(fp)
+    assert got is None and evidence.startswith(rule), (got, evidence)
+
+
+def test_mech_overrides():
+    from kaebench.kicad_scripts import mech_rules
+    rows = [dict(ref="J1", **{"class": "connector"}, evidence="lib: Connector"),
+            dict(ref="U1", **{"class": None}, evidence="")]
+    applied = mech_rules.apply_overrides(rows, {"fix": ["U1", "U9"], "free": ["J1"]})
+    assert applied == {"fix": ["U1"], "free": ["J1"], "unknown": ["U9"]}
+    assert [r["fixed"] for r in rows] == [False, True]
+    assert rows[1]["class"] == "override" and rows[0]["evidence"].startswith("override: free")
+
+
+def test_work_list_skips_place_fixed_whose_round_trip_failed():
+    class Ad:
+        name, kinds = "a", ("place", "place-fixed", "joint-fixed")
+    ok = {"ok": True}
+    rec = dict(id="b", tasks={"place": {"movable": 5}, "place-fixed": {"movable": 2}},
+               roundtrip={"route": ok, "place": ok, "place-fixed": {"ok": False}})
+    kinds = ("place", "place-fixed", "joint-fixed")
+    assert [w[1] for w in runner.work_list([rec], [(Ad(), None)], kinds, 1)] == ["place"]
+    rec["roundtrip"]["place-fixed"] = ok
+    assert [w[1] for w in runner.work_list([rec], [(Ad(), None)], kinds, 1)] == list(kinds)
+    assert [w[1] for w in runner.work_list([rec], [(Ad(), None)], kinds, 1, min_movable=3)] == ["place"]

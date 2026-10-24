@@ -155,17 +155,18 @@ def score_route_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
                          reference_board=board_path(task_dir / "reference"), allow_copy=allow_copy)
 
 
-def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=False):
+def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=False, kind="place"):
     """Score placement legality and quality (before routing). Also returns the stats of the
     rebuilt board (None if the output could not be loaded), which a routing probe starts from;
-    the rebuilt board itself is board.kicad_pcb in scoring_dir."""
+    the rebuilt board itself is board.kicad_pcb in scoring_dir. kind: the place task
+    (place or place-fixed) whose input and record the output is judged against."""
     task_dir = Path(task_dir)
-    staged, tr = _rebuild("transplant-placement", placed_board, board_path(task_dir / "place" / "input"),
+    staged, tr = _rebuild("transplant-placement", placed_board, board_path(task_dir / kind / "input"),
                           task_dir / "reference", scoring_dir, board_path(task_dir / "reference"))
     if not tr.get("loadable"):
         return _unloadable(tr, legal=False), None
     st, drc = _measure(staged, scoring_dir)
-    tin = record["tasks"]["place"]["input_stats"]
+    tin = record["tasks"][kind]["input_stats"]
     foreign = tr["foreign"]
     integrity = dict(
         pad_nets=tr["output"]["padnet_hash"] == tin["padnet_hash"],
@@ -189,21 +190,22 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
     return score, st
 
 
-def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=False):
-    """Place and route together, from the place task's input. The output's footprint poses
+def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=False, input_kind="place"):
+    """Place and route together, from the input of the place task input_kind (place for joint,
+    place-fixed for joint-fixed). The output's footprint poses
     are transplanted into the place input (placement integrity and legality, judged on the
     placement alone), then its tracks and vias into that placement (route integrity and
     route metrics). Valid only if both are; clean = valid, legal, fully routed, no errors."""
     task_dir, scoring_dir = Path(task_dir), Path(scoring_dir)
     ref_board = board_path(task_dir / "reference")
     placed_dir = scoring_dir / "placement"
-    staged_p, tp = _rebuild("transplant-placement", output_board, board_path(task_dir / "place" / "input"),
+    staged_p, tp = _rebuild("transplant-placement", output_board, board_path(task_dir / input_kind / "input"),
                             task_dir / "reference", placed_dir, ref_board)
     if not tp.get("loadable"):
         return _unloadable(tp, clean=False, legal=False, completion=0.0)
     pst, pdrc = _measure(staged_p, placed_dir)
     start, _ = _uncapped(staged_p, pdrc["unconnected"])
-    tin = record["tasks"]["place"]["input_stats"]
+    tin = record["tasks"][input_kind]["input_stats"]
     place_integrity = dict(
         pad_nets=tp["output"]["padnet_hash"] == tin["padnet_hash"],
         locked=tp["n_locked_moved"] == 0,

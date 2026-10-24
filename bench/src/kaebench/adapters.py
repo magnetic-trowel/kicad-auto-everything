@@ -91,7 +91,7 @@ class AdapterResult:
 
 class Adapter:
     name = "base"
-    kinds = ("route", "place", "joint")
+    kinds = ("route", "place", "joint", "place-fixed", "joint-fixed")
     needs_reference = False
 
     def describe(self):
@@ -240,14 +240,14 @@ class Freerouting(Adapter):
 
 
 class HumanFreerouting(Freerouting):
-    """Joint baseline: the human placement routed by Freerouting (its kinds: joint only)."""
+    """Joint baseline: the human placement routed by Freerouting (its kinds: joint and joint-fixed)."""
     name = "human-freerouting"
-    kinds = ("joint",)
+    kinds = ("joint", "joint-fixed")
     needs_reference = True
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         human = Path(workdir) / "human-placement"
-        copy_board(Path(reference["joint_placement"]).parent, human)
+        copy_board(Path(reference[f"{kind}_placement"]).parent, human)
         return super().run("route", human, workdir, attempt, timeout)
 
 
@@ -272,7 +272,8 @@ class Command(Adapter):
     """
     name = "command"
 
-    def __init__(self, template, name=None, kinds=("route", "place", "joint"), sandbox=None):
+    def __init__(self, template, name=None, kinds=("route", "place", "joint", "place-fixed", "joint-fixed"),
+                 sandbox=None):
         self.template = template
         if name:
             self.name = name

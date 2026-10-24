@@ -167,6 +167,22 @@ def test_convert_gives_tied_zones_unique_uuids(tmp_path):
 
 
 @needs_kicad
+def test_place_fixed_reference_and_noop(tasks):
+    """Two resistors and nothing mechanical: place-fixed is the place task, and the human
+    placement is legal on it."""
+    root, rec = tasks
+    t = rec["tasks"]["place-fixed"]
+    assert t["fixed_mech"] == [] and t["movable"] == rec["tasks"]["place"]["movable"]
+    assert rec["roundtrip"]["place-fixed"]["ok"], rec["roundtrip"]
+    rows = {r["kind"]: r for r in _run(root, adapters.Reference(), kinds=("place-fixed", "joint-fixed"),
+                                       name="ref-fixed")}
+    assert rows["place-fixed"]["score"]["legal"] and rows["place-fixed"]["score"]["hpwl_ratio"] == 1.0
+    assert rows["joint-fixed"]["score"]["clean"], rows["joint-fixed"]["score"]
+    s = _run(root, adapters.Noop(), kinds=("place-fixed",), name="noop-place-fixed")[0]["score"]
+    assert s["valid"] and not s["legal"], s
+
+
+@needs_kicad
 def test_joint_task_reference_and_noop(tasks):
     root, _ = tasks
     ref = _run(root, adapters.Reference(), kinds=("joint",), name="ref-joint")[0]["score"]
