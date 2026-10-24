@@ -42,7 +42,7 @@ from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer, make_annealer
 from . import exact as exactmod
 from .legalize import exact_check, legalize
-from .problem import Problem
+from .problem import Problem, fixed_text
 from .state import State, grid_violations
 from .stubs import make_brief, make_terms
 
@@ -228,6 +228,10 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             log(f"fixed parts off the board (they stay there): {', '.join(staged_fixed[:8])}")
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
                       angle_step=angle_step)
+    if fixed_text(board):
+        # board-level copper text: KiCad's glyphs for the exact check (and the silk texts with
+        # them, one pcbnew call)
+        rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
     if angle_step:
         rep["angle_step"] = angle_step
     if max(P.utilization()) > 0.95:
@@ -419,7 +423,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         w_chan = float(kw.pop("w_chan", CHAN_W) or 0.0)
         grids = []
         if exactmod.silk_on(P) and w_silk > 0:
-            rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
+            if "silk_text" not in rep:
+                rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
             grids.append(exactmod.silk_grid(P, weight=w_silk))
             rep["silk_term"] = dict(parts=len(grids[-1]), w_silk=w_silk)
         if w_chan > 0:

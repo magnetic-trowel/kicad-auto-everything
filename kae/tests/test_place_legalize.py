@@ -721,3 +721,26 @@ def test_repair_judges_exactly_where_the_grid_leaves_no_room():
     E = exact.ExactModel(P, st)
     ok, _ = exact.move_clean(P, st, E, i, time.monotonic() + 30)
     assert ok and (int(st.X[i]), int(st.Y[i]), int(st.K[i])) != home and not E.part_findings(i)
+
+
+def test_board_copper_text_is_fixed_copper_for_the_exact_check():
+    """Board-level copper text (KiCad's glyphs, refine_silk_text -> P.fixed_text_cu): a pad
+    on it, or within the clearance, is a clearance error (pic-programmer: a socket placed over
+    '1=>>' and 'I2C PROM'); text clear of the pads is not."""
+    from shapely.geometry import box
+    P, st = _pile()
+    legalize(P, st, time_s=30.0)
+    assert exact_check(P, st) == []
+    p = next(q for q in P.parts if q.movable and q.fp.pads)
+    pose = st.pose(p.i)
+    from kae.board import transform
+    from kae.place.legalize import pad_shape
+    pd = p.fp.pads[0]
+    g = transform.place_geom(pad_shape(pd), *pose)
+    side = 0 if p.s > 0 else 1
+    P.fixed_text_cu = [(side, box(*g.centroid.buffer(0.2).bounds), "1=>>")]
+    found = [v for v in exact_check(P, st) if "copper text" in v.get("detail", "")]
+    assert found and found[0]["type"] == "clearance" and p.ref in found[0]["refs"]
+    far = P.outline.bounds
+    P.fixed_text_cu = [(side, box(far[0] - 50, far[1] - 50, far[0] - 49, far[1] - 49), "away")]
+    assert not [v for v in exact_check(P, st) if "copper text" in v.get("detail", "")]

@@ -419,6 +419,22 @@ class ExactModel:
                 need = max(self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
                 if geom.distance(gm) < need - self.tol:
                     add("clearance", [i], f"pad {pd.number} vs fixed copper {net}")
+        # board-level copper text as KiCad draws it (refine_silk_text: pcbnew's glyphs; no net):
+        # the pad's clearance, and its mask opening must not expose the text's copper
+        s2c_t = float(getattr(getattr(P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
+        seen = set()
+        for side, gm, txt in getattr(P, "fixed_text_cu", None) or ():
+            for geom, k, pd in A["pads"]:
+                if side not in self.cs[i][k] or _npth_without_copper(pd) or (k, txt) in seen:
+                    continue
+                d = geom.distance(gm)
+                need = max(self._net_clr(pd.net), self._net_clr(""), _local_clr(pd))
+                if d < need - self.tol:
+                    seen.add((k, txt))
+                    add("clearance", [i], f"pad {pd.number} vs copper text '{txt[:20]}'")
+                elif self.mask_on and side in self.ms[i][k] and d < s2c_t + self.mm[i][k] - self.tol:
+                    seen.add((k, txt))
+                    add("solder_mask_bridge", [i], f"mask opening of pad {pd.number} over copper text '{txt[:20]}'")
         if self.mask_on and self.zones:
             # KiCad (drc_test_provider_solder_mask.cpp, testMaskItemAgainstZones): the pad's copper
             # against the zone's FILL, colliding closer than solder_mask_to_copper_clearance + the
@@ -1434,7 +1450,12 @@ def refine_silk_text(P, log=None):
         polys = [Polygon(r[0], r[1:]) for r in rings or [] if r and len(r[0]) >= 3]
         polys = [q if q.is_valid else q.buffer(0) for q in polys]
         return [q for q in polys if not q.is_empty]
+    cu_text = []
     for t in res.get("texts", []):
+        if not t.get("owner") and t.get("layer") in ("F.Cu", "B.Cu"):
+            # board-level copper text: fixed copper for the exact check (KiCad's glyphs)
+            cu_text += [(0 if t["layer"] == "F.Cu" else 1, q, t.get("text", "")) for q in shapes(t.get("polys"))]
+            continue
         ly = _SILK_NAMES.get(t.get("layer"))
         if ly is None:
             continue
@@ -1457,6 +1478,7 @@ def refine_silk_text(P, log=None):
             d = int(d)
             mine.setdefault(d, {}).setdefault(lib_ly, []).extend(
                 geom_to_lib(q, p.x0, p.y0, p.rot0 + d, f.side) for q in shapes(rings))
+    P.fixed_text_cu = cu_text
     for p in P.parts:
         mine = fp_text.get(p.uuid, {0: {}})
         p.fp.silk_text = mine[0]
@@ -1465,7 +1487,7 @@ def refine_silk_text(P, log=None):
     if isinstance(g, dict):
         for ly in ("F.SilkS", "B.SilkS"):
             g[ly + ":text"] = board_text.get(ly, [])
-    rep = dict(ok=True, texts=n, seconds=round(time.monotonic() - t0, 2))
+    rep = dict(ok=True, texts=n, copper_texts=len(cu_text), seconds=round(time.monotonic() - t0, 2))
     if log:
         log(f"silk texts: {n} glyph outlines from pcbnew ({rep['seconds']}s)")
     return rep
