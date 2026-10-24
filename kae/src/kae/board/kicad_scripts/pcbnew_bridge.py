@@ -11,6 +11,7 @@ and prints one status line ({"ok": ...}) on stdout.
     python pcbnew_bridge.py import-ses BOARD SES OUT_JSON DEST
     python pcbnew_bridge.py edit-routing BOARD EDITS OUT_JSON DEST
     python pcbnew_bridge.py zone-fills BOARD OUT_JSON
+    python pcbnew_bridge.py text-shapes BOARD OUT_JSON
 
 export-dsn: KiCad's Specctra export of BOARD (loaded with its project, so net classes and
 the .kicad_dru rules are active), plus what the DSN leaves out, as JSON (see route_info):
@@ -30,6 +31,9 @@ written to DEST with the plain writer.
 
 zone-fills: every zone of BOARD (loaded with its project) refilled as kicad-cli's DRC does
 with --refill-zones, and its filled copper per copper layer as polygons with holes.
+
+text-shapes: glyph outlines of every visible text on F/B.SilkS and F/B.Cu (footprint fields
+and texts with their footprint's uuid, board texts), as KiCad's DRC collides them.
 
 extract: pcbnew's own footprint poses, pads (absolute and footprint-relative), courtyards
 (F/B.CrtYd caches), the board outline (GetBoardPolygonOutlines), design rules, net classes
@@ -776,6 +780,39 @@ def zone_fills(path, out):
     _status(dict(ok=True, zones=len(zones)))
 
 
+def text_shapes(path, out):
+    """Glyph outlines of the visible texts on silkscreen and copper layers (TransformTextToPolySet,
+    KiCad's own shapes for DRC): footprint fields and texts with their footprint's uuid, and
+    board texts (owner ''). Board frame, mm."""
+    board = _load_plain(path)
+    want = {pcbnew.F_SilkS, pcbnew.B_SilkS, pcbnew.F_Cu, pcbnew.B_Cu}
+    max_error = board.GetDesignSettings().m_MaxError
+
+    def rec(t, owner):
+        if not t.IsVisible() or t.GetLayer() not in want:
+            return None
+        ps = pcbnew.SHAPE_POLY_SET()
+        t.TransformTextToPolySet(ps, 0, max_error, pcbnew.ERROR_INSIDE)
+        ps.Simplify()
+        return dict(owner=owner, uuid=t.m_Uuid.AsString(), layer=board.GetStandardLayerName(t.GetLayer()),
+                    text=t.GetShownText(True), polys=_polyset(ps))
+    texts = []
+    for fp in board.GetFootprints():
+        u = fp.m_Uuid.AsString()
+        items = [f for f in fp.GetFields()] + [g for g in fp.GraphicalItems() if isinstance(g, pcbnew.PCB_TEXT)]
+        for t in items:
+            r = rec(t, u)
+            if r is not None:
+                texts.append(r)
+    for d in board.GetDrawings():
+        if isinstance(d, pcbnew.PCB_TEXT):
+            r = rec(d, "")
+            if r is not None:
+                texts.append(r)
+    _write(out, dict(ok=True, texts=texts))
+    _status(dict(ok=True, texts=len(texts)))
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -797,6 +834,8 @@ def main(argv):
             edit_routing(args[0], args[1], args[2], args[3])
         elif op == "zone-fills":
             zone_fills(args[0], args[1])
+        elif op == "text-shapes":
+            text_shapes(args[0], args[1])
         else:
             raise SystemExit(f"unknown op {op}")
     except Exception as e:  # report failures as JSON

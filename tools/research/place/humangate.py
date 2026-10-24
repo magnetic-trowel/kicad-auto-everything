@@ -9,6 +9,8 @@ kaebench prepare): a type kae reports where KiCad has no error of that type is a
 positive of the model (it would make the placer avoid spots KiCad allows, or call a legal
 board illegal). pad_outside is compared with the pads the reference record lists outside;
 kae-only types with no KiCad counterpart (over_cutout, kicad_feedback) are reported apart.
+Where the project makes silkscreen an error, the placer's soft silk check (silk_overlap,
+silk_over_copper on KiCad's glyph outlines) is gated the same way.
 
     python tools/research/place/humangate.py --tasks kae-work-v3/tasks --split C [--ids a,b] [--out FILE]
 
@@ -24,12 +26,12 @@ from pathlib import Path
 
 KICAD_TYPES = {"courtyards_overlap", "clearance", "hole_clearance", "hole_to_hole", "solder_mask_bridge",
                "items_not_allowed", "copper_edge_clearance", "npth_inside_courtyard", "pth_inside_courtyard",
-               "shorting_items"}
+               "shorting_items", "silk_overlap", "silk_over_copper"}
 
 
 def check_task(tdir):
     from kae.board.kicad_file import load
-    from kae.place.exact import ExactModel
+    from kae.place.exact import ExactModel, refine_silk_text, silk_on
     from kae.place.problem import Problem
     from kae.place.state import State
     t = json.loads((tdir / "task.json").read_text())
@@ -50,6 +52,14 @@ def check_task(tdir):
         E.sh[p.i] = E._shapes(p.i, (p.x0, p.y0, p.rot0, p.fp.side))
         E.env[p.i] = E.sh[p.i]["env"]
     found = E.check(parts=range(len(P.parts)), max_items=100000)
+    if silk_on(P):
+        # the soft silkscreen check (fix_silk), on KiCad's glyphs as the placer uses them
+        refine_silk_text(P)
+        S = ExactModel(P, st)
+        for p in P.parts:
+            S.sh[p.i] = S._shapes(p.i, (p.x0, p.y0, p.rot0, p.fp.side))
+            S.env[p.i] = S.sh[p.i]["env"]
+        found += S.silk_check()
     drc = json.loads((tdir / "reference" / "drc.json").read_text())
     kicad = collections.Counter(v["type"] for v in drc.get("violations", []) if v.get("severity") == "error")
     ours = collections.Counter(v["type"] for v in found)

@@ -166,17 +166,21 @@ class Footprint(_Dict):
     path: str = ""                   # schematic path
     sheet: str = ""                  # schematic sheet name
     flags: list = field(default_factory=list)  # loader notes (module docstring)
-    silk: dict = field(default_factory=dict)   # library layer (F/B.SilkS, F/B.Fab) -> [Polygon], library
-    #                                            frame: stroked graphics and visible silk texts' boxes
+    silk: dict = field(default_factory=dict)   # library layer (F/B.SilkS) -> [Polygon], library
+    #                                            frame, stroked graphics
+    silk_text: dict = field(default_factory=dict)  # library layer (F/B.SilkS) -> [Polygon]: visible texts,
+    #                                                estimated boxes (kae.place.exact.refine_silk_text: glyphs)
 
     _to = {"pads": lambda v: [p.to_dict() for p in v], "courtyard": _polys_to, "body": _polys_to,
            "courtyard_back": _polys_to, "edge_cuts": _lines_to,
            "graphics": lambda v: {k: _polys_to(p) for k, p in v.items()},
-           "silk": lambda v: {k: _polys_to(p) for k, p in v.items()}}
+           "silk": lambda v: {k: _polys_to(p) for k, p in v.items()},
+           "silk_text": lambda v: {k: _polys_to(p) for k, p in v.items()}}
     _from = {"pads": lambda v: [Pad.from_dict(p) for p in v], "courtyard": _polys_from,
              "body": _polys_from, "courtyard_back": _polys_from, "edge_cuts": _lines_from,
              "graphics": lambda v: {k: _polys_from(p) for k, p in v.items()},
-             "silk": lambda v: {k: _polys_from(p) for k, p in v.items()}}
+             "silk": lambda v: {k: _polys_from(p) for k, p in v.items()},
+             "silk_text": lambda v: {k: _polys_from(p) for k, p in v.items()}}
 
 
 @dataclass

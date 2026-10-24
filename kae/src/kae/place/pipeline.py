@@ -452,6 +452,24 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         if rep["order_fix"].get("moved"):
             rep["exact"] = exact_check(P, st)
         stage("order_fix", t)
+    if exactmod.silk_on(P):
+        # silkscreen where the project makes it an error: a soft pass, legality kept
+        t = time.monotonic()
+        rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
+        reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
+        left = max(5.0, min(0.05 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
+        phys = None
+        if report_terms is not None:
+            def phys():
+                return physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts},
+                                       breakdown=False)["total_linear"]
+        try:
+            rep["silk_fix"] = exactmod.fix_silk(P, st, time_s=left, phys=phys, log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
+        if rep["silk_fix"].get("moved"):
+            rep["exact"] = exact_check(P, st)
+        stage("silk_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)

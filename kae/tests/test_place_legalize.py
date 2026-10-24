@@ -4,6 +4,7 @@
 from pathlib import Path
 
 import numpy as np
+import shapely
 
 from kae.board.kicad_file import load
 from kae.place.legalize import exact_check, kicad_violations, legalize, repair_kicad, violation_parts
@@ -558,3 +559,58 @@ def test_mask_only_aperture_across_two_zone_fills_is_a_bridge():
     assert ap.intersects(g0)
     zones(box(0, 0, 60, (ap.bounds[1] + ap.bounds[3]) / 2))
     assert not bridges()
+
+
+def test_silk_conflicts_are_soft_and_the_silk_pass_clears_them():
+    """Silkscreen where the project makes it an error (KiCad's default is a warning): silk over
+    another part's silk is silk_overlap, over its pad mask openings silk_over_copper. Not
+    legality: the final pass moves the smaller part to the nearest clean spot without one."""
+    from shapely.geometry import box
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    assert not exact.silk_on(P)
+    E = exact.ExactModel(P, st)
+    assert E.silk_check() == []
+    P.severity = dict(P.severity or {}, silk_overlap="error", silk_over_copper="error")
+    a = next(p for p in P.parts if p.ref == "U1")
+    b = min((p for p in P.parts if p.movable and p.s == a.s and p.i != a.i), key=lambda p: p.area)
+    # a wide silk bar under R1 reaching U1's position, and U1's own silk where it stands
+    ax, ay = st.xy(a.i)
+    bx, by = st.xy(b.i)
+    from kae.place.problem import geom_to_lib
+    bar = box(min(ax, bx) - 0.5, min(ay, by) - 0.5, max(ax, bx) + 0.5, max(ay, by) + 0.5)
+    b.fp.silk = {"F.SilkS" if b.s > 0 else "B.SilkS": [geom_to_lib(bar, *st.pose(b.i))]}
+    a.fp.silk = {"F.SilkS" if a.s > 0 else "B.SilkS": [geom_to_lib(box(ax - 0.3, ay - 0.3, ax + 0.3, ay + 0.3), *st.pose(a.i))]}
+    E = exact.ExactModel(P, st)
+    found = E.silk_check()
+    assert a.s == b.s and any(v["type"] == "silk_overlap" and set(v["parts"]) == {a.i, b.i} for v in found)
+    assert not exact_check(P, st)                 # soft: legality is untouched
+    rep = exact.fix_silk(P, st, time_s=30.0, max_wl_rise=10.0)
+    assert rep["start"]["silk_overlap"] >= 1 and rep["end"]["silk_overlap"] < rep["start"]["silk_overlap"]
+    assert rep["moved"] and rep["moved"][0] == min((a, b), key=lambda p: p.area).ref
+    assert not exact_check(P, st) and not grid_violations(st)
+
+
+def test_silk_texts_take_kicads_glyphs_inside_their_boxes():
+    """refine_silk_text: pcbnew's glyph outlines replace the estimated text boxes, in each
+    footprint's library frame (placed back where they were, they sit inside the box)."""
+    import pytest
+    from kae.board import pcbnew_io
+    from kae.place import exact
+    if not pcbnew_io.available():
+        pytest.skip("no Python with pcbnew")
+    P = Problem.build(load(FIXTURE))
+    boxes = {p.i: [g for v in p.fp.silk_text.values() for g in v] for p in P.parts}
+    rep = exact.refine_silk_text(P)
+    assert rep["ok"] and rep["texts"] >= 1
+    n = 0
+    for p in P.parts:
+        glyphs = [g for v in p.fp.silk_text.values() for g in v]
+        if not glyphs or not boxes[p.i]:
+            continue
+        n += 1
+        box_u = shapely.union_all(boxes[p.i]).buffer(0.3)
+        assert sum(g.area for g in glyphs) < sum(b.area for b in boxes[p.i])
+        assert all(box_u.contains(g) for g in glyphs), p.ref
+    assert n >= 1

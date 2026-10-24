@@ -45,6 +45,7 @@ from .critical_grid import Anchor, GridRouter
 from .critical_space import Space
 
 MARGINS = (1.0, 3.0, 8.0)       # mm around a part and the nearest other part: search windows
+WIDE = 15.0                     # mm around a part: the last window, before any rip-up
 RIP_MARGINS = (1.0, 3.0)        # windows whose foreign unlocked copper may be ripped
 MAX_RIP = 40                    # tracks and vias ripped for one connection at most
 VIA_COSTS = (None, 12.0)        # the grid router's via cost, then a dear one (cells per via)
@@ -256,8 +257,10 @@ def _conflicts(sp, it, new):
 
 def _join(gr, sp, net, src, others, widths, fixed):
     """One route from `src` to the other parts: (route, new items, ripped items) or None."""
-    for m in MARGINS:
-        got = _try(gr, sp, net, src, others, _window(src, others, m), widths)
+    x0, y0, x1, y1 = _bounds(src)
+    wide = box(x0 - WIDE, y0 - WIDE, x1 + WIDE, y1 + WIDE)    # every direction, not only the nearest part's
+    for win in [_window(src, others, m) for m in MARGINS] + [wide]:
+        got = _try(gr, sp, net, src, others, win, widths)
         if got is not None:
             return got[0], got[1], []
     for m in RIP_MARGINS:
@@ -360,8 +363,11 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
 
 
 def _relevant(part):
-    """A part KiCad's ratsnest counts: it holds a pad or zone fill (track-only parts are tails)."""
-    return any(n.kind in ("pad", "fill") for n in part)
+    """A part KiCad's ratsnest counts: it holds a pad, or zone fill that a track or via of the
+    net reaches (track-only parts are tails; a fill piece nothing reaches is an island KiCad
+    keeps or drops by the zone's island rule, never a missing connection)."""
+    kinds = {n.kind for n in part}
+    return "pad" in kinds or ("fill" in kinds and bool(kinds & {"track", "via"}))
 
 
 def _commit(sp, rt):

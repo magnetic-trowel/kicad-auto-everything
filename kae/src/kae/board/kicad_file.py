@@ -144,7 +144,7 @@ def _map_pieces(pieces, fn):
 
 
 GRAPHIC_LAYERS = ("F.Cu", "B.Cu", "F.Mask", "B.Mask")
-SILK_LAYERS = ("F.SilkS", "B.SilkS", "F.Fab", "B.Fab")
+SILK_LAYERS = ("F.SilkS", "B.SilkS")
 
 
 class _Reader:
@@ -341,7 +341,7 @@ class _Reader:
             opens, rings = pieces_on("Edge.Cuts")
             fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
         fp.graphics = self._graphics(fp, by_layer, lib)
-        fp.silk = self._silk(fp, node, by_layer, lib, frot, s)
+        fp.silk, fp.silk_text = self._silk(fp, node, by_layer, lib, frot, s)
         if not fp.courtyard:
             fp.body = self._body(fp, pieces_on, by_layer)
         for z in kids(node, "zone"):
@@ -404,12 +404,11 @@ class _Reader:
         return out
 
     def _silk(self, fp, node, by_layer, lib, frot, s):
-        """Silkscreen and fab of a footprint, library frame (KiCad's silk checks: silk_overlap
-        against other silk, pads, fab, courtyards and the edge; silk_over_copper against mask
-        openings): F/B.SilkS and F/B.Fab graphics stroked, and the visible texts on a silk
-        layer (Reference, Value, user texts; ${REFERENCE} expanded) as their estimated boxes
-        (_text_box). {layer: [Polygon]}."""
-        out = {}
+        """Silkscreen of a footprint, library frame (KiCad's silk_overlap and silk_over_copper):
+        F/B.SilkS graphics stroked, and the visible texts on a silk layer (Reference, Value,
+        user texts; ${REFERENCE} expanded) as their estimated boxes (_text_box).
+        ({layer: [Polygon]} graphics, {layer: [Polygon]} texts)."""
+        out, texts = {}, {}
         for ly in SILK_LAYERS:
             shapes = []
             for g in by_layer.get(ly, ()):
@@ -449,8 +448,8 @@ class _Reader:
             if s < 0:
                 box_ = affinity.scale(box_, 1.0, -1.0, origin=(0, 0))
                 ly = flip_layer(ly, self.ncu)
-            out.setdefault(ly, []).append(box_)
-        return out
+            texts.setdefault(ly, []).append(box_)
+        return out, texts
 
     def _body(self, fp, pieces_on, by_layer):
         """Fallback extent when there is no courtyard: the box around the closed Fab
@@ -842,7 +841,8 @@ def _board_graphics(tree, tol, warnings):
             elif g[0] == "gr_text":
                 b = _text_box(g)
                 if b is not None:
-                    by.setdefault(ly, []).append(b)
+                    # silkscreen text apart (an estimate kae.place.exact.refine_silk_text replaces)
+                    by.setdefault(ly + ":text" if ly.endswith("SilkS") else ly, []).append(b)
     return {ly: p for ly, p in ((ly, _polys(s)) for ly, s in by.items()) if p}
 
 

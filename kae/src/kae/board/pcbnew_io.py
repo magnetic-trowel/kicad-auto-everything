@@ -204,6 +204,13 @@ def zone_fills(path, timeout=900):
     return _run("zone-fills", lambda out: [_abs(path), out], timeout)
 
 
+def text_shapes(path, timeout=300):
+    """Glyph outlines of the visible silkscreen and copper texts of `path` (pcbnew_bridge
+    text_shapes). Returns {texts: [{owner (footprint uuid or ''), uuid, layer, text, polys:
+    [[outer ring, hole rings...]]}]}, board frame, mm."""
+    return _run("text-shapes", lambda out: [_abs(path), out], timeout)
+
+
 # ----------------------------------------------------------------------------- verify
 def _polys(rings_list):
     out = []

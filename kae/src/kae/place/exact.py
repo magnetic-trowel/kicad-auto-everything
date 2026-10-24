@@ -42,7 +42,7 @@ from .problem import edge_cut_polys, geom_to_lib, keepout_sides
 AREA_EPS = 1e-6
 EDGE_TOL = 0.05    # mm the copper-to-edge check forgives (outline arcs are polygonized)
 EDGE_STEP = 0.05   # mm a part's edge clearance grows each time KiCad reports it against the edge
-SILK_AREA = 0.01   # mm^2 of overlap that makes a silk conflict (silk text is an estimated box)
+SILK_AREA = 1e-3   # mm^2 of overlap that makes a silk conflict (touching is not one)
 
 
 def mask_margin(P, pd):
@@ -228,7 +228,8 @@ class ExactModel:
         self.silk_on = {k: sev.get(k, "warning") == "error" for k in ("silk_overlap", "silk_over_copper")}
         self.silk_clr = max(0.0, float(getattr(rules_, "silk_clearance", 0.0) or 0.0)) if rules_ is not None else 0.0
         bg = getattr(P.board, "graphics", None) or {}
-        self.board_silk = {0: list(bg.get("F.SilkS", ())), 1: list(bg.get("B.SilkS", ()))} \
+        self.board_silk = {0: list(bg.get("F.SilkS", ())) + list(bg.get("F.SilkS:text", ())),
+                           1: list(bg.get("B.SilkS", ())) + list(bg.get("B.SilkS:text", ()))} \
             if any(self.silk_on.values()) else {0: [], 1: []}
         fb = getattr(P, "feedback", None) or {}
         self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
@@ -267,12 +268,12 @@ class ExactModel:
                 continue
             bs = si if ly.startswith("F.") else 1 - si
             gfx[kind][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
-        silk = {"silk": {0: [], 1: []}, "fab": {0: [], 1: []}}
+        silk = {"silk": {0: [], 1: []}}
         if any(getattr(self, "silk_on", {}).values()):
-            for ly, polys in (getattr(fp, "silk", None) or {}).items():
-                kind = "silk" if ly.endswith("SilkS") else "fab"
+            for ly, polys in list((getattr(fp, "silk", None) or {}).items()) + \
+                    list((getattr(fp, "silk_text", None) or {}).items()):
                 bs = si if ly.startswith("F.") else 1 - si
-                silk[kind][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
+                silk["silk"][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
         geoms = [g for g, _, _ in pads] + [c for c in cy.values() if c is not None] + cuts + [g for _, _, g in kos] + \
             [g for d in gfx.values() for v in d.values() for g in v] + [g for v in silk["silk"].values() for g in v]
         if geoms:
@@ -311,25 +312,24 @@ class ExactModel:
 
     # ------------------------------------------------------------------ silkscreen (soft)
     def _silk_targets(self, j, B, side):
-        """What another part's silk may not overlap on a side (KiCad's silk checker): copper of
-        its pads, its silk and fab (silk_overlap); its pads' mask openings (silk_over_copper).
-        Courtyard lines and the board edge are KiCad targets too but left out: the human
-        placements touch them where KiCad passes (text boxes are estimates)."""
+        """What another part's silk may not overlap on a side, as KiCad 10 reports it: its silk
+        (silk_overlap) and its pads' mask openings (silk_over_copper). KiCad's silk checker
+        also pairs silk with copper, fab, courtyards and the edge, but its report on ecc83
+        names silk against silk and pads only, and the human boards overlap the rest."""
         key = ("silk_t", side)
         if key not in B:
-            cu = [g for g, k, pd in B["pads"] if side in self.cs[j][k]]
             mo = [g.buffer(self.mm[j][k]) if self.mm[j][k] > 0 else g
                   for g, k, pd in B["pads"] if side in self.ms[j][k] and not _npth_without_copper(pd)]
-            other = list(B["silk"]["silk"][side]) + list(B["silk"]["fab"][side])
             u = lambda gs: shapely.union_all(gs) if gs else None
-            B[key] = dict(silk=u(list(B["silk"]["silk"][side])), overlap=u(cu + other), mask=u(mo))
+            B[key] = dict(silk=u(list(B["silk"]["silk"][side])), mask=u(mo))
         return B[key]
 
     def silk_findings(self, i, X=None, Y=None, K=None):
         """Silkscreen conflicts of part i (where it is, or at grid pose X, Y, K) with the other
         parts and the board, as KiCad 10 reports them (drc_test_provider_silk_clearance.cpp):
-        silk_overlap for silk against other silk, pads, fab and board silk; silk_over_copper for silk over another part's pad mask openings. A
-        footprint's own silk against its own items is the library's, not the placement's.
+        silk_overlap for silk against other silk and board silk; silk_over_copper for silk
+        over another part's pad mask openings. A footprint's own silk against its own items
+        is the library's, not the placement's.
         Only checks the project makes errors. [{type, parts}]."""
         if not any(self.silk_on.values()):
             return []
@@ -362,15 +362,10 @@ class ExactModel:
                     if hit(mine["silk"], g):
                         out.append(dict(type="silk_overlap", parts=[i], detail="silk over board silk"))
                         break
-            if on_o and mine["overlap"] is not None:
-                for g in self.board_silk[side]:
-                    if hit(g, mine["overlap"]):
-                        out.append(dict(type="silk_overlap", parts=[i], detail="board silk over the part"))
-                        break
             for j in self.neighbours(A["env"], skip=i):
                 B = self.sh[j]
                 theirs = self._silk_targets(j, B, side)
-                if on_o and (hit(mine["silk"], theirs["overlap"]) or hit(theirs["silk"], mine["overlap"])):
+                if on_o and hit(mine["silk"], theirs["silk"]):
                     out.append(dict(type="silk_overlap", parts=[i, j], detail=P.parts[j].ref))
                 if on_m and (hit(mine["silk"], theirs["mask"]) or hit(theirs["silk"], mine["mask"])):
                     out.append(dict(type="silk_over_copper", parts=[i, j], detail=P.parts[j].ref))
@@ -1166,6 +1161,143 @@ def fix_order(P, st, time_s=10.0, phys=None, max_rise=0.03, w_rot=4.0, limit=600
     rep["seconds"] = round(time.monotonic() - t0, 2)
     if log:
         log(f"order fix: {rep['start']} -> {rep['end']} rules broken, moved {rep['moved']} ({rep['seconds']}s)")
+    return rep
+
+
+def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.03, w_rot=4.0, limit=600, max_evals=8,
+             rounds=3, log=None):
+    """A final pass on silkscreen conflicts (ExactModel.silk_findings: silk over another
+    part's silk or pad mask openings, where the project makes them errors): each part in a
+    conflict, the smaller first, moves to the nearest grid-free, exactly clean spot where it
+    has fewer conflicts and breaks no more protection-order rules. `phys` bounds the physics
+    total as in fix_order, and the moves together may lengthen the HPWL by `max_wl_rise` of
+    it at most. Returns a report (conflicts by type before and after)."""
+    t0 = time.monotonic()
+    deadline = t0 + time_s
+    E = ExactModel(P, st)
+    found = E.silk_check()
+    count = lambda f: {k: sum(1 for v in f if v["type"] == k) for k in ("silk_overlap", "silk_over_copper")}
+    rep = dict(start=count(found), moved=[], refused_physics=0, no_spot=0)
+    if not found:
+        rep.update(end=rep["start"], seconds=0.0)
+        return rep
+    guard = OrderGuard(P, st)
+    phys0 = base_phys = phys() if phys is not None else None
+    cap = None if phys0 is None else phys0 + max(0.05, max_rise * abs(phys0))
+    wl0 = st.hpwl()
+    wl_cap = wl0 * (1.0 + max_wl_rise)
+    for _ in range(rounds):
+        if not found or time.monotonic() > deadline:
+            break
+        progress = False
+        parts = {}
+        for v in found:
+            mv = [q for q in v["parts"] if P.parts[q].movable]
+            if mv:
+                q = min(mv, key=lambda q: P.parts[q].area)
+                parts[q] = parts.get(q, 0) + 1
+        for i in sorted(parts, key=lambda q: (P.parts[q].area, -parts[q])):
+            if time.monotonic() > deadline:
+                break
+            base = len(E.silk_findings(i))
+            if not base:
+                continue
+            gbase = guard.count(i)
+            S, pad = _tables(P, st, {i})
+            home = (int(st.X[i]), int(st.Y[i]), int(st.K[i]))
+            evals, done = 0, False
+            for c, X, Y, k in _candidates(P, st, i, S, pad, list(range(len(P.parts[i].rots))), w_rot, limit):
+                if time.monotonic() > deadline or evals >= max_evals:
+                    break
+                if E.findings_at(i, X, Y, k, first=True) or guard.count_at(i, X, Y, k) > gbase:
+                    continue
+                if len(E.silk_findings(i, X, Y, k)) >= base:
+                    continue
+                E.set_pose(i, X, Y, k)
+                if st.hpwl() > wl_cap:
+                    rep["refused_wl"] = rep.get("refused_wl", 0) + 1
+                    E.set_pose(i, *home)
+                    continue
+                if base_phys is not None:
+                    evals += 1
+                    p1 = phys()
+                    if p1 > cap:
+                        rep["refused_physics"] += 1
+                        E.set_pose(i, *home)
+                        continue
+                    base_phys = p1
+                rep["moved"].append(P.parts[i].ref)
+                done = progress = True
+                break
+            if not done:
+                rep["no_spot"] += 1
+        found = E.silk_check()
+        if not progress:
+            break
+    rep["end"] = count(found)
+    rep["hpwl"] = [round(wl0, 2), round(st.hpwl(), 2)]
+    if base_phys is not None:
+        rep["physics"] = [round(phys0, 4), round(base_phys, 4)]
+    rep["seconds"] = round(time.monotonic() - t0, 2)
+    if log:
+        log(f"silk fix: {rep['start']} -> {rep['end']}, moved {rep['moved']} ({rep['seconds']}s)")
+    return rep
+
+
+def silk_on(P):
+    """The project makes a silkscreen check an error (KiCad's default is a warning)."""
+    sev = getattr(P, "severity", None) or {}
+    return any(sev.get(k, "warning") == "error" for k in ("silk_overlap", "silk_over_copper"))
+
+
+_SILK_NAMES = {"F.Silkscreen": "F.SilkS", "B.Silkscreen": "B.SilkS", "F.SilkS": "F.SilkS", "B.SilkS": "B.SilkS"}
+
+
+def refine_silk_text(P, log=None):
+    """Silkscreen texts as KiCad draws them: the glyph outlines pcbnew returns (kae.board
+    .pcbnew_io.text_shapes) replace the estimated boxes, footprint texts in their library
+    frame (fp.silk_text) and board texts (Board.graphics '<layer>:text'). A box is ~3x the
+    glyphs' area, so silk checks on boxes see overlaps KiCad does not. Returns a report; with
+    no pcbnew the boxes stay."""
+    from shapely.geometry import Polygon
+    from kae.board import pcbnew_io, transform as tr
+    path = getattr(P.board, "path", "")
+    t0 = time.monotonic()
+    try:
+        res = pcbnew_io.text_shapes(path)
+    except Exception as e:      # noqa: BLE001 - no pcbnew: keep the estimates
+        return dict(ok=False, error=f"{type(e).__name__}: {str(e)[:160]}")
+    by_uuid = {p.uuid: p for p in P.parts}
+    fp_text, board_text, n = {}, {}, 0
+    for t in res.get("texts", []):
+        ly = _SILK_NAMES.get(t.get("layer"))
+        if ly is None:
+            continue
+        polys = [Polygon(r[0], r[1:]) for r in t.get("polys", []) if r and len(r[0]) >= 3]
+        polys = [q if q.is_valid else q.buffer(0) for q in polys]
+        polys = [q for q in polys if not q.is_empty]
+        if not polys:
+            continue
+        n += 1
+        if not t.get("owner"):
+            board_text.setdefault(ly, []).extend(polys)
+            continue
+        p = by_uuid.get(t["owner"])
+        if p is None:
+            continue
+        f = p.fp
+        lib_ly = ly if f.side == "F" else tr.flip_layer(ly)
+        fp_text.setdefault(p.uuid, {}).setdefault(lib_ly, []).extend(
+            geom_to_lib(q, p.x0, p.y0, p.rot0, f.side) for q in polys)
+    for p in P.parts:
+        p.fp.silk_text = fp_text.get(p.uuid, {})
+    g = getattr(P.board, "graphics", None)
+    if isinstance(g, dict):
+        for ly in ("F.SilkS", "B.SilkS"):
+            g[ly + ":text"] = board_text.get(ly, [])
+    rep = dict(ok=True, texts=n, seconds=round(time.monotonic() - t0, 2))
+    if log:
+        log(f"silk texts: {n} glyph outlines from pcbnew ({rep['seconds']}s)")
     return rep
 
 
