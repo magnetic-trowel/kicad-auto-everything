@@ -21,3 +21,18 @@ for what they buy). HPWL relative to human: 0.685 with physics, 0.657 without.
   vs 1/1. oasis-ledboard, xor-2in and tuxkeychain-expansion are clean on ours and not on human.
 - **Not scored:** on noisecard both kae placements move D1–D10 away from their printed dB labels
   and SW1 away from its ON/OFF text; the human places each beside its label.
+
+## Follow-up: silkscreen and labels (WIP snapshots up to d8c09e6)
+
+Silk is now checked where the project makes it an error (5 tasks), using KiCad's own glyph
+outlines from pcbnew (human placements: 0 conflicts on all five). A final pass moves the smaller
+part of each conflict within +3% physics and +10% HPWL. KiCad silk errors on those 5 boards,
+local, 600 s: 224 → 71 (ecc83 49 → 3, video 64 → 6, pic-programmer 32 → 7, sonde-xilinx 12 → 1,
+complex-hierarchy 67 → 54, where the HPWL cap binds); all legal, KiCad clean. Reference text
+cannot be moved: the scorer accepts only footprint poses.
+
+Board-level labels: 91 of 112 tasks carry board silk text. An association inferred from the
+task alone (connector-pin labels, numbered rows matched in order to one part family, keywords)
+puts the human placement's part within 3 mm on 58–86% of the 354 single-part labels. As an
+annealer term (`w_label`, off by default) it brings noisecard's 12 labelled parts from 0 to 8
+within 3 mm at weight 3, physics 2.38 → 2.76 (human 3.50), HPWL 170 → 258.
