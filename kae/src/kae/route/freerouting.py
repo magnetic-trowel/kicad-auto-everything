@@ -141,13 +141,46 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     except (OSError, ValueError):
         pass
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
-               seconds=round(dt, 2), timed_out=timed_out, report=_summary(report), argv=argv)
+               seconds=round(dt, 2), timed_out=timed_out, report=_summary(report, out or ""), argv=argv)
 
 
-def _summary(d):
+def _autorouter_stop(log, final_state):
+    """Why the autorouter's pass loop ended (the fork's StopReason), from its log: it logs
+    stagnation and no-improvement stops; a job past its deadline ends TIMED_OUT; otherwise the
+    loop ran out of work (COMPLETED: every connection it could attempt was routed)."""
+    if "not able to improve the board" in log:
+        return "NO_IMPROVEMENT"
+    if "has not improved by more than" in log:
+        return "STAGNATION"
+    if final_state == "TIMED_OUT":
+        return "TIMED_OUT"
+    return "COMPLETED" if final_state else None
+
+
+def _optimizer_stop(log):
+    """Why the optimizer stage ended, from Freerouting's log (the result file does not say)."""
+    if "Stopping optimizer because the improvement" in log:
+        return "below_threshold"
+    if "Optimizer stage timed out" in log:
+        return "timed_out"
+    if "Skipping optimization stage" in log:
+        return "skipped"
+    return None
+
+
+def _summary(d, log=""):
+    """The parts of Freerouting's result file the bridge reports, plus why each stage stopped:
+    `autorouter_stop` is the fork's StopReason for the chosen attempt (COMPLETED: nothing left
+    to route; STAGNATION / NO_IMPROVEMENT: its score stopped improving; TIMED_OUT: the clock;
+    MAX_PASSES), `optimizer_stop` is below_threshold, timed_out or skipped."""
     if not d:
         return {}
     use = d.get("resource_usage") or {}
+    fb = (d.get("phases") or {}).get("fallback") or {}
+    att = fb.get("attempts") or []
+    chosen = next((a for a in att if a.get("strategy") == fb.get("chosen")), att[-1] if att else {})
+    ar_stop = chosen.get("stop_reason") or _autorouter_stop(log, d.get("final_state"))
     return dict(final_state=d.get("final_state"), router_score=d.get("normalized_score"),
                 optimizer_score=d.get("optimizer_score"), cpu_s=use.get("cpu_time"),
-                peak_mb=use.get("peak_memory"), app_version=d.get("app_version"))
+                peak_mb=use.get("peak_memory"), app_version=d.get("app_version"),
+                autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log))
