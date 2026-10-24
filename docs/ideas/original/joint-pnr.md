@@ -148,7 +148,7 @@ Every idea below runs on one engine, so they can be compared fairly:
 35. **Factory-game solvers** [I]. Factorio/Shapez layout tools place machines and
     belts together with SAT; their trick of placing "belt bus" first maps to
     corridor-first PCB layout.
-36. **Numberlink SAT windows** [T: CP-SAT window place-and-route, see `pnr_cpsat`]. Exact joint solve of a small window: part pose
+36. **Numberlink SAT windows** [T: no merit; CP-SAT windows never optimal, 0/112 wins over heuristic repair]. Exact joint solve of a small window: part pose
     variables plus path variables in one SAT/CP-SAT model.
 37. **Chemical plant piping** [I]. Equipment placement and pipe routing co-optimized
     with pipe cost terms (length, bends, supports) in MILP; maps to vias and bends.

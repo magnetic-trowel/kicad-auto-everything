@@ -3,34 +3,28 @@
 """Exact simultaneous place-and-route of small windows with CP-SAT, as an LNS step.
 
 Catalog ideas 12 + 36 (docs/ideas/original/joint-pnr.md); sources: SP&R (Lee et al.,
-TCAD 2021, SMT simultaneous P&R of standard cells), Numberlink / Flow-Free SAT
-encodings, Factorio-SAT.
+TCAD 2021), Numberlink / Flow-Free SAT encodings, Factorio-SAT. Results and verdict:
+RESULTS.md (no merit at these sizes / budgets).
 
-Loop: start from a placed + routed board (methods.seq). Pick a target net (unrouted,
-else most detoured), a rectangular window around it holding 2-6 movable parts, rip up
-those parts and every net that touches them or crosses the window, and solve one CP-SAT
-model on a coarse grid (pitch = smallest even multiple of the engine cell >= the
-track-to-track halo radius, so different nets on 4-adjacent coarse cells are legal):
+Loop: start from a placed + routed board (methods_phys.seq_phys). Pick a target net
+(unrouted, else most detoured) and a window around it with 2-3 movable parts; rip up those
+parts and every net touching them or crossing the window; solve one CP-SAT model on a
+coarse grid (pitch = smallest even multiple of the engine cell >= the track halo radius):
 
-  pose      one Boolean per (part, origin on the coarse lattice, rotation) whose
-            courtyard is legal against fixed parts (checked on the 0.1 mm grid) and
-            lies inside the window; exactly one per part; courtyard bounding boxes
-            pairwise disjoint (NoOverlap2D, per board side)
-  occupancy o[n, l, c] Boolean per net, layer, coarse cell (cells blocked by fixed
-            foreign copper on the fine grid get no variable); sum_n o <= 1 per cell;
-            a pose forces o[pad net] on its pad's clearance halo cells and blocks cells
-            where two pads of one part compete
-  routing   per net single-commodity flow on 4-neighbour edges and vias: the root
-            (an exit cell on the window border with cost = distance to the nearest
-            outside pin, or one in-window pin) supplies one unit per connected
-            terminal; terminals are pad copper cells chosen by the poses (or fixed
-            pads / boundary crossings of passing nets); a via clears its 8 neighbours
-  objective 3000 * missed terminals + wirelength (0.1 mm) + 20 per via + exit cost
+  pose      Booleans per part over the current pose, Kit.candidates (fine grid) and
+            optionally a coarse lattice; legal against fixed keep-out planes; keep-out
+            boxes disjoint per plane (NoOverlap2D); pad halos close cells to other nets
+  routing   per net, terminals (pose-dependent pad cells, fixed pads, a priced border
+            exit, crossings of passing nets) joined by an MST into 2-terminal connections;
+            each connection a Numberlink path (endpoint degree 1, else 0 or 2); cells
+            exclusive per net; a via clears its 8 neighbours
+  objective 3000 * missed connections + length (0.1 mm) + 20 per via + exit cost
+            + 10 * phys_w * kae physics delta of the pose (first order)
 
-Decode: place the parts at the solved poses (on the engine grid by construction,
-checked with World.part_violation), re-route the ripped nets with the engine's
-PathFinder (optionally biased toward the CP-SAT corridors), accept if Kit.total_cost
-fell.
+Solve in two phases (current poses as assumptions -> complete hint -> free poses), one
+worker, no LP, no presolve, deterministic time limit. Decode: place at the solved poses,
+re-route the ripped nets with the engine's PathFinder, accept if Kit.total_cost() +
+phys_w * physics fell. cpsat_null is the same loop without the CP-SAT step (control).
 """
 import math
 import random
