@@ -50,7 +50,9 @@ def _rank(rep):
 def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         router="kae.route.cli", extra=(), workdir=None, log=print):
     """`router`: a module name, or a list of module names or (module, [args]) pairs; attempts
-    cycle through them and `extra` goes to every one."""
+    cycle through them and `extra` goes to every one. When a clean result comes from a router other
+    than the first, the first router's attempts still running are allowed to finish before the run
+    ends, and their clean board is preferred."""
     routers = [(r, []) if isinstance(r, str) else (r[0], list(r[1]))
                for r in ([router] if isinstance(router, str) else router)]
     inp, out = Path(inp).resolve(), Path(out).resolve()
@@ -99,7 +101,7 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
 
     while len(running) < parallel and launch():
         pass
-    clean = failed = False
+    clean = failed = waiting = False
     while running:
         time.sleep(1.0)
         for p in list(running):
@@ -127,6 +129,18 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         if len(tail) >= 2 * parallel and all(not a["has_board"] and a["seconds"] < 10 for a in tail):
             failed = True
             log(f"[portfolio] {len(tail)} attempts in a row failed at once; see {wd}/a*/log")
+        if clean and not failed and best["router"] > 0:
+            # a later-listed router finished clean first: let the first-listed router's attempts still
+            # running finish (they may be clean too, with better physics), stop the others, launch none
+            for p in [q for q in running if running[q]["router"] > 0]:
+                stop(p)
+                a = running.pop(p)
+                a.update(rank=(float("inf"), float("inf"), a["router"]), rc=p.returncode, stopped=True,
+                         seconds=round(time.monotonic() - a["t"], 1), has_board=False)
+                done.append(a)
+            if running:
+                waiting = True
+                continue
         if clean or failed:
             for p in list(running):
                 stop(p)
@@ -135,7 +149,7 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
                          seconds=round(time.monotonic() - a["t"], 1), has_board=False)
                 done.append(a)        # stopped after the winner: listed, never a candidate
             break
-        while len(running) < parallel and launch():
+        while not waiting and len(running) < parallel and launch():
             pass
     if best is not None:
         Path(out).parent.mkdir(parents=True, exist_ok=True)

@@ -78,3 +78,18 @@ def test_mixed_routers_cycle_through_their_modules(tmp_path, monkeypatch):
                         router=["router_a", ("router_b", ["--x"])], workdir=tmp_path / "wd", log=lambda m: None)
     assert rep["stop"] == "clean" and rep["best"]["router"] == "router_b" and out.read_text() == "router_b"
     assert {a["router"] for a in rep["attempts"]} == {0, 1}
+
+
+def test_a_clean_board_of_the_first_router_is_preferred(tmp_path, monkeypatch):
+    # the first router is clean but slow; the second is clean at once: the first one's board is kept
+    (tmp_path / "slow_a.py").write_text(
+        "import json, sys, time\na = sys.argv[1:]\ntime.sleep(6)\nopen(a[2], 'w').write('slow_a')\n"
+        "open(a[a.index('--report') + 1], 'w').write(json.dumps(dict(repair=dict(final=dict(errors=0, unconnected=0)))))\n")
+    (tmp_path / "fast_b.py").write_text(
+        "import json, sys\na = sys.argv[1:]\nopen(a[2], 'w').write('fast_b')\n"
+        "open(a[a.index('--report') + 1], 'w').write(json.dumps(dict(repair=dict(final=dict(errors=0, unconnected=0)))))\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    out = tmp_path / "out.kicad_pcb"
+    rep = portfolio.run("in.kicad_pcb", out, time_s=300, parallel=2, first_s=60,
+                        router=["slow_a", "fast_b"], workdir=tmp_path / "wd", log=lambda m: None)
+    assert rep["stop"] == "clean" and rep["best"]["router"] == "slow_a" and out.read_text() == "slow_a"
