@@ -16,10 +16,11 @@ from pathlib import Path
 
 def load(run):
     rows = {}
-    for f in Path(run).glob("*/place/*/attempt-0/attempt.json"):
+    for f in [*Path(run).glob("*/place/*/attempt-0/attempt.json"), *Path(run).glob("*/joint/*/attempt-0/attempt.json")]:
         r = json.loads(f.read_text())
         s = r.get("score") or {}
-        p = (r.get("probe") or {}).get("score") or {}
+        # joint tasks (harness score v7) carry placement and routing in one score
+        p = s if r.get("kind") == "joint" else ((r.get("probe") or {}).get("score") or {})
         rows[r["id"]] = dict(
             split=r["split"], status=r["status"], legal=bool(s.get("legal")),
             clean=bool(s.get("legal")) and bool(p.get("clean")),

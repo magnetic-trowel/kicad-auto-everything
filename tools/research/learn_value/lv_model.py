@@ -220,6 +220,10 @@ class Board:
                     elif rule == "bound":  # current routed cost already above the best final
                         f = self.runs[i]["ck"][c]
                         d = math.log1p(f["route_cost"] + self.phys_w * f["phys"]) - self.y[best]
+                    elif rule.startswith("oracle"):  # perfect value at checkpoint c0 (headroom)
+                        if c != int(rule[6:] or 0):
+                            continue
+                        d = self.y[i] - self.y[best]
                     if d > margin:
                         t += self.tck[i][c]
                         ab = True
@@ -284,7 +288,8 @@ def main():
     best_kind = None
     for kind in ("gbm", "ridge"):
         sb = {b: Board(boards[b], data[b], phys_w, models[kind][folds[b]], random.Random(3)) for b in names}
-        rules = ["model", "lift_model"] + (["heur_cost", "heur_conf", "bound"] if kind == "gbm" else [])
+        rules = ["model", "lift_model"] + (["heur_cost", "heur_conf", "bound", "oracle0", "oracle5"]
+                                           if kind == "gbm" else [])
         for rule in rules:
             tab = {m: sim_all(sb, rule, m, B, a.perm) for m in MARGINS}
             # nested margin choice: for fold f, the margin best on the other folds
