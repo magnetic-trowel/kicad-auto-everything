@@ -6,7 +6,7 @@
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N|auto] [--router-share F|auto]
                                                [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
-                                               [--last-mile] [--report FILE]
+                                               [--[no-]last-mile] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -49,8 +49,9 @@ def main(argv=None):
                         " round has open connections (keep), or KiCad's layer types (allow)")
     r.add_argument("--pad-shapes", default="kicad", choices=("kicad", "outside"),
                    help="pin polygons in the DSN: KiCad's (arc chords inside the pad) or ones that contain the pad")
-    r.add_argument("--last-mile", action="store_true",
-                   help="after the repair rounds, join what is still open with the grid router (kae.route.lastmile)")
+    r.add_argument("--last-mile", action=argparse.BooleanOptionalAction, default=True,
+                   help="after the repair rounds, join what is still open with the grid router "
+                        "(kae.route.lastmile; default on, --no-last-mile turns it off)")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
