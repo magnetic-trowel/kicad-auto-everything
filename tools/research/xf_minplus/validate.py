@@ -24,14 +24,14 @@ from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
+ROOT = HERE.parents[2]
+sys.path.insert(0, str(ROOT / "tools" / "research" / "pnr"))
 
 import minplus as MPm  # noqa: E402
 import methods as M  # noqa: E402
 from run import kicad  # noqa: E402
 from world import World  # noqa: E402
 
-ROOT = Path("/home/user/kicad-auto-everything")
 
 
 def load(board_id, cache):
