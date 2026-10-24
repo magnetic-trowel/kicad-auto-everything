@@ -17,6 +17,8 @@
    are picked on the other folds' boards (nested), then the result on held-out boards.
 5. Exports fold models + margins (meta.json) for lv_jc.jc_value.
 """
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # sklearn/OpenMP: one thread (CPU budget, shared machine)
 import argparse
 import json
 import math
@@ -40,8 +42,9 @@ def load(path):
         r = json.loads(l)
         key = r["board"]
         kd = r["kind"]
-        if kd == "board":
+        if kd == "board":  # a (re)started board: drop rows of an interrupted earlier attempt
             boards[key] = r
+            runs[key] = {}
         elif kd == "ck":
             runs[key].setdefault(r["k"], dict(ck={}))["ck"][r["it"]] = r
         elif kd == "end":
@@ -160,7 +163,7 @@ def ranking(boards, data, models, folds, phys_w, rng, cs=(0, 2, 5, 12, 30)):
 class Board:
     """Precomputed dy for every (running a, incumbent b, checkpoint c) of a board pool."""
 
-    def __init__(self, board, runs, phys_w, model, rng, max_runs=160):
+    def __init__(self, board, runs, phys_w, model, rng, max_runs=200):
         self.runs = runs if len(runs) <= max_runs else rng.sample(runs, max_runs)
         self.phys_w = phys_w
         n = len(self.runs)
@@ -188,7 +191,8 @@ class Board:
                 self.heur[(c, i)] = H[t]
         self.tck = [{c: r["ck"][c]["t_run"] for c in r["ck"]} for r in self.runs]
 
-    def simulate(self, order, B, rule, margin, checks=CHECKS):
+    def simulate(self, order, B, rule, margin, checks=CHECKS, max_consec=3):
+        consec = 0
         t = 0.0
         best = None
         t_full = None
@@ -199,7 +203,7 @@ class Board:
                 break
             nrun += 1
             ab = False
-            if best is not None and rule != "none":
+            if best is not None and rule != "none" and consec < max_consec:
                 for c in checks:
                     if (c, i) not in self.dy:
                         continue
@@ -222,7 +226,9 @@ class Board:
                         n_ab += 1
                         break
             if ab:
+                consec += 1
                 continue
+            consec = 0
             t += self.T[i]
             t_full = self.T[i]
             if best is None or self.cost[i] < self.cost[best]:
@@ -237,8 +243,7 @@ def sim_all(sb, rule, margin, B, n_perm=60, seed=0):
         rng = random.Random(seed)
         d, ab, nr = [], [], []
         for _ in range(n_perm):
-            order = list(range(len(S.runs)))
-            rng.shuffle(order)
+            order = [rng.randrange(len(S.runs)) for _ in range(3000)]  # bootstrap: pools can be short
             c0, _, _ = S.simulate(order, B, "none", 0)
             c1, n1, a1 = S.simulate(order, B, rule, margin)
             d.append(math.log1p(c1) - math.log1p(c0))

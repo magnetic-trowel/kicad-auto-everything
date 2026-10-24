@@ -18,6 +18,8 @@ collapse (tools/research/collapse_joint, frozen snapshot kae-work/jc-snap/jc_v3.
 The collapse itself is jc_v3's (Collapse, lift, best response, legalization); only the
 iteration loop is re-written here (collapse_once with a hook) and the restart driver.
 """
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # sklearn/OpenMP: one thread (CPU budget, shared machine)
 import importlib.util
 import json
 import math
@@ -167,7 +169,7 @@ def _cur_time(clock):
 
 def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0,
               beta_max=500.0, polish=0.15, first=0.35, run_cap=None, policy=None,
-              log_path=None, tag="", **kw):
+              log_path=None, tag="", max_consec=3, **kw):
     """jc_v3.jc (restarts, keep the best by routed cost + phys_w * fast physics, optional
     anneal_phys polish) with probes at every checkpoint and an optional `policy`:
     policy.start(board info), policy(stage, it, feats, best_cost) -> True to abandon."""
@@ -189,6 +191,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
     t_full = None
     n_abort = 0
     lift_ref = {}
+    consec = [0]  # restarts abandoned in a row; after max_consec the next one runs to the end
 
     while True:
         t0 = _cur_time(clock)
@@ -210,7 +213,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
             L.write(kind="ck", **feats)
             if policy is None:
                 return False
-            stop = policy(stage, it, feats, lift_ref, best_cost)
+            stop = policy(stage, it, feats, lift_ref, best_cost) and consec[0] < max_consec
             if stop:
                 log(f"lv run {k}: abandoned at {stage} it={it} t={feats['t_run']:.1f}")
             return stop
@@ -220,10 +223,12 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
         t_run = _cur_time(clock) - t0
         if res is None:
             n_abort += 1
+            consec[0] += 1
             L.write(kind="abort", k=k, t_run=t_run)
             k += 1
             continue
         it, beta = res
+        consec[0] = 0
         t_full = t_run
         st = r.stats()
         cost = kit.total_cost() + C.phys_w * ph.total()

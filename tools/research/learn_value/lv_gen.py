@@ -35,7 +35,10 @@ def one(args):
     import lv_jc
     from world import World
     data = json.loads(extract(tid).read_text())
-    w = World(data, g=0.1)
+    try:
+        w = World(data, g=0.1)
+    except ValueError as e:  # e.g. a board without outline (jc cannot run it either)
+        return f"{tid} skipped: {e}"
     lf = open(Path(logdir) / f"{tid}-{phys_w}-{seed}.log", "w")
     lv_jc.jc_log(w, seed=seed, budget=budget, log=lambda m: (lf.write(m + "\n"), lf.flush()),
                  phys_w=phys_w, log_path=out, tag="gen")

@@ -10,6 +10,8 @@ The model predicts dy = log(1 + cost_a) - log(1 + cost_b) of the two restarts' f
 scores; the restart is abandoned when dy > margin. Pairs keep the board's scale out of
 the model (costs span 5 to 3000 between boards), so it transfers across boards.
 """
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # sklearn/OpenMP: one thread (CPU budget, shared machine)
 import json
 import math
 from pathlib import Path
