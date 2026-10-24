@@ -231,6 +231,19 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     return out
 
 
+def _hidden_from_methods(tasks_dir, results_dir):
+    """What a sandboxed method must not read: the tasks and results dirs and, when they share
+    a work dir, everything else in it (the board cache holds the original layouts). Each
+    attempt's own dir is bound back. A work dir that holds the current directory (the
+    method's code) is not hidden as a whole."""
+    paths = [tasks_dir, results_dir]
+    work = tasks_dir.resolve().parent
+    cwd = Path.cwd().resolve()
+    if results_dir.resolve().parent == work and work != cwd and work not in cwd.parents:
+        paths += [p for p in work.iterdir() if p.resolve() not in (tasks_dir.resolve(), results_dir.resolve())]
+    return paths
+
+
 def work_list(recs, arms, kinds, k, min_movable=0):
     """Attempts in execution order: board by board, and within a board every arm back to back
     in an order shuffled per board (seeded), so all arms see the same host conditions and none
@@ -267,10 +280,11 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
+    hidden = _hidden_from_methods(tasks_dir, results_dir)
     for ad, pr in arms:
         for method in (ad, pr):  # a command probe is as untrusted as a command method
             if method is not None and hasattr(method, "hide"):
-                method.hide(tasks_dir, results_dir)
+                method.hide(*hidden)
     name = name or f"{'+'.join(names)}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)

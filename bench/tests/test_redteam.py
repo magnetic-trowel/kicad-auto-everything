@@ -8,6 +8,7 @@ keepout that the human routing respects. Add a case here for every new way to ch
 """
 import hashlib
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -64,8 +65,8 @@ def _run(root, ad, kind, name):
     return rows[0], run_dir
 
 
-def cheat(root, mode, kind="route", path="", sandbox=True):
-    sb = adapters.Sandbox(enabled=sandbox, ro=[HERE])
+def cheat(root, mode, kind="route", path="", sandbox=True, ro=()):
+    sb = adapters.Sandbox(enabled=sandbox, ro=[HERE, *ro])
     ad = adapters.Command(f"{sys.executable if not sandbox else 'python3'} {CHEATS} {mode} "
                           f"{{input}} {{output}} {path}", name=f"cheat-{mode}", kinds=(kind,), sandbox=sb)
     return _run(root, ad, kind, f"{kind}-{mode}-{'sb' if sandbox else 'nosb'}")
@@ -197,6 +198,15 @@ def test_sandbox_hides_reference(rt):
     assert row["status"] == "no_output", row
 
 
+def test_sandbox_hides_the_whole_work_dir(rt):
+    """Even when the work dir is readable (bound by --sandbox-ro, or the checkout holding the
+    method's code), everything in it but the attempt's own dir stays hidden: here the source
+    board in src/, standing in for the board cache."""
+    root, _ = rt
+    row, _ = cheat(root, "read_file", path=root / "src" / "redteam.kicad_pcb", ro=[root])
+    assert row["status"] == "no_output", row
+
+
 def test_sandbox_blocks_writes_outside_attempt(rt):
     root, _ = rt
     ref = board_path(root / "tasks" / "redteam" / "reference")
@@ -221,3 +231,12 @@ def test_unsandboxed_copy_is_flagged(rt):
     assert s["copy"]["frac"] == 1.0 and row["adapter_meta"]["sandboxed"] is False
     summary, _ = report.report([run_dir])
     assert "Unsandboxed" in report.to_markdown(summary)
+
+
+@pytest.mark.skipif(not shutil.which("bwrap"), reason="bubblewrap not installed")
+def test_sandbox_keeps_the_harness_python(tmp_path):
+    """The harness's own interpreter (and its venv packages) works inside the sandbox, even
+    when it lives under the hidden home directory; otherwise `python` silently changes."""
+    argv = adapters.Sandbox().wrap([sys.executable, "-c", "import sys, pytest; print(sys.prefix)"], tmp_path)
+    r = subprocess.run(argv, capture_output=True, text=True, cwd=tmp_path)
+    assert r.returncode == 0 and r.stdout.strip() == sys.prefix, r.stderr

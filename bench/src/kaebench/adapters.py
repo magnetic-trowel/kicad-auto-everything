@@ -18,6 +18,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,7 +46,15 @@ class Sandbox:
         return [Path(p).resolve() for p in [*self.hide, *extra]]
 
     def _readable(self):
-        paths = [tools.KAE_HOME, *self.ro]
+        # The harness's own Python (a venv and the interpreter it links to, e.g. a uv-managed
+        # one under the home directory): without it `python` silently falls back to another.
+        paths = [tools.KAE_HOME, sys.prefix, sys.base_prefix, *self.ro]
+        # A venv's python can reach its interpreter through a symlinked sibling dir (uv:
+        # cpython-3.12-... -> cpython-3.12.15-...), so also bind the interpreter's parent,
+        # unless that would re-expose the root or the home directory.
+        parent = Path(sys.base_prefix).resolve().parent
+        if parent != Path("/") and parent not in (home := Path.home().resolve(), *home.parents):
+            paths.append(parent)
         cwd = Path.cwd().resolve()
         if Path.home().resolve() in cwd.parents:
             paths.append(cwd)  # e.g. the repo checkout holding the method's code
