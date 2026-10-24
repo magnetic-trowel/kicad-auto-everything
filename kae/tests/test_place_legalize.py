@@ -523,8 +523,14 @@ def test_mask_only_aperture_across_two_zone_fills_is_a_bridge():
     from kae.place import exact
     P, st = _pile()
     legalize(P, st, time_s=30.0, workers=2, seed=0)
+    from kae.place.problem import geom_to_lib
     logo = next(p for p in P.parts if p.ref == "R1")
-    logo.fp.graphics = dict(logo.fp.graphics or {}, **{"F.Mask": [box(-0.6, 3.0, 0.6, 4.2)]})  # clear of its pads
+    # the aperture 3.6 mm from R1 towards the board's middle (clear of its pads, on the board
+    # wherever the legalizer put R1: CP-SAT's layout varies with the host's load)
+    cx, cy = st.xy(logo.i)
+    dy = 3.6 if cy < P.outline.centroid.y else -3.6
+    ap_board = box(cx - 0.6, cy + dy - 0.6, cx + 0.6, cy + dy + 0.6)
+    logo.fp.graphics = dict(logo.fp.graphics or {}, **{"F.Mask": [geom_to_lib(ap_board, *st.pose(logo.i))]})
     others = [z for z in P.board.zones if z.net != "GND"]
 
     def zones(vcc_outline):
@@ -551,7 +557,6 @@ def test_mask_only_aperture_across_two_zone_fills_is_a_bridge():
     zones(box(0, 0, 60, ymid))
     g0 = A["pads"][0][0]                               # over its own pad: the pad's opening
     x, y, rot, side = st.pose(logo.i)
-    from kae.place.problem import geom_to_lib
     logo.fp.graphics["F.Mask"] = [geom_to_lib(g0, x, y, rot, side).buffer(0.6)]
     E = exact.ExactModel(P, st)
     A = E.sh[logo.i]
@@ -573,6 +578,8 @@ def test_silk_conflicts_are_soft_and_the_silk_pass_clears_them():
     E = exact.ExactModel(P, st)
     assert E.silk_check() == []
     P.severity = dict(P.severity or {}, silk_overlap="error", silk_over_copper="error")
+    for p in P.parts:          # only the silk this test draws (the fixture's own texts would
+        p.fp.silk, p.fp.silk_text = {}, {}    # meet wherever CP-SAT happened to put them)
     a = next(p for p in P.parts if p.ref == "U1")
     b = min((p for p in P.parts if p.movable and p.s == a.s and p.i != a.i), key=lambda p: p.area)
     # a wide silk bar under R1 reaching U1's position, and U1's own silk where it stands

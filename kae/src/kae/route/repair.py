@@ -756,8 +756,11 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             rec["physics"] = why
             log(f"last mile {j}: critical copper re-laid, {why}")
             if not ok:
+                # the critical copper stays: the next round works on the same board, without
+                # the soft tier
                 rec["kept"] = False
-                break
+                soft = set()
+                continue
         log(f"last mile {j}: joined {r['joined']}, ripped {len(r['ripped'])}: {s_['errors']} errors {s_['by_type']}, "
             f"{s_['unconnected']} unconnected ({'kept' if rec['kept'] else 'not better'})")
         if rec["kept"]:
