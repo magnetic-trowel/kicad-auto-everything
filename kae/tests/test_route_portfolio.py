@@ -50,3 +50,13 @@ def test_without_a_clean_attempt_the_best_is_kept_and_budgets_grow(tmp_path, mon
     assert tuple(rep["best"]["rank"]) == (0, 2) and out.read_text() == "board 3"
     budgets = [a["budget"] for a in rep["attempts"]]
     assert max(budgets) > min(budgets)                     # later waves got longer attempts
+
+
+def test_attempts_that_fail_at_once_end_the_run(tmp_path, monkeypatch):
+    (tmp_path / "broken_router.py").write_text("import sys; sys.exit(2)\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    t = time.monotonic()
+    rep = portfolio.run("in.kicad_pcb", tmp_path / "out.kicad_pcb", time_s=600, parallel=2, first_s=60,
+                        router="broken_router", workdir=tmp_path / "wd", log=lambda m: None)
+    assert rep["stop"] == "failed" and rep["best"] is None and len(rep["attempts"]) == 4
+    assert time.monotonic() - t < 30

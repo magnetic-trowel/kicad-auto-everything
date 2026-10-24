@@ -44,6 +44,7 @@ def _rank(rep):
 
 def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         router="kae.route.cli", extra=(), workdir=None, log=print):
+    inp, out = Path(inp).resolve(), Path(out).resolve()
     t0 = time.monotonic()
     deadline = t0 + time_s - MARGIN_S
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-portfolio-"))
@@ -87,7 +88,7 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
 
     while len(running) < parallel and launch():
         pass
-    clean = False
+    clean = failed = False
     while running:
         time.sleep(1.0)
         for p in list(running):
@@ -110,7 +111,12 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
                 best = a
             if a["rank"] == (0, 0):
                 clean = True
-        if clean:
+        # attempts that die at once without a board (bad input, broken install): retrying won't help
+        tail = done[-2 * parallel:]
+        if len(tail) >= 2 * parallel and all(not a["has_board"] and a["seconds"] < 10 for a in tail):
+            failed = True
+            log(f"[portfolio] {len(tail)} attempts in a row failed at once; see {wd}/a*/log")
+        if clean or failed:
             for p in list(running):
                 stop(p)
                 running.pop(p)
@@ -122,7 +128,7 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         shutil.copyfile(best["out"], out)
     report = dict(input=str(inp), budget_s=time_s, parallel=parallel, first_s=first_s, growth=growth,
                   router=router, extra=list(extra), seconds=round(time.monotonic() - t0, 1),
-                  stop="clean" if clean else "time", attempts=[
+                  stop="clean" if clean else ("failed" if failed else "time"), attempts=[
                       {x: a[x] for x in ("k", "seed", "budget", "rank", "rc", "seconds", "has_board")}
                       for a in done],
                   best=None if best is None else dict(k=best["k"], seed=best["seed"], rank=best["rank"]))
