@@ -25,10 +25,10 @@ case $W in /*) ;; *) W=$PWD/$W ;; esac
 J=${J:-16}
 K=${K:-3}
 V=${V:-v4}
-# per-attempt budgets (s): T_AB for splits A+B, T_C for the split-C boards (default 4x the v3 budgets
-# of 600 and 900 s; the 10x sweep sets T_AB=6000 T_C=9000); change V with them
-T_AB=${T_AB:-2400}
-T_C=${T_C:-3600}
+# per-attempt budgets (s): T_AB for splits A+B, T_C for the split-C boards (default 10x the v3 budgets
+# of 600 and 900 s); change V with them
+T_AB=${T_AB:-6000}
+T_C=${T_C:-9000}
 PY=$PWD/kae/.venv/bin/python
 C=$W/code/kae-crit-$(git rev-parse --short HEAD)
 RO=(--sandbox-ro "$C")
