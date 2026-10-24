@@ -181,33 +181,74 @@ def test_local_replace_takes_congestion_history_and_a_fixed_move_budget():
     assert out1.poses == out2.poses
 
 
-def test_probe_select_keeps_the_placement_that_routes_within_the_physics_slack(monkeypatch, tmp_path):
-    """--probe-select N: N placements (seeds), each routed briefly; the fewest open connections
-    wins among the candidates within 10% of the best physics, physics breaking ties."""
+def _probe_fakes(monkeypatch, table, calls):
     from types import SimpleNamespace
-    from kae import cli
     from kae.place import pipeline
     from kae.place.pipeline import Result
     from kae.route import bridge
     from kae.route import drc as kdrc
-    # seed: (physics, unconnected): seed 1 routes best but costs 30% more physics; seed 2 is
-    # within the slack and routes better than seed 0
-    table = {0: (1.00, 5), 1: (1.30, 0), 2: (1.05, 2)}
 
     def fake_place(board, seed=0, time_s=0, **kw):
+        calls.setdefault("anneal_args", {})[seed] = dict(kw.get("anneal_args") or {})
         return Result(poses={"u": (0, 0, 0, "F")}, report=dict(scorecard=dict(total_linear=table[seed][0]), exact=[]),
                       state=None, problem=None)
     monkeypatch.setattr(pipeline, "place", fake_place)
     monkeypatch.setattr("kae.board.kicad_file.load", lambda p: SimpleNamespace(path=p))
     monkeypatch.setattr(kdrc, "stage_board", lambda out, inp, d: out)
-    routed = {}
 
     def fake_route(staged, out, seed=0, time_s=0, opts=None, log=None):
-        k = len(routed)
-        routed[k] = time_s
+        k = int(Path(staged).parent.name.removeprefix("cand"))    # candidate k is placed with seed k
+        calls.setdefault("probe_s", []).append(time_s)
         return dict(repair=dict(final=dict(unconnected=table[k][1])))
     monkeypatch.setattr(bridge, "route", fake_route)
+
+
+def test_probe_select_keeps_the_placement_that_routes_within_the_physics_slack(monkeypatch, tmp_path):
+    """--probe-select N: N placements (seeds), each routed briefly; the fewest open connections
+    wins among the candidates within 10% of the best physics, physics breaking ties."""
+    from types import SimpleNamespace
+    from kae import cli
+    # seed: (physics, unconnected): seed 1 routes best but costs 30% more physics; seed 2 is
+    # within the slack and routes better than seed 0
+    table = {0: (1.00, 5), 1: (1.30, 0), 2: (1.05, 2)}
+    calls = {}
+    _probe_fakes(monkeypatch, table, calls)
     a = SimpleNamespace(probe_select=3, time=600.0, seed=0, input=str(FIXTURE), writer="sexpr")
     res = cli._probe_select(a, None, {}, __import__("time").monotonic(), lambda *x, **k: dict(writer="fake"))
     ps = res.report["probe_select"]
     assert ps["chosen"] == 2 and [c["unconnected"] for c in ps["candidates"]] == [5, 0, 2]
+
+
+def test_probe_select_jitters_later_seed_stages_and_probes_in_parallel(monkeypatch):
+    """Candidates after the first start from a jittered seed stage (the user's anneal args kept);
+    --probe-parallel P probes P at once, so each probe gets the time of N/P sequential ones."""
+    from types import SimpleNamespace
+    from kae import cli
+    table = {0: (1.00, 5), 1: (1.02, 1), 2: (1.05, 2), 3: (1.01, 3)}
+    seq, par = {}, {}
+    _probe_fakes(monkeypatch, table, seq)
+    a = SimpleNamespace(probe_select=4, time=1200.0, seed=0, input=str(FIXTURE), writer="sexpr",
+                        probe_jitter=0.2, probe_parallel=1)
+    kw = dict(anneal_args={"w_chan": 3})
+    cli._probe_select(a, None, kw, __import__("time").monotonic(), lambda *x, **k: None)
+    assert seq["anneal_args"][0] == {"w_chan": 3}
+    assert all(seq["anneal_args"][k] == {"w_chan": 3, "seed_jitter": 0.2} for k in (1, 2, 3))
+    assert kw == dict(anneal_args={"w_chan": 3})          # the caller's args are not mutated
+    _probe_fakes(monkeypatch, table, par)
+    a.probe_parallel = 2
+    res = cli._probe_select(a, None, kw, __import__("time").monotonic(), lambda *x, **k: None)
+    ps = res.report["probe_select"]
+    assert ps["chosen"] == 1 and ps["parallel"] == 2
+    assert [c["unconnected"] for c in ps["candidates"]] == [5, 1, 2, 3]
+    assert min(par["probe_s"]) > max(seq["probe_s"]) * 1.5
+
+
+def test_seed_jitter_moves_the_seed_stage_deterministically():
+    from kae.place import pipeline
+    from kae.place.problem import Problem
+    P = Problem.build(kicad_file.load(FIXTURE))
+    net_w = {net.i: net.weight for net in P.nets}
+    a, _ = pipeline._seed_state(P, [], net_w, 1, lambda m: None)
+    b, _ = pipeline._seed_state(P, [], net_w, 1, lambda m: None, jitter=0.2)
+    c, _ = pipeline._seed_state(P, [], net_w, 1, lambda m: None, jitter=0.2)
+    assert (a.X != b.X).any() and (b.X == c.X).all() and (b.Y == c.Y).all()
