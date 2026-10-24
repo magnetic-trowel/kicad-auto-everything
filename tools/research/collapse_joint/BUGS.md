@@ -29,3 +29,11 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
    whose input came from the old task and whose score used the new one were invalid
    (`place_foreign`: dimensions, targets, graphics with new uuids). All jcfix runs started
    before the re-prepare finished were deleted and re-run from scratch.
+6. **Unguarded final PathFinder opens connections** (jc.py `collapse_once` end and
+   `methods_phys.anneal_phys` end, used as jc's polish). When a connection is open, both
+   rip every net and negotiate again from a low present cost, then legalize, and keep the
+   result even if more nets are dropped. paw3395 (jc2 v1, seed 0): 4 open connections
+   before the polish, 8 after, although annealing kept its best state. This is one source
+   of jc's open hops. Fix in jc2 (`guard=1`, from v2 on): keep the better of before/after
+   for the PathFinder retry and for the polish. `anneal_phys` itself is shared with combo
+   and left unchanged.

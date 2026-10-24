@@ -22,6 +22,8 @@ Switches (run.py --opt key=value; defaults reproduce jc on engine v6 except `eng
                     best state instead of to the polish
     minplus_w=0     blend the min-plus route-cost map (tools/research/xf_minplus) into the
                     part's wire term, from beta >= mp_from_beta
+    guard=1         never accept a final PathFinder retry or a polish that is worse (more
+                    open connections or higher cost) than the state before it (BUGS.md 6)
     restart=scratch scratch (jc) | perturb: every second restart starts from the best state,
                     re-rotates/re-lifts the k parts with the most part+wire history and
                     resumes the continuation from beta_p
@@ -62,8 +64,9 @@ def _length(r, w, n):
 
 class Collapse2(J.Collapse):
     def __init__(self, world, seed, budget, log, engine=1, via_beta=0.0, via_part=0.0, minplus_w=0.0,
-                 mp_from_beta=0.0, coarse_mm=0.4, **kw):
+                 mp_from_beta=0.0, coarse_mm=0.4, guard=1, **kw):
         super().__init__(world, seed, budget, log, **kw)
+        self.guard = bool(guard)
         self.mp = None
         self.minplus_w = float(minplus_w)
         self.mp_from_beta = mp_from_beta
@@ -385,7 +388,13 @@ def collapse_run(C, run_budget, gamma, beta0, beta_end, beta_max, log, start=Non
     C.set_via(beta)
     r.pathfinder(iters=20, pres0=max(0.5, min(beta, 4.0)), pres_mul=1.6)
     if any(r.unrouted.values()):
+        # jc re-runs PathFinder from scratch here and keeps the result even when it leaves
+        # more connections open (BUGS.md 6); guard: keep the better of the two
+        snap = kit.snapshot(list(w.net_pins)) if C.guard else None
+        c0 = kit.total_cost()
         r.pathfinder(iters=15, log=None)
+        if snap is not None and kit.total_cost() > c0 + 1e-6:
+            kit.restore(snap)
     log(f"jc2 end: beta={beta:.3g} its={it} collapsed {st0} -> legalized {m}/{nb} parts, "
         f"pathfinder {r.stats()}")
     return it, beta, st0
@@ -462,7 +471,14 @@ def jc2(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=6
         C.complete(Clock(max(1.0, min(clock.left(), budget * complete_frac))))
     if polish > 0 and clock.left() > 2:
         pol = clock.left() - (budget * clean_frac if clean else 0)
+        st_pre = _state(C) if C.guard else None
+        c_pre = kit.total_cost() + C.phys_w * ph.total()
         r = MP.anneal_phys(w, seed=seed, budget=max(1.0, pol), log=log, phys_w=C.phys_w, router=r)
+        c_post = kit.total_cost() + C.phys_w * ph.total()
+        # anneal_phys ends with an unguarded PathFinder that can drop nets (BUGS.md 6)
+        if st_pre is not None and c_post > c_pre + 1e-6:
+            log(f"jc2 polish rejected: cost {c_pre:.1f} -> {c_post:.1f} {r.stats()}")
+            _restore(C, st_pre)
         log(f"jc2 polished: {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f}")
     if complete and any(r.unrouted.values()) and clock.left() > 1:
         C.complete(Clock(max(1.0, clock.left() * 0.5)), repair_frac=0.0)
