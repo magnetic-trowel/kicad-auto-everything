@@ -418,7 +418,15 @@ def _fp(ref, fpid, value="", pads=2, pth=0, npth=0):
     # symbol names as values, then reference prefixes
     (_fp("P1", "x:SMD_4PAD", "CONN_01X04", pads=4), "connector", "value"),
     (_fp("J9", "x:1P-1.5x1.5", "EXTGND", pads=1), "connector", "ref"),
-    (_fp("RV1", "x:TRIM_3362P", "5K", pads=3, pth=3), "user", "ref"),
+    (_fp("RV9", "x:RV2X4", "1K", pads=3, pth=3), "user", "ref"),
+    # the user's choices: key switches and panel pots fixed, light pipes and LED bars too
+    (_fp("SW3", "x:Gateron_KS-33_LowProfile", pads=2), "user", "name"),
+    (_fp("RV3", "DIYSynthMNL:Potentiometer_RV09_BigPads", "CV_lvl_50k", pads=5, pth=5), "user", "name"),
+    (_fp("D7", "x:LightPipe_3mm_SMD", pads=2), "user", "name"),
+    (_fp("BAR1", "x:LED-Bar_10seg", pads=20, pth=20), "user", "name"),
+    (_fp("J4", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", "UART", pads=4, pth=4),
+     "connector", "lib"),
+    (_fp("JST1", "battery_connector_jst_ph_2", pads=2, pth=2), "connector", "name"),
 ])
 def test_mech_classifier_fixes(fp, cls, rule):
     from kaebench.kicad_scripts import mech_rules
@@ -435,17 +443,41 @@ def test_mech_classifier_fixes(fp, cls, rule):
     (_fp("G1", "Symbol:OSHW-Logo2_7.3x6mm_SilkScreen", pads=0), "exclude"),
     (_fp("USB1", "LEDs:LED-0805", "USB", pads=2), "conflict"),  # an LED named after what it shows
     (_fp("D1201", "BR_Discretes:SMA_L4.4-W2.6-LS5.0-RD", "60V 3A", pads=2), "conflict"),  # SMA diode
-    (_fp("P1", "Package_DIP:DIP-28_W7.62mm_Socket_LongPads", "SUPP28", pads=28, pth=28), "conflict"),
+    (_fp("P1", "Package_DIP:DIP-28_W7.62mm_Socket_LongPads", "SUPP28", pads=28, pth=28), "exclude: IC socket"),
     (_fp("LED1", "Kobold:LED_choc_6028R", "RGB", pads=4), "conflict"),  # a per-key LED, not a switch
     (_fp("X1", "Crystal:Crystal_HC49-U_Vertical", pads=2, pth=2), "conflict"),
     (_fp("VR1", "x:SOT223", "LD1117", pads=4), "conflict"),
     (_fp("LED1", "dp-LED:SK6812-mini-e", pads=4), ""),
     (_fp("U1", "kbd:ProMicro_v3", "ProMicro", pads=24, pth=24), ""),
+    # the user's choices: debug headers, batteries, trimmers and IC sockets stay free
+    (_fp("J5", "Connector_PinHeader_2.54mm:PinHeader_2x05_P2.54mm_Vertical", "SWD", pads=10, pth=10),
+     "exclude: programming/debug header"),
+    (_fp("ISP1", "Connector_IDC:IDC-Header_2x03_P2.54mm_Vertical", "AVR", pads=6, pth=6),
+     "exclude: programming/debug header"),
+    (_fp("J1", "Connector:Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical", "TagConnect", pads=6),
+     "exclude: programming/debug header"),
+    (_fp("J3", "x:CONN_HEADER_1.27MM_2x10_SMT", "CORTEX_DEBUG_ETM", pads=20), "exclude: programming/debug header"),
+    (_fp("BT1", "Battery:BatteryHolder_Keystone_3034_1x20mm", "CR2032", pads=3), "exclude: battery"),
+    (_fp("BT2", "x:CellHolder_CR2032", pads=2, pth=2), "exclude: battery"),
+    (_fp("RV1", "x:TRIM_3362P", "5K", pads=3, pth=3), "exclude: trimmer"),
+    (_fp("RV2", "Potentiometer_THT:Potentiometer_Bourns_3296W_Vertical", pads=3, pth=3), "exclude: trimmer"),
+    (_fp("P3", "footprints:40tex-Ell600", "SUPP40", pads=40, pth=40), "exclude: IC socket"),
+    (_fp("J2", "CHIPSAlliance_Connector:SOIC-Socket_LOTES_ACA-SPI-004_2x04_P1.27mm", pads=8),
+     "exclude: IC socket"),
+    (_fp("D2", "LED_SMD:LED_0603_1608Metric", "LED", pads=2), "conflict"),
 ])
+
 def test_mech_classifier_leaves_free(fp, rule):
     from kaebench.kicad_scripts import mech_rules
     got, evidence = mech_rules.classify(fp)
     assert got is None and evidence.startswith(rule), (got, evidence)
+
+
+def test_mech_classifier_keeps_a_prog_button_fixed():
+    """The debug-header rule frees connectors only: a boot button labelled PROG stays fixed."""
+    from kaebench.kicad_scripts import mech_rules
+    got, _ = mech_rules.classify(_fp("SW2", "Button_Switch_SMD:SW_SPST_B3U-1000P", "PROG", pads=2))
+    assert got == "user"
 
 
 def test_mech_overrides():

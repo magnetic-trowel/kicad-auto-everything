@@ -14,16 +14,23 @@ tests call it directly. Each footprint gets a class and the rule that matched:
              JST/Molex/FPC/FFC, terminal blocks, barrel and audio jacks, RF connectors,
              card slots (SD/SIM), edge connectors, wire pads
   mounting   screw holes, standoffs, fiducials, footprints whose pads are all NPTH
-  user       switches, buttons, potentiometers and encoders, displays, through-hole
-             (panel) LEDs, buzzers and speakers
-  None       everything else (heatsinked power parts are deliberately not fixed)
+  user       switches and keyboard key switches (Cherry MX, Kailh/Choc, Gateron...),
+             buttons, potentiometers and encoders, displays, through-hole, light-pipe and
+             LED-bar indicators, buzzers and speakers
+  None       everything else: heatsinked power parts, SMD LEDs, and the borderline parts
+             the user chose to leave free (rule 1 and the debug-header rule)
 
 Rules, in order; the first that matches decides:
 
   1. exclude   test points (TestPoint* library, TestPoint/TP in the name, reference TP),
                jumpers and solder bridges (Jumper* library, SolderJumper/Jumper/Bridge in
                the name, reference JP/SJ), net ties, heatsinks (they move with their part),
-               footprints without pads (logos, graphics) -> not fixed
+               batteries and battery holders (Battery* library, battery (not battery
+               connector), cell holder, coin cell, CR2032 in the name, reference BT),
+               trimmers (trim, Bourns 3266/3296/3299/3314/3339/3362/3386, Piher PT in the
+               name), IC sockets (DIP/PLCC/SOIC socket, ZIF, Textool in the name, value
+               SUPPnn), footprints without pads
+               (logos, graphics) -> not fixed
   2. lib       KiCad library nickname (LIB_RULES): Connector*, TerminalBlock*,
                MountingHole*, Fiducial*, Button_Switch*, Potentiometer*, Rotary_Encoder*,
                Display*, Buzzer_Beeper*, LED_THT, older or third-party names that contain
@@ -51,16 +58,24 @@ Rules, in order; the first that matches decides:
                BZ, SPK with at least 2 pads, RV/POT with at least 3 -> user. Not X
                (crystals), VR (regulators), DS (often diodes), K (relays).
 
+  Then programming and debug headers are freed: a part classed connector whose footprint
+  name, value or reference says JTAG, SWD, ISP/ICSP, UPDI, BDM, Tag-Connect (TC2030/TC2050/
+  TC2070), debug or prog (DEBUG_HEADERS) is not fixed: they face a programmer, not the
+  enclosure. A button named PROG stays fixed (the rule only frees connectors).
+
 Overrides per board (prepare --fixed-overrides) can fix or free parts by reference.
 """
 import re
 
 CLASSES = ("connector", "mounting", "user")
-RULES_VERSION = 1
+# 2: the user's choices on borderline parts: key switches fixed; debug headers, batteries,
+#    trimmers and IC sockets free; light pipes and LED bars fixed
+RULES_VERSION = 2
 
 _I = re.IGNORECASE
 
-# 1. never fixed
+# 1. never fixed: (what, library, footprint name, reference prefix)
+NEVER = re.compile(r"(?!)")
 EXCLUDE = (
     ("test point", re.compile(r"^test_?points?", _I), re.compile(r"test_?point|(?<![a-z])tp(?![a-z])", _I),
      re.compile(r"^TP$")),
@@ -68,7 +83,22 @@ EXCLUDE = (
      re.compile(r"^(JP|SJ)$")),
     ("net tie", re.compile(r"^nettie", _I), re.compile(r"net_?tie", _I), re.compile(r"^NT$")),
     ("heatsink", re.compile(r"heatsink", _I), re.compile(r"heat_?sink", _I), None),
+    ("battery", re.compile(r"^batter(y|ies)", _I),
+     re.compile(r"battery(?![-_]?conn)|batt_?holder|cell_?holder|coin_?cell|(?<![a-z])cr\d{4}|(?<![a-z0-9])18650", _I),
+     re.compile(r"^BT$")),
+    ("trimmer", NEVER,
+     re.compile(r"(?<![a-z])trim|bourns_?3(266|296|299|314|339|362|386)|"
+                r"(?<![a-z0-9])3(266|296|299|314|339|362|386)[a-z]|piher_?pt", _I), None),
+    ("IC socket", NEVER,
+     re.compile(r"(dip|plcc|soic|sop|qfp|pga|sip)[-_\w]*socket|zif|textool|(?<![a-z])\d+tex(?![a-z])", _I),
+     None),
 )
+IC_SOCKET_VALUE = re.compile(r"^supp\d", _I)  # KiCad 4's IC socket symbol
+
+# programming and debug headers: freed when classed connector
+DEBUG_HEADERS = re.compile(
+    r"jtag|swd|swclk|icsp|(?<![a-z])isp(?![a-z])|updi|udpi|(?<![a-z])bdm|tag-?connect|"
+    r"(?<![a-z])tc20[357]0|debug|(?<![a-z])prog(?![a-z])|(?<![a-z])pgm(?![a-z])", _I)
 
 # 2. library nickname -> class (case-insensitive; first match wins)
 LIB_RULES = (
@@ -128,6 +158,8 @@ NAME_RULES = (
 )
 # a through-hole LED (panel indicator): LED_D3.0mm, LED_D5.0mm_BigPads, LED-5MM
 THT_LED_NAME = re.compile(r"led[-_]?(d?\d(\.\d)?_?mm|tht)", _I)
+# light pipes and LED bars (bar graphs), SMD or not
+LED_INDICATOR_NAME = re.compile(r"light_?pipe|lightpipe|led[-_]?bar|bar_?graph", _I)
 
 # 6. values that are KiCad symbol names
 VALUE_RULES = (
@@ -157,6 +189,16 @@ def ref_prefix(ref):
 def classify(fp):
     """fp: dict with ref, lib, name, value, pads (count), pth, npth, smd (pad counts).
     Returns (class or None, evidence)."""
+    cls, evidence = _classify(fp)
+    if cls == "connector":
+        for field in ("name", "value", "ref"):
+            m = DEBUG_HEADERS.search(fp.get(field) or "")
+            if m:
+                return None, f"exclude: programming/debug header ({field} {m.group(0)}; was {evidence})"
+    return cls, evidence
+
+
+def _classify(fp):
     ref, lib, name, value = fp.get("ref") or "", fp.get("lib") or "", fp.get("name") or "", fp.get("value") or ""
     prefix = ref_prefix(ref)
     if not fp["pads"]:
@@ -164,6 +206,8 @@ def classify(fp):
     for what, lib_re, name_re, ref_re in EXCLUDE:
         if lib_re.search(lib) or name_re.search(name) or (ref_re and ref_re.match(prefix)):
             return None, f"exclude: {what}"
+    if IC_SOCKET_VALUE.search(value):
+        return None, "exclude: IC socket"
     for cls, rx in LIB_RULES:
         m = rx.search(lib)
         if m:
@@ -172,6 +216,9 @@ def classify(fp):
         return "mounting", "npth: all pads NPTH"
     if THT_LED_NAME.search(name) and fp["pth"] >= 2:
         return "user", "name: THT LED"
+    m = LED_INDICATOR_NAME.search(name)
+    if m:
+        return "user", f"name: LED indicator ({m.group(0)})"
     if CONFLICT_LIBS.search(lib) or CONFLICT_NAME.search(name):
         return None, f"conflict: {lib}:{name}"
     if prefix in CONFLICT_REFS:
