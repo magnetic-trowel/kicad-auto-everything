@@ -4,7 +4,7 @@
 - Placement and routing depend on each other: the placer cannot see where the router will fail, and the router cannot move a part. `kae.joint` closes the loop at the granularity that scales on PCBs: place and route the whole board once, then repair **windows** (a few parts and the nets touching them) where routing failed, DRC complained or a module's routed physics shifted.
 - One iteration = re-anneal the window's parts with everything else fixed (the placer's `subset`/`window` API) under a congestion penalty built from where routing failed, rip up only the nets touching the window, redo the window's modules (critical copper), re-route with everything else locked, judge with KiCad DRC and the routed-physics recheck.
 - An iteration is kept only if it is lexicographically better: legality, then completion and DRC, then routed physics. Legality, unconnected items and DRC errors may never get worse. A board that becomes clean is always kept. Any other completion gain may cost at most 10 % of routed physics per item gained, and with equal completion physics must improve. Otherwise it is reverted, so the output is never worse than the staged pipeline.
-- Results: see [Measured](#measured) (kaebench `joint` kind, splits A/B).
+- On 6 split-B boards (kaebench `joint`, 900 s, one shared 4-core host), the loop's repairs cut unconnected items + errors from 32 to 23 within its runs and turned 2 unfinished boards clean. Across arms, though, run-to-run noise from time-bound Freerouting (1–13 unconnected on one board) is larger than every difference: all kae arms have cp1 0.5, as does the human placement routed by the bridge. Each window costs 100–220 s of bridge time, so 900 s buys 1–4 windows [C].
 
 ## Key facts
 
@@ -83,7 +83,31 @@ Every stage seed derives from the run's seed and the iteration number (`derive_s
 
 ### Measured
 
-Pending: kaebench `joint` runs on splits A/B (staged baseline vs loop vs `reference` and `human-freerouting`).
+kaebench `joint` kind (harness cc5e564, score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), k = 1, 900 s, `-j 1` on a shared 4-core host (load 6–8). Σu is the loop's routed-physics total (`critical_recheck.board_physics` on the scored board, brief from the human placement, Σ min(u, 5)). It is unreliable on boards with open hops [C: `tools/research/joint/joint_physics.py`].
+
+| Arm | cp1 | legal | completion | unconnected | DRC errors | Σu (mean) | module value / human (median) | worst rail mΩ (median) | time s |
+|---|---|---|---|---|---|---|---|---|---|
+| human layout (`reference`) | 1.00 | 1.00 | 1.000 | 0 | 0 | 3.45 | 1.00 | 42 | — |
+| human placement + Freerouting (`human-freerouting`) | 0.33 | 1.00 | 0.891 | 23 | 7 | 3.16 | 0.99 | 101 | 44 |
+| human placement + bridge (route kind) | 0.50 | 1.00 | 0.960 | 7 | 0 | 3.79 | 1.05 | 118 | 184 |
+| kae place + bridge (staged, `--max-iters 0 --no-modules`) | 0.50 | 1.00 | 0.940 | 12 | 0 | 4.07 | 0.93 | 69 | 219 |
+| loop without module stage (`--no-modules`) | 0.50 | 1.00 | 0.956 | 10 | 0 | 4.41 | 1.18 | 92 | 312 |
+| joint loop, first full version (v5) | 0.50 | 1.00 | 0.927 | 17 | 0 | 2.38 | 0.81 | 60 | 468 |
+| joint loop, final code (v6) | 0.50 | 1.00 | 0.907 | 23 | 0 | 3.14 | 0.86 | 57 | 547 |
+
+Inside the loop's own runs (iteration 0 is the staged pipeline with the module stage):
+
+| Run | unconnected + errors, iteration 0 → final | clean boards | windows kept |
+|---|---|---|---|
+| joint v6 | 32 → 23 | 1 → 3 | 5 of 12 |
+| joint v5 | 25 → 17 | 1 → 3 | 5 of 13 |
+| loop without modules | 11 → 10 | 3 → 3 | 1 of 11 |
+
+What the numbers say:
+- **The loop works where it gets iterations.** On the bipolar supply a re-route window joined a rail's two track ends in 12 s, and the board became clean. On the CH552G three-part windows made the board clean in 18 s, then a physics window cut Σu from 2.10 to 1.67 at equal completion. On the PMW3610 two windows took 13 → 9 → 8 unconnected while Σu fell.
+- **Time is the binding constraint.** Iteration 0 takes 360–570 s on the larger boards (placer ~110 s, module stage ~80 s, bridge 250–400 s). A window then costs 100–220 s, mostly Freerouting, which times out even with everything else locked. Noisecard and olimex got one or two windows.
+- **Noise.** Five runs of near-identical code gave noisecard 1, 4, 7, 10 and 13 unconnected after iteration 0, because the time-bound Freerouting stops at a load-dependent point. Arm-level differences on 6 boards are inside that band. The 50-core run (33 boards, unloaded cores) is needed to separate them.
+- **The module stage costs completion and buys physics.** The module-stage arms reach the lowest routed physics: module values 0.81–0.86× the human's, worst rail drop 57–60 mΩ against 69–118 for the staged and bridge arms. They also leave the most unconnected items. With modules, the loop's slack rule kept a window that made CH552G clean at Σu 1.5 → 5.2.
 
 ## Recommendations for our system
 
