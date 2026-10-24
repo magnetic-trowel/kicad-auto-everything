@@ -302,7 +302,7 @@ class Collapse:
                 if len(v):
                     CV[v[:, 0], v[:, 1]] -= 1
         w.unplace(pi)
-        use_phys = pi in ph.active
+        use_phys = pi in ph.active and self.phys_w > 0
         cands = []
         win = None
         if self.trust:
@@ -365,7 +365,7 @@ class Collapse:
                 if not inside.any():
                     continue
                 c = kit.hpwl_map(pi, ri) + self.bias(pi, ri)
-                if pi in ph.active and len(w.pose) > 1:
+                if self.phys_w > 0 and pi in ph.active and len(w.pose) > 1:
                     c = c + self.phys_w * ph.coarse_map(pi, ri, step_mm=1.2, legal=inside)
                 c = np.where(inside, c, np.inf)
                 j = int(np.argmin(c))
@@ -543,11 +543,12 @@ def _reset(C):
 
 
 def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0, beta_max=500.0,
-       frozen=False, polish=0.15, restarts=True, first=0.35, png_dir=None, **kw):
+       frozen=False, polish=0.15, restarts=True, first=0.35, png_dir=None, full_w=0.0, **kw):
     """Joint collapse; with `restarts`, the budget left after one continuation is spent on
     further continuations from the lift (new random orders, gamma varied), keeping the best
-    legal end state by routed cost + phys_w * physics; then an optional anneal_phys polish
-    of `polish` x budget."""
+    legal end state by routed cost + phys_w * fast physics (+ full_w * full routed physics,
+    physics.RoutedPhys, when full_w > 0); then an optional anneal_phys polish of
+    `polish` x budget. phys_w = 0 is the length + vias objective."""
     C = Collapse(world, seed, budget, log, **kw)
     w, r, kit, ph = world, C.r, C.kit, C.ph
     clock = C.clock
@@ -556,6 +557,8 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
     k = 0
     gammas = [gamma, gamma * 0.9, gamma * 1.2, gamma * 0.8, gamma * 1.4]
     t_run = None
+    rp = None
+    runs = []
     while True:
         t0 = budget - clock.left()
         if k > 0:
@@ -570,8 +573,18 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
         t_run = budget - clock.left() - t0
         st = r.stats()
         cost = kit.total_cost() + C.phys_w * ph.total()
+        if full_w:
+            if rp is None:
+                import tempfile
+                from physics import RoutedPhys
+                rp = RoutedPhys(w, ph, tempfile.mkdtemp(prefix="jc-rp-"))
+            v = rp(r)
+            cost += full_w * (v if v is not None else 0.0)
+            log(f"jc run {k}: routed physics {v}")
         log(f"jc run {k}: gamma={g:.2f} its={it} {st} hpwl={w.hpwl():.1f} phys={ph.total():.2f} "
             f"cost={cost:.1f} t_run={t_run:.1f}")
+        runs.append(dict(k=k, gamma=round(g, 3), its=it, beta=round(beta, 3), cost=round(cost, 2),
+                         t_run=round(t_run, 1), hpwl=round(w.hpwl(), 2), phys=round(ph.total(), 3), **st))
         if best is None or cost < best[0]:
             best = (cost, dict(w.pose), kit.snapshot(list(w.net_pins)), k, w.hist.copy(), C.hist_c.copy(),
                     list(C.trace))
@@ -598,6 +611,8 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
         C.obstruction_png(Path(png_dir) / f"{_board_id(w)}.png",
                           f"{_board_id(w)}: obstruction map (frozen={frozen})")
         np.save(str(Path(png_dir) / f"{_board_id(w)}.trace.npy"), np.array(best[6]))
+        import json
+        (Path(png_dir) / f"{_board_id(w)}.runs.json").write_text(json.dumps(dict(best=best[3], runs=runs)))
     if polish > 0 and clock.left() > 2:
         r = MP.anneal_phys(w, seed=seed, budget=max(1.0, clock.left()), log=log, phys_w=C.phys_w, router=r)
         log(f"jc polished: {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f}")
@@ -629,5 +644,26 @@ def jc_slow(world, **kw):
     kw.setdefault("gamma", 1.02)
     kw.setdefault("restarts", False)
     kw.setdefault("first", 1.0)
+    kw.setdefault("polish", 0.0)
+    return jc(world, **kw)
+
+
+def jc_lv(world, **kw):
+    """Length + vias objective (phys_w = 0), with the short polish."""
+    kw["phys_w"] = 0.0
+    return jc(world, **kw)
+
+
+def jc_lv_nopol(world, **kw):
+    """Length + vias objective (phys_w = 0), continuation alone."""
+    kw["phys_w"] = 0.0
+    kw.setdefault("polish", 0.0)
+    return jc(world, **kw)
+
+
+def jc_full(world, **kw):
+    """Physics objective; restarts judged by routed cost + 2 fast physics + 5 full routed
+    physics (RoutedPhys at the end of every continuation), no polish."""
+    kw.setdefault("full_w", 5.0)
     kw.setdefault("polish", 0.0)
     return jc(world, **kw)
