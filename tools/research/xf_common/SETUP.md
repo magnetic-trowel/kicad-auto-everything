@@ -168,3 +168,23 @@ Columns:
 - **Compare only within round 2.** Round 1 numbers (`kae-work/score/baselines.md`, the
   older version of this file) used place tasks with a self-routing probe, an older engine
   and an older prepare.
+
+
+## Round 3: engine fixes (pnr commit 4c4330a)
+
+Two engine bugs left two ab33 boards never legal; both are fixed (see the commit and
+`tools/research/pnr/test_world.py`): pad-to-edge clearance was checked only at cells inside
+the pad (kicad-demos-ecc83), and copper board drawings were not pad obstacles or router
+terminals (pcbcorpus-justbuchanan-oasis-ledboard; the board's `.kicad_dru` edge clearance is
+now read too). Both boards are now legal. Every earlier run used the old engine; round-3
+runs are prefixed `xf3` (baselines `xf3-base-<method>-ab33`, `tools/research/xf_common/baselines.sh xf3`).
+
+Baselines (joint, ab33, budget 120, 3 seeds; `kae-work2/score/baselines-xf3.md`):
+
+| run | seeds | legal | clean | clean best-of-k | completion | length (mm) | vias | fast phys | routed phys |
+|---|---|---|---|---|---|---|---|---|---|
+| xf3-base-jc-ab33 | 3 | 1.000 ± 0.000 | 0.687 ± 0.017 | 0.758 | 0.935 ± 0.002 | 3521 | 53 | 0.96 ± 0.08 | 1.18 ± 0.08 |
+| xf3-base-jc_lv_nopol-ab33 | 3 | 0.990 ± 0.017 | 0.677 ± 0.035 | 0.727 | 0.942 ± 0.003 | 3423 | 58 | 1.92 ± 0.50 | 1.26 ± 0.05 |
+| xf3-base-jc_full-ab33 | 3 | 0.990 ± 0.017 | 0.677 ± 0.076 | 0.758 | 0.940 ± 0.003 | 3530 | 60 | 0.92 ± 0.08 | 0.98 ± 0.04 |
+| xf3-base-combo-ab33 | 3 | 0.929 ± 0.017 | 0.616 ± 0.035 | 0.697 | 0.929 ± 0.006 | 3554 | 44 | 1.29 ± 0.06 | 1.30 ± 0.05 |
+| xf3-base-combo_lv-ab33 | 3 | 0.909 ± 0.030 | 0.606 ± 0.061 | 0.697 | 0.926 ± 0.005 | 3466 | 37 | 3.39 ± 0.24 | 1.42 ± 0.13 |
