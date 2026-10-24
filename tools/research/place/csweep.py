@@ -175,7 +175,7 @@ def cmd_summary(args):
                    seconds=r.get("seconds"), budget_s=r.get("budget_s"), stages=r.get("stages"),
                    moves=a.get("moves"), planned=a.get("planned_moves"), moves_per_s=a.get("moves_per_s"),
                    engine=a.get("engine"), schedule=a.get("schedule"), hpwl=r.get("hpwl"),
-                   hpwl_seed=(r.get("seed") or {}).get("hpwl"),
+                   hpwl_seed=(r["seed"].get("hpwl") if isinstance(r.get("seed"), dict) else None),
                    physics=dict(total_linear=sc.get("total_linear"), over_budget=sc.get("over_budget"),
                                 structures=sc.get("structures")),
                    order=r.get("protection_order"), escalation=[(e.get("step"), e.get("end_violators")) for e in esc],
