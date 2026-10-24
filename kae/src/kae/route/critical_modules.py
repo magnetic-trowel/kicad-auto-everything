@@ -907,9 +907,20 @@ def route_decap(ctx, m):
         tG = _ic_ground(ctx, s, tp)
         key = f"{pin}:{cap}"
         side = ctx.side_layer(cap)
-        # rail: capacitor rail pad -> IC power pin, as wide as the narrower terminal
+        # rail: capacitor rail pad -> IC power pin, as wide as the narrower terminal; when the
+        # rail is an inner plane under both and the hop is long, the capacitor's rail pad goes
+        # into the plane instead (the IC pin joins that plane through the general router): a
+        # surface track around a dense IC takes the escape room of its signal pins, and the
+        # plane pair is the lower-inductance path anyway
         layers = hop_layers(ctx, tr, tp, prefer=side)
         rt = None
+        rpl = _rail_plane(ctx, rail, tr, tp)
+        if rpl is not None and math.hypot(tp.x - tr.x, tp.y - tr.y) > float(ctx.opts.get("decap_plane_mm", 2.0)):
+            c = via_candidates(ctx, tr, side, rail, rpl, toward=(tp.x, tp.y))
+            if c and _commit_vias(ctx, m, rail, side, tr, c[:1], f"railvia:{key}"):
+                m.notes.append(f"pin {pin}: capacitor into the {rpl} {rail} plane")
+                layers = []
+                rt = "plane"
         if layers:
             ux, uy = tp.x - tr.x, tp.y - tr.y
             dd = math.hypot(ux, uy) or 1.0
@@ -918,7 +929,9 @@ def route_decap(ctx, m):
             widths = sorted({round(w, 4) for w in width_ladder(max(a, opt), max(mn, min(a, opt)), 4) + [opt, mn]},
                             reverse=True)
             rt = route_hop(ctx, m, f"rail:{key}", rail, [anchor(tr)], [anchor(tp)], widths, [layers[0]], via=False)
-        if rt is None and len(ctx.sp.cu) > 1:
+        if rt == "plane":
+            pass
+        elif rt is None and len(ctx.sp.cu) > 1:
             # no common layer (capacitor on the far side of the IC) or no room on it: one
             # through via between the pads
             mn, opt, mx = ctx.sp.width_limits(rail, side)
@@ -953,6 +966,16 @@ def route_decap(ctx, m):
     m.status = "routed" if done == tried else ("partial" if done else "failed")
     quote(ctx, m)
     return m
+
+
+def _rail_plane(ctx, rail, ta, tb):
+    """An inner layer whose zone of `rail` covers both terminals (the rail is a plane there),
+    or None."""
+    inner = ctx.sp.cu[1:-1]
+    for l in inner:
+        if ctx.sp.zone_covers(rail, l, ta.x, ta.y) and ctx.sp.zone_covers(rail, l, tb.x, tb.y):
+            return l
+    return None
 
 
 def _has_plane_link(ctx, t, net, radius=1.0):

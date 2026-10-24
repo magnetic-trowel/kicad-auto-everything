@@ -50,6 +50,7 @@ DEFAULTS = dict(
     res=0.05,              # grid resolution (mm)
     via_in_pad=False,      # vias inside small SMD pads (thermal pads always allow them)
     decap_max_mm=10.0,     # a capacitor farther than this from its pin: no local decoupling, left to the bridge
+    decap_plane_mm=2.0,    # a decap rail hop longer than this over its own rail plane: a via into the plane instead
     chain_power_a=1.0,     # E5 current of a protected power pin without a rail estimate
     chain_tail=False,      # also route (and lock) a chain's hops after the protector (no surge physics)
     rail_light=False,      # also route rail branches that only need the class width (no drop physics)

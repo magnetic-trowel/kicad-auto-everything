@@ -5,64 +5,54 @@
 The annealer's routability term (kae.place.cost.Congestion) prices each bin's routing
 utilization u_b = (net demand + pin escape demand) / supply above a target, squared. The
 joint loop adds the congestion history of the routed board (feedback.CongestionHistory:
-where Freerouting failed) to the pin-escape demand array of those bins, as utilization
-times the bin's supply. Moves that keep nets and pins in a failed region then pay more,
-exactly as PathFinder's history cost makes a congested node dearer for every net.
+where Freerouting failed) to the static demand of those bins, as utilization times the
+bin's empty-board supply. Moves that keep nets and pins in a failed region then pay more,
+as PathFinder's history cost makes a congested node dearer for every net.
 
-The extra demand is static (it never moves with a part), so the incremental bookkeeping of
-both engines stays exact: the reference Annealer reads `cong.Dp` directly; the compiled
-FastAnnealer copied it into its engine arrays at construction (and copies it again when it
-rebuilds), so both copies get the same addition, and the engine's congestion total is
-re-read from the reference.
-
-This reaches into the annealer's congestion arrays; the placer owner has been asked for a
-public hook (`cong_args={"history": array}`), which `apply_history` will use once it exists.
+The placer takes it through its hook: `make_annealer(..., cong_history=f)` (also
+`local_replace(cong_history=...)`) calls f(x0, y0, b, nbx, nby) once with its bins and adds
+the returned (nbx, nby) array, in track mm per bin, to `Congestion.Dp`. The extra demand
+never moves with a part, so both engines stay exactly incremental. `history_hook` builds
+f; the supply per bin is the placer's own formula (Congestion: copper layers x bin area /
+track pitch, pitch = max(0.25, minimum track + minimum clearance)).
 """
 from __future__ import annotations
 
 import numpy as np
 
 
-def _reference(ann):
-    """The reference Annealer (the compiled engine keeps one as .ann)."""
-    return getattr(ann, "ann", ann)
+def bin_supply(P, b):
+    """Track mm a bin of size b holds on an empty board (kae.place.cost.Congestion.S0)."""
+    board = P.board
+    layers = len(board.stackup.copper) if getattr(board, "stackup", None) else 2
+    rules = board.rules
+    pitch = max(0.25, (rules.track_min if rules and rules.track_min else 0.2) + P.clr_min)
+    return layers * b * b / pitch
 
 
-def apply_history(ann, history, scale=1.0, window=None):
-    """Add `scale` x history (feedback.CongestionHistory, in utilization units) as static
-    demand to the annealer's congestion bins; with `window` = (x0, y0, x1, y1) mm, only to
-    bins within 2 bins of it (history far away cannot change a local move's cost, but would
-    shift the reported total). Returns a report dict (applied: False when the annealer has no
-    congestion term)."""
-    ref = _reference(ann)
-    c = getattr(ref, "cong", None)
-    if c is None or history is None or scale <= 0:
-        return dict(applied=False, reason="no congestion term" if c is None else "no history")
-    extra = history.sample(c.x0, c.y0, c.b, c.nbx, c.nby) * float(scale)
-    if window is not None:
-        x0, y0, x1, y1 = window
-        i0 = max(0, int((x0 - c.x0) / c.b) - 2)
-        i1 = min(c.nbx, int((x1 - c.x0) / c.b) + 3)
-        j0 = max(0, int((y0 - c.y0) / c.b) - 2)
-        j1 = min(c.nby, int((y1 - c.y0) / c.b) + 3)
-        mask = np.zeros_like(extra, dtype=bool)
-        mask[i0:i1, j0:j1] = True
-        extra = np.where(mask, extra, 0.0)
-    if not extra.any():
-        return dict(applied=False, reason="no history in the window")
-    demand = extra * c.S0
-    before = c.total()
-    c.Dp += demand
-    E = getattr(ann, "E", None)
-    if E is not None and ann is not ref:
-        if getattr(E, "Dp", None) is None or E.Dp.shape != demand.shape:
-            c.Dp -= demand
-            return dict(applied=False, reason="engine without congestion bins")
-        E.Dp[:, :] += demand
-        try:
-            from kae.place.engine import T_CONG
-            E.tot[T_CONG] = c.total()
-        except ImportError:  # pragma: no cover - the engine module is what built E
-            pass
-    return dict(applied=True, bins=int((extra > 0).sum()), peak=round(float(extra.max()), 3),
-                cong_before=round(before, 6), cong_after=round(c.total(), 6))
+def history_hook(P, history, scale=1.0, window=None, report=None):
+    """The placer's cong_history callable for `history` (feedback.CongestionHistory, in
+    utilization units) x `scale`; with `window` = (x0, y0, x1, y1) mm, only bins within two
+    bins of it (history far away cannot change a local move's cost, but would shift the
+    reported total). `report` (a dict) receives what was added. None when there is nothing
+    to add."""
+    if history is None or scale <= 0 or not history.h.any():
+        return None
+
+    def f(x0, y0, b, nbx, nby):
+        extra = history.sample(x0, y0, b, nbx, nby) * float(scale)
+        if window is not None:
+            wx0, wy0, wx1, wy1 = window
+            i0 = max(0, int((wx0 - x0) / b) - 2)
+            i1 = min(nbx, int((wx1 - x0) / b) + 3)
+            j0 = max(0, int((wy0 - y0) / b) - 2)
+            j1 = min(nby, int((wy1 - y0) / b) + 3)
+            mask = np.zeros_like(extra, dtype=bool)
+            mask[i0:i1, j0:j1] = True
+            extra = np.where(mask, extra, 0.0)
+        if report is not None:
+            report.update(applied=bool(extra.any()), bins=int((extra > 0).sum()),
+                          peak=round(float(extra.max()) if extra.size else 0.0, 3))
+        return extra * bin_supply(P, b)
+
+    return f

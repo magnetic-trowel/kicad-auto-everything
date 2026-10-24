@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from kae.board.kicad_file import load
 from kae.joint.feedback import CongestionHistory, Window
-from kae.joint.penalty import apply_history
+from kae.joint.penalty import bin_supply, history_hook
 from kae.joint.replace import replace_window, window_board
 from kae.joint.ripup import plan_ripup
 
@@ -56,28 +56,19 @@ def test_window_board_locks_everything_outside():
     assert not next(fp for fp in b.footprints if fp.ref == "U2").locked     # the input is untouched
 
 
-class _Cong:
-    def __init__(self):
-        self.x0, self.y0, self.b, self.nbx, self.nby, self.S0 = 0.0, 0.0, 2.0, 30, 20, 10.0
-        self.Dp = np.zeros((30, 20))
-        self.Dn = np.zeros((30, 20))
-        self.target = 0.5
-
-    def total(self):
-        u = (self.Dn + self.Dp) / self.S0 - self.target
-        return float(np.square(np.clip(u, 0, None)).sum())
-
-
-def test_history_becomes_static_demand_in_the_window_only():
-    class Ann:
-        cong = _Cong()
+def test_history_hook_adds_supply_scaled_demand_in_the_window_only():
+    from kae.place.problem import Problem
+    b = load(FIXTURE)
+    P = Problem.build(b)
     h = CongestionHistory((0, 0, 60, 40), bin_mm=1.0)
+    assert history_hook(P, h) is None                       # nothing failed yet
     h.add_corridor((10, 10), (50, 10), width=1.0, amount=2.0)
-    a = Ann()
-    r = apply_history(a, h, scale=1.0, window=(8, 8, 14, 12))
-    assert r["applied"] and r["cong_after"] > r["cong_before"]
-    assert a.cong.Dp[5, 5] > 0 and a.cong.Dp[20, 5] == 0     # far bins of the corridor untouched
-    assert not apply_history(type("N", (), {"cong": None})(), h)["applied"]
+    rep = {}
+    f = history_hook(P, h, scale=1.0, window=(8, 8, 14, 12), report=rep)
+    extra = f(0.0, 0.0, 2.0, 30, 20)
+    assert rep["applied"] and extra.shape == (30, 20)
+    assert extra[5, 5] > 0 and extra[20, 5] == 0             # far bins of the corridor untouched
+    assert np.isclose(extra[5, 5] / bin_supply(P, 2.0), h.sample(0.0, 0.0, 2.0, 30, 20)[5, 5])
 
 
 def test_replace_window_moves_only_window_parts_legally():
@@ -178,3 +169,15 @@ def test_window_takes_kicad_feedback_and_net_weights_and_covers_moves():
     assert res.report["kicad_feedback"]["constraints"] >= 1
     grown = _cover_moves(b, win, {u1: (40.0, 30.0, 0.0, "F")})
     assert grown.rect[2] > 40.0 and grown.rect[3] > 30.0 and grown.rect[:2] == (4.0, 4.0)
+
+
+def test_local_ripup_with_moves_rips_only_at_old_pads_and_new_footprint():
+    from shapely.geometry import box as _box
+    b = load(FIXTURE)
+    u1 = _uuid(b, "U1")
+    win = Window(rect=(7.0, 7.0, 30.0, 20.0), parts=(u1,))
+    far = _box(40.0, 30.0, 42.0, 32.0)                      # U1's new place: no copper there
+    plan = plan_ripup(b, win, {u1}, owners={}, module_parts={}, local=True, new_area=far)
+    # the SIG1 track ends at U1's pin (12.5, 13.0) region... only items touching the old pads go
+    assert set(plan.remove) <= {t.uuid for t in list(b.tracks) + list(b.vias) if t.net == "SIG1"}
+    assert "00000000-0000-4000-8000-000000000160" not in plan.remove   # the GND via inside the window stays

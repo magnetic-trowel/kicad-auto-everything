@@ -21,7 +21,8 @@ The placer's own machinery does the work (kae.place: Problem, State, make_anneal
    `net_mult` x more (the placer's net_weights hook in local_replace does the same).
 3. The annealer (physics terms, routability, legality, displacement) runs on the window's
    parts inside the window rectangle, with the congestion weight raised by `cong_mult` and
-   the routing history added as RUDY demand (penalty.apply_history), for a fixed number of
+   the routing history added as RUDY demand (penalty.history_hook, the placer's cong_history
+   hook), for a fixed number of
    moves.
 4. Legality is hard: grid legality (routing margin and routing bumps dropped if they are
    what is illegal, then the greedy legalizer), then the placer's exact closed loop scoped
@@ -35,7 +36,7 @@ import math
 import time
 from dataclasses import dataclass, field
 
-from .penalty import apply_history
+from .penalty import history_hook
 
 ROLE_KIND = {"ground": "ground", "rail": "power", "power": "power"}
 
@@ -143,9 +144,11 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
             log(f"place terms failed ({type(e).__name__}: {e})")
             terms = None
     order = clusters.protection_order(P, brief) if physics else []
+    hist_rep = dict(applied=False)
+    hook = history_hook(P, history, scale=history_scale, window=window.rect, report=hist_rep)
     ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=float(phys_mult) if terms is not None else 0.0,
-                        w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None)
-    rep["history"] = apply_history(ann, history, scale=history_scale, window=window.rect)
+                        w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None, cong_history=hook)
+    rep["history"] = hist_rep
     rep["cost_before"] = round(float(ann.cost(ann.lam1)), 5)
     # a fixed move count (not the engine's adaptive one): the same seed gives the same window
     # whenever the time budget does not bind

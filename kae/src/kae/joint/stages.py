@@ -396,12 +396,13 @@ class KaeStages:
             rep["outcome"] = res.report.get("rejected") or res.report.get("skipped") or "no part moved"
             return None, rep
         rip_win = _cover_moves(board, window, res.poses)
+        new_area = _new_area(board, res.poses)
         plan = plan_ripup(board, rip_win, set(res.poses), lay.owners, self.module_parts,
                           big_pads=int(o.get("big_pads", 20)), max_cross=int(o.get("max_cross", 4)),
                           also={u for sp in window.spots if sp.kind == "error" for u in sp.uuids},
                           supply_nets={n for n, d in ((self.brief or {}).get("nets") or {}).items()
                                        if isinstance(d, dict) and d.get("role") in ("ground", "rail", "power")},
-                          local=self.opts.get("window_router", "incremental") == "incremental")
+                          local=self.opts.get("window_router", "incremental") == "incremental", new_area=new_area)
         rep["ripup"] = plan.to_dict()
         if not plan.remove and not res.poses:
             rep["outcome"] = "re-route window: no routing to rip up"
@@ -462,6 +463,31 @@ class KaeStages:
             shutil.copy2(self.input, tmp)
         W.transplant(lay.board, tmp, output)
         return dict(moved=len(moved), output=str(output))
+
+
+def _new_area(board, poses, grow=0.3):
+    """The moved parts' footprints (courtyard, else pads) at their new poses, grown by
+    `grow` mm: where their copper now is. None when nothing moved."""
+    from shapely.geometry import Point
+    from shapely.ops import unary_union
+
+    from kae.board import transform
+    fp_of = {fp.uuid: fp for fp in board.footprints}
+    geoms = []
+    for u, (x, y, rot, side) in poses.items():
+        fp = fp_of.get(u)
+        if fp is None:
+            continue
+        try:
+            cy = transform.courtyard(fp, x, y, rot, side)
+        except Exception:  # noqa: BLE001 - fall back to the pads
+            cy = None
+        if cy is not None and not cy.is_empty:
+            geoms.append(cy.buffer(grow))
+        for p in fp.pads:
+            px, py = transform.pad_xy(fp, p, x, y, rot, side)
+            geoms.append(Point(px, py).buffer(max(p.size) / 2 + grow))
+    return unary_union(geoms) if geoms else None
 
 
 def _cover_moves(board, window, poses):

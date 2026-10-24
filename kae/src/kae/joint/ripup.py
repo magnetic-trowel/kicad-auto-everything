@@ -58,17 +58,20 @@ def _pad_xy(fp, pad):
 
 
 def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cross=4, pad_reach=0.3, also=(),
-               supply_nets=(), local=False):
+               supply_nets=(), local=False, new_area=None):
     """See the module docstring. board: kae.board.model.Board before the move (old poses);
     window: feedback.Window; moved: uuids of the parts that moved; owners: {routing uuid:
     module id} for critical copper; module_parts: {module id: [part uuid]}; also: routing
     uuids DRC blamed (error spots), ripped with their nets like a crossing net's items;
     supply_nets: ground and rail nets (the brief's roles), always ripped only locally;
-    local: every net ripped only locally (inside the window and at the moved pads), for the
-    incremental router, whose cost grows with the open connections."""
+    local: every net ripped only locally, for the incremental router, whose cost grows with
+    the open connections: with parts moved and `new_area` (their footprints at the new poses,
+    a shapely geometry) the region is that area plus the old pads, not the whole window."""
     moved = set(moved)
     fp_of = {fp.uuid: fp for fp in board.footprints}
     region = box(*window.rect).buffer(0.25)
+    if local and moved and new_area is not None:
+        region = new_area.buffer(0.25)
     pad_count = {}
     for fp in board.footprints:
         for p in fp.pads:

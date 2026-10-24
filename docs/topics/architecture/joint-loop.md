@@ -45,11 +45,11 @@ Spot weights are 4 (placement), 3 (unrouted), 2 (other errors) and 1 + rise + co
 
 ### Congestion penalty
 
-`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. RUDY marks how crowded the failed region is: the placer's own RUDY map of the routed placement adds 0.5·max(0, u − 0.5) to history bins within 3 mm of a failure. Alone, RUDY ranks PCB routability near chance ([joint-place-route](../physics/joint-place-route.md)), so it never opens a window by itself. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, is added to the static demand array:
+`CongestionHistory` is PathFinder's history cost on a 1 mm grid: every routed evaluation, accepted or not, adds 1 (in units of a bin's routing supply) along each failed connection's corridor. A region where routing failed stays expensive after one re-placement. RUDY marks how crowded the failed region is: the placer's own RUDY map of the routed placement adds 0.5·max(0, u − 0.5) to history bins within 3 mm of a failure. Alone, RUDY ranks PCB routability near chance ([joint-place-route](../physics/joint-place-route.md)), so it never opens a window by itself. Applying it uses the placer's own congestion model, `kae.place.cost.Congestion`, a RUDY map with pin-escape demand priced as Σ max(0, u − 0.5)² over bins. The history, resampled to the annealer's bins and limited to the window plus two bins, enters through the placer's `cong_history` hook (`make_annealer`, `local_replace`). It is added to the static demand array:
 
 u_b = (D_nets + D_escape + h_b·S_b) / S_b.
 
-The extra demand never moves with a part, so both engines (the reference `Annealer` and the compiled `FastAnnealer`, which copies the arrays at build time) stay exactly incremental. Moves that keep a window's nets and pins out of failed bins become cheaper, as a history cost makes a congested node dearer for every net in PathFinder. In a window the congestion weight is doubled (30 → 60). Parts named by an unrouted connection are bumped 0.25 mm (`Problem.bump`, more occupancy on every side) and the routing margin is 0.3 mm. Both are dropped if they are what makes the window illegal.
+The extra demand never moves with a part, so both engines (the reference `Annealer` and the compiled `FastAnnealer`) stay exactly incremental. Moves that keep a window's nets and pins out of failed bins become cheaper, as a history cost makes a congested node dearer for every net in PathFinder. In a window the congestion weight is doubled (30 → 60). Parts named by an unrouted connection are bumped 0.25 mm (`Problem.bump`, more occupancy on every side) and the routing margin is 0.3 mm. Both are dropped if they are what makes the window illegal.
 
 The re-anneal also carries the placer's physics terms (`kae.physics.place_terms`, calibrated against routed copper) and protection-order rules, and nets of the window's unrouted connections weigh 2× (the hook `local_replace(net_weights=…)` offers). Legality stays hard and closes with the placer's own loop. KiCad's placement errors on the current board become exact constraints (`exact.kicad_feedback`). Then come grid legality and the greedy legalizer if needed, then the exact check, repaired by `exact.repair(allowed=window parts)` as `local_replace` ends. The rip-up region grows to cover wherever that repair moved a part. An illegal window is discarded before any routing. The annealer runs a fixed move count (6,000 per part), so a window is reproducible whenever its time budget does not bind.
 
@@ -63,7 +63,13 @@ The re-anneal also carries the placer's physics terms (`kae.physics.place_terms`
 | Critical, owned by a module with a moved part or with copper in the window | all of that module's copper; the module stage runs again for it |
 | Critical, no module (rails, joins) | inside the window or at a moved pad |
 
-The window's modules are re-optimized with `optimize_modules(modules=…)`, with every part outside the window locked. Their guard pours are recomputed, and the other modules' guards stay. The bridge then routes with every remaining item locked (fixed wiring for Freerouting, untouched by its repair loop) and the guards in place. A window route caps Freerouting at 16 passes and the repair loop at 3 rounds. Afterwards everything except the critical copper is unlocked again.
+The window's modules are re-optimized with `optimize_modules(modules=…)`, with every part outside the window locked. Their guard pours are recomputed, and the other modules' guards stay. Every remaining item is then locked (fixed wiring for Freerouting) and the guards go in place. The window is re-routed by **`kae.route.incremental.route_open`**. It uses the bridge's constraint translation (`constraints.plan`, `translate.apply`, its router settings), but the run is made cheap:
+- only the open connections are routed;
+- one autorouter pass (the fork's `autorouter.max_passes`), with the optimizer off (`optimizer.enabled=false`);
+- the item order comes from the seed (`autorouter.item_order_seed`);
+- there are no repair rounds, and the loop's evaluation is the single DRC.
+
+Because the cost grows with the open connections, the window's rip-up is local: every net loses only the items inside the window and at the moved pads, and none is ripped whole. Afterwards everything except the critical copper is unlocked again. `--set window_router=bridge` restores the full bridge for windows.
 
 ### Acceptance
 
@@ -118,7 +124,7 @@ What the numbers say:
 ## Conflicts and open questions
 
 - **The bridge's wall time dominates.** Each iteration runs Freerouting and the bridge's DRC repair rounds, ~30–120 s on A/B boards, so a 900 s budget buys a handful of windows. A bridge mode that routes only the open nets, with no repair rounds unless DRC finds errors, would multiply the iterations.
-- **Interface requests** (owners asked; workarounds in kae/joint until then): a public congestion-history hook in the placer (`cong_args={"history": ndarray}`, today penalty.py adds to the arrays), and a public `Problem.add_obstacle`.
+- **Freerouting's cost per open connection.** One pass costs about 1–2 CPU s per open connection on these boards (noisecard window: 28 open, 17–19 CPU s, about 15 GB allocated). JVM heap and GC settings change nothing. A ≤ 30 s window therefore means ≤ ~15 open connections, or a router of our own for windows (the critical router's exactly verified grid A* routes a hop in milliseconds).
 - **Window choice** is greedy (least-tried, highest priority). An LNS over several disjoint windows per bridge run, or a bandit over window kinds, may pay on larger boards.
 
 See also: [month-plan](month-plan.md) · [joint-place-route](../physics/joint-place-route.md) · [critical-net-routing](../routing/critical-net-routing.md) · [freerouting-constraint-bridge](../routing/freerouting-constraint-bridge.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md)
