@@ -144,6 +144,7 @@ def _map_pieces(pieces, fn):
 
 
 GRAPHIC_LAYERS = ("F.Cu", "B.Cu", "F.Mask", "B.Mask")
+SILK_LAYERS = ("F.SilkS", "B.SilkS", "F.Fab", "B.Fab")
 
 
 class _Reader:
@@ -340,6 +341,7 @@ class _Reader:
             opens, rings = pieces_on("Edge.Cuts")
             fp.edge_cuts = [LineString(p) for p in opens + rings if len(p) >= 2]
         fp.graphics = self._graphics(fp, by_layer, lib)
+        fp.silk = self._silk(fp, node, by_layer, lib, frot, s)
         if not fp.courtyard:
             fp.body = self._body(fp, pieces_on, by_layer)
         for z in kids(node, "zone"):
@@ -399,6 +401,55 @@ class _Reader:
             polys = _polys(shapes)
             if polys:
                 out[ly] = polys
+        return out
+
+    def _silk(self, fp, node, by_layer, lib, frot, s):
+        """Silkscreen and fab of a footprint, library frame (KiCad's silk checks: silk_overlap
+        against other silk, pads, fab, courtyards and the edge; silk_over_copper against mask
+        openings): F/B.SilkS and F/B.Fab graphics stroked, and the visible texts on a silk
+        layer (Reference, Value, user texts; ${REFERENCE} expanded) as their estimated boxes
+        (_text_box). {layer: [Polygon]}."""
+        out = {}
+        for ly in SILK_LAYERS:
+            shapes = []
+            for g in by_layer.get(ly, ()):
+                try:
+                    o, r = shape_pieces(g, self.tol)
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if lib is not None:
+                    o, r = _map_pieces((o, r), lib)
+                shapes += _stroked(g, o, r)
+            polys = _polys(shapes)
+            if polys:
+                out[ly] = polys
+        from shapely import affinity
+        subst = {"${REFERENCE}": fp.ref, "${VALUE}": fp.value}
+        for t in list(kids(node, "property")) + list(kids(node, "fp_text")):
+            ly = value(t, "layer")
+            if ly not in ("F.SilkS", "B.SilkS"):
+                continue
+            eff = first(t, "effects")
+            if flag(t, "hide") or (eff is not None and flag(eff, "hide")):
+                continue
+            txt = t[2] if t[0] == "property" and len(t) > 2 and type(t[2]) is str else \
+                t[2] if len(t) > 2 and type(t[2]) is str else ""
+            for k, v in subst.items():
+                txt = txt.replace(k, v)
+            at = first(t, "at")
+            if not txt or at is None:
+                continue
+            u, v = float(at[1]), float(at[2])
+            a = float(at[3]) if len(at) > 3 and type(at[3]) is str and _NUM.match(at[3]) else 0.0
+            a -= frot           # a footprint's text angle is saved absolute; it turns with the part
+            box_ = _text_box(["gr_text", txt, ["at", str(u), str(v), str(a)]] +
+                             ([eff] if eff is not None else []))
+            if box_ is None:
+                continue
+            if s < 0:
+                box_ = affinity.scale(box_, 1.0, -1.0, origin=(0, 0))
+                ly = flip_layer(ly, self.ncu)
+            out.setdefault(ly, []).append(box_)
         return out
 
     def _body(self, fp, pieces_on, by_layer):
@@ -772,13 +823,14 @@ def _text_box(node):
 
 
 def _board_graphics(tree, tol, warnings):
-    """Board-level copper and mask graphics (gr_* shapes and gr_text) per layer, board frame."""
+    """Board-level copper, mask and silkscreen graphics (gr_* shapes and gr_text) per layer,
+    board frame."""
     by = {}
     for g in tree:
         if type(g) is not list or not g:
             continue
         for ly in _shape_layers(g):
-            if not (ly.endswith(".Cu") or ly.endswith(".Mask")):
+            if not (ly.endswith(".Cu") or ly.endswith(".Mask") or ly in ("F.SilkS", "B.SilkS")):
                 continue
             if g[0] in GR_SHAPES:
                 try:

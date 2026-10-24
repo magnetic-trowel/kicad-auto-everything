@@ -42,6 +42,7 @@ from .problem import edge_cut_polys, geom_to_lib, keepout_sides
 AREA_EPS = 1e-6
 EDGE_TOL = 0.05    # mm the copper-to-edge check forgives (outline arcs are polygonized)
 EDGE_STEP = 0.05   # mm a part's edge clearance grows each time KiCad reports it against the edge
+SILK_AREA = 0.01   # mm^2 of overlap that makes a silk conflict (silk text is an estimated box)
 
 
 def mask_margin(P, pd):
@@ -221,6 +222,14 @@ class ExactModel:
         self.zone_clr = {}
         for net, _, _, zc in self.zones:
             self.zone_clr[net] = max(self.zone_clr.get(net, 0.0), zc)
+        # silkscreen (a soft check, not legality: fix_silk): only where the project makes it an
+        # error (KiCad's default for both is a warning)
+        sev = getattr(P, "severity", None) or {}
+        self.silk_on = {k: sev.get(k, "warning") == "error" for k in ("silk_overlap", "silk_over_copper")}
+        self.silk_clr = max(0.0, float(getattr(rules_, "silk_clearance", 0.0) or 0.0)) if rules_ is not None else 0.0
+        bg = getattr(P.board, "graphics", None) or {}
+        self.board_silk = {0: list(bg.get("F.SilkS", ())), 1: list(bg.get("B.SilkS", ()))} \
+            if any(self.silk_on.values()) else {0: [], 1: []}
         fb = getattr(P, "feedback", None) or {}
         self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
         self.avoid = fb.get("avoid", {})      # i -> [(geometry, why)], from KiCad
@@ -258,15 +267,21 @@ class ExactModel:
                 continue
             bs = si if ly.startswith("F.") else 1 - si
             gfx[kind][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
+        silk = {"silk": {0: [], 1: []}, "fab": {0: [], 1: []}}
+        if any(getattr(self, "silk_on", {}).values()):
+            for ly, polys in (getattr(fp, "silk", None) or {}).items():
+                kind = "silk" if ly.endswith("SilkS") else "fab"
+                bs = si if ly.startswith("F.") else 1 - si
+                silk[kind][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
         geoms = [g for g, _, _ in pads] + [c for c in cy.values() if c is not None] + cuts + [g for _, _, g in kos] + \
-            [g for d in gfx.values() for v in d.values() for g in v]
+            [g for d in gfx.values() for v in d.values() for g in v] + [g for v in silk["silk"].values() for g in v]
         if geoms:
             b = np.array([g.bounds for g in geoms])
             env = (b[:, 0].min() - self.reach, b[:, 1].min() - self.reach, b[:, 2].max() + self.reach,
                    b[:, 3].max() + self.reach)
         else:
             env = (x, y, x, y)
-        return dict(cy=cy, pads=pads, holes=holes, side=si, cuts=cuts, kos=kos, gfx=gfx, env=env)
+        return dict(cy=cy, pads=pads, holes=holes, side=si, cuts=cuts, kos=kos, gfx=gfx, env=env, silk=silk)
 
     @staticmethod
     def hull(A):
@@ -293,6 +308,85 @@ class ExactModel:
     def _net_clr(self, net):
         from .legalize import _net_clr
         return _net_clr(self.P, net, self.clr_of)
+
+    # ------------------------------------------------------------------ silkscreen (soft)
+    def _silk_targets(self, j, B, side):
+        """What another part's silk may not overlap on a side (KiCad's silk checker): copper of
+        its pads, its silk and fab (silk_overlap); its pads' mask openings (silk_over_copper).
+        Courtyard lines and the board edge are KiCad targets too but left out: the human
+        placements touch them where KiCad passes (text boxes are estimates)."""
+        key = ("silk_t", side)
+        if key not in B:
+            cu = [g for g, k, pd in B["pads"] if side in self.cs[j][k]]
+            mo = [g.buffer(self.mm[j][k]) if self.mm[j][k] > 0 else g
+                  for g, k, pd in B["pads"] if side in self.ms[j][k] and not _npth_without_copper(pd)]
+            other = list(B["silk"]["silk"][side]) + list(B["silk"]["fab"][side])
+            u = lambda gs: shapely.union_all(gs) if gs else None
+            B[key] = dict(silk=u(list(B["silk"]["silk"][side])), overlap=u(cu + other), mask=u(mo))
+        return B[key]
+
+    def silk_findings(self, i, X=None, Y=None, K=None):
+        """Silkscreen conflicts of part i (where it is, or at grid pose X, Y, K) with the other
+        parts and the board, as KiCad 10 reports them (drc_test_provider_silk_clearance.cpp):
+        silk_overlap for silk against other silk, pads, fab and board silk; silk_over_copper for silk over another part's pad mask openings. A
+        footprint's own silk against its own items is the library's, not the placement's.
+        Only checks the project makes errors. [{type, parts}]."""
+        if not any(self.silk_on.values()):
+            return []
+        P, st = self.P, self.st
+        if X is None:
+            A = self.sh[i]
+        else:
+            saved = (st.X[i], st.Y[i], st.K[i])
+            st.X[i], st.Y[i], st.K[i] = X, Y, K
+            try:
+                A = self._shapes(i, st.pose(i))
+            finally:
+                st.X[i], st.Y[i], st.K[i] = saved
+        clr = self.silk_clr
+        out = []
+
+        def hit(a, b):
+            # text is an estimated box: touching is not an overlap (humangate: the human silk
+            # of ecc83, pic-programmer and video touches courtyards and fab KiCad passes)
+            if a is None or b is None:
+                return False
+            if clr > 0:
+                return a.distance(b) < clr - 1e-6
+            return a.intersects(b) and a.intersection(b).area > SILK_AREA
+        on_o, on_m = self.silk_on["silk_overlap"], self.silk_on["silk_over_copper"]
+        for side in (0, 1):
+            mine = self._silk_targets(i, A, side)
+            if on_o and mine["silk"] is not None:
+                for g in self.board_silk[side]:
+                    if hit(mine["silk"], g):
+                        out.append(dict(type="silk_overlap", parts=[i], detail="silk over board silk"))
+                        break
+            if on_o and mine["overlap"] is not None:
+                for g in self.board_silk[side]:
+                    if hit(g, mine["overlap"]):
+                        out.append(dict(type="silk_overlap", parts=[i], detail="board silk over the part"))
+                        break
+            for j in self.neighbours(A["env"], skip=i):
+                B = self.sh[j]
+                theirs = self._silk_targets(j, B, side)
+                if on_o and (hit(mine["silk"], theirs["overlap"]) or hit(theirs["silk"], mine["overlap"])):
+                    out.append(dict(type="silk_overlap", parts=[i, j], detail=P.parts[j].ref))
+                if on_m and (hit(mine["silk"], theirs["mask"]) or hit(theirs["silk"], mine["mask"])):
+                    out.append(dict(type="silk_over_copper", parts=[i, j], detail=P.parts[j].ref))
+        return out
+
+    def silk_check(self, parts=None):
+        """Silk conflicts over the board (each pair once). [{type, parts, refs}]."""
+        seen, out = set(), []
+        for i in (parts if parts is not None else range(len(self.P.parts))):
+            for v in self.silk_findings(i):
+                key = (v["type"], tuple(sorted(v["parts"])), v.get("detail") if len(v["parts"]) == 1 else "")
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(dict(v, refs=[self.P.parts[q].ref for q in v["parts"]]))
+        return out
 
     def _env(self, i, A, add):
         P = self.P
