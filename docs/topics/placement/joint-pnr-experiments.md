@@ -2,8 +2,8 @@
 
 **TL;DR**
 - We built our own engine for placing and routing together, without Freerouting ([tools/research/pnr/](../../../tools/research/pnr/)). It is a 0.1 mm halo grid with a numba negotiated-congestion router, legal-position maps computed by FFT, and KiCad read and write. On the **human** placements of the 33 qualified A/B boards the router alone gets **clean pass 0.85 (A) and 0.50 (B) in 2–8 s per board**. The repo's tuned Freerouting baseline gets 0.62 / 0.35 with up to 600 s [M].
-- **Physics belongs in the placement objective.** Every placement driven only by HPWL (half-perimeter wirelength) is electrically worse than the human one: 4.05× the human place-terms total on the 10 boards that have physics structures. The causes are decap loops, coupling and cable common-mode. Adding kae.physics place terms to the objective (`seq_phys`) cuts that to 1.52× at no cost in completion. Beam search with physics reaches **0.98×** [M].
-- **The routing-aware method that pays is beam search over place-one-route-it.** Compared with greedy on the same score at equal CPU, it gives completion 0.891 vs 0.868 and 8% less wire. Annealing with re-routing in every move also helps, and so does window repair aimed at the blocking parts. Soft routing gradients, Physarum flow, exact CP-SAT windows and an LLM move proposer did not beat simple controls [M].
+- **Physics belongs in the placement objective.** Every placement driven only by HPWL (half-perimeter wirelength) is electrically worse than the human one: 4.05× the human place-terms total on the 10 boards that have physics structures. The causes are decap loops, coupling and cable common-mode. Adding kae.physics place terms to the objective (`seq_phys`) cuts that to 1.52× at no cost in completion. Beam search with physics reaches **0.98×**, and `combo` reaches capped utilization 0.97× [M].
+- **Best pipeline: `combo` = beam search over place-one-route-it → blocker-directed window repair → annealing on routed cost + physics.** On all 33 boards it gets legal 0.848, clean 0.636 (equal to the human placement through the same router), completion 0.897, and 13% less copper than place-then-route. On the physics boards it is at human parity. Beam alone vs greedy on the same score at equal CPU: completion 0.891 vs 0.868, 8% less wire. Annealing with re-routing in every move also helps, and so does window repair aimed at the blocking parts. Soft routing gradients, Physarum flow, exact CP-SAT windows and an LLM move proposer did not beat simple controls [M].
 - **Clean pass is capped by DRC types that no method's objective sees.** These are silkscreen overlap (an error on some boards), solder-mask bridges and thermal-spoke starvation. Each was traced to placement crowding, not routing [M].
 - Along the way we found three harness bugs: `--command` adapters got relative paths; locked footprints were staged off-board, which made 7 of 33 place tasks unsolvable; and joint methods had no way to be scored. All three were fixed in separate commits.
 
@@ -21,27 +21,33 @@ The model's legality was calibrated against the human boards. Under the first mo
 
 ## Results (all 33 boards, engine v5)
 
-Length is summed over the 19 boards that every run in the table completed. Runs come from `kae-work/results/`.
+Length is summed over the 22 boards that every run in the table completed. Runs come from `kae-work/results/`.
 
 | Method | Idea | Legal | Clean | Completion | Length (mm) | Vias |
 |---|---|---|---|---|---|---|
-| `seq`: HPWL place, then route (control) | — | 0.788 | 0.545 | 0.863 | 2927 | 36 |
-| `seq_phys`: + physics descent | — | 0.788 | 0.545 | 0.863 | 2962 | 40 |
-| `grow`: place one, route it | 6 | 0.788 | 0.545 | 0.861 | 2880 | 28 |
-| `beam`: beam over grow, + physics ([pnr_mcts](../../../tools/research/pnr_mcts/RESULTS.md)) | 7 | **0.818** | 0.545 | **0.891** | **2628** | **20** |
-| `grad`: soft-min routing gradients ([pnr_grad](../../../tools/research/pnr_grad/RESULTS.md)) | 17, 22 | 0.848 | 0.545 | 0.869 | 3357 | 38 |
+| `seq`: HPWL place, then route (control) | — | 0.788 | 0.545 | 0.863 | 3386 | 60 |
+| `seq_phys`: + physics descent | 43 | 0.788 | 0.545 | 0.863 | 3422 | 64 |
+| `grow`: place one, route it | 6 | 0.788 | 0.545 | 0.861 | — | — |
+| `anneal_phys`: annealing on routed cost + physics | 11, 43 | 0.818 | 0.576 | 0.876 | 3189 | 38 |
+| `beam`: beam over grow, + physics ([pnr_mcts](../../../tools/research/pnr_mcts/RESULTS.md)) | 7, 43 | 0.818 | 0.545 | 0.891 | 3095 | 39 |
+| **`combo`: beam → blocker repair → physics annealing** ([methods_combo.py](../../../tools/research/pnr/methods_combo.py)) | 7, 12, 11, 43 | **0.848** | **0.636** | **0.897** | **2943** | **25** |
+| `grad`: soft-min routing gradients ([pnr_grad](../../../tools/research/pnr_grad/RESULTS.md)) | 22 | 0.848 | 0.545 | 0.869 | — | — |
 | human placement, same router (route task) | — | — | 0.636 | — | — | — |
 
-Physics on the 10 boards with structures (ratio to human; lower is better):
+On all 33 boards, `combo` matches the clean pass of the **human placement routed by the same router** (0.636). It uses 13% less copper and 58% fewer vias than `seq`.
 
-| Method | Place terms | Routed physics | Completion |
-|---|---|---|---|
-| `seq` | 4.05 | 1.39 | 0.858 |
-| `grow` | 7.35 | 1.37 | — |
-| `seq_phys` | 1.52 | 1.26 | 0.859 |
-| `grad_phys` + physics descent | 1.37 | **1.00** | 0.837 |
-| `beam` with phys_w = 2 | **0.98** | 1.14 | — |
-| Physarum motion + physics, from `seq_phys` | 1.53 | 1.30 | 0.862 |
+Physics on the 10 boards with structures (ratio to human; lower is better; [physics_score.py](../../../tools/research/pnr_phys/physics_score.py)):
+
+| Method | Legal / clean (of 10) | Completion | Place terms | Capped u | Routed physics |
+|---|---|---|---|---|---|
+| human placement, same router | 10 / 4 | 0.96 | 1.00 | 1.00 | 1.09 |
+| `seq` | 7 / 3 | 0.86 | 4.05 | 1.45 | 1.39 |
+| `seq_phys` | 7 / 3 | 0.86 | 1.52 | 1.20 | 1.26 |
+| `anneal_phys` | 8 / 4 | 0.89 | 1.68 | 1.29 | 1.33 |
+| `beam` (phys_w = 2) | 8 / 4 | 0.94 | 0.98 | 1.01 | 1.14 |
+| **`combo`** | **9 / 5** | **0.96** | 1.03 | **0.97** | **1.13** |
+| `grad_phys` + physics descent | — | 0.84 | 1.37 | 1.08 | **1.00** |
+| Physarum motion + physics, from `seq_phys` | 7 / 3 | 0.86 | 1.53 | — | 1.30 |
 
 Single boards:
 - On the olimex buck converter, the HPWL placement scores 51–1400 depending on the version, the human scores 7.39, and `anneal_phys` scores 5.83 and is DRC clean.
@@ -49,7 +55,7 @@ Single boards:
 
 ## What each approach showed
 
-- **Annealing with real re-routing** ([methods.py](../../../tools/research/pnr/methods.py) `anneal`; Nag–Rutenbar 1998). On v3 it used 5.5% less copper than `seq` on the boards every method completed. The rerun on v5 is pending.
+- **Annealing with real re-routing** ([methods.py](../../../tools/research/pnr/methods.py) `anneal`; Nag–Rutenbar 1998). With physics (`anneal_phys`, v5) it gives clean 0.576 vs 0.545, completion 0.876 vs 0.863, and 6% less copper than `seq`. It works best as the finishing stage of `combo`.
 - **Beam search over growth.** Keeping alternatives across steps helps; adding candidates per step does not (24 candidates per step scored the same as 6). MCTS gets only about 8–10 rollouts per part at 120 s and trails beam. Switching nodes by diffing poses and routes is 2–3 orders of magnitude cheaper than replaying them ([pnr_mcts](../../../tools/research/pnr_mcts/RESULTS.md)).
 - **Differentiable routing.** We tested whether soft-min shortest-path gradients point somewhere better than HPWL. Moving parts along the soft-route gradient improved the routed cost 33% of the time; HPWL did 36%, pin tension alone 43%, random 19%. **No merit** as a placement driver. A global gradient start followed by discrete physics descent gave the best routed physics (1.00×) ([pnr_grad](../../../tools/research/pnr_grad/RESULTS.md)).
 - **Physarum (slime-mould) networks.** The tubes thin to believable trees. As a router prior the effect is neutral or worse, and as forces on parts with an accept test it barely moves anything. **No merit** as built ([pnr_slime](../../../tools/research/pnr_slime/RESULTS.md)).
@@ -73,7 +79,7 @@ The error counts across the `seq` and `beam` runs, mostly from placement:
 ## Recommendations for our system
 
 - Make physics a first-class term in every placement objective (`Terms.delta` costs about 50 µs per move). Score routed physics on the final copper. HPWL alone produces electrically wrong boards that route well.
-- Use beam search over interleaved place-and-route as the search skeleton, with the physics term, ([mcts.py](../../../tools/research/pnr_mcts/mcts.py)). Finish with physics descent and annealing on routed cost plus physics.
+- Use `combo` as the baseline to beat: beam search over interleaved place-and-route with the physics term ([mcts.py](../../../tools/research/pnr_mcts/mcts.py)), then blocker-directed repair, then annealing on routed cost plus physics ([methods_combo.py](../../../tools/research/pnr/methods_combo.py)).
 - Put every DRC error type that blocks clean into the search score: silkscreen, mask apertures, spoke room. Clean depends on these, not on wirelength.
 - Use LLMs for diagnosis and structure (which parts are blocked, which connector goes to which edge), not for move-by-move proposals.
 
