@@ -896,6 +896,12 @@ def grad(world, seed=0, budget=120, log=print, mode="route", **kw):
         log(f"  hpwl after legalize {world.hpwl():.1f}")
         if kw.get("post", "none") == "descent":
             descent(world, kit, log, clock=clock, rounds=kw.get("rounds", 6))
+        elif kw.get("post") == "phys" and ph is not None:
+            # engine-side clean-up after legalization: best-response on HPWL + phys_w *
+            # physics (methods_phys.descent_phys), as seq_phys does after its HPWL descent
+            from methods_phys import descent_phys
+            ph.sync()
+            descent_phys(world, kit, ph, kw.get("phys_w", 2.0), log, clock=clock)
         elif kw.get("post") == "local":
             local_descent(world, kit, log, clock, radius_mm=kw.get("radius_mm", 2.0))
         if ph is not None:

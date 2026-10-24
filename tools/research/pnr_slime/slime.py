@@ -12,17 +12,21 @@ Soft routing on a coarse grid (~0.5 mm) per copper layer plus via edges:
   and keep-outs -> ~0); pen_n = 1 / (1 + beta * occupancy of OTHER nets' tubes on that
   node and layer + history), so nets compete for edges and separate onto layers.
 Part motion: each part is pulled by its pins along the tube leaving each pad (envelope
-theorem on the soft network) and pushed down the gradient of foreign tube occupancy under
-its courtyard; it moves a step, is legalized to the nearest legal origin (Kit.legal_map),
-and the flows are re-solved. The best placement by the Physarum network cost is kept.
+theorem on the soft network), pushed down the gradient of foreign tube occupancy under its
+courtyard and (optionally) down the finite-difference gradient of the physics place terms
+(physics.Phys, phys_w mm per unit). It steps, is legalized to the nearest legal origin
+(Kit.legal_map), its nets are re-grown, and the move is kept only if network cost
+(+ phys_w * physics) dropped; then all flows are re-solved.
 Final: route with the engine's PathFinder, optionally with a per-net corridor prior
 (extra history cost off the net's final slime tubes) so the slime topology and layer
-assignment transfer to real copper.
+assignment transfer to real copper. Budgets are CPU seconds (placekit.Clock).
 
 Methods (plug-ins for run.py):
   slime          seq start + slime part motion + corridor prior
   slime_motion   seq start + slime part motion, plain PathFinder
   slime_prior    seq placement, slime solve, corridor-prior PathFinder (no motion)
+  slime_phys     seq start + slime part motion with the physics term
+  slime_phys2    seq_phys start (methods_phys.descent_phys) + slime motion with physics
 """
 import math
 import random
