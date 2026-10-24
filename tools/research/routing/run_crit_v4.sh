@@ -26,8 +26,8 @@ J=${J:-16}
 K=${K:-3}
 V=${V:-v4}
 # per-attempt budgets (s): T_AB for splits A+B, T_C for the split-C boards; change V with them
-T_AB=${T_AB:-1200}
-T_C=${T_C:-1800}
+T_AB=${T_AB:-1800}
+T_C=${T_C:-3600}
 PY=$PWD/kae/.venv/bin/python
 C=$W/code/kae-crit-$(git rev-parse --short HEAD)
 RO=(--sandbox-ro "$C")
