@@ -222,7 +222,13 @@ def test_exhausted_windows_are_sampled_again_while_time_is_left():
             return super().repair(*a, **k)
     st = Slow(broken=("R2",), bad=("R2",))
     loop = JointLoop(st, opts=dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, finish=False,
-                                   max_attempts=1, min_cycle_s=0.01, max_iters=5))
+                                   max_attempts=1, min_cycle_s=0.01, max_iters=5, patience_cycles=10))
     rep = loop.run("out.kicad_pcb", time_s=1e6, seed=5)
     seeds = [c[2] for c in st.calls if c[0] == "repair"]
     assert len(seeds) == 5 and len(set(seeds)) == 5 and rep["cycles"] == 5   # new seeds each cycle
+    # patience: two full cycles in a row with nothing kept end the loop
+    st2 = Slow(broken=("R2",), bad=("R2",))
+    loop2 = JointLoop(st2, opts=dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, finish=False,
+                                     max_attempts=1, min_cycle_s=0.01))
+    rep2 = loop2.run("out.kicad_pcb", time_s=1e6, seed=5)
+    assert rep2["stop"] == "no improvement (cycle 1)" and len([c for c in st2.calls if c[0] == "repair"]) == 2

@@ -15,7 +15,9 @@ routed-physics recheck). Every later iteration:
    that is not exhausted is repaired. A window that was tried and rejected is retried up to
    `max_attempts` times (by default more with a longer budget), larger (margin x1.5, twice
    at most) and with the congestion weight x1.5; an accepted window resets the count, since
-   the board changed (annealed coupling).
+   the board changed (annealed coupling). When every window is exhausted, a new cycle samples
+   them again under new seeds, until `patience_cycles` cycles in a row accept nothing
+   (stop "no improvement (cycle k)").
 3. **Repair.** stages.repair: re-place the window's parts, rip up the nets touching it, redo
    its modules, re-route with everything else locked.
 4. **Judge.** scorecard.accept against the incumbent: legality, completion and DRC must not
@@ -58,6 +60,7 @@ DEFAULTS = dict(
     finish_release=True,   # a second finishing try releases the module copper on open corridors
     recycle=True,          # when every window is exhausted and time is left, sample them all again
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
+    patience_cycles=2,     # stop after this many full cycles over the windows in a row accept nothing
 )
 
 
@@ -156,7 +159,7 @@ class JointLoop:
         tries = {}
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
-        cycles, cycle_t0 = 0, time.monotonic()
+        cycles, cycle_t0, cycle_kept, idle = 0, time.monotonic(), 0, 0
         # a window costs far less than iteration 0 (local re-place, local rip-up, incremental
         # route): start from the minimum and learn from the windows themselves
         est = float(o["min_iter_s"])
@@ -185,10 +188,14 @@ class JointLoop:
                 # every window tried max_att times: with time left, a new cycle samples them
                 # again under new seeds and the history so far (a long budget keeps searching);
                 # a cycle that took no time (nothing could be routed) ends it
+                idle = idle + 1 if not cycle_kept else 0
+                if idle >= int(o["patience_cycles"]):
+                    stop = f"no improvement (cycle {cycles})"
+                    break
                 if o["recycle"] and spots and time.monotonic() - cycle_t0 >= o["min_cycle_s"]:
                     tries = {}
                     cycles += 1
-                    cycle_t0 = time.monotonic()
+                    cycle_t0, cycle_kept = time.monotonic(), 0
                     self.log(f"cycle {cycles}: all windows tried; again with new seeds")
                     continue
                 stop = "no window left to try"
@@ -239,6 +246,7 @@ class JointLoop:
                 best, best_card, best_fb = cand, card, fb
                 self._geom = st.geometry(best)
                 tries = {}               # the board changed: earlier failures may now succeed
+                cycle_kept += 1
         rep["stop"] = stop
         rep["cycles"] = cycles + 1
         # ---- finishing: the full bridge (repair rounds) over the whole board with the

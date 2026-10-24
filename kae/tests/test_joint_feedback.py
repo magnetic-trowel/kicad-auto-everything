@@ -173,3 +173,17 @@ def test_spot_without_movable_parts_becomes_a_reroute_window():
     w = plan_windows([s], parts, (0, 0, 50, 40), margin=1.0, max_parts=4)
     assert len(w) == 1 and w[0].parts == () and w[0].key[0] == "reroute"
     assert "re-route" in w[0].reasons[0]
+
+
+def test_stage_stop_reasons():
+    from kae.joint.stages import place_stops, route_stops
+    p = place_stops(dict(anneal=dict(schedule="budget"), closed_loop=dict(end=2, rounds=8), legal_grid=True, exact=[]))
+    assert p == dict(anneal="clock", closed_loop="round cap", legal=True)
+    assert place_stops(dict(anneal=dict(schedule="moves")))["anneal"] == "planned moves done"
+    r = route_stops(dict(router=dict(report=dict(autorouter_stop="STAGNATION", optimizer_stop="below_threshold")),
+                         repair=dict(rounds=[dict(round=0), dict(round=1, stopped="no improvement")],
+                                     final=dict(errors=0, unconnected=2))))
+    assert r == dict(autorouter="STAGNATION", optimizer="below_threshold", repair="no improvement", repair_rounds=1)
+    clean = route_stops(dict(router=dict(autorouter_stop="COMPLETED"), repair=dict(rounds=[{}], final=dict(errors=0,
+                                                                                                         unconnected=0))))
+    assert clean["repair"] == "clean" and clean["autorouter"] == "COMPLETED"

@@ -103,7 +103,9 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
                                 log_path=wd / "freerouting.log")
         step("router", t)
         rep["router"] = dict(seconds=round(run.seconds, 2), rc=run.rc, timed_out=run.timed_out,
-                             state=(run.report or {}).get("final_state"), settings=settings)
+                             state=(run.report or {}).get("final_state"), settings=settings,
+                             autorouter_stop=(run.report or {}).get("autorouter_stop"),
+                             optimizer_stop=(run.report or {}).get("optimizer_stop"))
         log(f"freerouting: rc={run.rc} {run.seconds:.1f}s state={(run.report or {}).get('final_state')}")
         if run.ses is None:
             shutil.copy2(input_path, output_path)

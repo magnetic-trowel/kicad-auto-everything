@@ -115,7 +115,8 @@ class KaeStages:
         legal = bool(rep.get("legal_grid") and not rep.get("exact") and not rep.get("outline_incomplete"))
         b = self._load(out)
         info = dict(place=dict(seconds=round(time.monotonic() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),
-                               scorecard=(rep.get("scorecard") or {}).get("total"), budget_s=rep.get("budget_s")))
+                               scorecard=(rep.get("scorecard") or {}).get("total"), budget_s=rep.get("budget_s"),
+                               stops=place_stops(rep)))
         return Layout(board=str(out), poses=self._all_poses(b), info=info)
 
     def layout_from(self, board_path):
@@ -207,7 +208,10 @@ class KaeStages:
             new.guards.pop(m.id, None)
         new.guards.update(guards)
         new.stage = self._stage_values(out, it)
-        new.info["modules"] = dict(seconds=round(time.monotonic() - t0, 1), moved=sorted(rep.get("moved") or {}),
+        dt_mod = time.monotonic() - t0
+        new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
+                                   stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
+                                   moved=sorted(rep.get("moved") or {}),
                                    copper=len(copper), modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
                                                                      status=m.get("status"))
                                                                 for m in rep.get("modules") or []])
@@ -307,7 +311,7 @@ class KaeStages:
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
         new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status=rep.get("status"), guards=len(guards),
-                                 finish=finish,
+                                 finish=finish, stops=route_stops(rep),
                                  router_s=(rep.get("router") or {}).get("seconds"),
                                  errors=fin.get("errors"), unconnected=fin.get("unconnected"))
         return new
@@ -561,6 +565,38 @@ def _cover_moves(board, window, poses):
                  max(a for a, _ in xy) + 0.5, max(c for _, c in xy) + 0.5)
         x0, y0, x1, y1 = min(x0, b[0]), min(y0, b[1]), max(x1, b[2]), max(y1, b[3])
     return dataclasses.replace(window, rect=(x0, y0, x1, y1))
+
+
+def place_stops(rep):
+    """Why the placer's stages stopped: the annealer ('planned moves done' or 'clock'), the
+    exact closed loop ('legal', 'round cap', 'clock')."""
+    a = rep.get("anneal") or {}
+    out = dict(anneal={"moves": "planned moves done", "budget": "clock"}.get(a.get("schedule"), a.get("schedule")))
+    cl = rep.get("closed_loop")
+    if isinstance(cl, dict):
+        out["closed_loop"] = "legal" if not cl.get("end") else ("round cap" if cl.get("rounds", 0) >= 8 else "clock")
+    out["legal"] = bool(rep.get("legal_grid") and not rep.get("exact"))
+    return out
+
+
+def route_stops(rep):
+    """Why a bridge or route_open call stopped: Freerouting's autorouter (COMPLETED,
+    STAGNATION, NO_IMPROVEMENT, TIMED_OUT, MAX_PASSES), its optimizer (below_threshold,
+    timed_out, skipped), the bridge's repair rounds (clean, no improvement, time, round cap)."""
+    r = rep.get("router") or {}
+    rr = r.get("report") or {}
+    out = dict(autorouter=r.get("autorouter_stop") or rr.get("autorouter_stop"),
+               optimizer=r.get("optimizer_stop") or rr.get("optimizer_stop"))
+    rp = rep.get("repair")
+    if isinstance(rp, dict):
+        rounds = rp.get("rounds") or []
+        why = next((x.get("stopped") for x in reversed(rounds) if x.get("stopped")), None)
+        fin = rp.get("final") or {}
+        if why is None:
+            why = "clean" if fin and not fin.get("errors") and not fin.get("unconnected") else "round cap"
+        out["repair"] = why
+        out["repair_rounds"] = max(0, len(rounds) - 1)
+    return out
 
 
 def placement_errors(drc_report):
