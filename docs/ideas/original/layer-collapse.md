@@ -35,6 +35,11 @@ collapse possible with the fewest conflicts, and find where it cannot go below L
 
   max Σ_P w_p·G_p(S_p) − Σ_S c_s·C_s(S_s) − Σ k_ij·M_ij − λ·#vias − μ·Σ_R length
 
+- **Placement and routing are one problem.** The variables are the poses of all parts,
+  the copper shape of every net, and the layer of every point of that copper, together.
+  The obstruction is joint: a placement can make an otherwise impossible collapse possible,
+  and the collapse decides which placement is good. The method below collapses parts and
+  nets at the same time.
 - **Placement is a variable too.** Each movable part k has a pose (x_k, y_k, θ_k), with its
   side fixed. Its pads T_i move with it. The lifted shapes, the cut demands, the pin-order
   permutations between parts and the pour regions are all functions of the poses. The
@@ -97,6 +102,31 @@ with citations and tags. It corrects the hypothesis table below:
 | Signal crossing a pour layer | Planar topology, percolation | A curve splits a simply connected pour iff it meets the pour's boundary twice or closes a loop; on plane layers signals must be short jumpers, or the pour needs stitching |
 | Over/under at crossings | Knot and link diagrams, braids | The crossing structure of the projected nets is a link diagram; via minimization chooses over/under at each crossing with minimum layer changes |
 | An algorithm for multi-phase partitions with constraints | MBO threshold dynamics (Merriman–Bence–Osher; Esedoglu–Otto 2015) | Fast grid scheme for multi-phase minimal partitions with volume constraints and arbitrary surface tensions |
+
+## Joint collapse by continuation (parts and nets together)
+
+- **Lift.** Every net and every part on its own layer, coupling β = 0:
+  - parts at their HPWL + physics optimum, overlaps allowed;
+  - each net its lone route (Steiner/A*) between its pads where they are now;
+  - pours fill everything.
+- **Collapse.** Raise one coupling β from 0 to ∞. Every conflict costs β times its
+  overlap, in one currency:
+  - two nets in the same physical-layer cell;
+  - two parts on the same side overlapping;
+  - a pad on another net's copper;
+  - a signal cutting a pour.
+- **At each β, every object best-responds to the same price field** (with PathFinder history
+  so conflicts that keep recurring get more expensive):
+  - nets re-route and choose layers; a via is taken where jumping costs less than sharing;
+  - parts translate and rotate, pulled by their nets' actual routes (pin tensions) and
+    the physics terms, pushed by priced conflicts under their footprint;
+  - pours take what is left of their layers.
+- **At β → ∞ the state is legal.** Cells whose price kept climbing are the obstructions:
+  there L layers are too few for that placement, and parts move to dissolve them.
+
+This is a homotopy from the lifted state to the board, close to deterministic annealing.
+`negotiate` prices the same conflicts but never starts from the lifted state, and `combo`
+builds the placement greedily before refining it.
 
 ## How the pieces could compose
 
