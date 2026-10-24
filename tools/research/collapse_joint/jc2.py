@@ -20,6 +20,8 @@ Switches (run.py --opt key=value; defaults reproduce jc on engine v6 except `eng
                     schedule without a new lowest conflict (jc burns them)
     fill=0          the time after the last whole run goes to one perturbed resume from the
                     best state instead of to the polish
+    minplus_w=0     blend the min-plus route-cost map (tools/research/xf_minplus) into the
+                    part's wire term, from beta >= mp_from_beta
     restart=scratch scratch (jc) | perturb: every second restart starts from the best state,
                     re-rotates/re-lifts the k parts with the most part+wire history and
                     resumes the continuation from beta_p
@@ -59,8 +61,20 @@ def _length(r, w, n):
 
 
 class Collapse2(J.Collapse):
-    def __init__(self, world, seed, budget, log, engine=1, via_beta=0.0, via_part=0.0, **kw):
+    def __init__(self, world, seed, budget, log, engine=1, via_beta=0.0, via_part=0.0, minplus_w=0.0,
+                 mp_from_beta=0.0, coarse_mm=0.4, **kw):
         super().__init__(world, seed, budget, log, **kw)
+        self.mp = None
+        self.minplus_w = float(minplus_w)
+        self.mp_from_beta = mp_from_beta
+        if self.minplus_w > 0:
+            # min-plus wire term (tools/research/xf_minplus, transformation T1): routed-cost
+            # distance fields on the priced grid instead of HPWL in the part best response
+            sys.path.insert(0, str(HERE.parent / "xf_minplus"))
+            import minplus as MPL
+            self._MPC = MPL.MPCollapse
+            self.mp = MPL.MinPlus(world, self.r, self.kit, coarse_mm, True, False)
+            self.mp_t, self.mp_calls = 0.0, 0
         self.engine = bool(engine)
         if self.engine:
             self.cut_parts = []
@@ -106,9 +120,14 @@ class Collapse2(J.Collapse):
                 self._vp = (cx, cy, ri, self.via_part * self.via0 * nv)
         return super().best_response(pi, beta, CT, CV, per)
 
+    def wire_term(self, pi, ri, beta, anchors, prepared):
+        return self._MPC.wire_term(self, pi, ri, beta, anchors, prepared)
+
     def part_cost_maps(self, pi, beta, CT, CV, anchors):
         vp = getattr(self, "_vp", None)
-        for ri, c, inside in super().part_cost_maps(pi, beta, CT, CV, anchors):
+        base = (self._MPC.part_cost_maps(self, pi, beta, CT, CV, anchors) if self.mp is not None
+                else super().part_cost_maps(pi, beta, CT, CV, anchors))
+        for ri, c, inside in base:
             if vp is not None and ri == vp[2]:
                 r = max(2, int(1.0 / self.w.g))
                 c = np.array(c, dtype=np.float64, copy=True)
@@ -473,6 +492,8 @@ jc2_comp = _v("jc2_comp", complete=1)
 jc2_pert = _v("jc2_pert", restart="perturb")
 jc2_stall = _v("jc2_stall", stall=4)
 jc2_fill = _v("jc2_fill", fill=1)
+jc2_mp = _v("jc2_mp", minplus_w=0.5, mp_from_beta=1.0)      # min-plus only late (vias appear at beta > 1)
+jc2_mp1 = _v("jc2_mp1", minplus_w=1.0)
 jc2_all = _v("jc2_all", via_beta=1.0, clean=1, complete=1, restart="perturb")
 for _n in list(globals()):
     if _n.startswith("jc2_") and callable(globals()[_n]):
