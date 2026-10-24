@@ -36,3 +36,13 @@ task alone (connector-pin labels, numbered rows matched in order to one part fam
 puts the human placement's part within 3 mm on 58–86% of the 354 single-part labels. As an
 annealer term (`w_label`, off by default) it brings noisecard's 12 labelled parts from 0 to 8
 within 3 mm at weight 3, physics 2.38 → 2.76 (human 3.50), HPWL 170 → 258.
+
+## Follow-up: silk in the annealer, labels on for numbered rows (WIP up to c6a2222)
+
+Silk is now also a soft annealer term (the 5 silk-error projects only); KiCad silk errors on
+those boards 224 → 71 (final pass only) → **13** (term + pass), all legal and KiCad clean;
+HPWL +7–13% on three of them, physics within +3% (seed 0, single runs). Label kinds by human
+precision (part within 3 mm of its label): numbered row → part family 100% (14 labels, 2 boards),
+connector-pin label 68%, keyword 49%, part reference 17%. Only numbered rows are on by default
+(weight 1); on noisecard 7 of 12 LEDs now sit within 3 mm of their label (1 of 12 off), physics
++1.7%, HPWL +52%. Full `kae/tests`: 450 pass.
