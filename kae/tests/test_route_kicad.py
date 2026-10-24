@@ -488,3 +488,37 @@ def test_a_locked_stub_on_a_rounded_pad_centre_routes_connected(tmp_path):
     import math
     slivers = [t for t in kicad_file.load(out).tracks if not t.locked and math.dist(t.start, t.end) < 0.002]
     assert not slivers, slivers
+
+
+@needs_router
+def test_last_mile_rejoins_a_net_cut_open(routed, exported, tmp_path):
+    """Cut a routed signal net open (all its tracks removed): kae.route.lastmile joins its
+    pads again with the grid router, and KiCad's DRC on the re-opened board agrees."""
+    from kae.board.kicad_file import load
+    from kae.route import critical_write as W
+    from kae.route import lastmile
+    board, out, rep, d = routed
+    _, info, _ = exported
+    b = load(out)
+    zone_nets = {z.net for z in b.zones}
+    pads = {}
+    for f in b.footprints:
+        for p in f.pads:
+            pads[p.net] = pads.get(p.net, 0) + 1
+    nets = sorted({t.net for t in b.tracks if t.net and t.net not in zone_nets and pads.get(t.net, 0) >= 2},
+                  key=lambda n: (pads[n], n))
+    assert nets
+    net = nets[0]
+    cut = tmp_path / "cut.kicad_pcb"
+    W.edit(out, cut, remove=[t.uuid for t in b.tracks if t.net == net] + [v.uuid for v in b.vias if v.net == net])
+    staged = drc.stage_board(cut, board, tmp_path / "cut")
+    before = drc.run(staged, tmp_path / "cut" / "drc.json")
+    assert net in lastmile.open_nets(before)
+    p = constraints.plan(info, board)
+    fills = pcbnew_io.zone_fills(staged)["zones"]
+    cand = tmp_path / "cand.kicad_pcb"
+    r = lastmile.close(staged, info, p, fills, cand, nets=lastmile.open_nets(before), log=lambda *a: None)
+    assert r["joined"] >= 1
+    after = drc.run(drc.stage_board(cand, board, tmp_path / "cand"), tmp_path / "cand" / "drc.json")
+    assert net not in lastmile.open_nets(after)
+    assert drc.summary(after)["errors"] <= drc.summary(before)["errors"]

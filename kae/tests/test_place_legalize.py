@@ -455,3 +455,106 @@ def test_fix_order_moves_the_protection_part_back_within_the_physics_bound():
     rep = exact.fix_order(P, st, time_s=30.0, phys=lambda: 1.0)
     assert rep["start"] == 1 and rep["end"] == 0 and rep["moved"] == ["U7"]
     assert not exact_check(P, st) and not grid_violations(st)
+
+
+def test_kicad_loop_writes_the_best_judged_placement_back(monkeypatch):
+    """The KiCad loop keeps the placement KiCad judged best: a later round that ends with more
+    errors, or a repair KiCad never judged (its DRC failed), puts that one back on disk."""
+    import time
+    from types import SimpleNamespace
+    from kae import cli
+    from kae.place import exact
+    from kae.place.pipeline import Result
+    from kae.route import drc as kdrc
+    P, st, E, guard, ref = _held_chain()
+    i7 = ref["U7"].i
+    spots = [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i7, *exact._tables(P, st, {i7}), list(range(4)),
+                                                           0.0, 400)[1:4]]
+    monkeypatch.setattr(kdrc, "kicad_cli", lambda: "kicad-cli")
+    monkeypatch.setattr(kdrc, "stage_board", lambda out, inp, tmp: out)
+    written = []
+
+    def write(inp, out, poses, **k):
+        written.append(dict(poses))
+        return dict(writer="fake")
+
+    def run_loop(verdicts, rounds):
+        it = iter(verdicts)
+
+        def run(staged, path, timeout):
+            v = next(it)
+            if v is None:
+                raise kdrc.DrcError("kicad-cli failed")
+            return {"n": v}
+        monkeypatch.setattr(kdrc, "run", run)
+        monkeypatch.setattr(exact, "kicad_feedback", lambda P, st, rep: dict(errors=rep["n"], by_type={}, fixed_only=0))
+        moves = iter(spots)
+
+        def repair(P, st, time_s, log=None):
+            st.X[i7], st.Y[i7], st.K[i7] = next(moves)
+            return dict(moved=["U7"], findings=[])
+        monkeypatch.setattr(exact, "repair", repair)
+        res = Result(poses=st.poses(), report={}, state=st, problem=P)
+        a = SimpleNamespace(drc="on", drc_rounds=rounds, time=600.0, output="o", input="i", writer="sexpr")
+        return res, cli._kicad_loop(a, res, time.monotonic(), write)
+
+    start = (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7]))
+    res, (clean, _) = run_loop([2, 5, 3], 2)          # worse after the first repair: round 0 back
+    assert clean is False and res.report["kicad_written_round"] == 0
+    assert (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == start and written[-1] == res.poses
+    assert res.poses[ref["U7"].uuid] == st.pose(i7)
+    st.X[i7], st.Y[i7], st.K[i7] = start
+    res, (clean, _) = run_loop([4, 1, None], 3)       # round 1 best; round 2's verdict never came
+    assert res.report["kicad_written_round"] == 1
+    assert (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == spots[0]
+    st.X[i7], st.Y[i7], st.K[i7] = start
+    res, (clean, _) = run_loop([3, 0], 2)             # clean: written as it is
+    assert clean and res.report["kicad_written_round"] == 1
+
+
+def test_mask_only_aperture_across_two_zone_fills_is_a_bridge():
+    """KiCad 10 (drc_test_provider_solder_mask.cpp, checkMaskAperture): a simple mask aperture
+    (a mask graphic with no copper, e.g. a mask-only logo) bridges when it exposes two distinct
+    positive nets; zone fills count (stickhub: LOGO4 on B.Mask across the GND and +5V fills).
+    Inside one fill it exposes one net; a pad's own opening drawn as a graphic is the pad's."""
+    from shapely.geometry import box
+    from kae.board.model import Zone
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    logo = next(p for p in P.parts if p.ref == "R1")
+    logo.fp.graphics = dict(logo.fp.graphics or {}, **{"F.Mask": [box(-0.6, 3.0, 0.6, 4.2)]})  # clear of its pads
+    others = [z for z in P.board.zones if z.net != "GND"]
+
+    def zones(vcc_outline):
+        P.board.zones = others + [
+            Zone(uuid="zg", name="", net="GND", layers=["F.Cu", "B.Cu"], outline=P.outline, priority=0, clearance=0.2),
+            Zone(uuid="zv", name="", net="VCC", layers=["F.Cu", "B.Cu"], outline=vcc_outline, priority=1,
+                 clearance=0.2)]
+
+    def bridges():
+        E = exact.ExactModel(P, st)
+        return [v for v in E.part_findings(logo.i) if v["type"] == "solder_mask_bridge"
+                and "aperture exposes" in v["detail"]]
+    zones(box(0, 0, 1, 1))
+    E = exact.ExactModel(P, st)
+    A = E.sh[logo.i]
+    ap = A["gfx"]["mask"][A["side"]][0]
+    assert not any(ap.intersects(g) for g, _, _ in A["pads"])
+    ymid = (ap.bounds[1] + ap.bounds[3]) / 2
+    zones(box(0, 0, 60, ymid))                         # the VCC fill's edge across the aperture
+    found = bridges()
+    assert found and "GND" in found[0]["detail"] and "VCC" in found[0]["detail"]
+    zones(box(0, 0, 60, 40))                           # all VCC under it: one net
+    assert not bridges()
+    zones(box(0, 0, 60, ymid))
+    g0 = A["pads"][0][0]                               # over its own pad: the pad's opening
+    x, y, rot, side = st.pose(logo.i)
+    from kae.place.problem import geom_to_lib
+    logo.fp.graphics["F.Mask"] = [geom_to_lib(g0, x, y, rot, side).buffer(0.6)]
+    E = exact.ExactModel(P, st)
+    A = E.sh[logo.i]
+    ap = A["gfx"]["mask"][A["side"]][0]
+    assert ap.intersects(g0)
+    zones(box(0, 0, 60, (ap.bounds[1] + ap.bounds[3]) / 2))
+    assert not bridges()

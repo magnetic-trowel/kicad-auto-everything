@@ -19,8 +19,12 @@ track joined only at its ends, as KiCad joins them) and joins each smaller part 
 rest: a grid route (GridRouter.connect, every segment and via checked exactly against the
 bridge's rules) from the part's copper to the other parts' copper within a growing window,
 first around everything, then with the window's unlocked tracks and vias of other nets
-taken out. Of those, only the ones the new copper would violate are ripped; their nets are
-then open, and the repair loop routes them again with the new copper fixed.
+taken out and priced per cell crossed (RIP_COST). Of those, only the ones the new copper
+would violate are ripped; their nets are then open, and the repair loop routes them again
+with the new copper fixed. A pad walled in by its own footprint (a microphone's centre pad
+inside its ring) is left through a via in the pad, as the human board does.
+
+The bridge runs it after its repair rounds with `last_mile` (off by default; repair._last_mile).
 
     close(board, info, plan, fills, out, nets=open_nets(drc_report)) -> report
 
@@ -44,8 +48,8 @@ MARGINS = (1.0, 3.0, 8.0)       # mm around a part and the nearest other part: s
 RIP_MARGINS = (1.0, 3.0)        # windows whose foreign unlocked copper may be ripped
 MAX_RIP = 40                    # tracks and vias ripped for one connection at most
 VIA_COSTS = (None, 12.0)        # the grid router's via cost, then a dear one (cells per via)
-RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (a detour of
-                                # about 10 mm beats ripping one 0.25 mm track)
+RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (crossing a
+                                # 0.25 mm track at 0.2 mm clearance costs as much as an 18 mm detour)
 
 
 # ----------------------------------------------------------------------------- connectivity

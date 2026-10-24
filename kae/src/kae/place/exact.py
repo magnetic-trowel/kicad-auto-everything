@@ -364,6 +364,10 @@ class ExactModel:
                 for m in A["gfx"]["mask"][side]:
                     if cu_u is not None and m.difference(cu_u).area < 0.05 * max(m.area, AREA_EPS):
                         continue          # copper with its mask opening, not a simple aperture
+                    if any(m.intersects(geom) for geom, k, pd in A["pads"] if side in self.cs[i][k]):
+                        # a pad's own opening drawn as a graphic (U15, MK501's custom ring pads:
+                        # their copper, not the pad shape modelled here, keeps the fill away)
+                        continue
                     near = [(geom, pd) for geom, k, pd in A["pads"] if side in self.cs[i][k]
                             and not _npth_without_copper(pd) and m.distance(geom) < 1.0]
                     for j in self.neighbours(m.bounds, skip=i):
@@ -375,9 +379,7 @@ class ExactModel:
                     for net, g in self.zone_fill[side]:
                         if net in nets or g.distance(m) >= s2c + 1e-6:
                             continue
-                        # the fill keeps its clearance from copper of other nets (a pad's own
-                        # mask opening drawn as a graphic, a little larger than the pad, does
-                        # not reach it: humangate, U15 / MK501)
+                        # the fill keeps its clearance from copper of other nets nearby
                         loc = g.intersection(reach)
                         for geom, pd in near:
                             if pd.net != net:

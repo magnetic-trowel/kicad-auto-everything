@@ -112,8 +112,11 @@ def cmd_place(a):
 
 def _kicad_loop(a, res, t0, write):
     """KiCad's DRC on the written placement, fed back until it is clean (kae.place.exact:
-    kicad_feedback -> repair -> write again), within the caller's time. Returns (clean or
-    None when KiCad could not run, the last writer report or None)."""
+    kicad_feedback -> repair -> write again), within the caller's time. The best placement
+    KiCad has judged (clean, else fewest placement errors) is kept: when the loop ends on a
+    worse verdict, or on a repair KiCad has not judged (time, a DRC failure), that one is
+    written again (report: kicad_written_round). Returns (clean or None when KiCad could not
+    run, the last writer report or None)."""
     import tempfile
     try:
         from kae.route import drc as kdrc
@@ -129,6 +132,8 @@ def _kicad_loop(a, res, t0, write):
     tmp = tempfile.mkdtemp(prefix="kae-drc-")
     rounds, clean, wrep = [], None, None
     before = st.poses()
+    best = None            # (placement errors, round, X, Y, K, poses) KiCad judged
+    judged = None          # errors of the board as written now (None: not judged yet)
     for it in range(a.drc_rounds + 1):
         left = t0 + 0.97 * float(a.time) - time.monotonic()
         if left < 15.0:
@@ -148,6 +153,9 @@ def _kicad_loop(a, res, t0, write):
                            seconds=round(time.monotonic() - t, 1)))
         _log(f"KiCad DRC round {it}: {fb['errors']} placement errors {fb['by_type']}")
         clean = fb["errors"] == fb["fixed_only"]
+        judged = fb["errors"] - fb["fixed_only"]
+        if best is None or judged < best[0]:
+            best = (judged, it, st.X.copy(), st.Y.copy(), st.K.copy(), dict(res.poses))
         if clean or it == a.drc_rounds:
             break
         left = t0 + 0.97 * float(a.time) - time.monotonic()
@@ -157,6 +165,17 @@ def _kicad_loop(a, res, t0, write):
         poses.update(st.poses())
         res.poses = poses
         wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
+        judged = None
+    written = None if judged is None else rounds[-1]["round"] if "errors" in rounds[-1] else None
+    if not clean and best is not None and (judged is None or judged > best[0]):
+        # the loop ended worse than a placement KiCad already judged: write that one again
+        _, written, X0, Y0, K0, poses0 = best
+        st.X[:], st.Y[:], st.K[:] = X0, Y0, K0
+        res.poses = poses0
+        wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
+        clean = best[0] == 0
+        _log(f"KiCad DRC: wrote round {written}'s placement again ({best[0]} placement errors)")
+    res.report["kicad_written_round"] = written
     res.report["kicad_drc"] = rounds
     res.report["kicad_verified"] = clean is not None
     res.report["exact"] = exact_check(P, st)

@@ -42,7 +42,7 @@ def arm_summary(arm_dir):
     for _, r in reports(arm_dir):
         n += 1
         used.append(float(r.get("seconds") or 0) / max(1.0, float(r.get("time_s") or 1)))
-        C["loop"][r.get("stop") or "?"] += 1
+        C["loop"][(r.get("stop") or "?").split(" (")[0]] += 1     # "time (45s left ...)" -> "time"
         st = (r.get("iterations") or [{}])[0].get("stages") or {}
         ps = (st.get("place") or {}).get("stops") or {}
         C["anneal"][ps.get("anneal") or "?"] += 1
