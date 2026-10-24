@@ -67,7 +67,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("boards", nargs="+")
     ap.add_argument("--json")
+    ap.add_argument("--coarse", type=float, default=0.4)
     a = ap.parse_args()
-    res = [run(b) for b in a.boards]
+    res = [run(b, a.coarse) for b in a.boards]
     if a.json:
         Path(a.json).write_text(json.dumps(res, indent=1))
