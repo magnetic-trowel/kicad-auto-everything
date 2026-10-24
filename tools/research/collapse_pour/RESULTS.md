@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
-# collapse_pour: minimal-partition pours (status: partial, batch still running)
+# collapse_pour: minimal-partition pours (status: partial; batch3 running)
 
 Idea: [layer-collapse](../../../docs/ideas/original/layer-collapse.md). When several pour
 nets share a layer, the split boundaries should form a minimal partition: constant-curvature
@@ -71,6 +71,40 @@ What olimex shows so far:
 - What counts for conductance is where the copper lies relative to the pads. The length
   of the boundary is secondary. The perimeter objective does not know where the pads are,
   so a "minimal" free region can land between pads.
+
+
+## Kobold 4-rail split (In1.Cu) — the counter-example
+The human In1 is a comb: RGB_PWR fingers run between rows of +3.3V LED pads
+(`fig/pcbcorpus-tzarc-keyboards-kobold_In1.Cu_iso_area2.png`). The minimal partition turns
+the comb into blobs, and RGB_PWR loses pads. Bridges added by `repair_connectivity` are
+thinned away by KiCad's fill. Result at equal copper:
+- 18 to 21 unconnected items (the human board has 0);
+- whole-net R_eff for RGB_PWR 81 squares against 36;
+- +3.3V 20.1 squares against 16.8.
+
+The 105 clearance errors are not caused by the pours: the refilled human board has the
+same 105, and they are excluded. The reference `drc.json` (pre-refill) has none.
+
+When the pads of two rails interleave, the boundary has to be long, so minimal perimeter
+is the wrong objective.
+
+Fixes made, rerunning in `kae-work/pour/batch3.sh` with tags `iso_area2`/`fill2` and
+`place2.json`:
+- (a) disconnected pairs count as zero conductance: `R_eff = 1/mean(1/R)`, plus the number
+  of cut-off pads;
+- (b) bridges keep the terminals the human pour connects on that layer connected;
+- (c) PTH pads are dumped on unflashed layers too;
+- (d) the kernel is annealed from 4 mm.
+
+`summarize.py` builds the tables, including the placement-term correlations against full
+R_eff, the kae fast and routed physics, worst-rail mOhm, length and vias (all read from
+`kae-work/phys/*.json`).
+
+## Verdict (provisional)
+**No merit as a pour objective on real boards.** Minimal partitions reproduce the soap-film
+geometry. On real boards they tie the human pours where there is one GND pour, change
+things by ±5–10% on a two-pour layer, and are clearly worse on an interleaved multi-rail
+plane. Conductance-aware shapes need a pad-aware term rather than perimeter.
 
 ## Placement → pour quality (asked by the lead; running)
 `pour_score(world)` predicts each pour net's mean pad-pair resistance as follows:

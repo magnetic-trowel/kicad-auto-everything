@@ -57,6 +57,12 @@ def item_poly(it, layer):
     return polys(sp)
 
 
+def circle(c, r, n=16):
+    import math
+    return [[[mm(c.x + r * math.cos(2 * math.pi * k / n)), mm(c.y + r * math.sin(2 * math.pi * k / n))]
+             for k in range(n)]]
+
+
 def dump(path, out, refill=False):
     board = pcbnew.LoadBoard(path)
     if refill:
@@ -85,9 +91,14 @@ def dump(path, out, refill=False):
                                   d=mm(max(p.GetDrillSize().x, p.GetDrillSize().y)),
                                   plated=p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH))
             for l in cu:
-                if not p.IsOnLayer(l) or (hasattr(p, "FlashLayer") and not p.FlashLayer(l)):
+                if not p.IsOnLayer(l):
                     continue
-                items.append(dict(kind="pad", net=net, layer=lname[l], poly=item_poly(p, l),
+                pp = item_poly(p, l)
+                if not pp and p.GetDrillSize().x > 0:  # unflashed PTH layer: annulus may be
+                    pp = circle(p.GetPosition(), max(p.GetDrillSize().x, p.GetDrillSize().y) / 2 + 0.1 * NM)
+                if not pp:
+                    continue
+                items.append(dict(kind="pad", net=net, layer=lname[l], poly=pp,
                                   ref=fp.GetReference(), pad=p.GetNumber(),
                                   x=mm(p.GetPosition().x), y=mm(p.GetPosition().y)))
     for t in board.GetTracks():
@@ -98,9 +109,11 @@ def dump(path, out, refill=False):
             for l in cu:
                 if not t.IsOnLayer(l):
                     continue
-                if hasattr(t, "FlashLayer") and not t.FlashLayer(l):
-                    continue
-                items.append(dict(kind="via", net=net, layer=lname[l], poly=item_poly(t, l),
+                # unflashed layers (unused annular rings removed) still count: a zone of
+                # the via's net that reaches it gets a ring (KiCad flashes it again)
+                pp = item_poly(t, l) or circle(t.GetPosition(), t.GetWidth(pcbnew.F_Cu) / 2
+                                               if hasattr(t, "GetWidth") else t.GetDrillValue())
+                items.append(dict(kind="via", net=net, layer=lname[l], poly=pp,
                                   x=mm(t.GetPosition().x), y=mm(t.GetPosition().y)))
         else:
             items.append(dict(kind="track", net=net, layer=lname[t.GetLayer()],

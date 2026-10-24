@@ -142,7 +142,13 @@ builds the placement greedily before refining it.
 5. Realize with the pnr router, using the assignment as a layer prior, and score with KiCad
    DRC and kae.physics.
 
-## Experiments
+## Experiments (tools/research/collapse_*)
 
-See [placement/joint-pnr-experiments](../../topics/placement/joint-pnr-experiments.md)
-for the engine and scoring, and the results section added when the experiments finish.
+| Experiment | Result | Verdict |
+|---|---|---|
+| Obstruction bounds on 112 boards ([collapse_obst](../../../tools/research/collapse_obst/RESULTS.md)) | Cut, thickness and area bounds never force more than 2 layers. Real layer counts are planes plus BGA escape: 102/112 boards have 2 signal layers, and the escape formula is within ±1 on all 7 fine-pitch BGAs. Capacity demand does not explain our routing failures | Bounds sound but loose. Bus rotation is the lever: human rotations are LDS-optimal for 60% of 240 buses, and the best rotations would cut forced 2-layer jumpers from 209 to 78 |
+| Collapse as routing ([collapse_assign](../../../tools/research/collapse_assign/RESULTS.md)) | Exact via-minimization assignment (CP-SAT, all 33 optimal) fed to the router: clean 0.606, against 0.636 for the engine and 0.667 for a random assignment. Most lifted conflicts are corridor sharing | No merit as a router |
+| Lifted cost as a placement measure (same) | Ranks 219 placements by routed cost at Spearman 0.85 (HPWL 0.51) and vias at 0.54 (HPWL 0.15). Predicts nothing about unrouted connections | Positive signal |
+| Minimal-partition pours ([collapse_pour](../../../tools/research/collapse_pour/RESULTS.md)) | MBO reproduces the analytic geometry (120° junctions, 90° at the rim, double-bubble radii, Wulff octagon). Olimex: −5% resistance where two pours share a layer, identical for a single pour. Kobold comb split: blobs instead of interleaved fingers, 18–21 unconnected, about 2× resistance | No merit as a pour objective. Minimal boundary is wrong when rails interleave; the shape must come from conductance to the pads |
+| Collapse terms in the joint placer ([collapse_cplace](../../../tools/research/collapse_cplace/)) | running | — |
+| Joint collapse by continuation ([collapse_joint](../../../tools/research/collapse_joint/)) | running | — |

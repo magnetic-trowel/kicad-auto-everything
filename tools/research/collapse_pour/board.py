@@ -459,7 +459,7 @@ def repair_connectivity(L, lab, allowed, log=print):
                     bridge[flat_y[k], flat_x[k]] = True
                     k = pred[k]
         if bridge.any():
-            r = max(L.minw.get(n, 0.25), 0.25) + G.g
+            r = 2 * max(L.minw.get(n, 0.25), 0.25) + 0.3
             bridge = G.dilate(bridge, r) & ok
             prev = L.extra_pins.get(n, np.zeros(G.shape, bool))
             new = bridge & ~prev
