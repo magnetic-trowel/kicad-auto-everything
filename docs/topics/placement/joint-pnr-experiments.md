@@ -25,6 +25,23 @@
   (0.13 to 0.95 over 9 physics boards). A method tuned on fast physics needs the routed
   check.
 
+### Objective comparison (v5, all 33 boards, one seed)
+
+Physics is the ratio to the human board on the 10 boards with physics structures. Length is summed over the 20 boards every run completed.
+
+| Pipeline | Objective | Legal | Clean | Completion | Length (mm) | Vias | Fast physics (capped u) | Routed physics |
+|---|---|---|---|---|---|---|---|---|
+| seq | length + vias | 0.788 | 0.545 | 0.863 | 3117 | 40 | 1.45 | 1.39 |
+| seq_phys | fast physics | 0.788 | 0.545 | 0.863 | 3152 | 44 | 1.20 | 1.26 |
+| anneal | length + vias | 0.848 | 0.576 | 0.874 | 2852 | 22 | 1.57 | 1.54 |
+| anneal_phys | fast physics | 0.818 | 0.576 | 0.876 | 2952 | 24 | 1.29 | 1.33 |
+| combo_lv | length + vias | 0.818 | 0.545 | 0.900 | 2695 | 16 | 1.34 | 1.26 |
+| combo | fast physics | 0.848 | 0.636 | 0.897 | 2687 | 16 | **0.97** | **1.13** |
+| combo_full | fast physics + full physics at gates | running | | | | | | |
+| human placement, same router | — | — | 0.636 | — | — | — | 1.00 | 1.09 |
+
+In every pipeline, switching from length + vias to fast physics improves both fast and routed physics. Completion, length and vias stay the same within noise. The physics objective costs essentially nothing in routability, so it should be on by default.
+
 ## Setup
 
 | Item | Value |
