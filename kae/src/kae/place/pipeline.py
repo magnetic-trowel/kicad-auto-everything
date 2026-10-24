@@ -55,6 +55,8 @@ class Result:
     report: dict = field(default_factory=dict)
     state: object = None
     problem: object = None
+    terms: object = None         # the place terms the scorecard uses (None: no structures)
+    order: list = field(default_factory=list)    # the protection-order rules
 
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
@@ -434,12 +436,10 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
-    if order:
-        chk = Annealer(P, st.copy(), terms=None, w_cong=0.0, order=order)
-        rep["protection_order"] = dict(rules=len(order), violated=chk.order_violations())
-    if report_terms is not None:
+    res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order)
+    final_physics(res)
+    if report_terms is not None and "physics_error" not in rep:
         try:
-            rep["scorecard"] = physics_summary(report_terms, {p.uuid: st.pose(p.i) for p in P.parts})
             rep["scorecard_seed"] = physics_summary(report_terms, {p.uuid: seed_state.pose(p.i) for p in P.parts},
                                                     breakdown=False)
         except Exception as e:
@@ -447,7 +447,22 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep["seconds"] = round(time.monotonic() - t0, 2)
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
-    return Result(poses=poses, report=rep, state=st, problem=P)
+    res.poses = poses
+    return res
+
+
+def final_physics(res):
+    """The report's protection_order and scorecard for where res.state stands now (place()
+    at its end; kae.cli again after a KiCad DRC round moved parts)."""
+    P, st, rep = res.problem, res.state, res.report
+    if res.order:
+        chk = Annealer(P, st.copy(), terms=None, w_cong=0.0, order=res.order)
+        rep["protection_order"] = dict(rules=len(res.order), violated=chk.order_violations())
+    if res.terms is not None:
+        try:
+            rep["scorecard"] = physics_summary(res.terms, {p.uuid: st.pose(p.i) for p in P.parts})
+        except Exception as e:
+            rep["physics_error"] = f"{type(e).__name__}: {e}"
 
 
 def grid_verdict(P, st, exact):

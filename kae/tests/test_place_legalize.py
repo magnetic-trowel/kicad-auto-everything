@@ -299,3 +299,52 @@ def test_move_clean_skips_a_spot_that_breaks_protection_order(monkeypatch):
     ok, _ = exact.move_clean(P, st, E, i7, time.monotonic() + 30)
     assert ok and (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == tuple(good)
     assert guard.total() == 0
+
+
+def test_kicad_round_that_moves_parts_refreshes_order_and_physics(monkeypatch):
+    """The report's protection order and physics scorecard describe the board as written: a
+    KiCad DRC round whose repair moves parts recomputes them (place()'s values stay as
+    *_pre_drc); a loop that moves nothing leaves them alone."""
+    import time
+    from types import SimpleNamespace
+    from kae import cli
+    from kae.place import exact
+    from kae.place.pipeline import Result, final_physics
+    from kae.route import drc as kdrc
+    P, st, E, guard, ref = _held_chain()
+    i7 = ref["U7"].i
+    u7 = ref["U7"].uuid
+
+    class Terms:              # a scorecard that follows U7's x
+        def breakdown(self, poses):
+            return [dict(id="s", kind="k", util=abs(poses[u7][0]) / 100.0, value=0.0, unit="")]
+    res = Result(poses=st.poses(), report={}, state=st, problem=P, terms=Terms(), order=P.order_rules)
+    final_physics(res)
+    assert res.report["protection_order"]["violated"] == 0
+    pre = dict(res.report)
+    cands = [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i7, *exact._tables(P, st, {i7}), list(range(4)),
+                                                           0.0, 4000) if not E.findings_at(i7, X, Y, k)]
+    bad = next(t for t in cands if guard.count_at(i7, *t) > 0)
+    errors = iter([1, 0, 0])
+    monkeypatch.setattr(kdrc, "kicad_cli", lambda: "kicad-cli")
+    monkeypatch.setattr(kdrc, "stage_board", lambda out, inp, tmp: out)
+    monkeypatch.setattr(kdrc, "run", lambda staged, path, timeout: {})
+    monkeypatch.setattr(exact, "kicad_feedback", lambda P, st, rep: dict(errors=next(errors), by_type={}, fixed_only=0))
+
+    def repair(P, st, time_s, log=None):
+        st.X[i7], st.Y[i7], st.K[i7] = bad
+        return dict(moved=["U7"], findings=[])
+    monkeypatch.setattr(exact, "repair", repair)
+    a = SimpleNamespace(drc="on", drc_rounds=2, time=600.0, output="out.kicad_pcb", input="in.kicad_pcb", writer="sexpr")
+    clean, _ = cli._kicad_loop(a, res, time.monotonic(), lambda *x, **k: dict(writer="fake"))
+    assert clean
+    assert res.report["protection_order_pre_drc"] == pre["protection_order"]
+    assert res.report["scorecard_pre_drc"] == pre["scorecard"]
+    assert res.report["protection_order"]["violated"] == 1
+    assert res.report["scorecard"]["total_linear"] != pre["scorecard"]["total_linear"]
+    # a clean first round moves nothing: no *_pre_drc
+    res2 = Result(poses=st.poses(), report={}, state=st, problem=P, terms=Terms(), order=P.order_rules)
+    final_physics(res2)
+    errors = iter([0])
+    cli._kicad_loop(a, res2, time.monotonic(), lambda *x, **k: dict(writer="fake"))
+    assert "protection_order_pre_drc" not in res2.report and "scorecard_pre_drc" not in res2.report

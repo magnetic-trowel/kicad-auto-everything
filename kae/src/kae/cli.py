@@ -128,6 +128,7 @@ def _kicad_loop(a, res, t0, write):
     P, st = res.problem, res.state
     tmp = tempfile.mkdtemp(prefix="kae-drc-")
     rounds, clean, wrep = [], None, None
+    before = st.poses()
     for it in range(a.drc_rounds + 1):
         left = t0 + 0.97 * float(a.time) - time.monotonic()
         if left < 15.0:
@@ -159,7 +160,19 @@ def _kicad_loop(a, res, t0, write):
     res.report["kicad_drc"] = rounds
     res.report["kicad_verified"] = clean is not None
     res.report["exact"] = exact_check(P, st)
+    if st.poses() != before:
+        _refresh_physics(res)
     return clean, wrep
+
+
+def _refresh_physics(res):
+    """A KiCad round moved parts: protection order and the physics scorecard again, for the
+    board as written; the values place() reported stay as *_pre_drc."""
+    from kae.place.pipeline import final_physics
+    for k in ("protection_order", "scorecard"):
+        if k in res.report:
+            res.report[f"{k}_pre_drc"] = res.report[k]
+    final_physics(res)
 
 
 def cmd_brief(a):
