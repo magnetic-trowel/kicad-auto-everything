@@ -39,7 +39,37 @@ collapse possible with the fewest conflicts, and find where it cannot go below L
   either local capacity (too many nets cross a cut) or local topology (the connections
   forced through a region form a graph that needs more than L planar layers).
 
-## Analogous problems with exact or analytic results (hypotheses to verify)
+## Verified: what the analogs actually give
+
+The literature check is in
+[research_notes/layer-collapse/analogs.md](../../../research_notes/layer-collapse/analogs.md),
+with citations and tags. It corrects the hypothesis table below:
+- **Topology never forces more than 2 layers.** A via is a point on every layer, so any
+  crossing becomes a two-via jumper, and the Euler thickness bound is ≥ 1 on real pin
+  graphs. Layers are forced by **capacity** (cut density, via area, single-layer SMD pads)
+  and by the via budget.
+- **Exact via-free results exist only for special pin orders:**
+  - two facing pin rows: minimum layers = the longest decreasing subsequence of the pin
+    permutation, and at most λ₁+…+λ_L nets fit via-free on L layers (Greene/RSK);
+  - all pins on one boundary: circle-graph clique is a lower bound;
+  - each footprint's pin order fixed: a linear-time one-layer test (partially embedded
+    planarity).
+- **One-layer capacity:** with each net's homotopy fixed, a layer is routable iff every cut
+  passes the density test (Cole–Siegel, Leiserson–Maley; polynomial). Okamura–Seymour needs
+  an Eulerian condition and only gives fractional flow.
+- **2-layer via minimization** is polynomial (planar max-cut) only if junctions have
+  degree ≤ 3. It is NP-complete with 4-way junctions and NP-hard for 3 or more layers.
+- **Split planes:** 2D minimal partitions (Morgan; double/triple bubble). Taylor 1976 is the
+  3D case. Each boundary has curvature (λ_i − λ_j)/σ_ij. Junction angles follow from the
+  clearance ratios (120° when all are equal), and boundaries meet the board edge at 90°.
+  Boundary cost relative to a circle: octilinear Wulff octagon +2.7%, Manhattan +12.8%.
+- **Minimum-capacitance net:** a Steiner tree is right over a ground plane (C ∝ length). In
+  free 2D the optimum is curved (Chebotarev–Grötzsch), so "monotone capacity" was the wrong
+  argument.
+- Knot diagrams and origami give nothing usable. Area-constrained MBO is auction dynamics
+  (Jacobs–Merkurjev–Esedoglu 2018).
+
+## Analogous problems (original hypotheses; see the corrections above)
 
 | Piece of the problem | Analog | Known result |
 |---|---|---|
@@ -59,9 +89,9 @@ collapse possible with the fewest conflicts, and find where it cannot go below L
 ## How the pieces could compose
 
 1. Lift: route every net alone (Steiner/A* on an empty board).
-2. Obstructions: thickness and cut bounds give where and how many layers are needed.
+2. Obstructions: cut-capacity bounds over Delaunay edges and rings around dense parts give where and how many layers are needed (topology alone never needs more than 2).
 3. Assign: crossings and overlaps of the lifted shapes become a conflict graph. Use planar
-   max-cut for 2 layers, Potts annealing or Max-k-Cut SDP for L.
+   max-cut for 2 layers (exact when junctions have degree ≤ 3), and annealing or ILP for L.
 4. Grow pours into the remainder of each layer as a multi-phase minimal partition (MBO with
    area weights and Wulff anisotropy), cut only by short signal jumpers.
 5. Realize with the pnr router, using the assignment as a layer prior, and score with KiCad
