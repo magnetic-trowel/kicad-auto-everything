@@ -202,3 +202,32 @@ def test_kicad_zone_error_keeps_the_part_off_the_whole_zone():
     assert fb["constraints"] == 1
     (g, why), = P.feedback["avoid"][i.i]
     assert g.contains(sbox(x - 5.9, y - 5.9, x + 5.9, y + 5.9))
+
+
+def test_exact_rules_follow_kicad_on_copperless_pads_roundrects_and_custom_rules():
+    """Regressions from the human-placement gate (humangate.py: the human placement must show
+    no finding KiCad's DRC does not): a paste-only or copperless NPTH pad is no copper; a
+    roundrect has rounded corners; a custom .kicad_dru clearance rule for a library replaces
+    the netclass clearance; a net-less fiducial whose mask expansion equals its fill gap does
+    not bridge to the zone."""
+    from kae.board.model import Pad
+    from kae.place import exact
+    from kae.place.legalize import pad_shape
+    paste = Pad(number="", net="", kind="smd", shape="rect", size=(1, 1), lx=0, ly=0, lrot=0, x=0, y=0,
+                layers=["F.Paste"])
+    npth = Pad(number="", net="", kind="np_thru_hole", shape="circle", size=(2, 2), lx=0, ly=0, lrot=0, x=0, y=0,
+               layers=["*.Cu", "*.Mask"], drill=2.0)
+    ring = Pad(number="", net="", kind="np_thru_hole", shape="circle", size=(3, 3), lx=0, ly=0, lrot=0, x=0, y=0,
+               layers=["*.Cu", "*.Mask"], drill=2.0)
+    assert exact._no_copper(paste) and exact._no_copper(npth) and not exact._no_copper(ring)
+    rr = Pad(number="1", net="", kind="smd", shape="roundrect", size=(1.0, 0.5), lx=0, ly=0, lrot=0, x=0, y=0,
+             layers=["F.Cu"], rratio=0.25)
+    assert pad_shape(rr).area < 0.5 - 1e-3                  # corners cut
+    P, st = _pile()
+    P.board.rules.custom = [dict(name="small", condition="A.memberOfFootprint('kae_test:ASYM3')",
+                                 constraints=[dict(type="clearance", min=0.05)])]
+    cc = exact._custom_clearances(P)
+    assert cc and cc[0][1:] == ("lib", "kae_test:ASYM3", 0.05)
+    E = exact.ExactModel(P, st)
+    i, j = P.mov[0], P.mov[1]
+    assert E._rule_clr(i, E.sh[i], j, E.sh[j]) in (0.05, None)

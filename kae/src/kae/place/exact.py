@@ -63,6 +63,77 @@ def mask_sides(pd):
     return out
 
 
+_NET_TIE = __import__("re").compile(r"net[_ -]?tie", __import__("re").I)
+
+
+def _no_copper(pd):
+    """A pad with no copper anywhere: an NPTH that flashes none, or one whose layers are all
+    technical (a paste-only pad, a footprint's cut-out marks)."""
+    lays = pd.layers or []
+    if lays and not any(ly.endswith(".Cu") for ly in lays):
+        return True
+    return _npth_without_copper(pd)
+
+
+def _npth_without_copper(pd):
+    """An NPTH pad whose copper is no larger than its hole (KiCad PAD::IsNPTHWithNoCopper):
+    the solder-mask test skips it."""
+    if pd.kind != "np_thru_hole":
+        return False
+    if not any(ly.endswith(".Cu") for ly in pd.layers or []):
+        return True          # no copper layer: it flashes nowhere
+    if tuple(pd.offset or (0.0, 0.0)) != (0.0, 0.0):
+        return False
+    w, h = pd.size
+    if pd.shape == "circle":
+        return w <= (pd.drill or 0.0) + 1e-9
+    if pd.shape == "oval":
+        sw, sh = pd.slot if pd.slot else (pd.drill, pd.drill)
+        return w <= max(sw, sh) + 1e-9 and h <= max(sw, sh) + 1e-9 and min(w, h) <= min(sw, sh) + 1e-9
+    return False
+
+
+def _custom_clearances(P):
+    """Parsable .kicad_dru clearance rules for pads: [(order, kind, pattern, min)], kind
+    'ref' | 'lib' | 'area'. A condition is a selector (A.memberOfFootprint('ref or lib:glob'),
+    A.intersectsArea('name'), A.Reference == 'glob') with optional Type/zone qualifiers that
+    do not exclude pads; anything else (track widths, nets, layers) is not applied."""
+    import re
+    out = []
+    rules = getattr(P.board, "rules", None)
+    sel = re.compile(r"^A\.(memberOfFootprint|intersectsArea)\('([^']+)'\)$|^A\.Reference\s*==\s*'([^']+)'$")
+    benign = re.compile(r"^[AB]\.[Tt]ype\s*!=\s*'Zone'$|^A\.Type\s*==\s*'[Pp]ad'$|^B\.Type\s*==\s*'[Pp]ad'$")
+    for n, rule in enumerate(getattr(rules, "custom", None) or []):
+        vals = [c["min"] for c in rule.get("constraints", []) if c.get("type") == "clearance"
+                and isinstance(c.get("min"), (int, float))]
+        if not vals:
+            continue
+        clauses = []
+        for c in (rule.get("condition") or "").split("&&"):
+            c = c.strip()
+            while c.startswith("(") and c.endswith(")") and c.count("(") == c.count(")"):
+                c = c[1:-1].strip()
+            clauses.append(c)
+        picks, ok = [], True
+        for c in clauses:
+            m = sel.match(c)
+            if m:
+                picks.append(m)
+            elif not benign.match(c):
+                ok = False
+        if not ok or len(picks) != 1:
+            continue
+        m = picks[0]
+        if m.group(3):
+            out.append((n, "ref", m.group(3), float(vals[0])))
+        elif m.group(1) == "intersectsArea":
+            out.append((n, "area", m.group(2), float(vals[0])))
+        else:
+            pat = m.group(2)
+            out.append((n, "lib" if ":" in pat else "ref", pat, float(vals[0])))
+    return out
+
+
 def _local_clr(pd):
     """A pad's local clearance override (pad or footprint level, KiCad's 'clearance'), 0 when
     the board model does not carry one."""
@@ -75,6 +146,8 @@ class ExactModel:
         self.P, self.st = P, st
         self.deflate = P.max_error
         self.clr_of = {}
+        # KiCad approximates arcs to max_error: a gap equal to the rule is legal
+        self.tol = max(1e-4, float(getattr(P, "max_error", 0.005) or 0.005))
         fbs = (getattr(P, "feedback", None) or {}).get("sep", {})
         rules = getattr(P.board, "rules", None)
         holes = [float(getattr(rules, k, 0.0) or 0.0) for k in ("hole_clearance", "hole_to_hole")] if rules else []
@@ -101,7 +174,18 @@ class ExactModel:
                     self.ko_owned.setdefault(oi, []).append(
                         (ko, sides, geom_to_lib(ko.outline, q.x0, q.y0, q.rot0, q.fp.side)))
         self.cuts = {p.i: edge_cut_polys(p.fp) for p in P.parts}
-        self.cs = {p.i: [self._copper_sides(pd, p.side) for pd in p.fp.pads] for p in P.parts}
+        # an NPTH pad that flashes no copper is no copper (KiCad skips it for clearance and
+        # shorting; its hole still counts for hole clearance)
+        self.cs = {p.i: [() if _no_copper(pd) else self._copper_sides(pd, p.side) for pd in p.fp.pads]
+                   for p in P.parts}
+        # custom clearance rules of the .kicad_dru for one footprint, library or rule area
+        # (pingdevkit: 0.17 mm for its 0201s, 0.1 mm in the 'BGA' area): they replace the
+        # netclass clearance for the parts they name
+        self.rules_clr = _custom_clearances(P)
+        self.areas = {ko.name: ko.outline for ko in (P.board.keepouts or []) if ko.name}
+        # net-tie footprints: their copper graphics may touch pads of the tie's nets
+        self.tie_nets = {p.i: {pd.net for pd in p.fp.pads if pd.net} for p in P.parts
+                         if _NET_TIE.search(p.fp.lib_id or "")}
         self.ms = {p.i: [mask_sides(pd) for pd in p.fp.pads] for p in P.parts}
         self.mm = {p.i: [mask_margin(P, pd) for pd in p.fp.pads] for p in P.parts}
         rules_ = getattr(P.board, "rules", None)
@@ -195,44 +279,68 @@ class ExactModel:
         boundary = outline.boundary
         e = P.edge_clearance
         ok_out = getattr(P.parts[i], "outside_ok", ())
+        edge_on = P.is_error("copper_edge_clearance")
+        e = getattr(P, "edge_by_ref", {}).get(P.parts[i].ref, e)   # a custom rule for this part
+        etol = 0.05      # kae.board polygonizes outline arcs: chords sit inside the true edge
         for geom, k, pd in A["pads"]:
             if k in ok_out:
                 continue        # a straddling part's outer pads (Problem._straddle_check)
             if not outline.contains(geom.centroid):
                 add("pad_outside", [i], pd.number)
-            elif e > 0 and geom.distance(boundary) < e - 1e-4:
+            elif not edge_on or _no_copper(pd):
+                continue
+            elif e > 0 and geom.distance(boundary) < e - etol:
                 add("copper_edge_clearance", [i], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
             elif not outline.contains(geom):
                 add("copper_edge_clearance", [i], f"{pd.number} crosses the edge")
-        for side in (0, 1):
+        for side in (0, 1) if edge_on else ():
             for g in A["gfx"]["cu"][side]:
                 if not outline.contains(g):
                     add("copper_edge_clearance", [i], "copper graphic crosses the edge")
-                elif e > 0 and g.distance(boundary) < e - 1e-4:
+                elif e > 0 and g.distance(boundary) < e - etol:
                     add("copper_edge_clearance", [i], f"copper graphic {g.distance(boundary):.3f}<{e}")
         for side, gm, net in getattr(P, "fixed_copper", []):
             for geom, k, pd in A["pads"]:
                 if side not in self.cs[i][k] or (net and pd.net == net):
                     continue
                 need = max(self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
-                if geom.distance(gm) < need - 1e-4:
+                if geom.distance(gm) < need - self.tol:
                     add("clearance", [i], f"pad {pd.number} vs fixed copper {net}")
         if self.mask_on and self.zones:
-            web = max(self.mask_web, 1e-4)
+            # KiCad (drc_test_provider_solder_mask.cpp, testMaskItemAgainstZones): the pad's copper
+            # against the zone's FILL, colliding closer than solder_mask_to_copper_clearance + the
+            # pad's mask expansion; a pad on the zone's net is skipped, a net-less pad is not, an
+            # NPTH pad without copper is never tested. The fill keeps the clearance rule's gap from
+            # the pad (zone, netclass and pad-local clearances), so the opening reaches copper only
+            # when s2c + expansion exceeds that gap (arcs approximated to max_error)
+            s2c = float(getattr(getattr(P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
+            tol = max(1e-6, float(getattr(P, "max_error", 0.005) or 0.005))
             for geom, k, pd in A["pads"]:
+                if _npth_without_copper(pd):
+                    continue
                 m = self.mm[i][k]
                 for net, sides, outline_z, zc in self.zones:
-                    if net == pd.net or not (sides & self.ms[i][k] & set(self.cs[i][k])):
+                    if (pd.net and net == pd.net) or not (sides & self.ms[i][k] & set(self.cs[i][k])):
                         continue
                     gap = max(zc, self._net_clr(pd.net), self._net_clr(net), _local_clr(pd))
-                    if m + web > gap + 1e-6 and outline_z.distance(geom) < m + 1e-6:
+                    if s2c + m > gap + tol and outline_z.distance(geom) < s2c + m + 1e-6:
                         add("solder_mask_bridge", [i], f"mask opening of pad {pd.number} over zone {net}")
                         break
+        # board-level mask apertures: simple apertures, a bridge only over two positive nets
+        web = max(self.mask_web, 1e-4)
+        s2c = float(getattr(getattr(P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
         for side, gm in getattr(P, "fixed_mask", []):
-            for geom, k, pd in A["pads"]:
-                if side in self.ms[i][k] and gm.distance(geom) - self.mm[i][k] < max(self.mask_web, 1e-4) - 1e-6:
-                    add("solder_mask_bridge", [i], f"pad {pd.number} under a board mask aperture")
-                    break
+            mine = {pd.net for geom, k, pd in A["pads"] if pd.net and side in self.cs[i][k]
+                    and not _npth_without_copper(pd) and gm.distance(geom) < s2c + web - 1e-6}
+            if not mine:
+                continue
+            nets = set(mine) | {net for net, sides, oz, _ in self.zones if side in sides and oz.intersects(gm)}
+            for j in self.neighbours(gm.bounds, skip=i):
+                B = self.sh[j]
+                nets |= {pd.net for geom, k, pd in B["pads"] if pd.net and side in self.cs[j][k]
+                         and not _npth_without_copper(pd) and gm.distance(geom) < s2c + web - 1e-6}
+            if len(nets) >= 2:
+                add("solder_mask_bridge", [i], f"a board mask aperture exposes nets {sorted(nets)[:3]}")
         for ko, sides, outline_k in self.ko_board:
             self._keepout(i, A, ko, sides, outline_k, add, None)
         for g, why in self.avoid.get(i, ()):
@@ -251,6 +359,27 @@ class ExactModel:
                 return
         if ko.pads and any(g.intersects(outline_k) for g, _, _ in A["pads"]):
             add("items_not_allowed", who, f"keepout {ko.name} (pads)")
+
+    def _aperture(self, rx, X, ry, Y, side, masks, add):
+        """KiCad's simple mask apertures (graphics on a mask layer, no copper): a bridge only
+        when an aperture exposes copper of two distinct positive nets (its footprint's pads,
+        the other part's pads, zones under it); net-less copper cannot bridge. Reported when
+        the other part's copper is among them."""
+        web = max(self.mask_web, 1e-4)
+        s2c = float(getattr(getattr(self.P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
+        for m in masks:
+            mine, theirs = set(), set()
+            for (Z, idx, out) in ((X, rx, mine), (Y, ry, theirs)):
+                for geom, k, pd in Z["pads"]:
+                    if pd.net and side in self.cs[idx][k] and not _npth_without_copper(pd) and \
+                            m.distance(geom) < s2c + web - 1e-6:
+                        out.add(pd.net)
+            if not theirs:
+                continue
+            nets = mine | theirs | {net for net, sides, oz, _ in self.zones if side in sides and oz.intersects(m)}
+            if len(nets) >= 2:
+                add("solder_mask_bridge", [rx, ry], f"mask graphic exposes nets {sorted(nets)[:3]}")
+                return
 
     def _pair(self, i, A, j, B, add):
         P = self.P
@@ -278,16 +407,17 @@ class ExactModel:
                     hnet = X["pads"][k][2].net
                     hloc = _local_clr(X["pads"][k][2])
                     for geom, l, pd in Y["pads"]:
-                        if hnet and pd.net == hnet:
+                        if (hnet and pd.net == hnet) or _no_copper(pd):
                             continue
-                        if hgeom.distance(geom) < max(hc, hloc, _local_clr(pd)) - 1e-4:
+                        if hgeom.distance(geom) < max(hc, hloc, _local_clr(pd)) - self.tol:
                             add("hole_clearance", [rx, ry], f"hole {X['pads'][k][2].number} - pad {pd.number}")
         if hh > 0 and P.is_error("hole_to_hole"):
             for ha, _ in A["holes"]:
                 for hb, _ in B["holes"]:
-                    if ha.distance(hb) < hh - 1e-4:
+                    if ha.distance(hb) < hh - self.tol:
                         add("hole_to_hole", [i, j], "holes")
         csi, csj = self.cs[i], self.cs[j]
+        rule = self._rule_clr(i, A, j, B)
         for side in (0, 1):
             pa = [(g, k, pd) for g, k, pd in A["pads"] if side in csi[k]]
             pb = [(g, k, pd) for g, k, pd in B["pads"] if side in csj[k]]
@@ -300,9 +430,10 @@ class ExactModel:
                 da, db = pa[a][2], pb[b][2]
                 if da.net and da.net == db.net:
                     continue
-                need = max(self._net_clr(da.net), self._net_clr(db.net), _local_clr(da), _local_clr(db))
+                base = rule if rule is not None else max(self._net_clr(da.net), self._net_clr(db.net))
+                need = max(base, _local_clr(da), _local_clr(db))
                 d = ga[a].distance(gb[b])
-                if d < need - 1e-4:
+                if d < need - self.tol:
                     add("clearance", [i, j], f"{da.number}-{db.number} {d:.3f}<{need:.3f}")
         # graphics: a mask aperture over another part's pads bridges them (KiCad's
         # solder_mask_bridge); copper graphics keep copper clearance
@@ -311,19 +442,18 @@ class ExactModel:
                 masks, cus = X["gfx"]["mask"][side], X["gfx"]["cu"][side]
                 if not masks and not cus:
                     continue
-                my = self.ms[ry]
+                if masks and self.mask_on:
+                    self._aperture(rx, X, ry, Y, side, masks, add)
+                ties = self.tie_nets.get(rx, ())
                 for geom, k, pd in Y["pads"]:
-                    if masks and self.mask_on and side in my[k] and \
-                            any(m.distance(geom) - self.mm[ry][k] < max(self.mask_web, 1e-4) - 1e-6 for m in masks):
-                        add("solder_mask_bridge", [rx, ry], f"mask graphic over pad {pd.number}")
-                    if side not in cy_[k]:
+                    if side not in cy_[k] or (pd.net and pd.net in ties):
                         continue
                     need = self._net_clr(pd.net)
-                    if cus and any(c.distance(geom) < need - 1e-4 for c in cus):
+                    if cus and any(c.distance(geom) < need - self.tol for c in cus):
                         add("clearance", [rx, ry], f"copper graphic near pad {pd.number}")
-                if cus and X is A:
+                if cus and X is A and not (ties and ties & self.tie_nets.get(ry, set())):
                     for c in cus:
-                        if any(c.distance(o) < P.clr_min - 1e-4 for o in Y["gfx"]["cu"][side]):
+                        if any(c.distance(o) < P.clr_min - self.tol for o in Y["gfx"]["cu"][side]):
                             add("clearance", [rx, ry], "copper graphics")
         # solder-mask apertures (pad + its mask expansion) of different nets closer than the
         # board's minimum mask web bridge (KiCad solder_mask_bridge)
@@ -341,7 +471,7 @@ class ExactModel:
                 near = shapely.dwithin(ga[:, None], gb[None, :], reach)
                 for a, b in zip(*np.nonzero(near)):
                     (_, ka, da), (_, kb, db) = pa[a], pb[b]
-                    if da.net and da.net == db.net:
+                    if (da.net and da.net == db.net) or _npth_without_copper(da) or _npth_without_copper(db):
                         continue
                     gap = ga[a].distance(gb[b]) - mmi[ka] - mmj[kb]
                     if gap < web - 1e-6:
@@ -351,7 +481,7 @@ class ExactModel:
             for cg in Y["cuts"]:
                 cb = cg.boundary
                 for geom, k, pd in X["pads"]:
-                    if geom.distance(cb) < e - 1e-4 or cg.contains(geom.centroid):
+                    if geom.distance(cb) < e - self.tol or cg.contains(geom.centroid):
                         add("copper_edge_clearance", [rx, ry], f"{pd.number} near a cut-out")
                 cyo = X["cy"].get(X["side"])
                 if cyo is not None and cyo.intersection(cg).area > AREA_EPS:
@@ -364,6 +494,29 @@ class ExactModel:
             ha, hb = self.hull(A), self.hull(B)
             if ha is not None and hb is not None and ha.distance(hb) < d - 1e-6:
                 add("kicad_feedback", [i, j], f"keep {d:.2f} mm apart (KiCad DRC)")
+
+    def _rule_clr(self, i, A, j, B):
+        """The custom clearance rule for a pair (the last matching rule in the file, as KiCad
+        evaluates them), or None for the netclass clearance."""
+        best = None
+        for order, kind, pat, value in self.rules_clr:
+            if self._matches(i, A, kind, pat) or self._matches(j, B, kind, pat):
+                if best is None or order > best[0]:
+                    best = (order, value)
+        return None if best is None else best[1]
+
+    def _matches(self, q, Q, kind, pat):
+        import fnmatch
+        p = self.P.parts[q]
+        if kind == "ref":
+            return fnmatch.fnmatchcase(p.ref, pat)
+        if kind == "lib":
+            return fnmatch.fnmatchcase(p.fp.lib_id or "", pat)
+        if kind == "area":
+            area = self.areas.get(pat)
+            h = self.hull(Q)
+            return area is not None and h is not None and h.intersects(area)
+        return False
 
     # ------------------------------------------------------------------ queries
     def check(self, parts=None, max_items=60):

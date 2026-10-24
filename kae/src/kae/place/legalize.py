@@ -636,7 +636,8 @@ def repair_kicad(P, st, violations, time_s=30.0, workers=2, seed=0, step_mm=0.1,
 
 # ----------------------------------------------------------------------------- exact shapes
 def pad_shape(p):
-    """A pad's copper as a library-frame polygon (rounded rectangles as rectangles)."""
+    """A pad's copper as a library-frame polygon (circles, ovals, rounded rectangles; other
+    shapes as their rectangle)."""
     w, h = p.size
     ox, oy = p.offset or (0.0, 0.0)
     c, s = transform.cos_sin(p.lrot)
@@ -656,6 +657,14 @@ def pad_shape(p):
     elif p.shape == "oval":
         cx, cy = lib(ox, oy)
         geom = Point(cx, cy).buffer(w / 2, quad_segs=8)
+    elif p.shape == "roundrect" and p.rratio > 0:
+        # KiCad's rounded rectangle: corner radius rratio x the shorter side (as rectangles
+        # the corners sat outside the copper; pingdevkit's 0402s read 0.191 mm apart, not 0.2)
+        r = min(0.5, float(p.rratio)) * min(w, h)
+        core = Polygon([(ox - w / 2 + r, oy - h / 2 + r), (ox + w / 2 - r, oy - h / 2 + r),
+                        (ox + w / 2 - r, oy + h / 2 - r), (ox - w / 2 + r, oy + h / 2 - r)])
+        loc = core.buffer(r, quad_segs=8) if r > 0 else core
+        geom = Polygon([lib(u, v) for u, v in loc.exterior.coords])
     else:
         geom = Polygon([lib(ox - w / 2, oy - h / 2), lib(ox + w / 2, oy - h / 2), lib(ox + w / 2, oy + h / 2),
                         lib(ox - w / 2, oy + h / 2)])

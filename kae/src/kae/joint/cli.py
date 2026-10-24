@@ -88,7 +88,7 @@ def main(argv=None):
     r.add_argument("output")
     r.add_argument("--time", type=float, default=900.0, help="wall seconds for everything")
     r.add_argument("--seed", type=int, default=0)
-    r.add_argument("--max-iters", type=int, default=12, help="repair iterations at most (0: staged pipeline only)")
+    r.add_argument("--max-iters", type=int, default=30, help="repair iterations at most (0: staged pipeline only)")
     r.add_argument("--no-modules", action="store_true", help="no module stage (kae place, then the bridge)")
     r.add_argument("--no-physics", action="store_true", help="placer without physics terms (ablation)")
     r.add_argument("--start", help="a placed board to start from instead of running the placer")

@@ -35,10 +35,10 @@ from .feedback import CongestionHistory, error_spots, physics_spots, plan_window
 from .scorecard import accept
 
 DEFAULTS = dict(
-    max_iters=12,          # repair iterations at most
+    max_iters=30,          # repair iterations at most
     max_attempts=2,        # tries of one window (each larger, with a higher congestion weight)
     margin=2.0,            # mm around a spot's parts (window_for_spot)
-    max_parts=8,           # movable parts per window
+    max_parts=6,           # movable parts per window
     max_part_share=0.35,   # ... and at most this share of the board's movable parts (at least 3)
     max_pins=12,           # first attempt: parts with more connected pads stay fixed (None: any part)
     history_amount=1.0,    # history added per failed connection's corridor bin (utilization units)
@@ -46,7 +46,7 @@ DEFAULTS = dict(
     route_share=0.6,       # share of what is left after placing and the module stage, for the first route
     reserve=25.0,          # seconds kept for the final write and DRC (at least 4 % of the budget)
     physics_spots=True,    # flagged modules make windows too
-    min_iter_s=120.0,      # an iteration is not started with less than this left
+    min_iter_s=60.0,       # an iteration is not started with less than this left
     iter_share=0.25,
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
     rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)       # one window's repair gets at most this share of the budget (at least 90 s)
@@ -178,15 +178,26 @@ class JointLoop:
                     for r in s.refs:
                         legal[r] = max(legal.get(r, 0.0), s.short_mm)
             budget = min(left(), max(o["min_iter_s"], o["iter_share"] * time_s))
-            cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
-                                   attempt=attempt, legal_refs=legal, drc=best_fb.get("drc"))
+            try:
+                cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
+                                       attempt=attempt, legal_refs=legal, drc=best_fb.get("drc"))
+            except Exception as e:  # noqa: BLE001 - one failed window must not lose the incumbent
+                import traceback
+                self.log(f"repair failed: {type(e).__name__}: {e}\n{traceback.format_exc(limit=6)}")
+                cand, rrep = None, dict(outcome=f"error: {type(e).__name__}: {e}")
             tries[base0.key] = attempt + 1
             if cand is None:
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=rrep.get("outcome"),
                                  seconds=round(time.monotonic() - t, 1), repair=rrep))
                 self.log(f"iter {it}: window {list(win.refs)}: {rrep.get('outcome')}")
                 continue
-            card, fb = st.evaluate(cand, it)
+            try:
+                card, fb = st.evaluate(cand, it)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"evaluate failed: {type(e).__name__}: {e}")
+                rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=f"evaluate error: {e}",
+                                 seconds=round(time.monotonic() - t, 1), repair=rrep))
+                continue
             self._history(hist, cand, fb)
             keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
             dt = time.monotonic() - t

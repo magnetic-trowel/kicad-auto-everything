@@ -576,6 +576,7 @@ def read_rules(pcb_path, tree=None):
         for f, key in _RULE_FIELDS.items():
             if rr.get(key) is not None:
                 setattr(r, f, float(rr[key]))
+        r.mask_to_copper = float(rr.get("solder_mask_to_copper_clearance") or 0.0)
         r.severities = {str(k): str(v) for k, v in (ds.get("rule_severities") or {}).items()
                         if v in ("error", "warning", "ignore")}
         r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]

@@ -241,7 +241,7 @@ class KaeStages:
             # a window: only its open connections, one fast pass (kae.route.incremental); the
             # loop's evaluate is the one DRC
             from kae.route.incremental import route_open
-            rep = route_open(locked, raw, seed=seed, time_s=min(time_s, float(self.opts.get("window_route_s", 45.0))),
+            rep = route_open(locked, raw, seed=seed, time_s=min(time_s, float(self.opts.get("window_route_s", 60.0))),
                              workdir=self.wd / f"it{it:02d}" / "incremental",
                              opts=dict(keep=bool(self.opts.get("keep")),
                                        passes=int(self.opts.get("window_passes", 1))),
@@ -343,13 +343,8 @@ class KaeStages:
         b = self._load(lay.board)
         parts = {}
         for fp in b.footprints:
-            box = None
-            try:
-                cy = transform.courtyard(fp)
-                if cy is not None and not cy.is_empty:
-                    box = cy.bounds
-            except Exception:
-                box = None
+            cy = _courtyard(fp)
+            box = cy.bounds if cy is not None else None
             if box is None:
                 xy = [transform.pad_xy(fp, p) for p in fp.pads] or [(fp.x, fp.y)]
                 box = (min(x for x, _ in xy) - 0.5, min(y for _, y in xy) - 0.5,
@@ -429,7 +424,7 @@ class KaeStages:
         redo = [] if (o.get("no_modules") or drop) else plan.redo
         rep["modules_dropped"] = sorted(plan.redo) if drop and not o.get("no_modules") else []
         mod = self.modules(mid, it, only=redo, window_parts=window.parts,
-                           time_s=min(float(o.get("module_time", 90.0)), max(5.0, 0.15 * left)))
+                           time_s=min(float(o.get("window_module_time", 20.0)), max(5.0, 0.15 * left)))
         rep["modules"] = mod.info.get("modules")
         left = time_s - (time.monotonic() - t0)
         min_route = 20.0 if o.get("window_router", "incremental") == "incremental" else 75.0
@@ -465,6 +460,18 @@ class KaeStages:
         return dict(moved=len(moved), output=str(output))
 
 
+def _courtyard(fp, *pose):
+    """A footprint's courtyard (or body) at a pose as one geometry, else None."""
+    from shapely.ops import unary_union
+
+    from kae.board import transform
+    polys = transform.courtyard(fp, *pose, which="extent")
+    if not polys:
+        return None
+    g = unary_union(polys)
+    return None if g.is_empty else g
+
+
 def _new_area(board, poses, grow=0.3):
     """The moved parts' footprints (courtyard, else pads) at their new poses, grown by
     `grow` mm: where their copper now is. None when nothing moved."""
@@ -478,11 +485,8 @@ def _new_area(board, poses, grow=0.3):
         fp = fp_of.get(u)
         if fp is None:
             continue
-        try:
-            cy = transform.courtyard(fp, x, y, rot, side)
-        except Exception:  # noqa: BLE001 - fall back to the pads
-            cy = None
-        if cy is not None and not cy.is_empty:
+        cy = _courtyard(fp, x, y, rot, side)
+        if cy is not None:
             geoms.append(cy.buffer(grow))
         for p in fp.pads:
             px, py = transform.pad_xy(fp, p, x, y, rot, side)
@@ -502,11 +506,8 @@ def _cover_moves(board, window, poses):
         fp = fp_of.get(u)
         if fp is None:
             continue
-        try:
-            cy = transform.courtyard(fp, x, y, rot, side)
-            b = cy.bounds if cy is not None and not cy.is_empty else None
-        except Exception:  # noqa: BLE001 - fall back to the pads
-            b = None
+        cy = _courtyard(fp, x, y, rot, side)
+        b = cy.bounds if cy is not None else None
         if b is None:
             xy = [transform.pad_xy(fp, p, x, y, rot, side) for p in fp.pads] or [(x, y)]
             b = (min(a for a, _ in xy) - 0.5, min(c for _, c in xy) - 0.5,

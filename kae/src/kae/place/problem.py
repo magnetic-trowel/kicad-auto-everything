@@ -280,8 +280,10 @@ def _on_own_copper(p, part_side):
     """The pad has copper on its footprint's side (no layers listed counts as yes)."""
     own = "F.Cu" if part_side == "F" else "B.Cu"
     lays = p.layers or []
-    if not any(ly.endswith(".Cu") for ly in lays):
+    if not lays:
         return True
+    if not any(ly.endswith(".Cu") for ly in lays):
+        return False         # paste-only or technical pads have no copper
     return any(ly == own or ly in ("*.Cu", "F&B.Cu") for ly in lays)
 
 
@@ -314,10 +316,33 @@ def fixed_copper(board):
     fixed copper a place task keeps. [(side, shapely geometry, net)]. From kae.board's
     Board.graphics (no net: clearance to every net); boards loaded without it are read with
     kae.board's S-expression parser (with nets, no text)."""
+    shapes = _fixed_copper_shapes(board)
+    return shapes
+
+
+def fixed_text(board):
+    """Board-level copper the shapes do not cover: copper text, whose kae.board box is an
+    estimate (an unexpanded ${REVISION} makes it longer than KiCad draws it). A grid obstacle
+    only: the exact check leaves text to KiCad's DRC in the loop. [(side, geometry, '')]."""
+    shapes = _fixed_copper_shapes(board)
+    if not isinstance(getattr(board, "graphics", None), dict):
+        return []
+    out = []
+    by_side = {0: [g for s, g, _ in shapes if s == 0], 1: [g for s, g, _ in shapes if s == 1]}
+    for ly in ("F.Cu", "B.Cu"):
+        side = 0 if ly == "F.Cu" else 1
+        cover = shapely.union_all(by_side[side]) if by_side[side] else None
+        for g in board.graphics.get(ly, ()):
+            if g.is_empty:
+                continue
+            if cover is not None and g.difference(cover.buffer(0.01)).area < 0.05 * g.area:
+                continue
+            out.append((side, g, ""))
+    return out
+
+
+def _fixed_copper_shapes(board):
     from pathlib import Path
-    if isinstance(getattr(board, "graphics", None), dict):
-        return [(0 if ly == "F.Cu" else 1, g, "") for ly in ("F.Cu", "B.Cu")
-                for g in board.graphics.get(ly, ()) if not g.is_empty]
 
     from kae.board import sexpr
     from kae.board.kicad_file import GR_SHAPES, shape_pieces
@@ -488,6 +513,8 @@ class Problem:
         P.angle_step = angle_step
         P._rules(board)
         P._severities(board)
+        if not P.is_error("copper_edge_clearance"):
+            P.edge_clearance = 0.0              # the project does not check copper against the edge
         # rule areas a footprint owns move with it (occupancy pieces of the part, see _part);
         # only board-level ones are fixed obstacles
         P._owned_keepouts = {}
@@ -530,10 +557,32 @@ class Problem:
         self.clearance = self.clr_max
         e = (r.edge_clearance if r else 0.0) or 0.0
         if r:
+            self.edge_by_ref = {}
+            pad_rule = None
             for rule in r.custom or []:
+                # only a rule for everything: a conditional one names tracks or one footprint
+                # (rocket-pcb's mounting holes, kobold's routed edge), not every pad; a rule for
+                # one footprint's items applies to that part
+                cond = (rule.get("condition") or "").strip()
+                if re.fullmatch(r"A\.Type\s*==\s*'[Pp]ad'", cond):
+                    # a rule for every pad replaces the board's edge clearance for them
+                    for c in rule.get("constraints", []):
+                        if c.get("type") == "edge_clearance" and isinstance(c.get("min"), (int, float)):
+                            pad_rule = float(c["min"])
+                    continue
+                if cond:
+                    m = re.fullmatch(r"A\.(?:intersectsCourtyard|memberOfFootprint)\('([^']+)'\)|A\.Reference\s*==\s*'([^']+)'",
+                                     cond)
+                    if m:
+                        for c in rule.get("constraints", []):
+                            if c.get("type") == "edge_clearance" and isinstance(c.get("min"), (int, float)):
+                                self.edge_by_ref[m.group(1) or m.group(2)] = max(0.0, float(c["min"]))
+                    continue
                 for c in rule.get("constraints", []):
                     if c.get("type") == "edge_clearance" and isinstance(c.get("min"), (int, float)):
                         e = max(e, float(c["min"]))
+        if r and pad_rule is not None:
+            e = pad_rule
         self.edge_clearance = e
         self.max_error = (r.max_error if r else 0.005) or 0.005
         self.netclass_clr = {}
@@ -966,13 +1015,11 @@ class Problem:
             for o in r.opp:
                 self._add_obstacle(1 - si, shift(o, p.x0, p.y0), f"locked {p.ref} (through)")
         self.fixed_copper = fixed_copper(board)
-        for side, gm, net in self.fixed_copper:
+        for side, gm, net in self.fixed_copper + fixed_text(board):
             for r in geom_cover_rects(gm.buffer(self.clr_max / 2), g):
                 self._add_obstacle(side, r, f"fixed copper {net or '(no net)'}")
+        # board-level mask apertures bridge only over two nets (exact check), not a grid obstacle
         self.fixed_mask = fixed_mask(board) if self.is_error("solder_mask_bridge") else []
-        for side, gm in self.fixed_mask:
-            for r in geom_cover_rects(gm, g):
-                self._add_obstacle(side, r, "fixed mask aperture")
         owners = {p.uuid for p in self.parts}
         for ko in board.keepouts if self.is_error("items_not_allowed") else ():
             if not (ko.footprints or ko.pads) or (ko.footprint and ko.footprint in owners):

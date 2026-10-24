@@ -298,6 +298,7 @@ class Rules(_Dict):
     severities: dict = field(default_factory=dict)  # DRC check -> 'error' | 'warning' | 'ignore' (.kicad_pro)
     mask_margin: float = 0.0         # board (setup) pad_to_mask_clearance: pads' default mask expansion
     mask_min_width: float = 0.0      # board (setup) solder_mask_min_width: thinner webs bridge
+    mask_to_copper: float = 0.0      # .kicad_pro solder_mask_to_copper_clearance (mask opening to other copper)
     mask_bridges_in_footprints: bool = False  # board (setup) allow_soldermask_bridges_in_footprints
     source: str = ""                 # where the numbers came from
 

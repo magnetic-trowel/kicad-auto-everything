@@ -153,3 +153,13 @@ def test_staged_baseline_has_no_iterations_and_no_modules():
     rep = _run(st, max_iters=0, modules=False)
     assert rep["stop"] == "iteration cap" and len(rep["iterations"]) == 1
     assert not [c for c in st.calls if c[0] == "modules"]
+
+
+def test_a_failing_window_does_not_lose_the_incumbent():
+    class Boom(FakeStages):
+        def repair(self, *a, **k):
+            raise RuntimeError("window exploded")
+    st = Boom(broken=("R1",))
+    rep = _run(st, max_attempts=1)
+    assert rep["final"]["unconnected"] == 1 and st.final.tag == "placed"
+    assert any("error" in (r.get("why") or "") for r in rep["iterations"][1:])

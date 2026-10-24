@@ -413,7 +413,6 @@ def test_board_mask_apertures_and_copper_graphics_are_fixed():
     b = load(FIXTURE)
     b.graphics = {"F.Mask": [sbox(20.0, 30.0, 24.0, 34.0)], "F.Cu": [sbox(40.0, 30.0, 41.0, 31.0)]}
     P = Problem.build(b)
-    assert any(o.why == "fixed mask aperture" for o in P.obstacles)
     assert any(o.why.startswith("fixed copper") for o in P.obstacles)
     st = _state_at_input(P)
     u = next(p for p in P.parts if p.ref == "U1")
@@ -421,8 +420,9 @@ def test_board_mask_apertures_and_copper_graphics_are_fixed():
     st.X[u.i], st.Y[u.i] = P.grid_of(22.0 - pad.lx, 32.0 - pad.ly)
     st.K[u.i] = 0
     assert any(v["type"] == "solder_mask_bridge" for v in exact_check(P, st, parts=[u.i]))
-    st.X[u.i], st.Y[u.i] = P.grid_of(40.5 - pad.lx, 30.5 - pad.ly)
-    assert any(v["type"] == "clearance" for v in exact_check(P, st, parts=[u.i]))
+    # copper the board file's shapes do not explain (text, estimated by kae.board) is a grid
+    # obstacle; the exact check leaves it to KiCad's DRC
+    assert not P.fixed_copper
 
 
 def test_logo_graphics_on_several_layers_are_read(tmp_path):

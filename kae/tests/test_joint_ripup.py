@@ -181,3 +181,15 @@ def test_local_ripup_with_moves_rips_only_at_old_pads_and_new_footprint():
     # the SIG1 track ends at U1's pin (12.5, 13.0) region... only items touching the old pads go
     assert set(plan.remove) <= {t.uuid for t in list(b.tracks) + list(b.vias) if t.net == "SIG1"}
     assert "00000000-0000-4000-8000-000000000160" not in plan.remove   # the GND via inside the window stays
+
+
+def test_courtyard_helper_and_geometry_use_courtyards():
+    from kae.joint.stages import _courtyard, _new_area
+    b = load(FIXTURE)
+    fp = next(f for f in b.footprints if f.ref == "U1")
+    cy = _courtyard(fp)
+    assert cy is not None and cy.area > 0
+    moved = _courtyard(fp, fp.x + 5.0, fp.y, fp.rot, fp.side)
+    assert abs(moved.bounds[0] - cy.bounds[0] - 5.0) < 1e-6
+    area = _new_area(b, {fp.uuid: (fp.x + 5.0, fp.y, fp.rot, fp.side)})
+    assert area.contains(moved.centroid)
