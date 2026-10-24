@@ -143,7 +143,9 @@ class Rules:
         cache = {}
         for o in self._others(net, other):
             oc = self._class(o)
-            key = oc.name if oc.name != rc.name else o
+            # a net's diff-pair complement has its own value (the pair's gap), which must not
+            # stand for the rest of its class
+            key = o if (oc.name == rc.name or C._coupled(net, o)) else oc.name
             if key in cache:
                 continue
             r = C.pair_clearances(self.info, self.rb, net, o, l, rc.widths[l], oc.widths[l], rc.via, oc.via)

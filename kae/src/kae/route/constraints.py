@@ -279,8 +279,21 @@ def plan(info, board_path, opts=None):
             nb = rbc.rep if a != b else ra.rep2
             if not na or not nb:
                 continue
+            # a coupled diff pair's clearance is its gap (KiCad's implicit "diff pair" rule),
+            # above or below the class clearance every other pair of the two classes needs
+            # (bms-c1: /BAT- and /BAT+ represented Default_2 x HV at 0.25 mm, and Freerouting
+            # laid /BAT- 0.28 mm from a /PACK+ via where KiCad wants HV's 0.3 mm): one coupled
+            # and one uncoupled pair of the two classes, when they have them, the strictest kept
+            pairs = [(na, nb)]
+            for want in (True, False):
+                if _coupled(na, nb) != want:
+                    alt = next(((x, y) for x in ra.nets for y in rbc.nets
+                                if x and y and x != y and _coupled(x, y) == want), None)
+                    if alt is not None:
+                        pairs.append(alt)
             for l in cu:
-                req[(a, b, l)] = pair_clearances(info, rb, na, nb, l, ra.widths[l], rbc.widths[l], ra.via, rbc.via)
+                rs = [pair_clearances(info, rb, x, y, l, ra.widths[l], rbc.widths[l], ra.via, rbc.via) for x, y in pairs]
+                req[(a, b, l)] = {k: max(r[k] for r in rs) for k in rs[0]}
     # same-net via pairs: hole-to-hole between two vias of one net (Freerouting has no
     # clearance within a net; recorded so the repair loop knows what to look for)
     for n in names:
@@ -316,6 +329,11 @@ def plan(info, board_path, opts=None):
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
     return p
+
+
+def _coupled(na, nb):
+    """Whether nets na and nb form a diff pair as KiCad matches them (AB.isCoupledDiffPair)."""
+    return bool(na and nb and R.diff_base(na) is not None and R.complement_net(na) == nb)
 
 
 def pair_clearances(info, rb, na, nb, layer, wa=None, wb=None, via_a=None, via_b=None):
