@@ -135,3 +135,14 @@ def test_rpm_shims(tmp_path):
     for bad in (b"", archive[:150]):
         r = subprocess.run([sys.executable, scripts / "cpio_extract.py", "-idum"], input=bad, cwd=tmp_path)
         assert r.returncode != 0
+
+
+def test_self_probe_returns_board_unchanged(tmp_path):
+    from kaebench import adapters
+    probe = adapters.make("self")
+    assert probe.name == "self" and probe.kinds == ("route",)
+    inp = tmp_path / "in"
+    inp.mkdir()
+    boardfiles.board_path(inp).write_text("(kicad_pcb)")
+    res = probe.run("route", inp, tmp_path / "w", 0, 10)
+    assert res.output.read_text() == "(kicad_pcb)"

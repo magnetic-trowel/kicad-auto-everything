@@ -231,7 +231,7 @@ def main(argv=None):
     sp.add_argument("-k", type=int, default=1, help="attempts per board (best-of-k)")
     sp.add_argument("--timeout", type=float, default=600, help="seconds per attempt")
     sp.add_argument("-j", "--jobs", type=int, default=1)
-    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting")
+    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting; 'self' scores the copper a joint place-and-route method wrote")
     sp.add_argument("--passes", type=int, help="freerouting: fixed -mp instead of the per-attempt schedule")
     sp.add_argument("--only")
     sp.add_argument("--splits", help="e.g. A,B")

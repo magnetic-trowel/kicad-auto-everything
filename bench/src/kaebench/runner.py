@@ -68,8 +68,11 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
                 pscore, placed_stats = score_place_task(task_dir, board_path(out_dir), adir / "score", rec)
                 row["score"] = pscore
                 if probe is not None and pscore["valid"]:
+                    # a self-routed placement starts from the place input, where nothing is connected
+                    start = (rec["tasks"]["place"]["input_drc"]["unconnected"] if probe.name == "self"
+                             else pscore["unconnected"])
                     row["probe"] = _probe(task_dir, rec, probe, out_dir, placed_stats,
-                                          pscore["unconnected"], attempt, timeout, adir)
+                                          start, attempt, timeout, adir)
         except Exception as e:
             row["status"] = "score_error"
             row["error"] = f"{type(e).__name__}: {e}"

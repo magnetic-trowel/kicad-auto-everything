@@ -59,6 +59,14 @@ class Noop(Adapter):
         return AdapterResult(board_path(out))
 
 
+class SelfRouted(Noop):
+    """Probe for joint place-and-route methods: the placer already routed its board, so
+    the probe scores that copper as is. Completion is measured against the place task's
+    input, where nothing is connected."""
+    name = "self"
+    kinds = ("route",)
+
+
 class Freerouting(Adapter):
     """Freerouting via Specctra DSN/SES with the pitfalls from docs/topics/kicad/specctra-freerouting-integration.md:
     single-threaded optimizer, SES placement block stripped, analytics off, best-of-k via pass schedule.
@@ -169,11 +177,13 @@ def make(name, command=None, passes=None):
         return Reference()
     if name == "noop":
         return Noop()
+    if name == "self":
+        return SelfRouted()
     if name == "freerouting":
         return Freerouting(passes=passes)
     if name == "freerouting-stock":
         return Freerouting(passes=passes, stock=True)
     if command:
         return Command(command, name=name)
-    raise ValueError(f"unknown adapter {name!r} (built-ins: reference, noop, freerouting; "
+    raise ValueError(f"unknown adapter {name!r} (built-ins: reference, noop, self, freerouting; "
                      "or pass --command for an external tool)")

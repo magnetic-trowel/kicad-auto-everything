@@ -100,6 +100,7 @@ The tool reads `{input}` (a `.kicad_pcb` with its project files beside it) and w
   - `legal`: no courtyard/clearance errors, every pad inside the board outline.
   - `hpwl_ratio` relative to the human placement.
   - With `--probe freerouting`, the placement is routed by a fixed router and scored like a route result, Cypress-style.
+  - With `--probe self`, a joint place-and-route method's own copper is scored as is; completion counts against the place input, where nothing is connected.
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
 
 ## Manifests
