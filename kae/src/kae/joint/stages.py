@@ -167,6 +167,8 @@ class KaeStages:
         if window_parts is not None:
             locked |= {fp.uuid for fp in board.footprints if fp.uuid not in set(window_parts)}
         t_mod = time_s if time_s is not None else float(self.opts.get("module_time", 90.0))
+        if time_s is None and self.opts.get("budget_s"):
+            t_mod = max(t_mod, 0.05 * float(self.opts["budget_s"]))   # a long budget: more module search
         try:
             sess = Session(lay.board, brief=brief, opts=dict(rails="none"), log=lambda m: None, board=board,
                            terms=self.terms)
@@ -422,13 +424,13 @@ class KaeStages:
         rep = dict(attempt=attempt)
         res = replace_window(board, window, self.brief, history=history, seed=seed,
                              time_s=min(float(o.get("replace_time", 25.0)), max(5.0, 0.2 * time_s)),
-                             cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** attempt),
+                             cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** min(attempt, 3)),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
                              bump_refs=bump_refs, margin=float(o.get("margin", 0.3)), legal_refs=legal_refs,
-                             legal_mm=float(o.get("legal_mm", 0.15)) * (1 + attempt), drc_report=drc,
+                             legal_mm=float(o.get("legal_mm", 0.15)) * (1 + min(attempt, 3)), drc_report=drc,
                              net_weights={n: float(o.get("net_mult", 2.0)) for sp in window.spots
                                           if sp.kind == "unrouted" for n in sp.nets},
-                             phys_mult=float(o.get("phys_mult", 2.0)) ** attempt,
+                             phys_mult=float(o.get("phys_mult", 2.0)) ** min(attempt, 2),
                              physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}
         if not res.poses and (window.parts or res.report.get("rejected")):
@@ -464,7 +466,8 @@ class KaeStages:
         left = time_s - (time.monotonic() - t0)
         # the last attempt at a window leaves its modules' nets to the bridge: their critical
         # copper and guards may be what blocks the corridor (acceptance prices the physics)
-        drop = attempt >= int(o.get("drop_modules_attempt", 1))
+        # odd attempts drop them, even attempts redo them (long budgets alternate)
+        drop = attempt >= int(o.get("drop_modules_attempt", 1)) and attempt % 2 == 1
         redo = [] if (o.get("no_modules") or drop) else plan.redo
         rep["modules_dropped"] = sorted(plan.redo) if drop and not o.get("no_modules") else []
         mod = self.modules(mid, it, only=redo, window_parts=window.parts,

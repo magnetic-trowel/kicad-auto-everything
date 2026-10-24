@@ -201,3 +201,28 @@ def test_second_finish_releases_module_copper_on_open_corridors():
     assert [r["finish"] for r in fin] == [True, "release"]
     assert fin[0]["accepted"] is False and fin[1]["accepted"] and fin[1]["released"] == ["m"]
     assert rep["final"]["unconnected"] == 0
+
+
+def test_longer_budgets_give_more_attempts_and_no_iteration_cap():
+    for budget, want in ((900.0, 2), (3600.0, 4), (9000.0, 7)):
+        st = FakeStages(broken=("R2",), bad=("R2",))
+        loop = JointLoop(st, opts=dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, finish=False))
+        rep = loop.run("out.kicad_pcb", time_s=budget, seed=5)
+        attempts = [c[4] for c in st.calls if c[0] == "repair"]
+        assert rep["max_attempts"] == want and attempts == list(range(want))
+        assert rep["stop"] == "no window left to try"
+
+
+def test_exhausted_windows_are_sampled_again_while_time_is_left():
+    import time as _t
+
+    class Slow(FakeStages):
+        def repair(self, *a, **k):
+            _t.sleep(0.02)
+            return super().repair(*a, **k)
+    st = Slow(broken=("R2",), bad=("R2",))
+    loop = JointLoop(st, opts=dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, finish=False,
+                                   max_attempts=1, min_cycle_s=0.01, max_iters=5))
+    rep = loop.run("out.kicad_pcb", time_s=1e6, seed=5)
+    seeds = [c[2] for c in st.calls if c[0] == "repair"]
+    assert len(seeds) == 5 and len(set(seeds)) == 5 and rep["cycles"] == 5   # new seeds each cycle

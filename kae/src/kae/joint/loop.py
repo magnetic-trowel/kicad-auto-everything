@@ -12,17 +12,18 @@ routed-physics recheck). Every later iteration:
    flags become spots (feedback); unrouted corridors also add to the congestion history,
    which persists across iterations whatever their outcome (PathFinder's history cost).
 2. **Window.** Spots are clustered into windows (feedback.plan_windows); the first window
-   that is not exhausted is repaired. A window that was tried and rejected is retried at
-   most `max_attempts` times, each time larger (margin x1.5) and with the congestion weight
-   x1.5 (annealed coupling).
+   that is not exhausted is repaired. A window that was tried and rejected is retried up to
+   `max_attempts` times (by default more with a longer budget), larger (margin x1.5, twice
+   at most) and with the congestion weight x1.5; an accepted window resets the count, since
+   the board changed (annealed coupling).
 3. **Repair.** stages.repair: re-place the window's parts, rip up the nets touching it, redo
    its modules, re-route with everything else locked.
 4. **Judge.** scorecard.accept against the incumbent: legality, completion and DRC must not
    get worse, routed physics must not get worse, and something must get better. Otherwise
    the incumbent stays (revert).
 
-Stops when the board is clean with nothing flagged, no window is left, `max_iters` is
-reached, or the time left (minus a reserve for the final write and DRC) is below what an
+Stops when the board is clean with nothing flagged, no window is left, `max_iters` (if set)
+is reached, or the time left (minus a reserve for the final write and DRC) is below what an
 iteration has been taking. Seeds of every stage derive from the run's seed and the
 iteration number, and windows are ordered deterministically, so the same seed gives the
 same result whenever no time budget binds (a time-bound stage stops at the clock).
@@ -35,8 +36,9 @@ from .feedback import CongestionHistory, error_spots, physics_spots, plan_window
 from .scorecard import accept
 
 DEFAULTS = dict(
-    max_iters=30,          # repair iterations at most
-    max_attempts=2,        # tries of one window (each larger, with a higher congestion weight)
+    max_iters=None,        # repair iterations at most (None: as many as the time allows)
+    max_attempts=None,     # tries of one window (each larger, with a higher congestion weight);
+                           # None: 2 + one per 30 min of budget (900 s: 2, 3600 s: 4, 9000 s: 7)
     margin=2.0,            # mm around a spot's parts (window_for_spot)
     max_parts=6,           # movable parts per window
     max_part_share=0.35,   # ... and at most this share of the board's movable parts (at least 3)
@@ -47,13 +49,15 @@ DEFAULTS = dict(
     reserve=25.0,          # seconds kept for the final write and DRC (at least 4 % of the budget)
     physics_spots=True,    # flagged modules make windows too
     min_iter_s=60.0,       # an iteration is not started with less than this left
-    iter_share=0.25,
+    iter_share=0.25,       # one window's repair gets at most this share of the budget (at least min_iter_s)
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
     rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)
     finish=True,           # a finishing stage: the full bridge over the whole board, critical copper locked
     finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
     finish_min_s=120.0,
-    finish_release=True,   # a second finishing try releases the module copper on open corridors       # one window's repair gets at most this share of the budget (at least 90 s)
+    finish_release=True,   # a second finishing try releases the module copper on open corridors
+    recycle=True,          # when every window is exhausted and time is left, sample them all again
+    min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
 )
 
 
@@ -63,8 +67,9 @@ def escalate(win, attempt, parts, bounds, o):
     they form."""
     if attempt <= 0:
         return win
-    ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** attempt),
-                      max_parts=o["max_parts"] + 2 * attempt, max_pins=None)
+    k = min(attempt, 2)          # windows stop growing after two escalations; seeds still differ
+    ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** k),
+                      max_parts=o["max_parts"] + 2 * k, max_pins=None)
     return ws[0] if ws else win
 
 
@@ -149,6 +154,9 @@ class JointLoop:
         self._history(hist, lay, fb)
         best, best_card, best_fb = lay, card, fb
         tries = {}
+        max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
+        rep["max_attempts"] = max_att
+        cycles, cycle_t0 = 0, time.monotonic()
         # a window costs far less than iteration 0 (local re-place, local rip-up, incremental
         # route): start from the minimum and learn from the windows themselves
         est = float(o["min_iter_s"])
@@ -159,7 +167,7 @@ class JointLoop:
                     and not best_card.flagged:
                 stop = "clean, nothing flagged"
                 break
-            if it >= o["max_iters"]:
+            if o["max_iters"] is not None and it >= o["max_iters"]:
                 stop = "iteration cap"
                 break
             if left_win() < est:
@@ -172,8 +180,17 @@ class JointLoop:
             o_win = dict(o, max_parts=cap)
             base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=cap,
                                             max_pins=o["max_pins"], merge_factor=1.0)
-                    if tries.get(w.key, 0) < o["max_attempts"]]
+                    if tries.get(w.key, 0) < max_att]
             if not base:
+                # every window tried max_att times: with time left, a new cycle samples them
+                # again under new seeds and the history so far (a long budget keeps searching);
+                # a cycle that took no time (nothing could be routed) ends it
+                if o["recycle"] and spots and time.monotonic() - cycle_t0 >= o["min_cycle_s"]:
+                    tries = {}
+                    cycles += 1
+                    cycle_t0 = time.monotonic()
+                    self.log(f"cycle {cycles}: all windows tried; again with new seeds")
+                    continue
                 stop = "no window left to try"
                 break
             # the least-tried window first, then by priority (plan_windows' order)
@@ -221,7 +238,9 @@ class JointLoop:
             if keep:
                 best, best_card, best_fb = cand, card, fb
                 self._geom = st.geometry(best)
+                tries = {}               # the board changed: earlier failures may now succeed
         rep["stop"] = stop
+        rep["cycles"] = cycles + 1
         # ---- finishing: the full bridge (repair rounds) over the whole board with the
         # critical copper locked, in the time reserved for it; judged by the same rule. If
         # connections stay open, a second try releases the critical copper of the modules on

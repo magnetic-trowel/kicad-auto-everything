@@ -6,14 +6,17 @@
 #   arms  staged     kae place, then the bridge (python -m kae.joint.cli run --max-iters 0 --no-modules)
 #         joint      the joint loop (module stage, windows, finishing stage)
 #         human-fr   the human placement routed by Freerouting (kaebench's human-freerouting)
-# Defaults: splits A,B (33 boards), k = 2 (seeds 0 and 1), 900 s per attempt, -j 20
-# (each attempt uses ~1-1.5 cores: Python, one Freerouting JVM thread, kicad-cli).
-# Worst case ~1 h: 66 attempts x 900 s / 20 for the loop, a few minutes for the others.
+# Defaults: splits A,B (33 boards), k = 2 (seeds 0 and 1), 3600 s per attempt (TIMEOUT; 9000
+# for the 10x sweep), -j 20 (each attempt uses ~1-1.5 cores: Python, one Freerouting JVM
+# thread, kicad-cli). The loop is time-driven: no iteration cap, more tries per window with a
+# longer budget, exhausted windows sampled again under new seeds, the finishing stage
+# reserved at 20 % of the budget, so it uses what it is given; boards that finish clean stop
+# early. Worst case per arm = 66 attempts x TIMEOUT / JOBS (3600 s: ~3.3 h; 9000 s: ~8.3 h).
 #
 #   tools/research/joint/run_joint_ab.sh TAG            # from the repo root, detached:
 #   tmux new -d -s joint 'tools/research/joint/run_joint_ab.sh v8 > kae-work/joint-ab-v8.log 2>&1'
 #
-# Env: WORKDIR (absolute; default $PWD/kae-work), JOBS (20), K (2), TIMEOUT (900), SPLITS (A,B),
+# Env: WORKDIR (absolute; default $PWD/kae-work), JOBS (20), K (2), TIMEOUT (3600), SPLITS (A,B),
 # ARMS ("staged joint human-fr"), KAE_PY (kae/.venv/bin/python), KB (bench/.venv/bin/kaebench).
 # The method's code is snapshotted to $WORKDIR/code/kae-joint-TAG (other agents keep editing
 # kae/), its numba cache pre-warmed outside the sandbox (read-only inside it).
@@ -21,7 +24,7 @@ set -euo pipefail
 TAG=${1:?usage: run_joint_ab.sh TAG}
 R=$(pwd)
 WORKDIR=${WORKDIR:-$R/kae-work}
-JOBS=${JOBS:-20}; K=${K:-2}; TIMEOUT=${TIMEOUT:-900}; SPLITS=${SPLITS:-A,B}
+JOBS=${JOBS:-20}; K=${K:-2}; TIMEOUT=${TIMEOUT:-3600}; SPLITS=${SPLITS:-A,B}
 ARMS=${ARMS:-"staged joint human-fr"}
 KAE_PY=${KAE_PY:-$R/kae/.venv/bin/python}
 KB=${KB:-$R/bench/.venv/bin/kaebench}
