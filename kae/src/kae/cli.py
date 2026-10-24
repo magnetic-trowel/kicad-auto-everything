@@ -191,6 +191,15 @@ def _kicad_loop(a, res, t0, write):
         left = t0 + 0.97 * float(a.time) - time.monotonic()
         rounds[-1]["repair"] = X.repair(P, st, time_s=max(3.0, min(120.0, 0.4 * left)), log=_log)
         rounds[-1]["repair"].pop("findings", None)
+        rep_r = rounds[-1]["repair"]
+        if X.silk_on(P) and (rep_r.get("moved") or rep_r.get("evicted") or rep_r.get("reseeds")):
+            # the repair re-placed parts without the silkscreen: the silk pass again (pic-
+            # programmer with its interface fixed: 40 parts evicted, 18 silk errors after)
+            try:
+                left = t0 + 0.97 * float(a.time) - time.monotonic()
+                rep_r["silk_fix"] = X.fix_silk(P, st, time_s=max(2.0, min(30.0, 0.15 * left)), log=_log)
+            except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+                rep_r["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
         poses = dict(res.poses)
         poses.update(st.poses())
         res.poses = poses
