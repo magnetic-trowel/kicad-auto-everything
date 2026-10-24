@@ -326,13 +326,17 @@ def ops_script():
 
 
 def run_ops(op, *args, timeout=600):
-    """Run a pcbnew operation in KiCad's Python; return its JSON result."""
+    """Run a pcbnew operation in KiCad's Python; return its JSON result. A run killed by a
+    signal with no result (KiCad crashes are sometimes transient) is retried once."""
     cmd = [*kicad_python(), ops_script(), op, *map(str, args)]
-    try:
-        r = run_measured(cmd, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        raise ToolError(f"pcbnew {op} timed out after {timeout}s")
-    lines = [ln for ln in r.stdout.splitlines() if ln.startswith("{")]
+    for retry in (True, False):
+        try:
+            r = run_measured(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise ToolError(f"pcbnew {op} timed out after {timeout}s")
+        lines = [ln for ln in r.stdout.splitlines() if ln.startswith("{")]
+        if lines or r.returncode >= 0 or not retry:
+            break
     if not lines:
         raise ToolError(f"pcbnew {op} produced no result (rc={r.returncode}): {r.stderr[-800:]}")
     res = json.loads(lines[-1])
@@ -354,12 +358,16 @@ def run_drc(board, out_json, timeout=None, stall=None):
     # absolute paths, so wrapped (containerised) kicad-cli does not depend on the cwd
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(Path(out_json).resolve()), str(board.resolve())]
-    try:
-        r = run_measured(cmd, timeout=timeout, cwd=board.parent, stall=stall or None)
-    except Stalled:
-        raise ToolError(f"DRC stalled: no CPU progress for {stall}s (KiCad hang)")
-    except subprocess.TimeoutExpired:
-        raise ToolError(f"DRC timed out after {timeout}s")
+    for retry in (True, False):
+        try:
+            r = run_measured(cmd, timeout=timeout, cwd=board.parent, stall=stall or None)
+        except Stalled:
+            raise ToolError(f"DRC stalled: no CPU progress for {stall}s (KiCad hang)")
+        except subprocess.TimeoutExpired:
+            raise ToolError(f"DRC timed out after {timeout}s")
+        # killed by a signal without a report: KiCad crashes are sometimes transient, retry once
+        if Path(out_json).exists() or r.returncode >= 0 or not retry:
+            break
     if not Path(out_json).exists():
         raise ToolError(f"DRC failed (rc={r.returncode}): {(r.stdout + r.stderr)[-800:]}")
     with open(out_json) as f:

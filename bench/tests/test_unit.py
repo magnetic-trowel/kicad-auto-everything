@@ -355,3 +355,39 @@ def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch
     flat = [str(x) for c in seen for x in (c if isinstance(c, list) else [c])]
     paths = [x for x in " ".join(flat).split() if x.endswith((".kicad_pcb", ".dsn", ".ses"))]
     assert paths and all(Path(x.strip("'")).is_absolute() for x in paths), paths
+
+
+def test_kicad_killed_by_a_signal_is_retried_once(tmp_path, monkeypatch):
+    """A pcbnew op or DRC that dies on a signal without a result runs once more; one that
+    exits normally without a result, or crashes twice, is still an error."""
+    calls = []
+
+    def flaky(cmd, **kw):
+        calls.append(cmd)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(cmd, -5, "", "Assert failure")
+        if "drc" in cmd:
+            Path(cmd[cmd.index("-o") + 1]).write_text('{"violations": []}')
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return subprocess.CompletedProcess(cmd, 0, '{"ok": true, "n": 1}\n', "")
+
+    monkeypatch.setattr(tools, "run_measured", flaky)
+    monkeypatch.setattr(tools, "kicad_python", lambda: ["py"])
+    monkeypatch.setattr(tools, "kicad_cli", lambda: ["kicad-cli"])
+    assert tools.run_ops("stats", "b")["n"] == 1 and len(calls) == 2
+    calls.clear()
+    assert tools.run_drc(tmp_path / "b.kicad_pcb", tmp_path / "d.json") == {"violations": []}
+    assert len(calls) == 2
+
+    calls.clear()
+    monkeypatch.setattr(tools, "run_measured",
+                        lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, -11, "", ""))
+    with pytest.raises(tools.ToolError):
+        tools.run_ops("stats", "b")
+    assert len(calls) == 2
+    calls.clear()
+    monkeypatch.setattr(tools, "run_measured",
+                        lambda cmd, **kw: calls.append(cmd) or subprocess.CompletedProcess(cmd, 1, "", ""))
+    with pytest.raises(tools.ToolError):
+        tools.run_ops("stats", "b")
+    assert len(calls) == 1
