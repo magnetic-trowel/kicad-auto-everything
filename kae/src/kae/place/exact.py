@@ -573,6 +573,49 @@ class ExactModel:
         return out
 
 
+# ----------------------------------------------------------------------------- order rules
+class OrderGuard:
+    """Protection-order rules (clusters.protection_order: ((conn, pads), (prot, pads),
+    (target, pads))) the repair must not break: a rule is broken when the protected part is
+    nearer the connector than the protection is, or nearer the protection than the connector
+    (Annealer.order_violations, no margin). Rules with a lifted (parked) member are not judged."""
+
+    def __init__(self, P, st, rules=None):
+        self.P, self.st = P, st
+        self.rules = list(rules if rules is not None else getattr(P, "order_rules", None) or [])
+        self.of = {}
+        for j, rule in enumerate(self.rules):
+            for (i, _) in rule:
+                self.of.setdefault(i, []).append(j)
+
+    def _c(self, i, pads):
+        xy = self.st.pins_xy(i)
+        return xy[pads].mean(axis=0) if len(pads) else xy.mean(axis=0)
+
+    def broken(self, j, lifted=()):
+        (ci, cp), (ti, tp), (ii, ip) = self.rules[j]
+        if ci in lifted or ti in lifted or ii in lifted:
+            return False
+        c, t, x = self._c(ci, cp), self._c(ti, tp), self._c(ii, ip)
+        d_ct = float(np.hypot(*(t - c)))
+        return d_ct > min(float(np.hypot(*(x - c))), float(np.hypot(*(x - t))))
+
+    def count(self, i, lifted=()):
+        return sum(1 for j in self.of.get(i, ()) if self.broken(j, lifted))
+
+    def count_at(self, i, X, Y, K, lifted=()):
+        st = self.st
+        saved = (st.X[i], st.Y[i], st.K[i])
+        st.X[i], st.Y[i], st.K[i] = X, Y, K
+        try:
+            return self.count(i, lifted)
+        finally:
+            st.X[i], st.Y[i], st.K[i] = saved
+
+    def total(self):
+        return sum(1 for j in range(len(self.rules)) if self.broken(j))
+
+
 # ----------------------------------------------------------------------------- repair
 def culprits(P, findings, allowed=None):
     """Movable parts to move for a list of findings, biggest first: a finding with one
@@ -655,17 +698,19 @@ def _tables(P, st, skip):
     return [sat(occ[0]), sat(occ[1])], pad
 
 
-def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=None):
+def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=None, guard=None):
     """Move part i to the nearest spot that is grid-free (others where they are) and exactly
     clean; with evict, else to the nearest exactly clean spot where it only covers smaller
     movable parts, which are then re-placed the same way. Returns (moved, evicted refs)."""
     p = P.parts[i]
     ks = list(range(len(p.rots)))
+    guard = guard if guard is not None else OrderGuard(P, st)
+    base = guard.count(i)          # a move may not break a protection-order rule that holds
     S, pad = _tables(P, st, {i})
     for c, X, Y, k in _candidates(P, st, i, S, pad, ks, w_rot, limit):
         if time.monotonic() > deadline:
             return False, []
-        if not E.findings_at(i, X, Y, k, first=True):
+        if not E.findings_at(i, X, Y, k, first=True) and guard.count_at(i, X, Y, k) <= base:
             E.set_pose(i, X, Y, k)
             return True, []
     if not evict:
@@ -682,11 +727,13 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=
         # bigger or fixed part, stays)
         if any(not (set(v["parts"]) - {i}) or not (set(v["parts"]) - {i}) <= small for v in f):
             continue
+        if guard.count_at(i, X, Y, k) > base:
+            continue
         out_parts = {q for v in f for q in v["parts"]} - {i}
         E.set_pose(i, X, Y, k)
         out = []
         for q in sorted(out_parts, key=lambda q: -P.parts[q].area):
-            move_clean(P, st, E, q, deadline, w_rot, limit, evict=False, allowed=allowed)
+            move_clean(P, st, E, q, deadline, w_rot, limit, evict=False, allowed=allowed, guard=guard)
             out.append(P.parts[q].ref)
         return True, out
     return False, []
@@ -702,6 +749,7 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
     back. A part with no such spot goes back where it was. Returns the parts that did."""
     order = [q for q in first if q in parts] + sorted([q for q in parts if q not in first],
                                                        key=lambda q: -P.parts[q].area)
+    guard = OrderGuard(P, st)
     home = {q: (int(st.X[q]), int(st.Y[q]), int(st.K[q])) for q in order}
     for q in order:
         E.set_pose(q, PARK, PARK, home[q][2])
@@ -726,6 +774,7 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
             if P.parts[q].area > 0.02 * board_area else []      # only a big part can shut a big one out
         first_clean = None
         tries = 0
+        guard_tries = 0
         if time.monotonic() < deadline:
             for c, X, Y, k in _candidates(P, st, q, S, pad, list(range(len(P.parts[q].rots))), w_rot, limit,
                                           edge=edge):
@@ -736,8 +785,11 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
                 E.set_pose(q, X, Y, k)
                 if first_clean is None:
                     first_clean = (X, Y, k)
-                ok = True
-                if big:
+                # keep its protection-order rules (with every member placed); when no spot nearby
+                # does, legality first
+                ok = guard.count(q, lifted) == 0 or guard_tries > 200
+                guard_tries += 1
+                if ok and big:
                     o2 = [o.copy() for o in occ]
                     stamp(o2, q)
                     S2 = [sat(o2[0]), sat(o2[1])]
@@ -787,6 +839,7 @@ def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
     scope = None if allowed is None else set(allowed)
     found = E.check(parts=scope, max_items=100000)
     rep = dict(start=len(found), rounds=0, moved=[], evicted=[], stuck=[])
+    order0 = OrderGuard(P, st).total()
     def local_rounds(found):
         for _ in range(rounds):
             if not found or time.monotonic() > deadline:
@@ -848,6 +901,7 @@ def repair(P, st, time_s=30.0, log=None, rounds=8, w_rot=4.0, allowed=None):
     rep["stuck_parts"] = sorted(left)
     rep["stuck"] = [P.parts[q].ref for q in rep["stuck_parts"]]
     rep["end"] = len(found)
+    rep["order_broken"] = [order0, OrderGuard(P, st).total()]      # protection-order rules, before/after
     rep["findings"] = found[:60]
     rep["seconds"] = round(time.monotonic() - t0, 2)
     if log:

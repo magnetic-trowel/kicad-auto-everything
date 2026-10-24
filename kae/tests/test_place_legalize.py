@@ -231,3 +231,45 @@ def test_exact_rules_follow_kicad_on_copperless_pads_roundrects_and_custom_rules
     E = exact.ExactModel(P, st)
     i, j = P.mov[0], P.mov[1]
     assert E._rule_clr(i, E.sh[i], j, E.sh[j]) in (0.05, None)
+
+
+def test_repair_keeps_protection_order():
+    """Regression (stickhub at fe68468): the closed loop's repair cleared a mask bridge by
+    moving a protection part to the far side of what it protects (4 of 7 rules broken).
+    A repair move or eviction may not break an order rule that holds."""
+    from shapely.geometry import Point
+    from kae.place import clusters, exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    ref = {p.ref: p for p in P.parts}
+    u = {r: p.uuid for r, p in ref.items()}
+    brief = {"structures": [
+        {"kind": "connector_chain", "connector": u["J1"], "pin": "1", "net": "VCC", "protected": True,
+         "protection": [u["U7"]], "chain": [[u["J1"], "1"], [u["U7"], "3"], [u["U1"], "3"]]}]}
+    P.order_rules = clusters.protection_order(P, brief)
+    E = exact.ExactModel(P, st)
+    # a chain that holds: U1 at a clean spot far from J1, U7 at the clean spot nearest J1
+    cx, cy = st.xy(ref["J1"].i)
+    guard = exact.OrderGuard(P, st)
+
+    def spots(i):
+        return [(X, Y, k) for c, X, Y, k in exact._candidates(P, st, i, *exact._tables(P, st, {i}),
+                                                              list(range(4)), 0.0, 4000)]
+    i1, i7 = ref["U1"].i, ref["U7"].i
+    far = sorted(spots(i1), key=lambda t: -abs(P.ox + t[0] * P.g - cx) - abs(P.oy + t[1] * P.g - cy))
+    for X, Y, k in far[:200]:
+        if not E.findings_at(i1, X, Y, k):
+            E.set_pose(i1, X, Y, k)
+            break
+    near = sorted(spots(i7), key=lambda t: abs(P.ox + t[0] * P.g - cx) + abs(P.oy + t[1] * P.g - cy))
+    for X, Y, k in near[:400]:
+        if not E.findings_at(i7, X, Y, k) and guard.count_at(i7, X, Y, k) == 0:
+            E.set_pose(i7, X, Y, k)
+            break
+    assert guard.total() == 0 and not exact_check(P, st)
+    # KiCad objects to U7 where it is: the repair must move it and keep the chain
+    x7, y7 = st.xy(ref["U7"].i)
+    P.feedback = {"sep": {}, "avoid": {ref["U7"].i: [(Point(x7, y7).buffer(1.0), "test")]}}
+    rep = exact.repair(P, st, time_s=30.0)
+    assert rep["end"] == 0 and "U7" in rep["moved"]
+    assert rep["order_broken"] == [0, 0]
