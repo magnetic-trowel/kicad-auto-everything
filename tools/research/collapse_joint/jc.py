@@ -138,7 +138,8 @@ class Collapse:
         self.bias = M.center_bias(self.kit, 0.05)
         self.kcache = {}
         self.hcache = {}
-        self.cutout = self._cutout_mask()
+        self.cut_parts = [p.idx for p in world.parts if p.data.get("edges")
+                          and any(len(self.cut_cells(p.idx, ri)) for ri in range(4))]
         self.trust = trust_mm
         self.pad_wire = pad_wire
         self.tension_beta = tension_beta
@@ -155,25 +156,81 @@ class Collapse:
         inside fixed footprints (the engine checks those only on the footprint's own side)."""
         key = (pi, ri)
         if key not in self.inside:
-            m = M._inside_map(self.w, self.kit, pi, ri)
-            if self.cutout.any():
-                cu = self.w.part_raster(self.w.parts[pi], ri)["cu"]
-                if len(cu):
-                    m &= corr(self.cutout, cu, pad_value=0.0) < 0.5
-            self.inside[key] = m
+            self.inside[key] = M._inside_map(self.w, self.kit, pi, ri)
         return self.inside[key]
 
-    def _cutout_mask(self):
-        w = self.w
-        mask = np.zeros((w.H, w.W), bool)
-        for pi, (cx, cy, ri) in w.pose.items():
+    def cut_cells(self, pi, ri):
+        """Cells (relative to the origin) of the board cutouts a footprint's own Edge.Cuts
+        enclose (a frame of lines becomes a hole in KiCad's outline), grown by the edge
+        clearance: no other part's pad copper may sit there."""
+        key = ("cut", pi, ri)
+        c = self.hcache.get(key)
+        if c is None:
+            from shapely.geometry import Polygon
+            from shapely.ops import unary_union
+            from raster import raster_poly
+            from world import ROTS, rot_pts
+            w = self.w
             part = w.parts[pi]
-            for ent in w.raster(pi)["pads"][len(part.pads):]:  # the footprint's own Edge.Cuts
-                c = ent["hT"]
+            edges = [np.array(e, float) for e in part.data.get("edges", []) if len(e) >= 3]
+            cells = []
+            if edges:
+                deg = ROTS[ri] if ri < 4 else part.rot0
+                u = unary_union([Polygon(rot_pts(e, deg)).buffer(0) for e in edges])
+                for gm in getattr(u, "geoms", [u]):
+                    for ring in getattr(gm, "interiors", []):
+                        cells.append(raster_poly(np.array(ring.coords)[:-1], w.R.ec, 0.0, 0.0, w.g))
+            c = self.hcache[key] = np.unique(np.concatenate(cells), axis=0).astype(np.int32) if cells \
+                else np.zeros((0, 2), np.int32)
+        return c
+
+    def cut_map(self, skip=None):
+        """Board cutouts of every placed footprint (but `skip`)."""
+        w = self.w
+        m = np.zeros((w.H, w.W), np.float32)
+        for q in self.cut_parts:
+            if q == skip or q not in w.pose:
+                continue
+            cx, cy, ri = w.pose[q]
+            c = self.cut_cells(q, ri)
+            xs, ys = c[:, 0] + cx, c[:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            m[ys[ok], xs[ok]] = 1.0
+        return m
+
+    def padcu_map(self, skip=None):
+        """Pad copper of every placed part (but `skip`)."""
+        w = self.w
+        m = np.zeros((w.H, w.W), np.float32)
+        for q, (cx, cy, ri) in w.pose.items():
+            if q == skip:
+                continue
+            c = w.raster(q)["cu"]
+            if len(c):
                 xs, ys = c[:, 0] + cx, c[:, 1] + cy
                 ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
-                mask[ys[ok], xs[ok]] = True
-        return mask
+                m[ys[ok], xs[ok]] = 1.0
+        return m
+
+    def cut_violation(self, pi):
+        if not self.cut_parts:
+            return 0
+        w = self.w
+        cx, cy, ri = w.pose[pi]
+        n = 0
+        cu = w.raster(pi)["cu"]
+        CM = self.cut_map(skip=pi)
+        if len(cu) and CM.any():
+            xs, ys = cu[:, 0] + cx, cu[:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            n += int((CM[ys[ok], xs[ok]] > 0).sum())
+        if pi in self.cut_parts:
+            c = self.cut_cells(pi, ri)
+            PM = self.padcu_map(skip=pi)
+            xs, ys = c[:, 0] + cx, c[:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            n += int((PM[ys[ok], xs[ok]] > 0).sum())
+        return n
 
     def holes(self, pi, ri):
         """Drill-hole cells of part pi (KiCad: no PTH/NPTH hole inside another courtyard,
@@ -257,7 +314,7 @@ class Collapse:
 
     def violation(self, pi):
         ov, out = self.w.part_violation(pi)
-        return ov + self.hole_violation(pi), out
+        return ov + self.hole_violation(pi), out + self.cut_violation(pi)
 
     def legal_map(self, pi, ri):
         L = self.kit.legal_map(pi, ri) & self.inside_map(pi, ri)
@@ -267,15 +324,31 @@ class Collapse:
             L &= corr(((w.court[0] > 0) | (w.court[1] > 0)).astype(np.float32), h, pad_value=0.0) < 0.5
         if len(side):
             L &= corr(self.hole_map(skip=pi), side, pad_value=0.0) < 0.5
+        if self.cut_parts:
+            L &= self.cut_cost(pi, ri) < 0.5
         return L
+
+    def cut_cost(self, pi, ri):
+        """Per origin: pad cells of pi in other footprints' cutouts + other pads in pi's."""
+        w = self.w
+        out = np.zeros((w.H, w.W))
+        cu = w.part_raster(w.parts[pi], ri)["cu"]
+        CM = self.cut_map(skip=pi)
+        if len(cu) and CM.any():
+            out += corr(CM, cu, pad_value=0.0)
+        if pi in self.cut_parts:
+            out += corr(self.padcu_map(skip=pi), self.cut_cells(pi, ri), pad_value=0.0)
+        return out
 
     def overlap_cells(self):
         w = self.w
         n = int(np.maximum(w.court.astype(np.int32) - 1, 0).sum())
-        Hm = None
         for q in self.kit.movable():
             if q in w.pose and self.holes(q, w.pose[q][2])[0].size:
                 n += self.hole_violation(q)
+        for q in self.cut_parts:
+            if q in w.pose:
+                n += self.cut_violation(q)
         return n
 
     def wire_conflicts(self):
@@ -412,6 +485,8 @@ class Collapse:
                 h, side = self.holes(pi, ri)
                 pairs += [(FC, h), (FH, side)]
                 c = c + F.corr(pairs)
+                if self.cut_parts:
+                    c = c + beta * self.cut_cost(pi, ri)
             yield ri, c, inside
 
     def best_response(self, pi, beta, CT, CV, per):
