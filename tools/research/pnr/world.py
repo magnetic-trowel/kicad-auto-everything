@@ -64,7 +64,7 @@ class Part:
     def __init__(self, idx, fp):
         self.idx = idx
         self.ref, self.uuid = fp["ref"], fp["uuid"]
-        self.locked = fp["locked"]
+        self.locked = fp["locked"] or fp.get("anchored", False)  # locked, or carries Edge.Cuts
         self.side = 1 if fp["back"] else 0
         self.x0, self.y0, self.rot0 = fp["x"], fp["y"], fp["rot"] % 360
         self.pads = fp["pads"]
@@ -311,9 +311,35 @@ class World:
                              cu=np.zeros((0, 2), np.int32), layers_halo=list(range(self.nl)),
                              hT=raster_poly(pl, R.ec + R.w / 2 + R.m, -fx, -fy, g),
                              hV=raster_poly(pl, R.ec + R.via_d / 2 + R.m, -fx, -fy, g)))
+        # the footprint's own rule areas (keep-outs) move with it: no-track / no-via areas are
+        # obstacles of no net for every net's wires and vias (KiCad items_not_allowed)
+        lids = [0 if l == 0 else (2 if l == self.nl - 1 else 4 + 2 * (l - 1)) for l in range(self.nl)]
+        kos = []
+        for ko in part.data.get("keepouts", []):
+            lay = [l for l in range(self.nl) if lids[l] in ko["layers"]]
+            for p_ in ko["poly"]:
+                if len(p_) < 3 or not lay:
+                    continue
+                pl = rot_pts(np.array(p_, float), deg)
+                kos.append((ko, lay, pl))
+                if not (ko["tracks"] or ko["vias"]):
+                    continue
+                none = np.zeros((0, 2), np.int32)
+                pads.append(dict(net=0, layers=[], npth=True, center=np.array([fx, fy]), cu=none,
+                                 layers_halo=lay,
+                                 hT=raster_poly(pl, R.w / 2 + R.m, -fx, -fy, g) if ko["tracks"] else none,
+                                 hV=raster_poly(pl, R.via_d / 2 + R.m, -fx, -fy, g) if ko["vias"] else none))
         # keep-out = courtyard, the part's own board cutouts, and its pads grown by half the
         # clearance (some library courtyards do not cover their pads)
         keep = {}
+        for ko, lay, pl in kos:  # other parts' pads / footprints may not enter its rule areas
+            cells = raster_poly(pl, 0.75 * g, -fx, -fy, g)
+            if ko["pads"]:
+                for l in lay:
+                    keep.setdefault(2 + l, []).append(cells)
+            if ko["footprints"]:
+                for side in {0 if l == 0 else 1 for l in lay if l in (0, self.nl - 1)}:
+                    keep.setdefault(side, []).append(cells)
         for pad in part.pads:
             drilled = bool(pad["drill"]) and max(pad["drill"]) > 0
             ex = max(0.0, (pad.get("clear") or 0.0) - R.c)  # local clearance beyond the board's

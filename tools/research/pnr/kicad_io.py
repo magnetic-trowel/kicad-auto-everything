@@ -100,6 +100,8 @@ def extract(path, out):
         # Record them in the footprint frame and take them off Edge.Cuts so the board
         # outline below is the board's own.
         edges = []
+        # the harness (task spec 5+) keeps footprints carrying Edge.Cuts where they are
+        anchored = fp.IsLocked() or any(g.GetLayer() == pcbnew.Edge_Cuts for g in fp.GraphicalItems())
         for item in fp.GraphicalItems():
             if item.GetLayer() == pcbnew.Edge_Cuts:
                 sp = pcbnew.SHAPE_POLY_SET()
@@ -107,6 +109,14 @@ def extract(path, out):
                 edges += poly_points(sp)
                 item.SetLayer(pcbnew.Cmts_User)
                 moved_edges.append(item)
+        # rule areas drawn inside a footprint (keep-outs) move with the part
+        fkos = []
+        for z in fp.Zones():
+            if z.GetIsRuleArea():
+                fkos.append(dict(layers=[l for l in z.GetLayerSet().CuStack()],
+                                 tracks=z.GetDoNotAllowTracks(), vias=z.GetDoNotAllowVias(),
+                                 pads=z.GetDoNotAllowPads(), footprints=z.GetDoNotAllowFootprints(),
+                                 poly=poly_points(z.Outline())))
         if hasattr(fp, "BuildCourtyardCaches"):
             fp.BuildCourtyardCaches()
         # courtyards on both sides (through-hole footprints often draw both)
@@ -123,9 +133,9 @@ def extract(path, out):
             rx, ry = rot(pd["x"], pd["y"], deg)
             worst = max(worst, abs(rx + mm(pos.x) - ax), abs(ry + mm(pos.y) - ay))
         fps.append(dict(ref=fp.GetReference(), uuid=fp.m_Uuid.AsString(), x=mm(pos.x), y=mm(pos.y),
-                        rot=deg, back=flipped, locked=fp.IsLocked(), pads=pads, courtyard=court,
+                        rot=deg, back=flipped, locked=fp.IsLocked(), anchored=anchored, pads=pads, courtyard=court,
                         courtyard_other=court_other,
-                        edges=edges))
+                        edges=edges, keepouts=fkos))
     outline = pcbnew.SHAPE_POLY_SET()
     board.GetBoardPolygonOutlines(outline, False)
     if outline.OutlineCount() == 0 and moved_edges:
