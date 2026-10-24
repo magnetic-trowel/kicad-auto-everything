@@ -109,6 +109,15 @@ class JointLoop:
             except Exception as e:  # noqa: BLE001 - the history still has the failures
                 self.log(f"rudy map failed: {type(e).__name__}: {e}")
 
+    def _save(self, st, lay, output, rep):
+        """Write the incumbent to OUTPUT now: a run killed later (an external timeout, a
+        stage overrunning its budget) still leaves its best board."""
+        try:
+            st.finish(lay, output)
+        except Exception as e:  # noqa: BLE001 - the final write tries again
+            self.log(f"interim write failed: {type(e).__name__}: {e}")
+            rep.setdefault("interim_write_errors", []).append(f"{type(e).__name__}: {e}")
+
     def _row(self, it, card, **kw):
         row = dict(iter=it, unconnected=card.unconnected, errors=card.errors, placement_errors=card.placement_errors,
                    physics=round(card.physics, 4), place_terms=None if card.place_terms is None else round(card.place_terms, 4),
@@ -156,6 +165,7 @@ class JointLoop:
         hist = CongestionHistory(self._geom[1], bin_mm=1.0)
         self._history(hist, lay, fb)
         best, best_card, best_fb = lay, card, fb
+        self._save(st, best, output, rep)
         tries = {}
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
@@ -244,6 +254,7 @@ class JointLoop:
                      f"{dt:.0f}s)")
             if keep:
                 best, best_card, best_fb = cand, card, fb
+                self._save(st, best, output, rep)
                 self._geom = st.geometry(best)
                 tries = {}               # the board changed: earlier failures may now succeed
                 cycle_kept += 1
@@ -272,7 +283,7 @@ class JointLoop:
             t = time.monotonic()
             try:
                 # the first try leaves time for the second one
-                share = 0.6 if (mode is None and len(tries_fin) > 1) else 1.0
+                share = 0.6 if (mode is None and len(tries_fin) > 1) else 0.85
                 cand = st.route(base, it, seed=derive_seed(seed, it), time_s=max(60.0, share * left()), finish=True)
                 card, fb = st.evaluate(cand, it)
                 keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
@@ -290,6 +301,7 @@ class JointLoop:
                      f"({why}, {dt:.0f}s)")
             if keep:
                 best, best_card, best_fb = cand, card, fb
+                self._save(st, best, output, rep)
         rep["final"] = best_card.to_dict()
         rep["initial"] = rows[0] if rows else None
         rep["accepted"] = sum(1 for r in rows[1:] if r.get("accepted"))

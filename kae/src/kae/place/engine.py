@@ -64,7 +64,7 @@ Eng = namedtuple("Eng", [
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
     "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
     "La", "Lr", "Lw",
-    "Sside", "Sext", "Ssr", "Sns", "Str", "Snt",
+    "Sside", "Sext", "Ssr", "Sns", "Str", "Snt", "Scl", "Swt", "Tcl",
 ])
 
 
@@ -415,15 +415,15 @@ def _lab_part(E, i):
 def _silk_pair(E, i, j):
     """Silk overlap of parts i and j (anneal.Annealer._silk_pair), cells^2."""
     if E.Sside[i] < 0 or E.Sside[j] != E.Sside[i]:
-        return 0
+        return 0.0
     dx = E.X[i] - E.X[j]
     dy = E.Y[i] - E.Y[j]
     lim = E.Sext[i] + E.Sext[j]
     if dx > lim or -dx > lim or dy > lim or -dy > lim:
-        return 0
+        return 0.0
     ki = E.K[i]
     kj = E.K[j]
-    tot = 0
+    tot = 0.0
     for side in range(2):
         if side == 0:
             a, b, ka, kb, ox, oy = i, j, ki, kj, dx, dy
@@ -434,13 +434,17 @@ def _silk_pair(E, i, j):
             a1 = E.Ssr[a, ka, p, 1] + ox
             c0 = E.Ssr[a, ka, p, 2] + oy
             c1 = E.Ssr[a, ka, p, 3] + oy
+            ca = E.Scl[a, ka, p]
+            wa = E.Swt[a, ka, p]
             for q in range(E.Snt[b, kb]):
+                if E.Tcl[b, kb, q] != ca:
+                    continue
                 w = min(a1, E.Str[b, kb, q, 1]) - max(a0, E.Str[b, kb, q, 0])
                 if w <= 0:
                     continue
                 h = min(c1, E.Str[b, kb, q, 3]) - max(c0, E.Str[b, kb, q, 2])
                 if h > 0:
-                    tot += w * h
+                    tot += wa * w * h
     return tot
 
 
@@ -448,8 +452,8 @@ def _silk_pair(E, i, j):
 def _silk(E, S, ns, stamp_s):
     """Silk overlap of parts S[:ns] with the others and among themselves."""
     if E.fp[F_WSILK] == 0.0:
-        return 0
-    tot = 0
+        return 0.0
+    tot = 0.0
     n = len(E.Sside)
     for a in range(ns):
         i = S[a]
@@ -1037,15 +1041,23 @@ def build(ann, hash_cap=None):
     Str = np.zeros((n, kmax, MS, 4), np.int64)
     Sns = np.zeros((n, kmax), np.int64)
     Snt = np.zeros((n, kmax), np.int64)
+    Scl = np.zeros((n, kmax, MS), np.int64)
+    Tcl = np.zeros((n, kmax, MS), np.int64)
+    Swt = np.zeros((n, kmax, MS))
     for i, (sd, srs, trs) in silk.items():
         Sside[i] = sd
         ext = 0
         for k in range(min(kmax, len(srs))):
-            for arr, cnt, rs in ((Ssr, Sns, srs[k]), (Str, Snt, trs[k])):
-                cnt[i, k] = len(rs)
-                for q, r in enumerate(rs):
-                    arr[i, k, q] = r
-                    ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
+            Sns[i, k] = len(srs[k])
+            for q, r in enumerate(srs[k]):
+                Ssr[i, k, q] = r[:4]
+                Scl[i, k, q], Swt[i, k, q] = r[4], r[5]
+                ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
+            Snt[i, k] = len(trs[k])
+            for q, r in enumerate(trs[k]):
+                Str[i, k, q] = r[:4]
+                Tcl[i, k, q] = r[4]
+                ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
         Sext[i] = ext
     E = Eng(
         ip=ip, fp=fp, tot=np.zeros(7),
@@ -1074,7 +1086,7 @@ def build(ann, hash_cap=None):
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
         turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
         La=La, Lr=Lr, Lw=Lw,
-        Sside=Sside, Sext=Sext, Ssr=Ssr, Sns=Sns, Str=Str, Snt=Snt,
+        Sside=Sside, Sext=Sext, Ssr=Ssr, Sns=Sns, Str=Str, Snt=Snt, Scl=Scl, Swt=Swt, Tcl=Tcl,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:

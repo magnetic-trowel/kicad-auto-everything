@@ -61,6 +61,7 @@ class Result:
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
 SILK_W = 1.0     # the annealer's silkscreen term (silk_on projects): overlap / mean part area
+CHAN_W = 0.0     # the annealer's routing-channel term (pad halos overlapping / mean part area)
 
 
 def _default_workers():
@@ -391,12 +392,21 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             if kw["labels"]:
                 rep["labels"] = dict(associations=len(assoc), kinds=list(kinds), anchored=len(kw["labels"]),
                                      w_label=kw["w_label"])
-        if exactmod.silk_on(P) and float(kw.get("w_silk", SILK_W) or 0.0) > 0:
-            # silkscreen where the project makes it an error: a soft term on KiCad's glyphs
+        # soft overlaps: silkscreen where the project makes it an error (on KiCad's glyphs) and
+        # routing channels between parts' pads (kae.place.exact.channel_grid)
+        w_silk = float(kw.pop("w_silk", SILK_W) or 0.0)
+        w_chan = float(kw.pop("w_chan", CHAN_W) or 0.0)
+        grids = []
+        if exactmod.silk_on(P) and w_silk > 0:
             rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
-            kw.setdefault("w_silk", SILK_W)
-            kw["silk"] = exactmod.silk_grid(P)
-            rep["silk_term"] = dict(parts=len(kw["silk"]), w_silk=kw["w_silk"])
+            grids.append(exactmod.silk_grid(P, weight=w_silk))
+            rep["silk_term"] = dict(parts=len(grids[-1]), w_silk=w_silk)
+        if w_chan > 0:
+            grids.append(exactmod.channel_grid(P, weight=w_chan))
+            rep["channel_term"] = dict(parts=len(grids[-1]), w_chan=w_chan)
+        if grids:
+            kw["silk"] = exactmod.soft_grid(*grids)
+            kw["w_silk"] = 1.0
         ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
                             log=log, **kw)
         if anneal_args:

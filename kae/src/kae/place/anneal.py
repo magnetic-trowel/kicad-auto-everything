@@ -12,8 +12,9 @@ tools/research/solver-bench/sa_place.py):
          + w_disp * displacement     L1 distance from the seed / (parts * mean part size)
          + w_label * labels          parts named by board silk labels, L1 beyond a dead zone
                                      from their label (kae.place.labels)
-         + w_silk * silkscreen       overlap of a part's silk with other silk and pad mask
-                                     openings / mean part area (silk_on projects only)
+         + w_silk * soft overlaps    silkscreen (silk over other silk and pad mask openings,
+                                     silk_on projects) and routing channels (pad halos of
+                                     two parts overlapping), weighted / mean part area
          + w_order * order           protection order of protected connector chains (a rule:
                                      the TVS nearer the connector than the protected part),
                                      violation distance / mean part size
@@ -200,9 +201,11 @@ class Annealer:
         # ---- labels (kae.place.labels.anchors): {i: (per-rotation target origins [(X, Y)], dead
         # zone in cells, weight)}: the part's labelled pads beside their board silk label
         self.labels = {i: a for i, a in (labels or {}).items() if i in self.movset} if w_label > 0 else {}
-        # ---- silkscreen (kae.place.exact.silk_grid; silk_on projects): {i: (side, silk rects
-        # per rotation, target rects per rotation)}: overlap area of a part's silk with the
-        # other parts' silk and pad mask openings, / mean part area
+        # ---- soft overlaps (kae.place.exact.soft_grid): {i: (side, source rects per rotation,
+        # target rects per rotation)}, rects classed: silkscreen (silk_on projects: a part's silk
+        # over other silk and pad mask openings) and routing channels (pad halos: no track
+        # between two parts' pads closer than track + 2 clearance); weighted overlap / mean
+        # part area
         self.silk = dict(silk or {}) if w_silk > 0 else {}
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label,
                       silk=w_silk)
@@ -385,30 +388,34 @@ class Annealer:
         return sum(abs(self.X[i] - self.Xs[i]) + abs(self.Y[i] - self.Ys[i]) for i in S)
 
     def _silk_pair(self, i, j):
+        """Soft overlap of parts i and j: each source rect (a, b, c, d, class, weight) of one
+        against the target rects (a, b, c, d, class) of the other of the same class."""
         a, b = self.silk.get(i), self.silk.get(j)
         if a is None or b is None or a[0] != b[0]:
-            return 0
+            return 0.0
         Xi, Yi, Xj, Yj = self.X[i], self.Y[i], self.X[j], self.Y[j]
         si, ti = a[1][self.K[i]], a[2][self.K[i]]
         sj, tj = b[1][self.K[j]], b[2][self.K[j]]
-        tot = 0
+        tot = 0.0
         for (A, B, dx, dy) in ((si, tj, Xi - Xj, Yi - Yj), (sj, ti, Xj - Xi, Yj - Yi)):
-            for (a0, a1, c0, c1) in A:
-                for (b0, b1, d0, d1) in B:
+            for (a0, a1, c0, c1, ca, wa) in A:
+                for (b0, b1, d0, d1, cb) in B:
+                    if ca != cb:
+                        continue
                     w = min(a1 + dx, b1) - max(a0 + dx, b0)
                     if w <= 0:
                         continue
                     h = min(c1 + dy, d1) - max(c0 + dy, d0)
                     if h > 0:
-                        tot += w * h
+                        tot += wa * w * h
         return tot
 
     def _silk(self, S):
         """Silk overlap of parts S with every other part (and among themselves), cells^2."""
         if not self.silk:
-            return 0
+            return 0.0
         Sset = set(S)
-        tot = 0
+        tot = 0.0
         for n, i in enumerate(S):
             if i not in self.silk:
                 continue

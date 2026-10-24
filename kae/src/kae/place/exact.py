@@ -1265,14 +1265,26 @@ def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.1, w_ro
     return rep
 
 
-def silk_grid(P, max_rects=8):
+def _grid_rects(P, p, rects, rot):
+    g = P.g
+    from .problem import rot_rect_any
+    out = []
+    for r in rects:
+        x0, y0, x1, y1 = rot_rect_any(r, rot, p.s)
+        gr = (int(round(x0 / g)), int(round(x1 / g)), int(round(y0 / g)), int(round(y1 / g)))
+        if gr[1] > gr[0] and gr[3] > gr[2]:
+            out.append(gr)
+    return out
+
+
+def silk_grid(P, max_rects=8, weight=1.0):
     """The annealer's silkscreen model (a soft term, silk_on projects): per part, on its own
     side, its silk as grid rectangles (graphics and texts, glyphs once refine_silk_text ran)
     and what other silk may not overlap (its silk and its pads' mask openings), per
     rotation, in cells from the origin, rounded to the nearest cell (adjacent parts do not
-    overlap by rounding). {i: (side, [silk rects per rotation], [target rects per rotation])}."""
-    from .problem import _cluster_rects, pad_lib_rect, rot_rect_any
-    g = P.g
+    overlap by rounding). {i: (side, [source rects (a, b, c, d, class 0, weight) per
+    rotation], [target rects (a, b, c, d, class 0) per rotation])}."""
+    from .problem import _cluster_rects, pad_lib_rect
     out = {}
     for p in P.parts:
         fp = p.fp
@@ -1290,16 +1302,57 @@ def silk_grid(P, max_rects=8):
             continue
         sr = _cluster_rects(silk, max_n=max_rects) if silk else []
         tr = _cluster_rects(list(silk) + masks, max_n=max_rects)
+        out[p.i] = (si, [[r + (0, weight) for r in _grid_rects(P, p, sr, rt.rot)] for rt in p.rots],
+                    [[r + (0,) for r in _grid_rects(P, p, tr, rt.rot)] for rt in p.rots])
+    return out
 
-        def grid(rects, rot):
-            outr = []
-            for r in rects:
-                x0, y0, x1, y1 = rot_rect_any(r, rot, p.s)
-                gr = (int(round(x0 / g)), int(round(x1 / g)), int(round(y0 / g)), int(round(y1 / g)))
-                if gr[1] > gr[0] and gr[3] > gr[2]:
-                    outr.append(gr)
-            return outr
-        out[p.i] = (si, [grid(sr, r.rot) for r in p.rots], [grid(tr, r.rot) for r in p.rots])
+
+def channel_grid(P, weight=1.0, max_rects=8):
+    """The annealer's routing-channel model: each part's pads on its own side grown by half
+    of what a track needs to pass between two parts' pads (track + 2 clearance, less the
+    clearance the legality rectangles already keep), as up to `max_rects` grid rectangles
+    per rotation. Two parts' halos overlapping is a channel no track fits through: on the
+    dense sensor boards (paw3395, pmw3610) our placements had 33 / 12 / 7 such pad gaps
+    against the human's 8 / 8 / 1, and routed worse. Class 1 rects, as silk_grid."""
+    from .legalize import _copper_sides
+    from .problem import _cluster_rects, pad_lib_rect
+    rules = getattr(P.board, "rules", None)
+    nc = (getattr(rules, "netclasses", None) or {}).get("Default") if rules is not None else None
+    track = float(getattr(nc, "track_width", 0.0) or (rules.track_min if rules and rules.track_min else 0.2))
+    clr = float(getattr(nc, "clearance", 0.0) or P.clr_min or 0.2)
+    halo = (track + 2 * clr) / 2.0
+    out = {}
+    for p in P.parts:
+        if not p.fp.pads:
+            continue
+        si = 0 if p.s > 0 else 1
+        rs = []
+        for pd in p.fp.pads:
+            own = si in _copper_sides(pd, p.side)
+            r = pad_lib_rect(pd)
+            if r is None or not own or _no_copper(pd):
+                continue
+            rs.append((r[0] - halo, r[1] - halo, r[2] + halo, r[3] + halo))
+        if not rs:
+            continue
+        cl = _cluster_rects(rs, max_n=max_rects)
+        out[p.i] = (si, [[r + (1, weight) for r in _grid_rects(P, p, cl, rt.rot)] for rt in p.rots],
+                    [[r + (1,) for r in _grid_rects(P, p, cl, rt.rot)] for rt in p.rots])
+    return out
+
+
+def soft_grid(*grids):
+    """Merge silk_grid / channel_grid outputs part by part (same side)."""
+    out = {}
+    for gr in grids:
+        for i, (sd, srs, trs) in gr.items():
+            if i not in out:
+                out[i] = (sd, [list(x) for x in srs], [list(x) for x in trs])
+            else:
+                o = out[i]
+                for k in range(len(srs)):
+                    o[1][k] += srs[k]
+                    o[2][k] += trs[k]
     return out
 
 

@@ -109,6 +109,7 @@ class FakeStages:
         return new
 
     def finish(self, lay, out):
+        self.writes = getattr(self, "writes", 0) + 1
         self.final = lay
         return dict(output=str(out))
 
@@ -232,3 +233,10 @@ def test_exhausted_windows_are_sampled_again_while_time_is_left():
                                      max_attempts=1, min_cycle_s=0.01))
     rep2 = loop2.run("out.kicad_pcb", time_s=1e6, seed=5)
     assert rep2["stop"] == "no improvement (cycle 1)" and len([c for c in st2.calls if c[0] == "repair"]) == 2
+
+
+def test_incumbent_is_written_after_every_acceptance():
+    st = FakeStages(broken=("R1", "R2"))
+    rep = _run(st)
+    kept = sum(1 for r in rep["iterations"][1:] if r.get("accepted"))
+    assert st.writes == 1 + kept + 1            # iteration 0, each kept window, the final write
