@@ -159,39 +159,32 @@ def case_bubble3():
 
 
 def case_corner():
-    H, W = 240, 300
-    alive = np.zeros((H + 20, W + 20), bool)
-    alive[10:-10, 10:-10] = True
+    """Quarter disc: radius R = sqrt(4A/pi) about the corner, 90 deg at both walls."""
+    H, W, pad = 240, 300, 10
+    alive = np.zeros((H + 2 * pad, W + 2 * pad), bool)
+    alive[pad:-pad, pad:-pad] = True
     lab = np.full(alive.shape, 1)
-    lab[10:90, 10:90] = 0
-    A = np.pi * 90 ** 2 / 4
+    lab[pad:pad + 80, pad:pad + 80] = 0
+    R = 90.0
+    A = np.pi * R ** 2 / 4
     lab, lam = run(alive, 2, lab, [A, np.nan])
-    pts = geom.interface_points(lab, 0, 1)
-    pts = pts[(pts[:, 0] > 14) & (pts[:, 1] > 14)]
-    cx, cy, r, rms = geom.fit_circle(pts)
-    # contact angles: tangent of the fitted circle where it meets the walls x=9.5, y=9.5
-    wall = 9.5
-    res = dict(r=r, r_theory=np.sqrt(4 * A / np.pi), centre=[cx - wall, cy - wall], rms=rms)
+    wall = pad - 0.5
+    pts = geom.interface_points(lab, 0, 1, purity=0.0)
+    pts = pts[(pts[:, 0] > wall) & (pts[:, 1] > wall) & (pts[:, 0] < wall + 1.5 * R)
+              & (pts[:, 1] < wall + 1.5 * R)]
+    rr = np.linalg.norm(pts - wall, axis=1)
     out = []
-    for axis in (0, 1):  # meeting wall y=wall (axis 1 coordinate fixed) and x=wall
-        if axis == 0:  # top wall y = wall: intersection x
-            dy = wall - cy
-            x = cx + np.sqrt(max(r * r - dy * dy, 0))
-            P = np.array([x, wall])
-            wall_dir = np.array([1.0, 0.0])
-        else:
-            dx = wall - cx
-            y = cy + np.sqrt(max(r * r - dx * dx, 0))
-            P = np.array([wall, y])
-            wall_dir = np.array([0.0, 1.0])
-        rad = P - np.array([cx, cy])
-        t = np.array([-rad[1], rad[0]]) / np.linalg.norm(rad)
-        out.append(float(np.degrees(np.arccos(abs(np.dot(t, wall_dir))))))
-    res["contact_angles"] = out
-    res["lam"] = lam.tolist()
-    res["kappa"] = 1 / r
-    res["kappa_from_lam"] = (lam[0] - lam[1]) / SIG_ISO
-    return lab, res
+    for ax in (0, 1):  # local line fit 3..20 cells from the wall x = wall (ax 0) / y = wall
+        sel = (pts[:, ax] - wall > 3) & (pts[:, ax] - wall < 20)
+        _, dvec, _ = geom.fit_line(pts[sel])
+        wall_dir = np.array([0.0, 1.0]) if ax == 0 else np.array([1.0, 0.0])
+        out.append(float(np.degrees(np.arccos(min(1, abs(np.dot(dvec, wall_dir)))))))
+    mid = pts[(rr > 0) & (np.abs(np.degrees(np.arctan2(pts[:, 1] - wall, pts[:, 0] - wall)) - 45) < 30)]
+    cx, cy, r, rms = geom.fit_circle(mid)
+    return lab, dict(R_theory=R, r_mean=float(rr.mean()), r_min=float(rr.min()),
+                     r_max=float(rr.max()), contact_angles=out,
+                     kappa_mid_fit=1 / r, kappa_theory=1 / R,
+                     kappa_from_lam=(lam[0] - lam[1]) / SIG_ISO, lam=lam.tolist())
 
 
 def case_disc3():
@@ -216,25 +209,30 @@ def case_disc3():
     # meeting point (nearest point of the arc to the circle)
     contact = {}
     c0 = np.array([N / 2 - 0.5, N / 2 - 0.5])
-    for (p, q), a in arcs.items():
-        pts = a["pts"]
-        d = np.abs(np.linalg.norm(pts - c0, axis=1) - R)
-        P = pts[np.argmin(d)]
-        # intersect fitted circle with boundary circle nearest to P
-        t = geom.tangent_at(P, pts, (*a["centre"], a["r"]))
-        radial = (P - c0) / np.linalg.norm(P - c0)
-        contact[f"{p}|{q}"] = float(np.degrees(np.arccos(min(1, abs(np.dot(t, radial))))))
+    for (p, q) in [(0, 1), (1, 2), (2, 0)]:  # local line fit 3..20 cells from the rim
+        pts = geom.interface_points(lab, p, q, purity=0.0)
+        dist = R - np.linalg.norm(pts - c0, axis=1)
+        sel = (dist > 3) & (dist < 20)
+        if sel.sum() < 5:
+            continue
+        P0, dvec, _ = geom.fit_line(pts[sel])
+        radial = (P0 - c0) / np.linalg.norm(P0 - c0)
+        contact[f"{p}|{q}"] = float(np.degrees(np.arccos(min(1, abs(np.dot(dvec, radial))))))
     return lab, dict(arcs=summarize_arcs(arcs), junctions=J, additivity=add,
                      contact_angle_to_normal=contact, lam=lam.tolist())
 
 
-def case_wulff(kernel):
+def case_wulff(kernel, init="disc"):
     H = W = 300
     alive = np.ones((H, W), bool)
     yy, xx = np.mgrid[:H, :W]
-    lab = np.where((np.abs(yy - 150) < 70) & (np.abs(xx - 150) < 70), 0, 1)
     A = 140 * 140
-    lab, lam = run(alive, 2, lab, [A, np.nan], kernel, sched=schedule(14, S_FINAL, 25, 120))
+    if init == "disc":
+        lab = np.where(np.hypot(yy - 150, xx - 150) < np.sqrt(A / np.pi), 0, 1)
+    else:
+        lab = np.where((np.abs(yy - 150) < 70) & (np.abs(xx - 150) < 70), 0, 1)
+    sf = 8.0 if kernel == "oct" else S_FINAL
+    lab, lam = run(alive, 2, lab, [A, np.nan], kernel, sched=schedule(3 * sf, sf, 30, 100))
     ang, L = geom.boundary_normals(lab, 0)
     hist, edges = np.histogram(np.mod(ang, 180), bins=36, range=(0, 180), weights=L)
     near = np.minimum.reduce([np.abs(((ang - a + 90) % 180) - 90) for a in (0, 45, 90, 135)])
@@ -249,7 +247,9 @@ def case_wulff(kernel):
         proj = (np.c_[xs, ys] - cxy) @ d
         ext[a] = float(0.5 * (proj.max() - proj.min()))
     iso_q = per ** 2 / (4 * np.pi * A)
-    return lab, dict(frac_len_within5deg_of_facets=frac_facet, perimeter=per,
+    apothem = np.sqrt(A / (8 * np.tan(np.pi / 8)))
+    return lab, dict(init=init, octagon_apothem_theory=apothem,
+                     octagon_circumradius_theory=apothem / np.cos(np.pi / 8),frac_len_within5deg_of_facets=frac_facet, perimeter=per,
                      perim_over_circle=per / (2 * np.sqrt(np.pi * A)),
                      regular_octagon_ratio=float(np.sqrt(8 * np.tan(np.pi / 8) / np.pi)),
                      half_width=ext, normal_hist=hist.tolist(), iso_quotient=iso_q)
@@ -261,18 +261,51 @@ def main(out=None):
     cases = [("bubble2", lambda: case_bubble2("iso")), ("bubble3", case_bubble3),
              ("corner", case_corner), ("disc3", case_disc3),
              ("wulff_iso", lambda: case_wulff("iso")), ("wulff_oct", lambda: case_wulff("oct")),
+             ("wulff_oct_sqinit", lambda: case_wulff("oct", "square")),
              ("bubble2_oct", lambda: case_bubble2("oct"))]
     for ax, (name, fn) in zip(axs.ravel(), cases):
         lab, r = fn()
         res[name] = r
         show(ax, lab, name)
         print(name, json.dumps(r, default=float)[:1500], flush=True)
-    axs.ravel()[-1].axis("off")
     fig.tight_layout()
     fig.savefig(os.path.join(FIG, "synth.png"), dpi=110)
     with open(out or os.path.join(HERE, "synth_results.json"), "w") as f:
         json.dump(res, f, indent=1, default=float)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and "--conv" not in sys.argv:
     main(sys.argv[1] if len(sys.argv) > 1 else None)
+
+
+def convergence(fs=(1, 2, 3)):
+    """Double bubble at grid refinement f (radii * f, kernel s = 5 sqrt(f) cells, so
+    s/R -> 0 and s/cell -> inf): junction angles and radii vs theory."""
+    out = []
+    for f in fs:
+        H = W = int(340 * f)
+        alive = np.ones((H, W), bool)
+        lab = np.full((H, W), 2)
+        lab[int(110 * f):int(230 * f), int(80 * f):int(175 * f)] = 0
+        lab[int(120 * f):int(220 * f), int(175 * f):int(250 * f)] = 1
+        A = [np.pi * (60 * f) ** 2, np.pi * (45 * f) ** 2]
+        s = S_FINAL * np.sqrt(f)
+        lab, lam = run(alive, 3, lab, [A[0], A[1], np.nan], sched=schedule(14 * np.sqrt(f), s, 25, 80))
+        arcs, J = arcs_and_junctions(lab, [(0, 2), (1, 2), (1, 0)], lam,
+                                     sig=s / np.sqrt(2 * np.pi), excl=8 * np.sqrt(f))
+        th = double_bubble_theory(*A)
+        ys = sorted(j["xy"][1] for j in J)
+        row = dict(f=f, s=s, angles=[j["angles"] for j in J],
+                   max_angle_err=max(abs(a - 120) for j in J for a in j["angles"]),
+                   r=[arcs[k]["r"] / f for k in [(0, 2), (1, 2), (1, 0)]],
+                   r_theory=[th["r1"] / f, th["r2"] / f, th["r0"] / f],
+                   half_chord=(ys[-1] - ys[0]) / 2 / f if len(ys) == 2 else None,
+                   half_chord_theory=th["r1"] * np.sin(np.radians(120 + th["t_deg"])) / f)
+        print("conv", json.dumps(row, default=float), flush=True)
+        out.append(row)
+    return out
+
+
+if __name__ == "__main__" and "--conv" in sys.argv:
+    json.dump(convergence(), open(os.path.join(HERE, "synth_convergence.json"), "w"),
+              indent=1, default=float)

@@ -168,10 +168,8 @@ class Layer:
             if it["kind"] in ("pad", "via") and it["net"] in self.nets:
                 t = self.term.setdefault(it["net"], np.zeros(G.shape, bool))
                 G.raster(it["poly"], t)
-        self.holes = np.zeros(G.shape, bool)
         hc = d["rules"]["hole_clearance"] or 0.0
-        for h in d["holes"]:
-            G.disc(h["x"], h["y"], h["d"] / 2 + hc, self.holes)
+        self.hole_list = [(h["x"], h["y"], h["d"] / 2 + hc) for h in d["holes"]]
         self.clear = {}
         for n in self.nets:
             zc = [z["clearance"] or 0 for z in self.zones if z["net"] == n]
@@ -180,14 +178,18 @@ class Layer:
         self.minw = {n: max([z["min_width"] for z in self.zones if z["net"] == n] + [0])
                      for n in self.nets}
 
-    def human_fill(self, dump=None):
+    def human_fill(self, dump=None, geoms=False):
+        """Zone fills of the pour nets on this layer: net -> mask (and shapely)."""
         d = dump or self.d
-        out = {}
+        out, gs = {}, {}
         for z in d["zones"]:
             if self.layer in z["layers"] and z["net"] in self.nets:
+                fl = z["fills"].get(self.layer, [])
                 m = out.setdefault(z["net"], np.zeros(self.grid.shape, bool))
-                self.grid.raster(z["fills"].get(self.layer, []), m)
-        return out
+                self.grid.raster(fl, m)
+                gs.setdefault(z["net"], []).append(rings_to_shapely(fl))
+        gs = {n: unary_union(v) for n, v in gs.items()}
+        return (out, gs) if geoms else out
 
     def setup(self):
         """Phases, allowed masks, pinned cells for the MBO solver."""
@@ -201,7 +203,13 @@ class Layer:
         for p, n in enumerate(nets):
             own = self.copper.get(n, np.zeros(G.shape, bool))
             foreign = allcu & ~own
-            bad = G.dilate(foreign, self.clear[n] + 0.5 * G.g) | (self.holes & ~own)
+            holes = np.zeros(G.shape, bool)
+            for (x, y, r) in self.hole_list:
+                i, j = int((x - G.x0) / G.g), int((y - G.y0) / G.g)
+                if 0 <= j < G.H and 0 <= i < G.W and own[j, i]:
+                    continue  # plated hole of the pour's own pad/via
+                G.disc(x, y, r, holes)
+            bad = G.dilate(foreign, self.clear[n] + 0.5 * G.g) | holes
             allowed[p] = self.alive & ~bad
         for p, n in enumerate(nets):  # pins last so own copper wins
             own = self.copper.get(n, np.zeros(G.shape, bool)) & self.inboard
@@ -254,25 +262,25 @@ def effective_resistance(region, terminals):
         Lr = L[keep][:, keep].tocsc()
         lu = spla.splu(Lr)
         tn = [tmap[t] for t in tids[1:]]
-        pos = {n: (n if n < g0 else n - 1) for n in tn}
-        B = np.zeros((N - 1, len(tn)))
-        for k, n in enumerate(tn):
-            B[pos[n], k] = 1.0
-        X = lu.solve(B)
-        Xt = X[[pos[n] for n in tn], :]
-        ids = [t - 1 for t in tids]
-        R[ids[0], ids[0]] = 0
-        for k, t in enumerate(tids[1:]):
-            R[ids[0], t - 1] = R[t - 1, ids[0]] = Xt[k, k]
-        for a in range(len(tn)):
-            for b in range(a + 1, len(tn)):
-                v = Xt[a, a] + Xt[b, b] - 2 * Xt[a, b]
-                R[tids[a + 1] - 1, tids[b + 1] - 1] = R[tids[b + 1] - 1, tids[a + 1] - 1] = v
+        rowsel = np.array([n if n < g0 else n - 1 for n in tn])
+        Xt = np.zeros((len(tn), len(tn)))
+        for c0 in range(0, len(tn), 64):
+            cols_ = np.arange(c0, min(c0 + 64, len(tn)))
+            B = np.zeros((N - 1, len(cols_)))
+            B[rowsel[cols_], np.arange(len(cols_))] = 1.0
+            Xt[:, cols_] = lu.solve(B)[rowsel, :]
+        dg = np.diag(Xt)
+        sub = dg[:, None] + dg[None, :] - 2 * Xt
+        ids = np.array(tids) - 1
+        R[ids[0], ids[1:]] = dg
+        R[ids[1:], ids[0]] = dg
+        R[np.ix_(ids[1:], ids[1:])] = sub
     return R
 
 
-def score_layer(L, fills, label=""):
-    """fills: net -> bool mask of zone fill. Copper = fill | own copper on layer."""
+def score_layer(L, fills, geoms=None):
+    """fills: net -> bool mask of zone fill (geoms: net -> shapely fill). Copper =
+    fill | own copper on layer. Lengths from the fill polygons when given."""
     G = L.grid
     out = {}
     others = {n: m for n, m in fills.items()}
@@ -297,14 +305,21 @@ def score_layer(L, fills, label=""):
                 near_other |= m2
         near_other = G.dilate(near_other, 2 * L.clear[n] + G.g)
         split = edge & near_other
+        if geoms is not None and n in geoms:
+            gn = geoms[n]
+            oth = unary_union([v for k, v in geoms.items() if k != n] or [Polygon()])
+            edge_mm = gn.boundary.length
+            split_mm = gn.boundary.intersection(oth.buffer(2 * L.clear[n] + 0.05)).length
+        else:
+            edge_mm = float(edge.sum() * G.g)
+            split_mm = float(split.sum() * G.g)
         out[n] = dict(area_mm2=float(cu.sum() * G.g ** 2), fill_mm2=float(f.sum() * G.g ** 2),
                       terminals=T, pairs=int(len(rv)), pairs_connected=int(con.sum()),
                       R_mean_sq=float(rv[con].mean()) if con.any() else None,
                       R_median_sq=float(np.median(rv[con])) if con.any() else None,
                       R_max_sq=float(rv[con].max()) if con.any() else None,
                       fill_components=int(nfl), islands=int(isl),
-                      edge_mm=float(edge.sum() * G.g * np.pi / 4),
-                      split_mm=float(split.sum() * G.g * np.pi / 4))
+                      edge_mm=float(edge_mm), split_mm=float(split_mm))
     return out
 
 
@@ -393,8 +408,8 @@ def plot_layer(L, panels, path):
 def drc(board_path):
     out = board_path + ".drc.json"
     subprocess.run(["kicad-cli", "pcb", "drc", "--format", "json", "--severity-error",
-                    "--refill-zones", "--schematic-parity" if False else "--units", "mm",
-                    "-o", out, board_path], capture_output=True, text=True)
+                    "--refill-zones", "--units", "mm", "-o", out, board_path],
+                   capture_output=True, text=True)
     try:
         d = json.load(open(out))
     except Exception:
@@ -430,8 +445,8 @@ def main():
     for ln in a.layers:
         L = Layer(d, ln, a.g)
         layers[ln] = L
-        hf = L.human_fill()
-        hs = score_layer(L, hf)
+        hf, hg = L.human_fill(geoms=True)
+        hs = score_layer(L, hf, hg)
         print(f"[{bid} {ln}] nets {L.nets} grid {L.grid.shape}", flush=True)
         if a.mode == "iso_area":
             tg = [hf[n].sum() + 0 for n in L.nets]
@@ -476,8 +491,8 @@ def main():
         dm = json.load(open(dj))
         results[f"drc_{k}"] = drc(ob)
         for ln, L in layers.items():
-            mf = L.human_fill(dm)
-            results["layers"][ln][f"mbo_{k}"] = score_layer(L, mf)
+            mf, mg = L.human_fill(dm, geoms=True)
+            results["layers"][ln][f"mbo_{k}"] = score_layer(L, mf, mg)
             results["layers"][ln][f"_fill_{k}"] = mf
     # human DRC (same command on a copy of the reference)
     hdir = os.path.join(WORK, bid, "human_board")

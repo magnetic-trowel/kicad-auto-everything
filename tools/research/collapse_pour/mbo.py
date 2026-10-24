@@ -50,7 +50,7 @@ def _diag1d(u, s, anti=False, truncate=3.5):
     return out
 
 
-def k_octagon(u, s, blur=1.0):
+def k_octagon(u, s, blur=0.7):
     """Zonotope kernel: mean of 1-D Gaussians along 0, 90, 45, 135 degrees."""
     v = ndi.gaussian_filter(u, blur, mode="constant", truncate=3.0) if blur > 0 else u
     out = ndi.gaussian_filter1d(v, s, axis=1, mode="constant", truncate=3.5)

@@ -35,6 +35,18 @@ collapse possible with the fewest conflicts, and find where it cannot go below L
 
   max Σ_P w_p·G_p(S_p) − Σ_S c_s·C_s(S_s) − Σ k_ij·M_ij − λ·#vias − μ·Σ_R length
 
+- **Placement is a variable too.** Each movable part k has a pose (x_k, y_k, θ_k), with its
+  side fixed. Its pads T_i move with it. The lifted shapes, the cut demands, the pin-order
+  permutations between parts and the pour regions are all functions of the poses. The
+  problem is therefore min over poses of [min over collapse assignments of the objective].
+  Placement sees it through cheap terms:
+  - **Forced vias of a bus:** the LDS/RSK count of the pin permutation between two parts,
+    which depends on both rotations.
+  - **Cut-capacity overflow:** over gaps between pads, a function of XY that pushes parts
+    apart only where L layers cannot carry the demand.
+  - **Pour fragmentation:** signals crossing between pads of a pour net.
+  - **Lifted conflicts:** how many conflicts are left after collapsing each net's lone
+    route.
 - **Obstructions:** points or regions where no assignment with L layers exists. They are
   either local capacity (too many nets cross a cut) or local topology (the connections
   forced through a region form a graph that needs more than L planar layers).
@@ -88,6 +100,9 @@ with citations and tags. It corrects the hypothesis table below:
 
 ## How the pieces could compose
 
+0. Place with collapse terms: choose part rotations by the LDS/RSK count of forced vias of
+   each bus, and spread parts only where the cut capacity overflows (XY), together with
+   the physics terms of [joint-pnr-experiments](../../topics/placement/joint-pnr-experiments.md).
 1. Lift: route every net alone (Steiner/A* on an empty board).
 2. Obstructions: cut-capacity bounds over Delaunay edges and rings around dense parts give where and how many layers are needed (topology alone never needs more than 2).
 3. Assign: crossings and overlaps of the lifted shapes become a conflict graph. Use planar

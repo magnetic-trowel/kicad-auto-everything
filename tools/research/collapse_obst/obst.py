@@ -606,3 +606,56 @@ def topology(B, time_limit=120.0):
         r["W_peel"] = peel(frame, groupsW, nodesW, time_limit)
         res[key] = r
     return res
+
+
+# ------------------------------------------------------- via-free bus permutations
+def rsk_shape(seq):
+    """Row lengths of the RSK insertion tableau of a sequence of distinct numbers.
+    Greene: lambda_1 + ... + lambda_k = max size of a union of k increasing subsequences."""
+    import bisect
+    rows = []
+    for v in seq:
+        for row in rows:
+            i = bisect.bisect_right(row, v)
+            if i == len(row):
+                row.append(v)
+                v = None
+                break
+            row[i], v = v, row[i]
+        if v is not None:
+            rows.append([v])
+    return [len(r) for r in rows]
+
+
+def facing_buses(B, min_nets=4):
+    """For each pair of parts joined by >= min_nets two-pin nets, order the pins of both
+    parts along the axis perpendicular to the line between the part centres. In a strip
+    between two facing pin rows, via-free routing on L layers fits at most
+    lambda_1+..+lambda_L of these nets (RSK/Greene), and fitting them all needs LDS
+    (longest decreasing subsequence = number of tableau rows) layers."""
+    pairs = {}
+    for n in range(B.nn):
+        idx = B.ci[B.net[B.ci] == n]
+        if len(idx) != 2 or B.fp[idx[0]] == B.fp[idx[1]]:
+            continue
+        a, b = sorted(idx, key=lambda i: B.fp[i])
+        pairs.setdefault((int(B.fp[a]), int(B.fp[b])), []).append((a, b))
+    out = []
+    for (fa, fb), lst in pairs.items():
+        if len(lst) < min_nets:
+            continue
+        ca = np.array([B.x[B.fp == fa].mean(), B.y[B.fp == fa].mean()])
+        cb = np.array([B.x[B.fp == fb].mean(), B.y[B.fp == fb].mean()])
+        u = cb - ca
+        if np.hypot(*u) == 0:
+            continue
+        perp = np.array([-u[1], u[0]]) / np.hypot(*u)
+        sa = np.array([B.x[a] * perp[0] + B.y[a] * perp[1] for a, _ in lst])
+        sb = np.array([B.x[b] * perp[0] + B.y[b] * perp[1] for _, b in lst])
+        order = np.argsort(sa, kind="stable")
+        rank_b = np.argsort(np.argsort(sb[order], kind="stable"), kind="stable")
+        shape = rsk_shape(list(rank_b))
+        n = len(lst)
+        out.append(dict(a=B.fps[fa]["ref"], b=B.fps[fb]["ref"], nets=n, lds=len(shape),
+                        fit1=shape[0], fit2=sum(shape[:2]), forced_2layer=n - sum(shape[:2])))
+    return out

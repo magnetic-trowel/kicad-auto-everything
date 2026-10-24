@@ -4,6 +4,7 @@
 
     python run_all.py extract            # kicad_io extract per task (KiCad python, serial)
     python run_all.py bounds [ids...]    # bounds -> kae-work/collapse_obst/bounds/<id>.json
+    python run_all.py buses              # add via-free facing-bus permutation stats
     python run_all.py heat id [id...]    # heat-map PNGs -> heatmaps/<id>.png
     python run_all.py report             # tables printed as markdown
 
@@ -42,7 +43,7 @@ def load(tid):
 
 
 def plane_layers(B):
-    """Copper layers on which one net's zone outlines cover >= 60% of the board."""
+    """Inner copper layers on which one net's zone outlines cover >= 60% of the board."""
     cover = {}
     for z in B.d.get("zones", []):
         if not z["net"]:
@@ -55,7 +56,10 @@ def plane_layers(B):
     for (lay, net), g in cover.items():
         f = g.intersection(B.geom).area / B.area if B.area else 0
         best[lay] = max(best.get(lay, 0), f)
-    return sum(1 for f in best.values() if f >= 0.6), {str(k): round(v, 2) for k, v in best.items()}
+    # planes: inner layers (KiCad 10 ids: F.Cu 0, B.Cu 2) mostly covered by one net's zones.
+    # Outer-layer pours on 2-layer boards are fill around signals, not planes.
+    planes = sum(1 for lay, f in best.items() if f >= 0.6 and lay not in (0, 2))
+    return planes, {str(k): round(v, 2) for k, v in best.items()}
 
 
 def bounds(tid):
@@ -85,7 +89,7 @@ def bounds(tid):
                                           where_nom=wn)
     r["escape"] = obst.escape(B)
     r["area"] = obst.area_bound(B)
-    r["topo"] = obst.topology(B, time_limit=60)
+    r["topo"] = obst.topology(B, time_limit=20)
     r["secs"] = round(time.time() - t0, 1)
     return r
 
@@ -179,6 +183,15 @@ def main():
                 r = dict(id=tid, error=repr(e))
             json.dump(r, open(out, "w"), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
             print(tid, r.get("secs"), r.get("error", ""), flush=True)
+    elif op == "buses":
+        for tid in task_ids():
+            out = os.path.join(OUT, tid + ".json")
+            r = json.load(open(out))
+            if "error" in r:
+                continue
+            _, B = load(tid)
+            r["buses"] = obst.facing_buses(B)
+            json.dump(r, open(out, "w"))
     elif op == "heat":
         for tid in sys.argv[2:]:
             heat(tid)
