@@ -1,6 +1,31 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # collapse_pour: minimal-partition pours (status: partial; batch3 running)
 
+## Final results (batch3, corrected metric; added by the lead)
+
+Full output: [summary-final.md](summary-final.md).
+
+- **Verdict: no merit as a pour objective.**
+  - Over 21 pour nets on 6 boards, the minimal partition's effective resistance relative to
+    the human pours is a geometric mean of 1.045 in fill mode (better on 6, worse on 5),
+    1.033 at equal area (better on 4, worse on 8), and 1.011 with the octagon kernel over 11
+    nets.
+  - Kobold, after the connectivity fixes, is still clearly worse. It leaves 17–18 unconnected
+    items against 0 for the human board, and the 105 clearance errors are the same as on
+    the refilled human board. RGB_PWR R_eff is 35–49 against 22.
+  - Olimex fill mode: /SW −5%, GND tie.
+- **Synthetic geometry converges to theory:** junction angle error falls from 3.3° to 0.45°
+  as the grid is refined; contact with the rim is 89.6–89.7°; the octagon kernel gives the
+  Wulff octagon (81–91% of the boundary within 5° of the facets).
+- **Placement study** (80 board × placement × pour-net rows):
+  - `pour_score` follows the full Laplace R_eff at Spearman 0.48 in absolute terms, but only
+    0.21 as a ratio to human.
+  - Full pour R_eff, as a ratio to human, follows kae routed physics at 0.65; `pour_score`
+    follows it at 0.11.
+  - combo's placements give better pours than the human ones (geometric mean R_eff 0.897
+    over 15 boards). seq's give worse (1.088).
+
+
 Idea: [layer-collapse](../../../docs/ideas/original/layer-collapse.md). When several pour
 nets share a layer, the split boundaries should form a minimal partition: constant-curvature
 arcs, 120° junctions, 90° at a free edge, octagonal Wulff cells for 0/45/90° copper. Here
