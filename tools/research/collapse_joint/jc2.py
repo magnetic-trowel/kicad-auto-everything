@@ -24,6 +24,8 @@ Switches (run.py --opt key=value; defaults reproduce jc on engine v6 except `eng
                     part's wire term, from beta >= mp_from_beta
     guard=1         never accept a final PathFinder retry or a polish that is worse (more
                     open connections or higher cost) than the state before it (BUGS.md 6)
+    end_alt=0       end of each continuation: also try keeping the collapsed copper and
+                    re-routing only conflicted nets (Router.legalize); keep the cheaper
     restart=scratch scratch (jc) | perturb: every second restart starts from the best state,
                     re-rotates/re-lifts the k parts with the most part+wire history and
                     resumes the continuation from beta_p
@@ -64,9 +66,10 @@ def _length(r, w, n):
 
 class Collapse2(J.Collapse):
     def __init__(self, world, seed, budget, log, engine=1, via_beta=0.0, via_part=0.0, minplus_w=0.0,
-                 mp_from_beta=0.0, coarse_mm=0.4, guard=1, **kw):
+                 mp_from_beta=0.0, coarse_mm=0.4, guard=1, end_alt=0, **kw):
         super().__init__(world, seed, budget, log, **kw)
         self.guard = bool(guard)
+        self.end_alt = bool(end_alt)
         self.mp = None
         self.minplus_w = float(minplus_w)
         self.mp_from_beta = mp_from_beta
@@ -383,9 +386,23 @@ def collapse_run(C, run_budget, gamma, beta0, beta_end, beta_max, log, start=Non
         need = (beta_end / beta) ** (1.0 / left_its) if beta < beta_end else 1.0
         beta = min(beta_max, beta * max(g_cur, need))
     st0 = r.stats()
+    pose0 = dict(w.pose)
     m, nb = C.legalize_parts()
     ph.sync()
     C.set_via(beta)
+    alt = None
+    if C.end_alt:
+        # candidate A: keep the collapsed copper, re-route only the conflicted nets hard
+        # (Router.legalize); jc always throws it away and negotiates again from scratch,
+        # which on paw3395 turns 0 open (18 conflicting cells) into 8-10 open connections
+        snap0 = kit.snapshot(list(w.net_pins))
+        moved_p = [q for q in w.pose if pose0.get(q) != w.pose[q]]
+        for n in kit.part_nets(moved_p):  # copper of moved parts no longer meets its pads
+            r.rip(n)
+            r.route_net(n)
+        r.legalize(list(w.net_pins))
+        alt = (kit.total_cost(), kit.snapshot(list(w.net_pins)), r.stats())
+        kit.restore(snap0)
     r.pathfinder(iters=20, pres0=max(0.5, min(beta, 4.0)), pres_mul=1.6)
     if any(r.unrouted.values()):
         # jc re-runs PathFinder from scratch here and keeps the result even when it leaves
@@ -395,6 +412,12 @@ def collapse_run(C, run_budget, gamma, beta0, beta_end, beta_max, log, start=Non
         r.pathfinder(iters=15, log=None)
         if snap is not None and kit.total_cost() > c0 + 1e-6:
             kit.restore(snap)
+    if alt is not None:
+        if alt[0] < kit.total_cost() - 1e-6:
+            log(f"jc2 end_alt: kept collapsed copper + legalize {alt[2]} over pathfinder {r.stats()}")
+            kit.restore(alt[1])
+        else:
+            log(f"jc2 end_alt: pathfinder {r.stats()} over collapsed copper + legalize {alt[2]}")
     log(f"jc2 end: beta={beta:.3g} its={it} collapsed {st0} -> legalized {m}/{nb} parts, "
         f"pathfinder {r.stats()}")
     return it, beta, st0
@@ -507,6 +530,7 @@ jc2_clean = _v("jc2_clean", clean=1)
 jc2_comp = _v("jc2_comp", complete=1)
 jc2_pert = _v("jc2_pert", restart="perturb")
 jc2_stall = _v("jc2_stall", stall=4)
+jc2_endalt = _v("jc2_endalt", end_alt=1)
 jc2_fill = _v("jc2_fill", fill=1)
 jc2_mp = _v("jc2_mp", minplus_w=0.5, mp_from_beta=1.0)      # min-plus only late (vias appear at beta > 1)
 jc2_mp1 = _v("jc2_mp1", minplus_w=1.0)

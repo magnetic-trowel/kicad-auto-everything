@@ -37,3 +37,8 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
    of jc's open hops. Fix in jc2 (`guard=1`, from v2 on): keep the better of before/after
    for the PathFinder retry and for the polish. `anneal_phys` itself is shared with combo
    and left unchanged.
+7. **Shared engine edited under running jobs** (workdir). tools/research/pnr changed
+   (v6.1 -> v6.3) while the first jc2 runs were in flight. Every jcfix run before the
+   engine freeze at c78c537 (pnr v6.3) is discarded (parked in `kae-v7/jcfix-old/`);
+   all reported runs are `-r3` on c78c537, and the run queue logs an md5 of the engine
+   and harness at the start and end of each arm.
