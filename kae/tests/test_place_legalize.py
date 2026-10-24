@@ -635,3 +635,36 @@ def test_silk_term_prices_alike_in_both_annealers_and_pulls_silk_apart():
     s0 = ref.silk_total()
     fast.run(cpu_s=20.0, max_moves=30000)
     assert fast.terms_report()["silk"] * fast.A0 < s0 or s0 == 0
+
+
+def test_kicad_loop_runs_a_crashed_drc_again(monkeypatch):
+    """kicad-cli killed by a signal (buspirate5: 'DRC failed (rc=-11)') runs again on a fresh
+    staged copy; an ordinary failure does not, and leaves the board unverified."""
+    import time
+    from types import SimpleNamespace
+    from kae import cli
+    from kae.place import exact
+    from kae.place.pipeline import Result
+    from kae.route import drc as kdrc
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    monkeypatch.setattr(kdrc, "kicad_cli", lambda: "kicad-cli")
+    monkeypatch.setattr(kdrc, "stage_board", lambda out, inp, tmp: str(Path(tmp) / "board.kicad_pcb"))
+    monkeypatch.setattr(exact, "kicad_feedback", lambda P, st, rep: dict(errors=0, by_type={}, fixed_only=0))
+    a = SimpleNamespace(drc="on", drc_rounds=2, time=600.0, output="o", input="i", writer="sexpr")
+    for verdicts, clean_expected, crashes in (([-11, "ok"], True, 1), (["boom"], None, 0)):
+        it = iter(verdicts)
+
+        def run(staged, path, timeout):
+            v = next(it)
+            if v == -11:
+                raise kdrc.DrcError("DRC failed (rc=-11): Segmentation fault")
+            if v == "boom":
+                raise kdrc.DrcError("DRC failed (rc=2): bad board")
+            return {}
+        monkeypatch.setattr(kdrc, "run", run)
+        res = Result(poses=st.poses(), report={}, state=st, problem=P)
+        clean, _ = cli._kicad_loop(a, res, time.monotonic(), lambda *x, **k: dict(writer="fake"))
+        assert clean is clean_expected
+        assert res.report["kicad_verified"] is (clean_expected is not None)
+        assert res.report["kicad_drc"][0].get("crashes", 0) == crashes

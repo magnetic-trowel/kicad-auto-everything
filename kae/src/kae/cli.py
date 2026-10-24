@@ -110,6 +110,10 @@ def cmd_place(a):
     return 0 if legal else 3
 
 
+DRC_RETRIES = 2                      # kicad-cli runs again after dying on a signal
+_DRC_SIGNAL = __import__("re").compile(r"rc=-\d+")
+
+
 def _kicad_loop(a, res, t0, write):
     """KiCad's DRC on the written placement, fed back until it is clean (kae.place.exact:
     kicad_feedback -> repair -> write again), within the caller's time. The best placement
@@ -139,18 +143,31 @@ def _kicad_loop(a, res, t0, write):
         if left < 15.0:
             rounds.append(dict(round=it, skipped="time"))
             break
-        staged = kdrc.stage_board(a.output, a.input, tmp)
         t = time.monotonic()
-        try:
-            # the first verdict may take nearly all that is left; repairs need a share after
-            report = kdrc.run(staged, Path(tmp) / "drc.json",
-                              timeout=max(10.0, min(600.0, (left - 5.0) if it == 0 else 0.5 * left)))
-        except kdrc.DrcError as e:
-            rounds.append(dict(round=it, error=str(e)[:200]))
+        report, err, crashes = None, None, 0
+        for attempt in range(1 + DRC_RETRIES):
+            # a fresh staged copy each attempt; the first verdict may take nearly all that is
+            # left, repairs need a share after
+            staged = kdrc.stage_board(a.output, a.input, tempfile.mkdtemp(prefix="kae-drc-", dir=tmp))
+            left = t0 + 0.97 * float(a.time) - time.monotonic()
+            try:
+                report = kdrc.run(staged, Path(staged).parent / "drc.json",
+                                  timeout=max(10.0, min(600.0, (left - 5.0) if it == 0 else 0.5 * left)))
+                err = None
+                break
+            except kdrc.DrcError as e:
+                err = str(e)
+                # kicad-cli killed by a signal (rc < 0, e.g. -11 on buspirate5): run it again
+                if not _DRC_SIGNAL.search(err) or left < 30.0:
+                    break
+                crashes += 1
+                _log(f"KiCad DRC round {it} crashed ({err[:60]}); retrying")
+        if report is None:
+            rounds.append(dict(round=it, error=(err or "")[:200], crashes=crashes))
             break
         fb = X.kicad_feedback(P, st, report)
         rounds.append(dict(round=it, errors=fb["errors"], by_type=fb["by_type"], fixed_only=fb["fixed_only"],
-                           seconds=round(time.monotonic() - t, 1)))
+                           seconds=round(time.monotonic() - t, 1), **({"crashes": crashes} if crashes else {})))
         _log(f"KiCad DRC round {it}: {fb['errors']} placement errors {fb['by_type']}")
         clean = fb["errors"] == fb["fixed_only"]
         judged = fb["errors"] - fb["fixed_only"]
