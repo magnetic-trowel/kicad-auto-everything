@@ -525,3 +525,28 @@ def test_last_mile_rejoins_a_net_cut_open(routed, exported, tmp_path):
     after = drc.run(drc.stage_board(cand, board, tmp_path / "cand"), tmp_path / "cand" / "drc.json")
     assert net not in lastmile.open_nets(after)
     assert drc.summary(after)["errors"] <= drc.summary(before)["errors"]
+
+
+@needs_router
+def test_router_copper_named_by_errors_is_taken_out_for_the_last_mile(routed, tmp_path):
+    """Routed (unlocked) copper that DRC errors name is taken out by repair._rip_errors,
+    leaving a board without errors for the last mile to join exactly; with an error that
+    names no router copper, nothing is taken out."""
+    from kae.route import critical_write as W
+    from kae.route import repair
+    board, out, rep, d = routed
+    r_base = drc.run(drc.stage_board(out, board, tmp_path / "base"), tmp_path / "base" / "drc.json")
+    base = drc.summary(r_base)["errors"]
+    lst = pcbnew_io.edit_routing(out, tmp_path / "l.kicad_pcb")["routing"]
+    t = max((r for r in lst if r["kind"] == "track" and not r.get("locked") and r.get("layer") == "F.Cu"),
+            key=lambda r: ((r["b"][0] - r["a"][0]) ** 2 + (r["b"][1] - r["a"][1]) ** 2))
+    bad = tmp_path / "bad.kicad_pcb"
+    pcbnew_io.edit_routing(out, bad, widths={t["uuid"]: 3.0})        # far too wide: clearances break
+    r0 = drc.run(drc.stage_board(bad, board, tmp_path / "bad"), tmp_path / "bad" / "drc.json")
+    assert drc.summary(r0)["errors"] > base
+    got = repair._rip_errors(board, bad, r0, tmp_path / "rip", set(), lambda: 600)
+    assert got is not None
+    cand, r1, s1 = got
+    assert s1["errors"] == 0 and t["uuid"] not in {r["uuid"] for r in W.routing(cand)}
+    # the same track fixed (a pre-route): not the router's to take out
+    assert repair._rip_errors(board, bad, r0, tmp_path / "rip2", {t["uuid"]}, lambda: 600) is None

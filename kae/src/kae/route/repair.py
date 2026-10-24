@@ -687,6 +687,41 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
 
 
+RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",
+                   "hole_to_hole", "via_diameter", "annular_width", "solder_mask_bridge", "tracks_crossing",
+                   "items_not_allowed")
+
+
+def _rip_errors(input_path, board, report, d, fixed, left):
+    """(board, report, summary) with the unlocked routing that every error-level violation
+    of `report` names taken out (each error must name some; other errors stay as they are),
+    or None when that leaves errors or nothing to take out."""
+    from . import critical_write as W
+    routed = {r["uuid"] for r in W.routing(board) if not r["locked"] and r["uuid"] not in fixed}
+    rip = set()
+    for v in drc.errors(report):
+        ours = {it.get("uuid") for it in v.get("items") or []} & routed
+        if v.get("type") not in RIP_ERROR_TYPES or not ours:
+            return None
+        rip |= ours
+    if not rip:
+        return None
+    if Path(d).exists():
+        shutil.rmtree(d)
+    Path(d).mkdir(parents=True)
+    cand = Path(d) / "cand.kicad_pcb"
+    W.edit(board, cand, remove=sorted(rip))
+    try:
+        rep = drc.run(drc.stage_board(cand, input_path, Path(d) / "drc"), Path(d) / "drc" / "drc.json",
+                      timeout=max(10, left() - 5))
+    except drc.DrcError:
+        return None
+    s_ = drc.summary(rep)
+    if s_["errors"]:
+        return None
+    return cand, rep, s_
+
+
 LAST_MILE_MAX = 40     # open connections the last mile takes on at most (bms-c1: 27 joined to 0 in 25 s;
                        # more is a routing failure for the router, not the last mile)
 
@@ -710,6 +745,16 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     guard = opts.get("physics_guard")
     soft = set(opts.get("soft_fixed") or ()) if guard is not None else set()
     cur, cur_rep, cur_sum = output_path, best_rep, best
+    if cur_sum["errors"] and left() > 90:
+        # errors the router keeps making (bms-c1 crit: a Freerouting track 0.19 mm from a
+        # 0.3 mm HV tab, in every round): take out the router's own copper that each error
+        # names, so the last mile, whose every segment is checked exactly, routes it instead
+        got = _rip_errors(input_path, cur, cur_rep, wd / "lastmile0", fixed, left)
+        if got is not None:
+            cur, cur_rep, cur_sum = got
+            rounds.append(dict(round="lm0", level="rip errors", **cur_sum))
+            log(f"last mile 0: router copper of {best['errors']} errors taken out: {cur_sum['errors']} errors, "
+                f"{cur_sum['unconnected']} unconnected")
     for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
         if cur_sum["errors"] or not cur_sum["unconnected"] or cur_sum["unconnected"] > LAST_MILE_MAX or left() < 60:
             break
