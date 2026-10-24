@@ -32,7 +32,7 @@ from mbo import MBO, schedule  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIG = os.path.join(HERE, "fig")
 S_FINAL = 5.0
-SCHED = schedule(14, S_FINAL, 25, 80)
+SCHED = schedule(40, S_FINAL, 40, 80)
 SIG_ISO = S_FINAL / np.sqrt(2 * np.pi)
 
 
@@ -174,11 +174,21 @@ def case_corner():
               & (pts[:, 1] < wall + 1.5 * R)]
     rr = np.linalg.norm(pts - wall, axis=1)
     out = []
-    for ax in (0, 1):  # local line fit 3..20 cells from the wall x = wall (ax 0) / y = wall
-        sel = (pts[:, ax] - wall > 3) & (pts[:, ax] - wall < 20)
-        _, dvec, _ = geom.fit_line(pts[sel])
-        wall_dir = np.array([0.0, 1.0]) if ax == 0 else np.array([1.0, 0.0])
-        out.append(float(np.degrees(np.arccos(min(1, abs(np.dot(dvec, wall_dir)))))))
+    for ax in (0, 1):  # local circle fit 3..40 cells from the wall, tangent at the wall
+        sel = (pts[:, ax] - wall > 3) & (pts[:, ax] - wall < 40)
+        cx, cy, r, _ = geom.fit_circle(pts[sel])
+        c = np.array([cx, cy])
+        # intersection of the fitted circle with the wall line coordinate[ax] = wall
+        o = 1 - ax
+        dd = wall - c[ax]
+        P = c.copy()
+        P[ax] = wall
+        P[o] = c[o] + np.sqrt(max(r * r - dd * dd, 0.0))
+        rad = P - c
+        tang = np.array([-rad[1], rad[0]]) / np.linalg.norm(rad)
+        wall_dir = np.zeros(2)
+        wall_dir[o] = 1.0
+        out.append(float(np.degrees(np.arccos(min(1, abs(np.dot(tang, wall_dir)))))))
     mid = pts[(rr > 0) & (np.abs(np.degrees(np.arctan2(pts[:, 1] - wall, pts[:, 0] - wall)) - 45) < 30)]
     cx, cy, r, rms = geom.fit_circle(mid)
     return lab, dict(R_theory=R, r_mean=float(rr.mean()), r_min=float(rr.min()),
@@ -290,7 +300,7 @@ def convergence(fs=(1, 2, 3)):
         lab[int(120 * f):int(220 * f), int(175 * f):int(250 * f)] = 1
         A = [np.pi * (60 * f) ** 2, np.pi * (45 * f) ** 2]
         s = S_FINAL * np.sqrt(f)
-        lab, lam = run(alive, 3, lab, [A[0], A[1], np.nan], sched=schedule(14 * np.sqrt(f), s, 25, 80))
+        lab, lam = run(alive, 3, lab, [A[0], A[1], np.nan], sched=schedule(40 * np.sqrt(f), s, 40, 80))
         arcs, J = arcs_and_junctions(lab, [(0, 2), (1, 2), (1, 0)], lam,
                                      sig=s / np.sqrt(2 * np.pi), excl=8 * np.sqrt(f))
         th = double_bubble_theory(*A)

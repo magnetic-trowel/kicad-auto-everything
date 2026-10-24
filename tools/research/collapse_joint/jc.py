@@ -113,8 +113,8 @@ class FFTCorr:
 
 
 class Collapse:
-    def __init__(self, world, seed, budget, log, phys_w=2.0, tension_w=0.5, hist_inc=0.3,
-                 hist_p=0.0, k_phys=24, trust_mm=2.0, pad_wire=1.0, **kw):
+    def __init__(self, world, seed, budget, log, phys_w=2.0, tension_w=0.3, hist_inc=0.3,
+                 hist_p=0.0, k_phys=24, trust_mm=2.0, pad_wire=1.0, tension_beta=1.0, max_stuck=8, **kw):
         self.w = world
         self.log = log
         self.rng = random.Random(seed)
@@ -139,7 +139,10 @@ class Collapse:
         self.kcache = {}
         self.trust = trust_mm
         self.pad_wire = pad_wire
+        self.tension_beta = tension_beta
+        self.max_stuck = max_stuck
         self.stuck = {}
+        self.trace = []
         self.last_pose = {}
         mov = self.kit.movable()
         self.F = FFTCorr(world.H, world.W, self.max_radius(mov), cap_bytes=kw.get("fft_cap", 1.0e9))
@@ -275,7 +278,7 @@ class Collapse:
             if not inside.any():
                 continue
             c = self.kit.hpwl_map(pi, ri) / g
-            if self.tension_w and anchors:
+            if self.tension_w and anchors and beta >= self.tension_beta:
                 c = (1 - self.tension_w) * c + self.tension_w * self.tension_map(pi, ri, anchors)
             c = c + self.bias(pi, ri) * 0.1 / g
             if beta > 0:
@@ -289,7 +292,7 @@ class Collapse:
     def best_response(self, pi, beta, CT, CV, per):
         w, ph = self.w, self.ph
         cur = w.pose[pi]
-        anchors = self.anchors(pi) if self.tension_w else []
+        anchors = self.anchors(pi) if (self.tension_w and beta >= self.tension_beta) else []
         nets = self.kit.part_nets([pi])
         # remove the part's own nets from the route maps
         for n in nets:
@@ -303,7 +306,7 @@ class Collapse:
         cands = []
         win = None
         if self.trust:
-            rad = int(self.trust / w.g * 2 ** min(self.stuck.get(pi, 0), 8))
+            rad = int(self.trust / w.g * 2 ** min(self.stuck.get(pi, 0), self.max_stuck))
             if rad < max(w.W, w.H):
                 win = np.zeros((w.H, w.W), bool)
                 win[max(0, cur[1] - rad):cur[1] + rad + 1, max(0, cur[0] - rad):cur[0] + rad + 1] = True
@@ -460,11 +463,12 @@ class Collapse:
         np.savez_compressed(str(path).replace(".png", ".npz"), wire=wire, part=part, inside=w.inside)
 
 
-def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0, beta_max=500.0, frozen=False,
-       polish=0.15, reserve=0.18, png_dir=None, **kw):
-    C = Collapse(world, seed, budget, log, **kw)
-    w, r, kit, ph = world, C.r, C.kit, C.ph
+def collapse_once(C, run_budget, gamma, beta0, beta_end, beta_max, frozen, log):
+    """One lift + continuation + legalization from scratch. Returns (iterations, beta)."""
+    w, r, kit, ph = C.w, C.r, C.kit, C.ph
     clock = C.clock
+    t_start = clock.budget - clock.left()
+    end_t = t_start + run_budget
     mov = [q for q in kit.movable() if q not in w.pose]
     C.lift(mov)
     mov = [q for q in kit.movable() if q in w.pose]
@@ -478,10 +482,8 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
     beta = beta0
     g_cur = gamma
     prev = None
-    it = 0
+    it = zero = 0
     t_it = []
-    zero = 0
-    end_t = budget * (1 - reserve - polish)
     while True:
         it += 1
         t0 = clock.budget - clock.left()
@@ -493,13 +495,13 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
             C.rng.shuffle(order)
             for pi in order:
                 moved += C.best_response(pi, beta, CT, CV, per)
-        over = w.court > 1
-        C.hist_c += C.hist_inc * over
+        C.hist_c += C.hist_inc * (w.court > 1)
         ovc = C.overlap_cells()
         wc = C.wire_conflicts()
         conf = ovc + wc
         used = clock.budget - clock.left()
         t_it.append(used - t0)
+        C.trace.append((beta, ovc, wc, w.hpwl()))
         log(f"  jc it={it} beta={beta:.3g} gamma={g_cur:.2f} moved={moved} overlap={ovc} "
             f"wire_conf={wc} nets_bad={len(bad)} {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f} t={used:.1f}")
         zero = zero + 1 if conf == 0 else 0
@@ -507,7 +509,8 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
             break
         if used > end_t:
             break
-        # adaptive geometric schedule: speed up when conflict stalls, slow down when it falls
+        # adaptive geometric schedule: faster while the conflict stalls, back to gamma while
+        # it falls quickly; never slower than needed to reach beta_end within the run budget
         if prev is not None and prev > 0:
             ratio = conf / prev
             if ratio > 0.85:
@@ -515,24 +518,86 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
             elif ratio < 0.5:
                 g_cur = max(gamma, g_cur / 1.15)
         prev = conf
-        # and fast enough to reach beta_end in the time left
         per_it = float(np.mean(t_it[-3:]))
         left_its = max(1.0, (end_t - used) / max(per_it, 1e-3))
         need = (beta_end / beta) ** (1.0 / left_its) if beta < beta_end else 1.0
         beta = min(beta_max, beta * max(g_cur, need))
-    # ---------------------------------------------------------------- end: legalize
     m, nb = C.legalize_parts()
     ph.sync()
     log(f"jc end: beta={beta:.3g} its={it} legalized {m}/{nb} parts; overlap={C.overlap_cells()}")
     r.pathfinder(iters=20, pres0=max(0.5, min(beta, 4.0)), pres_mul=1.6)
     if any(r.unrouted.values()):
         r.pathfinder(iters=15, log=None)
-    log(f"jc collapsed: {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f} t={budget - clock.left():.1f}")
+    return it, beta
+
+
+def _reset(C):
+    w, r, kit = C.w, C.r, C.kit
+    for q in [q for q in kit.movable() if q in w.pose]:
+        w.unplace(q)
+    r.rip_all()
+    r.unrouted.clear()
+    w.hist[:] = 0
+    C.hist_c[:] = 0
+    C.stuck.clear()
+
+
+def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0, beta_max=500.0,
+       frozen=False, polish=0.15, restarts=True, first=0.35, png_dir=None, **kw):
+    """Joint collapse; with `restarts`, the budget left after one continuation is spent on
+    further continuations from the lift (new random orders, gamma varied), keeping the best
+    legal end state by routed cost + phys_w * physics; then an optional anneal_phys polish
+    of `polish` x budget."""
+    C = Collapse(world, seed, budget, log, **kw)
+    w, r, kit, ph = world, C.r, C.kit, C.ph
+    clock = C.clock
+    run_end = budget * (1 - polish)
+    best = None
+    k = 0
+    gammas = [gamma, gamma * 0.9, gamma * 1.2, gamma * 0.8, gamma * 1.4]
+    t_run = None
+    while True:
+        t0 = budget - clock.left()
+        if k > 0:
+            if not restarts or t_run is None or run_end - t0 < 1.1 * t_run:
+                break
+            _reset(C)
+            C.rng = random.Random(seed * 1000 + k)
+        C.trace = []
+        g = gammas[k % len(gammas)] if not frozen else gamma
+        it, beta = collapse_once(C, min(run_end - t0, budget * first) * 0.85, max(1.02, g), beta0,
+                                 beta_end, beta_max, frozen, log)
+        t_run = budget - clock.left() - t0
+        st = r.stats()
+        cost = kit.total_cost() + C.phys_w * ph.total()
+        log(f"jc run {k}: gamma={g:.2f} its={it} {st} hpwl={w.hpwl():.1f} phys={ph.total():.2f} "
+            f"cost={cost:.1f} t_run={t_run:.1f}")
+        if best is None or cost < best[0]:
+            best = (cost, dict(w.pose), kit.snapshot(list(w.net_pins)), k, w.hist.copy(), C.hist_c.copy(),
+                    list(C.trace))
+        k += 1
+    if best[3] != k - 1:  # restore the best run
+        mov = kit.movable()
+        for q in [q for q in mov if q in w.pose]:
+            w.unplace(q)
+        r.rip_all()
+        r.unrouted.clear()
+        for q, p in best[1].items():
+            if q in mov:
+                w.place(q, *p)
+        kit.restore(best[2])
+        ph.sync()
+    w.hist[:] = best[4]
+    C.hist_c[:] = best[5]
+    r.legalize(list(w.net_pins))
+    log(f"jc collapsed: best run {best[3]} of {k} {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f} "
+        f"t={budget - clock.left():.1f}")
     if png_dir is None:
         png_dir = os.environ.get("JC_PNG_DIR")
     if png_dir:
         C.obstruction_png(Path(png_dir) / f"{_board_id(w)}.png",
                           f"{_board_id(w)}: obstruction map (frozen={frozen})")
+        np.save(str(Path(png_dir) / f"{_board_id(w)}.trace.npy"), np.array(best[6]))
     if polish > 0 and clock.left() > 2:
         r = MP.anneal_phys(w, seed=seed, budget=max(1.0, clock.left()), log=log, phys_w=C.phys_w, router=r)
         log(f"jc polished: {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f}")

@@ -324,15 +324,21 @@ def score_layer(L, fills, geoms=None):
 
 
 # ---------------------------------------------------------------- MBO on a layer
-def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=print):
+def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=print,
+            fill=False):
+    """fill=False: every phase has a cell target (free = the rest). fill=True: free has
+    no target and a large penalty (it only takes cells no pour may use or reach), the
+    largest pour (index 0) takes all the remaining cells, the others keep targets."""
     P, alive, allowed, pinned = L.setup()
     G = L.grid
     s0, s1 = s_mm[0] / G.g, s_mm[1] / G.g
-    tgt = np.array(list(targets) + [np.nan])
-    tgt[-1] = np.nan
-    # free phase: volume constraint too (rest of the alive cells) when pours are constrained
-    nalive = int((alive).sum())
-    tgt[-1] = max(nalive - np.nansum(tgt[:-1]), 0)
+    tgt = np.array(list(targets) + [np.nan], float)
+    reward = np.zeros(P)
+    if fill:
+        tgt[0] = np.nan
+        reward[-1] = -10.0
+    else:
+        tgt[-1] = max(int(alive.sum()) - np.nansum(tgt[:-1]), 0)
     if init is None:
         # Voronoi of pinned cells restricted to allowed; else free
         dist, ind = ndi.distance_transform_edt(pinned < 0, return_indices=True)
@@ -343,7 +349,7 @@ def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=pri
         lab = init.copy()
     connect = np.r_[np.ones(P - 1, bool), False]
     m = MBO(alive, P, kernel=kernel, allowed=allowed, pinned=pinned, target=tgt,
-            connect=connect)
+            connect=connect, reward=reward)
     t = time.time()
     lab = m.run(lab, schedule(s0, s1, n[0], n[1]), log=log)
     log(f"  mbo {kernel}: {time.time() - t:.1f}s, counts {np.bincount(lab[lab >= 0], minlength=P)}"
@@ -473,10 +479,8 @@ def main():
         P, alive, allowed, pinned = L.setup()
         if a.mode == "iso_area":
             tg = [hf[n].sum() for n in L.nets]
-        elif a.mode == "fill":  # max copper: all usable cells, split in the human ratio
-            usable = (alive & allowed[:P - 1].any(0)).sum() - (pinned >= 0).sum()
-            h = np.array([hf[n].sum() for n in L.nets], float)
-            tg = list(usable * h / h.sum())
+        elif a.mode == "fill":  # max copper: smaller pours keep the human area
+            tg = [hf[n].sum() for n in L.nets]
         else:
             tot = sum(hf[n].sum() for n in L.nets)
             w = np.array([max(ndi.label(L.term.get(n, np.zeros(1)))[1], 1) for n in L.nets], float)
@@ -496,7 +500,7 @@ def main():
         labs = {}
         for rnd in range((a.calib if a.mode == "iso_area" else 0) + 1):
             for ln, L in layers.items():
-                labs[ln], m = run_mbo(L, tg[ln], k, init=labs.get(ln))
+                labs[ln], m = run_mbo(L, tg[ln], k, init=labs.get(ln), fill=a.mode == "fill")
                 results["layers"][ln][f"lam_{k}"] = m.lam.tolist()
             ob, dm = write_and_dump(bid, ref, layers, labs, out_dir, k)
             dev = []
