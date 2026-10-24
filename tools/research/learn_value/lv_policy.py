@@ -81,11 +81,20 @@ class ValuePolicy(_Base):
         self.joblib = joblib
         self.margin_override = margin
 
-    def start(self, board_id, board, phys_w):
+    def start(self, board_id, board, phys_w, path=""):
         super().start(board_id, board, phys_w)
         obj = "phys" if phys_w > 0 else "lv"
         m = self.meta[obj]
+        # the kaebench sandbox hides the task tree, so jc's _board_id can miss: match the
+        # input path against the training boards (a board in no fold was never trained on)
+        if board_id not in m["folds"]:
+            for s_ in reversed(Path(path).parts):
+                if s_ in m["folds"]:
+                    board_id = s_
+                    break
+        self.bid = board_id
         fold = m["folds"].get(board_id, "all")
+        self.fold = fold
         self.model = self.joblib.load(self.dir / obj / f"fold{fold}.pkl")
         self.margin = float(self.margin_override if self.margin_override is not None
                             else m["margin"][str(fold)])
@@ -102,8 +111,9 @@ class HeuristicPolicy(_Base):
     def __init__(self, margin=None, model_dir=None):
         self.margin_default = margin
 
-    def start(self, board_id, board, phys_w):
+    def start(self, board_id, board, phys_w, path=""):
         super().start(board_id, board, phys_w)
+        self.fold = None
         self.margin = 0.3 if self.margin_default is None else float(self.margin_default)
 
     def dy(self, fa, fb, b_done, c):

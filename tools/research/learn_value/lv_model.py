@@ -36,7 +36,9 @@ NF = 5
 MARGINS = [0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.2]
 
 
-def load(path):
+def load(path, target="cost"):
+    """target 'cost' = the restart score of the run's objective; 'route_cost' = routed cost
+    only (the length + vias objective, re-targeted from physics-objective trajectories)."""
     boards, runs = {}, defaultdict(dict)
     for l in open(path):
         r = json.loads(l)
@@ -49,7 +51,7 @@ def load(path):
             runs[key].setdefault(r["k"], dict(ck={}))["ck"][r["it"]] = r
         elif kd == "end":
             d = runs[key].setdefault(r["k"], dict(ck={}))
-            d.update(cost=r["cost"], T=r["t_run"] - r.get("t_probe", 0.0), its=r["its"],
+            d.update(cost=r[target], T=r["t_run"] - r.get("t_probe", 0.0), its=r["its"],
                      overlap=r["overlap"], unrouted=r["unrouted"])
     out = {}
     for b, rs in runs.items():
@@ -261,13 +263,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("data")
     ap.add_argument("--obj", required=True, choices=["phys", "lv"])
-    ap.add_argument("--out", default="/home/user/kicad-auto-everything/kae-work/learnv/model")
+    ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "model"))
     ap.add_argument("--budget", type=float, default=None, help="restart CPU-s (jc: 102 phys, 120 lv)")
     ap.add_argument("--perm", type=int, default=60)
+    ap.add_argument("--retarget", action="store_true", help="lv from physics data: target = routed cost")
     a = ap.parse_args()
     phys_w = 2.0 if a.obj == "phys" else 0.0
     B = a.budget or (102.0 if a.obj == "phys" else 120.0)
-    boards, data = load(a.data)
+    boards, data = load(a.data, "cost" if a.obj == "phys" or not a.retarget else "route_cost")
     names = sorted(data)
     folds = folds_of(names)
     print(f"{a.obj}: {len(names)} boards, {sum(len(v) for v in data.values())} restarts, "

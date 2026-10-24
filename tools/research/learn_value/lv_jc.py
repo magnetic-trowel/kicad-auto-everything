@@ -182,7 +182,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
                dict(board=bid, seed=seed, phys_w=C.phys_w, tag=tag))
     L.write(kind="board", **probe.board)
     if policy is not None:
-        policy.start(bid, probe.board, C.phys_w)
+        policy.start(bid, probe.board, C.phys_w, path=str(w.data.get("path", "")))
     run_end = budget * (1 - polish)
     cap = run_cap if run_cap is not None else budget * first
     best = None
@@ -257,6 +257,10 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
     r.legalize(list(w.net_pins))
     L.write(kind="done", runs=k, aborted=n_abort, best_k=best[3], best_cost=best[0],
             t=_cur_time(clock), t_probe=probe.cpu)
+    print("LVSTATS " + json.dumps(dict(board=getattr(policy, "bid", bid), fold=getattr(policy, "fold", None),
+                                       margin=getattr(policy, "margin", None), runs=k, aborted=n_abort,
+                                       best_k=best[3], best_cost=round(best[0], 3),
+                                       t=round(_cur_time(clock), 1), probe_cpu=round(probe.cpu, 2))), flush=True)
     log(f"lv collapsed: best run {best[3]} of {k} ({n_abort} abandoned) {r.stats()} "
         f"t={_cur_time(clock):.1f} probe_cpu={probe.cpu:.1f}")
     if polish > 0 and clock.left() > 2:
@@ -275,7 +279,7 @@ def jc_log(world, **kw):
 
 def jc_value(world, model_dir=None, margin=None, **kw):
     from lv_policy import ValuePolicy
-    pol = ValuePolicy(model_dir or os.environ.get("LV_MODEL", str(ROOT / "kae-work/learnv/model")),
+    pol = ValuePolicy(model_dir or os.environ.get("LV_MODEL", str(Path(__file__).resolve().parent / "model")),
                       margin=margin)
     kw.setdefault("run_cap", RUN_CAP_S * kw.get("budget", 120) / 120)
     return jc_driver(world, policy=pol, **kw)
