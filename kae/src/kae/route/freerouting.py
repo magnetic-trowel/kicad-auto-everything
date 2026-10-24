@@ -84,6 +84,10 @@ def _env():
     for o in ("-XX:+UseSerialGC", "-XX:ActiveProcessorCount=1"):
         if o.split("=")[0].split(":")[-1] not in opts:
             opts = (opts + " " + o).strip()
+    # a bounded heap: by default the JVM may take a quarter of the cgroup's memory and, on a
+    # long budget, grows toward it whether or not the board needs it (KAE_FR_XMX, e.g. 6g)
+    if "-Xmx" not in opts:
+        opts = (opts + " -Xmx" + env.get("KAE_FR_XMX", "6g")).strip()
     env["JAVA_TOOL_OPTIONS"] = opts
     return env
 
