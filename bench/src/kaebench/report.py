@@ -47,10 +47,19 @@ def summarize(rows):
         adapter, kind, split = key
         first = [b[0] for b in boards]
         k = max(len(b) for b in boards)
+        every = [r for b in boards for r in b]
         m = dict(boards=len(boards), k=k,
-                 failures=sum(1 for b in boards for r in b if r["status"] != "ok"),
-                 time_s=_mean([r.get("runtime_s") for b in boards for r in b]))
-        if kind == "route":
+                 failures=sum(1 for r in every if r["status"] != "ok"),
+                 timeouts=sum(1 for r in every if (r.get("adapter_meta") or {}).get("timed_out")),
+                 capped=sum(1 for r in every if (r.get("score") or {}).get("drc_capped")),
+                 partial=sum(1 for r in every if (r.get("adapter_meta") or {}).get("partial")),
+                 time_s=_mean([r.get("runtime_s") for r in every]),
+                 cpu_s=_mean([(r.get("method_usage") or {}).get("cpu_s") for r in every]),
+                 rss_mb_max=max([(r.get("method_usage") or {}).get("max_rss_mb") or 0 for r in every] or [0]) or None,
+                 score_cpu_s=_mean([(r.get("scoring_usage") or {}).get("cpu_s") for r in every]),
+                 suspect=sum(1 for r in every if (r.get("score") or {}).get("suspect_copy")),
+                 unsandboxed=sum(1 for r in every if (r.get("adapter_meta") or {}).get("sandboxed") is False))
+        if kind in ("route", "joint"):
             best = [_route_best(b) for b in boards]
             sc1 = [r.get("score") or {} for r in first]
             sck = [r.get("score") or {} for r in best]
@@ -61,11 +70,15 @@ def summarize(rows):
                      invalid=sum(1 for s in sck if s and not s.get("valid")),
                      wl_ratio=_median([s.get("wl_ratio") for s in sck]),
                      via_delta=_mean([s.get("via_delta") for s in sck]))
+            if kind == "joint":
+                m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                         hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]))
         else:
             best = [_place_best(b) for b in boards]
             sck = [r.get("score") or {} for r in best]
             prb = [((r.get("probe") or {}).get("score")) or {} for r in best]
             m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                     invalid=sum(1 for s in sck if s and not s.get("valid")),
                      hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]),
                      outside=_mean([s.get("outside") for s in sck]),
                      probe_cp=_mean([1.0 if p.get("clean") else 0.0 for p in prb]) if any(prb) else None,
@@ -75,14 +88,18 @@ def summarize(rows):
 
 
 ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
-              "wl_ratio", "via_delta", "time_s", "failures")
-PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "hpwl_ratio", "outside", "probe_cp",
-              "probe_completion", "time_s", "failures")
+              "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
+              "timeouts", "capped", "failures")
+JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "legal", "completion", "errors", "invalid",
+              "suspect", "hpwl_ratio", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "timeouts",
+              "failures")
+PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
+              "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
 
 def to_markdown(summary):
     lines = []
-    for kind, cols in (("route", ROUTE_COLS), ("place", PLACE_COLS)):
+    for kind, cols in (("route", ROUTE_COLS), ("place", PLACE_COLS), ("joint", JOINT_COLS)):
         rows = [(key, m) for key, m in summary.items() if key[1] == kind]
         if not rows:
             continue
@@ -93,9 +110,18 @@ def to_markdown(summary):
             vals = dict(m, adapter=adapter, split=split)
             lines.append("| " + " | ".join("" if vals.get(c) is None else str(vals.get(c)) for c in cols) + " |")
         lines.append("")
+    unsandboxed = sorted({key[0] for key, m in summary.items() if m.get("unsandboxed")})
+    if unsandboxed:
+        lines.append(f"**Unsandboxed attempts** ({', '.join(unsandboxed)}): these methods could read "
+                     "the reference layouts; do not treat their scores as results.\n")
     lines.append("cp1/cpk: clean pass on attempt 0 / best of k (fully connected, no error-level DRC, "
-                 "placement and nets untouched). completion: share of start-of-task unconnected items "
-                 "routed. wl_ratio: track length / human. Scored by kicad-cli on re-opened boards.")
+                 "nothing but routing changed). completion: share of start-of-task unconnected items "
+                 "routed. invalid: best attempts that changed more than the task allows. suspect: "
+                 "attempts that reproduce the human layout. wl_ratio: track length / human. cpu_s / "
+                 "rss_mb_max: the method's CPU seconds (mean) and peak memory (max) over all processes it "
+                 "ran; score_cpu_s: the scorer's. capped: attempts with an error type at KiCad's DRC report cap "
+                 "(199 per type), whose error count is a lower bound; unconnected counts are exact. Scored by "
+                 "kicad-cli on boards rebuilt from the task input plus the method's allowed changes.")
     return "\n".join(lines)
 
 

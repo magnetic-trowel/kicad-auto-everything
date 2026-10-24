@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from kaebench import boardfiles, manifest, report, score, tools
+from kaebench import adapters, boardfiles, manifest, report, score, tools
 
 SHA = "0" * 40
 
@@ -61,6 +61,99 @@ def test_strip_ses_placement(tmp_path):
     assert "placement" not in text and "(routes" in text
 
 
+def test_quote_ses_net_names(tmp_path):
+    ses = tmp_path / "b.ses"
+    ses.write_text('(session b (routes (network_out\n  (net ADD|SUB (wire (path F.Cu 250 0 0 1 1)))\n'
+                   '  (net "XOR_NOT" (via "Via[0-1]_800:400_um" 0 0))\n  (net \\JMP (wire)))))\n')
+    assert boardfiles.quote_ses_net_names(ses) == 2
+    text = ses.read_text()
+    assert '(net "ADD|SUB" (wire' in text and '(net "XOR_NOT"' in text and '(net "\\JMP"' in text
+
+
+def test_unblock_all_power_dsn(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    head = "(pcb b (structure\n (layer F.Cu (type {}) (property (index 0)))\n (layer B.Cu (type power))\n"
+    dsn.write_text(head.format("power") + " (plane GND (polygon F.Cu 0 0 0 1 1))))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 2
+    assert "power" not in dsn.read_text() and dsn.read_text().count("(type signal)") == 2
+    dsn.write_text(head.format("signal") + "))\n")
+    assert boardfiles.unblock_all_power_dsn(dsn) == 0 and "(type power)" in dsn.read_text()
+
+
+def test_freerouting_empty_ses_is_no_output(tmp_path, monkeypatch):
+    """A router that crashes and leaves a 0-byte session gets no_output, not an import error."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    def router(cmd, **kw):
+        Path(cmd[cmd.index("-do") + 1]).write_text("")
+        return subprocess.CompletedProcess(cmd, 1, "", "NullPointerException")
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    monkeypatch.setattr(tools, "run_measured", router)
+    res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / "w", 0, 100)
+    assert res.output is None and res.meta["ses_empty"] and res.meta["rc"] == 1
+
+
+def test_freerouting_hung_after_writing_ses_keeps_it(tmp_path, monkeypatch):
+    """A router killed at our deadline after writing a complete session is scored on it;
+    a session cut off mid-write is no output."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+    imported = []
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        if op == "import-ses":
+            imported.append(args[1])
+            Path(args[2]).write_text("(kicad_pcb)")
+            return {"ok": True}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    for text, kept in (('(session s (routes (network_out (net "a)" (wire (path F.Cu 1 0 0 1 1))))))\n', True),
+                       ('(session s (routes (network_out (net "a" (wire', False)):
+        def router(cmd, **kw):
+            Path(cmd[cmd.index("-do") + 1]).write_text(text)
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+        monkeypatch.setattr(tools, "run_ops", ops)
+        monkeypatch.setattr(tools, "run_measured", router)
+        res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / f"w{kept}", 0, 100)
+        assert res.meta["timed_out"] and res.meta["partial"]
+        assert (res.output is not None) == kept and res.meta.get("ses_cut", False) == (not kept), res.meta
+    assert len(imported) == 1
+
+
+def test_dsn_unset_netclass_sizes(tmp_path):
+    dsn = tmp_path / "b.dsn"
+    dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
+                   '  (rule (width -0.001) (clearance 150)))\n (library\n'
+                   '  (padstack "Via[0-1]_-0.001:-0.001_um" (shape (circle F.Cu -0.001)) (shape (circle B.Cu -0.001))'
+                   ' (attach off))\n  (padstack "Via[0-1]_600:300_um" (shape (circle F.Cu 600)) (attach off)))\n'
+                   ' (network (class kicad_default a b (circuit (use_via "Via[0-1]_-0.001:-0.001_um"))'
+                   ' (rule (width -0.001)))))\n')
+    assert boardfiles.clamp_dsn_widths(dsn, 0.2) == 2
+    assert boardfiles.fix_dsn_unsized_vias(dsn, 0.5, 0.3) == 1
+    text = dsn.read_text()
+    assert "-0.001" not in text and text.count("(width 200)") == 2
+    assert text.count('"Via[0-1]_500:300_um"') == 3 and "(circle F.Cu 500)" in text and "(circle B.Cu 500)" in text
+    assert "(circle F.Cu 600)" in text and "Via[0-1]_600:300_um" in text
+
+
 def test_summarize_drc_ignores_library_checks():
     rep = dict(violations=[dict(type="clearance", severity="error"),
                            dict(type="lib_footprint_issues", severity="error"),
@@ -100,6 +193,22 @@ def test_id_list_from_file(tmp_path):
     assert _split("a,b,,c") == ["a", "b", "c"] and _split("") is None
 
 
+def test_local_boards_read_row_json(tmp_path):
+    from kaebench.cli import _local_boards
+    for name, row in (("b1", dict(id="b1", repo="https://github.com/o/r", commit=SHA, pcb_path="x/b.kicad_pcb",
+                                  license="MIT", license_tier="permissive", tags=["rf"])), ("b2", None)):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "board.kicad_pcb").write_text("(kicad_pcb)")
+        if row:
+            (d / "row.json").write_text(json.dumps(row))
+    items = {e["id"]: e for e, _ in _local_boards(tmp_path, "board.kicad_pcb", ["b1", "b2", "missing"])}
+    assert items["b1"]["license_tier"] == "permissive" and items["b1"]["tags"] == ["rf"]
+    assert items["b1"]["repo"] == "https://github.com/o/r" and items["b1"]["commit"] == SHA
+    assert items["b2"]["license"] == "unknown (local)" and items["b2"]["tags"] == []
+    assert len(_local_boards(tmp_path, "board.kicad_pcb", None)) == 2
+
+
 def test_clamp_dsn_widths(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text("(pcb b (resolution um 10) (unit um)\n (structure (rule (width 101.6) (clearance 200)))\n"
@@ -137,12 +246,112 @@ def test_rpm_shims(tmp_path):
         assert r.returncode != 0
 
 
-def test_self_probe_returns_board_unchanged(tmp_path):
-    from kaebench import adapters
-    probe = adapters.make("self")
-    assert probe.name == "self" and probe.kinds == ("route",)
-    inp = tmp_path / "in"
-    inp.mkdir()
-    boardfiles.board_path(inp).write_text("(kicad_pcb)")
-    res = probe.run("route", inp, tmp_path / "w", 0, 10)
-    assert res.output.read_text() == "(kicad_pcb)"
+def test_outside_is_judged_against_the_human_placement():
+    allowed = {"J1": 2}  # the designer's edge connector has 2 pads over the edge
+    rows = [dict(uuid="J1", pads_outside=2), dict(uuid="R1", pads_outside=0), dict(uuid="U1", pads_outside=None)]
+    assert score.outside_count(rows, allowed) == 0
+    assert score.outside_count([dict(uuid="J1", pads_outside=3), dict(uuid="R1", pads_outside=1)], allowed) == 2
+
+
+def test_work_list_interleaves_arms_per_board():
+    from kaebench import runner
+
+    class A:
+        kinds = ("route",)
+
+        def __init__(self, name):
+            self.name = name
+
+    recs = [dict(id=f"b{i}", tasks={"route": {}}) for i in range(40)]
+    arms = [(A("x"), None), (A("y"), None)]
+    work = runner.work_list(recs, arms, ("route",), 1)
+    # each board's arms are adjacent
+    assert [w[0]["id"] for w in work] == [r["id"] for r in recs for _ in arms]
+    firsts = [work[2 * i][3].name for i in range(len(recs))]
+    assert set(firsts) == {"x", "y"}  # neither arm always goes first
+    assert work == runner.work_list(recs, arms, ("route",), 1)  # deterministic
+    sized = [dict(id=f"s{p}", tasks={"route": {}}, reference=dict(stats=dict(pads=p))) for p in (5, 500, 50)]
+    assert [w[0]["id"] for w in runner.work_list(sized, arms[:1], ("route",), 1)] == ["s500", "s50", "s5"]
+
+    class P:
+        kinds = ("place",)
+        name = "p"
+    placeable = [dict(id=f"m{n}", tasks={"place": {"movable": n}}) for n in (0, 1, 5)]
+    assert [w[0]["id"] for w in runner.work_list(placeable, [(P(), None)], ("place",), 1, min_movable=2)] == ["m5"]
+    assert len(runner.work_list(placeable, [(P(), None)], ("place",), 1)) == 3  # default keeps all
+
+
+def test_run_measured_peak_rss_is_the_childs_not_the_runners():
+    # The runner's own peak RSS used to leak into every child's ru_maxrss via exec.
+    big = bytearray(1 << 30)  # 1 GiB touched in this (parent) process
+    for i in range(0, len(big), 4096):
+        big[i] = 1
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "b = bytearray(200 << 20)"])
+    u = tools.usage_take()
+    assert r.returncode == 0 and u["processes"] == 1
+    assert 200 <= u["max_rss_mb"] < 400, u
+    tools.run_measured(["true"])
+    assert tools.usage_take()["max_rss_mb"] < 50
+    del big
+
+
+def test_run_measured_cpu_exit_code_and_errors():
+    tools.usage_take()
+    r = tools.run_measured([sys.executable, "-c", "import sys\nx = 0\nfor i in range(3_000_000): x += i\n"
+                            "print('out'); print('err', file=sys.stderr); sys.exit(3)"])
+    u = tools.usage_take()
+    assert (r.returncode, r.stdout, r.stderr) == (3, "out\n", "err\n")
+    assert u["cpu_s"] > 0.05
+    assert tools.run_measured(["sh", "-c", "kill -9 $$"]).returncode == -9
+    with pytest.raises(FileNotFoundError):
+        tools.run_measured(["/nonexistent/kae-command"])
+    with pytest.raises(subprocess.TimeoutExpired):
+        tools.run_measured([sys.executable, "-c", "while True: pass"], timeout=1)
+    assert tools.usage_take()["cpu_s"] > 0.5  # the killed command's CPU is still accounted
+
+
+def test_run_measured_cuts_a_stalled_command_short():
+    """A process tree idling at ~0% CPU (as kicad-cli does when KiCad's zone filler
+    deadlocks) is killed after `stall` seconds; a busy one only at its timeout."""
+    import time
+    t = time.monotonic()
+    with pytest.raises(tools.Stalled):
+        tools.run_measured(["sh", "-c", "sleep 60; true"], timeout=60, stall=3)
+    assert time.monotonic() - t < 20
+    busy = [sys.executable, "-c", "while True: pass"]
+    with pytest.raises(subprocess.TimeoutExpired) as e:  # CPU of a grandchild counts as progress
+        tools.run_measured(["sh", "-c", f"{subprocess.list2cmdline(busy)}; true"], timeout=6, stall=2)
+    assert not isinstance(e.value, tools.Stalled)
+    tools.usage_take()
+
+
+def test_capped_drc_types_are_flagged():
+    drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
+    assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
+    assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
+
+
+def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch):
+    """Methods and Freerouting run with cwd=<attempt dir>, so relative paths would miss."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "board.kicad_pcb").write_text("(kicad_pcb)")
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd)
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(tools, "run_measured", run)
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+        return {"ok": True, "rules": {}}
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    adapters.Command("cp {input} {output}", sandbox=False).run("route", Path("in"), Path("w1"), 0, 10)
+    adapters.Freerouting(binary="freerouting").run("route", Path("in"), Path("w2"), 0, 10)
+    flat = [str(x) for c in seen for x in (c if isinstance(c, list) else [c])]
+    paths = [x for x in " ".join(flat).split() if x.endswith((".kicad_pcb", ".dsn", ".ses"))]
+    assert paths and all(Path(x.strip("'")).is_absolute() for x in paths), paths
