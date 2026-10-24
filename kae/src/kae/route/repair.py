@@ -653,7 +653,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         s_ = drc.summary(rep)
         rec.update(s_)
-        rec["kept"] = _key(s_) > _key(best)
+        # a round never buys a connection with a DRC error: an error is a defect the last mile
+        # cannot repair (it runs only on boards without errors), an open it can join (olimex
+        # crit: a free round traded 2 opens for 1 open + 1 starved thermal, and the board kept it)
+        rec["kept"] = _key(s_) > _key(best) and s_["errors"] <= best["errors"]
         log(f"repair round {k} ({mode}{', spokes ' + str(len(a['spokes'])) if a['spokes'] else ''}"
             f"{', split planes ' + str(len(a['connect'])) if use_split else ''}): "
             f"{s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
@@ -674,6 +677,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             if fails >= FAILS:
                 rec["stopped"] = "no improvement"
                 break
+    else:
+        # every round allowed ran without a stop of its own (opts rounds; "auto" lifts the cap)
+        if len(rounds) > 1 and not rounds[-1].get("stopped"):
+            rounds[-1]["stopped"] = "round cap"
     if opts.get("last_mile"):
         _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log)
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best

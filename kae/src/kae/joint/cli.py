@@ -59,6 +59,12 @@ def run(a):
     # the finishing stage belongs to the loop: the staged baseline (--max-iters 0) has none
     lopts = dict(opts, max_iters=a.max_iters, modules=not a.no_modules)
     lopts.setdefault("finish", (a.max_iters is None or a.max_iters > 0) and not a.no_finish)
+    # the loop's windows and its finishing stage run the last mile; on the first route it
+    # only takes their time (pmw3610, 900 s: iteration 0 took 234 s without, 381-518 s with,
+    # leaving 0-2 windows). The staged baseline keeps the bridge's default (last mile on
+    # since c9c49d6). --set first_last_mile=1 overrides.
+    if lopts["finish"]:
+        sopts.setdefault("first_last_mile", False)
     rep = dict(status="error")
     try:
         stages = KaeStages(a.input, wd, opts=sopts, log=_log)

@@ -240,3 +240,39 @@ def test_incumbent_is_written_after_every_acceptance():
     rep = _run(st)
     kept = sum(1 for r in rep["iterations"][1:] if r.get("accepted"))
     assert st.writes == 1 + kept + 1            # iteration 0, each kept window, the final write
+
+
+def test_last_mile_line_reads_counts():
+    # lastmile.close reports joined/failed as counts; a len() on them killed every window
+    from kae.joint.stages import last_mile_line
+    assert last_mile_line(dict(joined=2, failed=1, ripped=5, seconds=3.2)) == "joined 2, failed 1, ripped 5 (3.2s)"
+    assert last_mile_line(dict(error="RuntimeError: x", seconds=0.1)) == "error RuntimeError: x"
+    assert last_mile_line(None) == "nothing"
+
+
+def test_cli_first_route_skips_the_last_mile_only_when_the_loop_finishes(tmp_path, monkeypatch):
+    import kae.joint.cli as cli
+    import kae.joint.loop as L
+    import kae.joint.stages as S
+    seen = {}
+
+    class Stub:
+        def __init__(self, inp, wd, opts=None, log=None):
+            seen["sopts"] = dict(opts)
+
+    class Loop:
+        def __init__(self, stages, opts=None, log=None):
+            pass
+
+        def run(self, out, **kw):
+            return {}
+
+    monkeypatch.setattr(S, "KaeStages", Stub)
+    monkeypatch.setattr(L, "JointLoop", Loop)
+    base = ["run", str(tmp_path / "in.kicad_pcb"), str(tmp_path / "out.kicad_pcb"), "--time", "10"]
+    cli.main(base)
+    assert seen["sopts"]["first_last_mile"] is False
+    cli.main(base + ["--max-iters", "0"])
+    assert "first_last_mile" not in seen["sopts"]          # staged: the bridge's default
+    cli.main(base + ["--set", "first_last_mile=1"])
+    assert seen["sopts"]["first_last_mile"] == 1

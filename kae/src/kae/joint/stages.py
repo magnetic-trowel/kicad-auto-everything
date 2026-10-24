@@ -348,9 +348,7 @@ class KaeStages:
         lm = None
         if it > 0 and not finish and nets and self.opts.get("window_last_mile", True):
             lm = self._last_mile(out, it, nets, lay.crit)
-            self.log(f"last mile on {len(nets)} nets: " + (lm.get("error") or
-                     f"joined {len(lm.get('joined') or [])}, failed {len(lm.get('failed') or [])}, "
-                     f"ripped {lm.get('ripped')} ({lm.get('seconds')}s)"))
+            self.log(f"last mile on {len(nets)} nets: {last_mile_line(lm)}")
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
@@ -622,6 +620,16 @@ def place_stops(rep):
         out["closed_loop"] = "legal" if not cl.get("end") else ("round cap" if cl.get("rounds", 0) >= 8 else "clock")
     out["legal"] = bool(rep.get("legal_grid") and not rep.get("exact"))
     return out
+
+
+def last_mile_line(lm):
+    """One log line for KaeStages._last_mile's report (joined/failed are counts)."""
+    if not lm:
+        return "nothing"
+    if lm.get("error"):
+        return f"error {lm['error']}"
+    return (f"joined {lm.get('joined') or 0}, failed {lm.get('failed') or 0}, "
+            f"ripped {lm.get('ripped') or 0} ({lm.get('seconds')}s)")
 
 
 def route_stops(rep):

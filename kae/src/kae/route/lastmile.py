@@ -402,6 +402,10 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
                 if it.net not in queue and it.net != net:
                     queue.append(it.net)
             status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
+        else:
+            # max_parts joins and parts still left (a pour in many pieces): its turn again later
+            if net not in queue:
+                queue.append(net)
         log(f"last mile {net}: {'; '.join(status) or 'nothing to join'}")
     rep["ripped"] = sorted(ripped_ids)
     rep["ripped_soft"] = sorted(u for u in ripped_ids if u in soft)
