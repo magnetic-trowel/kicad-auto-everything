@@ -86,6 +86,8 @@ def test_replace_window_moves_only_window_parts_legally():
     h = CongestionHistory((0, 0, 60, 40), bin_mm=1.0)
     h.add_corridor((8, 10), (22, 10), width=3.0, amount=3.0)
     win = Window(rect=(4.0, 4.0, 26.0, 18.0), parts=(u1, u2), refs=("U1", "U2"))
+    # warm-up: a first call may compile the annealer's kernels, which can bind the time budget
+    replace_window(b, win, {"nets": {}, "structures": []}, history=h, seed=3, time_s=30.0, physics=False)
     res = replace_window(b, win, {"nets": {}, "structures": []}, history=h, seed=3, time_s=30.0, physics=False,
                          bump_refs=("U1",))
     assert res.report.get("history", {}).get("applied")
