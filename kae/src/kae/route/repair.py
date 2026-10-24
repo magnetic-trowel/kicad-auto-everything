@@ -670,4 +670,79 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             if fails >= FAILS:
                 rec["stopped"] = "no improvement"
                 break
+    if opts.get("last_mile"):
+        _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log)
+        best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
+
+
+LAST_MILE_MAX = 8      # open connections the last mile takes on at most (more is a routing failure)
+
+
+def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log):
+    """Last-mile rounds (kae.route.lastmile) after the repair rounds: join what is still
+    open with the grid router, rip what the new copper must cross, and let a nested repair
+    loop route the ripped nets with the new copper fixed. Each round works on the previous
+    round's board (a join can open the net it ripped, which the next round joins in turn)
+    while that board has no more errors than the best one; the output is replaced only by a
+    board KiCad's DRC finds better with no more errors. Appends its records to `rounds`
+    (each kept one carries `final`)."""
+    from . import lastmile
+
+    def left():
+        return deadline - time.monotonic()
+    sev = opts.get("severities") or {}
+    fixed = set(fixed)
+    cur, cur_rep, cur_sum = output_path, best_rep, best
+    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
+        if cur_sum["errors"] or not cur_sum["unconnected"] or cur_sum["unconnected"] > LAST_MILE_MAX or left() < 60:
+            break
+        rec = dict(round=f"lm{j}", level="last_mile")
+        rounds.append(rec)
+        ldir = wd / f"lastmile{j}"
+        if ldir.exists():
+            shutil.rmtree(ldir)
+        ldir.mkdir(parents=True)
+        try:
+            staged = drc.stage_board(cur, input_path, ldir / "base")
+            fills = pcbnew_io.zone_fills(staged)["zones"]
+            cand = ldir / "cand.kicad_pcb"
+            r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
+                               fixed=fixed, log=log)
+        except Exception as e:  # noqa: BLE001 - the repaired board stays
+            rec["error"] = f"{type(e).__name__}: {e}"
+            break
+        rec.update(joined=r["joined"], failed=r["failed"], added=len(r["added"]), ripped=len(r["ripped"]))
+        if not r["joined"]:
+            rec["stopped"] = "nothing joined"
+            break
+        fixed |= set(r["added"])
+        if r["ripped"] and left() > 60:
+            # the ripped nets go back to the router around the new, fixed copper
+            if (wd / "kicad.dsn").exists():
+                shutil.copy2(wd / "kicad.dsn", ldir / "kicad.dsn")
+            sub = loop(input_path, cand, ldir, plan, info, dict(opts, last_mile=False, fixed_uuids=sorted(fixed)),
+                       deadline, log=log)
+            rec["reroute"] = [{k: x.get(k) for k in ("round", "level", "errors", "unconnected", "kept")}
+                              for x in sub.get("rounds") or []]
+        if left() < 10:
+            rec["stopped"] = "time"
+            break
+        try:
+            rep = drc.run(drc.stage_board(cand, input_path, ldir / "drc"), ldir / "drc" / "drc.json",
+                          timeout=max(10, left() - 5))
+        except drc.DrcError as e:
+            rec["drc_error"] = str(e)
+            break
+        s_ = drc.summary(rep)
+        rec.update(s_)
+        rec["kept"] = _key(s_) > _key(best) and s_["errors"] <= best["errors"]
+        log(f"last mile {j}: joined {r['joined']}, ripped {len(r['ripped'])}: {s_['errors']} errors {s_['by_type']}, "
+            f"{s_['unconnected']} unconnected ({'kept' if rec['kept'] else 'not better'})")
+        if rec["kept"]:
+            shutil.copy2(cand, output_path)
+            best, best_rep = s_, rep
+            rec["final"] = s_
+        if s_["errors"] > best["errors"]:
+            break
+        cur, cur_rep, cur_sum = cand, rep, s_

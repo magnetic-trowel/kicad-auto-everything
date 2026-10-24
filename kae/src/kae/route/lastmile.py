@@ -241,8 +241,9 @@ def _join(gr, sp, net, src, others, widths, fixed):
     """One route from `src` to the other parts: (route, new items, ripped items) or None."""
     for m in MARGINS:
         rt = _try(gr, sp, net, src, others, _window(src, others, m), widths)
-        if rt is not None:
-            return rt, _commit(sp, rt), []
+        new = _commit(sp, rt) if rt is not None else None
+        if new is not None:
+            return rt, new, []
     for m in RIP_MARGINS:
         win = _window(src, others, m)
         cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
@@ -257,10 +258,10 @@ def _join(gr, sp, net, src, others, widths, fixed):
             rt = _try(gr, sp, net, src, others, win, widths)
         finally:
             gr.soft, gr.soft_cost = [], 0.0
-        if rt is None:
+        new = _commit(sp, rt) if rt is not None else None
+        if new is None:
             _restore(sp, cand)
             continue
-        new = _commit(sp, rt)
         keep = [it for it in cand if not _conflicts(sp, it, set(new))]
         _restore(sp, keep)
         ripped = [it for it in cand if it not in keep]
@@ -300,7 +301,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     todo = [net for net in nets if len([p for p in parts(sp, fp, net) if _relevant(p)]) > 1]
     for net in todo:
         mn, opt, _mx = sp.width_limits(net, sp.cu[0])
-        widths = sorted({round(opt, 4), round(mn, 4)}, reverse=True)
+        widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
         status = []
         for _ in range(max_parts):
             ps = [p for p in parts(sp, fp, net) if _relevant(p)]
@@ -312,6 +313,16 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
                 status.append("no anchors")
                 break
             got = _join(gr, sp, net, src, ps[:-1], widths, fixed)
+            if got is None and not sp.via_in_pad:
+                # a pad walled in by its own footprint (a microphone's centre pad inside its
+                # ring) is left only through a via in the pad, as the human boards do it
+                sp.via_in_pad = True
+                try:
+                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed)
+                finally:
+                    sp.via_in_pad = False
+                if got is not None:
+                    status.append("via in pad")
             if got is None:
                 status.append("no route")
                 rep["failed"] += 1
@@ -338,13 +349,19 @@ def _relevant(part):
 
 
 def _commit(sp, rt):
+    """Add a route's copper to the space; None (nothing added) when two of its own vias
+    break the same-net pitch or hole-to-hole distance (the search checks each via only
+    against committed copper)."""
     new = []
-    for l, a, b2 in rt.segs:
-        it = sp.add_track(rt.net, l, rt.width, a, b2, owner=("lastmile", ""))
+    for (x, y) in rt.vias:
+        if sp.via_violations(rt.net, x, y):
+            sp.remove(new)
+            return None
+        it = sp.add_via(rt.net, x, y, owner=("lastmile", ""))
         it.uuid = W.new_uuid()
         new.append(it)
-    for (x, y) in rt.vias:
-        it = sp.add_via(rt.net, x, y, owner=("lastmile", ""))
+    for l, a, b2 in rt.segs:
+        it = sp.add_track(rt.net, l, rt.width, a, b2, owner=("lastmile", ""))
         it.uuid = W.new_uuid()
         new.append(it)
     return new

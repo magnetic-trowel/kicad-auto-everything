@@ -44,6 +44,9 @@ DEFAULT_OPTS = dict(
                              # / time left), the same 0.6 up to a 1,500 s budget and more beyond, since the
                              # router stops by itself (COMPLETED / STAGNATION) and leaves the rest to repair
     repair_reserve_s=600.0,  # with router_share "auto": the time kept for the repair rounds at long budgets
+    last_mile=False,         # after the repair rounds, join what is still open with the grid router and
+                             # rip-up (kae.route.lastmile; repair._last_mile)
+    last_mile_rounds=4,      # last-mile rounds at most (each joins what the previous one left or ripped)
     planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
                              # plane_cost x, so they go there only when nothing shorter exists), "keep"
                              # (Freerouting power layers, no traces; a repair round with open connections
