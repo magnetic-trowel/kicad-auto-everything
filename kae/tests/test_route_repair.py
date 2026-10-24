@@ -144,3 +144,24 @@ def test_split_planes_keep_the_windows_that_matter():
     assert len(windows) == 2
     assert any(lo < 4.1 and hi > 4.7 for lo, hi in windows)     # the cut-off pad's hole
     assert any(lo < 12.1 and hi > 15.9 for lo, hi in windows)   # the large hole
+
+
+def test_router_budget_scales_only_past_the_old_split():
+    """router_share "auto" gives the first routing 0.6 of the time up to 1,500 s (as the
+    fixed 0.6 did) and all but repair_reserve_s beyond; repair rounds "auto" are bounded only
+    by the no-improvement rule and the time."""
+    from kae.route import bridge, repair
+    fixed = dict(bridge.DEFAULT_OPTS)
+    auto = dict(fixed, router_share="auto")
+    for left in (100.0, 600.0, 880.0, 1500.0):
+        assert abs(bridge.router_budget(left, auto) - bridge.router_budget(left, fixed)) < 1e-9
+    assert abs(bridge.router_budget(3580.0, auto) - 2980.0) < 1e-9
+    assert bridge.router_budget(3580.0, fixed) == 3580.0 * 0.6
+    assert bridge.router_budget(1000.0, dict(fixed, repair=False)) == 900.0
+    assert repair.max_rounds(fixed) == 5 and repair.max_rounds(dict(fixed, rounds="auto")) == repair.AUTO_ROUNDS
+
+
+def test_critical_cli_passes_bridge_options():
+    from kae.route.critical_cli import _bridge_opts
+    assert _bridge_opts(["rounds=auto", "router-share=0.8", "repair_reserve_s=900"]) == dict(
+        rounds="auto", router_share=0.8, repair_reserve_s=900)

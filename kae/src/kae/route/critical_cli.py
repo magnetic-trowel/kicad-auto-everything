@@ -6,7 +6,8 @@
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
-                                     [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
+                                     [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
+                                     [--pad-shapes kicad|outside] [--bridge-opt KEY=VALUE]
                                      [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
@@ -28,6 +29,21 @@ Exit status: 0 when an output was written, 2 otherwise.
 import argparse
 import json
 import sys
+
+
+def _bridge_opts(items):
+    """{key: value} from KEY=VALUE strings, numbers as numbers."""
+    out = {}
+    for it in items or []:
+        k, _, v = it.partition("=")
+        for cast in (int, float):
+            try:
+                v = cast(v)
+                break
+            except ValueError:
+                pass
+        out[k.strip().replace("-", "_")] = v
+    return out
 
 
 def main(argv=None):
@@ -66,6 +82,8 @@ def main(argv=None):
                    help="the bridge's inner plane layers (kae.route.bridge DEFAULT_OPTS planes)")
     r.add_argument("--pad-shapes", default="kicad", choices=("kicad", "outside"),
                    help="the bridge's pin polygons (kae.route.bridge DEFAULT_OPTS pad_shapes)")
+    r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
+                   help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
@@ -99,7 +117,8 @@ def main(argv=None):
         if a.trim_tol is not None:
             opts["trim_tol"] = a.trim_tol
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
-                           workdir=a.workdir, bridge=not a.no_bridge, bridge_opts=dict(planes=a.planes, pad_shapes=a.pad_shapes))
+                           workdir=a.workdir, bridge=not a.no_bridge,
+                           bridge_opts=dict(_bridge_opts(a.bridge_opt), planes=a.planes, pad_shapes=a.pad_shapes))
         if a.physics_fidelity != "fast":
             rep["physics_fidelity"] = EX.summary()
         text = json.dumps(rep, default=str)

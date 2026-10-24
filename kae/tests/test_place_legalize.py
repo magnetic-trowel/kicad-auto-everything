@@ -348,3 +348,49 @@ def test_kicad_round_that_moves_parts_refreshes_order_and_physics(monkeypatch):
     errors = iter([0])
     cli._kicad_loop(a, res2, time.monotonic(), lambda *x, **k: dict(writer="fake"))
     assert "protection_order_pre_drc" not in res2.report and "scorecard_pre_drc" not in res2.report
+
+
+def test_kicad_error_with_board_text_keeps_the_named_part_off_the_text():
+    """sparkfun-xrp-controller (seed 2): KiCad's clearance error between J3's pad and the
+    copper text 'v20' stayed through 6 rounds. The text item names no part, so matching it by
+    position blamed whichever part had a pad nearest the text's anchor; now the named part
+    alone keeps off the text, by more each time KiCad still objects."""
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    i, j = P.parts[P.mov[0]], P.parts[P.mov[1]]
+    jx, jy = (float(c) for c in st.pins_xy(j.i)[0])       # the text's anchor on j's pad
+    report = {"violations": [{"type": "clearance", "severity": "error", "items": [
+        {"description": f"Pad 1 [x] of {i.ref} on F.Cu", "pos": {"x": 0, "y": 0}},
+        {"description": "PCB text 'v20' on F.Cu", "pos": {"x": jx, "y": jy}, "uuid": "no-such-text"}]}]}
+    fb = exact.kicad_feedback(P, st, report, step=0.5)
+    assert fb["errors"] == 1 and fb["constraints"] == 1
+    assert set(P.feedback["avoid"]) == {i.i} and not P.feedback["sep"]
+    exact.kicad_feedback(P, st, report, step=0.5)                 # KiCad still objects: wider
+    (g1, _), (g2, _) = P.feedback["avoid"][i.i]
+    assert g2.area > g1.area
+    # only fixed parts named: nothing to move
+    fixed = next((p for p in P.parts if not p.movable), None)
+    if fixed is not None:
+        rep2 = {"violations": [{"type": "clearance", "severity": "error", "items": [
+            {"description": f"Footprint {fixed.ref}", "pos": {"x": 0, "y": 0}},
+            {"description": "PCB text 'x' on F.Cu", "pos": {"x": jx, "y": jy}}]}]}
+        assert exact.kicad_feedback(P, st, rep2)["fixed_only"] == 1
+
+
+def test_knockout_text_box_carries_kicads_margin(tmp_path):
+    """Knockout copper text is copper around the glyphs, grown by max(thickness/2, height/9)."""
+    from kae.board import sexpr
+    from kae.board.kicad_file import _text_box
+    from kae.place.problem import board_texts
+    node = ('(gr_text "v20" (at 10 10 0) (layer "B.Cu"{}) (uuid "u1") (effects (font (size 1.27 1.27) '
+            '(thickness 0.254) (bold yes)) (justify mirror)))')
+    plain = _text_box(sexpr.parse(node.format("")))
+    ko = _text_box(sexpr.parse(node.format(" knockout")))
+    m = max(0.254 / 2, 1.27 / 9)
+    (a0, b0, c0, d0), (a1, b1, c1, d1) = plain.bounds, ko.bounds
+    assert abs((a0 - a1) - m) < 1e-9 and abs((d1 - d0) - m) < 1e-9
+    f = tmp_path / "t.kicad_pcb"
+    f.write_text("(kicad_pcb (version 20240108) " + node.format(" knockout") + ")")
+    from types import SimpleNamespace
+    assert board_texts(SimpleNamespace(path=str(f)))["u1"].equals(ko)

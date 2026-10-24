@@ -968,8 +968,39 @@ def kicad_feedback(P, st, report, step=0.3):
     out = dict(errors=len(viols), by_type={}, constraints=0, fixed_only=0)
     import re
     zre = re.compile(r"^Zone \[([^\]]*)\] on (\S+?),?(\s|$)")
+    tre = re.compile(r"^PCB text '.*' on \S+", re.S)
+    texts = None
     for v in viols:
         out["by_type"][v["type"]] = out["by_type"].get(v["type"], 0) + 1
+        # board text on copper (a grid obstacle only; the exact model has no text): the parts
+        # the error names keep their hulls off the text's box, by `step` more each time KiCad
+        # still objects. The text item names no part: matched by position it would blame
+        # whichever part has a pad nearest the text's anchor.
+        tx = [it for it in v.get("items", []) if tre.match(it.get("description", ""))]
+        if tx:
+            if texts is None:
+                from .problem import board_texts
+                texts = board_texts(P.board)
+            v = dict(v, items=[it for it in v.get("items", []) if it not in tx])
+            mv = [i for i in sorted(violation_parts(P, st, v)) if P.parts[i].movable]
+            if not mv:
+                out["fixed_only"] += 1
+                continue
+            tr = fb.setdefault("text_rounds", {})
+            for it in tx:
+                pos = it.get("pos") or {}
+                g = texts.get(it.get("uuid", ""))
+                if g is None and "x" in pos and "y" in pos:
+                    g = shapely.Point(pos["x"], pos["y"])
+                if g is None:
+                    continue
+                for i in mv:
+                    key = (i, it.get("uuid") or (pos.get("x"), pos.get("y")))
+                    tr[key] = tr.get(key, 0) + 1
+                    fb["avoid"].setdefault(i, []).append(
+                        (g.buffer(step * tr[key]), f"{v['type']} with {it['description'].splitlines()[0][:60]} (KiCad DRC)"))
+                    out["constraints"] += 1
+            continue
         # a zone item: the culprit keeps off that zone's whole outline (KiCad reports a zone at
         # one point; a disc there let the part slide to another spot of the same zone)
         zones = []

@@ -341,6 +341,34 @@ def fixed_text(board):
     return out
 
 
+def board_texts(board):
+    """Board-level copper text by uuid: {uuid: geometry}, the same box as Board.graphics
+    (kae.board.kicad_file._text_box, knockout margin included), read from the board file so a
+    KiCad DRC item naming the text ('PCB text ... on B.Cu', with its uuid) finds it."""
+    from pathlib import Path
+
+    from kae.board import sexpr
+    from kae.board.kicad_file import _shape_layers, _text_box
+    path = getattr(board, "path", "")
+    if not path or not Path(path).exists():
+        return {}
+    try:
+        tree = sexpr.parse(sexpr.strip_blocks(Path(path).read_text(encoding="utf-8", errors="replace")))
+    except (ValueError, OSError):
+        return {}
+    out = {}
+    for node in tree:
+        if type(node) is not list or not node or node[0] != "gr_text":
+            continue
+        if not any(ly.endswith(".Cu") for ly in _shape_layers(node)):
+            continue
+        u = sexpr.value(node, "uuid") or sexpr.value(node, "tstamp")
+        b = _text_box(node)
+        if u and b is not None and not b.is_empty:
+            out[u] = b
+    return out
+
+
 def _fixed_copper_shapes(board):
     from pathlib import Path
 

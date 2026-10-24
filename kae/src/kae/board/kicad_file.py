@@ -763,7 +763,11 @@ def _text_box(node):
     x0 = 0.0 if "left" in just else (-w if "right" in just else -w / 2)
     y0 = 0.0 if "top" in just else (-hh if "bottom" in just else -hh / 2)
     from shapely import affinity
-    b = box(x0 - th / 2, y0 - th / 2, x0 + w + th / 2, y0 + hh + th / 2)
+    # knockout text ((layer "B.Cu" knockout)) is copper around the glyphs: KiCad's bounding
+    # hull of the text grown by GetKnockoutTextMargin = max(thickness / 2, height / 9)
+    ly = first(node, "layer")
+    m = max(th / 2, h / 9) if ly is not None and "knockout" in ly[2:] else 0.0
+    b = box(x0 - th / 2 - m, y0 - th / 2 - m, x0 + w + th / 2 + m, y0 + hh + th / 2 + m)
     return affinity.translate(affinity.rotate(b, -rot, origin=(0, 0)), x, y)
 
 

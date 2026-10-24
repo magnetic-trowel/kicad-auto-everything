@@ -37,8 +37,13 @@ DEFAULT_OPTS = dict(
     thermal_repair=True,     # starved thermals get spoke corridors in the repair loop
     passes=0,                # 0: autorouter runs until it stops improving
     repair=True,             # post-route DRC repair loop
-    rounds=5,                # repair rounds at most (each also bounded by the time left)
-    router_share=0.6,        # share of the budget for the first routing
+    rounds=5,                # repair rounds at most (each also bounded by the time left); "auto": until
+                             # repair.FAILS rounds in a row are not better, or the time is spent (a round
+                             # replaces the board only when it is better, so more rounds never make it worse)
+    router_share=0.6,        # share of the budget for the first routing; "auto": max(0.6, 1 - repair_reserve_s
+                             # / time left), the same 0.6 up to a 1,500 s budget and more beyond, since the
+                             # router stops by itself (COMPLETED / STAGNATION) and leaves the rest to repair
+    repair_reserve_s=600.0,  # with router_share "auto": the time kept for the repair rounds at long budgets
     planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
                              # plane_cost x, so they go there only when nothing shorter exists), "keep"
                              # (Freerouting power layers, no traces; a repair round with open connections
@@ -111,8 +116,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         settings = router_settings(p, opts)
         reserve = 20.0 if opts.get("repair") else 10.0
         grace = opts.get("router_grace", freerouting.GRACE_S)
-        share = opts.get("router_share") if opts.get("repair") else opts.get("router_share_alone", 0.9)
-        budget = max(20.0, left() * share)
+        budget = router_budget(left(), opts)
         run = freerouting.route(dsn, wd / "board.ses", wd, passes=opts.get("passes") or 0, settings=settings,
                                 budget_s=budget, hard_s=max(budget, min(budget + grace, left() - reserve)),
                                 log_path=wd / "freerouting.log")
@@ -164,6 +168,20 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def router_budget(left_s, opts):
+    """Seconds for the first routing out of `left_s`: router_share of it (router_share_alone
+    without the repair loop); router_share "auto" keeps repair_reserve_s for the repair
+    rounds and never gives the router less than 0.6."""
+    if not opts.get("repair"):
+        share = opts.get("router_share_alone", 0.9)
+    else:
+        share = opts.get("router_share", 0.6)
+        if share == "auto":
+            reserve = float(opts.get("repair_reserve_s", 600.0))
+            share = max(0.6, 1.0 - reserve / max(left_s, 1.0))
+    return max(20.0, left_s * float(share))
 
 
 def plane_policy(opts, free_round_with_open=False):

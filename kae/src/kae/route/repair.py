@@ -498,6 +498,16 @@ LEVELS = ("items", "nets", "free")
 FAILS = 2
 
 
+AUTO_ROUNDS = 50   # rounds "auto": a bound that only a run of ever-better rounds reaches
+
+
+def max_rounds(opts):
+    """The repair loop's round bound: opts rounds, or AUTO_ROUNDS for "auto" (the loop then
+    stops after FAILS rounds in a row that were not better, or on the time)."""
+    r = opts.get("rounds", 5)
+    return AUTO_ROUNDS if r == "auto" else int(r)
+
+
 def round_seed(seed, k):
     """The DSN order of repair round k (never 0, which is KiCad's order)."""
     return (seed or 0) * 7919 + k
@@ -531,7 +541,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
     level, fails, split_failed = 0, 0, False
-    for k in range(1, int(opts.get("rounds", 5)) + 1):
+    for k in range(1, max_rounds(opts) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
         rec = dict(round=k)

@@ -4,8 +4,9 @@
 
     python -m kae.route.cli route INPUT OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
-                                               [--passes N] [--rounds N] [--planes cost|keep|strict|allow]
-                                               [--pad-shapes kicad|outside] [--report FILE]
+                                               [--passes N] [--rounds N|auto] [--router-share F|auto]
+                                               [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
+                                               [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -38,7 +39,11 @@ def main(argv=None):
     r.add_argument("--no-thermal", action="store_true", help="no thermal-spoke corridors in the repair loop")
     r.add_argument("--thermal-all", action="store_true", help="spoke corridors for every thermal pad up front")
     r.add_argument("--passes", type=int, default=0)
-    r.add_argument("--rounds", type=int, default=5, help="repair rounds at most")
+    r.add_argument("--rounds", default="5",
+                   help="repair rounds at most, or 'auto' (until two rounds in a row are not better, or the time)")
+    r.add_argument("--router-share", default="0.6",
+                   help="share of the budget for the first routing, or 'auto' (0.6 up to 1,500 s, then all but"
+                        " 600 s: the router stops by itself and the repair rounds get the rest)")
     r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
                    help="inner plane layers: traces there cost plane_cost x (cost), none (strict), none unless a repair"
                         " round has open connections (keep), or KiCad's layer types (allow)")
@@ -49,7 +54,9 @@ def main(argv=None):
     from kae.route import bridge
     opts = dict(repair=not a.no_repair, fanout=True if a.fanout else ("first" if a.fanout_first else False),
                 thermal_repair=not a.no_thermal,
-                passes=a.passes, rounds=a.rounds, keep=a.keep, planes=a.planes, pad_shapes=a.pad_shapes)
+                passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
+                planes=a.planes, pad_shapes=a.pad_shapes,
+                router_share=a.router_share if a.router_share == "auto" else float(a.router_share))
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     try:
