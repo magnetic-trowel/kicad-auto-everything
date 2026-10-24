@@ -269,7 +269,35 @@ class KaeStages:
                       guards={m: g for m, g in lay.guards.items() if m not in mods},
                       status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
 
-    def route(self, lay, it, seed, time_s, finish=False):
+    def _last_mile(self, board, it, nets, crit):
+        """kae.route.lastmile.close on a routed window's `nets` (those that are still split
+        are joined by the grid router, ripping other nets' unlocked tracks in the way);
+        `board` is replaced in place when anything was joined; the new copper is left
+        unlocked (ordinary wiring for later windows). Returns its report (None: nothing)."""
+        from kae.board import pcbnew_io
+        from kae.route import bridge as BR
+        from kae.route import constraints, lastmile
+        from kae.route import critical_write as W
+        t0 = time.monotonic()
+        d = self.wd / f"it{it:02d}" / "lastmile"
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            info = pcbnew_io.export_dsn(board, d / "kicad.dsn")
+            sev = BR.severities(board)
+            plan = constraints.plan(info, board, dict(severities=sev))
+            fills = pcbnew_io.zone_fills(board)["zones"]
+            cand = d / "cand.kicad_pcb"
+            r = lastmile.close(board, info, plan, fills, cand, nets=sorted(nets), sev=sev, fixed=set(crit),
+                               log=lambda m: None)
+        except Exception as e:  # noqa: BLE001 - the routed window stands
+            return dict(error=f"{type(e).__name__}: {e}", seconds=round(time.monotonic() - t0, 1))
+        if r.get("joined"):
+            W.edit(cand, board, unlock=[u for u in r.get("added") or [] if u not in crit])
+            _project(self.input, board)
+        return dict(joined=r.get("joined"), failed=r.get("failed"), ripped=len(r.get("ripped") or []),
+                    seconds=round(time.monotonic() - t0, 1))
+
+    def route(self, lay, it, seed, time_s, finish=False, nets=None):
         """The bridge around everything already on lay.board (locked) and the guards. A
         window (it > 0) goes to the incremental router; `finish`: the full bridge with its
         repair rounds over the whole board, only the critical copper locked (the rest is
@@ -295,23 +323,30 @@ class KaeStages:
                                        passes=int(self.opts.get("window_passes", 3))),
                              log=lambda m: self.log(f"incremental: {m}"))
         else:
+            bopts = dict(keep=bool(self.opts.get("keep")))
+            if it > 0 and not finish:
+                bopts.update(rounds=int(self.opts.get("window_rounds", 3)), passes=int(self.opts.get("window_passes", 16)))
+            if finish:
+                # the finishing stage: repair rounds until they stop improving, then the last
+                # mile (kae.route.lastmile: grid joins with negotiated rip-up)
+                bopts.update(rounds=self.opts.get("finish_rounds", "auto"),
+                             last_mile=bool(self.opts.get("finish_last_mile", True)))
             rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
-                           opts=dict(keep=bool(self.opts.get("keep")),
-                                     **({"rounds": int(self.opts.get("window_rounds", 3)),
-                                         "passes": int(self.opts.get("window_passes", 16))}
-                                        if it > 0 and not finish else {})),
-                           log=lambda m: self.log(f"bridge: {m}"))
+                           opts=bopts, log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
         src = raw if raw.exists() else locked
         allr = W.routing(src)
         W.edit(src, out, unlock=[r["uuid"] for r in allr if r["locked"] and r["uuid"] not in lay.crit],
                drop_guards=True)
         _project(self.input, out)
+        lm = None
+        if it > 0 and not finish and nets and self.opts.get("window_last_mile", True):
+            lm = self._last_mile(out, it, nets, lay.crit)
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
         new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status=rep.get("status"), guards=len(guards),
-                                 finish=finish, stops=route_stops(rep),
+                                 finish=finish, stops=route_stops(rep), last_mile=lm,
                                  router_s=(rep.get("router") or {}).get("seconds"),
                                  errors=fin.get("errors"), unconnected=fin.get("unconnected"))
         return new
@@ -483,7 +518,8 @@ class KaeStages:
             # Freerouting killed before it writes a session leaves the window unrouted
             rep["outcome"] = f"no time left to route ({left:.0f}s)"
             return None, rep
-        routed = self.route(mod, it, seed=seed, time_s=left)
+        routed = self.route(mod, it, seed=seed, time_s=left,
+                            nets=set(plan.nets) | {n for sp in window.spots for n in sp.nets})
         rep["route"] = routed.info.get("route")
         rep["seconds"] = round(time.monotonic() - t0, 1)
         return routed, rep
