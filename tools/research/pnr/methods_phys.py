@@ -99,13 +99,17 @@ def grow_phys(world, seed=0, budget=300, log=print, phys_w=2.0, **kw):
     return r
 
 
-def anneal_phys(world, seed=0, budget=300, log=print, phys_w=2.0, **kw):
+def anneal_phys(world, seed=0, budget=300, log=print, phys_w=2.0, router=None, **kw):
     """Annealing whose cost is routed copper (incremental rip-up/re-route) + phys_w * place
     terms. Half the moves pick a physics part; a third of those jump to the part's best
-    HPWL + physics spot."""
+    HPWL + physics spot. With `router` (and world.phys) it continues from the current
+    board instead of starting from seq_phys."""
     rng = random.Random(seed)
     clock = Clock(budget)
-    r = seq_phys(world, seed=seed, budget=budget * 0.3, log=log, phys_w=phys_w, **kw)
+    if router is None:
+        r = seq_phys(world, seed=seed, budget=budget * 0.3, log=log, phys_w=phys_w, **kw)
+    else:
+        r = router
     ph = world.phys
     kit = Kit(world, r)
     mov = [q for q in kit.movable() if q in world.pose]
