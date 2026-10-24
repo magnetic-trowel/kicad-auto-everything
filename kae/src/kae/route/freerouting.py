@@ -16,6 +16,7 @@ KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
 ~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
 know are logged as unknown and ignored.
 """
+import fcntl
 import json
 import os
 import shutil
@@ -92,6 +93,82 @@ def _env():
     return env
 
 
+def _gb(v):
+    v = str(v).strip().lower()
+    mult = {"k": 1 / 2 ** 20, "m": 1 / 1024, "g": 1.0, "t": 1024.0}
+    return float(v[:-1]) * mult[v[-1]] if v and v[-1] in mult else float(v) / 2 ** 30
+
+
+def _host_gb():
+    """Memory this process may use: the cgroup limit if one is set, else MemTotal."""
+    lims = []
+    for f in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            t = Path(f).read_text().strip()
+            if t.isdigit() and int(t) < 2 ** 60:
+                lims.append(int(t) / 2 ** 30)
+        except OSError:
+            pass
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                lims.append(int(line.split()[1]) / 2 ** 20)
+    except OSError:
+        pass
+    return min(lims) if lims else None
+
+
+def slots():
+    """How many Freerouting JVMs may run at once on this host, across processes: KAE_FR_SLOTS,
+    else 60% of the host's memory over the heap cap (at least 1). Several agents or jobs on a
+    small host otherwise get JVMs OOM-killed (rc -9), which silently degrades their results."""
+    if os.environ.get("KAE_FR_SLOTS"):
+        return max(1, int(os.environ["KAE_FR_SLOTS"]))
+    host = _host_gb()
+    if not host:
+        return None
+    xmx = _gb(os.environ.get("KAE_FR_XMX", "6g"))
+    return max(1, int(0.6 * host // (xmx + 0.5)))
+
+
+class _Slot:
+    """A host-wide slot (flock on one of N files in KAE_FR_LOCKDIR, default /tmp/kae-fr-slots);
+    waits for a free one. No-op when the directory cannot be used."""
+
+    def __init__(self):
+        self.f = None
+        self.waited = 0.0
+
+    def __enter__(self):
+        n = slots()
+        d = Path(os.environ.get("KAE_FR_LOCKDIR", "/tmp/kae-fr-slots"))
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return self
+        if not n:
+            return self
+        t0 = time.monotonic()
+        while True:
+            for i in range(n):
+                try:
+                    f = open(d / f"slot{i}", "a")
+                except OSError:
+                    return self
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.f, self.waited = f, round(time.monotonic() - t0, 1)
+                    return self
+                except OSError:
+                    f.close()
+            time.sleep(1.0)
+
+    def __exit__(self, *exc):
+        if self.f is not None:
+            fcntl.flock(self.f, fcntl.LOCK_UN)
+            self.f.close()
+
+
 # Freerouting's job clock starts after the JVM has started and the DSN is loaded; at its
 # job_timeout it asks the router to stop and waits up to 30 s for it to stop between items
 # (RoutingJobSchedulerActionThread.GRACE_PERIOD), then writes the session. A process is
@@ -123,19 +200,23 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         argv += ["-mp", str(int(passes))]
     for k, v in (settings or {}).items():
         argv.append(f"--router.{k}={v}")
-    t0 = time.monotonic()
-    p = subprocess.Popen(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         errors="replace", env=_env(), start_new_session=True)
-    timed_out = False
+    slot = _Slot().__enter__()
     try:
-        out, _ = p.communicate(timeout=hard)
-    except subprocess.TimeoutExpired:
-        timed_out = True
+        t0 = time.monotonic()
+        p = subprocess.Popen(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             errors="replace", env=_env(), start_new_session=True)
+        timed_out = False
         try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        out, _ = p.communicate()
+            out, _ = p.communicate(timeout=hard)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            out, _ = p.communicate()
+    finally:
+        slot.__exit__()
     dt = time.monotonic() - t0
     if log_path:
         Path(log_path).write_text(out or "")
@@ -145,7 +226,8 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     except (OSError, ValueError):
         pass
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
-               seconds=round(dt, 2), timed_out=timed_out, report=_summary(report, out or ""), argv=argv)
+               seconds=round(dt, 2), timed_out=timed_out,
+               report=dict(_summary(report, out or ""), slot_wait_s=slot.waited), argv=argv)
 
 
 def _autorouter_stop(log, final_state):
