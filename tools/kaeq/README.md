@@ -17,7 +17,7 @@ Sessions on other machines: `export KAEQ_SSH=<host>`; every `kaeq ...` then runs
 (paths are host paths, so the repo must be checked out on the host).
 To stop permission prompts, allow one rule in each session's settings:
 `"permissions": {"allow": ["Bash(kaeq:*)"]}`. Sessions load the usage text from
-`.claude/skills/kaeq/SKILL.md`.
+`~/.claude/skills/kaeq/` (installed by `install.sh`, so every repo gets it).
 
 ## How it shares the machine
 
@@ -34,6 +34,17 @@ To stop permission prompts, allow one rule in each session's settings:
 Tune with `kaeq config --set reserve_cpu=24 --set reserve_mem_gb=64` (read every tick).
 Jobs get `KAEQ_CPUS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `GOMAXPROCS` = `--cpus`, and the
 submitter's `PATH`/`VIRTUAL_ENV`/`PYTHONPATH` (so the right venv is used).
+
+## Many repos and branches
+
+Each submit freezes the caller's tree (`git commit-tree` over HEAD + uncommitted + untracked,
+kept alive by `refs/kaeq/<sha>`) and the daemon runs the job in a throwaway `git worktree` of the
+submitter's repo, in the same subdirectory. Checkouts or edits after submit cannot change what
+runs, and two branches of one repo can run side by side. The worktree is removed when the job
+ends; the log stays. Git-ignored inputs are not in a snapshot: share them with `--link PATH`
+(symlinked from the original repo). `--live` skips snapshots. Outside git, jobs run live.
+The default owner is `repo@branch`; failure digests carry `repo@branch:sha`.
+Old `refs/kaeq/*` can be deleted any time once no queued job needs them.
 
 ## Reporting loop
 

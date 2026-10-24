@@ -7,5 +7,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p ~/.local/bin
 chmod +x "$here/kaeq.py"
 ln -sf "$here/kaeq.py" ~/.local/bin/kaeq
+# user-level skill: sessions in any repo/branch get the usage text
+mkdir -p ~/.claude/skills/kaeq
+cp "$here/../../.claude/skills/kaeq/SKILL.md" ~/.claude/skills/kaeq/SKILL.md
 ~/.local/bin/kaeq doctor
 echo "Optional, survives reboots/logouts: kaeq install-service"
