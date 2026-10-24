@@ -169,7 +169,8 @@ def cmd_summary(args):
         sc = r.get("scorecard") or {}
         esc = (r.get("legalize_seed_escalation") or []) + (r.get("legalize_escalation") or [])
         exact = collections.Counter(e.get("type") for e in r.get("exact") or [])
-        row.update(legal=bool(r.get("legal")), legal_grid=r.get("legal_grid"), exact=dict(exact),
+        row.update(legal=bool(r.get("legal")), kicad_verified=r.get("kicad_verified"),
+                   legal_grid=r.get("legal_grid"), exact=dict(exact),
                    outline_incomplete=r.get("outline_incomplete"), parts=(r.get("problem") or {}).get("movable"),
                    seconds=r.get("seconds"), budget_s=r.get("budget_s"), stages=r.get("stages"),
                    moves=a.get("moves"), planned=a.get("planned_moves"), moves_per_s=a.get("moves_per_s"),
@@ -215,6 +216,7 @@ def cmd_summary(args):
         boards=len(rows), counted=len(counted), outline_incomplete=[x["id"] for x in rows if x.get("outline_incomplete")],
         no_movable=[x["id"] for x in rows if x.get("parts") == 0 and not x.get("outline_incomplete")],
         legal=len(legal), legal_rate=round(len(legal) / max(1, len(counted)), 4),
+        legal_unverified=[x["id"] for x in legal if x.get("kicad_verified") is False],
         illegal=[dict(id=x["id"], reason=x.get("reason")) for x in counted if not x.get("legal")],
         wall_s=dict(median=statistics.median(walls) if walls else None, max=walls[-1] if walls else None,
                     over_budget=[x["id"] for x in rows if x.get("wall_s") and x["wall_s"] > args.time]),
@@ -231,7 +233,9 @@ def cmd_summary(args):
     md = [f"# Placement sweep: {out.name}", "",
           f"- boards {summ['boards']}, counted {summ['counted']} (held out: outline_incomplete "
           f"{len(summ['outline_incomplete'])}, no movable parts {len(summ['no_movable'])})",
-          f"- **legal {summ['legal']}/{summ['counted']} = {summ['legal_rate']:.1%}**",
+          f"- **legal {summ['legal']}/{summ['counted']} = {summ['legal_rate']:.1%}**"
+          + (f" ({len(summ['legal_unverified'])} without a KiCad verdict: {', '.join(summ['legal_unverified'])})"
+             if summ['legal_unverified'] else ""),
           f"- wall median {summ['wall_s']['median']} s, max {summ['wall_s']['max']} s, over {args.time} s: "
           f"{len(summ['wall_s']['over_budget'])}",
           f"- annealer: all planned moves on {summ['anneal_full_schedule']} boards, cooled on its time budget on "

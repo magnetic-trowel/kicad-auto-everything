@@ -39,10 +39,11 @@ DEFAULT_OPTS = dict(
     repair=True,             # post-route DRC repair loop
     rounds=5,                # repair rounds at most (each also bounded by the time left)
     router_share=0.6,        # share of the budget for the first routing
-    planes="keep",           # inner plane layers (translate.plane_layers) go to Freerouting as power
-                             # layers, no traces on them: "keep" (a repair round that re-routes open
-                             # connections freely may use them), "strict" (never), "allow" (as KiCad
-                             # exports them)
+    planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
+                             # plane_cost x, so they go there only when nothing shorter exists), "keep"
+                             # (Freerouting power layers, no traces; a repair round with open connections
+                             # may use them), "strict" (power layers, never), "allow" (KiCad's types)
+    plane_cost=4.0,          # plane-layer trace cost for planes="cost"
 )
 
 
@@ -89,12 +90,14 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
         p.plane_policy = plane_policy(opts)
+        p.plane_cost = opts.get("plane_cost")
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
         report["permuted"] = translate.permute(tree, seed)
         report["plan"] = plan_summary(p)
         dsn = wd / "board.dsn"
         specctra.write(tree, dsn)
+        translate.write_rules(p, dsn)
         log(f"plan: {len(p.classes)} classes, {len(p.obstacle_classes)} obstacle classes, "
             f"{report['translate'].get('obstacles')} obstacles ({time.monotonic() - t0:.1f}s)")
 
@@ -160,10 +163,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
 
 
 def plane_policy(opts, free_round_with_open=False):
-    """translate's plane_policy for a routing: 'power' (inner planes carry no traces) or
-    'signal'. With opts planes 'keep', a repair round that re-routes open connections
-    freely falls back to 'signal'."""
-    pol = opts.get("planes", "keep")
+    """translate's plane_policy for a routing: 'cost' (inner planes priced high), 'power'
+    (inner planes carry no traces) or 'signal'. With opts planes 'keep', a repair round with
+    open connections falls back to 'signal'."""
+    pol = opts.get("planes", "cost")
+    if pol == "cost":
+        return "cost"
     if pol == "allow" or (pol == "keep" and free_round_with_open):
         return "signal"
     return "power"

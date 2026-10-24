@@ -22,12 +22,15 @@ fixed wiring are kept):
   drill from the name); the class rule's typed clearances (wire_via, via_via) carry what
   KiCad asks of vias only (hole clearance, hole-to-hole);
 - layers: when every copper layer is a "power" layer they become signal layers
-  (Freerouting refuses a board without one and 2.5.0 hangs). With plan.plane_policy
-  "power", an inner layer that is a plane (one net's zones cover >= PLANE_SHARE of the
-  board, as the PLANE-PERF critic reads it) is written `(type power)`: Freerouting routes no
-  trace on a power layer (vias still pass, its zones stay planes), so signals stay off the
-  return planes. KiCad marks most such layers "signal" (C6: 1,362 mm of foreign track on
-  inner planes after critical routing, 282 mm on the human boards).
+  (Freerouting refuses a board without one and 2.5.0 hangs). Inner plane layers (one net's
+  zones cover >= PLANE_SHARE of the board, as the PLANE-PERF critic reads it; KiCad marks
+  most of them "signal") are kept for the return currents by plan.plane_policy:
+  "cost" (soft) leaves them signal layers and gives Freerouting per-layer trace costs in a
+  `board.rules` file beside the DSN (autoroute_settings layer_rule, which Freerouting loads
+  with the DSN and keeps over its own defaults): a trace there costs PLANE_COST times one on
+  a routing layer, so it goes there only when nothing shorter exists; "power" (hard) writes
+  them `(type power)`, which Freerouting never routes on (and which also turns off its own
+  detection of plane nets on the remaining layers); "signal" leaves KiCad's types.
 
 - wiring: KiCad writes DSN coordinates with %.6g, so at x or y >= 100 mm half a micrometre
   is lost: a locked track ending exactly on a pad centre such as 137.2875 mm is written
@@ -54,6 +57,7 @@ from .constraints import via_name
 from .specctra import Q, find, findall, fmt
 
 PLANE_SHARE = 0.30         # an inner layer is a plane when one net's zones cover this share of the board
+PLANE_COST = 4.0           # trace cost on a plane layer, in units of a routing layer's (plane_policy "cost")
 SNAP_TOL_UM = 1.5          # > the %.6g rounding (0.5 um per coordinate at >= 100 mm) on both axes
 
 OBSTACLE_IMAGE = "kae_obstacles"
@@ -301,6 +305,41 @@ def plane_layers(info, share=PLANE_SHARE):
     return {l: v[0] for l, v in out.items()}
 
 
+def layer_rules(names, is_plane, is_signal, k=PLANE_COST):
+    """A Specctra rules file (text) whose autoroute_settings give every layer its trace costs:
+    1 per unit length in the preferred direction and 2 against it, outer layers 0.2 per
+    signal layer more when there are more than two (Freerouting's own defaults), and plane
+    layers k times that. None when no layer is a plane."""
+    if not any(is_plane):
+        return None
+    n = len(names)
+    sig = sum(1 for x in is_signal if x)
+    out = ["(rules PCB board", "  (autoroute_settings"]
+    for i, (name, pl) in enumerate(zip(names, is_plane)):
+        base = 1.0 + (0.2 * sig if sig > 2 and i in (0, n - 1) else 0.0)
+        c = base * (k if pl else 1.0)
+        out.append(f"    (layer_rule {atom_name(name)} (preferred_direction_trace_costs {fmt(c)})"
+                   f" (against_preferred_direction_trace_costs {fmt(2.0 * c)}))")
+    out += ["  )", ")"]
+    return "\n".join(out) + "\n"
+
+
+def atom_name(name):
+    return S.atom(name)
+
+
+def write_rules(plan, dsn_path):
+    """The plan's layer_rules beside the DSN as `<stem>.rules` (Freerouting loads it with the
+    DSN); a stale one is removed."""
+    from pathlib import Path
+    r = Path(dsn_path).with_suffix(".rules")
+    text = getattr(plan, "layer_rules", None)
+    if text:
+        r.write_text(text)
+    elif r.exists():
+        r.unlink()
+
+
 def mark_plane_layers(layers, cu, info):
     """Write `(type power)` on the DSN `layers` (structure layer nodes, in `cu` order) that
     are inner planes (plane_layers). Returns the layers changed."""
@@ -352,6 +391,13 @@ def apply(tree, plan, info):
         made = mark_plane_layers(layers, cu, info)
         if made:
             summary["plane_layers_power"] = made
+    plan.layer_rules = None
+    if getattr(plan, "plane_policy", "signal") == "cost":
+        plan.layer_rules = layer_rules(dsn_names, [c in plane_layers(info) for c in cu],
+                                       [str((find(l, "type") or [None, "signal"])[1]) == "signal" for l in layers],
+                                       getattr(plan, "plane_cost", None) or PLANE_COST)
+        if plan.layer_rules:
+            summary["plane_layers_costed"] = [c for c in cu if c in plane_layers(info)]
 
     # ---- structure: KiCad's keepouts, via list and global rule are replaced
     removed = 0

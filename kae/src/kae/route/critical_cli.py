@@ -6,7 +6,7 @@
                                      [--rails auto|all|none] [--kinds cell,decap,crystal,chain]
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
-                                     [--soft complete,pad|none] [--skip ID,ID] [--planes keep|strict|allow]
+                                     [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
                                      [--rounds N]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE]
@@ -55,7 +55,7 @@ def main(argv=None):
                    help="joins written unlocked for Freerouting to keep or rip: complete,pad (or 'none')")
     r.add_argument("--skip", default="", help="comma-separated module id prefixes to leave out (diagnosis)")
     r.add_argument("--rounds", type=int, default=0, help="recheck / re-tweak rounds after the bridge")
-    r.add_argument("--planes", default="keep", choices=("keep", "strict", "allow"),
+    r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
                    help="the bridge's inner plane layers (kae.route.bridge DEFAULT_OPTS planes)")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")

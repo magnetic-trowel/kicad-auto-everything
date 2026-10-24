@@ -569,7 +569,8 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
         S = [sat(occ[0]), sat(occ[1])]
         done = False
         # lookahead: the next big parts (each > 5% of the board) must still find a spot
-        big = [j for j in order[n + 1:] if P.parts[j].area > 0.05 * board_area][:2]
+        big = [j for j in order[n + 1:] if P.parts[j].area > 0.05 * board_area][:2] \
+            if P.parts[q].area > 0.02 * board_area else []      # only a big part can shut a big one out
         first_clean = None
         tries = 0
         if time.monotonic() < deadline:

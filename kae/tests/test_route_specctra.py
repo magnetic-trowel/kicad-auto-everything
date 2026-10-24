@@ -171,6 +171,23 @@ def test_inner_planes_become_power_layers():
     layers = S.findall(S.find(tree, "structure"), "layer")
     assert translate.mark_plane_layers(layers, info["copper"], info) == ["In1.Cu"]
     assert [str(S.find(l, "type")[1]) for l in layers] == ["signal", "power", "signal", "signal"]
-    assert plane_policy({}) == "power" and plane_policy(dict(planes="allow")) == "signal"
-    assert plane_policy({}, free_round_with_open=True) == "signal"
+    assert plane_policy({}) == "cost" and plane_policy(dict(planes="allow")) == "signal"
+    assert plane_policy(dict(planes="keep")) == "power"
+    assert plane_policy(dict(planes="keep"), free_round_with_open=True) == "signal"
     assert plane_policy(dict(planes="strict"), free_round_with_open=True) == "power"
+    # soft: a rules file prices the plane layer at PLANE_COST, the others at Freerouting's defaults
+    text = translate.layer_rules(["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], [False, True, False, False], [True] * 4, 4.0)
+    assert "(layer_rule In1.Cu (preferred_direction_trace_costs 4) (against_preferred_direction_trace_costs 8))" in text
+    assert "(layer_rule F.Cu (preferred_direction_trace_costs 1.8)" in text
+    assert "(layer_rule In2.Cu (preferred_direction_trace_costs 1) " in text
+    assert translate.layer_rules(["F.Cu", "B.Cu"], [False, False], [True, True]) is None
+
+
+def test_plane_costs_go_beside_the_dsn(tmp_path):
+    from types import SimpleNamespace
+    dsn = tmp_path / "board.dsn"
+    dsn.write_text("(pcb x)")
+    translate.write_rules(SimpleNamespace(layer_rules="(rules PCB board)\n"), dsn)
+    assert (tmp_path / "board.rules").read_text() == "(rules PCB board)\n"
+    translate.write_rules(SimpleNamespace(layer_rules=None), dsn)
+    assert not (tmp_path / "board.rules").exists()

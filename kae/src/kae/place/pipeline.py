@@ -424,7 +424,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         # closed loop: legality is not a score; repair against the exact check until it is
         # clean or the caller's time (less the writer's share) is up, then say why not
         t = time.monotonic()
-        left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - t)
+        # leave the KiCad DRC its share (kae.cli runs it on the written board): ~0.1 s a part
+        reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
+        left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)
         rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)

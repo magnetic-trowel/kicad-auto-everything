@@ -136,7 +136,9 @@ def _kicad_loop(a, res, t0, write):
         staged = kdrc.stage_board(a.output, a.input, tmp)
         t = time.monotonic()
         try:
-            report = kdrc.run(staged, Path(tmp) / "drc.json", timeout=max(10.0, min(600.0, 0.5 * left)))
+            # the first verdict may take nearly all that is left; repairs need a share after
+            report = kdrc.run(staged, Path(tmp) / "drc.json",
+                              timeout=max(10.0, min(600.0, (left - 5.0) if it == 0 else 0.5 * left)))
         except kdrc.DrcError as e:
             rounds.append(dict(round=it, error=str(e)[:200]))
             break
@@ -155,6 +157,7 @@ def _kicad_loop(a, res, t0, write):
         res.poses = poses
         wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
     res.report["kicad_drc"] = rounds
+    res.report["kicad_verified"] = clean is not None
     res.report["exact"] = exact_check(P, st)
     return clean, wrep
 

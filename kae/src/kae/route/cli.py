@@ -4,7 +4,7 @@
 
     python -m kae.route.cli route INPUT OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
-                                               [--passes N] [--rounds N] [--planes keep|strict|allow]
+                                               [--passes N] [--rounds N] [--planes cost|keep|strict|allow]
                                                [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
@@ -39,9 +39,9 @@ def main(argv=None):
     r.add_argument("--thermal-all", action="store_true", help="spoke corridors for every thermal pad up front")
     r.add_argument("--passes", type=int, default=0)
     r.add_argument("--rounds", type=int, default=5, help="repair rounds at most")
-    r.add_argument("--planes", default="keep", choices=("keep", "strict", "allow"),
-                   help="inner plane layers: no traces (keep: unless a free repair round needs them; strict: never)"
-                        " or allow them (KiCad's layer types)")
+    r.add_argument("--planes", default="cost", choices=("cost", "keep", "strict", "allow"),
+                   help="inner plane layers: traces there cost plane_cost x (cost), none (strict), none unless a repair"
+                        " round has open connections (keep), or KiCad's layer types (allow)")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge

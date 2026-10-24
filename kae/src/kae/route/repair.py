@@ -583,7 +583,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             pcbnew_io.export_dsn(fixed_board, dsn_k, probes=False)
             tree = specctra.read(dsn_k)
             from .bridge import plane_policy
-            plan.plane_policy = plane_policy(opts, free_round_with_open=mode == "free" and bool(a["open"]))
+            plan.plane_policy = plane_policy(opts, free_round_with_open=bool(a["open"]))
+            plan.plane_cost = opts.get("plane_cost")
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
             translate.permute(tree, round_seed(opts.get("seed"), k))
@@ -596,6 +597,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                                                         if not use_split or n not in a["connect"]})
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
+            translate.write_rules(plan, dsn)
             budget = max(15.0, min(left() * 0.5, left() - 30))
             from .bridge import router_settings
             grace = opts.get("router_grace", freerouting.GRACE_S)
