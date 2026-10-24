@@ -86,14 +86,18 @@ def extract(path, out):
                                                 ("none" if not layers else "both")))
             lay = pcbnew.B_Cu if cu == "B" else pcbnew.F_Cu
             sp = pcbnew.SHAPE_POLY_SET()
+            spi = pcbnew.SHAPE_POLY_SET()
             if layers:
                 p.TransformShapeToPolygon(sp, lay, 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
+                p.TransformShapeToPolygon(spi, lay, 0, int(0.005 * NM), pcbnew.ERROR_INSIDE)
             d = p.GetDrillSize()
             c = p.GetCenter()
             loc = [v for v in (p.GetLocalClearance(), fp.GetLocalClearance()) if v is not None]
             pads.append(dict(num=p.GetNumber(), net=p.GetNetname(), cu=cu, x=mm(c.x), y=mm(c.y),
                              clear=mm(max(loc)) if loc else None,
-                             poly=poly_points(sp), drill=[mm(d.x), mm(d.y)],
+                             poly=poly_points(sp), poly_in=poly_points(spi),
+                             custom=p.GetShape(lay) == pcbnew.PAD_SHAPE_CUSTOM,
+                             anchor_r=mm(min(p.GetSize(lay).x, p.GetSize(lay).y)) / 2, drill=[mm(d.x), mm(d.y)],
                              pth=p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH,
                              npth=p.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH))
         # Edge.Cuts drawn inside a footprint (sensor windows, slots) move with the part.

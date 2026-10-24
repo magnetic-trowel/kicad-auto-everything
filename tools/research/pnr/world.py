@@ -259,8 +259,27 @@ class World:
             cu, hT, hV = [], [], []
             # pad-local clearance overrides (fiducials, mounting holes, power pads)
             ex = max(0.0, (pad.get("clear") or 0.0) - R.c)
+            # terminal cells (where a wire may end on the pad): centres inside the pad's inner
+            # approximation (the outer one admits cells a few microns outside the pad, which
+            # KiCad does not connect). Custom-shape pads: KiCad's connectivity misses track
+            # ends well inside a ring pad (funkeleinhorn MK1), so only the anchor (a disc of
+            # half the anchor size around the pad position) is a terminal there
+            cu_full = []
+            for q in pad.get("poly_in") or pad["poly"]:
+                if len(q) >= 3:
+                    cu.append(raster_poly(rot_pts(np.array(q, float), deg), 0.0, -fx, -fy, g))
+            # copper for the board-edge test: every cell within half a cell diagonal of the pad,
+            # so that no part of the pad lies further than that from a tested cell centre (with
+            # centres only, pads touched the edge: ecc83 P5/P6, copper_edge_clearance 0.0 mm)
             for pl in polys:
-                cu.append(raster_poly(pl, 0.0, -fx, -fy, g))
+                cu_full.append(raster_poly(pl, 0.71 * g, -fx, -fy, g))
+            if pad.get("custom") and cu:
+                cells = np.concatenate(cu)
+                cc = c + np.array([fx, fy])
+                d = np.hypot(-fx + cells[:, 0] * g - cc[0], -fy + cells[:, 1] * g - cc[1])
+                near = d <= max(pad.get("anchor_r", 0.0) - 0.05, 0.0)
+                cu = [np.ascontiguousarray(cells[near])] if near.any() else []
+            for pl in polys:
                 hT.append(raster_poly(pl, R.pad_T + ex, -fx, -fy, g))
                 hV.append(raster_poly(pl, R.pad_V + ex, -fx, -fy, g))
             drill = max(pad["drill"]) if pad["drill"] else 0.0
@@ -296,6 +315,7 @@ class World:
             if len(cu) == 0 and polys:
                 cu = nearest_cell(c[0] + fx, c[1] + fy, 0.0, 0.0, g)
             ent["cu"] = np.ascontiguousarray(cu, np.int32)
+            ent["cu_full"] = np.ascontiguousarray(np.concatenate(cu_full), np.int32) if cu_full else ent["cu"]
             ent["hT"] = np.ascontiguousarray(np.unique(np.concatenate(hT), axis=0) if hT else np.zeros((0, 2), np.int32), np.int32)
             ent["hV"] = np.ascontiguousarray(np.unique(np.concatenate(hV), axis=0) if hV else np.zeros((0, 2), np.int32), np.int32)
             if pad["npth"] or ent["layers"] == []:
@@ -420,7 +440,7 @@ class World:
         keep = [(pl, np.ascontiguousarray(np.unique(np.concatenate(cs), axis=0), np.int32))
                 for pl, cs in sorted(keep.items())]
         court = np.unique(np.concatenate([c for _, c in keep]), axis=0).astype(np.int32)
-        allcu = [p["cu"] for p in pads if len(p["cu"])]
+        allcu = [p.get("cu_full", p["cu"]) for p in pads if len(p.get("cu_full", p["cu"]))]
         # a part's own board cutouts must lie inside the board, like copper
         allcu += [raster_poly(rot_pts(np.array(e, float), deg), 0.75 * g, -fx, -fy, g)
                   for e in part.data.get("edges", []) if len(e) >= 3]
