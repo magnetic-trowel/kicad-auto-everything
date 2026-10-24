@@ -137,6 +137,8 @@ class Collapse:
         self.inside = {}
         self.bias = M.center_bias(self.kit, 0.05)
         self.kcache = {}
+        self.hcache = {}
+        self.cutout = self._cutout_mask()
         self.trust = trust_mm
         self.pad_wire = pad_wire
         self.tension_beta = tension_beta
@@ -149,13 +151,132 @@ class Collapse:
 
     # ------------------------------------------------------------ helpers
     def inside_map(self, pi, ri):
+        """Pad copper inside the board edge clearance and outside the board cutouts drawn
+        inside fixed footprints (the engine checks those only on the footprint's own side)."""
         key = (pi, ri)
         if key not in self.inside:
-            self.inside[key] = M._inside_map(self.w, self.kit, pi, ri)
+            m = M._inside_map(self.w, self.kit, pi, ri)
+            if self.cutout.any():
+                cu = self.w.part_raster(self.w.parts[pi], ri)["cu"]
+                if len(cu):
+                    m &= corr(self.cutout, cu, pad_value=0.0) < 0.5
+            self.inside[key] = m
         return self.inside[key]
 
+    def _cutout_mask(self):
+        w = self.w
+        mask = np.zeros((w.H, w.W), bool)
+        for pi, (cx, cy, ri) in w.pose.items():
+            part = w.parts[pi]
+            for ent in w.raster(pi)["pads"][len(part.pads):]:  # the footprint's own Edge.Cuts
+                c = ent["hT"]
+                xs, ys = c[:, 0] + cx, c[:, 1] + cy
+                ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+                mask[ys[ok], xs[ok]] = True
+        return mask
+
+    def holes(self, pi, ri):
+        """Drill-hole cells of part pi (KiCad: no PTH/NPTH hole inside another courtyard,
+        on either side; the engine's courtyard planes do not see holes)."""
+        key = (pi, ri)
+        h = self.hcache.get(key)
+        if h is None:
+            w = self.w
+            part = w.parts[pi]
+            rr = w.part_raster(part, ri)
+            out = []
+            for k, pad in enumerate(part.pads):
+                if pad["drill"] and max(pad["drill"]) > 0:
+                    c = np.round(rr["pads"][k]["center"] / w.g).astype(np.int32)
+                    from raster import disc
+                    out.append(disc(max(pad["drill"]) / 2, w.g).astype(np.int32) + c)
+            h = np.ascontiguousarray(np.unique(np.concatenate(out), axis=0), np.int32) if out \
+                else np.zeros((0, 2), np.int32)
+            side = [c for pl, c in rr["keep"] if pl < 2]
+            side = np.ascontiguousarray(np.unique(np.concatenate(side), axis=0), np.int32) if side \
+                else np.zeros((0, 2), np.int32)
+            h = self.hcache[key] = (h, side)
+        return h
+
+    def hole_map(self, skip=None):
+        w = self.w
+        Hm = np.zeros((w.H, w.W), np.float32)
+        for q, (cx, cy, ri) in w.pose.items():
+            if q == skip:
+                continue
+            h = self._holes_frac(q) if q in w.frac else self.holes(q, ri)[0]
+            if len(h):
+                xs, ys = h[:, 0] + cx, h[:, 1] + cy
+                ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+                Hm[ys[ok], xs[ok]] = 1.0
+        return Hm
+
+    def _holes_frac(self, q):
+        key = ("frac", q)
+        h = self.hcache.get(key)
+        if h is None:
+            from raster import disc
+            w = self.w
+            part = w.parts[q]
+            rr = w.raster(q)
+            out = [disc(max(pad["drill"]) / 2, w.g).astype(np.int32) +
+                   np.round(rr["pads"][k]["center"] / w.g).astype(np.int32)
+                   for k, pad in enumerate(part.pads) if pad["drill"] and max(pad["drill"]) > 0]
+            h = self.hcache[key] = np.unique(np.concatenate(out), axis=0).astype(np.int32) if out \
+                else np.zeros((0, 2), np.int32)
+        return h
+
+    def hole_violation(self, pi, Hm=None):
+        """Cells of pi's holes under other courtyards + other holes under pi's courtyards."""
+        w = self.w
+        cx, cy, ri = w.pose[pi]
+        if pi in w.frac:
+            return 0
+        h, side = self.holes(pi, ri)
+        Hm = self.hole_map(skip=pi) if Hm is None else Hm
+        own = np.zeros((w.H, w.W), np.int16)
+        n = 0
+        cs = (w.court[0] > 0) | (w.court[1] > 0)
+        if len(h):
+            xs, ys = h[:, 0] + cx, h[:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            # courtyard cells of pi itself are in court too: count only cells covered twice
+            # (pi's own courtyard on that side) or by the other side
+            cnt = w.court[0, ys[ok], xs[ok]].astype(int) + w.court[1, ys[ok], xs[ok]]
+            ownc = np.zeros_like(cnt)
+            for pl, c in w.raster(pi)["keep"]:
+                if pl < 2:
+                    sel = set(map(tuple, (c + [cx, cy]).tolist()))
+                    ownc += np.array([(x, y) in sel for x, y in zip(xs[ok], ys[ok])], int)
+            n += int(((cnt - ownc) > 0).sum())
+        if len(side):
+            xs, ys = side[:, 0] + cx, side[:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            n += int((Hm[ys[ok], xs[ok]] > 0).sum())
+        return n
+
+    def violation(self, pi):
+        ov, out = self.w.part_violation(pi)
+        return ov + self.hole_violation(pi), out
+
+    def legal_map(self, pi, ri):
+        L = self.kit.legal_map(pi, ri) & self.inside_map(pi, ri)
+        h, side = self.holes(pi, ri)
+        w = self.w
+        if len(h):
+            L &= corr(((w.court[0] > 0) | (w.court[1] > 0)).astype(np.float32), h, pad_value=0.0) < 0.5
+        if len(side):
+            L &= corr(self.hole_map(skip=pi), side, pad_value=0.0) < 0.5
+        return L
+
     def overlap_cells(self):
-        return int(np.maximum(self.w.court.astype(np.int32) - 1, 0).sum())
+        w = self.w
+        n = int(np.maximum(w.court.astype(np.int32) - 1, 0).sum())
+        Hm = None
+        for q in self.kit.movable():
+            if q in w.pose and self.holes(q, w.pose[q][2])[0].size:
+                n += self.hole_violation(q)
+        return n
 
     def wire_conflicts(self):
         return sum(self.r.net_conflicts(n) for n in self.nets if self.r.routes.get(n))
@@ -270,6 +391,8 @@ class Collapse:
         if beta > 0:
             FP = [F.map(beta * (w.court[p] > 0) * (1.0 + self.hist_c[p]) + self.hist_p * self.hist_c[p])
                   for p in range(w.P)]
+            FC = F.map(beta * ((w.court[0] > 0) | (w.court[1] > 0)))
+            FH = F.map(beta * self.hole_map(skip=pi))
             bw = beta * self.pad_wire
             FT = [F.map(bw * CT[l]) if (bw and CT[l].any()) else None for l in range(w.nl)]
             FV = F.map(bw * CV) if (bw and CV.any()) else None
@@ -286,6 +409,8 @@ class Collapse:
                 pairs = [(FP[p], cells) for p, cells in keep]
                 pairs += [(FT[l], cells) for l, cells in ht.items()]
                 pairs.append((FV, hv))
+                h, side = self.holes(pi, ri)
+                pairs += [(FC, h), (FH, side)]
                 c = c + F.corr(pairs)
             yield ri, c, inside
 
@@ -342,7 +467,7 @@ class Collapse:
         if self.trust:
             # the trust radius doubles while the part stays in conflict (homotopy tracking:
             # parts move locally, so the lifted cluster expands keeping its topology)
-            ov, _ = w.part_violation(pi)
+            ov, _ = self.violation(pi)
             self.stuck[pi] = self.stuck.get(pi, 0) + 1 if ov > 0 else 0
         for n in nets:
             if n in per:
@@ -384,7 +509,7 @@ class Collapse:
         (methods._evict_for) which are re-queued for their nearest legal pose."""
         w, kit = self.w, self.kit
         mov = [q for q in kit.movable() if q in w.pose]
-        bad = [(w.part_violation(q), q) for q in mov]
+        bad = [(self.violation(q), q) for q in mov]
         queue = [q for v, q in sorted((v[0] + 100 * v[1], q) for v, q in bad if v != (0, 0))]
         home = {q: w.pose[q] for q in queue}
         moved = evict = 0
@@ -392,7 +517,7 @@ class Collapse:
         while queue:
             q = queue.pop(0)
             if q in w.pose:
-                if w.part_violation(q) == (0, 0):
+                if self.violation(q) == (0, 0):
                     continue
                 cur = w.pose[q]
                 w.unplace(q)
@@ -402,7 +527,7 @@ class Collapse:
             D = kit.dist_map(x, y)
             best = None
             for ri in range(4):
-                L = kit.legal_map(q, ri)
+                L = self.legal_map(q, ri)
                 if not L.any():
                     continue
                 c = np.where(L, D + (0 if ri == cur[2] else 0.3) + 0.05 * kit.hpwl_map(q, ri), np.inf)
