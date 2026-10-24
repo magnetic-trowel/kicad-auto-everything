@@ -330,3 +330,28 @@ def test_capped_drc_types_are_flagged():
     drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
     assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
     assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
+
+
+def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch):
+    """Methods and Freerouting run with cwd=<attempt dir>, so relative paths would miss."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "board.kicad_pcb").write_text("(kicad_pcb)")
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd)
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(tools, "run_measured", run)
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+        return {"ok": True, "rules": {}}
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    adapters.Command("cp {input} {output}", sandbox=False).run("route", Path("in"), Path("w1"), 0, 10)
+    adapters.Freerouting(binary="freerouting").run("route", Path("in"), Path("w2"), 0, 10)
+    flat = [str(x) for c in seen for x in (c if isinstance(c, list) else [c])]
+    paths = [x for x in " ".join(flat).split() if x.endswith((".kicad_pcb", ".dsn", ".ses"))]
+    assert paths and all(Path(x.strip("'")).is_absolute() for x in paths), paths
