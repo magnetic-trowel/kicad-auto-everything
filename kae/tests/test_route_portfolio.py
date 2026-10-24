@@ -60,3 +60,20 @@ def test_attempts_that_fail_at_once_end_the_run(tmp_path, monkeypatch):
                         router="broken_router", workdir=tmp_path / "wd", log=lambda m: None)
     assert rep["stop"] == "failed" and rep["best"] is None and len(rep["attempts"]) == 4
     assert time.monotonic() - t < 30
+
+
+def test_mixed_routers_cycle_through_their_modules(tmp_path, monkeypatch):
+    # router a leaves 1 open, router b is clean: the mix finds b's clean board
+    def fake(name, unconnected):
+        (tmp_path / f"{name}.py").write_text(
+            "import json, sys\na = sys.argv[1:]\nopen(a[2], 'w').write('%s')\n" % name
+            + "open(a[a.index('--report') + 1], 'w').write(json.dumps(dict(repair=dict(final="
+            + "dict(errors=0, unconnected=%d)))))\n" % unconnected)
+    fake("router_a", 1)
+    fake("router_b", 0)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    out = tmp_path / "out.kicad_pcb"
+    rep = portfolio.run("in.kicad_pcb", out, time_s=300, parallel=2, first_s=60,
+                        router=["router_a", ("router_b", ["--x"])], workdir=tmp_path / "wd", log=lambda m: None)
+    assert rep["stop"] == "clean" and rep["best"]["router"] == "router_b" and out.read_text() == "router_b"
+    assert {a["router"] for a in rep["attempts"]} == {0, 1}

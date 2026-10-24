@@ -15,6 +15,11 @@ Each attempt is a separate `python -m <router> route` process (kae.route.cli or
 kae.route.critical_cli), so it can be stopped, and its own report decides its rank:
 report["repair"]["final"] = {errors, unconnected}. CPU use is up to `parallel` cores.
 
+Several routers can share one portfolio (`router` a list; attempts cycle through them): the two
+routers fail on different boards (on split C the bridge closes bldcm and aftonsparv, critical
+copper + soft last mile closes libresolar), so a mixed portfolio gets the union. Among equally
+ranked results the router listed first wins, so list the physics-first router first.
+
     python -m kae.route.portfolio route IN OUT [--seed S] [--time T] [--parallel P]
         [--first-s F] [--growth G] [--router kae.route.cli|kae.route.critical_cli] [-- ARGS...]
 """
@@ -44,6 +49,10 @@ def _rank(rep):
 
 def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         router="kae.route.cli", extra=(), workdir=None, log=print):
+    """`router`: a module name, or a list of module names or (module, [args]) pairs; attempts
+    cycle through them and `extra` goes to every one."""
+    routers = [(r, []) if isinstance(r, str) else (r[0], list(r[1]))
+               for r in ([router] if isinstance(router, str) else router)]
     inp, out = Path(inp).resolve(), Path(out).resolve()
     t0 = time.monotonic()
     deadline = t0 + time_s - MARGIN_S
@@ -60,15 +69,17 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         if b < 20:
             return False
         s = seed * 1000 + k
+        ri = k % len(routers)
+        mod, rargs = routers[ri]
         d = wd / f"a{k}"
         d.mkdir(exist_ok=True)
         o, r = d / "board.kicad_pcb", d / "report.json"
-        argv = [sys.executable, "-m", router, "route", str(inp), str(o), "--seed", str(s),
-                "--time", f"{b:.0f}", "--report", str(r), *extra]
+        argv = [sys.executable, "-m", mod, "route", str(inp), str(o), "--seed", str(s),
+                "--time", f"{b:.0f}", "--report", str(r), *rargs, *extra]
         p = subprocess.Popen(argv, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True)
-        running[p] = dict(k=k, seed=s, budget=round(b), out=o, report=r, t=time.monotonic())
-        log(f"[portfolio] start #{k} seed {s} budget {b:.0f}s")
+        running[p] = dict(k=k, seed=s, budget=round(b), out=o, report=r, t=time.monotonic(), router=ri)
+        log(f"[portfolio] start #{k} {mod} seed {s} budget {b:.0f}s")
         k += 1
         launched_in_wave += 1
         if launched_in_wave >= parallel:          # next wave: longer attempts
@@ -103,13 +114,13 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
                 rep = json.loads(a["report"].read_text())
             except (OSError, ValueError):
                 rep = None
-            a.update(rank=_rank(rep), rc=p.returncode, seconds=round(time.monotonic() - a["t"], 1),
+            a.update(rank=_rank(rep) + (a["router"],), rc=p.returncode, seconds=round(time.monotonic() - a["t"], 1),
                      has_board=a["out"].exists())
             done.append(a)
             log(f"[portfolio] end #{a['k']} rank {a['rank']} in {a['seconds']}s")
             if a["has_board"] and (best is None or a["rank"] < best["rank"]):
                 best = a
-            if a["rank"] == (0, 0):
+            if a["rank"][:2] == (0, 0):
                 clean = True
         # attempts that die at once without a board (bad input, broken install): retrying won't help
         tail = done[-2 * parallel:]
@@ -127,11 +138,12 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(best["out"], out)
     report = dict(input=str(inp), budget_s=time_s, parallel=parallel, first_s=first_s, growth=growth,
-                  router=router, extra=list(extra), seconds=round(time.monotonic() - t0, 1),
+                  routers=[[m, a_] for m, a_ in routers], extra=list(extra), seconds=round(time.monotonic() - t0, 1),
                   stop="clean" if clean else ("failed" if failed else "time"), attempts=[
-                      {x: a[x] for x in ("k", "seed", "budget", "rank", "rc", "seconds", "has_board")}
+                      {x: a[x] for x in ("k", "seed", "router", "budget", "rank", "rc", "seconds", "has_board")}
                       for a in done],
-                  best=None if best is None else dict(k=best["k"], seed=best["seed"], rank=best["rank"]))
+                  best=None if best is None else dict(k=best["k"], seed=best["seed"], rank=best["rank"][:2],
+                                                     router=routers[best["router"]][0]))
     try:
         best_rep = json.loads(best["report"].read_text()) if best else None
     except (OSError, ValueError):
@@ -156,12 +168,20 @@ def main(argv=None):
     r.add_argument("--parallel", type=int, default=4)
     r.add_argument("--first-s", type=float, default=120.0)
     r.add_argument("--growth", type=float, default=2.0)
-    r.add_argument("--router", default="kae.route.cli", choices=("kae.route.cli", "kae.route.critical_cli"))
+    r.add_argument("--router", action="append", metavar="MODULE[:ARGS]",
+                   help="kae.route.cli (default) or kae.route.critical_cli, optionally with its own "
+                        "arguments after a colon; repeat to mix routers (the first wins ties)")
     r.add_argument("--workdir")
     r.add_argument("--report")
     a = ap.parse_args(argv)
+    routers = []
+    for spec in a.router or ["kae.route.cli"]:
+        mod, _, rest = spec.partition(":")
+        if mod not in ("kae.route.cli", "kae.route.critical_cli"):
+            ap.error(f"unknown router {mod}")
+        routers.append((mod, rest.split()))
     rep = run(a.input, a.output, seed=a.seed, time_s=a.time, parallel=a.parallel, first_s=a.first_s,
-              growth=a.growth, router=a.router, extra=extra, workdir=a.workdir,
+              growth=a.growth, router=routers, extra=extra, workdir=a.workdir,
               log=lambda m: print(m, file=sys.stderr, flush=True))
     text = json.dumps(rep, default=str)
     if a.report:
