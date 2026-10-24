@@ -36,6 +36,8 @@ import os
 import time
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer, make_annealer
 from . import exact as exactmod
@@ -117,10 +119,12 @@ def _escalate(P, st, workers, seed, log, time_s):
     return steps
 
 
-def _seed_state(P, macros, net_w, seed, log, partition=False):
+def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
     """Quadratic + spread: an initial state (macros at their best layout). `partition`
     spreads by recursive bisection of the free cells (density-feasible, for big boards)
-    instead of pairwise repulsion."""
+    instead of pairwise repulsion. `jitter` > 0 moves every object by a normal offset of
+    jitter x the board's span (seeded) before the spread: a different start for the
+    floorplan and the annealer (--probe-select's candidates)."""
     objs, owner = seedmod._objects(P, macros)
     pos = seedmod.quadratic(P, objs, owner, net_w)
     # connectors are anchors: pinned inside the nearest edge, then the rest re-solved
@@ -128,6 +132,12 @@ def _seed_state(P, macros, net_w, seed, log, partition=False):
     anchors = seedmod.connector_anchors(P, objs, pos, weight=5.0 * wmax)
     if anchors:
         pos = seedmod.quadratic(P, objs, owner, net_w, anchors=anchors)
+    if jitter > 0:
+        x0, y0, x1, y1 = P.outline.bounds
+        rng = np.random.default_rng(seed)
+        pos = pos + rng.normal(0.0, jitter * max(x1 - x0, y1 - y0), pos.shape)
+        pos[:, 0] = np.clip(pos[:, 0], x0, x1)
+        pos[:, 1] = np.clip(pos[:, 1], y0, y1)
     if partition:
         pos = seedmod.partition_spread(P, objs, pos)
     else:
@@ -237,6 +247,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     macros, terms, report_terms, order = [], None, None, []
     anneal_args = dict(anneal_args or {})
     terms_knobs = anneal_args.pop("terms_knobs", None) or {}
+    seed_jitter = float(anneal_args.pop("seed_jitter", 0.0) or 0.0)
     t = time.monotonic()
     if not (brief or {}).get("structures"):
         tsrc = "none (no structures in the brief)"     # nothing to price: skip the build
@@ -288,7 +299,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     n_items = len(free_macros) + len(P.mov) - sum(len([i for i in m.members if P.parts[i].movable])
                                                    for m in free_macros)
     big = n_items > FLOORPLAN_MAX_ITEMS
-    st, _ = _seed_state(P, free_macros, net_w, seed, log, partition=big)
+    st, _ = _seed_state(P, free_macros, net_w, seed, log, partition=big, jitter=seed_jitter)
     for mac in macros:
         if mac.anchored:   # members start at their layout around the locked anchor
             a = P.parts[mac.anchor]

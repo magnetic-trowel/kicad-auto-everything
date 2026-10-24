@@ -206,46 +206,66 @@ def _kicad_loop(a, res, t0, write):
 
 
 PROBE_PHYS_SLACK = 0.10       # a probed candidate may cost 10% more physics than the best one
+PROBE_JITTER = 0.15           # candidates after the first start from a seed stage jittered this much
 
 
 def _probe_select(a, board, kw, t0, write):
-    """--probe-select N: place N times (seeds seed .. seed+N-1, each a share of the time),
-    route each placement briefly with kae.route.bridge (last mile on), keep the one with the
-    fewest open connections; physics breaks ties, and a candidate with fewer opens is taken
-    only within PROBE_PHYS_SLACK of the best physics among the candidates. A fallback for
-    when the congestion estimates cannot tell which placement routes (paw3395)."""
+    """--probe-select N: place N times (seeds seed .. seed+N-1, each a share of the time; the
+    candidates after the first also start from a jittered seed stage, --probe-jitter, so they
+    differ beyond the annealer's seed), route each placement briefly with kae.route.bridge
+    (last mile on; --probe-parallel P of them at once), and keep the one with the fewest open
+    connections; physics breaks ties, and a candidate with fewer opens is taken only within
+    PROBE_PHYS_SLACK of the best physics among the candidates. A fallback for when the
+    congestion estimates cannot tell which placement routes (paw3395)."""
+    import math
     import tempfile
+    from concurrent.futures import ThreadPoolExecutor
     from kae.board.kicad_file import load
     from kae.place.pipeline import place
     from kae.route import bridge
     from kae.route import drc as kdrc
     n = int(a.probe_select)
-    share = float(a.time) * 0.85 / n
-    place_s = max(30.0, 0.45 * share)
-    probe_s = max(30.0, min(300.0, 0.55 * share))
+    par = max(1, min(n, int(getattr(a, "probe_parallel", 1) or 1)))
+    waves = math.ceil(n / par)
+    jitter = float(getattr(a, "probe_jitter", PROBE_JITTER))
+    usable = float(a.time) * 0.85
+    place_s = max(30.0, 0.45 * usable / n)
+    probe_s = max(30.0, min(300.0, (usable - n * place_s) / waves))
     tmp = tempfile.mkdtemp(prefix="kae-probe-")
     cands = []
     for k in range(n):
-        if k and time.monotonic() - t0 > 0.85 * float(a.time) - place_s - probe_s:
+        if k and time.monotonic() - t0 > usable - place_s - waves * probe_s:
             break
-        r = place(load(a.input) if k else board, seed=a.seed + k, time_s=place_s, **kw)
+        kk = dict(kw)
+        if k and jitter > 0:
+            kk["anneal_args"] = dict(kk.get("anneal_args") or {}, seed_jitter=jitter)
+        r = place(load(a.input) if k else board, seed=a.seed + k, time_s=place_s, **kk)
         legal = not r.report.get("exact") and not r.report.get("outline_incomplete")
         phys = (r.report.get("scorecard") or {}).get("total_linear") or 0.0
         out = Path(tmp) / f"cand{k}" / "board.kicad_pcb"
         out.parent.mkdir(parents=True, exist_ok=True)
-        unc = None
+        staged = None
         if r.poses and legal:
             write(a.input, str(out), r.poses, mode=a.writer, log=_log)
             staged = kdrc.stage_board(str(out), a.input, str(out.parent / "staged"))
-            try:
-                rep = bridge.route(staged, str(out.parent / "routed.kicad_pcb"), seed=0, time_s=probe_s,
-                                   opts=dict(last_mile=True), log=lambda m: None)
-                fin = (rep.get("repair") or {}).get("final") or {}
-                unc = fin.get("unconnected")
-            except Exception as e:      # noqa: BLE001 - a probe that fails leaves the candidate unranked
-                _log(f"probe of seed {a.seed + k} failed: {type(e).__name__}: {e}")
-        _log(f"probe seed {a.seed + k}: legal={legal} physics={phys:.4g} unconnected={unc}")
-        cands.append(dict(seed=a.seed + k, res=r, legal=legal, physics=phys, unconnected=unc))
+        cands.append(dict(seed=a.seed + k, jitter=jitter if k else 0.0, res=r, legal=legal, physics=phys,
+                          unconnected=None, staged=staged, out=out))
+
+    def probe(c):
+        if c["staged"] is None:
+            return None
+        try:
+            rep = bridge.route(c["staged"], str(c["out"].parent / "routed.kicad_pcb"), seed=0, time_s=probe_s,
+                               opts=dict(last_mile=True), log=lambda m: None)
+            return ((rep.get("repair") or {}).get("final") or {}).get("unconnected")
+        except Exception as e:      # noqa: BLE001 - a probe that fails leaves the candidate unranked
+            _log(f"probe of seed {c['seed']} failed: {type(e).__name__}: {e}")
+            return None
+    t_probe = time.monotonic()
+    with ThreadPoolExecutor(max_workers=par) as ex:
+        for c, unc in zip(cands, ex.map(probe, cands)):
+            c["unconnected"] = unc
+            _log(f"probe seed {c['seed']}: legal={c['legal']} physics={c['physics']:.4g} unconnected={unc}")
     ok = [c for c in cands if c["legal"] and c["unconnected"] is not None]
     if not ok:
         best = cands[0]
@@ -254,8 +274,10 @@ def _probe_select(a, board, kw, t0, write):
         within = [c for c in ok if c["physics"] <= floor * (1.0 + PROBE_PHYS_SLACK) + 1e-9]
         best = min(within, key=lambda c: (c["unconnected"], c["physics"]))
     res = best["res"]
-    res.report["probe_select"] = dict(n=n, place_s=round(place_s, 1), probe_s=round(probe_s, 1), chosen=best["seed"],
-                                      candidates=[{k: c[k] for k in ("seed", "legal", "physics", "unconnected")}
+    res.report["probe_select"] = dict(n=n, parallel=par, jitter=jitter, place_s=round(place_s, 1),
+                                      probe_s=round(probe_s, 1), probe_wall_s=round(time.monotonic() - t_probe, 1),
+                                      chosen=best["seed"],
+                                      candidates=[{k: c[k] for k in ("seed", "jitter", "legal", "physics", "unconnected")}
                                                   for c in cands])
     return res
 
@@ -313,6 +335,11 @@ def main(argv=None):
     sp.add_argument("--probe-select", type=int, default=0, metavar="N",
                     help="place N times (seeds seed..seed+N-1) and keep the placement a quick kae.route "
                          "probe leaves the fewest open connections on (physics within 10%%; off by default)")
+    sp.add_argument("--probe-parallel", type=int, default=1, metavar="P",
+                    help="with --probe-select: probe P candidates at once (each probe runs Freerouting)")
+    sp.add_argument("--probe-jitter", type=float, default=PROBE_JITTER, metavar="F",
+                    help="with --probe-select: candidates after the first start from a seed stage moved by "
+                         "F x the board span (0: annealer seeds only)")
     sp.add_argument("--anneal-args", help="JSON of annealer weights for experiments, e.g. '{\"w_phys\": 2.0}' "
                                           "(w_phys, w_wl, w_cong, w_order, w_disp, cong_args, ...)")
     sp.set_defaults(fn=cmd_place)
