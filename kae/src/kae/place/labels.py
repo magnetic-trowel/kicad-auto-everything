@@ -192,8 +192,11 @@ def _rows(fps, labels, named, labelled):
                     if [int(v) for v in vals] != refs:
                         fams[cand[0]] = members
                         continue
+                along = 0 if axis == 1 else 1           # a row (one y) runs along x
+                cs = sorted(labels[i]["at"][along] for i in g)
+                pitch = sorted(b - a for a, b in zip(cs, cs[1:]))[len(cs) // 2 - 1] if len(cs) > 1 else 0.0
                 for li, f in zip(sorted(g, key=lambda i: num[i]), members):
-                    out.append(dict(label=li, how=f"row{gi}", part=f.uuid, pads=None))
+                    out.append(dict(label=li, how=f"row{gi}", part=f.uuid, pads=None, along=along, pitch=pitch))
                 used.update(g)
                 gi += 1
     return out
@@ -217,7 +220,11 @@ def distance(geom, fp, pads=None, edge=False):
 
 
 
-KINDS = ("pin", "row", "keyword")    # validated on the human placements (labels.py study)
+KINDS = ("pin", "row", "keyword")    # the kinds tools/research/place/labels.py validates
+# on by default: kinds whose part the human put within 3 mm (pad copper) of its label on >= 90%
+# of A/B/C (numbered rows 14/14 on 2 boards; connector pins 68%, keywords 49%: off)
+DEFAULT_KINDS = ("row",)
+DEFAULT_WEIGHT = 1.0
 
 
 def associations(board, kinds=KINDS):
@@ -250,22 +257,26 @@ def associations(board, kinds=KINDS):
         else:
             ev = f"'{lab['text'][:20]}' in the nets of {f.ref}"
         x0, y0, x1, y1 = lab["geom"].bounds
+        row = dict(along=a["along"], pitch=round(a["pitch"], 3)) if "along" in a else {}
         out.append(dict(label=li, text=lab["text"], xy=(round(lab["xy"][0], 3), round(lab["xy"][1], 3)),
                         half=round(max(x1 - x0, y1 - y0) / 2, 3), how=re.sub(r"\d+$", "", how), part=f.uuid,
-                        ref=f.ref, pads=a["pads"], evidence=ev))
+                        ref=f.ref, pads=a["pads"], evidence=ev, **row))
     return out
 
 
-def anchors(P, assoc, d0=1.5, weight=1.0):
-    """Annealer label targets from associations: {part index: ([(X, Y) target origin per
-    rotation], dead zone cells, weight)} putting the labelled pads' centre at the label (L1
-    dead zone: d0 plus half the label box's longer side). A part named by several labels
-    takes the first."""
+def anchors(P, assoc, d0=1.5, weight=1.0, kinds=None):
+    """Annealer label targets from associations (of `kinds`, default all): {part index: ([(X,
+    Y) target origin per rotation], dead zone cells (one, or (x, y)), weight)} putting the
+    labelled pads' centre at the label (dead zone: d0 plus half the label box's longer side;
+    along a numbered row a third of its pitch, which keeps the row's order). A part named by
+    several labels takes the first."""
     import math
     import numpy as np
     by_uuid = {p.uuid: p for p in P.parts}
     out = {}
     for a in assoc:
+        if kinds is not None and a["how"] not in kinds:
+            continue
         p = by_uuid.get(a["part"])
         if p is None or not p.movable or p.i in out:
             continue
@@ -275,5 +286,11 @@ def anchors(P, assoc, d0=1.5, weight=1.0):
         for r in p.rots:
             c = np.asarray(r.pins)[ks].mean(axis=0) if len(r.pins) else np.zeros(2)
             tg.append((int(round((lx - P.ox - c[0]) / P.g)), int(round((ly - P.oy - c[1]) / P.g))))
-        out[p.i] = (tg, int(math.ceil((d0 + a.get("half", 0.0)) / P.g)), float(weight))
+        r = int(math.ceil((d0 + a.get("half", 0.0)) / P.g))
+        if a.get("along") is not None and a.get("pitch"):
+            # order within a numbered row: along the row a third of its pitch, so no two parts
+            # of the row can trade places without leaving their labels
+            ra = max(1, int(a["pitch"] / 3.0 / P.g))
+            r = (ra, r) if a["along"] == 0 else (r, ra)
+        out[p.i] = (tg, r, float(weight))
     return out

@@ -71,3 +71,17 @@ def test_label_term_pulls_a_part_beside_its_label():
     ann.run(cpu_s=20.0, max_moves=40000)
     d1 = abs(int(ann.X[i]) - tx) + abs(int(ann.Y[i]) - ty)
     assert d1 < d0
+
+
+def test_numbered_row_anchors_keep_the_row_order():
+    """A numbered row's dead zone along the row is a third of its pitch (the parts keep the
+    labels' order); across it, the label's half size plus d0. Only the default-on kinds when
+    asked."""
+    P = Problem.build(load(FIXTURE))
+    p = P.parts[P.mov[0]]
+    row = dict(label=0, how="row", part=p.uuid, pads=None, xy=(10.0, 10.0), half=2.0, along=1, pitch=4.0)
+    pin = dict(label=1, how="pin", part=P.parts[P.mov[1]].uuid, pads=[0], xy=(20.0, 10.0), half=1.0)
+    a = labels.anchors(P, [row, pin], d0=1.5)
+    (tg, r, w) = a[p.i]
+    assert len(tg) == len(p.rots) and r == (int(3.5 / P.g + 0.999), int(4.0 / 3.0 / P.g))
+    assert set(labels.anchors(P, [row, pin], kinds=labels.DEFAULT_KINDS)) == {p.i}

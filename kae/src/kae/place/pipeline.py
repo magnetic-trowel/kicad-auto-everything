@@ -60,6 +60,7 @@ class Result:
 
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
+SILK_W = 1.0     # the annealer's silkscreen term (silk_on projects): overlap / mean part area
 
 
 def _default_workers():
@@ -377,14 +378,25 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
-        if float(kw.get("w_label", 0.0) or 0.0) > 0:
-            # parts named by board silk labels beside their label (off by default: w_label 0)
-            from . import labels as labelsmod
-            assoc = (brief or {}).get("labels")
-            if assoc is None:
-                assoc = labelsmod.associations(board)
-            kw["labels"] = labelsmod.anchors(P, assoc)
-            rep["labels"] = dict(associations=len(assoc), anchored=len(kw["labels"]))
+        # parts named by board silk labels beside their label: by default the kinds validated on
+        # the human placements (numbered rows) at a modest weight; anneal_args w_label and
+        # label_kinds widen or switch it off (w_label 0)
+        from . import labels as labelsmod
+        kinds = tuple(kw.pop("label_kinds", None) or ((labelsmod.KINDS if "w_label" in (anneal_args or {})
+                                                        else labelsmod.DEFAULT_KINDS)))
+        kw.setdefault("w_label", labelsmod.DEFAULT_WEIGHT)
+        assoc = (brief or {}).get("labels") or []
+        if float(kw["w_label"] or 0.0) > 0 and assoc:
+            kw["labels"] = labelsmod.anchors(P, assoc, kinds=kinds)
+            if kw["labels"]:
+                rep["labels"] = dict(associations=len(assoc), kinds=list(kinds), anchored=len(kw["labels"]),
+                                     w_label=kw["w_label"])
+        if exactmod.silk_on(P) and float(kw.get("w_silk", SILK_W) or 0.0) > 0:
+            # silkscreen where the project makes it an error: a soft term on KiCad's glyphs
+            rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
+            kw.setdefault("w_silk", SILK_W)
+            kw["silk"] = exactmod.silk_grid(P)
+            rep["silk_term"] = dict(parts=len(kw["silk"]), w_silk=kw["w_silk"])
         ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
                             log=log, **kw)
         if anneal_args:
@@ -464,7 +476,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     if exactmod.silk_on(P):
         # silkscreen where the project makes it an error: a soft pass, legality kept
         t = time.monotonic()
-        rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
+        if "silk_text" not in rep:
+            rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
         left = max(5.0, min(0.15 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
         phys = None

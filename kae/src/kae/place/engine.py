@@ -47,9 +47,9 @@ I_NCX, I_NCY, I_HX, I_HY, I_HB, I_CAP, I_HOFF, I_CX, I_CY, I_STAMP, I_NSTAMP, I_
     I_WIN, I_WX0, I_WX1, I_WY0, I_WY1 = range(18)
 # fparams indices
 F_G, F_OX, F_OY, F_CB, F_CX0, F_CY0, F_SUP, F_TGT, F_NORM, F_A0, F_S0, F_W0, F_SLACK, F_BAR, F_WWL, F_WDISP, \
-    F_WCONG, F_WORD, F_OMARGIN, F_NMOV, F_WLAB = range(21)
+    F_WCONG, F_WORD, F_OMARGIN, F_NMOV, F_WLAB, F_WSILK = range(22)
 # totals
-T_WL, T_LEG, T_CONG, T_ORDER, T_DISP, T_LAB = range(6)
+T_WL, T_LEG, T_CONG, T_ORDER, T_DISP, T_LAB, T_SILK = range(7)
 
 Eng = namedtuple("Eng", [
     "ip", "fp", "tot",
@@ -64,6 +64,7 @@ Eng = namedtuple("Eng", [
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
     "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
     "La", "Lr", "Lw",
+    "Sside", "Sext", "Ssr", "Sns", "Str", "Snt",
 ])
 
 
@@ -404,8 +405,63 @@ def _lab_part(E, i):
     if w == 0.0:
         return 0.0
     k = E.K[i]
-    d = abs(E.X[i] - E.La[i, k, 0]) + abs(E.Y[i] - E.La[i, k, 1]) - E.Lr[i]
-    return w * d if d > 0 else 0.0
+    dx = abs(E.X[i] - E.La[i, k, 0]) - E.Lr[i, 0]
+    dy = abs(E.Y[i] - E.La[i, k, 1]) - E.Lr[i, 1]
+    d = (dx if dx > 0 else 0) + (dy if dy > 0 else 0)
+    return w * d
+
+
+@_jit
+def _silk_pair(E, i, j):
+    """Silk overlap of parts i and j (anneal.Annealer._silk_pair), cells^2."""
+    if E.Sside[i] < 0 or E.Sside[j] != E.Sside[i]:
+        return 0
+    dx = E.X[i] - E.X[j]
+    dy = E.Y[i] - E.Y[j]
+    lim = E.Sext[i] + E.Sext[j]
+    if dx > lim or -dx > lim or dy > lim or -dy > lim:
+        return 0
+    ki = E.K[i]
+    kj = E.K[j]
+    tot = 0
+    for side in range(2):
+        if side == 0:
+            a, b, ka, kb, ox, oy = i, j, ki, kj, dx, dy
+        else:
+            a, b, ka, kb, ox, oy = j, i, kj, ki, -dx, -dy
+        for p in range(E.Sns[a, ka]):
+            a0 = E.Ssr[a, ka, p, 0] + ox
+            a1 = E.Ssr[a, ka, p, 1] + ox
+            c0 = E.Ssr[a, ka, p, 2] + oy
+            c1 = E.Ssr[a, ka, p, 3] + oy
+            for q in range(E.Snt[b, kb]):
+                w = min(a1, E.Str[b, kb, q, 1]) - max(a0, E.Str[b, kb, q, 0])
+                if w <= 0:
+                    continue
+                h = min(c1, E.Str[b, kb, q, 3]) - max(c0, E.Str[b, kb, q, 2])
+                if h > 0:
+                    tot += w * h
+    return tot
+
+
+@_jit
+def _silk(E, S, ns, stamp_s):
+    """Silk overlap of parts S[:ns] with the others and among themselves."""
+    if E.fp[F_WSILK] == 0.0:
+        return 0
+    tot = 0
+    n = len(E.Sside)
+    for a in range(ns):
+        i = S[a]
+        if E.Sside[i] < 0:
+            continue
+        for j in range(n):
+            if j == i or E.Sside[j] != E.Sside[i] or E.in_s[j] == stamp_s:
+                continue
+            tot += _silk_pair(E, i, j)
+        for b in range(a + 1, ns):
+            tot += _silk_pair(E, i, S[b])
+    return tot
 
 
 @_jit
@@ -419,6 +475,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         E.in_s[S[a]] = ss
     # ---- before
     leg_old = _leg(E, S, ns, ss)
+    silk_old = _silk(E, S, ns, ss)
     disp_old = 0
     lab_old = 0.0
     for a in range(ns):
@@ -488,6 +545,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         _place_rects(E, i)
         _update_pins(E, i)
     leg_new = _leg(E, S, ns, ss)
+    silk_new = _silk(E, S, ns, ss)
     disp_new = 0
     lab_new = 0.0
     for a in range(ns):
@@ -593,6 +651,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
              + lam * (leg_new - leg_old) / E.fp[F_A0]
              + E.fp[F_WDISP] * (disp_new - disp_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
              + E.fp[F_WLAB] * (lab_new - lab_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
+             + E.fp[F_WSILK] * (silk_new - silk_old) / E.fp[F_A0]
              + E.fp[F_WCONG] * d_cong
              + E.fp[F_WORD] * (ord_new - ord_old)
              + extra)
@@ -603,6 +662,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         E.tot[T_ORDER] += ord_new - ord_old
         E.tot[T_DISP] += disp_new - disp_old
         E.tot[T_LAB] += lab_new - lab_old
+        E.tot[T_SILK] += silk_new - silk_old
         return True, delta
     # ---- revert
     if E.ip[I_CONG] == 1:
@@ -950,7 +1010,7 @@ def build(ann, hash_cap=None):
         ip[I_WX0], ip[I_WX1], ip[I_WY0], ip[I_WY1] = ann.window
     ip[I_NCX], ip[I_NCY], ip[I_HX], ip[I_HY], ip[I_HB], ip[I_CAP], ip[I_HOFF] = P.ncx, P.ncy, HX, HY, HB, hash_cap, hoff
     ip[I_CX], ip[I_CY], ip[I_CONG] = cx, cy, 1 if use_cong else 0
-    fp = np.zeros(21)
+    fp = np.zeros(22)
     fp[F_G], fp[F_OX], fp[F_OY] = g, P.ox, P.oy
     fp[F_CB], fp[F_CX0], fp[F_CY0], fp[F_SUP], fp[F_TGT], fp[F_NORM] = cb, cx0, cy0, sup, tgt, norm
     fp[F_A0], fp[F_S0], fp[F_W0] = ann.A0, ann.S0, ann.W0
@@ -961,14 +1021,34 @@ def build(ann, hash_cap=None):
     fp[F_WLAB] = ann.w.get("label", 0.0)
     kmax = max([1] + [len(p.rots) for p in P.parts])
     La = np.zeros((n, kmax, 2), np.int64)
-    Lr = np.zeros(n, np.int64)
+    Lr = np.zeros((n, 2), np.int64)
     Lw = np.zeros(n)
     for i, (tg, r, wt) in (getattr(ann, "labels", None) or {}).items():
         for k, (tx, ty) in enumerate(tg[:kmax]):
             La[i, k, 0], La[i, k, 1] = tx, ty
-        Lr[i], Lw[i] = int(r), float(wt)
+        rx, ry = r if isinstance(r, (tuple, list)) else (r, r)
+        Lr[i, 0], Lr[i, 1], Lw[i] = int(rx), int(ry), float(wt)
+    fp[F_WSILK] = ann.w.get("silk", 0.0)
+    silk = getattr(ann, "silk", None) or {}
+    MS = max([1] + [len(rs) for (_, srs, trs) in silk.values() for rs in srs + trs])
+    Sside = np.full(n, -1, np.int64)
+    Sext = np.zeros(n, np.int64)
+    Ssr = np.zeros((n, kmax, MS, 4), np.int64)
+    Str = np.zeros((n, kmax, MS, 4), np.int64)
+    Sns = np.zeros((n, kmax), np.int64)
+    Snt = np.zeros((n, kmax), np.int64)
+    for i, (sd, srs, trs) in silk.items():
+        Sside[i] = sd
+        ext = 0
+        for k in range(min(kmax, len(srs))):
+            for arr, cnt, rs in ((Ssr, Sns, srs[k]), (Str, Snt, trs[k])):
+                cnt[i, k] = len(rs)
+                for q, r in enumerate(rs):
+                    arr[i, k, q] = r
+                    ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
+        Sext[i] = ext
     E = Eng(
-        ip=ip, fp=fp, tot=np.zeros(6),
+        ip=ip, fp=fp, tot=np.zeros(7),
         X=np.array(ann.X, np.int64), Y=np.array(ann.Y, np.int64), K=np.array(ann.K, np.int64),
         Xs=np.array(ann.Xs, np.int64), Ys=np.array(ann.Ys, np.int64), movable=movable, side=side, nrot=nrot,
         own=own, gbrd=gbrd, opp_ptr=opp_ptr, opp_r=opp_r, brd_ptr=brd_ptr, brd_r=brd_r,
@@ -994,6 +1074,7 @@ def build(ann, hash_cap=None):
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
         turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
         La=La, Lr=Lr, Lw=Lw,
+        Sside=Sside, Sext=Sext, Ssr=Ssr, Sns=Sns, Str=Str, Snt=Snt,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
@@ -1029,6 +1110,7 @@ def build(ann, hash_cap=None):
     E.tot[T_ORDER] = float(E.open[:len(rules)].sum()) if rules else 0.0
     E.tot[T_DISP] = float(sum(abs(ann.X[i] - ann.Xs[i]) + abs(ann.Y[i] - ann.Ys[i]) for i in ann.mov))
     E.tot[T_LAB] = float(sum(_lab_part(E, i) for i in ann.mov))
+    E.tot[T_SILK] = float(ann.silk_total()) if silk and fp[F_WSILK] > 0 else 0.0
     return E
 
 
@@ -1168,7 +1250,7 @@ class FastAnnealer:
         lab = E.tot[T_LAB] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
         return (w["wl"] * float(_wl_cost(E, E.tot[T_WL])) + lam * E.tot[T_LEG] / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + E.fp[F_WCONG] * E.tot[T_CONG] + w["order"] * E.tot[T_ORDER]
-                + w.get("label", 0.0) * lab)
+                + w.get("label", 0.0) * lab + w.get("silk", 0.0) * E.tot[T_SILK] / self.A0)
 
     def terms_report(self):
         E = self.E
@@ -1183,6 +1265,8 @@ class FastAnnealer:
             lab = E.tot[T_LAB] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
             out.update(label=round(float(lab), 5), labelled_parts=len(self.ann.labels),
                        labels_off=sum(1 for i in self.ann.labels if _lab_part(E, i) > 0))
+        if self.ann.silk:
+            out.update(silk=round(float(E.tot[T_SILK]) / self.A0, 5))
         return out
 
     def order_violations(self):

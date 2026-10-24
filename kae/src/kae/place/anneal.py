@@ -11,7 +11,9 @@ tools/research/solver-bench/sa_place.py):
                                      lam ramps up geometrically
          + w_disp * displacement     L1 distance from the seed / (parts * mean part size)
          + w_label * labels          parts named by board silk labels, L1 beyond a dead zone
-                                     from their label (kae.place.labels; off by default)
+                                     from their label (kae.place.labels)
+         + w_silk * silkscreen       overlap of a part's silk with other silk and pad mask
+                                     openings / mean part area (silk_on projects only)
          + w_order * order           protection order of protected connector chains (a rule:
                                      the TVS nearer the connector than the protected part),
                                      violation distance / mean part size
@@ -68,7 +70,7 @@ class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
                  cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
-                 cong_history=None, labels=None, w_label=0.0):
+                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -198,7 +200,12 @@ class Annealer:
         # ---- labels (kae.place.labels.anchors): {i: (per-rotation target origins [(X, Y)], dead
         # zone in cells, weight)}: the part's labelled pads beside their board silk label
         self.labels = {i: a for i, a in (labels or {}).items() if i in self.movset} if w_label > 0 else {}
-        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label)
+        # ---- silkscreen (kae.place.exact.silk_grid; silk_on projects): {i: (side, silk rects
+        # per rotation, target rects per rotation)}: overlap area of a part's silk with the
+        # other parts' silk and pad mask openings, / mean part area
+        self.silk = dict(silk or {}) if w_silk > 0 else {}
+        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label,
+                      silk=w_silk)
         self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
@@ -377,9 +384,50 @@ class Annealer:
     def _disp(self, S):
         return sum(abs(self.X[i] - self.Xs[i]) + abs(self.Y[i] - self.Ys[i]) for i in S)
 
+    def _silk_pair(self, i, j):
+        a, b = self.silk.get(i), self.silk.get(j)
+        if a is None or b is None or a[0] != b[0]:
+            return 0
+        Xi, Yi, Xj, Yj = self.X[i], self.Y[i], self.X[j], self.Y[j]
+        si, ti = a[1][self.K[i]], a[2][self.K[i]]
+        sj, tj = b[1][self.K[j]], b[2][self.K[j]]
+        tot = 0
+        for (A, B, dx, dy) in ((si, tj, Xi - Xj, Yi - Yj), (sj, ti, Xj - Xi, Yj - Yi)):
+            for (a0, a1, c0, c1) in A:
+                for (b0, b1, d0, d1) in B:
+                    w = min(a1 + dx, b1) - max(a0 + dx, b0)
+                    if w <= 0:
+                        continue
+                    h = min(c1 + dy, d1) - max(c0 + dy, d0)
+                    if h > 0:
+                        tot += w * h
+        return tot
+
+    def _silk(self, S):
+        """Silk overlap of parts S with every other part (and among themselves), cells^2."""
+        if not self.silk:
+            return 0
+        Sset = set(S)
+        tot = 0
+        for n, i in enumerate(S):
+            if i not in self.silk:
+                continue
+            for j in self.silk:
+                if j != i and j not in Sset:
+                    tot += self._silk_pair(i, j)
+            for j in S[n + 1:]:
+                tot += self._silk_pair(i, j)
+        return tot
+
+    def silk_total(self):
+        ks = list(self.silk)
+        return sum(self._silk_pair(ks[a], ks[b]) for a in range(len(ks)) for b in range(a + 1, len(ks)))
+
     def _lab(self, S):
-        """Label term of parts S: weight x L1 cells beyond the dead zone from the target origin
-        that puts the labelled pads at their label (for the part's rotation)."""
+        """Label term of parts S: weight x cells beyond the dead zone (rx, ry) from the target
+        origin that puts the labelled pads at their label (for the part's rotation). A
+        numbered row's dead zone along the row is a third of its pitch, so the parts keep the
+        labels' order."""
         if not self.labels:
             return 0.0
         tot = 0.0
@@ -388,7 +436,8 @@ class Annealer:
             if a is None:
                 continue
             tx, ty = a[0][self.K[i]]
-            d = abs(self.X[i] - tx) + abs(self.Y[i] - ty) - a[1]
+            rx, ry = a[1] if isinstance(a[1], (tuple, list)) else (a[1], a[1])
+            d = max(0, abs(self.X[i] - tx) - rx) + max(0, abs(self.Y[i] - ty) - ry)
             if d > 0:
                 tot += a[2] * d
         return tot
@@ -406,6 +455,7 @@ class Annealer:
         leg_old = self._leg(S)
         disp_old = self._disp(S)
         lab_old = self._lab(S)
+        silk_old = self._silk(S)
         cong_old = self.cong.local_cost(nets) if self.cong is not None else 0.0
         old = self._apply(S, newpos)
         newc = {j: self._net_cost(j) for j in nets}
@@ -413,6 +463,7 @@ class Annealer:
         leg_new = self._leg(S)
         disp_new = self._disp(S)
         lab_new = self._lab(S)
+        silk_new = self._silk(S)
         d_cong = 0.0
         if self.cong is not None:
             d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
@@ -430,6 +481,7 @@ class Annealer:
                  + lam * (leg_new - leg_old) * g2 / self.A0
                  + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
                  + w["label"] * (lab_new - lab_old) * self.g / (len(self.mov) * self.S0)
+                 + w["silk"] * (silk_new - silk_old) / self.A0
                  + w["phys"] * d_phys / self.nstruct
                  + w["cong"] * d_cong
                  + w["order"] * d_order)
@@ -580,9 +632,10 @@ class Annealer:
         disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0)
         c = self.cong.total() if self.cong is not None else 0.0
         lab = self._lab(self.mov) * self.g / (len(self.mov) * self.S0)
+        silk = self.silk_total() / self.A0 if self.silk else 0.0
         return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total
-                + w["label"] * lab)
+                + w["label"] * lab + w["silk"] * silk)
 
     def evaluate(self, st):
         """Full cost of another state with this annealer's weights and normalization (seed
@@ -591,7 +644,7 @@ class Annealer:
                      w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
                      wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
                      order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
-                     labels=self.labels, w_label=self.w["label"])
+                     labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"])
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
@@ -607,6 +660,8 @@ class Annealer:
         if self.labels:
             out.update(label=round(self._lab(self.mov) * self.g / (len(self.mov) * self.S0), 5),
                        labelled_parts=len(self.labels), labels_off=self.labels_off())
+        if self.silk:
+            out.update(silk=round(self.silk_total() / self.A0, 5))
         return out
 
     def labels_off(self):

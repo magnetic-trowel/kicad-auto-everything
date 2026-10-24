@@ -614,3 +614,24 @@ def test_silk_texts_take_kicads_glyphs_inside_their_boxes():
         assert sum(g.area for g in glyphs) < sum(b.area for b in boxes[p.i])
         assert all(box_u.contains(g) for g in glyphs), p.ref
     assert n >= 1
+
+
+def test_silk_term_prices_alike_in_both_annealers_and_pulls_silk_apart():
+    """The annealer's silkscreen term (silk_on projects): overlap area of a part's silk with
+    the other parts' silk and pad mask openings (exact.silk_grid), priced the same by the
+    compiled engine and anneal.Annealer; annealing lowers it."""
+    from shapely.geometry import box
+    from kae.place import exact
+    from kae.place.anneal import Annealer, make_annealer
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    for p in P.parts:                              # a wide silk bar on every part
+        p.fp.silk = {"F.SilkS": [box(-4.0, -0.3, 4.0, 0.3)]}
+    sg = exact.silk_grid(P)
+    assert sg and all(len(v[1]) == len(P.parts[i].rots) for i, v in sg.items())
+    ref = Annealer(P, st.copy(), terms=None, w_cong=0.0, silk=sg, w_silk=1.0, seed=0)
+    fast = make_annealer(P, st.copy(), terms=None, w_cong=0.0, silk=sg, w_silk=1.0, seed=0)
+    assert abs(fast.cost(fast.lam1) - ref.cost(ref.lam1)) < 1e-6
+    s0 = ref.silk_total()
+    fast.run(cpu_s=20.0, max_moves=30000)
+    assert fast.terms_report()["silk"] * fast.A0 < s0 or s0 == 0

@@ -1265,6 +1265,44 @@ def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.1, w_ro
     return rep
 
 
+def silk_grid(P, max_rects=8):
+    """The annealer's silkscreen model (a soft term, silk_on projects): per part, on its own
+    side, its silk as grid rectangles (graphics and texts, glyphs once refine_silk_text ran)
+    and what other silk may not overlap (its silk and its pads' mask openings), per
+    rotation, in cells from the origin, rounded to the nearest cell (adjacent parts do not
+    overlap by rounding). {i: (side, [silk rects per rotation], [target rects per rotation])}."""
+    from .problem import _cluster_rects, pad_lib_rect, rot_rect_any
+    g = P.g
+    out = {}
+    for p in P.parts:
+        fp = p.fp
+        si = 0 if p.s > 0 else 1
+        silk = [q.bounds for ly, gs in list((fp.silk or {}).items()) + list((getattr(fp, "silk_text", None) or {}).items())
+                if ly.startswith("F.") for q in gs if not q.is_empty]
+        masks = []
+        for pd in fp.pads:
+            if si in mask_sides(pd) and not _npth_without_copper(pd):
+                r = pad_lib_rect(pd)
+                if r is not None:
+                    m = mask_margin(P, pd)
+                    masks.append((r[0] - m, r[1] - m, r[2] + m, r[3] + m))
+        if not silk and not masks:
+            continue
+        sr = _cluster_rects(silk, max_n=max_rects) if silk else []
+        tr = _cluster_rects(list(silk) + masks, max_n=max_rects)
+
+        def grid(rects, rot):
+            outr = []
+            for r in rects:
+                x0, y0, x1, y1 = rot_rect_any(r, rot, p.s)
+                gr = (int(round(x0 / g)), int(round(x1 / g)), int(round(y0 / g)), int(round(y1 / g)))
+                if gr[1] > gr[0] and gr[3] > gr[2]:
+                    outr.append(gr)
+            return outr
+        out[p.i] = (si, [grid(sr, r.rot) for r in p.rots], [grid(tr, r.rot) for r in p.rots])
+    return out
+
+
 def silk_on(P):
     """The project makes a silkscreen check an error (KiCad's default is a warning)."""
     sev = getattr(P, "severity", None) or {}
