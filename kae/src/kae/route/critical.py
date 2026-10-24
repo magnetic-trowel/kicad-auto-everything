@@ -65,6 +65,7 @@ DEFAULTS = dict(
     soft=(),               # joins written unlocked for Freerouting to keep or rip: "complete", "pad" (rail pads)
     guards=("cell", "path", "crystal"),   # modules whose ground plane gets a kae-crit: guard pour for the bridge
     guard_margin=0.5,      # mm around the module's copper and pads
+    thermal_spokes=True,   # manual spokes first for pads the placement starves (Session.thermal_spokes)
     lm_soft=False,         # the bridge's last mile may re-lay critical copper, kept by the joint loop's
                            # physics rule (soft_critical)
 )
@@ -118,6 +119,7 @@ class Session:
         seconds are spent (the rest is left to the general router)."""
         t0 = time.monotonic()
         budget = budget_s if budget_s is not None else self.opts.get("budget_s")
+        pre = list(getattr(self, "pre_modules", []) or [])     # laid before the modules (run: thermal spokes)
         from .critical_rails import rail_currents
         try:
             self.ctx.rail_I = rail_currents(self.ctx)
@@ -138,7 +140,7 @@ class Session:
             self.log(f"{m.id}: {m.status}, {len(m.copper)} items, "
                      f"{m.physics.get('value')} {m.physics.get('unit', '')} (u {m.physics.get('u')})"
                      + (f" [{'; '.join(m.notes[:3])}]" if m.notes else ""))
-        self.modules = mods
+        self.modules = pre + mods
         if self.opts.get("rails", "auto") != "none" and (budget is None or time.monotonic() - t0 < budget):
             from .critical_rails import route_rails
             self.rails = route_rails(self.ctx, mode=self.opts.get("rails", "auto"))
@@ -154,6 +156,54 @@ class Session:
             self.joins = self.join_at_corners()
         self.t_route = time.monotonic() - t0
         return self
+
+    def thermal_spokes(self):
+        """Manual thermal spokes, laid first, for the pads the placement already starves:
+        KiCad's DRC on the input names the pads whose zone connection has fewer spokes than
+        the zone's minimum (their neighbours leave too little fill), and each gets the
+        missing spokes as short tracks of its net from inside the pad into the fill
+        (repair.spoke_tracks, KiCad's manual spokes), legal by the exact checks. Critical
+        copper laid after them keeps clear of them, so the repair loop is not left with a
+        spoke it can no longer draw past locked copper (paw3395: C11's GND pad starved on the
+        bare board, crit's VIN copper then took the room of its second spoke). Returns
+        [Module] (one, id "spokes") or []."""
+        import tempfile
+        from kae.board import pcbnew_io
+        from . import drc, repair as RP
+        from .critical_modules import Module
+        with tempfile.TemporaryDirectory(prefix="kae-spokes-") as d:
+            staged = drc.stage_board(self.path, self.path, Path(d))
+            rep = drc.run(staged, Path(d) / "drc.json", timeout=600)
+            starved = [v for v in drc.errors(rep) if v.get("type") == "starved_thermal"]
+            if not starved:
+                return []
+            fills = pcbnew_io.zone_fills(staged)["zones"]
+        zones = {z["uuid"]: z for z in fills}
+        pads = {p["uuid"]: p for p in self.info["pads"] if p.get("uuid")}
+        plan = self.space.plan
+        rs = RP._Space({}, self.info, plan)
+        m = Module(id="spokes", kind="spokes", spec={}, parts=[])
+        for v in starved:
+            its = v.get("items") or []
+            pad = next((pads[it["uuid"]] for it in its if it.get("uuid") in pads), None)
+            zone = next((zones[it["uuid"]] for it in its if it.get("uuid") in zones), None)
+            mm = RP._DRC_LAYER.search(v.get("description") or "")
+            sp_ = RP._SPOKES.search(v.get("description") or "")
+            layer = mm.group(1).strip() if mm else None
+            if pad is None or zone is None or layer not in self.space.cu:
+                continue
+            need = max(1, int(sp_.group(1)) - int(sp_.group(2))) if sp_ else 1
+            for t in RP.spoke_tracks(pad, zone, layer, need, plan, rs, taken=[]):
+                a, b = tuple(t["a"]), tuple(t["b"])
+                if self.space.track_violations(t["net"], layer, t["width"], a, b, first=True):
+                    continue
+                m.copper.append(self.space.add_track(t["net"], layer, t["width"], a, b,
+                                                     owner=("spokes", f"{pad.get('ref')}.{pad.get('number')}")))
+        if not m.copper:
+            return []
+        m.status = "routed"
+        self.log(f"thermal spokes: {len(m.copper)} for {len(starved)} starved pad connection(s)")
+        return [m]
 
     def escape_corridors(self, length, min_pads, brief):
         """Escape corridors out of dense ICs (at least `min_pads` pads): for each SMD signal
@@ -501,7 +551,13 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         s = None
         try:
             crit_budget = min(180.0, 0.2 * time_s)
-            s = Session(input_path, opts=opts, log=log).route(budget_s=crit_budget)
+            s = Session(input_path, opts=opts, log=log)
+            if s.opts.get("thermal_spokes", True):
+                try:
+                    s.pre_modules = s.thermal_spokes()
+                except Exception as e:  # noqa: BLE001 - spokes refine; the repair loop also draws them
+                    log(f"thermal spokes: {type(e).__name__}: {e}")
+            s.route(budget_s=crit_budget)
             if (opts or {}).get("stitch", True):
                 # ground pour pieces the critical copper leaves weakly tied get stitching vias
                 try:

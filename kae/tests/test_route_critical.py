@@ -940,3 +940,30 @@ def test_dense_ic_signal_pins_keep_escape_corridors(tmp_path):
     for it in s.space.routed:
         if it.kind == "via":
             assert not s.router.escape_hit(it.net, it.geom, it.r), it.owner
+
+
+def test_pads_the_placement_starves_get_their_spokes_first(tmp_path, monkeypatch):
+    """KiCad's DRC on the bare board names a starved thermal (paw3395: C11's GND pad):
+    Session.thermal_spokes lays the missing spoke as a legal track of the pad's net from
+    inside the pad into the zone's fill, before any module, so module copper keeps clear."""
+    from shapely.geometry import box
+    from kae.board import pcbnew_io
+    from kae.route import drc
+    s = F.session(tmp_path)
+    pad = next(p for p in s.info["pads"] if p["ref"] == "J1" and p["number"] == "2")      # GND, through hole
+    zone_uuid = next(z.uuid for z in s.board.zones if z.net == "GND")
+    monkeypatch.setattr(drc, "run", lambda *a, **k: {"violations": [dict(
+        type="starved_thermal", severity="error",
+        description="Thermal relief connection to zone incomplete (layer B.Cu; zone min spoke count 2; actual 1)",
+        items=[dict(uuid=zone_uuid), dict(uuid=pad["uuid"])])], "unconnected_items": []})
+    monkeypatch.setattr(pcbnew_io, "zone_fills", lambda *a, **k: {"zones": [dict(
+        uuid=zone_uuid, net="GND", layers={"B.Cu": [[list(box(100.5, 100.5, 139.5, 129.5).exterior.coords)]]})]})
+    mods = s.thermal_spokes()
+    assert len(mods) == 1 and mods[0].copper
+    for it in mods[0].copper:
+        assert it.net == "GND" and set(it.layers) == {"B.Cu"}
+        a, b = it.geom.coords[0], it.geom.coords[-1]
+        assert not s.space.track_violations("GND", "B.Cu", it.width, a, b, ignore=[it])
+    s.pre_modules = mods
+    s.route()
+    assert s.modules[0].id == "spokes"

@@ -692,15 +692,37 @@ RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_cl
                    "items_not_allowed")
 
 
-def _rip_errors(input_path, board, report, d, fixed, left):
+def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None):
     """(board, report, summary) with the unlocked routing that every error-level violation
     of `report` names taken out (each error must name some; other errors stay as they are),
-    or None when that leaves errors or nothing to take out."""
+    or None when that leaves errors or nothing to take out. A starved thermal names a pad
+    and a zone, not the copper that starves it: there the unlocked foreign tracks and vias
+    in the pad's spoke corridors (constraints.thermal_corridors) are taken out (paw3395
+    crit: a Freerouting +1V8 track wrapped round C3's GND pad)."""
     from . import critical_write as W
     routed = {r["uuid"] for r in W.routing(board) if not r["locked"] and r["uuid"] not in fixed}
     rip = set()
+    model = None
     for v in drc.errors(report):
-        ours = {it.get("uuid") for it in v.get("items") or []} & routed
+        uu = {it.get("uuid") for it in v.get("items") or []}
+        if v.get("type") == "starved_thermal" and info is not None and plan is not None:
+            if model is None:
+                from shapely.geometry import LineString, Point
+                from kae.board.kicad_file import load
+                model = load(board)
+                geo = [(t.uuid, t.net, t.layer, LineString([t.start, t.end]).buffer(t.width / 2)) for t in model.tracks]
+                geo += [(x.uuid, x.net, l, Point(x.x, x.y).buffer(x.size / 2)) for x in model.vias for l in plan.copper]
+            pads = {p.get("uuid") for p in info.get("pads") or []} & uu
+            from .constraints import thermal_corridors
+            hit = set()
+            for g, layer, pad in thermal_corridors(info, plan, pads):
+                hit |= {u for u, net, l, cg in geo if l == layer and net != pad.get("net") and u in routed
+                        and cg.intersects(g)}
+            if not hit:
+                return None
+            rip |= hit
+            continue
+        ours = uu & routed
         if v.get("type") not in RIP_ERROR_TYPES or not ours:
             return None
         rip |= ours
@@ -749,7 +771,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         # errors the router keeps making (bms-c1 crit: a Freerouting track 0.19 mm from a
         # 0.3 mm HV tab, in every round): take out the router's own copper that each error
         # names, so the last mile, whose every segment is checked exactly, routes it instead
-        got = _rip_errors(input_path, cur, cur_rep, wd / "lastmile0", fixed, left)
+        got = _rip_errors(input_path, cur, cur_rep, wd / "lastmile0", fixed, left, info=info, plan=plan)
         if got is not None:
             cur, cur_rep, cur_sum = got
             rounds.append(dict(round="lm0", level="rip errors", **cur_sum))
