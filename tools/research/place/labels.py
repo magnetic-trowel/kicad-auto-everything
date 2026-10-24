@@ -58,7 +58,8 @@ def check_task(tdir):
             others_by_label[a["label"]] = sorted(labels.distance(lab["geom"], g, None) for g in ref.footprints if g.pads)
         others = others_by_label[a["label"]]
         rank = 1 + sum(1 for o in others if o < d - 1e-9)
-        rows.append(dict(li=a["label"], label=lab["text"][:24], how=a["how"], ref=f.ref, d=round(d, 2), rank=rank))
+        rows.append(dict(li=a["label"], label=lab["text"][:24], how=a["how"], ref=f.ref, d=round(d, 2), rank=rank,
+                         d_edge=round(labels.distance(lab["geom"], f, a.get("pads"), edge=True), 2)))
     # a label naming several candidates (a "GND" beside one of the connectors with a GND
     # pin) names one of them: the nearest counts
     best = {}

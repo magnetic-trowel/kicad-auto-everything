@@ -199,13 +199,21 @@ def _rows(fps, labels, named, labelled):
     return out
 
 
-def distance(geom, fp, pads=None):
-    """Label box to the nearest of the footprint's pad centres (or of `pads`), mm."""
-    ks = pads if pads else range(len(fp.pads))
-    pts = [(fp.pads[k].x, fp.pads[k].y) for k in ks if k < len(fp.pads)]
-    if not pts:
+def distance(geom, fp, pads=None, edge=False):
+    """Label box to the nearest of the footprint's pad centres (or of `pads`), mm; edge=True
+    to the pad's copper (its centre less half its smaller side: a terminal block's 3 mm pad
+    beside its label is beside it)."""
+    ks = [k for k in (pads if pads else range(len(fp.pads))) if k < len(fp.pads)]
+    if not ks:
         return float("inf")
-    return float(min(geom.distance(shapely.Point(x, y)) for x, y in pts))
+    out = []
+    for k in ks:
+        pd = fp.pads[k]
+        d = geom.distance(shapely.Point(pd.x, pd.y))
+        if edge:
+            d = max(0.0, d - min(pd.size) / 2) if getattr(pd, "size", None) else d
+        out.append(d)
+    return float(min(out))
 
 
 
