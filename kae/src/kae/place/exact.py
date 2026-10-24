@@ -891,12 +891,30 @@ def _pad(P):
     return ext + 1
 
 
-def _tables(P, st, skip):
+def _tables(P, st, skip, obstacles=True):
+    """Summed-area tables of the grid occupancy without `skip`; obstacles=False leaves the
+    fixed parts' rectangles out (they are a conservative cover: a header may fit beside a
+    locked sensor where its rectangle does not, and only the exact check can tell)."""
     from .legalize import _occupancy
     from .problem import sat
     pad = _pad(P)
-    occ = _occupancy(P, st, skip, pad)
+    if obstacles:
+        occ = _occupancy(P, st, skip, pad)
+    else:
+        saved, P.obstacles = P.obstacles, []
+        try:
+            occ = _occupancy(P, st, skip, pad)
+        finally:
+            P.obstacles = saved
     return [sat(occ[0]), sat(occ[1])], pad
+
+
+def _exact_only_candidates(P, st, i, ks, w_rot, limit):
+    """Origins for a part the grid leaves no room (paw3222: a 7.8 mm header on a 7.75 mm
+    board beside a locked sensor whose rectangle covers the rest): free of the other
+    movable parts' rectangles only, for the exact check to judge against the fixed ones."""
+    S, pad = _tables(P, st, {i}, obstacles=False)
+    return _candidates(P, st, i, S, pad, ks, w_rot, limit)
 
 
 def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=None, guard=None):
@@ -908,7 +926,10 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=
     guard = guard if guard is not None else OrderGuard(P, st)
     base = guard.count(i)          # a move may not break a protection-order rule that holds
     S, pad = _tables(P, st, {i})
-    for c, X, Y, k in _candidates(P, st, i, S, pad, ks, w_rot, limit):
+    cands = _candidates(P, st, i, S, pad, ks, w_rot, limit)
+    if not cands:
+        cands = _exact_only_candidates(P, st, i, ks, w_rot, limit)
+    for c, X, Y, k in cands:
         if time.monotonic() > deadline:
             return False, []
         if not E.findings_at(i, X, Y, k, first=True) and guard.count_at(i, X, Y, k) <= base:
@@ -920,7 +941,11 @@ def move_clean(P, st, E, i, deadline, w_rot=4.0, limit=600, evict=True, allowed=
     # against everything but them, and they move out after
     small = {j for j in P.mov if j != i and P.parts[j].area < p.area and (allowed is None or j in allowed)}
     S2, pad2 = _tables(P, st, small | {i})
-    for c, X, Y, k in _candidates(P, st, i, S2, pad2, ks, w_rot, limit):
+    cands = _candidates(P, st, i, S2, pad2, ks, w_rot, limit)
+    if not cands:
+        S2, pad2 = _tables(P, st, small | {i}, obstacles=False)
+        cands = _candidates(P, st, i, S2, pad2, ks, w_rot, limit)
+    for c, X, Y, k in cands:
         if time.monotonic() > deadline:
             return False, []
         f = E.findings_at(i, X, Y, k)
@@ -978,8 +1003,11 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
         guard_tries = 0
         big_maps = {j: {k: _ok_map(P, j, k, S, pad) for k in range(len(P.parts[j].rots))} for j in big}
         if time.monotonic() < deadline:
-            for c, X, Y, k in _candidates(P, st, q, S, pad, list(range(len(P.parts[q].rots))), w_rot, limit,
-                                          edge=edge):
+            ks = list(range(len(P.parts[q].rots)))
+            cands = _candidates(P, st, q, S, pad, ks, w_rot, limit, edge=edge)
+            if not cands:        # the grid has no room for it: the exact check judges (paw3222)
+                cands = _exact_only_candidates(P, st, q, ks, w_rot, limit)
+            for c, X, Y, k in cands:
                 if time.monotonic() > deadline:
                     break
                 if E.findings_at(q, X, Y, k, first=True):
@@ -1524,6 +1552,9 @@ def diagnose(P, st, E, i, limit=400):
     S, pad = _tables(P, st, set(P.mov))
     fixed = {q.i for q in P.parts if not q.movable} | {i}
     cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
+    if not cands:
+        S, pad = _tables(P, st, set(P.mov), obstacles=False)
+        cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
     clean = None
     for c, X, Y, k in cands:
         f = E.findings_at(i, X, Y, k)

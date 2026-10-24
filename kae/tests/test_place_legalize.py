@@ -675,3 +675,28 @@ def test_kicad_loop_runs_a_crashed_drc_again(monkeypatch):
         assert clean is clean_expected
         assert res.report["kicad_verified"] is (clean_expected is not None)
         assert res.report["kicad_drc"][0].get("crashes", 0) == crashes
+
+
+def test_repair_judges_exactly_where_the_grid_leaves_no_room():
+    """paw3222: a locked sensor's rectangle covers all but a strip narrower than a header, so
+    the grid offered the header no origin at all and the repair called it 'no room' forever.
+    With no grid-free origin the repair takes origins free of the other movable parts only and
+    lets the exact check judge them against the fixed ones."""
+    import time
+    from kae.place import exact
+    from kae.place.problem import Obstacle
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    i = next(p.i for p in P.parts if p.ref == "U7")
+    si = 0 if P.parts[i].s > 0 else 1
+    # a fixed rectangle over the whole board on U7's side: no grid-free origin anywhere
+    P.obstacles = list(P.obstacles) + [Obstacle(side=si, rect=(0, 0, 0, 0), g=(-10, P.ncx + 10, -10, P.ncy + 10),
+                                                why="test cover")]
+    S, pad = exact._tables(P, st, {i})
+    assert not exact._candidates(P, st, i, S, pad, list(range(len(P.parts[i].rots))), 4.0, 600)
+    E = exact.ExactModel(P, st)
+    home = (int(st.X[i]), int(st.Y[i]), int(st.K[i]))
+    P.feedback = {"sep": {}, "avoid": {i: [(E.hull(E.sh[i]), "test")]}}   # it must leave where it is
+    E = exact.ExactModel(P, st)
+    ok, _ = exact.move_clean(P, st, E, i, time.monotonic() + 30)
+    assert ok and (int(st.X[i]), int(st.Y[i]), int(st.K[i])) != home and not E.part_findings(i)
