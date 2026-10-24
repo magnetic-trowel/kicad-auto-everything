@@ -42,7 +42,8 @@ from .problem import edge_cut_polys, geom_to_lib, keepout_sides
 AREA_EPS = 1e-6
 EDGE_TOL = 0.05    # mm the copper-to-edge check forgives (outline arcs are polygonized)
 EDGE_STEP = 0.05   # mm a part's edge clearance grows each time KiCad reports it against the edge
-SILK_AREA = 1e-3   # mm^2 of overlap that makes a silk conflict (touching is not one)
+SILK_AREA = 1e-5   # mm^2 of overlap that makes a silk conflict (touching is not one; KiCad
+#                    reports overlaps of 5e-4 mm^2: a glyph stroke over a silk line)
 
 
 def mask_margin(P, pd):
@@ -271,7 +272,7 @@ class ExactModel:
         silk = {"silk": {0: [], 1: []}}
         if any(getattr(self, "silk_on", {}).values()):
             for ly, polys in list((getattr(fp, "silk", None) or {}).items()) + \
-                    list((getattr(fp, "silk_text", None) or {}).items()):
+                    list(silk_text_at(p, rot).items()):
                 bs = si if ly.startswith("F.") else 1 - si
                 silk["silk"][bs] += [transform.place_geom(g, x, y, rot, side) for g in polys if not g.is_empty]
         geoms = [g for g, _, _ in pads] + [c for c in cy.values() if c is not None] + cuts + [g for _, _, g in kos] + \
@@ -1317,8 +1318,10 @@ def silk_grid(P, max_rects=8, weight=1.0):
     for p in P.parts:
         fp = p.fp
         si = 0 if p.s > 0 else 1
-        silk = [q.bounds for ly, gs in list((fp.silk or {}).items()) + list((getattr(fp, "silk_text", None) or {}).items())
-                if ly.startswith("F.") for q in gs if not q.is_empty]
+        def silk_at(rot):
+            return [q.bounds for ly, gs in list((fp.silk or {}).items()) + list(silk_text_at(p, rot).items())
+                    if ly.startswith("F.") for q in gs if not q.is_empty]
+        silk = silk_at(p.rot0)
         masks = []
         for pd in fp.pads:
             if si in mask_sides(pd) and not _npth_without_copper(pd):
@@ -1328,10 +1331,14 @@ def silk_grid(P, max_rects=8, weight=1.0):
                     masks.append((r[0] - m, r[1] - m, r[2] + m, r[3] + m))
         if not silk and not masks:
             continue
-        sr = _cluster_rects(silk, max_n=max_rects) if silk else []
-        tr = _cluster_rects(list(silk) + masks, max_n=max_rects)
-        out[p.i] = (si, [[r + (0, weight) for r in _grid_rects(P, p, sr, rt.rot)] for rt in p.rots],
-                    [[r + (0,) for r in _grid_rects(P, p, tr, rt.rot)] for rt in p.rots])
+        srcs, tgts = [], []
+        for rt in p.rots:
+            sl = silk_at(rt.rot)
+            sr = _cluster_rects(sl, max_n=max_rects) if sl else []
+            tr = _cluster_rects(list(sl) + masks, max_n=max_rects)
+            srcs.append([r + (0, weight) for r in _grid_rects(P, p, sr, rt.rot)])
+            tgts.append([r + (0,) for r in _grid_rects(P, p, tr, rt.rot)])
+        out[p.i] = (si, srcs, tgts)
     return out
 
 
@@ -1393,6 +1400,19 @@ def silk_on(P):
 _SILK_NAMES = {"F.Silkscreen": "F.SilkS", "B.Silkscreen": "B.SilkS", "F.SilkS": "F.SilkS", "B.SilkS": "B.SilkS"}
 
 
+def silk_text_at(p, rot):
+    """A part's silkscreen texts in its library frame at rotation `rot`: the glyphs KiCad draws
+    with the part turned by the nearest quarter turn from its board pose (refine_silk_text;
+    KiCad keeps texts readable, so a part turned by 180 degrees does not show its texts
+    turned), else the unturned ones."""
+    turns = getattr(p.fp, "silk_text_turns", None)
+    if turns:
+        d = int(round(((float(rot) - float(p.rot0)) % 360.0) / 90.0)) % 4 * 90
+        if d and d in turns:
+            return turns[d]
+    return getattr(p.fp, "silk_text", None) or {}
+
+
 def refine_silk_text(P, log=None):
     """Silkscreen texts as KiCad draws them: the glyph outlines pcbnew returns (kae.board
     .pcbnew_io.text_shapes) replace the estimated boxes, footprint texts in their library
@@ -1409,13 +1429,16 @@ def refine_silk_text(P, log=None):
         return dict(ok=False, error=f"{type(e).__name__}: {str(e)[:160]}")
     by_uuid = {p.uuid: p for p in P.parts}
     fp_text, board_text, n = {}, {}, 0
+
+    def shapes(rings):
+        polys = [Polygon(r[0], r[1:]) for r in rings or [] if r and len(r[0]) >= 3]
+        polys = [q if q.is_valid else q.buffer(0) for q in polys]
+        return [q for q in polys if not q.is_empty]
     for t in res.get("texts", []):
         ly = _SILK_NAMES.get(t.get("layer"))
         if ly is None:
             continue
-        polys = [Polygon(r[0], r[1:]) for r in t.get("polys", []) if r and len(r[0]) >= 3]
-        polys = [q if q.is_valid else q.buffer(0) for q in polys]
-        polys = [q for q in polys if not q.is_empty]
+        polys = shapes(t.get("polys"))
         if not polys:
             continue
         n += 1
@@ -1427,10 +1450,17 @@ def refine_silk_text(P, log=None):
             continue
         f = p.fp
         lib_ly = ly if f.side == "F" else tr.flip_layer(ly)
-        fp_text.setdefault(p.uuid, {}).setdefault(lib_ly, []).extend(
-            geom_to_lib(q, p.x0, p.y0, p.rot0, f.side) for q in polys)
+        mine = fp_text.setdefault(p.uuid, {0: {}})
+        mine[0].setdefault(lib_ly, []).extend(geom_to_lib(q, p.x0, p.y0, p.rot0, f.side) for q in polys)
+        # the footprint turned by d: its glyphs back in the library frame of that turn
+        for d, rings in (t.get("turns") or {}).items():
+            d = int(d)
+            mine.setdefault(d, {}).setdefault(lib_ly, []).extend(
+                geom_to_lib(q, p.x0, p.y0, p.rot0 + d, f.side) for q in shapes(rings))
     for p in P.parts:
-        p.fp.silk_text = fp_text.get(p.uuid, {})
+        mine = fp_text.get(p.uuid, {0: {}})
+        p.fp.silk_text = mine[0]
+        p.fp.silk_text_turns = {d: v for d, v in mine.items() if d}
     g = getattr(P.board, "graphics", None)
     if isinstance(g, dict):
         for ly in ("F.SilkS", "B.SilkS"):

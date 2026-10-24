@@ -621,6 +621,27 @@ def test_silk_texts_take_kicads_glyphs_inside_their_boxes():
         assert sum(g.area for g in glyphs) < sum(b.area for b in boxes[p.i])
         assert all(box_u.contains(g) for g in glyphs), p.ref
     assert n >= 1
+    # turned parts: KiCad keeps texts readable, so the glyphs of a part turned by 180 degrees
+    # are not its unturned glyphs turned; the model picks the quarter turn's own glyphs
+    turned = [p for p in P.parts if (p.fp.silk_text_turns or {}).get(180)]
+    assert turned
+    p = turned[0]
+    assert exact.silk_text_at(p, p.rot0 + 180) is p.fp.silk_text_turns[180]
+    assert exact.silk_text_at(p, p.rot0 + 178) is p.fp.silk_text_turns[180]
+    assert exact.silk_text_at(p, p.rot0) is p.fp.silk_text
+    assert exact.silk_text_at(p, p.rot0 - 90) is p.fp.silk_text_turns[270]
+
+
+def test_silk_text_at_picks_the_nearest_quarter_turn():
+    from types import SimpleNamespace
+    from kae.place import exact
+    fp = SimpleNamespace(silk_text={"F.SilkS": ["a"]}, silk_text_turns={90: {"F.SilkS": ["b"]}, 180: {"F.SilkS": ["c"]}})
+    p = SimpleNamespace(fp=fp, rot0=90.0)
+    assert exact.silk_text_at(p, 90.0) is fp.silk_text
+    assert exact.silk_text_at(p, 180.0) is fp.silk_text_turns[90]
+    assert exact.silk_text_at(p, 275.0) is fp.silk_text_turns[180]
+    assert exact.silk_text_at(p, 0.0) is fp.silk_text         # no 270 turn known: the unturned glyphs
+    assert exact.silk_text_at(SimpleNamespace(fp=SimpleNamespace(silk_text={}), rot0=0.0), 90.0) == {}
 
 
 def test_silk_term_prices_alike_in_both_annealers_and_pulls_silk_apart():

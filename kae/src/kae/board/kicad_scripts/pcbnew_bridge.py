@@ -33,7 +33,8 @@ zone-fills: every zone of BOARD (loaded with its project) refilled as kicad-cli'
 with --refill-zones, and its filled copper per copper layer as polygons with holes.
 
 text-shapes: glyph outlines of every visible text on F/B.SilkS and F/B.Cu (footprint fields
-and texts with their footprint's uuid, board texts), as KiCad's DRC collides them.
+and texts with their footprint's uuid, board texts), as KiCad's DRC collides them; footprint
+texts also with their footprint turned by 90, 180 and 270 degrees ("turns").
 
 extract: pcbnew's own footprint poses, pads (absolute and footprint-relative), courtyards
 (F/B.CrtYd caches), the board outline (GetBoardPolygonOutlines), design rules, net classes
@@ -797,13 +798,25 @@ def text_shapes(path, out):
         return dict(owner=owner, uuid=t.m_Uuid.AsString(), layer=board.GetStandardLayerName(t.GetLayer()),
                     text=t.GetShownText(True), polys=_polyset(ps))
     texts = []
+    quarter = pcbnew.EDA_ANGLE(90.0, pcbnew.DEGREES_T)
     for fp in board.GetFootprints():
         u = fp.m_Uuid.AsString()
         items = [f for f in fp.GetFields()] + [g for g in fp.GraphicalItems() if isinstance(g, pcbnew.PCB_TEXT)]
-        for t in items:
-            r = rec(t, u)
-            if r is not None:
-                texts.append(r)
+        recs = [(t, rec(t, u)) for t in items]
+        recs = [(t, r) for t, r in recs if r is not None]
+        if recs:
+            # the same texts with the footprint turned by 90, 180 and 270 degrees: KiCad keeps
+            # texts readable, so a turned part's glyphs are not its unturned glyphs turned
+            # (a field upside down is drawn the right way up, about its own anchor)
+            for d in (90, 180, 270):
+                fp.Rotate(fp.GetPosition(), quarter)
+                for t, r in recs:
+                    ps = pcbnew.SHAPE_POLY_SET()
+                    t.TransformTextToPolySet(ps, 0, max_error, pcbnew.ERROR_INSIDE)
+                    ps.Simplify()
+                    r.setdefault("turns", {})[str(d)] = _polyset(ps)
+            fp.Rotate(fp.GetPosition(), quarter)
+            texts += [r for _, r in recs]
     for d in board.GetDrawings():
         if isinstance(d, pcbnew.PCB_TEXT):
             r = rec(d, "")

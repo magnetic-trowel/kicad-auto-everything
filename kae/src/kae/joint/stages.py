@@ -304,6 +304,28 @@ class KaeStages:
         has its own restarts, so the loop's second (release) finishing try is not needed."""
         return int(self.opts.get("route_parallel", 1) or 1) > 1
 
+    @property
+    def window_route_s(self):
+        """A window's router budget: window_route_s (60 s), doubled after each window whose
+        router ran out of time, up to window_route_max_s (default max(60 s, 5 % of the
+        budget)); halved back towards 60 s after one that completed in under a quarter."""
+        return float(getattr(self, "_win_s", None) or self.opts.get("window_route_s", 60.0))
+
+    def _adapt_window_s(self, rep):
+        r = rep.get("router") or {}
+        base = float(self.opts.get("window_route_s", 60.0))
+        cap = float(self.opts.get("window_route_max_s", max(base, 0.05 * float(self.opts.get("budget_s") or 0))))
+        cur = self.window_route_s
+        if r.get("autorouter_stop") == "TIMED_OUT" or r.get("timed_out"):
+            new = min(cap, 2 * cur)
+        elif r.get("seconds") is not None and r["seconds"] < 0.25 * cur:
+            new = max(base, cur / 2)
+        else:
+            new = cur
+        if new != cur:
+            self.log(f"window router budget {cur:.0f}s -> {new:.0f}s")
+        self._win_s = new
+
     def _route_window(self, locked, raw, it, seed, time_s):
         """kae.route.incremental.route_open on a window; with --route-parallel P > 1 and
         connections left open, two more differently seeded runs at once, the one leaving the
@@ -322,7 +344,12 @@ class KaeStages:
         rep = one(0, raw, time_s)
         left = time_s - (time.monotonic() - t0)
         open0 = (rep.get("router") or {}).get("incomplete")
-        if P < 2 or rep.get("status") != "routed" or not open0 or left < 8.0:
+        # restarts help a window left with a few open connections; one that ran out of time
+        # (many open) would only run out of time again
+        timed_out = (rep.get("router") or {}).get("autorouter_stop") == "TIMED_OUT" or \
+            (rep.get("router") or {}).get("timed_out")
+        if (P < 2 or rep.get("status") != "routed" or not open0 or timed_out or left < 8.0
+                or open0 > int(self.opts.get("window_restart_open", 8))):
             return rep
         outs = [raw.with_name(f"{raw.stem}.r{k}{raw.suffix}") for k in (1, 2)]
         with ThreadPoolExecutor(2) as ex:
@@ -360,7 +387,8 @@ class KaeStages:
         raw = self._path(it, "route_raw")
         with _portfolio_rank(portfolio):
             rep = portfolio.run(inp, raw, seed=seed % 1_000_000, time_s=time_s, parallel=P,
-                                first_s=float(self.opts.get("portfolio_first_s", min(120.0, time_s / 1.5))),
+                                first_s=float(self.opts.get("portfolio_first_s",
+                                                            min(max(120.0, time_s / 6), time_s / 1.5))),
                                 growth=float(self.opts.get("portfolio_growth", 2.0)),
                                 router=[(m, list(a)) for m, a in routers], workdir=d / "runs",
                                 log=lambda m: self.log(m))
@@ -397,7 +425,8 @@ class KaeStages:
         if it > 0 and not finish and self.opts.get("window_router", "incremental") == "incremental":
             # a window: only its open connections, one fast pass (kae.route.incremental); the
             # loop's evaluate is the one DRC
-            rep = self._route_window(locked, raw, it, seed, min(time_s, float(self.opts.get("window_route_s", 60.0))))
+            rep = self._route_window(locked, raw, it, seed, min(time_s, self.window_route_s))
+            self._adapt_window_s(rep)
         elif finish and self.finish_restarts:
             return self._route_portfolio(lay, it, seed, time_s, t0)
         else:

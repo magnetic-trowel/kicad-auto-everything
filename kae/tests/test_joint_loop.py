@@ -313,3 +313,35 @@ def test_route_rank_reads_both_routers_reports():
     assert route_rank(dict(bridge=dict(repair=dict(final=dict(errors=0, unconnected=0))))) == (0, 0)  # critical_cli
     assert route_rank(dict(bridge=dict(drc=dict(errors=0, unconnected=9)))) == (0, 9)
     assert route_rank(None) == (float("inf"), float("inf"))
+
+
+def test_window_router_budget_grows_after_timeouts_and_shrinks_back():
+    from kae.joint.stages import KaeStages
+    st = KaeStages.__new__(KaeStages)
+    st.opts, st.log = dict(budget_s=9000.0), (lambda m: None)
+    assert st.window_route_s == 60.0
+    for want in (120.0, 240.0, 450.0, 450.0):          # cap: 5 % of the budget
+        st._adapt_window_s(dict(router=dict(autorouter_stop="TIMED_OUT", seconds=40.0)))
+        assert st.window_route_s == want
+    st._adapt_window_s(dict(router=dict(autorouter_stop="COMPLETED", seconds=10.0)))
+    assert st.window_route_s == 225.0
+    st._adapt_window_s(dict(router=dict(autorouter_stop="COMPLETED", seconds=100.0)))
+    assert st.window_route_s == 225.0
+
+
+def test_no_window_restarts_after_a_timeout_or_with_many_open(tmp_path, monkeypatch):
+    import kae.route.incremental as I
+    from kae.joint.stages import KaeStages
+    calls = []
+
+    def fake(inp, out, seed=0, time_s=0, workdir=None, opts=None, log=None):
+        calls.append(seed)
+        Path(out).write_text("x")
+        return dict(status="routed", router=fake.router)
+    monkeypatch.setattr(I, "route_open", fake)
+    st = KaeStages.__new__(KaeStages)
+    st.opts, st.wd, st.log = dict(route_parallel=2), tmp_path, lambda m: None
+    for router in (dict(incomplete=2, autorouter_stop="TIMED_OUT"), dict(incomplete=40, autorouter_stop="COMPLETED")):
+        fake.router, calls[:] = router, []
+        st._route_window(tmp_path / "in.kicad_pcb", tmp_path / "raw.kicad_pcb", 1, 5, 60.0)
+        assert calls == [5]
