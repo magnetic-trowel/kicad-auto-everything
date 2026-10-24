@@ -218,6 +218,7 @@ def _probe_select(a, board, kw, t0, write):
     PROBE_PHYS_SLACK of the best physics among the candidates. A fallback for when the
     congestion estimates cannot tell which placement routes (paw3395)."""
     import math
+    import shutil
     import tempfile
     from concurrent.futures import ThreadPoolExecutor
     from kae.board.kicad_file import load
@@ -255,9 +256,17 @@ def _probe_select(a, board, kw, t0, write):
         if c["staged"] is None:
             return None
         try:
-            rep = bridge.route(c["staged"], str(c["out"].parent / "routed.kicad_pcb"), seed=0, time_s=probe_s,
+            routed = c["out"].parent / "routed.kicad_pcb"
+            rep = bridge.route(c["staged"], str(routed), seed=0, time_s=probe_s,
                                opts=dict(last_mile=True), log=lambda m: None)
-            return ((rep.get("repair") or {}).get("final") or {}).get("unconnected")
+            unc = ((rep.get("repair") or {}).get("final") or {}).get("unconnected")
+            if unc is None and routed.exists():
+                # the router used the whole probe (no time left for its repair or DRC):
+                # count the routed board's opens with kicad-cli instead
+                d = c["out"].parent / "drc"
+                staged = kdrc.stage_board(str(routed), a.input, str(d))
+                unc = kdrc.summary(kdrc.run(staged, d / "drc.json", timeout=300))["unconnected"]
+            return unc
         except Exception as e:      # noqa: BLE001 - a probe that fails leaves the candidate unranked
             _log(f"probe of seed {c['seed']} failed: {type(e).__name__}: {e}")
             return None
@@ -273,6 +282,7 @@ def _probe_select(a, board, kw, t0, write):
         floor = min(c["physics"] for c in ok)
         within = [c for c in ok if c["physics"] <= floor * (1.0 + PROBE_PHYS_SLACK) + 1e-9]
         best = min(within, key=lambda c: (c["unconnected"], c["physics"]))
+    shutil.rmtree(tmp, ignore_errors=True)
     res = best["res"]
     res.report["probe_select"] = dict(n=n, parallel=par, jitter=jitter, place_s=round(place_s, 1),
                                       probe_s=round(probe_s, 1), probe_wall_s=round(time.monotonic() - t_probe, 1),
