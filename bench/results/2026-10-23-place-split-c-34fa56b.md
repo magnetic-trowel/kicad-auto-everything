@@ -56,5 +56,8 @@ Human gate 13/13 (A), 20/20 (B), 79/79 (C). Split C **72/72 legal** (from 67/72 
 every counted board KiCad-verified, no legal → illegal flips; the five flips are the four
 false-positive boards and stickhub. Physics ours 1,420 vs human 4,392 (−2.5% vs dcecf28), ours
 better on 64 boards, human on 2; pic-programmer 25.3 (human 46.8). Wall median 124 s, max 354 s.
-One regression: stickhub breaks 4 of its 7 protection-order rules (human 0), and its physics
-went from 22.2 to 33.4.
+One regression: stickhub breaks 4 protection-order rules (the summary's "4/7" column is ours /
+human: the human placement breaks 7 of its 24), and its physics went from 22.2 to 33.4. Cause:
+the final repair, clearing the mask bridge, moved J6, C17 and D15 across their chain without
+checking order. Fixed by the repair's order guard (a move or eviction may not raise a part's
+broken-rule count; in 1ef5bf1): 0 broken on seeds 0, 1 and 2, physics 24.5–29.0 (human 47.1).
