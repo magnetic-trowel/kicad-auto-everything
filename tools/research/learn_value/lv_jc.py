@@ -18,6 +18,8 @@ collapse (tools/research/collapse_joint, frozen snapshot kae-work/jc-snap/jc_v3.
 The collapse itself is jc_v3's (Collapse, lift, best response, legalization); only the
 iteration loop is re-written here (collapse_once with a hook) and the restart driver.
 """
+import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")  # sklearn/OpenMP: one thread (CPU budget, shared machine)
 import importlib.util
 import json
 import math
@@ -167,7 +169,7 @@ def _cur_time(clock):
 
 def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0,
               beta_max=500.0, polish=0.15, first=0.35, run_cap=None, policy=None,
-              log_path=None, tag="", **kw):
+              log_path=None, tag="", max_consec=3, **kw):
     """jc_v3.jc (restarts, keep the best by routed cost + phys_w * fast physics, optional
     anneal_phys polish) with probes at every checkpoint and an optional `policy`:
     policy.start(board info), policy(stage, it, feats, best_cost) -> True to abandon."""
@@ -180,7 +182,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
                dict(board=bid, seed=seed, phys_w=C.phys_w, tag=tag))
     L.write(kind="board", **probe.board)
     if policy is not None:
-        policy.start(bid, probe.board, C.phys_w)
+        policy.start(bid, probe.board, C.phys_w, path=str(w.data.get("path", "")))
     run_end = budget * (1 - polish)
     cap = run_cap if run_cap is not None else budget * first
     best = None
@@ -189,6 +191,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
     t_full = None
     n_abort = 0
     lift_ref = {}
+    consec = [0]  # restarts abandoned in a row; after max_consec the next one runs to the end
 
     while True:
         t0 = _cur_time(clock)
@@ -210,7 +213,7 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
             L.write(kind="ck", **feats)
             if policy is None:
                 return False
-            stop = policy(stage, it, feats, lift_ref, best_cost)
+            stop = policy(stage, it, feats, lift_ref, best_cost) and consec[0] < max_consec
             if stop:
                 log(f"lv run {k}: abandoned at {stage} it={it} t={feats['t_run']:.1f}")
             return stop
@@ -220,10 +223,12 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
         t_run = _cur_time(clock) - t0
         if res is None:
             n_abort += 1
+            consec[0] += 1
             L.write(kind="abort", k=k, t_run=t_run)
             k += 1
             continue
         it, beta = res
+        consec[0] = 0
         t_full = t_run
         st = r.stats()
         cost = kit.total_cost() + C.phys_w * ph.total()
@@ -252,6 +257,10 @@ def jc_driver(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta
     r.legalize(list(w.net_pins))
     L.write(kind="done", runs=k, aborted=n_abort, best_k=best[3], best_cost=best[0],
             t=_cur_time(clock), t_probe=probe.cpu)
+    print("LVSTATS " + json.dumps(dict(board=getattr(policy, "bid", bid), fold=getattr(policy, "fold", None),
+                                       margin=getattr(policy, "margin", None), runs=k, aborted=n_abort,
+                                       best_k=best[3], best_cost=round(best[0], 3),
+                                       t=round(_cur_time(clock), 1), probe_cpu=round(probe.cpu, 2))), flush=True)
     log(f"lv collapsed: best run {best[3]} of {k} ({n_abort} abandoned) {r.stats()} "
         f"t={_cur_time(clock):.1f} probe_cpu={probe.cpu:.1f}")
     if polish > 0 and clock.left() > 2:
@@ -270,15 +279,15 @@ def jc_log(world, **kw):
 
 def jc_value(world, model_dir=None, margin=None, **kw):
     from lv_policy import ValuePolicy
-    pol = ValuePolicy(model_dir or os.environ.get("LV_MODEL", str(ROOT / "kae-work/learnv/model")),
+    pol = ValuePolicy(model_dir or os.environ.get("LV_MODEL", str(Path(__file__).resolve().parent / "model")),
                       margin=margin)
     kw.setdefault("run_cap", RUN_CAP_S * kw.get("budget", 120) / 120)
     return jc_driver(world, policy=pol, **kw)
 
 
 def jc_value_lv(world, **kw):
+    """phys_w = 0 (length + vias), with the polish like jc_lv."""
     kw["phys_w"] = 0.0
-    kw.setdefault("polish", 0.0)
     return jc_value(world, **kw)
 
 
@@ -289,6 +298,6 @@ def jc_heur(world, margin=None, **kw):
 
 
 def jc_heur_lv(world, **kw):
+    """phys_w = 0 (length + vias), with the polish like jc_lv."""
     kw["phys_w"] = 0.0
-    kw.setdefault("polish", 0.0)
     return jc_heur(world, **kw)

@@ -64,6 +64,15 @@ Other implementations:
 | Footprint text displaced after import | Fix it after import (POA) | same [P] |
 | Board-edge clearance missing in KiCad exports | `--router.copperToEdgeClearanceUm` (v2.3.0 workaround) | [releases](https://github.com/freerouting/freerouting/releases) [P] |
 
+### Seen in our benchmark (KiCad 10.0.7, Freerouting 2.5.0)
+Reproduced on corpus boards; `bench/src/kaebench/adapters.py` (`Freerouting`) handles each [P].
+
+| Pitfall | Fix |
+|---|---|
+| A bare net name with `\|` (e.g. `ADD\|SUB`) passes through DSN and Freerouting, but KiCad's SES import then fails the whole session with no message | Quote every bare `(net …)` name in the SES |
+| A `.kicad_pro` netclass without track width, via diameter or drill exports `(width -0.001)` and padstack `Via[0-1]_-0.001:-0.001_um`; 2.5.0 draws zero-width tracks and vias | Raise widths to the board minimum; resize and rename unsized via padstacks (KiCad reads the drill from the name) |
+| A board whose copper layers are all KiCad "power" layers exports as `(type power)` only; Freerouting refuses it ("all layers are disabled") and 2.5.0 then hangs instead of exiting | Export those layers as `signal` (KiCad routes tracks on power layers) |
+
 ### How the four servers run it
 - **Shared core:** all four run `java -jar <jar> -de <dsn> -do <ses> -mp <passes>`.
 - **POA:**

@@ -4,20 +4,44 @@
 
 Recipe (after PCBWorld): convert to the installed KiCad version, keep each board's own
 rules, qualify boards whose human layout is fully connected and free of error-level
-DRC violations, keep the human copper as the reference, split by pad count.
+DRC violations, keep the human copper as the reference, split by pad count. A board also
+qualifies only if its human layout passes the benchmark's own scoring as if it were a
+method's output (the round trip), so every qualified task is solvable under the rules
+methods are held to.
 
 Task kinds:
   route  placement kept, all tracks/vias removed (locked copper optionally kept)
-  place  tracks removed and unlocked footprints moved to a staging area off-board
+  place  all copper removed and unlocked footprints moved to a staging area off-board;
+         locked footprints stay where the designer put them
 """
 import json
 import shutil
 from pathlib import Path
 
-from . import tools
+from . import score, tools
 from .boardfiles import STEM, board_path, install_rules
 
 TASK_KINDS = ("route", "place")
+# 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
+#    locked parts could not be placed legally and the human placement scored invalid)
+# 3: teardrops are stripped with the routing (left behind they were stray copper and marked
+#    the human pad positions in place tasks); footprints sharing a uuid get unique ones; the
+#    record lists the pads each footprint has outside the outline in the human placement
+# 4: qualification also requires the round trip (the human layout scored like a method's
+#    output); it drops boards whose routing relies on what tasks strip, e.g. teardrops that
+#    carry a connection or DRC rules keyed to the human copper's groups
+# 5: footprints carrying Edge.Cuts graphics stay in place in place tasks and may not be moved,
+#    like locked ones (staged off-board they broke the board outline)
+# 6: zones sharing a uuid get unique ones: KiCad 10.0.7's zone filler deadlocks when two
+#    zones on different nets share a layer, overlap, and tie on priority and uuid (KiCad 4
+#    boards store `(tstamp 0)`), so such boards never got through prepare. Otherwise the uuid
+#    only orders overlapping same-net zones, whose copper is the same either way, so tasks
+#    of earlier specs stay valid
+TASK_SPEC = 6
+# Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
+MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5}
+# The task input each kind starts from (joint = place and route, from the place task's input).
+INPUT_KIND = {"route": "route", "place": "place", "joint": "place"}
 
 
 def split_of(pads):
@@ -55,32 +79,71 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         if fetched.get(key):
             shutil.copy2(fetched[key], ref / f"{STEM}{ext}")
     # Converting writes the current KiCad format; rules stay in the project files.
-    tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
+    conv = tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
     ref_stats = tools.run_ops("stats", board_path(ref))
     ref_drc = tools.summarize_drc(tools.run_drc(board_path(ref), ref / "drc.json"))
-    qualified = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
+    human_clean = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
     record = dict(
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
         repo=entry["repo"], commit=entry["commit"], pcb_path=entry["pcb_path"],
         pcb_sha256=fetched.get("pcb_sha256"), tags=entry.get("tags") or [],
-        split=split_of(ref_stats["pads"]), qualified=qualified,
+        split=split_of(ref_stats["pads"]), qualified=human_clean, human_clean=human_clean, task_spec=TASK_SPEC,
+        footprint_uuids_reassigned=conv.get("footprint_uuids_reassigned", 0),
+        zone_uuids_reassigned=conv.get("zone_uuids_reassigned", 0),
         has_project_rules=(ref / f"{STEM}.kicad_pro").exists(),
-        reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc),
+        reference=dict(stats=_strip_stats(ref_stats), drc=ref_drc,
+                       pads_outside={r["uuid"]: r["pads_outside"] for r in ref_stats["placement"]
+                                     if r.get("pads_outside")}),
         tasks={},
     )
     for kind in kinds:
         kdir = tdir / kind / "input"
         kdir.mkdir(parents=True)
         install_rules(ref, kdir)
-        op = "strip-routing" if kind == "route" else "strip-placement"
-        args = ["--keep-locked"] if keep_locked else []
-        tools.run_ops(op, board_path(ref), board_path(kdir), *args)
+        if kind == "route":
+            tools.run_ops("strip-routing", board_path(ref), board_path(kdir),
+                          *(["--keep-locked"] if keep_locked else []))
+        else:
+            moved = tools.run_ops("strip-placement", board_path(ref), board_path(kdir)).get("moved")
         st = tools.run_ops("stats", board_path(kdir))
         drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
-                                     keep_locked=keep_locked)
+                                     keep_locked=keep_locked if kind == "route" else "footprints")
+        if kind == "place":  # footprints a placer may move (all others are anchored)
+            record["tasks"][kind]["movable"] = moved
+    if human_clean:
+        record["roundtrip"] = _roundtrip(tdir, record)
+        record["qualified"] = all(v["ok"] for v in record["roundtrip"].values())
     task_json.write_text(json.dumps(record, indent=1))
     return record
+
+
+def _verdict(s, ok):
+    return dict(ok=bool(s.get("valid") and ok),
+                integrity=[k for k, v in (s.get("integrity") or {}).items() if not v],
+                foreign=(s.get("foreign") or {}).get("by_kind"), errors_by_type=s.get("errors_by_type"),
+                unconnected=s.get("unconnected"), outside=s.get("outside"),
+                placement_errors=s.get("placement_errors"))
+
+
+def _roundtrip(tdir, record):
+    """Score the human layout of each task kind as if a method had produced it."""
+    rt = tdir / "roundtrip"
+    out = {}
+    try:
+        if "route" in record["tasks"]:
+            s = score.score_route_task(tdir, board_path(tdir / "reference"), rt / "route", record,
+                                       allow_copy=True)
+            out["route"] = _verdict(s, s.get("clean"))
+        if "place" in record["tasks"]:
+            human = rt / "human-placement"
+            human.mkdir(parents=True, exist_ok=True)
+            tools.run_ops("strip-routing", board_path(tdir / "reference"), board_path(human))
+            s, _ = score.score_place_task(tdir, board_path(human), rt / "place", record, allow_copy=True)
+            out["place"] = _verdict(s, s.get("legal"))
+    finally:
+        shutil.rmtree(rt, ignore_errors=True)
+    return out
 
 
 def load_tasks(tasks_dir, only=None, qualified_only=True, splits=None):

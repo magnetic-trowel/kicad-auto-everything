@@ -1,0 +1,1847 @@
+{
+ "obj": "phys",
+ "B": 102.0,
+ "ranking": {
+  "0": {
+   "cur_cost": [
+    -0.09062416630351916,
+    17
+   ],
+   "conf": [
+    0.040977113777732,
+    19
+   ],
+   "hpwl": [
+    -0.08481217485654383,
+    16
+   ],
+   "phys": [
+    0.02039605475806433,
+    9
+   ],
+   "hist_sum": [
+    0.010750910370797513,
+    18
+   ],
+   "overlap": [
+    0.05481470704304381,
+    19
+   ],
+   "fv": [
+    NaN,
+    0
+   ],
+   "ovf": [
+    0.05805957710044412,
+    13
+   ],
+   "model_ridge": [
+    -0.001077491333558467,
+    31
+   ],
+   "model_gbm": [
+    0.12097182290015678,
+    25
+   ]
+  },
+  "2": {
+   "cur_cost": [
+    0.09138500270037916,
+    31
+   ],
+   "conf": [
+    0.004433883671548183,
+    31
+   ],
+   "hpwl": [
+    0.22697103434662283,
+    31
+   ],
+   "phys": [
+    0.2958556697083912,
+    9
+   ],
+   "hist_sum": [
+    -0.0072974492413205305,
+    31
+   ],
+   "overlap": [
+    -0.007928313706278351,
+    31
+   ],
+   "fv": [
+    0.0023191807090628866,
+    3
+   ],
+   "ovf": [
+    0.09854658545707819,
+    24
+   ],
+   "model_ridge": [
+    0.13976760161107696,
+    31
+   ],
+   "model_gbm": [
+    0.2039240913619523,
+    31
+   ]
+  },
+  "5": {
+   "cur_cost": [
+    0.45182689543114296,
+    31
+   ],
+   "conf": [
+    0.05559807822414683,
+    31
+   ],
+   "hpwl": [
+    0.401153853146882,
+    31
+   ],
+   "phys": [
+    0.13560678490290368,
+    9
+   ],
+   "hist_sum": [
+    0.21815018055504923,
+    31
+   ],
+   "overlap": [
+    -0.022059040497697933,
+    31
+   ],
+   "fv": [
+    0.1667781007576574,
+    6
+   ],
+   "ovf": [
+    0.08792269084734491,
+    17
+   ],
+   "model_ridge": [
+    0.31455912541891856,
+    31
+   ],
+   "model_gbm": [
+    0.36236105408555086,
+    31
+   ]
+  },
+  "12": {
+   "cur_cost": [
+    0.5833696216878513,
+    28
+   ],
+   "conf": [
+    -0.018254607156021747,
+    28
+   ],
+   "hpwl": [
+    0.5138200165080941,
+    28
+   ],
+   "phys": [
+    0.3180094300647655,
+    8
+   ],
+   "hist_sum": [
+    0.15911136690950495,
+    28
+   ],
+   "overlap": [
+    -0.020126005238365295,
+    24
+   ],
+   "fv": [
+    0.017185915891669956,
+    4
+   ],
+   "ovf": [
+    -0.030775587269944272,
+    12
+   ],
+   "model_ridge": [
+    0.41862213811133364,
+    28
+   ],
+   "model_gbm": [
+    0.5536749860742771,
+    28
+   ]
+  },
+  "30": {
+   "cur_cost": [
+    0.5280987594257088,
+    13
+   ],
+   "conf": [
+    -0.18251012260086558,
+    13
+   ],
+   "hpwl": [
+    0.5243122731823536,
+    13
+   ],
+   "phys": [
+    0.24098963052451433,
+    5
+   ],
+   "hist_sum": [
+    -0.006886146388114505,
+    13
+   ],
+   "overlap": [
+    -0.03924244052083816,
+    6
+   ],
+   "fv": [
+    -0.07463680840708595,
+    4
+   ],
+   "ovf": [
+    0.042916343596558285,
+    7
+   ],
+   "model_ridge": [
+    0.35803389496959953,
+    13
+   ],
+   "model_gbm": [
+    0.4589096266250849,
+    13
+   ]
+  }
+ },
+ "sim": {
+  "model/gbm": {
+   "gmean_ratio": 1.0022375960542556,
+   "better": 8,
+   "worse": 4,
+   "margins": {
+    "0": 0.2,
+    "1": 0.2,
+    "2": 0.1,
+    "3": 0.2,
+    "4": 0.2
+   },
+   "runs": 48.23333333333333,
+   "aborted": 27.99892473118279,
+   "per_margin": {
+    "0.0": 1.011944643609562,
+    "0.05": 1.007144829110514,
+    "0.1": 0.9999351378397162,
+    "0.2": 0.9949579379511698,
+    "0.3": 1.000553106229464,
+    "0.5": 1.0001871490025145,
+    "0.8": 0.9999236144345948,
+    "1.2": 1.0
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.014340640797690462,
+     14.333333333333334,
+     7.25
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     -0.0005466652606311406,
+     27.95,
+     3.3
+    ],
+    "d3a-kitspace-gas-sensor": [
+     -0.0005792485595994545,
+     23.133333333333333,
+     2.6333333333333333
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.002092434090505043,
+     172.88333333333333,
+     101.56666666666666
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.0,
+     42.28333333333333,
+     0.2
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.008188036943021556,
+     5.283333333333333,
+     0.95
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.010736561655400023,
+     256.15,
+     191.38333333333333
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.0017668828351809311,
+     304.03333333333336,
+     201.93333333333334
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     -0.006965905440652971,
+     95.86666666666666,
+     45.93333333333333
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.00024538311427632447,
+     4.433333333333334,
+     0.1
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.005112438858765585,
+     4.466666666666667,
+     0.45
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.015454711091642093,
+     10.766666666666667,
+     5.383333333333334
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     -0.0004959558358870778,
+     20.883333333333333,
+     1.25
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.0030089527703830443,
+     42.7,
+     23.95
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     0.0,
+     2.0833333333333335,
+     0.1
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     0.0191704488651787,
+     2.75,
+     0.7666666666666667
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     -0.00045037365939556057,
+     15.733333333333333,
+     0.16666666666666666
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     -0.012219076703905133,
+     2.183333333333333,
+     0.2
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     -0.0017861237667841608,
+     2.6666666666666665,
+     0.4
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     0.010151140257386955,
+     3.816666666666667,
+     1.4166666666666667
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     0.11284179669282943,
+     4.983333333333333,
+     2.2
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.00037369541842028714,
+     44.78333333333333,
+     32.75
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.0018412295656601815,
+     336.85,
+     232.65
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.004657890475267301,
+     2.4833333333333334,
+     0.7166666666666667
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.0033202659402542228,
+     15.116666666666667,
+     1.7666666666666666
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     -0.003019913580682084,
+     13.866666666666667,
+     3.1666666666666665
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     -0.019790526644780294,
+     3.35,
+     1.4
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.0,
+     2.0,
+     0.13333333333333333
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.0068888753659274386,
+     8.183333333333334,
+     3.033333333333333
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.0007916041772619693,
+     7.216666666666667,
+     0.8166666666666667
+    ]
+   }
+  },
+  "lift_model/gbm": {
+   "gmean_ratio": 1.012513510498121,
+   "better": 5,
+   "worse": 5,
+   "margins": {
+    "0": 0.05,
+    "1": 0.05,
+    "2": 0.0,
+    "3": 0.05,
+    "4": 0.05
+   },
+   "runs": 40.15107526881721,
+   "aborted": 15.442473118279569,
+   "per_margin": {
+    "0.0": 1.0123157103786367,
+    "0.05": 0.9988594812364818,
+    "0.1": 0.9993840916043435,
+    "0.2": 0.9995454125226473,
+    "0.3": 1.0000102050198214,
+    "0.5": 1.0,
+    "0.8": 1.0,
+    "1.2": 1.0
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     0.0,
+     6.233333333333333,
+     0.0
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.0,
+     25.183333333333334,
+     0.0
+    ],
+    "d3a-kitspace-gas-sensor": [
+     0.0,
+     21.733333333333334,
+     0.0
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.0,
+     118.3,
+     0.0
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.0,
+     42.416666666666664,
+     0.31666666666666665
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     0.0,
+     3.816666666666667,
+     0.0
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.010736561655400023,
+     256.15,
+     191.38333333333333
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     0.0,
+     197.7,
+     0.0
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     0.0,
+     57.8,
+     0.0
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     0.0,
+     4.283333333333333,
+     0.0
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.003926903198773068,
+     4.916666666666667,
+     0.8666666666666667
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.009459165851758152,
+     13.3,
+     7.65
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     0.0,
+     19.983333333333334,
+     0.0
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     0.0,
+     27.433333333333334,
+     0.31666666666666665
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     0.021897511473030134,
+     2.55,
+     0.55
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     0.0,
+     15.683333333333334,
+     0.0
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     -0.0045090394831050155,
+     2.566666666666667,
+     0.15
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     -0.006759881221529218,
+     4.216666666666667,
+     1.5166666666666666
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     0.39916355532656167,
+     7.55,
+     4.583333333333333
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     -0.0003850591814776205,
+     44.6,
+     32.25
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     0.01685352587422293,
+     312.85,
+     233.9
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.009755919239226429,
+     2.4166666666666665,
+     0.31666666666666665
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.0,
+     13.9,
+     0.0
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.0,
+     11.583333333333334,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     -0.025996027894430673,
+     3.466666666666667,
+     1.4666666666666666
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     -0.00506728826042635,
+     2.1,
+     0.1
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.013898973870852652,
+     8.4,
+     2.716666666666667
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.00033817104606397307,
+     7.55,
+     0.6333333333333333
+    ]
+   }
+  },
+  "heur_cost": {
+   "gmean_ratio": 1.014222057132232,
+   "better": 3,
+   "worse": 4,
+   "margins": {
+    "0": 0.8,
+    "1": 0.8,
+    "2": 0.1,
+    "3": 0.8,
+    "4": 0.8
+   },
+   "runs": 33.3505376344086,
+   "aborted": 9.259139784946235,
+   "per_margin": {
+    "0.0": 1.0206267177333517,
+    "0.05": 1.0138536531394389,
+    "0.1": 1.0128191081606204,
+    "0.2": 1.0083705203245883,
+    "0.3": 1.0025546165949015,
+    "0.5": 1.0001323307827708,
+    "0.8": 0.9993801481624301,
+    "1.2": 1.0000675944476645
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     0.0,
+     6.266666666666667,
+     0.08333333333333333
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.0,
+     25.183333333333334,
+     0.0
+    ],
+    "d3a-kitspace-gas-sensor": [
+     0.0,
+     21.733333333333334,
+     0.0
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.0,
+     118.3,
+     0.0
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.0,
+     42.06666666666667,
+     0.0
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     0.0,
+     3.816666666666667,
+     0.0
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.017011947957412312,
+     111.51666666666667,
+     63.28333333333333
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     0.0,
+     197.78333333333333,
+     0.21666666666666667
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     0.0,
+     57.8,
+     0.0
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     0.0,
+     4.283333333333333,
+     0.0
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.0040291825052065485,
+     4.55,
+     0.3333333333333333
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.004213310439497301,
+     9.866666666666667,
+     5.65
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     0.0,
+     19.983333333333334,
+     0.0
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.0013834572700622827,
+     31.266666666666666,
+     6.85
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     -0.0020323485552743215,
+     2.05,
+     0.05
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     -0.008800671814208924,
+     2.1166666666666667,
+     0.11666666666666667
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     0.0,
+     15.683333333333334,
+     0.0
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     -0.005405202685654276,
+     2.066666666666667,
+     0.06666666666666667
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     0.0,
+     2.3666666666666667,
+     0.0
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     0.03204945508395705,
+     3.433333333333333,
+     1.0333333333333334
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     0.40271520277752815,
+     5.2,
+     2.6
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.0,
+     13.116666666666667,
+     0.0
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.0016065035178066604,
+     284.28333333333336,
+     203.05
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.013996165709833797,
+     2.783333333333333,
+     1.0
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.0,
+     13.9,
+     0.0
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.0,
+     11.583333333333334,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     0.0031882028789548935,
+     3.5,
+     1.6
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.02510720743069732,
+     2.2666666666666666,
+     0.26666666666666666
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.0029813381024097474,
+     5.916666666666667,
+     0.45
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.00024084600665402373,
+     7.183333333333334,
+     0.38333333333333336
+    ]
+   }
+  },
+  "heur_conf": {
+   "gmean_ratio": 1.0077650272593726,
+   "better": 3,
+   "worse": 12,
+   "margins": {
+    "0": 1.2,
+    "1": 1.2,
+    "2": 1.2,
+    "3": 1.2,
+    "4": 1.2
+   },
+   "runs": 53.065053763440865,
+   "aborted": 32.20913978494624,
+   "per_margin": {
+    "0.0": 1.0257599732224902,
+    "0.05": 1.0244025767324427,
+    "0.1": 1.0236683589904036,
+    "0.2": 1.0239023728446108,
+    "0.3": 1.0234672975566586,
+    "0.5": 1.0209716641497701,
+    "0.8": 1.0146835060859762,
+    "1.2": 1.0077650272593726
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.06138921020308277,
+     21.266666666666666,
+     12.95
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.004618166892931115,
+     44.28333333333333,
+     26.633333333333333
+    ],
+    "d3a-kitspace-gas-sensor": [
+     0.0005960037597814753,
+     40.05,
+     22.933333333333334
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.0016561602566893244,
+     201.11666666666667,
+     114.86666666666666
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.013222562938700078,
+     68.98333333333333,
+     28.383333333333333
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.051268290229304535,
+     8.6,
+     4.55
+    ],
+    "d3a-pcb-serie-led-strip": [
+     0.006294643726500992,
+     127.53333333333333,
+     79.26666666666667
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.0017668828351809311,
+     403.1,
+     287.15
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     0.0027461403844813324,
+     133.88333333333333,
+     83.16666666666667
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.016089058521503233,
+     10.916666666666666,
+     5.583333333333333
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     0.02407623406602511,
+     5.416666666666667,
+     1.8666666666666667
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.024501238458545623,
+     9.566666666666666,
+     4.166666666666667
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     0.002557501761711019,
+     41.8,
+     22.25
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     0.004343149160476904,
+     60.53333333333333,
+     33.1
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     0.07926715699005822,
+     2.3833333333333333,
+     0.5166666666666667
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     8.61209180688179e-05,
+     2.35,
+     0.35
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     0.003165152398879541,
+     22.916666666666668,
+     11.283333333333333
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     0.0024159591504416896,
+     2.55,
+     0.55
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     0.005897737491983183,
+     2.6666666666666665,
+     0.5166666666666667
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     -0.0017796949566312983,
+     5.35,
+     2.433333333333333
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     0.13309504530609628,
+     4.65,
+     1.85
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.00025935214673027395,
+     17.833333333333332,
+     8.4
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.0028499495757380237,
+     335.76666666666665,
+     212.15
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     -0.002307966271984633,
+     2.2333333333333334,
+     0.38333333333333336
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.018667264941063594,
+     25.9,
+     14.2
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.007262845529366209,
+     17.466666666666665,
+     8.816666666666666
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.00617731599269001,
+     2.1666666666666665,
+     0.16666666666666666
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     0.003982364476689619,
+     2.466666666666667,
+     0.48333333333333334
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.02164062437342841,
+     2.0166666666666666,
+     0.23333333333333334
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     0.00024049607547002398,
+     9.016666666666667,
+     4.516666666666667
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     0.01046788792550332,
+     10.233333333333333,
+     4.766666666666667
+    ]
+   }
+  },
+  "bound": {
+   "gmean_ratio": 0.9967955302708242,
+   "better": 8,
+   "worse": 6,
+   "margins": {
+    "0": 0.05,
+    "1": 0.0,
+    "2": 0.05,
+    "3": 0.05,
+    "4": 0.0
+   },
+   "runs": 51.39086021505377,
+   "aborted": 35.152150537634405,
+   "per_margin": {
+    "0.0": 0.9960257365377014,
+    "0.05": 0.9960405982230152,
+    "0.1": 0.9973570158880741,
+    "0.2": 0.9996045655791485,
+    "0.3": 1.0008253602892712,
+    "0.5": 1.0000480426204985,
+    "0.8": 0.9997306388956224,
+    "1.2": 0.9994736684287154
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.04023928453002611,
+     10.816666666666666,
+     5.9
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.0030595698485318696,
+     52.483333333333334,
+     38.233333333333334
+    ],
+    "d3a-kitspace-gas-sensor": [
+     -0.012221941216676043,
+     42.6,
+     27.116666666666667
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.005720243349729677,
+     198.88333333333333,
+     139.3
+    ],
+    "d3a-kitspace-temp-breakout": [
+     -0.0032907993006828415,
+     86.81666666666666,
+     61.4
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.0389352492039374,
+     9.116666666666667,
+     4.633333333333334
+    ],
+    "d3a-pcb-serie-led-strip": [
+     0.0013544903065430066,
+     166.58333333333334,
+     123.75
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.0017668828351809311,
+     318.73333333333335,
+     229.05
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     -0.01768493441741923,
+     134.46666666666667,
+     93.96666666666667
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.00794311697718797,
+     9.4,
+     5.45
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.008401576541896978,
+     4.7,
+     1.2833333333333334
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.010870352005061612,
+     12.1,
+     7.783333333333333
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     -0.006035502229012435,
+     32.28333333333333,
+     17.283333333333335
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.009136053728018297,
+     51.81666666666667,
+     31.983333333333334
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     -0.0007910736752123763,
+     17.533333333333335,
+     7.566666666666666
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     -0.004549216027979019,
+     2.7333333333333334,
+     1.0
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     0.00899207999106788,
+     3.4833333333333334,
+     1.5166666666666666
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     -0.00020966546686864706,
+     3.6666666666666665,
+     1.0
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.00010390859868922853,
+     46.766666666666666,
+     34.36666666666667
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.00317262637208362,
+     296.8833333333333,
+     204.83333333333334
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.005077292272697479,
+     2.216666666666667,
+     0.43333333333333335
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.002483583182959507,
+     31.516666666666666,
+     22.216666666666665
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.00877352119391223,
+     25.783333333333335,
+     18.55
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     -0.0009684086121358515,
+     2.15,
+     0.15
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.001650123297487749,
+     2.0,
+     0.2833333333333333
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     0.010678265612955063,
+     10.1,
+     6.316666666666666
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.0029151646793848405,
+     9.483333333333333,
+     4.35
+    ]
+   }
+  },
+  "oracle0": {
+   "gmean_ratio": 0.9666315217578625,
+   "better": 28,
+   "worse": 0,
+   "margins": {
+    "0": 0.0,
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0,
+    "4": 0.0
+   },
+   "runs": 87.63924731182796,
+   "aborted": 63.35161290322579,
+   "per_margin": {
+    "0.0": 0.9666315217578625,
+    "0.05": 0.9805324692051812,
+    "0.1": 0.9853901631205496,
+    "0.2": 0.9906261496727582,
+    "0.3": 0.9946284597346826,
+    "0.5": 0.9965938759347303,
+    "0.8": 0.9978713850235529,
+    "1.2": 0.9983268690817055
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.12908885889535215,
+     15.316666666666666,
+     9.4
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     -0.010862525711078715,
+     84.68333333333334,
+     60.733333333333334
+    ],
+    "d3a-kitspace-gas-sensor": [
+     -0.022199272055892633,
+     73.8,
+     52.36666666666667
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     -0.009939728973198258,
+     412.8333333333333,
+     305.8
+    ],
+    "d3a-kitspace-temp-breakout": [
+     -0.008395384756805294,
+     146.61666666666667,
+     106.43333333333334
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.07531249162847038,
+     11.233333333333333,
+     6.733333333333333
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.03620893833375673,
+     247.73333333333332,
+     182.65
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.0021202594022171175,
+     729.5833333333334,
+     540.8833333333333
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     -0.02492359785053128,
+     219.4,
+     160.93333333333334
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.024860727844658974,
+     14.116666666666667,
+     8.666666666666666
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.03061214476444588,
+     7.633333333333334,
+     4.133333333333334
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     -0.006074639967675018,
+     6.3,
+     3.1333333333333333
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     -0.015431223698439921,
+     67.11666666666666,
+     47.61666666666667
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.020360555850580928,
+     97.73333333333333,
+     70.28333333333333
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     -0.03248388660547884,
+     2.9833333333333334,
+     0.9833333333333333
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     -0.016932913052816443,
+     2.8333333333333335,
+     0.8333333333333334
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     -0.006477047927194146,
+     46.916666666666664,
+     32.71666666666667
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     -0.03395404613517781,
+     2.85,
+     0.85
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     -0.01375362509264167,
+     3.95,
+     1.4666666666666666
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     -0.006250482311326832,
+     6.316666666666666,
+     3.15
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     -0.31274969050566587,
+     7.633333333333334,
+     4.133333333333334
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     -0.0006988451718092777,
+     38.78333333333333,
+     26.35
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.004760121640747424,
+     349.8333333333333,
+     258.06666666666666
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     -0.016239776489126844,
+     3.1166666666666667,
+     1.0833333333333333
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     -0.031119281244734287,
+     39.63333333333333,
+     27.133333333333333
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     -0.032610027333422,
+     35.266666666666666,
+     23.85
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     -0.0062915945644150375,
+     2.966666666666667,
+     0.9666666666666667
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     -0.030711215925835412,
+     3.0,
+     1.0
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     -0.04257191152223456,
+     2.8333333333333335,
+     0.8333333333333334
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.03030213624713247,
+     15.7,
+     9.616666666666667
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.017778231800470192,
+     18.1,
+     11.1
+    ]
+   }
+  },
+  "oracle5": {
+   "gmean_ratio": 0.9724138182418719,
+   "better": 23,
+   "worse": 0,
+   "margins": {
+    "0": 0.0,
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0,
+    "4": 0.0
+   },
+   "runs": 45.93978494623657,
+   "aborted": 29.466129032258067,
+   "per_margin": {
+    "0.0": 0.9724138182418719,
+    "0.05": 0.9849115816692826,
+    "0.1": 0.9882070658564627,
+    "0.2": 0.9925788064896081,
+    "0.3": 0.9960545056061662,
+    "0.5": 0.997761865539092,
+    "0.8": 0.9983959966025941,
+    "1.2": 0.9988360195036776
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.10699391551458766,
+     13.733333333333333,
+     8.283333333333333
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     -0.0031392024384952737,
+     34.11666666666667,
+     19.433333333333334
+    ],
+    "d3a-kitspace-gas-sensor": [
+     -0.011811153918890331,
+     39.4,
+     26.9
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     -0.0014823790386591022,
+     134.5,
+     35.61666666666667
+    ],
+    "d3a-kitspace-temp-breakout": [
+     -0.003539307765833784,
+     60.63333333333333,
+     35.61666666666667
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.07531249162847038,
+     11.233333333333333,
+     6.733333333333333
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.02140385916979273,
+     113.03333333333333,
+     79.5
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.0017668828351809311,
+     307.26666666666665,
+     210.35
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     -0.018124765999382515,
+     120.4,
+     87.0
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.021716556441568818,
+     10.766666666666667,
+     6.3
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.026427772953514107,
+     5.866666666666666,
+     2.8833333333333333
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     -0.006074639967675018,
+     6.3,
+     3.1333333333333333
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     -0.011976627934845293,
+     45.05,
+     31.516666666666666
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.01880077831444364,
+     80.7,
+     57.65
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     -0.03248388660547884,
+     2.9833333333333334,
+     0.9833333333333333
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     -0.016932913052816443,
+     2.8333333333333335,
+     0.8333333333333334
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     -0.0034245726029924484,
+     26.75,
+     18.066666666666666
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     -0.03395404613517781,
+     2.85,
+     0.85
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     -0.008285700277765458,
+     3.0833333333333335,
+     1.0333333333333334
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     -0.003567913643173363,
+     5.166666666666667,
+     2.433333333333333
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     -0.30816693355663355,
+     5.466666666666667,
+     2.716666666666667
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     -0.00040637722200771443,
+     20.616666666666667,
+     13.416666666666666
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.004760121640747424,
+     301.06666666666666,
+     221.8
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     -0.013968196133384196,
+     2.6,
+     0.8666666666666667
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     -0.017869224676081607,
+     21.45,
+     14.116666666666667
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     -0.016770099752367325,
+     17.15,
+     10.916666666666666
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     -0.0062915945644150375,
+     2.966666666666667,
+     0.9666666666666667
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     -0.030711215925835412,
+     3.0,
+     1.0
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     -0.02136473581614576,
+     2.4166666666666665,
+     0.6666666666666666
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.012629469309455374,
+     10.05,
+     5.866666666666666
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     -0.007031277080098608,
+     10.683333333333334,
+     6.0
+    ]
+   }
+  },
+  "model/ridge": {
+   "gmean_ratio": 0.9955643950459954,
+   "better": 9,
+   "worse": 4,
+   "margins": {
+    "0": 0.2,
+    "1": 0.2,
+    "2": 0.2,
+    "3": 0.2,
+    "4": 0.2
+   },
+   "runs": 43.43924731182796,
+   "aborted": 19.131720430107524,
+   "per_margin": {
+    "0.0": 1.0182476927337802,
+    "0.05": 1.013695262820578,
+    "0.1": 1.0116227903153467,
+    "0.2": 0.9955643950459954,
+    "0.3": 0.9999761799919019,
+    "0.5": 1.0003557448273848,
+    "0.8": 0.9999367042444383,
+    "1.2": 1.0
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     -0.044609382127499105,
+     9.15,
+     2.6666666666666665
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.0006161119962322085,
+     26.533333333333335,
+     2.9166666666666665
+    ],
+    "d3a-kitspace-gas-sensor": [
+     -0.001184761774548715,
+     23.133333333333333,
+     3.8333333333333335
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     -0.00017978106670544965,
+     131.43333333333334,
+     25.4
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.0024708149690143492,
+     53.25,
+     15.966666666666667
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     -0.04675376628353963,
+     10.066666666666666,
+     4.416666666666667
+    ],
+    "d3a-pcb-serie-led-strip": [
+     -0.016381897240283112,
+     127.96666666666667,
+     83.58333333333333
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     -0.00047524634093477994,
+     276.73333333333335,
+     153.95
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     -0.0133552043623836,
+     107.21666666666667,
+     58.4
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     -0.014609976481063406,
+     5.95,
+     1.4166666666666667
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     -0.007134875022431656,
+     5.6,
+     2.066666666666667
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.020878124731894675,
+     9.816666666666666,
+     4.133333333333334
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     0.0,
+     20.133333333333333,
+     0.23333333333333334
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     -0.003081199502583306,
+     40.666666666666664,
+     22.516666666666666
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     -0.007975369709979748,
+     2.2666666666666666,
+     0.26666666666666666
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     0.001782057944327553,
+     2.55,
+     0.55
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     -0.0006833090549666742,
+     15.95,
+     0.8833333333333333
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     0.010124386800971186,
+     2.4166666666666665,
+     0.4166666666666667
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     0.0049899247363027165,
+     2.65,
+     0.6833333333333333
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     0.0002504559746696611,
+     2.933333333333333,
+     0.2833333333333333
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     -0.11571049567869819,
+     3.4,
+     0.6166666666666667
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.0,
+     13.116666666666667,
+     0.016666666666666666
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     -0.002854332173320125,
+     399.4,
+     195.51666666666668
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.009755919239226429,
+     2.283333333333333,
+     0.16666666666666666
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     -0.001349305899608518,
+     16.616666666666667,
+     3.35
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.0005028577619210643,
+     14.4,
+     4.933333333333334
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.0,
+     2.066666666666667,
+     0.06666666666666667
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.05
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.09441904101987555,
+     2.75,
+     1.15
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     -0.007306055534061296,
+     7.133333333333334,
+     2.2
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     4.564855140699227e-05,
+     7.033333333333333,
+     0.43333333333333335
+    ]
+   }
+  },
+  "lift_model/ridge": {
+   "gmean_ratio": 1.003253839907401,
+   "better": 0,
+   "worse": 2,
+   "margins": {
+    "0": 0.05,
+    "1": 0.8,
+    "2": 0.8,
+    "3": 0.8,
+    "4": 0.8
+   },
+   "runs": 25.267741935483873,
+   "aborted": 0.4112903225806452,
+   "per_margin": {
+    "0.0": 1.0157539273891203,
+    "0.05": 1.0015391449458886,
+    "0.1": 1.0026257637748288,
+    "0.2": 1.0006022013578058,
+    "0.3": 1.0005757344113777,
+    "0.5": 1.0002759253916742,
+    "0.8": 0.9999367042444383,
+    "1.2": 1.0
+   },
+   "per_board": {
+    "d3a-c-biscuit-crowbar": [
+     0.0,
+     6.233333333333333,
+     0.0
+    ],
+    "d3a-kitspace-12v5a-breakout": [
+     0.0,
+     25.183333333333334,
+     0.0
+    ],
+    "d3a-kitspace-gas-sensor": [
+     0.0,
+     21.733333333333334,
+     0.0
+    ],
+    "d3a-kitspace-hum-temp-sensor": [
+     0.0,
+     118.3,
+     0.0
+    ],
+    "d3a-kitspace-temp-breakout": [
+     0.0,
+     42.06666666666667,
+     0.0
+    ],
+    "d3a-marlin-neopixel-bridge-attiny85-marneo": [
+     0.0,
+     3.816666666666667,
+     0.0
+    ],
+    "d3a-pcb-serie-led-strip": [
+     0.0,
+     66.91666666666667,
+     0.0
+    ],
+    "d3a-starsynctrackers-reset-switch": [
+     0.0,
+     197.7,
+     0.0
+    ],
+    "d3a-z2amiller-sensorboard-programmer": [
+     0.0,
+     57.8,
+     0.0
+    ],
+    "kicad-demos-ecc83-ecc83-pp-v2": [
+     0.0,
+     4.283333333333333,
+     0.0
+    ],
+    "olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1": [
+     0.0024473023725444095,
+     7.183333333333334,
+     3.15
+    ],
+    "pcbcorpus-0rax-esphome-xiao-base-pcb": [
+     0.0,
+     4.383333333333334,
+     0.0
+    ],
+    "pcbcorpus-0xjmux-esp-prog-adapter-espprog-adapter": [
+     0.0,
+     19.983333333333334,
+     0.0
+    ],
+    "pcbcorpus-badjeff-paw3222-pcb-paw3222": [
+     0.009585133010900589,
+     37.333333333333336,
+     8.75
+    ],
+    "pcbcorpus-badjeff-paw3395-pcb-paw3395": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-blueokiris-ch552g-dev-board-ch552g-dev-board": [
+     0.0,
+     15.683333333333334,
+     0.0
+    ],
+    "pcbcorpus-electron271-tuxkeychain-expansion": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-funkeleinhorn-sc14cvmdect-devboard-audio-header": [
+     0.0,
+     2.3666666666666667,
+     0.0
+    ],
+    "pcbcorpus-jangtrinh-design-os-3d-blender-desktop-companion": [
+     0.0,
+     2.8333333333333335,
+     0.0
+    ],
+    "pcbcorpus-justbuchanan-oasis-ledboard": [
+     0.0,
+     2.9833333333333334,
+     0.0
+    ],
+    "pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply": [
+     0.0,
+     13.116666666666667,
+     0.0
+    ],
+    "pcbcorpus-kabukiflux-pi-rgb-cable-sync-mixer-rgbpi-sync-mixer": [
+     0.0,
+     80.56666666666666,
+     0.0
+    ],
+    "pcbcorpus-lambdakb-trackball-lt6c-lt6c-pcb": [
+     0.0,
+     2.1333333333333333,
+     0.0
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics": [
+     0.0,
+     13.9,
+     0.0
+    ],
+    "pcbcorpus-pcbcupid-kicad-7-series-schematics-d1e5bd": [
+     0.0,
+     11.583333333333334,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3360-pcb-pmw3360-pcb-jst": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-siderakb-pmw3610-pcb-pmw3610-pcb": [
+     0.0,
+     2.0,
+     0.0
+    ],
+    "pcbcorpus-tcsullivan-noisecard-noisecard": [
+     0.0886728510130647,
+     2.85,
+     0.85
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xnor-2in": [
+     0.0,
+     5.533333333333333,
+     0.0
+    ],
+    "pcbcorpus-tmarhguy-alu-gate-xor-2in": [
+     0.0,
+     6.833333333333333,
+     0.0
+    ]
+   }
+  }
+ }
+}
