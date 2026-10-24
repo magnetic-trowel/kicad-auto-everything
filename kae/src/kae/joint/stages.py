@@ -325,7 +325,13 @@ class KaeStages:
         else:
             bopts = dict(keep=bool(self.opts.get("keep")))
             if it > 0 and not finish:
-                bopts.update(rounds=int(self.opts.get("window_rounds", 3)), passes=int(self.opts.get("window_passes", 16)))
+                # window_router=bridge: the loop's own last mile on the window's nets follows
+                bopts.update(rounds=int(self.opts.get("window_rounds", 3)), passes=int(self.opts.get("window_passes", 16)),
+                             last_mile=False)
+            if it == 0 and self.opts.get("first_last_mile") is not None:
+                # the first route follows the bridge's default (last mile on since c9c49d6);
+                # --set first_last_mile=0 keeps it comparable to runs made before that
+                bopts.update(last_mile=bool(self.opts["first_last_mile"]))
             if finish:
                 # the finishing stage: repair rounds until they stop improving, then the last
                 # mile (kae.route.lastmile: grid joins with negotiated rip-up)
