@@ -2,17 +2,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """kaebench --command adapter that hands the harness a board the LLM loop already wrote.
 
-    python emit.py NAME {input} {output}
+    python emit.py NAME {input} {output} [WORK_DIR]
 
 The task id is the first component of the input path that names a board directory in
-kae-work/pnr_llm/; kae-work/pnr_llm/<id>/NAME.kicad_pcb is copied to {output}. Scoring is the harness's own.
+WORK_DIR (default kae-work/pnr_llm/); WORK_DIR/<id>/NAME.kicad_pcb is copied to {output}. Scoring is the harness's own.
 """
 import shutil
 import sys
 from pathlib import Path
 
 name, inp, out = sys.argv[1:4]
-root = Path("/home/user/kicad-auto-everything/kae-work/pnr_llm")
+root = Path(sys.argv[4] if len(sys.argv) > 4 else "/home/user/kicad-auto-everything/kae-work/pnr_llm")
 bid = next((p for p in Path(inp).resolve().parts if p.startswith(("pcbcorpus-", "d3a-", "kicad-", "olimex-", "azonenberg-"))
             and (root / p).is_dir()), "?")
 src = root / bid / f"{name}.kicad_pcb"

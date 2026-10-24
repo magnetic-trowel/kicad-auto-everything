@@ -69,6 +69,7 @@ class Slime:
         self.hist = np.zeros((self.L, self.Hc, self.Wc))
         self.vol = {}  # net -> tube volume (mm)
         self.it = 0
+        self.hist_rate = 0.1  # congestion history; frozen during part motion so costs compare
 
     # ------------------------------------------------------------ geometry
     def pins(self, n):
@@ -219,7 +220,7 @@ class Slime:
                 self.step_net(n, rng)
             self.rebuild_occ()
             over = np.maximum(self.occ - 1.0, 0.0)
-            self.hist += 0.1 * over
+            self.hist += self.hist_rate * over
             self.beta = min(self.beta_max, self.beta * self.beta_mul)
             self.it += 1
 
@@ -288,8 +289,19 @@ class PriorRouter(Router):
 
 
 # ---------------------------------------------------------------- part motion
-def part_force(world, kit, sl, pi, w_press, look_cells=3):
-    """Pin pulls along the tube leaving each pad + push down the foreign-tube gradient."""
+def phys_grad(world, ph, pi, h_mm=1.0):
+    """Central finite-difference gradient (per mm) of the place-terms total for part pi."""
+    cx, cy, ri = world.pose[pi]
+    h = max(1, int(round(h_mm / world.g)))
+    gx = (ph.delta(pi, (cx + h, cy, ri)) - ph.delta(pi, (cx - h, cy, ri))) / (2 * h * world.g)
+    gy = (ph.delta(pi, (cx, cy + h, ri)) - ph.delta(pi, (cx, cy - h, ri))) / (2 * h * world.g)
+    return np.array([gx, gy])
+
+
+def part_force(world, kit, sl, pi, w_press, look_cells=3, ph=None, phys_w=2.0):
+    """Pin pulls along the tube leaving each pad (d tube length / d pin ~ unit vector, so
+    the force is in mm of tube per mm of motion) + push down the foreign-tube gradient
+    + (optional) -phys_w * gradient of the physics place terms."""
     cx, cy, ri = world.pose[pi]
     rr = world.raster(pi)
     f = sl.f
@@ -334,15 +346,26 @@ def part_force(world, kit, sl, pi, w_press, look_cells=3):
     ys = np.clip((c[:, 1] + cy) // f, 0, sl.Hc - 1)
     G = -np.array([gx[ys, xs].mean(), gy[ys, xs].mean()])
     F += w_press * G * max(1, len(pulls))
+    if ph is not None and pi in ph.active:
+        F -= phys_w * phys_grad(world, ph, pi)
     return F, pulls
 
 
 def motion(world, kit, sl, clock, rng, log, frac=0.55, rounds=40, k_iter=6, step_mm=1.5,
-           w_press=1.0, allow_rot=True, accept=True, k_local=4):
+           w_press=1.0, allow_rot=True, accept=True, k_local=4, ph=None, phys_w=2.0, restore=True):
+    pw = (lambda: phys_w * ph.total()) if ph is not None else (lambda: 0.0)
     mov = [pi for pi in kit.movable() if pi in world.pose and kit.part_nets([pi])]
     sl.iterate(30, rng)  # warm-up: competition price reaches its cap, then stays fixed
+    sl.hist_rate = 0.0
+    prev = sl.cost()[0]
+    for _ in range(10):  # settle: tube volume steady to 0.5 %
+        sl.iterate(5, rng)
+        c = sl.cost()[0]
+        if abs(c - prev) < 0.005 * prev:
+            break
+        prev = c
     c0, ov0 = sl.cost()
-    best = (c0, dict(world.pose))
+    best = (c0 + pw(), dict(world.pose))
     log(f"  slime start cost={c0:.1f} overflow={ov0:.2f} beta={sl.beta:.2f}")
     t_end = clock.budget * frac
     target = {pi: np.array(world.pose[pi][:2], float) for pi in mov}
@@ -351,7 +374,7 @@ def motion(world, kit, sl, clock, rng, log, frac=0.55, rounds=40, k_iter=6, step
         rd += 1
         fr = (clock.budget - clock.left()) / t_end
         step = step_mm * (1.0 - 0.85 * fr) / world.g
-        forces = {pi: part_force(world, kit, sl, pi, w_press) for pi in mov}
+        forces = {pi: part_force(world, kit, sl, pi, w_press, ph=ph, phys_w=phys_w) for pi in mov}
         rng.shuffle(mov)
         moved = 0
         for pi in mov:
@@ -374,6 +397,8 @@ def motion(world, kit, sl, clock, rng, log, frac=0.55, rounds=40, k_iter=6, step
             mag = min(1.0, nF / npull)
             tgt = target[pi] + (F / (nF + 1e-9)) * step * mag
             world.unplace(pi)
+            if ph is not None:
+                ph.commit(pi)  # no-op for parts no term touches
             L = kit.legal_map(pi, nri)
             if not L.any() and nri != ri:
                 nri = ri
@@ -396,17 +421,21 @@ def motion(world, kit, sl, clock, rng, log, frac=0.55, rounds=40, k_iter=6, step
                 # tubes got cheaper (volume of its nets + overflow everywhere)
                 nets = [n for n in kit.part_nets([pi]) if n in sl.occ_n]
                 before = sl.local_cost(nets)
+                dphys = phys_w * ph.delta(pi, (nx, ny, nri)) if ph is not None else 0.0
                 snap = sl.snapshot(nets)
                 sl.iterate_nets(nets, k_local, rng)
-                if sl.local_cost(nets) > before - 1e-6:
+                if sl.local_cost(nets) + dphys > before - 1e-6:
                     sl.restore(snap)
                     world.unplace(pi)
                     world.place(pi, cx, cy, ri)
                     target[pi] = np.array([cx, cy], float)
                     continue
+            if ph is not None:
+                ph.commit(pi)
             moved += 1
         sl.iterate(k_iter, rng)
         c, ov = sl.cost()
+        c += pw()
         if c < best[0]:
             best = (c, dict(world.pose))
         log(f"  slime rd={rd} moved={moved} cost={c:.1f} overflow={ov:.2f} best={best[0]:.1f} "
@@ -416,15 +445,35 @@ def motion(world, kit, sl, clock, rng, log, frac=0.55, rounds=40, k_iter=6, step
                 step_mm *= 0.6  # nothing accepted: shorter steps
                 continue
             break
+    if not restore:
+        if ph is not None:
+            ph.sync()
+        return best[0]
     # restore the best placement by network cost
     for q in mov:
         world.unplace(q)
     for q in mov:
         world.place(q, *best[1][q])
+    if ph is not None:
+        ph.sync()
     return best[0]
 
 
 # ---------------------------------------------------------------- methods
+def _phys(world, log):
+    """physics.Phys for the input board, or None (no terms / kae not importable)."""
+    path = world.data.get("path") or next((a for a in sys.argv if a.endswith(".kicad_pcb")), None)
+    try:
+        from physics import Phys
+        ph = Phys(world, path)
+        ph.sync()
+    except Exception as e:  # noqa: BLE001 - physics is optional
+        log(f"  physics unavailable: {e}")
+        return None
+    log(f"  physics parts {len(ph.active)} total {ph.total():.2f}")
+    return ph if ph.active else None
+
+
 def _seq_place(world, kit, rng, clock, log):
     place_mechanical(world, kit, log)
     greedy_place(world, kit, growth_order(world, kit, rng), log)
@@ -432,28 +481,42 @@ def _seq_place(world, kit, rng, clock, log):
 
 
 def slime(world, seed=0, budget=120, log=print, move=True, prior=True, lam=0.2, gc_mm=0.5,
-          frac=0.55, w_press=1.0, step_mm=1.5, final_iter=25, dil=1, thr=0.3, accept=True, **kw):
+          frac=0.55, w_press=1.0, step_mm=1.5, final_iter=25, dil=1, thr=0.3, accept=True,
+          phys=False, phys_w=2.0, start="seq", restore=True, **kw):
     rng = random.Random(seed)
     clock = Clock(budget)
     _place_fixed(world)
     r0 = Router(world)
     kit = Kit(world, r0)
     _seq_place(world, kit, rng, clock, log)
-    log(f"  seq placement hpwl={world.hpwl():.1f}")
+    ph = None
+    if phys or start == "seq_phys":
+        ph = _phys(world, log)
+    if ph is not None and start == "seq_phys":
+        from methods_phys import descent_phys
+        descent_phys(world, kit, ph, phys_w, log, clock=clock)
+    log(f"  start placement hpwl={world.hpwl():.1f}" + (f" phys={ph.total():.2f}" if ph else ""))
+    if not phys:
+        ph = None
     sl = Slime(world, gc_mm=gc_mm)
     log(f"  slime grid {sl.L}x{sl.Hc}x{sl.Wc} cell={sl.gc:.2f} mm nets={len(sl.nets)}")
     if move:
-        motion(world, kit, sl, clock, rng, log, frac=frac, w_press=w_press, step_mm=step_mm, accept=accept)
+        motion(world, kit, sl, clock, rng, log, frac=frac, w_press=w_press, step_mm=step_mm, accept=accept,
+               ph=ph, phys_w=phys_w, restore=restore)
     pri = {}
     if prior:
         # converge the network on the final placement, then turn tubes into corridors
+        sl.hist_rate = 0.1
         sl.iterate(final_iter, rng)
         c, ov = sl.cost()
         log(f"  slime final cost={c:.1f} overflow={ov:.2f} beta={sl.beta:.2f}")
         pri = {n: sl.prior(n, lam=lam, thr=thr, dil=dil) for n in sl.nets if n in sl.occ_n}
     r = PriorRouter(world, prior=pri)
     r.pathfinder(log=log, iters=40)
-    log(f"slime move={move} prior={prior} {r.stats()} hpwl={world.hpwl():.1f}")
+    if ph is not None:
+        world.phys = ph
+    log(f"slime move={move} prior={prior} phys={phys} {r.stats()} hpwl={world.hpwl():.1f}"
+        + (f" phys={ph.total():.2f}" if ph else ""))
     return r
 
 
@@ -463,3 +526,14 @@ def slime_motion(world, seed=0, budget=120, log=print, **kw):
 
 def slime_prior(world, seed=0, budget=120, log=print, **kw):
     return slime(world, seed=seed, budget=budget, log=log, move=False, prior=True, **kw)
+
+
+def slime_phys(world, seed=0, budget=120, log=print, **kw):
+    """seq start + slime motion with the physics force/term, plain PathFinder."""
+    return slime(world, seed=seed, budget=budget, log=log, move=True, prior=False, phys=True, **kw)
+
+
+def slime_phys2(world, seed=0, budget=120, log=print, **kw):
+    """seq_phys start (HPWL + physics descent) + slime motion with the physics term."""
+    return slime(world, seed=seed, budget=budget, log=log, move=True, prior=False, phys=True,
+                 start="seq_phys", **kw)

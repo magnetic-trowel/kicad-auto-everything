@@ -21,6 +21,7 @@ Move language (one JSON object per move, optional "why" and "rot" on every move)
     {"move": "J1", "to_edge": "top|bottom|left|right"}
     {"rotate": "U2", "by": 90}                     # degrees, KiCad sense (CCW)
     {"swap": ["R1", "R3"]}                         # each keeps or takes the other's rotation
+    {"move": "U2", "with": ["L1", "C1"], "dir": "left", "dist": "loose|far"}   # rigid group shift
 A move whose nearest legal pose is > 3 mm from its target is refused ("far_ok": true overrides).
 "push": true on a move: smaller movable parts in the way are lifted and re-placed nearest their
 old spot ("push": "all" also pushes bigger parts).
@@ -42,7 +43,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path("/home/user/kicad-auto-everything")
-PNR = ROOT / "tools/research/pnr"
+PNR = Path(os.environ.get("KAE_PNR_DIR", ROOT / "tools/research/pnr"))  # engine (a frozen copy for re-runs)
 sys.path.insert(0, str(PNR))
 
 import methods  # noqa: E402
@@ -50,12 +51,13 @@ from placekit import Kit, corr  # noqa: E402
 from router import Router  # noqa: E402
 from world import ROTS, World, rot_pts  # noqa: E402
 
-WORK = ROOT / "kae-work/pnr_llm"
+WORK = Path(os.environ.get("KAE_LLM_WORK", ROOT / "kae-work/pnr_llm"))
 KICAD_PY = os.environ.get("KAE_KICAD_PYTHON", "/usr/bin/python3")
 GAP = {"tight": 0.3, "close": 1.0, "loose": 2.5}
 STEP = {"tight": 1.0, "close": 2.5, "loose": 5.0}
 SIDE = {"left": "left", "right": "right", "above": "above", "top": "above", "up": "above",
         "below": "below", "bottom": "below", "down": "below", "any": "any"}
+PHYS_W = 2.0  # mm of routed copper per unit of the physics place-terms total (methods_phys default)
 LAYER_COL = ["#d62728", "#1f5fd6", "#2ca02c", "#9467bd", "#8c564b", "#e377c2"]
 
 
@@ -97,11 +99,23 @@ class Session:
         self.max_miss = 3.0
         self._pad_ok = {}
         self._aper = {}
+        self.data.setdefault("path", str(task_board(bid)))
+        cfg = self.dir / "config.json"
+        self.cfg = json.loads(cfg.read_text()) if cfg.exists() else {}
+        self.ph = None
+
+    def _phys_on(self):
+        """Physics place terms (tools/research/pnr/physics.py) when the session asked for them."""
+        if self.cfg.get("phys"):
+            from physics import Phys
+            self.ph = Phys(self.world, self.data["path"])
+            self.ph.sync()
 
     # ------------------------------------------------------------ state
     def init_seq(self, budget=120, seed=0, log=None):
         self.r = methods.seq(self.world, seed=seed, budget=budget, log=log or (lambda m: None))
         self.kit = Kit(self.world, self.r)
+        self._phys_on()
 
     def load(self, f):
         st = json.loads(Path(f).read_text())
@@ -118,6 +132,7 @@ class Session:
             for p in ps:
                 self.r._stamp(int(n), p, 1)
         self.r.unrouted = {int(n): k for n, k in st["unrouted_nets"].items() if k}
+        self._phys_on()
         return st
 
     def save(self, f, extra=None):
@@ -134,12 +149,26 @@ class Session:
 
     def metrics(self):
         s = self.r.stats()
-        return dict(unrouted=int(s["unrouted"]), length_mm=s["length_mm"], vias=s["vias"],
-                    cost=round(self.kit.total_cost(), 2), connections=s["connections"])
+        m = dict(unrouted=int(s["unrouted"]), length_mm=s["length_mm"], vias=s["vias"],
+                 cost=round(self.kit.total_cost(), 2), connections=s["connections"])
+        if self.ph is not None:
+            self.ph.sync()
+            m["phys"] = round(self.ph.total(), 3)
+        return m
 
     def key(self):
-        """Lexicographic: illegal parts (pad outside board / in a cut-out), unrouted, cost."""
-        return (len(self.outside_pads()), sum(self.r.unrouted.values()), self.kit.total_cost())
+        """(illegal parts, primary, secondary, unrouted, phys); compared on the first three.
+        Without physics: illegal, unrouted, Kit.total_cost. With physics (as methods_phys):
+        illegal, then Kit.total_cost + PHYS_W * place-terms total (unrouted already costs a
+        board perimeter each inside total_cost)."""
+        ill = len(self.outside_pads())
+        unr = sum(self.r.unrouted.values())
+        c = self.kit.total_cost()
+        if self.ph is None:
+            return (ill, unr, c, unr, None)
+        self.ph.sync()
+        p = self.ph.total()
+        return (ill, 0, c + PHYS_W * p, unr, p)
 
     def movable(self):
         w = self.world
@@ -303,6 +332,8 @@ class Session:
                 w.unplace(pi)
                 pos, miss = self._resolve(pi, {ri: c}, band=0.3)
                 return self._finish(pi, old, pos, miss, rec)
+            if "with" in mv:
+                return self._group(mv, rec)
             pi = self.idx[mv["move"]]
             self._check_movable(pi)
             old = w.pose[pi]
@@ -368,6 +399,33 @@ class Session:
             return self._finish(pi, old, pos, miss, rec)
         except (KeyError, ValueError) as ex:
             return dict(rec, ok=False, err=f"bad move: {ex}")
+
+    def _group(self, mv, rec):
+        """Rigid translation of a group (move + with) by a dir/dist step, each part to the
+        legal pose nearest its shifted centre (biggest first)."""
+        w = self.world
+        grp = [self.idx[mv["move"]]] + [self.idx[x] for x in mv["with"]]
+        for q in grp:
+            self._check_movable(q)
+        s = {"tight": 1.0, "close": 2.5, "loose": 5.0, "far": 10.0}[mv.get("dist", "close")]
+        dx, dy = {"left": (-s, 0), "right": (s, 0), "up": (0, -s), "down": (0, s)}[mv["dir"]]
+        olds = {q: w.pose[q] for q in grp}
+        cent = {q: self.center_mm(q) for q in grp}
+        for q in grp:
+            w.unplace(q)
+        placed, worst = [], 0.0
+        for q in sorted(grp, key=lambda q: -w.parts[q].area):
+            pos, miss = self._resolve(q, {olds[q][2]: (cent[q][0] + dx, cent[q][1] + dy)}, band=0.3)
+            if pos is None or miss > self.max_miss:
+                for z in placed:
+                    w.unplace(z)
+                for z in grp:
+                    w.place(z, *olds[z])
+                return dict(rec, ok=False, err=f"group: no room for {self.names[q]}")
+            w.place(q, *pos)
+            placed.append(q)
+            worst = max(worst, miss)
+        return dict(rec, ok=True, parts=grp, miss_mm=round(worst, 2))
 
     def _clamp(self, pi, ri, t):
         """Keep a part-centre target where the part's box fits inside the board's box."""
@@ -455,10 +513,22 @@ class Session:
         """Re-route the nets of moved parts (plus any net whose copper became illegal),
         then, if connections are still missing, one negotiated pass over all nets."""
         kit, r = self.kit, self.r
+        u0 = sum(r.unrouted.values())
         aff = kit.part_nets(moved) | set(kit.conflicted_nets())
         kit.reroute(aff, iters=8)
-        if any(r.unrouted.values()):
+        if self.cfg.get("verify") != "v2":
+            if any(r.unrouted.values()):
+                r.pathfinder(iters=15)
+            return self.key()
+        # v2: global re-negotiation only when the local re-route lost connections, and
+        # keep whichever of the two is better
+        if sum(r.unrouted.values()) > u0 or (u0 == 0 and any(r.unrouted.values())):
+            k_loc = self.key()
+            snap = kit.snapshot(list(self.world.net_pins))
             r.pathfinder(iters=15)
+            k_glob = self.key()
+            if k_glob[:3] > k_loc[:3]:
+                kit.restore(snap)
         return self.key()
 
     def try_batch(self, moves, plateau=False):
@@ -479,7 +549,7 @@ class Session:
         if recs:
             recs[0]["net_diff"] = diff
         better = k1[:2] < k0[:2] or (k1[:2] == k0[:2] and k1[2] < k0[2] - 1e-6)
-        if plateau and k1[:2] <= k0[:2]:
+        if plateau and k1[:2] <= k0[:2] and k1[3] <= k0[3]:
             better = True  # proposer asked to keep a sideways step (no more illegal/unrouted)
         if not better:
             self.full_restore(snap)
@@ -634,7 +704,25 @@ class Session:
                      f"({(x0 + x1) / 2:.1f},{(y0 + y1) / 2:.1f}){flags} -> {nbs or '-'}")
         if big:
             L.append("big nets: " + ", ".join(f"{w.net_names[n]}({len(w.net_pins[n])})" for n in big))
+        if self.ph is not None:
+            L += self.phys_lines()
         return "\n".join(L)
+
+    def phys_lines(self):
+        """Per-structure physics breakdown (value vs budget), worst first."""
+        self.ph.sync()
+        br = sorted(self.ph.T.breakdown(self.ph.poses), key=lambda e: -e["cost"])
+        L = [f"PHYSICS place terms: total {self.ph.total():.2f} (lower is better; acceptance uses routed cost + "
+             f"{PHYS_W:g} x total). Per structure, worst first: id [members] value/budget unit (util):"]
+        for e in br:
+            if e["cost"] < 0.01 and e["util"] < 0.05:
+                continue
+            L.append(f"  {e['id']} [{' '.join(e['members'][:8])}{' ...' if len(e['members']) > 8 else ''}] "
+                     f"{e['value']:.3g}/{e['alloc'].get('value', 0):.3g} {e['unit']} (util {e['util']:.2f}, cost {e['cost']:.2f})"
+                     + (f"; switch net {e['info'].get('sw')}" if e["info"].get("sw") else "")
+                     + (f"; aggressors {', '.join(str(c['label']) for c in e.get('components') or [])}"
+                        if e["kind"] == "coupling" else ""))
+        return L
 
     def render(self, png, blk, title="", focus=None):
         import matplotlib
@@ -665,6 +753,12 @@ class Session:
             ax.add_patch(Polygon(o, closed=True, fill=True, fc="#f4f1e8", ec="black", lw=1.5, zorder=0))
         for h in w.holes:
             ax.add_patch(Polygon(h, closed=True, fill=True, fc="white", ec="black", lw=1.0, zorder=0))
+        hot = set()
+        if self.ph is not None:
+            self.ph.sync()
+            for e in self.ph.T.breakdown(self.ph.poses):
+                if e["util"] > 1.0:
+                    hot |= {self.idx[m] for m in e["members"] if m in self.idx}
         blockers = {}
         for n, bl in blk.items():
             for q, c in bl.items():
@@ -681,7 +775,8 @@ class Session:
             fc = "#ffb347" if pi in blockers else ("#bbbbbb" if locked else ("#dde8ff" if p.side else "#ffffff"))
             for c in p.court:
                 q = rot_pts(c, deg) + (ox, oy)
-                ax.add_patch(Polygon(q, closed=True, fc=fc, ec="#555555", lw=0.8, alpha=0.85, zorder=1,
+                ax.add_patch(Polygon(q, closed=True, fc=fc, ec="#e00000" if pi in hot else "#555555",
+                                     lw=2.5 if pi in hot else 0.8, alpha=0.85, zorder=1,
                                      ls="--" if p.side else "-"))
             for e in p.data.get("edges", []):
                 if len(e) >= 3:
@@ -693,6 +788,10 @@ class Session:
                     if len(pl) >= 3:
                         q = rot_pts(np.array(pl, float), deg) + (ox, oy)
                         ax.add_patch(Polygon(q, closed=True, fc=col, ec="none", alpha=0.55, zorder=2))
+                if focus and pad.get("num"):
+                    c = rot_pts(np.array([[pad["x"], pad["y"]]]), deg)[0] + (ox, oy)
+                    ax.text(c[0], c[1], str(pad["num"]), fontsize=6, color="#000080", ha="center", va="center",
+                            zorder=9, clip_on=True)
             x0, y0, x1, y1 = self.bbox_mm(pi)
             size = max(5.5, min(11.0, 0.9 * min(x1 - x0, y1 - y0) * pts_per_mm / 2.2))
             ax.text((x0 + x1) / 2, (y0 + y1) / 2, self.names[pi], ha="center", va="center", fontsize=size,
@@ -734,7 +833,8 @@ class Session:
         ax.set_title(f"{self.bid[:60]} {title} | unrouted {m['unrouted']} | len {m['length_mm']:.0f} mm | "
                      f"vias {m['vias']} | cost {m['cost']:.0f}\nred=top Cu, blue=bottom Cu, gold=THT pad, "
                      f"dashed outline=bottom part, grey=locked,\norange=blocks an unrouted net, "
-                     f"magenta dashed=missing link", fontsize=8)
+                     f"magenta dashed=missing link" + (f", red outline=in a physics structure over budget | phys {m['phys']:.2f}"
+                                                         if "phys" in m else ""), fontsize=8)
         ax.xaxis.set_major_locator(plt.MultipleLocator(5))
         ax.yaxis.set_major_locator(plt.MultipleLocator(5))
         ax.grid(True, lw=0.3, alpha=0.5)
@@ -763,7 +863,10 @@ class Session:
 
 
 def _k(k):
-    return dict(illegal=int(k[0]), unrouted=int(k[1]), cost=round(float(k[2]), 2))
+    d = dict(illegal=int(k[0]), unrouted=int(k[3]), cost=round(float(k[2]), 2))
+    if k[4] is not None:
+        d["phys"] = round(float(k[4]), 3)
+    return d
 
 
 def _clean(rec, names):
@@ -792,6 +895,9 @@ def publish(s, rnd, label="", focus=None):
 
 def cmd_init(a):
     s = Session(a.id)
+    if a.phys:
+        s.cfg = dict(phys=True)
+        (s.dir / "config.json").write_text(json.dumps(s.cfg))
     t0 = time.time()
     s.init_seq(budget=a.budget, seed=a.seed)
     s.save(s.dir / "state_r0.json")
@@ -935,6 +1041,7 @@ def main():
     p.add_argument("id")
     p.add_argument("--budget", type=float, default=120)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--phys", action="store_true", help="physics place terms in summary and acceptance")
     p = sp.add_parser("step")
     p.add_argument("id")
     p.add_argument("moves")

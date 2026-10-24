@@ -47,7 +47,7 @@ os.environ.setdefault("KAE_KICAD_PYTHON", "/usr/bin/python3")
 
 ROOT = Path("/home/user/kicad-auto-everything")
 WORK = ROOT / "kae-work"
-VERSION = "phys-1"           # bump when the scoring here changes (invalidates the caches)
+VERSION = "phys-1"           # harness numbers are re-read every time           # bump when the scoring here changes (invalidates the caches)
 U_CAP = 5.0
 EPS = 0.01                   # ratio floor: (m + EPS) / (h + EPS)
 TOL = 1e-3                   # relative change below which a board counts as a tie
@@ -205,7 +205,9 @@ def harness_info(adir):
         p = s
         s = dict(legal=True)
     return dict(status=r.get("status"), legal=bool(s.get("legal")),
-                clean=bool(s.get("legal")) and bool(p.get("clean")), completion=p.get("completion"))
+                clean=bool(s.get("legal")) and bool(p.get("clean")),
+                completion=p.get("completion", 0.0) if s.get("valid", True) else 0.0,
+                length_mm=p.get("track_length_mm"), vias=p.get("vias"))
 
 
 # ----------------------------------------------------------------------------- summary
@@ -238,8 +240,19 @@ def summarize(run, rows, human):
     pl_both = rt_both = 0
     lr, lw, nl = [], 0, 0             # place, legal placements only
     xr, xw, nx = [], 0, 0             # routed, no open hop on either board
+    hz = defaultdict(list)            # harness numbers: all boards with an attempt / physics boards
     for bid, r in sorted(rows.items()):
         h = human.get(bid) or {}
+        hi = r.get("harness") or {}
+        if hi or r.get("skip") != "no attempt":
+            phb = bool((h.get("place") or {}).get("n_structs"))
+            for scope in (("all", "phys") if phb else ("all",)):
+                hz[scope + "_n"].append(1)
+                hz[scope + "_legal"].append(int(bool(hi.get("legal"))))
+                hz[scope + "_clean"].append(int(bool(hi.get("clean"))))
+                hz[scope + "_compl"].append(float(hi.get("completion") or 0.0))
+                if hi.get("length_mm") is not None:
+                    hz[scope + "_len"].append(float(hi["length_mm"]))
         if r.get("skip"):
             cov[r["skip"]] += 1
             reasons[bid] = r["skip"]
@@ -288,7 +301,13 @@ def summarize(run, rows, human):
     exc = sum(kind_exc.values())
     kinds = {k: dict(n=kind_n[k], gmean_ratio=round(gmean(kind_r[k]) or 0, 3), worse=kind_w[k],
                      excess_share=round(kind_exc[k] / exc, 3) if exc > 0 else 0.0) for k in sorted(kind_n)}
-    return dict(run=run, boards=len(rows), place_scored=pl_both, no_structures=nz,
+    harness = {}
+    for scope in ("all", "phys"):
+        n = len(hz[scope + "_n"])
+        harness[scope] = dict(n=n, legal=sum(hz[scope + "_legal"]), clean=sum(hz[scope + "_clean"]),
+                              completion=round(sum(hz[scope + "_compl"]) / n, 4) if n else None,
+                              length_mm=round(sum(hz[scope + "_len"]), 1))
+    return dict(run=run, boards=len(rows), harness=harness, place_scored=pl_both, no_structures=nz,
                 place_gmean_ratio=gmean(pr), place_worse=pw, place_better=pb,
                 capped_gmean_ratio=gmean(cr), capped_worse=cw, capped_better=cb,
                 legal_scored=nl, legal_capped_gmean_ratio=gmean(lr), legal_capped_worse=lw,
@@ -304,12 +323,14 @@ def fmt(x, nd=2):
 
 
 def markdown(sums, n_human, human_cov):
-    L = ["| run | place scored | phys total x human (gmean) | worse / better | capped-u x human | worse / better "
+    L = ["| run | legal / clean / completion, physics boards | clean / completion, all boards | place scored | phys total x human (gmean) | worse / better | capped-u x human | worse / better "
          "| legal only: n, capped-u x human, worse | routed scored | routed x human | worse / better "
          "| open hops (method / human) | no open hop: n, routed x human, worse |",
-         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+         "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for s in sums:
-        L.append(f"| {s['run']} | {s['place_scored']} | {fmt(s['place_gmean_ratio'])} | {s['place_worse']} / "
+        hp, ha = s["harness"]["phys"], s["harness"]["all"]
+        L.append(f"| {s['run']} | {hp['legal']} / {hp['clean']} of {hp['n']}, {fmt(hp['completion'])} | "
+                 f"{ha['clean']} of {ha['n']}, {fmt(ha['completion'])} | {s['place_scored']} | {fmt(s['place_gmean_ratio'])} | {s['place_worse']} / "
                  f"{s['place_better']} | {fmt(s['capped_gmean_ratio'])} | {s['capped_worse']} / {s['capped_better']} | "
                  f"{s['legal_scored']}, {fmt(s['legal_capped_gmean_ratio'])}, {s['legal_capped_worse']} | "
                  f"{s['routed_scored']} | {fmt(s['routed_gmean_ratio'])} | {s['routed_worse']} / {s['routed_better']} | "
@@ -344,7 +365,14 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=600)
     ap.add_argument("--only", default=None, help="comma-separated board ids")
     a = ap.parse_args(argv)
-    runs = [Path(r).resolve() for r in a.runs]
+    runs = []
+    for r in a.runs:
+        if Path(r).is_dir():
+            runs.append(Path(r).resolve())
+        else:
+            log(f"{r}: no such run directory, skipped")
+    if not runs:
+        return 1
     cache, out = Path(a.cache), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     if a.only:

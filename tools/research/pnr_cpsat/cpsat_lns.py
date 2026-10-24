@@ -98,7 +98,7 @@ def _window_at(world, kit, rng, net, mov, bl, side, max_parts, margin_mm, max_pa
     # nearest other pin of the net
     best = None
     for pi, k in world.net_pins[net]:
-        if pi == seed:
+        if pi == seed or pi not in world.pose:
             continue
         x, y = world.cell(*world.pad_world(pi, k))
         d = abs(x - scx) + abs(y - scy)
@@ -138,7 +138,7 @@ class Window:
     """Everything needed to build, solve and decode one CP-SAT window."""
 
     def __init__(self, world, kit, parts, box, pitch=None, workers=1, cross=False, lin=0,
-                 radius=None, cmargin=None):
+                 radius=None, cmargin=2):
         self.w, self.kit, self.parts, self.box = world, kit, list(parts), box
         R = world.R
         s = pitch or int(math.ceil(R.R_TT / world.g / 2.0)) * 2
@@ -311,7 +311,7 @@ class Window:
         return ok
 
     # ------------------------------------------------------------ build
-    def build(self, rng=None):
+    def build(self, extra=None, lattice=True, phys=None, phys_w=2.0):
         w, s = self.w, self.s
         fx0, fy0, fx1, fy1 = self.box
         t0 = time.time()
@@ -336,7 +336,7 @@ class Window:
                 bx0, by0, bx1, by1 = rr["bbox"]
                 # coarse origins with the courtyard bbox inside the window
                 cand = []
-                for j in range(NY):
+                for j in range(NY if lattice else 0):
                     for i in range(NX):
                         ox, oy = self.fxy(i, j)
                         if self.radius is not None and (abs(ox - cur[0]) > self.radius * s or
@@ -344,12 +344,18 @@ class Window:
                             continue
                         if ox + bx0 >= fx0 and oy + by0 >= fy0 and ox + bx1 <= fx1 and oy + by1 <= fy1:
                             cand.append((ox, oy, i, j, 0, 0))
-                # the current pose (any phase) so "stay" is always representable
-                if cur[2] == ri and self.frac0[pi] == (0.0, 0.0):
-                    ox, oy = cur[0], cur[1]
+                # off-lattice poses: the current one (so "stay" is always representable) and
+                # any extra candidates (e.g. the heuristic's HPWL candidates, fine grid)
+                offl = [tuple(cur)] if self.frac0[pi] == (0.0, 0.0) else []
+                offl += [tuple(p) for p in (extra or {}).get(pi, [])]
+                seen = {(c[0], c[1]) for c in cand}
+                for (ox, oy, rj) in offl:
+                    if rj != ri or (ox, oy) in seen:
+                        continue
+                    seen.add((ox, oy))
                     i, j = (ox - fx0) // s, (oy - fy0) // s
                     px, py = (ox - fx0) - i * s, (oy - fy0) - j * s
-                    if (px, py) != (0, 0) and ox + bx0 >= fx0 and oy + by0 >= fy0 and ox + bx1 <= fx1 and oy + by1 <= fy1:
+                    if ox + bx0 >= fx0 and oy + by0 >= fy0 and ox + bx1 <= fx1 and oy + by1 <= fy1:
                         cand.append((ox, oy, i, j, px, py))
                 if not cand:
                     continue
@@ -392,6 +398,18 @@ class Window:
             npose += len(lst)
             M.AddExactlyOne([e[0] for e in lst])
             self.pv[pi] = lst
+        # ---- physics place terms (kae.physics), first order: per-pose delta vs the current
+        # board, in objective units (0.1 mm of routed copper per phys_w^-1 units of physics)
+        self.phys_obj = []
+        if phys is not None:
+            for pi, lst in self.pv.items():
+                if pi not in phys.active:
+                    continue
+                for v, ox, oy, ri, _, _ in lst:
+                    d = phys.delta(pi, (ox, oy, ri))
+                    c = int(round(10 * phys_w * d))
+                    if c:
+                        self.phys_obj.append(c * v)
         # ---- keep-out bounding boxes disjoint, per keep-out plane (courtyard per side, pad
         # keep-out per copper layer). Boxes are shrunk by one cell: a raster's edge rows are
         # partial (rounded corners), so touching legal parts share them; decode re-checks.
@@ -502,6 +520,8 @@ class Window:
             terms = []
             ext = []
             for pi, k in w.net_pins[n]:
+                if pi not in self.pv and pi not in w.pose:
+                    continue  # unplaced part (no legal spot): its pins are not routed
                 if pi in self.pv:
                     cx, cy, ri = self.poses0[pi]
                     c = w.part_raster(w.parts[pi], ri, self.frac0[pi])["pads"][k]["center"] / w.g
@@ -640,7 +660,7 @@ class Window:
             nterm += len(conns)
             self.term_info[n] = len(conns)
             self.miss[n] = (miss, conns, [t[0] for t in terms])
-        M.Minimize(sum(obj))
+        M.Minimize(sum(obj) + sum(self.phys_obj))
         # hint: current poses
         for pi, lst in self.pv.items():
             cur = self.poses0[pi]
@@ -796,21 +816,57 @@ def _restore_full(world, kit, mov, st):
     kit.restore(snap)
 
 
+def _dump_rows(world, rows):
+    """Window statistics next to the harness attempt (attempt-N/cpsat_windows.json)."""
+    import json
+    from pathlib import Path
+    p = Path(world.data.get("path", ""))
+    for d in p.parents:
+        if d.name.startswith("attempt-"):
+            try:
+                (d / "cpsat_windows.json").write_text(json.dumps(rows, default=float))
+            except OSError:
+                pass
+            return
+
+
 # ---------------------------------------------------------------- the method
-def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_mm=9.0,
-          tlim=4.0, workers=1, guide=False, compare=False, pitch=None, radius=None, cmargin=None,
-          **kw):
+def cpsat(world, seed=0, budget=300, log=print, start="seq_phys", max_parts=3, side_mm=9.0,
+          tlim=3.0, workers=1, guide=False, compare=False, pitch=None, radius=None, cmargin=2,
+          phys=True, phys_w=2.0, cands=6, lattice=False, null=False, **kw):
     """Window LNS with exact CP-SAT place-and-route of each window.
-    compare=True also runs the repair-style heuristic on every window (from the same
-    state) and logs both; the better of the two is kept (diagnostic mode)."""
+    Score = Kit.total_cost() + phys_w * physics place terms (if phys). Pose candidates per
+    part: the coarse lattice (lattice), the current pose and the top `cands` HPWL candidates
+    of Kit.candidates on the fine grid. compare=True also runs the repair-style heuristic
+    on every window from the same state and keeps the better (diagnostic mode)."""
     rng = random.Random(seed)
     clock = Clock(budget)
-    starter = {"seq": methods.seq, "grow": methods.grow}[start]
-    r = starter(world, seed=seed, budget=budget * 0.25, log=log, **kw)
+    if start == "seq_phys":
+        import methods_phys
+        r = methods_phys.seq_phys(world, seed=seed, budget=budget * 0.25, log=log, phys_w=phys_w, **kw)
+    else:
+        starter = {"seq": methods.seq, "grow": methods.grow}[start]
+        r = starter(world, seed=seed, budget=budget * 0.25, log=log, **kw)
     kit = Kit(world, r)
+    ph = None
+    if phys and world.data.get("path"):
+        try:
+            from physics import Phys
+            ph = getattr(world, "phys", None) or Phys(world, world.data["path"])
+        except Exception as e:  # kae not importable: route cost only
+            log(f"  physics unavailable: {e!r}")
     mov = [q for q in kit.movable() if q in world.pose]
-    cur = kit.total_cost()
-    log(f"cpsat start cost={cur:.1f} {r.stats()}")
+
+    def score():
+        c = kit.total_cost()
+        if ph is not None:
+            ph.sync()
+            c += phys_w * ph.total()
+        return c
+
+    cur = score()
+    log(f"cpsat start score={cur:.1f} cost={kit.total_cost():.1f} {r.stats()}"
+        + (f" phys={ph.total():.2f}" if ph else ""))
     tries = acc = acc_h = both = 0
     tabu = {}
     rows = []
@@ -821,10 +877,20 @@ def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_m
         if box is None or tabu.get(key, -1) >= tries:
             continue
         state0 = _full_state(world, kit, mov)
+        if ph is not None:
+            ph.sync()
         win = Window(world, kit, parts, box, pitch=pitch, workers=workers, radius=radius, cmargin=cmargin)
         win.rip()
-        ok = win.build()
-        poses = win.solve(tlim=tlim, seed=tries) if ok else None
+        extra = {}
+        if cands:
+            for q in parts:
+                extra[q] = [(cx, cy, ri) for _, cx, cy, ri in kit.candidates(q, k=cands)]
+        if null:  # control: same windows and rip-up, parts stay, nets re-routed
+            ok, poses = True, {q: tuple(win.poses0[q]) for q in parts}
+            win.cp_moved = 0
+        else:
+            ok = win.build(extra=extra, lattice=lattice, phys=ph, phys_w=phys_w)
+            poses = win.solve(tlim=tlim, seed=tries) if ok else None
         row = dict(net=world.net_names[net], parts=len(parts), **win.stats)
         new = None
         if poses is not None:
@@ -833,7 +899,7 @@ def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_m
                     _guided_route(world, kit, win, win.rip_nets)
                 else:
                     kit.reroute(win.rip_nets, iters=6)
-                new = kit.total_cost()
+                new = score()
             else:
                 row["decode"] = "illegal"
         row.update(moved=getattr(win, "cp_moved", None), before=round(cur, 1),
@@ -842,17 +908,16 @@ def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_m
         if compare:
             st_cp = _full_state(world, kit, mov) if new is not None else None
             _restore_full(world, kit, mov, state0)
-            # heuristic on the same window, from the same state
             for q in parts:
                 world.unplace(q)
-            th = time.time()
+            th = time.process_time()
             okh = heuristic_window(world, kit, parts, rng)
             hn = None
             if okh:
                 kit.reroute(win.rip_nets, iters=6)
-                hn = kit.total_cost()
+                hn = score()
             row["heur_after"] = None if hn is None else round(hn, 1)
-            row["heur_s"] = round(time.time() - th, 2)
+            row["heur_cpu"] = round(time.process_time() - th, 2)
             h_gain = (cur - hn) if hn is not None else None
             if cp_gain is not None and cp_gain > 1e-6 and (h_gain is None or cp_gain >= h_gain):
                 _restore_full(world, kit, mov, st_cp)
@@ -876,10 +941,21 @@ def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_m
         log(f"  win {tries}: {row}")
     r.legalize(list(world.net_pins))
     world.cpsat_rows = rows
-    log(f"cpsat {r.stats()} cost={kit.total_cost():.1f} tries={tries} acc={acc} acc_heur={acc_h} both={both}")
+    _dump_rows(world, rows)
+    if ph is not None:
+        ph.sync()
+        world.phys = ph
+    log(f"cpsat {r.stats()} cost={kit.total_cost():.1f} score={score():.1f} tries={tries} acc={acc} "
+        f"acc_heur={acc_h} both={both}" + (f" phys={ph.total():.2f}" if ph else ""))
     return r
 
 
 def cpsat_guided(world, seed=0, budget=300, log=print, **kw):
     kw.setdefault("guide", True)
+    return cpsat(world, seed=seed, budget=budget, log=log, **kw)
+
+
+def cpsat_null(world, seed=0, budget=300, log=print, **kw):
+    """Control: the same window LNS loop with the CP-SAT step removed (rip + re-route)."""
+    kw.setdefault("null", True)
     return cpsat(world, seed=seed, budget=budget, log=log, **kw)

@@ -9,6 +9,7 @@ Prints routed length, vias, unrouted connections, engine cost and placement lega
 """
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -33,6 +34,8 @@ def main():
     ap.add_argument("--opt", action="append", default=[])
     ap.add_argument("-v", action="store_true")
     a = ap.parse_args()
+    a.ext = str(Path(a.ext).resolve())
+    os.chdir("/home/user/kicad-auto-everything")  # extracts carry repo-relative board paths
     opts = {}
     for kv in a.opt:
         k, v = kv.split("=", 1)
@@ -61,7 +64,8 @@ def main():
             extra = [s for s in logs if "stats" in s]
             print(f"{bid[:34]:34s} {m:10s} len={st['length_mm']:7.1f} vias={st['vias']:3d} "
                   f"unr={st['unrouted']:2d}/{st['connections']:3d} cost={kit.total_cost():8.1f} "
-                  f"illegal={bad} t={dt:5.1f}s", flush=True)
+                  f"illegal={bad} t={dt:5.1f}s"
+                  + (f" phys={world.phys.total():.2f}" if getattr(world, "phys", None) else ""), flush=True)
             for s in extra:
                 print("   ", s.strip()[:400], flush=True)
 

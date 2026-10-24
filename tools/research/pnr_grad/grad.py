@@ -43,6 +43,7 @@ sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
 from methods import (_place_fixed, _router, center_bias, descent, greedy_place, growth_order,
                      place_mechanical)  # noqa: E402
 from placekit import Clock, Kit  # noqa: E402
+from world import ROTS  # noqa: E402
 
 SQ2 = math.sqrt(2.0)
 BIG = 30.0  # cost of a coarse cell outside the routable board
@@ -661,8 +662,32 @@ def halo_force(model, X, pi, maps_all, maps_net):
     return gX, gpi
 
 
+def physics_grad(ph, model, X, pi, w, gX, gpi, h):
+    """Add w * d(physics)/d(origin) and w * physics(rotation r) to the gradients; returns
+    the physics total at the current continuous poses (argmax rotation)."""
+    world = model.w
+    ra = pi.argmax(1)
+    T, poses = ph.T, ph.poses
+    for m, pi_ in enumerate(model.mov):
+        if pi_ in ph.key:
+            sd = "B" if world.parts[pi_].side else "F"
+            poses[ph.key[pi_]] = (float(X[m, 0]), float(X[m, 1]), ROTS[ra[m]], sd)
+    for m, pi_ in enumerate(model.mov):
+        if pi_ not in ph.active:
+            continue
+        u = ph.key[pi_]
+        x, y, rot, sd = poses[u]
+        d = lambda q: float(T.delta(poses, [u], {u: q}))
+        gX[m, 0] += w * (d((x + h, y, rot, sd)) - d((x - h, y, rot, sd))) / (2 * h)
+        gX[m, 1] += w * (d((x, y + h, rot, sd)) - d((x, y - h, rot, sd))) / (2 * h)
+        for r in range(4):
+            if r != ra[m]:
+                gpi[m, r] += w * d((x, y, ROTS[r], sd))
+    return float(T.total(poses))
+
+
 # ---------------------------------------------------------------- optimizer
-def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None):
+def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None, ph=None):
     model = Model(world, kit, mov, f=kw.get("coarse_f"))
     M = len(mov)
     log(f"  grad model: {M} movable, coarse {model.Wc}x{model.Hc} G={model.G:.2f}mm, "
@@ -677,6 +702,8 @@ def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None):
     theta = np.array([[rng.gauss(0, 0.1) for _ in range(4)] for _ in range(M)])
     if start is not None:  # refinement of a given legal placement
         for m, pi_ in enumerate(mov):
+            if pi_ not in start:  # the start left it unplaced: keep the random init
+                continue
             cx, cy, ri = start[pi_]
             X[m] = world.xy(cx, cy)
             theta[m, ri] += kw.get("theta_start", 2.0)
@@ -685,6 +712,8 @@ def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None):
     sr = SoftRouter(model) if mode == "route" else None
     lam_d = lam_p = lam_o = None
     lam_c = kw.get("lam_c", 2.0)
+    phys_w = kw.get("phys_w", 0.0)
+    Ephys = 0.0
     span_mm = float(np.hypot(*span))
     it = 0
     t0 = time.process_time()  # CPU seconds, like placekit.Clock
@@ -745,6 +774,11 @@ def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None):
             gX += s_r * hx
             gpi += s_r * hp
             Rw = R_val
+        # physics place terms (kae.physics via pnr/physics.Phys): central finite differences
+        # of the exact delta for the parts a term touches; the soft rotation sees the delta
+        # of each of the four orientations (mixture, linearized)
+        if ph is not None and phys_w > 0:
+            Ephys = physics_grad(ph, model, X, pi, phys_w, gX, gpi, kw.get("phys_h", 0.25))
         # chain pins -> parts
         pp = model.pin_part[mv]
         np.add.at(gX, pp, gP[mv])
@@ -782,7 +816,7 @@ def optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=None):
             lam_o *= kw.get("mu_o", 1.02)
         if it % 25 == 0:
             log(f"  it={it} t={frac:.2f} R={Rw:.1f} dens={Ed:.2f} over={over:.3f} pair={Ep:.2f} "
-                f"out={Eo:.2f} H={H.mean():.2f} lam_d={lam_d:.3g} lam_p={lam_p:.3g} lam_o={lam_o:.3g}")
+                f"out={Eo:.2f} phys={Ephys:.2f} H={H.mean():.2f} lam_d={lam_d:.3g} lam_p={lam_p:.3g} lam_o={lam_o:.3g}")
         it += 1
     pi = softmax(beta * theta)
     return X, pi, model, it
@@ -835,6 +869,7 @@ def grad(world, seed=0, budget=120, log=print, mode="route", **kw):
     kit = Kit(world, r)
     place_mechanical(world, kit, log)
     mov = [pi for pi in kit.movable() if pi not in world.pose]
+    ph = None
     if mov:
         start = None
         if kw.get("init") == "seq":
@@ -848,8 +883,14 @@ def grad(world, seed=0, budget=120, log=print, mode="route", **kw):
             for k, v in (("lam_d0", 1.0), ("lam_p0", 1.0), ("lam_o0", 5.0), ("lr0", 0.004),
                          ("lr1", 0.0005), ("beta0", 3.0), ("T0", 1.5), ("wb0", 2.0)):
                 kw.setdefault(k, v)
+        if kw.get("phys_w", 0.0) > 0:
+            from physics import Phys
+            ph = Phys(world, world.data["path"])
+            ph.sync()
+            log(f"  physics parts {len(ph.active & set(mov))} of {len(mov)} movable")
         t_opt = budget * kw.get("opt_frac", 0.45)
-        X, pi, model, its = optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=start)
+        X, pi, model, its = optimize(world, kit, mov, rng, mode, clock, t_opt, log, kw, start=start,
+                                     ph=ph)
         log(f"  optimized {its} iterations, {time.process_time() - clock.t0:.1f} CPU s so far")
         legalize(world, kit, model, X, pi, log)
         log(f"  hpwl after legalize {world.hpwl():.1f}")
@@ -857,6 +898,9 @@ def grad(world, seed=0, budget=120, log=print, mode="route", **kw):
             descent(world, kit, log, clock=clock, rounds=kw.get("rounds", 6))
         elif kw.get("post") == "local":
             local_descent(world, kit, log, clock, radius_mm=kw.get("radius_mm", 2.0))
+        if ph is not None:
+            ph.sync()
+            log(f"  physics after legalization {ph.total():.2f}")
     r.pathfinder(log=log, iters=40)
     log(f"grad[{mode}] {r.stats()} hpwl={world.hpwl():.1f}")
     return r
@@ -893,3 +937,13 @@ def local_descent(world, kit, log, clock, radius_mm=2.0, rounds=4):
 def grad_hpwl(world, seed=0, budget=120, log=print, **kw):
     """Ablation: the same pipeline with the routing term replaced by smooth HPWL."""
     return grad(world, seed=seed, budget=budget, log=log, mode="hpwl", **kw)
+
+
+def grad_phys(world, seed=0, budget=120, log=print, phys_w=2.0, **kw):
+    """Soft-routing energy plus phys_w (mm per unit) times the kae physics place terms."""
+    return grad(world, seed=seed, budget=budget, log=log, mode="route", phys_w=phys_w, **kw)
+
+
+def grad_hpwl_phys(world, seed=0, budget=120, log=print, phys_w=2.0, **kw):
+    """Ablation of grad_phys without the routing term."""
+    return grad(world, seed=seed, budget=budget, log=log, mode="hpwl", phys_w=phys_w, **kw)
