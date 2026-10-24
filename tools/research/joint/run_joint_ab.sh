@@ -20,7 +20,7 @@
 #   tools/research/joint/run_joint_ab.sh TAG            # from the repo root, detached:
 #   tmux new -d -s joint 'tools/research/joint/run_joint_ab.sh v8 > kae-work/joint-ab-v8.log 2>&1'
 #
-# Env: WORKDIR (absolute; default $PWD/kae-work), JOBS (20), K (2), TIMEOUT (9000), SPLITS (A,B),
+# Env: WORKDIR (absolute; default $PWD/kae-work), JOBS (20), K (2), TIMEOUT (9000), SPLITS (A,B), ONLY,
 # ARMS ("staged joint human-fr"), KAE_PY (kae/.venv/bin/python), KB (bench/.venv/bin/kaebench).
 # The method's code is snapshotted to $WORKDIR/code/kae-joint-TAG (other agents keep editing
 # kae/), its numba cache pre-warmed outside the sandbox (read-only inside it).
@@ -51,7 +51,8 @@ VENV=$(cd "$(dirname "$KAE_PY")/.." && pwd)
 BASE=$("$KAE_PY" -c 'import sys; print(sys.base_prefix)')
 RO="--sandbox-ro $VENV --sandbox-ro $BASE"
 for p in ${KAE_SANDBOX_RO:-}; do RO="$RO --sandbox-ro $p"; done
-RUN="$KB --workdir $WORKDIR run --kinds joint --splits $SPLITS -k $K -j $JOBS $RO"
+SEL="--splits $SPLITS"; [ -n "${ONLY:-}" ] && SEL="--only $ONLY"   # ONLY: ids or @file, overrides SPLITS
+RUN="$KB --workdir $WORKDIR run --kinds joint $SEL -k $K -j $JOBS $RO"
 for arm in $ARMS; do
   case $arm in
     staged)   $RUN --timeout "$TIMEOUT" --adapter kae-staged --sandbox-ro "$C" --command "$M --max-iters 0 --no-modules" \
