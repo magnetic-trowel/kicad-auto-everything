@@ -80,6 +80,15 @@ def cmd_place(a):
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
               anneal_args=anneal_args, angle_step=a.angles)
+    fix_classes = [c.strip() for c in (a.fix_class or "").split(",") if c.strip()]
+    fix_refs = [r.strip() for r in (a.fix or "").split(",") if r.strip()]
+    if fix_classes or fix_refs:
+        from kae.place.fixed import fixed_uuids
+        try:
+            kw["fixed"] = fixed_uuids(board, fix_classes, fix_refs)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        _log(f"fixed at their input pose: {len(kw['fixed'])} parts ({','.join(fix_classes) or 'by reference'})")
     if a.probe_select and a.probe_select > 1:
         res = _probe_select(a, board, kw, t0, write)
     else:
@@ -345,6 +354,11 @@ def main(argv=None):
     sp.add_argument("--probe-select", type=int, default=0, metavar="N",
                     help="place N times (seeds seed..seed+N-1) and keep the placement a quick kae.route "
                          "probe leaves the fewest open connections on (physics within 10%%; off by default)")
+    sp.add_argument("--fix", default="", metavar="REF[,REF...]",
+                    help="keep these parts at their input pose (fixed obstacles, as locked parts)")
+    sp.add_argument("--fix-class", default="", metavar="CLASS[,CLASS...]",
+                    help="keep every part of these classes at its input pose: connectors, mounting, user "
+                         "(kae.place.fixed.classify)")
     sp.add_argument("--probe-parallel", type=int, default=1, metavar="P",
                     help="with --probe-select: probe P candidates at once (each probe runs Freerouting)")
     sp.add_argument("--probe-jitter", type=float, default=PROBE_JITTER, metavar="F",

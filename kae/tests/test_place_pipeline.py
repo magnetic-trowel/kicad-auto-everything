@@ -252,3 +252,32 @@ def test_seed_jitter_moves_the_seed_stage_deterministically():
     b, _ = pipeline._seed_state(P, [], net_w, 1, lambda m: None, jitter=0.2)
     c, _ = pipeline._seed_state(P, [], net_w, 1, lambda m: None, jitter=0.2)
     assert (a.X != b.X).any() and (b.X == c.X).all() and (b.Y == c.Y).all()
+
+
+def test_fixed_parts_keep_their_input_pose_and_the_rest_moves(tmp_path):
+    """kae place --fix / --fix-class: fixed parts are obstacles at their input pose (as locked
+    parts) and no stage moves them; the others are placed."""
+    from kae.place import fixed
+    b = kicad_file.load(FIXTURE)
+    cls = fixed.classify(b)
+    assert {c["ref"] for c in cls.values() if c["cls"] == "connectors"} >= {"J1"}
+    u = fixed.fixed_uuids(b, ["connectors"], ["U4"])
+    by = {f.uuid: f for f in b.footprints}
+    assert {by[x].ref for x in u} >= {"J1", "U4"}
+    with pytest.raises(ValueError):
+        fixed.fixed_uuids(b, ["panels"])
+    with pytest.raises(ValueError):
+        fixed.fixed_uuids(b, [], ["NOPE1"])
+    out = tmp_path / "out.kicad_pcb"
+    rc = main(["place", str(FIXTURE), str(out), "--time", "20", "--no-physics", "--writer", "sexpr",
+               "--drc", "off", "--fix", "U4,J1"])
+    assert rc in (0, 3)
+    o = {f.ref: f for f in kicad_file.load(out).footprints}
+    i = {f.ref: f for f in b.footprints}
+    for r in ("U4", "J1"):
+        assert (o[r].x, o[r].y, o[r].rot % 360) == pytest.approx((i[r].x, i[r].y, i[r].rot % 360)) and o[r].side == i[r].side
+    moved = [r for r in i if not i[r].locked and r not in ("U4", "J1") and r in o
+             and (abs(o[r].x - i[r].x) > 1e-3 or abs(o[r].y - i[r].y) > 1e-3)]
+    assert moved
+    rep = json.loads(Path(str(out) + ".kae.json").read_text())
+    assert rep["fixed"]["n"] == 2 and set(rep["fixed"]["refs"]) == {"U4", "J1"}

@@ -180,7 +180,7 @@ def physics_summary(terms, poses, breakdown=True):
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
-          edge_mate=False, anneal_args=None, angle_step=None):
+          edge_mate=False, anneal_args=None, angle_step=None, fixed=()):
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -217,7 +217,17 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["outline_incomplete"] = sorted(fp.ref for fp in staged)
         log(f"outline_incomplete: staged footprints carry Edge.Cuts ({', '.join(rep['outline_incomplete'][:8])}); "
             "held off the board, the board cannot be legal")
-    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held}, angle_step=angle_step)
+    # parts held at their input pose by the caller (kae place --fix / --fix-class: the board's
+    # mechanical interface): fixed obstacles like locked parts, their nets still pulling
+    fixed = set(fixed or ())
+    if fixed:
+        staged_fixed = sorted(fp.ref for fp in board.footprints if fp.uuid in fixed and not fp.on_board)
+        rep["fixed"] = dict(n=len(fixed), refs=sorted(fp.ref for fp in board.footprints if fp.uuid in fixed)[:80])
+        if staged_fixed:
+            rep["fixed"]["staged"] = staged_fixed
+            log(f"fixed parts off the board (they stay there): {', '.join(staged_fixed[:8])}")
+    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
+                      angle_step=angle_step)
     if angle_step:
         rep["angle_step"] = angle_step
     if max(P.utilization()) > 0.95:
