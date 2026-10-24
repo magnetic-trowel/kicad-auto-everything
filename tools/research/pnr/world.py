@@ -311,6 +311,27 @@ class World:
                              cu=np.zeros((0, 2), np.int32), layers_halo=list(range(self.nl)),
                              hT=raster_poly(pl, R.ec + R.w / 2 + R.m, -fx, -fy, g),
                              hV=raster_poly(pl, R.ec + R.via_d / 2 + R.m, -fx, -fy, g)))
+        # free-standing copper graphics of the footprint (touching none of its pads) are copper
+        # of no net that moves with the part (KiCad shorting_items otherwise); graphics that
+        # touch a pad (pad extensions, solder-jumper bridges, net ties) are left as before
+        gfx = []
+        for gr in part.data.get("cu_gfx", []):
+            lid = gr["layer"]
+            l = 0 if lid == 0 else (self.nl - 1 if lid == 2 else (lid - 4) // 2 + 1)
+            for p_ in gr["poly"]:
+                if len(p_) >= 3:
+                    gfx.append((l, rot_pts(np.array(p_, float), deg)))
+        if gfx:
+            from shapely.geometry import Polygon
+            padp = [(self.pad_layers(part, pad), Polygon(rot_pts(np.array(q, float), deg)).buffer(0))
+                    for pad in part.pads for q in pad["poly"] if len(q) >= 3]
+            gfx = [(l, pl) for l, pl in gfx
+                   if not any(l in lays and Polygon(pl).buffer(0).intersects(pp) for lays, pp in padp)]
+            for l, pl in gfx:
+                pads.append(dict(net=0, layers=[], npth=True, center=np.array([fx, fy]),
+                                 cu=np.zeros((0, 2), np.int32), layers_halo=[l],
+                                 hT=raster_poly(pl, R.pad_T, -fx, -fy, g),
+                                 hV=raster_poly(pl, R.pad_V, -fx, -fy, g)))
         # the footprint's own rule areas (keep-outs) move with it: no-track / no-via areas are
         # obstacles of no net for every net's wires and vias (KiCad items_not_allowed)
         lids = [0 if l == 0 else (2 if l == self.nl - 1 else 4 + 2 * (l - 1)) for l in range(self.nl)]
@@ -332,6 +353,8 @@ class World:
         # keep-out = courtyard, the part's own board cutouts, and its pads grown by half the
         # clearance (some library courtyards do not cover their pads)
         keep = {}
+        for l, pl in gfx:  # other parts' pads keep their clearance from it, as from a pad
+            keep.setdefault(2 + l, []).append(raster_poly(pl, R.pad_gap / 2 + 0.71 * g, -fx, -fy, g))
         for ko, lay, pl in kos:  # other parts' pads / footprints may not enter its rule areas
             cells = raster_poly(pl, 0.75 * g, -fx, -fy, g)
             if ko["pads"]:

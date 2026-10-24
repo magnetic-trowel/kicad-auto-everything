@@ -109,6 +109,13 @@ def extract(path, out):
                 edges += poly_points(sp)
                 item.SetLayer(pcbnew.Cmts_User)
                 moved_edges.append(item)
+        # copper graphics drawn inside a footprint (shapes, text on copper) move with the part
+        cu_gfx = []
+        for item in fp.GraphicalItems():
+            if pcbnew.IsCopperLayer(item.GetLayer()):
+                sp = pcbnew.SHAPE_POLY_SET()
+                item.TransformShapeToPolygon(sp, item.GetLayer(), 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
+                cu_gfx.append(dict(layer=item.GetLayer(), poly=poly_points(sp)))
         # rule areas drawn inside a footprint (keep-outs) move with the part
         fkos = []
         for z in fp.Zones():
@@ -135,7 +142,7 @@ def extract(path, out):
         fps.append(dict(ref=fp.GetReference(), uuid=fp.m_Uuid.AsString(), x=mm(pos.x), y=mm(pos.y),
                         rot=deg, back=flipped, locked=fp.IsLocked(), anchored=anchored, pads=pads, courtyard=court,
                         courtyard_other=court_other,
-                        edges=edges, keepouts=fkos))
+                        edges=edges, keepouts=fkos, cu_gfx=cu_gfx))
     outline = pcbnew.SHAPE_POLY_SET()
     board.GetBoardPolygonOutlines(outline, False)
     if outline.OutlineCount() == 0 and moved_edges:
