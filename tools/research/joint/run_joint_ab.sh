@@ -6,6 +6,7 @@
 #   arms  staged     kae place, then the bridge (python -m kae.joint.cli run --max-iters 0 --no-modules)
 #         joint      the joint loop (module stage, windows, finishing stage)
 #         human-fr   the human placement routed by Freerouting (kaebench's human-freerouting)
+#         joint-multi  (optional, ARMS=...) the loop with --physics-fidelity multi (PEEC on decisions)
 # Defaults: splits A,B (33 boards), k = 2 (seeds 0 and 1), 9000 s per attempt (TIMEOUT; 10x
 # the 900 s of the local A/B), -j 20 (each attempt uses ~1-1.5 cores: Python, one Freerouting
 # JVM thread, kicad-cli). Every stage stops when it is done or stops improving, never on the
@@ -49,18 +50,22 @@ for arm in $ARMS; do
     staged)   $RUN --timeout "$TIMEOUT" --adapter kae-staged --sandbox-ro "$C" --command "$M --max-iters 0 --no-modules" \
                 --name "joint-staged-$TAG" ;;
     joint)    $RUN --timeout "$TIMEOUT" --adapter kae-joint --sandbox-ro "$C" --command "$M" --name "joint-loop-$TAG" ;;
+    joint-multi) $RUN --timeout "$TIMEOUT" --adapter kae-joint-multi --sandbox-ro "$C" \
+                --command "$M --physics-fidelity multi" --name "joint-multi-$TAG" ;;
     human-fr) $RUN --timeout "$TIMEOUT" --adapter human-freerouting --name "joint-human-fr-$TAG" ;;
     *) echo "unknown arm $arm" >&2; exit 2 ;;
   esac
 done
 for arm in $ARMS; do
-  case $arm in staged) n=joint-staged-$TAG ;; joint) n=joint-loop-$TAG ;; human-fr) n=joint-human-fr-$TAG ;; esac
+  case $arm in staged) n=joint-staged-$TAG ;; joint) n=joint-loop-$TAG ;; joint-multi) n=joint-multi-$TAG ;;
+               human-fr) n=joint-human-fr-$TAG ;; esac
   echo "== $n"; grep "| all" "$WORKDIR/results/$n/report.md" || true
 done
 A=""
 for arm in $ARMS; do
   case $arm in staged) A="$A staged=$WORKDIR/results/joint-staged-$TAG/kae-staged" ;;
-               joint) A="$A joint=$WORKDIR/results/joint-loop-$TAG/kae-joint" ;; esac
+               joint) A="$A joint=$WORKDIR/results/joint-loop-$TAG/kae-joint" ;;
+               joint-multi) A="$A joint-multi=$WORKDIR/results/joint-multi-$TAG/kae-joint-multi" ;; esac
 done
 [ -n "$A" ] && "$KAE_PY" "$R/tools/research/joint/joint_stops.py" $A --out "$WORKDIR/results/joint-stops-$TAG.md" || true
 # routed physics per arm (module values vs the human layout, rail drops):

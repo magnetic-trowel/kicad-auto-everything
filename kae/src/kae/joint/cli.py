@@ -5,6 +5,7 @@
     python -m kae.joint.cli run INPUT OUTPUT [--time S] [--seed N] [--max-iters N]
                                 [--no-modules] [--no-physics] [--start PLACED]
                                 [--workdir DIR] [--keep] [--report FILE] [--set KEY=VALUE ...]
+                                [--physics-fidelity fast|exact|multi] [--physics-k K]
 
 INPUT is a place task's board (.kicad_pcb with its project files beside it); OUTPUT is the
 input with every unlocked footprint placed and the board routed. The JSON report (per
@@ -16,6 +17,9 @@ goes to --report FILE; progress goes to stderr. As a kaebench method:
 
 `--max-iters 0 --no-modules` is the staged baseline (kae place, then the bridge);
 `--start PLACED` starts from a placed board instead of running the placer.
+`--physics-fidelity exact` makes the routed physics (recheck, board_physics, and so the
+accept rule's module values) PEEC (kae.physics.exact); `multi` uses closed forms to search
+and PEEC on each decision's top K and on finished boards; the default `fast` changes nothing.
 Exit status: 0 when an output was written, 2 otherwise.
 """
 from __future__ import annotations
@@ -61,6 +65,7 @@ def run(a):
         loop = JointLoop(stages, opts={k: v for k, v in lopts.items() if k in _loop_keys()}, log=_log)
         rep = loop.run(out, time_s=a.time, seed=a.seed, start=a.start)
         rep["status"] = "ok" if out.exists() else "no_output"
+        rep["physics_fidelity"] = dict(mode=a.physics_fidelity, k=a.physics_k)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -102,7 +107,10 @@ def main(argv=None):
     r.add_argument("--report")
     r.add_argument("--set", action="append", metavar="KEY=VALUE",
                    help="loop or stage option (loop.DEFAULTS, stages.KaeStages), JSON values")
+    from kae.physics import exact as EX
+    EX.add_cli_args(r)                      # --physics-fidelity fast | exact | multi, --physics-k
     a = ap.parse_args(argv)
+    EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()
     return run(a)
