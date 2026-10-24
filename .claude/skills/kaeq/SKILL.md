@@ -21,6 +21,11 @@ kaeq retry 42 [--mem 20G]      # after fixing the code (same cmd/cwd); bare `kae
 kaeq cancel --tag sweep
 ```
 
+Code is frozen at submit time: inside a git repo the job runs a snapshot (HEAD + uncommitted + untracked, ignored files excluded) in a private worktree,
+so switching branches or editing afterwards does not affect queued jobs. Needs git-ignored inputs (data, venv)? `--link kae-work --link .venv`.
+`--live` runs in the directory as-is. `kaeq retry` re-snapshots from the original directory, so fixes are picked up.
+Default owner is `repo@branch`; failures print `repo@branch:sha`.
+
 Workflow: submit -> start `kaeq wait` in the background -> keep working. When it exits
 (1 = problems printed, 0 = all done, 2 = timeout: just call it again), fix what it
 reports, `kaeq retry`, and start `kaeq wait` again. Estimate `--cpus`/`--mem` honestly:

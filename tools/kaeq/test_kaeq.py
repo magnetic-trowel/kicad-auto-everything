@@ -26,7 +26,7 @@ def kq(tmp_path, monkeypatch):
 
 def submit(kq, cmd, **kw):
     ns = dict(batch=None, command=[cmd], env=None, owner=None, name=None, tag=None, cwd=None, cpus=1.0, mem="50M",
-              timeout="1m", prio=0, retries=0)
+              timeout="1m", prio=0, retries=0, live=False, link=None)
     ns.update(kw)
     import argparse
     kq.ensure_daemon = lambda: None  # tests drive ticks themselves
@@ -83,3 +83,24 @@ def test_retry_only_own_failures(kq):
     import argparse
     kq.cmd_retry(argparse.Namespace(ids=[], owner=None, tag=None, mem=None, cpus=None, timeout=None, retries=0))
     assert states(d) == {"mine": "queued", "theirs": "failed"}
+
+
+def test_snapshot_isolates_code_from_later_checkouts(kq, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "sub").mkdir(parents=True)
+    run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True)
+    run("init", "-q"), run("config", "user.email", "t@t"), run("config", "user.name", "t")
+    (repo / "sub" / "f.txt").write_text("v1")
+    (repo / "data").mkdir()
+    (repo / ".gitignore").write_text("data/\n")
+    (repo / "data" / "big").write_text("ignored-input")
+    run("add", "-A"), run("commit", "-qm", "c")
+    (repo / "sub" / "f.txt").write_text("v1-dirty")  # uncommitted edit must be captured
+    d = kq.Daemon()
+    submit(kq, "cat f.txt; echo; cat ../data/big", name="j", cwd=str(repo / "sub"), link=["data"])
+    (repo / "sub" / "f.txt").write_text("v2-after-submit")  # later edit/checkout must not leak in
+    drive(kq, d, lambda: all(s not in kq.ACTIVE for s in states(d).values()))
+    assert states(d) == {"j": "ok"}
+    log = (tmp_path / "jobs" / "1" / "log").read_text()
+    assert log.split() == ["v1-dirty", "ignored-input"]
+    assert not (tmp_path / "jobs" / "1" / "src").exists()

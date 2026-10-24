@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS jobs(
  cpus REAL, mem_mb INTEGER, timeout_s INTEGER, prio INTEGER DEFAULT 0, state TEXT,
  attempt INTEGER DEFAULT 1, retries_left INTEGER DEFAULT 0, preempts INTEGER DEFAULT 0,
  submitted REAL, started REAL, finished REAL, not_before REAL DEFAULT 0, deadline REAL,
- pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT);
+ pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT,
+ root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -63,6 +64,10 @@ def db():
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
+    have = {r[1] for r in c.execute("PRAGMA table_info(jobs)")}
+    for col in ("root", "branch", "sha", "rel", "links"):  # upgrade a pre-snapshot database
+        if col not in have:
+            c.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
     return c
 
 
@@ -100,8 +105,54 @@ def fdur(s):
     return f"{s}s" if s < 120 else f"{s // 60}m" if s < 7200 else f"{s // 3600}h"
 
 
+def git(root, *args, env=None):
+    r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, env=env)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or "git failed")
+    return r.stdout.strip()
+
+
+def git_snapshot(cwd):
+    """Freeze the working tree (tracked + untracked, not ignored) as a commit; None outside a git repo."""
+    try:
+        root = git(cwd, "rev-parse", "--show-toplevel")
+        head = git(root, "rev-parse", "HEAD")
+        branch = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        idx = os.path.join(git(root, "rev-parse", "--absolute-git-dir"), f"kaeq-index-{os.getpid()}")
+        env = dict(os.environ, GIT_INDEX_FILE=idx)
+        try:
+            git(root, "read-tree", "HEAD", env=env)
+            git(root, "add", "-A", env=env)
+            tree = git(root, "write-tree", env=env)
+        finally:
+            if os.path.exists(idx):
+                os.unlink(idx)
+        sha = git(root, "commit-tree", tree, "-p", head, "-m", "kaeq snapshot")
+        git(root, "update-ref", f"refs/kaeq/{sha}", sha)  # keeps it from being gc'd
+        return dict(root=root, branch=branch, sha=sha, rel=os.path.relpath(os.path.realpath(cwd), os.path.realpath(root)))
+    except (RuntimeError, OSError):
+        return None
+
+
+def drop_worktree(j):
+    if j["sha"] and j["root"]:
+        src = os.path.join(jobdir(j["id"]), "src")
+        subprocess.run(["git", "-C", j["root"], "worktree", "remove", "--force", src], capture_output=True)
+        subprocess.run(["git", "-C", j["root"], "worktree", "prune"], capture_output=True)
+
+
+def ref(j):
+    return f"{os.path.basename(j['root'])}@{j['branch']}:{j['sha'][:7]}" if j["sha"] else "live"
+
+
 def default_owner():
-    return os.environ.get("KAEQ_OWNER") or f"{os.environ.get('USER', 'u')}-{os.path.basename(os.getcwd())}"
+    if os.environ.get("KAEQ_OWNER"):
+        return os.environ["KAEQ_OWNER"]
+    try:
+        root = git(os.getcwd(), "rev-parse", "--show-toplevel")
+        return f"{os.path.basename(root)}@{git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}"
+    except (RuntimeError, OSError):
+        return f"{os.environ.get('USER', 'u')}-{os.path.basename(os.getcwd())}"
 
 
 def pid_alive(pid):
@@ -318,8 +369,22 @@ class Daemon:
             except OSError:
                 pass
 
-        cwd = j["cwd"] if os.path.isdir(j["cwd"] or "") else None
-        if cwd is None:
+        cwd = j["cwd"]
+        if j["sha"]:  # run a frozen copy of the submitter's tree, not whatever is checked out now
+            src = os.path.join(d, "src")
+            drop_worktree(j)
+            try:
+                git(j["root"], "worktree", "add", "--detach", "--force", src, j["sha"])
+                for p in json.loads(j["links"] or "[]"):  # git-ignored inputs (data, venvs) shared by symlink
+                    t = os.path.join(j["root"], p)
+                    if os.path.exists(t) and not os.path.lexists(os.path.join(src, p)):
+                        os.makedirs(os.path.dirname(os.path.join(src, p)), exist_ok=True)
+                        os.symlink(t, os.path.join(src, p))
+            except (RuntimeError, OSError) as e:
+                self.finish_fail(j, "failed", f"snapshot checkout failed: {e}")
+                return False
+            cwd = os.path.normpath(os.path.join(src, j["rel"] or "."))
+        if not os.path.isdir(cwd or ""):
             self.finish_fail(j, "failed", f"cwd missing on daemon host: {j['cwd']}")
             return False
         try:
@@ -384,6 +449,7 @@ class Daemon:
     def finish(self, j, rc, peak, lost=False):
         if rc == 0 and not lost:
             self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL WHERE id=?", (time.time(), j["id"]))
+            drop_worktree(j)
             return
         note = "daemon lost the job's process" if lost else f"rc={rc}" + (" (SIGKILL: likely memory-cgroup OOM, raise --mem)" if rc == 137 else "")
         self.finish_fail(j, "lost" if lost else "failed", note, peak, rc)
@@ -397,8 +463,9 @@ class Daemon:
             return
         c.execute("UPDATE jobs SET state=?,rc=?,finished=?,pid=NULL,peak_mb=?,note=? WHERE id=?",
                   (state, rc if rc is not None else -1, time.time(), peak, note, j["id"]))
+        drop_worktree(j)
         run = (time.time() - (j["started"] or time.time()))
-        head = f"#{j['id']} {state.upper()} {note} | {j['name'] or j['cmd'][:60]} | {fdur(run)} peak {fgb(peak)}/{fgb(j['mem_mb'])} attempt {j['attempt']}"
+        head = f"#{j['id']} {state.upper()} {note} | {j['name'] or j['cmd'][:60]} | {ref(j)} | {fdur(run)} peak {fgb(peak)}/{fgb(j['mem_mb'])} attempt {j['attempt']}"
         event(c, j, state, "\n".join([head] + digest(j["id"]) + [f"  log: {os.path.join(jobdir(j['id']), 'log')}  retry: kaeq retry {j['id']}"]))
 
     def idle_events(self, now):
@@ -468,21 +535,26 @@ def cmd_submit(a):
         k, _, v = kv.partition("=")
         env[k] = v
     owner = a.owner or default_owner()
+    snap = None if a.live else git_snapshot(a.cwd or os.getcwd())
+    if snap is None:
+        snap = dict(root=None, branch=None, sha=None, rel=None)
     ensure_daemon()
     c = db()
     ids = []
     now = time.time()
     for i, cmd in enumerate(cmds):
         cur = c.execute(
-            "INSERT INTO jobs(owner,name,tag,cmd,cwd,env,cpus,mem_mb,timeout_s,prio,state,retries_left,submitted)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,'queued',?,?)",
+            "INSERT INTO jobs(owner,name,tag,cmd,cwd,env,cpus,mem_mb,timeout_s,prio,state,retries_left,submitted,root,branch,sha,rel,links)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)",
             (owner, a.name or (None if len(cmds) > 1 else None), a.tag, cmd, os.path.abspath(a.cwd or os.getcwd()),
-             json.dumps(env), a.cpus, int(parse_size(a.mem) / (1 << 20)), parse_dur(a.timeout), a.prio, a.retries, now))
+             json.dumps(env), a.cpus, int(parse_size(a.mem) / (1 << 20)), parse_dur(a.timeout), a.prio, a.retries, now,
+             snap["root"], snap["branch"], snap["sha"], snap["rel"], json.dumps(a.link or [])))
         ids.append(cur.lastrowid)
     c.commit()
     ahead = c.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND id<?", (ids[0],)).fetchone()[0]
     rng = f"#{ids[0]}" if len(ids) == 1 else f"#{ids[0]}..#{ids[-1]} ({len(ids)} jobs)"
-    print(f"queued {rng} owner={owner} ({ahead} ahead). Get failures pushed to you: kaeq wait --owner {owner}")
+    where = f"code={snap['root'] and os.path.basename(snap['root'])}@{snap['branch']}:{snap['sha'][:7]} (frozen now)" if snap["sha"] else "code=live dir"
+    print(f"queued {rng} owner={owner} {where} ({ahead} ahead). Get failures pushed to you: kaeq wait --owner {owner}")
 
 
 def sel_jobs(c, a, states=None):
@@ -586,7 +658,7 @@ def cmd_result(a):
     c = db()
     for j in sel_jobs(c, a):
         run = ((j["finished"] or time.time()) - j["started"]) if j["started"] else 0
-        print(f"#{j['id']} {j['state'].upper()} rc={j['rc']} {fdur(run)} peak {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])} {j['cpus']:g}c attempt {j['attempt']} owner={j['owner']}")
+        print(f"#{j['id']} {j['state'].upper()} rc={j['rc']} {fdur(run)} peak {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])} {j['cpus']:g}c attempt {j['attempt']} owner={j['owner']} code={ref(j)}")
         print(f"  cmd: {j['cmd'][:300]}\n  cwd: {j['cwd']}" + (f"\n  note: {j['note']}" if j["note"] else ""))
         print("\n".join(digest(j["id"], tail=a.tail)) + f"\n  log: {os.path.join(jobdir(j['id']), 'log')}")
 
@@ -600,6 +672,9 @@ def cmd_retry(a):
         if j["state"] in ACTIVE:
             continue
         mem = int(parse_size(a.mem) / (1 << 20)) if a.mem else max(j["mem_mb"], int(j["peak_mb"] * 1.3)) if j["state"] == "oom" else j["mem_mb"]
+        snap = None if not j["sha"] or not os.path.isdir(j["cwd"] or "") else git_snapshot(j["cwd"])  # pick up the fixes
+        if snap:
+            c.execute("UPDATE jobs SET root=?,branch=?,sha=?,rel=? WHERE id=?", (snap["root"], snap["branch"], snap["sha"], snap["rel"], j["id"]))
         c.execute("UPDATE jobs SET state='queued',attempt=attempt+1,preempts=0,mem_mb=?,timeout_s=?,cpus=?,pid=NULL,rc=NULL,"
                   "started=NULL,finished=NULL,note=NULL,submitted=?,retries_left=? WHERE id=?",
                   (mem, parse_dur(a.timeout) if a.timeout else j["timeout_s"], a.cpus or j["cpus"], time.time(), a.retries, j["id"]))
@@ -618,6 +693,7 @@ def cmd_cancel(a):
         sys.exit("give job ids, --owner or --tag")
     for j in rows:
         c.execute("UPDATE jobs SET state='cancelled',finished=?,note='cancelled' WHERE id=?", (time.time(), j["id"]))
+        drop_worktree(j)
         if j["state"] == "running":
             try:
                 os.killpg(j["pid"], signal.SIGKILL)
@@ -704,6 +780,8 @@ def main(argv=None):
     s.add_argument("--name"), s.add_argument("--tag"), s.add_argument("--cwd")
     s.add_argument("--env", action="append", metavar="K=V")
     s.add_argument("--batch", metavar="FILE", help="'-' for stdin")
+    s.add_argument("--live", action="store_true", help="run in the directory as-is when the job starts (default: frozen git snapshot taken now)")
+    s.add_argument("--link", action="append", metavar="PATH", help="git-ignored repo path to symlink into the snapshot (e.g. kae-work); repeatable")
     s.add_argument("command", nargs=argparse.REMAINDER)
     s.set_defaults(f=cmd_submit)
 
