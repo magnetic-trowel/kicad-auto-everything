@@ -174,15 +174,17 @@ class _Slot:
 # (RoutingJobSchedulerActionThread.GRACE_PERIOD), then writes the session. A process is
 # killed only after that grace and the write: earlier, under load, there is no session.
 GRACE_S = 45.0
+SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 
 def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
           log_path=None):
     """Route `dsn` into `ses`. `passes` caps the autorouter passes (0 = until it stops
     improving). Freerouting's own deadline (job_timeout) is `budget_s` less its start-up
-    (`margin_s`, default min(15 s, 10%)): it then stops between items and writes what it has
-    routed. The process is killed only at `hard_s` (default budget_s + GRACE_S). Returns a
-    Run (ses None when nothing was written)."""
+    (`margin_s`, default min(15 s, 10%)) and less the time spent waiting for a host slot
+    (_Slot; a wait over SLOT_WARN of the budget is logged): it then stops between items and
+    writes what it has routed. The process is killed only at `hard_s` (default budget_s +
+    GRACE_S), also counted from the call. Returns a Run (ses None when nothing was written)."""
     workdir = Path(workdir).resolve()
     dsn, ses = Path(dsn).resolve(), Path(ses).resolve()
     user = workdir / "fr-user"
@@ -191,8 +193,15 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     if ses.exists():
         ses.unlink()
     margin = margin_s if margin_s is not None else min(15.0, 0.1 * budget_s)
-    job_s = max(5.0, budget_s - margin)
-    hard = max(job_s + 5.0, hard_s if hard_s is not None else budget_s + GRACE_S)
+    slot = _Slot().__enter__()
+    # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it
+    waited = slot.waited or 0.0
+    if waited > SLOT_WARN * budget_s:
+        print(f"[kae.route {time.strftime('%H:%M:%S')}] warning: waited {waited:.0f}s for a Freerouting slot "
+              f"({waited / max(budget_s, 1e-9):.0%} of the {budget_s:.0f}s budget; KAE_FR_SLOTS / KAE_FR_XMX)",
+              flush=True)
+    job_s = max(5.0, budget_s - margin - waited)
+    hard = max(job_s + 5.0, (hard_s if hard_s is not None else budget_s + GRACE_S) - waited)
     argv = [*command(), "-de", str(dsn), "-do", str(ses), "-mt", "1", "--gui.enabled=false", "-da",
             f"--user_data_path={user}", f"--router.result_json={result}",
             f"--router.job_timeout={_hms(job_s)}"]
@@ -200,7 +209,6 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         argv += ["-mp", str(int(passes))]
     for k, v in (settings or {}).items():
         argv.append(f"--router.{k}={v}")
-    slot = _Slot().__enter__()
     try:
         t0 = time.monotonic()
         p = subprocess.Popen(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
