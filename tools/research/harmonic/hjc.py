@@ -32,11 +32,24 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
-sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/collapse_joint")
+# Everything resolves inside the checkout holding this file, so a frozen git worktree runs
+# its own engine and jc even though jc.py inserts the shared checkout's path: the engine
+# modules are imported from here first, then jc is loaded by file, then sys.path is cleaned.
+ROOT = Path(__file__).resolve().parents[3]
+PNR = str(ROOT / "tools/research/pnr")
+sys.path.insert(0, PNR)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import importlib.util  # noqa: E402
 
-import jc as JC  # noqa: E402
+for _m in ("raster", "world", "router", "placekit", "physics", "methods", "methods_phys"):
+    __import__(_m)
+    assert sys.modules[_m].__file__.startswith(PNR), (_m, sys.modules[_m].__file__)
+_spec = importlib.util.spec_from_file_location("jc", ROOT / "tools/research/collapse_joint/jc.py")
+JC = importlib.util.module_from_spec(_spec)
+sys.modules["jc"] = JC
+_spec.loader.exec_module(JC)
+sys.path[:] = [p for p in sys.path if not (p.rstrip("/").endswith(("tools/research/pnr", "collapse_joint"))
+                                             and p != PNR)]
 import methods as M  # noqa: E402
 from field import Field  # noqa: E402
 from router import add_hist, conflicts  # noqa: E402
