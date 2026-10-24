@@ -165,3 +165,32 @@ def test_critical_cli_passes_bridge_options():
     from kae.route.critical_cli import _bridge_opts
     assert _bridge_opts(["rounds=auto", "router-share=0.8", "repair_reserve_s=900"]) == dict(
         rounds="auto", router_share=0.8, repair_reserve_s=900)
+
+
+def test_slot_wait_comes_out_of_freeroutings_deadline(tmp_path, monkeypatch, capsys):
+    """A wait for a host-wide Freerouting slot is spent from the caller's budget: the job
+    timeout Freerouting gets is the budget less its start-up margin and the wait, and a wait
+    over SLOT_WARN of the budget is logged."""
+    import fcntl
+    import threading
+    import time as _t
+    from kae.route import freerouting as FR
+    fake = tmp_path / "fake-freerouting"
+    fake.write_text("#!/usr/bin/env python3\nimport sys\nopen(sys.argv[sys.argv.index('-do') + 1], 'w')"
+                    ".write(' '.join(sys.argv))\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("KAE_BRIDGE_FREEROUTING", str(fake))
+    monkeypatch.setenv("KAE_FR_SLOTS", "1")
+    monkeypatch.setenv("KAE_FR_LOCKDIR", str(tmp_path / "slots"))
+    (tmp_path / "slots").mkdir()
+    held = open(tmp_path / "slots" / "slot0", "a")
+    fcntl.flock(held, fcntl.LOCK_EX)
+    threading.Timer(4.0, lambda: (fcntl.flock(held, fcntl.LOCK_UN), held.close())).start()
+    t0 = _t.monotonic()
+    run = FR.route(tmp_path / "board.dsn", tmp_path / "board.ses", tmp_path, budget_s=30.0)
+    assert _t.monotonic() - t0 >= 3.5
+    w = run.report["slot_wait_s"]
+    assert w >= 3.0
+    assert abs(run.report["job_timeout_s"] - (30.0 - 3.0 - w)) < 0.2          # margin min(15, 10 %) = 3 s
+    assert "--router.job_timeout=00:00:2" in run.ses.read_text()               # 23-24 s, not 27
+    assert "warning: waited" in capsys.readouterr().out

@@ -20,8 +20,10 @@ rest: a grid route (GridRouter.connect, every segment and via checked exactly ag
 bridge's rules) from the part's copper to the other parts' copper within a growing window,
 first around everything, then with the window's unlocked tracks and vias of other nets
 taken out and priced per cell crossed (RIP_COST). Of those, only the ones the new copper
-would violate are ripped; their nets are then open, and the repair loop routes them again
-with the new copper fixed. A pad walled in by its own footprint (a microphone's centre pad
+would violate are ripped. A ripped net goes back on the queue and is joined again by the
+same search (negotiated rip-up and re-route, PathFinder-like: a net's copper gets dearer to
+rip each time, HIST_WEIGHT, and is left alone after HIST_MAX rip-ups; MAX_JOINS bounds the
+whole). What stays open goes to the repair loop, which routes it with the new copper fixed. A pad walled in by its own footprint (a microphone's centre pad
 inside its ring) is left through a via in the pad, as the human board does.
 
 The bridge runs it after its repair rounds with `last_mile` (off by default; repair._last_mile).
@@ -49,6 +51,9 @@ WIDE = 15.0                     # mm around a part: the last window, before any 
 RIP_MARGINS = (1.0, 3.0)        # windows whose foreign unlocked copper may be ripped
 MAX_RIP = 40                    # tracks and vias ripped for one connection at most
 VIA_COSTS = (None, 12.0)        # the grid router's via cost, then a dear one (cells per via)
+MAX_JOINS = 40                  # joins per close() at most (the negotiated re-routes included)
+HIST_WEIGHT = 2.0               # a net's copper costs (1 + HIST_WEIGHT * times ripped) x RIP_COST
+HIST_MAX = 3                    # a net ripped this often is not ripped again
 RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (crossing a
                                 # 0.25 mm track at 0.2 mm clearance costs as much as an 18 mm detour)
 
@@ -169,23 +174,23 @@ def _anchors(part, shrink, clip=None):
 # ----------------------------------------------------------------------------- routing
 class _SoftRouter(GridRouter):
     """A GridRouter that may cross `soft` copper (foreign tracks and vias taken out of the
-    space for a rip-up search) at `soft_cost` per cell, so a route rips only what a detour
-    of soft_cost cells per cell crossed cannot avoid."""
+    space for a rip-up search) at a price per cell crossed, so a route rips only what a
+    detour of that many cells per cell cannot avoid. `soft`: [(item, cost per cell)]."""
 
     def __init__(self, sp, **kw):
         super().__init__(sp, **kw)
-        self.soft = []           # [Item]
-        self.soft_cost = 0.0
+        self.soft = []
 
     def cost_layer(self, grid, net, layer, w, layer_factor=1.0, skip=()):
         c = super().cost_layer(grid, net, layer, w, layer_factor, skip)
-        if self.soft and self.soft_cost > 0:
-            m = np.zeros(c.shape, bool)
-            for it in self.soft:
-                if layer in it.layers:
+        if self.soft:
+            fin = np.isfinite(c)
+            for it, k in self.soft:
+                if layer in it.layers and k > 0:
+                    m = np.zeros(c.shape, bool)
                     nd = self.sp.need(it, net, "track", layer) or 0.0
                     grid.within(it.geom, it.r + nd + w / 2.0, m)
-            c[m & np.isfinite(c)] += self.soft_cost * layer_factor
+                    c[m & fin] += k * layer_factor
         return c
 
 
@@ -255,8 +260,11 @@ def _conflicts(sp, it, new):
     return True
 
 
-def _join(gr, sp, net, src, others, widths, fixed):
-    """One route from `src` to the other parts: (route, new items, ripped items) or None."""
+def _join(gr, sp, net, src, others, widths, fixed, hist=None):
+    """One route from `src` to the other parts: (route, new items, ripped items) or None.
+    `hist` {net: times ripped} prices a net's copper RIP_COST * (1 + HIST_WEIGHT * times)
+    per cell (PathFinder's history cost) and leaves it alone after HIST_MAX rip-ups."""
+    hist = hist if hist is not None else {}
     x0, y0, x1, y1 = _bounds(src)
     wide = box(x0 - WIDE, y0 - WIDE, x1 + WIDE, y1 + WIDE)    # every direction, not only the nearest part's
     for win in [_window(src, others, m) for m in MARGINS] + [wide]:
@@ -267,16 +275,17 @@ def _join(gr, sp, net, src, others, widths, fixed):
         win = _window(src, others, m)
         cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
                 if it.kind in ("track", "via") and it.net != net and it.owner == "existing"
-                and not it.locked and it.uuid not in fixed and it.geom.intersects(win)}
+                and not it.locked and it.uuid not in fixed and it.geom.intersects(win)
+                and hist.get(it.net, 0) < HIST_MAX}
         cand = list(cand.values())
         if not cand:
             continue
         sp.remove(cand)
-        gr.soft, gr.soft_cost = cand, RIP_COST
+        gr.soft = [(it, RIP_COST * (1.0 + HIST_WEIGHT * hist.get(it.net, 0))) for it in cand]
         try:
             got = _try(gr, sp, net, src, others, win, widths)
         finally:
-            gr.soft, gr.soft_cost = [], 0.0
+            gr.soft = []
         if got is None:
             _restore(sp, cand)
             continue
@@ -317,27 +326,35 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     rep = dict(joined=0, failed=0, ripped=[], added=[], nets={})
     if nets is None:
         nets = sorted({it.net for it in sp.pads if it.net and it.kind == "pad"})
-    todo = [net for net in nets if len([p for p in parts(sp, fp, net) if _relevant(p)]) > 1]
-    for net in todo:
+    queue = [net for net in nets if len([p for p in parts(sp, fp, net) if _relevant(p)]) > 1]
+    # negotiated rip-up and re-route (PathFinder-like, within each join's corridor): a net
+    # whose copper a join rips goes back on the queue and is joined again by the same search,
+    # its copper dearer to rip each time (hist) and left alone after HIST_MAX rip-ups; what
+    # stays open goes back to the repair loop's router
+    hist = {}
+    ripped_ids = {}
+    joins = 0
+    while queue and joins < MAX_JOINS:
+        net = queue.pop(0)
         mn, opt, _mx = sp.width_limits(net, sp.cu[0])
         widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
-        status = []
+        status = rep["nets"].setdefault(net, [])
         for _ in range(max_parts):
             ps = [p for p in parts(sp, fp, net) if _relevant(p)]
-            if len(ps) < 2:
+            if len(ps) < 2 or joins >= MAX_JOINS:
                 break
             small = ps[-1]
             src = _anchors(small, max(widths) / 2 + 0.02)
             if not src:
                 status.append("no anchors")
                 break
-            got = _join(gr, sp, net, src, ps[:-1], widths, fixed)
+            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist)
             if got is None and not sp.via_in_pad:
                 # a pad walled in by its own footprint (a microphone's centre pad inside its
                 # ring) is left only through a via in the pad, as the human boards do it
                 sp.via_in_pad = True
                 try:
-                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed)
+                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist)
                 finally:
                     sp.via_in_pad = False
                 if got is not None:
@@ -347,12 +364,19 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
                 rep["failed"] += 1
                 break
             rt, new, ripped = got
+            joins += 1
             rep["joined"] += 1
-            rep["added"] += [it.uuid for it in new]
-            rep["ripped"] += [it.uuid for it in ripped]
+            for it in ripped:
+                ripped_ids[it.uuid] = it.net
+                hist[it.net] = hist.get(it.net, 0) + 1
+                if it.net not in queue and it.net != net:
+                    queue.append(it.net)
             status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
-        rep["nets"][net] = status
         log(f"last mile {net}: {'; '.join(status) or 'nothing to join'}")
+    rep["ripped"] = sorted(ripped_ids)
+    rep["rerouted"] = sorted(n for n in set(ripped_ids.values())
+                             if len([p for p in parts(sp, fp, n) if _relevant(p)]) < 2)
+    rep["added"] = [it.uuid for it in sp.routed]
     tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
                it.uuid, True) for it in sp.routed if it.kind == "track"]
     vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, True) for it in sp.routed if it.kind == "via"]

@@ -235,7 +235,8 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         pass
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
                seconds=round(dt, 2), timed_out=timed_out,
-               report=dict(_summary(report, out or ""), slot_wait_s=slot.waited), argv=argv)
+               report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1)),
+               argv=argv)
 
 
 def _autorouter_stop(log, final_state):

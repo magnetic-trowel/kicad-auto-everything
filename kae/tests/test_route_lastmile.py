@@ -53,7 +53,8 @@ def test_close_joins_every_part_legally(tmp_path):
 
 def test_close_rips_only_the_wall_it_must_cross(tmp_path):
     """C4.1 is walled off from Y1.1 and U2.2 by +3V3 tracks across the board on both layers:
-    the join rips what it crosses (unlocked) and nothing else; a locked wall stays."""
+    the join rips what it crosses (unlocked) and nothing else, and the ripped net is joined
+    again by the same search (negotiated re-route); a fixed wall stays."""
     p = F.write_board(tmp_path)
     info = F.synth_info(load(p))
     x = 114.7
@@ -63,9 +64,12 @@ def test_close_rips_only_the_wall_it_must_cross(tmp_path):
     sp = _space(p, info)
     out = tmp_path / "out.kicad_pcb"
     rep = LM.close(p, info, sp.plan, [], out, nets=[NET], log=lambda *a: None)
-    assert rep["joined"] == 2 and rep["failed"] == 0
+    assert rep["failed"] == 0 and sum(st.startswith("joined") for st in rep["nets"][NET]) == 2
     assert rep["ripped"] and set(rep["ripped"]) <= {w[5] for w in wall}
-    assert len(LM.parts(_space(out, info), {}, NET)) == 1
+    assert rep["rerouted"] == ["+3V3"]
+    sp2 = _space(out, info)
+    assert len(LM.parts(sp2, {}, NET)) == 1
+    assert len([q for q in LM.parts(sp2, {}, "+3V3") if LM._relevant(q)]) == 1     # tails aside
     # fixed (pre-routed) copper is never ripped: with the whole wall fixed, C4 stays apart
     rep2 = LM.close(p, info, sp.plan, [], tmp_path / "out2.kicad_pcb", nets=[NET], fixed=[w[5] for w in wall],
                     log=lambda *a: None)

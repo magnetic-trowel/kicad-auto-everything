@@ -466,7 +466,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         t = time.monotonic()
         rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
-        left = max(5.0, min(0.05 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
+        left = max(5.0, min(0.15 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
         phys = None
         if report_terms is not None:
             def phys():

@@ -1164,7 +1164,19 @@ def fix_order(P, st, time_s=10.0, phys=None, max_rise=0.03, w_rot=4.0, limit=600
     return rep
 
 
-def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.03, w_rot=4.0, limit=600, max_evals=8,
+def _local_wl(P, st, nets):
+    """Weighted HPWL of `nets` (P.nets indices) where st stands, mm."""
+    tot = 0.0
+    for j in nets:
+        net = P.nets[j]
+        if len(net.pins) < 2:
+            continue
+        pts = np.array([st.pins_xy(i)[k] for (i, k) in net.pins])
+        tot += net.weight * (np.ptp(pts[:, 0]) + np.ptp(pts[:, 1]))
+    return float(tot)
+
+
+def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.1, w_rot=4.0, limit=600, max_evals=8,
              rounds=3, log=None):
     """A final pass on silkscreen conflicts (ExactModel.silk_findings: silk over another
     part's silk or pad mask openings, where the project makes them errors): each part in a
@@ -1184,8 +1196,12 @@ def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.03, w_r
     guard = OrderGuard(P, st)
     phys0 = base_phys = phys() if phys is not None else None
     cap = None if phys0 is None else phys0 + max(0.05, max_rise * abs(phys0))
-    wl0 = st.hpwl()
+    wl0 = wl = st.hpwl()
     wl_cap = wl0 * (1.0 + max_wl_rise)
+    nets_of = {}
+    for net in P.nets:
+        for (q, _) in net.pins:
+            nets_of.setdefault(q, set()).add(net.i)
     for _ in range(rounds):
         if not found or time.monotonic() > deadline:
             break
@@ -1206,18 +1222,22 @@ def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.03, w_r
             S, pad = _tables(P, st, {i})
             home = (int(st.X[i]), int(st.Y[i]), int(st.K[i]))
             evals, done = 0, False
+            mine = nets_of.get(i, ())
+            wl_home = _local_wl(P, st, mine)
             for c, X, Y, k in _candidates(P, st, i, S, pad, list(range(len(P.parts[i].rots))), w_rot, limit):
                 if time.monotonic() > deadline or evals >= max_evals:
                     break
+                st.X[i], st.Y[i], st.K[i] = X, Y, k            # the cheap test first: wirelength
+                d_wl = _local_wl(P, st, mine) - wl_home
+                st.X[i], st.Y[i], st.K[i] = home
+                if wl + d_wl > wl_cap:
+                    rep["refused_wl"] = rep.get("refused_wl", 0) + 1
+                    continue
                 if E.findings_at(i, X, Y, k, first=True) or guard.count_at(i, X, Y, k) > gbase:
                     continue
                 if len(E.silk_findings(i, X, Y, k)) >= base:
                     continue
                 E.set_pose(i, X, Y, k)
-                if st.hpwl() > wl_cap:
-                    rep["refused_wl"] = rep.get("refused_wl", 0) + 1
-                    E.set_pose(i, *home)
-                    continue
                 if base_phys is not None:
                     evals += 1
                     p1 = phys()
@@ -1226,6 +1246,7 @@ def fix_silk(P, st, time_s=10.0, phys=None, max_rise=0.03, max_wl_rise=0.03, w_r
                         E.set_pose(i, *home)
                         continue
                     base_phys = p1
+                wl += d_wl
                 rep["moved"].append(P.parts[i].ref)
                 done = progress = True
                 break
