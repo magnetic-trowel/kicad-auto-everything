@@ -593,7 +593,8 @@ def kicad_violations(drc):
 
 def violation_parts(P, st, v):
     """Part indices a KiCad violation names: by reference in an item's text ('Pad 2 [GND] of
-    C3 on F.Cu', 'Footprint U1'), else the part with a pad nearest the item's position."""
+    C3 on F.Cu', 'Footprint U1'); a reference that is unknown or repeats, by the part with a
+    pad nearest the item's position. Board-level items (no owner named) name no part."""
     by_ref = {}
     for p in P.parts:
         by_ref.setdefault(p.ref, []).append(p.i)
@@ -601,7 +602,12 @@ def violation_parts(P, st, v):
     for it in v.get("items", []):
         d = it.get("description", "")
         m = _OF_REF.search(d) or _FP_REF.search(d)
-        cands = by_ref.get(m.group(1), []) if m else []
+        if m is None:
+            # a board-level item ('Segment on Edge.Cuts', "PCB text '...' on B.Cu", 'Rule Area',
+            # 'Track', 'Via', 'Zone'): no part; by position it would name whichever part has a
+            # pad nearest the item's anchor (paw3222: an edge error became a pair separation)
+            continue
+        cands = by_ref.get(m.group(1), [])
         pos = it.get("pos") or {}
         if len(cands) == 1:
             out.add(cands[0])

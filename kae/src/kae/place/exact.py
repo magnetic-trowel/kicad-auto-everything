@@ -40,6 +40,8 @@ from kae.board import transform
 from .problem import edge_cut_polys, geom_to_lib, keepout_sides
 
 AREA_EPS = 1e-6
+EDGE_TOL = 0.05    # mm the copper-to-edge check forgives (outline arcs are polygonized)
+EDGE_STEP = 0.05   # mm a part's edge clearance grows each time KiCad reports it against the edge
 
 
 def mask_margin(P, pd):
@@ -203,6 +205,7 @@ class ExactModel:
         fb = getattr(P, "feedback", None) or {}
         self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
         self.avoid = fb.get("avoid", {})      # i -> [(geometry, why)], from KiCad
+        self.edge_extra = fb.get("edge", {})  # i -> mm added to its copper-to-edge clearance
         n = len(P.parts)
         self.env = np.zeros((n, 4))
         self.sh = [None] * n
@@ -281,7 +284,8 @@ class ExactModel:
         ok_out = getattr(P.parts[i], "outside_ok", ())
         edge_on = P.is_error("copper_edge_clearance")
         e = getattr(P, "edge_by_ref", {}).get(P.parts[i].ref, e)   # a custom rule for this part
-        etol = 0.05      # kae.board polygonizes outline arcs: chords sit inside the true edge
+        e += self.edge_extra.get(i, 0.0)                           # KiCad still objected (feedback)
+        etol = EDGE_TOL  # kae.board polygonizes outline arcs: chords sit inside the true edge
         for geom, k, pd in A["pads"]:
             if k in ok_out:
                 continue        # a straddling part's outer pads (Problem._straddle_check)
@@ -959,7 +963,7 @@ def kicad_feedback(P, st, report, step=0.3):
     time KiCad still objects); a part an error names alone (against a zone, a graphic, a
     track) keeps off the error's positions by `step`. Returns {errors, by_type, constraints,
     fixed_only}: errors between fixed items only cannot be repaired by placement."""
-    from .legalize import kicad_violations, violation_parts
+    from .legalize import _OF_REF, kicad_violations, violation_parts
     viols = kicad_violations(report)
     fb = getattr(P, "feedback", None)
     if fb is None:
@@ -1021,6 +1025,16 @@ def kicad_feedback(P, st, report, step=0.3):
         mv = [i for i in ps if P.parts[i].movable]
         if not mv:
             out["fixed_only"] += 1
+            continue
+        if v["type"] == "copper_edge_clearance" and any(
+                "Edge.Cuts" in it.get("description", "") and not _OF_REF.search(it.get("description", ""))
+                for it in v.get("items", [])):
+            # against the board edge: the named parts' copper keeps EDGE_STEP more from it each
+            # time KiCad still objects (the model's own edge check is EDGE_TOL lenient for
+            # polygonized arcs: paw3222's 0.175 < 0.2 mm passed it)
+            for i in mv:
+                fb.setdefault("edge", {})[i] = fb.get("edge", {}).get(i, 0.0) + EDGE_STEP
+                out["constraints"] += 1
             continue
         if len(ps) >= 2:
             for i in mv:

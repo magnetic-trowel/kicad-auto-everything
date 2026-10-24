@@ -3,6 +3,8 @@
 """kae.place.legalize: windowed CP-SAT repair and the exact polygon check."""
 from pathlib import Path
 
+import numpy as np
+
 from kae.board.kicad_file import load
 from kae.place.legalize import exact_check, kicad_violations, legalize, repair_kicad, violation_parts
 from kae.place.problem import Problem
@@ -394,3 +396,35 @@ def test_knockout_text_box_carries_kicads_margin(tmp_path):
     f.write_text("(kicad_pcb (version 20240108) " + node.format(" knockout") + ")")
     from types import SimpleNamespace
     assert board_texts(SimpleNamespace(path=str(f)))["u1"].equals(ko)
+
+
+def test_kicad_edge_error_grows_the_named_parts_edge_clearance():
+    """paw3222 (seed 1): KiCad's copper_edge_clearance (0.175 < 0.2 mm, inside the model's
+    tolerance for polygonized arcs) named 'Segment on Edge.Cuts' and J1's pad; the edge item
+    was matched by position to U1, so the feedback asked J1 and U1 to keep apart and the repair
+    never moved anything over 6 rounds. Now the edge item names no part and J1's own edge
+    clearance grows until the repair moves it."""
+    from kae.place import exact
+    P, st = _pile()
+    legalize(P, st, time_s=30.0, workers=2, seed=0)
+    E = exact.ExactModel(P, st)
+    boundary = P.outline.boundary
+    dist = {i: min(g.distance(boundary) for g, k, pd in E.sh[i]["pads"]) for i in P.mov if E.sh[i]["pads"]}
+    i = min(dist, key=dist.get)                                 # the part nearest the edge
+    j = min((q for q in dist if q != i), key=lambda q: float(np.min(np.hypot(*(st.pins_xy(q) - st.pins_xy(i)[0]).T))))
+    jx, jy = (float(c) for c in st.pins_xy(j)[0])
+    ref = P.parts[i].ref
+    report = {"violations": [{"type": "copper_edge_clearance", "severity": "error", "items": [
+        {"description": "Segment on Edge.Cuts", "pos": {"x": jx, "y": jy}},      # anchored by another part
+        {"description": f"PTH pad 6 [SDIO] of {ref}", "pos": {"x": 0, "y": 0}}]}]}
+    assert violation_parts(P, st, kicad_violations(report)[0]) == {i}
+    fb = exact.kicad_feedback(P, st, report)
+    assert fb["constraints"] == 1 and not P.feedback["sep"] and not P.feedback["avoid"]
+    assert P.feedback["edge"] == {i: exact.EDGE_STEP}
+    # KiCad keeps objecting until the model sees it too
+    while not any(v["type"] == "copper_edge_clearance" and v["parts"] == [i] for v in exact_check(P, st)):
+        exact.kicad_feedback(P, st, report)
+    rep = exact.repair(P, st, time_s=30.0)
+    assert rep["end"] == 0 and P.parts[i].ref in rep["moved"]
+    E = exact.ExactModel(P, st)
+    assert min(g.distance(boundary) for g, k, pd in E.sh[i]["pads"]) > dist[i]
