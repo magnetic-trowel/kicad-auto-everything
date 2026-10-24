@@ -123,7 +123,7 @@ Wall time goes mostly to the first route and to repair rounds, each of which run
 ## Conflicts and open questions
 - **Rules Freerouting cannot route by.** Diff pairs are routed as two nets: the gap minimum holds, the gap maximum and uncoupled length do not. Length, skew and via-count rules are only reported.
 - **Same-net hole-to-hole.** Freerouting has no same-net clearance, so hole-to-hole between two vias of one net is caught only by the repair.
-- **Unjoined planes.** When the router finds no room to join a split plane, the island remains a missing connection. Stitching vias placed by geometry would be the next step.
+- **Unjoined planes and the last mile.** Freerouting sees a plane as one area, so zone islands and pads cut off from their fill stay open. It also misses some legal paths. `--last-mile` (`kae.route.lastmile`) joins what is still open with the critical router's grid search, ripping foreign copper only where it must, and re-routes the ripped nets. Locally (seed 0, 600 s) it took 9 of 13 boards that end with unconnected items down to 2, with 0 errors [C]. The default stays off.
 - **Fork patch.** A fork that floors micro-neckdown at the class minimum would allow fanout without narrowing; it is on hold.
 - **Big boards.** DRC with refill takes minutes on the largest boards, and every repair round runs it once. The bridge bounds it by its own budget; for the scorer, raise `KAE_DRC_TIMEOUT`.
 - **Locked zones.** Locked zones that are not `kae-crit:` stay planes that other nets may cross, as in KiCad. That covers 36 locked zones on 8 of the 112 route tasks, all human pours.

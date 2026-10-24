@@ -202,6 +202,25 @@ class ExactModel:
             sides = {0 for ly in z.layers if ly == "F.Cu"} | {1 for ly in z.layers if ly == "B.Cu"}
             if sides and z.outline is not None and not z.outline.is_empty:
                 self.zones.append((z.net, sides, z.outline, float(z.clearance or 0.0)))
+        # where each zone's fill can be, per side (fills are not read): its outline less the
+        # outlines of higher-priority zones of other nets, kept their clearance away
+        self.zone_fill = {0: [], 1: []}
+        zs = sorted([z for z in getattr(P.board, "zones", None) or []
+                     if not getattr(z, "footprint", "") and z.net and z.outline is not None and not z.outline.is_empty],
+                    key=lambda z: -int(getattr(z, "priority", 0) or 0))
+        for side, ly in ((0, "F.Cu"), (1, "B.Cu")):
+            on = [z for z in zs if ly in z.layers]
+            for n, z in enumerate(on):
+                g = z.outline
+                pz = int(getattr(z, "priority", 0) or 0)
+                for h in on[:n]:
+                    if h.net != z.net and int(getattr(h, "priority", 0) or 0) > pz:
+                        g = g.difference(h.outline.buffer(max(float(z.clearance or 0.0), float(h.clearance or 0.0))))
+                if not g.is_empty:
+                    self.zone_fill[side].append((z.net, g))
+        self.zone_clr = {}
+        for net, _, _, zc in self.zones:
+            self.zone_clr[net] = max(self.zone_clr.get(net, 0.0), zc)
         fb = getattr(P, "feedback", None) or {}
         self.sep = fb.get("sep", {})          # (i, j) i < j -> min distance (mm), from KiCad
         self.avoid = fb.get("avoid", {})      # i -> [(geometry, why)], from KiCad
@@ -333,6 +352,45 @@ class ExactModel:
         # board-level mask apertures: simple apertures, a bridge only over two positive nets
         web = max(self.mask_web, 1e-4)
         s2c = float(getattr(getattr(P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
+        if self.mask_on and "allow_soldermask_bridges" not in (getattr(P.parts[i].fp, "attrs", None) or ()):
+            # the part's own simple apertures (mask graphics with no copper of its own under
+            # them, e.g. a mask-only logo) over zones: KiCad's checkMaskAperture collects the
+            # positive nets an aperture exposes (zone fills, its pads); two distinct ones bridge
+            # (stickhub: LOGO4 on B.Mask across the GND and +5V fills). Net-less copper never
+            # bridges. Other parts' pads under it are the pair check's (_aperture).
+            for side in (0, 1):
+                cu = A["gfx"]["cu"][side]
+                cu_u = shapely.union_all(cu).buffer(1e-3) if cu else None
+                for m in A["gfx"]["mask"][side]:
+                    if cu_u is not None and m.difference(cu_u).area < 0.05 * max(m.area, AREA_EPS):
+                        continue          # copper with its mask opening, not a simple aperture
+                    near = [(geom, pd) for geom, k, pd in A["pads"] if side in self.cs[i][k]
+                            and not _npth_without_copper(pd) and m.distance(geom) < 1.0]
+                    for j in self.neighbours(m.bounds, skip=i):
+                        near += [(geom, pd) for geom, k, pd in self.sh[j]["pads"] if side in self.cs[j][k]
+                                 and not _npth_without_copper(pd) and m.distance(geom) < 1.0]
+                    nets = {pd.net for geom, k, pd in A["pads"] if pd.net and side in self.cs[i][k]
+                            and not _npth_without_copper(pd) and m.distance(geom) < s2c + web - 1e-6}
+                    reach = m.buffer(s2c + 1e-3)
+                    for net, g in self.zone_fill[side]:
+                        if net in nets or g.distance(m) >= s2c + 1e-6:
+                            continue
+                        # the fill keeps its clearance from copper of other nets (a pad's own
+                        # mask opening drawn as a graphic, a little larger than the pad, does
+                        # not reach it: humangate, U15 / MK501)
+                        loc = g.intersection(reach)
+                        for geom, pd in near:
+                            if pd.net != net:
+                                gap = max(self.zone_clr.get(net, 0.0), self._net_clr(pd.net), self._net_clr(net),
+                                          _local_clr(pd))
+                                loc = loc.difference(geom.buffer(gap - 1e-3))
+                                if loc.is_empty:
+                                    break
+                        if not loc.is_empty and loc.area > 1e-4:
+                            nets.add(net)
+                    if len(nets) >= 2:
+                        add("solder_mask_bridge", [i], f"mask aperture exposes nets {sorted(nets)[:3]}")
+                        break
         for side, gm in getattr(P, "fixed_mask", []):
             mine = {pd.net for geom, k, pd in A["pads"] if pd.net and side in self.cs[i][k]
                     and not _npth_without_copper(pd) and gm.distance(geom) < s2c + web - 1e-6}
