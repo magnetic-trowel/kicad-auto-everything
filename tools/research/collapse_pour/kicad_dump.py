@@ -154,7 +154,8 @@ def write(path, spec_path, out):
             continue
         names = [board.GetLayerName(l) for l in z.GetLayerSet().CuStack()]
         for ln in names:
-            templates.setdefault((z.GetNetname(), ln), z)
+            if (z.GetNetname(), ln) not in templates:
+                templates[(z.GetNetname(), ln)] = pcbnew.ZONE(z)  # copy of the settings
         hit = [ln for ln in names if (z.GetNetname(), ln) in replace]
         if not hit:
             continue
@@ -169,9 +170,8 @@ def write(path, spec_path, out):
     nets = board.GetNetInfo()
     new = []
     for zs in spec["zones"]:
-        tz = templates[tuple(zs["template"])]
-        z = tz.Duplicate() if hasattr(tz, "Duplicate") else pcbnew.ZONE(tz)
-        z = pcbnew.Cast_to_ZONE(z) if hasattr(pcbnew, "Cast_to_ZONE") else z
+        z = templates[tuple(zs["template"])]
+        z = pcbnew.ZONE(z)
         ls = pcbnew.LSET()
         ls.AddLayer(lid[zs["layer"]])
         z.SetLayerSet(ls)

@@ -108,54 +108,69 @@ def summarize(r, key):
     return pred, parts, pred_nom, parts_nom
 
 
-def heat(tid, res=None):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
-    task, B = load(tid)
-    minx, miny, maxx, maxy = B.bounds
+def demand_grid(B, key="all", bounds=None, res=None):
+    """Local layer demand map: max fractional demand over the local cuts (circles on a
+    grid, rings around parts) passing through each cell."""
+    minx, miny, maxx, maxy = bounds or B.bounds
     h = res or max(maxx - minx, maxy - miny) / 160
     nx_, ny_ = int((maxx - minx) / h) + 1, int((maxy - miny) / h) + 1
-    H = {k: np.zeros((ny_, nx_)) for k in ("all", "nopour")}
+    H = np.zeros((ny_, nx_))
 
     def paint(px, py, inb, ev):
         i = np.clip(((py - miny) / h).astype(int), 0, ny_ - 1)
         j = np.clip(((px - minx) / h).astype(int), 0, nx_ - 1)
-        for k in H:
-            d = np.where(np.isfinite(ev[k]["d"]), ev[k]["d"], 0)
-            val = np.broadcast_to(d[:, None], px.shape)
-            np.maximum.at(H[k], (i[inb], j[inb]), val[inb])
+        d = np.where(np.isfinite(ev[key]["d"]), ev[key]["d"], 0)
+        val = np.broadcast_to(d[:, None], px.shape)
+        np.maximum.at(H, (i[inb], j[inb]), val[inb])
 
     obst.circle_cuts(B, spacing=max(maxx - minx, maxy - miny) / 80, paint=paint)
     obst.part_rings(B, paint=paint)
-    L = task["reference"]["stats"]["copper_layers"]
+    return H
+
+
+def heat_panels(panels, title, out):
+    """panels: [(Board, key, label)]. Writes one PNG with a shared colour scale."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+    B0 = panels[0][0]
+    minx, miny, maxx, maxy = B0.bounds
+    grids = [demand_grid(B, key, B0.bounds) for B, key, _ in panels]
     ramp = ["#ffffff", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
     cmap = LinearSegmentedColormap.from_list("blue", ramp)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5.4 * (maxy - miny) / max(maxx - minx, 1e-3) + 1.2))
-    vmax = max(1.0, max(float(v.max()) for v in H.values()))
-    for ax, k in zip(axs, ("all", "nopour")):
-        im = ax.imshow(H[k], origin="upper", extent=(minx, maxx, maxy, miny), cmap=cmap, vmin=0, vmax=vmax,
+    n = len(panels)
+    fig, axs = plt.subplots(1, n, figsize=(6 * n, 5.4 * (maxy - miny) / max(maxx - minx, 1e-3) + 1.2))
+    axs = np.atleast_1d(axs)
+    vmax = max(1.0, max(float(g.max()) for g in grids))
+    for ax, (B, key, label), H in zip(axs, panels, grids):
+        im = ax.imshow(H, origin="upper", extent=(minx, maxx, maxy, miny), cmap=cmap, vmin=0, vmax=vmax,
                        interpolation="nearest")
         for r in B.rings_outer + B.rings_hole:
             ax.plot(r[:, 0], r[:, 1], color="#555555", lw=0.8)
         ax.scatter(B.x, B.y, s=0.3, color="#888888", linewidths=0)
         ax.set_aspect("equal")
         ax.set_xlim(minx, maxx); ax.set_ylim(maxy, miny)
-        ax.set_title(f"{'all nets' if k == 'all' else 'pour nets removed'}: max {H[k].max():.2f}",
-                     fontsize=10, color="#333333")
+        ax.set_title(f"{label}: max {H.max():.2f}", fontsize=10, color="#333333")
         ax.tick_params(labelsize=7, colors="#666666")
-        for s in ax.spines.values():
-            s.set_color("#bbbbbb")
-    cb = fig.colorbar(im, ax=axs, shrink=0.8)
+        for sp in ax.spines.values():
+            sp.set_color("#bbbbbb")
+    cb = fig.colorbar(im, ax=list(axs), shrink=0.8)
     cb.set_label("local layer demand (crossing nets x pitch / free cut length)", fontsize=8)
     cb.ax.tick_params(labelsize=7)
-    fig.suptitle(f"{tid}  ({L} copper layers)", fontsize=10, color="#333333")
-    os.makedirs(os.path.join(HERE, "heatmaps"), exist_ok=True)
-    out = os.path.join(HERE, "heatmaps", tid + ".png")
-    fig.savefig(out, dpi=110)
+    fig.suptitle(title, fontsize=10, color="#333333")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    fig.savefig(out, dpi=110, bbox_inches="tight")
     plt.close(fig)
     print(out)
+
+
+def heat(tid):
+    task, B = load(tid)
+    L = task["reference"]["stats"]["copper_layers"]
+    heat_panels([(B, "all", "all nets"), (B, "nopour", "pour nets removed")],
+                f"{tid}  ({L} copper layers, human placement)",
+                os.path.join(HERE, "heatmaps", tid + ".png"))
 
 
 def main():

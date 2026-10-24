@@ -66,6 +66,10 @@ def main():
                   f"Rigorous bounds ({key}): max(side, topo-with-vias, cut, area)")
         confusion(rs, lambda r: max(max(parts(r, key)[0].values()), parts(r, key)[1]),
                   f"Rigorous + BGA escape formula ({key})")
+        # against signal layers: actual minus inner plane layers
+        sigrs = [dict(r, L=r["L"] - r["planes"]) for r in rs]
+        confusion(sigrs, lambda r: max(max(parts(r, key)[0].values()), parts(r, key)[1]),
+                  f"Rigorous + BGA escape ({key}) vs signal layers (copper layers minus inner plane layers)")
         # binding bound
         bind = collections.Counter()
         for r in rs:
@@ -97,7 +101,7 @@ def main():
         "human track area / board area": lambda r: (r["track_mm"] or 0) * r["p_lb"] / r["board_mm2"],
         "BGA escape L (formula)": lambda r: max([e["nopour"]["L"] for e in r["escape"]], default=0),
         "pads per cm2": lambda r: r["pads"] / r["board_mm2"] * 100,
-        "plane layers": lambda r: r["planes"],
+        "inner plane layers (0 by definition on 2L)": lambda r: r["planes"],
         "via-free thickness peel (A, all)": lambda r: r["topo"]["all"]["A_peel"] or 99,
     }
     acts = sorted({r["L"] for r in rs})
@@ -121,7 +125,8 @@ def main():
     print("\n### array packages found")
     for r in rs:
         for e in r["escape"]:
-            print(r["id"][:45], r["L"], r["planes"], e["ref"], e["grid"], e["pitch"], "t", e["t_top"], e["t_in"],
+            print(r["id"][:45], "L", r["L"], "signal", r["L"] - r["planes"], e["ref"], e["grid"], e["pitch"],
+                  "t", e["t_top"], e["t_in"],
                   "depth", e["nopour"]["depth"], "L", e["all"]["L"], e["nopour"]["L"])
     # top demand boards
     print("\n### highest cut demand boards")

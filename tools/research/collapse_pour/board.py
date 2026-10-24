@@ -352,27 +352,28 @@ def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=pri
 
 
 def zone_outlines(L, lab, shrink=None):
-    """Partition -> per-net shapely outlines. Pour cells plus their share (nearest
-    label) of the in-board cells no pour may use, minus half the clearance."""
+    """Partition -> per-net shapely outlines. Cells no pour may use (clearance rings,
+    holes, edge band) are handed to the nearest pour/free cell so KiCad's own clearance
+    rules shape the copper there; outlines of two pours are pulled back from each
+    other by half the clearance each."""
     G = L.grid
-    P = len(L.nets) + 1
+    P, alive, allowed, pinned = L.setup()
     lab = lab.copy()
+    lab[~allowed[:P - 1].any(0)] = -1
     lab[~L.inboard] = -1
     known = lab >= 0
-    blocked = L.inboard & ~known
-    if blocked.any():
+    grow = (L.inboard | ndi.binary_dilation(L.inboard, iterations=3)) & ~known
+    if grow.any() and known.any():
         _, ind = ndi.distance_transform_edt(~known, return_indices=True)
-        lab[blocked] = lab[ind[0], ind[1]][blocked]
-    # grow slightly beyond the board edge so outlines cover the edge band
-    edge = ndi.binary_dilation(L.inboard, iterations=3) & ~L.inboard
-    _, ind = ndi.distance_transform_edt(lab < 0, return_indices=True)
-    lab[edge] = lab[ind[0], ind[1]][edge]
+        lab[grow] = lab[ind[0], ind[1]][grow]
+    raw = {n: G.to_polys(lab == p) for p, n in enumerate(L.nets)}
     out = {}
-    for p, n in enumerate(L.nets):
-        geom = G.to_polys(lab == p)
+    for n, gm in raw.items():
         c = L.clear[n] if shrink is None else shrink
-        geom = geom.buffer(-(0.5 * c + 0.02), join_style=2).buffer(0)
-        out[n] = geom
+        others = [v for k, v in raw.items() if k != n and not v.is_empty]
+        if others:
+            gm = gm.difference(unary_union(others).buffer(0.5 * c + 0.02, join_style=2))
+        out[n] = gm.buffer(0)
     return out, lab
 
 
@@ -420,6 +421,27 @@ def drc(board_path):
     return dict(c)
 
 
+def write_and_dump(bid, ref, layers, labs, out_dir, k):
+    spec = dict(replace=[], zones=[])
+    for ln, L in layers.items():
+        geoms, _ = zone_outlines(L, labs[ln])
+        for n, gm in geoms.items():
+            spec["replace"].append([n, ln])
+            rings = shapely_to_rings(gm)
+            if rings:
+                spec["zones"].append(dict(net=n, layer=ln, template=[n, ln], polys=rings))
+    sp_path = os.path.join(out_dir, f"zones_{k}.json")
+    json.dump(spec, open(sp_path, "w"))
+    bdir = os.path.join(out_dir, f"board_{k}")
+    os.makedirs(bdir, exist_ok=True)
+    ob = os.path.join(bdir, "board.kicad_pcb")
+    shutil.copy(os.path.join(TASKS, bid, "reference", "board.kicad_pro"), bdir)
+    kicad("write", ref, sp_path, ob)
+    dj = os.path.join(bdir, "dump.json")
+    kicad("dump", ob, dj)
+    return ob, json.load(open(dj))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("board")
@@ -428,6 +450,7 @@ def main():
     ap.add_argument("--kernel", default="both")
     ap.add_argument("--mode", default="iso_area")
     ap.add_argument("--tag", default="v1")
+    ap.add_argument("--calib", type=int, default=2, help="area calibration rounds")
     ap.add_argument("--no-kicad", action="store_true")
     a = ap.parse_args()
     bid = a.board
@@ -440,69 +463,66 @@ def main():
     d = json.load(open(hum_json))
     kernels = ["iso", "oct"] if a.kernel == "both" else [a.kernel]
     results = dict(board=bid, g=a.g, mode=a.mode, layers={})
-    labs = {k: {} for k in kernels}
-    layers = {}
+    layers, targets, hfill = {}, {}, {}
     for ln in a.layers:
         L = Layer(d, ln, a.g)
         layers[ln] = L
         hf, hg = L.human_fill(geoms=True)
-        hs = score_layer(L, hf, hg)
+        hfill[ln] = hf
         print(f"[{bid} {ln}] nets {L.nets} grid {L.grid.shape}", flush=True)
+        P, alive, allowed, pinned = L.setup()
         if a.mode == "iso_area":
-            tg = [hf[n].sum() + 0 for n in L.nets]
+            tg = [hf[n].sum() for n in L.nets]
+        elif a.mode == "fill":  # max copper: all usable cells, split in the human ratio
+            usable = (alive & allowed[:P - 1].any(0)).sum() - (pinned >= 0).sum()
+            h = np.array([hf[n].sum() for n in L.nets], float)
+            tg = list(usable * h / h.sum())
         else:
             tot = sum(hf[n].sum() for n in L.nets)
             w = np.array([max(ndi.label(L.term.get(n, np.zeros(1)))[1], 1) for n in L.nets], float)
             tg = list(tot * w / w.sum())
-        # own copper is counted as pinned area; the fill target is the human fill
-        P, alive, allowed, pinned = L.setup()
-        tg = [int(t + (pinned == p).sum() - (hf[n] & (pinned == p)).sum())
-              for p, (n, t) in enumerate(zip(L.nets, tg))]
-        results["layers"][ln] = dict(nets=L.nets, human=hs, clear=L.clear, targets_cells=tg)
-        for k in kernels:
-            lab, m = run_mbo(L, tg, k)
-            labs[k][ln] = lab
-            results["layers"][ln][f"lam_{k}"] = m.lam.tolist()
-    with open(os.path.join(out_dir, "grid_results.json"), "w") as f:
-        json.dump(results, f, indent=1)
-    np.savez_compressed(os.path.join(out_dir, "labels.npz"),
-                        **{f"{k}|{ln}": v for k in labs for ln, v in labs[k].items()})
+        targets[ln] = np.array([t + (pinned == p).sum() - (hf[n] & (pinned == p)).sum()
+                                for p, (n, t) in enumerate(zip(L.nets, tg))], float)
+        results["layers"][ln] = dict(nets=L.nets, human=score_layer(L, hf, hg), clear=L.clear)
+    pour_nets = sorted({n for L in layers.values() for n in L.nets})
     if a.no_kicad:
+        for k in kernels:
+            for ln, L in layers.items():
+                run_mbo(L, targets[ln], k)
         return
-    # write back to KiCad (one board per kernel, all requested layers replaced)
+    results["net_human"] = {n: netcond_net(d, n, a.g) for n in pour_nets}
     for k in kernels:
-        spec = dict(replace=[], zones=[])
-        for ln, L in layers.items():
-            geoms, _ = zone_outlines(L, labs[k][ln])
-            for n, gm in geoms.items():
-                spec["replace"].append([n, ln])
-                rings = shapely_to_rings(gm)
-                if rings:
-                    spec["zones"].append(dict(net=n, layer=ln, template=[n, ln], polys=rings))
-        sp_path = os.path.join(out_dir, f"zones_{k}.json")
-        json.dump(spec, open(sp_path, "w"))
-        bdir = os.path.join(out_dir, f"board_{k}")
-        os.makedirs(bdir, exist_ok=True)
-        ob = os.path.join(bdir, "board.kicad_pcb")
-        shutil.copy(os.path.join(TASKS, bid, "reference", "board.kicad_pro"), bdir)
-        kicad("write", ref, sp_path, ob)
-        dj = os.path.join(bdir, "dump.json")
-        kicad("dump", ob, dj)
-        dm = json.load(open(dj))
+        tg = {ln: t.copy() for ln, t in targets.items()}
+        labs = {}
+        for rnd in range((a.calib if a.mode == "iso_area" else 0) + 1):
+            for ln, L in layers.items():
+                labs[ln], m = run_mbo(L, tg[ln], k, init=labs.get(ln))
+                results["layers"][ln][f"lam_{k}"] = m.lam.tolist()
+            ob, dm = write_and_dump(bid, ref, layers, labs, out_dir, k)
+            dev = []
+            for ln, L in layers.items():
+                mf = L.human_fill(dm)
+                for p, n in enumerate(L.nets):
+                    deficit = hfill[ln][n].sum() - mf.get(n, np.zeros(1, bool)).sum()
+                    dev.append(f"{ln}:{n}:{deficit * L.grid.g ** 2:+.1f}mm2")
+                    if a.mode == "iso_area":
+                        tg[ln][p] += deficit
+            print(f"  {k} round {rnd}: fill deficit vs human {' '.join(dev)}", flush=True)
+        np.savez_compressed(os.path.join(out_dir, f"labels_{k}.npz"), **labs)
         results[f"drc_{k}"] = drc(ob)
         for ln, L in layers.items():
             mf, mg = L.human_fill(dm, geoms=True)
             results["layers"][ln][f"mbo_{k}"] = score_layer(L, mf, mg)
             results["layers"][ln][f"_fill_{k}"] = mf
-    # human DRC (same command on a copy of the reference)
+        results[f"net_mbo_{k}"] = {n: netcond_net(dm, n, a.g) for n in pour_nets}
     hdir = os.path.join(WORK, bid, "human_board")
-    if not os.path.exists(os.path.join(hdir, "board.kicad_pcb.drc.json")):
-        os.makedirs(hdir, exist_ok=True)
+    os.makedirs(hdir, exist_ok=True)
+    if not os.path.exists(os.path.join(hdir, "board.kicad_pcb")):
         shutil.copy(ref, hdir)
         shutil.copy(os.path.join(TASKS, bid, "reference", "board.kicad_pro"), hdir)
     results["drc_human"] = drc(os.path.join(hdir, "board.kicad_pcb"))
     for ln, L in layers.items():
-        panels = [("human (KiCad fill)", L.human_fill())]
+        panels = [("human (KiCad fill)", hfill[ln])]
         for k in kernels:
             panels.append((f"MBO {k} (KiCad fill)", results["layers"][ln].pop(f"_fill_{k}")))
         figp = os.path.join(HERE, "fig", f"{bid[:40]}_{ln}_{a.tag}.png")
@@ -511,6 +531,11 @@ def main():
     with open(os.path.join(out_dir, "results.json"), "w") as f:
         json.dump(results, f, indent=1)
     print_summary(results)
+
+
+def netcond_net(d, n, g):
+    from netcond import net_resistance
+    return net_resistance(d, n, g)[0]
 
 
 def print_summary(res):
@@ -524,6 +549,13 @@ def print_summary(res):
                 m = r[k][n]
                 line += f" | {k} A={m['area_mm2']:7.1f} R={m['R_mean_sq'] or float('nan'):6.2f} conn={m['pairs_connected']} isl={m['islands']} split={m['split_mm']:.0f}"
             print(line)
+    for n, h in res.get("net_human", {}).items():
+        line = f"  NET {n[:18]:18s} pads={h['pads']} human R={h['R_mean']:.3f} Cu={h['copper_mm2']:.0f}"
+        for k in res:
+            if k.startswith("net_mbo_"):
+                m = res[k][n]
+                line += f" | {k[8:]} R={m['R_mean']:.3f} Cu={m['copper_mm2']:.0f} conn={m['connected']}/{m['pairs']}"
+        print(line)
     for k in res:
         if k.startswith("drc_"):
             print(k, res[k])

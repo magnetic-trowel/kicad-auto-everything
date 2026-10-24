@@ -95,7 +95,7 @@ class Board:
         zone_nets = {z["net"] for z in d.get("zones", []) if z["net"]}
         self.zone_nets = zone_nets
         # ---- pads
-        X, Y, RIN, ROUT, LM, NET, FP, AREA = [], [], [], [], [], [], [], []
+        X, Y, RIN, ROUT, LM, NET, FP, AREA, LX, LY = [], [], [], [], [], [], [], [], [], []
         netname = []
         netidx = {}
         self.fps = []
@@ -124,6 +124,7 @@ class Board:
                     n = netidx.setdefault(p["net"], len(netidx))
                     if n == len(netname):
                         netname.append(p["net"])
+                LX.append(p["x"]); LY.append(p["y"])
                 X.append(bx + fp["x"]); Y.append(by + fp["y"]); RIN.append(rin); ROUT.append(rout)
                 LM.append(lm); NET.append(n); FP.append(fi); AREA.append(a)
                 loc.append((p["x"], p["y"]))
@@ -133,6 +134,7 @@ class Board:
         self.rin, self.rout = np.asarray(RIN), np.asarray(ROUT)
         self.lm, self.net, self.fp = np.asarray(LM, int), np.asarray(NET, int), np.asarray(FP, int)
         self.parea = np.asarray(AREA)
+        self.lx, self.ly = np.asarray(LX), np.asarray(LY)
         # nets with >= 2 pads
         cnt = np.bincount(self.net[self.net >= 0], minlength=len(netname))
         keep = cnt >= 2
@@ -175,6 +177,44 @@ class Board:
         self.M = csr_matrix((np.ones(len(self.ci)), (self.net[self.ci], np.arange(len(self.ci)))),
                             shape=(self.nn, len(self.ci)))
         self._mask = None
+        self._blockers()
+
+    def _blockers(self):
+        """Per-layer blocking radius per pad (inscribed disc). A pad whose disc lies inside
+        another pad's disc on the same layer (stacked pads, vias in an exposed pad) and
+        pads centred outside the board do not block, so blocked length is not double
+        counted."""
+        inb = self.inboard(self.x, self.y)
+        self.bw = {}
+        for key, bit in (("F", LF), ("B", LB), ("I", LI)):
+            w = np.where(((self.lm & bit) > 0) & inb, self.rin, 0.0)
+            idx = np.nonzero(w > 0)[0]
+            if len(idx) > 1:
+                tree = cKDTree(np.c_[self.x[idx], self.y[idx]])
+                rmax = float(w[idx].max())
+                for a, nb in enumerate(tree.query_ball_point(np.c_[self.x[idx], self.y[idx]], rmax)):
+                    i = idx[a]
+                    for b in nb:
+                        j = idx[b]
+                        if j == i or w[j] == 0:
+                            continue
+                        dist = math.hypot(self.x[i] - self.x[j], self.y[i] - self.y[j])
+                        if dist + w[i] <= w[j] + 1e-6 and (w[j] > w[i] or j < i):
+                            w[i] = 0.0
+                            break
+            self.bw[key] = w
+
+    def set_poses(self, poses):
+        """Move footprints: poses {footprint index: (x, y, rot_deg)}. Recomputes pad
+        positions and blockers; keeps everything else (cheap enough for a placement loop)."""
+        for fi, (x, y, rot) in poses.items():
+            self.fps[fi].update(x=x, y=y, rot=rot)
+        fx = np.array([f["x"] for f in self.fps])[self.fp]
+        fy = np.array([f["y"] for f in self.fps])[self.fp]
+        fr = np.array([f["rot"] for f in self.fps])[self.fp]
+        rx, ry = kicad_rot(self.lx, self.ly, fr)
+        self.x, self.y = rx + fx, ry + fy
+        self._blockers()
 
     # ------------------------------------------------------------------ helpers
     def board_mask(self, h=None):
@@ -220,7 +260,7 @@ def demand(n_len, fF, fB):
 
 
 # ---------------------------------------------------------------------- cuts core
-def classify(B, sdf_c, sdf_b, rin_b, lm_b):
+def classify(B, sdf_c, sdf_b):
     """Given signed distances of conn pads (sdf_c: npads x ncuts, <0 inside) and of
     blocker pads, return crossing masks and per-layer blocked length.
     Returns cross (nn x ncuts bool), blocked dict F/B/I (ncuts)."""
@@ -233,8 +273,8 @@ def classify(B, sdf_c, sdf_b, rin_b, lm_b):
     non = M @ on.astype(np.float32)
     nout = M @ outside.astype(np.float32)
     cross = (nin > 0) & (nout > 0) & (non == 0)
-    ch = 2 * np.sqrt(np.maximum(rin_b[:, None] ** 2 - sdf_b ** 2, 0))
-    blk = {k: ((lm_b & bit) > 0).astype(np.float32) @ ch for k, bit in (("F", LF), ("B", LB), ("I", LI))}
+    s2 = sdf_b ** 2
+    blk = {k: (2 * np.sqrt(np.maximum(w[:, None] ** 2 - s2, 0))).sum(0) for k, w in B.bw.items()}
     return cross, blk
 
 
@@ -253,7 +293,8 @@ def evaluate(B, cross, blk, length):
         Lnom = np.where(nlen <= fF, 1, np.where(nlen <= fF + fB, 2,
                         2 + np.ceil(np.maximum(nlen - fF - fB, 0) / np.maximum(fI, 1e-9))))
         Lnom = np.where(n == 0, 1, Lnom)
-        res[key] = dict(n=n, L=L, Lnom=Lnom, d=demand(n * B.p_lb, fF, fB), dnom=demand(nlen, fF, fB))
+        res[key] = dict(n=n, L=L, Lnom=Lnom, d=demand(n * B.p_lb, fF, fB), dnom=demand(nlen, fF, fB),
+                        fF=fF, fB=fB, fI=fI)
     return res
 
 
@@ -286,7 +327,7 @@ def straight_cuts(B, n_theta=60, n_off=400):
             ring_length(B.rings_hole, nx, ny, t) if B.rings_hole else 0)
         sc = (xc * nx + yc * ny)[:, None] - t[None, :]
         sb = (B.x * nx + B.y * ny)[:, None] - t[None, :]
-        cross, blk = classify(B, sc, sb, B.rin, B.lm)
+        cross, blk = classify(B, sc, sb)
         ev = evaluate(B, cross, blk, length)
         allrec.append((th, t, length, ev))
     return allrec
@@ -331,7 +372,7 @@ def circle_cuts(B, spacing=None, radii=None, paint=None):
         db = np.hypot(B.x - cx, B.y - cy)
         sc = dc[:, None] - radii[None, :]
         sb = db[:, None] - radii[None, :]
-        cross, blk = classify(B, sc, sb, B.rin, B.lm)
+        cross, blk = classify(B, sc, sb)
         px = cx + radii[:, None] * np.cos(ang)[None, :]
         py = cy + radii[:, None] * np.sin(ang)[None, :]
         inb = B.inboard(px, py)
@@ -379,7 +420,7 @@ def part_rings(B, min_pads=4, paint=None):
 
         lx, ly = to_local(xc, yc)
         bx, by = to_local(B.x, B.y)
-        cross, blk = classify(B, rect_sdf(lx, ly), rect_sdf(bx, by), B.rin, B.lm)
+        cross, blk = classify(B, rect_sdf(lx, ly), rect_sdf(bx, by))
         ax, ay = np.maximum(hx + margins, 1e-6), np.maximum(hy + margins, 1e-6)
         per = 4 * (ax + ay)
         # sample rectangle boundary for in-board length
