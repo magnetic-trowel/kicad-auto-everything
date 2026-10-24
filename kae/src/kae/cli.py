@@ -78,8 +78,12 @@ def cmd_place(a):
         raise SystemExit(f"unknown stages {sorted(unknown)} (seed, anneal, legalize)")
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
-    res = place(board, seed=a.seed, time_s=a.time, physics=not a.no_physics, workers=a.workers, log=_log,
-                anneal=anneal, edge_mate=a.edge_mate, anneal_args=anneal_args, angle_step=a.angles)
+    kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
+              anneal_args=anneal_args, angle_step=a.angles)
+    if a.probe_select and a.probe_select > 1:
+        res = _probe_select(a, board, kw, t0, write)
+    else:
+        res = place(board, seed=a.seed, time_s=a.time, **kw)
     res.report["stages_run"] = sorted({"seed", "legalize"} | ({"anneal"} if anneal else set()))
     t1 = time.monotonic()
     wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
@@ -201,6 +205,61 @@ def _kicad_loop(a, res, t0, write):
     return clean, wrep
 
 
+PROBE_PHYS_SLACK = 0.10       # a probed candidate may cost 10% more physics than the best one
+
+
+def _probe_select(a, board, kw, t0, write):
+    """--probe-select N: place N times (seeds seed .. seed+N-1, each a share of the time),
+    route each placement briefly with kae.route.bridge (last mile on), keep the one with the
+    fewest open connections; physics breaks ties, and a candidate with fewer opens is taken
+    only within PROBE_PHYS_SLACK of the best physics among the candidates. A fallback for
+    when the congestion estimates cannot tell which placement routes (paw3395)."""
+    import tempfile
+    from kae.board.kicad_file import load
+    from kae.place.pipeline import place
+    from kae.route import bridge
+    from kae.route import drc as kdrc
+    n = int(a.probe_select)
+    share = float(a.time) * 0.85 / n
+    place_s = max(30.0, 0.45 * share)
+    probe_s = max(30.0, min(300.0, 0.55 * share))
+    tmp = tempfile.mkdtemp(prefix="kae-probe-")
+    cands = []
+    for k in range(n):
+        if k and time.monotonic() - t0 > 0.85 * float(a.time) - place_s - probe_s:
+            break
+        r = place(load(a.input) if k else board, seed=a.seed + k, time_s=place_s, **kw)
+        legal = not r.report.get("exact") and not r.report.get("outline_incomplete")
+        phys = (r.report.get("scorecard") or {}).get("total_linear") or 0.0
+        out = Path(tmp) / f"cand{k}" / "board.kicad_pcb"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        unc = None
+        if r.poses and legal:
+            write(a.input, str(out), r.poses, mode=a.writer, log=_log)
+            staged = kdrc.stage_board(str(out), a.input, str(out.parent / "staged"))
+            try:
+                rep = bridge.route(staged, str(out.parent / "routed.kicad_pcb"), seed=0, time_s=probe_s,
+                                   opts=dict(last_mile=True), log=lambda m: None)
+                fin = (rep.get("repair") or {}).get("final") or {}
+                unc = fin.get("unconnected")
+            except Exception as e:      # noqa: BLE001 - a probe that fails leaves the candidate unranked
+                _log(f"probe of seed {a.seed + k} failed: {type(e).__name__}: {e}")
+        _log(f"probe seed {a.seed + k}: legal={legal} physics={phys:.4g} unconnected={unc}")
+        cands.append(dict(seed=a.seed + k, res=r, legal=legal, physics=phys, unconnected=unc))
+    ok = [c for c in cands if c["legal"] and c["unconnected"] is not None]
+    if not ok:
+        best = cands[0]
+    else:
+        floor = min(c["physics"] for c in ok)
+        within = [c for c in ok if c["physics"] <= floor * (1.0 + PROBE_PHYS_SLACK) + 1e-9]
+        best = min(within, key=lambda c: (c["unconnected"], c["physics"]))
+    res = best["res"]
+    res.report["probe_select"] = dict(n=n, place_s=round(place_s, 1), probe_s=round(probe_s, 1), chosen=best["seed"],
+                                      candidates=[{k: c[k] for k in ("seed", "legal", "physics", "unconnected")}
+                                                  for c in cands])
+    return res
+
+
 def _refresh_physics(res):
     """A KiCad round moved parts: protection order and the physics scorecard again, for the
     board as written; the values place() reported stay as *_pre_drc."""
@@ -251,6 +310,9 @@ def main(argv=None):
     sp.add_argument("--angles", type=float, default=None, metavar="STEP",
                     help="let parts turn to any multiple of STEP degrees, not only right angles "
                          "(heatsink-mount packages keep right angles; CP-SAT stays on right angles)")
+    sp.add_argument("--probe-select", type=int, default=0, metavar="N",
+                    help="place N times (seeds seed..seed+N-1) and keep the placement a quick kae.route "
+                         "probe leaves the fewest open connections on (physics within 10%%; off by default)")
     sp.add_argument("--anneal-args", help="JSON of annealer weights for experiments, e.g. '{\"w_phys\": 2.0}' "
                                           "(w_phys, w_wl, w_cong, w_order, w_disp, cong_args, ...)")
     sp.set_defaults(fn=cmd_place)
