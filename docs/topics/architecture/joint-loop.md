@@ -4,7 +4,7 @@
 - Placement and routing depend on each other: the placer cannot see where the router will fail, and the router cannot move a part. `kae.joint` closes the loop at the granularity that scales on PCBs: place and route the whole board once, then repair **windows** (a few parts and the nets touching them) where routing failed, DRC complained or a module's routed physics shifted.
 - One iteration = re-anneal the window's parts with everything else fixed (the placer's `subset`/`window` API) under a congestion penalty built from where routing failed, rip up only the nets touching the window, redo the window's modules (critical copper), re-route with everything else locked, judge with KiCad DRC and the routed-physics recheck.
 - An iteration is kept only if it is lexicographically better: legality, then completion and DRC, then routed physics. Legality, unconnected items and DRC errors may never get worse. A board that becomes clean is always kept. Any other completion gain may cost at most 10 % of routed physics per item gained, and with equal completion physics must improve. Otherwise it is reverted, so the output is never worse than the staged pipeline.
-- On 6 split-B boards (kaebench `joint`, 900 s, one shared 4-core host), the loop's repairs cut unconnected items + errors from 32 to 23 within its runs and turned 2 unfinished boards clean. Across arms, though, run-to-run noise from time-bound Freerouting (1–13 unconnected on one board) is larger than every difference: all kae arms have cp1 0.5, as does the human placement routed by the bridge. Each window costs 100–220 s of bridge time, so 900 s buys 1–4 windows [C].
+- Windows are re-routed by `kae.route.incremental`: only the open connections, one Freerouting pass, no optimizer. That cut a window's routing from a median 107–124 s (the full bridge) to 7 s, and a whole window to ~19 s. On 6 split-B boards (kaebench `joint`, k = 2, 900 s), the loop cuts unconnected + errors 38 → 23 within its runs. But the staged pipeline without the module stage still finishes more boards' connections (3–5 unconnected against 10–13), and all kae arms have 3–4 clean boards of 6 [C].
 
 ## Key facts
 
@@ -28,7 +28,7 @@ It is also the month plan's module loop ([month-plan § joint loop](month-plan.m
 | 2. Window | spots clustered into windows; the least-tried, highest-priority one is repaired | feedback.plan_windows |
 | 3. Re-place | window parts re-annealed, rest fixed, history as RUDY demand | [replace.py](../../../kae/src/kae/joint/replace.py), [penalty.py](../../../kae/src/kae/joint/penalty.py) |
 | 4. Rip up | only nets touching the window; modules in the window redone | [ripup.py](../../../kae/src/kae/joint/ripup.py) |
-| 5. Re-route | the bridge with everything else locked | stages.route |
+| 5. Re-route | open connections only, everything else locked | [incremental.py](../../../kae/src/kae/route/incremental.py) |
 | 6. Judge | DRC + recheck; accept or revert | [scorecard.py](../../../kae/src/kae/joint/scorecard.py) |
 
 Steps 1–6 repeat until the board is clean with no module flagged, no window is left, the iteration cap is reached (12), or the time left (minus a reserve of max(25 s, 4 %) for the final write) is below what an iteration has been taking.
@@ -89,31 +89,30 @@ Every stage seed derives from the run's seed and the iteration number (`derive_s
 
 ### Measured
 
-kaebench `joint` kind (harness cc5e564, score v6), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), k = 1, 900 s, `-j 1` on a shared 4-core host (load 6–8). Σu is the loop's routed-physics total (`critical_recheck.board_physics` on the scored board, brief from the human placement, Σ min(u, 5)). It is unreliable on boards with open hops [C: `tools/research/joint/joint_physics.py`].
+kaebench `joint` (score v6, in-tree harness), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1 (k = 2), 900 s, `-j 1` on a shared 4-core host. Σu is the routed-physics total of the scored board (`critical_recheck.board_physics`, brief from the human placement, Σ min(u, 5)). It is unreliable where hops are open [C: `tools/research/joint/joint_physics.py`].
 
-| Arm | cp1 | legal | completion | unconnected | DRC errors | Σu (mean) | module value / human (median) | worst rail mΩ (median) | time s |
-|---|---|---|---|---|---|---|---|---|---|
-| human layout (`reference`) | 1.00 | 1.00 | 1.000 | 0 | 0 | 3.45 | 1.00 | 42 | — |
-| human placement + Freerouting (`human-freerouting`) | 0.33 | 1.00 | 0.891 | 23 | 7 | 3.16 | 0.99 | 101 | 44 |
-| human placement + bridge (route kind) | 0.50 | 1.00 | 0.960 | 7 | 0 | 3.79 | 1.05 | 118 | 184 |
-| kae place + bridge (staged, `--max-iters 0 --no-modules`) | 0.50 | 1.00 | 0.940 | 12 | 0 | 4.07 | 0.93 | 69 | 219 |
-| loop without module stage (`--no-modules`) | 0.50 | 1.00 | 0.956 | 10 | 0 | 4.41 | 1.18 | 92 | 312 |
-| joint loop, first full version (v5) | 0.50 | 1.00 | 0.927 | 17 | 0 | 2.38 | 0.81 | 60 | 468 |
-| joint loop, final code (v6) | 0.50 | 1.00 | 0.907 | 23 | 0 | 3.14 | 0.86 | 57 | 547 |
+| Arm (seed 0 / seed 1) | clean boards | legal | unconnected | DRC errors | Σu (mean) | module value / human (median) | worst rail mΩ (median) | time s |
+|---|---|---|---|---|---|---|---|---|
+| human layout | 6 / 6 | 6 / 6 | 0 / 0 | 0 / 0 | 3.45 | 1.00 | 42 | — |
+| human placement + Freerouting | 2 / 2 | 6 / 6 | 23 / 23 | 7 / 7 | 3.16 | 0.99 | 101 | 24 / 29 |
+| kae place + bridge (staged) | 3 / 3 | 6 / 5 | 3 / 5 | 0 / 5 | 4.48 / 4.01 | 1.33 / 1.08 | 102 / 107 | 118 / 104 |
+| loop, no module stage | 3 / 4 | 5 / 6 | 5 / 3 | 1 / 0 | 5.16 / 5.03 | 1.37 / 1.35 | 127 / 97 | 130 / 127 |
+| joint loop | 3 / 3 | 6 / 6 | 13 / 10 | 0 / 0 | 2.22 / 3.51 | 0.65 / 0.88 | 55 / 59 | 241 / 300 |
 
-Inside the loop's own runs (iteration 0 is the staged pipeline with the module stage):
+**Window cost, before and after `kae.route.incremental`** (all windows of all runs):
 
-| Run | unconnected + errors, iteration 0 → final | clean boards | windows kept |
-|---|---|---|---|
-| joint v6 | 32 → 23 | 1 → 3 | 5 of 12 |
-| joint v5 | 25 → 17 | 1 → 3 | 5 of 13 |
-| loop without modules | 11 → 10 | 3 → 3 | 1 of 11 |
+| Window router | windows routed | iteration s (median, range) | of which routing s | kept |
+|---|---|---|---|---|
+| full bridge, 16 passes, repair rounds (joint v5 + v6, k = 1) | 21 | 113–131 (13–201) | 107–124 (11–192) | 10 |
+| incremental, 1 pass, no optimizer (joint, k = 2) | 30 | 19 (8–158) | 7.4 (5.1–58) | 4 |
+| incremental (loop without modules, k = 2) | 9 | 12 (8–21) | 6.5 (5.6–7.6) | 0 |
+
+A window's routing now costs a JVM start, the DSN load and one pass of 1–2 s over 8–13 open connections. The rest of a window is the re-anneal (~8 s) and, when its modules are redone, their stage (capped at 20 s). A 900 s run now gets 5–7 windows on the boards that need them, where it got 1–4.
 
 What the numbers say:
-- **The loop works where it gets iterations.** On the bipolar supply a re-route window joined a rail's two track ends in 12 s, and the board became clean. On the CH552G three-part windows made the board clean in 18 s, then a physics window cut Σu from 2.10 to 1.67 at equal completion. On the PMW3610 two windows took 13 → 9 → 8 unconnected while Σu fell.
-- **Time is the binding constraint.** Iteration 0 takes 360–570 s on the larger boards (placer ~110 s, module stage ~80 s, bridge 250–400 s). A window then costs 100–220 s, mostly Freerouting, which times out even with everything else locked. Noisecard and olimex got one or two windows.
-- **Noise.** Five runs of near-identical code gave noisecard 1, 4, 7, 10 and 13 unconnected after iteration 0, because the time-bound Freerouting stops at a load-dependent point. Arm-level differences on 6 boards are inside that band. The 50-core run (33 boards, unloaded cores) is needed to separate them.
-- **The module stage costs completion and buys physics.** The module-stage arms reach the lowest routed physics: module values 0.81–0.86× the human's, worst rail drop 57–60 mΩ against 69–118 for the staged and bridge arms. They also leave the most unconnected items. With modules, the loop's slack rule kept a window that made CH552G clean at Σu 1.5 → 5.2.
+- **Cheap windows, few wins.** The loop with modules cut unconnected + errors from 38 to 23 inside its 12 runs (5 → 6 clean). Noisecard went 11 → 6 in one 21 s window. Without the module stage, the staged result is nearly finished (3–5 unconnected on 6 boards), and 0 of 9 windows beat it. One Freerouting pass leaves 1–2 connections of a window open, and the acceptance rule then reverts it.
+- **The module stage still costs completion and buys physics.** It gives the lowest routed physics (module values 0.65–0.88× the human's, worst rail 55–59 mΩ against ~100 for every other arm) and the most unconnected items (10–13 against 3–5).
+- **Noise.** Freerouting itself repeats (the human-placement arm is identical across seeds and runs). The kae arms vary with their seeds and with where time budgets bind: staged gave 3 and 5 unconnected, the loop 13 and 10. On 6 boards the differences in clean count (3 for every kae arm but one seed) are within that.
 
 ## Recommendations for our system
 
@@ -123,8 +122,8 @@ What the numbers say:
 
 ## Conflicts and open questions
 
-- **The bridge's wall time dominates.** Each iteration runs Freerouting and the bridge's DRC repair rounds, ~30–120 s on A/B boards, so a 900 s budget buys a handful of windows. A bridge mode that routes only the open nets, with no repair rounds unless DRC finds errors, would multiply the iterations.
-- **Freerouting's cost per open connection.** One pass costs about 1–2 CPU s per open connection on these boards (noisecard window: 28 open, 17–19 CPU s, about 15 GB allocated). JVM heap and GC settings change nothing. A ≤ 30 s window therefore means ≤ ~15 open connections, or a router of our own for windows (the critical router's exactly verified grid A* routes a hop in milliseconds).
+- **What a window cannot fix in one pass.** One Freerouting pass leaves the hardest 1–2 connections of a window open. More passes or our own grid router (the critical router's exactly verified A*) for the last connections are the next step.
+- **Freerouting's cost per open connection** is 1–2 CPU s (noisecard: 28 open, 17–19 CPU s, ~15 GB allocated; heap and GC settings change nothing). So a window stays cheap only while its rip-up stays local.
 - **Window choice** is greedy (least-tried, highest priority). An LNS over several disjoint windows per bridge run, or a bandit over window kinds, may pay on larger boards.
 
 See also: [month-plan](month-plan.md) · [joint-place-route](../physics/joint-place-route.md) · [critical-net-routing](../routing/critical-net-routing.md) · [freerouting-constraint-bridge](../routing/freerouting-constraint-bridge.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md)
