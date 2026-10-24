@@ -25,6 +25,9 @@ case $W in /*) ;; *) W=$PWD/$W ;; esac
 J=${J:-16}
 K=${K:-3}
 V=${V:-v4}
+# per-attempt budgets (s): T_AB for splits A+B, T_C for the split-C boards; change V with them
+T_AB=${T_AB:-1200}
+T_C=${T_C:-1800}
 PY=$PWD/kae/.venv/bin/python
 C=$W/code/kae-crit-$(git rev-parse --short HEAD)
 RO=(--sandbox-ro "$C")
@@ -59,7 +62,7 @@ run() {
 }
 FR=kae-fr-$V; FRP=kae-frp-$V; CC=kae-critc-$V; CCP=kae-critcp-$V
 for s in ab c6; do
-  t=600; [ $s = c6 ] && t=900
+  t=$T_AB; [ $s = c6 ] && t=$T_C
   run $FR-$s  kae-fr   kae.route.cli          $t "$K" "--planes allow" --only @"$W/suite-$s.txt"
   run $FRP-$s kae-fr   kae.route.cli          $t "$K" "--planes cost"  --only @"$W/suite-$s.txt"
   run $CC-$s  kae-crit kae.route.critical_cli $t "$K" "--planes allow" --only @"$W/suite-$s.txt"
