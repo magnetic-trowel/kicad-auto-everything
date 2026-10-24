@@ -687,7 +687,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
 
 
-LAST_MILE_MAX = 8      # open connections the last mile takes on at most (more is a routing failure)
+LAST_MILE_MAX = 40     # open connections the last mile takes on at most (bms-c1: 27 joined to 0 in 25 s;
+                       # more is a routing failure for the router, not the last mile)
 
 
 def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log):
