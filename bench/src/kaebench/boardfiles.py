@@ -161,6 +161,22 @@ def fix_dsn_unsized_vias(dsn_path, diameter_mm, drill_mm):
     return fixed
 
 
+def ses_complete(path):
+    """True if a Specctra session file is a whole s-expression (not cut off mid-write)."""
+    text = re.sub(r'"[^"]*"', "", Path(path).read_text(errors="replace"))
+    depth = 0
+    for i, ch in enumerate(text):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return not text[i + 1:].strip()
+            if depth < 0:
+                return False
+    return False
+
+
 def strip_ses_placement(ses_in, ses_out):
     """Drop the `(placement ...)` block of a Specctra session.
 

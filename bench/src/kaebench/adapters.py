@@ -24,7 +24,7 @@ from pathlib import Path
 
 from . import tools
 from .boardfiles import (board_path, clamp_dsn_widths, copy_board, fix_dsn_unsized_vias, quote_ses_net_names,
-                         strip_ses_placement, unblock_all_power_dsn)
+                         ses_complete, strip_ses_placement, unblock_all_power_dsn)
 
 
 @dataclass
@@ -169,7 +169,7 @@ class Freerouting(Adapter):
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
         if kind != "route":
             raise ValueError("freerouting only routes")
-        w = Path(workdir)
+        w = Path(workdir).resolve()  # Freerouting runs with cwd=w, so its paths must be absolute
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         dsn, ses, ses2 = w / "board.dsn", w / "board.ses", w / "board_noplace.ses"
@@ -196,22 +196,29 @@ class Freerouting(Adapter):
                *rule_args, *self.extra_args]
         # kept with the attempt: the exchange with the router and its own report
         artifacts = [dsn, ses, result]
+        rc, timed_out = None, False
         try:
             r = tools.run_measured(cmd, timeout=remaining, cwd=w, env=env)
-            log = r.stdout + r.stderr
+            log, rc = r.stdout + r.stderr, r.returncode
         except subprocess.TimeoutExpired as e:
+            # On big boards Freerouting often writes its session file at its own deadline and
+            # then hangs on exit until we kill it. A complete file written within the budget
+            # is the router's output; only a missing or cut-off one is no output.
             log = f"freerouting timed out after {remaining:.0f}s\n{e.stdout or ''}{e.stderr or ''}"
-            return AdapterResult(None, log, dict(passes=passes, timed_out=True, job_timeout_s=job_s,
-                                                 artifacts=artifacts))
+            timed_out = True
         own = _router_report(result)
-        partial = bool(own and own.get("final_state") == "TIMED_OUT")
-        if not ses.exists():
-            return AdapterResult(None, log, dict(passes=passes, rc=r.returncode, router_report=own,
+        partial = timed_out or bool(own and own.get("final_state") == "TIMED_OUT")
+        # A router that crashes can still leave an empty session file behind (Freerouting
+        # 2.5.0 opens it before writing); that is no output, not a failed import.
+        ses_empty = ses.exists() and ses.stat().st_size == 0
+        ses_cut = ses.exists() and not ses_empty and not ses_complete(ses)
+        if not ses.exists() or ses_empty or ses_cut:
+            return AdapterResult(None, log, dict(passes=passes, rc=rc, timed_out=timed_out, router_report=own,
                                                  job_timeout_s=job_s, partial=partial, **dsn_fixes,
-                                                 artifacts=artifacts))
+                                                 ses_empty=ses_empty, ses_cut=ses_cut, artifacts=artifacts))
         stripped = strip_ses_placement(ses, ses2)
         quoted = quote_ses_net_names(ses2)
-        meta = dict(passes=passes, rc=r.returncode, rule_args=rule_args, **dsn_fixes,
+        meta = dict(passes=passes, rc=rc, timed_out=timed_out, rule_args=rule_args, **dsn_fixes,
                     ses_placement_stripped=stripped, ses_nets_quoted=quoted, router_report=own,
                     job_timeout_s=job_s, partial=partial, artifacts=artifacts)
         try:
@@ -272,7 +279,8 @@ class Command(Adapter):
         self.sandbox.hide.extend(Path(p) for p in paths)
 
     def run(self, kind, input_dir, workdir, attempt, timeout, reference=None):
-        w = Path(workdir)
+        # The command runs with cwd=w, so every path it is given must be absolute.
+        w, input_dir = Path(workdir).resolve(), Path(input_dir).resolve()
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
         cmd = self.template.format(input=shlex.quote(str(board_path(input_dir))),

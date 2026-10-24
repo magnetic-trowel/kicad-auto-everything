@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from kaebench import boardfiles, manifest, report, score, tools
+from kaebench import adapters, boardfiles, manifest, report, score, tools
 
 SHA = "0" * 40
 
@@ -78,6 +78,64 @@ def test_unblock_all_power_dsn(tmp_path):
     assert "power" not in dsn.read_text() and dsn.read_text().count("(type signal)") == 2
     dsn.write_text(head.format("signal") + "))\n")
     assert boardfiles.unblock_all_power_dsn(dsn) == 0 and "(type power)" in dsn.read_text()
+
+
+def test_freerouting_empty_ses_is_no_output(tmp_path, monkeypatch):
+    """A router that crashes and leaves a 0-byte session gets no_output, not an import error."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    def router(cmd, **kw):
+        Path(cmd[cmd.index("-do") + 1]).write_text("")
+        return subprocess.CompletedProcess(cmd, 1, "", "NullPointerException")
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    monkeypatch.setattr(tools, "run_measured", router)
+    res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / "w", 0, 100)
+    assert res.output is None and res.meta["ses_empty"] and res.meta["rc"] == 1
+
+
+def test_freerouting_hung_after_writing_ses_keeps_it(tmp_path, monkeypatch):
+    """A router killed at our deadline after writing a complete session is scored on it;
+    a session cut off mid-write is no output."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+    imported = []
+
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+            return {"ok": True}
+        if op == "stats":
+            return {"ok": True, "rules": {}}
+        if op == "import-ses":
+            imported.append(args[1])
+            Path(args[2]).write_text("(kicad_pcb)")
+            return {"ok": True}
+        raise AssertionError(f"unexpected pcbnew op {op}")
+
+    for text, kept in (('(session s (routes (network_out (net "a)" (wire (path F.Cu 1 0 0 1 1))))))\n', True),
+                       ('(session s (routes (network_out (net "a" (wire', False)):
+        def router(cmd, **kw):
+            Path(cmd[cmd.index("-do") + 1]).write_text(text)
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+        monkeypatch.setattr(tools, "run_ops", ops)
+        monkeypatch.setattr(tools, "run_measured", router)
+        res = adapters.Freerouting(binary="freerouting").run("route", inp, tmp_path / f"w{kept}", 0, 100)
+        assert res.meta["timed_out"] and res.meta["partial"]
+        assert (res.output is not None) == kept and res.meta.get("ses_cut", False) == (not kept), res.meta
+    assert len(imported) == 1
 
 
 def test_dsn_unset_netclass_sizes(tmp_path):
@@ -272,3 +330,28 @@ def test_capped_drc_types_are_flagged():
     drc = dict(errors_by_type={"track_width": 199, "clearance": 12, "items_not_allowed": 499})
     assert score._capped_types(drc) == ["items_not_allowed", "track_width"]
     assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
+
+
+def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch):
+    """Methods and Freerouting run with cwd=<attempt dir>, so relative paths would miss."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "in").mkdir()
+    (tmp_path / "in" / "board.kicad_pcb").write_text("(kicad_pcb)")
+    seen = []
+
+    def run(cmd, **kw):
+        seen.append(cmd)
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(tools, "run_measured", run)
+    def ops(op, *args, **kw):
+        if op == "export-dsn":
+            Path(args[1]).write_text("(pcb b (unit um))")
+        return {"ok": True, "rules": {}}
+
+    monkeypatch.setattr(tools, "run_ops", ops)
+    adapters.Command("cp {input} {output}", sandbox=False).run("route", Path("in"), Path("w1"), 0, 10)
+    adapters.Freerouting(binary="freerouting").run("route", Path("in"), Path("w2"), 0, 10)
+    flat = [str(x) for c in seen for x in (c if isinstance(c, list) else [c])]
+    paths = [x for x in " ".join(flat).split() if x.endswith((".kicad_pcb", ".dsn", ".ses"))]
+    assert paths and all(Path(x.strip("'")).is_absolute() for x in paths), paths
