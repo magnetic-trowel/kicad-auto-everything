@@ -63,9 +63,14 @@ Eng = namedtuple("Eng", [
     "in_s", "sc_pins_x", "sc_pins_y", "sc_nets", "sc_nb", "sc_nc", "sc_box", "sc_has", "sc_dens",
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
     "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
-    "La", "Lr", "Lw",
-    "Sside", "Sext", "Ssr", "Sns", "Str", "Snt", "Scl", "Swt", "Tcl",
+    "Lab", "Soft",
 ])
+# Lab (n, kmax + 2, 2) float: per rotation the label target origin, then (rx, ry), (weight, 0).
+# Soft (n, kmax, MS + 1, 11) int: row p < MS: source rect a, b, c, d, its class, its weight x
+# SOFT_W, target rect a, b, c, d, its class; row MS: counts (sources, targets), side (-1: none),
+# extent. Two packed fields, not twelve: every kernel call passes Eng by value, and each field
+# costs (12 more fields cost ~10% move rate).
+SOFT_W = 1000.0
 
 
 # ============================================================================ kernels
@@ -401,24 +406,26 @@ def _wl_cost(E, wl):
 @_jit
 def _lab_part(E, i):
     """Label term of part i (anneal.Annealer._lab): weight x L1 cells beyond the dead zone."""
-    w = E.Lw[i]
+    km = E.Lab.shape[1] - 2
+    w = E.Lab[i, km + 1, 0]
     if w == 0.0:
         return 0.0
     k = E.K[i]
-    dx = abs(E.X[i] - E.La[i, k, 0]) - E.Lr[i, 0]
-    dy = abs(E.Y[i] - E.La[i, k, 1]) - E.Lr[i, 1]
-    d = (dx if dx > 0 else 0) + (dy if dy > 0 else 0)
+    dx = abs(E.X[i] - E.Lab[i, k, 0]) - E.Lab[i, km, 0]
+    dy = abs(E.Y[i] - E.Lab[i, k, 1]) - E.Lab[i, km, 1]
+    d = (dx if dx > 0 else 0.0) + (dy if dy > 0 else 0.0)
     return w * d
 
 
 @_jit
 def _silk_pair(E, i, j):
     """Silk overlap of parts i and j (anneal.Annealer._silk_pair), cells^2."""
-    if E.Sside[i] < 0 or E.Sside[j] != E.Sside[i]:
+    MS = E.Soft.shape[2] - 1
+    if E.Soft[i, 0, MS, 2] < 0 or E.Soft[j, 0, MS, 2] != E.Soft[i, 0, MS, 2]:
         return 0.0
     dx = E.X[i] - E.X[j]
     dy = E.Y[i] - E.Y[j]
-    lim = E.Sext[i] + E.Sext[j]
+    lim = E.Soft[i, 0, MS, 3] + E.Soft[j, 0, MS, 3]
     if dx > lim or -dx > lim or dy > lim or -dy > lim:
         return 0.0
     ki = E.K[i]
@@ -429,20 +436,20 @@ def _silk_pair(E, i, j):
             a, b, ka, kb, ox, oy = i, j, ki, kj, dx, dy
         else:
             a, b, ka, kb, ox, oy = j, i, kj, ki, -dx, -dy
-        for p in range(E.Sns[a, ka]):
-            a0 = E.Ssr[a, ka, p, 0] + ox
-            a1 = E.Ssr[a, ka, p, 1] + ox
-            c0 = E.Ssr[a, ka, p, 2] + oy
-            c1 = E.Ssr[a, ka, p, 3] + oy
-            ca = E.Scl[a, ka, p]
-            wa = E.Swt[a, ka, p]
-            for q in range(E.Snt[b, kb]):
-                if E.Tcl[b, kb, q] != ca:
+        for p in range(E.Soft[a, ka, MS, 0]):
+            a0 = E.Soft[a, ka, p, 0] + ox
+            a1 = E.Soft[a, ka, p, 1] + ox
+            c0 = E.Soft[a, ka, p, 2] + oy
+            c1 = E.Soft[a, ka, p, 3] + oy
+            ca = E.Soft[a, ka, p, 4]
+            wa = E.Soft[a, ka, p, 5] / SOFT_W
+            for q in range(E.Soft[b, kb, MS, 1]):
+                if E.Soft[b, kb, q, 10] != ca:
                     continue
-                w = min(a1, E.Str[b, kb, q, 1]) - max(a0, E.Str[b, kb, q, 0])
+                w = min(a1, E.Soft[b, kb, q, 7]) - max(a0, E.Soft[b, kb, q, 6])
                 if w <= 0:
                     continue
-                h = min(c1, E.Str[b, kb, q, 3]) - max(c0, E.Str[b, kb, q, 2])
+                h = min(c1, E.Soft[b, kb, q, 9]) - max(c0, E.Soft[b, kb, q, 8])
                 if h > 0:
                     tot += wa * w * h
     return tot
@@ -454,13 +461,15 @@ def _silk(E, S, ns, stamp_s):
     if E.fp[F_WSILK] == 0.0:
         return 0.0
     tot = 0.0
-    n = len(E.Sside)
+    n = E.Soft.shape[0]
+    MS = E.Soft.shape[2] - 1
     for a in range(ns):
         i = S[a]
-        if E.Sside[i] < 0:
+        si = E.Soft[i, 0, MS, 2]
+        if si < 0:
             continue
         for j in range(n):
-            if j == i or E.Sside[j] != E.Sside[i] or E.in_s[j] == stamp_s:
+            if j == i or E.Soft[j, 0, MS, 2] != si or E.in_s[j] == stamp_s:
                 continue
             tot += _silk_pair(E, i, j)
         for b in range(a + 1, ns):
@@ -479,13 +488,17 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         E.in_s[S[a]] = ss
     # ---- before
     leg_old = _leg(E, S, ns, ss)
-    silk_old = _silk(E, S, ns, ss)
+    # the label and soft-overlap terms cost nothing when off (no call: each passes E by value)
+    use_silk = E.fp[F_WSILK] != 0.0
+    use_lab = E.fp[F_WLAB] != 0.0
+    silk_old = _silk(E, S, ns, ss) if use_silk else 0.0
     disp_old = 0
     lab_old = 0.0
     for a in range(ns):
         i = S[a]
         disp_old += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
-        lab_old += _lab_part(E, i)
+        if use_lab:
+            lab_old += _lab_part(E, i)
     # touched nets and rules
     nn = 0
     nr = 0
@@ -549,13 +562,14 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         _place_rects(E, i)
         _update_pins(E, i)
     leg_new = _leg(E, S, ns, ss)
-    silk_new = _silk(E, S, ns, ss)
+    silk_new = _silk(E, S, ns, ss) if use_silk else 0.0
     disp_new = 0
     lab_new = 0.0
     for a in range(ns):
         i = S[a]
         disp_new += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
-        lab_new += _lab_part(E, i)
+        if use_lab:
+            lab_new += _lab_part(E, i)
     wl_new_nets = 0.0
     for t in range(nn):
         j = E.sc_nets[t]
@@ -1022,43 +1036,34 @@ def build(ann, hash_cap=None):
     fp[F_WWL], fp[F_WDISP], fp[F_WCONG], fp[F_WORD] = (ann.w["wl"], ann.w["disp"], ann.w["cong"] if use_cong else 0.0,
                                                        ann.w["order"])
     fp[F_OMARGIN], fp[F_NMOV] = ann.order_margin, max(1, len(ann.mov))
-    fp[F_WLAB] = ann.w.get("label", 0.0)
+    fp[F_WLAB] = ann.w.get("label", 0.0) if getattr(ann, "labels", None) else 0.0
     kmax = max([1] + [len(p.rots) for p in P.parts])
-    La = np.zeros((n, kmax, 2), np.int64)
-    Lr = np.zeros((n, 2), np.int64)
-    Lw = np.zeros(n)
+    Lab = np.zeros((n, kmax + 2, 2))
     for i, (tg, r, wt) in (getattr(ann, "labels", None) or {}).items():
         for k, (tx, ty) in enumerate(tg[:kmax]):
-            La[i, k, 0], La[i, k, 1] = tx, ty
+            Lab[i, k, 0], Lab[i, k, 1] = tx, ty
         rx, ry = r if isinstance(r, (tuple, list)) else (r, r)
-        Lr[i, 0], Lr[i, 1], Lw[i] = int(rx), int(ry), float(wt)
-    fp[F_WSILK] = ann.w.get("silk", 0.0)
+        Lab[i, kmax, 0], Lab[i, kmax, 1], Lab[i, kmax + 1, 0] = rx, ry, float(wt)
+    fp[F_WSILK] = ann.w.get("silk", 0.0) if getattr(ann, "silk", None) else 0.0
     silk = getattr(ann, "silk", None) or {}
     MS = max([1] + [len(rs) for (_, srs, trs) in silk.values() for rs in srs + trs])
-    Sside = np.full(n, -1, np.int64)
-    Sext = np.zeros(n, np.int64)
-    Ssr = np.zeros((n, kmax, MS, 4), np.int64)
-    Str = np.zeros((n, kmax, MS, 4), np.int64)
-    Sns = np.zeros((n, kmax), np.int64)
-    Snt = np.zeros((n, kmax), np.int64)
-    Scl = np.zeros((n, kmax, MS), np.int64)
-    Tcl = np.zeros((n, kmax, MS), np.int64)
-    Swt = np.zeros((n, kmax, MS))
+    Soft = np.zeros((n, kmax, MS + 1, 11), np.int64)
+    Soft[:, :, MS, 2] = -1
     for i, (sd, srs, trs) in silk.items():
-        Sside[i] = sd
         ext = 0
         for k in range(min(kmax, len(srs))):
-            Sns[i, k] = len(srs[k])
+            Soft[i, k, MS, 0] = len(srs[k])
             for q, r in enumerate(srs[k]):
-                Ssr[i, k, q] = r[:4]
-                Scl[i, k, q], Swt[i, k, q] = r[4], r[5]
+                Soft[i, k, q, 0:4] = r[:4]
+                Soft[i, k, q, 4], Soft[i, k, q, 5] = r[4], int(round(r[5] * SOFT_W))
                 ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
-            Snt[i, k] = len(trs[k])
+            Soft[i, k, MS, 1] = len(trs[k])
             for q, r in enumerate(trs[k]):
-                Str[i, k, q] = r[:4]
-                Tcl[i, k, q] = r[4]
+                Soft[i, k, q, 6:10] = r[:4]
+                Soft[i, k, q, 10] = r[4]
                 ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
-        Sext[i] = ext
+        Soft[i, 0, MS, 2] = sd
+        Soft[i, 0, MS, 3] = ext
     E = Eng(
         ip=ip, fp=fp, tot=np.zeros(7),
         X=np.array(ann.X, np.int64), Y=np.array(ann.Y, np.int64), K=np.array(ann.K, np.int64),
@@ -1085,8 +1090,7 @@ def build(ann, hash_cap=None):
         sc_pbx=np.zeros(NP + 2, np.int64), sc_pby=np.zeros(NP + 2, np.int64),
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
         turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
-        La=La, Lr=Lr, Lw=Lw,
-        Sside=Sside, Sext=Sext, Ssr=Ssr, Sns=Sns, Str=Str, Snt=Snt, Scl=Scl, Swt=Swt, Tcl=Tcl,
+        Lab=Lab, Soft=Soft,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
