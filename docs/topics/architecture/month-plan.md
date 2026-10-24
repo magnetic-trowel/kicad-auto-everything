@@ -90,6 +90,7 @@ A **module** is a physics structure from the brief (commutation cell, decap grou
 
 - kaebench scoring is never changed to improve a score; the `joint` kind and any fixes go in separate commits with baselines re-run (CLAUDE.md).
 - Every comparison uses the same harness commit, KiCad version, manifest and suite, and reports cp1, cpk, completion and per-type errors.
+- The board's mechanical interface stays where the design puts it: connectors, mounting holes and fiducials, and user-facing parts (switches, buttons, potentiometers and encoders, displays, panel LEDs, buzzers) are fixed at their given poses and everything else is placed. A placement that moves them can beat the human board on the metrics while failing to fit its enclosure and cables, so results on the task that frees them are not the headline (user's decision, 2026-10-24).
 - Place and joint runs include every task with at least one movable part (`kaebench run --min-movable 1`); tasks that lock every footprint are held out, since there is nothing to place.
 - Physics is judged apart from cp1/cpk: the passports and critics on the routed board, plus the place terms' breakdown, against the human board.
 
