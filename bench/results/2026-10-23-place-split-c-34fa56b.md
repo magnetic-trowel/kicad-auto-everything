@@ -37,3 +37,15 @@ On six legal boards the placer's own grid still lists violators while KiCad find
 (myra-sip-interposer, sonde-xilinx, sc14cvmdect, goga64-ulk, beelight, helium). Most are parts
 without a courtyard, where the grid uses body or pad extents and is stricter than KiCad; this
 needs a footprint-by-footprint check before the flips are trusted.
+
+## Follow-up (2026-10-24, in ea517f9)
+
+The dcecf28 sweep held at 67/72 but traded its five fixes for four exact-checker false
+positives (net-less fiducials and mounting holes over a GND pour, which KiCad passes) and one
+real stickhub mask bridge. The mask and edge rules now follow KiCad 10.0's
+`drc_test_provider_solder_mask.cpp` and `pad.cpp`, and `tools/research/place/humangate.py`
+gates the exact model: on every task, the human placement may produce no finding type that
+KiCad's DRC on the reference board does not. It passes 13/13 (A), 20/20 (B) and 79/79 (C).
+Locally, all 4 false-positive boards, stickhub and the 12-board regression set are legal with
+KiCad clean in round 0; pic-programmer's physics regression (47.3, from false-positive
+repairs) is back to 25.0 (human 46.8).
