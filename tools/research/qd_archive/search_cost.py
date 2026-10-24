@@ -11,13 +11,17 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from archive_stats import load_archives  # noqa: E402
+
 qd_dir, jc_dir = Path(sys.argv[1]), Path(sys.argv[2])
 rat, wins, ncand, njc = [], 0, [], []
-for f in sorted(qd_dir.glob("*.json")):
-    p = jc_dir / f"{f.stem}.runs.json"
+arch = load_archives(qd_dir)
+for (bid, seed) in sorted(arch):
+    p = jc_dir / f"{bid}.runs.json"
     if not p.exists():
         continue
-    A = json.loads(f.read_text())
+    A = arch[(bid, seed)]
     R = json.loads(p.read_text())["runs"]
     q = min(c["cost"] for c in A["cells"])
     j = min(r["cost"] for r in R)
@@ -25,7 +29,7 @@ for f in sorted(qd_dir.glob("*.json")):
     wins += q < j - 1e-6
     ncand.append(len(A["hist"]))
     njc.append(len(R))
-    print(f"{f.stem[:44]:44s} qd {q:9.1f} ({len(A['hist'])} cand)  jc {j:9.1f} ({len(R)} runs)  x{q / j:.3f}")
+    print(f"{bid[:40]:40s} s{seed} qd {q:9.1f} ({len(A['hist'])} cand)  jc {j:9.1f} ({len(R)} runs)  x{q / j:.3f}")
 r = np.array(rat)
 print(f"boards {len(r)}: qd better on {wins}, worse on {int((r > 1 + 1e-6).sum())}; gmean x{np.exp(np.log(r).mean()):.3f}; "
       f"median candidates {np.median(ncand):.0f} vs jc runs {np.median(njc):.0f}")

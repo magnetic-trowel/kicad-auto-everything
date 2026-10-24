@@ -41,7 +41,18 @@ sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
 sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/collapse_joint")
 
 import methods_phys as MP  # noqa: E402
-from jc import Collapse, _board_id, _reset, collapse_once  # noqa: E402
+from jc import Collapse, _reset, collapse_once  # noqa: E402
+
+ROOT = Path("/home/user/kicad-auto-everything")
+
+
+def _board_id(world):
+    """Task id from the input path (kae-v7 or kae-work task trees)."""
+    parts = Path(world.data.get("path", "board")).parts
+    for s in reversed(parts):
+        if any((ROOT / d / "tasks" / s).is_dir() for d in ("kae-v7", "kae-work")):
+            return s
+    return Path(world.data.get("path", "board")).parent.name
 
 
 # ------------------------------------------------------------------ continuation
@@ -302,14 +313,16 @@ def qd(world, seed=0, budget=300, log=print, desc="spread,vias", n_init=2, polis
     log(f"qd done: {k} candidates, {len(A.cells)} cells, best cell {best['key']} cost={best['cost']:.1f} "
         f"{r.stats()} phys={ph.total():.2f} t={budget - clock.left():.1f}")
     qd_dir = qd_dir or os.environ.get("QD_DIR")
+    out = dict(board=_board_id(w), seed=seed, desc=names, phys_w=C.phys_w, ref=A.ref, n=k,
+               cells=[dict(key=list(e["key"]), cost=round(e["cost"], 3), meta=e["meta"],
+                           **{a: round(b, 3) for a, b in e["d"].items()}) for e in A.cells.values()],
+               best=list(best["key"]), by_len=list(by_len["key"]),
+               by_phys=list(by_phys["key"]) if by_phys else None, hist=hist)
+    # the kaebench sandbox keeps only stdout (adapter.log): one line, read by archive_stats.py
+    print("QDARCHIVE " + json.dumps(out), flush=True)
     if qd_dir:
         Path(qd_dir).mkdir(parents=True, exist_ok=True)
-        out = dict(board=_board_id(w), desc=names, phys_w=C.phys_w, ref=A.ref, n=k,
-                   cells=[dict(key=list(e["key"]), cost=round(e["cost"], 3), meta=e["meta"],
-                               **{a: round(b, 3) for a, b in e["d"].items()}) for e in A.cells.values()],
-                   best=list(best["key"]), by_len=list(by_len["key"]),
-                   by_phys=list(by_phys["key"]) if by_phys else None, hist=hist)
-        (Path(qd_dir) / f"{_board_id(w)}.json").write_text(json.dumps(out))
+        (Path(qd_dir) / f"{_board_id(w)}.s{seed}.json").write_text(json.dumps(out))
     if polish > 0 and clock.left() > 2:
         r = MP.anneal_phys(w, seed=seed, budget=max(1.0, clock.left()), log=log, phys_w=C.phys_w, router=r)
         log(f"qd polished: {r.stats()} hpwl={w.hpwl():.1f} phys={ph.total():.2f}")

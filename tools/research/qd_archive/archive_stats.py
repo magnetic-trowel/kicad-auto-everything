@@ -17,6 +17,24 @@ from pathlib import Path
 import numpy as np
 
 
+def load_archives(path):
+    """{(board, seed): archive} from a qd_dir of JSON files or from a kaebench run
+    directory (the QDARCHIVE line of each attempt's adapter.log)."""
+    path = Path(path)
+    out = {}
+    for f in path.glob("*.json"):
+        if f.name in ("run.json",):
+            continue
+        b, _, s = f.stem.partition(".s")
+        out[(b, int(s or 0))] = json.loads(f.read_text())
+    for f in path.glob("*/*/*/attempt-*/adapter.log"):
+        for line in f.read_text(errors="replace").splitlines():
+            if line.startswith("QDARCHIVE "):
+                A = json.loads(line[len("QDARCHIVE "):])
+                out[(f.parent.parent.name, int(f.parent.name.split("-")[1]))] = A
+    return out
+
+
 def gmean(x):
     x = [v for v in x if v and v > 0]
     return float(np.exp(np.mean(np.log(x)))) if x else float("nan")
@@ -32,17 +50,18 @@ def main():
     ap.add_argument("--jc")
     ap.add_argument("--suite")
     a = ap.parse_args()
-    files = sorted(Path(a.dir).glob("*.json"))
+    arch = load_archives(a.dir)
     if a.suite:
         keep = {l.strip() for l in open(a.suite) if l.strip()}
-        files = [f for f in files if f.stem in keep]
+        arch = {k: v for k, v in arch.items() if k[0] in keep}
+    files = sorted(arch)
     n = cells = nm = 0
     newc = imp = gb = 0
     pick = Counter()
     ops = defaultdict(lambda: [0, 0, 0])
     lv_gain, ph_gain, ph_cost, lv_cost, jlv_gain, jph_gain = [], [], [], [], [], []
     for f in files:
-        A = json.loads(f.read_text())
+        A = arch[f]
         H = A["hist"]
         n += len(H)
         nm += sum(h["op"] not in ("init", "fresh") for h in H)
@@ -70,7 +89,7 @@ def main():
                 ph_gain.append(max(bp["phys"], 1e-3) / best["phys"])
                 ph_cost.append(bp["cost"] / best["cost"])
         if a.jc:
-            p = Path(a.jc) / f"{f.stem}.runs.json"
+            p = Path(a.jc) / f"{f[0]}.runs.json"
             if p.exists():
                 R = json.loads(p.read_text())["runs"]
                 jb = min(R, key=lambda r: r["cost"])
