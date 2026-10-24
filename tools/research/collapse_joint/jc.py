@@ -114,7 +114,7 @@ class FFTCorr:
 
 class Collapse:
     def __init__(self, world, seed, budget, log, phys_w=2.0, tension_w=0.3, hist_inc=0.3,
-                 hist_p=0.0, k_phys=24, trust_mm=2.0, pad_wire=1.0, tension_beta=1.0, max_stuck=8, **kw):
+                 hist_p=0.0, k_phys=24, trust_mm=0.0, pad_wire=1.0, tension_beta=1.0, max_stuck=8, **kw):
         self.w = world
         self.log = log
         self.rng = random.Random(seed)
@@ -605,28 +605,29 @@ def jc(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60
 
 
 def jc_nopol(world, **kw):
+    """The continuation alone (restarts, no polish)."""
     kw.setdefault("polish", 0.0)
     return jc(world, **kw)
 
 
 def jc_frozen(world, **kw):
+    """Routing-only collapse: parts legalized right after the lift and frozen."""
     kw.setdefault("frozen", True)
     kw.setdefault("polish", 0.0)
     return jc(world, **kw)
 
 
-def jc_frozen_pol(world, **kw):
-    kw.setdefault("frozen", True)
-    return jc(world, **kw)
-
-
 def jc_fast(world, **kw):
+    """Fast schedule (gamma 2, restarts, no polish)."""
     kw.setdefault("gamma", 2.0)
     kw.setdefault("polish", 0.0)
     return jc(world, **kw)
 
 
 def jc_slow(world, **kw):
-    kw.setdefault("gamma", 1.15)
+    """Slow schedule: one continuation paced to reach beta_end at the end of the budget."""
+    kw.setdefault("gamma", 1.02)
+    kw.setdefault("restarts", False)
+    kw.setdefault("first", 1.0)
     kw.setdefault("polish", 0.0)
     return jc(world, **kw)
