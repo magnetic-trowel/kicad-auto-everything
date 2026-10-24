@@ -49,3 +49,12 @@ KiCad's DRC on the reference board does not. It passes 13/13 (A), 20/20 (B) and 
 Locally, all 4 false-positive boards, stickhub and the 12-board regression set are legal with
 KiCad clean in round 0; pic-programmer's physics regression (47.3, from false-positive
 repairs) is back to 25.0 (human 46.8).
+
+## Split C at fe68468 (sk-tibia, 2026-10-24)
+
+Human gate 13/13 (A), 20/20 (B), 79/79 (C). Split C **72/72 legal** (from 67/72 at dcecf28),
+every counted board KiCad-verified, no legal → illegal flips; the five flips are the four
+false-positive boards and stickhub. Physics ours 1,420 vs human 4,392 (−2.5% vs dcecf28), ours
+better on 64 boards, human on 2; pic-programmer 25.3 (human 46.8). Wall median 124 s, max 354 s.
+One regression: stickhub breaks 4 of its 7 protection-order rules (human 0), and its physics
+went from 22.2 to 33.4.
