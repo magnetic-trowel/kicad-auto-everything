@@ -234,18 +234,20 @@ class World:
             ent["center"] = c + np.array([fx, fy])
             polys = [rot_pts(np.array(p, float), deg) for p in pad["poly"] if len(p) >= 3]
             cu, hT, hV = [], [], []
+            # pad-local clearance overrides (fiducials, mounting holes, power pads)
+            ex = max(0.0, (pad.get("clear") or 0.0) - R.c)
             for pl in polys:
                 cu.append(raster_poly(pl, 0.0, -fx, -fy, g))
-                hT.append(raster_poly(pl, R.pad_T, -fx, -fy, g))
-                hV.append(raster_poly(pl, R.pad_V, -fx, -fy, g))
+                hT.append(raster_poly(pl, R.pad_T + ex, -fx, -fy, g))
+                hV.append(raster_poly(pl, R.pad_V + ex, -fx, -fy, g))
             drill = max(pad["drill"]) if pad["drill"] else 0.0
             if drill > 0:
-                rv = drill / 2 + max(R.h2h + R.via_drill / 2, R.hc + R.via_d / 2) + R.m
+                rv = drill / 2 + max(R.h2h + R.via_drill / 2, R.hc + R.via_d / 2) + R.m + ex
                 cc = np.round((c + np.array([fx, fy])) / g).astype(np.int32)
                 d = disc(rv + 0.71 * g, g) + cc
                 hV.append(d.astype(np.int32))
                 if pad["npth"] or not polys:
-                    rt = drill / 2 + R.hc + R.w / 2 + R.m
+                    rt = drill / 2 + R.hc + R.w / 2 + R.m + ex
                     hT.append((disc(rt + 0.71 * g, g) + cc).astype(np.int32))
             # thermal spoke corridors (4 axis directions) kept free of other nets
             for l in ent["layers"]:
@@ -291,7 +293,8 @@ class World:
         keep = {}
         for pad in part.pads:
             drilled = bool(pad["drill"]) and max(pad["drill"]) > 0
-            rk = (max(R.c, R.hc) if drilled else R.c) / 2 + 0.71 * g
+            ex = max(0.0, (pad.get("clear") or 0.0) - R.c)  # local clearance beyond the board's
+            rk = (max(R.c, R.hc) if drilled else R.c) / 2 + ex + 0.71 * g
             lay = range(self.nl) if (pad["npth"] or pad["cu"] == "both") else self.pad_layers(part, pad)
             for p_ in pad["poly"]:
                 if len(p_) < 3:
@@ -299,6 +302,30 @@ class World:
                 cells = raster_poly(rot_pts(np.array(p_, float), deg), rk, -fx, -fy, g)
                 for l in lay:
                     keep.setdefault(2 + l, []).append(cells)
+            # thermal-relief spoke corridors of pads poured by a zone of their own net:
+            # other parts' pads stay out so the pour can form its spokes (starved_thermal)
+            if pad["net"] and pad["poly"]:
+                for l in lay:
+                    zs = self.zone_nets.get((pad["net"], l))
+                    if not zs:
+                        continue
+                    gap, spoke, minw = zs
+                    allp = rot_pts(np.concatenate([np.array(q, float) for q in pad["poly"] if len(q) >= 3]), deg)
+                    x0, y0 = allp.min(0)
+                    x1, y1 = allp.max(0)
+                    mx, my, ext, hs = (x0 + x1) / 2, (y0 + y1) / 2, gap + max(spoke, minw), spoke / 2
+                    for rc in ([[x1, my - hs], [x1 + ext, my - hs], [x1 + ext, my + hs], [x1, my + hs]],
+                               [[x0 - ext, my - hs], [x0, my - hs], [x0, my + hs], [x0 - ext, my + hs]],
+                               [[mx - hs, y1], [mx + hs, y1], [mx + hs, y1 + ext], [mx - hs, y1 + ext]],
+                               [[mx - hs, y0 - ext], [mx + hs, y0 - ext], [mx + hs, y0], [mx - hs, y0]]):
+                        rc = np.array(rc) + np.array([fx, fy])
+                        keep.setdefault(2 + l, []).append(raster_poly(rc, R.c / 2 + 0.71 * g, 0.0, 0.0, g))
+            if drilled:  # the hole itself (NPTH has no copper polygon): hole clearance
+                c0 = rot_pts(np.array([[pad["x"], pad["y"]]]), deg)[0] + np.array([fx, fy])
+                rh = max(pad["drill"]) / 2 + max(R.hc - R.c / 2, R.hc / 2) + ex + 0.71 * g
+                hole = disc(rh, g) + np.round(c0 / g).astype(np.int32)
+                for l in range(self.nl):
+                    keep.setdefault(2 + l, []).append(hole.astype(np.int32))
         side_cells = [raster_poly(rot_pts(c, deg), 0.75 * g, -fx, -fy, g) for c in part.court] + \
                      [raster_poly(rot_pts(np.array(e, float), deg), R.ec + 0.75 * g, -fx, -fy, g)
                       for e in part.data.get("edges", []) if len(e) >= 3]
@@ -311,6 +338,9 @@ class World:
                 for pl, cs in sorted(keep.items())]
         court = np.unique(np.concatenate([c for _, c in keep]), axis=0).astype(np.int32)
         allcu = [p["cu"] for p in pads if len(p["cu"])]
+        # a part's own board cutouts must lie inside the board, like copper
+        allcu += [raster_poly(rot_pts(np.array(e, float), deg), 0.75 * g, -fx, -fy, g)
+                  for e in part.data.get("edges", []) if len(e) >= 3]
         allcu = np.concatenate(allcu) if allcu else np.zeros((0, 2), np.int32)
         r = dict(pads=pads, court=np.ascontiguousarray(court), keep=keep, cu=np.ascontiguousarray(allcu, np.int32),
                  bbox=(court[:, 0].min(), court[:, 1].min(), court[:, 0].max(), court[:, 1].max()))

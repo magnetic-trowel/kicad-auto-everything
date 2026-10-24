@@ -89,7 +89,9 @@ def extract(path, out):
                 p.TransformShapeToPolygon(sp, lay, 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
             d = p.GetDrillSize()
             c = p.GetCenter()
+            loc = [v for v in (p.GetLocalClearance(), fp.GetLocalClearance()) if v is not None]
             pads.append(dict(num=p.GetNumber(), net=p.GetNetname(), cu=cu, x=mm(c.x), y=mm(c.y),
+                             clear=mm(max(loc)) if loc else None,
                              poly=poly_points(sp), drill=[mm(d.x), mm(d.y)],
                              pth=p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH,
                              npth=p.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH))
