@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import math
 
+from kae.physics import exact as EX
 from kae.physics import fastloop as FL
 from kae.physics.kernels import cprime_hj, gmd_rect
 
@@ -127,6 +128,9 @@ class Loop:
 
     def value(self, shares=False):
         """Loop inductance (nH); with shares=True also {element: current share}."""
+        ex = EX.loop_hook(self, shares)      # --physics-fidelity exact / multi: PEEC (kae.physics.exact)
+        if ex is not None:
+            return ex
         el = self._elements()
         names = [n for n, (H, V) in el.items() if H or V]
         if not self.cons or names == ["A"]:

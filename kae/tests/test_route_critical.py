@@ -918,3 +918,25 @@ def test_pad_requirement_reads_net_conditions_against_another_net(tmp_path):
     cls = plan.pin_class[(pad["comp"], pad["pin"])]
     tw, vw = plan.obstacle_classes[cls].values[(rc.name, "F.Cu")]
     assert tw >= 0.33 - 1e-9
+
+
+def test_dense_ic_signal_pins_keep_escape_corridors(tmp_path):
+    """escape_mm builds, for each signal pad of a dense IC, the strip from its outer end
+    outward along its long axis; critical vias of other nets stay out of them and critical
+    tracks pay to enter them (canhw: crit 18-21 unconnected -> 15 with 1.5 mm corridors)."""
+    import math as _m
+    s = F.session(tmp_path, escape_mm=1.5, escape_pins=8)
+    esc = s.router.escapes
+    u2 = next(f for f in s.board.footprints if f.ref == "U2")
+    nets = {n for _, _, n in esc}
+    assert "Net-(U2-XTAL1)" in nets and "Net-(U2-XTAL2)" in nets
+    assert not nets & {"GND", "+3V3"}                                      # ground and rails are not escapes
+    for g, l, n in esc:
+        pad = next(it for it in s.space.pads_by_fp[u2.uuid] if it.net == n)
+        c = g.centroid
+        assert _m.dist((c.x, c.y), (u2.x, u2.y)) > _m.dist(pad.pos, (u2.x, u2.y))   # outward
+        assert not g.intersects(pad.geom.buffer(-1e-3))                    # beyond the pad
+    s.route()
+    for it in s.space.routed:
+        if it.kind == "via":
+            assert not s.router.escape_hit(it.net, it.geom, it.r), it.owner

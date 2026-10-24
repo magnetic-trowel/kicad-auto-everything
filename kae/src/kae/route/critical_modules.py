@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from shapely.geometry import Point
 
+from kae.physics import exact as EX
 from kae.physics import priors as PR
 from kae.physics.boardview import body_z
 
@@ -518,7 +519,7 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
     m.vias.setdefault(key_a, [])
     m.vias.setdefault(key_b, [])
     base = quote(ctx, m, store=False)
-    best = None
+    cands = []
     for va in ca[:6]:
         for vb in cb[:6]:
             if math.dist(va[:2], vb[:2]) < ctx.sp.same_net_via_pitch(net):
@@ -526,8 +527,13 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
             m.vias[key_a] = [va]
             m.vias[key_b] = [vb]
             q = quote(ctx, m, store=False)
-            if q is not None and (best is None or q < best[0]):
-                best = (q, va, vb)
+            if q is not None:
+                cands.append((q, va, vb))
+
+    def requote(c):         # --physics-fidelity multi: the fast top K re-scored by PEEC
+        m.vias[key_a], m.vias[key_b] = [c[1]], [c[2]]
+        return quote(ctx, m, store=False)
+    best = EX.pick(cands, requote, what="cell return vias")
     m.vias[key_a], m.vias[key_b] = [], []
     if best is None or (base is not None and best[0] >= base * 0.995):
         return
@@ -535,15 +541,22 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
     _commit_vias(ctx, m, net, layer, tb, [best[2]], key_b)
     cur = best[0]
     # more vias while each one buys at least 2 %
+    def requote_more(c):
+        m.vias[c[2]].append(c[3])
+        try:
+            return quote(ctx, m, store=False)
+        finally:
+            m.vias[c[2]].pop()
     for _ in range(2 * (n_max - 1)):
-        gain = None
+        cands = []
         for t, key, other in ((ta, key_a, tb), (tb, key_b, ta)):
             for v in via_candidates(ctx, t, layer, net, pl, toward=(other.x, other.y), in_pad=_is_thermal_pad(t))[:6]:
                 m.vias[key].append(v)
                 q = quote(ctx, m, store=False)
                 m.vias[key].pop()
-                if q is not None and q < cur * 0.98 and (gain is None or q < gain[0]):
-                    gain = (q, t, key, v)
+                if q is not None and q < cur * 0.98:
+                    cands.append((q, t, key, v))
+        gain = EX.pick(cands, requote_more, what="cell extra vias")
         if gain is None:
             break
         _commit_vias(ctx, m, net, layer, gain[1], [gain[3]], gain[2])
@@ -1001,13 +1014,7 @@ def _decap_vias(ctx, m, lpd, net, layer, pl):
     if not m.vias[kc]:
         toward = (lpd["tp"].x, lpd["tp"].y)
         cands = via_candidates(ctx, tg, layer, net, pl, toward=toward)
-        best = None
-        for v in cands[:8]:
-            m.vias[kc] = [v]
-            q = _decap_loop_value(ctx, m, lpd)
-            if q is not None and (best is None or q < best[0]):
-                best = (q, v)
-        m.vias[kc] = []
+        best = _best_site(ctx, m, lpd, kc, cands[:8], "decap cap via")
         if best is not None:
             _commit_vias(ctx, m, net, layer, tg, [best[1]], kc)
     dense = ctx.npins(tG.fp) >= int(ctx.opts.get("dense_ic_pins", 10 ** 6)) if tG is not None else False
@@ -1020,15 +1027,21 @@ def _decap_vias(ctx, m, lpd, net, layer, pl):
             lay = layer if layer in tG.layers else tG.layers[0]
             cands = via_candidates(ctx, tG, lay, net, pl, toward=(lpd["tr"].x, lpd["tr"].y),
                                    in_pad=_is_thermal_pad(tG))
-            best = None
-            for v in cands[:8]:
-                m.vias[kG] = [v]
-                q = _decap_loop_value(ctx, m, lpd)
-                if q is not None and (best is None or q < best[0]):
-                    best = (q, v)
-            m.vias[kG] = []
+            best = _best_site(ctx, m, lpd, kG, cands[:8], "decap IC via")
             if best is not None:
                 _commit_vias(ctx, m, net, lay, tG, [best[1]], kG)
+
+
+def _best_site(ctx, m, lpd, key, cands, what):
+    """(loop nH, via) of the site at `key` that minimizes the routed decoupling loop, or None
+    (--physics-fidelity multi: the fast top K re-scored by PEEC, kae.physics.exact.pick)."""
+    def val(v):
+        m.vias[key] = [v]
+        return _decap_loop_value(ctx, m, lpd)
+    out = [(q, v) for v in cands for q in [val(v)] if q is not None]
+    best = EX.pick(out, lambda c: val(c[1]), what=what)
+    m.vias[key] = []
+    return best
 
 
 def _ic_ground_via(ctx, m, lpd, net, pour_layer):
@@ -1042,13 +1055,7 @@ def _ic_ground_via(ctx, m, lpd, net, pour_layer):
     lay = tG.layers[0]
     cands = via_candidates(ctx, tG, lay, net, pour_layer, toward=(lpd["tr"].x, lpd["tr"].y),
                            in_pad=_is_thermal_pad(tG))
-    best = None
-    for v in cands[:8]:
-        m.vias[kG] = [v]
-        q = _decap_loop_value(ctx, m, lpd)
-        if q is not None and (best is None or q < best[0]):
-            best = (q, v)
-    m.vias[kG] = []
+    best = _best_site(ctx, m, lpd, kG, cands[:8], "decap IC via")
     if best is None and cands:
         best = (None, cands[0])
     if best is not None:

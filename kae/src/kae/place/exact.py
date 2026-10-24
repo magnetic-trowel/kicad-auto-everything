@@ -631,6 +631,54 @@ def culprits(P, findings, allowed=None):
     return sorted(out, key=lambda q: -P.parts[q].area)
 
 
+def _ok_map(P, i, k, S, pad):
+    """Origins (ncx x ncy booleans) where part i in rotation k is inside its board rectangles
+    and free in the occupancy tables S."""
+    from .legalize import _inside_origins
+    p = P.parts[i]
+    si = 0 if p.s > 0 else 1
+    nx, ny = P.ncx, P.ncy
+    r = p.rots[k]
+    ok = np.ones((nx, ny), dtype=bool)
+    for brd in (r.g_boards or (r.g_board,)):
+        ok &= _inside_origins(P, brd, 0, nx - 1, 0, ny - 1)
+    for side, rect in [(si, o) for o in (r.g_own_rects or (r.g_own,))] + [(1 - si, o) for o in r.g_opp]:
+        if not ok.any():
+            break
+        a, b, c, d = rect
+        T = S[side]
+        cnt = (T[b + pad:b + pad + nx, d + pad:d + pad + ny] - T[a + pad:a + pad + nx, d + pad:d + pad + ny]
+               - T[b + pad:b + pad + nx, c + pad:c + pad + ny] + T[a + pad:a + pad + nx, c + pad:c + pad + ny])
+        ok &= cnt == 0
+    return ok
+
+
+def _still_fits(P, st, j, maps, q):
+    """Whether part j (its free-origin maps per rotation, without part q) still has an origin
+    once q stands where it is: the origins where a rectangle of j would overlap one of q's
+    (same side) are masked out, a few slices instead of new tables."""
+    pj = P.parts[j]
+    sj = 0 if pj.s > 0 else 1
+    qr = list(st.grid_rects(q))
+    nx, ny = P.ncx, P.ncy
+    for k, ok in maps.items():
+        if not ok.any():
+            continue
+        m = ok.copy()
+        r = pj.rots[k]
+        for side, (a, b, c, d) in [(sj, o) for o in (r.g_own_rects or (r.g_own,))] + [(1 - sj, o) for o in r.g_opp]:
+            for qs, (qa, qb, qc, qd), _ in qr:
+                if qs != side:
+                    continue
+                x0, x1 = max(0, qa - b + 1), min(nx, qb - a)
+                y0, y1 = max(0, qc - d + 1), min(ny, qd - c)
+                if x1 > x0 and y1 > y0:
+                    m[x0:x1, y0:y1] = False
+        if m.any():
+            return True
+    return False
+
+
 def _candidates(P, st, i, S, pad, ks, w_rot, limit, edge=False):
     """Grid-free origins for part i (rotations ks) by L1 distance (+ w_rot when turning) from
     where it is, at most `limit`: [(cost, X, Y, k)]. edge=True ranks them by the distance of
@@ -775,6 +823,7 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
         first_clean = None
         tries = 0
         guard_tries = 0
+        big_maps = {j: {k: _ok_map(P, j, k, S, pad) for k in range(len(P.parts[j].rots))} for j in big}
         if time.monotonic() < deadline:
             for c, X, Y, k in _candidates(P, st, q, S, pad, list(range(len(P.parts[q].rots))), w_rot, limit,
                                           edge=edge):
@@ -790,14 +839,7 @@ def reseed(P, st, E, parts, deadline, edge=False, first=(), w_rot=4.0, limit=600
                 ok = guard.count(q, lifted) == 0 or guard_tries > 200
                 guard_tries += 1
                 if ok and big:
-                    o2 = [o.copy() for o in occ]
-                    stamp(o2, q)
-                    S2 = [sat(o2[0]), sat(o2[1])]
-                    for j in big:
-                        sv = (int(st.X[j]), int(st.Y[j]), int(st.K[j]))
-                        st.X[j], st.Y[j], st.K[j] = home[j]
-                        ok = ok and bool(_candidates(P, st, j, S2, pad, list(range(len(P.parts[j].rots))), 0.0, 1))
-                        st.X[j], st.Y[j], st.K[j] = sv
+                    ok = all(_still_fits(P, st, j, big_maps[j], q) for j in big)
                 tries += 1
                 if ok:
                     done = True

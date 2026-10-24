@@ -42,6 +42,7 @@ from shapely.ops import unary_union
 
 from kae.board import transform
 from kae.board.kicad_file import load
+from kae.physics import exact as EX
 from kae.physics.boardview import body_z
 from kae.physics.kernels import lprime_hj
 
@@ -718,6 +719,7 @@ def _in_window(rb, m, window):
     return False
 
 
+@EX.final_fidelity          # --physics-fidelity exact / multi: loops by PEEC (kae.physics.exact)
 def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "decap", "crystal", "chain"), terms=None,
                   window=None, rails=True):
     """Every module's routed value, allocation and u on a finished board (see the module

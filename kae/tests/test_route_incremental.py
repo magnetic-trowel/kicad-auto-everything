@@ -37,7 +37,7 @@ def test_route_open_keeps_fixed_routing_and_routes_the_rest(tmp_path):
     rep = route_open(board, out, seed=3, time_s=60, log=lambda m: None)
     assert rep["status"] in ("routed", "no_session"), rep.get("error")
     assert rep["router"]["settings"]["optimizer.enabled"] == "false"
-    assert rep["router"]["settings"]["autorouter.max_passes"] == "1"
+    assert rep["router"]["settings"]["autorouter.max_passes"] == "3"   # pass 1, more only while open
     after = W.routing(out)
     kept = {r["uuid"] for r in after if r["locked"]}
     assert before <= kept                                   # fixed wiring comes back as it was
@@ -45,4 +45,4 @@ def test_route_open_keeps_fixed_routing_and_routes_the_rest(tmp_path):
     assert sexpr.parse(sexpr.strip_blocks(text)) is not None
     if rep["status"] == "routed":
         assert len(after) >= len(before)
-    assert rep["seconds"] < 60
+    assert rep["seconds"] < 60 + 40                         # budget plus the kill grace, at most

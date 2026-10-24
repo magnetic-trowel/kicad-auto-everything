@@ -7,9 +7,9 @@
                                      [--guards cell,crystal|none] [--chain-tail] [--rail-light]
                                      [--complete-mm MM] [--island-mm MM] [--no-stitch] [--trim-tol F]
                                      [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
-                                     [--rounds N]
+                                     [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
                                      [--workdir DIR] [--keep] [--report FILE]
-    python -m kae.route.critical_cli physics BOARD [--brief FILE]
+    python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
 
 `route` routes the critical copper of INPUT (a placed .kicad_pcb with its project files
 beside it), locks it, lets the Freerouting bridge route everything else around it, runs
@@ -20,6 +20,9 @@ is the last line of stdout. As a kaebench method:
       --command "<venv>/bin/python -m kae.route.critical_cli route {input} {output} --seed {attempt} --time {timeout}"
 
 `physics` prints the routed physics of a finished board's modules (critical_recheck).
+`--physics-fidelity` (kae.physics.exact): exact evaluates every routed loop of the module
+stage and the recheck by PEEC; multi searches with the closed forms and re-scores each
+decision's fast top `--physics-k` (4) by PEEC, the recheck by PEEC; fast (default) as before.
 Exit status: 0 when an output was written, 2 otherwise.
 """
 import argparse
@@ -67,7 +70,11 @@ def main(argv=None):
     p = sub.add_parser("physics", help="routed physics of a finished board's modules")
     p.add_argument("board")
     p.add_argument("--brief")
+    from kae.physics import exact as EX
+    EX.add_cli_args(r)
+    EX.add_cli_args(p)
     a = ap.parse_args(argv)
+    EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()
     if a.cmd == "route":
@@ -91,6 +98,8 @@ def main(argv=None):
             opts["trim_tol"] = a.trim_tol
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge, bridge_opts=dict(planes=a.planes))
+        if a.physics_fidelity != "fast":
+            rep["physics_fidelity"] = EX.summary()
         text = json.dumps(rep, default=str)
         if a.report:
             with open(a.report, "w") as f:
