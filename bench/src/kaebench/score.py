@@ -28,7 +28,7 @@ from pathlib import Path
 from . import tools
 from .boardfiles import board_path, install_rules
 
-SCORE_VERSION = 6
+SCORE_VERSION = 7
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499

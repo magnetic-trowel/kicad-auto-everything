@@ -650,11 +650,18 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
     _save(board, dst)
 
     # Normalize the allowed change away: put every output footprint back at its input pose.
+    # The input copy makes the same round trip first (to the output's pose and back): KiCad
+    # rewrites some footprint graphics when it rotates them (an fp_rect at a non-right angle
+    # becomes an fp_poly, and stays one when rotated back), so a placed footprint compared
+    # with an input that never moved would always look changed.
     fresh_fps = {fp.m_Uuid.AsString(): fp for fp in fresh.GetFootprints()}
     for u, o in out_fps.items():
         f = fresh_fps.get(u)
         if f is not None:
-            _set_pose(o, f.GetPosition(), f.GetOrientation(), f.IsFlipped())
+            pose = f.GetPosition(), f.GetOrientation(), f.IsFlipped()
+            _set_pose(f, o.GetPosition(), o.GetOrientation(), o.IsFlipped())
+            _set_pose(f, *pose)
+            _set_pose(o, *pose)
     _unfill(out)
     _unfill(fresh)
     foreign = _foreign(_canonical(out), _canonical(fresh))

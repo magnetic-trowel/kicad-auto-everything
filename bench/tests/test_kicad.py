@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """End-to-end tests on a two-net fixture board. Need KiCad 10; Freerouting optional."""
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -180,3 +181,26 @@ def test_human_freerouting_joint_baseline(tasks):
     root, _ = tasks
     s = _run(root, adapters.HumanFreerouting(), kinds=("joint",), name="hfr-joint", timeout=300)[0]["score"]
     assert s["valid"] and s["legal"] and s["clean"], s
+
+
+@needs_kicad
+def test_placement_rotated_off_right_angles_is_not_a_foreign_change(tmp_path):
+    """KiCad turns an fp_rect into an fp_poly when it rotates a footprint to a non-right
+    angle; an honest rotation must still leave nothing foreign."""
+    fixture = Path(__file__).parent / "fixtures" / "redteam.kicad_pcb"
+    inp = tmp_path / "input.kicad_pcb"
+    tools.run_ops("convert", fixture, inp)
+    out = tmp_path / "output.kicad_pcb"
+    script = tmp_path / "rotate.py"
+    script.write_text(
+        "import sys, pcbnew\n"
+        "b = pcbnew.LoadBoard(sys.argv[1])\n"
+        "free = [f for f in b.GetFootprints() if not f.IsLocked()\n"
+        "        and not any(g.GetLayer() == pcbnew.Edge_Cuts for g in f.GraphicalItems())]\n"
+        "for f, a in zip(free, (45, -135, 30, 12.5)):\n"
+        "    f.SetOrientationDegrees(a)\n"
+        "b.Save(sys.argv[2])\n")
+    subprocess.run([*tools.kicad_python(), str(script), str(inp), str(out)], check=True,
+                   capture_output=True)
+    tr = tools.run_ops("transplant-placement", out, inp, tmp_path / "dst.kicad_pcb", inp)
+    assert tr["foreign"]["count"] == 0, tr["foreign"]
