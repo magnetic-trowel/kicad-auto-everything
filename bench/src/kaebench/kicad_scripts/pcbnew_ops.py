@@ -176,7 +176,10 @@ def strip_routing(src, dst, keep_locked):
 
 
 def strip_placement(src, dst, keep_locked):
-    """Strip routing and move every unlocked footprint to a staging grid right of the board."""
+    """Strip routing and move every unlocked footprint to a staging grid right of the board.
+
+    Locked footprints always stay where they are: the place score requires them unchanged,
+    so staging them would make the task unsolvable. keep_locked only applies to copper."""
     board = _load(src)
     # Move footprints before removing tracks: after Remove() SWIG returns untyped objects.
     bb = board.GetBoardEdgesBoundingBox()
@@ -185,7 +188,7 @@ def strip_placement(src, dst, keep_locked):
     col_h = max(bb.GetHeight(), int(50 * NM))
     x, y, col_w = x0, y0, 0
     moved = 0
-    fps = [fp for fp in board.GetFootprints() if not (keep_locked and fp.IsLocked())]
+    fps = [fp for fp in board.GetFootprints() if not fp.IsLocked()]
     fps.sort(key=lambda f: f.GetReference())
     for fp in fps:
         fp.SetOrientationDegrees(0)
