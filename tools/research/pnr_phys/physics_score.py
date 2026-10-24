@@ -189,8 +189,8 @@ def score_board(ctx, board, routed, tmp, timeout):
     return out
 
 
-def attempt_dir(run, bid):
-    hits = sorted(Path(run).glob(f"*/*/{bid}/attempt-0"))
+def attempt_dir(run, bid, attempt=0):
+    hits = sorted(Path(run).glob(f"*/*/{bid}/attempt-{attempt}"))  # place, route or joint tasks
     return hits[0] if hits else None
 
 
@@ -204,6 +204,8 @@ def harness_info(adir):
     if r.get("kind") == "route":
         p = s
         s = dict(legal=True)
+    elif r.get("kind") == "joint":  # harness score v7: placement and routing in one score
+        p = s
     return dict(status=r.get("status"), legal=bool(s.get("legal")),
                 clean=bool(s.get("legal")) and bool(p.get("clean")),
                 completion=p.get("completion", 0.0) if s.get("valid", True) else 0.0,
@@ -354,6 +356,7 @@ def markdown(sums, n_human, human_cov):
 
 # ----------------------------------------------------------------------------- main
 def main(argv=None):
+    global WORK
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--suite", default=str(WORK / "ab33.txt"), help="board ids (default: the runs' union)")
@@ -364,7 +367,10 @@ def main(argv=None):
     ap.add_argument("--no-routed", action="store_true")
     ap.add_argument("--timeout", type=float, default=600)
     ap.add_argument("--only", default=None, help="comma-separated board ids")
+    ap.add_argument("--workdir", default=str(WORK), help="kaebench workdir holding tasks/ (reference boards)")
+    ap.add_argument("--attempt", type=int, default=0, help="which attempt (seed) of each task to score")
     a = ap.parse_args(argv)
+    WORK = Path(a.workdir).resolve()
     runs = []
     for r in a.runs:
         if Path(r).is_dir():
@@ -378,7 +384,7 @@ def main(argv=None):
     if a.only:
         ids = a.only.split(",")
     elif a.all or not Path(a.suite).exists():
-        ids = sorted({p.parent.name for r in runs for p in r.glob("*/*/*/attempt-0")})
+        ids = sorted({p.parent.name for r in runs for p in r.glob(f"*/*/*/attempt-{a.attempt}")})
     else:
         ids = [x.strip() for x in Path(a.suite).read_text().split() if x.strip() and not x.startswith("#")]
     routed = not a.no_routed
@@ -404,7 +410,7 @@ def main(argv=None):
             hf.write_text(json.dumps(h, indent=1))
         human[bid] = h
         for r in runs:
-            ad = attempt_dir(r, bid)
+            ad = attempt_dir(r, bid, a.attempt)
             if ad is None:
                 rows[r.name][bid] = dict(skip="no attempt")
                 continue
@@ -413,7 +419,7 @@ def main(argv=None):
             if not ob.exists():
                 rows[r.name][bid] = dict(skip=f"no output board (status {info.get('status')})", harness=info)
                 continue
-            rf = ctx.cache / "runs" / f"{r.name}.json"
+            rf = ctx.cache / "runs" / (f"{r.name}.json" if a.attempt == 0 else f"{r.name}.a{a.attempt}.json")
             m = md5(ob)
             res = json.loads(rf.read_text()) if rf.exists() else None
             if not res or res.get("key") != key or res.get("md5") != m:

@@ -1,0 +1,33 @@
+# v7 joint baselines: bugs found and fixed
+
+Log of the fix-and-rerun loop for [v7-baselines.md](v7-baselines.md) (harness score v7,
+task spec 6, `--kinds joint`, workdir `kae-v7/`). Every fix is a separate commit; runs made
+before a fix are discarded and re-run under a new name.
+
+| # | Where | Symptom | Cause | Fix | Runs affected |
+|---|---|---|---|---|---|
+| 1 | engine (`kicad_io.py`, `world.py`) | `items_not_allowed` on noisecard: tracks and vias inside the keep-outs of B1 and J1 | Only board-level rule areas were extracted; rule areas drawn inside a footprint were ignored, so wires crossed them | Footprint rule areas are extracted in the footprint frame and move with the part: no-track / no-via areas are no-net obstacles for every net; no-pad / no-footprint areas join the part's keep-out planes (4 of 33 boards have them) | `v7-seq`, `v7-seq_phys` (killed, discarded) |
+| 2 | engine (`kicad_io.py`, `world.py`) | Joint output invalid (`locked_moved`) on lt6c; any method | Task spec 5+ keeps footprints that carry Edge.Cuts in place (they are part of the outline); the engine treated them as movable | Footprints with Edge.Cuts graphics count as locked (`anchored`), as the harness defines them (5 of 33 boards) | as 1 |
+| 3 | runner (`kae-v7/runj.sh`) | Every physics method (`seq_phys`, `combo`, `combo_lv`, `jc`, `jc_lv`): `no_output`, `ModuleNotFoundError: kae` | The merged harness runs `--command` methods in a bubblewrap sandbox with a private `/tmp`; the kae package (`KAE_SRC`) lives under `/tmp/claude-0/...` | `--sandbox-ro <KAE_SRC>` in the runner (read-only; the sandbox stays on). Note `combo_lv` and `jc_lv` need kae too: they build the physics object even at `phys_w = 0` | smoke runs only |
+| 5 | engine (`kicad_io.py`, `world.py`) | `shorting_items` on paw3222: a GND track through D1's copper rectangles | Copper graphics drawn inside a footprint were not extracted (only board-level ones) | Free-standing footprint copper graphics (touching none of the part's pads) are no-net copper that moves with the part; graphics touching a pad (espprog's solder-jumper bridges) are left as before | smoke runs only (fixed before the counted runs) |
+| 4 | workdir (`kae-v7/prepare.log`) | 8 boards `FAILED` in prepare (`FileExistsError`, DRC on a half-written board) | Two `prepare` processes (one with `--force`) wrote the same workdir at once | All 33 A/B boards and the 8 failed ones re-prepared with `--force` by a single process before any counted run | none counted |
+
+## Harness issues written up, not fixed (scoring code is not changed here)
+
+- **`method_usage.cpu_s` is near zero for sandboxed `--command` methods** (0.008 s for a run
+  of 48 s). The harness measures the `wait4` rusage of `bwrap`; with `--unshare-pid` the
+  method's processes are reaped inside the sandbox's PID namespace and their CPU time never
+  reaches that rusage. The `cpu_s` column of `kaebench report` is therefore meaningless for
+  these runs; budgets are enforced inside the method (`placekit.Clock`, process time).
+
+## Engine limitations seen in the outputs (not bugs; left as they are)
+
+- **The legality model rejects the human placement on 13 of 33 boards**, some by hundreds of
+  cells (paw3395, noisecard, olimex, pmw3610-siderakb): pad keep-outs grown by the thermal
+  spoke corridors of zone-net pads (all four directions kept free, KiCad needs two spokes)
+  and by mask apertures. On paw3395 `seq` finds no legal spot for 3 capacitors and leaves
+  them staged off the board (`outside` > 0, not legal). This is the engine's model, not a
+  bug; changing it would change every method.
+- **Mask openings drawn as graphics** (a polygon on F.Mask inside lt6c's U1) are not
+  modelled: tracks routed under one, or the GND pour under it, give `solder_mask_bridge`.
+- `starved_thermal` (spokes of zone pads blocked by neighbours or wires) remains, as in v5.
