@@ -75,12 +75,23 @@ def pick_window(world, kit, rng, max_parts=5, side_mm=9.0, margin_mm=1.2, max_pa
         ratios = {n: kit.net_cost(n, unrouted_mm=0) / (world.hpwl([n]) + 1.0) for n in world.net_pins}
         net = max(ratios, key=lambda n: ratios[n] * rng.uniform(0.7, 1.3))
     side = int(side_mm / world.g)
+    snap = kit.snapshot([net])
+    bl = methods.blockers(world, kit, net)
+    kit.restore(snap)
+    for grow in (1.0, 1.4, 1.8):
+        res = _window_at(world, kit, rng, net, mov, bl, int(side * grow), max_parts, margin_mm, max_pads)
+        if res[1] is not None:
+            return (net,) + res
+    return net, [], None
+
+
+def _window_at(world, kit, rng, net, mov, bl, side, max_parts, margin_mm, max_pads):
     small = {pi for pi in mov if _npads(world, pi) <= max_pads}
     own = [pi for pi, k in world.net_pins[net] if pi in small]
     if not own:
         own = [rng.choice(sorted(small))] if small else []
     if not own:
-        return net, [], None
+        return [], None
     seed = rng.choice(own)
     sx0, sy0, sx1, sy1 = _court_bbox(world, seed)
     scx, scy = (sx0 + sx1) / 2, (sy0 + sy1) / 2
@@ -99,9 +110,6 @@ def pick_window(world, kit, rng, max_parts=5, side_mm=9.0, margin_mm=1.2, max_pa
     wx0, wy0 = int(cx - side / 2), int(cy - side / 2)
     wx1, wy1 = wx0 + side, wy0 + side
     # rank candidate parts: the net's own, blockers, then distance to the centre
-    snap = kit.snapshot([net])
-    bl = methods.blockers(world, kit, net)
-    kit.restore(snap)
     inside = []
     for pi in small:
         x0, y0, x1, y1 = _court_bbox(world, pi)
@@ -112,7 +120,7 @@ def pick_window(world, kit, rng, max_parts=5, side_mm=9.0, margin_mm=1.2, max_pa
     inside.sort()
     parts = [pi for _, pi in inside[:max_parts]]
     if len(parts) < 2:
-        return net, parts, None
+        return parts, None
     # shrink the window to the parts' bbox + margin (kept inside the side limit)
     m = int(margin_mm / world.g)
     bbs = np.array([_court_bbox(world, pi) for pi in parts])
@@ -122,14 +130,15 @@ def pick_window(world, kit, rng, max_parts=5, side_mm=9.0, margin_mm=1.2, max_pa
     fy1 = min(wy1, int(bbs[:, 3].max()) + m)
     fx0, fy0 = max(1, fx0), max(1, fy0)
     fx1, fy1 = min(world.W - 2, fx1), min(world.H - 2, fy1)
-    return net, parts, (fx0, fy0, fx1, fy1)
+    return parts, (fx0, fy0, fx1, fy1)
 
 
 # ---------------------------------------------------------------- model
 class Window:
     """Everything needed to build, solve and decode one CP-SAT window."""
 
-    def __init__(self, world, kit, parts, box, pitch=None, workers=2, cross=False):
+    def __init__(self, world, kit, parts, box, pitch=None, workers=1, cross=False, lin=0,
+                 radius=None, cmargin=None):
         self.w, self.kit, self.parts, self.box = world, kit, list(parts), box
         R = world.R
         s = pitch or int(math.ceil(R.R_TT / world.g / 2.0)) * 2
@@ -139,6 +148,10 @@ class Window:
         self.NY = (fy1 - fy0) // self.s + 1
         self.layers = [0] if world.nl == 1 else [0, world.nl - 1]
         self.workers = workers
+        self.lin = lin
+        self.presolve = False
+        self.radius = radius    # pose search radius around the current pose (coarse cells)
+        self.cmargin = cmargin  # routing corridor margin around a connection's terminals
         self.cross = cross  # sample pad halos at cell centre + edge midpoints (stricter)
         self.stats = {}
 
@@ -326,6 +339,9 @@ class Window:
                 for j in range(NY):
                     for i in range(NX):
                         ox, oy = self.fxy(i, j)
+                        if self.radius is not None and (abs(ox - cur[0]) > self.radius * s or
+                                                        abs(oy - cur[1]) > self.radius * s):
+                            continue
                         if ox + bx0 >= fx0 and oy + by0 >= fy0 and ox + bx1 <= fx1 and oy + by1 <= fy1:
                             cand.append((ox, oy, i, j, 0, 0))
                 # the current pose (any phase) so "stay" is always representable
@@ -583,6 +599,11 @@ class Window:
                 choose(terms[ta])
                 choose(terms[tb])
                 inc = {}
+                # the connection may only use cells near its terminals' candidate cells
+                ij = np.array([nd[2:] for nd in X]) if X else np.zeros((1, 2), int)
+                cm = self.cmargin if self.cmargin is not None else max(NX, NY)
+                ci0, cj0 = ij.min(0) - cm
+                ci1, cj1 = ij.max(0) + cm
                 for li in range(LL):
                     for dirn, (di, dj) in enumerate(((1, 0), (0, 1))):
                         eok = self.edge_ok[n, li, dirn]
@@ -590,6 +611,8 @@ class Window:
                             for i in range(NX - di):
                                 a, b = (n, li, i, j), (n, li, i + di, j + dj)
                                 if not eok[j, i] or a not in o or b not in o:
+                                    continue
+                                if not (ci0 <= i <= ci1 - di and cj0 <= j <= cj1 - dj):
                                     continue
                                 u = M.NewBoolVar("")
                                 M.AddImplication(u, net_edge(n, (n, li, i, j, dirn)))
@@ -603,6 +626,8 @@ class Window:
                         for i in range(NX):
                             a, b = (n, 0, i, j), (n, 1, i, j)
                             if not vok[j, i] or a not in o or b not in o:
+                                continue
+                            if not (ci0 <= i <= ci1 and cj0 <= j <= cj1):
                                 continue
                             v = M.NewBoolVar("")
                             M.AddImplication(v, net_via(n, i, j))
@@ -627,13 +652,47 @@ class Window:
         return True
 
     # ------------------------------------------------------------ solve / decode
-    def solve(self, tlim=4.0, seed=0):
+    def _solver(self, tlim, seed):
         S = cp_model.CpSolver()
-        S.parameters.max_time_in_seconds = tlim
+        # deterministic time: independent of machine load (budgets are CPU seconds); wall
+        # time only as a safety net
+        S.parameters.max_deterministic_time = tlim
+        S.parameters.max_time_in_seconds = 4 * tlim
         S.parameters.num_workers = self.workers
+        # pure CP/SAT search: the LP relaxation of the routing part is weak and slow; with
+        # it off a single worker finds far better routings in the same time
+        S.parameters.linearization_level = self.lin
         S.parameters.random_seed = seed
+        # presolve (probing especially) costs seconds on these models and buys little
+        S.parameters.cp_model_presolve = self.presolve
+        S.parameters.cp_model_probing_level = 0
+        return S
+
+    def solve(self, tlim=4.0, seed=0, phase1=0.35):
+        """Phase 1: route the window with the parts at their current poses (assumptions),
+        which yields a complete incumbent; phase 2: free poses, hinted with phase 1."""
+        M = self.M
+        cur = []
+        for pi, lst in self.pv.items():
+            hit = [v for v, ox, oy, ri, _, _ in lst if (ox, oy, ri) == tuple(self.poses0[pi])]
+            cur += hit[:1]
         t0 = time.time()
-        st = S.Solve(self.M)
+        self.stats["cur_obj"] = None
+        if len(cur) == len(self.pv) and phase1 > 0:
+            M.AddAssumptions(cur)
+            S = self._solver(tlim * phase1, seed)
+            st = S.Solve(M)
+            M.ClearAssumptions()
+            if st in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                self.stats["cur_obj"] = S.ObjectiveValue()
+                M.ClearHints()
+                sol = S.ResponseProto().solution
+                hp = M.Proto().solution_hint
+                hp.vars.extend(range(len(sol)))
+                hp.values.extend(sol)
+            tlim = tlim * (1 - phase1)
+        S = self._solver(tlim, seed)
+        st = S.Solve(M)
         self.stats.update(solve_s=round(time.time() - t0, 2), status=S.StatusName(st))
         if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return None
@@ -739,7 +798,8 @@ def _restore_full(world, kit, mov, st):
 
 # ---------------------------------------------------------------- the method
 def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_mm=9.0,
-          tlim=4.0, workers=2, guide=False, compare=False, pitch=None, **kw):
+          tlim=4.0, workers=1, guide=False, compare=False, pitch=None, radius=None, cmargin=None,
+          **kw):
     """Window LNS with exact CP-SAT place-and-route of each window.
     compare=True also runs the repair-style heuristic on every window (from the same
     state) and logs both; the better of the two is kept (diagnostic mode)."""
@@ -761,7 +821,7 @@ def cpsat(world, seed=0, budget=300, log=print, start="seq", max_parts=5, side_m
         if box is None or tabu.get(key, -1) >= tries:
             continue
         state0 = _full_state(world, kit, mov)
-        win = Window(world, kit, parts, box, pitch=pitch, workers=workers)
+        win = Window(world, kit, parts, box, pitch=pitch, workers=workers, radius=radius, cmargin=cmargin)
         win.rip()
         ok = win.build()
         poses = win.solve(tlim=tlim, seed=tries) if ok else None

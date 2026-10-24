@@ -29,7 +29,7 @@ sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
 
 import numpy as np  # noqa: E402
 
-from methods import _place_fixed, _router, center_bias, growth_order, place_mechanical  # noqa: E402
+from methods import _place_fixed, _router, center_bias, greedy_place, growth_order, place_mechanical  # noqa: E402
 from placekit import Clock, Kit  # noqa: E402
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
@@ -54,7 +54,7 @@ def capture(world, r, mov):
 
 def switch(world, r, mov, st, stats=None):
     """Make the world equal to node state `st` (diff against the current state)."""
-    t0 = time.time()
+    t0 = time.process_time()
     nets = set(n for n, ps in r.routes.items() if ps) | set(st.routes) | set(r.unrouted) | set(st.unrouted)
     diff = []
     for n in nets:
@@ -83,7 +83,7 @@ def switch(world, r, mov, st, stats=None):
         if st.unrouted.get(n):
             r.unrouted[n] = st.unrouted[n]
     if stats is not None:
-        stats["switch_s"] = stats.get("switch_s", 0.0) + time.time() - t0
+        stats["switch_s"] = stats.get("switch_s", 0.0) + time.process_time() - t0
         stats["switch_n"] = stats.get("switch_n", 0) + 1
         stats["switch_nets"] = stats.get("switch_nets", 0) + len(diff)
         stats["switch_parts"] = stats.get("switch_parts", 0) + moved
@@ -102,24 +102,21 @@ def _setup(world, seed, kw):
 
 def expand(world, kit, pi, pose, iters=4, stats=None):
     """Place pi at pose and re-route the nets it completes or blocks. Returns total cost."""
-    t0 = time.time()
+    t0 = time.process_time()
     world.place(pi, *pose)
     affected = kit.part_nets([pi]) | set(kit.conflicted_nets())
     kit.reroute(affected, iters=iters)
     c = kit.total_cost()
     if stats is not None:
-        stats["expand_s"] = stats.get("expand_s", 0.0) + time.time() - t0
+        stats["expand_s"] = stats.get("expand_s", 0.0) + time.process_time() - t0
         stats["expand_n"] = stats.get("expand_n", 0) + 1
     return c
 
 
 def unplaced_penalty(world, kit, pis):
-    """Cost of parts that found no legal spot: every connection they own is unrouted."""
-    tot = 0
-    for pi in pis:
-        for n in kit.part_nets([pi]):
-            tot += 1
-    return tot * kit.unrouted_mm
+    """Cost of parts that found no legal spot: every connection they own is unrouted, plus
+    three more (an illegal placement fails the board, so it must outweigh detours)."""
+    return sum(3 + len(kit.part_nets([pi])) for pi in pis) * kit.unrouted_mm
 
 
 def lookahead(world, kit, rest, L, bias, alpha=1.3):
@@ -147,7 +144,7 @@ def lookahead(world, kit, rest, L, bias, alpha=1.3):
 def rollout(world, kit, rest, bias, iters=3, stats=None):
     """Finish the board: greedy HPWL placement of `rest`, then a short PathFinder over the
     nets they touch. Returns (cost, failed parts)."""
-    t0 = time.time()
+    t0 = time.process_time()
     fail = []
     for q in rest:
         c = fc(kit, q, k=1, cost_extra=bias)
@@ -155,18 +152,30 @@ def rollout(world, kit, rest, bias, iters=3, stats=None):
             fail.append(q)
             continue
         world.place(q, *c[0][1:])
-    t1 = time.time()
+    t1 = time.process_time()
     nets = kit.part_nets([q for q in rest if q not in fail])
     kit.reroute(nets, iters=iters)
     cost = kit.total_cost() + unplaced_penalty(world, kit, fail)
     if stats is not None:
         stats["roll_place_s"] = stats.get("roll_place_s", 0.0) + t1 - t0
-        stats["roll_route_s"] = stats.get("roll_route_s", 0.0) + time.time() - t1
+        stats["roll_route_s"] = stats.get("roll_route_s", 0.0) + time.process_time() - t1
         stats["roll_n"] = stats.get("roll_n", 0) + 1
     return cost, fail
 
 
-def finish(world, r, kit, log, name, iters=40):
+def legalize_rest(world, kit, order, log):
+    """Parts the search left unplaced (no legal spot when their turn came) go through the
+    engine's ripple legalizer (greedy_place evicts smaller parts and re-queues them)."""
+    missing = [q for q in order if q not in world.pose]
+    if missing:
+        greedy_place(world, kit, missing, log)
+        log(f"  legalized {len(missing)} skipped parts, still unplaced: "
+            f"{[world.parts[q].ref for q in order if q not in world.pose]}")
+    return missing
+
+
+def finish(world, r, kit, log, name, order, iters=40):
+    legalize_rest(world, kit, order, log)
     r.pathfinder(log=None, iters=iters)
     log(f"{name} {r.stats()} hpwl={world.hpwl():.1f} cost={kit.total_cost():.1f}")
     return r
@@ -198,7 +207,7 @@ def grow_wide(world, seed=0, budget=300, log=print, k=24, **kw):
                 break
         switch(world, r, mov, best[1], stats)
     log(f"  grow_wide stats {_fmt(stats)}")
-    return finish(world, r, kit, log, "grow_wide")
+    return finish(world, r, kit, log, "grow_wide", order)
 
 
 # ---------------------------------------------------------------- idea 7: beam
@@ -252,8 +261,9 @@ def beam(world, seed=0, budget=300, log=print, B=4, k=6, L=2, alpha=1.3, per_par
         if best is not None and clock.left() < reserve * 0.3:
             break
         switch(world, r, mov, st, stats)
+        legalize_rest(world, kit, order, log)
         r.pathfinder(log=None, iters=40)
-        tot = kit.total_cost()
+        tot = kit.total_cost() + unplaced_penalty(world, kit, [q for q in order if q not in world.pose])
         log(f"  final candidate score={sc:.1f} -> cost {tot:.1f} {r.stats()}")
         if best is None or tot < best[0]:
             best = (tot, capture(world, r, mov))
@@ -411,10 +421,7 @@ def mcts(world, seed=0, budget=300, log=print, k=8, c_uct=0.7, pw_c=1.5, pw_alph
         if best is not None and clock.left() < reserve * 0.3:
             break
         switch(world, r, mov, st, stats)
-        if fi == 0:  # the committed line may have skipped parts: place them greedily
-            missing = [q for q in order if q not in world.pose]
-            if missing:
-                rollout(world, kit, missing, bias, iters=roll_iters)
+        legalize_rest(world, kit, order, log)
         r.pathfinder(log=None, iters=40)
         tot = kit.total_cost() + unplaced_penalty(world, kit, [q for q in order if q not in world.pose])
         log(f"  final {'line' if fi == 0 else 'rollout'} -> cost {tot:.1f} {r.stats()}")

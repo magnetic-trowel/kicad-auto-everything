@@ -216,7 +216,11 @@ class Session:
                 self._pad_ok[key] = np.ones((w.H, w.W), bool)
             else:
                 offs = np.unique(offs, axis=0)
-                self._pad_ok[key] = corr(~w.inside | ap, offs) < 0.5
+                bad = ~w.inside | ap
+                if np.abs(offs).max() == 0:  # placekit.corr returns an empty map for radius 0
+                    self._pad_ok[key] = ~bad
+                else:
+                    self._pad_ok[key] = corr(bad, offs) < 0.5
         return self._pad_ok[key]
 
     def pad_pos(self, ref_pad):
@@ -376,9 +380,11 @@ class Session:
         return (x, y)
 
     def _court_cells(self, pi, pose):
+        """{(plane, x, y)} keep-out cells of part pi at pose (courtyard per side, pad
+        keep-out per copper layer): two parts conflict only on a shared plane."""
         cx, cy, ri = pose
-        c = self.world.part_raster(self.world.parts[pi], ri, self.world.frac.get(pi, (0.0, 0.0)))["court"]
-        return {(int(x) + cx, int(y) + cy) for x, y in c}
+        r = self.world.part_raster(self.world.parts[pi], ri, self.world.frac.get(pi, (0.0, 0.0)))
+        return {(pl, int(x) + cx, int(y) + cy) for pl, c in r["keep"] for x, y in c}
 
     def _push(self, pi, old, targets, band, weights, rec):
         """Place pi at its target even if movable parts are in the way: those parts are

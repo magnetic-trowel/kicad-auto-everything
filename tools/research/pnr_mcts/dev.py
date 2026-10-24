@@ -49,10 +49,10 @@ def main():
         for m in a.methods.split(","):
             fn = getattr(mcts, m, None) or getattr(methods, m)
             world = World(data, g=0.1)
-            t0 = time.time()
+            t0 = time.process_time()
             logs = []
             r = fn(world, seed=a.seed, budget=a.budget, log=(print if a.v else logs.append), **opts)
-            dt = time.time() - t0
+            dt = time.process_time() - t0
             kit = Kit(world, r)
             viol = [world.part_violation(pi) for pi in world.pose]
             unpl = sum(1 for p in world.parts if p.idx not in world.pose)

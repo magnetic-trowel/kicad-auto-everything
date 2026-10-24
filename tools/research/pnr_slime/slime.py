@@ -431,8 +431,8 @@ def _seq_place(world, kit, rng, clock, log):
     descent(world, kit, log, clock=clock)
 
 
-def slime(world, seed=0, budget=120, log=print, move=True, prior=True, lam=0.6, gc_mm=0.5,
-          frac=0.55, w_press=1.0, step_mm=1.5, final_iter=25, dil=1, thr=0.3, **kw):
+def slime(world, seed=0, budget=120, log=print, move=True, prior=True, lam=0.2, gc_mm=0.5,
+          frac=0.55, w_press=1.0, step_mm=1.5, final_iter=25, dil=1, thr=0.3, accept=True, **kw):
     rng = random.Random(seed)
     clock = Clock(budget)
     _place_fixed(world)
@@ -443,7 +443,7 @@ def slime(world, seed=0, budget=120, log=print, move=True, prior=True, lam=0.6, 
     sl = Slime(world, gc_mm=gc_mm)
     log(f"  slime grid {sl.L}x{sl.Hc}x{sl.Wc} cell={sl.gc:.2f} mm nets={len(sl.nets)}")
     if move:
-        motion(world, kit, sl, clock, rng, log, frac=frac, w_press=w_press, step_mm=step_mm)
+        motion(world, kit, sl, clock, rng, log, frac=frac, w_press=w_press, step_mm=step_mm, accept=accept)
     pri = {}
     if prior:
         # converge the network on the final placement, then turn tubes into corridors
