@@ -135,9 +135,11 @@ class _Slot:
     """A host-wide slot (flock on one of N files in KAE_FR_LOCKDIR, default /tmp/kae-fr-slots);
     waits for a free one. No-op when the directory cannot be used."""
 
-    def __init__(self):
+    def __init__(self, timeout=None):
         self.f = None
         self.waited = 0.0
+        self.timeout = timeout      # give up waiting after this many seconds (None: wait on)
+        self.gave_up = False
 
     def __enter__(self):
         n = slots()
@@ -161,6 +163,10 @@ class _Slot:
                     return self
                 except OSError:
                     f.close()
+            if self.timeout is not None and time.monotonic() - t0 >= self.timeout:
+                # no slot within the budget: run without one rather than never
+                self.waited, self.gave_up = round(time.monotonic() - t0, 1), True
+                return self
             time.sleep(1.0)
 
     def __exit__(self, *exc):
@@ -193,9 +199,13 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     if ses.exists():
         ses.unlink()
     margin = margin_s if margin_s is not None else min(15.0, 0.1 * budget_s)
-    slot = _Slot().__enter__()
-    # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it
+    # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it,
+    # and after the budget it runs without a slot (a wait without end would hang the caller)
+    slot = _Slot(timeout=max(1.0, budget_s - margin - 5.0)).__enter__()
     waited = slot.waited or 0.0
+    if slot.gave_up:
+        print(f"[kae.route {time.strftime('%H:%M:%S')}] warning: no Freerouting slot within {waited:.0f}s; "
+              "running without one", flush=True)
     if waited > SLOT_WARN * budget_s:
         print(f"[kae.route {time.strftime('%H:%M:%S')}] warning: waited {waited:.0f}s for a Freerouting slot "
               f"({waited / max(budget_s, 1e-9):.0%} of the {budget_s:.0f}s budget; KAE_FR_SLOTS / KAE_FR_XMX)",
@@ -235,7 +245,8 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         pass
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
                seconds=round(dt, 2), timed_out=timed_out,
-               report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1)),
+               report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1),
+                          **({"slot_gave_up": True} if slot.gave_up else {})),
                argv=argv)
 
 

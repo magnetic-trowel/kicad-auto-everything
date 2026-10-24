@@ -348,6 +348,9 @@ class KaeStages:
         lm = None
         if it > 0 and not finish and nets and self.opts.get("window_last_mile", True):
             lm = self._last_mile(out, it, nets, lay.crit)
+            self.log(f"last mile on {len(nets)} nets: " + (lm.get("error") or
+                     f"joined {len(lm.get('joined') or [])}, failed {len(lm.get('failed') or [])}, "
+                     f"ripped {lm.get('ripped')} ({lm.get('seconds')}s)"))
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})

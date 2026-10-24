@@ -194,3 +194,24 @@ def test_slot_wait_comes_out_of_freeroutings_deadline(tmp_path, monkeypatch, cap
     assert abs(run.report["job_timeout_s"] - (30.0 - 3.0 - w)) < 0.2          # margin min(15, 10 %) = 3 s
     assert "--router.job_timeout=00:00:2" in run.ses.read_text()               # 23-24 s, not 27
     assert "warning: waited" in capsys.readouterr().out
+
+
+def test_slot_wait_ends_with_the_budget(tmp_path, monkeypatch):
+    """With every slot held for good, route() runs without one once the budget is spent
+    waiting, instead of hanging its caller."""
+    import fcntl
+    from kae.route import freerouting as FR
+    fake = tmp_path / "fake-freerouting"
+    fake.write_text("#!/usr/bin/env python3\nimport sys\nopen(sys.argv[sys.argv.index('-do') + 1], 'w')"
+                    ".write(' '.join(sys.argv))\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("KAE_BRIDGE_FREEROUTING", str(fake))
+    monkeypatch.setenv("KAE_FR_SLOTS", "1")
+    monkeypatch.setenv("KAE_FR_LOCKDIR", str(tmp_path / "slots"))
+    (tmp_path / "slots").mkdir()
+    held = open(tmp_path / "slots" / "slot0", "a")
+    fcntl.flock(held, fcntl.LOCK_EX)
+    run = FR.route(tmp_path / "board.dsn", tmp_path / "board.ses", tmp_path, budget_s=10.0)
+    assert run.report.get("slot_gave_up") and run.ses is not None
+    assert run.report["slot_wait_s"] < 10.0
+    held.close()
