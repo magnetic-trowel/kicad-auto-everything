@@ -259,6 +259,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         macros = clusters.build_macros(P, structs, time_s=min(0.1 * budget, 30.0), workers=workers,
                                        seed=seed, log=log, terms=terms)
         order = clusters.protection_order(P, brief)
+        P.order_rules = order          # the closed loop's repair keeps them (kae.place.exact)
         rep["physics_terms"] = dict(source=tsrc, structures=len(structs), macros=len(macros),
                                     macro_sizes=[len(m.members) for m in macros], order_rules=len(order))
         # nets inside structures are critical: pull them together harder in the seed
@@ -511,6 +512,7 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
         except Exception as e:
             log(f"place terms failed ({type(e).__name__}: {e})")
     order = clusters.protection_order(P, brief) if physics else []
+    P.order_rules = order          # the closed loop's repair keeps them (kae.place.exact)
     for net in P.nets:
         net.weight *= float((net_weights or {}).get(net.name, 1.0))
     rep = dict(parts=[P.parts[i].ref for i in sub], window=window)
