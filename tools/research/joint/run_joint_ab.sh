@@ -49,7 +49,8 @@ M="env PYTHONPATH=$C NUMBA_CACHE_DIR=$C/.numba_cache OMP_NUM_THREADS=1 KAE_WORKE
 # and the base CPython it links to) read-only so the script also runs from a checkout elsewhere
 VENV=$(cd "$(dirname "$KAE_PY")/.." && pwd)
 BASE=$("$KAE_PY" -c 'import sys; print(sys.base_prefix)')
-RO="--sandbox-ro $VENV --sandbox-ro $BASE ${KAE_SANDBOX_RO:+--sandbox-ro $KAE_SANDBOX_RO}"
+RO="--sandbox-ro $VENV --sandbox-ro $BASE"
+for p in ${KAE_SANDBOX_RO:-}; do RO="$RO --sandbox-ro $p"; done
 RUN="$KB --workdir $WORKDIR run --kinds joint --splits $SPLITS -k $K -j $JOBS $RO"
 for arm in $ARMS; do
   case $arm in
