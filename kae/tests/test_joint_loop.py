@@ -306,15 +306,6 @@ def test_window_restarts_keep_the_fewest_open(tmp_path, monkeypatch):
     assert "restarts" not in rep and raw.read_text() == "seed 5"
 
 
-def test_route_rank_reads_both_routers_reports():
-    from kae.joint.stages import route_rank
-    assert route_rank(dict(repair=dict(final=dict(errors=0, unconnected=3)))) == (0, 3)
-    assert route_rank(dict(drc=dict(errors=1, unconnected=2))) == (1, 2)                 # no repair rounds
-    assert route_rank(dict(bridge=dict(repair=dict(final=dict(errors=0, unconnected=0))))) == (0, 0)  # critical_cli
-    assert route_rank(dict(bridge=dict(drc=dict(errors=0, unconnected=9)))) == (0, 9)
-    assert route_rank(None) == (float("inf"), float("inf"))
-
-
 def test_window_router_budget_grows_after_timeouts_and_shrinks_back():
     from kae.joint.stages import KaeStages
     st = KaeStages.__new__(KaeStages)

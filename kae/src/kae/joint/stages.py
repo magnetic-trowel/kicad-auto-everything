@@ -24,7 +24,6 @@ Stage by stage:
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import math
 import shutil
@@ -385,13 +384,12 @@ class KaeStages:
                                                           ["kae.route.cli", []]]
         P = int(self.opts.get("route_parallel", 1))
         raw = self._path(it, "route_raw")
-        with _portfolio_rank(portfolio):
-            rep = portfolio.run(inp, raw, seed=seed % 1_000_000, time_s=time_s, parallel=P,
-                                first_s=float(self.opts.get("portfolio_first_s",
-                                                            min(max(120.0, time_s / 6), time_s / 1.5))),
-                                growth=float(self.opts.get("portfolio_growth", 2.0)),
-                                router=[(m, list(a)) for m, a in routers], workdir=d / "runs",
-                                log=lambda m: self.log(m))
+        rep = portfolio.run(inp, raw, seed=seed % 1_000_000, time_s=time_s, parallel=P,
+                            first_s=float(self.opts.get("portfolio_first_s",
+                                                        min(max(120.0, time_s / 6), time_s / 1.5))),
+                            growth=float(self.opts.get("portfolio_growth", 2.0)),
+                            router=[(m, list(a)) for m, a in routers], workdir=d / "runs",
+                            log=lambda m: self.log(m))
         if not raw.exists():
             raise RuntimeError(f"portfolio: no board ({rep.get('stop')})")
         _project(self.input, raw)
@@ -727,30 +725,6 @@ def place_stops(rep):
         out["closed_loop"] = "legal" if not cl.get("end") else ("round cap" if cl.get("rounds", 0) >= 8 else "clock")
     out["legal"] = bool(rep.get("legal_grid") and not rep.get("exact"))
     return out
-
-
-def route_rank(rep):
-    """(errors, unconnected) of a router's report wherever it keeps them: kae.route.cli
-    rep.repair.final (rep.drc when its budget left no repair rounds), kae.route.critical_cli
-    the same under rep.bridge; (inf, inf) when none."""
-    for r in (rep or {}, (rep or {}).get("bridge") or {}):
-        fin = (r.get("repair") or {}).get("final") or r.get("drc") or {}
-        if "errors" in fin and "unconnected" in fin:
-            return (int(fin["errors"]), int(fin["unconnected"]))
-    return (float("inf"), float("inf"))
-
-
-@contextlib.contextmanager
-def _portfolio_rank(portfolio):
-    """Workaround, reported: portfolio._rank reads only rep.repair.final, so every
-    critical_cli attempt (rep.bridge.repair.final) and every attempt too short for repair
-    rounds ranks (inf, inf) and is never kept. Ranks them with route_rank for this call."""
-    old = portfolio._rank
-    portfolio._rank = route_rank
-    try:
-        yield
-    finally:
-        portfolio._rank = old
 
 
 def last_mile_line(lm):
