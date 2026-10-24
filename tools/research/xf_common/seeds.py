@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Seed spread of kaebench place runs (--probe self): compare.py reads attempt-0 only.
+"""Seed spread of kaebench joint runs (and place runs with --probe self): compare.py
+reads attempt-0 only.
 
-    python seeds.py kae-work/results/RUN1 [RUN2 ...] [--suite FILE]
+    python seeds.py $XF_WORK/results/RUN1 [RUN2 ...] [--suite FILE]
 
 Per run and attempt (seed): legal, clean, mean completion over the suite's boards; then
 mean +- sd over seeds and best-of-k (a board counts as clean if any seed is clean). Uses
@@ -17,10 +18,11 @@ from pathlib import Path
 
 def load(run):
     rows = defaultdict(dict)  # attempt -> id -> metrics
-    for f in Path(run).glob("*/place/*/attempt-*/attempt.json"):
+    for f in [*Path(run).glob("*/place/*/attempt-*/attempt.json"), *Path(run).glob("*/joint/*/attempt-*/attempt.json")]:
         r = json.loads(f.read_text())
         s = r.get("score") or {}
-        p = (r.get("probe") or {}).get("score") or {}
+        # joint tasks (harness score v7) carry placement and routing in one score
+        p = s if r.get("kind") == "joint" else ((r.get("probe") or {}).get("score") or {})
         rows[r["attempt"]][r["id"]] = dict(
             legal=bool(s.get("legal")), clean=bool(s.get("legal")) and bool(p.get("clean")),
             completion=p.get("completion", 0.0) if s.get("valid") else 0.0)
