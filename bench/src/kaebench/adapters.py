@@ -150,9 +150,10 @@ class Command(Adapter):
         w = Path(workdir)
         out = w / "output"
         out.mkdir(parents=True, exist_ok=True)
-        cmd = self.template.format(input=shlex.quote(str(board_path(input_dir))),
-                                   output=shlex.quote(str(board_path(out))),
-                                   workdir=shlex.quote(str(w)), kind=kind, attempt=attempt,
+        # the command runs in the work directory, so pass absolute paths
+        cmd = self.template.format(input=shlex.quote(str(board_path(input_dir).resolve())),
+                                   output=shlex.quote(str(board_path(out).resolve())),
+                                   workdir=shlex.quote(str(w.resolve())), kind=kind, attempt=attempt,
                                    timeout=int(timeout))
         try:
             r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=w)
