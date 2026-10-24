@@ -526,6 +526,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     if (wd / "kicad.dsn").exists():
         lmap, lname_map = layer_names(specctra.read(wd / "kicad.dsn"), plan.copper)
 
+    # with the last mile on, the repair rounds leave it its time (it needs a refill, a few
+    # grid searches, possibly a nested repair and one DRC)
+    reserve = float(opts.get("last_mile_reserve_s", 90.0)) if opts.get("last_mile") else 0.0
+
     def left():
         return deadline - time.monotonic()
 
@@ -546,7 +550,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         rec = dict(round=k)
         rounds.append(rec)
-        if left() < 45:
+        if left() - reserve < 45:
             rec["stopped"] = "time"
             break
         rdir = wd / f"repair{k}"
@@ -609,7 +613,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
             translate.write_rules(plan, dsn)
-            budget = max(15.0, min(left() * 0.5, left() - 30))
+            budget = max(15.0, min((left() - reserve) * 0.5, left() - reserve - 30))
             from .bridge import router_settings
             grace = opts.get("router_grace", freerouting.GRACE_S)
             run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("passes") or 0,

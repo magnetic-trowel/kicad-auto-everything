@@ -30,7 +30,8 @@ when KiCad's DRC on the re-opened board is better.
 from __future__ import annotations
 
 import numpy as np
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely import STRtree
+from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from kae.board.kicad_file import load
@@ -42,6 +43,7 @@ from .critical_space import Space
 MARGINS = (1.0, 3.0, 8.0)       # mm around a part and the nearest other part: search windows
 RIP_MARGINS = (1.0, 3.0)        # windows whose foreign unlocked copper may be ripped
 MAX_RIP = 40                    # tracks and vias ripped for one connection at most
+VIA_COSTS = (None, 12.0)        # the grid router's via cost, then a dear one (cells per via)
 RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (a detour of
                                 # about 10 mm beats ripping one 0.25 mm track)
 
@@ -106,8 +108,12 @@ def parts(space, fills, net):
             parent[a] = b
 
     eps = 1e-6
+    tree = STRtree([n.copper for n in nodes]) if nodes else None
     for i, a in enumerate(nodes):
-        for j in range(i + 1, len(nodes)):
+        for j in tree.query(a.copper.buffer(eps)):
+            j = int(j)
+            if j <= i:
+                continue
             b = nodes[j]
             shared = a.layers & b.layers
             if not shared:
@@ -202,14 +208,21 @@ def _window(src, others, margin):
 
 
 def _try(gr, sp, net, src, others, win, widths):
+    """A route from `src` to the other parts' copper inside `win`, committed: (route, new
+    items) or None. A route whose own vias crowd each other (the search checks a via only
+    against committed copper) is searched again with vias dearer."""
     dst = [a for p in others for a in _anchors(p, max(widths) / 2 + 0.02, clip=win)]
     if not dst:
         return None
     grid = gr.window([Anchor(win, tuple(sp.cu))], margin=0.0)
     for w in widths:
-        rt = gr.connect(net, src, dst, w, sp.cu, via=len(sp.cu) > 1, window=grid)
-        if rt is not None and (rt.segs or rt.vias):
-            return rt
+        for vc in VIA_COSTS:
+            rt = gr.connect(net, src, dst, w, sp.cu, via=len(sp.cu) > 1, window=grid, via_cost=vc)
+            if rt is None or not (rt.segs or rt.vias):
+                break
+            new = _commit(sp, rt)
+            if new is not None:
+                return rt, new
     return None
 
 
@@ -240,10 +253,9 @@ def _conflicts(sp, it, new):
 def _join(gr, sp, net, src, others, widths, fixed):
     """One route from `src` to the other parts: (route, new items, ripped items) or None."""
     for m in MARGINS:
-        rt = _try(gr, sp, net, src, others, _window(src, others, m), widths)
-        new = _commit(sp, rt) if rt is not None else None
-        if new is not None:
-            return rt, new, []
+        got = _try(gr, sp, net, src, others, _window(src, others, m), widths)
+        if got is not None:
+            return got[0], got[1], []
     for m in RIP_MARGINS:
         win = _window(src, others, m)
         cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
@@ -255,13 +267,13 @@ def _join(gr, sp, net, src, others, widths, fixed):
         sp.remove(cand)
         gr.soft, gr.soft_cost = cand, RIP_COST
         try:
-            rt = _try(gr, sp, net, src, others, win, widths)
+            got = _try(gr, sp, net, src, others, win, widths)
         finally:
             gr.soft, gr.soft_cost = [], 0.0
-        new = _commit(sp, rt) if rt is not None else None
-        if new is None:
+        if got is None:
             _restore(sp, cand)
             continue
+        rt, new = got
         keep = [it for it in cand if not _conflicts(sp, it, set(new))]
         _restore(sp, keep)
         ripped = [it for it in cand if it not in keep]

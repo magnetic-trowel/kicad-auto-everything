@@ -46,6 +46,7 @@ DEFAULT_OPTS = dict(
     repair_reserve_s=600.0,  # with router_share "auto": the time kept for the repair rounds at long budgets
     last_mile=False,         # after the repair rounds, join what is still open with the grid router and
                              # rip-up (kae.route.lastmile; repair._last_mile)
+    last_mile_reserve_s=90.0,  # with last_mile: the repair rounds stop this much before the deadline
     last_mile_rounds=4,      # last-mile rounds at most (each joins what the previous one left or ripped)
     planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
                              # plane_cost x, so they go there only when nothing shorter exists), "keep"
