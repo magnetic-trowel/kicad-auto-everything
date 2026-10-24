@@ -73,7 +73,7 @@ The window's modules are re-optimized with `optimize_modules(modules=…)`, with
 | 2 | completion and DRC: unconnected + errors, then unconnected | neither may rise; a board that becomes clean is kept; another strict gain is kept if physics rises by at most 10 % per item gained |
 | 3 | routed physics: Σ_modules min(u, 5), a module without a value counted as 3 | with equal completion and DRC, must fall by more than 0.5 % |
 
-The slack and the clean rule interpret "lexicographic" in the request. On ch552g a window made the board clean (1 unconnected → 0) while its decoupling loops, now routed by the bridge, raised Σu from 1.17 to 2.88. A 10 % flat slack reverted it. The strict reading (physics never worse, `--set phys_slack=0`) reverted the first smoke run's only window, which had halved the unconnected items (15 → 7) at +33 % physics. The MCU moved there and lengthened its decoupling loop.
+The clean rule and the per-item slack are the user's decision (confirmed after the first A/B), and they are the default. On ch552g a window made the board clean (1 unconnected → 0) while its decoupling loops, now routed by the bridge, raised Σu from 1.17 to 2.88. A 10 % flat slack reverted it. The strict reading (physics never worse, `--set phys_slack=0`) reverted the first smoke run's only window, which had halved the unconnected items (15 → 7) at +33 % physics. The MCU moved there and lengthened its decoupling loop.
 
 A rejected candidate is dropped, and the incumbent board, its bookkeeping and its feedback stay. Its failures still enter the congestion history.
 

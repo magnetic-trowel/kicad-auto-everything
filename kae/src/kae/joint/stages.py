@@ -237,11 +237,21 @@ class KaeStages:
             W.append_items(locked, locked, zones=guards)
         _project(self.input, locked)
         raw = self._path(it, "route_raw")
-        rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
-                       opts=dict(keep=bool(self.opts.get("keep")),
-                                 **({"rounds": int(self.opts.get("window_rounds", 3)),
-                                     "passes": int(self.opts.get("window_passes", 16))} if it > 0 else {})),
-                       log=lambda m: self.log(f"bridge: {m}"))
+        if it > 0 and self.opts.get("window_router", "incremental") == "incremental":
+            # a window: only its open connections, one fast pass (kae.route.incremental); the
+            # loop's evaluate is the one DRC
+            from kae.route.incremental import route_open
+            rep = route_open(locked, raw, seed=seed, time_s=min(time_s, float(self.opts.get("window_route_s", 45.0))),
+                             workdir=self.wd / f"it{it:02d}" / "incremental",
+                             opts=dict(keep=bool(self.opts.get("keep")),
+                                       passes=int(self.opts.get("window_passes", 1))),
+                             log=lambda m: self.log(f"incremental: {m}"))
+        else:
+            rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
+                           opts=dict(keep=bool(self.opts.get("keep")),
+                                     **({"rounds": int(self.opts.get("window_rounds", 3)),
+                                         "passes": int(self.opts.get("window_passes", 16))} if it > 0 else {})),
+                           log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
         src = raw if raw.exists() else locked
         allr = W.routing(src)
@@ -390,7 +400,8 @@ class KaeStages:
                           big_pads=int(o.get("big_pads", 20)), max_cross=int(o.get("max_cross", 4)),
                           also={u for sp in window.spots if sp.kind == "error" for u in sp.uuids},
                           supply_nets={n for n, d in ((self.brief or {}).get("nets") or {}).items()
-                                       if isinstance(d, dict) and d.get("role") in ("ground", "rail", "power")})
+                                       if isinstance(d, dict) and d.get("role") in ("ground", "rail", "power")},
+                          local=self.opts.get("window_router", "incremental") == "incremental")
         rep["ripup"] = plan.to_dict()
         if not plan.remove and not res.poses:
             rep["outcome"] = "re-route window: no routing to rip up"
@@ -420,7 +431,8 @@ class KaeStages:
                            time_s=min(float(o.get("module_time", 90.0)), max(5.0, 0.15 * left)))
         rep["modules"] = mod.info.get("modules")
         left = time_s - (time.monotonic() - t0)
-        if left < float(o.get("min_route_s", 75.0)):
+        min_route = 20.0 if o.get("window_router", "incremental") == "incremental" else 75.0
+        if left < float(o.get("min_route_s", min_route)):
             # Freerouting killed before it writes a session leaves the window unrouted
             rep["outcome"] = f"no time left to route ({left:.0f}s)"
             return None, rep

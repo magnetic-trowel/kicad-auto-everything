@@ -58,12 +58,14 @@ def _pad_xy(fp, pad):
 
 
 def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cross=4, pad_reach=0.3, also=(),
-               supply_nets=()):
+               supply_nets=(), local=False):
     """See the module docstring. board: kae.board.model.Board before the move (old poses);
     window: feedback.Window; moved: uuids of the parts that moved; owners: {routing uuid:
     module id} for critical copper; module_parts: {module id: [part uuid]}; also: routing
     uuids DRC blamed (error spots), ripped with their nets like a crossing net's items;
-    supply_nets: ground and rail nets (the brief's roles), always ripped only locally."""
+    supply_nets: ground and rail nets (the brief's roles), always ripped only locally;
+    local: every net ripped only locally (inside the window and at the moved pads), for the
+    incremental router, whose cost grows with the open connections."""
     moved = set(moved)
     fp_of = {fp.uuid: fp for fp in board.footprints}
     region = box(*window.rect).buffer(0.25)
@@ -77,7 +79,7 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
     supply = set(supply_nets or ())
 
     def big(net):
-        return net in poured or net in supply or pad_count.get(net, 0) >= big_pads
+        return local or net in poured or net in supply or pad_count.get(net, 0) >= big_pads
 
     touch_nets = set()
     old_pads = []
@@ -130,6 +132,7 @@ def plan_ripup(board, window, moved, owners, module_parts, big_pads=20, max_cros
             if not it.locked and it.net in crossing and hasattr(it, "start"):
                 length[it.net] = length.get(it.net, 0.0) + math.dist(it.start, it.end)
         small = sorted((n for n in crossing if not big(n)), key=lambda n: (length.get(n, 0.0), n))[:max_cross]
+        small = [] if local else small
         for it in items:
             if not it.locked and it.net in small:
                 remove.add(it.uuid)

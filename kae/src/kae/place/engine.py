@@ -1398,12 +1398,13 @@ class FastAnnealer:
         for i in a.mov:
             a.X[i], a.Y[i], a.K[i] = int(self.E.X[i]), int(self.E.Y[i]), int(self.E.K[i])
         cap = int(self.E.ip[I_CAP]) * 4
-        tot = self.E.tot.copy()
-        Xs, Ys = self.E.Xs.copy(), self.E.Ys.copy()
+        old = self.E
         self.E = build(a, hash_cap=cap)
-        self.E.Xs[:] = Xs
-        self.E.Ys[:] = Ys
-        _ = tot
+        # build() takes the congestion demand, the nets' RUDY boxes and the wirelength total
+        # from the Python annealer, which still holds the state the run started from; the old
+        # engine's running state is the current one: carry it over (only the hash is new)
+        for name in ("Xs", "Ys", "tot", "Dn", "Dp", "net_box", "net_dens", "has_box", "nb", "nc", "open"):
+            getattr(self.E, name)[...] = getattr(old, name)
 
     def report(self, cpu, planned=0, done=0):
         return dict(cpu_s=round(cpu, 2), planned_moves=planned, moves=done,

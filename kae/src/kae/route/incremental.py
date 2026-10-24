@@ -10,11 +10,13 @@ translate.apply, the bridge's router settings); what differs is how hard Freerou
 
 - every routing item of the input is locked: Freerouting sees it as fixed wiring and routes
   only the open connections (the bridge's own export does this; nothing to change);
-- `passes` autorouter passes (default 1; `-mp`), the post-route optimizer off
+- `passes` autorouter passes (default 1; the fork's `autorouter.max_passes`), the post-route optimizer off
   (`--router.optimizer.enabled=false`), so Freerouting stops when its pass ends, or
   earlier when nothing is left to route;
-- the fork's `item_order_seed` gives the item order of `seed` (the bridge's DSN permutation
-  is applied too, for builds without it);
+- the fork's `autorouter.item_order_seed` gives the item order of `seed` (the bridge's DSN
+  permutation is applied too, for builds without it);
+- Freerouting's job timeout is 75 % of the budget and the process is killed only 35 s after
+  it: a pass stops between items at the timeout and still writes its session;
 - no repair rounds, no DRC: the caller runs the single KiCad DRC on its final board (the
   joint loop does, after it drops its guard pours, which a DRC here would count as copper).
 
@@ -31,7 +33,9 @@ from kae.board import pcbnew_io
 
 from . import constraints, freerouting, specctra, translate
 
-DEFAULTS = dict(passes=1, optimizer=False, router_share=0.9, grace=10.0)
+# job_timeout is router_share of the budget; the process is killed only `grace` later (a
+# pass stops between items and the session must still be written)
+DEFAULTS = dict(passes=1, optimizer=False, router_share=0.75, grace=35.0)
 
 
 def _log(msg):
@@ -88,10 +92,11 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
         settings = dict(BR.router_settings(p, o))
         if not o.get("optimizer"):
             settings["optimizer.enabled"] = "false"
-        settings["item_order_seed"] = str(int(seed) % 2_147_483_647)
+        settings["autorouter.item_order_seed"] = str(int(seed) % 2_147_483_647)
         budget = max(8.0, left() * float(o["router_share"]))
-        run = freerouting.route(dsn, wd / "board.ses", wd, passes=int(o.get("passes") or 1), settings=settings,
-                                budget_s=budget, hard_s=max(budget, min(budget + float(o["grace"]), left())),
+        settings["autorouter.max_passes"] = str(int(o.get("passes") or 1))
+        run = freerouting.route(dsn, wd / "board.ses", wd, passes=0, settings=settings, budget_s=budget,
+                                margin_s=min(3.0, 0.1 * budget), hard_s=budget + float(o["grace"]),
                                 log_path=wd / "freerouting.log")
         step("router", t)
         rep["router"] = dict(seconds=round(run.seconds, 2), rc=run.rc, timed_out=run.timed_out,

@@ -118,3 +118,24 @@ def test_engine_macro_moves_stay_exact():
     live = [j for j in range(len(P.nets)) if j not in fresh.frozen]
     assert abs(sum(fa.E.nc[j] for j in live) - sum(fresh.ncost[j] for j in live)) < 1e-6
     assert int(fa.E.tot[engine.T_LEG]) == fresh.total_leg()
+
+
+def test_engine_rebuild_keeps_totals_exact():
+    """Regression (joint loop): after a hash-overflow rebuild the engine's running totals
+    went stale (wirelength 65.76 vs 18.77, Dp off by 6): build() took them from the Python
+    annealer's start state. A rebuild now carries the running state over."""
+    b, P, st = _legal_state()
+    terms = StubTerms(b, stub_brief(b))
+    fa = engine.FastAnnealer(P, st.copy(), terms=terms, seed=4)
+    fa.run(cpu_s=60.0, max_moves=8000)
+    fa._rebuild()
+    fa.run(cpu_s=60.0, max_moves=4000)
+    fa.write_back()
+    ref = Annealer(P, fa.st.copy(), terms=terms, seed=0)
+    E = fa.E
+    live = [j for j in range(len(P.nets)) if j not in ref.frozen]
+    assert abs(sum(E.nc[j] for j in live) - sum(ref.ncost[j] for j in live)) < 1e-6
+    assert abs(E.tot[engine.T_WL] - ref.wl) < 1e-6 * max(1.0, ref.wl)
+    assert int(E.tot[engine.T_LEG]) == ref.total_leg()
+    assert np.allclose(E.Dp, ref.cong.Dp)
+    assert abs(fa.wl - ref.wl) < 1e-6 * max(1.0, ref.wl)
