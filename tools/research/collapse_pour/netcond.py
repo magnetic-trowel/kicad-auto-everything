@@ -164,7 +164,16 @@ def net_resistance(d, net, g=0.1, grid=None):
     iu = np.triu_indices(len(pads), 1)
     rv = R[iu]
     con = np.isfinite(rv)
-    return dict(pads=len(pads), pairs=int(len(rv)), connected=int(con.sum()),
+    # disconnected pairs count as zero conductance: G_mean = mean(1/R) over all pairs,
+    # R_eff = 1/G_mean (inf if nothing connects); pads outside the largest group
+    T = len(pads)
+    conn = np.isfinite(R)
+    biggest = int(conn.sum(1).max()) if T else 0
+    G = np.where(np.isfinite(rv) & (rv > 0), 1.0 / np.maximum(rv, 1e-12), 0.0)
+    gm = float(G.mean()) if len(G) else 0.0
+    return dict(pads=T, pairs=int(len(rv)), connected=int(con.sum()),
+                disconnected_pads=int(T - biggest), G_mean=gm,
+                R_eff=(1.0 / gm) if gm > 0 else None,
                 R_mean=float(rv[con].mean()) if con.any() else None,
                 R_median=float(np.median(rv[con])) if con.any() else None,
                 R_max=float(rv[con].max()) if con.any() else None,

@@ -192,7 +192,21 @@ class Layer:
         return (out, gs) if geoms else out
 
     def setup(self):
-        """Phases, allowed masks, pinned cells for the MBO solver."""
+        """Phases, allowed masks, pinned cells for the MBO solver (cached; bridge cells
+        added by `repair_connectivity` are extra pins)."""
+        if getattr(self, "_setup", None) is None:
+            self._setup = self._setup_base()
+        P, alive, allowed, pinned = self._setup
+        allowed, pinned = allowed.copy(), pinned.copy()
+        for p, n in enumerate(self.nets):
+            ex = getattr(self, "extra_pins", {}).get(n)
+            if ex is not None:
+                ex = ex & allowed[p] & (pinned < 0)
+                pinned[ex] = p
+        allowed[P - 1] = self.alive & (pinned < 0)
+        return P, alive, allowed, pinned
+
+    def _setup_base(self):
         G, nets = self.grid, self.nets
         P = len(nets) + 1
         allowed = np.zeros((P,) + G.shape, bool)
@@ -313,7 +327,12 @@ def score_layer(L, fills, geoms=None):
         else:
             edge_mm = float(edge.sum() * G.g)
             split_mm = float(split.sum() * G.g)
+        Gp = np.where(con & (rv > 0), 1.0 / np.maximum(rv, 1e-12), 0.0)
+        gm = float(Gp.mean()) if len(Gp) else 0.0
+        big = int(np.isfinite(R).sum(1).max()) if T else 0
         out[n] = dict(area_mm2=float(cu.sum() * G.g ** 2), fill_mm2=float(f.sum() * G.g ** 2),
+                      G_mean=gm, R_eff=(1.0 / gm) if gm > 0 else None,
+                      disconnected_terminals=int(T - big),
                       terminals=T, pairs=int(len(rv)), pairs_connected=int(con.sum()),
                       R_mean_sq=float(rv[con].mean()) if con.any() else None,
                       R_median_sq=float(np.median(rv[con])) if con.any() else None,
@@ -324,8 +343,8 @@ def score_layer(L, fills, geoms=None):
 
 
 # ---------------------------------------------------------------- MBO on a layer
-def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=print,
-            fill=False):
+def run_mbo(L, targets, kernel, s_mm=(4.0, 0.35), n=(40, 60), init=None, log=print,
+            fill=False, repair=True):
     """fill=False: every phase has a cell target (free = the rest). fill=True: free has
     no target and a large penalty (it only takes cells no pour may use or reach), the
     largest pour (index 0) takes all the remaining cells, the others keep targets."""
@@ -354,7 +373,101 @@ def run_mbo(L, targets, kernel, s_mm=(1.5, 0.35), n=(30, 60), init=None, log=pri
     lab = m.run(lab, schedule(s0, s1, n[0], n[1]), log=log)
     log(f"  mbo {kernel}: {time.time() - t:.1f}s, counts {np.bincount(lab[lab >= 0], minlength=P)}"
         f" target {np.round(tgt).astype(int)}")
+    if repair and getattr(L, "hgroups", None) is not None:
+        for rep in range(4):
+            added = repair_connectivity(L, lab, allowed, log)
+            if not added:
+                break
+            lab, m = run_mbo(L, targets, kernel, s_mm=(s_mm[1] * 2, s_mm[1]), n=(5, 20),
+                             init=lab, log=log, fill=fill, repair=False)
     return lab, m
+
+
+def human_groups(L, hf):
+    """net -> int map: label of the human copper component (fill | own copper) under
+    each terminal cell; terminals the human pour connects must stay connected."""
+    out = {}
+    for n in L.nets:
+        cu = hf.get(n, np.zeros(L.grid.shape, bool)) | L.copper.get(n, np.zeros(L.grid.shape, bool))
+        lab, _ = ndi.label(cu)
+        out[n] = lab
+    return out
+
+
+def repair_connectivity(L, lab, allowed, log=print):
+    """Bridge MBO components of a pour that hold terminals the human pour connects:
+    cheapest path through cells the pour may use (cost 0.02 on its own cells, 1
+    elsewhere), widened to the zone min width, becomes extra pinned cells."""
+    from scipy.sparse.csgraph import dijkstra
+    G = L.grid
+    L.extra_pins = getattr(L, "extra_pins", {})
+    added = 0
+    for p, n in enumerate(L.nets):
+        term = L.term.get(n)
+        if term is None:
+            continue
+        tl, T = ndi.label(term)
+        if T < 2:
+            continue
+        cc, _ = ndi.label(lab == p)
+        hg = L.hgroups[n]
+        groups = {}
+        for t in range(1, T + 1):
+            m = tl == t
+            h = np.bincount(hg[m]).argmax() if m.any() else 0
+            c = np.bincount(cc[m]).argmax() if m.any() else 0
+            if h > 0:
+                groups.setdefault(h, set()).add(c)
+        need = [cs for cs in groups.values() if len(cs) > 1 or 0 in cs]
+        if not need:
+            continue
+        ok = allowed[p]
+        idx = -np.ones(G.shape, np.int64)
+        idx[ok] = np.arange(int(ok.sum()))
+        cost = np.where(lab == p, 0.02, 1.0)[ok]
+        rows, cols, w = [], [], []
+        for a, b in ((idx[:, :-1], idx[:, 1:]), (idx[:-1, :], idx[1:, :])):
+            mm = (a >= 0) & (b >= 0)
+            rows += [a[mm], b[mm]]
+            cols += [b[mm], a[mm]]
+            w += [cost[b[mm]], cost[a[mm]]]
+        import scipy.sparse as sps
+        A = sps.csr_matrix((np.concatenate(w), (np.concatenate(rows), np.concatenate(cols))),
+                           shape=(int(ok.sum()),) * 2)
+        flat_y, flat_x = np.nonzero(ok)
+        bridge = np.zeros(G.shape, bool)
+        for cs in need:
+            cs = [c for c in cs if c > 0]
+            if len(cs) < 2:
+                continue
+            sizes = {c: int((cc == c).sum()) for c in cs}
+            main = max(cs, key=sizes.get)
+            src = idx[(cc == main) & ok]
+            src = src[src >= 0]
+            dist, pred, _ = dijkstra(A, indices=src, min_only=True, return_predecessors=True)
+            for c in cs:
+                if c == main:
+                    continue
+                tgt = idx[(cc == c) & ok]
+                tgt = tgt[tgt >= 0]
+                if not len(tgt):
+                    continue
+                k = tgt[np.argmin(dist[tgt])]
+                if not np.isfinite(dist[k]):
+                    continue
+                while k >= 0:
+                    bridge[flat_y[k], flat_x[k]] = True
+                    k = pred[k]
+        if bridge.any():
+            r = max(L.minw.get(n, 0.25), 0.25) + G.g
+            bridge = G.dilate(bridge, r) & ok
+            prev = L.extra_pins.get(n, np.zeros(G.shape, bool))
+            new = bridge & ~prev
+            L.extra_pins[n] = prev | bridge
+            added += int(new.sum())
+    if added:
+        log(f"  repair: pinned {added} bridge cells")
+    return added
 
 
 def zone_outlines(L, lab, shrink=None):
@@ -475,6 +588,7 @@ def main():
         layers[ln] = L
         hf, hg = L.human_fill(geoms=True)
         hfill[ln] = hf
+        L.hgroups = human_groups(L, hf)
         print(f"[{bid} {ln}] nets {L.nets} grid {L.grid.shape}", flush=True)
         P, alive, allowed, pinned = L.setup()
         if a.mode == "iso_area":
@@ -496,6 +610,8 @@ def main():
         return
     results["net_human"] = {n: netcond_net(d, n, a.g) for n in pour_nets}
     for k in kernels:
+        for L in layers.values():
+            L.extra_pins = {}
         tg = {ln: t.copy() for ln, t in targets.items()}
         labs = {}
         for rnd in range((a.calib if a.mode == "iso_area" else 0) + 1):
@@ -554,11 +670,14 @@ def print_summary(res):
                 line += f" | {k} A={m['area_mm2']:7.1f} R={m['R_mean_sq'] or float('nan'):6.2f} conn={m['pairs_connected']} isl={m['islands']} split={m['split_mm']:.0f}"
             print(line)
     for n, h in res.get("net_human", {}).items():
-        line = f"  NET {n[:18]:18s} pads={h['pads']} human R={h['R_mean']:.3f} Cu={h['copper_mm2']:.0f}"
+        f = lambda v: "inf" if v is None else f"{v:.3f}"  # noqa: E731
+        line = (f"  NET {n[:18]:18s} pads={h['pads']} human Reff={f(h.get('R_eff'))} "
+                f"Rconn={f(h['R_mean'])} disc={h.get('disconnected_pads')} Cu={h['copper_mm2']:.0f}")
         for k in res:
             if k.startswith("net_mbo_"):
                 m = res[k][n]
-                line += f" | {k[8:]} R={m['R_mean']:.3f} Cu={m['copper_mm2']:.0f} conn={m['connected']}/{m['pairs']}"
+                line += (f" | {k[8:]} Reff={f(m.get('R_eff'))} Rconn={f(m['R_mean'])} "
+                         f"disc={m.get('disconnected_pads')} Cu={m['copper_mm2']:.0f}")
         print(line)
     for k in res:
         if k.startswith("drc_"):
