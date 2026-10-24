@@ -7,6 +7,24 @@
 - **Clean pass is capped by DRC types that no method's objective sees.** These are silkscreen overlap (an error on some boards), solder-mask bridges and thermal-spoke starvation. Each was traced to placement crowding, not routing [M].
 - Along the way we found three harness bugs: `--command` adapters got relative paths; locked footprints were staged off-board, which made 7 of 33 place tasks unsolvable; and joint methods had no way to be scored. All three were fixed in separate commits.
 
+## Objectives and scores (how every method is tested)
+
+- **Objectives**, run as separate variants of each method:
+  - **Length + vias:** routed length + 2 mm per via + an unrouted penalty; phys_w = 0. Runs:
+    `seq`, `anneal`, `grow`, `combo_lv`.
+  - **Fast physics in the loop:** kae place terms (`Terms.delta`, ~50 µs per move), phys_w = 2.
+    Runs: `seq_phys`, `anneal_phys`, `grow_phys`, `combo`, beam p2.
+  - **Full physics at gates:** kae's routed recheck on the written board
+    (`physics.RoutedPhys`, ~1.5 s), used to accept stages and pick checkpoints. Run:
+    `combo_full`.
+- **Scores**, all three on every run (`kae-work/score_all.sh`):
+  - DRC: legal, clean, completion, length, vias;
+  - fast physics vs human;
+  - full routed physics vs human.
+- **Fast physics predicts full physics only moderately:** mean within-board Spearman 0.55
+  (0.13 to 0.95 over 9 physics boards). A method tuned on fast physics needs the routed
+  check.
+
 ## Setup
 
 | Item | Value |
