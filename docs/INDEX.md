@@ -30,6 +30,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | Generating or parsing DRC rules/reports | [kicad/drc-rule-language-reference](topics/kicad/drc-rule-language-reference.md), [kicad/drc-report-and-repair-loop](topics/kicad/drc-report-and-repair-loop.md) |
 | Designing the constraint/intent format | [architecture/constraint-ir](topics/architecture/constraint-ir.md), [rules/rule-pack-format](topics/rules/rule-pack-format.md) |
 | Designing LLM tools or an MCP server | [llm/interfaces-relations-vs-coordinates](topics/llm/interfaces-relations-vs-coordinates.md), [kicad/mcp-tool-surface-spec](topics/kicad/mcp-tool-surface-spec.md), [llm/agent-loop-patterns](topics/llm/agent-loop-patterns.md) |
+| Placing and routing together (measured) | [placement/joint-pnr-experiments](topics/placement/joint-pnr-experiments.md), [ideas/original/joint-pnr](ideas/original/joint-pnr.md) |
 | Building the placer | [placement/pcb-placers-2022-2026](topics/placement/pcb-placers-2022-2026.md), [placement/legalization](topics/placement/legalization.md), [solvers/recommended-stack](topics/solvers/recommended-stack.md) |
 | Integrating a router | [routing/freerouting](topics/routing/freerouting.md), [kicad/specctra-freerouting-integration](topics/kicad/specctra-freerouting-integration.md), [routing/kicad-pns-router](topics/routing/kicad-pns-router.md) |
 | Recognizing circuit blocks and net roles | [llm/design-understanding-pipeline](topics/llm/design-understanding-pipeline.md), [llm/net-role-classification](topics/llm/net-role-classification.md) |

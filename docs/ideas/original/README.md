@@ -76,6 +76,12 @@
 - **U6 Sketch-to-intent** (combo): scribbles converted to typed relations, never to geometry.
 - **U7 Intent-level merge** (new): concurrent human/agent edits merged on intents.
 
+## Joint place-and-route — [joint-pnr.md](joint-pnr.md)
+43 ideas for placing and routing together, with measured results in
+[joint-pnr-experiments](../../topics/placement/joint-pnr-experiments.md): beam search over
+place-one-route-it and physics place terms in the objective have merit; soft routing
+gradients, Physarum flow and LLM move proposals did not beat simple controls.
+
 ## Top 10 to try first (impact vs effort)
 1. **P6 Slot assignment** (S): designer 0.56 vs 0.31–0.39 after swaps; days of work.
 2. **N8 Decap assignment** (S): a contested slogan becomes an exact optimization.

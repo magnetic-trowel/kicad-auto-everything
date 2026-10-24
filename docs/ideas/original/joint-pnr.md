@@ -23,7 +23,7 @@ Every idea below runs on one engine, so they can be compared fairly:
 
 ## A. One market for parts and wires (negotiation)
 
-1. **Unified negotiated congestion ("PathFinder for everything")** [T].
+1. **Unified negotiated congestion ("PathFinder for everything")** [T: legal and routed within 3 rounds; wire prices must decay].
    A footprint is a fat "net" whose candidate routes are poses. Parts and wires
    share one present/history price field; each round every object rips itself up
    and re-chooses (wire: A*; part: best pose in a neighbourhood, priced by the cells
@@ -40,7 +40,7 @@ Every idea below runs on one engine, so they can be compared fairly:
    along the straight line to the net centroid (HPWL). Detours around obstacles
    then show up as forces that rotate and slide parts. Source: envelope theorem;
    differentiable shortest paths.
-4. **Congestion game / best-response dynamics** [Q]. Parts and nets as selfish
+4. **Congestion game / best-response dynamics** [I]. Parts and nets as selfish
    players in a potential game; iterate best responses to a Nash equilibrium.
    Same mechanics as 1 without global prices; tests whether prices matter.
 5. **Auction for board area** [I]. Parts bid for grid regions with budgets set by
@@ -54,9 +54,9 @@ Every idea below runs on one engine, so they can be compared fairly:
    route the nets that now have both ends placed; keep the cheapest. This is how
    designers work: place a block, route it, move on. Source: constructive placement
    in hand layout; Tetris-style packing.
-7. **Beam search over growth orders** [Q]. Keep B partial boards; expand each with
+7. **Beam search over growth orders** [T: merit, best method; completion 0.891 vs 0.868 greedy, physics 0.98× human]. Keep B partial boards; expand each with
    the next part's best poses; prune by routed cost plus a look-ahead estimate.
-8. **MCTS with routing rollouts** [I]. Same tree as 7, with rollouts that complete
+8. **MCTS with routing rollouts** [T: trails beam; too few rollouts at 120 CPU-s]. Same tree as 7, with rollouts that complete
    the board greedily and route it; UCT allocates effort. Source: AlphaGo,
    MCTS-based routers.
 9. **Space-colonization growth** [I]. Wires grow toward "attractor" pins one step at
@@ -71,10 +71,10 @@ Every idea below runs on one engine, so they can be compared fairly:
     two same-footprint parts. Cost: unrouted connections, routed length, vias,
     computed by re-routing only nets touching the moved part. Source: VPR's
     routability-driven placement with a real router instead of a wiring estimate.
-12. **Large-neighbourhood search on windows** [Q]. Rip up a window (parts + copper),
+12. **Large-neighbourhood search on windows** [T: `repair`, blocker-directed]. Rip up a window (parts + copper),
     re-place and re-route it jointly, accept if better. Source: LNS in vehicle
     routing.
-13. **Guided local search on blocked nets** [I]. Each round, raise a penalty on the
+13. **Guided local search on blocked nets** [T: part of `repair` (A* blocker attribution)]. Each round, raise a penalty on the
     part that blocks most failed routes (from A* blocker attribution) and move it.
     Source: GLS (Voudouris), sparrow nesting.
 14. **Tabu over part swaps with route reuse** [I]. Keep routes of unaffected nets;
@@ -86,7 +86,7 @@ Every idea below runs on one engine, so they can be compared fairly:
 
 ## D. Continuous and physics models
 
-17. **Elastic-band co-relaxation** [Q]. Each net is a polyline of beads with tension
+17. **Elastic-band co-relaxation** [I] (the gradient agent chose soft-min paths, 22). Each net is a polyline of beads with tension
     (length) and repulsion from other nets' beads and from parts; parts are rigid
     bodies pushed by the beads that touch them. One energy, one gradient descent;
     snap to the grid at the end. Source: elastic bands in robot motion planning;
@@ -97,14 +97,14 @@ Every idea below runs on one engine, so they can be compared fairly:
     sources and parts as walls; streamlines of a harmonic field have no local
     minima, and streamlines of one field never cross. Part moves update the field
     cheaply (multigrid). Source: harmonic potential fields in robotics.
-20. **Physarum multicommodity solver** [Q]. Tube conductivities grow with flux and
+20. **Physarum multicommodity solver** [T: no merit as built]. Tube conductivities grow with flux and
     decay otherwise; with several commodities and shared capacity, the surviving
     tubes form a routed network. Parts feel the flux through their footprint as
     pressure. Source: slime-mould network models (Tero et al.).
 21. **Homotopy continuation of clearance** [Q]. Start with zero clearance and
     shrunken footprints so everything fits, then grow both while re-solving.
     Source: continuation methods; analog "soft then hard" constraints.
-22. **Soft-min Bellman–Ford** [I]. Differentiable shortest-path distances over a
+22. **Soft-min Bellman–Ford** [T: gradients no better than HPWL; useful only as a global start for physics descent]. Differentiable shortest-path distances over a
     smoothed cost field give exact gradients of routed length w.r.t. obstacle
     masks, hence w.r.t. part positions via a differentiable rasterizer.
 23. **Perturbed-optimizer gradients** [I]. Average the routed solution under random
@@ -131,7 +131,7 @@ Every idea below runs on one engine, so they can be compared fairly:
 
 ## F. Learning and language models
 
-30. **LLM as move proposer** [I]. The LLM reads a rendered board with failed nets
+30. **LLM as move proposer** [T: routing inconclusive, physics no merit; use for diagnosis]. The LLM reads a rendered board with failed nets
     marked and proposes "move U3 left of J1, rotate C4" moves; the joint optimizer
     accepts or rejects them. The model never writes coordinates directly.
 31. **LLM-evolved coupling policy** [I]. Evolve the rule that decides when to stop
@@ -148,7 +148,7 @@ Every idea below runs on one engine, so they can be compared fairly:
 35. **Factory-game solvers** [I]. Factorio/Shapez layout tools place machines and
     belts together with SAT; their trick of placing "belt bus" first maps to
     corridor-first PCB layout.
-36. **Numberlink SAT windows** [Q]. Exact joint solve of a small window: part pose
+36. **Numberlink SAT windows** [T: CP-SAT window place-and-route, see `pnr_cpsat`]. Exact joint solve of a small window: part pose
     variables plus path variables in one SAT/CP-SAT model.
 37. **Chemical plant piping** [I]. Equipment placement and pipe routing co-optimized
     with pipe cost terms (length, bends, supports) in MILP; maps to vias and bends.
@@ -164,6 +164,13 @@ Every idea below runs on one engine, so they can be compared fairly:
     pairwise energies including routed cost; dead-end elimination prunes poses.
 42. **Origami/knot routing** [I]. Homotopy classes of nets as braids; part moves
     are braid moves that remove crossings.
+
+## Physics in the objective (added after the first results)
+
+43. **Physics place terms in every objective** [T: merit]. kae.physics `Terms.delta`
+    (~50 µs) added to placement and annealing costs: place terms 4.05× → 1.52× human
+    (`seq_phys`), 0.98× with beam search, no completion cost. HPWL alone makes boards that
+    route well and are electrically wrong.
 
 ## What gets tested first, and why
 
