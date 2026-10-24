@@ -2,9 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The combination the experiments point to (docs/topics/placement/joint-pnr-experiments.md):
 
-  combo  beam search over place-one-route-it with the physics term (pnr_mcts.beam),
-         then blocker-directed window repair, then annealing on routed cost + physics
-         (methods_phys.anneal_phys continuing from the board). Budget split 45/25/30 %.
+  combo       beam search over place-one-route-it with the fast physics term
+              (pnr_mcts.beam), then blocker-directed window repair, then annealing on
+              routed cost + physics (methods_phys.anneal_phys continuing from the board).
+              Budget split 45/25/30 %. phys_w=0 gives the length + vias objective.
+  combo_lv    combo with phys_w=0: routed length + vias only.
+  combo_full  combo with fast physics in the loop and full physics (kae's routed recheck
+              on the written board, physics.RoutedPhys) at stage gates: a stage whose result
+              is worse on routed cost + full_w * routed physics is reverted, and annealing
+              checkpoints are chosen by the same score.
 """
 import random
 import sys
@@ -110,4 +116,74 @@ def combo(world, seed=0, budget=300, log=print, phys_w=2.0, **kw):
     repair_phys(world, kit, ph, phys_w, Clock(budget * 0.25), log, rng)
     r = MP.anneal_phys(world, seed=seed, budget=max(1.0, clock.left()), log=log, phys_w=phys_w, router=r)
     log(f"combo {r.stats()} hpwl={world.hpwl():.1f} phys={ph.total():.2f}")
+    return r
+
+
+def combo_lv(world, seed=0, budget=300, log=print, **kw):
+    kw["phys_w"] = 0.0
+    return combo(world, seed=seed, budget=budget, log=log, **kw)
+
+
+def _state(world, kit):
+    return dict(world.pose), kit.snapshot(list(world.net_pins))
+
+
+def _restore(world, kit, ph, st, mov):
+    for q in list(world.pose):
+        if q in mov:
+            world.unplace(q)
+    kit.r.rip_all()
+    for q, p in st[0].items():
+        if q in mov:
+            world.place(q, *p)
+    kit.restore(st[1])
+    ph.sync()
+
+
+def combo_full(world, seed=0, budget=300, log=print, phys_w=2.0, full_w=5.0, **kw):
+    """combo with full routed physics at the stage gates. Score of a state:
+    routed cost (mm, unrouted penalized) + full_w * routed physics_total."""
+    import tempfile
+    import mcts
+    from physics import RoutedPhys
+    rng = random.Random(seed)
+    clock = Clock(budget)
+    r = mcts.beam(world, seed=seed, budget=budget * 0.4, log=log, phys_w=phys_w, **kw)
+    kit = Kit(world, r)
+    ph = Phys(world, world.data["path"])
+    ph.sync()
+    world.phys = ph
+    rp = RoutedPhys(world, ph, tempfile.mkdtemp(prefix="rp-"))
+    mov = [q for q in kit.movable() if q in world.pose]
+
+    def score():
+        v = rp(r)
+        return kit.total_cost() + full_w * (v if v is not None else 0.0), v
+
+    best_s, best_v = score()
+    best = _state(world, kit)
+    log(f"combo_full after beam: {r.stats()} fast={ph.total():.2f} routed_phys={best_v}")
+    repair_phys(world, kit, ph, phys_w, Clock(budget * 0.2), log, rng)
+    s_, v_ = score()
+    log(f"  gate repair: score {s_:.1f} (routed_phys {v_}) vs {best_s:.1f}")
+    if s_ <= best_s:
+        best_s, best_v, best = s_, v_, _state(world, kit)
+    else:
+        _restore(world, kit, ph, best, mov)
+    # annealing in slices; each slice end is a checkpoint judged by full physics
+    n = 4
+    for i in range(n):
+        left = clock.left()
+        if left <= 1.0:
+            break
+        MP.anneal_phys(world, seed=seed + 101 * i, budget=left / (n - i), log=log, phys_w=phys_w, router=r)
+        s_, v_ = score()
+        log(f"  gate anneal slice {i}: score {s_:.1f} (routed_phys {v_}) vs {best_s:.1f}")
+        if s_ <= best_s:
+            best_s, best_v, best = s_, v_, _state(world, kit)
+        else:
+            _restore(world, kit, ph, best, mov)
+    _restore(world, kit, ph, best, mov)
+    r.legalize(list(world.net_pins))
+    log(f"combo_full {r.stats()} fast={ph.total():.2f} routed_phys={best_v} calls={rp.calls}")
     return r

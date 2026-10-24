@@ -109,3 +109,48 @@ class Phys:
         iy = np.minimum(np.arange(w.H) // s, len(ys) - 1)
         ix = np.minimum(np.arange(w.W) // s, len(xs) - 1)
         return vals[iy][:, ix]
+
+
+class RoutedPhys:
+    """Full physics on the routed copper: write the board (poses + tracks + vias) with
+    KiCad's Python, then kae's routed recheck (critical_recheck.board_physics, zone
+    outlines instead of a KiCad refill) summarized as the Scorecard's physics_total.
+    About 1.5 s per call on small boards, so it is for stage gates and checkpoints, not
+    for single moves."""
+
+    def __init__(self, world, ph, workdir):
+        import subprocess  # noqa: F401
+        from pathlib import Path
+        self.w = world
+        self.ph = ph
+        self.dir = Path(workdir)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.calls = 0
+
+    def __call__(self, router):
+        import subprocess
+        from pathlib import Path
+        from kae.joint.scorecard import physics_total
+        from kae.route.critical_recheck import board_physics
+        w = self.w
+        tracks, vias = router.export()
+        poses = {}
+        for pi, (cx, cy, ri) in w.pose.items():
+            p = w.parts[pi]
+            if p.locked or pi in w.fixed:
+                continue
+            x, y = w.xy(cx, cy)
+            poses[str(pi)] = dict(x=x, y=y, rot=ROTS[ri], uuid=p.uuid)
+        res = self.dir / "rp_result.json"
+        out = self.dir / "rp_board.kicad_pcb"
+        res.write_text(json.dumps(dict(poses=poses, tracks=tracks, vias=vias)))
+        here = Path(__file__).resolve().parent
+        py = os.environ.get("KAE_KICAD_PYTHON", "/usr/bin/python3")
+        r = subprocess.run([py, str(here / "kicad_io.py"), "apply", w.data["path"], str(res), str(out)],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        ph = board_physics(str(out), brief=self.ph.T.brief, terms=self.ph.T, fills=None)
+        mods = {k: v.get("u") for k, v in ph.items() if not k.startswith("_") and isinstance(v, dict)}
+        self.calls += 1
+        return float(physics_total(mods)) if mods else 0.0
