@@ -278,7 +278,8 @@ def test_module_stage_in_every_fidelity(tmp_path):
             st = EX.stats()
             res[mode] = ({m.id: (m.status, EX.module_values(s.ctx, m)) for m in mods}, st)
     fast, multi, exact = res["fast"][0], res["multi"][0], res["exact"][0]
-    assert {k: v[0] for k, v in fast.items()} == {k: v[0] for k, v in multi.items()} == {k: v[0] for k, v in exact.items()}
+    status = [{k: v[0] for k, v in r.items()} for r in (fast, multi, exact)]
+    assert status[0] == status[1] == status[2]
     assert res["fast"][1]["decisions"] == 0 and res["fast"][1]["exact_calls"] == 0
     assert res["multi"][1]["decisions"] > 0
     assert res["exact"][1]["exact_calls"] > res["multi"][1]["exact_calls"] > 0
