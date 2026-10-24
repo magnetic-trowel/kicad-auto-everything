@@ -41,10 +41,15 @@ MARGIN_S = 15.0      # left at the end of the run to copy the winner
 
 
 def _rank(rep):
-    """(errors, unconnected) from an attempt's report: kae.route.cli has them at
-    repair.final, kae.route.critical_cli at bridge.repair.final."""
+    """(errors, unconnected) from an attempt's report: kae.route.cli has them at repair.final
+    (or drc, when the run was too short for repair rounds), kae.route.critical_cli at the same
+    places under bridge."""
     rep = rep or {}
-    fin = (rep.get("repair") or {}).get("final") or ((rep.get("bridge") or {}).get("repair") or {}).get("final") or {}
+    fin = {}
+    for r in (rep, rep.get("bridge") or {}):
+        fin = (r.get("repair") or {}).get("final") or r.get("drc") or {}
+        if "errors" in fin and "unconnected" in fin:
+            break
     if "errors" not in fin or "unconnected" not in fin:
         return (float("inf"), float("inf"))
     return (int(fin["errors"]), int(fin["unconnected"]))

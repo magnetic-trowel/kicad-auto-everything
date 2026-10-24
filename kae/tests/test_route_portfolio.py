@@ -98,4 +98,6 @@ def test_a_clean_board_of_the_first_router_is_preferred(tmp_path, monkeypatch):
 def test_rank_reads_both_routers_reports():
     assert portfolio._rank(dict(repair=dict(final=dict(errors=0, unconnected=2)))) == (0, 2)
     assert portfolio._rank(dict(critical={}, bridge=dict(repair=dict(final=dict(errors=1, unconnected=0))))) == (1, 0)
+    assert portfolio._rank(dict(drc=dict(errors=0, unconnected=3, by_type={}))) == (0, 3)
+    assert portfolio._rank(dict(bridge=dict(drc=dict(errors=2, unconnected=1)))) == (2, 1)
     assert portfolio._rank(dict(status="error")) == (float("inf"), float("inf"))
