@@ -41,7 +41,7 @@ source bench/.venv/bin/activate          # in /home/user/kicad-auto-everything
 python tools/research/pnr/run.py /abs/path/to/your_module.py:your_fn IN.kicad_pcb OUT_DIR/board.kicad_pcb --budget 60
 # through the harness (place tasks, self-routed copper scored by kicad-cli):
 kae-work/runext.sh /abs/path/to/your_module.py:your_fn <tag>-dev6-v1 120 kae-work/dev6.txt 1
-python tools/research/pnr/compare.py kae-work/results/pnr-seq-v3 kae-work/results/<tag>-dev6-v1
+python tools/research/pnr/compare.py kae-work/results/pnr-seq-v4 kae-work/results/<tag>-dev6-v1
 ```
 Task inputs: `kae-work/tasks/<id>/place/input/board.kicad_pcb`. Suites: `kae-work/dev6.txt`
 (6 dev boards), `kae-work/ab33.txt` (all 33 qualified A+B boards). Per-attempt artifacts:
@@ -49,9 +49,9 @@ Task inputs: `kae-work/tasks/<id>/place/input/board.kicad_pcb`. Suites: `kae-wor
 `probe/score/drc.json`). Metrics: `legal` (placement), `clean` (legal + copper fully
 connected + no DRC errors), `completion`, routed length, vias.
 
-Baselines (same engine, same boards): `kae-work/results/pnr-seq-v3` (place-then-route
-control), `pnr-grow-v3`, `pnr-anneal-v3`, ... (a batch is running; use what exists), and
-`pnr-route-v3` (the human placement routed by the same router: A clean 0.85, B 0.50).
+Baselines (same engine v4, same boards; budgets are CPU seconds via placekit.Clock): `kae-work/results/pnr-seq-v4` (place-then-route
+control), `pnr-grow-v4`, `pnr-anneal-v4`, ... (a batch is running; use what exists), and
+`pnr-route-v4` (the human placement routed by the same router: A clean 0.85, B 0.50).
 
 ## Rules
 - Do NOT edit anything in `tools/research/pnr/` or `bench/` (a benchmark batch is running
@@ -66,6 +66,6 @@ control), `pnr-grow-v3`, `pnr-anneal-v3`, ... (a batch is running; use what exis
 
 ## Deliverable
 `tools/research/pnr_<tag>/RESULTS.md` (<= 700 words): the idea and its source domain, the
-mechanism as built, what you tried (including what failed), a table vs `pnr-seq-v3` on the
+mechanism as built, what you tried (including what failed), a table vs `pnr-seq-v4` on the
 same boards (legal, clean, completion, length, vias, time), and a verdict: merit / no merit /
 inconclusive, with the next step you would take. Your final message: the same, shorter.

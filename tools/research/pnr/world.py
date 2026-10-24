@@ -72,8 +72,6 @@ class Part:
             x0, y0 = allp.min(0) - 0.25
             x1, y1 = allp.max(0) + 0.25
             self.court = [np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])]
-        # through-hole parts block both sides (their pads reach the far side)
-        self.sides = (0, 1) if any(p["cu"] == "both" for p in self.pads) else (self.side,)
         self.cache = {}
         self.area = sum(_poly_area(c) for c in self.court)
 
@@ -112,10 +110,21 @@ class World:
         self.occV = np.zeros((self.N, L, H, W), np.uint8)
         self.DT = np.zeros((L, H, W), np.int16)
         self.DV = np.zeros((L, H, W), np.int16)
-        self.court = np.zeros((2, H, W), np.int16)
+        # keep-out planes: 0/1 = front/back courtyards, 2 + l = pad keep-out on copper layer l
+        # (KiCad checks courtyards per side and copper clearance per layer)
+        self.P = 2 + L
+        self.court = np.zeros((self.P, H, W), np.int16)
         self.hist = np.zeros((L, H, W), np.float32)
         self._static_masks()
         self.parts = [Part(i, fp) for i, fp in enumerate(data["footprints"])]
+        for p in self.parts:
+            lay = set()
+            for pad in p.pads:
+                lay |= set(range(self.nl)) if (pad["npth"] or pad["cu"] == "both") else \
+                    set(self.pad_layers(p, pad))
+            other = (1 - p.side,) if p.data.get("courtyard_other") else ()
+            p.sides = tuple([p.side, *other] + [2 + l for l in sorted(lay)])  # planes it occupies
+        self._static_copper()
         self.pose = {}  # part idx -> (cx, cy, rot_index) for placed parts
         self.frac = {}  # part idx -> sub-cell origin offset (parts kept at input poses)
         self.fixed = set()  # parts that must not move (locked, or route-only runs)
@@ -174,6 +183,21 @@ class World:
                                 self.blockT[l, y, x] = True
                             if ko["vias"]:
                                 self.blockV[l, y, x] = True
+
+    def _static_copper(self):
+        """Board-level copper drawings are fixed copper of their net (or of no net). Wires
+        avoid them; parts are not checked against them (one board in A/B has such copper)."""
+        R, g = self.R, self.g
+        for s in self.data.get("cu_shapes", []):
+            lid = s["layer"]
+            l = 0 if lid == 0 else (self.nl - 1 if lid == 2 else (lid - 4) // 2 + 1)
+            net = self.net_id.get(s["net"], 0) if s["net"] else 0
+            for poly in s["poly"]:
+                if len(poly) < 3:
+                    continue
+                pl = np.array(poly, float)
+                stamp(self.occT, self.DT, net, l, raster_poly(pl, R.pad_T, self.x0, self.y0, g), 0, 0, 1)
+                stamp(self.occV, self.DV, net, l, raster_poly(pl, R.pad_V, self.x0, self.y0, g), 0, 0, 1)
 
     # ---------------------------------------------------------------- coords
     def cell(self, x, y):
@@ -264,15 +288,31 @@ class World:
                              hV=raster_poly(pl, R.ec + R.via_d / 2 + R.m, -fx, -fy, g)))
         # keep-out = courtyard, the part's own board cutouts, and its pads grown by half the
         # clearance (some library courtyards do not cover their pads)
-        padkeep = [raster_poly(rot_pts(np.array(p_, float), deg), R.c / 2 + 0.05 + 0.75 * g, -fx, -fy, g)
-                   for pad in part.pads for p_ in pad["poly"] if len(p_) >= 3]
-        court = np.concatenate(padkeep + [raster_poly(rot_pts(c, deg), 0.75 * g, -fx, -fy, g) for c in part.court] +
-                               [raster_poly(rot_pts(np.array(e, float), deg), R.ec + 0.75 * g, -fx, -fy, g)
-                                for e in part.data.get("edges", []) if len(e) >= 3])
-        court = np.unique(court, axis=0).astype(np.int32)
+        keep = {}
+        for pad in part.pads:
+            drilled = bool(pad["drill"]) and max(pad["drill"]) > 0
+            rk = (max(R.c, R.hc) if drilled else R.c) / 2 + 0.71 * g
+            lay = range(self.nl) if (pad["npth"] or pad["cu"] == "both") else self.pad_layers(part, pad)
+            for p_ in pad["poly"]:
+                if len(p_) < 3:
+                    continue
+                cells = raster_poly(rot_pts(np.array(p_, float), deg), rk, -fx, -fy, g)
+                for l in lay:
+                    keep.setdefault(2 + l, []).append(cells)
+        side_cells = [raster_poly(rot_pts(c, deg), 0.75 * g, -fx, -fy, g) for c in part.court] + \
+                     [raster_poly(rot_pts(np.array(e, float), deg), R.ec + 0.75 * g, -fx, -fy, g)
+                      for e in part.data.get("edges", []) if len(e) >= 3]
+        keep.setdefault(part.side, []).extend(side_cells)
+        other = [np.array(c, float) for c in part.data.get("courtyard_other", []) if len(c) >= 3]
+        if other:
+            keep.setdefault(1 - part.side, []).extend(
+                raster_poly(rot_pts(c, deg), 0.75 * g, -fx, -fy, g) for c in other)
+        keep = [(pl, np.ascontiguousarray(np.unique(np.concatenate(cs), axis=0), np.int32))
+                for pl, cs in sorted(keep.items())]
+        court = np.unique(np.concatenate([c for _, c in keep]), axis=0).astype(np.int32)
         allcu = [p["cu"] for p in pads if len(p["cu"])]
         allcu = np.concatenate(allcu) if allcu else np.zeros((0, 2), np.int32)
-        r = dict(pads=pads, court=np.ascontiguousarray(court), cu=np.ascontiguousarray(allcu, np.int32),
+        r = dict(pads=pads, court=np.ascontiguousarray(court), keep=keep, cu=np.ascontiguousarray(allcu, np.int32),
                  bbox=(court[:, 0].min(), court[:, 1].min(), court[:, 0].max(), court[:, 1].max()))
         part.cache[key] = r
         return r
@@ -283,8 +323,8 @@ class World:
             for l in ent["layers_halo"]:
                 stamp(self.occT, self.DT, ent["net"], l, ent["hT"], cx, cy, delta)
                 stamp(self.occV, self.DV, ent["net"], l, ent["hV"], cx, cy, delta)
-        for side in part.sides:
-            count_add(self.court, side, r["court"], cx, cy, delta)
+        for plane, cells in r["keep"]:
+            count_add(self.court, plane, cells, cx, cy, delta)
 
     def place(self, pi, cx, cy, ri, frac=(0.0, 0.0)):
         if pi in self.pose:
@@ -331,14 +371,12 @@ class World:
         else:
             own = 0
         r = self.part_raster(part, ri, self.frac.get(pi, (0.0, 0.0)) if own else (0.0, 0.0))
-        c = r["court"]
-        side = part.side
-        xs, ys = c[:, 0] + cx, c[:, 1] + cy
-        okb = (xs >= 0) & (ys >= 0) & (xs < self.W) & (ys < self.H)
-        outside = int((~okb).sum())
-        xs, ys = xs[okb], ys[okb]
-        overlap = sum(int((self.court[s, ys, xs] - own > 0).sum()) for s in part.sides)
-        outside += int((~self.ok_court[ys, xs]).sum())
+        overlap = 0
+        for plane, c in r["keep"]:
+            xs, ys = c[:, 0] + cx, c[:, 1] + cy
+            okb = (xs >= 0) & (ys >= 0) & (xs < self.W) & (ys < self.H)
+            overlap += int((self.court[plane, ys[okb], xs[okb]] - own > 0).sum())
+        outside = 0  # courtyards may overhang the board edge (KiCad does not check it)
         cu = r["cu"]
         xs, ys = cu[:, 0] + cx, cu[:, 1] + cy
         okb = (xs >= 0) & (ys >= 0) & (xs < self.W) & (ys < self.H)

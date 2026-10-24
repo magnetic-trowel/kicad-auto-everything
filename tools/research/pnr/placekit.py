@@ -52,11 +52,11 @@ class Kit:
         part = w.parts[pi]
         r = w.part_raster(part, ri)
         bad = np.zeros((w.H, w.W))
-        for s in part.sides:
-            occ = (w.court[s] > 0) | ~w.ok_court
-            if extra_block is not None:
+        for plane, cells in r["keep"]:
+            occ = w.court[plane] > 0
+            if extra_block is not None and plane < 2:
                 occ = occ | extra_block
-            bad += corr(occ, r["court"])
+            bad += corr(occ, cells, pad_value=0.0)
         if len(r["cu"]):
             bad += corr(~w.ok_cu, r["cu"])
         return bad < 0.5
@@ -68,8 +68,8 @@ class Kit:
         part = w.parts[pi]
         r = w.part_raster(part, ri)
         tot = np.zeros((w.H, w.W))
-        for s in part.sides:
-            tot += corr(((w.court[s] > 0) | ~w.ok_court).astype(float), r["court"])
+        for plane, cells in r["keep"]:
+            tot += corr((w.court[plane] > 0).astype(float), cells, pad_value=0.0)
         if len(r["cu"]):
             tot += corr(~w.ok_cu, r["cu"])
         return tot
@@ -194,12 +194,13 @@ class Kit:
 
 
 class Clock:
+    """Budget in CPU seconds of this process, so results do not depend on machine load."""
     def __init__(self, budget):
-        self.t0 = time.time()
+        self.t0 = time.process_time()
         self.budget = budget
 
     def left(self):
-        return self.budget - (time.time() - self.t0)
+        return self.budget - (time.process_time() - self.t0)
 
     def frac(self):
-        return min(1.0, (time.time() - self.t0) / max(1e-9, self.budget))
+        return min(1.0, (time.process_time() - self.t0) / max(1e-9, self.budget))

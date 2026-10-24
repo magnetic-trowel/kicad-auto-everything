@@ -104,8 +104,15 @@ def extract(path, out):
                 edges += poly_points(sp)
                 item.SetLayer(pcbnew.Cmts_User)
                 moved_edges.append(item)
-        cy = fp.GetCourtyard(pcbnew.B_CrtYd if flipped else pcbnew.F_CrtYd)
+        if hasattr(fp, "BuildCourtyardCaches"):
+            fp.BuildCourtyardCaches()
+        # courtyards on both sides (through-hole footprints often draw both)
+        own = pcbnew.B_CrtYd if flipped else pcbnew.F_CrtYd
+        other = pcbnew.F_CrtYd if flipped else pcbnew.B_CrtYd
+        cy = fp.GetCourtyard(own)
         court = poly_points(cy) if cy.OutlineCount() else []
+        cyo = fp.GetCourtyard(other)
+        court_other = poly_points(cyo) if cyo.OutlineCount() else []
         # restore and self-check
         fp.SetPosition(pos)
         fp.SetOrientationDegrees(deg)
@@ -114,6 +121,7 @@ def extract(path, out):
             worst = max(worst, abs(rx + mm(pos.x) - ax), abs(ry + mm(pos.y) - ay))
         fps.append(dict(ref=fp.GetReference(), uuid=fp.m_Uuid.AsString(), x=mm(pos.x), y=mm(pos.y),
                         rot=deg, back=flipped, locked=fp.IsLocked(), pads=pads, courtyard=court,
+                        courtyard_other=court_other,
                         edges=edges))
     outline = pcbnew.SHAPE_POLY_SET()
     board.GetBoardPolygonOutlines(outline, False)
@@ -148,7 +156,17 @@ def extract(path, out):
                           poly=poly_points(z.Outline()), gap=mm(z.GetThermalReliefGap()),
                           spoke=mm(z.GetThermalReliefSpokeWidth()),
                           min_width=mm(z.GetMinThickness())))
+    # board-level copper drawings (graphic tracks/arcs/polygons on copper, possibly with a net)
+    cu_shapes = []
+    for d in board.GetDrawings():
+        if d.GetClass() != "PCB_SHAPE" or not pcbnew.IsCopperLayer(d.GetLayer()):
+            continue
+        sp = pcbnew.SHAPE_POLY_SET()
+        d.TransformShapeToPolygon(sp, d.GetLayer(), 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
+        cu_shapes.append(dict(net=d.GetNetname() if hasattr(d, "GetNetname") else "",
+                              layer=d.GetLayer(), poly=poly_points(sp)))
     data = dict(path=path, layers=board.GetCopperLayerCount(), outline=poly_points(outline),
+                cu_shapes=cu_shapes,
                 outline_holes=holes, rules=rules, default=default, nets=nets, footprints=fps,
                 keepouts=keepouts, zones=zones, pose_selfcheck_mm=worst)
     with open(out, "w") as f:

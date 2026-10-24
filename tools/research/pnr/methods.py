@@ -99,16 +99,75 @@ def center_bias(kit, weight=0.02):
     return lambda pi, ri: D
 
 
-def greedy_place(world, kit, order, log, rots=range(4)):
+def greedy_place(world, kit, order, log, rots=range(4), max_evict=60):
+    """Place parts in order at their best legal pose. A part with no legal spot goes where
+    it overlaps the least small-part area; the parts it overlaps are evicted and re-queued
+    (a ripple legalizer), at most max_evict evictions in total."""
     bias = center_bias(kit)
-    for pi in order:
+    queue = list(order)
+    evictions = 0
+    while queue:
+        pi = queue.pop(0)
         c = kit.candidates(pi, rots=rots, k=1, cost_extra=bias)
-        if not c:
+        if c:
+            _, cx, cy, ri = c[0]
+            world.place(pi, cx, cy, ri)
+            continue
+        victims = _evict_for(world, kit, pi) if evictions < max_evict else None
+        if victims is None:
             log(f"  no legal spot for {world.parts[pi].ref}")
             continue
-        _, cx, cy, ri = c[0]
-        world.place(pi, cx, cy, ri)
+        evictions += len(victims)
+        queue.extend(victims)
 
+
+def _evict_for(world, kit, pi):
+    """Place pi where it overlaps the least keep-out area of smaller movable parts (never
+    fixed parts or parts at least as big as pi, so eviction chains shrink and terminate),
+    unplace those parts and return them. None if there is no such spot."""
+    from placekit import corr
+    part = world.parts[pi]
+    mov = set(kit.movable())
+    keep = {q for q in world.pose if q not in mov or world.parts[q].area >= part.area}
+    fixed = np.zeros((world.P, world.H, world.W), bool)
+    for q, (cx, cy, ri) in world.pose.items():
+        if q in keep:
+            for plane, c in world.raster(q)["keep"]:
+                xs, ys = c[:, 0] + cx, c[:, 1] + cy
+                ok = (xs >= 0) & (ys >= 0) & (xs < world.W) & (ys < world.H)
+                fixed[plane, ys[ok], xs[ok]] = True
+    best = None
+    for ri in range(4):
+        rr = world.part_raster(part, ri)
+        bad = np.zeros((world.H, world.W))
+        cost = np.zeros((world.H, world.W))
+        for plane, cells in rr["keep"]:
+            bad += corr(fixed[plane], cells, pad_value=0.0)
+            cost += corr((world.court[plane] > 0).astype(float), cells, pad_value=0.0)
+        if len(rr["cu"]):
+            bad += corr(~world.ok_cu, rr["cu"])
+        cost = np.where(bad < 0.5, cost, np.inf)
+        j = int(np.argmin(cost))
+        if np.isfinite(cost.flat[j]) and (best is None or cost.flat[j] < best[0]):
+            best = (cost.flat[j], j % world.W, j // world.W, ri)
+    if best is None:
+        return None
+    _, cx, cy, ri = best
+    rr = world.part_raster(part, ri)
+    cells = {(pl, int(x + cx), int(y + cy)) for pl, c in rr["keep"] for x, y in c}
+    victims = []
+    for q in list(world.pose):
+        if q in keep:
+            continue
+        qx, qy, _ = world.pose[q]
+        if any((pl, int(x + qx), int(y + qy)) in cells for pl, c in world.raster(q)["keep"] for x, y in c):
+            world.unplace(q)
+            victims.append(q)
+    world.place(pi, cx, cy, ri)
+    if world.part_violation(pi) != (0, 0):  # should not happen; undo
+        world.unplace(pi)
+        return None
+    return victims
 
 def descent(world, kit, log, rounds=6, clock=None, rots=range(4)):
     """Best-response coordinate descent on HPWL: each part jumps to its best legal pose."""
@@ -202,7 +261,7 @@ def anneal(world, seed=0, budget=300, log=print, start="seq", **kw):
     clock = Clock(budget)
     r = (seq if start == "seq" else grow)(world, seed=seed, budget=budget * 0.25, log=log, **kw)
     kit = Kit(world, r)
-    mov = kit.movable()
+    mov = [q for q in kit.movable() if q in world.pose]
     cur = kit.total_cost()
     best = (cur, dict(world.pose), kit.snapshot(list(world.net_pins)))
     T0 = kw.get("t0", 1.5)
@@ -335,7 +394,7 @@ def tension(world, seed=0, budget=300, log=print, start="seq", **kw):
     clock = Clock(budget)
     r = (seq if start == "seq" else grow)(world, seed=seed, budget=budget * 0.25, log=log, **kw)
     kit = Kit(world, r)
-    mov = kit.movable()
+    mov = [q for q in kit.movable() if q in world.pose]
     cur = kit.total_cost()
     best = (cur, dict(world.pose), kit.snapshot(list(world.net_pins)))
     step_mm = kw.get("step_mm", 2.0)
@@ -432,7 +491,7 @@ def bloat(world, seed=0, budget=300, log=print, **kw):
     r.pathfinder(iters=30, log=None)
     cur = kit.total_cost()
     best = (cur, dict(world.pose), kit.snapshot(list(world.net_pins)))
-    mov = kit.movable()
+    mov = [q for q in kit.movable() if q in world.pose]
     infl = {pi: 0.0 for pi in mov}
     rnd = 0
     while clock.left() > budget * 0.15:
@@ -519,7 +578,7 @@ def negotiate(world, seed=0, budget=300, log=print, **kw):
     r = _router(world, kw)
     kit = Kit(world, r)
     place_mechanical(world, kit, log)
-    mov = kit.movable()
+    mov = [q for q in kit.movable() if q in world.pose]
     order = growth_order(world, kit, rng)
     bias = center_bias(kit, 0.05)
     # soft start: every part at its HPWL-best spot ignoring other parts
@@ -533,7 +592,8 @@ def negotiate(world, seed=0, budget=300, log=print, **kw):
             if np.isfinite(c.flat[j]) and (best is None or c.flat[j] < best[0]):
                 best = (c.flat[j], j % world.W, j // world.W, ri)
         world.place(pi, best[1], best[2], best[3])
-    hist_c = np.zeros((2, world.H, world.W))
+    mov = [q for q in kit.movable() if q in world.pose]
+    hist_c = np.zeros((world.P, world.H, world.W))
     p_ov = kw.get("p_ov0", 0.02)
     p_w = kw.get("p_w0", 0.05)
     best_state = None
@@ -561,8 +621,8 @@ def negotiate(world, seed=0, budget=300, log=print, **kw):
                 c = kit.hpwl_map(pi, ri) + bias(pi, ri) * 0.1
                 ov = kit.overlap_map(pi, ri)
                 c = c + p_ov * ov
-                for s in world.parts[pi].sides:
-                    c = c + 0.5 * corr_offs(hist_c[s], rr["court"])
+                for plane, cells in rr["keep"]:
+                    c = c + 0.5 * corr_offs(hist_c[plane], cells)
                 halo = np.unique(np.concatenate([e["hT"] for e in rr["pads"]]), axis=0) if rr["pads"] else np.zeros((0, 2), np.int32)
                 c = c + p_w * corr_offs(wires, halo)
                 inside = _inside_map(world, kit, pi, ri)
@@ -572,7 +632,7 @@ def negotiate(world, seed=0, budget=300, log=print, **kw):
                     best = (c.flat[j], j % world.W, j // world.W, ri)
             world.place(pi, best[1], best[2], best[3])
         overl = 0
-        for s in (0, 1):
+        for s in range(world.P):
             over = world.court[s] > 1
             hist_c[s] += over
             overl += int(over.sum())
@@ -623,7 +683,7 @@ def _inside_map(world, kit, pi, ri):
     """Origins where the part lies inside the board (ignoring other parts)."""
     from placekit import corr
     rr = world.part_raster(world.parts[pi], ri)
-    bad = corr(~world.ok_court, rr["court"])
+    bad = np.zeros((world.H, world.W))
     if len(rr["cu"]):
         bad += corr(~world.ok_cu, rr["cu"])
     return bad < 0.5
@@ -737,7 +797,7 @@ def repair(world, seed=0, budget=300, log=print, start="seq", window=4, **kw):
     starter = {"seq": seq, "grow": grow, "seq_margin": seq_margin}[start]
     r = starter(world, seed=seed, budget=budget * 0.25, log=log, **kw)
     kit = Kit(world, r)
-    mov = kit.movable()
+    mov = [q for q in kit.movable() if q in world.pose]
     cur = kit.total_cost()
     tries = acc = 0
     tabu = {}
