@@ -179,3 +179,35 @@ def test_local_replace_takes_congestion_history_and_a_fixed_move_budget():
     assert seen["shape"] and out1.report["anneal"]["cong_history"]["bins"] == 1
     assert out1.report["anneal"]["moves"] == out2.report["anneal"]["moves"]
     assert out1.poses == out2.poses
+
+
+def test_probe_select_keeps_the_placement_that_routes_within_the_physics_slack(monkeypatch, tmp_path):
+    """--probe-select N: N placements (seeds), each routed briefly; the fewest open connections
+    wins among the candidates within 10% of the best physics, physics breaking ties."""
+    from types import SimpleNamespace
+    from kae import cli
+    from kae.place import pipeline
+    from kae.place.pipeline import Result
+    from kae.route import bridge
+    from kae.route import drc as kdrc
+    # seed: (physics, unconnected): seed 1 routes best but costs 30% more physics; seed 2 is
+    # within the slack and routes better than seed 0
+    table = {0: (1.00, 5), 1: (1.30, 0), 2: (1.05, 2)}
+
+    def fake_place(board, seed=0, time_s=0, **kw):
+        return Result(poses={"u": (0, 0, 0, "F")}, report=dict(scorecard=dict(total_linear=table[seed][0]), exact=[]),
+                      state=None, problem=None)
+    monkeypatch.setattr(pipeline, "place", fake_place)
+    monkeypatch.setattr("kae.board.kicad_file.load", lambda p: SimpleNamespace(path=p))
+    monkeypatch.setattr(kdrc, "stage_board", lambda out, inp, d: out)
+    routed = {}
+
+    def fake_route(staged, out, seed=0, time_s=0, opts=None, log=None):
+        k = len(routed)
+        routed[k] = time_s
+        return dict(repair=dict(final=dict(unconnected=table[k][1])))
+    monkeypatch.setattr(bridge, "route", fake_route)
+    a = SimpleNamespace(probe_select=3, time=600.0, seed=0, input=str(FIXTURE), writer="sexpr")
+    res = cli._probe_select(a, None, {}, __import__("time").monotonic(), lambda *x, **k: dict(writer="fake"))
+    ps = res.report["probe_select"]
+    assert ps["chosen"] == 2 and [c["unconnected"] for c in ps["candidates"]] == [5, 0, 2]
