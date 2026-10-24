@@ -45,7 +45,12 @@ if [ ! -d "$C/kae" ]; then
 fi
 TIME=$((TIMEOUT - 40))       # the method's own budget; kaebench's timeout is the hard stop
 M="env PYTHONPATH=$C NUMBA_CACHE_DIR=$C/.numba_cache OMP_NUM_THREADS=1 KAE_WORKERS=1 $KAE_PY -m kae.joint.cli run {input} {output} --seed {attempt} --time $TIME"
-RUN="$KB --workdir $WORKDIR run --kinds joint --splits $SPLITS -k $K -j $JOBS"
+# the sandbox exposes only the working directory under $HOME: bind the method's interpreter (its venv
+# and the base CPython it links to) read-only so the script also runs from a checkout elsewhere
+VENV=$(cd "$(dirname "$KAE_PY")/.." && pwd)
+BASE=$("$KAE_PY" -c 'import sys; print(sys.base_prefix)')
+RO="--sandbox-ro $VENV --sandbox-ro $BASE ${KAE_SANDBOX_RO:+--sandbox-ro $KAE_SANDBOX_RO}"
+RUN="$KB --workdir $WORKDIR run --kinds joint --splits $SPLITS -k $K -j $JOBS $RO"
 for arm in $ARMS; do
   case $arm in
     staged)   $RUN --timeout "$TIMEOUT" --adapter kae-staged --sandbox-ro "$C" --command "$M --max-iters 0 --no-modules" \
