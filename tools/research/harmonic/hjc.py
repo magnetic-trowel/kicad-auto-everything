@@ -270,3 +270,20 @@ def hroute(world, seed=0, budget=300, log=print, iters=40, mode="bias", lam=0.5,
     r.legalize(nets)
     log(f"hroute {r.stats()} field solves={H.F.solves} field cpu={H.t:.1f}s")
     return r
+
+
+def hjc_stream_lv_nopol(world, **kw):
+    """Length + vias twin of hjc_stream without polish (pairs with jc_lv_nopol)."""
+    kw["phys_w"] = 0.0
+    kw.setdefault("polish", 0.0)
+    return hjc_stream(world, **kw)
+
+
+def hjc_stream_nopol(world, **kw):
+    kw.setdefault("polish", 0.0)
+    return hjc_stream(world, **kw)
+
+
+def hjc_stream0(world, **kw):
+    """Streamline routes in the continuation, no part pressure (isolates (a))."""
+    return _run(world, dict(mode="stream", press_w=0.0), **kw)
