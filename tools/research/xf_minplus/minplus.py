@@ -32,12 +32,13 @@ from pathlib import Path
 import numpy as np
 from numba import njit
 
-sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/pnr")
-sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/collapse_joint")
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "tools" / "research" / "pnr"))
+sys.path.insert(0, str(ROOT / "tools" / "research" / "collapse_joint"))
+
 
 from router import _pop, _push  # noqa: E402
 
-ROOT = Path("/home/user/kicad-auto-everything")
 SQ2 = math.sqrt(2.0)
 
 

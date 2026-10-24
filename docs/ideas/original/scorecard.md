@@ -37,6 +37,9 @@ Baseline for "vs seq": place by HPWL, then route.
 | 20 | Physarum multi-commodity flow networks | slime-mould biology | `slime` (agent) | No merit | Neutral as a router prior; force moves barely act |
 | 36 | Exact CP-SAT window place-and-route | SP&R, Numberlink SAT | `cpsat` (agent) | No merit | 0/112 wins over heuristic repair; no window proved optimal |
 | 30 | LLM/VLM proposes moves, optimizer verifies | LLM agents | `llm` (agent as the LLM) | No merit (routing inconclusive) | Matched annealing on routing; about 110× worse than anneal_phys on physics; use only for diagnosis |
+| T1 | Min-plus best-response maps (priced per-net Dijkstra fields, summed per part) in jc's part move | distance transforms, min-plus convolution | `xf_minplus` (minplus_w 1, 0.5) vs jc / jc_lv_nopol, 3 seeds | **Merit** (length+vias) / inconclusive (physics) | jc_lv: −6.5% length, −27% vias on every seed at equal legal and completion (half the via cut is one board); jc: −23% vias, −4% length, but clean −0.04 and routed physics 0.88→1.18 |
+| T2 | Exact physics maps (DCT thermal, kae kernels compiled over the grid) replacing `coarse_map` in jc | Green's functions, spectral Poisson | `xf_physmap` (`jc_x`, `jc_full_x`) vs jc / jc_full, 3 seeds | **No merit** | Gate passed (p95 error 0.3%); jc fast physics 0.97→0.80× human on every seed but routed 0.96→1.17× (worse on every seed); jc_full worse on both; maps use 5–67% of CPU |
+| T4 | Pour-damage maps (sensitivity of pour R_eff) in jc best responses and router costs | variational principles, topological derivative | `xf_pour` (`pjc`, `pjc_lv_nopol`) vs jc / jc_lv_nopol, 3 seeds | **No merit** | Gate ρ ≥ 0.93 per board vs exact re-solves; pour R 0.86× jc_lv but 1.00× jc; routed physics 1.21 vs 1.16 (jc_lv), 1.01 vs 0.88 (jc); completion held |
 
 ## Layer collapse pieces
 
