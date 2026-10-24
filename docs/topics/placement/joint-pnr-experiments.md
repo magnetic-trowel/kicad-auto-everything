@@ -38,7 +38,13 @@ Physics is the ratio to the human board on the 10 boards with physics structures
 | combo_lv | length + vias | 0.818 | 0.545 | 0.900 | 2695 | 16 | 1.34 | 1.26 |
 | combo | fast physics | 0.848 | 0.636 | 0.897 | 2687 | 16 | **0.97** | **1.13** |
 | combo_full | fast physics + full physics at gates | running | | | | | | |
+| **jc**: joint collapse by continuation + polish ([collapse_joint](../../../tools/research/collapse_joint/RESULTS.md)) | fast physics | **0.879** | **0.667** | 0.897 | +1% vs combo (22 boards) | +70% vs combo | **0.82** (φ-total) | 1.05 |
+| jc_lv | length + vias | 0.879 | 0.667 | 0.897 | — | — | 2.05 (φ-total) | 1.29 |
+| jc_frozen: parts frozen after the lift | fast physics | 0.879 | 0.485 | 0.892 | 1.6× jc | 2.4× jc | 1.08 (φ-total) | 1.04 |
+| jc_full (10 physics boards only) | + full physics on restarts | 8/10 | 4/10 | 0.943 | — | — | 0.84 (φ-total) | **0.80** |
 | human placement, same router | — | — | 0.636 | — | — | — | 1.00 | 1.09 |
+
+**Joint collapse vs frozen parts** (same start, schedule, restarts and router): moving parts together with nets gives 0.52× the copper on 24 of 24 boards, 59% fewer vias and clean 0.606 vs 0.485. This is direct evidence that placement and routing cannot be separated. jc rows use the φ-total for fast physics (combo's φ-total is 1.03). jc leaves more open hops (1.3 vs 0.5 for combo), and that flatters its routed physics: on boards with no open hop it is 1.27 vs 1.22, roughly a tie. One seed so far; more seeds are running.
 
 In every pipeline, switching from length + vias to fast physics improves both fast and routed physics. Completion, length and vias stay the same within noise. The physics objective costs essentially nothing in routability, so it should be on by default.
 
