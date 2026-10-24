@@ -38,6 +38,7 @@ def test_first_clean_attempt_wins_and_stops_the_others(tmp_path, monkeypatch):
     assert rep["stop"] == "clean" and rep["best"]["k"] == 2 and tuple(rep["best"]["rank"]) == (0, 0)
     assert out.read_text() == "board 2"
     assert time.monotonic() - t < 60                       # the hanging attempts were stopped, not waited for
+    assert sorted(a["k"] for a in rep["attempts"] if a["stopped"]) == [0, 1]   # and still reported
 
 
 def test_without_a_clean_attempt_the_best_is_kept_and_budgets_grow(tmp_path, monkeypatch):

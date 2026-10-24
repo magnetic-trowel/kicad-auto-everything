@@ -130,7 +130,10 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         if clean or failed:
             for p in list(running):
                 stop(p)
-                running.pop(p)
+                a = running.pop(p)
+                a.update(rank=(float("inf"), float("inf"), a["router"]), rc=p.returncode, stopped=True,
+                         seconds=round(time.monotonic() - a["t"], 1), has_board=False)
+                done.append(a)        # stopped after the winner: listed, never a candidate
             break
         while len(running) < parallel and launch():
             pass
@@ -140,7 +143,8 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
     report = dict(input=str(inp), budget_s=time_s, parallel=parallel, first_s=first_s, growth=growth,
                   routers=[[m, a_] for m, a_ in routers], extra=list(extra), seconds=round(time.monotonic() - t0, 1),
                   stop="clean" if clean else ("failed" if failed else "time"), attempts=[
-                      {x: a[x] for x in ("k", "seed", "router", "budget", "rank", "rc", "seconds", "has_board")}
+                      dict({x: a[x] for x in ("k", "seed", "router", "budget", "rank", "rc", "seconds", "has_board")},
+                           stopped=a.get("stopped", False))
                       for a in done],
                   best=None if best is None else dict(k=best["k"], seed=best["seed"], rank=best["rank"][:2],
                                                      router=routers[best["router"]][0]))
