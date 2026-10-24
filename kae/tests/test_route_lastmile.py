@@ -105,3 +105,24 @@ def test_report_names_map_back_to_escaped_board_names():
     (noisecard: the last mile found nothing to join until the names were mapped back)."""
     assert LM.unescape("Net-(U1-PA12{slash}PA10)") == "Net-(U1-PA12/PA10)"
     assert LM.unescape("/mcu/TMS") == "/mcu/TMS"
+
+
+def test_close_finds_a_net_named_with_an_escaped_slash(tmp_path):
+    """A net KiCad escapes in the board ("SIG{slash}X") and unescapes in its DRC report
+    ("SIG/X") is still found and joined."""
+    net = "SIG{slash}X"
+    extra = [("R21", "1k", "Resistor_SMD:R_0402_1005Metric", 136.0, 124.0, 0.0,
+              [("1", net, -0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive"),
+               ("2", "", 0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive")], (0.95, 0.5)),
+              ("R22", "1k", "Resistor_SMD:R_0402_1005Metric", 136.0, 127.0, 0.0,
+               [("1", net, -0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive"),
+                ("2", "", 0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive")], (0.95, 0.5))]
+    p = F.write_board(tmp_path, extra=extra)
+    info = F.synth_info(load(p))
+    sp = _space(p, info)
+    rep = {"unconnected_items": [{"items": [{"description": "Pad 1 [SIG/X] of R21 on F.Cu"},
+                                            {"description": "Pad 1 [SIG/X] of R22 on F.Cu"}]}]}
+    out = tmp_path / "out.kicad_pcb"
+    r = LM.close(p, info, sp.plan, [], out, nets=LM.open_nets(rep), log=lambda *a: None)
+    assert r["joined"] == 1 and list(r["nets"]) == [net]
+    assert len(LM.parts(_space(out, info), {}, net)) == 1
