@@ -36,11 +36,6 @@ import sys
 from pathlib import Path
 
 
-def board_labels(path):
-    from kae.place import labels
-    return labels.board_labels(path)
-
-
 def check_task(tdir):
     from kae.board.kicad_file import load
     from kae.place import labels
@@ -62,11 +57,6 @@ def check_task(tdir):
         rows.append(dict(label=lab["text"][:24], how=a["how"], ref=f.ref, d=round(d, 2), rank=rank,
                          alt=a.get("alt", 0)))
     # rows matched in both directions: keep the direction the human held (the smaller sum)
-    best = {}
-    for r in rows:
-        if r["how"].startswith("row"):
-            k = r["how"]
-            best.setdefault(k, []).append(r)
     keep = [r for r in rows if not r["how"].startswith("row")]
     groups = collections.defaultdict(lambda: collections.defaultdict(list))
     for r in rows:
