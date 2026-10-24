@@ -287,3 +287,9 @@ def hjc_stream_nopol(world, **kw):
 def hjc_stream0(world, **kw):
     """Streamline routes in the continuation, no part pressure (isolates (a))."""
     return _run(world, dict(mode="stream", press_w=0.0), **kw)
+
+
+def hjc_press_lv(world, **kw):
+    """Length + vias twin of hjc_press (with jc's polish; pairs with jc_lv)."""
+    kw["phys_w"] = 0.0
+    return hjc_press(world, **kw)
