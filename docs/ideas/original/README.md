@@ -82,6 +82,8 @@
 place-one-route-it and physics place terms in the objective have merit; soft routing
 gradients, Physarum flow and LLM move proposals did not beat simple controls.
 
+## Scorecard of everything tried — [scorecard.md](scorecard.md)
+
 ## Layer collapse — [layer-collapse.md](layer-collapse.md)
 Every net on its own layer, collapsed into the board's L layers: pours maximize copper,
 sensitive nets minimize it. Maps the pieces to problems with exact answers (graph
