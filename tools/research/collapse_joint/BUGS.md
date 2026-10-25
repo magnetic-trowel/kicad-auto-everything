@@ -40,8 +40,13 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
 7. **Shared engine edited under running jobs** (workdir). tools/research/pnr changed
    (v6.1 -> v6.3) while the first jc2 runs were in flight. Every jcfix run before the
    engine freeze at c78c537 (pnr v6.3) is discarded (parked in `kae-v7/jcfix-old/`);
-   all reported runs are `-r3` on c78c537, and the run queue logs an md5 of the engine
-   and harness at the start and end of each arm.
+   all reported runs are `-r3`/`-r3b` on c78c537, and the run queue logs an md5 of the
+   engine and harness at the start and end of each arm. Two later md5 changes were checked
+   and are not behaviour changes for jc2: an uncommitted edit of the analysis script
+   `pnr/seeds.py` (not imported by any method; the queue's md5 now lists only engine
+   files), and `xf_minplus/minplus.py` `_load_jc` (ecaa86a, 00:39), which only changes the
+   parent class of `MPCollapse`; jc2 uses `MinPlus` and the two `MPCollapse` methods, which
+   did not change.
 8. **jc2 min-plus arm could not import `minplus` from a code snapshot** (jc2.py). The path
    was relative to the module file, which the run queue copies to `kae-v7/jcfix-snap/`;
    every `jcfix-jc2-mp-dev6-r3` attempt was `no_output`. Fixed (absolute path); the arm

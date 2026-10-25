@@ -26,6 +26,12 @@ Engine changes after the shared engine was in use by other agents' runs were mad
   method's processes are reaped inside the sandbox's PID namespace and their CPU time never
   reaches that rusage. The `cpu_s` column of `kaebench report` is therefore meaningless for
   these runs; budgets are enforced inside the method (`placekit.Clock`, process time).
+- **Interpreter inside the sandbox** (harness-integrity 538170f: `python` could fall back to
+  the system interpreter). Checked with a probe method run through the same runner: inside
+  bwrap `python` is `bench/.venv/bin/python` (3.13.17, PATH keeps the venv first) and numba
+  imports from the venv's site-packages; the system interpreter on this host is also 3.13.17.
+  Our runs were not affected. kae is imported as source from `KAE_SRC` / `~/.cache/kaebench`
+  (read-only), its dependencies from the venv.
 
 ## Engine limitations seen in the outputs (not bugs; left as they are)
 
