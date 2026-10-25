@@ -1,0 +1,5 @@
+olimex-dcdc-50-5-12-dcdc-50-5-12-rev-a1
+pcbcorpus-badjeff-paw3222-pcb-paw3222
+pcbcorpus-badjeff-pmw3610-pcb-pmw3610-pcb
+pcbcorpus-justbuchanan-oasis-ledboard
+pcbcorpus-jvedder-biploar-power-supply-kicad-bipolar-power-supply

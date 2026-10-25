@@ -7,6 +7,23 @@
 - **Clean pass is capped by DRC types that no method's objective sees.** These are silkscreen overlap (an error on some boards), solder-mask bridges and thermal-spoke starvation. Each was traced to placement crowding, not routing [M].
 - Along the way we found three harness bugs: `--command` adapters got relative paths; locked footprints were staged off-board, which made 7 of 33 place tasks unsolvable; and joint methods had no way to be scored. All three were fixed in separate commits.
 
+## Status: re-validation under harness score v7 (in progress)
+
+The numbers below are from engine v5 on the v3 harness. They are being re-measured with joint tasks (score v7) and 3 seeds, at 120 CPU-s per board. Each engine version fixes a DRC error found in those runs. The bug log is [v7-bugs.md](../../../tools/research/pnr/results/v7-bugs.md).
+
+| Engine | Fix |
+|---|---|
+| v6 | Solder-mask apertures between pads; holes under courtyards on both sides |
+| v6.1–6.2 | Footprint keep-outs; footprint copper drawings become no-net copper |
+| v6.3 (c78c537) | Pad terminals from KiCad's inner outline (custom ring pads); edge test covers whole pads |
+| v6.4 (pending) | Board copper drawings and copper text are pad obstacles; `.kicad_dru` edge clearance. Merged with the Tibia fix 4c4330a. Changes 5 of 33 boards |
+
+**Comparison sets.** Counted runs use v6.3 on [v7-ab33](../../../tools/research/pnr/suites/v7-ab33.txt). The headline compares the 28 boards that v6.4 leaves unchanged. The 5 changed boards are re-run on v6.4.
+
+**Baselines in progress:** `v7-{seq,seq_phys,combo,combo_lv,jc,jc_lv}-r3`. Results go to `results/v7-baselines.md`. Drivers are in [scripts/](../../../tools/research/pnr/scripts/).
+
+The final transformation experiments are in [scorecard](../../ideas/original/scorecard.md) rows T1, T2 and T4. That was round 3, run on another host with 4c4330a. The pour maps coupled across layers (`pjc2`) improved routed physics to 1.05× human, from jc's 1.18×, a gain still to confirm.
+
 ## Objectives and scores (how every method is tested)
 
 - **Objectives**, run as separate variants of each method:
