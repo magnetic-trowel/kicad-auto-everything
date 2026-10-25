@@ -4,7 +4,7 @@
 - The placer cannot see where the router will fail, and the router cannot move a part. `kae.joint` places and routes the whole board once, then repairs **windows** (a few parts and the nets touching them) where routing failed, DRC complained or a module's routed physics shifted.
 - One iteration = re-anneal the window's parts with everything else fixed under a congestion penalty built from where routing failed, rip up only the nets touching the window, redo the window's modules (critical copper), re-route with everything else locked, judge with KiCad DRC and the routed-physics recheck.
 - An iteration is kept only if it is lexicographically better: legality, then completion and DRC, then routed physics. Legality, unconnected items and DRC errors may never get worse. A board that becomes clean is always kept. Any other completion gain may cost at most 10 % of routed physics per item gained, and with equal completion physics must improve. Otherwise it is reverted.
-- Windows are re-routed by `kae.route.incremental` (only the open connections, no optimizer), then the grid last mile (`kae.route.lastmile`) on the window's nets. A window's routing fell from a median 107–124 s (the full bridge) to 10–12 s. On 6 split-B boards (kaebench `joint`, score v7, k = 2, 900 s) the loop has 4 / 5 clean boards and module values 0.75 / 0.88× the human's; the staged pipeline with the bridge's last mile has 5 / 5 at 1.24 / 1.33×. One board (PMW3610) holds the completion gap [C].
+- Windows are re-routed by `kae.route.incremental` (only the open connections, no optimizer), then the grid last mile (`kae.route.lastmile`) on the window's nets. On splits A+B at 9,000 s the loop is the best arm (cp1 0.909, module value 0.78× the human's); on split C it is clock-bound. Results: see Measured [C].
 
 ## Key facts
 
@@ -90,23 +90,13 @@ Stage seeds derive from the run's seed and the iteration (`derive_seed`), window
 
 ### Measured
 
-kaebench `joint` (score v7), KiCad 10.0.7, 6 split-B boards (olimex DC-DC, noisecard, PMW3610, XIAO base, bipolar supply, CH552G), seeds 0 and 1, 900 s, `-j 1`, shared 4-core host, 3 GB Freerouting heap (no OOM-hit attempt). Σu and module values come from `critical_recheck.board_physics` on the scored board (brief from the human placement); they are unreliable where hops are open [C: `tools/research/joint/joint_physics.py`, `joint_stops.py`]. "Last mile" for staged is the bridge's default since c9c49d6; for the joint loop, windows and the finishing stage.
+All kaebench `joint` kind, score v7, KiCad 10.0.7; physics from `tools/research/joint/joint_physics.py` (Σu and module values from `critical_recheck.board_physics` on the scored board, unreliable where hops are open), stops from `joint_stops.py`.
 
-| Arm (seed 0 / seed 1) | clean | unconnected | DRC errors | module value / human (median) | worst rail mΩ (median) | Σu | time s |
-|---|---|---|---|---|---|---|---|
-| human placement + Freerouting | 2 / 2 | 23 / 23 | 7 / 7 | 1.00 | 101 | 3.16 | 24 |
-| staged, no last mile | 3 / 4 | 3 / 3 | 0 / 0 | 1.18 / 1.39 | 108 / 87 | 4.23 / 4.46 | 160 / 112 |
-| staged, last mile | 5 / 5 | 4 / 5 | 0 / 0 | 1.24 / 1.33 | 104 / 103 | 5.45 / 4.59 | 199 / 178 |
-| joint loop, no last mile | 3 / 3 | 11 / 8 | 0 / 0 | 0.81 / 0.96 | 43 / 58 | 2.56 / 3.38 | 394 / 331 |
-| joint loop, last mile | 4 / 5 | 9 / 6 | 0 / 0 | 0.75 / 0.88 | 47 / 68 | 2.10 / 3.61 | 342 / 349 |
+- **Splits A+B at 10× (33 boards, k = 2, 9,000 s, sk-tibia, 4814e11)** [[joint-ab-4814e11](../../../bench/results/2026-10-24-joint-ab-4814e11.md)]. The loop is the best arm: cp1 0.909 (staged 0.879, human placement + Freerouting 0.455), cpk 0.909 (staged 0.939), no DRC errors, median module value 0.78× the human layout's (staged 0.82×). It stops by itself: "clean" 53 times and "no improvement" 11 times, never above 77 % of the budget; 504 windows routed and 37 kept, 12 finishing tries and 3 kept. It is worse than staged on badjeff-pmw3610 (4 → 5 unconnected) and bipolar-power-supply's physics.
+- **Split C at 10× (6 boards with switching cells, k = 1, 9,000 s, a28bd84)** [[portfolio-ab-0465818](../../../bench/results/2026-10-24-portfolio-ab-0465818.md)]: 3 of 6 clean, 6 of 6 legal, 44 unconnected against staged's 86 (staged also has 6 errors), module value 1.01× against 1.06×. The loop is clock-bound there: 4 of 6 stop on time, with 52 window and 3 finishing router timeouts. In the same file the restart portfolio routes all 12 split-C attempts clean with the bridge in ≤ 450 s, which is why `--route-parallel` exists.
+- **Last mile, 6 split-B boards locally (900 s)** [[joint-last-mile-local](../../../bench/results/2026-10-24-joint-last-mile-local.md), earlier runs in [joint-loop-b6](../../../bench/results/2026-10-24-joint-loop-b6.md)]: the loop has 4 / 5 clean boards at 0.75 / 0.88× the human's module value, against 5 / 5 at 1.24 / 1.33× for staged with the bridge's last mile. The completion gap is PMW3610 (7 / 6 against 4 / 5 unconnected).
+- **`--route-parallel 2` locally on split C (2,400 s, seed 0)** [same file]: 3 of 6 clean. Iteration 0 alone took 1,214–1,471 s on four boards, so the check cannot show whether the 9,000 s runs still stop on time; that needs the joint-pf arm on sk-tibia. Window routers timed out 4 of 53 times with the doubling budget, restarts improved 7 of 21 windows, and the portfolio finish at P = 2 never beat the loop's own board.
 
-kaebench cp1 / cpk: joint 0.667 / 0.833, staged with last mile 0.833 / 0.833. A whole window takes ~40 s with its last mile.
-
-What the numbers say:
-- **Physics holds.** The loop's boards have module values 0.75–0.88× the human's and half the rail resistance of either staged arm.
-- **Completion is one board.** Off PMW3610 the loop is clean on 9 of 10 attempts (noisecard seed 0 keeps 2). PMW3610 keeps 7 / 6 open where staged keeps 4 / 5, at Σu 22.3 / 17.0 against the loop's 5.5 / 14.5. There the finishing bridge's last mile joined 5–7 nets but ripped 19–22 items, ending 8–9 unconnected (not better), and window last miles joined 9–12 and failed 5–6, ending one or two worse than the incumbent.
-- **Split C, `--route-parallel 2`, 2,400 s, seed 0** (local, 4 shared cores): 3 of 6 clean (doorman, oasis, aftonsparv); bldcm 3, canhw 18, libresolar 44 unconnected plus 2 clearance errors left by the placer. Iteration 0 alone took 1,312–1,471 s on the three large boards, so 5 of 6 stopped on time (two clean, still on flagged modules). Window routers timed out 4 of 53 times; restarts improved 7 of 21 windows. The portfolio finish, routing from scratch at P = 2 in 400–500 s, never beat the loop's board (libresolar 98 against 44, canhw 49 against 18).
-- **Stops.** Loop: clean 8, time 4 of 12. Window Freerouting: COMPLETED 25 of 29. Finishing bridge: STAGNATION 4, TIMED_OUT 2. Runs used 38 % of their budget (up to 91 %).
 ## Recommendations for our system
 
 1. **Judge every iteration by KiCad, accept lexicographically.** The loop can then only help: its worst case is the staged pipeline.
@@ -116,6 +106,11 @@ What the numbers say:
 ## Conflicts and open questions
 
 - **PMW3610 has no room to move into.** The board is 15 × 30 mm, 2 layers, no pours. The locked sensor U1 (PTH, 16 pins) fills the lower half, and every small part sits in y ≈ 82–95 mm. The open connections run from that cluster to U1's pad columns (x = 144.7 and 155.3). Windows do pick the parts that wall them off (C10, C7, C5, C2, R1 at y ≈ 91–92), and they are the most-tried windows, but the band between the cluster and U1 is full. Closing it needs a re-place that spreads the cluster upward, more than a window's 5–8 parts.
+- **Split C is clock-bound.** On the large boards the first place-and-route takes 1,200–1,500 s even locally, and windows with many open connections run out of router time. Whether `--route-parallel` (portfolio finish, window restarts, doubling window budget) ends that at 9,000 s is not yet measured: it is the queued joint-pf arm on sk-tibia.
+- **The portfolio finish routes from scratch.** It throws away the loop's routing and redoes the module copper, so at small P it loses to the loop's own board. Restarts of the bridge on the loop's board (critical copper locked) would keep that work; untried.
+- **Clean boards with a flagged module run to the clock** (oasis, aftonsparv locally): windows then only chase physics. The patience rule ends this after two cycles that keep nothing, but a cycle on a large board is long.
+- **Placement errors the placer leaves** (libresolar: 2 clearance errors) are repaired first, but on a clock-bound board few windows run.
+- **A Freerouting slot wait counts against the budget** (`freerouting._Slot`). Outside the kaebench sandbox, where the slot locks are shared with other jobs, a finishing bridge once ran past its budget waiting for one; the wait is now subtracted from the budget, and after the budget the router runs without a slot (`slot_gave_up`).
 - **Freerouting's cost per open connection** is 1–2 CPU s (noisecard: 28 open, 17–19 CPU s). So a window stays cheap only while its rip-up stays local.
 
 See also: [month-plan](month-plan.md) · [joint-place-route](../physics/joint-place-route.md) · [critical-net-routing](../routing/critical-net-routing.md) · [freerouting-constraint-bridge](../routing/freerouting-constraint-bridge.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md)
