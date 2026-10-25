@@ -4,7 +4,7 @@
 - A few connections decide a board's physics: commutation loops, power paths, decoupling loops, crystal nets, the surge path ahead of a protector, and high-current rails. `kae.route.critical` routes them first on the placed board, at the geometry the physics wants, and locks them. The Freerouting bridge then routes everything else around them as fixed wiring.
 - Each connection is drawn by a grid A* search and verified exactly against KiCad's effective constraints (`kae.route.effective`, the bridge's rule port). Every module is priced on routed copper against the **placer's own allocations** (`kae.physics.place_terms`), so placement, module routing and the recheck optimize one objective.
 - Physics wins (33 boards of splits A and B, k = 1, against the bridge alone): decoupling loops at a median 0.71×, surge paths 0.71×, rail resistance 0.97×. The worst rail drop falls from 2.21× the human board's to 0.72× [C].
-- The critical copper cost completion: cp1 fell from 0.606 to 0.576. The main cause was joins the router could not see. Freerouting connects a wire to a pad only at the pad's centre and to another wire only at a corner. KiCad's DSN export also rounds half-micrometres at coordinates ≥ 100 mm. The stage now makes every join a centre or corner join and leaves non-physics copper to the bridge, and the bridge snaps fixed wiring onto pin centres.
+- Critical copper costs completion, because locked copper is a wall for the router. That cost is now mostly recovered by visible joins, spokes laid first, the soft last mile and a mixed restart portfolio ([last-mile-and-restarts](last-mile-and-restarts.md)). On split C at 2ec702e, critical + soft last mile was the first arm to route libresolar-bms-c1 clean; on A+B it holds decaps at 0.961 and cells at 0.877 of the human boards ([C6](../../../bench/results/2026-10-24-last-mile-c6-57487e6.md)).
 - `optimize_modules` moves a module's parts while routing its copper, at any angle, with right angles for heatsink tabs. On 12 human placements it lowered hot loops by a median 4 % and decoupling loops by a median 9 % [C]. It and the recheck are window-scoped, for the joint place-and-route loop.
 
 ## Key facts
@@ -31,7 +31,9 @@ Differential pairs and buses stay with the bridge ([diff-pair-routing](diff-pair
 Locked copper is a wall for Freerouting. The stage therefore draws only what buys physics, and draws it so the router can join to it.
 
 - **Joins Freerouting can see** ([critical.py](../../../kae/src/kae/route/critical.py) `join_at_corners`). Freerouting joins a wire to a pin or via only at its centre, and to another wire only at a corner; KiCad joins anything that overlaps. A track ending inside a pad off its centre gets a neck to the centre. A track ending on another track's body splits that body there. Before this, 101 ends on bodies and 70 off-centre pad ends sat on 24 of 28 boards.
-- **DSN rounding.** KiCad writes DSN coordinates with `%.6g`, so at ≥ 100 mm a pad centre such as 137.2875 mm is written as 137288 µm. Freerouting computes the pin centre as placement + pin offset = 137287.5 µm, so the fixed wire floats. On lambdakb, Freerouting logged the decap stub's pads as "unrouted" and left R2.1 open. 167 of 1,598 locked track ends on 10 boards are affected. The bridge now snaps DSN wiring onto pin centres (`translate.snap_wiring`); the same board is then clean in 24 s [C].
+- **DSN rounding.** At ≥ 100 mm KiCad's DSN loses half a micrometre, and fixed wires ending on pin centres float for Freerouting: 167 of 1,598 locked track ends on 10 boards. The bridge snaps them back (`translate.snap_wiring`, [bridge](freerouting-constraint-bridge.md)).
+- **Spokes first.** `Session.thermal_spokes` runs before the modules (`thermal_spokes`, on). KiCad's DRC on the bare board names the pads the placement already starves of thermal spokes, and each gets its missing spokes as short legal tracks of its net into the fill. On paw3395, C11's GND pad was starved on the bare board, and the critical VIN copper then took the room of its second spoke: crit seed 1 went from 2 starved_thermal + 6 open to 0 errors + 1 open [C]. Spoke corridors (`constraints.thermal_corridors`) also keep other nets' critical copper out of every pad's best spoke strips.
+- **Escape corridors** (`escape_mm`, off). These are strips out of a dense IC's signal pins that other nets' critical copper avoids. On canhw they did not reduce unconnected items (19–33 vs 13–29, k = 1–2) and left decap loops within 1 % [C].
 - **Width that buys physics.** After routing, each loop hop is narrowed to the narrowest width whose loop stays within 5 % of the wide one (`trim_tol`). It never goes below the class width or the hop current's IPC width. Same centre line, so every clearance holds. On lambdakb's VDDPIX hop: 1.41 → 0.98 mm for +4.5 % nH.
 - **Rails only where they beat the class width.** A branch that fits only at about the class width (≤ 1.05×) has no drop physics over the router's track, so it is ripped up and left to the router. On suzyqboard a 17 mm VBUS track between the USB connectors had cut D− and CC. The trunk to the farthest load carries the design current; every other branch carries its own load's current.
 - **Joins of a critical net.** A critical net's nearby pads (`complete_mm` 8) and its islands (`island_mm` 20) are joined at the class width. On sk-tibia (crit-v3), cp1 on A+B was 0.636 with these joins against 0.515 without; locally, oasis went from 9 to 1 unconnected [C]. `soft` writes them unlocked.
@@ -117,11 +119,12 @@ On 12 human placements (120 s each, 0 DRC errors): hot loops changed on 7 of 8 c
 | A/B on sk-tibia (k = 1, 600 s A+B / 900 s C6), bridge alone vs critical + bridge, earlier stage | 33 A+B | cp1 0.606 vs 0.576; completion 0.956 vs 0.943; 0 errors both. Physics vs bridge alone: decaps 0.71 (12 better, 3 worse), chains 0.71, rail R 0.97; vs human: decaps 0.87, rail R 0.95 |
 | Same | 6 C | complete 2/6 vs 0/6; completion 0.891 vs 0.854; decaps 0.84, rail R 0.72, cells 1.05; 11 new ground islands on 5 boards (before stitching) |
 | Inner-plane foreign track | 6 C | critical copper puts 0 mm on inner layers. The bridge routing around it puts 872 mm there, against 473 mm for the bridge alone and 282 mm on the human boards |
-| Local A/B, earlier stage, 10 boards (k = 1, 600 s) | 10 | bridge alone 9 clean; critical + bridge 7. Losses traced to invisible joins (lambdakb), a class-width rail (suzyqboard) and an island join (noisecard) |
 | Critical stage runtime | 39 | 0.4–60 s per board, one shared core |
-| Unit tests | synthetic converter, MCU, crystal, TVS | 51 KiCad-free and 5 KiCad tests, a regression test per bug fixed |
+| 10× budgets (6000 / 9000 s), k = 3 | 33 A+B, 6 C | cpk 0.697 (A+B), 0 (C); stops never on the clock; physics vs human: decap 0.961, cells 0.888 ([10x](../../../bench/results/2026-10-25-crit-v6-10x-1ef5bf1.md)) |
+| Last mile, soft tier (2ec702e), k = 2, 3600 s | 6 C | 6/12 clean vs 8/12 for the bridge, on different boards; 0 errors ([C6](../../../bench/results/2026-10-24-last-mile-c6-57487e6.md)) |
+| Unit tests | synthetic converter, MCU, crystal, TVS | KiCad-free and KiCad tests, one regression test per bug fixed |
 
-`tools/research/routing/run_crit_v3.sh` runs the A/B (k = 3), the re-tweak arm, `crit_compare.py` and the passports.
+`tools/research/routing/run_crit_v4.sh` runs the A/B, `crit_compare.py` and the passports.
 
 ## Recommendations for our system
 
@@ -131,8 +134,8 @@ On 12 human placements (120 s each, 0 DRC errors): hot loops changed on 7 of 8 c
 
 ## Conflicts and open questions
 
-- **DSN rounding** is fixed in `translate`. The bridge's repair rounds re-export routed boards, so bridge-alone runs should gain as well; the k = 3 A/B measures both.
-- **Routability vs physics** needs the k = 3 A/B. At k = 1 a one-board difference is within Freerouting's noise.
+- **Routability vs physics.** Critical copper still trails the bridge on clean boards. Its worst cases are the dense pmw3610 sensor boards, where every last-mile join forces rip-ups nothing can absorb ([last-mile-and-restarts](last-mile-and-restarts.md)). Use a mixed portfolio with the critical router first.
+- **Return coverage.** `suite_physics` finds more return-coverage (RET-COV) issues on critical arms than on the bridge (A+B 241 vs 185, C 92 vs 74), although critical copper wins every inductance metric ([10x](../../../bench/results/2026-10-25-crit-v6-10x-1ef5bf1.md)). Not yet explained: candidates are critical copper on the reference layer, guards that cut pours, and the bridge's routing around locked copper.
 - **Estimator vs passport.** The routed-copper estimator ranks layouts; the rb HF passport decides absolute values (olimex human board: 10.97 vs 6.4 nH).
 - **Re-tweak** needs a cheaper form than rip-up: a pre-route reservation (decap guards), or local re-placement through the joint loop.
 

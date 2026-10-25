@@ -3,8 +3,8 @@
 **TL;DR**
 - KiCad's Specctra export carries net class widths and clearances, the outline, pads and zones. It drops the custom rules, local overrides, hole, edge and solder-mask clearances, thermal reliefs and net-carrying copper graphics. Freerouting 2.5.0 also narrows tracks on its own. With the built-in adapter, **all 88** error-level DRC violations on splits A+B were translation losses [C].
 - `kae.route` resolves KiCad's DRC rules itself: a port of KiCad's rule engine that agrees with KiCad on **90,633 of 90,633** checks on the 17 corpus boards with a `.kicad_dru` [C]. It writes the result into the DSN as Freerouting's own constructs: net classes, a class-to-class clearance matrix, typed via clearances, pin and keepout clearance classes, and pins.
-- What Freerouting cannot hold is enforced after import. KiCad's DRC runs on the result, and a deterministic repair loop widens narrow tracks, draws thermal spokes as tracks, splits planes and rips up and re-routes. A board replaces the output only when it is better.
-- On A+B (k=1, 600 s) errors fell from **88 to 0** and clean passes rose from **0.455 to 0.606**. Completion went from 0.896 to 0.955. The price is wall time: 125 s against 13.5 s per board [C].
+- What Freerouting cannot hold is enforced after import. KiCad's DRC runs on the result, and a deterministic repair loop widens narrow tracks, draws thermal spokes as tracks, splits planes and rips up and re-routes. A last mile joins what is still open with an exactly checked grid router ([last-mile-and-restarts](last-mile-and-restarts.md)). A board replaces the output only when it is better and has no more errors.
+- On A+B (k=1, 600 s) errors fell from **88 to 0** and clean passes rose from **0.455 to 0.606** [C]. With the last mile, at k=3: cp1 0.909, cpk 0.970, 0 errors ([results](../../../bench/results/2026-10-24-last-mile-ab-57487e6.md)). A restart portfolio reaches 99/99 clean attempts ([results](../../../bench/results/2026-10-24-portfolio-ab-0465818.md)).
 - The same rules are exposed per net and layer (`kae.route.effective`), so routers that draw copper themselves (`kae.route.critical`) enforce identical numbers.
 
 ## Key facts
@@ -36,7 +36,7 @@ All functions and properties the corpus rule files use are supported [C].
 | KiCad constraint | Into Freerouting as | After import |
 |---|---|---|
 | Track width min/opt/max (board, net class, custom rules per layer) | class width per layer = opt clamped into [min, max]; `automatic_neckdown=false`, `fanout.enabled=false`; `neck_width_um` = max(largest min, narrowest class width); `min_trace_width_um` = largest min (the fork's floor for every neck-down) | narrower tracks widened in place when clearances allow, else ripped |
-| Copper clearance (board, net class, custom rules on both items, pad/footprint overrides) | `class_class` matrix per layer for every class pair | rip-up and re-route |
+| Copper clearance (board, net class, custom rules on both items, pad/footprint overrides) | `class_class` matrix per layer for every class pair, the strictest of the representative pair, a coupled and an uncoupled member pair (see below) | rip-up and re-route |
 | Pad clearance and pad shape | a clearance class per pin, per class and layer, read against a track or via of another net of the class, including the excess of real copper beyond the one shape the DSN carries; with `pad_shapes="outside"`, polygon pins that contain the pad | as above |
 | Via diameter, hole size, annular width | one via padstack per class, D ≥ d + 2·annulus, named in whole µm | — |
 | Hole clearance | vias: typed `wire_via`/`via_via` clearances raised by hole clearance minus annular ring; pads: through the pad's ring; NPTH: circle keepouts | rip-up |
@@ -73,14 +73,20 @@ All [P] in the v2.5.0 source:
 - **Outline.** `copper_to_edge_clearance_um` sets one value for the whole outline (`HeadlessBoardManager`).
 - **Planes.** Planes and wiring polygons are conduction areas that are not obstacles: other nets may cross them, like KiCad's refill.
 - **Connections.** A trace connects to a pin only at the pin's exact centre, and to a conduction area anywhere inside it (`Trace.getNormalContacts`).
-- **Plane layers.** KiCad marks most inner planes "signal", so Freerouting routed traces across them: on six split-C boards it put 781–1,362 mm there, against 282 mm on the human boards. `translate.plane_layers` finds inner layers where one net's zones cover ≥ 30 % of the board. With `planes="cost"` (the default), a `board.rules` file beside the DSN gives Freerouting per-layer trace costs: plane layers cost 4× a routing layer (`autoroute_settings layer_rule`). Freerouting loads that file with the DSN and keeps its costs over its own defaults. The hard alternative, `(type power)`, bans traces there. It also switches off Freerouting's plane-net detection on the remaining layers, and canhw went from 14 to 58 unconnected items. Bridge alone, same build, k = 1 [C]: oasis foreign inner track 127 → 0.6 mm, RET-COV 41 → 85 % (human 84 %); canhw 437 → 51 mm, 46 → 79 % (human 92 %); unconnected items 35 → 32 over four boards.
-- **Rounded pads.** KiCad writes roundrect, chamfered and custom pads as polygons whose arc chords lie inside the true outline: 3.9 µm at a 0.25 mm corner radius, 10 µm on oasis's custom pads. Freerouting keeps its clearance from that smaller polygon. With `--pad-shapes outside`, `translate.circumscribe_pins` writes KiCad's own outline for each such pin instead (ERROR_OUTSIDE: it contains the pad and lies at most `max_error` beyond it). The default stays `kicad`. A related plan bug is fixed: the pad's own net no longer stands in for the class's tracks. Before the fix, `A.Net != B.Net` rules never matched, so oasis's +18V pads got 0.15 mm instead of 0.2 mm. The fix changes pin clearances on 5 of the 17 boards with a `.kicad_dru` [C].
-- **Rounded wiring.** KiCad writes DSN coordinates with `%.6g`, so at x or y ≥ 100 mm half a micrometre is lost. A locked track ending on a pad centre at 137.2875 mm is written 137288 µm, while the pin centre (placement + pin offset) stays 137287.5. Freerouting then reads the wire as floating. `translate.snap_wiring` moves every wiring point within 1.5 µm of a same-net pin centre onto it, and near-coincident corners onto each other. `fix_session` gives KiCad's coordinates back to any returned point it moved. On lambdakb this turned critical + bridge from 1 unconnected to clean [C]. The repair rounds re-export routed boards and benefit too.
+- **Plane layers.** KiCad marks most inner planes "signal", so Freerouting routed traces across them: 781–1,362 mm on six split-C boards, against 282 mm on the human boards. `translate.plane_layers` finds inner layers where one net's zones cover ≥ 30 % of the board. With `planes="cost"` (the default), a `board.rules` file beside the DSN prices traces there at 4× a routing layer (`autoroute_settings layer_rule`). Freerouting keeps those costs over its own defaults. The hard alternative, `(type power)`, also switches off plane-net detection on the other layers (canhw: 14 → 58 open). The costs cut plane-layer signal track about 30-fold on split C, at a small cpk cost ([10x sweep](../../../bench/results/2026-10-25-crit-v6-10x-1ef5bf1.md)).
+- **Rounded pads.** KiCad writes roundrect, chamfered and custom pads as polygons whose arc chords lie inside the true outline: 3.9 µm at a 0.25 mm corner radius, 10 µm on oasis's custom pads. With `--pad-shapes outside`, `translate.circumscribe_pins` writes KiCad's own outline instead (ERROR_OUTSIDE: it contains the pad and lies at most `max_error` beyond it). The default stays `kicad`.
+- **Rounded wiring (pin snap).** KiCad writes DSN coordinates with `%.6g`, so at ≥ 100 mm half a micrometre is lost. A locked track ending on a pad centre at 137.2875 mm is written 137288 µm, while the pin centre stays 137287.5, and Freerouting reads the wire as floating. `translate.snap_wiring` moves wiring points within 1.5 µm of a same-net pin centre onto it, and `fix_session` restores KiCad's coordinates. On lambdakb this turned critical + bridge from 1 open to clean [C].
 - **Plane nets.** A net with a conduction area covering ≥ 30% of the board is routed as a plane net: items already touching any of its areas are skipped (`DsnFile`, `BatchAutorouter.getAutorouteItems`). A split plane is therefore never re-joined unless the island pieces are left out of the DSN.
 - **Fixed wiring.** `(type fix)` items become `SYSTEM_FIXED`; they are never moved and never written to the session (`SesWriter.writeNet`). KiCad's import re-adds its own locked objects.
 - **Determinism.** The router is deterministic: open items are routed in the order the DSN created them. `--seed N > 0` therefore permutes component, placement and net order, and every repair round uses a new order.
+- **Hosts.** Every JVM grows toward its heap cap (`KAE_FR_XMX`). Runs take host-wide slots, and the slot wait counts against Freerouting's deadline ([last-mile-and-restarts § Hosts](last-mile-and-restarts.md)).
 - **Deadline.** The job clock starts after the JVM has started and the DSN has loaded. At `job_timeout` the watchdog asks the router to stop and waits up to 30 s (`GRACE_PERIOD`) before writing the session. `save_intermediate_stages` writes nothing headless, since no listener is registered. A process killed before that is lost, so the bridge kills only after the grace period and the write. If no session appears, it runs one quick pass (`-mp 1`); failing that, the output is the unrouted input.
-- **Settings precedence.** Defaults < `freerouting.json` < DSN < SES < rules < env `FREEROUTING__*` < CLI. A host's leftover config is a hazard, not an observed cause. Every run gets a private `--user_data_path` and a scrubbed environment.
+- **Settings precedence.** Defaults < `freerouting.json` < DSN < SES < rules < env `FREEROUTING__*` < CLI. Every run therefore gets a private `--user_data_path` and a scrubbed environment.
+
+### Representatives: whose rules a class pair reads
+The plan evaluates each requirement on a representative net of each class, so the choice of representative matters [C]:
+- **A pad's own net never stands in for a class's tracks.** If it does, `A.Net != B.Net` rules never match: oasis's +18V pads got 0.15 mm instead of 0.2 mm, and Freerouting routed 30 µm inside the rule. The fix changes pin clearances on 5 of 17 boards with a `.kicad_dru`.
+- **A coupled diff pair never stands in for its two classes.** KiCad gives nets named `X+`/`X−` the diff-pair gap as their clearance (implicit "diff pair" rule). On bms-c1, /BAT− and /BAT+ represented Default_2 × HV, so the whole pair got 0.25 mm. Freerouting then laid /BAT− 0.28 mm from a /PACK+ via, where KiCad wants HV's 0.3 mm. Each class pair now also evaluates one coupled and one uncoupled member pair and keeps the strictest; `effective.clearance` likewise keeps a net's complement out of its class's value. This changed 2 of 112 boards, all upward.
 
 ### KiCad behaviour the repair relies on
 All [P] in KiCad 10.0:
@@ -100,19 +106,9 @@ Splits A+B (33 boards), k=1, 600 s per board, on one shared 4-core host with two
 | wire length / human | 0.898 | 0.929 | 0.908 |
 | wall time per board (mean) | 13.5 s | 125 s | 118 s |
 
-The built-in adapter's 88 errors break down as:
-- `track_width` 46: Freerouting's narrowing, and widths below the board minimum.
-- `clearance` 23: custom and board-minimum clearances absent from the DSN.
-- `copper_edge_clearance` 14: footprint Edge.Cuts, custom edge rules.
-- `starved_thermal` 5.
+The built-in adapter's 88 errors: `track_width` 46 (Freerouting's narrowing), `clearance` 23 (custom and board-minimum clearances absent from the DSN), `copper_edge_clearance` 14, `starved_thermal` 5. The bridge's 39 missing connections: 26 that Freerouting found no path for, and 13 zone islands. The last mile now closes both kinds ([last-mile-and-restarts](last-mile-and-restarts.md)).
 
-With the bridge, no error is left. The 39 missing connections it leaves are of two kinds:
-- 26 connections Freerouting found no path for: pad to pad 14, pad to track 6, between track pieces 4, to net-carrying copper arcs 2;
-- 13 zone islands it could not join: 11 between zone parts, 1 pad to zone, 1 teardrop.
-
-Fanout on the first route leaves 7 errors, all on one board: a repair round there ran out of router time before it could re-route the narrowed tracks.
-
-Wall time goes mostly to the first route and to repair rounds, each of which runs Freerouting and KiCad's DRC. Rounds that do not improve the board stop after two in a row.
+A repair round is kept only when it is better and its errors do not rise. A round that trades an open for an error leaves an error the last mile cannot touch. Rounds stop after two in a row are not better, or at the cap (`rounds`, 5; `"auto"` lifts it). Each round records why it stopped (`"no improvement"`, `"round cap"`, `"time"`). Freerouting reports why it stopped too (`autorouter_stop`: COMPLETED, STAGNATION, TIMED_OUT). At 10× budgets it was never the clock ([10x sweep](../../../bench/results/2026-10-25-crit-v6-10x-1ef5bf1.md)).
 
 ## Recommendations for our system
 - **Route through the bridge.** Use `kae.route.cli route` as the general router and as the placement probe (`--probe-command`). Keep the CLI stable. Give attempts seeds 0..k−1, since a seed is a different item order.
@@ -123,8 +119,9 @@ Wall time goes mostly to the first route and to repair rounds, each of which run
 ## Conflicts and open questions
 - **Rules Freerouting cannot route by.** Diff pairs are routed as two nets: the gap minimum holds, the gap maximum and uncoupled length do not. Length, skew and via-count rules are only reported.
 - **Same-net hole-to-hole.** Freerouting has no same-net clearance, so hole-to-hole between two vias of one net is caught only by the repair.
-- **Unjoined planes and the last mile.** Freerouting sees a plane as one area, so zone islands and pads cut off from their fill stay open. It also misses some legal paths. `--last-mile` (`kae.route.lastmile`) joins what is still open with the critical router's grid search, ripping foreign copper only where it must, and re-routes the ripped nets. On 13 A+B boards that often end with open connections (bridge alone, `--planes allow`, seed 0, 600 s), clean passes rose from 4 to 10 and unconnected items fell from 13 to 5, with 0 errors in both arms [C: kaebench runs `loc-fr-allow-lm` against `loc-fr-allow-nolm`]. Mean time per board rose from 99 s to 138 s. The default stays off.
-- **Fork patch.** A fork that floors micro-neckdown at the class minimum would allow fanout without narrowing; it is on hold.
+- **Unjoined planes.** Freerouting sees a plane as one area, so zone islands stay open for it; the last mile joins them ([last-mile-and-restarts](last-mile-and-restarts.md)).
+- **An unreproduced clearance error.** In one critical attempt, a Freerouting track sat 0.19 mm from a 0.3 mm HV custom-polygon pad on bms-c1, although the DSN shape and pin class were correct (same doc).
+- **Fork patch.** Flooring micro-neckdown at the class minimum would allow fanout without narrowing; on hold.
 - **Big boards.** DRC with refill takes minutes on the largest boards, and every repair round runs it once. The bridge bounds it by its own budget; for the scorer, raise `KAE_DRC_TIMEOUT`.
 - **Locked zones.** Locked zones that are not `kae-crit:` stay planes that other nets may cross, as in KiCad. That covers 36 locked zones on 8 of the 112 route tasks, all human pours.
 
