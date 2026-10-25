@@ -430,7 +430,7 @@ def collapse_run(C, run_budget, gamma, beta0, beta_end, beta_max, log, start=Non
 
 def jc2(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=60.0, beta_max=500.0,
         polish=0.15, first=0.35, restart="scratch", perturb_k=0.25, beta_p=0.3, clean=0,
-        clean_frac=0.05, clean_via=8.0, via_trade=3.0, complete=0, complete_frac=0.1, stall=0, fill=0,
+        clean_frac=0.03, clean_via=8.0, via_trade=3.0, complete=0, complete_frac=0.1, stall=0, fill=0,
         **kw):
     log0 = log
 
@@ -442,8 +442,10 @@ def jc2(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=6
     C = Collapse2(world, seed, budget, log, **kw)
     w, r, kit, ph = world, C.r, C.kit, C.ph
     clock = C.clock
-    end_frac = polish + (clean_frac if clean else 0) + (complete_frac if complete else 0)
-    run_end = budget * (1 - end_frac)
+    # the end passes take their time out of the polish share, not out of the restarts:
+    # reserving it up front cost a restart on large boards, and on olimex the restart is
+    # what finds the low-physics placement (BUGS.md 10)
+    run_end = budget * (1 - polish)
     best = None
     k = 0
     gammas = [gamma, gamma * 0.9, gamma * 1.2, gamma * 0.8, gamma * 1.4]

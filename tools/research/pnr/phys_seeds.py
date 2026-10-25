@@ -10,6 +10,7 @@ no open hop on either side), each as mean ± half-range over the seeds, then per
 """
 import argparse
 import json
+import sys
 from pathlib import Path
 
 
@@ -25,8 +26,29 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dirs", nargs="+")
     ap.add_argument("--runs", default=None)
+    ap.add_argument("--suite", default=None, help="restrict to these board ids (summaries recomputed)")
+    ap.add_argument("--override", action="append", default=[], metavar="RUN=OTHER",
+                    help="take the --override-ids boards of RUN from run OTHER (same seed dir)")
+    ap.add_argument("--override-ids", default=None)
     a = ap.parse_args()
-    seeds = [{p.stem: json.loads(p.read_text())["summary"] for p in Path(d).glob("*.json")} for d in a.dirs]
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pnr_phys"))
+    from physics_score import summarize
+    keep = set(Path(a.suite).read_text().split()) if a.suite else None
+    oids = set(Path(a.override_ids).read_text().split()) if a.override_ids else set()
+    over = dict(o.split("=", 1) for o in a.override)
+    seeds = []
+    for d in a.dirs:
+        raw = {p.stem: json.loads(p.read_text()) for p in Path(d).glob("*.json")}
+        out = {}
+        for name, j in raw.items():
+            boards = dict(j["boards"])
+            if name in over and over[name] in raw:
+                boards = {b: r for b, r in boards.items() if b not in oids}
+                boards.update({b: r for b, r in raw[over[name]]["boards"].items() if b in oids})
+            if keep is not None:
+                boards = {b: r for b, r in boards.items() if b in keep}
+            out[name] = summarize(name, boards, j["human"])
+        seeds.append(out)
     runs = a.runs.split(",") if a.runs else sorted(set.intersection(*[set(s) for s in seeds]))
     print("| run | legal (of n) | clean (of n) | completion | place terms x human | capped u x human "
           "| routed x human | routed, no open hop: x human (n) | open hops / board |")

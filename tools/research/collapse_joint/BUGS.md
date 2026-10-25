@@ -58,3 +58,10 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
    in 2 of 4 runs). Fix in jc2 (`legal_first=1`, from `-r4`): an illegal part adds 1e6 to
    the run's cost. The final 33-board runs use `-r4`; the dev screens (`-r3`, `-r3b`) do not
    have it.
+10. **jc2's end passes cost a restart** (jc2.py, `-r3b`/`-r4`). The completion and clean-up
+   shares (10 % + 5 %) were reserved before the restarts, so large boards ran one
+   continuation fewer; on olimex the missing third run was the one that found the
+   low-physics placement (fast physics 21.4 vs 5.1 for jc2_base, devB screen). Fixed in
+   `-r5`: restarts end where jc's do (85 % of the budget); completion (only when a
+   connection is open) and a 3 % clean-up come out of the polish share. The `-r4` finals
+   were stopped after ~15 attempts and re-run as `-r5`.

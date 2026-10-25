@@ -55,7 +55,7 @@ def main():
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--suite")
-    ap.add_argument("--phys", help="markdown path pattern with {run} and {seed}")
+    ap.add_argument("--phys", help="markdown path patterns with {run} and {seed}, comma-separated (first hit wins)")
     a = ap.parse_args()
     names = [Path(r).name for r in a.runs]
     data = {n: [load(r, s) for s in range(a.seeds)] for n, r in zip(names, a.runs)}
@@ -81,7 +81,8 @@ def main():
         V = [sum(data[n][s][i]["vias"] for i in full[s]) for s in S]
         row = f"| {n} | {fmt(leg)} | {fmt(cln)} | {cpk:.3f} | {fmt(com)} | {fmt(L, 0)} | {fmt(V, 0)} |"
         if a.phys:
-            ph = [phys_row(a.phys.format(run=n, seed=s), n) for s in S]
+            ph = [next((v for v in (phys_row(pat.format(run=n, seed=s), n) for pat in a.phys.split(","))
+                        if v is not None), None) for s in S]
             row += f" {fmt([p[0] if p else None for p in ph], 2)} | {fmt([p[1] if p else None for p in ph], 2)} |"
         print(row)
     print("\ncommon complete boards per seed: " + ", ".join(f"s{s} {len(v)}" for s, v in full.items()))
