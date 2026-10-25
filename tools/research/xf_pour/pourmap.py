@@ -39,38 +39,58 @@ def _block_mean(m, f, Hc, Wc):
 
 
 def solve_sheet(sigma, term, max_terms=48, rng=None):
-    """sigma (Hc, Wc) conductivity in [0, 1]; term (Hc, Wc) int terminal ids (0 none,
-    ids 1..T). Returns dict(R_eff, Gm, R (TxT), s (Hc, Wc) relative R_eff sensitivity per
-    unit of sigma removed, i.e. d(R_eff)/R_eff for d sigma_a = -1)."""
-    Hc, Wc = sigma.shape
+    """One layer: solve_stack with L = 1 (the round-1 per-layer model)."""
+    out = solve_stack(sigma[None], term[None])
+    out["s"] = out["s"][0]
+    return out
+
+
+def solve_stack(sigma, term, links=None):
+    """sigma (L, Hc, Wc) conductivity in [0, 1]; term (L, Hc, Wc) int terminal ids (0 none,
+    ids 1..T; one id may cover cells on several layers, i.e. a plated pad is one
+    equipotential terminal on all its layers); links (K, 3) rows (flat cell a, flat cell b,
+    conductance) of fixed inter-layer edges (vias of the net). Returns dict(R_eff, Gm, R
+    (TxT), s (L, Hc, Wc) relative R_eff sensitivity per unit of sigma removed, i.e.
+    d(R_eff)/R_eff for d sigma_a = -1). Fixed links carry no sensitivity."""
+    L, Hc, Wc = sigma.shape
     T = int(term.max())
-    out = dict(R_eff=None, Gm=0.0, T=T, s=np.zeros((Hc, Wc)))
+    out = dict(R_eff=None, Gm=0.0, T=T, s=np.zeros((L, Hc, Wc)))
     if T < 2:
         return out
     sig = np.where(term > 0, 1.0, sigma)
     alive = sig > 1e-6
     # node ids: terminals 0..T-1, free cells T..
-    node = -np.ones((Hc, Wc), np.int64)
+    node = -np.ones((L, Hc, Wc), np.int64)
     node[term > 0] = term[term > 0] - 1
     free = alive & (term == 0)
     nf = int(free.sum())
     node[free] = T + np.arange(nf)
     N = T + nf
-    # edges (a, b) between 4-neighbours, both alive
+    # edges (a, b) between in-plane 4-neighbours, both alive
     ea, eb, ca, cb = [], [], [], []
-    for (A, B) in (((slice(None), slice(0, -1)), (slice(None), slice(1, None))),
-                   ((slice(0, -1), slice(None)), (slice(1, None), slice(None)))):
+    ia = np.arange(L * Hc * Wc).reshape(L, Hc, Wc)
+    S = slice(None)
+    for (A, B) in (((S, S, slice(0, -1)), (S, S, slice(1, None))),
+                   ((S, slice(0, -1), S), (S, slice(1, None), S))):
         na, nb = node[A], node[B]
         m = (na >= 0) & (nb >= 0) & (na != nb)
         ea.append(na[m]); eb.append(nb[m])
-        # flat cell indices, for scattering sensitivities back to cells
-        ia = np.arange(Hc * Wc).reshape(Hc, Wc)
         ca.append(ia[A][m]); cb.append(ia[B][m])
     ea = np.concatenate(ea); eb = np.concatenate(eb)
     ca = np.concatenate(ca); cb = np.concatenate(cb)
     sa = sig.ravel()[ca]; sb = sig.ravel()[cb]
     ce = 2 * sa * sb / (sa + sb)
-    A = sp.coo_matrix((ce, (ea, eb)), shape=(N, N)).tocsr()
+    # fixed inter-layer links (no sensitivity)
+    xa = xb = np.zeros(0, np.int64)
+    xg = np.zeros(0)
+    if links is not None and len(links):
+        lk = np.asarray(links, np.float64)
+        fa, fb = lk[:, 0].astype(np.int64), lk[:, 1].astype(np.int64)
+        na, nb = node.ravel()[fa], node.ravel()[fb]
+        m = (na >= 0) & (nb >= 0) & (na != nb)
+        xa, xb, xg = na[m], nb[m], lk[m, 2]
+    A = sp.coo_matrix((np.concatenate([ce, xg]), (np.concatenate([ea, xa]), np.concatenate([eb, xb]))),
+                      shape=(N, N)).tocsr()
     A = A + A.T
     ncomp, lab = connected_components(A, directed=False)
     R = np.full((T, T), np.inf)
@@ -137,12 +157,12 @@ def solve_sheet(sigma, term, max_terms=48, rng=None):
     # dc_e/dsigma_a = 2 sb^2 / (sa + sb)^2
     da = 2 * sb * sb / (sa + sb) ** 2
     db = 2 * sa * sa / (sa + sb) ** 2
-    s = np.zeros(Hc * Wc)
+    s = np.zeros(L * Hc * Wc)
     np.add.at(s, ca, da * Q)
     np.add.at(s, cb, db * Q)
     s *= R_eff / P
     s[(term > 0).ravel()] = 0.0
-    out["s"] = s.reshape(Hc, Wc)
+    out["s"] = s.reshape(L, Hc, Wc)
     return out
 
 
@@ -150,8 +170,15 @@ class PourMaps:
     """Per (net, layer) pour of a World: region, terminals, coarse solve and the fine
     damage map E (relative R_eff increase of the net per removed fine cell)."""
 
-    def __init__(self, world, coarse_mm=0.4, max_terms=48, seed=0):
+    VIA_G = 0.5  # through-stack conductance of one plated hole, squares^-1 (netcond.VIA_G)
+
+    def __init__(self, world, coarse_mm=0.4, max_terms=48, seed=0, coupled=False, vias=None):
+        """coupled: solve each net's pour layers together (plated pads are one terminal on
+        all their layers, the net's vias link the layers), instead of one sheet per layer.
+        vias: callable net -> (K, 2) int array of the net's via cells (y, x) on the fine grid."""
         from raster import raster_poly
+        self.coupled = coupled
+        self.vias = vias
         self.w = w = world
         self.f = max(1, int(round(coarse_mm / w.g)))
         self.Hc = -(-w.H // self.f)
@@ -217,8 +244,82 @@ class PourMaps:
             term = self.terminals(n, l)
         return solve_sheet(sigma, term), fr, term
 
+    # ------------------------------------------------------------ coupled (round 2)
+    def net_layers(self, n):
+        return sorted(l for nn, l in self.pours if nn == n)
+
+    def terminals_net(self, n, layers):
+        """(len(layers), Hc, Wc) terminal ids; one id per pad over all its layers."""
+        w, f = self.w, self.f
+        term = np.zeros((len(layers), self.Hc, self.Wc), np.int32)
+        pads = []
+        for pi, k in w.net_pins.get(n, []):
+            if pi not in w.pose:
+                continue
+            ent = w.raster(pi)["pads"][k]
+            if not len(ent["cu"]):
+                continue
+            cx, cy, _ = w.pose[pi]
+            xs, ys = ent["cu"][:, 0] + cx, ent["cu"][:, 1] + cy
+            ok = (xs >= 0) & (ys >= 0) & (xs < w.W) & (ys < w.H)
+            if not ok.any():
+                continue
+            c = np.unique(np.stack([ys[ok] // f, xs[ok] // f], 1), axis=0)
+            ks = [j for j, l in enumerate(layers) if l in ent["layers"]]
+            if ks:
+                pads.append((ks, c))
+        if len(pads) > self.max_terms:
+            idx = np.sort(self.rng.choice(len(pads), self.max_terms, replace=False))
+            pads = [pads[i] for i in idx]
+        for t, (ks, c) in enumerate(pads):
+            for j in ks:
+                term[j, c[:, 0], c[:, 1]] = t + 1
+        u = np.unique(term[term > 0])
+        remap = np.zeros(len(pads) + 1, np.int32)
+        remap[u] = np.arange(1, len(u) + 1)
+        return remap[term]
+
+    def links_net(self, n, layers):
+        if self.vias is None or len(layers) < 2:
+            return None
+        v = np.asarray(self.vias(n), np.int64).reshape(-1, 2)
+        if not len(v):
+            return None
+        f, HW = self.f, self.Hc * self.Wc
+        cc = np.unique((v[:, 0] // f) * self.Wc + v[:, 1] // f)
+        rows = []
+        for j in range(len(layers) - 1):
+            g = self.VIA_G * (self.w.nl - 1) / (layers[j + 1] - layers[j])
+            rows.append(np.stack([cc + j * HW, cc + (j + 1) * HW, np.full(len(cc), g)], 1))
+        return np.concatenate(rows)
+
+    def solve_net(self, n, extra_cut=None, cut_layer=None, term=None):
+        layers = self.net_layers(n)
+        frs = [self.free(n, l, extra_cut if l == cut_layer else None) for l in layers]
+        sigma = np.stack([_block_mean(fr, self.f, self.Hc, self.Wc) for fr in frs])
+        if term is None:
+            term = self.terminals_net(n, layers)
+        return solve_stack(sigma, term, self.links_net(n, layers)), frs, term
+
+    def refresh_coupled(self):
+        w, f = self.w, self.f
+        self.E = {}
+        self.info = {}
+        for n in sorted({n for n, _ in self.pours}):
+            layers = self.net_layers(n)
+            r, frs, term = self.solve_net(n)
+            for j, l in enumerate(layers):
+                self.info[(n, l)] = dict(R_eff=r["R_eff"], T=r["T"], weight=1.0)
+                if r["R_eff"] is None:
+                    continue
+                s = np.kron(r["s"][j], np.ones((f, f)))[:w.H, :w.W] / (f * f)
+                self.E[(n, l)] = (s * frs[j]).astype(np.float32)
+        return self.E
+
     def refresh(self):
         """Recompute every pour's map. Returns the total relative-free cost in seconds."""
+        if self.coupled:
+            return self.refresh_coupled()
         w, f = self.w, self.f
         res = {}
         for (n, l) in self.pours:

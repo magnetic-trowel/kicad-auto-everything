@@ -42,3 +42,7 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
    engine freeze at c78c537 (pnr v6.3) is discarded (parked in `kae-v7/jcfix-old/`);
    all reported runs are `-r3` on c78c537, and the run queue logs an md5 of the engine
    and harness at the start and end of each arm.
+8. **jc2 min-plus arm could not import `minplus` from a code snapshot** (jc2.py). The path
+   was relative to the module file, which the run queue copies to `kae-v7/jcfix-snap/`;
+   every `jcfix-jc2-mp-dev6-r3` attempt was `no_output`. Fixed (absolute path); the arm
+   was re-run as `-r3b` (all other code paths identical to `-r3`).

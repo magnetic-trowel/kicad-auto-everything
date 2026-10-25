@@ -40,9 +40,18 @@ def main():
     ap.add_argument("runs", nargs="+")
     ap.add_argument("--suite", default="kae-v7/ab33.txt")
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--override", action="append", default=[], metavar="RUN=OTHER",
+                    help="take the --override-ids boards of RUN from run directory OTHER")
+    ap.add_argument("--override-ids", default=None, help="file of board ids for --override")
     a = ap.parse_args()
     ids = [x for x in Path(a.suite).read_text().split() if x]
     data = {Path(r).name: load(r, set(ids)) for r in a.runs}
+    oids = set(Path(a.override_ids).read_text().split()) if a.override_ids else set()
+    for o in a.override:
+        run, other = o.split("=", 1)
+        d = {k: v for k, v in data[run].items() if k[0] not in oids}
+        d.update(load(other, oids & set(ids)))
+        data[run] = d
     seeds = range(a.seeds)
     full = [i for i in ids if all(d.get((i, k), {}).get("completion", 0) >= 1.0 and d[(i, k)]["length"]
                                   for d in data.values() for k in seeds)]

@@ -14,6 +14,7 @@ predictor, pooled and within part.
 """
 import argparse
 import json
+import os
 import random
 import sys
 import time
@@ -25,6 +26,7 @@ from scipy.stats import spearmanr
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 ROOT = HERE.parents[2]
+WORK = Path(os.environ.get("XF_WORK", ROOT / "kae-work2"))
 sys.path.insert(0, str(ROOT / "tools" / "research" / "pnr"))
 
 import minplus as MPm  # noqa: E402
@@ -38,7 +40,7 @@ def load(board_id, cache):
     cache.mkdir(parents=True, exist_ok=True)
     ext = cache / f"{board_id}.json"
     if not ext.exists():
-        kicad("extract", ROOT / "kae-work" / "tasks" / board_id / "place" / "input" / "board.kicad_pcb", ext)
+        kicad("extract", WORK / "tasks" / board_id / "place" / "input" / "board.kicad_pcb", ext)
     return json.loads(ext.read_text())
 
 
@@ -168,7 +170,7 @@ def main():
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     betas = [float(b) for b in a.betas.split(",")]
-    cache = ROOT / "kae-work" / "xf_minplus" / "extract"
+    cache = WORK / "xf_minplus" / "extract"
     allrows = []
     for bid in a.boards:
         t0 = time.process_time()

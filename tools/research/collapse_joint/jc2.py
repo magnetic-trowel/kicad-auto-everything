@@ -76,7 +76,7 @@ class Collapse2(J.Collapse):
         if self.minplus_w > 0:
             # min-plus wire term (tools/research/xf_minplus, transformation T1): routed-cost
             # distance fields on the priced grid instead of HPWL in the part best response
-            sys.path.insert(0, str(HERE.parent / "xf_minplus"))
+            sys.path.insert(0, "/home/user/kicad-auto-everything/tools/research/xf_minplus")
             import minplus as MPL
             self._MPC = MPL.MPCollapse
             self.mp = MPL.MinPlus(world, self.r, self.kit, coarse_mm, True, False)
@@ -534,6 +534,11 @@ jc2_endalt = _v("jc2_endalt", end_alt=1)
 jc2_fill = _v("jc2_fill", fill=1)
 jc2_mp = _v("jc2_mp", minplus_w=0.5, mp_from_beta=1.0)      # min-plus only late (vias appear at beta > 1)
 jc2_mp1 = _v("jc2_mp1", minplus_w=1.0)
+# combinations (chosen from the dev6 screen): guard + stall + completion + via schedule + clean-up
+FIX = dict(stall=4, complete=1, via_beta=1.0, clean=1)
+jc2_fix = _v("jc2_fix", **FIX)
+jc2_fixp = _v("jc2_fixp", restart="perturb", **FIX)
+jc2_fixmp = _v("jc2_fixmp", minplus_w=0.5, mp_from_beta=1.0, **FIX)
 jc2_all = _v("jc2_all", via_beta=1.0, clean=1, complete=1, restart="perturb")
 for _n in list(globals()):
     if _n.startswith("jc2_") and callable(globals()[_n]):

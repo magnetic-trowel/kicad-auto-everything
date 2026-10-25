@@ -104,7 +104,7 @@ def brute(c, v, src):
 def board(bid):
     import validate as V
     from world import World
-    data = V.load(bid, V.ROOT / "kae-work" / "xf_minplus" / "extract")
+    data = V.load(bid, V.WORK / "xf_minplus" / "extract")
     w = World(data, g=0.1)
     C = MPm.MPCollapse(w, 0, 1e9, lambda s: None, phys_w=0.0, minplus_w=0.0)
     mov = [q for q in C.kit.movable() if q not in w.pose]

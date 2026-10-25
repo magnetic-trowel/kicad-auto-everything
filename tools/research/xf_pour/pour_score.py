@@ -25,8 +25,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 CP = ROOT / "tools" / "research" / "collapse_pour"
-RES = ROOT / "kae-work" / "results"
-TASKS = ROOT / "kae-work" / "tasks"
+XF_WORK = Path(os.environ.get("XF_WORK", ROOT / "kae-work2"))
+RES = XF_WORK / "results"
+TASKS = XF_WORK / "tasks"
 
 
 def _stub_plotting():
@@ -69,7 +70,7 @@ def job(args):
         _stub_plotting()
     from netcond import net_resistance
     kpy = os.environ.get("KAE_KICAD_PYTHON", "/usr/bin/python3")
-    with tempfile.TemporaryDirectory(dir=str(ROOT / "kae-work" / "xf_pour")) as td:
+    with tempfile.TemporaryDirectory(dir=str(XF_WORK / "xf_pour")) as td:
         dj = Path(td) / "dump.json"
         r = subprocess.run([kpy, str(CP / "kicad_dump.py"), "dump", str(path), str(dj), "--refill"],
                            capture_output=True, text=True)
@@ -95,7 +96,7 @@ def collect(runs, suite):
             continue
         todo.append((f"human|{bid}|0", TASKS / bid / "reference" / "board.kicad_pcb"))
         for run in runs:
-            base = RES / run / f"x-{run}" / "place" / bid
+            base = RES / run / f"x-{run}" / "joint" / bid
             for att in sorted(base.glob("attempt-*")):
                 p = att / "output" / "board.kicad_pcb"
                 if p.exists():
@@ -137,7 +138,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
     ap.add_argument("runs", nargs="+")
-    ap.add_argument("--suite", default=str(ROOT / "kae-work" / "ab33.txt"))
+    ap.add_argument("--suite", default=str(XF_WORK / "ab33.txt"))
     ap.add_argument("-j", type=int, default=8)
     ap.add_argument("--table", action="store_true")
     a = ap.parse_args()
@@ -145,7 +146,7 @@ def main():
     if a.table:
         table(res, a.runs[0], a.runs[1:])
         return
-    (ROOT / "kae-work" / "xf_pour").mkdir(parents=True, exist_ok=True)
+    (XF_WORK / "xf_pour").mkdir(parents=True, exist_ok=True)
     todo = [t for t in collect(a.runs, a.suite) if t[0] not in res]
     print(f"{len(todo)} boards to score", flush=True)
     with ProcessPoolExecutor(a.j) as ex:
