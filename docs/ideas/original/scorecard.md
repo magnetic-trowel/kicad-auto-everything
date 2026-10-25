@@ -40,6 +40,10 @@ Baseline for "vs seq": place by HPWL, then route.
 | T1 | Min-plus best-response maps (priced per-net Dijkstra fields, summed per part) in jc's part move | distance transforms, min-plus convolution | `xf_minplus` (minplus_w 1, 0.5) vs xf3 jc / jc_lv_nopol, joint, 3 seeds | **Inconclusive** (leans merit on vias) | Gate passed (within-part ρ 0.82 vs HPWL 0.79); vias −16 to −21% on every seed in all 4 arms at equal clean and completion, spread over ~10 boards; length ≥5% only with one board (noisecard); routed physics equal (jc) or worse (lv, w=1); round 1 (old engine, place tasks) read −27% vias, −6.5% length |
 | T2 | Exact physics maps (DCT thermal, kae kernels compiled over the grid) replacing `coarse_map` in jc | Green's functions, spectral Poisson | `xf_physmap` (`jc_x`, `jc_full_x`, lift-only `jc_full_xlp`) vs xf3 jc / jc_full, joint, 3 seeds + phys10 replicate | **No merit** | Gate passed (p95 thermal 0.3%, coupling 0.3%); jc fast physics −11% on ab33 reversed by a replicate (6 attempts: −1% fast, −2% routed; identical-code noise ±0.08); jc_full routed 0.98→1.08× (worse on every seed), lift-only 1.05×; maps use a median 14–19% of CPU |
 | T4 | Pour-damage maps (layer-coupled sensitivity of pour R_eff) in jc best responses and router costs | variational principles, topological derivative | `xf_pour` (`pjc2` coupled, `pjc` per-layer) vs xf3 jc / jc_lv_nopol, joint, 3 seeds | **Merit** (physics objective, coupled maps; needs confirming) | Gate ρ ≥ 0.96 per board vs exact re-solves; pjc2: pour R 0.84× jc, routed physics 1.05 ± 0.05 vs 1.18 ± 0.08, completion held (≈1.6 sd, 10 boards); no merit for length+vias (0.99×) or per-layer maps (0.94×, 1.12×) |
+| 19 | Harmonic-field routing: nets as potential flow; streamlines as routes, field pressure on parts | electrostatics, potential flow | `harmonic` (`hjc_press`, `hjc_press_lv`), v7, engine v6.3, 3 seeds | No merit as a router; **partial** as part pressure (ties jc) | Streamlines: 49.5% of connections clearance-legal, 1.45× A* length. `hjc_press` vs combo on 28 boards: legal 0.988 vs 0.917, clean 0.714 vs 0.667, routed physics ~1.11× vs 1.27× human; vs jc (24 boards) within seed spread. Field density predicts copper better than RUDY on 23/33 boards. Provisional: jc baselines unfinished |
+| 32 | Learned value of partial boards to prune jc restarts | AlphaZero value nets | `learn_value` (`jc_value`, `jc_value_lv`), v7, 3 seeds | No merit (provisional) | Nothing after the lift predicts a restart's end (ρ 0.12); from iteration 5 the current routed cost predicts as well (0.45 vs 0.36). Oracle pruning would buy only 3–4%; harness run ties jc |
+| 16 | Quality-diversity (MAP-Elites) archive over short jc continuations | evolutionary computation | `qd`, `qd_lv`, `qdh`, v7, 3 seeds | Partial results only | See [qd_archive/RESULTS.md](../../../tools/research/qd_archive/RESULTS.md) |
+| L′ | jc hardened (`jc2`): guarded PathFinder retry, legal-first restart ranking, stall stop, completion pass, via cost rising with β, via clean-up, min-plus for length+vias | ablations of jc | `jc2_fix`, `jc2_fixmp_lv`, v7, 61–62 of 99 attempts | **Merit likely** (unconfirmed) | vs jc: vias −17%, open connections 138 vs 154, clean 0.62 vs 0.56. `_lv` vs jc_lv: vias −30%, length −3.5%, open 120 vs 151. Clean gaps within seed spread |
 
 ## Layer collapse pieces
 
@@ -71,10 +75,9 @@ Baseline for "vs seq": place by HPWL, then route.
 ## Not tested (idea only)
 
 Congestion game (4); auction for board area (5); space-colonization growth (9);
-dungeon-generator layout (10); tabu search (14); CMA-ES (15); quality-diversity archive
-(16); copper as electrostatic charge (18); harmonic-field routing (19); homotopy on
-clearance (21); Tutte embedding seed (24); crossing-number objective (25: tested only as a
-proxy in `cplace`); planar sub-netlist layering (27); multigrid V-cycle (28); channel
-reservation (29); LLM-evolved coupling policy (31); learned value of partial boards (32);
+dungeon-generator layout (10); tabu search (14); CMA-ES (15); copper as electrostatic
+charge (18); homotopy on clearance (21); Tutte embedding seed (24); crossing-number
+objective (25: tested only as a proxy in `cplace`); planar sub-netlist layering (27);
+multigrid V-cycle (28); channel reservation (29); LLM-evolved coupling policy (31);
 diffusion on joint state (33); imitation of human routing order (34); factory-game,
 piping, cable-harness, urban, biochip and protein-packing transplants (35, 37–42).

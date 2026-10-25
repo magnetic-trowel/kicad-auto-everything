@@ -16,11 +16,11 @@ The numbers below are from engine v5 on the v3 harness. They are being re-measur
 | v6 | Solder-mask apertures between pads; holes under courtyards on both sides |
 | v6.1–6.2 | Footprint keep-outs; footprint copper drawings become no-net copper |
 | v6.3 (c78c537) | Pad terminals from KiCad's inner outline (custom ring pads); edge test covers whole pads |
-| v6.4 (pending) | Board copper drawings and copper text are pad obstacles; `.kicad_dru` edge clearance. Merged with the Tibia fix 4c4330a. Changes 5 of 33 boards |
+| v6.4 (merged, 9db768f) | Board copper drawings and copper text are pad obstacles; `.kicad_dru` edge clearance. Merged with the Tibia fix 4c4330a. Changes 5 of 33 boards |
 
 **Comparison sets.** Counted runs use v6.3 on [v7-ab33](../../../tools/research/pnr/suites/v7-ab33.txt). The headline compares the 28 boards that v6.4 leaves unchanged. The 5 changed boards are re-run on v6.4.
 
-**Baselines in progress:** `v7-{seq,seq_phys,combo,combo_lv,jc,jc_lv}-r3`. Results go to `results/v7-baselines.md`. Drivers are in [scripts/](../../../tools/research/pnr/scripts/).
+**Baselines (partial, stopped 2026-10-25):** [v7-baselines.md](../../../tools/research/pnr/results/v7-baselines.md). On the 28 boards, legal / clean / completion: seq 0.893 / 0.607 / 0.904, combo 0.917 / 0.667 / 0.935; combo uses 13% less copper and 54% fewer vias on every seed. jc and jc_lv reached 88 and 94 of 99 attempts; on the 24 boards with all seeds: legal 0.986, clean 0.694 (jc) and 0.722 (jc_lv). Clean gains over seq are within seed noise. Routed physics vs human (10 boards): seq 1.22, seq_phys 1.11, combo 1.27; the human placement through the same router scores 1.11. Engine v6.4 is merged (9 tests pass), but the five changed boards have not been re-run. Drivers are in [scripts/](../../../tools/research/pnr/scripts/).
 
 The final transformation experiments are in [scorecard](../../ideas/original/scorecard.md) rows T1, T2 and T4. That was round 3, run on another host with 4c4330a. The pour maps coupled across layers (`pjc2`) improved routed physics to 1.05× human, from jc's 1.18×, a gain still to confirm.
 
