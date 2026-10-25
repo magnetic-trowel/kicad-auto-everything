@@ -3,7 +3,7 @@ __pycache__/
 tools/research/**/results/errors*.log
 *.egg-info/
 bench/.venv/
-kae-work/
+kae-work*/
 kae-v7/
 CLAUDE.local.md
 .claude/settings.local.json
