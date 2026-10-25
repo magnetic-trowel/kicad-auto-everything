@@ -85,7 +85,9 @@ CLASSES = ("connector", "mounting", "user")
 # 3: aligned with the placement session's classifier (kae.place.fixed): debug headers also by
 #    their nets and a longer keyword list, displays by value, any THT LED with 2-4 pads,
 #    switches by value/reference (RST, BOOT), a trimmer's panel hole stays a hole
-RULES_VERSION = 3
+# 4: the user's judgement calls: SIMM sockets, microphone headers and pots whose value
+#    says trim are free (NPTH-only parts stay fixed as mounting)
+RULES_VERSION = 4
 
 _I = re.IGNORECASE
 
@@ -105,6 +107,8 @@ EXCLUDE = (
     ("trimmer", NEVER,
      re.compile(r"(?<![a-z])trim|bourns_?3(266|296|299|314|339|362|386)|"
                 r"(?<![a-z0-9])3(266|296|299|314|339|362|386)[a-z]|piher_?pt", _I), None),
+    ("SIMM socket", NEVER, re.compile(r"(?<![a-z])simm|(?<![a-z])sim\d", _I), None),
+    ("microphone", NEVER, re.compile(r"microphone", _I), re.compile(r"^MK$")),
     ("IC socket", NEVER,
      re.compile(r"(dip|plcc|soic|sop|qfp|pga|sip)[-_\w]*socket|zif|textool|(?<![a-z])\d+tex(?![a-z])", _I),
      None),
@@ -112,6 +116,8 @@ EXCLUDE = (
 # a pin header used as a jumper (value JUMPER, Jumper_2_Open, ..._JUMP): freed like a
 # debug header
 JUMPER_VALUE = re.compile(r"jump", _I)
+# a pot whose value says trim (Mix_trim_50k) is a trimmer even on a panel-pot footprint
+TRIM_VALUE = re.compile(r"(?<![a-z])trim", _I)
 
 
 def _one_net(fp):
@@ -270,6 +276,8 @@ def classify(fp):
     """fp: dict with ref, lib, name, value, pads (count), pth, npth, smd (pad counts).
     Returns (class or None, evidence)."""
     cls, evidence = _classify(fp)
+    if cls == "user" and TRIM_VALUE.search(fp.get("value") or ""):
+        return None, f"exclude: trimmer (value {fp['value']}; was {evidence})"
     if cls == "connector" and JUMPER_VALUE.search(fp.get("value") or ""):
         return None, f"exclude: jumper (value {fp['value']}; was {evidence})"
     if cls == "connector":
