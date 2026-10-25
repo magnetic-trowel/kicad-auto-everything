@@ -128,8 +128,8 @@ unaffected. [C]
 `--fix REF,...` and `--fix-class connectors,mounting,user` keep parts at their input pose.
 Through the problem's held set they become fixed obstacles like locked parts, and their
 nets still pull. [fixed.py](../../../kae/src/kae/place/fixed.py) classifies parts with the
-benchmark's place-fixed rules. `kae/src/kae/place/mech_rules.py` is a byte-identical copy
-of the harness's file, and `kae/tests/test_place_fixed.py` fails when they drift. On all
+benchmark's place-fixed rules (rules 4, task spec 8). `kae/src/kae/place/mech_rules.py` is a
+byte-identical copy of the harness's file, and `kae/tests/test_place_fixed.py` fails when they drift. On all
 112 boards kae and the harness agree on every part (0 differences). [C]
 
 Counts on the 112 human boards
@@ -137,22 +137,23 @@ Counts on the 112 human boards
 
 | Class | Parts (A / B / C) | Boards | Deciding rule (most parts) |
 |---|---|---|---|
-| connectors | 647 (35 / 43 / 569) | 104 | library 377, name 171 |
+| connectors | 637 (33 / 43 / 561) | 102 | library 375, name 163 |
 | mounting | 342 (21 / 42 / 279) | 72 | library 213, all-NPTH 68 |
-| user | 408 (9 / 18 / 381) | 61 | name 311 (switches, keyboard keys) |
+| user | 407 (9 / 18 / 380) | 61 | name 310 (switches, keyboard keys) |
 
 Parts freed by an explicit rule: test points 313, jumpers 120, programming/debug headers
-36, net ties 28, trimmers 8, IC sockets 6.
+36, net ties 28, trimmers 9, SIMM sockets 8, IC sockets 6, microphones 5.
 
 Debug headers are freed by name (JTAG, SWD, Tag-Connect, debug, prog...). A header of at
 most 20 pads is also freed by its nets: it carries one programming interface plus at most
 2 other signals. Two kinds of net are not counted: nets named for two functions
 (`SDC0_D2/JTAG_TCK`) and nets on panel or cable connectors.
 
-The user's decisions not yet in the harness rules (a v4 draft is with the coordinator):
-SIMM sockets, microphone headers and pots valued `..._trim` are free.
+Rules 4 carry the user's judgement calls: SIMM sockets, microphone headers and pots valued
+`..._trim` are free; NPTH-only parts stay fixed as mounting.
 
-**With the interface held at the human pose** (6 boards, 600 s, one routing):
+**With the interface held at the human pose** (6 boards, 600 s, one routing; parts chosen by the
+earlier roles-based classifier, before the switch to the shared rules):
 
 | Board | Unconnected: human / free / fixed |
 |---|---|
@@ -261,7 +262,6 @@ relying on free angles; the option is off by default.
   ([portfolio](../../../bench/results/2026-10-24-portfolio-ab-0465818.md)).
 - **Fixed interface on eurorack:** with 28 parts pinned, the free parts route worse (24
   unconnected) than either free placement or the human's.
-- **Remaining place-fixed rule gaps:** SIMM sockets, microphones and `_trim` pots.
 
 ## Sources
 
