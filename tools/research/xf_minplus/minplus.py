@@ -17,8 +17,8 @@ cheapest fine cell), are summed at coarse origins with each pad's offset rounded
 coarse grid, and are bilinearly upsampled to the fine origin grid. Units: fine cells (g),
 the currency of jc. Unreachable cells cost a board perimeter (Kit.unrouted_mm).
 
-Plug-ins for run.py (they wrap the frozen jc, kae-work/jc-snap/jc_v3.py when present,
-by swapping its Collapse class for MPCollapse; nothing in collapse_joint is edited):
+Plug-ins for run.py (they wrap a private copy of collapse_joint/jc.py by swapping its
+Collapse class for MPCollapse; nothing in collapse_joint is edited):
     xf     jc + min-plus map (minplus_w = 1 by default; --opt minplus_w=0.5)
     xf_lv  the same with phys_w = 0 (length + vias objective, no polish, as jc_lv_nopol)
 Options: minplus_w, coarse_mm (0.4), mp_from_beta (0: use the map from the first
@@ -43,9 +43,10 @@ SQ2 = math.sqrt(2.0)
 
 
 def _load_jc():
-    snap = ROOT / "kae-work" / "jc-snap" / "jc_v3.py"
-    path = snap if snap.exists() else ROOT / "tools" / "research" / "collapse_joint" / "jc.py"
-    spec = importlib.util.spec_from_file_location("jc_frozen_v3", str(path))
+    # A private copy of the current collapse_joint/jc.py (the one the round-2 baselines run),
+    # so swapping its Collapse class touches nothing else.
+    path = ROOT / "tools" / "research" / "collapse_joint" / "jc.py"
+    spec = importlib.util.spec_from_file_location("jc_for_minplus", str(path))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

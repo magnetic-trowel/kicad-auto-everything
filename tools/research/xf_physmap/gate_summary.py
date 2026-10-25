@@ -10,6 +10,8 @@ d = Path(sys.argv[1])
 for mb in ("none", "0.1", "0.3"):
     pool = {}
     cpu = []
+    if not list(d.glob(f"gate2-{mb}-*.json")):
+        continue
     for f in sorted(d.glob(f"gate2-{mb}-*.json")):
         j = json.loads(f.read_text())
         cpu.append(j["map_cpu_s"]["median"])

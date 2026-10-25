@@ -10,6 +10,8 @@ and pjc_lv_nopol (length + vias, phys_w 0, no polish, as xf-base-jc_lv_nopol).
   routing              for net m, hist on layer l += route_w / g * sum over pours (n, l),
                        n != m, of corr(E_{n,l}, track halo disc) / disc diameter
                        (a track step on a pour layer costs the pour damage it does)
+  coupled (pjc2*)      one solve per net over its pour layers, linked by its plated pads
+                       and routed vias (round 2); otherwise one sheet per layer (round 1)
   refresh              PourMaps.refresh() at every jc iteration, after the nets are
                        re-routed and before the parts move (pours see the current
                        parts and tracks); skipped when it would use > 10 % of the time.
@@ -31,7 +33,7 @@ sys.path.insert(0, str(HERE))
 
 from placekit import corr  # noqa: E402
 from pourmap import PourMaps  # noqa: E402
-from router import Router  # noqa: E402
+from router import Router, vias_of  # noqa: E402
 
 
 def _load_jc():
@@ -72,10 +74,10 @@ class PourRouter(Router):
 
 class PourCollapse(JC.Collapse):
     def __init__(self, world, seed, budget, log, pour_w=100.0, route_w=100.0, coarse_mm=0.4,
-                 pour_frac=0.10, **kw):
+                 pour_frac=0.10, coupled=False, **kw):
         super().__init__(world, seed, budget, log, **kw)
         self.r.__class__ = PourRouter
-        self.pm = PourMaps(world, coarse_mm=coarse_mm, seed=seed)
+        self.pm = PourMaps(world, coarse_mm=coarse_mm, seed=seed, coupled=coupled, vias=self.net_vias)
         self.pour_w = pour_w
         self.route_w = route_w
         self.pour_frac = pour_frac
@@ -86,7 +88,11 @@ class PourCollapse(JC.Collapse):
         self.n_skip = 0
         if self.pm.pours:
             log(f"xf_pour: pours {[(world.net_names[n], l) for n, l in self.pm.pours]} "
-                f"pour_w={pour_w} route_w={route_w} coarse={coarse_mm}")
+                f"pour_w={pour_w} route_w={route_w} coarse={coarse_mm} coupled={coupled}")
+
+    def net_vias(self, n):
+        v = [vias_of(p)[:, 1:] for p in self.r.routes.get(n, [])]
+        return np.concatenate(v) if v else np.zeros((0, 2), np.int64)
 
     def pour_kernel(self, pi, ri, n, l):
         key = (pi, ri, n, l)
@@ -178,6 +184,18 @@ def pjc_lv_nopol(world, **kw):
     return _run(world, kw, {"polish": 0.0})
 
 
+def pjc2(world, **kw):
+    """pjc with the layer-coupled maps (round 2): a net's pour layers solved together,
+    linked by its plated pads and routed vias."""
+    return _run(world, kw, {"coupled": True})
+
+
+def pjc2_lv_nopol(world, **kw):
+    """pjc_lv_nopol with the layer-coupled maps."""
+    kw["phys_w"] = 0.0
+    return _run(world, kw, {"polish": 0.0, "coupled": True})
+
+
 def pjc_route_only(world, **kw):
     """Ablation: only the routing term."""
     return _run(world, kw, {"pour_w": 0.0})
@@ -186,3 +204,20 @@ def pjc_route_only(world, **kw):
 def pjc_place_only(world, **kw):
     """Ablation: only the placement term."""
     return _run(world, kw, {"route_w": 0.0})
+
+
+# weight sweep on dev6 (K = pour_w = route_w, mm of wire per 100 % pour-R increase)
+def _mk(K, lv):
+    def f(world, **kw):
+        if lv:
+            kw["phys_w"] = 0.0
+            return _run(world, kw, {"polish": 0.0, "coupled": True, "pour_w": float(K), "route_w": float(K)})
+        return _run(world, kw, {"coupled": True, "pour_w": float(K), "route_w": float(K)})
+    f.__name__ = f"pjc2{'_lv_nopol' if lv else ''}_k{K}"
+    return f
+
+
+for _K in (30, 100, 300):
+    for _lv in (False, True):
+        _f = _mk(_K, _lv)
+        globals()[_f.__name__] = _f

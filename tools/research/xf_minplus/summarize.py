@@ -3,27 +3,29 @@
 """Per-seed legal / clean / completion and length / vias (summed over boards that every
 listed run fully routed in that seed), from attempt.json (kicad-cli scores).
 
-    python summarize.py [--suite FILE] RUN [RUN ...]     (run names under kae-work/results)
+    python summarize.py [--suite FILE] [--exclude ID,ID] RUN [RUN ...]     (run names under $XF_WORK/results)
 """
 import json
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
+WORK = Path(os.environ.get("XF_WORK", ROOT / "kae-work2"))
 
 
 def load(run):
     out = {}
-    for f in (ROOT / "kae-work" / "results" / run).glob("*/place/*/attempt-*/attempt.json"):
+    for f in (WORK / "results" / run).glob("*/joint/*/attempt-*/attempt.json"):
         a = json.loads(f.read_text())
-        p = (a.get("probe") or {}).get("score") or {}
-        s = a.get("score") or {}
+        s = a.get("score") or {}  # joint task: placement and routing in one score
+        ok = a["status"] == "ok" and bool(s.get("valid"))
         out[(a["id"], a["attempt"])] = dict(
-            legal=bool(s.get("legal")) and a["status"] == "ok", clean=bool(p.get("clean")),
-            comp=float(p.get("completion") or 0.0), len=p.get("track_length_mm"), vias=p.get("vias"),
-            full=a["status"] == "ok" and p.get("unconnected") == 0)
+            legal=bool(s.get("legal")) and ok, clean=bool(s.get("legal")) and bool(s.get("clean")) and ok,
+            comp=float(s.get("completion") or 0.0) if ok else 0.0, len=s.get("track_length_mm"),
+            vias=s.get("vias"), full=ok and s.get("unconnected") == 0)
     return out
 
 
@@ -33,11 +35,17 @@ def main():
     if args[0] == "--suite":
         suite = set(Path(args[1]).read_text().split())
         args = args[2:]
+    excl = set()
+    if args[0] == "--exclude":
+        excl = set(args[1].split(","))
+        args = args[2:]
     data = {r: load(r) for r in args}
     boards = sorted({b for d in data.values() for b, _ in d})
     if suite:
         boards = [b for b in boards if b in suite]
+    boards = [b for b in boards if b not in excl]
     seeds = sorted({k for d in data.values() for _, k in d})
+    per = {}
     print("| run | legal | clean | completion | length mm (common full) | vias | boards | clean best-of-3 |")
     print("|---|---|---|---|---|---|---|---|")
     for r in args:
@@ -55,8 +63,17 @@ def main():
             V.append(sum(d[(b, k)]["vias"] for b in com))
             NB.append(len(com))
         best = np.mean([any((d.get((b, k)) or {}).get("clean") for k in seeds) for b in boards])
-        f = lambda a, p=3: f"{np.mean(a):.{p}f} ± {np.std(a):.{p}f}"
+        f = lambda a, p=3: f"{np.mean(a):.{p}f} ± {np.std(a, ddof=1):.{p}f}"
         print(f"| {r} | {f(L)} | {f(C)} | {f(P)} | {f(LN, 0)} | {f(V, 1)} | {np.mean(NB):.0f} | {best:.3f} |")
+        per[r] = (LN, V)
+    # paired by seed against the first run (the baseline): % change in length and vias
+    b = args[0]
+    for r in args[1:]:
+        dl = [100 * (x / y - 1) for x, y in zip(per[r][0], per[b][0])]
+        dv = [100 * (x / y - 1) if y else float("nan") for x, y in zip(per[r][1], per[b][1])]
+        print(f"\n{r} vs {b}, per seed: length " + ", ".join(f"{x:+.1f}%" for x in dl)
+              + f" (mean {np.mean(dl):+.1f}%); vias " + ", ".join(f"{x:+.0f}%" for x in dv)
+              + f" (mean {np.mean(dv):+.0f}%)")
 
 
 if __name__ == "__main__":

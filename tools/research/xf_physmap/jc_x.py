@@ -7,6 +7,10 @@ Plug-ins for pnr/run.py (collapse_joint/jc.py is loaded and wrapped, not edited)
   jc_x           jc (phys_w = 2, polish 15 %) with exact maps
   jc_lv_nopol_x  jc_lv_nopol (phys_w = 0); maps are never consulted at phys_w = 0
   jc_full_x      jc_full (restarts judged with 5 x routed physics, no polish) with exact maps
+  jc_xlp         round-2 mitigation: jc with exact maps only where jc already used coarse_map
+                 (lift and polish); best responses are jc's own (physics only at the top
+                 HPWL/conflict candidates, re-scored with the exact Terms.delta)
+  jc_full_xlp    the same for jc_full (no polish, so exact maps in the lift only)
 
 Where the maps enter:
   lift          Phys.coarse_map(step 1.2 mm) -> exact map over the legal cells
@@ -36,7 +40,7 @@ _spec = importlib.util.spec_from_file_location("jc_base", str(HERE.parent / "col
 J = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(J)
 
-OPTS = dict(map_budget=0.3, br_budget=0.05, max_share=0.35)
+OPTS = dict(map_budget=0.3, br_budget=0.05, max_share=0.35, br_maps=True)
 
 
 class XPhys(physmap.ExactPhys):
@@ -61,6 +65,8 @@ class XCollapse(J.Collapse):
 
     def best_response(self, pi, beta, CT, CV, per):
         w, ph = self.w, self.ph
+        if not OPTS["br_maps"]:
+            return super().best_response(pi, beta, CT, CV, per)
         if not (pi in ph.active and self.phys_w > 0 and not self.trust and self._maps_ok()):
             if pi in ph.active and self.phys_w > 0:
                 self.br_fallback += 1
@@ -116,7 +122,7 @@ class XCollapse(J.Collapse):
 def _patched(fn, world, log=print, **kw):
     J.Phys = XPhys
     J.Collapse = XCollapse
-    for k in ("map_budget", "br_budget", "max_share"):
+    for k in ("map_budget", "br_budget", "max_share", "br_maps"):
         if k in kw:
             OPTS[k] = kw.pop(k)
     holder = {}
@@ -152,4 +158,14 @@ def jc_lv_nopol_x(world, **kw):
 
 
 def jc_full_x(world, **kw):
+    return _patched(J.jc_full, world, **kw)
+
+
+def jc_xlp(world, **kw):
+    kw.setdefault("br_maps", False)
+    return _patched(J.jc, world, **kw)
+
+
+def jc_full_xlp(world, **kw):
+    kw.setdefault("br_maps", False)
     return _patched(J.jc_full, world, **kw)
