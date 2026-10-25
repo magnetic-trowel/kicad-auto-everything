@@ -410,7 +410,6 @@ def _fp(ref, fpid, value="", pads=2, pth=0, npth=0):
     # holes without copper
     (_fp("REF**", "panel:PanelHole_AudioJack_3.5mm", pads=1, npth=1), "mounting", "npth"),
     # names of custom footprints
-    (_fp("U12", "footprints:sim72", "SIM4X32", pads=72, pth=72), "connector", "name"),
     (_fp("J3", "x:CONN_FFC_0.5MM_1x20", pads=20), "connector", "name"),
     (_fp("KSW1", "yuiop:Cherry_MX_Hotswap_1.0u_v4", pads=2), "user", "name"),
     (_fp("D1", "DIYSynthMNL:LED_D5.0mm_BigPads", pads=2, pth=2), "user", "name"),
@@ -465,6 +464,11 @@ def test_mech_classifier_fixes(fp, cls, rule):
     (_fp("J2", "CHIPSAlliance_Connector:SOIC-Socket_LOTES_ACA-SPI-004_2x04_P1.27mm", pads=8),
      "exclude: IC socket"),
     (_fp("D2", "LED_SMD:LED_0603_1608Metric", "LED", pads=2), "conflict"),
+    # the user's judgement calls (rules 4)
+    (_fp("U12", "footprints:sim72", "SIM4X32", pads=72, pth=72), "exclude: SIMM socket"),
+    (_fp("MK1", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "Microphone_Condenser",
+         pads=2, pth=2), "exclude: microphone"),
+    (_fp("RV4", "DIYSynthMNL:Potentiometer_RV09_BigPads", "Mix_trim_50k", pads=3, pth=3), "exclude: trimmer"),
 ])
 
 def test_mech_classifier_leaves_free(fp, rule):
