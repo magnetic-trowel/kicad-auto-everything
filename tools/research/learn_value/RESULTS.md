@@ -2,6 +2,8 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Learned value of partial boards for joint collapse (tag `learnv`, idea 32)
 
+**PARTIAL.** Work was closed out before the jc baselines finished. Everything below the harness section is complete. The harness comparison uses only the boards where every run has all 3 seeds.
+
 Can a cheap learned predictor of a partial board's final outcome steer [jc](../collapse_joint/RESULTS.md) restarts better than its heuristics, at equal CPU? Code: [lv_jc.py](lv_jc.py) (probes, steered jc), [lv_gen.py](lv_gen.py) (data), [lv_model.py](lv_model.py) (training, evaluation, simulation), [lv_policy.py](lv_policy.py); models in [model/](model/).
 
 ## Data
@@ -39,14 +41,29 @@ Each board's logged restarts were replayed in 60 bootstrap orders under jc's res
 
 **The headroom is small.** Even perfect knowledge of every restart's final cost, available right after its lift, buys only 3–4 % (4.5 % on the 12 boards with ≤4 restarts per budget). Restarts are cheap and their outcomes are close to i.i.d., so pruning them mostly buys more draws from the same distribution. The learned policies capture none of that 3–4 %.
 
-## Harness (kae-v7, score v7, engine v6.1, 33 A/B joint tasks, 120 CPU-s, 3 seeds)
+## Harness (kae-v7, score v7, engine v6.3 c78c537, 120 CPU-s, 3 seeds, mean ± half-range)
 
-PENDING
+The arms are `learnv-jcv-ab33-r3` (`jc_value`, physics objective) and `learnv-jcvlv-ab33-r3` (`jc_value_lv`, length + vias). Each ran all 99/99 attempts from a frozen worktree (`runj_wt.sh`), with about 12 of ~30 restarts per attempt abandoned. The baselines `v7-jc-r3` and `v7-jc_lv-r3` were stopped at 88 and 94 of 99. Fair rows: the **29 boards** that every run has on all 3 seeds (length and vias are summed over the 20 boards every run completed). Physics covers phys10 (jc baselines not yet scored).
 
-## Verdict
+| run | legal | clean | completion | length | vias | fast phys | routed phys |
+|---|---|---|---|---|---|---|---|
+| `jc` | 0.954 ± .017 | 0.655 ± .034 | 0.919 ± .009 | 3190 | 57.7 | — | — |
+| **`jc_value`** | 0.943 ± .017 | 0.667 ± .017 | 0.915 ± .009 | 3189 | 53.7 | 0.96 ± .07 | 1.15 ± .04 |
+| `combo` | 0.885 ± .017 | 0.644 ± .052 | 0.921 ± .005 | 3294 | 42.7 | 1.26 ± .12 | 1.27 ± .04 |
+| `jc_lv` | 0.954 ± .017 | 0.678 ± .017 | 0.919 ± .003 | 3175 | 53.0 | — | — |
+| **`jc_value_lv`** | 0.931 ± .000 | 0.667 ± .086 | 0.920 ± .001 | 3149 | 51.7 | 2.64 ± .35 | 1.24 ± .07 |
+| `combo_lv` | 0.897 ± .034 | 0.609 ± .052 | 0.919 ± .002 | 3240 | 39.7 | 2.84 ± .50 | 1.26 ± .08 |
 
-PENDING
+The requested 28-board row (`pnr/results/v63-v64-unchanged.txt`) and the 33-board row are in `kae-work/learnv/drc-tables.md`. Neither can be read yet: the missing baseline attempts count as zeros there (on 28 boards, `jc_value` shows legal 1.000 and clean 0.726 against 0.857 and 0.607 for `jc`, but `jc` has 73 of 84 attempts). Fast physics is the total ratio to human.
 
-## Next step
+## Verdict (provisional)
 
-PENDING
+**No merit.** The learned value predicts restart outcomes no better than the current routed cost. Restart pruning has a ceiling of only 3–4 % even with an oracle, and in the harness `jc_value` ties `jc` within the seed spread on every DRC metric (vias −7 %, within noise). The physics objective's own fast/routed physics stay ahead of combo, as jc's do.
+
+## Next steps to finish
+
+1. Let `v7-jc-r3` and `v7-jc_lv-r3` finish. Re-run `pnr/seeds.py` on the 28-board list, and run `kae-work/learnv/phys.sh v7-jc-r3 v7-jc_lv-r3` for the jc physics columns.
+2. Optionally regenerate the training data on engine v6.3 (it predates v6), though the ceiling makes a different outcome unlikely.
+3. If the idea is revisited, target what varies between restarts, the continuation's random orders, rather than the start state. For example, a value on whole-continuation summaries for choosing *which* restart to polish, not which to abandon.
+
+Earlier harness attempts (`learnv-*-v7`, `-v7b` = mixed engine code; `-v7c` = v6.2) are set aside as `.MIXED`/`.v62` and not counted.
