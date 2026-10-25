@@ -39,7 +39,7 @@ kaebench report kae-work/results/human kae-work/results/fr-2.5.0
 ```
 
 Everything lives under `--workdir` (default `./kae-work`): `cache/` (fetched files),
-`tasks/<id>/{reference,route,place}/` and `results/<run>/<adapter>/<kind>/<id>/attempt-N/`.
+`tasks/<id>/{reference,route,place,place-fixed}/` and `results/<run>/<adapter>/<kind>/<id>/attempt-N/`.
 Runs resume: re-running with the same `--name` skips finished attempts.
 
 Useful filters on `fetch`/`prepare`: `--tiers permissive`, `--tags rf,ddr`, `--only id1,id2`,
@@ -117,10 +117,17 @@ A method can't read the human layout it is scored against, download it, or touch
   - Its tracks and vias are then rebuilt onto that placement and scored like a route result.
   - Valid only if both parts are; `clean` also requires `legal`.
   - Baselines: `reference` (the human layout) and `human-freerouting` (Freerouting on the human placement).
-- **Degenerate place tasks.** Each place task records `movable`, the number of footprints a placer may move. A board whose parts are nearly all locked is trivially legal. `run --min-movable N` skips place and joint tasks with fewer than N movable footprints (default 0: none are skipped).
+- **Place-fixed tasks** (`--kinds place-fixed`, and `joint-fixed` for place and route from its input). A place task frees every unlocked footprint, the connectors and mounting holes too, so a placer can beat the human on wire length with a board that no longer fits its enclosure or cables. Place-fixed keeps the board's mechanical interface at the human pose, locked in the input, so it is scored exactly like a locked footprint (`locked_moved`); everything else is placed. Scoring and baselines are those of `place` and `joint`.
+  - Fixed: connectors (USB, pin headers and sockets, JST/Molex/FPC/FFC, terminal blocks, barrel and audio jacks, RF, SD/SIM and card-edge slots, wire pads); mounting (screw holes, standoffs, fiducials, all-NPTH footprints); user-facing parts (switches, keyboard key switches such as Cherry MX, Kailh/Choc and Gateron, buttons, panel pots and encoders, displays, through-hole, light-pipe and LED-bar indicators, buzzers and speakers).
+  - Free (the user's choices on borderline parts): programming and debug headers (JTAG, SWD, ISP/ICSP, PDI/UPDI, Tag-Connect, debug or prog in the name, value, description or reference, or a small header whose signal nets are one such interface), SMD LEDs, test points, jumpers and solder bridges (also pin headers with a jumper value), batteries and battery holders, trimmers, IC sockets; also net ties, heatsinks and plug-in modules. UART and display headers stay fixed.
+  - The rules follow the placement research classifier (`kae.place.fixed`); on the 112 qualified boards the two fix the same parts on 99 boards.
+  - Rules, first match wins (`kicad_scripts/mech_rules.py` documents each, `rules_version` is recorded): exclusions; KiCad library (`Connector*`, `TerminalBlock*`, `MountingHole*`, `Fiducial*`, `Button_Switch*`, `Potentiometer*`, `Rotary_Encoder*`, `Display*`, `Buzzer_Beeper*`, `LED_THT`, connector makers); all pads NPTH; a THT LED name; a passive/diode/IC library, package name or reference (R, C, D, Q, ...) stops the rest; footprint-name patterns; KiCad symbol names as values (`Conn_01x04`, `SW_Push`); reference prefixes (J, P, H, MH, FID, SW, RV, ...) when the footprint fits. A connector that is a programming or debug header is then freed.
+  - The task record lists every fixed part with its class and rule (`tasks["place-fixed"].fixed_mech`) and `movable`. `prepare --fixed-overrides FILE` takes `{"<board id>": {"fix": [refs], "free": [refs]}}` and records what it applied. Designer-locked parts and parts carrying Edge.Cuts stay anchored either way.
+  - The human placement must also pass the place-fixed round trip. A board that fails it keeps its other tasks; runs skip only its place-fixed and joint-fixed tasks.
+- **Degenerate place tasks.** Each place task records `movable`, the number of footprints a placer may move. A board whose parts are nearly all locked is trivially legal. `run --min-movable N` skips place, joint, place-fixed and joint-fixed tasks with fewer than N movable footprints (default 0: none are skipped).
 - **Best-of-k** picks the attempt by clean, then completion, errors, track length (PCBWorld's best-potential @k). The report shows `cp1` (attempt 0) and `cpk`.
 - **Rescoring.** After a scoring fix, `kaebench rescore RUN_DIR -j N` scores a run's saved outputs (and saved probe routes) again with the current scorer, without re-running the method. Each attempt records the version it was rescored from.
-- **Versions.** Every attempt records `score_version` (now 5). Tasks need task spec 5: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint uuids are made unique, and the human layout must pass the round trip. Re-run `prepare --force` on older task folders.
+- **Versions.** Every attempt records `score_version` (now 7). Tasks need task spec 5: locked footprints and footprints carrying Edge.Cuts stay in place, teardrops are stripped, repeated footprint uuids are made unique, and the human layout must pass the round trip. Place-fixed and joint-fixed need task spec 7. Re-run `prepare --force` on older task folders.
 - **Red-team tests.** `bench/tests/test_redteam.py` runs cheating methods (move parts, delete a keepout, grow the outline, add a layer, shrink pads, swap nets, ship own rules, read or overwrite the reference, use the network) and requires each to be invalid, blocked or ineffective. Add a case for every new cheat found.
 
 ## Manifests

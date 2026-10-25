@@ -13,6 +13,8 @@ Task kinds:
   route  placement kept, all tracks/vias removed (locked copper optionally kept)
   place  all copper removed and unlocked footprints moved to a staging area off-board;
          locked footprints stay where the designer put them
+  place-fixed  like place, but the board's mechanical interface (connectors, mounting holes,
+         user controls; kicad_scripts/mech_rules.py) also stays at the human pose, locked
 """
 import json
 import shutil
@@ -21,7 +23,7 @@ from pathlib import Path
 from . import score, tools
 from .boardfiles import STEM, board_path, install_rules
 
-TASK_KINDS = ("route", "place")
+TASK_KINDS = ("route", "place", "place-fixed")
 # 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
 #    locked parts could not be placed legally and the human placement scored invalid)
 # 3: teardrops are stripped with the routing (left behind they were stray copper and marked
@@ -37,11 +39,18 @@ TASK_KINDS = ("route", "place")
 #    boards store `(tstamp 0)`), so such boards never got through prepare. Otherwise the uuid
 #    only orders overlapping same-net zones, whose copper is the same either way, so tasks
 #    of earlier specs stay valid
-TASK_SPEC = 6
+# 7: place-fixed tasks (and joint-fixed from their input); route and place tasks unchanged
+TASK_SPEC = 7
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
-MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5}
+MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 7, "joint-fixed": 7}
 # The task input each kind starts from (joint = place and route, from the place task's input).
-INPUT_KIND = {"route": "route", "place": "place", "joint": "place"}
+INPUT_KIND = {"route": "route", "place": "place", "joint": "place",
+              "place-fixed": "place-fixed", "joint-fixed": "place-fixed"}
+# Place-like task inputs: footprints staged off-board, `movable` recorded.
+PLACE_INPUTS = ("place", "place-fixed")
+# Task inputs whose round trip does not decide qualification: a board that fails it keeps its
+# route and place tasks, and runs skip only its tasks of this kind.
+OPTIONAL_INPUTS = ("place-fixed",)
 
 
 def split_of(pads):
@@ -65,8 +74,39 @@ def _strip_stats(st):
     return out
 
 
-def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False, force=False):
-    """Create tasks_dir/<id>/{reference,route,place}/ and task.json. Returns the task record."""
+def _fixed_mech(ref, pf, overrides):
+    """Classify the reference's footprints, apply the board's overrides, and build
+    pf/reference: the human layout with the fixed parts locked (the place-fixed input and the
+    human references for place-fixed and joint-fixed are made from it)."""
+    from .kicad_scripts.mech_rules import apply_overrides
+
+    cls = tools.run_ops("classify-mech", board_path(ref))
+    rows = cls["footprints"]
+    applied = apply_overrides(rows, overrides)
+    fixed = [dict(uuid=r["uuid"], ref=r["ref"], fpid=r["fpid"], value=r["value"], cls=r["class"],
+                  evidence=r["evidence"], anchored=r["anchored"]) for r in rows if r["fixed"]]
+    href = pf / "reference"
+    href.mkdir(parents=True)
+    install_rules(ref, href)
+    uuids = pf / "fixed-uuids.json"
+    uuids.write_text(json.dumps([r["uuid"] for r in fixed]))
+    tools.run_ops("lock-footprints", board_path(ref), board_path(href), uuids)
+    uuids.unlink()
+    human = pf / "human-placement"
+    human.mkdir()
+    install_rules(ref, human)
+    tools.run_ops("strip-routing", board_path(href), board_path(human))
+    counts = {}
+    for r in fixed:
+        counts[r["cls"]] = counts.get(r["cls"], 0) + 1
+    return href, dict(rules_version=cls["rules_version"], overrides=applied, counts=counts,
+                      fixed_mech=[{k if k != "cls" else "class": v for k, v in r.items()} for r in fixed])
+
+
+def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False, force=False,
+                  fixed_overrides=None):
+    """Create tasks_dir/<id>/{reference,route,place,place-fixed}/ and task.json. Returns the task
+    record. fixed_overrides: {"fix": [refs], "free": [refs]} for this board's place-fixed task."""
     tdir = Path(tasks_dir) / entry["id"]
     task_json = tdir / "task.json"
     if task_json.exists() and not force:
@@ -100,20 +140,26 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         kdir = tdir / kind / "input"
         kdir.mkdir(parents=True)
         install_rules(ref, kdir)
+        mech = None
         if kind == "route":
             tools.run_ops("strip-routing", board_path(ref), board_path(kdir),
                           *(["--keep-locked"] if keep_locked else []))
+        elif kind == "place-fixed":
+            href, mech = _fixed_mech(ref, tdir / kind, fixed_overrides)
+            moved = tools.run_ops("strip-placement", board_path(href), board_path(kdir)).get("moved")
         else:
             moved = tools.run_ops("strip-placement", board_path(ref), board_path(kdir)).get("moved")
         st = tools.run_ops("stats", board_path(kdir))
         drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
                                      keep_locked=keep_locked if kind == "route" else "footprints")
-        if kind == "place":  # footprints a placer may move (all others are anchored)
+        if kind in PLACE_INPUTS:  # footprints a placer may move (all others are anchored)
             record["tasks"][kind]["movable"] = moved
+        if mech:
+            record["tasks"][kind].update(mech)
     if human_clean:
         record["roundtrip"] = _roundtrip(tdir, record)
-        record["qualified"] = all(v["ok"] for v in record["roundtrip"].values())
+        record["qualified"] = all(v["ok"] for k, v in record["roundtrip"].items() if k not in OPTIONAL_INPUTS)
     task_json.write_text(json.dumps(record, indent=1))
     return record
 
@@ -141,6 +187,10 @@ def _roundtrip(tdir, record):
             tools.run_ops("strip-routing", board_path(tdir / "reference"), board_path(human))
             s, _ = score.score_place_task(tdir, board_path(human), rt / "place", record, allow_copy=True)
             out["place"] = _verdict(s, s.get("legal"))
+        if "place-fixed" in record["tasks"]:
+            s, _ = score.score_place_task(tdir, board_path(tdir / "place-fixed" / "human-placement"),
+                                          rt / "place-fixed", record, allow_copy=True, kind="place-fixed")
+            out["place-fixed"] = _verdict(s, s.get("legal"))
     finally:
         shutil.rmtree(rt, ignore_errors=True)
     return out

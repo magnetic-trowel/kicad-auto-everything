@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import __version__, tools
 from .boardfiles import board_path, copy_board, install_rules
-from .prepare import INPUT_KIND, MIN_TASK_SPEC, TASK_SPEC, load_tasks
+from .prepare import INPUT_KIND, MIN_TASK_SPEC, OPTIONAL_INPUTS, PLACE_INPUTS, TASK_SPEC, load_tasks
 from .score import SCORE_VERSION, score_joint_task, score_place_task, score_route_task, score_routing
 
 
@@ -44,6 +44,11 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
         reference = {"route": board_path(task_dir / "reference"), "joint": board_path(task_dir / "reference"),
                      "joint_placement": board_path(task_dir / "route" / "input"),
                      "place": board_path(task_dir / "route" / "input")}
+        if INPUT_KIND[kind] == "place-fixed":  # the human layout with the fixed parts locked, as in the input
+            fixed = task_dir / "place-fixed"
+            reference.update({"place-fixed": board_path(fixed / "human-placement"),
+                              "joint-fixed": board_path(fixed / "reference"),
+                              "joint-fixed_placement": board_path(fixed / "human-placement")})
     row = dict(adapter=adapter.name, kind=kind, id=rec["id"], split=rec["split"], attempt=attempt,
                tags=rec.get("tags", []), score_version=SCORE_VERSION, load_avg_start=os.getloadavg())
     tools.usage_take()  # start this attempt's accounting from zero
@@ -107,10 +112,12 @@ def _score(row, task_dir, rec, kind, adir, allow_copy, probe=None, probe_args=No
         if kind == "route":
             row["score"] = score_route_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
             return
-        if kind == "joint":
-            row["score"] = score_joint_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
+        if kind in ("joint", "joint-fixed"):
+            row["score"] = score_joint_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy,
+                                            input_kind=INPUT_KIND[kind])
             return
-        pscore, placed_stats = score_place_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy)
+        pscore, placed_stats = score_place_task(task_dir, out, adir / "score", rec, allow_copy=allow_copy,
+                                                kind=INPUT_KIND[kind])
         row["score"] = pscore
         row["scoring_usage"] = tools.usage_take()  # before the probe starts its own accounting
         if probe is not None and pscore["valid"]:
@@ -231,6 +238,19 @@ def _probe(task_dir, rec, probe, placed_dir, placed_stats, placed_unconnected, a
     return out
 
 
+def _hidden_from_methods(tasks_dir, results_dir):
+    """What a sandboxed method must not read: the tasks and results dirs and, when they share
+    a work dir, everything else in it (the board cache holds the original layouts). Each
+    attempt's own dir is bound back. A work dir that holds the current directory (the
+    method's code) is not hidden as a whole."""
+    paths = [tasks_dir, results_dir]
+    work = tasks_dir.resolve().parent
+    cwd = Path.cwd().resolve()
+    if results_dir.resolve().parent == work and work != cwd and work not in cwd.parents:
+        paths += [p for p in work.iterdir() if p.resolve() not in (tasks_dir.resolve(), results_dir.resolve())]
+    return paths
+
+
 def work_list(recs, arms, kinds, k, min_movable=0):
     """Attempts in execution order: board by board, and within a board every arm back to back
     in an order shuffled per board (seeded), so all arms see the same host conditions and none
@@ -244,9 +264,12 @@ def work_list(recs, arms, kinds, k, min_movable=0):
             random.Random(f"{rec['id']}:{a}").shuffle(order)
             for adapter, probe in order:
                 for kind in kinds:
-                    if kind in adapter.kinds and INPUT_KIND[kind] in rec["tasks"] and (
-                            INPUT_KIND[kind] != "place"
-                            or rec["tasks"]["place"].get("movable", min_movable) >= min_movable):
+                    inp = INPUT_KIND[kind]
+                    if kind in adapter.kinds and inp in rec["tasks"] and (
+                            inp not in PLACE_INPUTS
+                            or rec["tasks"][inp].get("movable", min_movable) >= min_movable) and (
+                            inp not in OPTIONAL_INPUTS  # its human layout failed the round trip
+                            or ((rec.get("roundtrip") or {}).get(inp) or {}).get("ok", True)):
                         work.append((rec, kind, a, adapter, probe))
     return work
 
@@ -261,16 +284,20 @@ def run(tasks_dir, results_dir, adapter=None, kinds=("route",), k=1, timeout=600
     if len(set(names)) != len(names):
         raise ValueError(f"arm names must be unique (use labels): {names}")
     tasks_dir, results_dir = Path(tasks_dir), Path(results_dir)
+    unknown = [k for k in kinds if k not in INPUT_KIND]
+    if unknown:
+        raise ValueError(f"unknown task kinds {unknown} (known: {', '.join(INPUT_KIND)})")
     recs = load_tasks(tasks_dir, only=only, qualified_only=qualified_only, splits=splits)
     stale = [r["id"] for r in recs for kind in kinds
              if INPUT_KIND[kind] in r["tasks"] and r.get("task_spec", 1) < MIN_TASK_SPEC.get(kind, TASK_SPEC)]
     if stale:
         raise ValueError(f"{len(stale)} tasks were prepared with an older task spec "
                          f"(e.g. {stale[0]}); re-run `kaebench prepare --force`")
+    hidden = _hidden_from_methods(tasks_dir, results_dir)
     for ad, pr in arms:
         for method in (ad, pr):  # a command probe is as untrusted as a command method
             if method is not None and hasattr(method, "hide"):
-                method.hide(tasks_dir, results_dir)
+                method.hide(*hidden)
     name = name or f"{'+'.join(names)}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = results_dir / name
     run_dir.mkdir(parents=True, exist_ok=True)

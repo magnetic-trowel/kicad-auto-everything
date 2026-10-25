@@ -78,13 +78,20 @@ def cmd_fetch(a):
                      a.jobs, "fetch")
 
 
+def _overrides(a):
+    """--fixed-overrides FILE: {board id: {"fix": [refs], "free": [refs]}} for place-fixed tasks."""
+    return json.loads(Path(a.fixed_overrides).read_text()) if a.fixed_overrides else {}
+
+
 def cmd_prepare(a):
     cache, tasks, _ = _dirs(a)
     kinds = _split(a.kinds) or list(prepare.TASK_KINDS)
+    overrides = _overrides(a)
 
     def one(e):
         f = fetch.fetch(e, cache)
-        r = prepare.prepare_board(e, f, tasks, kinds=kinds, keep_locked=a.keep_locked, force=a.force)
+        r = prepare.prepare_board(e, f, tasks, kinds=kinds, keep_locked=a.keep_locked, force=a.force,
+                                  fixed_overrides=overrides.get(e["id"]))
         rd = r["reference"]["drc"]
         return (f"split={r['split']} pads={r['reference']['stats']['pads']} qualified={r['qualified']}"
                 f" (unconn={rd['unconnected']} err={rd['errors']})")
@@ -136,10 +143,11 @@ def cmd_prepare_dir(a):
     kinds = _split(a.kinds) or list(prepare.TASK_KINDS)
     items = _local_boards(a.dir, a.board_glob, _split(a.only))
     by_id = {e["id"]: f for e, f in items}
+    overrides = _overrides(a)
 
     def one(e):
         r = prepare.prepare_board(e, by_id[e["id"]], tasks, kinds=kinds, keep_locked=a.keep_locked,
-                                  force=a.force)
+                                  force=a.force, fixed_overrides=overrides.get(e["id"]))
         rd = r["reference"]["drc"]
         return (f"split={r['split']} pads={r['reference']['stats']['pads']} qualified={r['qualified']}"
                 f" (unconn={rd['unconnected']} err={rd['errors']})")
@@ -282,9 +290,12 @@ def main(argv=None):
     board_filters(sp)
     sp.set_defaults(fn=cmd_fetch)
 
+    fixed_help = ("JSON {board id: {\"fix\": [refs], \"free\": [refs]}}: parts to fix or free in "
+                  "place-fixed tasks on top of the classifier's choice")
     sp = sub.add_parser("prepare", help="convert, qualify and build route/place tasks")
     board_filters(sp)
-    sp.add_argument("--kinds", default="route,place")
+    sp.add_argument("--kinds", default=",".join(prepare.TASK_KINDS))
+    sp.add_argument("--fixed-overrides", metavar="FILE", help=fixed_help)
     sp.add_argument("--keep-locked", action="store_true",
                     help="route tasks keep locked copper (place tasks always keep locked footprints)")
     sp.set_defaults(fn=cmd_prepare)
@@ -294,7 +305,8 @@ def main(argv=None):
     sp.add_argument("--board-glob", default="*.kicad_pcb",
                     help="board file inside each folder, e.g. processed_v9_guide_v3.kicad_pcb")
     sp.add_argument("--only", help="comma-separated folder names, or @FILE")
-    sp.add_argument("--kinds", default="route,place")
+    sp.add_argument("--kinds", default=",".join(prepare.TASK_KINDS))
+    sp.add_argument("--fixed-overrides", metavar="FILE", help=fixed_help)
     sp.add_argument("--keep-locked", action="store_true")
     sp.add_argument("-j", "--jobs", type=int, default=4)
     sp.add_argument("--force", action="store_true")
@@ -306,7 +318,8 @@ def main(argv=None):
                     help="interleaved arm: name=LABEL,adapter=NAME[,probe=NAME][,freerouting=PATH]"
                          "[,passes=N]; repeat to compare built-in adapters board by board in one run")
     sp.add_argument("--command", help="external tool template: {input} {output} {workdir} {kind} {attempt} {timeout}")
-    sp.add_argument("--kinds", default="route")
+    sp.add_argument("--kinds", default="route",
+                    help="route, place, joint, place-fixed, joint-fixed (comma-separated)")
     sp.add_argument("-k", type=int, default=1, help="attempts per board (best-of-k)")
     sp.add_argument("--timeout", type=float, default=600, help="seconds per attempt")
     sp.add_argument("-j", "--jobs", type=int, default=1)
@@ -325,7 +338,8 @@ def main(argv=None):
     sp.add_argument("--name", help="run name (reuse to resume)")
     sp.add_argument("--keep-work", action="store_true")
     sp.add_argument("--min-movable", type=int, default=0, metavar="N",
-                    help="skip place and joint tasks with fewer than N movable footprints (tasks "
+                    help="skip place, joint, place-fixed and joint-fixed tasks with fewer than N "
+                         "movable footprints (tasks "
                          "prepared before this field existed are kept)")
     sp.add_argument("--no-sandbox", action="store_true",
                     help="run --command methods unsandboxed (they can then read reference layouts; "

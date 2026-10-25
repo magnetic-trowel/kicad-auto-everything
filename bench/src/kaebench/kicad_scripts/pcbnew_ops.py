@@ -9,6 +9,8 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py convert IN OUT
     python pcbnew_ops.py strip-routing IN OUT [--keep-locked]
     python pcbnew_ops.py strip-placement IN OUT
+    python pcbnew_ops.py classify-mech BOARD
+    python pcbnew_ops.py lock-footprints IN OUT UUIDS_JSON
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
     python pcbnew_ops.py unconnected BOARD
@@ -302,6 +304,51 @@ def strip_placement(src, dst):
     removed = _strip_routing(board, False)
     _save(board, dst)
     _out(dict(ok=True, path=dst, removed=removed, moved=moved))
+
+
+def _mech_row(fp):
+    pads = list(fp.Pads())
+    attrs = [p.GetAttribute() for p in pads]
+    fpid = fp.GetFPID()
+    return dict(uuid=fp.m_Uuid.AsString(), ref=fp.GetReference(), lib=str(fpid.GetLibNickname()),
+                name=str(fpid.GetLibItemName()), value=fp.GetValue(), desc=fp.GetLibDescription(),
+                nets=sorted({p.GetNetname() for p in pads} - {""}), pads=len(pads),
+                pth=sum(a == pcbnew.PAD_ATTRIB_PTH for a in attrs),
+                npth=sum(a == pcbnew.PAD_ATTRIB_NPTH for a in attrs),
+                smd=sum(a in (pcbnew.PAD_ATTRIB_SMD, pcbnew.PAD_ATTRIB_CONN) for a in attrs),
+                locked=bool(fp.IsLocked()), anchored=bool(_anchored(fp)))
+
+
+def classify_mech(path):
+    """The board's mechanical interface (connectors, mounting, user controls), by the rules in
+    mech_rules.py. One row per footprint: uuid, ref, fpid, value, class (None if not
+    mechanical) and the rule that decided (evidence)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mech_rules
+
+    rows = []
+    for fp in _load(path).GetFootprints():
+        r = _mech_row(fp)
+        r["class"], r["evidence"] = mech_rules.classify(r)
+        r["fpid"] = f"{r['lib']}:{r['name']}" if r["lib"] else r["name"]
+        del r["nets"]  # used by the rules; too bulky for the record
+        rows.append(r)
+    rows.sort(key=lambda r: r["uuid"])
+    _out(dict(ok=True, path=path, rules_version=mech_rules.RULES_VERSION, footprints=rows))
+
+
+def lock_footprints(src, dst, uuids_json):
+    """Lock the footprints whose uuids are listed (a JSON list in a file); nothing else changes."""
+    with open(uuids_json) as f:
+        want = set(json.load(f))
+    board = _load(src)
+    locked = 0
+    for fp in board.GetFootprints():
+        if fp.m_Uuid.AsString() in want and not fp.IsLocked():
+            fp.SetLocked(True)
+            locked += 1
+    _save(board, dst)
+    _out(dict(ok=True, path=dst, locked=locked))
 
 
 def export_dsn(src, dsn):
@@ -692,6 +739,10 @@ def main(argv):
             strip_routing(args[0], args[1], keep_locked)
         elif op == "strip-placement":
             strip_placement(args[0], args[1])
+        elif op == "classify-mech":
+            classify_mech(args[0])
+        elif op == "lock-footprints":
+            lock_footprints(args[0], args[1], args[2])
         elif op == "export-dsn":
             export_dsn(args[0], args[1])
         elif op == "import-ses":
