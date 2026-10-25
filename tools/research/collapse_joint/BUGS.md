@@ -51,3 +51,10 @@ Each entry: what, where, effect, fix, which runs it affects. Scoring code was ne
    was relative to the module file, which the run queue copies to `kae-v7/jcfix-snap/`;
    every `jcfix-jc2-mp-dev6-r3` attempt was `no_output`. Fixed (absolute path); the arm
    was re-run as `-r3b` (all other code paths identical to `-r3`).
+9. **jc can pick an illegal restart** (jc.py `jc`). Restarts are ranked by routed cost +
+   phys_w x physics only; when `legalize_parts` finds no legal spot (eviction fails) the
+   run ends with overlapping parts and can still win (paw3395 min-plus arm: 2 parts left
+   illegal in the chosen run, `clearance` placement error; biscuit-crowbar: P4/U1 illegal
+   in 2 of 4 runs). Fix in jc2 (`legal_first=1`, from `-r4`): an illegal part adds 1e6 to
+   the run's cost. The final 33-board runs use `-r4`; the dev screens (`-r3`, `-r3b`) do not
+   have it.

@@ -26,6 +26,7 @@ Switches (run.py --opt key=value; defaults reproduce jc on engine v6 except `eng
                     open connections or higher cost) than the state before it (BUGS.md 6)
     end_alt=0       end of each continuation: also try keeping the collapsed copper and
                     re-routing only conflicted nets (Router.legalize); keep the cheaper
+    legal_first=1   restarts are ranked legal first (jc ranks an illegal run by cost alone)
     restart=scratch scratch (jc) | perturb: every second restart starts from the best state,
                     re-rotates/re-lifts the k parts with the most part+wire history and
                     resumes the continuation from beta_p
@@ -66,9 +67,10 @@ def _length(r, w, n):
 
 class Collapse2(J.Collapse):
     def __init__(self, world, seed, budget, log, engine=1, via_beta=0.0, via_part=0.0, minplus_w=0.0,
-                 mp_from_beta=0.0, coarse_mm=0.4, guard=1, end_alt=0, **kw):
+                 mp_from_beta=0.0, coarse_mm=0.4, guard=1, end_alt=0, legal_first=1, **kw):
         super().__init__(world, seed, budget, log, **kw)
         self.guard = bool(guard)
+        self.legal_first = bool(legal_first)
         self.end_alt = bool(end_alt)
         self.mp = None
         self.minplus_w = float(minplus_w)
@@ -253,6 +255,9 @@ class Collapse2(J.Collapse):
             MC.repair_phys(w, kit, self.ph, self.phys_w, Clock(max(1.0, clock.left())), self.log,
                            self.rng)
         self.log(f"jc2 complete: open {u0} -> {sum(r.unrouted.values())} {r.stats()}")
+
+    def illegal_parts(self):
+        return [q for q in self.kit.movable() if q in self.w.pose and self.violation(q) != (0, 0)]
 
     def hot_parts(self, k):
         """Movable parts ranked by part history under their keep-out + wire history at
@@ -474,6 +479,13 @@ def jc2(world, seed=0, budget=300, log=print, gamma=1.35, beta0=0.05, beta_end=6
         t_run = budget - clock.left() - t0
         st = r.stats()
         cost = kit.total_cost() + C.phys_w * ph.total()
+        bad = C.illegal_parts() if C.legal_first else []
+        if bad:
+            # jc ranks restarts by routed cost + physics only, so a run whose legalization
+            # failed (parts left overlapping) can win (BUGS.md 9); an illegal part costs
+            # more than any routing difference
+            cost += 1.0e6 * len(bad)
+            log(f"jc2 run {k}: {len(bad)} parts still illegal: {[w.parts[q].ref for q in bad]}")
         log(f"jc2 run {k} ({start or 'lift'}): gamma={g:.2f} its={it} {st} hpwl={w.hpwl():.1f} "
             f"phys={ph.total():.2f} cost={cost:.1f} t_run={t_run:.1f}")
         runs.append(dict(k=k, start=start or "lift", its=it, beta=round(beta, 3), cost=round(cost, 2),
