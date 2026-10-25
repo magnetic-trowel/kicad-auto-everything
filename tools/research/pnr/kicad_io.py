@@ -37,6 +37,30 @@ def poly_points(sps):
     return out
 
 
+def poly_holes(sps):
+    """SHAPE_POLY_SET -> holes per outline (each a list of rings), parallel to poly_points."""
+    return [[[[mm(h.CPoint(j).x), mm(h.CPoint(j).y)] for j in range(h.PointCount())]
+             for h in (sps.CHole(i, k) for k in range(sps.HoleCount(i)))]
+            for i in range(sps.OutlineCount())]
+
+
+# copper drawings: shapes, and text on copper (olimex: a board text '4' on B.Cu)
+CU_CLASSES = ("PCB_SHAPE", "PCB_TEXT", "PCB_TEXTBOX")
+
+
+def cu_shape(item, layer):
+    """A copper drawing (line, arc, circle, rectangle, polygon) as polygons with holes:
+    an unfilled circle or rectangle is a ring, not a disc."""
+    sp = pcbnew.SHAPE_POLY_SET()
+    item.TransformShapeToPolygon(sp, layer, 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
+    try:
+        sp.Simplify()  # KiCad 9+
+    except TypeError:
+        sp.Simplify(pcbnew.SHAPE_POLY_SET.PM_FAST)
+    return dict(net=item.GetNetname() if hasattr(item, "GetNetname") else "", layer=layer,
+                poly=poly_points(sp), holes=poly_holes(sp))
+
+
 def rot(x, y, deg):
     # KiCad: y axis points down, positive orientation is counter-clockwise on screen
     a = math.radians(deg)
@@ -51,6 +75,20 @@ def netclass_of(ns, name):
                     via_d=mm(nc.GetViaDiameter()), via_drill=mm(nc.GetViaDrill()))
     except Exception:
         return None
+
+
+def dru_edge_clearances(path):
+    """edge_clearance minimums (mm) of the custom rules file beside the board, if any."""
+    import re
+    dru = os.path.splitext(path)[0] + ".kicad_dru"
+    if not os.path.exists(dru):
+        return []
+    text = "\n".join(l.split("#", 1)[0] for l in open(dru, errors="replace").read().splitlines())
+    out = []
+    for m in re.finditer(r"\(constraint\s+edge_clearance\b[^()]*\(min\s+([0-9.]+)\s*(mm|mil|in)?\s*\)", text):
+        v = float(m.group(1))
+        out.append(v * {"mil": 0.0254, "in": 25.4}.get(m.group(2) or "mm", 1.0))
+    return out
 
 
 def extract(path, out):
@@ -70,6 +108,9 @@ def extract(path, out):
                  edge_clearance=mm(ds.m_CopperEdgeClearance), min_drill=mm(ds.m_MinThroughDrill),
                  hole_to_hole=mm(ds.m_HoleToHoleMin), min_annular=mm(ds.m_ViasMinAnnularWidth),
                  mask_exp=mm(ds.m_SolderMaskExpansion), mask_web=mm(ds.m_SolderMaskMinWidth))
+    # custom rules (board.kicad_dru) may raise the edge clearance for some items: take the
+    # largest edge_clearance minimum for every item (conservative; conditions are ignored)
+    rules["edge_clearance"] = max([rules["edge_clearance"], *dru_edge_clearances(path)])
     fps = []
     worst = 0.0
     moved_edges = []
@@ -113,13 +154,10 @@ def extract(path, out):
                 edges += poly_points(sp)
                 item.SetLayer(pcbnew.Cmts_User)
                 moved_edges.append(item)
-        # copper graphics drawn inside a footprint (shapes, text on copper) move with the part
-        cu_gfx = []
-        for item in fp.GraphicalItems():
-            if pcbnew.IsCopperLayer(item.GetLayer()):
-                sp = pcbnew.SHAPE_POLY_SET()
-                item.TransformShapeToPolygon(sp, item.GetLayer(), 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
-                cu_gfx.append(dict(layer=item.GetLayer(), poly=poly_points(sp)))
+        # copper drawings of the footprint (pad extensions, solder-jumper bridges) are copper
+        # that moves with the part, like its pads
+        fcu = [cu_shape(item, item.GetLayer()) for item in fp.GraphicalItems()
+               if item.GetClass() in CU_CLASSES and pcbnew.IsCopperLayer(item.GetLayer())]
         # rule areas drawn inside a footprint (keep-outs) move with the part
         fkos = []
         for z in fp.Zones():
@@ -146,7 +184,7 @@ def extract(path, out):
         fps.append(dict(ref=fp.GetReference(), uuid=fp.m_Uuid.AsString(), x=mm(pos.x), y=mm(pos.y),
                         rot=deg, back=flipped, locked=fp.IsLocked(), anchored=anchored, pads=pads, courtyard=court,
                         courtyard_other=court_other,
-                        edges=edges, keepouts=fkos, cu_gfx=cu_gfx))
+                        edges=edges, keepouts=fkos, cu_shapes=fcu))
     outline = pcbnew.SHAPE_POLY_SET()
     board.GetBoardPolygonOutlines(outline, False)
     if outline.OutlineCount() == 0 and moved_edges:
@@ -180,15 +218,10 @@ def extract(path, out):
                           poly=poly_points(z.Outline()), gap=mm(z.GetThermalReliefGap()),
                           spoke=mm(z.GetThermalReliefSpokeWidth()),
                           min_width=mm(z.GetMinThickness())))
-    # board-level copper drawings (graphic tracks/arcs/polygons on copper, possibly with a net)
-    cu_shapes = []
-    for d in board.GetDrawings():
-        if d.GetClass() != "PCB_SHAPE" or not pcbnew.IsCopperLayer(d.GetLayer()):
-            continue
-        sp = pcbnew.SHAPE_POLY_SET()
-        d.TransformShapeToPolygon(sp, d.GetLayer(), 0, int(0.005 * NM), pcbnew.ERROR_OUTSIDE)
-        cu_shapes.append(dict(net=d.GetNetname() if hasattr(d, "GetNetname") else "",
-                              layer=d.GetLayer(), poly=poly_points(sp)))
+    # board-level copper drawings (graphic lines/arcs/circles/rectangles/polygons on copper,
+    # possibly with a net): fixed copper
+    cu_shapes = [cu_shape(d, d.GetLayer()) for d in board.GetDrawings()
+                 if d.GetClass() in CU_CLASSES and pcbnew.IsCopperLayer(d.GetLayer())]
     data = dict(path=path, layers=board.GetCopperLayerCount(), outline=poly_points(outline),
                 cu_shapes=cu_shapes,
                 outline_holes=holes, rules=rules, default=default, nets=nets, footprints=fps,
