@@ -276,6 +276,9 @@ class _Reader:
         for t in kids(node, "fp_text"):
             if len(t) > 2 and t[1] in ("reference", "value"):
                 fields.setdefault(t[1].capitalize(), t[2])
+        descr = value(node, "descr")
+        if descr:
+            fields.setdefault("Footprint_descr", descr)      # the library description (pcbnew GetLibDescription)
         attrs = [a for a in (first(node, "attr") or [])[1:] if type(a) is str]
         uuid = value(node, "uuid") or _kiid(value(node, "tstamp")) or ""
         fp = Footprint(ref=fields.get("Reference", ""), value=fields.get("Value", ""), lib_id=lib_id,
