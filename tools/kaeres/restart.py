@@ -182,7 +182,9 @@ def main():
 
     def launch():
         nonlocal k
-        b = min(a.first_s * a.growth ** (k // a.parallel), (deadline - time.monotonic()) / a.slack)
+        # the method's budget follows the schedule; slack only lets an attempt run past it (up to
+        # the overall deadline), it does not shrink the budget of late attempts
+        b = min(a.first_s * a.growth ** (k // a.parallel), deadline - time.monotonic())
         if b < 20 or (a.max_attempts and k >= a.max_attempts):
             return False
         d = wd / f"a{k}"
