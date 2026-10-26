@@ -728,8 +728,9 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
             p = m["recipe"]["params"]
             tpl, ro = command_template(m)
             extra = [x for r_ in ro for x in ("--sandbox-ro", r_)] + (["--probe", p["probe"]] if p.get("probe") else [])
-            # the sandbox hides the corpus, and Apptainer refuses to start when a bind source is missing
-            cenv = dict(genv, APPTAINER_BIND=str(ws))
+            # the sandbox hides the corpus, and Apptainer refuses to start when a bind source is missing;
+            # the method's code must be bound too (KiCad's Python runs its scripts)
+            cenv = dict(genv, APPTAINER_BIND=",".join([str(ws), *map(str, ro)]))
             rc, to = run_logged(kb + ["run", "--adapter", f"m{m['id']}", "--command", tpl, *extra, "--kinds", m["recipe"]["kind"],
                                       "-k", str(k), "--timeout", str(p.get("timeout_s", 900)), "--all", "--only", bid,
                                       "--name", f"cmd-{m['id']}", "-j", "1"], log, cenv,
