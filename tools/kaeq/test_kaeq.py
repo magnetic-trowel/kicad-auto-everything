@@ -44,6 +44,11 @@ def drive(kq, d, until, secs=15):
     raise AssertionError("timeout")
 
 
+def joblog(path):
+    """A job's log without kaeq's own === lines."""
+    return "\n".join(l for l in path.read_text().splitlines() if not l.startswith("=== "))
+
+
 def states(d):
     return {r["name"]: r["state"] for r in d.c.execute("SELECT name,state FROM jobs")}
 
@@ -102,7 +107,7 @@ def test_snapshot_isolates_code_from_later_checkouts(kq, tmp_path):
     (repo / "sub" / "f.txt").write_text("v2-after-submit")  # later edit/checkout must not leak in
     drive(kq, d, lambda: all(s not in kq.ACTIVE for s in states(d).values()))
     assert states(d) == {"j": "ok"}
-    log = (tmp_path / "jobs" / "1" / "log").read_text()
+    log = joblog(tmp_path / "jobs" / "1" / "log")
     assert log.split() == ["v1-dirty", "ignored-input"]
     assert not (tmp_path / "jobs" / "1" / "src").exists()
 
@@ -113,7 +118,7 @@ def test_scratch_dir_per_job_is_removed(kq, tmp_path):
            name="s")
     drive(kq, d, lambda: all(s not in kq.ACTIVE for s in states(d).values()))
     assert states(d) == {"s": "ok"}
-    path = (tmp_path / "jobs" / "1" / "log").read_text().split()[0]
+    path = joblog(tmp_path / "jobs" / "1" / "log").split()[0]
     assert path == str(tmp_path / "scratch" / "1")
     assert not os.path.exists(path)
 
@@ -135,7 +140,7 @@ def test_affinity_pins_jobs_and_reserves_cpus(kq, tmp_path):
     d = kq.Daemon()
     submit(kq, "python3 -c 'import os; print(len(os.sched_getaffinity(0)))'", name="p")
     drive(kq, d, lambda: all(s not in kq.ACTIVE for s in states(d).values()))
-    n = int((tmp_path / "jobs" / "1" / "log").read_text().split()[0])
+    n = int(joblog(tmp_path / "jobs" / "1" / "log").split()[0])
     assert n == min(4, len(os.sched_getaffinity(0))) - 1  # threads 4, reserve_cpu 1
 
 
@@ -156,3 +161,18 @@ def test_jobs_jsonl_carries_per_job_resources(kq, tmp_path):
     rows = {r["name"]: r for r in c.execute("SELECT * FROM jobs")}
     assert (rows["x"]["cpus"], rows["x"]["mem_mb"], rows["x"]["disk_mb"], rows["x"]["timeout_s"]) == (2, 3072, 5120, 7200)
     assert (rows["y"]["mem_mb"], rows["y"]["disk_mb"]) == (1024, 1024)
+
+
+def test_kill_reaches_children_in_their_own_session(kq, tmp_path):
+    # without a scope (cgroup off) only the process group is killed; with one, the whole scope
+    d = kq.Daemon()
+    if not d.use_cgroup(dict(kq.config(), cgroup="auto")):
+        pytest.skip("no systemd --user memory cgroup")
+    with open(kq.CONF, "w") as f:
+        f.write('{"threads": 4, "reserve_cpu": 1, "reserve_mem_gb": 0, "cgroup": "on", "slice": "", "scratch_dir": "%s"}'
+                % (tmp_path / "scratch"))
+    marker = tmp_path / "orphan-alive"
+    submit(kq, f"setsid sh -c 'sleep 3; touch {marker}' & sleep 30", name="o", timeout="2s")
+    drive(kq, d, lambda: states(d)["o"] == "timeout")
+    time.sleep(4)
+    assert not marker.exists()

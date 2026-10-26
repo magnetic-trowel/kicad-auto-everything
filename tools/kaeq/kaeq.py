@@ -289,6 +289,34 @@ def job_cgroup(pid):
     return None
 
 
+def kill_tree(pid, cg=None, sig=signal.SIGKILL):
+    """Kill a job: its process group, and every process in its scope (children that started
+    their own session would otherwise outlive the job, e.g. in a deleted scratch dir).
+    cg: the scope recorded while the job ran (never looked up from a pid that may be reused)."""
+    try:
+        os.killpg(pid, sig)
+    except (ProcessLookupError, PermissionError, TypeError):
+        pass
+    if not cg:
+        return
+    if sig == signal.SIGKILL and os.path.exists(os.path.join(cg, "cgroup.kill")):
+        try:
+            with open(os.path.join(cg, "cgroup.kill"), "w") as f:
+                f.write("1")
+            return
+        except OSError:
+            pass
+    try:
+        with open(os.path.join(cg, "cgroup.procs")) as f:
+            for q in f.read().split():
+                try:
+                    os.kill(int(q), sig)
+                except (ProcessLookupError, PermissionError, ValueError):
+                    pass
+    except OSError:
+        pass
+
+
 def job_usage(j, sessions, per_pid, cgroups):
     """(rss_mb, cpu_ticks) of a job: every process in its scope (children that start their own
     session stay in it), else every process in its session."""
@@ -307,6 +335,11 @@ def job_usage(j, sessions, per_pid, cgroups):
         except (OSError, ValueError):
             pass
     return sessions.get(j["pid"], (0.0, 0))
+
+
+def dlog(msg):
+    """One line per scheduling decision in the daemon's log (journal under systemd)."""
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{os.getpid()}] {msg}", flush=True)
 
 
 def event(c, job, kind, msg):
@@ -362,7 +395,7 @@ def digest(jid, tail=12, errs=6):
     except OSError:
         return ["  (no log)"]
     lines = [l.rstrip()[:200] for l in lines if l.strip()]
-    marks = [i for i, l in enumerate(lines) if l.startswith("=== kaeq retry")]
+    marks = [i for i, l in enumerate(lines) if l.startswith(("=== kaeq retry", "=== kaeq start"))]
     if marks:
         lines = lines[marks[-1] + 1:]  # only the latest attempt
     tl = lines[-tail:]
@@ -499,6 +532,7 @@ class Daemon:
         os.replace(BEAT + ".tmp", BEAT)
 
     def preempt(self, v, now, note, disk_mb=None):
+        dlog(f"preempt #{v['id']}: {note}")
         self.kill(v)
         drop_scratch(config(), v["id"])
         self.c.execute("UPDATE jobs SET state='queued',pid=NULL,preempts=preempts+1,not_before=?,note=?,disk_mb=? WHERE id=?",
@@ -587,6 +621,9 @@ class Daemon:
             return False
         try:
             with open(os.path.join(d, "log"), "ab") as log:
+                log.write(f"=== kaeq start job {j['id']} attempt {j['attempt']} by daemon {os.getpid()} at "
+                          f"{time.strftime('%Y-%m-%d %H:%M:%S')} (db {DB}) ===\n".encode())
+                log.flush()
                 p = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=log,
                                      stderr=subprocess.STDOUT, preexec_fn=pre)
         except OSError as e:
@@ -595,19 +632,15 @@ class Daemon:
         self.popen[j["id"]] = p
         self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL WHERE id=?",
                        (p.pid, time.time(), time.time() + j["timeout_s"], j["id"]))
+        dlog(f"start #{j['id']} attempt {j['attempt']} pid {p.pid} mem {fgb(j['mem_mb'])} {j['name'] or j['cmd'][:60]}")
         return True
 
     def kill(self, j, sig=signal.SIGTERM):
-        try:
-            os.killpg(j["pid"], sig)
-        except (ProcessLookupError, PermissionError, TypeError):
-            pass
-        if sig == signal.SIGTERM:  # escalate later via check(); give a hard kill after grace
+        cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] and pid_alive(j["pid"]) else None)
+        kill_tree(j["pid"], cg, sig)
+        if sig == signal.SIGTERM:  # a hard kill after a short grace
             time.sleep(0.2)
-            try:
-                os.killpg(j["pid"], signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, TypeError):
-                pass
+            kill_tree(j["pid"], cg, signal.SIGKILL)
 
     def check(self, j, rss, now, cfg, disk=0.0):
         c = self.c
@@ -625,10 +658,7 @@ class Daemon:
                 rc = int(open(rcf).read().strip() or 1)
             except ValueError:
                 rc = 1
-            try:
-                os.killpg(j["pid"], signal.SIGKILL)  # stragglers
-            except (ProcessLookupError, PermissionError):
-                pass
+            kill_tree(j["pid"], self.cgroups.get(j["id"]))  # stragglers, in their own sessions too
             self.popen.pop(j["id"], None)
             return self.finish(j, rc, peak)
         if not pid_alive(j["pid"]):
@@ -658,6 +688,7 @@ class Daemon:
                 self.finish_fail(j, "oom", f"RSS {fgb(rss)} exceeded declared {fgb(j['mem_mb'])}; resubmit with --mem {fgb(new)}", peak)
 
     def finish(self, j, rc, peak, lost=False):
+        dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
             self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL WHERE id=?", (time.time(), j["id"]))
             drop_worktree(j)
@@ -920,10 +951,7 @@ def cmd_cancel(a):
         c.execute("UPDATE jobs SET state='cancelled',finished=?,note='cancelled' WHERE id=?", (time.time(), j["id"]))
         drop_worktree(j)
         if j["state"] == "running":
-            try:
-                os.killpg(j["pid"], signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, TypeError):
-                pass
+            kill_tree(j["pid"], job_cgroup(j["pid"]) if j["pid"] and pid_alive(j["pid"]) else None)
             drop_scratch(config(), j["id"])
     c.commit()
     print(f"cancelled {len(rows)} job(s)")
