@@ -23,8 +23,13 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--time", type=float, required=True)
     a = ap.parse_args()
+    # The adapter keeps max(120 s, 10 %) of its timeout for DSN export and SES import, which
+    # would leave a short attempt ~10 s of routing: size its timeout so Freerouting's own job
+    # gets 80 % of this attempt's budget (restart.py allows the attempt slack for the rest).
+    job = 0.8 * a.time
+    timeout = job / 0.9 if job / 0.9 >= 1200 else job + 120
     res = adapters.make("freerouting", freerouting=a.binary).run(
-        "route", Path(a.input).resolve().parent, Path.cwd() / "fr", a.seed, a.time)
+        "route", Path(a.input).resolve().parent, Path.cwd() / "fr", a.seed, timeout)
     print(res.log[-4000:])
     if res.output is None:
         return 1

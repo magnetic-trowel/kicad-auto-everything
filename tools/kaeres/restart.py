@@ -21,6 +21,7 @@ import argparse
 import resource
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -77,13 +78,17 @@ def child_cpu():
     return r.ru_utime + r.ru_stime
 
 
+ENV_DEPENDENT_CHECKS = ("lib_footprint_issues", "lib_footprint_mismatch")  # as kaebench.tools: not the board's
+
+
 def drc(board, inp, timeout):
-    """(errors, unconnected) of a board by kicad-cli, or None when there is no usable board."""
+    """{type: count} of DRC errors (env-dependent checks dropped) and the unconnected count of a
+    board by kicad-cli, with the input's project rules; None when there is no usable board."""
     if not board.exists() or board.stat().st_size == 0:
         return None
-    for ext in (".kicad_pro", ".kicad_dru"):  # the board's rules live in its project files
+    for ext in (".kicad_pro", ".kicad_dru"):  # the task's rules, never the method's copy
         src = inp.with_suffix(ext)
-        if src.exists() and not board.with_suffix(ext).exists():
+        if src.exists():
             shutil.copy2(src, board.with_suffix(ext))
     rep = board.with_name("drc.json")
     cmd = [*shlex.split(os.environ.get("KAE_KICAD_WRAP", "")), "kicad-cli", "pcb", "drc", "--format", "json",
@@ -93,8 +98,43 @@ def drc(board, inp, timeout):
         r = json.loads(rep.read_text())
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return None
-    errors = sum(1 for v in r.get("violations", []) if v.get("severity", "error") == "error")
-    return errors, len(r.get("unconnected_items", []))
+    types = {}
+    for v in r.get("violations", []):
+        if v.get("severity", "error") == "error" and v.get("type") not in ENV_DEPENDENT_CHECKS:
+            types[v.get("type")] = types.get(v.get("type"), 0) + 1
+    return dict(types=types, unconnected=len(r.get("unconnected_items", [])))
+
+
+NUM = r"(-?[0-9.]+)"
+
+
+def outside(board):
+    """Footprints whose anchor lies outside the Edge.Cuts bounding box (a staged-off-board part,
+    which DRC does not flag): a cheap stand-in for the harness's legality check."""
+    txt = board.read_text(errors="replace")
+    pts = [(float(x), float(y)) for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b(.*?)\(layer \"Edge\.Cuts\"\)", txt, re.S)
+           for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, m.group(1))]
+    if not pts:
+        return 0
+    x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
+    y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
+    n = 0
+    for m in re.finditer(r"\(footprint \"[^\"]*\"(.*?)\(at " + NUM + " " + NUM, txt, re.S):
+        x, y = float(m.group(2)), float(m.group(3))
+        n += not (x0 <= x <= x1 and y0 <= y <= y1)
+    return n
+
+
+def judge(board, inp, base, timeout):
+    """Rank key (lower is better) in the harness's order: legal, clean, then fewer unconnected,
+    then fewer DRC errors beyond the input's own (per type). None when there is no board."""
+    d = drc(board, inp, timeout)
+    if d is None:
+        return None
+    new = sum(max(0, c - base.get(t, 0)) for t, c in d["types"].items())
+    out = outside(board)
+    clean = out == 0 and new == 0 and d["unconnected"] == 0
+    return (1 if out else 0, 0 if clean else 1, d["unconnected"], new, out)
 
 
 def main():
@@ -106,6 +146,10 @@ def main():
     ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--first-s", type=float, default=60.0)
     ap.add_argument("--growth", type=float, default=2.0)
+    ap.add_argument("--scale-first", action="store_true",
+                    help="first-s x sqrt(footprints / 40) when above 1: big boards need longer single attempts")
+    ap.add_argument("--max-attempts", type=int, default=0,
+                    help="stop launching after this many (deterministic methods: 1); 0 = no limit")
     ap.add_argument("--slack", type=float, default=1.0,
                     help="an attempt may run budget x slack before it is killed (methods whose budget is "
                          "solver CPU time and that spend more on KiCad I/O around it)")
@@ -116,8 +160,18 @@ def main():
     wd = Path.cwd() / "restarts"
     wd.mkdir(exist_ok=True)
     t0 = time.monotonic()
+    if a.scale_first:
+        nfp = inp.read_text(errors="replace").count("(footprint ")
+        a.first_s *= max(1.0, nfp / 40) ** 0.5
+        log(f"{nfp} footprints: first wave {a.first_s:.0f}s")
     # leave room for the last attempt's DRC and the copy
     deadline = t0 + a.time - min(0.25 * a.time, 60 + 0.05 * a.time)
+    base_dir = wd / "input"  # the input's own DRC errors (silk, rules) are not the method's
+    base_dir.mkdir(exist_ok=True)
+    shutil.copy2(inp, base_dir / "board.kicad_pcb")
+    b0 = drc(base_dir / "board.kicad_pcb", inp, 0.2 * a.time)
+    base = (b0 or {}).get("types", {})
+    log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
     best = None
     meter, judge_cpu, judge_wall = Meter(), 0.0, 0.0
@@ -125,7 +179,7 @@ def main():
     def launch():
         nonlocal k
         b = min(a.first_s * a.growth ** (k // a.parallel), (deadline - time.monotonic()) / a.slack)
-        if b < 20:
+        if b < 20 or (a.max_attempts and k >= a.max_attempts):
             return False
         d = wd / f"a{k}"
         d.mkdir(exist_ok=True)
@@ -162,15 +216,17 @@ def main():
             del running[p]
             info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=meter.cpu_s(p.pid), peak_rss_mb=meter.rss_mb(p.pid))
             c0, w0 = child_cpu(), time.monotonic()
-            rank = drc(info["out"], inp, deadline - time.monotonic() + GRACE_S)
+            rank = judge(info["out"], inp, base, deadline - time.monotonic() + GRACE_S)
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
             done.append(info)
-            log(f"end #{info['k']} rc {p.returncode} errors/unconnected {rank}")
+            log(f"end #{info['k']} rc {p.returncode} (illegal, not clean, unconnected, new errors, outside) {rank}")
             if rank is not None and (best is None or rank < best["rank"]):
                 best = info
-        if best and best["rank"] == (0, 0):
+                out.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(best["out"], out)  # at once: a kill at the deadline keeps the best so far
+        if best and best["rank"][:2] == (0, 0):
             log(f"#{best['k']} is clean: stopping the rest")
             meter.sample([p.pid for p in running])
             for p, info in list(running.items()):
@@ -182,7 +238,7 @@ def main():
             break
         while len(running) < a.parallel and launch():
             pass
-    work = dict(attempts=len(done), clean_found=bool(best and best["rank"] == (0, 0)),
+    work = dict(attempts=len(done), clean_found=bool(best and best["rank"][:2] == (0, 0)),
                 best_attempt=best and best["k"], best_seed=best and best["seed"], best_rank=best and list(best["rank"]),
                 cpu_s=round(sum(d.get("cpu_s", 0) for d in done) + judge_cpu, 1),
                 method_cpu_s=round(sum(d.get("cpu_s", 0) for d in done), 1), judge_cpu_s=round(judge_cpu, 1),
@@ -197,7 +253,7 @@ def main():
         return 1
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(best["out"], out)
-    log(f"kept #{best['k']} (seed {best['seed']}): errors/unconnected {best['rank']}")
+    log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
     return 0
 
 
