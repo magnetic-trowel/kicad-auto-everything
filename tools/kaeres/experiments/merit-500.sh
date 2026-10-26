@@ -12,7 +12,8 @@ KAE=(--code kae=.@origin/claude/vigilant-mayer-i91rrr)
 XF=(--code pnr=.@origin/xf-experiments)
 KW=(--code pnr=.@origin/claude/keen-wright-mlkjv6)
 T=(--param timeout_s=900)
-add() { $K method add "$@" "${T[@]}"; }
+# HARNESS=<commit> keeps the harness the methods were first registered with (same method ids)
+add() { $K method add "$@" "${T[@]}" ${HARNESS:+--harness $HARNESS}; }
 
 # kae (physics-first branch): routers on the human placement, and its place-and-route loops
 add "kae bridge" --description "kae.route.cli: Freerouting fork bridge + last mile (bench/results/2026-10-24-last-mile-ab)" \
@@ -44,6 +45,8 @@ pnr "pnr repair" joint XF pnr/methods.py:repair
 pnr "pnr negotiate" joint XF pnr/methods.py:negotiate
 pnr "pnr beam" joint XF pnr_mcts/mcts.py:beam
 pnr "pnr combo" joint XF pnr/methods_combo.py:combo
+pnr "pnr combo_full" joint XF pnr/methods_combo.py:combo_full    # partial (promising): full routed physics at the stage gates
+pnr "pnr seq_collapse" joint XF collapse_cplace/methods_cplace.py:seq_collapse  # partial: layer-collapse bus terms, place-then-route
 pnr "pnr grad_phys" joint XF pnr_grad/grad.py:grad_phys --opt post=phys
 pnr "pnr jc" joint XF collapse_joint/jc.py:jc
 pnr "pnr jc_lv" joint XF collapse_joint/jc.py:jc_lv
