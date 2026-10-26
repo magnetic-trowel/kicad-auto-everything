@@ -211,20 +211,47 @@ def code_dir(commit):
     return STORE / "code" / f"{HARNESS_REPO}@{commit[:12]}"
 
 
-def ensure_harness(commit, kae=False):
+def ensure_harness(commit, kae=False, venv=True):
     """A frozen worktree of the harness repo at commit, with its venv (kaebench, or kae for physics)."""
     d = code_dir(commit)
-    venv = d.with_name(d.name + (".venv-kae" if kae else ".venv"))
+    venv_d = d.with_name(d.name + (".venv-kae" if kae else ".venv"))
     repo = main_repo()
     if not d.exists():
         d.parent.mkdir(parents=True, exist_ok=True)
         sh(["git", "-C", repo, "worktree", "add", "--detach", str(d), commit])
-    if not (venv / "bin" / "python").exists():
+    venv, want = venv_d, venv
+    if want and not (venv / "bin" / "python").exists():
         uv = shutil.which("uv") or os.path.expanduser("~/.local/bin/uv")
         subprocess.run([uv, "venv", "-q", "--python", "3.12", str(venv)], check=True)
         pkg = f"{d / 'kae'}[fast]" if kae else str(d / "bench")
         subprocess.run([uv, "pip", "install", "-q", "-p", str(venv / "bin" / "python"), "-e", pkg], check=True)
     return d, venv
+
+
+def command_template(m):
+    """A --command method's template with {code:NAME} (frozen checkout), {venv:NAME} and {py:NAME} (the
+    kae venv of that checkout, and its python) filled in, and the paths its sandbox must be able to read."""
+    tpl, ro = m["recipe"]["runner"]["template"], []
+    for name, comp in m["code"].items():
+        d = code_dir(comp["commit"])
+        kv = d.with_name(d.name + ".venv-kae")
+        if "{code:" + name + "}" in tpl:
+            tpl, ro = tpl.replace("{code:" + name + "}", str(d)), ro + [d]
+        for key, val in (("py", kv / "bin" / "python"), ("venv", kv)):
+            if "{" + key + ":" + name + "}" in tpl:
+                tpl, ro = tpl.replace("{" + key + ":" + name + "}", str(val)), ro + [d, kv]
+    return tpl, list(dict.fromkeys(ro))
+
+
+def ensure_method_code(m):
+    """Frozen checkouts (and kae venvs where the template asks for one) of a --command method's code."""
+    if m["recipe"]["runner"]["type"] != "command":
+        return
+    tpl = m["recipe"]["runner"]["template"]
+    for name, comp in m["code"].items():
+        venv = "{py:" + name + "}" in tpl or "{venv:" + name + "}" in tpl
+        if name != "harness" and (venv or "{code:" + name + "}" in tpl):
+            ensure_harness(comp["commit"], kae=venv, venv=venv)
 
 
 def tree_ids(commit, paths):
@@ -450,6 +477,7 @@ def cmd_exp_create(a):
         hc = (m["code"].get("harness") or {}).get("commit")
         if hc:
             ensure_harness(hc)
+        ensure_method_code(m)
     kicad = kicad_version()
     evs = evaluators_for(harness, kae, kicad)
     e = dict(schema=SCHEMA, name=a.name, description=a.description or "", created=now(),
@@ -634,9 +662,10 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     genv = dict(env, PATH=f"{venv / 'bin'}:{env.get('PATH', '')}")
     steps = {}
     bugs = Bugs(bid)
+    kinds = sorted({"route"} | {m["recipe"]["kind"] for m, _ in items})
     with Step("prepare", steps):
         rc, to = run_logged(kb + ["prepare-dir", "--dir", ws / "src", "--board-glob", "board.kicad_pcb",
-                                  "--only", bid, "--kinds", "route", "-j", "1"], log, genv, timeout=3 * 3600)
+                                  "--only", bid, "--kinds", ",".join(kinds), "-j", "1"], log, genv, timeout=3 * 3600)
     task = work / "tasks" / bid
     tj = task / "task.json"
     if not tj.exists():
@@ -652,23 +681,27 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         _board_json(bid, row)
         return []
     record = json.loads(tj.read_text())
-    task_recipe = dict(board_sha256=record.get("pcb_sha256"), task_spec=record.get("task_spec"), kind="route", kicad=kicad)
-    task_id = ident(task_recipe)
-    tdir = board_dir(bid) / "tasks" / task_id
-    if not (tdir / "task.json").exists():
-        tmp = tdir.with_name(tdir.name + f".tmp{os.getpid()}")
-        tmp.mkdir(parents=True, exist_ok=True)
-        write_json(tmp / "task.json", dict(schema=SCHEMA, id=task_id, recipe=task_recipe, prepared_by=hc, at=now(), record=record))
-        if (task / "reference" / "drc.json").exists():
-            gz(task / "reference" / "drc.json", tmp / "human-drc.json.gz")
-        try:
-            os.replace(tmp, tdir)
-        except OSError:
-            shutil.rmtree(tmp, ignore_errors=True)
+    tids = {}  # one task per kind; the route task keeps the id it had before other kinds existed
+    for kind in kinds:
+        task_recipe = dict(board_sha256=record.get("pcb_sha256"), task_spec=record.get("task_spec"), kind=kind, kicad=kicad)
+        tids[kind] = ident(task_recipe)
+        tdir = board_dir(bid) / "tasks" / tids[kind]
+        if not (tdir / "task.json").exists():
+            tmp = tdir.with_name(tdir.name + f".tmp{os.getpid()}")
+            tmp.mkdir(parents=True, exist_ok=True)
+            write_json(tmp / "task.json", dict(schema=SCHEMA, id=tids[kind], recipe=task_recipe, prepared_by=hc, at=now(), record=record))
+            if (task / "reference" / "drc.json").exists():
+                gz(task / "reference" / "drc.json", tmp / "human-drc.json.gz")
+            try:
+                os.replace(tmp, tdir)
+            except OSError:
+                shutil.rmtree(tmp, ignore_errors=True)
+    task_id = tids["route"]
+    tid = lambda m: tids[m["recipe"]["kind"]]
     _board_json(bid, row)
     evs = evaluators_for(hc, kae, kicad)
     # skip methods that already have a run on this task (another experiment may have made it meanwhile)
-    todo = [(m, att) for m, att in items if a.method or find_run(bid, m["id"], att, task_id)[0] is None]
+    todo = [(m, att) for m, att in items if a.method or find_run(bid, m["id"], att, tid(m))[0] is None]
     if not todo:
         return []
     arms, cmds = [], []
@@ -693,10 +726,9 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
                          log_tail=tail(log, 60))
         for m in cmds:
             p = m["recipe"]["params"]
-            tpl = m["recipe"]["runner"]["template"]
-            for name, comp in m["code"].items():
-                tpl = tpl.replace("{code:" + name + "}", str(code_dir(comp["commit"])))
-            rc, to = run_logged(kb + ["run", "--adapter", f"m{m['id']}", "--command", tpl, "--kinds", m["recipe"]["kind"],
+            tpl, ro = command_template(m)
+            extra = [x for r_ in ro for x in ("--sandbox-ro", r_)] + (["--probe", p["probe"]] if p.get("probe") else [])
+            rc, to = run_logged(kb + ["run", "--adapter", f"m{m['id']}", "--command", tpl, *extra, "--kinds", m["recipe"]["kind"],
                                       "-k", str(k), "--timeout", str(p.get("timeout_s", 900)), "--all", "--only", bid,
                                       "--name", f"cmd-{m['id']}", "-j", "1"], log, genv,
                                 timeout=k * (int(p.get("timeout_s", 900)) + 1800) + 3600)
@@ -749,7 +781,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         if ph and ph.get("error"):
             rb.add("physics", "physics_error", ph["error"], signature=f"physics:{_normalize(ph['error'])}",
                    evidence=[f"evals/{evs['physics']}.json"], traceback=ph.get("traceback"))
-        name = _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, rb.items + bugs.items, steps, a)
+        name = _write_run(bid, m, att, tid(m), hc, aj, adir, ph, evs, rb.items + bugs.items, steps, a)
         bugs.items = []  # board-level bugs go with the first run written
         if name:
             made.append(name)
@@ -930,6 +962,8 @@ def human_physics(bid, task_id, evs):
     if not human:
         return None
     d, _ = find_run(bid, human["id"], 0, task_id)
+    if d is None:  # place and joint tasks: the human layout is scored on the board's route task
+        d, _ = find_run(bid, human["id"], 0)
     if d is None:
         return None
     return ((evals_of(d).get(evs.get("physics")) or {}).get("physics")) or None
@@ -1246,7 +1280,8 @@ def main():
     s.add_argument("--reference", action="store_true", help="the human layout (original copper)")
     s.add_argument("--adapter", default="freerouting", help="kaebench built-in adapter")
     s.add_argument("--binary", help="router binary (its install dir is copied into the store)")
-    s.add_argument("--command", help="kaebench --command template; {code:NAME} is a frozen checkout of code NAME")
+    s.add_argument("--command", help="kaebench --command template; {code:NAME} is a frozen checkout of code NAME, "
+                   "{venv:NAME} / {py:NAME} its kae venv / python (made at exp create, readable in the sandbox)")
     s.add_argument("--kind", default="route", help="route | place | joint")
     s.add_argument("--code", action="append", metavar="NAME=PATH[@REF] | NAME=URL@REF",
                    help="a code component; the harness (this repo, HEAD) is added unless given")

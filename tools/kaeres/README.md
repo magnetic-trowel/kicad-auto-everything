@@ -59,6 +59,8 @@ $K method add "freerouting 2.5.0" --binary ~/.cache/kaebench/freerouting-2.5.0-l
    --code router=https://github.com/freerouting/freerouting@v2.5.0 --build "release asset freerouting-2.5.0-linux-x64.zip"
 $K method add "fr-fork master" --binary ~/.cache/kaebench/kae-freerouting-fork-06d2686/bin/freerouting \
    --code router=~/.cache/kaebench/src/freerouting --build "tools/research/routing/install_freerouting_fork.sh 06d2686"
+$K method add "kae bridge" --command "{py:kae} -m kae.route.cli route {input} {output} --seed {attempt} --time {timeout}" \
+   --code kae=.@origin/claude/vigilant-mayer-i91rrr        # place / joint: --kind joint; place adds --param probe=freerouting
 $K method list
 $K exp create NAME --method "freerouting 2.5.0" --method "fr-fork master" [--boards @ids.txt] --description "..."
 $K exp submit NAME [--limit 20]       # one kaeq job per board that lacks a run; re-submitting resumes
