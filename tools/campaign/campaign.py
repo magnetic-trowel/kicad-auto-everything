@@ -273,6 +273,14 @@ def cmd_board(a):
     env.pop("VIRTUAL_ENV", None)
     kb = [str(root / "venv-bench" / "bin" / "kaebench"), "--workdir", str(work)]
     log = ws / "campaign.log"
+    print(f"{bid}: pid {os.getpid()} ppid {os.getppid()} job {os.environ.get('KAEQ_JOB')} scratch {ws}", flush=True)
+    # The environment must work before a board's failure can be blamed on the board: a broken
+    # container or bind is an infrastructure failure (non-zero exit: kaeq retries and reports it).
+    pre = subprocess.run([*env.get("KAE_KICAD_WRAP", "").split(), "python3", "-c", "import pcbnew"],
+                         capture_output=True, text=True, env=env, timeout=600)
+    if pre.returncode != 0:
+        print(f"preflight failed: KiCad's Python cannot import pcbnew (rc {pre.returncode}):\n{pre.stderr[-2000:]}", flush=True)
+        return 75
     steps = {}
     rec = dict(id=bid, campaign=a.name, started=now(), host_job=os.environ.get("KAEQ_JOB"), estimate=est,
                corpus=dict((k, row.get(k)) for k in ("collection", "license_tier", "layers", "footprints", "nets", "tracks",
@@ -292,6 +300,10 @@ def cmd_board(a):
                             timeout=int(est["timeout"][:-1]) // 2)
     task = work / "tasks" / bid
     tj = task / "task.json"
+    infra = re.search(r"no Python with pcbnew|kicad-cli not found|FATAL: +container|apptainer.*FATAL", tail(log, 200))
+    if not tj.exists() and infra:
+        print(f"prepare hit an environment error, not a board error: {infra.group(0)}\n{tail(log, 30)}", flush=True)
+        return 75
     if not tj.exists():
         rec["status"] = "prepare_failed"
         bug("harness", "prepare_timeout" if to else "prepare_error",
