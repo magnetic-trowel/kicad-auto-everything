@@ -11,11 +11,13 @@ OOM score (the kernel kills them first), and reports failures compactly to the
 submitting session through `kaeq wait` / `kaeq inbox`.  Stdlib only, Python >= 3.10.
 """
 import argparse
+import fcntl
 import json
 import os
 import re
 import shlex
 import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -39,13 +41,28 @@ def _on_nfs(path):
     return fs.startswith(("nfs", "cifs", "smb", "fuse.sshfs", "lustre", "gpfs"))
 
 
-# The queue database lives on local disk when HOME is a network share (WAL over NFS is unsafe);
-# it is then backed up into HOME every few minutes and restored from there if the local copy is lost.
-DB = os.environ.get("KAEQ_DB") or (os.path.join("/var/tmp", USER, "kaeq", "queue.db")
-                                   if _on_nfs(os.path.dirname(HOME.rstrip("/")) or "/") else os.path.join(HOME, "queue.db"))
-DB_BACKUP = os.path.join(HOME, "queue.db.bak")
 CONF = os.path.join(HOME, "config.json")
-BEAT = os.path.join(HOME, "daemon.json")
+
+
+def _pinned_db():
+    try:
+        with open(CONF) as f:
+            return json.load(f).get("db")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+# The queue database lives on local disk when HOME is a network share (WAL over NFS is unsafe);
+# it is then backed up into HOME every few minutes. The daemon pins its path in config.json, so
+# every client uses the same file even where mounts look different (e.g. inside a sandbox).
+AUTO_DB = (os.path.join("/var/tmp", USER, "kaeq", "queue.db")
+           if _on_nfs(os.path.dirname(HOME.rstrip("/")) or "/") else os.path.join(HOME, "queue.db"))
+DB = os.environ.get("KAEQ_DB") or _pinned_db() or AUTO_DB
+# HOME may be shared by several machines (an NFS home): files the daemon writes there carry its host name
+HOST = socket.gethostname().split(".")[0]
+DB_BACKUP = os.path.join(HOME, f"queue.{HOST}.db.bak")
+LOCK = os.path.join(HOME, "daemon.lock")
+BEAT = os.path.join(HOME, f"daemon.{HOST}.json")
 GB = 1 << 30
 TICK = 2.0
 ACTIVE = ("queued", "running")
@@ -59,6 +76,9 @@ DEFAULTS = {
     "mem_total_gb": 0,       # 0 = MemTotal
     "reserve_mem_gb": -1,    # MemAvailable kept free for other users (-1: reserve_frac of MemTotal)
     "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job
+    "warmup_s": 300,         # a new job keeps its declared --mem reserved this long; then its observed peak * peak_margin
+    "peak_margin": 1.25,
+    "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
     "mem_overrun": 1.5,      # kill a job whose RSS exceeds declared * this (+1 GB)
@@ -86,12 +106,32 @@ CREATE TABLE IF NOT EXISTS events(
 
 
 # ---------------------------------------------------------------- helpers
-def db():
+def pinned_host():
+    try:
+        with open(CONF) as f:
+            return json.load(f).get("host")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def db(restore=False):
+    """The queue database. Only the daemon (holding the lock) may restore it from the backup;
+    a client on another machine, or one that cannot see it, stops instead of starting a second,
+    diverging queue."""
     os.makedirs(HOME, exist_ok=True)
-    os.makedirs(os.path.dirname(DB), exist_ok=True)
-    if not os.path.exists(DB) and os.path.exists(DB_BACKUP):  # local disk wiped: start from the last backup
-        import shutil
-        shutil.copy2(DB_BACKUP, DB)
+    host = pinned_host()
+    if not restore and host and host != HOST:
+        sys.exit(f"kaeq: the queue's daemon runs on {host}, this is {HOST} (they share {HOME}). "
+                 f"Run kaeq there: export KAEQ_SSH={host}")
+    if not os.path.exists(DB):
+        if os.path.exists(DB_BACKUP) and not restore:
+            sys.exit(f"kaeq: the queue database {DB} is not visible here, but {DB_BACKUP} exists: this process sees a "
+                     "different filesystem than the daemon (a sandbox or container?). Run kaeq where the daemon runs.")
+        os.makedirs(os.path.dirname(DB), exist_ok=True)
+        if os.path.exists(DB_BACKUP):  # local disk wiped: start from the last backup
+            import shutil
+            shutil.copy2(DB_BACKUP, DB)
+            dlog(f"restored {DB} from {DB_BACKUP}")
     c = sqlite3.connect(DB, timeout=30, isolation_level=None)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA journal_mode=WAL")
@@ -350,6 +390,12 @@ def jobdir(jid):
     return os.path.join(HOME, "jobs", str(jid))
 
 
+def rc_path(j):
+    """Exit-code file of one start of a job: named per host and start (a requeue bumps attempt or
+    preempts), so nothing else writing into a shared HOME can end a job here."""
+    return os.path.join(jobdir(j["id"]), f"rc.{HOST}.{j['attempt']}.{j['preempts']}")
+
+
 def scratchdir(cfg, jid):
     return os.path.join(cfg["scratch_dir"], str(jid))
 
@@ -487,8 +533,12 @@ class Daemon:
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         for j in running:
+            # what a job may still grow into: its declared --mem while it warms up, then its observed peak
+            # with a margin (a later phase may need more than the first); free memory is measured, not declared
             rss = usage.get(j["id"], (0.0, 0))[0]
-            unrealized += max(0.0, j["mem_mb"] - rss)
+            peak = max(j["peak_mb"] or 0, rss)
+            expect = j["mem_mb"] if now - (j["started"] or now) < cfg["warmup_s"] else peak * cfg["peak_margin"]
+            unrealized += max(0.0, expect - rss)
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))
         # declared CPUs while a job warms up, then what the fleet really uses (floor: 25% of declared)
@@ -527,9 +577,10 @@ class Daemon:
             except (OSError, sqlite3.Error):
                 pass
             self.last_backup = now
-        with open(BEAT + ".tmp", "w") as f:
+        tmp = f"{BEAT}.tmp{os.getpid()}"
+        with open(tmp, "w") as f:
             json.dump({"pid": os.getpid(), "ts": now, "sys": self.sys}, f)
-        os.replace(BEAT + ".tmp", BEAT)
+        os.replace(tmp, BEAT)
 
     def preempt(self, v, now, note, disk_mb=None):
         dlog(f"preempt #{v['id']}: {note}")
@@ -546,7 +597,7 @@ class Daemon:
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
             per_owner[j["owner"]] = j["n"]
         started = 0
-        while queued and started < 8 and n_running < cfg["max_running"]:
+        while queued and started < cfg["starts_per_tick"] and n_running < cfg["max_running"]:
             queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
             fit = next((j for j in queued if j["mem_mb"] <= mem_room and j["disk_mb"] <= disk_room
                         and (j["cpus"] <= cpu_room or n_running == 0)), None)
@@ -565,7 +616,7 @@ class Daemon:
     def start(self, j, cfg):
         d = jobdir(j["id"])
         os.makedirs(d, exist_ok=True)
-        rc = os.path.join(d, "rc")
+        rc = rc_path(j)
         if os.path.exists(rc):
             os.unlink(rc)
         env = dict(os.environ)
@@ -649,7 +700,10 @@ class Daemon:
         p = self.popen.get(j["id"])
         if p:
             p.poll()
-        rcf = os.path.join(jobdir(j["id"]), "rc")
+        rcf = rc_path(j)
+        legacy = os.path.join(jobdir(j["id"]), "rc")  # jobs started before rc files were named per start
+        if not os.path.exists(rcf) and os.path.exists(legacy) and os.path.getmtime(legacy) >= (j["started"] or 0):
+            rcf = legacy
         peak = max(j["peak_mb"], int(rss))
         if peak != j["peak_mb"]:
             c.execute("UPDATE jobs SET peak_mb=? WHERE id=?", (peak, j["id"]))
@@ -739,15 +793,55 @@ def shutil_which(x):
     return shutil.which(x)
 
 
-def daemon_status():
+def take_lock():
+    """The single-daemon lock (a POSIX lock: NFS enforces it across hosts and namespaces, where
+    pids are not comparable). Returns the open file holding it, or None if another daemon has it."""
+    os.makedirs(HOME, exist_ok=True)
+    f = open(LOCK, "a+")
     try:
-        with open(BEAT) as f:
+        fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
+def daemon_status():
+    """The daemon's heartbeat if it is alive: a fresh beat, or the lock held (never a pid check alone:
+    a process in another pid namespace cannot see the daemon's pid)."""
+    b = None
+    try:
+        with open(os.path.join(HOME, f"daemon.{pinned_host() or HOST}.json")) as f:
             b = json.load(f)
-        if time.time() - b["ts"] < 15 and pid_alive(b["pid"]):
-            return b
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError):
         pass
+    if b and time.time() - b.get("ts", 0) < 15:
+        return b
+    lk = take_lock()
+    if lk is None:  # held: a daemon runs (perhaps busy, or beating where we cannot see)
+        return b or {"pid": None, "ts": 0, "sys": {}}
+    lk.close()
     return None
+
+
+def run_daemon(a):
+    lk = take_lock()
+    if lk is None:
+        print(f"kaeq: another daemon holds {LOCK}; not starting a second one", flush=True)
+        return
+    cfg = {}
+    try:
+        cfg = json.load(open(CONF))
+    except (OSError, ValueError):
+        pass
+    if (not os.environ.get("KAEQ_DB") and cfg.get("db") != DB) or cfg.get("host") != HOST:
+        cfg["db"] = DB  # pin the database path and host for every client
+        cfg["host"] = HOST
+        os.makedirs(HOME, exist_ok=True)
+        json.dump(cfg, open(CONF, "w"), indent=1)
+    db(restore=True).close()
+    dlog(f"daemon {os.getpid()} up: db {DB}")
+    Daemon().run()
 
 
 def ensure_daemon():
@@ -1086,7 +1180,7 @@ def main(argv=None):
 
     for name, f, h in (("doctor", cmd_doctor, "check isolation features"), ("down", cmd_down, "stop daemon"),
                        ("install-service", cmd_install_service, "write a systemd --user unit"),
-                       ("daemon", lambda a: Daemon().run(), "run the scheduler in the foreground")):
+                       ("daemon", run_daemon, "run the scheduler in the foreground")):
         sub.add_parser(name, help=h).set_defaults(f=f)
     a = p.parse_args(argv)
     if getattr(a, "command", None) and a.command[:1] == ["--"]:

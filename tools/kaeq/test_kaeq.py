@@ -176,3 +176,42 @@ def test_kill_reaches_children_in_their_own_session(kq, tmp_path):
     drive(kq, d, lambda: states(d)["o"] == "timeout")
     time.sleep(4)
     assert not marker.exists()
+
+
+def test_one_daemon_holds_the_lock(kq):
+    lk = kq.take_lock()
+    assert lk is not None
+    r = subprocess.run([sys.executable, "-c", "import kaeq, sys; sys.exit(0 if kaeq.take_lock() is None else 1)"],
+                       env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
+    assert r.returncode == 0  # a second process cannot take it
+    r = subprocess.run([sys.executable, "-c", "import kaeq, sys; sys.exit(0 if kaeq.daemon_status() is not None else 1)"],
+                       env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
+    assert r.returncode == 0  # held lock = a daemon runs, whatever pids say (POSIX locks are per process)
+    lk.close()
+
+
+def test_client_refuses_a_missing_db_when_a_backup_exists(kq):
+    kq.db().close()
+    os.replace(kq.DB, kq.DB_BACKUP)
+    for ext in ("-wal", "-shm"):
+        if os.path.exists(kq.DB + ext):
+            os.unlink(kq.DB + ext)
+    with pytest.raises(SystemExit):
+        kq.db()
+    kq.db(restore=True).close()  # the daemon restores it
+    assert os.path.exists(kq.DB)
+
+
+def test_reservation_drops_to_observed_peak_after_warmup(kq):
+    with open(kq.CONF, "w") as f:
+        f.write('{"threads": 4, "reserve_cpu": 1, "reserve_mem_gb": 0, "cgroup": "off", "warmup_s": 1, "scratch_dir": "%s"}'
+                % os.path.join(kq.HOME, "scratch"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="w", mem="100G")
+    drive(kq, d, lambda: states(d)["w"] == "running")
+    d.tick()
+    assert d.sys["unrealized"] > 90 * 1024  # declared 100G held while it warms up
+    time.sleep(1.5)
+    d.tick()
+    assert d.sys["unrealized"] < 1024  # then only its (tiny) observed peak with a margin
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")

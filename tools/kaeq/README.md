@@ -24,7 +24,7 @@ To stop permission prompts, allow one rule in each session's settings:
 | Concern | Mechanism (all unprivileged, Ubuntu 22.04) |
 |---|---|
 | Other users' CPU | Jobs run `SCHED_IDLE` (inherited by children): they only get cycles no normal-priority task wants. Jobs are pinned to `threads - reserve_cpu` CPUs (`cpu_affinity=auto`), a hard cap that needs no cgroup `cpuset` (often not delegated to user slices). Admission also counts other users' measured load, so `reserve_cpu` threads stay free beyond it. |
-| Other users' RAM | Admit a job only if `MemAvailable - unused part of running jobs' declared mem - job.mem >= reserve_mem_gb`. If free RAM drops below `emergency_frac` (75%) of the reserve, the newest job is killed and requeued (`preempted`). |
+| Other users' RAM | Admission is measured: a job starts only if `MemAvailable - reserve_mem_gb - what running jobs may still grow into >= its --mem`. A job younger than `warmup_s` (300 s) may grow into its declared `--mem`; after that, into its observed peak × `peak_margin` (1.25), so a later, heavier phase is still covered. Jobs start one per tick (`starts_per_tick`, every 2 s): each new job shows its memory before more start. If free RAM drops below `emergency_frac` (75%) of the reserve, the newest job is killed and requeued (`preempted`). |
 | Reserves | `reserve_cpu` and `reserve_mem_gb` default to `reserve_frac` (20%) of threads and RAM. |
 | Wrong estimates | RSS (summed over the job's cgroup scope, else its session) polled every 2 s; > 1.5x declared (+1 GB) kills the job and requeues it once with `--mem` corrected from the observed peak. |
 | Kernel OOM | `oom_score_adj=1000`: our jobs are the victims, not other users' processes. |
@@ -49,6 +49,15 @@ ends; the log stays. Git-ignored inputs are not in a snapshot: share them with `
 (symlinked from the original repo). `--live` skips snapshots. Outside git, jobs run live.
 The default owner is `repo@branch`; failure digests carry `repo@branch:sha`.
 Old `refs/kaeq/*` can be deleted any time once no queued job needs them.
+
+## One daemon, one machine
+
+A POSIX lock on `~/.kaeq/daemon.lock` admits one daemon, even across machines that share an NFS
+home: pids are not comparable across hosts or namespaces, but NFS locks are. The daemon pins its
+host and database path in `~/.kaeq/config.json`. A client on another machine stops and points
+at `KAEQ_SSH=<host>` instead of starting a second queue. Heartbeat (`daemon.<host>.json`), backup
+(`queue.<host>.db.bak`) and exit-code files (`jobs/<id>/rc.<host>.<attempt>.<preempts>`) are per
+host and per start, so nothing else writing into a shared home can end a job.
 
 ## Reporting loop
 
