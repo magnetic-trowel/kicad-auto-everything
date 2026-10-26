@@ -16,14 +16,16 @@ CPU time and memory of every step, router outcomes, and a bug log for a later fi
   campaign.py summarize NAME         # REPORT.md, results.csv, bugs/index.jsonl, bugs/BY-SIGNATURE.md
   campaign.py install-timer NAME     # summarize hourly (systemd --user timer)
 
-Layout (all under $KAE_CAMPAIGNS, default ~/kae-baselines, in the user's home):
-  NAME/campaign.json                 settings, routers, frozen code revisions
-  NAME/code/                         frozen checkout of this repo (the harness that runs)
-  NAME/kae-src/, venv-kae/           frozen kae package for routed physics
-  NAME/venv-bench/, kicad-config/    kaebench venv; KiCad config (DRC threads capped)
-  NAME/boards/<id>/                  record.json (summary), bugs.json, task.json, physics.json,
+Layout (all under $KAE_CAMPAIGNS, default ~/kae-baselines, in the user's home). Board-first:
+every campaign adds its results under the board, so all results for one board sit together.
+  boards/<id>/board.json             the board's corpus row
+  boards/<id>/<NAME>/                record.json (summary), bugs.json, task.json, physics.json,
                                      arms/<arm>/{attempt.json,drc.json,adapter.log.gz,result.json,board.ses.gz}
-  NAME/bugs/, REPORT.md, results.csv summaries (summarize)
+  campaigns/NAME/campaign.json       settings, routers, frozen code revisions
+  campaigns/NAME/code/               frozen checkout of this repo (the harness that runs)
+  campaigns/NAME/kae-src/, venv-kae/ frozen kae package for routed physics
+  campaigns/NAME/venv-bench/, kicad-config/  kaebench venv; KiCad config (DRC threads capped)
+  campaigns/NAME/bugs/, REPORT.md, results.csv   summaries (summarize)
 Scratch work happens in $KAEQ_SCRATCH (local disk, deleted by kaeq when the job ends).
 """
 import argparse
@@ -62,7 +64,13 @@ def sh(cmd, **kw):
 
 
 def croot(name):
-    return ROOT / name
+    """A campaign's own files: settings, frozen code, venvs, summaries."""
+    return ROOT / "campaigns" / name
+
+
+def bdir(name, bid):
+    """One board's results from one campaign."""
+    return ROOT / "boards" / bid / name
 
 
 def load_campaign(name):
@@ -125,8 +133,8 @@ def cmd_init(a):
         notes=a.notes,
     )
     (root / "campaign.json").write_text(json.dumps(meta, indent=1))
-    for d in ("boards", "bugs"):
-        (root / d).mkdir(exist_ok=True)
+    (root / "bugs").mkdir(exist_ok=True)
+    (ROOT / "boards").mkdir(exist_ok=True)
     print(json.dumps(meta, indent=1))
 
 
@@ -170,7 +178,7 @@ def cmd_submit(a):
         ids = set(Path(a.only[1:]).read_text().split()) if a.only.startswith("@") else set(a.only.split(","))
         rows = [r for r in rows if r["id"] in ids]
     if not a.redo:
-        rows = [r for r in rows if not (root / "boards" / r["id"] / "record.json").exists()]
+        rows = [r for r in rows if not (bdir(a.name, r["id"]) / "record.json").exists()]
     # a stable shuffle (sizes mixed, so memory-heavy boards spread over the run); the biggest boards first
     rows.sort(key=lambda r: hashlib.sha1(r["id"].encode()).hexdigest())
     if a.limit:
@@ -309,7 +317,7 @@ def cmd_board(a):
         bug("harness", "prepare_timeout" if to else "prepare_error",
             _first_error(tail(log, 200)) or f"rc={rc}", signature=f"harness:prepare:{_normalize(_first_error(tail(log, 200)))}",
             evidence=["prepare.log.gz"], log_tail=tail(log, 60))
-        return _archive(root, bid, rec, bugs, ws, task, {}, log, t_start)
+        return _archive(root, bid, rec, bugs, ws, task, {}, log, t_start, row=row)
     record = json.loads(tj.read_text())
     rec["task"] = dict(split=record["split"], pads=record["reference"]["stats"].get("pads"),
                        human_clean=record["human_clean"], qualified=record["qualified"],
@@ -374,7 +382,7 @@ def cmd_board(a):
                 evidence=["campaign.log.gz"])
             continue
         _arm_bugs(bug, arm, row_a, adirs[arm], human_types)
-    return _archive(root, bid, rec, bugs, ws, task, adirs, log, t_start, phys)
+    return _archive(root, bid, rec, bugs, ws, task, adirs, log, t_start, phys, row=row)
 
 
 _EXC = re.compile(r"\b((?:[a-z_][\w$]*\.)+[A-Z]\w*(?:Exception|Error))\b(:?[^\n]{0,200})")
@@ -480,10 +488,13 @@ def _physics_ratios(rec, phys):
         r["module_ratio_median"] = round(statistics.median(ratios), 4) if ratios else None
 
 
-def _archive(root, bid, rec, bugs, ws, task, adirs, log, t_start, phys=None):
-    """Copy what is worth keeping into the campaign (home), atomically per board."""
-    dest = root / "boards" / bid
-    tmp = root / "boards" / f".tmp-{bid}-{os.getpid()}"
+def _archive(root, bid, rec, bugs, ws, task, adirs, log, t_start, phys=None, row=None):
+    """Copy what is worth keeping into the board's folder (home), atomically per campaign."""
+    dest = bdir(rec["campaign"], bid)
+    tmp = dest.parent / f".tmp-{rec['campaign']}-{os.getpid()}"
+    if row is not None and not (dest.parent / "board.json").exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        (dest.parent / "board.json").write_text(json.dumps(row, indent=1))
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     if (task / "task.json").exists():
@@ -535,9 +546,9 @@ def _archive(root, bid, rec, bugs, ws, task, adirs, log, t_start, phys=None):
 
 
 # ------------------------------------------------------------------ status / summarize
-def records(root):
+def records(name):
     out = []
-    for p in sorted((root / "boards").glob("*/record.json")):
+    for p in sorted((ROOT / "boards").glob(f"*/{name}/record.json")):
         try:
             out.append((json.loads(p.read_text()), json.loads((p.parent / "bugs.json").read_text())))
         except (OSError, ValueError):
@@ -549,7 +560,7 @@ def cmd_status(a):
     c = load_campaign(a.name)
     root = croot(a.name)
     total = len(corpus_rows(c))
-    recs = records(root)
+    recs = records(a.name)
     st = Counter(r["status"] for r, _ in recs)
     print(f"{a.name}: {len(recs)}/{total} boards done ({dict(st)}), {sum(len(b) for _, b in recs)} bug records")
     subprocess.run(["kaeq", "status", "--owner", f"campaign-{a.name}", "--limit", "5"])
@@ -636,7 +647,7 @@ def arm_table(rows, arms, title):
 def cmd_summarize(a):
     c = load_campaign(a.name)
     root = croot(a.name)
-    recs = records(root)
+    recs = records(a.name)
     total = len(corpus_rows(c))
     arms = c["arms"]
     rows = [flat(r, arm) for r, _ in recs for arm in arms if r["status"] != "prepare_failed"]
@@ -656,8 +667,8 @@ def cmd_summarize(a):
         groups[b["signature"]].append(b)
     bl = [f"# Bugs by signature: {a.name}", "",
           f"{len(bugs)} records in {len(groups)} signatures over {sum(1 for _, bs in recs if bs)} boards. "
-          "Evidence paths are relative to `boards/<board>/`. Full records: `bugs/index.jsonl`; "
-          "per board with tracebacks and log tails: `boards/<board>/bugs.json`.", "",
+          f"Evidence paths are relative to `~/kae-baselines/boards/<board>/{a.name}/`. Full records: `bugs/index.jsonl`; "
+          f"per board with tracebacks and log tails: `boards/<board>/{a.name}/bugs.json`.", "",
           "| signature | boards | records | count | example boards | example detail |", "|---|---|---|---|---|---|"]
     for sig, bs in sorted(groups.items(), key=lambda kv: (-len({b["board"] for b in kv[1]}), kv[0])):
         boards = sorted({b["board"] for b in bs})

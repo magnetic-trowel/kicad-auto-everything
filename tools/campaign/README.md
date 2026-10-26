@@ -20,7 +20,7 @@ Each job does the following, in a private scratch directory that kaeq deletes af
    Each attempt is scored by kaebench (score v7): clean, completion, unconnected, DRC errors by type, `wl_ratio` and `via_delta` against the human layout, the router's CPU time and peak RSS, and the scoring cost.
 3. **Physics.** `physics_board.py` runs kae's routed module physics (the measure of `tools/research/joint/joint_physics.py`) on the human board and on every router's scored board. The brief comes from the human placement, so module ids pair across boards. It records Σu, its ratio to the human board, the median per-module value ratio, worst rail mΩ, and modules that are missing or have open hops.
 4. **Bugs.** Each problem becomes one record in `bugs.json` (schema below).
-5. **Archive.** Results go to `~/kae-baselines/<campaign>/boards/<id>/`, written atomically. `record.json` marks the board as done.
+5. **Archive.** Results go to `~/kae-baselines/boards/<id>/<campaign>/`, written atomically. `record.json` marks the board as done.
 
 Settings for every job:
 - KiCad runs with `MaximumThreads=2` (in the campaign's own `kicad-config`).
@@ -40,23 +40,27 @@ python3 $C install-timer NAME       # summarize hourly while it runs
 kaeq status --owner campaign-NAME   # queue view; kaeq result ID for a failed job
 ```
 
-`init` freezes the harness at a commit (a worktree in `NAME/code`, its own venv) and kae at
-another (`NAME/kae-src`, `NAME/venv-kae`). A campaign's code never changes once started. Use a
+`init` freezes the harness at a commit (a worktree in `campaigns/NAME/code`, its own venv) and kae at
+another (`campaigns/NAME/kae-src`, `campaigns/NAME/venv-kae`). A campaign's code never changes once started. Use a
 new campaign name after changing a method or the scorer. Re-submitting a campaign resumes it.
 
-## Layout of `~/kae-baselines/NAME/`
+## Layout of `~/kae-baselines/`
+
+Board-first: every campaign adds its results under the board, so a later run finds all
+earlier results for a board in one folder, without searching campaign by campaign.
 
 | Path | Contents |
 |---|---|
-| `campaign.json` | routers (path, version, jar sha256), code and kae commits, timeout, corpus manifest hash |
-| `REPORT.md` | per arm, for all boards, human-clean boards, splits A/B/C and layer counts: cp1, completion, boards not closed, DRC errors per board, timeouts, no output, errors, CPU time, physics. Also DRC types, router final states, top bug signatures |
-| `results.csv` | one row per board × arm, every metric above plus the router's own incomplete count, introduced violations and heap |
-| `boards/<id>/record.json` | the board's summary: corpus metadata, task (split, pads, human DRC), each arm's full `attempt.json`, physics summary, step times |
-| `boards/<id>/arms/<arm>/` | `attempt.json`, `drc.json` (scored board), `adapter.log.gz`, `result.json` (Freerouting's report), `board.ses.gz` (router output) |
-| `boards/<id>/physics.json` | per-module physics of every board |
-| `boards/<id>/bugs.json` | the board's bug records, with tracebacks and log tails |
-| `bugs/BY-SIGNATURE.md` | bugs grouped by signature, most boards first: the fixing agent's work list |
-| `bugs/index.jsonl` | all bug records |
+| `boards/<id>/board.json` | the board's corpus row |
+| `boards/<id>/<campaign>/record.json` | the board's summary for one campaign: corpus metadata, task (split, pads, human DRC), each arm's full `attempt.json`, physics summary, step times |
+| `boards/<id>/<campaign>/arms/<arm>/` | `attempt.json`, `drc.json` (scored board), `adapter.log.gz`, `result.json` (Freerouting's report), `board.ses.gz` (router output) |
+| `boards/<id>/<campaign>/physics.json` | per-module physics of every board |
+| `boards/<id>/<campaign>/bugs.json` | the board's bug records, with tracebacks and log tails |
+| `campaigns/<campaign>/campaign.json` | routers (path, version, jar sha256), code and kae commits, timeout, corpus manifest hash |
+| `campaigns/<campaign>/REPORT.md` | per arm, for all boards, human-clean boards, splits A/B/C and layer counts: cp1, completion, boards not closed, DRC errors per board, timeouts, no output, errors, CPU time, physics. Also DRC types, router final states, top bug signatures |
+| `campaigns/<campaign>/results.csv` | one row per board × arm, every metric above plus the router's own incomplete count, introduced violations and heap |
+| `campaigns/<campaign>/bugs/BY-SIGNATURE.md` | bugs grouped by signature, most boards first: the fixing agent's work list |
+| `campaigns/<campaign>/bugs/index.jsonl` | all bug records |
 
 To re-create a routed board, apply `board.ses.gz` to the route task. Rebuild the task with
 `kaebench prepare-dir` from the corpus folder. For arms with a non-DRC bug, the router's exact
@@ -67,7 +71,7 @@ flags in `attempt.json` → `adapter_meta.rule_args`.
 ## Bug records
 
 Each record has `campaign`, `board`, `arm`, `category`, `signature` (the grouping key),
-`detail` and `evidence` (paths under `boards/<board>/`). Some categories add fields.
+`detail` and `evidence` (paths under `boards/<board>/<campaign>/`). Some categories add fields.
 
 | Category | Meaning |
 |---|---|
