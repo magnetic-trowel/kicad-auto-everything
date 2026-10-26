@@ -92,6 +92,10 @@ def main():
     kicad("apply", a.input, work / "result.json", out)
     st = router.stats()
     st.update(method=a.method, seed=a.seed, runtime_s=round(time.time() - t0, 1), hpwl=round(world.hpwl(), 2))
+    import router as router_mod  # work counters of every router this run made (router.PROF)
+    st.update(fast=",".join(sorted(router_mod.FAST)) or None, cpu_s=round(time.process_time(), 1),
+              work={k: (round(v, 2) if isinstance(v, float) and not v.is_integer() else int(v))
+                    for k, v in sorted(router_mod.PROF.items())})
     log(f"done {st}")
     (work / "pnr_summary.json").write_text(json.dumps(st))
     print(json.dumps(st))
