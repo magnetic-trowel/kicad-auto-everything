@@ -834,7 +834,7 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a):
                job_steps=steps, **({"repro_of": run_name(m, att)} if suffix else {}))
     write_json(tmp / "run.json", run)
     if aj.get("score") is not None:
-        ev = dict(schema=SCHEMA, evaluator=evs["drc"], run=dest.name, at=now(), score=aj["score"],
+        ev = dict(schema=SCHEMA, evaluator=evs["drc"], run=dest.name, at=now(), score=aj["score"], probe=aj.get("probe"),
                   scoring_s=aj.get("scoring_s"), scoring_usage=aj.get("scoring_usage"))
         write_json(tmp / "evals" / f"{evs['drc']}.json", ev)
         if (adir / "score" / "drc.json").exists():
@@ -934,6 +934,9 @@ def run_view(bid, d, r, evs, human_phys=None):
     """One flat row: a run with the given evaluators' results."""
     ed = evals_of(d)
     s = (ed.get(evs.get("drc")) or {}).get("score") or {}
+    pr = ((ed.get(evs.get("drc")) or {}).get("probe") or {}).get("score")
+    if pr and "clean" not in s:  # a place task: the routing numbers are the probe's route of the placement
+        s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")))
     ph = ((ed.get(evs.get("physics")) or {}).get("physics")) or {}
     meta = r.get("adapter_meta") or {}
     rep = meta.get("router_report") or {}
