@@ -434,11 +434,26 @@ def heap_gb(size_mb):
     return int(min(16, max(2, 2 + size_mb / 8)))
 
 
+def method_timeout(m, row):
+    """Seconds per attempt. With timeout_scale=sqrt-fp40, bigger boards get more: the base times
+    sqrt(footprints / 40) when that is above 1, at most 4 h."""
+    p = m["recipe"]["params"]
+    t = int(p.get("timeout_s", 900))
+    if p.get("timeout_scale") == "sqrt-fp40":
+        t = int(min(4 * 3600, t * max(1.0, (row.get("footprints") or 0) / 40) ** 0.5))
+    return t
+
+
+def method_cpus(m):
+    return int(m["recipe"]["params"].get("parallel", 1))
+
+
 def estimate(row, ms):
     """Queue resources for one board's job (board files range from KB to 230 MB)."""
     s = board_size_mb(row)
     mem = 1.2 + 0.12 * s + 0.3 * heap_gb(s)  # GB, one step at a time; kaeq requeues an overrun with a corrected value
-    t = sum(int(m["recipe"]["params"].get("timeout_s", 0)) for m in ms)
+    t = sum(method_timeout(m, row) for m in ms)
+    mem *= max([method_cpus(m) for m in ms] + [1])  # parallel restarts each hold a copy of the board
     return dict(size_mb=round(s, 2), mem=f"{mem:.1f}G", disk=f"{int(100 + 10 * s)}M",
                 timeout=f"{int(min(24 * 3600, t + 3600 + 240 * s))}s")
 
@@ -526,9 +541,24 @@ def cmd_exp_submit(a):
         need = missing(e, bid)
         if not need or (prepare_failed(e, bid) and not a.redo):
             continue
-        est = estimate(rows[bid], [ms[m] for m, _ in need])
-        jobs.append(dict(cmd=f"{py} {script} job --experiment {a.name} --board {bid}", name=f"{a.name}:{bid}", cpus=2,
-                         mem=est["mem"], disk=est["disk"], timeout=est["timeout"], size_mb=est["size_mb"]))
+        # a job runs at most ~8 h of methods (each method at least whole), so big boards with
+        # long per-method budgets split into several jobs instead of one that runs for days
+        chunks, cur, t = [], [], 0
+        for m, att in need:
+            mt = method_timeout(ms[m], rows[bid])
+            if cur and t + mt > 8 * 3600:
+                chunks.append(cur)
+                cur, t = [], 0
+            cur.append((m, att))
+            t += mt
+        chunks.append(cur)
+        for i, ch in enumerate(chunks):
+            est = estimate(rows[bid], [ms[m] for m, _ in ch])
+            sel = "" if len(chunks) == 1 else "".join(f" --method {m}" for m, _ in ch)
+            jobs.append(dict(cmd=f"{py} {script} job --experiment {a.name} --board {bid}{sel}",
+                             name=f"{a.name}:{bid}" + (f":{i}" if len(chunks) > 1 else ""),
+                             cpus=max([2] + [method_cpus(ms[m]) for m, _ in ch]),
+                             mem=est["mem"], disk=est["disk"], timeout=est["timeout"], size_mb=est["size_mb"]))
         if a.limit and len(jobs) >= a.limit:
             break
     jobs = spread_large(jobs, lambda j: j["size_mb"] > LARGE_MB)  # kaeq runs them in this order
@@ -714,7 +744,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
             arms += ["--arm", f"name={arm},adapter={r['adapter']},freerouting={m['binary']}"]
         else:
             cmds.append(m)
-    timeout = max([int(m["recipe"]["params"].get("timeout_s", 900)) for m, _ in todo] + [900])
+    timeout = max([method_timeout(m, row) for m, _ in todo] + [900])
     k = max(att for _, att in todo) + 1
     with Step("run", steps):
         if arms:
@@ -732,9 +762,9 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
             # the method's code must be bound too (KiCad's Python runs its scripts)
             cenv = dict(genv, APPTAINER_BIND=",".join([str(ws), *map(str, ro)]))
             rc, to = run_logged(kb + ["run", "--adapter", f"m{m['id']}", "--command", tpl, *extra, "--kinds", m["recipe"]["kind"],
-                                      "-k", str(k), "--timeout", str(p.get("timeout_s", 900)), "--all", "--only", bid,
+                                      "-k", str(k), "--timeout", str(method_timeout(m, row)), "--all", "--only", bid,
                                       "--name", f"cmd-{m['id']}", "-j", "1"], log, cenv,
-                                timeout=k * (int(p.get("timeout_s", 900)) + 1800) + 3600)
+                                timeout=k * (method_timeout(m, row) + 1800) + 3600)
     human_run = find_run(bid, human["id"], 0, task_id) if human else (None, None)
     adirs = {}
     for m, att in todo:
@@ -791,6 +821,21 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     return made
 
 
+def _work(adir):
+    """The work a method reports with a last `KAE_WORK {json}` line (restart.py): attempts, CPU
+    seconds over all its processes (the harness cannot see inside the sandbox), peak RSS."""
+    log = adir / "adapter.log"
+    if not log.exists():
+        return None
+    for line in reversed(log.read_text(errors="replace").splitlines()):
+        if line.startswith("KAE_WORK "):
+            try:
+                return json.loads(line[9:])
+            except ValueError:
+                return None
+    return None
+
+
 def _board_json(bid, row):
     p = board_dir(bid) / "board.json"
     if not p.exists():
@@ -831,8 +876,11 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a):
                finished=now(), java_tool_options=os.environ.get("JAVA_TOOL_OPTIONS") if m["recipe"]["runner"]["type"] != "reference" else None,
                status=aj.get("status"), error=aj.get("error"), runtime_s=aj.get("runtime_s"), over_time=aj.get("over_time"),
                method_usage=aj.get("method_usage"), adapter_meta=aj.get("adapter_meta"), load_avg=[aj.get("load_avg_start"), aj.get("load_avg_end")],
-               job_steps=steps, **({"repro_of": run_name(m, att)} if suffix else {}))
+               job_steps=steps, work=_work(adir), **({"repro_of": run_name(m, att)} if suffix else {}))
     write_json(tmp / "run.json", run)
+    for sj in adir.rglob("restarts/summary.json"):  # restart.py's per-attempt log
+        shutil.copy2(sj, tmp / "restarts.json")
+        break
     if aj.get("score") is not None:
         ev = dict(schema=SCHEMA, evaluator=evs["drc"], run=dest.name, at=now(), score=aj["score"], probe=aj.get("probe"),
                   scoring_s=aj.get("scoring_s"), scoring_usage=aj.get("scoring_usage"))
@@ -946,7 +994,9 @@ def run_view(bid, d, r, evs, human_phys=None):
                completion=s.get("completion"), start_unconnected=s.get("start_unconnected"), unconnected=s.get("unconnected"),
                errors=s.get("errors"), warnings=s.get("warnings"), errors_by_type=json.dumps(s.get("errors_by_type") or {}, sort_keys=True),
                track_length_mm=s.get("track_length_mm"), vias=s.get("vias"), wl_ratio=s.get("wl_ratio"), via_delta=s.get("via_delta"),
-               runtime_s=r.get("runtime_s"), cpu_s=mu.get("cpu_s"), max_rss_mb=mu.get("max_rss_mb"),
+               runtime_s=r.get("runtime_s"), cpu_s=(r.get("work") or {}).get("cpu_s") or mu.get("cpu_s"),
+               max_rss_mb=(r.get("work") or {}).get("peak_rss_mb") or mu.get("max_rss_mb"),
+               attempts=(r.get("work") or {}).get("attempts"), wall_to_best_s=(r.get("work") or {}).get("wall_to_best_s"),
                timed_out=meta.get("timed_out"), partial=meta.get("partial"), final_state=rep.get("final_state"),
                router_incomplete=((rep.get("board_statistics") or {}).get("connections") or {}).get("incomplete_count"),
                router_introduced_violations=((rep.get("board_statistics") or {}).get("clearance_violations") or {}).get("router_introduced_count"),
@@ -1101,8 +1151,9 @@ def _f(x, nd=3):
 
 def method_table(rows, names, title):
     out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board | "
-           "timeouts | no output | errors | CPU s median / p90 / total h | physics Σu | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
+           "physics Σu | Σu vs human (median) | module ratio (median) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
@@ -1116,6 +1167,8 @@ def method_table(rows, names, title):
             str(sum(1 for r in rs if r["timed_out"] or r["partial"])), str(sum(1 for r in rs if r["status"] == "no_output")),
             str(sum(1 for r in rs if r["status"] in ("adapter_error", "score_error"))),
             f"{_f(_med(cpu), 1)} / {_f(_q(cpu, 0.9), 1)} / {_f(sum(x or 0 for x in cpu) / 3600, 1)}",
+            f"{_f(_med([r.get('attempts') for r in rs]), 0)} / {_f(_q([r.get('attempts') for r in rs], 0.9), 0)}",
+            _f(_med([r["runtime_s"] for r in rs]), 0),
             _f(_mean([r["physics_total"] for r in rs]), 3), _f(_med([r["physics_vs_human"] for r in rs]), 3),
             _f(_med([r["module_ratio_median"] for r in rs]), 3)]) + " |")
     return out + [""]
