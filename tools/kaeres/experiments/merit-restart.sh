@@ -14,7 +14,8 @@
 # - kae: staged is --max-iters 0 --no-modules; one CPU (OMP_NUM_THREADS=1 KAE_WORKERS=1), a warm
 #   numba cache, the bridge's Freerouting pinned; the bridge may overrun its --time a little.
 # - pnr: engine of keen-wright db10e58 (v6.4, a superset of xf-experiments); budgets are solver
-#   CPU s, and KiCad I/O comes on top (2-5x wall seen under load), hence the slack.
+#   CPU s; their routing (PathFinder) runs outside that clock and they write only at the end,
+#   so an attempt is killed only by the overall deadline (slack 100), never at a multiple of its budget.
 # - beam with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
 # - pnr route_only is deterministic: one attempt. autoplace sa-loop plans its own rounds from
 #   one budget (tested at 1200 s): one attempt, 1200 s base; its in-loop router and the probe
@@ -67,28 +68,28 @@ pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solve
     "${PNR[@]}"
 }
 J=joint-fixed
-pnr "pnr route_only" route 5 pnr/methods.py:route_only
-pnr "pnr seq" $J 5 pnr/methods.py:seq                      # control: HPWL place, then route
-pnr "pnr seq_phys" $J 5 pnr/methods_phys.py:seq_phys
-pnr "pnr anneal" $J 5 pnr/methods.py:anneal
-pnr "pnr anneal_phys" $J 5 pnr/methods_phys.py:anneal_phys
-pnr "pnr repair" $J 5 pnr/methods.py:repair
-pnr "pnr negotiate" $J 5 pnr/methods.py:negotiate
-pnr "pnr beam" $J 5 pnr_mcts/mcts.py:beam --opt phys_w=2
-pnr "pnr combo" $J 5 pnr/methods_combo.py:combo
-pnr "pnr combo_full" $J 8 pnr/methods_combo.py:combo_full
-pnr "pnr seq_collapse" $J 5 collapse_cplace/methods_cplace.py:seq_collapse --opt w_fv=4 --opt w_x=1 --opt w_ovf=0
-pnr "pnr grad_phys" $J 5 pnr_grad/grad.py:grad_phys --opt post=phys
-pnr "pnr jc" $J 5 collapse_joint/jc.py:jc
-pnr "pnr jc_lv" $J 5 collapse_joint/jc.py:jc_lv
-pnr "pnr jc_full" $J 8 collapse_joint/jc.py:jc_full
-pnr "pnr xf_h minplus" $J 5 xf_minplus/minplus.py:xf_h
-pnr "pnr pjc2 pour maps" $J 5 xf_pour/pjc.py:pjc2
-pnr "pnr pjc2_lv_nopol" $J 5 xf_pour/pjc.py:pjc2_lv_nopol
-pnr "pnr hjc_press" $J 5 harmonic/hjc.py:hjc_press
-pnr "pnr qd" $J 5 qd_archive/qd.py:qd
-pnr "pnr jc2_fix" $J 5 collapse_joint/jc2.py:jc2_fix
-pnr "pnr jc2_fixmp_lv" $J 5 collapse_joint/jc2.py:jc2_fixmp_lv
+pnr "pnr route_only" route 100 pnr/methods.py:route_only
+pnr "pnr seq" $J 100 pnr/methods.py:seq                      # control: HPWL place, then route
+pnr "pnr seq_phys" $J 100 pnr/methods_phys.py:seq_phys
+pnr "pnr anneal" $J 100 pnr/methods.py:anneal
+pnr "pnr anneal_phys" $J 100 pnr/methods_phys.py:anneal_phys
+pnr "pnr repair" $J 100 pnr/methods.py:repair
+pnr "pnr negotiate" $J 100 pnr/methods.py:negotiate
+pnr "pnr beam" $J 100 pnr_mcts/mcts.py:beam --opt phys_w=2
+pnr "pnr combo" $J 100 pnr/methods_combo.py:combo
+pnr "pnr combo_full" $J 100 pnr/methods_combo.py:combo_full
+pnr "pnr seq_collapse" $J 100 collapse_cplace/methods_cplace.py:seq_collapse --opt w_fv=4 --opt w_x=1 --opt w_ovf=0
+pnr "pnr grad_phys" $J 100 pnr_grad/grad.py:grad_phys --opt post=phys
+pnr "pnr jc" $J 100 collapse_joint/jc.py:jc
+pnr "pnr jc_lv" $J 100 collapse_joint/jc.py:jc_lv
+pnr "pnr jc_full" $J 100 collapse_joint/jc.py:jc_full
+pnr "pnr xf_h minplus" $J 100 xf_minplus/minplus.py:xf_h
+pnr "pnr pjc2 pour maps" $J 100 xf_pour/pjc.py:pjc2
+pnr "pnr pjc2_lv_nopol" $J 100 xf_pour/pjc.py:pjc2_lv_nopol
+pnr "pnr hjc_press" $J 100 harmonic/hjc.py:hjc_press
+pnr "pnr qd" $J 100 qd_archive/qd.py:qd
+pnr "pnr jc2_fix" $J 100 collapse_joint/jc2.py:jc2_fix
+pnr "pnr jc2_fixmp_lv" $J 100 collapse_joint/jc2.py:jc2_fixmp_lv
 
 # autoplace on the newer branch: --router kae routes its candidates with kae's bridge. Its
 # placements are scored through the same restart-wrapped kae bridge as the probe (Freerouting
