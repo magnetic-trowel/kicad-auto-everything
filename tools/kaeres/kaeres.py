@@ -228,10 +228,10 @@ def ensure_harness(commit, kae=False, venv=True):
     return d, venv
 
 
-def command_template(m):
+def command_template(m, tpl=None):
     """A --command method's template with {code:NAME} (frozen checkout), {venv:NAME} and {py:NAME} (the
     kae venv of that checkout, and its python) filled in, and the paths its sandbox must be able to read."""
-    tpl, ro = m["recipe"]["runner"]["template"], []
+    tpl, ro = tpl or m["recipe"]["runner"]["template"], []
     for name, comp in m["code"].items():
         d = code_dir(comp["commit"])
         kv = d.with_name(d.name + ".venv-kae")
@@ -757,7 +757,12 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         for m in cmds:
             p = m["recipe"]["params"]
             tpl, ro = command_template(m)
-            extra = [x for r_ in ro for x in ("--sandbox-ro", r_)] + (["--probe", p["probe"]] if p.get("probe") else [])
+            if p.get("probe_command"):  # a placement's probe: a command router, with the method's code
+                ptpl, pro = command_template(m, p["probe_command"])
+                probe, ro = ["--probe", p.get("probe", "cmd-probe"), "--probe-command", ptpl], list(dict.fromkeys(ro + pro))
+            else:
+                probe = ["--probe", p["probe"]] if p.get("probe") else []
+            extra = [x for r_ in ro for x in ("--sandbox-ro", r_)] + probe
             # the sandbox hides the corpus, and Apptainer refuses to start when a bind source is missing;
             # the method's code must be bound too (KiCad's Python runs its scripts)
             cenv = dict(genv, APPTAINER_BIND=",".join([str(ws), *map(str, ro)]))

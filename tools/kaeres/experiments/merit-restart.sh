@@ -17,7 +17,8 @@
 #   CPU s, and KiCad I/O comes on top (2-5x wall seen under load), hence the slack.
 # - beam with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
 # - pnr route_only is deterministic: one attempt. autoplace sa-loop plans its own rounds from
-#   one budget (tested at 1200 s): one attempt, 1200 s base.
+#   one budget (tested at 1200 s): one attempt, 1200 s base; its in-loop router and the probe
+#   are kae's bridge.
 # - Freerouting: the attempt index sets its pass count (its only variation), first wave 240 s.
 # - kae portfolio is left out: it is kae bridge in this same wrapper.
 #   HARNESS=<commit> keeps an earlier harness (same method ids).
@@ -26,7 +27,6 @@ cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
 KAE=(--code kae=.@45efe0066edb2559a32e217664ec1f544c80e790)   # claude/vigilant-mayer-i91rrr
 PNR=(--code pnr=.@db10e580a68863f09641244e432c401f5a293348)   # claude/keen-wright-mlkjv6
-AP=(--code ap=.@b3b08961f8e26555827730f2306c677073d0fca4)     # autoplace-experiments
 KH='$HOME/.cache/kaebench'
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-06d2686/bin/freerouting"
 # rs FIRST_S SLACK [restart.py options]: the wrapper; {timeout} is the board-scaled budget
@@ -88,6 +88,10 @@ pnr "pnr qd" $J 5 qd_archive/qd.py:qd
 pnr "pnr jc2_fix" $J 5 collapse_joint/jc2.py:jc2_fix
 pnr "pnr jc2_fixmp_lv" $J 5 collapse_joint/jc2.py:jc2_fixmp_lv
 
-add "autoplace sa-loop (restarts)" place-fixed 1200 "$(rs 100000 1.2 --max-attempts 1)" "methods/autoplace place.py --algo sa-loop (plans its own rounds; one attempt)" \
-  "env PYTHONPATH={code:ap}/bench/src {py:kae} {code:ap}/methods/autoplace/place.py --algo sa-loop --input @IN@ --output @OUT@ --workdir \$PWD --attempt @SEED@ --seed @SEED@ --timeout @TIME@" \
-  "${AP[@]}" --param probe=freerouting
+# autoplace on the newer branch: --router kae routes its candidates with kae's bridge. Its
+# placements are scored through the same restart-wrapped kae bridge as the probe (Freerouting
+# routes only 0.17 of human placements clean on the qualified boards, so it cannot tell placements apart).
+PROBE="$(rs 60 1.15) $KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
+add "autoplace sa-loop kae (restarts)" place-fixed 1200 "$(rs 100000 1.2 --max-attempts 1)" "methods/autoplace place.py --algo sa-loop --router kae (plans its own rounds; one attempt); probe: kae bridge with restarts" \
+  "cp -r $KH/numba-kae numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK PYTHONPATH={code:ap}/bench/src {py:kae} {code:ap}/methods/autoplace/place.py --algo sa-loop --router kae --input @IN@ --output @OUT@ --workdir \$PWD --attempt @SEED@ --seed @SEED@ --timeout @TIME@" \
+  --code ap=.@46e7f894e8357fad7d6f3f0e9093f5515a097ed6 --param probe=kae-bridge --param "probe_command=$PROBE"   # autoplace-kae-router
