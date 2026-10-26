@@ -153,8 +153,10 @@ def estimate(c, row):
     pcb = Path(c["corpus"]) / row["path"] / "board.kicad_pcb"
     s = pcb.stat().st_size / MB if pcb.exists() else 1.0
     heap = int(min(16, max(2, 2 + s / 8)))                     # Freerouting -Xmx, GB
-    mem = 1.5 + 0.15 * s + 0.6 * heap                           # GB: KiCad (pcbnew / DRC) + router
-    disk = 300 + 20 * s                                          # MB: tasks, three arms' boards and artifacts
+    # GB: one step at a time (KiCad pcbnew / DRC, or the router); smoke runs peaked at 0.5-0.9 GB on
+    # boards under 5 MB. kaeq requeues a job that overruns 1.5x with a corrected estimate.
+    mem = 1.2 + 0.12 * s + 0.3 * heap
+    disk = 100 + 10 * s                                          # MB: tasks, three arms' boards and artifacts
     T = c["timeout_s"]
     timeout = int(min(16 * 3600, len(c["routers"]) * T + 3600 + 240 * s))
     return dict(size_mb=round(s, 2), heap_gb=heap, mem=f"{mem:.1f}G", disk=f"{int(disk)}M", timeout=f"{timeout}s")
@@ -428,6 +430,13 @@ def _arm_bugs(bug, arm, row, adir, human_types):
         cat = "java_oom" if "OutOfMemoryError" in cls else "java_exception"
         bug(arm, cat, e["line"], signature=f"{arm}:{cat}:{cls}:{e['frame']}", exception=cls, count=e["count"],
             frame=e["frame"], evidence=ev + [f"arms/{arm}/artifacts"])
+    # the router's own count of open connections vs KiCad's on the imported board: more open in KiCad
+    # means connections were lost in translation (DSN export, SES import) or routed copper is illegal there
+    own_open = ((rep.get("board_statistics") or {}).get("connections") or {}).get("incomplete_count")
+    if st == "ok" and own_open is not None and s.get("unconnected") is not None and s["unconnected"] > own_open:
+        bug(arm, "unconnected_mismatch", f"KiCad finds {s['unconnected']} unconnected, the router reported {own_open} incomplete",
+            signature=f"{arm}:unconnected_mismatch", count=s["unconnected"] - own_open,
+            evidence=ev + [f"arms/{arm}/result.json", f"arms/{arm}/board.ses.gz"])
     if row.get("over_time"):
         bug(arm, "over_time", f"runtime {row.get('runtime_s')}s exceeded the attempt timeout", evidence=ev)
     if s and s.get("valid") is False:
@@ -555,6 +564,9 @@ def flat(rec, arm):
         runtime_s=row.get("runtime_s"), cpu_s=mu.get("cpu_s"), max_rss_mb=mu.get("max_rss_mb"),
         scoring_s=row.get("scoring_s"), scoring_cpu_s=su.get("cpu_s"),
         timed_out=m.get("timed_out"), partial=m.get("partial"), final_state=rep.get("final_state"), passes=m.get("passes"),
+        router_incomplete=((rep.get("board_statistics") or {}).get("connections") or {}).get("incomplete_count"),
+        router_introduced_violations=((rep.get("board_statistics") or {}).get("clearance_violations") or {}).get("router_introduced_count"),
+        router_peak_heap_mb=((rep.get("phases") or {}).get("autorouter") or {}).get("peak_heap_mb"),
         physics_total=ph.get("physics_total"), physics_vs_human=ph.get("total_vs_human"),
         module_ratio_median=ph.get("module_ratio_median"), physics_modules=ph.get("n_modules"),
         physics_missing=ph.get("n_missing"), physics_open=ph.get("n_open"), worst_rail_mohm=ph.get("worst_rail_mohm"),

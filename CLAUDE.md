@@ -35,6 +35,8 @@ kaebench report kae-work/results/<run> kae-work/results/<baseline-run>
 - Re-using `--name` resumes a run; use a new name after changing a method.
 - Per-attempt artifacts: `kae-work/results/<run>/<adapter>/<kind>/<id>/attempt-N/`
   (`attempt.json`, `adapter.log`, `score/drc.json`).
+- Long or heavy jobs on the shared host go through the `kaeq` queue (`tools/kaeq/README.md`), never run directly.
+  Corpus-wide router baselines: `tools/campaign/README.md` (results in `~/kae-baselines/<campaign>/`).
 - New methods plug in with `--command` (reads `{input}`, writes `{output}`) or a class in
   `bench/src/kaebench/adapters.py`.
 
