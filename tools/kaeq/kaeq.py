@@ -258,8 +258,8 @@ def cpu_ticks():
 
 
 def proc_by_session():
-    """{sid: (rss_mb, cpu_ticks)} over every process we can read."""
-    out = {}
+    """({sid: (rss_mb, cpu_ticks)}, {pid: (rss_mb, cpu_ticks)}) over every process we can read."""
+    out, per_pid = {}, {}
     page_mb = os.sysconf("SC_PAGE_SIZE") / (1 << 20)
     for ent in os.listdir("/proc"):
         if not ent.isdigit():
@@ -271,9 +271,42 @@ def proc_by_session():
             sid, ut, st, rss = int(fld[3]), int(fld[11]), int(fld[12]), int(fld[21])
         except (OSError, ValueError, IndexError):
             continue
+        per_pid[int(ent)] = (rss * page_mb, ut + st)
         r, t = out.get(sid, (0.0, 0))
         out[sid] = (r + rss * page_mb, t + ut + st)
-    return out
+    return out, per_pid
+
+
+def job_cgroup(pid):
+    """The job's own systemd scope (cgroup v2 path), or None when it runs without one."""
+    try:
+        with open(f"/proc/{pid}/cgroup") as f:
+            for line in f:
+                if line.startswith("0::") and line.rstrip().endswith(".scope") and "/run-" in line:
+                    return "/sys/fs/cgroup" + line[3:].strip()
+    except OSError:
+        pass
+    return None
+
+
+def job_usage(j, sessions, per_pid, cgroups):
+    """(rss_mb, cpu_ticks) of a job: every process in its scope (children that start their own
+    session stay in it), else every process in its session."""
+    cg = cgroups.get(j["id"]) or job_cgroup(j["pid"])
+    if cg:
+        cgroups[j["id"]] = cg
+        try:
+            with open(os.path.join(cg, "cgroup.procs")) as f:
+                pids = [int(x) for x in f.read().split()]
+            rss = ticks = 0
+            for q in pids:
+                r, t = per_pid.get(q, (0.0, 0))
+                rss += r
+                ticks += t
+            return rss, ticks
+        except (OSError, ValueError):
+            pass
+    return sessions.get(j["pid"], (0.0, 0))
 
 
 def event(c, job, kind, msg):
@@ -355,6 +388,7 @@ class Daemon:
         self.prev_ours = {}
         self.sys = {}
         self.cg = None
+        self.cgroups = {}        # job id -> its scope's cgroup dir
         self.disk = {}           # job id -> scratch MB (refreshed by a background thread)
         self.disk_total = 0.0
         self.disk_ts = 0.0
@@ -399,12 +433,13 @@ class Daemon:
     def tick(self):
         cfg = config()
         c = self.c
-        sessions = proc_by_session()
+        sessions, per_pid = proc_by_session()
         now = time.time()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         ours_ticks, ours_rss, unrealized = 0, 0.0, 0.0
+        usage = {j["id"]: job_usage(j, sessions, per_pid, self.cgroups) for j in running}
         for j in running:
-            rss, ticks = sessions.get(j["pid"], (0.0, 0))
+            rss, ticks = usage[j["id"]]
             ours_rss += rss
             ours_ticks += max(0, ticks - self.prev_ours.get(j["id"], ticks))
             self.prev_ours[j["id"]] = ticks
@@ -419,7 +454,7 @@ class Daemon:
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         for j in running:
-            rss = sessions.get(j["pid"], (0.0, 0))[0]
+            rss = usage.get(j["id"], (0.0, 0))[0]
             unrealized += max(0.0, j["mem_mb"] - rss)
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))

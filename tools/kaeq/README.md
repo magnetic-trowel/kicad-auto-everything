@@ -23,15 +23,19 @@ To stop permission prompts, allow one rule in each session's settings:
 
 | Concern | Mechanism (all unprivileged, Ubuntu 22.04) |
 |---|---|
-| Other users' CPU | Jobs run `SCHED_IDLE` (inherited by children): they only get cycles no normal-priority task wants, so we can fill the box without slowing anyone. Admission also keeps `reserve_cpu` (16) threads free. |
-| Other users' RAM | Admit a job only if `MemAvailable - unused-part-of-running-jobs' declared mem - job.mem >= reserve_mem_gb` (40). If free RAM drops below half the reserve, the newest job is killed and requeued (`preempted`). |
-| Wrong estimates | RSS polled every 2 s; > 1.5x declared (+1 GB) kills the job and requeues it once with `--mem` corrected from the observed peak. |
+| Other users' CPU | Jobs run `SCHED_IDLE` (inherited by children): they only get cycles no normal-priority task wants. Jobs are pinned to `threads - reserve_cpu` CPUs (`cpu_affinity=auto`), a hard cap that needs no cgroup `cpuset` (often not delegated to user slices). Admission also counts other users' measured load, so `reserve_cpu` threads stay free beyond it. |
+| Other users' RAM | Admit a job only if `MemAvailable - unused part of running jobs' declared mem - job.mem >= reserve_mem_gb`. If free RAM drops below `emergency_frac` (75%) of the reserve, the newest job is killed and requeued (`preempted`). |
+| Reserves | `reserve_cpu` and `reserve_mem_gb` default to `reserve_frac` (20%) of threads and RAM. |
+| Wrong estimates | RSS (summed over the job's cgroup scope, else its session) polled every 2 s; > 1.5x declared (+1 GB) kills the job and requeues it once with `--mem` corrected from the observed peak. |
 | Kernel OOM | `oom_score_adj=1000`: our jobs are the victims, not other users' processes. |
-| Disk | `ionice -c3`. |
-| Hard backstop | If `systemd-run --user` has the memory controller delegated (`kaeq doctor`), jobs also get `MemoryMax=2x`. Not required. |
+| Disk I/O | `ionice -c3`. |
+| Scratch disk | Each job gets `$KAEQ_SCRATCH` (also `TMPDIR`) under `scratch_dir` (default `/var/tmp/$USER/kaeq-scratch`), deleted when the job ends, fails, is cancelled or preempted. Admission keeps measured scratch plus the unused part of declared `--disk` under `scratch_gb` (100). A job over 3x its `--disk` (+5 GB) is killed and requeued with a corrected estimate; over budget overall, the largest user is preempted. |
+| Hard backstop | If `systemd-run --user` has the memory controller delegated (`kaeq doctor`), each job gets its own scope with `MemoryMax=2x`, inside `kaeq.slice` capped at `(1 - reserve_frac)` of RAM by `install-service`. Not required. |
+| State on NFS | When `~/.kaeq` is on a network share, the SQLite database lives on local disk (`/var/tmp/$USER/kaeq/queue.db`), is backed up to `~/.kaeq/queue.db.bak` every 5 minutes, and is restored from there if the local copy is lost. Logs stay in `~/.kaeq/jobs/<id>/log`. |
 | Fairness | Order: priority, then owners with the fewest running jobs, then age. A head-of-line job waiting > 10 min blocks backfill so big jobs don't starve. |
 
-Tune with `kaeq config --set reserve_cpu=24 --set reserve_mem_gb=64` (read every tick).
+Tune with `kaeq config --set reserve_frac=0.25 --set scratch_gb=150` (read every tick).
+Per-job resources in bulk: `kaeq submit --jobs FILE` (JSONL: `cmd`, `name`, `cpus`, `mem`, `disk`, `timeout`, `prio`).
 Jobs get `KAEQ_CPUS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `GOMAXPROCS` = `--cpus`, and the
 submitter's `PATH`/`VIRTUAL_ENV`/`PYTHONPATH` (so the right venv is used).
 
