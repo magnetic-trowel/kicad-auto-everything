@@ -638,24 +638,45 @@ def write_board(inp, poses, dst_dir):
     return out
 
 
+ROUTER = "freerouting"  # --router: the router that routes each candidate
+
+
+def _route_kae(board, work, timeout):
+    """Route with kae's bridge (python -m kae.route.cli, same interpreter); the output path or None."""
+    out = work / "kae" / "board.kicad_pcb"
+    out.parent.mkdir(parents=True)
+    with open(work / "kae.log", "w") as f:
+        try:
+            subprocess.run([sys.executable, "-m", "kae.route.cli", "route", str(board), str(out),
+                            "--time", str(int(max(20, timeout - 15)))], stdout=f, stderr=subprocess.STDOUT,
+                           timeout=timeout + 60)
+        except subprocess.TimeoutExpired:
+            pass
+    return out if out.exists() else None
+
+
 def route_probe(board, work, passes, timeout):
-    """Route a candidate with Freerouting (kaebench's own adapter) and count what is unrouted."""
-    from kaebench.adapters import Freerouting
+    """Route a candidate with Freerouting (kaebench's own adapter) or kae's bridge (--router kae)
+    and count what is unrouted."""
     work = Path(work)
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
     t0 = time.monotonic()
-    res = Freerouting(passes=passes).run("route", Path(board).parent, work, 0, timeout)
-    if not res.output:
+    if ROUTER == "kae":
+        output = _route_kae(Path(board), work, timeout)
+    else:
+        from kaebench.adapters import Freerouting
+        output = Freerouting(passes=passes).run("route", Path(board).parent, work, 0, timeout).output
+    if not output:
         return dict(unconnected=10 ** 6, errors=10 ** 6, failed={}, blame=[], t=time.monotonic() - t0)
-    d = json.loads(kicad_py("unconnected", res.output))
+    d = json.loads(kicad_py("unconnected", output))
     # DRC of the routed candidate under the board's own project rules (the task input's)
     from kaebench import tools
     for f in Path(board).parent.iterdir():
         if f.suffix in (".kicad_pro", ".kicad_dru"):
-            shutil.copy2(f, Path(res.output).parent / f.name)
-    rep = tools.run_drc(res.output, work / "drc.json")
+            shutil.copy2(f, Path(output).parent / f.name)
+    rep = tools.run_drc(output, work / "drc.json")
     s = tools.summarize_drc(rep)
     d.update(errors=s["errors"], errors_by_type=s["errors_by_type"])
     # parts to move: owners of unrouted nets and of the items in error-level violations
@@ -699,7 +720,11 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0, help="varies all random choices (the attempt index does too)")
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--probe-passes", type=int, default=4)
+    ap.add_argument("--router", choices=["freerouting", "kae"], default="freerouting",
+                    help="router for the in-loop routing of candidates (kae: kae.route.cli, needs kae importable)")
     a = ap.parse_args(argv)
+    global ROUTER
+    ROUTER = a.router
     t_start = time.monotonic()
     budget = a.timeout * 0.8 - 30  # leave time for writing and the harness
     work = Path(a.workdir) / "place"
