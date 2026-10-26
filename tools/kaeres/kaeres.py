@@ -1123,7 +1123,7 @@ def exp_rows(e):
                     use[key] = other[-1] if other else None
             v = run_view(bid, d, r, use, human_physics(bid, r["task_id"], use))
             v["evaluator_drc"], v["evaluator_physics"] = use["drc"], use["physics"]
-            v["foreign_evaluator"] = use["drc"] != evs["drc"]
+            v["foreign_evaluator"] = use["drc"] is not None and use["drc"] != evs["drc"]  # scored, but by another scorer
             b = read_json(bd / "board.json") or {}
             v.update(split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
@@ -1200,7 +1200,11 @@ def cmd_exp_report(a):
     os.replace(d / "bugs" / "index.jsonl.tmp", d / "bugs" / "index.jsonl")
     groups = defaultdict(list)
     for b in bugs:
-        groups[b["signature"]].append(b)
+        # older jobs put the board id in prepare signatures; group those by message alone
+        sig = b["signature"]
+        if sig.startswith("harness:prepare:"):
+            sig = re.sub(r"^harness:prepare:\[N<path> [^:]+: ", "harness:prepare: ", sig)
+        groups[sig].append(b)
     bl = [f"# Bugs by signature: {a.name}", "",
           f"{len(bugs)} records in {len(groups)} signatures over {len({b['board'] for b in bugs})} boards. Each record is in "
           "`~/kae-baselines/boards/<board>/runs/<run>/bugs.json` (with tracebacks and log tails; evidence paths are relative "
@@ -1253,7 +1257,11 @@ def cmd_exp_report(a):
         other = sum(v for k, v in fs.items() if k not in ("COMPLETED", "TIMED_OUT", "none"))
         rep.append(f"| {m['name']} | {fs['COMPLETED']} | {fs['TIMED_OUT']} | {other} | {fs['none']} |")
     rep += ["", "### Bugs", "", f"{len(bugs)} records, {len(groups)} signatures; top 15 (all: `bugs/BY-SIGNATURE.md`):", ""]
-    rep += bl[5:5 + 2 + 15]
+    head = bl.index("| signature | boards | records | count | example boards | example detail |")
+    rep += bl[head:head + 2 + 15]
+    nondrc = [ln for ln in bl[head + 2:] if ":drc:" not in ln.split("|")[1]]
+    rep += ["", f"Not DRC findings (crashes, exceptions, translation and harness bugs), {len(nondrc)} signatures:", "",
+            bl[head], bl[head + 1]] + nondrc[:30]
     (d / "REPORT.md").write_text("\n".join(rep) + "\n")
     print(f"wrote {d / 'REPORT.md'}, results.csv ({len(rows)} rows), bugs/ ({len(bugs)} records)")
 
@@ -1272,12 +1280,15 @@ def cmd_exp_timer(a):
     d = Path.home() / ".config" / "systemd" / "user"
     d.mkdir(parents=True, exist_ok=True)
     unit = f"kaeres-{a.name}"
-    cd = code_dir(e["harness"]["commit"])
-    py = cd.with_name(cd.name + ".venv") / "bin" / "python"
+    # Reports and the index come from an installed copy of this (stdlib-only) script, not the
+    # experiment's frozen code: report fixes then reach running experiments, and no result changes.
+    tool = Path.home() / ".local" / "share" / "kaeres" / "kaeres.py"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(Path(__file__).resolve(), tool)
     (d / f"{unit}.service").write_text(
         f"[Unit]\nDescription=kaeres report {a.name}\n\n[Service]\nType=oneshot\nNice=19\n"
-        f"ExecStart={py} {cd / 'tools' / 'kaeres' / 'kaeres.py'} exp report {a.name}\n"
-        f"ExecStartPost={py} {cd / 'tools' / 'kaeres' / 'kaeres.py'} index\n")
+        f"ExecStart=/usr/bin/python3 {tool} exp report {a.name}\n"
+        f"ExecStartPost=/usr/bin/python3 {tool} index\n")
     (d / f"{unit}.timer").write_text(f"[Unit]\nDescription=kaeres report {a.name} hourly\n\n[Timer]\nOnBootSec=10min\n"
                                      "OnUnitActiveSec=1h\n\n[Install]\nWantedBy=timers.target\n")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
