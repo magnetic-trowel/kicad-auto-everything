@@ -109,7 +109,7 @@ NUM = r"(-?[0-9.]+)"
 
 
 def outside(board):
-    """Unlocked footprints whose anchor lies outside the Edge.Cuts bounding box (a part left staged
+    """Unlocked footprints with pads whose anchor lies outside the Edge.Cuts bounding box (a part left staged
     off the board, which DRC does not flag): a cheap stand-in for the harness's legality check.
     Locked parts are the task's fixed interface and may overhang the edge."""
     txt = board.read_text(errors="replace")
@@ -122,7 +122,10 @@ def outside(board):
     n = 0
     for m in re.finditer(r"\(footprint \"[^\"]*\"(.*?)\(at " + NUM + " " + NUM, txt, re.S):
         x, y = float(m.group(2)), float(m.group(3))
-        n += "(locked" not in m.group(1) and not (x0 <= x <= x1 and y0 <= y <= y1)
+        end = txt.find("\n\t(footprint ", m.end())
+        pads = "(pad " in txt[m.end():end if end > 0 else len(txt)]
+        # like the harness (pad centres outside the outline): footprints without pads (logos) never count
+        n += pads and "(locked" not in m.group(1) and not (x0 <= x <= x1 and y0 <= y <= y1)
     return n
 
 
