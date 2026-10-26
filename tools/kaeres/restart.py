@@ -109,8 +109,9 @@ NUM = r"(-?[0-9.]+)"
 
 
 def outside(board):
-    """Footprints whose anchor lies outside the Edge.Cuts bounding box (a staged-off-board part,
-    which DRC does not flag): a cheap stand-in for the harness's legality check."""
+    """Unlocked footprints whose anchor lies outside the Edge.Cuts bounding box (a part left staged
+    off the board, which DRC does not flag): a cheap stand-in for the harness's legality check.
+    Locked parts are the task's fixed interface and may overhang the edge."""
     txt = board.read_text(errors="replace")
     pts = [(float(x), float(y)) for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b(.*?)\(layer \"Edge\.Cuts\"\)", txt, re.S)
            for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, m.group(1))]
@@ -121,18 +122,18 @@ def outside(board):
     n = 0
     for m in re.finditer(r"\(footprint \"[^\"]*\"(.*?)\(at " + NUM + " " + NUM, txt, re.S):
         x, y = float(m.group(2)), float(m.group(3))
-        n += not (x0 <= x <= x1 and y0 <= y <= y1)
+        n += "(locked" not in m.group(1) and not (x0 <= x <= x1 and y0 <= y <= y1)
     return n
 
 
-def judge(board, inp, base, timeout):
+def judge(board, inp, base, timeout, placement=False):
     """Rank key (lower is better) in the harness's order: legal, clean, then fewer unconnected,
     then fewer DRC errors beyond the input's own (per type). None when there is no board."""
     d = drc(board, inp, timeout)
     if d is None:
         return None
     new = sum(max(0, c - base.get(t, 0)) for t, c in d["types"].items())
-    out = outside(board)
+    out = outside(board) if placement else 0
     clean = out == 0 and new == 0 and d["unconnected"] == 0
     return (1 if out else 0, 0 if clean else 1, d["unconnected"], new, out)
 
@@ -148,6 +149,8 @@ def main():
     ap.add_argument("--growth", type=float, default=2.0)
     ap.add_argument("--scale-first", action="store_true",
                     help="first-s x sqrt(footprints / 40) when above 1: big boards need longer single attempts")
+    ap.add_argument("--check-placement", action="store_true",
+                    help="methods that place: unlocked parts outside the outline make an attempt illegal")
     ap.add_argument("--max-attempts", type=int, default=0,
                     help="stop launching after this many (deterministic methods: 1); 0 = no limit")
     ap.add_argument("--slack", type=float, default=1.0,
@@ -175,6 +178,7 @@ def main():
     running, done, k = {}, [], 0
     best = None
     meter, judge_cpu, judge_wall = Meter(), 0.0, 0.0
+    fast_fails = 0  # attempts in a row that died within seconds without a board: a broken command
 
     def launch():
         nonlocal k
@@ -216,10 +220,11 @@ def main():
             del running[p]
             info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=meter.cpu_s(p.pid), peak_rss_mb=meter.rss_mb(p.pid))
             c0, w0 = child_cpu(), time.monotonic()
-            rank = judge(info["out"], inp, base, deadline - time.monotonic() + GRACE_S)
+            rank = judge(info["out"], inp, base, deadline - time.monotonic() + GRACE_S, a.check_placement)
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
+            fast_fails = fast_fails + 1 if rank is None and info["wall_s"] < 10 else 0
             done.append(info)
             log(f"end #{info['k']} rc {p.returncode} (illegal, not clean, unconnected, new errors, outside) {rank}")
             if rank is not None and (best is None or rank < best["rank"]):
@@ -234,6 +239,12 @@ def main():
                 info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=meter.cpu_s(p.pid),
                             peak_rss_mb=meter.rss_mb(p.pid), rc=None, rank=None, stopped=True)
                 done.append(info)
+            running.clear()
+            break
+        if fast_fails >= 2 * a.parallel:
+            log(f"{fast_fails} attempts in a row died within 10 s without a board: giving up (see restarts/a*/log)")
+            for p in list(running):
+                stop(p)
             running.clear()
             break
         while len(running) < a.parallel and launch():

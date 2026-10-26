@@ -32,10 +32,12 @@ FORK="$HOME/.cache/kaebench/kae-freerouting-fork-06d2686/bin/freerouting"
 # rs FIRST_S SLACK [restart.py options]: the wrapper; {timeout} is the board-scaled budget
 rs() { local f=$1 sl=$2; shift 2
   echo "{py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time {timeout} --seed {attempt} --parallel 4 --first-s $f --scale-first --slack $sl $* --"; }
-add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]
+add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]; INNER is single-quoted, since the
+         # harness runs the template with sh -c (a ';' in it would end restart.py's command there)
   local name=$1 kind=$2 base=$3 wrap=$4 desc=$5 inner=$6; shift 6
+  [ "$kind" = route ] || wrap="${wrap% --} --check-placement --"
   $K method add "$name" --kind "$kind" --description "$desc; restart portfolio (tools/kaeres/restart.py)" \
-    --command "$wrap $inner" --param timeout_s="$base" --param timeout_scale=sqrt-fp40 --param parallel=4 \
+    --command "$wrap '$inner'" --param timeout_s="$base" --param timeout_scale=sqrt-fp40 --param parallel=4 \
     "${KAE[@]}" "$@" ${HARNESS:+--harness $HARNESS}
 }
 
@@ -91,7 +93,7 @@ pnr "pnr jc2_fixmp_lv" $J 5 collapse_joint/jc2.py:jc2_fixmp_lv
 # autoplace on the newer branch: --router kae routes its candidates with kae's bridge. Its
 # placements are scored through the same restart-wrapped kae bridge as the probe (Freerouting
 # routes only 0.17 of human placements clean on the qualified boards, so it cannot tell placements apart).
-PROBE="$(rs 60 1.15) $KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
+PROBE="$(rs 60 1.15) '$KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@'"
 add "autoplace sa-loop kae (restarts)" place-fixed 1200 "$(rs 100000 1.2 --max-attempts 1)" "methods/autoplace place.py --algo sa-loop --router kae (plans its own rounds; one attempt); probe: kae bridge with restarts" \
   "cp -r $KH/numba-kae numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK PYTHONPATH={code:ap}/bench/src {py:kae} {code:ap}/methods/autoplace/place.py --algo sa-loop --router kae --input @IN@ --output @OUT@ --workdir \$PWD --attempt @SEED@ --seed @SEED@ --timeout @TIME@" \
   --code ap=.@46e7f894e8357fad7d6f3f0e9093f5515a097ed6 --param probe=kae-bridge --param "probe_command=$PROBE"   # autoplace-kae-router
