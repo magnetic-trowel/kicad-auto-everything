@@ -36,7 +36,7 @@ kaebench report kae-work/results/<run> kae-work/results/<baseline-run>
 - Per-attempt artifacts: `kae-work/results/<run>/<adapter>/<kind>/<id>/attempt-N/`
   (`attempt.json`, `adapter.log`, `score/drc.json`).
 - Long or heavy jobs on the shared host go through the `kaeq` queue (`tools/kaeq/README.md`), never run directly.
-  Corpus-wide router baselines: `tools/campaign/README.md` (results per board in `~/kae-baselines/boards/<id>/<campaign>/`).
+  Results of every method on every board, with the code that made them: `tools/kaeres/README.md` (`~/kae-baselines/boards/<id>/runs/`).
 - New methods plug in with `--command` (reads `{input}`, writes `{output}`) or a class in
   `bench/src/kaebench/adapters.py`.
 
