@@ -375,6 +375,28 @@ def corpus_rows():
         return {r["id"]: r for r in (json.loads(l) for l in f if l.strip())}
 
 
+LARGE_MB = 10  # board files above this are the slow, memory-heavy jobs
+
+
+def spread_large(items, is_large, share=0.5):
+    """Queue order: small items in their given order, large ones spaced evenly through the first
+    `share` of the queue (not all first, which crowds memory; not last, which leaves a long tail)."""
+    large = [x for x in items if is_large(x)]
+    small = [x for x in items if not is_large(x)]
+    if not large:
+        return small
+    span = max(len(large), int(round(share * (len(large) + len(small)))))
+    slots = {int((i + 0.5) * span / len(large)) for i in range(len(large))}
+    out, li, si = [], iter(large), iter(small)
+    for pos in range(len(items)):
+        nxt = next(li, None) if pos in slots else next(si, None)
+        if nxt is None:  # one list ran out: the rest of the other
+            nxt = next(si, None) if pos in slots else next(li, None)
+        if nxt is not None:
+            out.append(nxt)
+    return out + list(li) + list(si)
+
+
 def board_size_mb(row):
     p = CORPUS / row["path"] / "board.kicad_pcb"
     return p.stat().st_size / MB if p.exists() else 1.0
@@ -478,9 +500,10 @@ def cmd_exp_submit(a):
             continue
         est = estimate(rows[bid], [ms[m] for m, _ in need])
         jobs.append(dict(cmd=f"{py} {script} job --experiment {a.name} --board {bid}", name=f"{a.name}:{bid}", cpus=2,
-                         mem=est["mem"], disk=est["disk"], timeout=est["timeout"], prio=1 if est["size_mb"] > 10 else 0))
+                         mem=est["mem"], disk=est["disk"], timeout=est["timeout"], size_mb=est["size_mb"]))
         if a.limit and len(jobs) >= a.limit:
             break
+    jobs = spread_large(jobs, lambda j: j["size_mb"] > LARGE_MB)  # kaeq runs them in this order
     f = exp_dir(a.name) / f"jobs-{datetime.now().strftime('%Y%m%dT%H%M%S')}.jsonl"
     f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
     print(f"{len(jobs)} board jobs -> {f}")
