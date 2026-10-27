@@ -170,9 +170,15 @@ def fetch_one(row):
 
     if host in NEVER or host not in HOSTS or "host-robots-restricted" in (row.get("tags") or []) or not row.get("commit"):
         return done("host_not_fetched", host=host)
-    roots = [row["sch_path"]] if row.get("sch_path") else \
-        [os.path.splitext(row["pcb_path"])[0] + e for e in (".kicad_sch", ".sch")]  # the project's own name
-    if not roots[0].endswith((".kicad_sch", ".sch")):
+    # the recorded path first; manifests sometimes record the KiCad 6+ name of a KiCad 5 project's
+    # schematic (or none), so the other extension and the board's own name are tried too
+    roots = []
+    for base in ([os.path.splitext(row["sch_path"])[0]] if row.get("sch_path") else []) + [os.path.splitext(row["pcb_path"])[0]]:
+        for ext in (".kicad_sch", ".sch") if not row.get("sch_path") or base != os.path.splitext(row["sch_path"])[0] \
+                else (os.path.splitext(row["sch_path"])[1], ".sch" if row["sch_path"].endswith(".kicad_sch") else ".kicad_sch"):
+            if base + ext not in roots:
+                roots.append(base + ext)
+    if row.get("sch_path") and not row["sch_path"].endswith((".kicad_sch", ".sch")):
         return done("unsupported_format")
     root = None
     for cand in roots:
