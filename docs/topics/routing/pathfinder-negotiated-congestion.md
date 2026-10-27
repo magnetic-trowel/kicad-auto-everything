@@ -2,7 +2,7 @@
 
 **TL;DR**
 - **Every production PCB router negotiates conflicts across passes** (Specctra, Situs, gEDA, PcbRouter, Freerouting) — route first while tolerating conflicts, then raise penalties.
-- PathFinder cost (b_n + h_n)·p_n with **VPR defaults** (pres_fac 0 → 0.5, ×1.3/iteration, acc_fac 1, ≤50 iterations) is a sound starting point for an in-house router.
+- PathFinder cost (b_n + h_n)·p_n (paper form) with the **VPR default schedule** (pres_fac 0 → 0.5, ×1.3/iteration, acc_fac 1, ≤50 iterations) is a sound starting point for an in-house router. VPR itself computes b·h·p with h starting at 1 and growing by acc_fac × overuse, calibrated for base costs ≈ 1 per wire, so normalize b (or use the multiplicative form) before reusing acc_fac 1 ([VTR route_common.h](https://github.com/verilog-to-routing/vtr-verilog-to-routing/blob/master/vpr/src/route/route_common.h) [P]).
 - Pure lattice PathFinder (OrthoRoute) fails on ordinary boards (PCBWorld CP 0.02, but run without board rules); negotiation works best **inside** a detailed router (FanoutNet MCR) or as a coarse global planner.
 - Expose the schedule as typed knobs with LLM presets per board class; learn it offline later (VLSI CQL: 1.56× faster convergence; LSTM variant −92% DRVs).
 
@@ -56,14 +56,14 @@ for it in range(50):
     pres_fac = 0.5 if it == 0 else min(pres_fac * 1.3, 1000)
 # post: merge collinear, 45° smoothing, neck-down at pads, write via IPC in one commit, kicad-cli drc; repair or fall back to Freerouting
 ```
-Measured results of this prototype: see [solver benchmarks](../solvers/benchmarks.md) (pending section in the notes).
+Measured results of this prototype: see [solver benchmarks](../solvers/benchmarks.md) § G (0 overuse in 14–15 iterations; 2.2–61 s for 50–300 nets).
 
 **Learning the schedule (VLSI, high transfer)**: offline conservative Q-learning chooses cost weights per iteration — **1.56× avg (3.01× max) faster convergence on ISPD19** at equal/better DRVs, some cross-technology generalization ([arXiv 2512.03594](https://arxiv.org/abs/2512.03594) [P-abs]); history-aware LSTM variant **−92% DRVs**, −10% runtime, pluggable into any cost-based router ([arXiv 2609.08232](https://arxiv.org/abs/2609.08232) [P-abs]).
 
 **MAPF analogs** (CBS, PIBT, LaCAM) as alternative conflict-resolution engines: [cross-domain routing](cross-domain-routing-transplants.md).
 
 ## Recommendations for our system
-- Implement PathFinder with VPR defaults inside the Rust A* router; window A* to the net bbox, growing per iteration; reroute only offenders [I].
+- Implement PathFinder with the VPR schedule (base costs normalized to ~1 per grid step) inside the Rust A* router; window A* to the net bbox, growing per iteration; reroute only offenders [I].
 - Expose the schedule (initial conflict cost, growth per pass, history weight, via-cost ramp, bbox factor) as a typed knob set; LLM picks presets per board class (dense 2-layer, BGA 6-layer, RF); later train an offline-RL scheduler on logged runs [I].
 - Use a conflict-tolerant first pass as a seconds-scale feasibility probe (layer count, hotspot map) for placement/stackup revisions ([autorouter skepticism](autorouter-skepticism.md)) [I].
 - LLM sets per-net-class cost multipliers and priorities, never paths ([cross-domain routing](cross-domain-routing-transplants.md)) [I].

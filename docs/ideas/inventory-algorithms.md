@@ -141,7 +141,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 122. Go-With-The-Winners tournament over agent variants. VP → [LLM-guided][P-LLM]
 123. Images optional: text conflict lists beat image-based overlap inference. VP → [LLM-guided][P-LLM]
 124. Calibrate tight/close/loose mm per component class from human boards. VP → [LLM-guided][P-LLM]
-125. Mine CCG-like relative-offset graphs from PCBWorld D3 human boards for fine-tuning. VP → [LLM-guided][P-LLM]
+125. Mine CCG-like relative-offset graphs from PCBWorld D3 human boards for fine-tuning, excluding the 99 D3-A + 10 D3-B evaluation boards. VP → [LLM-guided][P-LLM]
 126. Steerable IR menu: weighted costs, constraints, relative graphs, anchors/fences, orders/seeds, masks, conflict lists. PA → [LLM-guided][P-LLM]
 127. Run DRC after every API-driven placement pass. PA → [LLM-guided][P-LLM]
 128. Apply results as one undo step via IPC, respecting locked footprints. PA → [LLM-guided][P-LLM]
@@ -174,7 +174,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 151. OpenROAD PcbRouter as BSD-3 KiCad-native second baseline. RC → [families][R-families]
 
 ## J. Negotiation and rip-up
-152. PathFinder (b+h)·p negotiated congestion with VPR defaults. RA, ST, CD → [PathFinder][R-PathFinder]
+152. PathFinder negotiated congestion with the VPR schedule (VPR's cost is b·h·p; normalize base costs before reusing acc_fac 1). RA, ST, CD → [PathFinder][R-PathFinder]
 153. Formulation C: windowed multi-layer PathFinder grid router rerouting only offenders. ST → [PathFinder][R-PathFinder]
 154. Negotiation inside detailed routers (FanoutNet MCR multi-term 3-D A* cost). RA → [PathFinder][R-PathFinder]
 155. Situs "Globally Optimised Main" conflict-cost escalation. RC → [PathFinder][R-PathFinder]
@@ -189,7 +189,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 
 ## K. Topological routing
 164. Homotopy-class (rubber-band sketch over CDT) as route representation. RC → [topological][R-topo]
-165. SURF cut-capacity routability test that names the bottleneck. RC → [topological][R-topo]
+165. SURF cut-capacity routability test that names the bottleneck (exact only for a single-layer sketch). RC → [topological][R-topo]
 166. O(n log n + m) rubber-band → octilinear/rectilinear conversion. RC → [topological][R-topo]
 167. Spend LLM effort on topology, not angle (~5% octilinear penalty). RC → [topological][R-topo]
 168. Persist routes as topology; re-tighten after placement nudges. RC → [topological][R-topo]
@@ -212,7 +212,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 183. Staggered-array LP/ILP and flow escape. RC → [escape][R-escape]
 184. Multi-commodity-flow ordered escape (MCMCF-Router 525 pins). RC, VP → [escape][R-escape]
 185. LP network flow solving ordering + escape together. RC, ST → [escape][R-escape]
-186. MonoSAT multi-layer escape with via types and proven minimal layer counts. RC → [escape][R-escape]
+186. MonoSAT multi-layer escape with via types and proven minimal escape-layer counts (under its escape model). RC → [escape][R-escape]
 187. Negotiated escape (NCER), boundary escape (B-escape), multi-component SER. RC → [escape][R-escape]
 188. Full-flow SER → refinement → gridless area routing with constraints each stage (Lin DAC'21). RC → [escape][R-escape]
 189. Escape solver that can return "impossible" → stackup/HDI decision. RC → [escape][R-escape]
@@ -229,7 +229,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 198. ACO with two-ant synchronized DP routing. RC → [length/bus][R-length]
 199. Meander self-crosstalk speedup; ILP widening of meanders. RC → [length/bus][R-length]
 200. Reserve meander area as extension budgets before routing. RC → [length/bus][R-length]
-201. Explicit meander rules (pitch ≥3w, min corner radius, no tight meanders). RC → [length/bus][R-length]
+201. Explicit meander rules (spacing from the interface rule pack, TopoR pitch ≥3w only as fallback; min corner radius, no tight meanders). RC → [length/bus][R-length]
 202. Accordion / trombone / sawtooth / trapezoid-arc pattern generators. RC → [length/bus][R-length]
 203. KiCad greedy fill-then-trim meander engine; chain-level tuning fields. RA, RC → [PNS][R-PNS]
 204. Byte-lane auto-interactive delay tuning (Allegro AiDT). RC → [length/bus][R-length]
@@ -256,7 +256,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 221. Via-cost knobs (Via Miser, via_costs) set per net class by LLM. RC → [layers/vias][R-vias]
 
 ## P. Net ordering
-222. Order decides who gets good resources; negotiation protects completion. RC → [ordering][R-order]
+222. With negotiation, order decides who gets good resources; without it, order also decides completion. RC → [ordering][R-order]
 223. Textbook heuristics (pins-in-bbox, length, criticality); junction-pin ordering. RC → [ordering][R-order]
 224. KRT Maximum Planar Subset ordering (unrolled boundaries), inside-out, middle-out. RA → [ordering][R-order]
 225. Toporouter pairwise-interaction scoring as a quantified conflict graph for the LLM. RC → [ordering][R-order]
@@ -297,8 +297,8 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 254. Headless PNS log replay (`qa/tools/pns`) for regression tests. RA → [PNS][R-PNS]
 
 ## T. Freerouting
-255. Freerouting 2.6.x pinned as bulk router, fallback and routability judge, re-scored with KiCad DRC. RA, ST → [Freerouting][R-Freerouting]
-256. Use Freerouting fidelity knobs (-mp, -mt 0, improvement threshold) inside loops. ST → [Freerouting][R-Freerouting]
+255. Freerouting pinned to v2.5.0 (2.6.x is RC-only) as bulk router, fallback and routability judge, re-scored with KiCad DRC. RA, ST → [Freerouting][R-Freerouting]
+256. Use Freerouting fidelity knobs (-mp, -mt 0, improvement threshold) inside loops; final runs -mt 1. ST → [Freerouting][R-Freerouting]
 257. Freerouting REST/MCP/CLI/Docker/Python-client integration paths. RA, ST → [Freerouting][R-Freerouting]
 258. Improve Freerouting's fanout congestion and rip-up schedule (GPL-3 contribution). RA → [Freerouting][R-Freerouting]
 
@@ -310,7 +310,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 
 ## V. Cross-domain transplants (see ranked list)
 263. PCB-PSDL imperative placement language with shared variables. CD, VP → [scene][P-scene]
-264. LLM-free coordinate-descent repair with area-weighted OT + edit-distance terms. CD, VP → [scene][P-scene]
+264. LLM-free greedy local-search repair (constant/direction rewrites) with area-weighted OT + edit-distance terms. CD, VP → [scene][P-scene]
 265. LayoutVLM self-consistency relation filter. CD, VP → [scene][P-scene]
 266. Frame-free / pin-anchored relations to avoid multi-hop drift (R3L). CD → [scene][P-scene]
 267. Open-universe auto-repair (exception deletion, contradiction patterns, unsat restarts). CD → [scene][P-scene]

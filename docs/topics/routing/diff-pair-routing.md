@@ -33,7 +33,7 @@
 - **DeepPCB**: routes diff pairs (vendor), excludes length matching/skew [V].
 
 ## Recommendations for our system
-- Pipeline [I]: (1) median-point detection (pair pins, compute P/N merge points); (2) coupled centerline routing in the planner (KRT-style pose-space A*); (3) realization with KiCad's gateway DP placer from LLM-chosen waypoints; (4) PNS skew tuning; (5) return/stitching vias at layer changes.
+- Pipeline [I]: (1) median-point detection (pair pins, compute P/N merge points); (2) coupled centerline routing in the planner (KRT-style pose-space A*); (3) realization with KiCad's gateway DP placer from planner-chosen waypoints (the LLM supplies corridor and side-of-obstacle relations, never coordinates); (4) PNS skew tuning; (5) return/stitching vias at layer changes.
 - For BGAs with many pairs, use median points + min-cost flow (Li 2012) for simultaneous DP escape; DP protection zones as constraints ([escape](escape-routing.md)) [I].
 - Relation API: `pair(netP, netN, gap, max_uncoupled)`, `return_vias(pair|class)`, layer preference, via limits ([LLM routing evidence](llm-routing-evidence.md)) [I].
 - Route and lock pairs before bulk routing (Situs/DeepPCB practice); PcbRouter (BSD-3) code is a median-point reference [I].

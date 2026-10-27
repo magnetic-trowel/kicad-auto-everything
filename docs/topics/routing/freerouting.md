@@ -3,7 +3,7 @@
 **TL;DR**
 - GPL-3.0 Java router, Specctra DSN → SES; pipeline **fanout → batch A* over convex expansion rooms with escalating rip-up → keep-or-undo optimizer**.
 - De facto **routability oracle** of the placement literature (NS-Place, Cypress v1.9.0, ModuPlace, OmniLayout) and the strongest open rule-based router on PCBWorld D3-B (0.78 clean-pass with v2.1.0).
-- It **improved sharply in Sept–Oct 2026**: own nightly "clean" rate 31–36% (v1.9/2.4.1) → 75.2% (2.5.0) → **92.4% (2.6.0-RC4)** — partly a DRC-measurement fix; "clean" is its own check, not KiCad DRC.
+- It **improved sharply in Sept–Oct 2026**: on its 1,142-fixture nightly suite, "clean" rose from 36.2% (1.9.0) and 31.3% (2.4.1) to 75.2% (2.5.0) and **87.7% (2.6.0-RC3)**. RC4's 92.4% covers only 979 fixtures (tiers A+B), so it is not comparable. Part of the jump is a DRC-measurement fix, per-version time budgets differ up to ~100×, and "clean" is its own check, not KiCad DRC.
 - Diff pairs and meanders are **parsed but not routed**; fanout has no congestion analysis; rip-up escalation is linear and "sub-optimal" per maintainers.
 - Headless CLI, REST server, MCP server, Docker and a Python client exist; under GPL-3.0-or-later it can be integrated in-process or out-of-process.
 
@@ -30,22 +30,24 @@
 | 2.4.1 | 1,142 | 31.3% | 52.3% |
 | 2.5.0 | 1,142 | 75.2% | 75.5% |
 | 2.6.0-RC3 | 1,142 | 87.7% | 87.8% |
-| 2.6.0-RC4 | 979 | 92.4% | 92.5% |
+| 2.6.0-RC4 | 979 (tiers A+B only) | 92.4% | 92.5% |
 
-Tiers: A (452 two-layer canaries) 100% clean from RC1; B (527, 2–4 layers) 86.0% at RC4; C (141 dense/6+ layers) 69.5% at RC3; **D (22 stress boards) 13.6–18.2%**. Fixtures: ~1,143 PCBench-derived DSNs, DAC2020 bm01–bm11, KiCad 10 demos. Caveats: "clean" = Freerouting's own clearance check; #925 removed false positives on composite pads and rounding noise (part of the jump is measurement); KiCad DSN export omits copper-to-edge clearance (Issue 558) — PCBench treats KiCad DRC as arbiter ([pcbench README](https://github.com/freerouting/freerouting/blob/master/scripts/pcbench/README.md)).
+RC4 has no Tier C/D rows (979 = 452 + 527); on tiers A+B alone, 2.5.0 scores 80.4% and RC3 92.0%. Job time budgets per version: 360 min (1.9.0), 1–30 min (2.4.1), 5–45 min (2.5.0, RC1), 360–480 min (RC2–RC4). Tiers: A (452 two-layer canaries) 100% clean from RC1; B (527, 2–4 layers) 86.0% at RC4; C (141 dense/6+ layers) 69.5% at RC3; **D (22 stress boards) 13.6–18.2% (RC2/RC3; 2.5.0: 9.1%)**. Fixtures: PCBench-derived DSNs (the 2026-10-20 report lists all 1,142 under its PCBench group); the notes also name DAC2020 bm01–bm11 and KiCad 10 demos. Caveats: "clean" = Freerouting's own clearance check; #925 removed false positives on composite pads and rounding noise (part of the jump is measurement); KiCad DSN export omits copper-to-edge clearance (Issue 558) — PCBench treats KiCad DRC as arbiter ([pcbench README](https://github.com/freerouting/freerouting/blob/master/scripts/pcbench/README.md)).
 
 **Runtime profiles** (2.5.0-RC9, [doc](https://github.com/freerouting/freerouting/blob/master/docs/research/large-board-autorouter-performance.md) [P]): Aleste-520EX (2210 pins, 2 layers) one 1748 s pass cut incompletes 1620 → 882; logicbone (8 layers) fanout 899 s; si31-3 router 640 s + optimizer 807 s; "pin count does not separate the slow boards from the fast ones". Full runs "a few minutes to several hours".
 
-**External measurements**: PCBWorld (v2.1.0, `-mp 10`): D3-A CP 0.80 (routability only 0.91), D3-B 0.78, 7–10 s/board; WL 156 mm and 0.74 vias beat the human reference (170 mm, 1.18) ([PCBWorld](pcbworld.md)). FanoutNet (v1.4.5.1): 81%, >24 h on 4/5 HDI boards. Cypress used v1.9.0 two layers. DeepPCB marketing claims ("60–75%") conflict with these [V].
+**External measurements**: PCBWorld (v2.1.0, `-mp 10`): D3-A CP 0.80 (routability only 0.91), D3-B 0.78 (10 boards), 7–10 s/board; WL 156 mm and 0.74 vias vs the human reference's 170 mm and 1.18 on D3-A, but with ~9% of connections unrouted (on D3-B, at routability 1.00: 535 vs 570 mm, 3.48 vs 6.70 vias) ([PCBWorld](pcbworld.md)). FanoutNet (v1.4.5.1): 81%, >24 h on 4/5 HDI boards. Cypress used v1.9.0 two layers. DeepPCB marketing claims ("60–75%") conflict with these [V].
 
 ## Recommendations for our system
-- Ship Freerouting latest 2.6.x, **pinned**, as bulk router, fallback and routability judge; re-score outputs with KiCad DRC; record version/flags in every benchmark [I].
-- Use fidelity knobs in loops (`-mp`, `-mt 0`, improvement threshold); budget minutes–hours on large boards; run as a JVM process (simplest) even though GPL-3.0-or-later now allows tighter integration [I].
+- Ship Freerouting **pinned to v2.5.0** (latest release, 2026-10-05; 2.6.x exists only as RCs) until 2.6.0 is released, as bulk router, fallback and routability judge; re-score outputs with KiCad DRC; record version/flags in every benchmark [I].
+- Final runs use `-mt 1`: Freerouting warns that multi-threaded optimization "is known to generate clearance violations" ([integration pitfalls](../kicad/specctra-freerouting-integration.md)) [P]. Use fidelity knobs in loops (`-mp`, `-mt 0` = optimizer off, improvement threshold) for fast probes only; budget minutes–hours on large boards; run as a JVM process (simplest) even though GPL-3.0-or-later now allows tighter integration [I].
 - Pre-route and lock SI-critical classes (pairs, matched groups, escape) before bulk; compensate known weaknesses with LLM-set order hints, via costs, layer directions [I].
 - Contribute or wrap improvements (congestion-aware fanout, negotiated rip-up schedule) — the code is GPL-3 and actively developed [I].
 
 ## Conflicts and open questions
 - No independent KiCad-DRC re-scoring of 2.5/2.6 on PCBWorld-Bench; the C# improvements' algorithmic content was not reviewed.
+- Two self-reported suites disagree: the v2.5.0 release notes give 1,157 boards, 30.9% (2.4.1) → 75.0% clean, Tier C 49.2%, Tier D 50% ([verification_kicad_and_tools.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md) [P]); the nightly above gives 1,142 fixtures, 2.5.0 Tier D 2/22 (9.1%). Tier definitions may differ; name the suite wherever a rate is quoted.
+- The nightly fixtures and PCBWorld D3 both derive from PCBench, so newer Freerouting versions may have been tuned on boards that overlap the D3 benchmark [I].
 
 ## Sources
 - research notes: [routing_algorithms.md § Q1, Q2, Q4, Q6, Q7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/routing_algorithms.md); [solver_toolbox.md § 5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md); [verification_papers.md § 2.1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)

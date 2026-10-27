@@ -2,14 +2,14 @@
 
 **TL;DR**
 - Monolithic CP-SAT placement (4-way rotation, keep-outs, hard decap distance, exact pin HPWL) finds a first feasible solution in **0.24 s (N=30) → 5.9 s (100) → 15 s (150) → 73 s (200) → none in 300 s (300, 1000)** at 0.5 mm.
-- **Free rotation is the main difficulty**: N=300 with fixed orientations is feasible in 82.6 s; without decap constraints still infeasible; a dedicated packing subsolver made N=300 feasible in 271 s.
-- **Hierarchical CP-SAT + LNS** beats monolithic by 22–55% HPWL at N=100 in similar wall time (one seed; monolithic varies ~2× across seeds) and stays feasible at 300 (2,461 mm, 124 s) and 1000 (22,596 mm, 294 s).
-- **SA for wirelength + CP-SAT for legality wins at every size**: 4–46% (median ≈20%) better than monolithic CP-SAT at N=30–100; 2,278 vs 2,461 mm (hierarchical) at N=300; at N=1000 legal **13,774 mm vs 22,596 mm** after cluster-wise CP-SAT legalization (3.9 s). CP-SAT's HPWL lower bound stays at 5–25% of the incumbent.
+- **Free rotation is the main difficulty**: N=300 with fixed orientations is feasible in 82.6 s; without decap constraints still no solution in 300 s (UNKNOWN, not a proof of infeasibility); a dedicated packing subsolver made N=300 feasible in 271 s.
+- **Hierarchical CP-SAT + LNS** beats monolithic by 22–55% HPWL at N=100 in similar wall time (one instance; the ~2× spread across seeds is mostly instance variance, because `--seed` also changes the board) and stays feasible at 300 (2,461 mm, 124 s) and 1000 (22,596 mm, 294 s).
+- **SA for wirelength + CP-SAT for legality** beats monolithic CP-SAT at N=30–100 by 4–46% (median ≈20%), but **hierarchical CP-SAT + LNS wins at N=100** (480.5 vs 503.5 mm at 0.5 mm; 454.4 vs 465.9 mm at 0.1 mm). SA leads at N=300 (2,278 vs 2,461.5 mm, with ~2× the wall time: ~249 vs 124 s) and at N=1000 (legal **13,774 mm vs 22,596 mm** after cluster-wise CP-SAT legalization in 3.9 s; there the hierarchical LNS ran only 14 iterations and accepted 1, because full-model cloning cost ~8.6 s per 3 s solve). Single instances throughout. CP-SAT's HPWL lower bound is 2.5–25% of the incumbent with rotation and 51% with fixed orientation.
 - Geometry: full exact re-check of a 1000-part board ≤5 ms; per-move Python checks 12–30 µs. PathFinder prototype (Python A*) converges in 15 negotiation iterations for 50–300 nets (2.2–61 s); goal-directed A* beat SciPy's C Dijkstra 2×.
 
 ## Key facts
 
-**Setup** [M]: 4 vCPU, 15 GB RAM, Python 3.13, OR-Tools 9.15.6755, Shapely 2.2.0, rtree 1.4.1, pyclipper 1.4.0, NumPy 2.5.4; CP-SAT `num_workers=4`. Synthetic instances from `pcbgen.py`: R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers at courtyard size; board aspect 1.5 at 45% utilization; 4 mounting-hole keep-outs (6×6 mm) + one edge keep-out; 2–4 decaps per IC with **hard decap-pin ↔ IC-VDD-pin L1 ≤ 3 mm**; 2–4-pin nets with cluster locality; 4-way rotation; pin-level exact HPWL. Scripts (`pcbgen.py`, `cpsat_place.py`, `hier_place.py`, `sa_place.py`, `legalize_clusters.py`, `geom_bench.py`, `pathfinder_bench.py`, `results*.jsonl`) are in [`tools/research/solver-bench/`](../../../tools/research/solver-bench/) (raw results in `results/`).
+**Setup** [M]: 4 vCPU, 15 GB RAM, Python 3.13, OR-Tools 9.15.6755, Shapely 2.2.0, rtree 1.4.1, pyclipper 1.4.0, NumPy 2.5.4; CP-SAT `num_workers=4`. Synthetic instances from `pcbgen.py`: R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers at courtyard size; board aspect 1.5 at 45% utilization; 4 mounting-hole keep-outs (6×6 mm) + one edge keep-out; 2–4 decaps per IC with **hard decap-pin ↔ IC-VDD-pin L1 ≤ 3 mm**; 2–3-pin nets with cluster locality and no power/ground nets (decap GND pins are left to an implied plane); 4-way rotation; pin-level exact HPWL. Scripts (`pcbgen.py`, `cpsat_place.py`, `hier_place.py`, `sa_place.py`, `legalize_clusters.py`, `geom_bench.py`, `pathfinder_bench.py`, `results*.jsonl`) are in [`tools/research/solver-bench/`](../../../tools/research/solver-bench/) (raw results in `results/`).
 
 | N | Board (mm) | Nets | Decap constraints | CP-SAT vars |
 |---|---|---|---|---|
@@ -51,9 +51,9 @@ At N=1000 each LNS iteration cost ~8.6 s for a 3 s solve (full-model cloning/pre
 | N=300 "opt2" encoding | none |
 | N=300 at 35% utilization | 173.7 s |
 | N=300 + dedicated packing subsolver (area-energetic + energetic + timetabling NoOverlap2D reasoning, 5,000 pairwise pairs; 9.15 API fix) | **271 s** |
-| N=100 seeds 0–3 | first feasible 4.0–5.9 s; 60 s HPWL 616–1,177 mm (~2× spread) |
+| N=100 seeds 0–3 | first feasible 4.0–5.9 s; 60 s HPWL 643.5–1,176.5 mm ("var"; 616.5 is "opt2" on seed 0). `--seed` also seeds the instance generator, so these are four different boards (95–124 nets, 21–25 decaps): the ~2× spread is mostly instance variance, not solver noise |
 
-**E. Simulated annealing + CP-SAT legalization/polish** (`sa_place.py`: pure Python + NumPy, single thread, penalty λ ramp 0.5→200, shift/rotate/swap; 9.0–11.7k moves/s for N=30–1000). HPWL mm, legal unless noted; CP-SAT 4 workers.
+**E. Simulated annealing + CP-SAT legalization/polish** (`sa_place.py`: pure Python + NumPy, single thread, penalty λ ramp 0.5→200, shift/rotate/swap; 9.0–11.7k moves/s for N=30–1000). HPWL mm, legal unless noted; CP-SAT 4 workers; "seed" is the instance seed, so each seed is a different board.
 | N, grid (seed) | SA alone | → CP-SAT legalize | → + CP-SAT LNS | Hier. + LNS | Monolithic 60 s |
 |---|---|---|---|---|---|
 | 30, 0.5 (0) | 195.5 (10 s) | – | **182.0** (+20 s) | – | 218.5–243.5 |
@@ -65,7 +65,7 @@ At N=1000 each LNS iteration cost ~8.6 s for a 3 s solve (full-model cloning/pre
 | 300, 0.5 (0) | 2,316, 1 decap viol. (120 s) | 2,316 (6.9 s) | **2,278** (+122 s) | 2,461.5 | none |
 | 300, 0.1 (0) | 2,467.1 (120 s) | – | **2,399.2** (+120 s) | 2,473.2 | none |
 | 1000, 0.5 (0) | 13,552.5, 16 overlaps + 2 decap (240 s) | full-board: none in 120 s; **cluster-wise: legal 13,773.5 in 3.9 s** | – | 22,595.5 | none |
-Four N=1000 SA runs (240–300 s) ended at 12,093–13,552 mm with 8–25 residual overlaps. A first windowed legalizer that cloned the full model and freed k=30 neighbours of *every* violator in one model did not finish in a 10-min budget; `legalize_clusters.py` (one small model per violation cluster: 12 nearest parts free inside the window bbox +3 mm, overlapping parts and decap partners fixed, min L1 displacement, 3 s/window, k ×1.6 on failure) legalized 41 windows in 3.9 s.
+Four N=1000 SA runs (240–300 s) ended at 12,093–13,552 mm with 8–25 residual overlaps (per [solver_toolbox.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)). Only some are in `results/`: 12,267.5 mm / 25 overlaps (240 s, `results_sa1000w.jsonl`), 12,843 mm / 16 overlaps + 2 out-of-board (300 s, `results_sa.jsonl`), and the 13,552.5 mm legalizer input (`results_sa1000_legal.jsonl`, no record of its SA run); the 12,093 mm / 8-overlap run is not committed. A first windowed legalizer that cloned the full model and freed k=30 neighbours of *every* violator in one model did not finish in a 10-min budget; `legalize_clusters.py` (one small model per violation cluster: 12 nearest parts free inside the window bbox +3 mm, overlapping parts and decap partners fixed, min L1 displacement, 3 s/window, k ×1.6 on failure) legalized 41 windows in 3.9 s.
 
 **F. Geometry** (`geom_bench.py`): see table in [geometry libraries](geometry-libraries.md) — NumPy AABB 11–23 µs/move, grid hash 13–16 µs, static STRtree ~24–27 µs, exact octagons 27–32 µs; full exact check 0.49 ms (100) → 4.95 ms (1000) → 15.7 ms (3000); pyclipper offset 12.7–14.6 µs.
 
@@ -80,14 +80,14 @@ Four N=1000 SA runs (240–300 s) ended at 12,093–13,552 mm with 8–25 residu
 Goal-directed search beat raw C speed; negotiation converged in 14–15 iterations (VPR default cap 50); 2→4 layers doubled runtime but barely changed results (2-via hop cost 16 > early congestion penalties). A first generator allowing shared/abutting pin nodes never converged at 150/300 nets (5 and 13 overused nodes after 50 iterations) → reserve pins and pad escapes per net before negotiation. 2-pin nets, no rule geometry: bounds algorithmic cost, not routing quality.
 
 ## Recommendations for our system
-- Monolithic CP-SAT only up to ~100 parts at 0.5 mm; hierarchical soft-macro floorplan + window sub-model LNS beyond; fix orientations upstream at scale; add one packing-subsolver worker; "opt2" encoding at N ≥ 100; average over seeds (2× HPWL spread) [M/I].
+- Monolithic CP-SAT only up to ~100 parts at 0.5 mm; hierarchical soft-macro floorplan + window sub-model LNS beyond; fix orientations upstream at scale; add one packing-subsolver worker; "opt2" encoding at N ≥ 100 (one instance; every measured hierarchical/LNS/legalization run used "var"); separate instance seeds from solver seeds before averaging (the 2× HPWL spread is across instances) [M/I].
 - Use SA (Rust) for HPWL quality and CP-SAT for legality; legalize globally up to ~300 parts, per violation cluster (small window sub-models, never full-model clones) beyond; run the ≤5 ms exact check after each accepted move batch [M/I].
 - Router core: goal-directed A* with bounding windows + PathFinder (VPR schedule) in Rust; reserve pins/pad escapes per net [M/I].
-- Validate on real boards next (PCBWorld D3, Cypress small suite): synthetic instances bound scale, not quality [I].
+- Validate on real boards next (PCBWorld D3, Cypress small suite; Cypress's KiCad files have no Edge.Cuts outline, no copper and a stale net table, so synthesize outlines first, see [open board sources](../data/open-board-sources.md)): synthetic instances bound scale, not quality [I].
 
 ## Conflicts and open questions
-- Synthetic instances lack irregular outlines, many fixed parts, height/thermal/EMI rules.
-- Single seeds for most hierarchical/SA comparisons; monolithic CP-SAT showed ~2× HPWL spread across seeds, so small differences (e.g. 454 vs 466 mm at N=100) are not significant.
+- Synthetic instances lack irregular outlines, many fixed parts, height/thermal/EMI rules, and high-fanout power/ground nets (all nets have 2–3 pins).
+- Single instances for most hierarchical/SA comparisons. The ~2× spread across seeds 0–3 compares four different boards (`cpsat_place.py --seed` also seeds `make_instance`), so it is not a solver-noise estimate; whether small differences (e.g. 454 vs 466 mm at N=100) are significant needs repeated solver seeds on one instance.
 
 ## Sources
 - research notes: [solver_toolbox.md § 1, § 3, § 5, § 6, § 7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)

@@ -21,7 +21,9 @@ Results and interpretation: [docs/topics/solvers/benchmarks.md](../../docs/topic
 Requirements: Python 3.11+, `ortools` (tested 9.15), `numpy`, `scipy`,
 `shapely` (2.x), `rtree`, optionally `pyclipper`. Run e.g.
 `python3 cpsat_place.py 100 0.5 60` or `PY=/path/to/python ./run_sa.sh`.
-Most results are single-seed; plain CP-SAT varied ~2x across seeds.
+Most results are single-seed. `--seed` in `cpsat_place.py` also seeds the instance
+generator, so the ~2x spread of plain CP-SAT across seeds 0–3 compares four different
+boards (instance variance), not solver noise on one board.
 
 ## `layout-data/`: measurements on open-source KiCad boards
 

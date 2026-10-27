@@ -2,7 +2,7 @@
 
 **TL;DR**
 - Net order and cost weights are the main levers of sequential routers; most ML that helps on PCBs learns exactly these two.
-- The literature conflicts (Abel 1972: aggregate completed ideal length order-independent; textbooks: order "greatly affects" results). Resolution: **order decides which nets get the good resources**, not aggregate completion — a priority decision an LLM can legitimately make.
+- The literature conflicts (Abel 1972: aggregate completed ideal length order-independent; textbooks: order "greatly affects" results). Resolution: **with negotiation/rip-up, order mainly decides which nets get the good resources** — a priority decision an LLM can legitimately make. In sequential routing it also decides completion (PCBWorld: the first `net_select` often decides success; a learned Freerouting order reached 96% completion).
 - Protect aggregate completion with **negotiation/rip-up**, which makes order matter much less (negotiation-based layer assignment; SURF simultaneous global routing; MCTS routers "not prone to net ordering").
 - Give the LLM quantified conflict data: toporouter-style **pairwise-interaction scores** and KRT **MPS crossing analysis**.
 

@@ -3,16 +3,16 @@
 **TL;DR**
 - **Division of responsibility**: the LLM owns intent (hierarchy, sides, relations/constraints with ordinal magnitudes, priorities, per-class engine choice, topology hints, pin-swap proposals); solvers own geometry; KiCad DRC + domain checkers own legality.
 - **Placement**: clusters/sides from LLM + netlist → per-cluster CP-SAT soft macros → Cypress-style differentiable global placement (or CP-SAT soft-macro floorplan) → CP-SAT min-displacement legalization → Rust SA + windowed CP-SAT LNS → multi-tier metrics + conflict list back to the LLM.
-- **Routing**: escape by exact solvers → diff pairs/buses by centerline A* + PNS DP placer with reserved meander area → bulk by Freerouting 2.6.x and/or in-house Rust A*/PathFinder → PNS shove repair/smoothing (+ search over PNS) → KiCad tuning → KiCad DRC + SI checks.
+- **Routing**: escape by exact solvers → diff pairs/buses by centerline A* + PNS DP placer with reserved meander area → bulk by Freerouting (pinned v2.5.0 until 2.6.0 is released; `-mt 1` in final runs) and/or in-house Rust A*/PathFinder → PNS shove repair/smoothing (+ search over PNS) → KiCad tuning → KiCad DRC + SI checks.
 - **Tuning and improvement**: Optuna MOTPE (+ LLAMBO warm start); pyribs portfolios; offline LLM evolution of orders/costs/objectives through restricted APIs.
 - Code is **GPL-3.0-or-later**: GPL engines (Freerouting, KiCad PNS / PCBWorld-Engine, CGAL) may be integrated in-process; exclude Gurobi, OptiMathSAT, Triangle, GPL-2.0-only code; AGPL reference-only.
 
 ## Key facts
 
 **Evidence behind the stack** [P/M]
-- Decomposition is mandatory: NS-Place MILP failed 10/14 boards in 4 h; HiePlace's ILP baseline failed at 308–404 parts; our monolithic CP-SAT found nothing at 300/1000 parts; hierarchical CP-SAT + LNS stays feasible at 100–1000 ([benchmarks](benchmarks.md)).
-- Cypress's differentiable recipe scales to 6.6k parts with MOTPE + Freerouting evaluation ([analytical](analytical-differentiable.md)).
-- Freerouting has the best clean-pass on medium real boards in PCBWorld; KRT is fastest; LLM agents are not routers ([PCBWorld](../routing/pcbworld.md)).
+- Decomposition is mandatory: NS-Place's vanilla MILP found no feasible placement in 4 h on 9–10 of 14 boards; HiePlace's ILP baseline gave no result at 308–404 parts; our monolithic CP-SAT (feasible to ~200 parts) found nothing at 300/1000 parts in 300 s; hierarchical CP-SAT + LNS stays feasible at 100–1000 ([benchmarks](benchmarks.md)).
+- Cypress's differentiable recipe ran on boards of up to 6,628 parts, of which at most 2,152 were movable, with MOTPE + Freerouting evaluation ([analytical](analytical-differentiable.md)).
+- Freerouting has the best clean-pass on medium real boards in PCBWorld (D3-B, 10 boards); KRT is fastest; LLM agents are not routers ([PCBWorld](../routing/pcbworld.md)).
 - Relations beat coordinates (RAC 90.9% vs 23.2%) ([LLM routing evidence](../routing/llm-routing-evidence.md)); hierarchy matters most (ModuPlace) ([LLM-guided placement](../placement/llm-guided-placement.md)).
 - pyclipr lacks Linux wheels; pyclipper and jagua-rs are viable ([geometry](geometry-libraries.md)).
 
@@ -23,7 +23,7 @@
 | Clustering, sides, constraints | LLM + netlist graph (rustworkx / NetworkX) + rules | Cypress assumes pre-assigned sides | Apache-2.0 / BSD-3 | OK |
 | Cluster placement (≤50 parts, hard decap/keep-out/alignment) | CP-SAT formulation A, 0.5 mm grid, "opt2", ≥2 aspect variants ([CP-SAT](cp-sat-milp-smt.md)) | HiePlace-style MP with HiGHS/SCIP (not Gurobi) | Apache-2.0 | OK |
 | Global placement 100–1000 parts | Cypress-style JAX/PyTorch loss (Gumbel orientation, two-sided density, net crossing, decap/keep-out/thermal/loop penalties) or CP-SAT soft-macro floorplan | Cypress itself (GPU); DREAMPlace (BSD-3, old toolchain); SA | Apache-2.0 | OK |
-| Legalization | CP-SAT min-displacement with hard constraints (`hier_place.py::legalize`) ([legalization](../placement/legalization.md)) | Tetris + Abacus; sparrow GLS on jagua-rs; greedy (Rust) | Apache / MIT / MPL-2.0 | OK |
+| Legalization | CP-SAT min-displacement with hard constraints: full board (`hier_place.py::legalize`) up to ~300 parts, per violation cluster (`legalize_clusters.py`) beyond, since the full-board model found no solution at N=1000 ([benchmarks](benchmarks.md), [legalization](../placement/legalization.md)) | Tetris + Abacus; sparrow GLS on jagua-rs; greedy (Rust) | Apache / MIT / MPL-2.0 | OK |
 | Orientation/side cleanup | DEE + A*/ILP (transplant) | CP-SAT | own | OK |
 | Detailed placement | SA (Rust, incremental HPWL/RUDY) + windowed CP-SAT LNS | tabu | own | OK |
 | Weight tuning / Pareto | Optuna MOTPE / NSGA-II (+ OptunaHub LLAMBO first ~10 trials) ([tuning](bayesian-tuning.md)) | SMAC, BoTorch, pymoo | MIT / BSD / Apache | OK |
@@ -32,11 +32,11 @@
 | Escape / fan-out | Network-flow MILP (HiGHS/SCIP) or CP-SAT; MonoSAT for multi-layer ([escape](../routing/escape-routing.md)) | SAT ordered escape; CBS/ECBS (libMultiRobotPlanning) | MIT / Apache; MonoSAT MIT **only with `-DGPL=OFF`** (default links GPLv2 code — avoid unless it is "or later") | OK with flag |
 | Topology tier | CDT (PythonCDT) + SURF cut check ([topological](../routing/topological-routing.md)) | gEDA toporouter code (GPLv2+) | MPL/BSD/Apache; GPLv2+ | OK |
 | Diff pairs / buses | KRT-style pose-space centerline A* + KiCad PNS DP placer ([diff pairs](../routing/diff-pair-routing.md)) | PcbRouter median points | MIT / GPL-3 / BSD-3 | OK |
-| Bulk routing | In-house Rust A*/PathFinder (VPR defaults) ([PathFinder](../routing/pathfinder-negotiated-congestion.md)) + Freerouting 2.6.x headless ([freerouting](../routing/freerouting.md)) | KRT (MIT, reuse), tscircuit (MIT, Node), DeepPCB cloud (proprietary service, Apache-2.0 plugin; non-SI nets only) | own / MIT / GPL-3 | OK |
-| Realization, repair, smoothing | KiCad PNS via PCBWorld-Engine-style bindings, checkpoint/restore search ([PNS](../routing/kicad-pns-router.md)) | KiCad `qa/tools/pns` | GPL-3 | OK in-process |
+| Bulk routing | In-house Rust A*/PathFinder (VPR schedule, normalized base costs) ([PathFinder](../routing/pathfinder-negotiated-congestion.md)) + Freerouting v2.5.0 headless, pinned until 2.6.0 is released ([freerouting](../routing/freerouting.md)) | KRT (MIT, reuse), tscircuit (MIT, Node), DeepPCB cloud (proprietary service, Apache-2.0 plugin; non-SI nets only) | own / MIT / GPL-3 | OK |
+| Realization, repair, smoothing | KiCad PNS via PCBWorld-Engine-style bindings (the engine is pinned to KiCad 9.0.8), checkpoint/restore search ([PNS](../routing/kicad-pns-router.md)) | KiCad `qa/tools/pns` | GPL-3 | OK in-process |
 | Length tuning | Reserved-area planning + PNS meander engine ([length matching](../routing/length-matching-and-buses.md)) | KRT trombones | GPL-3 / MIT | OK |
 | Geometry | Shapely 2 (batch), pyclipper (offset, Minkowski), grid hash/NumPy inner loop, jagua-rs (Rust exact) | rtree, PythonCDT, CGAL (GPLv3+) | BSD / MIT / MPL / GPL | OK; **avoid `triangle`** |
-| Verification | `kicad-cli pcb drc` + PCBWorld clean-pass metric + SI/practitioner checks ([skepticism](../routing/autorouter-skepticism.md)) | Freerouting `-drc` JSON | GPL | OK |
+| Verification | `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` (add `--all-track-errors` in repair loops) + PCBWorld clean-pass metric + SI/practitioner checks ([skepticism](../routing/autorouter-skepticism.md)) | Freerouting `-drc` JSON | GPL | OK |
 
 **Excluded / restricted**: Gurobi (proprietary — HiePlace and Holodeck used it; substitute CP-SAT/HiGHS/SCIP); OptiMathSAT (research-only); Shewchuk Triangle (non-commercial); GPL-2.0-only components; AGPL reference-only; HiePlace text CC BY-NC-ND (reimplement from description, no code exists); DeepPCB cloud requires uploading boards (terms unreviewed). Apache-2.0 → GPLv3 compatibility per the ASF; MPL-2.0 combinable per Mozilla FAQ; LGPL fine [P/I].
 
@@ -54,7 +54,7 @@
 - First ablations: (a) LLM relational planner + classical realizers vs Freerouting/DeepPCB on PCBWorld D3 with SI constraints; (b) LLM topology plan + cut check vs router alone; (c) VLM regions vs random-region control [I].
 
 ## Conflicts and open questions
-- No end-to-end open implementation of this stack exists; pieces are validated separately; real-board validation of the placement half (PCBWorld D3, Cypress small suite) is the next experiment.
+- No end-to-end open implementation of this stack exists; pieces are validated separately; real-board validation of the placement half (PCBWorld D3, Cypress small suite) is the next experiment; Cypress's KiCad files need synthesized outlines and rebuilt net tables first ([open board sources](../data/open-board-sources.md)).
 - PCBWorld-Engine maintenance cost across KiCad 10/11 unknown; MonoSAT's GPL component version not confirmed.
 
 ## Sources
