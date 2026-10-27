@@ -7,6 +7,7 @@
     kaebench prepare -m MANIFEST
     kaebench run     --adapter freerouting -k 5
     kaebench report  RUN_DIR [RUN_DIR ...]
+    kaebench rescore RUN_DIR [RUN_DIR ...]
 """
 import argparse
 import json
@@ -77,25 +78,40 @@ def cmd_fetch(a):
                      a.jobs, "fetch")
 
 
+def _overrides(a):
+    """--fixed-overrides FILE: {board id: {"fix": [refs], "free": [refs]}} for place-fixed tasks."""
+    return json.loads(Path(a.fixed_overrides).read_text()) if a.fixed_overrides else {}
+
+
 def cmd_prepare(a):
     cache, tasks, _ = _dirs(a)
     kinds = _split(a.kinds) or list(prepare.TASK_KINDS)
+    overrides = _overrides(a)
 
     def one(e):
         f = fetch.fetch(e, cache)
-        r = prepare.prepare_board(e, f, tasks, kinds=kinds, keep_locked=a.keep_locked, force=a.force)
+        r = prepare.prepare_board(e, f, tasks, kinds=kinds, keep_locked=a.keep_locked, force=a.force,
+                                  fixed_overrides=overrides.get(e["id"]))
         rd = r["reference"]["drc"]
         return (f"split={r['split']} pads={r['reference']['stats']['pads']} qualified={r['qualified']}"
                 f" (unconn={rd['unconnected']} err={rd['errors']})")
     return _parallel(_entries(a), one, a.jobs, "prepare")
 
 
+ROW_FIELDS = ("repo", "commit", "pcb_path", "license", "license_tier", "tags")
+
+
 def _local_boards(root, pattern, only):
-    """Board folders under root (e.g. PCBWorld's exacad_sorted): one board per subfolder."""
+    """Board folders under root (e.g. PCBWorld's exacad_sorted): one board per subfolder.
+
+    A folder's row.json (the local corpus writes one per board) supplies the manifest
+    fields: repo, commit, licence, licence tier and tags.
+    """
     root = Path(root)
     items = []
-    for d in sorted(p for p in root.iterdir() if p.is_dir()):
-        if only and d.name not in only:
+    dirs = [root / name for name in sorted(set(only))] if only else sorted(root.iterdir())
+    for d in dirs:
+        if not d.is_dir():
             continue
         pcbs = sorted(d.glob(pattern))
         if not pcbs:
@@ -111,6 +127,10 @@ def _local_boards(root, pattern, only):
             fetched["kicad_dru"] = str(dru)
         entry = dict(id=d.name, repo=f"local:{root}", commit=None, pcb_path=str(pcb.relative_to(root)),
                      license="unknown (local)", license_tier=None, tags=[])
+        row = d / "row.json"
+        if row.exists():
+            meta = json.loads(row.read_text())
+            entry.update({k: meta[k] for k in ROW_FIELDS if meta.get(k) is not None})
         items.append((entry, fetched))
     missing = sorted(set(only or []) - {e["id"] for e, _ in items})
     if missing:
@@ -123,29 +143,84 @@ def cmd_prepare_dir(a):
     kinds = _split(a.kinds) or list(prepare.TASK_KINDS)
     items = _local_boards(a.dir, a.board_glob, _split(a.only))
     by_id = {e["id"]: f for e, f in items}
+    overrides = _overrides(a)
 
     def one(e):
         r = prepare.prepare_board(e, by_id[e["id"]], tasks, kinds=kinds, keep_locked=a.keep_locked,
-                                  force=a.force)
+                                  force=a.force, fixed_overrides=overrides.get(e["id"]))
         rd = r["reference"]["drc"]
         return (f"split={r['split']} pads={r['reference']['stats']['pads']} qualified={r['qualified']}"
                 f" (unconn={rd['unconnected']} err={rd['errors']})")
     return _parallel([e for e, _ in items], one, a.jobs, "prepare-dir")
 
 
+ARM_KEYS = ("name", "adapter", "probe", "probe_command", "freerouting", "passes")
+
+
+BUILTIN = ("reference", "noop", "freerouting", "freerouting-stock", "human-freerouting")
+
+
+def _probe_name(name, command):
+    if command and name in BUILTIN:
+        raise SystemExit(f"a command probe needs its own name, not the built-in {name!r}")
+    return name
+
+
+def _arms(a, sandbox):
+    """--arm name=LABEL,adapter=NAME[,probe=NAME[,probe_command=TEMPLATE]][,freerouting=PATH][,passes=N]
+    (repeatable): built-in adapters run interleaved in one run. A probe_command template may not
+    contain commas."""
+    arms = []
+    for spec in a.arm:
+        kv = dict(part.split("=", 1) for part in spec.split(",") if part)
+        bad = set(kv) - set(ARM_KEYS)
+        if bad or "adapter" not in kv or "name" not in kv:
+            raise SystemExit(f"--arm {spec!r}: need name= and adapter=, allowed keys {ARM_KEYS}")
+        passes = int(kv["passes"]) if kv.get("passes") else a.passes
+        ad = adapters.make(kv["adapter"], passes=passes, sandbox=sandbox, freerouting=kv.get("freerouting"))
+        ad.name = kv["name"]
+        pr = (adapters.make(_probe_name(kv["probe"], kv.get("probe_command")), command=kv.get("probe_command"), sandbox=sandbox,
+                            freerouting=kv.get("freerouting")) if kv.get("probe") else None)
+        arms.append((ad, pr))
+    return arms
+
+
 def cmd_run(a):
     _, tasks, results = _dirs(a)
-    ad = adapters.make(a.adapter, command=a.command, passes=a.passes)
-    probe = adapters.make(a.probe) if a.probe else None
-    run_dir = runner.run(tasks, results, ad, kinds=_split(a.kinds) or ["route"], k=a.k,
+    sandbox = adapters.Sandbox(enabled=not a.no_sandbox, network=a.sandbox_net,
+                               ro=[Path(x) for x in a.sandbox_ro or []])
+    if a.arm:
+        arms, ad, probe = _arms(a, sandbox), None, None
+    elif a.adapter:
+        arms = None
+        ad = adapters.make(a.adapter, command=a.command, passes=a.passes, sandbox=sandbox,
+                           freerouting=a.freerouting)
+        probe = (adapters.make(_probe_name(a.probe, a.probe_command), command=a.probe_command, sandbox=sandbox,
+                               freerouting=a.freerouting)
+                 if a.probe else None)
+        if a.label:
+            ad.name = a.label
+    else:
+        raise SystemExit("run needs --adapter or --arm")
+    run_dir = runner.run(tasks, results, ad, arms=arms, kinds=_split(a.kinds) or ["route"], k=a.k,
                          timeout=a.timeout, jobs=a.jobs, probe=probe, only=_split(a.only),
                          splits=_split(a.splits), qualified_only=not a.all, name=a.name,
-                         keep_work=a.keep_work)
+                         keep_work=a.keep_work, min_movable=a.min_movable)
     summary, _ = report.report([run_dir])
     md = report.to_markdown(summary)
     (run_dir / "report.md").write_text(md + "\n")
     print(md)
     print(f"\nresults: {run_dir}")
+    return 0
+
+
+def cmd_rescore(a):
+    for d in a.run_dirs:
+        run_dir = runner.rescore(d, jobs=a.jobs, force=a.force)
+        summary, _ = report.report([run_dir])
+        md = report.to_markdown(summary)
+        (Path(run_dir) / "report.md").write_text(md + "\n")
+        print(md)
     return 0
 
 
@@ -167,6 +242,14 @@ def cmd_tasks(a):
         for k, (n, q) in sorted(groups.items(), key=lambda kv: (-kv[1][0], str(kv[0]))):
             print(f"| {k} | {n} | {q} |")
     table("split", lambda r: [r["split"]])
+    def why(r):
+        if r["qualified"]:
+            return []
+        if not r.get("human_clean", True):
+            return ["human layout not DRC-clean"]
+        return [f"round trip fails: {k}" for k, v in (r.get("roundtrip") or {}).items() if not v["ok"]]
+    if any(why(r) for r in recs):
+        table("not qualified because", why)
     table("license tier", lambda r: [r.get("license_tier")])
     table("tag", lambda r: r.get("tags") or ["(none)"])
     if a.write_suite:
@@ -207,10 +290,14 @@ def main(argv=None):
     board_filters(sp)
     sp.set_defaults(fn=cmd_fetch)
 
+    fixed_help = ("JSON {board id: {\"fix\": [refs], \"free\": [refs]}}: parts to fix or free in "
+                  "place-fixed tasks on top of the classifier's choice")
     sp = sub.add_parser("prepare", help="convert, qualify and build route/place tasks")
     board_filters(sp)
-    sp.add_argument("--kinds", default="route,place")
-    sp.add_argument("--keep-locked", action="store_true", help="keep locked copper/footprints in tasks")
+    sp.add_argument("--kinds", default=",".join(prepare.TASK_KINDS))
+    sp.add_argument("--fixed-overrides", metavar="FILE", help=fixed_help)
+    sp.add_argument("--keep-locked", action="store_true",
+                    help="route tasks keep locked copper (place tasks always keep locked footprints)")
     sp.set_defaults(fn=cmd_prepare)
 
     sp = sub.add_parser("prepare-dir", help="build tasks from local board folders (e.g. PCBWorld output)")
@@ -218,27 +305,55 @@ def main(argv=None):
     sp.add_argument("--board-glob", default="*.kicad_pcb",
                     help="board file inside each folder, e.g. processed_v9_guide_v3.kicad_pcb")
     sp.add_argument("--only", help="comma-separated folder names, or @FILE")
-    sp.add_argument("--kinds", default="route,place")
+    sp.add_argument("--kinds", default=",".join(prepare.TASK_KINDS))
+    sp.add_argument("--fixed-overrides", metavar="FILE", help=fixed_help)
     sp.add_argument("--keep-locked", action="store_true")
     sp.add_argument("-j", "--jobs", type=int, default=4)
     sp.add_argument("--force", action="store_true")
     sp.set_defaults(fn=cmd_prepare_dir)
 
     sp = sub.add_parser("run", help="run an adapter on prepared tasks and score it")
-    sp.add_argument("--adapter", required=True, help="reference | noop | freerouting | <name> with --command")
+    sp.add_argument("--adapter", help="reference | noop | freerouting | <name> with --command")
+    sp.add_argument("--arm", action="append", metavar="SPEC",
+                    help="interleaved arm: name=LABEL,adapter=NAME[,probe=NAME][,freerouting=PATH]"
+                         "[,passes=N]; repeat to compare built-in adapters board by board in one run")
     sp.add_argument("--command", help="external tool template: {input} {output} {workdir} {kind} {attempt} {timeout}")
-    sp.add_argument("--kinds", default="route")
+    sp.add_argument("--kinds", default="route",
+                    help="route, place, joint, place-fixed, joint-fixed (comma-separated)")
     sp.add_argument("-k", type=int, default=1, help="attempts per board (best-of-k)")
     sp.add_argument("--timeout", type=float, default=600, help="seconds per attempt")
     sp.add_argument("-j", "--jobs", type=int, default=1)
-    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting")
+    sp.add_argument("--probe", help="router used to score placements, e.g. freerouting, or a name for --probe-command")
+    sp.add_argument("--probe-command", metavar="TEMPLATE",
+                    help="external router as the probe: a --command template ({input} {output} {workdir} "
+                         "{attempt} {timeout}), run as a route method in the sandbox")
     sp.add_argument("--passes", type=int, help="freerouting: fixed -mp instead of the per-attempt schedule")
+    sp.add_argument("--freerouting", metavar="PATH",
+                    help="Freerouting binary or JAR for the freerouting adapters and the probe "
+                         "(default: KAE_FREEROUTING or the installed release)")
+    sp.add_argument("--label", help="name the adapter in results and reports (e.g. freerouting-fork)")
     sp.add_argument("--only")
     sp.add_argument("--splits", help="e.g. A,B")
     sp.add_argument("--all", action="store_true", help="include boards whose human layout is not clean")
     sp.add_argument("--name", help="run name (reuse to resume)")
     sp.add_argument("--keep-work", action="store_true")
+    sp.add_argument("--min-movable", type=int, default=0, metavar="N",
+                    help="skip place, joint, place-fixed and joint-fixed tasks with fewer than N "
+                         "movable footprints (tasks "
+                         "prepared before this field existed are kept)")
+    sp.add_argument("--no-sandbox", action="store_true",
+                    help="run --command methods unsandboxed (they can then read reference layouts; "
+                         "results are marked unsandboxed)")
+    sp.add_argument("--sandbox-net", action="store_true", help="give sandboxed methods network access")
+    sp.add_argument("--sandbox-ro", action="append", metavar="PATH",
+                    help="extra path a sandboxed method may read (repeatable)")
     sp.set_defaults(fn=cmd_run)
+
+    sp = sub.add_parser("rescore", help="score a run's saved outputs again with the current scorer")
+    sp.add_argument("run_dirs", nargs="+")
+    sp.add_argument("-j", "--jobs", type=int, default=1)
+    sp.add_argument("--force", action="store_true", help="rescore attempts already scored by this version")
+    sp.set_defaults(fn=cmd_rescore)
 
     sp = sub.add_parser("tasks", help="qualification yield of prepared tasks")
     sp.add_argument("--write-suite", help="write qualified board ids to this file")
