@@ -30,7 +30,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
 KAE=(--code kae=.@45efe0066edb2559a32e217664ec1f544c80e790)   # claude/vigilant-mayer-i91rrr
-PNR=(--code pnr=.@0a28747acfeaff6bcecfc0a2bfab63397e852626)   # pnr-anytime: keen-wright db10e58 + anytime output + the fast router (pnr-fast-router)
+PNR=(--code pnr=.@957a37fd0d58483e0b8194d24ab47cfd69c56d9d)   # pnr-anytime: keen-wright db10e58 + anytime output + the fast router (pnr-fast-router)
 KH='$HOME/.cache/kaebench'
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"   # fork 06d2686 + kae-speed (same output, faster)
 # rs FIRST_S SLACK [restart.py options]: the wrapper; {timeout} is the board-scaled budget
