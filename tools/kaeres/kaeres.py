@@ -1285,11 +1285,13 @@ def cmd_exp_timer(a):
     d = Path.home() / ".config" / "systemd" / "user"
     d.mkdir(parents=True, exist_ok=True)
     unit = f"kaeres-{a.name}"
-    # Reports and the index come from an installed copy of this (stdlib-only) script, not the
-    # experiment's frozen code: report fixes then reach running experiments, and no result changes.
-    tool = Path.home() / ".local" / "share" / "kaeres" / "kaeres.py"
-    tool.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(Path(__file__).resolve(), tool)
+    # Reports and the index come from a frozen copy of the commit that installs the timer, not the
+    # experiment's own (older) code: report fixes reach running experiments, and no result changes.
+    # Not a shared installed copy: another checkout installing its timers would swap it under ours.
+    head = git(main_repo(), "rev-parse", "HEAD")
+    if not git(main_repo(), "branch", "-r", "--contains", head):
+        raise SystemExit(f"HEAD {head[:7]} is on no remote branch: push it first")
+    tool = ensure_harness(head, venv=False)[0] / "tools" / "kaeres" / "kaeres.py"
     (d / f"{unit}.service").write_text(
         f"[Unit]\nDescription=kaeres report {a.name}\n\n[Service]\nType=oneshot\nNice=19\n"
         f"ExecStart=/usr/bin/python3 {tool} exp report {a.name}\n"
@@ -1325,9 +1327,7 @@ def cmd_rephysics_timer(a):
     """Submit an experiment's physics re-evaluation hourly (new boards as the experiment finishes them)."""
     repo = main_repo()
     harness, kae = git(repo, "rev-parse", a.harness), git(repo, "rev-parse", a.kae)
-    tool = Path.home() / ".local" / "share" / "kaeres" / "kaeres.py"
-    tool.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(Path(__file__).resolve(), tool)
+    tool = ensure_harness(harness, venv=False)[0] / "tools" / "kaeres" / "kaeres.py"  # frozen: nothing can swap it
     d = Path.home() / ".config" / "systemd" / "user"
     unit = f"kaeres-rephysics-{a.name}"
     (d / f"{unit}.service").write_text(
