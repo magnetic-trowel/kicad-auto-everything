@@ -148,7 +148,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
 1. LLM as router configurator and priority-setter (bandit arms) ([agent-loop-patterns](../llm/agent-loop-patterns.md)).
 2. Net-role accuracy vs regex against designer netclasses ([net-role-classification](../llm/net-role-classification.md)).
 3. Bounded repair menus on near-miss outputs, a DRC-Aid analog.
-4. Placement intent layer: groups, anchors, regions at λ = 0.01, net weights feeding P1–P3 ([llm-guided-placement](../placement/llm-guided-placement.md)).
+4. Placement intent layer: groups, anchors, regions as weak anchors (weight set by sweep against a random-region control), net weights feeding P1–P3 ([llm-guided-placement](../placement/llm-guided-placement.md)).
 5. Relations vs coordinates on real A/B boards, using the legalizer ([interfaces-relations-vs-coordinates](../llm/interfaces-relations-vs-coordinates.md)).
 
 **Success:** L beats the strongest of B1–B4 on val by ≥ 5 pp, with a CI that excludes 0, and within the guardrails. Two iterations that don't beat B1/B2 kill that lever.
