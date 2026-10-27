@@ -1,0 +1,67 @@
+<!-- SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors -->
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+# Bugs found while fixing jc (tag `jcfix`)
+
+Each entry: what, where, effect, fix, which runs it affects. Scoring code was never changed.
+
+1. **Physics methods cannot import `kae` inside the harness sandbox** (environment, kae-v7).
+   `tools/research/pnr/physics.py` defaults `KAE_SRC` to a `/tmp` scratchpad; kaebench's
+   bwrap sandbox mounts a tmpfs over `/tmp`, so every `phys_w`-using method (jc, seq_phys,
+   combo, ...) died with `No module named 'kae'` (all attempts `no_output`). Fix: copy of
+   kae src in `kae-work/kae-src`, `export KAE_SRC=...` before `kae-v7/runj.sh` (the env
+   passes through bwrap); `trust` then added `--sandbox-ro` for the kae src to
+   `kae-v7/runj.sh`, which all later jcfix runs use. Failed runs deleted and re-run.
+2. **jc double counts two legality terms on engine v6** (jc.py, by design at the time).
+   Engine v6 stamps drilled holes into both courtyard planes and footprint cutouts into
+   every plane; jc still adds its own hole-under-courtyard and cutout maps to the part
+   cost and legal map. Fix in jc2 (`engine=1`, default): jc's copies are empty.
+3. **jc's polish share is not 15 % on large boards** (jc.py restart loop). A new
+   continuation starts only if 1.1 x the last run's time is left before `run_end`; on
+   boards where one run takes ~35 CPU-s (of 120) only 2 runs fit and the polish gets
+   ~43 % of the budget (diagnostic logs: olimex, jangtrinh, siderakb-pmw3610). jc2 `fill=1`
+   spends that remainder on a perturbed resume from the best state.
+4. **jc burns its run budget at the top of the schedule** (jc.py `collapse_once`). On
+   siderakb-pmw3610 beta sits at 500 for 15 iterations with the same 5 conflicting nets
+   and no part moving; legalization then drops them (6 open connections). jc2 `stall=4`
+   stops a continuation after 4 flat iterations at the top of the schedule.
+5. **Tasks re-prepared under running jobs** (workdir, not code). kae-v7 tasks were
+   re-prepared to task spec 6 at 19:47-19:49 UTC while the first dev6 arms ran; attempts
+   whose input came from the old task and whose score used the new one were invalid
+   (`place_foreign`: dimensions, targets, graphics with new uuids). All jcfix runs started
+   before the re-prepare finished were deleted and re-run from scratch.
+6. **Unguarded final PathFinder opens connections** (jc.py `collapse_once` end and
+   `methods_phys.anneal_phys` end, used as jc's polish). When a connection is open, both
+   rip every net and negotiate again from a low present cost, then legalize, and keep the
+   result even if more nets are dropped. paw3395 (jc2 v1, seed 0): 4 open connections
+   before the polish, 8 after, although annealing kept its best state. This is one source
+   of jc's open hops. Fix in jc2 (`guard=1`, from v2 on): keep the better of before/after
+   for the PathFinder retry and for the polish. `anneal_phys` itself is shared with combo
+   and left unchanged.
+7. **Shared engine edited under running jobs** (workdir). tools/research/pnr changed
+   (v6.1 -> v6.3) while the first jc2 runs were in flight. Every jcfix run before the
+   engine freeze at c78c537 (pnr v6.3) is discarded (parked in `kae-v7/jcfix-old/`);
+   all reported runs are `-r3`/`-r3b` on c78c537, and the run queue logs an md5 of the
+   engine and harness at the start and end of each arm. Two later md5 changes were checked
+   and are not behaviour changes for jc2: an uncommitted edit of the analysis script
+   `pnr/seeds.py` (not imported by any method; the queue's md5 now lists only engine
+   files), and `xf_minplus/minplus.py` `_load_jc` (ecaa86a, 00:39), which only changes the
+   parent class of `MPCollapse`; jc2 uses `MinPlus` and the two `MPCollapse` methods, which
+   did not change.
+8. **jc2 min-plus arm could not import `minplus` from a code snapshot** (jc2.py). The path
+   was relative to the module file, which the run queue copies to `kae-v7/jcfix-snap/`;
+   every `jcfix-jc2-mp-dev6-r3` attempt was `no_output`. Fixed (absolute path); the arm
+   was re-run as `-r3b` (all other code paths identical to `-r3`).
+9. **jc can pick an illegal restart** (jc.py `jc`). Restarts are ranked by routed cost +
+   phys_w x physics only; when `legalize_parts` finds no legal spot (eviction fails) the
+   run ends with overlapping parts and can still win (paw3395 min-plus arm: 2 parts left
+   illegal in the chosen run, `clearance` placement error; biscuit-crowbar: P4/U1 illegal
+   in 2 of 4 runs). Fix in jc2 (`legal_first=1`, from `-r4`): an illegal part adds 1e6 to
+   the run's cost. The final 33-board runs use `-r4`; the dev screens (`-r3`, `-r3b`) do not
+   have it.
+10. **jc2's end passes cost a restart** (jc2.py, `-r3b`/`-r4`). The completion and clean-up
+   shares (10 % + 5 %) were reserved before the restarts, so large boards ran one
+   continuation fewer; on olimex the missing third run was the one that found the
+   low-physics placement (fast physics 21.4 vs 5.1 for jc2_base, devB screen). Fixed in
+   `-r5`: restarts end where jc's do (85 % of the budget); completion (only when a
+   connection is open) and a 3 % clean-up come out of the polish share. The `-r4` finals
+   were stopped after ~15 attempts and re-run as `-r5`.
