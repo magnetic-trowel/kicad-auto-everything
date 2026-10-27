@@ -1,7 +1,31 @@
-# Research scripts
+# Research code
 
-One-off measurement scripts from the survey. They are research quality, not
-library code; results are written up in the docs linked below.
+The code behind every research path: experiments, prototypes and measurement
+scripts. It is research quality, not library code. Each path is written up in
+[docs/research](../../docs/research/README.md): how it works, what we tried, the
+numbers, and whether it worked. The production placer and router live in the
+[`kae`](../../kae/) package; its research scripts are under `physics/`, `place/`,
+`routing/` and `joint/` here.
+
+| Directory | What it is | Write-up |
+|---|---|---|
+| `pnr/` | pnr joint place-and-route engine (grid world, PathFinder/A* router with the fast router, anytime output) and its base methods: seq, anneal, repair, negotiate, combo | [engine](../../docs/research/joint/engine.md), [sequential controls](../../docs/research/joint/sequential-controls.md), [anneal and repair](../../docs/research/joint/anneal-and-repair.md), [combo](../../docs/research/joint/combo.md) |
+| `pnr_phys/` | physics terms in the pnr objective, physics scorer | [physics objective](../../docs/research/joint/physics-objective.md) |
+| `pnr_mcts/` | beam search and MCTS over placements | [tree search](../../docs/research/joint/tree-search.md) |
+| `pnr_cpsat/` | CP-SAT window re-placement | [anneal and repair](../../docs/research/joint/anneal-and-repair.md) |
+| `pnr_grad/`, `pnr_slime/` | soft-route gradients; Physarum routing | [forces and fields](../../docs/research/joint/forces-and-fields.md) |
+| `pnr_llm/` | LLM move proposer | [LLM proposer](../../docs/research/joint/llm-proposer.md) |
+| `collapse_joint/` | jc / jc2: layer-collapsed joint place-and-route | [jc](../../docs/research/joint/jc.md) |
+| `collapse_assign/`, `collapse_cplace/`, `collapse_obst/` | layer-count bounds, exact layer assignment, collapse terms in placement | [layer-collapse analysis](../../docs/research/joint/layer-collapse-analysis.md) |
+| `collapse_pour/`, `xf_pour/` | minimal-partition pours; pour-damage maps (pjc2) | [pour models](../../docs/research/joint/pour-models.md) |
+| `harmonic/`, `qd_archive/`, `learn_value/`, `xf_minplus/`, `xf_physmap/` | extensions of jc: harmonic fields, QD archive, learned value, min-plus maps, exact physics maps | [jc extensions](../../docs/research/joint/jc-extensions.md) |
+| `xf_common/` | shared launcher and helpers for the pnr experiments | [engine](../../docs/research/joint/engine.md) |
+| `physics/` | physics models, critics, derivation and validation scripts of the physics-first line | [physics](../../docs/research/physics/README.md) |
+| `place/`, `routing/`, `joint/` | experiment drivers for kae's placer, router and joint loop | [placement](../../docs/research/placement/README.md), [routing](../../docs/research/routing/README.md), [kae joint loop](../../docs/research/joint/kae-joint-loop.md) |
+| `autoplace/` | annealing placer with the router and DRC in the loop | [autoplace](../../docs/research/placement/autoplace.md), [with kae's router](../../docs/research/placement/autoplace-kae-router.md) |
+| `llm-design/` | kaesynth: typed circuit description to checked KiCad schematic, plus four LLM-made designs | [kaesynth](../../docs/research/llm-design/kaesynth.md) |
+| `board-sourcing/` | open-board corpus: licence audit, dedup, import | [board corpus](../../docs/research/data/board-corpus.md) |
+| `solver-bench/`, `layout-data/` | survey micro-benchmarks and board measurements (below) | below |
 
 ## `solver-bench/`: placement and routing solver micro-benchmarks
 
@@ -37,5 +61,7 @@ Input boards are third-party and are not redistributed here; see
 
 ## Licensing
 
-Scripts are GPL-3.0-or-later; `solver-bench/results/*.jsonl` are
-CDLA-Permissive-2.0 (see [LICENSING.md](../../LICENSING.md)).
+Scripts are GPL-3.0-or-later; `*/results/*.jsonl` are CDLA-Permissive-2.0; a
+KiCad-library footprint and generated schematics under `llm-design/` carry
+CC-BY-SA-4.0 with the KiCad libraries exception (see [LICENSING.md](../../LICENSING.md)
+and `REUSE.toml`).
