@@ -5,7 +5,7 @@
   - **A**: KiCad DRC plus generated custom rules, run continuously.
   - **S**: semantic-geometry critics driven by a role/constraint model, run at stage exits.
   - **J**: an LLM judge with simulation hooks, run at review gates.
-- Critic priority follows where fabs place holds and where checklist authors agree most: documentation/spec completeness → geometry rules → physics.
+- Critic priority follows where fabs place holds (one vendor's self-reported data, AtlasPCB [V]) and where checklist authors agree most: documentation/spec completeness → geometry rules → physics.
 - Every finding carries the measured value, threshold, threshold source, objects, evidence image and one concrete fix. Uncertain judgments go to a human.
 - Audit DRC severity overrides first ("Anything on 'ignore' makes a clean pass hollow"). Group violations by root cause before fixing.
 - Prior art: aklofas/kicad-happy (MIT; parsers plus LLM narration) and the Adom kicad-board-audit skill ("run the real checkers first"; "Every suspicious finding gets a primary source"). Neither has published accuracy.
@@ -29,7 +29,7 @@ Tags: [P] primary; [I] inference.
 | 1 | Stackup/impedance/fab-note completeness; net-class coverage | STK-09/12, CAM-04 |
 | 2 | Reference-plane continuity under HS traces, including void distance and plane edge | GND-02/10 |
 | 3 | Current capacity of tracks and vias | PDN-06/07/13 |
-| 4 | Decap distance, value order and own vias | PDN-01/02/11/15 |
+| 4 | Decap distance, mounting-inductance order and own vias (value order only behind the contested-rule selector, [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)) | PDN-01/02/11/15 |
 | 5 | Hot-loop and switch-node area | PWR-01/02 |
 | 6 | Return vias at layer transitions | GND-03 |
 | 7 | ESD series placement; filters at exits | EMC-06/07 |
@@ -80,6 +80,7 @@ Tags: [P] primary; [I] inference.
 
 - Tier-S thresholds (acceptable hot-loop area, decap distance by package and frequency) are not standardized. They need datasheet extraction or calibration on expert-reviewed boards.
 - No evaluated LLM review tool exists; kicad-happy and Adom publish no accuracy.
+- The priority order does not match the checklist's automation tags yet: of the rank-1 items only STK-09 is tagged A (STK-12 and CAM-04 are J), and the footprint items FP-01/02/12 are S or J. The documentation-first order also rests on one vendor's hold data; the other vendor dataset ranks geometry first, and holds measure order delays, not respins ([respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)).
 
 ## Sources
 

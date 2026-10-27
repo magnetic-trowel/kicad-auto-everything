@@ -34,7 +34,7 @@ Tags: [P] primary; [I] inference. Practitioner quotes: [P/C] community opinion.
   - jnoss and henrikh: legend in one or two directions; designators ordered by layout; traces exit pad ends.
   - Pikafu: 5 mil origin grid; caps' power nets facing the same way [P].
 - **Altium (Harris):** "All designators are only in one or two orientations"; "Each designator is close to and clearly identifies the associated component" [P].
-- **Flux:** 90° corners are not an SI issue below ~25 GHz on a 20.5 mil trace. Bend style is a DFM/aesthetic question [P].
+- **Flux:** 90° corners are not an SI issue below ~25 GHz on a 20.5 mil trace. Bend style is a DFM/aesthetic question [P]. That holds for single-ended nets below about 2 Gb/s; bend rules still apply to differential pairs and ≥10 Gb/s nets ([../rules/myths-and-contested.md](../rules/myths-and-contested.md)).
 - **Practitioners:**
   - Two 45° turns, not "10~30 small ones".
   - Any-angle output is painful to re-route by hand.
@@ -53,7 +53,7 @@ Tags: [P] primary; [I] inference. Practitioner quotes: [P/C] community opinion.
 | Minimal, uncrossed airwires (KiCad GS, KiCad forum) | HPWL + crossing count | Half-perimeter or MST wirelength per net; pairwise MST-edge crossings |
 | No scenic routes (Olney, Altium) | Manhattan ratio | Routed length ÷ Manhattan (or MST) length per net; flag outliers |
 | Compact power loops (Feranec, TI) | Hot-loop area; SW-node area | Polygon area through role-tagged loop pads; SW-net copper area |
-| Decap tightness and order (azonenberg, Pikafu, Feranec, UWARG) | Distance and rank order | Cap-pad to IC-pin path length; Spearman correlation of value vs distance |
+| Decap tightness and order (azonenberg, Pikafu, Feranec, UWARG) | Distance and rank order | Cap-pad to IC-pin path length; Spearman correlation of estimated mounting inductance (package, via count, via-to-pad distance) vs distance. Value order ("smallest closest") is CONTESTED, so score it only behind the contested-rule selector ([../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)) |
 | Text orientation (henrikh, jnoss, Altium) | Text-direction count | Number of readable directions (target ≤2); bottom text mirrored |
 | Geographic designators (henrikh, jnoss) | Rank correlation | Spearman correlation of designator number vs row-major position per prefix |
 | Pad-exit style (jnoss, grosdode, SparkFun) | Off-centre/side-exit count | Track endpoints not at pad centre, or attaching on the long side between same-net adjacent pins |

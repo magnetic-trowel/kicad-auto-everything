@@ -66,7 +66,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | STK-03 | Stackup | Controlled-impedance nets, targets and reference layers listed in fab notes | Fab tunes widths | M | S | AZ, PK, SC |
 | STK-04 | Stackup | Impedance calcs include solder mask (or mask removed over RF) | Mask shifts Z | M | S | AZ, PK |
 | STK-05 | Stackup | Controlled-impedance traces use the computed width/gap for their layer (per-layer net-class rules) | Mismatch → reflections | M | A (once classes are defined) | PK, HH, AL, SC |
-| STK-06 | Stackup | Layer count is the minimum giving continuous references, power copper and escape; +2 layers if channel use >70%; validated by test route | Cost vs SI/routability | M | J (S estimate) | NX, VSE |
+| STK-06 | Stackup | Layer count is the minimum giving continuous references, power copper and escape; +2 layers if channel use >70% (a single vendor blog, NextPCB; "channel use" is not defined); validated by test route | Cost vs SI/routability | M | J (S estimate) | NX, VSE |
 | STK-07 | Stackup | Sequential lamination cycles limited | Yield, cost | m | S | PS ([S]) |
 | STK-08 | Stackup | High-speed signals reference GND planes, not power planes | Return quality ("TI does not recommend high-speed signal references to power planes") | M | S | TI-HS |
 | STK-09 | Stackup | Every controlled-impedance net matches a net-class pattern (nets matching none silently get Default, e.g., USB D+/D−) | Silent impedance miss | C | A (class-coverage report) | AD |

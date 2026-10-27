@@ -2,7 +2,7 @@
 
 **TL;DR**
 - Output-package correctness (fresh fills, RS-274X/X2, latest files) is Critical and cheap to automate.
-- Creepage/clearance by voltage (HV-01) is DRC-checkable once net classes carry voltages.
+- Creepage/clearance by voltage (HV-01) is DRC-checkable once net classes carry voltages and the safety-standard inputs (pollution degree, material group, overvoltage category, insulation grade) are known.
 - Flex bend-area keepouts are rule areas; bend radius needs the flex construction.
 - This file holds 45 of the 299 checklist items (SLK 14, HV 3, CAM 13, PNL 8, FLX 7). The Critical items and the most-agreed Major items are summarized in [review-checklist.md](review-checklist.md).
 
@@ -29,7 +29,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | SLK-12 | Silkscreen | Legend clearances per fab (PCB Power: ≥8 mil to copper, ≥0.25 mm to routed edge / 0.45 mm to scored edge; Sierra: 4.5 mil silk-to-mask) | Clipping | m | A | PP, SCD |
 | SLK-13 | Silkscreen | Labels aligned on straight lines; uniform text size | Visual quality | m | A | SF, SC |
 | SLK-14 | Silkscreen | Silk checked from both sides | Mirroring/numbering errors | m | J | MF |
-| HV-01 | HV/safety | Creepage and clearance by voltage, including between layers (IPC-2221C tables) | Arcing | C | A (creepage, clearance by net class) | GD, HH, KD, AL, FX |
+| HV-01 | HV/safety | Creepage and clearance by voltage, including between layers, per the governing safety standard (IEC 60664-1 / 62368-1 / 61010-1: pollution degree, material group, overvoltage category, insulation grade, altitude), with the IPC-2221C tables as a functional floor only ([../rules/isolation-creepage.md](../rules/isolation-creepage.md)) | Arcing | C | A (creepage, clearance by net class) | GD, HH, KD, AL, FX |
 | HV-02 | HV/safety | Isolation barriers adequately sized | Safety | C | S | HH |
 | HV-03 | HV/safety | Signal and power not in the same connector; connectors for different purposes not interchangeable | Mis-mating fire (Fermilab 1987) | M | J | HH |
 | CAM-01 | Outputs | DRC and zone fill re-run immediately before export | Stale outputs | C | A | AZ |
