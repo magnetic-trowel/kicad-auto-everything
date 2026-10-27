@@ -9,12 +9,14 @@
   3. provenance and precedence, with conflicts **recorded rather than silently resolved**;
   4. a check backend: `kicad_dru`, `geometric`, `simulation` or `bom`;
   5. a placement intent, kept separate from the routing constraints.
-- **Vendor profiles are mandatory.** Primary values for the same interface differ 5–25×. When the vendor is unknown, use the tightest [P] value and add an `info` finding that names the looser alternatives.
+- **Vendor profiles are mandatory.** Primary values for the same interface differ 5–25×. When the vendor is unknown, the current policy is to use the tightest [P] value and add an `info` finding that names the looser alternatives.
+  - For two-sided windows, take the intersection of the [P] windows. If it is empty, raise a conflict (`ask`) and never synthesise a composite.
+  - The policy is under review. The per-interface packs' defaults currently differ from it (e.g. USB2 defaults to 50 mil skew, not SPRAAR7A's 2 mil).
 - **Precedence and resolution:**
-  - Precedence order: fab 10 < interface default 20 < vendor family 30 < device datasheet 40.
+  - Precedence order, for design-intent values only: interface default 20 < vendor family 30 < device datasheet 40.
+  - **Fab and safety minimums are not ranks in this ladder.** They are floors applied after resolution: effective_min = max(resolved_min, fab_min, safety_min). A pack that asks for less raises a conflict ("needs a different fab class") instead of winning. Also compile the fab minimums into Board Setup → Constraints (`.kicad_pro`), since KiCad clamps every resolved clearance and diff-pair gap to the board minimum ([P] [drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
   - A snippet-sourced [S] value never overrides a primary [P] value at equal precedence.
   - Our heuristics [I] default to `warning` until calibrated against vendor evaluation-board layouts.
-  - Fab packs set only `min`; interface packs set `opt` and `max`, and may never relax a fab minimum.
 - **Rule strength tiers** ([VR] §3):
   - hard fab limits;
   - hard topology;
@@ -34,7 +36,7 @@
 pack:
   id: <interface-or-circuit id>        # usb2_hs, buck_sync, xtal_pierce
   version: 0.1
-  precedence: 30                        # 10 fab < 20 interface < 30 vendor family < 40 datasheet
+  precedence: 30                        # 20 interface < 30 vendor family < 40 datasheet; fab/safety packs are floors, not ranks
   vendor_profile: <ti|microchip|qualcomm|...|unknown>
   applies_when:
     parts: [ {role: <name>, match: {lib_regex, pin_functions, value_regex, class, nets}, optional} ]
@@ -52,11 +54,12 @@ pack:
 ```
 
 **Resolution policy:**
-1. Use the highest precedence.
+1. Use the highest precedence (design-intent values only).
 2. Then use `by_vendor[vendor_profile]`.
-3. Then apply the declared `resolution`. The default is "stricter", and it raises an `info` finding citing both sources.
+3. Then apply the declared `resolution`. The default is "stricter", and it raises an `info` finding citing both sources. "Stricter" is defined for one-sided scalar bounds; two-sided windows take the intersection, and an empty intersection is a conflict (`ask`). Contested rules ([VR] §3) take a selector or `ask`, never "stricter".
 4. [S] never overrides [P] at equal precedence.
 5. [D]/[I] values are warnings until calibrated.
+6. Finally apply the fab and safety floors: effective_min = max(resolved_min, fab_min, safety_min). A resolved value below a floor is a conflict, not an override.
 
 ### Worked examples (full YAML in [IF] §11)
 - **usb2_hs.** See [interfaces/usb2.md](interfaces/usb2.md).
@@ -87,13 +90,13 @@ pack:
 ### Rule strength tiers ([VR] §3)
 | Tier | Examples | Encoding |
 |---|---|---|
-| Hard: fab/assembly | Fab absolute minimums (router targets the recommended values); courtyard non-overlap; IPC-2221B floor; JLC silk 1.0 mm / 0.15 mm | Board setup + `.kicad_dru` ([dfm-fab-limits.md](dfm-fab-limits.md)) |
-| Hard: topology (all primary sources agree) | No split or void crossing; ≥1.5W from voids (except voided SMD pads); crossings over the bridge; connector → TVS → IC with no stub, no via before the TVS, GND via at its pad; 0 TPs/stubs on SerDes; plus power/RF topology (CIN on the IC layer, 0 hot-loop vias, FB from the COUT pad, "mandatory" AGND–PGND tie, shunt cap via the named VSS pin, antenna keep-out polygon, no digital under RF, AGND+DGND to the analog plane) | G-checker → reject the placement or route |
-| Hard within declared scope | Pair skew, via count, 30/50 mil keep-outs, via stub min(15 mil, 0.3/Gbps) | Only when the interface pack and data rate are known; carries `source_scope` |
+| Hard: fab/assembly | Fab absolute minimums (router targets the recommended values); courtyard non-overlap; IPC-2221B floor; JLC silk 1.0 mm / 0.15 mm | Floors applied after resolution, not a precedence rank; Board setup + `.kicad_dru` ([dfm-fab-limits.md](dfm-fab-limits.md)) |
+| Hard: topology (all primary sources agree) | No split or void crossing; ≥1.5W from voids on HS differential pairs (except voided SMD pads); crossings over the bridge; connector → TVS → IC with no stub, no via before the TVS, GND via at its pad; 0 TPs/stubs on SerDes; plus power/RF topology (CIN on the IC layer for integrated converters, with via count and plane coverage scored through the loop-inductance estimate and vertical loops allowed; FB from the COUT pad, "mandatory" AGND–PGND tie, shunt cap via the named VSS pin, antenna keep-out polygon, no digital under RF, AGND+DGND to the analog plane) | G-checker → reject the placement or route |
+| Hard within declared scope | Pair skew, via count, 30/50 mil keep-outs, via stub min(15 mil, 0.3/Gbps in) on SerDes ≳3 Gb/s | Only when the interface pack and data rate are known; carries `source_scope` |
 | Soft, strong | Return via ≤200 mil as a hard max, with "closer is better" as the objective; ≥90 mil from the plane edge / ≥2h from the board edge; connectors on one edge; I/O ≤2 cm, non-I/O ≥2 cm; plus power items (L2 ≤0.13 mm, 1 via/A, C_boot ≥10·Cg, bead ≤20% of rated I, EP vias 0.3 mm at 1.0–1.2 mm) | High-weight cost terms; warnings that quote the source |
 | Soft, weak (heuristic) | TVS ≤5–10 mm; CMC ≤5 mm; crystal ≤5 mm; CIN ≤0.5–1 mm (MPS primary ≤2 mm); FB ≤2–3 mm; RF↔SMPS 20 mm; stitching λ/20, 3–5 mm or 2 mm near SerDes; **2W/3W/5W multipliers (compute crosstalk in h instead)**; 2 cm²/W | Rank-based objectives ("closer than any other part"); never DRC |
 | Context switch | See [myths-and-contested.md](myths-and-contested.md) | Store both variants plus a selector; ask; log |
-| Myth exceptions | 90° corners only on ESD and RF nets | Net-class scoped |
+| Myth exceptions | 90° corners are a myth only for single-ended nets below about 2 Gb/s; keep corner/bend rules on ESD and RF nets, differential pairs and nets ≥10 Gb/s | Net-class scoped |
 
 **Severity recalibrations ([VR]):**
 - TL-5 (test points on SerDes) becomes hard.
@@ -109,7 +112,7 @@ pack:
 | DDR4 DQ↔DQS | 2 ps (TI) | 25 ps (PolarFire) | 12.5× |
 | DDR4 ADDR↔CK | 4 ps (TI) | 100 ps (PolarFire) | 25× |
 | Ethernet PHY↔magnetics | <1 in (Microchip) | ≥25 mm (Pulse) | opposite directions |
-| PCIe AC cap | 75–220 nF (TI) | 176–265 nF (Qualcomm) | 220 nF fits both |
+| PCIe AC cap (Gen3+) | 75–220 nF (TI) | 176–265 nF (Qualcomm) | 220 nF fits both; Gen1/2-only parts may cap at 200 nF ([interfaces/pcie.md](interfaces/pcie.md)) |
 
 ### Knowledge-base record ([HS] §12 + [VR])
 - `rule_id, family, statement`

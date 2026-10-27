@@ -6,7 +6,7 @@
 - **Rules depend on the controller, and vendors differ greatly.**
   - DQ↔DQS: 2 ps (TI AM62x), 3.5 ps (Intel Agilex 5, [S]), 10 ps (Intel DDR3, [S]), 25 ps (Microchip PolarFire).
   - ADDR↔CK: 4 ps (TI) to 100 ps (Microchip).
-  - Pick the pack for the actual controller. Fall back to the tightest value when the controller is unknown.
+  - Pick the pack for the actual controller. When the controller is unknown, the general policy is the tightest [P] value, which is under review ([../rule-pack-format.md](../rule-pack-format.md)); this pack's Recommendations instead scale the Micron 1% rule.
 - **Fly-by matching is per SDRAM.** Emit one `fromTo()` length or skew rule per SDRAM per group, plus `within_diff_pairs` for CK and DQS. A single net-class-wide skew rule cannot express fly-by.
 - **Match only within a byte lane.** Cross-byte matching is "neither required nor recommended" for DDR4/LPDDR4.
 - **Policy (TI):** match in the layout tool to <20% of each limit, keep the full limit as `max`, then confirm with power-aware IBIS simulation across PVT.

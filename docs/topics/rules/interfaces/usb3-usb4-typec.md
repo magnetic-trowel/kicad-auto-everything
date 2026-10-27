@@ -27,7 +27,7 @@
 ## Key facts
 | Param | Default | Variants / **conflicts** | Check |
 |---|---|---|---|
-| Rates | Gen1 5 Gb/s (2.5 GHz), Gen2 10 Gb/s (5 GHz), USB4 Gen3 20 Gb/s NRZ (10 GHz), Gen4 40 Gb/s PAM3 (20 GHz). AC caps required on TX, optional on RX; SSTX/SSRX polarity reversal allowed; 3 m cable ([SLLA414A](https://www.ti.com/lit/pdf/slla414) [P]) | — | — |
+| Rates | Gen1 5 Gb/s (2.5 GHz), Gen2 10 Gb/s (5 GHz), USB4 Gen3 20 Gb/s NRZ (10 GHz), Gen4 40 Gb/s PAM3 (25.6 GBd, so 12.8 GHz Nyquist, not the note's 20 GHz [I; USB4 v2.0 spec]). AC caps required on TX, optional on RX; SSTX/SSRX polarity reversal allowed; 3 m cable ([SLLA414A](https://www.ti.com/lit/pdf/slla414) [P]) | — | — |
 | Zdiff | 90 Ω ±15% / 45 Ω SE (SLLA414A, TUSB9261, TUSB1046, SLLU149E) | AM57xx 83.7–96.3 Ω; AM65xx 95 Ω ±5%; Microchip AN26.2 85 ±5 Ω; Qualcomm 70–100 Ω incl. manufacturing variation | K + S |
 | Intra-pair skew | 5 mil (0.127 mm): SPRAAR7J tables, AN26.2 (0.13 mm), SLLU149E; SLLA414A "15 ps/m (TI recommends 5 mils)" | [TUSB1046](https://www.ti.com/lit/ds/symlink/tusb1046-dci.pdf) 2 mil; [TUSB9261](https://www.ti.com/lit/ds/symlink/tusb9261.pdf) 2.5 mil; [Qualcomm](https://docs.qualcomm.com/doc/80-PV086-5P/topic/usb3dot1-displayport-routing-constraints.html) 5 ps ≈ 0.7 mm (27.5 mil). 5 mil ≈ 0.75–0.9 ps [I] | K `skew within_diff_pairs` (device override) |
 | Inter-lane / DP AUX | 70 ps (10 mm) / 50 ps (7 mm) intralane (Qualcomm) | — | K |

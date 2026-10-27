@@ -10,10 +10,10 @@
   - The spec allows 70–100 Ω. Add-in cards need **85 Ω**. TI SoC tables use 100 Ω ±10% or 95 Ω ±5%.
   - Intra-pair skew ≤5 mil, *additive over segments*. Qualcomm allows 5 ps ≈ 0.7 mm.
   - Lane-to-lane matching is not required.
-- **AC caps.** 220 nF satisfies every range quoted (TI 75–220 nF; Qualcomm, Efinix and NXP 176–265 nF for Gen3+). Placement disputes reduce to "near the connector for add-in cards; near either endpoint on one board; never mid-line or staggered".
+- **AC caps.** For Gen3+, 220 nF satisfies every range quoted (TI 75–220 nF; Qualcomm, Efinix and NXP 176–265 nF). Gen1/2-only parts may cap at 200 nF (PCIe 2.0: 75–200 nF [I; PCIe 2.0 base spec]; NXP QorIQ Gen2), so use their datasheet value, e.g. SLLU149E's 0.1 µF. Placement disputes reduce to "near the connector for add-in cards; near either endpoint on one board; never mid-line or staggered".
 - **Vias and stubs:**
   - Return vias within 50 mil (TI Gen5) or ≥2 within 100–200 mil (EMA).
-  - Stubs <15 mil preferred. The physics limit at Gen5 is ≈51–54 mil.
+  - Stubs <15 mil preferred. TI's Gen5 quarter-wave maximum is ≈51–54 mil, a resonance ceiling rather than a target: Bogatin's 0.3/Gbps gives ≈9 mil at 32 GT/s [I].
   - Antipads 40 mil with 10/20 mil drill/pad; non-functional pads removed.
 - **Edges and layers:**
   - ≥max(5W, 5H) from the plane edge; ≥4H from voids.
@@ -50,7 +50,7 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
   - At 6.25 GHz, about 0.5 dB/in for Megtron 6 and about 1 dB/in for FR4.
   - Maximum RX channel loss: 25 dB.
 - **[EMA](https://www.ema-eda.com/wp-content/uploads/2025/10/PCIe-Design-Guide-Part-1.pdf) [P]** (an EDA reseller, so lower authority):
-  - End-to-end budgets: Gen3 <20 dB at 4 GHz; Gen4 <28 dB at 8 GHz; Gen5 <36 dB at 16 GHz; Gen6 <32 dB at 32 GHz (PAM4).
+  - End-to-end budgets: Gen3 <20 dB at 4 GHz; Gen4 <28 dB at 8 GHz; Gen5 <36 dB at 16 GHz; Gen6 <32 dB (PAM4). EMA quotes Gen6 at 32 GHz, but 64 GT/s PAM4 is 32 GBd, so Nyquist is 16 GHz, the same as Gen5 [I; PCIe 6.0 base spec].
   - Material Df: <0.010 for Gen3, <0.005 for Gen4, <0.002 for Gen5. Standard FR4 (Df ~0.020) is only for Gen1/2 or very short Gen3.
   - "Even 12 inches of standard FR4 can exceed the Gen5 loss budget."
 - **NXP AN10373 (2005)** [P]:
@@ -69,8 +69,8 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
 | Via count | Qualcomm: layer transitions only at breakout and connectors | TI SoC tables: **0 vias (AM57xx/KeyStone) vs 2 (AM65xx)** [VR] | K `via_count` |
 | Via geometry | 10/20/40 mil drill/pad/antipad; as many GND stitches around the antipad as possible; via-in-pad preferred; non-functional pads removed (SNLA426) | EMA: 8–10 mil drill, 18–22 mil pad, 30–35 mil antipad | G |
 | Return vias | Within 50 mil (1.27 mm) at Gen5 (SNLA426) | EMA: ≥2 within 100–200 mil, on both sides of a pair; SPRAAR7J 200 mil; SLLU149E: bypass caps next to the vias if the reference changes | G |
-| Via stubs | <15 mil, otherwise backdrill. Gen5 quarter-wave maximum ≈54 mil (Megtron 6) / 51 mil (FR4) | EMA: a 20 mil stub resonates near 8–16 GHz | G (stub from stackup) |
-| AC-cap value | **Conflict:** TI SNLA426 75–220 nF (220 nF typical); Qualcomm Gen3 176–265 nF, Gen2 75–265 nF; Efinix 176–265 nF (220 nF conventional); NXP QorIQ Gen2 75–200, Gen3 176–265 nF [S]; SLLU149E 0.1 µF 0402 | **220 nF fits all**; BOM window 176–220 nF [I] | M |
+| Via stubs | <15 mil, otherwise backdrill. Gen5 quarter-wave maximum ≈54 mil (Megtron 6) / 51 mil (FR4), a resonance ceiling, not a target | EMA: "a 20 mil stub resonates near 8–16 GHz" contradicts f ≈ 1.5/L (≈75 GHz at 20 mil) [I]; don't use it | G (stub from stackup) |
+| AC-cap value | **Conflict:** TI SNLA426 75–220 nF (220 nF typical); Qualcomm Gen3 176–265 nF, Gen2 75–265 nF; Efinix 176–265 nF (220 nF conventional); NXP QorIQ Gen2 75–200, Gen3 176–265 nF [S]; SLLU149E 0.1 µF 0402 | **220 nF fits all Gen3+ ranges**; BOM window 176–220 nF for Gen3+ [I]. Gen1/2-only parts: 75–200 nF (PCIe 2.0 [I; PCIe 2.0 base spec]) or the part's own range | M |
 | AC-cap position | **Conflict:** chip-to-chip near RX (SNLA426); same board near TXP/TXN (SLLU149E); TX side (Efinix); "anywhere … better close to source or receiver" (Qualcomm). Agreed: add-in/edge-finger → near the connector. Qualcomm: do not stagger caps | Treat "within N mm of TX pins *or* RX pins" as satisfied; pair caps side by side | G |
 | AC-cap package and void | Smallest package (0201 pad 12 mil vs a 5–7 mil 85 Ω trace); Efinix recommends 0201. Pad void 100%, two layers, larger than the pad | — | G / M |
 | Edge, voids, spacing | ≥max(5W, 5H) from the reference-plane edge; ≥4H from voids; pairs ≥4–5H apart; avoid the board edge (SNLA426) | Qualcomm 4W to others, Rx-Tx 4W (Gen3) / 3W (Gen2); EMA ≥3W (15–20 mil), ≥4W for Gen6; Efinix ×5 to other signals | K `clearance` / G |
@@ -86,7 +86,7 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
   - TI's FR4 figure with Gen4's 14 dB gives about 20 in before vias; realistically 9–12 in on FR-4, and much less at Gen5.
   - Store budgets and material tables; compute the limit per stackup.
 - **Checks to emit:**
-  - BOM: 176–220 nF window.
+  - BOM: 176–220 nF window for Gen3+; 75–200 nF (or the part's range) for Gen1/2-only links.
   - Placement: "cap within N mm of either endpoint", or of the connector on add-in cards.
   - Stub check (via checker H).
   - Return-via check, rate-scaled.
