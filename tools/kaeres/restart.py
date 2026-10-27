@@ -13,8 +13,10 @@ items, zones refilled, the input's project rules). The first clean one ends the 
 the best is kept when time runs out. Only stdlib; KiCad comes from KAE_KICAD_WRAP.
 
 Work is measured, since a sandboxed method's processes are invisible to the harness: every
-attempt's process session is sampled from /proc each second (CPU seconds summed over all its
-processes, peak RSS), and the DRC judging is counted separately. The totals go to
+attempt's processes (its process tree and session, so a router started in a session of its own
+counts too) are sampled from /proc each second (CPU seconds summed over all of them, peak RSS);
+an attempt that exits is reaped with wait4, whose rusage covers every descendant it waited for,
+and the larger of the two counts. The DRC judging is counted separately. The totals go to
 restarts/summary.json and to a last stdout line `KAE_WORK {json}` that kaeres records.
 """
 import argparse
@@ -42,15 +44,17 @@ PAGE = os.sysconf("SC_PAGE_SIZE")
 
 
 class Meter:
-    """CPU and memory of process sessions, by sampling /proc (processes that live < 1 s between
-    samples are missed; their CPU is small)."""
+    """CPU and memory of attempts, by sampling /proc: an attempt is its root process, the
+    processes below it and those in its session (processes that live < 1 s between samples are
+    missed; reap() adds the CPU of those the attempt waited for)."""
 
     def __init__(self):
-        self.cpu = {}   # sid -> {pid: cpu ticks last seen}
-        self.rss = {}   # sid -> peak summed RSS bytes
+        self.cpu = {}   # root pid -> {pid: cpu ticks last seen}
+        self.rss = {}   # root pid -> peak summed RSS bytes
+        self.members = {}   # root pid -> its processes at the last sample
 
-    def sample(self, sids):
-        now = {sid: 0 for sid in sids}
+    def sample(self, roots):
+        procs = {}      # pid -> (ppid, sid, ticks, rss)
         for d in os.listdir("/proc"):
             if not d.isdigit():
                 continue
@@ -59,18 +63,45 @@ class Meter:
             except OSError:
                 continue
             x = f[f.rindex(")") + 2:].split()
-            sid = int(x[3])
-            if sid in now:
-                self.cpu.setdefault(sid, {})[int(d)] = int(x[11]) + int(x[12])
-                now[sid] += int(x[21]) * PAGE
-        for sid, r in now.items():
-            self.rss[sid] = max(self.rss.get(sid, 0), r)
+            procs[int(d)] = (int(x[1]), int(x[3]), int(x[11]) + int(x[12]), int(x[21]) * PAGE)
+        kids = {}
+        for pid, (ppid, _, _, _) in procs.items():
+            kids.setdefault(ppid, []).append(pid)
+        for root in roots:
+            mine = {pid for pid, v in procs.items() if v[1] == root}
+            todo = [root]
+            while todo:
+                pid = todo.pop()
+                if pid in procs:
+                    mine.add(pid)
+                todo.extend(c for c in kids.get(pid, ()) if c not in mine)
+            self.members[root] = mine
+            seen = self.cpu.setdefault(root, {})
+            for pid in mine:
+                seen[pid] = max(seen.get(pid, 0), procs[pid][2])
+            self.rss[root] = max(self.rss.get(root, 0), sum(procs[pid][3] for pid in mine))
 
-    def cpu_s(self, sid):
-        return round(sum(self.cpu.get(sid, {}).values()) / TICK, 1)
+    def cpu_s(self, root):
+        return round(sum(self.cpu.get(root, {}).values()) / TICK, 1)
 
-    def rss_mb(self, sid):
-        return round(self.rss.get(sid, 0) / 2 ** 20)
+    def rss_mb(self, root):
+        return round(self.rss.get(root, 0) / 2 ** 20)
+
+
+def reap(p, info, block=False):
+    """p.poll() / p.wait() through wait4, keeping the CPU of p and every descendant it waited
+    for (info["ru_cpu_s"]). Returns the exit code, None while p runs."""
+    if p.returncode is not None:
+        return p.returncode
+    try:
+        pid, status, ru = os.wait4(p.pid, 0 if block else os.WNOHANG)
+    except ChildProcessError:
+        return p.poll()
+    if pid == 0:
+        return None
+    p.returncode = os.waitstatus_to_exitcode(status)
+    info["ru_cpu_s"] = ru.ru_utime + ru.ru_stime
+    return p.returncode
 
 
 def child_cpu():
@@ -203,12 +234,19 @@ def main():
         k += 1
         return True
 
-    def stop(p):
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        p.wait()
+    def stop(p, info):
+        # the whole tree, not just the process group: a router in a session of its own would
+        # otherwise run on after its parent is gone
+        meter.sample([p.pid])
+        for pid in [p.pid, *meter.members.get(p.pid, ())]:
+            try:
+                os.killpg(pid, signal.SIGKILL) if pid == p.pid else os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        reap(p, info, block=True)
+
+    def cpu_s(p, info):
+        return max(meter.cpu_s(p.pid), round(info.pop("ru_cpu_s", 0.0), 1))
 
     while launch() if len(running) < a.parallel else False:
         pass
@@ -218,12 +256,12 @@ def main():
         now = time.monotonic()
         for p, info in list(running.items()):
             over = now > info["t"] + info["budget"] * a.slack + GRACE_S or now > deadline + GRACE_S
-            if p.poll() is None and not over:
+            if reap(p, info) is None and not over:
                 continue
-            if p.poll() is None:
-                stop(p)
+            if p.returncode is None:
+                stop(p, info)
             del running[p]
-            info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=meter.cpu_s(p.pid), peak_rss_mb=meter.rss_mb(p.pid))
+            info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid))
             c0, w0 = child_cpu(), time.monotonic()
             rank = judge(info["out"], inp, base, deadline - time.monotonic() + GRACE_S, a.check_placement)
             judge_cpu += child_cpu() - c0
@@ -240,16 +278,16 @@ def main():
             log(f"#{best['k']} is clean: stopping the rest")
             meter.sample([p.pid for p in running])
             for p, info in list(running.items()):
-                stop(p)
-                info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=meter.cpu_s(p.pid),
+                stop(p, info)
+                info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=cpu_s(p, info),
                             peak_rss_mb=meter.rss_mb(p.pid), rc=None, rank=None, stopped=True)
                 done.append(info)
             running.clear()
             break
         if fast_fails >= 2 * a.parallel:
             log(f"{fast_fails} attempts in a row died within 10 s without a board: giving up (see restarts/a*/log)")
-            for p in list(running):
-                stop(p)
+            for p, info in list(running.items()):
+                stop(p, info)
             running.clear()
             break
         while len(running) < a.parallel and launch():
