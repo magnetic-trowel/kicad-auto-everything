@@ -441,3 +441,15 @@ def test_kicad_markup_in_pin_names_and_untyped_internal_regulator_pins():
     assert sem[('U1', '4')] == 'supply' and sem[('U1', '20')] == 'supply_out' and sem[('U1', '9')] == 'supply_out'
     assert sem[('U4', '24')] == 'supply_out'
     assert r.nets['REG18'].role == 'rail' and r.nets['VBUSOUT'].role == 'rail'
+
+
+def test_unannotated_pins_take_their_nets_meaning():
+    """A board never updated from a schematic has pads without names or types; an IC pad's net decides."""
+    from kae.circuit.roles import _unannotated_pin_sem
+    assert _unannotated_pin_sem("GND") == "ground"
+    assert _unannotated_pin_sem("/power/GND") == "ground"
+    assert _unannotated_pin_sem("+3V3") == "supply"
+    assert _unannotated_pin_sem("VCC") == "supply"
+    assert _unannotated_pin_sem("3V3_EN") is None      # a control line, not a rail
+    assert _unannotated_pin_sem("SHIELD") is None      # chassis is not a ground pin
+    assert _unannotated_pin_sem("Net-(U1-Pad3)") is None

@@ -1041,6 +1041,23 @@ def pin_sem(roles, p) -> str | None:
         return 'supply'
     if GND_PIN.match(fn):
         return 'ground'
+    if not fn and not p.ptype and kind in ('ic', 'module', 'oscillator') and p.net:
+        return _unannotated_pin_sem(p.net)
+    return None
+
+
+def _unannotated_pin_sem(net) -> str | None:
+    """A pin with neither name nor type: its board was never updated from a schematic (KiCad 5 boards,
+    Eagle and other imports; about 57% of the open-hardware corpus). Its net's name decides, as a designer
+    reading the layout would: an IC pad on GND is a ground pin, one on +3V3 or VCC_IO a supply pin. Net
+    names only, never rail detection, which itself asks pin semantics."""
+    leaf = net.rsplit('/', 1)[-1].strip() or net
+    if CHASSIS_NET.search(leaf):
+        return None
+    if GND_NET.search(leaf):
+        return 'ground'
+    if PWR_NET.match(leaf) and not CTRL_NET.search(leaf) and not CTRL_SUFFIX.search(leaf):
+        return 'supply'
     return None
 
 
