@@ -12,6 +12,7 @@ and prints one status line ({"ok": ...}) on stdout.
     python pcbnew_bridge.py edit-routing BOARD EDITS OUT_JSON DEST
     python pcbnew_bridge.py zone-fills BOARD OUT_JSON
     python pcbnew_bridge.py text-shapes BOARD OUT_JSON
+    python pcbnew_bridge.py worker
 
 export-dsn: KiCad's Specctra export of BOARD (loaded with its project, so net classes and
 the .kicad_dru rules are active), plus what the DSN leaves out, as JSON (see route_info):
@@ -48,6 +49,16 @@ and SetPosition. Nothing else is touched: the board is read and written with KiC
 plain S-expression reader and writer (PCB_IO_MGR.Load/Save). pcbnew.LoadBoard and
 SaveBoard build connectivity, which gives copper overlapping a pad that pad's net. The
 file is written to a temporary directory and moved to DEST, so no project file is written.
+
+worker: serve operations without paying KiCad's start-up (the container and `import pcbnew`,
+about a second) per call. Prints {"kae_worker": "ready"}, then reads requests from stdin,
+one JSON line each: {"argv": [OP, ARGS...], "stderr": PATH}. Each request runs in a child
+forked from this process as it is after `import pcbnew`, before any board is loaded, so an
+operation sees the same pcbnew state as in a process of its own (no project, settings or
+board carried over from an earlier request, and its memory is released when it exits); its
+stdout and stderr go to PATH. The child prints its status line as above, then the worker
+prints {"kae_worker": "done", "rc": RC} (RC negative: killed by that signal). The worker
+exits at the end of stdin, and children die with it.
 """
 import ctypes
 import json
@@ -826,6 +837,56 @@ def text_shapes(path, out):
     _status(dict(ok=True, texts=len(texts)))
 
 
+def _serve_one(req):
+    """Run one request in a forked child; returns its exit status (negative: signal)."""
+    parent = os.getpid()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    pid = os.fork()
+    if pid == 0:
+        rc = 1
+        try:
+            try:  # die with the worker (it is killed on a timeout)
+                ctypes.CDLL(None, use_errno=True).prctl(1, 9)  # PR_SET_PDEATHSIG, SIGKILL
+            except (OSError, AttributeError):
+                pass
+            if os.getppid() != parent:
+                os._exit(1)
+            fd = os.open(req["stderr"], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            os.dup2(fd, 1)
+            os.dup2(fd, 2)
+            os.close(fd)
+            nul = os.open(os.devnull, os.O_RDONLY)
+            os.dup2(nul, 0)
+            os.close(nul)
+            rc = main(["pcbnew_bridge.py", *req["argv"]])
+        except BaseException as e:  # noqa: BLE001 - reported like main's failures
+            _status(dict(ok=False, op=(req.get("argv") or ["?"])[0], error=f"{type(e).__name__}: {e}"))
+        finally:
+            for f in (sys.stdout, sys.stderr, _STATUS):
+                try:
+                    f.flush()
+                except Exception:  # noqa: BLE001
+                    pass
+            os._exit(rc if isinstance(rc, int) else 1)
+    _, st = os.waitpid(pid, 0)
+    return -os.WTERMSIG(st) if os.WIFSIGNALED(st) else os.WEXITSTATUS(st)
+
+
+def worker():
+    _status(dict(kae_worker="ready"))
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            rc = _serve_one(json.loads(line))
+        except Exception as e:  # noqa: BLE001 - a bad request; the worker goes on
+            _status(dict(ok=False, error=f"worker: {type(e).__name__}: {e}"))
+            rc = 1
+        _status(dict(kae_worker="done", rc=rc))
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
@@ -858,4 +919,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(worker() if sys.argv[1:] == ["worker"] else main(sys.argv))

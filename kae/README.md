@@ -24,7 +24,9 @@ kae/.venv/bin/pytest kae/tests          # KiCad tests skip without pcbnew
   `verify(path)`, through KiCad's own Python in a subprocess (the writer uses KiCad's plain
   reader and writer, so nothing but poses changes). Set `KAE_KICAD_PYTHON`
   (a command, e.g. `/usr/bin/python3`) or `KAE_KICAD_WRAP` (a prefix, e.g.
-  `apptainer exec ~/kicad.sif`), as for kaebench.
+  `apptainer exec ~/kicad.sif`), as for kaebench. One KiCad Python per process
+  serves the calls (each in a child forked after `import pcbnew`, so outputs are as with a
+  process per call, without its ~1 s start-up); `KAE_PCBNEW_WORKER=0` starts one per call.
 - `sdiff.diff(a, b)`: structural diff of two board files (objects keyed by uuid).
 
 Footprint frame: pad and courtyard coordinates are stored in the library frame (the
