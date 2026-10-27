@@ -454,24 +454,41 @@ def _grid(P, step):
     xs = np.arange(x0, x1 + 1e-9, step)
     ys = np.arange(y0, y1 + 1e-9, step)
     gx, gy = np.meshgrid(xs, ys)
-    return gx.ravel(), gy.ravel()
+    return gx.ravel(), gy.ravel(), (xs, ys)
 
 
-def _legal_mask(P, i, r, cx, cy, placed_rects, placed_idx):
-    """Candidate rect centres (cx, cy) for part i at rotation r: in region and no conflict."""
+def _legal_mask(P, i, r, cx, cy, placed_rects, placed_idx, axes=None):
+    """Candidate rect centres (cx, cy) for part i at rotation r: in region and no conflict.
+    axes=(xs, ys) says (cx, cy) is _grid's meshgrid of them: the overlap test then splits into
+    a column and a row test per obstacle, with the same floats as the flat arrays."""
     q = P.rects[i, r]
     h = P.halo[i] / 2
     ox, oy = (q[0] + q[2]) / 2, (q[1] + q[3]) / 2
     x, y = cx - ox, cy - oy
-    rx0, ry0, rx1, ry1 = x + q[0] - h, y + q[1] - h, x + q[2] + h, y + q[3] + h
-    ok = np.ones(len(x), bool)
     B = placed_rects[[j for j in placed_idx if P.conflict[i, j]]] if placed_idx else np.zeros((0, 4))
     fr = P.frects[P.fconflict[i]] if len(P.frects) else np.zeros((0, 4))
-    # one obstacle at a time: no candidates x obstacles temporaries
-    for b in [*B, *(fr + np.array([-h, -h, h, h]))]:
-        ok &= ~(((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6) &
-                ((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6))
-    ok[ok] = P.contains(P.side_key(i), rx0[ok], ry0[ok], rx1[ok], ry1[ok])  # region test last: the dearest
+    obst = [*B, *(fr + np.array([-h, -h, h, h]))]
+    if axes is None:
+        rx0, ry0, rx1, ry1 = x + q[0] - h, y + q[1] - h, x + q[2] + h, y + q[3] + h
+        ok = np.ones(len(x), bool)
+        # one obstacle at a time: no candidates x obstacles temporaries
+        for b in obst:
+            ok &= ~(((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6) &
+                    ((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6))
+        ok[ok] = P.contains(P.side_key(i), rx0[ok], ry0[ok], rx1[ok], ry1[ok])  # region test last: the dearest
+        return ok, x, y
+    xs, ys = axes[0] - ox, axes[1] - oy
+    rx0, ry0, rx1, ry1 = xs + q[0] - h, ys + q[1] - h, xs + q[2] + h, ys + q[3] + h
+    ok = np.ones((len(ys), len(xs)), bool)
+    for b in obst:  # clear the band of rows x columns the obstacle overlaps
+        cols = np.flatnonzero((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6)
+        rows = np.flatnonzero((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6)
+        if len(cols) and len(rows):
+            ok[np.ix_(rows, cols)] = False
+    ok = ok.ravel()
+    k = np.flatnonzero(ok)
+    c, w = k % len(xs), k // len(xs)
+    ok[k] = P.contains(P.side_key(i), rx0[c], ry0[w], rx1[c], ry1[w])  # region test last: the dearest
     return ok, x, y
 
 
@@ -501,7 +518,7 @@ def place_constructive(P, rng, random_order=False, step=None, jitter=0.0):
     least-bad spot and are left for the annealer / legalizer."""
     n = P.n
     step = step or float(np.clip(P.diag / 90, 0.25, 1.0))
-    gx, gy = _grid(P, step)
+    gx, gy, axes = _grid(P, step)
     pins = P.pin_fixed.copy()
     placed_pin = P.pin_part < 0
     x, y, r = np.zeros(n), np.zeros(n), np.zeros(n, int)
@@ -524,7 +541,7 @@ def place_constructive(P, rng, random_order=False, step=None, jitter=0.0):
             i = max(sorted(todo), key=score)
         best = None
         for rot in range(4):
-            ok, xx, yy = _legal_mask(P, i, rot, gx, gy, rects, placed)
+            ok, xx, yy = _legal_mask(P, i, rot, gx, gy, rects, placed, axes)
             if not ok.any():
                 continue
             xx, yy = xx[ok], yy[ok]
@@ -656,9 +673,9 @@ def legalize(S, rng, rounds=3):
             c0 = np.array([S.x[i] + (q0[0] + q0[2]) / 2, S.y[i] + (q0[1] + q0[3]) / 2])
             best = None
             for step in (float(np.clip(P.diag / 150, 0.1, 0.5)), 0.1, 0.05):
-                gx, gy = _grid(P, step)
+                gx, gy, axes = _grid(P, step)
                 for rot in range(4):
-                    ok, xx, yy = _legal_mask(P, i, rot, gx, gy, S.rect, others)
+                    ok, xx, yy = _legal_mask(P, i, rot, gx, gy, S.rect, others, axes)
                     if not ok.any():
                         continue
                     c = _incremental_wl(P, i, rot, xx[ok], yy[ok], pins, placed_pin)
