@@ -1,0 +1,1071 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Kernel source of the place terms (see kae.physics.jit, which loads this file twice: as
+plain Python, the fallback, and compiled by numba with an on-disk cache). Module-level
+functions only, so that numba can cache them; `jit` is the decorator the loader injects
+(identity when the file is imported directly). Units: mm, nH, pF, K, W."""
+import math
+
+import numpy as np
+
+try:
+    jit = _JIT          # noqa: F821  (injected by kae.physics.jit before execution)
+except NameError:       # imported directly: plain Python
+    def jit(f):
+        return f
+
+INF = math.inf
+MU = 0.1                 # mu0 / 4 pi, nH/mm
+ETA0 = 376.730313        # ohm
+C0 = 299.792458          # mm/ns
+TCU = 0.035
+EPS0 = 8.8541878128e-3     # pF/mm
+A2_NEAR = 0.3 ** 2       # mm^2: closest approach of two distinct conductors' axes (coupling)
+
+
+@jit
+def z0_air(w, h):
+    u = max(w, 1e-6) / max(h, 1e-6)
+    f = 6.0 + (2.0 * math.pi - 6.0) * math.exp(-((30.666 / u) ** 0.7528))
+    return ETA0 / (2.0 * math.pi) * math.log(f / u + math.sqrt(1.0 + (2.0 / u) ** 2))
+
+
+@jit
+def deff(w, h):
+    if h == INF:
+        return INF
+    a = 0.2235 * (w + TCU)
+    return a * math.exp(z0_air(w, h) / C0 / (2.0 * MU))
+
+
+@jit
+def m_self(ln, d):
+    if d < 1e-9:
+        d = 1e-9
+    return 2.0 * MU * (ln * math.asinh(ln / d) - math.sqrt(ln * ln + d * d) + d)
+
+
+@jit
+def G(u, d):
+    return u * math.asinh(u / d) - math.sqrt(u * u + d * d)
+
+
+@jit
+def m_par(l1, l2, s, d):
+    if d < 1e-9:
+        d = 1e-9
+    return MU * (G(s + l2, d) - G(s + l2 - l1, d) - G(s, d) + G(s - l1, d))
+
+
+@jit
+def xlogx(x):
+    return x * math.log(x) if x > 1e-12 else 0.0
+
+
+@jit
+def collinear(l1, l2, g):
+    return MU * (xlogx(l1 + l2 + g) - xlogx(l1 + g) - xlogx(l2 + g) + xlogx(g))
+
+
+@jit
+def strip_self(ln, w, h):
+    a = 0.2235 * (w + TCU)
+    de = deff(w, h)
+    if de == INF:
+        return m_self(ln, a)
+    return m_self(ln, a) - m_self(ln, de)
+
+
+@jit
+def ties(z, r, d, h):
+    """Two antiparallel vertical terminations of height z, distance d, from height h
+    (d floored at the radius: coincident terminations carry no loop)."""
+    d = max(d, r)
+    if h == INF:
+        return 2.0 * m_self(z, r) - 2.0 * m_par(z, z, 0.0, max(d, 1e-6))
+    return 2.0 * (m_self(z, r) + collinear(z, z, 2.0 * h)) \
+        - 2.0 * (m_par(z, z, 0.0, d) + m_par(z, z, -2.0 * h - z, d))
+
+
+@jit
+def via_return(h, d, r):
+    d = max(d, 2.0 * r)
+    return 2.0 * (m_self(h, r) + collinear(h, h, 0.0)) - 2.0 * (m_par(h, h, 0.0, d) + m_par(h, h, -2.0 * h, d))
+
+
+@jit
+def lnspan(p, z):
+    """Antiderivative of ln sqrt(p^2 + z^2) in p."""
+    if z > 0.0:
+        return 0.5 * p * math.log(p * p + z * z) - p + z * math.atan(p / z)
+    if p == 0.0:
+        return 0.0
+    return p * math.log(abs(p)) - p
+
+
+@jit
+def gmd_lin(d1, d2, z):
+    """Geometric mean of sqrt(p^2 + z^2) for p running linearly from d1 to d2 (signed
+    lateral offsets; a crossing pair has d1 d2 < 0 and a finite mean)."""
+    if abs(d2 - d1) <= 1e-9 * (abs(d1) + abs(d2) + z) + 1e-12:
+        q = 0.5 * (d1 + d2)
+        return math.sqrt(q * q + z * z)
+    return math.exp((lnspan(d2, z) - lnspan(d1, z)) / (d2 - d1))
+
+
+@jit
+def pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adjacent, cos_min, dmin, dsep, wov, ovdz):
+    """2 [M(j, k) - M(j, image k)] for horizontal segments j = A->B and k = C->D, k lying
+    dz above or below j, with the plane image of k at vertical distance zi from j
+    (inf: no plane). Pairs closer to perpendicular than cos_min give 0; adjacent pairs
+    (sharing a corner) with |cos| < 0.7 use the corner formula. Otherwise the parallel-
+    filament formula over the projected overlap with the geometric mean distance of the
+    linearly varying offset, floored at dsep (antiparallel or non-adjacent pairs: two
+    conductors on one layer cannot overlap) or dmin (the conductor's own GMD).
+    wov > 0 marks a board hop against a part's internal path. A trace cannot pass under a
+    part's pads on its own layer, so if the hop runs under the part (lateral offset < wov
+    over more than a quarter of the shorter length) it is taken on the far layer, ovdz
+    below (two-layer board, ovdz = the board thickness), or, with ovdz < 0, behind a plane
+    that shields it from the part (the pair is dropped)."""
+    ux = bx - ax
+    uy = by - ay
+    l1 = math.sqrt(ux * ux + uy * uy)
+    vx = dx - cx
+    vy = dy - cy
+    l2 = math.sqrt(vx * vx + vy * vy)
+    if l1 < 1e-9 or l2 < 1e-9:
+        return 0.0
+    ux /= l1
+    uy /= l1
+    c = (ux * vx + uy * vy) / l2
+    if -cos_min < c < cos_min:
+        return 0.0
+    qx = cx - ax
+    qy = cy - ay
+    rx = dx - ax
+    ry = dy - ay
+    s0 = qx * ux + qy * uy
+    s1 = rx * ux + ry * uy
+    d1 = qx * uy - qy * ux
+    d2 = rx * uy - ry * ux
+    if s1 >= s0:
+        lo = s0
+        e1 = s1
+    else:
+        lo = s1
+        e1 = s0
+    e2 = e1 - l1
+    e3 = lo - l1
+    if wov > 0.0:
+        ov = min(e1, l1) - max(lo, 0.0)
+        if ov > 0.25 * min(l1, l2) and gmd_lin(d1, d2, 0.0) < wov:
+            if ovdz < 0.0:
+                return 0.0
+            if dz < ovdz:
+                dz = ovdz
+    di = INF
+    if adjacent and -0.7 < c < 0.7:
+        R = math.hypot(dx - ax, dy - ay)
+        a = min(l2 / (l1 + R), 1.0 - 1e-12)
+        b = min(l1 / (l2 + R), 1.0 - 1e-12)
+        m = c * (l1 * math.log((1 + a) / (1 - a)) + l2 * math.log((1 + b) / (1 - b)))
+    else:
+        d = gmd_lin(d1, d2, dz)
+        fl = dsep if (c < 0.0 or not adjacent) else dmin
+        if d < fl:
+            # the conductors' axes cannot come closer than fl: the image sees the same
+            # floored lateral offset
+            if zi != INF:
+                di = math.sqrt(max(fl * fl - dz * dz, 0.0) + zi * zi)
+            d = fl
+        elif zi != INF:
+            di = gmd_lin(d1, d2, zi)
+        m = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
+        if c < 0:
+            m = -m
+    if zi != INF:
+        if adjacent and -0.7 < c < 0.7:
+            di = gmd_lin(d1, d2, zi)
+        d = di
+        mi = G(e1, d) - G(e2, d) - G(lo, d) + G(e3, d)
+        if c > 0:
+            m -= mi
+        else:
+            m += mi
+    return 2.0 * MU * m
+
+
+@jit
+def lookup(H, x0, y0, res, x, y):
+    i = int((x - x0) / res + 0.5)
+    j = int((y - y0) / res + 0.5)
+    if i < 0 or j < 0 or j >= H.shape[0] or i >= H.shape[1]:
+        return -1
+    return j * H.shape[1] + i
+
+
+@jit
+def med5(a, b, c, d, e):
+    """Median of five values (inf allowed), six comparisons, no allocation."""
+    if a > b:
+        a, b = b, a
+    if c > d:
+        c, d = d, c
+    if a > c:
+        a, b, c, d = c, d, a, b
+    a = e                       # the smallest of a..d is below the median: drop it
+    if a > b:
+        a, b = b, a
+    if a > c:
+        a, b, c, d = c, d, a, b
+    return min(b, c)            # the smallest of the four left is dropped too
+
+
+@jit
+def h_at(H, x0, y0, res, x, y):
+    idx = lookup(H, x0, y0, res, x, y)
+    return INF if idx < 0 else H.flat[idx]
+
+
+@jit
+def hop_h(H, x0, y0, res, ax, ay, bx, by):
+    """Reference-plane height under a hop: the median of five samples along it, so a notch
+    in the outline or a hole in the plane under part of a long hop does not unreference it,
+    while a hop mostly over no plane is unreferenced."""
+    dx = bx - ax
+    dy = by - ay
+    return med5(h_at(H, x0, y0, res, ax + 0.1 * dx, ay + 0.1 * dy), h_at(H, x0, y0, res, ax + 0.3 * dx, ay + 0.3 * dy),
+                h_at(H, x0, y0, res, ax + 0.5 * dx, ay + 0.5 * dy), h_at(H, x0, y0, res, ax + 0.7 * dx, ay + 0.7 * dy),
+                h_at(H, x0, y0, res, ax + 0.9 * dx, ay + 0.9 * dy))
+
+
+@jit
+def hop_on_ground(N, gmask, x0, y0, res, ax, ay, bx, by):
+    """(samples over a ground-net plane, samples over any plane) of five along a hop."""
+    cg = 0
+    ca = 0
+    for q in range(5):
+        t = 0.1 + 0.2 * q
+        gi = lookup(N, x0, y0, res, ax + t * (bx - ax), ay + t * (by - ay))
+        if gi >= 0:
+            net = N.flat[gi]
+            if net >= 0:
+                ca += 1
+                if gmask[net]:
+                    cg += 1
+    return cg, ca
+
+
+@jit
+def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, clr, detour, thick, rvia,
+              Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs, fs):
+    """Loop inductance (nH). clr: copper clearance (mm); detour: c of the expected route
+    length l (1 + c sqrt(l / 1 mm)) of a straight board hop of length l: each board hop is
+    stretched about its midpoint by that factor (priors.HOP_DETOUR). px, py, hs, fs:
+    scratch arrays of length >= n (points, plane heights, stretch factors)."""
+    for k in range(n):
+        i = ti[k]
+        c = C[i]
+        s = S[i]
+        ly = tly[k] * GS[i]
+        px[k] = X[i] + tlx[k] * c + ly * s
+        py[k] = Y[i] - tlx[k] * s + ly * c
+    # reference-plane height under each hop (median of samples along it, on the hop's own
+    # side); segments on opposite sides of a stack with planes seen from both sides are
+    # shielded from each other
+    mixed = False
+    for k in range(1, n):
+        if GS[ti[k]] != GS[ti[0]]:
+            mixed = True
+    shield = False
+    if mixed:
+        cf = 0
+        cb = 0
+        for k in range(n):
+            k1 = k + 1 if k + 1 < n else 0
+            mx = 0.5 * (px[k] + px[k1])
+            my = 0.5 * (py[k] + py[k1])
+            if h_at(Hf, rx0, ry0, rres, mx, my) != INF:
+                cf += 1
+            if h_at(Hb, rx0, ry0, rres, mx, my) != INF:
+                cb += 1
+        shield = 2 * cf > n and 2 * cb > n
+    # a loop is referenced consistently: on each side, when the hops over a plane make at
+    # least half of that side's length, a hop over a hole or a notch of the outline (an
+    # artifact of the straight hop: the route goes round it, over the plane) takes the plane
+    # height of the side's longest referenced hop; otherwise all of the side's hops are
+    # unreferenced (a loop mixing the two would charge free-space mutuals against
+    # image-reduced selfs)
+    for k in range(n):
+        k1 = k + 1 if k + 1 < n else 0
+        if GS[ti[k]] > 0:
+            hs[k] = hop_h(Hf, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        else:
+            hs[k] = hop_h(Hb, rx0, ry0, rres, px[k], py[k], px[k1], py[k1])
+        fs[k] = math.hypot(px[k1] - px[k], py[k1] - py[k])
+    for sd_ in (1.0, -1.0):
+        lr = 0.0
+        lu = 0.0
+        hb = INF
+        lb = -1.0
+        for k in range(n):
+            if GS[ti[k]] != sd_:
+                continue
+            if hs[k] != INF:
+                lr += fs[k]
+                if fs[k] > lb:
+                    lb = fs[k]
+                    hb = hs[k]
+            else:
+                lu += fs[k]
+        if lu > 0.0:
+            for k in range(n):
+                if GS[ti[k]] == sd_:
+                    if lr >= lu:
+                        if hs[k] == INF:
+                            hs[k] = hb
+                    else:
+                        hs[k] = INF
+    A = 0.0
+    B = 0.0
+    Af = 0.0
+    for k in range(n):
+        hk = hs[k]
+        if isbody[k]:
+            z = zb[k]
+            r = 0.2235 * (w[k] + TCU)
+            A += ties(z, r, bodyd[k], hk)
+            hs[k] = INF if hk == INF else hk + z
+            A += strip_self(bodyd[k], w[k], hs[k])
+            # floor: the part's internal path with its return directly under it at the
+            # board surface, a loop no external routing can make smaller
+            Af += ties(z, r, bodyd[k], 0.0) + strip_self(bodyd[k], w[k], z)
+        else:
+            hs[k] = hk
+    # board hops, each stretched about its midpoint by its expected detour
+    for k in range(n):
+        fs[k] = 1.0
+        if isbody[k]:
+            continue
+        k1 = k + 1 if k + 1 < n else 0
+        ln = math.hypot(px[k1] - px[k], py[k1] - py[k])
+        fs[k] = 1.0 + detour * math.sqrt(ln)
+        sk = strip_self(ln * fs[k], w[k], hs[k])
+        if k == gnd:
+            B = sk
+        else:
+            A += sk
+    MAB = 0.0
+    for j in range(n):
+        j1 = j + 1 if j + 1 < n else 0
+        ax = px[j]
+        ay = py[j]
+        bx = px[j1]
+        by = py[j1]
+        f = fs[j]
+        if f != 1.0:
+            mx = 0.5 * (ax + bx)
+            my = 0.5 * (ay + by)
+            ax = mx + (ax - mx) * f
+            ay = my + (ay - my) * f
+            bx = mx + (bx - mx) * f
+            by = my + (by - my) * f
+        for k in range(j + 1, n):
+            k1 = k + 1 if k + 1 < n else 0
+            cx = px[k]
+            cy = py[k]
+            dx = px[k1]
+            dy = py[k1]
+            f = fs[k]
+            if f != 1.0:
+                mx = 0.5 * (cx + dx)
+                my = 0.5 * (cy + dy)
+                cx = mx + (cx - mx) * f
+                cy = my + (cy - my) * f
+                dx = mx + (dx - mx) * f
+                dy = my + (dy - my) * f
+            sj = GS[ti[j]]
+            sk = GS[ti[k]]
+            if shield and sj != sk:
+                continue
+            hj = hs[j]
+            hk = hs[k]
+            if hj == INF or hk == INF:
+                zi = INF
+                dz = thick if sj != sk else 0.0
+            else:
+                zi = hj + hk
+                dz = abs(hj - hk)
+            dmin = 0.2235 * (min(w[j], w[k]) + TCU)
+            dsep = dmin
+            if dz == 0.0 and not isbody[j] and not isbody[k]:
+                dsep = 0.5 * (w[j] + w[k]) + clr
+            adj = (k == j + 1 or (j == 0 and k == n - 1)) and hj == hk
+            wov = 0.0
+            ovdz = 0.0
+            if isbody[j] != isbody[k] and sj == sk:
+                wov = 0.5 * (w[j] + w[k])
+                hb = hj if not isbody[j] else hk          # the board hop's plane distance
+                # reference plane on the far side (two-layer board) or none: the under-part
+                # route runs on the far layer; a nearer plane shields it
+                ovdz = thick if (hb == INF or hb >= 0.5 * thick) else -1.0
+            if k == j + 1 or not adj:
+                m = pair_mut(ax, ay, bx, by, cx, cy, dx, dy, dz, zi, adj, cos_min, dmin, dsep, wov, ovdz)
+            else:
+                m = pair_mut(cx, cy, dx, dy, ax, ay, bx, by, dz, zi, adj, cos_min, dmin, dsep, wov, ovdz)
+            if j == gnd or k == gnd:
+                MAB += 0.5 * m
+            else:
+                A += m
+    # vias where a board hop changes sides
+    nth = 0
+    for k in range(n):
+        if isbody[k]:
+            continue
+        k1 = k + 1 if k + 1 < n else 0
+        if GS[ti[k]] != GS[ti[k1]]:
+            A += m_self(thick, rvia)
+            for q in range(k + 1, n):
+                if isbody[q]:
+                    continue
+                q1 = q + 1 if q + 1 < n else 0
+                if GS[ti[q]] != GS[ti[q1]]:
+                    d = math.hypot(px[k1] - px[q1], py[k1] - py[q1])
+                    A -= 2.0 * m_par(thick, thick, 0.0, max(d, rvia))
+            nth += 1
+    if gnd < 0:
+        return max(A, Af)
+    lateral = max(A + B + 2.0 * MAB, Af)
+    h = hs[gnd]
+    if h == INF:
+        return lateral
+    g1 = gnd + 1 if gnd + 1 < n else 0
+    N = Nf if GS[ti[gnd]] > 0 else Nb
+    # the plane the ground hop returns through: by the samples along it that lie over a
+    # plane, else (all over a hole or notch) by those at the loop's terminals
+    cg, ca = hop_on_ground(N, gmask, rx0, ry0, rres, px[gnd], py[gnd], px[g1], py[g1])
+    if ca == 0:
+        for k in range(n):
+            gi = lookup(N, rx0, ry0, rres, px[k], py[k])
+            if gi >= 0 and N.flat[gi] >= 0:
+                ca += 1
+                if gmask[N.flat[gi]]:
+                    cg += 1
+    if ca == 0 or 2 * cg < ca:
+        return lateral
+    Cv = via_return(h, math.hypot(px[g1] - px[gnd], py[g1] - py[gnd]) * fs[gnd], rvia)
+    if B + Cv <= 1e-12:
+        return lateral
+    return max(A + MAB + (B + MAB) * (Cv - MAB) / (B + Cv), Af)
+
+
+@jit
+def cext(A, h):
+    """Charge strength (pF) of a copper patch of area A at height h over a plane, seen from
+    the air side: a square of side s with the per-length capacitance of an air microstrip,
+    C'_air(s, h) = 1 / (c0 Z0_air(s, h)) (Hammerstad-Jensen), along it and its fringe f
+    across its ends: s (2 C'_air - eps0 s / h). Within 4 % of a method-of-moments solve for
+    s / h >= 1.5 (16 % low at s / h = 0.6)."""
+    s = math.sqrt(A)
+    cpa = 1e3 / (C0 * z0_air(s, h))
+    return s * (2.0 * cpa - EPS0 * s / h)
+
+
+
+@jit
+def patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0):
+    """Pairwise sum of patches_near with the patch strengths precomputed (CA, CV)."""
+    k = 1.0 / (4.0 * math.pi * eps0)
+    h4 = 4.0 * h * h
+    cm = 0.0
+    for a in range(XA.shape[0]):
+        sa = math.sqrt(AA[a])
+        acc = 0.0
+        for v in range(XV.shape[0]):
+            rr = max(math.hypot(XA[a] - XV[v], YA[a] - YV[v]), 0.5 * (sa + math.sqrt(AV[v])))
+            acc += CV[v] * (1.0 / rr - 1.0 / math.sqrt(rr * rr + h4))
+        cm += CA[a] * acc
+    return k * cm
+
+
+@jit
+def k0(x):
+    if x <= 2.0:
+        t = x / 3.75
+        t2 = t * t
+        i0 = 1.0 + t2 * (3.5156229 + t2 * (3.0899424 + t2 * (1.2067492 + t2 * (0.2659732 + t2 * (0.0360768
+                                                                                               + t2 * 0.0045813)))))
+        y = x * x / 4.0
+        return -math.log(x / 2.0) * i0 + (-0.57721566 + y * (0.42278420 + y * (0.23069756 + y * (0.03488590 + y * (
+            0.00262698 + y * (0.00010750 + y * 0.0000074))))))
+    y = 2.0 / x
+    return math.exp(-x) / math.sqrt(x) * (1.25331414 + y * (-0.07832358 + y * (0.02189568 + y * (-0.01062446 + y * (
+        0.00587872 + y * (-0.00251540 + y * 0.00053208))))))
+
+
+@jit
+def k1(x):
+    """Modified Bessel K1 (Abramowitz & Stegun 9.8.3, 9.8.7, 9.8.8; |rel err| < 1e-7)."""
+    if x <= 2.0:
+        t = x / 3.75
+        t2 = t * t
+        i1 = x * (0.5 + t2 * (0.87890594 + t2 * (0.51498869 + t2 * (0.15084934 + t2 * (0.02658733 + t2 * (
+            0.00301532 + t2 * 0.00032411))))))
+        y = x * x / 4.0
+        return (x * math.log(x / 2.0) * i1 + 1.0 + y * (0.15443144 + y * (-0.67278579 + y * (-0.18156897 + y * (
+            -0.01919402 + y * (-0.00110404 + y * -0.00004686)))))) / x
+    y = 2.0 / x
+    return math.exp(-x) / math.sqrt(x) * (1.25331414 + y * (0.23498619 + y * (-0.03655620 + y * (0.01504268 + y * (
+        -0.00780353 + y * (0.00325614 + y * -0.00068245))))))
+
+
+@jit
+def fin_sum(tx, ty, IX, IY, a, lam):
+    """sum over the image lattice (IX x IY) of K0(max(r, a)/lam)."""
+    s = 0.0
+    for p in range(IX.shape[0]):
+        dx = tx - IX[p]
+        for q in range(IY.shape[0]):
+            dy = ty - IY[q]
+            r = math.sqrt(dx * dx + dy * dy)
+            if r < a:
+                r = a
+            s += k0(r / lam)
+    return s
+
+
+@jit
+def shape_geo(P, closed):
+    """centroid x, y, size, signed area, chord x, y of a polyline (k, 2)."""
+    k = P.shape[0]
+    cx = 0.0
+    cy = 0.0
+    for i in range(k):
+        cx += P[i, 0]
+        cy += P[i, 1]
+    cx /= k
+    cy /= k
+    size = 0.0
+    for i in range(k):
+        size = max(size, abs(P[i, 0] - cx), abs(P[i, 1] - cy))
+    area = 0.0
+    if closed:
+        for i in range(k):
+            j = i + 1 if i + 1 < k else 0
+            area += P[i, 0] * P[j, 1] - P[i, 1] * P[j, 0]
+        area *= 0.5
+    return cx, cy, 2.0 * size, area, P[k - 1, 0] - P[0, 0], P[k - 1, 1] - P[0, 1]
+
+
+@jit
+def dip_field(xa, ya, za, mx, my, mz, xv, yv, zv, vx, vy, vz):
+    rx = xv - xa
+    ry = yv - ya
+    rz = zv - za
+    R2 = rx * rx + ry * ry + rz * rz
+    R = math.sqrt(R2)
+    mr = (mx * rx + my * ry + mz * rz) / R2
+    return (3.0 * mr * (vx * rx + vy * ry + vz * rz) - (mx * vx + my * vy + mz * vz)) / (R2 * R)
+
+
+@jit
+def seg_mut(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, a2, ng, gt, gw):
+    """Neumann integral (mm; times mu0/4pi gives nH) of two straight filaments A = a->b and
+    V = c->d: inner integral along V in closed form (asinh), outer along A by ng-point
+    Gauss-Legendre. The squared distance to V's line is floored at a2 (conductors of
+    finite section cannot coincide), which keeps crossing filaments finite."""
+    ux = bx - ax
+    uy = by - ay
+    uz = bz - az
+    la = math.sqrt(ux * ux + uy * uy + uz * uz)
+    wx = dx - cx
+    wy = dy - cy
+    wz = dz - cz
+    lv = math.sqrt(wx * wx + wy * wy + wz * wz)
+    if la < 1e-9 or lv < 1e-9:
+        return 0.0
+    wx /= lv
+    wy /= lv
+    wz /= lv
+    cs = (ux * wx + uy * wy + uz * wz) / la
+    if -1e-12 < cs < 1e-12:
+        return 0.0
+    acc = 0.0
+    for q in range(ng):
+        px = ax + gt[q] * ux - cx
+        py = ay + gt[q] * uy - cy
+        pz = az + gt[q] * uz - cz
+        t0 = px * wx + py * wy + pz * wz
+        rho2 = px * px + py * py + pz * pz - t0 * t0
+        if rho2 < a2:
+            rho2 = a2
+        rho = math.sqrt(rho2)
+        acc += gw[q] * (math.asinh((lv - t0) / rho) + math.asinh(t0 / rho))
+    return cs * la * acc
+
+
+@jit
+def path_segments(P, closed, z, image, out0, out1, start):
+    """Write the straight segments of a path at height z into out0/out1 (start, end) from
+    row `start` (closed: polygon; open: via up at the first point, vias down at the
+    last, through the plane z = 0); with image, append the plane images (z mirrored,
+    direction reversed). Returns the next free row."""
+    k = P.shape[0]
+    c = start
+    if not closed:
+        out0[c, 0] = P[0, 0]
+        out0[c, 1] = P[0, 1]
+        out0[c, 2] = 0.0
+        out1[c, 0] = P[0, 0]
+        out1[c, 1] = P[0, 1]
+        out1[c, 2] = z
+        c += 1
+    nseg = k if closed else k - 1
+    for i in range(nseg):
+        j = i + 1 if i + 1 < k else 0
+        out0[c, 0] = P[i, 0]
+        out0[c, 1] = P[i, 1]
+        out0[c, 2] = z
+        out1[c, 0] = P[j, 0]
+        out1[c, 1] = P[j, 1]
+        out1[c, 2] = z
+        c += 1
+    if not closed:
+        out0[c, 0] = P[k - 1, 0]
+        out0[c, 1] = P[k - 1, 1]
+        out0[c, 2] = z
+        out1[c, 0] = P[k - 1, 0]
+        out1[c, 1] = P[k - 1, 1]
+        out1[c, 2] = 0.0
+        c += 1
+    if image:
+        n = c - start
+        for q in range(n):
+            r = start + q
+            out0[c, 0] = out1[r, 0]
+            out0[c, 1] = out1[r, 1]
+            out0[c, 2] = -out1[r, 2]
+            out1[c, 0] = out0[r, 0]
+            out1[c, 1] = out0[r, 1]
+            out1[c, 2] = -out0[r, 2]
+            c += 1
+    return c
+
+
+@jit
+def segs_mutual(A0, A1, na, V0, V1, nv, a2, gt3, gw3, gt6, gw6):
+    """mu0/4pi sum over segment pairs of seg_mut: 6-point outer rule for pairs closer than
+    their summed lengths, 3-point otherwise."""
+    m = 0.0
+    for i in range(na):
+        mx = 0.5 * (A0[i, 0] + A1[i, 0])
+        my = 0.5 * (A0[i, 1] + A1[i, 1])
+        mz = 0.5 * (A0[i, 2] + A1[i, 2])
+        la = math.sqrt((A1[i, 0] - A0[i, 0]) ** 2 + (A1[i, 1] - A0[i, 1]) ** 2 + (A1[i, 2] - A0[i, 2]) ** 2)
+        for j in range(nv):
+            lv = math.sqrt((V1[j, 0] - V0[j, 0]) ** 2 + (V1[j, 1] - V0[j, 1]) ** 2 + (V1[j, 2] - V0[j, 2]) ** 2)
+            ex = 0.5 * (V0[j, 0] + V1[j, 0]) - mx
+            ey = 0.5 * (V0[j, 1] + V1[j, 1]) - my
+            ez = 0.5 * (V0[j, 2] + V1[j, 2]) - mz
+            near = ex * ex + ey * ey + ez * ez < (la + lv) ** 2
+            # integrate along the longer segment's partner: outer over A
+            if near:
+                m += seg_mut(A0[i, 0], A0[i, 1], A0[i, 2], A1[i, 0], A1[i, 1], A1[i, 2],
+                             V0[j, 0], V0[j, 1], V0[j, 2], V1[j, 0], V1[j, 1], V1[j, 2], a2, 6, gt6, gw6)
+            else:
+                m += seg_mut(A0[i, 0], A0[i, 1], A0[i, 2], A1[i, 0], A1[i, 1], A1[i, 2],
+                             V0[j, 0], V0[j, 1], V0[j, 2], V1[j, 0], V1[j, 1], V1[j, 2], a2, 3, gt3, gw3)
+    return MU * m
+
+
+@jit
+def loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, vd):
+    """|M| (nH) between aggressor path PA (closed if ca) at za and victim PV (cv) at zv over
+    the plane at height reference h (inf: free space). Far apart: point dipoles of the loop
+    plus its image (closed: +A at +z, -A at -z; open: 2 z z^ x chord) against the victim's
+    physical area vector; near: segment-pair Neumann integrals (inner closed form, outer
+    Gauss) with the aggressor's plane images."""
+    xa, ya, sa, aa, cha_x, cha_y = shape_geo(PA, ca)
+    xv, yv, sv, av, chv_x, chv_y = shape_geo(PV, cv)
+    r = math.hypot(xa - xv, ya - yv)
+    big = max(sa, sv, 1e-3)
+    if h == INF:
+        if not (ca and cv):
+            return 0.0
+        if r >= 2.0 * big:
+            return abs(MU * aa * av / (r * r * r))
+        na = path_segments(PA, True, 0.0, False, sp, sd, 0)
+        nv = path_segments(PV, True, 0.0, False, vp, vd, 0)
+        return abs(segs_mutual(sp, sd, na, vp, vd, nv, A2_NEAR, gt3, gw3, gt6, gw6))
+    if r >= 2.0 * big and r >= 4.0 * h:
+        m = 0.0
+        if cv:
+            vx_, vy_, vz_, mvx, mvy, mvz = xv, yv, zv, 0.0, 0.0, av
+        else:
+            vx_, vy_, vz_, mvx, mvy, mvz = xv, yv, 0.5 * zv, -zv * chv_y, zv * chv_x, 0.0
+        if ca:
+            m += dip_field(xa, ya, za, 0.0, 0.0, aa, vx_, vy_, vz_, mvx, mvy, mvz)
+            m += dip_field(xa, ya, -za, 0.0, 0.0, -aa, vx_, vy_, vz_, mvx, mvy, mvz)
+        else:
+            m += dip_field(xa, ya, 0.0, -2.0 * za * cha_y, 2.0 * za * cha_x, 0.0, vx_, vy_, vz_, mvx, mvy, mvz)
+        return abs(MU * m)
+    na = path_segments(PA, ca, za, True, sp, sd, 0)
+    nv = path_segments(PV, cv, zv, False, vp, vd, 0)
+    return abs(segs_mutual(sp, sd, na, vp, vd, nv, A2_NEAR, gt3, gw3, gt6, gw6))
+
+
+@jit
+def patches_cm_core(XA, YA, AA, XV, YV, AV, h, eps_r, eps0):
+    """First-order mutual capacitance (pF) of two patch sets over a plane at h:
+    C_m = sum C_a C_v p_av, p_av = (1/(4 pi eps0)) (1/r - 1/sqrt(r^2 + 4 h^2)), with the
+    patches' air-side strengths (cext); far apart, the area-weighted centroids."""
+    CA = np.empty(XA.shape[0])
+    for a in range(XA.shape[0]):
+        CA[a] = cext(AA[a], h)
+    CV = np.empty(XV.shape[0])
+    for v in range(XV.shape[0]):
+        CV[v] = cext(AV[v], h)
+    return patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
+
+
+@jit
+def patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0):
+    """patches_cm_core with the patch strengths precomputed: CA = cext(AA, h), CV = cext(AV, h)."""
+    ta = 0.0
+    tv = 0.0
+    sa = 0.0
+    sv = 0.0
+    ax = 0.0
+    ay = 0.0
+    vx = 0.0
+    vy = 0.0
+    for a in range(XA.shape[0]):
+        ta += AA[a]
+        sa += CA[a]
+        ax += XA[a] * AA[a]
+        ay += YA[a] * AA[a]
+    for v in range(XV.shape[0]):
+        tv += AV[v]
+        sv += CV[v]
+        vx += XV[v] * AV[v]
+        vy += YV[v] * AV[v]
+    ax /= ta
+    ay /= ta
+    vx /= tv
+    vy /= tv
+    ea = 0.0
+    ev = 0.0
+    for a in range(XA.shape[0]):
+        ea = max(ea, abs(XA[a] - ax), abs(YA[a] - ay))
+    for v in range(XV.shape[0]):
+        ev = max(ev, abs(XV[v] - vx), abs(YV[v] - vy))
+    r = math.hypot(ax - vx, ay - vy)
+    k = 1.0 / (4.0 * math.pi * eps0)
+    if r > 3.0 * (ea + ev) + 2.0 * h:
+        p = k * (1.0 / r - 1.0 / math.sqrt(r * r + 4.0 * h * h))
+        return sa * sv * p
+    return patches_near_pre(XA, YA, AA, CA, XV, YV, AV, CV, h, eps0)
+
+
+@jit
+def eps_eff(w, h, er):
+    """Hammerstad-Jensen effective permittivity of a microstrip (zero thickness)."""
+    u = max(w, 1e-6) / max(h, 1e-6)
+    a = 1.0 + math.log((u ** 4 + (u / 52.0) ** 2) / (u ** 4 + 0.432)) / 49.0 \
+        + math.log(1.0 + (u / 18.1) ** 3) / 18.7
+    b = 0.564 * ((er - 0.9) / (er + 3.0)) ** 0.053
+    return (er + 1.0) / 2.0 + (er - 1.0) / 2.0 * (1.0 + 10.0 / u) ** (-a * b)
+
+
+@jit
+def cself(A, h, er):
+    """Capacitance to the plane (pF) of copper of area A at height h in a dielectric er: a
+    square of side s with the microstrip C'(s, h, er) along it and its fringe across the
+    ends, s (2 C' - eps0 er s / h) (Hammerstad-Jensen C' = sqrt(e_eff) / (c0 Z0))."""
+    s = math.sqrt(max(A, 1e-6))
+    ee = eps_eff(s, h, er)
+    cp = math.sqrt(ee) / (C0 * z0_air(s, h) / math.sqrt(ee)) * 1e3
+    return s * (2.0 * cp - EPS0 * er * s / h)
+
+
+@jit
+def window(g, r0, r1):
+    """Smooth cut-off of a coupling with the gap g between the two copper extents: 1 up to
+    r0, 0 beyond r1, a cubic step (C1) between."""
+    if g <= r0:
+        return 1.0
+    if g >= r1:
+        return 0.0
+    t = (g - r0) / (r1 - r0)
+    return 1.0 - t * t * (3.0 - 2.0 * t)
+
+
+@jit
+def box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1):
+    dx = max(0.0, max(ax0, bx0) - min(ax1, bx1))
+    dy = max(0.0, max(ay0, by0) - min(ay1, by1))
+    return math.hypot(dx, dy)
+
+
+@jit
+def xy_box(X, Y):
+    x0 = X[0]
+    x1 = X[0]
+    y0 = Y[0]
+    y1 = Y[0]
+    for i in range(1, X.shape[0]):
+        x0 = min(x0, X[i])
+        x1 = max(x1, X[i])
+        y0 = min(y0, Y[i])
+        y1 = max(y1, Y[i])
+    return x0, y0, x1, y1
+
+
+@jit
+def ind_one(PA, ca, za, PV, cv, zv, h, kind, k1, r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd):
+    """Inductive coupling of one target: k1 |M(aggressor, target)| (kind 1, a cable
+    connector: times the window of the gap between the two loops' extents)."""
+    if k1 == 0.0:
+        return 0.0
+    w = 1.0
+    if kind == 1:
+        ax0, ay0, ax1, ay1 = xy_box(PA[:, 0], PA[:, 1])
+        bx0, by0, bx1, by1 = xy_box(PV[:, 0], PV[:, 1])
+        w = window(box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1), r0, r1)
+        if w == 0.0:
+            return 0.0
+    return k1 * w * loop_mutual_core(PA, ca, za, PV, cv, zv, h, gt3, gw3, gt6, gw6, sp, sd, vp, vd)
+
+
+@jit
+def cap_one(XA, YA, AA, CA, XV, YV, AV, CV, hh, er, kind, k1, k2, r0, r1):
+    """Capacitive coupling of one target (patch strengths precomputed at hh):
+    kind 0, a victim: 1e3 k1 Cm / (Cm + C_self(victim copper) + 5 pF + k2), the charge
+    division of the aggressor's swing k1 (V) into the victim (k2 = t_sw / Z_v, pF), mV;
+    kind 1, a cable connector: k1 Cm times the window of the gap between the extents."""
+    if k1 == 0.0:
+        return 0.0
+    w = 1.0
+    if kind == 1:
+        ax0, ay0, ax1, ay1 = xy_box(XA, YA)
+        bx0, by0, bx1, by1 = xy_box(XV, YV)
+        w = window(box_gap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1), r0, r1)
+        if w == 0.0:
+            return 0.0
+    cm = patches_cm_pre(XA, YA, AA, CA, XV, YV, AV, CV, hh, EPS0)
+    if kind == 0:
+        at = 0.0
+        for v in range(AV.shape[0]):
+            at += AV[v]
+        cv = cself(at, hh, er) + 5.0
+        return 1e3 * k1 * cm / (cm + cv + k2)
+    return k1 * w * cm
+
+
+# ----------------------------------------------------------------------------- coupling engine
+@jit
+def eng_loop(X, Y, C, S, G, LT_i, LT_xy, off, n, GP):
+    """Points of a loop shape (its terminals at the current poses) into GP[off:off + n];
+    returns the centroid."""
+    cx = 0.0
+    cy = 0.0
+    for k in range(n):
+        q = off + k
+        i = LT_i[q]
+        c = C[i]
+        s = S[i]
+        ly = LT_xy[q, 1] * G[i]
+        x = X[i] + LT_xy[q, 0] * c + ly * s
+        y = Y[i] - LT_xy[q, 0] * s + ly * c
+        GP[q, 0] = x
+        GP[q, 1] = y
+        cx += x
+        cy += y
+    return cx / n, cy / n
+
+
+@jit
+def eng_node(X, Y, C, S, G, NT_i, NT_xya, toff, n, w, poff, PX, PY, PA):
+    """Patches of a node shape: its pads (their areas), then the hops between consecutive
+    pads as strips of width w (area length * w at the midpoint; none when w = 0); returns
+    the number of patches and the area-weighted centroid."""
+    for k in range(n):
+        q = toff + k
+        i = NT_i[q]
+        c = C[i]
+        s = S[i]
+        ly = NT_xya[q, 1] * G[i]
+        PX[poff + k] = X[i] + NT_xya[q, 0] * c + ly * s
+        PY[poff + k] = Y[i] - NT_xya[q, 0] * s + ly * c
+        PA[poff + k] = NT_xya[q, 2]
+    m = n
+    if w > 0.0:
+        for k in range(n - 1):
+            a = poff + k
+            ln = math.hypot(PX[a + 1] - PX[a], PY[a + 1] - PY[a])
+            PX[poff + m] = 0.5 * (PX[a] + PX[a + 1])
+            PY[poff + m] = 0.5 * (PY[a] + PY[a + 1])
+            PA[poff + m] = ln * w if ln > 1e-6 else 0.0
+            m += 1
+    at = 0.0
+    cx = 0.0
+    cy = 0.0
+    for k in range(m):
+        a = PA[poff + k]
+        at += a
+        cx += PX[poff + k] * a
+        cy += PY[poff + k] * a
+    if at <= 0.0:
+        at = 1e-6
+    return m, cx / at, cy / at
+
+
+@jit
+def eng_eval(X, Y, C, S, G, LT_i, LT_xy, L_meta, L_f, NT_i, NT_xya, N_meta, N_w, Hf, Hb, rx0, ry0, rres, er,
+             Lp, Lk, Cp, Ck, sel_l, sel_c, r0, r1, GP, Lc, Ls, PX, PY, PA, PC, Nc, Ns, stamp,
+             gt3, gw3, gt6, gw6, sp, sd, vp, vd, out_l, out_c):
+    """Coupling sub-terms of the selected pairs at the current poses (one call per delta):
+    inductive pairs Lp[p] = (aggressor loop, target loop, kind) with coefficient Lk[p]
+    (ind_one), capacitive pairs Cp[p] = (aggressor node, target node, kind) with Ck[p] =
+    (k1, k2) (cap_one). Shapes are laid out once (L_meta: offset, count; L_f: closed, z
+    extra; N_meta: terminal offset, count, patch offset; N_w: hop width) and evaluated from
+    the pose arrays at most once per call (stamp): loop centroid and plane height in Lc,
+    node centroid, plane height and the height its strengths PC were computed at in Nc."""
+    zero = 0.0
+    for q in range(sel_l.shape[0]):
+        p = sel_l[q]
+        a = Lp[p, 0]
+        t = Lp[p, 1]
+        for sh in (a, t):
+            if Ls[sh] != stamp:
+                cx, cy = eng_loop(X, Y, C, S, G, LT_i, LT_xy, L_meta[sh, 0], L_meta[sh, 1], GP)
+                side = G[LT_i[L_meta[sh, 0]]]
+                Lc[sh, 0] = cx
+                Lc[sh, 1] = cy
+                Lc[sh, 2] = h_at(Hf, rx0, ry0, rres, cx, cy) if side > 0 else h_at(Hb, rx0, ry0, rres, cx, cy)
+                Ls[sh] = stamp
+        h = Lc[a, 2]
+        zb = 1.6 if h == INF else h
+        PA_ = GP[L_meta[a, 0]:L_meta[a, 0] + L_meta[a, 1]]
+        PV_ = GP[L_meta[t, 0]:L_meta[t, 0] + L_meta[t, 1]]
+        if PV_.shape[0] < 2 or PA_.shape[0] < 2:
+            out_l[q] = zero
+            continue
+        out_l[q] = ind_one(PA_, L_f[a, 0] > 0.5, zb + L_f[a, 1], PV_, L_f[t, 0] > 0.5, zb + L_f[t, 1], h, Lp[p, 2],
+                           Lk[p], r0, r1, gt3, gw3, gt6, gw6, sp, sd, vp, vd)
+    for q in range(sel_c.shape[0]):
+        p = sel_c[q]
+        a = Cp[p, 0]
+        t = Cp[p, 1]
+        for sh in (a, t):
+            if Ns[sh] != stamp:
+                m, cx, cy = eng_node(X, Y, C, S, G, NT_i, NT_xya, N_meta[sh, 0], N_meta[sh, 1], N_w[sh],
+                                     N_meta[sh, 2], PX, PY, PA)
+                side = G[NT_i[N_meta[sh, 0]]]
+                hn = h_at(Hf, rx0, ry0, rres, cx, cy) if side > 0 else h_at(Hb, rx0, ry0, rres, cx, cy)
+                Nc[sh, 0] = cx
+                Nc[sh, 1] = cy
+                Nc[sh, 2] = 1.6 if hn == INF else max(hn, 0.05)
+                Nc[sh, 3] = -1.0               # strengths not computed at any height yet
+                Ns[sh] = stamp
+        hh = Nc[a, 2]
+        for sh in (a, t):
+            if Nc[sh, 3] != hh:
+                o = N_meta[sh, 2]
+                np_ = N_meta[sh, 3]
+                for k in range(np_):
+                    PC[o + k] = cext(PA[o + k], hh)
+                Nc[sh, 3] = hh
+        oa = N_meta[a, 2]
+        na_ = N_meta[a, 3]
+        ot = N_meta[t, 2]
+        nt_ = N_meta[t, 3]
+        out_c[q] = cap_one(PX[oa:oa + na_], PY[oa:oa + na_], PA[oa:oa + na_], PC[oa:oa + na_],
+                           PX[ot:ot + nt_], PY[ot:ot + nt_], PA[ot:ot + nt_], PC[ot:ot + nt_], hh, er, Cp[p, 2],
+                           Ck[p, 0], Ck[p, 1], r0, r1)
+
+
+@jit
+def phi_sum(T, m, A, Cf, barrier, usat):
+    """sum_t Cf[t] phi(max(T[t] - m, 0) / A[t]) with priors.phi (linear to 1, quadratic
+    barrier to usat, logarithmic beyond)."""
+    ps = usat + barrier * (usat - 1.0) ** 2
+    dps = 1.0 + 2.0 * barrier * (usat - 1.0)
+    tot = 0.0
+    for t in range(T.shape[0]):
+        u = max(T[t] - m, 0.0) / A[t]
+        if u <= 1.0:
+            f = u
+        elif u <= usat:
+            f = u + barrier * (u - 1.0) ** 2
+        else:
+            f = ps + dps * usat * math.log(u / usat)
+        tot += Cf[t] * f
+    return tot
+
+
+@jit
+def img_axis(c, c0, L, ms, out):
+    """Image coordinates of c along one axis of the box [c0, c0 + L] (adiabatic edges)."""
+    u = c - c0
+    n = ms.shape[0]
+    for p in range(n):
+        out[p] = c0 + 2.0 * ms[p] * L + u
+        out[n + p] = c0 + 2.0 * ms[p] * L - u
+
+
+@jit
+def fin_col_xy(X, Y, idx, sx, sy, box, ms, a, lam, out):
+    """fin_column for targets at (X[idx[t]], Y[idx[t]]) of a source at (sx, sy), its image
+    lattice built here."""
+    n = 2 * ms.shape[0]
+    IX = np.empty(n)
+    IY = np.empty(n)
+    img_axis(sx, box[0], box[2], ms, IX)
+    img_axis(sy, box[1], box[3], ms, IY)
+    for t in range(idx.shape[0]):
+        out[t] = fin_sum(X[idx[t]], Y[idx[t]], IX, IY, a, lam)
+
+
+@jit
+def fin_row_xy(X, Y, sidx, tx, ty, box, ms, A, lam, out):
+    """fin_row at (tx, ty) for sources at (X[sidx[k]], Y[sidx[k]]), lattices built here."""
+    n = 2 * ms.shape[0]
+    IX = np.empty(n)
+    IY = np.empty(n)
+    for k in range(sidx.shape[0]):
+        img_axis(X[sidx[k]], box[0], box[2], ms, IX)
+        img_axis(Y[sidx[k]], box[1], box[3], ms, IY)
+        out[k] = fin_sum(tx, ty, IX, IY, A[k], lam)
+
+
+@jit
+def mst_len(X, Y, C, S, G, ti, lx, ly, px, py, best, used):
+    """Length (mm) of the Euclidean minimum spanning tree of terminals (part ti[k], library
+    point lx[k], ly[k]) at the poses X, Y, C, S, G (Prim, O(n^2)); px, py, best, used are
+    scratch arrays of length n."""
+    n = ti.shape[0]
+    if n < 2:
+        return 0.0
+    for k in range(n):
+        i = ti[k]
+        q = ly[k] * G[i]
+        px[k] = X[i] + lx[k] * C[i] + q * S[i]
+        py[k] = Y[i] - lx[k] * S[i] + q * C[i]
+        best[k] = INF
+        used[k] = False
+    best[0] = 0.0
+    ln = 0.0
+    for _ in range(n):
+        k = -1
+        for j in range(n):
+            if not used[j] and (k < 0 or best[j] < best[k]):
+                k = j
+        used[k] = True
+        ln += best[k]
+        for j in range(n):
+            if not used[j]:
+                d = math.hypot(px[j] - px[k], py[j] - py[k])
+                if d < best[j]:
+                    best[j] = d
+    return ln

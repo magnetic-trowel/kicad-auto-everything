@@ -1,0 +1,9 @@
+(version 1)
+# fixture rules
+(rule "pwr_clearance"
+	(condition "A.NetClass == 'Power'")
+	(constraint clearance (min 0.3mm)))
+(rule "hs_width"
+	(layer outer)
+	(condition "A.NetClass == 'HS'")
+	(constraint track_width (min 0.15mm) (opt 0.2mm) (max 10mil)))
