@@ -1,0 +1,386 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd",
+      "violations": []
+    },
+    {
+      "path": "/tapin/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/31a1743b-056c-5359-8764-5b0f13fed45e",
+      "violations": []
+    },
+    {
+      "path": "/tap0/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/072016e3-1aa3-5632-a75c-817c344ec5e0",
+      "violations": []
+    },
+    {
+      "path": "/tap1/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/eea88b7c-b519-5150-af9a-72443a5f1640",
+      "violations": []
+    },
+    {
+      "path": "/tap2/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/74b346f1-3ac8-517e-be1b-527851303a3b",
+      "violations": []
+    },
+    {
+      "path": "/tap3/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/1a98c94f-418c-5d04-b6e7-86026e8e9bc9",
+      "violations": []
+    },
+    {
+      "path": "/tap4/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/859a2ca6-10d3-5a44-87b2-48e85f73fe29",
+      "violations": []
+    },
+    {
+      "path": "/tap5/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/4ca271e5-30d9-5746-8d7b-2c987a170a0c",
+      "violations": []
+    },
+    {
+      "path": "/tap6/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/c386d680-3cd1-5508-a5c5-781cc89676cc",
+      "violations": []
+    },
+    {
+      "path": "/tap7/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/31061ce2-73f5-52d5-95b9-6f125e96ac11",
+      "violations": []
+    },
+    {
+      "path": "/tap8/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/6c2b3053-d873-5f86-b68f-35a5fbcf2d40",
+      "violations": []
+    },
+    {
+      "path": "/tap9/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/b9f3aa6f-6f99-5642-943f-a2f313f7f65d",
+      "violations": []
+    },
+    {
+      "path": "/tap10/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/a115443f-8e44-562f-b0dc-faee283a78ad",
+      "violations": []
+    },
+    {
+      "path": "/tap11/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/a1edd6e3-bb94-574e-b1bf-20c1593553f4",
+      "violations": []
+    },
+    {
+      "path": "/tap12/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/cf25aa57-6c07-592c-9482-588241ce4da1",
+      "violations": []
+    },
+    {
+      "path": "/tap13/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/8438d9a3-d4db-523d-bcc2-29d8751f7faf",
+      "violations": []
+    },
+    {
+      "path": "/tap14/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/13b0ccd4-ed8a-591d-bef8-472be3f89628",
+      "violations": []
+    },
+    {
+      "path": "/tap15/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/6690f465-5343-5048-af1f-8e5fae012202",
+      "violations": []
+    },
+    {
+      "path": "/tap16/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/a278c03e-d942-5e57-9a24-a4e32c35c3a5",
+      "violations": []
+    },
+    {
+      "path": "/ch1/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/a13eab5e-6137-59c0-ad86-0d74389113db",
+      "violations": []
+    },
+    {
+      "path": "/ch2/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/2a69d5c8-cd48-5d41-a602-797c2aaf38d4",
+      "violations": []
+    },
+    {
+      "path": "/ch3/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/ca41bbf3-0006-593e-a8ae-d8b746564239",
+      "violations": []
+    },
+    {
+      "path": "/ch4/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/72bda991-4ec8-5b8b-8a2f-c82da9a60278",
+      "violations": []
+    },
+    {
+      "path": "/ch5/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/7c0e0214-6ce2-5906-b7da-9b0626955fc1",
+      "violations": []
+    },
+    {
+      "path": "/ch6/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/dd907d85-db27-54b1-898f-bc56218add52",
+      "violations": []
+    },
+    {
+      "path": "/ch7/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/5fab4117-9ca8-5d22-8732-21bfde759abd",
+      "violations": []
+    },
+    {
+      "path": "/ch8/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/2ba9ebcf-d7bd-5a81-b007-91d2538850a0",
+      "violations": []
+    },
+    {
+      "path": "/ch9/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/e415f6ad-4ef1-5f4c-96e4-8af5dd450129",
+      "violations": []
+    },
+    {
+      "path": "/ch10/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/15d7b0bf-80f3-510e-a40d-419af8a80fe5",
+      "violations": []
+    },
+    {
+      "path": "/ch11/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/55629b30-62ca-5b19-8cbb-c4547e463344",
+      "violations": []
+    },
+    {
+      "path": "/ch12/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/ea97fb37-5370-5fc8-8bcb-bb7a07aaf225",
+      "violations": []
+    },
+    {
+      "path": "/ch13/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/cc01fc9c-612f-56c1-979d-f1ea7f8103fc",
+      "violations": []
+    },
+    {
+      "path": "/ch14/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/fc619d2a-42ac-5f2e-84ab-1d17bb0faf92",
+      "violations": []
+    },
+    {
+      "path": "/ch15/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/896d443f-e011-5041-997b-8841f25fad65",
+      "violations": []
+    },
+    {
+      "path": "/ch16/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/493da4dc-1441-5947-8c91-fb84f6a395e9",
+      "violations": []
+    },
+    {
+      "path": "/ret/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/3f26a488-223e-51ee-94f8-190af58d5889",
+      "violations": []
+    },
+    {
+      "path": "/afe/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/eefa9007-412c-53b5-9828-b522fb682ffe",
+      "violations": [
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U1 Pin 43 [GPIO5, Bidirectional, Line]",
+              "pos": {
+                "x": 165.1,
+                "y": 43.18
+              },
+              "uuid": "141a7918-7834-59da-ae54-9f2308036575"
+            },
+            {
+              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 101.6,
+                "y": 30.48
+              },
+              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        },
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U1 Pin 44 [GPIO6, Bidirectional, Line]",
+              "pos": {
+                "x": 165.1,
+                "y": 45.72
+              },
+              "uuid": "fa953a00-f000-5129-81ed-1cbec7cdf510"
+            },
+            {
+              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 101.6,
+                "y": 30.48
+              },
+              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        },
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U1 Pin 45 [GPIO7, Bidirectional, Line]",
+              "pos": {
+                "x": 165.1,
+                "y": 48.26
+              },
+              "uuid": "acd060dc-d813-55eb-8179-9a98c26f982f"
+            },
+            {
+              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 101.6,
+                "y": 30.48
+              },
+              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        },
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U1 Pin 46 [GPIO8, Bidirectional, Line]",
+              "pos": {
+                "x": 165.1,
+                "y": 50.8
+              },
+              "uuid": "6c8ff645-de07-5bda-b6a4-18982fc21a81"
+            },
+            {
+              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 101.6,
+                "y": 30.48
+              },
+              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        },
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U1 Pin 47 [GPIO9, Bidirectional, Line]",
+              "pos": {
+                "x": 165.1,
+                "y": 53.34
+              },
+              "uuid": "d634e224-3632-5be7-baa7-efe741049fab"
+            },
+            {
+              "description": "Symbol #FLG02 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 101.6,
+                "y": 30.48
+              },
+              "uuid": "261b6da2-2b85-5fbd-bc36-bc24afdd6a0a"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        }
+      ]
+    },
+    {
+      "path": "/psu/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/47162457-9afd-52c0-9d3b-1b5caafe0789",
+      "violations": []
+    },
+    {
+      "path": "/mcu/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/38f070e5-3b9c-5311-aab5-bcb46ccabb58",
+      "violations": [
+        {
+          "description": "Pins of type Bidirectional and Power output are connected",
+          "items": [
+            {
+              "description": "Symbol U2 Pin 15 [PB0, Bidirectional, Line]",
+              "pos": {
+                "x": 43.18,
+                "y": 63.5
+              },
+              "uuid": "95462d70-8ffc-5331-a3b8-a28ecd0a5e31"
+            },
+            {
+              "description": "Symbol #FLG22 Pin 1 [Power output, Line]",
+              "pos": {
+                "x": 88.9,
+                "y": 165.1
+              },
+              "uuid": "6fef8b46-10df-58e8-b046-5074258d20d0"
+            }
+          ],
+          "severity": "warning",
+          "type": "pin_to_pin"
+        }
+      ]
+    },
+    {
+      "path": "/en/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/a15e1e63-fe7c-57ce-a650-c6feafb5efee",
+      "violations": []
+    },
+    {
+      "path": "/iso/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/8cd2676d-95e8-5674-b92a-21dbc7c62d85",
+      "violations": []
+    },
+    {
+      "path": "/harness/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/3bd30566-b724-5055-8c49-93f94eb7cac3",
+      "violations": []
+    },
+    {
+      "path": "/mech/",
+      "uuid_path": "/33401eb0-491f-5dda-903e-cf935510cefd/9499149c-3cf6-5600-be07-e603cd04b785",
+      "violations": []
+    }
+  ],
+  "source": "liion-balancer.kicad_sch"
+}

@@ -1,0 +1,10 @@
+# kaesynth build output: only the review-relevant report and ERC result are committed.
+designs/*/out/**
+!designs/*/out/
+!designs/*/out/report.md
+!designs/*/out/erc.json
+synth/.venv/
+*.kicad_prl
+*.lck
+fp-info-cache
+.pytest_cache/

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/5ead922d-a46e-5213-8afa-717d4080c82c",
+      "violations": []
+    },
+    {
+      "path": "/power/",
+      "uuid_path": "/5ead922d-a46e-5213-8afa-717d4080c82c/d3a8683f-3e4b-5978-9cd0-cd411bb7e591",
+      "violations": []
+    },
+    {
+      "path": "/led/",
+      "uuid_path": "/5ead922d-a46e-5213-8afa-717d4080c82c/56fec498-bc2f-5aec-b54b-a8a307606774",
+      "violations": []
+    }
+  ],
+  "source": "usb-led.kicad_sch"
+}

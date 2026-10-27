@@ -1,0 +1,92 @@
+{
+ "status": {
+  "ok": true,
+  "error": 0,
+  "warning": 10,
+  "info": 0,
+  "waived": 0,
+  "blocking_questions": []
+ },
+ "findings": [
+  {
+   "check": "rating.voltage",
+   "severity": "warning",
+   "message": "U101 (AP2112K-3.3TRG1): V(VIN-GND) 5.5 vs rating 6.5 (85%) (+5V to GND) \u2014 above 80% derating",
+   "objects": [
+    "U101"
+   ]
+  },
+  {
+   "check": "rating.power",
+   "severity": "warning",
+   "message": "R201 (150): worst case 3.4 V across it gives 0.0771 W vs rating 0.1 W \u2014 set p_diss from a calculation or fix the net ranges",
+   "objects": [
+    "R201"
+   ]
+  },
+  {
+   "check": "bom.no_mpn",
+   "severity": "warning",
+   "message": "J1 (1x2): no manufacturer part number",
+   "objects": [
+    "J1"
+   ]
+  },
+  {
+   "check": "bom.no_mpn",
+   "severity": "warning",
+   "message": "J201 (1x1): no manufacturer part number",
+   "objects": [
+    "J201"
+   ]
+  },
+  {
+   "check": "part.no_datasheet",
+   "severity": "warning",
+   "message": "J1 (1x2): no datasheet URL",
+   "objects": [
+    "J1"
+   ]
+  },
+  {
+   "check": "part.no_provenance",
+   "severity": "warning",
+   "message": "J1 (1x2): no source for ratings (PartDef(source={'pins': 'DS rev, page, table'}))",
+   "objects": [
+    "J1"
+   ]
+  },
+  {
+   "check": "part.no_datasheet",
+   "severity": "warning",
+   "message": "F101 (0805L050SLWR): no datasheet URL",
+   "objects": [
+    "F101"
+   ]
+  },
+  {
+   "check": "part.no_provenance",
+   "severity": "warning",
+   "message": "F101 (0805L050SLWR): no source for ratings (PartDef(source={'pins': 'DS rev, page, table'}))",
+   "objects": [
+    "F101"
+   ]
+  },
+  {
+   "check": "part.no_datasheet",
+   "severity": "warning",
+   "message": "J201 (1x1): no datasheet URL",
+   "objects": [
+    "J201"
+   ]
+  },
+  {
+   "check": "part.no_provenance",
+   "severity": "warning",
+   "message": "J201 (1x1): no source for ratings (PartDef(source={'pins': 'DS rev, page, table'}))",
+   "objects": [
+    "J201"
+   ]
+  }
+ ]
+}

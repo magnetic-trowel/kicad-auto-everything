@@ -17,6 +17,7 @@ None of this is legal advice.
 | Machine-readable layout rule packs and constraint/intent schemas | CC0 1.0 (public domain dedication) | `CC0-1.0` |
 | Datasets, benchmark manifests, and labels we create | Community Data License Agreement – Permissive 2.0 | `CDLA-Permissive-2.0` |
 | Trained model weights we release | Apache License 2.0 | `Apache-2.0` |
+| KiCad library content we reuse (one footprint in `tools/research/llm-design/designs/`, library symbols embedded in generated schematics) | CC BY-SA 4.0 with the KiCad libraries exception | `CC-BY-SA-4.0 WITH KiCad-libraries-exception` |
 
 The root [`LICENSE`](LICENSE) is the GPL v3 text. Per-file licensing is
 declared in [`REUSE.toml`](REUSE.toml) and SPDX headers, following

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kaesynth"
+version = "0.1.0"
+description = "Design synthesis: typed circuit IR to checked KiCad schematics and placement intent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+kaesynth = "kaesynth.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["kicad: needs KiCad 10 (kicad-cli and the official symbol/footprint libraries)"]
