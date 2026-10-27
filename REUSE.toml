@@ -17,13 +17,6 @@ precedence = "override"
 SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
 SPDX-License-Identifier = "CDLA-Permissive-2.0"
 
-# Documentation, research notes, and reports are CC-BY-4.0.
-[[annotations]]
-path = ["**/*.md", "research_notes/**", "reports/**", "docs/**"]
-precedence = "override"
-SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
-SPDX-License-Identifier = "CC-BY-4.0"
-
 # A footprint copied from the official KiCad library (kicad-footprint-generator output).
 [[annotations]]
 path = "tools/research/llm-design/designs/liion-balancer/footprints/custom.pretty/PhoenixContact_*.kicad_mod"
@@ -38,3 +31,10 @@ path = ["tools/research/llm-design/**/out/**.kicad_sch", "tools/research/llm-des
 precedence = "override"
 SPDX-FileCopyrightText = ["2026 kicad-auto-everything contributors", "KiCad Library Team and contributors"]
 SPDX-License-Identifier = "GPL-3.0-or-later AND CC-BY-SA-4.0 WITH KiCad-libraries-exception"
+
+# Documentation, research notes, and reports are CC-BY-4.0.
+[[annotations]]
+path = ["**/*.md", "research_notes/**", "reports/**", "docs/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
