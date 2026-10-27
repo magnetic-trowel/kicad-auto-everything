@@ -13,7 +13,7 @@
 - **Top level:** `$schema`, `source`, `date`, `kicad_version`, `violations[]`, `unconnected_items[]`, `schematic_parity[]`, `coordinate_units` (mm|mils|in), `included_severities[]` (error|warning|exclusion), `ignored_checks[]` (`{key, description}`) [P] ([drc.v1.json @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/resources/schemas/drc.v1.json)).
 - **Each violation:** `type` (the settings key), `description`, `severity` (error|warning), `items[]` (`{uuid, description, pos{x,y}}`), `excluded`, `comment`.
 - **Invalid JSON schema:** the schema file has a **trailing comma in `required`**, which is invalid strict JSON (also on master).
-- **`description`** = `GetErrorMessage()` = error title + detail, e.g. `"Clearance violation (<source> clearance 0.2000 mm; actual 0.1500 mm)"`. `<source>` is the rule or net-class name. Only the text `.rpt` adds `GetViolatingRuleDesc()` [P] ([rc_item.cpp](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/rc_item.cpp)).
+- **`description`** = `GetErrorMessage()` = error title + detail, e.g. `"Clearance violation (<source> clearance 0.2000 mm; actual 0.1500 mm)"`. `<source>` is the winning rule's name, or for non-rule sources "board minimum", "net tie", the net class or a pad/footprint override ([clearance resolution](drc-rule-language-reference.md)). Only the text `.rpt` adds `GetViolatingRuleDesc()` [P] ([rc_item.cpp](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/rc_item.cpp)).
 - **Freerouting** writes drc.v1 via `-drc` and `GET /jobs/{id}/drc`, adding a `freerouting_version` key that the KiCad schema's `additionalProperties:false` would reject. `compact=true` "drops raw coordinate bloat by >70%". `/drc/summary` gives "spatial congestion hotspots and … auto-correction hints" [P] ([API_v1.md](https://github.com/freerouting/freerouting/blob/master/docs/API/API_v1.md)).
 
 ### All 67 `type` keys in 10.0
@@ -35,7 +35,9 @@ unconnected_items, shorting_items, items_not_allowed, text_on_edge_cuts, clearan
   - Prefix every generated rule with a stable IR ID, e.g. `(rule "IR:c42:decap_len" …)`.
   - Map each violation by regex on `description`, e.g. `\((rule '|)?([^ ]+)'? .*?; actual .*?\)`, or by parsing the `.rpt`.
   - Keep a sidecar map from rule name to IR constraint. Treat `type` only as a coarse class.
+  - Treat a `<source>` without the `IR:` prefix ("board minimum", "net tie", a net class, an override) as its own class: no compiled rule won there.
 - **Lint pass:** after writing `.kicad_dru`, run DRC on a scratch copy; syntax errors block DRC entirely [I].
+- **Referee command:** `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a saved copy; add `--all-track-errors` in repair loops ([kicad-cli.md](kicad-cli.md)) [I].
 - **One tolerant parser** for KiCad and Freerouting drc.v1: accept the trailing comma and extra keys. Keep `unconnected_items`, `schematic_parity`, each item's position and the rule key. Report `null`, not `0`, for parity when it did not run [I].
 - **Synchronize live state** (save, compare, refill) before trusting DRC on a live board [I].
 - **Name every waived or ignored check** in the agent's review report. Never silently exclude categories [I, from PI].

@@ -51,7 +51,7 @@ Sources: [proto @10.0](https://gitlab.com/kicad/code/kicad/-/tree/10.0/api/proto
 | Footprint creation | ✅ fully specified `FootprintInstance` or `ParseAndCreateItemsFromString` | ✅ + `PlaceFootprintFromLibrary` | via items/string | ✅ |
 | Selection, `HitTest`, `GetBoundingBox` | ✅ | ✅ + `SyncSelection`, `HighlightNets`, `FocusOnItem`, `GetBoardBoundingBox` | ✅ | ✅ |
 | `GetNets`, `GetItemsByNet`, `GetItemsByNetClass`, `GetConnectedItems`, `GetNetClassForNets` | ✅ (by-net, by-netclass and connected need **≥10.0.1**) | ✅ | ✅ | ✅ |
-| Net-class definitions (incl. `tuning_profile`, since 10.0.0) | ✅ `Get/SetNetClasses` | ✅ | get only | ✅ |
+| Net-class definitions (incl. `tuning_profile`, since 10.0.0; a profile name only, no call creates profiles) | ✅ `Get/SetNetClasses` | ✅ | get only | ✅ |
 | Net-class assignments (patterns) | ❌ | ✅ | ❌ | ✅ (2026-09-23) |
 | Text variables; variants (8 commands) | ✅ | ✅ | vars only | – |
 | Board stackup | **read-only** (`UpdateBoardStackup` unhandled; corrected, VK) | **read-only** | get | get |
@@ -83,13 +83,13 @@ Sources: [proto @10.0](https://gitlab.com/kicad/code/kicad/-/tree/10.0/api/proto
 
 ## Recommendations for our system
 - **10.x backend** [I, from VK]:
-  1. IPC inside commit groups for CRUD, net classes and variants.
+  1. IPC inside commit groups for item CRUD. Net classes (project commands) and variants (variant commands) are not board-item edits, so commit groups do not cover them. kipy 0.8.x has no `set_net_classes` and does not wrap variants, so send `SetNetClasses` and the variant commands as raw protobuf (vendored `.proto`). Tuning profiles cannot be created over 10.0 IPC (a net class only names one), so write them in `.kicad_pro` [P].
   2. Library footprints via `ParseAndCreateItemsFromString` from `.kicad_mod` text, then an `UpdateItems` pass for pad nets. This gives undoable placement a full version before `PlaceFootprintFromLibrary`.
   3. `.kicad_dru` written directly.
-  4. `kicad-cli pcb drc --format json --refill-zones` on a saved copy as the referee.
+  4. `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a saved copy as the referee (see [kicad-cli.md](kicad-cli.md)).
   5. SWIG `ExportSpecctraDSN`/`ImportSpecctraSES` for routing round trips.
 - **Avoid:** stackup writes, unpolled refills, and `RunAction` wherever an alternative exists.
-- **Put a `BoardSession` abstraction in front** with three backends: live IPC, KiCad 11 headless `api-server`, and a file-level byte-preserving splice. Target 10.0.x and pin kipy 0.8.x [I].
+- **Put a `BoardSession` abstraction in front** with three backends: live IPC, KiCad 11 headless `api-server`, and a file-level byte-preserving splice. Target 10.0.x and pin kipy 0.8.x, plus raw protobuf for net-class and variant writes [I].
 - **Verify only after the push.** Poll refills until not busy. Correlate requests by ID. Never retry an uncertain write. See [mcp-server-lessons.md](mcp-server-lessons.md).
 - **For KiCad 11,** emit the structured `CustomRule` proto from the same IR as `.kicad_dru` and validate it by Get/Set round trip. See [drc-rule-language-reference.md](drc-rule-language-reference.md).
 - **Spike early on 10.0.7:**

@@ -2,6 +2,8 @@ version = 1
 SPDX-PackageName = "kicad-auto-everything"
 SPDX-PackageDownloadLocation = "https://github.com/magnetic-trowel/kicad-auto-everything"
 
+# When several tables match a file, the last matching table wins.
+
 # Default: code and anything else not matched below is GPL-3.0-or-later.
 # Files with their own SPDX header keep it ("closest").
 [[annotations]]
@@ -10,9 +12,9 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# Benchmark results and board manifests we generate are CDLA-Permissive-2.0.
+# Benchmark results, board manifests and board-id suites we generate are CDLA-Permissive-2.0.
 [[annotations]]
-path = ["tools/research/**/results/*.jsonl", "bench/manifests/*.jsonl"]
+path = ["tools/research/**/results/*.jsonl", "bench/manifests/*.jsonl", "bench/suites/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
 SPDX-License-Identifier = "CDLA-Permissive-2.0"
@@ -23,3 +25,12 @@ path = ["**/*.md", "research_notes/**", "reports/**", "docs/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 kicad-auto-everything contributors"
 SPDX-License-Identifier = "CC-BY-4.0"
+
+# The PCBWorld D3 suites are derived from LGAI-Research/PCBWorld
+# configs/datasets/d3.json @ 1989a93, which is BSD-3-Clause. Keep this table
+# after the CDLA one so it wins for these three files.
+[[annotations]]
+path = ["bench/suites/pcbworld-d3a-test.txt", "bench/suites/pcbworld-d3b-test.txt", "bench/suites/pcbworld-d3c-test.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026, LG Management Development Institute Co., Ltd. (LG AI Research)", "2026 kicad-auto-everything contributors"]
+SPDX-License-Identifier = "BSD-3-Clause"

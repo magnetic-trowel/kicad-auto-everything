@@ -21,7 +21,7 @@
 - **Anchor-only moves over IPC.** "KiCAD 10 serializes a FootprintInstance's children … in ABSOLUTE board coordinates — despite the proto comment on Pad.position claiming footprint-relative." Updating only position or orientation moved the anchor while copper, silk and text stayed behind, "permanently corrupting the .kicad_pcb on save". The fix applies KiCad's `SetPosition`/`SetOrientation` rigid transform to every child; "off-axis rectangles become polygons", and unknown item types are rejected [P] ([37adcaa](https://github.com/mixelpixx/Konnect/commit/37adcaaf148f6ae68bbc424fab8637700b15a7b1)).
 - **Pads and text left behind on rotation** (POA bugs 2, 53, 63, 87, 89 of #110). The fix:
   - applies `FOOTPRINT::Rotate` with the KeepUpright text rule;
-  - writes angles as KiCad does (270, not −90; omitted at 0);
+  - writes angles "the way KiCad formats them" (270, not −90; omitted at 0). That holds for pads, which KiCad keeps in [0, 360). Footprint `(at)` angles differ: KiCad normalizes them to (−180, 180], so a footprint at 270° is written as −90 [P] ([footprint.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/footprint.cpp) `SetOrientation`, [padstack.h @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/padstack.h));
   - computes in integer nanometres like `RotatePoint`, choosing KiROUND by format version ("KiCad 10's for a board stamped above 20241229") [P] ([cf501c7](https://github.com/ProductOfAmerica/mcp-server-kicad/commit/cf501c7faf7069757cd479211b221334b5b74290)).
 - **Flip** follows `FOOTPRINT::Flip`:
   - angle → (180 − angle) % 360, local Y negated, layers through the board's flip map;
@@ -40,7 +40,7 @@
 - **Exactly one transform module** (local↔board, rotate, flip, mirror) in integer nm, with KiROUND by format era. Under GPL-3.0-or-later it may be a direct port of KiCad's `trigo`/`RotatePoint`/`FOOTPRINT::Rotate`/`Flip`, keeping KiCad's copyright notices. POA's `tests/kicad_ref` ports and its October fixes are reusable for the same reason [I].
 - **Oracle-pin it:** compare against `kicad-cli` drill and Gerber coordinates and against IPC readback, on asymmetric fixtures (e.g. Antmicro boards) at 0/90/180/270°, on both sides [I].
 - **Prefer native IPC operations** (`FlipItems`, rigid moves via KiCad) over re-computing child geometry. Never trust proto comments about frames; verify by readback [I].
-- **Reject angle inputs KiCad cannot parse.** Normalize angles to KiCad's spelling before writing [I].
+- **Reject angle inputs KiCad cannot parse.** Normalize angles to KiCad's spelling before writing: footprints in (−180, 180], pads in [0, 360), omitted at 0 [I].
 
 ## Conflicts and open questions
 - Does `UpdateItems` on 10.0.x still need the client to transform children, or does a native rigid move exist for every item type? Not exhaustively tested.

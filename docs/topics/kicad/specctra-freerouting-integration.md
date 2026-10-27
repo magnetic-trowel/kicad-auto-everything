@@ -6,10 +6,11 @@
   - KiCad 11 adds `kicad-cli pcb export specctra` and the IPC calls `RunBoardJobExportSpecctraDsn`/`ImportSpecctraSession`.
   - Freerouting 2.5.0 adds its own KiCad 10 IPC integration [P].
 - **SES import in 10.0 is destructive.** It deletes all unlocked tracks and vias and all DRC markers, and **applies the SES placement**, moving and flipping footprints. The user doc says otherwise (corrected, VK) [P].
+  - **On 10.0.7 it can partially fail and still report success.** 10.0.0 aborted on an unknown reference; 10.0.7 skips any place, wire or via with an unknown reference, layer or padstack and only logs a warning. Wires on an unknown net land on net 0. Verify item counts, connectivity and DRC after every import [P] ([specctra_import.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/specctra_import_export/specctra_import.cpp)).
 - **Freerouting v2.5.0 (2026-10-05):**
   - REST `POST /v1/autoroute` and MCP `autoroute_board`.
   - Compact DRC in KiCad drc.v1 format; scores on a 0–1000 scale; GraalVM native binaries.
-  - Clean-board rate on its 1,157-board suite rose from 30.9% to 75.0% (self-reported).
+  - Clean-board rate on its release-note suite (1,157 boards) rose from 30.9% (2.4.1) to 75.0% (self-reported; "clean" is Freerouting's own check, not KiCad DRC). The nightly suite (1,142 fixtures) differs; see [../landscape/measured-tool-comparisons.md](../landscape/measured-tool-comparisons.md).
   - `-hr` and the RANDOM/GREEDY/HYBRID strategies were removed (corrected, VK) [P].
 - **A Freerouting wrapper silently fails on real boards unless it handles:** best-of-N, `-mt 1`, hole-keepout growth, SES placement stripping, netclass export, net-name reconciliation, SES units, Java detection and lock-before-import [P].
 - **Expose one tool to the LLM** that returns scores and a compact DRC summary, never geometry [I].
@@ -50,12 +51,12 @@ Other implementations:
 ### Pitfalls documented by the four MCP codebases
 | Pitfall | Fix | Source |
 |---|---|---|
-| SES `(resolution um 10)` declares a grid, not a multiplier; coordinates came out 10× too small | 1 mm = 1000 units, Y negated, no offset | [PRO 565a0203](https://github.com/oaslananka/kicad-mcp-pro/commit/565a02030d68cdb2b0bcddd325f5f5a1014ef66f) [P] |
+| PRO: SES `(resolution um 10)` declares a grid, not a multiplier; coordinates came out 10× too small | PRO uses 1 mm = 1000 units, Y negated, no offset. **This conflicts with KiCad's own importer**, which computes nm = value × unit ÷ resolution, i.e. 1 mm = 10,000 units at `(resolution um 10)` ([specctra_import.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/specctra_import_export/specctra_import.cpp) `scale()`). Use KiCad's rule and test it on a real Freerouting SES | [PRO 565a0203](https://github.com/oaslananka/kicad-mcp-pro/commit/565a02030d68cdb2b0bcddd325f5f5a1014ef66f) [P] |
 | Internal Edge.Cuts holes become keepouts cleared at track clearance (0.2 mm), not edge clearance (0.5 mm); `router.copper_to_edge_clearance_um` "does not change this (byte-identical SES)" | Grow circular keepouts by the difference, sized by apothem; test board went from 8 violations to 0 | [KMS da8ff18](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/da8ff187816d5b7adabfe3680c93d125edd0c1fe) [P] |
 | Net names lose their leading `/` through SES (#246) | Reconcile on import | [KMS 8c84fe9](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/8c84fe9862c38c9ba24614d8f78606e6d9947a4f) [P] |
 | `.kicad_pro` netclasses missing from the DSN (#302) | Export them | [KMS 711b0fe](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/711b0fe31ded406eb72e21654626b8fd6f2c0eeb) [P] |
-| The SES `(placement …)` block aborts the import when duplicate `REF**` references were renamed | Strip the placement block | [KMS f476a97](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f476a9794daaa323e9020010b5d09376c680bbd4) [P] |
-| `False == 0` let failed import or export report success | Check strictly | same [P] |
+| The SES `(placement …)` block aborts the import when duplicate `REF**` references were renamed (10.0.0: "Reference '%s' not found."; 10.0.7 skips the unknown reference instead, with only a log warning) | Strip the placement block | [KMS f476a97](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f476a9794daaa323e9020010b5d09376c680bbd4) [P] |
+| `False == 0` let failed import or export report success | Check strictly. On 10.0.7 a partial import returns success too, so also verify item counts, connectivity and DRC after import and capture wx log warnings | same [P]; [specctra_import.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/specctra_import_export/specctra_import.cpp) [P] |
 | Wrong Java runtime | Read the required version from the JAR's class-file major version (2.4.x needs Java 25); Docker (`eclipse-temurin:<N>-jre`) or Podman fallback | [KMS 356be10](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/356be10abf0acf209d961ca9505a9fa8c4ebe9c1) [P] |
 | Stale SES files | Guard them; stage artifacts in a temp dir | [KMS a7b4901](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/a7b49012d11673785cafa4dba7f03b6dc4618aea) [P] |
 | Freerouting prints "Multi-threaded route optimization is broken and it is known to generate clearance violations" on every run | `num_threads = 1`; KMS forces `-mt 1` in best-of-N | [POA pcb.py](https://github.com/ProductOfAmerica/mcp-server-kicad/blob/f5f82e02ffe17bbcba806fec35f3302ee332fefc/mcp_server_kicad/pcb.py) [P] |
@@ -91,13 +92,13 @@ Reproduced on corpus boards; `bench/src/kaebench/adapters.py` (`Freerouting`) ha
 - **Expose one tool**, `route_with_freerouting(board, nets_subset?, timeout)` [I, from VK]:
   1. Export DSN: SWIG helper on 10.x; `kicad-cli pcb export specctra` or IPC on 11.
   2. Call `POST /v1/autoroute` on a **local** server (auth disabled, `Freerouting-Environment-Host: KiCad/10.0`), or the CLI with `-da`.
-  3. Import SES into a candidate board.
+  3. Import SES into a candidate board, then check item counts and connectivity (10.0.7 skips unresolved items silently).
   4. Return only `normalized_score`, `optimizer_score`, the unrouted count and the compact DRC summary.
 - **Lock before import:** lock every track and via to keep (critical nets, earlier routes) before export. Strip or match the SES placement block. Refill zones afterwards (async on 10.0, so poll), then run `kicad-cli pcb drc` [I].
 - **Compare KiCad's DRC JSON with Freerouting's drc.v1** to expose DSN translation losses, such as the edge-clearance gap [I].
 - **Bake in every pitfall above:** hash-pinned binary, `-mt 1`, best-of-N, and a post-import DRC delta in the score [I].
 - **Licensing:** our code is GPL-3.0-or-later, so Freerouting may be vendored, forked or bridged in-process. Freerouting's GPL-3.0-only terms make the combined distribution GPL-3.0. Its 2014 provenance is unclear by community hearsay; avoid upstreaming Freerouting-derived code into KiCad [I]. See [../licensing/reuse-matrix.md](../licensing/reuse-matrix.md).
-- **Benchmark against Freerouting 2.5.0**, not PCBWorld's 2.1.0 baseline [I]. See [../landscape/measured-tool-comparisons.md](../landscape/measured-tool-comparisons.md).
+- **Pin and benchmark against Freerouting 2.5.0** (the latest release; 2.6.x exists only as RCs), not PCBWorld's 2.1.0 baseline [I]. See [../landscape/measured-tool-comparisons.md](../landscape/measured-tool-comparisons.md).
 
 ## Conflicts and open questions
 - Freerouting 2.5's KiCad 10 IPC path (which plugin mechanism? DRC fidelity?) has not been independently evaluated.
