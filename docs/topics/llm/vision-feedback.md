@@ -1,7 +1,7 @@
 # Rendered images as LLM feedback
 
 **TL;DR**
-- **Structured scoring feedback beats visual feedback for routing.** OmniRouting's Score tool cut the mean DRC count by **77.1%**; visualization alone barely moved routability [P].
+- **Structured scoring feedback beats visual feedback for routing on DRC.** OmniRouting's Score tool cut the cross-model mean DRC count by **77.1%**; visual feedback also lowered DRC for every model, with smaller, inconsistent gains. Visualization alone barely moved routability [P]. Our notes give no NRR effect for the Score tool, so neither is shown to raise routability much [I].
 - Adding images to good text gives little or negative benefit in general spatial benchmarks (TopoBench, FloorplanQA, SpatialEval). VeoPlace's text-only and image-only variants differ by **under 0.8%** [P].
 - **Exception:** MAGE's vision gate mattered for timing and structure (WNS **40.5%** worse without it) but not for wirelength [P].
 - Vision helps when it is **specialized or fine-tuned** (SCALE's DRC-VLM: +12–25% fix rate) or used for **reading figures in documents** (DRC-Coder) [P].

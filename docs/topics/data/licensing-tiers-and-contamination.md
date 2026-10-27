@@ -15,7 +15,7 @@
   | C | unlicensed, NC, ND | private evaluation only |
 
   Our **data products are CDLA-Permissive-2.0**, so only tier A feeds them [I].
-- **Contamination is real.** Hardware benchmarks show about 100% contamination for GPT-3.5 and GPT-4o. Use time- and cluster-split held-out boards [P].
+- **Contamination is real.** Membership-inference detectors (CDD, Min-K%) put contamination of hardware benchmarks near 100% for GPT-3.5 and GPT-4o. Use time- and cluster-split held-out boards [P].
 - **Code licence note:** project code is now **GPL-3.0-or-later**, so GPL-3.0 tools (e.g. Freerouting, PCBWorld-Engine) can be integrated in-process. This does not change *data* tiers. Board files under GPL or CERN-OHL-S stay tier B for redistributed data [I].
 
 ## Key facts
@@ -27,6 +27,8 @@
 | PCBench (1,183) | 62.1% | 18.7% | 18.0% |
 | kicad-happy sample (54) | 41% | 37% | 22% |
 | circuit-skills licensed (235) | 0% (filtered) | 54% (128) | 46% (107: GPL-3 67, CERN-OHL-S 25, CC-BY-SA 10, CERN-OHL-W 5) |
+
+PCBench's share depends on the metadata file counted (62.1% of 1,183 here; 54.3% of 1,194 and 743 + 91 of 1,142 elsewhere); see [corpora-and-yield.md](corpora-and-yield.md). The circuit-skills split uses GitHub-detected labels (the same 235 boards as pcb-corpus): our audit of 89 of them found `minuet` recorded as MIT although its hardware is CERN-OHL-W, so the split is unaudited ([open-board-sources.md](open-board-sources.md)).
 
 ### Licence texts and precedents
 - **CERN-OHL-S v2** [P] ([SPDX text](https://raw.githubusercontent.com/spdx/license-list-data/main/text/CERN-OHL-S-2.0.txt)):
@@ -67,11 +69,11 @@
 - **Facts over expression:** aggregate statistics (percentiles, width ratios) and abstract constraint graphs are far less likely to carry copyright or reciprocal obligations than verbatim geometry. This is an inference, not legal advice.
 - Keep an **opt-out list**; record per-board SPDX (LICENSE + README + scancode).
 - **Contamination control:**
-  - time-split boards committed after the base model's cutoff, plus private boards;
+  - time-split boards whose first public commit (forks and re-uploads deduplicated) is after the base model's cutoff, plus private boards;
   - cluster-split by footprint set or WL hash;
   - a CodeV-R1-style similarity filter between training fragments and evaluation boards;
   - report popular and obscure splits separately;
-  - Min-K%-style probes.
+  - Min-K%-style probes, which need per-token log-probabilities (open-weight models only) and are weak evidence.
 - **Bias control:** condition priors on layer count, package and board class; weight professional and DRC-clean boards.
 - **Code reuse** follows the project licence rules (GPL-3.0-or-later; avoid GPL-2.0-only, AGPL, NC). See [../licensing/reuse-matrix.md](../licensing/reuse-matrix.md).
 

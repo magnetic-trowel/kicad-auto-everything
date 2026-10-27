@@ -83,7 +83,7 @@ PSDL's sequential imperative programs beat declarative solvers on scenes. On PCB
    - `route_matched(nets, tol_class)`, `layer_pref(net, layer)`, `via_limit(net, n)`, `net_order(rank)`.
 
    The EDA note adds `same_side`, `route_priority`, `min_loop(nets)`, `plane(net, layer, region)` and `kelvin(R_sense)`.
-2. **Magnitude classes resolve to mm on the solver side**, from net class, stackup, datasheet facts and corpus priors per component class (e.g. a 0402 decap is "tight" at about 2.5 mm; see [../data/measured-priors.md](../data/measured-priors.md)). The LLM never chooses mm.
+2. **Magnitude classes resolve to mm on the solver side**, from net class, stackup, datasheet facts and corpus priors per component class (e.g. the corpus median for a 0402 decap is about 2.5 mm, pad centre to pad centre; see [../data/measured-priors.md](../data/measured-priors.md)). The LLM never chooses mm.
 3. **Joint realization** by the analytical placer plus legalizer plus router. Verification uses independent KiCad DRC plus per-relation oracles, never the solver's own satisfaction flag.
 4. **Feedback** returns, for each relation, realized or violated, the margin, conflict sets and admissible relaxations.
 5. **Self-consistency filter (optional):** drop a proposed relation if the LLM's own coarse sketch violates it (LayoutVLM: −12.4 points without it).

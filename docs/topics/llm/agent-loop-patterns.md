@@ -5,7 +5,7 @@
 - **Deterministic tools realize each choice and independently verify it.** "A model can make a repair fail but cannot make a layout pass checks it fails" [P].
 - **Planner/executor splits are a cost tool, not a quality guarantee.** The cheapest verified option was often a mid-tier model alone. Input context was 81% of spend [P].
 - **Execution infrastructure** (stateful tools, rollback, structured APIs) decides long-horizon reliability; similar agents differ by up to **141× in token ROI** [P].
-- More iterations can hurt. Budget the loop and stop on stall [P].
+- More iterations don't guarantee improvement: in OmniRouting, more steps came with lower NRR for a small model (a confounded comparison; see below). Budget the loop and stop on stall [I].
 
 ## Key facts
 
@@ -67,7 +67,7 @@
 
 ### Iteration and sampling
 
-- OmniRouting: more steps helped GPT-5.5 (NRR 21.7% → 28.0%) and hurt GPT-5-mini (9.9% → 6.8%) [P].
+- OmniRouting: more steps came with higher NRR for GPT-5.5 (21.7% → 28.0%) and lower NRR for GPT-5-mini (9.9% → 6.8%) [P]. For GPT-5.5 the comparison is the no-tool agentic baseline vs all tools, so tools and step counts changed together; it is not a clean test of iteration budget [I].
 - Agentic constraint-model improvement beat originals in 68.5% of 1,500 cases, but **best-of-5 with the same validators matched it** (101 vs 102.8 of 150) ([2608.08127](https://arxiv.org/abs/2608.08127)) [P].
 
 ### LLM → MILP/CP formulation
@@ -98,7 +98,7 @@ No study applies LLM → MILP formulation to PCB placement. RAC's fixed relation
 
    See [../routing/pcbworld.md](../routing/pcbworld.md).
 3. **Planner contract:** evidence, hypothesis, falsifier and intents; return to the planner on regression or stall.
-4. **Models:** a mid-tier model alone by default, escalating to a flagship planner only on verified failure. Keep a per-role ledger of tokens, spend and tool time. Keep observations compact.
+4. **Models:** a mid-tier model alone by default, escalating to a flagship planner only on verified failure. This default is task-class dependent [I]: the evidence is analog IC repair, where the cheapest model alone fixed 1 of 11 tasks and the note's summary is internally inconsistent ("No fixed assignment is cheapest on every task" vs "The cheapest verified option on every task was a mid-tier model alone"). Keep a per-role ledger of tokens, spend and tool time. Keep observations compact.
 5. **Stateful sessions** with checkpoint and rollback (FluxEDA); no reload per shell call.
 6. **Explicit iteration and spend budgets.** Use best-of-N with validators as the baseline any agent loop must beat.
 7. **For LLM-written constraints:** a Python-embedded API (CPMpy/OR-Tools style), validated on several instances to catch over-encoding.

@@ -60,10 +60,10 @@ Field example: the JLCPCB build fixed an FB trace beside the SW node with a 1.2 
 
 | Block (recognizer) | Hard | Soft / defaults |
 |---|---|---|
-| **Buck** (U with SW/FB(/BOOT) + L on SW) | width from current (≥ 15 mil/A floor; IPC-2152 better); vias by current (1 per 200 mA conservative vs 1 per A); Kelvin FB where the datasheet says | Cin_HF first, same layer, adjacent to VIN/PGND (max weight); loop ≲ 2–20 mm² by stack-up with a vertical return over solid L2 GND; minimal SW copper; FB divider at the pin with separate VOUT sense, away from SW/L; Pin Distance check (0–1 cm example); sensitive parts ≥ 15 mm from an unshielded L |
+| **Buck** (U with SW/FB(/BOOT) + L on SW) | CIN on the IC layer (integrated converters); width from current (≥ 15 mil/A floor; IPC-2152 better); vias by current (1 per 200 mA conservative vs 1 per A); Kelvin FB where the datasheet says | Cin_HF first, adjacent to VIN/PGND (max weight); loop ≲ 2–20 mm² by stack-up with a vertical return over solid L2 GND; minimal SW copper; FB divider at the pin with separate VOUT sense, away from SW/L; Pin Distance check (0–1 cm example); sensitive parts ≥ 15 mm from an unshielded L |
 | **Boost** | as buck | Cout_HF is the critical loop cap |
 | **LDO** | no thermal via under a DQN pad if the datasheet says so | Cin/Cout adjacent; thermal copper |
-| **Decoupling** (cap rail–GND sharing a net with an IC power pin; parent by wire → voltage-named pin → split) | ≤ 6 mm trace through a via (Microchip) | smallest cap closest; ground via at the cap pad (Espressif) |
+| **Decoupling** (cap rail–GND sharing a net with an IC power pin; parent by wire → voltage-named pin → split) | none universal | lowest mounting inductance closest (value order only behind the contested-rule selector); ≤ 2–3 mm as a soft heuristic (PDN-01); a vendor distance as an objective scoped to that part only where its guide gives one (e.g. Microchip MCUs: ≤ 6 mm pin-to-cap trace through a via); ground via at the cap pad (Espressif). See [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md) |
 | **Crystal** (X/Y with both pins on the same IC) | none universal | near the driver; nothing routed underneath; ground isolation; ≥ 2.0 mm (chip-specific); no magnetics nearby |
 | **USB / diff pairs** | Zdiff and skew from the protocol pack; KiCad diff-pair class | ESD at the connector |
 | **RF** | 50 Ω (±10% invalid width) | matching at the pin; antenna keepout; 15 mm housing clearance |
