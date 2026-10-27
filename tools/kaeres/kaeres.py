@@ -1336,7 +1336,7 @@ def cmd_rephysics_timer(a):
         f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}\n\n[Service]\nType=oneshot\nNice=19\n"
         f"Environment=PATH={Path.home() / '.local' / 'bin'}:/usr/local/bin:/usr/bin:/bin\n"
         f"ExecStart=/usr/bin/python3 {tool} rephysics submit {a.name} --harness {harness} --kae {kae}"
-        + (f" --after {a.after}" if a.after else "") + "\n")
+        + (f" --after {a.after}" if a.after else "") + f" --prio {a.prio}\n")
     (d / f"{unit}.timer").write_text(f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}, hourly\n\n[Timer]\n"
                                      "OnBootSec=15min\nOnUnitActiveSec=1h\n\n[Install]\nWantedBy=timers.target\n")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
@@ -1582,7 +1582,7 @@ def main():
     s.set_defaults(f=cmd_rephysics_submit)
     s = rp.add_parser("install-timer", help="submit hourly as the experiment finishes boards")
     s.add_argument("name"), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
-    s.add_argument("--after")
+    s.add_argument("--after"), s.add_argument("--prio", type=int, default=-1)
     s.set_defaults(f=cmd_rephysics_timer)
     s = sub.add_parser("rephysics-job", help="one board's physics re-evaluation (what each queued job runs)")
     s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)

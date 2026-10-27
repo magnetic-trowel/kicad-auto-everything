@@ -1051,6 +1051,17 @@ def cmd_cancel(a):
     print(f"cancelled {len(rows)} job(s)")
 
 
+def cmd_prio(a):
+    c = db()
+    if not (a.ids or a.owner or a.tag):
+        sys.exit("give job ids, --owner or --tag")
+    n = 0
+    for j in sel_jobs(c, a, ("queued",)):
+        n += c.execute("UPDATE jobs SET prio=? WHERE id=? AND state='queued'", (a.prio, j["id"])).rowcount
+    c.commit()
+    print(f"set priority {a.prio} on {n} queued job(s)")
+
+
 def cmd_config(a):
     cfg = {}
     try:
@@ -1173,6 +1184,10 @@ def main(argv=None):
     s = sub.add_parser("cancel", help="cancel queued/running jobs by id, --owner or --tag")
     s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
     s.set_defaults(f=cmd_cancel)
+
+    s = sub.add_parser("prio", help="change the priority of queued jobs by id, --owner or --tag")
+    s.add_argument("prio", type=int), s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
+    s.set_defaults(f=cmd_prio)
 
     s = sub.add_parser("config", help="show / set limits: --set reserve_cpu=24 --set reserve_mem_gb=48")
     s.add_argument("--set", action="append")

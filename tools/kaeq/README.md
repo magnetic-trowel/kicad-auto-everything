@@ -36,6 +36,7 @@ To stop permission prompts, allow one rule in each session's settings:
 
 Tune with `kaeq config --set reserve_frac=0.25 --set scratch_gb=150` (read every tick).
 Per-job resources in bulk: `kaeq submit --jobs FILE` (JSONL: `cmd`, `name`, `cpus`, `mem`, `disk`, `timeout`, `prio`).
+Change the priority of queued jobs: `kaeq prio N [ids] [--owner O] [--tag T]` (higher runs first).
 Jobs get `KAEQ_CPUS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `GOMAXPROCS` = `--cpus`, and the
 submitter's `PATH`/`VIRTUAL_ENV`/`PYTHONPATH` (so the right venv is used).
 
