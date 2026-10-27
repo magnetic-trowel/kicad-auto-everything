@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# KiCad's Python (pcbnew) as one executable path, for KAE_KICAD_PYTHON: run.py and
+# physics.py call it as [KAE_KICAD_PYTHON, script, ...], and KiCad runs in Apptainer here.
+# Paths it reads must be under APPTAINER_BIND (or the home directory).
+[ -n "$KAE_KICAD_WRAP" ] || . "$HOME/.cache/kaebench/env.sh"
+exec $KAE_KICAD_WRAP python3 "$@"
