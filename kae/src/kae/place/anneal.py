@@ -1,0 +1,784 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Simulated annealing on the grid, with one cost (adapted from
+tools/research/solver-bench/sa_place.py):
+
+    cost = w_phys * physics          Terms.total / structures (budget utilization), via Terms.delta
+         + w_wl * routability        weighted HPWL / seed HPWL (+ RUDY congestion, escape halos;
+                                     kae.place.cost)
+         + lam(t) * legality         overlap area of the grid rectangles (own, opposite side,
+                                     obstacles) + area outside the outline, / mean part area;
+                                     lam ramps up geometrically
+         + w_disp * displacement     L1 distance from the seed / (parts * mean part size)
+         + w_label * labels          parts named by board silk labels, L1 beyond a dead zone
+                                     from their label (kae.place.labels)
+         + w_silk * soft overlaps    silkscreen (silk over other silk and pad mask openings,
+                                     silk_on projects) and routing channels (pad halos of
+                                     two parts overlapping), weighted / mean part area
+         + w_order * order           protection order of protected connector chains (a rule:
+                                     the TVS nearer the connector than the protected part),
+                                     violation distance / mean part size
+
+Moves: shift (radius shrinking with the temperature), rotate in place, swap equal
+footprints (or similar sizes), macro shift, macro rotate, macro re-layout from its top-K.
+Everything is incremental: nets keep their pin coordinates and only touched nets are
+re-measured; overlaps come from a spatial hash per side; physics from Terms.delta.
+Seeded by `seed`; the budget is CPU seconds (time.process_time), checked between batches,
+and the schedule runs over a planned move count so a run is reproducible when the budget
+does not bind.
+"""
+from __future__ import annotations
+
+import math
+import random
+import time
+
+import numpy as np
+
+from .cost import Congestion
+
+BIG_NET = 40   # ground/power nets with more pins are frozen in the annealer
+
+
+def turn_move(p, k0, rng):
+    """A rotation move of part p from rotation k0: a quarter turn (the right angles; an odd
+    angle stays odd), or, for parts that may turn freely (Problem angle_step), a step to the
+    next angle either way or a snap back to the nearest right angle. Returns (k1, kind)."""
+    n_ortho = getattr(p, "n_ortho", len(p.rots))
+    if len(p.rots) > n_ortho:
+        v = rng.random()
+        if v < 0.3:
+            return p.ring[k0][rng.randrange(2)], "rotate_step"
+        if k0 >= n_ortho and v < 0.55:
+            return snap_index(p, k0), "rotate_snap"
+    return p.turn[k0][rng.choice((1, 2, 3))], "rotate"
+
+
+def snap_index(p, k):
+    """The right-angle rotation nearest to rotation k."""
+    a = p.rots[k].rot
+    n_ortho = getattr(p, "n_ortho", len(p.rots))
+    return min(range(n_ortho), key=lambda j: min(abs(p.rots[j].rot - a) % 360.0, 360.0 - abs(p.rots[j].rot - a) % 360.0))
+
+
+def quarter_turns(p, k, k_ref):
+    """Quarter turns from rotation k_ref to rotation k of part p (nearest)."""
+    d = (p.rots[k].rot - p.rots[k_ref].rot) % 360.0
+    return int(round(d / 90.0)) % 4
+
+
+class Annealer:
+    def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
+                 w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
+                 cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
+                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0):
+        self.P = P
+        self.st = st
+        self.rng = random.Random(seed)
+        self.log = log or (lambda *a, **k: None)
+        self.g = g = P.g
+        self.mov = list(P.mov)
+        self.movset = set(self.mov)
+        # a local re-placement moves only `subset` (everything else is fixed geometry), and
+        # with `window` = grid rect (i0, i1, j0, j1) keeps their own rectangles inside it
+        self.active = [i for i in self.mov if subset is None or i in set(subset)]
+        self.activeset = set(self.active)
+        self.window = window
+        n = len(P.parts)
+        X, Y, K = st.X, st.Y, st.K
+        self.X = [int(v) for v in X]
+        self.Y = [int(v) for v in Y]
+        self.K = [int(v) for v in K]
+        self.Xs = list(self.X)          # seed positions (displacement term)
+        self.Ys = list(self.Y)
+        # ---- static geometry per part and rotation
+        self.own = [[r.g_own for r in p.rots] for p in P.parts]          # box: centres, clamps
+        self.own_rects = [[tuple(r.g_own_rects or (r.g_own,)) for r in p.rots] for p in P.parts]
+        self.opp = [[r.g_opp for r in p.rots] for p in P.parts]
+        self.brd = [[r.g_board for r in p.rots] for p in P.parts]
+        self.brds = [[r.g_boards for r in p.rots] for p in P.parts]
+        self.side = [0 if p.s > 0 else 1 for p in P.parts]
+        self.pinx = [[[float(v) for v in r.pins[:, 0]] for r in p.rots] for p in P.parts]
+        self.piny = [[[float(v) for v in r.pins[:, 1]] for r in p.rots] for p in P.parts]
+        self.nrot = [len(p.rots) for p in P.parts]
+        areas = [(r[1] - r[0]) * (r[3] - r[2]) for r in (self.own[i][0] for i in self.mov)] or [1]
+        self.A0 = max(1.0, sum(areas) / len(areas))      # mean part area, cells^2
+        self.S0 = math.sqrt(self.A0) * g                  # mean part size, mm
+        # ---- spatial hash: rect ids per side
+        self.B = max(4, int(round(math.sqrt(self.A0) * 1.5)))
+        self.buckets = ({}, {})
+        self.r_owner = []
+        self.r_side = []
+        self.r_box = []
+        self.r_span = []
+        self.part_rects = [[] for _ in range(n)]
+        for i in self.mov:
+            k = self.K[i]
+            for _ in self.own_rects[i][k]:
+                rid = self._new_rect(i, self.side[i])
+                self.part_rects[i].append(rid)
+            for _ in self.opp[i][k]:
+                rid = self._new_rect(i, 1 - self.side[i])
+                self.part_rects[i].append(rid)
+            self._place_rects(i)
+        for ob in P.obstacles:
+            rid = self._new_rect(-1, ob.side)
+            self.r_box[rid] = ob.g
+            self._hash_add(rid)
+        # ---- nets: pin coordinate lists; per part (net, slot, pad)
+        self.net_w = [net.weight for net in P.nets]
+        self.nx = []
+        self.ny = []
+        self.part_pins = [[] for _ in range(n)]
+        for net in P.nets:
+            xs, ys = [], []
+            for (i, k) in net.pins:
+                x, y = self._pin_xy(i, k)
+                self.part_pins[i].append((net.i, len(xs), k))
+                xs.append(x)
+                ys.append(y)
+            self.nx.append(xs)
+            self.ny.append(ys)
+        # ground/power nets with many pins span the board whatever one part does, and are
+        # poured in practice (H11): their (down-weighted) length is frozen, which keeps every
+        # move from re-measuring hundreds of pins
+        self.frozen = {net.i for net in P.nets if net.kind in ("ground", "power") and len(net.pins) > BIG_NET}
+        self.part_nets = [sorted({nn for (nn, _, _) in pp if nn not in self.frozen}) for pp in self.part_pins]
+        self.part_pins = [[(nn, sl, k) for (nn, sl, k) in pp if nn not in self.frozen] for pp in self.part_pins]
+        self.ncost = [self._net_cost(j) for j in range(len(P.nets))]
+        self.wl = sum(self.ncost)
+        self.W0 = max(1e-6, self.wl)
+        # ---- physics
+        self.terms = terms
+        self.tparts = set()
+        self.uuid = [p.uuid for p in P.parts]
+        self.poses = {p.uuid: st.pose(p.i) for p in P.parts}
+        if terms is not None:
+            try:
+                self.tparts = set(terms.parts())
+            except Exception:
+                self.tparts = set(self.uuid)
+            self.nstruct = max(1, len(getattr(terms, "structs", [])) or len(self.tparts) // 2 or 1)
+            self.phys = terms.total(self.poses)
+        else:
+            self.nstruct = 1
+            self.phys = 0.0
+        # ---- congestion (RUDY) and escape halos
+        self.cong = Congestion(P, self, **(cong_args or {})) if w_cong > 0 else None
+        # routing feedback (kae.joint): static demand added to the congestion bins, e.g. a
+        # routed board's congestion history; callable (x0, y0, b, nbx, nby) -> (nbx, nby)
+        # array in Dp's units (track mm per bin; Congestion.S0 is a bin's empty-board supply)
+        self.cong_history = None
+        if cong_history is not None and self.cong is not None:
+            c = self.cong
+            extra = np.asarray(cong_history(c.x0, c.y0, c.b, c.nbx, c.nby), dtype=float)
+            if extra.shape != c.Dp.shape:
+                raise ValueError(f"cong_history returned {extra.shape}, the bins are {c.Dp.shape}")
+            c.Dp += extra
+            self.cong_history = dict(bins=int((extra != 0).sum()), added=round(float(extra.sum()), 6))
+        # ---- macros
+        self.macros = [m for m in macros if len(m.members) >= 2
+                       and all(i in self.activeset or i not in self.movset for i in m.members)]
+        self.macro_of = {}
+        for mi, m in enumerate(self.macros):
+            for i in m.members:
+                if i in self.movset:
+                    self.macro_of[i] = mi
+        # ---- equal-footprint swap classes
+        cls = {}
+        for i in self.active:
+            cls.setdefault(P.parts[i].shape_key, []).append(i)
+        self.swap_class = {i: c for c in cls.values() if len(c) > 1 for i in c}
+        # ---- protection order rules ((conn, pads), (prot, pads), (target, pads))
+        self.order = list(order)
+        self.order_margin = order_margin
+        self.order_of = {}
+        for j, rule in enumerate(self.order):
+            for (i, _) in rule:
+                self.order_of.setdefault(i, []).append(j)
+        self.open = [self._order_pen(j) for j in range(len(self.order))]
+        self.order_total = sum(self.open)
+        # ---- labels (kae.place.labels.anchors): {i: (per-rotation target origins [(X, Y)], dead
+        # zone in cells, weight)}: the part's labelled pads beside their board silk label
+        self.labels = {i: a for i, a in (labels or {}).items() if i in self.movset} if w_label > 0 else {}
+        # ---- soft overlaps (kae.place.exact.soft_grid): {i: (side, source rects per rotation,
+        # target rects per rotation)}, rects classed: silkscreen (silk_on projects: a part's silk
+        # over other silk and pad mask openings) and routing channels (pad halos: no track
+        # between two parts' pads closer than track + 2 clearance); weighted overlap / mean
+        # part area
+        self.silk = dict(silk or {}) if w_silk > 0 else {}
+        self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label,
+                      silk=w_silk)
+        self.cong_args = cong_args
+        # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
+        self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
+        self.lam0, self.lam1 = lam0, lam1
+        self.stats = dict(moves=0, accepted=0, by_move={})
+        self.leg_total = self.total_leg()
+        self.best_legal = None
+
+    # ------------------------------------------------------------------ geometry
+    def _new_rect(self, owner, side):
+        self.r_owner.append(owner)
+        self.r_side.append(side)
+        self.r_box.append((0, 0, 0, 0))
+        self.r_span.append(None)
+        return len(self.r_owner) - 1
+
+    def _hash_add(self, rid):
+        i0, i1, j0, j1 = self.r_box[rid]
+        B = self.B
+        span = (i0 // B, (i1 - 1) // B, j0 // B, (j1 - 1) // B)
+        self.r_span[rid] = span
+        bk = self.buckets[self.r_side[rid]]
+        for bi in range(span[0], span[1] + 1):
+            for bj in range(span[2], span[3] + 1):
+                s = bk.get((bi, bj))
+                if s is None:
+                    bk[(bi, bj)] = {rid}
+                else:
+                    s.add(rid)
+
+    def _hash_remove(self, rid):
+        span = self.r_span[rid]
+        if span is None:
+            return
+        bk = self.buckets[self.r_side[rid]]
+        for bi in range(span[0], span[1] + 1):
+            for bj in range(span[2], span[3] + 1):
+                s = bk.get((bi, bj))
+                if s is not None:
+                    s.discard(rid)
+        self.r_span[rid] = None
+
+    def _place_rects(self, i):
+        """(Re)register part i's rectangles at its current X, Y, K."""
+        X, Y, k = self.X[i], self.Y[i], self.K[i]
+        rids = self.part_rects[i]
+        boxes = list(self.own_rects[i][k]) + list(self.opp[i][k])
+        for rid, (a, b, c, d) in zip(rids, boxes):
+            box = (X + a, X + b, Y + c, Y + d)
+            if box == self.r_box[rid] and self.r_span[rid] is not None:
+                continue
+            self._hash_remove(rid)
+            self.r_box[rid] = box
+            self._hash_add(rid)
+
+    def _overlap_part(self, i, exclude):
+        """Overlap area (cells^2) of part i's rectangles with other owners not in exclude."""
+        tot = 0
+        bks = self.buckets
+        r_box, r_owner = self.r_box, self.r_owner
+        for rid in self.part_rects[i]:
+            i0, i1, j0, j1 = r_box[rid]
+            sp = self.r_span[rid]
+            bk = bks[self.r_side[rid]]
+            seen = set()
+            for bi in range(sp[0], sp[1] + 1):
+                for bj in range(sp[2], sp[3] + 1):
+                    s = bk.get((bi, bj))
+                    if not s:
+                        continue
+                    for o in s:
+                        if o in seen:
+                            continue
+                        seen.add(o)
+                        ow = r_owner[o]
+                        if ow == i or ow in exclude:
+                            continue
+                        a0, a1, b0, b1 = r_box[o]
+                        dx = (i1 if i1 < a1 else a1) - (i0 if i0 > a0 else a0)
+                        if dx <= 0:
+                            continue
+                        dy = (j1 if j1 < b1 else b1) - (j0 if j0 > b0 else b0)
+                        if dy > 0:
+                            tot += dx * dy
+        return tot
+
+    def _overlap_pair(self, i, j):
+        tot = 0
+        for ra in self.part_rects[i]:
+            for rb in self.part_rects[j]:
+                if self.r_side[ra] != self.r_side[rb]:
+                    continue
+                a0, a1, b0, b1 = self.r_box[ra]
+                c0, c1, d0, d1 = self.r_box[rb]
+                dx = min(a1, c1) - max(a0, c0)
+                dy = min(b1, d1) - max(b0, d0)
+                if dx > 0 and dy > 0:
+                    tot += dx * dy
+        return tot
+
+    def _outline(self, i):
+        return self.P.outside_cells_all(self.X[i], self.Y[i], self.brds[i][self.K[i]])
+
+    def _leg(self, S):
+        """Legality cost of the parts in S (cells^2), each pair counted once."""
+        ex = set(S)
+        tot = 0
+        for idx, i in enumerate(S):
+            tot += self._overlap_part(i, ex) + self._outline(i)
+            for j in S[idx + 1:]:
+                tot += self._overlap_pair(i, j)
+        return tot
+
+    # ------------------------------------------------------------------ nets
+    def _pin_xy(self, i, k):
+        p = self.P.parts[i]
+        if not p.movable:
+            r = p.rots[0]
+            return p.x0 + float(r.pins[k, 0]), p.y0 + float(r.pins[k, 1])
+        kk = self.K[i]
+        return (self.P.ox + self.X[i] * self.g + self.pinx[i][kk][k],
+                self.P.oy + self.Y[i] * self.g + self.piny[i][kk][k])
+
+    def _net_cost(self, j):
+        xs, ys = self.nx[j], self.ny[j]
+        if len(xs) < 2:
+            return 0.0
+        return self.net_w[j] * (max(xs) - min(xs) + max(ys) - min(ys))
+
+    def _update_pins(self, i):
+        x0 = self.P.ox + self.X[i] * self.g
+        y0 = self.P.oy + self.Y[i] * self.g
+        kk = self.K[i]
+        px, py = self.pinx[i][kk], self.piny[i][kk]
+        nx, ny = self.nx, self.ny
+        for (j, slot, k) in self.part_pins[i]:
+            nx[j][slot] = x0 + px[k]
+            ny[j][slot] = y0 + py[k]
+
+    def _centroid(self, i, pads):
+        xs = ys = 0.0
+        for k in pads:
+            x, y = self._pin_xy(i, k)
+            xs += x
+            ys += y
+        return xs / len(pads), ys / len(pads)
+
+    def _order_dist(self, j):
+        """(connector-to-protection distance, the protected part's distance from either) mm."""
+        (ci, cp), (ti, tp), (ii, ip) = self.order[j]
+        cx, cy = self._centroid(ci, cp)
+        tx, ty = self._centroid(ti, tp)
+        ix, iy = self._centroid(ii, ip)
+        return math.hypot(tx - cx, ty - cy), min(math.hypot(ix - cx, iy - cy), math.hypot(ix - tx, iy - ty))
+
+    def _order_pen(self, j):
+        d_ct, d_i = self._order_dist(j)
+        over = d_ct + self.order_margin - d_i
+        return over / self.S0 if over > 0 else 0.0
+
+    def order_violations(self):
+        """Rules broken outright (no margin): the protected part is nearer the connector than
+        the protection is, or nearer the protection than the connector is."""
+        return sum(1 for j in range(len(self.order)) if (lambda d: d[0] > d[1])(self._order_dist(j)))
+
+    # ------------------------------------------------------------------ evaluation
+    def _apply(self, S, newpos):
+        """Move parts S to newpos [(X, Y, K)]; returns the old positions."""
+        old = [(self.X[i], self.Y[i], self.K[i]) for i in S]
+        for i, (X, Y, K) in zip(S, newpos):
+            self.X[i], self.Y[i], self.K[i] = X, Y, K
+            self._place_rects(i)
+            self._update_pins(i)
+        return old
+
+    def _disp(self, S):
+        return sum(abs(self.X[i] - self.Xs[i]) + abs(self.Y[i] - self.Ys[i]) for i in S)
+
+    def _silk_pair(self, i, j):
+        """Soft overlap of parts i and j: each source rect (a, b, c, d, class, weight) of one
+        against the target rects (a, b, c, d, class) of the other of the same class."""
+        a, b = self.silk.get(i), self.silk.get(j)
+        if a is None or b is None or a[0] != b[0]:
+            return 0.0
+        Xi, Yi, Xj, Yj = self.X[i], self.Y[i], self.X[j], self.Y[j]
+        si, ti = a[1][self.K[i]], a[2][self.K[i]]
+        sj, tj = b[1][self.K[j]], b[2][self.K[j]]
+        tot = 0.0
+        for (A, B, dx, dy) in ((si, tj, Xi - Xj, Yi - Yj), (sj, ti, Xj - Xi, Yj - Yi)):
+            for (a0, a1, c0, c1, ca, wa) in A:
+                for (b0, b1, d0, d1, cb) in B:
+                    if ca != cb:
+                        continue
+                    w = min(a1 + dx, b1) - max(a0 + dx, b0)
+                    if w <= 0:
+                        continue
+                    h = min(c1 + dy, d1) - max(c0 + dy, d0)
+                    if h > 0:
+                        tot += wa * w * h
+        return tot
+
+    def _silk(self, S):
+        """Silk overlap of parts S with every other part (and among themselves), cells^2."""
+        if not self.silk:
+            return 0.0
+        Sset = set(S)
+        tot = 0.0
+        for n, i in enumerate(S):
+            if i not in self.silk:
+                continue
+            for j in self.silk:
+                if j != i and j not in Sset:
+                    tot += self._silk_pair(i, j)
+            for j in S[n + 1:]:
+                tot += self._silk_pair(i, j)
+        return tot
+
+    def silk_total(self):
+        ks = list(self.silk)
+        return sum(self._silk_pair(ks[a], ks[b]) for a in range(len(ks)) for b in range(a + 1, len(ks)))
+
+    def _lab(self, S):
+        """Label term of parts S: weight x cells beyond the dead zone (rx, ry) from the target
+        origin that puts the labelled pads at their label (for the part's rotation). A
+        numbered row's dead zone along the row is a third of its pitch, so the parts keep the
+        labels' order."""
+        if not self.labels:
+            return 0.0
+        tot = 0.0
+        for i in S:
+            a = self.labels.get(i)
+            if a is None:
+                continue
+            tx, ty = a[0][self.K[i]]
+            rx, ry = a[1] if isinstance(a[1], (tuple, list)) else (a[1], a[1])
+            d = max(0, abs(self.X[i] - tx) - rx) + max(0, abs(self.Y[i] - ty) - ry)
+            if d > 0:
+                tot += a[2] * d
+        return tot
+
+    def _pose_of(self, i):
+        p = self.P.parts[i]
+        return (self.P.ox + self.X[i] * self.g, self.P.oy + self.Y[i] * self.g, p.rots[self.K[i]].rot, p.side)
+
+    def try_move(self, S, newpos, T, lam, kind):
+        """Evaluate moving parts S to newpos; accept or revert. Returns accepted."""
+        nets = set()
+        for i in S:
+            nets.update(self.part_nets[i])
+        wl_old = sum(self.ncost[j] for j in nets)
+        leg_old = self._leg(S)
+        disp_old = self._disp(S)
+        lab_old = self._lab(S)
+        silk_old = self._silk(S)
+        cong_old = self.cong.local_cost(nets) if self.cong is not None else 0.0
+        old = self._apply(S, newpos)
+        newc = {j: self._net_cost(j) for j in nets}
+        wl_new = sum(newc.values())
+        leg_new = self._leg(S)
+        disp_new = self._disp(S)
+        lab_new = self._lab(S)
+        silk_new = self._silk(S)
+        d_cong = 0.0
+        if self.cong is not None:
+            d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
+        rules = {j for i in S for j in self.order_of.get(i, ())}
+        newo = {j: self._order_pen(j) for j in rules}
+        d_order = sum(newo[j] - self.open[j] for j in rules)
+        d_phys = 0.0
+        moved_u = [self.uuid[i] for i in S if self.uuid[i] in self.tparts]
+        if moved_u:
+            newp = {self.uuid[i]: self._pose_of(i) for i in S}
+            d_phys = self.terms.delta(self.poses, moved_u, {u: newp[u] for u in moved_u})
+        w = self.w
+        g2 = 1.0
+        delta = (w["wl"] * (self._wl_cost(self.wl + wl_new - wl_old) - self._wl_cost(self.wl))
+                 + lam * (leg_new - leg_old) * g2 / self.A0
+                 + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
+                 + w["label"] * (lab_new - lab_old) * self.g / (len(self.mov) * self.S0)
+                 + w["silk"] * (silk_new - silk_old) / self.A0
+                 + w["phys"] * d_phys / self.nstruct
+                 + w["cong"] * d_cong
+                 + w["order"] * d_order)
+        st = self.stats
+        st["moves"] += 1
+        bm = st["by_move"].setdefault(kind, [0, 0])
+        bm[0] += 1
+        if delta <= 0 or self.rng.random() < math.exp(-delta / T):
+            for j, c in newc.items():
+                self.ncost[j] = c
+            self.wl += wl_new - wl_old
+            self.phys += d_phys
+            for j, v in newo.items():
+                self.open[j] = v
+            self.order_total += d_order
+            if self.cong is not None:
+                self.cong.commit()
+            for i in S:
+                self.poses[self.uuid[i]] = self._pose_of(i)
+            st["accepted"] += 1
+            bm[1] += 1
+            self.leg_total += leg_new - leg_old
+            return True, delta
+        self._apply(S, old)
+        if self.cong is not None:
+            self.cong.revert()
+        return False, delta
+
+    # ------------------------------------------------------------------ moves
+    def _clamp(self, i, X, Y, K):
+        a, b, c, d = self.brd[i][K]
+        lo_x, hi_x = -a, self.P.ncx - b
+        lo_y, hi_y = -c, self.P.ncy - d
+        if self.window is not None:
+            wi0, wi1, wj0, wj1 = self.window
+            oa, ob, oc, od = self.own[i][K]
+            lo_x, hi_x = max(lo_x, wi0 - oa), min(hi_x, wi1 - ob)
+            lo_y, hi_y = max(lo_y, wj0 - oc), min(hi_y, wj1 - od)
+        X = min(max(X, lo_x), max(lo_x, hi_x))
+        Y = min(max(Y, lo_y), max(lo_y, hi_y))
+        return X, Y
+
+    def _span(self):
+        """Cells the moves range over: the window, else the board."""
+        if self.window is not None:
+            wi0, wi1, wj0, wj1 = self.window
+            return max(wi1 - wi0, wj1 - wj0)
+        return max(self.P.ncx, self.P.ncy)
+
+    def _center2(self, i, k):
+        a, b, c, d = self.own[i][k]
+        return a + b, c + d
+
+    def propose(self, r):
+        rng = self.rng
+        i = self.active[rng.randrange(len(self.active))]
+        u = rng.random()
+        mi = self.macro_of.get(i)
+        if mi is not None and u < 0.25:
+            return self._macro_move(mi, r)
+        if u < 0.62:
+            X = self.X[i] + rng.randint(-r, r)
+            Y = self.Y[i] + rng.randint(-r, r)
+            X, Y = self._clamp(i, X, Y, self.K[i])
+            return (i,), [(X, Y, self.K[i])], "shift"
+        if u < 0.80 and self.nrot[i] > 1:
+            k0 = self.K[i]
+            k1, kind = turn_move(self.P.parts[i], k0, rng)
+            cx0, cy0 = self._center2(i, k0)
+            cx1, cy1 = self._center2(i, k1)
+            X = self.X[i] + (cx0 - cx1) // 2
+            Y = self.Y[i] + (cy0 - cy1) // 2
+            X, Y = self._clamp(i, X, Y, k1)
+            return (i,), [(X, Y, k1)], kind
+        # swap: an equal footprint if there is one, else any part on the same side
+        cls = self.swap_class.get(i)
+        if cls and rng.random() < 0.7:
+            j = cls[rng.randrange(len(cls))]
+            if j != i:
+                return (i, j), [(self.X[j], self.Y[j], self.K[j]), (self.X[i], self.Y[i], self.K[i])], "swap_equal"
+        j = self.active[rng.randrange(len(self.active))]
+        if j == i or self.side[j] != self.side[i]:
+            X = self.X[i] + rng.randint(-r, r)
+            Y = self.Y[i] + rng.randint(-r, r)
+            X, Y = self._clamp(i, X, Y, self.K[i])
+            return (i,), [(X, Y, self.K[i])], "shift"
+        ci = self._center2(i, self.K[i])
+        cj = self._center2(j, self.K[j])
+        Xi = self.X[j] + (cj[0] - ci[0]) // 2
+        Yi = self.Y[j] + (cj[1] - ci[1]) // 2
+        Xj = self.X[i] + (ci[0] - cj[0]) // 2
+        Yj = self.Y[i] + (ci[1] - cj[1]) // 2
+        Xi, Yi = self._clamp(i, Xi, Yi, self.K[i])
+        Xj, Yj = self._clamp(j, Xj, Yj, self.K[j])
+        return (i, j), [(Xi, Yi, self.K[i]), (Xj, Yj, self.K[j])], "swap"
+
+    def _macro_move(self, mi, r):
+        rng = self.rng
+        m = self.macros[mi]
+        mem = [i for i in m.members if i in self.movset]
+        if not mem:
+            return None
+        u = rng.random()
+        # rotating a whole macro in place is almost never accepted (0.2% on split B: it swings
+        # the members into their neighbours), so it is tried least
+        if u < 0.6 or m.anchor not in self.movset:
+            dX = rng.randint(-r, r)
+            dY = rng.randint(-r, r)
+            return tuple(mem), [(self.X[i] + dX, self.Y[i] + dY, self.K[i]) for i in mem], "macro_shift"
+        a = m.anchor
+        AX, AY = self.X[a], self.Y[a]
+        if u < 0.7 or len(m.layouts) < 2:
+            q = rng.choice((1, 2, 3))
+            out = []
+            for i in mem:
+                dx, dy = self.X[i] - AX, self.Y[i] - AY
+                for _ in range(q):
+                    dx, dy = dy, -dx      # KiCad +90 degrees, y down
+                out.append((AX + dx, AY + dy, self.P.parts[i].turn[self.K[i]][q]))
+            return tuple(mem), out, "macro_rotate"
+        lay = m.layouts[rng.randrange(len(m.layouts))]
+        # the macro's current turn: the anchor's rotation relative to the layout's
+        q = quarter_turns(self.P.parts[a], self.K[a], lay.offsets[a][2])
+        out = []
+        for i in mem:
+            dx, dy, k = lay.offsets[i]
+            dx -= lay.offsets[a][0]
+            dy -= lay.offsets[a][1]
+            for _ in range(q):
+                dx, dy = dy, -dx
+            out.append((AX + dx, AY + dy, self.P.parts[i].turn[k][q]))
+        return tuple(mem), out, "macro_relayout"
+
+    # ------------------------------------------------------------------ schedule
+    def total_leg(self):
+        tot = 0
+        for idx, i in enumerate(self.mov):
+            tot += self._overlap_part(i, set(self.mov[:idx + 1])) + self._outline(i)
+        return tot
+
+    def _wl_cost(self, wl):
+        u = wl / self.W0
+        over = u - 1.0 - self.wl_slack
+        return u + (self.wl_barrier * over * over if over > 0 else 0.0)
+
+    def cost(self, lam):
+        w = self.w
+        disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0)
+        c = self.cong.total() if self.cong is not None else 0.0
+        lab = self._lab(self.mov) * self.g / (len(self.mov) * self.S0)
+        silk = self.silk_total() / self.A0 if self.silk else 0.0
+        return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
+                + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total
+                + w["label"] * lab + w["silk"] * silk)
+
+    def evaluate(self, st):
+        """Full cost of another state with this annealer's weights and normalization (seed
+        HPWL, mean part area and size, seed positions, final legality weight)."""
+        o = Annealer(self.P, st.copy(), terms=self.terms, seed=0, w_wl=self.w["wl"], w_phys=self.w["phys"],
+                     w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
+                     wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
+                     order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
+                     labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"])
+        o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
+        o.Xs, o.Ys = self.Xs, self.Ys
+        return o.cost(self.lam1), o.terms_report()
+
+    def terms_report(self):
+        disp = self._disp(self.mov) * self.g / (len(self.mov) * self.S0) if self.mov else 0.0
+        out = dict(wl=round(self.wl / self.W0, 5), phys=round(self.phys / self.nstruct, 5),
+                   cong=round(self.cong.total(), 6) if self.cong is not None else None,
+                   leg=self.leg_total, disp=round(disp, 5))
+        if self.order:
+            out.update(order=round(self.order_total, 5), order_rules=len(self.order),
+                       order_violations=self.order_violations())
+        if self.labels:
+            out.update(label=round(self._lab(self.mov) * self.g / (len(self.mov) * self.S0), 5),
+                       labelled_parts=len(self.labels), labels_off=self.labels_off())
+        if self.silk:
+            out.update(silk=round(self.silk_total() / self.A0, 5))
+        return out
+
+    def labels_off(self):
+        """Labelled parts beyond their label's dead zone."""
+        return sum(1 for i in self.labels if self._lab([i]) > 0)
+
+    def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, deadline=None):
+        """Anneal for at most cpu_s CPU seconds (and, with `deadline`, until that
+        time.monotonic(): under CPU contention wall time runs ahead of CPU time)."""
+        n = len(self.active)
+        if n == 0:
+            return self.report(0.0)
+        N = max_moves or moves_per_part * n
+        self.leg_total = self.total_leg()
+        t0 = time.process_time()
+        r0 = max(2, int(0.25 * self._span()))
+        # initial temperature from uphill deltas of sampled moves (not applied)
+        ups = []
+        for _ in range(min(200, 20 * n)):
+            mv = self.propose(r0)
+            if mv is None:
+                continue
+            S, newpos, kind = mv
+            acc, d = self.try_move(S, newpos, 1e-12, self.lam0, kind)
+            if acc and d > 0:
+                pass
+            if d > 0:
+                ups.append(d)
+        ups.sort()
+        T0 = ups[len(ups) // 2] / math.log(1 / 0.3) if ups else 1e-3
+        T1 = T0 * 1e-4
+        self.T0 = T0
+        self.stats = dict(moves=0, accepted=0, by_move={})
+        done = 0
+        batch = 200
+        next_log = log_every
+        best = None
+        w0 = time.monotonic()
+        wall = (deadline - w0) if deadline is not None else None
+        self.ended = "moves"
+        while done < N:
+            # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
+            # run cut short by its budget still ends cold (not at a random hot state)
+            frac = done / N
+            el = time.process_time() - t0
+            tf = el / cpu_s if cpu_s > 0 else 0.0
+            if wall:
+                tf = max(tf, (time.monotonic() - w0) / wall)
+            if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
+                frac = tf
+                self.ended = "budget"
+            if frac >= 1.0:
+                break
+            T = T0 * (T1 / T0) ** frac
+            self.T_last = T
+            lam = self.lam0 * (self.lam1 / self.lam0) ** frac
+            r = max(1, int(r0 * (T / T0) ** 0.5))
+            for _ in range(batch):
+                mv = self.propose(r)
+                if mv is None:
+                    continue
+                S, newpos, kind = mv
+                self.try_move(S, newpos, T, lam, kind)
+            done += batch
+            if self.leg_total == 0:
+                c = self.cost(lam)
+                if best is None or c < best[0]:
+                    best = (c, list(self.X), list(self.Y), list(self.K))
+            if done / N >= next_log:
+                next_log += log_every
+                self.log(f"anneal {100 * done / N:.0f}% T={T:.2e} lam={lam:.1f} r={r} wl={self.wl:.1f} "
+                         f"phys={self.phys:.3f} leg={self.leg_total} acc={self.stats['accepted'] / max(1, self.stats['moves']):.2f}")
+        # a run whose budget went to overheads before it could cool ends with a short quench
+        if getattr(self, "T_last", T0) > 10 * T1:
+            self.T_last = T1
+            for _ in range(5 * batch):
+                mv = self.propose(1)
+                if mv is not None:
+                    self.try_move(mv[0], mv[1], T1, self.lam1, mv[2])
+            done += 5 * batch
+        self.final_lam = self.lam0 * (self.lam1 / self.lam0) ** min(1.0, done / N)
+        self.best_legal = best
+        return self.report(time.process_time() - t0, planned=N, done=done)
+
+    def report(self, cpu, planned=0, done=0):
+        return dict(cpu_s=round(cpu, 2), planned_moves=planned, moves=done,
+                    moves_per_s=round(done / cpu) if cpu > 0 else None,
+                    accept=round(self.stats["accepted"] / max(1, self.stats["moves"]), 3),
+                    by_move={k: dict(tried=v[0], accepted=v[1]) for k, v in self.stats["by_move"].items()},
+                    hpwl=round(self.wl, 2), physics=round(self.phys, 4), leg_cells=self.leg_total,
+                    T0=getattr(self, "T0", None), schedule=getattr(self, "ended", None))
+
+    def write_back(self, use_best_legal=False):
+        X, Y, K = self.X, self.Y, self.K
+        if use_best_legal and self.best_legal is not None:
+            _, X, Y, K = self.best_legal
+        for i in self.mov:
+            self.st.X[i], self.st.Y[i], self.st.K[i] = X[i], Y[i], K[i]
+
+
+def make_annealer(P, st, **kw):
+    """The compiled engine (kae.place.engine.FastAnnealer) when numba is installed and
+    KAE_NO_NUMBA is unset, else this module's Annealer; both take the same arguments and
+    price the same cost."""
+    import os
+    if not os.environ.get("KAE_NO_NUMBA"):
+        try:
+            from .engine import HAVE_NUMBA, FastAnnealer
+            if HAVE_NUMBA:
+                return FastAnnealer(P, st, **kw)
+        except ImportError:
+            pass
+    return Annealer(P, st, **kw)
