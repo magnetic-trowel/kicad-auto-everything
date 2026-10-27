@@ -1,9 +1,8 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Every method that had merit (or partial merit) in the earlier experiments, plus both Freerouting
-# baselines, each run the same fair way: tools/kaeres/restart.py wraps the method in a restart
-# portfolio (4 differently seeded attempts at a time on a doubling schedule; the first wave grows
+# Every method that had merit (or partial merit) in the earlier experiments, each run the same
+# fair way: tools/kaeres/restart.py wraps the method in a restart portfolio (4 differently seeded attempts at a time on a doubling schedule; the first wave grows
 # with sqrt(footprints / 40); the harness's order (legal, clean, unconnected, new DRC errors)
 # picks the best and the first clean one stops the run), with a budget of
 # 900 s x sqrt(footprints / 40) (at least 900 s, at most 4 h). restart.py measures the work
@@ -23,7 +22,9 @@
 # - pnr route_only is deterministic: one attempt. autoplace sa-loop plans its own rounds from
 #   one budget (tested at 1200 s): one attempt, 1200 s base; its in-loop router and the probe
 #   are kae's bridge.
-# - Freerouting: the attempt index sets its pass count (its only variation), first wave 240 s.
+# - Freerouting is not wrapped: it is deterministic (the attempt index only picks one of 8 pass
+#   counts), so restarts repeated identical runs (one board: 129 attempts, one result). The
+#   reference is plain Freerouting 2.5.0 from the fr-baseline campaign (one run per board).
 # - kae portfolio is left out: it is kae bridge in this same wrapper.
 #   HARNESS=<commit> keeps an earlier harness (same method ids).
 set -euo pipefail
@@ -45,13 +46,8 @@ add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]; INNE
     "${KAE[@]}" "$@" ${HARNESS:+--harness $HARNESS}
 }
 
-fr() { add "$1 (restarts)" route 900 "$(rs 240 1.3)" "$2 through kaebench's adapter" \
-  "env PYTHONPATH={code:harness}/bench/src {py:kae} {code:harness}/tools/kaeres/fr_attempt.py --binary $3 --input @IN@ --output @OUT@ --seed @SEED@ --time @TIME@"; }
-fr "freerouting 2.5.0" "Freerouting v2.5.0 release" "$HOME/.cache/kaebench/freerouting-2.5.0-linux-x64/bin/freerouting"
-fr "fr-fork kae-speed" "magnetic-trowel/freerouting 06d2686 + kae-speed 2e1125a (same output, faster)" "$FORK"
-
 # the kae methods and autoplace run kae-speed (45efe00 + faster critical grid + one pcbnew worker per
-# process, same outputs) with its own warm numba cache; pnr and Freerouting keep 45efe00's venv
+# process, same outputs) with its own warm numba cache; pnr keeps 45efe00's venv
 KAE_BASE=("${KAE[@]}")
 KAE=(--code kae=.@1650f8e65f538dd86964eee01007453c6cd9a05f)   # kae-speed
 
