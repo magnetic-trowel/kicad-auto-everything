@@ -18,6 +18,7 @@ None of this is legal advice.
 | Datasets, benchmark manifests, board-id suites (`bench/suites/`), and labels we create | Community Data License Agreement – Permissive 2.0 | `CDLA-Permissive-2.0` |
 | PCBWorld D3 suites (`bench/suites/pcbworld-d3*-test.txt`), derived from LGAI-Research/PCBWorld `configs/datasets/d3.json` @ 1989a93 | BSD 3-Clause, © 2026 LG Management Development Institute Co., Ltd. (LG AI Research) | `BSD-3-Clause` |
 | Trained model weights we release | Apache License 2.0 | `Apache-2.0` |
+| KiCad library content we reuse (one footprint in `tools/research/llm-design/designs/`, library symbols embedded in generated schematics) | CC BY-SA 4.0 with the KiCad libraries exception | `CC-BY-SA-4.0 WITH KiCad-libraries-exception` |
 
 The root [`LICENSE`](LICENSE) is the GPL v3 text. Per-file licensing is
 declared in [`REUSE.toml`](REUSE.toml) and SPDX headers, following

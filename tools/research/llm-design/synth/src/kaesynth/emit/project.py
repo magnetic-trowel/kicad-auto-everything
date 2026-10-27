@@ -1,0 +1,325 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""KiCad project files: .kicad_pro (net classes and patterns), lib tables, .kicad_dru."""
+import json
+import math
+
+from ..checks import Checker
+from ..ir import GRADES
+
+# IPC-2221B Table 6-1, minimum conductor spacing (mm). Columns: B1 internal, B2 external
+# uncoated <=3050 m, B4 external with permanent polymer coating, A6 external component lead
+# uncoated. Rows: upper bound of peak/DC voltage between conductors. Above 500 V: mm per volt.
+# B4/A6 >500 V use the corrected 0.00305 mm/V (docs/topics/rules/isolation-creepage.md).
+IPC2221B = [
+    (15, {"B1": 0.05, "B2": 0.1, "B4": 0.05, "A6": 0.13}),
+    (30, {"B1": 0.05, "B2": 0.1, "B4": 0.05, "A6": 0.25}),
+    (50, {"B1": 0.1, "B2": 0.6, "B4": 0.13, "A6": 0.4}),
+    (100, {"B1": 0.1, "B2": 0.6, "B4": 0.13, "A6": 0.5}),
+    (150, {"B1": 0.2, "B2": 0.6, "B4": 0.4, "A6": 0.8}),
+    (170, {"B1": 0.2, "B2": 1.25, "B4": 0.4, "A6": 0.8}),
+    (250, {"B1": 0.2, "B2": 1.25, "B4": 0.4, "A6": 0.8}),
+    (300, {"B1": 0.2, "B2": 1.25, "B4": 0.4, "A6": 0.8}),
+    (500, {"B1": 0.25, "B2": 2.5, "B4": 0.8, "A6": 1.5}),
+]
+IPC2221B_PER_V = {"B1": 0.0025, "B2": 0.005, "B4": 0.00305, "A6": 0.00305}
+
+
+def ipc2221b_spacing(volts, column="B2"):
+    v = abs(volts)
+    for vmax, row in IPC2221B:
+        if v <= vmax:
+            return row[column]
+    return round(IPC2221B_PER_V[column] * v, 3)
+
+
+def ipc2221_width_mm(amps, rise_c=10.0, oz=1.0, external=True):
+    """IPC-2221 trace width for a current and temperature rise (conservative vs IPC-2152)."""
+    if not amps:
+        return None
+    k = 0.048 if external else 0.024
+    area_mil2 = (amps / (k * rise_c ** 0.44)) ** (1 / 0.725)
+    width_mil = area_mil2 / (1.378 * oz)
+    return round(math.ceil(width_mil * 0.0254 / 0.05) * 0.05, 2)
+
+
+class NetClasses:
+    """Derive one net class per (domain, current bucket); clearance from in-domain voltage."""
+
+    def __init__(self, design, checker=None):
+        self.d = design
+        self.ck = checker or Checker(design)
+        self.classes = {}       # name -> dict
+        self.assign = {}        # net full kicad name -> class
+
+    def build(self):
+        d = self.d
+        nets = [n for n in d.all_nets() if n.pins]
+        # worst voltage from each net to any other net of its own domain; spacing between
+        # domains comes from dru_text (barriers and per-domain-pair functional rules)
+        worst = {}
+        by_dom = {}
+        for n in nets:
+            dom = d.domain_of(n)
+            by_dom.setdefault(dom.name if dom else None, []).append(n)
+        for root, group in by_dom.items():
+            for i, a in enumerate(group):
+                for b in group[i + 1:]:
+                    r = self.ck.vdiff(a, b)
+                    if r is None:
+                        continue
+                    m = max(abs(r[0]), abs(r[1]))
+                    worst[a] = max(worst.get(a, 0), m)
+                    worst[b] = max(worst.get(b, 0), m)
+        coated = bool(d.board_spec and d.board_spec.coating)
+        col = "B4" if coated else "B2"
+        oz = d.board_spec.copper_oz if d.board_spec else 1.0
+        for n in nets:
+            dom = d.domain_of(n)
+            base = n.netclass or (dom.name if dom else "Default")
+            cls = base
+            width = ipc2221_width_mm(n.i_max, oz=oz) if n.i_max and n.i_max >= 0.5 else None
+            if width and not n.netclass:
+                cls = f"{base}_{_bucket(n.i_max)}A"
+                width = ipc2221_width_mm(_bucket(n.i_max), oz=oz)
+            if n.width_mm:
+                width = max(width or 0, n.width_mm)
+                if not n.netclass:
+                    cls = f"{base}_W{str(n.width_mm).replace('.', 'p')}"
+            clr = max(0.2, ipc2221b_spacing(worst.get(n, 0), col))
+            c = self.classes.setdefault(cls, {"name": cls, "clearance": 0.2, "track_width": 0.25,
+                                              "domain": dom.name if dom else None, "nets": []})
+            c["clearance"] = max(c["clearance"], clr)
+            if width:
+                c["track_width"] = max(c["track_width"], width)
+            c["nets"].append(n)
+            self.assign[kicad_net_name(n)] = cls
+        return self
+
+    def project_json(self, template):
+        pro = json.loads(json.dumps(template))
+        ns = pro.setdefault("net_settings", {})
+        classes = [{"name": "Default", "clearance": 0.2, "track_width": 0.25, "via_diameter": 0.6,
+                    "via_drill": 0.3, "priority": 2147483647}]
+        for i, c in enumerate(sorted(self.classes.values(), key=lambda c: c["name"])):
+            if c["name"] == "Default":
+                classes[0]["clearance"] = c["clearance"]
+                continue
+            classes.append({"name": c["name"], "clearance": c["clearance"], "track_width": c["track_width"],
+                            "via_diameter": max(0.6, round(c["track_width"] * 0.8 + 0.3, 2)),
+                            "via_drill": max(0.3, round(c["track_width"] * 0.4, 2)), "priority": i})
+        ns["classes"] = classes
+        ns["meta"] = {"version": 4}
+        ns["netclass_patterns"] = [{"netclass": cls, "pattern": name}
+                                   for name, cls in sorted(self.assign.items())]
+        return pro
+
+
+def _bucket(i):
+    for b in (1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 100):
+        if i <= b:
+            return b
+    return int(math.ceil(i / 50.0) * 50)
+
+
+def kicad_net_name(net):
+    return net.name if net.is_global else f"/{net.block.name}/{net.name}"
+
+
+def write_project(outdir, design, symtable, netclasses, slug=None, parts=None, fplibs=None):
+    import os
+    slug = slug or design.slug
+    parts = design.all_parts() if parts is None else parts
+    template = {
+        "board": {"design_settings": {"defaults": {}, "diff_pair_dimensions": [], "drc_exclusions": [],
+                                      "rules": {}, "track_widths": [], "via_dimensions": []}},
+        "boards": [],
+        "libraries": {"pinned_footprint_libs": [], "pinned_symbol_libs": []},
+        "meta": {"filename": f"{slug}.kicad_pro", "version": 3},
+        "net_settings": {},
+        "pcbnew": {"page_layout_descr_file": ""},
+        "schematic": {"legacy_lib_dir": "", "legacy_lib_list": []},
+        "sheets": [], "text_variables": {},
+    }
+    pro = netclasses.project_json(template)
+    (outdir / f"{slug}.kicad_pro").write_text(json.dumps(pro, indent=2) + "\n")
+    libs = sorted(symtable.used_libs)
+    sym_rows = [f'  (lib (name "{lib}")(type "KiCad")(uri "${{KICAD10_SYMBOL_DIR}}/{lib}.kicad_sym")(options "")(descr ""))'
+                for lib in libs]
+    sym_rows.append('  (lib (name "kaesynth")(type "KiCad")(uri "${KIPRJMOD}/kaesynth.kicad_sym")(options "")(descr "generated by kaesynth"))')
+    (outdir / "sym-lib-table").write_text("(sym_lib_table\n  (version 7)\n" + "\n".join(sym_rows) + "\n)\n")
+    fps = sorted({p.defn.footprint.split(":", 1)[0] for p in parts
+                  if p.defn.footprint and ":" in p.defn.footprint and not p.defn.footprint.startswith("custom:")})
+    fps = sorted(set(fps) | {p.defn.footprint.split(":", 1)[0] for p in parts
+                             if p.defn.footprint and p.defn.footprint.startswith("custom:")})
+    fp_rows = []
+    for lib in fps:
+        local = fplibs.local_dir(lib) if fplibs else None
+        if local is not None:
+            uri = "${KIPRJMOD}/" + os.path.relpath(local, outdir).replace(os.sep, "/")
+        elif lib == "custom":
+            uri = "${KIPRJMOD}/../footprints/custom.pretty"
+        else:
+            uri = f"${{KICAD10_FOOTPRINT_DIR}}/{lib}.pretty"
+        fp_rows.append(f'  (lib (name "{lib}")(type "KiCad")(uri "{uri}")(options "")(descr ""))')
+    (outdir / "fp-lib-table").write_text("(fp_lib_table\n  (version 7)\n" + "\n".join(fp_rows) + "\n)\n")
+
+
+def dru_text(design, netclasses):
+    """Custom DRC rules: barrier clearance/creepage between domain net classes."""
+    lines = ["(version 1)", ""]
+    by_domain = {}
+    for c in netclasses.classes.values():
+        by_domain.setdefault(c["domain"], []).append(c["name"])
+    parent = {}
+    for dom in design.domains.values():
+        try:
+            pd = design.domain_of(design.net_by_name(dom.ref))
+        except Exception:
+            pd = None
+        parent[dom.name] = pd.name if pd is not None and pd is not dom else None
+
+    def subtree(dom):
+        """A domain and every domain floating on top of it."""
+        out = set()
+        for name in design.domains:
+            x = name
+            while x is not None:
+                if x == dom:
+                    out.add(name)
+                    break
+                x = parent.get(x)
+        return out
+
+    def classes(doms, side):
+        names = sorted(n for d in doms for n in by_domain.get(d, []))
+        if not names:
+            return None
+        return "(" + " || ".join(f"{side}.hasNetclass('{n}')" for n in names) + ")"
+
+    def sides(bar):
+        """Domains on each side. A barrier covers the domains floating on each side too,
+        except those on the other side (a parent/child barrier must not apply inside the child)."""
+        sa, sb = subtree(bar.a), subtree(bar.b)
+        if bar.b in sa:
+            return sa - sb, sb
+        if bar.a in sb:
+            return sa, sb - sa
+        return sa, sb
+
+    for dom in design.domains.values():
+        if dom.edge_clearance_mm is None:
+            continue
+        c = classes(subtree(dom.name), "A")
+        if c:
+            lines.append(f"# {dom.name} copper to board edge, {dom.edge_source}".rstrip(", "))
+            lines.append(f'(rule "IR:edge.{dom.name}"')
+            lines.append(f'  (condition "{c}")')
+            lines.append(f"  (constraint edge_clearance (min {dom.edge_clearance_mm:g}mm)))")
+            lines.append("")
+            # edge_clearance covers Edge.Cuts and oval holes only; round mounting holes need
+            # hole_clearance (and clearance for their pads) against this domain's copper
+            holes = [p.ref for p in design.all_parts() if p.defn.category == "mechanical" and p.on_board]
+            if holes:
+                hb = " || ".join(f"B.memberOfFootprint('{r}')" for r in holes)
+                lines.append(f"# {dom.name} copper to mounting holes {', '.join(holes)}")
+                lines.append(f'(rule "IR:edge.{dom.name}.holes"')
+                lines.append(f'  (condition "{c} && ({hb})")')
+                lines.append(f"  (constraint hole_clearance (min {dom.edge_clearance_mm:g}mm))")
+                lines.append(f"  (constraint clearance (min {dom.edge_clearance_mm:g}mm)))")
+                lines.append("")
+
+    def depth(name):
+        n, x = 0, parent.get(name)
+        while x is not None:
+            n, x = n + 1, parent.get(x)
+        return n
+
+    # KiCad applies the last matching rule, so emit general before specific:
+    # 1. general rules — functional spacing between domain pairs of one root (IPC-2221B from their
+    #    worst voltage) and barriers inherited through floating domains — sorted by spacing so the
+    #    strictest of several covering one pair wins,
+    # 2. barriers naming the nets' own domains (the designer's explicit pair),
+    # 3. exemptions for pads of one part that bridges domains (its package sets that spacing).
+    from ..checks import Checker
+    ck = Checker(design)
+    coated = bool(design.board_spec and design.board_spec.coating)
+    col = "B4" if coated else "B2"
+    declared = {frozenset((b.a, b.b)) for b in design.barriers}
+    spaced = set(declared)              # domain pairs some rule spaces apart
+    doms = [x for x in design.domains.values() if by_domain.get(x.name)]
+    grouped = {}                        # (domain, mm) -> [(other domain, worst V)]
+    for i, da in enumerate(doms):
+        for db in doms[i + 1:]:
+            if frozenset((da.name, db.name)) in declared:
+                continue
+            v = ck.domain_pair_vmax(da, db)
+            if v is None:
+                continue
+            mm = ipc2221b_spacing(v, col)
+            # emit even when a net class already has this clearance: a matching custom rule
+            # (e.g. a looser inherited barrier) overrides net-class clearance in KiCad
+            if mm <= 0.2:
+                continue
+            grouped.setdefault((da.name, mm), []).append((db.name, v))
+            spaced.add(frozenset((da.name, db.name)))
+    general = []      # (clearance, creepage, lines): functional and inherited rules
+    for (a, mm), others in grouped.items():
+        names = {o for o, _ in others}
+        ca, cb = classes({a}, "A"), classes(names, "B")
+        ca2, cb2 = classes(names, "A"), classes({a}, "B")
+        worst = max(v for _, v in others)
+        general.append((mm, 0.0, [
+            f"# functional spacing {a} to {', '.join(sorted(names))}: worst {worst:.4g} V, IPC-2221B {col}",
+            f'(rule "IR:functional.{a}.{mm:g}mm"',
+            f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")',
+            f"  (constraint clearance (min {mm:g}mm)))", ""]))
+    emitted = []
+    for direct in (False, True):
+        order = sorted(design.barriers, key=lambda b: (GRADES[b.grade], b.clearance_mm, b.creepage_mm))
+        if direct:
+            # general rules sorted so that where several cover one pair the strictest comes last
+            for _, _, block in sorted(general, key=lambda g: (g[0], g[1])):
+                lines.extend(block)
+        for bar in order:
+            sa, sb = ({bar.a}, {bar.b}) if direct else sides(bar)
+            if not direct and (sa, sb) == ({bar.a}, {bar.b}):
+                continue          # nothing inherited: the direct rule covers it
+            ca, cb, ca2, cb2 = classes(sa, "A"), classes(sb, "B"), classes(sb, "A"), classes(sa, "B")
+            if not (ca and cb):
+                continue
+            rid = f"IR:barrier.{bar.a}.{bar.b}" + ("" if direct else ".inherited")
+            emitted.append(rid)
+            block = [f"# {bar.grade} insulation, {bar.v_work:g} V working, {bar.standard} {bar.source}".rstrip(),
+                     f'(rule "{rid}"',
+                     f'  (condition "({ca} && {cb}) || ({ca2} && {cb2})")',
+                     f"  (constraint clearance (min {bar.clearance_mm:g}mm))",
+                     f"  (constraint creepage (min {bar.creepage_mm:g}mm)))", ""]
+            if direct:
+                lines.extend(block)
+            else:
+                general.append((bar.clearance_mm, bar.creepage_mm, block))
+    def inherited_pairs():
+        out = set()
+        for bar in design.barriers:
+            sa, sb = sides(bar)
+            out |= {frozenset((x, y)) for x in sa for y in sb if x != y}
+        return out
+
+    spaced |= inherited_pairs()
+    bridging = []
+    for p in design.all_parts():
+        pd = sorted({design.domain_of(n).name for n in p.conn.values() if design.domain_of(n)})
+        if p.on_board and any(frozenset((x, y)) in spaced for i, x in enumerate(pd) for y in pd[i + 1:]):
+            bridging.append(p.ref)
+    for i in range(0, len(bridging), 40):
+        chunk = bridging[i:i + 40]
+        cond = " || ".join(f"(A.memberOfFootprint('{r}') && B.memberOfFootprint('{r}'))" for r in chunk)
+        lines.append(f"# pads of one part that bridges spaced domains: {', '.join(chunk)}")
+        lines.append("# (its package sets that spacing; package creepage is checked against the barrier)")
+        lines.append(f'(rule "IR:bridging_parts.{i // 40 + 1}"')
+        lines.append(f'  (condition "{cond}")')
+        lines.append("  (constraint clearance (min 0mm))")
+        lines.append("  (constraint creepage (min 0mm)))")
+        lines.append("")
+    return "\n".join(lines)

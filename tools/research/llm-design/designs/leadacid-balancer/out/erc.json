@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d",
+      "violations": []
+    },
+    {
+      "path": "/input/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/86708fdd-ea15-5c0f-b209-021a16ff9031",
+      "violations": []
+    },
+    {
+      "path": "/ch1/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/26cc7d35-9b2d-5fbf-9640-02adc2d4b150",
+      "violations": []
+    },
+    {
+      "path": "/ch2/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/cb98b94a-f199-5a7d-aa25-432d54d2b160",
+      "violations": []
+    },
+    {
+      "path": "/ch3/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/f143e59e-fc15-542e-9309-dca9a1b08193",
+      "violations": []
+    },
+    {
+      "path": "/alarm/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/cf1d326d-1904-5168-b9da-d8ce55ede38b",
+      "violations": []
+    },
+    {
+      "path": "/mech/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/9050d52b-f05a-5ff5-bfbf-d8a9b27d3e52",
+      "violations": []
+    },
+    {
+      "path": "/harness/",
+      "uuid_path": "/19cb7a1a-0065-5673-9954-2860fa0f563d/06546ba7-c8e3-5a36-b011-943edfcffc44",
+      "violations": []
+    }
+  ],
+  "source": "leadacid-balancer.kicad_sch"
+}

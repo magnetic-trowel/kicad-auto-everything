@@ -1,0 +1,96 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "ignored_checks": [
+    {
+      "description": "Global label only appears once in the schematic",
+      "key": "single_global_label"
+    },
+    {
+      "description": "Four connection points are joined together",
+      "key": "four_way_junction"
+    },
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": [
+    "error",
+    "warning",
+    "exclusion"
+  ],
+  "kicad_version": "10.0.7",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a",
+      "violations": []
+    },
+    {
+      "path": "/mains_in/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/5a948949-00be-5f30-a335-0da22bab355f",
+      "violations": []
+    },
+    {
+      "path": "/power5/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/00bc7493-cf71-5b3e-90a5-99aa474c97d9",
+      "violations": []
+    },
+    {
+      "path": "/pi/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/004c64fb-3c5c-5d21-a81a-6480cdab26e7",
+      "violations": []
+    },
+    {
+      "path": "/arm/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/c4900e25-da27-50d6-8823-620d0dc74617",
+      "violations": []
+    },
+    {
+      "path": "/ch1/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/d5d3af06-bb94-5568-b155-db1df6270ff3",
+      "violations": []
+    },
+    {
+      "path": "/ch2/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/6de384ee-328d-5456-b0b0-d4b97d794c0d",
+      "violations": []
+    },
+    {
+      "path": "/ch3/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/b1b24986-035c-58c5-a8f9-7b25c66e2a0f",
+      "violations": []
+    },
+    {
+      "path": "/ch4/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/e8e6b6c4-da9e-56eb-b53f-d1aae700ec51",
+      "violations": []
+    },
+    {
+      "path": "/ch5/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/e79e76df-5bd2-5912-8919-36d9dba5b530",
+      "violations": []
+    },
+    {
+      "path": "/ch6/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/de801235-2e58-5b45-a405-5c4ea07b03b5",
+      "violations": []
+    },
+    {
+      "path": "/outlets/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/90444293-8b95-54ac-add3-75d8c9962a0a",
+      "violations": []
+    },
+    {
+      "path": "/mech/",
+      "uuid_path": "/a30cabb5-b934-5e97-9aeb-aaefec3ba07a/3d33b6f9-21ed-5bfc-a356-a4c53021f7fa",
+      "violations": []
+    }
+  ],
+  "source": "rpi-mains-relay.kicad_sch"
+}
