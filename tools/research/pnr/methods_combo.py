@@ -75,9 +75,15 @@ def repair_phys(world, kit, ph, w, clock, log, rng, window=4, k=5):
                 world.unplace(q)
                 if best is None or c < best[0]:
                     best = (c, cx, cy, ri)
+                if clock.left() < 0:
+                    break
+            if clock.left() < 0:  # out of time inside a try: abandon it (restored below)
+                ok = False
+                break
             world.place(q, *best[1:])
             kit.reroute(kit.part_nets([q]) | set(kit.conflicted_nets()), iters=3)
         new = None
+        ok = ok and clock.left() > 0
         if ok:
             r.pathfinder(iters=15, log=None)
             ph.sync()

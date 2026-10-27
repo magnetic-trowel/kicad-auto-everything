@@ -841,8 +841,14 @@ def repair(world, seed=0, budget=300, log=print, start="seq", window=4, **kw):
                 world.unplace(q)
                 if best is None or c < best[0]:
                     best = (c, cx, cy, ri)
+                if clock.left() < 0:
+                    break
+            if clock.left() < 0:  # out of time inside a try: abandon it (restored below)
+                ok = False
+                break
             world.place(q, *best[1:])
             kit.reroute(kit.part_nets([q]) | set(kit.conflicted_nets()), iters=3)
+        ok = ok and clock.left() > 0
         if ok:
             r.pathfinder(iters=15, log=None)
             new = kit.total_cost()

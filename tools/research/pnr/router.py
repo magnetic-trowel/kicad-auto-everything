@@ -18,6 +18,7 @@ from raster import stamp_disc_path
 
 INF = 1e18
 SQ2 = math.sqrt(2.0)
+STOP = None  # run.py: a callable that is true past the run's CPU deadline (anytime.budget_stop)
 
 
 @njit(cache=True)
@@ -352,6 +353,8 @@ class Router:
                 log(f"  pf it={it} pres={self.pres:.2f} conflicted={len(bad)} "
                     f"unrouted={sum(self.unrouted.values())}")
             if not bad:
+                break
+            if STOP is not None and STOP():
                 break
             for n in bad:
                 for p in self.routes[n]:
