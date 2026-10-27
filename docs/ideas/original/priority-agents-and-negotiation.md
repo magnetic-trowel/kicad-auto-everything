@@ -50,7 +50,7 @@ Design stance: a domain submodule is deterministic code, made of a recipe pack, 
 Each substitution is a typed move with a computed iso-curve. Example: CIN may move from 1.5 mm to 3 mm if a second via pair is added and L1–L2 ≤ 0.1 mm, keeping L_loop ≤ 1.2 nH. The LLM or the market searches substitutions, and the checker verifies the budget invariant before acceptance.
 
 **Why it should work.**
-- Loop inductance depends on plane distance as well as area (187 nH vs 13 nH) ([hot-loops](../../topics/rules/power/hot-loops.md)).
+- Loop inductance depends on plane distance as well as area (AN-139: 187 nH vs 13 nH for a 10 × 10 cm test loop at 27 MHz; real hot loops are 2–20 mm², SNVA803: 2 mm² < 0.5 nH) ([hot-loops](../../topics/rules/power/hot-loops.md)).
 - Mounting inductance, not capacitance value, governs decoupling ([decoupling-pdn](../../topics/rules/decoupling-pdn.md)).
 - Reduce h before adding spacing ([si-fundamentals](../../topics/rules/si-fundamentals.md)).
 - Admissible-relaxation feedback helps LLMs ([interfaces](../../topics/llm/interfaces-relations-vs-coordinates.md)).
@@ -128,7 +128,7 @@ Each substitution is a typed move with a computed iso-curve. Example: CIN may mo
 **Why it should work.**
 - Experts route critical nets first and lock them ([expert-state-machine](../../topics/workflow/expert-state-machine.md), [sub-workflows](../../topics/workflow/sub-workflows-power-bga-ddr.md)).
 - Meander area should be reserved early ([length-matching](../../topics/routing/length-matching-and-buses.md)).
-- KiCad 10 SES import deletes unlocked copper, so frozen-copper flows are brittle ([specctra-freerouting-integration](../../topics/kicad/specctra-freerouting-integration.md)).
+- Reservations let upper tiers be re-realized after ECOs without losing intent. KiCad 10 SES import deletes unlocked tracks and vias but re-adds locked ones, so any critical copper that exists at a Freerouting hand-off must be locked ([specctra-freerouting-integration](../../topics/kicad/specctra-freerouting-integration.md)).
 
 **Builds on.** alg#200, alg#247; prac#63, prac#67; llm#346.
 
@@ -171,9 +171,9 @@ Each substitution is a typed move with a computed iso-curve. Example: CIN may mo
 **Mechanism.**
 1. Detect the cell and its hot-loop members from the topology table.
 2. Enumerate discrete poses for 3–6 parts: 4 rotations, side fixed to the IC's side, a 0.25 mm grid inside a 15 mm window. Use CP-SAT, or DFS with pruning.
-3. Objective: L_est from loop-polygon area, depth to the first plane (from the stackup), and via count and position. Use the AN-139, SNVA803 and EPC anchors plus the via-inductance formula.
+3. Objective: L_est from loop-polygon area, depth to the first plane (from the stackup), and via count and position. Use the SNVA803 and EPC anchors plus the via-inductance formula. AN-139's 187/13 nH are for a 10 × 10 cm test loop at 27 MHz, about 10³ times a 2–20 mm² hot loop, so use them only qualitatively.
 4. Constraints:
-   - CIN on the IC layer, with no vias in the hot loop;
+   - CIN on the IC layer (integrated converters). Via count and plane coverage are scored through L_est, and vertical loops (vias to the first inner plane) are allowed;
    - an SW copper-area cap;
    - FB parts outside the SW/L half-plane (angular-sector test);
    - room for thermal vias.
@@ -212,7 +212,7 @@ Each substitution is a typed move with a computed iso-curve. Example: CIN may mo
 
 **Builds on.** pwr: mounting-inductance ranking, PDN screener; prac#30; eco#115; alg#49.
 
-**How to test.** On 20 MCU/FPGA boards, compare against "smallest closest" and against the designer. Metrics: weighted L_mount, screener peak/Z_t, area. Validate the L model on 3 boards with padne or KiPI.
+**How to test.** On 20 MCU/FPGA boards, compare against "smallest closest" and against the designer. Metrics: weighted L_mount, screener peak/Z_t, area. Validate the L model on 3 boards with KiPI (AC PDN impedance; 0.9.1 alpha, unvalidated). padne is a DC solver and cannot measure inductance.
 
 **Effort/risk.** S. Transient shares are guesses and are labelled as estimates.
 

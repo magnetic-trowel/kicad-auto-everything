@@ -6,11 +6,11 @@ Part of the [original-ideas catalog](README.md). Shorthands as in [intent-and-wh
 
 ## P1. Router-probe pseudo-gradients — *novel combination*
 
-**Pitch.** Run a bounded fast router on placement snapshots and attribute each failure to the parts that caused it. Feed the attributions back into the analytical placer as forces and penalties, so placement learns from routing probes rather than from RUDY.
+**Pitch.** Run a bounded fast router on placement snapshots and attribute each failure to the parts that caused it. Feed the attributions back into the analytical placer as forces and penalties, so placement learns from routing probes, not from RUDY alone.
 
 **Mechanism.**
 1. Every k Nesterov steps (or per LNS window), legalize a snapshot.
-2. Run KRT (≈0.65 s) or a short Freerouting pass (5–10 s budget).
+2. Run KRT or a short Freerouting pass (5–10 s budget). PCBWorld measured KRT at ≈0.65 s per D3-A board (≤31 pads) and 3.27 s at ≤100 pads, so budget by board size.
 3. Collect unrouted nets, KRT blocker attributions, SURF cut overflows and via hotspots.
 4. Convert them:
    - each blocked net becomes a force on its blockers, perpendicular to the blocked corridor, scaled by overflow;
@@ -22,12 +22,12 @@ Probe results are archived to fit a per-board linear surrogate online. There is 
 
 **Why it should work.**
 - Practitioners already use autorouters as placement probes and read the failure clusters ([autorouter-distrust](../../topics/workflow/autorouter-distrust.md), [llm-field-reports](../../topics/workflow/llm-field-reports.md)).
-- Rule routers are fast enough for the loop ([evaluation-stack](../../topics/verification/evaluation-stack.md)).
-- No published correlation links RUDY to completion ([performance-and-multifidelity](../../topics/solvers/performance-and-multifidelity.md)).
+- Rule routers are fast enough for the loop on small boards ([evaluation-stack](../../topics/verification/evaluation-stack.md)). On larger boards they are not: on kaebench's split C, 22 of 79 Freerouting runs hit the 600 s timeout ([harness](../../topics/verification/harness.md)).
+- Published correlations between routing proxies and completion are few and weak (one unreviewed 64-board study, one patent dataset), and none calibrates RUDY on PCBs ([performance-and-multifidelity](../../topics/solvers/performance-and-multifidelity.md), [imitation](../../topics/data/imitation-and-learned-scores.md), [patents](../../topics/landscape/patents-watchlist.md)).
 
 **Builds on.** prac#72–73; alg#31, alg#161; eco#109, eco#129. Avoids eco#133 ([patents](../../topics/landscape/patents-watchlist.md)).
 
-**How to test.** On the Cypress small suite and placement-stripped D3 boards, at equal wall-clock, compare a Cypress-style placer with RUDY against the same placer with probe forces. Metric: Freerouting 2.5 completion, clean pass and vias. Ablation: attributed forces vs uniform inflation.
+**How to test.** On the Cypress small suite and placement-stripped D3 boards, at equal wall-clock, compare a Cypress-style placer with RUDY against the same placer with RUDY plus probe forces. Metric: Freerouting 2.5.0 completion, clean pass and vias. Ablation: attributed forces vs uniform inflation.
 
 **Effort/risk.** M. Noisy probes can make the placer thrash; probe only legalized snapshots and decay the forces.
 
@@ -49,10 +49,10 @@ Probe results are archived to fit a per-board linear surrogate online. There is 
 - **Output:** the accepted floorplan becomes KiCad rule areas and global-placement regions.
 
 **Why it should work.**
-- The SURF cut test is exact and names the bottleneck ([topological-routing](../../topics/routing/topological-routing.md)).
+- The SURF cut test names the bottleneck ([topological-routing](../../topics/routing/topological-routing.md)). It is exact only for a fixed single-layer sketch; for multi-layer bundle flow across blocks it is a necessary condition, so a passing floorplan can still fail to route (hence the Spearman test below).
 - Practitioners add a layer pair above 70% channel use ([board-size-layers-stackup](../../topics/workflow/board-size-layers-stackup.md)).
 - Hierarchy matters most ([llm-guided-placement](../../topics/placement/llm-guided-placement.md)).
-- Monolithic exact placement fails beyond about 100 parts ([cp-sat](../../topics/solvers/cp-sat-milp-smt.md)).
+- Monolithic exact placement stays competitive only to about 100 parts and found no feasible solution at 300 ([cp-sat](../../topics/solvers/cp-sat-milp-smt.md), [measurements](../../topics/solvers/benchmarks.md)).
 
 **Builds on.** alg#165, alg#286, alg#307; prac#88, prac#102; xd#29; eco#111.
 
@@ -75,7 +75,7 @@ Probe results are archived to fit a per-board linear surrogate online. There is 
 **Why it should work.**
 - Copying the EVM is the least-risk path, yet app notes are "wrong until proven right" ([layout-reuse](../../topics/workflow/layout-reuse.md)).
 - Coarse hints barely help; fine relative geometry does ([layout-retrieval](../../topics/data/layout-retrieval-and-reuse.md)).
-- PSDL programs with repair were preferred 94.3% ([scene-layout-transplants](../../topics/placement/scene-layout-transplants.md)).
+- In 3-D scenes, PSDL programs with repair were preferred 94.3% over Holodeck and 82.9% over a declarative DSL ([scene-layout-transplants](../../topics/placement/scene-layout-transplants.md)).
 
 **Builds on.** xd#1, xd#19; alg#69, alg#76, alg#91; llm#198; prac#99–101; [N7](priority-agents-and-negotiation.md#n7-hot-loop-micro-placer-minimizing-estimated-nanohenries--new).
 
@@ -121,7 +121,7 @@ The LLM writes the affinities with a reason for each and sees their prices ([I4]
 1. Canonicalize to the anchor IC's frame (pin 1, rotation). Key each satellite by pin function and package.
 2. Fit a Gaussian mixture per (anchor family, pin function, satellite package, layer count).
 3. Keep only boards with `ref_open == 0` that pass their own DRC, weighted by trust tier.
-4. Placer term: a weak −log p(pose), at VeoPlace-like strength (λ ≈ 0.01). Datasheet hard constraints override it.
+4. Placer term: a weak −log p(pose). Set its weight by sweep against a random-prior control: VeoPlace's λ_A = 0.01 multiplies a quadratic anchor in that benchmark's units and does not transfer. Datasheet hard constraints override it.
 5. Retrieval returns the motif, its density, and exemplar boards with their licences.
 
 **Why it should work.**
@@ -149,7 +149,7 @@ The LLM writes the affinities with a reason for each and sees their prices ([I4]
 - **Pin swaps** are emitted as back-annotation proposals for a human to approve.
 
 **Why it should work.**
-- Swapping interchangeable parts alone drops designer clean-route from 0.56 to 0.31–0.39, so assignment within groups matters ([imitation](../../topics/data/imitation-and-learned-scores.md)).
+- Swapping interchangeable parts alone drops designer clean-route from 0.56 to 0.31–0.39, so assignment within groups matters ([imitation](../../topics/data/imitation-and-learned-scores.md)). Caveats: one third-party, unreviewed 64-board study, and the swaps also added 0.9–3.5 pre-route DRC errors on average, so the drop is not purely about assignment.
 - Pin assignment with escape is polynomial-optimal ([escape-routing](../../topics/routing/escape-routing.md)).
 
 **Builds on.** llm#291; alg#47–48, alg#190; eco#104.

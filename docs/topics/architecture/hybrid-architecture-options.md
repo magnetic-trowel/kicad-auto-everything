@@ -34,7 +34,7 @@ The same submodules appear in every option. What differs between options is how 
 | Decoupling / PDN | N8 assignment; PDN screener | min-cost flow; lumped RLC | 2 |
 | EMI/EMC | P8 connector-voltage proxy; P4 side cut; R2; Checker F | analytical penalty; router cost | spans tiers |
 | Thermal | ΔT budgets (I1); P4 bottom heat-sinking | screener in the placement loop | spans tiers |
-| DFM / mechanical | fab packs (precedence 10); P10 variants; locked anchors | legalizer constraints | hard |
+| DFM / mechanical | fab packs (floors applied after rule resolution and compiled into Board Setup, not a precedence rank); P10 variants; locked anchors | legalizer constraints | hard |
 | Bulk signals | R5 bandit over Freerouting / KRT / PathFinder | — | last |
 
 Evidence for the specialists: hot loops rank first everywhere ([hot-loops](../rules/power/hot-loops.md)); mounting inductance governs decoupling ([decoupling-pdn](../rules/decoupling-pdn.md)); TVS order is comparative ([emc-placement](../rules/emc-placement.md)); return-path continuity is the shared SI/EMC physics ([si-fundamentals](../rules/si-fundamentals.md)).
@@ -56,7 +56,7 @@ Evidence for the specialists: hot loops rank first everywhere ([hot-loops](../ru
                           │
  3 Placement: sides (P4) → floorplan + cut check (P2) → recipe solvers
    (N7, N8, N9, P3) → analytical GP (+ P1 probe forces) → CP-SAT legalize
-   → slot assignment (P6) → SA/LNS            gate: probe completion ≥ 85%
+   → slot assignment (P6) → SA/LNS     gate: probe completion (profile, default 85%)
                           │
  4 Routing: escape + via sites (R3) → macros (R6) → critical nets
    (PNS DP placer, meanders in reserved slack) → bulk (Freerouting/KRT)
@@ -76,11 +76,11 @@ Evidence for the specialists: hot loops rank first everywhere ([hot-loops](../ru
 - Stage 6: repair, choosing from bounded menus.
 - Throughout: narration generated from derivations and the why-graph.
 
-Estimated token use is around 50–200k per board, far below the 0.4–1.9M tokens of per-step routing agents ([pcbworld](../routing/pcbworld.md)) [I].
+Estimated token use, not yet derived or measured, is around 50–200k per board, far below the 0.4–1.9M tokens of PCBWorld's per-step routing agents on 2-layer boards of ≤31 and ≤100 pads ([pcbworld](../routing/pcbworld.md)) [I].
 
-**Priorities.** Tier order is set by stage order plus the ε-lexicographic compiler (N6). Critical copper becomes reservations (N5), not frozen copper, because KiCad 10 SES import deletes unlocked copper ([specctra-freerouting-integration](../kicad/specctra-freerouting-integration.md)).
+**Priorities.** Tier order is set by stage order plus the ε-lexicographic compiler (N6). Critical copper becomes reservations (N5), not frozen copper, so upper tiers can be re-realized after ECOs. Any critical copper that exists at a Freerouting hand-off must be locked: KiCad 10 SES import deletes unlocked tracks and vias and re-adds locked ones ([specctra-freerouting-integration](../kicad/specctra-freerouting-integration.md)).
 
-**Engines.** CP-SAT, a Cypress-style JAX placer, Rust SA/LNS, MonoSAT or CP-SAT escape, the PNS DP placer and meander engine, Freerouting 2.6.x, and KRT ([recommended-stack](../solvers/recommended-stack.md)).
+**Engines.** CP-SAT, a Cypress-style JAX placer, Rust SA/LNS, MonoSAT or CP-SAT escape, the PNS DP placer and meander engine, Freerouting v2.5.0 (pinned until 2.6.0 is released; 2.6.x exists only as RCs; `-mt 1` for final runs), and KRT ([recommended-stack](../solvers/recommended-stack.md)).
 
 **Strengths.**
 - It mirrors the commercial pattern and the field-proven loop ([field-reports](../ux/field-reports.md)).
@@ -187,7 +187,7 @@ Estimated token use is around 50–200k per board, far below the 0.4–1.9M toke
      │
  MCTS / beam over macro decisions:
    sides, block regions, big-IC orientation, homotopy choices, engine presets
-   prior: LLM proposals (+ VLM regions, λ≈0.01)
+   prior: LLM proposals (+ VLM regions as weak anchors)
    rollout: Option A pipeline at low fidelity
      │
  Successive halving across fidelity rungs (S6); QD archive keyed by budget spend
@@ -220,7 +220,7 @@ Estimated token use is around 50–200k per board, far below the 0.4–1.9M toke
 |---|---|---|---|---|
 | LLM role | configurator and repairer of commitments | treasury and court | topology planner | prior and narrator |
 | Cross-domain trade-offs | stage order, ε | explicit prices | corridor and cut capacity | search over alternatives |
-| Placement–routing coupling | probes (P1), 85% gate | reservations | strong (sketch) | rollouts |
+| Placement–routing coupling | probes (P1), probe-completion gate | reservations | strong (sketch) | rollouts |
 | Build effort | M | L | L | M, after A |
 | First useful result | weeks to months (review, recipes) | months | many months | after A |
 | Main risk | rigid order | convergence, currency | no open topological engine | compute, FTO |
@@ -232,7 +232,7 @@ Estimated token use is around 50–200k per board, far below the 0.4–1.9M toke
 
 | Phase | Scope | Exit / kill criterion |
 |---|---|---|
-| 1. A-core | Substrate. Top-10 ideas: P6, N8, N7, V2, V1, I4, I1+I2, P1. Freerouting/KRT bulk. Review mode ships first ([trust-requirements](../workflow/trust-requirements.md)) | Beats Freerouting 2.5+ alone on PCBWorld D3 clean pass with SI PRCs, and beats Cypress-protocol routability on placement-stripped boards |
+| 1. A-core | Substrate. Top-10 ideas except R1 and R2 (Phase 3): P6, N8, N7, V2, V1, I4, I1+I2, P1. Freerouting/KRT bulk. Review mode ships first ([trust-requirements](../workflow/trust-requirements.md)) | Beats Freerouting 2.5+ alone on PCBWorld D3 clean pass with SI PRCs, and beats Cypress-protocol routability (Freerouting v1.9.0, two free layers, % of pin pairs routed) on placement-stripped boards |
 | 2. B-lite | N3, N4, N5, N6 everywhere. N1 market only for named contested resources (anchor-pin rings, plane adjacency, BGA via sites) | Drop N1 if it doesn't beat N6 ε-lexicographic on per-domain PRC pass for the conflict-board suite |
 | 3. C for critical nets | R1 menus, R2 shadow returns, R3, R8 on HS/RF nets only; bulk stays on engines. P7 only if R1 shows topology gains | Keep it only if critical-net SI PRC pass and vias beat PNS+Freerouting at <50k tokens/board |
 | 4. D overnight | S6, QD alternatives (U4), R5, L2, gated by V2 and V4 | Better best-of-portfolio than A at equal wall-clock; red team finds no new hacks |
@@ -246,7 +246,7 @@ Why this order:
 ## Conflicts and open questions
 - **KiCad limits.**
   - KiCad 10 IPC has no DRC run or routing calls, so file-level work plus `kicad-cli` is required until KiCad 11 (~Q1 2027).
-  - PCBWorld-Engine maintenance across 10/11 is unknown, which matters for R8 and Option C ([kicad-pns-router](../routing/kicad-pns-router.md)).
+  - KiCad's IPC API has no route or shove RPC, and the existing Python binding to PNS, PCBWorld-Engine, pins KiCad 9.0.8 ([kicad-pns-router](../routing/kicad-pns-router.md); "Blocked" in [routing/strategy-candidates](../routing/strategy-candidates.md)). Its maintenance across 10/11 is unknown. This matters from Phase 1, because Option A's critical-net, repair and tuning stages use PNS, and again for R8 and Option C.
 - **Patent exposure.** All four options have an LLM updating constraints in a loop, which resembles pending NVIDIA US 2025/0315590. Collecting prior art matters regardless of the option chosen ([patents-watchlist](../landscape/patents-watchlist.md)).
 - **Spend models.** Budget spend models (I1) and the EMI proxy (P8) are uncalibrated, and the quality of Options B and C depends on them, so calibrate per V4 first.
 - **Market fallback.** Whether a market (B) converges on real boards is unknown; N6 is the fallback.
