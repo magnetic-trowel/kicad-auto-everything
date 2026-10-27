@@ -87,7 +87,7 @@ Each statement below links to the topic doc that holds the detail and evidence. 
   - Proximity, via-to-plane and loop area need custom checkers.
 
   → [constraint-ir](../topics/architecture/constraint-ir.md)
-- **Rule resolution differs by tool:** KiCad uses last match (floored at the board minimum), Altium priority, JITX specificity, Allegro CSets. Timing belongs on pad-to-pad topologies. IPC-2581C carries impedance but no placement or routing rules. → [constraint-models-compared](../topics/architecture/constraint-models-compared.md)
+- **Rule resolution differs by tool:** KiCad uses last match (net-class defaults are floored at the board minimum; custom rules are not), Altium priority, JITX specificity, Allegro CSets. Timing belongs on pad-to-pad topologies. IPC-2581C carries impedance but no placement or routing rules. → [constraint-models-compared](../topics/architecture/constraint-models-compared.md)
 
 ## Key corrections (verification note)
 

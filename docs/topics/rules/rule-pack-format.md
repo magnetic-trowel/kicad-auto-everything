@@ -14,7 +14,7 @@
   - The policy is under review. The per-interface packs' defaults currently differ from it (e.g. USB2 defaults to 50 mil skew, not SPRAAR7A's 2 mil).
 - **Precedence and resolution:**
   - Precedence order, for design-intent values only: interface default 20 < vendor family 30 < device datasheet 40.
-  - **Fab and safety minimums are not ranks in this ladder.** They are floors applied after resolution: effective_min = max(resolved_min, fab_min, safety_min). A pack that asks for less raises a conflict ("needs a different fab class") instead of winning. Also compile the fab minimums into Board Setup → Constraints (`.kicad_pro`), since KiCad clamps every resolved clearance and diff-pair gap to the board minimum ([P] [drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
+  - **Fab and safety minimums are not ranks in this ladder.** They are floors applied after resolution: effective_min = max(resolved_min, fab_min, safety_min). A pack that asks for less raises a conflict ("needs a different fab class") instead of winning. Also compile the fab minimums into Board Setup → Constraints (`.kicad_pro`). KiCad floors net-class clearances, implicit diff-pair gaps and pad/footprint overrides at that minimum, but uses a matching custom rule as written (a negative min even allows overlap), so the compiler must also clamp every emitted rule to the floors ([P] [drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
   - A snippet-sourced [S] value never overrides a primary [P] value at equal precedence.
   - Our heuristics [I] default to `warning` until calibrated against vendor evaluation-board layouts.
 - **Rule strength tiers** ([VR] §3):
