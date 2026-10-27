@@ -1,6 +1,6 @@
 # Digest: LLM interfaces, agent loops, design understanding, data and UX
 
-Executive statements; detail lives in the linked topic docs. Every idea is in [the idea inventory](../ideas/inventory-llm-data-ux.md).
+Executive statements; detail is in the linked topic docs and every idea in [the inventory](../ideas/inventory-llm-data-ux.md).
 
 ## What LLMs can and cannot do
 - **LLMs fail at emitting geometry and succeed at semantic choices made for a solver.**
