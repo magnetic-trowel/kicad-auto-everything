@@ -65,8 +65,8 @@ Main findings:
 | minimal-partition (soap-film) pours | did not work | Pours 1.01–1.05× human resistance; interleaved rails fail | [pour-models.md](pour-models.md) | `collapse_pour` |
 | pour-damage maps (T4) | worked (physics objective; needs confirming) | Pour R 0.84× jc, routed physics 1.05 vs 1.18 | [pour-models.md](pour-models.md#pour-damage-maps-in-jc-t4) | `xf_pour` |
 | transformations T3, T5–T12; untested catalog ideas | untested ideas | Mechanisms and test plans only | [untested-ideas.md](untested-ideas.md) | — |
-| kae joint place-and-route loop | see page | — | [kae-joint-loop.md](kae-joint-loop.md) | — |
-| kae staged pipeline | see page | — | [kae-staged.md](kae-staged.md) | — |
+| kae joint loop: KiCad-judged feedback windows, local re-place and rip-up, incremental re-route, lexicographic accept | worked on A+B; clock-bound on split C | A+B cp1 0.909 vs staged 0.879 vs human + Freerouting 0.455; module physics 0.78x human | [kae-joint-loop.md](kae-joint-loop.md) | `kae/src/kae/joint/`, `tools/research/joint/` |
+| kae staged: kae place, then the Freerouting bridge with last mile | worked on A+B; partial on split C | A+B cp1 0.909, as the human placement with the same router; split C 30/78 clean vs 43/78 human | [kae-staged.md](kae-staged.md) | `kae/src/kae/joint/cli.py` (`--max-iters 0 --no-modules`) |
 
 Two older micro-benchmarks from the same research, already on main, are listed in the placement area:
 synthetic CP-SAT / annealing placement benchmarks (`tools/research/solver-bench`, see
