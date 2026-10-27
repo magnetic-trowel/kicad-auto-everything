@@ -4,7 +4,8 @@
 
 For a part at orientation ri, every candidate origin cell is scored at once:
   legal_map  courtyard free of other parts and inside the board, pad copper inside the
-             edge clearance (FFT correlation of occupancy with the part's raster)
+             edge clearance (correlation of occupancy with the part's raster: a summed-area
+             table over the raster's rectangles, FFT for rasters of many rectangles)
   hpwl_map   HPWL of the part's nets as a function of its origin (separable: fx + fy)
 and the routing state is managed with snapshot/restore so moves can be tried and undone.
 """
@@ -17,11 +18,87 @@ from scipy.signal import correlate
 from world import ROTS
 
 
+RECT_MAX = 64  # more rectangles than this: FFT (about break-even on a 700x300 grid)
+_RECTS = {}
+
+
+def _rects(offs):
+    """The kernel's cells as rectangles (dx0, dx1, dy0, dy1), inclusive: each row's runs of
+    consecutive cells, merged down while the rows below have the same run."""
+    key = (offs.dtype.str, offs.shape, offs.tobytes())
+    r = _RECTS.get(key)
+    if r is not None:
+        return r
+    rows = {}
+    for dx, dy in {(int(a), int(b)) for a, b in offs}:
+        rows.setdefault(dy, []).append(dx)
+    runs = {}
+    for dy, xs in rows.items():
+        xs.sort()
+        out, s = [], xs[0]
+        for p, q in zip(xs, xs[1:] + [None]):
+            if q != p + 1:
+                out.append((s, p))
+                s = q
+        runs[dy] = out
+    open_, done = {}, []
+    for dy in range(min(runs), max(runs) + 2):
+        cur = set(runs.get(dy, ()))
+        for run in list(open_):
+            if run not in cur:
+                done.append((run[0], run[1], open_.pop(run), dy - 1))
+        for run in cur:
+            open_.setdefault(run, dy)
+    if len(_RECTS) > 4096:
+        _RECTS.clear()
+    _RECTS[key] = done
+    return done
+
+
+_SATS = {}
+
+
+def _sat(occ, R, pad_value):
+    """(S, P): the summed-area table of occ padded by P >= R cells of pad_value, with a
+    leading zero row and column."""
+    exact = occ.dtype == bool and float(pad_value) in (0.0, 1.0)
+    raw = np.ascontiguousarray(occ).tobytes()
+    key = (hash(raw), occ.shape, occ.dtype.str, float(pad_value))
+    hit = _SATS.get(key)
+    if hit is not None and hit[1] >= R and hit[2] == raw:
+        return hit[0], hit[1]
+    P = -(-max(R, 1) // 16) * 16
+    dt = np.int32 if exact else np.float64
+    occ_p = np.pad(occ.astype(dt), P, constant_values=dt(pad_value))
+    S = np.zeros((occ_p.shape[0] + 1, occ_p.shape[1] + 1), dt)
+    np.cumsum(occ_p, 0, out=S[1:, 1:])
+    np.cumsum(S[1:, 1:], 1, out=S[1:, 1:])
+    if len(_SATS) >= 8:
+        _SATS.pop(next(iter(_SATS)))
+    _SATS[key] = (S, P, raw)
+    return S, P
+
+
 def corr(occ, offs, pad_value=1.0):
     """result[y, x] = sum_k occ[y + dy_k, x + dx_k]; out-of-grid reads pad_value."""
     if len(offs) == 0:
         return np.zeros(occ.shape)
     R = int(np.abs(offs).max())
+    rects = _rects(offs)
+    if len(rects) <= RECT_MAX:
+        # summed-area table (cached by the map's content: legal_map sweeps reuse one
+        # occupancy for every part and rotation); each rectangle is 4 lookups per cell,
+        # exact for 0/1 maps
+        H, W = occ.shape
+        S, P = _sat(occ, R, pad_value)
+        out = np.zeros((H, W), S.dtype)
+        for x0, x1, y0, y1 in rects:
+            ya, yb, xa, xb = P + y0, P + y1 + 1, P + x0, P + x1 + 1
+            out += S[yb:yb + H, xb:xb + W]
+            out -= S[ya:ya + H, xb:xb + W]
+            out -= S[yb:yb + H, xa:xa + W]
+            out += S[ya:ya + H, xa:xa + W]
+        return out.astype(np.float64)
     K = np.zeros((2 * R + 1, 2 * R + 1))
     K[offs[:, 1] + R, offs[:, 0] + R] = 1.0
     occ_p = np.pad(occ.astype(np.float64), R, constant_values=pad_value)

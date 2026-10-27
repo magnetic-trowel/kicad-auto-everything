@@ -110,7 +110,7 @@ def problem(world, router):
     st = getattr(w, "shape_terms", {})
     H, W = w.H, w.W
     for n, pins in w.net_pins.items():
-        terms = [np.array(w.terminals(pi, k), np.int64).reshape(-1, 3) for pi, k in pins] + list(st.get(n, []))
+        terms = [w.terminal_array(pi, k) for pi, k in pins] + list(st.get(n, []))
         terms = [t for t in terms if len(t)]
         if len(terms) < 2:
             continue
