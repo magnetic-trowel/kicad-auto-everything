@@ -29,6 +29,7 @@ import csv
 import gzip
 import hashlib
 import json
+import math
 import os
 import re
 import resource
@@ -48,6 +49,7 @@ STORE = Path(os.path.expanduser(os.environ.get("KAE_RESULTS", "~/kae-baselines")
 KAE_HOME = Path(os.path.expanduser(os.environ.get("KAE_HOME", "~/.cache/kaebench")))
 CORPUS = Path(os.path.expanduser(os.environ.get("KAE_CORPUS", "~/kae-boards")))
 MB = 1 << 20
+CHUNKS_MIN, CHUNKS_MAX = 2, 5  # jobs per board in `exp submit` (see cmd_exp_submit)
 AS_LIMIT = 40 * (1 << 30)  # address-space cap for the harness tree (a runaway KiCad DRC once reached 100 GB)
 SCHEMA = "kaeres/1"
 HARNESS_REPO = "kicad-auto-everything"
@@ -543,17 +545,17 @@ def cmd_exp_submit(a):
         need = missing(e, bid)
         if not need or (prepare_failed(e, bid) and not a.redo):
             continue
-        # a job runs at most ~8 h of methods (each method at least whole), so big boards with
-        # long per-method budgets split into several jobs instead of one that runs for days
-        chunks, cur, t = [], [], 0
-        for m, att in need:
-            mt = method_timeout(ms[m], rows[bid])
-            if cur and t + mt > 8 * 3600:
-                chunks.append(cur)
-                cur, t = [], 0
-            cur.append((m, att))
-            t += mt
-        chunks.append(cur)
+        # a board's methods run as 2-5 jobs of about equal length (methods whole; more jobs for
+        # ~8 h of methods each, at most 5), so no single job runs every method back to back
+        # and the run has no long tail; each job prepares the board again, hence no more than 5
+        cost = {m: method_timeout(ms[m], rows[bid]) for m, _ in need}
+        k = max(1, min(len(need), CHUNKS_MAX, max(CHUNKS_MIN, math.ceil(sum(cost.values()) / (8 * 3600)))))
+        chunks, load = [[] for _ in range(k)], [0.0] * k
+        for m, att in sorted(need, key=lambda x: -cost[x[0]]):   # longest first, to the least loaded
+            i = load.index(min(load))
+            chunks[i].append((m, att))
+            load[i] += cost[m]
+        chunks = [ch for ch in chunks if ch]
         for i, ch in enumerate(chunks):
             est = estimate(rows[bid], [ms[m] for m, _ in ch])
             sel = "" if len(chunks) == 1 else "".join(f" --method {m}" for m, _ in ch)
