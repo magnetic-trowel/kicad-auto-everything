@@ -12,14 +12,25 @@ wrapper prefix) or KAE_KICAD_WRAP (a prefix such as "apptainer exec ~/kicad.sif"
 macOS/Windows KiCad bundles that can `import pcbnew`. Paths are passed absolute, so a
 containerized Python sees the same files (Apptainer binds $HOME, the cwd and /tmp).
 Set KAE_TMPDIR when the container cannot see the default temporary directory.
+
+Calls go to a long-lived KiCad Python (pcbnew_bridge.py worker), started on first use, which
+runs each operation in a child forked right after `import pcbnew`: the same operation code
+and pcbnew state as a process of its own per call, without KiCad's start-up each time. A
+process keeps one worker per thread calling at once. KAE_PCBNEW_WORKER=0 starts a process
+per call instead.
 """
+import atexit
 import functools
 import json
 import math
 import os
+import select
 import shlex
+import signal
 import subprocess
 import tempfile
+import threading
+import time
 from importlib import resources
 from pathlib import Path
 
@@ -66,7 +77,10 @@ def kicad_python():
 def available():
     """True when a Python with pcbnew can be found."""
     try:
-        kicad_python()
+        if _worker_enabled() and _configured_python():
+            _release(_acquire(300))  # starting a worker is the probe, and it is kept
+        else:
+            kicad_python()
         return True
     except PcbnewError:
         return False
@@ -83,7 +97,21 @@ def _tmpdir():
     return d if d and os.path.isdir(d) else None
 
 
-def _run(op, args, timeout):
+def _result(op, status, rc, stderr, out):
+    if status is None:
+        raise PcbnewError(f"pcbnew {op} produced no result (rc={rc}): {stderr[-800:]}")
+    if not status.get("ok"):
+        detail = ""
+        if os.path.exists(out):
+            with open(out) as f:
+                detail = json.dumps(json.load(f))[:800]
+        raise PcbnewError(f"pcbnew {op} failed: {status.get('error')} {detail}")
+    with open(out) as f:
+        return json.load(f)
+
+
+def _run_process(op, args, timeout):
+    """One KiCad Python process for this call (KAE_PCBNEW_WORKER=0)."""
     with tempfile.TemporaryDirectory(prefix="kae-pcbnew-", dir=_tmpdir()) as d:
         out = os.path.join(d, "out.json")
         cmd = [*kicad_python(), bridge_script(), op, *args(out)]
@@ -92,17 +120,246 @@ def _run(op, args, timeout):
         except subprocess.TimeoutExpired:
             raise PcbnewError(f"pcbnew {op} timed out after {timeout}s")
         lines = [ln for ln in r.stdout.splitlines() if ln.startswith("{")]
-        status = json.loads(lines[-1]) if lines else None
-        if status is None:
-            raise PcbnewError(f"pcbnew {op} produced no result (rc={r.returncode}): {r.stderr[-800:]}")
-        if not status.get("ok"):
-            detail = ""
-            if os.path.exists(out):
-                with open(out) as f:
-                    detail = json.dumps(json.load(f))[:800]
-            raise PcbnewError(f"pcbnew {op} failed: {status.get('error')} {detail}")
-        with open(out) as f:
-            return json.load(f)
+        return _result(op, json.loads(lines[-1]) if lines else None, r.returncode, r.stderr, out)
+
+
+# ----------------------------------------------------------------------------- worker
+def _worker_enabled():
+    return os.environ.get("KAE_PCBNEW_WORKER", "1").strip().lower() not in ("0", "false", "no", "off") \
+        and hasattr(os, "fork")
+
+
+def _configured_python():
+    """The configured KiCad Python command (KAE_KICAD_PYTHON or KAE_KICAD_WRAP + python3),
+    or None. A worker starts it without probing it first: its start fails clearly instead."""
+    cmd = _env_cmd("KAE_KICAD_PYTHON")
+    if cmd:
+        return tuple(cmd)
+    wrap = _env_cmd("KAE_KICAD_WRAP")
+    return (*wrap, "python3") if wrap else None
+
+
+class _WorkerDied(Exception):
+    pass
+
+
+class _WorkerTimeout(Exception):
+    pass
+
+
+def _tail(path, n=800):
+    try:
+        with open(path, errors="replace") as f:
+            return f.read()[-n:]
+    except OSError:
+        return ""
+
+
+def _fd_tail(fd, n=800):
+    """The end of an open file (a worker's stderr, unlinked as soon as it is opened)."""
+    try:
+        size = os.fstat(fd).st_size
+        return os.pread(fd, n, max(0, size - n)).decode(errors="replace")
+    except OSError:
+        return ""
+
+
+class _Worker:
+    """One `pcbnew_bridge.py worker` process. Answers are read from its stdout, where the
+    bridge writes only its own JSON lines (KiCad's noise goes to stderr)."""
+
+    def __init__(self, timeout):
+        self.key = _worker_key()
+        self.owner = os.getpid()
+        self.closed = False
+        fd, log = tempfile.mkstemp(prefix="kae-pcbnew-worker-", suffix=".log", dir=_tmpdir())
+        os.unlink(log)  # nothing left behind, whatever ends this process
+        self.log = fd
+        cmd = [*(_configured_python() or kicad_python()), bridge_script(), "worker"]
+        try:
+            self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=fd)
+        except OSError as e:
+            os.close(fd)
+            raise PcbnewError(f"pcbnew worker did not start ({shlex.join(cmd)}): {e}")
+        self.buf = b""
+        _ALL.add(self)
+        try:
+            ready = self._line(time.monotonic() + timeout)
+        except (_WorkerDied, _WorkerTimeout) as e:
+            err = _fd_tail(fd)
+            self.close()
+            how = "exited" if isinstance(e, _WorkerDied) else f"no answer in {timeout:.0f}s"
+            raise PcbnewError(f"pcbnew worker did not start ({how}; {shlex.join(cmd)}): {err}")
+        if ready.get("kae_worker") != "ready":
+            self.close()
+            raise PcbnewError(f"pcbnew worker did not start: {ready}")
+
+    def _line(self, deadline):
+        """The next JSON line of the worker's stdout."""
+        fd = self.proc.stdout.fileno()
+        while True:
+            i = self.buf.find(b"\n")
+            if i >= 0:
+                ln, self.buf = self.buf[:i], self.buf[i + 1:]
+                if ln.startswith(b"{"):
+                    return json.loads(ln)
+                continue
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise _WorkerTimeout()
+            r, _, _ = select.select([fd], [], [], left)
+            if r:
+                chunk = os.read(fd, 1 << 16)
+                if not chunk:
+                    raise _WorkerDied()
+                self.buf += chunk
+
+    def request(self, argv, stderr, timeout):
+        """(status line or None, exit status) of one operation."""
+        deadline = time.monotonic() + timeout
+        try:
+            self.proc.stdin.write((json.dumps(dict(argv=argv, stderr=stderr)) + "\n").encode())
+            self.proc.stdin.flush()
+        except (BrokenPipeError, OSError, ValueError):
+            raise _WorkerDied()
+        status = None
+        while True:
+            m = self._line(deadline)
+            if "kae_worker" in m:
+                return status, m.get("rc")
+            status = m
+
+    def close(self):
+        _ALL.discard(self)
+        if self.owner != os.getpid() or self.closed:
+            return
+        self.closed = True
+        try:
+            self.proc.stdin.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()  # its children die with it (PR_SET_PDEATHSIG)
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        try:
+            self.proc.stdout.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            os.close(self.log)
+        except OSError:
+            pass
+
+    def kill(self):
+        if self.owner == os.getpid() and self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGKILL)
+        self.close()
+
+
+_IDLE = []        # workers waiting for a call
+_ALL = set()      # every live worker of this process
+_LOCK = threading.Lock()
+
+
+def _worker_key():
+    """What a worker inherited when it started; one whose start differs is not reused (a
+    process per call would see the current environment and directory)."""
+    return (_configured_python() or kicad_python(), bridge_script(), dict(os.environ), os.getcwd())
+
+
+def _acquire(timeout):
+    key = _worker_key()
+    stale = []
+    with _LOCK:
+        w = None
+        while _IDLE:
+            c = _IDLE.pop()
+            if c.key == key and c.proc.poll() is None:
+                w = c
+                break
+            stale.append(c)
+    for c in stale:
+        c.close()
+    return w if w is not None else _Worker(timeout)
+
+
+def _release(w):
+    with _LOCK:
+        _IDLE.append(w)
+
+
+def _close_all():
+    """At exit: idle workers end with their stdin, busy ones (other threads) are killed."""
+    with _LOCK:
+        idle, busy = list(_IDLE), [w for w in _ALL if w not in _IDLE]
+        _IDLE.clear()
+    for w in idle:
+        w.close()
+    for w in busy:
+        w.kill()
+
+
+def _forget_in_child():
+    """A forked kae process must not talk to its parent's workers."""
+    for w in list(_ALL):
+        for f in (w.proc.stdin, w.proc.stdout):
+            try:
+                f.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            os.close(w.log)
+        except OSError:
+            pass
+    _ALL.clear()
+    _IDLE.clear()
+    global _LOCK
+    _LOCK = threading.Lock()
+
+
+atexit.register(_close_all)
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_forget_in_child)
+
+
+def _run_worker(op, args, timeout):
+    with tempfile.TemporaryDirectory(prefix="kae-pcbnew-", dir=_tmpdir()) as d:
+        out = os.path.join(d, "out.json")
+        err = os.path.join(d, "stderr.txt")
+        argv = [op, *args(out)]
+        t_end = time.monotonic() + timeout
+        for attempt in (0, 1):
+            left = t_end - time.monotonic()
+            if left <= 0:
+                raise PcbnewError(f"pcbnew {op} timed out after {timeout}s")
+            w = _acquire(left)  # raises PcbnewError when no worker starts
+            try:
+                status, rc = w.request(argv, err, max(1e-3, t_end - time.monotonic()))
+            except _WorkerTimeout:
+                w.kill()
+                raise PcbnewError(f"pcbnew {op} timed out after {timeout}s")
+            except _WorkerDied:
+                log = _fd_tail(w.log)
+                w.kill()
+                if attempt:
+                    raise PcbnewError(f"pcbnew worker died twice during {op}: {log}")
+                continue
+            except BaseException:
+                w.kill()  # e.g. KeyboardInterrupt mid-request: its answer would be read by the next call
+                raise
+            _release(w)
+            return _result(op, status, rc, _tail(err, 1 << 20), out)
+
+
+def _run(op, args, timeout):
+    if _worker_enabled():
+        return _run_worker(op, args, timeout)
+    return _run_process(op, args, timeout)
 
 
 def _abs(p):
