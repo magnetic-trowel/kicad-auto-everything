@@ -16,7 +16,8 @@ Fetching honours the corpus rules: only boards from github.com, gitlab.com and c
 pinned commit, never a board tagged host-robots-restricted, and only where the host's robots.txt
 allows the raw URL. Files land in ~/kae-baselines/schematics/<id>/ (third-party; never committed).
 Supported: KiCad 6+ .kicad_sch (lib_symbols, instances, symbol_instances, hierarchical sheets),
-KiCad 4/5 .sch with its -cache.lib, and Eagle XML .sch (pin directions, and each device's own pin to
+KiCad 4/5 .sch with its -cache.lib (then the project's own libraries from its sym-lib-table, then KiCad's
+standard 5.1.7 libraries for symbols the project does not carry), and Eagle XML .sch (pin directions, and each device's own pin to
 pad map). A board without a recorded schematic path tries the board's own path with .kicad_sch, .sch.
 Altium schematics are recorded as unsupported.
 """
@@ -42,6 +43,8 @@ SCH = STORE / "schematics"
 UA = "kicad-auto-everything-research/1 (pin types for open-hardware boards; github.com/magnetic-trowel/kicad-auto-everything)"
 HOSTS = ("github.com", "gitlab.com", "codeberg.org")
 NEVER = ("gitlab.fabcloud.org",)
+STD_REPO, STD_TAG = "https://github.com/KiCad/kicad-symbols", "5.1.7"   # the last KiCad 5 symbol libraries
+STD_DIR = STORE / f"kicad-symbols-{STD_TAG}"
 MAX_FILES = 60          # sheets per design
 MAX_BYTES = 40 << 20    # per file
 EAGLE_TYPES = {"in": "input", "out": "output", "io": "bidirectional", "oc": "open_collector", "hiz": "tri_state",
@@ -154,18 +157,58 @@ def sub_sheets(path, text):
     return out
 
 
+def project_libs(row, meta, d):
+    """A KiCad 5 project's own symbol libraries (its sym-lib-table's ${KIPRJMOD} entries), fetched into d."""
+    base = PurePosixPath(meta["root"]).parent
+    paths = [str(base / "sym-lib-table").lstrip("./") if str(base) != "." else "sym-lib-table"]
+    got = []
+    for p in paths:
+        url = raw_url(row["repo"], row["commit"], p)
+        data = get(url) if url and allowed(url) else None
+        meta["files"].append(dict(path=p, status="ok" if data is not None else "missing",
+                                  **(dict(url=url, sha256=hashlib.sha256(data).hexdigest()) if data is not None else {})))
+        if data is None:
+            continue
+        (d / "files" / p).parent.mkdir(parents=True, exist_ok=True)
+        (d / "files" / p).write_bytes(data)
+        for uri in re.findall(r'\(uri\s+"?\$\{KIPRJMOD\}/([^")\s]+)', data.decode("utf-8", "replace")):
+            lp = os.path.normpath(str(base / uri)).replace("\\", "/")
+            if lp.startswith("..") or not lp.endswith(".lib"):
+                continue
+            u = raw_url(row["repo"], row["commit"], lp)
+            ld = get(u) if u and allowed(u) else None
+            meta["files"].append(dict(path=lp, status="ok" if ld is not None else "missing",
+                                      **(dict(url=u, sha256=hashlib.sha256(ld).hexdigest()) if ld is not None else {})))
+            if ld is not None:
+                (d / "files" / lp).parent.mkdir(parents=True, exist_ok=True)
+                (d / "files" / lp).write_bytes(ld)
+                got.append(lp)
+    meta["libs_checked"] = True
+    return got
+
+
 def fetch_one(row):
     d = SCH / row["id"]
     meta_p = d / "fetch.json"
-    if meta_p.exists():
-        return json.loads(meta_p.read_text())["status"]
+    try:
+        meta = json.loads(meta_p.read_text()) if meta_p.exists() else None
+    except ValueError:  # cut off by a killed run: fetch again
+        meta = None
+    if meta is not None:
+        if meta["status"] == "ok" and meta.get("format", "kicad") == "kicad" and (meta.get("root") or "").endswith(".sch") \
+                and not meta.get("libs_checked"):
+            project_libs(row, meta, d)  # fetched before project libraries were looked for
+            meta_p.write_text(json.dumps(meta, indent=1))
+        return meta["status"]
     host = urllib.parse.urlparse(row.get("repo") or "").netloc
     meta = dict(board=row["id"], repo=row.get("repo"), commit=row.get("commit"), root=row.get("sch_path"), at=now(), files=[])
 
     def done(status, **kw):
         meta.update(status=status, **kw)
         d.mkdir(parents=True, exist_ok=True)
-        meta_p.write_text(json.dumps(meta, indent=1))
+        tmp = meta_p.with_name(meta_p.name + f".tmp{os.getpid()}.{threading.get_ident()}")
+        tmp.write_text(json.dumps(meta, indent=1))
+        os.replace(tmp, meta_p)
         return status
 
     if host in NEVER or host not in HOSTS or "host-robots-restricted" in (row.get("tags") or []) or not row.get("commit"):
@@ -220,6 +263,8 @@ def fetch_one(row):
     rf = next((f for f in meta["files"] if f["path"] == root), {})
     if rf.get("status") != "ok":
         return done("root_" + (rf.get("status") or "missing"))
+    if root.endswith(".sch") and rf.get("format") != "eagle":
+        project_libs(row, meta, d)
     return done("ok", format=rf.get("format", "kicad"))
 
 
@@ -319,10 +364,27 @@ def parse_kicad_sch(files):
     return out
 
 
-def parse_legacy(files, libs):
-    """{ref: {pad: (type, name)}} from KiCad 4/5 sheets and their cache/rescue libraries."""
+_std, _std_lock = {}, threading.Lock()
+
+
+def std_lib(name):
+    """{symbol: {pad: (type, name)}} of one of KiCad's standard 5.1.7 libraries (fetched once), {} if none."""
+    with _std_lock:
+        if name in _std:
+            return _std[name]
+        p = STD_DIR / f"{name}.lib"
+        if not p.exists() and re.fullmatch(r"[\w.+-]+", name):
+            url = raw_url(STD_REPO, STD_TAG, f"{name}.lib")
+            data = get(url) if allowed(url) else None
+            STD_DIR.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data if data is not None else b"")
+        _std[name] = lib_defs([p.read_text(errors="replace")]) if p.exists() else {}
+        return _std[name]
+
+
+def lib_defs(texts):
     defs = {}
-    for _, text in libs:
+    for text in texts:
         cur = None
         for line in text.splitlines():
             if line.startswith("DEF "):
@@ -337,6 +399,14 @@ def parse_legacy(files, libs):
                     cur[f[2]] = (LEGACY_TYPES.get(f[11], "unspecified"), "" if f[1] == "~" else f[1])
             elif line.startswith("ENDDEF"):
                 cur = None
+    return defs
+
+
+def parse_legacy(files, libs, sources=None):
+    """{ref: {pad: (type, name)}} from KiCad 4/5 sheets: symbols from the project's cache, rescue and own
+    libraries, else KiCad's standard library of the symbol's nickname. sources counts symbols per origin."""
+    defs = lib_defs([t for _, t in libs])
+    sources = sources if sources is not None else {}
     out = {}
     for _, text in files:
         for comp in re.findall(r"\$Comp\n(.*?)\$EndComp", text, re.S):
@@ -346,12 +416,18 @@ def parse_legacy(files, libs):
             name, ref = m.groups()
             cands = (name.replace(":", "_"), name.split(":")[-1], name)
             pins = next((defs[c] for c in cands if c in defs), None)
+            src = "project"
+            if pins is None and ":" in name:
+                nick, sym = name.split(":", 1)
+                pins = std_lib(nick).get(sym)
+                src = f"kicad-symbols {STD_TAG}"
             if pins is None:
                 continue
             refs = {ref} | set(re.findall(r'AR Path="[^"]*" Ref="([^"]+)"', comp))
             for r in refs:
                 if r and not r.startswith("#") and "?" not in r:
                     out.setdefault(r, {}).update(pins)
+                    sources[src] = sources.get(src, 0) + 1
     return out
 
 
@@ -394,13 +470,17 @@ def board_refs(row):
 
 def extract_one(row):
     d = SCH / row["id"]
-    meta = json.loads((d / "fetch.json").read_text()) if (d / "fetch.json").exists() else None
+    try:
+        meta = json.loads((d / "fetch.json").read_text()) if (d / "fetch.json").exists() else None
+    except ValueError:
+        meta = None
     out_p = STORE / "boards" / row["id"] / "pintypes.json"
     if not meta or meta["status"] != "ok":
         return "not_fetched"
     ok = [f for f in meta["files"] if f["status"] == "ok"]
     texts = [(f["path"], (d / "files" / f["path"]).read_text(errors="replace")) for f in ok]
     root = meta.get("root") or row.get("sch_path")
+    sources = {}
     sch = [(p, t) for p, t in texts if p.endswith((".sch", ".kicad_sch")) and not t.lstrip().startswith("<?xml")]
     try:
         if meta.get("format") == "eagle":
@@ -408,7 +488,7 @@ def extract_one(row):
         elif root.endswith(".kicad_sch"):
             refs = parse_kicad_sch(sch)
         else:
-            refs = parse_legacy(sch, [(p, t) for p, t in texts if p.endswith(".lib")])
+            refs = parse_legacy(sch, [(p, t) for p, t in texts if p.endswith(".lib")], sources)
     except Exception as e:  # noqa: BLE001
         refs, err = {}, f"{type(e).__name__}: {e}"
     else:
@@ -421,7 +501,8 @@ def extract_one(row):
                error=err, refs={r: {n: dict(type=t, name=nm) for n, (t, nm) in sorted(refs[r].items())} for r in matched},
                stats=dict(schematic_refs=len(refs), board_refs=len(on_board), matched_refs=len(matched),
                           pins=sum(len(refs[r]) for r in matched),
-                          power_pins=sum(1 for r in matched for t, _ in refs[r].values() if t in ("power_in", "power_out"))))
+                          power_pins=sum(1 for r in matched for t, _ in refs[r].values() if t in ("power_in", "power_out")),
+                          symbols_by_source=sources))
     if not matched:
         rec["note"] = "no schematic reference matches the board"
     out_p.parent.mkdir(parents=True, exist_ok=True)
