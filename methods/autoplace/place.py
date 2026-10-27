@@ -85,6 +85,11 @@ class Problem:
         self.region[None] = self.region[False].intersection(self.region[True])  # THT: both sides
         for r in self.region.values():
             shapely.prepare(r)
+        cells = {}
+        for r in self.region.values():
+            if id(r) not in cells:
+                cells[id(r)] = _Cells(r)
+        self.cells = {k: cells[id(r)] for k, r in self.region.items()}
         self.bbox = np.array(region.bounds)
         self.diag = float(np.hypot(*(self.bbox[2:] - self.bbox[:2])))
         parts = g["free"]
@@ -184,6 +189,55 @@ class Problem:
     def side_key(self, i):
         return None if self.tht[i] else bool(self.back[i])
 
+    def contains(self, side, x0, y0, x1, y1):
+        """region[side].contains(box) for arrays of boxes; the same answers, mostly without shapely."""
+        return self.cells[side].contains(x0, y0, x1, y1)
+
+
+class _Cells:
+    """A region cut into a k x k grid of cells, each known to be inside the region, disjoint from
+    it, or neither (one shapely call per cell, once). A box covered by inside cells is in the
+    region, a box touching a disjoint cell or leaving the bounds is not; only boxes near the
+    boundary are asked of shapely. Exact: the cell and box edges are the same floats."""
+
+    def __init__(self, reg, k=256):
+        self.reg = reg
+        x0, y0, x1, y1 = reg.bounds if not reg.is_empty else (0, 0, 0, 0)
+        self.ok = reg.is_valid and x1 > x0 and y1 > y0
+        if not self.ok:
+            return
+        self.xs, self.ys = np.linspace(x0, x1, k + 1), np.linspace(y0, y1, k + 1)
+        gx, gy = np.meshgrid(np.arange(k), np.arange(k), indexing="ij")
+        cells = shapely.box(self.xs[gx], self.ys[gy], self.xs[gx + 1], self.ys[gy + 1])
+        # summed-area tables: number of inside / disjoint cells in any index range in O(1)
+        self.n_in, self.n_out = (np.pad(m.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+                                 for m in (shapely.contains(reg, cells).astype(int),
+                                           shapely.disjoint(reg, cells).astype(int)))
+
+    def contains(self, x0, y0, x1, y1):
+        x0, y0, x1, y1 = np.broadcast_arrays(*(np.atleast_1d(np.asarray(v, dtype=float)) for v in (x0, y0, x1, y1)))
+        res = np.zeros(x0.shape, bool)
+        todo = np.ones(x0.shape, bool)
+        if self.ok:
+            xs, ys = self.xs, self.ys
+            proper = (x1 > x0) & (y1 > y0)
+            todo = ~proper  # degenerate boxes: shapely decides
+            inb = proper & (x0 >= xs[0]) & (y0 >= ys[0]) & (x1 <= xs[-1]) & (y1 <= ys[-1])
+            # cells a..b x c..d all touch the box and together cover it
+            a = np.searchsorted(xs, x0[inb], "right") - 1
+            b = np.searchsorted(xs, x1[inb], "left")
+            c = np.searchsorted(ys, y0[inb], "right") - 1
+            d = np.searchsorted(ys, y1[inb], "left")
+
+            def count(t):
+                return t[b, d] - t[a, d] - t[b, c] + t[a, c]
+            full = count(self.n_in) == (b - a) * (d - c)
+            res[inb] = full
+            todo[inb] = ~full & (count(self.n_out) == 0)
+        if todo.any():
+            res[todo] = shapely.contains(self.reg, shapely.box(x0[todo], y0[todo], x1[todo], y1[todo]))
+        return res
+
 
 def _overlap(a, B):
     """Overlap areas of rect a with rects B (n x 4)."""
@@ -191,7 +245,7 @@ def _overlap(a, B):
         return np.zeros(0)
     w = np.minimum(a[2], B[:, 2]) - np.maximum(a[0], B[:, 0])
     h = np.minimum(a[3], B[:, 3]) - np.maximum(a[1], B[:, 1])
-    return np.clip(w, 0, None) * np.clip(h, 0, None)
+    return np.maximum(w, 0) * np.maximum(h, 0)
 
 
 def _mst_edges(pts):
@@ -218,12 +272,25 @@ def _mst_edges(pts):
     return np.array(out)
 
 
-def _crossings(A, B):
-    """Proper crossings between segment sets A (m x 4) and B (n x 4)."""
+def _crossings(A, B, pairs=None):
+    """Proper crossings between segment sets A (m x 4) and B (n x 4); `pairs` (m x n bool)
+    limits the count to those pairs. Segments with disjoint bounding boxes cannot cross and are
+    not tested."""
     if len(A) == 0 or len(B) == 0:
         return 0
-    p1, p2 = A[:, None, :2], A[:, None, 2:]
-    q1, q2 = B[None, :, :2], B[None, :, 2:]
+    alo, ahi = np.minimum(A[:, :2], A[:, 2:]), np.maximum(A[:, :2], A[:, 2:])
+    blo, bhi = np.minimum(B[:, :2], B[:, 2:]), np.maximum(B[:, :2], B[:, 2:])
+    if pairs is None:  # cheap first cut: B against the box around all of A
+        keep = ((blo <= ahi.max(0)) & (bhi >= alo.min(0))).all(1)
+        B, blo, bhi = B[keep], blo[keep], bhi[keep]
+        if len(B) == 0:
+            return 0
+    near = ((alo[:, None] <= bhi[None]) & (blo[None] <= ahi[:, None])).all(2)
+    if pairs is not None:
+        near &= pairs
+    i, j = np.nonzero(near)
+    p1, p2 = A[i, :2], A[i, 2:]
+    q1, q2 = B[j, :2], B[j, 2:]
 
     def orient(a, b, c):
         return (b[..., 0] - a[..., 0]) * (c[..., 1] - a[..., 1]) - (b[..., 1] - a[..., 1]) * (c[..., 0] - a[..., 0])
@@ -260,7 +327,9 @@ class State:
         return float(np.ptp(p[:, 0]) + np.ptp(p[:, 1]))
 
     def _mst(self, k):
-        return _mst_edges(np.unique(self.pins[self.P.nets[k]].round(4), axis=0))
+        p = self.pins[self.P.nets[k]].round(4)
+        p = p[np.lexsort((p[:, 1], p[:, 0]))]  # np.unique(p, axis=0), without its overhead
+        return _mst_edges(p[np.r_[True, (p[1:] != p[:-1]).any(1)]])
 
     def _all_crossings(self):
         ks = list(self.edges)
@@ -272,9 +341,11 @@ class State:
         return total
 
     def _outside(self, i, rect):
-        reg = self.P.region[self.P.side_key(i)]
+        side = self.P.side_key(i)
+        if self.P.contains(side, *rect)[0]:
+            return 0.0
         b = box(*rect)
-        return float(b.area - b.intersection(reg).area) if not reg.contains(b) else 0.0
+        return float(b.area - b.intersection(self.P.region[side]).area)
 
     def _part_violation(self, i, rect, skip=()):
         P = self.P
@@ -342,12 +413,13 @@ class State:
 
     @staticmethod
     def _within(es):
-        ks = list(es)
-        t = 0
-        for a in range(len(ks)):
-            for b in range(a + 1, len(ks)):
-                t += _crossings(es[ks[a]], es[ks[b]])
-        return t
+        """Crossings between edges of different nets in es, each pair once."""
+        if len(es) < 2:
+            return 0
+        E = np.concatenate(list(es.values()))
+        net = np.repeat(np.arange(len(es)), [len(e) for e in es.values()])
+        # the pair test is symmetric, so the upper triangle counts each pair of nets once
+        return _crossings(E, E, np.triu(net[:, None] != net[None, :]))
 
     def commit(self, rec):
         _, _, _, _, _, dcross, dviol = rec
@@ -382,26 +454,41 @@ def _grid(P, step):
     xs = np.arange(x0, x1 + 1e-9, step)
     ys = np.arange(y0, y1 + 1e-9, step)
     gx, gy = np.meshgrid(xs, ys)
-    return gx.ravel(), gy.ravel()
+    return gx.ravel(), gy.ravel(), (xs, ys)
 
 
-def _legal_mask(P, i, r, cx, cy, placed_rects, placed_idx):
-    """Candidate rect centres (cx, cy) for part i at rotation r: in region and no conflict."""
+def _legal_mask(P, i, r, cx, cy, placed_rects, placed_idx, axes=None):
+    """Candidate rect centres (cx, cy) for part i at rotation r: in region and no conflict.
+    axes=(xs, ys) says (cx, cy) is _grid's meshgrid of them: the overlap test then splits into
+    a column and a row test per obstacle, with the same floats as the flat arrays."""
     q = P.rects[i, r]
     h = P.halo[i] / 2
     ox, oy = (q[0] + q[2]) / 2, (q[1] + q[3]) / 2
     x, y = cx - ox, cy - oy
-    rx0, ry0, rx1, ry1 = x + q[0] - h, y + q[1] - h, x + q[2] + h, y + q[3] + h
-    ok = shapely.contains(P.region[P.side_key(i)], shapely.box(rx0, ry0, rx1, ry1))
-    if placed_idx:
-        B = placed_rects[[j for j in placed_idx if P.conflict[i, j]]]
-        if len(B):
-            ok &= ~(((np.minimum(rx1[:, None], B[None, :, 2]) - np.maximum(rx0[:, None], B[None, :, 0])) > 1e-6) &
-                    ((np.minimum(ry1[:, None], B[None, :, 3]) - np.maximum(ry0[:, None], B[None, :, 1])) > 1e-6)).any(1)
+    B = placed_rects[[j for j in placed_idx if P.conflict[i, j]]] if placed_idx else np.zeros((0, 4))
     fr = P.frects[P.fconflict[i]] if len(P.frects) else np.zeros((0, 4))
-    if len(fr):
-        ok &= ~(((np.minimum(rx1[:, None], fr[None, :, 2] + h) - np.maximum(rx0[:, None], fr[None, :, 0] - h)) > 1e-6) &
-                ((np.minimum(ry1[:, None], fr[None, :, 3] + h) - np.maximum(ry0[:, None], fr[None, :, 1] - h)) > 1e-6)).any(1)
+    obst = [*B, *(fr + np.array([-h, -h, h, h]))]
+    if axes is None:
+        rx0, ry0, rx1, ry1 = x + q[0] - h, y + q[1] - h, x + q[2] + h, y + q[3] + h
+        ok = np.ones(len(x), bool)
+        # one obstacle at a time: no candidates x obstacles temporaries
+        for b in obst:
+            ok &= ~(((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6) &
+                    ((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6))
+        ok[ok] = P.contains(P.side_key(i), rx0[ok], ry0[ok], rx1[ok], ry1[ok])  # region test last: the dearest
+        return ok, x, y
+    xs, ys = axes[0] - ox, axes[1] - oy
+    rx0, ry0, rx1, ry1 = xs + q[0] - h, ys + q[1] - h, xs + q[2] + h, ys + q[3] + h
+    ok = np.ones((len(ys), len(xs)), bool)
+    for b in obst:  # clear the band of rows x columns the obstacle overlaps
+        cols = np.flatnonzero((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6)
+        rows = np.flatnonzero((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6)
+        if len(cols) and len(rows):
+            ok[np.ix_(rows, cols)] = False
+    ok = ok.ravel()
+    k = np.flatnonzero(ok)
+    c, w = k % len(xs), k // len(xs)
+    ok[k] = P.contains(P.side_key(i), rx0[c], ry0[w], rx1[c], ry1[w])  # region test last: the dearest
     return ok, x, y
 
 
@@ -431,7 +518,7 @@ def place_constructive(P, rng, random_order=False, step=None, jitter=0.0):
     least-bad spot and are left for the annealer / legalizer."""
     n = P.n
     step = step or float(np.clip(P.diag / 90, 0.25, 1.0))
-    gx, gy = _grid(P, step)
+    gx, gy, axes = _grid(P, step)
     pins = P.pin_fixed.copy()
     placed_pin = P.pin_part < 0
     x, y, r = np.zeros(n), np.zeros(n), np.zeros(n, int)
@@ -454,7 +541,7 @@ def place_constructive(P, rng, random_order=False, step=None, jitter=0.0):
             i = max(sorted(todo), key=score)
         best = None
         for rot in range(4):
-            ok, xx, yy = _legal_mask(P, i, rot, gx, gy, rects, placed)
+            ok, xx, yy = _legal_mask(P, i, rot, gx, gy, rects, placed, axes)
             if not ok.any():
                 continue
             xx, yy = xx[ok], yy[ok]
@@ -586,9 +673,9 @@ def legalize(S, rng, rounds=3):
             c0 = np.array([S.x[i] + (q0[0] + q0[2]) / 2, S.y[i] + (q0[1] + q0[3]) / 2])
             best = None
             for step in (float(np.clip(P.diag / 150, 0.1, 0.5)), 0.1, 0.05):
-                gx, gy = _grid(P, step)
+                gx, gy, axes = _grid(P, step)
                 for rot in range(4):
-                    ok, xx, yy = _legal_mask(P, i, rot, gx, gy, S.rect, others)
+                    ok, xx, yy = _legal_mask(P, i, rot, gx, gy, S.rect, others, axes)
                     if not ok.any():
                         continue
                     c = _incremental_wl(P, i, rot, xx[ok], yy[ok], pins, placed_pin)
@@ -638,24 +725,45 @@ def write_board(inp, poses, dst_dir):
     return out
 
 
+ROUTER = "freerouting"  # --router: the router that routes each candidate
+
+
+def _route_kae(board, work, timeout):
+    """Route with kae's bridge (python -m kae.route.cli, same interpreter); the output path or None."""
+    out = work / "kae" / "board.kicad_pcb"
+    out.parent.mkdir(parents=True)
+    with open(work / "kae.log", "w") as f:
+        try:
+            subprocess.run([sys.executable, "-m", "kae.route.cli", "route", str(board), str(out),
+                            "--time", str(int(max(20, timeout - 15)))], stdout=f, stderr=subprocess.STDOUT,
+                           timeout=timeout + 60)
+        except subprocess.TimeoutExpired:
+            pass
+    return out if out.exists() else None
+
+
 def route_probe(board, work, passes, timeout):
-    """Route a candidate with Freerouting (kaebench's own adapter) and count what is unrouted."""
-    from kaebench.adapters import Freerouting
+    """Route a candidate with Freerouting (kaebench's own adapter) or kae's bridge (--router kae)
+    and count what is unrouted."""
     work = Path(work)
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
     t0 = time.monotonic()
-    res = Freerouting(passes=passes).run("route", Path(board).parent, work, 0, timeout)
-    if not res.output:
+    if ROUTER == "kae":
+        output = _route_kae(Path(board), work, timeout)
+    else:
+        from kaebench.adapters import Freerouting
+        output = Freerouting(passes=passes).run("route", Path(board).parent, work, 0, timeout).output
+    if not output:
         return dict(unconnected=10 ** 6, errors=10 ** 6, failed={}, blame=[], t=time.monotonic() - t0)
-    d = json.loads(kicad_py("unconnected", res.output))
+    d = json.loads(kicad_py("unconnected", output))
     # DRC of the routed candidate under the board's own project rules (the task input's)
     from kaebench import tools
     for f in Path(board).parent.iterdir():
         if f.suffix in (".kicad_pro", ".kicad_dru"):
-            shutil.copy2(f, Path(res.output).parent / f.name)
-    rep = tools.run_drc(res.output, work / "drc.json")
+            shutil.copy2(f, Path(output).parent / f.name)
+    rep = tools.run_drc(output, work / "drc.json")
     s = tools.summarize_drc(rep)
     d.update(errors=s["errors"], errors_by_type=s["errors_by_type"])
     # parts to move: owners of unrouted nets and of the items in error-level violations
@@ -699,7 +807,11 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0, help="varies all random choices (the attempt index does too)")
     ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--probe-passes", type=int, default=4)
+    ap.add_argument("--router", choices=["freerouting", "kae"], default="freerouting",
+                    help="router for the in-loop routing of candidates (kae: kae.route.cli, needs kae importable)")
     a = ap.parse_args(argv)
+    global ROUTER
+    ROUTER = a.router
     t_start = time.monotonic()
     budget = a.timeout * 0.8 - 30  # leave time for writing and the harness
     work = Path(a.workdir) / "place"
