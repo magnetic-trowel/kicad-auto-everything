@@ -132,3 +132,35 @@ def test_missing_kae_tmpdir_falls_back_to_the_default(monkeypatch):
     assert pcbnew_io._tmpdir() is None
     monkeypatch.setenv("KAE_TMPDIR", "/tmp")
     assert pcbnew_io._tmpdir() == "/tmp"
+
+
+def test_worker_answers_as_a_process_per_call(tmp_path, monkeypatch):
+    """The worker (default) and a KiCad process per call (KAE_PCBNEW_WORKER=0) return the
+    same JSON and write the same bytes."""
+    src = _copy(tmp_path)
+    poses = _random_poses(kicad_file.load(src), random.Random(5))
+    moved, dsn = tmp_path / "moved.kicad_pcb", tmp_path / "board.dsn"
+    got = {}
+    for mode in ("1", "0"):
+        monkeypatch.setenv("KAE_PCBNEW_WORKER", mode)
+        res = [pcbnew_io.extract(src), pcbnew_io.zone_fills(src), pcbnew_io.text_shapes(src),
+               pcbnew_io.write_poses(src, moved, poses), pcbnew_io.export_dsn(src, dsn),
+               pcbnew_io.edit_routing(moved, moved, lock_all=True)]
+        got[mode] = (json.dumps(res), moved.read_bytes(), dsn.read_bytes())
+        moved.unlink()
+        dsn.unlink()
+    assert got["1"] == got["0"]
+
+
+def test_worker_timeout_and_restart(monkeypatch):
+    monkeypatch.setenv("KAE_PCBNEW_WORKER", "1")
+    n = len(pcbnew_io.extract(FIXTURE)["footprints"])
+    with pytest.raises(pcbnew_io.PcbnewError, match="timed out"):
+        pcbnew_io.zone_fills(FIXTURE, timeout=0.01)
+    assert all(w.proc.poll() is None for w in pcbnew_io._ALL)  # the timed-out worker is gone
+    w = pcbnew_io._acquire(300)
+    w.proc.kill()  # a worker that died while idle is replaced
+    w.proc.wait()
+    pcbnew_io._release(w)
+    assert len(pcbnew_io.extract(FIXTURE)["footprints"]) == n
+    assert w not in pcbnew_io._ALL

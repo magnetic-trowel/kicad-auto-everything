@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, Polygon, box
 
 from .critical_space import INF, TOL
 
@@ -110,31 +110,188 @@ class Grid:
     def within(self, geom, r, out=None):
         """Boolean grid: cell centres within distance r of geom (r >= 0); or with `out`,
         those cells are or-ed into out. Points and two-point lines exactly, polygons
-        through a circumscribed buffer."""
+        through a circumscribed buffer (axis-aligned rectangles, most pads, in numpy but for
+        cells right at the buffer's edge). Windows are rebuilt for every connection and
+        candidate route around the same pads, so the cells of (geom, r, window) are kept."""
         if out is None:
             out = np.zeros((self.ny, self.nx), bool)
-        i0, i1, j0, j1 = self._span(geom.bounds, r)
+        key = (id(geom), r, self.x0, self.y0, self.nx, self.ny, self.res)
+        hit = _RASTER.get(key)
+        if hit is None:
+            hit = (geom, self._within(geom, r))
+            _keep(_RASTER, key, hit, 200 + (0 if hit[1] is None else hit[1][4].size))
+        if hit[1] is not None:
+            j0, j1, i0, i1, m = hit[1]
+            out[j0:j1 + 1, i0:i1 + 1] |= m
+        return out
+
+    def _within(self, geom, r):
+        """(j0, j1, i0, i1, cells) of `within` (the cells of that block), or None."""
+        bounds, kind, data = _shape(geom)
+        i0, i1, j0, j1 = self._span(bounds, r)
         if i0 > i1 or j0 > j1:
-            return out
-        X, Y = self.coords(i0, i1, j0, j1)
-        gt = geom.geom_type
-        if gt == "Point":
-            m = np.hypot(X - geom.x, Y - geom.y) <= r
-        elif gt == "LineString" and len(geom.coords) == 2:
-            (ax, ay), (bx, by) = geom.coords
-            m = _seg_dist(X, Y, ax, ay, bx, by) <= r
+            return None
+        # a row and a column of cell centres; broadcasting them gives the same values as
+        # the full coordinate grids (coords)
+        X = (self.x0 + np.arange(i0, i1 + 1) * self.res)[None, :]
+        Y = (self.y0 + np.arange(j0, j1 + 1) * self.res)[:, None]
+        if kind == "point":
+            m = np.hypot(X - data[0], Y - data[1]) <= r
+        elif kind == "segment":
+            m = _seg_dist(X, Y, *data) <= r
+        elif kind == "rect":
+            m = _rect_within(geom, data, r, X, Y)
         else:
-            q = 4
-            g = geom.buffer(r / math.cos(math.pi / (4 * q)), quad_segs=q) if r > 0 else geom
+            g = _buffered(geom, r)
             if g.is_empty:
-                return out
-            if X.size > 64:
-                shapely.prepare(g)      # many points against one polygon: index it once
+                return None
+            X, Y = np.broadcast_arrays(X, Y)
             m = shapely.contains_xy(g, X, Y)
             if r <= 0:
                 m |= shapely.intersects_xy(g, X, Y)
-        out[j0:j1 + 1, i0:i1 + 1] |= m
-        return out
+        return j0, j1, i0, i1, m
+
+
+# Caches of Grid.within, keyed by id(geom) and holding the geometry, so an id cannot be
+# reused while its entry lives (shapely geometries are immutable): cells per window,
+# buffered polygons, what kind of shape each is. Each is emptied when full.
+_BUF_Q = 4
+_RASTER = {}
+_BUF = {}
+_SHAPE = {}
+_SIZE = {}
+_LIMIT = {id(_RASTER): 100_000_000, id(_BUF): 100_000, id(_SHAPE): 100_000}
+
+
+def _keep(cache, key, value, size=1):
+    """cache[key] = value, emptying the cache first when its size (about bytes for cells,
+    else entries) would pass its limit."""
+    n = _SIZE.get(id(cache), 0) + max(size, 1)
+    if n > _LIMIT[id(cache)]:
+        cache.clear()
+        n = max(size, 1)
+    _SIZE[id(cache)] = n
+    cache[key] = value
+
+
+def _buffered(geom, r):
+    """geom buffered by r circumscribed (r / cos(pi/16), quad_segs 4: every point within r
+    is inside), prepared; geom itself for r <= 0."""
+    key = (id(geom), r)
+    hit = _BUF.get(key)
+    if hit is None:
+        g = geom.buffer(r / math.cos(math.pi / (4 * _BUF_Q)), quad_segs=_BUF_Q) if r > 0 else geom
+        if not g.is_empty:
+            shapely.prepare(g)      # many points against one polygon: index it once
+        hit = (geom, g)
+        _keep(_BUF, key, hit)
+    return hit[1]
+
+
+def _shape(geom):
+    """(bounds, kind, data) of geom for Grid.within: kind "point" (data x, y), "segment"
+    (a two-point LineString; ax, ay, bx, by), "rect" (a Polygon that is exactly an
+    axis-aligned rectangle of positive area, four corners and no holes, when shapely buffers
+    rectangles as _rect_within expects; x0, y0, x1, y1) or "other"."""
+    hit = _SHAPE.get(id(geom))
+    if hit is not None:
+        return hit[1]
+    gt = geom.geom_type
+    kind, data = "other", None
+    if gt == "Point":
+        kind, data = "point", (geom.x, geom.y)
+    elif gt == "LineString" and len(geom.coords) == 2:
+        (ax, ay), (bx, by) = geom.coords
+        kind, data = "segment", (ax, ay, bx, by)
+    elif gt == "Polygon" and not geom.interiors and _fillets_ok():
+        c = shapely.get_coordinates(geom)
+        x0, y0, x1, y1 = geom.bounds
+        if (len(c) == 5 and x0 < x1 and y0 < y1 and (c[0] == c[4]).all()
+                and len({(float(x), float(y)) for x, y in c[:4]}) == 4
+                and np.isin(c[:, 0], (x0, x1)).all() and np.isin(c[:, 1], (y0, y1)).all()
+                and ((np.diff(c[:, 0]) == 0) | (np.diff(c[:, 1]) == 0)).all()):
+            kind, data = "rect", (x0, y0, x1, y1)
+    info = (geom.bounds, kind, data)
+    _keep(_SHAPE, id(geom), (geom, info))
+    return info
+
+
+# fillet chords of a quarter circle in quad_segs 4: outward normals (cos, sin) of chords
+# between the points at angles k pi/8, k = 0..4
+_CHORDS = [(math.cos((k + 0.5) * math.pi / 8), math.sin((k + 0.5) * math.pi / 8)) for k in range(4)]
+_FILLETS_OK = []
+
+
+def _fillets_ok():
+    """Whether shapely buffers an axis-aligned rectangle into the polygon _rect_within
+    reasons about: the sides moved out by the buffer distance, joined at each corner by
+    points on the circle of that radius at angles k pi/8 (checked once per process)."""
+    if not _FILLETS_OK:
+        ok = True
+        rb = 0.37
+        for g in (box(0.0, 0.0, 2.0, 1.0), box(0.0, 0.0, 2.0, 1.0, ccw=False),
+                  Polygon([(2.0, 1.0), (0.0, 1.0), (0.0, 0.0), (2.0, 0.0)])):
+            want = [(cx + sx * rb * math.cos(k * math.pi / 8), cy + sy * rb * math.sin(k * math.pi / 8))
+                    for cx, cy, sx, sy in ((2.0, 1.0, 1, 1), (0.0, 1.0, -1, 1), (0.0, 0.0, -1, -1), (2.0, 0.0, 1, -1))
+                    for k in range(5)]
+            b = g.buffer(rb, quad_segs=_BUF_Q)
+            got = shapely.get_coordinates(b.exterior)[:-1] if b.geom_type == "Polygon" and not b.interiors else []
+            near = [[math.hypot(x - u, y - v) < 1e-12 for u, v in want] for x, y in got]
+            ok = ok and len(got) == 20 and all(map(any, near)) and all(map(any, zip(*near)))
+        _FILLETS_OK.append(ok)
+    return _FILLETS_OK[0]
+
+
+def _rect_within(geom, rect, r, X, Y):
+    """What the circumscribed-buffer test of `within` gives for the axis-aligned rectangle
+    geom (X a row, Y a column of cell centres), without the buffer where the answer is
+    certain. r <= 0: the closed rectangle. r > 0: the buffer is the rectangle with its sides
+    moved out by r' = r / cos(pi/16), joined at each corner by chords between points on the
+    circle of radius r' about the corner, pi/8 apart (_fillets_ok); each chord is r from
+    the corner. Beside a side a cell is inside when nearer than r' to it; beyond a corner
+    when it is on the corner's side of all four chords. Cells within eps (far more than
+    rounding) of an edge of the buffer go to shapely."""
+    x0, y0, x1, y1 = rect
+    if r <= 0:
+        return ((X >= x0) & (X <= x1)) & ((Y >= y0) & (Y <= y1))
+    xs, ys = X[0], Y[:, 0]
+    u = np.maximum(np.maximum(x0 - xs, xs - x1), 0.0)       # distance beyond the sides, x
+    v = np.maximum(np.maximum(y0 - ys, ys - y1), 0.0)       # and y
+    rb = r / math.cos(math.pi / (4 * _BUF_Q))
+    eps = 1e-9 * (1.0 + r + max(abs(x0), abs(x1), abs(y0), abs(y1)))
+    # columns ia:ib have u = 0, rows ja:jb v = 0 (the centres are sorted)
+    ia, ib = int(np.searchsorted(xs, x0, "left")), int(np.searchsorted(xs, x1, "right"))
+    ja, jb = int(np.searchsorted(ys, y0, "left")), int(np.searchsorted(ys, y1, "right"))
+    m = np.empty((ys.size, xs.size), bool)
+    # beside a side (or inside): the distance is the other of u, v; inside below rb
+    m[:, ia:ib] = (v <= rb - eps)[:, None]
+    m[ja:jb, :] = (u <= rb - eps)[None, :]
+    near_u, near_v = np.abs(u - rb) <= eps, np.abs(v - rb) <= eps
+    # beyond a corner (four blocks): inside on the corner's side of all four chords
+    blocks = [(np.s_[rows], np.s_[cols], np.s_[crows], np.s_[ccols])
+              for rows, crows in ((np.s_[:ja], np.s_[:ja]), (np.s_[jb:], np.s_[ja:]))
+              for cols, ccols in ((np.s_[:ia], np.s_[:ia]), (np.s_[ib:], np.s_[ia:]))]
+    cu = np.concatenate((u[:ia], u[ib:]))[None, :]
+    cv = np.concatenate((v[:ja], v[jb:]))[:, None]
+    near_f = None
+    if cu.size and cv.size:
+        f = np.maximum(np.maximum(cu * _CHORDS[0][0] + cv * _CHORDS[0][1], cu * _CHORDS[1][0] + cv * _CHORDS[1][1]),
+                       np.maximum(cu * _CHORDS[2][0] + cv * _CHORDS[2][1], cu * _CHORDS[3][0] + cv * _CHORDS[3][1]))
+        fin = f <= r - eps
+        near_f = np.abs(f - r) <= eps
+        for rows, cols, crows, ccols in blocks:
+            m[rows, cols] = fin[crows, ccols]
+    if near_u.any() or near_v.any() or (near_f is not None and near_f.any()):
+        # rare: cells within eps of the buffer's edge, decided by shapely
+        unsure = np.zeros_like(m)
+        unsure[:, ia:ib] |= near_v[:, None]
+        unsure[ja:jb, :] |= near_u[None, :]
+        if near_f is not None:
+            for rows, cols, crows, ccols in blocks:
+                unsure[rows, cols] |= near_f[crows, ccols]
+        jj, ii = np.nonzero(unsure)
+        m[jj, ii] = shapely.contains_xy(_buffered(geom, r), xs[ii], ys[jj])
+    return m
 
 
 def _seg_dist(X, Y, ax, ay, bx, by):
@@ -263,12 +420,7 @@ class GridRouter:
             if kind == "via":
                 e = max(e, sp.plan.notes.get("via_edge_band") or 0.0)
             R = half + e + TOL
-            inner = sp.outline.buffer(-(R + _margin(R, grid.res)), quad_segs=4)
-            X, Y = grid.coords(0, grid.nx - 1, 0, grid.ny - 1)
-            if not inner.is_empty:
-                shapely.prepare(inner)
-            ok = shapely.contains_xy(inner, X, Y) if not inner.is_empty else np.zeros_like(out)
-            out |= ~ok
+            out |= self._off_board(grid, R + _margin(R, grid.res))
         return out
 
     def via_allowed(self, grid, net, layers_all):
@@ -314,12 +466,25 @@ class GridRouter:
         if sp.outline is not None:
             e = max(sp.edge_need(net, "via", l) for l in sp.cu)
             e = max(e, sp.plan.notes.get("via_edge_band") or 0.0)
-            inner = sp.outline.buffer(-(rv + e + m + TOL), quad_segs=4)
-            X, Y = grid.coords(0, grid.nx - 1, 0, grid.ny - 1)
+            out |= self._off_board(grid, rv + e + m + TOL)
+        return ~out
+
+    def _off_board(self, grid, d):
+        """Cells whose centre is not inside the board outline shrunk by d (quad_segs 4)."""
+        outline = self.sp.outline
+        key = (id(outline), d)
+        hit = _INNER.get(key)
+        if hit is None:
+            inner = outline.buffer(-d, quad_segs=4)
             if not inner.is_empty:
                 shapely.prepare(inner)
-            out |= ~shapely.contains_xy(inner, X, Y) if not inner.is_empty else np.ones_like(out)
-        return ~out
+            if len(_INNER) >= 1000:
+                _INNER.clear()
+            _INNER[key] = hit = (outline, inner)
+        inner = hit[1]
+        if inner.is_empty:
+            return np.ones((grid.ny, grid.nx), bool)
+        return ~_contains_grid(inner, grid)
 
     def cost_layer(self, grid, net, layer, w, layer_factor=1.0, skip=()):
         blk = self.blocked(grid, net, layer, w, "track", skip)
@@ -599,6 +764,35 @@ class GridRouter:
             out.append(pts[cand])
             i = cand
         return out
+
+
+# board outlines shrunk for GridRouter._off_board: (id(outline), d) -> (outline, prepared)
+_INNER = {}
+
+
+def _contains_grid(g, grid, t=16):
+    """shapely.contains_xy(g, cell centres) over the whole grid for a prepared polygon g,
+    deciding blocks of t x t cells at once: a block whose bounding box lies in g's interior
+    (contains_properly) is all inside, one whose box misses g all outside; only the cells of
+    the blocks across g's boundary are tested one by one."""
+    xs = grid.x0 + np.arange(grid.nx) * grid.res
+    ys = grid.y0 + np.arange(grid.ny) * grid.res
+    ia = np.arange(0, grid.nx, t)
+    ja = np.arange(0, grid.ny, t)
+    ib = np.minimum(ia + t - 1, grid.nx - 1)
+    jb = np.minimum(ja + t - 1, grid.ny - 1)
+    boxes = shapely.box(xs[ia][None, :], ys[ja][:, None], xs[ib][None, :], ys[jb][:, None])
+    flat = (xs[ia] < xs[ib])[None, :] & (ys[ja] < ys[jb])[:, None]
+    full = shapely.contains_properly(g, boxes) & flat
+    miss = ~shapely.intersects(g, boxes) & flat
+    cell_full = np.repeat(np.repeat(full, t, axis=0), t, axis=1)[:grid.ny, :grid.nx]
+    cell_miss = np.repeat(np.repeat(miss, t, axis=0), t, axis=1)[:grid.ny, :grid.nx]
+    out = cell_full.copy()
+    unsure = ~(cell_full | cell_miss)
+    if unsure.any():
+        jj, ii = np.nonzero(unsure)
+        out[jj, ii] = shapely.contains_xy(g, xs[ii], ys[jj])
+    return out
 
 
 def _pour_mask(grid, polys, box, step=4):
