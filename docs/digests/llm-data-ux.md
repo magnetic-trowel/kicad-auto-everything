@@ -5,7 +5,7 @@ Executive statements; detail is in the linked topic docs and every idea in [the 
 ## What LLMs can and cannot do
 - **LLMs fail at emitting geometry and succeed at semantic choices made for a solver.**
   - OmniRouting: best model 12.6% of nets DRC-clean (28.0% agentic) vs 56.2% for an open router and 93.6% for humans.
-  - Every PCB win for an LLM system with a legal or DRC-clean output keeps geometry in a solver.
+  - Every legal or DRC-clean PCB win for an LLM system keeps geometry in a solver.
 
   → [spatial-reasoning-limits](../topics/llm/spatial-reasoning-limits.md), [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
 - **Corrected:** LLM placement is connectivity-aware but illegal. Frontier models beat academic placers on routability (0.90–0.95, legality gating unstated) but about 80% of outputs have pad overlaps. → [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
@@ -23,7 +23,7 @@ Executive statements; detail is in the linked topic docs and every idea in [the 
 - **Placement roles that worked:**
   - grouping plus MILP legalization (Li DAC'26: −15%/−13% WL/vias vs Quilter);
   - fine-tuned constraint graphs (ModuPlace);
-  - weak VLM anchors (λ = 0.01);
+  - weak VLM anchors (VeoPlace);
   - place-one-replicate for repeated channels.
 
   → [llm-guided-placement-systems](../topics/llm/llm-guided-placement-systems.md), [placement/llm-guided-placement](../topics/placement/llm-guided-placement.md)
