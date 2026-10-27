@@ -85,6 +85,11 @@ class Problem:
         self.region[None] = self.region[False].intersection(self.region[True])  # THT: both sides
         for r in self.region.values():
             shapely.prepare(r)
+        cells = {}
+        for r in self.region.values():
+            if id(r) not in cells:
+                cells[id(r)] = _Cells(r)
+        self.cells = {k: cells[id(r)] for k, r in self.region.items()}
         self.bbox = np.array(region.bounds)
         self.diag = float(np.hypot(*(self.bbox[2:] - self.bbox[:2])))
         parts = g["free"]
@@ -184,6 +189,55 @@ class Problem:
     def side_key(self, i):
         return None if self.tht[i] else bool(self.back[i])
 
+    def contains(self, side, x0, y0, x1, y1):
+        """region[side].contains(box) for arrays of boxes; the same answers, mostly without shapely."""
+        return self.cells[side].contains(x0, y0, x1, y1)
+
+
+class _Cells:
+    """A region cut into a k x k grid of cells, each known to be inside the region, disjoint from
+    it, or neither (one shapely call per cell, once). A box covered by inside cells is in the
+    region, a box touching a disjoint cell or leaving the bounds is not; only boxes near the
+    boundary are asked of shapely. Exact: the cell and box edges are the same floats."""
+
+    def __init__(self, reg, k=256):
+        self.reg = reg
+        x0, y0, x1, y1 = reg.bounds if not reg.is_empty else (0, 0, 0, 0)
+        self.ok = reg.is_valid and x1 > x0 and y1 > y0
+        if not self.ok:
+            return
+        self.xs, self.ys = np.linspace(x0, x1, k + 1), np.linspace(y0, y1, k + 1)
+        gx, gy = np.meshgrid(np.arange(k), np.arange(k), indexing="ij")
+        cells = shapely.box(self.xs[gx], self.ys[gy], self.xs[gx + 1], self.ys[gy + 1])
+        # summed-area tables: number of inside / disjoint cells in any index range in O(1)
+        self.n_in, self.n_out = (np.pad(m.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+                                 for m in (shapely.contains(reg, cells).astype(int),
+                                           shapely.disjoint(reg, cells).astype(int)))
+
+    def contains(self, x0, y0, x1, y1):
+        x0, y0, x1, y1 = np.broadcast_arrays(*(np.atleast_1d(np.asarray(v, dtype=float)) for v in (x0, y0, x1, y1)))
+        res = np.zeros(x0.shape, bool)
+        todo = np.ones(x0.shape, bool)
+        if self.ok:
+            xs, ys = self.xs, self.ys
+            proper = (x1 > x0) & (y1 > y0)
+            todo = ~proper  # degenerate boxes: shapely decides
+            inb = proper & (x0 >= xs[0]) & (y0 >= ys[0]) & (x1 <= xs[-1]) & (y1 <= ys[-1])
+            # cells a..b x c..d all touch the box and together cover it
+            a = np.searchsorted(xs, x0[inb], "right") - 1
+            b = np.searchsorted(xs, x1[inb], "left")
+            c = np.searchsorted(ys, y0[inb], "right") - 1
+            d = np.searchsorted(ys, y1[inb], "left")
+
+            def count(t):
+                return t[b, d] - t[a, d] - t[b, c] + t[a, c]
+            full = count(self.n_in) == (b - a) * (d - c)
+            res[inb] = full
+            todo[inb] = ~full & (count(self.n_out) == 0)
+        if todo.any():
+            res[todo] = shapely.contains(self.reg, shapely.box(x0[todo], y0[todo], x1[todo], y1[todo]))
+        return res
+
 
 def _overlap(a, B):
     """Overlap areas of rect a with rects B (n x 4)."""
@@ -191,7 +245,7 @@ def _overlap(a, B):
         return np.zeros(0)
     w = np.minimum(a[2], B[:, 2]) - np.maximum(a[0], B[:, 0])
     h = np.minimum(a[3], B[:, 3]) - np.maximum(a[1], B[:, 1])
-    return np.clip(w, 0, None) * np.clip(h, 0, None)
+    return np.maximum(w, 0) * np.maximum(h, 0)
 
 
 def _mst_edges(pts):
@@ -218,12 +272,25 @@ def _mst_edges(pts):
     return np.array(out)
 
 
-def _crossings(A, B):
-    """Proper crossings between segment sets A (m x 4) and B (n x 4)."""
+def _crossings(A, B, pairs=None):
+    """Proper crossings between segment sets A (m x 4) and B (n x 4); `pairs` (m x n bool)
+    limits the count to those pairs. Segments with disjoint bounding boxes cannot cross and are
+    not tested."""
     if len(A) == 0 or len(B) == 0:
         return 0
-    p1, p2 = A[:, None, :2], A[:, None, 2:]
-    q1, q2 = B[None, :, :2], B[None, :, 2:]
+    alo, ahi = np.minimum(A[:, :2], A[:, 2:]), np.maximum(A[:, :2], A[:, 2:])
+    blo, bhi = np.minimum(B[:, :2], B[:, 2:]), np.maximum(B[:, :2], B[:, 2:])
+    if pairs is None:  # cheap first cut: B against the box around all of A
+        keep = ((blo <= ahi.max(0)) & (bhi >= alo.min(0))).all(1)
+        B, blo, bhi = B[keep], blo[keep], bhi[keep]
+        if len(B) == 0:
+            return 0
+    near = ((alo[:, None] <= bhi[None]) & (blo[None] <= ahi[:, None])).all(2)
+    if pairs is not None:
+        near &= pairs
+    i, j = np.nonzero(near)
+    p1, p2 = A[i, :2], A[i, 2:]
+    q1, q2 = B[j, :2], B[j, 2:]
 
     def orient(a, b, c):
         return (b[..., 0] - a[..., 0]) * (c[..., 1] - a[..., 1]) - (b[..., 1] - a[..., 1]) * (c[..., 0] - a[..., 0])
@@ -260,7 +327,9 @@ class State:
         return float(np.ptp(p[:, 0]) + np.ptp(p[:, 1]))
 
     def _mst(self, k):
-        return _mst_edges(np.unique(self.pins[self.P.nets[k]].round(4), axis=0))
+        p = self.pins[self.P.nets[k]].round(4)
+        p = p[np.lexsort((p[:, 1], p[:, 0]))]  # np.unique(p, axis=0), without its overhead
+        return _mst_edges(p[np.r_[True, (p[1:] != p[:-1]).any(1)]])
 
     def _all_crossings(self):
         ks = list(self.edges)
@@ -272,9 +341,11 @@ class State:
         return total
 
     def _outside(self, i, rect):
-        reg = self.P.region[self.P.side_key(i)]
+        side = self.P.side_key(i)
+        if self.P.contains(side, *rect)[0]:
+            return 0.0
         b = box(*rect)
-        return float(b.area - b.intersection(reg).area) if not reg.contains(b) else 0.0
+        return float(b.area - b.intersection(self.P.region[side]).area)
 
     def _part_violation(self, i, rect, skip=()):
         P = self.P
@@ -342,12 +413,13 @@ class State:
 
     @staticmethod
     def _within(es):
-        ks = list(es)
-        t = 0
-        for a in range(len(ks)):
-            for b in range(a + 1, len(ks)):
-                t += _crossings(es[ks[a]], es[ks[b]])
-        return t
+        """Crossings between edges of different nets in es, each pair once."""
+        if len(es) < 2:
+            return 0
+        E = np.concatenate(list(es.values()))
+        net = np.repeat(np.arange(len(es)), [len(e) for e in es.values()])
+        # the pair test is symmetric, so the upper triangle counts each pair of nets once
+        return _crossings(E, E, np.triu(net[:, None] != net[None, :]))
 
     def commit(self, rec):
         _, _, _, _, _, dcross, dviol = rec
@@ -392,16 +464,14 @@ def _legal_mask(P, i, r, cx, cy, placed_rects, placed_idx):
     ox, oy = (q[0] + q[2]) / 2, (q[1] + q[3]) / 2
     x, y = cx - ox, cy - oy
     rx0, ry0, rx1, ry1 = x + q[0] - h, y + q[1] - h, x + q[2] + h, y + q[3] + h
-    ok = shapely.contains(P.region[P.side_key(i)], shapely.box(rx0, ry0, rx1, ry1))
-    if placed_idx:
-        B = placed_rects[[j for j in placed_idx if P.conflict[i, j]]]
-        if len(B):
-            ok &= ~(((np.minimum(rx1[:, None], B[None, :, 2]) - np.maximum(rx0[:, None], B[None, :, 0])) > 1e-6) &
-                    ((np.minimum(ry1[:, None], B[None, :, 3]) - np.maximum(ry0[:, None], B[None, :, 1])) > 1e-6)).any(1)
+    ok = np.ones(len(x), bool)
+    B = placed_rects[[j for j in placed_idx if P.conflict[i, j]]] if placed_idx else np.zeros((0, 4))
     fr = P.frects[P.fconflict[i]] if len(P.frects) else np.zeros((0, 4))
-    if len(fr):
-        ok &= ~(((np.minimum(rx1[:, None], fr[None, :, 2] + h) - np.maximum(rx0[:, None], fr[None, :, 0] - h)) > 1e-6) &
-                ((np.minimum(ry1[:, None], fr[None, :, 3] + h) - np.maximum(ry0[:, None], fr[None, :, 1] - h)) > 1e-6)).any(1)
+    # one obstacle at a time: no candidates x obstacles temporaries
+    for b in [*B, *(fr + np.array([-h, -h, h, h]))]:
+        ok &= ~(((np.minimum(rx1, b[2]) - np.maximum(rx0, b[0])) > 1e-6) &
+                ((np.minimum(ry1, b[3]) - np.maximum(ry0, b[1])) > 1e-6))
+    ok[ok] = P.contains(P.side_key(i), rx0[ok], ry0[ok], rx1[ok], ry1[ok])  # region test last: the dearest
     return ok, x, y
 
 
