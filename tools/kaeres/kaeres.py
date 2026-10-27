@@ -1116,7 +1116,7 @@ def exp_rows(e):
             if task_meta is None:
                 task_meta = (read_json(bd / "tasks" / r["task_id"] / "task.json") or {}).get("record") or {}
             ed = evals_of(d)
-            use = dict(evs)
+            use = dict(evs, physics=evs.get("physics_current") or evs["physics"])
             for key, field in (("drc", "score"), ("physics", "physics")):
                 if use[key] not in ed:
                     other = [k for k, v in ed.items() if (v or {}).get(field) is not None]
@@ -1296,6 +1296,127 @@ def cmd_exp_timer(a):
     print(f"enabled {unit}.timer (stop: systemctl --user disable --now {unit}.timer)")
 
 
+# ------------------------------------------------------------------ re-evaluation (physics)
+def _rephysics_todo(bid, method_ids, pid):
+    """Runs of these methods on a board that have an output but no evaluation by physics evaluator pid."""
+    return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r.get("status") == "ok"
+            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()]
+
+
+def cmd_rephysics_submit(a):
+    """Queue physics re-evaluation of an experiment's finished boards with a newer physics evaluator
+    (new kae and/or physics_board.py), at low priority. Runs are never re-run: each stored output is
+    rebuilt as its scorer did and measured again; the result is a new evaluation beside the old."""
+    e = load_exp(a.name)
+    repo = main_repo()
+    harness, kae = git(repo, "rev-parse", a.harness), git(repo, "rev-parse", a.kae)
+    for c in (harness, kae):
+        if not git(repo, "branch", "-r", "--contains", c):
+            raise SystemExit(f"{c[:7]} is on no remote branch: push it first")
+    ensure_harness(harness)
+    ensure_harness(kae, kae=True)
+    pid = evaluators_for(harness, kae, e["kicad"])["physics"]
+    human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
+    mids = {m["id"] for m in e["methods"]} | ({human["id"]} if human else set())
+    rows = corpus_rows()
+    boards = (exp_dir(a.name) / "boards.txt").read_text().split()
+    if a.only:
+        only = set(Path(a.only[1:]).read_text().split() if a.only.startswith("@") else a.only.split(","))
+        boards = [b for b in boards if b in only]
+    cd = code_dir(harness)
+    py = cd.with_name(cd.name + ".venv") / "bin" / "python"
+    jobs = []
+    for bid in boards:
+        if bid not in rows or missing(e, bid) or not _rephysics_todo(bid, mids, pid):
+            continue  # not finished by the experiment yet, or nothing left to measure
+        sz = board_size_mb(rows[bid])
+        jobs.append(dict(cmd=f"{py} {cd / 'tools' / 'kaeres' / 'kaeres.py'} rephysics-job --board {bid} --harness {harness} "
+                             f"--kae {kae} --methods {','.join(sorted(mids))}",
+                         name=f"rephysics-{a.name}:{bid}", cpus=2, mem=f"{1.5 + 0.15 * sz:.1f}G", disk=f"{int(100 + 8 * sz)}M",
+                         timeout=f"{int(min(12 * 3600, 1800 + 300 * sz))}s", prio=a.prio))
+        if a.limit and len(jobs) >= a.limit:
+            break
+    ev = dict(e["evaluators"])
+    if ev.get("physics_current") != pid:
+        ev.setdefault("physics_history", [ev["physics"]])
+        if pid not in ev["physics_history"]:
+            ev["physics_history"].append(pid)
+        ev["physics_current"] = pid  # reports use it; runs without it yet fall back to their older evaluation
+        e["evaluators"] = ev
+        write_json(exp_dir(a.name) / "experiment.json", e)
+    f = exp_dir(a.name) / f"rephysics-{datetime.now().strftime('%Y%m%dT%H%M%S')}.jsonl"
+    f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
+    print(f"physics evaluator {pid} (harness {harness[:7]}, kae {kae[:7]}): {len(jobs)} board jobs -> {f}")
+    if jobs and not a.dry_run:
+        subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"rephysics-{a.name}", "--tag", f"rephysics-{a.name}",
+                        "--live", "--cwd", str(cd), "--retries", "1"], check=True)
+
+
+def cmd_rephysics_job(a):
+    bid = a.board
+    row = corpus_rows()[bid]
+    pid = evaluators_for(a.harness, a.kae, kicad_version())["physics"]
+    todo = _rephysics_todo(bid, set(a.methods.split(",")), pid)
+    if not todo:
+        print(f"{bid}: nothing to measure")
+        return 0
+    ws = Path(os.environ.get("KAEQ_SCRATCH") or tempfile.mkdtemp(prefix="kaeres-", dir="/var/tmp"))
+    size = board_size_mb(row)
+    env = dict(os.environ)
+    env.update({k: v for k, v in env_sh().items() if k not in env})
+    binds = [b for b in env.get("APPTAINER_BIND", "").split(",") if b]
+    env["APPTAINER_BIND"] = ",".join(dict.fromkeys(binds + [str(ws), str(CORPUS.resolve())]))
+    env["KICAD_CONFIG_HOME"] = str(STORE / "kicad-config" / "threads-2")
+    env.pop("VIRTUAL_ENV", None)
+    log = ws / "job.log"
+    cd = code_dir(a.harness)
+    kv = code_dir(a.kae).with_name(code_dir(a.kae).name + ".venv-kae")
+    pt = board_dir(bid) / "pintypes.json"
+    written = 0
+    groups = defaultdict(list)
+    for d, r in todo:
+        groups[r["harness_commit"]].append((d, r))
+    for hc, items in groups.items():  # rebuild with the harness that scored the runs
+        hv = code_dir(hc).with_name(code_dir(hc).name + ".venv")
+        man_p = ws / f"rebuild-{hc[:8]}.json"
+        rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
+                             "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
+                             *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
+                             "--out", man_p], log, dict(env, PATH=f"{hv / 'bin'}:{env.get('PATH', '')}"), timeout=int(1800 + 120 * size))
+        man = read_json(man_p)
+        if not man:
+            print(f"{bid}: rebuild with harness {hc[:7]} failed (rc {rc}, timed out {to}):\n{tail(log, 30)}", flush=True)
+            return 1
+        boards = {}
+        for d, r in items:
+            t = read_json(board_dir(bid) / "tasks" / r["task_id"] / "task.json") or {}
+            if (t.get("recipe") or {}).get("board_sha256") not in (None, man["board_sha256"]):
+                print(f"{bid}: {r['run']} was made on another board file; skipped", flush=True)
+                continue
+            got = man["runs"].get(r["run"]) or {}
+            if got.get("board"):
+                boards[r["run"]] = got["board"]
+        if not boards:
+            continue
+        pout = ws / f"physics-{hc[:8]}.json"
+        run_logged([kv / "bin" / "python", cd / "tools" / "kaeres" / "physics_board.py", "--input", man["input"],
+                    *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
+                    *(["--pintypes", pt] if pt.exists() else [])], log, env, timeout=int(1800 + 120 * size))
+        phys = read_json(pout) or dict(error="physics step failed", log=tail(log, 30))
+        for d, r in items:
+            if r["run"] not in boards:
+                continue
+            ph = (phys.get("boards") or {}).get(r["run"]) or dict(error=phys.get("error") or "no result")
+            write_json(d / "evals" / f"{pid}.json", dict(
+                schema=SCHEMA, evaluator=pid, run=r["run"], at=now(), rescored=True, rebuilt_with=hc,
+                pintypes=phys.get("pintypes"), physics={k: v for k, v in ph.items() if k != "traceback"},
+                **({"traceback": ph["traceback"]} if ph.get("traceback") else {})))
+            written += 1
+    print(f"{bid}: {written} physics evaluation(s) by {pid}", flush=True)
+    shutil.rmtree(ws / "w", ignore_errors=True)
+    return 0
+
+
 # ------------------------------------------------------------------ index
 def cmd_index(a):
     """Rebuild index.sqlite: methods, evaluators, tasks, runs and evaluations (a cache; files are the truth)."""
@@ -1403,6 +1524,18 @@ def main():
     s = sub.add_parser("rerun", help="how to reproduce a run; --submit queues the reproduction")
     s.add_argument("run"), s.add_argument("--submit", action="store_true")
     s.set_defaults(f=cmd_rerun)
+    rp = sub.add_parser("rephysics", help="re-evaluate physics of an experiment's runs with a newer evaluator").add_subparsers(dest="sub", required=True)
+    s = rp.add_parser("submit")
+    s.add_argument("name"), s.add_argument("--only"), s.add_argument("--limit", type=int)
+    s.add_argument("--harness", default="HEAD", help="revision whose physics_board.py and rebuild_boards.py run")
+    s.add_argument("--kae", required=True, help="revision with the kae package to measure with")
+    s.add_argument("--prio", type=int, default=-1)
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(f=cmd_rephysics_submit)
+    s = sub.add_parser("rephysics-job", help="one board's physics re-evaluation (what each queued job runs)")
+    s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
+    s.add_argument("--methods", required=True)
+    s.set_defaults(f=cmd_rephysics_job)
     s = sub.add_parser("index", help="rebuild index.sqlite")
     s.set_defaults(f=cmd_index)
     a = ap.parse_args()
