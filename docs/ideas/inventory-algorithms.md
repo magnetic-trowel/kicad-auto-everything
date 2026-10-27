@@ -132,7 +132,7 @@ Link labels: `P-` placement, `R-` routing, `S-` solvers topic docs (definitions 
 113. Typed relation bundle with ordinal magnitudes as the LLM's only write API. PA, VP → [LLM-guided][P-LLM]
 114. PCB constraint DSL (fixed, on_edge, keepout, side, rot_allowed, inside, clearance; near, ring, align, order, symmetric, group, spread, away_from, loop_compact). PA → [LLM-guided][P-LLM]
 115. Persist relations as re-solvable design intent for ECOs/resizes. VP → [LLM-guided][P-LLM]
-116. VeoPlace VLM regions as weak anchors (λ_A 0.01) or action masks. PA, CD, VP → [LLM-guided][P-LLM]
+116. VeoPlace VLM regions as weak anchors (weight calibrated by sweep; VeoPlace's λ_A 0.01 is in its own units) or action masks. PA, CD, VP → [LLM-guided][P-LLM]
 117. VeoPlace HISTORY SUMMARY → STRATEGY → REGIONS output contract. VP → [LLM-guided][P-LLM]
 118. Top-Stratified context selection (K-means + rank-softmax). CD, VP → [LLM-guided][P-LLM]
 119. Random-region control in every VLM-guidance evaluation. CD → [LLM-guided][P-LLM]

@@ -41,7 +41,7 @@ def loss(params, key, k):                                 # k = continuation ste
 # then argmax orientations -> CP-SAT legalization (min displacement, hard decap/keep-out) -> SA/LNS detail
 ```
 
-**Transplant terms** [I]: VeoPlace weak anchors λ_A·Σ‖x − x̂‖² (λ_A = 0.01) for LLM/VLM regions ([LLM-guided](../placement/llm-guided-placement.md)); NTU power-flow anchors; centroid-direction no-overlap gradient + repel-then-no-repel schedule ([scene transplants](../placement/scene-layout-transplants.md)); TRouter-style differentiable thermal surrogate; Qplacer frequency-aware repulsion for aggressor/victim pairs; CoEvoP&R-style LLM-evolved objective over a restricted observable API ([LLM-evolved heuristics](llm-evolved-heuristics.md)).
+**Transplant terms** [I]: VeoPlace weak anchors λ_A·Σ‖x − x̂‖² for LLM/VLM regions (VeoPlace's best λ_A = 0.01 is an absolute weight in its own units; calibrate ours by sweep against a random-region control) ([LLM-guided](../placement/llm-guided-placement.md)); NTU power-flow anchors; centroid-direction no-overlap gradient + repel-then-no-repel schedule ([scene transplants](../placement/scene-layout-transplants.md)); TRouter-style differentiable thermal surrogate; Qplacer frequency-aware repulsion for aggressor/victim pairs; CoEvoP&R-style LLM-evolved objective over a restricted observable API ([LLM-evolved heuristics](llm-evolved-heuristics.md)).
 
 ## Recommendations for our system
 - Global placement for 100–1000 parts: Cypress-style JAX/PyTorch loss with Gumbel orientation, two-sided density, net crossing and domain penalties; or Cypress itself (Apache-2.0, GPU) as reference [I].
