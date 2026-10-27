@@ -87,7 +87,7 @@ Source: [priority-agents-and-negotiation](../ideas/original/priority-agents-and-
     anchor pins, edge segments, cut capacity, plane adjacency and BGA via sites.
   - Prices of over-subscribed resources rise, PathFinder-style, until demand clears.
   - Closest test: unified negotiated congestion of parts and wires, which partly worked
-    ([negotiate](joint/negotiate.md)).
+    ([negotiate](joint/jc.md)).
 - **N2 Iso-physics substitutions.** A library of substitutions per mechanism, each with a computed
   iso-curve: distance ↔ parallel vias ↔ plane depth, length ↔ via balance, spacing ↔ parallel
   length ↔ h. A checker verifies that the budget is unchanged after a trade.
@@ -129,14 +129,14 @@ Source: [placement](../ideas/original/placement.md). The ids here are not the P0
     density. Pin sides that cross suggest rotations.
   - Forces decay over time, and a per-board online linear surrogate learns from the probes.
   - **Partial:** the discrete form was tried twice: blame-driven re-annealing
-    ([ap-sa-loop](placement/ap-sa-loop.md)) and blocker-directed window repair
-    ([blocker-repair](joint/blocker-repair.md)). The continuous-force version is untested.
+    ([ap-sa-loop](placement/autoplace.md)) and blocker-directed window repair
+    ([blocker-repair](joint/anneal-and-repair.md)). The continuous-force version is untested.
 - **P2 Contracted floorplan with a cut check.**
   - Blocks become soft macros with area, aspect variants and port contracts, floorplanned by
     CP-SAT or a slicing GA.
   - A SURF-style cut test compares demand with capacity (cut length × layers / pitch).
   - Overflowing cut lines go back to the LLM.
-  - Cut-capacity bounds as layer predictors did not work ([collapse-obst](joint/collapse-obst.md)),
+  - Cut-capacity bounds as layer predictors did not work ([collapse-obst](joint/layer-collapse-analysis.md)),
     but that is a different use.
 - **P3 Physics-slack templates.** Store a relative-pose program plus, for each part, the slack
   region found by sampling perturbations that keep every budget. Linearize the regions to boxes or
@@ -157,7 +157,7 @@ Source: [placement](../ideas/original/placement.md). The ids here are not the P0
 - **P7 Live topological sketch objective.** Keep Toporouter-style topological routes up to date on
   every move. The objective is sketch length + λ·cut overflow + critical crossings. The closest
   test is the lifted layer-collapse cost as a placement measure, which ranked placements at ρ 0.85
-  vs 0.51 for HPWL ([collapse-assign](joint/collapse-assign.md)).
+  vs 0.51 for HPWL ([collapse-assign](joint/layer-collapse-analysis.md)).
 - **P8 Connector-voltage EMI proxy.** V_ab ≈ Σ I_k·2πf_k·L_plane·g(d_k) between cabled
   connectors, with softplus(V_ab − V_budget) as a differentiable placer loss.
 - **P9 Pin-mux co-floorplanning.** Solve the pin-mux CSP from vendor tables jointly with IC
@@ -184,7 +184,7 @@ Source: [routing](../ideas/original/routing.md).
   re-prioritization.
 - **R5 Router-portfolio bandit.** Context (net class, density, region) × arms (engine × preset),
   with Thompson sampling and a lexicographic reward. A fixed restart portfolio, which is not a
-  bandit, worked ([restart-portfolio-and-budgets](routing/restart-portfolio-and-budgets.md)).
+  bandit, worked ([restart-portfolio-and-budgets](routing/kae-restart-portfolio.md)).
 - **R6 Verified routing macros.** A macro is a precondition, stackup-derived parameters, a
   deterministic generator and postconditions. The LLM picks macros from a menu.
 - **R7 Plane-partition synthesis.** Assign grid cells × plane layers to rails, with penalties for
@@ -211,8 +211,8 @@ Source: [system-loop](../ideas/original/system-loop.md).
   - Push N placements × router presets through rungs: T0 metrics → a 1 s router → a short
     Freerouting run → full route + DRC + SI.
   - Keep the top 1/η at each rung, with MAP-Elites niches.
-  - **Partial:** best-of-N ranked by in-loop DRC reached 12/14 ([ap-sa-best](placement/ap-sa-best.md)).
-    A QD archive did not beat `jc` ([qd-archive](joint/qd-archive.md)).
+  - **Partial:** best-of-N ranked by in-loop DRC reached 12/14 ([ap-sa-best](placement/autoplace.md)).
+    A QD archive did not beat `jc` ([qd-archive](joint/jc-extensions.md)).
 
 ### Verification (V)
 
@@ -302,13 +302,13 @@ each.
 7. **Polygon-partition MCTS global router.** Partition the board by extending pad edges into
    polygons, run MCTS over polygon sequences, and re-partition after each net. An LLM gives the PUCT
    prior and the net order. Tried in a related form: MCTS did not work at our budget
-   ([mcts](joint/mcts.md)).
+   ([mcts](joint/tree-search.md)).
 8. **LLM-evolved heuristics** (FunSearch/AlphaEvolve). Evolve PathFinder costs, net and placement
    order, repair neighbourhoods and legalizer schedules, through an evaluation cascade with a
    restricted API.
 9. **Quality-diversity portfolio with legalizer repair.** MAP-Elites over area, sidedness, flow
    straightness and thermal spread, with LLM mutation operators. Tried: no gain over `jc`
-   ([qd-archive](joint/qd-archive.md)).
+   ([qd-archive](joint/jc-extensions.md)).
 10. **Netlist-conditioned diffusion placer.** Train on synthetic random legal placements whose pad
     nets connect with p ∝ exp(−l/s), using a GNN plus attention denoiser. Constraints are
     composable energy potentials with dual ascent, plus recycling and inpainting.
@@ -326,12 +326,12 @@ each.
     persists for re-tightening.
 15. **LLM as a MAPF meta-controller.** The LLM sets priorities, conflict branches, yielding nets and
     per-class costs, while CBS or PathFinder compute the paths. Our grid router uses PathFinder
-    without an LLM ([pnr-engine](joint/pnr-engine.md)).
+    without an LLM ([pnr-engine](joint/engine.md)).
 16. **ASP/WFC for tiled regions.** Enumerate valid tilings for key matrices, LED arrays and
     multichannel blocks. clingo flags contradictions, order cycles and over-subscribed edge slots.
 17. **SAT/ZDD local windows.** Solve escape and fan-out windows exactly, with vias as bridges, and
     let a ZDD enumerate the alternatives. Tried as exact CP-SAT windows: no merit
-    ([cpsat-windows](joint/cpsat-windows.md)).
+    ([cpsat-windows](joint/anneal-and-repair.md)).
 18. **Stakeholder critic agents.** PI, SI, thermal, DFM and mechanical critics advise, and a planner
     revises.
 19. **Template retargeting of reference layouts.** Extract orders, alignments and spacing variables
@@ -356,7 +356,7 @@ each.
 25. **Collision discriminator** to rerank generative samples.
 26. **MCTS over coarse placement decisions with an LLM prior.** The tree decides block-to-region,
     side and major IC orientation; rollouts are a fast placer plus a routability preview. Related
-    result: [mcts](joint/mcts.md).
+    result: [mcts](joint/tree-search.md).
 27. **PIBT/LaCAM first routing for dense fan-out,** treated as dense multi-agent path finding, then
     improved by CBS or rip-up.
 28. **Metric histograms.** Show area, vias, length, worst decap distance and crossings against prior
@@ -378,7 +378,7 @@ on branch `claude/keen-wright-mlkjv6`, and its
 [literature survey](https://github.com/magnetic-trowel/kicad-auto-everything/blob/claude/keen-wright-mlkjv6/research_notes/joint-pnr/literature-survey.md).
 The tested ideas (1–3, 6–8, 11–13, 16, 17, 19, 20, 22, 23, 26, 30, 32, 36, 43) have pages in the
 [joint area](joint/README.md); 17 and 23 were folded into the differentiable-routing test
-([soft-route-grad](joint/soft-route-grad.md)). The untested ones are below.
+([soft-route-grad](joint/forces-and-fields.md)). The untested ones are below.
 
 - **4 Congestion game.** Parts and nets are selfish players in a potential game. Iterate best
   responses to a Nash equilibrium. This is the same mechanics as negotiated congestion without
@@ -395,7 +395,7 @@ The tested ideas (1–3, 6–8, 11–13, 16, 17, 19, 20, 22, 23, 26, 30, 32, 36,
   cost, where gradients mislead.
 - **18 Copper as charge.** In an ePlace-style electrostatic density, routed copper counts as charge,
   so it pushes parts out of wiring channels. Only the overflow-pushes-pads part exists, inside
-  [soft-route-grad](joint/soft-route-grad.md).
+  [soft-route-grad](joint/forces-and-fields.md).
 - **21 Homotopy continuation of clearance.** Start with zero clearance and shrunken footprints so
   everything fits. Grow both while re-solving.
 - **24 Tutte embedding seed.** Use a barycentric embedding of the part graph with the boundary
@@ -403,7 +403,7 @@ The tested ideas (1–3, 6–8, 11–13, 16, 17, 19, 20, 22, 23, 26, 30, 32, 36,
   few vias.
 - **25 Crossing-number objective.** Minimize straight-line ratsnest crossings instead of HPWL, as a
   proxy for vias on two layers. Tried only as a term inside other objectives
-  ([collapse-cplace](joint/collapse-cplace.md), [ap-crossing-halo-ablation](placement/ap-crossing-halo-ablation.md)).
+  ([collapse-cplace](joint/layer-collapse-analysis.md), [ap-crossing-halo-ablation](placement/autoplace.md)).
 - **27 Planar sub-netlist layering.** Split the netlist into two planar layers (a thickness-2 graph),
   assign each net a layer up front, and place so that both layers stay planar.
 - **28 Multigrid V-cycle.** Place and route on a 1 mm grid, then refine to 0.5 mm and 0.1 mm,
@@ -437,9 +437,9 @@ Source:
 [research_notes/transformations/transformations.md](https://github.com/magnetic-trowel/kicad-auto-everything/blob/claude/keen-wright-mlkjv6/research_notes/transformations/transformations.md)
 on `claude/keen-wright-mlkjv6`. Each entry there gives the mapping, known results, what breaks,
 the payoff, a test plan and a novelty note. Three of them were built and run:
-- T1, min-plus best-response maps: [minplus-maps](joint/minplus-maps.md);
-- T2, exact Green's-function physics maps: [exact-physics-maps](joint/exact-physics-maps.md);
-- T4, pour-damage maps: [pour-damage-maps](joint/pour-damage-maps.md).
+- T1, min-plus best-response maps: [minplus-maps](joint/jc-extensions.md);
+- T2, exact Green's-function physics maps: [exact-physics-maps](joint/jc-extensions.md);
+- T4, pour-damage maps: [pour-damage-maps](joint/pour-models.md).
 
 The rest:
 
