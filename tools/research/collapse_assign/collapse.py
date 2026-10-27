@@ -147,7 +147,8 @@ class Lift:
                 D, occ = (self.D1, self.occ1) if self.pres > 0 else (self.D0, self.occ0)
                 n = astar(1, H, W, blockT, self.noV, D, self.D0, occ, self.occ0, self.net,
                           hist, self.pres, False, src, self.tgt, sid, bx0, by0, bx1, by1, 1e9, 0.0, tc,
-                          self.gcost, self.parent, self.visit, self.hk, self.hv, self.buf)
+                          self.gcost, self.parent, self.visit, self.hk, self.hv, self.buf,
+                          np.zeros(1, np.int64))
                 if n >= 0:
                     break
             if n < 0:

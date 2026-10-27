@@ -6,6 +6,11 @@
 
 Extracts the board with KiCad's Python, runs METHOD from methods.py, writes poses and
 copper back with KiCad's Python. Logs and a summary JSON go next to the output.
+
+Anytime (anytime.py): while the method runs, the best legal board so far is written to
+the output (atomically), so a killed attempt keeps it; a complete legal board ends the run
+early (--stop-when-routed 0 keeps going); PathFinder passes stop at budget x (1 + overrun)
+CPU s. PNR_ANYTIME=0 PNR_STOP_WHEN_ROUTED=0 PNR_OVERRUN=-1 run as before this module.
 """
 import argparse
 import json
@@ -38,6 +43,15 @@ def main():
     ap.add_argument("--spokes", action="store_true", help="reserve thermal spoke corridors")
     ap.add_argument("--zone-nets", default="route", choices=["route", "skip"])
     ap.add_argument("--opt", action="append", default=[], help="key=value method options")
+    env = os.environ.get
+    ap.add_argument("--anytime", type=int, default=int(env("PNR_ANYTIME", "1")),
+                    help="1: write the best legal board so far while the method runs")
+    ap.add_argument("--anytime-every", type=float, default=float(env("PNR_ANYTIME_EVERY", "30")),
+                    help="wall s between writes that only lower the cost (fewer open connections: at once)")
+    ap.add_argument("--stop-when-routed", type=int, default=int(env("PNR_STOP_WHEN_ROUTED", "1")),
+                    help="1: end the method at the first legal board with every connection routed")
+    ap.add_argument("--overrun", type=float, default=float(env("PNR_OVERRUN", "0.1")),
+                    help="PathFinder stops its passes past budget x (1 + overrun) CPU s; < 0: never")
     a = ap.parse_args()
     t0 = time.time()
     out = Path(a.output)
@@ -46,6 +60,7 @@ def main():
     ext = work / "extract.json"
     kicad("extract", a.input, ext)
     data = json.loads(ext.read_text())
+    import anytime
     import methods
     from world import World
     world = World(data, g=a.grid, spokes=a.spokes, zone_nets=a.zone_nets)
@@ -77,21 +92,35 @@ def main():
         fn = getattr(mod, fname)
     else:
         fn = getattr(methods, a.method.replace("-", "_"))
-    router = fn(world, seed=a.seed, budget=a.budget, log=log, **opts)
-    tracks, vias = router.export()
-    poses = {}
-    for pi, (cx, cy, ri) in world.pose.items():
-        p = world.parts[pi]
-        if p.locked or pi in world.fixed:
-            continue
-        x, y = world.xy(cx, cy)
-        from world import ROTS
-        poses[str(pi)] = dict(x=x, y=y, rot=ROTS[ri], uuid=p.uuid)
-    res = dict(poses=poses, tracks=tracks, vias=vias)
-    (work / "result.json").write_text(json.dumps(res))
-    kicad("apply", a.input, work / "result.json", out)
+    writer = anytime.Writer(kicad, a.input, out)
+    at = anytime.install(world, writer, a.budget, log, every_s=a.anytime_every, overrun=a.overrun,
+                         stop_when_routed=bool(a.stop_when_routed), enabled=bool(a.anytime), t0=t0)
+    try:
+        router = fn(world, seed=a.seed, budget=a.budget, log=log, **opts)
+    except anytime.Routed as e:
+        router = e.router
+    inflight = at.close()
+    res = anytime.export(world, router)
     st = router.stats()
+    kept = "final"
+    if at.best_payload is not None:
+        # a checkpoint on disk with fewer open connections than the method's final state
+        # (or the final state illegal) stays the output
+        fin = (0 if anytime.legal(world, router) else 1, st["unrouted"])
+        if (0, at.best[0]) < fin:
+            log(f"anytime: final state {fin} is worse than the best checkpoint {at.best}; writing that")
+            res, kept = at.best_payload, "checkpoint"
+            st.update(final_unrouted=st["unrouted"], unrouted=at.best[0])
+    (work / "result.json").write_text(json.dumps(res))
+    writer.commit(writer(res, final=True))
+    if inflight is not None:
+        inflight.join()  # its checkpoint is discarded, not committed
+    st["anytime"] = dict(at.summary(), output=kept)
     st.update(method=a.method, seed=a.seed, runtime_s=round(time.time() - t0, 1), hpwl=round(world.hpwl(), 2))
+    import router as router_mod  # work counters of every router this run made (router.PROF)
+    st.update(fast=",".join(sorted(router_mod.FAST)) or None, cpu_s=round(time.process_time(), 1),
+              work={k: (round(v, 2) if isinstance(v, float) and not v.is_integer() else int(v))
+                    for k, v in sorted(router_mod.PROF.items())})
     log(f"done {st}")
     (work / "pnr_summary.json").write_text(json.dumps(st))
     print(json.dumps(st))
