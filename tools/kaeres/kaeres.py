@@ -402,6 +402,8 @@ def corpus_rows():
         return {r["id"]: r for r in (json.loads(l) for l in f if l.strip())}
 
 
+INPUT_KIND = {"joint": "place", "joint-fixed": "place-fixed"}  # task kind -> the input it runs on
+
 LARGE_MB = 10  # board files above this are the slow, memory-heavy jobs
 
 
@@ -693,9 +695,12 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     steps = {}
     bugs = Bugs(bid)
     kinds = sorted({"route"} | {m["recipe"]["kind"] for m, _ in items})
+    # prepare builds task inputs; joint kinds run on the matching place input (kaebench's
+    # prepare.INPUT_KIND), which must be asked for even when no place method is in the group
+    inputs = sorted({INPUT_KIND.get(k, k) for k in kinds})
     with Step("prepare", steps):
         rc, to = run_logged(kb + ["prepare-dir", "--dir", ws / "src", "--board-glob", "board.kicad_pcb",
-                                  "--only", bid, "--kinds", ",".join(kinds), "-j", "1"], log, genv, timeout=3 * 3600)
+                                  "--only", bid, "--kinds", ",".join(inputs), "-j", "1"], log, genv, timeout=3 * 3600)
     task = work / "tasks" / bid
     tj = task / "task.json"
     if not tj.exists():
