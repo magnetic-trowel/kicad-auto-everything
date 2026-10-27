@@ -15,7 +15,7 @@
     3. power and ground (P/G) tightly coupled;
     4. high-speed (HS) signals buried between planes;
     5. multiple ground planes.
-  - Eight layers is the minimum that meets all five. Layers beyond eight are for routing only.
+  - Eight layers is the minimum that meets all five with more than two routing layers; Ott's 6-layer G/S/G/P/S/G meets all five with only two [I]. Layers beyond eight are for routing only.
 - **Hartley's two prohibitions:** never two signal layers on one plane, and never stacked power planes with no ground nearby. He also rejects thick 1.6 mm S/P/G/S and S/P/S/S/G/S stacks.
 - **Experts disagree on two stacks.** Ott and Hartley disagree on the common 6-layer stack, and TI and Ott disagree on stripline for HS pairs. Both are **warnings with a selector**, not rejections.
 - **Choose the stackup before placement.** It fixes each layer's reference plane, which vias change the reference, stub lengths, and the width and gap per layer.

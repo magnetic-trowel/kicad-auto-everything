@@ -8,7 +8,7 @@
   - BO reverse-engineering of expert layouts (GenLeaf);
   - solver distillation plus feasibility RL (FOARL);
   - calibrated jitter and part swaps for hard negatives [P].
-- **Scale:** hundreds (426 CCGs) to thousands (2,105 schematics) of expert examples suffice for a 7–20B LoRA *when the representation is right*; a few thousand hard RL prompts (3.1K) suffice [P].
+- **Scale:** hundreds (426 CCGs) to thousands (2,105 schematics) of expert examples suffice for a 7–20B LoRA *when the representation is right*, at least in distribution: out of distribution, SchGen's fine-tuned model scored 65.6% valid vs GPT-5.2's 77.0% [I]. A few thousand hard RL prompts (3.1K) sufficed for CodeV-R1 [P].
 - For PCBs, the highest-value generator is **round-trip constraint extraction** from human boards, accepted only when re-solving reproduces the human result [I].
 
 ## Key facts
@@ -69,7 +69,9 @@
 ### Training order
 DevFormer-style pose/assignment model → **SFT** (7–20B LoRA, distilled CoT, anchor-relative DSL) → **GRPO/DAPO** (groups of 4–5 out of 16–36 samples) → expert A/B rankings for a ranker or DPO.
 
-**Open data:** mine relative-offset graphs from the 679 KiCad-9 PCBWorld D3 boards (each keeps its source licence; tier rules apply) as an open CCG equivalent. See [data-pipeline-plan.md](data-pipeline-plan.md).
+Before distilling CoT, check the base-model licence and the teacher model's terms for training on its outputs and releasing the weights, and record the teacher in the data card ([LICENSING.md](../../../LICENSING.md)).
+
+**Open data:** mine relative-offset graphs as an open CCG equivalent only from PCBWorld D3's tier-A (permissive) boards, roughly 100 of the 677 in `d3.json` after a README/licence audit: 356 have no licence and 45 are NOASSERTION ([open-board-sources.md](open-board-sources.md)). Never mine the 119 evaluation boards in `d3.json` (99 D3-A + 10 D3-B + 10 D3-C), since D3-A/B is our routing benchmark. See [data-pipeline-plan.md](data-pipeline-plan.md).
 
 ## Conflicts and open questions
 

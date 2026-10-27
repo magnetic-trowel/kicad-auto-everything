@@ -4,7 +4,7 @@
 - Experts cite: too many vias; wasted space from strict X/Y layer bias; cleanup slower than manual routing; setup complexity ("too many rules can bog it down"); blindness to intent (current, noise, return paths, clocks, analog); and a **bottom-up, one-connection-at-a-time process that clashes with top-down planning**.
 - "Ugly" has two causes: **legality/completion failures** (fix with better engines + DRC loops) and **intent failures** (fix with explicit constraints and relational intent from a planner).
 - Vendors answered with guided automation (sketch routing, topological maps, flow/bundle planning, byte-lane tuning) that needs a human to draw — an LLM that **generates the sketch/flow plan from schematic semantics** fills exactly that gap.
-- Humans optimize structure, not just length: PCBWorld's human boards are longer with more vias than Freerouting's, yet are the gold standard.
+- Humans optimize structure, not just length: PCBWorld's human boards are longer with more vias than Freerouting's, yet are the gold standard (this holds on D3-B, where Freerouting completes every connection; on D3-A it leaves ~9% unrouted, and PCBench cleaning re-routed pour nets with an autorouter [V]).
 
 ## Key facts
 
@@ -19,8 +19,8 @@
 - Cadence: Interconnect Flow Planner bundles; auto-interactive breakout (AiBT), trunk routing (AiTR), delay tuning (AiDT) [S/V].
 
 **Benchmark evidence**
-- PCBWorld D3-A: Freerouting WL 156 mm / 0.74 vias vs human 170 mm / 1.18 at CP 0.80 ([PCBWorld](pcbworld.md)); rule-based routers "rarely complete complex production boards end-to-end".
-- Freerouting Tier D stress boards only 13.6–18.2% clean ([freerouting](freerouting.md)).
+- PCBWorld D3-A: Freerouting WL 156 mm / 0.74 vias vs human 170 mm / 1.18 at CP 0.80, but at routability 0.91, so not like-for-like; D3-B (routability 1.00): 535 mm / 3.48 vs 570 mm / 6.70 ([PCBWorld](pcbworld.md)); rule-based routers "rarely complete complex production boards end-to-end".
+- Freerouting Tier D stress boards only 13.6–18.2% clean on its own nightly suite (RC2/RC3, its own check) ([freerouting](freerouting.md)).
 - OmniRouting: LMMs average 69.8–431.3 DRC violations vs 0.8 human; GND routed as traces instead of pours ([LLM evidence](llm-routing-evidence.md)).
 - Even AI-router vendors scope out SI-critical classes (DeepPCB: no DDR, length matching, impedance, RF); a competitor says DeepPCB's checks are geometric only [V].
 - NVIDIA ISPD'24: PCB design "typically semi-automated or fully manual" [S].

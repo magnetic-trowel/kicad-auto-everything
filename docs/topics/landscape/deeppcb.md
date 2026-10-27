@@ -47,7 +47,7 @@
   - Completion: mean 96.1%, median 100%; 87% of boards ≥95%.
   - A 5,208-airwire 8-layer board took ~14 h. "2–3 days by hand → ~3 hours plus 30–60 minutes cleanup" [V] ([routing time](https://deeppcb.ai/pcb-routing-time/)).
 - **KiCad page:** "27,721 Boards, 95.6% Hit 95%+ Completion", "Median 96.9%", "11,000+ KiCad users" [V].
-- **PCBWorld-Bench (one attempt, 3 min engine time):** clean-pass 0.929 on D3-A and 0.800 on D3-B (3 attempts each), with 0.59× and 0.50× the reference vias at 0.94× and 0.95× the length. Almost all boards are 2-layer. Paper baselines are in [measured-tool-comparisons.md](measured-tool-comparisons.md) [V] ([post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)).
+- **PCBWorld-Bench (3 min engine time):** clean-pass 0.929 on D3-A (92/99 boards, one attempt each) and 0.800 on D3-B (24/30 attempts: 3 per board on the 10 evaluated boards), with 0.59× and 0.50× the reference vias at 0.94× and 0.95× the length. Almost all boards are 2-layer. Paper baselines are in [measured-tool-comparisons.md](measured-tool-comparisons.md) [V] ([post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)).
 - **Versus Quilter** on STRF (98 airwires), PocketBeagle (290) and BeagleConnect Freedom (414): completion 99/96/97% vs 94/82/87%; vias 29/135/191 vs 58/163/235; first result in 1–2 min vs 15–20 min. Run by DeepPCB, unreplicated [V].
 - **Versus GPT-6 Astra** on "microduck head" (70×60 mm, 4 layers, 27 nets): 132/132 connections at 1,104 mm vs 1,282 mm.
   - DeepPCB used 64 vias = 14 layer changes + 50 drops to an inner split power plane; Astra used 32, 9 of them in pads.

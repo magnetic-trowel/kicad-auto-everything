@@ -1,7 +1,7 @@
 # What PCB designers want from AI, and why they distrust it
 
 **TL;DR**
-- In the one large 2026 survey, **91%** of 400 North American engineers had used AI in PCB design. **75%** want it as an **acceleration layer inside existing workflows**, and the top wish is **real-time error detection** [V].
+- In the one large 2026 survey, **91%** of 400 North American engineers had used AI in PCB design. **75%** want it as an **acceleration layer inside existing workflows**, and the wishes cited were **real-time error detection** and fully autonomous text-to-PCB (unranked) [V].
 - **Concerns:**
   - trust and auditability (decades of bad autorouters);
   - **RL opacity** ("can't explain their reasoning");
@@ -65,7 +65,7 @@
   - a read-only reviewer found 22 bugs in comma.ai's challenge ($1000 prize);
   - "it should not invent findings. If there is no evidence, there is no report"; "A bad AI reviewer is worse than no reviewer"; review means "reconstructing the intent of the engineer"; "intent lives outside the file".
 - **tscircuit** [V]: "Sequential Optimal Packing", in which "every individual packing decision is easy to understand". Weak spots (order, local optima) are mitigated by hardening constraints, which "LLM loops can easily adapt" ([blog](https://blog.autorouting.com/p/sequential-optimal-packing-for-pcb)).
-- **Cherry Blossom:** "The same model scores 69.3% designing circuits on its own and produces boards that come back working 97% of the time once real part data and a verification gate are wrapped around it". Four hurdles: netlist, real parts and footprints, placement and routing ("closest to solved"), manufacturability [V].
+- **Cherry Blossom:** "The same model scores 69.3% designing circuits on its own and produces boards that come back working 97% of the time once real part data and a verification gate are wrapped around it". The 69.3% EEBench score is disputed (see [../llm/pcb-llm-benchmarks.md](../llm/pcb-llm-benchmarks.md)). Four hurdles: netlist, real parts and footprints, placement and routing ("closest to solved"), manufacturability [V].
 - **Where designers draw the line:** high-speed, RF, HDI/BGA and novel analog stay with humans [S/V].
 
 ## Recommendations for our system

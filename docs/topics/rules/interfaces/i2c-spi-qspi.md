@@ -5,7 +5,7 @@
 **TL;DR**
 - **I2C:** the rise-time and bus-capacitance limits set the pull-up window.
   - Limits: t_r ≤1000 / 300 / 120 ns and C_b ≤400 / 400 / 550 pF (Standard-mode / Fast-mode / Fast-mode Plus).
-  - Pull-up window: R_P ∈ [(VCC − 0.4)/3 mA, t_r/(0.8473·C_b)].
+  - Pull-up window: R_P ∈ [(VCC − 0.4)/I_OL, t_r/(0.8473·C_b)], with I_OL = 3 / 3 / 20 mA (Sm / Fm / Fm+) [I; NXP UM10204].
   - We can check this automatically. Estimate C_b from the stackup's capacitance per mm plus the pin capacitances.
 - **QSPI at 133 MHz (Infineon):** IO-to-IO ±30 mil, SCK-to-IO ±200 mil, and ±1500 mil. These are first-pass snippet values; check AN240090 for exactly what each tolerance applies to.
 - **Slow multi-drop clocks (Qualcomm SLEEP_CLK):** star branches must differ by <30 mm; daisy-chain stubs must be <7 mm.
@@ -24,7 +24,7 @@
 | Fast-plus (Fm+) | 120 ns | 550 pF |
 
 Pull-up bounds:
-- Output low is VOL ≤0.4 V at 3 mA.
+- Output low is VOL ≤0.4 V at 3 mA (Sm/Fm). Fm+ specifies 0.4 V at 20 mA [I; NXP UM10204]; with 3 mA the Fm+ window is empty (3.3 V, 300 pF: R_min 967 Ω > R_max 472 Ω), with 20 mA R_min is 145 Ω.
 - R_P(min) = (VCC − VOL)/IOL.
 - R_P(max) = t_r/(0.8473·C_b).
 
@@ -50,7 +50,7 @@ LearnEMC says "Critical nets should be routed in a daisy chain fashion with no s
 
 | ID | Rule | Check |
 |---|---|---|
-| I2C-RC | R_P within [(VCC−0.4)/3 mA, t_r/(0.8473·C_b)] | M + G (C_b from trace pF/mm + pins) |
+| I2C-RC | R_P within [(VCC−0.4)/I_OL, t_r/(0.8473·C_b)]; I_OL 3 mA (Sm/Fm), 20 mA (Fm+) | M + G (C_b from trace pF/mm + pins) |
 | I2C-CB | C_b ≤400 pF (Sm/Fm), ≤550 pF (Fm+) | G/M |
 | CLK-STAR | Branch Δ <30 mm; daisy stub <7 mm | G |
 

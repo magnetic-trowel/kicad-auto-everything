@@ -3,7 +3,7 @@
 **TL;DR**
 - **Driver next to the FET.** Gate and return are routed as a pair, wide and short. The Kelvin source return is top priority, because common-source inductance causes false turn-on and ringing.
 - **EPC overshoot-free criterion:** L_G ≤ ¼·(R_G + R_Source)²·C_GS.
-- **Bootstrap (CORRECTED):** C_boot **≥** 10 × C_g and C_VDD **≥** 10 × C_boot. These are minimums, not "about 10×". Place them at the driver pins with the smallest cap nearest.
+- **Bootstrap (CORRECTED):** C_boot **≥** 10 × C_g and C_VDD **≥** 10 × C_boot. These are minimums, not "about 10×". Place them at the driver pins. For GaN drivers TI SLUAAM3 puts the smaller VDD cap nearest; otherwise rank by mounting inductance ([../decoupling-pdn.md](../decoupling-pdn.md)).
 - **The driver-supply (INTVCC) loop is a second hot loop,** about 20 dB below the input loop.
 - **Edge-rate control** (series bootstrap R) is a deliberate EMI-vs-efficiency knob.
 
@@ -27,7 +27,7 @@
 | ID | Rule | Check | Class |
 |---|---|---|---|
 | PWR-11 | Driver adjacent to the FET; gate and return paired; Kelvin source pin used | Gate trace length; gate/return separation; Kelvin pin connected | S1, VERIFIED |
-| PWR-12 | Boot cap at BOOT/SW, VDD bypass at the driver pins, smallest nearest; C_boot ≥10 C_g, C_VDD ≥10 C_boot | Pad distance + schematic value check | S2, soft strong |
+| PWR-12 | Boot cap at BOOT/SW, VDD bypass at the driver pins (smaller nearest for GaN drivers, SLUAAM3); C_boot ≥10 C_g, C_VDD ≥10 C_boot | Pad distance + schematic value check | S2, soft strong |
 | MOT-03 | Gate ≥20 mil @ 1 oz, paired with SHx / LS source | Parallel-run coupling; width | S2 |
 
 ## Recommendations for our system

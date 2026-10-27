@@ -3,7 +3,7 @@
 **Scope:** this doc covers the *LLM-role* view and the systems the placement-area doc does not. PCBAgent, ModuPlace, Li et al. DAC'26, VeoPlace and MAGE are covered in full in [../placement/llm-guided-placement.md](../placement/llm-guided-placement.md), and non-LLM PCB placers in [../placement/pcb-placers-2022-2026.md](../placement/pcb-placers-2022-2026.md).
 
 **TL;DR**
-- **Every PCB result in which an LLM-involved system beats classical or commercial tools keeps geometry in a solver** [I]:
+- **Every PCB result in which an LLM-involved system beats classical or commercial tools with a legal or DRC-clean output keeps geometry in a solver** [I]:
   - Li et al. DAC'26: LLM grouping plus MILP legalization; −55%/−73% WL/vias vs a commercial placer, −15%/−13% vs Quilter [S, via survey];
   - ModuPlace: LLM constraint graph plus hierarchical placer [P];
   - PCBAgent: RL with legality masks; the LLM only reweights [P].
@@ -48,11 +48,11 @@
 ## Recommendations for our system
 
 1. The LLM produces hierarchy, grouping, sides and a relation graph; our solver places and legalizes (MILP/CP-SAT). The LLM never emits final coordinates. See [interfaces-relations-vs-coordinates.md](interfaces-relations-vs-coordinates.md) [I].
-2. **Weak anchors only** (about 1% weight for LLM regions), validated against a random-region control.
+2. **Weak anchors only,** relative to the wirelength and density terms, validated against a random-region control. VeoPlace's best λ_A = 0.01 (0.1–1.0 over-constrained) is an absolute coefficient in its own benchmark's units, not a 1% share, so calibrate ours by a sweep [I].
 3. Reuse VeoPlace's prompt contract and context selection for per-block rule-area proposals.
 4. Detect repeated channels, place one and replicate (KiCad multichannel / Repeat Layout), then legalize globally.
 5. Have the LLM **explain** any parameter or weight it proposes (HyperPlace pattern), stored in the intent record (see [../ux/design-rationale-and-intent-record.md](../ux/design-rationale-and-intent-record.md)).
-6. Plan a fine-tuned constraint-graph model (an open CCG dataset mined from PCBWorld D3 boards).
+6. Plan a fine-tuned constraint-graph model (an open CCG dataset mined from PCBWorld D3's tier-A boards only, excluding the evaluation boards; see [../data/training-recipes.md](../data/training-recipes.md)).
 
 ## Conflicts and open questions
 

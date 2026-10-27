@@ -6,8 +6,8 @@
 - **Parser gotchas:**
   - A second `condition` silently **overwrites** the first.
   - Each constraint type may appear only once per rule.
-  - The **last** matching rule wins.
-  - All operators have **equal precedence, evaluated left to right** [P].
+  - The **last** matching rule wins, but a footprint net tie forces clearance 0 and pad/footprint clearance overrides beat every rule (see *Clearance resolution*).
+  - **`&&` binds looser than `||`** (the reverse of C), and comparisons bind tighter than both. The user doc's "same precedence, left to right" is wrong, so always parenthesise (corrected from the 10.0 grammar) [P].
 - **`microvia_*` and `isStackedVia` are master-only**; the master keyword is `hole_aspect_ratio`. `track_angle` and `track_segment_length` *are* in 10.0 (corrected, VK) [P].
 - **What DRC can and cannot express:**
   - Can: courtyard spacing, side or orientation (via `assertion`), rule-area containment, edge and keepout distances.
@@ -25,10 +25,16 @@ Sources: [pcbnew_advanced.adoc @10.0](https://gitlab.com/kicad/services/kicad-do
   - A second `layer` clause is an error.
   - "Rule already has a '%s' constraint" is raised for a repeated constraint type.
 - **Evaluation order:** rules are "evaluated in reverse order" and the first match wins, so put specific rules **later**.
+- **Clearance resolution** (`DRC_ENGINE::EvalRules`) [P] ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)):
+  1. A footprint net tie forces clearance 0 (source "net tie").
+  2. Pad and footprint clearance overrides (`Clearance_Override`) beat every custom rule. They are floored at Board Setup's minimum clearance (hole-clearance overrides at its minimum hole clearance).
+  3. Otherwise the last matching custom rule's value is used as is, with no board-minimum floor, so a negative `min` still allows overlap.
+  4. With no matching custom rule, the net-class value is maxed with local clearances (e.g. zones) and floored at the board minimum; implicit diff-pair gaps are floored the same way. The source then names the net class, the local item or "board minimum".
+  - So the violation `<source>` is a rule name only in case 3 ([drc-report-and-repair-loop.md](drc-report-and-repair-loop.md)).
 - **Severity:** `ignore` rules are still evaluated and "can still override previous rules". The interactive router does **not** observe `ignore`; it observes error, warning and exclusion.
 - **Conditions:**
   - Objects `A` and `B` are tested in both orders; `AB.` is used for pair functions.
-  - `== != > >= < <= && || !` have equal precedence, left to right.
+  - Precedence, lowest to highest: `&&` < `||` < comparisons (`== != > >= < <=`, non-associative) < `!` < `+ -` < `* /`. So `a && b || c` parses as `a && (b || c)` and `!x == y` as `(!x) == y`. The 10.0 user doc says "All the boolean operators have the same precedence and are evaluated in order from left to right"; the grammar disagrees (corrected) [P] ([grammar.lemon @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/libeval_compiler/grammar.lemon)).
   - Booleans are bare (`A.Do_not_populate`); there are no `true`/`false` literals; `null` is comparable.
   - A unitless value is in nm, or degrees for angles.
 - **Units:** resolver error text "must be mm, in, mil, deg, fs, or ps". Time units elsewhere raise "Time based units not allowed for constraint type"; mixing time and length raises "Mixed units" [P] ([pcbexpr_evaluator.cpp](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/pcbexpr_evaluator.cpp)).
@@ -145,7 +151,8 @@ Source: [pcbexpr_functions.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob
   3. Emit general rules first, specific rules last.
   4. Emit only `mm`, `deg` and `ps`.
   5. Use stable `IR:<id>:<slug>` rule names. Feedback mapping is in [drc-report-and-repair-loop.md](drc-report-and-repair-loop.md).
-- **High-speed classes, time-domain first:** a tuning profile per net class (written via `SetNetClasses`, whose `tuning_profile` field exists since 10.0.0), plus `length`/`skew` in ps with `(within_diff_pairs)`. DeepPCB and Quilter explicitly leave this space open [I].
+  6. Write fab minimums into Board Setup (`.kicad_pro`) so net-class values and overrides are floored there, and clamp every emitted rule to the fab floor in the compiler, because a matching custom rule bypasses the board minimum. Audit pad and footprint `Clearance_Override` values, which beat compiled rules.
+- **High-speed classes, time-domain first:** a tuning profile per net class (on 10.x the profiles must exist in `.kicad_pro`: 10.0 IPC has no call that creates them, and the net class's `tuning_profile` field, settable via `SetNetClasses` since 10.0.0, only names one; kipy 0.8.x cannot call `SetNetClasses`) [P] ([project_settings.proto @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/api/proto/common/types/project_settings.proto)), plus `length`/`skew` in ps with `(within_diff_pairs)`. DeepPCB and Quilter explicitly leave this space open [I].
 - **Compile placement intent into native DRC** where possible: courtyard spacing; `assertion` on `Layer` and `Orientation`; `enclosedByArea`/`intersectsArea` against named rule areas; component classes; edge and keepout rules. Build our own checker only for pairwise distance, alignment, symmetry, loop area, and return path on 10.x [I].
 - **Re-target return-path checks** to master's `return_path` if it ships in 11.0. Keep a second emitter for the KiCad 11 `CustomRule` proto ([ipc-api-10-vs-11.md](ipc-api-10-vs-11.md)) [I].
 - **Never trust net names alone for diff pairs.** Confirm detected pairs, e.g. against XTAL false positives [I].

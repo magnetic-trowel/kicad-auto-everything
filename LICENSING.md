@@ -15,7 +15,8 @@ None of this is legal advice.
 | Source code (Python, Rust, MCP servers, KiCad plugins, scripts) | GNU GPL v3 or later | `GPL-3.0-or-later` |
 | Documentation, research notes, reports (`*.md`, `docs/`, `research_notes/`, `reports/`) | Creative Commons Attribution 4.0 | `CC-BY-4.0` |
 | Machine-readable layout rule packs and constraint/intent schemas | CC0 1.0 (public domain dedication) | `CC0-1.0` |
-| Datasets, benchmark manifests, and labels we create | Community Data License Agreement – Permissive 2.0 | `CDLA-Permissive-2.0` |
+| Datasets, benchmark manifests, board-id suites (`bench/suites/`), and labels we create | Community Data License Agreement – Permissive 2.0 | `CDLA-Permissive-2.0` |
+| PCBWorld D3 suites (`bench/suites/pcbworld-d3*-test.txt`), derived from LGAI-Research/PCBWorld `configs/datasets/d3.json` @ 1989a93 | BSD 3-Clause, © 2026 LG Management Development Institute Co., Ltd. (LG AI Research) | `BSD-3-Clause` |
 | Trained model weights we release | Apache License 2.0 | `Apache-2.0` |
 
 The root [`LICENSE`](LICENSE) is the GPL v3 text. Per-file licensing is
@@ -23,7 +24,8 @@ declared in [`REUSE.toml`](REUSE.toml) and SPDX headers, following
 [REUSE](https://reuse.software); full texts are in [`LICENSES/`](LICENSES).
 When the first rule pack or weights file lands, add its license text to
 `LICENSES/` and an annotation to `REUSE.toml` (as done for the benchmark
-results in `tools/research/`).
+results in `tools/research/`). Data derived from a third-party file keeps that
+file's license and copyright line, as for the PCBWorld suites.
 
 New source files should start with:
 

@@ -10,7 +10,7 @@
 - **Each leg returns under itself.** Pairs are not self-returning, so every return-path rule applies to each leg.
 - **Skew turns differential signal into common mode.** 20% skew relative to t_r gives 10% common mode, and common mode dominates both EMI and crosstalk. Budget skew as skew_max = min(vendor spec, ≈0.1·t_r), and correct it with **running-skew** compensation placed near the mismatch.
 - **Coupling closer than about 0.5 mm buys no extra EMI benefit**, because driver imbalance dominates. Choose the gap for Zdiff and density. Rounded corners do **not** remove skew.
-- **TI's absolute keep-outs:**
+- **TI's absolute keep-outs**, scoped to high-speed interface pairs on TI processors (e.g. USB, PCIe, SATA, HDMI; hard only within that declared scope, [VR] §3):
   - 30 mil to any signal;
   - 50 mil to clocks;
   - 5W between pairs.
@@ -69,7 +69,7 @@
   - Put GND vias beside every differential via pair.
   - Keep via counts equal on both legs.
   - Route into connector pads from the non-stub end.
-- **Constraints to emit:** `diff_pair_gap`, `diff_pair_uncoupled (max 1.14mm)`, `skew within_diff_pairs`, `via_count`, and pair-to-other clearances of 0.762 mm (30 mil) and 1.27 mm (50 mil to clocks). Interface packs override these defaults (e.g. [interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md), [interfaces/pcie.md](interfaces/pcie.md), [interfaces/ddr.md](interfaces/ddr.md)).
+- **Constraints to emit:** `diff_pair_gap`, `diff_pair_uncoupled (max 1.14mm)`, `skew within_diff_pairs`, `via_count`, and, for high-speed interface pairs (TI's scope), pair-to-other clearances of 0.762 mm (30 mil) and 1.27 mm (50 mil to clocks). Other pairs take their spacing from the crosstalk budget ([si-fundamentals.md](si-fundamentals.md)). Interface packs override these defaults (e.g. [interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md), [interfaces/pcie.md](interfaces/pcie.md), [interfaces/ddr.md](interfaces/ddr.md)).
 
 ## Conflicts and open questions
 - **Vendor intra-pair skew differs by up to 14× for USB3.** See [interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md).

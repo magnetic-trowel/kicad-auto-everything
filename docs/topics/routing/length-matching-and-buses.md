@@ -4,7 +4,7 @@
 - Academic length matching evolved from Lagrangian-relaxation resource allocation during routing → gridless **area assignment** (BSG-Route: 88 s vs >1 day) → LP/ILP/flow area assignment for any-direction multilayer boards (2024–26).
 - In practice tools tune **after** routing with pattern generators (Altium accordion/trombone/sawtooth; KiCad greedy fill-then-trim), which fails when neighbours have consumed the space.
 - **Reserve meander area during planning**: three independent lines (area-assignment research, Situs pass design, TopoR trapezoids) agree.
-- Dense meanders **speed signals up via self-crosstalk** (Tseng ICCAD'13) — meander pitch/amplitude must be explicit rules (pitch ≥3w).
+- Dense meanders **speed signals up via self-crosstalk** (Tseng ICCAD'13) — meander pitch/amplitude must be explicit rules, taken from the per-interface rule pack (TopoR's generic "pitch usually ≥3w" is looser than the DDR, USB2 and PCIe packs).
 - Bus untangling is O(n) for one-sided single detours; **no ICCAD CAD Contest problem on PCB routing exists (2015–2026)**.
 
 ## Key facts
@@ -44,7 +44,7 @@
 ## Recommendations for our system
 - Convert DDR/bus constraints (LLM-read from datasheets) into per-net **extension budgets** and keep-out **meander regions** allocated before bulk routing (BSG/LP-style area assignment) [I].
 - Route buses with reserved area, then tune with KiCad PNS meanders (point-to-point; check chain-level fields) or KRT trombones [I].
-- Make meander rules explicit LLM-set constraints: spacing ≥3w, min corner radius ≥ half width, avoid tight meanders (Tseng); verify by a length-group spread / skew check [I].
+- Make meander rules explicit LLM-set constraints from the interface's rule pack: e.g. DDR centre-to-centre ≥5W including serpentines ([DDR](../rules/interfaces/ddr.md)), USB2 meander gap ≥5X with X = max(W, H) ([USB2](../rules/interfaces/usb2.md)), PCIe serpentine segments ≥ max(3W, 3H) ([PCIe](../rules/interfaces/pcie.md)); TopoR's pitch ≥3w only as a generic fallback; min corner radius ≥ half width; avoid tight meanders (Tseng); verify by a length-group spread / skew check [I].
 - Untangle buses before routing (O(n) single detour); prefer allowed bit swaps (LLM decision) that remove the twist entirely ([escape](escape-routing.md)) [I].
 - Relation API: `match_group(nets, tol_ps, reserve_area=region)` / `route_matched(nets, tol_class)` ([LLM routing evidence](llm-routing-evidence.md)) [I].
 

@@ -10,7 +10,7 @@
 - **The radiators are the cables and the chassis.** Below about 100 MHz they are the only efficient antennas. About **1 mV between two cable reference points can fail Class B** (100 µV under stricter limits). So EMC placement means never letting a voltage develop between connectors.
 - **Connector placement:** all cabled connectors on one edge or one corner, no high-speed circuitry between connectors, I/O devices within about 2 cm of their connector, other parts at least 2 cm away. These are LearnEMC defaults, labelled "situational".
 - **Protection parts** are best written as **comparative topology constraints**: connector → TVS → IC, with no via or stub before the TVS and a GND via right at the TVS pad. TI gives no millimetre value. The "TVS within 5–10 mm" and "CMC within 5 mm" figures are soft.
-- **Edges:** keep high-speed traces ≥90 mil from the reference-plane edge (TI) and ≥2h from the board edge (LearnEMC). Plane edges need a zone-aware check, because `edge_clearance` covers only Edge.Cuts.
+- **Edges:** keep high-speed differential pairs ≥90 mil from the reference-plane edge (TI's HS-interface scope) and fast traces ≥2h from the board edge (LearnEMC). Plane edges need a zone-aware check, because `edge_clearance` covers only Edge.Cuts.
 - **Stitching is contested.** Perimeter rings versus distributed vias is unresolved, and no primary source gives λ/20 or 3–5 mm. Measure the largest unstitched region instead. Rank findings by estimated common-mode voltage, not by rule count.
 
 ## Key facts
@@ -121,12 +121,12 @@
 - **No primary source gives λ/20 or a 3–5 mm stitching pitch.** λ/20 is Ott's *aperture* red flag: 6" at 100 MHz.
 - **Split boundaries:** TPS case study, stitch every **10–15 mm**. The design failed at 40–50 mm and passed at 12 mm. "Above 100 MHz the slot … acts as an effective antenna" [VERIFIED, medium authority, soft].
 - **Other figures:**
-  - Johnson: a via row at about ¼" pitch, and a 10:1 signal:ground via ratio.
+  - Johnson: a via row at about ¼" pitch, and a 10:1 signal:ground via ratio for 0.063" vias at about 500 ps edges (SerDes pairs follow the vendor return-via rules in [diff-pairs.md](diff-pairs.md)).
   - u-blox: a stitched GND ring at the board edge, with power planes kept back from it.
   - KiCad master `PCB_VIA_STITCH`: default pitch max(2 mm, 2× via diameter).
 
 ### Grounding and chassis
-- **One ground.** Hubing 2019 lists "more than one ground" as MOST EGREGIOUS and calls for "1 solid ground plane under all digital logic" ([slides](https://r6.ieee.org/scv-emcs/wp-content/uploads/sites/111/022019ToddHubing.pdf) [P]). Clearing ground under magnetics, inverters or HV is fine; gapping it is not.
+- **One ground.** Hubing 2019 lists "more than one ground" as MOST EGREGIOUS and calls for "1 solid ground plane under all digital logic" ([slides](https://r6.ieee.org/scv-emcs/wp-content/uploads/sites/111/022019ToddHubing.pdf) [P]). Clearing ground under magnetics, inverters or HV is fine; gapping it is not. Required galvanic isolation barriers are outside this rule ([isolation-creepage.md](isolation-creepage.md)).
 - **Chassis bonding:** a chassis layer *overlapping* digital ground, bonded with multiple SMT caps, plus one low-frequency connection. The goal is low impedance above 30 MHz and isolation below about 100 kHz.
   - Never a single-point bond at the I/O by default, and never at the oscillator.
   - "Bond (at RF) everything that leaves the board." Near metal structure: "Connect to it!"
@@ -226,7 +226,7 @@ Steps 1–3 are hard, anchor-relative constraints. Steps 4–6 are soft costs; n
 - **Write TVS and CMC rules as comparative constraints:** d(TVS, connector) < d(TVS, IC), zero vias before the TVS, and a GND via at the TVS pad. Never use millimetre DRC errors for these.
 - **Edges per layer:**
   - `edge_clearance` ≥2h for fast classes;
-  - a geometric check for ≥90 mil (or w/2 + 3h) from plane edges;
+  - a geometric check for ≥90 mil from plane edges on HS differential pairs (TI), or w/2 + 3h otherwise;
   - keep-out rule areas for the I/O zone.
 - **Stitching:** use a single "largest unstitched region" metric, which avoids settling the perimeter-vs-distributed debate. Use KiCad master's GUARD generator for fences.
 - **Optional footprints:** always add them (CMF 0 Ω, TVS, shield-can pads, chassis R/C) when compliance is uncertain.

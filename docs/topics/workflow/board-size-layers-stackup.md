@@ -3,7 +3,7 @@
 **TL;DR**
 - Board size is usually set by the enclosure. When it is free, don't over-constrain it: needed space is routinely underestimated.
 - Check that parts fit before placing them: an area estimate plus a quick packer or autoplace run (Olney's only accepted use of autoplace).
-- Layer count is the minimum that gives every high-speed signal a continuous reference plane, every power domain enough copper and fine-pitch parts an escape path. Add a pair of layers if channel use is above 70%, and validate with a test autoroute.
+- Layer count is the minimum that gives every high-speed signal a continuous reference plane, every power domain enough copper and fine-pitch parts an escape path. Add a pair of layers if channel use is above 70% (one vendor blog, NextPCB; "channel use" is not defined), and validate with a test autoroute.
 - Choose the stackup from the fab's standard stackups. If the computed impedance width is unreasonable, pick another stackup or ask the fab (craftyjon). Experts call the stackup the single most critical, most often wrong decision.
 - Hi-rel mode: IPC-2221 Class 3 plus the relevant sectional standard, with test coupons on production panels (NASA).
 
@@ -16,7 +16,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 | Size | "If you don't have any need to limit the size of the board, don't limit it too much. Usually the needed space and the space taken by the components+connections are underestimated" | [KiCad forum, eelik](https://forum.kicad.info/t/strategy-to-use-for-placing-components/23682) [P] |
 | Fit test | Use autoplacement only "to see if all the components will fit inside the board outline before starting placement. If not, then you can re-evaluate the packaging or reduce functionality" | [Olney 2012](https://iconnect007.com/article/72046/beyond-design-interactive-placement-and-routing-strategies/72049/design) [P] |
 | Mechanics first | "Define size, shape, and mechanical features prior to starting layout"; "Start with a small layer count then increase if you need it"; every signal layer needs a GND reference; consider panelization efficiency | [Pikafu](https://github.com/Pikafu/pcb_design) [P] |
-| Layer count rule | Choose "the minimum" giving "every high-speed signal … a continuous reference plane, every power domain … adequate copper, and every fine-pitch component [a clean] escape. Then add one pair of layers as margin if your routing density exceeds 70% of available channels" | [NextPCB](https://www.nextpcb.com/blog/how-many-layers-can-a-pcb-have) [P] |
+| Layer count rule | Choose "the minimum" giving "every high-speed signal … a continuous reference plane, every power domain … adequate copper, and every fine-pitch component [a clean] escape. Then add one pair of layers as margin if your routing density exceeds 70% of available channels" | [NextPCB](https://www.nextpcb.com/blog/how-many-layers-can-a-pcb-have) [P, vendor blog] |
 | Autorouter test | "An autorouter should be nearly able to complete routing on its own if the layer count is adequate … The goal … is not to offer guidance but to evaluate the routing density — doubling as a valuable assessment of component placement" | [VSE](https://www.vse.com/blog/multilayer-pcb-stackup-planning/) [P] |
 | Stackup method | "I first try to pick the layer count (based on routing complexity) and the board thickness (based on mechanical constraints)", then take a fab standard stackup and compute widths. An unreasonable width means the reference distance is wrong: pick another stackup (possibly not 1.6 mm) or ask for a custom one | [craftyjon](https://forum.kicad.info/t/about-stack-up-selection/21123) [P] |
 | Criticality | Stackup is "the most critical item … what people most often get wrong"; with 2–3 signal layers per plane, "all fields intermingling in the dielectric space … that's one of the places where EMI comes from". The common 4-layer stackup with L2/L3 planes in 1.6 mm is poor | [Hartley/Altium](https://resources.altium.com/p/pc-board-stack-up-best-practices-with-rick-hartley) [P] |
@@ -35,7 +35,7 @@ Ritchey & Zasio *Right the First Time* Vol 2 lists the chapters "Designing the P
 ## Recommendations for our system
 
 - **Size**: estimate area as Σ(courtyard areas)/utilization plus edge keepouts, rounded to easy numbers. Then run a packer fit test inside the outline. On failure, enlarge the board, repackage, or flag the requirement conflict [I].
-- **Layer count** is generate-and-test. Start from the minimum, run placement plus a test route, and add a layer pair if channel use is above 70% or completion is below 85–100% [I].
+- **Layer count** is generate-and-test. Start from the minimum, run placement plus a test route, and add a layer pair if channel use is above 70% or completion is below the placement gate (Olney's 85%, an uncalibrated profile parameter; [expert-state-machine.md](expert-state-machine.md)) [I].
 - **Stackup**: choose from fab catalog templates and apply craftyjon's "impedance width sanity" check. Write per-layer net-class widths [I].
 - **Hi-rel mode** applies IPC Class 3 rules and coupon requirements globally [I].
 - Stackup physics and EMC rules live in the rules cluster's docs; see [../rules/si-fundamentals.md](../rules/si-fundamentals.md).
@@ -43,6 +43,7 @@ Ritchey & Zasio *Right the First Time* Vol 2 lists the chapters "Designing the P
 ## Conflicts and open questions
 
 - No published quantitative model links board area or layer count to cost and yield; this is vendor-specific.
+- The 70% channel-use rule comes from one vendor blog, and no metric in the evaluation stack computes channel use yet ([../verification/evaluation-stack.md](../verification/evaluation-stack.md)).
 - Robertson's numbers are 2003-era; current fab capability must come from the fab profile.
 - The KiCad 10 IPC API treats the stackup as read-only (`UpdateBoardStackup` has no handler). Stackup writes need file edits; see [../kicad/ipc-api-10-vs-11.md](../kicad/ipc-api-10-vs-11.md).
 

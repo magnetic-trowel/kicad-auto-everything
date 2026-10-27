@@ -2,7 +2,7 @@
 
 **TL;DR**
 - Experts agree on a constraint-first order: mechanics, stackup and rules come first; power/ground strategy before placement; critical nets routed by hand and locked before bulk routing.
-- Expert judgment is concentrated in placement (states S3–S9). The explicit, quantified gate between placement and routing is Olney's test autoroute: at least 85% completion.
+- Expert judgment is concentrated in placement (states S3–S9). The explicit, quantified gate between placement and routing is Olney's test autoroute: at least 85% completion. That number is one columnist's 2012 rule of thumb (Autodesk repeats it) and depends on the router, pass budget and rules, so treat it as an uncalibrated profile parameter.
 - The workflow maps onto an 18-state backtracking state machine with three review gates: constraint model, rough placement before routing, and sign-off.
 - When a stage fails, experts escalate in a fixed order: local moves → re-floorplan → repackage, add layers or enlarge the board → drop or flag functionality → ask a human.
 - Typical effort is 50 h for a simple board and about 200 h for a CPU+memory board (Feranec). The "90% placement" saying is folklore, not data.
@@ -34,7 +34,7 @@ This merges the expert-workflow note's Q1 workflow table with its agent state ma
 | S4 Fixed parts | Place and lock connectors, UI, mounting holes, heatsinks and debug headers | MEC-04..06/12/17/20 | → S1 |
 | S5 Floorplan | Gather each IC's private parts, then form functional blocks. Separate power/analog/digital/RF and order blocks by signal flow, with the fewest crossings between groups. Place by cross-probing, in order of importance | PLC-02..05, ANA-02, flow metric | → S1/S4 |
 | S6 Critical placement | Run the [micro-workflows](sub-workflows-power-bga-ddr.md): BGA trial fanout; power stage (input cap placed **and routed** first); crystal; RF; terminations. Apply design-block memory if KiCad ≥10 | PWR-01..03/08, PLC-07/12/24/27, RF-04 | ↔ S10 |
-| S7 Decoupling/support | Place caps per pin, nF → µF → bulk; each gets its own vias. Put ESD at connectors and terminations at the correct end | PDN-01..04/11/15, PLC-05/06/08, EMC-01/07 | → S6 |
+| S7 Decoupling/support | Place caps per pin, lowest mounting inductance closest (value order nF → µF → bulk only behind the contested-rule selector, [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)); each gets its own vias. Put ESD at connectors and terminations at the correct end | PDN-01..04/11/15, PLC-05/06/08, EMC-01/07 | → S6 |
 | S8 Remaining + regularize | Place everything before routing. Snap to grid; normalize orientation and pin 1; use Repeat Layout for channels | MEC-08, PLC-13..17/23/26, ASM-09..11 | — |
 | S9 Placement review | Ratsnest, HPWL, congestion; **test autoroute ≥85%**; formal placement review | **Gate 2**: PLC-10/11, STK-06 | → S5–S8, or S2 (add layers) |
 | S10 Fanout | Escape patterns; decap vias (own vias) | DFM-24, PST-01, PDN-03/11 | → S6 |
@@ -75,7 +75,7 @@ This merges the expert-workflow note's Q1 workflow table with its agent state ma
 | cushychicken | Schematic capture is under 10% of the time | [P/C] |
 | BadeBhaiya | Symbols ~1%, schematic+layout ~20%, "The rest 80% … is decision making around constraints" | [P/C] |
 | MonMotha | "almost as much time floorplanning and placing … as it is actually routing" | [P/C] |
-| Quilter Linux board | ~27 h of parallel seeded runs plus human cleanup, vs Tesla500's ~38 h manual layout (rasz counts 38.5 h of human assistance) | [P/C] |
+| Quilter Linux board | Human time about equal: rasz counts 38.5 h of human assistance with Quilter vs Tesla500's ~38 h manual layout. Quilter's ~27 h of parallel seeded runs are compute time on top, followed by human cleanup | [P/C] |
 
 ### Practitioner placement procedures (S3–S8 in practice)
 
@@ -105,13 +105,14 @@ Tags as above; [P/A] marks a single practitioner's anecdote.
 
 - Make the agent's first placement output a floorplan of regions, pre-placed connectors, anchors and pin-distance constraints, confirmed by the user before any numeric optimizer runs. Then refine from that seed [I].
 - Implement S0–S17 as an explicit backtracking state machine with critic-gated exits. Checkpoint every state as a git commit, mirroring UW Rocketry's PR-per-review practice [I].
-- Make the three gates real stops, with human or LLM review of the constraint model (Gate 1), the placement (Gate 2) and sign-off (Gate 3) [I].
+- Make the three gates real stops. Gate 1 (the constraint model the LLM authored) and Gate 3 (sign-off) need a human: S17 requires human approval tied to a commit, and the IR requires a human to confirm LLM-authored constraints ([../architecture/constraint-ir.md](../architecture/constraint-ir.md)). An LLM may pre-review them but cannot pass them. Gate 2 (placement) may use human or LLM review [I].
 - Spend most search effort on S3–S9. Use a fast routability probe as the inner-loop objective, and make the ≥85% threshold a profile parameter [I].
 - Encode Olney's escalation ladder as the retry policy, ending with an explicit human question [I].
 - Treat the ladder of micro-workflows as sub-plans: see [sub-workflows-power-bga-ddr.md](sub-workflows-power-bga-ddr.md).
 
 ## Conflicts and open questions
 
+- Olney's ≥85% gate has one source (Olney 2012; Autodesk repeats it). Completion depends on the router, pass budget, rules and pre-routed nets, and janvi reports from-scratch autorouting "rarely over 80%" ([autorouter-distrust.md](autorouter-distrust.md)), so the right threshold depends on the probe router and its budget.
 - No primary source splits expert hours by phase in extractable form. Feranec's timesheet graphs are images that were not extracted.
 - No published, *evaluated* LLM-agent layout workflow exists. kicad-happy and the Adom audit skill are review tools with unpublished accuracy.
 - Whether the KiCad 10 IPC API can execute every state's actions is unverified; see [../kicad/ipc-api-10-vs-11.md](../kicad/ipc-api-10-vs-11.md).

@@ -1,14 +1,14 @@
 # Digest: LLM interfaces, agent loops, design understanding, data and UX
 
-Executive statements; detail lives in the linked topic docs. Every idea is in [the idea inventory](../ideas/inventory-llm-data-ux.md).
+Executive statements; detail is in the linked topic docs and every idea in [the inventory](../ideas/inventory-llm-data-ux.md).
 
 ## What LLMs can and cannot do
 - **LLMs fail at emitting geometry and succeed at semantic choices made for a solver.**
   - OmniRouting: best model 12.6% of nets DRC-clean (28.0% agentic) vs 56.2% for an open router and 93.6% for humans.
-  - Every PCB win for an LLM system keeps geometry in a solver.
+  - Every legal or DRC-clean PCB win for an LLM system keeps geometry in a solver.
 
   → [spatial-reasoning-limits](../topics/llm/spatial-reasoning-limits.md), [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
-- **Corrected:** LLM placement is connectivity-aware but illegal. Frontier models beat academic placers on routability (0.90–0.95) but about 80% of outputs have pad overlaps. → [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
+- **Corrected:** LLM placement is connectivity-aware but illegal. Frontier models beat academic placers on routability (0.90–0.95, legality gating unstated) but about 80% of outputs have pad overlaps. → [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
 - **Difficulty scales with coupled relations; tools fix arithmetic, not planning.** → [spatial-reasoning-limits](../topics/llm/spatial-reasoning-limits.md)
 - **Corrected:** PCBWorld's LLM routers ran without DRC feedback (0.65 clean-pass is a floor), yet 0.4–1.9M tokens per board rules out per-segment LLM routing. → [routing/pcbworld](../topics/routing/pcbworld.md), [agent-loop-patterns](../topics/llm/agent-loop-patterns.md)
 
@@ -16,14 +16,14 @@ Executive statements; detail lives in the linked topic docs. Every idea is in [t
 - **The write interface matters more than the model.** On RAC, relation bundles reach 90.9% clean-pass against 23.2% for coordinates (21.0% with Python) and 62.4% for sequential relations. Use ordinal magnitudes and relaxation feedback. → [interfaces-relations-vs-coordinates](../topics/llm/interfaces-relations-vs-coordinates.md)
 - **Persist relations as intent.** Re-solving after resizes passes 89.5%, against 65.6% for coordinate reuse. → [interfaces-relations-vs-coordinates](../topics/llm/interfaces-relations-vs-coordinates.md), [design-rationale-and-intent-record](../topics/ux/design-rationale-and-intent-record.md)
 - **Read side:** incident-list netlists, compact JSON plus query tools (0.88 vs 0.43 for PDF), relative pin-name code (82% vs 32.5% for raw KiCad). → [read-representations](../topics/llm/read-representations.md)
-- **Structured feedback beats images:** −77.1% DRC from scoring vs marginal gains from visuals. Images are a gestalt channel only. → [vision-feedback](../topics/llm/vision-feedback.md)
+- **Structured feedback beats images on DRC:** scoring cut DRC 77.1%, visuals less; neither clearly lifted routability. Images are a gestalt channel only. → [vision-feedback](../topics/llm/vision-feedback.md)
 
 ## Agent loops
 - **Bounded menus plus deterministic realization plus independent checks win** (DRC-Aid 92.5% vs 6.6% for static prompting). Default to a mid-tier model; budget iterations. → [agent-loop-patterns](../topics/llm/agent-loop-patterns.md)
 - **Placement roles that worked:**
   - grouping plus MILP legalization (Li DAC'26: −15%/−13% WL/vias vs Quilter);
   - fine-tuned constraint graphs (ModuPlace);
-  - weak VLM anchors (λ = 0.01);
+  - weak VLM anchors (VeoPlace);
   - place-one-replicate for repeated channels.
 
   → [llm-guided-placement-systems](../topics/llm/llm-guided-placement-systems.md), [placement/llm-guided-placement](../topics/placement/llm-guided-placement.md)

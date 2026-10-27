@@ -2,11 +2,11 @@
 
 **TL;DR**
 - **PCBWorld-Bench** (LG AI Research, KDD 2026 workshop) is the only neutral multi-tool routing comparison:
-  - Freerouting 2.1.0 has the best rule-based clean-pass: 0.80 (D3-A, 99 boards) and 0.78 (D3-B, 10 boards), @5.
+  - Freerouting 2.1.0 has the best rule-based clean-pass: 0.80 (D3-A, 99 boards) and 0.78 (D3-B, 10 of its 287 boards), @5. Freerouting and RL rows are 4-seed means; LLM rows are a single best-of-5 run.
   - GPT-5.4 driving KiCad's router interactively reaches 0.65, then **0.00 on D3-B**.
   - A small PPO policy scores 0.86 / 0.45 [P].
 - **Engine engagement decides LLM success:** GPT-5.4 scores 0.65 interactive vs 0.19 plan-then-execute vs 0.02 engine-free [P].
-- **Freerouting v2.5.0 self-reports 30.9% → 75.0% clean** on its 1,157-board suite. That makes PCBWorld's 2.1.0 baseline stale [P].
+- **Freerouting v2.5.0 self-reports 30.9% → 75.0% clean** on its release-note suite (1,157 boards); its nightly suite (1,142 fixtures) gives 75.2%. "Clean" is Freerouting's own check, not KiCad DRC. That makes PCBWorld's 2.1.0 baseline stale [P].
 - **No placement benchmark exists, and there is no independent benchmark of Quilter, DeepPCB or Flux.** Vendor numbers are not comparable [P].
 - **"0 DRC" is a weak metric.** A no-tools Claude Code board passed DRC while routing through the GND plane [P].
 
@@ -21,9 +21,9 @@
 - **Datasets:**
   - D1: synthetic grid (Jumanji Connector-style, sizes 10–500).
   - D2: synthetic gridless 2-layer multi-pin.
-  - D3: 679 boards from PCBench, normalized to KiCad 9, fully connected and DRV-free, split by pad count into D3-A/B/C. Zero-shot uses 99 D3-A and 10 D3-B boards; D3-C ("hundreds of nets") is a challenge split.
+  - D3: 679 boards from PCBench, normalized to KiCad 9, fully connected and DRV-free under PCBWorld's edited `.kicad_pro` severities (some checks ignored, some floors zeroed). Split by pad count: D3-A 100 (≤31 pads), D3-B 287 (≤100 pads), D3-C 292 (6–451 nets, ≤2,103 pads, 2–8 layers; unevaluated challenge split). Published evaluations use 99 D3-A boards and 10 D3-B boards (2-layer, one per pad-count quantile); see [../routing/pcbworld.md](../routing/pcbworld.md).
   - D3 is rebuilt at run time with `prepare_pcbench.sh` [P].
-- **Metrics:** Clean Pass (all nets connected, zero DRC), Potential Gain, Routability, Time, DRV, wirelength, vias; best of 5 ("@5").
+- **Metrics:** Clean Pass (all nets connected, zero DRC), Potential Gain, Routability, Time, DRV, wirelength, vias. CP@5 is the clean status of the best-potential (Φ) rollout of 5, not "any of 5 clean".
 
 **@5 results (arXiv v2 Table 3, confirmed by VK)**
 
@@ -36,21 +36,23 @@
 | GPT-5.4-mini / -nano / Qwen3.5-397B | 0.58 / 0.55 / 0.33 | 0.28 / 0.30 / 0.34 | 0.00 |
 | PPO transformer (trained on synthetic D2 only) | 1.00 | 0.86 | 0.45 |
 
+- Freerouting ran 2.1.0 at `-mp 10` (a tenth of its default 100 passes) with a 4 GiB heap. Freerouting and RL rows are 4-seed means, LLM rows a single best-of-5 run, which is why D3-B values on 10 boards are not multiples of 0.1 [P].
 - **Mean time on D3-A:** Freerouting 7.09 s, KRT 0.65 s, GPT-5.4 231 s (231–866 s per board per VK), PPO 1.83 s. "All LLM agents nonetheless obtain 0.00 CP on D3-B" [P].
 - **Engine engagement (Table 4, GPT-5.4, D3-A):** interactive CP 0.65 (DRV 1.31); plan-and-execute 0.19 (DRV 16.28); engine-free 0.02. "Generating raw wire segments while keeping every track within the design rules is beyond current models". GPT-5.4-nano engine-free produced no loadable file in any of 5 rollouts on 10% of boards [P].
-- **One-attempt results (v4 Tables 21–22, as reproduced by DeepPCB):** GPT-5.4 0.42 / 0.00; Freerouting 0.75 / 0.64; PPO (without finish) 0.81 / 0.22; KRT 0.74 / 0.20; Qwen3.5-397B 0.19 / 0.00; OrthoRoute 0.02 / 0.00. DeepPCB claims 0.929 / 0.800 [V] ([DeepPCB post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)). **Do not mix @5 and one-attempt numbers.**
+- **One-attempt results (v4 Table 22, as reproduced by DeepPCB; Table 21 is @5):** GPT-5.4 0.42 / 0.00; Freerouting 0.75 / 0.64; PPO (without finish) 0.81 / 0.22; KRT 0.74 / 0.20; Qwen3.5-397B 0.19 / 0.00; OrthoRoute 0.02 / 0.00. DeepPCB claims 0.929 / 0.800 [V] ([DeepPCB post](https://deeppcb.ai/benchmark/pcbworld-bench-deeppcb-results/)). **Do not mix @5 and one-attempt numbers.**
 - **OrthoRoute's README** quotes 30% and 51% routability, probably @1 or an older version, versus the paper's 0.34 / 0.53 [P].
 
 ### Other measurements
 | Item | Numbers | Tag |
 |---|---|---|
-| Freerouting v2.5.0 on its PCBench suite (1,157 boards) | Clean 358 (30.9%) → 868 (75.0%); fully routed 600 → 872 (75.4%); timeouts 78 → 78; total time 3,251 s → 2,997 s; Tier C (6+ layers) 49.2% clean, Tier D 50% | [P] self-reported ([release](https://github.com/freerouting/freerouting/releases/tag/v2.5.0)) |
+| Freerouting v2.5.0 release notes, on its PCBench suite (1,157 boards) | Clean 358 (30.9%) → 868 (75.0%); fully routed 600 → 872 (75.4%); timeouts 78 → 78; total time 3,251 s → 2,997 s; Tier C (6+ layers) 49.2% clean, Tier D 50% | [P] self-reported ([release](https://github.com/freerouting/freerouting/releases/tag/v2.5.0)) |
+| Freerouting nightly benchmark (2026-10-20, 1,142 fixtures) | Clean 1.9.0 36.2%, 2.4.1 31.3%, 2.5.0 75.2%, 2.6.0-RC3 87.7%. RC4's 92.4% is on 979 fixtures (tiers A+B only, 452 + 527), so not comparable. 2.5.0 Tier D 9.1% (2/22), against 50% in the release notes. Per-version job time budgets differ up to ~100×. "Clean" is Freerouting's own check. See [../routing/freerouting.md](../routing/freerouting.md) | [P] self-reported ([benchmarks.md](https://github.com/freerouting/freerouting/blob/master/scripts/benchmark/results/benchmarks.md)) |
 | fastroute vs Freerouting (20 boards) | 510 s (420 s with PGO) vs 2,102 s; 20–300 MB vs 1–2 GB | [P] self-reported |
 | kicad-tools TraceMaker | ≈0.99 / 1.00 / 0.90 vs Freerouting 2.2.4 ≈0.7 / 0.7 / 0.2 (single 60 s runs) | [P] self-reported (corrected baseline, VK) |
 | KRT | 47/47 FTDI nets in 8.6 s; 28/28 LVDS pairs in 29.7 s; ongoing A/B on open-source boards | [P] self-reported |
 | devbisme dual-ADC test | 8 AI tools plus a null baseline; all routed boards used Freerouting; null baseline $11.16 "DRC clean" with signals on the GND plane. Table in [kicad-ai-tools-and-mcp-servers.md](kicad-ai-tools-and-mcp-servers.md) | [P], unvalidated |
 | POA A/B | Plain Claude Code 18/18 single edits vs 3/18 with an MCP-only plugin; 1.8× context. See [../kicad/mcp-server-lessons.md](../kicad/mcp-server-lessons.md) | [P], small |
-| DeepPCB | 27,721 boards, 95.6% hit ≥95%; mean completion 96.1%; Quilter comparison. See [deeppcb.md](deeppcb.md) | [V] |
+| DeepPCB | KiCad page: 27,721 boards, 95.6% hit ≥95%, median 96.9%. Platform statistics: mean completion 96.1%, but only 87% of boards ≥95%; the two vendor sources disagree. Quilter comparison. See [deeppcb.md](deeppcb.md) | [V] |
 | Quilter Speedrun | 38.5 h vs 428 h quoted; SOM placement human. See [quilter.md](quilter.md) | [V] |
 | Cadence and Zuken | ">10X"; 25 vs 70 min placement (EMA); 45 min → 30 s (Zuken) | [V] |
 | EEVblog 2010 | Freerouting 11 vias vs 18 manual on one board | [S] |
@@ -78,7 +80,7 @@
 - The evaluation stack design itself belongs to the `verification/` area.
 
 ## Conflicts and open questions
-- PCBench counts (164 / 679 / 1,157 / 1,194) are only partly reconciled. The 1,194 vs 1,157 gap is perhaps loadable or convertible boards [I].
+- PCBench counts (164 / 679 / 1,142 / 1,157 / 1,194) are only partly reconciled. The 1,194 vs 1,157 gap is perhaps loadable or convertible boards [I]. Freerouting's release-note suite (1,157) and nightly suite (1,142) differ, and their tier definitions may too.
 - PCBWorld did not evaluate Freerouting 2.5, fastroute, kicad-tools, tscircuit, Quilter or Flux. DeepPCB's leaderboard claim is self-reported.
 - No independent SI measurement of AI-routed boards exists.
 

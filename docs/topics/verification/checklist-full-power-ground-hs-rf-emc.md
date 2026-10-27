@@ -16,7 +16,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | ID | Category | What to check | Why | Sev | Auto | Sources |
 |---|---|---|---|---|---|---|
 | PDN-01 | Power integrity | Decoupling caps as close as possible to power pins, one per pin (Altium: under 15 mm; CE default <3 mm) | Loop inductance | M (C for fast ICs) | S (cap-to-pin association) | AZ, JN, KG, CE, AL, UW, SCR |
-| PDN-02 | Power integrity | Smallest-value cap closest to the pin | HF effectiveness | M | S | PK, TI, UW, FD |
+| PDN-02 | Power integrity | Lowest-mounting-inductance cap closest to the pin (package, via count, via-to-pad distance). The sources' "smallest-value cap closest" is CONTESTED (MT-101 vs Bogatin/Archambeault, VR): use value order only behind the contested-rule selector ([../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)) | HF effectiveness | M | S | PK, TI, UW, FD |
 | PDN-03 | Power integrity | Low-inductance mounting (via-in-pad if available, else short side vias to plane) | Mounting inductance dominates | M | S | AZ, HH |
 | PDN-04 | Power integrity | Bulk capacitance at power entry and regulator outputs | LF stability | M | S | HH, CE |
 | PDN-05 | Power integrity | Every IC power/ground pin connected (pour/thermal connections on all layers; ground pins have vias to the plane) | Floating supply pins | C | A (parity + connectivity) | GD, HH, AL |
@@ -27,9 +27,9 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | PDN-10 | Power integrity | DNP footprints for extra regulator input/output caps | Bring-up tuning | m | J | PK |
 | PDN-11 | Power integrity | Every GND/VCC pin and every decap has its own via(s); vias not shared | Shared vias add inductance | M | S | AL, BO, SCR |
 | PDN-12 | Power integrity | Enough GND current-carrying vias near connectors and current sinks/sources | Return current capacity | M | S | AL |
-| PDN-13 | Power integrity | Width calculated for every track carrying >100 mA; internal-layer width used if airflow is poor (Flux: ~10 mil/A on 1 oz external at 10 °C rise as a rough start; internal ~2×) | Overheating | C | S | AL, FL |
+| PDN-13 | Power integrity | Width calculated for every track carrying >100 mA from IPC-2221/2152; internal-layer width used if airflow is poor (Flux: ~10 mil/A on 1 oz external at 10 °C rise as a rough start; internal ~2×). Flux's rule holds only near 1 A: IPC-2221 is non-linear (≈12 / 31 / 54 / 109 mil at 1 / 2 / 3 / 5 A on 1 oz external, 10 °C), and inner layers need ≈2.6× the width [I, arithmetic on the VR formula] | Overheating | C | S | AL, FL |
 | PDN-14 | Power integrity | Through-hole pin rows in planes keep copper webs between pins (no merged-antipad slots) | Plane slots | M | A | TI-EMI, AZ |
-| PDN-15 | Power integrity | BGA decap staging: nF at pins, µF nearby/around BGA, 100s of µF around BGA or on the path from the source | Frequency-staged decoupling | M | S | FD |
+| PDN-15 | Power integrity | BGA decap staging: nF at pins, µF nearby/around BGA, 100s of µF around BGA or on the path from the source (value order: same CONTESTED caveat as PDN-02) | Frequency-staged decoupling | M | S | FD |
 | PWR-01 | Power conversion | Switching hot loop (input cap–switch–rectifier; boost: switch–rectifier–output cap) has minimal area | High di/dt loop radiates | C | S + J/sim | TI, GD, TI-BUCK |
 | PWR-02 | Power conversion | SW-node copper area minimal; ground plane under the regulator | dV/dt antenna | M | S | TI |
 | PWR-03 | Power conversion | FB network at the FB pin; FB trace away from SW/inductor | Regulation noise | M | S | TI |
@@ -46,9 +46,9 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | GND-05 | Ground/return | If grounds are separated, they join at exactly one point | Ground loops | M | S | HH, JN, CD, AL |
 | GND-06 | Ground/return | No plane bottlenecks or isolated/floating copper | Starved returns; antennas | M | A (Isolated copper fill) | GD, JN, KD, UW, SCR |
 | GND-07 | Ground/return | Vias spread evenly across planes (no via walls) | Avoid slots | m | S | JN |
-| GND-08 | Ground/return | No signals, especially noisy ones, along board edges; edge ground ring/stitching | Edge radiation ("Never run noisy traces on the outside edge") | m | A | HH, GD, TI-EMI, FL |
+| GND-08 | Ground/return | No signals, especially noisy ones, along board edges; edge ground ring/stitching (perimeter stitching is CONTESTED, Ott vs Hubing: context switch, not a default, VR) | Edge radiation ("Never run noisy traces on the outside edge") | m | A | HH, GD, TI-EMI, FL |
 | GND-09 | Ground/return | Return path checked for every critical net | Root of many SI/EMI problems | M | S/J | GD, HT |
-| GND-10 | Ground/return | High-speed traces ≥1.5×W from reference voids and ≥90 mil from plane edges (TI) | Fringing/return disruption | M | A/S | TI-HS |
+| GND-10 | Ground/return | High-speed differential traces ≥1.5×W from reference voids, except at intentionally voided SMD pads (VR RP-2; see HS-08, EMC-08), and ≥90 mil from plane edges (TI, HS diff pairs) | Fringing/return disruption | M | A/S | TI-HS |
 | GND-11 | Ground/return | Two-layer boards: no ground loops; ground track sized for each device's return; unbroken pour under every high-speed trace; power and ground run over each other; length:width ≤3:1 | 2-layer return control | M | S | AL, TI-EMI |
 | GND-12 | Ground/return | No buried signal traces in the ground plane (use the +V plane if unavoidable) | Plane integrity | M | A | TI-EMI |
 | GND-13 | Ground/return | No loops in power and ground nets | Loop antennas | M | S | SCR, AL |
@@ -58,7 +58,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | HS-04 | High-speed | Clearance to aggressors; pair-to-pair spacing maximized; clocks isolated | Crosstalk | M | S | AZ, GD, TI-HS, VSE, SC |
 | HS-05 | High-speed | Stubs and layer changes minimized; via count limited | Reflections | M | A/S (via_count) | HH, AZ, KD, SC, SCR, FL |
 | HS-06 | High-speed | Terminations present and at the correct end | Reflections | M | S | HH, JN, AL |
-| HS-07 | High-speed | Mitered/curved bends on impedance-sensitive traces (Flux: a 90° corner on a 20.5 mil trace is transparent below ~25 GHz, so this is mostly DFM/aesthetic) | Minor discontinuity | m | A (track_angle) | HH, JN, FL, SF |
+| HS-07 | High-speed | Mitered/curved bends on impedance-sensitive traces (Flux: a 90° corner on a 20.5 mil trace is transparent below ~25 GHz, so this is mostly DFM/aesthetic for single-ended nets below about 2 Gb/s; keep bend rules for differential pairs and ≥10 Gb/s, [../rules/myths-and-contested.md](../rules/myths-and-contested.md)) | Minor discontinuity | m | A (track_angle) | HH, JN, FL, SF |
 | HS-08 | High-speed | Wide connector/SMD pads compensated (plane cutouts/voids under pads) | Impedance dip | M | J/sim | AZ, TI-HS |
 | HS-09 | High-speed | Footprint option for a common-mode filter on off-board high-speed pairs | EMC fallback | m | J | HH, TI-HS |
 | HS-10 | High-speed | Series-R / 0 Ω placeholders on fast single-ended lines | Edge control later | m | J | HH, PK |
@@ -112,6 +112,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 
 - research notes: [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
 - corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
+- corrections (VR): [verification_rules.md § 1 (RP-2, PDN-07, EMI-4, "smallest closest"), § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 - source checklists and their URLs: [checklist-sources.md](checklist-sources.md)
 
 See also: [review-checklist.md](review-checklist.md), [critic-stack.md](critic-stack.md), [respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)

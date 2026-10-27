@@ -45,7 +45,7 @@ This spec comes from [kicad_mcp_codebases.md § 6](../../../research_notes/LLM%2
 | 14 | `apply_candidate(candidate_id, expected_rev, description)` | outcome, applied items, `board_rev_after`, verification `{score, drc_summary, connectivity}` |
 | 15 | `undo_last(n=1)` / `revert_to(rev)` | native KiCad undo / snapshot journal (file mode only) |
 | 16 | `snapshot(label)` / `diff(rev_a, rev_b)` | moved, added, removed, nets changed |
-| 17 | `kicad_cli(args[])` | escape hatch limited to drc, erc, export, render, upgrade; outputs to a temp dir |
+| 17 | `kicad_cli(args[])` | escape hatch limited to drc, erc, export, render, and upgrade of libraries or a copy (never the user's board in place: `upgrade` re-serializes, see [file-format-and-version-hazards.md](file-format-and-version-hazards.md)); outputs to a temp dir |
 | 18 | `raw_edit(path, splice{anchor_uuid, old_sexpr, new_sexpr}, expected_rev)` | byte-preserving CST splice, then a `kicad-cli` load check and connectivity check; refused while the board is open live |
 
 ### Verification hooks on every apply

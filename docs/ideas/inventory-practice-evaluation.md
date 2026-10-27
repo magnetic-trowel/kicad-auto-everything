@@ -27,6 +27,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 | BP | benchmark-plan |
 | IR | constraint-ir |
 | CM | constraint-models-compared |
+| PD | research note practitioner_discussions.md (items no topic doc holds yet) |
 
 ## Workflow and process
 
@@ -62,7 +63,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 27. BGA: trial placement, clear, then fan out and place from the centre, together → [SW]
 28. Leave routing channels between memories and dense ICs → [SW]
 29. Keep the power-stage transistor, inductor and caps tight → [SW]
-30. Decap staging: nF at pins → µF near → bulk on the source path → [SW]
+30. Decap staging: nF at pins → µF near → bulk on the source path (Feranec's value order; CONTESTED, so our default is lowest mounting inductance closest) → [SW]
 31. Place and route the converter input cap first → [SW]
 32. Shorten power loops before widening traces → [SW]
 33. SLVAFJ3 8-step converter order, including Kelvin sense through net ties → [SW]
@@ -114,7 +115,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 76. The router must rip up its own earlier routes → [AD]
 77. Feed routers quantitative info: keepouts, vias by ground pins, layer penalties → [TR]
 78. EMI-aware autorouter as a long-term goal → [TR]
-79. Topological, any-angle and 8-direction routing are underexplored → [AD]
+79. Topological, any-angle and 8-direction routing are underexplored → [PD]
 80. Avoid any-angle routes and micro-wiggles for human editability → [GL] [LM]
 81. Width only where current flows; polygons for power distribution → [GL]
 82. Keep margin from rule minima → [GL]
@@ -126,7 +127,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 ## Board size, layers and stackup
 
 87. Size estimate = Σ courtyard / utilization + edge keepouts, then a packer fit test (I) → [BS]
-88. Layer count by generate-and-test: +2 layers at >70% channel use or <85–100% completion → [BS]
+88. Layer count by generate-and-test: +2 layers at >70% channel use (one vendor blog; "channel use" undefined) or completion below the placement gate → [BS]
 89. Stackup from the fab catalog with the impedance-width sanity check (craftyjon) → [BS]
 90. Fab approves HDI/rigid-flex stackup before rules are set → [BS]
 91. Evaluate interdependent fab parameters jointly → [BS]
@@ -188,8 +189,8 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 141. Unit-test board generators → [DR]
 142. Visual red-flag list: random decaps, thick traces, backwards connectors, needless BGAs, length matching → [DR]
 143. Connector-orientation and supplier-footprint-orientation checks → [LF] [TR]
-144. "Trace width closely matches reference design for chip" check → [LF]
-145. "Opamp schematic layout conventional" check → [LF]
+144. "Trace width closely matches reference design for chip" check → [PD]
+145. "Opamp schematic layout conventional" check → [PD]
 146. Readable schematic as a precondition for review → [DR]
 147. Project web page with a chronological change log and visualizations → [DR]
 148. Test-point distance L = 0.29·H + 0.7 mm → [CF4]
@@ -198,14 +199,14 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 151. Termination threshold at trace length >λ/10 (FCC) or >λ/50 → [CF3]
 152. Via-fence pitch ≤λ/8 → [CF3]
 153. Simulate nets longer than 1/6 of rise time → [CF3]
-154. HS traces ≥1.5W from voids and ≥90 mil from plane edges; stitching caps ≤1 µF → [RC] [CF3]
+154. HS differential traces ≥1.5W from voids (except intentionally voided SMD pads) and ≥90 mil from plane edges (TI); stitching caps ≤1 µF → [RC] [CF3]
 155. Via stubs <15 mil or backdrill; ~30 mil antipads; equal via counts; SMDs ≤0603; breakout within 0.25" → [RC] [CF3]
 156. Tombstone copper-ratio checks (UWARG <2×; kicad-happy <0.3) → [RC] [CF4]
 157. Assembler passive spacing table; part-to-hole ≥8 mil → [CF4]
 158. Fiducial rules: 3 global, 2 local, 40–118 mil → [RC] [CF4]
 159. Split grounds only for audio/precision <~100 kHz, joined at a single point → [CF3]
 160. Respin framing: 2.8–2.9 respins/project; ~60% of designers at 1–5/year; <2–20% of designs with no TQs → [RF]
-161. Fab-hold ranking (stackup 28%, impedance 22%, drill-to-copper 18%, notes 15%, BGA ring 12%) drives critic order → [RF]
+161. Fab-hold ranking (stackup 28%, impedance 22%, drill-to-copper 18%, notes 15%, BGA ring 12%; one vendor's self-report, AtlasPCB [V]) drives critic order → [RF]
 162. Extract per-IC rules from datasheet "Layout Guidelines" sections at intake → [SM] [LR]
 163. Keep source keys next to every threshold so conflicts stay visible (I) → [CK]
 
@@ -218,7 +219,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 168. HPWL/MST plus airwire crossing count → [LM]
 169. Routed/Manhattan ratio outliers ("no scenic routes") → [LM]
 170. Hot-loop polygon area and switch-node copper area → [LM]
-171. Decap distance plus Spearman value-vs-distance order → [LM]
+171. Decap distance plus Spearman mounting-inductance-vs-distance order (value order only behind the contested-rule selector) → [LM]
 172. ≤2 text directions; mirrored bottom text → [LM]
 173. Geographic designator rank correlation → [LM]
 174. Pad-exit-style violations → [LM]
@@ -272,7 +273,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 219. Do the delegable work perfectly first → [DR] [TR]
 220. Ship the reviewer/analyzer before the producer → [LF] [TR]
 221. "Good but not perfect"; a "well-constrained one-step-up from autorouter" for simple boards → [TR]
-222. Boilerplate prototypes are valuable even without analog/HS → [LF]
+222. Boilerplate prototypes are valuable even without analog/HS → [PD]
 223. Leave routing to humans who enjoy it (optional per block) (I) → [TR]
 224. Prove quality with evidence before claiming it → [TR]
 225. Reliable tool round-trips and fixed-part marking → [AD]
@@ -299,8 +300,8 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 243. Guard the known failure modes: connectors, endless loops, huge schematics, BGA escape, micro-wiggles, unrequested edits, DRC slop, open nets at export, odd self-imposed rules → [LF]
 244. LLMs don't reliably use only datasheet information → [LF]
 245. Guard against LLM overconfidence → [LF]
-246. Datasheet footnote traps (e.g. "3.3v max 80MHz") → [TR]
-247. Datasheets are not ground truth (old, overkill, wrong, NDA) → [GL] [LR]
+246. Datasheet footnote traps (e.g. "3.3v max 80MHz") → [PD]
+247. Datasheets are not ground truth (old, overkill, wrong, NDA) → [GL] [LR] [PD]
 248. Decoupling as a loop/cross-impedance target; distance is only a proxy → [TR]
 249. Layout is circuit design with unknown component values → [DR]
 250. Pin, part and package swaps as layout moves with schematic back-annotation → [DR]
@@ -315,7 +316,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 259. Deterministic scripts with AI only at judgment calls; per-module `board.yaml` hard-errors on unsafe pins → [DR]
 260. `git describe` revision on the silkscreen → [DR]
 261. AI teaching itself from layout plus simulation (Feranec) → [LF]
-262. Harness with built-in EMC/EMI/SI/PI/thermal solvers → [AD]
+262. Harness with built-in EMC/EMI/SI/PI/thermal solvers → [AD] [PD]
 
 ## Constraint and intent IR
 
@@ -405,7 +406,7 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 337. Hygiene: pinned KiCad, licence manifest, private held-out split, re-run DRC on saved files → [BP]
 338. Act through the engine (CP 0.65 interactive vs 0.19 plan-execute vs 0.02 engine-free) → [BM]
 339. Feedback quality matters more than iteration count (OmniRouting) → [BM]
-340. LLM-only routing is not competitive (0.65/0.00 vs Freerouting 0.80/0.78) → [BM] [LF]
+340. LLM-only routing is not competitive (PCBWorld D3-A/D3-B, 99 + 10 boards: 0.65/0.00 vs Freerouting 0.80/0.78) → [BM] [LF]
 341. Golden-task suites (18/18) and devbisme's AI-tool test repo → [BM]
 342. EEBench-style deterministic grading (SPICE corners, BOM cost) → [BM]
 343. Controlled human vs autorouter vs LLM comparison with measurements → [BP]
@@ -440,3 +441,4 @@ This inventory lists every distinct approach, metric, checker, workflow idea and
 [BP]: ../topics/verification/benchmark-plan.md
 [IR]: ../topics/architecture/constraint-ir.md
 [CM]: ../topics/architecture/constraint-models-compared.md
+[PD]: ../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md

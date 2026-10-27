@@ -5,19 +5,19 @@ Each statement below links to the topic doc that holds the detail and evidence. 
 ## Expert workflow
 
 - **Experts work constraint-first and spend their judgment on placement.**
-  - A test autoroute reaching ≥85% completion is the gate from placement to routing.
+  - Olney's 2012 rule of thumb gates placement → routing on a test autoroute reaching ≥85% completion (uncalibrated; a profile parameter).
   - The workflow maps onto an 18-state backtracking state machine with three review gates.
 
   → [expert-state-machine](../topics/workflow/expert-state-machine.md)
 - **Three micro-workflows recur:**
   - power stage: place and route the input cap first; shorten loops before widening traces;
-  - BGA: fan out while placing; stage decaps nF → µF → bulk;
+  - BGA: fan out while placing; stage decaps lowest mounting inductance first (value order is contested);
   - routing ladder: power/susceptible nets → clocked → rest, with DDR channels reserved before buses are completed.
 
   → [sub-workflows](../topics/workflow/sub-workflows-power-bga-ddr.md)
 - **Size, layers and stackup are generate-and-test.**
   - Run a fit check first.
-  - Use the minimum layer count that gives a solid reference, plus two layers if channel use exceeds 70%.
+  - Use the minimum layer count that gives a solid reference, plus two layers if channel use exceeds 70% (one vendor blog; "channel use" undefined).
   - Start from a fab template stackup and check that the impedance widths are reasonable.
 
   → [board-size-layers-stackup](../topics/workflow/board-size-layers-stackup.md)
@@ -43,7 +43,7 @@ Each statement below links to the topic doc that holds the detail and evidence. 
 
 ## Review and verification
 
-- **299 checklist items, 41 of them Critical**; 83% of the Critical items are at least semi-automatable once a semantic role layer exists. → [review-checklist](../topics/verification/review-checklist.md), [checklist-sources](../topics/verification/checklist-sources.md)
+- **299 checklist items, 41 of them Critical**; 80–83% of the Critical items (depending on mixed tags) are at least semi-automatable once a semantic role layer exists. → [review-checklist](../topics/verification/review-checklist.md), [checklist-sources](../topics/verification/checklist-sources.md)
 
   Full lists:
   - [process/DFM/stackup](../topics/verification/checklist-full-process-dfm-stackup.md)
@@ -56,11 +56,11 @@ Each statement below links to the topic doc that holds the detail and evidence. 
   - Order: documentation → geometry → physics.
 
   → [critic-stack](../topics/verification/critic-stack.md)
-- **Respins are routine** (~2.9 per project). The top fab holds are ambiguous stackup (28%) and undefined impedance (22%). → [respin-and-fab-hold-data](../topics/verification/respin-and-fab-hold-data.md)
-- **"Looks right" can be measured**: orientation entropy, grid snap, Manhattan ratio, hot-loop area, decap order. Always pair these with a coupling penalty. → [looks-right-metrics](../topics/verification/looks-right-metrics.md)
+- **Respins are routine** (~2.9 per project). In one vendor's self-reported data (AtlasPCB), the top fab holds are ambiguous stackup (28%) and undefined impedance (22%). → [respin-and-fab-hold-data](../topics/verification/respin-and-fab-hold-data.md)
+- **"Looks right" can be measured**: orientation entropy, grid snap, Manhattan ratio, hot-loop area, decap mounting-inductance order. Always pair these with a coupling penalty. → [looks-right-metrics](../topics/verification/looks-right-metrics.md)
 - **Four evaluation tiers:**
   - geometry on every move;
-  - `kicad-cli` DRC plus a router probe (0.65–10 s);
+  - `kicad-cli` DRC plus a router probe (0.65–10 s on ≤100-pad boards; large boards hit 600–900 s timeouts);
   - 2.5D PI;
   - openEMS/FEM for finalists.
 
@@ -87,7 +87,7 @@ Each statement below links to the topic doc that holds the detail and evidence. 
   - Proximity, via-to-plane and loop area need custom checkers.
 
   → [constraint-ir](../topics/architecture/constraint-ir.md)
-- **Rule resolution differs by tool:** KiCad uses last match, Altium priority, JITX specificity, Allegro CSets. Timing belongs on pad-to-pad topologies. IPC-2581C carries impedance but no placement or routing rules. → [constraint-models-compared](../topics/architecture/constraint-models-compared.md)
+- **Rule resolution differs by tool:** KiCad uses last match (net-class defaults are floored at the board minimum; custom rules are not), Altium priority, JITX specificity, Allegro CSets. Timing belongs on pad-to-pad topologies. IPC-2581C carries impedance but no placement or routing rules. → [constraint-models-compared](../topics/architecture/constraint-models-compared.md)
 
 ## Key corrections (verification note)
 
@@ -95,6 +95,6 @@ Each statement below links to the topic doc that holds the detail and evidence. 
 - DRC units are only mm/mil/in/deg/ps/fs.
 - DRC JSON has no rule-name field.
 - KiCad 10 SES import deletes unlocked copper.
-- PCBWorld D3-B has only 10 boards.
+- PCBWorld's published D3-B results use 10 of its 287 boards.
 
 → [constraint-ir](../topics/architecture/constraint-ir.md), [evaluation-stack](../topics/verification/evaluation-stack.md), [benchmarks](../topics/verification/benchmarks.md)

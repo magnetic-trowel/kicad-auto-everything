@@ -5,7 +5,7 @@
 - **Placement**: Cypress small benchmarks under the Cypress protocol, plus placement-stripped PCBWorld boards routed by a fixed router and compared with the human placement routed the same way.
 - **Extra tracks** beyond routing/placement: intent conformance, physics checks, human-relative diagnostics, synthetic unit suites, and a checklist track seeded with known-bad boards.
 - **Hygiene**: pinned KiCad version, per-board licence manifest, private recent held-out split, and no method ever scoring itself (re-open saved files, re-run DRC).
-- **Build the harness first.** It doubles as the agent's verification loop, which practitioners say LLM tools lack.
+- **Build the harness first.** It now exists ([harness](harness.md); development plan in [dev-eval-plan](dev-eval-plan.md)) and doubles as the agent's verification loop, which practitioners say LLM tools lack.
 
 ## Key facts
 
@@ -13,13 +13,13 @@ Tags: [P] primary; [I] inference. Items 1–7 come from the constraints/benchmar
 
 | # | Track | Content | Scoring |
 |---|---|---|---|
-| 1 | Routing leaderboard | PCBWorld D3-A/B, later D3-C | @5 CP / Pot. / Rout. / DRV / WL / Via / Time / Parse-fail, against published Freerouting (0.80/0.78) and KRT (0.74/0.20). Also re-run Freerouting 2.5.0, since the published baseline is 2.1.0 (VK) |
-| 2 | Placement leaderboard | Cypress small benchmarks; PCBWorld D3 boards with placement stripped (keep outline, mechanical parts, connectors and locks; re-place everything else) | Cypress protocol (Freerouting routability, two layers) plus HPWL, overlap, out-of-bounds, crossings; compare with the human placement routed by the same router |
+| 1 | Routing leaderboard | PCBWorld D3-A/B, later D3-C | @5 CP / Pot. / Rout. / DRV / WL / Via / Time / Parse-fail, against published Freerouting (0.80/0.78) and KRT (0.74/0.20). Also re-run Freerouting 2.5.0, since the published baseline is 2.1.0 (VK). The published numbers come from KiCad 9.0.8, Freerouting 2.1.0 at `-mp 10`, 99 D3-A and 10 D3-B boards, 4-seed means, so they are not a same-version, same-suite baseline. kaebench's `cpk` is any-clean@k, not PCBWorld's Φ-selected CP@5, and can only be ≥ it ([quality-metrics.md](quality-metrics.md)) |
+| 2 | Placement leaderboard | Cypress small benchmarks; PCBWorld D3 boards with placement stripped (keep outline, mechanical parts, connectors and locks; re-place everything else) | Cypress protocol (Freerouting v1.9.0 routability, two free layers, default settings; VP #37) plus HPWL, overlap, out-of-bounds, crossings; compare with the human placement routed by the same router |
 | 3 | Intent track | Subset of D3 plus own boards, annotated with human-confirmed IR constraints ([../architecture/constraint-ir.md](../architecture/constraint-ir.md)) | PRC pass rate by constraint kind; hard-violation counts |
 | 4 | Physics track | Decap PRCs, return-path violations, IR-drop margin (padne/KiPI); si-wrapper/openEMS impedance and delay on a few high-speed boards | Measured vs limit ([evaluation-stack.md](evaluation-stack.md)) |
 | 5 | Human-relative diagnostics | Every board with human copper | OmniRouting-style MGS plus WL, via and HPWL ratios. Report human scores on every metric, since human boards are not 100% clean |
 | 6 | Unit suites | Synthetic generators per IR kind (PCBWorld D1/D2-style); DPP simulator for decaps; FloorSet-style mixes of region, edge, grouping and pre-placed constraints | Per-kind pass rates |
-| 7 | Hygiene | Pinned KiCad version; licence manifest per board; private recent held-out split against pretraining contamination | Methods never score themselves: re-open and re-run DRC on saved files |
+| 7 | Hygiene | Pinned KiCad version; licence manifest per board; private recent held-out split against pretraining contamination (the dev/val/sealed-test split is planned in [dev-eval-plan.md](dev-eval-plan.md), item 0.11; not built yet); never mine, fit or calibrate on the 99 + 10 PCBWorld evaluation boards | Methods never score themselves: re-open and re-run DRC on saved files |
 | 8 | Checklist track [I] | Run the 299-item critic stack ([review-checklist.md](review-checklist.md)). Seed with known-bad boards plus fixes ("very very few examples out there as to what is wrong... need bad examples and their fixes", Naib) and escaped-error cases: SOT-23 flips, a backwards USB-C connector, missing MCU VCAP caps, open nets at export | Critical/Major pass counts; detection rate on seeded faults |
 | 9 | Trust/process track [I] | Scripted tasks with locked regions and narrow scopes | Edits outside scope; determinism (board hash across runs); human setup minutes; agreement of predicted vs actual DRC/routability; harness immutability |
 | 10 | Blind expert review [I] | A sample of outputs mixed with human boards | Acceptance rate and review time; used to calibrate the convention metrics ([looks-right-metrics.md](looks-right-metrics.md)) |
@@ -29,7 +29,7 @@ Tags: [P] primary; [I] inference. Items 1–7 come from the constraints/benchmar
 
 Follow the PCBWorld recipe [P]:
 1. Convert boards to the current KiCad version.
-2. Keep each board's own rules.
+2. Keep each board's own rules. (PCBWorld itself edited `.kicad_pro` severities and floors, VP #7.)
 3. Drop boards that are not fully connected and DRV-clean after conversion.
 4. Keep the human copper as the reference.
 5. Split by pad count.
@@ -46,12 +46,14 @@ Then add placement-stripped variants and intent annotations [I].
 
 - Licences of PCBWorld D3, PCBench and the Cypress benchmarks need per-board verification.
 - IR checkers (pad distance, via-to-plane, loop area, layer switches) need implementation and validation against Quilter-style PRC definitions and openEMS before the intent and physics tracks are trustworthy.
-- Tier timings for DRC, padne and KiPI on representative boards are unmeasured.
+- Tier timings for padne and KiPI on representative boards are unmeasured. DRC is partly measured: on KiCad 10.0.7, 4 of 297 manifest boards timed out at 900 s ([harness.md](harness.md)).
+- The qualified kaebench suite is selected: 112 of 297 boards qualify, and only 10 of 54 boards with 6+ layers, so it skews to simple boards ([harness.md](harness.md)).
 
 ## Sources
 
 - research notes: [constraints_verification_benchmarks.md § Q4, Q6C](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
 - research notes: [practitioner_discussions.md § Q2b, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 5 (#9)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
+- corrections (VP): [verification_papers.md § 1 (#7, #8, #37)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
 
 See also: [benchmarks.md](benchmarks.md), [quality-metrics.md](quality-metrics.md)

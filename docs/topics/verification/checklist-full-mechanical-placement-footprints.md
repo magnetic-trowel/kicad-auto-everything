@@ -62,7 +62,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | PLC-24 | Placement | No unrelated components within 1 inch of a microcontroller crystal (TI EMI guideline) | "Most EMI-related crosstalk problems center around the crystal" | M | S | TI-EMI |
 | PLC-25 | Placement | Circuits with similar supply/ground domains grouped together | PDN, isolation | m | S | SCD |
 | PLC-26 | Placement | Pin 1 of all ICs in the same orientation where function allows; repeated parts in a clear matrix | Inspection, assembly | m | A | BO |
-| PLC-27 | Placement | Power-stage order: IC → input cap (placed and routed immediately, no vias) → inductor/catch diode → output cap → small-signal parts → single-point ground and vias | The hot loop dominates converter behavior | C | J/S | TI-BUCK, TI-1229 |
+| PLC-27 | Placement | Power-stage order: IC → input cap (placed and routed immediately, on the IC's layer for integrated converters; vias and plane coverage are scored through the loop-inductance estimate, and vertical loops to the first inner plane are allowed, [../rules/power/hot-loops.md](../rules/power/hot-loops.md)) → inductor/catch diode → output cap → small-signal parts → single-point ground and vias | The hot loop dominates converter behavior | C | J/S | TI-BUCK, TI-1229 |
 | FP-01 | Footprints | Footprint matches the ordered package (e.g., not 0805 for 0603); symbol pinout matches the package | Unassemblable / wrong pins | C | S | AZ, FL, SFC |
 | FP-02 | Footprints | Pinout drawings read in the correct view (top vs bottom) | Mirrored pinout | C | J | AZ, HH, MF2 |
 | FP-03 | Footprints | 1:1 printout checked against physical parts | Dimension errors | M | J | AZ, GD, JN, SFC |

@@ -1,7 +1,7 @@
 # Landscape: open-source routers usable with KiCad
 
 **TL;DR**
-- **Freerouting** (GPL-3.0, v2.5.0, 2026-10-05) is the strongest open bulk router. In PCBWorld it scored clean-pass 0.80 / 0.78 (v2.1.0), and its own suite rose from 30.9% to 75.0% clean in v2.5.0. It has REST, MCP and KiCad 10 IPC [P].
+- **Freerouting** (GPL-3.0, v2.5.0, 2026-10-05) is the strongest open bulk router. In PCBWorld it scored clean-pass 0.80 / 0.78 @5 on D3-A / D3-B (v2.1.0 at `-mp 10`), and its own release-note suite (1,157 boards, its own clean check, not KiCad DRC) rose from 30.9% to 75.0% clean in v2.5.0. It has REST, MCP and KiCad 10 IPC [P].
 - **KiCad's push-and-shove (PNS) router can run headlessly via LG's PCBWorld-Engine** (GPLv3, pybind11 over a socket, KiCad 9.0.8, 58 APIs). That is the engine-grounded interactive primitive LLM agents need. Horizon EDA also embeds PNS [P].
 - **KiCadRoutingTools** (MIT; Rust A*, diff pairs, length/time matching, fanout, plane repair; 10 skills) and **kicad-tools** (MIT) are agent-oriented and file-based. Neither does push-and-shove [P].
 - **Others:** fastroute (a Rust Freerouting port, ~4× faster), tscircuit's capacity-mesh router (MIT, TypeScript), OrthoRoute (GPU, backplanes only), Topola (topological, work in progress), route-rnd (GPL-2+) [P].
@@ -33,7 +33,7 @@
 **Commercial DSN/SES back ends** (Allegro PCB Router, Konekt Electra, TopoR, Altium Situs, PCB Auto Router) are covered in [commercial-incumbents-and-startups.md](commercial-incumbents-and-startups.md).
 
 ## Recommendations for our system
-- **Bulk routing:** Freerouting 2.5, supervised as in [../kicad/specctra-freerouting-integration.md](../kicad/specctra-freerouting-integration.md). Evaluate fastroute as a faster drop-in [I].
+- **Bulk routing:** Freerouting v2.5.0, pinned until 2.6.0 is released (2.6.x exists only as RCs), with `-mt 1` for final runs, supervised as in [../kicad/specctra-freerouting-integration.md](../kicad/specctra-freerouting-integration.md). Evaluate fastroute as a faster drop-in [I].
 - **Critical nets and repair:** PCBWorld-Engine, linkable in-process under our GPL license, or kept behind its socket for crash isolation. Budget a port to KiCad 10/11 and upstreaming. Pours need separate handling [I].
 - **Specialized jobs:** KRT for fanout, diff pairs, plane repair and time matching. Use tscircuit's capacity mesh as a design reference for fast congestion estimates that can feed placement [I].
 - **Keep DSN/SES first-class** for user-supplied commercial routers [I].

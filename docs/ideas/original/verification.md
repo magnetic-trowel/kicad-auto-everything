@@ -105,7 +105,7 @@ Part of the [original-ideas catalog](README.md). Shorthands as in [intent-and-wh
 
 **Why it should work.**
 - Proxies must be calibrated before they are rewarded ([evaluation-stack](../../topics/verification/evaluation-stack.md)).
-- No published correlation links routing proxies to completion ([performance-and-multifidelity](../../topics/solvers/performance-and-multifidelity.md)).
+- Published correlations between routing proxies and completion are few and weak (one unreviewed 64-board study, one patent dataset), so calibrate before use ([performance-and-multifidelity](../../topics/solvers/performance-and-multifidelity.md), [imitation](../../topics/data/imitation-and-learned-scores.md), [patents](../../topics/landscape/patents-watchlist.md)).
 - No figure of merit links scores to lab outcomes ([quality-metrics](../../topics/verification/quality-metrics.md)).
 - Optimizers find proxy errors (Goodhart's law).
 

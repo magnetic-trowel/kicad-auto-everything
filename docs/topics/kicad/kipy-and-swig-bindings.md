@@ -1,7 +1,7 @@
 # KiCad Python bindings: kicad-python (kipy) and legacy SWIG `pcbnew`
 
 **TL;DR**
-- **kipy** is the official IPC client: MIT, PyPI **0.8.0 (2026-08-30)**. Every KiCad-11-only method (design rules, custom rules, library placement, netlist import, `export_*`, `set_net_classes`) exists only on unreleased main (0.9.0.dev0). Corrected by VK [P].
+- **kipy** is the official IPC client: MIT, PyPI **0.8.0 (2026-08-30)**. Every KiCad-11-only method (design rules, custom rules, library placement, netlist import, `export_*`) exists only on unreleased main (0.9.0.dev0). `set_net_classes` is main-only too, although KiCad 10.0 already serves `SetNetClasses`; variants are not wrapped. Corrected by VK [P].
 - **kipy traps:**
   - The 0.8.0 orientation setter **drops every 3D model**.
   - `Track.length` is a method.
@@ -20,7 +20,8 @@
 | Requirements | `protobuf<6,>=5.29`, `pynng<0.10,>=0.9`, `jsonschema`, Python ≥3.9; `KiCad.check_version` checks compatibility [P] ([PyPI JSON](https://pypi.org/pypi/kicad-python/json)) |
 | main | 0.9.0.dev0, "Production/Stable" classifier. Latest commit 2026-09-23 adds net-class assignments. Can auto-launch `kicad-cli api-server` (KiCad 11) [P] |
 | `Board` methods in 0.8.0 | footprints, tracks, vias, zones, pads, nets; by-net, by-netclass and connected items (KiCad ≥10.0.1); `refill_zones`, `interactive_move`, `flip_items`, `hit_test`, `get_stackup`, pad polygons, commits, `run_action`, save/revert/`get_as_string` [P] |
-| main-only, needs KiCad 11 | `get/set_design_rules`, `get/set_custom_design_rules`, `place_footprint_from_library`, `import_netlist`, `export_*`, `open/create/close_document`, `set_net_classes`, net-class assignments [P] (corrected, VK) |
+| main-only, needs KiCad 11 | `get/set_design_rules`, `get/set_custom_design_rules`, `place_footprint_from_library`, `import_netlist`, `export_*`, `open/create/close_document`, net-class assignments [P] (corrected, VK) |
+| main-only, server side already in 10.0 | `set_net_classes` (10.0 serves `SetNetClasses`; with 0.8.0, send it as raw protobuf). The 8 variant commands are not wrapped in 0.8.0 [P] |
 | Examples | `move_footprints.py`, `create_zone.py`, `round_tracks`, `design_rules.py`, `check_for_testpoints.py`, `headless.py`, `jobs.py`, `layer_indicator` [P] |
 | Docs | [docs.kicad.org/kicad-python-main](https://docs.kicad.org/kicad-python-main/) |
 | License wrinkle | A stray GPL header in `kipy/proto/common/types/__init__.py`. 11 of 17 generated `*_pb2.pyi` stubs in 0.7.1 carry GPL headers ([issue #134](https://gitlab.com/kicad/code/kicad-python/-/work_items/134), open). Irrelevant for our GPL code [I]. |
@@ -38,7 +39,7 @@
   - pcbnew writes a possibly stale project model over `.kicad_pro` on every save. KMS restores `net_settings` with `preserve_project_settings()`.
   - "Calling `ZONE_FILLER` via SWIG causes segfault" ([KMS KNOWN_ISSUES](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/docs/KNOWN_ISSUES.md)).
   - A SWIG `BOARD` proxy can lose its methods after some sequences (`delete_trace` + auto-save), and `open_project` kept reporting success ([KMS f65eaf2](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f65eaf2798c642eb174af2ace6a9c7e8d2753ec8)).
-  - `ImportSpecctraSES`/`ExportSpecctraDSN` return `False` on failure, and a `!= 0` check accepted it because `False == 0` ([KMS f476a97](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f476a9794daaa323e9020010b5d09376c680bbd4)).
+  - `ImportSpecctraSES`/`ExportSpecctraDSN` return `False` on failure, and a `!= 0` check accepted it because `False == 0` ([KMS f476a97](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f476a9794daaa323e9020010b5d09376c680bbd4)). On 10.0.7 a partial SES import still returns success: unresolved items are skipped with only a log warning ([specctra-freerouting-integration.md](specctra-freerouting-integration.md)).
   - Calling `Flip()` before `board.Add()` caused "a 30s hang in KiCAD 9" (KMS).
   - SWIG has no undo and needs a manual reload; IPC has transactions. KMS's `place_component` is hybrid: SWIG loads the library footprint, IPC places it.
 - **Plugins that break in 11:**

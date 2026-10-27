@@ -2,7 +2,7 @@
 
 **TL;DR**
 - PCBWorld (LG AI Research; arXiv 2607.05915 v4; KDD'26 workshop, non-archival) wraps **KiCad 9.0.8's PNS router + DRC** as 58 Python APIs in a separate GPLv3 process; BSD-3 environment.
-- Real boards (D3-A, 99 small; D3-B, 10 medium, all 2-layer): **Freerouting 2.1.0 0.80 / 0.78** clean-pass @5, **PPO on engine actions 0.86 / 0.45** (0.94 on D3-A without `finish`), **GPT-5.4 interactive 0.65 / 0.00**.
+- Real boards (99 small D3-A boards; 10 of D3-B's 287 medium boards, all 2-layer): **Freerouting 2.1.0 0.80 / 0.78** clean-pass @5, **PPO on engine actions 0.86 / 0.45** (0.94 on D3-A without `finish`), **GPT-5.4 interactive 0.65 / 0.00**.
 - LLM agents were handicapped: **no reward and no DRC list in the prompt**, no copper zones, 2-turn history, 256-token replies, no delete/rework actions, T = 200 — their numbers are a lower bound.
 - Engine engagement is decisive (GPT-5.4 interactive 0.65 vs plan-and-execute 0.19 vs engine-free 0.02), but per-step LLM routing is ruled out on cost: **~425k tokens per small board, ~1.92M per medium board; 126× slower than PPO, 33× slower than Freerouting**.
 - The first `net_select` often decides success; agents rarely recover.
@@ -20,7 +20,7 @@
 
 **Reward / metrics**: Φ = −f_drv − 0.002·WL − 0.1·vias; f_drv = 3·ln(1+x/2) + Σᵢ ln(1+xᵢ/2) (x = dirty nets, xᵢ = violations on net i); 38 checks = 35 stock error checks + DANGLING_VIA, DANGLING_TRACK, NET_CONFLICT; terminal reward Φ(s_T) − Φ(s_0); shipped repo uses a newer potential (−unconnected, completion bonus, step penalty). **Clean Pass** = full connectivity and 0 error DRVs on the best-potential of 5 rollouts (@5); boards can pass with the 3 promoted warnings.
 
-**Datasets**: D1 Jumanji-Connector grid replica (10–500); D2 synthetic gridless (2 layers, 4–6 nets, 8–21 pads; 10k/128/128); D3 = 679 real boards from PCBench's 1,182-board `PCBs_version_9` pool converted to KiCad 9 (only `.kicad_pro` severities edited) — D3-A 100 (≤31 pads), D3-B 287 (≤100 pads), D3-C 292 (6–451 nets, ≤2,103 pads, 2–8 layers; unevaluated). Evaluations use 99 D3-A boards and 10 D3-B boards (2-layer, one per pad-count quantile); Freerouting/RL rows are 4-seed means; LLM rows single best-of-5.
+**Datasets**: D1 Jumanji-Connector grid replica (10–500); D2 synthetic gridless (2 layers, 4–6 nets, 8–21 pads; 10k/128/128); D3 = 679 real boards from PCBench's 1,182-board `PCBs_version_9` pool converted to KiCad 9 (only `.kicad_pro` edited: some checks set to ignore, some rule floors zeroed; board files byte-identical) — D3-A 100 (≤31 pads), D3-B 287 (≤100 pads), D3-C 292 (6–451 nets, ≤2,103 pads, 2–8 layers; unevaluated). Evaluations use 99 D3-A boards and 10 D3-B boards (2-layer, one per pad-count quantile); Freerouting/RL rows are 4-seed means; LLM rows single best-of-5.
 
 **Results (Table 21, @5)** — CP / routability / DRV / WL mm / vias / s
 | Method | D2 | D3-A | D3-B |
@@ -45,10 +45,10 @@
 - Failure modes: first `net_select` decides; loops without delete actions; LLM errors map to DRC codes — via on pad (ANNULAR_WIDTH, HOLE_CLEARANCE), wrong-layer endpoint (DANGLING_TRACK), shorts/clearance, edge detours (EDGE_CLEARANCE), phantom waypoints, repeated attempts.
 
 ## Recommendations for our system
-- Use PCBWorld D3-A/B as a routing benchmark with matched @1/@5, seed means, stated router settings and potential function; add D3-C and Freerouting Tier C/D as stress sets ([benchmarks](benchmarks-and-datasets.md)) [I].
+- Use PCBWorld D3-A/B as a routing benchmark with matched @1/@5, seed means, stated router settings and potential function (kaebench's `cpk` is any-clean@k, so it can only be ≥ PCBWorld's Φ-selected CP@5); add D3-C and Freerouting Tier C/D as stress sets ([benchmarks](benchmarks-and-datasets.md)) [I].
 - Do not build per-segment LLM routing; if a step agent is built, fix: echo DRC codes/positions, include zones, per-netclass rules, delete/rip-up actions, longer history, explicit first-`net_select` planning, prefix-cached static block [I].
 - Reuse the engine (GPLv3 — in-process allowed under our GPL-3.0-or-later) for scripted PNS: checkpoint/restore enables beam search/MCTS over waypoints and modes ([PNS](kicad-pns-router.md)) [I].
-- Mine the 679 human-routed boards for relation/offset priors and ordinal-magnitude calibration (per-board licenses apply) [I].
+- Mine D3's human-routed boards for relation/offset priors and ordinal-magnitude calibration, excluding the 99 D3-A + 10 D3-B evaluation boards: never mine, fit or calibrate on them (per-board licenses apply) [I].
 
 ## Conflicts and open questions
 - Paper says L1 engine "unmodified"; repo contains modified KiCad files.

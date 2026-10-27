@@ -19,7 +19,7 @@
   - Use Ott's layer-change order.
   - Place a return via within ≤200 mil, scaled with data rate down to about 1.3 mm at PCIe Gen5.
   - Use stitching capacitors (≤1 µF) only where a split crossing is unavoidable.
-- Electrical length is judged against **rise time**, not clock period. At t_r/6, flag the net for SI review; at t_r/2, it must be terminated (the threshold is CONTESTED). Slow the edges before adding termination. Keep stubs below min(15 mil, 0.3/Gbps).
+- Electrical length is judged against **rise time**, not clock period. At t_r/6, flag the net for SI review; at t_r/2, it must be terminated (the threshold is CONTESTED). Slow the edges before adding termination. On SerDes links ≳3 Gb/s, keep via stubs below min(15 mil, 0.3/Gbps in).
 - Crosstalk follows K = 1/(1+(D/H)²). Reduce h first, then set spacing from a crosstalk budget. Guard traces and ground fill are never defaults.
 - Express every rule in units of h (taken from the stackup) and per-net t_r. Never use bare slogans such as "3W".
 
@@ -31,7 +31,7 @@
 | Return path location | Above the frequency where ωL dominates, the return runs "directly underneath the signal currents" (the lowest loop inductance). Bogatin's Rule #7: "always use a continuous return path adjacent to every signal path" | [Bogatin/LeCroy](https://www.teledynelecroy.com/oscilloscope/blog/signal-return-paths-signal-and-power-integrity-tutorial/) [P]; [SIJ 20 rules](https://www.signalintegrityjournal.com/blogs/4-eric-bogatin-signal-integrity-journal-technical-editor/post/1539-bogatins-20-rules-for-engineers) [P; VERIFIED] |
 | Plane type | The return uses the plane directly beneath, whether power or ground. With 1 oz copper above 30 MHz the currents are surface currents, so a plane acts as two conductors | [Ott P6](https://hott.shielddigitaldesign.com/techtips/pcb-stack-up-6.html) [P] |
 | Adjacent plane takes all of it | An L1 signal returns 100% in an adjacent L2 ground, even with 20 planes. Two or three signal layers sharing one plane leave "fields intermingling … where EMI comes from" | [Hartley/Altium](https://resources.altium.com/p/pc-board-stack-up-best-practices-with-rick-hartley) [P; VERIFIED as a paraphrase] |
-| Lateral spread | Microstrip: 50% within ±1h, 80% within ±3h, 97% within ±10h. Stripline: 99% within ±3h, about 75% on the nearer plane. Because w ≈ 2h at 50 Ω, TI's "1.5 W from voids" ≈ 3h, which is the same physics [I] | [Adamczyk](https://incompliancemag.com/pcb-return-current-distribution-in-a-microstrip-line/) [P] |
+| Lateral spread | Microstrip: 50% within ±1h, 80% within ±3h, 97% within ±10h. Stripline: 99% within ±3h, about 75% on the nearer plane. Check [I]: the standard microstrip density J ∝ 1/(1+(x/h)²) gives the 50% and 80% figures but 94% at ±10h (97% at ±20h); the source was not re-opened. Because w ≈ 2h at 50 Ω, TI's "1.5 W from voids" ≈ 3h, which is the same physics [I]. That holds at 50 Ω single-ended widths; TI's rule is for HS differential pairs, whose traces are often narrower, so 1.5W can fall short of 3h there [I] | [Adamczyk](https://incompliancemag.com/pcb-return-current-distribution-in-a-microstrip-line/) [P] |
 | Return pins | The signals closest to a good return suffer the least ground bounce, so spread return pins among signal pins | [Johnson](https://www.sigcon.com/Pubs/edn/SpreadYourReturns.htm) [P] |
 | 3-D scaling | A 0.063" via at 500 ps behaves like a Euro-connector at 5 ns. It therefore needs a 10:1 signal:ground via ratio, i.e. a "carpet of vias" | [Johnson](https://www.sigcon.com/Pubs/edn/ConnectLayers.htm) [P] |
 | Differential pairs | They are not self-returning; each leg returns under itself. In a 2.5 Gb/s XAUI case, a pair on a power plane with its SMA grounds on ground gave a "horrible" eye. The fix was a ground island under the connectors (6 mil gap, pair about 12 mil apart at the crossing) | [Johnson](https://www.sigcon.com/Pubs/edn/ReturnCurrentMatters.htm) [P] |
@@ -107,9 +107,10 @@
     - At 30 Gb/s the limit is about 10 mil. A non-backdrilled via stub is 11 mil (4 + 3 + 4). Count the middle pad ring even on backdrilled vias. "50 mils is too long for even an 8 Gbps stub."
   - Quarter-wave frequency: f ≈ 1.5/L[in] GHz [S; EDN NOT RETR., but arithmetically consistent].
   - TI: <15 mil, otherwise backdrill [VERIFIED].
-  - Gen5 maximum: about 54 mil (Megtron 6) or 51 mil (FR4).
-  - EMA: a 20 mil stub resonates at 8–16 GHz.
+  - TI SNLA426 Gen5 quarter-wave maximum: about 54 mil (Megtron 6) or 51 mil (FR4). This is a resonance ceiling, not a target: 0.3/Gbps gives about 9 mil at 32 GT/s [I].
+  - EMA claims a 20 mil stub resonates at 8–16 GHz. That contradicts f ≈ 1.5/L, which gives about 75 GHz at 20 mil (8–16 GHz needs roughly 90–190 mil) [I], so don't use the figure.
   - LPDDR4: ≤20 mil (CA) and ≤40 mil (data).
+  - Scope: the 15 mil and 0.3/Gbps limits are for SerDes ≳3 Gb/s (rules_highspeed_emi.md TL-4); other nets use their vendor pack's stub limit.
 - **Alternatives to backdrill:** near-outer layers (L1 to L15 of 16), sequential lamination, or blind/buried vias. Decide the stub strategy before the stackup (Telian).
 - **Pads as stubs:**
   - Enter a connector pad from the end opposite the solder leg; otherwise there is a pad stub of about 50 mil. Use SMT connectors at 25+ Gb/s (Telian).

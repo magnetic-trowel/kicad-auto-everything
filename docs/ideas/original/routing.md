@@ -22,7 +22,7 @@ Part of the [original-ideas catalog](README.md). Shorthands as in [intent-and-wh
 
 **Why it should work.**
 - Spend LLM effort on homotopy, not angle ([topological-routing](../../topics/routing/topological-routing.md)).
-- Bounded menus beat free-form generation (92.5% vs 6.6%) ([agent-loop-patterns](../../topics/llm/agent-loop-patterns.md)).
+- Bounded menus beat free-form generation (DRC-Aid on IC layouts: 92.5% vs 6.6%) ([agent-loop-patterns](../../topics/llm/agent-loop-patterns.md)).
 - PNS needs waypoints and an order supplied from outside ([kicad-pns-router](../../topics/routing/kicad-pns-router.md)).
 - LLMs cannot emit copper ([llm-routing-evidence](../../topics/routing/llm-routing-evidence.md)).
 
@@ -135,7 +135,7 @@ The procedure is deterministic, with no sampled look-ahead.
 
 **Builds on.** alg#334; eco#69, eco#88; prac#74.
 
-**How to test.** Measure regret against the best fixed engine per class over 100 D3 boards, using a time split, and record compute cost.
+**How to test.** Measure regret against the best fixed engine per class over 100 D3 boards outside PCBWorld's 99 + 10 evaluation set, using a time split, and record compute cost.
 
 **Effort/risk.** S–M. Region-split routing creates boundary conflicts, so start by dispatching per stage.
 

@@ -1,7 +1,7 @@
 # License compliance checklist (GPL-3.0-or-later code; permissive docs, rules, data, weights)
 
 **TL;DR**
-- **REUSE layout:** `LICENSES/` holds GPL-3.0-or-later, CC-BY-4.0, CC0-1.0, CDLA-Permissive-2.0 and Apache-2.0 (when weights land). Every file gets SPDX headers or a `REUSE.toml` annotation. Run `reuse lint` in CI [P/I].
+- **REUSE layout:** `LICENSES/` holds GPL-3.0-or-later, CC-BY-4.0, CDLA-Permissive-2.0 and BSD-3-Clause (the PCBWorld-derived suites). Add CC0-1.0 with the first rule pack and Apache-2.0 with the first weights, since REUSE forbids unused license files. Every file gets SPDX headers or a `REUSE.toml` annotation. Run `reuse lint` in CI [P/I].
 - **Dependency gates** (`cargo-deny`, `pip-licenses`/`licensecheck`, ScanCode) **deny** GPL-2.0-only, AGPL, non-commercial, unlicensed and proprietary code, and **allow** GPL-3.0, GPL-2.0-or-later, LGPL, MPL-2.0 and permissive licenses [I].
 - **Generate `THIRD_PARTY_NOTICES.md` at each release.** Bundles that ship KiCad, Freerouting or GEOS binaries must include license texts plus source or a written offer [P/I].
 - **Contributions:** DCO plus inbound=outbound ([CONTRIBUTING.md](../../../CONTRIBUTING.md)). An AI-assistance rule bars AGPL, unlicensed, non-commercial and proprietary source from prompts and diffs [I].
@@ -29,7 +29,7 @@
 - **Analytics:** Freerouting collects anonymous analytics unless `-da` is passed [P].
 
 ## Recommendations for our system
-1. **Annotate `REUSE.toml`:** `docs/**`, `reports/**`, `research_notes/**` → CC-BY-4.0; `rules/**` and constraint/intent schemas → CC0-1.0; `datasets/manifests/**` → CDLA-Permissive-2.0; future weights → Apache-2.0. Quotations remain their authors' [I].
+1. **Annotate `REUSE.toml`** (current state; the last matching table wins): `**/*.md`, `docs/**`, `reports/**`, `research_notes/**` → CC-BY-4.0; `bench/manifests/*.jsonl`, `bench/suites/**` and `tools/research/**/results/*.jsonl` → CDLA-Permissive-2.0, except the three PCBWorld D3 suites → BSD-3-Clause with LG AI Research's copyright line; everything else → GPL-3.0-or-later. Still to add: rule packs and constraint/intent schemas → CC0-1.0 (on a top-level path that cannot match `docs/topics/rules/**`) and weights → Apache-2.0. Quotations remain their authors' [I].
 2. **Rust:** `cargo deny check licenses` allowing GPL-3.0(-or-later), GPL-2.0-or-later, LGPL-*, MPL-2.0, Apache-2.0, MIT, BSD-2/3-Clause, ISC, Zlib, BSL-1.0, Unicode-3.0. Deny AGPL (unless deliberately accepted), GPL-2.0-only, unlicensed and proprietary crates [I].
 3. **Python:** `pip-licenses --from=mixed --fail-on` with the same deny list, or `licensecheck`. Keep Gurobi and other proprietary solvers as optional user-installed extras that are never bundled [I].
 4. **Releases:** generate `THIRD_PARTY_NOTICES.md` (pip-licenses or cargo-about output). For Docker images bundling KiCad, Freerouting (GPL-3.0-only, so that image is GPL-3.0) or GEOS, include license texts and corresponding source or a written offer [I].

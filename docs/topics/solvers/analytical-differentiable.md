@@ -1,7 +1,7 @@
 # Analytical / differentiable placement (Cypress, DREAMPlace, custom JAX/PyTorch losses)
 
 **TL;DR**
-- The proven scalable PCB approach is analytical placement; **Cypress** (NVIDIA/Cornell, ISPD'25, Apache-2.0) is DREAMPlace adapted to PCBs and demonstrated from 41 to 6,628 components.
+- The proven scalable PCB approach is analytical placement; **Cypress** (NVIDIA/Cornell, ISPD'25, Apache-2.0) is DREAMPlace adapted to PCBs and demonstrated from 41 to 6,628 components (the big designs have only 1,293–2,152 movable parts).
 - Its validated terms: orientation-aware LSE wirelength, **two-sided electrostatic density** (sides pre-assigned), **differentiable net crossing** (Bézier parameters through bell functions), **Gumbel-Softmax orientation** optimized bi-level, MOTPE tuning against Freerouting routability.
 - Domain terms (decap distance, hot-loop area, keep-out/outline SDF, thermal spreading, RUDY congestion) drop in as penalties; discrete decisions (side, final orientation, legality) still need a discrete legalizer.
 - For 20–1000 parts, a lean JAX/PyTorch reimplementation of Cypress's ideas is likely better than DREAMPlace's CUDA build (pinned to Python ≤3.9, PyTorch ≤2.0, GCC 7.5) [I].
@@ -41,7 +41,7 @@ def loss(params, key, k):                                 # k = continuation ste
 # then argmax orientations -> CP-SAT legalization (min displacement, hard decap/keep-out) -> SA/LNS detail
 ```
 
-**Transplant terms** [I]: VeoPlace weak anchors λ_A·Σ‖x − x̂‖² (λ_A = 0.01) for LLM/VLM regions ([LLM-guided](../placement/llm-guided-placement.md)); NTU power-flow anchors; centroid-direction no-overlap gradient + repel-then-no-repel schedule ([scene transplants](../placement/scene-layout-transplants.md)); TRouter-style differentiable thermal surrogate; Qplacer frequency-aware repulsion for aggressor/victim pairs; CoEvoP&R-style LLM-evolved objective over a restricted observable API ([LLM-evolved heuristics](llm-evolved-heuristics.md)).
+**Transplant terms** [I]: VeoPlace weak anchors λ_A·Σ‖x − x̂‖² for LLM/VLM regions (VeoPlace's best λ_A = 0.01 is an absolute weight in its own units; calibrate ours by sweep against a random-region control) ([LLM-guided](../placement/llm-guided-placement.md)); NTU power-flow anchors; centroid-direction no-overlap gradient + repel-then-no-repel schedule ([scene transplants](../placement/scene-layout-transplants.md)); TRouter-style differentiable thermal surrogate; Qplacer frequency-aware repulsion for aggressor/victim pairs; CoEvoP&R-style LLM-evolved objective over a restricted observable API ([LLM-evolved heuristics](llm-evolved-heuristics.md)).
 
 ## Recommendations for our system
 - Global placement for 100–1000 parts: Cypress-style JAX/PyTorch loss with Gumbel orientation, two-sided density, net crossing and domain penalties; or Cypress itself (Apache-2.0, GPU) as reference [I].

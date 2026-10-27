@@ -16,7 +16,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 
 | Source | Metrics and definitions | Tag |
 |---|---|---|
-| PCBWorld | **CP** (Clean Pass: fully connected and 0 error-level DRVs); **Potential gain** Φ over unconnected, DRV, WL and vias; Routability; DRV; WL; Via; Time; Parse-fail. @5 = best of five rollouts by Φ, with Time averaged over all rollouts. DRC is re-run on saved boards against each board's own rules ([METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md)) | [P] |
+| PCBWorld | **CP** (Clean Pass: fully connected and 0 error-level DRVs); **Potential gain** Φ over unconnected, DRV, WL and vias; Routability; DRV; WL; Via; Time; Parse-fail. @5 = best of five rollouts by Φ (CP@5 is the clean status of that one rollout, so a clean rollout with a worse Φ does not count), with Time averaged over all rollouts. DRC is re-run on saved boards against each board's own rules, after D3's `.kicad_pro` severity and floor edits (VP #7) ([METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md)) | [P] |
 | OmniRouting | **PR** (load and schema success); **NRR** (% of expected nets connected and DRC-clean); **PRR** (% of the Σ(\|Pₙ\|−1) minimum pad connections routed and clean; missing outputs stay in denominators); **Open / PShort / NShort** (PShort counts only different-net wire–wire and via–wire contacts); **Clr./Dist.** violation counts by cause; **Polygon** (copper-pour use); **TWL**; **#Vias**; **#Layers**; **RT** ([arXiv 2608.04434](https://arxiv.org/html/2608.04434v1)) | [P] |
 | OmniRouting MGS | Predicted and reference routings become pad-aware, layer-specific graphs at coarse (corridor/topology) and fine (geometry) resolution, with coarse weighted more. Measures agreement with the expert reference, **not correctness** | [P] |
 | OmniRouting human reference | NRR 93.58%, PRR 95.91%, Open 4.38%, PShort 0.38%, Clr. 0.80 | [P] |
@@ -27,6 +27,8 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 | Freerouting v2.5.0 scores (VK) | Router score `V2_CONTINUOUS` = max(0, 1000 − W1·o1 − W2·o2 − W_C·N_viol/D − W_D·ΣL_um/(U·D)), open fraction split at F = 0.5 with W1 ≈ 333.3 and W2 ≈ 666.7, and D = max(1, pins × signal layers). Optimizer score `V2_LOWER_BOUND` measures copper efficiency against placement-derived bounds; incomplete nets and DRC hits are vetoes. `normalized_score` is 0–1000 ([scoring.md](https://github.com/freerouting/freerouting/blob/master/docs/scoring.md)) | [P] |
 | Quilter blog | Routing metrics without first-pass yield or bring-up data do not prove boards work | [S] |
 | Practitioners | "how to calculate a figure of merit for an attempt at a PCB, which is a necessary step in reinforcement learning" (AndyC_772); AI needs "a clear definition of a correct vs incorrect classification" (TheHeintzel) | [P] |
+
+**kaebench best-of-k is a different metric.** kaebench's `cpk` is "any-clean@k": any clean attempt counts (attempts ranked clean → completion → errors → length). It is not PCBWorld's Φ-selected CP@5 and can only be ≥ it. Its Freerouting attempts vary only the `-mp` pass schedule, and Freerouting seeds `Random(0)`, so attempts are not independent samples ([harness.md](harness.md), [dev-eval-plan.md](dev-eval-plan.md)).
 
 ### Recommended union metric set
 
@@ -63,5 +65,6 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 - research notes: [constraints_verification_benchmarks.md § Q3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
 - research notes: [practitioner_discussions.md § Q2c, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 4 Freerouting](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
+- corrections (VP): [verification_papers.md § 1 (#7), § 2.1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
 
 See also: [benchmarks.md](benchmarks.md), [benchmark-plan.md](benchmark-plan.md), [looks-right-metrics.md](looks-right-metrics.md)

@@ -10,6 +10,7 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 - [Executive report](../reports/LLM%20driven%20PCB%20placement%20and%20routing.md): conclusions, recommended architecture, roadmap.
 - [Hybrid architecture options](topics/architecture/hybrid-architecture-options.md)
 - [Original ideas](ideas/original/README.md): new ideas, top 10 to try first.
+- [Research](research/README.md): every method we built or planned, what worked and what did not, with numbers and code; untested ideas in [research/ideas](research/ideas.md).
 
 ## Digests
 

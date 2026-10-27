@@ -3,24 +3,24 @@
 **TL;DR**
 - Evaluate in four tiers:
   - **T0** (µs–ms): geometry, intent and PRC-style checks on every move.
-  - **T1** (seconds): `kicad-cli` DRC plus a quick reference router as a routability probe.
+  - **T1** (seconds on small boards): `kicad-cli` DRC plus a quick reference router as a routability probe.
   - **T2** (seconds–minutes): 2.5D IR drop and PDN impedance.
   - **T3** (minutes–hours): openEMS SI slices and FEM thermal for finalists.
-- Rule routers are fast enough to sit inside a placement loop as evaluators: KiCadRoutingTools ≈0.65 s and Freerouting 2.1.0 ≈7 s per small real board (PCBWorld).
+- Rule routers are fast enough to sit inside a placement loop as evaluators only on small boards: KiCadRoutingTools ≈0.65 s and Freerouting 2.1.0 ≈7 s per PCBWorld D3-A board (≤31 pads). On larger boards the harness measured Freerouting 2.5.0 timeouts at 600 s on 22 of 79 split-C boards, and 4 of 297 boards' DRC timed out at 900 s ([harness.md](harness.md)) [M].
 - The most production-ready open SI verifier is Antmicro's si-wrapper + gerber2ems flow. It is CI-able and VNA-validated, but runs on KiCad 9.0.x only.
 - ML surrogates exist for PDN impedance, decap selection, eye metrics and crosstalk. None is layout-generic, open and KiCad-integrated, and no layout-level EMI or thermal surrogate exists.
 - Calibrate cheap proxies against T3 on reference boards before using them as rewards.
 
 ## Key facts
 
-Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
+Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference; [M] measured in this repo.
 
 ### Tiers
 
 | Tier | When | Checks | Tools and runtime evidence |
 |---|---|---|---|
 | T0 (µs–ms) | Every move | Overlap/out-of-bounds; intent and PRC geometry (proximity, region, edge, symmetry, layer-switch count once routed); HPWL; net crossings; Transcalc Z0/delay; IPC-2221/2152 widths; overheated-length proxy; convention metrics ([looks-right-metrics.md](looks-right-metrics.md)) | In-process geometry; KRT-style intent grader; optional trained PDN-impedance DNN (0.1 s) |
-| T1 (s) | Per accepted placement or route batch | `kicad-cli pcb drc --format json --refill-zones --schematic-parity --exit-code-violations`; return-path VOID/SPLIT/VIA flags; NRR/PRR/PShort; quick reference router as routability probe | kicad-cli; `return_path`; KRT ≈0.65 s and Freerouting 2.1.0 ≈7 s per small PCBWorld D3-A board ([PCBWorld Table 3](https://arxiv.org/html/2607.05915v2)) [P] |
+| T1 (s on small boards; minutes or more on large ones) | Per accepted placement or route batch | `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` (add `--all-track-errors` for repair loops); return-path VOID/SPLIT/VIA flags; NRR/PRR/PShort; quick reference router as routability probe | kicad-cli; `return_path`; KRT ≈0.65 s and Freerouting 2.1.0 ≈7 s per small PCBWorld D3-A board ([PCBWorld Table 3](https://arxiv.org/html/2607.05915v2)) [P]; see Speed evidence for large boards |
 | T2 (s–min) | Checkpoints | DC IR drop and current density; PDN impedance vs target; switcher coupled noise; near-field estimate | padne, KiPI, Ki-PIDA, emcvisual |
 | T3 (min–h) | Finalists | openEMS S-parameters, TDR and delay per critical net/pair via si-wrapper slices; FEM thermal | gerber2ems + si-wrapper + scikit-rf; FreeCAD/gmsh/CalculiX (Antmicro scripts) or Salome/Elmer; Palace for C/L extraction |
 
@@ -39,7 +39,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 The verification note recommends four channels on 10.x [P/I]:
 1. **IPC** for item CRUD inside commits. This includes library footprint placement via `ParseAndCreateItemsFromString` from `.kicad_mod` text, followed by an `UpdateItems` pass for pad nets (untested), plus net classes and variants.
 2. **Direct `.kicad_dru` writes** for rules.
-3. **`kicad-cli pcb drc --format json --refill-zones`** on a saved copy as the referee.
+3. **`kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations`** on a saved copy as the referee (the note gave only `--format json --refill-zones`; without `--schematic-parity` parity is not checked, and without `--severity-all` excluded items are not reported).
 4. **SWIG `ExportSpecctraDSN`/`ImportSpecctraSES`** in a short-lived helper process for Freerouting round trips. SWIG is slated for removal in KiCad 11.
 
 Pitfalls and patterns:
@@ -78,6 +78,7 @@ The KiCad core has no SI/PI plans: a July 2026 forum request got no developer re
 | Item | Figure | Tag |
 |---|---|---|
 | PCBWorld per-rollout time (D2 / D3-A / D3-B) | Freerouting 2.1.0: 2.69 / 7.09 / 9.94 s. KRT: 0.82 / 0.65 / 3.27 s. PPO: 0.43 / 1.83 s. GPT-5.4 agent: — / 231 / 866 s | [P] |
+| kaebench on KiCad 10.0.7 (harness) | Freerouting 2.5.0, k = 1, 600 s: 22 timeouts on 79 split-C boards. Qualification DRC: 4 of 297 boards timed out at 900 s; CLAUDE.md sets `KAE_DRC_TIMEOUT=3600` for big boards ([harness.md](harness.md)) | [M] |
 | gerber2ems sample | 3.37 ms/timestep × 10,000 steps ≈ 34 s per excited port; scales with cells, steps and ports | [P, derived] |
 | Analytic radiated power | 30 s vs ~5 h full-wave | [S] |
 
@@ -102,7 +103,7 @@ The KiCad core has no SI/PI plans: a July 2026 forum request got no developer re
 
 ## Conflicts and open questions
 
-- No published wall-clock data exists for kicad-cli DRC vs board size, padne/KiPI solves, or a full DDR-net gerber2ems slice. Measure them in-project.
+- No published wall-clock data exists for kicad-cli DRC vs board size, padne/KiPI solves, or a full DDR-net gerber2ems slice. Measure them in-project. The harness has started: DRC exceeded 900 s on 4 of 297 boards ([harness.md](harness.md)), so a per-move T1 router probe is plausible only on small boards [I].
 - Validation of KiPI, Ki-PIDA, padne and SPIKE beyond the authors' caveats is undocumented.
 - Thermal-ML and EMI-ML surrogate searches were incomplete (search budget exhausted).
 

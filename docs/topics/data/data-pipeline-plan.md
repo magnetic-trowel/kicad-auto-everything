@@ -52,16 +52,16 @@ Published data products: CDLA-Permissive-2.0, from tier A only.
 - **Step 1 (small models):**
   - a DevFormer-style relative-pose and **assignment** model;
   - a pairwise ranker on the outcome-labelled sets with board-grouped CV and σ controls, used only as a tie-breaker.
-- **Step 2:** LLM SFT (7–20B LoRA, distilled CoT). Netlist plus board context in, anchor-relative constraint DSL out; decontaminate against eval clusters.
+- **Step 2:** LLM SFT (7–20B LoRA, distilled CoT). Netlist plus board context in, anchor-relative constraint DSL out; decontaminate against eval clusters. The teacher model's terms and the base-model licence must allow training on its outputs and releasing the weights ([LICENSING.md](../../../LICENSING.md)).
 - **Step 3:** GRPO/DAPO with a tiered reward (parse → legality → completion + optimality, + β ranker). VeriReason and CodeV-R1 prompt filters; groups of 4–5 out of 16–36; Best-of-N with router and DRC at inference.
 - **Step 4:** a few hundred expert A/B rankings → a ModuPlace-style ranker or DPO; switch to DPO if hacking appears.
 
 ### 6. Evaluate
-- **Splits:** time-split (first commit after model cutoff), cluster-split, private boards; strata by layers and tier.
+- **Splits:** time-split (first public commit after model cutoff, forks and re-uploads deduplicated), cluster-split, private boards; strata by layers and tier.
 - **Baselines:** designer, swap25/swap100, rules-only constraints with the same solver, existing auto placers, frontier LLMs zero-shot.
 - **Metrics:** clean-route rate and connections routed under a fixed router budget; error-level DRC; HPWL and via ratio vs designer; prior-table compliance; a blind expert-preference subset.
 - **Ablations:** rules vs priors vs pose model vs LLM constraint graphs; retrieval on/off; SFT vs +GRPO.
-- **Contamination probes:** Min-K%-style tests on test-board fragments; popular vs obscure splits.
+- **Contamination probes:** Min-K%-style tests on test-board fragments (they need per-token log-probabilities, so open-weight models only; weak evidence) [I]; popular vs obscure splits.
 
 ## Conflicts and open questions
 

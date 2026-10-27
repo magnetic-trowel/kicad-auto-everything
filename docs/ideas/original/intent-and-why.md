@@ -166,7 +166,7 @@ It runs as a git pre-commit hook and as a PR comment, including on edits made on
 **Why it should work.**
 - Relations survive geometry change (re-solve passes 89.5%), so they make a stable key ([interfaces](../../topics/llm/interfaces-relations-vs-coordinates.md)).
 - Reviewable diffs build trust ([design-rationale](../../topics/ux/design-rationale-and-intent-record.md)).
-- Respins run about 2.9 per project ([respin](../../topics/verification/respin-and-fab-hold-data.md)).
+- Respins run about 2.9 per project (Lifecycle Insights, cited only in vendor marketing; [respin](../../topics/verification/respin-and-fab-hold-data.md)).
 
 **Builds on.** llm#6, llm#207, llm#330; eco#135; prac#4.
 
