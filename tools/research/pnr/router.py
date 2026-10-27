@@ -22,7 +22,9 @@ from raster import stamp_disc_path
 INF = 1e18
 SQ2 = math.sqrt(2.0)
 
-# PNR_FAST: comma list of the fast-router changes (all off by default; "all" = A,B,C,D):
+# PNR_FAST: comma list of the fast-router changes. Default (unset): D,L,K,B,R,J with
+# PNR_STALL=8, measured on two placed boards and pnr seq / jc; "none" routes exactly as the
+# original router (keen-wright db10e58); "all" turns on every change:
 #   A  pathfinder reroutes only the nets in conflict after its first pass
 #   B  pathfinder stops when conflicts + unrouted have not improved for STALL passes
 #   C  a failed connection widens its box step by step (x3 margin, then the full grid once per
@@ -32,11 +34,16 @@ SQ2 = math.sqrt(2.0)
 #   K  a net whose tree cannot reach its remaining terminals continues as a forest: a new
 #      tree starts at one of them and only that break counts as unrouted (not all of them)
 #   R  pathfinder legalizes the best pass seen (fewest conflicted nets, then unrouted), not the last
+#   J  legalize drops only a conflicted net's conflicting connections and reconnects the
+#      pieces left (pins plus kept paths) in hard mode, instead of rerouting the whole net
+#      and dropping all of it when that fails
 #   L  hard-mode searches (legalize) do not retry on the full grid: with foreign copper
 #      forbidden they rarely succeed there, and each failure floods the whole board
-_F = os.environ.get("PNR_FAST", "")
-FAST = set("ABCDKLR") if _F.strip().lower() == "all" else {c.strip().upper() for c in _F.split(",") if c.strip()}
-STALL = int(os.environ.get("PNR_STALL", "4"))
+DEFAULT_FAST = "D,L,K,B,R,J"
+_F = os.environ.get("PNR_FAST", DEFAULT_FAST).strip()
+FAST = (set("ABCDJKLR") if _F.lower() == "all" else set() if _F.lower() in ("", "none")
+        else {c.strip().upper() for c in _F.split(",") if c.strip()})
+STALL = int(os.environ.get("PNR_STALL", "8"))
 # Work counters for every router in the process (run.py writes them to pnr_summary.json):
 # A* expansions and calls, by outcome and by why the search ran.
 PROF = defaultdict(float)
@@ -318,6 +325,16 @@ class Router:
         # start from the pin closest to the pins' centroid
         cents = np.array([t[:, 1:].mean(0) if len(t) else (0, 0) for t in terms])
         start = int(np.argmin(((cents - cents.mean(0)) ** 2).sum(1)))
+        paths, failed = self._grow(net, terms, cents, start, hard, pres)
+        self.routes[net] = paths
+        if failed:
+            self.unrouted[net] = failed
+        return failed
+
+    def _grow(self, net, terms, cents, start, hard, pres):
+        """Prim-style tree from terms[start] to every other non-empty terms[i] (cell arrays:
+        pins, or whole pieces of copper). Stamps the new paths; returns (paths, failed)."""
+        w = self.w
         tree = [terms[start]]
         remaining = [i for i in range(len(terms)) if i != start and len(terms[i])]
         paths = []
@@ -362,10 +379,7 @@ class Router:
             tree.append(path)
             tree.append(terms[hit])
             remaining.remove(hit)
-        self.routes[net] = paths
-        if failed:
-            self.unrouted[net] = failed
-        return failed
+        return paths, failed
 
     def _search(self, net, src, targets, terms, cents, hard, pres, margin, kind):
         """One A* from src to any of `targets` within the box of everything plus `margin`
@@ -467,6 +481,14 @@ class Router:
     def legalize(self, nets=None):
         """Make every route legal: re-route conflicted nets in hard mode, else drop them."""
         nets = list(nets if nets is not None else self.routes)
+        if "J" in FAST:
+            for _ in range(3):
+                bad = [n for n in nets if self.net_conflicts(n)]
+                if not bad:
+                    break
+                kept = {n: self._drop_conflicting(n) for n in bad}
+                for n in bad:
+                    self._reconnect(n, kept[n])
         for _ in range(3):
             bad = [n for n in nets if self.net_conflicts(n)]
             if not bad:
@@ -479,6 +501,59 @@ class Router:
                     self.rip(n)
                     self.routes[n] = []
                     self.unrouted[n] = len(self.w.net_pins[n]) - 1 + len(getattr(self.w, "shape_terms", {}).get(n, []))
+
+    def _drop_conflicting(self, net):
+        """J: unstamp the net's paths that sit in foreign copper; returns the paths kept."""
+        w = self.w
+        kept = []
+        for p in self.routes.get(net, []):
+            if conflicts(p, net, w.DT, w.occT, w.DV, w.occV, w.nl):
+                self._stamp(net, p, -1)
+                PROF["legal.paths_dropped"] += 1
+            else:
+                kept.append(p)
+        self.routes[net] = kept
+        return kept
+
+    def _reconnect(self, net, kept):
+        """J: group the net's pins and kept paths into connected pieces (sharing a cell), then
+        join the pieces in hard mode from the largest one. Unjoinable pieces count as unrouted."""
+        w = self.w
+        pins = [(pi, k) for pi, k in w.net_pins[net] if pi in w.pose]
+        terms = [np.array(w.terminals(pi, k), np.int32).reshape(-1, 3) for pi, k in pins]
+        terms += getattr(w, "shape_terms", {}).get(net, [])
+        terms = [t[(t[:, 1] >= 0) & (t[:, 2] >= 0) & (t[:, 1] < w.H) & (t[:, 2] < w.W)] for t in terms]
+        items = [t for t in terms if len(t)] + list(kept)
+        n_items = len(items)
+        parent = list(range(n_items))
+
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        owner = {}
+        for i, it in enumerate(items):
+            for c in map(tuple, it.tolist()):
+                j = owner.setdefault(c, i)
+                if j != i:
+                    parent[find(i)] = find(j)
+        groups = {}
+        for i in range(n_items):
+            groups.setdefault(find(i), []).append(i)
+        pieces = [np.concatenate([items[i] for i in g]) for g in groups.values()]
+        self.unrouted.pop(net, None)
+        if len(pieces) < 2:
+            return
+        PROF["legal.reconnect_pieces"] += len(pieces) - 1
+        cents = np.array([p[:, 1:].mean(0) for p in pieces])
+        start = int(np.argmax([len(g) for g in groups.values()]))
+        paths, failed = self._grow(net, pieces, cents, start, True, self.pres)
+        self.routes[net] = list(kept) + paths
+        if failed:
+            self.unrouted[net] = failed
+            PROF["legal.reconnect_failed"] += failed
 
     # ------------------------------------------------------------ metrics
     def stats(self):
