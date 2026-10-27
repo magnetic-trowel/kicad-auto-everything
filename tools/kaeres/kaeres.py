@@ -1308,6 +1308,40 @@ def _rephysics_todo(bid, method_ids, pid):
             and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()]
 
 
+def _kaeq_active(owner):
+    """Names of an owner's queued or running kaeq jobs (read-only look at the queue database)."""
+    cfg = read_json(Path.home() / ".kaeq" / "config.json", {})
+    dbp = cfg.get("db")
+    if not dbp or not os.path.exists(dbp):
+        return set()
+    c = sqlite3.connect(f"file:{dbp}?mode=ro", uri=True, timeout=30)
+    try:
+        return {r[0] for r in c.execute("SELECT name FROM jobs WHERE owner=? AND state IN ('queued','running')", (owner,))}
+    finally:
+        c.close()
+
+
+def cmd_rephysics_timer(a):
+    """Submit an experiment's physics re-evaluation hourly (new boards as the experiment finishes them)."""
+    repo = main_repo()
+    harness, kae = git(repo, "rev-parse", a.harness), git(repo, "rev-parse", a.kae)
+    tool = Path.home() / ".local" / "share" / "kaeres" / "kaeres.py"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(Path(__file__).resolve(), tool)
+    d = Path.home() / ".config" / "systemd" / "user"
+    unit = f"kaeres-rephysics-{a.name}"
+    (d / f"{unit}.service").write_text(
+        f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}\n\n[Service]\nType=oneshot\nNice=19\n"
+        f"Environment=PATH={Path.home() / '.local' / 'bin'}:/usr/local/bin:/usr/bin:/bin\n"
+        f"ExecStart=/usr/bin/python3 {tool} rephysics submit {a.name} --harness {harness} --kae {kae}"
+        + (f" --after {a.after}" if a.after else "") + "\n")
+    (d / f"{unit}.timer").write_text(f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}, hourly\n\n[Timer]\n"
+                                     "OnBootSec=15min\nOnUnitActiveSec=1h\n\n[Install]\nWantedBy=timers.target\n")
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "--user", "enable", "--now", f"{unit}.timer"], check=True)
+    print(f"enabled {unit}.timer: harness {harness[:7]}, kae {kae[:7]} (stop: systemctl --user disable --now {unit}.timer)")
+
+
 def cmd_rephysics_submit(a):
     """Queue physics re-evaluation of an experiment's finished boards with a newer physics evaluator
     (new kae and/or physics_board.py), at low priority. Runs are never re-run: each stored output is
@@ -1328,10 +1362,16 @@ def cmd_rephysics_submit(a):
     if a.only:
         only = set(Path(a.only[1:]).read_text().split() if a.only.startswith("@") else a.only.split(","))
         boards = [b for b in boards if b in only]
+    if a.after and not Path(os.path.expanduser(a.after)).exists():
+        print(f"waiting for {a.after}; nothing submitted")
+        return
     cd = code_dir(harness)
     py = cd.with_name(cd.name + ".venv") / "bin" / "python"
+    pending = _kaeq_active(f"rephysics-{a.name}")
     jobs = []
     for bid in boards:
+        if f"rephysics-{a.name}:{bid}" in pending:
+            continue  # already queued or running
         if bid not in rows or missing(e, bid) or not _rephysics_todo(bid, mids, pid):
             continue  # not finished by the experiment yet, or nothing left to measure
         sz = board_size_mb(rows[bid])
@@ -1342,7 +1382,7 @@ def cmd_rephysics_submit(a):
         if a.limit and len(jobs) >= a.limit:
             break
     ev = dict(e["evaluators"])
-    if ev.get("physics_current") != pid:
+    if ev.get("physics_current") != pid and not a.dry_run:
         ev.setdefault("physics_history", [ev["physics"]])
         if pid not in ev["physics_history"]:
             ev["physics_history"].append(pid)
@@ -1535,8 +1575,13 @@ def main():
     s.add_argument("--harness", default="HEAD", help="revision whose physics_board.py and rebuild_boards.py run")
     s.add_argument("--kae", required=True, help="revision with the kae package to measure with")
     s.add_argument("--prio", type=int, default=-1)
+    s.add_argument("--after", help="submit nothing until this file exists (e.g. the pin types' pass marker)")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(f=cmd_rephysics_submit)
+    s = rp.add_parser("install-timer", help="submit hourly as the experiment finishes boards")
+    s.add_argument("name"), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
+    s.add_argument("--after")
+    s.set_defaults(f=cmd_rephysics_timer)
     s = sub.add_parser("rephysics-job", help="one board's physics re-evaluation (what each queued job runs)")
     s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
     s.add_argument("--methods", required=True)
