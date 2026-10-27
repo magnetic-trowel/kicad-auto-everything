@@ -345,8 +345,9 @@ class Router:
         while remaining:
             src_all = np.concatenate(tree)
             n, hit = -1, None
-            if "D" in FAST and len(remaining) > 1:
-                # the remaining terminal nearest to the tree, from the tree cells near it
+            if "D" in FAST and len(remaining) > 1 and len(src_all):
+                # the remaining terminal nearest to the tree, from the tree cells near it (a start
+                # pin wholly off the grid leaves the tree empty: the plain search then fails as before)
                 ty, tx = src_all[:, 1], src_all[:, 2]
                 dmin = [int(np.min(np.maximum(np.abs(ty - cents[i][0]), np.abs(tx - cents[i][1]))))
                         for i in remaining]
