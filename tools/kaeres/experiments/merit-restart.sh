@@ -15,7 +15,8 @@
 #   numba cache, the bridge's Freerouting pinned; the bridge may overrun its --time a little.
 # - pnr: engine of keen-wright db10e58 (v6.4, a superset of xf-experiments) with anytime output
 #   (branch pnr-anytime: the board is written whenever it improves, a fully routed state ends the
-#   attempt, routing and repair keep to the budget); budgets are solver
+#   attempt, routing and repair keep to the budget) and the fast router of pnr-fast-router
+#   (its default, PNR_FAST=D,L,K,B,R,J); budgets are solver
 #   CPU s; their routing (PathFinder) runs outside that clock and they write only at the end,
 #   so an attempt is killed only by the overall deadline (slack 100), never at a multiple of its budget.
 # - beam with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
@@ -29,7 +30,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
 KAE=(--code kae=.@45efe0066edb2559a32e217664ec1f544c80e790)   # claude/vigilant-mayer-i91rrr
-PNR=(--code pnr=.@1ff1b688ec6560c80895e4b25d146c9c3b487295)   # pnr-anytime (keen-wright db10e58 + anytime output, stop when routed, budget-faithful)
+PNR=(--code pnr=.@0a28747acfeaff6bcecfc0a2bfab63397e852626)   # pnr-anytime: keen-wright db10e58 + anytime output + the fast router (pnr-fast-router)
 KH='$HOME/.cache/kaebench'
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"   # fork 06d2686 + kae-speed (same output, faster)
 # rs FIRST_S SLACK [restart.py options]: the wrapper; {timeout} is the board-scaled budget
@@ -66,7 +67,7 @@ pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solve
   local wrap
   if [ "$name" = "pnr route_only" ]; then wrap="$(rs 100000 $sl --max-attempts 1)"; else wrap="$(rs 120 $sl)"; fi
   add "$name (restarts)" "$kind" 900 "$wrap" "pnr engine $spec ${*:+($*) }(docs/ideas/original/scorecard.md)" \
-    "env VIRTUAL_ENV={venv:kae} PYTHONPATH={code:pnr}/tools/research/collapse_joint:{code:pnr}/tools/research/xf_minplus KAE_KICAD_PYTHON={code:pnr}/tools/research/xf_common/kicad-python NUMBA_CACHE_DIR=$KH/numba-anyt NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 sh {code:pnr}/tools/research/xf_common/xf_run.sh {code:pnr}/tools/research/$spec @IN@ @OUT@ @TIME@ @SEED@ $*" \
+    "env VIRTUAL_ENV={venv:kae} PYTHONPATH={code:pnr}/tools/research/collapse_joint:{code:pnr}/tools/research/xf_minplus KAE_KICAD_PYTHON={code:pnr}/tools/research/xf_common/kicad-python NUMBA_CACHE_DIR=$KH/numba-anytfast NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 sh {code:pnr}/tools/research/xf_common/xf_run.sh {code:pnr}/tools/research/$spec @IN@ @OUT@ @TIME@ @SEED@ $*" \
     "${PNR[@]}"
 }
 J=joint-fixed
