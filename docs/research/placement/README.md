@@ -1,0 +1,19 @@
+# Placement research
+
+Placement paths we tried, mostly the physics-first `kae` placer (package `kae`, `kae/src/kae/place`, `circuit`, `physics`). Every kae number here is from KiCad 10.0.7 and kaebench's qualified suite (splits A/B/C = 13/20/79 boards); "physics" is kae's own uncalibrated estimate unless a page says otherwise, and most results are single-seed. Joint place-and-route is in [joint](../joint/README.md); routers in [routing](../routing/README.md); the physics models behind the place terms in [physics](../physics/README.md).
+
+| path | status | one-line result | page | code |
+|---|---|---|---|---|
+| kae placer: quadratic seed, physics macros, CP-SAT floorplan, compiled annealer, grid legalizer | worked | split C legal 72/72; physics 1,410 vs 35,380 without terms (human 4,392); A+B routability unchanged | [kae-placer](kae-placer.md) | `kae/src/kae/place/`, `tools/research/place/csweep.py` |
+| Exact legality, human gate, KiCad DRC loop, protection order, silkscreen, board labels | worked (labels partial) | split C 66/73 -> 72/72 legal; human gate 112/112; silk errors 224 -> 13; 0 of 252 order rules broken | [kae-exact-legality](kae-exact-legality.md) | `kae/src/kae/place/{exact,labels}.py`, `tools/research/place/humangate.py` |
+| Fast physics place terms (loop L, coupling, crystal, thermal, ESD, cable CM, antenna) | worked (thermal partial) | loop L within 5% median of PEEC; move priced in 22 us median; thermal is the one term where shuffles beat the human | [kae-physics-terms](kae-physics-terms.md) | `kae/src/kae/physics/` |
+| Circuit comprehension: physics brief, name-first pins, unannotated pins | worked (ownership partial) | 0.1 s per board; cap ownership 74.7% vs 38% baseline; 81% of human hot loops below the 5th percentile of random | [kae-comprehension-brief](kae-comprehension-brief.md) | `kae/src/kae/circuit/` |
+| Board model, pure-Python KiCad reader, pcbnew bridge, edge-mate | worked (edge-mate not finished) | 80,908 pads match pcbnew to 0.56 nm | [kae-board-model](kae-board-model.md) | `kae/src/kae/board/` |
+| Fixed mechanical interface classifier and baselines | worked; our fixed runs pending | 0 differences with the harness on 112 boards; human + Freerouting 0.17 cp1 on fixed tasks | [kae-fixed-interface](kae-fixed-interface.md) | `kae/src/kae/place/{fixed,mech_rules}.py` |
+| Routability estimators: RUDY, channels, cut capacity, pour fragmentation, probe-select, edge pull, free angles | did not work (angles untested) | none separates failing from routing placements | [kae-routability-estimators](kae-routability-estimators.md) | `kae/src/kae/place/{cost,pour}.py`, `kae/src/kae/cli.py` |
+| Exact physics (PEEC, FV) in the optimizer before routing; `--physics-fidelity` switch | did not work for decisions; tool works | exact 10^3-10^4x slower per move, polish only 1.9% better; 0 of 50 decisions changed on A+B | [kae-exact-physics-before-routing](kae-exact-physics-before-routing.md) | `kae/src/kae/physics/exact.py`, `tools/research/physics/ex_*.py` |
+| Autoplace | see page | see page | [autoplace](autoplace.md) | see page |
+
+Not covered on these pages: `kae place` alone is not a merit method; it runs inside "kae staged (restarts)" and "kae joint loop (restarts)" ([kae-staged](../joint/kae-staged.md), [kae-joint-loop](../joint/kae-joint-loop.md)). Background surveys of placement algorithms are in [docs/topics/placement](../../topics/placement/kae-place.md) and its siblings.
+
+Related areas: [routing](../routing/README.md), [joint](../joint/README.md), [physics](../physics/README.md).
