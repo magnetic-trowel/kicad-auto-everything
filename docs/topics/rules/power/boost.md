@@ -25,7 +25,7 @@
 
 ## Recommendations for our system
 - **Topology detector:** an inductor between the input rail and SW, plus a diode or sync FET from SW to the output → boost. Assign COUT_HF = the smallest-package cap on VOUT/PGND.
-- **Hot-loop polygon** {SW pin / LS FET, rectifier, COUT_HF, PGND}: hard same-layer and 0-via topology; soft area score.
+- **Hot-loop polygon** {SW pin / LS FET, rectifier, COUT_HF, PGND}: COUT_HF on the IC layer is hard (integrated converters); vias and plane coverage are scored through the loop-inductance estimate, so vertical loops stay legal ([hot-loops.md](hot-loops.md)); soft area score.
 - **Cap rank:** the COUT_HF ground pad must be the closest cap to PGND.
 - **Do not flag a large VIN pour as an EMI risk** in boost designs.
 

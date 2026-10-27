@@ -32,13 +32,15 @@
 **Constraint schema example** (RPA §20B):
 ```yaml
 - {id: U3.hotloop, type: loop_area, members: [C12.pad1, U3.PVIN, U3.PGND, C12.pad2],
-   max_mm2: 15, same_layer: true, max_vias: 0, severity: S1, source: "SLYT614 step 1; AN-139"}   # max_mm2 unsourced
+   same_layer: true, severity: S1, source: "SLYT614 step 1"}   # hard part: CIN on the IC layer (integrated converter)
+- {id: U3.hotloop_score, type: loop_area, members: same, objective: min_L_est, max_mm2: 15,
+   severity: S2, source: "SNVA803; EPC"}   # vias, area, next-layer plane scored via L_est; vertical loops allowed; max_mm2 unsourced
 - {id: U3.l_adjacent, type: proximity, a: L2.pad_dot, b: U3.SW, max_gap_mm: 2.0,
    require_net_match: {L2.pad_dot: SW}, severity: S2}
 - {id: U3.fb_kelvin, type: connect_at, net: VOUT_SENSE, at_pad: C20.pad1,
    forbid_shared_copper_with: [VOUT_POWER_PATH], severity: S1}
 - {id: U3.fb_keepout, type: keepout, victim_netclass: SENSITIVE, aggressors: [net:SW, courtyard:L2],
-   clearance_mm: 1.0, layers: all, severity: S1}
+   clearance_mm: 1.0, layers: all, severity: S2}   # 1 mm is an [I] heuristic (VR PWR-05): warning, not DRC
 - {id: U3.L2_plane, type: solid_reference, region: "hull(U3.hotloop.members) + 1mm", layer: In1.Cu, net: GND, severity: S2}
 - {id: U3.ep_vias, type: via_array, region: U3.EP, drill_mm: 0.3, pitch_mm: [1.0, 1.2], fill: plugged_or_tented, severity: S2}
 ```
@@ -51,7 +53,7 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
 - **Calibration anchors:**
   - Axotron 0402: 0.44–0.63 nH top;
   - Archambeault: 0.9 → 3.2 nH at 10 → 100 mil depth;
-  - AN-139 table;
+  - AN-139 table (10 × 10 cm test loop at 27 MHz: plane-distance trend only, not absolute nH);
   - SNVA803: 20 mm² >1 nH, 2 mm² <0.5 nH;
   - EPC: 0.4–2.9 nH.
 - **Budgets to judge against:** SLAA896 per-pin pH totals (750–1150 pH; pin-to-pin 250–650 pH) ([power/class-d-audio.md](power/class-d-audio.md)); EPC overshoot/efficiency data.
@@ -59,26 +61,26 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
 
 **Safety-spacing engine** [I] ([isolation-creepage.md](isolation-creepage.md)):
 - Lookup: (V_RMS, V_impulse from OVC, PD, MG/CTI, altitude, grade) → (creepage, clearance).
-- 2-D surface-geodesic creepage, routed around slots ≥ the PD minimum width only.
+- Surface creepage: KiCad 10.0's native `creepage` constraint where it suffices ([drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)); otherwise a 2-D surface-geodesic check, routed around slots ≥ the PD minimum width only.
 - 3-D straight-line clearance across slots and bodies.
 - All-layer barrier keep-out check.
 - The LLM classifies nets and grades; a human confirms.
 
 **Thermal screener** ([thermal.md](thermal.md)): power per part → zone-graph flood-fill spreading → network (θ_JC/Ψ_JB + 261 °C/W ÷ N + lateral + convection) → superposition → T_J and sensitive-part ΔT.
 
-**PDN screener** ([decoupling-pdn.md](decoupling-pdn.md)): per rail, Z_t + lumped RLC with derated MLCCs and geometric mounting L → peaks ≤1.57× / 3× Z_t, Q, rogue-wave warning, cavity modes vs clocks.
+**PDN screener** ([decoupling-pdn.md](decoupling-pdn.md)): per rail, Z_t + lumped RLC with derated MLCCs and geometric mounting L → peaks ≤1.57× / 3× Z_t (S2 warnings), Q, rogue-wave warning, cavity modes vs clocks.
 
 **Deterministic checks** (pcbnew Python / IPC API) [I]:
 - **Adjacency and proximity:** pad-edge distances; same-side test; via count on the shortest copper path (graph search over tracks and vias).
-- **Reference-plane integrity:** rasterise zones on the adjacent layer under a region or along each critical track; flag voids, slots, foreign nets, split crossings (Ott).
+- **Reference-plane integrity:** rasterise zones on the adjacent layer under a region or along each critical track; flag voids, slots, foreign nets, split crossings (Ott), except voids the part's datasheet mandates (U.FL pad, RF matching network).
 - **Coupling:** parallel-run length and minimum distance, victim vs aggressor, same layer and ±1 layer.
 - **Keep-out compliance:** copper on all layers vs antenna/module/inductor/barrier polygons.
 - **Via fence and stitching:** maximum GND-via gap along the RF centreline within an offset; pour maximum gap ≤ λ/20.
 - **Thermal:** EP via count/pitch; P vs connected copper; hot↔sensitive distances; airflow cone; cut angle vs radial.
 - **DFM:** courtyards (built in); tombstone asymmetry (copper within 1 mm of each pad); polarized-rotation histogram; fiducial count/position/asymmetry; test-point coverage; part-class distance to Edge.Cuts / V-score; HV clearance by net class.
-- **PDN:** nearest cap and via distance per power pin; derated C vs Z_t; bead resonance vs f_sw.
+- **PDN:** nearest cap and via distance per power pin; derated C vs Z_t; bead + cap attenuation at f_sw and its harmonics.
 - **Specials:**
-  - FB angular sector (PWR-17); loop non-containment (FLY-02); SW copper on >1 layer (CHG-02); SW area cap (PWR-03);
+  - FB angular sector (PWR-17); loop non-containment (FLY-02); parallel SW copper on >1 layer (CHG-02; a WCSP series layer change passes); SW area cap (PWR-03);
   - narrowest cross-section on the current graph (HC-01); quiet/power-ground single join (FLY-05);
   - shared copper between high-current paths and monitor/audio references (BMS-03, AUD-05);
   - mirror symmetry (AMS-07); TC± symmetry (SEN-01); IN− copper (SEN-04/05); Kelvin tap inside the pad (PWR-14);
@@ -86,10 +88,10 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
 
 **KiCad encoding** (verify syntax on the installed KiCad) [I]:
 - **Net classes per role:** `PWR_HOT`, `SW`, `SENSITIVE` (FB/COMP/RT/SS/REF/crystal), `RF50`, `HV`, `ANALOG`, `DIGITAL`; widths and clearances generated from IPC and fab limits.
-- **`.kicad_dru` rules** on `A.NetClass` / `B.NetClass`, `A.insideArea('…')` and layer, e.g. SENSITIVE↔SW ≥1 mm.
+- **`.kicad_dru` rules** on `A.NetClass` / `B.NetClass`, `A.intersectsArea('…')` (`insideArea` is deprecated in 10.0) and layer, e.g. SENSITIVE↔SW ≥1 mm with `(severity warning)`, since that distance is a heuristic.
 - **Rule areas** from module, antenna and barrier keep-outs (disallow tracks, vias and zones on all layers); courtyard and edge rules by part class (MLCC near V-score).
-- **Net-tie footprints** inserted to enforce Kelvin and single-point ties.
-- **Everything else** (loop area, Kelvin tap point, solid-reference coverage, via-fence pitch, tombstone symmetry, creepage) is a custom Python check emitting KiCad-style markers.
+- **Net ties** to enforce Kelvin and single-point ties, proposed as schematic changes (symbol + `net_tie_pad_groups` footprint). A board-only footprint is an `extra_footprint` parity error.
+- **Everything else** (loop area, Kelvin tap point, solid-reference coverage, via-fence pitch, tombstone symmetry, creepage beyond the native `creepage` constraint) is a custom Python check emitting KiCad-style markers.
 
 **Criticality map** (Pease) [I]. Before placement, the LLM emits a reviewable list, each item with severity and provenance:
 - hot loops;
@@ -105,7 +107,7 @@ A human corrects it before any geometry is generated, and the deterministic chec
 - **Build the converter detector + hot-loop polygon + loop-inductance estimator first.** They cover the rules sources rank highest.
 - **Treat low-authority numbers as soft objectives** and keep provenance (URL, tag) on every emitted constraint, so humans can audit and override.
 - **Context-dependence flags** stop over-application:
-  - 90° corners only on RF and ESD nets;
+  - corner rules on RF, ESD, differential-pair and ≥10 Gb/s nets (90° corners are a myth for single-ended nets below about 2 Gb/s);
   - split ground only on datasheet mandate (single bridge);
   - "smallest closest" means lowest mounting L;
   - copper under inductors follows the datasheet;
@@ -114,7 +116,7 @@ A human corrects it before any geometry is generated, and the deterministic chec
 
 ## Conflicts and open questions
 - **Default thresholds** (pad gaps, loop-area caps, keep-out distances) are uncalibrated heuristics.
-- **The KiCad custom-rule syntax** and creepage DRC support were not checked against the installed version.
+- **KiCad custom-rule syntax**, including the native `creepage` constraint, is documented for 10.0 in [drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md). How `creepage` treats slots and the PD minimum slot width is still to be tested.
 
 ## Sources
 - research notes: [rules_power_rf_analog_dfm.md § 8, § 9, § 17, § 18, § 19, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 8, § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)

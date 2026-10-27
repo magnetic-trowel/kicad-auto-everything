@@ -2,10 +2,10 @@
 
 **TL;DR**
 - **RF geometry is fixed by the module or RF-IC datasheet and reference design.** That means a 50 Ω CPWG/microstrip over continuous ground, the matching network at the pin, and an antenna keep-out polygon from the module figure. Store this data **per part**.
-- **Hard rules:** shunt match parts grounded through the *named* pin (Nordic VSS pin 31); only GND under RF traces on every layer; the PCB antenna keep-out polygon.
+- **Hard rules:** shunt match parts grounded through the *named* pin (Nordic VSS pin 31); only GND under RF traces on every layer, apart from voids the part's datasheet mandates (U.FL pad, matching network); the PCB antenna keep-out polygon.
 - **Corrected:** Espressif's 15 mm is **enclosure** clearance, not a PCB keep-out. The u-blox "≤0.5 mm / ≤2 mm" via-fence numbers were **NOT FOUND**. The RF↔SMPS "20 mm" has no primary source.
 - **Use λ_g/20 at the highest harmonic** as a soft fence and stitching objective.
-- **90° corners matter only at multi-GHz.** On RF nets use arcs or 135°.
+- **90° corners are a myth for single-ended nets below about 2 Gb/s.** On RF nets use arcs or 135° (vendor rule); bend rules also stay for differential pairs and ≥10 Gb/s nets.
 
 ## Key facts
 
@@ -87,7 +87,7 @@
 
 | ID | Rule | Numeric | Class |
 |---|---|---|---|
-| RF-01 | Z0 geometry from a field solver; continuous reference under the full line | u-blox ≥200 µm | Hard (S1) |
+| RF-01 | Z0 geometry from a field solver; continuous reference under the full line, except voids the part's datasheet mandates (U.FL pad on the first inner layer, inner layers under the Nordic match, all layers under the IPEX connector) | u-blox ≥200 µm | Hard (S1) |
 | RF-02 | Point-to-point; no stubs, test pads or T-branches except designed matching | stub ≪ λ/10 [I] | Hard (S1) |
 | RF-03 | Match at the pin; shunt grounded at the named pin | first element ≤~1 mm [I] | Topology hard; distance soft |
 | RF-04 | Via fence along CPWG and around the RF section | ≤ λ_g/20 (u-blox 2 mm NOT FOUND) | Soft |

@@ -2,7 +2,7 @@
 
 **TL;DR**
 - **Switching chargers are buck converters with an explicit ordered layout list.** BQ25895: "Layout PCB according to this specific order is essential". Emit it as `placement_priority`.
-- **SW copper on one layer only** ("do not use multiple layers in parallel"). This is a good default for every buck.
+- **No SW copper in parallel on several layers** ("do not use multiple layers in parallel"). This is a good default for every buck; a series layer change, as in the WCSP case in [buck.md](buck.md), is allowed.
 - **BMS pack shunt:** 4-wire Kelvin, with the RC filter **at the IC, not at the shunt**, and parallel traces from the shunt.
 - **Cell-tap RC filters at the monitor IC;** cell traces in order without crossing; balance resistors spread for heat.
 - **Spacing classes** scale with stack voltage (16S Li-ion ≈ 67 V). Use PCB spark gaps at the pack terminals.
@@ -34,7 +34,7 @@
 | ID | Rule | Numeric | Check | Sev |
 |---|---|---|---|---|
 | CHG-01 | Follow the charger's ordered list exactly | As datasheet | Order-of-placement check; PWR-01 loop on {C_PMID, PMID, PGND} | S1 |
-| CHG-02 | SW copper on one layer only | — | SW-net copper on >1 layer → flag | S2 |
+| CHG-02 | No SW copper in parallel on several layers | — | SW-net copper paralleled on >1 layer → flag; a series layer change (WCSP, SLYT614) passes | S2 |
 | BMS-01 | Pack shunt Kelvin; SRP/SRN filter at the IC; parallel pair | 100 Ω + 0.1 µF (BQ76952) | Filter nearer the IC than the shunt; diff pair | S1 |
 | BMS-02 | Cell RCs at the monitor; cell traces ordered, uncrossed; balance resistors spread away from the monitor and NTCs | 20–100 Ω / 0.1–1 µF (part-specific) | Filter-to-pin distances; thermal spread | S2 |
 | BMS-03 | High-current path (pack±, FETs, shunt) as wide pours, off the monitor ground; monitor ground tied at the datasheet point | — | Shared-copper analysis vs monitor VSS | S1 |

@@ -1,10 +1,10 @@
 # DFM, DFA and fab limits
 
 **TL;DR**
-- **DRC minimums = the fab's absolute limits; router targets = the fab's recommended values + margin.** Fab profiles are their own rule packs (lowest precedence) that set `min` only. Nothing may relax them.
+- **DRC minimums = the fab's absolute limits; router targets = the fab's recommended values + margin.** Fab profiles set `min` only. Fab and safety minimums are floors applied after rule resolution, not precedence ranks: effective_min = max(resolved_min, fab_min, safety_min), and a pack that asks for less raises a conflict ("needs a different fab class"). Also compile them into Board Setup → Constraints (`.kicad_pro`), since KiCad clamps every resolved clearance and diff-pair gap to the board minimum [P] ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
 - **JLCPCB 1 oz:** 0.10/0.10 mm (1–2 layer), 0.09/0.09 mm (multilayer); annular ring 0.25/0.20 mm recommended; copper ≥0.2 mm from routed edges, ≥0.4 mm from V-cuts; silk ≥1.0 mm text / 0.15 mm line (CORRECTED).
 - **Courtyards:** IPC-7351 Level B 0.25 mm per side. Tombstoning needs symmetric thermal connection on 0201/0402.
-- **Corrected assembly numbers:** fiducial edge distance = SMEMA 7.62 mm + clearance (not "≥5 mm"); test pads 1.0 mm from components (not 2.5 mm).
+- **Corrected assembly numbers:** fiducial edge distance = SMEMA 7.62 mm + clearance when the board rides the conveyor on its own edges, otherwise the assembler's panel/rail spec (not "≥5 mm"); test pads 1.0 mm from components (not 2.5 mm).
 - **Mounting-hole keep-outs have no standard.** Derive from screw head + margin; RP2040 reference: 6 mm around a 2.75 mm hole.
 
 ## Key facts
@@ -58,7 +58,7 @@ Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB
 
 **Fiducials** ([Solutions Mfg](https://www.solutionsmfg.com/images/pdf/fiducial.pdf)) [P], CORRECTED:
 - Minimum 1 mm, maximum 3 mm. Clear area ≥ the mark radius, preferably equal to the diameter.
-- Edge distance ≥ 7.62 mm (SMEMA transport clearance) + fiducial clearance. There is no "≥5 mm" in the primary.
+- Edge distance ≥ 7.62 mm (SMEMA transport clearance) + fiducial clearance for a board conveyed on its own edges. On railed panels the assembler's rail spec applies (JLC: 1 mm fiducials 3.85 mm from the panel edges on 5 mm rails, VR). There is no "≥5 mm" in the primary.
 - Local fiducials for ≤0.020" (0.5 mm) pitch; others use <1.0 or ≤0.4 mm.
 - Three global fiducials in an asymmetric L, all the same size; mask never covers them.
 
@@ -101,7 +101,7 @@ Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB
 | DFM-12 | Height zones from the enclosure | Mechanical drawing | 3-D height vs rule areas | S1 |
 
 ## Recommendations for our system
-- **Fab-profile packs** (precedence 10) set `min` only, with `recommended` as the router's `opt`. Interface and circuit packs set `opt`/`max` and can never relax them ([datasheet-to-constraints.md](datasheet-to-constraints.md)).
+- **Fab-profile packs** set `min` only, with `recommended` as the router's `opt`. They are floors applied after resolution, not a precedence rank, so no interface, vendor or datasheet pack can relax them; a pack that asks for less raises a conflict ("needs a different fab class"). Write the minimums into Board Setup → Constraints as well ([datasheet-to-constraints.md](datasheet-to-constraints.md), [rule-pack-format.md](rule-pack-format.md)).
 - **Copper-weight choice feeds pad-gap checks** ([power/high-current.md](power/high-current.md), HC-03).
 - **Most limits are native KiCad constraints** (`track_width`, `clearance`, `hole_size`, `annular_width`, `edge_clearance`, `hole_to_hole`, `text_height`, `text_thickness`, `silk_clearance`, `courtyard_clearance`). Python checks are needed for tombstone symmetry, fiducial and test-point coverage, and part-class edge/V-score distances.
 

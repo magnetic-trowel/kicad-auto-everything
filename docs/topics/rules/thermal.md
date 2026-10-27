@@ -3,7 +3,7 @@
 **TL;DR**
 - **R_θJA is a property of the JEDEC test board.** 70–95% of the heat leaves through the board, and PCB design is its strongest influence. Never size copper from R_θJA alone; build a resistance network.
 - **TI rules of thumb (SNVA419):**
-  - ≥15.3 cm²/W of two-sided solid copper for a 40 °C rise in still air;
+  - board area ≥15.3 cm² per W of total dissipation (two-sided solid fills, 40 °C rise, still air);
   - ~261 °C/W per 12 mil via, so use as many as fit at 1 mm pitch;
   - 1 oz base, 2 oz above 3 W, 4 oz above 6 W;
   - no copper cuts perpendicular to heat flow;
@@ -22,13 +22,13 @@
 - Ψ_JB back-calculates T_J from a board thermocouple. Do not use Ψ_JT with a heatsink.
 
 **TI SNVA419C** (AN-2020 "Thermal Design By Insight, Not Hindsight", [PDF](https://www.ti.com/lit/pdf/snva419)) [P]:
-- **Rule 1:** ≥15.29 cm² (2.37 in²) of two-sided solid copper per W for a 40 °C rise, natural convection, no heatsink. Airflow can reduce this "by up to half". Alternative: area ≥ 500 °C·cm²/W ÷ (θ_JA − θ_JC). This assumes no enclosure blockage and an EP tied to planes that reach the board edge. Inner planes improve a good 2-layer design by up to 30%.
+- **Rule 1 (board size):** ≥15.29 cm² (2.37 in²) of two-sided solid copper per W for a 40 °C rise, natural convection, no heatsink. Airflow can reduce this "by up to half". Alternative: area ≥ 500 °C·cm²/W ÷ (θ_JA − θ_JC). This assumes no enclosure blockage and an EP tied to planes that reach the board edge. Inner planes improve a good 2-layer design by up to 30%.
 - **Rule 2:** a 12 mil via with 0.5 oz walls ≈ **261 °C/W**. "As many thermal vias as will fit underneath the exposed pad … with 1mm spacing", on as many layers as possible, with a solid bottom ground.
 - **Rule 3:** ≥1 oz; 2 oz above 3 W; 4 oz above 6 W. Example: 3 × 3 in 2-layer θ_JA 28.3 → 21.2 °C/W going from 1 to 2 oz (25% better).
 - **Rule 4:** a cut perpendicular to heat flow added 5.5 °C, vs 1.5 °C for a parallel cut. Route traces through spreaders radially.
 - **Rule 5:** plastic package tops have θ_JT 50–200 °C/W, so heatsink the board bottom through the EP and vias.
 - **Rule 6:** superposition "almost works" (slightly non-linear).
-- **Constants:** λ_Cu ≈ 4 W/cm·K; FR-4 ≈ 0.0023 W/cm·K; h ≈ 10 W/m²K. 1 cm² of 1 oz copper laterally ≈ 71 °C/W; FR-4 vertical for 1 cm² ≈ 13.9 °C/W.
+- **Constants:** λ_Cu ≈ 4 W/cm·K; FR-4 ≈ 0.0023 W/cm·K; h ≈ 10 W/m²K. 1 cm² of 1 oz copper laterally ≈ 71 °C/W; FR-4 vertical for 1 cm² ≈ 13.9 °C/W. No thickness is given; with λ_FR4 = 0.0023 W/cm·K that figure implies t ≈ 0.32 mm. Compute R = t/(λ·A) from the stack-up instead: ≈70 °C/W for 1 cm² of a 1.6 mm board [I].
 
 **TI SLMA002H** (PowerPAD, [PDF](https://www.ti.com/lit/pdf/slma002)) [P]:
 - Thermal land directly under the package; TQFP maximum land = body − 2.0 mm, solder-mask-defined.
@@ -82,7 +82,7 @@
 | TH-07 | Tall parts parallel to airflow, not upstream of hot parts | — | Upstream-cone test | S3 |
 | TH-08 | No SW-node copper as heatsink; use PGND/EP + vias | — | SW area cap | S2 |
 | TH-09 | Never size from R_θJA alone | — | Estimator | S2 |
-| TH-10 | Minimum copper per watt | ≥15.3 cm²/W | Connected area vs P | S2 |
+| TH-10 | Minimum board area per watt (SNVA419 Rule 1, board-level) | ≥15.3 cm²/W, two-sided solid fills, still air | Board area vs Σ P; per part use TH-04 and the estimator | S2 |
 | TH-11 | EP vias 1 mm pitch, as many as fit, every plane, direct-connect | 0.30–0.33 mm | Pitch/count; zone connection solid | S2 |
 | TH-12 | Copper weight by dissipation | 1 / 2 / 4 oz at 3 / 6 W | Stack-up vs total P | S3 |
 | TH-13 | No breaks perpendicular to heat flow near hot parts | 5.5 vs 1.5 °C | Slot/track angle vs radial within r | S3 |

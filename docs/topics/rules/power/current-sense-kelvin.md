@@ -4,7 +4,7 @@
 - **Use 4-wire Kelvin connections.** Sense traces are equal-length, equal-width, short, and terminate at the **centre of the inner pad edge** (onsemi). This closes the earlier tap-point gap.
 - **Amplifier on the same side and near the shunt.** Route the pair tightly coupled and never parallel to switching nets.
 - **Place filter R/C at the IC,** not at the shunt (BQ76952, AN-136, TPS922050).
-- **Net ties are the KiCad mechanism to force Kelvin routing** (TI SLVA959).
+- **Net ties force Kelvin routing** (TI SLVA959, which is tool-agnostic). In KiCad a net tie is a schematic symbol plus a footprint with `net_tie_pad_groups`, so it comes from the schematic.
 - **Why it matters:** pad and solder IR drop is comparable to the shunt voltage. Poor layout causes 10–15%+ error.
 
 ## Key facts
@@ -47,7 +47,7 @@
 
 ## Recommendations for our system
 - **RSENSE role detector:** a low-ohm (≤100 mΩ) resistor in a power path whose ends go to CS±/SENSE/SRP/SRN/CSP/CSN pins.
-- **Auto-insert net ties** at the shunt pads (KiCad net-tie footprints) so the router cannot share copper.
+- **Propose net ties** at the shunt pads as a schematic change (net-tie symbol + footprint), then update the PCB, so the router cannot share copper. A board-only footprint fails the referee's `--schematic-parity` check as `extra_footprint` ([drc-report-and-repair-loop.md](../../kicad/drc-report-and-repair-loop.md)).
 - **Geometric checks:**
   - tap point within the inner half of the pad;
   - pair length mismatch;

@@ -64,7 +64,7 @@
 
 ## Recommendations for our system
 - **H-bridge / 3-phase detector:** N-FET pairs sharing an SH node that goes to a connector; gate-driver pins GHx/SHx/GLx/SLx/SPx/SNx/VDRAIN/VCP. Roles: per-phase bypass cap, shunt, CSA filter caps, bulk cap.
-- **Insert net ties** for shunt Kelvin pairs and VDRAIN automatically.
+- **Propose net ties** for shunt Kelvin pairs and VDRAIN as schematic changes; KiCad net ties need a symbol ([current-sense-kelvin.md](current-sense-kelvin.md)).
 - **Use the conservative via-current table,** and flag SLVA959's thermal equation as an erroneous source in provenance.
 
 ## Conflicts and open questions

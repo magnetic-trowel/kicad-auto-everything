@@ -2,7 +2,7 @@
 
 **TL;DR**
 - **Placement order (TI SLYT614):** IC → CIN (route it immediately, no vias) → L with minimal SW copper (+ snubber) → COUT and VOS → small-signal parts (EN/PG last) → single-point ground. Datasheet ordered lists override this.
-- **CIN distance:** MPS's "<2 mm" is the only numeric primary CIN distance. Other vendors say "every millimetre matters". Hard-gate the topology (same layer, 0 vias); soft-score the distance.
+- **CIN distance:** MPS's "<2 mm" is the only numeric primary CIN distance. Other vendors say "every millimetre matters". Hard-gate CIN on the IC layer (integrated converters); score via count and plane coverage through the loop-inductance estimate (vertical loops allowed); soft-score the distance.
 - **FB/VOS** is Kelvin-sensed at the COUT pad, kept off the power plane, never under L or beside SW on any layer. No vendor gives a numeric clearance.
 - **AGND/PGND** join once, at the EP or the datasheet point; TPS62130 calls this "mandatory".
 - **Contested defaults** need a context switch: copper under the inductor, CIN/COUT ground separation, PMIC ground cuts.
@@ -20,10 +20,10 @@
 | Power trace width | **>1 mm/A (1 oz)**, >0.7 mm/A (2 oz); 2 A → 0.53 mm for a 20 °C rise | Rohm [P] |
 | Thermal vias | **0.3 mm ID at ~1.2 mm pitch** (TI/Renesas: 0.3 mm at 1.0–1.2 mm) | Rohm [P]; [../thermal.md](../thermal.md) |
 | SW trace width | ≤100 mil (2.54 mm) | [TI LM10504](https://ti.com/document-viewer/LM10504/datasheet/layout) [P] |
-| Loop anchors | SNVA803: ~20 mm² lateral >1 nH; 2 mm² vertical <0.5 nH, ~4 V less overshoot. EPC: 0.4→2.9 nH costs >4% efficiency; overshoot 100% of V_in at 1.6 nH vs 30% at 0.4 nH. AN-139: 187 nH single-layer → 13 nH with a plane 0.12 mm below; next-layer plane >3× better than a 1.5 mm 2-layer board | [SNVA803](https://www.ti.com/lit/pdf/snva803); [EPC WP010](https://epc-co.com/epc/Portals/0/epc/documents/papers/Optimizing%20PCB%20Layout%20with%20eGaN%20FETs.pdf); [AN-139](https://theengineer.markallengroup.com/production/content/uploads/2015/01/an139f.pdf) [P]. Detail: [hot-loops.md](hot-loops.md) |
+| Loop anchors | SNVA803: ~20 mm² lateral >1 nH; 2 mm² vertical <0.5 nH, ~4 V less overshoot. EPC: 0.4→2.9 nH costs >4% efficiency; overshoot 100% of V_in at 1.6 nH vs 30% at 0.4 nH. AN-139 (10 × 10 cm test loop at 27 MHz, not hot-loop scale): 187 nH single-layer → 13 nH with a plane 0.12 mm below; next-layer plane >3× better than a 1.5 mm 2-layer board | [SNVA803](https://www.ti.com/lit/pdf/snva803); [EPC WP010](https://epc-co.com/epc/Portals/0/epc/documents/papers/Optimizing%20PCB%20Layout%20with%20eGaN%20FETs.pdf); [AN-139](https://theengineer.markallengroup.com/production/content/uploads/2015/01/an139f.pdf) [P]. Detail: [hot-loops.md](hot-loops.md) |
 | Overshoot | 5 A/ns × 2 nH = 10 V | [TI SLYT682](https://www.ti.com/lit/pdf/slyt682) [P] |
 | L1–L2 dielectric | ≤0.127 mm (5 mil) | SLYT682 [P] |
-| Loop tiers | ≤2 mm² excellent, ≤10 mm² acceptable, >20 mm² fail | [I], anchored on SNVA803 |
+| Loop tiers | ≤2 mm² excellent, ≤10 mm² acceptable, >20 mm² poor (soft score) | [I], anchored on SNVA803 |
 
 **Order and CIN.**
 - **SLYT614** ([PDF](https://www.ti.com/lit/an/slyt614/slyt614.pdf)) [P], VERIFIED:
@@ -62,7 +62,7 @@
   - AN-136: ground under SW adds shielding.
   - No source gives a numeric area.
 - A SW trace wider than 100 mil (2.54 mm) "cause[s] too much capacitive loading" ([TI LM10504](https://ti.com/document-viewer/LM10504/datasheet/layout)) [P].
-- SW copper on one layer only ("Do not use multiple layers in parallel", [BQ25895](chargers-bms.md)) [P].
+- No SW copper in parallel on several layers ("Do not use multiple layers in parallel", [BQ25895](chargers-bms.md)) [P]. A series layer change, as in the WCSP case, is not paralleling.
 - Cooling vs EMI conflict ([USPTO 10763221](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/10763221)): cool through PGND/EP vias, never by enlarging SW copper (Rohm; [HS Electronik](https://hs-electronik.com/news/buck-converter-pcb-layout-hot-loops-feedback-guide) [V]).
 - RC snubber: "the shortest possible routing between the SW and PGND pins" (SLYT614 gives no values, [E2E](https://e2e.ti.com/support/power-management-group/power-management/f/power-management-forum/927858/tps62130a-snubber)). Rohm: put it at the IC SW/GND terminals; "Placing it at the both ends of diode will not absorb spike noise." The freewheel diode goes on the same surface, close to the IC.
 
@@ -93,7 +93,7 @@
 
 | ID | Rule | Class |
 |---|---|---|
-| PWR-01 | CIN_HF first, IC layer, 0 vias; ≤2 mm (MPS) | Topology hard; distance soft |
+| PWR-01 | CIN_HF first, on the IC layer; vias and distance (≤2 mm, MPS NB67x) scored | IC layer hard (integrated converters); vias through the loop-inductance estimate; distance soft |
 | PWR-02 | Solid GND on the next layer, ≤0.127 mm | Soft, strong ([hot-loops.md](hot-loops.md)) |
 | PWR-03 | SW area ≤ k × (SW pads + L pad) | Soft |
 | PWR-04 | Inductor dot on SW (needs a footprint pin-1 = dot convention) | Soft, +CTX |
@@ -107,15 +107,15 @@
 
 **IRP `buck_sync` rule pack** (precedence 20), summarised:
 - **Roles:** `cin_hf` ≤1 µF on VIN/PGND, preferring the smallest package; `cin_bulk` >1 µF; `ind` on SW; `cout`; `rfb_top` / `rfb_bot`.
-- **Parameters:** cin ≤2 mm (hard window); bulk ≤20 mm; loop 2 / 10 / 20 mm²; di/dt 5 A/ns; L1–L2 ≤0.127 mm; 1 via/A; 1 mm/A; SW width ≤2.54 mm; FB ≤3 mm [I].
-- **Placement:** priority order; same side; F.Cu keep-out ring around the inductor.
-- **Routing:** SW = pad + minimum link, 0 vias. FB with 0 vias, on a different layer from SW, shielded, not parallel to SW or VIN.
+- **Parameters:** cin ≤2 mm (IRP marks it `hard: true`; here a soft objective scoped to MPS NB67x, per VR §3); bulk ≤20 mm; loop 2 / 10 / 20 mm²; di/dt 5 A/ns; L1–L2 ≤0.127 mm; 1 via/A; 1 mm/A; SW width ≤2.54 mm (LM10504); FB ≤3 mm [I].
+- **Placement:** priority order; same side. The F.Cu keep-out ring around the inductor applies only when the copper-under-inductor selector picks TI's variant (contested; see Conflicts).
+- **Routing:** SW = pad + minimum link, 0 vias, except the WCSP case above. FB node (divider → FB pin): 0 vias, on the IC side (MPS). VOUT sense trace (COUT pad → divider): may run on another layer, GND-shielded (LM5163/TPS560430). Neither runs parallel to SW or VIN. IRP's single `fb_trace` rule (0 vias *and* a layer other than SW) cannot be met when the divider sits beside the IC, so it is split here.
 - **Override:** a datasheet reference layout (precedence 40) sets the target loop area measured from the eval board.
 
 ## Recommendations for our system
 - **Emit the SLYT614 order as `placement_priority`.** Parse datasheet ordered lists and let them override.
-- **Hard-gate the topology** (CIN on the IC layer, 0 hot-loop vias, FB from the COUT pad, tie count = 1). Soft-score distances with the [loop-inductance estimator](../checkers-power.md).
-- **Pre-assign net classes** `PWR_HOT`, `SW` and `SENSITIVE` (FB/COMP/RT/SS) and emit DRU clearance SENSITIVE↔SW ≥1 mm as a soft default.
+- **Hard-gate the topology** (CIN on the IC layer for integrated converters, FB from the COUT pad, tie count = 1 where the datasheet mandates it). Score hot-loop vias, plane coverage and distances with the [loop-inductance estimator](../checkers-power.md).
+- **Pre-assign net classes** `PWR_HOT`, `SW` and `SENSITIVE` (FB/COMP/RT/SS) and emit SENSITIVE↔SW ≥1 mm as a soft default: a `.kicad_dru` rule with `(severity warning)`, or a scored objective. The interactive router still observes warning-severity rules ([drc-rule-language-reference.md](../../kicad/drc-rule-language-reference.md)), so only the scored objective is fully soft.
 - **Check the inductor dot net** only when the footprint follows the pin-1 = dot convention.
 
 ## Conflicts and open questions
@@ -128,7 +128,7 @@
   - TI SLYT682: top-layer keep-out to limit SW→VOUT coupling, with L2 GND kept.
   - Rohm: "Not placing ground layer directly below the inductor" (eddy currents lower L and raise loss).
   - Hubing: a plane under some chokes is "not a good idea".
-  - Context switch. The IRP pack uses an F.Cu keep-out ("stricter").
+  - Context switch: a selector (datasheet, power level) or `ask`, never a default. The IRP pack resolves it as "stricter" with an F.Cu keep-out, but "stricter" is undefined between topological alternatives, so that resolution is not used (VR §3).
 - **TI internal tension:** the TPS62130 datasheet ties the FB resistors straight to the system plane, while SLYT614 says not to via quiet grounds into it.
 - **PMIC ground cuts** (DA9080) conflict with the one-ground doctrine. Honour them only when the datasheet mandates them.
 
