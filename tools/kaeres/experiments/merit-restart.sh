@@ -13,7 +13,9 @@
 # Settings follow the experiments that showed merit (audit 2026-10-26):
 # - kae: staged is --max-iters 0 --no-modules; one CPU (OMP_NUM_THREADS=1 KAE_WORKERS=1), a warm
 #   numba cache, the bridge's Freerouting pinned; the bridge may overrun its --time a little.
-# - pnr: engine of keen-wright db10e58 (v6.4, a superset of xf-experiments); budgets are solver
+# - pnr: engine of keen-wright db10e58 (v6.4, a superset of xf-experiments) with anytime output
+#   (branch pnr-anytime: the board is written whenever it improves, a fully routed state ends the
+#   attempt, routing and repair keep to the budget); budgets are solver
 #   CPU s; their routing (PathFinder) runs outside that clock and they write only at the end,
 #   so an attempt is killed only by the overall deadline (slack 100), never at a multiple of its budget.
 # - beam with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
@@ -27,9 +29,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
 KAE=(--code kae=.@45efe0066edb2559a32e217664ec1f544c80e790)   # claude/vigilant-mayer-i91rrr
-PNR=(--code pnr=.@db10e580a68863f09641244e432c401f5a293348)   # claude/keen-wright-mlkjv6
+PNR=(--code pnr=.@1ff1b688ec6560c80895e4b25d146c9c3b487295)   # pnr-anytime (keen-wright db10e58 + anytime output, stop when routed, budget-faithful)
 KH='$HOME/.cache/kaebench'
-FORK="$HOME/.cache/kaebench/kae-freerouting-fork-06d2686/bin/freerouting"
+FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"   # fork 06d2686 + kae-speed (same output, faster)
 # rs FIRST_S SLACK [restart.py options]: the wrapper; {timeout} is the board-scaled budget
 rs() { local f=$1 sl=$2; shift 2
   echo "{py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time {timeout} --seed {attempt} --parallel 4 --first-s $f --scale-first --slack $sl $* --"; }
@@ -45,7 +47,7 @@ add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]; INNE
 fr() { add "$1 (restarts)" route 900 "$(rs 240 1.3)" "$2 through kaebench's adapter" \
   "env PYTHONPATH={code:harness}/bench/src {py:kae} {code:harness}/tools/kaeres/fr_attempt.py --binary $3 --input @IN@ --output @OUT@ --seed @SEED@ --time @TIME@"; }
 fr "freerouting 2.5.0" "Freerouting v2.5.0 release" "$HOME/.cache/kaebench/freerouting-2.5.0-linux-x64/bin/freerouting"
-fr "fr-fork master" "magnetic-trowel/freerouting master 06d2686" "$FORK"
+fr "fr-fork kae-speed" "magnetic-trowel/freerouting 06d2686 + kae-speed 2e1125a (same output, faster)" "$FORK"
 
 KENV="cp -r $KH/numba-kae numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
 add "kae bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli: bridge + last mile" \
@@ -64,7 +66,7 @@ pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solve
   local wrap
   if [ "$name" = "pnr route_only" ]; then wrap="$(rs 100000 $sl --max-attempts 1)"; else wrap="$(rs 120 $sl)"; fi
   add "$name (restarts)" "$kind" 900 "$wrap" "pnr engine $spec ${*:+($*) }(docs/ideas/original/scorecard.md)" \
-    "env VIRTUAL_ENV={venv:kae} PYTHONPATH={code:pnr}/tools/research/collapse_joint:{code:pnr}/tools/research/xf_minplus KAE_KICAD_PYTHON={code:pnr}/tools/research/xf_common/kicad-python NUMBA_CACHE_DIR=$KH/numba-KW NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 sh {code:pnr}/tools/research/xf_common/xf_run.sh {code:pnr}/tools/research/$spec @IN@ @OUT@ @TIME@ @SEED@ $*" \
+    "env VIRTUAL_ENV={venv:kae} PYTHONPATH={code:pnr}/tools/research/collapse_joint:{code:pnr}/tools/research/xf_minplus KAE_KICAD_PYTHON={code:pnr}/tools/research/xf_common/kicad-python NUMBA_CACHE_DIR=$KH/numba-anyt NUMBA_NUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 sh {code:pnr}/tools/research/xf_common/xf_run.sh {code:pnr}/tools/research/$spec @IN@ @OUT@ @TIME@ @SEED@ $*" \
     "${PNR[@]}"
 }
 J=joint-fixed
@@ -97,4 +99,4 @@ pnr "pnr jc2_fixmp_lv" $J 100 collapse_joint/jc2.py:jc2_fixmp_lv
 PROBE="$(rs 60 1.15) '$KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@'"
 add "autoplace sa-loop kae (restarts)" place-fixed 1200 "$(rs 100000 1.2 --max-attempts 1)" "methods/autoplace place.py --algo sa-loop --router kae (plans its own rounds; one attempt); probe: kae bridge with restarts" \
   "cp -r $KH/numba-kae numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK PYTHONPATH={code:ap}/bench/src {py:kae} {code:ap}/methods/autoplace/place.py --algo sa-loop --router kae --input @IN@ --output @OUT@ --workdir \$PWD --attempt @SEED@ --seed @SEED@ --timeout @TIME@" \
-  --code ap=.@46e7f894e8357fad7d6f3f0e9093f5515a097ed6 --param probe=kae-bridge --param "probe_command=$PROBE"   # autoplace-kae-router
+  --code ap=.@eb395651b95ead5a8575befff9527bc2b91e9f12 --param probe=kae-bridge --param "probe_command=$PROBE"   # autoplace-kae-router
