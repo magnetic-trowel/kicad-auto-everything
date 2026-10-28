@@ -176,7 +176,11 @@ class NetGraph:
             self.nodes.append(("pad", layers, x, y, geom))
             self.pad_node.setdefault((f.uuid, p.number), []).append(k)
             for l in layers:
-                items[l].append(("pad", k, geom, 0.0))
+                gl = geom
+                if l in (getattr(p, "layer_shapes", None) or {}):     # a padstack's own shape on this layer
+                    from kae.place.legalize import pad_shape
+                    gl = transform.place_geom(pad_shape(p, l), f.x, f.y, f.rot, f.side)
+                items[l].append(("pad", k, gl, 0.0))
         # pads bonded inside a part (jumper pad groups; same-numbered pads when those are jumpers)
         bonds = []
         by_fp = {}

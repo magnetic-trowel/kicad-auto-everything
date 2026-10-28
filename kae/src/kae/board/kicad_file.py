@@ -45,6 +45,33 @@ GR_SHAPES = ("gr_line", "gr_arc", "gr_circle", "gr_rect", "gr_poly", "gr_curve")
 _NUM = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$")
 
 
+def trapezoid(w, h, dx, dy):
+    """KiCad's trapezoid pad (PAD::BuildEffectiveShapes): size w x h with rect_delta (dx, dy),
+    pad frame (y down)."""
+    hx, hy, tx, ty = w / 2, h / 2, dx / 2, dy / 2
+    return Polygon([(-hx - ty, hy + tx), (hx + ty, hy - tx), (hx - ty, -hy + tx), (-hx + ty, -hy - tx)])
+
+
+_CORNER = {"top_left": (-1, -1), "top_right": (1, -1), "bottom_left": (-1, 1), "bottom_right": (1, 1)}
+
+
+def round_chamfer_rect(w, h, r, c, corners, quad_segs=16):
+    """KiCad's chamfered rectangle (TransformRoundChamferedRectToPolygon): corners named in
+    `corners` cut by c along both edges, the other corners rounded with radius r; pad frame (y down)."""
+    rect = box(-w / 2, -h / 2, w / 2, h / 2)
+    shape = box(-w / 2 + r, -h / 2 + r, w / 2 - r, h / 2 - r).buffer(r, quad_segs=quad_segs) if r > 0 else rect
+    for name in corners:
+        sx, sy = _CORNER.get(name, (0, 0))
+        if not sx:
+            continue
+        cx, cy = sx * w / 2, sy * h / 2
+        if r > 0:      # a chamfered corner is not rounded first
+            shape = shape.union(box(min(cx, cx - sx * r), min(cy, cy - sy * r), max(cx, cx - sx * r), max(cy, cy - sy * r)))
+        if c > 0:
+            shape = shape.difference(Polygon([(cx, cy), (cx - sx * c, cy), (cx, cy - sy * c)]))
+    return shape.intersection(rect)
+
+
 def _shape_layers(g):
     """Layers a graphic shape is on: (layer "X"), or (layers "X" "Y") (KiCad 9+ copper logos
     with their mask opening)."""
@@ -396,7 +423,69 @@ class _Reader:
                    pintype=value(pd, "pintype", "") or "",
                    uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
                    rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset,
-                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear)
+                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear,
+                   outline=self._pad_geometry(pd, shape, (sx, sy), s), layer_shapes=self._padstack(pd, s))
+
+    def _pad_geometry(self, node, shape, size, s):
+        """Copper outline of a pad (or of one padstack layer) whose shape is beyond what
+        legalize.pad_shape draws from its fields: a trapezoid, a chamfered (and rounded)
+        rectangle, or a custom pad (its anchor and primitives). Built in the file's pad frame as
+        KiCad builds it (PAD::BuildEffectiveShapes), then mirrored into the library frame for a
+        part on the back (s = -1). None for plain rect, roundrect, circle and oval."""
+        w, h = size
+        poly = None
+        cr = _f(value(node, "chamfer_ratio"), 0.0)
+        corners = [c for c in (first(node, "chamfer") or [])[1:] if type(c) is str]
+        if shape == "trapezoid":
+            d = first(node, "rect_delta")
+            dx, dy = (float(d[1]), float(d[2])) if d is not None and len(d) > 2 else (0.0, 0.0)
+            poly = trapezoid(w, h, dx, dy)
+        elif shape in ("rect", "roundrect") and cr > 0 and corners:
+            rr = _f(value(node, "roundrect_rratio"), 0.0) if shape == "roundrect" else 0.0
+            poly = round_chamfer_rect(w, h, min(0.5, rr) * min(w, h), min(0.5, cr) * min(w, h), corners)
+        elif shape == "custom":
+            opts = first(node, "options")
+            anchor = value(opts, "anchor", "rect") if opts is not None else "rect"
+            parts = [Point(0, 0).buffer(w / 2, quad_segs=16)] if anchor == "circle" else [box(-w / 2, -h / 2, w / 2, h / 2)]
+            prim = first(node, "primitives")
+            for g in (prim[1:] if prim else ()):
+                if type(g) is not list or not g or not str(g[0]).startswith("gr_"):
+                    continue
+                try:
+                    o, r = shape_pieces(g, self.tol)
+                except (TypeError, ValueError, IndexError):
+                    continue
+                parts += _stroked(g, o, r)
+            u = unary_union([p for p in parts if not p.is_empty])
+            poly = None if u.is_empty else u     # disjoint primitives stay part of the pad (MultiPolygon)
+        if poly is None:
+            return None
+        if s < 0:
+            from shapely import affinity
+            poly = affinity.scale(poly, 1.0, -1.0, origin=(0, 0))
+        return poly
+
+    def _padstack(self, pd, s):
+        """Per-layer copper overrides of a padstack (KiCad 9+): {layer: {shape, size, offset, rratio,
+        outline}}; 'Inner' stands for every inner copper layer."""
+        ps = first(pd, "padstack")
+        if ps is None:
+            return {}
+        out = {}
+        inner = [l for l in self.cu if l not in ("F.Cu", "B.Cu")]
+        for ly in kids(ps, "layer"):
+            name = ly[1] if len(ly) > 1 and type(ly[1]) is str else ""
+            shape = value(ly, "shape", "circle") or "circle"
+            sz = first(ly, "size")
+            sx = float(sz[1]) if sz else 0.0
+            sy = float(sz[2]) if sz is not None and len(sz) > 2 else sx
+            off = first(ly, "offset")
+            offset = (float(off[1]), s * float(off[2])) if off is not None else None
+            d = dict(shape=shape, size=(sx, sy), offset=offset, rratio=_f(value(ly, "roundrect_rratio"), 0.0),
+                     outline=self._pad_geometry(ly, shape, (sx, sy), s))
+            for l in (inner if name == "Inner" else [name]):
+                out[l] = d
+        return out
 
     def _graphics(self, fp, by_layer, lib):
         """Copper and mask graphics of a footprint (logos, mask apertures, copper shapes) as
