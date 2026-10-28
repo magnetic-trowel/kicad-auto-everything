@@ -23,7 +23,7 @@ Tags: [M] measured in this repo; [I] inference. Format: [intent-interchange](../
 | Decap modules unmeasured | 48%. In a 40-board sample, about 76% had every candidate capacitor below ownership 0.5, which `decap_pairs` drops (approximate: briefs rebuilt without schematic pin types) |
 | Share of the total by kind | decap 69%, ESD chain 24%, hot loop 3%, power path 2.5%, crystal 1.3% |
 | Length, skew and diff-pair DRC violations | 6, 7 and 32 of 11,758 boards; ordinary error counts. Nothing reads the brief's `Zdiff` budgets |
-| Copper connectivity | `NetGraph` (used by this evaluator) misses track ends that overlap without coinciding. KiCad connects them ([functional-evaluator](../architecture/functional-evaluator.md) §3) |
+| Copper connectivity (before the fix in `kae.route.copper`) | `NetGraph` split 353 nets on 150 boards that KiCad reports connected (overlapping round track ends, pours with distant contact clusters, jumper pads, net copper shapes); now 5 |
 
 ### 2. Principles
 
@@ -105,7 +105,7 @@ A regulator's harmonics are spaced at f_sw, so what counts is the envelope or th
    5. inventories and source-to-radiator;
    6. antenna feed;
    7. thermal.
-3. Fix `NetGraph`'s overlap gap in its own commit, and re-run the routed-physics baselines.
+3. Re-run the routed-physics baselines under the new copper connectivity.
 4. Pilot the LLM pass on one board, measure its cost, then decide the subset size.
 
 ## Conflicts and open questions

@@ -65,11 +65,7 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
 
 **Reduction and robustness:**
 - **Micrometre pieces:** the copper graph splits tracks at junctions into pieces micrometres long. As full sections they put femtofarads behind micro-ohms and the matrix goes near-singular: ngspice reported "timestep too small" at 2 ps [M]. Short pieces keep their resistance and drop only their negligible inductance. All R are at least 0.1 mΩ.
-- **Overlapping track ends:** the copper graph joins only coincident keypoints and interior T-junctions, while KiCad connects any overlapping copper. The extraction adds the contacts it misses:
-  - track ends of one net and layer within half the narrower width;
-  - a track end whose copper overlaps a pad.
-  
-  On one board this removed every split KiCad did not also report [M]. The same gap affects `rail_drops` and today's routed-physics evaluator. Fixing it in `NetGraph` changes those numbers, so it needs its own commit and re-run baselines.
+- **Connectivity:** the copper graph ([`kae.route.copper`](../../../kae/src/kae/route/copper.py)) connects items as KiCad does: shapes that collide on a shared layer, with round-ended tracks, jumper pad groups, net-carrying copper shapes and pours that are one conductor each. On 150 human boards it splits 5 nets that KiCad reports connected, where the earlier graph split 353 [M]. Custom pad primitives are still modelled as the pad's rectangle.
 - **Copper islands:** each test's pins are checked against the copper islands before simulating. A split test is reported as `incomplete`, with the stranded pins listed, and its routed runs are skipped. A load on an island has no return but the 10¹² Ω leak, and the solver would chase 10¹¹ V.
 
 **Limits:** ideal plane under each piece (slots and splits are for geometric checks); power planes as AC ground for line C; no broadside coupling across layers; no pad copper or thermal spokes; no skin effect; coarse pours.
@@ -146,7 +142,7 @@ python -m kae.sim.cli questions eval.json
    - add boost and half-bridge stand-ins;
    - find the cause of the slow and singular signal runs (scaling the couplings to keep the inductance matrix positive definite did not cure them).
 3. Hook into kaeres as a new evaluator (the evaluator id hashes the code tree), beside the legacy `physics_total`. Report per category, never inside cp1, cpk or `score.py`.
-4. Fix `NetGraph`'s overlap gap in its own commit, and re-run the routed-physics baselines.
+4. Re-run the routed-physics baselines under the new connectivity (it changes the evaluator id); model custom pad primitives.
 5. Before KiCad 11, port the SWIG `pcbnew` users (the fills, the board writer) to the IPC API.
 
 ## Conflicts and open questions
@@ -159,6 +155,6 @@ python -m kae.sim.cli questions eval.json
 ## Sources
 
 - Code and tests: [`kae/src/kae/sim/`](../../../kae/src/kae/sim/), [`kae/tests/test_sim.py`](../../../kae/tests/test_sim.py).
-- Reused: [`critical_recheck.py`](../../../kae/src/kae/route/critical_recheck.py) (RoutedBoard, NetGraph, fills), [`kernels.py`](../../../kae/src/kae/physics/kernels.py), [`fastloop.py`](../../../kae/src/kae/physics/fastloop.py), [`priors.py`](../../../kae/src/kae/physics/priors.py), [`brief.py`](../../../kae/src/kae/circuit/brief.py).
+- Reused: [`critical_recheck.py`](../../../kae/src/kae/route/critical_recheck.py) (RoutedBoard, fills), [`copper.py`](../../../kae/src/kae/route/copper.py) (NetGraph), [`kernels.py`](../../../kae/src/kae/physics/kernels.py), [`fastloop.py`](../../../kae/src/kae/physics/fastloop.py), [`priors.py`](../../../kae/src/kae/physics/priors.py), [`brief.py`](../../../kae/src/kae/circuit/brief.py).
 
 See also: [functional-evaluation](../physics/functional-evaluation.md), [intent-interchange](intent-interchange.md), [physics-critics](../physics/physics-critics.md), [physics-engine-design](physics-engine-design.md).
