@@ -804,9 +804,11 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
+            pt = board_dir(bid) / "pintypes.json"  # the schematic's pin types, as re-evaluation passes them
             rc, to = run_logged([kv / "bin" / "python", d / "tools" / "kaeres" / "physics_board.py",
                                  "--input", task / "route" / "input" / "board.kicad_pcb",
-                                 *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout],
+                                 *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
+                                 *(["--pintypes", pt] if pt.exists() else [])],
                                 log, genv, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error=f"physics step {'timed out' if to else f'failed rc={rc}'}")
         if phys.get("error"):
