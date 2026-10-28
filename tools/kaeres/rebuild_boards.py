@@ -5,9 +5,13 @@
 Runs in a harness venv (kaebench importable), the one whose commit ran the runs, so the rebuild is
 the scorer's own. From a corpus board folder it rebuilds the route task's reference and input the
 way `prepare` does (convert, rules, strip-routing; no DRC), then each run's output is transplanted
-onto the input with the reference rules (kaebench.score._rebuild, as score_route_task does).
+onto the input with the reference rules (kaebench.score._rebuild, as score_route_task does). A run
+named with --joint placed the parts too: its poses go onto the input first, then its copper onto that
+placement (as score_joint_task does; the place input differs from the route input only in which parts
+are locked and where unplaced parts wait, and every part takes the output's pose).
 
-  python rebuild_boards.py --board-dir CORPUS/boards/<id> --work DIR --run NAME=OUTPUT.kicad_pcb[.gz] ... --out MANIFEST.json
+  python rebuild_boards.py --board-dir CORPUS/boards/<id> --work DIR --run NAME=OUTPUT.kicad_pcb[.gz] ... [--joint NAME ...]
+                           --out MANIFEST.json
 Writes MANIFEST: {"input": path, "reference": path, "board_sha256": ..., "task_spec": N,
 "runs": {NAME: {"board": path} | {"error": ...}}}.
 """
@@ -25,6 +29,7 @@ def main():
     ap.add_argument("--board-dir", required=True)
     ap.add_argument("--work", required=True)
     ap.add_argument("--run", action="append", default=[], metavar="NAME=OUTPUT")
+    ap.add_argument("--joint", action="append", default=[], metavar="NAME", help="a run of a joint task")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     from kaebench import prepare, score, tools
@@ -55,7 +60,14 @@ def main():
                     shutil.copyfileobj(fi, fo)
             else:
                 shutil.copy2(out, src)
-            staged, tr = score._rebuild("transplant-routing", src, board_path(inp), ref, work / "scored" / name,
+            onto = board_path(inp)
+            if name in a.joint:
+                onto, tp = score._rebuild("transplant-placement", src, board_path(inp), ref, work / "placed" / name,
+                                          board_path(ref))
+                if not tp.get("loadable"):
+                    man["runs"][name] = dict(error="placement not loadable")
+                    continue
+            staged, tr = score._rebuild("transplant-routing", src, onto, ref, work / "scored" / name,
                                         board_path(ref))
             man["runs"][name] = dict(board=str(staged)) if tr.get("loadable") else dict(error="output not loadable")
         except Exception as e:  # noqa: BLE001

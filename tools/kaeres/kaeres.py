@@ -793,8 +793,12 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     boards = {}
     for (mid, att), adir in adirs.items():
         aj = read_json(adir / "attempt.json") or {}
-        if aj.get("status") == "ok" and (adir / "score" / "board.kicad_pcb").exists():
-            boards[f"{mid}.{att}"] = adir / "score" / "board.kicad_pcb"
+        # route and place tasks score score/board.kicad_pcb; joint tasks score the placement and the
+        # routing separately, and the routed board is score/routing/board.kicad_pcb
+        for sb in (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb"):
+            if aj.get("status") == "ok" and sb.exists():
+                boards[f"{mid}.{att}"] = sb
+                break
     phys = {}
     if boards:
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
@@ -1307,9 +1311,21 @@ def cmd_exp_timer(a):
 
 # ------------------------------------------------------------------ re-evaluation (physics)
 def _rephysics_todo(bid, method_ids, pid):
-    """Runs of these methods on a board that have an output but no evaluation by physics evaluator pid."""
+    """Runs of these methods on a board that have an output but no evaluation by physics evaluator pid.
+    Place tasks are left out: their routed board is the probe's, which is not stored."""
     return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r.get("status") == "ok"
-            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()]
+            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()
+            and _run_kind(r) not in ("place", "place-fixed")]
+
+
+_KINDS = {}
+
+
+def _run_kind(r):
+    """The task kind of a run's method (route for the human reference)."""
+    if r["method_id"] not in _KINDS:
+        _KINDS.update({k: (m.get("recipe") or {}).get("kind") or "route" for k, m in methods().items()})
+    return _KINDS.get(r["method_id"], "route")
 
 
 def _kaeq_active(owner):
@@ -1429,6 +1445,7 @@ def cmd_rephysics_job(a):
         rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
                              "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
                              *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
+                             *[x for d, r in items if _run_kind(r) in ("joint", "joint-fixed") for x in ("--joint", r["run"])],
                              "--out", man_p], log, dict(env, PATH=f"{hv / 'bin'}:{env.get('PATH', '')}"), timeout=int(1800 + 120 * size))
         man = read_json(man_p)
         if not man:
