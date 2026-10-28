@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Routed copper as a circuit: R, L, C, mutual L and coupling C per piece of copper.
 
-`extract(rb, nets)` reads the copper graph of each net (kae.route.critical_recheck.NetGraph: pads,
-track pieces split at junctions, vias, refilled pours) and returns a Network of elements between
+`extract(rb, nets)` reads the copper graph of each net (kae.route.copper.NetGraph: pads,
+round-ended tracks split where they touch, vias, refilled pours; connected as KiCad connects them) and returns a Network of elements between
 node keys ('pin:U5.12' at a pad, '<net>#...' inside the copper, '0' the reference).
 
 Model (each piece is a line over its reference plane; the plane carries the return directly under it):
@@ -165,44 +165,6 @@ class _Builder:
                 na, nb = nk(u, layer), nk(v, layer)
                 if na != nb:
                     self.line(name, layer, na, nb, a, c, w, ground, pour=kind == "pour")
-        # track ends that overlap without coinciding (KiCad connects overlapping copper; the copper
-        # graph joins only coincident keypoints and interior T-junctions)
-        kps = {}
-        for k, nd in enumerate(g.nodes):
-            if nd[0] == "kp":
-                kps.setdefault(nd[1][0], []).append(k)
-        contacts = 0
-        # a track end whose copper overlaps a pad of its net (end point just outside the pad)
-        pads = [(k, nd) for k, nd in enumerate(g.nodes) if nd[0] == "pad"]
-        for layer, ks in kps.items():
-            for k in ks:
-                _, _, x, y, w = g.nodes[k]
-                adj = {v for v, _w, _p in g.adj.get(k, ())}
-                pt = Point(x, y)
-                for kp_, nd in pads:
-                    if kp_ in adj or layer not in nd[1]:
-                        continue
-                    if nd[4].distance(pt) <= (w or 0.0) / 2 + 1e-3:
-                        na, nb = nk(k, layer), nk(kp_, layer)
-                        if na != nb:
-                            self.pieces.append(_Piece(name, na, nb, R_MIN, 0.0, 0.0, 0.0))
-                            contacts += 1
-        for layer, ks in kps.items():
-            if len(ks) < 2:
-                continue
-            P = np.array([[g.nodes[k][2], g.nodes[k][3]] for k in ks])
-            W = np.array([g.nodes[k][4] or 0.0 for k in ks])
-            for i in range(len(ks)):
-                d = np.hypot(P[:, 0] - P[i, 0], P[:, 1] - P[i, 1])
-                tol = 0.5 * np.minimum(W, W[i])
-                for j in np.nonzero((d <= tol) & (d > 1e-6))[0]:
-                    if j > i:
-                        na, nb = nk(ks[i], layer), nk(ks[int(j)], layer)
-                        if na != nb:
-                            self.pieces.append(_Piece(name, na, nb, R_MIN, 0.0, 0.0, 0.0))
-                            contacts += 1
-        if contacts:
-            self.net.stats["overlap_contacts"] = self.net.stats.get("overlap_contacts", 0) + contacts
         for u, lay in via_layers.items():
             v = via_obj.get((round(g.nodes[u][2], 4), round(g.nodes[u][3], 4)))
             drill = v.drill if v is not None and getattr(v, "drill", 0) else 0.3
@@ -213,7 +175,8 @@ class _Builder:
                     self.pieces.append(_Piece(name, k1, k2, r_via(dz, drill), FL.m_self(dz, drill / 2) * 1e-9, 0.0, 0.0))
         if not ground:
             fills = (rb.fills or {}).get(name) if rb.fills is not None else None
-            for l, pg in [(l, pg) for l, polys in (fills or {}).items() for pg in polys]:
+            shapes = (getattr(rb.board, "copper", {}) or {}).get(name, {})
+            for l, pg in [(l, pg) for src in (fills or {}, shapes) for l, polys in src.items() for pg in polys]:
                 cont = [k for k, nd in enumerate(g.nodes) if l in nd[1] and (pg.contains(Point(nd[2], nd[3]))
                                                                             or (nd[0] == "pad" and pg.intersects(nd[4])))]
                 if not cont:

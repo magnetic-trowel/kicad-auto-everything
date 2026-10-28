@@ -165,6 +165,8 @@ class Footprint(_Dict):
     #                                               stroke widths included (logos, mask apertures, copper shapes)
     path: str = ""                   # schematic path
     sheet: str = ""                  # schematic sheet name
+    jumpers: list = field(default_factory=list)  # [[pad numbers]] bonded inside the part (KiCad jumper_pad_groups,
+    #                                              and same-numbered pads with duplicate_pad_numbers_are_jumpers)
     flags: list = field(default_factory=list)  # loader notes (module docstring)
     silk: dict = field(default_factory=dict)   # library layer (F/B.SilkS) -> [Polygon], library
     #                                            frame, stroked graphics
@@ -340,9 +342,12 @@ class Board(_Dict):
     warnings: list = field(default_factory=list)
     graphics: dict = field(default_factory=dict)    # board-level copper/mask graphics: layer -> [Polygon]
     #                                                 (gr_* shapes with stroke widths; gr_text as its box)
+    copper: dict = field(default_factory=dict)      # net -> {layer: [Polygon]}: board-level copper shapes that
+    #                                                 carry a net (KiCad 8+: they conduct, like a small pour)
 
     _to = {"footprints": lambda v: [f.to_dict() for f in v],
            "graphics": lambda v: {k: _polys_to(p) for k, p in v.items()},
+           "copper": lambda v: {n: {k: _polys_to(p) for k, p in d.items()} for n, d in v.items()},
            "nets": lambda v: {k: n.to_dict() for k, n in v.items()},
            "outline": _polys_to,
            "keepouts": lambda v: [k.to_dict() for k in v],
@@ -353,6 +358,7 @@ class Board(_Dict):
            "rules": lambda v: v.to_dict() if v is not None else None}
     _from = {"footprints": lambda v: [Footprint.from_dict(f) for f in v],
              "graphics": lambda v: {k: _polys_from(p) for k, p in v.items()},
+             "copper": lambda v: {n: {k: _polys_from(p) for k, p in d.items()} for n, d in v.items()},
              "nets": lambda v: {k: Net.from_dict(n) for k, n in v.items()},
              "outline": _polys_from,
              "keepouts": lambda v: [Keepout.from_dict(k) for k in v],

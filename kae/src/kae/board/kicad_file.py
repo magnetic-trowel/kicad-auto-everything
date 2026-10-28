@@ -296,6 +296,19 @@ class _Reader:
             fp.pads.append(self.pad(pd, fx, fy, frot, c, sn, s, fp_clear))
             pm = _f(value(pd, "solder_mask_margin"), None)
             fp.pads[-1].mask_margin = pm if pm is not None else fp_mask
+        # pads bonded inside the part: KiCad connects them (jumper_pad_groups, KiCad 9+)
+        jg = first(node, "jumper_pad_groups")
+        for g in (jg[1:] if jg else ()):
+            if isinstance(g, list):
+                nums = [x for x in g if type(x) is str]
+                if len(nums) > 1:
+                    fp.jumpers.append(nums)
+        if value(node, "duplicate_pad_numbers_are_jumpers") == "yes":
+            seen = {}
+            for p in fp.pads:
+                seen.setdefault(p.number, 0)
+                seen[p.number] += 1
+            fp.jumpers += [[n] for n, k in seen.items() if k > 1 and n]
 
         # graphics in the library frame: (u, v) stored -> (u, s*v), layers flipped on the back
         by_layer = {}
@@ -850,6 +863,26 @@ def _board_graphics(tree, tol, warnings):
 
 
 
+def _net_copper(tree, tol, rd):
+    """Board-level copper shapes that carry a net, per net and layer (KiCad 8+ connects them)."""
+    by = {}
+    for g in tree:
+        if type(g) is not list or not g or g[0] not in GR_SHAPES:
+            continue
+        net = rd.net(g)
+        if not net:
+            continue
+        for ly in _shape_layers(g):
+            if not ly.endswith(".Cu"):
+                continue
+            try:
+                o, r = shape_pieces(g, tol)
+            except (TypeError, ValueError, IndexError):
+                continue
+            by.setdefault(net, {}).setdefault(ly, []).extend(_stroked(g, o, r))
+    return {n: {ly: p for ly, p in ((ly, _polys(s)) for ly, s in d.items()) if p} for n, d in by.items()}
+
+
 def _outline_pieces(tree, tol, warnings):
     opens, rings = [], []
     for g in tree:
@@ -971,4 +1004,4 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
                  keepouts=rd.keepouts, zones=rd.zones, tracks=tracks, vias=vias, stackup=rd.stackup,
                  rules=rules_obj, generator=f"{gen} {gv}".strip() if gv else gen,
                  layers=dict(rd.layer_types), thickness=rd.stackup.thickness, warnings=rd.warnings,
-                 graphics=_board_graphics(tree, arc_tol, rd.warnings))
+                 graphics=_board_graphics(tree, arc_tol, rd.warnings), copper=_net_copper(tree, arc_tol, rd))
