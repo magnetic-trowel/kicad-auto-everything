@@ -6,9 +6,10 @@
 whoever routed it (us, the bridge, a human), with the module stage's models
 (critical_physics.Loop over kae.physics.fastloop):
 
-- each net's copper is a graph: pads, track end points (T-junctions split the track they
-  land on), vias, and the refilled zone regions (kicad-cli's fill, pcbnew_io.zone_fills),
-  whose contacts are joined through the pour;
+- each net's copper is a graph (kae.route.copper.NetGraph), connected as KiCad connects
+  it: pads, vias, round-ended tracks and the refilled zone regions (kicad-cli's fill,
+  pcbnew_io.zone_fills) touch where their shapes collide on a shared layer, and a track
+  is split where it touches; contacts in a pour are joined through it;
 - a hop between two terminals follows the path of least L'(w)-weighted length (the HF
   current's path), as strips, vias and pour pieces; a part's internal path is its body;
 - each strip's reference plane is the nearest layer whose refilled copper (any net: every
@@ -30,12 +31,10 @@ round judged by KiCad's DRC and kept only if it is no worse.
 """
 from __future__ import annotations
 
-import heapq
 import math
 import time
 from pathlib import Path
 
-import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
@@ -46,6 +45,7 @@ from kae.physics import exact as EX
 from kae.physics.boardview import body_z
 from kae.physics.kernels import lprime_hj
 
+from .copper import NetGraph
 from .critical_physics import INF, Loop, r_track, r_via, trace_capacitance_pf
 
 GND_HINT = ("GND", "VSS", "GROUND", "EARTH")
@@ -123,9 +123,13 @@ class RoutedBoard:
 
     # ---- planes (any net) for image heights
     def planes(self):
-        """{layer: union of copper fills (any net)}; zone outlines when no fills are known."""
+        """{layer: union of copper fills (any net)}; zone outlines when no fills are known; and
+        the board-level copper shapes that carry a net."""
         if self._planes is None:
             per = {}
+            for byl in (getattr(self.board, "copper", {}) or {}).values():
+                for l, polys in byl.items():
+                    per.setdefault(l, []).extend(polys)
             if self.fills is not None:
                 for net, byl in self.fills.items():
                     for l, polys in byl.items():
@@ -168,187 +172,14 @@ class RoutedBoard:
     def graph(self, net):
         g = self._graphs.get(net)
         if g is None:
-            g = NetGraph(self, net)
+            fills = (self.fills or {}).get(net) if self.fills is not None else None
+            g = NetGraph(self.board, net, self.cu, self.pads(net), fills)
             self._graphs[net] = g
         return g
 
 
 # ----------------------------------------------------------------------------- net graphs
-def _lp(w):
-    """L' weight of a strip of width w at a nominal 0.5 mm height (relative path cost)."""
-    return lprime_hj(max(w, 0.05), 0.5)
-
-
-class NetGraph:
-    """Conductors of one net as a weighted graph (see the module docstring)."""
-
-    def __init__(self, rb, net):
-        self.rb, self.net = rb, net
-        self.nodes = []            # (kind, layers, x, y)
-        self.adj = {}
-        self.key = {}
-        b = rb.board
-        cu = rb.cu
-        # pads
-        self.pad_node = {}
-        pads = rb.pads(net)
-        for f, p, geom in pads:
-            x, y = transform.pad_xy(f, p)
-            layers = tuple(l for l in p.layers if l in cu) or ((cu[0],) if f.side == "F" else (cu[-1],))
-            k = self._node("pad", layers, x, y)
-            self.pad_node[(f.uuid, p.number)] = self.pad_node.get((f.uuid, p.number), []) + [k]
-            self.nodes[k] = ("pad", layers, x, y, geom)
-        # vias
-        vias = []
-        for v in b.vias:
-            if v.net != net:
-                continue
-            k = self._node("via", tuple(cu), v.x, v.y)
-            vias.append((k, v))
-        # track keypoints and segments
-        segs = []
-        for t in b.tracks:
-            if t.net != net or t.layer not in cu:
-                continue
-            pts = [t.start, t.end] if t.mid is None else [t.start, t.mid, t.end]
-            for a, c in zip(pts[:-1], pts[1:]):
-                ka = self._kp(t.layer, a, t.width)
-                kc = self._kp(t.layer, c, t.width)
-                segs.append((ka, kc, t.layer, a, c, t.width))
-                self._edge(ka, kc, math.dist(a, c) * _lp(t.width), ("strip", t.layer, a, c, t.width))
-        # attachments of keypoints: pads, vias, T-junctions
-        kps = [(k, n) for k, n in enumerate(self.nodes) if n[0] == "kp"]
-        for k, n in kps:
-            _, (l,), x, y, w = n
-            p = Point(x, y)
-            for (fu, num), ks in self.pad_node.items():
-                for kk in ks:
-                    _, layers, px, py, geom = self.nodes[kk]
-                    if l in layers and geom.distance(p) <= 1e-3:
-                        self._edge(k, kk, math.dist((x, y), (px, py)) * _lp(w), ("strip", l, (px, py), (x, y), w))
-            for kv, v in vias:
-                if math.dist((x, y), (v.x, v.y)) <= v.size / 2 + 1e-3:
-                    self._edge(k, kv, math.dist((x, y), (v.x, v.y)) * _lp(w), ("strip", l, (v.x, v.y), (x, y), w))
-        for k, n in kps:
-            _, (l,), x, y, w = n
-            for ka, kc, sl, a, c, sw in segs:
-                if sl != l or ka == k or kc == k:
-                    continue
-                d, q, t = _proj(a, c, (x, y))
-                if d <= sw / 2 + 1e-3 and 1e-6 < t < 1 - 1e-6:
-                    kq = self._kp(l, q, sw)
-                    self._edge(kq, ka, math.dist(q, a) * _lp(sw), ("strip", l, q, a, sw))
-                    self._edge(kq, kc, math.dist(q, c) * _lp(sw), ("strip", l, q, c, sw))
-                    self._edge(k, kq, max(d, 1e-6) * _lp(w), ("strip", l, q, (x, y), w))
-        # vias inside pads
-        for kv, v in vias:
-            pv = Point(v.x, v.y)
-            for (fu, num), ks in self.pad_node.items():
-                for kk in ks:
-                    _, layers, px, py, geom = self.nodes[kk]
-                    if geom.distance(pv) <= v.size / 2:
-                        l = layers[0]
-                        self._edge(kv, kk, math.dist((v.x, v.y), (px, py)) * _lp(0.5), ("strip", l, (px, py), (v.x, v.y), 0.5))
-        # zones: contacts in each filled region, joined through the pour
-        fills = (rb.fills or {}).get(net) if rb.fills is not None else None
-        regions = []
-        if fills is not None:
-            for l, polys in fills.items():
-                for pg in polys:
-                    regions.append((l, pg))
-        else:
-            for z in b.zones:
-                if z.net == net and z.outline is not None and not z.outline.is_empty:
-                    for l in z.layers:
-                        if l in cu:
-                            regions.append((l, z.outline))
-        for l, pg in regions:
-            contacts = []
-            for k, n in enumerate(self.nodes):
-                kind, layers = n[0], n[1]
-                if l not in layers:
-                    continue
-                if pg.contains(Point(n[2], n[3])) or (kind == "pad" and pg.intersects(n[4])):
-                    contacts.append(k)
-            if len(contacts) < 2:
-                continue
-            P = np.array([[self.nodes[k][2], self.nodes[k][3]] for k in contacts])
-            nn = min(8, len(contacts) - 1)
-            for i, k in enumerate(contacts):
-                d = np.hypot(P[:, 0] - P[i, 0], P[:, 1] - P[i, 1])
-                for j in np.argsort(d)[1:nn + 1]:
-                    kk = contacts[int(j)]
-                    a, c = (P[i, 0], P[i, 1]), (P[int(j), 0], P[int(j), 1])
-                    wz = 2.0
-                    self._edge(k, kk, float(d[j]) * _lp(wz), ("pour", l, a, c, wz))
-        # via barrels: a via node is one node on all layers (its barrel is a vertical piece
-        # in the loop model, added between the strips that meet it)
-
-    def _node(self, kind, layers, x, y):
-        self.nodes.append((kind, layers, x, y, None))
-        return len(self.nodes) - 1
-
-    def _kp(self, layer, p, w=0.0):
-        key = (layer, round(p[0], 4), round(p[1], 4))
-        k = self.key.get(key)
-        if k is None:
-            self.nodes.append(("kp", (layer,), float(p[0]), float(p[1]), w))
-            k = len(self.nodes) - 1
-            self.key[key] = k
-        else:
-            kind, ly, x, y, w0 = self.nodes[k]
-            self.nodes[k] = (kind, ly, x, y, max(w0, w))
-        return k
-
-    def _edge(self, a, b, w, piece):
-        if a == b:
-            return
-        self.adj.setdefault(a, []).append((b, w, piece))
-        self.adj.setdefault(b, []).append((a, w, piece))
-
-    def path(self, srcs, dsts):
-        """Least-cost path from any node in srcs to any in dsts: [(piece, from node, to node)]
-        or None."""
-        dset = set(dsts)
-        dist = {}
-        prev = {}
-        hp = []
-        for s in srcs:
-            dist[s] = 0.0
-            heapq.heappush(hp, (0.0, s))
-        goal = None
-        while hp:
-            d, u = heapq.heappop(hp)
-            if d > dist.get(u, INF):
-                continue
-            if u in dset:
-                goal = u
-                break
-            for v, w, piece in self.adj.get(u, ()):
-                nd = d + w
-                if nd < dist.get(v, INF):
-                    dist[v] = nd
-                    prev[v] = (u, piece)
-                    heapq.heappush(hp, (nd, v))
-        if goal is None:
-            return None
-        out = []
-        k = goal
-        while k in prev:
-            u, piece = prev[k]
-            out.append((piece, u, k))
-            k = u
-        return out[::-1]
-
-
-def _proj(a, c, p):
-    dx, dy = c[0] - a[0], c[1] - a[1]
-    l2 = dx * dx + dy * dy
-    if l2 < 1e-18:
-        return math.dist(a, p), a, 0.0
-    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
-    q = (a[0] + t * dx, a[1] + t * dy)
-    return math.dist(q, p), q, t
+# kae.route.copper.NetGraph: connected as KiCad connects copper (shapes that collide on a shared layer)
 
 
 # ----------------------------------------------------------------------------- loops on real copper
@@ -788,8 +619,8 @@ def fills_of(board_path):
     d = pcbnew_io.zone_fills(board_path)
     out = {}
     for z in d.get("zones") or []:
-        if z.get("teardrop") or not z.get("net") or (z.get("name") or "").startswith("kae-crit:"):
-            continue                    # guard pours are the bridge's hint, not copper
+        if not z.get("net") or (z.get("name") or "").startswith("kae-crit:"):
+            continue                    # guard pours are the bridge's hint, not copper (teardrops are copper)
         for l, rings_list in (z.get("layers") or {}).items():
             for rings in rings_list:
                 if rings and len(rings[0]) >= 3:
