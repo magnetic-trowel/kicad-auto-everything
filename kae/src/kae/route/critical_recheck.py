@@ -52,10 +52,10 @@ GND_HINT = ("GND", "VSS", "GROUND", "EARTH")
 
 
 # ----------------------------------------------------------------------------- geometry
-def pad_poly(fp, pad):
-    """The pad's copper in the board frame (rounded rectangles as rectangles)."""
+def pad_poly(fp, pad, layer=None):
+    """The pad's copper in the board frame, on `layer` when its padstack differs per layer."""
     from kae.place.legalize import pad_shape
-    return transform.place_geom(pad_shape(pad), fp.x, fp.y, fp.rot, fp.side)
+    return transform.place_geom(pad_shape(pad, layer), fp.x, fp.y, fp.rot, fp.side)
 
 
 def _z_of(board):

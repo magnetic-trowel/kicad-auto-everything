@@ -641,32 +641,41 @@ def repair_kicad(P, st, violations, time_s=30.0, workers=2, seed=0, step_mm=0.1,
 
 
 # ----------------------------------------------------------------------------- exact shapes
-def pad_shape(p):
-    """A pad's copper as a library-frame polygon (circles, ovals, rounded rectangles; other
-    shapes as their rectangle)."""
-    w, h = p.size
-    ox, oy = p.offset or (0.0, 0.0)
+def pad_shape(p, layer=None):
+    """A pad's copper as a library-frame polygon, as KiCad shapes it: circles, ovals, rounded
+    rectangles from the pad's fields; trapezoids, chamfered rectangles and custom pads (anchor
+    and primitives) from the outline the loader built (Pad.outline). With `layer`, a padstack's
+    override for that copper layer (Pad.layer_shapes) when it has one."""
+    ov = (getattr(p, "layer_shapes", None) or {}).get(layer) if layer else None
+    shape = ov["shape"] if ov else p.shape
+    w, h = ov["size"] if ov else p.size
+    ox, oy = (ov.get("offset") if ov and ov.get("offset") is not None else p.offset) or (0.0, 0.0)
+    rratio = ov["rratio"] if ov else p.rratio
+    outline = ov.get("outline") if ov else getattr(p, "outline", None)
     c, s = transform.cos_sin(p.lrot)
 
     def lib(u, v):
         return (p.lx + u * c + v * s, p.ly - u * s + v * c)
-    if p.shape == "circle":
+    if outline is not None and not outline.is_empty:
+        from shapely import affinity
+        geom = affinity.affine_transform(affinity.translate(outline, ox, oy), [c, s, -s, c, p.lx, p.ly])
+    elif shape == "circle":
         cx, cy = lib(ox, oy)
         geom = Point(cx, cy).buffer(max(w, h) / 2, quad_segs=8)
-    elif p.shape == "oval" and abs(w - h) > 1e-9:
+    elif shape == "oval" and abs(w - h) > 1e-9:
         r = min(w, h) / 2
         if w > h:
             a, b = lib(ox - (w / 2 - r), oy), lib(ox + (w / 2 - r), oy)
         else:
             a, b = lib(ox, oy - (h / 2 - r)), lib(ox, oy + (h / 2 - r))
         geom = LineString([a, b]).buffer(r, quad_segs=8)
-    elif p.shape == "oval":
+    elif shape == "oval":
         cx, cy = lib(ox, oy)
         geom = Point(cx, cy).buffer(w / 2, quad_segs=8)
-    elif p.shape == "roundrect" and p.rratio > 0:
+    elif shape == "roundrect" and rratio > 0:
         # KiCad's rounded rectangle: corner radius rratio x the shorter side (as rectangles
         # the corners sat outside the copper; pingdevkit's 0402s read 0.191 mm apart, not 0.2)
-        r = min(0.5, float(p.rratio)) * min(w, h)
+        r = min(0.5, float(rratio)) * min(w, h)
         core = Polygon([(ox - w / 2 + r, oy - h / 2 + r), (ox + w / 2 - r, oy - h / 2 + r),
                         (ox + w / 2 - r, oy + h / 2 - r), (ox - w / 2 + r, oy + h / 2 - r)])
         loc = core.buffer(r, quad_segs=8) if r > 0 else core

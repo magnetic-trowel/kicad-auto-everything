@@ -5,7 +5,7 @@ import math
 import uuid
 
 import pytest
-from shapely.geometry import box
+from shapely.geometry import Point, box
 
 from critical_fixtures import write_board
 from kae.board.kicad_file import load
@@ -162,3 +162,39 @@ def test_a_pour_is_one_conductor_even_with_distant_contact_clusters(tmp_path):
     right = [(NET, "F.Cu", 0.2, (136.0 + 0.3 * i, 106.0), (136.0 + 0.3 * i, 102.0)) for i in range(9)]
     rb = _rb(tmp_path, left + right, fills={NET: {"F.Cu": [pour]}})
     assert len(_pieces(rb.graph(NET))) == 1
+
+
+def test_pad_outlines_follow_kicad():
+    from kae.board.kicad_file import round_chamfer_rect, trapezoid
+    t = trapezoid(1.5, 1.0, 0.0, 0.7)                      # rect_delta 0 0.7: the long sides tilt
+    assert t.area == pytest.approx(1.5 * 1.0, rel=1e-9)     # a trapezoid keeps the rectangle's area
+    xs = sorted(round(x, 6) for x, _ in t.exterior.coords[:-1])
+    assert xs == [-1.1, -0.4, 0.4, 1.1]
+    c = round_chamfer_rect(2.0, 2.0, 0.0, 0.5, ["top_left"])
+    assert c.area == pytest.approx(4.0 - 0.5 * 0.5 * 0.5, rel=1e-9)
+    assert not c.contains(Point(-0.95, -0.95)) and c.contains(Point(0.95, -0.95))
+    rc = round_chamfer_rect(2.0, 2.0, 0.4, 0.5, ["top_left"])  # the chamfered corner is cut, not rounded
+    assert rc.contains(Point(-0.95, 0.95 - 1e-3)) is False and rc.contains(Point(-0.6, -0.6))
+
+
+def test_custom_pad_is_anchor_plus_primitives(tmp_path):
+    p = write_board(tmp_path)
+    text = p.read_text()
+    old = '(pad "1" smd rect'
+    i = text.index('"C3"') if '"C3"' in text else 0
+    # turn C3 pad 1 into a custom pad: a 0.2 mm anchor plus a 1 x 0.6 mm rectangle primitive
+    j = text.index(old, text.rfind("(footprint", 0, i))
+    k = text.index("(layers", j)
+    custom = ('(pad "1" smd custom\n\t\t\t(at -0.48 0)\n\t\t\t(size 0.2 0.2)\n\t\t\t'
+              '(options\n\t\t\t\t(clearance outline)\n\t\t\t\t(anchor rect)\n\t\t\t)\n\t\t\t'
+              '(primitives\n\t\t\t\t(gr_rect\n\t\t\t\t\t(start -0.5 -0.3)\n\t\t\t\t\t(end 0.5 0.3)\n\t\t\t\t\t(width 0)'
+              '\n\t\t\t\t\t(fill yes)\n\t\t\t\t)\n\t\t\t)\n\t\t\t')
+    p.write_text(text[:j] + custom + text[k:])
+    b = load(p)
+    c3 = next(f for f in b.footprints if f.ref == "C3")
+    pad = next(q for q in c3.pads if q.number == "1")
+    assert pad.shape == "custom" and pad.outline is not None
+    from kae.route.critical_recheck import pad_poly
+    assert pad_poly(c3, pad).area == pytest.approx(1.0 * 0.6, rel=1e-6)
+    d = pad.to_dict()
+    assert type(pad).from_dict(d).outline.area == pytest.approx(pad.outline.area)
