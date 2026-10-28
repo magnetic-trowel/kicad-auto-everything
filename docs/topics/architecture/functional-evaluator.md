@@ -101,6 +101,12 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
   2. unknowns;
   3. verdicts resting on priors alone.
 
+### 5a. Budgets (`kae.sim.budget`)
+
+The placer and the critical router price every structure as spend over allocation, with the allocation taken from a closed form unless the brief's structure carries a `budget`. `kae.sim.cli budgets` derives that budget from the board's own testbench: for a cell, a series inductance is swept at the cell's loop insertion point (`Vloop`) on the ideal circuit, at every corner. The budget is the loop's ideal inductance plus the largest addition at which the requirement holds at every corner. Budgets are written to `board.budgets.json` and applied only by methods that opt in (`critical_cli route --budgets`). Evaluators never apply them, so a method's budgets cannot change its score.
+
+Before budgets are used for routing, the two loop measures must agree. On `acarpm-chesslab-powerboard`'s boost loop, the router's closed form gives 13.2 nH (PEEC on the same pieces: 13.1 nH), and the SPICE loop test gives 2.7 nH. The router's figure has 3.1 nH of part bodies (D3, IC1, C5), which SPICE lacks. Its return hop runs about 18 mm through two vias and across B.Cu, which is the reference plane itself, as strips above that plane. SPICE's pour mesh is coarse and unvalidated for returns through a plane. A field solve of the actual copper decides which is right [M].
+
 ### 6. Command line
 
 ```
@@ -160,7 +166,7 @@ python -m kae.sim.cli questions eval.json
   - **Step:** the step is the smaller of T_SW/20 and 0.25 ns, forced everywhere. That is within 0.2% of a 25 ps reference; leaving the step to error control read the peak 6% low.
   - **Loss:** loss is computed after the run, in a `.control` block, from the converged waveforms. As a B-source probe node, the v·i sum stalled solves that converge without it, because it carries the solver's sub-nA noise. An aborted run reports nothing, never a partial-waveform value.
   - **Diode resistance:** without its series resistance the diode is a bare exponential on a ring with Q ≈ 30, and Newton fails. Restored at 20 mΩ, every corner converges, and the result moves by under 1.5% between 5 and 20 mΩ.
-  - **Open:** at 1 ns edges, four of the fixture buck's nine corners still fail. Newton fails at the body diode while it recovers into the C_oss ring, which has Q ≈ 30 with DC resistances, even at `itl4=500`. The missing physical damping (soft recovery, C_oss loss, skin effect) is the faithful fix; a solver setting that hides the failure is not.
+  - **C_oss loss:** at 1 ns edges, four of the fixture's nine corners failed to converge with any solver setting, even `itl4=500`, and a 0 V link placed in the loop flipped the typical corner. The cell was at the edge of convergence: an ideal C_oss ringing with Q ≈ 30. Real C_oss charges through the switch's spreading resistance (its hysteresis loss), which is what damps measured switch-node rings to Q ≈ 3–10. With 0.05 Ω, the low end of 0.05–1 Ω, every corner converges. Loss moves under 0.5%, and the peak drops 0.2% (fixture), 0.2% (boost) and 1.5% (motor driver); at 1 Ω the motor driver's peak is 10% lower.
   - **Low frequencies:** the cell is simulated at max(F_SW, 300 kHz). With a constant winding current, a period's loss is conduction (read on the settled middles of the on and off intervals) plus edge energy `e_sw`, and `p_loss` = p_cond + e_sw·F_SW. Each ring decays in about 25 ns, against flats of at least 1 µs.
 - **Frequency priors** when the part table has none: motor drivers 1–100 kHz (typical 20 kHz), discrete half-bridges 20–500 kHz, integrated converters 150 kHz–3 MHz. A single 0.3–3 MHz prior had put motor drivers at converter frequencies, where a 100 ns edge and its dead time left a negative on-time, and the switch never turned on.
 - **Coarse pours:** a sheet solver (the engine's K2 operator) would replace the 2 mm strip mesh.

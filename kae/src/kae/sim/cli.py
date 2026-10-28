@@ -58,6 +58,15 @@ def main(argv=None):
     e.add_argument("--only", nargs="*")
     e.add_argument("--workdir", default="kae-sim")
     e.add_argument("-o", "--out", required=True)
+    g = sub.add_parser("budgets", help="per-structure budgets from the testbench (cell: hot-loop nH)")
+    g.add_argument("board")
+    g.add_argument("--testbench", required=True)
+    g.add_argument("--pintypes")
+    g.add_argument("--schematic")
+    g.add_argument("--input")
+    g.add_argument("-j", "--jobs", type=int, default=8)
+    g.add_argument("--workdir", default="kae-sim-budget")
+    g.add_argument("-o", "--out", required=True, help="board.budgets.json")
     q = sub.add_parser("questions")
     q.add_argument("evaluation")
     a = ap.parse_args(argv)
@@ -79,6 +88,21 @@ def main(argv=None):
         Path(a.out).write_text(TB.render(tests, sha))
         TB.parse(Path(a.out).read_text())            # what we write must read back
         print(json.dumps(dict(tests=len(tests), unknown=sum(1 for t in tests if t.unknown), out=a.out)))
+        return 0
+    if a.cmd == "budgets":
+        from . import budget as BG
+        from .evaluate import Context
+        b = load_board(a.board, a.pintypes, a.schematic)
+        br = brief_of(load_board(a.input, a.pintypes, a.schematic) if a.input else b)
+        tests = TB.parse(Path(a.testbench).read_text())
+        ctx = Context(b, br, D.build(b, br), rb=None, workdir=a.workdir)
+        bud = BG.cell_budgets(tests, ctx, jobs=a.jobs)
+        for sid, x in bud.items():
+            pr = BG.prior_of(br, sid)
+            x["prior_nH"] = None if pr is None else round(pr, 4)
+        sha = lambda f: hashlib.sha256(Path(f).read_bytes()).hexdigest()
+        BG.write(bud, a.out, sha(a.board), sha(a.testbench))
+        print(json.dumps({k: dict(value=v["value"], prior_nH=v["prior_nH"]) for k, v in bud.items()}))
         return 0
     from .evaluate import Context, evaluate, write
     b = load_board(a.board, a.pintypes, a.schematic)

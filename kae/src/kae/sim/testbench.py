@@ -17,6 +17,8 @@
 - `<REF.PAD>` is the node at that pad; `<NET>` the node of a net that the test does not extract (a
   rail driven by an ideal source, for example). Angle brackets are illegal in ngspice node names,
   so an unresolved name can never pass through silently.
+- `*@test ID kind=K structure=S`: S names the brief structure the test judges; kae.sim.budget
+  writes the budget it derives under that id.
 - `*@nets` lists the nets replaced by their extracted copper in the routed run.
 - `*@range NAME lo hi src=...` makes `.param NAME` an interval: the test runs at its corners.
 - `*@require MEAS OP BOUND src=...` (OP one of <=, >=, <, >) judges a `.meas` result; `*@info MEAS`
@@ -93,6 +95,7 @@ class Test:
     unknown: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     exclude: list = field(default_factory=list)     # board parts left out of this test (the testbench models them)
+    structure: str = ""                             # the brief structure this test judges (its budget's owner)
     extract: str = "signal"                         # extraction profile of the routed run (extract.PROFILES)
 
     def meas_names(self):
@@ -153,7 +156,7 @@ def parse(text):
                     if cur is not None:
                         raise ValueError("*@test inside a test (missing *@end)")
                     pos, kv = _kv(rest)
-                    cur = Test(id=pos[0], kind=kv.get("kind", ""))
+                    cur = Test(id=pos[0], kind=kv.get("kind", ""), structure=kv.get("structure", ""))
                     continue
                 if cur is None:
                     raise ValueError(f"*@{tag} outside a test")
@@ -211,7 +214,7 @@ def render(tests, board_sha=""):
         out.append(f"*@board sha256={board_sha}")
     for t in tests:
         out.append("")
-        out.append(f"*@test {t.id}" + (f" kind={t.kind}" if t.kind else ""))
+        out.append(f"*@test {t.id}" + (f" kind={t.kind}" if t.kind else "") + (f" structure={t.structure}" if t.structure else ""))
         if t.nets:
             out.append("*@nets " + " ".join(shlex.quote(n) for n in t.nets))
         if t.exclude:

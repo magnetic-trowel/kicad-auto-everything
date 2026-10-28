@@ -426,6 +426,8 @@ F_SW_PRIOR = {
     "half_bridge": (100e3, 20e3, 500e3, "discrete half-bridge PWM"),
     None: (1e6, 150e3, 3e6, "integrated converter: 150 kHz (older controllers) to 3 MHz"),
 }
+R_OSS = 0.05                       # ohm: C_oss loss, low end of 0.05-1 (peak 10% lower at 1, loss unchanged)
+LOOP_LINK = "Vloop"                # the cell's series insertion point in its commutation loop
 F_SIM_MIN = 3e5                    # Hz: the slowest simulated switching (see cell_tests)
 LOOP_F = 1e6                       # Hz: the loop's capacitors are shorted, so Z = R + j w L at any frequency
 
@@ -435,7 +437,8 @@ def _loop_test(c, s, swn, bus, gnd, bus_tok, gnd_tok):
     the bus back to its ground pin, with each capacitor shorted to its ESR and ESL. It sets the
     switch-node ringing and the cell's radiated field whatever the switches are, so it is judged
     without a model of them."""
-    t = Test(id=f"loop:{s.get('id')}:{swn}", kind="loop", extract="power", nets=sorted({bus} | set(c.gnd_nets())))
+    t = Test(id=f"loop:{s.get('id')}:{swn}", kind="loop", extract="power", nets=sorted({bus} | set(c.gnd_nets())),
+             structure=s.get("id") or "")
     caps = [p for p in c.design.parts if p.kind == "C"
             and {c.design.pin_net.get(k) for k in p.pins} == {bus, gnd}]
     if not caps:
@@ -474,7 +477,7 @@ def cell_tests(c):
         for swn in (s.get("sw_nets") or [s.get("sw")]):
             if not swn:
                 continue
-            t = Test(id=f"{s.get('id')}:{swn}", kind="cell", extract="power")
+            t = Test(id=f"{s.get('id')}:{swn}", kind="cell", extract="power", structure=s.get("id") or "")
             t.nets = sorted({n for n in (bus, swn, s.get("vin"), s.get("vout")) if n}) + c.gnd_nets()
             if cls not in CELL_TOPOLOGY:
                 t.unknown.append(f"class {cls}: no stand-in")
@@ -554,8 +557,13 @@ def cell_tests(c):
             t.lines.append("Vhs hs 0 PULSE(0 1 {DT} {T_SW} {T_SW} {D/F_SIM-2*DT} {1/F_SIM})")
             t.lines.append("Vls ls 0 PULSE(1 0 0 {T_SW} {T_SW} {D/F_SIM} {1/F_SIM})")
             loss = [PDISS]
+            # the loop's insertion point: the high element reaches the bus through Vloop, a 0 V link that
+            # kae.sim.budget replaces with a series inductance to find the loop's budget
+            t.lines.append(f"{LOOP_LINK} {vtok} kae_hb 0")
             for (fp, what), (pa, pb), ctl, tag in ((high, hp, "hs", "h"), (low, lp, "ls", "l")):
                 a_, b_ = f"<{fp.ref}.{pa}>", f"<{fp.ref}.{pb}>"
+                if tag == "h":
+                    a_ = "kae_hb"
                 diodes = []
                 if what == "diode":
                     # conducts when the switch opposite is off: anode at the lower potential side
@@ -569,7 +577,10 @@ def cell_tests(c):
                     t.lines.append(f"{name} {an} {name.lower()}k {model}")
                     t.lines.append(f"V{name}s {name.lower()}k {ca} 0")
                     loss.append(f"(v({an})-v({ca}))*i(V{name}s)")
-                t.lines.append(f"Coss{tag} {a_} {b_} 100p")
+                # C_oss charges through the switch's spreading resistance (its hysteresis loss): real and
+                # what damps the ring; R_OSS at the low end of its range keeps the peak an upper bound
+                t.lines.append(f"Coss{tag} {a_} kae_c{tag} 100p")
+                t.lines.append(f"Ross{tag} kae_c{tag} {b_} {R_OSS:g}")
             sw_probe = _probe(t, "vsw", ntok_l, gtok)
             # dissipation in the cell: switches, diodes, and the board's copper, resistors and capacitor
             # ESR (an off-board source's delivered power would also count energy still being stored in

@@ -88,6 +88,10 @@ class Session:
         if brief is None:
             from kae.circuit.brief import build
             brief = build(self.board)
+        if self.opts.get("budgets"):
+            # simulated budgets (kae.sim.budget) replace the closed-form allocations they cover
+            from kae.sim.budget import apply, load as load_budgets
+            log(f"budgets: {', '.join(apply(brief, load_budgets(self.opts['budgets']))) or 'none applied'}")
         self.brief = brief
         if info is None:
             with tempfile.TemporaryDirectory(prefix="kae-crit-") as d:

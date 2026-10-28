@@ -255,9 +255,10 @@ def test_cell_models_both_switches_at_their_power_pins(tmp_path):
     cell = t["cell"]
     assert not cell.unknown and cell.exclude == ["L1"]          # the inductor is the load current source
     lines = "\n".join(cell.lines)
-    assert "Xh <U1.3> xhk hs kae_sw\nVXhs xhk <U1.5> 0" in lines   # VIN pin, not EN (pin 2, also on VIN)
+    assert "Vloop <U1.3> kae_hb 0" in lines                      # VIN pin, not EN (pin 2, also on VIN)
+    assert "Xh kae_hb xhk hs kae_sw\nVXhs xhk <U1.5> 0" in lines
     assert "Xl <U1.5> xlk ls kae_sw\nVXls xlk <U1.4> 0" in lines
-    assert "Cossh <U1.3> <U1.5>" in lines and "Cossl <U1.5> <U1.4>" in lines
+    assert "Cossh kae_hb kae_ch 100p\nRossh kae_ch <U1.5>" in lines and "Cossl <U1.5> kae_cl 100p\nRossl kae_cl <U1.4>" in lines
     assert re.search(r"^Iload <L1\.1> far ", lines, re.M)
     ploss = next(ln for ln in cell.lines if ln.startswith("let ploss"))
     assert all(f"i({v})" in ploss for v in ("VXhs", "VXls", "VDbhs", "VDbls")) and "kae_pdiss" in ploss
@@ -335,10 +336,34 @@ def test_cell_physics_at_the_typical_corner(tmp_path):
 
 
 @pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
-@pytest.mark.xfail(strict=True, reason="1 ns edges: Newton fails at the body diode during recovery into the "
-                   "undamped C_oss ring, even at itl4=500 (docs/topics/architecture/functional-evaluator.md)")
 def test_cell_converges_at_every_corner(tmp_path):
     from kae.sim.evaluate import Context, evaluate
     b, br, t = _cell_tests(tmp_path)
     rep = evaluate([t["cell"]], Context(b, br, D.build(b, br), rb=None, workdir=tmp_path / "sim"), jobs=4)
     assert not rep["tests"][0]["problems"]
+
+
+# ----------------------------------------------------------------------------- budgets
+def test_budget_crossing_interpolates_to_the_first_failure():
+    from kae.sim.budget import _crossing
+    assert _crossing([(0, 10.0), (1, 12.0), (2, 14.0)], "<=", 13.0) == (1.5, "")
+    assert _crossing([(0, 14.0), (1, 15.0)], "<=", 13.0)[0] == 0.0
+    L, note = _crossing([(0, 10.0), (4, 11.0)], "<=", 13.0)
+    assert L == 4 and "sweep's end" in note
+    L, note = _crossing([(0, 10.0), (1, None), (2, 14.0)], "<=", 13.0)
+    assert L == 0 and "converge" in note
+
+
+def test_budget_sweep_replaces_the_loop_link_and_reaches_the_placer(tmp_path):
+    from kae.physics.place_terms import Terms
+    from kae.sim.autotb import LOOP_LINK
+    from kae.sim.budget import _with_l, apply
+    b, br, t = _cell_tests(tmp_path)
+    link = next(ln for ln in t["cell"].lines if ln.startswith(LOOP_LINK + " "))
+    u = _with_l(t["cell"], 2.0)
+    assert link not in u.lines and f"Lloop {' '.join(link.split()[1:3])} 2.0n" in u.lines
+    assert _with_l(t["cell"], 0.0).lines == t["cell"].lines
+    sid = t["cell"].structure
+    assert apply(br, {sid: dict(value=3.25, unit="nH", basis="simulated: test", **{"class": "sim"})}) == [sid]
+    st = next(s for s in Terms(b, br).structs if s.id == sid)
+    assert st.alloc.value == 3.25 and st.alloc.basis == "simulated: test"
