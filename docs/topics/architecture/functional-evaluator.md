@@ -137,7 +137,7 @@ python -m kae.sim.cli questions eval.json
 
 ### 8. Next
 
-1. Fix the pilot's eight generator errors. Each becomes a rule, so all boards improve without more tokens.
+1. ~~Fix the pilot's eight generator errors.~~ Done: supply trees through ferrites, fuses and small resistors (also finding supplies the brief did not name); an IC's current returns at its ground pin nearest the supply pin, other loads at the reference; only logic ICs step in ns; dividers simulated and pull-ups counted at V/R; I2C lines followed through series resistors; parallel ideal sources merged. On ardor the automatic testbench now judges the 3.3 V tree (it was unknown); only the off-board I2C pull-ups still need an outside fact.
 2. Add crosstalk victim tests on routed copper, leakage and creepage, the excitation and radiator inventories with the source-to-radiator check, and the antenna feed. Fix the known limits:
    - add boost and half-bridge stand-ins;
    - find the cause of the slow and singular signal runs (scaling the couplings to keep the inductance matrix positive definite did not cure them).

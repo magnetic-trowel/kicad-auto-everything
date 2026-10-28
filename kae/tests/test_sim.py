@@ -18,6 +18,7 @@ from kae.route.critical_physics import r_track
 from kae.route.critical_recheck import RoutedBoard
 from kae.sim import design as D
 from kae.sim import testbench as TB
+from kae.sim.testbench import fmt
 from kae.sim.extract import GROUND, R_MIN, extract
 from kae.sim.names import Namer
 
@@ -158,3 +159,82 @@ Iload <U2.8> 0 DC 1
     ln = math.dist(PATH[0], PATH[1]) + math.dist(PATH[1], PATH[2])
     R = r_track(ln, 0.25, rb.board.stackup.cu_thickness[0])
     assert 3.3 - routed == pytest.approx(R * 1.0, rel=0.05, abs=5 * R_MIN)
+
+
+# ----------------------------------------------------------------------------- testbench generator rules
+def _pads2(n1, net1, n2, net2, pitch=1.6, w=0.8, h=0.9):
+    return [(n1, net1, -pitch / 2, 0.0, w, h, "smd", 0.0, "", "passive"), (n2, net2, pitch / 2, 0.0, w, h, "smd", 0.0, "", "passive")]
+
+
+EXTRA = [
+    ("FB1", "600R@100MHz", "Inductor_SMD:L_0603_1608Metric", 110.0, 104.0, 0.0, _pads2("1", "+3V3", "2", "+3V3_A"), (1.3, 0.7)),
+    ("U3", "ADS1115IDGS", "Package_SO:MSOP-10_3x3mm_P0.5mm", 110.0, 110.0, 0.0,
+     [("1", "+3V3_A", -2.2, -1.0, 1.0, 0.3, "smd", 0.0, "VDD", "power_in"),
+      ("2", "GND", -2.2, -0.5, 1.0, 0.3, "smd", 0.0, "GND", "power_in"),
+      ("3", "DIV", -2.2, 0.0, 1.0, 0.3, "smd", 0.0, "AIN0", "input"),
+      ("4", "SDA_X", -2.2, 0.5, 1.0, 0.3, "smd", 0.0, "SDA", "bidirectional"),
+      ("5", "SCL", -2.2, 1.0, 1.0, 0.3, "smd", 0.0, "SCL", "input"),
+      ("6", "GND", 2.2, 1.0, 1.0, 0.3, "smd", 0.0, "GND", "power_in")], (3.0, 2.0)),
+    ("R10", "10k", "Resistor_SMD:R_0402_1005Metric", 106.0, 108.0, 0.0, _pads2("1", "+3V3_A", "2", "DIV", 1.0, 0.5, 0.6), (0.9, 0.5)),
+    ("R11", "10k", "Resistor_SMD:R_0402_1005Metric", 106.0, 110.0, 0.0, _pads2("1", "DIV", "2", "GND", 1.0, 0.5, 0.6), (0.9, 0.5)),
+    ("R12", "1k", "Resistor_SMD:R_0402_1005Metric", 106.0, 112.0, 0.0, _pads2("1", "+3V3", "2", "LED_K", 1.0, 0.5, 0.6), (0.9, 0.5)),
+    ("R13", "33", "Resistor_SMD:R_0402_1005Metric", 106.0, 114.0, 0.0, _pads2("1", "SDA", "2", "SDA_X", 1.0, 0.5, 0.6), (0.9, 0.5)),
+    ("R14", "4.7k", "Resistor_SMD:R_0402_1005Metric", 106.0, 116.0, 0.0, _pads2("1", "+3V3", "2", "SDA", 1.0, 0.5, 0.6), (0.9, 0.5)),
+    ("U4", "SN74LVC1G04", "Package_TO_SOT_SMD:SOT-23-5", 114.0, 104.0, 0.0,
+     [("1", "", -1.1, -0.95, 1.0, 0.6, "smd", 0.0, "NC", "no_connect"),
+      ("2", "SDA", -1.1, 0.0, 1.0, 0.6, "smd", 0.0, "A", "input"),
+      ("3", "GND", -1.1, 0.95, 1.0, 0.6, "smd", 0.0, "GND", "power_in"),
+      ("4", "LED_K", 1.1, 0.95, 1.0, 0.6, "smd", 0.0, "Y", "output"),
+      ("5", "+3V3", 1.1, -0.95, 1.0, 0.6, "smd", 0.0, "VCC", "power_in")], (2.0, 1.8)),
+]
+
+
+def _generated(tmp_path):
+    from kae.sim.autotb import _Ctx, generate, rail_trees
+    b = load(write_board(tmp_path, extra=EXTRA))
+    br = build(b)
+    d = D.build(b, br)
+    return b, br, generate(b, br, d), rail_trees(_Ctx(b, br, d))
+
+
+def test_supply_tree_follows_ferrites_and_finds_unnamed_rails(tmp_path):
+    b, br, tests, trees = _generated(tmp_path)
+    root = next(r for r, t in trees.items() if "+3V3_A" in t["nets"])
+    assert trees[root]["nets"][0] == root and "+3V3_A" not in trees
+    t = next(x for x in tests if x.id == f"rail_dc:{root}")
+    assert "+3V3_A" in t.nets
+    assert any(ln.startswith("I_U3_1 ") for ln in t.lines)
+
+
+def test_ic_current_returns_at_its_nearest_ground_pin(tmp_path):
+    b, br, tests, trees = _generated(tmp_path)
+    root = next(r for r, t in trees.items() if "+3V3_A" in t["nets"])
+    t = next(x for x in tests if x.id == f"rail_dc:{root}")
+    line = next(ln for ln in t.lines if ln.startswith("I_U3_1 "))
+    assert "<U3.2>" in line and "<U3.6>" not in line          # pin 2 is beside the supply pin; pin 6 is across
+
+
+def test_dividers_are_simulated_and_pullups_count_at_worst_case(tmp_path):
+    b, br, tests, trees = _generated(tmp_path)
+    root = next(r for r, t in trees.items() if "+3V3_A" in t["nets"])
+    t = next(x for x in tests if x.id == f"rail_dc:{root}")
+    assert "DIV" in t.nets and "R10" not in t.exclude          # a divider: its resistors stay in the circuit
+    assert "R12" in t.exclude
+    assert any(ln.startswith("I_R12_pullup") and ln.endswith(fmt(3.3 / 1000.0)) for ln in t.lines)
+
+
+def test_i2c_line_follows_series_resistors(tmp_path):
+    b, br, tests, trees = _generated(tmp_path)
+    t = next((x for x in tests if x.kind == "i2c" and "SDA" in x.nets), None)
+    assert t is not None and "SDA_X" in t.nets
+    assert any("<U3.4>" in ln for ln in t.lines)
+
+
+def test_parallel_ideal_sources_merge_or_fail():
+    from kae.sim.evaluate import _merge_parallel_sources
+    out = _merge_parallel_sources(["V1 n1 0 DC 5", "V2 0 n1 DC 5", "R1 n1 0 1k"])
+    assert out[0] == "V1 n1 0 DC 5" and out[1].startswith("* V2 merged") and out[2] == "R1 n1 0 1k"
+    with pytest.raises(ValueError, match="different values"):
+        _merge_parallel_sources(["V1 n1 0 DC 5", "V2 n1 0 DC 3.3"])
+    with pytest.raises(ValueError, match="itself"):
+        _merge_parallel_sources(["V1 n1 n1 DC 5"])

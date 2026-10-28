@@ -152,8 +152,31 @@ def build_deck(test, mode, values, ctx, net=None):
             ln = f"{m.group(1)}{m.group(2)}{m.group(3)}{fmt(values[m.group(2)])}{m.group(5)}"
         ln = TOKEN.sub(tok, ln)
         out.append(ln)
+    out = _merge_parallel_sources(out)
     out.append(".end")
     return "\n".join(out) + "\n", nm, used_pins, stats
+
+
+def _merge_parallel_sources(lines):
+    """Voltage sources between the same two nodes: identical ones are kept once (in the ideal deck two
+    pins of a net are one node, so a source per pin would put sources in parallel and make the circuit
+    singular); different ones are an error."""
+    seen, out = {}, []
+    for ln in lines:
+        w = ln.split()
+        if len(w) >= 4 and w[0][:1] in "Vv" and not ln.lstrip().startswith((".", "*")):
+            key = frozenset((w[1], w[2]))
+            spec = " ".join(w[3:])
+            if len(key) == 1:
+                raise ValueError(f"{w[0]} connects a node to itself ({w[1]})")
+            if key in seen:
+                if seen[key][1] != spec:
+                    raise ValueError(f"{w[0]} and {seen[key][0]} drive the same nodes with different values")
+                out.append(f"* {w[0]} merged with {seen[key][0]} (same nodes, same value)")
+                continue
+            seen[key] = (w[0], spec)
+        out.append(ln)
+    return out
 
 
 def _status(vals, op, bound):

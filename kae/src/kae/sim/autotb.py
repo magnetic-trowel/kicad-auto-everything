@@ -67,7 +67,68 @@ class _Ctx:
 PASSIVE_KINDS = {"resistor", "capacitor", "inductor", "ferrite", "connector", "test_point", "mounting_hole",
                  "fiducial", "jumper", "switch", "diode", "tvs", "fuse", "crystal", "unknown", ""}
 SERIES_KINDS = {"ferrite", "inductor", "resistor", "fuse", "jumper"}
-STEP_KINDS = {"ic", "module"}      # loads whose supply current steps in nanoseconds (logic)
+SERIES_R_MAX = 1.0                 # ohm: a resistor this small in a supply is a link or a shunt, not a load
+# loads whose supply current steps in nanoseconds: logic, processors, interfaces, and unclassified ICs;
+# analog and power parts (op-amps, converters, audio, sensors, references) draw at audio or slower rates
+STEP_SUBTYPES = {None, "", "mcu", "fpga", "memory", "logic", "interface", "phy", "usb", "ethernet", "clock",
+                 "oscillator", "module"}
+IC_KINDS = {"ic", "module"}
+
+
+def _series_parts(c):
+    """{footprint uuid: (net a, net b)} of two-terminal series parts that can carry a supply onward:
+    ferrites, fuses, jumpers, inductors that are not a converter's, resistors up to SERIES_R_MAX."""
+    conv_l = {s.get("inductor") for s in c.brief.get("structures") or [] if s.get("kind") == "commutation_cell"}
+    dv = {p.ref: p for p in c.design.parts}
+    out = {}
+    for fp in c.b.footprints:
+        k = c.kind(fp)
+        if k not in SERIES_KINDS or fp.uuid in conv_l:
+            continue
+        nets = sorted({p.net for p in fp.pads if p.net})
+        if len(nets) != 2:
+            continue
+        if k == "resistor" and not (fp.ref in dv and dv[fp.ref].value <= SERIES_R_MAX):
+            continue
+        out[fp.uuid] = tuple(nets)
+    return out
+
+
+def _has_load(c, net):
+    return any(c.kind(fp) not in PASSIVE_KINDS and c.pins_on(fp, net) for fp in c.b.footprints)
+
+
+def rail_trees(c):
+    """Supply trees: {root rail: dict(nets=[root first], series=[footprints], source=footprint or None)}.
+    A rail's tree is its root (followed up through series parts) and every net fed from the tree through
+    a series part that is a rail or has a load (so supplies the brief did not name are still found)."""
+    series = _series_parts(c)
+    rails = [n for n, r in c.nets.items() if (r or {}).get("role") == "rail"]
+    roots = {}
+    for n in rails:
+        sfp, skind, chain, _ = _root(c, n)
+        roots.setdefault(chain[-1], dict(source=sfp, source_kind=skind))
+    trees = {}
+    for root, info in roots.items():
+        nets, parts = [root], []
+        grew = True
+        while grew:
+            grew = False
+            for u, (a, b) in series.items():
+                if (a in nets) == (b in nets):
+                    continue
+                far = b if a in nets else a
+                role = (c.nets.get(far) or {}).get("role")
+                if far in c.gnd or role in ("ground", "switch_node"):
+                    continue
+                if role == "rail" or _has_load(c, far):
+                    nets.append(far)
+                    parts.append(c.by_uuid[u])
+                    grew = True
+        trees[root] = dict(nets=nets, series=parts, **info)
+    # a rail that is itself inside a larger tree is not a root of its own
+    inner = {n for r, tr in trees.items() for n in tr["nets"][1:]}
+    return {r: tr for r, tr in trees.items() if r not in inner}
 
 
 def _root(c, net):
@@ -86,39 +147,75 @@ def _root(c, net):
         nets.append(up[0])
 
 
-def rail_tests(c, net):
-    r = c.nets.get(net) or {}
-    v = r.get("volts")
-    sfp, skind, chain, series = _root(c, net)
+def _nearest_gnd(c, fp, pin):
+    """The ground pad of fp nearest its pad `pin` (an IC's supply current returns at its closest
+    ground pin), as a token; '0' when the part has none."""
+    from kae.board import transform
+    sp = next((p for p in fp.pads if p.number == pin), None)
+    gs = [p for p in fp.pads if p.net in c.gnd]
+    if not gs or sp is None:
+        return "0"
+    x0, y0 = transform.pad_xy(fp, sp)
+    best = min(gs, key=lambda p: (transform.pad_xy(fp, p)[0] - x0) ** 2 + (transform.pad_xy(fp, p)[1] - y0) ** 2)
+    return f"<{fp.ref}.{best.number}>"
+
+
+def _resistive(c, tree, gnd):
+    """Resistor loads on a tree: (nets the test must include: dividers (the far net also has a resistor
+    to ground; active pins there are inputs) and passive filters; pull-ups: [(resistor ref, tree pin
+    key, far net, ohm)] into a line an active pin drives, counted at their worst case V / R)."""
+    passive_nets, pullups = set(), []
+    for p in c.design.parts:
+        if p.kind != "R":
+            continue
+        nets = [c.design.pin_net.get(k) for k in p.pins]
+        on = [i for i, n in enumerate(nets) if n in tree]
+        if len(on) != 1:
+            continue
+        other = nets[1 - on[0]]
+        if other in gnd or other in tree:
+            continue
+        pads = [(fp, q) for fp in c.b.footprints for q in fp.pads if q.net == other]
+        to_gnd = any(q.kind == "R" and other in ns and any(n in gnd for n in ns)
+                     for q in c.design.parts for ns in ([c.design.pin_net.get(k) for k in q.pins],))
+        if to_gnd or all(c.kind(fp) in ("resistor", "capacitor") for fp, _ in pads):
+            passive_nets.add(other)       # a divider or filter (active pins there are inputs): simulate it
+        else:
+            pullups.append((p.ref, p.pins[on[0]], other, p.value))
+    return passive_nets, pullups
+
+
+def rail_tests(c, root, tree):
+    v = (c.nets.get(root) or {}).get("volts")
+    sfp, skind, nets = tree["source"], tree.get("source_kind"), tree["nets"]
+    series_ids = {f.uuid for f in tree["series"]}
     out = []
     loads = []
     for fp in c.b.footprints:
-        if (sfp is not None and fp.uuid == sfp.uuid) or fp in series:
+        if (sfp is not None and fp.uuid == sfp.uuid) or fp.uuid in series_ids or c.kind(fp) in PASSIVE_KINDS:
             continue
-        if c.kind(fp) in PASSIVE_KINDS:
-            continue
-        ps = c.pins_on(fp, net)
+        ps = [(n, pn) for n in nets for pn in c.pins_on(fp, n)]
         if ps:
             loads.append((fp, ps))
-    src = {"kind": skind}
+    passive_nets, pullups = _resistive(c, set(nets), c.gnd)
     for kind in ("rail_dc", "rail_step"):
-        t = Test(id=f"{kind}:{net}", kind=kind, nets=chain + c.gnd_nets(), extract="power")
-        if series:
-            t.notes.append(f"derived rail: fed from {chain[-1]} through {', '.join(f.ref for f in series)} "
-                           "(board parts, priors where unvalued)")
+        t = Test(id=f"{kind}:{root}", kind=kind, nets=nets + sorted(passive_nets) + c.gnd_nets(), extract="power")
+        if tree["series"]:
+            t.notes.append("supply tree: " + root + " -> " + ", ".join(
+                f"{n} (via {f.ref})" for n, f in zip(nets[1:], tree["series"])))
         if v is None:
             t.unknown.append("rail voltage not stated (no voltage in its name or parts); values are reported, not judged")
         if sfp is None:
             t.unknown.append("no source found for this rail")
             out.append(t)
             continue
-        if not loads:
-            t.unknown.append("no IC or module draws from this rail")
+        if not loads and not pullups:
+            t.unknown.append("nothing draws from this supply tree")
             out.append(t)
             continue
         V = v if v is not None else 1.0
-        sp = c.pins_on(sfp, chain[-1])
-        t.notes.append(f"source {sfp.ref} ({src.get('kind') or 'unknown kind'}, inferred) as an ideal {fmt(V)} V "
+        sp = c.pins_on(sfp, root)
+        t.notes.append(f"source {sfp.ref} ({skind or 'unknown kind'}, inferred) as an ideal {fmt(V)} V "
                        f"source at pin {sp[0]}")
         t.params["SCALE"] = Param("SCALE", 1.0, 0.2, 2.0, 'prior:"load current x0.2 to x2 of the IC prior"')
         t.lines.append(".param SCALE=1")
@@ -128,61 +225,102 @@ def rail_tests(c, net):
         t.lines.append(f"Vsrc <{sfp.ref}.{sp[0]}> {c.gnd_pin(sfp)} DC {fmt(V)}")
         meas = []
         conv = {s.get("controller"): s for s in c.brief.get("structures") or []
-                if s.get("kind") == "commutation_cell" and s.get("rail") == net}
+                if s.get("kind") == "commutation_cell" and s.get("rail") in nets}
         for fp, ps in loads:
+            sub = (c.parts.get(fp.uuid) or {}).get("subtype")
             if fp.uuid in conv:
                 iout = ((conv[fp.uuid].get("excite") or {}).get("I")) or 1.0
                 itot = 0.5 * iout
-                t.notes.append(f"{fp.ref}: converter input, {fmt(itot)} A prior (I_out {fmt(iout)} A x duty 0.5) "
-                               f"over {len(ps)} pin(s) on {net}")
+                t.notes.append(f"{fp.ref}: converter input, {fmt(itot)} A prior (I_out {fmt(iout)} A x duty 0.5)")
             else:
                 itot = PR.ic_current_prior(len(fp.pads))
-                t.notes.append(f"{fp.ref}: {fmt(itot)} A prior ({len(fp.pads)} pins) over {len(ps)} pin(s) on {net}")
+                t.notes.append(f"{fp.ref} ({c.kind(fp)}{', ' + sub if sub else ''}): {fmt(itot)} A prior "
+                               f"({len(fp.pads)} pins) over {len(ps)} supply pin(s)")
             per = itot / len(ps)
-            gp = c.gnd_pin(fp)
-            steps = c.kind(fp) in STEP_KINDS and fp.uuid not in conv
+            is_ic = c.kind(fp) in IC_KINDS
+            steps = is_ic and sub in STEP_SUBTYPES and fp.uuid not in conv
             if kind == "rail_step" and not steps:
-                t.notes.append(f"{fp.ref} ({c.kind(fp)}) held at its DC current: only digital ICs and modules step in ns")
-            for p in ps:
-                nm = _safe(f"I_{fp.ref}_{p}")
+                t.notes.append(f"{fp.ref} held at its DC current (it does not step in nanoseconds)")
+            if not is_ic:
+                t.notes.append(f"{fp.ref}: current returned at the reference, not through a pin of the part "
+                               "(which pin returns it is not known)")
+            for n, pn in ps:
+                gp = _nearest_gnd(c, fp, pn) if is_ic else "0"
+                nm = _safe(f"I_{fp.ref}_{pn}")
                 if kind == "rail_dc" or not steps:
-                    t.lines.append(f"{nm} <{fp.ref}.{p}> {gp} DC {{{fmt(per)}*SCALE}}")
+                    t.lines.append(f"{nm} <{fp.ref}.{pn}> {gp} DC {{{fmt(per)}*SCALE}}")
                 else:
                     lo, hi = f"{{{fmt(0.2 * per)}*SCALE}}", f"{{{fmt(per)}*SCALE}}"
-                    t.lines.append(f"{nm} <{fp.ref}.{p}> {gp} PULSE({lo} {hi} 1u {{T_STEP}} {{T_STEP}} 1u 4u)")
-                m = _safe(f"v_{fp.ref}_{p}")
-                meas.append((m, _probe(t, m, f"<{fp.ref}.{p}>", gp)))
+                    t.lines.append(f"{nm} <{fp.ref}.{pn}> {gp} PULSE({lo} {hi} 1u {{T_STEP}} {{T_STEP}} 1u 4u)")
+                m = _safe(f"v_{fp.ref}_{pn}")
+                meas.append((m, _probe(t, m, f"<{fp.ref}.{pn}>", gp), (c.nets.get(n) or {}).get("volts") or v))
+        for ref, pin, other, r in pullups:
+            vr = (c.nets.get(c.design.pin_net.get(pin)) or {}).get("volts") or V
+            t.exclude.append(ref)
+            t.lines.append(f"I_{_safe(ref)}_pullup <{pin.split(':', 1)[1]}> 0 DC {fmt(vr / max(r, 1e-3))}")
+            t.notes.append(f"{ref} {fmt(r)} ohm into {other}: counted at its worst case, {fmt(vr / max(r, 1e-3))} A "
+                           "with that line held low")
         if kind == "rail_dc":
             t.lines.append(".tran 10n 2u")
-            for m, probe in meas:
+            for m, probe, _ in meas:
                 t.lines.append(f".meas tran {m} MIN {probe} from=1u to=2u")
         else:
             t.lines.append(".tran 0.2n 2.5u")
-            for m, probe in meas:
+            for m, probe, _ in meas:
                 t.lines.append(f".meas tran {m} MIN {probe} from=0.9u to=2.5u")
         lim = DROP_DC if kind == "rail_dc" else DROP_STEP
-        if v is not None:
-            for m, _ in meas:
-                t.requires.append(Require(m, ">=", (1 - lim) * v, f'prior:"within {lim:.0%} of {fmt(v)} V"'))
-        else:
-            t.info.extend(m for m, _ in meas)
+        for m, _, vn in meas:
+            if vn is not None and v is not None:
+                t.requires.append(Require(m, ">=", (1 - lim) * vn, f'prior:"within {lim:.0%} of {fmt(vn)} V"'))
+            else:
+                t.info.append(m)
         out.append(t)
     return out
 
 
+SERIES_SIGNAL_R_MAX = 100.0       # ohm: a series resistor in a bus line (22-33 ohm damping, ESD), not a pull-up
+
+
+def _bus_nets(c, net):
+    """A bus line and the nets beyond its small series resistors (devices behind damping resistors)."""
+    nets = [net]
+    grew = True
+    while grew:
+        grew = False
+        for p in c.design.parts:
+            if p.kind != "R" or p.value > SERIES_SIGNAL_R_MAX:
+                continue
+            ns = [c.design.pin_net.get(k) for k in p.pins]
+            if (ns[0] in nets) == (ns[1] in nets):
+                continue
+            far = ns[1] if ns[0] in nets else ns[0]
+            role = (c.nets.get(far) or {}).get("role")
+            if far in c.gnd or role in ("rail", "ground"):
+                continue
+            nets.append(far)
+            grew = True
+    return nets
+
+
 def i2c_tests(c):
     out = []
+    done = set()
     for net, r in c.nets.items():
-        if (r or {}).get("subrole") != "i2c":
+        if (r or {}).get("subrole") != "i2c" or net in done:
             continue
-        t = Test(id=f"i2c:{net}", kind="i2c", nets=[net] + c.gnd_nets())
+        line = _bus_nets(c, net)
+        done.update(line)
+        t = Test(id=f"i2c:{net}", kind="i2c", nets=line + c.gnd_nets())
+        if len(line) > 1:
+            t.notes.append("bus line through series resistors: " + ", ".join(line))
         pull = None
         for p in c.design.parts:
             if p.kind != "R":
                 continue
             nets = [c.design.pin_net.get(k) for k in p.pins]
-            if net in nets:
-                other = nets[1 - nets.index(net)]
+            on = [n for n in nets if n in line]
+            if len(on) == 1:
+                other = nets[1 - nets.index(on[0])]
                 ov = (c.nets.get(other) or {}).get("volts")
                 if (c.nets.get(other) or {}).get("role") == "rail" and ov:
                     pull = (p, other, ov)
@@ -190,8 +328,9 @@ def i2c_tests(c):
         bus = []
         for fp in c.b.footprints:
             if c.kind(fp) in ("ic", "module", "connector"):
-                for pn in c.pins_on(fp, net):
-                    bus.append((fp, pn))
+                for n in line:
+                    for pn in c.pins_on(fp, n):
+                        bus.append((fp, pn))
         if len(bus) < 1:
             t.unknown.append("no device pins on the bus")
             out.append(t)
@@ -342,9 +481,8 @@ def pair_tests(c):
 def generate(board, brief, design):
     c = _Ctx(board, brief, design)
     tests = []
-    for net, r in c.nets.items():
-        if (r or {}).get("role") == "rail":
-            tests += rail_tests(c, net)
+    for root, tree in rail_trees(c).items():
+        tests += rail_tests(c, root, tree)
     tests += i2c_tests(c)
     tests += sw_tests(c)
     tests += pair_tests(c)
