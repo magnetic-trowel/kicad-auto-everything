@@ -27,6 +27,13 @@
   as a current source).
 - `*@unknown reason` marks what the test cannot know (no rail voltage, no source found); its verdicts
   are then unknown, never pass or fail. `*@note` is free text kept with the results.
+- A test may end in a `.control` block (`run`, then `let`, `meas` and `print` on the result vectors) for
+  quantities computed from the converged waveforms, such as v * i products: as a B-source probe a
+  product is a circuit node that the solver must also converge, and it can stall a run whose circuit
+  converges. In it, ground is `0`, not `v(0)` (the evaluator rewrites it).
+- `kae_pdiss`, in the `.control` block after `run`, is the power the board's own resistances (copper,
+  resistors, capacitor ESR, inductor DCR) dissipate at each instant; the evaluator computes it for any
+  test that names it.
 - Sources: kind:"citation", kind one of human, board_rule, datasheet, board_value, schematic,
   standard, inferred, prior.
 """
@@ -36,6 +43,7 @@ import re
 import shlex
 from dataclasses import dataclass, field
 
+PDISS = "kae_pdiss"                                   # node: watts dissipated in the board's resistances
 SOURCES = ("human", "board_rule", "datasheet", "board_value", "schematic", "standard", "inferred", "prior")
 _SUFFIX = {"t": 1e12, "g": 1e9, "meg": 1e6, "k": 1e3, "m": 1e-3, "u": 1e-6, "n": 1e-9, "p": 1e-12, "f": 1e-15}
 _NUM = re.compile(r"^([-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?)(meg|[tgkmunpf])?[a-z]*$", re.I)
@@ -88,11 +96,18 @@ class Test:
     extract: str = "signal"                         # extraction profile of the routed run (extract.PROFILES)
 
     def meas_names(self):
-        out = []
+        """`.meas` names, and `meas` names in a `.control` block (outside one, a line starting with
+        `meas` is an element: a MOSFET)."""
+        out, ctl = [], False
         for ln in self.lines:
-            m = re.match(r"\s*\.meas(?:ure)?\s+\w+\s+(\w+)", ln, re.I)
+            low = ln.strip().lower()
+            ctl = (ctl or low.startswith(".control")) and not low.startswith(".endc")
+            m = re.match(r"\s*\.meas(?:ure)?\s+\w+\s+(\w+)", ln, re.I) or \
+                (ctl and re.match(r"\s*meas(?:ure)?\s+\w+\s+(\w+)", ln, re.I))
             if m:
                 out.append(m.group(1))
+            elif ctl and re.match(r"\s*print\s", ln, re.I):
+                out += ln.split()[1:]                    # printed vectors read as results
         return out
 
 

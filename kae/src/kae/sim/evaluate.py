@@ -29,7 +29,7 @@ from . import ngspice
 from .autotb import I2C_MODES
 from .extract import GROUND, extract
 from .names import Namer
-from .testbench import TOKEN, fmt, num
+from .testbench import PDISS, TOKEN, fmt, num
 
 _RAW_NODE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -113,21 +113,25 @@ def build_deck(test, mode, values, ctx, net=None):
             k = _pin(m.group(1), ctx)
             scope.add(ctx.design.pin_net.get(k) if k else m.group(1))
     excl = set(test.exclude)
+    res = []                                          # (node, node, ohm) of every resistor emitted here
     for p in ctx.design.touching(test.nets):
         if p.ref in excl or not all(ctx.design.pin_net.get(k) in scope for k in p.pins):
             continue
         a, b = (pin_node(k) for k in p.pins)
         if p.kind == "R":
             out.append(f"{nm.element('R', p.ref)} {a} {b} {fmt(p.value)}")
+            res.append((a, b, p.value))
         elif p.kind == "C":
             x, y = nm.node(f"x:{p.ref}.c"), nm.node(f"x:{p.ref}.r")
             out.append(f"{nm.element('C', p.ref)} {a} {x} {fmt(p.value)}")
             out.append(f"{nm.element('R', p.ref + '.esr')} {x} {y} {fmt(p.esr)}")
+            res.append((x, y, p.esr))
             out.append(f"{nm.element('L', p.ref + '.esl')} {y} {b} {fmt(p.esl)}")
         else:
             x = nm.node(f"x:{p.ref}.l")
             out.append(f"{nm.element('L', p.ref)} {a} {x} {fmt(p.value)}")
             out.append(f"{nm.element('R', p.ref + '.dcr')} {x} {b} {fmt(max(p.esr, 1e-6))}")
+            res.append((x, b, max(p.esr, 1e-6)))
     # routed copper
     stats = {}
     if mode == "routed":
@@ -142,16 +146,36 @@ def build_deck(test, mode, values, ctx, net=None):
             if e.kind == "L":
                 lname[e.key] = name
             out.append(f"{name} {a} {b} {e.value:.6g}")
+            if e.kind == "R":
+                res.append((a, b, e.value))
         for e in net.elements:
             if e.kind == "K" and e.l1 in lname and e.l2 in lname:
                 out.append(f"{nm.element('K', e.key)} {lname[e.l1]} {lname[e.l2]} {e.value:.4f}")
+    # PDISS: the power the board's own resistances dissipate (copper, resistors, ESR, DCR), a vector
+    # computed after the run in the test's .control block (as a probe node it stalls the solver)
+    pdiss = []
+    if any(PDISS in ln for ln in test.lines):
+        terms = [f"(v({a})-v({b}))^2/{r:.6g}" for a, b, r in res if a != b]
+        parts = [terms[k:k + 40] for k in range(0, len(terms), 40)] or [["0"]]
+        pdiss = [f"let kae_pd{k} = {'+'.join(c)}" for k, c in enumerate(parts)]
+        pdiss.append(f"let {PDISS} = {'+'.join(f'kae_pd{k}' for k in range(len(parts)))}")
     # the testbench, with corner values
+    ctl = False
     for ln in test.lines:
         m = re.match(r"(\s*\.param\s+)(\w+)(\s*=\s*)(\S+)(.*)", ln, re.I)
         if m and m.group(2) in values:
             ln = f"{m.group(1)}{m.group(2)}{m.group(3)}{fmt(values[m.group(2)])}{m.group(5)}"
         ln = TOKEN.sub(tok, ln)
+        low = ln.strip().lower()
+        ctl = (ctl or low.startswith(".control")) and not low.startswith(".endc")
+        if ctl:
+            ln = re.sub(r"\bv\(0\)", "0", ln)               # ground is no vector in the control language
         out.append(ln)
+        if ctl and low == "run" and pdiss:
+            out += [re.sub(r"\bv\(0\)", "0", x) for x in pdiss]
+            pdiss = None
+    if pdiss:
+        raise ValueError(f"{PDISS} is a vector of the .control block: name it after `run` there")
     out = _merge_parallel_sources(out)
     out.append(".end")
     return "\n".join(out) + "\n", nm, used_pins, stats
@@ -343,6 +367,29 @@ def _capability(t, rec):
             if worst <= lim:
                 best = name
         return dict(fastest_mode=best, worst_rise_s=None if worst == math.inf else worst)
+    if t.kind == "cell":
+        # the layout's power loss: the cell's dissipation on the routed copper minus on the ideal circuit,
+        # per corner, and as a share of the power delivered at the far end
+        pl = rec["info"].get("p_loss") or {}
+        vf = rec["info"].get("v_far") or {}
+        out = {}
+        for cname, r in (pl.get("routed") or {}).items():
+            i0 = (pl.get("ideal") or {}).get(cname)
+            if r is None or i0 is None:
+                continue
+            d = dict(layout_loss_W=round(r - i0, 6), ideal_loss_W=round(i0, 6))
+            vfar = (vf.get("routed") or {}).get(cname)
+            iout = _corner_value(t, cname, "I_OUT")
+            if vfar and iout:
+                d["share_of_output"] = round((r - i0) / abs(vfar * iout), 5)
+            out[cname] = d
+        return dict(layout_loss=out) if out else None
+    if t.kind == "loop":
+        d = (rec["info"].get("loop_nH") or {})
+        i0, r = (d.get("ideal") or {}).get("typ"), (d.get("routed") or {}).get("typ")
+        if i0 is None or r is None:
+            return None
+        return dict(loop_nH=round(r, 3), ideal_nH=round(i0, 3), layout_nH=round(r - i0, 3))
     if t.kind == "pair":
         out = {}
         pre = {n: f"td{k}_" for k, n in enumerate(t.nets[:2])}
@@ -377,6 +424,22 @@ def questions(report):
             out.append(dict(rank=3, test=t["id"], why=f"{t['status']} on priors only", inputs=priors,
                             bounds_from_priors=req_src))
     return sorted(out, key=lambda q: (q["rank"], q["test"]))
+
+
+def _corner_value(t, cname, param):
+    """A parameter's value at a named corner ('typ', 'F_SW=lo,I_OUT=hi,...', 'all=hi')."""
+    p = t.params.get(param)
+    if p is None:
+        return None
+    if cname == "typ":
+        return p.typ
+    if cname.startswith("all="):
+        return p.lo if cname.endswith("lo") else p.hi
+    for part in cname.split(","):
+        k, _, v = part.partition("=")
+        if k == param:
+            return p.lo if v == "lo" else p.hi
+    return p.typ
 
 
 def write(report, path):

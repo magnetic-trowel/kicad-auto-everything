@@ -39,8 +39,9 @@ Tags: [M] measured in this repo; [I] inference. Format: [intent-interchange](../
 |---|---|---|---|
 | Power | `rail_dc` | loads at their current priors from a source through the rail's copper (and series ferrites to the root rail); voltage at each load pin against 3% (prior) | built |
 | | `rail_step` | logic loads stepping in T_STEP with the board's decoupling (ESR, ESL); droop against 5% (prior) | built |
-| | `sw` (buck) | switches in the controller's place, inductor as a current source, C_oss; switch-node peak against 85% of the next rating above 1.25 V_in | built (buck only) |
-| | converter loss curve, current capacity of necks and vias | I²R and ½·L·I²·f_sw from the same circuits; IPC-2152 style limits | planned |
+| | `cell` | buck, boost, half-bridge and motor-driver phases: a generic switch pair (or switch and rectifier) with body diodes and C_oss, the inductor or winding as a current source, off-board feeds behind 1 µH. Switch-node peak against 85% of the next rating above 1.25 V_bus (prior); the cell's dissipation per corner, routed minus ideal = the layout's loss | built |
+| | `loop` | hot-loop inductance from the switch's bus pin through the bus capacitors (shorted to ESR and ESL) to its ground pin; needs no switch model or bus voltage | built |
+| | current capacity of necks and vias; flyback, buck-boost, charge pump, LDO and load-switch dissipation | IPC-2152 style limits; stand-ins per topology | planned |
 | Signal | `i2c` | the pull-up (or a probe), pin capacitance, routed copper; 30–70% rise against 1000/300/120 ns; with off-board pull-ups, bus capacitance and the largest pull-up per mode | built |
 | | `pair` | a 50 Ω driver into each half; delay to every pin and skew | built |
 | | crosstalk | aggressors from the excitation inventory into victims (sense, feedback, ADC inputs) through coupling C and mutual L; noise against the victim's margin | planned |
@@ -98,7 +99,7 @@ A regulator's harmonics are spaced at f_sw, so what counts is the envelope or th
 
 1. Use `kae.sim` as the functional evaluator. Add it to kaeres as a new evaluator beside the legacy total, and never inside cp1, cpk or `score.py` (CLAUDE.md).
 2. Build the planned checks in this order:
-   1. converter loss and current capacity;
+   1. current capacity (converter loss and hot loops are built);
    2. crosstalk victims;
    3. return path;
    4. leakage and creepage;

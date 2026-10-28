@@ -18,11 +18,12 @@ becomes `*@unknown` (the test still runs and reports values, but cannot pass or 
 """
 from __future__ import annotations
 
+import math
 import re
 
 from kae.physics import priors as PR
 
-from .testbench import Param, Require, Test, fmt
+from .testbench import PDISS, Param, Require, Test, fmt
 
 DROP_DC, DROP_STEP = 0.03, 0.05
 I2C_MODES = (("standard", 1000e-9), ("fast", 300e-9), ("fast_plus", 120e-9))
@@ -373,71 +374,230 @@ def i2c_tests(c):
     return out
 
 
-def sw_tests(c):
+# switching cells ----------------------------------------------------------------------------------------
+# A switch whose resistance sweeps from Ron to Roff (log-linear) as its control goes 0 -> 1 in T_SW, so the
+# circuit sees a real edge rate; a body diode across each switch (dead time); a Schottky rectifier model.
+CELL_MODELS = [
+    ".subckt kae_sw d s ctl ron=0.05 roff=1e6",
+    "Bsw d s I={v(d,s)/exp(ln(ron)*max(min(v(ctl),1),0)+ln(roff)*(1-max(min(v(ctl),1),0)))}",
+    ".ends",
+    ".model kae_body d is=1e-9 n=1.5 rs=0.02 cjo=50p tt=10n",
+    ".model kae_schottky d is=1e-5 n=1.05 rs=0.05 cjo=100p",
+]
+# class -> (bus+ field, sw current direction: +1 out of the node (buck, bridge phase), -1 into it (boost))
+CELL_TOPOLOGY = {"buck": ("rail", +1), "boost": ("rail", -1), "half_bridge": ("rail", +1), "bridge_driver": ("rail", +1)}
+
+
+def _ext_source(t, name, pin_token, gnd_token, volts):
+    """An off-board supply or load: an ideal source behind 1 uH (damped by 0.2 ohm across it) and
+    10 mOhm, so the board's own capacitors carry the high-frequency current, as on the bench, and the
+    connection does not ring with them."""
+    t.lines.append(f"V{name} x{name.lower()} 0 DC {fmt(volts)}")
+    t.lines.append(f"L{name} x{name.lower()} y{name.lower()} 1u")
+    t.lines.append(f"R{name}d x{name.lower()} y{name.lower()} 0.2")
+    t.lines.append(f"R{name} y{name.lower()} {pin_token} 10m")
+    if gnd_token != "0":
+        t.lines.append(f"R{name}g {gnd_token} 0 1m")
+    return f"V{name}", f"x{name.lower()}"
+
+
+# pin functions that carry a cell's current, best first (an enable tied to the input carries none)
+POWER_PIN = re.compile(r"^(P?VIN|VM|VBB|VS|P?VCC|VDD|SW\w*|LX\w*|PH\w*|\w*OUT\w*|P?GND|VSS|EP|PAD)$", re.I)
+
+
+def _power_pins(fp, net):
+    """Pins of fp on net, the ones that carry power first: power pin types, then power pin names."""
+    pads = [p for p in fp.pads if p.net == net]
+    return [p.number for p in sorted(pads, key=lambda p: (not p.pintype.startswith("power"),
+                                                            not POWER_PIN.match(p.pinfunction or "")))]
+
+
+def _elem_pins(c, fp, a, b):
+    """(pin on net a, pin on net b) of a switching element, or None."""
+    if fp is None:
+        return None
+    pa, pb = _power_pins(fp, a), _power_pins(fp, b)
+    return (pa[0], pb[0]) if pa and pb else None
+
+
+# switching frequency when the brief has none: (typ, lo, hi, why), by controller subtype, else class
+F_SW_PRIOR = {
+    "motor_driver": (20e3, 1e3, 100e3, "motor PWM: from about 1 kHz (microcontroller default) to 100 kHz"),
+    "half_bridge": (100e3, 20e3, 500e3, "discrete half-bridge PWM"),
+    None: (1e6, 150e3, 3e6, "integrated converter: 150 kHz (older controllers) to 3 MHz"),
+}
+F_SIM_MIN = 3e5                    # Hz: the slowest simulated switching (see cell_tests)
+LOOP_F = 1e6                       # Hz: the loop's capacitors are shorted, so Z = R + j w L at any frequency
+
+
+def _loop_test(c, s, swn, bus, gnd, bus_tok, gnd_tok):
+    """The cell's hot loop: the inductance from the switch's bus pin through the capacitors across
+    the bus back to its ground pin, with each capacitor shorted to its ESR and ESL. It sets the
+    switch-node ringing and the cell's radiated field whatever the switches are, so it is judged
+    without a model of them."""
+    t = Test(id=f"loop:{s.get('id')}:{swn}", kind="loop", extract="power", nets=sorted({bus} | set(c.gnd_nets())))
+    caps = [p for p in c.design.parts if p.kind == "C"
+            and {c.design.pin_net.get(k) for k in p.pins} == {bus, gnd}]
+    if not caps:
+        t.unknown.append(f"no capacitor across {bus} and {gnd}")
+        return t
+    t.notes.append(f"from {bus_tok[1:-1]} through {', '.join(p.ref for p in caps)} to {gnd_tok[1:-1]}")
+    for p in caps:
+        t.exclude.append(p.ref)
+        a, b = (f"<{k[4:]}>" for k in p.pins)
+        t.lines.append(f"Lq{p.ref} {a} q{p.ref.lower()} {fmt(max(p.esl, 1e-12))}")
+        t.lines.append(f"Rq{p.ref} q{p.ref.lower()} {b} {fmt(max(p.esr, 1e-4))}")
+    # a current of 1e9/w at -90 degrees: the real part of the voltage it makes is the inductance in nH
+    t.lines.append(f"Iq {gnd_tok} {bus_tok} AC {1e9 / (2 * math.pi * LOOP_F):.6g} -90")
+    pr = _probe(t, "zq", bus_tok, gnd_tok)
+    t.lines.append(f".ac lin 3 {fmt(0.9 * LOOP_F)} {fmt(1.1 * LOOP_F)}")
+    t.lines.append(f".meas ac loop_nH FIND {pr} AT={fmt(LOOP_F)}")
+    t.info.append("loop_nH")
+    return t
+
+
+def cell_tests(c):
+    """One test per switch node of every commutation cell the brief found (buck, boost, half-bridge
+    and motor-driver phases): switch-node peak and undershoot, and the dissipation of the whole cell,
+    whose routed-minus-ideal difference is the layout's power loss."""
     out = []
     for s in c.brief.get("structures") or []:
         if s.get("kind") != "commutation_cell":
             continue
-        t = Test(id=f"sw:{s.get('id')}", kind="sw", extract="power")
+        cls = s.get("class") or "unknown"
         ctrl = c.by_uuid.get(s.get("controller"))
-        rail, sw, gnd = s.get("rail"), s.get("sw"), s.get("gnd")
-        vin = (c.nets.get(rail) or {}).get("volts")
-        t.nets = [n for n in (rail, sw) if n] + c.gnd_nets()
-        if s.get("class") != "buck":
-            t.unknown.append(f"class {s.get('class')}: only buck stand-ins exist so far")
+        sw_ = s.get("switches") or {}
+        hi_fp = c.by_uuid.get(sw_.get("high")) or ctrl
+        lo_fp = c.by_uuid.get(sw_.get("low"))
+        rect = c.by_uuid.get(sw_.get("rectifier"))
+        bus, gnd = s.get("rail"), s.get("gnd")
+        for swn in (s.get("sw_nets") or [s.get("sw")]):
+            if not swn:
+                continue
+            t = Test(id=f"{s.get('id')}:{swn}", kind="cell", extract="power")
+            t.nets = sorted({n for n in (bus, swn, s.get("vin"), s.get("vout")) if n}) + c.gnd_nets()
+            if cls not in CELL_TOPOLOGY:
+                t.unknown.append(f"class {cls}: no stand-in")
+                out.append(t)
+                continue
+            if not bus or not gnd:
+                t.unknown.append("bus rail or ground not identified")
+                out.append(t)
+                continue
+            direction = CELL_TOPOLOGY[cls][1]
+            # elements: the high one spans bus -> node, the low one node -> ground
+            if cls == "boost":
+                high = (rect, "diode") if rect is not None else (hi_fp, "switch")
+                low = (lo_fp or ctrl, "switch")
+            else:
+                high = (hi_fp, "switch")
+                low = (rect, "diode") if rect is not None else (lo_fp or ctrl, "switch")
+            hp = _elem_pins(c, high[0], bus, swn)
+            lp = _elem_pins(c, low[0], swn, gnd)
+            if hp is None or lp is None:
+                t.unknown.append(f"switching elements not found on {bus} -> {swn} -> {gnd}")
+                out.append(t)
+                continue
+            out.append(_loop_test(c, s, swn, bus, gnd, f"<{high[0].ref}.{hp[0]}>", f"<{low[0].ref}.{lp[1]}>"))
+            vbus = (c.nets.get(bus) or {}).get("volts") or (s.get("excite") or {}).get("V")
+            if vbus is None:
+                t.unknown.append(f"{bus}: voltage not identified")
+                out.append(t)
+                continue
+            ex = s.get("excite") or {}
+            basis = "; ".join(ex.get("basis") or [])
+            fsw = ex.get("f_sw_Hz")
+            tsw = (ex.get("t_sw_ns") or 2.0) * 1e-9
+            iout = ex.get("I") or 1.0
+            t.notes.append(f"{cls}: {high[0].ref} {high[1]} {bus}->{swn}, {low[0].ref} {low[1]} {swn}->{gnd}; brief: {basis}")
+            if fsw:
+                t.params["F_SW"] = Param("F_SW", fsw, 0.8 * fsw, 1.2 * fsw, f'inferred:"{fmt(fsw)} Hz from the brief, +-20%"')
+            else:
+                sub = (c.parts.get(ctrl.uuid) or {}).get("subtype") if ctrl is not None else None
+                typ, lo, hi, why = F_SW_PRIOR.get(sub) or F_SW_PRIOR.get(cls) or F_SW_PRIOR[None]
+                t.params["F_SW"] = Param("F_SW", typ, lo, hi, f'prior:"{why}"')
+            t.params["I_OUT"] = Param("I_OUT", iout, 0.2 * iout, iout, f'inferred:"0.2 to 1 x {fmt(iout)} A ({basis[:80]})"')
+            t.params["T_SW"] = Param("T_SW", tsw, 0.5 * tsw, 2.0 * tsw, f'inferred:"switch edge {fmt(tsw)} s x0.5 to x2"')
+            t.lines += [f".param {n}={fmt(p.typ)}" for n, p in t.params.items()]
+            # simulated at F_SIM >= F_SIM_MIN: with the winding a constant current, a period's loss is the
+            # conduction (independent of frequency) plus the edges' energy, so a low PWM frequency needs no
+            # millisecond run; the edge energy is scaled to F_SW afterwards. Peaks are per edge.
+            t.lines += [".param D=0.5", ".param DT={max(5e-9,2*T_SW)}", f".param F_SIM={{max(F_SW,{F_SIM_MIN:g})}}",
+                        "Bkfsw kae_fsw 0 V={F_SW}", "Bkfsim kae_fsim 0 V={F_SIM}"] + CELL_MODELS
+            vtok = f"<{high[0].ref}.{hp[0]}>"
+            gtok = f"<{low[0].ref}.{lp[1]}>"
+            ntok_h, ntok_l = f"<{high[0].ref}.{hp[1]}>", f"<{low[0].ref}.{lp[0]}>"
+            # off-board: the bus supply (boost: the held output), and the far end of the inductor
+            bsrc = ((c.nets.get(bus) or {}).get("source") or {}).get("part")
+            bfp = c.by_uuid.get(bsrc) if cls != "boost" else None
+            at = f"<{bfp.ref}.{c.pins_on(bfp, bus)[0]}>" if bfp is not None and c.pins_on(bfp, bus) else vtok
+            _ext_source(t, "BUS", at, "0", vbus)
+            far_net = s.get("vout") if cls == "buck" else s.get("vin") if cls == "boost" else None
+            far_v = (c.nets.get(far_net) or {}).get("volts") if far_net else None
+            if far_v is None:
+                far_v = vbus * 0.5
+                t.notes.append(f"far end of the inductor or winding held at {fmt(far_v)} V (half the bus: not identified)")
+            ind = c.by_uuid.get(s.get("inductor"))
+            if ind is not None and cls in ("buck", "boost"):
+                t.exclude.append(ind.ref)
+                ip = c.pins_on(ind, swn)
+                itok = f"<{ind.ref}.{ip[0]}>" if ip else ntok_l
+            else:
+                itok = ntok_l
+            _ext_source(t, "FAR", "far", "0", far_v)
+            if direction > 0:
+                t.lines.append(f"Iload {itok} far DC {{I_OUT}}")
+            else:
+                t.lines.append(f"Iload far {itok} DC {{I_OUT}}")
+            # switches with their output capacitance, body diodes, rectifier; each through a 0 V source
+            # so the loss sums v * i (re-evaluating the switch law there stalls the solver at its clamps)
+            t.lines.append("Vhs hs 0 PULSE(0 1 {DT} {T_SW} {T_SW} {D/F_SIM-2*DT} {1/F_SIM})")
+            t.lines.append("Vls ls 0 PULSE(1 0 0 {T_SW} {T_SW} {D/F_SIM} {1/F_SIM})")
+            loss = [PDISS]
+            for (fp, what), (pa, pb), ctl, tag in ((high, hp, "hs", "h"), (low, lp, "ls", "l")):
+                a_, b_ = f"<{fp.ref}.{pa}>", f"<{fp.ref}.{pb}>"
+                diodes = []
+                if what == "diode":
+                    # conducts when the switch opposite is off: anode at the lower potential side
+                    diodes.append((f"Dr{tag}", b_, a_, "kae_schottky"))
+                else:
+                    t.lines.append(f"X{tag} {a_} x{tag}k {ctl} kae_sw")
+                    t.lines.append(f"VX{tag}s x{tag}k {b_} 0")
+                    loss.append(f"(v({a_})-v({b_}))*i(VX{tag}s)")
+                    diodes.append((f"Db{tag}", b_, a_, "kae_body"))
+                for name, an, ca, model in diodes:
+                    t.lines.append(f"{name} {an} {name.lower()}k {model}")
+                    t.lines.append(f"V{name}s {name.lower()}k {ca} 0")
+                    loss.append(f"(v({an})-v({ca}))*i(V{name}s)")
+                t.lines.append(f"Coss{tag} {a_} {b_} 100p")
+            sw_probe = _probe(t, "vsw", ntok_l, gtok)
+            # dissipation in the cell: switches, diodes, and the board's copper, resistors and capacitor
+            # ESR (an off-board source's delivered power would also count energy still being stored in
+            # the bus capacitors while the input filter settles, which takes far longer than the run)
+            # the step bounds the solver's everywhere: error control alone read the ring's peak 6% low
+            t.lines.append(".tran {min(T_SW/20,2.5e-10)} {12/F_SIM}")
+            t.lines.append(f".meas tran vsw_max MAX {sw_probe} from={{8/F_SIM}} to={{12/F_SIM}}")
+            t.lines.append(f".meas tran vsw_min MIN {sw_probe} from={{8/F_SIM}} to={{12/F_SIM}}")
+            t.lines.append(".meas tran v_far AVG v(far) from={8/F_SIM} to={12/F_SIM}")
+            # the loss from the converged waveforms, after the run: as a probe node, the v * i sum stalls
+            # the solver ("timestep too small" at that node) on circuits that converge without it
+            # conduction: the loss on the settled middles of the on and off intervals of period 10, time
+            # weighted; e_sw: the rest of a period's energy, the edges and their rings
+            t.lines += [".control", "run", "let kae_t1 = time[length(time)-1]", "let kae_t0 = kae_t1*8/12",
+                        f"let ploss = {' + '.join(loss)}", "meas tran kae_psim AVG ploss from=$&kae_t0 to=$&kae_t1",
+                        "meas tran kae_tr WHEN v(hs)=0.5 RISE=10", "meas tran kae_tf WHEN v(hs)=0.5 FALL=10",
+                        "meas tran kae_tr2 WHEN v(hs)=0.5 RISE=11",
+                        "let kae_mon = (kae_tr+kae_tf)/2", "let kae_moff = (kae_tf+kae_tr2)/2",
+                        "meas tran kae_pon FIND ploss AT=$&kae_mon", "meas tran kae_poff FIND ploss AT=$&kae_moff",
+                        "let p_cond = (kae_pon*(kae_tf-kae_tr)+kae_poff*(kae_tr2-kae_tf))/(kae_tr2-kae_tr)",
+                        "let e_sw = (kae_psim-p_cond)/v(kae_fsim)[0]",
+                        "let p_loss = p_cond+e_sw*v(kae_fsw)[0]",
+                        "print p_loss p_cond e_sw", ".endc"]
+            rating = PR.v_abs_rating(vbus)
+            t.requires.append(Require("vsw_max", "<=", 0.85 * rating,
+                                      f'prior:"85% of {fmt(rating)} V, the next standard rating above 1.25 x {fmt(vbus)} V"'))
+            t.info += ["vsw_min", "p_loss", "p_cond", "e_sw", "v_far"]
             out.append(t)
-            continue
-        if ctrl is None or not rail or not sw:
-            t.unknown.append("controller, input rail or switch node not identified")
-            out.append(t)
-            continue
-        if vin is None:
-            t.unknown.append(f"input rail {rail} voltage not stated")
-            out.append(t)
-            continue
-        vp, sp, gp = c.pins_on(ctrl, rail), c.pins_on(ctrl, sw), [p.number for p in ctrl.pads if p.net in c.gnd]
-        if not (vp and sp and gp):
-            t.unknown.append(f"controller {ctrl.ref} has no pin on {'input' if not vp else 'switch' if not sp else 'ground'}")
-            out.append(t)
-            continue
-        ind = c.by_uuid.get(s.get("inductor"))
-        vout = s.get("vout")
-        if ind is not None:
-            t.exclude = [ind.ref]
-        rating = PR.v_abs_rating(vin)
-        t.notes.append(f"{ctrl.ref} replaced by ideal complementary switches (pins {vp[0]} -> {sp[0]} -> {gp[0]}); "
-                       f"inductor {ind.ref if ind else '?'} held as a current source")
-        t.params["F_SW"] = Param("F_SW", 1.5e6, 0.5e6, 3e6, 'prior:"integrated buck switching frequency"')
-        t.params["I_OUT"] = Param("I_OUT", 1.0, 0.2, 2.0, 'prior:"buck class default 1 A"')
-        t.params["C_OSS"] = Param("C_OSS", 100e-12, 50e-12, 300e-12, 'prior:"integrated switch node capacitance"')
-        t.lines += [".param F_SW=1.5meg", ".param I_OUT=1", ".param C_OSS=100p", ".param D=0.5"]
-        rsrc = ((c.nets.get(rail) or {}).get("source") or {}).get("part")
-        rfp = c.by_uuid.get(rsrc)
-        if rfp is not None and c.pins_on(rfp, rail):
-            t.lines.append(f"Vin_src <{rfp.ref}.{c.pins_on(rfp, rail)[0]}> {c.gnd_pin(rfp)} DC {fmt(vin)}")
-        else:
-            t.lines.append(f"Vin_src <{ctrl.ref}.{vp[0]}> <{ctrl.ref}.{gp[0]}> DC {fmt(vin)}")
-            t.notes.append("no rail source found: ideal input at the controller's own pins (pessimistic: no input copper)")
-        t.lines.append(".model swb sw vt=0.5 vh=0.05 ron=0.05 roff=1e6")
-        t.lines.append(f"Shs <{ctrl.ref}.{vp[0]}> <{ctrl.ref}.{sp[0]}> hs 0 swb")
-        t.lines.append(f"Sls <{ctrl.ref}.{sp[0]}> <{ctrl.ref}.{gp[0]}> ls 0 swb")
-        t.lines.append("Vhs hs 0 PULSE(0 1 {0.02/F_SW} 1n 1n {D/F_SW-0.04/F_SW} {1/F_SW})")
-        t.lines.append("Vls ls 0 PULSE(1 0 0 1n 1n {D/F_SW+0.02/F_SW} {1/F_SW})")
-        t.lines.append(f"Coss <{ctrl.ref}.{sp[0]}> <{ctrl.ref}.{gp[0]}> {{C_OSS}}")
-        if ind is not None and vout:
-            ip = [p.number for p in ind.pads if p.net == sw]
-            t.lines.append(f"Iind <{ind.ref}.{ip[0] if ip else sp[0]}> <{vout}> DC {{I_OUT}}")
-            t.lines.append(f"Vout_hold <{vout}> 0 DC {fmt(vin * 0.5)}")
-        else:
-            t.lines.append(f"Iind <{ctrl.ref}.{sp[0]}> 0 DC {{I_OUT}}")
-        sw_probe = _probe(t, "vsw", f"<{ctrl.ref}.{sp[0]}>", f"<{ctrl.ref}.{gp[0]}>")
-        t.lines.append(".tran 0.05n {4/F_SW}")
-        t.lines.append(f".meas tran vsw_max MAX {sw_probe} from={{1/F_SW}} to={{4/F_SW}}")
-        t.lines.append(f".meas tran vsw_min MIN {sw_probe} from={{1/F_SW}} to={{4/F_SW}}")
-        t.requires.append(Require("vsw_max", "<=", 0.85 * rating,
-                                  f'prior:"85% of {fmt(rating)} V, the next standard rating above 1.25 x {fmt(vin)} V"'))
-        t.info.append("vsw_min")
-        out.append(t)
     return out
 
 
@@ -484,6 +644,6 @@ def generate(board, brief, design):
     for root, tree in rail_trees(c).items():
         tests += rail_tests(c, root, tree)
     tests += i2c_tests(c)
-    tests += sw_tests(c)
+    tests += cell_tests(c)
     tests += pair_tests(c)
     return tests

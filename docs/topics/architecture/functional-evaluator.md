@@ -23,7 +23,7 @@ Semantics: [functional-evaluation](../physics/functional-evaluation.md). Format 
 | Module | Role |
 |---|---|
 | [`testbench.py`](../../../kae/src/kae/sim/testbench.py) | the testbench format: parse (errors carry line numbers), render, SPICE numbers |
-| [`autotb.py`](../../../kae/src/kae/sim/autotb.py) | a default testbench from the board and its brief, no LLM: rail DC drop and load step, I2C, buck switch node, differential-pair delay and skew |
+| [`autotb.py`](../../../kae/src/kae/sim/autotb.py) | a default testbench from the board and its brief, no LLM: rail DC drop and load step, I2C, switching cells (buck, boost, half-bridge and motor-driver phases) and their hot loops, differential-pair delay and skew |
 | [`design.py`](../../../kae/src/kae/sim/design.py) | the board's passives as elements: values from the value field, ESR and ESL by package (E5), ferrites as R + L |
 | [`schematic.py`](../../../kae/src/kae/sim/schematic.py) | values and fields from a KiCad 6+ schematic through `kicad-cli sch export netlist` |
 | [`extract.py`](../../../kae/src/kae/sim/extract.py) | copper → Network of R, L, C, K between node keys; copper islands per net |
@@ -81,6 +81,7 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
   - `v(a,b)` becomes a B-source probe, because batch `.meas` cannot read it;
   - `.option rshunt=1e12 method=gear`;
   - every requested `.meas` must come back.
+- **Dissipation:** a test that names `kae_pdiss` in its `.control` block gets a vector holding the power in every resistance the deck holds from the board: copper, resistors, capacitor ESR, inductor DCR. It is computed after the run, never as a probe node. Loss is summed from the dissipating elements, never from the sources' delivered power. That would also count energy still flowing into the bus capacitors while the off-board feed settles, which takes about 100 µs against a 12-period run, and it gave −3.5 W on a 1 W cell [M].
 
 ### 5. Verdicts
 
@@ -92,7 +93,9 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
 - **Capability:**
   - `rail_dc`: the load multiple at which the first pin reaches its bound, from the line through the low and high corners (DC with current loads is linear);
   - `i2c`: the fastest mode whose limit holds, or, with the pull-up off board, the bus capacitance and the largest pull-up per mode;
-  - `pair`: delay and skew.
+  - `pair`: delay and skew;
+  - `cell`: the layout's power loss per corner, routed minus ideal dissipation, also as a share of the output;
+  - `loop`: hot-loop inductance, routed and ideal, and their difference.
 - **`questions`** ranks:
   1. marginal verdicts and their prior inputs;
   2. unknowns;
@@ -121,6 +124,10 @@ python -m kae.sim.cli questions eval.json
   - 50 tests, 199 simulations, 338 s.
   - 23 differential pairs report delay and skew: 75–260 ps routed against a 100 ps driver-and-load ideal. CRX1 has 30 ps of intra-pair skew, USB31_TX 6 ps.
   - Two pairs still time out, and one reports a singular matrix at a ground node.
+- **Switching cells** (stand-ins; no LLM, no schematic):
+  - `acarpm-chesslab-powerboard`, an MT3608 boost from a 3.7 V cell to 5 V. Hot loop (D3, C5, IC1 ground): 2.7 nH routed against 1.0 nH for the capacitor alone. The cell dissipates 0.28 W ideal and 0.29 W routed. Conduction rises by 15 mW, while the edges lose less (5.1 against 9.8 nJ a period, because the loop's inductance slows the turn-on current). The switch node peaks at 8.5 V routed against 5.6 V ideal, so it is marginal on the prior bound, which needs the MT3608's switch rating to judge.
+  - `aarondennis-mup-astro-cat-hardware-astro-cat`, a DRV88xx with four motor phases on 12 V, PWM prior 20 kHz. Hot loop 1.66 nH against 0.24 nH for four capacitors in parallel. Loss is 0.22 W ideal and 0.23 W routed, with conduction 0.206 W against I²·R_on = 0.200 W. Each phase rings to 26 V against 11.9 V ideal, an upper bound (see Stand-in fidelity).
+  - Every corner of both boards converges. Each corner takes 1–3 minutes routed.
 - **LLM pilot on ardor** (one agent, 146k tokens, about 10 web lookups, 9 minutes). It replaced the priors with cited datasheet intervals and bounds:
   - ADS1115, OPA2320, TPA6132A2, Omron G5V-1, H11L1M;
   - the Raspberry Pi's 1.8 kΩ I2C pull-ups, which the schematic confirms with "Pi has them".
@@ -139,7 +146,7 @@ python -m kae.sim.cli questions eval.json
 
 1. ~~Fix the pilot's eight generator errors.~~ Done: supply trees through ferrites, fuses and small resistors (also finding supplies the brief did not name); an IC's current returns at its ground pin nearest the supply pin, other loads at the reference; only logic ICs step in ns; dividers simulated and pull-ups counted at V/R; I2C lines followed through series resistors; parallel ideal sources merged. On ardor the automatic testbench now judges the 3.3 V tree (it was unknown); only the off-board I2C pull-ups still need an outside fact.
 2. Add crosstalk victim tests on routed copper, leakage and creepage, the excitation and radiator inventories with the source-to-radiator check, and the antenna feed. Fix the known limits:
-   - add boost and half-bridge stand-ins;
+   - ~~add boost and half-bridge stand-ins~~ (done: generic cells and the hot-loop test); next flyback, buck-boost, charge pumps, LDO and load-switch dissipation, and creepage and clearance against working voltage;
    - find the cause of the slow and singular signal runs (scaling the couplings to keep the inductance matrix positive definite did not cure them).
 3. Hook into kaeres as a new evaluator (the evaluator id hashes the code tree), beside the legacy `physics_total`. Report per category, never inside cp1, cpk or `score.py`.
 4. Re-run the routed-physics baselines under the new connectivity (it changes the evaluator id); model custom pad primitives.
@@ -147,7 +154,15 @@ python -m kae.sim.cli questions eval.json
 
 ## Conflicts and open questions
 
-- **Stand-in fidelity:** the buck stand-in has ideal switches and an inductor held as a current source. It shows hot-loop ringing but not control behaviour. Vendor or Verilog-A models would replace it.
+- **Stand-in fidelity:** the cell stand-in has log-linear switches (50 mΩ to 1 MΩ), body diodes (20 mΩ, 10 ns transit time), 100 pF across each switch, and the inductor or winding held as a constant current source. It gives the copper's share of loss and the hot-loop ring, but not control behaviour or ripple. The ring's peak is an upper bound, for three reasons: the SPICE diode recovers abruptly where body diodes recover softly; C_oss is linear and lossless; and copper and capacitor resistance stay at their DC values (no skin effect). The loop inductance does not depend on any of these. Vendor or Verilog-A models would replace the stand-in.
+- **Numerics, checked by refinement** [M]: every change to how a cell is solved is checked against a finer reference, and one that alters the circuit's physics is not accepted.
+  - **Integration:** the Gear method holds p_loss within 0.01% from a 0.25 ns step down to 2 ps. Trapezoidal moved the peak by up to 3.5×, which is numerical ringing, so it is not used.
+  - **Step:** the step is the smaller of T_SW/20 and 0.25 ns, forced everywhere. That is within 0.2% of a 25 ps reference; leaving the step to error control read the peak 6% low.
+  - **Loss:** loss is computed after the run, in a `.control` block, from the converged waveforms. As a B-source probe node, the v·i sum stalled solves that converge without it, because it carries the solver's sub-nA noise. An aborted run reports nothing, never a partial-waveform value.
+  - **Diode resistance:** without its series resistance the diode is a bare exponential on a ring with Q ≈ 30, and Newton fails. Restored at 20 mΩ, every corner converges, and the result moves by under 1.5% between 5 and 20 mΩ.
+  - **Open:** at 1 ns edges, four of the fixture buck's nine corners still fail. Newton fails at the body diode while it recovers into the C_oss ring, which has Q ≈ 30 with DC resistances, even at `itl4=500`. The missing physical damping (soft recovery, C_oss loss, skin effect) is the faithful fix; a solver setting that hides the failure is not.
+  - **Low frequencies:** the cell is simulated at max(F_SW, 300 kHz). With a constant winding current, a period's loss is conduction (read on the settled middles of the on and off intervals) plus edge energy `e_sw`, and `p_loss` = p_cond + e_sw·F_SW. Each ring decays in about 25 ns, against flats of at least 1 µs.
+- **Frequency priors** when the part table has none: motor drivers 1–100 kHz (typical 20 kHz), discrete half-bridges 20–500 kHz, integrated converters 150 kHz–3 MHz. A single 0.3–3 MHz prior had put motor drivers at converter frequencies, where a 100 ns edge and its dead time left a negative on-time, and the switch never turned on.
 - **Coarse pours:** a sheet solver (the engine's K2 operator) would replace the 2 mm strip mesh.
 - **Runtime:** most signal tests take about a second per corner, but a few large pairs reach the 300 s cap. Power tests take milliseconds to seconds.
 - **LLM cost:** about 150k tokens per board for the questions-only pass. A per-part fact cache should lower it on later boards.

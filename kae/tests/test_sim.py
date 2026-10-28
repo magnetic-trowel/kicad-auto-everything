@@ -238,3 +238,107 @@ def test_parallel_ideal_sources_merge_or_fail():
         _merge_parallel_sources(["V1 n1 0 DC 5", "V2 n1 0 DC 3.3"])
     with pytest.raises(ValueError, match="itself"):
         _merge_parallel_sources(["V1 n1 n1 DC 5"])
+
+
+# ----------------------------------------------------------------------------- switching cells
+def _cell_tests(tmp_path, vin=12.0):
+    from kae.sim.autotb import generate
+    b = load(write_board(tmp_path))
+    br = build(b)
+    if vin is not None:
+        br["nets"]["VIN"]["volts"] = vin
+    return b, br, {t.kind: t for t in generate(b, br, D.build(b, br)) if t.kind in ("cell", "loop")}
+
+
+def test_cell_models_both_switches_at_their_power_pins(tmp_path):
+    b, br, t = _cell_tests(tmp_path)
+    cell = t["cell"]
+    assert not cell.unknown and cell.exclude == ["L1"]          # the inductor is the load current source
+    lines = "\n".join(cell.lines)
+    assert "Xh <U1.3> xhk hs kae_sw\nVXhs xhk <U1.5> 0" in lines   # VIN pin, not EN (pin 2, also on VIN)
+    assert "Xl <U1.5> xlk ls kae_sw\nVXls xlk <U1.4> 0" in lines
+    assert "Cossh <U1.3> <U1.5>" in lines and "Cossl <U1.5> <U1.4>" in lines
+    assert re.search(r"^Iload <L1\.1> far ", lines, re.M)
+    ploss = next(ln for ln in cell.lines if ln.startswith("let ploss"))
+    assert all(f"i({v})" in ploss for v in ("VXhs", "VXls", "VDbhs", "VDbls")) and "kae_pdiss" in ploss
+    assert "p_loss" in cell.meas_names() and not any(ln.startswith("B") and "i(V" in ln for ln in cell.lines)
+    assert {"p_loss", "vsw_min", "v_far"} <= set(cell.info) and cell.requires[0].meas == "vsw_max"
+
+
+def test_loop_is_judged_without_the_bus_voltage(tmp_path):
+    b, br, t = _cell_tests(tmp_path, vin=None)
+    assert t["cell"].unknown and not t["loop"].unknown
+    loop = t["loop"]
+    assert loop.exclude == ["C1"] and loop.nets == ["GND", "VIN"]
+    assert any(ln.startswith("Iq <U1.4> <U1.3> AC ") for ln in loop.lines)
+
+
+@pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
+def test_loop_inductance_ideal_is_the_esl_and_copper_adds_to_it(tmp_path):
+    from kae.board import transform
+    from kae.sim.evaluate import Context, evaluate
+    b, br, t = _cell_tests(tmp_path / "a")
+    loop = t["loop"]
+    d = D.build(b, br)
+    esl = next(p.esl for p in d.parts if p.ref == "C1")
+    rep = evaluate([loop], Context(b, br, d, rb=None, workdir=tmp_path / "sim_i"), jobs=1)
+    assert rep["tests"][0]["info"]["loop_nH"]["ideal"]["typ"] == pytest.approx(esl * 1e9, rel=1e-3)
+    # route C1 to U1's VIN and GND pins: the loop gains the tracks' inductance
+    fp = {f.ref: f for f in b.footprints}
+    xy = {(r, n): transform.pad_xy(fp[r], next(p for p in fp[r].pads if p.number == n))
+          for r, n in (("C1", "1"), ("C1", "2"), ("U1", "3"), ("U1", "4"))}
+    for net, a, c in (("VIN", ("C1", "1"), ("U1", "3")), ("GND", ("C1", "2"), ("U1", "4"))):
+        b.tracks.append(Track(uuid=str(uuid.uuid4()), net=net, layer="F.Cu", width=0.3, start=xy[a], end=xy[c]))
+    rb = RoutedBoard(b, fills=None, brief=br)
+    rep = evaluate([loop], Context(b, br, d, rb=rb, workdir=tmp_path / "sim_r"), jobs=1)
+    cap = rep["tests"][0]["capability"]
+    assert cap["ideal_nH"] == pytest.approx(esl * 1e9, rel=1e-3) and cap["layout_nH"] > 0.5
+
+
+@pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
+def test_pdiss_is_the_power_in_board_resistances(tmp_path):
+    from kae.sim.evaluate import Context, evaluate
+    b = load(write_board(tmp_path, extra=EXTRA))
+    br = build(b)
+    d = D.build(b, br)
+    text = """*@test diss kind=custom
+*@nets +3V3 LED_K
+Vs <R12.1> 0 DC 2
+Vk <R12.2> 0 DC 0
+.tran 10n 100n
+.control
+run
+meas tran p AVG kae_pdiss from=50n to=100n
+.endc
+*@info p
+*@end
+"""
+    rep = evaluate(TB.parse(text), Context(b, br, d, rb=None, workdir=tmp_path / "sim"), jobs=1)
+    assert rep["tests"][0]["info"]["p"]["ideal"]["typ"] == pytest.approx(2.0 ** 2 / 1000.0, rel=1e-3)
+
+
+@pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
+def test_cell_physics_at_the_typical_corner(tmp_path):
+    from kae.sim.evaluate import Context, evaluate
+    b, br, t = _cell_tests(tmp_path)
+    rep = evaluate([t["cell"]], Context(b, br, D.build(b, br), rb=None, workdir=tmp_path / "sim"), jobs=4)
+    r = rep["tests"][0]
+    loss = r["info"]["p_loss"]["ideal"]
+    assert loss["typ"] is not None and loss["typ"] > 0
+    # the switch node swings rail to rail, plus at most a diode drop and the ring of the 1 nH input capacitor
+    vmax = r["requirements"][0]["ideal"]
+    assert 12.0 <= vmax["typ"] <= 13.5
+    # conduction: the load current through one 50 mOhm switch at a time, plus the capacitors' ESR
+    i_out = t["cell"].params["I_OUT"].typ
+    assert r["info"]["p_cond"]["ideal"]["typ"] == pytest.approx(i_out ** 2 * 0.05, rel=0.1)
+    assert r["info"]["e_sw"]["ideal"]["typ"] > 0
+
+
+@pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
+@pytest.mark.xfail(strict=True, reason="1 ns edges: Newton fails at the body diode during recovery into the "
+                   "undamped C_oss ring, even at itl4=500 (docs/topics/architecture/functional-evaluator.md)")
+def test_cell_converges_at_every_corner(tmp_path):
+    from kae.sim.evaluate import Context, evaluate
+    b, br, t = _cell_tests(tmp_path)
+    rep = evaluate([t["cell"]], Context(b, br, D.build(b, br), rb=None, workdir=tmp_path / "sim"), jobs=4)
+    assert not rep["tests"][0]["problems"]

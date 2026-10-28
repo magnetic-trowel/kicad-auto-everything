@@ -62,6 +62,10 @@ def run(deck, workdir, names, timeout=900):
         low = line.lower()
         if ("error" in low or "warning" in low) and "no compatibility mode" not in low:
             r.problems.append(line.strip()[:300])
+    if re.search(r"timestep too small|simulation\(s\) aborted", out, re.I):
+        # an aborted run: anything measured after it (a .control block) saw a partial waveform
+        r.problems.append("analysis aborted: " + (re.findall(r".*timestep too small.*", out, re.I) or ["?"])[0].strip()[:200])
+        r.meas = {}
     r.failed = sorted(want - set(r.meas))
     r.ok = not r.failed and not any("error" in x.lower() for x in r.problems)
     return r
