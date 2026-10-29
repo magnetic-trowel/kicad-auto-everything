@@ -23,8 +23,12 @@ import math
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
+
+from kae.excite import dc as DC
+from kae.route.critical_physics import RHO_CU, ipc2221_width
 
 from . import solve as ES
 from . import t1 as T1
@@ -106,9 +110,20 @@ class PhysRouter:
         for o in self.obs:
             self.pat[("o", o.name)] = O.pattern(bd, o, self.f, active=True)
             self.flow[("o", o.name)] = O.pattern(bd, o, self.f)
-        # priced nets: every non-ground net carrying pattern current (above 1% of the pattern's largest)
+        # the DC band (kae.excite.dc): the evaluator's plan and observers, at the same corners (a corner's
+        # cells take their switching corner's values)
+        self.dcp = DC.plan(b, self.brief, bd, self.P, self.srcs, intent)
+        for p in self.dcp.params:
+            self.ledger.add(p)
+        ncp = n_corners + 3
+        own = corners(self.dcp.params, n=n_corners, seed=seed + 1) if self.dcp.params else [{} for _ in range(ncp)]
+        self.dcv = [dict(own[c], **{s.name: self.cval[s.name][c] for s in self.srcs if s.kind == "cell"}) for c in range(ncp)]
+        self.dc_inj = [DC.injections(self.dcp, cv) for cv in self.dcv]
+        self.dc_obs = None
+        # priced nets: every non-ground net carrying pattern current (above 1% of the pattern's largest),
+        # switching or DC
         load_ = {}
-        for key, J in self.flow.items():
+        for J in list(self.flow.values()) + self.dc_inj:
             mx = max((abs(v) for v in J.values()), default=0) or 1
             for p, v in J.items():
                 n = bd.net_of.get(p)
@@ -172,6 +187,7 @@ class PhysRouter:
         pads = {q for J in self.pat.values() for q in J}
         pads |= {q for n in self.nets for q in self.bd.pads_of.get(n, [])}
         pads |= {q for e in self.bd.circuit.elems if e.pa and e.pb for q in (e.pa, e.pb)}
+        pads |= self.dcp.dc_pads
         ok = set()
         for q in sorted(pads):
             try:
@@ -183,7 +199,7 @@ class PhysRouter:
         # islands of each net's pads; unrouted connections become field-free shorts
         self.islands = {}
         shorted = 0
-        for n in set(self.bd.net_of[q] for q in ok):
+        for n in set(self.bd.net_of[q] for q in ok if q in self.bd.net_of):
             groups = {}
             for q in self.bd.pads_of.get(n, []):
                 if q in ok:
@@ -199,9 +215,25 @@ class PhysRouter:
             if t not in ok:
                 raise KeyError(t)
             return t
+        base = list(bm.m.lumped)          # the field-free shorts of unrouted connections
         lump_into(self.bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
         net = ES.Network(bm.m)
         op = ES.Operator(net)
+        self.dc_obs = None
+        if self.dcp.loads:
+            # the DC copper: the shorts and the parts that conduct at DC; one solve per corner at f = 0
+            ac = bm.m.lumped
+            bm.m.lumped = list(base)
+            lump_into(SimpleNamespace(elems=[e for e in self.bd.circuit.elems if e.kind in DC.DC_KINDS]), tpad,
+                      lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
+            net_dc = ES.Network(bm.m)
+            bm.m.lumped = ac
+            res_dc = ES.potentials_many(bm.m, [{q: a for q, a in inj.items() if q in ok} for inj in self.dc_inj], 0.0,
+                                        net=net_dc, op=ES.Operator(net_dc))
+            if all(V is not None for V, _ in res_dc):
+                self.dc_obs = [DC.observe(self.dcp, cv, V, info) for cv, (V, info) in zip(self.dcv, res_dc)]
+            else:
+                self.log("pnr: the DC flow cannot close in the copper; the DC band is unpriced")
         self.ref_ids = {bm.m.nets.index(g) for g in self.ref_nets() if g in bm.m.nets} or None
         self.prices, self.pot_at = {}, {}
         self.K = {}
@@ -296,6 +328,8 @@ class PhysRouter:
                 tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
                 if o.kind not in UNPRICED:
                     slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name))
+        for c, ob in enumerate(self.dc_obs or []):
+            tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
         self.H, idx = HA.robust(list(tot))
         self.H_typ, self.H_corners = float(tot[0]), idx
         for key, (g, sg, pk) in slope.items():
@@ -428,6 +462,8 @@ class PhysRouter:
                 # a split under the track: its return must find another layer or a capacitor; priced
                 # as five times the track's own inductance there (not a potential difference)
                 selfc[li] = max(wself, 0.0) * np.where(split, 6.0 * Lp, Lp)
+                # the hop's DC resistance: harm per ohm times ohm per mm on this layer's copper
+                selfc[li] += getattr(self, "_hop_dc", 0.0) * RHO_CU / (width * m.layers[L].t)     # ohm mm / mm^2
             # a via's own loop: the hop's return changes planes at the nearest return transfer (a via or
             # through-hole pad of a return net): L = mu0 dz / (2 pi) ln(d / r), dz the board's copper span
             vs = np.zeros((grid.ny, grid.nx))
@@ -450,6 +486,70 @@ class PhysRouter:
                         pot2=lam * pot2, void2=void2, theta=lam * theta, th_src=lam * th_src, th_dst=lam * th_dst,
                         floor=0.2)
         return f
+
+    WIDTHS = (0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0)     # mm, the ladder
+
+    def _feed_pads(self, n):
+        """The pads where rail n's feed delivers its current."""
+        f = self.dcp.feeds.get(n)
+        if f is None:
+            return set()
+        if f["kind"] != "cell":
+            return set(f.get("out") or [])
+        c = f["cell"]
+        ref = c["rect"] or c["ctrl"]
+        return {q for q in self.bd.pads_of.get(n, []) if q.rsplit(".", 1)[0] == ref}
+
+    def _dc_per_ohm(self, n, b_pads):
+        """(dH/dR, I_max) of a hop joining island b_pads to the rest of net n: the robust objective's
+        derivative per ohm of the hop (copper loss I^2 R; the drop I R of every load beyond the hop from
+        its rail's feed), averaged over the objective's corners, and the hop's largest DC current."""
+        if not self.dc_obs or not getattr(self, "H_corners", None):
+            return 0.0, 0.0
+        I = [sum(inj.get(q, 0.0) for q in b_pads) for inj in self.dc_inj]
+        Imax = max(abs(x) for x in I)
+        if Imax < 1e-4:
+            return 0.0, 0.0
+        bset = set(b_pads)
+        src_in_b = bool(self._feed_pads(n) & bset)
+        beyond = {(ld["ref"], ld["rail"]) for ld in self.dcp.loads
+                  if ld["rail"] == n and bool(set(ld["sup"]) & bset) != src_in_b}
+        g = 0.0
+        for c in self.H_corners:
+            ob = self.dc_obs[c]
+            u, _, bud = ob["loss"]
+            if bud > 0:
+                g += phi_prime(u) * I[c] ** 2 / bud
+            for ref, rail, um, _, bm_ in ob["drops"]:
+                if (ref, rail) in beyond:
+                    g += phi_prime(um) * abs(I[c]) / bm_
+        return g / len(self.H_corners), Imax
+
+    def _dc_width(self, n, layer, w0, g, Imax):
+        """(width, reason) of a hop with DC price g (harm per ohm) and largest current Imax: the ladder
+        width minimizing area (relative to the class width and its clearance) plus resistance per mm,
+        never below w0 or the IPC-2221 width for Imax at the DC band's temperature rise."""
+        mn, opt, mx = self.sp.width_limits(n, layer)
+        L = self.layer_names.index(layer) if layer in self.layer_names else 0
+        t = self.mesh.layers[L].t
+        try:
+            s = float(self.sp._generic_need(n, "track", layer) or 0.2)
+        except Exception:                     # noqa: BLE001 - a clearance only weighs the area
+            s = 0.2
+        ext = L in (0, len(self.mesh.layers) - 1)
+        w_ipc = ipc2221_width(Imax, self.dcp.dT_max, t, internal=not ext)
+        lo = max(w0, mn, w_ipc)
+        if mx is not None and lo > mx + 1e-9:
+            return mx, f"IPC width {w_ipc:.2f} mm for {Imax:.2f} A exceeds the class maximum {mx:g} mm"
+        cands = sorted({lo} | {w for w in self.WIDTHS if w > lo and (mx is None or w <= mx + 1e-9)})
+
+        def cost(w):
+            return (w + s) / (max(opt, mn, 0.1) + s) + self.lam * g * RHO_CU / (w * t)
+        w = min(cands, key=cost)
+        floor = ("the IPC minimum" if lo == w_ipc else "the class width" if lo in (mn, opt) else "the commutation floor")
+        return self.sp.clamp_width(n, layer, w), (f"{Imax:.3g} A, {g:.3g} harm/ohm; IPC minimum {w_ipc:.2f} mm; "
+                                                  + (f"{floor} binds" if w == lo else
+                                                     f"area-resistance optimum among {len(cands)} widths"))
 
     def _gnd_gap(self, L):
         """Distance (mm) from each cell to the nearest ground copper on layer L, or None if it has none."""
@@ -501,7 +601,7 @@ class PhysRouter:
         return self
 
     # ------------------------------------------------------------------ verified candidates
-    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
               "_pred", "_L0", "_predL")
 
     def _snap(self):
@@ -580,6 +680,13 @@ class PhysRouter:
                 if any(k[0] == "s" and k[1].startswith("cell:") for k in cur):
                     # a commutation current: wide copper lowers its inductance per length
                     width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
+                self._hop_dc = 0.0
+                if not plain:
+                    g, Imax = self._dc_per_ohm(n, b_)
+                    if Imax > 0:
+                        width, why = self._dc_width(n, layer0[0], width, g, Imax)
+                        self._hop_dc = g
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
                 srcs = [self._anchor(q) for q in b_]
                 dsts = [self._anchor(q) for q in a]
                 ends = (self._end_plane(b_), self._end_plane(a))

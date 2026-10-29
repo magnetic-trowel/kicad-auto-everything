@@ -238,7 +238,8 @@ def plan(board, brief, bd, P, srcs, intent=None):
             c = f["cell"]
             for ref in (c["ctrl"], c["rect"]):
                 if ref:
-                    pl.dc_pads |= {f"{ref}.{n}" for n, _, _, _ in pads.get(ref, [])}
+                    pl.dc_pads |= {f"{ref}.{n}" for n, net, _, _ in pads.get(ref, [])
+                                   if net in rails or net in grounds or net == c["sw"]}
     pl.pads = pads
     pl.grounds = grounds
     pl.volts = {r: volts(r) for r in rails}
