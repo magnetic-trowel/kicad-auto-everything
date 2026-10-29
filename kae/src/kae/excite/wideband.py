@@ -155,7 +155,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
         Zl = Zr - Zi
         return np.abs(Zl) + 1e-3 * np.abs(Zl).max()
     model.build(f_max, fmin=1e3, tol=tol, rows=rows, cols=cols, scale=scale, f0=(0.0, min(10e6, f_max / 3)))
-    est = model.history[-1][1] if model.history else None
+    est = model.history[-1][3] if model.history else None          # calibrated by the snapshots' true errors
     log(f"wideband: model of order {model.V.shape[1]} from snapshots {[round(f / 1e6, 4) for f in model.freqs]} MHz "
         f"in {model.seconds:.0f}s; estimated worst relative error {est:.1e}")
     # per corner, per source: the harmonic sums

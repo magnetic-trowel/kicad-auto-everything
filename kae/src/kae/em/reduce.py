@@ -65,10 +65,12 @@ class Reduced:
 
     # ------------------------------------------------------------------ basis
     def snapshot(self, f, tol=1e-8):
-        """Solve every port at f and add the solutions to the basis. Returns the iterations."""
+        """Solve every port at f and add the solutions to the basis. Returns the iterations; the full
+        solution's port impedances stay in self.last_Z (a free check of the model before it)."""
         sy = ES.System(self.op, f)
         X, its = sy.solve_many(self.P, tol=tol, maxiter=3000)
         X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
+        self.last_Z = self.P.T @ X[self.nb:]
         self._extend(np.concatenate([X.real, X.imag], 1))
         self.freqs.append(f)
         return its
@@ -218,7 +220,12 @@ class Reduced:
     def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,)):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
-        magnitudes errors are relative to (default |Z| of the model itself)."""
+        magnitudes errors are relative to (default |Z| of the model itself).
+
+        Each greedy snapshot is a full solve exactly where the model was judged worst, so the model's
+        true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
+        the estimate times the largest ratio of true to estimated error seen so far (the estimator's
+        dual error is one preconditioner application, typically pessimistic)."""
         t0 = time.time()
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
         for f in f0:
@@ -227,6 +234,8 @@ class Reduced:
         rows = list(range(self.P.shape[1])) if rows is None else rows
         cols = list(range(self.P.shape[1])) if cols is None else cols
         self.history = []
+        self.calibration = []
+        cal = None
         while True:
             worst, fw = 0.0, None
             for f in G:
@@ -238,12 +247,25 @@ class Reduced:
                 rel = float(np.max(E / np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)))
                 if rel > worst:
                     worst, fw = rel, f
-            self.history.append((self.V.shape[1], worst, fw))
+            cw = worst * cal if cal is not None else worst
+            self.history.append((self.V.shape[1], worst, fw, cw))
             self.log(f"reduce: basis {self.V.shape[1]}, estimated worst relative error {worst:.1e}"
-                     + (f" at {fw / 1e6:.4g} MHz" if fw else ""))
-            if worst < tol or fw is None or len(self.freqs) >= max_snapshots:
+                     + (f" at {fw / 1e6:.4g} MHz" if fw else "")
+                     + (f", calibrated {cw:.1e} (factor {cal:.2g})" if cal is not None else ""))
+            if cw < tol or fw is None or len(self.freqs) >= max_snapshots:
                 break
+            Zr = self.Z(fw)[np.ix_(rows, cols)]
+            S = np.abs(Zr) if scale is None else scale(fw)
+            E_est = self.error(fw, rows, cols)
             its = self.snapshot(fw)
-            self.log(f"reduce: snapshot {fw / 1e6:.4g} MHz ({int(np.max(its))} iterations)")
+            Zt = self.last_Z[np.ix_(rows, cols)]
+            den = np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)
+            true = float(np.max(np.abs(Zr - Zt) / den))
+            est = float(np.max(E_est / den))
+            ratio = true / est if est > 0 else 1.0
+            self.calibration.append((fw, true, est))
+            cal = max(cal or 0.0, ratio)
+            self.log(f"reduce: snapshot {fw / 1e6:.4g} MHz ({int(np.max(its))} iterations): the model's true error "
+                     f"there was {true:.1e} (estimated {est:.1e})")
         self.seconds = time.time() - t0
         return self
