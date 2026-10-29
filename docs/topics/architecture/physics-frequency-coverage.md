@@ -164,6 +164,9 @@ plan.
 |---|---|---|
 | R1 | IC pin models into the copper as lumped parts on internal nodes; fixed-source patterns | the two current bands' harms reproduced within 1% |
 | R2 | Two-sided reduced basis, DC moments, greedy by the dual-weighted output estimate | reduced vs direct at 10 random frequencies, 1 kHz – 300 MHz, ≤ 1e-3 relative on every observer, on boost and a 4-layer board; the reduced model passive |
+
+**R2 on boost: passed.** 7 snapshots (DC, 46 kHz, 0.24, 0.72, 10, 19, 300 MHz), order 111, 30 min at 4 threads. At 10 seeded random frequencies from 1.2 kHz to 132 MHz the worst relative error of any observer's layout share was 2.7e-4; the model's port matrix had no negative eigenvalue beyond rounding (−8e-14 against 3e4). The 4-layer case is still to run.
+
 | R3 | Harms from the reduced model: waveform peaks, harmonics vs limit lines, low-frequency bands | boost ring frequency and overshoot against a direct transient of the full system at one corner |
 | R4 | Router prices weighted over the spectrum; basis recycling between refreshes | predicted vs actual dL per pair within the current 0.93–1.06 band |
 | R5 | P operator (EQS) and capacitive prices | microstrip C per length vs closed form; two-trace mutual C vs FastCap |
