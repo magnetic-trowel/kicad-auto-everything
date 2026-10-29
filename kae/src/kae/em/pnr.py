@@ -251,6 +251,38 @@ class PhysRouter:
                 self.wts[(kk, ks)] = phi_prime(u) * np.sign(L or 1.0) * scale / (bound or 1.0)
                 self.harm[(o.name, s.name)] = u
 
+    def _islands_only(self):
+        """The copper islands of each net (what is still to connect) without solving any field: the
+        plain router's setup."""
+        p = self._state_board()
+        from kae.board.kicad_file import load
+        b = load(p)
+        if self.window is None:
+            from kae.board import transform
+            xs, ys = [], []
+            for fp in b.footprints:
+                for pd in fp.pads:
+                    x, y = transform.pad_xy(fp, pd)
+                    xs.append(x), ys.append(y)
+            self.window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+        bm = BoardMesh(p, self.window, self.pitch, nsub=1, b=b)
+        ok = set()
+        for q in sorted({q for n in self.nets for q in self.bd.pads_of.get(n, [])}):
+            try:
+                bm.pad(q)
+                ok.add(q)
+            except (KeyError, ValueError):
+                pass
+        net = ES.Network(bm.m)
+        self.islands = {}
+        for n in self.nets:
+            groups = {}
+            for q in self.bd.pads_of.get(n, []):
+                if q in ok:
+                    groups.setdefault(int(net.comp[net.term_node[q]]), []).append(q)
+            self.islands[n] = list(groups.values())
+        self.prices = {}
+
     def ref_nets(self):
         """Nets whose copper carries returns at the pattern band: the grounds, and every rail with a
         capacitor to a ground (an AC ground there: a power plane next to a track is its return)."""
@@ -389,9 +421,11 @@ class PhysRouter:
         self.choices = []
         since = 0
         for n in self.nets:
-            if done == 0 or since >= self.refresh:
-                self.solve_fields()
+            if not self.plain and (done == 0 or since >= self.refresh):
+                self.solve_fields()           # plain routing reads no fields: it needs the islands only
                 since = 0
+            elif self.plain and done == 0:
+                self._islands_only()
             since += 1
             isl = [g for g in self.islands.get(n, []) if g]
             if len(isl) < 2:
