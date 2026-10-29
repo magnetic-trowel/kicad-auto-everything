@@ -116,7 +116,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
         if t not in bm.m.terminals:
             raise KeyError(t)
         return t
-    # unrouted connections: a net whose pads lie on more than one island of the bare copper (no score)
+    # unrouted connections: a net whose pads lie on more than one island of the bare copper (reported)
     bare = ES.Network(bm.m)
     unrouted = []
     for n_, pads_ in bd.pads_of.items():
@@ -256,11 +256,16 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                              ac_parts=ac_by_ref, log=log, ledger=ledger)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     from .evaluate import totals
-    unc = [f"net {n_}" for n_ in sorted(unrouted)] + (["dc"] if any(n.startswith("DC: copper open") for n in notes) else [])
+    # the AC model carries the copper as it is (an open connection is physics here: a floating pad, or an
+    # open loop that rings without bound), so only the DC band, which skips an open flow, voids the score
+    unc = ["dc"] if any(n.startswith("DC: copper open") for n in notes) else []
+    if unrouted:
+        notes.insert(0, f"unrouted: {len(unrouted)} nets have pads on separate copper islands ({', '.join(sorted(unrouted)[:8])}); "
+                        f"their harms are of the board as it stands, so compare only boards with the same open connections")
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
                 model=dict(order=int(model.V.shape[1]), snapshots=model.freqs, estimated_error=est,
                            history=model.history),
-                total=totals(tot, unc),
+                total=dict(totals(tot, unc), unrouted=sorted(unrouted)),
                 ac_loss=dict(copper_W=dict(typical=float(ac_cu[0]), hi=float(ac_cu.max())),
                              parts_W={k: dict(typical=float(v[0]), hi=float(v.max())) for k, v in
                                       sorted(parts.items(), key=lambda kv: -kv[1].max()) if v.max() > 0}),

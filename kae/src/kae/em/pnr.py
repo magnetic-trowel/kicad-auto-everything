@@ -204,7 +204,9 @@ class PhysRouter:
             for q in self.bd.pads_of.get(n, []):
                 if q in ok:
                     groups.setdefault(int(net.comp[net.term_node[q]]), []).append(q)
-            self.islands[n] = list(groups.values())
+            # the routing islands come from the exact copper (the raster can merge pads closer than a
+            # cell, and the hop between them would never be routed); the mesh's own groups get the shorts
+            self.islands[n] = self._exact_islands(n, ok) if n in self.nets else list(groups.values())
             reps = [g[0] for g in groups.values()]
             for a, c in zip(reps[:-1], reps[1:]):
                 bm.m.part(a, c)
@@ -358,15 +360,53 @@ class PhysRouter:
                 ok.add(q)
             except (KeyError, ValueError):
                 pass
-        net = ES.Network(bm.m)
-        self.islands = {}
-        for n in self.nets:
-            groups = {}
-            for q in self.bd.pads_of.get(n, []):
-                if q in ok:
-                    groups.setdefault(int(net.comp[net.term_node[q]]), []).append(q)
-            self.islands[n] = list(groups.values())
+        self.islands = {n: self._exact_islands(n, ok) for n in self.nets}
         self.prices = {}
+
+    def _exact_islands(self, n, ok):
+        """Net n's pads (those in `ok`) grouped by exact copper: pads, tracks and vias that touch
+        (kae.route Space.component), joined through every connected piece of the net's zone fills."""
+        sp = self.sp
+        tok_of = {}
+        for q in self.bd.pads_of.get(n, []):
+            if q not in ok:
+                continue
+            ref, num = q.rsplit(".", 1)
+            for it in sp.pads_by_fp.get(self._fp(ref), []):
+                if str(it.owner[1]) == num:
+                    tok_of[id(it)] = q
+        comps, where = [], {}
+        for q in tok_of.values():
+            if q in where:
+                continue
+            a = self._anchor(q)
+            comp = sp.component(n, [(a.geom, a.layers)])
+            k = len(comps)
+            comps.append(comp)
+            for it in comp:
+                if id(it) in tok_of:
+                    where[tok_of[id(it)]] = k
+            where.setdefault(q, k)
+        parent = list(range(len(comps)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        for zn, layer, g, _ in sp.zones:
+            if zn != n:
+                continue
+            for piece in getattr(g, "geoms", [g]):
+                touch = [k for k, comp in enumerate(comps)
+                         if any(layer in it.layers and (it.geom.buffer(it.r) if it.r > 0 else it.geom).distance(piece) <= 1e-6
+                                for it in comp)]
+                for k in touch[1:]:
+                    parent[find(k)] = find(touch[0])
+        groups = {}
+        for q, k in where.items():
+            groups.setdefault(find(k), []).append(q)
+        return list(groups.values())
 
     def ref_nets(self):
         """Nets whose copper carries returns at the pattern band: the grounds, and every rail with a
