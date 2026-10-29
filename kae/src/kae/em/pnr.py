@@ -194,6 +194,12 @@ class PhysRouter:
         self.op = op
         self.layer_names = [l.name for l in bm.m.layers]
         self._weights()
+        H = sum(u if u <= 1 else u + 4 * (u - 1) ** 2 for u in self.harm.values())
+        pred = getattr(self, "_pred", None)
+        if pred is not None and getattr(self, "_H", None) is not None:
+            self.log(f"pnr: harm {self._H:.2f} -> {H:.2f} (change {H - self._H:+.2f}; the hops' prices predicted "
+                     f"{pred:+.2f})")
+        self._H, self._pred = H, 0.0
         self.log(f"pnr: fields of {len(self.prices)} patterns on {bm.m.nx}x{bm.m.ny}x{len(layers)} "
                  f"({shorted} unrouted connections shorted) in {time.time() - t0:.1f}s")
 
@@ -380,6 +386,10 @@ class PhysRouter:
                     for l, p0, p1 in rt.segs:
                         it = self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n))
                         self.tracks.append((n, l, rt.width, p0, p1, "", False))
+                    try:
+                        self._pred = (self._pred or 0.0) + self._path_harm(rt, cur, width)
+                    except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
+                        self.log(f"pnr: prediction failed: {type(e).__name__}: {e}")
                     self._update_fields(rt, cur)
                     for (x, y) in rt.vias:
                         self.sp.add_via(n, x, y, owner=("pnr", n))
@@ -398,6 +408,39 @@ class PhysRouter:
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
                  f"{time.time() - t0:.1f}s")
         return self
+
+    def _path_harm(self, rt, cur, width):
+        """The harm change (u, linearized) the price fields predict for a routed hop: its own loop over
+        its references plus coupling and crossings along its segments (vias and ends not counted)."""
+        m = self.mesh
+        tot = 0.0
+        for l, p0, p1 in rt.segs:
+            if l not in self.layer_names:
+                continue
+            L = self.layer_names.index(l)
+            n = max(2, int(math.ceil(math.dist(p0, p1) / (m.pitch / 2))) + 1)
+            cells = []
+            for t in np.linspace(0, 1, n):
+                c = m.cell(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
+                if 0 <= c[0] < m.ny and 0 <= c[1] < m.nx and (not cells or c != cells[-1]):
+                    cells.append(c)
+            if len(cells) < 2:
+                continue
+            up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+            j, i = cells[len(cells) // 2]
+            Lu = strip_L_per_mm(width, hu[j, i]) if np.isfinite(hu[j, i]) else np.inf
+            Ld = strip_L_per_mm(width, hd[j, i]) if np.isfinite(hd[j, i]) else np.inf
+            g = (0.0 if not np.isfinite(Lu) else 1.0 / float(Lu)) + (0.0 if not np.isfinite(Ld) else 1.0 / float(Ld))
+            Lp = 1.0 / g if g > 0 else float(strip_L_per_mm(width, 1.6))
+            for (kk, ks), wt in self.wts.items():
+                ik, is_ = cur.get(kk, 0.0), cur.get(ks, 0.0)
+                if ik == 0 and is_ == 0:
+                    continue
+                tot += wt * ik * is_ * Lp * math.dist(p0, p1)
+                for pa, pb in ((ks, ik), (kk, is_)):
+                    if pb and pa in self.prices:
+                        tot += wt * pb * T1.path_price(self.prices[pa][L], cells, m.pitch)
+        return float(tot)
 
     def _update_fields(self, rt, cur):
         """Between refreshes, a routed hop's own flux joins every pattern's price fields (its current in
