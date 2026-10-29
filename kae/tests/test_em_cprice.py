@@ -17,10 +17,8 @@ def _setup(h=0.2, er=4.5, pitch=0.25):
     m.rect(0, "A", 3, 5.5, 17, 6.5)
     m.rect(0, "V", 18, 1, 19, 2)
     es = ST.Electrostatic(m, ST.Stack([0.0, h * 1e-3], [er]), [h * 1e-3, 0.0])
-    cp = CP.CapPrices.__new__(CP.CapPrices)
-    cp.log, cp.tol, cp._es = (lambda s: None), 1e-7, (None, es)
-    cp.pairs = [dict(obs="k", src="s", a="A", n="V", bound=1e-3, R=3e4, Cc=5e-12, V0=5.0)]
-    cp.nets, cp.cval = ["A", "V"], {"s": [{"V_V": 5.0, "t_v_s": 1e-9}]}
+    cp = CP.CapPrices.bare([dict(obs="k", src="s", a="A", n="V", bound=1e-3, R=3e4, Cc=5e-12, V0=5.0)],
+                           {"s": [{"V_V": 5.0, "t_v_s": 1e-9}]}, es, ["F", "B"], tol=1e-7)
     F = CP.Fields(m)
     cp._drive(es, F, ["A", "V"])
     cp._pairs(F)

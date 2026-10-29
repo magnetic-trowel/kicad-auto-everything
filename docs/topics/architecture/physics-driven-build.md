@@ -123,6 +123,10 @@ the magnetic one. Each pair is a victim observer (feedback, analog, crystal, res
   - C′ is microstrip (Hammerstad–Jensen) over the nearest copper above and below, plus a coplanar
     share fitted to raster solves. It is scaled to the raster's own strip capacitance at the layer's
     height.
+- **Pours.** A hop laid over another net's pour, which the refill later cuts back, takes over the charge its
+  cells hold in the other net's drive. On the raster that is exact, because their potential stays 0 V. The refill's clearance band
+  adds half its charge. Without this term a pour cell prices at zero, because φ = 0 on copper. The first smoke route then
+  ran the switch node on B.Cu under the feedback divider and raised C_m to 58 fF.
 - **Refresh.** Every field refresh re-solves every capacitive net. After each hop of an aggressor or
   victim net, its copper is painted into the static raster and that net's own field re-solved (CG from its
   last charges). So the next hop sees it, and every hop logs its predicted ΔC_m against the solved one.
@@ -140,6 +144,8 @@ over a plane and a 10 mm victim track one pitch (0.25 mm) wide at edge gap d.
 
 - The 5% left at h = 1.51 mm is the free ends' fringe: an end-on track reads 0.83. A routed hop
   ends on pads.
+- An aggressor track cut through the plane under or beside the victim strip (zone clearance 0.2 mm) reads
+  1.07–1.14 at both heights.
 - Aggressor copper beside a victim strip (reciprocity) reads 1.04–1.12 at h = 1.51 mm and 0.99 at 0.2 mm. The excess is the screening of the
   net's own earlier copper, which first order leaves out.
 
@@ -152,11 +158,14 @@ On the boost board the feedback net's tracks were removed and then added back on
 | R5 to R4, 2.2 mm | +0.54 | 1.04 |
 | all three | +2.24 | 1.02 |
 | a stub 0.25 mm from the switch node, 3.3 mm | +38.8 | 0.91 |
+| switch node on B.Cu through the plane under the divider, 18.5 mm (the first smoke route's) | +25.8 | 1.07 |
 
 - The hops change C_m little (15.6 → 17.9 fF) because the pins dominate it: FB sits two pins
   from SW on the SOT-23.
 - The stub raises u from 2.4 to 8.0. This is what the price keeps the router from doing.
 - A board re-meshed from scratch with all hops gives the same C_m as painting them in turn (17.856 fF both).
+- The switch-node route, written out with its zones refilled by KiCad, gives +35.3 fF against the +28.0 predicted.
+  The refill drops slivers and isolated islands of the cut plane, which the band term does not foresee.
 
 ## 4. The circuit side
 

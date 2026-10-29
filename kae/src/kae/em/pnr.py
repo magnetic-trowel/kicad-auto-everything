@@ -106,6 +106,8 @@ class PhysRouter:
             from .cprice import CapPrices
             self.cap = CapPrices(bd, self.brief, self.srcs, self.obs, self.cval, log=log)
             self.cap = self.cap if self.cap.pairs else None
+            if self.cap:
+                self.cap.clearance = lambda n, layer: self.sp._generic_need(n, "track", layer)
         # pat: the injection at the pads of parts outside the copper model (two-pad parts are lumped into
         # it); flow: every pad's current with ideal copper, which says what each net carries
         self.pat, self.flow, self.vid = {}, {}, {}

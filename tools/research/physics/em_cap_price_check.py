@@ -14,7 +14,8 @@ The exact change is a re-solve with the segment painted in (CapPrices.after_hop)
 
 On a board: the victim net's tracks are removed, the fields solved, and the tracks (or the hops in
 HOPS.json, [[layer, [x0, y0], [x1, y1], width], ...] per hop) added back one hop at a time, each
-predicted and then re-solved; last, the board with every hop is re-meshed from scratch and solved.
+predicted and then re-solved (a hop's refill void emulated in the raster); last, the board with every
+hop is written, its zones refilled by KiCad, re-meshed and solved.
 """
 from __future__ import annotations
 
@@ -41,10 +42,8 @@ def setup(pitch, h, er, victim_strip=False):
     else:
         m.rect(0, "V", 27, 2, 28, 3)                    # a victim pad far away
     es = ST.Electrostatic(m, ST.Stack([0.0, h * 1e-3], [er]), [h * 1e-3, 0.0])
-    cp = CP.CapPrices.__new__(CP.CapPrices)
-    cp.log, cp.tol, cp._es = (lambda s: None), 1e-7, (None, es)
-    cp.pairs = [dict(obs="k", src="s", a="A", n="V", bound=1.0, R=1e4, Cc=5e-12, V0=5.0)]
-    cp.nets, cp.cval = ["A", "V"], {"s": [{}]}
+    cp = CP.CapPrices.bare([dict(obs="k", src="s", a="A", n="V", bound=1.0, R=1e4, Cc=5e-12, V0=5.0)],
+                           {"s": [{}]}, es, ["F", "B"], tol=1e-7)
     F = CP.Fields(m)
     cp._drive(es, F, ["A", "V"])
     cp._pairs(F)
@@ -83,6 +82,7 @@ def measure(path, pitch):
 
 
 def board_check(path, victim, hops_file, pitch):
+    """victim: the net whose tracks are removed and re-added hop by hop (an aggressor works the same way)."""
     import json
     import math
     import time
@@ -114,10 +114,21 @@ def board_check(path, victim, hops_file, pitch):
         hops = json.load(open(hops_file))
     else:
         hops = [[[t.layer, list(t.start), list(t.end), t.width]] for t in b.tracks if t.net == victim]
-    fills = fills_of(path)
-    keep = [t for t in b.tracks if t.net != victim]
-    b.tracks = keep
-    bm = BoardMesh(path, window, pitch, nsub=1, b=b, fills=fills)
+    import shutil
+    import tempfile
+    from kae.route import critical_write as W
+    tmp = Path(tempfile.mkdtemp(prefix="cap-check-"))
+    base, out = tmp / "base.kicad_pcb", tmp / "hops.kicad_pcb"
+    W.edit(path, base, remove=[t.uuid for t in b.tracks if t.net == victim] + [v.uuid for v in b.vias if v.net == victim])
+    vias = [(p1[0], p1[1]) for h in hops for (l, p0, p1, w), (l2, *_) in zip(h[:-1], h[1:]) if l2 != l]
+    W.append_items(base, out, tracks=[(victim, l, w, tuple(p0), tuple(p1), "", False) for h in hops for l, p0, p1, w in h],
+                   vias=[(victim, x, y, 0.6, 0.3, "", False) for x, y in vias])
+    for ext in (".kicad_pro", ".kicad_dru"):
+        if Path(path).with_suffix(ext).exists():
+            for d in (base, out):
+                shutil.copy2(Path(path).with_suffix(ext), d.with_suffix(ext))
+    b = load(base)
+    bm = BoardMesh(base, window, pitch, nsub=1, b=b, fills=fills_of(base))
     F = cp.solve(bm, b)
     ncp = len(next(iter(cval.values())))
     idx = robust(list(np.sum([F.u[k] for k in F.u], axis=0) if F.u else np.zeros(ncp)))[1]
@@ -129,7 +140,8 @@ def board_check(path, victim, hops_file, pitch):
     for h in hops:
         segs = [(l, tuple(p0), tuple(p1)) for l, p0, p1, w in h]
         w = h[0][3]
-        G, r = cp.after_hop(F, victim, segs, [], w, 0.6, names)
+        hv = [(p1[0], p1[1]) for (l, p0, p1), (l2, *_) in zip(segs[:-1], segs[1:]) if l2 != l]
+        G, r = cp.after_hop(F, victim, segs, hv, w, 0.6, names)
         for key, (p, x) in r.items():
             ln = sum(math.dist(p0, p1) for _, p0, p1 in segs)
             print(f"hop {len(segs)} segs {ln:5.2f} mm w {w:g}: C_m {key[0]} <- {key[1]}: {F.Cm[key] * 1e15:7.3f} -> "
@@ -138,14 +150,10 @@ def board_check(path, victim, hops_file, pitch):
             tot_p, tot_x = tot_p + p, tot_x + x
         F = G
     print(f"all hops: predicted {tot_p * 1e15:+.3f} fF, solved hop by hop {tot_x * 1e15:+.3f} fF")
-    from kae.board.model import Track
-    b2 = load(path)
-    b2.tracks = keep + [Track(uuid="", start=tuple(p0), end=tuple(p1), width=w, layer=l, net=victim)
-                        for h in hops for l, p0, p1, w in h]
-    bm2 = BoardMesh(path, window, pitch, nsub=1, b=b2, fills=fills)
-    F2 = cp.solve(bm2, b2)
+    b2 = load(out)
+    F2 = cp.solve(BoardMesh(out, window, pitch, nsub=1, b=b2, fills=fills_of(out)), b2)
     for key in F2.Cm:
-        print(f"re-meshed board: C_m {key[0]} <- {key[1]} {F2.Cm[key] * 1e15:.3f} fF (hop by hop {F.Cm[key] * 1e15:.3f}); "
+        print(f"re-meshed board, zones refilled: C_m {key[0]} <- {key[1]} {F2.Cm[key] * 1e15:.3f} fF (hop by hop {F.Cm[key] * 1e15:.3f}); "
               f"C_node {(cp._pair(key[0], key[1])['Cc'] + F2.Cself[key[2]]) * 1e12:.3f} pF; u typ {F2.u[key][0]:.3f}, "
               f"max {F2.u[key].max():.3f}")
     print(f"total {time.time() - t0:.1f}s")
@@ -157,7 +165,7 @@ def main(argv=None):
     ap.add_argument("--h", type=float, default=1.51)
     ap.add_argument("--er", type=float, default=4.5)
     ap.add_argument("--board")
-    ap.add_argument("--victim")
+    ap.add_argument("--victim", "--net", dest="victim")
     ap.add_argument("--hops")
     ap.add_argument("--measure", nargs="+", help="boards to measure as they stand")
     a = ap.parse_args(argv)
@@ -193,6 +201,14 @@ def main(argv=None):
         G, r = cp.after_hop(F, "A", segs, [], w, 0.6, ["F", "B"])
         p, x = r[key]
         print(f"{'aggressor segment, gap ' + format(d, 'g') + ' mm to V':34s} {p * 1e15:12.3f} {x * 1e15:10.3f} {p / x:6.3f}")
+    # an aggressor track through the ground plane under the victim strip and beside it: the refill opens
+    # its clearance (0.2 mm) in the plane
+    cp.pours = {"GND"}
+    for off in (0.0, 1.0, 3.0):
+        y = 13.125 - off
+        G, r = cp.after_hop(F, "A", [("B", (10.0, y), (20.0, y))], [], w, 0.6, ["F", "B"])
+        p, x = r[key]
+        print(f"{'aggressor in the plane, ' + format(off, 'g') + ' mm off V':34s} {p * 1e15:12.3f} {x * 1e15:10.3f} {p / x:6.3f}")
 
 
 if __name__ == "__main__":

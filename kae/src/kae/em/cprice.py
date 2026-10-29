@@ -40,6 +40,14 @@ permittivity; capacitances to both sides add) and beside it on the layer (coplan
 width the static raster carries (a chain one pitch wide below three pitches, kae.em.mesh): the solve
 that refreshes the prices sees that width.
 
+Pours. A hop the router lays over another net's pour (it is refilled afterwards) takes over the
+cells it covers: in the other net's drive their potential stays 0 V, so their charge -Q_other simply
+changes owner (exact on the raster), and the refill clears the zone's clearance around the hop, whose
+charge the hop and the pour's new edge share (half each, an estimate). Over a pour a hop pays W
+(-Q_other / p^2) (w + clearance) per mm: a switch node cut through the plane under a feedback divider
+is priced, though the plane's cells hold no potential. KiCad's refill also drops slivers and isolated
+islands, which this does not foresee.
+
 Limits of first order: the hop's copper is not in the field it is priced on. A piece beside its own
 net's earlier copper is over-priced (that copper already took part of the charge: 1.04-1.12 against
 a fresh solve at 1 mm), a free track end under-priced (its fringe: 0.83 end-on). After each hop of an
@@ -67,6 +75,7 @@ H_NONE = 1.6            # mm: the plane height assumed where a cell has no coppe
 # microstrip C' (one side; sides add): fitted to raster solves (kae.em.static) of 0.25 and 0.5 mm strips at
 # h = 0.2 and 1.51 mm beside a 5 mm coplanar ground, g / h 0.17-1.3, within 0.04 C_ms of each solve
 CO_A, CO_B = 0.25, 3.0
+CLEAR = 0.2             # mm: the clearance a refill opens around a track when no rule says (KiCad's default)
 
 
 def victim_rc(circuit, o, t_e):
@@ -189,7 +198,19 @@ class CapPrices:
                 log(f"cap: pair {o.name} <- {a} ({s.name}): victim node R {R / 1e3:.3g} kOhm, circuit C "
                     f"{C * 1e12:.3g} pF at the {t_e * 1e9:.2g} ns edge, bound {o.bound * 1e3:.3g} mV")
         self.nets = sorted({p["a"] for p in self.pairs} | {p["n"] for p in self.pairs})
-        self._es = None
+        self._es, self.pours, self._layer_names, self.zone_clear = None, set(), [], {}
+        self.clearance = lambda net, layer: CLEAR        # (net, layer name) -> mm; kae.em.pnr sets the rules'
+
+
+    @classmethod
+    def bare(cls, pairs, cval, es, layer_names, tol=1e-6):
+        """Prices of given pairs on a given static operator, without a board (tests and checks)."""
+        self = cls.__new__(cls)
+        self.log, self.tol, self.cval, self.pairs = (lambda s: None), tol, cval, pairs
+        self.nets = sorted({p["a"] for p in pairs} | {p["n"] for p in pairs})
+        self._es, self.pours, self._layer_names, self.zone_clear = (None, es), set(), list(layer_names), {}
+        self.clearance = lambda net, layer: CLEAR
+        return self
 
     # ------------------------------------------------------------------ solves
     def _operator(self, bm, b):
@@ -210,6 +231,14 @@ class CapPrices:
         """Every field on the router's mesh as it stands (a refresh)."""
         if not self.pairs:
             return None
+        self.pours = {z.net for z in b.zones if z.net}
+        self._layer_names = [l.name for l in bm.m.layers]
+        self.zone_clear = {}
+        for z in b.zones:
+            for l in z.layers if z.net else ():
+                if l in self._layer_names:
+                    L = self._layer_names.index(l)
+                    self.zone_clear[L] = max(self.zone_clear.get(L, 0.0), float(z.clearance or 0.0))
         es = self._operator(bm, b)
         m = bm.m
         F = Fields(m)
@@ -277,12 +306,18 @@ class CapPrices:
         self._phi_fields(F)
 
     def _phi_fields(self, F):
-        F.Phi = {}
+        """Phi_X: sum over X's pairs of W phi_other (on empty cells); Sig_X: of W times the charge density
+        -Q_other / p^2 that other nets' copper carries with the other net at 1 V (on that copper: a hop
+        painted over a pour takes over its cells' charge, exactly, with the potentials unchanged)."""
+        F.Phi, F.Sig = {}, {}
+        p2 = F.pitch ** 2
         for (o, a, n), W in F.W.items():
-            if n in F.pot:
-                F.Phi[a] = F.Phi.get(a, 0.0) + W * F.pot[n]      # a's copper priced by the victim's field
-            if a in F.pot:
-                F.Phi[n] = F.Phi.get(n, 0.0) + W * F.pot[a]      # the victim's copper by the aggressor's
+            for X, other in ((a, n), (n, a)):
+                if other not in F.pot:
+                    continue
+                F.Phi[X] = F.Phi.get(X, 0.0) + W * F.pot[other]
+                foreign = (F.lab >= 0) & (F.lab != F.nets.index(a)) & (F.lab != F.nets.index(n))
+                F.Sig[X] = F.Sig.get(X, 0.0) + W * np.where(foreign, np.maximum(-F.Q[other], 0.0), 0.0) / p2
 
     def report(self, F):
         if F is None:
@@ -357,23 +392,43 @@ class CapPrices:
         tot = sum(max(0.0, min(hi, zz[i + 1]) - max(lo, zz[i])) * e[i] for i in range(len(e)))
         return float(tot / (hi - lo)) if tot > 0 else 1.0
 
+    def clear(self, net, L):
+        """Clearance (mm) a refill opens around a track of `net` on layer index L: the rules' for the net,
+        or the pours' own on that layer where larger."""
+        try:
+            c = float(self.clearance(net, self._layer_names[L]) or CLEAR)
+        except Exception:                     # noqa: BLE001 - no rules: the default netclass
+            c = CLEAR
+        return max(c, self.zone_clear.get(L, 0.0))
+
     def cost(self, F, net, w, L, sel):
-        """Harm per mm of a hop of `net` (width w) on layer L, at the routing grid's cells `sel`, or None."""
+        """Harm per mm of a hop of `net` (width w) on layer L, at the routing grid's cells `sel`, or None:
+        C' Phi on empty cells; over a pour, the charge density of its cells times the track's raster width
+        plus the clearance (the refill's void, each side's band shared between the track and the pour)."""
         if F is None or net not in F.Phi:
             return None
-        return (self.cprime(F, L, w, net) * F.Phi[net][L])[sel]
+        return (self.cprime(F, L, w, net) * F.Phi[net][L] + (self.wq(w, F.pitch) + self.clear(net, L)) * F.Sig[net][L])[sel]
 
-    def predict(self, F, net, new, w):
-        """{pair: predicted dC_m (F)} of new copper of `net` (mask (L, ny, nx) of the cells it paints) from
-        F's fields: C' phi_other p summed over the cells, the raster's own quadrature of the path integral
-        the search pays (which differs by the cells a pad's edge cuts and by a diagonal's staircase)."""
+    def predict(self, F, net, new, band, w):
+        """{pair: predicted dC_m (F)} of new copper of `net` (mask (L, ny, nx) of the cells it paints; band:
+        the pour cells its refill clears) from F's fields: C' phi_other p over its empty cells, the charge
+        -Q_other of the pour cells it takes, half that of the band; the raster's own quadrature of the
+        path integral the search pays (which differs by the cells a pad's edge cuts and by a diagonal's
+        staircase)."""
         out = {}
+        empty = F.lab < 0
         for (o, a, n) in F.Cm:
             other = n if net == a else a if net == n else None
             if other is None or other not in F.pot:
                 continue
-            out[(o, a, n)] = sum(float((self.cprime(F, L, w, net)[new[L]] * F.pot[other][L][new[L]]).sum()) * F.pitch
-                                 for L in range(len(F.layers)) if new[L].any())
+            d = 0.0
+            for L in range(len(F.layers)):
+                e = new[L] & empty[L]
+                if e.any():
+                    d += float((self.cprime(F, L, w, net)[e] * F.pot[other][L][e]).sum()) * F.pitch
+            q = np.maximum(-F.Q[other], 0.0)
+            d += float(q[new & ~empty].sum()) + 0.5 * float(q[band].sum())
+            out[(o, a, n)] = d
         return out
 
     def after_hop(self, F, net, segs, vias, w, via_d, layer_names):
@@ -400,7 +455,18 @@ class CapPrices:
                 if 0 <= j < mm.ny and 0 <= i < mm.nx:
                     mm.lab[L, j, i] = mm.net_id(net)
         k = mm.nets.index(net)
-        pred = self.predict(F, net, (mm.lab == k) & (F.lab != (F.nets.index(net) if net in F.nets else -2)), w)
+        new = (mm.lab == k) & (F.lab != (F.nets.index(net) if net in F.nets else -2))
+        # the refill: pour copper of other nets within the clearance of the new copper is cleared (a cell
+        # stays while a quarter of it is outside the void, as the raster keeps it)
+        from scipy import ndimage
+        band = np.zeros(new.shape, bool)
+        pour = np.isin(mm.lab, [mm.nets.index(x) for x in self.pours if x in mm.nets and x != net])
+        for L in range(len(F.layers)):
+            if new[L].any():
+                d = ndimage.distance_transform_edt(~new[L]) * F.pitch
+                band[L] = pour[L] & (d < min(w, F.pitch) / 2 + self.clear(net, L) - 0.25 * F.pitch)
+        mm.lab[band] = -1
+        pred = self.predict(F, net, new, band, w)
         G = Fields(mm, mm.lab, mm.nets)
         G.Q, G.pot, G.col = dict(F.Q), dict(F.pot), dict(F.col)
         # only the hop net's field is re-solved: it is the one the hop changes at first order (its partners'
