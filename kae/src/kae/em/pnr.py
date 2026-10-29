@@ -821,7 +821,9 @@ class PhysRouter:
 
     def _end_plane(self, pads):
         """The plane the return of an island's terminal enters: nearest return copper to its first pad's
-        copper layer (an SMD pad on F.Cu: the plane under F.Cu)."""
+        copper layer (an SMD pad on F.Cu: the plane under F.Cu). None without a mesh (plain routing)."""
+        if not getattr(self, "layer_names", None):
+            return None
         for q in pads:
             ref, num = q.rsplit(".", 1)
             for it in self.sp.pads_by_fp.get(self._fp(ref), []):
