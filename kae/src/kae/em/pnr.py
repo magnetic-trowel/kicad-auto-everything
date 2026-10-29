@@ -184,7 +184,13 @@ class PhysRouter:
             if inj:
                 keys.append(key)
                 injs.append(inj)
-        for key, (v, info) in zip(keys, ES.potentials_many(bm.m, injs, self.f, net=net, op=op)):
+        # (warm starts from the previous refresh did not converge faster: adding copper changes the solution
+        # too much; kae.em.solve.System.warm stays available)
+        res = ES.potentials_many(bm.m, injs, self.f, net=net, op=op)
+        self._warm = {}
+        self.log(f"pnr: solve iterations {[r[1]['iters'] for r in res]}")
+        for key, (v, info) in zip(keys, res):
+            self._warm[key] = info.get("state")
             if v is None:
                 self.log(f"pnr: pattern {key[1]} cannot close in the copper ({info['open_terms'][:4]}); unpriced")
                 continue
@@ -410,7 +416,7 @@ class PhysRouter:
         return self
 
     # ------------------------------------------------------------------ verified candidates
-    _STATE = ("prices", "pot_at", "K", "wts", "harm", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
               "_pred", "_L0", "_predL")
 
     def _snap(self):

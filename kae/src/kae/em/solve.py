@@ -50,6 +50,9 @@ except ImportError:                                   # pragma: no cover
         return np.einsum("rsm,csm->crm", Kh, X)
 
 WORKERS = 8
+# relative residual of the iterative solves: port quantities are variational (their error is second
+# order), so 1e-5 gives them to ~3e-7 in about two thirds of the iterations 1e-8 takes
+TOL = 1e-5
 BATCH = 8               # right-hand sides solved together (memory: FFT arrays per batch)
 PATCH = 2               # preconditioner blocks: all filaments of one orientation in PATCH x PATCH cells
 
@@ -266,13 +269,65 @@ class System:
         a = self.Zn_inv @ (r1 + self.D @ b)
         return np.concatenate([a, b])
 
-    def solve_many(self, S_, tol=1e-8, maxiter=1000):
+    def warm(self, prev):
+        """An initial guess (n, P) from earlier solutions `prev` = list of (state) from `state_of`, mapped
+        onto this network by position: filament currents by (orientation, sublayer, j, i), node potentials
+        by (layer, j, i); anything new starts at zero."""
+        net = self.net
+        n = net.n_br + self.nfree
+        X0 = np.zeros((n, len(prev)), complex)
+        for q, st in enumerate(prev):
+            if st is None:
+                continue
+            for o in ("x", "y"):
+                f = net.fil[o]
+                if not len(f["a"]):
+                    continue
+                d = st["fil"].get(o)
+                if d is None:
+                    continue
+                arr = d
+                ok = (f["j"] < arr.shape[1]) & (f["i"] < arr.shape[2])
+                vals = np.zeros(len(f["a"]), complex)
+                vals[ok] = arr[f["s"][ok], f["j"][ok], f["i"][ok]]
+                X0[net.off[o]:net.off[o] + len(f["a"]), q] = vals
+            pot = st["pot"]
+            occ = net.node >= 0
+            cells = np.nonzero(occ)
+            nd = net.node[occ]
+            k = self.free_idx[nd]
+            m = (k >= 0) & (cells[1] < pot.shape[1]) & (cells[2] < pot.shape[2])
+            X0[net.n_br + k[m], q] = pot[cells[0][m], cells[1][m], cells[2][m]] * self.kap
+        return X0
+
+    def state_of(self, x):
+        """A solution as position-keyed arrays (for `warm` on a later, slightly different network)."""
+        net, m = self.net, self.net.m
+        fil = {}
+        for o in ("x", "y"):
+            f = net.fil[o]
+            arr = np.zeros((len(net.subs), m.ny, m.nx), complex)
+            if len(f["a"]):
+                arr[f["s"], f["j"], f["i"]] = x[net.off[o]:net.off[o] + len(f["a"])]
+            fil[o] = arr
+        pot = np.zeros(m.lab.shape, complex)
+        occ = net.node >= 0
+        k = self.free_idx[net.node[occ]]
+        vals = np.where(k >= 0, x[net.n_br + np.maximum(k, 0)], 0.0) / self.kap
+        pot[occ] = vals
+        return dict(fil=fil, pot=pot)
+
+    def solve_many(self, S_, tol=1e-8, maxiter=1000, X0=None):
         """COCG on P right-hand sides in lockstep (columns of S_, (nfree, P)): every iteration shares one
         batched FFT pass and one factor solve. Returns (X (n, P), iterations per column)."""
         nb = self.net.n_br
         P = S_.shape[1]
         rhs = np.concatenate([np.zeros((nb, P), complex), -np.asarray(S_, complex)])
         x = self.psolve(rhs)
+        if X0 is not None:
+            # a warm start: keep the earlier solution's divergence-free part; the preconditioner applied to
+            # the residual of rhs fixes the constraint (projected CG stays feasible)
+            x = X0 + self.psolve(rhs - self.matvec(X0))
         r = rhs - self.matvec(x)
         bn = np.linalg.norm(rhs, axis=0)
         bn[bn == 0] = 1.0
@@ -370,7 +425,7 @@ def solve(mesh, freqs, tol=1e-8, maxiter=400):
                 stats=net.stats(), network=net, currents=cur)
 
 
-def potentials(mesh, injections, f, read=None, tol=1e-8, net=None, op=None):
+def potentials(mesh, injections, f, read=None, tol=TOL, net=None, op=None):
     """Terminal potentials (V) for currents injected at terminals ({terminal: A}, summing to zero on
     each connected island), at frequency f. A terminal on an island without injection reads nan:
     its potential is undefined (only differences within an island, or sums weighted by
@@ -405,7 +460,7 @@ def potentials(mesh, injections, f, read=None, tol=1e-8, net=None, op=None):
                      open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_])
 
 
-def potentials_many(mesh, inj_list, f, read=None, tol=1e-8, net=None, op=None):
+def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None):
     """potentials() for several injection sets at once (one batched COCG). Returns a list of
     ({terminal: V}, info) in the order given; an unbalanced set returns (None, info)."""
     net = net or Network(mesh)
@@ -435,14 +490,17 @@ def potentials_many(mesh, inj_list, f, read=None, tol=1e-8, net=None, op=None):
     # of 2 x batch x sublayers grids)
     Xs, itss = [], []
     for k in range(0, len(cols), BATCH):
-        Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol)
+        X0 = None
+        if warm is not None and any(w is not None for w in warm[k:k + BATCH]):
+            X0 = sysm.warm(list(warm[k:k + BATCH]))
+        Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol, X0=X0)
         Xs.append(Xk)
         itss.append(ik)
     X, its = np.concatenate(Xs, axis=1), np.concatenate(itss)
     out = []
     for q, info in enumerate(infos):
         x = X[:, q]
-        info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br])
+        info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br], state=sysm.state_of(x))
         if info["unbalanced"]:
             out.append((None, info))
             continue
