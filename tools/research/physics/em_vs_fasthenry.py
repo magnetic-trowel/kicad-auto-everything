@@ -37,9 +37,16 @@ def _trace_over_plane(L, w, h=0.2, slot=None, py=20.0, px=None):
     yc = py / 2
     x0 = 5.0
     holes = [slot] if slot else []
-    return dict(sigma=5.8e7, freqs=[F],
+    # the reference plane in three abutting bands: 0.1 mm cells under the traces (h/2), 0.4 mm elsewhere,
+    # 3 filaments through the copper (FastHenry's automatic choice runs out of memory at 0.85M filaments)
+    bands = [(0, yc - 2.5, 0.4), (yc - 2.5, yc + 3.5, 0.1), (yc + 3.5, py, 0.4)]
+    planes = []
+    for k, (b0, b1, pp) in enumerate(bands):
+        hb = [(hx0, max(hy0, b0), hx1, min(hy1, b1)) for hx0, hy0, hx1, hy1 in holes if hy0 < b1 and hy1 > b0]
+        planes.append(dict(x0=0, y0=b0, x1=px, y1=b1, z=0, t=T, holes=hb, name=f"gnd{k}", pitch=(pp, pp)))
+    return dict(sigma=5.8e7, freqs=[F], plane_nhinc=3,
                 rects=[dict(x0=x0, y0=yc - w / 2, x1=x0 + L, y1=yc + w / 2, z=zs, t=T, name="tr")],
-                planes=[dict(x0=0, y0=0, x1=px, y1=py, z=0, t=T, holes=holes, name="gnd", pitch=(0.1, 0.1))],
+                planes=planes,
                 ports=[dict(p=(x0, yc, zs + T / 2), n=(x0, yc, T / 2), name="P")],
                 shorts=[dict(a=(x0 + L, yc, zs + T / 2), b=(x0 + L, yc, T / 2))])
 
@@ -60,7 +67,8 @@ def cases():
     v = smoke_spec(None, hole=True)
     v.pop("workdir", None)
     v["freqs"] = [F]
-    v["planes"][0]["pitch"] = (0.1, 0.1)
+    v["planes"][0]["pitch"] = (0.2, 0.2)
+    v["plane_nhinc"] = 3
     v["planes"][0].pop("cells", None)
     out["viahole"] = v
     h = 0.1

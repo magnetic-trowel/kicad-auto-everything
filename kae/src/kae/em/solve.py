@@ -132,29 +132,34 @@ class Operator:
         return self._ix
 
     def L_apply(self, I):
-        """L_p I (the flux, V s; multiply by jw)."""
+        """L_p I (the flux, V s; multiply by jw). I: (n_br,) or (n_br, P) for P right-hand sides at once."""
         net = self.net
-        out = np.zeros_like(I)
+        one = I.ndim == 1
+        I2 = I[:, None] if one else I
+        P = I2.shape[1]
+        out = np.zeros_like(I2)
         for o, (S, slot, Kh) in self._index().items():
             f = net.fil[o]
             a0 = net.off[o]
             n = len(f["a"])
             if not n:
                 continue
-            seg = I[a0:a0 + n]
-            G = np.zeros((2, S, self.Ny, self.Nx))
-            G[0, slot, f["j"], f["i"]] = seg.real
-            G[1, slot, f["j"], f["i"]] = seg.imag
-            X = sfft.rfft2(G, workers=WORKERS)                       # (2, S, Ny, Nx/2+1)
+            seg = I2[a0:a0 + n]                                       # (n, P)
+            G = np.zeros((2 * P, S, self.Ny, self.Nx))
+            for q in range(P):
+                G[2 * q, slot, f["j"], f["i"]] = seg[:, q].real
+                G[2 * q + 1, slot, f["j"], f["i"]] = seg[:, q].imag
+            X = sfft.rfft2(G, workers=WORKERS)                       # (2P, S, Ny, Nx/2+1)
             sh = X.shape
-            Y = _kmul(Kh, np.ascontiguousarray(X.reshape(2, S, -1))).reshape(sh)
+            Y = _kmul(Kh, np.ascontiguousarray(X.reshape(2 * P, S, -1))).reshape(sh)
             Y = sfft.irfft2(Y, s=(self.Ny, self.Nx), workers=WORKERS)
-            out[a0:a0 + n] = Y[0, slot, f["j"], f["i"]] + 1j * Y[1, slot, f["j"], f["i"]]
+            for q in range(P):
+                out[a0:a0 + n, q] = Y[2 * q, slot, f["j"], f["i"]] + 1j * Y[2 * q + 1, slot, f["j"], f["i"]]
         nv = len(net.vseg)
         if nv:
             o = net.off["v"]
-            out[o:o + nv] = self.Lv @ I[o:o + nv]
-        return out
+            out[o:o + nv] = self.Lv @ I2[o:o + nv]
+        return out[:, 0] if one else out
 
 
 class System:
@@ -249,16 +254,52 @@ class System:
     def matvec(self, u):
         nb = self.net.n_br
         I, phi = u[:nb], u[nb:]
-        top = self.kap * (self.zdiag * I + 1j * self.w * self.op.L_apply(I)) - self.D @ phi
+        zd = self.zdiag if u.ndim == 1 else self.zdiag[:, None]
+        top = self.kap * (zd * I + 1j * self.w * self.op.L_apply(I)) - self.D @ phi
         bot = -(self.DT @ I)
         return np.concatenate([top, bot])
 
     def psolve(self, r):
         nb = self.net.n_br
         r1, r2 = r[:nb], r[nb:]
-        b = self.lu.solve(-r2 - self.DT @ (self.Zn_inv @ r1))
+        b = self.lu.solve(np.ascontiguousarray(-r2 - self.DT @ (self.Zn_inv @ r1)))
         a = self.Zn_inv @ (r1 + self.D @ b)
         return np.concatenate([a, b])
+
+    def solve_many(self, S_, tol=1e-8, maxiter=1000):
+        """COCG on P right-hand sides in lockstep (columns of S_, (nfree, P)): every iteration shares one
+        batched FFT pass and one factor solve. Returns (X (n, P), iterations per column)."""
+        nb = self.net.n_br
+        P = S_.shape[1]
+        rhs = np.concatenate([np.zeros((nb, P), complex), -np.asarray(S_, complex)])
+        x = self.psolve(rhs)
+        r = rhs - self.matvec(x)
+        bn = np.linalg.norm(rhs, axis=0)
+        bn[bn == 0] = 1.0
+        act = np.linalg.norm(r, axis=0) > tol * bn
+        its = np.zeros(P, int)
+        if not act.any():
+            return x, its
+        z = self.psolve(r)
+        p = z.copy()
+        rz = np.einsum("ij,ij->j", r, z)
+        for it in range(1, maxiter + 1):
+            A = np.nonzero(act)[0]
+            q = self.matvec(p[:, A])
+            a = rz[A] / np.einsum("ij,ij->j", p[:, A], q)
+            x[:, A] += a * p[:, A]
+            r[:, A] -= a * q
+            its[A] = it
+            done = np.linalg.norm(r[:, A], axis=0) <= tol * bn[A]
+            act[A[done]] = False
+            if not act.any():
+                break
+            A = np.nonzero(act)[0]
+            zA = self.psolve(r[:, A])
+            rzn = np.einsum("ij,ij->j", r[:, A], zA)
+            p[:, A] = zA + (rzn / rz[A]) * p[:, A]
+            rz[A] = rzn
+        return x, its
 
     def solve(self, s, tol=1e-8, maxiter=1000):
         """Preconditioned COCG (conjugate orthogonal CG) for the complex-symmetric saddle system
@@ -362,3 +403,41 @@ def potentials(mesh, injections, f, read=None, tol=1e-8, net=None, op=None):
         out[t] = sysm.potential(x, t)
     return out, dict(iters=it, info=info, net=net, op=op, unbalanced=len(open_), I=x[:net.n_br], x=x, sys=sysm,
                      open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_])
+
+
+def potentials_many(mesh, inj_list, f, read=None, tol=1e-8, net=None, op=None):
+    """potentials() for several injection sets at once (one batched COCG). Returns a list of
+    ({terminal: V}, info) in the order given; an unbalanced set returns (None, info)."""
+    net = net or Network(mesh)
+    op = op or Operator(net)
+    sysm = System(op, f)
+    cols, infos = [], []
+    for injections in inj_list:
+        bal = {}
+        for t, cur in injections.items():
+            c = net.comp[net.term_node[t]]
+            bal[c] = bal.get(c, 0) + cur
+        big = max((abs(c) for c in injections.values()), default=1.0) or 1.0
+        open_ = [c for c, b in bal.items() if abs(b) > 1e-3 * big]
+        inj = dict(injections)
+        for c, b in bal.items():
+            if c not in open_ and b != 0:
+                tmax = max((t for t in inj if net.comp[net.term_node[t]] == c), key=lambda t: abs(inj[t]))
+                inj[tmax] -= b
+        s = np.zeros(sysm.nfree, complex)
+        for t, cur in inj.items():
+            k = sysm.free_idx[net.term_node[t]]
+            if k >= 0:
+                s[k] += cur
+        cols.append(s)
+        infos.append(dict(unbalanced=len(open_), open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_]))
+    X, its = sysm.solve_many(np.stack(cols, axis=1), tol=tol)
+    out = []
+    for q, info in enumerate(infos):
+        x = X[:, q]
+        info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br])
+        if info["unbalanced"]:
+            out.append((None, info))
+            continue
+        out.append(({t: sysm.potential(x, t) for t in (read or mesh.terminals)}, info))
+    return out

@@ -551,7 +551,7 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None, avoid=()):
+                via_cost=None, skip=(), max_len=None, avoid=(), phys=None):
         """Route one track of `width` from any source anchor to any target anchor on the
         given layers (vias between them when `via`), keeping the track centre `r` away from
         each (geometry, r, layer) in `avoid`. Returns a Route or None."""
@@ -604,8 +604,17 @@ class GridRouter:
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
         tx0, tx1, ty0, ty1 = min(xs), max(xs), min(ys), max(ys)
         vc = self.via_cost if via_cost is None else via_cost
-        path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
-                                  int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
+        if phys is not None:
+            # physics-priced search (kae.em.route): phys(grid, layers) gives the move-cost arrays
+            from kae.em.route import search_flat
+            ph = phys(grid, layers)
+            path = search_flat(cost, ph["self"], ph["px"], ph["py"], ph["pot"], ph["void"], vmask, src, dst, grid.res,
+                               via_cost=float(vc), lam=1.0, floor=ph.get("floor", 0.2),
+                               target=((ty0 + ty1) // 2, (tx0 + tx1) // 2))
+            nexp = 0
+        else:
+            path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
+                                      int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
         self.stats["expansions"] += int(nexp)
         if path.size == 0:
             return None

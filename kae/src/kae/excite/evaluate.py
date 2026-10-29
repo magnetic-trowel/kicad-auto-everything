@@ -60,11 +60,16 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     log(f"mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, {len(srcs)} sources, {len(obs)} observers, "
         f"{len(pads)} pads ({len(missing)} outside or unresolved), setup {time.time() - t0:.1f}s")
     harms, notes = [], []
+    solved = {}
+    for f in sorted({pats[s.name][0] for s in srcs}):
+        group = [s for s in srcs if pats[s.name][0] == f]
+        injs = [{p: j for p, j in pats[s.name][1].items() if p in bm.m.terminals} for s in group]
+        for s, res in zip(group, ES.potentials_many(bm.m, injs, f, net=net, op=op)):
+            solved[s.name] = res
     for s in srcs:
         f, J = pats[s.name]
         w = 2 * math.pi * f
-        inj = {p: j for p, j in J.items() if p in bm.m.terminals}
-        v, info = ES.potentials(bm.m, inj, f, net=net, op=op)
+        v, info = solved[s.name]
         if info["unbalanced"]:
             notes.append(f"{s.name}: copper open between {', '.join(sorted(info['open_terms'])[:6])} "
                          f"(unrouted or outside the window): its harms are not computed")
