@@ -58,6 +58,9 @@ DEFAULTS = dict(
     finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
     finish_min_s=120.0,
     finish_release=True,   # a second finishing try releases the module copper on open corridors
+    window_rip=True,       # a window's DRC errors beyond the incumbent's: rip their router copper, re-join
+                           # with the last mile, then judge (traces: windows that closed 7-15 open
+                           # connections were reverted for 3-10 new errors)
     recycle=True,          # when every window is exhausted and time is left, sample them all again
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
     patience_cycles=2,     # stop after this many full cycles over the windows in a row accept nothing
@@ -223,6 +226,9 @@ class JointLoop:
                     for r in s.refs:
                         legal[r] = max(legal.get(r, 0.0), s.short_mm)
             budget = min(left_win(), max(o["min_iter_s"], o["iter_share"] * time_s))
+            # the incumbent's DRC errors by type: a window's routing errors beyond them have their
+            # router copper ripped and re-joined before the window is judged (KaeStages.route)
+            st.incumbent_errors = dict(best_card.errors_by_type) if o.get("window_rip", True) else None
             try:
                 cand, rrep = st.repair(best, win, hist, it, derive_seed(seed, it), time_s=budget, bump_refs=bump,
                                        attempt=attempt, legal_refs=legal, drc=best_fb.get("drc"))
