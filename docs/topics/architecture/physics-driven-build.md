@@ -162,17 +162,18 @@ On boost, the feedback tracks were removed and added back one hop at a time:
 **Smoke route.** Boost, `kae.em.pnr` without `--verify`, the 7 priced nets re-routed, against the same code
 with `--no-capacitive`. Each output was measured by a fresh static solve with KiCad-refilled zones:
 
-| | C_m SW–FB (fF) | u feedback, typical | capacitive Σφ(u), robust | `excite.evaluate` robust | route time |
+| | C_m SW–FB (fF) | u feedback, typical (here / `wideband`) | `wideband` total, robust | `evaluate` total, robust | route time |
 |---|---|---|---|---|---|
-| without capacitive prices | 57.5 | 7.85 | 210 | 852 | 263 s |
-| with capacitive prices | 6.3 | 0.89 | 0.93 | 933 | 284 s |
-| human layout | 17.9 | 2.6 | – | – | – |
+| without capacitive prices | 57.5 | 7.85 / 6.0 | 5207 | 852 | 263 s |
+| with capacitive prices | 6.3 | 0.89 / 1.1 | 3338 | 933 | 284 s |
+| human layout | 17.9 | 2.6 / 1.6 | 10844 | – | – |
 
 - Without the term, the switch node runs through the plane under the divider. With it, the node takes a
   straighter path 3 mm away.
 - Per hop, predicted / solved was 1.26, 0.75, 1.05 and 1.13. The refreshed mesh read 4.4 fF against 3.1 fF
   hop by hop, because of the other nets' copper and the refill.
-- `excite.evaluate` does not score capacitance. Its inductive and DC total rose 9.5%, mostly in the J2–J3 cable common mode.
+- `excite.wideband` carries each coupling as a circuit part. It scores the feedback victim 5× lower and every
+  cable common mode lower too. `excite.evaluate` has no capacitance; its single-band total rose 9.5%.
 - The fields cost 3 CG solves per refresh and 1 per capacitive hop, about 2 s each at 8 threads: 8% of the route.
 
 ## 4. The circuit side
