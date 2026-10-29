@@ -15,6 +15,8 @@
    the local reference, signed coupling to every other pattern, and the crossing term. The fields
    are re-solved after every `refresh` nets.
 --plain routes the same nets in the same order with the same legality and no physics (the A/B).
+--spectral prices over the whole spectrum instead of the 10 MHz band: a reduced model of the copper and the
+whole circuit per refresh, weights from the evaluator's harmonic harms (kae.em.spectral).
 """
 from __future__ import annotations
 

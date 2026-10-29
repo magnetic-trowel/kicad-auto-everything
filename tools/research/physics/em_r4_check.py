@@ -104,11 +104,93 @@ def direct(m, freqs):
     return np.array(out)
 
 
+def mapped_basis(model, net, sy, hop_bars):
+    """Basis recycling without a solve: the old basis carried onto a new network by position (filaments by
+    sublayer and cell, parts by name, nodes by a cell of theirs, potentials re-grounded per island), plus one
+    vector of the new copper's own current (hop_bars: [(layer, o, j, i, current)], its return under it)."""
+    old, m = model.net, net.m
+    mm = model.V.shape[1]
+    out = np.zeros((net.n_br + sy.nfree, mm))
+    for o in ("x", "y"):
+        fo, fn = old.fil[o], net.fil[o]
+        key = lambda f: (f["s"] * m.ny + f["j"]) * m.nx + f["i"]
+        lut = -np.ones(len(old.subs) * m.ny * m.nx, np.int64)
+        lut[key(fo)] = np.arange(len(fo["a"]))
+        hit = lut[key(fn)]
+        ok = hit >= 0
+        out[net.off[o] + np.nonzero(ok)[0]] = model.V[old.off[o] + hit[ok]]
+    names = {q.name: k for k, (_, _, q) in enumerate(old.lump)}
+    for k, (_, _, q) in enumerate(net.lump):
+        if q.name in names:
+            out[net.off["l"] + k] = model.V[old.off["l"] + names[q.name]]
+    occ = net.node >= 0
+    cells = np.argwhere(occ)
+    nd = net.node[occ]
+    _, first = np.unique(nd, return_index=True)
+    on = old.node[tuple(cells[first].T)]
+    of = np.where(on >= 0, model.sys0.free_idx[np.maximum(on, 0)], -1)
+    nn = np.unique(nd)
+    val = np.zeros((net.n_nodes, mm))
+    val[nn[of >= 0]] = model.V[old.n_br + of[of >= 0]]
+    for name in m.internal:
+        if name in old.term_node:
+            k = model.sys0.free_idx[old.term_node[name]]
+            if k >= 0:
+                val[net.term_node[name]] = model.V[old.n_br + k]
+    for g in np.nonzero(sy.free_idx < 0)[0]:          # each island's grounded node is the reference
+        isl = net.comp == net.comp[g]
+        val[isl] -= val[g]
+    free = sy.free_idx >= 0
+    out[net.n_br + sy.free_idx[free]] = val[free]
+    hv = np.zeros(net.n_br + sy.nfree)
+    for o in ("x", "y"):
+        fn = net.fil[o]
+        lut = {(int(s_), int(j), int(i)): k for k, (s_, j, i) in enumerate(zip(fn["s"], fn["j"], fn["i"]))}
+        for (l, oo, j, i, c) in hop_bars:
+            if oo != o:
+                continue
+            for s_ in net.sub_of[l]:
+                k = lut.get((int(s_), j, i))
+                if k is not None:
+                    hv[net.off[o] + k] += c / len(net.sub_of[l])
+    return np.concatenate([out, hv[:, None]], 1)
+
+
+def recycle(a, model, pts, freqs, Zpost):
+    """Errors of the post-hop model three ways: the mapped old basis (+ the hop's current), the same with fresh
+    snapshots at the old frequencies, against direct solves (Zpost)."""
+    m2 = board(a.pitch, a.d, pts, a.slot)
+    net2 = ES.Network(m2)
+    op2 = ES.Operator(net2)
+    md = RD.Reduced(op2, PORTS, log=lambda s: None)
+    bars = []
+    for off in (-a.pitch / 2 + 1e-6, a.pitch / 2 - 1e-6):
+        c = cells_of(m2, pts, off)
+        for (j0, i0), (j1, i1) in zip(c[:-1], c[1:]):
+            o = "x" if j0 == j1 else "y"
+            sg = (i1 - i0) if o == "x" else (j1 - j0)
+            jj, ii = min(j0, j1), min(i0, i1)
+            bars += [(0, o, jj, ii, 0.5 * sg), (1, o, jj, ii, -0.5 * sg)]
+    W = mapped_basis(model, net2, md.sys0, bars)
+    md._extend(W)
+    t = time.time()
+    fr = RD.Reduced(op2, PORTS, log=lambda s: None)
+    fr.snapshots(list(model.freqs), tol=1e-5)
+    t_fresh = time.time() - t
+    print(f"recycling, the post-hop board ({time.time() - t:.0f}s for {len(model.freqs)} fresh snapshots): |Z_vs model - direct| / |Z_vs|")
+    print(f"{'f MHz':>9s} {'mapped basis':>13s} {'fresh snapshots':>16s}")
+    for k, f in enumerate(freqs):
+        zd = Zpost[k][1, 0]
+        print(f"{f / 1e6:9.3f} {abs(md.Z(f)[1, 0] - zd) / abs(zd):13.1e} {abs(fr.Z(f)[1, 0] - zd) / abs(zd):16.1e}", flush=True)
+    return t_fresh
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--pitch", type=float, default=0.2)
     ap.add_argument("--d", type=float, default=1.0)
     ap.add_argument("--slot", action="store_true")
+    ap.add_argument("--recycle", action="store_true", help="also: the post-hop model from the mapped old basis")
     a = ap.parse_args(argv)
     t0 = time.time()
     m = board(a.pitch, a.d, None, a.slot)
@@ -158,6 +240,8 @@ def main(argv=None):
         wb = max(max(abs(x[0] - 1), abs(x[2] - 1)) for x in sel)
         ws = max(max(abs(x[1] - 1), abs(x[3] - 1)) for x in sel)
         print(f"from {lo / 1e6:g} MHz: worst |price/exact - 1|: basis fields {wb:.3f}, single band {ws:.3f}")
+    if a.recycle:
+        recycle(a, model, P["detour"], FREQS, Zp["detour"])
     print(f"{time.time() - t0:.0f}s")
 
 
