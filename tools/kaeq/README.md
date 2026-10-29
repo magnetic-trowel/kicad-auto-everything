@@ -32,7 +32,7 @@ To stop permission prompts, allow one rule in each session's settings:
 | Scratch disk | Each job gets `$KAEQ_SCRATCH` (also `TMPDIR`) under `scratch_dir` (default `/var/tmp/$USER/kaeq-scratch`), deleted when the job ends, fails, is cancelled or preempted. Admission keeps measured scratch plus the unused part of declared `--disk` under `scratch_gb` (100). A job over 3x its `--disk` (+5 GB) is killed and requeued with a corrected estimate; over budget overall, the largest user is preempted. |
 | Hard backstop | If `systemd-run --user` has the memory controller delegated (`kaeq doctor`), each job gets its own scope with `MemoryMax=2x`, inside `kaeq.slice` capped at `(1 - reserve_frac)` of RAM by `install-service`. Not required. |
 | State on NFS | When `~/.kaeq` is on a network share, the SQLite database lives on local disk (`/var/tmp/$USER/kaeq/queue.db`), is backed up to `~/.kaeq/queue.db.bak` every 5 minutes, and is restored from there if the local copy is lost. Logs stay in `~/.kaeq/jobs/<id>/log`. |
-| Fairness | Order: priority, then owners with the fewest running jobs, then age. A head-of-line job waiting > 10 min blocks backfill so big jobs don't starve. |
+| Fairness | Order: priority, then owners with the fewest running jobs, then age. A head-of-line job waiting > 10 min blocks backfill so big jobs don't starve, except by owners whose recent jobs end quickly (p90 of the last 50 ≤ `backfill_short_s`, 30 min): those still fill the held room, so a big job waits at most about that much longer once its room frees. |
 
 Tune with `kaeq config --set reserve_frac=0.25 --set scratch_gb=150` (read every tick).
 Per-job resources in bulk: `kaeq submit --jobs FILE` (JSONL: `cmd`, `name`, `cpus`, `mem`, `disk`, `timeout`, `prio`).

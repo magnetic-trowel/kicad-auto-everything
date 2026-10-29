@@ -74,6 +74,26 @@ def test_memory_gate_and_backfill(kq):
     assert states(d)["huge"] == "queued"
 
 
+def test_starving_head_lets_only_short_owners_backfill(kq):
+    d = kq.Daemon()
+    free = kq.meminfo()["MemAvailable"]
+    submit(kq, "sleep 5", name="huge", mem=f"{free * 2}M", owner="big")
+    submit(kq, "sleep 1", name="slowpoke", owner="slow")
+    submit(kq, "sleep 1", name="quick", owner="fast")
+    old = time.time() - 3600
+    d.c.execute("UPDATE jobs SET submitted=?", (old,))  # every job has waited past starve_after_s
+    for i in range(5):  # history: "fast" jobs end in 10 s, "slow" ones take an hour
+        for owner, dur in (("fast", 10), ("slow", 3600)):
+            d.c.execute("INSERT INTO jobs (owner,cmd,cpus,mem_mb,timeout_s,prio,state,attempt,retries_left,preempts,"
+                        "submitted,started,finished,not_before,disk_mb) VALUES (?,'x',1,1,60,0,'ok',1,0,0,?,?,?,0,1)",
+                        (owner, old, old, old + dur))
+    d.c.commit()
+    drive(kq, d, lambda: states(d).get("quick") in ("running", "ok"))
+    assert states(d)["slowpoke"] == "queued" and states(d)["huge"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+    d.c.commit()
+
+
 def test_overrun_requeues_with_larger_mem(kq):
     d = kq.Daemon()
     submit(kq, "python3 -c 'x=bytearray(1300*1024*1024); import time; time.sleep(30)'", name="hog", mem="50M")

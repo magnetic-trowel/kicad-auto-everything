@@ -82,7 +82,8 @@ DEFAULTS = {
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
     "mem_overrun": 1.5,      # kill a job whose RSS exceeds declared * this (+1 GB)
-    "starve_after_s": 600,   # a head-of-line job waiting this long blocks backfill
+    "starve_after_s": 600,   # a head-of-line job waiting this long blocks backfill, except short jobs:
+    "backfill_short_s": 1800,  # an owner whose recent jobs (p90) end within this may still backfill; 0 = never
     "cgroup": "auto",        # auto|on|off: wrap jobs in `systemd-run --user --scope`
     "slice": "kaeq.slice",   # systemd user slice for job scopes (install-service caps its memory); "" = none
     "scratch_dir": "",       # per-job scratch dirs ($KAEQ_SCRATCH), deleted when the job ends; "" = /var/tmp/$USER/kaeq-scratch
@@ -597,13 +598,20 @@ class Daemon:
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
             per_owner[j["owner"]] = j["n"]
         started = 0
+        short = None
         while queued and started < cfg["starts_per_tick"] and n_running < cfg["max_running"]:
             queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
-            fit = next((j for j in queued if j["mem_mb"] <= mem_room and j["disk_mb"] <= disk_room
-                        and (j["cpus"] <= cpu_room or n_running == 0)), None)
+            fits = lambda j: (j["mem_mb"] <= mem_room and j["disk_mb"] <= disk_room
+                              and (j["cpus"] <= cpu_room or n_running == 0))
+            fit = next((j for j in queued if fits(j)), None)
             head = queued[0]
-            if fit is None or (fit is not head and now - head["submitted"] > cfg["starve_after_s"]):
-                break  # nothing fits, or head is starving: hold the room for it
+            if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"]:
+                # head is starving: hold the room for it, but let jobs that end soon use it meanwhile,
+                # so the head waits at most about backfill_short_s longer once its room frees
+                short = self.short_owners(cfg) if short is None else short
+                fit = next((j for j in queued if j["owner"] in short and fits(j)), None)
+            if fit is None:
+                break
             queued.remove(fit)
             if self.start(fit, cfg):
                 mem_room -= fit["mem_mb"]
@@ -612,6 +620,19 @@ class Daemon:
                 n_running += 1
                 started += 1
                 per_owner[fit["owner"]] = per_owner.get(fit["owner"], 0) + 1
+
+    def short_owners(self, cfg):
+        """Owners whose recent jobs (p90 of the last 50, at least 5) ran within backfill_short_s."""
+        out = set()
+        if cfg["backfill_short_s"] <= 0:
+            return out
+        for (owner,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state='queued'").fetchall():
+            d = sorted(r[0] for r in self.c.execute(
+                "SELECT finished-started FROM jobs WHERE owner=? AND state='ok' AND started IS NOT NULL "
+                "ORDER BY finished DESC LIMIT 50", (owner,)))
+            if len(d) >= 5 and d[int(0.9 * (len(d) - 1))] <= cfg["backfill_short_s"]:
+                out.add(owner)
+        return out
 
     def start(self, j, cfg):
         d = jobdir(j["id"])
