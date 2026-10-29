@@ -174,6 +174,7 @@ plan.
 **R5 capacitive prices: built** ([physics-driven-build](physics-driven-build.md) §3b).
 - A hop's predicted change of mutual capacitance holds within 0.91–0.99 of a fresh static solve beside an aggressor strip.
 - On the boost feedback net's hops it holds within 1.02 in sum.
+- In a smoke route of boost it kept the switch node out of the plane under the feedback divider: C_m 6.3 fF against 57.5 fF without it, and 17.9 fF for the human layout.
 - The FastCap comparison is still to run.
 
 | R6 | θ screen and quasi-TEM constraints for long nets | Z₀ vs closed form per layer of the stackup |

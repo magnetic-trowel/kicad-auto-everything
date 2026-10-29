@@ -103,38 +103,33 @@ return enters. Both read the aggressor's own node potentials and telescope along
 
 ## 3b. Capacitive prices (stage E3)
 
-[`kae.em.cprice`](../../../kae/src/kae/em/cprice.py) prices the electric field the way §3 prices
-the magnetic one. Each pair is a victim observer (feedback, analog, crystal, reset...) and an aggressor net
+[`kae.em.cprice`](../../../kae/src/kae/em/cprice.py) prices the electric field the way §3 prices the
+magnetic one. Each pair is a victim observer (feedback, analog, crystal, reset...) and an aggressor net
 (a switch node, a clock).
 
-- **Harm.** Capacitive coupling is voltage-forced. The swing V in t_v drives C_m V/t_v into the
-  victim node. To the edge that node is R (the circuit's, at low frequency) in parallel with C_node:
-  the circuit's capacitance at the edge band plus the net's own copper capacitance. The peak is
-  v = C_m (V/t_v) R (1 − e^(−t_v/(R C_node))), which is linear in C_m at every corner of the ledger.
-  - On boost the feedback node is 28.6 kΩ, 5.0 pF circuit plus 0.5–0.7 pF copper, against edges of
-    0.2–8 ns. That is the divider C_m V / C_node: u = 2.6 at the human layout's 17.9 fF (bound 6 mV).
-  - The evaluator's linear circuit sees the same 18 fF as u = 1.0. There a cell is a current
-    source with its rectifier conducting, so the switch node moves by the loop's ring and not by its
-    commutation swing.
-- **Price.** φ_a is the potential on every cell with the aggressor at 1 V and all other copper at
-  0 V (the static solve). A victim piece at x adds ΔC_m = C′(x) φ_a(x) dl, where C′ is its capacitance per length to
-  everything else. By reciprocity an aggressor piece adds C′ φ_victim dl.
-  - The A* self term gains C′ Σ W φ_other per mm. W is the robust objective's derivative per farad.
-  - C′ is microstrip (Hammerstad–Jensen) over the nearest copper above and below, plus a coplanar
-    share fitted to raster solves. It is scaled to the raster's own strip capacitance at the layer's
-    height.
-- **Pours.** A hop laid over another net's pour, which the refill later cuts back, takes over the charge its
-  cells hold in the other net's drive. On the raster that is exact, because their potential stays 0 V. The refill's clearance band
-  adds half its charge. Without this term a pour cell prices at zero, because φ = 0 on copper. The first smoke route then
-  ran the switch node on B.Cu under the feedback divider and raised C_m to 58 fF.
-- **Refresh.** Every field refresh re-solves every capacitive net. After each hop of an aggressor or
-  victim net, its copper is painted into the static raster and that net's own field re-solved (CG from its
-  last charges). So the next hop sees it, and every hop logs its predicted ΔC_m against the solved one.
-  The other fields miss the new copper's screening until the next refresh.
+- **Harm.** Coupling is voltage-forced. The swing V in t_v drives C_m V/t_v into the victim node: R (the
+  circuit's) in parallel with C_node (the circuit's at the edge band plus the net's own copper). The peak
+  v = C_m (V/t_v) R (1 − e^(−t_v/(R C_node))) is linear in C_m at every corner of the ledger.
+  - Boost's feedback node is 28.6 kΩ and 5.5–5.9 pF against 0.2–8 ns edges, so it acts as the divider C_m V / C_node:
+    u = 2.6 at the human layout's 17.9 fF (bound 6 mV).
+  - The evaluator's circuit sees those 18 fF as u = 1.0. Its cell is a current source with the rectifier
+    conducting, so the switch node moves by the loop's ring, not by the commutation swing.
+- **Price.** φ_a is the static potential with the aggressor at 1 V and all other copper at 0 V. A victim
+  piece at x adds ΔC_m = C′(x) φ_a(x) dl, with C′ its capacitance per length to everything else. By
+  reciprocity, an aggressor piece adds C′ φ_victim dl.
+  - The A* self term gains C′ Σ W φ_other per mm, with W the robust objective's derivative per farad.
+  - C′ is microstrip over the nearest copper above and below plus a coplanar share fitted to raster
+    solves, scaled to the raster's own strip capacitance.
+- **Pours.** φ = 0 on copper, so a hop laid over another net's pour would price at zero. The first smoke route
+  exploited that: it ran the switch node through the plane under the divider (58 fF). Such a hop now takes
+  over the charge those cells hold in the other net's drive. That is exact on the raster, since their potential
+  stays 0 V. It also takes half the charge of the clearance band the refill opens.
+- **Refresh.** Every refresh re-solves each capacitive net. After a hop of one, its copper is painted into the
+  raster and its own field re-solved (CG from its last charges), and the hop logs predicted against solved ΔC_m.
 
-[em_cap_price_check](../../../tools/research/physics/em_cap_price_check.py): ΔC_m predicted from the
-fields before a hop, against a fresh static solve with it. The synthetic case is a 1 mm aggressor strip
-over a plane and a 10 mm victim track one pitch (0.25 mm) wide at edge gap d.
+[em_cap_price_check](../../../tools/research/physics/em_cap_price_check.py) compares the ΔC_m predicted
+from the fields before a hop against a fresh static solve with the hop. The synthetic case is a 1 mm aggressor
+strip over a plane and a 10 mm victim track one pitch (0.25 mm) wide at edge gap d.
 
 | case | d = 0.25 | 0.5 | 1 | 2 | 4 mm |
 |---|---|---|---|---|---|
@@ -142,14 +137,12 @@ over a plane and a 10 mm victim track one pitch (0.25 mm) wide at edge gap d.
 | h = 1.51 mm: predicted / solved | 0.91 | 0.94 | 0.95 | 0.95 | 0.95 |
 | h = 0.2 mm: predicted / solved | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 |
 
-- The 5% left at h = 1.51 mm is the free ends' fringe: an end-on track reads 0.83. A routed hop
-  ends on pads.
-- An aggressor track cut through the plane under or beside the victim strip (zone clearance 0.2 mm) reads
-  1.07–1.14 at both heights.
-- Aggressor copper beside a victim strip (reciprocity) reads 1.04–1.12 at h = 1.51 mm and 0.99 at 0.2 mm. The excess is the screening of the
-  net's own earlier copper, which first order leaves out.
+- The rest at 1.51 mm is the free ends' fringe: an end-on track reads 0.83. A routed hop ends on pads.
+- An aggressor cut through the plane under or beside the victim strip reads 1.07–1.14.
+- Aggressor copper beside a victim strip reads 1.04–1.12 at 1.51 mm and 0.99 at 0.2 mm. The excess is the
+  screening of the net's own earlier copper, which first order leaves out.
 
-On the boost board the feedback net's tracks were removed and then added back one hop at a time:
+On boost, the feedback tracks were removed and added back one hop at a time:
 
 | hop | solved ΔC_m (fF) | predicted / solved |
 |---|---|---|
@@ -158,14 +151,29 @@ On the boost board the feedback net's tracks were removed and then added back on
 | R5 to R4, 2.2 mm | +0.54 | 1.04 |
 | all three | +2.24 | 1.02 |
 | a stub 0.25 mm from the switch node, 3.3 mm | +38.8 | 0.91 |
-| switch node on B.Cu through the plane under the divider, 18.5 mm (the first smoke route's) | +25.8 | 1.07 |
+| switch node through the plane under the divider (the first smoke route's), 18.5 mm | +25.8 | 1.07 |
 
-- The hops change C_m little (15.6 → 17.9 fF) because the pins dominate it: FB sits two pins
-  from SW on the SOT-23.
-- The stub raises u from 2.4 to 8.0. This is what the price keeps the router from doing.
-- A board re-meshed from scratch with all hops gives the same C_m as painting them in turn (17.856 fF both).
-- The switch-node route, written out with its zones refilled by KiCad, gives +35.3 fF against the +28.0 predicted.
-  The refill drops slivers and isolated islands of the cut plane, which the band term does not foresee.
+- The pins dominate C_m (15.6 fF of 17.9): FB sits two pins from SW on the SOT-23.
+- The stub raises u from 2.4 to 8.0.
+- Re-meshing from scratch gives the hop-by-hop C_m exactly.
+- With its zones refilled by KiCad, the switch-node route reads +35.3 fF against +28.0 predicted. The refill also drops
+  slivers and islands of the cut plane.
+
+**Smoke route.** Boost, `kae.em.pnr` without `--verify`, the 7 priced nets re-routed, against the same code
+with `--no-capacitive`. Each output was measured by a fresh static solve with KiCad-refilled zones:
+
+| | C_m SW–FB (fF) | u feedback, typical | capacitive Σφ(u), robust | `excite.evaluate` robust | route time |
+|---|---|---|---|---|---|
+| without capacitive prices | 57.5 | 7.85 | 210 | 852 | 263 s |
+| with capacitive prices | 6.3 | 0.89 | 0.93 | 933 | 284 s |
+| human layout | 17.9 | 2.6 | – | – | – |
+
+- Without the term, the switch node runs through the plane under the divider. With it, the node takes a
+  straighter path 3 mm away.
+- Per hop, predicted / solved was 1.26, 0.75, 1.05 and 1.13. The refreshed mesh read 4.4 fF against 3.1 fF
+  hop by hop, because of the other nets' copper and the refill.
+- `excite.evaluate` does not score capacitance. Its inductive and DC total rose 9.5%, mostly in the J2–J3 cable common mode.
+- The fields cost 3 CG solves per refresh and 1 per capacitive hop, about 2 s each at 8 threads: 8% of the route.
 
 ## 4. The circuit side
 
