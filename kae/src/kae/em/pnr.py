@@ -321,7 +321,18 @@ class PhysRouter:
                 # a split under the track: its return must find another layer or a capacitor; priced
                 # as five times the track's own inductance there (not a potential difference)
                 selfc[li] = max(wself, 0.0) * np.where(split, 6.0 * Lp, Lp)
-            return dict(self=lam * selfc, px=lam * px, py=lam * py, pot=lam * pot, void=void,
+            # a via's own loop: the hop's return changes planes at the nearest return transfer (a via or
+            # through-hole pad of a return net): L = mu0 dz / (2 pi) ln(d / r), dz the board's copper span
+            vs = np.zeros((grid.ny, grid.nx))
+            wself_all = sum(wt * cur.get(kk, 0.0) * cur.get(ks, 0.0) for (kk, ks), wt in self.wts.items())
+            if wself_all > 0:
+                d = self._transfer_dist()[sel]
+                zs = [l.z for l in m.layers]
+                dz = (max(zs) - min(zs)) * 1e-3
+                r = 0.15e-3
+                Lv = MU0 * dz / (2 * math.pi) * np.log(np.maximum(d * 1e-3, 2 * r) / r)
+                vs = lam * wself_all * Lv
+            return dict(self=lam * selfc, px=lam * px, py=lam * py, pot=lam * pot, void=void, vself=vs,
                         pot2=lam * pot2, void2=void2, theta=lam * theta, th_src=lam * th_src, th_dst=lam * th_dst,
                         floor=0.2)
         return f
@@ -441,6 +452,24 @@ class PhysRouter:
                     if pb and pa in self.prices:
                         tot += wt * pb * T1.path_price(self.prices[pa][L], cells, m.pitch)
         return float(tot)
+
+    def _transfer_dist(self):
+        """Distance (mm) from each mesh cell to the nearest place a return can change planes: a via or
+        through-hole pad of a return net."""
+        if getattr(self, "_td", (None,))[0] is self.mesh:
+            return self._td[1]
+        from scipy import ndimage
+        m = self.mesh
+        pts = np.zeros((m.ny, m.nx), bool)
+        rid = self.ref_ids or set()
+        for v in m.vias:
+            if v.net in rid:
+                j, i = m.cell(v.x, v.y)
+                if 0 <= j < m.ny and 0 <= i < m.nx:
+                    pts[j, i] = True
+        d = ndimage.distance_transform_edt(~pts) * m.pitch if pts.any() else np.full((m.ny, m.nx), 50.0)
+        self._td = (m, d)
+        return d
 
     def _update_fields(self, rt, cur):
         """Between refreshes, a routed hop's own flux joins every pattern's price fields (its current in
