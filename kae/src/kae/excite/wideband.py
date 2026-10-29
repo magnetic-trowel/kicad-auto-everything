@@ -116,6 +116,14 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
         if t not in bm.m.terminals:
             raise KeyError(t)
         return t
+    # unrouted connections: a net whose pads lie on more than one island of the bare copper (no score)
+    bare = ES.Network(bm.m)
+    unrouted = []
+    for n_, pads_ in bd.pads_of.items():
+        comps = {int(bare.comp[bare.term_node[q]]) for q in pads_ if q in bare.term_node}
+        if len(comps) > 1:
+            unrouted.append(n_)
+    del bare
     # the DC copper first (only the parts that conduct at DC), then the whole circuit for the AC model
     lump_into(SimpleNamespace(elems=[e for e in bd.circuit.elems if e.kind in DC.DC_KINDS]), mesh_pad,
               lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
@@ -247,12 +255,12 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
         harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent,
                              ac_parts=ac_by_ref, log=log, ledger=ledger)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
-    ts = sorted(tot)
+    from .evaluate import totals
+    unc = [f"net {n_}" for n_ in sorted(unrouted)] + (["dc"] if any(n.startswith("DC: copper open") for n in notes) else [])
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
                 model=dict(order=int(model.V.shape[1]), snapshots=model.freqs, estimated_error=est,
                            history=model.history),
-                total=dict(robust=round(HA.robust(tot)[0], 2), typical=round(tot[0], 2),
-                           p90=round(ts[int(0.9 * (ncp - 1))], 2), worst=round(max(tot), 2), best=round(min(tot), 2)),
+                total=totals(tot, unc),
                 ac_loss=dict(copper_W=dict(typical=float(ac_cu[0]), hi=float(ac_cu.max())),
                              parts_W={k: dict(typical=float(v[0]), hi=float(v.max())) for k, v in
                                       sorted(parts.items(), key=lambda kv: -kv[1].max()) if v.max() > 0}),
@@ -279,8 +287,8 @@ def main(argv=None):
     from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, intent=load_intent(a.intent), seed=a.seed, tol=a.tol, capacitive=not a.no_capacitive,
                  log=lambda m: print(m, file=sys.stderr, flush=True))
-    t = r["total"]
-    print(f"total harm: robust {t['robust']}, typical {t['typical']}, 90% of corners below {t['p90']}, worst {t['worst']}")
+    from .evaluate import print_total
+    print_total(r["total"])
     print(f"model: order {r['model']['order']}, snapshots {[round(f / 1e6, 3) for f in r['model']['snapshots']]} MHz, "
           f"estimated error {r['model']['estimated_error']:.1e}; harmonics to {r['f_max'] / 1e6:.0f} MHz "
           f"(left out: {', '.join(f'{k} {v:.1%}' for k, v in r['left_out'].items())})")

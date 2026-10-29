@@ -149,6 +149,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         for k, res in zip(keys, ES.potentials_many(bm.m, injs, f, net=net, op=op)):
             solved[k] = res
     notes = []
+    uncomputed = []
     pairs = []
     for s in srcs:
         res = {}
@@ -157,6 +158,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             if info["unbalanced"]:
                 notes.append(f"{s.name}: copper open between {', '.join(sorted(info['open_terms'])[:6])} "
                              f"(unrouted or outside the window): its harms are not computed")
+                uncomputed.append(s.name)
                 res = None
                 break
             res[band] = (f, v)
@@ -203,17 +205,36 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 fr = [1 / (2 * math.pi * math.sqrt(pr["Le"] * c)) for c in (C.hi, C.typ, C.lo)]
                 rings.append(dict(cell=pr["s"].name, L_copper_nH=round(pr["Le"] * 1e9, 3),
                                   f_ring_MHz=[round(x / 1e6) for x in fr]))
-    tot_sorted = sorted(tot)
+    if any(n.startswith("DC: copper open") for n in notes):
+        uncomputed.append("dc")
     return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1), seed=seed,
-                total=dict(robust=round(HA.robust(tot)[0], 2), typical=round(tot[0], 2),
-                           p90=round(tot_sorted[int(0.9 * (ncp - 1))], 2),
-                           worst=round(max(tot), 2), best=round(min(tot), 2)),
+                total=totals(tot, uncomputed),
                 ledger=ledger.rows(), questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit,
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
+
+
+def totals(tot, uncomputed=()):
+    """The per-corner totals' summary; none when any source or band could not be computed (open copper):
+    an incomplete evaluation has no score (a missing harm is not a zero harm)."""
+    if uncomputed:
+        return dict(complete=False, not_computed=list(uncomputed), robust=None, typical=None, p90=None, worst=None,
+                    best=None)
+    ts = sorted(tot)
+    return dict(complete=True, robust=round(HA.robust(tot)[0], 2), typical=round(tot[0], 2),
+                p90=round(ts[int(0.9 * (len(ts) - 1))], 2), worst=round(max(tot), 2), best=round(min(tot), 2))
+
+
+def print_total(t):
+    if not t.get("complete", True):
+        print(f"total harm: NOT COMPUTED: the copper is open for {', '.join(t['not_computed'][:6])} "
+              f"(an unrouted or broken connection); this board has no score")
+        return
+    print(f"total harm: robust {t['robust']} (mean of the worst {HA.WORST_SHARE:.0%} of corners), typical {t['typical']}, "
+          f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
 
 
 def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None):
@@ -303,9 +324,7 @@ def main(argv=None):
     from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr),
                  lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
-    t = r["total"]
-    print(f"total harm: robust {t['robust']} (mean of the worst {HA.WORST_SHARE:.0%} of corners), typical {t['typical']}, "
-          f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
+    print_total(r["total"])
     print("assumptions:")
     for p in r["ledger"]:
         print(f"  {p['subject'][:28]:28s} {p['name']:9s} {p['typ']:10.4g} [{p['lo']:.4g} .. {p['hi']:.4g}] {p['unit']:2s} "
