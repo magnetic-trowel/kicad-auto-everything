@@ -123,9 +123,10 @@ the magnetic one. Each pair is a victim observer (feedback, analog, crystal, res
   - C′ is microstrip (Hammerstad–Jensen) over the nearest copper above and below, plus a coplanar
     share fitted to raster solves. It is scaled to the raster's own strip capacitance at the layer's
     height.
-- **Refresh.** Every field refresh re-solves all pairs. After each hop of an aggressor or victim net,
-  its copper is painted into the static raster and its pairs re-solved (CG from the last charges).
-  So the next hop sees it, and every hop logs its predicted ΔC_m against the solved one.
+- **Refresh.** Every field refresh re-solves every capacitive net. After each hop of an aggressor or
+  victim net, its copper is painted into the static raster and that net's own field re-solved (CG from its
+  last charges). So the next hop sees it, and every hop logs its predicted ΔC_m against the solved one.
+  The other fields miss the new copper's screening until the next refresh.
 
 [em_cap_price_check](../../../tools/research/physics/em_cap_price_check.py): ΔC_m predicted from the
 fields before a hop, against a fresh static solve with it. The synthetic case is a 1 mm aggressor strip

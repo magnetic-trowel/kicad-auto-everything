@@ -40,14 +40,14 @@ permittivity; capacitances to both sides add) and beside it on the layer (coplan
 width the static raster carries (a chain one pitch wide below three pitches, kae.em.mesh): the solve
 that refreshes the prices sees that width.
 
-Limits of first order: the hop's copper is not in the field it is priced on. Within about one
-dielectric height of the other net, the piece's own charge reshapes the field and the price is too
-high; beside the hop net's own earlier copper (which already took the charge) also. Both are undone
-after each hop: an aggressor's or victim's hop is painted into the static raster and the fields of
-its pairs re-solved (conjugate gradients from the previous charges), so the next hop sees the copper;
-the router's refresh re-meshes and re-solves every field. The victim's own copper also raises C_node,
-which lowers u: the harm counts it, the prices do not (a negative price per length would reward
-wandering).
+Limits of first order: the hop's copper is not in the field it is priced on. A piece beside its own
+net's earlier copper is over-priced (that copper already took part of the charge: 1.04-1.12 against
+a fresh solve at 1 mm), a free track end under-priced (its fringe: 0.83 end-on). After each hop of an
+aggressor or a victim net, its copper is painted into the static raster and that net's own field
+re-solved (conjugate gradients from its previous charges), so the next hop sees the copper; the other
+fields miss the new copper's screening (second order) until the router's refresh re-meshes and
+re-solves every field. The victim's own copper also raises C_node, which lowers u: the harm counts
+it, the prices do not (a negative price per length would reward wandering).
 """
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ class Fields:
         self.Q, self.pot, self.col = {}, {}, {}
         self.Cm, self.Cself, self.g, self.u, self.W = {}, {}, {}, {}, {}
         self.Phi, self._cp = {}, {}
-        self.its = []
+        self.its, self.stale = [], set()
 
     def cell(self, x, y):
         return int(math.floor((y - self.y0) / self.pitch)), int(math.floor((x - self.x0) / self.pitch))
@@ -171,13 +171,16 @@ class CapPrices:
             n = s.meta.get("sw") if s.kind == "cell" else s.meta.get("net") if s.kind == "clock" else None
             if n in agg:
                 src_of.setdefault(n, s)
+        # a victim tied to the aggressor through one part (a crystal's two pins, a bootstrap capacitor) is
+        # left out: that part's coupling is the circuit's, and dwarfs the copper's
+        tied = {frozenset((e.a, e.b)) for e in bd.circuit.elems}
         self.pairs = []
         for o in obs:
             if o.kind != "victim" or not o.bound:
                 continue
             n = o.meta.get("net")
             for a, s in src_of.items():
-                if a == n:
+                if a == n or frozenset((a, n)) in tied:
                     continue
                 V0 = float(s.meta.get("V") or 3.3)
                 t_e = float(np.median([swing(v, V0)[1] for v in cval[s.name]]))
@@ -239,8 +242,8 @@ class CapPrices:
         F.seconds = time.time() - t0
 
     def _pairs(self, F):
-        """C_m of every pair (both columns' mean: Maxwell's matrix is symmetric), each victim's own
-        capacitance, and u per corner."""
+        """C_m of every pair (the mean of both columns, Maxwell's matrix being symmetric; only the fresh
+        one's where the other predates new copper), each victim's own capacitance, and u per corner."""
         for n in self.nets:
             if n in F.col:
                 F.Cself[n] = float(F.col[n][F.nets.index(n)])
@@ -249,7 +252,9 @@ class CapPrices:
             if a not in F.col or n not in F.col:
                 continue
             key = (p["obs"], a, n)
-            F.Cm[key] = max(-0.5 * (F.col[a][F.nets.index(n)] + F.col[n][F.nets.index(a)]), 0.0)
+            cols = [-F.col[x][F.nets.index(y)] for x, y in ((a, n), (n, a)) if x not in F.stale] or \
+                [-F.col[a][F.nets.index(n)], -F.col[n][F.nets.index(a)]]
+            F.Cm[key] = max(float(np.mean(cols)), 0.0)
             Cn = p["Cc"] + F.Cself[n]
             F.g[key] = np.array([edge_gain(*swing(v, p["V0"]), p["R"], Cn) / p["bound"] for v in self.cval[p["src"]]])
             F.u[key] = F.g[key] * F.Cm[key]
@@ -372,7 +377,7 @@ class CapPrices:
         return out
 
     def after_hop(self, F, net, segs, vias, w, via_d, layer_names):
-        """A committed hop of `net`: (new Fields with its copper painted and its pairs' fields re-solved,
+        """A committed hop of `net`: (new Fields with its copper painted and its own field re-solved,
         {pair: (predicted, actual) dC_m}); F itself when the hop's net has no pair."""
         if F is None or net not in self.nets:
             return F, {}
@@ -398,11 +403,11 @@ class CapPrices:
         pred = self.predict(F, net, (mm.lab == k) & (F.lab != (F.nets.index(net) if net in F.nets else -2)), w)
         G = Fields(mm, mm.lab, mm.nets)
         G.Q, G.pot, G.col = dict(F.Q), dict(F.pot), dict(F.col)
-        partners = {p["n"] if p["a"] == net else p["a"] for p in self.pairs if net in (p["a"], p["n"])}
-        es = self._es[1]
-        self._drive(es, G, [n for n in [net] + sorted(partners) if n in G.nets], prev=F)
-        # a net not re-solved keeps its column but sees the new copper as 0 V only through this hop's
-        # partners' solves: its charge on the new cells is left out (second order)
+        # only the hop net's field is re-solved: it is the one the hop changes at first order (its partners'
+        # copper is priced by it). The others keep their fields, which miss the new copper's screening
+        # (second order) until the refresh, and their columns are not read for the pairs it touches.
+        G.stale = (F.stale | set(self.nets)) - {net}
+        self._drive(self._es[1], G, [net] if net in G.nets else [], prev=F)
         self._pairs(G)
         G.W = dict(F.W)
         self._phi_fields(G)
