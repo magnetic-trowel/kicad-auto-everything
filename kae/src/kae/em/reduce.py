@@ -101,6 +101,59 @@ class Reduced:
         self.G_D = VI.T @ (self.sys0.D @ Vp)
         self.Vl = VI[self.lo:]
         self.Pr = Vp.T @ self.P                 # (m, nports)
+        self.Mb = self._element_moments().T @ VI         # (3, m): magnetic moment per basis coefficient
+
+    def _element_moments(self):
+        """(n_br, 3): each branch's magnetic moment 1/2 r x dl per ampere (m^2), r from the mesh centre:
+        bars and via segments where they lie, lumped parts from terminal to terminal (an internal node at
+        the mean of the terminals its parts reach)."""
+        if hasattr(self, "_em"):
+            return self._em
+        net, m = self.net, self.net.m
+        p = m.pitch * 1e-3
+        xc, yc = (m.x0 + m.nx * m.pitch / 2) * 1e-3, (m.y0 + m.ny * m.pitch / 2) * 1e-3
+        out = np.zeros((net.n_br, 3))
+        zs = np.array([z + t / 2 for z, t in net.subs])
+        for o in ("x", "y"):
+            f = net.fil[o]
+            a0, n = net.off[o], len(f["a"])
+            if not n:
+                continue
+            z = zs[f["s"]]
+            if o == "x":
+                y = m.y0 * 1e-3 + (f["j"] + 0.5) * p - yc
+                out[a0:a0 + n] = 0.5 * np.stack([np.zeros(n), z * p, -y * p], 1)
+            else:
+                x = m.x0 * 1e-3 + (f["i"] + 0.5) * p - xc
+                out[a0:a0 + n] = 0.5 * np.stack([-z * p, np.zeros(n), x * p], 1)
+        o = net.off["v"]
+        for k, row in enumerate(net.vseg):
+            x, y, dz = row[2] - xc, row[3] - yc, row[5] - row[4]
+            out[o + k] = 0.5 * np.array([y * dz, -x * dz, 0.0])
+        # lumped parts: between their terminals' positions
+        pos = {}
+        X, Y = m.centres()
+        for t, cells in m.terminals.items():
+            pos[t] = np.mean([[X[j, i] * 1e-3 - xc, Y[j, i] * 1e-3 - yc, m.layers[l].z * 1e-3] for l, j, i in cells], 0)
+        for _ in range(2):
+            acc = {}
+            for q in m.lumped:
+                for u, v in ((q.a, q.b), (q.b, q.a)):
+                    if u not in pos and v in pos:
+                        acc.setdefault(u, []).append(pos[v])
+            for u, ps in acc.items():
+                pos[u] = np.mean(ps, 0)
+        lo = net.off["l"]
+        for k, (_, _, q) in enumerate(net.lump):
+            ra, rb = pos.get(q.a), pos.get(q.b)
+            if ra is not None and rb is not None:
+                out[lo + k] = 0.5 * np.cross((ra + rb) / 2, rb - ra)
+        self._em = out
+        return out
+
+    def moment(self, Y):
+        """Magnetic dipole moment (3, ncols) A m^2 of reduced solutions Y."""
+        return self.Mb @ Y
 
     # ------------------------------------------------------------------ evaluation
     def _zl(self, f):

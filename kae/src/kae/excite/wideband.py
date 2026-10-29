@@ -169,6 +169,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     left = {}
     t1 = time.time()
     cm_amp = {}                                     # cm observer -> {harmonic frequency: summed amplitude} per corner
+    rad_amp = [dict() for _ in range(ncp)]          # the board's loop radiation, the same way
     for j, s in enumerate(srcs):
         for c in range(ncp):
             val = {k[1]: v for k, v in cps[s.name][c].items()}
@@ -180,6 +181,10 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
             for nm, pw in r["parts"].items():
                 parts.setdefault(nm, np.zeros(ncp))[c] += pw
             left[s.name] = max(left.get(s.name, 0.0), r["left_out"])
+            for f, e in zip(r["f"], r["E"]):
+                if f >= O.F_CM[0]:
+                    key = round(f / 1e3)
+                    rad_amp[c][key] = rad_amp[c].get(key, 0.0) + e
             for k, o in enumerate(obs):
                 if o.kind == "overshoot" and o.meta.get("source") != s.name:
                     continue
@@ -207,14 +212,28 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
             us.append(best)
             worst_f[oname] = fb if c == 0 else worst_f.get(oname)
         U[(oname, "all")] = us
+    us = []
+    for c, d in enumerate(rad_amp):
+        best, fb = 0.0, None
+        for key, e in d.items():
+            rr = e / float(SP.cispr_b(key * 1e3))
+            if rr > best:
+                best, fb = rr, key * 1e3
+        us.append(best)
+        if c == 0:
+            worst_f["radiated:loop"] = fb
+    if any(us):
+        U[("radiated:loop", "all")] = us
     log(f"wideband: harmonic sums over {ncp} corners in {time.time() - t1:.1f}s")
     harms = []
     for (oname, sname), us in U.items():
         for c in range(ncp):
             tot[c] += HA.phi(us[c])
-        o = next(x for x in obs if x.name == oname)
-        harms.append(dict(observer=oname, source=sname, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
-                          basis=o.basis, f_worst_MHz=round(worst_f[oname] / 1e6, 2) if worst_f.get(oname) else None))
+        o = next((x for x in obs if x.name == oname), None)
+        kind, basis = (o.kind, o.basis) if o else ("radiated", "the board's loop radiation (its magnetic dipole moment) "
+                                                   "at 10 m against CISPR 32 class B; cables apart")
+        harms.append(dict(observer=oname, source=sname, kind=kind, u=us[0], u_lo=min(us), u_hi=max(us),
+                          basis=basis, f_worst_MHz=round(worst_f[oname] / 1e6, 2) if worst_f.get(oname) else None))
     notes = []
     dc_rows = _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=ac_cu) \
         if dcp.loads else []

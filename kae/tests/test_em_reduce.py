@@ -76,3 +76,22 @@ def test_totals_conserve_energy_and_parseval(model):
     # the waveform's mean square is the observer's RMS squared (Parseval of the synthesis)
     assert np.mean(r["wave"][0] ** 2) == pytest.approx(r["rms"][0] ** 2, rel=1e-9)
     assert 0 < r["left_out"] < 0.05
+
+
+def test_a_rings_magnetic_moment_is_its_current_times_its_area():
+    p = 0.25
+    m = Mesh.over(-6, -6, 6, 6, p, [Layer("C", 0, 0.035, 1)])
+    for x0, y0, x1, y1 in ((-5, -5, 5, -4), (-5, 4, 5, 5), (-5, -5, -4, 5), (4, -5, 5, 5)):
+        m.rect(0, "R", x0, y0, x1, y1)
+    m.lab[0, m.cell(4.5, -0.1)[0]:m.cell(4.5, 0.1)[0] + 1, :] = np.where(
+        np.arange(m.nx)[None, :] >= m.cell(4.0, 0)[1], -1, m.lab[0, m.cell(4.5, -0.1)[0]:m.cell(4.5, 0.1)[0] + 1, :])
+    X, Y = m.centres()
+    lo, hi = m.cell(4.5, -0.1)[0], m.cell(4.5, 0.1)[0]
+    m.terminal("a", 0, mask=(X > 4) & (np.arange(m.ny)[:, None] == lo - 1))
+    m.terminal("b", 0, mask=(X > 4) & (np.arange(m.ny)[:, None] == hi + 1))
+    op = ES.Operator(ES.Network(m))
+    md = RD.Reduced(op, [{"b": 1.0, "a": -1.0}], log=lambda *a: None)
+    md.snapshot(0.0)
+    mz = md.moment(md.solve(0.0))[:, 0]
+    assert abs(mz[2]) == pytest.approx(81e-6, rel=0.05)
+    assert abs(mz[0]) + abs(mz[1]) < 1e-3 * abs(mz[2])
