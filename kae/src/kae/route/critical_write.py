@@ -71,11 +71,11 @@ def zone_sexpr(net, layer, rings, name, uid=None, clearance=0.0, min_thickness=0
 
 # ----------------------------------------------------------------------------- reading
 def _blocks(text, heads):
-    """(head, start, end) of top-level blocks with these heads."""
+    """(head, start, end) of top-level blocks with these heads: one level in, a tab (KiCad 8+) or two
+    spaces (KiCad 6/7)."""
     out = []
     i = 0
-    n = len(text)
-    pat = re.compile(r"\n\t\((" + "|".join(heads) + r")\b")
+    pat = re.compile(r"\n(?:\t|  )\((" + "|".join(heads) + r")\b")
     while True:
         m = pat.search(text, i)
         if not m:
@@ -88,7 +88,8 @@ def _blocks(text, heads):
 
 
 def _uuid_of(block):
-    m = re.search(r'\(uuid\s+"([^"]+)"\)', block)
+    """The item's id as kae.board.kicad_file reads it: (uuid "...") or, in KiCad 6/7 files, (tstamp ...)."""
+    m = re.search(r'\((?:uuid|tstamp)\s+"?([^")\s]+)"?\)', block)
     return m.group(1) if m else None
 
 

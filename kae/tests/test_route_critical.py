@@ -967,3 +967,21 @@ def test_pads_the_placement_starves_get_their_spokes_first(tmp_path, monkeypatch
     s.pre_modules = mods
     s.route()
     assert s.modules[0].id == "spokes"
+
+
+def test_writer_edits_kicad6_files_with_spaces_and_tstamps(tmp_path):
+    """KiCad 6/7 files indent by two spaces and id items by (tstamp ...): rip-up and lock must see them."""
+    src = tmp_path / "k6.kicad_pcb"
+    src.write_text('(kicad_pcb (version 20211014) (generator pcbnew)\n'
+                   '  (net 0 "")\n  (net 1 "A")\n'
+                   '  (gr_poly (pts (xy 0 0) (arc (start 1 1) (mid 2 2) (end 3 3))) (layer "Edge.Cuts") (width 0.1) (tstamp 00000000-0000-0000-0000-00000000000e))\n'
+                   '  (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 1) (tstamp 11111111-1111-1111-1111-111111111111))\n'
+                   '  (segment (start 1 0) (end 2 0) (width 0.2) (layer "F.Cu") (net 1) (tstamp 22222222-2222-2222-2222-222222222222))\n'
+                   '  (via (at 2 0) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net 1) (tstamp 33333333-3333-3333-3333-333333333333))\n'
+                   ')\n')
+    items = W.routing(src)
+    assert [(i["kind"], i["uuid"][:2]) for i in items] == [("segment", "11"), ("segment", "22"), ("via", "33")]
+    dst = tmp_path / "out.kicad_pcb"
+    W.edit(src, dst, remove=["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"])
+    text = dst.read_text()
+    assert "1111" not in text and "3333" not in text and "2222" in text and "(arc (start 1 1)" in text
