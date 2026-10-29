@@ -70,7 +70,7 @@ def phi_prime(u):
 
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
-                 verify=False, intent=None, seed=0, n_corners=16):
+                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -100,6 +100,12 @@ class PhysRouter:
                 log(f"pnr: {s.name}: edge band {O.gentle_f(s) / 1e6:.3g} MHz, priced at {self.f / 1e6:.3g} MHz")
         for p in self.ledger.flagged():
             log(f"pnr: prior {p.subject} {p.name} [{p.lo:.4g} .. {p.hi:.4g}] {p.unit}: priced over the interval")
+        # capacitive prices (kae.em.cprice): victim copper in the swinging nets' fields, and back
+        self.cap, self.capf = None, None
+        if capacitive and not plain:
+            from .cprice import CapPrices
+            self.cap = CapPrices(bd, self.brief, self.srcs, self.obs, self.cval, log=log)
+            self.cap = self.cap if self.cap.pairs else None
         # pat: the injection at the pads of parts outside the copper model (two-pad parts are lumped into
         # it); flow: every pad's current with ideal copper, which says what each net carries
         self.pat, self.flow, self.vid = {}, {}, {}
@@ -274,6 +280,8 @@ class PhysRouter:
         self.mesh = bm.m
         self.op = op
         self.layer_names = [l.name for l in bm.m.layers]
+        if self.cap:
+            self.capf = self.cap.solve(bm, b, prev=self.capf)
         self._weights()
         H = self.H
         pred = getattr(self, "_pred", None)
@@ -332,8 +340,13 @@ class PhysRouter:
                     slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name))
         for c, ob in enumerate(self.dc_obs or []):
             tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
+        if self.cap:
+            tot = tot + self.cap.corner_phi(self.capf)
         self.H, idx = HA.robust(list(tot))
         self.H_typ, self.H_corners = float(tot[0]), idx
+        if self.cap:
+            self.cap.set_weights(self.capf, idx, phi_prime)
+            self.log(f"cap: {self.cap.report(self.capf)}")
         for key, (g, sg, pk) in slope.items():
             us = self.u_c[pk]
             self.wts[key] = sg * float(np.mean([phi_prime(us[c]) * g[c] for c in idx]))
@@ -505,6 +518,9 @@ class PhysRouter:
                 selfc[li] = max(wself, 0.0) * np.where(split, 6.0 * Lp, Lp)
                 # the hop's DC resistance: harm per ohm times ohm per mm on this layer's copper
                 selfc[li] += getattr(self, "_hop_dc", 0.0) * RHO_CU / (width * m.layers[L].t)     # ohm mm / mm^2
+                cc = self.cap.cost(self.capf, self._hop_net, width, L, sel) if self.cap else None
+                if cc is not None:
+                    selfc[li] += cc               # capacitive: C' per mm times the other nets' weighted fields
             # a via's own loop: the hop's return changes planes at the nearest return transfer (a via or
             # through-hole pad of a return net): L = mu0 dz / (2 pi) ln(d / r), dz the board's copper span
             vs = np.zeros((grid.ny, grid.nx))
@@ -643,7 +659,7 @@ class PhysRouter:
 
     # ------------------------------------------------------------------ verified candidates
     _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
-              "_pred", "_L0", "_predL")
+              "_pred", "_L0", "_predL", "capf")
 
     def _snap(self):
         import copy
@@ -758,6 +774,8 @@ class PhysRouter:
                         except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
                             self.log(f"pnr: prediction failed: {type(e).__name__}: {e}")
                         self._update_fields(rt, cur)
+                        if self.cap:
+                            self.capf = self.cap.hop(self, n, rt)
                     for (x, y) in rt.vias:
                         out["items"].append(self.sp.add_via(n, x, y, owner=("pnr", n)))
                         D, d = self.sp.via_size(n)
@@ -1017,10 +1035,11 @@ def main(argv=None):
                     help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
     ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
     ap.add_argument("--seed", type=int, default=0, help="seed of the corners sampled over the parameters' intervals")
+    ap.add_argument("--no-capacitive", action="store_true", help="leave out the capacitive prices (kae.em.cprice)")
     a = ap.parse_args(argv)
     from kae.excite.beliefs import load_intent
     PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify,
-               intent=load_intent(a.intent), seed=a.seed).route()
+               intent=load_intent(a.intent), seed=a.seed, capacitive=not a.no_capacitive).route()
 
 
 if __name__ == "__main__":
