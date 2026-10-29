@@ -19,7 +19,7 @@
 #   table instead of FFT, the same maps; pad cells as cached arrays); budgets are solver
 #   CPU s; their routing (PathFinder) runs outside that clock and they write only at the end,
 #   so an attempt is killed only by the overall deadline (slack 100), never at a multiple of its budget.
-# - beam with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
+# - (until pruned) beam ran with phys_w 2 and seq_collapse with w_fv 4, w_x 1, w_ovf 0, as benchmarked.
 # - pnr route_only is deterministic: one attempt. autoplace sa-loop plans its own rounds from
 #   one budget (tested at 1200 s): one attempt, 1200 s base; its in-loop router and the probe
 #   are kae's bridge.
@@ -27,6 +27,12 @@
 #   counts), so restarts repeated identical runs (one board: 129 attempts, one result). The
 #   reference is plain Freerouting 2.5.0 from the fr-baseline campaign (one run per board).
 # - kae portfolio is left out: it is kae bridge in this same wrapper.
+# - Pruned 2026-10-29 (near-duplicates of a kept method, or inferior with no unique clean board; on 159
+#   boards no pnr method cleaned a board that kae or autoplace did not, and pnr clean sets overlapped
+#   0.97-1.0): kae critical soft (a flag of critical+bridge); pnr combo_full, jc_lv, jc2_fixmp_lv,
+#   pjc2_lv_nopol (settings of combo, jc, jc2_fix, pjc2); xf_h minplus (its maps are in jc2_fix); anneal,
+#   beam, seq, seq_phys (their ideas run inside anneal_phys and combo); seq_collapse, jc_full, qd,
+#   negotiate (did not work in research; jc refines negotiate). docs/research keeps every idea.
 #   HARNESS=<commit> keeps an earlier harness (same method ids).
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
@@ -57,8 +63,6 @@ add "kae bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli: bridge + l
   "$KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
 add "kae critical+bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli: critical copper, then the bridge" \
   "$KENV -m kae.route.critical_cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
-add "kae critical soft (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli --last-mile-soft (only clean result on libresolar-bms-c1; thin)" \
-  "$KENV -m kae.route.critical_cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@ --last-mile-soft"
 add "kae staged (restarts)" joint-fixed 900 "$(rs 300 1.15)" "kae.joint.cli --max-iters 0 --no-modules: kae place, then the bridge" \
   "$KENV -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules"
 add "kae joint loop (restarts)" joint-fixed 900 "$(rs 300 1.15)" "kae.joint.cli: module stage, windows with last mile, finishing bridge" \
@@ -74,27 +78,14 @@ pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solve
 }
 J=joint-fixed
 pnr "pnr route_only" route 100 pnr/methods.py:route_only
-pnr "pnr seq" $J 100 pnr/methods.py:seq                      # control: HPWL place, then route
-pnr "pnr seq_phys" $J 100 pnr/methods_phys.py:seq_phys
-pnr "pnr anneal" $J 100 pnr/methods.py:anneal
 pnr "pnr anneal_phys" $J 100 pnr/methods_phys.py:anneal_phys
 pnr "pnr repair" $J 100 pnr/methods.py:repair
-pnr "pnr negotiate" $J 100 pnr/methods.py:negotiate
-pnr "pnr beam" $J 100 pnr_mcts/mcts.py:beam --opt phys_w=2
 pnr "pnr combo" $J 100 pnr/methods_combo.py:combo
-pnr "pnr combo_full" $J 100 pnr/methods_combo.py:combo_full
-pnr "pnr seq_collapse" $J 100 collapse_cplace/methods_cplace.py:seq_collapse --opt w_fv=4 --opt w_x=1 --opt w_ovf=0
 pnr "pnr grad_phys" $J 100 pnr_grad/grad.py:grad_phys --opt post=phys
 pnr "pnr jc" $J 100 collapse_joint/jc.py:jc
-pnr "pnr jc_lv" $J 100 collapse_joint/jc.py:jc_lv
-pnr "pnr jc_full" $J 100 collapse_joint/jc.py:jc_full
-pnr "pnr xf_h minplus" $J 100 xf_minplus/minplus.py:xf_h
 pnr "pnr pjc2 pour maps" $J 100 xf_pour/pjc.py:pjc2
-pnr "pnr pjc2_lv_nopol" $J 100 xf_pour/pjc.py:pjc2_lv_nopol
 pnr "pnr hjc_press" $J 100 harmonic/hjc.py:hjc_press
-pnr "pnr qd" $J 100 qd_archive/qd.py:qd
 pnr "pnr jc2_fix" $J 100 collapse_joint/jc2.py:jc2_fix
-pnr "pnr jc2_fixmp_lv" $J 100 collapse_joint/jc2.py:jc2_fixmp_lv
 
 # autoplace on the newer branch: --router kae routes its candidates with kae's bridge. Its
 # placements are scored through the same restart-wrapped kae bridge as the probe (Freerouting
