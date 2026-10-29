@@ -70,7 +70,7 @@ def phi_prime(u):
 
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
-                 verify=False, intent=None, seed=0, n_corners=16):
+                 verify=False, intent=None, seed=0, n_corners=16, spectral=False):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -151,6 +151,11 @@ class PhysRouter:
         self.sp, self.router = self.sess.space, self.sess.router
         self.tracks, self.vias = [], []
         self.window = None
+        # whole-spectrum prices (kae.em.spectral): the reduced model of every refresh replaces the 10 MHz solve
+        self.spec, self.spec_m, self.spec_hops, self.spec_pred = None, None, (), {}
+        if spectral:
+            from .spectral import Spectral
+            self.spec = Spectral(self, log=log, **(spectral if isinstance(spectral, dict) else {}))
 
     # ------------------------------------------------------------------ fields
     def _state_board(self):
@@ -237,6 +242,8 @@ class PhysRouter:
             else:
                 self.log("pnr: the DC flow cannot close in the copper; the DC band is unpriced")
         self.ref_ids = {bm.m.nets.index(g) for g in self.ref_nets() if g in bm.m.nets} or None
+        if self.spec is not None:
+            return self.spec.refresh(bm, base, ok, t0, sig, shorted)
         self.prices, self.pot_at = {}, {}
         self.K = {}
         layers = list(range(len(bm.m.layers)))
@@ -431,11 +438,15 @@ class PhysRouter:
             i = sum(J.get(q, 0) for q in a_pads)
             if abs(i) > 1e-6:
                 out[key] = complex(i).real            # injected at A's pads, flowing A -> B in the copper
+        if self.spec is not None:
+            out[("pads", tuple(a_pads))] = 0.0       # kae.em.spectral reads the hop's currents per frequency
         return out
 
     def phys(self, cur, width, ends=(None, None)):
         """The move-cost callable for GridRouter.connect, for a hop carrying `cur` {pattern: A}; ends: the
         mesh layer indices of the planes its source and target terminals' returns enter."""
+        if self.spec is not None and not self.plain:
+            cur = self.spec.hop(cur)
         lam, m = self.lam, getattr(self, "mesh", None)
 
         def f(grid, layers):
@@ -643,7 +654,7 @@ class PhysRouter:
 
     # ------------------------------------------------------------------ verified candidates
     _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
-              "_pred", "_L0", "_predL")
+              "_pred", "_L0", "_predL", "spec_m", "spec_hops", "_cut_w", "spec_pred")
 
     def _snap(self):
         import copy
@@ -752,7 +763,7 @@ class PhysRouter:
                         t = (n, l, rt.width, p0, p1, "", False)
                         self.tracks.append(t)
                         out["tracks"].append(t)
-                    if not plain:
+                    if not plain or self.spec is not None:     # (spectral: plain candidates are predicted too)
                         try:
                             self._pred = (self._pred or 0.0) + self._path_harm(rt, cur, width)
                         except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
@@ -812,6 +823,8 @@ class PhysRouter:
     def _path_harm(self, rt, cur, width):
         """The harm change (u, linearized) the price fields predict for a routed hop: its own loop over
         its references plus coupling and crossings along its segments (vias and ends not counted)."""
+        if self.spec is not None:
+            return self.spec.path(rt, cur, width)
         m = self.mesh
         tot = 0.0
         for l, p0, p1 in rt.segs:
@@ -922,6 +935,8 @@ class PhysRouter:
     def _update_fields(self, rt, cur):
         """Between refreshes, a routed hop's own flux joins every pattern's price fields (its current in
         that pattern times the field of the hop and its return under it), so the nets after it see it."""
+        if self.spec is not None:
+            return self.spec.add_hop(rt, cur)
         if self.plain or not hasattr(self, "op"):
             return
         from . import fields as EF
@@ -1017,10 +1032,15 @@ def main(argv=None):
                     help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
     ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
     ap.add_argument("--seed", type=int, default=0, help="seed of the corners sampled over the parameters' intervals")
+    ap.add_argument("--spectral", action="store_true",
+                    help="prices weighted over the whole spectrum from a reduced model per refresh (kae.em.spectral)")
+    ap.add_argument("--workers", type=int, default=1, help="--spectral: snapshot frequencies solved at once")
+    ap.add_argument("--work", help="work directory (default: a new temporary one)")
     a = ap.parse_args(argv)
     from kae.excite.beliefs import load_intent
     PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify,
-               intent=load_intent(a.intent), seed=a.seed).route()
+               intent=load_intent(a.intent), seed=a.seed, work=a.work,
+               spectral=dict(workers=a.workers) if a.spectral else False).route()
 
 
 if __name__ == "__main__":

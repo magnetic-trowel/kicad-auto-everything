@@ -75,6 +75,26 @@ class Reduced:
         self.freqs.append(f)
         return its
 
+    def snapshots(self, freqs, tol=1e-8, workers=1):
+        """snapshot() at every f of freqs, the solves `workers` at a time (threads: the FFTs, the factor
+        solves and the BLAS release the interpreter), then one orthonormalization of all solutions.
+        Returns {f: iterations}; the full solutions' port impedances stay in self.last_Zs."""
+        def one(f):
+            sy = ES.System(self.op, f)
+            X, its = sy.solve_many(self.P, tol=tol, maxiter=3000)
+            X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
+            return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:]
+        if workers > 1 and len(freqs) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(min(workers, len(freqs))) as ex:
+                res = list(ex.map(one, freqs))
+        else:
+            res = [one(f) for f in freqs]
+        self.last_Zs = {f: Z for f, (_, _, Z) in zip(freqs, res)}
+        self._extend(np.concatenate([W for W, _, _ in res], 1))
+        self.freqs += list(freqs)
+        return {f: its for f, (_, its, _) in zip(freqs, res)}
+
     def _extend(self, W):
         """Orthonormalize W against the basis (classical Gram-Schmidt, twice) and keep what is new."""
         for _ in range(2):
@@ -217,7 +237,8 @@ class Reduced:
         return E
 
     # ------------------------------------------------------------------ greedy build
-    def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,)):
+    def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
+              snap_tol=1e-8):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
         magnitudes errors are relative to (default |Z| of the model itself).
@@ -225,11 +246,12 @@ class Reduced:
         Each greedy snapshot is a full solve exactly where the model was judged worst, so the model's
         true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
         the estimate times the largest ratio of true to estimated error seen so far (the estimator's
-        dual error is one preconditioner application, typically pessimistic)."""
+        dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
+        tolerance."""
         t0 = time.time()
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
         for f in f0:
-            its = self.snapshot(f)
+            its = self.snapshot(f, tol=snap_tol)
             self.log(f"reduce: snapshot {f / 1e6:.4g} MHz ({int(np.max(its))} iterations), basis {self.V.shape[1]}")
         rows = list(range(self.P.shape[1])) if rows is None else rows
         cols = list(range(self.P.shape[1])) if cols is None else cols
@@ -257,7 +279,7 @@ class Reduced:
             Zr = self.Z(fw)[np.ix_(rows, cols)]
             S = np.abs(Zr) if scale is None else scale(fw)
             E_est = self.error(fw, rows, cols)
-            its = self.snapshot(fw)
+            its = self.snapshot(fw, tol=snap_tol)
             Zt = self.last_Z[np.ix_(rows, cols)]
             den = np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)
             true = float(np.max(np.abs(Zr - Zt) / den))
