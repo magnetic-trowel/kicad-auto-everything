@@ -50,6 +50,7 @@ except ImportError:                                   # pragma: no cover
         return np.einsum("rsm,csm->crm", Kh, X)
 
 WORKERS = 8
+BATCH = 8               # right-hand sides solved together (memory: FFT arrays per batch)
 PATCH = 2               # preconditioner blocks: all filaments of one orientation in PATCH x PATCH cells
 
 
@@ -430,7 +431,14 @@ def potentials_many(mesh, inj_list, f, read=None, tol=1e-8, net=None, op=None):
                 s[k] += cur
         cols.append(s)
         infos.append(dict(unbalanced=len(open_), open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_]))
-    X, its = sysm.solve_many(np.stack(cols, axis=1), tol=tol)
+    # batches of BATCH right-hand sides share the factorization; memory grows with the batch (FFT arrays
+    # of 2 x batch x sublayers grids)
+    Xs, itss = [], []
+    for k in range(0, len(cols), BATCH):
+        Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol)
+        Xs.append(Xk)
+        itss.append(ik)
+    X, its = np.concatenate(Xs, axis=1), np.concatenate(itss)
     out = []
     for q, info in enumerate(infos):
         x = X[:, q]
