@@ -21,6 +21,7 @@ from .models import PKG_L, SW_FN, _rl
 # dynamic core current and edge of IC classes (stand-ins; an IC's datasheet replaces them)
 DYNAMIC = {"mcu": (0.05, 1e-9), "fpga": (0.5, 0.5e-9), "memory": (0.1, 1e-9), "logic": (0.02, 1e-9),
            "adc_dac": (0.01, 2e-9), "": (0.01, 2e-9)}
+DIGITAL = ("mcu", "fpga", "memory", "logic", "adc_dac", "interface", "phy", "module", "processor", "soc")
 CLOCK_TR = 1e-9
 CLOCK_F = 25e6                   # a clock whose frequency the board does not state
 CORE_F = 50e6                    # core clock of an IC whose clock is not known
@@ -39,8 +40,9 @@ def add_all(bd, brief, nl=None):
                 out.append(src)
     for ref, nodes in bd.ic_nodes.items():
         kind, sub, role = bd.part_kind.get(ref, ("ic", None, ""))
-        if sub in ("regulator_linear", "regulator_switching", "reference", "load_switch", "opamp", "motor_driver"):
-            continue
+        if sub not in DIGITAL:
+            continue                 # only clocked logic draws a core current at its clock; a charger, a
+            #                          regulator or an analog part does not
         I, tr = DYNAMIC.get(sub or "", DYNAMIC[""])
         for rail, v in nodes.items():
             if rail == "g":

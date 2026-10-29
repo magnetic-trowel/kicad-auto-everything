@@ -18,34 +18,83 @@ from . import observe as O
 from . import sources as S
 
 
-def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True):
-    """lumped: two-pad parts (capacitors with ESL/ESR, resistors, inductors, ferrites, conducting
-    rectifiers) are branches of the copper model and only the other parts' pads are injected, so the
-    geometry decides which capacitor closes a loop or carries a return between planes. Harms are then
-    totals (copper plus those parts); without it they are the copper's share with the circuit's
-    ideal-copper current split."""
+def _phi(u):
+    return u if u <= 1 else u + 4 * (u - 1) ** 2
+
+
+def _vin_net(bd, brief, st):
+    """A cell's input rail: the inductor's terminal that is not the switch node."""
+    uuid = {u: p["ref"] for u, p in brief["parts"].items()}
+    ref = uuid.get(st.get("inductor"))
+    nets = {bd.net_of.get(t) for t in bd.net_of if ref and t.startswith(ref + ".")}
+    nets.discard(st.get("sw"))
+    nets.discard(None)
+    return next(iter(nets), None)
+
+
+def ledger_for(bd, brief, srcs, intent=None):
+    """The assumption ledger of the board's aggressors: {source name: {param: Param}}, Ledger."""
+    from kae.circuit.netlist import Netlist  # noqa: F401  (part text comes from the brief's parts)
+    from .beliefs import Ledger
+    from . import params as PA
+    L = Ledger()
+    text = {p["ref"]: " ".join(str(p.get(k) or "") for k in ("value", "lib_id")) for p in brief["parts"].values()}
+    uuid = {u: p["ref"] for u, p in brief["parts"].items()}
+    P = {}
+    for s in srcs:
+        if s.kind == "cell":
+            st = next((x for x in brief.get("structures") or [] if x.get("id") == s.meta["cell"]), {})
+            ctrl = uuid.get(st.get("controller"))
+            rect = next((uuid.get(u) for u, _ in st.get("loop") or []
+                         if bd.part_kind.get(uuid.get(u), ("",))[0] == "diode"), None)
+            P[s.name] = PA.cell(L, s, brief, bd, intent, text.get(ctrl, ""), text.get(rect, ""),
+                                vin_net=_vin_net(bd, brief, st))
+        else:
+            P[s.name] = PA.generic(L, s, s.kind)
+    return P, L
+
+
+def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True,
+             intent=None, n_corners=16, seed=0):
+    """Every harm of a laid-out board, across the parameters' intervals.
+
+    Each aggressor's pattern is solved in two bands: its switching fundamental (current split by the
+    parts' C and ESR) and the edge band (split by ESL). Per (observer, aggressor) pair the copper's
+    layout share is |Z| at the fundamental and L at the edge (the solve minus the same parts with
+    ideal copper). Harm sizes (kae.excite.harm) are evaluated at the typical point and at seeded
+    corners of the intervals (kae.excite.beliefs). lumped: two-pad parts are branches of the copper
+    model and only the other parts' pads are injected."""
     from kae.board.kicad_file import load
     from kae.circuit import brief as B
     from kae.em import solve as ES
     from kae.em.kicad import BoardMesh
+    from . import harm as HA
+    from .beliefs import corners
     t0 = time.time()
     b = b or load(path)
     brief = brief or B.build(b)
     bd = M.build(b, brief)
     srcs = S.add_all(bd, brief)
     obs = O.observers(bd, brief, srcs)
-    # every pad any pattern touches becomes a terminal of the copper model
+    P, ledger = ledger_for(bd, brief, srcs, intent)
     key = "Ja" if lumped else "J"
-    pats, pads, vid = {}, set(), {}
+    # the two bands of each aggressor
+    bands = {}
     for s in srcs:
-        f = O.gentle_f(s)
-        sol = bd.circuit.solve(f, [s])[s.name]
-        pats[s.name] = (f, sol[key])
-        vid[s.name] = O.ideal(bd, sol)
-        pads |= {p for p, j in pats[s.name][1].items() if abs(j) > 1e-9}
+        f_fund = P[s.name]["f_sw"].typ
+        f_edge = O.gentle_f(s)
+        bands[s.name] = {"fund": f_fund, "edge": max(f_edge, 2 * f_fund) if f_fund >= f_edge else f_edge}
+    pats, vid, pads = {}, {}, set()
+    for s in srcs:
+        for band, f in bands[s.name].items():
+            sol = bd.circuit.solve(f, [s])[s.name]
+            pats[(s.name, band)] = (f, sol[key])
+            vid[(s.name, band)] = O.ideal(bd, sol)
+            pads |= {p for p, j in sol[key].items() if abs(j) > 1e-9}
+    freqs = sorted({f for (_, _), (f, _) in pats.items()})
     opats = {}
     for o in obs:
-        for f in {pf for pf, _ in pats.values()}:
+        for f in freqs:
             opats[(o.name, f)] = O.pattern(bd, o, f, active=lumped)
             pads |= {p for p, j in opats[(o.name, f)].items() if abs(j) > 1e-9}
     if lumped:
@@ -76,39 +125,87 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         n_lumped = len(lump_into(bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf)))
     net = ES.Network(bm.m)
     op = ES.Operator(net)
-    log(f"{n_lumped} parts lumped into the copper; mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, {len(srcs)} sources, {len(obs)} observers, "
-        f"{len(pads)} pads ({len(missing)} outside or unresolved), setup {time.time() - t0:.1f}s")
-    harms, notes = [], []
+    log(f"{n_lumped} parts lumped into the copper; mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, "
+        f"{len(srcs)} sources, {len(obs)} observers, {len(pads)} pads ({len(missing)} outside or unresolved), "
+        f"bands {[round(f / 1e6, 3) for f in freqs]} MHz, setup {time.time() - t0:.1f}s")
     solved = {}
-    for f in sorted({pats[s.name][0] for s in srcs}):
-        group = [s for s in srcs if pats[s.name][0] == f]
-        injs = [{p: j for p, j in pats[s.name][1].items() if p in bm.m.terminals} for s in group]
-        for s, res in zip(group, ES.potentials_many(bm.m, injs, f, net=net, op=op)):
-            solved[s.name] = res
+    for f in freqs:
+        keys = [k for k, (ff, _) in pats.items() if ff == f]
+        injs = [{p: j for p, j in pats[k][1].items() if p in bm.m.terminals} for k in keys]
+        for k, res in zip(keys, ES.potentials_many(bm.m, injs, f, net=net, op=op)):
+            solved[k] = res
+    notes = []
+    pairs = []
     for s in srcs:
-        f, J = pats[s.name]
-        w = 2 * math.pi * f
-        v, info = solved[s.name]
-        if info["unbalanced"]:
-            notes.append(f"{s.name}: copper open between {', '.join(sorted(info['open_terms'])[:6])} "
-                         f"(unrouted or outside the window): its harms are not computed")
+        res = {}
+        for band, f in bands[s.name].items():
+            v, info = solved[(s.name, band)]
+            if info["unbalanced"]:
+                notes.append(f"{s.name}: copper open between {', '.join(sorted(info['open_terms'])[:6])} "
+                             f"(unrouted or outside the window): its harms are not computed")
+                res = None
+                break
+            res[band] = (f, v)
+        if res is None:
             continue
         for o in obs:
             if o.kind == "overshoot" and o.meta.get("source") != s.name:
                 continue
-            Jk = opats[(o.name, f)]
-            # the layout's share: the copper solve minus the same parts with ideal copper (with lumped
-            # parts the solve also holds the circuit's own, intended coupling)
-            r = O.bilinear(Jk, v) - (O.bilinear(Jk, vid[s.name]) if lumped else 0.0)
-            L = r.imag / w
-            volts, bound = O.size(o, s, L)
-            harms.append(dict(observer=o.name, source=s.name, L_nH=round(L * 1e9, 4), volts=volts,
-                              bound=bound, u=volts / bound if bound else None, basis=o.basis,
-                              src_class=o.src_class, iters=info["iters"]))
-    harms.sort(key=lambda h: -(h["u"] or 0))
-    return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1),
-                sources=[dict(name=s.name, **{k: v for k, v in s.meta.items() if isinstance(v, (int, float, str))})
-                         for s in srcs],
+            z = {}
+            for band, (f, v) in res.items():
+                Jk = opats[(o.name, f)]
+                # the layout's share: the copper solve minus the same parts with ideal copper
+                z[band] = O.bilinear(Jk, v) - (O.bilinear(Jk, vid[(s.name, band)]) if lumped else 0.0)
+            w_e = 2 * math.pi * res["edge"][0]
+            pairs.append(dict(o=o, s=s, Zf=z["fund"], Le=z["edge"].imag / w_e))
+    # harms at the typical point and at the corners of each aggressor's intervals
+    cps = {s.name: corners(P[s.name].values(), n=n_corners, seed=seed) for s in srcs}
+    ncp = n_corners + 3
+    harms = []
+    tot = [0.0] * ncp
+    for pr in pairs:
+        o, s = pr["o"], pr["s"]
+        us, parts_ = [], None
+        for c in range(ncp):
+            cp = cps[s.name][c]
+            val = {k[1]: v for k, v in cp.items()}
+            I, ti = val["I_A"], val["t_i_s"]
+            D = val.get("D", 0.5)
+            fsw = val["f_sw_Hz"]
+            if o.kind == "cm":
+                u, fw = HA.cm(pr["Le"], I, fsw, ti)
+                if c == 0:
+                    parts_ = dict(f_worst_MHz=round(fw / 1e6, 1) if fw else None)
+            else:
+                V, vf, ve = HA.peak(pr["Zf"], pr["Le"], I, D, ti)
+                bound = o.bound
+                if o.kind == "overshoot" and "V_max_V" in val:
+                    bound = max(val["V_max_V"] - val.get("V_V", 0.0), 1e-3)     # the switch's own margin
+                u = V / bound if bound else 0.0
+                if c == 0:
+                    parts_ = dict(volts=V, bound=bound, edge_share=round(ve / V, 3) if V else None)
+            us.append(u)
+            tot[c] += _phi(u)
+        harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
+                          L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
+                          basis=o.basis, src_class=o.src_class, **(parts_ or {})))
+    harms.sort(key=lambda h: -(h["u_hi"] or 0))
+    # each cell's parasitic ring: its copper loop with the switch node's capacitance
+    rings = []
+    for pr in pairs:
+        if pr["o"].kind == "overshoot":
+            C = P[pr["s"].name].get("C_sw")
+            if C is not None and pr["Le"] > 0:
+                fr = [1 / (2 * math.pi * math.sqrt(pr["Le"] * c)) for c in (C.hi, C.typ, C.lo)]
+                rings.append(dict(cell=pr["s"].name, L_copper_nH=round(pr["Le"] * 1e9, 3),
+                                  f_ring_MHz=[round(x / 1e6) for x in fr]))
+    tot_sorted = sorted(tot)
+    return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1), seed=seed,
+                total=dict(typical=round(tot[0], 2), p90=round(tot_sorted[int(0.9 * (ncp - 1))], 2),
+                           worst=round(max(tot), 2), best=round(min(tot), 2)),
+                ledger=ledger.rows(), questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit,
+                                                      basis=p.basis) for p in ledger.flagged()],
+                bands={k: v for k, v in bands.items()}, rings=rings,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
@@ -121,12 +218,30 @@ def main(argv=None):
     ap.add_argument("--window", type=float, nargs=4)
     ap.add_argument("-o")
     ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
+    ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
+    ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args(argv)
+    from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr),
-                 lumped=not a.no_lumped)
+                 lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
+    t = r["total"]
+    print(f"total harm: typical {t['typical']}, 90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
+    print("assumptions:")
+    for p in r["ledger"]:
+        print(f"  {p['subject'][:28]:28s} {p['name']:9s} {p['typ']:10.4g} [{p['lo']:.4g} .. {p['hi']:.4g}] {p['unit']:2s} "
+              f"{p['source']:10s} {p['basis'][:90]}")
+    for rg in r["rings"]:
+        print(f"ring: {rg['cell']}: copper loop {rg['L_copper_nH']} nH, f_ring {rg['f_ring_MHz']} MHz (C_sw hi/typ/lo)")
+    print("harms (u at typical, [lowest .. highest over the corners]):")
     for h in r["harms"][:25]:
-        print(f"{h['u']:8.3f}  {h['volts']*1e3:9.2f} mV / {h['bound']*1e3:7.2f}  L {h['L_nH']:8.3f} nH  "
-              f"{h['observer']}  <-  {h['source']}")
+        extra = (f"edge share {h['edge_share']:.0%}" if h.get("edge_share") is not None else
+                 f"worst harmonic {h.get('f_worst_MHz')} MHz" if h.get("f_worst_MHz") else "")
+        print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  L {h['L_nH']:7.3f} nH  |Zf| {h['Zf_mohm']:7.2f} mOhm  "
+              f"{extra:22s} {h['observer']}  <-  {h['source']}")
+    if r["questions"]:
+        print("would settle it (resting on class priors):")
+        for q in r["questions"]:
+            print(f"  {q['subject']} {q['name']}: {q['lo']:.4g}..{q['hi']:.4g} {q['unit']} ({q['basis'][:80]})")
     for n in r["notes"]:
         print("note:", n)
     if a.o:
