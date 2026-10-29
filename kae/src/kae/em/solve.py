@@ -28,8 +28,15 @@ import scipy.sparse.linalg as sla
 from . import kernels as KN
 from .mesh import MM, Network
 
+import os
+
+# threads of the FFTs and the compiled kernels: a shared host's other users come first (numba otherwise
+# starts one thread per core); KAE_EM_THREADS overrides
+WORKERS = int(os.environ.get("KAE_EM_THREADS", "8"))
+
 try:
     import numba
+    numba.set_num_threads(max(1, min(WORKERS, numba.config.NUMBA_NUM_THREADS)))
 
     @numba.njit(parallel=True, cache=True)
     def _kmul(Kh, X):
@@ -49,7 +56,6 @@ except ImportError:                                   # pragma: no cover
     def _kmul(Kh, X):
         return np.einsum("rsm,csm->crm", Kh, X)
 
-WORKERS = 8
 # relative residual of the iterative solves: port quantities are variational (their error is second
 # order), so 1e-5 gives them to ~3e-7 in about two thirds of the iterations 1e-8 takes
 TOL = 1e-5
