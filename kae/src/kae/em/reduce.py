@@ -78,12 +78,18 @@ class Reduced:
     def snapshots(self, freqs, tol=1e-8, workers=1):
         """snapshot() at every f of freqs, the solves `workers` at a time (threads: the FFTs, the factor
         solves and the BLAS release the interpreter), then one orthonormalization of all solutions.
-        Returns {f: iterations}; the full solutions' port impedances stay in self.last_Zs."""
+        Returns {f: iterations}; the full solutions' port impedances stay in self.last_Zs. Identical ports
+        (an overshoot observer is its cell's source port) are solved once."""
+        first = {}
+        cols = [first.setdefault(self.P[:, j].tobytes(), j) for j in range(self.P.shape[1])]
+        uniq = sorted(set(cols))
+        back = [uniq.index(c) for c in cols]
+
         def one(f):
             sy = ES.System(self.op, f)
-            X, its = sy.solve_many(self.P, tol=tol, maxiter=3000)
+            X, its = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000)
             X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
-            return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:]
+            return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:][:, back]
         if workers > 1 and len(freqs) > 1:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(min(workers, len(freqs))) as ex:
