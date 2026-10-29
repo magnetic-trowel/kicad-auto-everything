@@ -51,9 +51,17 @@ def cpw_L_per_mm(w, g):
     return MU0 / 4 * ellipk(1 - k * k) / ellipk(k * k) * 1e-3
 
 
+# the router's prices use the barrier's slope only up to this: past it, one observer whose bound is a
+# crude prior would set every price (the true score, sum phi(u), is not capped)
+PHI_SLOPE_CAP = 5.0
+# observer kinds whose coupling prediction has not passed a check against exact solves: the router does
+# not price them (the field solve that verifies each candidate still counts them)
+UNPRICED = ("cm",)
+
+
 def phi_prime(u):
     """Slope of the margin price phi (kae.physics.priors): linear to 1, then a quadratic barrier."""
-    return 1.0 if u <= 1 else min(1.0 + 8.0 * (u - 1.0), 50.0)
+    return 1.0 if u <= 1 else min(1.0 + 8.0 * (u - 1.0), PHI_SLOPE_CAP)
 
 
 class PhysRouter:
@@ -248,8 +256,10 @@ class PhysRouter:
                 volts, bound = O.size(o, src[s.name], L)
                 u = volts / bound if bound else 0.0
                 scale = volts / abs(L) if abs(L) > 0 else (O.size(o, src[s.name], 1e-9)[0] / 1e-9)
-                self.wts[(kk, ks)] = phi_prime(u) * np.sign(L or 1.0) * scale / (bound or 1.0)
                 self.harm[(o.name, s.name)] = u
+                if o.kind in UNPRICED:
+                    continue
+                self.wts[(kk, ks)] = phi_prime(u) * np.sign(L or 1.0) * scale / (bound or 1.0)
 
     def _islands_only(self):
         """The copper islands of each net (what is still to connect) without solving any field: the
