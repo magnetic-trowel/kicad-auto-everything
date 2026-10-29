@@ -87,6 +87,7 @@ class Mesh:
     lumped: list = field(default_factory=list)
     terminals: dict = field(default_factory=dict)      # name -> list of (layer, j, i)
     ports: list = field(default_factory=list)          # (name, plus terminal, minus terminal)
+    internal: list = field(default_factory=list)       # nodes inside parts (an IC's die): no copper
 
     def __post_init__(self):
         self.lab = np.full((len(self.layers), self.ny, self.nx), -1, np.int32)
@@ -233,6 +234,14 @@ class Mesh:
         self.terminals.setdefault(name, []).extend(cells)
         return name
 
+    def internal_node(self, name):
+        """A node inside a part (an IC's die node): lumped parts connect it to the copper; it has none."""
+        if name in self.terminals:
+            raise ValueError(f"internal node {name}: already a copper terminal")
+        if name not in self.internal:
+            self.internal.append(name)
+        return name
+
     def part(self, a, b, R=0.0, L=0.0, C=None, name="", zf=None):
         """A lumped part between terminals a and b; R = L = 0 with no C (and no zf) is an ideal short."""
         self.lumped.append(Lumped(a, b, R, L, C, name, zf))
@@ -328,6 +337,9 @@ class Network:
         node[occ] = node_of
         self.node = node
         self.term_node = {name: int(node[cells[0]]) for name, cells in m.terminals.items()}
+        for k, name in enumerate(m.internal):                  # parts' internal nodes follow the copper's
+            self.term_node[name] = self.n_nodes + k
+        self.n_nodes += len(m.internal)
 
         # sublayers
         subs, sub_of = [], []

@@ -59,6 +59,56 @@ def lump_into(bd_circuit, mesh_pad, part):
     return done
 
 
+def lump_all(bd, mesh_pad, part, internal):
+    """The whole circuit inside a copper model: every element a lumped part between the terminals of
+    its pads, or internal nodes (an IC's die) where it has none. bd: kae.excite.models.Board;
+    mesh_pad(token) the pad's terminal (raises if not meshed); part(a, b, zf, name) adds a part;
+    internal(name) makes an internal node. Returns (term, skipped): term(node, pad) maps a circuit
+    endpoint to its terminal (for sources and observers), skipped the elements with a pad outside."""
+    nets = set(bd.net_of.values())
+    gpad = {}
+
+    def term(node, pad):
+        if pad:
+            return mesh_pad(pad)
+        if node in nets:
+            # a board net reached without a pad (an IC with no ground pin references the board's
+            # ground): the net's first meshed pad
+            if node not in gpad:
+                gpad[node] = next((mesh_pad(q) for q in bd.pads_of.get(node, []) if _meshed(mesh_pad, q)), None)
+            if gpad[node] is None:
+                raise KeyError(node)
+            return gpad[node]
+        return internal(f"node:{node}")
+    skipped = []
+    for e in bd.circuit.elems:
+        try:
+            a, b = term(e.a, e.pa), term(e.b, e.pb)
+        except (KeyError, ValueError):
+            skipped.append(e.name)
+            continue
+        if a != b:
+            part(a, b, e.z, e.name)
+    return term, skipped
+
+
+def _meshed(mesh_pad, q):
+    try:
+        mesh_pad(q)
+        return True
+    except (KeyError, ValueError):
+        return False
+
+
+def port(term, a, b, pa=None, pb=None):
+    """{terminal: A} of a unit port between circuit nodes a and b: 1 A into b, out of a (the convention
+    of Circuit.solve's sources, and of observers' adjoint ports)."""
+    out = {}
+    for t, v in ((term(b, pb), 1.0), (term(a, pa), -1.0)):
+        out[t] = out.get(t, 0.0) + v
+    return out
+
+
 class Circuit:
     def __init__(self, ground):
         self.ground = ground
