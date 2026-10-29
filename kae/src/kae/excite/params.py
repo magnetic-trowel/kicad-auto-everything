@@ -114,6 +114,9 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
                   (f" ({rt['cj_F'][3]})" if "cj_F" in rt else " (small Schottky class range)"))
         lo, hi = co[0] + cd[0], co[1] + cd[1]
         out["C_sw"] = _p(L, sid, "C_sw_F", math.sqrt(lo * hi), lo, hi, "F", "physics", f"{cbasis}; {dbasis}")
+    if "r_on_ohm" in tab:
+        t, lo, hi, src = tab["r_on_ohm"]
+        out["R_on"] = _p(L, sid, "R_on_ohm", t, lo, hi, "ohm", "part_table", src)
     # voltage edge: the switch node cannot move faster than I charges C_sw
     V, I, C = out["V"], out["I"], out["C_sw"]
     tv = (C.lo * V.lo / I.hi, C.typ * V.typ / I.typ, C.hi * V.hi / I.lo)

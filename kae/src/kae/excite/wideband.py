@@ -33,6 +33,7 @@ import numpy as np
 from . import capacitive as CP
 from . import dc as DC
 from . import harm as HA
+from . import heat as HT
 from . import models as M
 from . import observe as O
 from . import sources as S
@@ -215,6 +216,14 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     dc_rows = _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=ac_cu) \
         if dcp.loads else []
     harms += dc_rows
+    # temperatures: the DC flow's and the parts' heat, with each part's switching-harmonic loss
+    ac_by_ref = {}
+    for nm, v in parts.items():
+        ref = nm.split(":")[0].split(".")[0]
+        ac_by_ref[ref] = ac_by_ref.get(ref, np.zeros(ncp)) + v
+    if dcp.loads:
+        harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent,
+                             ac_parts=ac_by_ref, log=log, ledger=ledger)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     ts = sorted(tot)
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
@@ -259,7 +268,8 @@ def main(argv=None):
     print("harms (u at typical, [lowest .. highest over the corners]):")
     for h in r["harms"][:25]:
         print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  {h['observer']}  <-  {h['source']}"
-              + (f"  (worst harmonic {h['f_worst_MHz']} MHz)" if h.get("f_worst_MHz") else ""))
+              + (f"  (worst harmonic {h['f_worst_MHz']} MHz)" if h.get("f_worst_MHz") else "")
+              + (f"  ({h['T_C']} C, corners up to {h['T_hi_C']} C)" if h.get("T_C") is not None else ""))
     for n in r["notes"]:
         print("note:", n)
     if a.o:
