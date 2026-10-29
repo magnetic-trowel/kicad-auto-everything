@@ -48,3 +48,33 @@ def cm(Le, I, f_sw, ti):
         if r > best * (1 + 1e-9):
             best, fbest = r, f
     return best, fbest
+
+
+def pair_u(kind, bound, Zf, Le, val):
+    """u (size / bound) of one (observer, aggressor) pair at one point `val` ({param name: value}) of the
+    aggressor's intervals, and its parts: dict(volts, bound, vf, ve) or dict(f_worst)."""
+    I, ti = val["I_A"], val["t_i_s"]
+    if kind == "cm":
+        u, fw = cm(Le, I, val["f_sw_Hz"], ti)
+        return u, dict(f_worst=fw)
+    V, vf, ve = peak(Zf, Le, I, val.get("D", 0.5), ti)
+    if kind == "overshoot" and "V_max_V" in val:
+        bound = max(val["V_max_V"] - val.get("V_V", 0.0), 1e-3)          # the switch's own margin
+    return (V / bound if bound else 0.0), dict(volts=V, bound=bound, vf=vf, ve=ve)
+
+
+def phi(u):
+    """The margin price: linear to the bound, then a quadratic barrier."""
+    return u if u <= 1 else u + 4 * (u - 1) ** 2
+
+
+# the design objective is the mean total over the worst fifth of the corners (a conditional value at
+# risk): a layout that is good only at the typical point, or only at one lucky corner, does not score well
+WORST_SHARE = 0.2
+
+
+def robust(totals):
+    """(objective, indices of the corners it averages) from per-corner totals."""
+    k = max(1, math.ceil(WORST_SHARE * len(totals)))
+    idx = sorted(range(len(totals)), key=lambda c: totals[c])[-k:]
+    return sum(totals[c] for c in idx) / k, idx

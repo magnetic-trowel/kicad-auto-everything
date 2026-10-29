@@ -66,7 +66,7 @@ def phi_prime(u):
 
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
-                 verify=False):
+                 verify=False, intent=None, seed=0, n_corners=16):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -85,6 +85,17 @@ class PhysRouter:
         self.obs = O.observers(bd, self.brief, self.srcs)
         self.f = O.F_PATTERN
         self.w = 2 * math.pi * self.f
+        # the evaluator's assumption ledger and corners: the router prices the harm the evaluator scores
+        from kae.excite.beliefs import corners
+        from kae.excite.evaluate import ledger_for
+        self.P, self.ledger = ledger_for(bd, self.brief, self.srcs, intent)
+        self.cval = {s.name: [{k[1]: v for k, v in c.items()} for c in corners(self.P[s.name].values(), n=n_corners, seed=seed)]
+                     for s in self.srcs}
+        for s in self.srcs:
+            if O.gentle_f(s) != self.f:
+                log(f"pnr: {s.name}: edge band {O.gentle_f(s) / 1e6:.3g} MHz, priced at {self.f / 1e6:.3g} MHz")
+        for p in self.ledger.flagged():
+            log(f"pnr: prior {p.subject} {p.name} [{p.lo:.4g} .. {p.hi:.4g}] {p.unit}: priced over the interval")
         # pat: the injection at the pads of parts outside the copper model (two-pad parts are lumped into
         # it); flow: every pad's current with ideal copper, which says what each net carries
         self.pat, self.flow, self.vid = {}, {}, {}
@@ -109,6 +120,10 @@ class PhysRouter:
         rip = [t.uuid for t in b.tracks if t.net in self.nets] + [v.uuid for v in b.vias if v.net in self.nets]
         self.base = self.work / "base.kicad_pcb"
         W.edit(path, self.base, remove=rip)
+        left = sum(1 for t in load(self.base).tracks if t.net in self.nets)
+        if left:
+            raise RuntimeError(f"pnr: rip-up left {left} tracks on the priced nets ({path}): the board's item ids "
+                               f"were not matched; routing would see every net connected")
         for ext in (".kicad_pro", ".kicad_dru"):
             s_ = Path(path).with_suffix(ext)
             if s_.exists():
@@ -135,8 +150,13 @@ class PhysRouter:
         return p
 
     def solve_fields(self):
-        """Mesh the copper as it stands, short what is not yet connected, solve every pattern."""
+        """Mesh the copper as it stands, short what is not yet connected, solve every pattern. Copper that has
+        not changed since the last solve keeps its fields (the solve is deterministic)."""
         t0 = time.time()
+        sig = hash(repr((self.tracks, self.vias)))
+        if sig == getattr(self, "_sig", None) and getattr(self, "prices", None) is not None:
+            self.log("pnr: copper unchanged since the last solve; fields kept")
+            return
         p = self._state_board()
         from kae.board.kicad_file import load
         b = load(p)
@@ -194,7 +214,15 @@ class PhysRouter:
                 injs.append(inj)
         # (warm starts from the previous refresh did not converge faster: adding copper changes the solution
         # too much; kae.em.solve.System.warm stays available)
-        res = ES.potentials_many(bm.m, injs, self.f, net=net, op=op)
+        # identical injection sets (e.g. an observer whose active and passive patterns coincide) solve once
+        uniq, slot = {}, []
+        for inj in injs:
+            slot.append(uniq.setdefault(tuple(sorted((q, complex(v)) for q, v in inj.items())), len(uniq)))
+        first = {i: inj for inj, i in zip(injs, slot)}
+        resu = ES.potentials_many(bm.m, [first[i] for i in range(len(uniq))], self.f, net=net, op=op)
+        res = [resu[i] for i in slot]
+        if len(uniq) < len(injs):
+            self.log(f"pnr: {len(injs)} patterns, {len(uniq)} distinct")
         self._warm = {}
         self.log(f"pnr: solve iterations {[r[1]['iters'] for r in res]}")
         for key, (v, info) in zip(keys, res):
@@ -213,7 +241,7 @@ class PhysRouter:
         self.op = op
         self.layer_names = [l.name for l in bm.m.layers]
         self._weights()
-        H = sum(u if u <= 1 else u + 4 * (u - 1) ** 2 for u in self.harm.values())
+        H = self.H
         pred = getattr(self, "_pred", None)
         if pred is not None and getattr(self, "_H", None) is not None:
             self.log(f"pnr: harm {self._H:.2f} -> {H:.2f} (change {H - self._H:+.2f}; the hops' prices predicted "
@@ -231,16 +259,22 @@ class PhysRouter:
                          f"predicted {pl * 1e9:+8.3f} nH")
         self._H, self._pred = H, 0.0
         self._L0, self._predL = dict(self.Lks), {}
+        self._sig = sig
         self.log(f"pnr: fields of {len(self.prices)} patterns on {bm.m.nx}x{bm.m.ny}x{len(layers)} "
-                 f"({shorted} unrouted connections shorted) in {time.time() - t0:.1f}s")
+                 f"({shorted} unrouted connections shorted) in {time.time() - t0:.1f}s; harm robust {H:.2f}, "
+                 f"typical {self.H_typ:.2f}")
 
     def _weights(self):
-        """w[(k, s)] = phi'(u) sign(L) scale_s / bound_k: harm (u) per henry of L_ks."""
-        from kae.excite import observe as O
-        self.wts = {}
-        self.harm = {}
-        self.Lks = {}
-        src = {s.name: s for s in self.srcs}
+        """Per (observer k, aggressor s) pair: u at every corner of s's intervals by the evaluator's model
+        (kae.excite.harm.pair_u) from the solve's L_ks; the objective H is the robust total (mean over the
+        worst corners, kae.excite.harm.robust) and w[(k, s)] its derivative per henry of L_ks. The router
+        solves one band, so the fundamental's layout share is its inductive part (j w_sw L_ks); the
+        resistive part is the DC band's."""
+        from kae.excite import harm as HA
+        self.wts, self.harm, self.Lks, self.u_c = {}, {}, {}, {}
+        ncp = len(next(iter(self.cval.values()), [None]))
+        tot = np.zeros(ncp)
+        slope = {}
         for o in self.obs:
             kk = ("o", o.name)
             for s in self.srcs:
@@ -253,13 +287,20 @@ class PhysRouter:
                 r -= sum(self.pat[kk].get(q, 0) * self.vid[ks].get(q, 0) for q in self.pat[kk])   # the layout's share
                 L = r.imag / self.w
                 self.Lks[(o.name, s.name)] = L
-                volts, bound = O.size(o, src[s.name], L)
-                u = volts / bound if bound else 0.0
-                scale = volts / abs(L) if abs(L) > 0 else (O.size(o, src[s.name], 1e-9)[0] / 1e-9)
-                self.harm[(o.name, s.name)] = u
-                if o.kind in UNPRICED:
-                    continue
-                self.wts[(kk, ks)] = phi_prime(u) * np.sign(L or 1.0) * scale / (bound or 1.0)
+                # both terms are proportional to |L| here, so u = g |L| with g per corner
+                g = np.array([HA.pair_u(o.kind, o.bound, 2j * math.pi * v["f_sw_Hz"] * 1e-9, 1e-9, v)[0] / 1e-9
+                              for v in self.cval[s.name]])
+                us = g * abs(L)
+                self.u_c[(o.name, s.name)] = us
+                self.harm[(o.name, s.name)] = float(us[0])
+                tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
+                if o.kind not in UNPRICED:
+                    slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name))
+        self.H, idx = HA.robust(list(tot))
+        self.H_typ, self.H_corners = float(tot[0]), idx
+        for key, (g, sg, pk) in slope.items():
+            us = self.u_c[pk]
+            self.wts[key] = sg * float(np.mean([phi_prime(us[c]) * g[c] for c in idx]))
 
     def _islands_only(self):
         """The copper islands of each net (what is still to connect) without solving any field: the
@@ -460,7 +501,7 @@ class PhysRouter:
         return self
 
     # ------------------------------------------------------------------ verified candidates
-    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
               "_pred", "_L0", "_predL")
 
     def _snap(self):
@@ -472,9 +513,10 @@ class PhysRouter:
             setattr(self, k, v)
 
     def _true_harm(self):
-        """Sum of phi(u) over every (observer, aggressor) pair by a field solve of the copper as it stands."""
+        """The robust objective (kae.excite.harm.robust of the per-corner sums of phi(u)) by a field solve of the
+        copper as it stands."""
         self.solve_fields()
-        return sum(u if u <= 1 else u + 4 * (u - 1) ** 2 for u in self.harm.values())
+        return self.H
 
     def _route_verified(self, n):
         """Route net n twice (physics prices, plain), keep the candidate the field solve says harms less:
@@ -823,8 +865,12 @@ def main(argv=None):
     ap.add_argument("--refresh", type=int, default=6)
     ap.add_argument("--verify", action="store_true",
                     help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
+    ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
+    ap.add_argument("--seed", type=int, default=0, help="seed of the corners sampled over the parameters' intervals")
     a = ap.parse_args(argv)
-    PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify).route()
+    from kae.excite.beliefs import load_intent
+    PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify,
+               intent=load_intent(a.intent), seed=a.seed).route()
 
 
 if __name__ == "__main__":

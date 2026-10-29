@@ -13,13 +13,10 @@ import math
 import sys
 import time
 
+from . import harm as HA
 from . import models as M
 from . import observe as O
 from . import sources as S
-
-
-def _phi(u):
-    return u if u <= 1 else u + 4 * (u - 1) ** 2
 
 
 def _vin_net(bd, brief, st):
@@ -68,7 +65,6 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     from kae.circuit import brief as B
     from kae.em import solve as ES
     from kae.em.kicad import BoardMesh
-    from . import harm as HA
     from .beliefs import corners
     t0 = time.time()
     b = b or load(path)
@@ -167,25 +163,13 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         o, s = pr["o"], pr["s"]
         us, parts_ = [], None
         for c in range(ncp):
-            cp = cps[s.name][c]
-            val = {k[1]: v for k, v in cp.items()}
-            I, ti = val["I_A"], val["t_i_s"]
-            D = val.get("D", 0.5)
-            fsw = val["f_sw_Hz"]
-            if o.kind == "cm":
-                u, fw = HA.cm(pr["Le"], I, fsw, ti)
-                if c == 0:
-                    parts_ = dict(f_worst_MHz=round(fw / 1e6, 1) if fw else None)
-            else:
-                V, vf, ve = HA.peak(pr["Zf"], pr["Le"], I, D, ti)
-                bound = o.bound
-                if o.kind == "overshoot" and "V_max_V" in val:
-                    bound = max(val["V_max_V"] - val.get("V_V", 0.0), 1e-3)     # the switch's own margin
-                u = V / bound if bound else 0.0
-                if c == 0:
-                    parts_ = dict(volts=V, bound=bound, edge_share=round(ve / V, 3) if V else None)
+            val = {k[1]: v for k, v in cps[s.name][c].items()}
+            u, d = HA.pair_u(o.kind, o.bound, pr["Zf"], pr["Le"], val)
+            if c == 0:
+                parts_ = (dict(f_worst_MHz=round(d["f_worst"] / 1e6, 1) if d["f_worst"] else None) if o.kind == "cm" else
+                          dict(volts=d["volts"], bound=d["bound"], edge_share=round(d["ve"] / d["volts"], 3) if d["volts"] else None))
             us.append(u)
-            tot[c] += _phi(u)
+            tot[c] += HA.phi(u)
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
@@ -201,7 +185,8 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                                   f_ring_MHz=[round(x / 1e6) for x in fr]))
     tot_sorted = sorted(tot)
     return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1), seed=seed,
-                total=dict(typical=round(tot[0], 2), p90=round(tot_sorted[int(0.9 * (ncp - 1))], 2),
+                total=dict(robust=round(HA.robust(tot)[0], 2), typical=round(tot[0], 2),
+                           p90=round(tot_sorted[int(0.9 * (ncp - 1))], 2),
                            worst=round(max(tot), 2), best=round(min(tot), 2)),
                 ledger=ledger.rows(), questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit,
                                                       basis=p.basis) for p in ledger.flagged()],
@@ -225,7 +210,8 @@ def main(argv=None):
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr),
                  lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
     t = r["total"]
-    print(f"total harm: typical {t['typical']}, 90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
+    print(f"total harm: robust {t['robust']} (mean of the worst {HA.WORST_SHARE:.0%} of corners), typical {t['typical']}, "
+          f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
     print("assumptions:")
     for p in r["ledger"]:
         print(f"  {p['subject'][:28]:28s} {p['name']:9s} {p['typ']:10.4g} [{p['lo']:.4g} .. {p['hi']:.4g}] {p['unit']:2s} "
