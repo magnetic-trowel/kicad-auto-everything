@@ -396,10 +396,13 @@ class PhysRouter:
     def phys(self, cur, width, ends=(None, None)):
         """The move-cost callable for GridRouter.connect, for a hop carrying `cur` {pattern: A}; ends: the
         mesh layer indices of the planes its source and target terminals' returns enter."""
-        lam, m = self.lam, self.mesh
+        lam, m = self.lam, getattr(self, "mesh", None)
 
         def f(grid, layers):
             nl = len(layers)
+            if self.plain:                    # plain routing: no mesh, no prices
+                z = np.zeros((nl, grid.ny, grid.nx))
+                return dict(self=z, px=z, py=z, pot=z, void=z.astype(bool), floor=1.0)
             X = grid.x0 + np.arange(grid.nx) * grid.res
             Y = grid.y0 + np.arange(grid.ny) * grid.res
             jj = np.clip(((Y - m.y0) / m.pitch).astype(int), 0, m.ny - 1)
@@ -415,8 +418,6 @@ class PhysRouter:
             theta = np.zeros_like(selfc)
             th_src = np.zeros_like(selfc)
             th_dst = np.zeros_like(selfc)
-            if self.plain:
-                return dict(self=selfc, px=px, py=py, pot=pot, void=void, floor=1.0)
             for li, lname in enumerate(layers):
                 L = self.layer_names.index(lname) if lname in self.layer_names else None
                 if L is None:
