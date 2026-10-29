@@ -36,7 +36,8 @@ def _p(L, subject, name, typ, lo, hi, unit, source, basis):
 def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
     """Add the parameters of commutation-cell source s to ledger L; returns {name: Param}."""
     sid = s.meta["cell"]
-    ex = next((x for x in brief.get("structures") or [] if x.get("id") == sid), {}).get("excite") or {}
+    st = next((x for x in brief.get("structures") or [] if x.get("id") == sid), {})
+    ex = st.get("excite") or {}
     tab = lookup(text)
     out = {}
     cls = s.meta.get("cls") or ""
@@ -59,6 +60,7 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
         out["V"] = _p(L, sid, "V_V", *vb, "V", "board", f"rail {s.meta.get('bus')}: its name, regulator or divider")
     else:
         out["V"] = _p(L, sid, "V_V", 12.0, 3.3, 48.0, "V", "prior", "bus voltage unknown")
+    vin_net = st.get("vin") if cls == "boost" and st.get("vin") else vin_net
     vi = volts(vin_net) if vin_net else None
     # f_sw
     iv = intent_value(intent, "cells", sid, "f_sw_Hz")
@@ -120,12 +122,18 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
     # duty
     if vi and cls == "boost":
         D = (max(0.05, 1 - vi[2] / V.lo), 1 - vi[0] / V.typ, min(0.95, 1 - vi[1] / V.hi))
-        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics", f"boost D = 1 - Vin/V with Vin from {vin_net}")
-    elif vi and cls == "buck":
-        D = (V.lo / vi[2], V.typ / vi[0], V.hi / vi[1])
-        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics", f"buck D = V/Vin with Vin from {vin_net}")
+        clip = " (clipped: Vin >= Vout as the rails read, their voltages are suspect)" if vi[0] >= V.typ else ""
+        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics", f"boost D = 1 - Vin/V with Vin from {vin_net}{clip}")
+    elif cls == "buck" and volts(st.get("vout")):
+        # a buck's bus (V) is its input; its output is the structure's vout
+        vo = volts(st.get("vout"))
+        D = (max(0.02, vo[1] / V.hi), vo[0] / V.typ, min(0.98, vo[2] / V.lo))
+        clip = " (clipped: Vout >= Vin as the rails read, their voltages are suspect)" if vo[0] >= V.typ else ""
+        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics",
+                      f"buck D = Vout/Vin with Vout from {st.get('vout')}{clip}")
     else:
-        out["D"] = _p(L, sid, "D", 0.5, 0.1, 0.9, "", "prior", "duty unknown (input voltage not identified)")
+        why = f"input rail {vin_net} has no voltage" if vin_net else "input rail not identified"
+        out["D"] = _p(L, sid, "D", 0.5, 0.1, 0.9, "", "prior", f"duty unknown ({why})")
     # the switch's voltage rating, for the overshoot requirement
     if "v_sw_max_V" in tab:
         t, lo, hi, src = tab["v_sw_max_V"]

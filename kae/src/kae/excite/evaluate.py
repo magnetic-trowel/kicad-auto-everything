@@ -12,7 +12,9 @@ import json
 import math
 import sys
 import time
+from types import SimpleNamespace
 
+from . import dc as DC
 from . import harm as HA
 from . import models as M
 from . import observe as O
@@ -52,7 +54,7 @@ def ledger_for(bd, brief, srcs, intent=None):
 
 
 def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True,
-             intent=None, n_corners=16, seed=0):
+             intent=None, n_corners=16, seed=0, dc=True):
     """Every harm of a laid-out board, across the parameters' intervals.
 
     Each aggressor's pattern is solved in two bands: its switching fundamental (current split by the
@@ -73,6 +75,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     srcs = S.add_all(bd, brief)
     obs = O.observers(bd, brief, srcs)
     P, ledger = ledger_for(bd, brief, srcs, intent)
+    dcp = DC.plan(b, brief, bd, P, srcs, intent) if dc else None
+    for p in (dcp.params if dcp else []):
+        ledger.add(p)
     key = "Ja" if lumped else "J"
     # the two bands of each aggressor
     bands = {}
@@ -93,8 +98,10 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         for f in freqs:
             opats[(o.name, f)] = O.pattern(bd, o, f, active=lumped)
             pads |= {p for p, j in opats[(o.name, f)].items() if abs(j) > 1e-9}
-    if lumped:
+    if lumped or dcp:
         pads |= {p for e in bd.circuit.elems if e.pa and e.pb for p in (e.pa, e.pb)}
+    if dcp:
+        pads |= dcp.dc_pads
     if window is None:
         from kae.board import transform
         xs, ys = [], []
@@ -111,16 +118,27 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         except (KeyError, ValueError):
             missing.append(p)
     n_lumped = 0
-    if lumped:
-        from .circuit import lump_into
+    from .circuit import lump_into
 
-        def tpad(t):
-            if t not in bm.m.terminals:
-                raise KeyError(t)
-            return t
+    def tpad(t):
+        if t not in bm.m.terminals:
+            raise KeyError(t)
+        return t
+    base = list(bm.m.lumped)
+    if lumped:
         n_lumped = len(lump_into(bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf)))
     net = ES.Network(bm.m)
     op = ES.Operator(net)
+    if dcp:
+        # the DC copper: only the parts that conduct at DC (a capacitor is open; a closed path through one
+        # would hide an open in the copper)
+        ac = bm.m.lumped
+        bm.m.lumped = list(base)
+        lump_into(SimpleNamespace(elems=[e for e in bd.circuit.elems if e.kind in DC.DC_KINDS]), tpad,
+                  lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
+        net_dc = ES.Network(bm.m)
+        bm.m.lumped = ac
+        op_dc = ES.Operator(net_dc)
     log(f"{n_lumped} parts lumped into the copper; mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, "
         f"{len(srcs)} sources, {len(obs)} observers, {len(pads)} pads ({len(missing)} outside or unresolved), "
         f"bands {[round(f / 1e6, 3) for f in freqs]} MHz, setup {time.time() - t0:.1f}s")
@@ -173,6 +191,8 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
+    if dcp:
+        harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
@@ -194,6 +214,74 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
+
+
+def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log):
+    """The DC band's harms (kae.excite.dc) at every corner, added into the per-corner totals `tot`. A
+    corner's cells take the values of the same corner of their switching harms (one operating point)."""
+    from kae.em import solve as ES
+    from .beliefs import corners
+    t0 = time.time()
+    ncp = n_corners + 3
+    own = corners(dcp.params, n=n_corners, seed=seed + 1) if dcp.params else [{} for _ in range(ncp)]
+    cvs = []
+    for c in range(ncp):
+        cv = dict(own[c])
+        for s in srcs:
+            if s.kind == "cell":
+                cv[s.name] = {k[1]: v for k, v in cps[s.name][c].items()}
+        cvs.append(cv)
+    m = bm.m
+    raw = [DC.injections(dcp, cv) for cv in cvs]
+    out_ = sorted({p for inj in raw for p in inj if p not in m.terminals})
+    if out_:
+        notes.append(f"DC: pads outside the copper model ({', '.join(out_[:6])}): their currents are left out")
+    injs = [{p: a for p, a in inj.items() if p in m.terminals} for inj in raw]
+    if not any(injs):
+        notes.append("DC: no rail with a source and a load; the DC band is empty")
+        return []
+    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc)
+    trk = DC.track_currents(bm, b.tracks, net_dc, nets=set(dcp.feeds) | set(dcp.grounds))
+    loss, drops, heat = [], {}, []
+    for c, (V, info) in enumerate(res):
+        if V is None:
+            notes.append(f"DC: copper open between {', '.join(sorted(info['open_terms'])[:6])} (unrouted, or a path "
+                         f"only through a part that is open at DC): the DC band is not computed")
+            return []
+        ob = DC.observe(dcp, cvs[c], V, info, tracks=trk)
+        loss.append(ob["loss"])
+        for ref, rail, u, dv, bnd in ob["drops"]:
+            drops.setdefault((ref, rail), [None] * ncp)[c] = (u, dv, bnd)
+        heat.append(max(ob["heat"], key=lambda h: h[1]) if ob["heat"] else None)
+    rows = []
+    us = [x[0] for x in loss]
+    rows.append(dict(observer="dc:copper_loss", source="dc", kind="dc_loss", u=us[0], u_lo=min(us), u_hi=max(us),
+                     P_mW=round(loss[0][1] * 1e3, 3), budget_mW=round(loss[0][2] * 1e3, 3),
+                     basis=f"copper dissipation against {dcp.loss_share:.0%} of the delivered power"))
+    for c in range(ncp):
+        tot[c] += HA.phi(us[c])
+    for (ref, rail), vals in drops.items():
+        u_ = [v[0] if v else 0.0 for v in vals]
+        for c in range(ncp):
+            tot[c] += HA.phi(u_[c])
+        v0 = vals[0] or (0.0, 0.0, 0.0)
+        rows.append(dict(observer=f"dc:drop:{ref}@{rail}", source="dc", kind="dc_drop", u=u_[0], u_lo=min(u_), u_hi=max(u_),
+                         dV_mV=round(v0[1] * 1e3, 3), budget_mV=round(v0[2] * 1e3, 2),
+                         basis=f"rail + ground drop from the rail's source against {dcp.drop_share:.0%} of its voltage"))
+    if any(heat):
+        u_ = [h[1] if h else 0.0 for h in heat]
+        for c in range(ncp):
+            tot[c] += HA.phi(u_[c])
+        worst = max((h for h in heat if h), key=lambda h: h[1])
+        tr = trk.tracks[worst[0]]
+        h0 = heat[0]
+        rows.append(dict(observer=f"dc:heating:{tr.net}@{tr.layer}", source="dc", kind="dc_heat", u=u_[0], u_lo=min(u_),
+                         u_hi=max(u_), dT_K=round(h0[2], 2) if h0 else None, I_A=round(abs(worst[3]), 3),
+                         track=dict(net=tr.net, layer=tr.layer, width=tr.width, start=tr.start, end=tr.end),
+                         basis=f"hottest track by IPC-2221 against {dcp.dT_max:g} K"))
+    log(f"DC band: {len(dcp.loads)} loads on {len(dcp.feeds)} rails, {len(cvs)} corners in {time.time() - t0:.1f}s")
+    notes.extend(f"DC: {n}" for n in dcp.notes)
+    return rows
 
 
 def main(argv=None):
@@ -221,7 +309,13 @@ def main(argv=None):
     print("harms (u at typical, [lowest .. highest over the corners]):")
     for h in r["harms"][:25]:
         extra = (f"edge share {h['edge_share']:.0%}" if h.get("edge_share") is not None else
-                 f"worst harmonic {h.get('f_worst_MHz')} MHz" if h.get("f_worst_MHz") else "")
+                 f"worst harmonic {h.get('f_worst_MHz')} MHz" if h.get("f_worst_MHz") else
+                 f"{h['P_mW']} of {h['budget_mW']} mW" if h["kind"] == "dc_loss" else
+                 f"{h['dV_mV']} of {h['budget_mV']} mV" if h["kind"] == "dc_drop" else
+                 f"{h['dT_K']} K at {h['I_A']} A" if h["kind"] == "dc_heat" else "")
+        if h["kind"].startswith("dc_"):
+            print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  {extra:38s} {h['observer']}")
+            continue
         print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  L {h['L_nH']:7.3f} nH  |Zf| {h['Zf_mohm']:7.2f} mOhm  "
               f"{extra:22s} {h['observer']}  <-  {h['source']}")
     if r["questions"]:
