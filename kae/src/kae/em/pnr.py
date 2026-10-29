@@ -57,7 +57,8 @@ def phi_prime(u):
 
 
 class PhysRouter:
-    def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None):
+    def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
+                 verify=False):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -65,6 +66,8 @@ class PhysRouter:
         from kae.excite import sources as S
         from kae.route import critical_write as W
         self.log, self.pitch, self.lam, self.nsub, self.plain, self.refresh = log, pitch, lam, nsub, plain, refresh
+        self.verify = verify
+        self.explain_hops = True
         self.src_path, self.out = Path(path), Path(out)
         self.work = Path(work or tempfile.mkdtemp(prefix="kae-pnr-"))
         b = load(path)
@@ -173,6 +176,7 @@ class PhysRouter:
         op = ES.Operator(net)
         self.ref_ids = {bm.m.nets.index(g) for g in self.ref_nets() if g in bm.m.nets} or None
         self.prices, self.pot_at = {}, {}
+        self.K = {}
         layers = list(range(len(bm.m.layers)))
         keys, injs = [], []
         for key, J in self.pat.items():
@@ -185,6 +189,7 @@ class PhysRouter:
                 self.log(f"pnr: pattern {key[1]} cannot close in the copper ({info['open_terms'][:4]}); unpriced")
                 continue
             cp = T1.cell_potentials(info["sys"], info["x"])
+            self.K[key] = self._sheet_currents(net, info["I"])
             from . import fields as EF
             fl = EF.flux(op, info["I"])
             self.prices[key] = {l: T1.price(bm.m, op, info["I"], cp, None, l, w=self.w, ref_ids=self.ref_ids,
@@ -199,7 +204,19 @@ class PhysRouter:
         if pred is not None and getattr(self, "_H", None) is not None:
             self.log(f"pnr: harm {self._H:.2f} -> {H:.2f} (change {H - self._H:+.2f}; the hops' prices predicted "
                      f"{pred:+.2f})")
+            # per (observer, aggressor) pair: the change of L the prices predicted against the solve's
+            rows = []
+            for key, L in self.Lks.items():
+                L0 = self._L0.get(key)
+                if L0 is None:
+                    continue
+                pl = self._predL.get(key, 0.0)
+                rows.append((abs(L - L0) + abs(pl), key, L - L0, pl))
+            for _, key, dl, pl in sorted(rows, reverse=True)[:8]:
+                self.log(f"pnr:   dL {key[0][:34]:34s} <- {key[1][:24]:24s} actual {dl * 1e9:+8.3f} nH "
+                         f"predicted {pl * 1e9:+8.3f} nH")
         self._H, self._pred = H, 0.0
+        self._L0, self._predL = dict(self.Lks), {}
         self.log(f"pnr: fields of {len(self.prices)} patterns on {bm.m.nx}x{bm.m.ny}x{len(layers)} "
                  f"({shorted} unrouted connections shorted) in {time.time() - t0:.1f}s")
 
@@ -208,6 +225,7 @@ class PhysRouter:
         from kae.excite import observe as O
         self.wts = {}
         self.harm = {}
+        self.Lks = {}
         src = {s.name: s for s in self.srcs}
         for o in self.obs:
             kk = ("o", o.name)
@@ -220,6 +238,7 @@ class PhysRouter:
                 r = sum(self.pat[kk].get(q, 0) * self.pot_at[ks].get(q, 0) for q in self.pat[kk] if q in self.pot_at[ks])
                 r -= sum(self.pat[kk].get(q, 0) * self.vid[ks].get(q, 0) for q in self.pat[kk])   # the layout's share
                 L = r.imag / self.w
+                self.Lks[(o.name, s.name)] = L
                 volts, bound = O.size(o, src[s.name], L)
                 u = volts / bound if bound else 0.0
                 scale = volts / abs(L) if abs(L) > 0 else (O.size(o, src[s.name], 1e-9)[0] / 1e-9)
@@ -309,11 +328,10 @@ class PhysRouter:
                         void[li] |= pr.void[sel]
                         pot2[li] += wt * pb * pr.phi2[sel]
                         void2[li] |= pr.void2[sel]
+                        # vias only: replacing an unrouted (field-free) connection adds a circulating current
+                        # (the hop, back through the field-free short) whose image in the planes closes on
+                        # itself, so its ends move no return between planes; a via in the hop does
                         theta[li] += wt * pb * pr.psi[sel]
-                        # the ends: psi minus the potential of the plane each terminal's return enters
-                        for arr, T in ((th_src, ends[0]), (th_dst, ends[1])):
-                            if T is not None and T in pr.ext:
-                                arr[li] += wt * pb * (pr.psi[sel] - pr.ext[T][sel])
                 split = np.zeros((grid.ny, grid.nx), bool)
                 for pa in self.prices.values():
                     split |= pa[L].split[sel]
@@ -332,7 +350,14 @@ class PhysRouter:
                 r = 0.15e-3
                 Lv = MU0 * dz / (2 * math.pi) * np.log(np.maximum(d * 1e-3, 2 * r) / r)
                 vs = lam * wself_all * Lv
+            cxs = np.zeros_like(selfc)
+            cys = np.zeros_like(selfc)
+            for li, lname in enumerate(layers):
+                if lname in self.layer_names:
+                    cxs[li], cys[li] = self._cut_costs(self.layer_names.index(lname), self._hop_net, cur, sel,
+                                                       (grid.ny, grid.nx))
             return dict(self=lam * selfc, px=lam * px, py=lam * py, pot=lam * pot, void=void, vself=vs,
+                        cx=lam * cxs, cy=lam * cys,
                         pot2=lam * pot2, void2=void2, theta=lam * theta, th_src=lam * th_src, th_dst=lam * th_dst,
                         floor=0.2)
         return f
@@ -352,62 +377,26 @@ class PhysRouter:
 
     # ------------------------------------------------------------------ routing
     def route(self):
-        from kae.route.critical_grid import Anchor
         t0 = time.time()
         done = 0
         self.failed = []
+        self.choices = []
         since = 0
         for n in self.nets:
-            # refresh before every net that carries a commutation current (its loop's other halves must
-            # be in the fields) and otherwise every `refresh` nets
-            cell = any(k[0] == "s" and k[1].startswith("cell:") and any(abs(self.flow[k].get(q, 0)) > 1e-3
-                       for q in self.bd.pads_of.get(n, [])) for k in self.flow)
-            # (hops update the price fields incrementally in between, kae.em.fields.flux_of_cells)
             if done == 0 or since >= self.refresh:
                 self.solve_fields()
                 since = 0
             since += 1
             isl = [g for g in self.islands.get(n, []) if g]
             if len(isl) < 2:
+                done += 1
                 continue
-            # chain the islands nearest-first (a spanning tree on island centroids)
-            def cen(g):
-                pts = [self._pad_xy(q) for q in g]
-                return np.mean(pts, axis=0)
-            left = isl[1:]
-            tree = [isl[0]]
-            while left:
-                best = min(((a, b_) for a in tree for b_ in left), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
-                a, b_ = best
-                cur = self.hop_currents(n, b_, a)
-                layer0 = self.sp.cu
-                width = self.sp.width_limits(n, layer0[0])[1]
-                if any(k[0] == "s" and k[1].startswith("cell:") for k in cur):
-                    # a commutation current: wide copper lowers its inductance per length
-                    width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
-                srcs = [self._anchor(q) for q in b_]
-                dsts = [self._anchor(q) for q in a]
-                ends = (self._end_plane(b_), self._end_plane(a))
-                rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
-                                         phys=self.phys(cur, width, ends))
-                if rt is None or not rt.segs and not rt.vias:
-                    if rt is None:
-                        self.failed.append((n, b_[0], a[0]))
-                else:
-                    for l, p0, p1 in rt.segs:
-                        it = self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n))
-                        self.tracks.append((n, l, rt.width, p0, p1, "", False))
-                    try:
-                        self._pred = (self._pred or 0.0) + self._path_harm(rt, cur, width)
-                    except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
-                        self.log(f"pnr: prediction failed: {type(e).__name__}: {e}")
-                    self._update_fields(rt, cur)
-                    for (x, y) in rt.vias:
-                        self.sp.add_via(n, x, y, owner=("pnr", n))
-                        D, d = self.sp.via_size(n)
-                        self.vias.append((n, x, y, D, d, "", False))
-                tree.append(b_)
-                left.remove(b_)
+            if self.verify and not self.plain:
+                self._route_verified(n)
+                since = 0                      # the chosen candidate's fields are current
+            else:
+                res = self._route_net(n, plain=self.plain)
+                self.failed += res["failed"]
             done += 1
         from kae.route import critical_write as W
         W.append_items(self.base, self.out, tracks=self.tracks, vias=self.vias)
@@ -417,8 +406,168 @@ class PhysRouter:
                 import shutil
                 shutil.copy2(s_, self.out.with_suffix(ext))
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
-                 f"{time.time() - t0:.1f}s")
+                 f"{time.time() - t0:.1f}s" + (f"; chose {self.choices}" if self.choices else ""))
         return self
+
+    # ------------------------------------------------------------------ verified candidates
+    _STATE = ("prices", "pot_at", "K", "wts", "harm", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+              "_pred", "_L0", "_predL")
+
+    def _snap(self):
+        import copy
+        return {k: copy.deepcopy(getattr(self, k)) if k == "prices" else getattr(self, k, None) for k in self._STATE}
+
+    def _restore(self, st):
+        for k, v in st.items():
+            setattr(self, k, v)
+
+    def _true_harm(self):
+        """Sum of phi(u) over every (observer, aggressor) pair by a field solve of the copper as it stands."""
+        self.solve_fields()
+        return sum(u if u <= 1 else u + 4 * (u - 1) ** 2 for u in self.harm.values())
+
+    def _route_verified(self, n):
+        """Route net n twice (physics prices, plain), keep the candidate the field solve says harms less:
+        the router's own estimate never decides; with the plain route always a candidate, physics routing
+        is never worse than plain by the evaluator's measure."""
+        st0 = self._snap()
+        cands = []
+        for mode in ("phys", "plain"):
+            self._restore(st0 if mode == "phys" else st0)
+            if mode == "plain":
+                import copy
+                self.prices = copy.deepcopy(st0["prices"])
+            res = self._route_net(n, plain=(mode == "plain"))
+            H = self._true_harm()
+            cands.append((H, mode, res, self._snap()))
+            self._uncommit(res)
+        H, mode, res, st = min(cands, key=lambda c: (c[0], c[1] != "plain"))
+        self._recommit(res)
+        self._restore(st)
+        self.failed += res["failed"]
+        self.choices.append((n, mode, round(cands[0][0], 2), round(cands[1][0], 2)))
+        self.log(f"pnr: {n}: physics candidate {cands[0][0]:.2f}, plain {cands[1][0]:.2f} -> {mode}")
+
+    def _uncommit(self, res):
+        self.sp.remove(res["items"])
+        for t in res["tracks"]:
+            self.tracks.remove(t)
+        for v in res["vias"]:
+            self.vias.remove(v)
+
+    def _recommit(self, res):
+        items = []
+        for (n, l, w, p0, p1, u, lk) in res["tracks"]:
+            items.append(self.sp.add_track(n, l, w, p0, p1, owner=("pnr", n)))
+            self.tracks.append((n, l, w, p0, p1, u, lk))
+        for (n, x, y, D, d, u, lk) in res["vias"]:
+            items.append(self.sp.add_via(n, x, y, owner=("pnr", n)))
+            self.vias.append((n, x, y, D, d, u, lk))
+        res["items"] = items
+
+    def _route_net(self, n, plain=False):
+        """Route every hop of net n (a spanning tree of its copper islands, nearest first); commits its
+        copper and returns dict(items, tracks, vias, failed)."""
+        out = dict(items=[], tracks=[], vias=[], failed=[])
+        isl = [g for g in self.islands.get(n, []) if g]
+        if len(isl) < 2:
+            return out
+        was = self.plain
+        self.plain = plain
+
+        def cen(g):
+            return np.mean([self._pad_xy(q) for q in g], axis=0)
+        left = isl[1:]
+        tree = [isl[0]]
+        try:
+            while left:
+                a, b_ = min(((a, b_) for a in tree for b_ in left), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
+                cur = self.hop_currents(n, b_, a)
+                layer0 = self.sp.cu
+                width = self.sp.width_limits(n, layer0[0])[1]
+                if any(k[0] == "s" and k[1].startswith("cell:") for k in cur):
+                    # a commutation current: wide copper lowers its inductance per length
+                    width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
+                srcs = [self._anchor(q) for q in b_]
+                dsts = [self._anchor(q) for q in a]
+                ends = (self._end_plane(b_), self._end_plane(a))
+                self._hop_net = n
+                rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
+                                         phys=self.phys(cur, width, ends))
+                if rt is None:
+                    out["failed"].append((n, b_[0], a[0]))
+                elif rt.segs or rt.vias:
+                    if self.explain_hops and getattr(rt, "search", None) is not None and self.prices:
+                        grid, lay, path, ph = rt.search
+                        if plain:
+                            # price the plain path with the physics arrays it was not searched with
+                            self.plain = False
+                            ph = self.phys(cur, width, ends)(grid, lay)
+                            self.plain = True
+                            rt.search = (grid, lay, path, ph)
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]} {'plain' if plain else 'phys'}: "
+                                 f"{self.explain(rt)} len {rt.length:.1f} vias {len(rt.vias)}")
+                    for l, p0, p1 in rt.segs:
+                        out["items"].append(self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n)))
+                        t = (n, l, rt.width, p0, p1, "", False)
+                        self.tracks.append(t)
+                        out["tracks"].append(t)
+                    if not plain:
+                        try:
+                            self._pred = (self._pred or 0.0) + self._path_harm(rt, cur, width)
+                        except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
+                            self.log(f"pnr: prediction failed: {type(e).__name__}: {e}")
+                        self._update_fields(rt, cur)
+                    for (x, y) in rt.vias:
+                        out["items"].append(self.sp.add_via(n, x, y, owner=("pnr", n)))
+                        D, d = self.sp.via_size(n)
+                        v = (n, x, y, D, d, "", False)
+                        self.vias.append(v)
+                        out["vias"].append(v)
+                tree.append(b_)
+                left.remove(b_)
+        finally:
+            self.plain = was
+        return out
+
+    @staticmethod
+    def explain(rt, base=None):
+        """Cost of the path a physics search found, term by term, with the arrays it was priced with:
+        {base, self, mutual, crossing, transfer, via, cut} (mm-equivalent)."""
+        grid, layers, path, ph = rt.search
+        nl, ny, nx = len(layers), grid.ny, grid.nx
+        plane = ny * nx
+        out = dict(base=0.0, self=0.0, mutual=0.0, crossing=0.0, transfer=0.0, via=0.0, cut=0.0)
+        f = lambda a: np.asarray(a, float).reshape(-1)
+        S, PX, PY, POT, VO = f(ph["self"]), f(ph["px"]), f(ph["py"]), f(ph["pot"]), np.asarray(ph["void"]).reshape(-1)
+        POT2, VO2 = f(ph.get("pot2", np.zeros(nl * plane))), np.asarray(ph.get("void2", np.zeros(nl * plane, bool))).reshape(-1)
+        TH, TS, TD = (f(ph.get(k, np.zeros(nl * plane))) for k in ("theta", "th_src", "th_dst"))
+        VS = f(ph.get("vself", np.zeros(plane)))
+        CX, CY = f(ph.get("cx", np.zeros(nl * plane))), f(ph.get("cy", np.zeros(nl * plane)))
+        p = [int(k) for k in path]
+        out["transfer"] += TS[p[0]] - TD[p[-1]]
+        for k, k2 in zip(p[:-1], p[1:]):
+            l, r = divmod(k, plane)
+            l2, r2 = divmod(k2, plane)
+            if l2 != l:
+                tr = TH[k2] - TH[k]
+                tr = 0.0 if (tr < 0 and -tr > VS[r]) else tr
+                out["via"] += VS[r]
+                out["transfer"] += tr
+                continue
+            j, i = divmod(r, nx)
+            j2, i2 = divmod(r2, nx)
+            di, dj = i2 - i, j2 - j
+            ln = grid.res * math.hypot(di, dj)
+            out["self"] += ln * 0.5 * (S[k] + S[k2])
+            out["mutual"] += grid.res * (0.5 * (PX[k] + PX[k2]) * di + 0.5 * (PY[k] + PY[k2]) * dj)
+            if VO[k] or VO[k2]:
+                out["crossing"] += POT[k2] - POT[k]
+            if VO2[k] or VO2[k2]:
+                out["crossing"] += POT2[k2] - POT2[k]
+            out["cut"] += 0.5 * (CX[k] + CX[k2]) * abs(di) + 0.5 * (CY[k] + CY[k2]) * abs(dj)
+            out["base"] += ln
+        return {k: round(v, 2) for k, v in out.items()}
 
     def _path_harm(self, rt, cur, width):
         """The harm change (u, linearized) the price fields predict for a routed hop: its own loop over
@@ -447,11 +596,70 @@ class PhysRouter:
                 ik, is_ = cur.get(kk, 0.0), cur.get(ks, 0.0)
                 if ik == 0 and is_ == 0:
                     continue
-                tot += wt * ik * is_ * Lp * math.dist(p0, p1)
+                dl = ik * is_ * Lp * math.dist(p0, p1)
                 for pa, pb in ((ks, ik), (kk, is_)):
                     if pb and pa in self.prices:
-                        tot += wt * pb * T1.path_price(self.prices[pa][L], cells, m.pitch)
+                        dl += pb * T1.path_price(self.prices[pa][L], cells, m.pitch)
+                tot += wt * dl
+                key = (kk[1], ks[1])
+                self._predL[key] = self._predL.get(key, 0.0) + dl
         return float(tot)
+
+    # cutting a return pour (kae: em_t1_check main_cut): dL_ks = C(h) X_k X_s (1 - exp(-l / l0)), X the
+    # current crossing the cut, C = CUT_C (h / mm)^CUT_B fitted at h = 0.2 and 1.5 mm with 4 mm stitching
+    CUT_C, CUT_B = 1.92e-9, 0.65
+
+    def _sheet_currents(self, net, I):
+        """{layer: (Kx, Ky)}: each cell's x- and y-bar current (summed through the thickness, real part),
+        A per unit pattern current."""
+        m = self.mesh if hasattr(self, "mesh") and self.mesh is net.m else net.m
+        out = {}
+        for o in ("x", "y"):
+            f = net.fil[o]
+            a0 = net.off[o]
+            n = len(f["a"])
+            for l in range(len(m.layers)):
+                sel = np.isin(f["s"], net.sub_of[l])
+                arr = np.zeros((m.ny, m.nx))
+                if n and sel.any():
+                    np.add.at(arr, (f["j"][sel], f["i"][sel]), I[a0:a0 + n][sel].real)
+                out.setdefault(l, {})[o] = arr
+        return {l: (d["x"], d["y"]) for l, d in out.items()}
+
+    def _cut_costs(self, L, net_name, cur, sel, shape):
+        """Per-step costs (x moves, y moves) on routing layer L of cutting its return pour: over cells of
+        return copper of another net, sum over priced pairs of w C X_k X_s, one side's crossing current
+        summed over a window of l0 along the cut (the current a long cut interrupts)."""
+        from scipy import ndimage
+        m = self.mesh
+        if not self.ref_ids:
+            return np.zeros(shape), np.zeros(shape)
+        own = m.nets.index(net_name) if net_name in m.nets else -2
+        pour = np.isin(m.lab[L], list(self.ref_ids)) & (m.lab[L] != own)
+        if not pour.any():
+            return np.zeros(shape), np.zeros(shape)
+        up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+        h = np.minimum(np.where(np.isfinite(hu), hu, 1e3), np.where(np.isfinite(hd), hd, 1e3))
+        h = np.where(h > 100, 1.6, h)
+        C = self.CUT_C * np.power(h, self.CUT_B)
+        n0 = max(1, int(round(max(1.0, 1.3 * float(np.median(h))) / m.pitch)))
+        cx = np.zeros((m.ny, m.nx))
+        cy = np.zeros((m.ny, m.nx))
+        for (kk, ks), wt in self.wts.items():
+            if kk not in self.K or ks not in self.K:
+                continue
+            Kkx, Kky = self.K[kk][L]
+            Ksx, Ksy = self.K[ks][L]
+            # an x move cuts the y-bars (current crossing it); its window runs along x
+            wy_k = ndimage.uniform_filter1d(Kky, 2 * n0 + 1, axis=1) * (2 * n0 + 1)
+            wy_s = ndimage.uniform_filter1d(Ksy, 2 * n0 + 1, axis=1) * (2 * n0 + 1)
+            wx_k = ndimage.uniform_filter1d(Kkx, 2 * n0 + 1, axis=0) * (2 * n0 + 1)
+            wx_s = ndimage.uniform_filter1d(Ksx, 2 * n0 + 1, axis=0) * (2 * n0 + 1)
+            cx += wt * 0.5 * (Kky * wy_s + Ksy * wy_k)
+            cy += wt * 0.5 * (Kkx * wx_s + Ksx * wx_k)
+        cx = np.where(pour, np.maximum(C * cx, 0.0), 0.0)
+        cy = np.where(pour, np.maximum(C * cy, 0.0), 0.0)
+        return cx[sel], cy[sel]
 
     def _transfer_dist(self):
         """Distance (mm) from each mesh cell to the nearest place a return can change planes: a via or
@@ -563,8 +771,10 @@ def main(argv=None):
     ap.add_argument("--lam", type=float, default=30.0)
     ap.add_argument("--pitch", type=float, default=0.25)
     ap.add_argument("--refresh", type=int, default=6)
+    ap.add_argument("--verify", action="store_true",
+                    help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
     a = ap.parse_args(argv)
-    PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh).route()
+    PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify).route()
 
 
 if __name__ == "__main__":

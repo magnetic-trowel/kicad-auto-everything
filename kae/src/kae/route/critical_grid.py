@@ -612,7 +612,7 @@ class GridRouter:
                                via_cost=float(vc), lam=1.0, floor=ph.get("floor", 0.2),
                                target=((ty0 + ty1) // 2, (tx0 + tx1) // 2), pot2=ph.get("pot2"), void2=ph.get("void2"),
                                theta=ph.get("theta"), th_src=ph.get("th_src"), th_dst=ph.get("th_dst"),
-                               vself=ph.get("vself"))
+                               vself=ph.get("vself"), cx=ph.get("cx"), cy=ph.get("cy"))
             nexp = 0
         else:
             path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
@@ -623,6 +623,8 @@ class GridRouter:
         rt = self._geometry(grid, net, width, layers, path, sources, targets)
         if rt is None:
             return None
+        if phys is not None:
+            rt.search = (grid, layers, path, ph)          # what the physics search priced (kae.em.pnr.explain)
         rt.expansions = int(nexp)
         rt.res = grid.res
         if max_len is not None and rt.length > max_len:

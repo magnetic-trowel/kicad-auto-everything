@@ -33,8 +33,8 @@ SQ2 = math.sqrt(2.0)
 
 
 @jit
-def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, vself, via_ok, src, dst, nl, ny, nx, res,
-           via_cost, lam, floor, hmin, ti, tj):
+def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, vself, cx, cy, via_ok, src, dst, nl, ny,
+           nx, res, via_cost, lam, floor, hmin, ti, tj):
     plane = ny * nx
     n = nl * plane
     g = np.full(n, np.inf)
@@ -83,6 +83,8 @@ def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, v
                 c += lam * (pot[k2] - pot[k])          # the crossing term, telescoped over the void
             if void2[k] or void2[k2]:
                 c += lam * (pot2[k2] - pot2[k])        # the same for the return plane on the other side
+            # cutting a return pour on this layer: per step across the current it interrupts
+            c += 0.5 * (cx[k] + cx[k2]) * abs(di[m]) + 0.5 * (cy[k] + cy[k2]) * abs(dj[m])
             if c < floor * ln:
                 c = floor * ln
             ng = g[k] + c
@@ -118,7 +120,7 @@ def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, v
 
 
 def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=1.0, lam=1.0, floor=0.05, target=None,
-                pot2=None, void2=None, theta=None, th_src=None, th_dst=None, vself=None):
+                pot2=None, void2=None, theta=None, th_src=None, th_dst=None, vself=None, cx=None, cy=None):
     """As `search` with flat cell indices: src (int array), dst (bool array over all cells); returns a
     flat index array (empty: no route)."""
     nl, ny, nx = base.shape
@@ -136,10 +138,12 @@ def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=
     th_src = theta if th_src is None else th_src
     th_dst = theta if th_dst is None else th_dst
     vself = np.zeros(ny * nx) if vself is None else np.asarray(vself, float).ravel()
+    cx = np.zeros(pot.size) if cx is None else np.asarray(cx, float).ravel()
+    cy = np.zeros(pot.size) if cy is None else np.asarray(cy, float).ravel()
     path = _astar(base.ravel().astype(float), selfc.ravel().astype(float), px.ravel().astype(float),
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
                   pot2.ravel().astype(float), void2.ravel().astype(np.bool_), theta.ravel().astype(float),
-                  th_src.ravel().astype(float), th_dst.ravel().astype(float), vself,
+                  th_src.ravel().astype(float), th_dst.ravel().astype(float), vself, cx, cy,
                   via_ok.ravel().astype(np.bool_), np.asarray(src, np.int64), np.asarray(dst, np.bool_), nl, ny, nx,
                   float(res), float(via_cost), float(lam), float(floor), hmin, ti, tj)
     return np.array(path, np.int64)
@@ -164,7 +168,8 @@ def search(base, selfc, px, py, via_ok, src, dst, res, via_cost=1.0, lam=1.0, fl
     z0 = np.zeros(base.size)
     path = _astar(base.ravel().astype(float), selfc.ravel().astype(float), px.ravel().astype(float),
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
-                  z0, z0.astype(np.bool_), z0, z0, z0, np.zeros(ny * nx), via_ok.ravel().astype(np.bool_), s, d, nl, ny, nx,
+                  z0, z0.astype(np.bool_), z0, z0, z0, np.zeros(ny * nx), z0, z0, via_ok.ravel().astype(np.bool_), s, d, nl,
+                  ny, nx,
                   float(res),
                   float(via_cost), float(lam), float(floor), hmin, ti, tj)
     out = []
