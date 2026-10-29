@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -235,3 +236,27 @@ def test_reservation_drops_to_observed_peak_after_warmup(kq):
     d.tick()
     assert d.sys["unrealized"] < 1024  # then only its (tiny) observed peak with a margin
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")
+
+
+def test_pooled_headroom_sets_aside_less_when_peaks_are_rare(kq):
+    B = kq.MEM_BINS
+    always_top = [0.0] * (B - 1) + [1.0]
+    brief_peak = [0.9 / (B // 4)] * (B // 4) + [0.0] * (B - B // 4 - 1) + [0.1]  # 90% of life low, 10% at peak
+    jobs = [("a", 2000.0, 400.0, None)] * 3
+    assert kq.pooled_headroom(jobs, 3, 0.5) == (4800.0, 4800.0)  # unknown jobs count in full
+    jobs = [("a", 2000.0, 400.0, always_top)] * 10
+    aside, worst = kq.pooled_headroom(jobs, 3, 0.5)
+    assert worst == 16000.0 and aside == worst  # jobs that sit at their peak: nothing to pool
+    jobs = [(f"o{i}", 2000.0, 400.0, brief_peak) for i in range(20)]
+    aside, worst = kq.pooled_headroom(jobs, 3, 0.5)
+    assert 1600.0 <= aside < 0.5 * worst  # independent owners, rare peaks: well under the sum, >= one job's headroom
+    lock = kq.pooled_headroom([("one", 2000.0, 400.0, brief_peak)] * 20, 3, 1.0)[0]
+    assert lock > aside  # the same jobs in lockstep need more
+
+
+def test_finished_job_records_its_memory_histogram(kq):
+    d = kq.Daemon()
+    submit(kq, "python3 -c 'import time; b = bytearray(60 << 20); time.sleep(70)'", name="h", timeout="3m")
+    drive(kq, d, lambda: states(d)["h"] == "ok", secs=120)
+    h = json.loads(d.c.execute("SELECT mem_hist FROM jobs WHERE name='h'").fetchone()[0])
+    assert len(h) == kq.MEM_BINS and sum(h) >= 6 and h[-1] > 0

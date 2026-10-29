@@ -107,8 +107,12 @@ def frame(c, cfg, sampler, args, width):
     ours_rss, unreal = bsys.get("ours_rss", 0.0), bsys.get("unrealized", 0.0)
     rmem = bsys.get("reserve_mem", cfg["reserve_mem_gb"] * 1024)
     room = avail - unreal - rmem
+    upeak = bsys.get("unrealized_peak", unreal)
     L.append(f"RAM  {bar((total - avail) / total, bw)} {gb(total - avail)}/{gb(total)} used: queue jobs {gb(ours_rss)} now, "
              f"{gb(unreal)} more set aside for their peaks | {gb(avail)} free, {gb(rmem)} kept free")
+    if upeak > unreal + 512:
+        L.append(f"     set aside {gb(unreal)} instead of {gb(upeak)} (all peaks at once): jobs rarely peak together"
+                 f" (pooled owners marked *)")
     L.append(f"     room for new jobs: {gb(max(0, room))}  (free - set aside - kept free)"
              + ("   << memory is the limit" if room < 4096 else ""))
     if bsys.get("disk_cap"):
@@ -156,6 +160,7 @@ def frame(c, cfg, sampler, args, width):
     owners = [o for o, s in rows.items()
               if args.all or s.get("queued") or s.get("running") or rate.get(o, {}).get(3)]
     owners.sort(key=lambda o: (-max(prios.get(o, {-99})), -(rows[o].get("running", 0)), o))
+    pooled = set(bsys.get("pooled_owners") or [])
     pw = max(10, min(20, width - 120))
     ow = max(12, min(26, max([len(o) for o in owners] + [5])))
     L.append(f"{'OWNER':<{ow}} PRIO RUN  CPU   RAM  ASIDE  QUEUED   DONE  FAIL  {'PROGRESS':<{pw + 7}} DONE/h 1h  3h   ETA (at 3h rate)")
@@ -178,11 +183,13 @@ def frame(c, cfg, sampler, args, width):
         else:
             eta = "stalled" if run == 0 else "no finishes in 3h"
         pr = ",".join(str(p) for p in sorted(prios.get(o, []), reverse=True)) or "-"
-        L.append(f"{o[:ow]:<{ow}} {pr:>4} {run:>3} {cpu:5.1f} {gb(ram):>5} {gb(aside.get(o, 0)):>5} {q:>7} {done:>6} {bad:>5}  "
+        name = (o[:ow - 1] + "*") if o in pooled else o[:ow]
+        L.append(f"{name:<{ow}} {pr:>4} {run:>3} {cpu:5.1f} {gb(ram):>5} {gb(aside.get(o, 0)):>5} {q:>7} {done:>6} {bad:>5}  "
                  f"{bar(frac, pw)} {frac * 100:3.0f}%  {r1:>5} {r3 / 3:5.0f}   {eta}")
     L.append(f"{'total':<{ow}}      {tot_run:>3} {sum((u[1] or 0) for u in use.values()):5.1f} "
              f"{gb(sum(u[0] for u in use.values())):>5} {gb(sum(aside.values())):>5} {tot_q:>7}")
-    L.append("  RUN/CPU/RAM: jobs running now and what they use.  ASIDE: memory held for their expected peaks.")
+    L.append("  RUN/CPU/RAM: jobs running now and what they use.  ASIDE: their worst case (every job at its peak);"
+             " * = pooled: the queue sets aside less, from how its jobs' memory rises and falls")
     L.append("  DONE/FAIL: finished (FAIL = failed, timeout, oom or lost).  DONE/h: finishes in the last hour, and per hour over 3 h.")
 
     # problems in the last 24 h

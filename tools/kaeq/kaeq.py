@@ -78,6 +78,13 @@ DEFAULTS = {
     "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job
     "warmup_s": 300,         # a new job keeps its declared --mem reserved this long; then its observed peak * peak_margin
     "peak_margin": 1.25,
+    # memory set aside for running jobs' peaks: "peak" = the sum of every job's peak (as if all peak at once);
+    # "pooled" = statistical: jobs rarely peak together, so set aside mean + mem_pool_z std of their combined
+    # growth, from how jobs of the same owner spent their lifetime (memory histograms of finished jobs)
+    "mem_pool": "pooled",
+    "mem_pool_z": 3.0,       # std deviations of headroom (3: ~0.1% of moments short if independent)
+    "mem_pool_rho": 0.5,     # assumed correlation between jobs of one owner (0 = independent, 1 = in lockstep)
+    "mem_pool_min_jobs": 5,  # finished jobs with a histogram an owner needs before its jobs are pooled
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
@@ -98,7 +105,8 @@ CREATE TABLE IF NOT EXISTS jobs(
  attempt INTEGER DEFAULT 1, retries_left INTEGER DEFAULT 0, preempts INTEGER DEFAULT 0,
  submitted REAL, started REAL, finished REAL, not_before REAL DEFAULT 0, deadline REAL,
  pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT,
- root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0);
+ root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0,
+ mem_hist TEXT);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -138,7 +146,7 @@ def db(restore=False):
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     have = {r[1] for r in c.execute("PRAGMA table_info(jobs)")}
-    for col in ("root", "branch", "sha", "rel", "links"):  # upgrade a pre-snapshot database
+    for col in ("root", "branch", "sha", "rel", "links", "mem_hist"):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
     for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0)):  # upgrade a pre-scratch database
@@ -358,6 +366,52 @@ def kill_tree(pid, cg=None, sig=signal.SIGKILL):
         pass
 
 
+MEM_BINS = 20
+
+
+def mem_hist(samples, peak):
+    """How a job spent its life: counts of RSS samples in MEM_BINS equal slices of its peak."""
+    h = [0] * MEM_BINS
+    for r in samples:
+        h[min(MEM_BINS - 1, int(r / peak * MEM_BINS))] += 1
+    return h
+
+
+def pooled_headroom(jobs, z, rho):
+    """Memory to set aside for running jobs' growth when they rarely peak together.
+    jobs: [(owner, expect_mb, rss_mb, profile or None)]: expect = the most it may reach (its peak x
+    margin, or its declared --mem while it warms up); profile = share of lifetime its owner's jobs
+    spend at each slice of their peak (MEM_BINS weights). A job without a profile counts its whole
+    headroom (expect - rss). A profiled job's RSS at a random moment is expect x (slice upper edge),
+    so its growth is max(0, that - rss): mean + z std over all of them, jobs of one owner correlated
+    by rho, owners independent; never less than the largest single headroom, never more than the sum.
+    Returns (set aside, sum of headrooms)."""
+    full = worst = 0.0
+    biggest = 0.0
+    mu = 0.0
+    var = 0.0
+    by_owner = {}
+    for owner, expect, rss, prof in jobs:
+        room = max(0.0, expect - rss)
+        worst += room
+        if prof is None:
+            full += room
+            continue
+        biggest = max(biggest, room)
+        g = [max(0.0, expect * (k + 1) / MEM_BINS - rss) for k in range(MEM_BINS)]  # growth if at slice k
+        m = sum(w * x for w, x in zip(prof, g))
+        m2 = sum(w * x * x for w, x in zip(prof, g))
+        sd = max(0.0, m2 - m * m) ** 0.5
+        mu += m
+        o = by_owner.setdefault(owner, [0.0, 0.0])
+        o[0] += sd
+        o[1] += sd * sd
+    for lin, sq in by_owner.values():
+        var += (1 - rho) * sq + rho * lin * lin
+    pooled = max(biggest, mu + z * var ** 0.5)
+    return min(worst, full + pooled), worst
+
+
 def job_usage(j, sessions, per_pid, cgroups):
     """(rss_mb, cpu_ticks) of a job: every process in its scope (children that start their own
     session stay in it), else every process in its session."""
@@ -473,6 +527,8 @@ class Daemon:
         self.disk_total = 0.0
         self.disk_ts = 0.0
         self.last_backup = 0.0
+        self.trace = {}          # job id -> RSS samples (every ~10 s) for its memory histogram
+        self.profiles, self.profiles_ts = {}, 0.0
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -523,6 +579,10 @@ class Daemon:
             ours_rss += rss
             ours_ticks += max(0, ticks - self.prev_ours.get(j["id"], ticks))
             self.prev_ours[j["id"]] = ticks
+            tr = self.trace.setdefault(j["id"], [0.0, [], now - (j["started"] or now) < 30])  # [last, samples, whole life]
+            if now - tr[0] >= 10:
+                tr[0] = now
+                tr[1].append(rss)
             self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0))
         # system sample
         busy, total = cpu_ticks()
@@ -533,13 +593,21 @@ class Daemon:
         self.prev = (busy, total)
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+        for jid in set(self.trace) - {j["id"] for j in running}:
+            del self.trace[jid]
+        profiles = self.owner_profiles(cfg, now, running)
+        grow = []
         for j in running:
             # what a job may still grow into: its declared --mem while it warms up, then its observed peak
             # with a margin (a later phase may need more than the first); free memory is measured, not declared
             rss = usage.get(j["id"], (0.0, 0))[0]
             peak = max(j["peak_mb"] or 0, rss)
-            expect = j["mem_mb"] if now - (j["started"] or now) < cfg["warmup_s"] else peak * cfg["peak_margin"]
-            unrealized += max(0.0, expect - rss)
+            warm = now - (j["started"] or now) < cfg["warmup_s"]
+            expect = j["mem_mb"] if warm else peak * cfg["peak_margin"]
+            grow.append((j["owner"], expect, rss, None if warm else profiles.get(j["owner"])))
+        unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"])
+        if cfg["mem_pool"] != "pooled":
+            unrealized = unrealized_peak
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))
         # declared CPUs while a job warms up, then what the fleet really uses (floor: 25% of declared)
@@ -551,6 +619,7 @@ class Daemon:
         pinned = job_cpus(cfg)
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
+                        unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
                         reserve_cpu=cfg["reserve_cpu"], reserve_mem=reserve, running=len(running),
                         pinned=len(pinned) if pinned else None, disk=self.disk_total, disk_cap=cap,
                         disk_unrealized=disk_unrealized)
@@ -762,10 +831,28 @@ class Daemon:
             else:
                 self.finish_fail(j, "oom", f"RSS {fgb(rss)} exceeded declared {fgb(j['mem_mb'])}; resubmit with --mem {fgb(new)}", peak)
 
+    def owner_profiles(self, cfg, now, running):
+        """{owner: MEM_BINS weights}: the average memory histogram of an owner's last 50 finished
+        jobs, for owners with at least mem_pool_min_jobs of them (refreshed every minute)."""
+        if now - self.profiles_ts < 60:
+            return self.profiles
+        out = {}
+        for o in {j["owner"] for j in running}:
+            hs = [json.loads(r[0]) for r in self.c.execute(
+                "SELECT mem_hist FROM jobs WHERE owner=? AND mem_hist IS NOT NULL ORDER BY finished DESC LIMIT 50", (o,))]
+            hs = [h for h in hs if sum(h)]
+            if len(hs) >= cfg["mem_pool_min_jobs"]:
+                out[o] = [sum(h[k] / sum(h) for h in hs) / len(hs) for k in range(MEM_BINS)]
+        self.profiles, self.profiles_ts = out, now
+        return out
+
     def finish(self, j, rc, peak, lost=False):
         dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
-            self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL WHERE id=?", (time.time(), j["id"]))
+            _, tr, whole = self.trace.pop(j["id"], [0, [], False])
+            hist = json.dumps(mem_hist(tr, peak)) if whole and len(tr) >= 6 and peak > 0 else None  # >= 1 min, from its start
+            self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL,mem_hist=? WHERE id=?",
+                           (time.time(), hist, j["id"]))
             drop_worktree(j)
             drop_scratch(config(), j["id"])
             return
