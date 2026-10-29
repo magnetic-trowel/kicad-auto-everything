@@ -682,7 +682,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         if len(rounds) > 1 and not rounds[-1].get("stopped"):
             rounds[-1]["stopped"] = "round cap"
     if opts.get("last_mile"):
-        base = input_errors(input_path, wd, deadline)
+        # only a board with errors needs the baseline (one more DRC, minutes on big boards)
+        base = input_errors(input_path, wd, deadline) if best["errors"] else {}
         _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
                    base=base)
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
@@ -752,6 +753,8 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None,
 
 LAST_MILE_MAX = 40     # open connections the last mile always takes on (bms-c1: 27 joined to 0 in 25 s);
 LAST_MILE_PER_S = 0.5  # beyond that, as many as time allows at this rate (about a join a second, halved)
+LAST_MILE_MIN_S = 30.0 # time a last-mile round needs (was 60: a short attempt, the restart portfolio's first
+                       # waves, then had neither repair nor last mile and ended with time unused)
 
 _BASE = {}
 
@@ -810,7 +813,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                 f"{cur_sum['unconnected']} unconnected")
     for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
         if (drc.excess(cur_sum, base) or not cur_sum["unconnected"] or cur_sum["unconnected"] > last_mile_cap(left())
-                or left() < 60):
+                or left() < LAST_MILE_MIN_S):
             break
         rec = dict(round=f"lm{j}", level="last_mile")
         rounds.append(rec)
