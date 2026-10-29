@@ -101,6 +101,62 @@ the planes a track's return uses (shares a_k by inverse distance, as a stripline
 a via pays its change in psi and an end pays psi minus the potential of the plane its terminal's
 return enters. Both read the aggressor's own node potentials and telescope along a path.
 
+## 3b. Capacitive prices (stage E3)
+
+[`kae.em.cprice`](../../../kae/src/kae/em/cprice.py) prices the electric field the way §3 prices
+the magnetic one. Each pair is a victim observer (feedback, analog, crystal, reset...) and an aggressor net
+(a switch node, a clock).
+
+- **Harm.** Capacitive coupling is voltage-forced. The swing V in t_v drives C_m V/t_v into the
+  victim node. To the edge that node is R (the circuit's, at low frequency) in parallel with C_node:
+  the circuit's capacitance at the edge band plus the net's own copper capacitance. The peak is
+  v = C_m (V/t_v) R (1 − e^(−t_v/(R C_node))), which is linear in C_m at every corner of the ledger.
+  - On boost the feedback node is 28.6 kΩ, 5.0 pF circuit plus 0.5–0.7 pF copper, against edges of
+    0.2–8 ns. That is the divider C_m V / C_node: u = 2.6 at the human layout's 17.9 fF (bound 6 mV).
+  - The evaluator's linear circuit sees the same 18 fF as u = 1.0. There a cell is a current
+    source with its rectifier conducting, so the switch node moves by the loop's ring and not by its
+    commutation swing.
+- **Price.** φ_a is the potential on every cell with the aggressor at 1 V and all other copper at
+  0 V (the static solve). A victim piece at x adds ΔC_m = C′(x) φ_a(x) dl, where C′ is its capacitance per length to
+  everything else. By reciprocity an aggressor piece adds C′ φ_victim dl.
+  - The A* self term gains C′ Σ W φ_other per mm. W is the robust objective's derivative per farad.
+  - C′ is microstrip (Hammerstad–Jensen) over the nearest copper above and below, plus a coplanar
+    share fitted to raster solves. It is scaled to the raster's own strip capacitance at the layer's
+    height.
+- **Refresh.** Every field refresh re-solves all pairs. After each hop of an aggressor or victim net,
+  its copper is painted into the static raster and its pairs re-solved (CG from the last charges).
+  So the next hop sees it, and every hop logs its predicted ΔC_m against the solved one.
+
+[em_cap_price_check](../../../tools/research/physics/em_cap_price_check.py): ΔC_m predicted from the
+fields before a hop, against a fresh static solve with it. The synthetic case is a 1 mm aggressor strip
+over a plane and a 10 mm victim track one pitch (0.25 mm) wide at edge gap d.
+
+| case | d = 0.25 | 0.5 | 1 | 2 | 4 mm |
+|---|---|---|---|---|---|
+| h = 1.51 mm: solved (fF) | 232 | 164 | 95.7 | 39.5 | 9.3 |
+| h = 1.51 mm: predicted / solved | 0.91 | 0.94 | 0.95 | 0.95 | 0.95 |
+| h = 0.2 mm: predicted / solved | 0.99 | 0.99 | 0.99 | 0.99 | 0.99 |
+
+- The 5% left at h = 1.51 mm is the free ends' fringe: an end-on track reads 0.83. A routed hop
+  ends on pads.
+- Aggressor copper beside a victim strip (reciprocity) reads 1.04–1.12 at h = 1.51 mm and 0.99 at 0.2 mm. The excess is the screening of the
+  net's own earlier copper, which first order leaves out.
+
+On the boost board the feedback net's tracks were removed and then added back one hop at a time:
+
+| hop | solved ΔC_m (fF) | predicted / solved |
+|---|---|---|
+| IC1.3 west, 1.8 mm | +0.91 | 0.82 |
+| diagonal to R4, 2.6 mm | +0.79 | 1.23 |
+| R5 to R4, 2.2 mm | +0.54 | 1.04 |
+| all three | +2.24 | 1.02 |
+| a stub 0.25 mm from the switch node, 3.3 mm | +38.8 | 0.91 |
+
+- The hops change C_m little (15.6 → 17.9 fF) because the pins dominate it: FB sits two pins
+  from SW on the SOT-23.
+- The stub raises u from 2.4 to 8.0. This is what the price keeps the router from doing.
+- A board re-meshed from scratch with all hops gives the same C_m as painting them in turn (17.856 fF both).
+
 ## 4. The circuit side
 
 On acarpm-chesslab-powerboard (MT3608 boost, TP4056 charger, LDO; 2 layers):
@@ -147,7 +203,9 @@ The shorts are between nets the router does not touch; they are the human board'
   - Next: a two-level coarse correction; meshing only the windows the priced nets need.
 - **Self cost.** The router's self term is a closed form over the local reference height. The coplanar return to a ground pour on the routing layer is now included, in parallel with it. A hop's own detour across a gap is still only local.
 - **Widths** are fixed per hop: the class width, or 0.8 mm for commutation currents. Width choice is part of the physics (wider copper lowers L′) and is not yet searched.
+- **Capacitive prices** (§3b) are first order in the new piece, the C′ closed form is fitted to the raster, and
+  thin tracks are priced at one pitch, which is the raster's width for them. The evaluator's circuit does not drive
+  the switch node's voltage edge.
 - **Not modelled yet:**
-  - capacitance and dV/dt coupling (the electrostatic operator is drafted, not validated);
   - DC IR drop (resistive patterns);
   - placement on W.
