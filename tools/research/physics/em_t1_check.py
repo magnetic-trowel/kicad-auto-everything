@@ -170,3 +170,98 @@ def main_t1(pitch=0.2):
             cols = np.nonzero((X[0] > 5) & (X[0] < 30))[0]
             Mt = np.mean([T1.path_price(pr, [(r, c) for c in cols], pitch) for r in rows])
             print(f"{name:24s} {d:5.1f} {Me * 1e12:9.1f} {Mt * 1e12:8.1f} {Mt / Me:6.3f}", flush=True)
+
+
+def board4(pitch, d, victim=True, slot_up=None, slot_dn=None, h_dn=0.2, h_up=0.2):
+    """Stripline version: traces on a middle layer between a lower and an upper ground plane, the
+    planes tied by vias along the board edges."""
+    zt = T + h_dn
+    zu = zt + T + h_up
+    m = Mesh.over(0, 0, 40, 30, pitch, [Layer("U", zu, T, 2), Layer("S", zt, T, 2), Layer("D", 0, T, 2)])
+    for k, sl in ((0, slot_up), (2, slot_dn)):
+        m.rect(k, "GND", 0, 0, 40, 30)
+        if sl:
+            X, Y = m.centres()
+            x0, y0, x1, y1 = sl
+            m.lab[k][(X > x0) & (X < x1) & (Y > y0) & (Y < y1)] = -1
+    for x in np.arange(1.0, 40.0, 2.0):
+        for y in (1.0, 29.0):
+            m.via(x, y, [0, 1, 2], "GND", drill=0.3)
+    for y in np.arange(3.0, 28.0, 2.0):
+        for x in (1.0, 39.0):
+            m.via(x, y, [0, 1, 2], "GND", drill=0.3)
+    m.rect(1, "A", 5, 10 - 0.15, 30, 10 + 0.15)
+    X, Y = m.centres()
+
+    def ends(net_y, w, name):
+        near = (X > 5) & (X < 5 + pitch) & (abs(Y - net_y) < w / 2)
+        far = (X > 30 - pitch) & (X < 30) & (abs(Y - net_y) < w / 2)
+        m.terminal(f"{name}s", 1, mask=near)
+        m.terminal(f"{name}g", 2, mask=near)
+        m.terminal(f"{name}e", 1, mask=far)
+        m.terminal(f"{name}eg", 2, mask=far)
+        m.part(f"{name}e", f"{name}eg")
+    ends(10, 0.3, "a")
+    m.port("A", "as", "ag")
+    if victim:
+        m.rect(1, "V", 5, 10 + d - 0.15, 30, 10 + d + 0.15)
+        ends(10 + d, 0.3, "v")
+        m.port("V", "vs", "vg")
+    return m
+
+
+def main_t1_4l(pitch=0.2):
+    """The two-sided price model on striplines: solid planes, a slot in the upper plane only, and in
+    the lower plane only (both traces cross it)."""
+    from kae.em import t1 as T1
+    print(f"{'planes':22s} {'d mm':>5s} {'M exact':>9s} {'t1':>8s} {'ratio':>6s}")
+    slots = {"solid": (None, None), "slot in upper only": ((14.5, 4.0, 15.5, 26.0), None),
+             "slot in lower only": (None, (14.5, 4.0, 15.5, 26.0))}
+    for name, (su, sd) in slots.items():
+        m = board4(pitch, 1.0, victim=False, slot_up=su, slot_dn=sd)
+        v, info = ES.potentials(m, {"as": 1.0, "ag": -1.0}, INF)
+        pr = T1.price(m, info["op"], info["I"], T1.cell_potentials(info["sys"], info["x"]), None, 1, w=1.0,
+                      ref_ids={m.nets.index("GND")})
+        X, Y = m.centres()
+        for d in (0.6, 2.0, 8.0):
+            mm = board4(pitch, d, victim=True, slot_up=su, slot_dn=sd)
+            Me = ES.solve(mm, [INF])["L"][0, 0, 1]
+            rows = np.nonzero(abs(Y[:, 0] - (10 + d)) < 0.15)[0]
+            cols = np.nonzero((X[0] > 5) & (X[0] < 30))[0]
+            Mt = np.mean([T1.path_price(pr, [(r, c) for c in cols], pitch, T_start=2, T_end=2) for r in rows])
+            print(f"{name:22s} {d:5.1f} {Me * 1e12:9.1f} {Mt * 1e12:8.1f} {Mt / Me:6.3f}", flush=True)
+
+
+def main_transition(pitch=0.2):
+    """Plane-transition term: where the victim's return must move between planes (its ends, which
+    connect to the lower plane only), its upper-plane share pays the aggressor's U-D voltage there."""
+    from kae.em import t1 as T1
+    print(f"{'planes':22s} {'d':>4s} {'exact':>8s} {'t1':>8s} {'trans':>8s} {'t1+tr':>8s} {'ratio':>6s} {'t1-tr':>8s} {'ratio':>6s}")
+    slots = {"solid": (None, None), "slot in upper only": ((14.5, 4.0, 15.5, 26.0), None),
+             "slot in lower only": (None, (14.5, 4.0, 15.5, 26.0))}
+    for name, (su, sd) in slots.items():
+        m = board4(pitch, 1.0, victim=False, slot_up=su, slot_dn=sd)
+        v, info = ES.potentials(m, {"as": 1.0, "ag": -1.0}, INF)
+        cp = T1.cell_potentials(info["sys"], info["x"])
+        pr = T1.price(m, info["op"], info["I"], cp, None, 1, w=1.0, ref_ids={m.nets.index("GND")})
+        up, dn, hu, hd, a_up, a_dn = T1.references(m, 1, {m.nets.index("GND")})
+        X, Y = m.centres()
+        for d in (0.6, 2.0, 8.0):
+            mm = board4(pitch, d, victim=True, slot_up=su, slot_dn=sd)
+            Me = ES.solve(mm, [INF])["L"][0, 0, 1]
+            rows = np.nonzero(abs(Y[:, 0] - (10 + d)) < 0.15)[0]
+            cols = np.nonzero((X[0] > 5) & (X[0] < 30))[0]
+            Mt = np.mean([T1.path_price(pr, [(r, c) for c in cols], pitch) for r in rows])
+            r = rows[len(rows) // 2]
+            c0, c1 = cols[0], cols[-1]
+
+            def dUD(c):
+                return (cp["phi"][0, r, c] - cp["phi"][2, r, c]).imag
+            tr = float(a_up[r, c0]) * (dUD(c0) - dUD(c1))
+            print(f"{name:22s} {d:4.1f} {Me*1e12:8.1f} {Mt*1e12:8.1f} {tr*1e12:8.1f} {(Mt+tr)*1e12:8.1f} "
+                  f"{(Mt+tr)/Me:6.3f} {(Mt-tr)*1e12:8.1f} {(Mt-tr)/Me:6.3f}", flush=True)
+
+
+def main_t1_4l_full(pitch=0.2):
+    """main_t1_4l through t1.path_price with the transfer potential (the router's model)."""
+    main_t1_4l(pitch)

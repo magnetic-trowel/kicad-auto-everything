@@ -33,7 +33,8 @@ SQ2 = math.sqrt(2.0)
 
 
 @jit
-def _astar(base, selfc, px, py, pot, void, via_ok, src, dst, nl, ny, nx, res, via_cost, lam, floor, hmin, ti, tj):
+def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, via_ok, src, dst, nl, ny, nx, res,
+           via_cost, lam, floor, hmin, ti, tj):
     plane = ny * nx
     n = nl * plane
     g = np.full(n, np.inf)
@@ -44,8 +45,8 @@ def _astar(base, selfc, px, py, pot, void, via_ok, src, dst, nl, ny, nx, res, vi
     for q in range(src.shape[0]):
         k = src[q]
         if base[k] < np.inf:
-            g[k] = 0.0
-            heapq.heappush(heap, (0.0, k))
+            g[k] = lam * th_src[k]                    # the return leaves its terminal's plane here
+            heapq.heappush(heap, (g[k], k))
     di = (1, -1, 0, 0, 1, 1, -1, -1)
     dj = (0, 0, 1, -1, 1, -1, 1, -1)
     while heap:
@@ -80,9 +81,13 @@ def _astar(base, selfc, px, py, pot, void, via_ok, src, dst, nl, ny, nx, res, vi
             c += lam * res * (0.5 * (px[k] + px[k2]) * di[m] + 0.5 * (py[k] + py[k2]) * dj[m])
             if void[k] or void[k2]:
                 c += lam * (pot[k2] - pot[k])          # the crossing term, telescoped over the void
+            if void2[k] or void2[k2]:
+                c += lam * (pot2[k2] - pot2[k])        # the same for the return plane on the other side
             if c < floor * ln:
                 c = floor * ln
             ng = g[k] + c
+            if dst[k2]:
+                ng -= lam * th_dst[k2]                # and joins the target terminal's plane
             if ng < g[k2]:
                 g[k2] = ng
                 par[k2] = k
@@ -95,7 +100,9 @@ def _astar(base, selfc, px, py, pot, void, via_ok, src, dst, nl, ny, nx, res, vi
                 k2 = l2 * plane + r
                 if base[k2] == np.inf or done[k2]:
                     continue
-                ng = g[k] + via_cost
+                ng = g[k] + via_cost + lam * (theta[k2] - theta[k])     # the return changes planes at the via
+                if dst[k2]:
+                    ng -= lam * th_dst[k2]
                 if ng < g[k2]:
                     g[k2] = ng
                     par[k2] = k
@@ -104,7 +111,8 @@ def _astar(base, selfc, px, py, pot, void, via_ok, src, dst, nl, ny, nx, res, vi
     return [np.int64(-1)][:0]
 
 
-def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=1.0, lam=1.0, floor=0.05, target=None):
+def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=1.0, lam=1.0, floor=0.05, target=None,
+                pot2=None, void2=None, theta=None, th_src=None, th_dst=None):
     """As `search` with flat cell indices: src (int array), dst (bool array over all cells); returns a
     flat index array (empty: no route)."""
     nl, ny, nx = base.shape
@@ -116,8 +124,15 @@ def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=
     fin = np.isfinite(per)
     hmin = max(float(np.min(per[fin])) if fin.any() else floor, floor)
     hmin = min(hmin, 1.0)
+    pot2 = np.zeros_like(pot) if pot2 is None else pot2
+    void2 = np.zeros(pot.shape, bool) if void2 is None else void2
+    theta = np.zeros_like(pot) if theta is None else theta
+    th_src = theta if th_src is None else th_src
+    th_dst = theta if th_dst is None else th_dst
     path = _astar(base.ravel().astype(float), selfc.ravel().astype(float), px.ravel().astype(float),
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
+                  pot2.ravel().astype(float), void2.ravel().astype(np.bool_), theta.ravel().astype(float),
+                  th_src.ravel().astype(float), th_dst.ravel().astype(float),
                   via_ok.ravel().astype(np.bool_), np.asarray(src, np.int64), np.asarray(dst, np.bool_), nl, ny, nx,
                   float(res), float(via_cost), float(lam), float(floor), hmin, ti, tj)
     return np.array(path, np.int64)
@@ -139,9 +154,10 @@ def search(base, selfc, px, py, via_ok, src, dst, res, via_cost=1.0, lam=1.0, fl
     per = base + lam * selfc - lam * (np.abs(px) + np.abs(py))
     hmin = max(float(np.min(per[np.isfinite(per)])) if np.isfinite(per).any() else floor, floor)
     hmin = min(hmin, 1.0)
+    z0 = np.zeros(base.size)
     path = _astar(base.ravel().astype(float), selfc.ravel().astype(float), px.ravel().astype(float),
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
-                  via_ok.ravel().astype(np.bool_), s, d, nl, ny, nx, float(res),
+                  z0, z0.astype(np.bool_), z0, z0, z0, via_ok.ravel().astype(np.bool_), s, d, nl, ny, nx, float(res),
                   float(via_cost), float(lam), float(floor), hmin, ti, tj)
     out = []
     for k in path:

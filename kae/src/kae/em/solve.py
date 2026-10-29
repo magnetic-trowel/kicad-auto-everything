@@ -145,16 +145,15 @@ class Operator:
             if not n:
                 continue
             seg = I2[a0:a0 + n]                                       # (n, P)
-            G = np.zeros((2 * P, S, self.Ny, self.Nx))
-            for q in range(P):
-                G[2 * q, slot, f["j"], f["i"]] = seg[:, q].real
-                G[2 * q + 1, slot, f["j"], f["i"]] = seg[:, q].imag
+            G = np.zeros((P, 2, S, self.Ny, self.Nx))
+            G[:, 0, slot, f["j"], f["i"]] = seg.real.T
+            G[:, 1, slot, f["j"], f["i"]] = seg.imag.T
+            G = G.reshape(2 * P, S, self.Ny, self.Nx)
             X = sfft.rfft2(G, workers=WORKERS)                       # (2P, S, Ny, Nx/2+1)
             sh = X.shape
             Y = _kmul(Kh, np.ascontiguousarray(X.reshape(2 * P, S, -1))).reshape(sh)
-            Y = sfft.irfft2(Y, s=(self.Ny, self.Nx), workers=WORKERS)
-            for q in range(P):
-                out[a0:a0 + n, q] = Y[2 * q, slot, f["j"], f["i"]] + 1j * Y[2 * q + 1, slot, f["j"], f["i"]]
+            Y = sfft.irfft2(Y, s=(self.Ny, self.Nx), workers=WORKERS).reshape(P, 2, S, self.Ny, self.Nx)
+            out[a0:a0 + n] = (Y[:, 0, slot, f["j"], f["i"]] + 1j * Y[:, 1, slot, f["j"], f["i"]]).T
         nv = len(net.vseg)
         if nv:
             o = net.off["v"]
@@ -284,21 +283,21 @@ class System:
         p = z.copy()
         rz = np.einsum("ij,ij->j", r, z)
         for it in range(1, maxiter + 1):
-            A = np.nonzero(act)[0]
-            q = self.matvec(p[:, A])
-            a = rz[A] / np.einsum("ij,ij->j", p[:, A], q)
-            x[:, A] += a * p[:, A]
-            r[:, A] -= a * q
-            its[A] = it
-            done = np.linalg.norm(r[:, A], axis=0) <= tol * bn[A]
-            act[A[done]] = False
+            # every column steps together (no gathers); a converged column is frozen by a zero step
+            q = self.matvec(p)
+            pq = np.einsum("ij,ij->j", p, q)
+            a = np.where(act, rz / np.where(act, pq, 1.0), 0.0)
+            x += a * p
+            r -= a * q
+            its[act] = it
+            act &= np.linalg.norm(r, axis=0) > tol * bn
             if not act.any():
                 break
-            A = np.nonzero(act)[0]
-            zA = self.psolve(r[:, A])
-            rzn = np.einsum("ij,ij->j", r[:, A], zA)
-            p[:, A] = zA + (rzn / rz[A]) * p[:, A]
-            rz[A] = rzn
+            z = self.psolve(r)
+            rzn = np.einsum("ij,ij->j", r, z)
+            beta = np.where(act, rzn / np.where(act, rz, 1.0), 0.0)
+            p = z + beta * p
+            rz = np.where(act, rzn, rz)
         return x, its
 
     def solve(self, s, tol=1e-8, maxiter=1000):

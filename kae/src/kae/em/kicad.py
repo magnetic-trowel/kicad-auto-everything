@@ -96,8 +96,16 @@ class BoardMesh:
                     g = transform.place_geom(pad_shape(p, layer), f.x, f.y, f.rot, f.side)
                     add(p.net, layer, g)
                     self.pads.setdefault(f"{f.ref}.{p.number}", []).append((layer, g, p))
+        order = [l.name for l in layers_of(b.stackup, nsub)]
+
+        def span(ls):
+            """A via's copper layers: every layer from its first to its last in stackup order (the file
+            lists only the two ends of a through or blind via)."""
+            ks = [order.index(l) for l in ls if l in order]
+            return order[min(ks):max(ks) + 1] if ks else []
+        self.span = span
         for v in b.vias:
-            for layer in v.layers:
+            for layer in span(v.layers):
                 add(v.net, layer, Point(v.x, v.y).buffer(v.size / 2, quad_segs=8))
         for (net, layer), gs in geo.items():
             m.paint(self.li[layer], net, unary_union(gs).intersection(win))
@@ -117,7 +125,7 @@ class BoardMesh:
                         m.lab[self.li[layer], j, i] = m.net_id(p.net)
         for v in b.vias:
             if win.contains(Point(v.x, v.y)) and (nets is None or v.net in nets):
-                ls = [self.li[l] for l in v.layers if l in self.li]
+                ls = [self.li[l] for l in span(v.layers) if l in self.li]
                 if len(ls) > 1:
                     m.via(v.x, v.y, ls, v.net, drill=v.drill)
         for tok, lst in self.pads.items():

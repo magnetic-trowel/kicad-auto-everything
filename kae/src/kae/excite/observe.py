@@ -101,16 +101,17 @@ def observers(bd, brief, sources):
     return out
 
 
-def pattern(bd, obs, f):
+def pattern(bd, obs, f, active=False):
     """J_k: pad currents of a unit current driven at the observer's port (adjoint solve); a direct pad
-    pair (cm) is its own pattern."""
+    pair (cm) is its own pattern. active: only the pads of parts outside the copper model (the
+    injection when two-pad parts are lumped into the copper)."""
     if obs.kind == "cm":
         a, b = obs.meta["pads"]
         return {a: 1.0, b: -1.0}
     c = bd.circuit
     s = c.src(f"adj:{obs.name}", obs.a, obs.b, obs.pa, obs.pb, kind="adjoint")
     c.sources.remove(s)
-    return c.solve(f, [s])[s.name]["J"]
+    return c.solve(f, [s])[s.name]["Ja" if active else "J"]
 
 
 F_PATTERN = 10e6
@@ -145,6 +146,14 @@ def size(o, s, L):
     f = min(max(f_r, F_CM[0]), F_CM[1])
     v = 2 * abs(L) * I * f_rep * (1.0 if f <= f_r else (f_r / f) ** 1)
     return v, CM_V_LIM_HZ / f
+
+
+def ideal(bd, sol):
+    """{pad: V} of a circuit solution with ideal copper (every pad at its net's node voltage): what a
+    copper model holding the same parts gives with zero copper impedance. The layout's harm is the
+    copper solve's value minus this one."""
+    V = sol["V"]
+    return {p: V.get(n, 0.0) for p, n in bd.net_of.items()}
 
 
 def bilinear(Ja, v):

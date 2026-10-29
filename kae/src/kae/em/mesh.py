@@ -58,8 +58,15 @@ class Lumped:
     L: float = 0.0
     C: float | None = None
     name: str = ""
+    zf: object = None        # callable w -> impedance (a circuit model), replacing R, L, C
+
+    @property
+    def short(self):
+        return self.zf is None and self.R == 0 and self.L == 0 and not self.C
 
     def z(self, w):
+        if self.zf is not None:
+            return complex(self.zf(w)) if w > 0 else complex(self.zf(1e3))
         z = self.R + 1j * w * self.L
         if self.C:
             z = z + (1 / (1j * w * self.C) if w > 0 else 1e12)
@@ -84,6 +91,7 @@ class Mesh:
     def __post_init__(self):
         self.lab = np.full((len(self.layers), self.ny, self.nx), -1, np.int32)
         self.thin = {}          # (layer, orientation, j, i) -> (width mm, length scale): sub-cell tracks
+        self.cov = np.zeros(self.lab.shape)    # copper coverage of each cell (0..1), for edge cells
 
     @classmethod
     def over(cls, x0, y0, x1, y1, pitch, layers, **kw):
@@ -109,13 +117,51 @@ class Mesh:
         shapely.prepare(geom)
         return shapely.contains_xy(geom, X, Y)
 
-    def paint(self, layer, net, geom=None, mask=None):
-        """Label the cells of `geom` (shapely, mm) or `mask` on layer index `layer` with `net`.
-        Later paint wins: paint pours first, then tracks and pads."""
+    SUB = 4                # sub-samples per cell side for the coverage of edge cells
+    MIN_COV = 0.25         # a cell less covered than this stays empty
+
+    def coverage(self, geom=None, rect=None):
+        """(ny, nx) fraction of each cell covered by the copper: exact 0/1 away from its edge, sampled
+        on SUB x SUB points per cell along it."""
+        from scipy import ndimage
+        X, Y = self.centres()
+        if rect is not None:
+            x0, y0, x1, y1 = rect
+            p = self.pitch
+            fx = np.clip((np.minimum(X + p / 2, x1) - np.maximum(X - p / 2, x0)) / p, 0, 1)
+            fy = np.clip((np.minimum(Y + p / 2, y1) - np.maximum(Y - p / 2, y0)) / p, 0, 1)
+            return fx * fy
+        import shapely
+        shapely.prepare(geom)
+        inside = shapely.contains_xy(geom, X, Y)
+        cov = inside.astype(float)
+        edge = ndimage.binary_dilation(inside) & ~ndimage.binary_erosion(inside)
+        edge |= ndimage.binary_dilation(edge)
+        jj, ii = np.nonzero(edge)
+        if len(jj):
+            n = self.SUB
+            off = (np.arange(n) + 0.5) / n - 0.5
+            ox, oy = np.meshgrid(off, off)
+            px = X[jj, ii][:, None] + ox.ravel()[None] * self.pitch
+            py = Y[jj, ii][:, None] + oy.ravel()[None] * self.pitch
+            cov[jj, ii] = shapely.contains_xy(geom, px, py).mean(axis=1)
+        return cov
+
+    def paint(self, layer, net, geom=None, mask=None, cov=None):
+        """Label the cells of `geom` (shapely, mm) or `mask` on layer index `layer` with `net`, keeping
+        each cell's copper coverage (edge cells: partial). Later paint wins where it covers a cell at
+        least as much. Partly covered cells carry their true width (Network)."""
         k = self.net_id(net)
-        m = self.cells_in(geom) if mask is None else mask
-        self.lab[layer][m] = k
-        return int(m.sum())
+        if mask is not None and cov is None:
+            cov = mask.astype(float)
+        elif cov is None:
+            cov = self.coverage(geom)
+        m = cov >= self.MIN_COV
+        own = self.lab[layer] == k
+        take = m & (own | (cov >= self.cov[layer] * 0.999) | (self.lab[layer] < 0))
+        self.cov[layer][take] = np.where(own[take], np.maximum(self.cov[layer][take], cov[take]), cov[take])
+        self.lab[layer][take] = k
+        return int(take.sum())
 
     def paint_line(self, layer, net, pts, width):
         """A track narrower than a few cells: a 4-connected chain of cells along its centre line, so it
@@ -148,7 +194,7 @@ class Mesh:
             scale = seg / ((len(cells) - 1) * p)
             pre = {c: lab[c] == k for c in cells}
             for (j0, i0), (j1, i1) in zip(cells[:-1], cells[1:]):
-                if pre[(j0, i0)] and pre[(j1, i1)]:
+                if pre[(j0, i0)] and pre[(j1, i1)] and self.cov[layer][j0, i0] >= 0.999 and self.cov[layer][j1, i1] >= 0.999:
                     continue
                 o = "x" if j0 == j1 else "y"
                 key = (layer, o, min(j0, j1), min(i0, i1))
@@ -156,10 +202,10 @@ class Mesh:
                     self.thin[key] = (width, scale)
             for j, i in cells:
                 lab[j, i] = k
+                self.cov[layer][j, i] = 1.0
 
     def rect(self, layer, net, x0, y0, x1, y1):
-        X, Y = self.centres()
-        return self.paint(layer, net, mask=(X > x0) & (X < x1) & (Y > y0) & (Y < y1))
+        return self.paint(layer, net, cov=self.coverage(rect=(x0, y0, x1, y1)))
 
     def via(self, x, y, layers, net, drill=0.3, plating=PLATING):
         self.vias.append(Via(x, y, list(layers), self.net_id(net), drill, plating))
@@ -187,9 +233,9 @@ class Mesh:
         self.terminals.setdefault(name, []).extend(cells)
         return name
 
-    def part(self, a, b, R=0.0, L=0.0, C=None, name=""):
-        """A lumped part between terminals a and b; R = L = 0 with no C is an ideal short."""
-        self.lumped.append(Lumped(a, b, R, L, C, name))
+    def part(self, a, b, R=0.0, L=0.0, C=None, name="", zf=None):
+        """A lumped part between terminals a and b; R = L = 0 with no C (and no zf) is an ideal short."""
+        self.lumped.append(Lumped(a, b, R, L, C, name, zf))
 
     def port(self, name, plus, minus):
         self.ports.append((name, plus, minus))
@@ -254,7 +300,7 @@ class Network:
             return r
         for name, cells in m.terminals.items():
             union(cells)
-        shorts = [q for q in m.lumped if q.R == 0 and q.L == 0 and not q.C]
+        shorts = [q for q in m.lumped if q.short]
         for q in shorts:
             union([m.terminals[q.a][0], m.terminals[q.b][0]])
         # via landings: the via's own-net cells within the barrel (radius + p/2) on each layer
@@ -308,6 +354,11 @@ class Network:
                 wfac = np.ones(len(jj))
                 lscale = np.ones(len(jj))
                 thin_w = np.full(len(jj), np.nan)
+                # an edge bar of partly covered cells: its width is the smaller coverage times p
+                cv = np.minimum(m.cov[l, jj, ii], m.cov[l, jj + dj, ii + di])
+                part = (cv > 0) & (cv < 0.999)
+                thin_w[part] = cv[part] * m.pitch
+                wfac[part] = 1.0 / cv[part]
                 if m.thin:
                     for q, (j_, i_) in enumerate(zip(jj, ii)):
                         th = m.thin.get((l, o, int(j_), int(i_)))
@@ -337,7 +388,8 @@ class Network:
                 R = h / (m.sigma * np.pi * 2 * r * v.plating)
                 vs.append((na, nb, v.x * MM, v.y * MM, min(za, zb), max(za, zb), r, R))
         self.vseg = np.array(vs, float).reshape(-1, 8)
-        self.lump = [(self.term_node[q.a], self.term_node[q.b], q) for q in m.lumped if q not in shorts]
+        self.lump = [(self.term_node[q.a], self.term_node[q.b], q) for q in m.lumped
+                     if not q.short and self.term_node[q.a] != self.term_node[q.b]]
 
         nf = {o: len(f["a"]) for o, f in self.fil.items()}
         self.off = {"x": 0, "y": nf["x"], "v": nf["x"] + nf["y"], "l": nf["x"] + nf["y"] + len(self.vseg)}

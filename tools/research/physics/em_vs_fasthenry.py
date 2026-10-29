@@ -43,7 +43,8 @@ def _trace_over_plane(L, w, h=0.2, slot=None, py=20.0, px=None):
     planes = []
     for k, (b0, b1, pp) in enumerate(bands):
         hb = [(hx0, max(hy0, b0), hx1, min(hy1, b1)) for hx0, hy0, hx1, hy1 in holes if hy0 < b1 and hy1 > b0]
-        planes.append(dict(x0=0, y0=b0, x1=px, y1=b1, z=0, t=T, holes=hb, name=f"gnd{k}", pitch=(pp, pp)))
+        for q, ((a0, c0, a1, c1), hh) in enumerate(_band_pieces(0, b0, px, b1, hb)):
+            planes.append(dict(x0=a0, y0=c0, x1=a1, y1=c1, z=0, t=T, holes=hh, name=f"gnd{k}{q}", pitch=(pp, pp)))
     return dict(sigma=5.8e7, freqs=[F], plane_nhinc=3,
                 rects=[dict(x0=x0, y0=yc - w / 2, x1=x0 + L, y1=yc + w / 2, z=zs, t=T, name="tr")],
                 planes=planes,
@@ -51,8 +52,79 @@ def _trace_over_plane(L, w, h=0.2, slot=None, py=20.0, px=None):
                 shorts=[dict(a=(x0 + L, yc, zs + T / 2), b=(x0 + L, yc, T / 2))])
 
 
+def _band_pieces(x0, y0, x1, y1, holes):
+    """A band minus its holes as FastHenry planes: a hole that spans the band's full height would cut
+    one plane in two (FastHenry needs each plane connected), so the band is split at it."""
+    full = [h for h in holes if h[1] <= y0 + 1e-9 and h[3] >= y1 - 1e-9]
+    if not full:
+        return [((x0, y0, x1, y1), list(holes))]
+    hx0, _, hx1, _ = full[0]
+    rest = [h for h in holes if h is not full[0]]
+    out = []
+    for a, b in ((x0, hx0), (hx1, x1)):
+        if b - a > 1e-9:
+            out += _band_pieces(a, y0, b, y1, [h for h in rest if h[0] < b and h[2] > a])
+    return out
+
+
+def _banded(name, z, px, py, yc, holes=(), fine=0.1, coarse=0.4, half=2.5):
+    """A plane in three abutting bands (fine under the traces at yc)."""
+    out = []
+    for k, (b0, b1, pp) in enumerate([(0, yc - half, coarse), (yc - half, yc + half, fine), (yc + half, py, coarse)]):
+        hb = [(hx0, max(hy0, b0), hx1, min(hy1, b1)) for hx0, hy0, hx1, hy1 in holes if hy0 < b1 and hy1 > b0]
+        for q, ((a0, c0, a1, c1), hh) in enumerate(_band_pieces(0, b0, px, b1, hb)):
+            out.append(dict(x0=a0, y0=c0, x1=a1, y1=c1, z=z, t=T, holes=hh, name=f"{name}{k}{q}", pitch=(pp, pp)))
+    return out
+
+
+def _stripline(h_dn, h_up, w=0.3, L=14.0, slot_up=None, slot_dn=None, px=24.0, py=14.0):
+    """A trace between two planes h_dn below and h_up above it, both planes tied together by rows of
+    shorts at the feed and at the far end; the trace is shorted to the lower plane at its far end."""
+    yc, x0 = py / 2, 5.0
+    zt = T + h_dn
+    zu = zt + T + h_up
+    planes = _banded("dn", 0.0, px, py, yc, [slot_dn] if slot_dn else []) + \
+        _banded("up", zu, px, py, yc, [slot_up] if slot_up else [])
+    ties = [dict(a=(x, y, T / 2), b=(x, y, zu + T / 2)) for x in (x0 - 2.0, x0 + L + 2.0)
+            for y in np.linspace(2.0, py - 2.0, 7)]
+    return dict(sigma=5.8e7, freqs=[F], plane_nhinc=3,
+                rects=[dict(x0=x0, y0=yc - w / 2, x1=x0 + L, y1=yc + w / 2, z=zt, t=T, name="tr")],
+                planes=planes,
+                ports=[dict(p=(x0, yc, zt + T / 2), n=(x0, yc, T / 2), name="P")],
+                shorts=[dict(a=(x0 + L, yc, zt + T / 2), b=(x0 + L, yc, T / 2))] + ties)
+
+
+def _layer_change(D, w=0.3, px=24.0, py=None):
+    """4 layers: a trace on L1 over plane A (L2) runs to a via at x = 12 and continues on L4 under
+    plane B (L3); A and B are joined only by one capacitor (an ideal short) D mm from the via. The
+    return has to change planes there."""
+    py = py or max(20.0, 2 * D + 6.0)             # the capacitor at yc + D stays on the board
+    yc, x0, xv, x1 = py / 2, 4.0, 12.0, 20.0
+    h = 0.2
+    z4, z3 = 0.0, T + h            # L4 trace, L3 plane B
+    z2 = z3 + T + 0.6              # L2 plane A (core 0.6 between the planes)
+    z1 = z2 + T + h                # L1 trace
+    hole = (xv - 0.5, yc - 0.5, xv + 0.5, yc + 0.5)
+    half = min(max(2.5, D + 1.0), 6.0)            # the fine band reaches the capacitor (FastHenry memory bound)
+    planes = _banded("A", z2, px, py, yc, [hole], half=half) + _banded("B", z3, px, py, yc, [hole], half=half)
+    return dict(sigma=5.8e7, freqs=[F], plane_nhinc=3,
+                rects=[dict(x0=x0, y0=yc - w / 2, x1=xv + 0.2, y1=yc + w / 2, z=z1, t=T, name="t1"),
+                       dict(x0=xv - 0.2, y0=yc - w / 2, x1=x1, y1=yc + w / 2, z=z4, t=T, name="t4")],
+                planes=planes,
+                vias=[dict(x=xv, y=yc, z0=z1 + T / 2, z1=z4 + T / 2, d=0.3)],
+                ports=[dict(p=(x0, yc, z1 + T / 2), n=(x0, yc, z2 + T / 2), name="P")],
+                shorts=[dict(a=(x1, yc, z4 + T / 2), b=(x1, yc, z3 + T / 2)),          # far end to plane B
+                        dict(a=(xv, yc + D, z2 + T / 2), b=(xv, yc + D, z3 + T / 2))])  # the capacitor A-B
+
+
 def cases():
     out = {}
+    out["strip_sym"] = _stripline(0.2, 0.2)
+    out["strip_asym"] = _stripline(0.1, 0.3)
+    out["strip_slot_up"] = _stripline(0.2, 0.2, slot_up=(11.5, 3.0, 12.5, 11.0))
+    out["strip_slot_dn"] = _stripline(0.2, 0.2, slot_dn=(11.5, 3.0, 12.5, 11.0))
+    for D in (1, 5, 15):
+        out[f"layerchange_{D}"] = _layer_change(float(D))
     for L in (20, 30):
         out[f"microstrip{L}"] = _trace_over_plane(L, 0.5, py=10.0, px=L + 10)
     out["noslot"] = _trace_over_plane(20, 0.3)

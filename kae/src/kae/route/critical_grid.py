@@ -610,7 +610,8 @@ class GridRouter:
             ph = phys(grid, layers)
             path = search_flat(cost, ph["self"], ph["px"], ph["py"], ph["pot"], ph["void"], vmask, src, dst, grid.res,
                                via_cost=float(vc), lam=1.0, floor=ph.get("floor", 0.2),
-                               target=((ty0 + ty1) // 2, (tx0 + tx1) // 2))
+                               target=((ty0 + ty1) // 2, (tx0 + tx1) // 2), pot2=ph.get("pot2"), void2=ph.get("void2"),
+                               theta=ph.get("theta"), th_src=ph.get("th_src"), th_dst=ph.get("th_dst"))
             nexp = 0
         else:
             path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),

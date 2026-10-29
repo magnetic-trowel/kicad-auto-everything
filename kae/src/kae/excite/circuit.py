@@ -42,6 +42,23 @@ class Source:
     meta: dict = field(default_factory=dict)
 
 
+def lump_into(bd_circuit, mesh_pad, part):
+    """Every two-pad element of the circuit as a lumped part of a copper model: mesh_pad(token) makes
+    or finds the terminal (raises if the pad is not in the model); part(a, b, zf, name) adds it.
+    Returns the names lumped."""
+    done = []
+    for e in bd_circuit.elems:
+        if not (e.pa and e.pb):
+            continue
+        try:
+            a, b = mesh_pad(e.pa), mesh_pad(e.pb)
+        except (KeyError, ValueError):
+            continue
+        part(a, b, e.z, e.name)
+        done.append(e.name)
+    return done
+
+
 class Circuit:
     def __init__(self, ground):
         self.ground = ground
@@ -94,17 +111,21 @@ class Circuit:
             rhs[self.nodes[s.a]] -= 1.0
             V = np.r_[0.0, lu.solve(rhs[1:])]
             Ie = (V[ia] - V[ib]) * y                     # a -> b through each element
-            J = {}
+            J, Ja = {}, {}
             for e, i in zip(self.elems, Ie):
-                if e.pa:
-                    J[e.pa] = J.get(e.pa, 0) - i       # leaves the copper at a into the part
-                if e.pb:
-                    J[e.pb] = J.get(e.pb, 0) + i
-            if s.pa:
-                J[s.pa] = J.get(s.pa, 0) - 1.0
-            if s.pb:
-                J[s.pb] = J.get(s.pb, 0) + 1.0
-            out[s.name] = dict(V=dict(zip(names, V)), J=J, I={e.name: i for e, i in zip(self.elems, Ie)})
+                two = bool(e.pa and e.pb)
+                for pad, v in ((e.pa, -i), (e.pb, i)):    # leaves the copper at a into the part, back at b
+                    if pad:
+                        J[pad] = J.get(pad, 0) + v
+                        if not two:
+                            Ja[pad] = Ja.get(pad, 0) + v
+            for pad, v in ((s.pa, -1.0), (s.pb, 1.0)):
+                if pad:
+                    J[pad] = J.get(pad, 0) + v
+                    Ja[pad] = Ja.get(pad, 0) + v
+            # J: every pad (ideal copper); Ja: only the pads of parts that stay outside the copper model
+            # (ICs, connectors, the source): the injection when two-pad parts are lumped into the copper
+            out[s.name] = dict(V=dict(zip(names, V)), J=J, Ja=Ja, I={e.name: i for e, i in zip(self.elems, Ie)})
         return out
 
 

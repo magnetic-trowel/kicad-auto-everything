@@ -18,7 +18,12 @@ from . import observe as O
 from . import sources as S
 
 
-def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print):
+def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True):
+    """lumped: two-pad parts (capacitors with ESL/ESR, resistors, inductors, ferrites, conducting
+    rectifiers) are branches of the copper model and only the other parts' pads are injected, so the
+    geometry decides which capacitor closes a loop or carries a return between planes. Harms are then
+    totals (copper plus those parts); without it they are the copper's share with the circuit's
+    ideal-copper current split."""
     from kae.board.kicad_file import load
     from kae.circuit import brief as B
     from kae.em import solve as ES
@@ -30,16 +35,21 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     srcs = S.add_all(bd, brief)
     obs = O.observers(bd, brief, srcs)
     # every pad any pattern touches becomes a terminal of the copper model
-    pats, pads = {}, set()
+    key = "Ja" if lumped else "J"
+    pats, pads, vid = {}, set(), {}
     for s in srcs:
         f = O.gentle_f(s)
-        pats[s.name] = (f, bd.circuit.solve(f, [s])[s.name]["J"])
-        pads |= {p for p, j in pats[s.name][1].items() if abs(j) > 1e-6}
+        sol = bd.circuit.solve(f, [s])[s.name]
+        pats[s.name] = (f, sol[key])
+        vid[s.name] = O.ideal(bd, sol)
+        pads |= {p for p, j in pats[s.name][1].items() if abs(j) > 1e-9}
     opats = {}
     for o in obs:
         for f in {pf for pf, _ in pats.values()}:
-            opats[(o.name, f)] = O.pattern(bd, o, f)
-            pads |= {p for p, j in opats[(o.name, f)].items() if abs(j) > 1e-6}
+            opats[(o.name, f)] = O.pattern(bd, o, f, active=lumped)
+            pads |= {p for p, j in opats[(o.name, f)].items() if abs(j) > 1e-9}
+    if lumped:
+        pads |= {p for e in bd.circuit.elems if e.pa and e.pb for p in (e.pa, e.pb)}
     if window is None:
         from kae.board import transform
         xs, ys = [], []
@@ -55,9 +65,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             bm.pad(p)
         except (KeyError, ValueError):
             missing.append(p)
+    n_lumped = 0
+    if lumped:
+        from .circuit import lump_into
+
+        def tpad(t):
+            if t not in bm.m.terminals:
+                raise KeyError(t)
+            return t
+        n_lumped = len(lump_into(bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf)))
     net = ES.Network(bm.m)
     op = ES.Operator(net)
-    log(f"mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, {len(srcs)} sources, {len(obs)} observers, "
+    log(f"{n_lumped} parts lumped into the copper; mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, {len(srcs)} sources, {len(obs)} observers, "
         f"{len(pads)} pads ({len(missing)} outside or unresolved), setup {time.time() - t0:.1f}s")
     harms, notes = [], []
     solved = {}
@@ -78,7 +97,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             if o.kind == "overshoot" and o.meta.get("source") != s.name:
                 continue
             Jk = opats[(o.name, f)]
-            r = O.bilinear(Jk, v)
+            # the layout's share: the copper solve minus the same parts with ideal copper (with lumped
+            # parts the solve also holds the circuit's own, intended coupling)
+            r = O.bilinear(Jk, v) - (O.bilinear(Jk, vid[s.name]) if lumped else 0.0)
             L = r.imag / w
             volts, bound = O.size(o, s, L)
             harms.append(dict(observer=o.name, source=s.name, L_nH=round(L * 1e9, 4), volts=volts,
@@ -99,8 +120,10 @@ def main(argv=None):
     ap.add_argument("--pitch", type=float, default=0.25)
     ap.add_argument("--window", type=float, nargs=4)
     ap.add_argument("-o")
+    ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
     a = ap.parse_args(argv)
-    r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr))
+    r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr),
+                 lumped=not a.no_lumped)
     for h in r["harms"][:25]:
         print(f"{h['u']:8.3f}  {h['volts']*1e3:9.2f} mV / {h['bound']*1e3:7.2f}  L {h['L_nH']:8.3f} nH  "
               f"{h['observer']}  <-  {h['source']}")

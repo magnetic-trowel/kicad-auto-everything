@@ -32,7 +32,9 @@ def mesh_of(spec, pitch, nsub=2, margin=0.0):
     for s in spec.get("planes") or []:
         k = li[(round(s["z"], 9), round(s["t"], 9))]
         for hx0, hy0, hx1, hy1 in s.get("holes") or []:
-            m.lab[k][(X > hx0) & (X < hx1) & (Y > hy0) & (Y < hy1)] = -1
+            hole = (X > hx0) & (X < hx1) & (Y > hy0) & (Y < hy1)
+            m.lab[k][hole] = -1
+            m.cov[k][hole] = 0.0
 
     def layer_at(z):
         for k, l in enumerate(layers):
