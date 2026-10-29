@@ -66,7 +66,8 @@ class Operator:
         self.S = len(net.subs)
         self.Ny = sfft.next_fast_len(2 * m.ny - 1, real=True)
         self.Nx = sfft.next_fast_len(2 * m.nx - 1, real=True)
-        self.used = {o: np.unique(net.fil[o]["s"]) for o in ("x", "y")}
+        # every sublayer, copper or not: price fields are read on empty layers too
+        self.used = {o: np.arange(len(net.subs)) for o in ("x", "y")}
         self.Kh = {o: self._kernels(o) for o in ("x", "y")}
         self.Lv = self._via_matrix()
 
@@ -359,5 +360,5 @@ def potentials(mesh, injections, f, read=None, tol=1e-8, net=None, op=None):
     out = {}
     for t in (read or mesh.terminals):
         out[t] = sysm.potential(x, t)
-    return out, dict(iters=it, info=info, net=net, op=op, unbalanced=len(open_),
+    return out, dict(iters=it, info=info, net=net, op=op, unbalanced=len(open_), I=x[:net.n_br], x=x, sys=sysm,
                      open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_])

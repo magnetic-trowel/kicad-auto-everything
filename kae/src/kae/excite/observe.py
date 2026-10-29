@@ -113,10 +113,17 @@ def pattern(bd, obs, f):
     return c.solve(f, [s])[s.name]["J"]
 
 
-def gentle_f(src, f_res_guard=50e6):
-    """The frequency at which an aggressor's pattern is taken: its edge band, capped below the loop's
-    own parasitic resonances (first-order pricing holds only inside them)."""
-    return min(src.meta.get("f_e") or 1e8, f_res_guard)
+F_PATTERN = 10e6
+
+
+def gentle_f(src, f_cap=F_PATTERN):
+    """The frequency at which an aggressor's current pattern is taken: its edge band, capped at 10 MHz.
+    Above the capacitors' self-resonance (1-5 MHz for microfarads) they share current by their
+    package inductance, as at the edge; well below the loop's parasitic resonance (C_oss or the
+    switch node with nanohenries: 50-300 MHz) the pattern carries no resonant gain. First-order
+    pricing holds only below that resonance (the gentleness criterion); the ring is a sign-off
+    question (`gain` reports it)."""
+    return min(src.meta.get("f_e") or 1e8, f_cap)
 
 
 CM_V_LIM_HZ = 3.8e4        # V_lim(f) = CM_V_LIM_HZ / f, see TOL["cm"]
