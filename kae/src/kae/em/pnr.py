@@ -191,6 +191,7 @@ class PhysRouter:
                                             phi_all=fl) for l in layers}
             self.pot_at[key] = v
         self.mesh = bm.m
+        self.op = op
         self.layer_names = [l.name for l in bm.m.layers]
         self._weights()
         self.log(f"pnr: fields of {len(self.prices)} patterns on {bm.m.nx}x{bm.m.ny}x{len(layers)} "
@@ -344,7 +345,8 @@ class PhysRouter:
             # be in the fields) and otherwise every `refresh` nets
             cell = any(k[0] == "s" and k[1].startswith("cell:") and any(abs(self.flow[k].get(q, 0)) > 1e-3
                        for q in self.bd.pads_of.get(n, [])) for k in self.flow)
-            if done == 0 or since >= self.refresh or (cell and since > 0):
+            # (hops update the price fields incrementally in between, kae.em.fields.flux_of_cells)
+            if done == 0 or since >= self.refresh:
                 self.solve_fields()
                 since = 0
             since += 1
@@ -378,6 +380,7 @@ class PhysRouter:
                     for l, p0, p1 in rt.segs:
                         it = self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n))
                         self.tracks.append((n, l, rt.width, p0, p1, "", False))
+                    self._update_fields(rt, cur)
                     for (x, y) in rt.vias:
                         self.sp.add_via(n, x, y, owner=("pnr", n))
                         D, d = self.sp.via_size(n)
@@ -395,6 +398,54 @@ class PhysRouter:
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
                  f"{time.time() - t0:.1f}s")
         return self
+
+    def _update_fields(self, rt, cur):
+        """Between refreshes, a routed hop's own flux joins every pattern's price fields (its current in
+        that pattern times the field of the hop and its return under it), so the nets after it see it."""
+        if self.plain or not hasattr(self, "op"):
+            return
+        from . import fields as EF
+        m = self.mesh
+        bars = []
+        for l, p0, p1 in rt.segs:
+            if l not in self.layer_names:
+                continue
+            L = self.layer_names.index(l)
+            up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+            n = max(2, int(math.ceil(math.dist(p0, p1) / (m.pitch / 2))) + 1)
+            prev = None
+            for t in np.linspace(0, 1, n):
+                c = m.cell(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
+                if prev is not None and c != prev and 0 <= c[0] < m.ny and 0 <= c[1] < m.nx:
+                    (j0, i0), (j1, i1) = prev, c
+                    for (ja, ia), (jb, ib) in (((j0, i0), (j0, i1)), ((j0, i1), (j1, i1))):
+                        if (ja, ia) == (jb, ib):
+                            continue
+                        o = "x" if ja == jb else "y"
+                        sg = (ib - ia) if o == "x" else (jb - ja)
+                        jj, ii = min(ja, jb), min(ia, ib)
+                        bars.append((L, o, jj, ii, float(sg)))
+                        for ref, a in ((up, a_up), (dn, a_dn)):
+                            k = ref[jj, ii]
+                            if k >= 0 and a[jj, ii] > 0:
+                                bars.append((int(k), o, jj, ii, -float(sg) * float(a[jj, ii])))
+                prev = c
+        if not bars:
+            return
+        fl = EF.flux_of_cells(self.op, bars)
+        for key, i in cur.items():
+            if key not in self.prices or i == 0:
+                continue
+            for L, pr in self.prices[key].items():
+                up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+                dx, dy = fl[(L, "x")].copy(), fl[(L, "y")].copy()
+                for ref, a in ((up, a_up), (dn, a_dn)):
+                    for k in np.unique(ref[ref >= 0]):
+                        sel = ref == k
+                        dx[sel] -= a[sel] * fl[(int(k), "x")][sel]
+                        dy[sel] -= a[sel] * fl[(int(k), "y")][sel]
+                pr.Px = pr.Px + i * dx
+                pr.Py = pr.Py + i * dy
 
     def _end_plane(self, pads):
         """The plane the return of an island's terminal enters: nearest return copper to its first pad's
@@ -439,7 +490,7 @@ def main(argv=None):
     ap.add_argument("--plain", action="store_true")
     ap.add_argument("--lam", type=float, default=30.0)
     ap.add_argument("--pitch", type=float, default=0.25)
-    ap.add_argument("--refresh", type=int, default=4)
+    ap.add_argument("--refresh", type=int, default=6)
     a = ap.parse_args(argv)
     PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh).route()
 

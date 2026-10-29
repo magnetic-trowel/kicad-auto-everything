@@ -51,3 +51,38 @@ def flux(op, I, layers=None):
             k = used.index(subs[len(subs) // 2])
             out[(l, o)] = Y[0, k] + 1j * Y[1, k]
     return out
+
+
+def flux_of_cells(op, bars, layers=None):
+    """Flux fields of given unit-current bars that are not part of the mesh: bars = [(layer, 'x'|'y', j, i,
+    current)], each placed on its layer's middle sublayer. Returns {(layer, o): real (ny, nx)} like
+    `flux` (the new copper a router just laid, with its return as negative bars on the planes)."""
+    net = op.net
+    m = net.m
+    layers = range(len(m.layers)) if layers is None else layers
+    out = {}
+    for o in ("x", "y"):
+        S, slot, Kh = op._index()[o]
+        used = list(op.used[o])
+        G = np.zeros((S, op.Ny, op.Nx))
+        any_ = False
+        for (l, oo, j, i, c) in bars:
+            if oo != o:
+                continue
+            subs = net.sub_of[l]
+            k = used.index(subs[len(subs) // 2])
+            G[k, j, i] += c
+            any_ = True
+        if not any_:
+            for l in layers:
+                out[(l, o)] = np.zeros((m.ny, m.nx))
+            continue
+        X = sfft.rfft2(G[None], workers=WORKERS)
+        sh = X.shape
+        Y = _kmul(Kh, np.ascontiguousarray(X.reshape(1, S, -1).astype(complex))).reshape(sh)
+        Y = sfft.irfft2(Y, s=(op.Ny, op.Nx), workers=WORKERS)[0, :, :m.ny, :m.nx]
+        for l in layers:
+            subs = net.sub_of[l]
+            k = used.index(subs[len(subs) // 2])
+            out[(l, o)] = Y[k]
+    return out
