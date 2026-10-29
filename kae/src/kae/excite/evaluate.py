@@ -216,9 +216,10 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 assumptions=bd.assumptions)
 
 
-def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log):
+def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None):
     """The DC band's harms (kae.excite.dc) at every corner, added into the per-corner totals `tot`. A
-    corner's cells take the values of the same corner of their switching harms (one operating point)."""
+    corner's cells take the values of the same corner of their switching harms (one operating point).
+    ac_copper: the switching harmonics' copper loss per corner (W), counted with the DC copper loss."""
     from kae.em import solve as ES
     from .beliefs import corners
     t0 = time.time()
@@ -249,6 +250,10 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
                          f"only through a part that is open at DC): the DC band is not computed")
             return []
         ob = DC.observe(dcp, cvs[c], V, info, tracks=trk)
+        if ac_copper is not None:
+            u_, P_, bud = ob["loss"]
+            P_ += float(ac_copper[c])
+            ob["loss"] = (P_ / bud if bud > 0 else 0.0, P_, bud)
         loss.append(ob["loss"])
         for ref, rail, u, dv, bnd in ob["drops"]:
             drops.setdefault((ref, rail), [None] * ncp)[c] = (u, dv, bnd)
@@ -257,7 +262,8 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     us = [x[0] for x in loss]
     rows.append(dict(observer="dc:copper_loss", source="dc", kind="dc_loss", u=us[0], u_lo=min(us), u_hi=max(us),
                      P_mW=round(loss[0][1] * 1e3, 3), budget_mW=round(loss[0][2] * 1e3, 3),
-                     basis=f"copper dissipation against {dcp.loss_share:.0%} of the delivered power"))
+                     basis=f"copper dissipation{' (DC and switching harmonics)' if ac_copper is not None else ''} "
+                           f"against {dcp.loss_share:.0%} of the delivered power"))
     for c in range(ncp):
         tot[c] += HA.phi(us[c])
     for (ref, rail), vals in drops.items():

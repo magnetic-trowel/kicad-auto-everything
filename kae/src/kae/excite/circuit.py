@@ -135,11 +135,12 @@ class Circuit:
         self.sources.append(s)
         return s
 
-    def _Y(self, w):
+    def _Y(self, w, elems=None):
+        elems = self.elems if elems is None else elems
         n = len(self.nodes)
-        ia = np.array([self.nodes[e.a] for e in self.elems])
-        ib = np.array([self.nodes[e.b] for e in self.elems])
-        y = np.array([1.0 / max_abs(e.z(w)) for e in self.elems], complex)
+        ia = np.array([self.nodes[e.a] for e in elems])
+        ib = np.array([self.nodes[e.b] for e in elems])
+        y = np.array([1.0 / max_abs(e.z(w)) for e in elems], complex)
         rows = np.concatenate([ia, ib, ia, ib, np.arange(n)])
         cols = np.concatenate([ia, ib, ib, ia, np.arange(n)])
         vals = np.concatenate([y, y, -y, -y, np.full(n, G_LEAK)])
@@ -147,11 +148,13 @@ class Circuit:
         keep = np.arange(1, n)                         # node 0 (ground) is the reference
         return Y[keep][:, keep].tocsc(), ia, ib, y
 
-    def solve(self, f, sources=None):
+    def solve(self, f, sources=None, skip=()):
         """{source name: dict(V={node: V}, J={pad: A}, I={elem name: A})} at frequency f (Hz), each source
-        driving 1 A."""
+        driving 1 A. skip: element kinds left out (the layout's own parasitics, for an ideal-copper
+        reference)."""
         w = 2 * np.pi * f
-        Y, ia, ib, y = self._Y(w)
+        elems = [e for e in self.elems if e.kind not in skip] if skip else self.elems
+        Y, ia, ib, y = self._Y(w, elems)
         lu = sla.splu(Y)
         out = {}
         names = list(self.nodes)
@@ -162,7 +165,7 @@ class Circuit:
             V = np.r_[0.0, lu.solve(rhs[1:])]
             Ie = (V[ia] - V[ib]) * y                     # a -> b through each element
             J, Ja = {}, {}
-            for e, i in zip(self.elems, Ie):
+            for e, i in zip(elems, Ie):
                 two = bool(e.pa and e.pb)
                 for pad, v in ((e.pa, -i), (e.pb, i)):    # leaves the copper at a into the part, back at b
                     if pad:
@@ -175,7 +178,7 @@ class Circuit:
                     Ja[pad] = Ja.get(pad, 0) + v
             # J: every pad (ideal copper); Ja: only the pads of parts that stay outside the copper model
             # (ICs, connectors, the source): the injection when two-pad parts are lumped into the copper
-            out[s.name] = dict(V=dict(zip(names, V)), J=J, Ja=Ja, I={e.name: i for e, i in zip(self.elems, Ie)})
+            out[s.name] = dict(V=dict(zip(names, V)), J=J, Ja=Ja, I={e.name: i for e, i in zip(elems, Ie)})
         return out
 
 
