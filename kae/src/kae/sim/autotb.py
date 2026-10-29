@@ -432,27 +432,33 @@ F_SIM_MIN = 3e5                    # Hz: the slowest simulated switching (see ce
 LOOP_F = 1e6                       # Hz: the loop's capacitors are shorted, so Z = R + j w L at any frequency
 
 
-def _loop_test(c, s, swn, bus, gnd, bus_tok, gnd_tok):
-    """The cell's hot loop: the inductance from the switch's bus pin through the capacitors across
-    the bus back to its ground pin, with each capacitor shorted to its ESR and ESL. It sets the
-    switch-node ringing and the cell's radiated field whatever the switches are, so it is judged
-    without a model of them."""
-    t = Test(id=f"loop:{s.get('id')}:{swn}", kind="loop", extract="power", nets=sorted({bus} | set(c.gnd_nets())),
-             structure=s.get("id") or "")
+def _loop_test(c, s, swn, bus, gnd, high, low):
+    """The cell's commutation loop: high element, bus copper, the capacitors across the bus (each
+    shorted to its ESR and ESL), ground copper, low element, switch-node copper. The source takes
+    the high element's place and the low one is shorted (the switches' own package inductance is
+    not in it). It sets the switch-node ring and the cell's field whatever the switches are, so it
+    is judged without a model of them. high, low: ((footprint, kind), (pin a, pin b))."""
+    t = Test(id=f"loop:{s.get('id')}:{swn}", kind="loop", extract="power",
+             nets=sorted({bus, swn} | set(c.gnd_nets())), structure=s.get("id") or "")
     caps = [p for p in c.design.parts if p.kind == "C"
             and {c.design.pin_net.get(k) for k in p.pins} == {bus, gnd}]
     if not caps:
         t.unknown.append(f"no capacitor across {bus} and {gnd}")
         return t
-    t.notes.append(f"from {bus_tok[1:-1]} through {', '.join(p.ref for p in caps)} to {gnd_tok[1:-1]}")
+    (hf, _), (hb, hs) = high
+    (lf, _), (ls, lg) = low
+    h_bus, h_sw, l_sw, l_gnd = f"<{hf.ref}.{hb}>", f"<{hf.ref}.{hs}>", f"<{lf.ref}.{ls}>", f"<{lf.ref}.{lg}>"
+    t.notes.append(f"{h_sw[1:-1]} -> {h_bus[1:-1]} -> {', '.join(p.ref for p in caps)} -> {l_gnd[1:-1]} -> "
+                   f"{l_sw[1:-1]} (shorted) -> {h_sw[1:-1]}")
     for p in caps:
         t.exclude.append(p.ref)
         a, b = (f"<{k[4:]}>" for k in p.pins)
         t.lines.append(f"Lq{p.ref} {a} q{p.ref.lower()} {fmt(max(p.esl, 1e-12))}")
         t.lines.append(f"Rq{p.ref} q{p.ref.lower()} {b} {fmt(max(p.esr, 1e-4))}")
+    t.lines.append(f"Rql {l_sw} {l_gnd} 1e-4")
     # a current of 1e9/w at -90 degrees: the real part of the voltage it makes is the inductance in nH
-    t.lines.append(f"Iq {gnd_tok} {bus_tok} AC {1e9 / (2 * math.pi * LOOP_F):.6g} -90")
-    pr = _probe(t, "zq", bus_tok, gnd_tok)
+    t.lines.append(f"Iq {h_sw} {h_bus} AC {1e9 / (2 * math.pi * LOOP_F):.6g} -90")
+    pr = _probe(t, "zq", h_bus, h_sw)
     t.lines.append(f".ac lin 3 {fmt(0.9 * LOOP_F)} {fmt(1.1 * LOOP_F)}")
     t.lines.append(f".meas ac loop_nH FIND {pr} AT={fmt(LOOP_F)}")
     t.info.append("loop_nH")
@@ -501,7 +507,7 @@ def cell_tests(c):
                 t.unknown.append(f"switching elements not found on {bus} -> {swn} -> {gnd}")
                 out.append(t)
                 continue
-            out.append(_loop_test(c, s, swn, bus, gnd, f"<{high[0].ref}.{hp[0]}>", f"<{low[0].ref}.{lp[1]}>"))
+            out.append(_loop_test(c, s, swn, bus, gnd, (high, hp), (low, lp)))
             vbus = (c.nets.get(bus) or {}).get("volts") or (s.get("excite") or {}).get("V")
             if vbus is None:
                 t.unknown.append(f"{bus}: voltage not identified")

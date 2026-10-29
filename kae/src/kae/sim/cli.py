@@ -102,7 +102,9 @@ def main(argv=None):
             x["prior_nH"] = None if pr is None else round(pr, 4)
         sha = lambda f: hashlib.sha256(Path(f).read_bytes()).hexdigest()
         BG.write(bud, a.out, sha(a.board), sha(a.testbench))
-        print(json.dumps({k: dict(value=v["value"], prior_nH=v["prior_nH"]) for k, v in bud.items()}))
+        print(json.dumps({k: dict(value=v.get("value"), lenient=(v.get("detail") or {}).get("lenient_nH"),
+                                  floor=(v.get("detail") or {}).get("floor_nH"), prior_nH=v["prior_nH"],
+                                  status=v["status"]) for k, v in bud.items()}, indent=1))
         return 0
     from .evaluate import Context, evaluate, write
     b = load_board(a.board, a.pintypes, a.schematic)

@@ -270,8 +270,10 @@ def test_loop_is_judged_without_the_bus_voltage(tmp_path):
     b, br, t = _cell_tests(tmp_path, vin=None)
     assert t["cell"].unknown and not t["loop"].unknown
     loop = t["loop"]
-    assert loop.exclude == ["C1"] and loop.nets == ["GND", "VIN"]
-    assert any(ln.startswith("Iq <U1.4> <U1.3> AC ") for ln in loop.lines)
+    assert loop.exclude == ["C1"] and loop.nets == ["GND", "Net-(U1-SW)", "VIN"]
+    # the whole commutation loop: the source in the high switch's place, the low one shorted
+    assert any(ln.startswith("Iq <U1.5> <U1.3> AC ") for ln in loop.lines)
+    assert "Rql <U1.5> <U1.4> 1e-4" in loop.lines
 
 
 @pytest.mark.skipif(not _have_ngspice(), reason="ngspice not available")
@@ -363,7 +365,11 @@ def test_budget_sweep_replaces_the_loop_link_and_reaches_the_placer(tmp_path):
     u = _with_l(t["cell"], 2.0)
     assert link not in u.lines and f"Lloop {' '.join(link.split()[1:3])} 2.0n" in u.lines
     assert _with_l(t["cell"], 0.0).lines == t["cell"].lines
+    lenient = "\n".join(_with_l(t["cell"], 0.0, "lenient").lines)
+    assert "tt=2n" in lenient and re.search(r"^Rossh kae_ch <U1.5> 1$", lenient, re.M)
     sid = t["cell"].structure
-    assert apply(br, {sid: dict(value=3.25, unit="nH", basis="simulated: test", **{"class": "sim"})}) == [sid]
+    ok = dict(value=3.25, unit="nH", basis="simulated: test", status="ok", **{"class": "sim"})
+    assert apply(br, {sid: dict(ok, status="prior bound (prior)")}) == []      # flagged: never applied
+    assert apply(br, {sid: ok}) == [sid]
     st = next(s for s in Terms(b, br).structs if s.id == sid)
     assert st.alloc.value == 3.25 and st.alloc.basis == "simulated: test"

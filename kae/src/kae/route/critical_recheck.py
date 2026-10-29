@@ -359,6 +359,30 @@ def _cell_loop(rb, T):
                                plane_cover=round(cover, 4) if cover is not None else None)
 
 
+def cell_body_floor(rb, s):
+    """Inductance (nH) of a cell's loop through its parts' internal paths alone, with no copper
+    between them: a floor no layout of these parts can go below (copper only adds to it, apart
+    from small mutual terms). None without the loop's terminals."""
+    T = [rb.terminal(m[0], m[1]) for m in s.get("loop") or []]
+    if len(T) < 3 or any(t is None for t in T):
+        return None
+    T = [_T(t) for t in T]
+    side = rb.fp[T[0]["fp"]].side
+    layer = rb.cu[0] if side == "F" else rb.cu[-1]
+    cx = sum(t["x"] for t in T) / len(T)
+    cy = sum(t["y"] for t in T) / len(T)
+    gl = _gnd_layer(rb, layer, cx, cy) or _gnd_layer(rb, layer, cx, cy, outlines=True)
+    lb = LoopBuilder(rb, layer, gl)
+    for k in range(len(T)):
+        ta, tb = T[k], T[(k + 1) % len(T)]
+        if ta["fp"] == tb["fp"]:
+            f = rb.fp[ta["fp"]]
+            w = 0.3 if len(f.pads) > 4 else max(min(ta["width"], tb["width"]), 0.2)
+            lb.body(ta, tb, body_z(f.lib_id, f.value), w)
+    v = lb.lp.value()
+    return v if v is not None and math.isfinite(v) else None
+
+
 def decap_values(rb, s, structs=(), fallback=None):
     """A decap structure's routed loops priced like the place terms (decap_spend: per pin
     cluster or capacitor structure `structs`; without them the worst pin). Returns (value,

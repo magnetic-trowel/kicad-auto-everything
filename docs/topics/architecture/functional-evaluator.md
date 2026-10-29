@@ -105,7 +105,27 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
 
 The placer and the critical router price every structure as spend over allocation, with the allocation taken from a closed form unless the brief's structure carries a `budget`. `kae.sim.cli budgets` derives that budget from the board's own testbench: for a cell, a series inductance is swept at the cell's loop insertion point (`Vloop`) on the ideal circuit, at every corner. The budget is the loop's ideal inductance plus the largest addition at which the requirement holds at every corner. Budgets are written to `board.budgets.json` and applied only by methods that opt in (`critical_cli route --budgets`). Evaluators never apply them, so a method's budgets cannot change its score.
 
-Before budgets are used for routing, the two loop measures must agree. On `acarpm-chesslab-powerboard`'s boost loop, the router's closed form gives 13.2 nH (PEEC on the same pieces: 13.1 nH), and the SPICE loop test gives 2.7 nH. The router's figure has 3.1 nH of part bodies (D3, IC1, C5), which SPICE lacks. Its return hop runs about 18 mm through two vias and across B.Cu, which is the reference plane itself, as strips above that plane. SPICE's pour mesh is coarse and unvalidated for returns through a plane. A field solve of the actual copper decides which is right [M].
+A budget is applied only if all three hold; otherwise the closed-form allocation stays, and the file records every reason:
+1. **The requirement comes from a trusted source:** human, board rule, datasheet, board value, schematic or standard. A budget derived from a prior bound is no better than the closed-form allocation, and on the boost below it was worse.
+2. **It is achievable:** at least the loop inductance of the parts' own internal paths alone (`critical_recheck.cell_body_floor`, the router's model). No layout of those parts can go lower.
+3. **It does not depend on the stand-in:** the sweep runs with a conservative stand-in (body-diode transit 20 ns, C_oss loss 0.05 Ω) and a lenient one (2 ns, 1 Ω). The budget is the conservative value, and is used only if the lenient one is within 3× of it.
+
+On the two smoke boards, no budget passes [M]. Both bounds are priors.
+- **Boost:** 1.16 nH, against a floor of 3.12 nH.
+- **Motor driver:** 0.24 to 1.78 nH across the stand-ins, against a floor of 7.1 nH. Its prior, a ring that never reaches the rating at 50 ns edges and so is capped at 50 nH, ignores recovery altogether.
+
+The boost's closed-form allocation, 2.08 nH, is itself below its floor: the router can never meet it there.
+
+**Loop measures, cross-checked** [M]. On the boost's routed loop, the router's closed form gives 13.2 nH, and PEEC on the same pieces gives 13.1 nH. Without the parts' bodies it gives 9.4 nH of copper. The SPICE loop test, once it covers the whole commutation loop (switch-node copper included), gives 6.6 nH of copper plus 1.0 nH of capacitor ESL. An earlier loop test stopped at the switch pins and gave 2.7 nH; it was not the same loop, and comparing the two was wrong. The copper, drawn: the switch-node trace cuts IC1's ground pad off from C5's on F.Cu, so the return detours to a via 6.5 mm away, as the router models it. A B.Cu track slots the reference plane under the loop, which both fast models ignore. `tools/research/physics/pt_mesh_loop.py` is the reference. It is a nodal PEEC of all the copper in a window, with planes meshed and no plane assumed; it reads −2.4% against an image plane at 0.5 mm pitch.
+
+| Copper-only loop, boost | nH | vs reference |
+|---|---|---|
+| Reference, F.Cu 0.25 mm, B.Cu 0.5 mm (0.35 / 0.7 mm: 10.96) | 10.59 | |
+| Reference with B.Cu filled solid (0.35 / 0.7 mm) | 9.25 | the slot adds about 1.7 nH (+18%) |
+| Router's closed form | 9.37 | −11%; within about 5% of the solid-plane reference |
+| SPICE extraction, power profile | 6.57 | −38% |
+
+So the router's loop model is the authority for loop inductance. Its error on this loop is the plane slot, which it cannot see. The SPICE extraction has no mutual inductance in the power profile and an ideal plane under each piece, so it must not judge loops (it stays for DC drop and loss, where it was checked). One loop is one data point: the next step is a sample of hot loops across the corpus, to put an error band on the closed form.
 
 ### 6. Command line
 

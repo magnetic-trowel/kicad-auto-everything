@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 
 from kae.physics import priors as PR
@@ -30,17 +31,35 @@ from .testbench import fmt
 
 SWEEP_NH = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0)
 QUANTITY = {"cell": "L_nH"}                          # the brief budget key each kind sets
+# the stand-in's uncertain physics, each across its physical range: body-diode recovery (transit
+# time) and C_oss loss. The budget is the conservative one; it is used only if the lenient one is
+# within ROBUST_RATIO of it (else it rests on part data the board does not give)
+VARIANTS = {"conservative": dict(tt="20n", r_oss=0.05), "lenient": dict(tt="2n", r_oss=1.0)}
+ROBUST_RATIO = 3.0
+# requirement sources a budget may rest on; a prior bound gives a budget no better than the
+# closed-form allocation (which then stays)
+TRUSTED = ("human", "board_rule", "datasheet", "board_value", "schematic", "standard")
 
 
-def _with_l(t, nh):
-    """Test t with nh of series loop inductance at its insertion point (0: the 0 V link)."""
+def _with_l(t, nh, variant=None):
+    """Test t with nh of series loop inductance at its insertion point (0: the 0 V link), and the
+    stand-in variant's diode transit time and C_oss loss."""
     u = copy.deepcopy(t)
-    u.id = f"{t.id}@L={fmt(nh)}n"
-    if nh > 0:
-        def sub(ln):
-            w = ln.split()
-            return f"L{LOOP_LINK[1:]} {w[1]} {w[2]} {nh}n" if w and w[0] == LOOP_LINK else ln
-        u.lines = [sub(ln) for ln in t.lines]
+    u.id = f"{t.id}@L={fmt(nh)}n" + (f"@{variant}" if variant else "")
+    v = VARIANTS.get(variant)
+
+    def sub(ln):
+        w = ln.split()
+        if not w:
+            return ln
+        if w[0] == LOOP_LINK and nh > 0:
+            return f"L{LOOP_LINK[1:]} {w[1]} {w[2]} {nh}n"
+        if v and ln.startswith(".model kae_body "):
+            return re.sub(r"tt=\S+", f"tt={v['tt']}", ln)
+        if v and re.match(r"Ross[hl] ", ln):
+            return " ".join(w[:3] + [f"{v['r_oss']:g}"])
+        return ln
+    u.lines = [sub(ln) for ln in t.lines]
     return u
 
 
@@ -61,14 +80,25 @@ def _crossing(points, op, bound):
     return points[-1][0], f"holds up to {fmt(points[-1][0])} nH, the sweep's end"
 
 
+def _floors(ctx, sids):
+    """{structure id: body floor nH} by the router's loop model on the board as placed."""
+    from kae.route.critical_recheck import RoutedBoard, cell_body_floor
+    rb = RoutedBoard(ctx.b, fills=None, brief=ctx.brief)
+    st = {s.get("id"): s for s in ctx.brief.get("structures") or []}
+    return {sid: cell_body_floor(rb, st[sid]) for sid in sids if sid in st}
+
+
 def cell_budgets(tests, ctx, jobs=8, timeout=600):
-    """{structure id: budget dict} for the cell tests (kind cell with a <= requirement and the
-    insertion point), from their sweep on the ideal circuit (ctx.rb is not used)."""
+    """{structure id: budget dict} for the cell tests (kind cell with a requirement and the
+    insertion point), from their sweep on the ideal circuit (ctx.rb is not used). Each budget has
+    a `status`: ok (apply() uses it) or the reason it must not be used."""
     from .evaluate import evaluate
     cells = [t for t in tests if t.kind == "cell" and t.structure and not t.unknown and t.requires
              and any(ln.startswith(LOOP_LINK + " ") for ln in t.lines)]
     loops = {t.id[len("loop:"):]: t for t in tests if t.kind == "loop" and not t.unknown}
-    plan = [_with_l(t, nh) for t in cells for nh in SWEEP_NH] + [loops[t.id] for t in cells if t.id in loops]
+    floors = _floors(ctx, {t.structure for t in cells})
+    plan = [_with_l(t, nh, v) for t in cells for v in VARIANTS for nh in SWEEP_NH]
+    plan += [loops[t.id] for t in cells if t.id in loops]
     ideal_ctx = copy.copy(ctx)
     ideal_ctx.rb = None
     rep = evaluate(plan, ideal_ctx, jobs=jobs, timeout=timeout)
@@ -77,29 +107,44 @@ def cell_budgets(tests, ctx, jobs=8, timeout=600):
     for t in cells:
         q = t.requires[0]
         worst = "hi" if q.op in ("<=", "<") else "lo"       # the requirement holds at every corner iff here
-        points, failed = [], []
-        for nh in SWEEP_NH:
-            r = by_id[f"{t.id}@L={fmt(nh)}n"]
-            row = next(x for x in r["requirements"] if x["meas"] == q.meas)
-            if any(p.startswith("ideal") for p in r.get("problems") or []):
-                failed.append(fmt(nh))
-            points.append((nh, (row.get("ideal") or {}).get(worst)))
-        extra, note = _crossing(points, q.op, q.bound)
-        if failed:
-            note = "; ".join(x for x in (note, f"corners failed at {', '.join(failed)} nH: the worst is over the rest") if x)
         lp = by_id.get(f"loop:{t.id}")
         l0 = ((lp or {}).get("info", {}).get("loop_nH", {}).get("ideal") or {}).get("typ")
+        per = {}
+        for v in VARIANTS:
+            points, failed = [], []
+            for nh in SWEEP_NH:
+                r = by_id[f"{t.id}@L={fmt(nh)}n@{v}"]
+                row = next(x for x in r["requirements"] if x["meas"] == q.meas)
+                if any(p.startswith("ideal") for p in r.get("problems") or []):
+                    failed.append(fmt(nh))
+                points.append((nh, (row.get("ideal") or {}).get(worst)))
+            extra, note = _crossing(points, q.op, q.bound)
+            if failed:
+                note = "; ".join(x for x in (note, f"corners failed at {', '.join(failed)} nH") if x)
+            per[v] = dict(added_nH=round(extra, 4), note=note, sweep=points)
         if l0 is None:
-            continue                                   # no loop test: the budget has no reference
-        value = l0 + extra
-        basis = (f"simulated: {t.id}, {q.meas} {q.op} {fmt(q.bound)} at every corner: {fmt(extra)} nH above "
-                 f"the {fmt(l0)} nH of its capacitors" + (f"; {note}" if note else ""))
-        b = dict(value=round(value, 4), unit="nH", basis=basis, **{"class": "sim"},
-                 detail=dict(test=t.id, ideal_loop_nH=l0, added_nH=round(extra, 4), sweep=points,
-                             bound=q.bound, src=q.src))
+            b = dict(value=None, status="no reference: the loop test did not run")
+        else:
+            cons, len_ = (l0 + per[v]["added_nH"] for v in ("conservative", "lenient"))
+            floor = floors.get(t.structure)
+            src_kind = q.src.split(":", 1)[0]
+            why = []                                      # every reason not to use it
+            if src_kind not in TRUSTED:
+                why.append(f"prior bound ({src_kind}): the closed-form allocation stays")
+            if floor is not None and cons < floor:
+                why.append(f"below the parts' own {fmt(floor)} nH: the requirement or the stand-in is wrong")
+            if cons <= 0 or len_ / cons > ROBUST_RATIO:
+                why.append(f"stand-in dependent ({fmt(cons)} to {fmt(len_)} nH): needs the parts' recovery and C_oss data")
+            status = "; ".join(why) or "ok"
+            b = dict(value=round(cons, 4), unit="nH", **{"class": "sim"}, status=status,
+                     basis=(f"simulated: {t.id}, {q.meas} {q.op} {fmt(q.bound)} at every corner, conservative "
+                            f"stand-in: {fmt(per['conservative']['added_nH'])} nH above the {fmt(l0)} nH of its "
+                            f"capacitors"),
+                     detail=dict(test=t.id, ideal_loop_nH=l0, lenient_nH=round(len_, 4), floor_nH=floor,
+                                 bound=q.bound, src=q.src, variants=per))
         prev = out.get(t.structure)
-        if prev is None or b["value"] < prev["value"]:     # a structure's phases: the tightest
-            out[t.structure] = b
+        if prev is None or (b.get("value") is not None and (prev.get("value") is None or b["value"] < prev["value"])):
+            out[t.structure] = b                             # a structure's phases: the tightest
     return out
 
 
@@ -123,12 +168,13 @@ def load(path):
 
 
 def apply(brief, budgets):
-    """Put each budget on its brief structure (`budget[L_nH]`); returns the ids applied."""
+    """Put each budget whose status is ok on its brief structure (`budget[L_nH]`); returns the ids
+    applied."""
     done = []
     for s in brief.get("structures") or []:
         b = budgets.get(s.get("id"))
-        if b is None:
-            continue
+        if b is None or b.get("status") != "ok":
+            continue                         # a budget with a reason not to use it is never applied
         key = QUANTITY.get("cell") if s.get("kind") == "commutation_cell" else None
         if key is None:
             continue
