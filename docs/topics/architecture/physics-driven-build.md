@@ -11,8 +11,10 @@
 - **Router prices against exact two-port solves** (trace over plane, plus a victim at 0.6–8 mm):
   - solid plane: 1.04–1.06×;
   - slot under both traces: the flux term alone reads 0.29× down to 0×, because it misses the shared detour; with the gap-crossing term, 0.94–0.98×.
-- **First routing A/B** (one board, human placement, the 6 priced nets re-routed): total harm 1006 → 506 against the human routing, with refilled DRC no worse.
-  - The hot loop got worse (8.8 → 10.2 nH). Fields were refreshed only every 4 nets, so a hop could not see where its loop's other half had gone. A per-net refresh is under test.
+- **The first routing A/B was negative** (boost board, human placement, the 6 priced nets re-routed). Total Σφ(u): physics 506, plain router (no physics) 227, human 1006.
+  - The physics router sent the switch node on a 19 mm detour (12.4 mm plain), chasing bogus crossing gains from other nets' copper islands.
+  - That is fixed, and the A/B is re-running on five boards (§5).
+- **Multilayer:** the two-sided price model with its transfer term holds at 0.98–1.06× against two-port solves of striplines, with solid planes and with a slot in either plane (§3).
 - **Every number here is model against model.** Gates G1–G5 of the design doc stay the acceptance criteria.
 
 ## 1. What each piece does
@@ -82,6 +84,23 @@ The slotted rows show why a plane-unaware router misleads. Two traces crossing t
 - the **flux term**, which uses the aggressor's own detour (included in its solve);
 - the **crossing term**: the voltage the aggressor develops across the gap where the victim would cross. It is read from node potentials the solve already has, and telescoped so that it is additive per move.
 
+**Multilayer** (striplines between ground planes tied only by edge vias; the traces' ends return
+on the lower plane), from the aggressor's solve alone, against two-port solves:
+
+| planes | d = 0.6 | 2 | 8 mm |
+|---|---|---|---|
+| solid: exact (pH) | 372 | 67 | 19 |
+| one-plane model / exact | 0.72 | 0.04 | 0.04 |
+| two-sided + transfer term / exact | 1.01 | 1.04 | 1.04 |
+| slot in the upper plane only | 1.01 | 1.04 | 1.06 |
+| slot in the lower plane only | 0.98 | 0.98 | 0.99 |
+
+The one-plane model misses that the upper plane's share of the return cannot close under the track:
+it runs to the nearest stitching via. The **transfer term** prices it: with psi = Σ a_k φ_k over
+the planes a track's return uses (shares a_k by inverse distance, as a stripline's charge divides),
+a via pays its change in psi and an end pays psi minus the potential of the plane its terminal's
+return enters. Both read the aggressor's own node potentials and telescope along a path.
+
 ## 4. The circuit side
 
 On acarpm-chesslab-powerboard (MT3608 boost, TP4056 charger, LDO; 2 layers):
@@ -107,6 +126,20 @@ Board as above, human placement and human routing of every other net. The six pr
 The shorts are between nets the router does not touch; they are the human board's own. Two A/B runs are pending:
 - the plain router: the same nets, order and legality, with no physics;
 - physics with a per-net refresh.
+
+## 5a. Co-simulation and the fixes it forced
+
+- Two-pad parts are now branches of the copper model (`kae.excite.circuit.lump_into`), and only
+  active parts' pads are injected, so the geometry decides which capacitor closes a loop or carries a
+  plane transition. A harm is the solve minus the same parts with ideal copper; without that
+  subtraction a crystal pin "saw" its own load capacitance as −6.9 µH of coupling.
+- Through vias listed only their end layers; they now land on every layer between. Every multilayer
+  board was cut into islands before.
+- The return reference is return-net copper (grounds and decoupled rails) only: other nets' copper
+  islands have unrelated potentials, and differencing them sent the first boost A/B's switch-node
+  hop on a 19 mm detour (12.4 mm plain).
+- Cells carry fractional coverage: a 0.3 mm trace at 0.1 mm pitch had been meshed 2 cells wide
+  (−33%), which put one coupled-pair case 22% off FastHenry.
 
 ## 6. Known limits and next steps
 
