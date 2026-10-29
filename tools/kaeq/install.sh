@@ -8,7 +8,9 @@ mkdir -p ~/.local/bin
 # a stable copy: the daemon must not change (or vanish) when this checkout switches branches
 mkdir -p ~/.local/share/kaeq
 install -m 755 "$here/kaeq.py" ~/.local/share/kaeq/kaeq.py
+install -m 755 "$here/kaeqtop.py" ~/.local/share/kaeq/kaeqtop.py
 ln -sf ~/.local/share/kaeq/kaeq.py ~/.local/bin/kaeq
+ln -sf ~/.local/share/kaeq/kaeqtop.py ~/.local/bin/kaeqtop
 # user-level skill: sessions in any repo/branch get the usage text
 mkdir -p ~/.claude/skills/kaeq
 cp "$here/../../.claude/skills/kaeq/SKILL.md" ~/.claude/skills/kaeq/SKILL.md
