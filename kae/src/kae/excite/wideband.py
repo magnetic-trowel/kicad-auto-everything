@@ -50,7 +50,7 @@ def _ports(srcs, obs, term):
     for s in srcs:
         out.append(port(term, s.a, s.b, s.pa, s.pb))
     for o in obs:
-        if o.kind == "cm":
+        if o.kind == "cm" and "pads" in o.meta:
             a, b = o.meta["pads"]
             out.append({term(None, a): 1.0, term(None, b): -1.0})
         else:
@@ -63,7 +63,7 @@ def _ideal(bd, s, obs, f):
     V = bd.circuit.solve(f, [s], skip=(CP.KIND,))[s.name]["V"]
     out = np.zeros(len(obs), complex)
     for k, o in enumerate(obs):
-        if o.kind == "cm":
+        if o.kind == "cm" and "pads" in o.meta:
             a, b = o.meta["pads"]
             out[k] = V.get(bd.net_of[a], 0) - V.get(bd.net_of[b], 0)
         else:
@@ -105,7 +105,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     bm = BoardMesh(path, window, pitch, nsub=nsub, b=b)
     pads = {q for e in bd.circuit.elems for q in (e.pa, e.pb) if q}
     pads |= {q for s in srcs for q in (s.pa, s.pb) if q} | {q for o in obs for q in (o.pa, o.pb) if q}
-    pads |= {q for o in obs if o.kind == "cm" for q in o.meta["pads"]} | dcp.dc_pads
+    pads |= {q for o in obs if o.kind == "cm" for q in o.meta.get("pads", ())} | dcp.dc_pads
     for q in sorted(pads):
         try:
             bm.pad(q)
@@ -125,8 +125,11 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     n_cm = 0
     if capacitive:
         # the layout's capacitive couplings become parts of the circuit (kae.excite.capacitive)
-        coupl, world = CP.couplings(b, bm, bd, brief, srcs, log=log)
+        coupl, _ = CP.couplings(b, bm, bd, brief, srcs, log=log)
         n_cm = CP.add_to_circuit(bd, coupl)
+        n0 = len(bd.circuit.elems)
+        obs = obs + CP.add_world(bd, CP.world(b, bm, log=log))
+        n_cm += len(bd.circuit.elems) - n0
         for e in bd.circuit.elems[-n_cm:] if n_cm else []:
             for q in (e.pa, e.pb):
                 try:
