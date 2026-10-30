@@ -54,6 +54,7 @@ DEFAULT_OPTS = dict(
                              # (Freerouting power layers, no traces; a repair round with open connections
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
+    neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -203,7 +204,11 @@ def plane_policy(opts, free_round_with_open=False):
 
 
 def router_settings(p, opts, repair=False):
-    s = {"automatic_neckdown": "false"}
+    # neck-down at pins: a net class's width is KiCad's default, not a limit (DRC checks the
+    # board minimum and custom rules); with the fork's floor (min_trace_width_um, the largest
+    # legal minimum) Freerouting may narrow a track into a pin narrower than the class
+    neck = bool(opts.get("neckdown")) and bool(p.min_width)
+    s = {"automatic_neckdown": "true" if neck else "false"}
     fan = opts.get("fanout")
     if not fan or (repair and fan == "first"):
         s["fanout.enabled"] = "false"

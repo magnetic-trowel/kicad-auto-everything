@@ -361,7 +361,7 @@ def plan(info, board_path, opts=None):
     for pad in info["pads"]:
         if not pad.get("pin") or not pad.get("layers"):
             continue
-        vec = _pad_requirements(info, rb, p, pad, sev)
+        vec = _pad_requirements(info, rb, p, pad, sev, outside=opts.get("pad_shapes") == "outside")
         key = tuple(sorted(vec.items()))
         cls = pin_req.get(key)
         if cls is None:
@@ -474,8 +474,12 @@ def _ring(pad, dsn):
     return float(dsn.exterior.distance(seg)) - h["width"] / 2 if dsn.contains(seg) else -h["width"] / 2
 
 
-def _pad_requirements(info, rb, p, pad, sev):
-    """{(routing class, layer): clearance mm} for one pad (see module docstring)."""
+def _pad_requirements(info, rb, p, pad, sev, outside=False):
+    """{(routing class, layer): clearance mm} for one pad (see module docstring). `outside`: the
+    DSN pin is the pad's own copper (pad_shapes "outside", translate.circumscribe_pins), so the
+    clearance needs no allowance for chords inside the outline (applied on every side, that
+    allowance closed the one legal escape between 0.4 mm-pitch pads 0.2 mm apart at 0.2 mm
+    clearance: kata0510 rp2040, qubik bmps)."""
     s = info["settings"]
     cu = p.copper
     pi = pad_item(info, pad)
@@ -497,7 +501,7 @@ def _pad_requirements(info, rb, p, pad, sev):
         for l in cu:
             if l not in pad["layers"]:
                 continue
-            e = _excess(real.get(l), dsn)
+            e = 0.0 if outside else _excess(real.get(l), dsn)
             t = net_item(info, rep, "track", l, rc.widths[l])
             v = net_item(info, rep, "via", l)
             tw = _strict_min(rb, "clearance", pi, t, l) + e

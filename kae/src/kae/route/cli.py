@@ -52,6 +52,11 @@ def main(argv=None):
     r.add_argument("--last-mile", action=argparse.BooleanOptionalAction, default=True,
                    help="after the repair rounds, join what is still open with the grid router "
                         "(kae.route.lastmile; default on, --no-last-mile turns it off)")
+    r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
+                   help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
+    r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="override one of kae's own defaults (e.g. ignored_clearance_floor=0.08); a "
+                        "KAE_<KEY> text variable in the KiCad project overrides this in turn")
     r.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
@@ -60,7 +65,13 @@ def main(argv=None):
                 passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
                 planes=a.planes, pad_shapes=a.pad_shapes,
                 router_share=a.router_share if a.router_share == "auto" else float(a.router_share),
-                last_mile=a.last_mile)
+                last_mile=a.last_mile, neckdown=a.neckdown)
+    for kv in a.set:
+        k, _, v = kv.partition("=")
+        try:
+            opts[k] = json.loads(v)
+        except ValueError:
+            opts[k] = v
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     try:
