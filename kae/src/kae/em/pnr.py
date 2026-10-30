@@ -21,6 +21,7 @@ whole circuit per refresh, weights from the evaluator's harmonic harms (kae.em.s
 from __future__ import annotations
 
 import argparse
+import os
 import math
 import tempfile
 import time
@@ -700,7 +701,9 @@ class PhysRouter:
                 res = self._route_net(n, plain=self.plain)
                 self.failed += res["failed"]
             done += 1
+            self._refill()
         self._repair()
+        self._check_connectivity()
         from kae.route import critical_write as W
         W.append_items(self.base, self.out, tracks=self.tracks, vias=self.vias)
         for ext in (".kicad_pro", ".kicad_dru"):
@@ -711,6 +714,54 @@ class PhysRouter:
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
                  f"{time.time() - t0:.1f}s" + (f"; chose {self.choices}" if self.choices else ""))
         return self
+
+    def _refill(self):
+        """After a net: KiCad's refill of the copper as it stands (about a second), and the exact islands of
+        the nets still to route from it, so no net is routed against a pour the copper so far has pushed
+        back. Boards without zones skip it."""
+        if not getattr(self, "_has_zones", None):
+            from kae.board.kicad_file import load
+            self._has_zones = bool(load(self.base).zones)
+        if not self._has_zones:
+            return
+        from kae.route.critical_recheck import fills_of
+        t = time.time()
+        self._fills = fills_of(self._state_board())
+        for n, groups in list(self.islands.items()):
+            if n in self.nets:
+                ok = {q for g in groups for q in g}
+                self.islands[n] = self._exact_islands(n, ok)
+        self.t_refill = getattr(self, "t_refill", 0.0) + time.time() - t
+
+    def _check_connectivity(self):
+        """The LVS of the routed copper: KiCad's DRC (refilled) against the router's own islands. A pad one
+        calls joined and the other open is logged, both ways."""
+        import json
+        import subprocess
+        self._refill()                               # the router's islands of the finished copper
+        p = self._state_board()
+        out = p.with_suffix(".drc.json")
+        wrap = os.environ.get("KAE_KICAD_WRAP", "")
+        try:
+            subprocess.run(f"{wrap} kicad-cli pcb drc --refill-zones --format json --severity-error -o {out} {p}",
+                           shell=True, check=True, capture_output=True, timeout=1800)
+            drc = json.loads(out.read_text())
+        except Exception as e:                       # noqa: BLE001 - a missing check is logged, never fatal
+            self.log(f"pnr: connectivity check: DRC did not run ({type(e).__name__})")
+            return
+        kicad_open = set()
+        for u in drc.get("unconnected_items", []):
+            for it in u.get("items", []):
+                d = it.get("description") or ""
+                if d.startswith("Pad "):
+                    kicad_open.add(d)
+        ours = {n: len([g for g in self.islands.get(n, []) if g]) for n in self.nets}
+        ours_open = {n for n, k in ours.items() if k > 1}
+        self.log(f"pnr: connectivity check: KiCad reports {len(drc.get('unconnected_items', []))} unconnected items; "
+                 f"the router {len(ours_open)} priced nets in pieces ({sorted(ours_open)[:6]})"
+                 + (f"; refills took {self.t_refill:.0f}s" if getattr(self, "t_refill", None) else ""))
+        for d in sorted(kicad_open)[:10]:
+            self.log(f"pnr: connectivity check: KiCad: {d} unconnected")
 
     def _repair(self):
         """After every net: the pours refilled on the finished copper can have pulled back from pads the
