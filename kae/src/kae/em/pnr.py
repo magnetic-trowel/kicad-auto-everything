@@ -63,6 +63,9 @@ PHI_SLOPE_CAP = 5.0
 # observer kinds whose coupling prediction has not passed a check against exact solves: the router does
 # not price them (the field solve that verifies each candidate still counts them)
 UNPRICED = ("cm",)
+# a hop gets the commutation width floor (0.8 mm) only when it carries at least this share of a cell's
+# pattern current: a trace of it (a feedback divider's) is not the commutation loop
+COMMUTATION_SHARE = 0.1
 
 
 def phi_prime(u):
@@ -563,6 +566,20 @@ class PhysRouter:
 
     WIDTHS = (0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0)     # mm, the ladder
 
+    def _commutation_share(self, n, cur):
+        """The largest share of a commutation cell's pattern current a hop of net n carries (its current
+        over the pattern's largest pad current); 0 for a net an observer reads as a victim (high
+        impedance: width only adds capacitance to whatever swings near it)."""
+        if any(o.kind == "victim" and o.meta.get("net") == n for o in self.obs):
+            return 0.0
+        best = 0.0
+        for k, i in cur.items():
+            if k[0] == "s" and str(k[1]).startswith("cell:") and k in self.flow:
+                mx = max((abs(v) for v in self.flow[k].values()), default=0.0)
+                if mx > 0:
+                    best = max(best, abs(i) / mx)
+        return best
+
     def _feed_pads(self, n):
         """The pads where rail n's feed delivers its current."""
         f = self.dcp.feeds.get(n)
@@ -751,7 +768,7 @@ class PhysRouter:
                 cur = self.hop_currents(n, b_, a)
                 layer0 = self.sp.cu
                 width = self.sp.width_limits(n, layer0[0])[1]
-                if any(k[0] == "s" and k[1].startswith("cell:") for k in cur):
+                if self._commutation_share(n, cur) >= COMMUTATION_SHARE:
                     # a commutation current: wide copper lowers its inductance per length
                     width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
                 self._hop_dc = 0.0
