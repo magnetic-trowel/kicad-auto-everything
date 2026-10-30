@@ -260,3 +260,19 @@ def test_finished_job_records_its_memory_histogram(kq):
     drive(kq, d, lambda: states(d)["h"] == "ok", secs=120)
     h = json.loads(d.c.execute("SELECT mem_hist FROM jobs WHERE name='h'").fetchone()[0])
     assert len(h) == kq.MEM_BINS and sum(h) >= 6 and h[-1] > 0
+
+
+def test_owner_correlation_is_measured_from_concurrent_jobs(kq):
+    import math
+    import random
+    rnd = random.Random(1)
+    wave = [1000 + 500 * math.sin(i / 5) for i in range(90)]
+    lockstep = [[w * f for w in wave] for f in (1.0, 1.5, 0.7, 2.0)]
+    rho, n = kq.owner_correlation(lockstep, 0.5)
+    assert n == 6 and rho > 0.85
+    noise = [[1000 + rnd.gauss(0, 200) for _ in range(90)] for _ in range(6)]
+    rho, n = kq.owner_correlation(noise, 0.5)
+    assert n == 15 and rho < 0.2
+    assert kq.owner_correlation([[5.0] * 90] * 3, 0.5) == (0.5, 0)  # flat jobs: no evidence, the prior
+    jobs = [("lm", 2000.0, 400.0, [1 / kq.MEM_BINS] * kq.MEM_BINS)] * 9
+    assert kq.pooled_headroom(jobs, 3, 0.5, {"lm": 0.0})[0] < kq.pooled_headroom(jobs, 3, 0.5)[0]

@@ -83,7 +83,8 @@ DEFAULTS = {
     # growth, from how jobs of the same owner spent their lifetime (memory histograms of finished jobs)
     "mem_pool": "pooled",
     "mem_pool_z": 3.0,       # std deviations of headroom (3: ~0.1% of moments short if independent)
-    "mem_pool_rho": 0.5,     # assumed correlation between jobs of one owner (0 = independent, 1 = in lockstep)
+    "mem_pool_rho": 0.5,     # prior correlation between jobs of one owner (0 = independent, 1 = in lockstep); the
+                             # daemon measures it from concurrent jobs' RSS and uses the prior only as 2 pseudo-pairs
     "mem_pool_min_jobs": 5,  # finished jobs with a histogram an owner needs before its jobs are pooled
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
@@ -377,15 +378,15 @@ def mem_hist(samples, peak):
     return h
 
 
-def pooled_headroom(jobs, z, rho):
+def pooled_headroom(jobs, z, rho, rho_of=None):
     """Memory to set aside for running jobs' growth when they rarely peak together.
     jobs: [(owner, expect_mb, rss_mb, profile or None)]: expect = the most it may reach (its peak x
     margin, or its declared --mem while it warms up); profile = share of lifetime its owner's jobs
     spend at each slice of their peak (MEM_BINS weights). A job without a profile counts its whole
     headroom (expect - rss). A profiled job's RSS at a random moment is expect x (slice upper edge),
     so its growth is max(0, that - rss): mean + z std over all of them, jobs of one owner correlated
-    by rho, owners independent; never less than the largest single headroom, never more than the sum.
-    Returns (set aside, sum of headrooms)."""
+    by rho (or rho_of[owner], measured), owners independent; never less than the largest single
+    headroom, never more than the sum. Returns (set aside, sum of headrooms)."""
     full = worst = 0.0
     biggest = 0.0
     mu = 0.0
@@ -406,10 +407,42 @@ def pooled_headroom(jobs, z, rho):
         o = by_owner.setdefault(owner, [0.0, 0.0])
         o[0] += sd
         o[1] += sd * sd
-    for lin, sq in by_owner.values():
-        var += (1 - rho) * sq + rho * lin * lin
+    for owner, (lin, sq) in by_owner.items():
+        r = (rho_of or {}).get(owner, rho)
+        var += (1 - r) * sq + r * lin * lin
     pooled = max(biggest, mu + z * var ** 0.5)
     return min(worst, full + pooled), worst
+
+
+def pearson(a, b):
+    n = len(a)
+    ma, mb = sum(a) / n, sum(b) / n
+    va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
+    if va <= 0 or vb <= 0:
+        return None
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (va * vb) ** 0.5
+
+
+def owner_correlation(series, prior, window=90, min_samples=30):
+    """Correlation between one owner's concurrently running jobs, measured: the mean Pearson r over
+    pairs of their last `window` RSS samples (taken on the same ticks), negative r counted as 0 and
+    pairs where either job is flat (coefficient of variation < 5%) skipped, shrunk towards `prior`
+    as 2 pseudo-pairs. series: [RSS samples] per job. Returns (rho, pairs used)."""
+    ok = []
+    for s in series:
+        if len(s) >= min_samples:
+            t = s[-window:]
+            m = sum(t) / len(t)
+            if m > 0 and (sum((x - m) ** 2 for x in t) / len(t)) ** 0.5 / m >= 0.05:
+                ok.append(t)
+    rs = []
+    for i in range(len(ok)):
+        for k in range(i + 1, len(ok)):
+            n = min(len(ok[i]), len(ok[k]))
+            r = pearson(ok[i][-n:], ok[k][-n:])
+            if r is not None:
+                rs.append(max(0.0, r))
+    return (sum(rs) + 2 * prior) / (len(rs) + 2), len(rs)
 
 
 def job_usage(j, sessions, per_pid, cgroups):
@@ -529,6 +562,7 @@ class Daemon:
         self.last_backup = 0.0
         self.trace = {}          # job id -> RSS samples (every ~10 s) for its memory histogram
         self.profiles, self.profiles_ts = {}, 0.0
+        self.rho, self.rho_ts = {}, 0.0  # owner -> (measured correlation, pairs)
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -579,7 +613,7 @@ class Daemon:
             ours_rss += rss
             ours_ticks += max(0, ticks - self.prev_ours.get(j["id"], ticks))
             self.prev_ours[j["id"]] = ticks
-            tr = self.trace.setdefault(j["id"], [0.0, [], now - (j["started"] or now) < 30])  # [last, samples, whole life]
+            tr = self.trace.setdefault(j["id"], [0.0, [], now])  # [last sample, samples, first sample]
             if now - tr[0] >= 10:
                 tr[0] = now
                 tr[1].append(rss)
@@ -596,6 +630,13 @@ class Daemon:
         for jid in set(self.trace) - {j["id"] for j in running}:
             del self.trace[jid]
         profiles = self.owner_profiles(cfg, now, running)
+        if now - self.rho_ts >= 60:
+            by = {}
+            for j in running:
+                if j["id"] in self.trace:
+                    by.setdefault(j["owner"], []).append(self.trace[j["id"]][1])
+            self.rho = {o: owner_correlation(v, cfg["mem_pool_rho"]) for o, v in by.items() if o in profiles}
+            self.rho_ts = now
         grow = []
         for j in running:
             # what a job may still grow into: its declared --mem while it warms up, then its observed peak
@@ -605,7 +646,8 @@ class Daemon:
             warm = now - (j["started"] or now) < cfg["warmup_s"]
             expect = j["mem_mb"] if warm else peak * cfg["peak_margin"]
             grow.append((j["owner"], expect, rss, None if warm else profiles.get(j["owner"])))
-        unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"])
+        unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"],
+                                                      {o: r for o, (r, _) in self.rho.items()})
         if cfg["mem_pool"] != "pooled":
             unrealized = unrealized_peak
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
@@ -620,6 +662,7 @@ class Daemon:
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
                         unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
+                        pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
                         reserve_cpu=cfg["reserve_cpu"], reserve_mem=reserve, running=len(running),
                         pinned=len(pinned) if pinned else None, disk=self.disk_total, disk_cap=cap,
                         disk_unrealized=disk_unrealized)
@@ -849,8 +892,10 @@ class Daemon:
     def finish(self, j, rc, peak, lost=False):
         dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
-            _, tr, whole = self.trace.pop(j["id"], [0, [], False])
-            hist = json.dumps(mem_hist(tr, peak)) if whole and len(tr) >= 6 and peak > 0 else None  # >= 1 min, from its start
+            now = time.time()
+            _, tr, first = self.trace.pop(j["id"], [0, [], now])
+            seen = (now - first) / max(1.0, now - (j["started"] or now))  # share of its run observed (< 1 after a restart)
+            hist = json.dumps(mem_hist(tr, peak)) if seen >= 0.5 and len(tr) >= 6 and peak > 0 else None
             self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL,mem_hist=? WHERE id=?",
                            (time.time(), hist, j["id"]))
             drop_worktree(j)

@@ -110,9 +110,12 @@ def frame(c, cfg, sampler, args, width):
     upeak = bsys.get("unrealized_peak", unreal)
     L.append(f"RAM  {bar((total - avail) / total, bw)} {gb(total - avail)}/{gb(total)} used: queue jobs {gb(ours_rss)} now, "
              f"{gb(unreal)} more set aside for their peaks | {gb(avail)} free, {gb(rmem)} kept free")
-    if upeak > unreal + 512:
-        L.append(f"     set aside {gb(unreal)} instead of {gb(upeak)} (all peaks at once): jobs rarely peak together"
-                 f" (pooled owners marked *)")
+    pooled_now = bsys.get("pooled_owners") or []
+    if pooled_now:
+        rho = bsys.get("pool_rho") or {}
+        L.append(f"     pooled: set aside {gb(unreal)} instead of {gb(upeak)} (every job at its peak at once), saving "
+                 f"{gb(max(0, upeak - unreal))}; owners marked *, measured correlation: "
+                 + (", ".join(f"{o} {r:.2f} ({n} pairs)" for o, (r, n) in sorted(rho.items())) or "not yet"))
     L.append(f"     room for new jobs: {gb(max(0, room))}  (free - set aside - kept free)"
              + ("   << memory is the limit" if room < 4096 else ""))
     if bsys.get("disk_cap"):
