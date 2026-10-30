@@ -558,7 +558,10 @@ def cmd_exp_submit(a):
         chunks = [ch for ch in chunks if ch]
         for i, ch in enumerate(chunks):
             est = estimate(rows[bid], [ms[m] for m, _ in ch])
-            sel = "" if len(chunks) == 1 else "".join(f" --method {m}" for m, _ in ch)
+            # each method with its attempt (ID@N): a job runs --attempt for bare ids, so a chunk
+            # of later attempts would otherwise re-run attempt 0 (multi-attempt experiments ran
+            # attempt 0 only)
+            sel = "" if len(chunks) == 1 else "".join(f" --method {m}@{att}" for m, att in ch)
             jobs.append(dict(cmd=f"{py} {script} job --experiment {a.name} --board {bid}{sel}",
                              name=f"{a.name}:{bid}" + (f":{i}" if len(chunks) > 1 else ""),
                              cpus=max([2] + [method_cpus(ms[m]) for m, _ in ch]),
@@ -632,7 +635,10 @@ def cmd_job(a):
     harness = a.harness or e["harness"]["commit"]
     kae = a.kae or e["kae"]["commit"]
     if a.method:
-        todo = [(find_method(m)["id"], a.attempt) for m in a.method]
+        todo = []
+        for m in a.method:   # ID or ID@ATTEMPT
+            mid, _, att = m.partition("@")
+            todo.append((find_method(mid)["id"], int(att) if att else a.attempt))
     else:
         todo = missing(e, bid)
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
