@@ -299,3 +299,11 @@ def test_max_rise_finds_the_largest_growth_within_a_window(kq):
     assert kq.max_rise(s, 20) == 19.0   # 1 at t=40 -> 20 at t=60
     assert kq.max_rise(s, 10) == 16.0   # 4 -> 20
     assert kq.max_rise([(0, 5.0), (10, 3.0)], 60) == 0.0  # shrinking is no rise
+
+
+def test_warm_jobs_count_their_owners_spread_of_sizes(kq):
+    rs = [0.2] * 18 + [1.0, 1.1]  # most jobs use a fifth of --mem, a few all of it
+    jobs = [(100.0, 7900.0, 8000.0, rs)] * 10
+    aside = kq.warm_headroom(jobs, 2)
+    assert 7900.0 <= aside < 0.6 * 79000.0  # >= one job's full headroom, well under all ten at their worst
+    assert kq.warm_headroom([(100.0, 7900.0, 8000.0, None)] * 10, 2) == 79000.0  # unknown owner: in full

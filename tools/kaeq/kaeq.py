@@ -472,6 +472,26 @@ def owner_correlation(series, prior, window=90, min_samples=30):
     return (sum(rs) + 2 * prior) / (len(rs) + 2), len(rs)
 
 
+def warm_headroom(jobs, z):
+    """What jobs still warming up may yet grow by. jobs: [(rss, full_headroom, mem_mb, ratios or None)]:
+    ratios = the owner's finished jobs' peak/--mem; without them a job counts its full headroom. With
+    them, a job's peak is --mem x a random draw from those ratios (job sizes vary independently from
+    one board to the next): mean + z std of the growth, at least the largest single headroom,
+    capped at its full headroom per job and at the sum overall."""
+    full = worst = biggest = mu = var = 0.0
+    for rss, room, mem, rs in jobs:
+        worst += room
+        if not rs:
+            full += room
+            continue
+        g = [min(room, max(0.0, mem * r - rss)) for r in rs]
+        m = sum(g) / len(g)
+        mu += m
+        var += sum((x - m) ** 2 for x in g) / len(g)
+        biggest = max(biggest, room)
+    return min(worst, full + max(biggest, mu + z * var ** 0.5))
+
+
 RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
 
 
@@ -602,6 +622,7 @@ class Daemon:
         self.profiles, self.profiles_ts = {}, 0.0
         self.rho, self.rho_ts = {}, 0.0  # owner -> (measured correlation, pairs)
         self.ratios, self.ratios_ts = {}, 0.0  # owner -> p95 of peak / --mem
+        self.ratio_samples = {}  # owner -> its jobs' peak / --mem, sorted
         self.organic = 0.0       # cumulative growth of running jobs' RSS (starts and finishes excluded)
         self.last_rss = {}
         self.rise_hist = load_rise_hist()  # [(t, organic)] every ~10 s
@@ -698,7 +719,7 @@ class Daemon:
             span = self.rise_hist[-1][0] - self.rise_hist[0][0] if self.rise_hist else 0
             self.rise = max_rise(self.rise_hist, cfg["mem_rise_window_s"]) if span >= cfg["mem_rise_window_s"] else None
             self.rise_ts = now
-        grow, warm_need, single = [], 0.0, 0.0
+        grow, warm_jobs, single = [], [], 0.0
         for j in running:
             # what a job may still grow into: its declared --mem while it warms up, then its observed peak
             # with a margin (a later phase may need more than the first); free memory is measured, not declared
@@ -710,9 +731,11 @@ class Daemon:
                       peak * (cfg["mem_pool_margin"] if prof and cfg["mem_pool"] == "pooled" else cfg["peak_margin"]))
             grow.append((j["owner"], expect, rss, prof))
             if warm:
-                warm_need += max(0.0, expect - rss)
+                warm_jobs.append((j, rss, max(0.0, expect - rss)))
             else:
                 single = max(single, expect - rss)
+        warm_need = warm_headroom([(rss, room, j["mem_mb"], self.ratio_samples.get(j["owner"]))
+                                   for j, rss, room in warm_jobs], cfg["mem_pool_z"])
         unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"],
                                                       {o: r for o, (r, _) in self.rho.items()})
         mode = cfg["mem_pool"]
@@ -960,14 +983,15 @@ class Daemon:
         (refreshed every 5 minutes)."""
         if now - self.ratios_ts < 300:
             return
-        out = {}
+        out, samples = {}, {}
         for (o,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state IN ('queued','running')").fetchall():
             r = sorted(p / m for m, p in self.c.execute(
                 "SELECT mem_mb, peak_mb FROM jobs WHERE owner=? AND state='ok' AND peak_mb>0 AND mem_mb>0 "
                 "ORDER BY finished DESC LIMIT 100", (o,)))
             if len(r) >= cfg["mem_learn_min_jobs"]:
                 out[o] = r[int(0.95 * (len(r) - 1))]
-        self.ratios, self.ratios_ts = out, now
+                samples[o] = r
+        self.ratios, self.ratio_samples, self.ratios_ts = out, samples, now
 
     def need_mb(self, j, cfg):
         """Memory a job is expected to need: --mem, scaled by its owner's learned peak/--mem."""
