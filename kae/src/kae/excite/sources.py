@@ -94,8 +94,12 @@ def _cell(bd, s, uuid):
             if not rect:
                 # synchronous: the other switch is inside the controller and conducts
                 other = nodes["g"] if high else (nodes.get(bus) or bus)
+                # the rectifier's far end: an internal node, or the bus net itself at the controller's own pin on
+                # it (a net end without a pad would carry the cell's current into the net from nowhere)
+                op_ = next((t for t in bd.pads_of.get(bus, []) if t.rsplit(".", 1)[0] == ctrl), None) \
+                    if other == bus else None
                 c.z(f"{ctrl}:sync", sw if high else other, other if high else sw, _rl(0.05, PKG_L),
-                    swp[0] if high else None, None if high else swp[0], "sync_on")
+                    swp[0] if high else op_, op_ if high else swp[0], "sync_on")
                 bd.assumptions.append(f"{s['id']}: no rectifier part in the loop; a synchronous switch inside {ctrl} conducts")
             return src
     # a discrete switch: the transistor in the loop between the switch node and the far net

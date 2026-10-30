@@ -285,7 +285,12 @@ class _Reader:
             return n[1]
         if len(n) >= 3:
             return n[2]
-        return self.netname.get(n[1], "")
+        if n[1] in self.netname:
+            return self.netname[n[1]]
+        # (net "name") in a numbered-net file (KiCad 6/7): items written in KiCad 8's form, which KiCad reads
+        if not hasattr(self, "_netnames"):
+            self._netnames = set(self.netname.values())
+        return n[1] if n[1] in self._netnames else ""
 
     # ------------------------------------------------------------------ footprints
     def footprint(self, node):
