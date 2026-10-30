@@ -269,6 +269,37 @@ class KaeStages:
                       guards={m: g for m, g in lay.guards.items() if m not in mods},
                       status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
 
+    def _rip_new_errors(self, board, it, crit, base):
+        """A routed window whose DRC errors exceed the incumbent's (`base`, by type): take out the
+        router copper each error names (kae.route.repair._rip_errors, the last mile's rip-out),
+        then join the opened nets with the last mile; `board` is replaced in place. None when
+        there is nothing beyond `base`."""
+        from kae.route import drc as D
+        from kae.route import lastmile
+        from kae.route import repair as RP
+        t0 = time.monotonic()
+        d = self.wd / f"it{it:02d}" / "ripnew"
+        try:
+            rep = D.run(D.stage_board(board, self.input, d / "drc"), d / "drc" / "drc.json",
+                        timeout=int(self.opts.get("drc_timeout", 600)))
+        except D.DrcError as e:
+            return dict(error=str(e))
+        s = D.summary(rep)
+        extra = D.excess(s, base)
+        if not extra:
+            return None
+        got = RP._rip_errors(self.input, board, rep, d / "rip", set(crit), lambda: 300.0, base=base)
+        if got is None:
+            return dict(extra=extra, ripped=False, seconds=round(time.monotonic() - t0, 1))
+        cand, rep2, s2 = got
+        shutil.copy2(cand, board)
+        _project(self.input, board)
+        nets = lastmile.open_nets(rep2)
+        lm = self._last_mile(board, it, nets, crit) if nets else None
+        return dict(extra=extra, ripped=True, open_after_rip=s2["unconnected"],
+                    last_mile=None if lm is None else {k: lm.get(k) for k in ("joined", "failed", "ripped", "error")},
+                    seconds=round(time.monotonic() - t0, 1))
+
     def _last_mile(self, board, it, nets, crit):
         """kae.route.lastmile.close on a routed window's `nets` (those that are still split
         are joined by the grid router, ripping other nets' unlocked tracks in the way);
@@ -454,6 +485,12 @@ class KaeStages:
         if it > 0 and not finish and nets and self.opts.get("window_last_mile", True):
             lm = self._last_mile(out, it, nets, lay.crit)
             self.log(f"last mile on {len(nets)} nets: {last_mile_line(lm)}")
+        if it > 0 and not finish and getattr(self, "incumbent_errors", None) is not None:
+            rr = self._rip_new_errors(out, it, lay.crit, self.incumbent_errors)
+            if rr:
+                self.log(f"window errors beyond the incumbent's: {rr}")
+                if lm is not None:
+                    lm = dict(lm, rip_new_errors=rr)
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
