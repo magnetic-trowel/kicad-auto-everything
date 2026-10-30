@@ -846,8 +846,12 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             staged = drc.stage_board(cur, input_path, ldir / "base")
             fills = pcbnew_io.zone_fills(staged)["zones"]
             cand = ldir / "cand.kicad_pcb"
+            # bounded by time, not by a count of joins (kata0510 rp2040: 39 open connections
+            # behind 0.4 mm-pitch escapes took 40 joins, the old cap, in 20 s); the round keeps
+            # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
-                               fixed=fixed, log=log, soft=soft)
+                               fixed=fixed, log=log, soft=soft, max_joins=None,
+                               deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break

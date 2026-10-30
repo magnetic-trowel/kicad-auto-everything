@@ -237,9 +237,14 @@ def _try(gr, sp, net, src, others, win, widths):
     return None
 
 
+def _own(it):
+    """Whether `it` is copper this close() added (owner ("lastmile", join number))."""
+    return isinstance(it.owner, tuple) and it.owner[:1] == ("lastmile",)
+
+
 def _restore(sp, items):
     for it in items:
-        sp.existing.append(it)
+        (sp.routed if _own(it) else sp.existing).append(it)
         for l in it.layers:
             if l in sp.items:
                 sp.items[l].append(it)
@@ -282,9 +287,13 @@ def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
             if it.uuid in soft:
                 return with_soft
             return not it.locked and it.uuid not in fixed
+        # the board's unlocked copper, and what earlier joins of this close() laid (a join is
+        # not final: the first nets through a 0.4 mm-pitch row can wall in a later one, qubik
+        # bmps U2.11 behind /CELLX's via); each net at most HIST_MAX times
         cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
-                if it.kind in ("track", "via") and it.net != net and it.owner == "existing"
-                and rippable(it) and it.geom.intersects(win) and hist.get(it.net, 0) < HIST_MAX}
+                if it.kind in ("track", "via") and it.net != net
+                and (it.owner == "existing" and rippable(it) or _own(it))
+                and it.geom.intersects(win) and hist.get(it.net, 0) < HIST_MAX}
         cand = list(cand.values())
         if not cand or (with_soft and not any(it.uuid in soft for it in cand)):
             continue
@@ -300,8 +309,15 @@ def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
             continue
         rt, new = got
         keep = [it for it in cand if not _conflicts(sp, it, set(new))]
+        # an earlier join goes as a whole when any piece of it must (no dangling remains)
+        gone = {it.owner for it in cand if _own(it) and it not in keep}
+        keep = [it for it in keep if not (_own(it) and it.owner in gone)]
         _restore(sp, keep)
         ripped = [it for it in cand if it not in keep]
+        rest = [it for it in sp.routed if _own(it) and it.owner in gone]
+        if rest:
+            sp.remove(rest)
+            ripped += rest
         if len(ripped) > MAX_RIP:
             sp.remove(new)
             _restore(sp, ripped)
@@ -334,14 +350,21 @@ def open_nets(report):
     return sorted(out)
 
 
-def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=()):
+def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=(),
+          max_joins=MAX_JOINS, deadline=None):
     """Join the parts of the open nets of `board` (`nets`, default every net with more
     than one part; see the module docstring) and write the result to `out`, the new copper
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
     ["zones"] (refilled with those rules); `fixed`: uuids never ripped (pre-routes); `soft`:
     locked uuids a last rip-up tier may take out (critical copper; the caller judges the
-    physics). Returns {joined, failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net],
-    added: [uuid], nets: {net: status}}."""
+    physics). `max_joins` bounds the joins (None: no bound), `deadline` (time.monotonic())
+    the time: no join starts after it. Returns {joined, failed, ripped: [uuid], ripped_soft:
+    [uuid], rerouted: [net], added: [uuid], nets: {net: status}}."""
+    import time
+    cap = max_joins if max_joins is not None else float("inf")
+
+    def more():
+        return joins < cap and (deadline is None or time.monotonic() < deadline)
     soft = set(soft or ())
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -364,14 +387,14 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     hist = {}
     ripped_ids = {}
     joins = 0
-    while queue and joins < MAX_JOINS:
+    while queue and more():
         net = queue.pop(0)
         mn, opt, _mx = sp.width_limits(net, sp.cu[0])
         widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
         status = rep["nets"].setdefault(net, [])
         for _ in range(max_parts):
             ps = [p for p in parts(sp, fp, net) if _relevant(p)]
-            if len(ps) < 2 or joins >= MAX_JOINS:
+            if len(ps) < 2 or not more():
                 break
             small = ps[-1]
             src = _anchors(small, max(widths) / 2 + 0.02)
@@ -396,9 +419,15 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             rt, new, ripped = got
             joins += 1
             rep["joined"] += 1
+            for it in new:
+                it.owner = ("lastmile", joins)
+            hit = set()
             for it in ripped:
-                ripped_ids[it.uuid] = it.net
-                hist[it.net] = hist.get(it.net, 0) + 1
+                if not _own(it):
+                    ripped_ids[it.uuid] = it.net
+                if it.net not in hit:
+                    hit.add(it.net)
+                    hist[it.net] = hist.get(it.net, 0) + 1
                 if it.net not in queue and it.net != net:
                     queue.append(it.net)
             status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
