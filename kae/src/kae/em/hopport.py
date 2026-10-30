@@ -126,7 +126,11 @@ class Loop:
         self.bars, self.length = bars, length
         self.imgs = [image_bars(m, bars, ref_ids, width, s) for s in SPREADS]
         vecs = [bars] + self.imgs
-        fls = [EF.flux_of_cells(op, v) for v in vecs]
+        # the hop's and its returns' currents on the faces toward each other (the gap's mid-height)
+        zs = [m.layers[l].z + m.layers[l].t / 2 for l in range(len(m.layers))]
+        gi = next((g[0][0] for g in self.imgs if g), None)
+        face = 0.5 * (zs[bars[0][0]] + zs[gi]) if bars and gi is not None else None
+        fls = [EF.flux_of_cells(op, v, face=face) for v in vecs]
         n = len(vecs)
         self.L = np.array([[_read(fls[q], vecs[p]) for q in range(n)] for p in range(n)])
         self.L = 0.5 * (self.L + self.L.T)

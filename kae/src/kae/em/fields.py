@@ -53,14 +53,22 @@ def flux(op, I, layers=None):
     return out
 
 
-def flux_of_cells(op, bars, layers=None):
+def flux_of_cells(op, bars, layers=None, face=None):
     """Flux fields of given unit-current bars that are not part of the mesh: bars = [(layer, 'x'|'y', j, i,
     current)], each placed on its layer's middle sublayer. Returns {(layer, o): real (ny, nx)} like
-    `flux` (the new copper a router just laid, with its return as negative bars on the planes)."""
+    `flux` (the new copper a router just laid, with its return as negative bars on the planes). face (mm):
+    place and read on each layer's sublayer nearest that height instead (a loop's currents crowd to the
+    faces toward each other)."""
     net = op.net
     m = net.m
     layers = range(len(m.layers)) if layers is None else layers
     out = {}
+
+    def sub(l):
+        subs = net.sub_of[l]
+        if face is None:
+            return subs[len(subs) // 2]
+        return min(subs, key=lambda q: abs(net.subs[q][0] + net.subs[q][1] / 2 - face * 1e-3))     # subs in m
     for o in ("x", "y"):
         S, slot, Kh = op._index()[o]
         used = list(op.used[o])
@@ -69,8 +77,7 @@ def flux_of_cells(op, bars, layers=None):
         for (l, oo, j, i, c) in bars:
             if oo != o:
                 continue
-            subs = net.sub_of[l]
-            k = used.index(subs[len(subs) // 2])
+            k = used.index(sub(l))
             G[k, j, i] += c
             any_ = True
         if not any_:
@@ -82,7 +89,5 @@ def flux_of_cells(op, bars, layers=None):
         Y = _kmul(Kh, np.ascontiguousarray(X.reshape(1, S, -1).astype(complex))).reshape(sh)
         Y = sfft.irfft2(Y, s=(op.Ny, op.Nx), workers=WORKERS)[0, :, :m.ny, :m.nx]
         for l in layers:
-            subs = net.sub_of[l]
-            k = used.index(subs[len(subs) // 2])
-            out[(l, o)] = Y[k]
+            out[(l, o)] = Y[used.index(sub(l))]
     return out
