@@ -258,9 +258,9 @@ class Electrostatic:
         p = self.p
         return _panel_inv_r(p, p, 0.0, 0.0) / (p * p) / (4 * np.pi * EPS0 * self.stack.eps_at(self.z[l]))
 
-    def _cg(self, v, idx, t0, tol, maxiter):
+    def _cg(self, v, idx, t0, tol, maxiter, q0=None):
         """P q = v on the copper cells, preconditioned conjugate gradients (P symmetric positive definite);
-        Jacobi preconditioner from each layer's self term."""
+        Jacobi preconditioner from each layer's self term; q0 a starting guess (else the diagonal's)."""
         m = self.m
         dinv = 1.0 / t0[idx[0]]
 
@@ -268,7 +268,7 @@ class Electrostatic:
             Q = np.zeros(m.lab.shape)
             Q[idx] = q
             return self.apply(Q)[idx]
-        q = v * dinv
+        q = v * dinv if q0 is None else np.array(q0, float)
         r = v - A(q)
         z = r * dinv
         p_ = z.copy()
