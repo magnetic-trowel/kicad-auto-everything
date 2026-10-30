@@ -48,7 +48,6 @@ DEFAULT_OPTS = dict(
                              # rip-up (kae.route.lastmile; repair._last_mile). On by default since the
                              # A+B k=3 suite at 57487e6: cp1 0.727 -> 0.909, cpk 0.818 -> 0.970, 0 errors
     last_mile_reserve_s=90.0,  # with last_mile: the repair rounds stop this much before the deadline
-    last_mile_rounds=4,      # last-mile rip-up rounds at most (each joins what the previous one left or ripped)
     last_mile_free_first=True,  # one last-mile round before those that joins without ripping anything
     planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
                              # plane_cost x, so they go there only when nothing shorter exists), "keep"
