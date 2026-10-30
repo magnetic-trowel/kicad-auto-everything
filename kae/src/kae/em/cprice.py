@@ -182,7 +182,7 @@ class CapPrices:
                 src_of.setdefault(n, s)
         # a victim tied to the aggressor through one part (a crystal's two pins, a bootstrap capacitor) is
         # left out: that part's coupling is the circuit's, and dwarfs the copper's
-        tied = {frozenset((e.a, e.b)) for e in bd.circuit.elems}
+        tied = {frozenset((e.a, e.b)) for e in bd.circuit.elems if e.kind != "Cm"}   # not the layout's own couplings
         self.pairs = []
         for o in obs:
             if o.kind != "victim" or not o.bound:
