@@ -135,10 +135,17 @@ observer's reduced adjoint z. The two-sided basis carries z already.
   projection computes L·V_I anyway.
 - So prices weighted over the whole spectrum, Π = Σ_f w(f) Π(f), are a combination of fixed fields
   with weights from the reduced model. Resonant pairs get their Q-amplified weight automatically.
-- Between refreshes the basis is recycled: the old basis plus the new copper's local currents.
-  A refresh adds a snapshot only where the error estimate says so. A single-vector warm start
-  did not pay ([physics-driven-build](physics-driven-build.md) §6); a recycled subspace is the
-  form that usually does.
+- Between refreshes the basis was to be recycled: the old basis plus the new copper's local
+  currents. Measured (R4 below), it is not accurate enough. What is recycled is the snapshot
+  frequencies: a refresh re-solves them concurrently and adds one only where the calibrated
+  error estimate says so.
+- Built as [`kae.em.spectral`](../../../kae/src/kae/em/spectral.py), `kae.em.pnr --spectral`. Two
+  points the design above missed:
+  - A hop's current per pattern comes from the model's own part currents at each frequency. The
+    ring and the copper's own current split are in it; the ideal-copper flow has neither.
+  - The projection's potentials are multipliers of the projected KCL. They are right at the ports
+    and at the snapshots, but off by up to 40× between them. Crossing prices recover potentials
+    from the reduced currents through the branch equation D φ = (R + jωL) I instead.
 
 **Sign-off.** The reduced model is a passive RLC-like state space. It exports as a SPICE
 subcircuit with the switch and rectifier replaced by device models, which is step 6 of the build
@@ -169,6 +176,81 @@ plan.
 
 | R3 | Harms from the reduced model: waveform peaks, harmonics vs limit lines, low-frequency bands | boost ring frequency and overshoot against a direct transient of the full system at one corner |
 | R4 | Router prices weighted over the spectrum; basis recycling between refreshes | predicted vs actual dL per pair within the current 0.93–1.06 band |
+
+**R4: built. The gate holds on the check geometry, and on boost where a hop carries the pair's current.**
+
+What `kae.em.spectral` does:
+- Every refresh reduces the copper as it stands, with the whole circuit inside it.
+- The weights are the derivatives of the evaluator's own harms: the waveform peak at every corner,
+  through the robust objective. That makes one complex weight per harmonic.
+- A hop's price is one real combination of the basis vectors' price fields.
+
+Check geometry ([em_r4_check](../../../tools/research/physics/em_r4_check.py), 0.2 mm): an aggressor
+loop with C_sw that rings at 130–170 MHz, and a victim hop replacing a field-free short. The table
+gives price / exact, from 1 to 300 MHz:
+
+| | basis fields | one 10 MHz field, constant L |
+|---|---|---|
+| solid plane: coupling | 1.01–1.07 | 0.09–4.3, sign flips above the ring |
+| solid plane: detour minus straight | 1.01–1.05 | 0.09–4.3 |
+| slot under both: coupling | 0.99–1.01 | 0.24–5.9 |
+| slot under both: detour minus straight | 0.97–1.00 | 0.24–5.8 |
+
+Below 0.3 MHz both fail (0.3–0.7 at 0.1 MHz). There the hop's return does not run under it, which
+is the R–L transition (§1).
+
+The price counts the hop's whole coupling. The field-free short it replaces already returned through
+the plane, and that coupling was in Z before the hop (a third of it here). It is the same for every
+path, so it does not move a route, but it does keep an absolute "actual dL" from matching.
+
+Recycling:
+- The old basis carried onto the new copper (by position, plus the hop's own current) misses the
+  post-hop Z_vs by 13–46%.
+- Fresh snapshots at the old frequencies hold it to 1e-6–1e-3. So the frequencies are what gets
+  recycled, not the vectors.
+
+Cost per refresh on boost, 0.25 mm, 8 threads
+([em_r4_cost](../../../tools/research/physics/em_r4_cost.py)):
+
+| Refresh | Time |
+|---|---|
+| 10 MHz solve of 9 patterns | 143 s |
+| spectral, first (greedy build of 7 snapshots) | 1825 s |
+| spectral, recycled, frequencies one after another | 878 s |
+| spectral, recycled, 2 at once | 437 s |
+| spectral, recycled, 4 at once | did not run: SuperLU and OpenMP ran out of address space under the 40 GB `ulimit -v` |
+
+The greedy build's cost is mostly its error grid: 24 factorizations per step.
+
+Boost, `--verify`: each net is routed twice from one state, and the two candidates' difference is
+compared per pair ([em_r4_trace](../../../tools/research/physics/em_r4_trace.py)). The route took 8656 s
+for 7 nets, against 2635 s for the 10 MHz router.
+
+Where the hop carries the pair's pattern current, the change is first order and the prices hold:
+- On the switch node, Net-(D3-A), the cell's overshoot changed by +0.796 nH at 10 MHz. The
+  prediction was +0.797 (1.00); for supply:IC1 it was 0.96.
+- On the whole-spectrum harm u, the ratios are 0.73 (overshoot) and 1.15 (supply:IC1).
+- On the FB net, the feedback victim's ratio is 1.09.
+
+Where the hop carries none of it, the prediction is ~0, and the actual changes are 0.001–0.03 nH:
+- Rails with capacitors become new return copper, which is second order in the coupling.
+- Every pair's |dZ| peaks at 70–95 MHz, at the resonance under the board's 95 MHz limit, which
+  routing shifts.
+- One prediction was spurious: −0.71 nH on supply:U2 for a /VBAT route, against +0.03 actual. The
+  search sought it out.
+
+Boost A/B: the six priced nets re-routed with the human placement. Scores are from
+`kae.excite.wideband` (robust objective) and `kae.excite.evaluate` (two bands):
+
+| Router | wideband robust | two-band robust | DRC |
+|---|---|---|---|
+| plain | 4176 | 367 | 1 starved thermal, 1 unconnected (the human board's own) |
+| physics, 10 MHz, `--verify` | 1316 | 221 | the same |
+| physics, whole spectrum, `--verify` | 806 | 170 | the same |
+
+One board and one run. The physics candidate won on 2 of the 7 nets, /VBAT and +5V. Part of the gain
+is that `--verify` now chooses by the evaluator's own whole-spectrum harm.
+
 | R5 | P operator (EQS) and capacitive prices | microstrip C per length vs closed form; two-trace mutual C vs FastCap |
 
 **R5 capacitive prices: built** ([physics-driven-build](physics-driven-build.md) §3b).
