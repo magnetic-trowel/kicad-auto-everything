@@ -322,7 +322,7 @@ class Spectral:
         midpoints between snapshots) adds one where it exceeds the tolerance."""
         if self.freqs is None:
             t = time.time()
-            model.build(f_max, fmin=1e3, tol=self.tol, rows=rows, cols=cols, scale=scale, grid=self.grid,
+            model.build(f_max, fmin=1e3, tol=self.tol, rows=rows, cols=cols, scale=scale, grid=self.grid, keep_factors=True,
                         f0=(0.0, min(F_LOG, f_max / 3)), snap_tol=self.snap_tol)
             self.freqs = list(model.freqs)
             self.cal = max([tr / es for _, tr, es in model.calibration if es > 0], default=1.0)

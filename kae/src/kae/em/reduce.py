@@ -259,7 +259,7 @@ class Reduced:
 
     # ------------------------------------------------------------------ greedy build
     def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
-              snap_tol=1e-8):
+              snap_tol=1e-8, keep_factors=False):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
         magnitudes errors are relative to (default |Z| of the model itself).
@@ -268,10 +268,12 @@ class Reduced:
         true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
         the estimate times the largest ratio of true to estimated error seen so far (the estimator's
         dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
-        tolerance."""
+        tolerance; keep_factors: see below."""
         t0 = time.time()
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
-        self._sys = {}                  # each grid frequency's factorization, kept across the greedy steps
+        # keep_factors: each grid frequency's factorization across the greedy steps (memory: one sparse factor
+        # per grid point)
+        self._sys = {} if keep_factors else None
         for f in f0:
             its = self.snapshot(f, tol=snap_tol)
             self.log(f"reduce: snapshot {f / 1e6:.4g} MHz ({int(np.max(its))} iterations), basis {self.V.shape[1]}")
