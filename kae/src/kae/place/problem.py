@@ -31,6 +31,7 @@ Grid coordinates: a part's origin is at (ox + X*g, oy + Y*g) for integers X, Y; 
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -44,6 +45,11 @@ ROTS = (0.0, 90.0, 180.0, 270.0)
 COURTYARD_EXCESS = 0.25   # mm around pads for footprints that draw no courtyard
 GRID_LADDER = (0.025, 0.05, 0.1, 0.2, 0.25)
 EPS = 1e-6
+# Routing room from the free area (Problem.fill_margin): the margin at least fills this share
+# of the area the movable parts can use, up to FILL_MAX_MM (0: off, the utilization rule
+# alone). Overridable: KAE_PLACE_FILL, KAE_PLACE_FILL_MAX_MM.
+FILL_TARGET = float(os.environ.get("KAE_PLACE_FILL", "0.6"))
+FILL_MAX_MM = float(os.environ.get("KAE_PLACE_FILL_MAX_MM", "1.5"))
 
 _GROUND_RE = re.compile(r"^(A|D|P|S|C|PWR|SIG|CHASSIS|EARTH)?(GND|VSS|GROUND|0V)\w*$|^(EARTH|PE|SHIELD)$", re.I)
 _POWER_RE = re.compile(
@@ -998,9 +1004,72 @@ class Problem:
     def auto_margin(self):
         """Routing room between movable parts, from how full the board is: about 1 mm on an
         empty board, nothing above 70% utilization (part rectangles are mutually exclusive
-        inflated by half the margin each)."""
+        inflated by half the margin each). With FILL_TARGET > 0, at least the room that
+        fills that share of the free area (fill_margin)."""
         util = max(self.utilization())
-        return float(min(1.0, max(0.0, 2.0 * (0.7 - util))))
+        m = float(min(1.0, max(0.0, 2.0 * (0.7 - util))))
+        if FILL_TARGET > 0:
+            m = max(m, self.fill_margin(FILL_TARGET, FILL_MAX_MM))
+        return m
+
+    def fill_margin(self, fill, m_max):
+        """The largest margin m <= m_max at which the movable parts, each inflated as set_margin
+        inflates it (m plus its pin-count escape share, half on each side), cover at most
+        `fill` of the area they can use: per side, the outline less the fixed obstacles there.
+
+        utilization() sums every part's occupancy rectangles, which overlap (a battery holder's
+        pieces count 1.5x its box) and include parts whose box holds other parts (a HAT's
+        outline footprint, a module's courtyard frame, a locked carrier): on 7 of 11 small
+        boards where our placement left connections open that the human's did not, it read
+        over 0.7 (up to 2.8) and the placer packed parts with no routing room at all. Here a
+        part counts the union of its own pieces; one whose box covers half the usable area or
+        more hosts others and counts nothing."""
+        from shapely.geometry import box as _box
+        from shapely.ops import unary_union as _union
+        A = float(self.outline.area)
+        if A <= 0:
+            return 0.0
+        free = []
+        for si in (0, 1):
+            obs = [_box(o.rect[0], o.rect[1], o.rect[2], o.rect[3]) for o in self.obstacles if o.side == si]
+            used = _union(obs).intersection(self.outline).area if obs else 0.0
+            free.append(max(0.0, A - used))
+        parts = ([], [])                    # per side: (area, perimeter, escape share)
+        for p in self.parts:
+            if not p.movable:
+                continue
+            r = p.rots[0]
+            si = 0 if p.s > 0 else 1
+            g = _union([_box(a, c, b, d) for a, c, b, d in (r.own_rects or (r.own,))])
+            if (r.own[2] - r.own[0]) * (r.own[3] - r.own[1]) >= 0.5 * free[si]:
+                continue                    # a host: other parts sit inside its box
+            e = min(0.8, 0.1 * math.sqrt(len(p.fp.pads)))
+            parts[si].append((g.area, g.length, e))
+
+        def need(si, m):
+            s = 0.0
+            for a, per, e in parts[si]:
+                d = m * (1.0 + e) / 2.0     # set_margin: (m + m e) / 2 on each side
+                s += a + per * d + 4.0 * d * d
+            return s
+
+        best = m_max
+        for si in (0, 1):
+            if not parts[si]:
+                continue
+            cap = fill * free[si]
+            if need(si, 0.0) >= cap:
+                return 0.0
+            if need(si, m_max) > cap:
+                lo, hi = 0.0, m_max
+                for _ in range(30):
+                    mid = 0.5 * (lo + hi)
+                    if need(si, mid) <= cap:
+                        lo = mid
+                    else:
+                        hi = mid
+                best = min(best, lo)
+        return float(best)
 
     def set_margin(self, m):
         """Grow every movable part's occupancy and board rectangles by m/2 on each side (0
