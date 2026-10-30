@@ -133,9 +133,13 @@ class Reduced:
         R[self.lo:] = 0.0                       # lumped parts enter through z_l(w)
         self.G_R = VI.T @ (R[:, None] * VI)
         self.G_Lc = VI.T @ (net.Lc[:, None] * VI)
-        LV = np.concatenate([self.op.L_apply(VI[:, k:k + ES.BATCH].astype(complex)).real
-                             for k in range(0, VI.shape[1], ES.BATCH)], 1)
-        self.G_L = VI.T @ LV
+        # L V_I only for the columns new since the last projection (the basis only grows)
+        old = getattr(self, "LV", None)
+        k0 = 0 if old is None else old.shape[1]
+        new = [self.op.L_apply(VI[:, k:min(k + ES.BATCH, VI.shape[1])].astype(complex)).real
+               for k in range(k0, VI.shape[1], ES.BATCH)]
+        self.LV = np.concatenate(([old] if old is not None else []) + new, 1) if new else old
+        self.G_L = VI.T @ self.LV
         self.G_D = VI.T @ (self.sys0.D @ Vp)
         self.Vl = VI[self.lo:]
         self.Pr = Vp.T @ self.P - VI.T @ self.E           # (m, nports): minus the reduced right-hand sides
@@ -248,10 +252,14 @@ class Reduced:
             sy = ES.System(self.op, f)
             if cache is not None:
                 cache[f] = sy
-        X = self.full(f)[:, need]
-        Xs = np.concatenate([X[:self.nb], X[self.nb:] * sy.kap])
+        Y = self.solve(f)[:, need]
+        X = self.V @ Y
+        I, phi = X[:self.nb], X[self.nb:] * sy.kap
+        # the residual without an FFT: L X_I = (L V_I) Y, kept from the projection
+        w = 2 * np.pi * f
+        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * (self.LV @ Y)) - sy.D @ phi
         rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
-        r = rhs - sy.matvec(Xs)
+        r = rhs - np.concatenate([top, -(sy.DT @ I)])
         e = sy.psolve(r)
         at = {k: q for q, k in enumerate(need)}
         E = np.abs(e[:, [at[k] for k in rows]].T @ r[:, [at[j] for j in cols]]) / sy.kap
@@ -282,17 +290,31 @@ class Reduced:
         self.history = []
         self.calibration = []
         cal = None
+        self.timing = dict(snapshots=time.time() - t0, grid=0.0, grid_points=0, grid_skipped=0)
+        last = {}                 # grid frequency -> its latest estimate (an estimate only falls as the basis grows)
         while True:
-            worst, fw = 0.0, None
+            worst, fw, Ew = 0.0, None, None
+            tg = time.time()
             for f in G:
                 if any(abs(f - g) <= 1e-9 * max(f, 1.0) for g in self.freqs):
                     continue
+                if f in last and cal is not None and last[f] * cal < 0.1 * tol:
+                    # converged well below the tolerance: keep its last (larger) estimate, skip the factor
+                    self.timing["grid_skipped"] += 1
+                    continue
                 E = self.error(f, rows, cols)
+                self.timing["grid_points"] += 1
                 Zr = self.Z(f)[np.ix_(rows, cols)]
                 S = np.abs(Zr) if scale is None else scale(f)
                 rel = float(np.max(E / np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)))
+                last[f] = rel
                 if rel > worst:
-                    worst, fw = rel, f
+                    worst, fw, Ew = rel, f, E
+            # a skipped point's last estimate still counts (conservative)
+            for f, rel in last.items():
+                if rel > worst and not any(abs(f - g) <= 1e-9 * max(f, 1.0) for g in self.freqs):
+                    worst, fw, Ew = rel, f, None
+            self.timing["grid"] += time.time() - tg
             cw = worst * cal if cal is not None else worst
             self.history.append((self.V.shape[1], worst, fw, cw))
             self.log(f"reduce: basis {self.V.shape[1]}, estimated worst relative error {worst:.1e}"
@@ -302,8 +324,10 @@ class Reduced:
                 break
             Zr = self.Z(fw)[np.ix_(rows, cols)]
             S = np.abs(Zr) if scale is None else scale(fw)
-            E_est = self.error(fw, rows, cols)
+            E_est = Ew if Ew is not None else self.error(fw, rows, cols)   # the grid's own, when it has it
+            ts = time.time()
             its = self.snapshot(fw, tol=snap_tol)
+            self.timing["snapshots"] += time.time() - ts
             Zt = self.last_Z[np.ix_(rows, cols)]
             den = np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)
             true = float(np.max(np.abs(Zr - Zt) / den))
@@ -315,4 +339,7 @@ class Reduced:
                      f"there was {true:.1e} (estimated {est:.1e})")
         self._sys = None
         self.seconds = time.time() - t0
+        self.log(f"reduce: built in {self.seconds:.0f}s: snapshots {self.timing['snapshots']:.0f}s, error grid "
+                 f"{self.timing['grid']:.0f}s over {self.timing['grid_points']} points "
+                 f"({self.timing['grid_skipped']} skipped as converged)")
         return self
