@@ -683,8 +683,10 @@ class Daemon:
                     by.setdefault(j["owner"], []).append(self.trace[j["id"]][1])
             self.rho = {o: owner_correlation(v, cfg["mem_pool_rho"]) for o, v in by.items() if o in profiles}
             self.rho_ts = now
-        # organic growth: RSS change of jobs running both last tick and now
-        cur = {j["id"]: usage[j["id"]][0] for j in running if j["id"] in usage}
+        # organic growth: RSS change of jobs past warm-up running both last tick and now (a warming-up job's
+        # growth is covered by its own need, below; counting it here too would count it twice)
+        cur = {j["id"]: usage[j["id"]][0] for j in running
+               if j["id"] in usage and now - (j["started"] or now) >= cfg["warmup_s"]}
         self.organic += sum(r - self.last_rss[i] for i, r in cur.items() if i in self.last_rss)
         self.last_rss = cur
         if not self.rise_hist or now - self.rise_hist[-1][0] >= 10:
