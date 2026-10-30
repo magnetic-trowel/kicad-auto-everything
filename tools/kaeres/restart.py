@@ -6,7 +6,10 @@
                -- COMMAND...
 
 COMMAND is one attempt of the method, run with `sh -c` in its own directory, with @IN@, @OUT@,
-@SEED@ and @TIME@ replaced. `parallel` attempts run at once; attempt k gets seed S*1000+k and a
+@SEED@, @TIME@ and @BEST@ replaced. With --resume S, a share S of each wave after the first
+continues from the best board so far: @BEST@ is a copy of it (with the input's project files) and
+KAE_RESUME=1 is set; otherwise @BEST@ is the input and KAE_RESUME=0. A command decides what
+continuing means (a router routes what is still open; a placer may keep the placement and route). `parallel` attempts run at once; attempt k gets seed S*1000+k and a
 budget of F * G**(k // P) seconds (a doubling schedule: a board that needs one long attempt
 still gets one). Each finished attempt is checked with kicad-cli DRC (errors, then unconnected
 items, zones refilled, the input's project rules). The first clean one ends the run; otherwise
@@ -190,6 +193,9 @@ def main():
     ap.add_argument("--slack", type=float, default=1.0,
                     help="an attempt may run budget x slack before it is killed (methods whose budget is "
                          "solver CPU time and that spend more on KiCad I/O around it)")
+    ap.add_argument("--resume", type=float, default=0.0,
+                    help="share of each wave after the first that continues from the best board so far "
+                         "(@BEST@, KAE_RESUME=1); 0 = every attempt starts from the input")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
@@ -225,12 +231,22 @@ def main():
         d.mkdir(exist_ok=True)
         o = d / "board.kicad_pcb"
         s = a.seed * 1000 + k
+        src, resume = inp, False
+        if (a.resume > 0 and k >= a.parallel and best is not None and best["rank"] is not None
+                and k % a.parallel < round(a.resume * a.parallel)):
+            src, resume = d / "best_in.kicad_pcb", True
+            shutil.copy2(best["out"], src)
+            for ext in (".kicad_pro", ".kicad_dru"):   # the task's rules
+                if inp.with_suffix(ext).exists():
+                    shutil.copy2(inp.with_suffix(ext), src.with_suffix(ext))
         c = cmd.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
+        c = c.replace("@BEST@", shlex.quote(str(src)))
         c = c.replace("@SEED@", str(s)).replace("@TIME@", str(int(b)))
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
-                             start_new_session=True)
-        running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic())
-        log(f"start #{k} seed {s} budget {b:.0f}s")
+                             start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0"))
+        running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
+                          resumed_from=best["k"] if resume else None)
+        log(f"start #{k} seed {s} budget {b:.0f}s" + (f" from #{best['k']}'s board" if resume else ""))
         k += 1
         return True
 
