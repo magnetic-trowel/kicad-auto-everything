@@ -56,6 +56,9 @@ DEFAULT_OPTS = dict(
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
     neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
+    escapes=False,           # escape pre-pass (kae.route.escape): dog-bones of grid packages' balls laid
+                             # before Freerouting; "lock" keeps them as fixed copper, "soft" (or True) unlocks
+                             # them after the first routing so the repair rounds and last mile may rip them
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -100,10 +103,16 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         sev = severities(input_path)
         opts["severities"] = sev
         opts["seed"] = seed
+        route_input = input_path          # the board Freerouting's session is imported into
+        escape_uuids = []
+        if opts.get("escapes"):
+            route_input, escape_uuids, report["escapes"] = _escape_prepass(input_path, info, opts, wd, log)
+            if escape_uuids:
+                info = pcbnew_io.export_dsn(route_input, kdsn)
         if any((z.get("name") or "").startswith(CRIT_PREFIX) for z in info.get("zones") or []):
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
-        p = constraints.plan(info, input_path, opts)
+        p = constraints.plan(info, route_input, opts)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
@@ -150,11 +159,16 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         report["session"] = translate.fix_session(ses, p)
         ses_k = wd / "board_kicad.ses"
         specctra.write(ses, ses_k)
-        imported = pcbnew_io.import_ses(input_path, ses_k, output_path)
+        imported = pcbnew_io.import_ses(route_input, ses_k, output_path)
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
-        opts["fixed_uuids"] = sorted(r["uuid"] for r in imported.get("routing") or [] if r.get("locked"))
+        soft = set(escape_uuids) if opts.get("escapes") != "lock" else set()
+        if soft:
+            from . import critical_write as W
+            W.edit(output_path, output_path, unlock=sorted(soft))
+        opts["fixed_uuids"] = sorted(r["uuid"] for r in imported.get("routing") or []
+                                     if r.get("locked") and r["uuid"] not in soft)
         report["fixed_items"] = len(opts["fixed_uuids"])
         report["status"] = "routed"
 
@@ -176,6 +190,36 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def _escape_prepass(input_path, info, opts, wd, log):
+    """(board with the escapes as locked copper, their uuids, report); the input itself when
+    there is nothing to lay."""
+    from kae.board.kicad_file import load
+
+    from . import critical_write as W
+    from . import escape
+    from .critical_space import Space
+    t = time.monotonic()
+    p0 = constraints.plan(info, input_path, opts)
+    sp = Space(load(input_path), info, plan=p0, sev=opts.get("severities") or {})
+    got = escape.plan_escapes(input_path, info, p0, space=sp, opts=opts, log=log)
+    rep = dict(got["report"], seconds=round(time.monotonic() - t, 1))
+    if not got["vias"]:
+        return input_path, [], rep
+    board = W.stage(input_path, wd / "escaped", "board")
+    tracks, vias, uuids = [], [], []
+    for (net, layer, w, a, b) in got["tracks"]:
+        u = W.new_uuid()
+        tracks.append((net, layer, w, a, b, u, True))
+        uuids.append(u)
+    for (net, x, y, D, d) in got["vias"]:
+        u = W.new_uuid()
+        vias.append((net, x, y, D, d, u, True))
+        uuids.append(u)
+    W.append_items(board, board, tracks=tracks, vias=vias)
+    log(f"escapes: {len(got['vias'])} dog-bones laid ({rep['seconds']}s)")
+    return board, uuids, rep
 
 
 def router_budget(left_s, opts):
