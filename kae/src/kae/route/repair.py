@@ -96,9 +96,24 @@ class _Space:
         for net, shapes, cls, _ in getattr(plan, "net_graphics", []):  # copper pins of a net
             for l, g in shapes.items():
                 self.items.append((g, net, "pad", l, cls, None))
-        for ob in plan.obstacles:  # rule areas forbid tracks of every net
-            if ob.kind == "keepout" and ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
-                self.items.append((ob.geom, "", "keepout", None if ob.layer == "signal" else ob.layer, None, None))
+        for ob in plan.obstacles:
+            if ob.kind != "keepout":
+                continue  # via keepouts do not bind tracks
+            lay = None if ob.layer == "signal" else ob.layer
+            if ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
+                # rule areas forbid tracks of every net
+                self.items.append((ob.geom, "", "keepout", lay, None, None))
+                continue
+            # the plan's other keepouts (NPTH holes, cut-outs and stray edges, mask openings,
+            # copper graphics) at their class's clearance: a spoke track drawn across one was
+            # an error of its own (a solder mask bridge, a hole or edge clearance)
+            g = ob.geom
+            if isinstance(g, tuple):
+                if g[0] != "circle":
+                    continue
+                from shapely.geometry import Point
+                g = Point(g[1], g[2]).buffer(g[3] / 2, quad_segs=16)
+            self.items.append((g, "", "obstacle", lay, ob.cls, None))
         self.tree = STRtree([it[0] for it in self.items]) if self.items else None
 
     def _need(self, net, layer, it):
@@ -112,8 +127,8 @@ class _Space:
             v = self.plan.matrix.get((a, b, layer), (0.2, 0.2, 0.2))
             r = self.routed.get(it[5])
             return v[1] if r is not None and r["kind"] == "via" else v[0]
-        if it[2] == "pad" and it[4] in self.plan.obstacle_classes:
-            return self.plan.obstacle_classes[it[4]].values.get((cls, layer), (0.2, 0.2))[0]
+        if it[2] in ("pad", "obstacle") and it[4] in self.plan.obstacle_classes:
+            return max(self.plan.obstacle_classes[it[4]].values.get((cls, layer), (0.2, 0.2))[0], 1e-6)
         vals = [oc.values.get((cls, layer)) for n, oc in self.plan.obstacle_classes.items() if n.startswith("kae_cu")]
         return max([v[0] for v in vals if v is not None] or [0.2])
 
