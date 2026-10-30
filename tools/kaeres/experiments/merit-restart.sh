@@ -53,27 +53,31 @@ add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]; INNE
     "${KAE[@]}" "$@" ${MH:-${HARNESS:+--harness $HARNESS}}
 }
 
-# the kae methods run kae-complete 78d3de7 (kae-speed 1650f8e + the last mile and its error rip-out
+# the kae methods run kae-route-fixes 9a21bbf (kae-complete 78d3de7 + clearance checks the board turns off
+# are not enforced, an overridable floor kept; other new options off) and restart.py a046c92 (resume;
+# attempts stop in time to be judged). kae-complete 78d3de7 (kae-speed 1650f8e + the last mile and its error rip-out
 # counting only errors beyond the routed board's input, from 30 s left, cap growing with time: on the
 # 69 boards the earlier versions left open, fully routed boards 15 -> 33 for the bridge) with its own
 # warm numba cache; staged and joint loop also resume (restart.py --resume 0.5 at restart-resume
 # 2e380fb: half of each later wave routes the best board's placement with the bridge; staged 6 -> 20,
 # joint loop 10 -> 20 there). autoplace keeps kae-speed. pnr keeps 45efe00's venv.
 KAE_BASE=("${KAE[@]}")
-KAE=(--code kae=.@78d3de7ba62d71b8c06b63541ca945ea9786d331)   # kae-complete
-RESUME_H="--harness 2e380fb58d46f038b2a7a06b3596faee83a6fa8d"   # restart.py --resume
+KAE=(--code kae=.@9a21bbf7afbed394928c2ecdd61afec1682d87d7)   # kae-route-fixes 9a21bbf: kae-complete + the board's rule severities honoured
+RESUME_H="--harness a046c925138f6f1879eb24411c20a766432a960b"   # restart.py --resume, judging time reserved
 
-CP="cp -r $KH/numba-kaecomplete2 numba 2>/dev/null;"
+CP="cp -r $KH/numba-kaesev numba 2>/dev/null;"
 E="env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
-add "kae bridge lm-base (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli, last mile on errors beyond the input (kae-complete)" \
+MH=$RESUME_H add "kae bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli, last mile on errors beyond the input (kae-complete)" \
   "$CP $E -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
-add "kae critical+bridge lm-base (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli: critical copper, then the bridge, last mile on errors beyond the input (kae-complete)" \
+MH=$RESUME_H add "kae critical+bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli: critical copper, then the bridge, last mile on errors beyond the input (kae-complete)" \
   "$CP $E -m kae.route.critical_cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
-MH=$RESUME_H add "kae staged lm-base resume (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "as kae staged lm-base; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
+MH=$RESUME_H add "kae staged (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "kae.joint.cli --max-iters 0 --no-modules (kae place, then the bridge), last mile on errors beyond the input; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
   "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules; fi"
-MH=$RESUME_H add "kae joint loop lm-base resume (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "as kae joint loop lm-base; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
+MH=$RESUME_H add "kae joint loop (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "kae.joint.cli (module stage, windows with last mile, finishing bridge), last mile on errors beyond the input; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
   "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@; fi"
-# superseded 2026-10-29 (still on disk): kae bridge, critical+bridge, staged, joint loop at kae-speed 1650f8e
+# superseded (runs still on disk): 2026-10-29 the kae-speed 1650f8e versions; 2026-10-30 the kae-complete
+# 78d3de7 "lm-base" versions (the same code except the board's rule severities, and restart.py without
+# the judging reserve: seniordesign hdmi2rgb ran past its time and kept nothing)
 
 pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solver CPU s
   local name=$1 kind=$2 sl=$3 spec=$4; shift 4
