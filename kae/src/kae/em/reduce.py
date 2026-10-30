@@ -73,7 +73,7 @@ class Reduced:
         return s
 
     # ------------------------------------------------------------------ basis
-    def snapshot(self, f, tol=1e-8):
+    def snapshot(self, f, tol=1e-6):
         """Solve every port at f and add the solutions to the basis. Returns the iterations; the full
         solution's port impedances stay in self.last_Z (a free check of the model before it)."""
         sy = (getattr(self, "_sys", None) or {}).get(f) or ES.System(self.op, f)
@@ -84,7 +84,7 @@ class Reduced:
         self.freqs.append(f)
         return its
 
-    def snapshots(self, freqs, tol=1e-8, workers=1):
+    def snapshots(self, freqs, tol=1e-6, workers=1):
         """snapshot() at every f of freqs, the solves `workers` at a time (threads: the FFTs, the factor
         solves and the BLAS release the interpreter), then one orthonormalization of all solutions.
         Returns {f: iterations}; the full solutions' port impedances stay in self.last_Zs. Identical ports
@@ -267,7 +267,7 @@ class Reduced:
 
     # ------------------------------------------------------------------ greedy build
     def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
-              snap_tol=1e-8, keep_factors=False):
+              snap_tol=1e-6, keep_factors=False):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
         magnitudes errors are relative to (default |Z| of the model itself).
