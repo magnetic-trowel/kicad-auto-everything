@@ -214,6 +214,27 @@ def edge_cut_lib_rect(fp):
     return polys_lib_rect(list(fp.edge_cuts))
 
 
+def draws_outline(fp, board, tol=0.05):
+    """Whether fp's Edge.Cuts lie on the board's outer boundary (it draws the outline rather
+    than cutting a hole): most of their length within `tol` of an outline exterior, at the
+    footprint's pose in the file."""
+    outs = [p for p in (board.outline or []) if p.area > 0]
+    if not fp.edge_cuts or not outs or not fp.on_board:
+        return False
+    from shapely.affinity import rotate as _rot, translate as _tr, scale as _sc
+    ext = shapely.union_all([p.exterior for p in outs]).buffer(tol)
+    total = on = 0.0
+    for ln in fp.edge_cuts:
+        g = ln
+        if fp.side == "B":
+            g = _sc(g, xfact=1.0, yfact=-1.0, origin=(0, 0))   # transform.to_board: ly -> -ly
+        g = _rot(g, -fp.rot, origin=(0, 0))          # KiCad: y down, counter-clockwise on screen
+        g = _tr(g, fp.x, fp.y)
+        total += g.length
+        on += g.intersection(ext).length
+    return total > 0 and on >= 0.5 * total
+
+
 _HEATSINK_MOUNT = re.compile(r"TO-?(220|247|3P|218|264|126|3)\b|Heatsink|heatsink|HeatSink", re.I)
 
 
@@ -717,7 +738,10 @@ class Problem:
         # pads with copper on the part's own side (an LGA footprint on F whose lands are all on
         # B.Cu, an interposer's, takes room on the back only: see lib_opp)
         near = [k for k, q in enumerate(pads) if is_drilled(q) or _on_own_copper(q, fp.side)]
-        pad_pieces = _cluster_rects([infl[k] for k in near], max_n=6)
+        # a footprint drawing the board outline (held where it is) keeps every pad: clustered,
+        # a castellated module's ring of edge pads became one box over the whole board
+        frame = bool(fp.edge_cuts) and draws_outline(fp, self.board)
+        pad_pieces = [infl[k] for k in near] if frame else _cluster_rects([infl[k] for k in near], max_n=6)
         # copper and mask graphics (logos, mask apertures): copper keeps clearance from other
         # copper, a mask aperture may not expose another part's pads (solder_mask_bridge)
         gr = getattr(fp, "graphics", None) or {}
@@ -727,7 +751,7 @@ class Problem:
                                 for ly in ("B.Cu", "B.Mask") for g in gr.get(ly, ()) if not g.is_empty], max_n=4)
         pad_pieces = pad_pieces + [r for r in g_near if not any(_inside(r, q) for q in pad_pieces)]
         own_pieces = cy_pieces + [r for r in pad_pieces if not any(_inside(r, c) for c in cy_pieces)]
-        if len(own_pieces) > 8:
+        if len(own_pieces) > 8 and not frame:
             own_pieces = _cluster_rects(own_pieces, max_n=8)
         # rule areas the footprint owns (an antenna or sensor keepout): no other part's pads
         # or courtyard inside, on the sides of their layers; KiCad moves them with the part
@@ -757,9 +781,16 @@ class Problem:
         lib_opp = _cluster_rects([rect_union([infl[k], rect_grow(hole_lib_rect(pads[k]), self.clr_min / 2)])
                                   for k in drilled] + [infl[k] for k in far])
         if fp.courtyard_back and self.is_error("courtyards_overlap"):
-            lib_opp.append(polys_lib_rect(fp.courtyard_back))
+            ub = shapely.union_all(fp.courtyard_back)
+            lib_opp += poly_cover_rects(ub, max(1e-3, (ub.bounds[2] - ub.bounds[0]) / 4.0)) or \
+                [polys_lib_rect(fp.courtyard_back)]
         lib_opp = [r for r in lib_opp if r is not None] + ko_opp + g_far
         cut = edge_cut_lib_rect(fp)
+        if cut is not None and frame:
+            # the footprint draws the board's own outline (a HAT, bonnet or Feather template, a
+            # castellated module's edge): its box is the board, not a hole in it. As a cut it
+            # took the whole board on both sides, and every other part collided with it
+            cut = None
         if cut is not None:
             # the footprint cuts the board (a lens hole, a window): nothing on either side may
             # come within the copper-to-edge clearance of the cut, and the cut stays inside the
@@ -1213,7 +1244,8 @@ def _grow_rect(r, S_out, ni, nj):
 
 def poly_cover_rects(poly, step):
     """Rectangles whose union covers a polygon (vertical strips of width ~step, each the
-    polygon's extent within the strip); a rectangle polygon gives itself."""
+    extent of every separate part of the polygon within the strip, so a frame-shaped courtyard
+    does not cover the inside of the frame); a rectangle polygon gives itself."""
     if poly is None or poly.is_empty:
         return []
     x0, y0, x1, y1 = poly.bounds
@@ -1224,7 +1256,10 @@ def poly_cover_rects(poly, step):
     out = []
     for a, b in zip(xs[:-1], xs[1:]):
         piece = poly.intersection(box(a, y0 - 1, b, y1 + 1))
-        if not piece.is_empty and piece.area > 0:
-            px0, py0, px1, py1 = piece.bounds
-            out.append((a, py0, b, py1))
+        if piece.is_empty or piece.area <= 0:
+            continue
+        for g in getattr(piece, "geoms", [piece]):
+            if g.area > 0:
+                px0, py0, px1, py1 = g.bounds
+                out.append((max(a, px0), py0, min(b, px1), py1))
     return out
