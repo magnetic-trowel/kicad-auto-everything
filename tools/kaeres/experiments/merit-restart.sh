@@ -50,23 +50,30 @@ add() {  # NAME KIND BASE_S WRAPPER DESCRIPTION INNER [CODE/PARAM ARGS...]; INNE
   [ "$kind" = route ] || wrap="${wrap% --} --check-placement --"
   $K method add "$name" --kind "$kind" --description "$desc; restart portfolio (tools/kaeres/restart.py)" \
     --command "$wrap '$inner'" --param timeout_s="$base" --param timeout_scale=sqrt-fp40 --param parallel=4 \
-    "${KAE[@]}" "$@" ${HARNESS:+--harness $HARNESS}
+    "${KAE[@]}" "$@" ${MH:-${HARNESS:+--harness $HARNESS}}
 }
 
-# the kae methods and autoplace run kae-speed (45efe00 + faster critical grid + one pcbnew worker per
-# process, same outputs) with its own warm numba cache; pnr keeps 45efe00's venv
+# the kae methods run kae-complete 78d3de7 (kae-speed 1650f8e + the last mile and its error rip-out
+# counting only errors beyond the routed board's input, from 30 s left, cap growing with time: on the
+# 69 boards the earlier versions left open, fully routed boards 15 -> 33 for the bridge) with its own
+# warm numba cache; staged and joint loop also resume (restart.py --resume 0.5 at restart-resume
+# 2e380fb: half of each later wave routes the best board's placement with the bridge; staged 6 -> 20,
+# joint loop 10 -> 20 there). autoplace keeps kae-speed. pnr keeps 45efe00's venv.
 KAE_BASE=("${KAE[@]}")
-KAE=(--code kae=.@1650f8e65f538dd86964eee01007453c6cd9a05f)   # kae-speed
+KAE=(--code kae=.@78d3de7ba62d71b8c06b63541ca945ea9786d331)   # kae-complete
+RESUME_H="--harness 2e380fb58d46f038b2a7a06b3596faee83a6fa8d"   # restart.py --resume
 
-KENV="cp -r $KH/numba-kaefast numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
-add "kae bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli: bridge + last mile" \
-  "$KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
-add "kae critical+bridge (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli: critical copper, then the bridge" \
-  "$KENV -m kae.route.critical_cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
-add "kae staged (restarts)" joint-fixed 900 "$(rs 300 1.15)" "kae.joint.cli --max-iters 0 --no-modules: kae place, then the bridge" \
-  "$KENV -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules"
-add "kae joint loop (restarts)" joint-fixed 900 "$(rs 300 1.15)" "kae.joint.cli: module stage, windows with last mile, finishing bridge" \
-  "$KENV -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@"
+CP="cp -r $KH/numba-kaecomplete2 numba 2>/dev/null;"
+E="env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
+add "kae bridge lm-base (restarts)" route 900 "$(rs 60 1.15)" "kae.route.cli, last mile on errors beyond the input (kae-complete)" \
+  "$CP $E -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
+add "kae critical+bridge lm-base (restarts)" route 900 "$(rs 60 1.15)" "kae.route.critical_cli: critical copper, then the bridge, last mile on errors beyond the input (kae-complete)" \
+  "$CP $E -m kae.route.critical_cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@"
+MH=$RESUME_H add "kae staged lm-base resume (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "as kae staged lm-base; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
+  "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules; fi"
+MH=$RESUME_H add "kae joint loop lm-base resume (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "as kae joint loop lm-base; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
+  "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@; fi"
+# superseded 2026-10-29 (still on disk): kae bridge, critical+bridge, staged, joint loop at kae-speed 1650f8e
 
 pnr() {  # NAME KIND SLACK SPEC [run.py options...]; the attempt budget is solver CPU s
   local name=$1 kind=$2 sl=$3 spec=$4; shift 4
@@ -90,6 +97,8 @@ pnr "pnr jc2_fix" $J 100 collapse_joint/jc2.py:jc2_fix
 # autoplace on the newer branch: --router kae routes its candidates with kae's bridge. Its
 # placements are scored through the same restart-wrapped kae bridge as the probe (Freerouting
 # routes only 0.17 of human placements clean on the qualified boards, so it cannot tell placements apart).
+KAE=(--code kae=.@1650f8e65f538dd86964eee01007453c6cd9a05f)   # autoplace keeps kae-speed
+KENV="cp -r $KH/numba-kaefast numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
 PROBE="$(rs 60 1.15) '$KENV -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@'"
 add "autoplace sa-loop kae (restarts)" place-fixed 1200 "$(rs 100000 1.2 --max-attempts 1)" "methods/autoplace place.py --algo sa-loop --router kae (plans its own rounds; one attempt); probe: kae bridge with restarts" \
   "cp -r $KH/numba-kaefast numba 2>/dev/null; env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK PYTHONPATH={code:ap}/bench/src {py:kae} {code:ap}/methods/autoplace/place.py --algo sa-loop --router kae --input @IN@ --output @OUT@ --workdir \$PWD --attempt @SEED@ --seed @SEED@ --timeout @TIME@" \
