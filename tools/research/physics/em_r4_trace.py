@@ -30,6 +30,21 @@ def main(argv=None):
             if abs(p["dL"]) > 1e-12 or abs(p["dL_pred"]) > 1e-12:
                 du = f"{p['du_lin']:+.3f} / {p['du_pred']:+.3f}" if p["du_lin"] is not None else ""
                 print(f"  {p['pair'][0][:30]:30s} {p['dL'] * 1e9:+8.3f} / {p['dL_pred'] * 1e9:+8.3f}   {du}")
+    # with connection ports (kae.em.hopport) the absolute change is predictable too
+    ab10, abu = [], []
+    for r in recs:
+        mx = max((abs(p["dL"]) for p in r["pairs"]), default=0)
+        for p in r["pairs"]:
+            if mx and abs(p["dL"]) >= 0.1 * mx:
+                ab10.append(p["dL_pred"] / p["dL"])
+            if p["du_lin"] is not None and abs(p["du_lin"]) > 1e-3:
+                abu.append(p["du_pred"] / p["du_lin"])
+    for name, rs in (("absolute dL at 10 MHz (pairs >= 10% of the refresh's largest)", ab10),
+                     ("absolute du, typical corner, linearized (|du| > 1e-3)", abu)):
+        if rs:
+            a_ = np.array(rs)
+            print(f"{name}: {len(a_)} ratios, median {np.median(a_):.2f}, within 0.8-1.25: {np.mean((a_ > 0.8) & (a_ < 1.25)):.0%}, "
+                  f"sign right: {np.mean(a_ > 0):.0%}")
     print("candidate differences (physics minus plain route of one net from one state):")
     rat10, ratu = [], []
     for a, b in zip(recs[:-1], recs[1:]):

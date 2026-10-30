@@ -468,7 +468,7 @@ class PhysRouter:
         """The move-cost callable for GridRouter.connect, for a hop carrying `cur` {pattern: A}; ends: the
         mesh layer indices of the planes its source and target terminals' returns enter."""
         if self.spec is not None and not self.plain:
-            cur = self.spec.hop(cur)
+            cur = self.spec.hop(cur, width)
         lam, m = self.lam, getattr(self, "mesh", None)
 
         def f(grid, layers):

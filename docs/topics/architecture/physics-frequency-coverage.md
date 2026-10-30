@@ -251,6 +251,9 @@ Boost A/B: the six priced nets re-routed with the human placement. Scores are fr
 One board and one run. The physics candidate won on 2 of the 7 nets, /VBAT and +5V. Part of the gain
 is that `--verify` now chooses by the evaluator's own whole-spectrum harm.
 
+**R4b:** hops priced through the ports of the connections they replace, which is exact for coupling
+from 1 kHz to 300 MHz: [physics-hop-ports](physics-hop-ports.md).
+
 | R5 | P operator (EQS) and capacitive prices | microstrip C per length vs closed form; two-trace mutual C vs FastCap |
 
 **R5 capacitive prices: built** ([physics-driven-build](physics-driven-build.md) §3b).

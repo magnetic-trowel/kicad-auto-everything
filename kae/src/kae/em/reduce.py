@@ -43,14 +43,23 @@ class _Bare(ES.System):
 class Reduced:
     """The reduced model of one Network for a set of ports.
 
-    ports: list of {terminal: A} injections. Build with `build`; evaluate with `Z(f)`."""
+    ports: list of {terminal: A} injections; emf: branch indices with a unit series EMF as further ports
+    (after the injections: a port across a part, e.g. an unrouted connection of negligible impedance, whose
+    own response is the branch current, Z_bb = -I_b: minus the admittance the branch's loop presents).
+    Build with `build`; evaluate with `Z(f)`: Z_kj = p_k^T phi_j - e_k^T I_j."""
 
-    def __init__(self, op, ports, log=print):
+    def __init__(self, op, ports, log=print, emf=()):
         self.op, self.net = op, op.net
         self.log = log
         self.sys0 = _Bare(op, 1e6)              # grounding, D and free nodes do not depend on f
         self.nb = self.net.n_br
-        self.P = np.stack([self._vec(p) for p in ports], 1)        # (nfree, nports)
+        n = len(ports) + len(emf)
+        self.P = np.zeros((self.sys0.nfree, n), complex)              # (nfree, nports): injections
+        for j, p in enumerate(ports):
+            self.P[:, j] = self._vec(p)
+        self.E = np.zeros((self.nb, n))                                 # (n_br, nports): series EMFs
+        for j, b in enumerate(emf):
+            self.E[b, len(ports) + j] = 1.0
         self.V = np.zeros((self.nb + self.sys0.nfree, 0))
         self.freqs = []
         self.lo = self.net.off["l"]
@@ -67,10 +76,10 @@ class Reduced:
     def snapshot(self, f, tol=1e-8):
         """Solve every port at f and add the solutions to the basis. Returns the iterations; the full
         solution's port impedances stay in self.last_Z (a free check of the model before it)."""
-        sy = ES.System(self.op, f)
-        X, its = sy.solve_many(self.P, tol=tol, maxiter=3000)
+        sy = (getattr(self, "_sys", None) or {}).get(f) or ES.System(self.op, f)
+        X, its = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E)
         X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
-        self.last_Z = self.P.T @ X[self.nb:]
+        self.last_Z = self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
         self._extend(np.concatenate([X.real, X.imag], 1))
         self.freqs.append(f)
         return its
@@ -81,15 +90,16 @@ class Reduced:
         Returns {f: iterations}; the full solutions' port impedances stay in self.last_Zs. Identical ports
         (an overshoot observer is its cell's source port) are solved once."""
         first = {}
-        cols = [first.setdefault(self.P[:, j].tobytes(), j) for j in range(self.P.shape[1])]
+        cols = [first.setdefault(self.P[:, j].tobytes() + self.E[:, j].tobytes(), j) for j in range(self.P.shape[1])]
         uniq = sorted(set(cols))
         back = [uniq.index(c) for c in cols]
 
         def one(f):
             sy = ES.System(self.op, f)
-            X, its = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000)
+            X, its = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000, E=self.E[:, uniq])
             X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
-            return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:][:, back]
+            X = X[:, back]
+            return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
         if workers > 1 and len(freqs) > 1:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(min(workers, len(freqs))) as ex:
@@ -128,7 +138,7 @@ class Reduced:
         self.G_L = VI.T @ LV
         self.G_D = VI.T @ (self.sys0.D @ Vp)
         self.Vl = VI[self.lo:]
-        self.Pr = Vp.T @ self.P                 # (m, nports)
+        self.Pr = Vp.T @ self.P - VI.T @ self.E           # (m, nports): minus the reduced right-hand sides
         self.Mb = self._element_moments().T @ VI         # (3, m): magnetic moment per basis coefficient
 
     def _element_moments(self):
@@ -232,10 +242,15 @@ class Reduced:
         rows = list(range(self.P.shape[1])) if rows is None else rows
         cols = list(range(self.P.shape[1])) if cols is None else cols
         need = sorted(set(rows) | set(cols))
-        sy = ES.System(self.op, f)
+        cache = getattr(self, "_sys", None)
+        sy = cache.get(f) if cache is not None else None
+        if sy is None:
+            sy = ES.System(self.op, f)
+            if cache is not None:
+                cache[f] = sy
         X = self.full(f)[:, need]
         Xs = np.concatenate([X[:self.nb], X[self.nb:] * sy.kap])
-        rhs = np.concatenate([np.zeros((self.nb, len(need)), complex), -self.P[:, need]])
+        rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
         r = rhs - sy.matvec(Xs)
         e = sy.psolve(r)
         at = {k: q for q, k in enumerate(need)}
@@ -244,7 +259,7 @@ class Reduced:
 
     # ------------------------------------------------------------------ greedy build
     def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
-              snap_tol=1e-8):
+              snap_tol=1e-8, keep_factors=False):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
         magnitudes errors are relative to (default |Z| of the model itself).
@@ -253,9 +268,12 @@ class Reduced:
         true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
         the estimate times the largest ratio of true to estimated error seen so far (the estimator's
         dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
-        tolerance."""
+        tolerance; keep_factors: see below."""
         t0 = time.time()
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
+        # keep_factors: each grid frequency's factorization across the greedy steps (memory: one sparse factor
+        # per grid point)
+        self._sys = {} if keep_factors else None
         for f in f0:
             its = self.snapshot(f, tol=snap_tol)
             self.log(f"reduce: snapshot {f / 1e6:.4g} MHz ({int(np.max(its))} iterations), basis {self.V.shape[1]}")
@@ -295,5 +313,6 @@ class Reduced:
             cal = max(cal or 0.0, ratio)
             self.log(f"reduce: snapshot {fw / 1e6:.4g} MHz ({int(np.max(its))} iterations): the model's true error "
                      f"there was {true:.1e} (estimated {est:.1e})")
+        self._sys = None
         self.seconds = time.time() - t0
         return self
