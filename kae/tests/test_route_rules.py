@@ -137,3 +137,20 @@ def test_ignored_clearance_keeps_only_the_floor(tmp_path):
     assert R.strictest(rb, "hole_clearance", via("A"), a, "F.Cu").min == 0.25   # still checked
     rb2 = C.rule_board(info, tmp_path / "other.kicad_pcb")              # no project: nothing ignored
     assert R.strictest(rb2, "clearance", a, p, "F.Cu").min == 0.3
+
+
+def test_ignored_clearance_floor_is_overridable(tmp_path):
+    import json
+    from kae.route import constraints as C
+    info = dict(copper=COPPER, settings=dict(SETTINGS, min_clearance=0.0), netclasses=CLASSES, nets={"A": {}, "PWR": {}})
+    a, p = track("A"), track("PWR", nc="Power")
+    pro = {"board": {"design_settings": {"rule_severities": {"clearance": "ignore"}}}}
+    (tmp_path / "board.kicad_pro").write_text(json.dumps(pro))
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == C.DEFAULTS["ignored_clearance_floor"]
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb", dict(ignored_clearance_floor=0.08))
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.08              # run option
+    pro["text_variables"] = {"KAE_IGNORED_CLEARANCE_FLOOR": "0.05"}
+    (tmp_path / "board.kicad_pro").write_text(json.dumps(pro))
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb", dict(ignored_clearance_floor=0.08))
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.05              # the project wins

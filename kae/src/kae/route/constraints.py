@@ -143,20 +143,44 @@ class Plan:
 # ----------------------------------------------------------------------------- helpers
 # clearance checks a board's project may turn off (rule_severities key -> constraint type)
 IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copper_edge_clearance": "edge_clearance"}
-IGNORED_FLOOR = 0.1   # mm: what an unchecked clearance still gets (or the board's own minimum, if larger)
+# Our own limits apply only where the board's rules are silent, and each can be overridden without
+# code: a KAE_<NAME> text variable in the KiCad project wins over the run's opts (<name>), which win
+# over the default here.
+DEFAULTS = dict(
+    ignored_clearance_floor=0.1,   # mm: gap kept for a clearance check the board turns off (or the
+                                   # board's own minimum, if larger); KiCad then checks only shorts
+)
 
 
-def board_severities(board_path):
-    """DRC rule severities from the board's project file (as KiCad's DRC reads them)."""
+def _project(board_path):
     pro = Path(board_path).with_suffix(".kicad_pro")
     try:
-        d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
-        return ((d.get("board") or {}).get("design_settings") or {}).get("rule_severities") or {}
+        return json.loads(pro.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError):
         return {}
 
 
-def rule_board(info, board_path):
+def board_severities(board_path):
+    """DRC rule severities from the board's project file (as KiCad's DRC reads them)."""
+    return ((_project(board_path).get("board") or {}).get("design_settings") or {}).get("rule_severities") or {}
+
+
+def setting(name, board_path=None, opts=None):
+    """One of our own limits (DEFAULTS): the project's KAE_<NAME> text variable, else opts[name],
+    else the default."""
+    if board_path is not None:
+        tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper())
+        if tv not in (None, ""):
+            try:
+                return float(tv)
+            except ValueError:
+                pass
+    if opts and opts.get(name) is not None:
+        return float(opts[name])
+    return DEFAULTS[name]
+
+
+def rule_board(info, board_path, opts=None):
     dru = Path(board_path).with_suffix(".kicad_dru")
     rb = R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
                  str(dru) if dru.exists() else None)
@@ -166,7 +190,8 @@ def rule_board(info, board_path):
     s = info["settings"]
     mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
             "edge_clearance": s.get("edge_clearance", 0.0)}
-    rb.ignored = {ct: max(IGNORED_FLOOR, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
+    floor = setting("ignored_clearance_floor", board_path, opts)
+    rb.ignored = {ct: max(floor, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
                   if _severity_ignored(sev, key)}
     return rb
 
@@ -225,7 +250,7 @@ def _via_choice(info, rb, net):
 def plan(info, board_path, opts=None):
     """The routing plan for a board (see the module docstring)."""
     opts = dict(opts or {})
-    rb = rule_board(info, board_path)
+    rb = rule_board(info, board_path, opts)
     cu = list(info["copper"])
     p = Plan(copper=cu, rule_board=rb)
     sev = opts.get("severities") or {}
