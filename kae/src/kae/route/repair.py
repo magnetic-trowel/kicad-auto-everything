@@ -607,6 +607,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             pol = getattr(plan, "plane_policy", None)
             plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
             plan.plane_policy = pol
+            plan.strict_planes = opts.get("strict_planes") or []
         if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
