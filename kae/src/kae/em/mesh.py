@@ -164,6 +164,31 @@ class Mesh:
         self.lab[layer][take] = k
         return int(take.sum())
 
+    def paint_connected(self, layer, net, geom):
+        """paint(), then keep the copper connected: a connected piece of geom (a pour with a thermal spoke, a
+        neck narrower than MIN_COV of a cell) that the raster splits gets its lightly covered cells too, with
+        their true coverage (the neck's bars then carry its true, small width)."""
+        from scipy import ndimage
+        self.paint(layer, net, geom)
+        k = self.net_id(net)
+        mine = self.lab[layer] == k
+        _, n_raster = ndimage.label(mine)
+        pieces = list(getattr(geom, "geoms", [geom]))
+        if n_raster <= len(pieces):
+            return
+        for g in pieces:
+            if g.is_empty or g.area <= 0:
+                continue
+            cov = self.coverage(g)
+            sel = (cov > 0) & (cov < self.MIN_COV)
+            lab_g, n_g = ndimage.label(mine & (cov > 0))
+            if n_g <= 1 or not sel.any():
+                continue
+            take = sel & ((self.lab[layer] < 0) | (self.lab[layer] == k))
+            self.cov[layer][take] = np.maximum(self.cov[layer][take], cov[take])
+            self.lab[layer][take] = k
+            mine = self.lab[layer] == k
+
     def paint_line(self, layer, net, pts, width):
         """A track narrower than a few cells: a 4-connected chain of cells along its centre line, so it
         conducts at any pitch. Its bars carry the track's true width and length (Network applies them to

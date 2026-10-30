@@ -61,6 +61,7 @@ class BoardMesh:
         if fills is None:
             from kae.route.critical_recheck import fills_of
             fills = fills_of(path)
+        self.fills = fills                  # {net: {layer: [Polygon]}}: KiCad's refill of the board as it is
         self.b, self.transform, self.pad_shape = b, transform, pad_shape
         lays = layers_of(b.stackup, nsub)
         if layers:
@@ -108,7 +109,7 @@ class BoardMesh:
             for layer in span(v.layers):
                 add(v.net, layer, Point(v.x, v.y).buffer(v.size / 2, quad_segs=8))
         for (net, layer), gs in geo.items():
-            m.paint(self.li[layer], net, unary_union(gs).intersection(win))
+            m.paint_connected(self.li[layer], net, unary_union(gs).intersection(win))
         for t, pts in thin:
             m.paint_line(self.li[t.layer], t.net, pts, t.width)
         # a pad smaller than a cell still owns the cell under its centre

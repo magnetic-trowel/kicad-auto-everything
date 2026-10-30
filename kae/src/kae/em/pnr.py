@@ -202,6 +202,7 @@ class PhysRouter:
                     xs.append(x), ys.append(y)
             self.window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
         bm = BoardMesh(p, self.window, self.pitch, nsub=self.nsub, b=b)
+        self._fills = bm.fills
         pads = {q for J in self.pat.values() for q in J}
         pads |= {q for n in self.nets for q in self.bd.pads_of.get(n, [])}
         pads |= {q for e in self.bd.circuit.elems if e.pa and e.pb for q in (e.pa, e.pb)}
@@ -382,6 +383,7 @@ class PhysRouter:
                     xs.append(x), ys.append(y)
             self.window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
         bm = BoardMesh(p, self.window, self.pitch, nsub=1, b=b)
+        self._fills = bm.fills
         ok = set()
         for q in sorted({q for n in self.nets for q in self.bd.pads_of.get(n, [])}):
             try:
@@ -391,6 +393,12 @@ class PhysRouter:
                 pass
         self.islands = {n: self._exact_islands(n, ok) for n in self.nets}
         self.prices = {}
+
+    def _zone_anchors(self, n, pads):
+        """Anchors for the pour pieces joined to the island of `pads` (refilled copper)."""
+        from kae.route.critical_grid import Anchor
+        zs = getattr(self, "island_zones", {}).get((n, frozenset(pads)), [])
+        return [Anchor(piece, (layer,), None, kind="zone") for layer, piece in zs]
 
     def _exact_islands(self, n, ok):
         """Net n's pads (those in `ok`) grouped by exact copper: pads, tracks and vias that touch
@@ -423,7 +431,13 @@ class PhysRouter:
                 parent[i] = parent[parent[i]]
                 i = parent[i]
             return i
-        for zn, layer, g, _ in sp.zones:
+        # the pours as KiCad refills them on the copper as it stands (the mesh's fill), not the input board's: a
+        # pour the new tracks pushed back from a pad no longer connects it
+        fills = getattr(self, "_fills", None)
+        zones = ([(n, layer, g, None) for layer, polys in (fills.get(n) or {}).items() for g in polys] if fills is not None
+                 else [z for z in sp.zones if z[0] == n])
+        pieces = []
+        for zn, layer, g, _ in zones:
             if zn != n:
                 continue
             for piece in getattr(g, "geoms", [g]):
@@ -432,9 +446,15 @@ class PhysRouter:
                                 for it in comp)]
                 for k in touch[1:]:
                     parent[find(k)] = find(touch[0])
+                if touch:
+                    pieces.append((touch[0], layer, piece))
         groups = {}
         for q, k in where.items():
             groups.setdefault(find(k), []).append(q)
+        # each island's pour pieces: a hop may end on them (a pad a refill cut off rejoins its pour)
+        self.island_zones = getattr(self, "island_zones", {})
+        for root, g in groups.items():
+            self.island_zones[(n, frozenset(g))] = [(layer, piece) for k, layer, piece in pieces if find(k) == root]
         return list(groups.values())
 
     def ref_nets(self):
@@ -680,6 +700,7 @@ class PhysRouter:
                 res = self._route_net(n, plain=self.plain)
                 self.failed += res["failed"]
             done += 1
+        self._repair()
         from kae.route import critical_write as W
         W.append_items(self.base, self.out, tracks=self.tracks, vias=self.vias)
         for ext in (".kicad_pro", ".kicad_dru"):
@@ -690,6 +711,45 @@ class PhysRouter:
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
                  f"{time.time() - t0:.1f}s" + (f"; chose {self.choices}" if self.choices else ""))
         return self
+
+    def _repair(self):
+        """After every net: the pours refilled on the finished copper can have pulled back from pads the
+        router counted as joined through them; route each priced net that has come apart again."""
+        if self.plain:
+            self._islands_only()
+        else:
+            self.solve_fields()
+        torn = [n for n in self.nets if len([g for g in self.islands.get(n, []) if g]) > 1]
+        for n in torn:
+            self.log(f"pnr: repair: {n} has {len(self.islands[n])} islands on the refilled copper; routing them")
+            res = self._route_net(n, plain=self.plain)
+            if res["failed"]:
+                res = self._repair_ripping(n, res)
+            self.failed += res["failed"]
+
+    def _repair_ripping(self, n, res, reach=1.0):
+        """A repair hop with no path: the router's own tracks of other nets within `reach` (mm) of the stranded
+        pads walled them off (and pushed their pour back). Rip those nets, route n, route them again."""
+        from shapely.geometry import LineString
+        stranded = [self._anchor(b) for (_, b, _) in res["failed"]] + [self._anchor(a) for (_, _, a) in res["failed"]]
+        stranded = [x for x in stranded if x is not None]
+        near = sorted({t[0] for t in self.tracks if t[0] != n and any(
+            LineString([t[3], t[4]]).distance(x.geom) <= reach + t[2] / 2 for x in stranded)})
+        if not near:
+            return res
+        self.log(f"pnr: repair: {n} walled off by {near}; ripping them, routing {n}, routing them again")
+        for X in near:
+            self.sp.remove([it for it in self.sp.routed if getattr(it, "owner", None) == ("pnr", X)])
+            self.tracks = [t for t in self.tracks if t[0] != X]
+            self.vias = [v for v in self.vias if v[0] != X]
+        ok = {q for N in [n] + near for q in self.bd.pads_of.get(N, [])}
+        self.islands[n] = self._exact_islands(n, ok)
+        res2 = self._route_net(n, plain=self.plain)
+        for X in near:
+            self.islands[X] = self._exact_islands(X, ok)
+            r = self._route_net(X, plain=self.plain)
+            res2["failed"] += r["failed"]
+        return res2
 
     # ------------------------------------------------------------------ verified candidates
     _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
@@ -778,12 +838,19 @@ class PhysRouter:
                         width, why = self._dc_width(n, layer0[0], width, g, Imax)
                         self._hop_dc = g
                         self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
-                srcs = [self._anchor(q) for q in b_]
-                dsts = [self._anchor(q) for q in a]
+                srcs = [self._anchor(q) for q in b_] + self._zone_anchors(n, b_)
+                dsts = [self._anchor(q) for q in a] + self._zone_anchors(n, a)
                 ends = (self._end_plane(b_), self._end_plane(a))
                 self._hop_net = n
                 rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
                                          phys=self.phys(cur, width, ends))
+                w_class = self.sp.width_limits(n, layer0[0])[1]
+                if rt is None and width > w_class + 1e-9:
+                    # no path at the widened width (a fine-pitch pad): the class width, necked down, beats none
+                    self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: no path at {width:g} mm; at the class width {w_class:g} mm")
+                    width = w_class
+                    rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
+                                             phys=self.phys(cur, width, ends))
                 if rt is None:
                     out["failed"].append((n, b_[0], a[0]))
                 elif rt.segs or rt.vias:
