@@ -35,9 +35,11 @@ from shapely.geometry import LineString, Point
 
 from kae.board.kicad_file import load
 
-from .critical_space import Space
+from .critical_space import EXACT_TOL, TOL, Space
 
 MIN_GRID_PADS = 16      # a grid package has at least this many signal pads
+STEP = 0.01             # mm: the walk along a pad axis (row escapes)
+WALK = 5.0              # mm beyond the pad at most (row escapes)
 
 
 def _grid(pads):
@@ -188,4 +190,105 @@ def plan_escapes(board_path, info, plan, sev=None, opts=None, space=None, log=No
         if log:
             log(f"escapes {sig[0].owner[0]}: pitch {pitch:.3f}, {len(sig)} balls, {cap} track(s) between balls, "
                 f"dog-bones from ring {first}: {done} of {len(todo)}")
+    if opts.get("row_escapes", True):
+        rows = plan_row_escapes(sp, log=log)
+        tracks += rows
+        rep["row_stubs"] = len(rows)
     return dict(tracks=tracks, vias=vias, report=rep)
+
+
+# ----------------------------------------------------------------------------- row escapes
+def _axes(geom, centre, away):
+    """Unit directions along the axes of the pad's bounding rectangle, both ways, the one
+    nearest `away` (outward from the footprint) first; and the pad's half diagonal."""
+    rect = geom.minimum_rotated_rectangle
+    pts = list(rect.exterior.coords)[:4] if rect.geom_type == "Polygon" else []
+    if len(pts) < 4:
+        return [], 0.0
+    out = []
+    for p, q in ((pts[0], pts[1]), (pts[1], pts[2])):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        n = math.hypot(dx, dy)
+        if n > 1e-9:
+            out += [(dx / n, dy / n), (-dx / n, -dy / n)]
+    out.sort(key=lambda d: -(d[0] * away[0] + d[1] * away[1]))
+    return out, max(math.dist(centre, p) for p in pts)
+
+
+def _walk(sp, net, layer, c, d, reach, w_piece, w_end, tol_piece):
+    """The first point p along d from c where the piece c -> p (width w_piece, tol_piece above
+    each requirement) is legal and a track of width w_end may start at p; None when the piece
+    stops being legal first or `reach` is passed."""
+    k = 1
+    while k * STEP <= reach:
+        p = (c[0] + k * STEP * d[0], c[1] + k * STEP * d[1])
+        k += 1
+        if sp.track_violations(net, layer, w_piece, c, p, first=True, tol=tol_piece):
+            return None
+        if not sp.track_violations(net, layer, w_end, p, p, first=True):
+            return p
+    return None
+
+
+def plan_row_escapes(sp, log=None):
+    """Straight stubs out of pads that no track of the net's routing width can leave (zero
+    slack: a 0.4 mm-pitch pin 0.2 mm wide at 0.2 mm clearance): the narrowest legal width,
+    from the pad centre along an axis (outward first), checked at EXACT_TOL, out to the first
+    point where a track of the routing width can start. Freerouting never enters such a pin
+    (its neck-down keeps a board unit); with the stub laid it connects to the stub's end.
+    Pads are taken odd numbers first so neighbours' stubs end staggered. -> [(net, layer, w,
+    a, b)]"""
+    pads_of_net = {}
+    for it in sp.pads:
+        if it.kind == "pad" and it.net:
+            pads_of_net[it.net] = pads_of_net.get(it.net, 0) + 1
+    zone_nets = {z[0] for z in sp.zones}
+    cand = []
+    for it in sp.pads:
+        if it.kind != "pad" or not it.net or (pads_of_net.get(it.net, 0) < 2 and it.net not in zone_nets):
+            continue
+        if it.hole is not None or len(it.layers) != 1:
+            continue
+        layer = next(iter(it.layers))
+        mn, opt, _mx = sp.width_limits(it.net, layer)
+        if not opt:
+            continue
+        mn = mn or opt
+        c = it.pos
+        own = [p for p in sp.pads_by_fp.get(it.fp) or [] if p.kind == "pad"]
+        fx = sum(p.pos[0] for p in own) / len(own) if own else c[0]
+        fy = sum(p.pos[1] for p in own) / len(own) if own else c[1]
+        away = (c[0] - fx, c[1] - fy)
+        n = math.hypot(*away)
+        away = (away[0] / n, away[1] / n) if n > 1e-9 else (0.0, 0.0)
+        dirs, half = _axes(it.geom, c, away)
+        if not dirs:
+            continue
+        reach = half + WALK
+        g = it.geom
+        ring = g.exterior if g.geom_type == "Polygon" else g.boundary
+        n_pts = max(8, int(ring.length / STEP / 2))
+        pts = [c] + [ring.interpolate(k / n_pts, normalized=True).coords[0] for k in range(n_pts)]
+        if any(not sp.track_violations(it.net, layer, opt, q, q, first=True) for q in pts):
+            continue
+        if any(_walk(sp, it.net, layer, c, d, reach, opt, opt, TOL) is not None for d in dirs):
+            continue
+        num = str((it.owner or ("", ""))[1])
+        par = int(num) % 2 == 0 if num.isdigit() else True
+        cand.append((par, str(it.owner), it, layer, mn, opt, c, dirs, reach))
+    out = []
+    for _par, _own, it, layer, mn, opt, c, dirs, reach in sorted(cand, key=lambda t: (t[0], t[1])):
+        for w in dict.fromkeys([opt, mn]):
+            got = None
+            for d in dirs:
+                p = _walk(sp, it.net, layer, c, d, reach, w, opt, EXACT_TOL)
+                if p is not None:
+                    got = p
+                    break
+            if got is not None:
+                sp.add_track(it.net, layer, w, c, got, owner=("escape", ""))
+                out.append((it.net, layer, w, tuple(c), got))
+                break
+    if log:
+        log(f"row escapes: {len(out)} of {len(cand)} zero-slack pads")
+    return out

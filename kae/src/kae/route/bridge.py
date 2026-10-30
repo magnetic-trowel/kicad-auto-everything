@@ -205,7 +205,7 @@ def _escape_prepass(input_path, info, opts, wd, log):
     sp = Space(load(input_path), info, plan=p0, sev=opts.get("severities") or {})
     got = escape.plan_escapes(input_path, info, p0, space=sp, opts=opts, log=log)
     rep = dict(got["report"], seconds=round(time.monotonic() - t, 1))
-    if not got["vias"]:
+    if not got["vias"] and not got["tracks"]:
         return input_path, [], rep
     board = W.stage(input_path, wd / "escaped", "board")
     tracks, vias, uuids = [], [], []
@@ -218,7 +218,7 @@ def _escape_prepass(input_path, info, opts, wd, log):
         vias.append((net, x, y, D, d, u, True))
         uuids.append(u)
     W.append_items(board, board, tracks=tracks, vias=vias)
-    log(f"escapes: {len(got['vias'])} dog-bones laid ({rep['seconds']}s)")
+    log(f"escapes: {len(got['vias'])} dog-bones, {rep.get('row_stubs', 0)} row stubs laid ({rep['seconds']}s)")
     return board, uuids, rep
 
 
