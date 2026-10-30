@@ -158,7 +158,7 @@ def test_ignored_clearance_floor_is_overridable(tmp_path):
 
 def test_zero_length_edge_shapes_are_skipped():
     from kae.route import constraints as C
-    info = dict(outline=[[(0, 0), (10, 0), (10, 10), (0, 10)]],
+    info = dict(outline=[[[(0, 0), (10, 0), (10, 10), (0, 10)]]],
                 edges=[dict(kind="segment", layer="Edge.Cuts", pts=[(5, 5), (5, 5)]),
                        dict(kind="segment", layer="Edge.Cuts", pts=[(2, 2), (3, 3)])])
     cut, stray, board = C._edge_geoms(info)   # raised GEOSException on the zero-length segment
