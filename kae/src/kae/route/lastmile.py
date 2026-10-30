@@ -55,6 +55,7 @@ MAX_JOINS = 40                  # joins per close() at most (the negotiated re-r
 HIST_WEIGHT = 2.0               # a net's copper costs (1 + HIST_WEIGHT * times ripped) x RIP_COST
 HIST_MAX = 3                    # a net ripped this often is not ripped again
 SOFT_FACTOR = 3.0               # critical copper (close's `soft`) costs this many times more to rip
+TXN_JOINS = 24                  # joins one transaction (close's txn) may make at most
 RIP_COST = 20.0                 # per cell of foreign copper crossed in a rip-up search (crossing a
                                 # 0.25 mm track at 0.2 mm clearance costs as much as an 18 mm detour)
 
@@ -353,7 +354,7 @@ def open_nets(report):
 
 
 def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=(),
-          max_joins=MAX_JOINS, deadline=None, rip=True):
+          max_joins=MAX_JOINS, deadline=None, rip=True, txn=False, txn_joins=TXN_JOINS):
     """Join the parts of the open nets of `board` (`nets`, default every net with more
     than one part; see the module docstring) and write the result to `out`, the new copper
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
@@ -361,8 +362,11 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     locked uuids a last rip-up tier may take out (critical copper; the caller judges the
     physics). `max_joins` bounds the joins (None: no bound), `deadline` (time.monotonic())
     the time: no join starts after it; `rip` False: joins around everything only, nothing is
-    ripped. Returns {joined, failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net],
-    added: [uuid], nets: {net: status}}."""
+    ripped. `txn`: each open net's join and the re-joins of the nets it rips (and of the nets
+    those rip, at most `txn_joins` joins) form one transaction, kept only when it leaves fewer
+    open connections among the nets it touched than before, else undone (see _transaction).
+    Returns {joined, failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net],
+    added: [uuid], nets: {net: status}, undone: transactions undone}."""
     import time
     cap = max_joins if max_joins is not None else float("inf")
 
@@ -390,6 +394,11 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     hist = {}
     ripped_ids = {}
     joins = 0
+    if txn and rip:
+        st = dict(joins=0)
+        _transactions(sp, gr, fp, queue, rep, hist, ripped_ids, fixed, soft, max_parts, txn_joins, more, st, log)
+        joins = st["joins"]
+        queue = []
     while queue and more():
         net = queue.pop(0)
         mn, opt, _mx = sp.width_limits(net, sp.cu[0])
@@ -451,6 +460,98 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     if tracks or vias:
         W.append_items(out, out, tracks=tracks, vias=vias)
     return rep
+
+
+def _open_count(sp, fp, net):
+    """Missing connections of `net` as its parts count them (parts - 1)."""
+    return max(0, len([p for p in parts(sp, fp, net) if _relevant(p)]) - 1)
+
+
+def _transactions(sp, gr, fp, queue, rep, hist, ripped_ids, fixed, soft, max_parts, txn_joins, more, st, log):
+    """close()'s rip-up loop as transactions. For each open net in turn: join its parts (ripping
+    what must go, as _join does), then re-join every net that join ripped, and the nets those
+    re-joins rip, depth first, at most `txn_joins` joins. The transaction is kept when the nets it
+    touched have fewer missing connections in all than before it began; otherwise every track
+    and via it laid is taken out and every one it ripped is put back, so a join that rips nets
+    nobody can re-join (fm4dd i2c24io: 3 open, 28 joins ripped 70 items, 14 open) costs
+    nothing. Nets the DRC did not name open are taken as whole before their first rip."""
+    known = {n: _open_count(sp, fp, n) for n in queue}
+    undone = 0
+    for root in list(queue):
+        if not more():
+            break
+        if _open_count(sp, fp, root) == 0:
+            known[root] = 0
+            continue
+        added, removed, touched = [], [], [root]
+        saved = (dict(hist), dict(ripped_ids), rep["joined"], rep["failed"])
+        before = {root: known.get(root, 0)}
+        local, n_joins, log_lines = [root], 0, []
+        while local and more() and n_joins < txn_joins:
+            net = local.pop(0)
+            mn, opt, _mx = sp.width_limits(net, sp.cu[0])
+            widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
+            status = []
+            for _ in range(max_parts):
+                ps = [p for p in parts(sp, fp, net) if _relevant(p)]
+                if len(ps) < 2 or not more() or n_joins >= txn_joins:
+                    break
+                small = ps[-1]
+                src = _anchors(small, max(widths) / 2 + 0.02)
+                if not src:
+                    status.append("no anchors")
+                    break
+                got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, True)
+                if got is None and not sp.via_in_pad:
+                    sp.via_in_pad = True
+                    try:
+                        got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, True)
+                    finally:
+                        sp.via_in_pad = False
+                if got is None:
+                    status.append("no route")
+                    rep["failed"] += 1
+                    break
+                rt, new, ripped = got
+                st["joins"] += 1
+                n_joins += 1
+                rep["joined"] += 1
+                for it in new:
+                    it.owner = ("lastmile", st["joins"])
+                added += new
+                removed += ripped
+                hit = set()
+                for it in ripped:
+                    if not _own(it):
+                        ripped_ids[it.uuid] = it.net
+                    if it.net not in hit:
+                        hit.add(it.net)
+                        hist[it.net] = hist.get(it.net, 0) + 1
+                    if it.net not in before:
+                        before[it.net] = known.get(it.net, 0)
+                        touched.append(it.net)
+                    if it.net != net and it.net not in local:
+                        local.append(it.net)
+                status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
+            log_lines.append(f"{net}: {'; '.join(status) or 'nothing to join'}")
+        after = {n: _open_count(sp, fp, n) for n in touched}
+        b, a = sum(before.values()), sum(after.values())
+        if a < b:
+            known.update(after)
+            log(f"last mile {root}: kept, {b} -> {a} open on {len(touched)} nets ({n_joins} joins) | "
+                + " | ".join(log_lines))
+            continue
+        # undo: out with what the transaction laid, back with what it ripped (not its own)
+        mine = {id(it) for it in added}
+        sp.remove(added)
+        _restore(sp, [it for it in removed if id(it) not in mine])
+        hist.clear(); hist.update(saved[0])
+        ripped_ids.clear(); ripped_ids.update(saved[1])
+        rep["joined"], rep["failed"] = saved[2], saved[3] + 1
+        undone += 1
+        log(f"last mile {root}: undone, {b} -> {a} open on {len(touched)} nets ({n_joins} joins) | "
+            + " | ".join(log_lines))
+    rep["undone"] = undone
 
 
 def _relevant(part):

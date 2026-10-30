@@ -457,23 +457,54 @@ def plane_layers(info, share=PLANE_SHARE):
     return {l: v[0] for l, v in out.items()}
 
 
-def layer_rules(names, is_plane, is_signal, k=PLANE_COST):
+def layer_rules(names, is_plane, is_signal, k=PLANE_COST, dirs=None, against=2.0):
     """A Specctra rules file (text) whose autoroute_settings give every layer its trace costs:
-    1 per unit length in the preferred direction and 2 against it, outer layers 0.2 per
-    signal layer more when there are more than two (Freerouting's own defaults), and plane
-    layers k times that. None when no layer is a plane."""
-    if not any(is_plane):
+    1 per unit length in the preferred direction and `against` (2) against it, outer layers 0.2
+    per signal layer more when there are more than two (Freerouting's own defaults), and plane
+    layers k times that. `dirs`: per layer "h", "v" or None, an explicit preferred direction
+    (else Freerouting picks: the first signal layer horizontal on a board wider than tall, then
+    alternating). None when no layer is a plane and no direction is given."""
+    if not any(is_plane) and not any(dirs or ()):
         return None
     n = len(names)
     sig = sum(1 for x in is_signal if x)
+    dirs = list(dirs or [None] * n)
     out = ["(rules PCB board", "  (autoroute_settings"]
     for i, (name, pl) in enumerate(zip(names, is_plane)):
         base = 1.0 + (0.2 * sig if sig > 2 and i in (0, n - 1) else 0.0)
         c = base * (k if pl else 1.0)
-        out.append(f"    (layer_rule {atom_name(name)} (preferred_direction_trace_costs {fmt(c)})"
-                   f" (against_preferred_direction_trace_costs {fmt(2.0 * c)}))")
+        d = {"h": " (preferred_direction horizontal)", "v": " (preferred_direction vertical)"}.get(dirs[i], "")
+        out.append(f"    (layer_rule {atom_name(name)}{d} (preferred_direction_trace_costs {fmt(c)})"
+                   f" (against_preferred_direction_trace_costs {fmt(against * c)}))")
     out += ["  )", ")"]
     return "\n".join(out) + "\n"
+
+
+def layer_directions(plan, info):
+    """{copper layer: "h" | "v"} from plan.layer_dirs: None (Freerouting's own choice: by the
+    board's aspect ratio), "flip" (the opposite of that choice), or "F.Cu=v,B.Cu=h". Only
+    the outer layers of a board are given one by "flip"."""
+    spec = getattr(plan, "layer_dirs", None)
+    cu = plan.copper
+    if not spec:
+        return {}
+    if spec in ("flip", "aspect"):
+        xs, ys = [], []
+        for rings in (info or {}).get("outline") or []:
+            for pt in (rings[0] if rings else []):
+                xs.append(pt[0])
+                ys.append(pt[1])
+        if not xs:
+            return {}
+        wide = (max(xs) - min(xs)) >= (max(ys) - min(ys))
+        first_h = wide if spec == "aspect" else not wide
+        return {c: ("h" if (i % 2 == 0) == first_h else "v") for i, c in enumerate(cu)}
+    out = {}
+    for kv in str(spec).split(","):
+        k, _, v = kv.partition("=")
+        if k.strip() in cu and v.strip() in ("h", "v"):
+            out[k.strip()] = v.strip()
+    return out
 
 
 def atom_name(name):
@@ -544,12 +575,18 @@ def apply(tree, plan, info):
         if made:
             summary["plane_layers_power"] = made
     plan.layer_rules = None
-    if getattr(plan, "plane_policy", "signal") == "cost":
-        plan.layer_rules = layer_rules(dsn_names, [c in plane_layers(info) for c in cu],
+    dirs = layer_directions(plan, info)
+    if getattr(plan, "plane_policy", "signal") == "cost" or dirs:
+        costed = getattr(plan, "plane_policy", "signal") == "cost"
+        plan.layer_rules = layer_rules(dsn_names, [costed and c in plane_layers(info) for c in cu],
                                        [str((find(l, "type") or [None, "signal"])[1]) == "signal" for l in layers],
-                                       getattr(plan, "plane_cost", None) or PLANE_COST)
-        if plan.layer_rules:
+                                       getattr(plan, "plane_cost", None) or PLANE_COST,
+                                       dirs=[(dirs or {}).get(c) for c in cu],
+                                       against=float(getattr(plan, "against_cost", None) or 2.0))
+        if plan.layer_rules and costed:
             summary["plane_layers_costed"] = [c for c in cu if c in plane_layers(info)]
+        if dirs:
+            summary["layer_directions"] = dirs
 
     # ---- pins: polygons that contain the pad's copper (plan.pad_shapes "outside")
     if getattr(plan, "pad_shapes", "kicad") == "outside":
@@ -723,6 +760,44 @@ def permute(tree, seed):
     if network is not None:
         shuffle_children(network, "net")
     return True
+
+
+def order_nets(tree, info, how):
+    """Reorder the DSN's nets (in place) by the span of their pads: how "span" puts the nets
+    whose pads span the largest box (half perimeter) first, "span_short" last. Freerouting
+    numbers nets in network order, and from its second pass on routes the open items by net
+    number (incomplete nets first), so this decides who gets a contested corridor first.
+    Nets without pads in `info` keep their order, after the others. Returns nets ordered."""
+    if how not in ("span", "span_short"):
+        return 0
+    network = find(tree, "network")
+    if network is None:
+        return 0
+    box = {}
+    from .constraints import _pad_shapes
+    for pd in (info or {}).get("pads") or []:
+        n = pd.get("net")
+        if not n:
+            continue
+        first, real = _pad_shapes(pd)
+        g = first if first is not None else next((v for v in real.values() if v is not None), None)
+        if g is None or g.is_empty:
+            continue
+        x0, y0, x1, y1 = g.bounds
+        b = box.get(n)
+        box[n] = (x0, y0, x1, y1) if b is None else (min(b[0], x0), min(b[1], y0), max(b[2], x1), max(b[3], y1))
+
+    def span(node):
+        name = str(node[1]).strip('"') if len(node) > 1 else ""
+        b = box.get(name)
+        return -1.0 if b is None else (b[2] - b[0]) + (b[3] - b[1])
+    idx = [i for i, c in enumerate(network) if isinstance(c, list) and c and c[0] == "net"]
+    kids = [network[i] for i in idx]
+    sign = -1.0 if how == "span" else 1.0
+    kids.sort(key=lambda k: (span(k) < 0, sign * span(k)))
+    for i, c in zip(idx, kids):
+        network[i] = c
+    return sum(1 for k in kids if span(k) >= 0)
 
 
 # ----------------------------------------------------------------------------- session

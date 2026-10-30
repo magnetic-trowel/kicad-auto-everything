@@ -610,10 +610,14 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             from .bridge import plane_policy
             plan.plane_policy = plane_policy(opts, free_round_with_open=bool(a["open"]))
             plan.plane_cost = opts.get("plane_cost")
+            plan.layer_dirs = opts.get("layer_directions")
+            plan.against_cost = opts.get("against_direction_cost")
             plan.pad_shapes = opts.get("pad_shapes") or "kicad"
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
             translate.permute(tree, round_seed(opts.get("seed"), k))
+            if opts.get("net_order"):
+                translate.order_nets(tree, info, opts.get("net_order"))
             if use_split:
                 now = {u: r for u, r in copper.items() if u not in rip}   # the board as exported
                 now.update({f"spoke{i}": dict(kind="track", **s) for i, s in enumerate(a["spokes"])})
@@ -886,11 +890,13 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
                                fixed=fixed, log=log, soft=soft, rip=rip, max_joins=None,
+                               txn=bool(opts.get("last_mile_txn", False)),
                                deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break
         rec.update(joined=r["joined"], failed=r["failed"], added=len(r["added"]), ripped=len(r["ripped"]),
+                   undone=r.get("undone"),
                    ripped_soft=len(r.get("ripped_soft") or ()))
         soft -= set(r["ripped"])
         if not r["joined"]:

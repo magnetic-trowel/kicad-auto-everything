@@ -106,10 +106,14 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         p = constraints.plan(info, input_path, opts)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
+        p.layer_dirs = opts.get("layer_directions")       # translate.layer_directions
+        p.against_cost = opts.get("against_direction_cost")
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
         report["permuted"] = translate.permute(tree, seed)
+        if opts.get("net_order"):
+            report["nets_ordered"] = translate.order_nets(tree, info, opts.get("net_order"))
         report["plan"] = plan_summary(p)
         dsn = wd / "board.dsn"
         specctra.write(tree, dsn)
