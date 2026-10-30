@@ -429,6 +429,9 @@ class KaeStages:
             return self._route_portfolio(lay, it, seed, time_s, t0)
         else:
             bopts = dict(keep=bool(self.opts.get("keep")))
+            # --set bridge.KEY=VALUE: any kae.route.bridge option (pad_shapes, neckdown, one of
+            # kae's own defaults such as ignored_clearance_floor) for every bridge call
+            bopts.update({k[len("bridge."):]: v for k, v in self.opts.items() if k.startswith("bridge.")})
             if it > 0 and not finish:
                 # window_router=bridge: the loop's own last mile on the window's nets follows
                 bopts.update(rounds=int(self.opts.get("window_rounds", 3)), passes=int(self.opts.get("window_passes", 16)),
