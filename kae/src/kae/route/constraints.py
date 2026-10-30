@@ -849,7 +849,17 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
                     continue
                 gap = pad.get("thermal_gap") or z.get("thermal_gap") or 0.5
                 mt = z.get("min_thickness") or 0.0
-                sw = max(pad.get("spoke_width") or z.get("spoke_width") or 0.5, mt)
+                # KiCad draws no spoke wider than the pad (kata0510 rp2040: the human's GND pin
+                # U2.19, 0.2 mm wide between 0.4 mm-pitch neighbours that both escape straight
+                # out, has its spokes with the zone's 0.508 mm spoke width; a strip that wide
+                # closed both neighbours' only escapes)
+                rr = cop.minimum_rotated_rectangle
+                rc = list(rr.exterior.coords) if rr.geom_type == "Polygon" else []
+                pmin = min(math.dist(rc[0], rc[1]), math.dist(rc[1], rc[2])) if len(rc) >= 3 else None
+                sw = pad.get("spoke_width") or z.get("spoke_width") or 0.5
+                if pmin:
+                    sw = min(sw, pmin)
+                sw = max(sw, mt)
                 clr = max(z.get("clearance") or 0.0, s.get("min_clearance", 0.0))
                 fill = zg
                 if board is not None:

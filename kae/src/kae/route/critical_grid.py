@@ -21,6 +21,12 @@ between two sets of same-net copper (pads, committed tracks and vias) inside a w
    straight shortcut is kept only if `Space.track_violations` finds nothing (exact shapely
    distances); ends are moved onto the pad centres when that is legal.
 
+A pad none of whose cells is free (a 0.4 mm-pitch QFN pin 0.2 mm wide, 0.2 mm from its
+neighbours at 0.2 mm clearance: the one legal track is exactly as wide as the pad, centred on
+it, and the margins above leave it no cell) is left through an escape (`_escapes`): a straight
+piece from its centre along one of its axes, legal with no margin at all (EXACT_TOL), to the
+nearest free cell past the tight spot; a route through an escape is verified the same way.
+
 The result is a list of segments and vias, every one checked exactly against KiCad's
 requirements; nothing is committed until the caller does so.
 """
@@ -36,7 +42,7 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 
-from .critical_space import INF, TOL
+from .critical_space import EXACT_TOL, INF, TOL
 
 _SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "critical_kernels.py")
 
@@ -577,11 +583,21 @@ class GridRouter:
             vmask = self.via_allowed(grid, net, sp.cu).reshape(-1)
         else:
             vmask = np.zeros(plane, bool)
+        # a pad whose every cell is blocked (a track as wide as the pad, centred on it, is the
+        # only legal way out, with no room left for the raster's margins) is left through an
+        # escape: a straight piece from its centre, checked exactly, to a free cell
+        esc_src, esc_dst = {}, {}
         src = []
         for a in sources:
             for li, l in enumerate(layers):
                 if l in a.layers:
-                    src.append(self._cells(grid, a, li, cost, plane, l))
+                    k = self._cells(grid, a, li, cost, plane, l)
+                    if k.size == 0 and a.kind == "pad":
+                        found = self._escapes(grid, net, width, a, l, li, cost, plane)
+                        for kk, pts in found:
+                            esc_src.setdefault(int(kk), pts)
+                        k = np.array([kk for kk, _ in found], np.int64)
+                    src.append(k)
         src = np.unique(np.concatenate(src)) if src else np.zeros(0, np.int64)
         dst = np.zeros(nl * plane, bool)
         tb = []
@@ -589,6 +605,11 @@ class GridRouter:
             for li, l in enumerate(layers):
                 if l in a.layers:
                     k = self._cells(grid, a, li, cost, plane, l)
+                    if k.size == 0 and a.kind == "pad":
+                        found = self._escapes(grid, net, width, a, l, li, cost, plane)
+                        for kk, pts in found:
+                            esc_dst.setdefault(int(kk), pts[::-1])
+                        k = np.array([kk for kk, _ in found], np.int64)
                     dst[k] = True
                     if k.size:
                         r = k % plane
@@ -609,7 +630,7 @@ class GridRouter:
         self.stats["expansions"] += int(nexp)
         if path.size == 0:
             return None
-        rt = self._geometry(grid, net, width, layers, path, sources, targets)
+        rt = self._geometry(grid, net, width, layers, path, sources, targets, esc_src, esc_dst)
         if rt is None:
             return None
         rt.expansions = int(nexp)
@@ -619,14 +640,72 @@ class GridRouter:
         self.stats["found"] += 1
         return rt
 
+    def _escapes(self, grid, net, width, a, layer, li, cost, plane):
+        """Ways out of pad anchor `a` on `layer` when none of its cells is free: [(flat cell
+        index, [centre, p])], where the piece centre -> p runs along one of the pad's axes and
+        is legal exactly (EXACT_TOL: a 0.2 mm track centred on a 0.2 mm pad between
+        neighbours 0.2 mm away at 0.2 mm clearance has nothing to spare), and p -> the free
+        cell is legal too. One per direction (both ways along each axis of the pad's
+        bounding rectangle), the shortest. The walk along an axis ends where the piece from
+        the centre stops being legal (a longer piece only adds copper) or past the pad's
+        reach plus the largest requirement, the width and two cells."""
+        c = a.centre_on(layer)
+        g = a.geom_on(layer)
+        if c is None or g is None or g.is_empty:
+            return []
+        sp = self.sp
+        rect = g.minimum_rotated_rectangle
+        pts = list(rect.exterior.coords)[:4] if rect.geom_type == "Polygon" else []
+        if len(pts) < 4:
+            return []
+        axes = []
+        for p, q in ((pts[0], pts[1]), (pts[1], pts[2])):
+            dx, dy = q[0] - p[0], q[1] - p[1]
+            n = math.hypot(dx, dy)
+            if n > 1e-9:
+                axes.append((dx / n, dy / n))
+        reach = max(math.dist(c, p) for p in pts) + sp.max_need + width + 2 * grid.res
+        step = grid.res / 2
+        flat = cost.reshape(-1)
+        out = []
+        for ux, uy in axes:
+            for sx in (1.0, -1.0):
+                dx, dy = sx * ux, sx * uy
+                k = 1
+                while k * step <= reach:
+                    p = (c[0] + k * step * dx, c[1] + k * step * dy)
+                    k += 1
+                    if sp.track_violations(net, layer, width, c, p, first=True, tol=EXACT_TOL):
+                        break
+                    i0 = int(math.floor((p[0] - grid.x0) / grid.res))
+                    j0 = int(math.floor((p[1] - grid.y0) / grid.res))
+                    cells = [(i, j) for i in (i0, i0 + 1) for j in (j0, j0 + 1) if grid.inside(i, j)]
+                    cells.sort(key=lambda ij: math.dist(grid.xy(*ij), p))
+                    hit = None
+                    for i, j in cells:
+                        kk = li * plane + j * grid.nx + i
+                        if not np.isfinite(flat[kk]):
+                            continue
+                        q = grid.xy(i, j)
+                        if not sp.track_violations(net, layer, width, p, q, first=True, tol=EXACT_TOL):
+                            hit = (kk, [tuple(c), p])
+                            break
+                    if hit is not None:
+                        out.append(hit)
+                        break
+        return out
+
     # ------------------------------------------------------------------ path -> geometry
-    def _geometry(self, grid, net, width, layers, path, sources, targets):
+    def _geometry(self, grid, net, width, layers, path, sources, targets, esc_src=None, esc_dst=None):
         sp = self.sp
         plane = grid.nx * grid.ny
         runs = []      # [layer, [pts]]
         vias = []
         prev_l = None
-        for k in path.tolist():
+        path_l = path.tolist()
+        pre = (esc_src or {}).get(path_l[0]) if path_l else None
+        post = (esc_dst or {}).get(path_l[-1]) if path_l else None
+        for k in path_l:
             li, r = divmod(k, plane)
             j, i = divmod(r, grid.nx)
             p = grid.xy(i, j)
@@ -638,20 +717,27 @@ class GridRouter:
                 prev_l = l
             else:
                 runs[-1][1].append(p)
+        if runs and pre:
+            runs[0][1] = list(pre) + runs[0][1]
+        if runs and post:
+            runs[-1][1] = runs[-1][1] + list(post)
+        # a route through an escape holds pieces with no room beyond the requirement: it is
+        # verified without our margin (KiCad's requirement exactly)
+        tol = EXACT_TOL if (pre or post) else TOL
         segs = []
         for ri, (l, pts) in enumerate(runs):
             pts = _merge_collinear(pts)
-            if ri == 0:
+            if ri == 0 and not pre:
                 pts = self._snap_end(net, l, width, pts, sources, first=True)
-            if ri == len(runs) - 1:
+            if ri == len(runs) - 1 and not post:
                 pts = self._snap_end(net, l, width, pts, targets, first=False)
-            pts = self._pull(net, l, width, pts)
+            pts = self._pull(net, l, width, pts, tol)
             for a, b in zip(pts[:-1], pts[1:]):
                 if math.dist(a, b) > 1e-6:
                     segs.append((l, a, b))
         # exact verification of every piece
         for l, a, b in segs:
-            if sp.track_violations(net, l, width, a, b, first=True):
+            if sp.track_violations(net, l, width, a, b, first=True, tol=tol):
                 return None
         for (x, y) in vias:
             if sp.via_violations(net, x, y, first=True):
@@ -747,7 +833,7 @@ class GridRouter:
                 return [c] + pts if first else pts + [c]
         return pts
 
-    def _pull(self, net, layer, w, pts):
+    def _pull(self, net, layer, w, pts, tol=TOL):
         """String pulling: keep the farthest straight shortcut that is exactly legal."""
         if len(pts) <= 2:
             return pts
@@ -758,7 +844,7 @@ class GridRouter:
         while i < n - 1:
             cand = i + 1
             for j in range(n - 1, i + 1, -1):
-                if not sp.track_violations(net, layer, w, pts[i], pts[j], first=True):
+                if not sp.track_violations(net, layer, w, pts[i], pts[j], first=True, tol=tol):
                     cand = j
                     break
             out.append(pts[cand])

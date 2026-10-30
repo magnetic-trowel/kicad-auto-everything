@@ -45,6 +45,9 @@ from . import effective as EF
 from . import rules as R
 
 TOL = 0.002          # mm kept above every requirement
+EXACT_TOL = -1e-7    # mm: no margin, only float slack (0.1 nm; KiCad stores whole nm), for the
+                     # pieces where the requirement itself is all the room there is (a track
+                     # exactly as wide as a 0.4 mm-pitch pad, centred on it, between its neighbours)
 INF = math.inf
 
 
@@ -462,9 +465,10 @@ class Space:
         d = it.geom.distance(g)
         return d - it.r
 
-    def track_violations(self, net, layer, w, a, b, ignore=(), first=False):
+    def track_violations(self, net, layer, w, a, b, ignore=(), first=False, tol=TOL):
         """Requirements a track of `net`, width w, from a to b on `layer` breaks:
-        [(item or 'edge', distance, needed)] (empty when legal)."""
+        [(item or 'edge', distance, needed)] (empty when legal); `tol` mm kept above each."""
+        TOL = tol
         out = []
         seg = LineString([a, b]) if (abs(a[0] - b[0]) > 1e-9 or abs(a[1] - b[1]) > 1e-9) else Point(a)
         half = w / 2.0
