@@ -24,10 +24,10 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("board")
     ap.add_argument("--pitch", type=float, default=0.25)
-    ap.add_argument("--workers", type=int, nargs="*", default=[1, 4])
+    ap.add_argument("--workers", type=int, nargs="*", default=[2])
     ap.add_argument("--work")
     a = ap.parse_args(argv)
-    r = PhysRouter(a.board, Path(a.work or ".") / "cost_out.kicad_pcb", pitch=a.pitch, work=a.work,
+    r = PhysRouter(a.board, Path(a.work or ".") / "cost_out.kicad_pcb", pitch=a.pitch, work=a.work, verify=True,
                    log=lambda s: print(s, flush=True))
     t = time.time()
     r.solve_fields()

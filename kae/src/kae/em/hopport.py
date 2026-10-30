@@ -45,9 +45,24 @@ RHO = 1.72e-8               # ohm m
 SPREADS = (0.5, 1.0, 2.0)   # trial return widths, in units of the gap to the plane
 
 
-def path_bars(m, segs, layer_names):
-    """[(layer, o, j, i, sign)]: the unit-current x/y bars of a path of segments [(layer name, p0, p1)]
-    on the mesh (a staircase through the cells it crosses), and its length (mm)."""
+def path_bars(m, segs, layer_names, width=None):
+    """[(layer, o, j, i, current)]: the unit-current x/y bars of a path of segments [(layer name, p0, p1)]
+    on the mesh (a staircase through the cells it crosses), and its length (mm). width: the current split
+    over round(width / pitch) parallel staircases across it, as the raster meshes the track."""
+    n = max(1, int(round((width or 0) / m.pitch)))
+    if n > 1:
+        out, ln = {}, 0.0
+        for q in range(n):
+            off = (q - (n - 1) / 2) * m.pitch
+            sh = []
+            for l, p0, p1 in segs:
+                d = np.subtract(p1, p0)
+                nn = np.array([-d[1], d[0]]) / (np.hypot(*d) or 1.0)
+                sh.append((l, tuple(np.add(p0, off * nn)), tuple(np.add(p1, off * nn))))
+            b, ln = path_bars(m, sh, layer_names)
+            for (L, o, j, i, c) in b:
+                out[(L, o, j, i)] = out.get((L, o, j, i), 0.0) + c / n
+        return [(L, o, j, i, c) for (L, o, j, i), c in out.items() if c], ln
     bars, ln = [], 0.0
     for l, p0, p1 in segs:
         if l not in layer_names:
@@ -122,9 +137,9 @@ class Loop:
         for p in range(1, n):
             R[p, p] = sum(c * c * RHO / t[l] for (l, o, j, i, c) in vecs[p])
         self.R = R
-        # the hop's own partial inductance at its real width: the closed-form strip loop against the raster's
-        # loop with the middle image (the raster's bar is a cell wide)
-        if h_ref and length > 0:
+        # a track narrower than a cell: its partial inductance at its real width (the closed-form strip loop
+        # against the raster's loop with the middle image); wider ones are split over cell rows (path_bars)
+        if h_ref and length > 0 and width < 0.75 * m.pitch:
             Ls = float(strip_L_per_mm(width, h_ref)) * length
             Lr = self.L[0, 0] + 2 * self.L[0, 2] + self.L[2, 2]
             self.L[0, 0] += Ls - Lr

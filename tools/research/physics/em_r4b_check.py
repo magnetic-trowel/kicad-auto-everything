@@ -190,7 +190,7 @@ def main(argv=None):
     md = RD.Reduced(op0, PORTS, log=lambda s: None, emf=[b])
     md.build(3e8, fmin=1e3, tol=1e-4, f0=(0.0, 1e7), snap_tol=1e-9)
     bf = Spectral._basis(None, md, n0, op0, m0, None)
-    bars, ln = HP.path_bars(m0, [("F", (5.3, y), (29.7, y))], ["F", "B"])
+    bars, ln = HP.path_bars(m0, [("F", (5.3, y), (29.7, y))], ["F", "B"], w)
     loop = HP.Loop(op0, m0, bf, bars, ln, w, None, h_ref=H)
     kb = next(k for k, (_, _, q) in enumerate(n0.lump) if q.name == "unrouted")
     Gc = md.G_L + md.G_Lc

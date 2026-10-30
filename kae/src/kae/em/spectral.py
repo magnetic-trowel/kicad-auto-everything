@@ -646,10 +646,12 @@ class Spectral:
 
     # ------------------------------------------------------------------ connection ports (kae.em.hopport)
     def _upcoming(self):
-        """The nets routed before the next refresh: the first priced nets still in pieces (one with --verify)."""
+        """The nets routed before the next refresh: the first priced nets in pieces that the router has not
+        laid copper for yet (one with --verify)."""
         r = self.r
         n_up = 1 if r.verify else max(1, r.refresh)
-        return [n for n in r.nets if len([g for g in r.islands.get(n, []) if g]) > 1][:n_up]
+        routed = {t[0] for t in r.tracks} | {v[0] for v in r.vias}
+        return [n for n in r.nets if n not in routed and len([g for g in r.islands.get(n, []) if g]) > 1][:n_up]
 
     def _tree_shorts(self, m, base, ok, up):
         """Set m.lumped: the field-free shorts of every other net; for each net in `up`, field-free shorts
@@ -721,7 +723,7 @@ class Spectral:
         from . import hopport as HP
         r, st = self.r, self.r.spec_m
         m = r.mesh
-        bars, ln = HP.path_bars(m, segs, r.layer_names)
+        bars, ln = HP.path_bars(m, segs, r.layer_names, width)
         if not bars:
             return None
         L, o, j, i, _ = bars[len(bars) // 2]
