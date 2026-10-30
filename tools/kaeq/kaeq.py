@@ -503,9 +503,23 @@ def load_rise_hist():
         return []
 
 
+TICK_HZ = os.sysconf("SC_CLK_TCK")
+
+
+def runnable_threads():
+    """Threads ready to run right now, over the whole machine (procs_running, minus this one)."""
+    with open("/proc/stat") as f:
+        for line in f:
+            if line.startswith("procs_running"):
+                return max(0, int(line.split()[1]) - 1)
+    return 0
+
+
 def job_usage(j, sessions, per_pid, cgroups):
     """(rss_mb, cpu_ticks) of a job: every process in its scope (children that start their own
-    session stay in it), else every process in its session."""
+    session stay in it), else every process in its session. CPU comes from the scope's cpu.stat
+    when it has one: it includes children that have already exited (a job running many short
+    subprocesses otherwise looks idle)."""
     cg = cgroups.get(j["id"]) or job_cgroup(j["pid"])
     if cg:
         cgroups[j["id"]] = cg
@@ -517,6 +531,12 @@ def job_usage(j, sessions, per_pid, cgroups):
                 r, t = per_pid.get(q, (0.0, 0))
                 rss += r
                 ticks += t
+            try:
+                with open(os.path.join(cg, "cpu.stat")) as f:
+                    usec = int(f.readline().split()[1])  # usage_usec
+                ticks = usec * TICK_HZ // 1_000_000
+            except (OSError, ValueError, IndexError):
+                pass
             return rss, ticks
         except (OSError, ValueError):
             pass
@@ -609,6 +629,7 @@ class Daemon:
         self.c = db()
         self.popen = {}          # id -> Popen (to reap zombies)
         self.others_ema = 0.0
+        self.runq_ema = 0.0
         self.prev = cpu_ticks()
         self.prev_ours = {}
         self.sys = {}
@@ -691,6 +712,8 @@ class Daemon:
         ours_threads = ours_ticks / dt * cfg["threads"]
         self.others_ema = 0.7 * self.others_ema + 0.3 * max(0.0, sys_threads - ours_threads)
         self.prev = (busy, total)
+        # demand, not just use: when CPUs are saturated, use stops at capacity but threads keep queueing
+        self.runq_ema = 0.8 * self.runq_ema + 0.2 * runnable_threads()
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         for jid in set(self.trace) - {j["id"] for j in running}:
@@ -757,6 +780,7 @@ class Daemon:
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
                         unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
+                        runnable=self.runq_ema,
                         pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
                         mem_ratio={o: round(q, 3) for o, q in self.ratios.items()},
                         mem_mode=mode, mem_rise=self.rise, mem_single=single, mem_warm=warm_need,
@@ -809,6 +833,8 @@ class Daemon:
     def admit(self, cfg, now, mem_room, cpu_commit, n_running, disk_room=float("inf")):
         c = self.c
         cpu_room = cfg["threads"] - cfg["reserve_cpu"] - self.others_ema - cpu_commit
+        # no start while threads already queue for a CPU: more work would only slow every running job
+        cpu_room = min(cpu_room, cfg["threads"] - cfg["reserve_cpu"] - self.runq_ema)
         queued = c.execute("SELECT * FROM jobs WHERE state='queued' AND not_before<=?", (now,)).fetchall()
         per_owner = {}
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):

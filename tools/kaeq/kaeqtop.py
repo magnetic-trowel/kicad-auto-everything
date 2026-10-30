@@ -102,6 +102,10 @@ def frame(c, cfg, sampler, args, width):
     bw = max(10, min(40, width - 90))
     L.append(f"CPU  {bar((ours_cpu + others) / threads, bw)} {ours_cpu + others:5.1f}/{threads} threads busy: "
              f"queue jobs {ours_cpu:.1f}, everything else {others:.1f} | jobs may use {pinned} CPUs, {rcpu} kept free")
+    if "runnable" in bsys:
+        rq = bsys["runnable"]
+        L.append(f"     threads ready to run: {rq:.0f} for {threads - rcpu} CPUs jobs may use"
+                 + ("  << oversubscribed: jobs wait for a CPU, no new starts until this drops" if rq > threads - rcpu else ""))
     mi = kaeq.meminfo()
     total, avail = mi["MemTotal"], bsys.get("avail", mi["MemAvailable"])
     ours_rss, unreal = bsys.get("ours_rss", 0.0), bsys.get("unrealized", 0.0)
@@ -143,12 +147,15 @@ def frame(c, cfg, sampler, args, width):
         queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
         h = queued[0]
         cpu_room = threads - rcpu - others - bsys.get("cpu_commit", ours_cpu)
+        if "runnable" in bsys:
+            cpu_room = min(cpu_room, threads - rcpu - bsys["runnable"])
         why = []
         if need(h) > room:
             asked = f" (asked {gb(h['mem_mb'])}, its owner's jobs use less)" if need(h) < h["mem_mb"] else ""
             why.append(f"needs {gb(need(h))} RAM{asked}, {gb(max(0, room))} free for jobs")
         if h["cpus"] > cpu_room:
-            why.append(f"needs {h['cpus']:g} CPUs, {max(0, cpu_room):.0f} free")
+            why.append(f"needs {h['cpus']:g} CPUs, {max(0, cpu_room):.0f} free"
+                       + (" (threads already queue for a CPU)" if bsys.get("runnable", 0) > threads - rcpu - h["cpus"] else ""))
         starving = now - h["submitted"] > cfg["starve_after_s"]
         L.append(f"Next: #{h['id']} {h['owner']} prio {h['prio']} ({h['name'] or h['cmd'][:40]})")
         L.append("      " + ("; ".join(why) + (" -> room is held for it; only short jobs may backfill" if starving else "")

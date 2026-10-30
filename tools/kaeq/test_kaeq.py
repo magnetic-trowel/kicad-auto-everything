@@ -307,3 +307,25 @@ def test_warm_jobs_count_their_owners_spread_of_sizes(kq):
     aside = kq.warm_headroom(jobs, 2)
     assert 7900.0 <= aside < 0.6 * 79000.0  # >= one job's full headroom, well under all ten at their worst
     assert kq.warm_headroom([(100.0, 7900.0, 8000.0, None)] * 10, 2) == 79000.0  # unknown owner: in full
+
+
+def test_no_start_while_threads_queue_for_a_cpu(kq):
+    clock = [0]
+
+    def idle_cpus():  # the test machine may be busy: report it idle, so only the run queue decides
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy")
+    drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
+    kq.runnable_threads = lambda: 50  # 4 threads, 1 reserved: 50 runnable threads is oversubscribed
+    submit(kq, "true", name="wait")
+    for _ in range(10):
+        d.tick()
+        time.sleep(0.1)
+    assert states(d)["wait"] == "queued"
+    kq.runnable_threads = lambda: 0
+    drive(kq, d, lambda: states(d)["wait"] in ("running", "ok"))
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+    d.c.commit()
