@@ -224,9 +224,3 @@ def test_excess_counts_only_errors_beyond_the_input():
     assert drc.excess(s, base) == 1          # the clearance error is the router's
     assert drc.excess(s, {}) == 7            # no baseline: every error counts, as before
     assert drc.excess(dict(by_type={}), base) == 0
-
-
-def test_last_mile_cap_grows_with_time():
-    from kae.route import repair
-    assert repair.last_mile_cap(30) == repair.LAST_MILE_MAX
-    assert repair.last_mile_cap(600) == 300

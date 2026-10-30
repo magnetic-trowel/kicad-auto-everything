@@ -610,6 +610,12 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
             break
+        if k > 1 and opts.get("last_mile") and not any(v.get("type") == "starved_thermal" or any(
+                it.get("uuid") in routed for it in v.get("items") or []) for v in drc.errors(best_rep)):
+            # no error on router copper, only open connections: the last mile joins them, given the
+            # time (heypcb kestrel 1,000 s: 28/25/15 open -> 14/6/0)
+            rec["stopped"] = "open connections: last mile"
+            break
         use_split = bool(a["connect"] and fills and not split_failed)
         if not a["items"] and not a["widen"] and not use_split and level == 0 and a["open"]:
             level = 2  # only open connections: the router needs room, not the same board again
@@ -805,8 +811,6 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None,
     return cand, rep, s_
 
 
-LAST_MILE_MAX = 40     # open connections the last mile always takes on (bms-c1: 27 joined to 0 in 25 s);
-LAST_MILE_PER_S = 0.5  # beyond that, as many as time allows at this rate (about a join a second, halved)
 LAST_MILE_MIN_S = 30.0 # time a last-mile round needs (was 60: a short attempt, the restart portfolio's first
                        # waves, then had neither repair nor last mile and ended with time unused)
 
@@ -843,10 +847,6 @@ def errors_no_worse(s_, ref, base):
     if s_["errors"] <= ref["errors"]:
         return True
     return bool(base) and drc.excess(s_, base) <= drc.excess(ref, base)
-
-
-def last_mile_cap(left_s):
-    return max(LAST_MILE_MAX, int(LAST_MILE_PER_S * left_s))
 
 
 def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
@@ -888,9 +888,12 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     # (siderakb ergo-snm: 16 open; with rip-up 26 joins, 29 ripped, 18 open and discarded, where
     # the free joins alone gave 10)
     free_first = bool(opts.get("last_mile_free_first", True))
-    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1 + free_first):
+    # no bound on the open connections or rounds: joins stop at their deadline, rounds after FAILS in
+    # a row not better (a bound of 40 open skipped transistorfet z280's last mile, 2 minutes unused)
+    fails = 0
+    for j in range(1, AUTO_ROUNDS + 1):
         rip = not (free_first and j == 1)
-        if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or cur_sum["unconnected"] > last_mile_cap(left())
+        if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or fails >= FAILS
                 or left() < LAST_MILE_MIN_S):
             break
         rec = dict(round=f"lm{j}", level="last_mile" if rip else "last_mile free")
@@ -961,6 +964,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             shutil.copy2(cand, output_path)
             best, best_rep = s_, rep
             rec["final"] = s_
+        fails = 0 if rec["kept"] else fails + rip
         if not errors_no_worse(s_, best, base):
             break
         cur, cur_rep, cur_sum = cand, rep, s_
