@@ -543,6 +543,16 @@ def apply(tree, plan, info):
         made = mark_plane_layers(layers, cu, info)
         if made:
             summary["plane_layers_power"] = made
+    strict = set(getattr(plan, "strict_planes", None) or ())
+    if strict and getattr(plan, "plane_policy", "signal") == "cost":
+        made = []
+        for c, l in zip(cu, layers):
+            k = find(l, "type")
+            if c in strict and k is not None and len(k) > 1 and k[1] != "power":
+                k[1] = "power"
+                made.append(c)
+        if made:
+            summary["plane_layers_power"] = made
     plan.layer_rules = None
     if getattr(plan, "plane_policy", "signal") == "cost":
         plan.layer_rules = layer_rules(dsn_names, [c in plane_layers(info) for c in cu],
@@ -785,3 +795,37 @@ def _unsnap(net_out, snaps, scale):
                     n += 1
                     break
     return n
+
+
+def fill_planes(info, fills):
+    """{inner copper layer: (net, share)}: the net whose refilled zone copper (pcbnew_io.zone_fills
+    records) covers the most of the board outline on each inner layer, and that share."""
+    from shapely.ops import unary_union
+    cu = list(info.get("copper") or [])
+    inner = set(cu[1:-1])
+    if not inner:
+        return {}
+
+    def polys(rings_list):
+        out = []
+        for rings in rings_list or []:
+            if rings and len(rings[0]) >= 3:
+                pg = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])
+                out.append(pg if pg.is_valid else pg.buffer(0))
+        return out
+    board = unary_union(polys(info.get("outline")))
+    if board.area <= 0:
+        return {}
+    by = {}
+    for z in fills or []:
+        if z.get("teardrop") or not z.get("net"):
+            continue
+        for l, rl in (z.get("layers") or {}).items():
+            if l in inner:
+                by.setdefault((l, z["net"]), []).extend(polys(rl))
+    out = {}
+    for (l, net), ps in by.items():
+        a = unary_union(ps).intersection(board).area / board.area
+        if a > out.get(l, (None, 0.0))[1]:
+            out[l] = (net, a)
+    return out

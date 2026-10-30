@@ -59,6 +59,9 @@ DEFAULT_OPTS = dict(
     plane_escapes=False,     # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # locked: the plane connections the human boards make first
+    plane_strict_share=None,  # with planes "cost": inner layers whose one-net fill (refilled input) covers
+                             # at least this share of the board carry no traces at all (Freerouting power
+                             # layers); human boards leave 30 of 33 such layers at >= 0.8 free of signals
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -107,6 +110,13 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
+        strict_planes = []
+        if opts.get("plane_strict_share") and opts.get("planes", "cost") == "cost":
+            fl = pcbnew_io.zone_fills(drc.stage_board(input_path, input_path, wd / "planefill"))["zones"]
+            fp_ = translate.fill_planes(info, fl)
+            strict_planes = sorted(l for l, (n, a) in fp_.items() if a >= float(opts["plane_strict_share"]))
+            report["plane_fill_shares"] = {l: [n, round(a, 3)] for l, (n, a) in fp_.items()}
+            opts["strict_planes"] = strict_planes
         if opts.get("plane_escapes") and any(z.get("net") for z in info.get("zones") or []):
             from . import lastmile
             te = time.monotonic()
@@ -124,6 +134,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
+        p.strict_planes = opts.get("strict_planes") or []
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
