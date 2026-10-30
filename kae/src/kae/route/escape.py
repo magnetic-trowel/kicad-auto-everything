@@ -107,6 +107,7 @@ def plan_escapes(board_path, info, plan, sev=None, opts=None, space=None, log=No
     zclr = max([float(z.get("clearance") or 0.0) for z in info.get("zones") or []] + [0.0])
     zmin = max([float(z.get("min_thickness") or 0.0) for z in info.get("zones") or []] + [0.0])
     cors = [c for cs in sp.corridors_by_fp.values() for c in cs]
+    guard = opts.get("escape_spoke_guard", True)     # off when the caller checks with KiCad's DRC
 
     def near_corridor(net, geom, r, layers):
         for c in cors:
@@ -161,7 +162,7 @@ def plan_escapes(board_path, info, plan, sev=None, opts=None, space=None, log=No
                     rep["why"][f"via:{k}"] = rep["why"].get(f"via:{k}", 0) + 1
                     continue
                 D, d = sp.via_size(p.net)
-                if near_corridor(p.net, Point(vx, vy), D / 2, frozenset(sp.cu)):
+                if guard and near_corridor(p.net, Point(vx, vy), D / 2, frozenset(sp.cu)):
                     rep["why"]["via:spokes"] = rep["why"].get("via:spokes", 0) + 1
                     continue
                 for wd in widths:
@@ -170,7 +171,7 @@ def plan_escapes(board_path, info, plan, sev=None, opts=None, space=None, log=No
                         k = getattr(bad[0][0], "kind", bad[0][0])
                         rep["why"][f"stub:{k}"] = rep["why"].get(f"stub:{k}", 0) + 1
                         continue
-                    if near_corridor(p.net, LineString([c, (vx, vy)]), wd / 2, frozenset([layer])):
+                    if guard and near_corridor(p.net, LineString([c, (vx, vy)]), wd / 2, frozenset([layer])):
                         rep["why"]["stub:spokes"] = rep["why"].get("stub:spokes", 0) + 1
                         continue
                     sp.add_via(p.net, vx, vy, owner=("escape", ""))

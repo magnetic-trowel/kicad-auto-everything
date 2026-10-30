@@ -20,6 +20,7 @@ The output is written as soon as a routed board exists and replaced only by bett
 so a run that is killed still leaves its best board. Returns a JSON-able report.
 """
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -67,6 +68,8 @@ DEFAULT_OPTS = dict(
 
 # zones that kae.route.critical emitted: hard obstacles for the other nets
 CRIT_PREFIX = "kae-crit:"
+# mm around a pad whose thermal relief new escapes starve: escapes there are taken out
+ESCAPE_SPOKE_MM = 1.2
 
 
 def _log(msg):
@@ -106,7 +109,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         route_input = input_path          # the board Freerouting's session is imported into
         escape_uuids = []
         if opts.get("escapes"):
-            route_input, escape_uuids, report["escapes"] = _escape_prepass(input_path, info, opts, wd, log)
+            route_input, escape_uuids, report["escapes"] = _escape_prepass(input_path, info, opts, wd, log,
+                                                                            deadline=t0 + time_s * 0.25)
             if escape_uuids:
                 info = pcbnew_io.export_dsn(route_input, kdsn)
         if any((z.get("name") or "").startswith(CRIT_PREFIX) for z in info.get("zones") or []):
@@ -192,33 +196,98 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def _escape_prepass(input_path, info, opts, wd, log):
+def _escape_prepass(input_path, info, opts, wd, log, deadline=None):
     """(board with the escapes as locked copper, their uuids, report); the input itself when
-    there is nothing to lay."""
+    there is nothing to lay. With escape_drc (default), the escapes are laid as planned and
+    checked by KiCad's DRC: a dog-bone or stub in an error the input did not have, or within
+    ESCAPE_SPOKE_MM of a pad whose thermal relief it starves, is taken out, and the board
+    checked again (twice at most; then the guarded plan, which keeps the vias off the
+    plan's spoke strips, without a check)."""
     from kae.board.kicad_file import load
 
     from . import critical_write as W
     from . import escape
     from .critical_space import Space
     t = time.monotonic()
+    check = bool(opts.get("escape_drc", True))
     p0 = constraints.plan(info, input_path, opts)
-    sp = Space(load(input_path), info, plan=p0, sev=opts.get("severities") or {})
-    got = escape.plan_escapes(input_path, info, p0, space=sp, opts=opts, log=log)
-    rep = dict(got["report"], seconds=round(time.monotonic() - t, 1))
-    if not got["vias"] and not got["tracks"]:
+
+    def plan(guard):
+        sp = Space(load(input_path), info, plan=p0, sev=opts.get("severities") or {})
+        got = escape.plan_escapes(input_path, info, p0, space=sp, opts=dict(opts, escape_spoke_guard=guard), log=log)
+        groups = []          # one dog-bone (stub + via) or one row stub each
+        nv = len(got["vias"])
+        for k, (net, layer, w, a, b) in enumerate(got["tracks"]):
+            g = [("t", (net, layer, w, a, b, W.new_uuid(), True))]
+            if k < nv:
+                net_, x, y, D, d = got["vias"][k]
+                g.append(("v", (net_, x, y, D, d, W.new_uuid(), True)))
+            groups.append(g)
+        return got["report"], groups
+
+    def write(groups):
+        board = W.stage(input_path, wd / "escaped", "board")
+        W.append_items(board, board, tracks=[it for g in groups for k, it in g if k == "t"],
+                       vias=[it for g in groups for k, it in g if k == "v"])
+        return board
+
+    rep, groups = plan(not check)
+    if not groups:
+        return input_path, [], dict(rep, seconds=round(time.monotonic() - t, 1))
+    board = write(groups)
+    if check:
+        from . import repair
+        dl = deadline or (time.monotonic() + 900)
+        base = repair.input_errors(input_path, wd, dl)
+        try:
+            ref = json.loads((wd / "input_drc" / "drc.json").read_text())
+        except (OSError, ValueError):
+            ref = None
+        sig = lambda v: (v["type"], tuple(sorted(i.get("uuid", "") for i in v.get("items", []))))
+        old = {sig(v) for v in drc.errors(ref)} if ref else set()
+        dropped = 0
+        for attempt in range(3):
+            if ref is None:
+                break
+            rp = drc.run(drc.stage_board(board, input_path, wd / "escaped_drc"), wd / "escaped_drc" / "drc.json",
+                         timeout=max(30, min(900, dl - time.monotonic() - 60)))
+            new = [v for v in drc.errors(rp) if sig(v) not in old]
+            if not new and drc.excess(drc.summary(rp), base) <= 0:
+                break
+            if attempt == 2:
+                rep, groups = plan(True)
+                board = write(groups) if groups else input_path
+                rep["escape_drc"] = "guarded"
+                break
+            uu = {i.get("uuid") for v in new for i in v.get("items", [])}
+            pts = [(i["pos"]["x"], i["pos"]["y"]) for v in new for i in v.get("items", [])
+                   if not (i.get("description") or "").startswith("Zone")]
+            reach = float(opts.get("escape_spoke_mm", ESCAPE_SPOKE_MM))
+
+            def hit(g):
+                for k, it in g:
+                    if it[5] in uu:
+                        return True
+                    xy = [it[3], it[4]] if k == "t" else [(it[1], it[2])]
+                    if any(math.dist(q, p) < reach for q in xy for p in pts):
+                        return True
+                return False
+            keep = [g for g in groups if not hit(g)]
+            dropped += len(groups) - len(keep)
+            if len(keep) == len(groups):
+                rep, groups = plan(True)
+                board = write(groups) if groups else input_path
+                rep["escape_drc"] = "guarded"
+                break
+            groups = keep
+            board = write(groups)
+        rep["dropped"] = dropped
+    rep["seconds"] = round(time.monotonic() - t, 1)
+    if not groups:
         return input_path, [], rep
-    board = W.stage(input_path, wd / "escaped", "board")
-    tracks, vias, uuids = [], [], []
-    for (net, layer, w, a, b) in got["tracks"]:
-        u = W.new_uuid()
-        tracks.append((net, layer, w, a, b, u, True))
-        uuids.append(u)
-    for (net, x, y, D, d) in got["vias"]:
-        u = W.new_uuid()
-        vias.append((net, x, y, D, d, u, True))
-        uuids.append(u)
-    W.append_items(board, board, tracks=tracks, vias=vias)
-    log(f"escapes: {len(got['vias'])} dog-bones, {rep.get('row_stubs', 0)} row stubs laid ({rep['seconds']}s)")
+    uuids = [it[5] for g in groups for _k, it in g]
+    log(f"escapes: {sum(1 for g in groups if len(g) == 2)} dog-bones, "
+        f"{sum(1 for g in groups if len(g) == 1)} row stubs laid ({rep['seconds']}s)")
     return board, uuids, rep
 
 
