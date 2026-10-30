@@ -54,17 +54,18 @@ def test_basis_price_predicts_the_hops_coupling_over_the_spectrum():
     m = _board(pitch, False)
     net = ES.Network(m)
     op = ES.Operator(net)
-    model = RD.Reduced(op, ports, log=lambda *a: None).build(3e8, fmin=1e4, tol=1e-4, f0=(0.0, 1e7), snap_tol=1e-9)
+    model = RD.Reduced(op, ports, log=lambda *a: None).build(3e8, fmin=1e3, tol=1e-4, f0=(0.0, 1e7), snap_tol=1e-9)
     bf = Spectral._basis(None, model, net, op, m, None)
     X, Y = m.centres()
     rows = np.nonzero(abs(Y[:, 0] - 4.75) < 0.25)[0]
     i0, i1 = m.cell(2.25, 4.75)[1], m.cell(13.75, 4.75)[1]
     ii = np.arange(i0, i1 + 1)
     fl = sum((0.5 * (bf["Px"][0][:, j, ii[:-1]] + bf["Px"][0][:, j, ii[1:]])).sum(1) for j in rows) / len(rows)
+    raw = sum((0.5 * (bf["Rx"][0][:, j, ii[:-1]] + bf["Rx"][0][:, j, ii[1:]])).sum(1) for j in rows) / len(rows)
     post = ES.Network(_board(pitch, True))
     op2 = ES.Operator(post)
     P2 = RD.Reduced(op2, ports, log=lambda *a: None).P
-    for f in (1e7, 6e7, 1.5e8, 2.5e8):           # above the R-L transition (below it the return spreads)
+    for f in (1e5, 1e6, 1e7, 6e7, 1.5e8, 2.5e8):
         Z = []
         for o, P in ((op, model.P), (op2, P2)):
             sy = ES.System(o, f)
@@ -72,5 +73,10 @@ def test_basis_price_predicts_the_hops_coupling_over_the_spectrum():
             Z.append((P.T @ (Xs[-P.shape[0]:] / sy.kap))[1, 0])
         # the price counts the hop's whole coupling: the short's own return through the plane, the same for
         # every path the hop could take, is already in Z_vs before it (Z[0])
-        pred = 1j * 2 * np.pi * f * (fl @ model.solve(f)[:, 0])
-        assert abs(pred / Z[1] - 1) < 0.1, (f, pred / Z[1])
+        # the exact first order (kae.em.hopport): the hop's unit current against the raw flux of the board
+        # before it, at every frequency
+        exact = 1j * 2 * np.pi * f * (raw @ model.solve(f)[:, 0])
+        assert abs(exact / (Z[1] - Z[0]) - 1) < 0.1, (f, exact / (Z[1] - Z[0]))
+        if f >= 1e7:                               # T1's image return: right only above the R-L transition
+            pred = 1j * 2 * np.pi * f * (fl @ model.solve(f)[:, 0])
+            assert abs(pred / Z[1] - 1) < 0.1, (f, pred / Z[1])

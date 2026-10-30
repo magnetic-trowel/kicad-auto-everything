@@ -325,12 +325,14 @@ class System:
         pot[occ] = vals
         return dict(fil=fil, pot=pot)
 
-    def solve_many(self, S_, tol=1e-8, maxiter=1000, X0=None):
+    def solve_many(self, S_, tol=1e-8, maxiter=1000, X0=None, E=None):
         """COCG on P right-hand sides in lockstep (columns of S_, (nfree, P)): every iteration shares one
-        batched FFT pass and one factor solve. Returns (X (n, P), iterations per column)."""
+        batched FFT pass and one factor solve. E (n_br, P): series EMFs (V) in the branches as well, the
+        branch equation reading Z I - D phi = E. Returns (X (n, P), iterations per column)."""
         nb = self.net.n_br
         P = S_.shape[1]
-        rhs = np.concatenate([np.zeros((nb, P), complex), -np.asarray(S_, complex)])
+        top = np.zeros((nb, P), complex) if E is None else self.kap * np.asarray(E, complex)
+        rhs = np.concatenate([top, -np.asarray(S_, complex)])
         x = self.psolve(rhs)
         if X0 is not None:
             # a warm start: keep the earlier solution's divergence-free part; the preconditioner applied to

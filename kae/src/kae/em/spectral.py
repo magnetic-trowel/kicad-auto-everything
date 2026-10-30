@@ -63,6 +63,8 @@ from . import t1 as T1
 SNAP_TOL = 1e-5         # the snapshots' solver tolerance (port quantities are variational: kae.em.solve.TOL)
 MODEL_TOL = 1e-2        # the router model's tolerance on every pair's layout share (the evaluator's: 1e-3)
 CUT_RANK = 12           # rank-one terms kept of the pour-cut weight matrix
+GRID = 12               # the greedy build's error grid, 1 kHz .. f_max (the evaluator's: 24)
+Z_SHORT = 1e-5          # ohm: an unrouted connection with a port (kae.em.hopport), a part instead of a node merge
 F_LOG = O.F_PATTERN     # the frequency the per-pair dL log is read at (comparable with the 10 MHz router)
 
 
@@ -106,8 +108,9 @@ def path_integrals(bf, L, cells):
 class Spectral:
     """The whole-spectrum prices of a kae.em.pnr.PhysRouter `r` (which calls it at every refresh and hop)."""
 
-    def __init__(self, r, tol=MODEL_TOL, snap_tol=SNAP_TOL, workers=1, probes=True, log=print):
+    def __init__(self, r, tol=MODEL_TOL, snap_tol=SNAP_TOL, workers=1, probes=True, log=print, grid=GRID):
         self.r, self.tol, self.snap_tol, self.workers, self.probes, self.log = r, tol, snap_tol, workers, probes, log
+        self.grid = grid
         self.freqs, self.cal = None, None
         self.costs = []
         self.trace = r.work / "spectral.jsonl"
@@ -120,7 +123,9 @@ class Spectral:
         from kae.excite.wideband import EPS_EFF, F_TOP, THETA, _ideal, _wave_params
         r = self.r
         m = bm.m
-        m.lumped = list(base)                   # the field-free shorts; then the whole circuit
+        # the field-free shorts; the upcoming nets' connections, along the router's own tree, as parts of
+        # negligible impedance with an EMF port each (kae.em.hopport); then the whole circuit
+        edges = self._tree_shorts(m, base, ok, self._upcoming())
 
         def mpad(t):
             if t not in ok:
@@ -145,7 +150,10 @@ class Spectral:
         op = ES.Operator(net)
         t_mesh = time.time() - t0
         rows, cols = list(range(ns, ns + len(obs))), list(range(ns))
-        model = RD.Reduced(op, ports, log=lambda s: None)
+        at_l = {q.name: k for k, (_, _, q) in enumerate(net.lump)}
+        edges = [dict(e, lump=at_l[e["name"]]) for e in edges if e["name"] in at_l]
+        nP0 = len(ports)
+        model = RD.Reduced(op, ports, log=lambda s: None, emf=[net.off["l"] + e["lump"] for e in edges])
         xs = [r.window[0], r.window[2]]
         ys = [r.window[1], r.window[3]]
         diag = math.hypot(xs[1] - xs[0], ys[1] - ys[0]) * 1e-3
@@ -185,8 +193,9 @@ class Spectral:
                 waves[(j, c)] = (n, 2 * SP.trapezoid(I, D, tr, fsw, n), np.array([fidx(x * fsw) for x in n]), val)
         i_log = fidx(F_LOG)
         F = np.array(F)
-        Y = np.stack([model.solve(f) for f in F])                         # (nF, m, nP)
-        Z = np.einsum("mp,fmq->fpq", model.Pr, Y)                         # (nF, nP, nP): Z_pq = p_p^T phi_q
+        Yall = np.stack([model.solve(f) for f in F])                      # (nF, m, nP + edges)
+        Y = Yall[:, :, :nP0]
+        Z = np.einsum("mp,fmq->fpq", model.Pr[:, :nP0], Y)                 # (nF, nP, nP): Z_pq = p_p^T phi_q
         Zi = {j: np.stack([ideal(s, f) for f in F]) for j, s in enumerate(srcs)}     # (nF, nobs)
         ncp = len(next(iter(r.cval.values()), [None]))
         tot = np.zeros(ncp)
@@ -275,7 +284,7 @@ class Spectral:
         # ---------------------------------------------------------------- the router's state
         st = dict(model=model, net=net, op=op, m=m, srcs=srcs, obs=obs, ports=ports, ns=ns, F=F, w=w, Y=Y, Z=Z,
                   Zi=Zi, G=G, G0=G0, pairs=pairs, i_log=i_log, bf=bf, U=U, f_max=f_max,
-                  Jb=self._pad_injection(model, net, ports))
+                  Jb=self._pad_injection(model, net, ports), edges=self._edge_data(model, edges, Yall, nP0, w))
         prev = r.spec_m
         r.spec_m, r.spec_hops = st, ()
         r.mesh, r.op = m, op
@@ -300,7 +309,7 @@ class Spectral:
                  + "; ".join(f"{nm[0]} <- {nm[1]} {a:.2f}, {b:.2f}" for a, b, nm in top))
         cost = dict(total=time.time() - t0, mesh=t_mesh, model=t_model, harmonics=t_harm, fields=t_fields, **built)
         self.costs.append(cost)
-        self.log(f"pnr: spectral fields of {len(ports)} ports on {m.nx}x{m.ny}x{len(m.layers)} ({shorted} unrouted "
+        self.log(f"pnr: spectral fields of {len(ports)} ports and {len(edges)} connection ports on {m.nx}x{m.ny}x{len(m.layers)} ({shorted} unrouted "
                  f"connections shorted): model order {model.V.shape[1]} from {len(model.freqs)} snapshots "
                  f"{[round(f / 1e6, 3) for f in model.freqs]} MHz ({built['mode']}), {len(F)} harmonics to "
                  f"{f_max / 1e6:.0f} MHz; {cost['total']:.1f}s (mesh {t_mesh:.0f}, model {t_model:.0f}: snapshots "
@@ -313,7 +322,7 @@ class Spectral:
         midpoints between snapshots) adds one where it exceeds the tolerance."""
         if self.freqs is None:
             t = time.time()
-            model.build(f_max, fmin=1e3, tol=self.tol, rows=rows, cols=cols, scale=scale,
+            model.build(f_max, fmin=1e3, tol=self.tol, rows=rows, cols=cols, scale=scale, grid=self.grid,
                         f0=(0.0, min(F_LOG, f_max / 3)), snap_tol=self.snap_tol)
             self.freqs = list(model.freqs)
             self.cal = max([tr / es for _, tr, es in model.calibration if es > 0], default=1.0)
@@ -382,7 +391,7 @@ class Spectral:
         kf = sy.free_idx[nd]
         comp = np.full(m.lab.shape, -1, np.int64)
         comp[occ] = net.comp[nd]
-        out = dict(Px={}, Py={}, phi={}, phi2={}, psi={}, phiL={}, phi2L={}, psiL={}, tmpl={}, Kx={}, Ky={})
+        out = dict(Px={}, Py={}, Rx={}, Ry={}, phi={}, phi2={}, psi={}, phiL={}, phi2L={}, psiL={}, tmpl={}, Kx={}, Ky={})
         plane = {}
         for k in range(nl):
             occk = T1.ref_copper(m, k, ref_ids)
@@ -408,6 +417,7 @@ class Spectral:
             z = np.zeros((mm, m.ny, m.nx), np.float32)
             f = np.zeros((m.ny, m.nx), bool)
             out["Px"][L], out["Py"][L] = Px, Py
+            out["Rx"][L], out["Ry"][L] = Fl[(L, "x")], Fl[(L, "y")]        # the raw flux: no return subtracted
             for q, sfx in ((0, ""), (1, "L")):
                 terms, psi = {}, np.zeros((mm, m.ny, m.nx), np.float32)
                 for side, a in (("up", a_up), ("dn", a_dn)):
@@ -460,6 +470,9 @@ class Spectral:
         at every harmonic frequency."""
         st = self.r.spec_m
         Jb = st["Jb"]
+        e = st.get("edges", {}).get(tuple(pads))
+        if e is not None:
+            return e["I"]                          # the model's own current through the connection
         row = np.zeros(st["Y"].shape[1])
         fix = np.zeros(st["Y"].shape[2])
         for q in pads:
@@ -482,11 +495,14 @@ class Spectral:
             g_self += float(np.real(np.sum(g * jw * i[:, kp] * i[:, j])))
         return B * jw[:, None], B, g_self
 
-    def hop(self, cur):
+    def hop(self, cur, width=0.25):
         """Pseudo state for PhysRouter.phys: one pair of unit weight whose price fields are this hop's
         combination of the basis fields; returns the pseudo hop currents."""
         st = self.r.spec_m
         pads = next((k[1] for k in cur if k[0] == "pads"), ())
+        e = st.get("edges", {}).get(tuple(pads))
+        if e is not None:
+            return self._hop_port(e, width)
         i = self.currents(pads)
         A, B, g_self = self._adjoint(i)
         c = np.real(np.einsum("fp,fmp->m", A, st["Y"]))
@@ -494,18 +510,21 @@ class Spectral:
         e = [float(np.real(np.sum(A * ih))) for _, ih in self.r.spec_hops]
         return self._pseudo(c, d, g_self, e)
 
-    def _pseudo(self, c, d, g_self, e):
+    def _pseudo(self, c, d, g_self, e, raw=False):
+        """raw: c weighs the basis's raw flux (kae.em.hopport: nothing subtracted, no crossing terms)."""
         r, st = self.r, self.r.spec_m
         bf = st["bf"]
         comb, zero = {}, {}
         for L, tm in bf["tmpl"].items():
-            Px = np.tensordot(c, bf["Px"][L], 1)
-            Py = np.tensordot(c, bf["Py"][L], 1)
+            Px = np.tensordot(c, bf["Rx" if raw else "Px"][L], 1)
+            Py = np.tensordot(c, bf["Ry" if raw else "Py"][L], 1)
             for eh, (dF, _) in zip(e, r.spec_hops):
                 if eh and L in dF:
                     Px = Px + eh * dF[L][0]
                     Py = Py + eh * dF[L][1]
             def pot(k):                     # the crossing potential: R part with d, L part (jw inside c) with c
+                if raw:
+                    return np.zeros_like(Px)
                 return np.tensordot(d, bf[k][L], 1) + np.tensordot(c, bf[k + "L"][L], 1)
             pr = T1.Price(Px, Py, pot("phi"), tm.ref, tm.void, tm.split)
             pr.phi2, pr.void2, pr.psi, pr.h_up, pr.h_dn = pot("phi2"), tm.void2, pot("psi"), tm.h_up, tm.h_dn
@@ -536,6 +555,9 @@ class Spectral:
         r, st = self.r, self.r.spec_m
         bf, m = st["bf"], r.mesh
         pads = next((k[1] for k in cur if k[0] == "pads"), ())
+        e = st.get("edges", {}).get(tuple(pads))
+        if e is not None:
+            return self._path_port(e, rt, width)
         i = self.currents(pads)
         mm = st["Y"].shape[1]
         fl, cr, ln_L = np.zeros(mm), np.zeros((2, mm)), 0.0
@@ -621,6 +643,161 @@ class Spectral:
             dF[L] = (dx.astype(np.float32), dy.astype(np.float32))
         pads = next((k[1] for k in cur if k[0] == "pads"), ())
         r.spec_hops = r.spec_hops + ((dF, self.currents(pads)),)
+
+    # ------------------------------------------------------------------ connection ports (kae.em.hopport)
+    def _upcoming(self):
+        """The nets routed before the next refresh: the first priced nets still in pieces (one with --verify)."""
+        r = self.r
+        n_up = 1 if r.verify else max(1, r.refresh)
+        return [n for n in r.nets if len([g for g in r.islands.get(n, []) if g]) > 1][:n_up]
+
+    def _tree_shorts(self, m, base, ok, up):
+        """Set m.lumped: the field-free shorts of every other net; for each net in `up`, field-free shorts
+        between the mesh groups inside each of its exact islands, and one part of negligible impedance per
+        edge of the spanning tree kae.em.pnr._route_net will route (nearest island centroids first), between
+        the closest meshed pads of its two islands. Returns the edges."""
+        from .mesh import Lumped
+        r = self.r
+        keep = [q for q in base if r.bd.net_of.get(q.a) not in up]
+        m.lumped = []
+        bare = ES.Network(m)
+        comp = {q: int(bare.comp[bare.term_node[q]]) for q in ok if q in bare.term_node}
+        edges = []
+        for n in up:
+            isl = [g for g in r.islands.get(n, []) if g]
+            for g in isl:
+                reps = {}
+                for q in g:
+                    if q in comp:
+                        reps.setdefault(comp[q], q)
+                rs = list(reps.values())
+                keep += [Lumped(x, y) for x, y in zip(rs[:-1], rs[1:])]
+
+            def cen(g):
+                return np.mean([r._pad_xy(q) for q in g], axis=0)
+            tree, left = [isl[0]], isl[1:]
+            while left:
+                a, b_ = min(((a, b_) for a in tree for b_ in left), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
+                pa, pb = [q for q in a if q in comp], [q for q in b_ if q in comp]
+                if pa and pb:
+                    qb, qa = min(((x, y) for x in pb for y in pa), key=lambda xy: np.linalg.norm(r._pad_xy(xy[0]) - r._pad_xy(xy[1])))
+                    nm = f"hop:{n}:{len(edges)}"
+                    keep.append(Lumped(qb, qa, name=nm, zf=lambda w: Z_SHORT + 0j))
+                    edges.append(dict(name=nm, net=n, key=tuple(b_), qb=qb, qa=qa))
+                elif pa or pb:
+                    keep.append(Lumped((pb or pa)[0], (pa or pb)[0]))
+                tree.append(b_)
+                left.remove(b_)
+        m.lumped = keep
+        return edges
+
+    def _edge_data(self, model, edges, Yall, nP0, w):
+        """Per connection port: the current every pattern drives through it (nF, nP), its loop's admittance
+        Y (nF), the loop's coefficients ye (nF, m), and Y Z(l_e): the copper part of the loop's impedance
+        times Y (stable as Y -> 0)."""
+        out = {}
+        Gc = model.G_L + model.G_Lc
+        for q, e in enumerate(edges):
+            ce = nP0 + q
+            ye = Yall[:, :, ce]
+            Yb = np.einsum("m,fm->f", model.Vl[e["lump"]], ye)
+            I = np.einsum("m,fmp->fp", model.Vl[e["lump"]], Yall[:, :, :nP0])
+            E = np.einsum("fm,mn,fn->f", ye, model.G_R, ye) + 1j * w * np.einsum("fm,mn,fn->f", ye, Gc, ye)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                YZrr = np.where(np.abs(Yb) > 1e-12, E / Yb, np.inf)
+            out[e["key"]] = dict(e, I=I, Yb=Yb, ye=ye, YZrr=YZrr, loops={})
+        return out
+
+    def _open(self, e):
+        """The patterns' coefficients with the connection opened: y_P - (I_P / Y) y_e (no correction where
+        the loop admits no current: the connection is then fed by a current source alone)."""
+        st = self.r.spec_m
+        Yb = e["Yb"]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            s = np.where(np.abs(Yb)[:, None] > 1e-9, e["I"] / Yb[:, None], 0.0)
+        return st["Y"] - s[:, None, :] * e["ye"][:, :, None]
+
+    def _loop(self, e, segs, width):
+        from . import hopport as HP
+        r, st = self.r, self.r.spec_m
+        m = r.mesh
+        bars, ln = HP.path_bars(m, segs, r.layer_names)
+        if not bars:
+            return None
+        L, o, j, i, _ = bars[len(bars) // 2]
+        up, dn, hu, hd, a_up, a_dn = T1.references(m, L, r.ref_ids)
+        h = min(float(hu[j, i]), float(hd[j, i]))
+        return HP.Loop(r.op, m, st["bf"], bars, ln, width, r.ref_ids, h_ref=h if np.isfinite(h) else None)
+
+    def _nominal(self, e, width):
+        """The straight hop between the connection's two pads, on the first routing layer either pad is on."""
+        k = round(width, 3)
+        if k not in e["loops"]:
+            r = self.r
+            p0, p1 = tuple(r._pad_xy(e["qb"])), tuple(r._pad_xy(e["qa"]))
+            lay = next((l for l in r.layer_names if r._anchor(e["qb"]) and l in r._anchor(e["qb"]).layers), r.layer_names[0])
+            e["loops"][k] = self._loop(e, [(lay, p0, p1)], width)
+        return e["loops"][k]
+
+    def _hop_port(self, e, width):
+        """The hop's move costs, linear in its path about the straight hop: the hop's loop current I_P
+        scaled by the compensation kap0 of the straight hop's loop, plus the current the loop picks up
+        from the other patterns' flux there (the second-order term, linearized), against the raw flux of
+        every pattern with the connection opened."""
+        st = self.r.spec_m
+        ns, w = st["ns"], st["w"]
+        jw = 1j * w
+        I, Yb = e["I"], e["Yb"]
+        yo = self._open(e)
+        lp = self._nominal(e, width)
+        if lp is None:
+            kap, Po = np.ones(len(w)), np.zeros(I.shape, complex)
+        else:
+            _, dZ = lp.impedance(w, e["ye"], Yb, e["YZrr"])
+            kap = 1.0 / (1.0 + Yb * dZ)
+            Po = np.einsum("m,fmp->fp", lp.rh, yo)
+        It = I - (Yb * jw)[:, None] * Po
+        A = np.zeros(I.shape, complex)
+        g_self = 0.0
+        for (k, j), g in st["G"].items():
+            kp = ns + k
+            A[:, j] += g * jw * kap * It[:, kp]
+            A[:, kp] += g * jw * kap * It[:, j]
+            g_self += float(np.real(np.sum(g * jw * kap * I[:, kp] * I[:, j])))
+        c = np.real(np.einsum("fp,fmp->m", A, yo))
+        eh = [float(np.real(np.sum(A * ih))) for _, ih in self.r.spec_hops]
+        return self._pseudo(c, None, g_self, eh, raw=True)
+
+    def _path_port(self, e, rt, width):
+        """kae.em.hopport's prediction for the routed path: the loop's stationary return, the compensation,
+        the raw flux of the opened patterns along the path (and of the hops routed since the refresh)."""
+        r, st = self.r, self.r.spec_m
+        ns, w = st["ns"], st["w"]
+        jw = 1j * w
+        I, Yb = e["I"], e["Yb"]
+        yo = self._open(e)
+        lp = self._loop(e, rt.segs, width)
+        if lp is None:
+            return 0.0
+        _, dZ = lp.impedance(w, e["ye"], Yb, e["YZrr"])
+        kap = 1.0 / (1.0 + Yb * dZ)
+        Po = np.einsum("m,fmp->fp", lp.rh, yo)
+        m = r.mesh
+        for h, (dF, ih) in enumerate(r.spec_hops):
+            v = sum(c * (dF[l][0] if o == "x" else dF[l][1])[j, i] for (l, o, j, i, c) in lp.bars if l in dF)
+            Po = Po + v * ih
+        tot = 0.0
+        pz = dict(r.spec_pred)
+        for (k, j) in st["pairs"]:
+            kp = ns + k
+            dZp = kap * (I[:, kp] * I[:, j] * dZ + jw * (I[:, kp] * Po[:, j] + I[:, j] * Po[:, kp])) \
+                - Yb * kap * (jw * Po[:, kp]) * (jw * Po[:, j])
+            pz[(k, j)] = pz.get((k, j), 0.0) + dZp
+            g = st["G"].get((k, j))
+            if g is not None:
+                tot += float(np.real(np.sum(g * dZp)))
+        r.spec_pred = pz
+        return tot
 
     # ------------------------------------------------------------------ predicted against actual
     def _compare(self, prev, st, H):

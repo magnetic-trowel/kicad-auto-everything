@@ -209,11 +209,20 @@ def main(argv=None):
             f_, c_ = path_integrals(bf, 0, cells_of(m, pts, off))
             fl, cr = fl + f_ / 2, cr + c_ / 2
         price[nm] = (fl, cr)
+        raw = np.zeros(model.V.shape[1])
+        for off in (-a.pitch / 2 + 1e-6, a.pitch / 2 - 1e-6):
+            c = cells_of(m, pts, off)
+            jj, ii = np.array([x[0] for x in c]), np.array([x[1] for x in c])
+            Rx, Ry = bf["Rx"][0][:, jj, ii], bf["Ry"][0][:, jj, ii]
+            raw += (0.5 * (Rx[:, :-1] + Rx[:, 1:]) * np.diff(ii) + 0.5 * (Ry[:, :-1] + Ry[:, 1:]) * np.diff(jj)).sum(1) / 2
+        price[nm + ":raw"] = raw
 
     def pred(nm, f):
         y = model.solve(f)[:, 0]          # the aggressor's coefficients; the hop carries 1 A of the victim's pattern
         fl, cr = price[nm]
         return 1j * 2 * np.pi * f * (fl @ y + cr[1] @ y) + cr[0] @ y
+    def raw(nm, f):                       # the exact first order: the hop's 1 A against the pre-state flux
+        return 1j * 2 * np.pi * f * (price[nm + ":raw"] @ model.solve(f)[:, 0])
     Zpre = direct(m, FREQS)
     Zp = {nm: direct(board(a.pitch, a.d, pts, a.slot), FREQS) for nm, pts in P.items()}
     w10 = 2 * np.pi * 1e7
@@ -235,6 +244,11 @@ def main(argv=None):
         print(f"{f / 1e6:9.3f} {abs(zs):11.3e} " + " ".join(f"{abs(x):7.3f} {np.angle(x, deg=True):+7.1f} deg" for x in r[:2])
               + f" | {abs(dd):12.3e} " + " ".join(f"{abs(x):7.3f} {np.angle(x, deg=True):+7.1f} deg" for x in r[2:])
               + f" {me:9.1e}", flush=True)
+    print("raw pre-state flux along the hop / exact change of Z_vs (dZ = Z with the hop - Z with the short):")
+    for k, f in enumerate(FREQS):
+        dz = {nm: Zp[nm][k][1, 0] - Zpre[k][1, 0] for nm in P}
+        print(f"{f / 1e6:9.3f} " + "  ".join(f"{nm} {abs(raw(nm, f) / dz[nm]):6.3f} {np.angle(raw(nm, f) / dz[nm], deg=True):+6.1f} deg"
+                                            for nm in P), flush=True)
     for lo in (1e6, 3e5):
         sel = [r for f, r in rows if f >= lo]
         wb = max(max(abs(x[0] - 1), abs(x[2] - 1)) for x in sel)
