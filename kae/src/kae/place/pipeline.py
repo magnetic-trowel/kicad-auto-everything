@@ -475,6 +475,17 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     if viol and time.monotonic() < deadline + 0.1 * budget:
         rep["legalize_final"] = legalize(P, st, time_s=max(3.0, 0.1 * budget), workers=workers, seed=seed, log=log)
         viol = grid_violations(st)
+    if not viol and float(os.environ.get("KAE_PLACE_UNTANGLE", "1") or 0) > 0:
+        # ratsnest crossings HPWL does not see: swaps of interchangeable parts and half turns
+        # that keep every rectangle (kae.place.crossings.untangle)
+        t = time.monotonic()
+        from .crossings import untangle
+        try:
+            rep["untangle"] = untangle(P, st, time_s=min(20.0, max(2.0, 0.1 * budget)), log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["untangle"] = dict(error=f"{type(e).__name__}: {e}")
+        viol = grid_violations(st)
+        stage("untangle", t)
     rep["legal_grid"] = not viol
     rep["margin_mm"] = P.margin
     t = time.monotonic()
