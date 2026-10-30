@@ -58,6 +58,12 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
+    plane_strict_share="odd",  # with planes "cost": inner layers whose one-net fill (refilled input) covers
+                             # at least this share of the board carry no traces at all (Freerouting power
+                             # layers); human boards leave 30 of 33 such layers at >= 0.8 free of signals.
+                             # "odd": 0.8 on odd seeds, none on even ones, so restarts try both and the DRC
+                             # picks (z280 needs it: ~94 open -> 3; heypcb kestrel, whose human routes
+                             # 1.6 m on its planes, is hurt by it: 28 -> 53 open); a number: every seed; 0: never
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -106,11 +112,18 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
-        if opts.get("plane_escapes") and any(z.get("net") for z in info.get("zones") or []):
-            from . import lastmile
+        zoned = any(z.get("net") for z in info.get("zones") or [])
+        share = strict_share(opts, seed)
+        if zoned and (opts.get("plane_escapes") or share):
             te = time.monotonic()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
-            fills = pcbnew_io.zone_fills(staged)["zones"]
+            fills = pcbnew_io.zone_fills(staged)["zones"]   # refilled with the board's rules
+        if zoned and share and opts.get("planes", "cost") == "cost":
+            fp_ = translate.fill_planes(info, fills)
+            opts["strict_planes"] = sorted(l for l, (n, a) in fp_.items() if a >= share)
+            report["plane_fill_shares"] = {l: [n, round(a, 3)] for l, (n, a) in fp_.items()}
+        if zoned and opts.get("plane_escapes"):
+            from . import lastmile
             esc = wd / "escapes" / "escaped.kicad_pcb"
             report["plane_escapes"] = {k: v for k, v in lastmile.plane_escapes(
                 staged, info, p, fills, esc, sev=sev, log=log,
@@ -123,6 +136,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
+        p.strict_planes = opts.get("strict_planes") or []
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
@@ -211,6 +225,14 @@ def router_budget(left_s, opts):
             reserve = float(opts.get("repair_reserve_s", 600.0))
             share = max(0.6, 1.0 - reserve / max(left_s, 1.0))
     return max(20.0, left_s * float(share))
+
+
+def strict_share(opts, seed):
+    """The attempt's plane_strict_share: "odd" is 0.8 on odd seeds and none on even ones."""
+    s = opts.get("plane_strict_share")
+    if s == "odd":
+        return 0.8 if seed % 2 else None
+    return float(s) if s else None
 
 
 def plane_policy(opts, free_round_with_open=False):
