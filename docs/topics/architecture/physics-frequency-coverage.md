@@ -177,7 +177,7 @@ plan.
 | R3 | Harms from the reduced model: waveform peaks, harmonics vs limit lines, low-frequency bands | boost ring frequency and overshoot against a direct transient of the full system at one corner |
 | R4 | Router prices weighted over the spectrum; basis recycling between refreshes | predicted vs actual dL per pair within the current 0.93–1.06 band |
 
-**R4: built; the gate holds on the check geometry, not yet on boost.**
+**R4: built. The gate holds on the check geometry, and on boost where a hop carries the pair's current.**
 
 What `kae.em.spectral` does:
 - Every refresh reduces the copper as it stands, with the whole circuit inside it.
@@ -218,17 +218,27 @@ Cost per refresh on boost, 0.25 mm, 8 threads
 | spectral, first (greedy build of 7 snapshots) | 1825 s |
 | spectral, recycled, frequencies one after another | 878 s |
 | spectral, recycled, 2 at once | 437 s |
+| spectral, recycled, 4 at once | did not run: SuperLU and OpenMP ran out of address space under the 40 GB `ulimit -v` |
 
 The greedy build's cost is mostly its error grid: 24 factorizations per step.
 
 Boost, `--verify`: each net is routed twice from one state, and the two candidates' difference is
-compared ([em_r4_trace](../../../tools/research/physics/em_r4_trace.py)).
-- Prediction per pair is poor: 0.01–0.2 of the actual change at the |dZ| peak, and ~0 for dL at
-  10 MHz, where the 10 MHz router's own log shows the same misses.
-- The changes peak at 73–86 MHz, near the board's resonance under its 95 MHz limit. Routing shifts
-  that resonance, and a first-order price does not see the shift.
-- Hops on rails that carry no pattern current still change every pair. They become new return
-  copper through the rail's capacitors, which is second order in the coupling.
+compared per pair ([em_r4_trace](../../../tools/research/physics/em_r4_trace.py)). The route took 8656 s
+for 7 nets, against 2635 s for the 10 MHz router.
+
+Where the hop carries the pair's pattern current, the change is first order and the prices hold:
+- On the switch node, Net-(D3-A), the cell's overshoot changed by +0.796 nH at 10 MHz. The
+  prediction was +0.797 (1.00); for supply:IC1 it was 0.96.
+- On the whole-spectrum harm u, the ratios are 0.73 (overshoot) and 1.15 (supply:IC1).
+- On the FB net, the feedback victim's ratio is 1.09.
+
+Where the hop carries none of it, the prediction is ~0, and the actual changes are 0.001–0.03 nH:
+- Rails with capacitors become new return copper, which is second order in the coupling.
+- Every pair's |dZ| peaks at 70–95 MHz, at the resonance under the board's 95 MHz limit, which
+  routing shifts.
+- One prediction was spurious: −0.71 nH on supply:U2 for a /VBAT route, against +0.03 actual. The
+  search sought it out.
+
 | R5 | P operator (EQS) and capacitive prices | microstrip C per length vs closed form; two-trace mutual C vs FastCap |
 | R6 | θ screen and quasi-TEM constraints for long nets | Z₀ vs closed form per layer of the stackup |
 | R7 | SPICE export of the reduced model; nonlinear sign-off | waveform vs the reduced model's own linear transient at small signal |
