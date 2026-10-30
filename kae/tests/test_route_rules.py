@@ -154,3 +154,12 @@ def test_ignored_clearance_floor_is_overridable(tmp_path):
     (tmp_path / "board.kicad_pro").write_text(json.dumps(pro))
     rb = C.rule_board(info, tmp_path / "board.kicad_pcb", dict(ignored_clearance_floor=0.08))
     assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.05              # the project wins
+
+
+def test_zero_length_edge_shapes_are_skipped():
+    from kae.route import constraints as C
+    info = dict(outline=[[(0, 0), (10, 0), (10, 10), (0, 10)]],
+                edges=[dict(kind="segment", layer="Edge.Cuts", pts=[(5, 5), (5, 5)]),
+                       dict(kind="segment", layer="Edge.Cuts", pts=[(2, 2), (3, 3)])])
+    cut, stray, board = C._edge_geoms(info)   # raised GEOSException on the zero-length segment
+    assert board is not None and len(stray) == 1

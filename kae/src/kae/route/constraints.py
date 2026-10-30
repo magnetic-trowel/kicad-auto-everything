@@ -564,8 +564,9 @@ def _edge_geoms(info):
     bnd = board.boundary if board is not None else None
     for e in info.get("edges") or []:
         g = _edge_line(e)
-        if g is None:
-            continue
+        if g is None or g.is_empty or g.length <= 1e-9:
+            continue  # zero-length edge shapes (gitberthe, keebio, neotron): nothing to keep out,
+                      # and shapely.segmentize raises on them
         w = e.get("width", 0.0) if e.get("layer") == "Margin" else 0.0
         if e.get("layer") == "Edge.Cuts" and bnd is not None:
             pts = shapely.get_coordinates(shapely.segmentize(g, 0.05))
