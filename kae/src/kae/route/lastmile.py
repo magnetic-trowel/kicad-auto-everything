@@ -515,3 +515,66 @@ def _commit(sp, rt):
         it.uuid = W.new_uuid()
         new.append(it)
     return new
+
+
+# ----------------------------------------------------------------------------- plane escapes
+ESCAPE_MARGINS = (0.5, 1.5, 3.0)   # mm windows for a pad's escape to its plane: short ones only
+
+
+def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=None, margins=ESCAPE_MARGINS):
+    """Join every pad of a plane net (a net with zone fill) that the fill does not reach to
+    that fill, before any routing: a short stub and, where the fill is on another layer, a
+    via (the human boards' "power first": a GND pin of a QFN gets its own via to the GND
+    plane next to it). `board` is the unrouted input with its project files beside it,
+    `fills` its refilled zones (pcbnew_io.zone_fills). Searches stay within `margins` of the
+    pad (no rip-up; what does not fit is left to the router). The new copper is written
+    locked to `out`. Returns {escaped, failed, nets: {net: [escaped, failed]}, added}."""
+    import time
+    b = load(board)
+    sp = Space(b, info, plan=plan, sev=sev or {})
+    gr = GridRouter(sp)
+    fp = _fill_polys(fills)
+    rep = dict(escaped=0, failed=0, nets={}, added=[])
+    for net in sorted(fp):
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        if not any(it.net == net and it.kind == "pad" for it in sp.pads):
+            continue
+        mn, opt, _mx = sp.width_limits(net, sp.cu[0])
+        widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
+        st = rep["nets"].setdefault(net, [0, 0])
+        ps = parts(sp, fp, net)
+        planes = [p for p in ps if any(n.kind == "fill" for n in p)]
+        if not planes:
+            continue
+        for p in ps:
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            if any(n.kind == "fill" for n in p) or not any(n.kind == "pad" for n in p):
+                continue
+            src = _anchors(p, max(widths) / 2 + 0.02)
+            if not src:
+                continue
+            got = None
+            for m in margins:
+                x0, y0, x1, y1 = _bounds(src)
+                win = box(x0 - m, y0 - m, x1 + m, y1 + m)
+                got = _try(gr, sp, net, src, planes, win, widths)
+                if got is not None:
+                    break
+            if got is None:
+                st[1] += 1
+                rep["failed"] += 1
+                continue
+            st[0] += 1
+            rep["escaped"] += 1
+    rep["added"] = [it.uuid for it in sp.routed]
+    tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
+               it.uuid, True) for it in sp.routed if it.kind == "track"]
+    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, True) for it in sp.routed if it.kind == "via"]
+    W.edit(board, out)
+    if tracks or vias:
+        W.append_items(out, out, tracks=tracks, vias=vias)
+    log(f"plane escapes: {rep['escaped']} escaped, {rep['failed']} left to the router "
+        f"({', '.join(f'{n} {a}/{a + f}' for n, (a, f) in rep['nets'].items() if a or f)})")
+    return rep
