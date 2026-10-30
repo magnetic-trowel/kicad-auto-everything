@@ -93,6 +93,17 @@ class Grid:
     def inside(self, i, j):
         return 0 <= i < self.nx and 0 <= j < self.ny
 
+    def aligned(self, x, y):
+        """The same window shifted by less than half a cell so that (x, y) is a cell centre,
+        or None when it already is one."""
+        dx = (x - self.x0) / self.res
+        dy = (y - self.y0) / self.res
+        dx, dy = (dx - round(dx)) * self.res, (dy - round(dy)) * self.res
+        if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+            return None
+        g = Grid(self.x0 + dx, self.y0 + dy, self.x1 + dx, self.y1 + dy, self.res)
+        return g
+
     def _span(self, bounds, r):
         gx0, gy0, gx1, gy1 = bounds
         res = self.res
@@ -304,6 +315,20 @@ def _seg_dist(X, Y, ax, ay, bx, by):
 
 
 # ----------------------------------------------------------------------------- results
+
+def _finest_centre(anchors, layers):
+    """The centre of the smallest anchor with one (a pad or via) on one of `layers`, or None."""
+    best = None
+    for a in anchors:
+        for l in layers:
+            if l in a.layers:
+                c = a.centre_on(l)
+                if c is not None:
+                    area = a.geom_on(l).area
+                    if best is None or area < best[0]:
+                        best = (area, tuple(c))
+    return None if best is None else best[1]
+
 
 def _margin(R, res):
     """Inflation beyond a requirement R that keeps the straight move between two free
@@ -551,10 +576,15 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None, avoid=()):
+                via_cost=None, skip=(), max_len=None, avoid=(), _aligned=False):
         """Route one track of `width` from any source anchor to any target anchor on the
         given layers (vias between them when `via`), keeping the track centre `r` away from
-        each (geometry, r, layer) in `avoid`. Returns a Route or None."""
+        each (geometry, r, layer) in `avoid`. Returns a Route or None. When the sources or
+        the targets have no free cell, the window is shifted (less than half a cell) so the
+        smallest pad's centre is a cell centre, and searched once more: a fine-pitch pin
+        leaves only a sliver between its neighbours' clearances, which a coarse grid misses
+        (siderakb ergo-snm: SCLK at U4's 0.4 mm-pitch pin 34 has 0.025 mm to spare each side
+        for a 0.15 mm track, the 0.078 mm grid of a 100 mm window found no cell in it)."""
         sp = self.sp
         self.stats["calls"] += 1
         grid = window or self.window(list(sources) + list(targets))
@@ -598,7 +628,12 @@ class GridRouter:
                         tb.append((r // grid.nx).max())
         self.stats["cells"] += int(nl * plane)
         if src.size == 0 or not dst.any():
-            return None
+            c = None if _aligned else _finest_centre(sources if src.size == 0 else targets, layers)
+            g2 = grid.aligned(*c) if c is not None else None
+            if g2 is None:
+                return None
+            return self.connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
+                                via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, _aligned=True)
         if dst[src].any():
             return Route(net=net, width=width, res=grid.res)     # already touching
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
