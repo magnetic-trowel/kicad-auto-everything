@@ -123,3 +123,17 @@ def test_diff_pair_helpers():
 def test_bad_conditions_raise(text):
     with pytest.raises(ValueError):
         R.compile_condition(text)
+
+
+def test_ignored_clearance_keeps_only_the_floor(tmp_path):
+    import json
+    from kae.route import constraints as C
+    (tmp_path / "board.kicad_pro").write_text(json.dumps(
+        {"board": {"design_settings": {"rule_severities": {"clearance": "ignore", "hole_clearance": "error"}}}}))
+    info = dict(copper=COPPER, settings=SETTINGS, netclasses=CLASSES, nets={"A": {}, "PWR": {}})
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    a, p = track("A"), track("PWR", nc="Power")
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.15   # board minimum (>= 0.1 floor), not Power's 0.3
+    assert R.strictest(rb, "hole_clearance", via("A"), a, "F.Cu").min == 0.25   # still checked
+    rb2 = C.rule_board(info, tmp_path / "other.kicad_pcb")              # no project: nothing ignored
+    assert R.strictest(rb2, "clearance", a, p, "F.Cu").min == 0.3

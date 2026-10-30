@@ -37,6 +37,7 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
 
 All lengths mm. Requirements are rounded up to 0.1 um (the DSN resolution).
 """
+import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -140,10 +141,34 @@ class Plan:
 
 
 # ----------------------------------------------------------------------------- helpers
+# clearance checks a board's project may turn off (rule_severities key -> constraint type)
+IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copper_edge_clearance": "edge_clearance"}
+IGNORED_FLOOR = 0.1   # mm: what an unchecked clearance still gets (or the board's own minimum, if larger)
+
+
+def board_severities(board_path):
+    """DRC rule severities from the board's project file (as KiCad's DRC reads them)."""
+    pro = Path(board_path).with_suffix(".kicad_pro")
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+        return ((d.get("board") or {}).get("design_settings") or {}).get("rule_severities") or {}
+    except (OSError, ValueError):
+        return {}
+
+
 def rule_board(info, board_path):
     dru = Path(board_path).with_suffix(".kicad_dru")
-    return R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
-                   str(dru) if dru.exists() else None)
+    rb = R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
+                 str(dru) if dru.exists() else None)
+    # kelu124 pic0rick: clearance "ignore", GND in a 0.5 mm class beside 0.5 mm-pitch pins; the
+    # human's tracks pass 0.245 mm from GND pads and DRC passes, ours walled the IC in (45 open)
+    sev = board_severities(board_path)
+    s = info["settings"]
+    mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
+            "edge_clearance": s.get("edge_clearance", 0.0)}
+    rb.ignored = {ct: max(IGNORED_FLOOR, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
+                  if _severity_ignored(sev, key)}
+    return rb
 
 
 def _strict_min(rb, ctype, a, b, layer):
