@@ -169,19 +169,26 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
     if not net or cls is None or need <= 0:
         return []
     w = plan.classes[cls].widths.get(layer)
-    pieces = [g for i, g in enumerate(_poly(r) for r in (zone.get("layers") or {}).get(layer) or [])
-              if g is not None and (zone.get("uuid"), layer, i) not in skip]
-    if not w or not pieces:
-        return []
-    core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
     _, real = _pad_shapes(pad)
     cop = real.get(layer)
-    if core.is_empty or cop is None or cop.is_empty:
+    if not w or cop is None or cop.is_empty:
         return []
     start = Point(pad["pos"])
     if not cop.contains(start):
         start = cop.representative_point()
     reach = math.sqrt(cop.area) + (pad.get("thermal_gap") or 0.5) + 2.0
+    # only the fill near the pad counts: a ray reaches `reach` from it, and the fill clipped to a
+    # box `w` + 1 mm wider shrinks the same inside the ray's range (a board-wide pour shrunk whole
+    # for every starved pad took 4 of 5 minutes of a repair round on bastardkb dilemma)
+    m = reach + w + 1.0
+    win = shapely.box(start.x - m, start.y - m, start.x + m, start.y + m)
+    pieces = [g.intersection(win) for i, g in enumerate(_poly(r) for r in (zone.get("layers") or {}).get(layer) or [])
+              if g is not None and (zone.get("uuid"), layer, i) not in skip and g.intersects(win)]
+    if not pieces:
+        return []
+    core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
+    if core.is_empty:
+        return []
     base = pad.get("spoke_angle") or 0.0
     cands, seen = [], set()
     for ang in [base + 90 * k for k in range(4)] + [base + 15 * k for k in range(24)]:
