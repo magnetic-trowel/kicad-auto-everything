@@ -861,11 +861,17 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             rounds.append(dict(round="lm0", level="rip errors", **cur_sum))
             log(f"last mile 0: router copper of {best['errors']} errors taken out: {cur_sum['errors']} errors, "
                 f"{cur_sum['unconnected']} unconnected")
-    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
+    # the first round joins only around everything (no rip-up): those joins cost nothing, and a
+    # rip-up round whose ripped nets get no reroute in the time left ends worse than it began
+    # (siderakb ergo-snm: 16 open; with rip-up 26 joins, 29 ripped, 18 open and discarded, where
+    # the free joins alone gave 10)
+    free_first = bool(opts.get("last_mile_free_first", True))
+    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1 + free_first):
+        rip = not (free_first and j == 1)
         if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or cur_sum["unconnected"] > last_mile_cap(left())
                 or left() < LAST_MILE_MIN_S):
             break
-        rec = dict(round=f"lm{j}", level="last_mile")
+        rec = dict(round=f"lm{j}", level="last_mile" if rip else "last_mile free")
         rounds.append(rec)
         ldir = wd / f"lastmile{j}"
         if ldir.exists():
@@ -876,7 +882,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             fills = pcbnew_io.zone_fills(staged)["zones"]
             cand = ldir / "cand.kicad_pcb"
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
-                               fixed=fixed, log=log, soft=soft)
+                               fixed=fixed, log=log, soft=soft, rip=rip)
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break
@@ -885,6 +891,8 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         soft -= set(r["ripped"])
         if not r["joined"]:
             rec["stopped"] = "nothing joined"
+            if not rip:
+                continue    # the rip-up rounds work on the same board
             break
         fixed |= set(r["added"])
         if r["ripped"] and left() > 60:

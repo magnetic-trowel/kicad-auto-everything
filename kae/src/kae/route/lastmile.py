@@ -261,7 +261,7 @@ def _conflicts(sp, it, new):
     return True
 
 
-def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
+def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=(), rip=True):
     """One route from `src` to the other parts: (route, new items, ripped items) or None.
     `hist` {net: times ripped} prices a net's copper RIP_COST * (1 + HIST_WEIGHT * times)
     per cell (PathFinder's history cost) and leaves it alone after HIST_MAX rip-ups. `soft`:
@@ -274,6 +274,8 @@ def _join(gr, sp, net, src, others, widths, fixed, hist=None, soft=()):
         got = _try(gr, sp, net, src, others, win, widths)
         if got is not None:
             return got[0], got[1], []
+    if not rip:
+        return None
     tiers = [(m, False) for m in RIP_MARGINS] + ([(m, True) for m in RIP_MARGINS] if soft else [])
     for m, with_soft in tiers:
         win = _window(src, others, m)
@@ -334,14 +336,15 @@ def open_nets(report):
     return sorted(out)
 
 
-def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=()):
+def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=(), rip=True):
     """Join the parts of the open nets of `board` (`nets`, default every net with more
     than one part; see the module docstring) and write the result to `out`, the new copper
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
     ["zones"] (refilled with those rules); `fixed`: uuids never ripped (pre-routes); `soft`:
     locked uuids a last rip-up tier may take out (critical copper; the caller judges the
-    physics). Returns {joined, failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net],
-    added: [uuid], nets: {net: status}}."""
+    physics); `rip` False: joins around everything only, nothing is ripped. Returns {joined,
+    failed, ripped: [uuid], ripped_soft: [uuid], rerouted: [net], added: [uuid], nets: {net:
+    status}}."""
     soft = set(soft or ())
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -378,13 +381,13 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             if not src:
                 status.append("no anchors")
                 break
-            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft)
+            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, rip)
             if got is None and not sp.via_in_pad:
                 # a pad walled in by its own footprint (a microphone's centre pad inside its
                 # ring) is left only through a via in the pad, as the human boards do it
                 sp.via_in_pad = True
                 try:
-                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft)
+                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, rip)
                 finally:
                     sp.via_in_pad = False
                 if got is not None:
