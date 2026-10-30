@@ -56,6 +56,9 @@ DEFAULT_OPTS = dict(
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
     neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
+    plane_escapes=False,     # before routing, join each pad of a zone net that the input's fill does not
+                             # reach to that fill with a short stub and via (lastmile.plane_escapes),
+                             # locked: the plane connections the human boards make first
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -104,6 +107,21 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
+        if opts.get("plane_escapes") and any(z.get("net") for z in info.get("zones") or []):
+            from . import lastmile
+            te = time.monotonic()
+            staged = drc.stage_board(input_path, input_path, wd / "escapes")
+            fills = pcbnew_io.zone_fills(staged)["zones"]
+            esc = wd / "escapes" / "escaped.kicad_pcb"
+            report["plane_escapes"] = {k: v for k, v in lastmile.plane_escapes(
+                staged, info, p, fills, esc, sev=sev, log=log,
+                deadline=time.monotonic() + max(10.0, 0.1 * left())).items() if k != "added"}
+            if report["plane_escapes"]["escaped"]:
+                esc_in = drc.stage_board(esc, input_path, wd / "escaped")
+                input_path = esc_in
+                info = pcbnew_io.export_dsn(input_path, kdsn)
+                p = constraints.plan(info, input_path, opts)
+            report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
