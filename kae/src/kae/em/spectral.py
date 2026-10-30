@@ -381,7 +381,8 @@ class Spectral:
         lo = net.off["l"]
         Dc = sy.D[:lo]                                     # the copper's branches (bars, vias), not the parts
         G = (Dc.T @ Dc).tocsc() + 1e-9 * sp.identity(sy.nfree, format="csc")
-        LV = np.concatenate([op.L_apply(VI[:, k:k + ES.BATCH].astype(complex)).real for k in range(0, mm, ES.BATCH)], 1)
+        LV = model.LV if getattr(model, "LV", None) is not None and model.LV.shape[1] == mm else \
+            np.concatenate([op.L_apply(VI[:, k:k + ES.BATCH].astype(complex)).real for k in range(0, mm, ES.BATCH)], 1)
         lu = spla.splu(G)
         phR = lu.solve(np.ascontiguousarray(Dc.T @ (net.R[:lo, None] * VI[:lo])))
         phL = lu.solve(np.ascontiguousarray(Dc.T @ (LV[:lo] + net.Lc[:lo, None] * VI[:lo])))
