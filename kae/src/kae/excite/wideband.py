@@ -233,6 +233,24 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     if any(us):
         U[("radiated:loop", "all")] = us
     log(f"wideband: harmonic sums over {ncp} corners in {time.time() - t1:.1f}s")
+    # the commutation's voltage edge: the linear model drives a cell by its current (the rectifier
+    # conducting), so its switch node moves by the hot loop's ring, not by the swing V in t_v that a real
+    # commutation makes; that swing through each victim's mutual capacitance (kae.em.cprice: the router's
+    # own model, v = C_m (V / t_v) R (1 - exp(-t_v / (R C_node)))) adds to the victim's peak at every corner
+    edge_rows = 0
+    if capacitive:
+        from kae.em.cprice import CapPrices
+        cval = {s.name: [{k[1]: v for k, v in cps[s.name][c].items()} for c in range(ncp)] for s in srcs}
+        cpx = CapPrices(bd, brief, srcs, [o for o in obs if o.kind == "victim"], cval, log=lambda *a: None)
+        F = cpx.solve(bm, b)
+        for (oname, a, n), us in (F.u.items() if F is not None else ()):
+            sname = cpx._pair(oname, a)["src"]
+            cur = U.setdefault((oname, sname), [0.0] * ncp)
+            for c in range(ncp):
+                cur[c] += float(us[c])
+            edge_rows += 1
+        if edge_rows:
+            log(f"wideband: voltage-edge pickup on {edge_rows} victim pairs: {cpx.report(F)}")
     harms = []
     for (oname, sname), us in U.items():
         for c in range(ncp):
