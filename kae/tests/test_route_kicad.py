@@ -164,6 +164,46 @@ def test_mask_openings_keep_other_copper_out(exported):
     assert not [o for o in p2.obstacles if o.why.startswith("mask opening")]
 
 
+def test_mask_openings_over_pads(exported):
+    """An opening that exposes a netted pad stays a keepout beyond the room the pad's net needs
+    (a hole as large as the pad's clearance); one that shuts the pad in raises the pad's
+    clearance over its share of the opening instead; no-net copper does not count."""
+    import copy
+    from shapely.geometry import box
+    board, info, _ = exported
+    info = copy.deepcopy(info)
+    pads = [pd for pd in info["pads"] if "F.Cu" in pd["layers"] and pd.get("net") and pd.get("pin")]
+    pad = pads[0]
+    g = constraints._pad_shapes(pad)[1]["F.Cu"]
+    x0, y0, x1, y1 = g.bounds
+    ring = lambda b: [[list(c) for c in b.exterior.coords]]
+    # a strip from the pad's left edge 3 mm out: a keepout minus the hole round the pad
+    strip = box(x0 - 3, (y0 + y1) / 2 - 0.1, (x0 + x1) / 2, (y0 + y1) / 2 + 0.1)
+    info["mask_openings"] = [dict(layer="F.Mask", owner="", cls="PCB_SHAPE", polys=[ring(strip)])]
+    p0 = constraints.plan(info, board)
+    base_cls = p0.pin_class[(pad["comp"], pad["pin"])]
+    ko = [o for o in p0.obstacles if o.why.startswith("mask opening")]
+    assert len(ko) == 1 and ko[0].layer == "F.Cu" and not ko[0].geom.intersects(g)
+    assert ko[0].geom.area < strip.area and ko[0].geom.bounds[0] == pytest.approx(x0 - 3)
+    # a box 1 mm round the pad on every side: shut in, so no keepout near it, a wider clearance
+    big = g.buffer(1.0).envelope
+    others = [pd for pd in info["pads"] if pd is not pad
+              and any(h is not None and h.intersects(big.buffer(0.5)) for h in constraints._pad_shapes(pd)[1].values())]
+    if not others:
+        info["mask_openings"] = [dict(layer="F.Mask", owner="", cls="PCB_SHAPE", polys=[ring(big)])]
+        p1 = constraints.plan(info, board)
+        assert not [o for o in p1.obstacles if o.why.startswith("mask opening")]
+        c0 = p0.obstacle_classes[base_cls].values
+        c1 = p1.obstacle_classes[p1.pin_class[(pad["comp"], pad["pin"])]].values
+        assert all(c1[k][0] >= 1.0 > c0[k][0] for k in c1 if k[1] == "F.Cu")
+    # the same strip over a pad with no net: a keepout of the whole strip
+    info["pads"] = [dict(pd, net="") if pd is pad else pd for pd in info["pads"]]
+    info["mask_openings"] = [dict(layer="F.Mask", owner="", cls="PCB_SHAPE", polys=[ring(strip)])]
+    p2 = constraints.plan(info, board)
+    ko = [o for o in p2.obstacles if o.why.startswith("mask opening")]
+    assert len(ko) == 1 and ko[0].geom.equals(strip)
+
+
 def test_effective_rules_are_the_plans(exported):
     board, info, _ = exported
     p = constraints.plan(info, board)
