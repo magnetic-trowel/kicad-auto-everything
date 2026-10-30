@@ -585,7 +585,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                    rip_nets=sorted(a["nets"]), connect=sorted(a["connect"]), open=sorted(a["open"]),
                    thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
         if mode == "items":
-            rip = set(a["items"])
+            rip = _with_via_tracks(output_path, set(a["items"]), routed)
         else:
             rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
         fixed_board = drc.stage_board(output_path, input_path, rdir / "fixed")
@@ -695,6 +695,26 @@ RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_cl
                    "items_not_allowed")
 
 
+def _with_via_tracks(board, rip, routed):
+    """`rip` plus the router tracks that end on a via in it (same net): a via ripped alone left
+    two tracks on different layers with no via between them, an open the next rounds kept
+    (heypcb kestrel: 6 of 17 open connections)."""
+    from kae.board.kicad_file import load
+    model = load(board)
+    vias = [v for v in model.vias if v.uuid in rip]
+    if not vias:
+        return set(rip)
+    out = set(rip)
+    for t in model.tracks:
+        if t.uuid in out or t.uuid not in routed:
+            continue
+        for v in vias:
+            if t.net == v.net and any(math.dist(e, (v.x, v.y)) <= v.size / 2 + 1e-3 for e in (t.start, t.end)):
+                out.add(t.uuid)
+                break
+    return out
+
+
 def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None, base=None):
     """(board, report, summary) with the unlocked routing that every error-level violation
     of `report` names taken out (each error must name some; other errors stay as they are),
@@ -735,6 +755,7 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None,
         rip |= ours
     if not rip:
         return None
+    rip = _with_via_tracks(board, rip, routed)
     if Path(d).exists():
         shutil.rmtree(d)
     Path(d).mkdir(parents=True)
