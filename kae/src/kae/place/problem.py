@@ -221,15 +221,12 @@ def draws_outline(fp, board, tol=0.05):
     outs = [p for p in (board.outline or []) if p.area > 0]
     if not fp.edge_cuts or not outs or not fp.on_board:
         return False
-    from shapely.affinity import rotate as _rot, translate as _tr, scale as _sc
+    from shapely.ops import transform as _map
+    from kae.board import transform
     ext = shapely.union_all([p.exterior for p in outs]).buffer(tol)
     total = on = 0.0
     for ln in fp.edge_cuts:
-        g = ln
-        if fp.side == "B":
-            g = _sc(g, xfact=1.0, yfact=-1.0, origin=(0, 0))   # transform.to_board: ly -> -ly
-        g = _rot(g, -fp.rot, origin=(0, 0))          # KiCad: y down, counter-clockwise on screen
-        g = _tr(g, fp.x, fp.y)
+        g = _map(lambda lx, ly: transform.to_board(lx, ly, fp.x, fp.y, fp.rot, fp.side), ln)
         total += g.length
         on += g.intersection(ext).length
     return total > 0 and on >= 0.5 * total
