@@ -111,7 +111,14 @@ def frame(c, cfg, sampler, args, width):
     L.append(f"RAM  {bar((total - avail) / total, bw)} {gb(total - avail)}/{gb(total)} used: queue jobs {gb(ours_rss)} now, "
              f"{gb(unreal)} more set aside for their peaks | {gb(avail)} free, {gb(rmem)} kept free")
     pooled_now = bsys.get("pooled_owners") or []
-    if pooled_now:
+    if bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
+        L.append(f"     measured: running jobs together grew at most {gb(bsys['mem_rise'])} in any hour of the last "
+                 f"{dur(bsys.get('mem_hist_s', 0))}; set aside {gb(unreal)} (that x {cfg['mem_rise_margin']}, at least the "
+                 f"biggest single job's {gb(bsys.get('mem_single', 0))}, + {gb(bsys.get('mem_warm', 0))} for jobs warming up)"
+                 f" instead of {gb(upeak)} if every job peaked at once")
+    elif bsys.get("mem_mode"):
+        L.append(f"     mode: {bsys['mem_mode']}, {dur(bsys.get('mem_hist_s', 0))} of history so far")
+    if pooled_now and str(bsys.get("mem_mode", "pooled")).startswith("pooled"):
         rho = bsys.get("pool_rho") or {}
         L.append(f"     pooled: set aside {gb(unreal)} instead of {gb(upeak)} (every job at its peak at once), saving "
                  f"{gb(max(0, upeak - unreal))}; owners marked *, measured correlation: "
@@ -126,13 +133,20 @@ def frame(c, cfg, sampler, args, width):
     per_owner = {}
     for j in running:
         per_owner[j["owner"]] = per_owner.get(j["owner"], 0) + 1
+    ratio = bsys.get("mem_ratio") or {}
+
+    def need(j):  # as the daemon: --mem scaled by the owner's learned peak/--mem
+        q = ratio.get(j["owner"])
+        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
+
     if queued:
         queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
         h = queued[0]
         cpu_room = threads - rcpu - others - bsys.get("cpu_commit", ours_cpu)
         why = []
-        if h["mem_mb"] > room:
-            why.append(f"needs {gb(h['mem_mb'])} RAM, {gb(max(0, room))} free for jobs")
+        if need(h) > room:
+            asked = f" (asked {gb(h['mem_mb'])}, its owner's jobs use less)" if need(h) < h["mem_mb"] else ""
+            why.append(f"needs {gb(need(h))} RAM{asked}, {gb(max(0, room))} free for jobs")
         if h["cpus"] > cpu_room:
             why.append(f"needs {h['cpus']:g} CPUs, {max(0, cpu_room):.0f} free")
         starving = now - h["submitted"] > cfg["starve_after_s"]
@@ -158,7 +172,7 @@ def frame(c, cfg, sampler, args, width):
     for j in running:
         rss = use.get(j["id"], (0.0, None))[0]
         peak = max(j["peak_mb"] or 0, rss)
-        expect = j["mem_mb"] if now - (j["started"] or now) < cfg["warmup_s"] else peak * cfg["peak_margin"]
+        expect = need(j) if now - (j["started"] or now) < cfg["warmup_s"] else peak * cfg["peak_margin"]
         aside[j["owner"]] = aside.get(j["owner"], 0.0) + max(0.0, expect - rss)
     owners = [o for o, s in rows.items()
               if args.all or s.get("queued") or s.get("running") or rate.get(o, {}).get(3)]

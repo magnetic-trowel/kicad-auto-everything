@@ -276,3 +276,26 @@ def test_owner_correlation_is_measured_from_concurrent_jobs(kq):
     assert kq.owner_correlation([[5.0] * 90] * 3, 0.5) == (0.5, 0)  # flat jobs: no evidence, the prior
     jobs = [("lm", 2000.0, 400.0, [1 / kq.MEM_BINS] * kq.MEM_BINS)] * 9
     assert kq.pooled_headroom(jobs, 3, 0.5, {"lm": 0.0})[0] < kq.pooled_headroom(jobs, 3, 0.5)[0]
+
+
+def test_admission_learns_what_an_owners_jobs_really_use(kq):
+    d = kq.Daemon()
+    old = time.time() - 3600
+    for i in range(25):  # history: owner "x" declares 10G and peaks at 1-2G
+        d.c.execute("INSERT INTO jobs (owner,cmd,cpus,mem_mb,timeout_s,prio,state,attempt,retries_left,preempts,"
+                    "submitted,started,finished,not_before,disk_mb,peak_mb) VALUES ('x','x',1,10240,60,0,'ok',1,0,0,?,?,?,0,1,?)",
+                    (old, old, old + 10, 1024 + 40 * i))
+    submit(kq, "true", owner="x", mem="10G")  # ratios are learned for owners with work queued
+    cfg = kq.config()
+    d.learn_ratios(cfg, time.time())
+    need = d.need_mb({"owner": "x", "mem_mb": 10240}, cfg)
+    assert 1900 < need < 2600  # p95 of peak/--mem (~0.19) x 1.2 margin, not the declared 10G
+    assert d.need_mb({"owner": "new", "mem_mb": 10240}, cfg) == 10240  # no history: what it asked for
+
+
+def test_max_rise_finds_the_largest_growth_within_a_window(kq):
+    s = [(0, 0.0), (10, 5.0), (20, 2.0), (30, 9.0), (40, 1.0), (50, 4.0), (60, 20.0)]
+    assert kq.max_rise(s, 100) == 20.0  # 0 at t=0 -> 20 at t=60
+    assert kq.max_rise(s, 20) == 19.0   # 1 at t=40 -> 20 at t=60
+    assert kq.max_rise(s, 10) == 16.0   # 4 -> 20
+    assert kq.max_rise([(0, 5.0), (10, 3.0)], 60) == 0.0  # shrinking is no rise

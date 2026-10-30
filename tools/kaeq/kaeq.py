@@ -81,11 +81,24 @@ DEFAULTS = {
     # memory set aside for running jobs' peaks: "peak" = the sum of every job's peak (as if all peak at once);
     # "pooled" = statistical: jobs rarely peak together, so set aside mean + mem_pool_z std of their combined
     # growth, from how jobs of the same owner spent their lifetime (memory histograms of finished jobs)
-    "mem_pool": "pooled",
-    "mem_pool_z": 3.0,       # std deviations of headroom (3: ~0.1% of moments short if independent)
+    "mem_pool": "measured",
+    # "measured": set aside what the running jobs together have actually grown by: the largest rise of their
+    # summed RSS within any mem_rise_window_s over the last mem_rise_history_s (new starts and finishes excluded),
+    # x mem_rise_margin; at least the largest single job's headroom; plus warming-up jobs' needs. Falls back to
+    # "pooled" until mem_rise_window_s of history exists
+    "mem_rise_window_s": 3600,
+    "mem_rise_history_s": 86400,
+    "mem_rise_margin": 1.25,
+    "mem_pool_z": 2.0,       # std deviations of headroom (2: ~2% of moments short if independent; the backstop
+                             # preempts the newest job if free RAM really runs low)
+    "mem_pool_margin": 1.1,  # pooled jobs may reach their observed peak x this (others: peak_margin)
     "mem_pool_rho": 0.5,     # prior correlation between jobs of one owner (0 = independent, 1 = in lockstep); the
                              # daemon measures it from concurrent jobs' RSS and uses the prior only as 2 pseudo-pairs
-    "mem_pool_min_jobs": 5,  # finished jobs with a histogram an owner needs before its jobs are pooled
+    "mem_pool_min_jobs": 3,  # finished jobs with a histogram an owner needs before its jobs are pooled
+    # admission and warm-up on what jobs really use: once an owner has mem_learn_min_jobs finished jobs, a new job
+    # of it needs its --mem x (p95 of the owner's peak/--mem) x mem_learn_margin, never more than --mem
+    "mem_learn_min_jobs": 20,
+    "mem_learn_margin": 1.2,
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
@@ -414,6 +427,20 @@ def pooled_headroom(jobs, z, rho, rho_of=None):
     return min(worst, full + pooled), worst
 
 
+def max_rise(series, window):
+    """Largest G[j] - G[i] with i <= j and t_j - t_i <= window, over [(t, G)] sorted by t (a sliding minimum)."""
+    from collections import deque
+    best, q = 0.0, deque()  # indexes of increasing G within the window
+    for j, (t, g) in enumerate(series):
+        while q and series[q[0]][0] < t - window:
+            q.popleft()
+        while q and series[q[-1]][1] >= g:
+            q.pop()
+        q.append(j)
+        best = max(best, g - series[q[0]][1])
+    return best
+
+
 def pearson(a, b):
     n = len(a)
     ma, mb = sum(a) / n, sum(b) / n
@@ -443,6 +470,17 @@ def owner_correlation(series, prior, window=90, min_samples=30):
             if r is not None:
                 rs.append(max(0.0, r))
     return (sum(rs) + 2 * prior) / (len(rs) + 2), len(rs)
+
+
+RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
+
+
+def load_rise_hist():
+    try:
+        with open(RISE_HIST) as f:
+            return [tuple(x) for x in json.load(f)]
+    except (OSError, ValueError, TypeError):
+        return []
 
 
 def job_usage(j, sessions, per_pid, cgroups):
@@ -563,6 +601,13 @@ class Daemon:
         self.trace = {}          # job id -> RSS samples (every ~10 s) for its memory histogram
         self.profiles, self.profiles_ts = {}, 0.0
         self.rho, self.rho_ts = {}, 0.0  # owner -> (measured correlation, pairs)
+        self.ratios, self.ratios_ts = {}, 0.0  # owner -> p95 of peak / --mem
+        self.organic = 0.0       # cumulative growth of running jobs' RSS (starts and finishes excluded)
+        self.last_rss = {}
+        self.rise_hist = load_rise_hist()  # [(t, organic)] every ~10 s
+        if self.rise_hist:
+            self.organic = self.rise_hist[-1][1]
+        self.rise, self.rise_ts = None, 0.0
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -630,6 +675,7 @@ class Daemon:
         for jid in set(self.trace) - {j["id"] for j in running}:
             del self.trace[jid]
         profiles = self.owner_profiles(cfg, now, running)
+        self.learn_ratios(cfg, now)
         if now - self.rho_ts >= 60:
             by = {}
             for j in running:
@@ -637,18 +683,42 @@ class Daemon:
                     by.setdefault(j["owner"], []).append(self.trace[j["id"]][1])
             self.rho = {o: owner_correlation(v, cfg["mem_pool_rho"]) for o, v in by.items() if o in profiles}
             self.rho_ts = now
-        grow = []
+        # organic growth: RSS change of jobs running both last tick and now
+        cur = {j["id"]: usage[j["id"]][0] for j in running if j["id"] in usage}
+        self.organic += sum(r - self.last_rss[i] for i, r in cur.items() if i in self.last_rss)
+        self.last_rss = cur
+        if not self.rise_hist or now - self.rise_hist[-1][0] >= 10:
+            self.rise_hist.append((now, self.organic))
+            cut = now - cfg["mem_rise_history_s"]
+            while self.rise_hist and self.rise_hist[0][0] < cut:
+                self.rise_hist.pop(0)
+        if now - self.rise_ts >= 60:
+            span = self.rise_hist[-1][0] - self.rise_hist[0][0] if self.rise_hist else 0
+            self.rise = max_rise(self.rise_hist, cfg["mem_rise_window_s"]) if span >= cfg["mem_rise_window_s"] else None
+            self.rise_ts = now
+        grow, warm_need, single = [], 0.0, 0.0
         for j in running:
             # what a job may still grow into: its declared --mem while it warms up, then its observed peak
             # with a margin (a later phase may need more than the first); free memory is measured, not declared
             rss = usage.get(j["id"], (0.0, 0))[0]
             peak = max(j["peak_mb"] or 0, rss)
             warm = now - (j["started"] or now) < cfg["warmup_s"]
-            expect = j["mem_mb"] if warm else peak * cfg["peak_margin"]
-            grow.append((j["owner"], expect, rss, None if warm else profiles.get(j["owner"])))
+            prof = None if warm else profiles.get(j["owner"])
+            expect = (self.need_mb(j, cfg) if warm else
+                      peak * (cfg["mem_pool_margin"] if prof and cfg["mem_pool"] == "pooled" else cfg["peak_margin"]))
+            grow.append((j["owner"], expect, rss, prof))
+            if warm:
+                warm_need += max(0.0, expect - rss)
+            else:
+                single = max(single, expect - rss)
         unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"],
                                                       {o: r for o, (r, _) in self.rho.items()})
-        if cfg["mem_pool"] != "pooled":
+        mode = cfg["mem_pool"]
+        if mode == "measured" and self.rise is not None:
+            unrealized = min(unrealized_peak, warm_need + max(single, self.rise * cfg["mem_rise_margin"]))
+        elif mode == "measured":
+            mode = "pooled (measuring: under 1 h of history)"
+        elif mode != "pooled":
             unrealized = unrealized_peak
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))
@@ -663,6 +733,9 @@ class Daemon:
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
                         unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
                         pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
+                        mem_ratio={o: round(q, 3) for o, q in self.ratios.items()},
+                        mem_mode=mode, mem_rise=self.rise, mem_single=single, mem_warm=warm_need,
+                        mem_hist_s=(self.rise_hist[-1][0] - self.rise_hist[0][0]) if self.rise_hist else 0,
                         reserve_cpu=cfg["reserve_cpu"], reserve_mem=reserve, running=len(running),
                         pinned=len(pinned) if pinned else None, disk=self.disk_total, disk_cap=cap,
                         disk_unrealized=disk_unrealized)
@@ -689,6 +762,12 @@ class Daemon:
                 backup_db(c)
             except (OSError, sqlite3.Error):
                 pass
+            try:  # the measured growth history survives daemon restarts
+                with open(RISE_HIST + ".tmp", "w") as f:
+                    json.dump(self.rise_hist, f)
+                os.replace(RISE_HIST + ".tmp", RISE_HIST)
+            except OSError:
+                pass
             self.last_backup = now
         tmp = f"{BEAT}.tmp{os.getpid()}"
         with open(tmp, "w") as f:
@@ -713,7 +792,7 @@ class Daemon:
         short = None
         while queued and started < cfg["starts_per_tick"] and n_running < cfg["max_running"]:
             queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
-            fits = lambda j: (j["mem_mb"] <= mem_room and j["disk_mb"] <= disk_room
+            fits = lambda j: (self.need_mb(j, cfg) <= mem_room and j["disk_mb"] <= disk_room
                               and (j["cpus"] <= cpu_room or n_running == 0))
             fit = next((j for j in queued if fits(j)), None)
             head = queued[0]
@@ -726,7 +805,7 @@ class Daemon:
                 break
             queued.remove(fit)
             if self.start(fit, cfg):
-                mem_room -= fit["mem_mb"]
+                mem_room -= self.need_mb(fit, cfg)
                 cpu_room -= fit["cpus"]
                 disk_room -= fit["disk_mb"]
                 n_running += 1
@@ -873,6 +952,25 @@ class Daemon:
                           (new, f"killed at {fgb(rss)} > declared {fgb(j['mem_mb'])}; auto-requeued with --mem {fgb(new)}", j["id"]))
             else:
                 self.finish_fail(j, "oom", f"RSS {fgb(rss)} exceeded declared {fgb(j['mem_mb'])}; resubmit with --mem {fgb(new)}", peak)
+
+    def learn_ratios(self, cfg, now):
+        """{owner: p95 of peak/--mem over its last 100 finished jobs} for owners with enough of them
+        (refreshed every 5 minutes)."""
+        if now - self.ratios_ts < 300:
+            return
+        out = {}
+        for (o,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state IN ('queued','running')").fetchall():
+            r = sorted(p / m for m, p in self.c.execute(
+                "SELECT mem_mb, peak_mb FROM jobs WHERE owner=? AND state='ok' AND peak_mb>0 AND mem_mb>0 "
+                "ORDER BY finished DESC LIMIT 100", (o,)))
+            if len(r) >= cfg["mem_learn_min_jobs"]:
+                out[o] = r[int(0.95 * (len(r) - 1))]
+        self.ratios, self.ratios_ts = out, now
+
+    def need_mb(self, j, cfg):
+        """Memory a job is expected to need: --mem, scaled by its owner's learned peak/--mem."""
+        q = self.ratios.get(j["owner"])
+        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
 
     def owner_profiles(self, cfg, now, running):
         """{owner: MEM_BINS weights}: the average memory histogram of an owner's last 50 finished
