@@ -226,7 +226,42 @@ def test_excess_counts_only_errors_beyond_the_input():
     assert drc.excess(dict(by_type={}), base) == 0
 
 
-def test_last_mile_cap_grows_with_time():
+def test_last_mile_cap_is_off_by_default():
     from kae.route import repair
-    assert repair.last_mile_cap(30) == repair.LAST_MILE_MAX
-    assert repair.last_mile_cap(600) == 300
+    assert repair.last_mile_cap(30) == float("inf")              # no bound by default
+    rate = dict(last_mile_max_open="rate")
+    assert repair.last_mile_cap(30, rate) == repair.LAST_MILE_MAX
+    assert repair.last_mile_cap(600, rate) == 300
+    assert repair.last_mile_cap(600, dict(last_mile_max_open=50)) == 50
+
+
+def test_pass_summary_reads_freeroutings_passes():
+    from kae.route import freerouting as FR
+    line = ("2026-10-30 07:45:06.795 INFO   [CD0879\\F8CA9F] Auto-routing pass #{} on board 'b{}' was completed in "
+            "32.41 seconds with score 626.26 ({} unrouted and 0 violations), using 27.96 CPU seconds.\n")
+    flat = "".join(line.format(k, k, u) for k, u in enumerate([37, 38, 38, 37], 1))
+    assert FR.passes(flat) == [(1, 37), (2, 38), (3, 38), (4, 37)]
+    assert FR.pass_summary(flat) == dict(passes=4, best_pass=1, unrouted=37, improving=False, first_pass_s=0.0)
+    gaining = "".join(line.format(k, k, u) for k, u in enumerate([30, 28, 25], 1))
+    assert FR.pass_summary(gaining) == dict(passes=3, best_pass=3, unrouted=25, improving=True, first_pass_s=0.0)
+    assert FR.pass_summary("no passes") == {}
+
+
+def test_repair_pass_cap_is_an_overridable_default():
+    """Repair rounds cap Freerouting's passes ("auto" starts at REPAIR_PASSES_START and grows in
+    the state the loop doubles); an int fixes it, 0 lifts it, and opts passes caps it too."""
+    st = {}
+    assert repair.repair_pass_cap({}, st) == repair.REPAIR_PASSES_START
+    st["cap"] = 8
+    assert repair.repair_pass_cap(dict(repair_passes="auto"), st) == 8
+    assert repair.repair_pass_cap(dict(repair_passes="auto", passes=3), st) == 3
+    assert repair.repair_pass_cap(dict(repair_passes=0), st) == 0
+    assert repair.repair_pass_cap(dict(repair_passes=0, passes=16), st) == 16
+    assert repair.repair_pass_cap(dict(repair_passes=6), st) == 6
+
+
+def test_open_only_rounds_hand_over_to_the_last_mile():
+    assert repair.open_rounds(dict(last_mile=True)) == 1
+    assert repair.open_rounds(dict(last_mile=False)) == float("inf")
+    assert repair.open_rounds(dict(last_mile=True, repair_open_rounds=3)) == 3
+    assert repair.open_rounds(dict(last_mile=True, repair_open_rounds=None)) == float("inf")

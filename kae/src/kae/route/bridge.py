@@ -48,7 +48,14 @@ DEFAULT_OPTS = dict(
                              # rip-up (kae.route.lastmile; repair._last_mile). On by default since the
                              # A+B k=3 suite at 57487e6: cp1 0.727 -> 0.909, cpk 0.818 -> 0.970, 0 errors
     last_mile_reserve_s=90.0,  # with last_mile: the repair rounds stop this much before the deadline
-    last_mile_rounds=4,      # last-mile rip-up rounds at most (each joins what the previous one left or ripped)
+    last_mile_rounds="auto", # last-mile rip-up rounds at most (each joins what the previous one left or ripped);
+                             # "auto": until repair.FAILS rounds in a row are not better, or the time is spent
+    last_mile_max_open=None, # the last mile takes on any number of open connections (its joins stop at their
+                             # deadline); an int bounds it, "rate" is the old max(40, 0.5 per second left)
+    repair_passes="auto",    # Freerouting's pass cap in a repair round (repair.repair_pass_cap): "auto" starts
+                             # at 2 and doubles after a round still gaining at its cap; 0: no cap
+    repair_open_rounds="auto",  # repair rounds with only open connections to route before the last mile takes
+                             # over (repair.open_rounds); "auto": 1 with the last mile on, else no bound
     last_mile_free_first=True,  # one last-mile round before those that joins without ripping anything
     planes="cost",           # inner plane layers (translate.plane_layers): "cost" (traces there cost
                              # plane_cost x, so they go there only when nothing shorter exists), "keep"

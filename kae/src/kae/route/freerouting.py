@@ -19,6 +19,7 @@ know are logged as unknown and ignored.
 import fcntl
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -274,6 +275,39 @@ def _optimizer_stop(log):
     return None
 
 
+_PASS = re.compile(r"Auto-routing pass #(\d+) on board .*? with score [\d.]+ \((\d+) unrouted")
+_STAMP = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+) ", re.M)
+_PASS_LINE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+) .*Auto-routing pass #1 on board", re.M)
+
+
+def _first_pass_s(log):
+    """Seconds from Freerouting's first log line to the end of its first pass, or None."""
+    from datetime import datetime
+    a, b = _STAMP.search(log or ""), _PASS_LINE.search(log or "")
+    if not a or not b:
+        return None
+    f = "%Y-%m-%d %H:%M:%S.%f"
+    return round((datetime.strptime(b.group(1), f) - datetime.strptime(a.group(1), f)).total_seconds(), 1)
+
+
+def passes(log):
+    """The autorouter passes in a Freerouting log: [(pass number, unrouted connections after it)]."""
+    return [(int(m.group(1)), int(m.group(2))) for m in _PASS.finditer(log or "")]
+
+
+def pass_summary(log):
+    """passes: how many passes ran; best_pass: the first pass with the fewest unrouted
+    connections; improving: whether the last pass was that one, with fewer than every pass before
+    it (the router was still gaining when it stopped)."""
+    ps = passes(log)
+    if not ps:
+        return {}
+    best = min(u for _, u in ps)
+    first = next(k for k, u in ps if u == best)
+    return dict(passes=ps[-1][0], best_pass=first, unrouted=best,
+                improving=len(ps) > 1 and first == ps[-1][0], first_pass_s=_first_pass_s(log))
+
+
 def _summary(d, log=""):
     """The parts of Freerouting's result file the bridge reports, plus why each stage stopped:
     `autorouter_stop` is the fork's StopReason for the chosen attempt (COMPLETED: nothing left
@@ -289,4 +323,4 @@ def _summary(d, log=""):
     return dict(final_state=d.get("final_state"), router_score=d.get("normalized_score"),
                 optimizer_score=d.get("optimizer_score"), cpu_s=use.get("cpu_time"),
                 peak_mb=use.get("peak_memory"), app_version=d.get("app_version"),
-                autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log))
+                autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log), **pass_summary(log))

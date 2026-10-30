@@ -515,6 +515,40 @@ def max_rounds(opts):
     return AUTO_ROUNDS if r == "auto" else int(r)
 
 
+REPAIR_PASSES_START = 2   # repair_passes "auto": the first round's pass cap (doubled while rounds gain)
+ROUND_OVERHEAD_S = 30.0   # a round's time beside its routing (export, import, DRC) before one is measured
+
+
+def repair_pass_cap(opts, state):
+    """Freerouting's pass cap for a repair round. Its passes after the first rarely gain in a
+    repair round: the routing around the open connections is fixed, and later passes repeat the
+    searches that failed (297 rounds on 11 boards: the fewest unrouted connections came at pass 1
+    in 231, at pass 4 or earlier in 270; 2/3 of the router's time came after it; kata0510 rp2040:
+    10 passes, 260 s, 37 -> 37). opts repair_passes: "auto" starts at REPAIR_PASSES_START and
+    doubles (state["cap"]) after a round whose last pass still gained; an int is a fixed cap; 0
+    lets the router stop by itself. opts passes, when set, caps it too."""
+    v = opts.get("repair_passes", "auto")
+    cap = int(state.setdefault("cap", REPAIR_PASSES_START)) if v == "auto" else int(v or 0)
+    outer = int(opts.get("passes") or 0)
+    if outer and (not cap or outer < cap):
+        cap = outer
+    return cap
+
+
+def open_rounds(opts):
+    """Repair rounds on a board whose errors involve no router copper and no starved thermal
+    (only open connections to route) before the loop hands the board to the last mile: opts repair_open_rounds, "auto" 1 with the
+    last mile on, else no bound. The last mile joins what is open with exact geometry and its own
+    rip-up, and sends what it rips back to the router around the new copper; with the time of the
+    router rounds after the first it closes more (heypcb kestrel, 1,000 s: three rounds 96 -> 39
+    -> 32 -> 31 and the last mile to 27; one round 96 -> 41 and the last mile to 21. kata0510
+    rp2040, 562 s: 11 and 10 open). A round that also repairs errors always runs."""
+    v = opts.get("repair_open_rounds", "auto")
+    if v == "auto":
+        return 1 if opts.get("last_mile") else math.inf
+    return math.inf if v is None else int(v)
+
+
 def round_seed(seed, k):
     """The DSN order of repair round k (never 0, which is KiCad's order)."""
     return (seed or 0) * 7919 + k
@@ -536,6 +570,11 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     # with the last mile on, the repair rounds leave it its time (it needs a refill, a few
     # grid searches, possibly a nested repair and one DRC)
     reserve = float(opts.get("last_mile_reserve_s", 90.0)) if opts.get("last_mile") else 0.0
+    cap_state = {}
+    # a round's time beside its routing (export, import, fills, DRC; a DRC alone takes minutes on
+    # big boards): a round starts only with time for that and a short routing, and its routing
+    # leaves time for it
+    over = {"s": ROUND_OVERHEAD_S}
 
     def left():
         return deadline - time.monotonic()
@@ -555,22 +594,28 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             base_["v"] = input_errors(input_path, wd, deadline)
         return errors_no_worse(s_, ref, base_["v"])
 
+    t_drc = time.monotonic()
     try:
         best_rep = check(output_path, wd / "repair0" / "drc")
     except drc.DrcError as e:
         return dict(rounds=[dict(round=0, drc_error=str(e))], final=None)
+    drc_s = time.monotonic() - t_drc
+    best_json = wd / "repair0" / "drc" / "drc.json"
+    over["s"] = max(ROUND_OVERHEAD_S, 1.5 * drc_s)
     best = drc.summary(best_rep)
-    rounds.append(dict(round=0, **best))
+    rounds.append(dict(round=0, drc_s=round(drc_s, 1), **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
-    level, fails, split_failed = 0, 0, False
+    level, fails, split_failed, n_open = 0, 0, False, 0
     for k in range(1, max_rounds(opts) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
         rec = dict(round=k)
         rounds.append(rec)
-        if left() - reserve < 45:
+        if left() - reserve < 15 + over["s"]:
             rec["stopped"] = "time"
             break
+        t_round = time.monotonic()
+        router_s = 0.0
         rdir = wd / f"repair{k}"
         if rdir.exists():
             shutil.rmtree(rdir)
@@ -595,6 +640,13 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
             break
+        if not any(v.get("type") == "starved_thermal" or any(it.get("uuid") in routed for it in v.get("items") or [])
+                   for v in drc.errors(best_rep)):
+            # no error of the router's copper to repair: the round would only route open connections
+            n_open += 1
+            if n_open > open_rounds(opts):
+                rec["stopped"] = "open connections: last mile"
+                break
         use_split = bool(a["connect"] and fills and not split_failed)
         if not a["items"] and not a["widen"] and not use_split and level == 0 and a["open"]:
             level = 2  # only open connections: the router needs room, not the same board again
@@ -631,15 +683,21 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
             translate.write_rules(plan, dsn)
-            budget = max(15.0, min((left() - reserve) * 0.5, left() - reserve - 30))
+            budget = max(15.0, min((left() - reserve) * 0.5, left() - reserve - over["s"]))
             from .bridge import router_settings
             grace = opts.get("router_grace", freerouting.GRACE_S)
-            run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("passes") or 0,
+            cap = repair_pass_cap(opts, cap_state)
+            run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=cap,
                                     settings=router_settings(plan, opts, repair=True), budget_s=budget,
                                     hard_s=max(budget, min(budget + grace, left() - 15)),
                                     log_path=rdir / "freerouting.log")
+            router_s = run.seconds + (run.report.get("slot_wait_s") or 0.0)   # a wait for a host slot is not overhead
             rec["router"] = dict(seconds=run.seconds, state=run.report.get("final_state"),
-                                 score=run.report.get("router_score"), killed=run.timed_out)
+                                 score=run.report.get("router_score"), killed=run.timed_out, cap=cap,
+                                 **{x: run.report.get(x) for x in ("passes", "best_pass", "unrouted")})
+            if (opts.get("repair_passes", "auto") == "auto" and cap and run.report.get("improving")
+                    and (run.report.get("passes") or 0) >= cap):
+                cap_state["cap"] = 2 * cap   # still gaining at the cap: the next round may go on longer
             if run.ses is None:
                 # a failed round like any other: the best board stays, the next round escalates
                 rec["kept"] = False
@@ -671,6 +729,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         s_ = drc.summary(rep)
         rec.update(s_)
+        rec["seconds"] = round(time.monotonic() - t_round, 1)
+        over["s"] = max(over["s"], rec["seconds"] - router_s)
         # a round never buys a connection with a DRC error beyond the input's own (no_worse): an
         # error is a defect the last mile cannot repair, an open it can join (olimex crit: a free
         # round traded 2 opens for 1 open + 1 starved thermal, and the board kept it)
@@ -682,6 +742,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         if rec["kept"]:
             shutil.copy2(cand, output_path)
             best, best_rep = s_, rep
+            best_json = rdir / "drc" / "drc.json"
             level, fails = 0, 0
         else:
             fails += 1
@@ -703,9 +764,11 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         # only a board with errors needs the baseline (one more DRC, minutes on big boards)
         base = input_errors(input_path, wd, deadline) if best["errors"] else {}
         _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
-                   base=base)
+                   base=base, drc_s=drc_s)
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
-    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
+        best_json = None
+    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
+                drc_s=round(drc_s, 1), report_json=str(best_json) if best_json else None)
 
 
 RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",
@@ -790,8 +853,8 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None,
     return cand, rep, s_
 
 
-LAST_MILE_MAX = 40     # open connections the last mile always takes on (bms-c1: 27 joined to 0 in 25 s);
-LAST_MILE_PER_S = 0.5  # beyond that, as many as time allows at this rate (about a join a second, halved)
+LAST_MILE_MAX = 40     # last_mile_max_open "rate": open connections the last mile always takes on (bms-c1: 27
+LAST_MILE_PER_S = 0.5  # joined to 0 in 25 s); beyond that, as many as time allows at this rate
 LAST_MILE_MIN_S = 30.0 # time a last-mile round needs (was 60: a short attempt, the restart portfolio's first
                        # waves, then had neither repair nor last mile and ended with time unused)
 
@@ -830,12 +893,22 @@ def errors_no_worse(s_, ref, base):
     return bool(base) and drc.excess(s_, base) <= drc.excess(ref, base)
 
 
-def last_mile_cap(left_s):
-    return max(LAST_MILE_MAX, int(LAST_MILE_PER_S * left_s))
+def last_mile_cap(left_s, opts=None):
+    """The most open connections the last mile takes on, by opts last_mile_max_open: None (the
+    default) no bound, since its joins stop at their deadline and a round is kept only when
+    KiCad's DRC finds it better (transistorfet z280: 105 open, 2 minutes left, the old bound of
+    max(40, 0.5 per second) skipped the last mile and the time went unused); an int; or "rate",
+    the old bound."""
+    v = (opts or {}).get("last_mile_max_open")
+    if v is None:
+        return math.inf
+    if v == "rate":
+        return max(LAST_MILE_MAX, int(LAST_MILE_PER_S * left_s))
+    return int(v)
 
 
 def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
-               base=None):
+               base=None, drc_s=0.0):
     """Last-mile rounds (kae.route.lastmile) after the repair rounds: join what is still
     open with the grid router, rip what the new copper must cross, and let a nested repair
     loop route the ripped nets with the new copper fixed. Each round works on the previous
@@ -873,10 +946,16 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     # (siderakb ergo-snm: 16 open; with rip-up 26 joins, 29 ripped, 18 open and discarded, where
     # the free joins alone gave 10)
     free_first = bool(opts.get("last_mile_free_first", True))
-    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1 + free_first):
+    n_rounds = opts.get("last_mile_rounds", "auto")
+    n_rounds = AUTO_ROUNDS if n_rounds == "auto" else int(n_rounds)
+    fails = 0
+    # a round's time beside its joins: a refill and a DRC, minutes each on big boards (bastardkb
+    # dilemma: a DRC takes 3 minutes); the joins stop in time for them
+    over = {"s": 2.0 * drc_s}
+    for j in range(1, n_rounds + 1 + free_first):
         rip = not (free_first and j == 1)
-        if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or cur_sum["unconnected"] > last_mile_cap(left())
-                or left() < LAST_MILE_MIN_S):
+        if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or cur_sum["unconnected"] > last_mile_cap(left(), opts)
+                or left() < LAST_MILE_MIN_S + over["s"]):
             break
         rec = dict(round=f"lm{j}", level="last_mile" if rip else "last_mile free")
         rounds.append(rec)
@@ -885,15 +964,19 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             shutil.rmtree(ldir)
         ldir.mkdir(parents=True)
         try:
+            t_fill = time.monotonic()
             staged = drc.stage_board(cur, input_path, ldir / "base")
             fills = pcbnew_io.zone_fills(staged)["zones"]
+            fill_s = time.monotonic() - t_fill
+            over["s"] = max(over["s"], fill_s + drc_s)
             cand = ldir / "cand.kicad_pcb"
             # bounded by time, not by a count of joins (kata0510 rp2040: 39 open connections
             # behind 0.4 mm-pitch escapes took 40 joins, the old cap, in 20 s); the round keeps
             # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
                                fixed=fixed, log=log, soft=soft, rip=rip, max_joins=None,
-                               deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
+                               deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, min(
+                                   0.5 * (left() - LAST_MILE_MIN_S), left() - 1.5 * drc_s - 10)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break
@@ -906,7 +989,8 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                 continue    # the rip-up rounds work on the same board
             break
         fixed |= set(r["added"])
-        if r["ripped"] and left() > 60:
+        sub = {}
+        if r["ripped"] and left() > 60 + 2 * drc_s:
             # the ripped nets go back to the router around the new, fixed copper
             if (wd / "kicad.dsn").exists():
                 shutil.copy2(wd / "kicad.dsn", ldir / "kicad.dsn")
@@ -914,22 +998,29 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                        deadline, log=log)
             rec["reroute"] = [{k: x.get(k) for k in ("round", "level", "errors", "unconnected", "kept")}
                               for x in sub.get("rounds") or []]
-        if left() < 10:
+        rep, rep_dir = None, ldir / "drc"
+        if sub.get("report_json") and Path(sub["report_json"]).exists():
+            # the reroute ends with KiCad's DRC of its best board, which is `cand`: no second DRC
+            import json
+            rep_dir = Path(sub["report_json"]).parent
+            rep = json.loads((rep_dir / "drc.json").read_text())
+        elif left() < 10:
             rec["stopped"] = "time"
             break
-        try:
-            rep = drc.run(drc.stage_board(cand, input_path, ldir / "drc"), ldir / "drc" / "drc.json",
-                          timeout=max(10, left() - 5))
-        except drc.DrcError as e:
-            rec["drc_error"] = str(e)
-            break
+        if rep is None:
+            try:
+                rep = drc.run(drc.stage_board(cand, input_path, ldir / "drc"), ldir / "drc" / "drc.json",
+                              timeout=max(10, left() - 5))
+            except drc.DrcError as e:
+                rec["drc_error"] = str(e)
+                break
         s_ = drc.summary(rep)
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
         if r.get("ripped_soft") and guard is not None:
             # critical copper was re-laid: the routed physics must hold (the joint loop's rule)
             try:
-                ok, why = guard(staged, cur_sum, ldir / "drc" / "board.kicad_pcb", s_)
+                ok, why = guard(staged, cur_sum, rep_dir / "board.kicad_pcb", s_)
             except Exception as e:  # noqa: BLE001 - no physics verdict, no critical copper change
                 ok, why = False, f"physics guard failed: {type(e).__name__}: {e}"
             rec["physics"] = why
@@ -946,6 +1037,12 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             shutil.copy2(cand, output_path)
             best, best_rep = s_, rep
             rec["final"] = s_
+            fails = 0
+        elif rip:
+            fails += 1
         if not errors_no_worse(s_, best, base):
+            break
+        if fails >= FAILS and opts.get("last_mile_rounds", "auto") == "auto":
+            rec["stopped"] = "no improvement"
             break
         cur, cur_rep, cur_sum = cand, rep, s_
