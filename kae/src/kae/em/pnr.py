@@ -76,7 +76,7 @@ def phi_prime(u):
 
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
-                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False):
+                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False, goal=None):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -127,6 +127,14 @@ class PhysRouter:
         # the DC band (kae.excite.dc): the evaluator's plan and observers, at the same corners (a corner's
         # cells take their switching corner's values)
         self.dcp = DC.plan(b, self.brief, bd, self.P, self.srcs, intent)
+        # goal: the commander's intent (kae.intent/1); its copper policy sets hop widths in closed form, in
+        # plain and physics routing alike
+        self.policy = None
+        if goal is not None:
+            from kae.intent import route as IR
+            from kae.intent import sections as SE
+            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
+            log(f"pnr: {self.policy.describe()}")
         for p in self.dcp.params:
             self.ledger.add(p)
         ncp = n_corners + 3
@@ -663,6 +671,20 @@ class PhysRouter:
                                                   + (f"{floor} binds" if w == lo else
                                                      f"area-resistance optimum among {len(cands)} widths"))
 
+    def _intent_width(self, n, layer, w0, I):
+        """(width, reason) of a hop of net n carrying the DC plan's corner currents I, by the intent's copper
+        policy (kae.intent.route): loss and drop rates against the area cost, IPC floor at its heating limit."""
+        mn, opt, mx = self.sp.width_limits(n, layer)
+        mesh = getattr(self, "mesh", None)
+        names = getattr(self, "layer_names", None) or []
+        t = mesh.layers[names.index(layer)].t if mesh is not None and layer in names else 0.035
+        try:
+            s = float(self.sp._generic_need(n, "track", layer) or 0.2)
+        except Exception:                     # noqa: BLE001 - a clearance only weighs the area
+            s = 0.2
+        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx)
+        return self.sp.clamp_width(n, layer, w), why
+
     def _gnd_gap(self, L):
         """Distance (mm) from each cell to the nearest ground copper on layer L, or None if it has none."""
         if not hasattr(self, "_gg") or self._gg[0] is not self.mesh:
@@ -871,11 +893,22 @@ class PhysRouter:
 
         def cen(g):
             return np.mean([self._pad_xy(q) for q in g], axis=0)
+        # the spanning tree, nearest first, known before any copper: a hop carries the DC current of every
+        # island beyond it (islands attached later feed through it), not only its own island's
+        order, left_, tree_ = [], isl[1:], [isl[0]]
+        while left_:
+            a, b_ = min(((a, b_) for a in tree_ for b_ in left_), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
+            order.append((a, b_))
+            tree_.append(b_)
+            left_.remove(b_)
+        beyond = {id(b_): [b_] for _, b_ in order}
+        for a, b_ in reversed(order):
+            if id(a) in beyond:
+                beyond[id(a)] += beyond[id(b_)]
         left = isl[1:]
         tree = [isl[0]]
         try:
-            while left:
-                a, b_ = min(((a, b_) for a in tree for b_ in left), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
+            for a, b_ in order:
                 cur = self.hop_currents(n, b_, a)
                 layer0 = self.sp.cu
                 width = self.sp.width_limits(n, layer0[0])[1]
@@ -883,7 +916,13 @@ class PhysRouter:
                     # a commutation current: wide copper lowers its inductance per length
                     width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
                 self._hop_dc = 0.0
-                if not plain:
+                if self.policy is not None:
+                    far = [q for g in beyond[id(b_)] for q in g]
+                    I = [sum(inj.get(q, 0.0) for q in far) for inj in self.dc_inj]
+                    if max((abs(x) for x in I), default=0.0) > 1e-4:
+                        width, why = self._intent_width(n, layer0[0], width, I)
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
+                elif not plain:
                     g, Imax = self._dc_per_ohm(n, b_)
                     if Imax > 0:
                         width, why = self._dc_width(n, layer0[0], width, g, Imax)
@@ -896,10 +935,19 @@ class PhysRouter:
                 rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
                                          phys=self.phys(cur, width, ends))
                 w_class = self.sp.width_limits(n, layer0[0])[1]
-                if rt is None and width > w_class + 1e-9:
-                    # no path at the widened width (a fine-pitch pad): the class width, necked down, beats none
-                    self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: no path at {width:g} mm; at the class width {w_class:g} mm")
-                    width = w_class
+                # no path at the widened width (a fine-pitch pad): about half, then a quarter of it (on the
+                # ladder), then the class width, necked down, which beats no path
+                steps = []
+                for frac in (0.5, 0.25):
+                    w_ = max((w for w in self.WIDTHS if w <= width * frac + 1e-9), default=w_class)
+                    if w_ > w_class + 1e-9 and w_ not in steps:
+                        steps.append(w_)
+                steps.append(w_class)
+                for w_try in steps:
+                    if rt is not None or width <= w_class + 1e-9:
+                        break
+                    self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: no path at {width:g} mm; trying {w_try:g} mm")
+                    width = w_try
                     rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
                                              phys=self.phys(cur, width, ends))
                 if rt is None:
@@ -1189,7 +1237,8 @@ def main(argv=None):
     ap.add_argument("--refresh", type=int, default=6)
     ap.add_argument("--verify", action="store_true",
                     help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
-    ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
+    ap.add_argument("--intent", help="intent file (JSON): a kae.intent/1 document (goal and facts; "
+                    "docs/topics/architecture/intent-driven-objectives.md), or bare part facts")
     ap.add_argument("--seed", type=int, default=0, help="seed of the corners sampled over the parameters' intervals")
     ap.add_argument("--no-capacitive", action="store_true", help="leave out the capacitive prices (kae.em.cprice)")
     ap.add_argument("--spectral", action="store_true",
@@ -1198,9 +1247,12 @@ def main(argv=None):
     ap.add_argument("--work", help="work directory (default: a new temporary one)")
     a = ap.parse_args(argv)
     from kae.excite.beliefs import load_intent
+    facts, goal = load_intent(a.intent), None
+    if facts.get("schema") == "kae.intent/1":            # the commander's intent: its facts and its goal
+        goal, facts = facts, facts.get("facts") or {}
     PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify,
-               intent=load_intent(a.intent), seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
-               spectral=dict(workers=a.workers) if a.spectral else False).route()
+               intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
+               spectral=dict(workers=a.workers) if a.spectral else False, goal=goal).route()
 
 
 if __name__ == "__main__":

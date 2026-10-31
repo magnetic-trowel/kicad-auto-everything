@@ -95,3 +95,19 @@ def test_errors_say_how_to_fix_them(term, says):
     with pytest.raises((OB.IntentError, U.UnitError)) as e:
         OB.evaluate(WIDE, {"terms": [term]}, BRIEF)
     assert says in str(e.value)
+
+
+def test_the_copper_policy_widens_with_current_and_follows_the_area_knob():
+    from kae.intent import route as IR
+    ladder = (0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0)
+    p = IR.Policy({})                                     # neutral/1: copper loss at 1 mW_eq/mW
+    w = [p.width("VIN", [i] * 5, 0.035, 0.2, ladder, 0.2, None)[0] for i in (0.05, 0.3, 1.0)]
+    assert w[0] == 0.2 and w[0] < w[1] < w[2]
+    # w* = sqrt(k rho / (t a)): four times the area cost halves the width
+    q = IR.Policy({"knobs": {"route.area_cost": 0.2}})
+    assert q.width("VIN", [0.3] * 5, 0.035, 0.2, ladder, 0.2, None)[0] < w[1]
+    # a heating limit floors the width at IPC-2221's
+    h = IR.Policy({"terms": [{"id": "H", "tier": "hard", "obs": "heat.track", "max": "5 K", "why": "w"}],
+                   "knobs": {"route.area_cost": 100}})
+    from kae.route.critical_physics import ipc2221_width
+    assert h.width("VIN", [2.0] * 5, 0.035, 0.2, ladder, 0.2, None)[0] >= ipc2221_width(2.0, 5, 0.035)
