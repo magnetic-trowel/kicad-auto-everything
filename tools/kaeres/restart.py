@@ -202,10 +202,12 @@ def judge(board, inp, base, timeout, placement=False, base_pairs=()):
 def rung_plan(wall_s, parallel, screen_s, eta=2):
     """Successive halving sized from the budget: rung r runs budget screen_s * eta**r; each rung
     gets the same share of the slot-seconds (parallel * wall_s), so rung r holds n0 / eta**r
-    candidates. The most rungs whose top budget fits in 80 % of the wall time and whose top
-    rung still has one candidate. Returns (budgets, n0)."""
-    R = 1
-    while screen_s * eta ** R <= 0.8 * wall_s and (R + 1) * eta ** R * screen_s <= parallel * wall_s:
+    candidates. At least two rungs (a top budget past the wall time is cut at the deadline;
+    with one rung nothing is ever resumed: bestelampe, a 26 s DRC, got [304] s and 9 fresh
+    placements), else the most whose top budget fits in the wall time and whose top rung still
+    has one candidate. Returns (budgets, n0)."""
+    R = 2
+    while screen_s * eta ** R <= wall_s and (R + 1) * eta ** R * screen_s <= parallel * wall_s:
         R += 1
     n0 = max(parallel, int(parallel * wall_s // (R * screen_s)))
     return [screen_s * eta ** r for r in range(R)], n0

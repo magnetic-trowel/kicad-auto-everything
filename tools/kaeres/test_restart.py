@@ -37,7 +37,8 @@ def test_judge_overlaps_beyond_the_input_are_illegal(monkeypatch, tmp_path):
 def test_rung_plan_is_sized_from_the_budget():
     budgets, n0 = restart.rung_plan(795, 4, 150)
     assert budgets == [150, 300, 600] and n0 == 7
-    assert restart.rung_plan(100, 4, 150) == ([150], 4)
+    assert restart.rung_plan(725, 4, 304) == ([304, 608], 4)     # never a single rung
+    assert restart.rung_plan(100, 4, 150) == ([150, 300], 4)
 
 
 def test_halving_promotes_the_top_half_then_resumes_the_best():
