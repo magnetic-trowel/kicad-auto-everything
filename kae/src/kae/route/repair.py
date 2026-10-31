@@ -31,6 +31,7 @@ missing connections), so the output never gets worse. Stops when the board is cl
 more can be done, FAILS rounds in a row were not better, the round limit is reached, or time
 runs out.
 """
+import json
 import math
 import re
 import shutil
@@ -571,7 +572,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         return errors_no_worse(s_, ref, base_["v"])
 
     try:
-        best_rep = check(output_path, wd / "repair0" / "drc")
+        best_rep, best_dir = check(output_path, wd / "repair0" / "drc"), wd / "repair0" / "drc"
     except drc.DrcError as e:
         return dict(rounds=[dict(round=0, drc_error=str(e))], final=None)
     best = drc.summary(best_rep)
@@ -702,7 +703,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             f"({'kept' if rec['kept'] else 'discarded'})")
         if rec["kept"]:
             shutil.copy2(cand, output_path)
-            best, best_rep = s_, rep
+            best, best_rep, best_dir = s_, rep, rdir / "drc"
             level, fails = 0, 0
         else:
             fails += 1
@@ -726,7 +727,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
                    base=base)
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
-    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
+    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
+                drc_dir=None if opts.get("last_mile") else str(best_dir))   # the DRC of the board kept
 
 
 RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",
@@ -924,6 +926,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                 continue    # the rip-up rounds work on the same board
             break
         fixed |= set(r["added"])
+        sub = {}
         if r["ripped"] and left() > 60:
             # the ripped nets go back to the router around the new, fixed copper
             if (wd / "kicad.dsn").exists():
@@ -932,22 +935,25 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                        deadline, log=log)
             rec["reroute"] = [{k: x.get(k) for k in ("round", "level", "errors", "unconnected", "kept")}
                               for x in sub.get("rounds") or []]
-        if left() < 10:
+        d = Path(sub.get("drc_dir") or ldir / "drc")   # a reroute ends with its DRC of cand: no second one
+        if sub.get("drc_dir"):
+            rep = json.loads((d / "drc.json").read_text())
+        elif left() < 10:
             rec["stopped"] = "time"
             break
-        try:
-            rep = drc.run(drc.stage_board(cand, input_path, ldir / "drc"), ldir / "drc" / "drc.json",
-                          timeout=max(10, left() - 5))
-        except drc.DrcError as e:
-            rec["drc_error"] = str(e)
-            break
+        else:
+            try:
+                rep = drc.run(drc.stage_board(cand, input_path, d), d / "drc.json", timeout=max(10, left() - 5))
+            except drc.DrcError as e:
+                rec["drc_error"] = str(e)
+                break
         s_ = drc.summary(rep)
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
         if r.get("ripped_soft") and guard is not None:
             # critical copper was re-laid: the routed physics must hold (the joint loop's rule)
             try:
-                ok, why = guard(staged, cur_sum, ldir / "drc" / "board.kicad_pcb", s_)
+                ok, why = guard(staged, cur_sum, d / "board.kicad_pcb", s_)
             except Exception as e:  # noqa: BLE001 - no physics verdict, no critical copper change
                 ok, why = False, f"physics guard failed: {type(e).__name__}: {e}"
             rec["physics"] = why
