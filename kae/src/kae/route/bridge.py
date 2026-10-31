@@ -63,6 +63,8 @@ DEFAULT_OPTS = dict(
                              # escapes, and the certificate of balls no routing can escape (report "blocked")
     escape_share=0.15,       # of the time left: the plane escapes' and escape plans' share at most
     escape_min_s=45.0,       # but the escape plans get this much at least (cached for a restart's later attempts)
+    escape_lay="dog_bones",  # laid before routing: the fixed dog-bones, or "plan" (the plan's vias and escapes;
+                             # 2x the opens under Freerouting on gecko5education and nekoink)
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)

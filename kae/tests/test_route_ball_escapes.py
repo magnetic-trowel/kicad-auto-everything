@@ -22,6 +22,16 @@ PARTNER = ("P7", "Pads", "x:Pads", 104.0, 125.0, 0.0,
             for k, b in enumerate(BALLS)], (2.5, 1.5))
 
 
+def test_dog_bones_for_inner_rings_in_diagonal_gaps(tmp_path):
+    sp, info = _space(tmp_path)
+    assert escape.dog_bones(sp, info, log=lambda m: None) == (16, 16)    # rings 2 and 3: the inner 4 x 4
+    vias = [it for it in sp.routed if it.kind == "via"]
+    balls = {b[1]: (134.5 + b[2], 121.0 + b[3]) for b in BALLS}
+    for v in vias:
+        bx, by = balls[v.net]
+        assert (v.geom.x - bx) * (bx - 134.5) > 0 and (v.geom.y - by) * (by - 121.0) > 0
+
+
 def _space(tmp_path):
     p = F.write_board(tmp_path, extra=[GRID, PARTNER])
     info = F.synth_info(load(p))

@@ -162,6 +162,16 @@ def find_packages(sp):
     return out
 
 
+def small_via(sp):
+    """(diameter, drill) of the smallest through via the board setup allows (minimum drill,
+    annular ring and via diameter), or None when it sets no minimum drill. A board-rule
+    choice where room is scarce, not a relaxation."""
+    s = sp.settings
+    d = s.get("min_drill") or 0.0
+    D = max(s.get("min_via") or 0.0, d + 2 * (s.get("min_annular") or 0.0))
+    return (round(D, 4), round(d, 4)) if d > 0 and D > d else None
+
+
 def rules_of(sp, nets, layers, minimum=False, override=None):
     """Per layer {w, c, D, drill} for the signal `nets`: the median routing width (the
     board's legal minimum with `minimum`), clearance and via; `override` replaces values."""
@@ -177,6 +187,9 @@ def rules_of(sp, nets, layers, minimum=False, override=None):
         wmed = sorted(ws)[len(ws) // 2] if (minimum and ws) else _median(ws, 0.2)
         r = dict(w=max(wmed, 0.01) if minimum else wmed, c=_median(cs, 0.2), D=_median([v[0] for v in vs], 0.6),
                  drill=_median([v[1] for v in vs], 0.3), c_pad=None)
+        sv = small_via(sp) if minimum else None
+        if sv and sv[0] < r["D"]:
+            r["D"], r["drill"] = sv          # the bound credits the smallest legal via
         r.update({k: v for k, v in (override or {}).items() if k in r})
         out[l] = r
     return out
@@ -483,10 +496,15 @@ def _site_ok(sp, ctx, override=None, check=True):
                 out[(k, t)] = True
                 continue
             v = xy(t[0] / 2, t[1] / 2)
-            vkw = dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1)) if dv else {}
             mn, opt, _ = sp.width_limits(pd.net, B)
-            out[(k, t)] = not sp.via_violations(pd.net, *v, first=True, **vkw) and \
-                not sp.track_violations(pd.net, B, mn or opt or 0.1, pd.pos, v, first=True)
+            if sp.track_violations(pd.net, B, mn or opt or 0.1, pd.pos, v, first=True):
+                out[(k, t)] = False
+                continue
+            sizes = [dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1))] if dv else [{}]
+            sv = small_via(sp)
+            if sv and not dv:
+                sizes.append(dict(size=sv[0], drill=sv[1]))
+            out[(k, t)] = any(not sp.via_violations(pd.net, *v, first=True, **kw) for kw in sizes)
     return out
 
 
@@ -898,7 +916,7 @@ def ring_certificate(sp, pkg, log=print):
 
 
 # ----------------------------------------------------------------------------- laying
-def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
+def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
     """Lay a plan: the plane balls' and the planned dog-bones, then each escape on its layer
     along its planned path (through the middle of each gap, side by side where several
     share one), checked exactly, else searched with the grid router to a box past the
@@ -922,21 +940,39 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
             sp.add_via(pd.net, *v, owner=owner, uuid=W.new_uuid())
             return v
         v = xy(t[0] / 2, t[1] / 2)
-        if sp.via_violations(pd.net, *v, first=True) or \
-                _starves(sp, pd.net, Point(v), sp.via_size(pd.net)[0] / 2, sp.cu, zclr):
+        # the net's via, else the smallest the board allows (where room is scarce)
+        size = None
+        for cand in [sp.via_size(pd.net)] + ([small_via(sp)] if small_via(sp) else []):
+            if not sp.via_violations(pd.net, *v, size=cand[0], drill=cand[1], first=True) and \
+                    not _starves(sp, pd.net, Point(v), cand[0] / 2, sp.cu, zclr):
+                size = cand
+                break
+        if size is None:
             return None
         mn, opt, _ = sp.width_limits(pd.net, B)
         for wd in [w for w in dict.fromkeys([opt, mn]) if w] or [0.1]:
             if sp.track_violations(pd.net, B, wd, pd.pos, v, first=True) or \
                     _starves(sp, pd.net, LineString([pd.pos, v]), wd / 2, [B], zclr):
                 continue
-            sp.add_via(pd.net, *v, owner=owner, uuid=W.new_uuid())
+            sp.add_via(pd.net, *v, owner=owner, size=size[0], drill=size[1], uuid=W.new_uuid())
             sp.add_track(pd.net, B, wd, pd.pos, v, owner=owner, uuid=W.new_uuid())
+            via_size[pd.net, round(v[0], 4), round(v[1], 4)] = size
             return v
         return None
+    via_size = {}
     for k, t in plane_vias:
         dog_bone(balls[k][0], t)
     vias = {k: dog_bone(balls[k][0], q["site"]) for k, q in paths.items() if q["site"] is not None}
+    if not tracks:
+        # the dog-bones only: the router lays the escapes, from the vias the plan placed
+        recs = []
+        for k, q in paths.items():
+            pd = balls[k][0]
+            v = vias.get(k)
+            recs.append(dict(pad=f"{pd.owner[0]}.{pd.owner[1]}", net=pd.net, ring=balls[k][1], layer=q["layer"],
+                             side=q["side"], via=[round(v[0], 4), round(v[1], 4)] if v else None, exit=None,
+                             laid=False, **ctx.get("flex", {}).get(k, {})))
+        return recs
     slots = {}
     for q in paths.values():
         for nd in q["nodes"]:
@@ -959,6 +995,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
             if v is None:
                 continue
             rec["via"] = [round(v[0], 4), round(v[1], 4)]
+            rec["via_size"] = list(via_size.get((pd.net, rec["via"][0], rec["via"][1]), sp.via_size(pd.net)))
         if deadline is not None and time.monotonic() > deadline:
             continue
         start = pd.pos if l == B else tuple(rec["via"])
@@ -1004,6 +1041,23 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
     for rec in recs:
         rec.pop("_pts", None)
         rec.pop("_k", None)
+    return recs
+
+
+def _records(ctx, paths):
+    """The plan per ball, not laid: layer, side, planned via position, flexibility."""
+    xy, balls, flex = ctx["xy"], ctx["balls"], ctx.get("flex", {})
+    recs = []
+    for k, q in sorted(paths.items()):
+        pd = balls[k][0]
+        t = q["site"]
+        via = None
+        if t is not None:
+            via = pd.pos if t[0] == "pad" else xy(t[0] / 2, t[1] / 2)
+            via = [round(via[0], 4), round(via[1], 4)]
+        recs.append(dict(pad=f"{pd.owner[0]}.{pd.owner[1]}", net=pd.net, ring=balls[k][1], layer=q["layer"],
+                         side=q["side"], via=via, in_pad=bool(t is not None and t[0] == "pad"), exit=None,
+                         laid=False, **flex.get(k, {})))
     return recs
 
 
@@ -1133,7 +1187,7 @@ def run(sp, info, opts=None, log=print, deadline=None):
     Returns {packages, blocked, laid, wanted} (blocked: kae.route.blocked entries)."""
     opts = opts or {}
     out = dict(packages=[], blocked=[], laid=0, wanted=0)
-    lay = opts.get("escape_lay", True)
+    lay = opts.get("escape_lay", True) not in (False, "dog_bones")
     for pkg in find_packages(sp):
         try:
             if pkg["kind"] == "ring":
@@ -1167,10 +1221,11 @@ def run(sp, info, opts=None, log=print, deadline=None):
             if cert:
                 out["blocked"].append(cert)
                 plan["certificate"] = cert["summary"]
-            recs = _lay_grid(sp, ctx, paths, plane_vias, info, deadline=deadline) if lay else []
+            recs = _lay_grid(sp, ctx, paths, plane_vias, info, deadline=deadline,
+                             tracks=bool(opts.get("escape_tracks", True))) if lay else _records(ctx, paths)
             plan["escapes"] = recs
             plan["laid"] = sum(1 for r in recs if r["laid"])
-            plan["vias_laid"] = sum(1 for r in recs if r["via"])
+            plan["vias_laid"] = sum(1 for r in recs if r["via"] and r["laid"] is not False) if lay else 0
             out["laid"] += plan["laid"]
             out["wanted"] += plan.get("planned", 0)
             log(f"escape plan {pkg['ref']}: pitch {plan['pitch']:.3f}, {plan['signal']} signal and "
@@ -1183,3 +1238,58 @@ def run(sp, info, opts=None, log=print, deadline=None):
             log(f"escape plan {pkg['ref']}: failed: {type(e).__name__}: {e} {traceback.format_exc(limit=3)}")
             out["packages"].append(dict(ref=pkg["ref"], error=f"{type(e).__name__}: {e}"))
     return out
+def dog_bones(sp, info, log=print):
+    # the fixed pass (rules-bga), the default before routing: rings from the surface capacity + 1
+    # down, the diagonal pointing away from the centre
+    """Lay the ball grids' dog-bones in `sp` (critical_space.Space) -> (laid, wanted)."""
+    count = {}
+    for it in sp.pads:
+        if it.kind == "pad" and it.net:
+            count[it.net] = count.get(it.net, 0) + 1
+    zclr = max([float(z.get("clearance") or 0.0) for z in info.get("zones") or []] + [0.0])
+    laid = wanted = 0
+    for pads in sp.pads_by_fp.values():
+        smd = [p for p in pads if p.kind == "pad" and p.smd and len(p.layers) == 1 and p.hole is None]
+        if len(smd) < MIN_BALLS:
+            continue
+        med = sorted(p.geom.area for p in smd)[len(smd) // 2]
+        balls = [p for p in smd if p.geom.area <= 4 * med]
+        g = _grid([p.pos for p in balls]) if len(balls) >= MIN_BALLS else None
+        if g is None:
+            continue
+        pitch, ang, loc, rings = g
+        layer = next(iter(balls[0].layers))
+        b = balls[0].geom.bounds
+        first = _capacity(sp, balls[0].net or "", layer, pitch, min(b[2] - b[0], b[3] - b[1])) + 1
+        todo = []
+        for p, (u, w), r in zip(balls, loc, rings):
+            plane = p.net and any(z[0] == p.net and z[1] != layer for z in sp.zones)
+            if p.net and (plane or (r >= first and count[p.net] >= 2)):
+                todo.append((-r, str(p.owner), p, u, w))
+        n0 = laid
+        ca, sa = math.cos(ang), math.sin(ang)
+        for _r, _o, p, u, w in sorted(todo, key=lambda t: t[:2]):
+            mn, opt, _ = sp.width_limits(p.net, layer)
+            diags = sorted(((a, c) for a in (1, -1) for c in (1, -1)), key=lambda d: -(d[0] * u + d[1] * w))
+            done = False
+            for du, dw in diags:
+                lu, lw = du * pitch / 2, dw * pitch / 2
+                v = (p.pos[0] + lu * ca - lw * sa, p.pos[1] + lu * sa + lw * ca)
+                if sp.via_violations(p.net, *v, first=True) or \
+                        _starves(sp, p.net, Point(v), sp.via_size(p.net)[0] / 2, sp.cu, zclr):
+                    continue
+                for wd in [x for x in dict.fromkeys([opt, mn]) if x] or [0.1]:
+                    if sp.track_violations(p.net, layer, wd, p.pos, v, first=True) or \
+                            _starves(sp, p.net, LineString([p.pos, v]), wd / 2, [layer], zclr):
+                        continue
+                    sp.add_via(p.net, *v, owner=("escape", ""), uuid=W.new_uuid())
+                    sp.add_track(p.net, layer, wd, p.pos, v, owner=("escape", ""), uuid=W.new_uuid())
+                    done = True
+                    break
+                if done:
+                    break
+            laid += done
+        wanted += len(todo)
+        log(f"dog-bones {balls[0].owner[0]}: pitch {pitch:.3f}, {len(balls)} balls, from ring {first}: "
+            f"{laid - n0} of {len(todo)}")
+    return laid, wanted
