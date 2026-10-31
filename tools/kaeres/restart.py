@@ -15,6 +15,13 @@ still gets one). Each finished attempt is checked with kicad-cli DRC (errors, th
 items, zones refilled, the input's project rules). The first clean one ends the run; otherwise
 the best is kept when time runs out. Only stdlib; KiCad comes from KAE_KICAD_WRAP.
 
+With --final COMMAND, the board kept gets one more pass at the end (final_pass), however late its
+attempt ended: COMMAND runs with @IN@ (the input), @BEST@ (a copy of the kept board with the
+input's project files), @OUT@, @SEED@ and @TIME@ replaced, its time reserved from the start
+(final_reserve: --final-s, or FINAL_MIN_S plus one DRC of the board, plus judging the result).
+Its board replaces the kept one only when KiCad's DRC ranks it better. For a router this is the
+last mile alone (kae.route.cli lastmile): an attempt that ended late is not punished for it.
+
 Work is measured, since a sandboxed method's processes are invisible to the harness: every
 attempt's processes (its process tree and session, so a router started in a session of its own
 counts too) are sampled from /proc each second (CPU seconds summed over all of them, peak RSS);
@@ -36,6 +43,7 @@ import time
 from pathlib import Path
 
 GRACE_S = 30.0  # an attempt is killed this long after its own budget
+FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
 
 
 def log(msg):
@@ -175,6 +183,55 @@ def judge(board, inp, base, timeout, placement=False):
     return (1 if out else 0, 0 if clean else 1, d["unconnected"], new, out)
 
 
+def final_reserve(a, judge_est):
+    """Seconds kept free from the start for the final pass: its command (--final-s, else
+    FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
+    judgement of its board. 0 without --final."""
+    if not a.final:
+        return 0.0
+    return (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
+
+
+def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s):
+    """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
+    the end (at least what final_reserve kept free) less one judgement. Returns its record (kept:
+    whether KiCad's DRC ranks its board better than the kept one), None when there is nothing to
+    do (no board, or a clean one)."""
+    if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
+        return None
+    d = wd / "final"
+    d.mkdir(exist_ok=True)
+    src, o = d / "best_in.kicad_pcb", d / "board.kicad_pcb"
+    shutil.copy2(best["out"], src)
+    for ext in (".kicad_pro", ".kicad_dru"):   # the task's rules
+        if inp.with_suffix(ext).exists():
+            shutil.copy2(inp.with_suffix(ext), src.with_suffix(ext))
+    t = time.monotonic()
+    b = max(20.0, end - t - judge_est - 10.0)
+    seed = a.seed * 1000 + 999
+    c = a.final.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
+    c = c.replace("@BEST@", shlex.quote(str(src))).replace("@SEED@", str(seed)).replace("@TIME@", str(int(b)))
+    log(f"final pass on #{best['k']}'s board: {b:.0f}s")
+    p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
+                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1"))
+    info = dict(k="final", seed=seed, budget=round(b), out=o, t=t, resumed_from=best["k"])
+    while reap(p, info) is None:
+        if time.monotonic() > t + b + GRACE_S or time.monotonic() > end - judge_est - 5:
+            stop(p, info)
+            info["killed"] = True
+            break
+        meter.sample([p.pid])
+        time.sleep(1)
+    info.update(wall_s=round(time.monotonic() - t, 1), cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid),
+                rc=p.returncode)
+    c0, w0 = child_cpu(), time.monotonic()
+    rank = judge(o, inp, base, max(10.0, end - w0 - 5), a.check_placement)
+    info.update(rank=rank, judge_cpu_s=child_cpu() - c0, judge_wall_s=time.monotonic() - w0)
+    info["kept"] = rank is not None and rank < best["rank"]
+    log(f"final pass rc {p.returncode} {rank}: {'kept' if info['kept'] else 'not better'}")
+    return info
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -196,6 +253,11 @@ def main():
     ap.add_argument("--resume", type=float, default=0.0,
                     help="share of each wave after the first that continues from the best board so far "
                          "(@BEST@, KAE_RESUME=1); 0 = every attempt starts from the input")
+    ap.add_argument("--final", default="",
+                    help="command for one last pass on the kept board (@IN@, @BEST@, @OUT@, @SEED@, @TIME@), "
+                         "its time reserved from the start; kept only when KiCad ranks it better")
+    ap.add_argument("--final-s", type=float, default=0.0,
+                    help="seconds for the final pass; 0 = FINAL_MIN_S plus one DRC of the board")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
@@ -219,7 +281,8 @@ def main():
         # attempts stop in time for the last wave to be judged one by one before the end
         # (seniordesign hdmi2rgb: a DRC takes ~60 s; a fixed reserve let the wrapper run 88 s
         # past its time, the harness killed it and kept nothing)
-        return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15)
+        return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15) \
+            - final_reserve(a, judge_est)
     base = (b0 or {}).get("types", {})
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
@@ -320,6 +383,15 @@ def main():
             break
         while len(running) < a.parallel and launch():
             pass
+    fin = final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s) if a.final else None
+    if fin is not None:
+        judge_cpu += fin.pop("judge_cpu_s", 0.0)
+        judge_wall += fin.pop("judge_wall_s", 0.0)
+        done.append(fin)
+        if fin.get("kept"):
+            best = fin
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(best["out"], out)
     work = dict(attempts=len(done), clean_found=bool(best and best["rank"][:2] == (0, 0)),
                 best_attempt=best and best["k"], best_seed=best and best["seed"], best_rank=best and list(best["rank"]),
                 cpu_s=round(sum(d.get("cpu_s", 0) for d in done) + judge_cpu, 1),

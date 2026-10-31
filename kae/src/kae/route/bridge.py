@@ -199,6 +199,58 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
+def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, workdir=None, opts=None, log=print):
+    """The post-route stage alone on a routed board: `board_path` (routed from the task's
+    `input_path`, whose project files and own DRC errors are the reference) is checked with
+    KiCad's DRC and handed to the last mile (repair._last_mile: its joins, the nested repair of
+    what they rip, KiCad's DRC of every round). `output_path` gets the board, replaced only by a
+    round KiCad finds better. The restart wrapper runs it on the board it keeps, so a board
+    whose attempt ended late still gets its last mile (magtag 2.9in: the kept attempt ended at
+    1,363 s of 1,519 s with 2 open connections that a last mile closes in 33 s). Returns a
+    report like route()'s."""
+    from . import repair
+    t0 = time.monotonic()
+    opts = {**DEFAULT_OPTS, **(opts or {})}
+    input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    own_wd = workdir is None
+    wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-lastmile-", dir=output_path.parent))
+    wd.mkdir(parents=True, exist_ok=True)
+    report = dict(input=str(input_path), board=str(board_path), seed=seed, budget_s=time_s, mode="last mile only")
+    deadline = t0 + time_s - 5
+    try:
+        shutil.copy2(board_path, output_path)
+        info = pcbnew_io.export_dsn(input_path, wd / "kicad.dsn")
+        opts["severities"] = severities(input_path)
+        opts["seed"] = seed
+        p = constraints.plan(info, input_path, opts)
+        p.plane_policy = plane_policy(opts)
+        p.plane_cost = opts.get("plane_cost")
+        p.pad_shapes = opts.get("pad_shapes") or "kicad"
+        from .critical_write import routing
+        fixed = {r["uuid"] for r in routing(input_path) if r.get("locked")}   # the input's pre-routes
+        opts["fixed_uuids"] = sorted(fixed)
+        staged = drc.stage_board(output_path, input_path, wd / "start")
+        rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - time.monotonic()))
+        best = drc.summary(rep)
+        report["start"] = best
+        log(f"last mile only: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
+        rounds = []
+        if best["unconnected"] or best["errors"]:
+            base = repair.input_errors(input_path, wd, deadline) if best["errors"] else {}
+            repair._last_mile(input_path, output_path, wd, p, info, opts, deadline, rounds, best, rep, fixed, log,
+                              base=base)
+        final = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
+        report.update(rounds=rounds, final=final, status="repaired")
+        return report
+    finally:
+        report["seconds"] = round(time.monotonic() - t0, 2)
+        if own_wd and not opts.get("keep"):
+            shutil.rmtree(wd, ignore_errors=True)
+        else:
+            report["workdir"] = str(wd)
+
+
 def router_budget(left_s, opts):
     """Seconds for the first routing out of `left_s`: router_share of it (router_share_alone
     without the repair loop); router_share "auto" keeps repair_reserve_s for the repair
