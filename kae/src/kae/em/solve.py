@@ -265,6 +265,12 @@ class System:
         self.lu = sla.splu(Sn, permc_spec="MMD_AT_PLUS_A", options=dict(SymmetricMode=True, DiagPivotThresh=0.1))
         self.t_factor = time.time() - t
 
+    @property
+    def nbytes(self):
+        """Memory of the frequency's own arrays: the factor, Zn^-1 and the branch diagonal."""
+        sp_ = lambda M: M.data.nbytes + M.indices.nbytes + M.indptr.nbytes
+        return sp_(self.lu.L) + sp_(self.lu.U) + sp_(self.Zn_inv) + self.zdiag.nbytes
+
     def matvec(self, u):
         nb = self.net.n_br
         I, phi = u[:nb], u[nb:]

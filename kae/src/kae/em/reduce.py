@@ -26,11 +26,16 @@ the dual-weighted residual with the dual error approximated by one preconditione
 """
 from __future__ import annotations
 
+import os
 import time
 
 import numpy as np
 
 from . import solve as ES
+
+# the greedy build keeps grid frequencies' factorizations up to this many bytes (one is 0.25 GB on a 2-layer
+# 60 x 80 mm board at 0.25 mm pitch, 0.4 GB on 4 layers); beyond it they are factored again at every step
+FACTOR_BUDGET = float(os.environ.get("KAE_EM_FACTOR_GB", "8")) * 1e9
 
 
 class _Bare(ES.System):
@@ -73,10 +78,11 @@ class Reduced:
         return s
 
     # ------------------------------------------------------------------ basis
-    def snapshot(self, f, tol=1e-6):
+    def snapshot(self, f, tol=1e-6, sy=None):
         """Solve every port at f and add the solutions to the basis. Returns the iterations; the full
-        solution's port impedances stay in self.last_Z (a free check of the model before it)."""
-        sy = (getattr(self, "_sys", None) or {}).get(f) or ES.System(self.op, f)
+        solution's port impedances stay in self.last_Z (a free check of the model before it). sy: f's
+        System when the caller already has it."""
+        sy = sy or (getattr(self, "_sys", None) or {}).pop(f, None) or ES.System(self.op, f)   # f leaves the grid
         X, its = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E)
         X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
         self.last_Z = self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
@@ -250,8 +256,10 @@ class Reduced:
         sy = cache.get(f) if cache is not None else None
         if sy is None:
             sy = ES.System(self.op, f)
-            if cache is not None:
+            if cache is not None and (self._budget is None or sum(s.nbytes for s in cache.values()) + sy.nbytes
+                                      <= self._budget):
                 cache[f] = sy
+        self.last_sys = sy                  # the greedy build hands the worst point's factor to its snapshot
         Y = self.solve(f)[:, need]
         X = self.V @ Y
         I, phi = X[:self.nb], X[self.nb:] * sy.kap
@@ -267,7 +275,7 @@ class Reduced:
 
     # ------------------------------------------------------------------ greedy build
     def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
-              snap_tol=1e-6, keep_factors=False):
+              snap_tol=1e-6, keep_factors=FACTOR_BUDGET):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
         magnitudes errors are relative to (default |Z| of the model itself).
@@ -280,8 +288,10 @@ class Reduced:
         t0 = time.time()
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
         # keep_factors: each grid frequency's factorization across the greedy steps (memory: one sparse factor
-        # per grid point)
+        # per grid point; System.nbytes). True keeps all; a number keeps factors up to that many bytes, the rest
+        # are factored again at every step
         self._sys = {} if keep_factors else None
+        self._budget = None if keep_factors is True else keep_factors
         for f in f0:
             its = self.snapshot(f, tol=snap_tol)
             self.log(f"reduce: snapshot {f / 1e6:.4g} MHz ({int(np.max(its))} iterations), basis {self.V.shape[1]}")
@@ -293,7 +303,7 @@ class Reduced:
         self.timing = dict(snapshots=time.time() - t0, grid=0.0, grid_points=0, grid_skipped=0)
         last = {}                 # grid frequency -> its latest estimate (an estimate only falls as the basis grows)
         while True:
-            worst, fw, Ew = 0.0, None, None
+            worst, fw, Ew, sw = 0.0, None, None, None
             tg = time.time()
             for f in G:
                 if any(abs(f - g) <= 1e-9 * max(f, 1.0) for g in self.freqs):
@@ -309,7 +319,7 @@ class Reduced:
                 rel = float(np.max(E / np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)))
                 last[f] = rel
                 if rel > worst:
-                    worst, fw, Ew = rel, f, E
+                    worst, fw, Ew, sw = rel, f, E, self.last_sys
             # a skipped point's last estimate still counts (conservative)
             for f, rel in last.items():
                 if rel > worst and not any(abs(f - g) <= 1e-9 * max(f, 1.0) for g in self.freqs):
@@ -326,7 +336,8 @@ class Reduced:
             S = np.abs(Zr) if scale is None else scale(fw)
             E_est = Ew if Ew is not None else self.error(fw, rows, cols)   # the grid's own, when it has it
             ts = time.time()
-            its = self.snapshot(fw, tol=snap_tol)
+            its = self.snapshot(fw, tol=snap_tol, sy=sw if Ew is not None else self.last_sys)
+            sw = self.last_sys = None
             self.timing["snapshots"] += time.time() - ts
             Zt = self.last_Z[np.ix_(rows, cols)]
             den = np.maximum(S, 1e-12 * np.max(np.abs(S)) + 1e-300)
@@ -337,7 +348,7 @@ class Reduced:
             cal = max(cal or 0.0, ratio)
             self.log(f"reduce: snapshot {fw / 1e6:.4g} MHz ({int(np.max(its))} iterations): the model's true error "
                      f"there was {true:.1e} (estimated {est:.1e})")
-        self._sys = None
+        self._sys = self.last_sys = None
         self.seconds = time.time() - t0
         self.log(f"reduce: built in {self.seconds:.0f}s: snapshots {self.timing['snapshots']:.0f}s, error grid "
                  f"{self.timing['grid']:.0f}s over {self.timing['grid_points']} points "
