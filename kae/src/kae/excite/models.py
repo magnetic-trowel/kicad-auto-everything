@@ -65,6 +65,8 @@ class Board:
     part_kind: dict               # ref -> (kind, subtype, role)
     assumptions: list = field(default_factory=list)
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
+    pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
+    pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board
 
 
 def build(board, brief=None):
@@ -100,9 +102,14 @@ def build(board, brief=None):
         for p in pins:
             tok = f"{ref}.{p.number}"
             bd.net_of[tok] = p.net
+            bd.pin_type[tok] = p.ptype
             bd.pads_of.setdefault(p.net, []).append(tok)
         in_cell = uuid_of.get(ref) in cell_parts
         _part(bd, ref, part, pins, kind, sub, role, rec, in_cell)
+    from kae.board import transform
+    for fp in board.footprints:
+        for p in fp.pads:
+            bd.pad_xy.setdefault(f"{fp.ref}.{p.number}", transform.pad_xy(fp, p))
     return bd
 
 

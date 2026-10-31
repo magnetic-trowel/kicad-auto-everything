@@ -7,7 +7,8 @@
   finds the hot loop (switch, rectifier, the capacitors that close it) and how the capacitors
   share it, whatever the topology.
 - ICs: the dynamic supply current of the core, drawn from the internal supply node to ground.
-- Clock drivers: the output pin charges the net's load, returning through the driver's ground.
+- Clock drivers: the output pin charges the net's load, returning through the driver's ground (a clock
+  arriving through a connector: from the connector's pin, back through its nearest ground pin).
 
 Each source carries di/dt (A/s) and the edge frequency f_e = 1/(pi t_r) at which its injection
 vector is solved; requirements scale the unit solution by these.
@@ -53,20 +54,58 @@ def add_all(bd, brief, nl=None):
     for net, d in brief["nets"].items():
         if d.get("role") != "clock":
             continue
-        drv = None
-        for tok in bd.pads_of.get(net, []):
-            ref = tok.rsplit(".", 1)[0]
-            if ref in bd.ic_nodes:
-                drv = drv or tok
-        if drv:
-            ref = drv.rsplit(".", 1)[0]
-            V = 3.3
-            I = CLOCK_C * V / CLOCK_TR
-            src = bd.circuit.src(f"clk:{net}", bd.ic_nodes[ref]["g"], net, pb=drv, kind="clock", net=net,
-                                 I=I, didt=I / CLOCK_TR, f_e=1 / (math.pi * CLOCK_TR), V=V,
-                                 f_rep=(d.get("f_Hz") or CLOCK_F))
-            out.append(src)
+        drv = clock_driver(bd, net)
+        if drv is None:
+            bd.assumptions.append(f"clk:{net}: no pin that can drive it (only inputs); no clock source")
+            continue
+        ref = drv.rsplit(".", 1)[0]
+        if ref in bd.ic_nodes:
+            a, pa = bd.ic_nodes[ref]["g"], None                  # returns through the driver's ground
+        else:
+            pa = _nearest_ground(bd, ref, drv)                   # an oscillator, or a connector: from off the board
+            if pa is None:
+                bd.assumptions.append(f"clk:{net}: driver {drv} has no ground pin to return through; no clock source")
+                continue
+            a = bd.net_of[pa]
+        V = 3.3
+        I = CLOCK_C * V / CLOCK_TR
+        src = bd.circuit.src(f"clk:{net}", a, net, pa=pa, pb=drv, kind="clock", net=net,
+                             I=I, didt=I / CLOCK_TR, f_e=1 / (math.pi * CLOCK_TR), V=V,
+                             f_rep=(d.get("f_Hz") or CLOCK_F))
+        out.append(src)
     return out
+
+
+DRIVES = ("output", "tri_state", "power_out")      # pin types that drive a net
+UNTYPED = ("", "unspecified", "passive", "free")
+
+
+def clock_driver(bd, net):
+    """The pad that drives a clock net, by the schematic's pin types: an output; else an oscillator's
+    pin; else a bidirectional IC pin; else a connector's (the clock comes from off the board); else an
+    IC pin of no stated direction. An input never drives. None if nothing can."""
+    toks = bd.pads_of.get(net, [])                     # the board's order breaks ties (as before)
+    ref = lambda t: t.rsplit(".", 1)[0]
+    typ = lambda t: bd.pin_type.get(t, "")
+    kind = lambda t: bd.part_kind.get(ref(t), ("",))[0]
+    for test in (lambda t: typ(t) in DRIVES,
+                 lambda t: kind(t) == "oscillator" and typ(t) != "input",
+                 lambda t: typ(t) == "bidirectional" and ref(t) in bd.ic_nodes,
+                 lambda t: kind(t) == "connector" and typ(t) != "input",
+                 lambda t: typ(t) in UNTYPED and ref(t) in bd.ic_nodes):
+        for t in toks:
+            if test(t):
+                return t
+    return None
+
+
+def _nearest_ground(bd, ref, pad):
+    """The part's ground pin nearest to its pad (the return path of a signal it drives)."""
+    gs = [t for nt in bd.grounds for t in bd.pads_of.get(nt, []) if t.rsplit(".", 1)[0] == ref]
+    if not gs:
+        return None
+    x, y = bd.pad_xy.get(pad, (0.0, 0.0))
+    return min(gs, key=lambda t: math.dist(bd.pad_xy.get(t, (x, y)), (x, y)) if t in bd.pad_xy else math.inf)
 
 
 def _cell(bd, s, uuid):
