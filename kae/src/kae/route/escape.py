@@ -441,10 +441,21 @@ def _network(M, ctx, l, yvar, kinds, sources, tags=True, yfix=()):
                     for s in ss:
                         if k in ("*", s):
                             arc(k, ("g", g), ("sink", s), cost=0.0)
+    inside_set = set(inside)
     for (k, node), terms in sources.items():
-        for g in _neighbours(node[1]):
-            if g in gaps:
-                arc(k, node, ("g", g), ub=1)
+        if node[0] == "pad":
+            # a via in a ball's pad sits in a tile's centre: it leaves through the tile's sides
+            for g in _neighbours(node[1]):
+                if g in gaps:
+                    arc(k, node, ("g", g), ub=1)
+        else:
+            # a ball (or a dog-bone's via) is a corner: its track enters a tile round it without
+            # passing between two other obstacles, so it does not use that tile's centre or
+            # sides until it leaves the tile (Yan & Wong's pin edge)
+            X, Y = node[1]
+            for T in ((X + 1, Y + 1), (X - 1, Y + 1), (X - 1, Y - 1), (X + 1, Y - 1)):
+                if T in inside_set:
+                    arc(k, node, ("c", T), ub=1)
         # a corner on the array's edge leaves straight into an outside tile (Yan & Wong's pin
         # edge into a boundary tile), between no two obstacles
         X, Y = node[1]
@@ -743,11 +754,19 @@ def bound(sp, pkg, info, opts=None, **kw):
 
 
 def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
-    """None when the LP bound reaches the demand; else the blocked entry for the package."""
-    esc, meta, duals = bound(sp, pkg, info, opts)
+    """None when the LP bound reaches the demand; else the blocked entry for the package.
+    Vias in the balls' pads are legal under KiCad's rules (a same-net via in a pad), so the
+    bound that proves a package cannot escape allows them (cause "rule"); when only they
+    let it escape, the entry says so (cause "via in pad", a fab choice) with the rule
+    relaxations that would avoid them."""
+    esc, meta, duals = bound(sp, pkg, info, opts, pads=True)
     demand = len(meta["sig"])
-    if esc is None or esc >= demand - 0.5:
-        return None
+    pads = True
+    if esc is not None and esc >= demand - 0.5:
+        esc, meta, duals = bound(sp, pkg, info, opts)
+        if esc is None or esc >= demand - 0.5:
+            return None
+        pads = False
     short = demand - int(math.floor(esc + 1e-6))
     groups = {}
     for tag, dv in duals.items():
@@ -770,13 +789,13 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
     for w in [v for v in WIDTH_LADDER if v < w0 - 1e-6]:
         if not more_time():
             break
-        e, _m, _d = bound(sp, pkg, info, opts, override=dict(w=w))
+        e, _m, _d = bound(sp, pkg, info, opts, override=dict(w=w), pads=pads)
         if ok(e):
             relax.append(dict(rule="track width", value=w, escapable=round(e, 1), all=True))
             break
     c = min(R[l]["c"] for l in real) - CLEARANCE_STEP
     while c >= 0.05 - 1e-9 and more_time():
-        e, _m, _d = bound(sp, pkg, info, opts, override=dict(c=round(c, 4)))
+        e, _m, _d = bound(sp, pkg, info, opts, override=dict(c=round(c, 4)), pads=pads)
         if ok(e):
             relax.append(dict(rule="clearance", value=round(c, 4), escapable=round(e, 1), all=True))
             break
@@ -787,7 +806,7 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
         # mask-to-copper) or a pad rule binds
         c = cp0 - CLEARANCE_STEP
         while c >= 0.05 - 1e-9 and more_time():
-            e, _m, _d = bound(sp, pkg, info, opts, override=dict(c_pad=round(c, 4)))
+            e, _m, _d = bound(sp, pkg, info, opts, override=dict(c_pad=round(c, 4)), pads=pads)
             if ok(e):
                 relax.append(dict(rule="ball-to-track clearance (solder-mask aperture: expansion + mask-to-copper)",
                                   value=round(c, 4), escapable=round(e, 1), all=True))
@@ -796,24 +815,24 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
     D = min(R[l]["D"] for l in real) - 0.05
     dr = min(R[l]["drill"] for l in real)
     while D >= dr + 0.1 - 1e-9 and more_time():
-        e, _m, _d = bound(sp, pkg, info, opts, override=dict(D=round(D, 4)))
+        e, _m, _d = bound(sp, pkg, info, opts, override=dict(D=round(D, 4)), pads=pads)
         if ok(e):
             relax.append(dict(rule="via diameter", value=round(D, 4), escapable=round(e, 1), all=True))
             break
         D -= 0.05
-    if not (opts or {}).get("escape_via_in_pad") and more_time():
+    if not pads:
         e, _m, _d = bound(sp, pkg, info, opts, pads=True)
         relax.append(dict(rule="vias in the balls' pads (via-in-pad, filled and capped; kae: --set "
                                "escape_via_in_pad=true)", escapable=round(e or 0, 1), all=ok(e)))
     from .translate import plane_layers
     pls = sorted(plane_layers(info))
     if pls and more_time():
-        e, _m, _d = bound(sp, pkg, info, opts, open_planes=True)
+        e, _m, _d = bound(sp, pkg, info, opts, open_planes=True, pads=pads)
         relax.append(dict(rule="signals on plane layers " + ",".join(pls), escapable=round(e or 0, 1), all=ok(e)))
     for n in (2, 4):
         if not more_time():
             break
-        e, _m, _d = bound(sp, pkg, info, opts, extra_layers=n)
+        e, _m, _d = bound(sp, pkg, info, opts, extra_layers=n, pads=pads)
         relax.append(dict(rule=f"{n} more signal layers", escapable=round(e or 0, 1), all=ok(e)))
         if ok(e):
             break
@@ -824,11 +843,13 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
     where = (f"the {b['kind']}s of ring {b['ring']} on {b['layer']} hold {b['tracks']} track(s) at "
              f"{b['width']}/{b['clearance']} mm between {b['between']}") if b else "no single cut"
     fixes = [f"{r['rule']} {r['value']} mm" if "value" in r else r["rule"] for r in relax if r.get("all")]
-    summary = (f"{pkg['ref']}: {short} of {demand} signal balls can't escape on {len(real)} layers "
+    head = "" if pads else "without vias in their pads, "
+    summary = (f"{pkg['ref']}: {head}{short} of {demand} signal balls can't escape on {len(real)} layers "
                f"({', '.join(real)}; LP bound {esc:.1f}); {where}; feasible with "
                + (" or ".join(fixes) if fixes else "none of the relaxations tried"))
     log("escape certificate " + summary)
-    return dict(package=pkg["ref"], cause="rule", constraint="escape", demand=demand, escapable=round(esc, 1),
+    return dict(package=pkg["ref"], cause="rule" if pads else "via in pad", constraint="escape", demand=demand,
+                escapable=round(esc, 1), via_in_pad_considered=pads,
                 short=short, layers=real, cut=cut, relaxations=relax, summary=summary, source="board",
                 where=".kicad_pro net classes and board setup, .kicad_dru rules")
 
