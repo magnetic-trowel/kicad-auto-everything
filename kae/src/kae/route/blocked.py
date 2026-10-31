@@ -330,11 +330,15 @@ def _line(net, pads, cause, b):
 
 
 # ----------------------------------------------------------------------------- the board
-def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=None, log=print, max_conns=60):
+def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=None, log=print, max_conns=60,
+             regions=()):
     """Diagnose the open connections of `board` (see the module docstring). `board`: the
     final board with its project files beside it (drc.stage_board), `fills` its refilled
     zones (pcbnew_io.zone_fills()["zones"]), `report` its KiCad DRC report, `input_ids` the
-    uuids of the input's tracks and vias (pre-routes: not ours to take out)."""
+    uuids of the input's tracks and vias (pre-routes: not ours to take out). `regions`: the
+    reports of kae.route.region's dense windows; where a negotiation did not converge, the
+    congestion of a net it names gets the quantified cause ("capacity": the channel or via site
+    more nets need than the rules leave room for), and "regions" lists each window's verdict."""
     t0 = time.monotonic()
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -376,8 +380,34 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
             (out["congestion"] if rec["cause"] == "congestion" else out["blocked"]).append(rec)
             log("blocked: " + rec["line"])
     out["summary"] = [r["line"] for r in out["blocked"]]
+    _capacity(out, regions)
     out["seconds"] = round(time.monotonic() - t0, 1)
     return out
+
+
+def _capacity(out, regions):
+    """Carry the dense windows' capacity verdicts (kae.route.region) into the diagnosis: per
+    window a summary, per congestion record of a net in an over-full channel its cause."""
+    out["regions"] = []
+    for r in regions or ():
+        if not r or "ref" not in r:
+            continue
+        its = r.get("iterations") or []
+        v = dict(ref=r["ref"], kind=r.get("kind"), nets=r.get("nets"), converged=r.get("converged"),
+                 iterations=len(its), best_iteration=r.get("best_iteration"),
+                 in_conflict=len(r.get("in_conflict") or ()),
+                 conflicts=[x.get("nets_in_conflict") for x in its], capacity=r.get("capacity") or [])
+        out["regions"].append(v)
+        if r.get("converged"):
+            continue
+        for c in v["capacity"]:
+            line = (f"{r['ref']} ({r.get('kind')}): congestion, {c['line']}; {v['in_conflict']} of its "
+                    f"{r.get('nets')} nets still in conflict after {len(its)} negotiation iterations")
+            out["summary"].append(line)
+            for rec in out["congestion"]:
+                if rec.get("net") in c.get("nets", ()) and "capacity" not in rec:
+                    rec["capacity"] = c
+                    rec["line"] = f"{rec['line']}; {c['line']}"
 
 
 def _enclosing(sp, net, src, w):

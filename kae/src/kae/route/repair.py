@@ -854,6 +854,98 @@ def errors_no_worse(s_, ref, base):
     return bool(base) and drc.excess(s_, base) <= drc.excess(ref, base)
 
 
+REGION_MIN_S = 120.0   # time a dense-window round needs at least: the negotiation, a reroute, a DRC
+REGION_SHARE = 0.5     # share of the time left that the dense windows may take (the last mile keeps the rest)
+REGION_WINDOWS = 3     # windows tried at most
+
+
+def _region(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log, base=None):
+    """Dense-window rounds (kae.route.region) before the last mile: for each window holding open
+    connections (most first, at most REGION_WINDOWS), negotiate its nets, let a nested repair
+    loop route what stays open around the new copper (fixed), and keep the board when KiCad's DRC
+    finds it better with no more errors (errors_no_worse), as the last mile does. Appends its
+    records to `rounds` (each with the window's convergence statistics; a kept one carries
+    `final`). Returns (best, best_rep, fixed) when a board was kept, else None."""
+    from kae.board.kicad_file import load
+
+    from . import region
+    from .critical_space import Space
+
+    def left():
+        return deadline - time.monotonic()
+    sev = opts.get("severities") or {}
+    stop = time.monotonic() + float(opts.get("region_share", REGION_SHARE)) * left()
+    tried, kept = set(), False
+    fixed = set(fixed)
+    for k in range(1, int(opts.get("region_windows", REGION_WINDOWS)) + 1):
+        if stop - time.monotonic() < REGION_MIN_S or not best["unconnected"]:
+            break
+        rdir = wd / f"region{k}"
+        if rdir.exists():
+            shutil.rmtree(rdir)
+        rdir.mkdir(parents=True)
+        try:
+            staged = drc.stage_board(output_path, input_path, rdir / "base")
+            fills = pcbnew_io.zone_fills(staged)["zones"]
+            sp = Space(load(staged), info, plan=plan, sev=sev)
+            ws = [w for w in region.windows(sp, region.focus_points(best_rep)) if w["fp"] not in tried]
+        except Exception as e:  # noqa: BLE001 - the board stays
+            rounds.append(dict(round=f"region{k}", level="region", error=f"{type(e).__name__}: {e}"))
+            break
+        if not ws:
+            break
+        w = ws[0]
+        tried.add(w["fp"])
+        rec = dict(round=f"region{k}", level="region", window=w["ref"], window_opens=w["opens"])
+        rounds.append(rec)
+        cand = rdir / "cand.kicad_pcb"
+        try:
+            # the negotiation gets half of the windows' time left, the reroute and the DRC the rest
+            r = region.solve(staged, info, plan, fills, cand, w, sev=sev, fixed=fixed, log=log,
+                             seed=int(opts.get("seed") or 0), sp=sp,
+                             deadline=time.monotonic() + max(30.0, 0.5 * (stop - time.monotonic())))
+        except Exception as e:  # noqa: BLE001 - the board stays
+            rec["error"] = f"{type(e).__name__}: {e}"
+            log(f"region {w['ref']}: failed: {rec['error']}")
+            continue
+        rec["region"] = {k_: v for k_, v in r.items() if k_ != "added"}
+        if not r.get("wrote"):
+            rec["stopped"] = "no fewer open connections in the window"
+            continue
+        added = set(r.get("added") or ())
+        sub = {}
+        if left() > 60 and stop - time.monotonic() > 60:
+            # what is still open (the escapes' far ends among it) goes to the router around the new copper
+            if (wd / "kicad.dsn").exists():
+                shutil.copy2(wd / "kicad.dsn", rdir / "kicad.dsn")
+            sub = loop(input_path, cand, rdir, plan, info,
+                       dict(opts, last_mile=False, fixed_uuids=sorted(fixed | added)),
+                       min(deadline, max(stop, time.monotonic() + 60)), log=log)
+            rec["reroute"] = [{k_: x.get(k_) for k_ in ("round", "level", "errors", "unconnected", "kept")}
+                              for x in sub.get("rounds") or []]
+        d = Path(sub.get("drc_dir") or rdir / "drc")
+        try:
+            if sub.get("drc_dir"):
+                rep = json.loads((d / "drc.json").read_text())
+            else:
+                rep = drc.run(drc.stage_board(cand, input_path, d), d / "drc.json", timeout=max(10, left() - 5))
+        except (drc.DrcError, OSError, ValueError) as e:
+            rec["drc_error"] = str(e)
+            break
+        s_ = drc.summary(rep)
+        rec.update(s_)
+        rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
+        log(f"region round {k} ({w['ref']}): {s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
+            f"({'kept' if rec['kept'] else 'not better'})")
+        if rec["kept"]:
+            shutil.copy2(cand, output_path)
+            best, best_rep = s_, rep
+            fixed |= added
+            rec["final"] = s_
+            kept = True
+    return (best, best_rep, fixed) if kept else None
+
+
 def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
                base=None):
     """Last-mile rounds (kae.route.lastmile) after the repair rounds: join what is still
@@ -888,6 +980,14 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             rounds.append(dict(round="lm0", level="rip errors", **cur_sum))
             log(f"last mile 0: router copper of {best['errors']} errors taken out: {cur_sum['errors']} errors, "
                 f"{cur_sum['unconnected']} unconnected")
+    if opts.get("region", True) and cur_sum["unconnected"] and left() > REGION_MIN_S:
+        # dense windows first (kae.route.region): every net of a ball grid's field and escape ring
+        # re-routed together by negotiation; the last mile then joins what is left
+        got = _region(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
+                      base=base)
+        if got is not None:
+            best, best_rep, fixed = got
+            cur, cur_rep, cur_sum = output_path, best_rep, best
     # the first round joins only around everything (no rip-up): those joins cost nothing, and a
     # rip-up round whose ripped nets get no reroute in the time left ends worse than it began
     # (siderakb ergo-snm: 16 open; with rip-up 26 joins, 29 ripped, 18 open and discarded, where

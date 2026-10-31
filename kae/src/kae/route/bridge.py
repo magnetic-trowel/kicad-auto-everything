@@ -60,6 +60,10 @@ DEFAULT_OPTS = dict(
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
     ball_escapes=True,       # with them, dog-bones for the inner rings of ball grids (escape.dog_bones)
+    region=True,             # before the last mile, the dense windows holding open connections (ball grids,
+                             # fine-pitch packages) are re-routed whole by negotiated congestion (kae.route.region,
+                             # repair._region), kept only when KiCad's DRC ranks the board better
+    region_share=0.5,        # with region: the share of the time left after the repair rounds it may take
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
@@ -195,8 +199,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                            deadline=t0 + time_s - 10 - diag_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
+                regions = [r["region"] for r in report["repair"].get("rounds") or [] if r.get("region")]
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
-                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log,
+                                             regions=regions)
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
@@ -212,7 +218,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log):
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, regions=()):
     """kae.route.blocked on the final board: what makes each open connection impossible."""
     from kae.board.kicad_file import load
     from . import blocked
@@ -222,7 +228,7 @@ def diagnose(output_path, input_path, original_input, info, plan, drc_report, se
         inb = load(original_input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
-                               log=log)
+                               log=log, regions=regions)
         log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
             f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
         return out
