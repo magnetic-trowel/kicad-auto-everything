@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # ab_run.sh MODE BOARD [TAG]: route (plain | physv) or take the human board (human), then evaluate and DRC it.
 # Runs the code of the kaeq snapshot it is started in (cwd = repo root).
-source ~/.cache/kaebench/env.sh; export APPTAINER_BIND=${KAE_WORK:-/var/tmp/$USER}; ulimit -v 80000000
+source ~/.cache/kaebench/env.sh; export APPTAINER_BIND=${KAE_WORK:-/var/tmp/$USER}; ulimit -v 100000000   # address space runs well ahead of RSS (factor caches, threads)
 T=${KAEQ_CPUS:-8}; export PYTHONPATH=$PWD/kae/src NUMBA_THREADING_LAYER=omp KAE_EM_THREADS=$T OMP_NUM_THREADS=$T OPENBLAS_NUM_THREADS=$T MKL_NUM_THREADS=$T
 PY=${KAE_PY:-python3}             # the venv with kae's dependencies
-set -e
+set -eo pipefail          # a crash inside a pipe (the evaluation into tee) fails the job
 mode=$1; board=$2; tag=${3:-r4}; d=$(dirname $board)
 echo "code $(git rev-parse --short HEAD 2>/dev/null) mode $mode board $board"
 # intake: a board in an older KiCad format is upgraded once, in place, its original (and project files)
