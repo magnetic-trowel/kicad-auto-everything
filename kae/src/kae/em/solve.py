@@ -476,7 +476,18 @@ def potentials(mesh, injections, f, read=None, tol=TOL, net=None, op=None):
     for t in (read or mesh.terminals):
         out[t] = sysm.potential(x, t)
     return out, dict(iters=it, info=info, net=net, op=op, unbalanced=len(open_), I=x[:net.n_br], x=x, sys=sysm,
-                     open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_])
+                     open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_],
+                     open_islands=open_islands(net, injections, open_))
+
+
+def open_islands(net, injections, open_):
+    """The copper pieces a pattern's current cannot leave: [dict(terms, current)], the largest net current
+    first (current: what enters the piece through its terminals and has no way out)."""
+    out = []
+    for c in open_:
+        ts = sorted(t for t in injections if net.comp[net.term_node[t]] == c)
+        out.append(dict(terms=ts, current=complex(sum(injections[t] for t in ts))))
+    return sorted(out, key=lambda d: -abs(d["current"]))
 
 
 def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None):
@@ -504,7 +515,8 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
             if k >= 0:
                 s[k] += cur
         cols.append(s)
-        infos.append(dict(unbalanced=len(open_), open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_]))
+        infos.append(dict(unbalanced=len(open_), open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_],
+                          open_islands=open_islands(net, injections, open_)))
     # batches of BATCH right-hand sides share the factorization; memory grows with the batch (FFT arrays
     # of 2 x batch x sublayers grids)
     Xs, itss = [], []

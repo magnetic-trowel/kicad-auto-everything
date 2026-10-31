@@ -156,8 +156,8 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         for band, f in bands[s.name].items():
             v, info = solved[(s.name, band)]
             if info["unbalanced"]:
-                notes.append(f"{s.name}: copper open between {', '.join(sorted(info['open_terms'])[:6])} "
-                             f"(unrouted or outside the window): its harms are not computed")
+                notes.append(f"{s.name}: copper open: {open_note(info, bd.net_of)} (unrouted or outside the window): "
+                             f"its harms are not computed")
                 uncomputed.append(s.name)
                 res = None
                 break
@@ -217,6 +217,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 assumptions=bd.assumptions)
 
 
+def open_note(info, net_of=None):
+    """The copper pieces a pattern's current cannot leave (kae.em.solve.open_islands), the largest first:
+    the current, the nets and a few terminals of each."""
+    out = []
+    for isl in info["open_islands"][:3]:
+        nets = sorted({(net_of or {}).get(t, "?") for t in isl["terms"]})
+        out.append(f"{abs(isl['current']):.3g} A enters {'/'.join(nets[:3])} ({', '.join(isl['terms'][:4])}"
+                   f"{', ...' if len(isl['terms']) > 4 else ''}) with no way out")
+    more = len(info["open_islands"]) - 3
+    return "; ".join(out) + (f"; {more} more pieces" if more > 0 else "")
+
+
 def totals(tot, uncomputed=()):
     """The per-corner totals' summary; none when any source or band could not be computed (open copper):
     an incomplete evaluation has no score (a missing harm is not a zero harm)."""
@@ -259,6 +271,7 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     if out_:
         notes.append(f"DC: pads outside the copper model ({', '.join(out_[:6])}): their currents are left out")
     injs = [{p: a for p, a in inj.items() if p in m.terminals} for inj in raw]
+    net_of = {f"{fp.ref}.{p.number}": p.net for fp in b.footprints for p in fp.pads}
     if not any(injs):
         notes.append("DC: no rail with a source and a load; the DC band is empty")
         return []
@@ -267,7 +280,7 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     loss, drops, heat = [], {}, []
     for c, (V, info) in enumerate(res):
         if V is None:
-            notes.append(f"DC: copper open between {', '.join(sorted(info['open_terms'])[:6])} (unrouted, or a path "
+            notes.append(f"DC: copper open: {open_note(info, net_of)} (unrouted, or a path "
                          f"only through a part that is open at DC): the DC band is not computed")
             return []
         ob = DC.observe(dcp, cvs[c], V, info, tracks=trk)
