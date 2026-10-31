@@ -902,8 +902,9 @@ def _region(input_path, output_path, wd, plan, info, opts, deadline, rounds, bes
         try:
             # the negotiation gets half of the windows' time left, the reroute and the DRC the rest
             run = region.solve if opts.get("region_mode") == "full" else region.repair_window
+            extra = {} if run is region.solve else dict(report=best_rep)
             r = run(staged, info, plan, fills, cand, w, sev=sev, fixed=fixed, log=log,
-                    seed=int(opts.get("seed") or 0), sp=sp,
+                    seed=int(opts.get("seed") or 0), sp=sp, **extra,
                     deadline=time.monotonic() + max(30.0, 0.5 * (stop - time.monotonic())))
         except Exception as e:  # noqa: BLE001 - the board stays
             rec["error"] = f"{type(e).__name__}: {e}"

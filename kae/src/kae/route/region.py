@@ -93,7 +93,9 @@ NEG_SHARE = 0.6        # share of the time for the negotiation; the neighbourhoo
 LNS_SIZE = 8           # nets re-planned together in one repair move (MAPF-LNS2's neighbourhood)
 LNS_PRES = 1000.0      # pres_fac of a repair move: another net's cell costs as a long detour
 REFILL_EVERY = 6       # steps that close something between two KiCad refills (checkpoints)
-HARD_POURS = True      # other nets' fills and thermal corridors are walls inside a window (not priced)
+HARD_POURS = True      # no via of another net in a pad's thermal-spoke corridor
+FILL_COST = 2.0        # per cell of another net's fill a track crosses (base cost 1): planes and signals
+                       # negotiate; the refill and KiCad's DRC judge the damage
 FLOAT_MM = 1.0         # mm along the border either side of a stub: where its net may cross instead
 LNS_STALL = 60         # repair moves in a row without fewer conflicts before it stops
 MAX_NETS = 600         # nets in one window at most (more: the window is skipped)
@@ -236,8 +238,8 @@ class Region:
         for it in sp.existing + sp.routed:
             if it.kind not in ("track", "via") or not it.net or it.locked or it.uuid in self.fixed:
                 continue
-            if self.only is not None and (it.net not in self.only or it.net in self.fp):
-                continue    # a step moves only its nets; plane nets' escapes and dog-bones stay
+            if self.only is not None and it.net not in self.only:
+                continue    # a step moves only its nets (plane escapes and dog-bones too, when in its way)
             if it.kind == "via":
                 if Wb.contains(it.geom):
                     rip.append(it)
@@ -371,13 +373,6 @@ class Region:
             for li, l in enumerate(sp.cu):
                 if l in self.layers[n]:
                     blk[li] = self.gr.blocked(g, n, l, w, "track")
-            if HARD_POURS:
-                # another net's fill is not crossed: a track through it cuts the plane, and KiCad's
-                # refill then leaves islands and starved thermals (nekoink U100: +5 open, +3 starved
-                # thermals where our model, judging the old fills, saw 17 fewer open)
-                for (zn, li), m in self._fills().items():
-                    if zn != n:
-                        blk[li] |= m
             if len(self.layers[n]) > 1:
                 via = self.gr.via_allowed(g, n, sp.cu)
                 if HARD_POURS:
@@ -625,6 +620,11 @@ class Region:
         li_of = {l: li for li, l in enumerate(sp.cu)}
         occ_t = self.occ[self.rho[n]].astype(np.float32)
         cost = (1.0 + self.pour + self.hist) * (1.0 + pf * occ_t)
+        # another net's fill is a resource with a price, not a wall: crossing it cuts the plane
+        # (islands, starved thermals), which the refill and KiCad's DRC judge at each checkpoint
+        for (zn, li), m in self._fills().items():
+            if zn != n:
+                cost[li][m] += FILL_COST
         for zl, m in self.pour_of.items():
             if zl[0] == n:
                 cost[zl[1]][m] -= self.gr.pour_cost * (1.0 + pf * occ_t[zl[1]][m])
@@ -1308,10 +1308,10 @@ def _open_parts(sp, fp, net, Wb):
 def _blockers(sp, gr, fp, net, src, others, win, fixed, widths):
     """The nets whose unlocked copper a route of `net` from `src` to `others` inside `win`
     (a box) would cross, cheapest first (lastmile's rip-up search: their copper taken out and
-    priced per cell crossed). Plane nets (with fill) are never blockers: their escapes stay."""
+    priced per cell crossed). Plane escapes and dog-bones are blockers like any other copper."""
     cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
             if it.kind in ("track", "via") and it.net and it.net != net and not it.locked
-            and it.uuid not in fixed and it.net not in fp and it.geom.intersects(win)}
+            and it.uuid not in fixed and it.geom.intersects(win)}
     cand = list(cand.values())
     if not cand:
         return []
@@ -1341,7 +1341,7 @@ def _undo(sp, rg):
 
 
 def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadline=None, log=print, seed=0,
-                  sp=None, refill=True):
+                  sp=None, refill=True, report=None):
     """Monotone repair of window `win` (from `windows`), starting from the board's routing as it
     is: each open connection that ends in the window is a step. A step takes the nets whose
     unlocked copper is in the connection's way (lastmile's rip-up search; at most STEP_NETS,
@@ -1352,8 +1352,10 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
     fewer missing connections than before, or as many (a plateau move, at most STEP_STALL in a
     row); otherwise its copper goes and the old comes back, so the window never gets worse.
     Every REFILL_EVERY steps that close something, KiCad refills the zones of the board so far and
-    the batch stays only if the window has fewer open connections against those fills (`refill`
-    False: against the old fills, for tests without KiCad). Copper with a free end is never
+    the batch stays only if KiCad's DRC of the whole board finds fewer open connections plus
+    errors (signal and plane opens, starved thermals; `refill` False: our count against the old
+    fills, for tests without KiCad). Signals and planes negotiate: plane escapes and dog-bones
+    move like any copper, another net's fill is priced (FILL_COST per cell), not forbidden. Copper with a free end is never
     written. Writes `out` when a checkpoint was kept. Returns a report with every step's and
     checkpoint's record, and join_of / join_box for lastmile.drop_joins."""
     t0 = time.monotonic()
@@ -1374,7 +1376,11 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
     # refilled by KiCad and the window's open connections counted against the new fills; a batch
     # that does not lower that count is undone to the last checkpoint (the old fills misjudge
     # what new copper does to a plane)
-    ck = dict(path=None, count=sum(open0.values()), fills=fills, fp=fp, batch=0, n=0)
+    if refill and report is None:
+        report = drc.run(board, Path(out).parent / (Path(out).stem + "-base.json"))
+    base = drc.summary(report) if refill else None
+    ck = dict(path=None, count=(base["unconnected"] + base["errors"]) if base else sum(open0.values()),
+              fills=fills, fp=fp, batch=0, n=0)
     checks = []
     step_of = {}
     wd = Path(out).parent / (Path(out).stem + "-ck")
@@ -1391,11 +1397,17 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
         rec = dict(n=ck["n"], steps=ck["batch"], dangling_dropped=dropped)
         try:
             if refill:
-                nf = pcbnew_io.zone_fills(drc.stage_board(cand, board, wd / f"ck{ck['n']}"))["zones"]
+                st = drc.stage_board(cand, board, wd / f"ck{ck['n']}")
+                nf = pcbnew_io.zone_fills(st)["zones"]
                 nfp = LM._fill_polys(nf)
+                # KiCad decides: signal and plane opens (islands, pads the fill no longer reaches)
+                # and errors (starved thermals and the like) on the whole board
+                sm = drc.summary(drc.run(st, wd / f"ck{ck['n']}" / "drc.json"))
+                cnt = sm["unconnected"] + sm["errors"]
+                rec.update(drc=sm, model=sum(LM._open_count(sp, nfp, m) for m in nets))
             else:
                 nf, nfp = fills, fp    # no KiCad: judged against the fills we have
-            cnt = sum(LM._open_count(sp, nfp, m) for m in nets)
+                cnt = sum(LM._open_count(sp, nfp, m) for m in nets)
         except Exception as e:  # noqa: BLE001 - no refill, no batch
             nf, nfp, cnt = None, None, None
             rec["error"] = f"{type(e).__name__}: {e}"
@@ -1413,7 +1425,7 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
         is_open = {m for m in nets if LM._open_count(sp, fp, m)}
         ck["batch"] = 0
         checks.append(rec)
-        log(f"region {win['ref']} checkpoint {ck['n']}: open after KiCad's refill {rec['before']} -> "
+        log(f"region {win['ref']} checkpoint {ck['n']}: KiCad open + errors {rec['before']} -> "
             f"{rec['after']} ({'kept' if rec['kept'] else 'undone'}, {dropped} dangling pieces dropped)")
     while deadline is None or time.monotonic() < deadline:
         if ck["batch"] >= REFILL_EVERY:
