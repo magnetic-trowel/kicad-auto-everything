@@ -49,6 +49,23 @@ def test_model_resolves_the_resonance_between_its_snapshots(model):
         assert np.max(np.abs(Zr - Zd)) <= 1e-3 * np.max(np.abs(Zd)), f
 
 
+def test_the_error_estimate_sees_a_reduced_solve_that_is_not_exact(model, monkeypatch):
+    """The estimate's second term: an error in the reduced solve itself (rounding, where the model is
+    ill-conditioned) changes Z at first order, which the residual-times-correction term alone cannot see."""
+    f = 2e6
+    sy = ES.System(model.op, f)
+    X, _ = sy.solve_many(model.P, tol=1e-12, maxiter=3000)
+    Zd = model.P.T @ (X[model.nb:] / sy.kap)
+    exact = model.solve(f)
+    rng = np.random.default_rng(0)
+    dY = 1e-3 * np.abs(exact).max() * rng.standard_normal(exact.shape)
+    monkeypatch.setattr(model, "solve", lambda g: exact + dY if g == f else RD.Reduced.solve(model, g))
+    true = np.abs(model.Z(f) - Zd)
+    est = model.error(f)
+    assert true.max() > 1e3 * np.abs(model.Pr.T @ exact - Zd).max()          # the perturbation dominates
+    assert 0.3 < est.max() / true.max() < 3
+
+
 def test_delivered_power_is_copper_plus_parts(model):
     for f in (0.0, 1e5, 4.1e7, 2e8):
         pw = model.powers(f)

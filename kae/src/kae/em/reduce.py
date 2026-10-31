@@ -213,9 +213,16 @@ class Reduced:
         return (self.G_R + 1j * w * (self.G_L + self.G_Lc) + self.Vl.T @ (self._zl(f)[:, None] * self.Vl)
                 - self.G_D - self.G_D.T)
 
+    def _solve(self, f, B):
+        """A(f)^-1 B, symmetrically equilibrated: at kHz the capacitors' 1/jwC puts the model's condition
+        number near 1/eps (2e16 on a 4-layer board at 1 kHz), the scaled matrix's is ~1e2."""
+        A = self.A(f)
+        d = 1 / np.sqrt(np.maximum(np.abs(np.diag(A)), 1e-300))
+        return d[:, None] * np.linalg.solve(d[:, None] * A * d[None], d[:, None] * B)
+
     def solve(self, f):
         """Reduced coefficients Y (m, nports) of every port's solution at f."""
-        return np.linalg.solve(self.A(f), -self.Pr)
+        return self._solve(f, -self.Pr)
 
     def Z(self, f):
         """Port impedance matrix (nports, nports) at f (Hz): Z_kj = p_k^T phi_j."""
@@ -231,7 +238,7 @@ class Reduced:
         equals the sum of the next two in the full system (energy conservation); in the model the
         difference is a check of its currents."""
         cols = list(range(self.P.shape[1])) if cols is None else list(cols)
-        Y = np.linalg.solve(self.A(f), -self.Pr[:, cols])
+        Y = self._solve(f, -self.Pr[:, cols])
         Z = self.Pr.T @ Y
         quad = (lambda G: np.real(np.einsum("ij,ik,kj->j", Y.conj(), G, Y)))
         Il = self.Vl @ Y
@@ -268,7 +275,12 @@ class Reduced:
         top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * (self.LV @ Y)) - sy.D @ phi
         rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
         r = rhs - np.concatenate([top, -(sy.DT @ I)])
-        e = sy.psolve(r)
+        # Z_kj - Z_r,kj = -u_k^T r_j / kap exactly (the scaled system is complex symmetric, A u_k = b_k), and
+        # u_k = (u_k - u_r,k) + u_r,k: the error of port k's solution, ~ one preconditioner application to its
+        # residual, plus the model's own solution. The latter's term vanishes for an exact Galerkin solve; it
+        # is kept because the reduced solve is not exact where the model is ill-conditioned (kHz, where the
+        # capacitors' 1/jwC dwarfs the copper)
+        e = sy.psolve(r) + np.concatenate([I, phi])
         at = {k: q for q, k in enumerate(need)}
         E = np.abs(e[:, [at[k] for k in rows]].T @ r[:, [at[j] for j in cols]]) / sy.kap
         return E
