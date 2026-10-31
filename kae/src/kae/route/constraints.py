@@ -846,7 +846,16 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
     away from foreign pads and copper by the zone clearance and from the board edge; so each
     strip (spoke width + 2 clearances wide, reaching past the gap by the zone's minimum width)
     is cut to that potential fill, and only the `min_resolved_spokes` strips with the most
-    landing area are kept. `pad_uuids` limits the pads (None: all)."""
+    landing area are kept. `pad_uuids` limits the pads (None: all).
+
+    A strip gives way where it would block another pin's only escape (gives_way): strips that
+    block none are preferred; when fewer than `min_resolved_spokes` of those are left and the
+    pad has a way out for a track itself, the pad gets no strips at all. Its zone then reaches
+    it through the routing or not at all (has_way): KiCad reports no starved thermal for a pad with no
+    spoke that a track joins to its net (checked with kicad-cli on a pad with every spoke cut),
+    and a lone spoke would be one (actual 1 < 2). bancouver40 dogema48: with a 0.508 mm zone
+    clearance, the strips of a 0.5 mm-pitch QFN's GND pins closed their neighbours' only
+    escapes, every seed; the human's GND pins there have no spokes and no error."""
     if sev and _severity_ignored(sev, "starved_thermal"):
         return []
     s = info["settings"]
@@ -861,6 +870,74 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
     if polys:
         board = unary_union(polys)
     foreign_cache = {}
+    lane_w = max(s.get("min_track") or 0.0, 0.1)
+    by_layer = {}
+
+    def pads_on(layer):
+        """(STRtree, [(pad, copper)]) of every pad with copper on `layer`."""
+        if layer not in by_layer:
+            items = []
+            for q in info["pads"]:
+                g = _pad_shapes(q)[1].get(layer)
+                if g is not None and not g.is_empty:
+                    items.append((q, g))
+            by_layer[layer] = (shapely.STRtree([g for _, g in items]), items)
+        return by_layer[layer]
+
+    def free_lanes(q, g, layer):
+        """Straight ways out of pad q (copper g) for a track of the board's minimum width along
+        its own axes that cross no other pad: where a track from it can go."""
+        tree, items = pads_on(layer)
+        cx, cy = q["pos"]
+        x0, y0, x1, y1 = g.bounds
+        far = max(x1 - cx, cx - x0, y1 - cy, cy - y0) + 1.0
+        out = []
+        for k in range(4):
+            a = math.radians((q.get("orient") or 0.0) + 90 * k)
+            lane = LineString([(cx, cy), (cx + far * math.cos(a), cy - far * math.sin(a))]).buffer(
+                lane_w / 2, cap_style="flat")
+            if board is not None and not board.contains(lane):
+                continue
+            hit = False
+            for i in tree.query(lane):
+                o, og = items[int(i)]
+                if o is not q and o.get("net") != q.get("net") and og.intersects(lane):
+                    hit = True
+                    break
+            if not hit:
+                out.append(lane.difference(g))
+        return out
+
+    def has_way(q, g, layer):
+        """Whether a track can leave pad q (copper g): a free lane, or a short straight piece to
+        another pad of its net that crosses no other net's pad (a QFN's exposed pad to its GND pins)."""
+        if free_lanes(q, g, layer):
+            return True
+        from shapely.ops import nearest_points
+        tree, items = pads_on(layer)
+        for i in tree.query(g.buffer(2.0)):
+            o, og = items[int(i)]
+            if o is q or o.get("net") != q.get("net"):
+                continue
+            a, b2 = nearest_points(g, og)
+            piece = LineString([a, b2]).buffer(lane_w / 2) if a.distance(b2) > 1e-6 else None
+            if piece is None or not any(oo.get("net") != q.get("net") and oog.intersects(piece)
+                                        for oo, oog in (items[int(j)] for j in tree.query(piece))):
+                return True
+        return False
+
+    def gives_way(strip, pad, layer):
+        """Whether `strip` (the pad's strips together) covers every free lane of some other pin
+        (another net's pad next to it)."""
+        tree, items = pads_on(layer)
+        for i in tree.query(strip.buffer(lane_w)):
+            q, g = items[int(i)]
+            if q is pad or q.get("net") == pad.get("net") or not q.get("net"):
+                continue
+            lanes = free_lanes(q, g, layer)
+            if lanes and all(strip.intersection(x).area > 1e-6 for x in lanes):
+                return True
+        return False
 
     def foreign(layer, net, clr):
         key = (layer, net, round(clr, 4))
@@ -943,11 +1020,23 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
                     a = math.radians((pad.get("spoke_angle") or 0.0) + (pad.get("orient") or 0.0) + 90 * k)
                     ex, ey = cx + reach * math.cos(a), cy - reach * math.sin(a)
                     strip = LineString([(cx, cy), (ex, ey)]).buffer(sw / 2 + clr, cap_style="flat")
-                    land = strip.intersection(fill).difference(ring)
+                    # fill the spoke can reach: pieces of the strip's fill that enter the relief gap
+                    # (beyond a foreign pad in its way, fill is no landing: KiCad's spoke stops there)
+                    sf = strip.intersection(fill)
+                    land = unary_union([q for q in getattr(sf, "geoms", [sf]) if q.intersects(ring)] or [Polygon()])
+                    land = land.difference(ring)
                     if land.area < sw * max(mt, 0.05):
                         continue
                     cand.append((land.area, strip.intersection(fill.union(ring)).difference(cop.buffer(1e-4))))
                 cand.sort(key=lambda t: -t[0])
+                clear = []    # the best strips that, together, leave every neighbour a way out
+                for c in cand:
+                    if len(clear) < need and not gives_way(unary_union([g for _, g in clear] + [c[1]]), pad, l):
+                        clear.append(c)
+                if len(clear) < min(need, len(cand)) and has_way(pad, cop, l):
+                    continue      # strips that close a neighbour in: none, the pad joins its net by a track
+                if len(clear) >= min(need, len(cand)):
+                    cand = clear
                 corridor = unary_union([g for _, g in cand[:need]]) if cand else None
                 if corridor is not None and not corridor.is_empty:
                     out.append((corridor, l, pad))

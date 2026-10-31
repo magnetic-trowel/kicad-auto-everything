@@ -123,3 +123,26 @@ def test_spoke_strips_follow_the_pad_orientation(tmp_path):
     x, y = next(pd["pos"] for pd in row if pd["number"] == "2")
     track = LineString([(x - 0.4 * d[0], y - 0.4 * d[1]), (x + 0.4 * d[0], y + 0.4 * d[1])]).buffer(0.1)
     assert any(g.intersection(track).area > 1e-6 for g in cors)
+
+
+def _gnd_zone(info, clearance):
+    for pd in info["pads"]:
+        if pd["ref"] == "U9" and pd["number"] == "3":
+            pd["net"] = "GND"
+    info["zones"].append(dict(owner="", name="gnd_f", layers=["F.Cu"],
+                              rings=[[[[100.5, 100.5], [139.5, 100.5], [139.5, 129.5], [100.5, 129.5],
+                                       [100.5, 100.5]]]],
+                              rule_area=False, net="GND", priority=0, clearance=clearance, min_thickness=0.15,
+                              pad_connection="thermal", thermal_gap=0.5, spoke_width=0.5, teardrop=False))
+
+
+def test_spoke_strips_give_way_to_a_neighbours_only_escape(tmp_path):
+    """With a zone clearance this wide, the GND pin's strips would cover both ways out of each
+    neighbour (up and down; sideways are pins): the pin gets no strips, since a track can still
+    leave it. With a narrow clearance the strips stay."""
+    p, info, plan, _sp = _setup(tmp_path)
+    _gnd_zone(info, 0.3)
+    assert not [g for g, l, pad in CN.thermal_corridors(info, plan) if pad["ref"] == "U9" and pad["number"] == "3"]
+    p, info, plan, _sp = _setup(tmp_path / "narrow")
+    _gnd_zone(info, 0.15)
+    assert [g for g, l, pad in CN.thermal_corridors(info, plan) if pad["ref"] == "U9" and pad["number"] == "3"]
