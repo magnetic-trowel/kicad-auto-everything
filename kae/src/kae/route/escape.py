@@ -23,7 +23,10 @@ thesis ch. 2) on every signal layer (_network):
   a site is offered only where the via and its stub pass Space's exact checks.
 
 Plan (plan_grid): stage 1 is the LP of all layers with one commodity (which ball goes down,
-through which site); its options are rounded greedily (a site holds one via); stage 2 solves
+through which site); its options are rounded greedily, the balls with the fewest legal
+options first and the plane balls last (scarce ones get their paths, flexible ones yield; a
+site holds one via; each ball's options are recorded as its flexibility for later
+negotiation); stage 2 solves
 each layer's integer flow with its vias fixed and one commodity per side (falling back to one
 commodity, a network flow, when sides cost escapes); balls the rounding left out are offered
 to each layer in turn. Outer rings stay on the surface (LAYER_COST), as on the human boards
@@ -584,10 +587,25 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
         plan.update(status="no solution", seconds=round(time.monotonic() - t0, 1))
         return plan, ctx, {}, []
     plan["lp"] = round(float(sum(x[v] for v in opt.values())), 1)
-    cand = sorted(((x[v], k, l, t) for (k, l, t), v in opt.items() if x[v] > 1e-6), key=lambda c: -c[0])
+    # flexibility: a ball's legal options (layer and site); the scarce ones choose first, the
+    # flexible ones (outer rings, plane balls that can stitch anywhere) yield
+    # the surface option counts only for the rings the ball layer can serve (O tracks between
+    # two balls let O + 1 rings out; the rule the human boards follow)
+    surf = ctx["cap"][ctx["B"]]["O"] + 1
+    nopt = {}
+    for (k, l, t) in opt:
+        if t is not None or ctx["balls"][k][1] < surf:
+            nopt[k] = nopt.get(k, 0) + 1
+    alts = {}
+    for (k, l, t), v in opt.items():
+        if x[v] > 0.01:
+            alts[k] = alts.get(k, 0) + 1
+    ctx["flex"] = {k: dict(options=nopt.get(k, 0), lp_alternatives=alts.get(k, 0)) for k in ctx["sig"]}
+    cand = sorted(((x[v], k, l, t) for (k, l, t), v in opt.items() if x[v] > 1e-6),
+                  key=lambda c: (nopt.get(c[1], 0), -c[0]))
     cand += sorted(((x[v], k, "plane", t) for (k, t), v in plane.items() if x[v] > 1e-6), key=lambda c: -c[0])
     chosen, taken = {}, set()
-    for val, k, l, t in sorted(cand, key=lambda c: -c[0]):
+    for val, k, l, t in cand:
         if k in chosen or (t is not None and t in taken):
             continue
         chosen[k] = (l, t)
@@ -867,12 +885,14 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
                 slots[key] = [slots.get(key, [0, 0])[0] + 1, 0]
     gr = GridRouter(sp)
     recs = []
-    # outer rings first on each layer: they pass the fewest balls
-    for k in sorted(paths, key=lambda k: (ctx["layers"].index(paths[k]["layer"]), balls[k][1], len(paths[k]["nodes"]))):
+    # the least flexible first on each layer (fewest options: they cannot go elsewhere)
+    flex = ctx.get("flex", {})
+    for k in sorted(paths, key=lambda k: (ctx["layers"].index(paths[k]["layer"]),
+                                          flex.get(k, {}).get("options", 0), -balls[k][1], len(paths[k]["nodes"]))):
         q, pd = paths[k], balls[k][0]
         l = q["layer"]
         rec = dict(pad=f"{pd.owner[0]}.{pd.owner[1]}", net=pd.net, ring=balls[k][1], layer=l, side=q["side"],
-                   via=None, exit=None, laid=False)
+                   via=None, exit=None, laid=False, **flex.get(k, {}))
         recs.append(rec)
         if q["site"] is not None:
             v = vias.get(k)
