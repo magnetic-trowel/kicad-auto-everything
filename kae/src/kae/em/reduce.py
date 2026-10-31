@@ -286,7 +286,7 @@ class Reduced:
         return E
 
     # ------------------------------------------------------------------ greedy build
-    def build(self, fmax, fmin=1e3, tol=1e-3, grid=24, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
+    def build(self, fmax, fmin=10.0, tol=1e-3, grid=None, max_snapshots=12, rows=None, cols=None, scale=None, f0=(0.0,),
               snap_tol=1e-6, keep_factors=FACTOR_BUDGET):
         """Snapshots at f0, then greedily where the estimated relative error of Z[rows][:, cols] over a log
         grid fmin..fmax is largest, until below tol. scale(f) -> (len(rows), len(cols)) array of the
@@ -298,6 +298,8 @@ class Reduced:
         dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
         tolerance; keep_factors: see below."""
         t0 = time.time()
+        # grid: the number of points (default 4.2 a decade: 25 over 1 kHz .. 300 MHz, 33 from 10 Hz)
+        grid = grid or int(np.ceil(4.2 * np.log10(fmax / fmin))) + 1
         G = np.logspace(np.log10(fmin), np.log10(fmax), grid)
         # keep_factors: each grid frequency's factorization across the greedy steps (memory: one sparse factor
         # per grid point; System.nbytes). True keeps all; a number keeps factors up to that many bytes, the rest

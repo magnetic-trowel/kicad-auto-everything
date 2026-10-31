@@ -6,7 +6,7 @@ solves.
 The board's whole circuit goes into its copper (kae.excite.circuit.lump_all); every commutation cell's
 source and every observer is a fixed port. kae.em.reduce builds the model greedily up to 300 MHz with
 errors relative to each pair's layout share (the solve minus the circuit with ideal copper). Then at
-ten seeded random frequencies (log-uniform, 1 kHz .. 300 MHz, none a snapshot) every source-to-observer
+ten seeded random frequencies (log-uniform, 10 Hz .. 300 MHz, none a snapshot) every source-to-observer
 layout share from the model is compared with a direct solve, and the model's port impedance matrix is
 checked for passivity (its Hermitian part positive semidefinite).
 
@@ -142,13 +142,13 @@ def main(argv=None):
     def scale(f):
         Zl = model.Z(f)[np.ix_(rows, cols)] - ideal(bd, f, nodes, n_src)[rows]
         return np.abs(Zl) + 1e-3 * np.abs(Zl).max()
-    model.build(a.fmax, fmin=1e3, tol=a.tol, rows=rows, cols=cols, scale=scale, f0=(0.0, min(10e6, a.fmax / 3)))
+    model.build(a.fmax, tol=a.tol, rows=rows, cols=cols, scale=scale, f0=(0.0, min(10e6, a.fmax / 3)))
     cal = max([tr / es for _, tr, es in model.calibration if es > 0], default=1.0)
     print(f"built in {model.seconds:.0f}s: snapshots {[round(f / 1e6, 4) for f in model.freqs]} MHz, "
           f"basis {model.V.shape[1]}", flush=True)
     rng = np.random.default_rng(a.seed)
     worst = 0.0
-    for f in sorted(10 ** rng.uniform(3, np.log10(a.fmax), 10)):
+    for f in sorted(10 ** rng.uniform(1, np.log10(a.fmax), 10)):
         t0 = time.time()
         sy = ES.System(op, f)
         X, its = sy.solve_many(model.P[:, cols], tol=1e-9, maxiter=3000)

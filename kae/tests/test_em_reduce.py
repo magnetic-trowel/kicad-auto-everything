@@ -66,6 +66,19 @@ def test_the_error_estimate_sees_a_reduced_solve_that_is_not_exact(model, monkey
     assert 0.3 < est.max() / true.max() < 3
 
 
+def test_dc_is_the_limit_of_low_frequencies(model):
+    """At DC the load's capacitor is open: the far port sees the line and the 1 kOhm shunt, continuous with
+    1 Hz (the load's 80 MOhm there shunts it by 1e-5), and the model holds at 10 Hz against a direct solve."""
+    from kae.em.mesh import OPEN, Lumped
+    assert Lumped("a", "b", zf=lambda w: 0.2 + 1 / (1j * w * 2e-9)).z(0.0) == OPEN
+    z0, z1 = model.Z(0.0)[1, 1], model.Z(1.0)[1, 1]
+    assert abs(z0.real - 1e3) < 1.0 and abs(z1 - z0) < 1e-4 * abs(z0)
+    sy = ES.System(model.op, 10.0)
+    X, _ = sy.solve_many(model.P, tol=1e-12, maxiter=3000)
+    Zd = model.P.T @ (X[model.nb:] / sy.kap)
+    assert np.max(np.abs(model.Z(10.0) - Zd)) <= 1e-9 * np.max(np.abs(Zd))
+
+
 def test_delivered_power_is_copper_plus_parts(model):
     for f in (0.0, 1e5, 4.1e7, 2e8):
         pw = model.powers(f)

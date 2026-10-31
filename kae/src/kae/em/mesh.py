@@ -50,6 +50,12 @@ class Via:
     plating: float = PLATING
 
 
+# the DC limit of a part's impedance function: evaluated at W_DC (rad/s), an open circuit beyond OPEN ohms
+# (a 1 nF capacitor reads 1e15 at W_DC; the reduced solves are equilibrated, kae.em.reduce)
+W_DC = 1e-6
+OPEN = 1e12
+
+
 @dataclass
 class Lumped:
     a: str
@@ -65,11 +71,15 @@ class Lumped:
         return self.zf is None and self.R == 0 and self.L == 0 and not self.C
 
     def z(self, w):
+        """Impedance at w (rad/s); at w = 0 the DC limit: a capacitor in series is open (OPEN ohms)."""
         if self.zf is not None:
-            return complex(self.zf(w)) if w > 0 else complex(self.zf(1e3))
+            if w > 0:
+                return complex(self.zf(w))
+            z = complex(self.zf(W_DC))
+            return z if abs(z) < OPEN else complex(OPEN)
         z = self.R + 1j * w * self.L
         if self.C:
-            z = z + (1 / (1j * w * self.C) if w > 0 else 1e12)
+            z = z + (1 / (1j * w * self.C) if w > 0 else OPEN)
         return z
 
 
