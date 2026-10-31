@@ -171,9 +171,11 @@ def rules_of(sp, nets, layers, minimum=False, override=None):
         ws, cs = [], []
         for n in nets:
             mn, opt, _mx = sp.width_limits(n, l)
-            ws.append((mn or opt) if minimum else (opt or mn))
+            # the legal minimum: what the rules impose (0 where they impose none), never a class width
+            ws.append((mn or 0.0) if minimum else (opt or mn))
             cs.append(sp._generic_need(n, "track", l))
-        r = dict(w=_median(ws, 0.2), c=_median(cs, 0.2), D=_median([v[0] for v in vs], 0.6),
+        wmed = sorted(ws)[len(ws) // 2] if (minimum and ws) else _median(ws, 0.2)
+        r = dict(w=max(wmed, 0.01) if minimum else wmed, c=_median(cs, 0.2), D=_median([v[0] for v in vs], 0.6),
                  drill=_median([v[1] for v in vs], 0.3), c_pad=None)
         r.update({k: v for k, v in (override or {}).items() if k in r})
         out[l] = r
@@ -861,12 +863,14 @@ def ring_certificate(sp, pkg, log=print):
         pitch = nb[0][0]
         if pitch > RING_PITCH or abs(nb[1][0] - pitch) > 0.05 * pitch:
             continue        # coarse, or a row's end (it can leave sideways)
+        if _across(p, nb[0][2]) >= pitch:
+            continue        # not a row: the neighbour lies off the pad's side
         if any(q.net == p.net for _d, _i, q in nb):
             continue        # a neighbour of its own net: the track leaves on that side
         total += 1
         a = _across(p, nb[0][2])
         mn, opt, _ = sp.width_limits(p.net, pkg["layer"])
-        w = mn or opt or 0.1
+        w = mn or 0.0                  # the rules' minimum (none: any width)
         c = sp._generic_need(p.net, "track", pkg["layer"])
         gap = pitch - a / 2 - w / 2
         if gap < c - 1e-6:
@@ -1081,7 +1085,8 @@ def _cache_key(opts, pkg):
     b = (opts or {}).get("_board")
     if not b or not Path(b).exists():
         return None
-    h = hashlib.sha1(Path(b).read_bytes())
+    h = hashlib.sha1(Path(__file__).read_bytes())      # this code
+    h.update(Path(b).read_bytes())
     pro = Path(b).with_suffix(".kicad_pro")
     for p in (pro, Path(b).with_suffix(".kicad_dru")):
         if p.exists():
