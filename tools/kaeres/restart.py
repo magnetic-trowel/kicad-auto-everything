@@ -336,7 +336,32 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(best["out"], out)
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
+    carry_report(best["out"].parent, wd)
     return 0
+
+
+def carry_report(attempt_dir, wd):
+    """The kept attempt's own JSON report (a method's last stdout line, as kae.route.cli prints it)
+    goes to restarts/report.json, and its "blocked" lines (kae.route.blocked: the rule each open
+    connection is blocked by) to this log, so the kept board's diagnosis reaches the caller."""
+    try:
+        lines = (attempt_dir / "log").read_text(errors="replace").splitlines()
+    except OSError:
+        return
+    for line in reversed(lines):
+        if line.startswith("{"):
+            try:
+                rep = json.loads(line)
+            except ValueError:
+                continue
+            (wd / "report.json").write_text(json.dumps(rep, indent=1))
+            b = rep.get("blocked") if isinstance(rep, dict) else None
+            if isinstance(b, dict):
+                log(f"blocked: {len(b.get('blocked') or [])} open connections the rules block, "
+                    f"{len(b.get('congestion') or [])} congestion (restarts/report.json)")
+                for s in b.get("summary") or []:
+                    log(f"blocked: {s}")
+            return
 
 
 if __name__ == "__main__":
