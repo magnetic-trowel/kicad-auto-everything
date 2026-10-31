@@ -517,8 +517,31 @@ def layer_names(dsn_tree, copper):
 # new order (translate.permute), so a round that repeats a level is a new attempt; the loop
 # stops after FAILS rounds in a row that were not better (on A+B no fourth round in a row
 # ever improved a board).
-LEVELS = ("items", "nets", "free")
+LEVELS = ("items", "nets", "region", "free")   # "region" only with opts region_level (experimental)
 FAILS = 2
+REGION_TUBE = (2.0, 4.0)   # mm each side of an open connection's straight line: the "region" level's rip-up,
+                           # wider on a second region round
+
+
+def region_rip(report, routed, nets, tube):
+    """Routed items (uuids) of `nets`, and every routed item of any net within `tube` mm of the
+    straight line between the two items of each of the report's missing connections: the
+    region Freerouting re-routes as a whole (its own rip-up), the rest fixed. Experimental (opts
+    region_level): on the merge2 final boards every region round was worse and discarded
+    (fm4dd i2c24io 3 -> 7 open, kata0510 rp2040 6 -> 18, bancouver40 5 -> 13, noggin 1 -> 4):
+    the open connections are not short of room locally but of the topology chosen earlier."""
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    tubes = []
+    for u in report.get("unconnected_items") or []:
+        ps = [(it["pos"]["x"], it["pos"]["y"]) for it in u.get("items") or [] if it.get("pos")]
+        if len(ps) == 2:
+            tubes.append((LineString(ps) if ps[0] != ps[1] else Point(ps[0])).buffer(tube))
+    area = unary_union(tubes) if tubes else None
+    out = {u for u, r in routed.items() if r["net"] in nets}
+    if area is not None:
+        out |= {u for u, r in routed.items() if _routed_geom(r).intersects(area)}
+    return out
 
 
 AUTO_ROUNDS = 50   # rounds "auto": a bound that only a run of ever-better rounds reaches
@@ -578,7 +601,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     best = drc.summary(best_rep)
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
-    level, fails, split_failed = 0, 0, False
+    level, fails, split_failed, region_tries = 0, 0, False, 0
+    levels = LEVELS if opts.get("region_level") else tuple(x for x in LEVELS if x != "region")
     for k in range(1, max_rounds(opts) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
@@ -619,13 +643,21 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         use_split = bool(a["connect"] and fills and not split_failed)
         if not a["items"] and not a["widen"] and not use_split and level == 0 and a["open"]:
-            level = 2  # only open connections: the router needs room, not the same board again
-        mode = LEVELS[level]
+            # only open connections: the router needs room, not the same board again; first the
+            # region round them when opts region_level (experimental: it made every board it ran on
+            # worse, see the close-nearmiss study), else straight to a free re-route
+            level = levels.index("region" if "region" in levels else "free")
+        mode = levels[level]
         rec.update(level=mode, widen=len(a["widen"]), spokes=len(a["spokes"]), rip_items=len(a["items"]),
                    rip_nets=sorted(a["nets"]), connect=sorted(a["connect"]), open=sorted(a["open"]),
                    thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
         if mode == "items":
             rip = _with_via_tracks(output_path, set(a["items"]), routed)
+        elif mode == "region":
+            tube = REGION_TUBE[min(region_tries, len(REGION_TUBE) - 1)]
+            region_tries += 1
+            rip = _with_via_tracks(output_path, region_rip(best_rep, routed, a["nets"], tube), routed)
+            rec["region_tube"] = tube
         else:
             rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
         fixed_board = drc.stage_board(output_path, input_path, rdir / "fixed")
@@ -668,7 +700,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                 log(f"repair round {k} ({mode}): the router wrote no session "
                     f"({'killed' if run.timed_out else 'rc=' + str(run.rc)})")
                 fails += 1
-                level = min(level + 1, len(LEVELS) - 1)
+                level = min(level + 1, len(levels) - 1)
                 if use_split:
                     split_failed = True
                 if fails >= FAILS:
@@ -704,16 +736,16 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         if rec["kept"]:
             shutil.copy2(cand, output_path)
             best, best_rep, best_dir = s_, rep, rdir / "drc"
-            level, fails = 0, 0
+            level, fails, region_tries = 0, 0, 0
         else:
             fails += 1
             if use_split:
                 # the router could not join the parts with everything else in place: from now
                 # on the net's planes are left out and the rest of the routing may move
                 split_failed = True
-                level = len(LEVELS) - 1 if not (a["items"] or a["widen"]) else min(level + 1, len(LEVELS) - 1)
+                level = len(levels) - 1 if not (a["items"] or a["widen"]) else min(level + 1, len(levels) - 1)
             else:
-                level = min(level + 1, len(LEVELS) - 1)
+                level = min(level + 1, len(levels) - 1)
             if fails >= FAILS:
                 rec["stopped"] = "no improvement"
                 break
