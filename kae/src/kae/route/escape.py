@@ -74,6 +74,8 @@ LAYER_COST = 100.0             # per layer away from the ball layer (more than a
                                # escape on the surface, as on the human boards)
 ESCAPE_GAIN = 1000.0           # objective value of one escaped signal ball
 PLANE_GAIN = 500.0             # of one plane ball's dog-bone
+PAD_COST = 150.0               # a via in the ball's pad (legal in KiCad; filled and capped at the fab):
+                               # only where no dog-bone does
 EDGE_COST = 1.0                # per tile or cell crossed
 MILP_S = 60.0                  # seconds for one package's integer plan
 WIDTH_LADDER = (0.15, 0.127, 0.1, 0.075)   # mm: relaxations tried below the board's minimum width
@@ -341,7 +343,7 @@ def _neighbours(P):
 def _network(M, ctx, l, yvar, kinds, sources, tags=True, yfix=()):
     """Add layer `l`'s network to model M. `kinds`: commodities ('*', or sides); `ysites`:
     {site: variable} (vias decided by the model) or {site: 1} (vias fixed); `sources`:
-    {(kind, node): [(variable, coefficient)]} with nodes ('ball', P) or ('site', P).
+    {(kind, node): [(variable, coefficient)]} with nodes ('ball', P), ('site', P) or ('pad', P).
     Returns {flows: {(kind, a, b): var}, adj: {(kind, a): [b]}}."""
     B, cap, balls = ctx["B"], ctx["cap"][l], ctx["balls"]
     nx, ny = ctx["nx"], ctx["ny"]
@@ -401,9 +403,9 @@ def _network(M, ctx, l, yvar, kinds, sources, tags=True, yfix=()):
         cen = cap["centre"] + miss * sum(1 - c for c, _ in pc)
         vt = [(v, miss * cf) for _, vs in pc for v, cf in vs]
         tag = ("centre", l, _ring_at(ctx, X, Y), cap["centre"]) if tags else None
-        if l == B and P in yvar:          # a via in the centre closes it
-            M.row(through + [(yvar[P], cen)], -np.inf, cen, tag=tag)
-        elif l == B and P in yfix:
+        if P in yvar:          # a via in the centre (a dog-bone site, or a via in a ball's pad) closes it
+            M.row(through + vt + [(yvar[P], cen)], -np.inf, cen, tag=tag)
+        elif P in yfix:
             M.row(through, -np.inf, 0)
         else:
             M.row(through + vt, -np.inf, cen, tag=tag)
@@ -463,6 +465,15 @@ def _site_ok(sp, ctx, override=None, check=True):
     dv = (override or {}).get("D")
     for k in ctx["sig"] + ctx["pln"]:
         pd = balls[k][0]
+        if check:
+            vkw = dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1)) if dv else {}
+            sp.via_in_pad = True      # a via in its own pad: Space otherwise keeps vias out of pads
+            try:
+                out[(k, "pad")] = not sp.via_violations(pd.net, *pd.pos, first=True, **vkw)
+            finally:
+                sp.via_in_pad = False
+        else:
+            out[(k, "pad")] = True
         for t in _neighbours_diag(k):
             if t not in sites:
                 continue
@@ -482,7 +493,7 @@ def _neighbours_diag(k):
     return ((2 * i + 1, 2 * j + 1), (2 * i - 1, 2 * j + 1), (2 * i - 1, 2 * j - 1), (2 * i + 1, 2 * j - 1))
 
 
-def _stage1(sp, ctx, site_ok, planes=True):
+def _stage1(sp, ctx, site_ok, planes=True, pads=False):
     """All layers, one commodity: layer and dog-bone site per ball, vias as variables.
     -> (model, option vars {(ball, layer, site or None): var}, plane vars, nets)."""
     M = _Model()
@@ -499,6 +510,10 @@ def _stage1(sp, ctx, site_ok, planes=True):
                 for li, l in enumerate(layers[1:], 1):
                     v = opt[(k, l, t)] = M.var(ESCAPE_GAIN - LAYER_COST * li, 1)
                     src[l].setdefault(("*", ("site", t)), []).append((v, 1))
+        if pads and site_ok.get((k, "pad")):
+            for li, l in enumerate(layers[1:], 1):
+                v = opt[(k, l, ("pad", P))] = M.var(ESCAPE_GAIN - LAYER_COST * li - PAD_COST, 1)
+                src[l].setdefault(("*", ("pad", P)), []).append((v, 1))
     for k in ctx["pln"] if planes else ():
         for t in _neighbours_diag(k):
             if site_ok.get((k, t)):
@@ -511,14 +526,22 @@ def _stage1(sp, ctx, site_ok, planes=True):
     for vs in per.values():
         M.row([(v, 1) for v in vs], -np.inf, 1)
     use = {t: [] for t in y}
+    pad_y, pad_use = {}, {}
     for (k, l, t), v in opt.items():
-        if t is not None:
+        if t is None:
+            continue
+        if t[0] == "pad":
+            pad_use.setdefault(t[1], []).append(v)
+        else:
             use[t].append(v)
+    for P, vs in pad_use.items():
+        pad_y[P] = M.var(0.0, 1)
+        M.row([(v, 1) for v in vs] + [(pad_y[P], -1)], 0, 0)
     for (k, t), v in plane.items():
         use[t].append(v)
     for t, yv in y.items():
         M.row([(v, 1) for v in use[t]] + [(yv, -1)], 0, 0)
-    nets = {l: _network(M, ctx, l, y, ["*"], src[l]) for l in layers}
+    nets = {l: _network(M, ctx, l, y if l == B else {**y, **pad_y}, ["*"], src[l]) for l in layers}
     return M, opt, plane, nets
 
 
@@ -537,7 +560,7 @@ def _stage2(sp, ctx, l, assigned, taken, time_limit, single=False):
         own = min((("W", k[0]), ("E", nx - 1 - k[0]), ("S", k[1]), ("N", ny - 1 - k[1])), key=lambda a: a[1])[0]
         ss = ["*"] if single else list(dict.fromkeys(order[:PLAN_SIDES] + [own]))
         sides_of[k] = ss
-        node = ("ball", (2 * k[0], 2 * k[1])) if t is None else ("site", t)
+        node = _node(k, t)
         for s in ss:
             v = zs[(k, s)] = M.var(ESCAPE_GAIN - (0.0 if single else SIDE_COST[order.index(s)]), 1)
             src.setdefault((s, node), []).append((v, 1))
@@ -552,8 +575,7 @@ def _stage2(sp, ctx, l, assigned, taken, time_limit, single=False):
     for (k, s), v in zs.items():
         if x[v] < 0.5:
             continue
-        t = dict(assigned)[k]
-        node = ("ball", (2 * k[0], 2 * k[1])) if t is None else ("site", t)
+        node = _node(k, dict(assigned)[k])
         nodes = [node]
         for _ in range(8 * (nx + ny) + 16):
             nxt = next((b_ for b_ in net["adj"].get((s, node), []) if rem.get((s, node, b_), 0) > 0), None)
@@ -568,6 +590,18 @@ def _stage2(sp, ctx, l, assigned, taken, time_limit, single=False):
     return out
 
 
+def _node(k, t):
+    """The source node of ball k's escape: the ball, its dog-bone site, or its pad's via."""
+    if t is None:
+        return ("ball", (2 * k[0], 2 * k[1]))
+    return ("pad", t[1]) if t[0] == "pad" else ("site", t)
+
+
+def _key(t):
+    """What a via occupies (a site, or the ball's position for a via in its pad)."""
+    return t[1] if t[0] == "pad" else t
+
+
 def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     """The escape plan of a ball grid -> (plan summary, ctx, {ball: path}, plane vias).
     Stage 1: the LP of all layers (which ball goes down, through which site); its options
@@ -577,7 +611,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     t0 = time.monotonic()
     ctx = _setup(sp, pkg, info, opts)
     ok = _site_ok(sp, ctx)
-    M, opt, plane, _ = _stage1(sp, ctx, ok)
+    M, opt, plane, _ = _stage1(sp, ctx, ok, pads=bool((opts or {}).get("escape_via_in_pad")))
     obj, x, _ = M.solve(integer=False)
     plan = dict(ref=pkg["ref"], kind="grid", pitch=round(ctx["p"], 4), balls=len(ctx["balls"]),
                 signal=len(ctx["sig"]), plane=len(ctx["pln"]), layers=ctx["layers"], capacity=ctx["cap"],
@@ -606,11 +640,11 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     cand += sorted(((x[v], k, "plane", t) for (k, t), v in plane.items() if x[v] > 1e-6), key=lambda c: -c[0])
     chosen, taken = {}, set()
     for val, k, l, t in cand:
-        if k in chosen or (t is not None and t in taken):
+        if k in chosen or (t is not None and _key(t) in taken):
             continue
         chosen[k] = (l, t)
         if t is not None:
-            taken.add(t)
+            taken.add(_key(t))
     plane_vias = [(k, t) for k, (l, t) in chosen.items() if l == "plane"]
     paths = {}
 
@@ -653,7 +687,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
             continue
         for k, t in add:
             if t is not None:
-                taken.add(t)
+                taken.add(_key(t))
         got = layer_plan(l, old_a + add)
         if len(got) > len(old_g):
             per_layer[l] = (old_a + add, got)
@@ -661,7 +695,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
                 chosen[k] = (l, t)
         for k, t in add:
             if t is not None and k not in got:
-                taken.discard(t)
+                taken.discard(_key(t))
     for l, (assigned, got) in per_layer.items():
         for k, (s, nodes) in got.items():
             paths[k] = dict(layer=l, side=s, site=dict(assigned)[k], nodes=nodes)
@@ -676,10 +710,12 @@ def bound(sp, pkg, info, opts=None, **kw):
     """(LP bound on the escapable signal balls, ctx, duals): one commodity on every layer,
     the board's legal minimum width, and the relaxations in `kw` (override, extra_layers,
     open_planes)."""
-    ctx = _setup(sp, pkg, info, opts, minimum=True, **kw)
+    pads = kw.pop("pads", False) or bool((opts or {}).get("escape_via_in_pad"))
+    kw["pads"] = pads
+    ctx = _setup(sp, pkg, info, opts, minimum=True, **{k: v for k, v in kw.items() if k != "pads"})
     ok = _site_ok(sp, ctx, override=kw.get("override"))
     # plane balls' vias left out: the bound only credits the signal balls more room
-    M, opt, plane, _ = _stage1(sp, ctx, ok, planes=False)
+    M, opt, plane, _ = _stage1(sp, ctx, ok, planes=False, pads=kw.get("pads", False))
     obj, x, duals = M.solve(integer=False)
     if x is None:
         return None, ctx, {}
@@ -745,6 +781,10 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
             relax.append(dict(rule="via diameter", value=round(D, 4), escapable=round(e, 1), all=True))
             break
         D -= 0.05
+    if not (opts or {}).get("escape_via_in_pad") and more_time():
+        e, _m, _d = bound(sp, pkg, info, opts, pads=True)
+        relax.append(dict(rule="vias in the balls' pads (via-in-pad, filled and capped; kae: --set "
+                               "escape_via_in_pad=true)", escapable=round(e or 0, 1), all=ok(e)))
     from .translate import plane_layers
     pls = sorted(plane_layers(info))
     if pls and more_time():
@@ -786,6 +826,8 @@ def _kicad_edit(ref, r, layers):
                 f"expansion in {ref}) so that a track keeps {v} mm from a ball")
     if rule == "via diameter":
         return f"board setup / net class via diameter {v} mm (or a via type: micro or blind via, via-in-pad)"
+    if rule.startswith("vias in the balls"):
+        return f"fab: via-in-pad (filled, capped) for {ref}; KiCad's DRC allows a same-net via in a pad"
     if rule.startswith("signals on plane"):
         return "route signals on the plane layers (kae: --set escape_plane_layers=true, --planes allow)"
     if "more signal layers" in rule:
@@ -861,6 +903,17 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
     owner = ("escape", ctx["ref"])
 
     def dog_bone(pd, t):
+        if t[0] == "pad":
+            v = pd.pos
+            sp.via_in_pad = True
+            try:
+                bad = sp.via_violations(pd.net, *v, first=True)
+            finally:
+                sp.via_in_pad = False
+            if bad:
+                return None
+            sp.add_via(pd.net, *v, owner=owner, uuid=W.new_uuid())
+            return v
         v = xy(t[0] / 2, t[1] / 2)
         if sp.via_violations(pd.net, *v, first=True) or \
                 _starves(sp, pd.net, Point(v), sp.via_size(pd.net)[0] / 2, sp.cu, zclr):
