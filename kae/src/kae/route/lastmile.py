@@ -475,14 +475,20 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     rep["ripped_soft"] = sorted(u for u in ripped_ids if u in soft)
     rep["rerouted"] = sorted(n for n in set(ripped_ids.values())
                              if len([p for p in parts(sp, fp, n) if _relevant(p)]) < 2)
-    rep["added"] = [it.uuid for it in sp.routed]
+    rep["added"] = _write(sp, board, out, remove=rep["ripped"])
+    return rep
+
+
+def _write(sp, board, out, remove=()):
+    """`out` = `board` without `remove` (uuids) plus the space's new copper, locked; returns
+    the new copper's uuids."""
     tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
                it.uuid, True) for it in sp.routed if it.kind == "track"]
     vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, True) for it in sp.routed if it.kind == "via"]
-    W.edit(board, out, remove=rep["ripped"]) if rep["ripped"] else W.edit(board, out)
+    W.edit(board, out, remove=list(remove)) if remove else W.edit(board, out)
     if tracks or vias:
         W.append_items(out, out, tracks=tracks, vias=vias)
-    return rep
+    return [it.uuid for it in sp.routed]
 
 
 def _open_count(sp, fp, net):
@@ -568,13 +574,7 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
                 continue
             st[0] += 1
             rep["escaped"] += 1
-    rep["added"] = [it.uuid for it in sp.routed]
-    tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
-               it.uuid, True) for it in sp.routed if it.kind == "track"]
-    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, True) for it in sp.routed if it.kind == "via"]
-    W.edit(board, out)
-    if tracks or vias:
-        W.append_items(out, out, tracks=tracks, vias=vias)
+    rep["added"] = _write(sp, board, out)
     log(f"plane escapes: {rep['escaped']} escaped, {rep['failed']} left to the router "
         f"({', '.join(f'{n} {a}/{a + f}' for n, (a, f) in rep['nets'].items() if a or f)})")
     return rep

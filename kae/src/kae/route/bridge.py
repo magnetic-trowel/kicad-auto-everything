@@ -56,7 +56,7 @@ DEFAULT_OPTS = dict(
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
     neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
-    plane_escapes=False,     # before routing, join each pad of a zone net that the input's fill does not
+    plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # locked: the plane connections the human boards make first
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as

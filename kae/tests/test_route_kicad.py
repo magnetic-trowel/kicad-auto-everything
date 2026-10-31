@@ -311,7 +311,7 @@ def test_locked_preroutes_come_back_unchanged(routed, tmp_path):
     assert set(before) == keep and all("(locked yes)" in b for b in before.values())
 
     out2 = tmp_path / "out2" / "board.kicad_pcb"
-    rep = bridge.route(pre, out2, time_s=120, workdir=tmp_path / "wd2", opts=dict(rounds=1))
+    rep = bridge.route(pre, out2, time_s=120, workdir=tmp_path / "wd2", opts=dict(rounds=1, plane_escapes=False))
     assert rep["status"] == "routed" and rep["fixed_items"] == len(keep)
     after = _blocks(out2.read_text())
     for u, b in before.items():
@@ -447,7 +447,7 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
     # the fake needs no memory: its own slots, so it never waits for a host-wide Freerouting
     # slot (kae.route.freerouting._Slot) held by real routers, which would spend the deadline
     monkeypatch.setenv("KAE_FR_LOCKDIR", str(tmp_path / "fr-slots"))
-    fast = dict(repair=False, router_share_alone=0.25, router_grace=2)
+    fast = dict(repair=False, router_share_alone=0.25, router_grace=2, plane_escapes=False)
 
     out = tmp_path / "out" / "board.kicad_pcb"
     rep = bridge.route(board, out, time_s=50, workdir=tmp_path / "wd", opts=fast)
