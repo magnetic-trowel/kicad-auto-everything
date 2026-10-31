@@ -934,6 +934,20 @@ def _region(input_path, output_path, wd, plan, info, opts, deadline, rounds, bes
             rec["drc_error"] = str(e)
             break
         s_ = drc.summary(rep)
+        if not errors_no_worse(s_, best, base) and r.get("join_of") and left() > 30:
+            # the steps whose copper KiCad faults go, the rest is judged again (as the last mile does)
+            from . import lastmile
+            more = {t for t, n in (s_.get("by_type") or {}).items() if n > (best.get("by_type") or {}).get(t, 0)}
+            bad = lastmile.drop_joins(cand, cand, r, rep, types=more)
+            if bad:
+                try:
+                    d2 = rdir / "drc2"
+                    rep = drc.run(drc.stage_board(cand, input_path, d2), d2 / "drc.json", timeout=max(10, left() - 5))
+                    s_ = drc.summary(rep)
+                    rec["steps_dropped"] = len(bad)
+                except drc.DrcError as e:
+                    rec["drc_error"] = str(e)
+                    break
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
         log(f"region round {k} ({w['ref']}): {s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "

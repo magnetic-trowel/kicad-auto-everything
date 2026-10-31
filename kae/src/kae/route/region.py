@@ -57,13 +57,16 @@ import math
 import os
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 from shapely.geometry import LineString, Point, box
 
+from kae.board import pcbnew_io
 from kae.board.kicad_file import load
 
 from . import critical_write as W
+from . import drc
 from . import lastmile as LM
 from .critical_grid import Grid, GridRouter, _margin, _merge_collinear, _pour_mask
 from .critical_space import EXACT_TOL, INF, TOL, Space
@@ -89,6 +92,8 @@ STALL = 8              # negotiation stops after this many iterations with no be
 NEG_SHARE = 0.6        # share of the time for the negotiation; the neighbourhood repair gets the rest
 LNS_SIZE = 8           # nets re-planned together in one repair move (MAPF-LNS2's neighbourhood)
 LNS_PRES = 1000.0      # pres_fac of a repair move: another net's cell costs as a long detour
+REFILL_EVERY = 6       # steps that close something between two KiCad refills (checkpoints)
+HARD_POURS = True      # other nets' fills and thermal corridors are walls inside a window (not priced)
 FLOAT_MM = 1.0         # mm along the border either side of a stub: where its net may cross instead
 LNS_STALL = 60         # repair moves in a row without fewer conflicts before it stops
 MAX_NETS = 600         # nets in one window at most (more: the window is skipped)
@@ -337,6 +342,25 @@ class Region:
         self.routes = {}
         self._terminals()
 
+    def _fills(self):
+        """{(net, layer index): cells inside that net's zone fill} on the grid (the board's
+        refilled zones, `fills`)."""
+        if getattr(self, "_fill_cells", None) is None:
+            g = self.grid
+            bx = box(g.x0, g.y0, g.x1, g.y1)
+            out = {}
+            for zn, by_l in self.fp.items():
+                for l, polys in by_l.items():
+                    if l not in self.sp.cu:
+                        continue
+                    hit = [q for q in polys if q.intersects(bx)]
+                    if hit:
+                        m = _pour_mask(g, hit, bx, step=1)
+                        if m.any():
+                            out[(zn, self.sp.cu.index(l))] = m
+            self._fill_cells = out
+        return self._fill_cells
+
     def _base(self, n):
         """(blocked bits, via-allowed bits) of net n on the grid, cached packed."""
         hit = self.base.get(n)
@@ -347,8 +371,24 @@ class Region:
             for li, l in enumerate(sp.cu):
                 if l in self.layers[n]:
                     blk[li] = self.gr.blocked(g, n, l, w, "track")
+            if HARD_POURS:
+                # another net's fill is not crossed: a track through it cuts the plane, and KiCad's
+                # refill then leaves islands and starved thermals (nekoink U100: +5 open, +3 starved
+                # thermals where our model, judging the old fills, saw 17 fewer open)
+                for (zn, li), m in self._fills().items():
+                    if zn != n:
+                        blk[li] |= m
             if len(self.layers[n]) > 1:
                 via = self.gr.via_allowed(g, n, sp.cu)
+                if HARD_POURS:
+                    D, _d = sp.via_size(n)
+                    bx = box(g.x0, g.y0, g.x1, g.y1)
+                    for l in sp.cu:
+                        for it in sp.query(l, (g.x0, g.y0, g.x1, g.y1)):
+                            if it.kind == "corridor" and it.net != n and it.geom.intersects(bx):
+                                m = np.zeros((g.ny, g.nx), bool)
+                                g.within(it.geom, D / 2 + 1e-3, m)
+                                via &= ~m      # no via in another pad's thermal spokes either
             else:
                 via = np.zeros((g.ny, g.nx), bool)
             hit = (np.packbits(blk), np.packbits(via))
@@ -1301,7 +1341,7 @@ def _undo(sp, rg):
 
 
 def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadline=None, log=print, seed=0,
-                  sp=None):
+                  sp=None, refill=True):
     """Monotone repair of window `win` (from `windows`), starting from the board's routing as it
     is: each open connection that ends in the window is a step. A step takes the nets whose
     unlocked copper is in the connection's way (lastmile's rip-up search; at most STEP_NETS,
@@ -1311,7 +1351,11 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
     (Region with `only`), laid with exact checks. A step is kept only when its nets end with
     fewer missing connections than before, or as many (a plateau move, at most STEP_STALL in a
     row); otherwise its copper goes and the old comes back, so the window never gets worse.
-    Writes `out` when a step was kept. Returns a report with every step's record."""
+    Every REFILL_EVERY steps that close something, KiCad refills the zones of the board so far and
+    the batch stays only if the window has fewer open connections against those fills (`refill`
+    False: against the old fills, for tests without KiCad). Copper with a free end is never
+    written. Writes `out` when a checkpoint was kept. Returns a report with every step's and
+    checkpoint's record, and join_of / join_box for lastmile.drop_joins."""
     t0 = time.monotonic()
     if sp is None:
         sp = Space(load(board), info, plan=plan, sev=sev or {})
@@ -1326,7 +1370,54 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
     steps, kept, stall, tried = [], 0, 0, {}
     t_step = []
     is_open = {n for n, v in open0.items() if v}
+    # checkpoints: every REFILL_EVERY steps that close something, the board is written, its zones
+    # refilled by KiCad and the window's open connections counted against the new fills; a batch
+    # that does not lower that count is undone to the last checkpoint (the old fills misjudge
+    # what new copper does to a plane)
+    ck = dict(path=None, count=sum(open0.values()), fills=fills, fp=fp, batch=0, n=0)
+    checks = []
+    step_of = {}
+    wd = Path(out).parent / (Path(out).stem + "-ck")
+
+    def checkpoint(final=False):
+        nonlocal sp, gr, fp, fills, is_open
+        if not ck["batch"]:
+            return
+        ck["n"] += 1
+        cand = wd / f"ck{ck['n']}.kicad_pcb"
+        wd.mkdir(parents=True, exist_ok=True)
+        dropped = _drop_dangling(sp, fp, file_ids)
+        _write_diff(sp, board, cand, file_ids)
+        rec = dict(n=ck["n"], steps=ck["batch"], dangling_dropped=dropped)
+        try:
+            if refill:
+                nf = pcbnew_io.zone_fills(drc.stage_board(cand, board, wd / f"ck{ck['n']}"))["zones"]
+                nfp = LM._fill_polys(nf)
+            else:
+                nf, nfp = fills, fp    # no KiCad: judged against the fills we have
+            cnt = sum(LM._open_count(sp, nfp, m) for m in nets)
+        except Exception as e:  # noqa: BLE001 - no refill, no batch
+            nf, nfp, cnt = None, None, None
+            rec["error"] = f"{type(e).__name__}: {e}"
+        rec.update(before=ck["count"], after=cnt)
+        if cnt is not None and cnt < ck["count"]:
+            ck.update(path=cand, count=cnt, fills=nf, fp=nfp)
+            fills, fp = nf, nfp
+            rec["kept"] = True
+        else:
+            rec["kept"] = False
+            src = ck["path"] or board
+            sp = Space(load(src), info, plan=plan, sev=sev or {})
+            gr = LM._SoftRouter(sp)
+            fills, fp = ck["fills"], ck["fp"]
+        is_open = {m for m in nets if LM._open_count(sp, fp, m)}
+        ck["batch"] = 0
+        checks.append(rec)
+        log(f"region {win['ref']} checkpoint {ck['n']}: open after KiCad's refill {rec['before']} -> "
+            f"{rec['after']} ({'kept' if rec['kept'] else 'undone'}, {dropped} dangling pieces dropped)")
     while deadline is None or time.monotonic() < deadline:
+        if ck["batch"] >= REFILL_EVERY:
+            checkpoint()
         todo = []
         for n in sorted(is_open):
             ps, inside = _open_parts(sp, fp, n, Wb)
@@ -1383,8 +1474,11 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
             _undo(sp, rg)
         else:
             kept += 1
+            if a_ < b_:
+                ck["batch"] += 1
             for it in rg.new + rg.stubs:
                 it.locked = False      # a later step may move it; written locked (_write_diff)
+                step_of[it.uuid] = len(steps) + 1
             for m in move:
                 if after.get(m):
                     is_open.add(m)
@@ -1397,6 +1491,7 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
         log(f"region {win['ref']} step {len(steps)} {n}: {len(move)} nets moved, open {b_} -> {a_} "
             f"({'kept' if ok else 'undone'}; {'converged' if rg.converged else 'not converged'} in "
             f"{len(rg.stats)} iterations, {rec['seconds']} s)")
+    checkpoint(final=True)
     open1 = {n: LM._open_count(sp, fp, n) for n in nets}
     rep = dict(ref=win["ref"], kind=win["kind"], pitch=win["pitch"], box=[round(v, 3) for v in win["box"]],
                nets=len(nets), mode="repair", steps=steps, kept=kept,
@@ -1404,19 +1499,79 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
                step_seconds=dict(n=len(t_step), mean=round(float(np.mean(t_step)), 1) if t_step else 0.0,
                                  max=max(t_step) if t_step else 0.0),
                converged=sum(open1.values()) == 0)
-    rep["wrote"] = rep["open_after"] < rep["open_before"]
+    rep["checkpoints"] = checks
+    rep["wrote"] = ck["path"] is not None
     if rep["wrote"]:
-        rep["added"] = _write_diff(sp, board, out, file_ids)
+        import shutil
+        shutil.copy2(ck["path"], out)
+        rep["open_after"] = ck["count"]
+        rep["added"] = [it.uuid for it in sp.existing + sp.routed
+                        if it.kind in ("track", "via") and it.uuid not in file_ids]
+        # which step laid each new item, and each step's box: drop_joins takes out the steps whose
+        # copper KiCad's DRC faults
+        rep["join_of"] = {u: step_of[u] for u in rep["added"] if u in step_of}
+        boxes = {}
+        for it in sp.existing + sp.routed:
+            j = rep["join_of"].get(it.uuid)
+            if j is not None:
+                b_ = it.bbox
+                o = boxes.get(j, b_)
+                boxes[j] = (min(o[0], b_[0]), min(o[1], b_[1]), max(o[2], b_[2]), max(o[3], b_[3]))
+        rep["join_box"] = boxes
     rep["seconds"] = round(time.monotonic() - t0, 1)
     log(f"region {win['ref']}: {kept} of {len(steps)} steps kept; open on its nets {rep['open_before']} -> "
         f"{rep['open_after']} ({rep['seconds']} s)")
     return rep
 
 
-def _write_diff(sp, board, out, file_ids):
+def _drop_dangling(sp, fp, file_ids):
+    """Take out of the space the new tracks (and border stubs) with an end on no copper of their
+    net (no pad, track end or body, via or fill there), and new vias that touch nothing, until
+    none is left: copper with a free end is a track_dangling error on boards that check it
+    (sdi-mipi: 26 from stubs whose inside part a rejected move left unrouted). Returns their count."""
+    from shapely.geometry import Point as P_
+    dropped = 0
+    while True:
+        new = [it for it in sp.existing + sp.routed if it.kind in ("track", "via") and it.uuid not in file_ids]
+        bad = []
+        for it in new:
+            if it.kind == "track":
+                ends = [it.geom.coords[0], it.geom.coords[-1]]
+                layer = next(iter(it.layers))
+            else:
+                ends, layer = [(it.geom.x, it.geom.y)], None
+            for e in ends:
+                pt = P_(e)
+                hit = False
+                for l in (it.layers if layer is None else [layer]):
+                    for o in sp.query(l, (e[0], e[1], e[0], e[1]), 0.01):
+                        if o is it or o.net != it.net or o.kind not in ("pad", "track", "via"):
+                            continue
+                        if o.geom.distance(pt) <= (o.r or 0.0) + 1e-6:
+                            hit = True
+                            break
+                    if not hit:
+                        for q in (fp.get(it.net) or {}).get(l, []):
+                            if q.distance(pt) <= 1e-6:
+                                hit = True
+                                break
+                    if hit:
+                        break
+                if not hit:
+                    bad.append(it)
+                    break
+        if not bad:
+            return dropped
+        sp.remove(bad)
+        dropped += len(bad)
+
+
+def _write_diff(sp, board, out, file_ids, fp=None):
     """`out` = `board` with the space's copper: the board's tracks and vias no longer in the space
     taken out, the space's new ones added (stubs unlocked, as the tracks they come from; the rest
     locked, as the last mile's). Returns the new uuids."""
+    if fp is not None:
+        _drop_dangling(sp, fp, file_ids)
     present = {it.uuid for it in sp.existing + sp.routed if it.kind in ("track", "via")}
     remove = sorted(u for u in file_ids if u and u not in present)
     tracks, vias, added = [], [], []

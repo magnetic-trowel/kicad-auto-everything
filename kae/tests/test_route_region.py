@@ -89,7 +89,8 @@ def test_monotone_repair_joins_and_stays_legal(tmp_path):
     plan = CN.plan(info, p, {})
     sp = Space(load(p), info, plan=plan)
     w = next(x for x in region.windows(sp) if x["ref"] == "U7")
-    r = region.repair_window(p, info, plan, [], tmp_path / "out.kicad_pcb", w, sp=sp, log=lambda m: None)
+    r = region.repair_window(p, info, plan, [], tmp_path / "out.kicad_pcb", w, sp=sp, log=lambda m: None,
+                             refill=False)
     assert r["open_after"] < r["open_before"] and r["wrote"]
     assert all(s["after"] <= s["before"] for s in r["steps"] if s.get("kept"))
     for it in sp.routed + sp.existing:
