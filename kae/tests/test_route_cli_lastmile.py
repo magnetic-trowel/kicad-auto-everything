@@ -37,3 +37,11 @@ def test_route_first_reads_the_restart_history(monkeypatch, tmp_path):
     monkeypatch.setenv("KAE_ROUTE_HISTORY", str(h))
     assert bridge.route_first({}) == (["SCLK", "MOSI"], str(h))
     assert bridge.route_first({"history": str(tmp_path / "missing.json")})[0] == []   # unreadable: empty
+
+
+def test_route_first_takes_a_few_nets_only(monkeypatch, tmp_path):
+    h = tmp_path / "history.json"
+    h.write_text(json.dumps({f"N{i:02d}": 30 - i for i in range(30)}))
+    monkeypatch.setenv("KAE_ROUTE_HISTORY", str(h))
+    assert bridge.route_first({})[0] == [f"N{i:02d}" for i in range(bridge.ROUTE_FIRST_MAX)]
+    assert len(bridge.route_first({"route_first_max": 3})[0]) == 3

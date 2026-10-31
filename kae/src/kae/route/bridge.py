@@ -255,10 +255,14 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
             report["workdir"] = str(wd)
 
 
+ROUTE_FIRST_MAX = 8   # nets of a failure history routed first at most (opts route_first_max)
+
+
 def route_first(opts):
     """(nets to route first, history path) from a failure history: a JSON {net: times an earlier
     attempt left it open} at opts history, else at $KAE_ROUTE_HISTORY (the restart wrapper's
-    --history). ([], None) without one; an unreadable one counts as empty."""
+    --history): the ROUTE_FIRST_MAX most often open. ([], None) without one; an unreadable one
+    counts as empty."""
     path = opts.get("history") or os.environ.get("KAE_ROUTE_HISTORY")
     if not path:
         return [], None
@@ -266,7 +270,10 @@ def route_first(opts):
         hist = json.loads(Path(path).read_text())
     except (OSError, ValueError):
         hist = {}
-    return translate.route_first(hist if isinstance(hist, dict) else {}), path
+    # a few nets only: with every net once open (a first wave of 30-70 open), the history fixed the
+    # whole placement order and every later attempt routed alike (kata0510 rp2040: 7, 7, 7, 7 open)
+    return translate.route_first(hist if isinstance(hist, dict) else {},
+                                 limit=int(opts.get("route_first_max", ROUTE_FIRST_MAX))), path
 
 
 def router_budget(left_s, opts):
