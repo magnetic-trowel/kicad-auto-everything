@@ -54,6 +54,7 @@ DEFAULT_OPTS = dict(
                              # (Freerouting power layers, no traces; a repair round with open connections
                              # may use them), "strict" (power layers, never), "allow" (KiCad's types)
     plane_cost=4.0,          # plane-layer trace cost for planes="cost"
+    outer_surcharge=None,    # outer-layer trace cost per signal layer beyond two (None: Freerouting's 0.2)
     neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
@@ -125,6 +126,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
+        p.outer_surcharge = opts.get("outer_surcharge")
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)

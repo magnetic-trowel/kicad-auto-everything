@@ -457,18 +457,22 @@ def plane_layers(info, share=PLANE_SHARE):
     return {l: v[0] for l, v in out.items()}
 
 
-def layer_rules(names, is_plane, is_signal, k=PLANE_COST):
+OUTER_SURCHARGE = 0.2      # Freerouting's own default: outer layers cost this much more per signal layer
+
+
+def layer_rules(names, is_plane, is_signal, k=PLANE_COST, outer=OUTER_SURCHARGE):
     """A Specctra rules file (text) whose autoroute_settings give every layer its trace costs:
-    1 per unit length in the preferred direction and 2 against it, outer layers 0.2 per
-    signal layer more when there are more than two (Freerouting's own defaults), and plane
-    layers k times that. None when no layer is a plane."""
-    if not any(is_plane):
+    1 per unit length in the preferred direction and 2 against it, outer layers `outer` per
+    signal layer more when there are more than two (Freerouting's own default 0.2), and plane
+    layers k times that. None when no layer is a plane and the outer surcharge is
+    Freerouting's own."""
+    if not any(is_plane) and outer == OUTER_SURCHARGE:
         return None
     n = len(names)
     sig = sum(1 for x in is_signal if x)
     out = ["(rules PCB board", "  (autoroute_settings"]
     for i, (name, pl) in enumerate(zip(names, is_plane)):
-        base = 1.0 + (0.2 * sig if sig > 2 and i in (0, n - 1) else 0.0)
+        base = 1.0 + (outer * sig if sig > 2 and i in (0, n - 1) else 0.0)
         c = base * (k if pl else 1.0)
         out.append(f"    (layer_rule {atom_name(name)} (preferred_direction_trace_costs {fmt(c)})"
                    f" (against_preferred_direction_trace_costs {fmt(2.0 * c)}))")
@@ -544,10 +548,13 @@ def apply(tree, plan, info):
         if made:
             summary["plane_layers_power"] = made
     plan.layer_rules = None
-    if getattr(plan, "plane_policy", "signal") == "cost":
-        plan.layer_rules = layer_rules(dsn_names, [c in plane_layers(info) for c in cu],
+    outer = getattr(plan, "outer_surcharge", None)
+    outer = OUTER_SURCHARGE if outer is None else float(outer)
+    if getattr(plan, "plane_policy", "signal") == "cost" or outer != OUTER_SURCHARGE:
+        cost = getattr(plan, "plane_policy", "signal") == "cost"
+        plan.layer_rules = layer_rules(dsn_names, [cost and c in plane_layers(info) for c in cu],
                                        [str((find(l, "type") or [None, "signal"])[1]) == "signal" for l in layers],
-                                       getattr(plan, "plane_cost", None) or PLANE_COST)
+                                       getattr(plan, "plane_cost", None) or PLANE_COST, outer)
         if plan.layer_rules:
             summary["plane_layers_costed"] = [c for c in cu if c in plane_layers(info)]
 

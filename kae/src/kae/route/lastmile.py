@@ -228,14 +228,30 @@ def _try(gr, sp, net, src, others, win, widths):
         return None
     grid = gr.window([Anchor(win, tuple(sp.cu))], margin=0.0)
     for w in widths:
+        # only the layers whose rules allow this width (sdi-mipi: ddr3 0.2 mm outside, at most
+        # 0.162 mm inside; one width for all layers made 50 track_width errors)
+        cu = [l for l in sp.cu if _width_ok(sp, net, l, w)]
+        if not cu:
+            continue
         for vc in VIA_COSTS:
-            rt = gr.connect(net, src, dst, w, sp.cu, via=len(sp.cu) > 1, window=grid, via_cost=vc)
+            rt = gr.connect(net, src, dst, w, cu, via=len(cu) > 1, window=grid, via_cost=vc)
             if rt is None or not (rt.segs or rt.vias):
                 break
             new = _commit(sp, rt)
             if new is not None:
                 return rt, new
     return None
+
+
+def _width_ok(sp, net, layer, w):
+    mn, _opt, mx = sp.width_limits(net, layer)
+    return w >= (mn or 0.0) - 1e-6 and (mx is None or w <= mx + 1e-6)
+
+
+def widths_of(sp, net):
+    """The track widths to try for `net`, widest first: each layer's opt and min."""
+    ws = {round(w, 4) for l in sp.cu for w in sp.width_limits(net, l)[:2] if w and w > 0}
+    return sorted(ws, reverse=True) or [0.2]
 
 
 def _own(it):
@@ -400,8 +416,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
         """Join `net`'s parts (at most max_parts joins); nets it rips go to `local`. True when
         parts are still left after max_parts joins (a pour in many pieces)."""
         nonlocal joins
-        mn, opt, _mx = sp.width_limits(net, sp.cu[0])
-        widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
+        widths = widths_of(sp, net)
         status = rep["nets"].setdefault(net, [])
         for _ in range(max_parts):
             ps = [p for p in parts(sp, fp, net) if _relevant(p)]
@@ -477,7 +492,45 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     rep["rerouted"] = sorted(n for n in set(ripped_ids.values())
                              if len([p for p in parts(sp, fp, n) if _relevant(p)]) < 2)
     rep["added"] = _write(sp, board, out, remove=rep["ripped"])
+    # which join laid each new item: a caller may take out the joins KiCad's DRC faults
+    rep["join_of"] = {it.uuid: it.owner[1] for it in sp.routed if _own(it)}
+    boxes = {}
+    for it in sp.routed:
+        if _own(it):
+            b, j = it.bbox, it.owner[1]
+            o = boxes.get(j, b)
+            boxes[j] = (min(o[0], b[0]), min(o[1], b[1]), max(o[2], b[2]), max(o[3], b[3]))
+    rep["join_box"] = boxes
     return rep
+
+
+DROP_NEAR = 0.5     # mm: an error that names no join's copper is put on the joins this close to it
+
+
+def drop_joins(board, out, rep, report, types=None):
+    """`out` = `board` without the joins (lastmile.close's `rep`) that an error of KiCad's DRC
+    `report` of one of `types` (None: all) names, or, when it names none of them (a starved
+    thermal names the zone and the pad), whose copper lies within DROP_NEAR of it. Returns
+    the joins taken out (a set of join numbers)."""
+    join_of = rep.get("join_of") or {}
+    boxes = rep.get("join_box") or {}
+    bad = set()
+    for v in report.get("violations") or []:
+        if v.get("severity") != "error" or (types is not None and v.get("type") not in types):
+            continue
+        named = {join_of[i.get("uuid")] for i in v.get("items") or [] if i.get("uuid") in join_of}
+        if not named:
+            for i in v.get("items") or []:
+                p = i.get("pos") or {}
+                x, y = p.get("x"), p.get("y")
+                if x is None:
+                    continue
+                named |= {j for j, b in boxes.items() if b[0] - DROP_NEAR <= x <= b[2] + DROP_NEAR
+                          and b[1] - DROP_NEAR <= y <= b[3] + DROP_NEAR}
+        bad |= named
+    if bad:
+        W.edit(board, out, remove=[u for u, j in join_of.items() if j in bad])
+    return bad
 
 
 def _write(sp, board, out, remove=(), locked=True):

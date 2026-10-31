@@ -639,6 +639,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             from .bridge import plane_policy
             plan.plane_policy = plane_policy(opts, free_round_with_open=bool(a["open"]))
             plan.plane_cost = opts.get("plane_cost")
+            plan.outer_surcharge = opts.get("outer_surcharge")
             plan.pad_shapes = opts.get("pad_shapes") or "kicad"
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
@@ -955,6 +956,19 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                 rec["drc_error"] = str(e)
                 break
         s_ = drc.summary(rep)
+        if not errors_no_worse(s_, best, base) and not sub.get("drc_dir") and left() > 30:
+            # a few joins KiCad faults (a track through a pour's spokes) need not cost the round's
+            # other joins: those joins go, and the rest is judged again
+            more = {t for t, n in (s_.get("by_type") or {}).items() if n > (best.get("by_type") or {}).get(t, 0)}
+            bad = lastmile.drop_joins(cand, cand, r, rep, types=more)
+            if bad:
+                try:
+                    rep = drc.run(drc.stage_board(cand, input_path, d), d / "drc.json", timeout=max(10, left() - 5))
+                    s_ = drc.summary(rep)
+                    rec["joins_dropped"] = len(bad)
+                except drc.DrcError as e:
+                    rec["drc_error"] = str(e)
+                    break
         rec.update(s_)
         rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
         if r.get("ripped_soft") and guard is not None:
