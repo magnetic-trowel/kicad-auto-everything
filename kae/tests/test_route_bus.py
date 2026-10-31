@@ -67,3 +67,19 @@ def test_no_pin_field_for_coarse_pitch_or_two_row_connectors():
     assert bus.pin_fields(_qfn(pitch=1.27, half=6.0), _poly) == []
     two_rows = [_pad("J1", i, f"S{i}", 0.5 * (i % 12), 0.0 if i < 12 else 1.5) for i in range(24)]
     assert bus.pin_fields(two_rows, _poly) == []
+
+
+def test_switches_from_the_board(tmp_path):
+    """KAE_PIN_FIELDS / KAE_BUS_ORDER in the project win over opts (--set), which win over the
+    defaults (both off), as for every kae limit."""
+    import json
+    from kae.route import constraints
+    pcb = tmp_path / "b.kicad_pcb"
+    pro = pcb.with_suffix(".kicad_pro")
+    assert constraints.setting("pin_fields", pcb) is False
+    assert constraints.setting("bus_order", pcb, dict(bus_order="1")) is True
+    pro.write_text(json.dumps({"text_variables": {"KAE_PIN_FIELDS": "yes", "KAE_BUS_ORDER": "0"}}))
+    assert constraints.setting("pin_fields", pcb, dict(pin_fields=False)) is True
+    assert constraints.setting("bus_order", pcb, dict(bus_order=True)) is False
+    pro.write_text(json.dumps({"text_variables": {"KAE_BUS_ORDER": "maybe"}}))
+    assert constraints.setting("bus_order", pcb, dict(bus_order="on")) is True

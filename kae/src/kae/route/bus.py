@@ -143,10 +143,10 @@ def pin_fields(pads, poly=None):
     `pads` (route_info pads) -> [(ref, polygon)]: the convex hull of the pad centres, without
     the exposed pad (a pad > 4 x the median pad area) grown by half the pitch.
 
-    On the human boards these are almost free of vias of the pins' nets: every pin escapes
-    outwards (tools/research/routing/close-topology/infield.py). Freerouting's maze takes the
-    short way in under the package, and the via it leaves there walls in the next pins
-    (kata0510 rp2040-8key: 8 such vias in the RP2040's field, the human 2)."""
+    Used by constraints (setting pin_fields, off): a via keepout there pushes every escape
+    outwards. It measured worse (kata0510, ergosnm, fm4dd seed 0: 17 open against 7), and the
+    human boards do put vias of their pins' nets there (33 of 82 exposed-pad parts, 42 of 59
+    others; tools/research/routing/close-topology/infield.py)."""
     from shapely.geometry import LineString, MultiPoint, Point
     from shapely.ops import unary_union
 

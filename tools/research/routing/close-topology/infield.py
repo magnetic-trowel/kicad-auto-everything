@@ -32,19 +32,29 @@ def fields(b):
         inner = hull.buffer(-2 * pitch)
         if inner.is_empty or any(inner.contains(Point(p.x, p.y)) for p in small):
             continue
-        out.append((fp, hull, {p.net for p in fp.pads if p.net}, pitch, big.net if len(small) < len(ps) else None))
+        ep = big.net if len(small) < len(ps) else None
+        ring = hull
+        if ep is not None:
+            from kae.board import transform
+            from kae.place.legalize import pad_shape
+            for p in fp.pads:
+                if p.number == big.number:
+                    ring = ring.difference(transform.place_geom(pad_shape(p), fp.x, fp.y, fp.rot, fp.side).buffer(pitch / 2))
+        out.append((fp, hull, {p.net for p in fp.pads if p.net}, pitch, ep, ring))
     return out
 
 
 def count(b):
     side_cu = lambda fp: "F.Cu" if fp.side == "F" else "B.Cu"
     res = []
-    for fp, hull, own, pitch, ep in fields(b):
+    for fp, hull, own, pitch, ep, ring in fields(b):
         r = dict(ref=fp.ref, pitch=round(pitch, 3), pads=len(fp.pads), area=round(hull.area, 1),
-                 foreign_vias=0, own_vias=0, pin_vias=0, foreign_len_side=0.0, foreign_len_other=0.0)
+                 has_ep=ep is not None, foreign_vias=0, own_vias=0, pin_vias=0, pin_vias_ring=0, foreign_len_side=0.0, foreign_len_other=0.0)
         for v in b.vias:
             if hull.contains(Point(v.x, v.y)):
                 r["foreign_vias" if v.net not in own else "own_vias" if v.net == ep else "pin_vias"] += 1
+                if v.net in own and v.net != ep and ep is not None and ring.contains(Point(v.x, v.y)):
+                    r["pin_vias_ring"] += 1
         for t in b.tracks:
             if t.net in own or t.start == t.end:
                 continue

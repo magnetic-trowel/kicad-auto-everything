@@ -150,7 +150,18 @@ IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copp
 DEFAULTS = dict(
     ignored_clearance_floor=0.1,   # mm: gap kept for a clearance check the board turns off (or the
                                    # board's own minimum, if larger); KiCad then checks only shorts
+    pin_fields=False,              # via keepout over the pin field of fine-pitch QFN/QFP/SON (bus.pin_fields).
+                                   # Off: the human boards put vias of their pins' nets there on 33 of 82
+                                   # exposed-pad parts and 42 of 59 others, and on kata0510, ergosnm and
+                                   # fm4dd (seed 0) it left 17 open where the base left 7
+    bus_order=False,               # Freerouting routes each bus's nets one after another, in pin order
+                                   # (bus.find, bus.order)
 )
+
+
+def _flag(v):
+    s = str(v).strip().lower()
+    return True if s in ("1", "true", "yes", "on") else False if s in ("0", "false", "no", "off") else None
 
 
 def _project(board_path):
@@ -169,6 +180,12 @@ def board_severities(board_path):
 def setting(name, board_path=None, opts=None):
     """One of our own limits (DEFAULTS): the project's KAE_<NAME> text variable, else opts[name],
     else the default."""
+    if isinstance(DEFAULTS[name], bool):      # a switch: 1/0, true/false, yes/no, on/off
+        tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper()) if board_path else None
+        for v in (tv, (opts or {}).get(name)):
+            if v not in (None, "") and _flag(v) is not None:
+                return _flag(v)
+        return DEFAULTS[name]
     if board_path is not None:
         tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper())
         if tv not in (None, ""):
@@ -376,7 +393,7 @@ def plan(info, board_path, opts=None):
         p.pin_class[(pad["comp"], pad["pin"])] = cls
 
     # ---- obstacles
-    _obstacles(info, rb, p, sev, opts)
+    _obstacles(info, rb, p, sev, opts, board_path)
     p.obstacles.extend(mask_obs)
 
     # ---- the board outline (Freerouting applies one value to every class)
@@ -602,7 +619,7 @@ def _edge_line(e):
     return None
 
 
-def _obstacles(info, rb, p, sev, opts):
+def _obstacles(info, rb, p, sev, opts, board_path=None):
     cu = p.copper
     # ---- edges: Freerouting's outline and the edge class carry the track requirement; where
     # vias need more (KiCad's board setup often asks more of vias than a custom track rule),
@@ -693,9 +710,9 @@ def _obstacles(info, rb, p, sev, opts):
             continue
         for l, geo in shapes.items():
             p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
-    # ---- pin fields of fine-pitch perimeter packages: no vias between the pad rows and the
-    # exposed pad (bus.pin_fields), so the pins escape outwards, as a group, as the human boards do
-    if opts.get("pin_fields"):
+    # ---- pin fields of fine-pitch perimeter packages (setting pin_fields, off by default): no vias
+    # between the pad rows and the exposed pad, so the pins escape outwards
+    if setting("pin_fields", board_path, opts):
         from .bus import pin_fields
         for ref, geo in pin_fields(info["pads"], _poly):
             p.obstacles.append(Obstacle("via_keepout", "signal", geo, _zero_class(p), f"pin field {ref}"))
