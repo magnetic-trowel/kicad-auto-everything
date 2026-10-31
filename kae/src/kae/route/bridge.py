@@ -159,22 +159,26 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["router_quick"] = dict(seconds=run.seconds, rc=run.rc, timed_out=run.timed_out,
                                           report=run.report)
         if run.ses is None:
-            shutil.copy2(input_path, output_path)   # the input, unrouted: a board in every case
+            # nothing from the router (a board too big for one pass in the time: polarfire SoM,
+            # every attempt): the input goes on unrouted, and the repair rounds and the last
+            # mile route what they can, instead of ending the attempt with no board
+            shutil.copy2(input_path, output_path)
+            from .critical_write import routing
+            routed = routing(output_path)
             report["status"] = "no_session"
-            return report
-
-        # 4: import
-        ses = specctra.read(run.ses)
-        report["session"] = translate.fix_session(ses, p)
-        ses_k = wd / "board_kicad.ses"
-        specctra.write(ses, ses_k)
-        imported = pcbnew_io.import_ses(input_path, ses_k, output_path)
+        else:
+            # 4: import
+            ses = specctra.read(run.ses)
+            report["session"] = translate.fix_session(ses, p)
+            ses_k = wd / "board_kicad.ses"
+            specctra.write(ses, ses_k)
+            routed = pcbnew_io.import_ses(input_path, ses_k, output_path).get("routing") or []
+            report["status"] = "routed"
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
-        opts["fixed_uuids"] = sorted(r["uuid"] for r in imported.get("routing") or [] if r.get("locked"))
+        opts["fixed_uuids"] = sorted(r["uuid"] for r in routed if r.get("locked"))
         report["fixed_items"] = len(opts["fixed_uuids"])
-        report["status"] = "routed"
 
         # 5: DRC and repair
         if opts.get("repair") and left() > 30:

@@ -462,6 +462,13 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
     assert rep2["status"] == "no_session" and rep2["router"]["timed_out"]
     assert out2.read_bytes() == board.read_bytes()
 
+    # with the repair loop on, an attempt without a session goes on from the unrouted input
+    # (its rounds and the last mile route what they can) instead of ending there
+    out3 = tmp_path / "out3" / "board.kicad_pcb"
+    rep3 = bridge.route(board, out3, time_s=150, workdir=tmp_path / "wd3", opts=dict(fast, repair=True, rounds=1))
+    assert rep3["status"] == "no_session" and out3.exists()
+    assert (rep3.get("repair") or {}).get("rounds"), rep3.get("repair")
+
 
 @needs_router
 def test_repair_round_without_a_session_is_a_failed_round(routed, exported, tmp_path, monkeypatch):
