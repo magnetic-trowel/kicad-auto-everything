@@ -850,16 +850,19 @@ def ring_certificate(sp, pkg, log=print):
     cannot leave between its two neighbours (a track's end lies inside its pad, so it runs
     alongside both neighbours) -> the blocked entry, or None."""
     count = _counts(sp)
+    zoned = {z[0] for z in sp.zones}
     bad, total, need_w, need_c, detail = 0, 0, [], [], None
     for p in pkg["pads"]:
-        if not p.net or count.get(p.net, 0) < 2:
-            continue
+        if not p.net or count.get(p.net, 0) < 2 or p.net in zoned:
+            continue        # no connection to make, or a pour's (it may reach the pad itself)
         nb = sorted(((math.dist(p.pos, q.pos), id(q), q) for q in pkg["pads"] if q is not p))[:2]
         if len(nb) < 2:
             continue
         pitch = nb[0][0]
         if pitch > RING_PITCH or abs(nb[1][0] - pitch) > 0.05 * pitch:
             continue        # coarse, or a row's end (it can leave sideways)
+        if any(q.net == p.net for _d, _i, q in nb):
+            continue        # a neighbour of its own net: the track leaves on that side
         total += 1
         a = _across(p, nb[0][2])
         mn, opt, _ = sp.width_limits(p.net, pkg["layer"])
