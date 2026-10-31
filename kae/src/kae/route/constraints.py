@@ -937,7 +937,10 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
                 ring = cop.buffer(gap, quad_segs=8)
                 cand = []
                 for k in range(4):
-                    a = math.radians((pad.get("spoke_angle") or 0.0) + 90 * k)
+                    # KiCad lays the spokes out in the pad's frame: the spoke angle is relative to the
+                    # pad's orientation (bancouver40: a 45-degree QFN's GND pins U1.15 and U1.23 got
+                    # axis-aligned corridors across their neighbours' only escapes, every seed)
+                    a = math.radians((pad.get("spoke_angle") or 0.0) + (pad.get("orient") or 0.0) + 90 * k)
                     ex, ey = cx + reach * math.cos(a), cy - reach * math.sin(a)
                     strip = LineString([(cx, cy), (ex, ey)]).buffer(sw / 2 + clr, cap_style="flat")
                     land = strip.intersection(fill).difference(ring)

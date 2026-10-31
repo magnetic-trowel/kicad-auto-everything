@@ -190,7 +190,7 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
     core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
     if core.is_empty:
         return []
-    base = pad.get("spoke_angle") or 0.0
+    base = (pad.get("spoke_angle") or 0.0) + (pad.get("orient") or 0.0)   # spokes lie in the pad's frame
     cands, seen = [], set()
     for ang in [base + 90 * k for k in range(4)] + [base + 15 * k for k in range(24)]:
         a = round(ang % 360, 3)

@@ -77,3 +77,49 @@ def test_spoke_strip_is_no_wider_than_the_pad(tmp_path):
         axis = (x, y - 0.4), (x, y + 0.4)
         track = LineString(axis).buffer(0.1)
         assert all(g.intersection(track).area <= 1e-9 for g, _ in cors)
+
+
+def test_spoke_strips_follow_the_pad_orientation(tmp_path):
+    """KiCad lays thermal spokes out in the pad's frame (spoke angle + pad orientation): on a part
+    rotated 45 degrees the strips run along the pins, not along the board's axes, so the
+    neighbours' escapes along their own axes stay open (bancouver40 dogema48: a 45-degree QFN's
+    GND pins got axis-aligned strips across their neighbours' escapes)."""
+    from shapely import affinity
+    from shapely.geometry import Point
+    p, info, plan, _sp = _setup(tmp_path)
+    row = [pd for pd in info["pads"] if pd["ref"] == "U9"]
+    c = Point(106.0, 127.0)
+
+    def rot(pt):
+        q = affinity.rotate(Point(pt), -45.0, origin=c)    # +45 in KiCad's frame (y down)
+        return [q.x, q.y]
+
+    def deep(v):                                   # nested lists of points
+        return rot(v) if len(v) == 2 and all(isinstance(t, (int, float)) for t in v) else [deep(w) for w in v]
+    for pd in row:
+        pd["pos"] = rot(pd["pos"])
+        pd["orient"] = 45.0
+        if "poly" in pd:
+            pd["poly"] = deep(pd["poly"])
+        if "poly_by_layer" in pd:
+            pd["poly_by_layer"] = {l: deep(v) for l, v in pd["poly_by_layer"].items()}
+        if pd["number"] == "3":
+            pd["net"] = "GND"
+    info["zones"].append(dict(owner="", name="gnd_f", layers=["F.Cu"],
+                              rings=[[[[100.5, 100.5], [139.5, 100.5], [139.5, 129.5], [100.5, 129.5],
+                                       [100.5, 100.5]]]],
+                              rule_area=False, net="GND", priority=0, clearance=0.15, min_thickness=0.15,
+                              pad_connection="thermal", thermal_gap=0.5, spoke_width=0.5, teardrop=False))
+    cors = [g for g, l, pad in CN.thermal_corridors(info, plan) if pad["ref"] == "U9" and pad["number"] == "3"]
+    assert cors
+    d = (math.sqrt(0.5), math.sqrt(0.5))           # the pins' axis after the rotation
+    for nb in ("2", "4"):
+        x, y = next(pd["pos"] for pd in row if pd["number"] == nb)
+        track = LineString([(x - 0.4 * d[0], y - 0.4 * d[1]), (x + 0.4 * d[0], y + 0.4 * d[1])]).buffer(0.1)
+        assert all(g.intersection(track).area <= 1e-9 for g in cors)
+    for pd in row:
+        pd["orient"] = 0.0                          # the old, axis-aligned strips cross them
+    cors = [g for g, l, pad in CN.thermal_corridors(info, plan) if pad["ref"] == "U9" and pad["number"] == "3"]
+    x, y = next(pd["pos"] for pd in row if pd["number"] == "2")
+    track = LineString([(x - 0.4 * d[0], y - 0.4 * d[1]), (x + 0.4 * d[0], y + 0.4 * d[1])]).buffer(0.1)
+    assert any(g.intersection(track).area > 1e-6 for g in cors)
