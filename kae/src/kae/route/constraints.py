@@ -150,6 +150,13 @@ IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copp
 DEFAULTS = dict(
     ignored_clearance_floor=0.1,   # mm: gap kept for a clearance check the board turns off (or the
                                    # board's own minimum, if larger); KiCad then checks only shorts
+    plane_strict_share="odd",      # with planes "cost": inner layers whose one-net fill (refilled input)
+                                   # covers at least this share of the board carry no traces (Freerouting
+                                   # power layers); human boards leave 30 of 33 such layers at >= 0.8 free of
+                                   # signals. "odd": 0.8 on odd seeds, none on even ones, so restarts try both
+                                   # and the DRC picks (z280 needs it: ~94 open -> 3; heypcb kestrel, whose
+                                   # human routes 1.6 m on its planes, is hurt: 28 -> 53); a number: every
+                                   # seed; 0: never (bridge.strict_share)
 )
 
 
@@ -168,16 +175,17 @@ def board_severities(board_path):
 
 def setting(name, board_path=None, opts=None):
     """One of our own limits (DEFAULTS): the project's KAE_<NAME> text variable, else opts[name],
-    else the default."""
-    if board_path is not None:
-        tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper())
-        if tv not in (None, ""):
-            try:
-                return float(tv)
-            except ValueError:
-                pass
-    if opts and opts.get(name) is not None:
-        return float(opts[name])
+    else the default. Numbers come back as floats; a word (plane_strict_share "odd") as it is, where
+    the default is one too (a word for a numeric limit is skipped)."""
+    tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper()) if board_path else None
+    for v in (tv, (opts or {}).get(name)):
+        if v in (None, ""):
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            if isinstance(DEFAULTS[name], str):
+                return v
     return DEFAULTS[name]
 
 

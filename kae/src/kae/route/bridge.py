@@ -58,12 +58,6 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
-    plane_strict_share="odd",  # with planes "cost": inner layers whose one-net fill (refilled input) covers
-                             # at least this share of the board carry no traces at all (Freerouting power
-                             # layers); human boards leave 30 of 33 such layers at >= 0.8 free of signals.
-                             # "odd": 0.8 on odd seeds, none on even ones, so restarts try both and the DRC
-                             # picks (z280 needs it: ~94 open -> 3; heypcb kestrel, whose human routes
-                             # 1.6 m on its planes, is hurt by it: 28 -> 53 open); a number: every seed; 0: never
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -113,7 +107,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
         zoned = any(z.get("net") for z in info.get("zones") or [])
-        share = strict_share(opts, seed)
+        share = strict_share(opts, seed, input_path)
         if zoned and (opts.get("plane_escapes") or share):
             te = time.monotonic()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
@@ -227,9 +221,10 @@ def router_budget(left_s, opts):
     return max(20.0, left_s * float(share))
 
 
-def strict_share(opts, seed):
-    """The attempt's plane_strict_share: "odd" is 0.8 on odd seeds and none on even ones."""
-    s = opts.get("plane_strict_share")
+def strict_share(opts, seed, board_path=None):
+    """The attempt's plane_strict_share (constraints.setting: the board's KAE_PLANE_STRICT_SHARE,
+    else opts, else "odd"): "odd" is 0.8 on odd seeds and none on even ones."""
+    s = constraints.setting("plane_strict_share", board_path, opts)
     if s == "odd":
         return 0.8 if seed % 2 else None
     return float(s) if s else None
