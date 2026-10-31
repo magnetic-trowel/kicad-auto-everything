@@ -403,22 +403,31 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
         mn, opt, _mx = sp.width_limits(net, sp.cu[0])
         widths = sorted({round(w, 4) for w in (opt, mn) if w and w > 0}, reverse=True) or [0.2]
         status = rep["nets"].setdefault(net, [])
+        # a part that finds no join is passed over and the net's next smaller part tried: one
+        # walled-in part ended the whole net (fona 800: GND's U1.77, which only a rule break
+        # reaches, kept three free joins of other GND parts from being tried; 10 -> 7 open)
+        stuck, done = set(), 0
         for _ in range(max_parts):
             ps = [p for p in parts(sp, fp, net) if _relevant(p)]
-            if len(ps) < 2 or not more():
+            cand = [p for p in ps if not stuck & {id(n.item) for n in p}]
+            if len(ps) < 2 or not cand or not more():
                 return False
-            small = ps[-1]
+            small = cand[-1]
+            if small is ps[0]:
+                return False                        # only the largest part is left untried
             src = _anchors(small, max(widths) / 2 + 0.02)
             if not src:
                 status.append("no anchors")
-                return False
-            got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, rip)
+                stuck |= {id(n.item) for n in small}
+                continue
+            rest = [p for p in ps if p is not small]
+            got = _join(gr, sp, net, src, rest, widths, fixed, hist, soft, rip)
             if got is None and not sp.via_in_pad:
                 # a pad walled in by its own footprint (a microphone's centre pad inside its
                 # ring) is left only through a via in the pad, as the human boards do it
                 sp.via_in_pad = True
                 try:
-                    got = _join(gr, sp, net, src, ps[:-1], widths, fixed, hist, soft, rip)
+                    got = _join(gr, sp, net, src, rest, widths, fixed, hist, soft, rip)
                 finally:
                     sp.via_in_pad = False
                 if got is not None:
@@ -426,7 +435,8 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             if got is None:
                 status.append("no route")
                 rep["failed"] += 1
-                return False
+                stuck |= {id(n.item) for n in small}
+                continue
             rt, new, ripped = got
             joins += 1
             rep["joined"] += 1
@@ -445,7 +455,8 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
                 if it.net != net and it.net not in local:
                     local.append(it.net)
             status.append(f"joined ({len(rt.segs)} segs, {len(rt.vias)} vias, ripped {len(ripped)})")
-        return True
+            done += 1
+        return done > 0     # parts left after max_parts tries; again later only if some joined
 
     while queue and more():
         root = queue.pop(0)
