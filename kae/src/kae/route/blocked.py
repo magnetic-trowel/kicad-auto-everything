@@ -24,8 +24,13 @@ them) it asks lastmile's grid router, in the same Space with the same rules:
    solder-mask opening of a pad, or one of kae's own defaults with its override
    (KAE_<NAME> text variable or --set name=value). "geometry": no path even then.
 
-The result is data: {"blocked": [...], "congestion": [...], "summary": [lines]} with the
-value required and the value available for each binding gap, its layer, position and items.
+The result is data: {"blocked": [...], "congestion": [...], "summary": [lines], "undiagnosed",
+"seconds"}. Each connection: net, pads (of the smaller part), cause ("congestion", "fixed
+copper" with fixed_nets, "rule", "kae default", "geometry" with walled_by), a summary line, and
+for rules the binding gap: constraint (clearance, track_width, solder_mask, hole_clearance,
+edge_clearance, keepout, thermal_corridor, pad_shape), required and available (mm), layer, at
+[x, y], against (the item), source ("board" or "kae"), where, override, and the next gaps on
+the same path (others).
 It is deterministic (no seeds) and bounded by `deadline`. Lengths are mm.
 """
 from __future__ import annotations
@@ -62,7 +67,7 @@ class _Relaxed:
 
     def __init__(self, sp):
         self.sp = sp
-        self.on = False
+        self.max_need = sp.max_need
 
     def __enter__(self):
         sp, real_need = self.sp, self.sp.need
@@ -75,14 +80,12 @@ class _Relaxed:
         sp.need = need
         sp.edge_need = lambda net, kind, layer: 0.0
         sp.max_need = SHORT
-        self.on = True
         return self
 
     def __exit__(self, *exc):
         for k in ("need", "edge_need"):
             self.sp.__dict__.pop(k, None)
-        self.sp.max_need = self.sp._max_need()
-        self.on = False
+        self.sp.max_need = self.max_need
 
 
 class _RelaxedRouter(GridRouter):
@@ -157,9 +160,9 @@ def _terms(sp, it, net, kind, layer, width):
     k = it.kind
     if k == "corridor":
         out.append((0.0, "thermal_corridor", "kae",
-                    f"kae thermal-spoke corridor of {it.owner} (constraints.thermal_corridors: keeps room for the "
-                    f"board's min_resolved_spokes={sp.settings.get('min_resolved_spokes', 2)}; the board's "
-                    f"starved_thermal severity 'ignore' turns it off)", None))
+                    f"kae thermal-spoke corridor of {it.owner} (constraints.thermal_corridors, room for the board's "
+                    f"min_resolved_spokes={sp.settings.get('min_resolved_spokes', 2)}; no override, off when the "
+                    f"board's starved_thermal severity is 'ignore')", None))
     elif k == "keepout":
         out.append((0.0, "keepout", "board", f"{it.owner or 'rule area'} (.kicad_pcb rule area)", None))
     elif k in ("track", "via"):
