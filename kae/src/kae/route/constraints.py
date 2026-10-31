@@ -364,9 +364,7 @@ def plan(info, board_path, opts=None):
                for i, pad in enumerate(info["pads"]) if pad.get("pin") and pad.get("layers")}
     # solder-mask openings drawn as graphics: keepouts, and around the pads they expose a
     # clearance raised to cover the opening where a keepout would shut the pad in
-    mask_obs, reach = _mask_openings(info, p, sev, pad_vec, outside)
-    for i, r in reach.items():
-        pad_vec[i] = _pad_requirements(info, rb, p, info["pads"][i], sev, outside=outside, mask_reach=r)
+    mask_obs = _mask_openings(info, p, sev, pad_vec, outside)
     for i, vec in pad_vec.items():
         pad = info["pads"][i]
         key = tuple(sorted(vec.items()))
@@ -482,14 +480,12 @@ def _ring(pad, dsn):
     return float(dsn.exterior.distance(seg)) - h["width"] / 2 if dsn.contains(seg) else -h["width"] / 2
 
 
-def _pad_requirements(info, rb, p, pad, sev, outside=False, mask_reach=None):
+def _pad_requirements(info, rb, p, pad, sev, outside=False):
     """{(routing class, layer): clearance mm} for one pad (see module docstring). `outside`: the
     DSN pin is the pad's own copper (pad_shapes "outside", translate.circumscribe_pins), so the
     clearance needs no allowance for chords inside the outline (applied on every side, that
     allowance closed the one legal escape between 0.4 mm-pitch pads 0.2 mm apart at 0.2 mm
-    clearance: kata0510 rp2040, qubik bmps). `mask_reach`: {layer: mm} how far a solder-mask
-    opening drawn as a graphic reaches beyond the pad's copper where no keepout covers it
-    (_mask_openings); other nets keep that far away plus the mask-to-copper clearance."""
+    clearance: kata0510 rp2040, qubik bmps)."""
     s = info["settings"]
     cu = p.copper
     pi = pad_item(info, pad)
@@ -531,9 +527,6 @@ def _pad_requirements(info, rb, p, pad, sev, outside=False, mask_reach=None):
                 tw = max(tw, m)
                 tented = s.get("tent_vias_front" if side == "F" else "tent_vias_back", True)
                 vw = max(vw, m if tented else m + s.get("mask_min_web", 0.0) + s.get("mask_expansion", 0.0))
-            if mask_on and mask_reach and l in mask_reach:
-                m = mask_reach[l] + s.get("mask_to_copper", 0.0) + e
-                tw, vw = max(tw, m), max(vw, m)
             if pad.get("attr") == "npth" and pad.get("hole") and pad["hole"]["a"] != pad["hole"]["b"]:
                 ec_t = _strict_min(rb, "edge_clearance", t, EDGE_ITEM, l)
                 ec_v = _strict_min(rb, "edge_clearance", v, EDGE_ITEM, l)
@@ -747,7 +740,7 @@ def _obstacles(info, rb, p, sev, opts):
 
 
 def _mask_openings(info, p, sev, pad_vec, outside=False):
-    """(keepouts, {pad index: {layer: reach mm}}) for the solder-mask openings drawn as
+    """Keepouts for the solder-mask openings drawn as
     graphics (board and footprint shapes and texts on F.Mask/B.Mask).
 
     KiCad's DRC (drc_test_provider_solder_mask.cpp) counts a bridge whenever one such
@@ -757,17 +750,17 @@ def _mask_openings(info, p, sev, pad_vec, outside=False):
     exposes another net's copper, and of an empty one altogether. An opening becomes a
     keepout (class kae_mask: mask-to-copper clearance), minus a hole round every netted pad
     it exposes, so the pad's net can still reach it: the hole is as large as the pad's own
-    clearance (other nets keep that far away anyway). Where the opening shuts the pad in
-    (no gap a track of its net fits through on the hole's rim), the hole takes the pad's
-    whole share of the opening (the part nearer it than any other exposed pad) and the pad's
-    clearance is raised to cover it (`reach`).
+    clearance (other nets keep that far away anyway). An opening that shuts a pad in (no gap
+    a track of its net fits through on the hole's rim: a solder jumper's, a crystal's) is left
+    out, as before (raising the pad's clearance over its share of the opening walled
+    protocentral pulse-express in: 5 -> 12-13 open).
 
     Before, any opening that touched a pad was left out entirely: a fiducial's mask ring
     touching its no-net dot let other nets' tracks through it (adafruit fona: HP+ under FID1),
     a text over a jumper's corner did too (lenaschimmel bestelampe 'Lampe': one track, 36-42
     bridges)."""
     if _severity_ignored(sev, "solder_mask_bridge") or not info.get("mask_openings"):
-        return [], {}
+        return []
     cu = p.copper
     m2c = info["settings"].get("mask_to_copper", 0.0)
     side_layer = {"F.Mask": cu[0], "B.Mask": cu[-1]}
@@ -790,7 +783,7 @@ def _mask_openings(info, p, sev, pad_vec, outside=False):
             exposed.setdefault(l, []).append((i, g, max(r, 0.0), w))
     trees = {l: shapely.STRtree([g for _, g, _, _ in v]) for l, v in exposed.items()}
     vec = {(n, l2): (up(max(m2c, EPS_SHORT)), up(max(m2c, EPS_SHORT))) for n in p.classes for l2 in cu}
-    obs, reach = [], {}
+    obs = []
     for m in info["mask_openings"]:
         l = side_layer.get(m.get("layer"))
         if l is None or (m.get("owner") and m["owner"] in allow):
@@ -806,25 +799,19 @@ def _mask_openings(info, p, sev, pad_vec, outside=False):
                 if g.intersects(reach_geo):
                     hits.append((i, g, r, w))
         keep = geo
-        if hits:
-            pts = shapely.get_coordinates(shapely.segmentize(geo.boundary, 0.02))
-            near = [min(range(len(hits)), key=lambda h: hits[h][1].distance(Point(x, y))) for x, y in pts]
-            for h, (i, g, r, w) in enumerate(hits):
-                hole = g.buffer(r, quad_segs=8)
-                rim = hole.exterior.difference(geo.buffer(m2c + 1e-4))
-                if rim.length < max(w, 1e-3):
-                    # shut in: the pad takes its share of the opening, its clearance covers it
-                    ext = max([float(g.distance(Point(*pt))) for pt, k in zip(pts, near) if k == h] or [0.0])
-                    if ext > r:
-                        reach.setdefault(i, {})[l] = max(ext, reach.get(i, {}).get(l, 0.0))
-                        hole = g.buffer(ext + 1e-4, quad_segs=8)
-                keep = keep.difference(hole)
-        if keep.is_empty or keep.area < 1e-6:
+        shut = False
+        for i, g, r, w in hits:
+            hole = g.buffer(r, quad_segs=8)
+            if hole.exterior.difference(geo.buffer(m2c + 1e-4)).length < max(w, 1e-3):
+                shut = True   # a pad the opening shuts in (a jumper's, a crystal's): left as before
+                break
+            keep = keep.difference(hole)
+        if shut or keep.is_empty or keep.area < 1e-6:
             continue
         obs.append(Obstacle("keepout", l, keep, _obstacle_class(p, "kae_mask", vec),
                             f"mask opening {m.get('cls')} {m.get('owner') or 'board'}"
                             + (f" (around {len(hits)} pads)" if hits else "")))
-    return obs, reach
+    return obs
 
 
 def _hole_free(g):

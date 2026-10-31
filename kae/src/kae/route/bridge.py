@@ -57,7 +57,7 @@ DEFAULT_OPTS = dict(
     neckdown=False,          # Freerouting's neck-down at pins, floored at the board's legal minimum width
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
-                             # locked: the plane connections the human boards make first
+                             # unlocked: the plane connections the human boards make first
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)

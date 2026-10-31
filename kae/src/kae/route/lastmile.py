@@ -354,7 +354,7 @@ def open_nets(report):
 
 
 def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=print, max_parts=8, soft=(),
-          max_joins=MAX_JOINS, deadline=None, rip=True):
+          max_joins=MAX_JOINS, deadline=None, rip=True, txn=True):
     """Join the parts of the open nets of `board` (`nets`, default every net with more
     than one part; see the module docstring) and write the result to `out`, the new copper
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
@@ -362,7 +362,8 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     locked uuids a last rip-up tier may take out (critical copper; the caller judges the
     physics). `max_joins` bounds the joins (None: no bound), `deadline` (time.monotonic())
     the time: no join starts after it; `rip` False: joins around everything only, nothing is
-    ripped. Rip-up works in transactions (see below). Returns {joined, failed, ripped: [uuid],
+    ripped. Rip-up works in transactions (see below); `txn` False keeps every join (for a caller
+    that reroutes the ripped nets afterwards). Returns {joined, failed, ripped: [uuid],
     ripped_soft: [uuid], rerouted: [net], added: [uuid], nets: {net: status}, undone}."""
     import time
     cap = max_joins if max_joins is not None else float("inf")
@@ -455,7 +456,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
             net = local.pop(0)
             left |= join_net(net, local, added, removed, before) and net == root
         after = {n: _open_count(sp, fp, n) for n in before}
-        if sum(after.values()) < sum(before.values()):
+        if not txn or sum(after.values()) < sum(before.values()):
             open_now.update(after)
             # nets still open (a pour in many pieces, a ripped net not re-joined): their turn later
             queue += [n for n, v in after.items() if v and n not in queue and (n != root or left)]
@@ -479,12 +480,12 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     return rep
 
 
-def _write(sp, board, out, remove=()):
-    """`out` = `board` without `remove` (uuids) plus the space's new copper, locked; returns
-    the new copper's uuids."""
+def _write(sp, board, out, remove=(), locked=True):
+    """`out` = `board` without `remove` (uuids) plus the space's new copper (`locked` or not);
+    returns the new copper's uuids."""
     tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
-               it.uuid, True) for it in sp.routed if it.kind == "track"]
-    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, True) for it in sp.routed if it.kind == "via"]
+               it.uuid, locked) for it in sp.routed if it.kind == "track"]
+    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, locked) for it in sp.routed if it.kind == "via"]
     W.edit(board, out, remove=list(remove)) if remove else W.edit(board, out)
     if tracks or vias:
         W.append_items(out, out, tracks=tracks, vias=vias)
@@ -524,7 +525,8 @@ def _commit(sp, rt):
 
 
 # ----------------------------------------------------------------------------- plane escapes
-ESCAPE_MARGINS = (0.5, 1.5, 3.0)   # mm windows for a pad's escape to its plane: short ones only
+ESCAPE_MARGINS = (0.5, 1.5)        # mm windows for a pad's escape to its plane: short ones only (a 3 mm one
+                                   # took a channel on fm4dd i2c24io: 5 -> 10 open)
 
 
 def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=None, margins=ESCAPE_MARGINS):
@@ -534,7 +536,7 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
     plane next to it). `board` is the unrouted input with its project files beside it,
     `fills` its refilled zones (pcbnew_io.zone_fills). Searches stay within `margins` of the
     pad (no rip-up; what does not fit is left to the router). The new copper is written
-    locked to `out`. Returns {escaped, failed, nets: {net: [escaped, failed]}, added}."""
+    unlocked to `out` (the router may move or rip it). Returns {escaped, failed, nets: {net: [escaped, failed]}, added}."""
     import time
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -574,7 +576,9 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
                 continue
             st[0] += 1
             rep["escaped"] += 1
-    rep["added"] = _write(sp, board, out)
+    # unlocked: ordinary copper the router may move or rip where a signal needs the room (locked,
+    # one escape on fm4dd i2c24io took a channel: 5 -> 10 open)
+    rep["added"] = _write(sp, board, out, locked=False)
     log(f"plane escapes: {rep['escaped']} escaped, {rep['failed']} left to the router "
         f"({', '.join(f'{n} {a}/{a + f}' for n, (a, f) in rep['nets'].items() if a or f)})")
     return rep

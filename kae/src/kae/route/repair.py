@@ -813,6 +813,7 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None,
     return cand, rep, s_
 
 
+GREEDY_MIN_S = 120.0   # time a greedy last-mile round needs: its joins, the nested reroute and two DRCs
 LAST_MILE_MIN_S = 30.0 # time a last-mile round needs (was 60: a short attempt, the restart portfolio's first
                        # waves, then had neither repair nor last mile and ended with time unused)
 
@@ -895,6 +896,12 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     fails = 0
     for j in range(1, AUTO_ROUNDS + 1):
         rip = not (free_first and j == 1)
+        # with time for the nested reroute, a rip-up keeps its joins and the reroute takes the
+        # ripped nets (judged by KiCad's DRC like any round); without it, rip-ups are transactions,
+        # undone unless they leave fewer open connections on the grid alone (heypcb kestrel:
+        # transactions throughout 31/22/14 open, greedy with the reroute 18/2/2; fm4dd i2c24io:
+        # a greedy cascade with no reroute after it 5 -> 30 open)
+        greedy = left() > GREEDY_MIN_S
         if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or fails >= FAILS
                 or left() < LAST_MILE_MIN_S):
             break
@@ -912,7 +919,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             # behind 0.4 mm-pitch escapes took 40 joins, the old cap, in 20 s); the round keeps
             # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
-                               fixed=fixed, log=log, soft=soft, rip=rip, max_joins=None,
+                               fixed=fixed, log=log, soft=soft, rip=rip, txn=not greedy, max_joins=None,
                                deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"

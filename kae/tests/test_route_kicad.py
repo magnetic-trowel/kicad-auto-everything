@@ -166,8 +166,8 @@ def test_mask_openings_keep_other_copper_out(exported):
 
 def test_mask_openings_over_pads(exported):
     """An opening that exposes a netted pad stays a keepout beyond the room the pad's net needs
-    (a hole as large as the pad's clearance); one that shuts the pad in raises the pad's
-    clearance over its share of the opening instead; no-net copper does not count."""
+    (a hole as large as the pad's clearance); one that shuts the pad in is left out (the pad's
+    clearance unchanged); no-net copper does not count."""
     import copy
     from shapely.geometry import box
     board, info, _ = exported
@@ -185,7 +185,7 @@ def test_mask_openings_over_pads(exported):
     ko = [o for o in p0.obstacles if o.why.startswith("mask opening")]
     assert len(ko) == 1 and ko[0].layer == "F.Cu" and not ko[0].geom.intersects(g)
     assert ko[0].geom.area < strip.area and ko[0].geom.bounds[0] == pytest.approx(x0 - 3)
-    # a box 1 mm round the pad on every side: shut in, so no keepout near it, a wider clearance
+    # a box 1 mm round the pad on every side: shut in, so no keepout and the same clearance
     big = g.buffer(1.0).envelope
     others = [pd for pd in info["pads"] if pd is not pad
               and any(h is not None and h.intersects(big.buffer(0.5)) for h in constraints._pad_shapes(pd)[1].values())]
@@ -195,7 +195,7 @@ def test_mask_openings_over_pads(exported):
         assert not [o for o in p1.obstacles if o.why.startswith("mask opening")]
         c0 = p0.obstacle_classes[base_cls].values
         c1 = p1.obstacle_classes[p1.pin_class[(pad["comp"], pad["pin"])]].values
-        assert all(c1[k][0] >= 1.0 > c0[k][0] for k in c1 if k[1] == "F.Cu")
+        assert c1 == c0
     # the same strip over a pad with no net: a keepout of the whole strip
     info["pads"] = [dict(pd, net="") if pd is pad else pd for pd in info["pads"]]
     info["mask_openings"] = [dict(layer="F.Mask", owner="", cls="PCB_SHAPE", polys=[ring(strip)])]
