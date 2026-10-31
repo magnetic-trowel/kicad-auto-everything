@@ -693,6 +693,12 @@ def _obstacles(info, rb, p, sev, opts):
             continue
         for l, geo in shapes.items():
             p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
+    # ---- pin fields of fine-pitch perimeter packages: no vias between the pad rows and the
+    # exposed pad (bus.pin_fields), so the pins escape outwards, as a group, as the human boards do
+    if opts.get("pin_fields"):
+        from .bus import pin_fields
+        for ref, geo in pin_fields(info["pads"], _poly):
+            p.obstacles.append(Obstacle("via_keepout", "signal", geo, _zero_class(p), f"pin field {ref}"))
     # ---- kae.route.critical's pours: hard obstacles for the other nets
     for z in opts.get("crit_zones") or []:
         net = z.get("net") or ""

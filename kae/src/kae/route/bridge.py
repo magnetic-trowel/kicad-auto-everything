@@ -58,6 +58,9 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
+    pin_fields=True,         # no vias inside the pin field of fine-pitch QFN/QFP/SON (bus.pin_fields): pins
+                             # escape outwards, as on the human boards
+    bus_order=False,         # route each bus's nets one after another in pin order (bus.find, bus.order)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -127,6 +130,11 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
         report["permuted"] = translate.permute(tree, seed)
+        if opts.get("bus_order"):
+            from . import bus
+            zn = {z.get("net") for z in info.get("zones") or [] if z.get("net")}
+            buses = bus.find(info["pads"], zn)
+            report["bus_order"] = dict(buses=len(buses), lines=sum(map(len, buses)), moved=bus.order(tree, buses))
         report["plan"] = plan_summary(p)
         dsn = wd / "board.dsn"
         specctra.write(tree, dsn)
