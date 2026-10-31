@@ -298,7 +298,9 @@ def main():
     ap.add_argument("--screen", action="store_true",
                     help="methods that place: successive halving over placements instead of the fixed waves "
                          "(fresh attempts at --screen-s, the best of each rung resumed with eta x the budget)")
-    ap.add_argument("--screen-s", type=float, default=0.0, help="rung-0 budget (0: half of first-s)")
+    ap.add_argument("--screen-s", type=float, default=0.0,
+                    help="rung-0 budget (0: first-s; kae staged at half of it overran its budget: placing alone "
+                         "takes 60-100 s)")
     ap.add_argument("--eta", type=int, default=2)
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
@@ -327,7 +329,7 @@ def main():
     base = (b0 or {}).get("types", {})
     sh = None
     if a.screen:
-        sh = Halving(*rung_plan(deadline() - time.monotonic(), a.parallel, a.screen_s or a.first_s / 2, a.eta), eta=a.eta)
+        sh = Halving(*rung_plan(deadline() - time.monotonic(), a.parallel, a.screen_s or a.first_s, a.eta), eta=a.eta)
         log(f"successive halving: rung budgets {[round(b) for b in sh.budgets]} s, {sh.n0} placements")
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
