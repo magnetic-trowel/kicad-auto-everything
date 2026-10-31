@@ -94,8 +94,11 @@ LNS_SIZE = 8           # nets re-planned together in one repair move (MAPF-LNS2'
 LNS_PRES = 1000.0      # pres_fac of a repair move: another net's cell costs as a long detour
 REFILL_EVERY = 6       # steps that close something between two KiCad refills (checkpoints)
 HARD_POURS = True      # no via of another net in a pad's thermal-spoke corridor
-FILL_COST = 2.0        # per cell of another net's fill a track crosses (base cost 1): planes and signals
-                       # negotiate; the refill and KiCad's DRC judge the damage
+FILL_COST = 2.0        # per cell of another net's fill a track crosses (base cost 1), times that plane net's
+                       # weight (`_flexibility`); planes and signals negotiate, the refill and KiCad's DRC judge
+PLANE_WEIGHT = 0.5     # weight of a plane net with no ball in the step (a plane has many ways to stay joined)
+FLEX_PITCHES = 1.5     # pitches around a net's terminals counted for its flexibility
+WEIGHT_MIN, WEIGHT_MAX = 0.25, 8.0
 FLOAT_MM = 1.0         # mm along the border either side of a stub: where its net may cross instead
 LNS_STALL = 60         # repair moves in a row without fewer conflicts before it stops
 MAX_NETS = 600         # nets in one window at most (more: the window is skipped)
@@ -337,12 +340,16 @@ class Region:
             self.rhov[n] = round(D / 2 + cv / 2, 4)
         self.groups = sorted({self.rho[n] for n in self.nets} | {self.rhov[n] for n in self.nets})
         self.occ = {r: np.zeros((nl, g.ny, g.nx), np.int16) for r in self.groups}
+        # the same claims weighted by how little room each claimer has (`_flexibility`): what a
+        # route pays to cross another's cells
+        self.occw = {r: np.zeros((nl, g.ny, g.nx), np.float32) for r in self.groups}
         self.hist = np.zeros((nl, g.ny, g.nx), np.float32)
         self.vhist = np.zeros((g.ny, g.nx), np.float32)
         self.base = {}
         self.claims = {}
         self.routes = {}
         self._terminals()
+        self._flexibility()
 
     def _fills(self):
         """{(net, layer index): cells inside that net's zone fill} on the grid (the board's
@@ -496,6 +503,36 @@ class Region:
                 out[li] = ndimage.binary_erosion(m[li], structure=st, border_value=0)
         return np.flatnonzero(out)
 
+    def _flexibility(self):
+        """How much room each net has: the free cells (on its layers, its own fill included, a
+        via site counting once per other layer) within FLEX_PITCHES pitches of its terminal
+        copper in the window. A ball deep in the field has a few channel cells; one on the edge
+        or a plane ball beside its fill has many. A net's weight is the window's median of that
+        over its own, within WEIGHT_MIN..WEIGHT_MAX: its claims cost others that many times the
+        price, so the net with the fewest ways out keeps its way and the roomier one yields
+        (the user's rule: the more flexible side yields more). The route order goes from least to
+        most flexible."""
+        g = self.grid
+        R = FLEX_PITCHES * self.win["pitch"]
+        self.flex, self.weight = {}, {}
+        for n in self.nets:
+            t = self.terms.get(n) or {}
+            cells = [x[0] for x in t.get("groups") or [] if x[2] >= 0 and x[0].size]
+            if not cells:
+                self.flex[n] = 0.0
+                continue
+            c = np.unique(np.concatenate(cells))
+            ring = self._disc(np.unique(c % self.plane), R)
+            blk, via = self._base(n)
+            free = (~blk).reshape(self.nl, -1)[:, ring].sum() - np.isin(c, (np.arange(self.nl)[:, None] * self.plane
+                                                                          + ring[None, :]).ravel()).sum()
+            nv = int(via.reshape(-1)[ring].sum()) * max(0, self.nl - 1)
+            self.flex[n] = float(max(1, free + nv))
+        vals = sorted(v for v in self.flex.values() if v > 0)
+        med = vals[len(vals) // 2] if vals else 1.0
+        for n, v in self.flex.items():
+            self.weight[n] = float(min(WEIGHT_MAX, max(WEIGHT_MIN, med / max(v, 1.0))))
+
     def _anchor_cells(self, n, anchors, cost):
         """Flat 3D cells of the anchors on the net's layers, and the escape pieces of pads with
         no free cell {cell: [pts]} (GridRouter._escapes)."""
@@ -591,6 +628,8 @@ class Region:
             if idx.size:
                 f = self.occ[r].reshape(-1)
                 f[idx] += np.int16(sign)
+                fw = self.occw[r].reshape(-1)
+                fw[idx] += np.float32(sign * self.weight.get(n, 1.0))
         if sign < 0:
             self.claims.pop(n, None)
 
@@ -618,20 +657,20 @@ class Region:
             return rt
         blk, via = self._base(n)
         li_of = {l: li for li, l in enumerate(sp.cu)}
-        occ_t = self.occ[self.rho[n]].astype(np.float32)
+        occ_t = self.occw[self.rho[n]]
         cost = (1.0 + self.pour + self.hist) * (1.0 + pf * occ_t)
         # another net's fill is a resource with a price, not a wall: crossing it cuts the plane
         # (islands, starved thermals), which the refill and KiCad's DRC judge at each checkpoint
         for (zn, li), m in self._fills().items():
             if zn != n:
-                cost[li][m] += FILL_COST
+                cost[li][m] += FILL_COST * self.weight.get(zn, PLANE_WEIGHT)
         for zl, m in self.pour_of.items():
             if zl[0] == n:
                 cost[zl[1]][m] -= self.gr.pour_cost * (1.0 + pf * occ_t[zl[1]][m])
         cost[blk] = INF
         flat = cost.reshape(-1).astype(np.float64)
         if via.any():
-            ov = self.occ[self.rhov[n]].sum(axis=0).astype(np.float32)
+            ov = self.occw[self.rhov[n]].sum(axis=0)
             viac = np.where(via, VIA_COST * (1.0 + pf * ov) + self.vhist, INF).reshape(-1).astype(np.float64)
         else:
             viac = np.full(self.plane, INF)
@@ -744,12 +783,12 @@ class Region:
         for it in range(max_iter):
             ti = time.monotonic()
             if it == 0:
-                order = sorted(todo, key=lambda n: (-self.depth[n], tie[n]))
+                order = sorted(todo, key=lambda n: (self.flex[n], -self.depth[n], tie[n]))
             else:
                 # only the nets in conflict are ripped (connection-based reroute), in a seeded
                 # shuffle (a fixed order lets the same net win every time)
-                order = sorted(conflict, key=lambda n: (-self.depth[n], tie[n]))
-                order = [order[k] for k in rng.permutation(len(order))]
+                # the least flexible first; equal flexibility in a seeded shuffle
+                order = sorted(conflict, key=lambda n: (self.flex[n], tie[n] + rng.random()))
             for n in order:
                 if t_neg is not None and time.monotonic() > t_neg:
                     break
@@ -792,6 +831,7 @@ class Region:
         """Occupancy rebuilt from `routes` (the state kept)."""
         for r in self.groups:
             self.occ[r][:] = 0
+            self.occw[r][:] = 0.0
         self.claims = {}
         self.routes = dict(routes)
         for rt in self.routes.values():
@@ -828,8 +868,7 @@ class Region:
             for n in nb:
                 if n in self.routes:
                     self._claim(self.routes[n], -1)
-            for i in rng.permutation(len(nb)):
-                n = nb[int(i)]
+            for n in sorted(nb, key=lambda m: (self.flex.get(m, 0), rng.random())):
                 rt = self._route_net(n, LNS_PRES)
                 self.routes[n] = rt
                 self._claim(rt, 1)
@@ -1475,6 +1514,14 @@ def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadli
         after = {m: LM._open_count(sp, fp, m) for m in move}
         b_, a_ = sum(before.values()), sum(after.values())
         ok = a_ < b_ or (a_ == b_ and stall < STEP_STALL)
+        yielded = []
+        for m in move[1:]:
+            rt = rg.best.get(m)
+            old_len = sum(it.geom.length for it in rg.ripped_by_net.get(m, []) if it.kind == "track")
+            if rt is not None and rt.length > old_len + 1e-6:
+                yielded.append(m)
+        rec["contenders"] = {m: dict(flex=rg.flex.get(m), weight=round(rg.weight.get(m, 1.0), 3)) for m in move}
+        rec["yielded"] = yielded
         rec.update(moved=len(move), before=b_, after=a_, converged=rg.converged, iterations=len(rg.stats),
                    conflicts=[x["nets_in_conflict"] for x in rg.stats], laid=com["laid"],
                    kept=bool(ok), seconds=round(time.monotonic() - ts, 1))
