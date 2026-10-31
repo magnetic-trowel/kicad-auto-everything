@@ -22,25 +22,40 @@ PARTNER = ("P7", "Pads", "x:Pads", 104.0, 125.0, 0.0,
             for k, b in enumerate(BALLS)], (2.5, 1.5))
 
 
-def test_dog_bones_for_inner_rings_in_diagonal_gaps(tmp_path):
+def _space(tmp_path):
     p = F.write_board(tmp_path, extra=[GRID, PARTNER])
     info = F.synth_info(load(p))
-    sp = Space(load(p), info, plan=CN.plan(info, p, {}))
-    assert escape.dog_bones(sp, info, log=lambda m: None) == (16, 16)    # rings 2 and 3: the inner 4 x 4
-    vias = [it for it in sp.routed if it.kind == "via"]
-    tracks = [it for it in sp.routed if it.kind == "track"]
+    return Space(load(p), info, plan=CN.plan(info, p, {})), info
+
+
+def test_escape_plan_escapes_every_ball_and_lays_legal_copper(tmp_path):
+    sp, info = _space(tmp_path)
+    out = escape.run(sp, info, {}, log=lambda m: None)
+    (pk,) = out["packages"]
+    assert pk["signal"] == 64 and pk["planned"] == 64 and not out["blocked"]
+    # the outer rings on the surface, the rest through dog-bones to B.Cu
+    assert pk["by_layer"]["F.Cu"] >= 28 and pk["by_layer"]["B.Cu"] >= 4
+    assert pk["laid"] >= 44
     balls = {b[1]: (134.5 + b[2], 121.0 + b[3]) for b in BALLS}
-    outer = {n for n, (x, y) in balls.items() if max(abs(x - 134.5), abs(y - 121.0)) > 2 * PITCH}
-    assert len(tracks) == 16 and not outer & {v.net for v in vias}
-    for v in vias:
-        bx, by = balls[v.net]
-        assert abs(abs(v.geom.x - bx) - PITCH / 2) < 1e-9 and abs(abs(v.geom.y - by) - PITCH / 2) < 1e-9
-        # pointing away from the package centre
-        assert (v.geom.x - bx) * (bx - 134.5) > 0 and (v.geom.y - by) * (by - 121.0) > 0
+    for r in pk["escapes"]:
+        if r["via"]:
+            bx, by = balls[r["net"]]
+            assert abs(abs(r["via"][0] - bx) - PITCH / 2) < 1e-6 and abs(abs(r["via"][1] - by) - PITCH / 2) < 1e-6
     for it in sp.routed:
         if it.kind == "via":
             assert not sp.via_violations(it.net, it.geom.x, it.geom.y, ignore=(it,))
         else:
             a, b = it.geom.coords
-            assert math.dist(a, balls[it.net]) < 1e-9
             assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=(it,))
+
+
+def test_escape_bound_proves_too_wide_tracks_cannot_escape(tmp_path):
+    sp, info = _space(tmp_path)
+    (pkg,) = [p for p in escape.find_packages(sp) if p["kind"] == "grid"]
+    ok, meta, _ = escape.bound(sp, pkg, info)
+    assert ok >= 64 - 0.5 and escape.certificate(sp, pkg, info, log=lambda m: None) is None
+    # 2 mm tracks: no channel holds one; the outer ring leaves straight out, the next one
+    # only past its dog-bones, the inner 4 x 4 not at all
+    assert escape.fit(PITCH - 0.4, 2.0, 0.2) == 0 and escape.fit(2 * PITCH - 0.6, 2.0, 0.2) == 0
+    low, meta, duals = escape.bound(sp, pkg, info, override=dict(w=2.0))
+    assert low <= 64 - 16 + 1e-6 and duals

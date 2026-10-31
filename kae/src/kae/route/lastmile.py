@@ -583,16 +583,17 @@ ESCAPE_MARGINS = (0.5, 1.5)        # mm windows for a pad's escape to its plane:
 
 
 def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=None, margins=ESCAPE_MARGINS,
-                  balls=True):
+                  balls=True, escape_opts=None):
     """Join every pad of a plane net (a net with zone fill) that the fill does not reach to
     that fill, before any routing: a short stub and, where the fill is on another layer, a
     via (the human boards' "power first": a GND pin of a QFN gets its own via to the GND
-    plane next to it); with `balls`, the ball grids' dog-bones first (escape.dog_bones).
+    plane next to it); with `balls`, the ball grids' escape plans first (escape.run: dog-bones
+    and escapes, `escape_opts`).
     `board` is the unrouted input with its project files beside it, `fills` its refilled
     zones (pcbnew_io.zone_fills). Searches stay within `margins` of the pad (no rip-up;
     what does not fit is left to the router). The new copper is written unlocked to `out`
     (the router may move or rip it). Returns {escaped, failed, nets: {net: [escaped,
-    failed]}, added, dog_bones: (laid, wanted)}."""
+    failed]}, added, escape (escape.run's report), dog_bones: (vias laid, balls planned)}."""
     import time
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -600,8 +601,13 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
     fp = _fill_polys(fills)
     rep = dict(escaped=0, failed=0, nets={}, added=[])
     if balls:
-        from .escape import dog_bones
-        rep["dog_bones"] = dog_bones(sp, info, log=log)
+        # whole-package escape plans first (kae.route.escape): dog-bones and escapes of the
+        # ball grids, and the certificate of what no routing can escape under the rules
+        from . import escape
+        esc = escape.run(sp, info, escape_opts, log=log,
+                         deadline=None if deadline is None else time.monotonic() + 0.7 * max(0.0, deadline - time.monotonic()))
+        rep["escape"] = esc
+        rep["dog_bones"] = (sum(p.get("vias_laid", 0) for p in esc["packages"]), esc["wanted"])
     for net in sorted(fp):
         if deadline is not None and time.monotonic() > deadline:
             break

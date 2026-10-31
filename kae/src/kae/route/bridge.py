@@ -59,7 +59,9 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
-    ball_escapes=True,       # with them, dog-bones for the inner rings of ball grids (escape.dog_bones)
+    ball_escapes=True,       # with them, whole-package escape plans for ball grids (escape.run): dog-bones,
+                             # escapes, and the certificate of balls no routing can escape (report "blocked")
+    escape_share=0.15,       # of the time left: the plane escapes' and escape plans' share at most
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
@@ -120,8 +122,15 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             fills = pcbnew_io.zone_fills(staged)["zones"] if planes else []
             esc = wd / "escapes" / "escaped.kicad_pcb"
             got = lastmile.plane_escapes(staged, info, p, fills, esc, sev=sev, log=log, balls=opts.get("ball_escapes"),
-                                         deadline=time.monotonic() + max(10.0, 0.1 * left()))
-            report["plane_escapes"] = {k: v for k, v in got.items() if k != "added"}
+                                         deadline=time.monotonic() + max(10.0, opts.get("escape_share", 0.15) * left()),
+                                         escape_opts=opts)
+            report["plane_escapes"] = {k: v for k, v in got.items() if k not in ("added", "escape")}
+            if got.get("escape"):
+                # the escape plan per package (per ball: layer, side, via, exit), and what no routing
+                # can escape under the board's rules (the "blocked" section's packages)
+                report["escape"] = {k: v for k, v in got["escape"].items() if k != "blocked"}
+                if got["escape"]["blocked"]:
+                    report["blocked_packages"] = got["escape"]["blocked"]
             if got["added"]:
                 esc_in = drc.stage_board(esc, input_path, wd / "escaped")
                 input_path = esc_in
@@ -197,6 +206,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
                                              deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+        if report.get("blocked_packages"):
+            blk = report.setdefault("blocked", {})
+            blk["packages"] = report.pop("blocked_packages")
+            blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
