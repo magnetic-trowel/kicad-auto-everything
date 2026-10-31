@@ -136,7 +136,27 @@ def drc(board, inp, timeout):
     for v in r.get("violations", []):
         if v.get("severity", "error") == "error" and v.get("type") not in ENV_DEPENDENT_CHECKS:
             types[v.get("type")] = types.get(v.get("type"), 0) + 1
-    return dict(types=types, unconnected=len(r.get("unconnected_items", [])))
+    return dict(types=types, unconnected=len(r.get("unconnected_items", [])), overlaps=overlaps(r))
+
+
+OF_REF = re.compile(r"^(?:Footprint (\S+)$|.*\bpad\b.* of (\S+?)(?: on \S+)?$)", re.I)
+
+
+def overlaps(report):
+    """Pairs of parts a placement put on top of each other, from a DRC report: courtyards that
+    overlap, and pads of two parts that short (pad to pad: a track's short is the router's).
+    can485: a 1x6 header placed over a 1x12 one gave 47 shorting_items and was kept."""
+    pairs = set()
+    for v in report.get("violations", []):
+        if v.get("type") not in ("courtyards_overlap", "shorting_items") or v.get("severity", "error") != "error":
+            continue
+        refs = []
+        for it in v.get("items", []):
+            m = OF_REF.match(it.get("description", ""))
+            refs.append((m.group(1) or m.group(2)) if m else None)
+        if len(refs) == 2 and None not in refs and refs[0] != refs[1]:
+            pairs.add(tuple(sorted(refs)))
+    return sorted(pairs)
 
 
 NUM = r"(-?[0-9.]+)"
@@ -163,16 +183,94 @@ def outside(board):
     return n
 
 
-def judge(board, inp, base, timeout, placement=False):
+def judge(board, inp, base, timeout, placement=False, base_pairs=()):
     """Rank key (lower is better) in the harness's order: legal, clean, then fewer unconnected,
-    then fewer DRC errors beyond the input's own (per type). None when there is no board."""
+    then fewer DRC errors beyond the input's own (per type). With `placement`, parts outside the
+    outline, or parts on top of each other that the input (`base_pairs`) does not already have,
+    make it illegal; the last field counts both. None when there is no board."""
     d = drc(board, inp, timeout)
     if d is None:
         return None
     new = sum(max(0, c - base.get(t, 0)) for t, c in d["types"].items())
     out = outside(board) if placement else 0
+    if placement:
+        out += len(set(map(tuple, d.get("overlaps", ()))) - set(map(tuple, base_pairs)))
     clean = out == 0 and new == 0 and d["unconnected"] == 0
     return (1 if out else 0, 0 if clean else 1, d["unconnected"], new, out)
+
+
+def rung_plan(wall_s, parallel, screen_s, eta=2):
+    """Successive halving sized from the budget: rung r runs budget screen_s * eta**r; each rung
+    gets the same share of the slot-seconds (parallel * wall_s), so rung r holds n0 / eta**r
+    candidates. The most rungs whose top budget fits in 80 % of the wall time and whose top
+    rung still has one candidate. Returns (budgets, n0)."""
+    R = 1
+    while screen_s * eta ** R <= 0.8 * wall_s and (R + 1) * eta ** R * screen_s <= parallel * wall_s:
+        R += 1
+    n0 = max(parallel, int(parallel * wall_s // (R * screen_s)))
+    return [screen_s * eta ** r for r in range(R)], n0
+
+
+class Halving:
+    """Asynchronous successive halving over placements (ASHA, Li et al., MLSys 2020): a free slot
+    promotes a candidate in the top 1/eta of those judged at its rung (its board resumed with
+    the next rung's budget, a new seed), else starts a new candidate (a fresh placement with the
+    screen budget) while rung 0 has room, a lower rung may still promote or a new one has time
+    to climb every rung, else resumes the best board at the top rung. A
+    candidate's score at a rung is its attempt's rank there; every candidate and score goes to
+    summary.json."""
+
+    def __init__(self, budgets, n0, eta=2):
+        self.budgets, self.n0, self.eta = budgets, n0, eta
+        self.cands = []          # {id, seed, rungs: [{k, rank}], promoted: set of rungs}
+
+    @staticmethod
+    def last(c):
+        """A candidate's latest judged attempt at any rung ({k, rank}), None before one."""
+        xs = [x for x in c["rungs"] if x["rank"] is not None]
+        return xs[-1] if xs else None
+
+    def next(self, left=float("inf")):
+        """(candidate or None, rung, budget, k of the attempt whose board it resumes or None):
+        what the next free slot runs; `left`: seconds left for attempts."""
+        top = len(self.budgets) - 1
+        for r in range(top - 1, -1, -1):       # the highest rung first: its budget is the longest
+            done = [c for c in self.cands if len(c["rungs"]) > r and c["rungs"][r]["rank"] is not None]
+            done.sort(key=lambda c: c["rungs"][r]["rank"])
+            for c in done[:len(done) // self.eta]:
+                if r not in c["promoted"]:
+                    c["promoted"].add(r)
+                    return c, r + 1, self.budgets[r + 1], c["rungs"][r]["k"]
+        waiting = any(not x.get("done") for c in self.cands for x, r in zip(c["rungs"], range(top)))
+        if len(self.cands) < self.n0 or waiting or left >= sum(self.budgets):
+            # rung 0 has room, a lower rung may still promote, or a new placement still has time
+            # to climb every rung: a short fresh placement fills the slot. Resuming the same
+            # board again rarely helps (merge2-eval-joint: 18 of 70 second resumes, 21.5 -> 21.0
+            # open on average), so the best is resumed only when nothing else fits
+            return None, 0, self.budgets[0], None
+        scored = [c for c in self.cands if self.last(c)]
+        if scored:
+            c = min(scored, key=lambda c: self.last(c)["rank"])
+            return c, top, self.budgets[top], self.last(c)["k"]
+        return None, 0, self.budgets[0], None
+
+    def started(self, cand, k, seed):
+        if cand is None:
+            cand = dict(id=len(self.cands), seed=seed, rungs=[], promoted=set())
+            self.cands.append(cand)
+        cand["rungs"].append(dict(k=k, rank=None))
+        return cand
+
+    def judged(self, cand, k, rank):
+        for x in cand["rungs"]:
+            if x["k"] == k:
+                x["rank"], x["done"] = rank, True
+
+    def summary(self):
+        return dict(budgets=[round(b) for b in self.budgets], n0=self.n0, eta=self.eta,
+                    candidates=[dict(id=c["id"], seed=c["seed"],
+                                     rungs=[dict(k=x["k"], rank=x["rank"] and list(x["rank"])) for x in c["rungs"]])
+                                for c in self.cands])
 
 
 def main():
@@ -187,7 +285,8 @@ def main():
     ap.add_argument("--scale-first", action="store_true",
                     help="first-s x sqrt(footprints / 40) when above 1: big boards need longer single attempts")
     ap.add_argument("--check-placement", action="store_true",
-                    help="methods that place: unlocked parts outside the outline make an attempt illegal")
+                    help="methods that place: unlocked parts outside the outline, or parts on top of each other "
+                         "(courtyards, pad-to-pad shorts) beyond the input's, make an attempt illegal")
     ap.add_argument("--max-attempts", type=int, default=0,
                     help="stop launching after this many (deterministic methods: 1); 0 = no limit")
     ap.add_argument("--slack", type=float, default=1.0,
@@ -196,6 +295,11 @@ def main():
     ap.add_argument("--resume", type=float, default=0.0,
                     help="share of each wave after the first that continues from the best board so far "
                          "(@BEST@, KAE_RESUME=1); 0 = every attempt starts from the input")
+    ap.add_argument("--screen", action="store_true",
+                    help="methods that place: successive halving over placements instead of the fixed waves "
+                         "(fresh attempts at --screen-s, the best of each rung resumed with eta x the budget)")
+    ap.add_argument("--screen-s", type=float, default=0.0, help="rung-0 budget (0: half of first-s)")
+    ap.add_argument("--eta", type=int, default=2)
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
@@ -221,6 +325,10 @@ def main():
         # past its time, the harness killed it and kept nothing)
         return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15)
     base = (b0 or {}).get("types", {})
+    sh = None
+    if a.screen:
+        sh = Halving(*rung_plan(deadline() - time.monotonic(), a.parallel, a.screen_s or a.first_s / 2, a.eta), eta=a.eta)
+        log(f"successive halving: rung budgets {[round(b) for b in sh.budgets]} s, {sh.n0} placements")
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
     best = None
@@ -231,7 +339,14 @@ def main():
         nonlocal k
         # the method's budget follows the schedule; slack only lets an attempt run past it (up to
         # the overall deadline), it does not shrink the budget of late attempts
-        b = min(a.first_s * a.growth ** (k // a.parallel), deadline() - time.monotonic())
+        if sh is not None:
+            cand, rung, b, src_k = sh.next(deadline() - time.monotonic())
+            b = min(b, deadline() - time.monotonic())
+            frm = next(x for x in done if x["k"] == src_k) if src_k is not None else None
+        else:
+            b = min(a.first_s * a.growth ** (k // a.parallel), deadline() - time.monotonic())
+            frm = best if (a.resume > 0 and k >= a.parallel and best is not None and best["rank"] is not None
+                           and k % a.parallel < round(a.resume * a.parallel)) else None
         if b < 20 or (a.max_attempts and k >= a.max_attempts):
             return False
         d = wd / f"a{k}"
@@ -239,10 +354,9 @@ def main():
         o = d / "board.kicad_pcb"
         s = a.seed * 1000 + k
         src, resume = inp, False
-        if (a.resume > 0 and k >= a.parallel and best is not None and best["rank"] is not None
-                and k % a.parallel < round(a.resume * a.parallel)):
+        if frm is not None:
             src, resume = d / "best_in.kicad_pcb", True
-            shutil.copy2(best["out"], src)
+            shutil.copy2(frm["out"], src)
             for ext in (".kicad_pro", ".kicad_dru"):   # the task's rules
                 if inp.with_suffix(ext).exists():
                     shutil.copy2(inp.with_suffix(ext), src.with_suffix(ext))
@@ -252,8 +366,11 @@ def main():
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0"))
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
-                          resumed_from=best["k"] if resume else None)
-        log(f"start #{k} seed {s} budget {b:.0f}s" + (f" from #{best['k']}'s board" if resume else ""))
+                          resumed_from=frm["k"] if resume else None)
+        if sh is not None:
+            running[p].update(cand=sh.started(cand, k, s), rung=rung)
+        log(f"start #{k} seed {s} budget {b:.0f}s" + (f" from #{frm['k']}'s board" if resume else "")
+            + (f" (candidate {running[p]['cand']['id']}, rung {rung})" if sh is not None else ""))
         k += 1
         return True
 
@@ -290,11 +407,14 @@ def main():
                 rank = None   # no time left to judge it: the best so far stays the output
                 info["not_judged"] = "time"
             else:
-                rank = judge(info["out"], inp, base, max(10.0, end - w0 - 5), a.check_placement)
+                rank = judge(info["out"], inp, base, max(10.0, end - w0 - 5), a.check_placement,
+                             (b0 or {}).get("overlaps", ()))
                 judge_est = max(judge_est, time.monotonic() - w0)
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
+            if sh is not None:
+                sh.judged(info["cand"], info["k"], rank)
             fast_fails = fast_fails + 1 if rank is None and info["wall_s"] < 10 else 0
             done.append(info)
             log(f"end #{info['k']} rc {p.returncode} (illegal, not clean, unconnected, new errors, outside) {rank}")
@@ -327,7 +447,10 @@ def main():
                 judge_wall_s=round(judge_wall, 1), wall_s=round(time.monotonic() - t0, 1), budget_s=a.time,
                 parallel=a.parallel, peak_rss_mb=max([d.get("peak_rss_mb", 0) for d in done] + [0]),
                 wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1))
-    summary = dict(work, attempt_log=[{k_: v for k_, v in d.items() if k_ not in ("out", "t")} for d in done])
+    summary = dict(work, attempt_log=[{k_: (v["id"] if k_ == "cand" else v) for k_, v in d.items() if k_ not in ("out", "t")}
+                                      for d in done])
+    if sh is not None:
+        summary["halving"] = sh.summary()
     (wd / "summary.json").write_text(json.dumps(summary, indent=1))
     print("KAE_WORK " + json.dumps(work), flush=True)
     if best is None:
