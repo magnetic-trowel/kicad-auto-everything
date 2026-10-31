@@ -101,6 +101,40 @@ def observers(bd, brief, sources):
     return out
 
 
+OBS_ID = {"victim": "pickup.peak", "supply": "supply.peak", "overshoot": "overshoot.peak", "cm": "cable_cm.v"}
+
+
+def _ref(tok):
+    return tok.rsplit(".", 1)[0] if tok and "." in tok else None
+
+
+def observation(bd, o, s, values, us, fs=()):
+    """One (observer, aggressor) pair as a kae.intent observation: its physical value at every corner
+    (V peak; for cm the common-mode voltage between the two connectors' grounds at its worst harmonic,
+    whose frequency per corner is f_Hz), the old ratio u per corner (the legacy score), its scope (the
+    parts, nets and structure on each side) and its old bound as a reference, not a limit."""
+    if o.kind == "cm":
+        to_parts = sorted({_ref(t) for t in o.meta["pads"]})
+        to_nets = []
+    else:
+        to_parts = sorted({r for r in (_ref(o.pa), _ref(o.pb), o.meta.get("ref")) if r})
+        to_nets = sorted({n for n in (o.a, o.b, o.meta.get("net"), o.meta.get("rail")) if n in bd.pads_of})
+    m = s.meta
+    from_parts = sorted({r for r in (_ref(s.pa), _ref(s.pb), m.get("ref")) if r})
+    from_nets = sorted({n for n in (s.a, s.b, m.get("net"), m.get("sw"), m.get("bus")) if n in bd.pads_of})
+    out = dict(id=OBS_ID.get(o.kind, o.kind), unit="V", values=list(values), u=list(us),
+               scope=dict(kind=o.kind, observer=o.name, source=s.name, source_kind=s.kind, from_struct=m.get("cell"),
+                          from_parts=from_parts, from_nets=from_nets, to_parts=to_parts, to_nets=to_nets),
+               reference=dict(value=(o.bound or None), basis=o.basis, src_class=o.src_class),
+               label=f"{o.name} <- {s.name}")
+    if fs:
+        out["f_Hz"] = list(fs)
+        out["scope"]["connectors"] = to_parts
+        out["reference"] = dict(value=None, basis=o.basis + " (the limit as a voltage at f: "
+                                f"{CM_V_LIM_HZ:g} V Hz / f, for 1 m of cable)", src_class=o.src_class)
+    return out
+
+
 def pattern(bd, obs, f, active=False):
     """J_k: pad currents of a unit current driven at the observer's port (adjoint solve); a direct pad
     pair (cm) is its own pattern. active: only the pads of parts outside the copper model (the

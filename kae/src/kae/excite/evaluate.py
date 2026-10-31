@@ -178,23 +178,30 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     cps = {s.name: corners(P[s.name].values(), n=n_corners, seed=seed) for s in srcs}
     ncp = n_corners + 3
     harms = []
+    observations = []
     tot = [0.0] * ncp
     for pr in pairs:
         o, s = pr["o"], pr["s"]
-        us, parts_ = [], None
+        us, parts_, vals, fs = [], None, [], []
         for c in range(ncp):
             val = {k[1]: v for k, v in cps[s.name][c].items()}
             u, d = HA.pair_u(o.kind, o.bound, pr["Zf"], pr["Le"], val)
             if c == 0:
                 parts_ = (dict(f_worst_MHz=round(d["f_worst"] / 1e6, 1) if d["f_worst"] else None) if o.kind == "cm" else
                           dict(volts=d["volts"], bound=d["bound"], edge_share=round(d["ve"] / d["volts"], 3) if d["volts"] else None))
+            if o.kind == "cm":
+                fs.append(d["f_worst"])
+                vals.append(u * O.CM_V_LIM_HZ / d["f_worst"] if d["f_worst"] else 0.0)
+            else:
+                vals.append(d["volts"])
             us.append(u)
             tot[c] += HA.phi(u)
+        observations.append(O.observation(bd, o, s, vals, us, fs))
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
     if dcp:
-        harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log)
+        harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
@@ -213,7 +220,8 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
-                harms=harms, notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
+                harms=harms, observations=observations,
+                notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
 
 
@@ -249,10 +257,11 @@ def print_total(t):
           f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
 
 
-def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None):
+def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None, obs_out=None):
     """The DC band's harms (kae.excite.dc) at every corner, added into the per-corner totals `tot`. A
     corner's cells take the values of the same corner of their switching harms (one operating point).
-    ac_copper: the switching harmonics' copper loss per corner (W), counted with the DC copper loss."""
+    ac_copper: the switching harmonics' copper loss per corner (W), counted with the DC copper loss.
+    obs_out: a list the band's observations (kae.intent: physical values per corner) are appended to."""
     from kae.em import solve as ES
     from .beliefs import corners
     t0 = time.time()
@@ -300,11 +309,20 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
                            f"against {dcp.loss_share:.0%} of the delivered power"))
     for c in range(ncp):
         tot[c] += HA.phi(us[c])
+    obs = [] if obs_out is None else obs_out
+    obs.append(dict(id="loss.copper", unit="W", values=[x[1] for x in loss], u=us,
+                    scope=dict(kind="dc_loss", nets=sorted(set(dcp.feeds) | set(dcp.grounds))),
+                    reference=dict(value=loss[0][2], basis=f"{dcp.loss_share:.0%} of the delivered power"),
+                    label="copper dissipation" + (" (DC and switching harmonics)" if ac_copper is not None else " (DC)")))
     for (ref, rail), vals in drops.items():
         u_ = [v[0] if v else 0.0 for v in vals]
         for c in range(ncp):
             tot[c] += HA.phi(u_[c])
         v0 = vals[0] or (0.0, 0.0, 0.0)
+        obs.append(dict(id="drop.rail", unit="V", values=[v[1] if v else 0.0 for v in vals], u=u_,
+                        scope=dict(kind="dc_drop", load=ref, rail=rail, parts=[ref], nets=[rail]),
+                        reference=dict(value=v0[2], basis=f"{dcp.drop_share:.0%} of the rail's voltage"),
+                        label=f"DC drop from {rail}'s source to {ref}"))
         rows.append(dict(observer=f"dc:drop:{ref}@{rail}", source="dc", kind="dc_drop", u=u_[0], u_lo=min(u_), u_hi=max(u_),
                          dV_mV=round(v0[1] * 1e3, 3), budget_mV=round(v0[2] * 1e3, 2),
                          basis=f"rail + ground drop from the rail's source against {dcp.drop_share:.0%} of its voltage"))
@@ -315,6 +333,11 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
         worst = max((h for h in heat if h), key=lambda h: h[1])
         tr = trk.tracks[worst[0]]
         h0 = heat[0]
+        obs.append(dict(id="heat.track", unit="K", values=[h[2] if h else 0.0 for h in heat], u=u_,
+                        scope=dict(kind="dc_heat", nets=[tr.net], layer=tr.layer, width_mm=tr.width),
+                        reference=dict(value=dcp.dT_max, basis="IPC-2221 rise"),
+                        label=f"temperature rise of the hottest track (worst corner: {tr.net} on {tr.layer}, "
+                              f"{tr.width} mm)"))
         rows.append(dict(observer=f"dc:heating:{tr.net}@{tr.layer}", source="dc", kind="dc_heat", u=u_[0], u_lo=min(u_),
                          u_hi=max(u_), dT_K=round(h0[2], 2) if h0 else None, I_A=round(abs(worst[3]), 3),
                          track=dict(net=tr.net, layer=tr.layer, width=tr.width, start=tr.start, end=tr.end),
