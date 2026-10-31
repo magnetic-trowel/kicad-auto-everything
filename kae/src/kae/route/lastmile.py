@@ -529,20 +529,26 @@ ESCAPE_MARGINS = (0.5, 1.5)        # mm windows for a pad's escape to its plane:
                                    # took a channel on fm4dd i2c24io: 5 -> 10 open)
 
 
-def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=None, margins=ESCAPE_MARGINS):
+def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=None, margins=ESCAPE_MARGINS,
+                  balls=True):
     """Join every pad of a plane net (a net with zone fill) that the fill does not reach to
     that fill, before any routing: a short stub and, where the fill is on another layer, a
     via (the human boards' "power first": a GND pin of a QFN gets its own via to the GND
-    plane next to it). `board` is the unrouted input with its project files beside it,
-    `fills` its refilled zones (pcbnew_io.zone_fills). Searches stay within `margins` of the
-    pad (no rip-up; what does not fit is left to the router). The new copper is written
-    unlocked to `out` (the router may move or rip it). Returns {escaped, failed, nets: {net: [escaped, failed]}, added}."""
+    plane next to it); with `balls`, the ball grids' dog-bones first (escape.dog_bones).
+    `board` is the unrouted input with its project files beside it, `fills` its refilled
+    zones (pcbnew_io.zone_fills). Searches stay within `margins` of the pad (no rip-up;
+    what does not fit is left to the router). The new copper is written unlocked to `out`
+    (the router may move or rip it). Returns {escaped, failed, nets: {net: [escaped,
+    failed]}, added, dog_bones: (laid, wanted)}."""
     import time
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
     gr = GridRouter(sp)
     fp = _fill_polys(fills)
     rep = dict(escaped=0, failed=0, nets={}, added=[])
+    if balls:
+        from .escape import dog_bones
+        rep["dog_bones"] = dog_bones(sp, info, log=log)
     for net in sorted(fp):
         if deadline is not None and time.monotonic() > deadline:
             break

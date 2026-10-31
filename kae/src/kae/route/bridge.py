@@ -58,6 +58,7 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
+    ball_escapes=True,       # with them, dog-bones for the inner rings of ball grids (escape.dog_bones)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -106,16 +107,17 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
-        if opts.get("plane_escapes") and any(z.get("net") for z in info.get("zones") or []):
+        planes = opts.get("plane_escapes") and any(z.get("net") for z in info.get("zones") or [])
+        if planes or opts.get("ball_escapes"):
             from . import lastmile
             te = time.monotonic()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
-            fills = pcbnew_io.zone_fills(staged)["zones"]
+            fills = pcbnew_io.zone_fills(staged)["zones"] if planes else []
             esc = wd / "escapes" / "escaped.kicad_pcb"
-            report["plane_escapes"] = {k: v for k, v in lastmile.plane_escapes(
-                staged, info, p, fills, esc, sev=sev, log=log,
-                deadline=time.monotonic() + max(10.0, 0.1 * left())).items() if k != "added"}
-            if report["plane_escapes"]["escaped"]:
+            got = lastmile.plane_escapes(staged, info, p, fills, esc, sev=sev, log=log, balls=opts.get("ball_escapes"),
+                                         deadline=time.monotonic() + max(10.0, 0.1 * left()))
+            report["plane_escapes"] = {k: v for k, v in got.items() if k != "added"}
+            if got["added"]:
                 esc_in = drc.stage_board(esc, input_path, wd / "escaped")
                 input_path = esc_in
                 info = pcbnew_io.export_dsn(input_path, kdsn)
