@@ -725,11 +725,12 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     if opts.get("last_mile"):
         # only a board with errors needs the baseline (one more DRC, minutes on big boards)
         base = input_errors(input_path, wd, deadline) if best["errors"] else {}
-        _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
-                   base=base)
+        best_rep = _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed,
+                              log, base=base) or best_rep
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
-                drc_dir=None if opts.get("last_mile") else str(best_dir))   # the DRC of the board kept
+                drc_dir=None if opts.get("last_mile") else str(best_dir),   # the DRC of the board kept
+                _report=best_rep)   # its DRC report (for kae.route.blocked; the bridge takes it out)
 
 
 RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",
@@ -995,3 +996,4 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         if not errors_no_worse(s_, best, base):
             break
         cur, cur_rep, cur_sum = cand, rep, s_
+    return best_rep
